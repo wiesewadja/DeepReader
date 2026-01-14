@@ -9,6 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from .config import Config
 from .tools.pdf_indexer import index_pdf
+from .tools.pdf_query import query_pdf
 
 class MCPServer:
     """MCP 服务器封装"""
@@ -88,6 +89,16 @@ class MCPServer:
                 result = index_pdf(
                     pdf_path=arguments["path"],
                     storage_dir=str(self.config.base_dir)
+                )
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                }
+            elif name == "query_pdf":
+                result = query_pdf(
+                    query=arguments["query"],
+                    index_id=arguments["index_id"],
+                    storage_dir=str(self.config.base_dir),
+                    max_results=self.config.max_results
                 )
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
