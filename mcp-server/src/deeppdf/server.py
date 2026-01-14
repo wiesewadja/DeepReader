@@ -4,9 +4,11 @@ DeepPDF MCP Server
 PDF 索引和查询服务
 """
 import sys
+import json
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from .config import Config
+from .tools.pdf_indexer import index_pdf
 
 class MCPServer:
     """MCP 服务器封装"""
@@ -82,7 +84,15 @@ class MCPServer:
         @self.app.call_tool()
         async def call_tool(name: str, arguments: dict):
             """处理工具调用"""
-            # 稍后实现具体工具逻辑
+            if name == "index_pdf":
+                result = index_pdf(
+                    pdf_path=arguments["path"],
+                    storage_dir=str(self.config.base_dir)
+                )
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                }
+            # 其他工具稍后实现
             return {
                 "content": [{"type": "text", "text": f"Tool {name} not yet implemented"}]
             }
