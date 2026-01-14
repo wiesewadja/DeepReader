@@ -9,7 +9,8 @@
     "copy-css": "cp src/styles/main.css styles.css",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "deploy": "npm run build && mkdir -p /Users/lizhao/Documents/2025logseq/.obsidian/plugins/deeppdf && cp main.js manifest.json styles.css /Users/lizhao/Documents/2025logseq/.obsidian/plugins/deeppdf/"
   },
   "keywords": [
     "obsidian",
