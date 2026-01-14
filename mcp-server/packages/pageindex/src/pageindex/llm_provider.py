@@ -267,3 +267,24 @@ class UnifiedLLM:
                 else:
                     logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
                     return "Error"
+
+    async def chat_with_finish_reason_async(
+        self, prompt: str, chat_history: list = None, temperature: float = 0
+    ):
+        if chat_history:
+            messages = chat_history.copy()
+            messages.append({"role": "user", "content": prompt})
+        else:
+            messages = [{"role": "user", "content": prompt}]
+
+        for i in range(self.max_retries):
+            try:
+                content = await self.provider.chat_async(self.model, messages, temperature)
+                return content, "finished"
+            except Exception as e:
+                logging.error(f"Error: {e}")
+                if i < self.max_retries - 1:
+                    await asyncio.sleep(1)
+                else:
+                    logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
+                    return "Error", "error"
