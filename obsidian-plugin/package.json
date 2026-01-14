@@ -1,0 +1,28 @@
+{
+  "name": "obsidian-deeppdf",
+  "version": "0.1.0",
+  "description": "DeepPDF - 深度阅读 PDF 知识库插件",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "pdf",
+    "knowledge",
+    "search"
+  ],
+  "author": "DeepPDF Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.19.0",
+    "obsidian": "latest",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  }
+}
