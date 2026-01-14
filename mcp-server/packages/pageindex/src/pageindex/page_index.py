@@ -116,6 +116,9 @@ async def check_title_appearance_in_start_concurrent(
 
 
 async def toc_detector_single_page(content, llm_client=None):
+    if llm_client is None:
+        raise ValueError("llm_client is required for toc_detector_single_page")
+
     prompt = f"""
     Your job is to detect if there is a table of content provided in the given text.
 
@@ -365,6 +368,9 @@ def toc_transformer(toc_content, model=None):
 
 
 async def find_toc_pages(start_page_index=0, page_list=None, opt=None, llm_client=None, logger=None):
+    if page_list is None:
+        raise ValueError("page_list cannot be None")
+
     print("start find_toc_pages")
     last_page_is_yes = False
     toc_page_list = []
