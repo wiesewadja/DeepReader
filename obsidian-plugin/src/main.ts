@@ -1,5 +1,4 @@
 import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf } from "obsidian";
-import { MCPClient } from "./mcp/client.js";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 
 interface DeepPDFSettings {
@@ -14,7 +13,6 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
-    mcpClient: MCPClient | null = null;
 
     async onload() {
         await this.loadSettings();
@@ -22,7 +20,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this.mcpClient)
+            (leaf) => new SidebarView(leaf, this.settings.mcpServerPath)
         );
 
         // 添加设置面板
@@ -47,6 +45,10 @@ export default class DeepPDFPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+
+    async onunload() {
+        // 清理资源
     }
 
     activateView() {

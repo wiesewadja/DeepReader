@@ -1,17 +1,16 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
-import { MCPClient } from "../mcp/client.js";
 import { IndexManagerModal } from "../ui/index-manager-modal.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
 export class SidebarView extends ItemView {
-    private client: MCPClient | null;
     private submitHandler: () => void;
     private keyPressHandler: (e: KeyboardEvent) => void;
+    private mcpServerPath: string;
 
-    constructor(leaf: WorkspaceLeaf, client: MCPClient | null = null) {
+    constructor(leaf: WorkspaceLeaf, mcpServerPath: string = "") {
         super(leaf);
-        this.client = client;
+        this.mcpServerPath = mcpServerPath;
         this.submitHandler = () => {};
         this.keyPressHandler = () => {};
     }
@@ -32,6 +31,20 @@ export class SidebarView extends ItemView {
         // 头部
         const header = container.createEl("header", { cls: "deeppdf-header" });
         header.createEl("h2", { text: "DeepPDF" });
+
+        // 服务器状态指示器
+        const statusEl = header.createEl("div", { cls: "deeppdf-status" });
+        if (!this.mcpServerPath) {
+            statusEl.createEl("span", {
+                text: "⚠️ 未配置 MCP 服务器路径",
+                cls: "deeppdf-status-warning"
+            });
+        } else {
+            statusEl.createEl("span", {
+                text: `✅ MCP 服务器: ${this.mcpServerPath}`,
+                cls: "deeppdf-status-ok"
+            });
+        }
 
         // 管理索引按钮
         const manageBtn = header.createEl("button", {
@@ -77,15 +90,20 @@ export class SidebarView extends ItemView {
     }
 
     openIndexManager() {
-        if (!this.client) {
-            alert("MCP 客户端未连接。请先在设置中配置 MCP 服务器路径。");
+        if (!this.mcpServerPath) {
+            this.showError("请先在设置中配置 MCP 服务器路径");
             return;
         }
-        new IndexManagerModal(this.app, this.client).open();
+        new IndexManagerModal(this.app, this.mcpServerPath).open();
     }
 
     async handleSubmit(query: string) {
         if (!query.trim()) {
+            return;
+        }
+
+        if (!this.mcpServerPath) {
+            this.showError("请先在设置中配置 MCP 服务器路径");
             return;
         }
 
@@ -94,19 +112,44 @@ export class SidebarView extends ItemView {
 
         resultsSection.innerHTML = "<p>查询中...</p>";
 
-        // TODO: 集成 MCP 查询功能，替换下面的模拟实现
-        setTimeout(() => {
-            resultsSection.innerHTML = `
-                <div class="deeppdf-result">
-                    <p>查询功能尚未完全实现</p>
-                    <p><strong>问题:</strong> ${query}</p>
+        try {
+            // TODO: 实现实际的查询逻辑
+            // 当前版本使用模拟数据
+            await this.simulateQuery(query, resultsSection);
+        } catch (error) {
+            resultsSection.innerHTML = `<p class="deeppdf-error">查询失败: ${error}</p>`;
+        }
+    }
+
+    private async simulateQuery(query: string, resultsSection: Element) {
+        // 模拟查询延迟
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        resultsSection.innerHTML = `
+            <div class="deeppdf-result">
+                <h3>查询结果</h3>
+                <p><strong>问题:</strong> ${query}</p>
+                <p class="deeppdf-notice">
+                    📝 注意：当前版本使用模拟数据。<br>
+                    实际查询功能需要 MCP 服务器支持。
+                </p>
+                <div class="deeppdf-meta-info">
+                    <p><strong>MCP 服务器路径:</strong> ${this.mcpServerPath}</p>
+                    <p><strong>索引状态:</strong> 请使用"管理索引"查看</p>
                 </div>
-            `;
-        }, 500);
+            </div>
+        `;
+    }
+
+    private showError(message: string) {
+        const resultsSection = this.containerEl.querySelector(".deeppdf-results-section");
+        if (resultsSection) {
+            resultsSection.innerHTML = `<p class="deeppdf-error">${message}</p>`;
+        }
     }
 
     async onClose() {
-        // 清理事件监听器，防止内存泄漏
+        // 清理事件监听器
         const submitBtn = this.containerEl.querySelector(".deeppdf-submit-btn");
         const input = this.containerEl.querySelector(".deeppdf-query-input");
 
