@@ -6,5 +6,10 @@
     ],
     "[python]": {
         "editor.formatOnSave": true
-    }
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "mcp-server/tests",
+        "-v"
+    ]
 }

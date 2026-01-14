@@ -7,6 +7,11 @@ from deeppdf.tools.pdf_indexer import index_pdf
 
 def test_query_pdf_success():
     """测试成功的查询"""
+    import os
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or os.getenv("CHATGPT_API_KEY")
+    if not api_key:
+        pytest.skip("LLM API key not set")
+
     with tempfile.TemporaryDirectory() as tmpdir:
         test_pdf = Path(__file__).parent / "fixtures" / "sample.pdf"
 

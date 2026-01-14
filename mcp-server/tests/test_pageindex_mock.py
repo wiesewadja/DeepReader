@@ -7,7 +7,7 @@ import sys
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from io import BytesIO
-from PyPDF2 import PdfWriter, PdfReader
+from pypdf import PdfWriter, PdfReader
 
 # 添加 src 到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -31,7 +31,7 @@ from pageindex.utils import (
 @pytest.fixture
 def mock_pdf_bytes():
     """创建一个简单的测试 PDF"""
-    # 这里需要使用 PyPDF2 创建一个真实的 PDF 用于测试
+    # 这里需要使用 pypdf 创建一个真实的 PDF 用于测试
     # 由于创建真实 PDF 比较复杂，我们先返回 None，稍后实现
     return None
 
@@ -214,7 +214,7 @@ def test_chatgpt_api_mock(mock_chatgpt):
 
 # ============ PDF 处理测试 ============
 
-@patch('pageindex.utils.PyPDF2.PdfReader')
+@patch('pageindex.utils.pypdf.PdfReader')
 def test_get_page_tokens_mock(mock_pdf_reader):
     """测试获取页面 token（mock 版本）"""
     # 创建 mock 页面对象
@@ -229,7 +229,7 @@ def test_get_page_tokens_mock(mock_pdf_reader):
     mock_pdf_reader.return_value = mock_reader_instance
 
     # 调用函数
-    result = get_page_tokens("test.pdf", model="gpt-4o", pdf_parser="PyPDF2")
+    result = get_page_tokens("test.pdf", model="gpt-4o", pdf_parser="pypdf")
 
     # 验证结果
     assert len(result) == 2
