@@ -2,10 +2,15 @@ import hashlib
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any
-from .pdf_parser import PDFParser, PDFParseError
+from typing import Dict, Any, List
 from ..pageindex.integration import PageIndexWrapper
+from ..pageindex.integration import get_pdf_page_tokens
 from ..storage.chroma_store import ChromaStore
+
+
+class PDFIndexError(Exception):
+    """PDF 索引错误"""
+    pass
 
 
 def index_pdf(pdf_path: str, storage_dir: str) -> Dict[str, Any]:
@@ -39,50 +44,35 @@ def index_pdf(pdf_path: str, storage_dir: str) -> Dict[str, Any]:
     index_id = f"idx_{file_hash}"
 
     try:
-        # 1. 解析 PDF（提取原始文本）
-        parser = PDFParser()
-        raw_sections = parser.extract_sections(pdf_path)
+        # 1. 使用 PageIndex 获取页面内容（按页分段）
+        # 使用默认模型进行 token 计算
+        page_tokens = get_pdf_page_tokens(pdf_path)
 
-        if not raw_sections:
+        if not page_tokens:
             return {
                 "status": "error",
                 "error": "No text extracted from PDF"
             }
 
-        # 2. 使用 PageIndex 进行智能分段
-        try:
-            # 初始化 PageIndex（使用 mock 配置，不需要 API key）
-            pageindex = PageIndexWrapper(
-                pdf_path=str(pdf_path_obj),
-                llm_provider="mock"  # 使用 mock 模式进行测试
-            )
-
-            # 使用 PageIndex 解析结构化内容
-            pageindex_result = pageindex.parse()
-
-            if pageindex_result and "tree" in pageindex_result:
-                # 使用 PageIndex 的结果
-                structured_sections = _convert_pageindex_to_sections(pageindex_result["tree"])
-            else:
-                # 回退到简单的按页分割
-                structured_sections = [
-                    {
-                        "id": f"section_{i}",
-                        "text": section["text"],
-                        "metadata": section.get("metadata", {})
+        # 2. 转换为 sections 格式
+        structured_sections = []
+        for page_num, (text, token_count) in enumerate(page_tokens):
+            if text and text.strip():
+                structured_sections.append({
+                    "id": f"page_{page_num + 1}",
+                    "text": text.strip(),
+                    "metadata": {
+                        "page": page_num + 1,
+                        "total_pages": len(page_tokens),
+                        "token_count": token_count
                     }
-                    for i, section in enumerate(raw_sections)
-                ]
-        except Exception as e:
-            # PageIndex 失败，回退到简单分割
-            structured_sections = [
-                {
-                    "id": f"section_{i}",
-                    "text": section["text"],
-                    "metadata": section.get("metadata", {})
-                }
-                for i, section in enumerate(raw_sections)
-            ]
+                })
+
+        if not structured_sections:
+            return {
+                "status": "error",
+                "error": "No valid text content found in PDF"
+            }
 
         # 3. 存储到 ChromaDB
         storage_dir_path = Path(storage_dir)
@@ -136,70 +126,13 @@ def index_pdf(pdf_path: str, storage_dir: str) -> Dict[str, Any]:
             "pdf_name": pdf_path_obj.name
         }
 
-    except PDFParseError as e:
+    except FileNotFoundError:
         return {
             "status": "error",
-            "error": f"PDF parsing failed: {str(e)}"
+            "error": f"PDF file not found: {pdf_path}"
         }
     except Exception as e:
         return {
             "status": "error",
             "error": f"Unexpected error: {str(e)}"
         }
-
-
-def _convert_pageindex_to_sections(tree: Dict) -> list:
-    """
-    将 PageIndex 的树结构转换为 sections 列表
-
-    Args:
-        tree: PageIndex 返回的树结构
-
-    Returns:
-        sections 列表
-    """
-    sections = []
-
-    def process_node(node, level=0):
-        # 提取节点文本
-        text = node.get("content", "")
-        if not text:
-            text = node.get("title", "")
-
-        if text:
-            sections.append({
-                "id": node.get("id", f"section_{len(sections)}"),
-                "text": text,
-                "metadata": {
-                    "level": level,
-                    "page": node.get("page", 1),
-                    "type": node.get("type", "section")
-                }
-            })
-
-        # 处理子节点
-        for child in node.get("children", []):
-            process_node(child, level + 1)
-
-    if "root" in tree:
-        root_id = tree["root"]
-        nodes = tree.get("nodes", {})
-
-        # 找到根节点
-        root_node = None
-        if isinstance(nodes, list):
-            for node in nodes:
-                if node.get("id") == root_id:
-                    root_node = node
-                    break
-        elif isinstance(nodes, dict):
-            root_node = nodes.get(root_id)
-
-        if root_node:
-            process_node(root_node)
-    elif isinstance(tree.get("nodes"), list):
-        # 直接遍历节点列表
-        for node in tree["nodes"]:
-            process_node(node)
-
-    return sections
