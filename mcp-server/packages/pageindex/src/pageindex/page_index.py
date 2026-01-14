@@ -115,7 +115,7 @@ async def check_title_appearance_in_start_concurrent(
     return structure
 
 
-def toc_detector_single_page(content, model=None):
+async def toc_detector_single_page(content, llm_client=None):
     prompt = f"""
     Your job is to detect if there is a table of content provided in the given text.
 
@@ -130,7 +130,7 @@ def toc_detector_single_page(content, model=None):
     Directly return the final JSON structure. Do not output anything else.
     Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
 
-    response = ChatGPT_API(model=model, prompt=prompt)
+    response = await llm_client.chat_async(prompt)
     # print('response', response)
     json_content = extract_json(response)
     return json_content["toc_detected"]
@@ -364,7 +364,7 @@ def toc_transformer(toc_content, model=None):
     return cleaned_response
 
 
-def find_toc_pages(start_page_index, page_list, opt, logger=None):
+async def find_toc_pages(start_page_index=0, page_list=None, opt=None, llm_client=None, logger=None):
     print("start find_toc_pages")
     last_page_is_yes = False
     toc_page_list = []
@@ -374,10 +374,10 @@ def find_toc_pages(start_page_index, page_list, opt, logger=None):
         # Only check beyond max_pages if we're still finding TOC pages
         if i >= opt.toc_check_page_num and not last_page_is_yes:
             break
-        
-        detected_result = toc_detector_single_page(
-            page_list[i][0],
-            model=opt.model,
+
+        detected_result = await toc_detector_single_page(
+            content=page_list[i][0],
+            llm_client=llm_client,
         )
         if detected_result == "yes":
             if logger:
@@ -768,8 +768,8 @@ def process_none_page_numbers(toc_items, page_list, start_index=1, model=None):
     return toc_items
 
 
-def check_toc(page_list, opt=None):
-    toc_page_list = find_toc_pages(start_page_index=0, page_list=page_list, opt=opt)
+async def check_toc(page_list, opt=None, llm_client=None):
+    toc_page_list = await find_toc_pages(start_page_index=0, page_list=page_list, opt=opt, llm_client=llm_client)
     if len(toc_page_list) == 0:
         print("no toc found")
         return {
@@ -796,8 +796,8 @@ def check_toc(page_list, opt=None):
                 and current_start_index < len(page_list)
                 and current_start_index < opt.toc_check_page_num
             ):
-                additional_toc_pages = find_toc_pages(
-                    start_page_index=current_start_index, page_list=page_list, opt=opt
+                additional_toc_pages = await find_toc_pages(
+                    start_page_index=current_start_index, page_list=page_list, opt=opt, llm_client=llm_client
                 )
 
                 if len(additional_toc_pages) == 0:
@@ -1231,8 +1231,8 @@ async def process_large_node_recursively(node, page_list, opt=None, logger=None)
     return node
 
 
-async def tree_parser(page_list, opt, doc=None, logger=None):
-    check_toc_result = check_toc(page_list, opt)
+async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
+    check_toc_result = await check_toc(page_list, opt, llm_client=llm_client)
     logger.info(check_toc_result)
 
     if (
@@ -1295,7 +1295,7 @@ def page_index_main(doc, opt=None, llm_client=None):
     logger.info({"total_token": sum([page[1] for page in page_list])})
 
     async def page_index_builder():
-        structure = await tree_parser(page_list, opt, doc=doc, logger=logger)
+        structure = await tree_parser(page_list, opt, doc=doc, logger=logger, llm_client=llm_client)
         if opt.if_add_node_id == "yes":
             write_node_id(structure)
         if opt.if_add_node_text == "yes":
