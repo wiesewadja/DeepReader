@@ -1,13 +1,17 @@
 import { ItemView, WorkspaceLeaf } from "obsidian";
+import { MCPClient } from "../mcp/client.js";
+import { IndexManagerModal } from "../ui/index-manager-modal.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
 export class SidebarView extends ItemView {
+    private client: MCPClient | null;
     private submitHandler: () => void;
     private keyPressHandler: (e: KeyboardEvent) => void;
 
-    constructor(leaf: WorkspaceLeaf) {
+    constructor(leaf: WorkspaceLeaf, client: MCPClient | null = null) {
         super(leaf);
+        this.client = client;
         this.submitHandler = () => {};
         this.keyPressHandler = () => {};
     }
@@ -28,6 +32,15 @@ export class SidebarView extends ItemView {
         // 头部
         const header = container.createEl("header", { cls: "deeppdf-header" });
         header.createEl("h2", { text: "DeepPDF" });
+
+        // 管理索引按钮
+        const manageBtn = header.createEl("button", {
+            cls: "deeppdf-manage-btn",
+            text: "管理索引"
+        });
+        manageBtn.addEventListener("click", () => {
+            this.openIndexManager();
+        });
 
         // 查询输入区域
         const querySection = container.createEl("div", { cls: "deeppdf-query-section" });
@@ -61,6 +74,14 @@ export class SidebarView extends ItemView {
         // 添加事件监听
         submitBtn.addEventListener("click", this.submitHandler);
         input.addEventListener("keypress", this.keyPressHandler);
+    }
+
+    openIndexManager() {
+        if (!this.client) {
+            alert("MCP 客户端未连接。请先在设置中配置 MCP 服务器路径。");
+            return;
+        }
+        new IndexManagerModal(this.app, this.client).open();
     }
 
     async handleSubmit(query: string) {
