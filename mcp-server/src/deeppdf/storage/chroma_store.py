@@ -1,29 +1,38 @@
 """
 ChromaDB 存储封装
-提供 PDF 文档向量存储和检索功能
+提供 PDF 文档向量存储和检索功能，使用中文嵌入模型
 """
 import chromadb
 from chromadb.config import Settings
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 import hashlib
+from .embeddings import ChineseEmbeddingFunction
 
 
 class ChromaStore:
-    """ChromaDB 存储管理器"""
+    """ChromaDB 存储管理器，使用中文嵌入模型"""
 
-    def __init__(self, persist_directory: str = None):
+    def __init__(
+        self,
+        persist_directory: str = None,
+        embedding_function: Optional[Callable] = None
+    ):
         """
         初始化 ChromaDB 客户端
 
         Args:
             persist_directory: 持久化存储目录
+            embedding_function: 嵌入函数，默认使用中文嵌入模型
         """
         if persist_directory is None:
             persist_directory = Path(__file__).parent.parent.parent / "data" / "chroma"
 
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
+
+        # 初始化中文嵌入函数
+        self.embedding_function = embedding_function or ChineseEmbeddingFunction()
 
         # 初始化 ChromaDB 客户端
         self.client = chromadb.PersistentClient(
@@ -37,7 +46,8 @@ class ChromaStore:
     def create_collection(
         self,
         name: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        embedding_function: Optional[Callable] = None
     ) -> chromadb.Collection:
         """
         创建集合
@@ -45,6 +55,7 @@ class ChromaStore:
         Args:
             name: 集合名称
             metadata: 集合元数据
+            embedding_function: 嵌入函数，默认使用实例的嵌入函数
 
         Returns:
             ChromaDB 集合对象
@@ -54,9 +65,15 @@ class ChromaStore:
         if name in existing_collections:
             return self.client.get_collection(name)
 
+        # 使用指定的嵌入函数或默认的中文嵌入函数
+        embed_fn = embedding_function or self.embedding_function
+
         # 创建新集合
         # ChromaDB 不接受空 metadata，只有当 metadata 非空时才传递
-        create_kwargs = {"name": name}
+        create_kwargs = {
+            "name": name,
+            "embedding_function": embed_fn
+        }
         if metadata:
             create_kwargs["metadata"] = metadata
 
@@ -105,7 +122,7 @@ class ChromaStore:
         Args:
             collection_name: 集合名称
             documents: 文档列表，每个文档包含 id, text, metadata
-            embeddings: 可选的嵌入向量列表
+            embeddings: 可选的嵌入向量列表（如果提供，将覆盖自动生成的嵌入）
         """
         collection = self.get_collection(collection_name)
 
@@ -124,6 +141,7 @@ class ChromaStore:
             metadatas.append(doc.get("metadata", {}))
 
         # 添加文档到集合
+        # 如果没有提供 embeddings，ChromaDB 会使用集合的嵌入函数自动生成
         collection.add(
             ids=ids,
             documents=texts,
@@ -147,7 +165,7 @@ class ChromaStore:
             query_texts: 查询文本列表
             n_results: 返回结果数量
             where: 元数据过滤条件
-            query_embeddings: 可选的查询嵌入向量
+            query_embeddings: 可选的查询嵌入向量（如果提供，将覆盖自动生成的嵌入）
 
         Returns:
             查询结果
