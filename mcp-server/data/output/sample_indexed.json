@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "file_name": "sample.pdf",
+    "file_path": "/Users/lizhao/workspace/DeepPDF/mcp-server/data/sample.pdf",
+    "collection_id": "pdf_610492705879",
+    "created_at": "2026-01-14 18:05:42",
+    "total_pages": 15,
+    "total_tokens": 10101,
+    "pdf_info": {
+      "name": "sample.pdf",
+      "title": "Untitled",
+      "page_count": 15
+    }
+  },
+  "tree_structure": null,
+  "pages": [
+    {
+      "page_number": 1,
+      "token_count": 648,
+      "text_preview": "Provided proper attribution is provided, Google hereby grants permission to\nreproduce the tables and figures in this paper solely for use in journalistic or\nscholarly works.\nAttention Is All You Need\n..."
+    },
+    {
+      "page_number": 2,
+      "token_count": 851,
+      "text_preview": "1 Introduction\nRecurrent neural networks, long short-term memory [ 13] and gated recurrent [ 7] neural networks\nin particular, have been firmly established as state of the art approaches in sequence m..."
+    },
+    {
+      "page_number": 3,
+      "token_count": 401,
+      "text_preview": "Figure 1: The Transformer - model architecture.\nThe Transformer follows this overall architecture using stacked self-attention and point-wise, fully\nconnected layers for both the encoder and decoder, ..."
+    },
+    {
+      "page_number": 4,
+      "token_count": 542,
+      "text_preview": "Scaled Dot-Product Attention\n Multi-Head Attention\nFigure 2: (left) Scaled Dot-Product Attention. (right) Multi-Head Attention consists of several\nattention layers running in parallel.\nof the values, ..."
+    },
+    {
+      "page_number": 5,
+      "token_count": 733,
+      "text_preview": "output values. These are concatenated and once again projected, resulting in the final values, as\ndepicted in Figure 2.\nMulti-head attention allows the model to jointly attend to information from diff..."
+    },
+    {
+      "page_number": 6,
+      "token_count": 771,
+      "text_preview": "Table 1: Maximum path lengths, per-layer complexity and minimum number of sequential operations\nfor different layer types. nis the sequence length, dis the representation dimension, kis the kernel\nsiz..."
+    },
+    {
+      "page_number": 7,
+      "token_count": 764,
+      "text_preview": "length nis smaller than the representation dimensionality d, which is most often the case with\nsentence representations used by state-of-the-art models in machine translations, such as word-piece\n[38]..."
+    },
+    {
+      "page_number": 8,
+      "token_count": 909,
+      "text_preview": "Table 2: The Transformer achieves better BLEU scores than previous state-of-the-art models on the\nEnglish-to-German and English-to-French newstest2014 tests at a fraction of the training cost.\nModelBL..."
+    },
+    {
+      "page_number": 9,
+      "token_count": 879,
+      "text_preview": "Table 3: Variations on the Transformer architecture. Unlisted values are identical to those of the base\nmodel. All metrics are on the English-to-German translation development set, newstest2013. Liste..."
+    },
+    {
+      "page_number": 10,
+      "token_count": 835,
+      "text_preview": "Table 4: The Transformer generalizes well to English constituency parsing (Results are on Section 23\nof WSJ)\nParser Training WSJ 23 F1\nVinyals & Kaiser el al. (2014) [37] WSJ only, discriminative 88.3..."
+    },
+    {
+      "page_number": 11,
+      "token_count": 988,
+      "text_preview": "[5]Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre, Fethi Bougares, Holger Schwenk,\nand Yoshua Bengio. Learning phrase representations using rnn encoder-decoder for statistical\nmachine translatio..."
+    },
+    {
+      "page_number": 12,
+      "token_count": 956,
+      "text_preview": "[25] Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. Building a large annotated\ncorpus of english: The penn treebank. Computational linguistics , 19(2):313–330, 1993.\n[26] David McC..."
+    },
+    {
+      "page_number": 13,
+      "token_count": 247,
+      "text_preview": "Attention Visualizations\nInput-Input Layer5\nIt\nis\nin\nthis\nspirit\nthat\na\nmajority\nof\nAmerican\ngovernments\nhave\npassed\nnew\nlaws\nsince\n2009\nmaking\nthe\nregistration\nor\nvoting\nprocess\nmore\ndifficult\n.\n<EOS..."
+    },
+    {
+      "page_number": 14,
+      "token_count": 295,
+      "text_preview": "Input-Input Layer5\nThe\nLaw\nwill\nnever\nbe\nperfect\n,\nbut\nits\napplication\nshould\nbe\njust\n-\nthis\nis\nwhat\nwe\nare\nmissing\n,\nin\nmy\nopinion\n.\n<EOS>\n<pad>\nThe\nLaw\nwill\nnever\nbe\nperfect\n,\nbut\nits\napplication\nsh..."
+    },
+    {
+      "page_number": 15,
+      "token_count": 282,
+      "text_preview": "Input-Input Layer5\nThe\nLaw\nwill\nnever\nbe\nperfect\n,\nbut\nits\napplication\nshould\nbe\njust\n-\nthis\nis\nwhat\nwe\nare\nmissing\n,\nin\nmy\nopinion\n.\n<EOS>\n<pad>\nThe\nLaw\nwill\nnever\nbe\nperfect\n,\nbut\nits\napplication\nsh..."
+    }
+  ]
+}

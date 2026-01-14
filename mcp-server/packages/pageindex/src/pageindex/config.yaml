@@ -1,0 +1,23 @@
+# PageIndex 配置文件
+# 使用 DeepSeek API 进行树状索引生成
+
+# LLM 模型配置
+model: "deepseek-chat"  # DeepSeek 模型 (deepseek-chat 或 deepseek-coder)
+
+# PDF 解析配置
+toc_check_page_num: 20  # TOC 检查页数
+max_page_num_each_node: 10  # 每节点最大页数
+max_token_num_each_node: 20000  # 每节点最大 token 数
+
+# 节点内容配置
+if_add_node_id: "yes"  # 添加节点 ID
+if_add_node_summary: "yes"  # 添加节点摘要（需要 LLM）
+if_add_doc_description: "no"  # 添加文档描述
+if_add_node_text: "yes"  # 添加节点文本内容
+
+# LLM Provider 配置
+llm_provider:
+  type: "deepseek"  # 使用 DeepSeek provider
+  api_key: null  # 从环境变量 OPENAI_API_KEY 读取
+  base_url: "https://api.deepseek.com"  # DeepSeek API 端点
+  model_param: "model"

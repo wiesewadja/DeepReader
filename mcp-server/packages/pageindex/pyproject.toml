@@ -1,0 +1,39 @@
+[project]
+name = "pageindex"
+version = "0.1.0"
+description = "PDF and Markdown document structure analysis library"
+requires-python = ">=3.10"
+dependencies = [
+    "tiktoken>=0.6.0",
+    "openai>=1.30.0",
+    "pymupdf>=1.24.0",
+    "pypdf2>=3.0.0",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.9.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pageindex"]
+
+[tool.hatch.build]
+include = [
+  "src/pageindex/**/*.py",
+  "src/pageindex/config.yaml",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100

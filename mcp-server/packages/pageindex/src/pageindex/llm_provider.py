@@ -10,7 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY")
+# 支持 CHATGPT_API_KEY（向后兼容）和 OPENAI_API_KEY（更通用）
+CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 try:
     from google import genai

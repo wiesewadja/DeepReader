@@ -20,7 +20,8 @@ import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
 
-CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY")
+# 支持 CHATGPT_API_KEY（向后兼容）和 OPENAI_API_KEY（更通用）
+CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 
 def count_tokens(text, model=None):
