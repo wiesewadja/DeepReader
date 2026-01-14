@@ -7,8 +7,10 @@ dependencies = [
     "mcp>=1.0.0",
     "chromadb>=0.5.0",
     "sentence-transformers>=3.0.0",
+    "langchain-huggingface>=0.1.0",
     "orjson>=3.10.0",
     "backoff>=2.2.0",
+    "pageindex",  # 依赖 workspace 中的 pageindex
 ]
 
 [project.optional-dependencies]

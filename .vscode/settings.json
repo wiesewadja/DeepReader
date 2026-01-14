@@ -1,7 +1,10 @@
 {
-    "python.testing.pytestArgs": [
-        "mcp-server"
+    "python.defaultInterpreterPath": "${workspaceFolder}/mcp-server/.venv/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/mcp-server/packages/pageindex/src",
+        "${workspaceFolder}/mcp-server/packages/deeppdf/src"
     ],
-    "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true
+    "[python]": {
+        "editor.formatOnSave": true
+    }
 }
