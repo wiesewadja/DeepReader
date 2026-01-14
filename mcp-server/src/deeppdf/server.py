@@ -10,6 +10,7 @@ from mcp.server.stdio import stdio_server
 from .config import Config
 from .tools.pdf_indexer import index_pdf
 from .tools.pdf_query import query_pdf
+from .tools.index_manager import list_indexes, delete_index
 
 class MCPServer:
     """MCP 服务器封装"""
@@ -103,9 +104,19 @@ class MCPServer:
                 return {
                     "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
                 }
-            # 其他工具稍后实现
+            elif name == "list_indexes":
+                result = list_indexes(str(self.config.base_dir))
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                }
+            elif name == "delete_index":
+                result = delete_index(arguments["index_id"], str(self.config.base_dir))
+                return {
+                    "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]
+                }
+            # 未知工具
             return {
-                "content": [{"type": "text", "text": f"Tool {name} not yet implemented"}]
+                "content": [{"type": "text", "text": f"Unknown tool: {name}"}]
             }
 
     async def run(self):
