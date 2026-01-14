@@ -1,5 +1,6 @@
-import { Plugin, PluginSettingTab, App, Setting } from "obsidian";
+import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf } from "obsidian";
 import { MCPClient } from "./mcp/client.js";
+import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 
 interface DeepPDFSettings {
     mcpServerPath: string;
@@ -18,6 +19,12 @@ export default class DeepPDFPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
+        // 注册侧边栏视图
+        this.registerView(
+            SIDEBAR_VIEW_TYPE,
+            (leaf) => new SidebarView(leaf)
+        );
+
         // 添加设置面板
         this.addSettingTab(new DeepPDFSettingTab(this.app, this));
 
@@ -28,8 +35,8 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 添加命令
         this.addCommand({
-            id: "open-deeppdf",
-            name: "Open DeepPDF",
+            id: "open-deeppdf-sidebar",
+            name: "Open DeepPDF sidebar",
             callback: () => this.activateView()
         });
     }
@@ -43,8 +50,26 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     activateView() {
-        // 稍后实现
-        console.log("Activating DeepPDF view");
+        const { workspace } = this.app;
+
+        let leaf: WorkspaceLeaf | null = null;
+
+        const leaves = workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+
+        if (leaves.length > 0) {
+            leaf = leaves[0];
+        } else {
+            leaf = workspace.getRightLeaf(false);
+            if (!leaf) return;
+            leaf.setViewState({
+                type: SIDEBAR_VIEW_TYPE,
+                active: true
+            });
+        }
+
+        if (leaf) {
+            workspace.revealLeaf(leaf);
+        }
     }
 }
 
