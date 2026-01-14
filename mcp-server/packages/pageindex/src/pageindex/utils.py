@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 import time
 import json
+import warnings
 import PyPDF2
 import copy
 import asyncio
@@ -38,6 +39,11 @@ def count_tokens(text, model=None):
 def ChatGPT_API_with_finish_reason(
     model, prompt, api_key=CHATGPT_API_KEY, chat_history=None
 ):
+    warnings.warn(
+        "ChatGPT_API_with_finish_reason is deprecated. Use UnifiedLLM.chat() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     max_retries = 10
     client = openai.OpenAI(api_key=api_key)
     for i in range(max_retries):
@@ -69,6 +75,11 @@ def ChatGPT_API_with_finish_reason(
 
 
 def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
+    warnings.warn(
+        "ChatGPT_API is deprecated. Use UnifiedLLM.chat() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     max_retries = 10
     client = openai.OpenAI(api_key=api_key)
     for i in range(max_retries):
@@ -97,6 +108,11 @@ def ChatGPT_API(model, prompt, api_key=CHATGPT_API_KEY, chat_history=None):
 
 
 async def ChatGPT_API_async(model, prompt, api_key=CHATGPT_API_KEY):
+    warnings.warn(
+        "ChatGPT_API_async is deprecated. Use UnifiedLLM.chat_async() instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     max_retries = 10
     messages = [{"role": "user", "content": prompt}]
     for i in range(max_retries):
