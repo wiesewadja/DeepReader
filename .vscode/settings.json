@@ -1,0 +1,7 @@
+{
+    "python.testing.pytestArgs": [
+        "mcp-server"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
+}
