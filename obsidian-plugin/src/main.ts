@@ -8,7 +8,7 @@ interface DeepPDFSettings {
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
-    mcpServerPath: "",
+    mcpServerPath: "/Users/lizhao/workspace/DeepPDF/mcp-server",
     maxResults: 5
 };
 
