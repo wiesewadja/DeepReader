@@ -15,6 +15,14 @@ if [ ! -d ".venv" ]; then
     exit 1
 fi
 
+# 同步依赖
+echo "同步依赖..."
+uv sync > /dev/null 2>&1
+
+# 安装 deeppdf-api 包（editable 模式）
+echo "安装 deeppdf-api 包..."
+uv pip install -e ./deeppdf-api > /dev/null 2>&1
+
 # 加载环境变量
 if [ -f ".env" ]; then
     export $(cat .env | grep -v '^#' | xargs)
