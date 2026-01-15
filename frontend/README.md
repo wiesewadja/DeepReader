@@ -9,7 +9,6 @@ PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
 - 📊 侧边栏查询界面
 - ⚙️ 可配置的设置面板
 - 🗂️ 索引管理
-- 🚀 自动启动后端服务器
 
 ## 安装
 
@@ -29,9 +28,9 @@ PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
 
 ## 配置
 
-1. 打开 Obsidian 设置 > DeepPDF
-2. 设置 Backend Path 为 FastAPI 后端目录（`backend` 的绝对路径）
-3. 设置 API Port（默认：8000）
+1. 启动后端服务器：`cd backend && ./scripts/start_server.sh`
+2. 打开 Obsidian 设置 > DeepPDF
+3. 设置 API Port（默认：6088，需与后端端口一致）
 4. 调整 Max Results 设置
 
 ## 使用

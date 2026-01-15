@@ -75,7 +75,9 @@ cd backend
 ./scripts/start_server.sh
 ```
 
-服务器将在 http://localhost:8000 启动。
+服务器将在 http://localhost:6088 启动。
+
+API 文档：http://localhost:6088/docs
 
 ### 3. 安装 Obsidian 插件
 
@@ -91,9 +93,8 @@ npm run build
 
 在 Obsidian 设置中:
 1. 启用 DeepPDF 插件
-2. 设置 Backend Path 为 `backend` 目录的绝对路径
-3. 设置 API Port（默认：8000）
-4. 调整 Max Results（默认：5）
+2. 设置 API Port（默认：6088，与后端端口一致）
+3. 调整 Max Results（默认：5）
 
 ### 5. 配置 LLM API
 

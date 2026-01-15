@@ -1,10 +1,8 @@
 import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
-import { ServerManager } from "./api/server-manager.js";
 
 interface DeepPDFSettings {
-    backendPath: string;
     apiPort: number;
     maxResults: number;
     deepseekApiKey: string;
@@ -18,8 +16,7 @@ interface DeepPDFSettings {
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
-    backendPath: "/Users/lizhao/workspace/DeepPDF/backend",
-    apiPort: 8000,
+    apiPort: 6088,
     maxResults: 5,
     deepseekApiKey: "",
     openaiApiKey: "",
@@ -34,32 +31,22 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
     apiClient: DeepPDFClient | null = null;
-    serverManager: ServerManager | null = null;
 
     async onload() {
         console.log('[DeepPDF] Loading plugin');
 
         await this.loadSettings();
 
-        // 初始化 HTTP 客户端
+        // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
-        // 初始化服务器管理器
-        this.serverManager = new ServerManager(this.settings.apiPort);
-
-        // 检查服务器健康状态
+        // 检查服务器连接状态
         const isHealthy = await this.apiClient.healthCheck();
         if (!isHealthy) {
-            console.log('[DeepPDF] Server not running, attempting to start...');
-            try {
-                await this.serverManager.start(this.settings.backendPath);
-                new Notice('DeepPDF 服务器已启动');
-            } catch (error) {
-                console.error('[DeepPDF] Failed to start server:', error);
-                new Notice('DeepPDF 服务器启动失败，请检查配置');
-            }
+            console.log('[DeepPDF] Server not running at localhost:' + this.settings.apiPort);
+            new Notice(`DeepPDF: 无法连接到服务器 localhost:${this.settings.apiPort}，请确保后端已启动`);
         } else {
-            console.log('[DeepPDF] Server is already running');
+            console.log('[DeepPDF] Server connected successfully');
         }
 
         // 注册侧边栏视图
@@ -82,19 +69,6 @@ export default class DeepPDFPlugin extends Plugin {
             name: "Open DeepPDF sidebar",
             callback: () => this.activateView()
         });
-
-        // 添加重启服务器命令
-        this.addCommand({
-            id: "restart-deeppdf-server",
-            name: "Restart DeepPDF server",
-            callback: async () => {
-                if (this.serverManager) {
-                    await this.serverManager.stop();
-                    await this.serverManager.start(this.settings.backendPath);
-                    new Notice('DeepPDF 服务器已重启');
-                }
-            }
-        });
     }
 
     async loadSettings() {
@@ -106,10 +80,7 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     async onunload() {
-        // 停止服务器
-        if (this.serverManager) {
-            await this.serverManager.stop();
-        }
+        // 插件卸载时不需要停止服务器（服务器由用户独立管理）
     }
 
     activateView() {
@@ -151,24 +122,13 @@ class DeepPDFSettingTab extends PluginSettingTab {
         containerEl.createEl('h2', { text: 'API Server 设置' });
 
         new Setting(containerEl)
-            .setName("Backend Path")
-            .setDesc("Path to the backend directory")
-            .addText(text => text
-                .setPlaceholder("/path/to/backend")
-                .setValue(this.plugin.settings.backendPath)
-                .onChange(async (value) => {
-                    this.plugin.settings.backendPath = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
             .setName("API Port")
-            .setDesc("Port for the FastAPI server")
+            .setDesc("FastAPI 服务器端口（默认 localhost:6088）")
             .addText(text => text
-                .setPlaceholder("8000")
+                .setPlaceholder("6088")
                 .setValue(String(this.plugin.settings.apiPort))
                 .onChange(async (value) => {
-                    this.plugin.settings.apiPort = parseInt(value) || 8000;
+                    this.plugin.settings.apiPort = parseInt(value) || 6088;
                     await this.plugin.saveSettings();
                 }));
 

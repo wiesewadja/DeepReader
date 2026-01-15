@@ -25,7 +25,7 @@ uv sync
 ./scripts/start_server.sh
 
 # 或手动启动
-uv run uvicorn deeppdf.main:app --port 8000 --reload --loop asyncio
+uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio
 
 # 运行所有测试
 uv run pytest deeppdf-api/tests/ -v
@@ -70,18 +70,18 @@ npm run deploy
 
 ```bash
 # 访问 API 文档（服务器启动后）
-open http://localhost:8000/docs
+open http://localhost:6088/docs
 
 # 健康检查
-curl http://localhost:8000/health
+curl http://localhost:6088/health
 
 # 创建索引
-curl -X POST http://localhost:8000/api/index \
+curl -X POST http://localhost:6088/api/index \
   -H "Content-Type: application/json" \
   -d '{"path": "/path/to/file.pdf"}'
 
 # 查询
-curl -X POST http://localhost:8000/api/query \
+curl -X POST http://localhost:6088/api/query \
   -H "Content-Type: application/json" \
   -d '{"query": "您的问题", "index_id": "索引ID"}'
 ```
@@ -191,7 +191,7 @@ DeepPDF/
 │  │   HTTP Client (fetch API)          │ │
 │  └────────────┬───────────────────────┘ │
 └───────────────┼──────────────────────────┘
-                │ HTTP (localhost:8000)
+                │ HTTP (localhost:6088)
 ┌───────────────▼──────────────────────────┐
 │         FastAPI Server (Python)          │
 │  ┌────────────────────────────────────┐ │
@@ -231,8 +231,7 @@ LLM_CONCURRENT_LIMIT=3
 
 Obsidian 插件设置：
 
-- `backendPath`: 后端目录的绝对路径（默认：`backend`）
-- `apiPort`: API 端口（默认：`8000`）
+- `apiPort`: API 端口（默认：`6088`，需与后端一致）
 - `maxResults`: 查询返回的最大结果数（默认：`5`）
 
 ## 测试框架
@@ -322,7 +321,7 @@ Obsidian 插件设置：
 
 7. **CORS 配置**: 开发环境允许所有来源，生产环境应限制为具体域名
 
-8. **端口冲突**: 默认端口 8000，如被占用可在配置中修改
+8. **端口冲突**: 默认端口 6088，如被占用可在配置中修改
 
 ## 相关文档
 
@@ -331,7 +330,7 @@ Obsidian 插件设置：
 - [迁移指南 (MCP → FastAPI)](docs/MVP/migration-guide.md)
 - [MVP 架构设计](docs/MVP/mvp-architecture-design.md)
 - [实施进度](docs/MVP/implementation-progress.md)
-- [API 文档](http://localhost:8000/docs) - 服务器启动后访问
+- [API 文档](http://localhost:6088/docs) - 服务器启动后访问
 
 ## 故障排除
 
@@ -341,7 +340,7 @@ Obsidian 插件设置：
 
 **解决**: 使用 `--loop asyncio` 标志启动服务器
 ```bash
-uv run uvicorn deeppdf.main:app --port 8000 --loop asyncio
+uv run uvicorn deeppdf.main:app --port 6088 --loop asyncio
 ```
 
 ### Pydantic 验证错误
@@ -356,9 +355,8 @@ uv run uvicorn deeppdf.main:app --port 8000 --loop asyncio
 
 **解决**:
 1. 确认后端服务器正在运行
-2. 检查 `backendPath` 设置是否正确
-3. 确认端口配置（默认 8000）
-4. 访问 http://localhost:8000/health 验证服务器
+2. 确认端口配置（默认 6088）
+3. 访问 http://localhost:6088/health 验证服务器
 
 ### 测试失败
 
