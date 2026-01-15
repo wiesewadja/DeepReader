@@ -1,15 +1,15 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/mcp-server/.venv/bin/python",
+    "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/bin/python",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/mcp-server/packages/pageindex/src",
-        "${workspaceFolder}/mcp-server/packages/deeppdf/src"
+        "${workspaceFolder}/backend/pageindex-lib/src/pageindex",
+        "${workspaceFolder}/backend/deeppdf-api/src/deeppdf"
     ],
     "[python]": {
         "editor.formatOnSave": true
     },
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
-        "mcp-server/tests",
+        "backend/deeppdf-api/tests",
         "-v"
     ]
 }

@@ -1,6 +1,6 @@
 # DeepPDF Obsidian Plugin
 
-PDF 智能索引和问答插件，使用 MCP 协议与 Python 后端通信。
+PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
 
 ## 功能
 
@@ -9,19 +9,20 @@ PDF 智能索引和问答插件，使用 MCP 协议与 Python 后端通信。
 - 📊 侧边栏查询界面
 - ⚙️ 可配置的设置面板
 - 🗂️ 索引管理
+- 🚀 自动启动后端服务器
 
 ## 安装
 
 1. 构建插件：
    ```bash
-   cd obsidian-plugin
+   cd frontend
    npm install
    npm run build
    ```
 
 2. 复制到 Obsidian 插件目录：
    ```bash
-   cp -r obsidian-plugin /path/to/obsidian/vault/.obsidian/plugins/deeppdf
+   cp -r frontend /path/to/obsidian/vault/.obsidian/plugins/deeppdf
    ```
 
 3. 在 Obsidian 设置中启用 DeepPDF 插件
@@ -29,8 +30,9 @@ PDF 智能索引和问答插件，使用 MCP 协议与 Python 后端通信。
 ## 配置
 
 1. 打开 Obsidian 设置 > DeepPDF
-2. 设置 MCP Server Path 为 MCP 服务器目录
-3. 调整 Max Results 设置
+2. 设置 Backend Path 为 FastAPI 后端目录（`backend` 的绝对路径）
+3. 设置 API Port（默认：8000）
+4. 调整 Max Results 设置
 
 ## 使用
 
@@ -52,7 +54,7 @@ PDF 智能索引和问答插件，使用 MCP 协议与 Python 后端通信。
 # 安装依赖
 npm install
 
-# 开发模式
+# 开发模式（热重载）
 npm run dev
 
 # 构建
@@ -65,19 +67,19 @@ npm run test:run
 ## 架构
 
 ```
-obsidian-plugin/
+frontend/
 ├── src/
-│   ├── main.ts           # 插件入口
-│   ├── mcp/              # MCP 客户端
-│   │   ├── client.ts
-│   │   └── types.ts
-│   ├── views/            # 视图组件
+│   ├── main.ts              # 插件入口
+│   ├── api/                 # HTTP 客户端
+│   │   ├── http-client.ts   # API 客户端
+│   │   └── server-manager.ts # 服务器进程管理
+│   ├── views/               # 视图组件
 │   │   └── sidebar-view.ts
-│   ├── ui/               # UI 组件
+│   ├── ui/                  # UI 组件
 │   │   └── index-manager-modal.ts
-│   └── styles/           # 样式
+│   └── styles/              # 样式
 │       └── main.css
-└── styles.css            # 构建输出的样式
+└── styles.css               # 构建输出的样式
 ```
 
 ## 许可证
