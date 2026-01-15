@@ -1,5 +1,5 @@
 import { App, Modal, Notice } from "obsidian";
-import { requestUrl } from "obsidian";
+import { MCPClient } from "../mcp/client.js";
 
 interface IndexInfo {
     id: string;
@@ -9,11 +9,11 @@ interface IndexInfo {
 }
 
 export class IndexManagerModal extends Modal {
-    private serverPath: string;
+    private mcpClient: MCPClient;
 
-    constructor(app: App, serverPath: string) {
+    constructor(app: App, mcpClient: MCPClient) {
         super(app);
-        this.serverPath = serverPath;
+        this.mcpClient = mcpClient;
     }
 
     async onOpen() {
@@ -24,13 +24,13 @@ export class IndexManagerModal extends Modal {
 
         // 说明信息
         contentEl.createEl("p", {
-            text: `MCP 服务器路径: ${this.serverPath}`,
+            text: "管理 PDF 索引，用于深度查询",
             cls: "deemphasized"
         });
 
         // 刷新按钮
         const refreshBtn = contentEl.createEl("button", {
-            text: "刷新",
+            text: "刷新索引列表",
             cls: "mod-cta"
         });
         refreshBtn.addEventListener("click", () => this.loadIndexes());
@@ -46,58 +46,96 @@ export class IndexManagerModal extends Modal {
         if (!listContainer) return;
 
         listContainer.empty();
+        listContainer.createEl("p", { text: "加载中..." });
 
         try {
-            // 直接读取索引目录中的 JSON 文件
-            const indexesDir = `${this.serverPath}/data/indexes`;
-            const result = await requestUrl({
-                url: `file://${indexesDir}`,
-                method: "GET"
+            // 使用 MCP 客户端获取索引列表
+            const result = await this.mcpClient.listIndexes();
+
+            listContainer.empty();
+
+            if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
+                listContainer.createEl("p", {
+                    text: "📭 暂无索引",
+                    cls: "deemphasized"
+                });
+                listContainer.createEl("p", {
+                    text: "提示：使用命令行工具索引 PDF 文件",
+                    cls: "deemphasized"
+                });
+                return;
+            }
+
+            // 显示索引列表
+            const table = listContainer.createEl("table", {
+                cls: "index-table"
             });
 
-            // 由于跨域限制，直接使用文件系统 API 不可行
-            // 显示提示信息
-            listContainer.createEl("div", { cls: "deeppdf-notice" });
-            listContainer.createEl("p", {
-                text: "📂 索引管理功能说明",
-                cls: "deeppdf-notice-title"
-            });
+            // 表头
+            const thead = table.createEl("thead");
+            const headerRow = thead.createEl("tr");
+            headerRow.createEl("th", { text: "PDF 名称" });
+            headerRow.createEl("th", { text: "节点数" });
+            headerRow.createEl("th", { text: "创建时间" });
+            headerRow.createEl("th", { text: "操作" });
 
-            const noticeEl = listContainer.createEl("div", { cls: "deeppdf-notice-content" });
-            noticeEl.createEl("p", {
-                text: "索引数据存储在以下目录："
-            });
-            noticeEl.createEl("code", {
-                text: `${this.serverPath}/data/indexes/`
-            });
-            noticeEl.createEl("p", {
-                text: "每个索引对应一个 JSON 文件，包含索引元数据。"
-            });
-            noticeEl.createEl("p", {
-                text: "要管理索引，您可以："
-            });
-            noticeEl.createEl("ul").createEl("li", {
-                text: "直接删除对应的 JSON 文件"
-            });
-            noticeEl.createEl("ul").createEl("li", {
-                text: "或使用 MCP 服务器的命令行工具"
-            });
+            // 表体
+            const tbody = table.createEl("tbody");
+            result.indexes.forEach((index: IndexInfo) => {
+                const row = tbody.createEl("tr");
 
-            // 显示示例命令
-            const cmdEl = listContainer.createEl("div", { cls: "deeppdf-command-example" });
-            cmdEl.createEl("p", {
-                text: "示例命令：",
-                cls: "deeppdf-notice-title"
-            });
-            cmdEl.createEl("pre", {
-                text: `cd ${this.serverPath}\nuv run python -c "from deeppdf.tools.index_manager import list_indexes; import json; print(json.dumps(list_indexes('${this.serverPath}/data')))"`
+                row.createEl("td", {
+                    text: index.pdf_name,
+                    cls: "index-name"
+                });
+
+                row.createEl("td", {
+                    text: index.node_count.toString(),
+                    cls: "index-count"
+                });
+
+                row.createEl("td", {
+                    text: new Date(index.created_at).toLocaleString('zh-CN'),
+                    cls: "index-date"
+                });
+
+                const actionsCell = row.createEl("td", {
+                    cls: "index-actions"
+                });
+
+                const deleteBtn = actionsCell.createEl("button", {
+                    text: "删除",
+                    cls: "mod-warning"
+                });
+
+                deleteBtn.addEventListener("click", async () => {
+                    if (confirm(`确定要删除索引 "${index.pdf_name}" 吗？`)) {
+                        await this.deleteIndex(index.id);
+                    }
+                });
             });
 
         } catch (error) {
+            listContainer.empty();
             listContainer.createEl("p", {
-                text: `加载索引时出错: ${error}`,
-                cls: "deemphasized"
+                text: `加载索引失败: ${error}`,
+                cls: "deeppdf-error"
             });
+        }
+    }
+
+    private async deleteIndex(indexId: string) {
+        try {
+            const result = await this.mcpClient.deleteIndex(indexId);
+
+            if (result && result.status === "success") {
+                new Notice("索引删除成功");
+                await this.loadIndexes(); // 刷新列表
+            } else {
+                new Notice(`删除失败: ${result?.message || "未知错误"}`);
+            }
+        } catch (error) {
+            new Notice(`删除失败: ${error}`);
         }
     }
 
