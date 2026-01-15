@@ -47,7 +47,7 @@ export interface DeleteIndexResult {
 
 export class DeepPDFClient {
   private baseUrl: string;
-  private readonly DEFAULT_PORT = 8000;
+  private readonly DEFAULT_PORT = 6088;
 
   constructor(port?: number) {
     this.baseUrl = `http://localhost:${port || this.DEFAULT_PORT}`;
