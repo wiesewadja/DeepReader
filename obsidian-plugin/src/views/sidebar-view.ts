@@ -8,12 +8,14 @@ export class SidebarView extends ItemView {
     private submitHandler: () => void;
     private keyPressHandler: (e: KeyboardEvent) => void;
     private mcpClient: MCPClient | null;
+    private indexSelectHandler: () => void;
 
     constructor(leaf: WorkspaceLeaf, mcpClient: MCPClient | null) {
         super(leaf);
         this.mcpClient = mcpClient;
         this.submitHandler = () => {};
         this.keyPressHandler = () => {};
+        this.indexSelectHandler = () => {};
     }
 
     getViewType() {
@@ -64,6 +66,18 @@ export class SidebarView extends ItemView {
         // 查询输入区域
         const querySection = container.createEl("div", { cls: "deeppdf-query-section" });
 
+        // 索引选择器
+        const indexSelectRow = querySection.createDiv({ cls: "deeppdf-index-select-row" });
+        indexSelectRow.createEl("label", {
+            text: "选择索引:",
+            cls: "deeppdf-index-label"
+        });
+
+        const indexSelect = indexSelectRow.createEl("select", {
+            cls: "deeppdf-index-select"
+        }) as HTMLSelectElement;
+        indexSelect.add(new Option("加载中...", ""));
+
         const input = querySection.createEl("input", {
             type: "text",
             cls: "deeppdf-query-input",
@@ -83,16 +97,24 @@ export class SidebarView extends ItemView {
         });
 
         // 保存事件监听器引用以便清理
-        this.submitHandler = () => this.handleSubmit(input.value);
+        this.submitHandler = () => this.handleSubmit(input.value, indexSelect.value);
         this.keyPressHandler = (e: KeyboardEvent) => {
             if (e.key === "Enter") {
-                this.handleSubmit(input.value);
+                this.handleSubmit(input.value, indexSelect.value);
             }
+        };
+        this.indexSelectHandler = () => {
+            // 索引选择变化时的处理（可选）
+            console.log(`[DeepPDF] 选中的索引: ${indexSelect.value}`);
         };
 
         // 添加事件监听
         submitBtn.addEventListener("click", this.submitHandler);
         input.addEventListener("keypress", this.keyPressHandler);
+        indexSelect.addEventListener("change", this.indexSelectHandler);
+
+        // 加载索引列表
+        await this.loadIndexes(indexSelect);
     }
 
     openIndexManager() {
@@ -103,7 +125,7 @@ export class SidebarView extends ItemView {
         new IndexManagerModal(this.app, this.mcpClient).open();
     }
 
-    async handleSubmit(query: string) {
+    async handleSubmit(query: string, selectedIndexId: string) {
         if (!query.trim()) {
             return;
         }
@@ -119,29 +141,62 @@ export class SidebarView extends ItemView {
         resultsSection.innerHTML = "<p>查询中...</p>";
 
         try {
-            // 使用 MCP 客户端调用查询功能
-            const indexes = await this.mcpClient.listIndexes();
-
-            if (!indexes || !Array.isArray(indexes.indexes) || indexes.indexes.length === 0) {
+            // 检查是否选择了索引
+            if (!selectedIndexId) {
                 resultsSection.innerHTML = `
                     <div class="deeppdf-result">
                         <h3>查询结果</h3>
                         <p class="deeppdf-notice">
-                            ⚠️ 没有可用的索引。<br>
-                            请先使用"管理索引"创建 PDF 索引。
+                            ⚠️ 请先选择一个索引。<br>
+                            如果没有可用索引，请使用"管理索引"创建 PDF 索引。
                         </p>
                     </div>
                 `;
                 return;
             }
 
-            // 使用第一个索引进行查询
-            const firstIndex = indexes.indexes[0];
-            const result = await this.mcpClient.queryPDF(query, firstIndex.id);
+            // 使用选中的索引进行查询
+            const result = await this.mcpClient.queryPDF(query, selectedIndexId);
 
             this.displayQueryResult(result, query, resultsSection);
         } catch (error) {
             resultsSection.innerHTML = `<p class="deeppdf-error">查询失败: ${error}</p>`;
+        }
+    }
+
+    /**
+     * 加载索引列表到选择器
+     */
+    private async loadIndexes(indexSelect: HTMLSelectElement): Promise<void> {
+        if (!this.mcpClient) {
+            indexSelect.innerHTML = '<option value="">未连接</option>';
+            return;
+        }
+
+        try {
+            const result = await this.mcpClient.listIndexes();
+
+            // 清空现有选项
+            indexSelect.innerHTML = '';
+
+            if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
+                indexSelect.add(new Option("暂无索引", ""));
+                return;
+            }
+
+            // 添加索引选项
+            result.indexes.forEach((index: any) => {
+                const option = new Option(
+                    `${index.pdf_name} (${index.node_count} 节点)`,
+                    index.id
+                );
+                indexSelect.add(option);
+            });
+
+            console.log(`[DeepPDF] 已加载 ${result.indexes.length} 个索引`);
+        } catch (error) {
+            console.error('[DeepPDF] 加载索引列表失败:', error);
+            indexSelect.innerHTML = '<option value="">加载失败</option>';
         }
     }
 
@@ -198,12 +253,16 @@ export class SidebarView extends ItemView {
         // 清理事件监听器
         const submitBtn = this.containerEl.querySelector(".deeppdf-submit-btn");
         const input = this.containerEl.querySelector(".deeppdf-query-input");
+        const indexSelect = this.containerEl.querySelector(".deeppdf-index-select");
 
         if (submitBtn) {
             submitBtn.removeEventListener("click", this.submitHandler);
         }
         if (input) {
             input.removeEventListener("keypress", this.keyPressHandler);
+        }
+        if (indexSelect) {
+            indexSelect.removeEventListener("change", this.indexSelectHandler);
         }
     }
 }

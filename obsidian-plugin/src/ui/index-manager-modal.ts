@@ -1,4 +1,4 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, SuggestModal } from "obsidian";
 import { MCPClient } from "../mcp/client.js";
 
 interface IndexInfo {
@@ -28,10 +28,19 @@ export class IndexManagerModal extends Modal {
             cls: "deemphasized"
         });
 
-        // 刷新按钮
-        const refreshBtn = contentEl.createEl("button", {
-            text: "刷新索引列表",
+        // 操作按钮区域
+        const buttonContainer = contentEl.createDiv({ cls: "index-button-container" });
+
+        // 导入 PDF 按钮
+        const importBtn = buttonContainer.createEl("button", {
+            text: "+ 导入 PDF",
             cls: "mod-cta"
+        });
+        importBtn.addEventListener("click", () => this.importPDF());
+
+        // 刷新按钮
+        const refreshBtn = buttonContainer.createEl("button", {
+            text: "刷新索引列表"
         });
         refreshBtn.addEventListener("click", () => this.loadIndexes());
 
@@ -60,7 +69,7 @@ export class IndexManagerModal extends Modal {
                     cls: "deemphasized"
                 });
                 listContainer.createEl("p", {
-                    text: "提示：使用命令行工具索引 PDF 文件",
+                    text: "提示：点击上方\"导入 PDF\"按钮开始创建索引",
                     cls: "deemphasized"
                 });
                 return;
@@ -136,6 +145,131 @@ export class IndexManagerModal extends Modal {
             }
         } catch (error) {
             new Notice(`删除失败: ${error}`);
+        }
+    }
+
+    /**
+     * 导入 PDF 并创建索引
+     */
+    private async importPDF() {
+        // 创建一个简单的模态框来输入文件路径
+        new ImportPDFModal(this.app, this.mcpClient).open();
+    }
+}
+
+/**
+ * PDF 导入模态框
+ */
+class ImportPDFModal extends Modal {
+    private mcpClient: MCPClient;
+    private inputEl: HTMLInputElement | null = null;
+    private submitBtn: HTMLButtonElement | null = null;
+
+    constructor(app: App, mcpClient: MCPClient) {
+        super(app);
+        this.mcpClient = mcpClient;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl("h2", { text: "导入 PDF 索引" });
+
+        // 文件路径输入
+        const inputContainer = contentEl.createDiv({ cls: "import-input-container" });
+        inputContainer.createEl("label", { text: "PDF 文件路径:" });
+
+        this.inputEl = inputContainer.createEl("input", {
+            type: "text",
+            placeholder: "/path/to/your/file.pdf",
+            cls: "import-file-input"
+        });
+
+        // 提示信息
+        const hintEl = contentEl.createEl("p", {
+            text: "💡 提示：输入 PDF 文件的完整路径，例如 /Users/xxx/Documents/paper.pdf",
+            cls: "deemphasized"
+        });
+
+        // 按钮容器
+        const buttonContainer = contentEl.createDiv({ cls: "import-button-container" });
+
+        // 取消按钮
+        const cancelBtn = buttonContainer.createEl("button", {
+            text: "取消"
+        });
+        cancelBtn.addEventListener("click", () => this.close());
+
+        // 导入按钮
+        this.submitBtn = buttonContainer.createEl("button", {
+            text: "开始索引",
+            cls: "mod-cta"
+        });
+        this.submitBtn.addEventListener("click", () => this.handleImport());
+
+        // 支持回车提交
+        this.inputEl.addEventListener("keypress", (e: KeyboardEvent) => {
+            if (e.key === "Enter" && this.submitBtn) {
+                this.handleImport();
+            }
+        });
+
+        // 自动聚焦到输入框
+        setTimeout(() => this.inputEl?.focus(), 100);
+    }
+
+    private async handleImport() {
+        const pdfPath = this.inputEl?.value?.trim();
+
+        if (!pdfPath) {
+            new Notice("请输入 PDF 文件路径");
+            return;
+        }
+
+        // 禁用按钮防止重复提交
+        if (this.submitBtn) {
+            this.submitBtn.disabled = true;
+            this.submitBtn.textContent = "索引中...";
+        }
+
+        // 显示进度提示
+        const progressNotice = new Notice(`📄 正在索引: ${pdfPath}`, 0);
+
+        try {
+            // 调用 MCP 客户端创建索引
+            const result = await this.mcpClient.indexPDF(pdfPath);
+
+            progressNotice.hide();
+
+            if (result && result.status === "success") {
+                new Notice(
+                    `✅ 索引创建成功！\n` +
+                    `PDF: ${result.pdf_name}\n` +
+                    `节点数: ${result.node_count}\n` +
+                    `索引 ID: ${result.index_id}`
+                );
+                this.close(); // 关闭模态框
+            } else if (result && result.status === "error") {
+                new Notice(`❌ 索引失败: ${result.error || "未知错误"}`);
+                if (this.submitBtn) {
+                    this.submitBtn.disabled = false;
+                    this.submitBtn.textContent = "开始索引";
+                }
+            } else {
+                new Notice(`❌ 索引失败: 未知错误`);
+                if (this.submitBtn) {
+                    this.submitBtn.disabled = false;
+                    this.submitBtn.textContent = "开始索引";
+                }
+            }
+        } catch (indexError) {
+            progressNotice.hide();
+            new Notice(`❌ 索引失败: ${indexError}`);
+            if (this.submitBtn) {
+                this.submitBtn.disabled = false;
+                this.submitBtn.textContent = "开始索引";
+            }
         }
     }
 
