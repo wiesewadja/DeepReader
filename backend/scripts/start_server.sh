@@ -24,7 +24,7 @@ fi
 echo "正在启动服务器..."
 echo "服务地址: http://localhost:6088"
 echo "API 文档: http://localhost:6088/docs"
-.venv/bin/uvicorn deeppdf.main:app \
+uv run uvicorn deeppdf.main:app \
     --host 0.0.0.0 \
     --port 6088 \
     --loop asyncio \
