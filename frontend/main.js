@@ -35,9 +35,9 @@ var import_obsidian2 = require("obsidian");
 // src/ui/index-manager-modal.ts
 var import_obsidian = require("obsidian");
 var IndexManagerModal = class extends import_obsidian.Modal {
-  constructor(app, mcpClient) {
+  constructor(app, apiClient) {
     super(app);
-    this.mcpClient = mcpClient;
+    this.apiClient = apiClient;
   }
   async onOpen() {
     const { contentEl } = this;
@@ -67,7 +67,7 @@ var IndexManagerModal = class extends import_obsidian.Modal {
     listContainer.empty();
     listContainer.createEl("p", { text: "\u52A0\u8F7D\u4E2D..." });
     try {
-      const result = await this.mcpClient.listIndexes();
+      const result = await this.apiClient.listIndexes();
       listContainer.empty();
       if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
         listContainer.createEl("p", {
@@ -128,7 +128,7 @@ var IndexManagerModal = class extends import_obsidian.Modal {
   }
   async deleteIndex(indexId) {
     try {
-      const result = await this.mcpClient.deleteIndex(indexId);
+      const result = await this.apiClient.deleteIndex(indexId);
       if (result && result.status === "success") {
         new import_obsidian.Notice("\u7D22\u5F15\u5220\u9664\u6210\u529F");
         await this.loadIndexes();
@@ -143,15 +143,15 @@ var IndexManagerModal = class extends import_obsidian.Modal {
    * 导入 PDF 并创建索引
    */
   async importPDF() {
-    new ImportPDFModal(this.app, this.mcpClient).open();
+    new ImportPDFModal(this.app, this.apiClient).open();
   }
 };
 var ImportPDFModal = class extends import_obsidian.Modal {
-  constructor(app, mcpClient) {
+  constructor(app, apiClient) {
     super(app);
     this.inputEl = null;
     this.submitBtn = null;
-    this.mcpClient = mcpClient;
+    this.apiClient = apiClient;
   }
   onOpen() {
     const { contentEl } = this;
@@ -201,7 +201,7 @@ var ImportPDFModal = class extends import_obsidian.Modal {
     }
     const progressNotice = new import_obsidian.Notice(`\u6B63\u5728\u7D22\u5F15: ${pdfPath}`, 0);
     try {
-      const result = await this.mcpClient.indexPDF(pdfPath);
+      const result = await this.apiClient.indexPDF(pdfPath);
       progressNotice.hide();
       if (result && result.status === "success") {
         new import_obsidian.Notice(
@@ -242,9 +242,9 @@ PDF: ${result.pdf_name}
 // src/views/sidebar-view.ts
 var SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 var SidebarView = class extends import_obsidian2.ItemView {
-  constructor(leaf, mcpClient) {
+  constructor(leaf, apiClient) {
     super(leaf);
-    this.mcpClient = mcpClient;
+    this.apiClient = apiClient;
     this.submitHandler = () => {
     };
     this.keyPressHandler = () => {
@@ -265,22 +265,7 @@ var SidebarView = class extends import_obsidian2.ItemView {
     const header = container.createEl("header", { cls: "deeppdf-header" });
     header.createEl("h2", { text: "DeepPDF" });
     const statusEl = header.createEl("div", { cls: "deeppdf-status" });
-    if (!this.mcpClient) {
-      statusEl.createEl("span", {
-        text: "\u26A0\uFE0F MCP \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5",
-        cls: "deeppdf-status-warning"
-      });
-    } else if (this.mcpClient.checkConnection()) {
-      statusEl.createEl("span", {
-        text: "\u2705 MCP \u670D\u52A1\u5668\u5DF2\u8FDE\u63A5",
-        cls: "deeppdf-status-ok"
-      });
-    } else {
-      statusEl.createEl("span", {
-        text: "\u26A0\uFE0F MCP \u670D\u52A1\u5668\u672A\u8FDE\u63A5",
-        cls: "deeppdf-status-warning"
-      });
-    }
+    this.updateStatus(statusEl);
     const manageBtn = header.createEl("button", {
       cls: "deeppdf-manage-btn",
       text: "\u7BA1\u7406\u7D22\u5F15"
@@ -326,19 +311,41 @@ var SidebarView = class extends import_obsidian2.ItemView {
     indexSelect.addEventListener("change", this.indexSelectHandler);
     await this.loadIndexes(indexSelect);
   }
+  async updateStatus(statusEl) {
+    statusEl.empty();
+    if (!this.apiClient) {
+      statusEl.createEl("span", {
+        text: "\u26A0\uFE0F API \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5",
+        cls: "deeppdf-status-warning"
+      });
+    } else {
+      const isHealthy = await this.apiClient.healthCheck();
+      if (isHealthy) {
+        statusEl.createEl("span", {
+          text: "\u2705 API \u670D\u52A1\u5668\u5DF2\u8FDE\u63A5",
+          cls: "deeppdf-status-ok"
+        });
+      } else {
+        statusEl.createEl("span", {
+          text: "\u26A0\uFE0F API \u670D\u52A1\u5668\u672A\u8FDE\u63A5",
+          cls: "deeppdf-status-warning"
+        });
+      }
+    }
+  }
   openIndexManager() {
-    if (!this.mcpClient) {
-      this.showError("MCP \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5");
+    if (!this.apiClient) {
+      this.showError("API \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5");
       return;
     }
-    new IndexManagerModal(this.app, this.mcpClient).open();
+    new IndexManagerModal(this.app, this.apiClient).open();
   }
   async handleSubmit(query, selectedIndexId) {
     if (!query.trim()) {
       return;
     }
-    if (!this.mcpClient) {
-      this.showError("MCP \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5");
+    if (!this.apiClient) {
+      this.showError("API \u5BA2\u6237\u7AEF\u672A\u8FDE\u63A5");
       return;
     }
     const resultsSection = this.containerEl.querySelector(".deeppdf-results-section");
@@ -358,7 +365,7 @@ var SidebarView = class extends import_obsidian2.ItemView {
                 `;
         return;
       }
-      const result = await this.mcpClient.queryPDF(query, selectedIndexId);
+      const result = await this.apiClient.queryPDF(query, selectedIndexId);
       this.displayQueryResult(result, query, resultsSection);
     } catch (error) {
       resultsSection.innerHTML = `<p class="deeppdf-error">\u67E5\u8BE2\u5931\u8D25: ${error}</p>`;
@@ -368,12 +375,12 @@ var SidebarView = class extends import_obsidian2.ItemView {
    * 加载索引列表到选择器
    */
   async loadIndexes(indexSelect) {
-    if (!this.mcpClient) {
+    if (!this.apiClient) {
       indexSelect.innerHTML = '<option value="">\u672A\u8FDE\u63A5</option>';
       return;
     }
     try {
-      const result = await this.mcpClient.listIndexes();
+      const result = await this.apiClient.listIndexes();
       indexSelect.innerHTML = "";
       if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
         indexSelect.add(new Option("\u6682\u65E0\u7D22\u5F15", ""));
@@ -393,12 +400,11 @@ var SidebarView = class extends import_obsidian2.ItemView {
     }
   }
   displayQueryResult(result, query, resultsSection) {
-    var _a;
     if (!result || result.status !== "success") {
       resultsSection.innerHTML = `
                 <div class="deeppdf-result">
                     <h3>\u67E5\u8BE2\u7ED3\u679C</h3>
-                    <p class="deeppdf-error">\u67E5\u8BE2\u5931\u8D25: ${(result == null ? void 0 : result.message) || "\u672A\u77E5\u9519\u8BEF"}</p>
+                    <p class="deeppdf-error">\u67E5\u8BE2\u5931\u8D25: ${"\u672A\u77E5\u9519\u8BEF"}</p>
                 </div>
             `;
       return;
@@ -407,34 +413,23 @@ var SidebarView = class extends import_obsidian2.ItemView {
             <div class="deeppdf-result">
                 <h3>\u67E5\u8BE2\u7ED3\u679C</h3>
                 <p><strong>\u95EE\u9898:</strong> ${query}</p>
-                <p><strong>\u7D22\u5F15:</strong> ${((_a = result.index_info) == null ? void 0 : _a.pdf_name) || "\u672A\u77E5"}</p>
         `;
     if (result.results && Array.isArray(result.results) && result.results.length > 0) {
       resultsHtml += `<div class="deeppdf-results-list">`;
       result.results.forEach((item, index) => {
-        var _a2, _b, _c, _d, _e;
-        const pageNumber = ((_a2 = item.metadata) == null ? void 0 : _a2.page) || ((_b = item.metadata) == null ? void 0 : _b.start_index);
-        const pdfPath = (_c = result.index_info) == null ? void 0 : _c.pdf_path;
-        const dataAttrs = pdfPath ? `data-pdf-path="${pdfPath}" data-page="${pageNumber}"` : "";
+        var _a, _b, _c;
+        const pageNumber = ((_a = item.metadata) == null ? void 0 : _a.page) || ((_b = item.metadata) == null ? void 0 : _b.start_index);
         resultsHtml += `
                     <div class="deeppdf-result-item">
                         <h4>\u7ED3\u679C ${index + 1}</h4>
                         <p class="deeppdf-result-text">${item.text || "\u65E0\u5185\u5BB9"}</p>
                         <div class="deeppdf-result-meta">
                             <span class="deeppdf-meta-label">\u7AE0\u8282:</span>
-                            <span>${((_d = item.metadata) == null ? void 0 : _d.section) || "\u672A\u77E5"}</span>
+                            <span>${((_c = item.metadata) == null ? void 0 : _c.section) || "\u672A\u77E5"}</span>
                             <span class="deeppdf-meta-separator">\u2022</span>
                             <span class="deeppdf-meta-label">\u9875\u7801:</span>
                             <span>${pageNumber || "\u672A\u77E5"}</span>
-                            <span class="deeppdf-meta-separator">\u2022</span>
-                            <span class="deeppdf-meta-label">\u76F8\u4F3C\u5EA6:</span>
-                            <span>${(((_e = item.metadata) == null ? void 0 : _e.distance) || 0).toFixed(3)}</span>
                         </div>
-                        ${pdfPath && pageNumber ? `
-                            <button class="deeppdf-jump-btn" ${dataAttrs} data-result-index="${index}" aria-label="\u8DF3\u8F6C\u5230 PDF \u7B2C ${pageNumber} \u9875">
-                                \u8DF3\u8F6C\u5230 PDF
-                            </button>
-                        ` : ""}
                     </div>
                 `;
       });
@@ -444,76 +439,6 @@ var SidebarView = class extends import_obsidian2.ItemView {
     }
     resultsHtml += `</div>`;
     resultsSection.innerHTML = resultsHtml;
-    this.attachJumpHandlers(resultsSection);
-  }
-  /**
-   * 为跳转按钮添加事件处理器
-   */
-  attachJumpHandlers(resultsSection) {
-    const jumpButtons = resultsSection.querySelectorAll(".deeppdf-jump-btn");
-    jumpButtons.forEach((button) => {
-      button.addEventListener("click", (e) => {
-        const target = e.currentTarget;
-        const pdfPath = target.getAttribute("data-pdf-path");
-        const page = target.getAttribute("data-page");
-        if (pdfPath && page) {
-          this.jumpToPDF(pdfPath, parseInt(page));
-        }
-      });
-    });
-  }
-  /**
-   * 跳转到 PDF 指定页码
-   *
-   * @param pdfPath - PDF 文件路径
-   * @param pageNumber - 目标页码（从 1 开始）
-   */
-  async jumpToPDF(pdfPath, pageNumber) {
-    try {
-      const pdfName = pdfPath.split("/").pop() || pdfPath.split("\\").pop();
-      if (!pdfName) {
-        new import_obsidian2.Notice(`\u65E0\u6CD5\u89E3\u6790\u6587\u4EF6\u540D`);
-        return;
-      }
-      const files = this.app.vault.getFiles();
-      const pdfFile = files.find(
-        (f) => f.name === pdfName && f.extension === "pdf"
-      );
-      if (pdfFile) {
-        const linkWithPage = `${pdfFile.path}#page=${pageNumber}`;
-        await this.app.workspace.openLinkText(linkWithPage, "", true);
-        new import_obsidian2.Notice(`\u5DF2\u6253\u5F00 PDF: \u7B2C ${pageNumber} \u9875`);
-      } else {
-        this.openExternalPDF(pdfPath, pageNumber);
-      }
-    } catch (error) {
-      console.error("[DeepPDF] \u8DF3\u8F6C PDF \u5931\u8D25:", error);
-      new import_obsidian2.Notice(`\u8DF3\u8F6C\u5931\u8D25: ${error}`);
-    }
-  }
-  /**
-   * 使用系统默认应用打开外部 PDF
-   *
-   * @param pdfPath - PDF 文件路径
-   * @param pageNumber - 目标页码（仅用于提示）
-   */
-  openExternalPDF(pdfPath, pageNumber) {
-    const { exec } = require("child_process");
-    let command;
-    if (process.platform === "darwin") {
-      command = `open "${pdfPath}"`;
-    } else if (process.platform === "win32") {
-      command = `start "" "${pdfPath}"`;
-    } else {
-      command = `xdg-open "${pdfPath}"`;
-    }
-    exec(command, (error) => {
-      if (error) {
-        new import_obsidian2.Notice(`\u6253\u5F00 PDF \u5931\u8D25: ${error.message}`);
-      } else {
-        new import_obsidian2.Notice(`\u5DF2\u6253\u5F00 PDF\uFF08\u5916\u90E8\u6587\u4EF6\uFF0C\u8BF7\u624B\u52A8\u8DF3\u8F6C\u5230\u7B2C ${pageNumber} \u9875\uFF09`);
-      }
-    });
   }
   showError(message) {
     const resultsSection = this.containerEl.querySelector(".deeppdf-results-section");
@@ -537,712 +462,153 @@ var SidebarView = class extends import_obsidian2.ItemView {
   }
 };
 
-// src/mcp/json-rpc.ts
-var JSONRPCError = class extends Error {
-  constructor(code, message, data) {
-    super(message);
-    this.code = code;
-    this.data = data;
-    this.name = "JSONRPCError";
-  }
-};
-var JSONRPCClient = class {
-  constructor() {
-    this.pendingRequests = /* @__PURE__ */ new Map();
-    this.nextId = 1;
+// src/api/http-client.ts
+var DeepPDFClient = class {
+  constructor(port) {
+    this.DEFAULT_PORT = 8e3;
+    this.baseUrl = `http://localhost:${port || this.DEFAULT_PORT}`;
   }
   /**
-   * 创建 JSON-RPC 请求
-   *
-   * @param method - 方法名
-   * @param params - 参数（可选）
-   * @returns JSON-RPC 请求对象
+   * 健康检查
    */
-  createRequest(method, params) {
-    return {
-      jsonrpc: "2.0",
-      method,
-      params,
-      id: this.nextId++
-    };
-  }
-  /**
-   * 创建 JSON-RPC 错误响应
-   *
-   * @param code - 错误代码
-   * @param message - 错误消息
-   * @param data - 错误数据（可选）
-   * @param id - 请求 ID
-   * @returns JSON-RPC 响应对象
-   */
-  createError(code, message, data, id) {
-    return {
-      jsonrpc: "2.0",
-      error: {
-        code,
-        message,
-        data
-      },
-      id: id != null ? id : 0
-    };
-  }
-  /**
-   * 解析 JSON-RPC 响应
-   *
-   * @param data - JSON 字符串
-   * @returns JSON-RPC 响应对象
-   * @throws {JSONRPCError} 如果解析失败或响应格式错误
-   */
-  parseResponse(data) {
-    let response;
+  async healthCheck() {
     try {
-      response = JSON.parse(data);
-    } catch (error) {
-      throw new JSONRPCError(-32700, "Parse error", error);
-    }
-    if (!response || typeof response !== "object") {
-      throw new JSONRPCError(-32600, "Invalid Response", "Response is not an object");
-    }
-    const resp = response;
-    if (resp.jsonrpc !== "2.0") {
-      throw new JSONRPCError(-32600, "Invalid Response", "jsonrpc version must be 2.0");
-    }
-    if (typeof resp.id !== "string" && typeof resp.id !== "number") {
-      throw new JSONRPCError(-32600, "Invalid Response", "id must be a string or number");
-    }
-    if (resp.error) {
-      const error = resp.error;
-      return {
-        jsonrpc: "2.0",
-        error,
-        id: resp.id
-      };
-    }
-    return {
-      jsonrpc: "2.0",
-      result: resp.result,
-      id: resp.id
-    };
-  }
-  /**
-   * 注册待处理的请求
-   *
-   * @param id - 请求 ID
-   * @param resolve - 成功回调
-   * @param reject - 失败回调
-   */
-  registerPendingRequest(id, resolve, reject) {
-    this.pendingRequests.set(id, { resolve, reject });
-  }
-  /**
-   * 处理 JSON-RPC 响应
-   *
-   * @param response - JSON-RPC 响应对象
-   * @throws {JSONRPCError} 如果响应中有错误或找不到对应的请求
-   */
-  handleResponse(response) {
-    const pending = this.pendingRequests.get(response.id);
-    if (!pending) {
-      throw new JSONRPCError(-32600, "Invalid Response", `No pending request for id ${response.id}`);
-    }
-    this.pendingRequests.delete(response.id);
-    if (response.error) {
-      const error = new JSONRPCError(
-        response.error.code,
-        response.error.message,
-        response.error.data
-      );
-      pending.reject(error);
-    } else {
-      pending.resolve(response);
+      const response = await fetch(`${this.baseUrl}/health`);
+      const data = await response.json();
+      return data.status === "ok";
+    } catch (e) {
+      return false;
     }
   }
   /**
-   * 清除所有待处理的请求
-   */
-  clearPendingRequests() {
-    for (const [id, pending] of this.pendingRequests.entries()) {
-      pending.reject(new Error("Request cancelled"));
-    }
-    this.pendingRequests.clear();
-  }
-  /**
-   * 获取待处理的请求数量
-   */
-  getPendingRequestCount() {
-    return this.pendingRequests.size;
-  }
-};
-
-// src/mcp/stdio-transport.ts
-var import_child_process = require("child_process");
-var import_events = require("events");
-var DEFAULT_CONFIG = {
-  startupTimeout: 5e3,
-  sendTimeout: 1e4
-};
-var StdioTransport = class extends import_events.EventEmitter {
-  constructor(config) {
-    var _a, _b, _c;
-    super();
-    this.process = null;
-    this.isStarted = false;
-    this.messageBuffer = "";
-    this.config = {
-      ...config,
-      startupTimeout: (_a = config.startupTimeout) != null ? _a : DEFAULT_CONFIG.startupTimeout,
-      sendTimeout: (_b = config.sendTimeout) != null ? _b : DEFAULT_CONFIG.sendTimeout,
-      cwd: (_c = config.cwd) != null ? _c : config.serverPath
-    };
-    this.customEnv = config.env;
-    this.setMaxListeners(100);
-  }
-  /**
-   * 启动 Python MCP Server 进程
-   *
-   * @throws {Error} 如果进程启动失败或超时
-   */
-  async start() {
-    if (this.isStarted) {
-      throw new Error("Transport already started");
-    }
-    return new Promise((resolve, reject) => {
-      var _a;
-      try {
-        const spawnOptions = {
-          stdio: ["pipe", "pipe", "pipe"],
-          cwd: this.config.cwd,
-          env: {
-            ...process.env,
-            PYTHONPATH: `${this.config.serverPath}/packages/deeppdf/src`,
-            ...this.customEnv
-          }
-        };
-        console.log("[StdioTransport] Starting MCP server process...");
-        console.log("[StdioTransport] Working directory:", this.config.cwd);
-        console.log("[StdioTransport] PYTHONPATH:", (_a = spawnOptions.env) == null ? void 0 : _a.PYTHONPATH);
-        console.log("[StdioTransport] Environment variables:", Object.keys(spawnOptions.env || {}).filter((k) => k.startsWith("DEEPSEEK_") || k.startsWith("OPENAI_") || k.startsWith("PDF_INDEX_")).map((k) => `${k}=${(spawnOptions.env[k] || "").substring(0, 10)}...`).join(", "));
-        const pythonPath = this.config.pythonPath || `${this.config.serverPath}/.venv/bin/python`;
-        const serverArgs = ["-m", "deeppdf.server"];
-        console.log("[StdioTransport] Spawning:", pythonPath, serverArgs.join(" "));
-        this.process = (0, import_child_process.spawn)(pythonPath, serverArgs, spawnOptions);
-        console.log("[StdioTransport] Process spawned, PID:", this.process.pid);
-        if (this.process) {
-          this.process.on("close", (code, signal) => {
-            console.log(`[StdioTransport] Process closed with code ${code} and signal ${signal}`);
-            this.isStarted = false;
-            this.emit("close", code, signal);
-          });
-          this.process.on("error", (error) => {
-            console.error("[StdioTransport] Process error:", error);
-            this.emit("error", error);
-            reject(error);
-          });
-          if (this.process.stdout) {
-            this.process.stdout.on("data", (data) => {
-              this.handleStdoutData(data);
-            });
-            this.process.stdout.on("error", (error) => {
-              console.error("[StdioTransport] stdout error:", error);
-              this.emit("error", error);
-            });
-          }
-          if (this.process.stderr) {
-            this.process.stderr.on("data", (data) => {
-              console.error("[StdioTransport] stderr:", data.toString());
-            });
-          }
-        }
-        const timeout = setTimeout(() => {
-          if (!this.isStarted) {
-            this.kill();
-            reject(new Error("Process startup timeout"));
-          }
-        }, this.config.startupTimeout);
-        setTimeout(() => {
-          clearTimeout(timeout);
-          this.isStarted = true;
-          console.log("[StdioTransport] Process started successfully");
-          resolve();
-        }, 100);
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-  /**
-   * 处理 stdout 接收到的数据
-   *
-   * JSON-RPC 消息可能被分片传输，需要使用换行符分割消息
-   *
-   * @param data - 接收到的 Buffer 数据
-   */
-  handleStdoutData(data) {
-    this.messageBuffer += data.toString();
-    const lines = this.messageBuffer.split("\n");
-    this.messageBuffer = lines.pop() || "";
-    for (const line of lines) {
-      if (line.trim()) {
-        this.emit("message", line);
-      }
-    }
-  }
-  /**
-   * 发送消息到 Python 进程
-   *
-   * @param data - 要发送的 JSON 字符串
-   * @throws {Error} 如果进程未启动或发送失败
-   */
-  async send(data) {
-    if (!this.isStarted || !this.process) {
-      throw new Error("Process not started");
-    }
-    if (!this.process.stdin) {
-      throw new Error("Process stdin not available");
-    }
-    return new Promise((resolve, reject) => {
-      const message = data + "\n";
-      const timeout = setTimeout(() => {
-        reject(new Error("Send timeout"));
-      }, this.config.sendTimeout);
-      const writeSuccess = this.process.stdin.write(message, (error) => {
-        clearTimeout(timeout);
-        if (error) {
-          console.error("[StdioTransport] Failed to send message:", error);
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-      if (!writeSuccess) {
-        clearTimeout(timeout);
-        reject(new Error("Failed to write to stdin (buffer full)"));
-      }
-    });
-  }
-  /**
-   * 终止进程
-   *
-   * 优雅关闭：先尝试 SIGTERM，如果进程在 1 秒内未退出，则使用 SIGKILL
-   */
-  kill() {
-    if (this.process && this.isStarted) {
-      console.log("[StdioTransport] Killing process...");
-      if (this.killTimeout) {
-        clearTimeout(this.killTimeout);
-        this.killTimeout = void 0;
-      }
-      this.process.kill("SIGTERM");
-      this.killTimeout = setTimeout(() => {
-        if (this.process && this.isStarted) {
-          console.log("[StdioTransport] Force killing process...");
-          this.process.kill("SIGKILL");
-        }
-        this.killTimeout = void 0;
-      }, 1e3);
-      this.isStarted = false;
-    }
-  }
-  /**
-   * 重启进程
-   *
-   * 如果进程正在运行，先终止它，然后重新启动
-   */
-  async restart() {
-    if (this.isStarted) {
-      this.kill();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    await this.start();
-  }
-  /**
-   * 添加消息监听器
-   *
-   * @param listener - 消息处理函数
-   */
-  onMessage(listener) {
-    this.on("message", listener);
-  }
-  /**
-   * 添加关闭监听器
-   *
-   * @param listener - 关闭处理函数
-   */
-  onClose(listener) {
-    this.on("close", listener);
-  }
-  /**
-   * 添加错误监听器
-   *
-   * @param listener - 错误处理函数
-   */
-  onError(listener) {
-    this.on("error", listener);
-  }
-  /**
-   * 检查进程是否正在运行
-   */
-  isRunning() {
-    return this.isStarted && this.process !== null;
-  }
-  /**
-   * 获取进程 PID（用于调试）
-   */
-  getPid() {
-    var _a;
-    return (_a = this.process) == null ? void 0 : _a.pid;
-  }
-};
-
-// src/mcp/client.ts
-var MCPClientError = class extends Error {
-  constructor(message, cause) {
-    super(message);
-    this.cause = cause;
-    this.name = "MCPClientError";
-  }
-};
-var DEFAULT_MCP_CONFIG = {
-  maxRetries: 3,
-  retryDelay: 1e3,
-  // 1秒
-  requestTimeout: 3e4
-  // 30秒
-};
-var MCPClient = class {
-  constructor(config) {
-    this.isConnected = false;
-    var _a, _b, _c;
-    this.config = {
-      ...config,
-      ...DEFAULT_MCP_CONFIG,
-      startupTimeout: (_a = config.startupTimeout) != null ? _a : 5e3,
-      sendTimeout: (_b = config.sendTimeout) != null ? _b : 1e4,
-      requestTimeout: (_c = config.requestTimeout) != null ? _c : DEFAULT_MCP_CONFIG.requestTimeout
-    };
-    this.transport = new StdioTransport({
-      serverPath: this.config.serverPath,
-      pythonPath: this.config.pythonPath,
-      cwd: this.config.cwd,
-      startupTimeout: this.config.startupTimeout,
-      sendTimeout: this.config.sendTimeout,
-      env: config.env
-    });
-    this.jsonrpc = new JSONRPCClient();
-    this.transport.onMessage((data) => {
-      this.handleMessage(data);
-    });
-    this.transport.onClose((code, signal) => {
-      console.log(`[MCPClient] Transport closed: code=${code}, signal=${signal}`);
-      this.isConnected = false;
-    });
-    this.transport.onError((error) => {
-      console.error("[MCPClient] Transport error:", error);
-      this.isConnected = false;
-      this.emitError(new MCPClientError("Transport layer error", error));
-    });
-  }
-  /**
-   * 发射错误事件（用于错误传播）
-   */
-  emitError(error) {
-    console.error("[MCPClient]", error.message, error.cause);
-  }
-  /**
-   * 处理接收到的消息
-   *
-   * @param data - JSON 字符串格式的消息
-   */
-  handleMessage(data) {
-    try {
-      const response = this.jsonrpc.parseResponse(data);
-      this.jsonrpc.handleResponse(response);
-    } catch (error) {
-      const mcpError = new MCPClientError(
-        `Failed to parse/handle message: ${error instanceof Error ? error.message : String(error)}`,
-        error instanceof Error ? error : void 0
-      );
-      this.emitError(mcpError);
-    }
-  }
-  /**
-   * 连接到 MCP Server
-   *
-   * 执行 initialize 握手，建立与 MCP Server 的连接
-   *
-   * @throws {MCPClientError} 如果连接失败
-   */
-  async connect() {
-    if (this.isConnected) {
-      console.log("[MCPClient] Already connected");
-      return;
-    }
-    try {
-      console.log("[MCPClient] Starting transport...");
-      await this.transport.start();
-      console.log("[MCPClient] Transport started");
-      console.log("[MCPClient] Performing initialize handshake...");
-      await this.initialize();
-      console.log("[MCPClient] Initialize handshake successful");
-      this.isConnected = true;
-      console.log("[MCPClient] Connected to MCP Server");
-    } catch (error) {
-      console.error("[MCPClient] Failed to connect:", error);
-      this.transport.kill();
-      throw new MCPClientError("Failed to connect to MCP Server", error);
-    }
-  }
-  /**
-   * 执行 initialize 握手
-   *
-   * MCP 协议要求在调用任何工具前先执行 initialize 握手
-   */
-  async initialize() {
-    const request = this.jsonrpc.createRequest("initialize", {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: {
-        name: "obsidian-deeppdf",
-        version: "0.1.0"
-      }
-    });
-    const response = await this.sendRequestWithRetry(request);
-    if (!response.result) {
-      throw new MCPClientError("Initialize failed: no result in response");
-    }
-    console.log("[MCPClient] Initialize response:", response.result);
-  }
-  /**
-   * 调用 MCP Tool
-   *
-   * @param toolName - 工具名称
-   * @param args - 工具参数
-   * @returns 工具执行结果
-   * @throws {MCPClientError} 如果工具调用失败
-   */
-  async callTool(toolName, args) {
-    if (!this.isConnected) {
-      throw new MCPClientError("Not connected to MCP Server");
-    }
-    if (typeof toolName !== "string" || toolName.trim() === "") {
-      throw new MCPClientError("Invalid tool name");
-    }
-    const request = this.jsonrpc.createRequest("tools/call", {
-      name: toolName,
-      arguments: args || {}
-    });
-    try {
-      const response = await this.sendRequestWithRetry(request);
-      if (!response.result) {
-        throw new MCPClientError("Tool call failed: no result in response");
-      }
-      return response.result;
-    } catch (error) {
-      throw new MCPClientError(`Tool call failed: ${toolName}`, error);
-    }
-  }
-  /**
-   * 索引 PDF
-   *
-   * @param pdfPath - PDF 文件路径
-   * @returns 索引结果
+   * 创建 PDF 索引
    */
   async indexPDF(pdfPath) {
-    const result = await this.callTool("index_pdf", { path: pdfPath });
-    return this.parseToolResult(result);
+    const response = await fetch(`${this.baseUrl}/api/index`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: pdfPath })
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Index creation failed");
+    }
+    return response.json();
   }
   /**
    * 查询 PDF
-   *
-   * @param query - 查询文本
-   * @param indexId - 索引 ID
-   * @returns 查询结果
    */
   async queryPDF(query, indexId) {
-    const result = await this.callTool("query_pdf", { query, index_id: indexId });
-    return this.parseToolResult(result);
+    const response = await fetch(`${this.baseUrl}/api/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, index_id: indexId })
+    });
+    if (!response.ok) {
+      throw new Error("Query failed");
+    }
+    return response.json();
   }
   /**
    * 列出所有索引
-   *
-   * @returns 索引列表
    */
   async listIndexes() {
-    const result = await this.callTool("list_indexes", {});
-    return this.parseToolResult(result);
+    const response = await fetch(`${this.baseUrl}/api/indexes`);
+    return response.json();
   }
   /**
    * 删除索引
-   *
-   * @param indexId - 索引 ID
-   * @returns 删除结果
    */
   async deleteIndex(indexId) {
-    const result = await this.callTool("delete_index", { index_id: indexId });
-    return this.parseToolResult(result);
-  }
-  /**
-   * 解析工具调用结果
-   *
-   * MCP SDK 返回格式（低级服务器）：
-   * - structuredContent: 结构化数据（自动序列化的 JSON）
-   * - content: 文本内容数组（向后兼容）
-   *
-   * @param result - 工具调用返回的原始结果
-   * @returns 解析后的结果对象
-   * @throws {MCPClientError} 如果解析失败
-   */
-  parseToolResult(result) {
-    if (!result || typeof result !== "object") {
-      throw new MCPClientError("Invalid tool result: not an object");
-    }
-    const resultObj = result;
-    if ("structuredContent" in resultObj && resultObj.structuredContent) {
-      return resultObj.structuredContent;
-    }
-    if ("content" in resultObj) {
-      const content = resultObj.content;
-      if (Array.isArray(content) && content.length > 0) {
-        const first = content[0];
-        if (first && typeof first === "object" && "type" in first) {
-          if (first.type === "text" && "text" in first) {
-            try {
-              return JSON.parse(first.text);
-            } catch (error) {
-              return first.text;
-            }
-          }
-        }
-      }
-    }
-    throw new MCPClientError("Invalid tool result format: missing content and structuredContent");
-  }
-  /**
-   * 发送请求并自动重试
-   *
-   * 使用指数退避策略进行重试：
-   * - 第1次重试：延迟 1s
-   * - 第2次重试：延迟 2s
-   * - 第3次重试：延迟 4s
-   *
-   * @param request - JSON-RPC 请求对象
-   * @returns JSON-RPC 响应对象
-   */
-  async sendRequestWithRetry(request) {
-    let lastError;
-    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          console.log(`[MCPClient] Retry attempt ${attempt}/${this.config.maxRetries}`);
-          const delay = this.config.retryDelay * Math.pow(2, attempt - 1);
-          await this.sleep(delay);
-        }
-        return await this.sendRequest(request);
-      } catch (error) {
-        lastError = error;
-        console.error(`[MCPClient] Attempt ${attempt + 1} failed:`, error);
-        if (attempt === this.config.maxRetries) {
-          break;
-        }
-        if (error instanceof JSONRPCError) {
-          if (error.code === -32600 || // Invalid Request
-          error.code === -32602 || // Invalid params
-          error.code === -32601) {
-            break;
-          }
-        }
-      }
-    }
-    throw new MCPClientError(
-      `Request failed after ${this.config.maxRetries + 1} attempts`,
-      lastError
-    );
-  }
-  /**
-   * 发送单个请求（带超时控制）
-   *
-   * @param request - JSON-RPC 请求对象
-   * @returns Promise<JSONRPCResponse>
-   * @throws {MCPClientError} 如果发送失败或超时
-   */
-  sendRequest(request) {
-    return new Promise((resolve, reject) => {
-      let timeoutId;
-      const timeoutPromise = new Promise((_, rejectTimeout) => {
-        timeoutId = setTimeout(() => {
-          var _a;
-          (_a = this.jsonrpc["pendingRequests"]) == null ? void 0 : _a.delete(request.id);
-          rejectTimeout(
-            new MCPClientError(`Request timeout after ${this.config.requestTimeout}ms`)
-          );
-        }, this.config.requestTimeout);
-      });
-      const requestPromise = new Promise((resolveRequest, rejectRequest) => {
-        this.jsonrpc.registerPendingRequest(
-          request.id,
-          (response) => {
-            resolveRequest(response);
-          },
-          (error) => {
-            rejectRequest(error);
-          }
-        );
-        const message = JSON.stringify(request);
-        this.transport.send(message).catch((error) => {
-          this.jsonrpc.handleResponse(
-            this.jsonrpc.createError(-32603, "Internal error", error, request.id)
-          );
-        });
-      });
-      Promise.race([requestPromise, timeoutPromise]).then((response) => {
-        clearTimeout(timeoutId);
-        resolve(response);
-      }).catch((error) => {
-        clearTimeout(timeoutId);
-        reject(error);
-      });
+    const response = await fetch(`${this.baseUrl}/api/indexes/${indexId}`, {
+      method: "DELETE"
     });
+    return response.json();
+  }
+};
+
+// src/api/server-manager.ts
+var import_child_process = require("child_process");
+var ServerManager = class {
+  constructor(port = 8e3) {
+    this.process = null;
+    this.port = port;
   }
   /**
-   * 断开与 MCP Server 的连接
+   * 启动服务器
    */
-  disconnect() {
-    if (!this.isConnected) {
+  async start(serverPath) {
+    var _a, _b;
+    if (this.process) {
+      console.log("[ServerManager] Server already running");
       return;
     }
-    console.log("[MCPClient] Disconnecting from MCP Server...");
-    this.transport.kill();
-    this.isConnected = false;
-    this.jsonrpc.clearPendingRequests();
-    console.log("[MCPClient] Disconnected");
+    console.log("[ServerManager] Starting FastAPI server...");
+    this.process = (0, import_child_process.spawn)("uv", [
+      "--directory",
+      serverPath,
+      "run",
+      "uvicorn",
+      "deeppdf.main:app",
+      "--port",
+      String(this.port),
+      "--loop",
+      "asyncio"
+    ]);
+    (_a = this.process.stdout) == null ? void 0 : _a.on("data", (data) => {
+      console.log(`[Server] ${data}`);
+    });
+    (_b = this.process.stderr) == null ? void 0 : _b.on("data", (data) => {
+      console.error(`[Server Error] ${data}`);
+    });
+    this.process.on("close", (code) => {
+      console.log(`[ServerManager] Server process exited with code ${code}`);
+      this.process = null;
+    });
+    await this.waitForReady();
   }
   /**
-   * 重启连接
+   * 停止服务器
    */
-  async restart() {
-    this.disconnect();
-    await this.sleep(500);
-    await this.connect();
+  async stop() {
+    if (!this.process) {
+      console.log("[ServerManager] No server process running");
+      return;
+    }
+    console.log("[ServerManager] Stopping server...");
+    this.process.kill();
+    this.process = null;
   }
   /**
-   * 检查是否已连接
+   * 等待服务器就绪
    */
-  checkConnection() {
-    return this.isConnected && this.transport.isRunning();
+  async waitForReady(timeout = 1e4) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      try {
+        const response = await fetch(`http://localhost:${this.port}/health`);
+        if (response.ok) {
+          console.log("[ServerManager] Server is ready");
+          return true;
+        }
+      } catch (e) {
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error("Server failed to start within timeout");
   }
   /**
-   * 睡眠函数（用于重试延迟）
-   *
-   * @param ms - 延迟时间（毫秒）
+   * 检查服务器是否运行
    */
-  sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  isRunning() {
+    return this.process !== null;
   }
 };
 
 // src/main.ts
 var DEFAULT_SETTINGS = {
-  mcpServerPath: "/Users/lizhao/workspace/DeepPDF/mcp-server",
+  backendPath: "/Users/lizhao/workspace/DeepPDF/backend",
+  apiPort: 8e3,
   maxResults: 5,
   deepseekApiKey: "",
   openaiApiKey: "",
@@ -1256,32 +622,30 @@ var DEFAULT_SETTINGS = {
 var DeepPDFPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
-    this.mcpClient = null;
+    this.apiClient = null;
+    this.serverManager = null;
   }
   async onload() {
+    console.log("[DeepPDF] Loading plugin");
     await this.loadSettings();
-    try {
-      this.mcpClient = new MCPClient({
-        serverPath: this.settings.mcpServerPath,
-        env: {
-          DEEPSEEK_API_KEY: this.settings.deepseekApiKey,
-          OPENAI_API_KEY: this.settings.openaiApiKey,
-          PDF_INDEX_LLM_PROVIDER: this.settings.llmProvider,
-          PDF_INDEX_MODEL: this.settings.llmModel,
-          PDF_INDEX_BASE_URL: this.settings.apiUrl,
-          PDF_INDEX_MAX_PAGES_PER_NODE: String(this.settings.maxPagesPerNode),
-          PDF_INDEX_MAX_TOKENS_PER_NODE: String(this.settings.maxTokensPerNode),
-          PDF_INDEX_IF_ADD_NODE_SUMMARY: this.settings.ifAddNodeSummary ? "yes" : "no"
-        }
-      });
-      await this.mcpClient.connect();
-      console.log("[DeepPDF] MCP Client connected successfully");
-    } catch (error) {
-      console.error("[DeepPDF] Failed to connect MCP Client:", error);
+    this.apiClient = new DeepPDFClient(this.settings.apiPort);
+    this.serverManager = new ServerManager(this.settings.apiPort);
+    const isHealthy = await this.apiClient.healthCheck();
+    if (!isHealthy) {
+      console.log("[DeepPDF] Server not running, attempting to start...");
+      try {
+        await this.serverManager.start(this.settings.backendPath);
+        new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u5DF2\u542F\u52A8");
+      } catch (error) {
+        console.error("[DeepPDF] Failed to start server:", error);
+        new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u542F\u52A8\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u914D\u7F6E");
+      }
+    } else {
+      console.log("[DeepPDF] Server is already running");
     }
     this.registerView(
       SIDEBAR_VIEW_TYPE,
-      (leaf) => new SidebarView(leaf, this.mcpClient)
+      (leaf) => new SidebarView(leaf, this.apiClient)
     );
     this.addSettingTab(new DeepPDFSettingTab(this.app, this));
     this.addRibbonIcon("book", "DeepPDF", () => {
@@ -1292,6 +656,17 @@ var DeepPDFPlugin = class extends import_obsidian3.Plugin {
       name: "Open DeepPDF sidebar",
       callback: () => this.activateView()
     });
+    this.addCommand({
+      id: "restart-deeppdf-server",
+      name: "Restart DeepPDF server",
+      callback: async () => {
+        if (this.serverManager) {
+          await this.serverManager.stop();
+          await this.serverManager.start(this.settings.backendPath);
+          new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u5DF2\u91CD\u542F");
+        }
+      }
+    });
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -1300,6 +675,9 @@ var DeepPDFPlugin = class extends import_obsidian3.Plugin {
     await this.saveData(this.settings);
   }
   async onunload() {
+    if (this.serverManager) {
+      await this.serverManager.stop();
+    }
   }
   activateView() {
     const { workspace } = this.app;
@@ -1329,9 +707,13 @@ var DeepPDFSettingTab = class extends import_obsidian3.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "MCP Server \u8BBE\u7F6E" });
-    new import_obsidian3.Setting(containerEl).setName("MCP Server Path").setDesc("Path to the MCP server directory").addText((text) => text.setPlaceholder("/path/to/mcp-server").setValue(this.plugin.settings.mcpServerPath).onChange(async (value) => {
-      this.plugin.settings.mcpServerPath = value;
+    containerEl.createEl("h2", { text: "API Server \u8BBE\u7F6E" });
+    new import_obsidian3.Setting(containerEl).setName("Backend Path").setDesc("Path to the backend directory").addText((text) => text.setPlaceholder("/path/to/backend").setValue(this.plugin.settings.backendPath).onChange(async (value) => {
+      this.plugin.settings.backendPath = value;
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian3.Setting(containerEl).setName("API Port").setDesc("Port for the FastAPI server").addText((text) => text.setPlaceholder("8000").setValue(String(this.plugin.settings.apiPort)).onChange(async (value) => {
+      this.plugin.settings.apiPort = parseInt(value) || 8e3;
       await this.plugin.saveSettings();
     }));
     new import_obsidian3.Setting(containerEl).setName("Max Results").setDesc("Maximum number of results to return").addSlider((slider) => slider.setLimits(1, 20, 1).setValue(this.plugin.settings.maxResults).setDynamicTooltip().onChange(async (value) => {
