@@ -27,4 +27,5 @@ echo "API 文档: http://localhost:6088/docs"
 .venv/bin/uvicorn deeppdf.main:app \
     --host 0.0.0.0 \
     --port 6088 \
+    --loop asyncio \
     --reload
