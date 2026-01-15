@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deeppdf",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepPDF - 深度阅读 PDF 知识库插件",
   "main": "main.js",
   "scripts": {

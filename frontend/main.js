@@ -527,88 +527,9 @@ var DeepPDFClient = class {
   }
 };
 
-// src/api/server-manager.ts
-var import_child_process = require("child_process");
-var ServerManager = class {
-  constructor(port = 8e3) {
-    this.process = null;
-    this.port = port;
-  }
-  /**
-   * 启动服务器
-   */
-  async start(serverPath) {
-    var _a, _b;
-    if (this.process) {
-      console.log("[ServerManager] Server already running");
-      return;
-    }
-    console.log("[ServerManager] Starting FastAPI server...");
-    this.process = (0, import_child_process.spawn)("uv", [
-      "--directory",
-      serverPath,
-      "run",
-      "uvicorn",
-      "deeppdf.main:app",
-      "--port",
-      String(this.port),
-      "--loop",
-      "asyncio"
-    ]);
-    (_a = this.process.stdout) == null ? void 0 : _a.on("data", (data) => {
-      console.log(`[Server] ${data}`);
-    });
-    (_b = this.process.stderr) == null ? void 0 : _b.on("data", (data) => {
-      console.error(`[Server Error] ${data}`);
-    });
-    this.process.on("close", (code) => {
-      console.log(`[ServerManager] Server process exited with code ${code}`);
-      this.process = null;
-    });
-    await this.waitForReady();
-  }
-  /**
-   * 停止服务器
-   */
-  async stop() {
-    if (!this.process) {
-      console.log("[ServerManager] No server process running");
-      return;
-    }
-    console.log("[ServerManager] Stopping server...");
-    this.process.kill();
-    this.process = null;
-  }
-  /**
-   * 等待服务器就绪
-   */
-  async waitForReady(timeout = 1e4) {
-    const startTime = Date.now();
-    while (Date.now() - startTime < timeout) {
-      try {
-        const response = await fetch(`http://localhost:${this.port}/health`);
-        if (response.ok) {
-          console.log("[ServerManager] Server is ready");
-          return true;
-        }
-      } catch (e) {
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    throw new Error("Server failed to start within timeout");
-  }
-  /**
-   * 检查服务器是否运行
-   */
-  isRunning() {
-    return this.process !== null;
-  }
-};
-
 // src/main.ts
 var DEFAULT_SETTINGS = {
-  backendPath: "/Users/lizhao/workspace/DeepPDF/backend",
-  apiPort: 8e3,
+  apiPort: 6088,
   maxResults: 5,
   deepseekApiKey: "",
   openaiApiKey: "",
@@ -623,25 +544,17 @@ var DeepPDFPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.apiClient = null;
-    this.serverManager = null;
   }
   async onload() {
     console.log("[DeepPDF] Loading plugin");
     await this.loadSettings();
     this.apiClient = new DeepPDFClient(this.settings.apiPort);
-    this.serverManager = new ServerManager(this.settings.apiPort);
     const isHealthy = await this.apiClient.healthCheck();
     if (!isHealthy) {
-      console.log("[DeepPDF] Server not running, attempting to start...");
-      try {
-        await this.serverManager.start(this.settings.backendPath);
-        new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u5DF2\u542F\u52A8");
-      } catch (error) {
-        console.error("[DeepPDF] Failed to start server:", error);
-        new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u542F\u52A8\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u914D\u7F6E");
-      }
+      console.log("[DeepPDF] Server not running at localhost:" + this.settings.apiPort);
+      new import_obsidian3.Notice(`DeepPDF: \u65E0\u6CD5\u8FDE\u63A5\u5230\u670D\u52A1\u5668 localhost:${this.settings.apiPort}\uFF0C\u8BF7\u786E\u4FDD\u540E\u7AEF\u5DF2\u542F\u52A8`);
     } else {
-      console.log("[DeepPDF] Server is already running");
+      console.log("[DeepPDF] Server connected successfully");
     }
     this.registerView(
       SIDEBAR_VIEW_TYPE,
@@ -656,17 +569,6 @@ var DeepPDFPlugin = class extends import_obsidian3.Plugin {
       name: "Open DeepPDF sidebar",
       callback: () => this.activateView()
     });
-    this.addCommand({
-      id: "restart-deeppdf-server",
-      name: "Restart DeepPDF server",
-      callback: async () => {
-        if (this.serverManager) {
-          await this.serverManager.stop();
-          await this.serverManager.start(this.settings.backendPath);
-          new import_obsidian3.Notice("DeepPDF \u670D\u52A1\u5668\u5DF2\u91CD\u542F");
-        }
-      }
-    });
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -675,9 +577,6 @@ var DeepPDFPlugin = class extends import_obsidian3.Plugin {
     await this.saveData(this.settings);
   }
   async onunload() {
-    if (this.serverManager) {
-      await this.serverManager.stop();
-    }
   }
   activateView() {
     const { workspace } = this.app;
@@ -708,12 +607,8 @@ var DeepPDFSettingTab = class extends import_obsidian3.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "API Server \u8BBE\u7F6E" });
-    new import_obsidian3.Setting(containerEl).setName("Backend Path").setDesc("Path to the backend directory").addText((text) => text.setPlaceholder("/path/to/backend").setValue(this.plugin.settings.backendPath).onChange(async (value) => {
-      this.plugin.settings.backendPath = value;
-      await this.plugin.saveSettings();
-    }));
-    new import_obsidian3.Setting(containerEl).setName("API Port").setDesc("Port for the FastAPI server").addText((text) => text.setPlaceholder("8000").setValue(String(this.plugin.settings.apiPort)).onChange(async (value) => {
-      this.plugin.settings.apiPort = parseInt(value) || 8e3;
+    new import_obsidian3.Setting(containerEl).setName("API Port").setDesc("FastAPI \u670D\u52A1\u5668\u7AEF\u53E3\uFF08\u9ED8\u8BA4 localhost:6088\uFF09").addText((text) => text.setPlaceholder("6088").setValue(String(this.plugin.settings.apiPort)).onChange(async (value) => {
+      this.plugin.settings.apiPort = parseInt(value) || 6088;
       await this.plugin.saveSettings();
     }));
     new import_obsidian3.Setting(containerEl).setName("Max Results").setDesc("Maximum number of results to return").addSlider((slider) => slider.setLimits(1, 20, 1).setValue(this.plugin.settings.maxResults).setDynamicTooltip().onChange(async (value) => {
