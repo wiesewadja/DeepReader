@@ -92,9 +92,10 @@ def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
         import json
         with open(metadata_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # 返回基本元数据
+            # 返回基本元数据（包含 pdf_path 用于跳转功能）
             return {
                 "pdf_name": data.get("pdf_name", ""),
+                "pdf_path": data.get("pdf_path", ""),
                 "node_count": data.get("node_count", 0),
                 "created_at": data.get("created_at", "")
             }
