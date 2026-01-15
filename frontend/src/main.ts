@@ -1,9 +1,11 @@
-import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf } from "obsidian";
+import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
-import { MCPClient } from "./mcp/client.js";
+import { DeepPDFClient } from "./api/http-client.js";
+import { ServerManager } from "./api/server-manager.js";
 
 interface DeepPDFSettings {
-    mcpServerPath: string;
+    backendPath: string;
+    apiPort: number;
     maxResults: number;
     deepseekApiKey: string;
     openaiApiKey: string;
@@ -16,7 +18,8 @@ interface DeepPDFSettings {
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
-    mcpServerPath: "/Users/lizhao/workspace/DeepPDF/mcp-server",
+    backendPath: "/Users/lizhao/workspace/DeepPDF/backend",
+    apiPort: 8000,
     maxResults: 5,
     deepseekApiKey: "",
     openaiApiKey: "",
@@ -30,40 +33,39 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
-    mcpClient: MCPClient | null = null;
+    apiClient: DeepPDFClient | null = null;
+    serverManager: ServerManager | null = null;
 
     async onload() {
+        console.log('[DeepPDF] Loading plugin');
+
         await this.loadSettings();
 
-        // 初始化 MCP 客户端
-        try {
-            this.mcpClient = new MCPClient({
-                serverPath: this.settings.mcpServerPath,
-                env: {
-                    DEEPSEEK_API_KEY: this.settings.deepseekApiKey,
-                    OPENAI_API_KEY: this.settings.openaiApiKey,
-                    PDF_INDEX_LLM_PROVIDER: this.settings.llmProvider,
-                    PDF_INDEX_MODEL: this.settings.llmModel,
-                    PDF_INDEX_BASE_URL: this.settings.apiUrl,
-                    PDF_INDEX_MAX_PAGES_PER_NODE: String(this.settings.maxPagesPerNode),
-                    PDF_INDEX_MAX_TOKENS_PER_NODE: String(this.settings.maxTokensPerNode),
-                    PDF_INDEX_IF_ADD_NODE_SUMMARY: this.settings.ifAddNodeSummary ? "yes" : "no"
-                }
-            });
+        // 初始化 HTTP 客户端
+        this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
-            // 连接到 MCP 服务器
-            await this.mcpClient.connect();
+        // 初始化服务器管理器
+        this.serverManager = new ServerManager(this.settings.apiPort);
 
-            console.log("[DeepPDF] MCP Client connected successfully");
-        } catch (error) {
-            console.error("[DeepPDF] Failed to connect MCP Client:", error);
-            // 不抛出错误，允许插件在没有 MCP 连接的情况下运行
+        // 检查服务器健康状态
+        const isHealthy = await this.apiClient.healthCheck();
+        if (!isHealthy) {
+            console.log('[DeepPDF] Server not running, attempting to start...');
+            try {
+                await this.serverManager.start(this.settings.backendPath);
+                new Notice('DeepPDF 服务器已启动');
+            } catch (error) {
+                console.error('[DeepPDF] Failed to start server:', error);
+                new Notice('DeepPDF 服务器启动失败，请检查配置');
+            }
+        } else {
+            console.log('[DeepPDF] Server is already running');
         }
 
         // 注册侧边栏视图
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this.mcpClient)
+            (leaf) => new SidebarView(leaf, this.apiClient)
         );
 
         // 添加设置面板
@@ -80,6 +82,19 @@ export default class DeepPDFPlugin extends Plugin {
             name: "Open DeepPDF sidebar",
             callback: () => this.activateView()
         });
+
+        // 添加重启服务器命令
+        this.addCommand({
+            id: "restart-deeppdf-server",
+            name: "Restart DeepPDF server",
+            callback: async () => {
+                if (this.serverManager) {
+                    await this.serverManager.stop();
+                    await this.serverManager.start(this.settings.backendPath);
+                    new Notice('DeepPDF 服务器已重启');
+                }
+            }
+        });
     }
 
     async loadSettings() {
@@ -91,9 +106,10 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     async onunload() {
-        // 不主动断开 MCP 客户端连接
-        // 当插件卸载时，Node.js 进程退出会自动清理子进程
-        // 主动断开可能导致 UI 事件监听器冲突
+        // 停止服务器
+        if (this.serverManager) {
+            await this.serverManager.stop();
+        }
     }
 
     activateView() {
@@ -132,16 +148,27 @@ class DeepPDFSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        containerEl.createEl('h2', { text: 'MCP Server 设置' });
+        containerEl.createEl('h2', { text: 'API Server 设置' });
 
         new Setting(containerEl)
-            .setName("MCP Server Path")
-            .setDesc("Path to the MCP server directory")
+            .setName("Backend Path")
+            .setDesc("Path to the backend directory")
             .addText(text => text
-                .setPlaceholder("/path/to/mcp-server")
-                .setValue(this.plugin.settings.mcpServerPath)
+                .setPlaceholder("/path/to/backend")
+                .setValue(this.plugin.settings.backendPath)
                 .onChange(async (value) => {
-                    this.plugin.settings.mcpServerPath = value;
+                    this.plugin.settings.backendPath = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("API Port")
+            .setDesc("Port for the FastAPI server")
+            .addText(text => text
+                .setPlaceholder("8000")
+                .setValue(String(this.plugin.settings.apiPort))
+                .onChange(async (value) => {
+                    this.plugin.settings.apiPort = parseInt(value) || 8000;
                     await this.plugin.saveSettings();
                 }));
 
