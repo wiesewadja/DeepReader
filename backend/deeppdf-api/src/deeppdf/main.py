@@ -49,9 +49,9 @@ async def health_check():
     return {"status": "ok", "version": "1.0.0"}
 
 
-# 注册路由（后续添加）
-# from deeppdf.api.routes import router
-# app.include_router(router)
+# 注册路由
+from deeppdf.api.routes import router
+app.include_router(router)
 
 
 if __name__ == "__main__":
