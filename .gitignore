@@ -9,3 +9,15 @@ wheels/
 # Virtual environments
 .venv
 docs
+
+# Backend runtime data
+backend/logs/
+backend/deeppdf-api/data/
+backend/deeppdf-api/logs/
+
+# Node modules
+frontend/node_modules/
+
+# Build outputs
+frontend/main.js
+frontend/manifest.json
