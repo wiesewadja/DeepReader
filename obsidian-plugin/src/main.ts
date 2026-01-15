@@ -91,10 +91,9 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     async onunload() {
-        // 断开 MCP 客户端连接
-        if (this.mcpClient) {
-            this.mcpClient.disconnect();
-        }
+        // 不主动断开 MCP 客户端连接
+        // 当插件卸载时，Node.js 进程退出会自动清理子进程
+        // 主动断开可能导致 UI 事件监听器冲突
     }
 
     activateView() {

@@ -230,13 +230,18 @@ export class SidebarView extends ItemView {
                         <h4>结果 ${index + 1}</h4>
                         <p class="deeppdf-result-text">${item.text || "无内容"}</p>
                         <div class="deeppdf-result-meta">
-                            <span>📄 ${item.metadata?.section || "未知章节"}</span>
-                            <span>📄 页码: ${pageNumber || "未知"}</span>
-                            <span>🎯 相似度: ${(item.metadata?.distance || 0).toFixed(3)}</span>
+                            <span class="deeppdf-meta-label">章节:</span>
+                            <span>${item.metadata?.section || "未知"}</span>
+                            <span class="deeppdf-meta-separator">•</span>
+                            <span class="deeppdf-meta-label">页码:</span>
+                            <span>${pageNumber || "未知"}</span>
+                            <span class="deeppdf-meta-separator">•</span>
+                            <span class="deeppdf-meta-label">相似度:</span>
+                            <span>${(item.metadata?.distance || 0).toFixed(3)}</span>
                         </div>
                         ${pdfPath && pageNumber ? `
-                            <button class="deeppdf-jump-btn" ${dataAttrs} data-result-index="${index}">
-                                📖 跳转到 PDF
+                            <button class="deeppdf-jump-btn" ${dataAttrs} data-result-index="${index}" aria-label="跳转到 PDF 第 ${pageNumber} 页">
+                                跳转到 PDF
                             </button>
                         ` : ''}
                     </div>
@@ -283,7 +288,7 @@ export class SidebarView extends ItemView {
             // 尝试在 vault 中查找文件（通过文件名匹配）
             const pdfName = pdfPath.split('/').pop() || pdfPath.split('\\').pop();
             if (!pdfName) {
-                new Notice(`❌ 无法解析文件名`);
+                new Notice(`无法解析文件名`);
                 return;
             }
 
@@ -298,14 +303,14 @@ export class SidebarView extends ItemView {
                 // Obsidian 的 PDF 链接格式：file.pdf#page=5
                 const linkWithPage = `${pdfFile.path}#page=${pageNumber}`;
                 await this.app.workspace.openLinkText(linkWithPage, '', true);
-                new Notice(`✅ 已打开 PDF: 第 ${pageNumber} 页`);
+                new Notice(`已打开 PDF: 第 ${pageNumber} 页`);
             } else {
                 // PDF 不在 vault 中：使用系统默认应用打开
                 this.openExternalPDF(pdfPath, pageNumber);
             }
         } catch (error) {
             console.error('[DeepPDF] 跳转 PDF 失败:', error);
-            new Notice(`❌ 跳转失败: ${error}`);
+            new Notice(`跳转失败: ${error}`);
         }
     }
 
@@ -333,9 +338,9 @@ export class SidebarView extends ItemView {
 
         exec(command, (error: any) => {
             if (error) {
-                new Notice(`❌ 打开 PDF 失败: ${error.message}`);
+                new Notice(`打开 PDF 失败: ${error.message}`);
             } else {
-                new Notice(`✅ 已打开 PDF（外部文件，请手动跳转到第 ${pageNumber} 页）`);
+                new Notice(`已打开 PDF（外部文件，请手动跳转到第 ${pageNumber} 页）`);
             }
         });
     }

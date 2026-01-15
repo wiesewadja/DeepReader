@@ -83,3 +83,249 @@
 .deeppdf-result p {
     margin: var(--spacing-xs) 0;
 }
+
+/* 服务器状态指示器 */
+.deeppdf-status {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.deeppdf-status-ok {
+    color: var(--text-success);
+    font-size: var(--font-ui-smaller);
+}
+
+.deeppdf-status-warning {
+    color: var(--text-warning);
+    font-size: var(--font-ui-smaller);
+}
+
+/* 管理索引按钮 */
+.deeppdf-manage-btn {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-ui-smaller);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.deeppdf-manage-btn:hover {
+    background: var(--interactive-hover);
+}
+
+/* 索引选择器 */
+.deeppdf-index-select-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.deeppdf-index-label {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    white-space: nowrap;
+}
+
+.deeppdf-index-select {
+    flex: 1;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-ui-small);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.deeppdf-index-select:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+/* 查询结果列表 */
+.deeppdf-results-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-md);
+}
+
+.deeppdf-result-item {
+    padding: var(--spacing-md);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-sm);
+}
+
+.deeppdf-result-item h4 {
+    margin: 0 0 var(--spacing-xs) 0;
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+}
+
+.deeppdf-result-text {
+    margin: var(--spacing-xs) 0;
+    font-size: var(--font-ui-small);
+    line-height: 1.6;
+    color: var(--text-muted);
+}
+
+.deeppdf-result-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid var(--background-modifier-border-hover);
+}
+
+.deeppdf-result-meta span {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.deeppdf-meta-label {
+    color: var(--text-normal);
+    font-weight: var(--font-medium);
+}
+
+.deeppdf-meta-separator {
+    color: var(--background-modifier-border-hover);
+    margin: 0 var(--spacing-xs);
+}
+
+/* 跳转按钮 */
+.deeppdf-jump-btn {
+    margin-top: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-ui-small);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.deeppdf-jump-btn:hover {
+    background: var(--interactive-hover);
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-jump-btn:active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* 错误和提示消息 */
+.deeppdf-error {
+    color: var(--text-error);
+    font-size: var(--font-ui-small);
+    padding: var(--spacing-sm);
+    background: var(--background-error);
+    border-radius: var(--radius-sm);
+}
+
+.deeppdf-notice {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: var(--spacing-sm);
+    background: var(--background-secondary);
+    border-radius: var(--radius-sm);
+    line-height: 1.6;
+}
+
+/* 索引管理模态框样式 */
+.index-button-container {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.index-list {
+    margin-top: var(--spacing-md);
+}
+
+.index-table-wrapper {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.index-table {
+    width: 100%;
+    min-width: 600px;
+    border-collapse: collapse;
+    font-size: var(--font-ui-small);
+}
+
+.index-table th,
+.index-table td {
+    padding: var(--spacing-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+}
+
+.index-table th {
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.index-table tr:hover {
+    background: var(--background-modifier-hover);
+}
+
+.index-name {
+    font-weight: var(--font-medium);
+    color: var(--text-normal);
+}
+
+.index-count,
+.index-date {
+    color: var(--text-muted);
+}
+
+.index-actions {
+    text-align: right;
+}
+
+/* PDF 导入模态框样式 */
+.import-input-container {
+    margin-bottom: var(--spacing-md);
+}
+
+.import-input-container label {
+    display: block;
+    margin-bottom: var(--spacing-xs);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+}
+
+.import-file-input {
+    width: 100%;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-ui-small);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.import-file-input:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+}
+
+.import-button-container {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: flex-end;
+    margin-top: var(--spacing-lg);
+}

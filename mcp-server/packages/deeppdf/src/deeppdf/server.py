@@ -5,6 +5,7 @@ PDF 索引和查询服务
 """
 
 import json
+import nest_asyncio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp import types
@@ -12,6 +13,10 @@ from .config import Config
 from .tools.pdf_indexer import index_pdf
 from .tools.pdf_query import query_pdf
 from .tools.index_manager import list_indexes, delete_index
+
+# 应用 nest_asyncio 以支持嵌套事件循环
+# 这对于 PageIndex 库的异步操作很重要
+nest_asyncio.apply()
 
 
 class MCPServer:
@@ -109,7 +114,14 @@ def main():
     server = MCPServer()
     import asyncio
 
-    asyncio.run(server.run())
+    try:
+        # 检查是否已有运行中的事件循环
+        loop = asyncio.get_running_loop()
+        # 如果已有事件循环，使用 run_until_complete
+        loop.run_until_complete(server.run())
+    except RuntimeError:
+        # 没有运行中的事件循环，使用 asyncio.run()
+        asyncio.run(server.run())
 
 
 if __name__ == "__main__":

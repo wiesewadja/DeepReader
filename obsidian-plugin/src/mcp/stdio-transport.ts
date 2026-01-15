@@ -128,6 +128,10 @@ export class StdioTransport extends EventEmitter {
         console.log('[StdioTransport] Starting MCP server process...');
         console.log('[StdioTransport] Working directory:', this.config.cwd);
         console.log('[StdioTransport] PYTHONPATH:', spawnOptions.env?.PYTHONPATH);
+        console.log('[StdioTransport] Environment variables:', Object.keys(spawnOptions.env || {})
+            .filter(k => k.startsWith('DEEPSEEK_') || k.startsWith('OPENAI_') || k.startsWith('PDF_INDEX_'))
+            .map(k => `${k}=${(spawnOptions.env![k] || '').substring(0, 10)}...`)
+            .join(', '));
 
         // 使用虚拟环境中的 Python 解释器启动 MCP 服务器
         const pythonPath = this.config.pythonPath || `${this.config.serverPath}/.venv/bin/python`;

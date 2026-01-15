@@ -65,18 +65,19 @@ export class IndexManagerModal extends Modal {
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
                 listContainer.createEl("p", {
-                    text: "📭 暂无索引",
+                    text: "暂无索引",
                     cls: "deemphasized"
                 });
                 listContainer.createEl("p", {
-                    text: "提示：点击上方\"导入 PDF\"按钮开始创建索引",
+                    text: "提示：点击上方 \"导入 PDF\" 按钮开始创建索引",
                     cls: "deemphasized"
                 });
                 return;
             }
 
             // 显示索引列表
-            const table = listContainer.createEl("table", {
+            const tableWrapper = listContainer.createDiv({ cls: "index-table-wrapper" });
+            const table = tableWrapper.createEl("table", {
                 cls: "index-table"
             });
 
@@ -188,7 +189,7 @@ class ImportPDFModal extends Modal {
 
         // 提示信息
         const hintEl = contentEl.createEl("p", {
-            text: "💡 提示：输入 PDF 文件的完整路径，例如 /Users/xxx/Documents/paper.pdf",
+            text: "提示：输入 PDF 文件的完整路径，例如 /Users/xxx/Documents/paper.pdf",
             cls: "deemphasized"
         });
 
@@ -234,7 +235,7 @@ class ImportPDFModal extends Modal {
         }
 
         // 显示进度提示
-        const progressNotice = new Notice(`📄 正在索引: ${pdfPath}`, 0);
+        const progressNotice = new Notice(`正在索引: ${pdfPath}`, 0);
 
         try {
             // 调用 MCP 客户端创建索引
@@ -244,20 +245,20 @@ class ImportPDFModal extends Modal {
 
             if (result && result.status === "success") {
                 new Notice(
-                    `✅ 索引创建成功！\n` +
+                    `索引创建成功！\n` +
                     `PDF: ${result.pdf_name}\n` +
                     `节点数: ${result.node_count}\n` +
                     `索引 ID: ${result.index_id}`
                 );
                 this.close(); // 关闭模态框
             } else if (result && result.status === "error") {
-                new Notice(`❌ 索引失败: ${result.error || "未知错误"}`);
+                new Notice(`索引失败: ${result.error || "未知错误"}`);
                 if (this.submitBtn) {
                     this.submitBtn.disabled = false;
                     this.submitBtn.textContent = "开始索引";
                 }
             } else {
-                new Notice(`❌ 索引失败: 未知错误`);
+                new Notice(`索引失败: 未知错误`);
                 if (this.submitBtn) {
                     this.submitBtn.disabled = false;
                     this.submitBtn.textContent = "开始索引";
@@ -265,7 +266,7 @@ class ImportPDFModal extends Modal {
             }
         } catch (indexError) {
             progressNotice.hide();
-            new Notice(`❌ 索引失败: ${indexError}`);
+            new Notice(`索引失败: ${indexError}`);
             if (this.submitBtn) {
                 this.submitBtn.disabled = false;
                 this.submitBtn.textContent = "开始索引";

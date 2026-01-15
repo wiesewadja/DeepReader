@@ -1379,7 +1379,16 @@ def page_index_main(doc, opt=None, llm_client=None):
             "structure": structure,
         }
 
-    return asyncio.run(page_index_builder())
+    try:
+        # 检查是否已有运行中的事件循环
+        loop = asyncio.get_running_loop()
+        # 如果已有事件循环，使用 run_until_complete
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(page_index_builder())
+    except RuntimeError:
+        # 没有运行中的事件循环，使用 asyncio.run()
+        return asyncio.run(page_index_builder())
 
 
 def page_index(

@@ -197,10 +197,19 @@ def index_pdf(
 
     # 验证文件存在
     if not pdf_path_obj.exists():
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        return {
+            "status": "error",
+            "error": f"PDF file not found: {pdf_path}"
+        }
 
     # 验证文件大小（避免空文件）
-    if pdf_path_obj.stat().st_size < 1024:
+    try:
+        if pdf_path_obj.stat().st_size < 1024:
+            return {
+                "status": "error",
+                "error": "PDF file is too small (< 1KB)"
+            }
+    except FileNotFoundError:
         return {
             "status": "error",
             "error": "PDF file is too small (< 1KB)"
@@ -213,10 +222,11 @@ def index_pdf(
         os.getenv("OPENAI_API_KEY")
     )
     if require_llm and not llm_api_key:
-        raise LLMRequiredError(
-            "LLM API key is required for PageIndex tree indexing. "
-            "Please set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
-        )
+        return {
+            "status": "error",
+            "error": "LLM API key is required for PageIndex tree indexing. "
+                    "Please set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
+        }
 
     # 生成索引 ID（基于文件名和时间的 hash）
     file_hash = hashlib.md5(
@@ -353,13 +363,6 @@ def index_pdf(
             "indexing_method": "pageindex_tree"
         }
 
-    except LLMRequiredError:
-        raise
-    except FileNotFoundError:
-        return {
-            "status": "error",
-            "error": f"PDF file not found: {pdf_path}"
-        }
     except Exception as e:
         return {
             "status": "error",
