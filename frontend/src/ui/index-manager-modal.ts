@@ -1,5 +1,5 @@
 import { App, Modal, Notice, SuggestModal } from "obsidian";
-import { MCPClient } from "../mcp/client.js";
+import { DeepPDFClient, IndexPDFResult, DeleteIndexResult, ListIndexesResult, IndexListItem } from "../api/http-client.js";
 
 interface IndexInfo {
     id: string;
@@ -9,11 +9,11 @@ interface IndexInfo {
 }
 
 export class IndexManagerModal extends Modal {
-    private mcpClient: MCPClient;
+    private apiClient: DeepPDFClient;
 
-    constructor(app: App, mcpClient: MCPClient) {
+    constructor(app: App, apiClient: DeepPDFClient) {
         super(app);
-        this.mcpClient = mcpClient;
+        this.apiClient = apiClient;
     }
 
     async onOpen() {
@@ -58,8 +58,8 @@ export class IndexManagerModal extends Modal {
         listContainer.createEl("p", { text: "加载中..." });
 
         try {
-            // 使用 MCP 客户端获取索引列表
-            const result = await this.mcpClient.listIndexes();
+            // 使用 HTTP 客户端获取索引列表
+            const result: ListIndexesResult = await this.apiClient.listIndexes();
 
             listContainer.empty();
 
@@ -91,7 +91,7 @@ export class IndexManagerModal extends Modal {
 
             // 表体
             const tbody = table.createEl("tbody");
-            result.indexes.forEach((index: IndexInfo) => {
+            result.indexes.forEach((index: IndexListItem) => {
                 const row = tbody.createEl("tr");
 
                 row.createEl("td", {
@@ -136,7 +136,7 @@ export class IndexManagerModal extends Modal {
 
     private async deleteIndex(indexId: string) {
         try {
-            const result = await this.mcpClient.deleteIndex(indexId);
+            const result: DeleteIndexResult = await this.apiClient.deleteIndex(indexId);
 
             if (result && result.status === "success") {
                 new Notice("索引删除成功");
@@ -154,7 +154,7 @@ export class IndexManagerModal extends Modal {
      */
     private async importPDF() {
         // 创建一个简单的模态框来输入文件路径
-        new ImportPDFModal(this.app, this.mcpClient).open();
+        new ImportPDFModal(this.app, this.apiClient).open();
     }
 }
 
@@ -162,13 +162,13 @@ export class IndexManagerModal extends Modal {
  * PDF 导入模态框
  */
 class ImportPDFModal extends Modal {
-    private mcpClient: MCPClient;
+    private apiClient: DeepPDFClient;
     private inputEl: HTMLInputElement | null = null;
     private submitBtn: HTMLButtonElement | null = null;
 
-    constructor(app: App, mcpClient: MCPClient) {
+    constructor(app: App, apiClient: DeepPDFClient) {
         super(app);
-        this.mcpClient = mcpClient;
+        this.apiClient = apiClient;
     }
 
     onOpen() {
@@ -238,8 +238,8 @@ class ImportPDFModal extends Modal {
         const progressNotice = new Notice(`正在索引: ${pdfPath}`, 0);
 
         try {
-            // 调用 MCP 客户端创建索引
-            const result = await this.mcpClient.indexPDF(pdfPath);
+            // 调用 HTTP 客户端创建索引
+            const result: IndexPDFResult = await this.apiClient.indexPDF(pdfPath);
 
             progressNotice.hide();
 
