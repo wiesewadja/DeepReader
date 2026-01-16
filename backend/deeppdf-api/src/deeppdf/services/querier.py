@@ -7,9 +7,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-# 导入旧的存储模块（暂时使用旧位置）
-import sys
-sys.path.insert(0, 'deeppdf-api/deeppdf/src')
+# 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
 
 # 导入智能检索

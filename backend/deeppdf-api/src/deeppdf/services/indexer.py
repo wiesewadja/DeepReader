@@ -16,9 +16,7 @@ from pageindex import page_index_main
 from pageindex.utils import ConfigLoader
 from pageindex.llm_provider import UnifiedLLM
 
-# 导入旧的存储模块（暂时使用旧位置）
-import sys
-sys.path.insert(0, 'deeppdf-api/deeppdf/src')
+# 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
 
 # 配置日志
