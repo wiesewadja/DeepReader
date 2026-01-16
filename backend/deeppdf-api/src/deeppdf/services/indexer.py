@@ -121,6 +121,16 @@ def _index_pdf_sync(
     model = kwargs.get("model") or _get_env_default("PDF_INDEX_MODEL", "deepseek-chat")
     llm_provider = kwargs.get("llm_provider") or _get_env_default("PDF_INDEX_LLM_PROVIDER", "deepseek")
     base_url = kwargs.get("base_url") or _get_env_default("PDF_INDEX_BASE_URL", None)
+
+    # custom provider 必须提供 base_url
+    if llm_provider == "custom" and not base_url:
+        logger.error("使用 custom provider 时必须提供 base_url")
+        return {
+            "status": "error",
+            "error": "When using 'custom' llm_provider, 'api_url' parameter is required. "
+                    "Please provide the base URL of your custom LLM API (e.g., https://api.siliconflow.cn/v1)."
+        }
+
     toc_check_pages = kwargs.get("toc_check_pages") or _get_env_default("PDF_INDEX_TOC_CHECK_PAGES", 20, int)
     max_pages_per_node = kwargs.get("max_pages_per_node") or _get_env_default("PDF_INDEX_MAX_PAGES_PER_NODE", 10, int)
     max_tokens_per_node = kwargs.get("max_tokens_per_node") or _get_env_default("PDF_INDEX_MAX_TOKENS_PER_NODE", 20000, int)
@@ -210,6 +220,7 @@ def _index_pdf_sync(
                 "base_url": base_url,
             },
         }
+        logger.debug(f"[PageIndex配置] llm_provider: type={llm_provider}, base_url={base_url}")
         opt = config_loader.load(user_opt)
         logger.info("PageIndex 配置加载完成")
 

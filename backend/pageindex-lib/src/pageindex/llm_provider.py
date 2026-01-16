@@ -124,8 +124,10 @@ class CustomProvider(LLMProvider):
         self.base_url = base_url
         self.api_key = api_key
         self.model_param = model_param
+        logging.info(f"[CustomProvider] 初始化: base_url={base_url}, model_param={model_param}")
 
     def chat(self, model: str, messages: list, temperature: float = 0) -> str:
+        logging.info(f"[CustomProvider] chat: 使用 base_url={self.base_url}, model={model}")
         client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
         kwargs = {self.model_param: model}
         response = client.chat.completions.create(
@@ -226,9 +228,18 @@ class UnifiedLLM:
             try:
                 return self.provider.chat(self.model, messages, temperature)
             except Exception as e:
-                logging.error(f"Error: {e}")
+                error_msg = str(e)
+                # 检测是否为连接错误，增加等待时间
+                is_connection_error = any(
+                    keyword in error_msg.lower()
+                    for keyword in ["connection", "timeout", "network", "temporarily"]
+                )
+                wait_time = min(2 ** i, 10) if is_connection_error else 1  # 指数退避，最多10秒
+
+                logging.error(f"Error (attempt {i+1}/{self.max_retries}): {e}")
                 if i < self.max_retries - 1:
-                    time.sleep(1)
+                    logging.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
                 else:
                     logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
                     return "Error"
@@ -247,9 +258,18 @@ class UnifiedLLM:
                 content = self.provider.chat(self.model, messages, temperature)
                 return content, "finished"
             except Exception as e:
-                logging.error(f"Error: {e}")
+                error_msg = str(e)
+                # 检测是否为连接错误，增加等待时间
+                is_connection_error = any(
+                    keyword in error_msg.lower()
+                    for keyword in ["connection", "timeout", "network", "temporarily"]
+                )
+                wait_time = min(2 ** i, 10) if is_connection_error else 1  # 指数退避，最多10秒
+
+                logging.error(f"Error (attempt {i+1}/{self.max_retries}): {e}")
                 if i < self.max_retries - 1:
-                    time.sleep(1)
+                    logging.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
                 else:
                     logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
                     return "Error", "error"
@@ -261,9 +281,18 @@ class UnifiedLLM:
             try:
                 return await self.provider.chat_async(self.model, messages, temperature)
             except Exception as e:
-                logging.error(f"Error: {e}")
+                error_msg = str(e)
+                # 检测是否为连接错误，增加等待时间
+                is_connection_error = any(
+                    keyword in error_msg.lower()
+                    for keyword in ["connection", "timeout", "network", "temporarily"]
+                )
+                wait_time = min(2 ** i, 10) if is_connection_error else 1  # 指数退避，最多10秒
+
+                logging.error(f"Error (attempt {i+1}/{self.max_retries}): {e}")
                 if i < self.max_retries - 1:
-                    await asyncio.sleep(1)
+                    logging.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                 else:
                     logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
                     return "Error"
@@ -282,9 +311,18 @@ class UnifiedLLM:
                 content = await self.provider.chat_async(self.model, messages, temperature)
                 return content, "finished"
             except Exception as e:
-                logging.error(f"Error: {e}")
+                error_msg = str(e)
+                # 检测是否为连接错误，增加等待时间
+                is_connection_error = any(
+                    keyword in error_msg.lower()
+                    for keyword in ["connection", "timeout", "network", "temporarily"]
+                )
+                wait_time = min(2 ** i, 10) if is_connection_error else 1  # 指数退避，最多10秒
+
+                logging.error(f"Error (attempt {i+1}/{self.max_retries}): {e}")
                 if i < self.max_retries - 1:
-                    await asyncio.sleep(1)
+                    logging.info(f"Retrying in {wait_time} seconds...")
+                    await asyncio.sleep(wait_time)
                 else:
                     logging.error(f"Max retries reached for prompt: {prompt[:100]}...")
                     return "Error", "error"

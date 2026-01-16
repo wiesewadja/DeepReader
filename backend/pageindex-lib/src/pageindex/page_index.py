@@ -390,37 +390,126 @@ async def toc_transformer(toc_content, llm_client=None):
     return cleaned_response
 
 
+def _calculate_toc_confidence(content: str) -> float:
+    """
+    使用规则计算页面是目录页的置信度 (0-1)
+
+    规则包括：
+    1. 目录关键词匹配
+    2. 章节列表结构（多行标题）
+    3. 页码模式
+    4. 典型目录特征
+    """
+    if not content or not content.strip():
+        return 0.0
+
+    content_lower = content.lower()
+    confidence = 0.0
+
+    # 1. 目录关键词检测（权重 0.4）
+    toc_keywords = [
+        "目录", "contents", "content", "table of contents",
+        "章节", "chapter", "chapters", "索引", "目　录"
+    ]
+    keyword_found = any(keyword in content_lower for keyword in toc_keywords)
+    if keyword_found:
+        confidence += 0.4
+
+    # 2. 章节列表结构检测（权重 0.3）
+    lines = [line.strip() for line in content.split('\n') if line.strip()]
+    if len(lines) >= 5:  # 至少 5 行
+        # 检查是否有类似章节标题的行（以数字、字母开头）
+        chapter_patterns = sum(
+            1 for line in lines
+            if line and (line[0].isdigit() or line.split()[0][0].isdigit() if line.split() else False)
+        )
+        if chapter_patterns >= len(lines) * 0.3:  # 30% 的行有章节特征
+            confidence += 0.3
+
+    # 3. 页码模式检测（权重 0.2）
+    # 检查是否有多个页码（如 "1", "2", "3" 或 "第1章", "第2章"）
+    import re
+    page_numbers = re.findall(r'第?\s*\d+\s*章|^\d+\s+', content, re.MULTILINE)
+    if len(page_numbers) >= 3:
+        confidence += 0.2
+
+    # 4. 点号引导模式（权重 0.1）
+    # 检查是否有典型的目录格式，如 "1. xxx", "Chapter 1. xxx"
+    dot_pattern = re.findall(r'^\s*[\d一二三四五六七八九十]+[.、．]\s*\w+', content, re.MULTILINE)
+    if len(dot_pattern) >= 3:
+        confidence += 0.1
+
+    return min(confidence, 1.0)
+
+
 async def find_toc_pages(start_page_index=0, page_list=None, opt=None, llm_client=None, logger=None):
+    """
+    优化版目录检测：先使用规则快速过滤，只在必要时使用 LLM
+
+    性能优化：
+    - 高置信度 (>0.7): 直接使用规则结果
+    - 中等置信度 (0.3-0.7): 使用 LLM 确认
+    - 低置信度 (<0.3): 跳过
+    """
     if page_list is None:
         raise ValueError("page_list cannot be None")
 
-    print("start find_toc_pages")
-    last_page_is_yes = False
+    print("start find_toc_pages (rule-based + LLM fallback)")
     toc_page_list = []
     i = start_page_index
+    rule_based_count = 0
+    llm_confirm_count = 0
 
     while i < len(page_list):
         # Only check beyond max_pages if we're still finding TOC pages
-        if i >= opt.toc_check_page_num and not last_page_is_yes:
+        if i >= opt.toc_check_page_num and not toc_page_list:
             break
 
-        detected_result = await toc_detector_single_page(
-            content=page_list[i][0],
-            llm_client=llm_client,
-        )
-        if detected_result == "yes":
+        content = page_list[i][0]
+
+        # 步骤 1: 使用规则计算置信度
+        confidence = _calculate_toc_confidence(content)
+
+        # 步骤 2: 根据置信度决定是否使用 LLM
+        is_toc_page = False
+
+        if confidence >= 0.7:  # 高置信度：直接使用规则结果
+            is_toc_page = True
+            rule_based_count += 1
             if logger:
-                logger.info(f"Page {i} has toc")
+                logger.info(f"Page {i}: TOC detected (rule-based, confidence={confidence:.2f})")
+        elif confidence >= 0.3:  # 中等置信度：使用 LLM 确认
+            detected_result = await toc_detector_single_page(
+                content=content,
+                llm_client=llm_client,
+            )
+            is_toc_page = (detected_result == "yes")
+            llm_confirm_count += 1
+            if logger:
+                logger.info(f"Page {i}: TOC {'found' if is_toc_page else 'not found'} (LLM confirmed, confidence={confidence:.2f})")
+        else:  # 低置信度：不是目录页
+            if logger:
+                logger.debug(f"Page {i}: Not a TOC page (confidence={confidence:.2f})")
+            # 如果已经找到过目录页，说明目录结束了
+            if toc_page_list:
+                break
+            i += 1
+            continue
+
+        if is_toc_page:
             toc_page_list.append(i)
-            last_page_is_yes = True
-        elif detected_result == "no" and last_page_is_yes:
+        elif toc_page_list:  # 之前找到过目录，现在不是了，说明目录结束
             if logger:
-                logger.info(f"Found the last page with toc: {i - 1}")
+                logger.info(f"Found the last TOC page: {i - 1}")
             break
+
         i += 1
 
     if not toc_page_list and logger:
         logger.info("No toc found")
+
+    if logger:
+        logger.info(f"TOC detection summary: {rule_based_count} rule-based, {llm_confirm_count} LLM-confirmed, {len(toc_page_list)} TOC pages found")
 
     return toc_page_list
 
