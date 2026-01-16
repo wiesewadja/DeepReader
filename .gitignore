@@ -21,3 +21,6 @@ frontend/node_modules/
 # Build outputs
 frontend/main.js
 frontend/manifest.json
+
+# Git worktrees
+.worktrees/
