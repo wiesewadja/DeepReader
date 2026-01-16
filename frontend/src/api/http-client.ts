@@ -69,11 +69,50 @@ export class DeepPDFClient {
   /**
    * 创建 PDF 索引
    */
-  async indexPDF(pdfPath: string): Promise<IndexPDFResult> {
+  async indexPDF(pdfPath: string, llmConfig?: {
+    llmProvider?: string;
+    llmModel?: string;
+    deepseekApiKey?: string;
+    openaiApiKey?: string;
+    apiUrl?: string;
+    maxPagesPerNode?: number;
+    maxTokensPerNode?: number;
+    ifAddNodeSummary?: boolean;
+  }): Promise<IndexPDFResult> {
+    const requestBody: any = { path: pdfPath };
+
+    // 添加 LLM 配置（如果提供）
+    if (llmConfig) {
+      if (llmConfig.llmProvider !== undefined && llmConfig.llmProvider !== "") {
+        requestBody.llm_provider = llmConfig.llmProvider;
+      }
+      if (llmConfig.llmModel !== undefined && llmConfig.llmModel !== "") {
+        requestBody.llm_model = llmConfig.llmModel;
+      }
+      if (llmConfig.deepseekApiKey !== undefined && llmConfig.deepseekApiKey !== "") {
+        requestBody.deepseek_api_key = llmConfig.deepseekApiKey;
+      }
+      if (llmConfig.openaiApiKey !== undefined && llmConfig.openaiApiKey !== "") {
+        requestBody.openai_api_key = llmConfig.openaiApiKey;
+      }
+      if (llmConfig.apiUrl !== undefined && llmConfig.apiUrl !== "") {
+        requestBody.api_url = llmConfig.apiUrl;
+      }
+      if (llmConfig.maxPagesPerNode !== undefined) {
+        requestBody.max_pages_per_node = llmConfig.maxPagesPerNode;
+      }
+      if (llmConfig.maxTokensPerNode !== undefined) {
+        requestBody.max_tokens_per_node = llmConfig.maxTokensPerNode;
+      }
+      if (llmConfig.ifAddNodeSummary !== undefined) {
+        requestBody.if_add_node_summary = llmConfig.ifAddNodeSummary;
+      }
+    }
+
     const response = await fetch(`${this.baseUrl}/api/index`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: pdfPath })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {

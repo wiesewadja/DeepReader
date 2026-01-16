@@ -448,17 +448,25 @@ def add_preface_if_needed(data):
     return data
 
 
-def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="pypdf"):
+def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="PyMuPDF"):
     enc = tiktoken.encoding_for_model(model)
     if pdf_parser in ("PyPDF2", "pypdf"):  # PyPDF2 is deprecated, use pypdf
-        pdf_reader = pypdf.PdfReader(pdf_path)
-        page_list = []
-        for page_num in range(len(pdf_reader.pages)):
-            page = pdf_reader.pages[page_num]
-            page_text = page.extract_text()
-            token_length = len(enc.encode(page_text))
-            page_list.append((page_text, token_length))
-        return page_list
+        try:
+            pdf_reader = pypdf.PdfReader(pdf_path)
+            page_list = []
+            for page_num in range(len(pdf_reader.pages)):
+                page = pdf_reader.pages[page_num]
+                page_text = page.extract_text()
+                token_length = len(enc.encode(page_text))
+                page_list.append((page_text, token_length))
+            return page_list
+        except Exception as e:
+            # pypdf 解析失败，回退到 PyMuPDF
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"pypdf 解析失败: {e}，尝试使用 PyMuPDF...")
+            # 递归调用，使用 PyMuPDF
+            return get_page_tokens(pdf_path, model=model, pdf_parser="PyMuPDF")
     elif pdf_parser == "PyMuPDF":
         if isinstance(pdf_path, BytesIO):
             pdf_stream = pdf_path

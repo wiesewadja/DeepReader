@@ -10,6 +10,15 @@ from typing import List, Optional
 class IndexRequest(BaseModel):
     """创建索引请求"""
     path: str = Field(..., description="PDF 文件路径")
+    # LLM 配置（可选，用于覆盖全局配置）
+    llm_provider: Optional[str] = Field(None, description="LLM provider (deepseek/openai/google/custom)")
+    llm_model: Optional[str] = Field(None, description="LLM model name")
+    deepseek_api_key: Optional[str] = Field(None, description="DeepSeek API key")
+    openai_api_key: Optional[str] = Field(None, description="OpenAI API key")
+    api_url: Optional[str] = Field(None, description="Custom API base URL")
+    max_pages_per_node: Optional[int] = Field(None, description="Max pages per section node")
+    max_tokens_per_node: Optional[int] = Field(None, description="Max tokens per section node")
+    if_add_node_summary: Optional[bool] = Field(None, description="Add node summary using LLM")
 
 
 class QueryRequest(BaseModel):

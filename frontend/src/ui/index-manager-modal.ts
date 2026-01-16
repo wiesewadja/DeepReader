@@ -10,10 +10,12 @@ interface IndexInfo {
 
 export class IndexManagerModal extends Modal {
     private apiClient: DeepPDFClient;
+    private onIndexCreated?: () => void;
 
-    constructor(app: App, apiClient: DeepPDFClient) {
+    constructor(app: App, apiClient: DeepPDFClient, onIndexCreated?: () => void) {
         super(app);
         this.apiClient = apiClient;
+        this.onIndexCreated = onIndexCreated;
     }
 
     async onOpen() {
@@ -154,7 +156,7 @@ export class IndexManagerModal extends Modal {
      */
     private async importPDF() {
         // 创建一个简单的模态框来输入文件路径
-        new ImportPDFModal(this.app, this.apiClient).open();
+        new ImportPDFModal(this.app, this.apiClient, this.onIndexCreated).open();
     }
 }
 
@@ -165,10 +167,12 @@ class ImportPDFModal extends Modal {
     private apiClient: DeepPDFClient;
     private inputEl: HTMLInputElement | null = null;
     private submitBtn: HTMLButtonElement | null = null;
+    private onIndexCreated?: () => void;
 
-    constructor(app: App, apiClient: DeepPDFClient) {
+    constructor(app: App, apiClient: DeepPDFClient, onIndexCreated?: () => void) {
         super(app);
         this.apiClient = apiClient;
+        this.onIndexCreated = onIndexCreated;
     }
 
     onOpen() {
@@ -238,8 +242,25 @@ class ImportPDFModal extends Modal {
         const progressNotice = new Notice(`正在索引: ${pdfPath}`, 0);
 
         try {
-            // 调用 HTTP 客户端创建索引
-            const result: IndexPDFResult = await this.apiClient.indexPDF(pdfPath);
+            // 获取插件设置中的 LLM 配置
+            const plugin = (this.app as any).plugins.plugins['deeppdf'];
+            let llmConfig;
+
+            if (plugin && plugin.settings) {
+                llmConfig = {
+                    llmProvider: plugin.settings.llmProvider,
+                    llmModel: plugin.settings.llmModel,
+                    deepseekApiKey: plugin.settings.deepseekApiKey,
+                    openaiApiKey: plugin.settings.openaiApiKey,
+                    apiUrl: plugin.settings.apiUrl,
+                    maxPagesPerNode: plugin.settings.maxPagesPerNode,
+                    maxTokensPerNode: plugin.settings.maxTokensPerNode,
+                    ifAddNodeSummary: plugin.settings.ifAddNodeSummary
+                };
+            }
+
+            // 调用 HTTP 客户端创建索引，传递 LLM 配置
+            const result: IndexPDFResult = await this.apiClient.indexPDF(pdfPath, llmConfig);
 
             progressNotice.hide();
 
@@ -250,6 +271,10 @@ class ImportPDFModal extends Modal {
                     `节点数: ${result.node_count}\n` +
                     `索引 ID: ${result.index_id}`
                 );
+                // 调用刷新回调
+                if (this.onIndexCreated) {
+                    this.onIndexCreated();
+                }
                 this.close(); // 关闭模态框
             } else if (result && result.status === "error") {
                 new Notice(`索引失败: ${result.error || "未知错误"}`);

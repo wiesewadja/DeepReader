@@ -9,6 +9,7 @@ export class SidebarView extends ItemView {
     private keyPressHandler: (e: KeyboardEvent) => void;
     private apiClient: DeepPDFClient | null;
     private indexSelectHandler: () => void;
+    private indexSelect: HTMLSelectElement | null = null;
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null) {
         super(leaf);
@@ -62,6 +63,9 @@ export class SidebarView extends ItemView {
             cls: "deeppdf-index-select"
         }) as HTMLSelectElement;
         indexSelect.add(new Option("加载中...", ""));
+
+        // 保存索引选择器引用
+        this.indexSelect = indexSelect;
 
         const input = querySection.createEl("input", {
             type: "text",
@@ -130,7 +134,16 @@ export class SidebarView extends ItemView {
             this.showError("API 客户端未连接");
             return;
         }
-        new IndexManagerModal(this.app, this.apiClient).open();
+        new IndexManagerModal(this.app, this.apiClient, () => this.refreshIndexes()).open();
+    }
+
+    /**
+     * 刷新索引列表
+     */
+    async refreshIndexes(): Promise<void> {
+        if (this.indexSelect) {
+            await this.loadIndexes(this.indexSelect);
+        }
     }
 
     async handleSubmit(query: string, selectedIndexId: string) {
