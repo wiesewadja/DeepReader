@@ -1,12 +1,81 @@
+"""
+PageIndex 主入口模块
+
+本模块提供 PDF 文档结构分析的主入口函数。
+
+主要功能:
+    - page_index_main: PDF 索引的主函数
+    - page_index: 便捷的索引函数
+    - tree_parser: 树状结构解析器
+
+使用示例:
+    >>> from pageindex import page_index
+    >>>
+    >>> # 索引 PDF 文档
+    >>> result = page_index("document.pdf")
+    >>> print(result["doc_name"])
+    >>> print(result["structure"])
+
+作者: DeepPDF Team
+创建时间: 2026-01-16
+"""
+
 import os
 import json
 import copy
 import math
 import random
 import re
-from .utils import *
-import os
+import asyncio
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# 从新模块导入
+from .pdf import PDFParser
+from .llm import UnifiedLLM
+from .llm_provider import get_provider as get_llm_provider_legacy
+from .core import ConfigLoader, ValidationError, load_config
+from .toc import (
+    find_toc_pages,
+    _calculate_toc_confidence,
+    check_toc,
+    toc_transformer,
+    toc_extractor,
+    toc_index_extractor,
+    extract_toc_content,
+    detect_page_index,
+    verify_toc,
+    check_title_appearance_in_start_concurrent,
+    fix_incorrect_toc_with_retries,
+)
+from .structure import (
+    list_to_tree,
+    write_node_id,
+    add_node_text_with_labels,
+)
+from .json_ops import extract_json, get_json_content
+
+# 从 utils 导入尚未迁移的函数
+from .utils import (
+    get_page_tokens,
+    count_tokens,
+    get_text_of_pages,
+    get_text_of_pdf_pages,
+    get_text_of_pdf_pages_with_labels,
+    convert_page_to_int,
+    convert_physical_index_to_int,
+    post_processing,
+    add_preface_if_needed,
+    generate_node_summary,
+    generate_summaries_for_structure,
+    create_clean_structure_for_description,
+    generate_doc_description,
+    remove_structure_text,
+    remove_fields,
+    format_structure,
+    JsonLogger,
+    get_pdf_name,
+)
 
 
 ################### check title in page #########################################################
