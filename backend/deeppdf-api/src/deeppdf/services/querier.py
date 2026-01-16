@@ -7,10 +7,11 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-# 导入旧的存储模块（暂时使用旧位置）
-import sys
-sys.path.insert(0, 'deeppdf-api/deeppdf/src')
+# 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
+
+# 导入智能检索
+from .smart_search import hybrid_search
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +85,36 @@ def _query_pdf_sync(
 
         logger.info(f"[查询] 返回 {len(formatted_results)} 个结果")
 
-        # 加载索引元数据
+        # 加载索引元数据（包含 tree_structure）
         index_metadata = _load_index_metadata(storage_dir_path, index_id)
+
+        # 使用智能检索
+        logger.info(f"[智能检索] 启动混合检索...")
+        hybrid_result = hybrid_search(
+            query=query,
+            index_metadata=index_metadata,
+            vector_results=formatted_results,
+            max_results=max_results
+        )
+
+        # 格式化最终结果
+        final_results = []
+        for item in hybrid_result["results"]:
+            final_results.append({
+                "text": item["text"],
+                "metadata": item["metadata"]
+            })
 
         return {
             "status": "success",
-            "results": formatted_results,
-            "index_info": index_metadata
+            "results": final_results,
+            "index_info": {
+                "pdf_name": index_metadata.get("pdf_name", ""),
+                "pdf_path": index_metadata.get("pdf_path", ""),
+                "node_count": index_metadata.get("node_count", 0),
+                "created_at": index_metadata.get("created_at", "")
+            },
+            "search_method": hybrid_result["method"]
         }
 
     except ValueError as e:
@@ -108,17 +132,24 @@ def _query_pdf_sync(
 
 
 def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
-    """加载索引元数据"""
+    """
+    加载索引元数据（包含完整的 tree_structure）
+    """
     metadata_path = storage_dir / "indexes" / f"{index_id}.json"
 
     if metadata_path.exists():
         with open(metadata_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+            # 返回完整的元数据，包括 tree_structure
             return {
                 "pdf_name": data.get("pdf_name", ""),
                 "pdf_path": data.get("pdf_path", ""),
                 "node_count": data.get("node_count", 0),
-                "created_at": data.get("created_at", "")
+                "created_at": data.get("created_at", ""),
+                "indexing_method": data.get("indexing_method", ""),
+                "llm_enabled": data.get("llm_enabled", False),
+                "tree_structure": data.get("tree_structure", {}),
+                "sections": data.get("sections", [])
             }
 
     return {}

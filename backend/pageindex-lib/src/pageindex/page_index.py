@@ -1,12 +1,81 @@
+"""
+PageIndex 主入口模块
+
+本模块提供 PDF 文档结构分析的主入口函数。
+
+主要功能:
+    - page_index_main: PDF 索引的主函数
+    - page_index: 便捷的索引函数
+    - tree_parser: 树状结构解析器
+
+使用示例:
+    >>> from pageindex import page_index
+    >>>
+    >>> # 索引 PDF 文档
+    >>> result = page_index("document.pdf")
+    >>> print(result["doc_name"])
+    >>> print(result["structure"])
+
+作者: DeepPDF Team
+创建时间: 2026-01-16
+"""
+
 import os
 import json
 import copy
 import math
 import random
 import re
-from .utils import *
-import os
+import asyncio
+from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# 从新模块导入
+from .pdf import PDFParser
+from .llm import UnifiedLLM
+from .llm_provider import get_provider as get_llm_provider_legacy
+from .core import ConfigLoader, ValidationError, load_config
+from .toc import (
+    find_toc_pages,
+    _calculate_toc_confidence,
+    check_toc,
+    toc_transformer,
+    toc_extractor,
+    toc_index_extractor,
+    extract_toc_content,
+    detect_page_index,
+    verify_toc,
+    check_title_appearance_in_start_concurrent,
+    fix_incorrect_toc_with_retries,
+)
+from .structure import (
+    list_to_tree,
+    write_node_id,
+    add_node_text_with_labels,
+)
+from .json_ops import extract_json, get_json_content
+
+# 从 utils 导入尚未迁移的函数
+from .utils import (
+    get_page_tokens,
+    count_tokens,
+    get_text_of_pages,
+    get_text_of_pdf_pages,
+    get_text_of_pdf_pages_with_labels,
+    convert_page_to_int,
+    convert_physical_index_to_int,
+    post_processing,
+    add_preface_if_needed,
+    generate_node_summary,
+    generate_summaries_for_structure,
+    create_clean_structure_for_description,
+    generate_doc_description,
+    remove_structure_text,
+    remove_fields,
+    format_structure,
+    JsonLogger,
+    get_pdf_name,
+)
 
 
 ################### check title in page #########################################################
@@ -42,7 +111,9 @@ async def check_title_appearance(item, page_list, start_index=1, llm_client=None
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息：显示标题和页码
+    context = f"标题验证-检查'{title[:30]}...'是否在第{page_number}页"
+    response = await llm_client.chat_async(prompt, context=context)
     response = extract_json(response)
     if "answer" in response:
         answer = response["answer"]
@@ -78,7 +149,9 @@ async def check_title_appearance_in_start(title, page_text, llm_client=None, log
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    context = f"标题验证-检查'{title[:30]}...'是否在页面开头"
+    response = await llm_client.chat_async(prompt, context=context)
     response = extract_json(response)
     if logger:
         logger.info(f"Response: {response}")
@@ -139,7 +212,8 @@ async def toc_detector_single_page(content, llm_client=None):
     Directly return the final JSON structure. Do not output anything else.
     Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
 
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    response = await llm_client.chat_async(prompt, context="目录检测-单页")
     # print('response', response)
     json_content = extract_json(response)
     return json_content["toc_detected"]
@@ -161,7 +235,8 @@ async def check_if_toc_extraction_is_complete(content, toc, llm_client=None):
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\n Document:\n" + content + "\n Table of contents:\n" + toc
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    response = await llm_client.chat_async(prompt, context="目录检测-检查提取完整性")
     json_content = extract_json(response)
     return json_content["completed"]
 
@@ -188,7 +263,8 @@ async def check_if_toc_transformation_is_complete(content, toc, llm_client=None)
         + "\n Cleaned Table of contents:\n"
         + toc
     )
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    response = await llm_client.chat_async(prompt, context="目录检测-检查转换完整性")
     json_content = extract_json(response)
     return json_content["completed"]
 
@@ -204,7 +280,8 @@ async def extract_toc_content(content, llm_client=None):
 
     Directly return the full table of contents content. Do not output anything else."""
 
-    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt)
+    # 添加上下文信息
+    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt, context="目录提取-提取目录内容")
 
     if_complete = await check_if_toc_transformation_is_complete(content, response, llm_client)
     if if_complete == "yes" and finish_reason == "finished":
@@ -216,7 +293,7 @@ async def extract_toc_content(content, llm_client=None):
     ]
     prompt = f"""please continue the generation of table of contents , directly output the remaining part of the structure"""
     new_response, finish_reason = await llm_client.chat_with_finish_reason_async(
-        prompt=prompt, chat_history=chat_history
+        prompt=prompt, chat_history=chat_history, context="目录提取-继续生成"
     )
     response = response + new_response
     if_complete = await check_if_toc_transformation_is_complete(content, response, llm_client)
@@ -228,7 +305,7 @@ async def extract_toc_content(content, llm_client=None):
         ]
         prompt = f"""please continue the generation of table of contents , directly output the remaining part of the structure"""
         new_response, finish_reason = await llm_client.chat_with_finish_reason_async(
-            prompt=prompt, chat_history=chat_history
+            prompt=prompt, chat_history=chat_history, context="目录提取-继续生成"
         )
         response = response + new_response
         if_complete = await check_if_toc_transformation_is_complete(content, response, llm_client)
@@ -261,7 +338,8 @@ async def detect_page_index(toc_content, llm_client=None):
     }}
     Directly return the final JSON structure. Do not output anything else."""
 
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    response = await llm_client.chat_async(prompt, context="目录检测-检测页码")
     json_content = extract_json(response)
     return json_content["page_index_given_in_toc"]
 
@@ -318,7 +396,8 @@ async def toc_index_extractor(toc, content, llm_client=None):
         + "\nDocument pages:\n"
         + content
     )
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    response = await llm_client.chat_async(prompt, context="目录提取-提取页码索引")
     json_content = extract_json(response)
     return json_content
 
@@ -348,7 +427,8 @@ async def toc_transformer(toc_content, llm_client=None):
     Directly return the final JSON structure, do not output anything else. """
 
     prompt = init_prompt + "\n Given table of contents\n:" + toc_content
-    last_complete, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt)
+    # 添加上下文信息
+    last_complete, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt, context="目录转换-转换为JSON")
     if_complete = await check_if_toc_transformation_is_complete(
         toc_content, last_complete, llm_client
     )
@@ -390,37 +470,126 @@ async def toc_transformer(toc_content, llm_client=None):
     return cleaned_response
 
 
+def _calculate_toc_confidence(content: str) -> float:
+    """
+    使用规则计算页面是目录页的置信度 (0-1)
+
+    规则包括：
+    1. 目录关键词匹配
+    2. 章节列表结构（多行标题）
+    3. 页码模式
+    4. 典型目录特征
+    """
+    if not content or not content.strip():
+        return 0.0
+
+    content_lower = content.lower()
+    confidence = 0.0
+
+    # 1. 目录关键词检测（权重 0.4）
+    toc_keywords = [
+        "目录", "contents", "content", "table of contents",
+        "章节", "chapter", "chapters", "索引", "目　录"
+    ]
+    keyword_found = any(keyword in content_lower for keyword in toc_keywords)
+    if keyword_found:
+        confidence += 0.4
+
+    # 2. 章节列表结构检测（权重 0.3）
+    lines = [line.strip() for line in content.split('\n') if line.strip()]
+    if len(lines) >= 5:  # 至少 5 行
+        # 检查是否有类似章节标题的行（以数字、字母开头）
+        chapter_patterns = sum(
+            1 for line in lines
+            if line and (line[0].isdigit() or line.split()[0][0].isdigit() if line.split() else False)
+        )
+        if chapter_patterns >= len(lines) * 0.3:  # 30% 的行有章节特征
+            confidence += 0.3
+
+    # 3. 页码模式检测（权重 0.2）
+    # 检查是否有多个页码（如 "1", "2", "3" 或 "第1章", "第2章"）
+    import re
+    page_numbers = re.findall(r'第?\s*\d+\s*章|^\d+\s+', content, re.MULTILINE)
+    if len(page_numbers) >= 3:
+        confidence += 0.2
+
+    # 4. 点号引导模式（权重 0.1）
+    # 检查是否有典型的目录格式，如 "1. xxx", "Chapter 1. xxx"
+    dot_pattern = re.findall(r'^\s*[\d一二三四五六七八九十]+[.、．]\s*\w+', content, re.MULTILINE)
+    if len(dot_pattern) >= 3:
+        confidence += 0.1
+
+    return min(confidence, 1.0)
+
+
 async def find_toc_pages(start_page_index=0, page_list=None, opt=None, llm_client=None, logger=None):
+    """
+    优化版目录检测：先使用规则快速过滤，只在必要时使用 LLM
+
+    性能优化：
+    - 高置信度 (>0.7): 直接使用规则结果
+    - 中等置信度 (0.3-0.7): 使用 LLM 确认
+    - 低置信度 (<0.3): 跳过
+    """
     if page_list is None:
         raise ValueError("page_list cannot be None")
 
-    print("start find_toc_pages")
-    last_page_is_yes = False
+    print("start find_toc_pages (rule-based + LLM fallback)")
     toc_page_list = []
     i = start_page_index
+    rule_based_count = 0
+    llm_confirm_count = 0
 
     while i < len(page_list):
         # Only check beyond max_pages if we're still finding TOC pages
-        if i >= opt.toc_check_page_num and not last_page_is_yes:
+        if i >= opt.toc_check_page_num and not toc_page_list:
             break
 
-        detected_result = await toc_detector_single_page(
-            content=page_list[i][0],
-            llm_client=llm_client,
-        )
-        if detected_result == "yes":
+        content = page_list[i][0]
+
+        # 步骤 1: 使用规则计算置信度
+        confidence = _calculate_toc_confidence(content)
+
+        # 步骤 2: 根据置信度决定是否使用 LLM
+        is_toc_page = False
+
+        if confidence >= 0.7:  # 高置信度：直接使用规则结果
+            is_toc_page = True
+            rule_based_count += 1
             if logger:
-                logger.info(f"Page {i} has toc")
+                logger.info(f"Page {i}: TOC detected (rule-based, confidence={confidence:.2f})")
+        elif confidence >= 0.3:  # 中等置信度：使用 LLM 确认
+            detected_result = await toc_detector_single_page(
+                content=content,
+                llm_client=llm_client,
+            )
+            is_toc_page = (detected_result == "yes")
+            llm_confirm_count += 1
+            if logger:
+                logger.info(f"Page {i}: TOC {'found' if is_toc_page else 'not found'} (LLM confirmed, confidence={confidence:.2f})")
+        else:  # 低置信度：不是目录页
+            if logger:
+                logger.debug(f"Page {i}: Not a TOC page (confidence={confidence:.2f})")
+            # 如果已经找到过目录页，说明目录结束了
+            if toc_page_list:
+                break
+            i += 1
+            continue
+
+        if is_toc_page:
             toc_page_list.append(i)
-            last_page_is_yes = True
-        elif detected_result == "no" and last_page_is_yes:
+        elif toc_page_list:  # 之前找到过目录，现在不是了，说明目录结束
             if logger:
-                logger.info(f"Found the last page with toc: {i - 1}")
+                logger.info(f"Found the last TOC page: {i - 1}")
             break
+
         i += 1
 
     if not toc_page_list and logger:
         logger.info("No toc found")
+
+    if logger:
+        logger.info(f"TOC detection summary: {rule_based_count} rule-based, {llm_confirm_count} LLM-confirmed, {len(toc_page_list)} TOC pages found")
 
     return toc_page_list
 
@@ -558,7 +727,8 @@ async def add_page_number_to_toc(part, structure, llm_client=None):
         fill_prompt_seq
         + f"\n\nCurrent Partial Document:\n{part}\n\nGiven Structure\n{json.dumps(structure, indent=2)}\n"
     )
-    current_json_raw = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    current_json_raw = await llm_client.chat_async(prompt, context="目录阶段-页码修复")
     json_result = extract_json(current_json_raw)
 
     for item in json_result:
@@ -618,7 +788,8 @@ async def generate_toc_continue(toc_content, part, llm_client=None):
         + "\nPrevious tree structure\n:"
         + json.dumps(toc_content, indent=2)
     )
-    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt)
+    # 添加上下文信息
+    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt, context="目录阶段-续接生成")
     if finish_reason == "finished":
         return extract_json(response)
     else:
@@ -631,7 +802,12 @@ async def generate_toc_init(part, llm_client=None):
         raise ValueError("llm_client is required for generate_toc_init")
 
     print("start generate_toc_init")
-    prompt = """
+
+    # 计算文本长度并添加到日志
+    part_length = len(part)
+    estimated_pages = part_length // 2000  # 粗略估算页数
+
+    prompt = f"""
     You are an expert in extracting hierarchical tree structure, your task is to generate the tree structure of the document.
 
     The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
@@ -656,7 +832,10 @@ async def generate_toc_init(part, llm_client=None):
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\nGiven text\n:" + part
-    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt)
+
+    # 添加上下文信息：显示文本大小和估算页数
+    context = f"目录阶段-初始生成(文本{part_length}字符,约{estimated_pages}页)"
+    response, finish_reason = await llm_client.chat_with_finish_reason_async(prompt=prompt, context=context)
 
     if finish_reason == "finished":
         return extract_json(response)

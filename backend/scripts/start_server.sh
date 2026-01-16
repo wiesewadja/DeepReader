@@ -28,6 +28,15 @@ if [ -f ".env" ]; then
     export $(cat .env | grep -v '^#' | xargs)
 fi
 
+# 检查并释放 6088 端口
+PORT=6088
+if lsof -ti:$PORT > /dev/null 2>&1; then
+    echo "端口 $PORT 已被占用，正在释放..."
+    lsof -ti:$PORT | xargs kill -9 2>/dev/null || true
+    sleep 1
+    echo "端口 $PORT 已释放"
+fi
+
 # 启动服务器
 echo "正在启动服务器..."
 echo "服务地址: http://localhost:6088"

@@ -3,12 +3,6 @@ FastAPI 端点测试
 测试所有 API 路由的功能
 """
 import pytest
-import sys
-from pathlib import Path
-
-# 添加 src 目录到 Python 路径
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from fastapi.testclient import TestClient
 from deeppdf.main import app
 

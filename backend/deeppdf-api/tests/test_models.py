@@ -3,12 +3,6 @@ Pydantic 模型测试
 测试请求/响应模型的数据验证
 """
 import pytest
-import sys
-from pathlib import Path
-
-# 添加 src 目录到 Python 路径
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from deeppdf.api.models import (
     IndexRequest, IndexResponse,
     QueryRequest, QueryResponse,

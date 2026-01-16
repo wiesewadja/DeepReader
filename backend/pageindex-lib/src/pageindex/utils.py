@@ -668,7 +668,10 @@ async def generate_node_summary(node, llm_client=None):
 
     Directly return the description, do not include any other text.
     """
-    response = await llm_client.chat_async(prompt)
+    # 添加上下文信息
+    title = node.get("title", "未知章节")
+    context = f"摘要生成-章节'{title[:30]}...'"
+    response = await llm_client.chat_async(prompt, context=context)
     return response
 
 
@@ -716,7 +719,8 @@ def generate_doc_description(structure, llm_client=None):
 
     Directly return the description, do not include any other text.
     """
-    response = llm_client.chat(prompt)
+    # 添加上下文信息
+    response = llm_client.chat(prompt, context="文档描述生成")
     return response
 
 
