@@ -32,6 +32,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 从新模块导入
 from .pdf import PDFParser
+from .pdf.parser import get_text_of_pages
+from .pdf.tokens import count_tokens
 from .llm import UnifiedLLM
 from .llm_provider import get_provider as get_llm_provider_legacy
 from .core import ConfigLoader, ValidationError, load_config
@@ -58,8 +60,6 @@ from .json_ops import extract_json, get_json_content
 # 从 utils 导入尚未迁移的函数
 from .utils import (
     get_page_tokens,
-    count_tokens,
-    get_text_of_pages,
     get_text_of_pdf_pages,
     get_text_of_pdf_pages_with_labels,
     convert_page_to_int,
