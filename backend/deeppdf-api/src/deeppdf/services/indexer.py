@@ -14,8 +14,8 @@ from typing import Dict, Any
 from datetime import datetime
 
 from pageindex import page_index_main
-from pageindex.utils import ConfigLoader
-from pageindex.llm_provider import UnifiedLLM
+from pageindex.core import ConfigLoader
+from pageindex.llm import UnifiedLLM, get_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
@@ -229,7 +229,6 @@ def _index_pdf_sync(
         logger.info(f"[步骤 4/6] 创建 LLM 客户端...")
         llm_client_instance = None
         if require_llm and llm_api_key:
-            from pageindex.llm_provider import get_provider
             provider = get_provider(user_opt["llm_provider"])
             llm_client_instance = UnifiedLLM(provider=provider, model=opt.model)
             logger.info(f"LLM 客户端创建成功: {llm_provider}/{model}")
