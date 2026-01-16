@@ -116,6 +116,9 @@ def list_to_tree(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     root_nodes = []
 
     for item in data:
+        # 提取结构编号
+        structure = item.get("structure")
+
         node = {
             "title": item.get("title"),
             "start_index": item.get("start_index"),
