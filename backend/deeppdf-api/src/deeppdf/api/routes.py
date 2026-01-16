@@ -3,8 +3,10 @@ API 路由定义
 """
 import asyncio
 import logging
+import time
 from typing import Dict
-from fastapi import APIRouter, HTTPException, status
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, status, Request
 from .models import (
     IndexRequest, IndexResponse,
     QueryRequest, QueryResponse,
@@ -62,7 +64,7 @@ async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwarg
 
 
 @router.post("/index", response_model=IndexResponse)
-async def create_index(req: IndexRequest):
+async def create_index(req: IndexRequest, http_request: Request):
     """
     创建 PDF 索引（后台任务）
 
@@ -70,50 +72,78 @@ async def create_index(req: IndexRequest):
     使用 GET /api/indexes/{task_id} 查询任务状态。
     使用 DELETE /api/indexes/{task_id} 取消任务。
     """
-    import time
     import hashlib
     from pathlib import Path
+    from urllib.parse import urlparse
 
-    logger.info(f"[API] 收到索引请求: {req.path}")
+    request_start = time.time()
+    client_host = http_request.client.host if http_request.client else "unknown"
+
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info(f"[API请求] POST /api/index")
+    logger.info(f"[API请求] 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"[API请求] 客户端: {client_host}")
+    logger.info("=" * 60)
+    logger.info(f"[请求参数] PDF 路径: {req.path}")
 
     # 快速验证路径是否存在（同步）
     pdf_path = Path(req.path)
     if not pdf_path.exists():
-        logger.error(f"[API] 文件不存在: {req.path}")
+        logger.error(f"[API请求] ✗ 文件不存在: {req.path}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"PDF file not found: {req.path}"
         )
 
+    # 获取文件大小
+    try:
+        file_size = pdf_path.stat().st_size
+        file_size_mb = file_size / (1024 * 1024)
+        logger.info(f"[请求参数] 文件大小: {file_size_mb:.2f} MB")
+    except:
+        pass
+
     # 生成任务 ID
     task_id = f"task_{hashlib.md5(f'{req.path}{time.time()}'.encode()).hexdigest()[:12]}"
+    logger.info(f"[任务信息] 任务 ID: {task_id}")
 
     # 提取 LLM 配置参数
     llm_config = {}
+    logger.info(f"[LLM配置] 开始提取 LLM 配置参数...")
+
     if req.llm_provider is not None:
         llm_config["llm_provider"] = req.llm_provider
-        logger.info(f"[API] 使用 LLM Provider: {req.llm_provider}")
+        logger.info(f"[LLM配置]  Provider: {req.llm_provider}")
     if req.llm_model is not None:
         llm_config["model"] = req.llm_model
-        logger.info(f"[API] 使用 LLM Model: {req.llm_model}")
+        logger.info(f"[LLM配置]  Model: {req.llm_model}")
     if req.deepseek_api_key is not None:
         llm_config["api_key"] = req.deepseek_api_key
-        logger.debug(f"[API] 收到 DeepSeek API Key")
+        masked_key = f"{req.deepseek_api_key[:8]}...{req.deepseek_api_key[-4:]}"
+        logger.info(f"[LLM配置]  DeepSeek API Key: {masked_key}")
     if req.openai_api_key is not None:
         llm_config["api_key"] = req.openai_api_key
-        logger.debug(f"[API] 收到 OpenAI/SiliconFlow API Key")
+        masked_key = f"{req.openai_api_key[:8]}...{req.openai_api_key[-4:]}"
+        logger.info(f"[LLM配置]  OpenAI/SiliconFlow API Key: {masked_key}")
     if req.api_url is not None:
         llm_config["base_url"] = req.api_url
-        logger.info(f"[API] 使用自定义 API URL: {req.api_url}")
+        # 解析 URL，只显示 host
+        try:
+            parsed = urlparse(req.api_url)
+            url_display = f"{parsed.scheme}://{parsed.netloc}"
+            logger.info(f"[LLM配置]  API URL: {url_display}")
+        except:
+            logger.info(f"[LLM配置]  API URL: {req.api_url}")
     if req.max_pages_per_node is not None:
         llm_config["max_pages_per_node"] = req.max_pages_per_node
-        logger.info(f"[API] Max Pages Per Node: {req.max_pages_per_node}")
+        logger.info(f"[LLM配置]  Max Pages Per Node: {req.max_pages_per_node}")
     if req.max_tokens_per_node is not None:
         llm_config["max_tokens_per_node"] = req.max_tokens_per_node
-        logger.info(f"[API] Max Tokens Per Node: {req.max_tokens_per_node}")
+        logger.info(f"[LLM配置]  Max Tokens Per Node: {req.max_tokens_per_node}")
     if req.if_add_node_summary is not None:
         llm_config["if_add_node_summary"] = req.if_add_node_summary
-        logger.info(f"[API] Add Node Summary: {req.if_add_node_summary}")
+        logger.info(f"[LLM配置]  Add Node Summary: {req.if_add_node_summary}")
 
     # 初始化任务状态
     _running_tasks[task_id] = {
@@ -125,12 +155,22 @@ async def create_index(req: IndexRequest):
     }
 
     # 创建异步任务
+    logger.info(f"[任务信息] 创建后台任务...")
+
     task = asyncio.create_task(
         _run_index_task(task_id, req.path, str(settings.base_dir), **llm_config)
     )
     _running_tasks[task_id]["task"] = task
 
-    logger.info(f"[API] 后台索引任务已创建: {task_id}")
+    # 响应时间统计
+    response_time = time.time() - request_start
+
+    logger.info(f"[任务信息] ✓ 后台索引任务已创建")
+    logger.info(f"[API响应] 任务 ID: {task_id}")
+    logger.info(f"[API响应] 状态: pending")
+    logger.info(f"[API响应] 响应时间: {response_time*1000:.1f} ms")
+    logger.info("=" * 60)
+    logger.info("")
 
     # 立即返回任务信息
     return IndexResponse(

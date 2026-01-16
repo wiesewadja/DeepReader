@@ -11,6 +11,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Any
+from datetime import datetime
 
 from pageindex import page_index_main
 from pageindex.utils import ConfigLoader
@@ -240,61 +241,121 @@ def _index_pdf_sync(
         if if_add_node_summary == "yes":
             logger.info(f"  - 生成摘要 (使用 {llm_provider}/{model})")
 
+        # 显示解析开始时间
         parse_start = time.time()
-        tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client_instance)
-        parse_time = time.time() - parse_start
-        logger.info(f"PDF 解析完成 (耗时: {parse_time:.2f} 秒)")
+        logger.info(f"[PDF解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}")
+        logger.info(f"[PDF解析] 输入文件: {pdf_path_obj.name}")
+        logger.info(f"[PDF解析] 配置参数: to_check={toc_check_pages}, max_pages={max_pages_per_node}, max_tokens={max_tokens_per_node}")
 
-        if not tree_result or not tree_result.get("structure"):
-            logger.error("PageIndex 返回空结构")
+        try:
+            tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client_instance)
+        except Exception as e:
+            logger.error(f"[PDF解析] 失败: {type(e).__name__}: {str(e)}")
+            logger.error(f"[PDF解析] 耗时: {time.time() - parse_start:.2f} 秒")
+            raise
+
+        parse_time = time.time() - parse_start
+        logger.info(f"[PDF解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}")
+        logger.info(f"[PDF解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
+
+        if not tree_result:
+            logger.error("[PDF解析] PageIndex 返回 None")
+            raise Exception("PageIndex returned None")
+
+        # 记录返回结果的详细信息
+        logger.debug(f"[PDF解析] 原始结果键: {list(tree_result.keys())}")
+        for key, value in tree_result.items():
+            if key != "structure" and key != "tree":
+                logger.debug(f"[PDF解析] {key}: {value}")
+
+        if not tree_result.get("structure"):
+            logger.error("[PDF解析] structure 字段为空")
+            # 检查是否有其他字段
+            if "error" in tree_result:
+                logger.error(f"[PDF解析] 错误信息: {tree_result['error']}")
             raise Exception("PageIndex returned empty tree structure")
 
-        logger.info(f"树状结构节点数: {len(tree_result.get('structure', []))}")
+        structure_list = tree_result.get("structure", [])
+        logger.info(f"[PDF解析] 顶层节点数: {len(structure_list)}")
 
         # 从树状结构提取章节节点
-        logger.info("提取章节节点...")
+        logger.info("=" * 50)
+        logger.info("[章节提取] 开始从树状结构提取节点")
+        logger.info("=" * 50)
+
         section_nodes = []
-        for top_level_node in tree_result.get("structure", []):
+        for idx, top_level_node in enumerate(structure_list):
+            node_title = top_level_node.get('title', f'Unknown_{idx}')
+            logger.debug(f"[章节提取] 处理顶层节点 {idx + 1}: {node_title}")
+            logger.debug(f"  - 起始页: {top_level_node.get('start_index', 'Unknown')}")
+            logger.debug(f"  - 结束页: {top_level_node.get('end_index', 'Unknown')}")
+            logger.debug(f"  - 节点ID: {top_level_node.get('node_id', 'Unknown')}")
+
             nodes = _extract_nodes_from_tree(top_level_node)
             section_nodes.extend(nodes)
             if nodes:
-                logger.debug(f"  - {top_level_node.get('title', 'Unknown')}: {len(nodes)} 个节点")
+                logger.info(f"  ✓ {node_title}: {len(nodes)} 个节点")
+            else:
+                logger.warning(f"  ⚠ {node_title}: 未提取到节点")
 
-        logger.info(f"共提取 {len(section_nodes)} 个章节节点")
+        logger.info("=" * 50)
+        logger.info(f"[章节提取] 共提取 {len(section_nodes)} 个章节节点")
+        logger.info("=" * 50)
 
         if not section_nodes:
             logger.error("未能提取任何章节节点")
             raise Exception("No section nodes extracted from tree structure")
 
         # 显示节点详情
-        for i, node in enumerate(section_nodes[:5]):  # 显示前5个节点
-            logger.debug(f"  节点 {i+1}: {node['metadata'].get('section', 'Unknown')} (页码: {node['metadata'].get('page', 'Unknown')})")
+        logger.info("-" * 50)
+        logger.info(f"[节点详情] 前 5 个节点信息:")
+        for i, node in enumerate(section_nodes[:5]):
+            section = node['metadata'].get('section', 'Unknown')
+            page = node['metadata'].get('page', 'Unknown')
+            level = node['metadata'].get('level', 0)
+            text_len = len(node['text'])
+            logger.info(f"  节点 {i+1}: {section}")
+            logger.info(f"    - 页码: {page}, 层级: {level}, 文本长度: {text_len} 字符")
+
         if len(section_nodes) > 5:
-            logger.debug(f"  ... 还有 {len(section_nodes) - 5} 个节点")
+            logger.info(f"  ... 还有 {len(section_nodes) - 5} 个节点")
+        logger.info("-" * 50)
 
         # 存储到 ChromaDB
-        logger.info(f"[步骤 6/6] 存储到向量数据库...")
+        logger.info("=" * 50)
+        logger.info(f"[向量存储] 开始存储到 ChromaDB")
+        logger.info("=" * 50)
+
         storage_dir_path = Path(storage_dir)
         chroma_dir = storage_dir_path / "chroma"
         chroma_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"ChromaDB 目录: {chroma_dir}")
+        logger.info(f"[向量存储] ChromaDB 目录: {chroma_dir}")
 
+        vector_start = time.time()
         store = ChromaStore(persist_directory=str(chroma_dir))
+
+        # 创建集合
+        logger.info(f"[向量存储] 创建集合: {index_id}")
+        collection_metadata = {
+            "pdf_name": pdf_path_obj.name,
+            "pdf_path": str(pdf_path_obj.absolute()),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "node_count": len(section_nodes),
+            "indexing_method": "pageindex_tree",
+            "llm_enabled": require_llm
+        }
+        logger.debug(f"[向量存储] 集合元数据: {collection_metadata}")
+
         store.create_collection(
             name=index_id,
-            metadata={
-                "pdf_name": pdf_path_obj.name,
-                "pdf_path": str(pdf_path_obj.absolute()),
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "node_count": len(section_nodes),
-                "indexing_method": "pageindex_tree",
-                "llm_enabled": require_llm
-            }
+            metadata=collection_metadata
         )
-        logger.info(f"创建集合: {index_id}")
+        logger.info(f"[向量存储] 集合创建成功")
 
         # 准备文档
-        logger.info("准备向量化文档...")
+        logger.info("[向量存储] 准备向量化文档...")
+        doc_start = time.time()
+
         documents = [
             {
                 "id": node["id"],
@@ -307,41 +368,70 @@ def _index_pdf_sync(
             for node in section_nodes
         ]
 
-        # 计算总文本长度
+        # 计算总文本长度和统计信息
         total_text_length = sum(len(doc["text"]) for doc in documents)
-        logger.info(f"总文本长度: {total_text_length:,} 字符")
+        avg_text_length = total_text_length // len(documents) if documents else 0
 
+        logger.info(f"[向量存储] 文档统计:")
+        logger.info(f"  - 文档数量: {len(documents)}")
+        logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
+        logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
+
+        # 添加文档到向量数据库
+        logger.info("[向量存储] 正在向量化并添加到数据库...")
+        embed_start = time.time()
         store.add_documents(index_id, documents)
-        logger.info(f"向量存储完成: {len(documents)} 个文档")
+        embed_time = time.time() - embed_start
+
+        vector_time = time.time() - vector_start
+        logger.info(f"[向量存储] 向量存储完成:")
+        logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
+        logger.info(f"  - 存储总耗时: {vector_time:.2f} 秒")
+        logger.info(f"  - 存储文档数: {len(documents)}")
 
         # 保存索引元数据
-        logger.info("保存索引元数据...")
+        logger.info("=" * 50)
+        logger.info("[元数据] 保存索引元数据...")
+
         index_dir = storage_dir_path / "indexes"
         index_dir.mkdir(parents=True, exist_ok=True)
 
         metadata_path = index_dir / f"{index_id}.json"
-        with open(metadata_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "id": index_id,
-                "pdf_name": pdf_path_obj.name,
-                "pdf_path": str(pdf_path_obj.absolute()),
-                "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "node_count": len(section_nodes),
-                "indexing_method": "pageindex_tree",
-                "llm_enabled": require_llm,
-                "tree_structure": tree_result,
-                "sections": section_nodes
-            }, f, ensure_ascii=False, indent=2)
-        logger.info(f"元数据已保存: {metadata_path}")
+        metadata_content = {
+            "id": index_id,
+            "pdf_name": pdf_path_obj.name,
+            "pdf_path": str(pdf_path_obj.absolute()),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "node_count": len(section_nodes),
+            "indexing_method": "pageindex_tree",
+            "llm_enabled": require_llm,
+            "tree_structure": tree_result,
+            "sections": section_nodes
+        }
 
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata_content, f, ensure_ascii=False, indent=2)
+
+        metadata_size = metadata_path.stat().st_size / 1024  # KB
+        logger.info(f"[元数据] 已保存: {metadata_path}")
+        logger.info(f"[元数据] 文件大小: {metadata_size:.2f} KB")
+
+        # 最终总结
         total_time = time.time() - start_time
-        logger.info("="*60)
-        logger.info(f"[索引完成] 成功!")
-        logger.info(f"  - 索引 ID: {index_id}")
-        logger.info(f"  - 节点数: {len(section_nodes)}")
-        logger.info(f"  - PDF 名称: {pdf_path_obj.name}")
-        logger.info(f"  - 总耗时: {total_time:.2f} 秒")
-        logger.info("="*60)
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info(f"[索引完成] ✓ 索引创建成功!")
+        logger.info("=" * 60)
+        logger.info(f"  索引信息:")
+        logger.info(f"    - 索引 ID: {index_id}")
+        logger.info(f"    - PDF 名称: {pdf_path_obj.name}")
+        logger.info(f"    - 节点数量: {len(section_nodes)}")
+        logger.info(f"  时间统计:")
+        logger.info(f"    - PDF 解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)")
+        logger.info(f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)")
+        logger.info(f"    - 总耗时: {total_time:.2f} 秒 ({total_time/60:.1f} 分钟)")
+        logger.info("=" * 60)
+        logger.info("")
 
         return {
             "status": "success",
@@ -353,12 +443,19 @@ def _index_pdf_sync(
 
     except Exception as e:
         total_time = time.time() - start_time
-        logger.error("="*60)
-        logger.error(f"[索引失败] 错误: {str(e)}")
-        logger.error(f"  - PDF 文件: {pdf_path}")
-        logger.error(f"  - 耗时: {total_time:.2f} 秒")
-        logger.error(f"  - 异常类型: {type(e).__name__}")
-        logger.error("="*60, exc_info=True)
+        logger.error("")
+        logger.error("=" * 60)
+        logger.error(f"[索引失败] ✗ 索引创建失败")
+        logger.error("=" * 60)
+        logger.error(f"  错误信息:")
+        logger.error(f"    - 异常类型: {type(e).__name__}")
+        logger.error(f"    - 错误内容: {str(e)}")
+        logger.error(f"  上下文信息:")
+        logger.error(f"    - PDF 文件: {pdf_path}")
+        logger.error(f"    - 耗时: {total_time:.2f} 秒")
+        logger.error("=" * 60)
+        logger.error("", exc_info=True)
+
         return {
             "status": "error",
             "error": f"Unexpected error: {str(e)}"
