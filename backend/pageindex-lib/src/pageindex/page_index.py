@@ -198,7 +198,34 @@ async def toc_detector_single_page(content, llm_client=None):
         raise ValueError("llm_client is required for toc_detector_single_page")
 
     prompt = f"""
-    Your job is to detect if there is a table of content provided in the given text.
+    Your job is to detect if there is a table of contents in the given text.
+
+    # Chinese PDF Table of Contents Characteristics (中文PDF目录特征)
+
+    ## Common Keywords (常见关键词)
+    - Direct indicators: 目录, 目　录 (full-width space), Contents, 目录表
+    - Secondary indicators: 篇目, 章节, 索引
+
+    ## Section Numbering Formats (章节编号格式)
+    Chinese documents may use mixed numbering systems:
+    - Chinese numerals: 第一章, 第二章, 第三章
+    - Arabic numerals: 1. 第一章, 2. 第二章, 1.1, 1.2
+    - Mixed formats: 第一章 1.1, 一、 (一) 1.
+
+    ## Page Number Formats (页码格式)
+    - Chinese style: 第5页, 第 5 页, 五
+    - Arabic style: P5, Page 5, 5
+    - Symbols: .............. 5 (dot leaders)
+
+    ## Exclusions (排除项)
+    The following are NOT table of contents:
+    - 摘要, Abstract
+    - 图表目录, List of Figures/Tables
+    - 符号说明, Notation List
+    - 参考文献, References
+    - 致谢, Acknowledgments
+
+    ---
 
     Given text: {content}
 
@@ -208,8 +235,7 @@ async def toc_detector_single_page(content, llm_client=None):
         "toc_detected": "<yes or no>",
     }}
 
-    Directly return the final JSON structure. Do not output anything else.
-    Please note: abstract,summary, notation list, figure list, table list, etc. are not table of contents."""
+    Directly return the final JSON structure. Do not output anything else."""
 
     # 添加上下文信息
     response = await llm_client.chat_async(prompt, context="目录检测-单页")
@@ -368,24 +394,68 @@ async def toc_index_extractor(toc, content, llm_client=None):
 
     print("start toc_index_extractor")
     tob_extractor_prompt = """
-    You are given a table of contents in a json format and several pages of a document, your job is to add the physical_index to the table of contents in the json format.
+    You are given a table of contents in JSON format and document pages with physical location tags.
+    Your job is to match each TOC entry to its physical page location.
 
-    The provided pages contains tags like <physical_index_X> and <physical_index_X> to indicate the physical location of the page X.
+    # Physical Page Tags (物理页码标签)
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    Document pages contain tags like:
+    - `<physical_index_1>` - Start of page 1
+    - `<physical_index_5>` - Start of page 5
 
-    The response should be in the following JSON format:
+    These tags mark the exact location where each page begins.
+
+    # Chinese Title Matching (中文标题匹配)
+
+    ## Exact Match (精确匹配)
+    Match the title exactly as it appears in the document.
+
+    ## Fuzzy Match Guidelines (模糊匹配指南)
+
+    When exact match is not found, consider these variations:
+
+    1. **Punctuation differences**
+       - TOC: "第一章：研究背景"
+       - Page: "第一章 研究背景" or "第一章. 研究背景"
+
+    2. **Minor wording differences**
+       - TOC: "1.1 研究意义"
+       - Page: "1.1 研究的目的与意义" (may match if context is clear)
+
+    3. **Synonym variations (谨慎处理)**
+       - TOC: "引言"
+       - Page: "绪论" or "前言"
+       Only match if confident (same context, same position in TOC)
+
+    4. **Number format differences**
+       - TOC: "第一章"
+       - Page: "第 1 章" or "第1章"
+
+    ## Matching Strategy (匹配策略)
+
+    1. **First choice**: Exact match
+    2. **Second choice**: Match after removing punctuation differences
+    3. **Last choice**: Match based on structure hierarchy
+
+    ## Important Notes (重要说明)
+
+    - Only add physical_index to entries found in the provided pages
+    - If not found, do NOT add physical_index (omit the field)
+    - When title appears multiple times, use the FIRST occurrence
+    - Keep the tag format exactly: `<physical_index_X>`
+
+    ---
+
+    Response format:
     [
-        {
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>,
-            "physical_index": "<physical_index_X>" (keep the format)
-        },
+        {{
+            "structure": <structure index> (string),
+            "title": <title> (string),
+            "physical_index": "<physical_index_X>" or omit (string)
+        }},
         ...
     ]
 
-    Only add the physical_index to the sections that are in the provided pages.
-    If the section is not in the provided pages, do not add the physical_index to it.
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = (
@@ -407,23 +477,67 @@ async def toc_transformer(toc_content, llm_client=None):
 
     print("start toc_transformer")
     init_prompt = """
-    You are given a table of contents, You job is to transform the whole table of content into a JSON format included table_of_contents.
+    You are given a table of contents. Your job is to transform it into JSON format.
 
-    structure is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    # Structure Index System (结构索引系统)
 
-    The response should be in the following JSON format:
-    {
-    table_of_contents: [
-        {
-            "structure": <structure index, "x.x.x" or None> (string),
-            "title": <title of the section>,
-            "page": <page number or None>,
-        },
+    The structure field represents the hierarchy using dot-separated numbers.
+
+    ## Conversion Rules (转换规则)
+
+    ### Chinese Numerals → Arabic Numerals
+    - 一、二、三 → 1, 2, 3
+    - 第X章、第X节 → X
+    - （一）、（二） → 1.1, 1.2 (when nested)
+    - 一、 (一) 1. → 1, 1.1, 1.1.1
+
+    ### Hierarchy Examples (层级示例)
+
+    Chinese TOC → JSON structure:
+    ```
+    第一篇  概论
+      第一章  背景
+        1.1  意义
+        1.2  内容
+      第二章  方法
+    第二篇  实验
+    ```
+
+    ↓
+
+    ```json
+    [
+      {"structure": "1", "title": "概论"},
+      {"structure": "1.1", "title": "背景"},
+      {"structure": "1.1.1", "title": "意义"},
+      {"structure": "1.1.2", "title": "内容"},
+      {"structure": "1.2", "title": "方法"},
+      {"structure": "2", "title": "实验"}
+    ]
+    ```
+
+    ## Special Cases (特殊情况)
+
+    1. **No explicit numbering**: Assign structure based on indentation level
+    2. **Mixed numbering**: Standardize to Arabic numerals (1, 1.1, 1.1.1)
+    3. **Preface/Appendix**: Use "0" for preface, "A", "B" for appendices
+    4. **Pageless entries**: Set page to null
+
+    ## Response Format
+
+    {{
+      "table_of_contents": [
+        {{
+          "structure": <structure index like "1" or "1.1.1", or null> (string),
+          "title": <title of the section> (string),
+          "page": <page number as integer, or null> (integer or null),
+        }},
         ...
-        ],
-    }
-    You should transform the full table of contents in one go.
-    Directly return the final JSON structure, do not output anything else. """
+      ],
+    }}
+
+    Transform the full table of contents in one go.
+    Directly return the final JSON structure. Do not output anything else. """
 
     prompt = init_prompt + "\n Given table of contents\n:" + toc_content
     # 添加上下文信息
