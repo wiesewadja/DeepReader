@@ -917,8 +917,49 @@ def add_page_offset_to_toc_json(data, offset):
 
 
 def page_list_to_group_text(
-    page_contents, token_lengths, max_tokens=20000, overlap_page=1
+    page_contents, token_lengths, max_tokens=None, overlap_page=None
 ):
+    """
+    将页面内容按 token 数量分组
+
+    将大量页面内容分成适合 LLM 处理的小组，避免超过 token 限制。
+
+    参数:
+        page_contents: 页面内容列表
+        token_lengths: 每页的 token 数量列表
+        max_tokens: 每组最大 token 数 (可选，默认从配置读取)
+        overlap_page: 组与组之间的重叠页数 (可选，默认从配置读取)
+
+    返回:
+        分组后的文本列表
+
+    配置读取:
+        - max_tokens: 从 config.page_group_max_tokens 读取，默认 20000
+        - overlap_page: 从 config.page_group_overlap_pages 读取，默认 1
+
+    使用示例:
+        >>> groups = page_list_to_group_text(pages, tokens)
+        >>> print(f"分成 {len(groups)} 组")
+    """
+    # ============================================================
+    # 从配置读取默认值
+    # ============================================================
+    if max_tokens is None:
+        try:
+            from .core.config import load_config
+            config = load_config()
+            max_tokens = getattr(config, "page_group_max_tokens", 20000)
+        except Exception:
+            max_tokens = 20000
+
+    if overlap_page is None:
+        try:
+            from .core.config import load_config
+            config = load_config()
+            overlap_page = getattr(config, "page_group_overlap_pages", 1)
+        except Exception:
+            overlap_page = 1
+
     num_tokens = sum(token_lengths)
 
     if num_tokens <= max_tokens:

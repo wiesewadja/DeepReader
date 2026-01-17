@@ -321,7 +321,14 @@ class ConfigLoader:
         # ============================================================
         # 步骤4: 创建 UnifiedLLM 实例
         # ============================================================
-        model = getattr(cfg, "model", "deepseek-chat")
+        # model 是必需配置项，不应该有默认值
+        if not hasattr(cfg, "model") or not cfg.model:
+            raise ValidationError(
+                "缺少必需的 model 配置",
+                parameter="model"
+            )
+
+        model = cfg.model
         llm_client = UnifiedLLM(provider=provider, model=model)
 
         logger.info(f"LLM 客户端创建成功: model={model}, provider={type(provider).__name__}")

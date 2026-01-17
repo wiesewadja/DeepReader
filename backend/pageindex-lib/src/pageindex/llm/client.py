@@ -105,7 +105,7 @@ class UnifiedLLM:
         self,
         provider: LLMProvider,
         model: str,
-        max_retries: int = 10,
+        max_retries: Optional[int] = None,
     ):
         """
         初始化 UnifiedLLM 客户端
@@ -113,7 +113,7 @@ class UnifiedLLM:
         参数:
             provider: LLM Provider 实例
             model: 模型名称
-            max_retries: 最大重试次数 (默认 10)
+            max_retries: 最大重试次数 (可选，默认从配置文件读取)
 
         异常:
             ValueError: 如果参数无效
@@ -131,6 +131,27 @@ class UnifiedLLM:
 
         self.provider = provider
         self.model = model
+
+        # ============================================================
+        # 从配置读取默认值
+        # ============================================================
+        try:
+            from ..core.config import load_config
+            config = load_config()
+            self._default_max_retries = getattr(config, "llm_max_retries", 10)
+            self._default_temperature = getattr(config, "llm_temperature", 0)
+        except Exception:
+            # 配置加载失败时的默认值
+            self._default_max_retries = 10
+            self._default_temperature = 0
+
+        # ============================================================
+        # 确定 max_retries 值
+        # ============================================================
+        # 优先级: 参数 > 配置文件 > 默认值
+        if max_retries is None:
+            max_retries = self._default_max_retries
+
         self.max_retries = max_retries
 
         # 内部状态
@@ -139,7 +160,8 @@ class UnifiedLLM:
 
         logger.debug(
             f"UnifiedLLM 初始化: model={model}, "
-            f"provider={type(provider).__name__}, max_retries={max_retries}"
+            f"provider={type(provider).__name__}, max_retries={max_retries}, "
+            f"default_temperature={self._default_temperature}"
         )
 
     # ============================================================
@@ -299,7 +321,7 @@ class UnifiedLLM:
         self,
         prompt: str,
         chat_history: Optional[List[dict]] = None,
-        temperature: float = 0,
+        temperature: Optional[float] = None,
         context: Optional[str] = None,
     ) -> str:
         """
@@ -309,7 +331,7 @@ class UnifiedLLM:
             prompt: 用户提示词
             chat_history: 对话历史 (可选)
                 格式: [{"role": "...", "content": "..."}]
-            temperature: 温度参数 (0-2，默认 0)
+            temperature: 温度参数 (0-2，可选，默认从配置文件读取)
             context: 额外的上下文信息 (用于日志)
 
         返回:
@@ -333,6 +355,10 @@ class UnifiedLLM:
             >>> # 带上下文
             >>> response = llm_client.chat("分析文本", context="文档索引")
         """
+        # 使用配置的默认 temperature
+        if temperature is None:
+            temperature = self._default_temperature
+
         # 构建消息列表
         if chat_history:
             messages = chat_history.copy()
@@ -371,7 +397,7 @@ class UnifiedLLM:
         self,
         prompt: str,
         chat_history: Optional[List[dict]] = None,
-        temperature: float = 0,
+        temperature: Optional[float] = None,
         context: Optional[str] = None,
     ) -> Tuple[str, str]:
         """
@@ -407,7 +433,7 @@ class UnifiedLLM:
     async def chat_async(
         self,
         prompt: str,
-        temperature: float = 0,
+        temperature: Optional[float] = None,
         context: Optional[str] = None,
     ) -> str:
         """
@@ -415,7 +441,7 @@ class UnifiedLLM:
 
         参数:
             prompt: 用户提示词
-            temperature: 温度参数 (默认 0)
+            temperature: 温度参数 (可选，默认从配置文件读取)
             context: 额外的上下文信息
 
         返回:
@@ -427,6 +453,10 @@ class UnifiedLLM:
         使用示例:
             >>> response = await llm_client.chat_async("分析这段文本")
         """
+        # 使用配置的默认 temperature
+        if temperature is None:
+            temperature = self._default_temperature
+
         messages = [{"role": "user", "content": prompt}]
 
         # 记录请求
@@ -460,7 +490,7 @@ class UnifiedLLM:
         self,
         prompt: str,
         chat_history: Optional[List[dict]] = None,
-        temperature: float = 0,
+        temperature: Optional[float] = None,
         context: Optional[str] = None,
     ) -> Tuple[str, str]:
         """
@@ -471,7 +501,7 @@ class UnifiedLLM:
         参数:
             prompt: 用户提示词
             chat_history: 对话历史 (可选)
-            temperature: 温度参数
+            temperature: 温度参数 (可选，默认从配置文件读取)
             context: 额外的上下文信息
 
         返回:
@@ -483,6 +513,10 @@ class UnifiedLLM:
         使用示例:
             >>> response, reason = await llm_client.chat_with_finish_reason_async("Hello")
         """
+        # 使用配置的默认 temperature
+        if temperature is None:
+            temperature = self._default_temperature
+
         # 构建消息列表
         if chat_history:
             messages = chat_history.copy()
