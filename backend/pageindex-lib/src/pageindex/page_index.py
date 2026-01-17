@@ -95,19 +95,54 @@ async def check_title_appearance(item, page_list, start_index=1, llm_client=None
     page_text = page_list[page_number - start_index][0]
 
     prompt = f"""
-    Your job is to check if the given section appears or starts in the given page_text.
+    Your job is to check if the given section title appears or starts in the given page_text.
 
-    Note: do fuzzy matching, ignore any space inconsistency in the page_text.
+    # Chinese Title Matching (中文标题匹配)
 
-    The given section title is {title}.
-    The given page_text is {page_text}.
+    ## Exact Match (精确匹配)
+    The title appears exactly as given.
+
+    ## Fuzzy Match Guidelines (模糊匹配指南)
+
+    For Chinese documents, consider these variations as a match:
+
+    1. **Punctuation differences**
+       - TOC: "第一章：研究背景"
+       - Page: "第一章 研究背景" or "第一章. 研究背景"
+       - Full-width vs half-width: ：(U+FF1A) vs :(U+003A)
+
+    2. **Spacing differences**
+       - TOC: "第一章  研究背景" (multiple spaces)
+       - Page: "第一章 研究背景" (single space)
+
+    3. **Number format differences**
+       - TOC: "第一章"
+       - Page: "第 1 章" or "第1章"
+
+    4. **Minor wording variations (谨慎处理)**
+       - TOC: "1.1 研究意义"
+       - Page: "1.1 研究的目的与意义"
+       Consider as match ONLY if the core title is preserved and context is clear.
+
+    ## Non-Matching Cases (不匹配情况)
+
+    DO NOT consider as a match if:
+    - The title is mentioned as a reference (e.g., "参见第一章...")
+    - Only partial match without proper context
+    - Completely different titles with similar keywords
+
+    ---
+
+    The given section title is: {title}
+
+    The given page_text is: {page_text}
 
     Reply format:
     {{
-
         "thinking": <why do you think the section appears or starts in the page_text>
         "answer": "yes or no" (yes if the section appears or starts in the page_text, no otherwise)
     }}
+
     Directly return the final JSON structure. Do not output anything else."""
 
     # 添加上下文信息：显示标题和页码
@@ -870,29 +905,62 @@ async def generate_toc_continue(toc_content, part, llm_client=None):
 
     print("start generate_toc_continue")
     prompt = """
-    You are an expert in extracting hierarchical tree structure.
-    You are given a tree structure of the previous part and the text of the current part.
-    Your task is to continue the tree structure from the previous part to include the current part.
+    You are an expert in extracting hierarchical tree structure from documents.
+    You are given the previous tree structure and need to continue it for the current document part.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    # Structure Continuation Rules (结构延续规则)
 
-    For the title, you need to extract the original title from the text, only fix the space inconsistency.
+    1. **Maintain hierarchy consistency** - Continue the structure numbering from the previous part
+   - If previous ends at "1.2", next can be "1.3" (same level) or "2" (new main section)
+   - If previous ends at "1.2.1", next can be "1.2.2" or "1.3" or "2"
 
-    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the start and end of page X.
+2. **Detect new sections** - Identify new main sections (level 1)
+   - Look for patterns like: "第二章", "2. XXX", "第二篇"
+   - Start new structure number when major section begins
 
-    For the physical_index, you need to extract the physical index of the start of the section from the text. Keep the <physical_index_X> format.
+3. **Detect subsections** - Identify nested sections
+   - Look for increased indentation or smaller headings
+   - Assign appropriate sub-number (e.g., 1.1, 1.1.1)
 
-    The response should be in the following format.
-        [
-            {
-                "structure": <structure index, "x.x.x"> (string),
-                "title": <title of the section, keep the original title>,
-                "physical_index": "<physical_index_X> (keep the format)"
-            },
-            ...
-        ]
+# Chinese Document Continuation Patterns (中文文档延续模式)
 
-    Directly return the additional part of the final JSON structure. Do not output anything else."""
+## Academic Papers
+- After "第一章 绪论" → "第二章 相关工作" (structure: "2")
+- After "1.1 研究背景" → "1.2 研究意义" (structure: "1.2")
+- After "1.2.1 方法" → "1.2.2 实验" (structure: "1.2.2")
+
+## Technical Documents
+- After "概述" → "安装指南" (structure: "2")
+- After "1. 概述" → "1.1 系统要求" → "1.2 安装步骤"
+
+## Books
+- After "第一篇" → "第二篇" (structure: "2")
+- After "第一章" → "第二章" (structure: "2" or "1.1" depending on context)
+
+# Title Extraction (标题提取)
+
+- **Keep original**: Extract title exactly as it appears
+- **Fix spacing**: Normalize multiple spaces to single
+- **Include numbering**: Preserve "第一章", "1.1", etc. in title
+- **Skip non-sections**: Ignore 摘要, 参考文献, etc.
+
+# Physical Index (物理索引)
+
+Extract the `<physical_index_X>` tag where each section starts in the current text.
+
+# Output Format
+
+Return ONLY the NEW sections from the current part (do not repeat previous sections):
+[
+    {{
+        "structure": <continue the numbering, e.g., "1.3" or "2"> (string),
+        "title": <exact title from current text> (string),
+        "physical_index": "<physical_index_X> from current text> (string)
+    }},
+    ...
+]
+
+Directly return the final JSON structure for the NEW sections only. Do not output anything else."""
 
     prompt = (
         prompt
@@ -921,28 +989,69 @@ async def generate_toc_init(part, llm_client=None):
     estimated_pages = part_length // 2000  # 粗略估算页数
 
     prompt = f"""
-    You are an expert in extracting hierarchical tree structure, your task is to generate the tree structure of the document.
+    You are an expert in extracting hierarchical tree structure from documents.
+    Your task is to generate the table of contents structure by identifying section titles and their hierarchy.
 
-    The structure variable is the numeric system which represents the index of the hierarchy section in the table of contents. For example, the first section has structure index 1, the first subsection has structure index 1.1, the second subsection has structure index 1.2, etc.
+    # Structure Index System (结构索引系统)
 
-    For the title, you need to extract the original title from the text, only fix the space inconsistency.
+    The structure field uses dot-separated numbers to represent hierarchy:
+- Level 1: "1", "2", "3" (main sections)
+- Level 2: "1.1", "1.2", "2.1" (subsections)
+- Level 3: "1.1.1", "1.1.2" (sub-subsections)
 
-    The provided text contains tags like <physical_index_X> and <physical_index_X> to indicate the start and end of page X.
+# Chinese Document Patterns (中文文档模式)
 
-    For the physical_index, you need to extract the physical index of the start of the section from the text. Keep the <physical_index_X> format.
+## Common Section Title Patterns (常见章节标题模式)
 
-    The response should be in the following format.
-        [
-            {{
-                "structure": <structure index, "x.x.x"> (string),
-                "title": <title of the section, keep the original title>,
-                "physical_index": "<physical_index_X> (keep the format)"
-            }},
+### Academic Papers (学术论文)
+- 绪论 / 引言 / 第一章 绪论
+- 文献综述 /相关工作 / 第二章 文献综述
+- 研究方法 / 第三章 方法
+- 实验设计 / 第四章 实验
+- 结果与分析 / 第五章 结果
+- 结论 / 第六章 结论
+- 参考文献 / 致谢
 
-        ],
+### Technical Documents (技术文档)
+- 概述 / 简介
+- 快速开始 / 安装指南
+- 详细说明 / 使用指南
+- API 参考 / 配置说明
+- 常见问题 / 故障排除
 
+### Books (书籍)
+- 第一篇 / 第二篇 (parts)
+- 第一章 / 第二章 (chapters)
+- 第一节 / 第二节 (sections)
 
-    Directly return the final JSON structure. Do not output anything else."""
+## Title Extraction Rules (标题提取规则)
+
+1. **Keep original title** - Extract exactly as it appears in the document
+2. **Fix spacing only** - Normalize multiple spaces to single space
+3. **Include numbering** - Keep "第一章", "1.1", etc. in the title
+4. **Skip non-sections** - Ignore: 摘要, Abstract, 参考文献, 目录, etc.
+
+## Physical Index Tags (物理索引标签)
+
+The text contains tags marking page boundaries:
+- `<physical_index_5>` marks the start of page 5
+- `<physical_index_10>` marks the start of page 10
+
+Extract the physical_index where each section actually starts.
+
+## Response Format
+
+Return a JSON array of sections:
+[
+    {{
+        "structure": <hierarchy index like "1" or "1.1.1"> (string),
+        "title": <exact title from document, preserve spacing> (string),
+        "physical_index": "<physical_index_X> where section starts> (string)
+    }},
+    ...
+]
+
+Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\nGiven text\n:" + part
 
