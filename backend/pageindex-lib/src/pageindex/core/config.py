@@ -88,8 +88,8 @@ class ConfigLoader:
             yaml.YAMLError: 如果 YAML 格式错误
         """
         if default_path is None:
-            # 默认使用模块目录下的 config.yaml
-            default_path = Path(__file__).parent / "config.yaml"
+            # 默认使用 pageindex 模块目录下的 config.yaml
+            default_path = Path(__file__).parent.parent / "config.yaml"
 
         self._config_path = Path(default_path)
         self._default_dict = self._load_yaml(self._config_path)
