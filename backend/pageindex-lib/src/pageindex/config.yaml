@@ -4,6 +4,11 @@
 # LLM 模型配置
 model: "deepseek-chat"  # DeepSeek 模型 (deepseek-chat 或 deepseek-coder)
 
+# Token 计数模型配置
+# 用于 PDF 解析时计算页面 token 数量
+# 注意: 只使用 tiktoken 本地计算，不需要 API key
+token_model: "gpt-4o"  # Token 计数模型 (gpt-4o, gpt-4, gpt-3.5-turbo 等)
+
 # PDF 解析配置
 toc_check_page_num: 20  # TOC 检查页数
 max_page_num_each_node: 10  # 每节点最大页数

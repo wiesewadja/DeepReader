@@ -81,7 +81,7 @@ class PDFParser:
         self,
         default_parser: str = "pypdf",
         fallback_enabled: bool = True,
-        model: str = "gpt-4o-2024-11-20",
+        model: Optional[str] = None,
     ):
         """
         初始化 PDF 解析器
@@ -89,7 +89,9 @@ class PDFParser:
         参数:
             default_parser: 默认解析器，可选 "pypdf" 或 "PyMuPDF"
             fallback_enabled: 是否启用自动回退机制
-            model: Token 计数使用的模型名称
+            model: Token 计数使用的模型名称 (可选)
+                    - 如果为 None，从配置文件读取
+                    - 如果配置文件也没有，使用默认值 "gpt-4o"
 
         异常:
             ValueError: 如果解析器名称不支持
@@ -106,11 +108,26 @@ class PDFParser:
 
         self.default_parser = default_parser
         self.fallback_enabled = fallback_enabled
+
+        # ============================================================
+        # 确定 Token 计数模型
+        # ============================================================
+        # 优先级: 参数 > 配置文件 > 默认值
+        if model is None:
+            # 尝试从配置文件读取
+            try:
+                from ..core.config import load_config
+                config = load_config()
+                model = getattr(config, "token_model", "gpt-4o")
+            except Exception:
+                # 配置加载失败，使用默认值
+                model = "gpt-4o"
+
         self.model = model
 
         logger.debug(
             f"PDFParser 初始化: parser={default_parser}, "
-            f"fallback={fallback_enabled}"
+            f"fallback={fallback_enabled}, token_model={model}"
         )
 
     def parse(
