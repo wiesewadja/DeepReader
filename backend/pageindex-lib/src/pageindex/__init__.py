@@ -52,9 +52,6 @@ from .page_index import (
 # Markdown 处理
 from .page_index_md import md_to_tree
 
-# LLM 相关 (保留向后兼容)
-from .llm_provider import LLMProvider, LLMProviderFactory, UnifiedLLM
-
 # 新模块 (用于高级用法)
 from .core import (
     PageIndexError,
@@ -74,8 +71,10 @@ from .pdf import (
     count_tokens,
 )
 from .llm import (
+    UnifiedLLM,
     get_provider as get_llm_provider,
 )
+from .llm.providers import LLMProvider, LLMProviderFactory
 from .toc import (
     find_toc_pages,
     toc_transformer,

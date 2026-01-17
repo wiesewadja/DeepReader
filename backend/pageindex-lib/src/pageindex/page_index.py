@@ -34,8 +34,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from .pdf import PDFParser
 from .pdf.parser import get_text_of_pages
 from .pdf.tokens import count_tokens
-from .llm import UnifiedLLM
-from .llm_provider import get_provider as get_llm_provider_legacy
+from .llm import UnifiedLLM, get_provider
 from .core import ConfigLoader, ValidationError, load_config
 from .toc import (
     find_toc_pages,

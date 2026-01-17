@@ -286,7 +286,7 @@ class ConfigLoader:
             ... })
         """
         # 延迟导入，避免循环依赖
-        from ..llm_provider import get_provider, UnifiedLLM
+        from ..llm import get_provider, UnifiedLLM
 
         # ============================================================
         # 步骤1: 加载配置

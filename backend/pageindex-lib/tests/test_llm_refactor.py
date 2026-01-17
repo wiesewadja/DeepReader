@@ -33,7 +33,8 @@ from pageindex.page_index import (
     process_none_page_numbers,
     single_toc_item_index_fixer,
 )
-from pageindex.llm_provider import LLMProviderFactory, UnifiedLLM
+from pageindex.llm import UnifiedLLM
+from pageindex.llm.providers import LLMProviderFactory
 
 
 @pytest.fixture
