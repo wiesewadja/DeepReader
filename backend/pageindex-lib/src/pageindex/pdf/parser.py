@@ -524,7 +524,7 @@ class PDFParser:
 
 def get_page_tokens(
     pdf_path: Union[str, BytesIO],
-    model: str = "gpt-4o-2024-11-20",
+    model: Optional[str] = None,
     pdf_parser: str = "PyMuPDF",
 ) -> List[Tuple[str, int]]:
     """
@@ -535,7 +535,7 @@ def get_page_tokens(
 
     参数:
         pdf_path: PDF 文件路径或 BytesIO 对象
-        model: Token 计数使用的模型名称
+        model: Token 计数使用的模型名称 (可选，默认从配置文件读取)
         pdf_parser: 解析器类型 ("pypdf" 或 "PyMuPDF")
 
     返回:

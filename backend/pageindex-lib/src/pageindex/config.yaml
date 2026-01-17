@@ -9,6 +9,7 @@ model: "deepseek-chat"  # 默认 LLM 模型 (用于目录解析、摘要生成�
 # LLM 调用参数
 llm_temperature: 0  # LLM 温度参数 (0-2，越低越确定)
 llm_max_retries: 10  # LLM 调用失败时的最大重试次数
+llm_timeout: 300  # LLM API 请求超时时间 (秒)
 
 # ============================================================
 # Token 计数模型配置
@@ -44,3 +45,4 @@ llm_provider:
   api_key: null  # API 密钥 (null 表示从环境变量读取)
   base_url: "https://api.deepseek.com"  # API 端点
   model_param: "model"  # 模型参数名
+  timeout: null  # API 请求超时 (秒，null 表示使用配置文件的 llm_timeout)

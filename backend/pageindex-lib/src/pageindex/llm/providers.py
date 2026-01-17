@@ -143,7 +143,7 @@ class OpenAIProvider(LLMProvider):
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        timeout: float = 300.0,
+        timeout: Optional[float] = None,
     ):
         """
         初始化 OpenAI Provider
@@ -151,10 +151,20 @@ class OpenAIProvider(LLMProvider):
         参数:
             api_key: OpenAI API 密钥 (可选，默认使用环境变量)
             base_url: API 基础 URL (可选，用于兼容其他服务)
-            timeout: 请求超时时间 (秒，默认 300)
+            timeout: 请求超时时间 (秒，可选，默认从配置文件读取)
         """
         self.api_key = api_key or CHATGPT_API_KEY
         self.base_url = base_url
+
+        # 从配置文件读取默认 timeout
+        if timeout is None:
+            try:
+                from ..core.config import load_config
+                config = load_config()
+                timeout = getattr(config, "llm_timeout", 300)
+            except Exception:
+                timeout = 300
+
         self.timeout = timeout
 
         logger.debug(
@@ -211,7 +221,7 @@ class DeepSeekProvider(LLMProvider):
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        timeout: float = 300.0,
+        timeout: Optional[float] = None,
     ):
         """
         初始化 DeepSeek Provider
@@ -219,10 +229,20 @@ class DeepSeekProvider(LLMProvider):
         参数:
             api_key: DeepSeek API 密钥
             base_url: API 基础 URL (默认 https://api.deepseek.com)
-            timeout: 请求超时时间 (秒，默认 300)
+            timeout: 请求超时时间 (秒，可选，默认从配置文件读取)
         """
         self.base_url = base_url or "https://api.deepseek.com"
         self.api_key = api_key
+
+        # 从配置文件读取默认 timeout
+        if timeout is None:
+            try:
+                from ..core.config import load_config
+                config = load_config()
+                timeout = getattr(config, "llm_timeout", 300)
+            except Exception:
+                timeout = 300
+
         self.timeout = timeout
 
         logger.debug(
@@ -345,7 +365,7 @@ class CustomProvider(LLMProvider):
         base_url: str,
         api_key: Optional[str] = None,
         model_param: str = "model",
-        timeout: float = 300.0,
+        timeout: Optional[float] = None,
     ):
         """
         初始化自定义 Provider
@@ -354,7 +374,7 @@ class CustomProvider(LLMProvider):
             base_url: API 基础 URL (必需)
             api_key: API 密钥 (可选)
             model_param: 模型参数名称 (默认 "model")
-            timeout: 请求超时时间 (秒，默认 300)
+            timeout: 请求超时时间 (秒，可选，默认从配置文件读取)
 
         注意:
             model_param 用于兼容不同 API 的模型参数命名:
@@ -364,6 +384,16 @@ class CustomProvider(LLMProvider):
         self.base_url = base_url
         self.api_key = api_key
         self.model_param = model_param
+
+        # 从配置文件读取默认 timeout
+        if timeout is None:
+            try:
+                from ..core.config import load_config
+                config = load_config()
+                timeout = getattr(config, "llm_timeout", 300)
+            except Exception:
+                timeout = 300
+
         self.timeout = timeout
 
         logger.info(
@@ -571,6 +601,14 @@ def get_provider(provider_config) -> LLMProvider:
         else getattr(provider_config, "api_key", None)
     )
     factory_kwargs["api_key"] = api_key
+
+    # 获取 timeout (null 表示使用配置文件的 llm_timeout)
+    timeout = (
+        provider_config.get("timeout")
+        if hasattr(provider_config, "get")
+        else getattr(provider_config, "timeout", None)
+    )
+    factory_kwargs["timeout"] = timeout
 
     # 创建 Provider
     return LLMProviderFactory.create(provider_type, **factory_kwargs)

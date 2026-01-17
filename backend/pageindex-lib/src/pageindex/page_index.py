@@ -1285,6 +1285,15 @@ async def process_toc_with_page_numbers(
     if llm_client is None:
         raise ValueError("llm_client is required for process_toc_with_page_numbers")
 
+    # 从配置文件读取默认 toc_check_page_num
+    if toc_check_page_num is None:
+        try:
+            from .core.config import load_config
+            config = load_config()
+            toc_check_page_num = getattr(config, "toc_check_page_num", 20)
+        except Exception:
+            toc_check_page_num = 20
+
     toc_with_page_number = await toc_transformer(toc_content, llm_client)
     logger.info(f"toc_with_page_number: {toc_with_page_number}")
 

@@ -727,7 +727,7 @@ class JsonLogger:
 # PDF 解析工具 (向后兼容)
 # ============================================================
 
-def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="PyMuPDF"):
+def get_page_tokens(pdf_path, model=None, pdf_parser="PyMuPDF"):
     """
     解析 PDF 并返回每页的文本和 Token 数量
 
@@ -736,7 +736,7 @@ def get_page_tokens(pdf_path, model="gpt-4o-2024-11-20", pdf_parser="PyMuPDF"):
 
     参数:
         pdf_path: PDF 文件路径
-        model: 用于 Token 计数的模型名称
+        model: 用于 Token 计数的模型名称 (可选，默认从配置文件读取)
         pdf_parser: PDF 解析器 ("pypdf" 或 "PyMuPDF")
 
     返回:

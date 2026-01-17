@@ -381,7 +381,14 @@ if __name__ == "__main__":
         os.path.dirname(__file__), "..", "tests/markdowns/", f"{MD_NAME}.md"
     )
 
-    MODEL = "gpt-4.1"
+    # 从配置文件读取模型名称
+    try:
+        from .core.config import load_config
+        config = load_config()
+        MODEL = getattr(config, "model", None)
+    except Exception:
+        MODEL = None
+
     IF_THINNING = False
     THINNING_THRESHOLD = 5000
     SUMMARY_TOKEN_THRESHOLD = 200
