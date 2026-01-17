@@ -166,21 +166,76 @@ async def check_title_appearance_in_start(title, page_text, llm_client=None, log
         raise ValueError("llm_client is required for check_title_appearance_in_start")
 
     prompt = f"""
-    You will be given the current section title and the current page_text.
-    Your job is to check if the current section starts in the beginning of the given page_text.
-    If there are other contents before the current section title, then the current section does not start in the beginning of the given page_text.
-    If the current section title is the first content in the given page_text, then the current section starts in the beginning of the given page_text.
+    You will be given a section title and a page text.
+    Your job is to check if the section title appears at the very BEGINNING of the page text.
 
-    Note: do fuzzy matching, ignore any space inconsistency in the page_text.
+    # Definition of "Beginning" (开头的定义)
 
-    The given section title is {title}.
-    The given page_text is {page_text}.
+    **"yes" (在开头)**: The section title is the FIRST substantive content on the page
+    - Minor whitespace before the title is OK
+    - Page numbers or headers (like "Page 5") are OK before the title
+    - No other section titles or body text before it
 
-    reply format:
+    **"no" (不在开头)**: There is other content before the section title
+    - Previous sections continuing from the last page
+    - Other section titles appearing first
+    - Body paragraphs or content before this section
+
+    # Chinese Title Matching (中文标题匹配)
+
+    Consider these variations as the SAME title:
+
+    1. **Punctuation differences**
+       - TOC: "第一章：研究背景"
+       - Page: "第一章 研究背景" or "第一章. 研究背景"
+
+    2. **Spacing differences**
+       - TOC: "第一章  研究背景"
+       - Page: "第一章 研究背景"
+
+    3. **Number format differences**
+       - TOC: "第一章"
+       - Page: "第 1 章" or "第1章"
+
+    4. **Full-width vs half-width punctuation**
+       - ：(U+FF1A) vs :(U+003A)
+       - ．(U+FF0E) vs .(U+002E)
+
+    # Examples (示例)
+
+    **Example 1 - "yes" (在开头)**:
+    ```
+    <physical_index_5>
+    第一章 研究背景
+
+    本章主要讨论...
+    ```
+    Title "第一章 研究背景" appears at beginning → "yes"
+
+    **Example 2 - "no" (不在开头)**:
+    ```
+    <physical_index_5>
+    ...continued from previous section
+
+    1.2 研究方法
+    本章主要讨论...
+
+    第一章 研究背景
+    ```
+    Title "第一章 研究背景" appears AFTER other content → "no"
+
+    ---
+
+    The given section title is: {title}
+
+    The given page_text is: {page_text}
+
+    Reply format:
     {{
         "thinking": <why do you think the section appears or starts in the page_text>
         "start_begin": "yes or no" (yes if the section starts in the beginning of the page_text, no otherwise)
     }}
+
     Directly return the final JSON structure. Do not output anything else."""
 
     # 添加上下文信息
@@ -284,14 +339,69 @@ async def check_if_toc_extraction_is_complete(content, toc, llm_client=None):
         raise ValueError("llm_client is required for check_if_toc_extraction_is_complete")
 
     prompt = f"""
-    You are given a partial document  and a  table of contents.
-    Your job is to check if the  table of contents is complete, which it contains all the main sections in the partial document.
+    You are given a partial document and a table of contents (TOC).
+    Your job is to check if the TOC is complete - it should contain all the main sections from the document.
+
+    # What Completeness Means (完整性的含义)
+
+    **"yes" (完整)**: The TOC includes all main sections visible in the document
+    - All chapter-level sections (第一章, 第二章, etc.) are present
+    - Major subsections are included (1.1, 1.2, etc.)
+    - Minor omissions OK (some sub-subsections may be missing)
+
+    **"no" (不完整)**: The TOC is missing significant sections
+    - Missing entire chapters or main sections
+    - Gaps in section numbering (e.g., has 1.1 and 1.3, but missing 1.2)
+    - Document continues with new major sections not in TOC
+
+    # Chinese Document Section Patterns (中文文档章节模式)
+
+    ## Main Sections to Include (应包含的主要章节)
+
+    ### Academic Papers (学术论文)
+    Must include:
+    - 绪论/引言/第一章
+    - 主要章节 (文献综述/方法/实验/结果等)
+    - 结论
+
+    May exclude:
+    - 摘要/Abstract (usually before TOC)
+    - 参考文献/References (usually after TOC)
+    - 致谢/Acknowledgments (usually after TOC)
+    - 附录/Appendix (optional, at the end)
+
+    ### Technical Documents (技术文档)
+    Must include:
+    - 主要章节 (概述/安装/使用/API等)
+
+    May exclude:
+    - 版权信息
+    - 目录本身
+
+    ### Books (书籍)
+    Must include:
+    - 篇/章 (parts/chapters)
+    - Major sections
+
+    # Completeness Check Process (完整性检查流程)
+
+    1. List all section titles visible in the document
+    2. List all section titles in the TOC
+    3. Check if all major document sections are present in TOC
+    4. Consider "complete" if 90%+ of main sections are covered
+
+    ---
+
+    Document content: {content}
+
+    Table of contents: {toc}
 
     Reply format:
     {{
         "thinking": <why do you think the table of contents is complete or not>
         "completed": "yes" or "no"
     }}
+
     Directly return the final JSON structure. Do not output anything else."""
 
     prompt = prompt + "\n Document:\n" + content + "\n Table of contents:\n" + toc
