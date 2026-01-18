@@ -17,7 +17,9 @@ from .models import (
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
+from ..services.config_storage import ConfigStorage
 from ..config import settings
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -263,7 +265,6 @@ async def create_index(req: IndexRequest, http_request: Request):
     速率限制：每小时最多 5 个索引任务（按 IP 地址）
     """
     import hashlib
-    from pathlib import Path
     from urllib.parse import urlparse
 
     # 速率限制检查
@@ -326,38 +327,73 @@ async def create_index(req: IndexRequest, http_request: Request):
     llm_config = {}
     logger.info(f"[LLM配置] 开始提取 LLM 配置参数...")
 
+    # 优先级: 1. 指定配置名称加载 2. 使用请求参数 3. 使用环境变量默认值
+    if req.config_name:
+        # 从 JSON 加载配置
+        storage_dir = Path(settings.base_dir) / "configs"
+        config_storage = ConfigStorage(storage_dir=str(storage_dir))
+        user_config = config_storage.get_config(req.config_name)
+
+        if not user_config:
+            logger.error(f"[LLM配置] ✗ 配置 '{req.config_name}' 不存在")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Configuration '{req.config_name}' not found"
+            )
+
+        logger.info(f"[LLM配置] 使用已保存配置: {req.config_name}")
+        llm_config["llm_provider"] = user_config.llm.provider
+        llm_config["model"] = user_config.llm.model
+        if user_config.llm.api_key:
+            llm_config["api_key"] = user_config.llm.api_key
+        if user_config.llm.base_url:
+            llm_config["base_url"] = user_config.llm.base_url
+        llm_config["max_pages_per_node"] = user_config.indexing.max_pages_per_node
+        llm_config["max_tokens_per_node"] = user_config.indexing.max_tokens_per_node
+        # 将布尔值转换为字符串（indexer 期望 "yes"/"no"）
+        llm_config["if_add_node_summary"] = "yes" if user_config.indexing.if_add_node_summary else "no"
+        llm_config["if_add_node_text"] = "yes" if user_config.indexing.if_add_node_text else "no"
+
+        logger.info(f"[LLM配置]  Provider: {user_config.llm.provider}")
+        logger.info(f"[LLM配置]  Model: {user_config.llm.model}")
+        logger.info(f"[LLM配置]  API Key: {'*' * min(len(user_config.llm.api_key) if user_config.llm.api_key else 0, 12)} ({len(user_config.llm.api_key) if user_config.llm.api_key else 0} 字符)")
+        logger.info(f"[LLM配置]  Max Pages Per Node: {user_config.indexing.max_pages_per_node}")
+        logger.info(f"[LLM配置]  Max Tokens Per Node: {user_config.indexing.max_tokens_per_node}")
+        logger.info(f"[LLM配置]  Add Node Summary: {user_config.indexing.if_add_node_summary}")
+
+    # 请求参数可以覆盖配置中的值
     if req.llm_provider is not None:
         llm_config["llm_provider"] = req.llm_provider
-        logger.info(f"[LLM配置]  Provider: {req.llm_provider}")
+        logger.info(f"[LLM配置]  Provider (覆盖): {req.llm_provider}")
     if req.llm_model is not None:
         llm_config["model"] = req.llm_model
-        logger.info(f"[LLM配置]  Model: {req.llm_model}")
+        logger.info(f"[LLM配置]  Model (覆盖): {req.llm_model}")
     if req.deepseek_api_key is not None:
         llm_config["api_key"] = req.deepseek_api_key
         key_length = len(req.deepseek_api_key)
-        logger.info(f"[LLM配置]  DeepSeek API Key: {'*' * min(key_length, 12)} ({key_length} 字符)")
+        logger.info(f"[LLM配置]  DeepSeek API Key (覆盖): {'*' * min(key_length, 12)} ({key_length} 字符)")
     if req.openai_api_key is not None:
         llm_config["api_key"] = req.openai_api_key
         key_length = len(req.openai_api_key)
-        logger.info(f"[LLM配置]  OpenAI/SiliconFlow API Key: {'*' * min(key_length, 12)} ({key_length} 字符)")
+        logger.info(f"[LLM配置]  OpenAI/SiliconFlow API Key (覆盖): {'*' * min(key_length, 12)} ({key_length} 字符)")
     if req.api_url is not None:
         llm_config["base_url"] = req.api_url
         # 解析 URL，只显示 host
         try:
             parsed = urlparse(req.api_url)
             url_display = f"{parsed.scheme}://{parsed.netloc}"
-            logger.info(f"[LLM配置]  API URL: {url_display}")
+            logger.info(f"[LLM配置]  API URL (覆盖): {url_display}")
         except (ValueError, Exception) as e:
-            logger.info(f"[LLM配置]  API URL: {req.api_url}")
+            logger.info(f"[LLM配置]  API URL (覆盖): {req.api_url}")
     if req.max_pages_per_node is not None:
         llm_config["max_pages_per_node"] = req.max_pages_per_node
-        logger.info(f"[LLM配置]  Max Pages Per Node: {req.max_pages_per_node}")
+        logger.info(f"[LLM配置]  Max Pages Per Node (覆盖): {req.max_pages_per_node}")
     if req.max_tokens_per_node is not None:
         llm_config["max_tokens_per_node"] = req.max_tokens_per_node
-        logger.info(f"[LLM配置]  Max Tokens Per Node: {req.max_tokens_per_node}")
+        logger.info(f"[LLM配置]  Max Tokens Per Node (覆盖): {req.max_tokens_per_node}")
     if req.if_add_node_summary is not None:
-        llm_config["if_add_node_summary"] = req.if_add_node_summary
-        logger.info(f"[LLM配置]  Add Node Summary: {req.if_add_node_summary}")
+        llm_config["if_add_node_summary"] = "yes" if req.if_add_node_summary else "no"
+        logger.info(f"[LLM配置]  Add Node Summary (覆盖): {req.if_add_node_summary}")
 
     # 初始化任务状态
     _running_tasks[task_id] = {

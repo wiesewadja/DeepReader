@@ -10,6 +10,8 @@ from typing import List, Optional
 class IndexRequest(BaseModel):
     """创建索引请求"""
     path: str = Field(..., description="PDF 文件路径")
+    # 配置名称（可选，用于使用已保存的配置）
+    config_name: Optional[str] = Field(None, description="使用已保存的配置名称，优先级高于单独参数")
     # LLM 配置（可选，用于覆盖全局配置）
     llm_provider: Optional[str] = Field(None, description="LLM provider (deepseek/openai/google/custom)")
     llm_model: Optional[str] = Field(None, description="LLM model name")

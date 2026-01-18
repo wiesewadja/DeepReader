@@ -51,7 +51,9 @@ async def health_check():
 
 # 注册路由
 from deeppdf.api.routes import router
+from deeppdf.api.config_routes import router as config_router
 app.include_router(router)
+app.include_router(config_router)
 
 
 if __name__ == "__main__":

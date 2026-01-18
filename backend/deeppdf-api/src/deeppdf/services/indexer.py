@@ -121,7 +121,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     if_add_node_id = if_add_node_id_str.lower() in ("yes", "true", "1", "on")
     if_add_node_summary = if_add_node_summary_str.lower() in ("yes", "true", "1", "on")
     if_add_node_text = if_add_node_text_str.lower() in ("yes", "true", "1", "on")
-    if_add_node_description = if_add_node_description_str.lower() in ("yes", "true", "1", "on")
+    if_add_node_description = if_add_doc_description_str.lower() in ("yes", "true", "1", "on")
 
     require_llm = kwargs.get("require_llm", True)
     api_key = kwargs.get("api_key")
@@ -212,7 +212,7 @@ def _setup_pageindex_config(config: Dict[str, Any], llm_api_key: Optional[str]) 
         "if_add_node_summary": config["if_add_node_summary"] if config["require_llm"] else "no",
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
-        "if_add_node_description": config["if_add_node_description"],
+        # Note: if_add_node_description is not supported by PageIndex
         "toc_check_page_num": config["toc_check_pages"],
         "max_page_num_each_node": config["max_pages_per_node"],
         "max_token_num_each_node": config["max_tokens_per_node"],
