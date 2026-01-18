@@ -4,7 +4,8 @@ API 路由定义
 import asyncio
 import logging
 import time
-from typing import Dict
+from typing import Dict, Tuple
+from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request
 from .models import (
@@ -23,6 +24,178 @@ router = APIRouter(prefix="/api")
 
 # 全局任务存储：task_id -> {"task": asyncio.Task, "status": str, ...}
 _running_tasks: Dict[str, Dict] = {}
+
+
+# ========== 速率限制器 ==========
+
+class RateLimiter:
+    """简单的内存速率限制器"""
+
+    def __init__(self):
+        # 存储每个客户端的请求记录: client_ip -> [(timestamp, count), ...]
+        self._requests: Dict[str, list] = defaultdict(list)
+        # 清理过期记录的间隔（秒）
+        self._cleanup_interval = 3600
+
+    def _cleanup_old_requests(self, current_time: float):
+        """清理超过 1 小时的旧记录"""
+        cutoff_time = current_time - 3600
+        for client_ip in list(self._requests.keys()):
+            # 只保留最近的请求记录
+            self._requests[client_ip] = [
+                (ts, count) for ts, count in self._requests[client_ip]
+                if ts > cutoff_time
+            ]
+            # 如果没有请求记录了，删除这个客户端
+            if not self._requests[client_ip]:
+                del self._requests[client_ip]
+
+    def check_rate_limit(
+        self,
+        client_ip: str,
+        max_requests: int,
+        window_seconds: int
+    ) -> Tuple[bool, Dict[str, int]]:
+        """
+        检查是否超过速率限制
+
+        Args:
+            client_ip: 客户端 IP 地址
+            max_requests: 时间窗口内允许的最大请求数
+            window_seconds: 时间窗口（秒）
+
+        Returns:
+            (is_allowed, info): is_allowed 表示是否允许请求
+                                info 包含限制信息
+        """
+        current_time = time.time()
+
+        # 定期清理旧记录
+        if int(current_time) % self._cleanup_interval == 0:
+            self._cleanup_old_requests(current_time)
+
+        # 获取该客户端的请求记录
+        requests = self._requests[client_ip]
+
+        # 移除时间窗口外的旧请求
+        window_start = current_time - window_seconds
+        self._requests[client_ip] = [
+            (ts, count) for ts, count in requests
+            if ts > window_start
+        ]
+
+        # 计算时间窗口内的请求数
+        requests_in_window = sum(count for _, count in self._requests[client_ip])
+
+        # 检查是否超过限制
+        if requests_in_window >= max_requests:
+            # 计算重置时间
+            if self._requests[client_ip]:
+                oldest_request = self._requests[client_ip][0][0]
+                reset_time = int(oldest_request + window_seconds - current_time)
+            else:
+                reset_time = window_seconds
+
+            return False, {
+                "limit": max_requests,
+                "remaining": 0,
+                "reset": reset_time,
+                "window": window_seconds
+            }
+
+        # 记录本次请求
+        self._requests[client_ip].append((current_time, 1))
+
+        return True, {
+            "limit": max_requests,
+            "remaining": max_requests - requests_in_window - 1,
+            "reset": window_seconds,
+            "window": window_seconds
+        }
+
+
+# 全局速率限制器实例
+_rate_limiter = RateLimiter()
+
+
+def _get_client_ip(request: Request) -> str:
+    """获取客户端 IP 地址"""
+    # 优先使用 X-Forwarded-For 头（反向代理场景）
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+
+    # 其次使用 X-Real-IP 头
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+
+    # 最后使用直接连接的 IP
+    if request.client:
+        return request.client.host
+
+    return "unknown"
+
+
+async def _cleanup_completed_tasks():
+    """
+    定期清理已完成的任务
+
+    清理超过 1 小时的已完成/失败/取消的任务，避免内存泄漏
+    """
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 每小时执行一次清理
+
+            current_time = time.time()
+            tasks_to_remove = []
+            cleanup_count = 0
+
+            for task_id, task_info in _running_tasks.items():
+                # 只清理已完成的任务
+                if task_info["status"] in ["completed", "failed", "cancelled"]:
+                    try:
+                        # 解析创建时间
+                        created_at_str = task_info.get("created_at", "")
+                        if created_at_str:
+                            created_time = time.mktime(
+                                time.strptime(created_at_str, "%Y-%m-%d %H:%M:%S")
+                            )
+                            # 如果任务完成超过 1 小时，标记为删除
+                            if current_time - created_time > 3600:
+                                tasks_to_remove.append(task_id)
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"[任务清理] 无法解析任务 {task_id} 的时间: {e}")
+                        # 如果无法解析时间，也标记为删除
+                        tasks_to_remove.append(task_id)
+
+            # 删除标记的任务
+            for task_id in tasks_to_remove:
+                del _running_tasks[task_id]
+                cleanup_count += 1
+
+            if cleanup_count > 0:
+                logger.info(f"[任务清理] 已清理 {cleanup_count} 个过期任务")
+                logger.info(f"[任务清理] 当前活跃任务数: {len(_running_tasks)}")
+
+        except asyncio.CancelledError:
+            logger.info("[任务清理] 清理任务被取消")
+            break
+        except Exception as e:
+            logger.error(f"[任务清理] 清理过程中出错: {e}", exc_info=True)
+
+
+# 启动清理任务的标志
+_cleanup_task_started = False
+
+
+async def _ensure_cleanup_task_running():
+    """确保清理任务正在运行"""
+    global _cleanup_task_started
+    if not _cleanup_task_started:
+        asyncio.create_task(_cleanup_completed_tasks())
+        _cleanup_task_started = True
+        logger.info("[任务清理] 已启动后台任务清理器")
 
 
 async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwargs):
@@ -86,10 +259,36 @@ async def create_index(req: IndexRequest, http_request: Request):
     立即返回任务 ID，索引在后台进行。
     使用 GET /api/indexes/{task_id} 查询任务状态。
     使用 DELETE /api/indexes/{task_id} 取消任务。
+
+    速率限制：每小时最多 5 个索引任务（按 IP 地址）
     """
     import hashlib
     from pathlib import Path
     from urllib.parse import urlparse
+
+    # 速率限制检查
+    client_ip = _get_client_ip(http_request)
+    is_allowed, rate_info = _rate_limiter.check_rate_limit(
+        client_ip,
+        max_requests=5,  # 每小时最多 5 个索引任务
+        window_seconds=3600  # 1 小时窗口
+    )
+
+    if not is_allowed:
+        logger.warning(f"[速率限制] 客户端 {client_ip} 超过索引创建限制")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": f"每小时最多可以创建 5 个索引任务。请在 {rate_info['reset']} 秒后重试。",
+                "limit": rate_info['limit'],
+                "window": rate_info['window'],
+                "reset_after": rate_info['reset']
+            }
+        )
+
+    # 确保清理任务正在运行
+    await _ensure_cleanup_task_running()
 
     request_start = time.time()
     client_host = http_request.client.host if http_request.client else "unknown"
@@ -116,8 +315,8 @@ async def create_index(req: IndexRequest, http_request: Request):
         file_size = pdf_path.stat().st_size
         file_size_mb = file_size / (1024 * 1024)
         logger.info(f"[请求参数] 文件大小: {file_size_mb:.2f} MB")
-    except:
-        pass
+    except (OSError, AttributeError) as e:
+        logger.warning(f"[请求参数] 无法获取文件大小: {e}")
 
     # 生成任务 ID
     task_id = f"task_{hashlib.md5(f'{req.path}{time.time()}'.encode()).hexdigest()[:12]}"
@@ -135,12 +334,12 @@ async def create_index(req: IndexRequest, http_request: Request):
         logger.info(f"[LLM配置]  Model: {req.llm_model}")
     if req.deepseek_api_key is not None:
         llm_config["api_key"] = req.deepseek_api_key
-        masked_key = f"{req.deepseek_api_key[:8]}...{req.deepseek_api_key[-4:]}"
-        logger.info(f"[LLM配置]  DeepSeek API Key: {masked_key}")
+        key_length = len(req.deepseek_api_key)
+        logger.info(f"[LLM配置]  DeepSeek API Key: {'*' * min(key_length, 12)} ({key_length} 字符)")
     if req.openai_api_key is not None:
         llm_config["api_key"] = req.openai_api_key
-        masked_key = f"{req.openai_api_key[:8]}...{req.openai_api_key[-4:]}"
-        logger.info(f"[LLM配置]  OpenAI/SiliconFlow API Key: {masked_key}")
+        key_length = len(req.openai_api_key)
+        logger.info(f"[LLM配置]  OpenAI/SiliconFlow API Key: {'*' * min(key_length, 12)} ({key_length} 字符)")
     if req.api_url is not None:
         llm_config["base_url"] = req.api_url
         # 解析 URL，只显示 host
@@ -148,7 +347,7 @@ async def create_index(req: IndexRequest, http_request: Request):
             parsed = urlparse(req.api_url)
             url_display = f"{parsed.scheme}://{parsed.netloc}"
             logger.info(f"[LLM配置]  API URL: {url_display}")
-        except:
+        except (ValueError, Exception) as e:
             logger.info(f"[LLM配置]  API URL: {req.api_url}")
     if req.max_pages_per_node is not None:
         llm_config["max_pages_per_node"] = req.max_pages_per_node

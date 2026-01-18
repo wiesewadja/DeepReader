@@ -1,7 +1,7 @@
 """
 API 请求/响应模型
 """
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 
 
@@ -19,6 +19,34 @@ class IndexRequest(BaseModel):
     max_pages_per_node: Optional[int] = Field(None, description="Max pages per section node")
     max_tokens_per_node: Optional[int] = Field(None, description="Max tokens per section node")
     if_add_node_summary: Optional[bool] = Field(None, description="Add node summary using LLM")
+
+    @field_validator('path')
+    @classmethod
+    def validate_pdf_path(cls, v: str) -> str:
+        """验证 PDF 路径，防止路径遍历攻击"""
+        # 检查是否为 .pdf 文件
+        if not v.lower().endswith('.pdf'):
+            raise ValueError('Path must point to a PDF file')
+
+        # 防止路径遍历攻击
+        if '..' in v:
+            raise ValueError('Path traversal detected: ".." is not allowed')
+
+        # 检查路径长度
+        if len(v) > 500:
+            raise ValueError('Path too long (maximum 500 characters)')
+
+        return v
+
+    @field_validator('llm_provider')
+    @classmethod
+    def validate_llm_provider(cls, v: Optional[str]) -> Optional[str]:
+        """验证 LLM provider"""
+        if v is not None:
+            valid_providers = ['deepseek', 'openai', 'google', 'custom', 'anthropic']
+            if v.lower() not in valid_providers:
+                raise ValueError(f'llm_provider must be one of: {", ".join(valid_providers)}')
+        return v
 
 
 class QueryRequest(BaseModel):

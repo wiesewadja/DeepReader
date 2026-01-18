@@ -10,7 +10,7 @@ import time
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 from pageindex import page_index_main
@@ -19,6 +19,8 @@ from pageindex.llm import UnifiedLLM, get_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
+# 导入配置
+from deeppdf.config import settings
 
 # 配置日志
 logging.basicConfig(
@@ -29,23 +31,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# 全局线程池
-cpu_executor = ThreadPoolExecutor(max_workers=2)
-
-
-def _get_env_default(key: str, default: Any = None, cast_type: type = str) -> Any:
-    """从环境变量获取配置值，支持类型转换"""
-    value = os.getenv(key, default)
-    if value is None or value == default:
-        return default
-    if cast_type == bool:
-        return value.lower() in ("yes", "true", "1", "on")
-    if cast_type == int:
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            return default
-    return value
+# 全局线程池 - 使用配置中的 worker 数量
+cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
 
 
 def _extract_nodes_from_tree(
@@ -134,10 +121,10 @@ def _index_pdf_sync(
             except Exception as e:
                 logger.warning(f"进度回调调用失败: {e}")
 
-    # 从环境变量读取默认配置
-    model = kwargs.get("model") or _get_env_default("PDF_INDEX_MODEL", "deepseek-chat")
-    llm_provider = kwargs.get("llm_provider") or _get_env_default("PDF_INDEX_LLM_PROVIDER", "deepseek")
-    base_url = kwargs.get("base_url") or _get_env_default("PDF_INDEX_BASE_URL", None)
+    # 从配置读取默认配置
+    model = kwargs.get("model") or settings.pdf_index_model
+    llm_provider = kwargs.get("llm_provider") or settings.pdf_index_llm_provider
+    base_url = kwargs.get("base_url") or settings.llm_base_url
 
     # custom provider 必须提供 base_url
     if llm_provider == "custom" and not base_url:
@@ -148,13 +135,21 @@ def _index_pdf_sync(
                     "Please provide the base URL of your custom LLM API (e.g., https://api.siliconflow.cn/v1)."
         }
 
-    toc_check_pages = kwargs.get("toc_check_pages") or _get_env_default("PDF_INDEX_TOC_CHECK_PAGES", 20, int)
-    max_pages_per_node = kwargs.get("max_pages_per_node") or _get_env_default("PDF_INDEX_MAX_PAGES_PER_NODE", 10, int)
-    max_tokens_per_node = kwargs.get("max_tokens_per_node") or _get_env_default("PDF_INDEX_MAX_TOKENS_PER_NODE", 20000, int)
-    if_add_node_id = kwargs.get("if_add_node_id") or _get_env_default("PDF_INDEX_IF_ADD_NODE_ID", "yes")
-    if_add_node_summary = kwargs.get("if_add_node_summary") or _get_env_default("PDF_INDEX_IF_ADD_NODE_SUMMARY", "yes")
-    if_add_node_text = kwargs.get("if_add_node_text") or _get_env_default("PDF_INDEX_IF_ADD_NODE_TEXT", "no")
-    if_add_doc_description = kwargs.get("if_add_doc_description") or _get_env_default("PDF_INDEX_IF_ADD_DOC_DESCRIPTION", "no")
+    toc_check_pages = kwargs.get("toc_check_pages") or settings.pdf_index_toc_check_pages
+    max_pages_per_node = kwargs.get("max_pages_per_node") or settings.pdf_index_max_pages_per_node
+    max_tokens_per_node = kwargs.get("max_tokens_per_node") or settings.pdf_index_max_tokens_per_node
+    # 这些是字符串类型的配置，转换为布尔值
+    if_add_node_id_str = kwargs.get("if_add_node_id") or "yes"
+    if_add_node_summary_str = kwargs.get("if_add_node_summary") or "yes"
+    if_add_node_text_str = kwargs.get("if_add_node_text") or "no"
+    if_add_doc_description_str = kwargs.get("if_add_doc_description") or "no"
+
+    # 转换为布尔值
+    if_add_node_id = if_add_node_id_str.lower() in ("yes", "true", "1", "on")
+    if_add_node_summary = if_add_node_summary_str.lower() in ("yes", "true", "1", "on")
+    if_add_node_text = if_add_node_text_str.lower() in ("yes", "true", "1", "on")
+    if_add_doc_description = if_add_doc_description_str.lower() in ("yes", "true", "1", "on")
+
     require_llm = kwargs.get("require_llm", True)
     api_key = kwargs.get("api_key")
 
