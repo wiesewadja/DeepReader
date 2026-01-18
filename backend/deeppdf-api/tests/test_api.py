@@ -104,6 +104,39 @@ class TestDeleteIndexEndpoint:
         assert "status" in data
 
 
+class TestGetIndexStatusEndpoint:
+    """测试 GET /api/indexes/{index_id} 端点"""
+
+    def test_get_index_status_not_found(self, client):
+        """测试获取不存在的索引状态"""
+        response = client.get("/api/indexes/nonexistent-index")
+        assert response.status_code == 404
+        data = response.json()
+        assert "不存在" in data["detail"]
+
+
+class TestTaskProgressEndpoint:
+    """测试 GET /api/tasks/{task_id}/progress 端点"""
+
+    def test_get_task_progress_not_found(self, client):
+        """测试获取不存在的任务进度"""
+        response = client.get("/api/tasks/nonexistent-task/progress")
+        assert response.status_code == 404
+        data = response.json()
+        assert "不存在" in data["detail"]
+
+
+class TestCancelTaskEndpoint:
+    """测试 DELETE /api/tasks/{task_id} 端点"""
+
+    def test_cancel_task_not_found(self, client):
+        """测试取消不存在的任务"""
+        response = client.delete("/api/tasks/nonexistent-task")
+        assert response.status_code == 404
+        data = response.json()
+        assert "不存在" in data["detail"]
+
+
 class TestCors:
     """测试 CORS 配置"""
 
