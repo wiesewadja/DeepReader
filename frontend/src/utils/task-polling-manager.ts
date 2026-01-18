@@ -6,7 +6,7 @@
 import { DeepPDFClient, TaskProgress } from "../api/http-client.js";
 
 export class TaskPollingManager {
-    private pollingIntervals: Map<string, NodeJS.Timeout> = new Map();
+    private pollingIntervals: Map<string, number> = new Map();
     private progressCache: Map<string, TaskProgress> = new Map();
     private apiClient: DeepPDFClient;
     private pollInterval: number = 2000; // 2秒
@@ -17,6 +17,14 @@ export class TaskPollingManager {
 
     // 开始轮询任务进度
     startPolling(taskId: string, onUpdate: (progress: TaskProgress) => void): void {
+        // 参数验证
+        if (!taskId || typeof taskId !== "string") {
+            throw new Error("taskId 必须是非空字符串");
+        }
+        if (typeof onUpdate !== "function") {
+            throw new Error("onUpdate 必须是函数");
+        }
+
         // 清除已有的轮询
         this.stopPolling(taskId);
 
@@ -32,6 +40,14 @@ export class TaskPollingManager {
                 }
             } catch (error) {
                 console.error(`[任务轮询] 获取任务 ${taskId} 进度失败:`, error);
+                // API 调用失败时停止轮询并通知回调
+                this.stopPolling(taskId);
+                onUpdate({
+                    id: taskId,
+                    status: "failed",
+                    message: "获取任务进度失败",
+                    error: error instanceof Error ? error.message : String(error)
+                });
             }
         }, this.pollInterval);
 
@@ -44,6 +60,7 @@ export class TaskPollingManager {
         if (timer) {
             clearInterval(timer);
             this.pollingIntervals.delete(taskId);
+            this.progressCache.delete(taskId);
         }
     }
 
