@@ -1,0 +1,53 @@
+.deeppdf-task-card {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.deeppdf-task-name {
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.deeppdf-task-progress-bar {
+    height: 6px;
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.deeppdf-task-progress-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    transition: width 0.3s ease;
+}
+
+.deeppdf-task-progress-text {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--font-smallest);
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.deeppdf-task-card-failed {
+    border-color: var(--text-error);
+}
+
+.deeppdf-task-error {
+    color: var(--text-error);
+    font-size: var(--font-smallest);
+    margin: 8px 0;
+}
+
+.deeppdf-task-card-completed {
+    border-color: var(--color-success);
+}
+
+.deeppdf-task-status {
+    color: var(--color-success);
+    font-size: var(--font-smallest);
+}

@@ -11,6 +11,7 @@
 
 /* ==================== 导入组件样式 ==================== */
 @import url('../components/drawer/drawer.css');
+@import url('../components/task-progress-card.css');
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {
