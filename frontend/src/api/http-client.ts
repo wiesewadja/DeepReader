@@ -1,31 +1,127 @@
 /**
  * DeepPDF HTTP 客户端
- * 替代原有的 MCP Client
+ * 完整的 API 调用封装
  */
+
+// ==================== 类型定义 ====================
+
+// 基础响应
+export interface APIResponse {
+  status: string;
+  message?: string;
+}
+
+// 健康检查
+export interface HealthResponse {
+  status: string;
+  version: string;
+}
+
+// 文件管理相关类型
+export interface FileInfo {
+  file_id: string;
+  file_name: string;
+  file_size: number;
+  file_path: string;
+  uploaded_at: string;
+  status: string;
+  indexed: boolean;
+  indexes?: string[];
+}
+
+export interface FileUploadResponse {
+  file_id: string;
+  file_name: string;
+  file_size: number;
+  file_path: string;
+  uploaded_at: string;
+  status: string;
+  indexed: boolean;
+}
+
+export interface FileListResponse {
+  status: string;
+  files: FileInfo[];
+  total?: number;
+}
+
+export interface FileDetailResponse {
+  status: string;
+  file: FileInfo;
+}
+
+export interface FileDeleteResponse {
+  status: string;
+  message: string;
+  file_id: string;
+  deleted_indexes?: number;
+}
+
+// 配置管理相关类型
+export interface LLMConfig {
+  provider: string;
+  model: string;
+  api_key?: string;
+  base_url?: string;
+}
+
+export interface IndexingConfig {
+  toc_check_pages: number;
+  max_pages_per_node: number;
+  max_tokens_per_node: number;
+  if_add_node_summary: boolean;
+  if_add_node_text: boolean;
+}
+
+export interface UserConfig {
+  name: string;
+  description?: string;
+  is_default: boolean;
+  llm: LLMConfig;
+  indexing: IndexingConfig;
+}
+
+export interface UserConfigUpdate {
+  description?: string;
+  is_default?: boolean;
+  llm?: Partial<LLMConfig>;
+  indexing?: Partial<IndexingConfig>;
+}
+
+export interface UserConfigListResponse {
+  status: string;
+  configs: UserConfig[];
+}
+
+export interface UserConfigResponse {
+  status: string;
+  config: UserConfig | null;
+  message?: string;
+}
+
+// 索引管理相关类型
+export interface IndexPDFRequest {
+  file_id?: string;
+  path?: string;
+  config_name?: string;
+  llm_provider?: string;
+  llm_model?: string;
+  deepseek_api_key?: string;
+  openai_api_key?: string;
+  api_url?: string;
+  max_pages_per_node?: number;
+  max_tokens_per_node?: number;
+  if_add_node_summary?: boolean;
+}
 
 export interface IndexPDFResult {
   status: string;
   index_id?: string;
+  message?: string;
   node_count?: number;
   pdf_name?: string;
   indexing_method?: string;
   error?: string;
-}
-
-export interface QueryPDFResult {
-  status: string;
-  results: Array<{
-    text: string;
-    metadata: {
-      section: string;
-      page: number;
-      distance?: number;
-      start_index?: number;
-      end_index?: number;
-      node_name?: string;
-      node_id?: string;
-    };
-  }>;
 }
 
 export interface IndexListItem {
@@ -33,6 +129,8 @@ export interface IndexListItem {
   pdf_name: string;
   node_count: number;
   created_at: string;
+  status?: string;
+  message?: string;
 }
 
 export interface ListIndexesResult {
@@ -40,10 +138,55 @@ export interface ListIndexesResult {
   indexes: IndexListItem[];
 }
 
+export interface TaskProgress {
+  id: string;
+  status: string;  // pending, processing, completed, failed, cancelled
+  message: string;
+  pdf_path?: string;
+  created_at?: string;
+  current_step?: string;
+  progress_percent?: number;
+  total_steps?: number;
+  completed_steps?: number;
+  index_id?: string;
+  node_count?: number;
+  pdf_name?: string;
+  error?: string;
+}
+
 export interface DeleteIndexResult {
   status: string;
   message?: string;
 }
+
+export interface CancelTaskResult {
+  status: string;
+  message?: string;
+  task_id: string;
+  current_status?: string;
+}
+
+// 查询相关类型
+export interface QueryResultItem {
+  text: string;
+  metadata: {
+    section?: string;
+    page?: number;
+    distance?: number;
+    start_index?: number;
+    end_index?: number;
+    node_name?: string;
+    node_id?: string;
+  };
+}
+
+export interface QueryPDFResult {
+  status: string;
+  query?: string;
+  results: QueryResultItem[];
+}
+
+// ==================== HTTP 客户端类 ====================
 
 export class DeepPDFClient {
   private baseUrl: string;
@@ -53,51 +196,239 @@ export class DeepPDFClient {
     this.baseUrl = `http://localhost:${port || this.DEFAULT_PORT}`;
   }
 
+  // ==================== 辅助方法 ====================
+
+  private async request<T>(
+    endpoint: string,
+    options?: RequestInit
+  ): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    const response = await fetch(url, options);
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(error.detail || error.message || 'Request failed');
+    }
+
+    return response.json();
+  }
+
+  // ==================== 基础 API ====================
+
   /**
    * 健康检查
    */
-  async healthCheck(): Promise<boolean> {
-    try {
-      const response = await fetch(`${this.baseUrl}/health`);
-      const data = await response.json();
-      return data.status === 'ok';
-    } catch {
-      return false;
-    }
+  async healthCheck(): Promise<HealthResponse> {
+    return this.request<HealthResponse>('/health');
   }
 
   /**
-   * 创建 PDF 索引
+   * 获取 API 信息
    */
-  async indexPDF(pdfPath: string, llmConfig?: {
-    llmProvider?: string;
-    llmModel?: string;
-    deepseekApiKey?: string;
-    openaiApiKey?: string;
-    apiUrl?: string;
-    maxPagesPerNode?: number;
-    maxTokensPerNode?: number;
-    ifAddNodeSummary?: boolean;
-  }): Promise<IndexPDFResult> {
-    const requestBody: any = { path: pdfPath };
+  async getAPIInfo(): Promise<{ message: string; version: string; docs: string; health: string }> {
+    return this.request('/');
+  }
 
-    // 添加 LLM 配置（如果提供）
+  // ==================== 文件管理 API ====================
+
+  /**
+   * 上传 PDF 文件
+   * @param file PDF 文件对象
+   * @param onProgress 上传进度回调（可选）
+   */
+  async uploadFile(
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<FileUploadResponse> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      // 上传进度
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable && onProgress) {
+          const progress = Math.round((e.loaded / e.total) * 100);
+          onProgress(progress);
+        }
+      });
+
+      // 完成
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const response = JSON.parse(xhr.responseText);
+          resolve(response);
+        } else {
+          const error = JSON.parse(xhr.responseText);
+          reject(new Error(error.detail || 'Upload failed'));
+        }
+      });
+
+      // 错误
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during upload'));
+      });
+
+      // 上传
+      const formData = new FormData();
+      formData.append('file', file);
+
+      xhr.open('POST', `${this.baseUrl}/api/files`);
+      xhr.send(formData);
+    });
+  }
+
+  /**
+   * 列出所有文件
+   */
+  async listFiles(): Promise<FileListResponse> {
+    return this.request<FileListResponse>('/api/files');
+  }
+
+  /**
+   * 获取文件详情
+   */
+  async getFileInfo(fileId: string): Promise<FileDetailResponse> {
+    return this.request<FileDetailResponse>(`/api/files/${fileId}`);
+  }
+
+  /**
+   * 删除文件
+   */
+  async deleteFile(fileId: string): Promise<FileDeleteResponse> {
+    return this.request<FileDeleteResponse>(`/api/files/${fileId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // ==================== 配置管理 API ====================
+
+  /**
+   * 列出所有配置
+   */
+  async listConfigs(): Promise<UserConfigListResponse> {
+    return this.request<UserConfigListResponse>('/api/config');
+  }
+
+  /**
+   * 获取默认配置
+   */
+  async getDefaultConfig(): Promise<UserConfigResponse> {
+    return this.request<UserConfigResponse>('/api/config/default');
+  }
+
+  /**
+   * 创建配置
+   */
+  async createConfig(config: UserConfig): Promise<UserConfigResponse> {
+    return this.request<UserConfigResponse>('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+  }
+
+  /**
+   * 更新配置
+   */
+  async updateConfig(
+    name: string,
+    update: UserConfigUpdate
+  ): Promise<UserConfigResponse> {
+    return this.request<UserConfigResponse>(`/api/config/${name}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update)
+    });
+  }
+
+  /**
+   * 删除配置
+   */
+  async deleteConfig(name: string): Promise<UserConfigResponse> {
+    return this.request<UserConfigResponse>(`/api/config/${name}`, {
+      method: 'DELETE'
+    });
+  }
+
+  /**
+   * 设置默认配置
+   */
+  async setDefaultConfig(name: string): Promise<UserConfigResponse> {
+    return this.request<UserConfigResponse>(`/api/config/${name}/set-default`, {
+      method: 'PATCH'
+    });
+  }
+
+  // ==================== 索引管理 API ====================
+
+  /**
+   * 创建 PDF 索引（使用本地路径）
+   * @deprecated 使用 indexPDFWithFile 或 indexPDFWithPath 代替
+   */
+  async indexPDF(
+    pdfPath: string,
+    llmConfig?: {
+      llmProvider?: string;
+      llmModel?: string;
+      deepseekApiKey?: string;
+      openaiApiKey?: string;
+      apiUrl?: string;
+      maxPagesPerNode?: number;
+      maxTokensPerNode?: number;
+      ifAddNodeSummary?: boolean;
+    }
+  ): Promise<IndexPDFResult> {
+    return this.indexPDFWithPath(pdfPath, llmConfig);
+  }
+
+  /**
+   * 创建 PDF 索引（使用已上传文件）
+   */
+  async indexPDFWithFile(
+    fileId: string,
+    configName?: string,
+    overrides?: Partial<IndexPDFRequest>
+  ): Promise<IndexPDFResult> {
+    const requestBody: IndexPDFRequest = {
+      file_id: fileId,
+      ...overrides
+    };
+
+    if (configName) {
+      requestBody.config_name = configName;
+    }
+
+    return this.request<IndexPDFResult>('/api/index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+  }
+
+  /**
+   * 创建 PDF 索引（使用本地路径）
+   */
+  async indexPDFWithPath(
+    path: string,
+    llmConfig?: {
+      llmProvider?: string;
+      llmModel?: string;
+      deepseekApiKey?: string;
+      openaiApiKey?: string;
+      apiUrl?: string;
+      maxPagesPerNode?: number;
+      maxTokensPerNode?: number;
+      ifAddNodeSummary?: boolean;
+    }
+  ): Promise<IndexPDFResult> {
+    const requestBody: IndexPDFRequest = { path };
+
+    // 添加 LLM 配置
     if (llmConfig) {
-      if (llmConfig.llmProvider !== undefined && llmConfig.llmProvider !== "") {
-        requestBody.llm_provider = llmConfig.llmProvider;
-      }
-      if (llmConfig.llmModel !== undefined && llmConfig.llmModel !== "") {
-        requestBody.llm_model = llmConfig.llmModel;
-      }
-      if (llmConfig.deepseekApiKey !== undefined && llmConfig.deepseekApiKey !== "") {
-        requestBody.deepseek_api_key = llmConfig.deepseekApiKey;
-      }
-      if (llmConfig.openaiApiKey !== undefined && llmConfig.openaiApiKey !== "") {
-        requestBody.openai_api_key = llmConfig.openaiApiKey;
-      }
-      if (llmConfig.apiUrl !== undefined && llmConfig.apiUrl !== "") {
-        requestBody.api_url = llmConfig.apiUrl;
-      }
+      if (llmConfig.llmProvider) requestBody.llm_provider = llmConfig.llmProvider;
+      if (llmConfig.llmModel) requestBody.llm_model = llmConfig.llmModel;
+      if (llmConfig.deepseekApiKey) requestBody.deepseek_api_key = llmConfig.deepseekApiKey;
+      if (llmConfig.openaiApiKey) requestBody.openai_api_key = llmConfig.openaiApiKey;
+      if (llmConfig.apiUrl) requestBody.api_url = llmConfig.apiUrl;
       if (llmConfig.maxPagesPerNode !== undefined) {
         requestBody.max_pages_per_node = llmConfig.maxPagesPerNode;
       }
@@ -109,52 +440,124 @@ export class DeepPDFClient {
       }
     }
 
-    const response = await fetch(`${this.baseUrl}/api/index`, {
+    return this.request<IndexPDFResult>('/api/index', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Index creation failed');
-    }
-
-    return response.json();
-  }
-
-  /**
-   * 查询 PDF
-   */
-  async queryPDF(query: string, indexId: string): Promise<QueryPDFResult> {
-    const response = await fetch(`${this.baseUrl}/api/query`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, index_id: indexId })
-    });
-
-    if (!response.ok) {
-      throw new Error('Query failed');
-    }
-
-    return response.json();
   }
 
   /**
    * 列出所有索引
    */
   async listIndexes(): Promise<ListIndexesResult> {
-    const response = await fetch(`${this.baseUrl}/api/indexes`);
-    return response.json();
+    return this.request<ListIndexesResult>('/api/indexes');
+  }
+
+  /**
+   * 获取索引/任务状态
+   */
+  async getIndexStatus(indexId: string): Promise<TaskProgress> {
+    return this.request<TaskProgress>(`/api/indexes/${indexId}`);
+  }
+
+  /**
+   * 获取任务详细进度
+   */
+  async getTaskProgress(taskId: string): Promise<TaskProgress> {
+    return this.request<TaskProgress>(`/api/tasks/${taskId}/progress`);
   }
 
   /**
    * 删除索引
    */
   async deleteIndex(indexId: string): Promise<DeleteIndexResult> {
-    const response = await fetch(`${this.baseUrl}/api/indexes/${indexId}`, {
+    return this.request<DeleteIndexResult>(`/api/indexes/${indexId}`, {
       method: 'DELETE'
     });
-    return response.json();
+  }
+
+  /**
+   * 取消任务
+   */
+  async cancelTask(taskId: string): Promise<CancelTaskResult> {
+    return this.request<CancelTaskResult>(`/api/tasks/${taskId}`, {
+      method: 'DELETE'
+    });
+  }
+
+  // ==================== 查询 API ====================
+
+  /**
+   * 查询 PDF
+   */
+  async queryPDF(
+    query: string,
+    indexId: string
+  ): Promise<QueryPDFResult> {
+    return this.request<QueryPDFResult>('/api/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, index_id: indexId })
+    });
+  }
+
+  // ==================== 实用方法 ====================
+
+  /**
+   * 轮询任务状态直到完成
+   * @param taskId 任务 ID
+   * @param onProgress 进度回调
+   * @param interval 轮询间隔（毫秒）
+   */
+  async pollTaskStatus(
+    taskId: string,
+    onProgress?: (progress: TaskProgress) => void,
+    interval: number = 2000
+  ): Promise<TaskProgress> {
+    while (true) {
+      const progress = await this.getTaskProgress(taskId);
+
+      if (onProgress) {
+        onProgress(progress);
+      }
+
+      if (progress.status === 'completed') {
+        return progress;
+      }
+
+      if (progress.status === 'failed' || progress.status === 'cancelled') {
+        throw new Error(progress.error || progress.message || `Task ${progress.status}`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, interval));
+    }
+  }
+
+  /**
+   * 完整工作流：上传文件并创建索引
+   */
+  async uploadAndIndex(
+    file: File,
+    configName?: string,
+    onUploadProgress?: (progress: number) => void,
+    onIndexProgress?: (progress: TaskProgress) => void
+  ): Promise<TaskProgress> {
+    // 1. 上传文件
+    const uploadResult = await this.uploadFile(file, onUploadProgress);
+
+    // 2. 创建索引
+    const indexResult = await this.indexPDFWithFile(uploadResult.file_id, configName);
+
+    if (indexResult.status !== 'pending' || !indexResult.index_id) {
+      throw new Error(indexResult.error || 'Failed to create index');
+    }
+
+    // 3. 轮询任务状态
+    return this.pollTaskStatus(indexResult.index_id, onIndexProgress);
   }
 }
+
+// ==================== 默认实例 ====================
+
+export const deeppdfClient = new DeepPDFClient();
