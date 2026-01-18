@@ -19,6 +19,7 @@ PageIndex 工具函数模块
 创建时间: 2026-01-16
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -673,11 +674,18 @@ class JsonLogger:
     """
     JSON 日志记录器
 
-    将日志消息保存为 JSON 文件。
+    将日志消息保存为 JSON 文件，每条日志包含时间戳和级别。
 
     属性:
         filename: 日志文件名
         log_data: 日志数据列表
+
+    日志格式:
+        {
+            "timestamp": "2026-01-18 11:30:45.123",
+            "level": "INFO",
+            "message": "开始处理"
+        }
 
     使用示例:
         >>> logger = JsonLogger("document.pdf")
@@ -696,15 +704,25 @@ class JsonLogger:
         self.log_data = []
 
     def log(self, level, message, **kwargs):
-        if isinstance(message, dict):
-            self.log_data.append(message)
-        else:
-            self.log_data.append({"message": message})
-        # Add new message to the log data
+        # Add timestamp to each log entry
+        log_entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],  # 毫秒级时间戳
+            "level": level,
+        }
 
-        # Write entire log data to file
-        with open(self._filepath(), "w") as f:
-            json.dump(self.log_data, f, indent=2)
+        if isinstance(message, dict):
+            log_entry.update(message)
+        else:
+            log_entry["message"] = message
+
+        # Add any additional kwargs
+        log_entry.update(kwargs)
+
+        self.log_data.append(log_entry)
+
+        # Write entire log data to file (ensure_ascii=False for Chinese support)
+        with open(self._filepath(), "w", encoding="utf-8") as f:
+            json.dump(self.log_data, f, indent=2, ensure_ascii=False)
 
     def info(self, message, **kwargs):
         self.log("INFO", message, **kwargs)

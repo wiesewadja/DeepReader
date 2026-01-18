@@ -75,3 +75,28 @@ class HealthResponse(BaseModel):
     """健康检查响应"""
     status: str
     version: str
+
+
+# ========== 进度相关模型 ==========
+
+class TaskProgressResponse(BaseModel):
+    """任务进度响应"""
+    id: str
+    status: str  # pending, processing, completed, failed, cancelled
+    message: str
+    pdf_path: Optional[str] = None
+    created_at: Optional[str] = None
+
+    # 进度信息
+    current_step: Optional[str] = None
+    progress_percent: Optional[int] = None  # 0-100
+    total_steps: Optional[int] = None
+    completed_steps: Optional[int] = None
+
+    # 完成后的信息
+    index_id: Optional[str] = None
+    node_count: Optional[int] = None
+    pdf_name: Optional[str] = None
+
+    # 错误信息
+    error: Optional[str] = None

@@ -104,12 +104,19 @@ def _extract_nodes_from_tree(
 def _index_pdf_sync(
     pdf_path: str,
     storage_dir: str,
+    progress_callback=None,
     **kwargs
 ) -> Dict[str, Any]:
     """
     同步 PDF 索引函数（在线程池中执行）
 
     这是原始的同步逻辑，被异步包装器调用
+
+    参数:
+        pdf_path: PDF 文件路径
+        storage_dir: 存储目录
+        progress_callback: 进度回调函数，签名为 (step, percent, message)
+        **kwargs: 其他配置参数
     """
     pdf_path_obj = Path(pdf_path)
     start_time = time.time()
@@ -117,6 +124,15 @@ def _index_pdf_sync(
     logger.info("="*60)
     logger.info(f"[索引开始] PDF 文件: {pdf_path}")
     logger.info("="*60)
+
+    # 辅助函数：安全地调用进度回调
+    def _update_progress(step: str, percent: int, message: str):
+        """安全地调用进度回调，忽略任何异常"""
+        if progress_callback:
+            try:
+                progress_callback(step, percent, message)
+            except Exception as e:
+                logger.warning(f"进度回调调用失败: {e}")
 
     # 从环境变量读取默认配置
     model = kwargs.get("model") or _get_env_default("PDF_INDEX_MODEL", "deepseek-chat")
@@ -152,6 +168,7 @@ def _index_pdf_sync(
 
     # 验证文件存在
     logger.info(f"[步骤 1/6] 验证 PDF 文件...")
+    _update_progress("validate_pdf", 10, "验证 PDF 文件...")
     if not pdf_path_obj.exists():
         logger.error(f"文件不存在: {pdf_path}")
         return {
@@ -179,6 +196,7 @@ def _index_pdf_sync(
 
     # 检查 LLM API 配置
     logger.info(f"[步骤 2/6] 检查 LLM API 配置...")
+    _update_progress("check_llm_config", 20, "检查 LLM API 配置...")
     llm_api_key = api_key or (
         os.getenv("DEEPSEEK_API_KEY") or
         os.getenv("CHATGPT_API_KEY") or
@@ -204,6 +222,7 @@ def _index_pdf_sync(
     try:
         # 使用 PageIndex 生成章节树状结构
         logger.info(f"[步骤 3/6] 初始化 PageIndex 配置...")
+        _update_progress("init_pageindex", 30, "初始化 PageIndex 配置...")
         config_loader = ConfigLoader()
 
         user_opt = {
@@ -227,6 +246,7 @@ def _index_pdf_sync(
 
         # 创建 LLM client
         logger.info(f"[步骤 4/6] 创建 LLM 客户端...")
+        _update_progress("create_llm_client", 40, "创建 LLM 客户端...")
         llm_client_instance = None
         if require_llm and llm_api_key:
             provider = get_provider(user_opt["llm_provider"])
@@ -237,6 +257,7 @@ def _index_pdf_sync(
         logger.info(f"[步骤 5/6] 开始解析 PDF 结构 (这可能需要几分钟)...")
         logger.info(f"  - 检测目录 (前 {toc_check_pages} 页)")
         logger.info(f"  - 分割章节 (每节点最多 {max_pages_per_node} 页)")
+        _update_progress("parse_pdf_structure", 50, "开始解析 PDF 结构 (这可能需要几分钟)...")
         if if_add_node_summary == "yes":
             logger.info(f"  - 生成摘要 (使用 {llm_provider}/{model})")
 
@@ -256,6 +277,9 @@ def _index_pdf_sync(
         parse_time = time.time() - parse_start
         logger.info(f"[PDF解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}")
         logger.info(f"[PDF解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
+
+        # 更新进度：PDF 解析完成
+        _update_progress("parse_complete", 70, "PDF 结构解析完成，正在提取章节...")
 
         if not tree_result:
             logger.error("[PDF解析] PageIndex 返回 None")
@@ -324,6 +348,7 @@ def _index_pdf_sync(
         logger.info("=" * 50)
         logger.info(f"[向量存储] 开始存储到 ChromaDB")
         logger.info("=" * 50)
+        _update_progress("store_vectors", 80, "正在向量化并存储到 ChromaDB...")
 
         storage_dir_path = Path(storage_dir)
         chroma_dir = storage_dir_path / "chroma"
@@ -391,6 +416,7 @@ def _index_pdf_sync(
         # 保存索引元数据
         logger.info("=" * 50)
         logger.info("[元数据] 保存索引元数据...")
+        _update_progress("save_metadata", 95, "保存索引元数据...")
 
         index_dir = storage_dir_path / "indexes"
         index_dir.mkdir(parents=True, exist_ok=True)
@@ -432,6 +458,9 @@ def _index_pdf_sync(
         logger.info("=" * 60)
         logger.info("")
 
+        # 更新进度：索引完成
+        _update_progress("complete", 100, "索引创建成功！")
+
         return {
             "status": "success",
             "index_id": index_id,
@@ -464,16 +493,23 @@ def _index_pdf_sync(
 async def index_pdf(
     pdf_path: str,
     storage_dir: str,
+    progress_callback=None,
     **kwargs
 ) -> Dict[str, Any]:
     """
     异步 PDF 索引
 
     使用 ThreadPoolExecutor 处理 CPU 密集型任务
+
+    参数:
+        pdf_path: PDF 文件路径
+        storage_dir: 存储目录
+        progress_callback: 进度回调函数，签名为 (step, percent, message)
+        **kwargs: 其他配置参数
     """
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         cpu_executor,
-        functools.partial(_index_pdf_sync, pdf_path=pdf_path, storage_dir=storage_dir, **kwargs)
+        functools.partial(_index_pdf_sync, pdf_path=pdf_path, storage_dir=storage_dir, progress_callback=progress_callback, **kwargs)
     )
     return result

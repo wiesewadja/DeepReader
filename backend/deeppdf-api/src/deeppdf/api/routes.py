@@ -10,7 +10,8 @@ from fastapi import APIRouter, HTTPException, status, Request
 from .models import (
     IndexRequest, IndexResponse,
     QueryRequest, QueryResponse,
-    ListIndexesResponse, DeleteIndexResponse
+    ListIndexesResponse, DeleteIndexResponse,
+    TaskProgressResponse
 )
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
@@ -26,6 +27,18 @@ _running_tasks: Dict[str, Dict] = {}
 
 async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwargs):
     """后台运行索引任务（支持取消）"""
+
+    # 创建进度回调函数
+    def progress_callback(step: str, percent: int, message: str):
+        """进度回调函数，更新任务进度信息"""
+        if task_id in _running_tasks:
+            _running_tasks[task_id].update({
+                "current_step": step,
+                "progress_percent": percent,
+                "message": message
+            })
+            logger.debug(f"[进度更新] {task_id}: {step} ({percent}%) - {message}")
+
     try:
         # 检查是否已被取消
         if _running_tasks.get(task_id, {}).get("cancelled"):
@@ -35,8 +48,10 @@ async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwarg
 
         _running_tasks[task_id]["status"] = "processing"
         _running_tasks[task_id]["message"] = "正在索引 PDF..."
+        _running_tasks[task_id]["current_step"] = "start"
+        _running_tasks[task_id]["progress_percent"] = 0
 
-        result = await index_pdf(pdf_path, storage_dir, **kwargs)
+        result = await index_pdf(pdf_path, storage_dir, progress_callback=progress_callback, **kwargs)
 
         # 再次检查是否在处理过程中被取消
         if _running_tasks.get(task_id, {}).get("cancelled"):
@@ -238,20 +253,27 @@ async def get_index_status(index_id: str):
             "status": task_info["status"],
             "pdf_path": task_info.get("pdf_path", ""),
             "created_at": task_info.get("created_at", ""),
+            "message": task_info.get("message", ""),
         }
+
+        # 添加进度信息
+        if "current_step" in task_info:
+            response["current_step"] = task_info["current_step"]
+        if "progress_percent" in task_info:
+            response["progress_percent"] = task_info["progress_percent"]
+        if "total_steps" in task_info:
+            response["total_steps"] = task_info["total_steps"]
+        if "completed_steps" in task_info:
+            response["completed_steps"] = task_info["completed_steps"]
 
         if task_info["status"] == "completed":
             response.update({
                 "index_id": task_info["result"].get("index_id"),
                 "node_count": task_info["result"].get("node_count"),
                 "pdf_name": task_info["result"].get("pdf_name"),
-                "message": "索引创建成功"
             })
         elif task_info["status"] == "failed":
             response["error"] = task_info.get("error", "Unknown error")
-            response["message"] = "索引创建失败"
-        else:
-            response["message"] = task_info.get("message", "")
 
         return response
 
@@ -268,13 +290,54 @@ async def get_index_status(index_id: str):
         )
 
 
+@router.get("/tasks/{task_id}/progress", response_model=TaskProgressResponse)
+async def get_task_progress(task_id: str):
+    """
+    获取任务详细进度
+
+    返回任务的详细进度信息，包括：
+    - 当前步骤
+    - 进度百分比
+    - 总步骤数和已完成步骤数
+    """
+    if task_id not in _running_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"任务 {task_id} 不存在"
+        )
+
+    task_info = _running_tasks[task_id]
+
+    response = TaskProgressResponse(
+        id=task_id,
+        status=task_info["status"],
+        message=task_info.get("message", ""),
+        pdf_path=task_info.get("pdf_path"),
+        created_at=task_info.get("created_at"),
+        current_step=task_info.get("current_step"),
+        progress_percent=task_info.get("progress_percent"),
+        total_steps=task_info.get("total_steps"),
+        completed_steps=task_info.get("completed_steps"),
+    )
+
+    if task_info["status"] == "completed":
+        response.index_id = task_info["result"].get("index_id")
+        response.node_count = task_info["result"].get("node_count")
+        response.pdf_name = task_info["result"].get("pdf_name")
+        response.progress_percent = 100
+    elif task_info["status"] == "failed":
+        response.error = task_info.get("error", "Unknown error")
+
+    return response
+
+
 @router.delete("/indexes/{index_id}")
 async def delete_index_endpoint(index_id: str):
     """
     删除索引或取消任务
 
     - 如果是 task_id：取消正在运行的任务
-    - 如果是 idx_id：删除已完成的索引
+    - 如果是 idx_id：删除已完成的索引（包括其向量数据和元数据）
     """
     logger.info(f"[API] 收到删除/取消请求: id='{index_id}'")
 
@@ -313,4 +376,61 @@ async def delete_index_endpoint(index_id: str):
     else:
         result = await delete_index(index_id, str(settings.base_dir))
         logger.info(f"[API] 删除索引结果: {result.get('status')}")
+
+        # 返回更详细的信息
+        if result.get("status") == "success":
+            result["message"] = f"索引 {index_id} 已成功删除（包括向量数据和元数据）"
+
         return result
+
+
+@router.delete("/tasks/{task_id}")
+async def cancel_task_endpoint(task_id: str):
+    """
+    取消正在运行的任务
+
+    专门用于取消任务的接口，返回更详细的取消信息
+    """
+    logger.info(f"[API] 收到取消任务请求: task_id='{task_id}'")
+
+    if task_id not in _running_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"任务 {task_id} 不存在"
+        )
+
+    task_info = _running_tasks[task_id]
+    current_status = task_info["status"]
+
+    # 检查任务状态
+    if current_status in ["completed", "failed", "cancelled"]:
+        return {
+            "status": "success",
+            "message": f"任务已{current_status}，无需取消",
+            "task_id": task_id,
+            "current_status": current_status
+        }
+
+    if current_status == "pending":
+        return {
+            "status": "success",
+            "message": "任务尚未开始，已标记为取消",
+            "task_id": task_id,
+            "current_status": "cancelled"
+        }
+
+    # 标记任务为取消状态
+    task_info["cancelled"] = True
+
+    # 取消异步任务
+    task = task_info.get("task")
+    if task and not task.done():
+        task.cancel()
+        logger.info(f"[API] 已发送取消信号: {task_id}")
+
+    return {
+        "status": "success",
+        "message": f"任务 {task_id} 已取消",
+        "task_id": task_id,
+        "current_status": "cancelled"
+    }

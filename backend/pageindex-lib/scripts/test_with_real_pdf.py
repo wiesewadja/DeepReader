@@ -35,12 +35,32 @@ import sys
 import asyncio
 import argparse
 import time
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 
 # 添加 src 到路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+# 加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    # 尝试加载 backend/.env 文件
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"已加载环境变量: {env_path}")
+except ImportError:
+    pass  # python-dotenv 未安装，跳过
+
+# 配置 logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# 创建测试脚本的 logger
+test_logger = logging.getLogger(__name__)
 
 # 颜色输出
 class Colors:
@@ -292,9 +312,11 @@ async def test_toc_detection(pdf_path: str, llm_client=None) -> TestResult:
 
         # 检测目录页
         toc_pages = await find_toc_pages(
-            page_list,
-            config,
-            llm_client=llm_client
+            start_page_index=0,
+            page_list=page_list,
+            opt=config,
+            llm_client=llm_client,
+            logger=test_logger
         )
 
         details["toc_pages_found"] = len(toc_pages)
@@ -373,7 +395,13 @@ async def test_toc_parsing(pdf_path: str, llm_client=None) -> TestResult:
         config = load_config()
 
         # 检测目录页
-        toc_pages = await find_toc_pages(page_list, config, llm_client=llm_client)
+        toc_pages = await find_toc_pages(
+            start_page_index=0,
+            page_list=page_list,
+            opt=config,
+            llm_client=llm_client,
+            logger=test_logger
+        )
 
         if not toc_pages:
             print_warning("未找到目录，跳过目录解析")
@@ -452,7 +480,7 @@ async def test_full_indexing(pdf_path: str, llm_client=None) -> TestResult:
     details = {}
 
     try:
-        from pageindex import page_index
+        from pageindex import page_index_main
         from pageindex.core import load_config
 
         print_info("执行完整索引流程...")
@@ -461,9 +489,9 @@ async def test_full_indexing(pdf_path: str, llm_client=None) -> TestResult:
         # 加载配置
         config = load_config()
 
-        # 执行索引
-        result = page_index(
-            pdf_path=pdf_path,
+        # 执行索引 (使用 page_index_main，因为它支持 llm_client 参数)
+        result = page_index_main(
+            doc=pdf_path,
             opt=config,
             llm_client=llm_client
         )
@@ -595,22 +623,43 @@ async def main_async(args: argparse.Namespace):
 
         from pageindex.llm import get_provider, UnifiedLLM
 
-        provider_config = {
-            "type": args.provider,
-            "api_key": args.api_key or os.environ.get("LLM_API_KEY"),
-        }
+        # 根据 provider 类型确定 API key 环境变量名
+        if args.api_key:
+            api_key = args.api_key
+        else:
+            # 优先使用 provider 特定的环境变量
+            env_var_map = {
+                "deepseek": "DEEPSEEK_API_KEY",
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+            }
+            env_var = env_var_map.get(args.provider, "LLM_API_KEY")
+            api_key = os.environ.get(env_var)
 
-        if args.provider != "openai":
-            provider_config["base_url"] = os.environ.get("LLM_BASE_URL")
+            if not api_key:
+                print_error(f"未找到 API key，请设置 {env_var} 环境变量或使用 --api-key 参数")
+                args.with_llm = False
 
-        try:
-            provider = get_provider(provider_config)
-            llm_client = UnifiedLLM(provider=provider, model=args.model)
-            print_success("LLM 客户端创建成功\n")
-        except Exception as e:
-            print_error(f"LLM 客户端创建失败: {e}")
-            print_info("将运行不需要 LLM 的测试")
-            args.with_llm = False
+        if args.with_llm and api_key:
+            provider_config = {
+                "type": args.provider,
+                "api_key": api_key,
+            }
+
+            # deepseek 需要设置 base_url
+            if args.provider == "deepseek":
+                provider_config["base_url"] = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+            elif args.provider != "openai":
+                provider_config["base_url"] = os.environ.get("LLM_BASE_URL")
+
+            try:
+                provider = get_provider(provider_config)
+                llm_client = UnifiedLLM(provider=provider, model=args.model)
+                print_success("LLM 客户端创建成功\n")
+            except Exception as e:
+                print_error(f"LLM 客户端创建失败: {e}")
+                print_info("将运行不需要 LLM 的测试")
+                args.with_llm = False
 
     # 运行测试
     report = await run_tests(

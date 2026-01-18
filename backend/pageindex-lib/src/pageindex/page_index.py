@@ -52,6 +52,7 @@ from .toc import (
 from .structure import (
     list_to_tree,
     write_node_id,
+    add_node_text,
     add_node_text_with_labels,
 )
 from .json_ops import extract_json, get_json_content
@@ -1896,6 +1897,36 @@ async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
     return toc_tree
 
 
+def save_result(result: dict, pdf_path: str) -> str:
+    """
+    保存最终索引结果到 results/ 目录
+
+    参数:
+        result: 索引结果字典，包含 doc_name 和 structure
+        pdf_path: 原始 PDF 文件路径
+
+    返回:
+        保存的结果文件路径
+    """
+    from datetime import datetime
+
+    # 确保 results 目录存在
+    os.makedirs("results", exist_ok=True)
+
+    # 生成结果文件名
+    pdf_name = result.get("doc_name", get_pdf_name(pdf_path))
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    result_filename = f"{pdf_name}_{current_time}.json"
+    result_filepath = os.path.join("results", result_filename)
+
+    # 保存结果
+    with open(result_filepath, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    print(f"索引结果已保存到: {result_filepath}")
+    return result_filepath
+
+
 def page_index_main(doc, opt=None, llm_client=None):
     logger = JsonLogger(doc)
 
@@ -1946,10 +1977,15 @@ def page_index_main(doc, opt=None, llm_client=None):
         # 如果已有事件循环，使用 run_until_complete
         import nest_asyncio
         nest_asyncio.apply()
-        return loop.run_until_complete(page_index_builder())
+        result = loop.run_until_complete(page_index_builder())
     except RuntimeError:
         # 没有运行中的事件循环，使用 asyncio.run()
-        return asyncio.run(page_index_builder())
+        result = asyncio.run(page_index_builder())
+
+    # 保存最终结果到 results/ 目录
+    save_result(result, doc)
+
+    return result
 
 
 def page_index(
