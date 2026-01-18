@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { IndexManagerModal } from "../ui/index-manager-modal.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
@@ -33,6 +33,8 @@ export class SidebarView extends ItemView {
     private indexSelect: HTMLSelectElement | null = null;
     private statusEl: HTMLElement | null = null;
     private drawer: Drawer | null = null;
+    private drawerCloseHandler: () => void;
+    private isDrawerOpen: boolean = false;
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null) {
         super(leaf);
@@ -40,6 +42,7 @@ export class SidebarView extends ItemView {
         this.submitHandler = () => {};
         this.keyPressHandler = () => {};
         this.indexSelectHandler = () => {};
+        this.drawerCloseHandler = () => {};
     }
 
     getViewType() {
@@ -205,12 +208,13 @@ export class SidebarView extends ItemView {
     }
 
     private openIndexDrawer() {
-        if (!this.drawer) return;
+        if (!this.drawer || this.isDrawerOpen) return;
 
         // 设置抽屉内容
         const drawerContent = this.createIndexManagerContent();
         this.drawer.setContent(drawerContent);
         this.drawer.open();
+        this.isDrawerOpen = true;
     }
 
     private createIndexManagerContent(): HTMLElement {
@@ -227,10 +231,12 @@ export class SidebarView extends ItemView {
         `;
 
         // 关闭按钮事件
-        const closeBtn = header.querySelector(".deeppdf-drawer-close");
-        closeBtn?.addEventListener("click", () => {
+        this.drawerCloseHandler = () => {
             this.drawer?.close();
-        });
+            this.isDrawerOpen = false;
+        };
+        const closeBtn = header.querySelector(".deeppdf-drawer-close");
+        closeBtn?.addEventListener("click", this.drawerCloseHandler);
 
         // 操作按钮区
         const actions = container.createEl("div", { cls: "deeppdf-drawer-actions" });
@@ -264,7 +270,7 @@ export class SidebarView extends ItemView {
                 return;
             }
 
-            result.indexes.forEach((index: any) => {
+            result.indexes.forEach((index: IndexListItem) => {
                 const card = container.createEl("div", { cls: "deeppdf-index-card" });
                 card.innerHTML = `
                     <div class="deeppdf-index-card-info">
@@ -275,7 +281,8 @@ export class SidebarView extends ItemView {
                 `;
             });
         } catch (error) {
-            container.innerHTML = `<p>加载失败: ${error}</p>`;
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            container.innerHTML = `<p>加载失败: ${errorMessage}</p>`;
         }
     }
 
@@ -473,12 +480,19 @@ export class SidebarView extends ItemView {
 
         // 清理抽屉
         if (this.drawer) {
+            // 清理关闭按钮的事件监听器
+            const closeBtn = this.drawer.getElement()?.querySelector(".deeppdf-drawer-close");
+            if (closeBtn) {
+                closeBtn.removeEventListener("click", this.drawerCloseHandler);
+            }
+
             this.drawer.close();
             const drawerEl = this.drawer.getElement();
             if (drawerEl) {
                 drawerEl.remove();
             }
             this.drawer = null;
+            this.isDrawerOpen = false;
         }
     }
 }
