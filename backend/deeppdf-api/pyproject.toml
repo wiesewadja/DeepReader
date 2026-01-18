@@ -7,31 +7,26 @@ dependencies = [
     # Web framework
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
-
     # Data storage
     "chromadb>=0.5.0",
     "sentence-transformers>=3.0.0",
     "langchain-huggingface>=0.1.0",
-
     # PDF processing
     "pymupdf>=1.24.0",
     "pypdf>=3.0.0",
-
     # LLM API
     "openai>=1.30.0",
     "tiktoken>=0.6.0",
-
     # Utilities
     "orjson>=3.10.0",
     "backoff>=2.2.0",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0.1",
-
     # Concurrency control
     "aiofiles>=23.2.1",
-
     # Internal dependencies
     "pageindex",  # workspace dependency
+    "python-multipart>=0.0.21",
 ]
 
 [project.optional-dependencies]

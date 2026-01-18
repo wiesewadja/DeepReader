@@ -9,7 +9,9 @@ from typing import List, Optional
 
 class IndexRequest(BaseModel):
     """创建索引请求"""
-    path: str = Field(..., description="PDF 文件路径")
+    # 文件路径和文件 ID 二选一
+    file_id: Optional[str] = Field(None, description="已上传文件的 ID（通过 /api/files 上传获取）")
+    path: Optional[str] = Field(None, description="PDF 文件路径（绝对路径）")
     # 配置名称（可选，用于使用已保存的配置）
     config_name: Optional[str] = Field(None, description="使用已保存的配置名称，优先级高于单独参数")
     # LLM 配置（可选，用于覆盖全局配置）
@@ -24,20 +26,19 @@ class IndexRequest(BaseModel):
 
     @field_validator('path')
     @classmethod
-    def validate_pdf_path(cls, v: str) -> str:
+    def validate_pdf_path(cls, v: Optional[str]) -> Optional[str]:
         """验证 PDF 路径，防止路径遍历攻击"""
+        if v is None:
+            return v
         # 检查是否为 .pdf 文件
         if not v.lower().endswith('.pdf'):
             raise ValueError('Path must point to a PDF file')
-
         # 防止路径遍历攻击
         if '..' in v:
             raise ValueError('Path traversal detected: ".." is not allowed')
-
         # 检查路径长度
         if len(v) > 500:
             raise ValueError('Path too long (maximum 500 characters)')
-
         return v
 
     @field_validator('llm_provider')

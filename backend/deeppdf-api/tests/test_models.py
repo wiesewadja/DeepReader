@@ -20,10 +20,18 @@ class TestIndexRequest:
         req = IndexRequest(path="/path/to/file.pdf")
         assert req.path == "/path/to/file.pdf"
 
-    def test_index_request_missing_path(self):
-        """测试缺少 path 字段的请求"""
-        with pytest.raises(ValueError):
-            IndexRequest()
+    def test_valid_index_request_with_file_id(self):
+        """测试使用 file_id 的索引请求"""
+        req = IndexRequest(file_id="f_abc123")
+        assert req.file_id == "f_abc123"
+        assert req.path is None
+
+    def test_index_request_missing_path_and_file_id(self):
+        """测试同时缺少 path 和 file_id 字段的请求"""
+        # 现在两个都是可选的，所以不会抛出 ValueError
+        req = IndexRequest()
+        assert req.path is None
+        assert req.file_id is None
 
 
 class TestQueryRequest:

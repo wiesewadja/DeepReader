@@ -46,9 +46,20 @@ class TestIndexEndpoint:
         assert "detail" in data
 
     def test_index_missing_path_field(self, client):
-        """测试缺少 path 字段的请求"""
+        """测试缺少 path 和 file_id 字段的请求"""
         response = client.post("/api/index", json={})
-        assert response.status_code == 422  # Validation error
+        # 现在返回 400 因为两个都是可选的，但业务逻辑要求至少提供一个
+        assert response.status_code == 400
+        data = response.json()
+        assert "detail" in data
+        assert "file_id" in data["detail"] or "path" in data["detail"]
+
+    def test_index_with_invalid_file_id(self, client):
+        """测试使用不存在的 file_id"""
+        response = client.post("/api/index", json={"file_id": "nonexistent_file_id"})
+        assert response.status_code == 404
+        data = response.json()
+        assert "detail" in data
 
 
 class TestQueryEndpoint:

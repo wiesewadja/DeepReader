@@ -18,6 +18,7 @@ from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
 from ..services.config_storage import ConfigStorage
+from ..services.file_storage import FileStorage
 from ..config import settings
 from pathlib import Path
 
@@ -118,6 +119,10 @@ class RateLimiter:
 
 # 全局速率限制器实例
 _rate_limiter = RateLimiter()
+
+# 初始化文件存储服务
+_storage_dir = Path(settings.base_dir)
+_file_storage = FileStorage(storage_dir=str(_storage_dir))
 
 
 def _get_client_ip(request: Request) -> str:
@@ -300,15 +305,42 @@ async def create_index(req: IndexRequest, http_request: Request):
     logger.info(f"[API请求] 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"[API请求] 客户端: {client_host}")
     logger.info("=" * 60)
-    logger.info(f"[请求参数] PDF 路径: {req.path}")
 
-    # 快速验证路径是否存在（同步）
-    pdf_path = Path(req.path)
-    if not pdf_path.exists():
-        logger.error(f"[API请求] ✗ 文件不存在: {req.path}")
+    # 处理 file_id 和 path 参数
+    pdf_path_str = None
+    file_id = None
+
+    if req.file_id:
+        # 从文件存储中获取路径
+        file_id = req.file_id
+        file_info = _file_storage.get_file(req.file_id)
+        if not file_info:
+            logger.error(f"[API请求] ✗ 文件不存在: {req.file_id}")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"File '{req.file_id}' not found"
+            )
+        pdf_path_str = file_info.file_path
+        logger.info(f"[请求参数] 文件 ID: {req.file_id}")
+        logger.info(f"[请求参数] 文件名: {file_info.file_name}")
+    elif req.path:
+        # 直接使用提供的路径
+        pdf_path_str = req.path
+        logger.info(f"[请求参数] PDF 路径: {req.path}")
+    else:
+        logger.error(f"[API请求] ✗ 必须提供 file_id 或 path")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"PDF file not found: {req.path}"
+            detail="Either 'file_id' or 'path' must be provided"
+        )
+
+    # 快速验证路径是否存在（同步）
+    pdf_path = Path(pdf_path_str)
+    if not pdf_path.exists():
+        logger.error(f"[API请求] ✗ 文件不存在: {pdf_path_str}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"PDF file not found: {pdf_path_str}"
         )
 
     # 获取文件大小
@@ -320,7 +352,7 @@ async def create_index(req: IndexRequest, http_request: Request):
         logger.warning(f"[请求参数] 无法获取文件大小: {e}")
 
     # 生成任务 ID
-    task_id = f"task_{hashlib.md5(f'{req.path}{time.time()}'.encode()).hexdigest()[:12]}"
+    task_id = f"task_{hashlib.md5(f'{pdf_path_str}{time.time()}'.encode()).hexdigest()[:12]}"
     logger.info(f"[任务信息] 任务 ID: {task_id}")
 
     # 提取 LLM 配置参数
@@ -399,7 +431,8 @@ async def create_index(req: IndexRequest, http_request: Request):
     _running_tasks[task_id] = {
         "status": "pending",
         "message": "任务已创建，等待处理",
-        "pdf_path": req.path,
+        "pdf_path": pdf_path_str,
+        "file_id": file_id,
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "cancelled": False
     }
@@ -408,7 +441,7 @@ async def create_index(req: IndexRequest, http_request: Request):
     logger.info(f"[任务信息] 创建后台任务...")
 
     task = asyncio.create_task(
-        _run_index_task(task_id, req.path, str(settings.base_dir), **llm_config)
+        _run_index_task(task_id, pdf_path_str, str(settings.base_dir), **llm_config)
     )
     _running_tasks[task_id]["task"] = task
 
