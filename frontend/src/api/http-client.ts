@@ -455,6 +455,21 @@ export class DeepPDFClient {
   }
 
   /**
+   * 获取所有进行中的任务
+   */
+  async getActiveTasks(): Promise<TaskProgress[]> {
+    const result = await this.listIndexes();
+    return result.indexes
+      .filter((index: IndexListItem) => index.id.startsWith('task_'))
+      .map((index: IndexListItem) => ({
+        id: index.id,
+        status: index.status === 'pending' || index.status === 'processing' ? index.status : 'pending',
+        message: index.message || '任务进行中',
+        pdf_name: index.pdf_name
+      } as TaskProgress));
+  }
+
+  /**
    * 获取索引/任务状态
    */
   async getIndexStatus(indexId: string): Promise<TaskProgress> {

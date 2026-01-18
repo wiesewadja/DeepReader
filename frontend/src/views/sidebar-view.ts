@@ -5,8 +5,35 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { IndexManagerModal } from "../ui/index-manager-modal.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
+import { TaskPollingManager } from "../utils/task-polling-manager.js";
+import { TaskProgressCard } from "../components/task-progress-card.js";
+import { TaskProgress } from "../types/index.js";
+
+// ==================== 类型映射 ====================
+
+/**
+ * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
+ * @internal
+ */
+export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
+    return {
+        id: apiProgress.id,
+        status: (apiProgress.status === 'pending' || apiProgress.status === 'processing' ||
+                 apiProgress.status === 'completed' || apiProgress.status === 'failed' ||
+                 apiProgress.status === 'cancelled')
+            ? apiProgress.status
+            : 'pending',
+        message: apiProgress.message || '任务进行中',
+        pdf_name: apiProgress.pdf_name,
+        current_step: apiProgress.current_step,
+        progress_percent: apiProgress.progress_percent,
+        total_steps: apiProgress.total_steps,
+        completed_steps: apiProgress.completed_steps,
+        error: apiProgress.error
+    };
+}
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -35,6 +62,8 @@ export class SidebarView extends ItemView {
     private drawer: Drawer | null = null;
     private drawerCloseHandler: () => void;
     private isDrawerOpen: boolean = false;
+    private taskPollingManager: TaskPollingManager | null = null;
+    private taskCards: Map<string, TaskProgressCard> = new Map();
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null) {
         super(leaf);
@@ -43,6 +72,7 @@ export class SidebarView extends ItemView {
         this.keyPressHandler = () => {};
         this.indexSelectHandler = () => {};
         this.drawerCloseHandler = () => {};
+        // TaskPollingManager 将在首次需要时延迟初始化
     }
 
     getViewType() {
@@ -55,6 +85,19 @@ export class SidebarView extends ItemView {
 
     getIcon() {
         return Icons.database;
+    }
+
+    /**
+     * 获取或创建 TaskPollingManager 实例
+     */
+    private getTaskPollingManager(): TaskPollingManager | null {
+        if (!this.apiClient) return null;
+
+        if (!this.taskPollingManager) {
+            this.taskPollingManager = new TaskPollingManager(this.apiClient);
+        }
+
+        return this.taskPollingManager;
     }
 
     async onOpen() {
@@ -215,6 +258,9 @@ export class SidebarView extends ItemView {
         this.drawer.setContent(drawerContent);
         this.drawer.open();
         this.isDrawerOpen = true;
+
+        // 加载进行中的任务
+        this.loadActiveTasks();
     }
 
     private createIndexManagerContent(): HTMLElement {
@@ -243,6 +289,15 @@ export class SidebarView extends ItemView {
         actions.innerHTML = `
             <button class="deeppdf-btn deeppdf-btn-primary">+ 新建索引</button>
             <button class="deeppdf-btn deeppdf-btn-secondary">刷新</button>
+        `;
+
+        // 任务进度区域
+        const taskSection = container.createEl("div", { cls: "deeppdf-task-section" });
+        taskSection.innerHTML = `
+            <div class="deeppdf-section-header">
+                <h3>⏳ 进行中的任务</h3>
+            </div>
+            <div class="deeppdf-task-list" id="deeppdf-task-list"></div>
         `;
 
         // 索引列表容器
@@ -283,6 +338,141 @@ export class SidebarView extends ItemView {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             container.innerHTML = `<p>加载失败: ${errorMessage}</p>`;
+        }
+    }
+
+    private async loadActiveTasks(): Promise<void> {
+        if (!this.apiClient) return;
+
+        // 清理现有的轮询和任务卡片，防止重复
+        this.clearExistingTasks();
+
+        try {
+            const activeTasks = await this.apiClient.getActiveTasks();
+
+            for (const task of activeTasks) {
+                await this.addTaskCard(task.id, task);
+            }
+        } catch (error) {
+            console.error('[DeepPDF] 加载进行中的任务失败:', error);
+        }
+    }
+
+    /**
+     * 清理现有的任务轮询和卡片
+     */
+    private clearExistingTasks(): void {
+        // 停止所有轮询
+        const manager = this.getTaskPollingManager();
+        if (manager) {
+            const activeTaskIds = manager.getActiveTaskIds();
+            activeTaskIds.forEach(taskId => {
+                manager.stopPolling(taskId);
+            });
+        }
+
+        // 移除所有任务卡片
+        this.taskCards.forEach((card, taskId) => {
+            card.getElement().remove();
+        });
+        this.taskCards.clear();
+    }
+
+    private async addTaskCard(taskId: string, progress: APITaskProgress): Promise<void> {
+        if (!this.drawer) return;
+
+        const taskList = this.drawer.getElement()?.querySelector("#deeppdf-task-list");
+        if (!taskList) return;
+
+        // 如果已经存在该任务的卡片，跳过
+        if (this.taskCards.has(taskId)) return;
+
+        // 转换 API 的 TaskProgress 为组件需要的格式
+        const componentProgress = toTaskProgress(progress);
+
+        // 创建任务进度卡片
+        const card = new TaskProgressCard(componentProgress, async () => {
+            await this.cancelTask(taskId);
+        });
+
+        // 添加到 DOM
+        taskList.appendChild(card.getElement());
+
+        // 保存引用
+        this.taskCards.set(taskId, card);
+
+        // 开始轮询任务进度
+        const manager = this.getTaskPollingManager();
+        if (manager) {
+            manager.startPolling(taskId, (updatedProgress) => {
+                this.updateTaskCard(taskId, updatedProgress);
+            });
+        }
+    }
+
+    private updateTaskCard(taskId: string, progress: APITaskProgress): void {
+        const card = this.taskCards.get(taskId);
+        if (!card) return;
+
+        // 转换 API 的 TaskProgress 为组件需要的格式
+        const componentProgress = toTaskProgress(progress);
+        card.update(componentProgress);
+
+        // 如果任务完成或失败，处理后续逻辑
+        if (progress.status === "completed" || progress.status === "failed" || progress.status === "cancelled") {
+            this.moveTaskToIndexList(taskId, progress);
+        }
+    }
+
+    private async cancelTask(taskId: string): Promise<void> {
+        if (!this.apiClient) return;
+
+        try {
+            await this.apiClient.cancelTask(taskId);
+
+            // 从 DOM 中移除任务卡片
+            const card = this.taskCards.get(taskId);
+            if (card) {
+                card.getElement().remove();
+                this.taskCards.delete(taskId);
+            }
+
+            // 停止轮询
+            const manager = this.getTaskPollingManager();
+            if (manager) {
+                manager.stopPolling(taskId);
+            }
+
+            new Notice("任务已取消");
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            new Notice(`取消任务失败: ${errorMessage}`);
+        }
+    }
+
+    private async moveTaskToIndexList(taskId: string, progress: APITaskProgress): Promise<void> {
+        // 从任务进度区域移除卡片
+        const card = this.taskCards.get(taskId);
+        if (card) {
+            // 延迟移除，让用户看到完成状态
+            setTimeout(() => {
+                card.getElement().remove();
+                this.taskCards.delete(taskId);
+            }, 2000);
+        }
+
+        // 停止轮询
+        const manager = this.getTaskPollingManager();
+        if (manager) {
+            manager.stopPolling(taskId);
+        }
+
+        // 如果任务完成，刷新索引列表
+        if (progress.status === "completed") {
+            const listContainer = this.drawer?.getElement()?.querySelector(".deeppdf-index-list");
+            if (listContainer) {
+                await this.loadIndexesIntoDrawer(listContainer as HTMLElement);
+            }
         }
     }
 
@@ -477,6 +667,14 @@ export class SidebarView extends ItemView {
         if (indexSelect) {
             indexSelect.removeEventListener("change", this.indexSelectHandler);
         }
+
+        // 清理轮询管理器
+        if (this.taskPollingManager) {
+            this.taskPollingManager.destroy();
+        }
+
+        // 清理任务卡片
+        this.taskCards.clear();
 
         // 清理抽屉
         if (this.drawer) {

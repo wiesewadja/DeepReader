@@ -6,7 +6,7 @@
 import { DeepPDFClient, TaskProgress } from "../api/http-client.js";
 
 export class TaskPollingManager {
-    private pollingIntervals: Map<string, number> = new Map();
+    private pollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
     private progressCache: Map<string, TaskProgress> = new Map();
     private apiClient: DeepPDFClient;
     private pollInterval: number = 2000; // 2秒
