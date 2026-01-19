@@ -79,7 +79,10 @@ class QueryResultItem(BaseModel):
 class QueryResponse(BaseModel):
     """查询响应"""
     status: str
-    results: List[QueryResultItem]
+    results: Optional[List[QueryResultItem]] = None
+    error: Optional[str] = None
+    index_info: Optional[dict] = None
+    search_method: Optional[str] = None
 
 
 class IndexListItem(BaseModel):

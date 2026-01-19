@@ -475,7 +475,21 @@ async def query_index(req: QueryRequest):
         str(settings.base_dir),
         settings.max_results
     )
-    logger.info(f"[API] 查询完成: 返回 {len(result.get('results', []))} 个结果")
+
+    # 检查是否出错
+    if result.get("status") == "error":
+        error_msg = result.get("error", "Unknown error")
+        logger.warning(f"[API] 查询失败: {error_msg}")
+        # 返回错误响应，状态码仍然为 200（由 response_model 保证一致性）
+        # 前端可以通过 status="error" 判断
+        return QueryResponse(
+            status="error",
+            results=None,
+            error=error_msg
+        )
+
+    result_count = len(result.get("results", []))
+    logger.info(f"[API] 查询完成: 返回 {result_count} 个结果")
     return QueryResponse(**result)
 
 
