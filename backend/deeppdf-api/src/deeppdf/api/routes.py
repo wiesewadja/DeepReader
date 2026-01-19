@@ -499,8 +499,13 @@ async def list_all_indexes():
     logger.info("[API] 收到列出索引请求")
     result = await list_indexes(str(settings.base_dir))
 
+    # 为已完成的索引添加 status 字段
+    all_indexes = []
+    for idx in result.get("indexes", []):
+        idx["status"] = "completed"
+        all_indexes.append(idx)
+
     # 添加正在运行的任务到列表中
-    all_indexes = result.get("indexes", [])
     for task_id, task_info in _running_tasks.items():
         if task_info["status"] in ["pending", "processing"]:
             all_indexes.append({
