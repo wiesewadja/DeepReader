@@ -653,20 +653,28 @@ export class SidebarView extends ItemView {
         }
 
         try {
+            console.log('[DeepPDF] [loadIndexes] 开始请求索引列表...');
             const result: ListIndexesResult = await this.apiClient.listIndexes();
+            console.log('[DeepPDF] [loadIndexes] API 响应:', JSON.stringify(result, null, 2));
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
                 this.indexManager.setIndexes([]);
                 return;
             }
 
+            // 打印每个索引的状态
+            result.indexes.forEach((idx, i) => {
+                console.log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
+            });
+
             // 更新索引列表，保持当前选中状态 (如果还在列表中)
             this.indexManager.setIndexes(result.indexes, this.currentIndexId || undefined);
-            console.log(`[DeepPDF] 已加载 ${result.indexes.length} 个索引`);
+            console.log(`[DeepPDF] [loadIndexes] 已加载 ${result.indexes.length} 个索引，当前选中: ${this.currentIndexId || '无'}`);
 
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();
         } catch (error) {
+            console.error('[DeepPDF] [loadIndexes] 请求失败:', error);
             handleNetworkError(error as Error, { context: 'loadIndexes' });
             this.indexManager.setIndexes([]);
         }
@@ -677,30 +685,42 @@ export class SidebarView extends ItemView {
      */
     private async updateCurrentIndexIdIfNeeded(): Promise<void> {
         if (!this.currentIndexId || !this.apiClient) {
+            console.log('[DeepPDF] [updateCurrentIndexIdIfNeeded] 跳过：无 currentIndexId 或 apiClient');
             return;
         }
 
+        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 当前选中: ${this.currentIndexId}`);
+
         // 如果当前选中的是 task_id，查询任务状态获取实际的 index_id
         if (this.currentIndexId.startsWith('task_')) {
+            console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 检测到 task_id，查询状态...`);
             try {
                 const taskStatus = await this.apiClient.getIndexStatus(this.currentIndexId);
+                console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态响应:`, JSON.stringify(taskStatus, null, 2));
+
                 if (taskStatus.status === 'completed' && taskStatus.index_id) {
                     // 任务已完成，更新为实际的 index_id
-                    console.log(`[DeepPDF] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
+                    console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
                     this.currentIndexId = taskStatus.index_id;
                     // 更新索引管理器的选中状态
                     if (this.indexManager) {
                         (this.indexManager as any).selectedIndexId = taskStatus.index_id;
                         (this.indexManager as any).renderList();
+                        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新索引管理器选中状态`);
                     }
                     // 更新 PDF 名称
                     if (taskStatus.pdf_name) {
                         this.currentPdfName = taskStatus.pdf_name;
+                        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新 PDF 名称: ${taskStatus.pdf_name}`);
                     }
+                } else {
+                    console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态: ${taskStatus.status}，未完成或无 index_id`);
                 }
             } catch (error) {
-                console.warn(`[DeepPDF] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
+                console.warn(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
             }
+        } else {
+            console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 不是 task_id，跳过查询`);
         }
     }
 

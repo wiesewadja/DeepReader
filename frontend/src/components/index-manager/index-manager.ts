@@ -6,8 +6,11 @@
 import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
 import { IndexListItem } from '../../api/http-client.js';
+import { App } from 'obsidian';
+import { ConfirmModal } from '../confirm-modal.js';
 
 export interface IndexManagerOptions {
+    app: App;
     onIndexChange?: (indexId: string) => void;
     onCreateIndex?: () => void;
     onExportMarkdown?: (indexId: string) => void;
@@ -16,6 +19,7 @@ export interface IndexManagerOptions {
 
 export class IndexManager extends Component {
     private options: IndexManagerOptions;
+    private app: App;
     private isExpanded: boolean = false;
     private indexes: IndexListItem[] = [];
     private selectedIndexId: string = '';
@@ -25,9 +29,10 @@ export class IndexManager extends Component {
     private listEl: HTMLElement | null = null;
     private toggleIcon: HTMLElement | null = null;
 
-    constructor(options: IndexManagerOptions = {}) {
+    constructor(options: IndexManagerOptions) {
         super();
         this.options = options;
+        this.app = options.app;
         this.el = this.render();
     }
 
@@ -181,22 +186,30 @@ export class IndexManager extends Component {
             let displayStatus = 'Unknown';
             let statusClass = 'unknown';
 
+            // 详细的索引状态日志
+            console.log(`[DeepPDF] [IndexManager] 处理索引状态: id="${index.id}", status="${index.status}", rawStatus="${rawStatus}"`);
+
             if (['processing', 'indexing', 'started', 'created'].includes(rawStatus)) {
                 displayStatus = 'Indexing...';
                 statusClass = 'processing';
+                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 processing`);
             } else if (['completed', 'ready', 'success'].includes(rawStatus)) {
                 displayStatus = 'Ready';
                 statusClass = 'ready';
+                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 completed/ready`);
             } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
                 displayStatus = 'Queued';
                 statusClass = 'queued';
+                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 pending/queued`);
             } else if (['failed', 'error'].includes(rawStatus)) {
                 displayStatus = 'Failed';
                 statusClass = 'failed';
+                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 failed`);
             } else {
                 // 如果是其他非空状态，默认显示该状态文本
                 displayStatus = index.status || 'Unknown';
-                console.log(`[DeepPDF] Index ID: ${index.id} has unknown status: "${index.status}"`);
+                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 有未知状态: "${index.status}"`);
+                console.log(`[DeepPDF] [IndexManager] 完整索引对象:`, JSON.stringify(index, null, 2));
             }
 
             statusDiv.className = `deeppdf-index-status ${statusClass}`;
@@ -221,13 +234,42 @@ export class IndexManager extends Component {
                 statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
             }
 
+
             item.appendChild(statusDiv);
+
+            // 4. 操作按钮区 (新增 - 删除按钮)
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'deeppdf-index-actions';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'deeppdf-btn-icon deeppdf-btn-danger';
+            deleteBtn.innerHTML = Icons.trash;
+            deleteBtn.title = 'Delete Index';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 防止触发选择
+
+                new ConfirmModal(
+                    this.app, // 需要传入 app 实例
+                    'Delete Index',
+                    `Are you sure you want to delete index "${index.pdf_name}"?\nThis action cannot be undone.`,
+                    () => {
+                        this.options.onDeleteIndex?.(index.id);
+                    },
+                    {
+                        confirmLabel: 'Delete',
+                        isDestructive: true
+                    }
+                ).open();
+            });
+
+            actionsDiv.appendChild(deleteBtn);
+            item.appendChild(actionsDiv);
 
             // Add click handler to the entire item for selection
             item.addEventListener('click', (e) => {
-                // Don't trigger if clicking on action buttons
+                // Don't trigger if clicking on action buttons or inside actionsDiv
                 const target = e.target as HTMLElement;
-                if (!target.closest('button')) {
+                if (!target.closest('button') && !target.closest('.deeppdf-index-actions')) {
                     this.selectIndex(index.id);
                 }
             });
