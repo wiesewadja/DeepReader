@@ -131,6 +131,7 @@ export interface IndexListItem {
   created_at: string;
   status?: string;
   message?: string;
+  progress_percent?: number;  // 索引进度 0-100
 }
 
 export interface ListIndexesResult {

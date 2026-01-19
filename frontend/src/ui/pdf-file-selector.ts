@@ -31,6 +31,7 @@ export class PDFFileSelectorModal extends Modal {
     private filteredFiles: PDFFileInfo[] = [];
     private searchInput: HTMLInputElement | null = null;
     private fileListEl: HTMLElement | null = null;
+    private fileCountEl: HTMLElement | null = null;
 
     constructor(app: App, onSelect: (fileInfo: PDFFileInfo) => void) {
         super(app);
@@ -50,6 +51,11 @@ export class PDFFileSelectorModal extends Modal {
 
         // 加载 PDF 文件
         await this.loadPDFFiles();
+
+        // 更新文件计数（在加载完成后）
+        if (this.fileCountEl) {
+            this.updateFileCount(this.fileCountEl);
+        }
 
         // 创建文件列表
         this.createFileList(contentEl);
@@ -78,9 +84,6 @@ export class PDFFileSelectorModal extends Modal {
 
         const searchWrapper = searchContainer.createDiv({ cls: "deeppdf-search-wrapper" });
 
-        const searchIcon = searchWrapper.createDiv({ cls: "deeppdf-search-icon" });
-        searchIcon.innerHTML = Icons.search;
-
         this.searchInput = searchWrapper.createEl("input", {
             cls: "deeppdf-search-input",
             attr: { type: "text", placeholder: "搜索 PDF 文件..." }
@@ -90,9 +93,8 @@ export class PDFFileSelectorModal extends Modal {
             this.filterFiles(this.searchInput?.value || "");
         });
 
-        // 显示文件数量
-        const countEl = searchContainer.createDiv({ cls: "deeppdf-file-count" });
-        this.updateFileCount(countEl);
+        // 显示文件数量（稍后更新）
+        this.fileCountEl = searchContainer.createDiv({ cls: "deeppdf-file-count" });
     }
 
     private async loadPDFFiles() {

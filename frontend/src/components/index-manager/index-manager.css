@@ -15,32 +15,138 @@
 .deeppdf-index-manager-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: space-between;
+    gap: 12px;
     padding: 10px 16px;
-    cursor: pointer;
     transition: background 0.2s;
     user-select: none;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+    min-height: 44px;
+    position: relative;
+    /* 为绝对定位的 PDF 名称提供定位上下文 */
 }
 
 .deeppdf-index-manager-header:hover {
     background: var(--background-modifier-hover);
 }
 
+/* Header Left Section (Toggle + Title) */
+.deeppdf-index-header-left {
+    display: flex;
+    align-items: flex-start;
+    /* 改为 flex-start，让箭头始终与顶部对齐 */
+    gap: 10px;
+    flex: 1;
+    cursor: pointer;
+    padding-top: 2px;
+    /* 微调，确保视觉居中 */
+}
+
 .deeppdf-index-toggle-icon {
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
-    transition: transform 0.2s;
-    color: var(--text-muted);
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    /* 微调与文字基线对齐 */
 }
 
 .deeppdf-index-manager-title {
-    flex: 1;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-normal);
+    line-height: 20px;
+}
+
+/* Title Wrapper */
+.deeppdf-index-title-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+}
+
+/* Title Row (Title + Status Dot) */
+.deeppdf-index-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+}
+
+/* Current PDF Indicator - Absolutely Centered */
+.deeppdf-current-pdf {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+    /* 限制最大宽度，避免覆盖按钮 */
+    pointer-events: none;
+    /* 不阻挡点击事件 */
+}
+
+/* Connection Status Indicator */
+.deeppdf-connection-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    border: 2px solid var(--background-modifier-border);
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.deeppdf-connection-status.status-loading {
+    background: var(--text-warning, #F59E0B);
+    border-color: var(--text-warning, #F59E0B);
+    animation: pulse-loading 2s infinite;
+}
+
+.deeppdf-connection-status.status-ok {
+    background: var(--text-success, #10B981);
+    border-color: var(--text-success, #10B981);
+}
+
+.deeppdf-connection-status.status-error {
+    background: var(--text-error, #EF4444);
+    border-color: var(--text-error, #EF4444);
+}
+
+@keyframes pulse-loading {
+    0% {
+        opacity: 0.5;
+        transform: scale(0.9);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 0.5;
+        transform: scale(0.9);
+    }
+}
+
+/* New Index Button in Header */
+.deeppdf-index-create-btn {
+    flex-shrink: 0;
+    font-size: 12px !important;
+    padding: 4px 10px !important;
+    height: auto !important;
 }
 
 /* Content Area */
@@ -152,12 +258,17 @@
     /* 更柔和的悬浮阴影 */
 }
 
+/* 选中状态 - 支持 .active 和 .is-selected */
+.deeppdf-index-item.active,
 .deeppdf-index-item.is-selected {
-    background: var(--background-primary);
+    background: var(--background-primary-alt);
     border-color: var(--interactive-accent);
-    box-shadow: 0 0 0 2px var(--interactive-accent-25, rgba(var(--interactive-accent-rgb), 0.25));
+    border-left-width: 4px;
+    border-left-color: var(--interactive-accent);
+    padding-left: 11px;
+    /* 补偿左边框增加的宽度 */
+    box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.15);
     z-index: 1;
-    /* 确保选中项在上方 */
 }
 
 /* 1. 图标容器 */
@@ -176,10 +287,11 @@
 }
 
 /* 选中项的图标高亮 */
+.deeppdf-index-item.active .deeppdf-index-icon-wrapper,
 .deeppdf-index-item.is-selected .deeppdf-index-icon-wrapper {
     color: var(--interactive-accent);
-    background: var(--background-accent-5, rgba(var(--interactive-accent-rgb), 0.1));
-    border-color: var(--interactive-accent-25, rgba(var(--interactive-accent-rgb), 0.25));
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.12);
+    border-color: var(--interactive-accent);
 }
 
 .deeppdf-index-icon-wrapper svg {

@@ -164,6 +164,24 @@ export class SidebarView extends ItemView {
 
                                         // 刷新索引列表以显示新任务
                                         await this.loadIndexes();
+
+                                        // 启动任务轮询以更新进度
+                                        const pollingManager = this.getTaskPollingManager();
+                                        if (pollingManager && result.index_id) {
+                                            console.log(`[DeepPDF] 开始轮询任务: ${result.index_id}`);
+                                            pollingManager.startPolling(result.index_id, async (progress) => {
+                                                console.log(`[DeepPDF] 任务进度更新: ${progress.status}, ${progress.progress_percent}%`);
+                                                // 刷新索引列表以显示最新进度
+                                                await this.loadIndexes();
+
+                                                // 如果任务完成，显示通知
+                                                if (progress.status === 'completed') {
+                                                    new Notice(`Indexing completed! Nodes: ${progress.node_count || 0}`, 3000);
+                                                } else if (progress.status === 'failed') {
+                                                    new Notice(`Indexing failed: ${progress.error || 'Unknown error'}`, 5000);
+                                                }
+                                            });
+                                        }
                                     } else if (result.status === 'success') {
                                         // 同步完成
                                         new Notice(`Indexing successful! Nodes: ${result.node_count}`, 3000);
@@ -546,24 +564,23 @@ export class SidebarView extends ItemView {
         // ========== 优化 2: 优化 System Prompt ==========
         const systemPrompt = this.buildEnhancedSystemPrompt(pdfName, resultsWithContext, citations);
 
-        // ========== 优化 3: 添加检索来源说明 ==========
-        let contextWithSources = "";
+        // ========== 构建读书上下文 ==========
+        let bookContext = "";
 
-        // 添加来源说明
-        const sourceSections = resultsWithContext.map((item, index) => {
-            const title = citations[index].title || `Page ${citations[index].page}`;
-            return `  [${index + 1}] ${title}`;
-        }).join('\n');
+        // 添加书籍章节信息（自然描述）
+        const sections = resultsWithContext.map((item, index) => {
+            const title = citations[index].title || `第${citations[index].page}页`;
+            return title;
+        });
+        bookContext = `《${pdfName}》中相关内容：\n\n`;
 
-        contextWithSources = `📚 检索来源: ${resultsWithContext.length} 个片段来自《${pdfName}》\n${sourceSections}\n\n文档内容:\n\n`;
+        // 构建 context（自然叙述，不用技术标记）
+        bookContext += resultsWithContext.map((r, index) => {
+            const title = citations[index].title || `第${index + 1}节`;
+            return `（${title}）\n${r.text}`;
+        }).join("\n\n");
 
-        // 构建 context（带 token 限制）
-        contextWithSources += resultsWithContext.map((r, index) => {
-            const title = citations[index].title || `片段 ${index + 1}`;
-            return `【${title}】\n${r.text}`;
-        }).join("\n\n---\n\n");
-
-        const userPrompt = `${contextWithSources}\n\n用户问题: ${query}`;
+        const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
 
         console.log(`[DeepPDF] [handleQuery] 查询: "${query}"`);
         console.log(`[DeepPDF] [handleQuery] 使用 ${resultsWithContext.length}/${result.results.length} 个结果 (token 限制)`);
@@ -1078,18 +1095,26 @@ export class SidebarView extends ItemView {
 ${structureInfo}
 
 📋 回答规范：
-1. 所有答案必须源于所供文本，无一字无来历
-2. 引用内容时，精确标注章节与页码
+1. 所有答案必须源于所读书籍，无一字无来历
+2. 引用时自然注明章节与页码，如"第X章第Y页提到..."
 3. 以清晰逻辑组织答案，展现思辨能力
 4. 用凝练文字表达，勿冗勿散
 5. 书中未言明处，直截了当说明"此书未涉及"
 6. 以用户所用语言作答（中文、英文等）
 
-✍️ 答案风格：
+✍️ 答案风格（务必遵守）：
+- 像真人读书一样自然回答，不要像机器
+- 直接说出答案，不要说"根据文档"、"从片段中看到"、"书中提到"这类话
+- 不要说"从提供的五个片段来看"之类暴露技术细节的话
 - 开门见山，直指要害
 - 条理分明，层次清晰
-- 引文恰当，佐证有力
-- 跨章节关联时，注明各处出处`;
+- 引文时自然融入，如"作者在XX页指出..."
+- 跨章节关联时，自然提及各处，如"这一点在第X章和第Y页都有阐述"
+
+⚠️ 禁忌：
+- 禁止使用"片段"、"文档"、"提供的内容"、"检索结果"等技术术语
+- 禁止说"根据..."、"从...来看"、"...显示"等AI常用语
+- 禁止罗列式回答，要像人一样连贯表达`;
     }
 
     /**

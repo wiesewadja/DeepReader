@@ -63,8 +63,8 @@ export default class DeepPDFPlugin extends Plugin {
         // 添加设置面板
         this.addSettingTab(new DeepPDFSettingTab(this.app, this));
 
-        // 添加 Ribbon 图标
-        this.addRibbonIcon("book", "DeepPDF", () => {
+        // 添加 Ribbon 图标 - 使用读书郎图标
+        this.addRibbonIcon("lucide-book-open", "DeepPDF", () => {
             this.activateView();
         });
 

@@ -50,7 +50,7 @@ export class TopNav extends Component {
 		// Logo
 		const logo = document.createElement('div');
 		logo.className = 'deeppdf-logo-icon';
-		logo.innerHTML = Icons.database;
+		logo.innerHTML = Icons.bookworm;
 		leftSection.appendChild(logo);
 
 		// 标题

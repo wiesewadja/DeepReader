@@ -93,6 +93,7 @@ class IndexListItem(BaseModel):
     created_at: str
     status: Optional[str] = None
     message: Optional[str] = None
+    progress_percent: Optional[int] = None  # 索引进度 0-100
 
 
 class ListIndexesResponse(BaseModel):

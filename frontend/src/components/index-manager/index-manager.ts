@@ -28,6 +28,8 @@ export class IndexManager extends Component {
     private contentEl: HTMLElement | null = null;
     private listEl: HTMLElement | null = null;
     private toggleIcon: HTMLElement | null = null;
+    private currentPdfEl: HTMLElement | null = null;
+    private statusDot: HTMLElement | null = null;
 
     constructor(options: IndexManagerOptions) {
         super();
@@ -40,42 +42,67 @@ export class IndexManager extends Component {
         const container = document.createElement('div');
         container.className = 'deeppdf-index-manager';
 
-        // 1. Header (Toggle)
+        // 1. Header (Toggle + New Index Button)
         this.headerEl = document.createElement('div');
         this.headerEl.className = 'deeppdf-index-manager-header';
-        this.headerEl.addEventListener('click', () => this.toggle());
 
-        const title = document.createElement('span');
-        title.className = 'deeppdf-index-manager-title';
-        title.textContent = 'Index Management';
+        // 左侧：折叠图标 + 标题
+        const leftSection = document.createElement('div');
+        leftSection.className = 'deeppdf-index-header-left';
+        leftSection.addEventListener('click', () => this.toggle());
 
         this.toggleIcon = document.createElement('span');
         this.toggleIcon.className = 'deeppdf-index-toggle-icon';
         this.toggleIcon.innerHTML = Icons.chevronRight;
 
-        this.headerEl.appendChild(this.toggleIcon);
-        this.headerEl.appendChild(title);
+        const titleWrapper = document.createElement('div');
+        titleWrapper.className = 'deeppdf-index-title-wrapper';
+
+        // 第一行：标题 + 状态点
+        const titleRow = document.createElement('div');
+        titleRow.className = 'deeppdf-index-title-row';
+
+        const title = document.createElement('span');
+        title.className = 'deeppdf-index-manager-title';
+        title.textContent = 'Index Management';
+
+        // 连接状态指示器
+        this.statusDot = document.createElement('span');
+        this.statusDot.className = 'deeppdf-connection-status';
+        this.statusDot.title = 'Connecting...';
+
+        titleRow.appendChild(title);
+        titleRow.appendChild(this.statusDot);
+
+        titleWrapper.appendChild(titleRow);
+
+        leftSection.appendChild(this.toggleIcon);
+        leftSection.appendChild(titleWrapper);
+
+        // 右侧：New Index 按钮
+        const createBtn = document.createElement('button');
+        createBtn.className = 'deeppdf-btn deeppdf-btn-sm deeppdf-btn-primary deeppdf-index-create-btn';
+        createBtn.innerHTML = `${Icons.plus} New Index`;
+        createBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onCreateIndex?.();
+        });
+
+        // 中央：当前 PDF 名称（绝对定位居中）
+        this.currentPdfEl = document.createElement('div');
+        this.currentPdfEl.className = 'deeppdf-current-pdf';
+        this.currentPdfEl.style.display = 'none';
+
+        this.headerEl.appendChild(leftSection);
+        this.headerEl.appendChild(this.currentPdfEl);
+        this.headerEl.appendChild(createBtn);
 
         // 2. Content (Collapsible)
         this.contentEl = document.createElement('div');
         this.contentEl.className = 'deeppdf-index-manager-content';
         this.contentEl.style.display = 'none'; // 默认折叠
 
-        // 工具栏
-        const toolbar = document.createElement('div');
-        toolbar.className = 'deeppdf-index-toolbar';
-
-        const createBtn = document.createElement('button');
-        createBtn.className = 'deeppdf-btn deeppdf-btn-sm deeppdf-btn-primary';
-        createBtn.innerHTML = `${Icons.plus} New Index`;
-        createBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.options.onCreateIndex?.();
-        });
-        toolbar.appendChild(createBtn);
-        this.contentEl.appendChild(toolbar);
-
-        // 索引列表
+        // 索引列表（移除 toolbar）
         this.listEl = document.createElement('div');
         this.listEl.className = 'deeppdf-index-list';
         this.contentEl.appendChild(this.listEl);
@@ -108,6 +135,25 @@ export class IndexManager extends Component {
             this.selectedIndexId = selectedId;
         }
         this.renderList();
+        this.updateCurrentPdfIndicator();
+    }
+
+    private updateCurrentPdfIndicator(): void {
+        if (!this.currentPdfEl) return;
+
+        const selectedIndex = this.indexes.find(idx => idx.id === this.selectedIndexId);
+
+        if (selectedIndex) {
+            // 移除 .pdf 后缀
+            let displayName = selectedIndex.pdf_name;
+            if (displayName.toLowerCase().endsWith('.pdf')) {
+                displayName = displayName.slice(0, -4);
+            }
+            this.currentPdfEl.textContent = displayName;
+            this.currentPdfEl.style.display = 'inline-block';
+        } else {
+            this.currentPdfEl.style.display = 'none';
+        }
     }
 
     private renderList(): void {
@@ -224,8 +270,11 @@ export class IndexManager extends Component {
                 // 设置类名以显示进度条
                 item.classList.add('processing');
 
-                // 模拟进度
-                setTimeout(() => { progressBar.style.width = '45%'; }, 100);
+                // 使用实际进度或默认值
+                const actualProgress = index.progress_percent || 0;
+                setTimeout(() => {
+                    progressBar.style.width = `${actualProgress}%`;
+                }, 100);
             } else if (statusClass === 'ready') {
                 statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
             } else if (statusClass === 'queued') {
@@ -309,10 +358,37 @@ export class IndexManager extends Component {
         }
     }
 
+    setConnectionStatus(status: 'loading' | 'connected' | 'disconnected' | 'error'): void {
+        if (!this.statusDot) return;
+
+        // Remove all status classes
+        this.statusDot.removeClass('status-loading');
+        this.statusDot.removeClass('status-ok');
+        this.statusDot.removeClass('status-error');
+
+        // Add appropriate class and update title
+        switch (status) {
+            case 'loading':
+                this.statusDot.addClass('status-loading');
+                this.statusDot.title = 'Connecting...';
+                break;
+            case 'connected':
+                this.statusDot.addClass('status-ok');
+                this.statusDot.title = 'Connected';
+                break;
+            case 'disconnected':
+            case 'error':
+                this.statusDot.addClass('status-error');
+                this.statusDot.title = 'Disconnected';
+                break;
+        }
+    }
+
     private selectIndex(id: string): void {
         if (this.selectedIndexId === id) return;
         this.selectedIndexId = id;
         this.renderList(); // 重新渲染以更新状态
+        this.updateCurrentPdfIndicator(); // 更新当前 PDF 指示器
         this.options.onIndexChange?.(id);
     }
 }

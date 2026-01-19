@@ -516,10 +516,11 @@ async def list_all_indexes():
                 "node_count": 0,  # 任务未完成时节点数为 0
                 "status": task_info["status"],
                 "created_at": task_info.get("created_at", ""),
-                "message": task_info.get("message", "")
+                "message": task_info.get("message", ""),
+                "progress_percent": task_info.get("progress_percent", 0)  # 添加进度信息
             })
             running_task_count += 1
-            logger.info(f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}")
+            logger.info(f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}, progress={task_info.get('progress_percent', 0)}%")
 
     logger.info(f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count}, 运行中: {running_task_count})")
     return ListIndexesResponse(status=result.get("status", "success"), indexes=all_indexes)

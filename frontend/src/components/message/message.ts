@@ -287,9 +287,7 @@ export class AIMessage extends Message {
 		const container = this.renderContainer();
 		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
 
-		// AI Avatar
-		const avatar = wrapper.createEl('div', { cls: 'deeppdf-message-avatar' });
-		avatar.innerHTML = '🤖';
+
 
 		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
 
