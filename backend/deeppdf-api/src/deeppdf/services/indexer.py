@@ -40,7 +40,11 @@ def _extract_nodes_from_tree(
     parent_section: str = "",
     level: int = 0
 ) -> list:
-    """从 PageIndex 树状结构中提取章节节点"""
+    """
+    从 PageIndex 树状结构中提取章节节点
+
+    优先使用 summary，如果没有则使用 text
+    """
     nodes = []
 
     if not tree:
@@ -56,24 +60,18 @@ def _extract_nodes_from_tree(
     current_section = f"{parent_section} > {node_name}" if parent_section else node_name
 
     # 优先使用摘要，如果没有摘要则使用原文
-    # 将章节名称添加到内容前，提供更好的上下文
     content_for_embedding = node_summary or node_text
 
-    # 组合章节名称和内容，提高检索准确性
+    # 如果有内容，创建节点
     if content_for_embedding and content_for_embedding.strip():
         full_text_for_embedding = f"【{current_section}】\n{content_for_embedding.strip()}"
-    else:
-        full_text_for_embedding = None
-
-    if full_text_for_embedding:
-        page_info = start_page
         nodes.append({
             "id": node_id or f"node_{len(nodes)}",
             "text": full_text_for_embedding,
             "metadata": {
                 "section": current_section,
                 "level": level,
-                "page": page_info,
+                "page": start_page,
                 "start_index": start_page,
                 "end_index": end_page,
                 "node_name": node_name,
@@ -81,6 +79,7 @@ def _extract_nodes_from_tree(
             }
         })
 
+    # 递归处理子节点
     children = tree.get("nodes", [])
     for child in children:
         nodes.extend(_extract_nodes_from_tree(child, current_section, level + 1))
@@ -114,7 +113,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     # 这些是字符串类型的配置，转换为布尔值
     if_add_node_id_str = kwargs.get("if_add_node_id") or "yes"
     if_add_node_summary_str = kwargs.get("if_add_node_summary") or "yes"
-    if_add_node_text_str = kwargs.get("if_add_node_text") or "no"
+    if_add_node_text_str = kwargs.get("if_add_node_text") or "yes"
     if_add_doc_description_str = kwargs.get("if_add_doc_description") or "no"
 
     # 转换为布尔值

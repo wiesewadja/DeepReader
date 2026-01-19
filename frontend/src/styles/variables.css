@@ -7,100 +7,55 @@
  */
 
 /* ==================== CSS 变量 ==================== */
+/* ==================== CSS 变量 ==================== */
 :root {
-  /* 品牌色 - 适配 Obsidian 强调色 */
-  --deeppdf-primary: var(--interactive-accent);
-  --deeppdf-primary-hover: var(--interactive-accent-hover);
-  
-  /* 辅助品牌色 - 依然保持一些品牌特性，但要适配 */
-  --deeppdf-brand-blue: #3B82F6; 
-  --deeppdf-brand-blue-hover: #2563EB;
+  /* 核心色板 - 适配主题 */
+  --deeppdf-bg-app: var(--background-primary);
+  --deeppdf-bg-panel: var(--background-secondary);
+  --deeppdf-bg-card: var(--background-primary);
+  --deeppdf-bg-card-hover: var(--background-modifier-hover);
+
+  /* 品牌色 */
+  --deeppdf-accent: var(--interactive-accent);
+  --deeppdf-accent-gradient: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover));
+  --deeppdf-accent-glow: 0 0 15px rgba(var(--interactive-accent-rgb), 0.3);
 
   /* 状态色 */
-  --deeppdf-success: var(--color-green, #10B981);
-  --deeppdf-success-bg: rgba(16, 185, 129, 0.1);
-  --deeppdf-warning: var(--color-orange, #F59E0B);
-  --deeppdf-warning-bg: rgba(245, 158, 11, 0.1);
-  --deeppdf-error: var(--color-red, #EF4444);
-  --deeppdf-error-bg: rgba(239, 68, 68, 0.1);
-  --deeppdf-info: var(--color-blue, #3B82F6);
-  --deeppdf-info-bg: rgba(59, 130, 246, 0.1);
+  --deeppdf-status-ready: var(--color-green, #10B981);
+  --deeppdf-status-indexing: var(--color-blue, #3B82F6);
+  --deeppdf-status-queued: var(--color-orange, #F59E0B);
 
-  /* 背景色 - 映射到 Obsidian 变量 */
-  --deeppdf-bg-primary: var(--background-primary);
-  --deeppdf-bg-secondary: var(--background-secondary);
-  --deeppdf-bg-tertiary: var(--background-secondary-alt);
-  /* 悬浮层背景 (Glassmorphism 基础) */
-  --deeppdf-bg-elevated: var(--background-primary); 
-  --deeppdf-bg-hover: var(--background-modifier-hover);
+  /* 边框与分割线 */
+  --deeppdf-border: var(--background-modifier-border);
+  --deeppdf-border-highlight: var(--interactive-accent);
 
-  /* 文本色 - 映射到 Obsidian 变量 */
+  /* 文字颜色 - 修复：使用主题变量 */
   --deeppdf-text-primary: var(--text-normal);
   --deeppdf-text-secondary: var(--text-muted);
-  --deeppdf-text-muted: var(--text-faint);
-  --deeppdf-text-inverse: var(--text-on-accent);
+  --deeppdf-text-tertiary: var(--text-faint);
 
-  /* 边框色 */
-  --deeppdf-border-subtle: var(--background-modifier-border);
-  --deeppdf-border-default: var(--background-modifier-border);
-  --deeppdf-border-strong: var(--text-muted);
-
-  /* 阴影 - 适配模式 */
-  --deeppdf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
-  --deeppdf-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-  --deeppdf-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
-  --deeppdf-shadow-glow: 0 0 15px rgba(var(--interactive-accent-rgb), 0.3);
-
-  /* 间距 */
-  --deeppdf-spacing-xs: 4px;
-  --deeppdf-spacing-sm: 8px;
-  --deeppdf-spacing-md: 12px;
-  --deeppdf-spacing-lg: 16px;
-  --deeppdf-spacing-xl: 24px;
-  --deeppdf-spacing-2xl: 32px;
-
-  /* 圆角 */
-  --deeppdf-radius-sm: 4px;
-  --deeppdf-radius-md: 8px;
-  --deeppdf-radius-lg: 12px;
-  --deeppdf-radius-full: 9999px;
-
-  /* 过渡 */
-  --deeppdf-transition-fast: 150ms ease;
-  --deeppdf-transition-normal: 200ms ease;
-  --deeppdf-transition-slow: 300ms ease;
-
-  /* 字体 */
-  --deeppdf-font-family: var(--font-interface);
-  --deeppdf-font-size-xs: var(--font-ui-smaller);
-  --deeppdf-font-size-sm: var(--font-ui-small);
-  --deeppdf-font-size-base: var(--font-ui-medium);
-  --deeppdf-font-size-lg: var(--font-ui-large);
-  --deeppdf-font-size-xl: 1.125rem;
-  --deeppdf-font-size-2xl: 1.5rem;
-
-  /* Z-index 层级 */
-  --deeppdf-z-dropdown: 100;
-  --deeppdf-z-sticky: 200;
-  --deeppdf-z-fixed: 300;
-  --deeppdf-z-modal-backdrop: 400;
-  --deeppdf-z-modal: 500;
-  --deeppdf-z-popover: 600;
-  --deeppdf-z-tooltip: 700;
+  /* 阴影与模糊 */
+  --deeppdf-shadow-glass: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --deeppdf-backdrop-blur: blur(12px);
 }
 
-/* 针对深色模式的特定微调 (Obsidian 会在 body 添加 .theme-dark) */
+/* 强制重置容器样式以匹配设计 */
+.deeppdf-container {
+  background-color: var(--deeppdf-bg-app) !important;
+  color: var(--deeppdf-text-primary);
+  font-family: var(--font-interface);
+}
+
+/* 针对深色模式的特定微调 */
 .theme-dark {
   --deeppdf-bg-glass: rgba(30, 41, 59, 0.7);
   --deeppdf-border-glass: rgba(255, 255, 255, 0.1);
-  --deeppdf-shadow-glass: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
 }
 
 /* 针对浅色模式的特定微调 */
 .theme-light {
   --deeppdf-bg-glass: rgba(255, 255, 255, 0.7);
   --deeppdf-border-glass: rgba(0, 0, 0, 0.1);
-  --deeppdf-shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
 }
 
 /* ==================== 基础样式 ==================== */
@@ -119,7 +74,7 @@
   border-radius: var(--deeppdf-radius-lg);
   padding: var(--deeppdf-spacing-lg);
   transition: border-color var(--deeppdf-transition-normal),
-              box-shadow var(--deeppdf-transition-normal);
+    box-shadow var(--deeppdf-transition-normal);
 }
 
 .deeppdf-card:hover {
@@ -268,7 +223,7 @@
   border: 1px solid var(--deeppdf-border-default);
   border-radius: var(--deeppdf-radius-md);
   transition: border-color var(--deeppdf-transition-fast),
-              box-shadow var(--deeppdf-transition-fast);
+    box-shadow var(--deeppdf-transition-fast);
 }
 
 .deeppdf-input::placeholder {
@@ -392,6 +347,7 @@
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -509,6 +465,7 @@
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -519,6 +476,7 @@
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -530,6 +488,7 @@
     opacity: 0;
     transform: scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: scale(1);

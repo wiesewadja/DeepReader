@@ -110,9 +110,31 @@ export class IndexManager extends Component {
         this.listEl.innerHTML = '';
 
         if (this.indexes.length === 0) {
+            // 友好的空状态设计
             const emptyState = document.createElement('div');
-            emptyState.className = 'deeppdf-index-empty';
-            emptyState.textContent = 'No indexes found.';
+            emptyState.className = 'deeppdf-index-empty-friendly';
+
+            emptyState.innerHTML = `
+                <div class="empty-icon">📚</div>
+                <div class="empty-title">还没有索引</div>
+                <div class="empty-hint">索引后可以快速检索 PDF 内容并智能问答</div>
+                <button class="deeppdf-btn deeppdf-btn-primary create-first-btn" id="create-first-index">
+                    ✨ 创建第一个索引
+                </button>
+                <div class="empty-features">
+                    <div class="feature-item">💡 快速检索 PDF 内容</div>
+                    <div class="feature-item">🤖 智能 AI 问答</div>
+                    <div class="feature-item">📝 导出 Markdown 笔记</div>
+                </div>
+            `;
+
+            // 添加点击事件
+            emptyState.querySelector('#create-first-index')?.addEventListener('click', () => {
+                if (this.options.onCreateIndex) {
+                    this.options.onCreateIndex();
+                }
+            });
+
             this.listEl.appendChild(emptyState);
             return;
         }
@@ -122,77 +144,84 @@ export class IndexManager extends Component {
             item.className = `deeppdf-index-item ${index.id === this.selectedIndexId ? 'active' : ''}`;
             item.setAttribute('data-index-id', index.id);
 
-            // 不在这里添加点击事件，因为我们不希望整个项可点击（会干扰按钮）
+            // 新设计结构：
+            // [图标容器] [中间内容区(标题+进度条)] [右侧状态]
 
-            // PDF Icon + Name
-            const iconAndName = document.createElement('div');
-            iconAndName.className = 'deeppdf-index-icon-name';
+            // 1. 左侧图标容器
+            const iconWrapper = document.createElement('div');
+            // 根据文件类型设置样式（目前主要是 PDF）
+            iconWrapper.className = 'deeppdf-index-icon-wrapper pdf';
+            iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+            item.appendChild(iconWrapper);
 
-            const icon = document.createElement('div');
-            icon.className = 'deeppdf-index-icon';
-            icon.innerHTML = this.getStatusIcon(index.status);
+            // 2. 中间内容区
+            const content = document.createElement('div');
+            content.className = 'deeppdf-index-content';
 
             const name = document.createElement('div');
-            name.className = 'deeppdf-index-name-col';
+            name.className = 'deeppdf-index-name';
             name.textContent = index.pdf_name;
+            content.appendChild(name);
 
-            iconAndName.appendChild(icon);
-            iconAndName.appendChild(name);
-            item.appendChild(iconAndName);
+            // 进度条容器 (始终存在，但仅在 processing 时显示)
+            const progressContainer = document.createElement('div');
+            progressContainer.className = 'deeppdf-index-progress-container';
+            const progressBar = document.createElement('div');
+            progressBar.className = 'deeppdf-index-progress-bar';
+            progressContainer.appendChild(progressBar);
+            content.appendChild(progressContainer);
 
-            // Status Area (Right Side)
-            const statusArea = document.createElement('div');
-            statusArea.className = 'deeppdf-index-status-area';
+            item.appendChild(content);
 
-            const status = index.status || 'completed';
+            // 3. 右侧状态区
+            const statusDiv = document.createElement('div');
 
-            if (status === 'processing' || status === 'indexing') {
-                // Show progress bar
-                const progressInfo = document.createElement('div');
-                progressInfo.className = 'deeppdf-index-progress-info';
+            // 状态规范化 (转为小写)
+            const rawStatus = (index.status || 'unknown').toLowerCase();
+            let displayStatus = 'Unknown';
+            let statusClass = 'unknown';
 
-                const progressLabel = document.createElement('span');
-                progressLabel.className = 'deeppdf-index-progress-label';
-                progressLabel.textContent = 'Indexing...';
-
-                const progressPercent = document.createElement('span');
-                progressPercent.className = 'deeppdf-index-progress-percent';
-                // We'll update this with real progress if available
-                progressPercent.textContent = '0%';
-
-                progressInfo.appendChild(progressLabel);
-                progressInfo.appendChild(progressPercent);
-
-                const progressBar = document.createElement('div');
-                progressBar.className = 'deeppdf-index-progress-bar';
-                const progressFill = document.createElement('div');
-                progressFill.className = 'deeppdf-index-progress-fill';
-                progressFill.style.width = '0%';
-                progressBar.appendChild(progressFill);
-
-                statusArea.appendChild(progressInfo);
-                statusArea.appendChild(progressBar);
-            } else if (status === 'completed' || status === 'ready') {
-                // Show "Ready" badge
-                const readyBadge = document.createElement('div');
-                readyBadge.className = 'deeppdf-index-status-badge ready';
-                readyBadge.innerHTML = 'Ready <span class="checkmark">✓</span>';
-                statusArea.appendChild(readyBadge);
-            } else if (status === 'pending' || status === 'queued') {
-                // Show "Queued" badge
-                const queuedBadge = document.createElement('div');
-                queuedBadge.className = 'deeppdf-index-status-badge queued';
-                queuedBadge.innerHTML = 'Queued <span class="clock-icon">⏱️</span>';
-                statusArea.appendChild(queuedBadge);
+            if (['processing', 'indexing', 'started', 'created'].includes(rawStatus)) {
+                displayStatus = 'Indexing...';
+                statusClass = 'processing';
+            } else if (['completed', 'ready', 'success'].includes(rawStatus)) {
+                displayStatus = 'Ready';
+                statusClass = 'ready';
+            } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
+                displayStatus = 'Queued';
+                statusClass = 'queued';
+            } else if (['failed', 'error'].includes(rawStatus)) {
+                displayStatus = 'Failed';
+                statusClass = 'failed';
             } else {
-                // Unknown status
-                const unknownBadge = document.createElement('div');
-                unknownBadge.className = 'deeppdf-index-status-badge unknown';
-                unknownBadge.textContent = status || 'Unknown';
-                statusArea.appendChild(unknownBadge);
+                // 如果是其他非空状态，默认显示该状态文本
+                displayStatus = index.status || 'Unknown';
+                console.log(`[DeepPDF] Index ID: ${index.id} has unknown status: "${index.status}"`);
             }
 
-            item.appendChild(statusArea);
+            statusDiv.className = `deeppdf-index-status ${statusClass}`;
+            statusDiv.innerHTML = `<span>${displayStatus}</span>`;
+
+            // 状态图标
+            if (statusClass === 'processing') {
+                const spinner = document.createElement('div');
+                spinner.className = 'spinner';
+                statusDiv.appendChild(spinner);
+
+                // 设置类名以显示进度条
+                item.classList.add('processing');
+
+                // 模拟进度
+                setTimeout(() => { progressBar.style.width = '45%'; }, 100);
+            } else if (statusClass === 'ready') {
+                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+            } else if (statusClass === 'queued') {
+                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
+            } else if (statusClass === 'failed') {
+                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+            }
+
+            item.appendChild(statusDiv);
 
             // Add click handler to the entire item for selection
             item.addEventListener('click', (e) => {

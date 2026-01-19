@@ -1945,27 +1945,74 @@ def page_index_main(doc, opt=None, llm_client=None):
     logger.info({"total_token": sum([page[1] for page in page_list])})
 
     async def page_index_builder():
+        # 解析 PDF 结构
         structure = await tree_parser(page_list, opt, doc=doc, logger=logger, llm_client=llm_client)
-        if opt.if_add_node_id == "yes":
+
+        if not structure:
+            logger.error("[PageIndex] structure 为空")
+            return {"doc_name": get_pdf_name(doc), "structure": []}
+
+        # 将配置转换为布尔值
+        add_node_id = (opt.if_add_node_id if isinstance(opt.if_add_node_id, bool)
+                       else opt.if_add_node_id == "yes")
+        add_node_text_config = (opt.if_add_node_text if isinstance(opt.if_add_node_text, bool)
+                               else opt.if_add_node_text == "yes")
+        add_node_summary_config = (opt.if_add_node_summary if isinstance(opt.if_add_node_summary, bool)
+                                  else opt.if_add_node_summary == "yes")
+
+        logger.info(f"[PageIndex] 配置: add_node_id={add_node_id}, add_node_text={add_node_text_config}, add_node_summary={add_node_summary_config}")
+
+        # 步骤 1: 添加节点 ID
+        if add_node_id:
             write_node_id(structure)
-        if opt.if_add_node_text == "yes":
+            logger.info("[PageIndex] ✓ 节点 ID 已添加")
+
+        # 步骤 2 & 3: 处理文本和摘要
+        # 确定是否需要保留文本
+        keep_text = add_node_text_config
+        text_temporarily_added = False
+
+        # 如果需要摘要但没有文本，临时添加文本
+        if add_node_summary_config and not add_node_text_config:
+            logger.info("[PageIndex] 临时添加文本用于摘要生成")
             add_node_text(structure, page_list)
-        if opt.if_add_node_summary == "yes":
-            if opt.if_add_node_text == "no":
-                add_node_text(structure, page_list)
+            text_temporarily_added = True
+
+        # 添加文本（如果需要）
+        if add_node_text_config and not text_temporarily_added:
+            add_node_text(structure, page_list)
+            logger.info("[PageIndex] ✓ 节点文本已添加")
+
+        # 生成摘要
+        if add_node_summary_config:
+            logger.info(f"[PageIndex] 开始生成摘要 (llm_client={'None' if llm_client is None else 'available'})")
             await generate_summaries_for_structure(structure, llm_client=llm_client)
-            if opt.if_add_node_text == "no":
-                remove_structure_text(structure)
-            if opt.if_add_doc_description == "yes":
-                clean_structure = create_clean_structure_for_description(structure)
-                doc_description = generate_doc_description(
-                    clean_structure, llm_client=llm_client
-                )
-                return {
-                    "doc_name": get_pdf_name(doc),
-                    "doc_description": doc_description,
-                    "structure": structure,
-                }
+            logger.info("[PageIndex] ✓ 摘要生成完成")
+
+            # 验证摘要是否添加成功
+            first_node = structure[0] if structure else None
+            if first_node and "summary" not in first_node:
+                logger.warning(f"[PageIndex] ⚠ 第一个节点缺少 summary 字段，现有键: {list(first_node.keys())}")
+
+        # 如果是临时添加的文本，现在移除
+        if text_temporarily_added:
+            remove_structure_text(structure)
+            logger.info("[PageIndex] ✓ 临时文本已移除")
+
+        # 检查 doc_description 选项
+        add_doc_description = (opt.if_add_doc_description if hasattr(opt, 'if_add_doc_description') and isinstance(opt.if_add_doc_description, bool)
+                             else (hasattr(opt, 'if_add_doc_description') and opt.if_add_doc_description == "yes"))
+
+        if add_doc_description:
+            logger.info("[PageIndex] 生成文档描述")
+            clean_structure = create_clean_structure_for_description(structure)
+            doc_description = generate_doc_description(clean_structure, llm_client=llm_client)
+            return {
+                "doc_name": get_pdf_name(doc),
+                "doc_description": doc_description,
+                "structure": structure,
+            }
+
         return {
             "doc_name": get_pdf_name(doc),
             "structure": structure,

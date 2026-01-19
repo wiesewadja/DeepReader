@@ -19,10 +19,13 @@
 	flex: 1;
 	overflow-y: auto;
 	overflow-x: hidden;
-	padding: var(--size-4-4, 1rem);
+
+	/* 增加底部 padding，防止被悬浮输入框遮挡 */
+	padding: 16px 16px 100px 16px;
+
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-4, 1rem);
+	gap: 16px;
 
 	/* 自定义滚动条样式 */
 	scrollbar-width: thin;
@@ -74,9 +77,12 @@
 }
 
 @keyframes deeppdf-float {
-	0%, 100% {
+
+	0%,
+	100% {
 		transform: translateY(0);
 	}
+
 	50% {
 		transform: translateY(-10px);
 	}
@@ -106,6 +112,7 @@
 		opacity: 0;
 		transform: translateY(10px);
 	}
+
 	to {
 		opacity: 1;
 		transform: translateY(0);

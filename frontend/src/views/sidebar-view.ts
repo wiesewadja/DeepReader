@@ -4,7 +4,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
-import { IndexManagerModal } from "../ui/index-manager-modal.js";
+import { PDFFileSelectorModal, PDFFileInfo } from "../ui/pdf-file-selector.js";
 import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
@@ -125,10 +125,83 @@ export class SidebarView extends ItemView {
                 }
             },
             onCreateIndex: () => {
-                // 打开索引管理对话框，传递设置
-                new IndexManagerModal(this.app, this.apiClient!, this.plugin.settings, () => {
-                    // 索引创建成功后刷新列表
-                    this.loadIndexes();
+                // 直接打开 PDF 选择器，不再需要 IndexManagerModal
+                new PDFFileSelectorModal(this.app, async (fileInfo: PDFFileInfo) => {
+                    try {
+                        // 显示确认对话框
+                        const confirmed = confirm(
+                            `确定要索引 "${fileInfo.name}"？\n\n` +
+                            `文件大小: ${fileInfo.sizeFormatted}\n` +
+                            `索引完成后可以开始 AI 问答`
+                        );
+
+                        if (!confirmed) {
+                            return;
+                        }
+
+                        new Notice(`开始索引 "${fileInfo.name}"...`);
+
+                        // 调用 API 创建索引
+                        const result = await this.apiClient!.indexPDF(fileInfo.path, {
+                            llmProvider: this.plugin.settings.llmProvider,
+                            llmModel: this.plugin.settings.llmModel,
+                            deepseekApiKey: this.plugin.settings.deepseekApiKey,
+                            openaiApiKey: this.plugin.settings.openaiApiKey,
+                            apiUrl: this.plugin.settings.apiUrl,
+                            maxPagesPerNode: this.plugin.settings.maxPagesPerNode,
+                            maxTokensPerNode: this.plugin.settings.maxTokensPerNode,
+                            ifAddNodeSummary: this.plugin.settings.ifAddNodeSummary
+                        });
+
+                        // 检查返回状态
+                        if (result.status === 'pending') {
+                            // 异步任务已创建
+                            new Notice(
+                                `索引任务已创建 (ID: ${result.index_id})，正在后台处理...`,
+                                4000
+                            );
+
+                            // 等待一小段时间确保后端任务已注册
+                            await new Promise(resolve => setTimeout(resolve, 500));
+
+                            // 刷新索引列表以显示新任务
+                            await this.loadIndexes();
+
+
+                        } else if (result.status === 'success') {
+                            // 同步完成（很少见）
+                            new Notice(
+                                `索引创建成功！节点数: ${result.node_count}`,
+                                3000
+                            );
+
+                            // 刷新索引列表
+                            await this.loadIndexes();
+                        } else {
+                            // 其他状态
+                            new Notice(
+                                `索引状态: ${result.status}`,
+                                3000
+                            );
+                            await this.loadIndexes();
+                        }
+                    } catch (error: any) {
+                        let errorMessage = '索引创建失败';
+
+                        if (error.message) {
+                            if (error.message.includes('Too Many Requests') ||
+                                error.message.includes('速率限制')) {
+                                errorMessage = '创建索引过于频繁，请稍后再试';
+                            } else if (error.message.includes('API key')) {
+                                errorMessage = 'API key 未配置或无效，请在设置中检查';
+                            } else {
+                                errorMessage = `索引创建失败: ${error.message}`;
+                            }
+                        }
+
+                        new Notice(errorMessage, 5000);
+                        console.error('[DeepPDF] 索引创建错误:', error);
+                    }
                 }).open();
             },
             onExportMarkdown: async (indexId: string) => {

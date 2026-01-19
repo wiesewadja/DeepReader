@@ -4,58 +4,73 @@
  * 使用 Obsidian 原生主题变量以适配不同主题
  */
 
-/* ==================== 聊天输入容器 ==================== */
+/* ==================== 悬浮聊天输入框 Container ==================== */
+
+.deeppdf-chat-input-section {
+	position: absolute;
+	bottom: 20px;
+	left: 20px;
+	right: 20px;
+	z-index: 100;
+}
 
 .deeppdf-chat-input {
 	display: flex;
 	flex-direction: column;
 	width: 100%;
-	animation: deeppdf-fade-in 0.2s ease;
+	/* 移除原有背景，改为悬浮设计 */
+	background: transparent;
+	animation: deeppdf-fade-in 0.3s ease;
 }
 
-/* ==================== 输入框包装器 ==================== */
+/* ==================== 输入框包装器 (胶囊样式) ==================== */
 
 .deeppdf-chat-input-wrapper {
 	display: flex;
-	align-items: flex-end;
-	gap: var(--size-4-2, 0.55rem);
-	padding: var(--size-4-2, 0.55rem);
-	padding-right: var(--size-4-2, 0.55rem);
-	background: var(--background-modifier-form-field);
+	align-items: center;
+	gap: 12px;
+	padding: 8px 8px 8px 20px;
+	/* 左侧多留白给文字 */
+
+	/* 玻璃拟态背景 - 修复适配亮色模式 */
+	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-lg);
-	transition: border-color var(--deeppdf-transition-fast, 150ms ease),
-	            box-shadow var(--deeppdf-transition-fast, 150ms ease);
-	position: relative;
+
+	border-radius: 999px;
+	/* 胶囊形状 */
+
+	box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .deeppdf-chat-input-wrapper:focus-within {
 	border-color: var(--interactive-accent);
-	box-shadow: 0 0 0 3px var(--color-accent-soft, rgba(var(--interactive-accent-rgb), 0.15));
+	box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15),
+		0 0 0 1px var(--interactive-accent);
+	transform: translateY(-2px);
 }
 
 /* ==================== 文本输入框 ==================== */
 
 .deeppdf-chat-input-textarea {
 	flex: 1;
-	min-height: 32px;
-	max-height: 150px;
-	padding: var(--size-4-1, 0.275rem) var(--size-4-2, 0.55rem);
-	font-size: var(--font-ui-medium);
+	min-height: 24px;
+	/* 更紧凑的高度 */
+	max-height: 120px;
+	padding: 8px 0;
+	font-size: 14px;
 	font-family: inherit;
 	line-height: 1.5;
 	color: var(--text-normal);
 	background: transparent;
 	border: none;
-	border-radius: var(--radius-md);
 	resize: none;
-	overflow: hidden;
-	transition: color var(--deeppdf-transition-fast, 150ms ease);
+	outline: none;
 }
 
 .deeppdf-chat-input-textarea::placeholder {
 	color: var(--text-muted);
-	opacity: 0.7;
 }
 
 .deeppdf-chat-input-textarea:focus {
@@ -228,6 +243,7 @@
 		opacity: 0;
 		transform: translateY(4px);
 	}
+
 	to {
 		opacity: 1;
 		transform: translateY(0);
