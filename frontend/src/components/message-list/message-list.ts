@@ -3,6 +3,7 @@
  * 管理和渲染聊天消息列表
  */
 
+import { App } from 'obsidian';
 import { Component } from '../component';
 import { createMessage, Message, MessageData, CitationData } from '../message/message';
 
@@ -29,12 +30,14 @@ export class MessageList extends Component {
 	private messagesContainer: HTMLElement | null = null;
 	private emptyState: HTMLElement | null = null;
 	private callbacks: MessageCallbacks;
+	private app?: App;
 	/** 存储每个消息的引用事件处理器，用于清理 */
 	private citationEventHandlers: Map<string, Array<() => void>> = new Map();
 
-	constructor(callbacks: MessageCallbacks = {}) {
+	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
 		this.callbacks = callbacks;
+		this.app = app;
 		this.el = this.render();
 	}
 
@@ -86,7 +89,8 @@ export class MessageList extends Component {
 			},
 			onCopyWithCitation: () => {
 				this.callbacks.onCopyWithCitation?.(messageData.id);
-			}
+			},
+			app: this.app
 		});
 
 		// 如果消息有引用，需要为每个引用添加跳转回调

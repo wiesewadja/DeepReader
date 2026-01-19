@@ -1,7 +1,9 @@
 /**
  * DeepPDF 消息组件
- * 实现 ChatGPT 风格的聊天消息界面
+ * 实现 ChatGPT 风格的聊天消息界面，支持 Markdown 渲染和流式更新
  */
+
+import { App, MarkdownRenderer, Component } from 'obsidian';
 
 /**
  * 消息角色类型
@@ -22,6 +24,10 @@ export interface CitationData {
 	file_path?: string;
 	/** 可选：Markdown 文件路径 (相对于 vault) */
 	markdown_path?: string;
+	/** 相关性得分 */
+	score?: number;
+	/** 可选：标题 */
+	title?: string;
 }
 
 /**
@@ -44,43 +50,31 @@ export interface MessageData {
 
 /**
  * HTML 转义工具函数
- * 防止 XSS 攻击
  */
 function escapeHtml(text: string): string {
-	const div = document.createElement('div');
-	div.textContent = text;
-	return div.innerHTML;
+	if (!text) return '';
+	return text
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&#039;");
 }
 
 /**
  * 格式化时间戳
  */
-function formatTimestamp(timestamp: string): string {
-	const date = new Date(timestamp);
-	const now = new Date();
-	const diffMs = now.getTime() - date.getTime();
-	const diffMins = Math.floor(diffMs / 60000);
-
-	if (diffMins < 1) {
-		return '刚刚';
-	} else if (diffMins < 60) {
-		return `${diffMins} 分钟前`;
-	} else if (diffMins < 1440) {
-		const hours = Math.floor(diffMins / 60);
-		return `${hours} 小时前`;
-	} else {
-		return date.toLocaleDateString('zh-CN', {
-			month: 'short',
-			day: 'numeric',
-			hour: '2-digit',
-			minute: '2-digit'
-		});
+function formatTimestamp(isoString: string): string {
+	try {
+		const date = new Date(isoString);
+		return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	} catch (e) {
+		return '';
 	}
 }
 
 /**
  * 引用来源组件
- * 显示 PDF 引用信息，支持点击跳转
  */
 export class Citation {
 	private el: HTMLElement;
@@ -97,48 +91,43 @@ export class Citation {
 		const citationEl = document.createElement('div');
 		citationEl.addClass('deeppdf-citation');
 
-		// 引用头部：文件名和页码
+		// 上半部分：Icon + Filename + Page Badge
 		const header = citationEl.createEl('div', { cls: 'deeppdf-citation-header' });
+
+		// Icon
+		const iconWrapper = header.createEl('div', { cls: 'deeppdf-citation-icon' });
+		// Simple document icon
+		iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
 
 		const fileInfo = header.createEl('div', { cls: 'deeppdf-citation-file-info' });
 		fileInfo.createEl('span', {
-			cls: 'deeppdf-citation-icon',
-			text: '📄'
-		});
-		fileInfo.createEl('span', {
 			cls: 'deeppdf-citation-filename',
-			text: this.escapeHtml(this.citation.pdf_name)
+			text: this.citation.pdf_name
 		});
 
-		const pageBadge = header.createEl('span', {
-			cls: 'deeppdf-citation-page-badge'
-		});
-		pageBadge.createEl('span', { text: '第 ' });
-		pageBadge.createEl('strong', { text: this.citation.page.toString() });
-		pageBadge.createEl('span', { text: ' 页' });
-
-		// 引用内容
-		const snippet = citationEl.createEl('div', {
-			cls: 'deeppdf-citation-snippet',
-			text: this.citation.snippet
+		// Meta info (Page)
+		const meta = fileInfo.createEl('div', { cls: 'deeppdf-citation-meta' });
+		const pageBadge = meta.createEl('span', {
+			cls: 'deeppdf-citation-page-badge',
+			text: `Page ${this.citation.page}`
 		});
 
-		// 跳转按钮（如果有回调）
-		if (this.onJump) {
-			const jumpBtn = citationEl.createEl('button', {
-				cls: 'deeppdf-citation-jump-btn'
+		// 引用内容摘要 (Snippet)
+		if (this.citation.snippet) {
+			citationEl.createEl('div', {
+				cls: 'deeppdf-citation-snippet',
+				text: this.citation.snippet
 			});
-			jumpBtn.innerHTML = '🔗 跳转';
-			jumpBtn.addEventListener('click', () => {
+		}
+
+		// 跳转逻辑绑定整个卡片
+		if (this.onJump) {
+			citationEl.addEventListener('click', () => {
 				this.onJump?.(this.citation);
 			});
 		}
 
 		return citationEl;
-	}
-
-	private escapeHtml(text: string): string {
-		return escapeHtml(text);
 	}
 
 	getElement(): HTMLElement {
@@ -152,10 +141,11 @@ export class Citation {
 export abstract class Message {
 	protected el: HTMLElement | null = null;
 	protected data: MessageData;
+	protected app?: App;
 
-	constructor(data: MessageData) {
+	constructor(data: MessageData, app?: App) {
 		this.data = data;
-		// 不在构造函数中调用 render()，让子类在设置完属性后自行调用
+		this.app = app;
 	}
 
 	/**
@@ -179,33 +169,44 @@ export abstract class Message {
 		return timeEl;
 	}
 
-	/**
-	 * 转义 HTML
-	 */
 	protected escapeHtml(text: string): string {
 		return escapeHtml(text);
 	}
 
-	/**
-	 * 子类实现具体的渲染逻辑
-	 */
 	abstract render(): HTMLElement;
 
 	/**
-	 * 更新消息内容
+	 * 更新消息内容 (优化版: 避免全量重绘)
 	 */
 	update(data: Partial<MessageData>): void {
+		const oldContent = this.data.content;
+		const oldCitations = this.data.citations;
 		Object.assign(this.data, data);
-		const newRender = this.render();
-		if (this.el) {
-			this.el.replaceWith(newRender);
+
+		// 如果只是内容变了，且DOM已存在，尝试局部更新
+		// 注意：如果 citations 变了，我们需要重绘整个 AI 消息或者专门更新引用部分
+		// 目前为了简单，如果只有 content 变了，走局部更新；否则走全量
+		if (this.el &&
+			data.content !== undefined &&
+			data.content !== oldContent &&
+			(data.citations === undefined || JSON.stringify(data.citations) === JSON.stringify(oldCitations))
+		) {
+			this.updateContent(data.content);
+		} else {
+			// 全量重绘
+			const newRender = this.render();
+			if (this.el) {
+				this.el.replaceWith(newRender);
+			}
+			this.el = newRender;
 		}
-		this.el = newRender;
 	}
 
 	/**
-	 * 获取消息元素
+	 * 局部更新内容
 	 */
+	protected abstract updateContent(content: string): void;
+
 	getElement(): HTMLElement {
 		if (!this.el) {
 			throw new Error('Message element not initialized. Call render() first.');
@@ -213,9 +214,6 @@ export abstract class Message {
 		return this.el;
 	}
 
-	/**
-	 * 获取消息数据
-	 */
 	getData(): MessageData {
 		return { ...this.data };
 	}
@@ -223,43 +221,46 @@ export abstract class Message {
 
 /**
  * 用户消息组件
- * 右对齐，浅色背景
  */
 export class UserMessage extends Message {
-	constructor(data: MessageData) {
-		super(data);
+	constructor(data: MessageData, app?: App) {
+		super(data, app);
 		this.el = this.render();
 	}
 
 	render(): HTMLElement {
 		const container = this.renderContainer();
+		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
+		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-user'] });
 
-		// 消息内容包装器（右对齐）
-		const wrapper = container.createEl('div', {
-			cls: 'deeppdf-message-wrapper'
-		});
+		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
-		// 消息气泡
-		const bubble = wrapper.createEl('div', {
-			cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-user']
-		});
+		// 用户消息支持 Markdown 渲染（如果 app 存在）
+		if (this.app) {
+			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
+		} else {
+			content.innerHTML = this.escapeHtml(this.data.content);
+		}
 
-		// 消息内容
-		const content = bubble.createEl('div', {
-			cls: 'deeppdf-message-content'
-		});
-		content.innerHTML = this.escapeHtml(this.data.content);
-
-		// 时间戳
 		bubble.appendChild(this.renderTimestamp());
-
 		return container;
+	}
+
+	protected updateContent(content: string): void {
+		const contentEl = this.el?.querySelector('.deeppdf-message-content');
+		if (contentEl) {
+			contentEl.empty();
+			if (this.app) {
+				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
+			} else {
+				contentEl.innerHTML = this.escapeHtml(content);
+			}
+		}
 	}
 }
 
 /**
  * AI 消息组件
- * 左对齐，深色背景，带操作按钮
  */
 export class AIMessage extends Message {
 	private onRegenerate?: () => void;
@@ -272,9 +273,10 @@ export class AIMessage extends Message {
 			onRegenerate?: () => void;
 			onCopy?: () => void;
 			onCopyWithCitation?: () => void;
+			app?: App;
 		}
 	) {
-		super(data);
+		super(data, options?.app);
 		this.onRegenerate = options?.onRegenerate;
 		this.onCopy = options?.onCopy;
 		this.onCopyWithCitation = options?.onCopyWithCitation;
@@ -283,89 +285,101 @@ export class AIMessage extends Message {
 
 	render(): HTMLElement {
 		const container = this.renderContainer();
+		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
 
-		// 消息内容包装器（左对齐）
-		const wrapper = container.createEl('div', {
-			cls: 'deeppdf-message-wrapper'
-		});
-
-		// AI 图标
-		const avatar = wrapper.createEl('div', {
-			cls: 'deeppdf-message-avatar'
-		});
+		// AI Avatar
+		const avatar = wrapper.createEl('div', { cls: 'deeppdf-message-avatar' });
 		avatar.innerHTML = '🤖';
 
-		// 消息气泡
-		const bubble = wrapper.createEl('div', {
-			cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai']
-		});
+		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
 
-		// 消息内容
-		const content = bubble.createEl('div', {
-			cls: 'deeppdf-message-content'
-		});
-		content.innerHTML = this.escapeHtml(this.data.content);
+		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
-		// 时间戳
+		// 使用 Markdown 渲染
+		if (this.app) {
+			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
+		} else {
+			content.innerHTML = this.escapeHtml(this.data.content);
+		}
+
 		bubble.appendChild(this.renderTimestamp());
 
-		// 操作按钮（只有当有回调时才创建）
-		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0));
-		if (hasActions) {
-			const actions = bubble.createEl('div', {
-				cls: 'deeppdf-message-actions'
-			});
+		// 渲染操作按钮和引用
+		this.renderActions(bubble);
+		this.renderCitations(bubble);
 
-			if (this.onRegenerate) {
-				const regenerateBtn = actions.createEl('button', {
-					cls: 'deeppdf-message-action-btn'
-				});
-				regenerateBtn.innerHTML = '🔄 重新生成';
-				regenerateBtn.addEventListener('click', () => {
-					this.onRegenerate?.();
-				});
-			}
+		// 如果正在流式传输，添加光标效果 (由 CSS 处理 .deeppdf-message-streaming)
+		if (this.data.isStreaming) {
+			container.addClass('deeppdf-message-streaming');
+		} else {
+			container.removeClass('deeppdf-message-streaming');
+		}
 
-			if (this.onCopy) {
-				const copyBtn = actions.createEl('button', {
-					cls: 'deeppdf-message-action-btn'
-				});
-				copyBtn.innerHTML = '📋 复制';
-				copyBtn.addEventListener('click', () => {
-					this.onCopy?.();
-				});
-			}
+		return container;
+	}
 
-			if (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) {
-				const copyWithCitationBtn = actions.createEl('button', {
-					cls: 'deeppdf-message-action-btn'
-				});
-				copyWithCitationBtn.innerHTML = '📋 复制+引用';
-				copyWithCitationBtn.addEventListener('click', () => {
-					this.onCopyWithCitation?.();
-				});
+	protected updateContent(content: string): void {
+		const contentEl = this.el?.querySelector('.deeppdf-message-content');
+		if (contentEl) {
+			contentEl.empty();
+			if (this.app) {
+				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
+			} else {
+				contentEl.innerHTML = this.escapeHtml(content);
 			}
 		}
 
-		// 引用来源
-		if (this.data.citations && this.data.citations.length > 0) {
-			const citationsContainer = bubble.createEl('div', {
-				cls: 'deeppdf-message-citations'
-			});
+		// 更新流式状态类
+		/*
+		if (this.data.isStreaming) {
+			this.el?.addClass('deeppdf-message-streaming');
+		} else {
+			this.el?.removeClass('deeppdf-message-streaming');
+		}
+		*/
+	}
 
+	private renderActions(container: HTMLElement) {
+		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0));
+		if (hasActions) {
+			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
+			if (this.onRegenerate) {
+				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				// Icon: Refresh CW
+				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+				btn.title = "Regenerate";
+				btn.addEventListener('click', () => this.onRegenerate?.());
+			}
+			if (this.onCopy) {
+				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				// Icon: Clipboard
+				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+				btn.title = "Copy";
+				btn.addEventListener('click', () => this.onCopy?.());
+			}
+			if (this.onCopyWithCitation && this.data.citations?.length) {
+				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				// Icon: Copy with headers/list
+				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
+				btn.title = "Copy with Citations";
+				btn.addEventListener('click', () => this.onCopyWithCitation?.());
+			}
+		}
+	}
+
+	private renderCitations(container: HTMLElement) {
+		if (this.data.citations && this.data.citations.length > 0) {
+			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
 			this.data.citations.forEach(citation => {
 				const citationEl = new Citation(citation);
 				citationsContainer.appendChild(citationEl.getElement());
 			});
 		}
-
-		return container;
 	}
 }
 
 /**
  * 消息工厂函数
- * 根据消息角色创建相应的消息组件
  */
 export function createMessage(
 	data: MessageData,
@@ -373,10 +387,11 @@ export function createMessage(
 		onRegenerate?: () => void;
 		onCopy?: () => void;
 		onCopyWithCitation?: () => void;
+		app?: App;
 	}
 ): Message {
 	if (data.role === 'user') {
-		return new UserMessage(data);
+		return new UserMessage(data, options?.app);
 	} else {
 		return new AIMessage(data, options);
 	}

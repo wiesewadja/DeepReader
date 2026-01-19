@@ -332,7 +332,7 @@ export class SidebarView extends ItemView {
             onCitationJump: (citation: CitationData) => {
                 this.handleCitationJump(citation);
             }
-        });
+        }, this.app);
 
         const messageListEl = this.messageList.getElement();
         if (messageListEl) {
@@ -405,15 +405,9 @@ export class SidebarView extends ItemView {
             };
             this.messageList?.addMessage(aiMessageData);
 
-            // 发送查询请求
-            const result = await this.handleQuery(message, this.currentIndexId);
+            // 发送查询请求 (handleQuery 将负责更新 UI 和流式输出)
+            await this.handleQuery(message, this.currentIndexId, aiMessageId);
 
-            // 更新 AI 消息
-            this.messageList?.updateMessage(aiMessageId, {
-                content: result.answer,
-                citations: result.citations,
-                isStreaming: false
-            });
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -438,10 +432,7 @@ export class SidebarView extends ItemView {
     /**
      * 处理查询请求
      */
-    private async handleQuery(query: string, indexId: string): Promise<{
-        answer: string;
-        citations: CitationData[];
-    }> {
+    private async handleQuery(query: string, indexId: string, aiMessageId: string): Promise<void> {
         if (!this.apiClient) {
             throw new Error("API 客户端未连接");
         }
@@ -449,39 +440,229 @@ export class SidebarView extends ItemView {
         const result = await this.apiClient.queryPDF(query, indexId);
 
         if (result.status !== "success") {
-            throw new Error("查询失败");
+            throw new Error(result.error || "查询失败");
         }
 
-        // 从 API 响应中获取 PDF 名称（避免依赖可能过时的本地状态）
+        // 从 API 响应中获取 PDF 名称
         const pdfName = result.index_info?.pdf_name || "未知文档";
 
-        // 格式化响应
-        let answer = "";
-        if (result.query) {
-            answer += `**查询**: ${query}\n\n`;
-        }
-
+        // 如果没有相关结果
         if (!result.results || result.results.length === 0) {
-            answer += "未找到相关结果。请尝试使用不同的关键词重新搜索。";
-            return { answer, citations: [] };
+            this.messageList?.updateMessage(aiMessageId, {
+                content: "未找到相关结果。请尝试使用不同的关键词重新搜索。",
+                isStreaming: false
+            });
+            return;
         }
 
-        // 构建答案
-        answer += `找到 ${result.results.length} 个相关结果：\n\n`;
+        // ========== 优化 3: Re-ranking 机制 ==========
+        // 在应用 token 限制之前，先对结果进行 Re-ranking
+        const rerankedResults = this.rerankResults(result.results, query);
+        console.log(`[DeepPDF] [handleQuery] Re-ranking 完成，结果顺序已优化`);
 
-        result.results.forEach((item, index) => {
-            answer += `${index + 1}. ${this.escapeHtml(item.text || "")}\n\n`;
+        // ========== 优化 1: Context token 限制 ==========
+        const MAX_CONTEXT_TOKENS = 12000; // 根据 DeepSeek (16K) 和 GPT-3.5 (4K) 调整
+        const resultsWithContext = this.buildContextWithTokenLimit(rerankedResults, MAX_CONTEXT_TOKENS);
+
+        // 构建包含完整信息的引用
+        const citations: CitationData[] = resultsWithContext.map((item, index) => {
+            const section = item.metadata?.section || '';
+            const nodeName = item.metadata?.node_name || '';
+            const page = item.metadata?.page || item.metadata?.start_index || 0;
+
+            // 构建描述性标题
+            let title = `Page ${page}`;
+            if (nodeName) {
+                title = `${nodeName} (p.${page})`;
+            } else if (section) {
+                title = `${section} (p.${page})`;
+            }
+
+            return {
+                pdf_name: pdfName,
+                page: page,
+                snippet: item.text || "",
+                section: section,
+                node_name: nodeName,
+                title: title // 添加标题字段用于显示
+            };
         });
 
-        // 构建引用（使用从 API 返回的 pdf_name）
-        const citations: CitationData[] = result.results.map(item => ({
-            pdf_name: pdfName,
-            page: item.metadata?.page || item.metadata?.start_index || 0,
-            snippet: item.text || "",
-            file_path: item.metadata?.node_name || undefined
-        }));
+        // 检查是否有 DeepSeek/OpenAI API Key
+        const settings = this.plugin.settings;
+        const apiKey = settings.llmProvider === 'openai' ? settings.openaiApiKey : settings.deepseekApiKey;
+        const model = settings.llmModel || (settings.llmProvider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat') || 'deepseek-chat';
 
-        return { answer, citations };
+        // 如果没有 Key，回退到显示检索片段
+        if (!apiKey) {
+            let answer = `找到 ${resultsWithContext.length} 个相关结果 (请在设置中配置 API Key 以启用 AI 智能回答)：\n\n`;
+            resultsWithContext.forEach((item, index) => {
+                const title = citations[index].title || `Page ${citations[index].page}`;
+                answer += `${index + 1}. **${title}**: ${this.escapeHtml(item.text || "").substring(0, 150)}...\n\n`;
+            });
+
+            this.messageList?.updateMessage(aiMessageId, {
+                content: answer,
+                citations: citations,
+                isStreaming: false
+            });
+            return;
+        }
+
+        // ========== 优化 2: 优化 System Prompt ==========
+        const systemPrompt = this.buildEnhancedSystemPrompt(pdfName, resultsWithContext, citations);
+
+        // ========== 优化 3: 添加检索来源说明 ==========
+        let contextWithSources = "";
+
+        // 添加来源说明
+        const sourceSections = resultsWithContext.map((item, index) => {
+            const title = citations[index].title || `Page ${citations[index].page}`;
+            return `  [${index + 1}] ${title}`;
+        }).join('\n');
+
+        contextWithSources = `📚 检索来源: ${resultsWithContext.length} 个片段来自《${pdfName}》\n${sourceSections}\n\n文档内容:\n\n`;
+
+        // 构建 context（带 token 限制）
+        contextWithSources += resultsWithContext.map((r, index) => {
+            const title = citations[index].title || `片段 ${index + 1}`;
+            return `【${title}】\n${r.text}`;
+        }).join("\n\n---\n\n");
+
+        const userPrompt = `${contextWithSources}\n\n用户问题: ${query}`;
+
+        console.log(`[DeepPDF] [handleQuery] 查询: "${query}"`);
+        console.log(`[DeepPDF] [handleQuery] 使用 ${resultsWithContext.length}/${result.results.length} 个结果 (token 限制)`);
+        console.log(`[DeepPDF] [handleQuery] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
+
+        try {
+            await this.streamLLMResponse(
+                settings.llmProvider,
+                apiKey,
+                model,
+                systemPrompt,
+                userPrompt,
+                aiMessageId,
+                citations
+            );
+        } catch (err: any) {
+            console.error("LLM Error:", err);
+
+            // 失败时的回退显示
+            let fallbackAnswer = `AI 生成失败: ${err.message || 'Unknown error'}\n\n但我们找到了以下相关内容：\n\n`;
+            resultsWithContext.forEach((item, index) => {
+                const title = citations[index].title || `Page ${citations[index].page}`;
+                fallbackAnswer += `${index + 1}. **${title}**: ${this.escapeHtml(item.text || "").substring(0, 150)}...\n\n`;
+            });
+
+            this.messageList?.updateMessage(aiMessageId, {
+                content: fallbackAnswer,
+                citations: citations,
+                isStreaming: false
+            });
+        }
+    }
+
+    /**
+     * 调用 LLM API 并流式输出 (带节流优化)
+     */
+    private async streamLLMResponse(
+        provider: string,
+        apiKey: string,
+        model: string,
+        systemPrompt: string,
+        userPrompt: string,
+        messageId: string,
+        citations: CitationData[]
+    ): Promise<void> {
+        const apiUrl = provider === 'openai'
+            ? 'https://api.openai.com/v1/chat/completions'
+            : 'https://api.deepseek.com/chat/completions'; // DeepSeek 兼容 OpenAI 格式
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: "system", content: systemPrompt },
+                        { role: "user", content: userPrompt }
+                    ],
+                    stream: true,
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`LLM API returned ${response.status}: ${errorText}`);
+            }
+
+            if (!response.body) {
+                throw new Error("ReadableStream not supported in this environment");
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let fullContent = "";
+            let lastUpdateTime = 0;
+            const UPDATE_INTERVAL = 100; // 100ms 节流，避免频繁渲染导致闪烁
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n').filter(line => line.trim() !== '');
+
+                let hasNewContent = false;
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+
+                        try {
+                            const parsed = JSON.parse(data);
+                            const content = parsed.choices?.[0]?.delta?.content || "";
+                            if (content) {
+                                fullContent += content;
+                                hasNewContent = true;
+                            }
+                        } catch (e) {
+                            console.warn("Error parsing stream chunk", e);
+                        }
+                    }
+                }
+
+                // 节流更新 UI
+                if (hasNewContent) {
+                    const now = Date.now();
+                    if (now - lastUpdateTime > UPDATE_INTERVAL) {
+                        this.messageList?.updateMessage(messageId, {
+                            content: fullContent,
+                            citations: citations, // 保持引用显示
+                            isStreaming: true
+                        });
+                        lastUpdateTime = now;
+                    }
+                }
+            }
+
+            // 完成后进行最后一次更新，确保内容完整
+            this.messageList?.updateMessage(messageId, {
+                content: fullContent,
+                citations: citations,
+                isStreaming: false
+            });
+
+        } catch (error) {
+            throw error;
+        }
     }
 
     /**
@@ -736,6 +917,172 @@ export class SidebarView extends ItemView {
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    /**
+     * Re-ranking 机制
+     * 结合向量相似度、关键词匹配和文本长度进行重新排序
+     * 目标：优先将最相关的结果放在前面
+     */
+    private rerankResults(results: any[], query: string): any[] {
+        if (results.length === 0) return results;
+
+        console.log(`[DeepPDF] [rerank] 开始 Re-ranking ${results.length} 个结果`);
+
+        const queryLower = query.toLowerCase();
+        const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
+
+        return results.map((result, index) => {
+            const text = result.text || "";
+            const textLower = text.toLowerCase();
+            let score = 0;
+
+            // 1. 向量相似度分数（如果有）
+            // ChromaDB 返回的距离分数，越小越好，转换为相似度
+            const distance = result.metadata?.distance || result.metadata?.similarity || 0;
+            // 距离转换为相似度：distance 0 -> score 1.0, distance 0.5 -> 0.7, distance 1 -> 0.5, distance 2+ -> 0.3
+            const similarityScore = distance === 0 ? 1.0 : (distance < 0.5 ? 0.7 : (distance < 1 ? 0.5 : 0.3));
+            score += similarityScore * 30; // 最高 30 分（完全匹配）
+
+            // 2. 精确查询词匹配（在文本中）
+            const exactMatchCount = (textLower.match(new RegExp(queryLower, 'g')) || []).length;
+            score += exactMatchCount * 15; // 每个 15 分
+
+            // 3. 查询词部分匹配
+            let partialMatchScore = 0;
+            queryTerms.forEach(term => {
+                const termCount = (textLower.match(new RegExp(term, 'g')) || []).length;
+                partialMatchScore += termCount * 3; // 每个 3 分
+            });
+            score += partialMatchScore;
+
+            // 4. 文本位置加权（开头更重要）
+            const firstMatchPos = textLower.indexOf(queryLower);
+            if (firstMatchPos !== -1) {
+                // 前 20% 匹配加 10 分
+                if (firstMatchPos < text.length * 0.2) {
+                    score += 10;
+                }
+            }
+
+            // 5. 文本长度适中性（避免太短或太长）
+            const textLength = text.length;
+            if (textLength > 100 && textLength < 800) {
+                score += 5; // 理想长度
+            } else if (textLength >= 800 && textLength < 1500) {
+                score += 2; // 可接受长度
+            }
+
+            // 6. 章节标题匹配
+            const section = result.metadata?.section || result.metadata?.node_name || "";
+            const sectionLower = section.toLowerCase();
+            if (sectionLower && queryTerms.some(term => sectionLower.includes(term))) {
+                score += 12; // 章节匹配加分
+            }
+
+            // 7. 原始顺序保持（微小的优先级给前面的结果）
+            score += (results.length - index) * 0.1;
+
+            return { ...result, _rerankScore: score };
+        })
+            .sort((a, b) => (b._rerankScore || 0) - (a._rerankScore || 0))
+            .map(({ _rerankScore, ...result }) => result);
+    }
+
+    /**
+     * 构建 context 时考虑 token 限制
+     * 优先保留最相关的结果（在 Re-ranking 之后）
+     */
+    private buildContextWithTokenLimit(results: any[], maxTokens: number): any[] {
+        const limitedResults = [];
+        let currentTokens = 0;
+
+        for (const result of results) {
+            const tokens = this.estimateTokens(result.text || "");
+            if (currentTokens + tokens > maxTokens) {
+                console.log(`[DeepPDF] [buildContext] 达到 token 限制 (${currentTokens}/${maxTokens})，剩余 ${results.length - limitedResults.length} 个结果被截断`);
+                break;
+            }
+            limitedResults.push(result);
+            currentTokens += tokens;
+        }
+
+        return limitedResults;
+    }
+
+    /**
+     * 简单的 token 估算（英文约 4 字符/token，中文约 2 字符/token）
+     */
+    private estimateTokens(text: string): number {
+        if (!text) return 0;
+
+        // 统计中文字符
+        const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+        // 统计英文字符（非中文）
+        const englishChars = text.length - chineseChars;
+
+        // 中文: ~2 字符/token, 英文: ~4 字符/token
+        return Math.ceil(chineseChars / 2 + englishChars / 4);
+    }
+
+    /**
+     * 构建增强的系统提示词，包含 PDF 结构信息
+     */
+    private buildEnhancedSystemPrompt(pdfName: string, results: any[], citations: any[]): string {
+        // 提取结构信息
+        const structureInfo = this.extractStructureInfo(results);
+
+        return `You are a helpful AI assistant specialized in analyzing PDF documents.
+
+📄 Document: 《${pdfName}》
+${structureInfo}
+
+📋 Guidelines:
+1. Use the provided context from the PDF to answer the user's question accurately
+2. Context is organized by sections with page numbers - preserve this structure in your answer
+3. When referencing specific content, mention the section name and page number
+4. If the answer is not in the context, clearly state that you cannot find the answer in the document
+5. Maintain the hierarchical structure of information when possible
+6. Respond in the same language as the user's question (Chinese, English, etc.)
+
+💡 Tips for better answers:
+- Start with a direct answer, then provide supporting details
+- Use bullet points for listing multiple items
+- Quote key phrases from the document when relevant
+- Cross-reference different sections if they provide related information`;
+    }
+
+    /**
+     * 从检索结果中提取 PDF 结构信息
+     */
+    private extractStructureInfo(results: any[]): string {
+        const sections = new Set<string>();
+        const pages = new Set<number>();
+
+        results.forEach(result => {
+            // 收集章节信息
+            if (result.metadata?.section) {
+                sections.add(result.metadata.section);
+            }
+            if (result.metadata?.node_name) {
+                sections.add(result.metadata.node_name);
+            }
+            // 收集页码信息
+            if (result.metadata?.page) {
+                pages.add(result.metadata.page);
+            }
+        });
+
+        let info = "";
+        if (sections.size > 0) {
+            info += `📑 Available sections: ${Array.from(sections).slice(0, 5).join(', ')}${sections.size > 5 ? '...' : ''}\n`;
+        }
+        if (pages.size > 0) {
+            const sortedPages = Array.from(pages).sort((a, b) => a - b);
+            info += `📖 Pages: ${sortedPages[0]}-${sortedPages[sortedPages.length - 1]}`;
+        }
+
+        return info || "📑 Document structure unknown";
     }
 
     /**

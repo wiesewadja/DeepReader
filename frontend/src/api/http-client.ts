@@ -192,6 +192,7 @@ export interface QueryPDFResult {
   query?: string;
   results: QueryResultItem[];
   index_info?: QueryIndexInfo;
+  error?: string;
 }
 
 // ==================== HTTP 客户端类 ====================

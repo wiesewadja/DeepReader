@@ -125,58 +125,177 @@
 }
 
 /* ==================== 索引卡片 (现代设计) ==================== */
-/* ==================== 索引卡片 (现代设计) ==================== */
+/* ==================== 索引卡片 (Premium Redesign) ==================== */
+
 .deeppdf-index-item {
     display: flex;
-    /* 改回 flex row 布局 */
     flex-direction: row;
     align-items: center;
     gap: 12px;
-    padding: 10px;
+    padding: 12px 14px;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
-    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    margin-bottom: 8px;
+    /* 卡片间距 */
 }
 
 .deeppdf-index-item:hover {
-    background: var(--background-modifier-hover);
+    background: var(--background-secondary);
+    border-color: var(--background-modifier-border-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    /* 更柔和的悬浮阴影 */
+}
+
+.deeppdf-index-item.is-selected {
+    background: var(--background-primary);
     border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent-25, rgba(var(--interactive-accent-rgb), 0.25));
+    z-index: 1;
+    /* 确保选中项在上方 */
 }
 
-/* 操作按钮区 */
-.deeppdf-index-actions {
-    display: flex;
-    align-items: center;
-    margin-left: auto;
-    /* 推到最右侧 */
-    opacity: 0;
-    /* 默认隐藏 */
-    transition: opacity 0.2s ease;
-    padding-left: 8px;
-}
-
-/* 只有当鼠标悬停在卡片上时才显示操作按钮 */
-.deeppdf-index-item:hover .deeppdf-index-actions {
-    opacity: 1;
-}
-
-/* 按钮基础样式 */
-.deeppdf-btn-icon {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 6px;
-    border-radius: 6px;
+/* 1. 图标容器 */
+.deeppdf-index-icon-wrapper {
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: var(--background-secondary-alt);
+    border-radius: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    border: 1px solid var(--background-modifier-border);
     transition: all 0.2s;
-    line-height: 0;
+}
+
+/* 选中项的图标高亮 */
+.deeppdf-index-item.is-selected .deeppdf-index-icon-wrapper {
+    color: var(--interactive-accent);
+    background: var(--background-accent-5, rgba(var(--interactive-accent-rgb), 0.1));
+    border-color: var(--interactive-accent-25, rgba(var(--interactive-accent-rgb), 0.25));
+}
+
+.deeppdf-index-icon-wrapper svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* 2. 中间内容区 */
+.deeppdf-index-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+    /* 名称和进度条的间距 */
+}
+
+.deeppdf-index-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+/* 3. 状态区 (胶囊 Badge) */
+.deeppdf-index-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 20px;
+    /* 全圆角 */
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    background: var(--background-secondary-alt);
+    color: var(--text-muted);
+    border: 1px solid transparent;
+    /* 预留边框位置 */
+    flex-shrink: 0;
+    text-transform: capitalize;
+    /* 首字母大写 */
+    transition: all 0.2s;
+}
+
+/* 状态: Indexing / Processing */
+.deeppdf-index-status.processing {
+    background: rgba(var(--interactive-accent-rgb), 0.1);
+    color: var(--interactive-accent);
+    border-color: rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+/* 状态: Ready / Success */
+.deeppdf-index-status.ready,
+.deeppdf-index-status.success {
+    background: rgba(var(--color-green-rgb, 76, 175, 80), 0.1);
+    /* 绿色背景 */
+    color: var(--color-green, #4caf50);
+    border-color: rgba(var(--color-green-rgb, 76, 175, 80), 0.2);
+}
+
+/* 状态: Queued */
+.deeppdf-index-status.queued {
+    background: rgba(var(--color-yellow-rgb, 255, 193, 7), 0.1);
+    color: var(--color-yellow, #ffc107);
+    border-color: rgba(var(--color-yellow-rgb, 255, 193, 7), 0.2);
+}
+
+/* 状态: Failed */
+.deeppdf-index-status.failed {
+    background: rgba(var(--color-red-rgb, 244, 67, 54), 0.1);
+    color: var(--color-red, #f44336);
+    border-color: rgba(var(--color-red-rgb, 244, 67, 54), 0.2);
+}
+
+/* 状态图标微调 */
+.deeppdf-index-status svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* 4. 操作按钮区 */
+.deeppdf-index-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    opacity: 0;
+    transform: translateX(10px);
+    transition: all 0.2s ease;
+}
+
+/* Hover 时显示操作按钮 */
+.deeppdf-index-item:hover .deeppdf-index-actions {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* 操作按钮样式 */
+.deeppdf-btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    padding: 0;
 }
 
 .deeppdf-btn-icon:hover {
@@ -184,27 +303,36 @@
     color: var(--text-normal);
 }
 
-/* 危险按钮 (删除) */
 .deeppdf-btn-danger:hover {
-    color: var(--text-error, #ef4444);
-    background: rgba(255, 0, 0, 0.1);
+    background: rgba(var(--color-red-rgb, 244, 67, 54), 0.1);
+    color: var(--color-red, #f44336);
 }
 
-.deeppdf-btn-icon svg {
-    width: 16px;
-    height: 16px;
+/* 进度条 */
+.deeppdf-index-progress-container {
+    height: 4px;
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+    width: 100%;
+    display: none;
+    /* 默认隐藏 */
 }
 
-.deeppdf-index-item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-color: var(--interactive-accent);
+/* 当父元素有 processing 类时显示进度条 */
+.deeppdf-index-item.processing .deeppdf-index-progress-container {
+    display: block;
 }
 
-.deeppdf-index-item.active {
-    background: var(--background-modifier-hover);
-    border-color: var(--interactive-accent);
+.deeppdf-index-progress-bar {
+    height: 100%;
+    background: var(--interactive-accent);
+    width: 0%;
+    transition: width 0.3s ease;
 }
+
+
 
 /* 卡片顶部：图标 + 名称 + 状态 */
 .deeppdf-index-icon-name {
