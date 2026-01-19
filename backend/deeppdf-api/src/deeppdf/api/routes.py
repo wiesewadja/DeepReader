@@ -504,7 +504,7 @@ async def list_all_indexes():
     for idx in result.get("indexes", []):
         idx["status"] = "completed"
         all_indexes.append(idx)
-        logger.debug(f"[API] 已完成索引: id={idx['id']}, pdf_name={idx.get('pdf_name', 'N/A')}, status=completed")
+        logger.info(f"[API] 已完成索引: id={idx['id']}, pdf_name={idx.get('pdf_name', 'N/A')}, status=completed")
 
     # 添加正在运行的任务到列表中
     running_task_count = 0
@@ -519,7 +519,7 @@ async def list_all_indexes():
                 "message": task_info.get("message", "")
             })
             running_task_count += 1
-            logger.debug(f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}")
+            logger.info(f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}")
 
     logger.info(f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count}, 运行中: {running_task_count})")
     return ListIndexesResponse(status=result.get("status", "success"), indexes=all_indexes)

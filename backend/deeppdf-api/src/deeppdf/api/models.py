@@ -91,6 +91,8 @@ class IndexListItem(BaseModel):
     pdf_name: str
     node_count: int
     created_at: str
+    status: Optional[str] = None
+    message: Optional[str] = None
 
 
 class ListIndexesResponse(BaseModel):
