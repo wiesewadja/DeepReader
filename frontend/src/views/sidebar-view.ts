@@ -15,6 +15,7 @@ import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, CitationData } from "../components/message/message.js";
 import { TopNav } from "../components/top-nav/top-nav.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
+import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
@@ -115,6 +116,7 @@ export class SidebarView extends ItemView {
      */
     private createIndexManager(container: HTMLElement) {
         this.indexManager = new IndexManager({
+            app: this.app,
             onIndexChange: (indexId: string) => {
                 this.currentIndexId = indexId;
                 // 查找 PDF 名称
@@ -128,16 +130,70 @@ export class SidebarView extends ItemView {
                 // 直接打开 PDF 选择器，不再需要 IndexManagerModal
                 new PDFFileSelectorModal(this.app, async (fileInfo: PDFFileInfo) => {
                     try {
-                        // 显示确认对话框
-                        const confirmed = confirm(
-                            `确定要索引 "${fileInfo.name}"？\n\n` +
-                            `文件大小: ${fileInfo.sizeFormatted}\n` +
-                            `索引完成后可以开始 AI 问答`
-                        );
+                        // 使用 ConfirmModal 替代原生 confirm
+                        new ConfirmModal(
+                            this.app,
+                            'Confirm Indexing',
+                            `Are you sure you want to index "${fileInfo.name}"?\n\nFile size: ${fileInfo.sizeFormatted}\nYou can start AI Q&A after indexing is complete.`,
+                            async () => {
+                                new Notice(`Starting to index "${fileInfo.name}"...`);
 
-                        if (!confirmed) {
-                            return;
-                        }
+                                // 调用 API 创建索引
+                                try {
+                                    const result = await this.apiClient!.indexPDF(fileInfo.path, {
+                                        llmProvider: this.plugin.settings.llmProvider,
+                                        llmModel: this.plugin.settings.llmModel,
+                                        deepseekApiKey: this.plugin.settings.deepseekApiKey,
+                                        openaiApiKey: this.plugin.settings.openaiApiKey,
+                                        apiUrl: this.plugin.settings.apiUrl,
+                                        maxPagesPerNode: this.plugin.settings.maxPagesPerNode,
+                                        maxTokensPerNode: this.plugin.settings.maxTokensPerNode,
+                                        ifAddNodeSummary: this.plugin.settings.ifAddNodeSummary
+                                    });
+
+                                    // 检查返回状态
+                                    if (result.status === 'pending') {
+                                        // 异步任务已创建
+                                        new Notice(
+                                            `Index task created (ID: ${result.index_id}), processing in background...`,
+                                            4000
+                                        );
+
+                                        // 等待一小段时间确保后端任务已注册
+                                        await new Promise(resolve => setTimeout(resolve, 500));
+
+                                        // 刷新索引列表以显示新任务
+                                        await this.loadIndexes();
+                                    } else if (result.status === 'success') {
+                                        // 同步完成
+                                        new Notice(`Indexing successful! Nodes: ${result.node_count}`, 3000);
+                                        await this.loadIndexes();
+                                    } else {
+                                        new Notice(`Index status: ${result.status}`, 3000);
+                                        await this.loadIndexes();
+                                    }
+                                } catch (error: any) {
+                                    let errorMessage = 'Indexing failed';
+                                    if (error.message) {
+                                        if (error.message.includes('Too Many Requests') || error.message.includes('速率限制')) {
+                                            errorMessage = 'Rate limit exceeded, please try again later';
+                                        } else if (error.message.includes('API key')) {
+                                            errorMessage = 'API key invalid or missing';
+                                        } else {
+                                            errorMessage = `Indexing failed: ${error.message}`;
+                                        }
+                                    }
+                                    new Notice(errorMessage, 5000);
+                                    console.error('[DeepPDF] Indexing error:', error);
+                                }
+                            },
+                            {
+                                confirmLabel: 'Start Indexing'
+                            }
+                        ).open();
+
+                        // 移除原来的逻辑，因为现在都在 ConfirmModal 的回调里了
+                        return;
 
                         new Notice(`开始索引 "${fileInfo.name}"...`);
 
@@ -607,9 +663,44 @@ export class SidebarView extends ItemView {
             // 更新索引列表，保持当前选中状态 (如果还在列表中)
             this.indexManager.setIndexes(result.indexes, this.currentIndexId || undefined);
             console.log(`[DeepPDF] 已加载 ${result.indexes.length} 个索引`);
+
+            // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
+            await this.updateCurrentIndexIdIfNeeded();
         } catch (error) {
             handleNetworkError(error as Error, { context: 'loadIndexes' });
             this.indexManager.setIndexes([]);
+        }
+    }
+
+    /**
+     * 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
+     */
+    private async updateCurrentIndexIdIfNeeded(): Promise<void> {
+        if (!this.currentIndexId || !this.apiClient) {
+            return;
+        }
+
+        // 如果当前选中的是 task_id，查询任务状态获取实际的 index_id
+        if (this.currentIndexId.startsWith('task_')) {
+            try {
+                const taskStatus = await this.apiClient.getIndexStatus(this.currentIndexId);
+                if (taskStatus.status === 'completed' && taskStatus.index_id) {
+                    // 任务已完成，更新为实际的 index_id
+                    console.log(`[DeepPDF] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
+                    this.currentIndexId = taskStatus.index_id;
+                    // 更新索引管理器的选中状态
+                    if (this.indexManager) {
+                        (this.indexManager as any).selectedIndexId = taskStatus.index_id;
+                        (this.indexManager as any).renderList();
+                    }
+                    // 更新 PDF 名称
+                    if (taskStatus.pdf_name) {
+                        this.currentPdfName = taskStatus.pdf_name;
+                    }
+                }
+            } catch (error) {
+                console.warn(`[DeepPDF] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
+            }
         }
     }
 

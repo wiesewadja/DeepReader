@@ -567,6 +567,8 @@ async def get_index_status(index_id: str):
         result = await list_indexes(str(settings.base_dir))
         for idx in result.get("indexes", []):
             if idx["id"] == index_id:
+                # 添加 status 字段以保持与任务状态的兼容性
+                idx["status"] = "completed"
                 return idx
 
         raise HTTPException(
