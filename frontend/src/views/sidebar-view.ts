@@ -80,7 +80,7 @@ export class SidebarView extends ItemView {
     }
 
     getIcon() {
-        return Icons.database;
+        return "lucide-book-open";
     }
 
     /**
@@ -293,9 +293,6 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
-        // 创建顶部导航区
-        this.createTopNavigation(container);
-
         // 创建索引管理区 (新)
         this.createIndexManager(container);
 
@@ -310,6 +307,43 @@ export class SidebarView extends ItemView {
 
         // 更新服务器状态
         this.updateStatus();
+
+        // 设置滚动监听：滚动时隐藏输入框
+        this.setupScrollHandler(container);
+    }
+
+    /**
+     * 设置滚动监听逻辑
+     * 当消息列表滚动时隐藏输入框，停止滚动后显示
+     */
+    private setupScrollHandler(container: HTMLElement) {
+        // 使用 setTimeout 延迟查找 DOM 元素，确保它们已被渲染
+        setTimeout(() => {
+            // 注意：实际滚动的是 messages-container，不是 message-list
+            const messagesContainer = container.querySelector('.deeppdf-messages-container');
+            const inputSection = container.querySelector('.deeppdf-chat-input-section');
+
+            if (!messagesContainer || !inputSection) {
+                console.warn('[DeepPDF] Scroll handler setup failed: elements not found');
+                return;
+            }
+
+            let scrollTimeout: any = null;
+
+            messagesContainer.addEventListener('scroll', () => {
+                // 滚动时添加 hidden 类
+                inputSection.addClass('hidden');
+
+                if (scrollTimeout) {
+                    clearTimeout(scrollTimeout);
+                }
+
+                // 停止滚动 300ms 后显示
+                scrollTimeout = setTimeout(() => {
+                    inputSection.removeClass('hidden');
+                }, 300);
+            });
+        }, 100);
     }
 
     /**
@@ -348,7 +382,7 @@ export class SidebarView extends ItemView {
 
         // 创建聊天输入组件
         this.chatInput = new ChatInput({
-            placeholder: "输入问题开始查询...",
+            placeholder: "输入以开始对话...",
             onSend: (message: string) => {
                 this.sendMessage(message);
             }
@@ -746,26 +780,26 @@ export class SidebarView extends ItemView {
     }
 
     async updateStatus(): Promise<void> {
-        if (!this.topNav) return;
+        if (!this.indexManager) return;
 
         // 设置为加载状态
-        this.topNav.setStatus('loading');
+        this.indexManager.setConnectionStatus('loading');
 
         if (!this.apiClient) {
-            this.topNav.setStatus('disconnected');
+            this.indexManager.setConnectionStatus('disconnected');
             return;
         }
 
         try {
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
-                this.topNav.setStatus('connected');
+                this.indexManager.setConnectionStatus('connected');
             } else {
-                this.topNav.setStatus('disconnected');
+                this.indexManager.setConnectionStatus('disconnected');
             }
         } catch (error) {
             handleNetworkError(error as Error, { context: 'updateStatus' });
-            this.topNav.setStatus('error');
+            this.indexManager.setConnectionStatus('error');
         }
     }
 
@@ -1032,24 +1066,24 @@ export class SidebarView extends ItemView {
         // 提取结构信息
         const structureInfo = this.extractStructureInfo(results);
 
-        return `You are a helpful AI assistant specialized in analyzing PDF documents.
+        return `你是一位专业的文档分析助手，擅长从 PDF 文档中提取和解答信息。
 
-📄 Document: 《${pdfName}》
+📄 文档：《${pdfName}》
 ${structureInfo}
 
-📋 Guidelines:
-1. Use the provided context from the PDF to answer the user's question accurately
-2. Context is organized by sections with page numbers - preserve this structure in your answer
-3. When referencing specific content, mention the section name and page number
-4. If the answer is not in the context, clearly state that you cannot find the answer in the document
-5. Maintain the hierarchical structure of information when possible
-6. Respond in the same language as the user's question (Chinese, English, etc.)
+📋 回答指南：
+1. 基于提供的文档内容准确回答用户问题
+2. 文档内容按章节和页码组织 - 回答时保留这一结构
+3. 引用具体内容时，注明章节名称和页码
+4. 如果文档中没有答案，明确说明无法找到相关信息
+5. 尽可能保持信息的层级结构
+6. 用用户提问的语言回答（中文、英文等）
 
-💡 Tips for better answers:
-- Start with a direct answer, then provide supporting details
-- Use bullet points for listing multiple items
-- Quote key phrases from the document when relevant
-- Cross-reference different sections if they provide related information`;
+💡 回答技巧：
+- 先给出直接答案，再提供详细说明
+- 列举多项内容时使用项目符号
+- 引用文档中的关键语句
+- 跨章节关联相关信息时注明来源`;
     }
 
     /**
