@@ -57,7 +57,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this.apiClient)
+            (leaf) => new SidebarView(leaf, this.apiClient, this)
         );
 
         // 添加设置面板

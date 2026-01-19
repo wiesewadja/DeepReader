@@ -100,14 +100,22 @@ export class PDFFileSelectorModal extends Modal {
         const allFiles = this.app.vault.getFiles();
         const pdfFiles = allFiles.filter(f => f.extension === "pdf");
 
-        this.pdfFiles = pdfFiles.map(file => ({
-            file,
-            name: file.basename,
-            path: file.path,
-            size: file.stat.size,
-            sizeFormatted: this.formatFileSize(file.stat.size),
-            folder: file.parent?.path || "/"
-        }));
+        // 获取 vault 的基础路径
+        const basePath = (this.app.vault.adapter as any).basePath || '';
+
+        this.pdfFiles = pdfFiles.map(file => {
+            // 拼接绝对路径
+            const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
+
+            return {
+                file,
+                name: file.basename,
+                path: absolutePath, // 使用绝对路径
+                size: file.stat.size,
+                sizeFormatted: this.formatFileSize(file.stat.size),
+                folder: file.parent?.path || "/"
+            };
+        });
 
         this.filteredFiles = [...this.pdfFiles];
     }
@@ -183,8 +191,8 @@ export class PDFFileSelectorModal extends Modal {
                 <div class="deeppdf-empty-text">未找到 PDF 文件</div>
                 <div class="deeppdf-empty-hint">
                     ${this.searchInput && this.searchInput.value
-                        ? "尝试使用其他关键词搜索"
-                        : "当前 vault 中没有 PDF 文件"}
+                ? "尝试使用其他关键词搜索"
+                : "当前 vault 中没有 PDF 文件"}
                 </div>
             </div>
         `;
@@ -262,14 +270,22 @@ export class PDFQuickSelector extends FuzzySuggestModal<PDFFileInfo> {
         const allFiles = this.app.vault.getFiles();
         const pdfFiles = allFiles.filter(f => f.extension === "pdf");
 
-        this.pdfFiles = pdfFiles.map(file => ({
-            file,
-            name: file.basename,
-            path: file.path,
-            size: file.stat.size,
-            sizeFormatted: this.formatFileSize(file.stat.size),
-            folder: file.parent?.path || "/"
-        }));
+        // 获取 vault 的基础路径
+        const basePath = (this.app.vault.adapter as any).basePath || '';
+
+        this.pdfFiles = pdfFiles.map(file => {
+            // 拼接绝对路径
+            const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
+
+            return {
+                file,
+                name: file.basename,
+                path: absolutePath, // 使用绝对路径
+                size: file.stat.size,
+                sizeFormatted: this.formatFileSize(file.stat.size),
+                folder: file.parent?.path || "/"
+            };
+        });
 
         super.onOpen();
     }

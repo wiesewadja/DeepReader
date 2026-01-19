@@ -50,6 +50,7 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
     private apiClient: DeepPDFClient | null;
+    private plugin: any; // 插件实例，用于访问设置
     private topNav: TopNav | null = null;
     private indexManager: IndexManager | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
@@ -62,9 +63,10 @@ export class SidebarView extends ItemView {
     private currentPdfName: string | null = null;
     private isProcessing: boolean = false;
 
-    constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null) {
+    constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null, plugin: any) {
         super(leaf);
         this.apiClient = apiClient;
+        this.plugin = plugin;
         // TaskPollingManager 将在首次需要时延迟初始化
     }
 
@@ -123,8 +125,8 @@ export class SidebarView extends ItemView {
                 }
             },
             onCreateIndex: () => {
-                // 打开索引管理对话框
-                new IndexManagerModal(this.app, this.apiClient!, () => {
+                // 打开索引管理对话框，传递设置
+                new IndexManagerModal(this.app, this.apiClient!, this.plugin.settings, () => {
                     // 索引创建成功后刷新列表
                     this.loadIndexes();
                 }).open();
@@ -564,37 +566,63 @@ export class SidebarView extends ItemView {
         try {
             // 清理 TopNav
             if (this.topNav) {
-                this.topNav.destroy();
+                try {
+                    this.topNav.destroy();
+                } catch (e) {
+                    console.warn('[DeepPDF] Error destroying topNav:', e);
+                }
                 this.topNav = null;
             }
 
             // 清理消息列表
             if (this.messageList) {
-                this.messageList.destroy();
+                try {
+                    this.messageList.destroy();
+                } catch (e) {
+                    console.warn('[DeepPDF] Error destroying messageList:', e);
+                }
                 this.messageList = null;
             }
 
             // 清理聊天输入
             if (this.chatInput) {
-                this.chatInput.destroy();
+                try {
+                    this.chatInput.destroy();
+                } catch (e) {
+                    console.warn('[DeepPDF] Error destroying chatInput:', e);
+                }
                 this.chatInput = null;
             }
 
             // 清理轮询管理器
             if (this.taskPollingManager) {
-                this.taskPollingManager.destroy();
+                try {
+                    this.taskPollingManager.destroy();
+                } catch (e) {
+                    console.warn('[DeepPDF] Error destroying taskPollingManager:', e);
+                }
                 this.taskPollingManager = null;
             }
 
             // 清理任务卡片
-            this.taskCards.clear();
+            try {
+                this.taskCards.clear();
+            } catch (e) {
+                console.warn('[DeepPDF] Error clearing taskCards:', e);
+            }
 
+            // 清理索引管理器
             if (this.indexManager) {
-                this.indexManager.destroy();
+                try {
+                    this.indexManager.destroy();
+                } catch (e) {
+                    console.warn('[DeepPDF] Error destroying indexManager:', e);
+                }
                 this.indexManager = null;
             }
         } catch (error) {
-            console.error('[DeepPDF] Error closing sidebar view:', error);
+            console.error('[DeepPDF] Error in onClose:', error);
+            // 不要重新抛出错误，避免影响 Obsidian 的 UI
         }
     }
 }

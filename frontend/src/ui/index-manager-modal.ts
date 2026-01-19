@@ -30,10 +30,12 @@ export class IndexManagerModal extends Modal {
     // private taskQueue: TaskQueueManager;
     private refreshBtn: HTMLButtonElement | null = null;
     private indexStatusCache: Map<string, string> = new Map(); // 缓存索引状态
+    private llmSettings: any; // LLM 配置
 
-    constructor(app: App, apiClient: DeepPDFClient, onIndexCreated?: () => void) {
+    constructor(app: App, apiClient: DeepPDFClient, llmSettings: any, onIndexCreated?: () => void) {
         super(app);
         this.apiClient = apiClient;
+        this.llmSettings = llmSettings;
         this.onIndexCreated = onIndexCreated;
 
         // 创建任务队列容器
@@ -117,30 +119,41 @@ export class IndexManagerModal extends Modal {
         this.refreshBtn.addEventListener("click", () => this.loadIndexes());
     }
 
+    private pendingPDFs: PDFFileInfo[] = []; // 待索引的 PDF 列表
+
     private selectPDFAndCreateIndex() {
         new PDFFileSelectorModal(this.app, async (fileInfo: PDFFileInfo) => {
-            // 创建索引任务
-            await this.createIndexFromFile(fileInfo);
+            // 添加到待索引列表
+            this.pendingPDFs.push(fileInfo);
+            new Notice(`已选择 "${fileInfo.name}"，请点击"开始索引"按钮`);
+            // 刷新显示
+            await this.loadIndexes();
         }).open();
     }
 
-    private async createIndexFromFile(fileInfo: PDFFileInfo) {
+    private async createIndexFromFile(fileInfo: PDFFileInfo, startBtn?: HTMLButtonElement) {
         try {
             // 显示创建中提示
             new Notice(`正在为 "${fileInfo.name}" 创建索引...`);
 
-            // 调用 API 创建索引
-            const result: IndexPDFResult = await this.apiClient.indexPDF(fileInfo.path);
+            // 调用 API 创建索引，传递 LLM 配置
+            const result: IndexPDFResult = await this.apiClient.indexPDF(fileInfo.path, {
+                llmProvider: this.llmSettings.llmProvider,
+                llmModel: this.llmSettings.llmModel,
+                deepseekApiKey: this.llmSettings.deepseekApiKey,
+                openaiApiKey: this.llmSettings.openaiApiKey,
+                apiUrl: this.llmSettings.apiUrl,
+                maxPagesPerNode: this.llmSettings.maxPagesPerNode,
+                maxTokensPerNode: this.llmSettings.maxTokensPerNode,
+                ifAddNodeSummary: this.llmSettings.ifAddNodeSummary
+            });
 
             if (result && result.status === 'success') {
-                // 成功创建
+                // 成功创建（同步完成）
                 new Notice(`索引创建成功！节点数: ${result.node_count}`);
 
-                // 添加到任务队列跟踪
-                // if (result.index_id) {
-                //     const taskId = createIndexTask(this.taskQueue, fileInfo.name, result.index_id);
-                //     this.indexStatusCache.set(result.index_id, 'processing');
-                // }
+                // 从待索引列表中移除
+                this.pendingPDFs = this.pendingPDFs.filter(p => p.path !== fileInfo.path);
 
                 // 刷新索引列表
                 await this.loadIndexes();
@@ -150,22 +163,49 @@ export class IndexManagerModal extends Modal {
                 }
             } else if (result && result.status === 'pending') {
                 // 异步处理中
-                new Notice(`索引任务已创建，ID: ${result.index_id}`);
+                new Notice(`索引任务已创建，ID: ${result.index_id}。请稍后在索引列表中查看进度。`);
 
-                // 添加到任务队列跟踪
-                // if (result.index_id) {
-                //     const taskId = createIndexTask(this.taskQueue, fileInfo.name, result.index_id);
-                //     this.indexStatusCache.set(result.index_id, 'processing');
-                // }
+                // 从待索引列表中移除
+                this.pendingPDFs = this.pendingPDFs.filter(p => p.path !== fileInfo.path);
 
-                // 刷新索引列表
-                await this.loadIndexes();
+                // 关闭模态框，让用户回到主界面查看索引状态
+                this.close();
+
+                if (this.onIndexCreated) {
+                    this.onIndexCreated();
+                }
             } else {
                 // 失败
                 new Notice(`索引创建失败: ${result?.error || '未知错误'}`, 5000);
+
+                // 恢复按钮状态
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.innerHTML = `${Icons.filePlus} 开始索引`;
+                }
             }
-        } catch (error) {
-            new Notice(`索引创建失败: ${error}`, 5000);
+        } catch (error: any) {
+            // 处理 HTTP 错误和其他异常
+            let errorMessage = '索引创建失败';
+
+            if (error.message) {
+                if (error.message.includes('Too Many Requests') || error.message.includes('速率限制')) {
+                    errorMessage = '创建索引过于频繁，请稍后再试';
+                } else if (error.message.includes('API key')) {
+                    errorMessage = 'API key 未配置或无效，请在设置中检查';
+                } else {
+                    errorMessage = `索引创建失败: ${error.message}`;
+                }
+            }
+
+            new Notice(errorMessage, 5000);
+            console.error('[DeepPDF] 索引创建错误:', error);
+
+            // 恢复按钮状态
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = `${Icons.filePlus} 开始索引`;
+            }
         }
     }
 
@@ -186,13 +226,16 @@ export class IndexManagerModal extends Modal {
             const result: ListIndexesResult = await this.apiClient.listIndexes();
             listContainer.empty();
 
-            if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
+            const indexes = (result && Array.isArray(result.indexes)) ? result.indexes : [];
+
+            // 检查是否有待索引的 PDF 或已有索引
+            if (this.pendingPDFs.length === 0 && indexes.length === 0) {
                 this.showEmptyState(listContainer);
                 return;
             }
 
-            // 显示索引卡片列表
-            this.showIndexCards(listContainer, result.indexes);
+            // 显示索引卡片列表（包括待索引的 PDF 和已有索引）
+            this.showIndexCards(listContainer, indexes);
         } catch (error) {
             this.showErrorState(listContainer, error);
         }
@@ -220,12 +263,71 @@ export class IndexManagerModal extends Modal {
     private showIndexCards(container: HTMLElement, indexes: IndexListItem[]) {
         const cardsContainer = container.createDiv({ cls: "index-cards-container" });
 
-        indexes.forEach((index: IndexListItem, indexNum: number) => {
-            const card = this.createIndexCard(index);
-            card.addClass("deeppdf-animate-fade-in");
-            card.style.animationDelay = `${Math.min(indexNum * 50, 200)}ms`;
-            cardsContainer.appendChild(card);
+        // 1. 显示待索引的 PDF（如果有）
+        if (this.pendingPDFs.length > 0) {
+            const pendingSection = cardsContainer.createDiv({ cls: "pending-pdfs-section" });
+            const pendingTitle = pendingSection.createEl("h3", {
+                text: "待索引 PDF",
+                cls: "deeppdf-section-title"
+            });
+
+            this.pendingPDFs.forEach((pdfInfo, index) => {
+                const pendingCard = this.createPendingPDFCard(pdfInfo);
+                pendingCard.addClass("deeppdf-animate-fade-in");
+                pendingCard.style.animationDelay = `${index * 50}ms`;
+                pendingSection.appendChild(pendingCard);
+            });
+        }
+
+        // 2. 显示已有索引
+        if (indexes.length > 0) {
+            indexes.forEach((index: IndexListItem, indexNum: number) => {
+                const card = this.createIndexCard(index);
+                card.addClass("deeppdf-animate-fade-in");
+                card.style.animationDelay = `${Math.min((indexNum + this.pendingPDFs.length) * 50, 200)}ms`;
+                cardsContainer.appendChild(card);
+            });
+        }
+    }
+
+    private createPendingPDFCard(pdfInfo: PDFFileInfo): HTMLElement {
+        const card = document.createElement("div");
+        card.addClass("index-card", "pending-card");
+
+        // 左侧信息区域
+        const info = card.createDiv({ cls: "index-card-info" });
+
+        const name = info.createDiv({ cls: "index-card-name" });
+        name.innerHTML = `${Icons.file} ${this.escapeHtml(pdfInfo.name)}`;
+
+        const meta = info.createDiv({ cls: "index-card-meta" });
+        meta.innerHTML = `${pdfInfo.sizeFormatted} • 待索引`;
+
+        // 右侧操作区域
+        const actions = card.createDiv({ cls: "index-card-actions" });
+
+        // 开始索引按钮
+        const startBtn = actions.createEl("button", {
+            cls: "deeppdf-btn deeppdf-btn-primary"
         });
+        startBtn.innerHTML = `${Icons.filePlus} 开始索引`;
+        startBtn.addEventListener("click", async () => {
+            startBtn.disabled = true;
+            startBtn.innerHTML = `<span class="deeppdf-spinner" style="width:14px;height:14px;border-width:1px;"></span> 索引中...`;
+            await this.createIndexFromFile(pdfInfo, startBtn);
+        });
+
+        // 移除按钮
+        const removeBtn = actions.createEl("button", {
+            cls: "deeppdf-btn deeppdf-btn-ghost"
+        });
+        removeBtn.innerHTML = `${Icons.x} 移除`;
+        removeBtn.addEventListener("click", () => {
+            this.pendingPDFs = this.pendingPDFs.filter(p => p.path !== pdfInfo.path);
+            this.loadIndexes();
+        });
+
+        return card;
     }
 
     private createIndexCard(index: IndexListItem): HTMLElement {

@@ -79,14 +79,10 @@ class RateLimiter:
         """
         current_time = time.time()
 
-        # 定期清理旧记录
-        if int(current_time) % self._cleanup_interval == 0:
-            self._cleanup_old_requests(current_time)
-
         # 获取该客户端的请求记录
         requests = self._requests[client_ip]
 
-        # 移除时间窗口外的旧请求
+        # 每次检查时都移除时间窗口外的旧请求（修复：原清理逻辑只在特定时间触发）
         window_start = current_time - window_seconds
         self._requests[client_ip] = [
             (ts, count) for ts, count in requests
@@ -278,12 +274,12 @@ async def create_index(req: IndexRequest, http_request: Request):
     import hashlib
     from urllib.parse import urlparse
 
-    # 速率限制检查
+    # 速率限制检查（修复：增加限制并缩短窗口）
     client_ip = _get_client_ip(http_request)
     is_allowed, rate_info = _rate_limiter.check_rate_limit(
         client_ip,
-        max_requests=5,  # 每小时最多 5 个索引任务
-        window_seconds=3600  # 1 小时窗口
+        max_requests=20,  # 每 10 分钟最多 20 个索引任务
+        window_seconds=600  # 10 分钟窗口
     )
 
     if not is_allowed:
@@ -292,7 +288,7 @@ async def create_index(req: IndexRequest, http_request: Request):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
                 "error": "Rate limit exceeded",
-                "message": f"每小时最多可以创建 5 个索引任务。请在 {rate_info['reset']} 秒后重试。",
+                "message": f"索引创建过于频繁，请在 {rate_info['reset']} 秒后重试。",
                 "limit": rate_info['limit'],
                 "window": rate_info['window'],
                 "reset_after": rate_info['reset']
@@ -496,6 +492,7 @@ async def list_all_indexes():
             all_indexes.append({
                 "id": task_id,
                 "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
+                "node_count": 0,  # 任务未完成时节点数为 0
                 "status": task_info["status"],
                 "created_at": task_info.get("created_at", ""),
                 "message": task_info.get("message", "")

@@ -212,6 +212,11 @@
     background: var(--background-modifier-border);
 }
 
+.deeppdf-index-status-badge.failed {
+    color: var(--text-error);
+    background: var(--background-modifier-error);
+}
+
 .deeppdf-index-status-badge.unknown {
     color: var(--text-muted);
     background: var(--background-modifier-border);
