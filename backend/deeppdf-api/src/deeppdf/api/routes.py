@@ -504,8 +504,10 @@ async def list_all_indexes():
     for idx in result.get("indexes", []):
         idx["status"] = "completed"
         all_indexes.append(idx)
+        logger.debug(f"[API] 已完成索引: id={idx['id']}, pdf_name={idx.get('pdf_name', 'N/A')}, status=completed")
 
     # 添加正在运行的任务到列表中
+    running_task_count = 0
     for task_id, task_info in _running_tasks.items():
         if task_info["status"] in ["pending", "processing"]:
             all_indexes.append({
@@ -516,8 +518,10 @@ async def list_all_indexes():
                 "created_at": task_info.get("created_at", ""),
                 "message": task_info.get("message", "")
             })
+            running_task_count += 1
+            logger.debug(f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}")
 
-    logger.info(f"[API] 返回 {len(all_indexes)} 个索引/任务")
+    logger.info(f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count}, 运行中: {running_task_count})")
     return ListIndexesResponse(status=result.get("status", "success"), indexes=all_indexes)
 
 
@@ -529,9 +533,13 @@ async def get_index_status(index_id: str):
     - 如果是 task_id 开头，返回后台任务状态
     - 如果是 idx_id 开头，检查索引是否存在
     """
+    logger.info(f"[API] 收到索引状态查询请求: index_id='{index_id}'")
+
     # 查询后台任务状态
     if index_id.startswith("task_"):
+        logger.info(f"[API] 查询类型: 任务状态 (task_id)")
         if index_id not in _running_tasks:
+            logger.warning(f"[API] 任务不存在: {index_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"任务 {index_id} 不存在"
@@ -562,20 +570,28 @@ async def get_index_status(index_id: str):
                 "node_count": task_info["result"].get("node_count"),
                 "pdf_name": task_info["result"].get("pdf_name"),
             })
+            logger.info(f"[API] 任务已完成，返回 index_id={task_info['result'].get('index_id')}")
         elif task_info["status"] == "failed":
             response["error"] = task_info.get("error", "Unknown error")
+            logger.info(f"[API] 任务失败: {task_info.get('error', 'Unknown error')}")
 
+        logger.info(f"[API] 返回任务状态: status={response['status']}, index_id={response.get('index_id', 'N/A')}")
         return response
 
     # 查询已完成的索引
     else:
+        logger.info(f"[API] 查询类型: 已完成索引 (idx_id)")
         result = await list_indexes(str(settings.base_dir))
+        logger.info(f"[API] list_indexes 返回 {len(result.get('indexes', []))} 个索引")
+
         for idx in result.get("indexes", []):
             if idx["id"] == index_id:
                 # 添加 status 字段以保持与任务状态的兼容性
                 idx["status"] = "completed"
+                logger.info(f"[API] 找到索引: id={idx['id']}, status={idx['status']}, pdf_name={idx.get('pdf_name', 'N/A')}")
                 return idx
 
+        logger.warning(f"[API] 索引不存在: {index_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"索引 {index_id} 不存在"
