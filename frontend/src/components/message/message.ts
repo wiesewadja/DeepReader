@@ -4,6 +4,7 @@
  */
 
 import { App, MarkdownRenderer, Component } from 'obsidian';
+import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 
 /**
  * 消息角色类型
@@ -31,6 +32,54 @@ export interface CitationData {
 }
 
 /**
+ * 追问问题数据结构
+ */
+export interface FollowUpQuestion {
+	/** 问题内容 */
+	question: string;
+	/** 问题索引（用于点击事件） */
+	index: number;
+}
+
+/**
+ * 解析追问问题列表
+ * 从 AI 回答中提取 <<<QUESTIONS>>> 标记包裹的问题
+ * 返回 { content: 清理后的内容, questions: 问题列表 }
+ */
+export function parseFollowUpQuestions(content: string): {
+	content: string;
+	questions: FollowUpQuestion[];
+} {
+	const questions: FollowUpQuestion[] = [];
+	let cleanedContent = content;
+
+	// 匹配 <<<QUESTIONS>>>...</QUESTIONS>>> 标记
+	const questionRegex = /<<<QUESTIONS>>>([\s\S]*?)<\/QUESTIONS>>>/;
+	const match = content.match(questionRegex);
+
+	if (match) {
+		// 提取问题部分
+		const questionsText = match[1];
+		// 按行分割，提取以 "- " 开头的问题
+		const lines = questionsText.split('\n');
+		lines.forEach((line, index) => {
+			const trimmed = line.trim();
+			if (trimmed.startsWith('- ')) {
+				questions.push({
+					question: trimmed.slice(2).trim(),
+					index: index
+				});
+			}
+		});
+
+		// 移除追问标记部分
+		cleanedContent = content.replace(questionRegex, '').trim();
+	}
+
+	return { content: cleanedContent, questions };
+}
+
+/**
  * 消息数据结构
  */
 export interface MessageData {
@@ -46,6 +95,8 @@ export interface MessageData {
 	citations?: CitationData[];
 	/** 可选：是否正在生成 */
 	isStreaming?: boolean;
+	/** 可选：追问问题列表（仅 AI 消息） */
+	followUpQuestions?: FollowUpQuestion[];
 }
 
 /**
@@ -181,15 +232,20 @@ export abstract class Message {
 	update(data: Partial<MessageData>): void {
 		const oldContent = this.data.content;
 		const oldCitations = this.data.citations;
+		const oldFollowUpQuestions = this.data.followUpQuestions;
 		Object.assign(this.data, data);
 
 		// 如果只是内容变了，且DOM已存在，尝试局部更新
-		// 注意：如果 citations 变了，我们需要重绘整个 AI 消息或者专门更新引用部分
+		// 注意：如果 citations 或 followUpQuestions 变了，我们需要重绘整个 AI 消息
 		// 目前为了简单，如果只有 content 变了，走局部更新；否则走全量
+		const citationsChanged = data.citations !== undefined && JSON.stringify(data.citations) !== JSON.stringify(oldCitations);
+		const followUpChanged = data.followUpQuestions !== undefined && JSON.stringify(data.followUpQuestions) !== JSON.stringify(oldFollowUpQuestions);
+
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
-			(data.citations === undefined || JSON.stringify(data.citations) === JSON.stringify(oldCitations))
+			!citationsChanged &&
+			!followUpChanged
 		) {
 			this.updateContent(data.content);
 		} else {
@@ -266,6 +322,7 @@ export class AIMessage extends Message {
 	private onRegenerate?: () => void;
 	private onCopy?: () => void;
 	private onCopyWithCitation?: () => void;
+	private onQuestionClick?: (question: string) => void;
 
 	constructor(
 		data: MessageData,
@@ -273,6 +330,7 @@ export class AIMessage extends Message {
 			onRegenerate?: () => void;
 			onCopy?: () => void;
 			onCopyWithCitation?: () => void;
+			onQuestionClick?: (question: string) => void;
 			app?: App;
 		}
 	) {
@@ -280,6 +338,7 @@ export class AIMessage extends Message {
 		this.onRegenerate = options?.onRegenerate;
 		this.onCopy = options?.onCopy;
 		this.onCopyWithCitation = options?.onCopyWithCitation;
+		this.onQuestionClick = options?.onQuestionClick;
 		this.el = this.render();
 	}
 
@@ -305,6 +364,15 @@ export class AIMessage extends Message {
 		// 渲染操作按钮和引用
 		this.renderActions(bubble);
 		this.renderCitations(bubble);
+
+		// 渲染追问问题卡片（在 wrapper 中，bubble 之后）
+		if (this.data.followUpQuestions && this.data.followUpQuestions.length > 0) {
+			const followUpComponent = new FollowUpQuestions({
+				questions: this.data.followUpQuestions,
+				onQuestionClick: this.onQuestionClick
+			});
+			wrapper.appendChild(followUpComponent.getElement());
+		}
 
 		// 如果正在流式传输，添加光标效果 (由 CSS 处理 .deeppdf-message-streaming)
 		if (this.data.isStreaming) {
@@ -385,6 +453,7 @@ export function createMessage(
 		onRegenerate?: () => void;
 		onCopy?: () => void;
 		onCopyWithCitation?: () => void;
+		onQuestionClick?: (question: string) => void;
 		app?: App;
 	}
 ): Message {

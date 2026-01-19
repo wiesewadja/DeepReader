@@ -17,6 +17,7 @@
 @import url('../components/chat-input/chat-input.css');
 @import url('../components/top-nav/top-nav.css');
 @import url('../components/index-manager/index-manager.css');
+@import url('../components/follow-up-questions/follow-up-questions.css');
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {

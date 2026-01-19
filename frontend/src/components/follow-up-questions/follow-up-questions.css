@@ -1,0 +1,76 @@
+/**
+ * 追问问题卡片组件样式
+ */
+
+.deeppdf-followup-questions {
+	margin-top: 12px;
+	padding: 0;
+}
+
+.deeppdf-followup-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--font-ui-smaller, 12px);
+	color: var(--text-muted, var(--text-faint));
+	margin-bottom: 8px;
+	font-weight: 500;
+}
+
+.deeppdf-followup-icon {
+	font-size: 14px;
+}
+
+.deeppdf-followup-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.deeppdf-followup-card {
+	padding: 10px 14px;
+	background: var(--background-secondary, var(--color-background-secondary));
+	border: 1px solid var(--background-modifier-border, var(--color-border));
+	border-radius: 12px;
+	font-size: var(--font-ui-small, 13px);
+	color: var(--text-normal, var(--color-text));
+	cursor: pointer;
+	transition: all 0.2s ease;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.deeppdf-followup-card::before {
+	content: "→";
+	flex-shrink: 0;
+	color: var(--interactive-accent, var(--color-accent));
+	opacity: 0.6;
+	transition: all 0.2s ease;
+}
+
+.deeppdf-followup-card:hover {
+	background: var(--background-modifier-hover, var(--color-background-hover));
+	border-color: var(--interactive-accent, var(--color-accent));
+	transform: translateX(2px);
+}
+
+.deeppdf-followup-card:hover::before {
+	opacity: 1;
+	transform: translateX(2px);
+}
+
+.deeppdf-followup-card:active {
+	transform: translateX(3px) scale(0.98);
+}
+
+/* 暗色主题优化 */
+.theme-dark .deeppdf-followup-card {
+	background: rgba(0, 0, 0, 0.2);
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-dark .deeppdf-followup-card:hover {
+	background: rgba(0, 0, 0, 0.3);
+	border-color: var(--interactive-accent, var(--color-accent));
+}

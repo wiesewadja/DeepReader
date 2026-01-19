@@ -19,6 +19,8 @@ export interface MessageCallbacks {
 	onCopyWithCitation?: (messageId: string) => void;
 	/** 跳转到引用 */
 	onCitationJump?: (citation: CitationData) => void;
+	/** 追问问题点击 */
+	onQuestionClick?: (question: string) => void;
 }
 
 /**
@@ -89,6 +91,9 @@ export class MessageList extends Component {
 			},
 			onCopyWithCitation: () => {
 				this.callbacks.onCopyWithCitation?.(messageData.id);
+			},
+			onQuestionClick: (question: string) => {
+				this.callbacks.onQuestionClick?.(question);
 			},
 			app: this.app
 		});

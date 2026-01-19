@@ -64,12 +64,12 @@ export class IndexManager extends Component {
 
         const title = document.createElement('span');
         title.className = 'deeppdf-index-manager-title';
-        title.textContent = 'Index Management';
+        title.textContent = '文档库';
 
         // 连接状态指示器
         this.statusDot = document.createElement('span');
         this.statusDot.className = 'deeppdf-connection-status';
-        this.statusDot.title = 'Connecting...';
+        this.statusDot.title = '连接中...';
 
         titleRow.appendChild(title);
         titleRow.appendChild(this.statusDot);
@@ -82,7 +82,7 @@ export class IndexManager extends Component {
         // 右侧：New Index 按钮
         const createBtn = document.createElement('button');
         createBtn.className = 'deeppdf-btn deeppdf-btn-sm deeppdf-btn-primary deeppdf-index-create-btn';
-        createBtn.innerHTML = `${Icons.plus} New Index`;
+        createBtn.innerHTML = `${Icons.plus} 添加文档`;
         createBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.options.onCreateIndex?.();

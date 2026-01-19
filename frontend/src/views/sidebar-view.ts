@@ -12,7 +12,7 @@ import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress } from "../types/index.js";
 import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, CitationData } from "../components/message/message.js";
+import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion } from "../components/message/message.js";
 import { TopNav } from "../components/top-nav/top-nav.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
@@ -383,6 +383,9 @@ export class SidebarView extends ItemView {
             },
             onCitationJump: (citation: CitationData) => {
                 this.handleCitationJump(citation);
+            },
+            onQuestionClick: (question: string) => {
+                this.handleQuestionClick(question);
             }
         }, this.app);
 
@@ -705,10 +708,14 @@ export class SidebarView extends ItemView {
             }
 
             // 完成后进行最后一次更新，确保内容完整
+            // 解析追问问题
+            const { content: cleanedContent, questions: followUpQuestions } = parseFollowUpQuestions(fullContent);
+
             this.messageList?.updateMessage(messageId, {
-                content: fullContent,
+                content: cleanedContent,
                 citations: citations,
-                isStreaming: false
+                isStreaming: false,
+                followUpQuestions: followUpQuestions.length > 0 ? followUpQuestions : undefined
             });
 
         } catch (error) {
@@ -794,6 +801,16 @@ export class SidebarView extends ItemView {
             new Notice(`Markdown 文件未生成,请重新索引 PDF: ${citation.pdf_name}`);
             console.warn('[DeepPDF] Markdown path not found for citation:', citation);
         }
+    }
+
+    /**
+     * 处理追问问题点击
+     * 自动发送追问问题
+     */
+    private handleQuestionClick(question: string): void {
+        console.log('[DeepPDF] 追问问题点击:', question);
+        // 自动发送问题
+        this.sendMessage(question);
     }
 
     async updateStatus(): Promise<void> {
@@ -1083,7 +1100,7 @@ export class SidebarView extends ItemView {
         // 提取结构信息
         const structureInfo = this.extractStructureInfo(results);
 
-        return `你是一位专注的读书郎，毕生沉浸于典籍研读，对文字有着敏锐的洞察力和深刻的思辨能力。
+        return `你是一位与昭见森对谈的专注的读书郎，毕生沉浸于典籍研读，对文字有着敏锐的洞察力和深刻的思辨能力。
 
 📚 你的信条：
 - 你只知晓眼前这本书的内容，除此别无所知
@@ -1095,26 +1112,36 @@ export class SidebarView extends ItemView {
 ${structureInfo}
 
 📋 回答规范：
+0. 在回答时要提及昭见森名称，表达尊重和关注，避免使用不礼貌的语言。
 1. 所有答案必须源于所读书籍，无一字无来历
 2. 引用时自然注明章节与页码，如"第X章第Y页提到..."
 3. 以清晰逻辑组织答案，展现思辨能力
 4. 用凝练文字表达，勿冗勿散
-5. 书中未言明处，直截了当说明"此书未涉及"
+5. 书中没说到的地方，就说"这一点书中没提"或"书中未谈及此内容"
 6. 以用户所用语言作答（中文、英文等）
 
 ✍️ 答案风格（务必遵守）：
 - 像真人读书一样自然回答，不要像机器
-- 直接说出答案，不要说"根据文档"、"从片段中看到"、"书中提到"这类话
-- 不要说"从提供的五个片段来看"之类暴露技术细节的话
-- 开门见山，直指要害
+- 直接说出答案，开门见山，直指要害
 - 条理分明，层次清晰
 - 引文时自然融入，如"作者在XX页指出..."
 - 跨章节关联时，自然提及各处，如"这一点在第X章和第Y页都有阐述"
 
-⚠️ 禁忌：
-- 禁止使用"片段"、"文档"、"提供的内容"、"检索结果"等技术术语
-- 禁止说"根据..."、"从...来看"、"...显示"等AI常用语
-- 禁止罗列式回答，要像人一样连贯表达`;
+⚠️ 绝对禁止（严格遵守）：
+- 禁止使用"片段"、"文档"、"提供的内容"、"检索结果"、"提供的章节"等技术术语
+- 禁止说"根据..."、"从...来看"、"...显示"、"在...中"等AI常用语
+- 禁止说"从提供的...来看"、"在提供的章节中"这类暴露技术细节的话
+- 禁止罗列式回答，要像人一样连贯表达
+
+🔄 追问机制（重要）：
+回答结束后，根据读者的提问和书中内容，提出1-2个能引导深入探索的问题：
+- 问题应与读者提问主题相关且书中能够回答
+- 用特殊标记 <<<QUESTIONS>>> 包裹问题列表，格式如下：
+  <<<QUESTIONS>>>
+  - 第一个问题
+  - 第二个问题
+  </QUESTIONS>>>
+- 每个问题单独一行，以 "- " 开头`;
     }
 
     /**
