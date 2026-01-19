@@ -6,8 +6,11 @@
 
 export {
   DeepPDFClient,
-  deeppdfClient,
-  // 类型定义
+  deeppdfClient
+} from './http-client';
+
+// 类型导出
+export type {
   APIResponse,
   HealthResponse,
   FileInfo,
@@ -111,7 +114,7 @@ export const indexAPI = {
   createWithFile: (
     fileId: string,
     configName?: string,
-    overrides?: import('./http-client').Partial<import('./http-client').IndexPDFRequest>
+    overrides?: Partial<import('./http-client').IndexPDFRequest>
   ) => deeppdfClient.indexPDFWithFile(fileId, configName, overrides),
 
   /**

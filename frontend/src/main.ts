@@ -41,12 +41,17 @@ export default class DeepPDFPlugin extends Plugin {
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
         // 检查服务器连接状态
-        const isHealthy = await this.apiClient.healthCheck();
-        if (!isHealthy) {
-            console.log('[DeepPDF] Server not running at localhost:' + this.settings.apiPort);
-            new Notice(`DeepPDF: 无法连接到服务器 localhost:${this.settings.apiPort}，请确保后端已启动`);
-        } else {
-            console.log('[DeepPDF] Server connected successfully');
+        try {
+            const isHealthy = await this.apiClient.healthCheck();
+            if (!isHealthy) {
+                console.log('[DeepPDF] Server not running or unhealthy at localhost:' + this.settings.apiPort);
+                new Notice(`DeepPDF: 无法连接到服务器 (localhost:${this.settings.apiPort})。请启动后端服务。`);
+            } else {
+                console.log('[DeepPDF] Server connected successfully');
+            }
+        } catch (error) {
+            console.warn('[DeepPDF] Failed to connect to server:', error);
+            new Notice(`DeepPDF: 连接失败 (localhost:${this.settings.apiPort})。请检查后端是否运行。`);
         }
 
         // 注册侧边栏视图
@@ -80,7 +85,8 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     async onunload() {
-        // 插件卸载时不需要停止服务器（服务器由用户独立管理）
+        // 卸载时手动清理视图，虽然 Obsidian 会自动处理，但显式清理更安全
+        this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
     }
 
     activateView() {

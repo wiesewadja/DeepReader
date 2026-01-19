@@ -1,0 +1,243 @@
+/**
+ * DeepPDF 聊天输入组件样式
+ * ChatGPT 风格的聊天输入框
+ * 使用 Obsidian 原生主题变量以适配不同主题
+ */
+
+/* ==================== 聊天输入容器 ==================== */
+
+.deeppdf-chat-input {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	animation: deeppdf-fade-in 0.2s ease;
+}
+
+/* ==================== 输入框包装器 ==================== */
+
+.deeppdf-chat-input-wrapper {
+	display: flex;
+	align-items: flex-end;
+	gap: var(--size-4-2, 0.55rem);
+	padding: var(--size-4-2, 0.55rem);
+	padding-right: var(--size-4-2, 0.55rem);
+	background: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-lg);
+	transition: border-color var(--deeppdf-transition-fast, 150ms ease),
+	            box-shadow var(--deeppdf-transition-fast, 150ms ease);
+	position: relative;
+}
+
+.deeppdf-chat-input-wrapper:focus-within {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 3px var(--color-accent-soft, rgba(var(--interactive-accent-rgb), 0.15));
+}
+
+/* ==================== 文本输入框 ==================== */
+
+.deeppdf-chat-input-textarea {
+	flex: 1;
+	min-height: 32px;
+	max-height: 150px;
+	padding: var(--size-4-1, 0.275rem) var(--size-4-2, 0.55rem);
+	font-size: var(--font-ui-medium);
+	font-family: inherit;
+	line-height: 1.5;
+	color: var(--text-normal);
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-md);
+	resize: none;
+	overflow: hidden;
+	transition: color var(--deeppdf-transition-fast, 150ms ease);
+}
+
+.deeppdf-chat-input-textarea::placeholder {
+	color: var(--text-muted);
+	opacity: 0.7;
+}
+
+.deeppdf-chat-input-textarea:focus {
+	outline: none;
+}
+
+.deeppdf-chat-input-textarea:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* 滚动条样式 */
+.deeppdf-chat-input-textarea::-webkit-scrollbar {
+	width: 6px;
+}
+
+.deeppdf-chat-input-textarea::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.deeppdf-chat-input-textarea::-webkit-scrollbar-thumb {
+	background: var(--background-modifier-border);
+	border-radius: var(--radius-full, 100px);
+}
+
+.deeppdf-chat-input-textarea::-webkit-scrollbar-thumb:hover {
+	background: var(--text-muted);
+}
+
+/* ==================== 按钮包装器 ==================== */
+
+.deeppdf-chat-input-button-wrapper {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1, 0.275rem);
+}
+
+/* ==================== 发送按钮 - ChatGPT 风格圆形图标按钮 ==================== */
+
+.deeppdf-chat-input-send-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	min-width: 32px;
+	padding: 0;
+	color: var(--text-muted);
+	background: transparent;
+	border: none;
+	border-radius: var(--radius-md);
+	cursor: pointer;
+	transition: all var(--deeppdf-transition-fast, 150ms ease);
+}
+
+.deeppdf-chat-input-send-btn svg {
+	width: 18px;
+	height: 18px;
+}
+
+.deeppdf-chat-input-send-btn:not(:disabled):hover {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.deeppdf-chat-input-send-btn:not(:disabled):active {
+	transform: scale(0.95);
+}
+
+.deeppdf-chat-input-send-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.deeppdf-chat-input-send-btn:not(:disabled) {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* ==================== 焦点可见性（可访问性） ==================== */
+
+.deeppdf-chat-input-send-btn:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* ==================== 加载状态 ==================== */
+
+.deeppdf-chat-input-send-btn.loading {
+	position: relative;
+	color: transparent;
+	pointer-events: none;
+}
+
+.deeppdf-chat-input-send-btn.loading::after {
+	content: '';
+	position: absolute;
+	width: 16px;
+	height: 16px;
+	top: 50%;
+	left: 50%;
+	margin-left: -8px;
+	margin-top: -8px;
+	border: 2px solid rgba(255, 255, 255, 0.3);
+	border-top-color: white;
+	border-radius: 50%;
+	animation: deeppdf-chat-input-spin 0.6s linear infinite;
+}
+
+@keyframes deeppdf-chat-input-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ==================== 响应式设计 ==================== */
+
+@media (max-width: 640px) {
+	.deeppdf-chat-input-wrapper {
+		padding: var(--size-4-1, 0.275rem);
+		gap: var(--size-4-1, 0.275rem);
+	}
+
+	.deeppdf-chat-input-textarea {
+		font-size: var(--font-ui-small);
+		padding: var(--size-4-1, 0.275rem);
+	}
+
+	.deeppdf-chat-input-send-btn {
+		min-width: 50px;
+		height: 28px;
+		padding: var(--size-4-1, 0.275rem) var(--size-4-2, 0.55rem);
+		font-size: var(--font-ui-smaller);
+	}
+}
+
+/* ==================== 暗色主题优化 ==================== */
+
+@media (prefers-color-scheme: dark) {
+	.deeppdf-chat-input-wrapper {
+		background: rgba(0, 0, 0, 0.2);
+	}
+
+	.deeppdf-chat-input-textarea::placeholder {
+		opacity: 0.5;
+	}
+}
+
+/* ==================== 高对比度模式 ==================== */
+
+@media (prefers-contrast: high) {
+	.deeppdf-chat-input-wrapper {
+		border-width: 2px;
+	}
+
+	.deeppdf-chat-input-send-btn {
+		border: 1px solid transparent;
+	}
+
+	.deeppdf-chat-input-send-btn:focus-visible {
+		outline-width: 3px;
+	}
+}
+
+/* ==================== 动画 ==================== */
+
+@keyframes deeppdf-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* ==================== 打印样式 ==================== */
+
+@media print {
+	.deeppdf-chat-input {
+		display: none;
+	}
+}

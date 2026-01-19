@@ -1,0 +1,231 @@
+/**
+ * DeepPDF Index Manager Component Styles
+ * Premium dark theme with status indicators
+ */
+
+/* Main Container */
+.deeppdf-index-manager {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+/* Header (Collapsible) */
+.deeppdf-index-manager-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+    user-select: none;
+}
+
+.deeppdf-index-manager-header:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-index-toggle-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    transition: transform 0.2s;
+    color: var(--text-muted);
+}
+
+.deeppdf-index-manager-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* Content Area */
+.deeppdf-index-manager-content {
+    overflow: hidden;
+    transition: all 0.3s;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Toolbar */
+.deeppdf-index-toolbar {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-btn-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.deeppdf-btn-sm:hover {
+    opacity: 0.9;
+}
+
+/* Index List */
+.deeppdf-index-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Individual Index Item - Horizontal Layout */
+.deeppdf-index-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    transition: background 0.15s;
+    cursor: pointer;
+}
+
+.deeppdf-index-item:last-child {
+    border-bottom: none;
+}
+
+.deeppdf-index-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-index-item.active {
+    background: var(--background-modifier-form-field);
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: 13px;
+}
+
+/* Icon + Name (Left Side) */
+.deeppdf-index-icon-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.deeppdf-index-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.deeppdf-index-name-col {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Status Area (Right Side) */
+.deeppdf-index-status-area {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Progress Bar Styles */
+.deeppdf-index-progress-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.deeppdf-index-progress-label {
+    color: var(--text-muted);
+}
+
+.deeppdf-index-progress-percent {
+    font-weight: 600;
+    color: var(--interactive-accent);
+}
+
+.deeppdf-index-progress-bar {
+    width: 80px;
+    height: 4px;
+    background: var(--background-modifier-border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.deeppdf-index-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--interactive-accent), var(--interactive-accent-hover));
+    border-radius: 10px;
+    transition: width 0.3s ease;
+    animation: progressPulse 2s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
+}
+
+/* Status Badges */
+.deeppdf-index-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.deeppdf-index-status-badge.ready {
+    color: var(--text-success);
+    background: var(--background-modifier-success);
+}
+
+.deeppdf-index-status-badge.queued {
+    color: var(--text-warning);
+    background: var(--background-modifier-border);
+}
+
+.deeppdf-index-status-badge.unknown {
+    color: var(--text-muted);
+    background: var(--background-modifier-border);
+}
+
+.deeppdf-index-status-badge .checkmark,
+.deeppdf-index-status-badge .clock-icon {
+    font-size: 11px;
+}
+
+/* Empty State */
+.deeppdf-index-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+}

@@ -1,0 +1,318 @@
+/**
+ * DeepPDF 消息组件样式
+ * ChatGPT 风格的聊天消息界面
+ * 使用 Obsidian 原生主题变量以适配不同主题
+ */
+
+/* ==================== 消息容器 ==================== */
+
+.deeppdf-message {
+	display: flex;
+	width: 100%;
+	margin-bottom: var(--size-4-4, 1.1rem);
+	animation: deeppdf-fade-in 0.2s ease;
+}
+
+.deeppdf-message-user {
+	justify-content: flex-end;
+}
+
+.deeppdf-message-assistant {
+	justify-content: flex-start;
+}
+
+/* ==================== 消息包装器 ==================== */
+
+.deeppdf-message-wrapper {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2, 0.55rem);
+	max-width: 80%;
+}
+
+.deeppdf-message-user .deeppdf-message-wrapper {
+	flex-direction: row-reverse;
+}
+
+.deeppdf-message-assistant .deeppdf-message-wrapper {
+	flex-direction: row;
+}
+
+/* ==================== AI 头像 ==================== */
+
+.deeppdf-message-avatar {
+	flex-shrink: 0;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--background-modifier-form-field);
+	border-radius: var(--radius-md);
+	font-size: 16px;
+	border: 1px solid var(--background-modifier-border);
+}
+
+/* ==================== 消息气泡 ==================== */
+
+.deeppdf-message-bubble {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2, 0.55rem);
+	padding: var(--size-4-3, 0.8rem);
+	border-radius: var(--radius-lg);
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+	max-width: 100%;
+}
+
+/* 用户消息气泡 - 右侧蓝色 */
+.deeppdf-message-bubble-user {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-bottom-right-radius: 4px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.deeppdf-message-bubble-user .deeppdf-message-content {
+	color: var(--text-on-accent);
+}
+
+.deeppdf-message-bubble-user .deeppdf-message-time {
+	color: var(--text-on-accent);
+	opacity: 0.85;
+}
+
+/* AI 消息气泡 - 左侧灰色 */
+.deeppdf-message-bubble-ai {
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-bottom-left-radius: 4px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.deeppdf-message-bubble-ai:hover {
+	border-color: var(--background-modifier-border-hover);
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* ==================== 消息内容 ==================== */
+
+.deeppdf-message-content {
+	font-size: var(--font-ui-medium);
+	line-height: 1.6;
+	word-wrap: break-word;
+	overflow-wrap: break-word;
+	white-space: pre-wrap;
+}
+
+/* AI 消息内容的特殊样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content {
+	color: var(--text-normal);
+}
+
+/* ==================== 时间戳 ==================== */
+
+.deeppdf-message-time {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	opacity: 0.8;
+}
+
+/* ==================== 操作按钮 ==================== */
+
+.deeppdf-message-actions {
+	display: flex;
+	gap: var(--size-4-1, 0.275rem);
+	flex-wrap: wrap;
+	padding-top: var(--size-4-1, 0.275rem);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-message-action-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1, 0.275rem);
+	padding: var(--size-4-1, 0.275rem) var(--size-4-2, 0.55rem);
+	font-size: var(--font-ui-smaller);
+	font-family: inherit;
+	font-weight: 500;
+	background: transparent;
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-sm);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.deeppdf-message-action-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+.deeppdf-message-action-btn:active {
+	transform: scale(0.98);
+}
+
+/* ==================== 引用来源 ==================== */
+
+.deeppdf-message-citations {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2, 0.55rem);
+	margin-top: var(--size-4-2, 0.55rem);
+	padding-top: var(--size-4-2, 0.55rem);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-citation {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-2, 0.55rem);
+	padding: var(--size-4-2, 0.55rem) var(--size-4-3, 0.8rem);
+	background: var(--background-modifier-form-field);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-md);
+	transition: all 0.15s ease;
+	cursor: pointer;
+	max-width: 200px;
+}
+
+.deeppdf-citation:hover {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+	transform: translateY(-1px);
+}
+
+/* 引用头部 - Compact Horizontal Layout */
+.deeppdf-citation-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1, 0.275rem);
+	flex: 1;
+	min-width: 0;
+}
+
+.deeppdf-citation-file-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1;
+	min-width: 0;
+}
+
+.deeppdf-citation-icon {
+	font-size: 20px;
+	flex-shrink: 0;
+	opacity: 0.7;
+}
+
+.deeppdf-citation-filename {
+	font-size: var(--font-ui-smaller);
+	font-weight: 600;
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.deeppdf-citation-page-badge {
+	font-size: var(--font-ui-smaller);
+	font-weight: 500;
+	color: var(--text-normal);
+}
+
+.deeppdf-citation-page-badge strong {
+	font-weight: 600;
+	color: var(--interactive-accent);
+}
+
+/* Hide snippet in compact inline view */
+.deeppdf-citation-snippet {
+	display: none;
+}
+
+/* 跳转按钮 - Hidden in inline card (entire card is clickable) */
+.deeppdf-citation-jump-btn {
+	display: none;
+}
+
+/* ==================== 流式输出状态 ==================== */
+
+.deeppdf-message-streaming .deeppdf-message-content::after {
+	content: '▋';
+	animation: deeppdf-cursor-blink 1s infinite;
+	margin-left: 2px;
+}
+
+@keyframes deeppdf-cursor-blink {
+
+	0%,
+	50% {
+		opacity: 1;
+	}
+
+	51%,
+	100% {
+		opacity: 0;
+	}
+}
+
+/* ==================== 响应式设计 ==================== */
+
+@media (max-width: 640px) {
+	.deeppdf-message-wrapper {
+		max-width: 90%;
+	}
+
+	.deeppdf-message-bubble {
+		padding: var(--size-4-2, 0.55rem);
+	}
+
+	.deeppdf-message-avatar {
+		width: 28px;
+		height: 28px;
+		font-size: 14px;
+	}
+
+	.deeppdf-message-content {
+		font-size: var(--font-ui-small);
+	}
+
+	.deeppdf-citation-header {
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--size-4-1, 0.275rem);
+	}
+
+	.deeppdf-message-actions {
+		flex-direction: column;
+	}
+
+	.deeppdf-message-action-btn {
+		width: 100%;
+		justify-content: center;
+	}
+}
+
+/* ==================== 打印样式 ==================== */
+
+@media print {
+
+	.deeppdf-message-actions,
+	.deeppdf-citation-jump-btn {
+		display: none;
+	}
+
+	.deeppdf-message-bubble {
+		box-shadow: none;
+		border: 1px solid #ddd;
+	}
+
+	.deeppdf-message-bubble-user {
+		background: #f0f0f0 !important;
+		color: #000 !important;
+	}
+}

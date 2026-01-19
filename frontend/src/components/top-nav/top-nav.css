@@ -1,0 +1,138 @@
+/**
+ * DeepPDF 顶部导航样式
+ * Premium 风格 - 统一工具栏设计
+ */
+
+.deeppdf-header-minimal {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px 16px;
+	background: var(--background-secondary);
+	border-bottom: 1px solid var(--background-modifier-border);
+	height: 52px;
+	flex-shrink: 0;
+}
+
+.deeppdf-header-left {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.deeppdf-logo-icon svg {
+	width: 20px;
+	height: 20px;
+	color: var(--interactive-accent);
+	opacity: 0.9;
+}
+
+.deeppdf-header-title {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--text-normal);
+	line-height: 1;
+	white-space: nowrap;
+}
+
+.deeppdf-header-title:hover {
+	color: var(--interactive-accent);
+	cursor: pointer;
+}
+
+/* 状态指示器 - 极简设计 */
+.deeppdf-status-indicator {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 4px;
+}
+
+.deeppdf-status-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	border: 2px solid var(--background-modifier-border);
+	background-color: var(--text-faint);
+	transition: all 0.3s ease;
+	flex-shrink: 0;
+}
+
+.deeppdf-status-text {
+	font-size: 12px;
+	color: var(--text-muted);
+	font-weight: 500;
+	white-space: nowrap;
+}
+
+/* 状态颜色 - 使用 Obsidian 原生变量 */
+.deeppdf-status-dot.status-loading {
+	background-color: var(--text-warning, #F59E0B);
+	border-color: var(--text-warning, #F59E0B);
+	box-shadow: 0 0 4px var(--text-warning, #F59E0B);
+	animation: pulse-loading 2s infinite;
+}
+
+.deeppdf-status-dot.status-ok {
+	background-color: var(--text-success, #10B981);
+	border-color: var(--text-success, #10B981);
+}
+
+.deeppdf-status-dot.status-error {
+	background-color: var(--text-error, #EF4444);
+	border-color: var(--text-error, #EF4444);
+}
+
+.deeppdf-status-dot.status-warning {
+	background-color: var(--text-warning, #F59E0B);
+	border-color: var(--text-warning, #F59E0B);
+}
+
+@keyframes pulse-loading {
+	0% {
+		opacity: 0.5;
+		transform: scale(0.9);
+	}
+
+	50% {
+		opacity: 1;
+		transform: scale(1.1);
+	}
+
+	100% {
+		opacity: 0.5;
+		transform: scale(0.9);
+	}
+}
+
+/* 右侧设置按钮 */
+.deeppdf-header-right {
+	display: flex;
+	align-items: center;
+}
+
+.deeppdf-icon-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border: none;
+	background: transparent;
+	color: var(--text-muted);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	padding: 0;
+}
+
+.deeppdf-icon-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.deeppdf-icon-button svg {
+	width: 18px;
+	height: 18px;
+}

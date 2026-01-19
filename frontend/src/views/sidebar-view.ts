@@ -1,6 +1,6 @@
 /**
  * DeepPDF 侧边栏视图
- * 现代化设计 - SVG 图标、卡片布局、平滑动画
+ * ChatGPT 风格的对话界面
  */
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
@@ -10,6 +10,14 @@ import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress } from "../types/index.js";
+import { MessageList } from "../components/message-list/message-list.js";
+import { ChatInput } from "../components/chat-input/chat-input.js";
+import { MessageData, MessageRole, CitationData } from "../components/message/message.js";
+import { TopNav } from "../components/top-nav/top-nav.js";
+import { IndexManager } from "../components/index-manager/index-manager.js";
+import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
+import { Icons, getIcon } from "../utils/icons.js";
+import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 
 // ==================== 类型映射 ====================
 
@@ -21,8 +29,8 @@ export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
     return {
         id: apiProgress.id,
         status: (apiProgress.status === 'pending' || apiProgress.status === 'processing' ||
-                 apiProgress.status === 'completed' || apiProgress.status === 'failed' ||
-                 apiProgress.status === 'cancelled')
+            apiProgress.status === 'completed' || apiProgress.status === 'failed' ||
+            apiProgress.status === 'cancelled')
             ? apiProgress.status
             : 'pending',
         message: apiProgress.message || '任务进行中',
@@ -37,41 +45,26 @@ export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
-// ==================== SVG 图标系统 ====================
-const Icons = {
-    search: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
-    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`,
-    refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`,
-    check: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
-    warning: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
-    x: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
-    database: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s 9-1.34 9-3V5"/></svg>`,
-    file: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
-    copy: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
-    chevronDown: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`,
-    spinner: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`
-};
+/** 任务完成后显示延迟时间（毫秒） */
+const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
-    private submitHandler: () => void;
-    private keyPressHandler: (e: KeyboardEvent) => void;
     private apiClient: DeepPDFClient | null;
-    private indexSelectHandler: () => void;
-    private indexSelect: HTMLSelectElement | null = null;
-    private statusEl: HTMLElement | null = null;
-    private drawer: Drawer | null = null;
-    private drawerCloseHandler: () => void;
-    private isDrawerOpen: boolean = false;
+    private topNav: TopNav | null = null;
+    private indexManager: IndexManager | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
     private taskCards: Map<string, TaskProgressCard> = new Map();
+
+    // 对话界面组件
+    private messageList: MessageList | null = null;
+    private chatInput: ChatInput | null = null;
+    private currentIndexId: string | null = null;
+    private currentPdfName: string | null = null;
+    private isProcessing: boolean = false;
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null) {
         super(leaf);
         this.apiClient = apiClient;
-        this.submitHandler = () => {};
-        this.keyPressHandler = () => {};
-        this.indexSelectHandler = () => {};
-        this.drawerCloseHandler = () => {};
         // TaskPollingManager 将在首次需要时延迟初始化
     }
 
@@ -85,6 +78,69 @@ export class SidebarView extends ItemView {
 
     getIcon() {
         return Icons.database;
+    }
+
+    /**
+     * 创建顶部导航区
+     */
+    /**
+     * 创建顶部导航区
+     */
+    private createTopNavigation(container: HTMLElement) {
+        // 创建 TopNav 组件 (极简风格)
+        this.topNav = new TopNav({
+            onSettings: () => {
+                // 打开 Obsidian 设置并定位到 DeepPDF 插件
+                const app = this.app as any;
+                if (app.setting) {
+                    app.setting.open();
+                    app.setting.openTabById('deeppdf');
+                }
+            },
+            onTitleClick: () => {
+                // 可以在这里显示关于信息或重置
+            }
+        });
+
+        const navEl = this.topNav.getElement();
+        if (navEl) {
+            container.appendChild(navEl);
+        }
+    }
+
+    /**
+     * 创建索引管理区 (折叠面板)
+     */
+    private createIndexManager(container: HTMLElement) {
+        this.indexManager = new IndexManager({
+            onIndexChange: (indexId: string) => {
+                this.currentIndexId = indexId;
+                // 查找 PDF 名称
+                const index = (this.indexManager as any).indexes?.find((i: any) => i.id === indexId);
+                if (index) {
+                    this.currentPdfName = index.pdf_name;
+                    new Notice(`已切换到索引: ${index.pdf_name}`);
+                }
+            },
+            onCreateIndex: () => {
+                // 打开索引管理对话框
+                new IndexManagerModal(this.app, this.apiClient!, () => {
+                    // 索引创建成功后刷新列表
+                    this.loadIndexes();
+                }).open();
+            },
+            onExportMarkdown: async (indexId: string) => {
+                await this.handleExportMarkdown(indexId);
+            },
+            onDeleteIndex: async (indexId: string) => {
+                await this.handleDeleteIndex(indexId);
+            }
+        });
+
+        const el = this.indexManager.getElement();
+        if (el) {
+            container.appendChild(el);
+        }
     }
 
     /**
@@ -104,15 +160,19 @@ export class SidebarView extends ItemView {
         const container = this.containerEl.children[1] as HTMLElement;
         container.empty();
         container.addClass("deeppdf-container");
+        container.addClass("deeppdf-chat-container");
 
-        // 创建头部
-        this.createHeader(container);
+        // 创建顶部导航区
+        this.createTopNavigation(container);
 
-        // 创建查询区域
-        this.createQuerySection(container);
+        // 创建索引管理区 (新)
+        this.createIndexManager(container);
 
-        // 创建结果区域
-        this.createResultsSection(container);
+        // 创建消息列表区
+        this.createMessageListSection(container);
+
+        // 创建输入区
+        this.createChatInputSection(container);
 
         // 加载索引列表
         await this.loadIndexes();
@@ -121,508 +181,360 @@ export class SidebarView extends ItemView {
         this.updateStatus();
     }
 
-    private createHeader(container: HTMLElement) {
-        const header = container.createEl("header", { cls: "deeppdf-header" });
+    /**
+     * 创建消息列表区
+     */
+    private createMessageListSection(container: HTMLElement) {
+        const section = container.createDiv({ cls: "deeppdf-message-list-section" });
 
-        // 左侧：Logo 和标题
-        const headerLeft = header.createDiv({ cls: "deeppdf-header-left" }) as HTMLElement;
-
-        const logo = headerLeft.createDiv({ cls: "deeppdf-logo" }) as HTMLElement;
-        logo.innerHTML = Icons.database;
-
-        headerLeft.createEl("h2", { text: "DeepPDF" });
-
-        // 右侧：状态和操作
-        const headerRight = header.createDiv({ cls: "deeppdf-header-right" }) as HTMLElement;
-
-        // 服务器状态指示器
-        this.statusEl = headerRight.createDiv({ cls: "deeppdf-status deeppdf-status-loading" });
-        this.statusEl.innerHTML = `<span></span> 检查中...`;
-
-        // 管理索引按钮
-        const manageBtn = headerRight.createEl("button", {
-            cls: "deeppdf-btn deeppdf-manage-btn"
-        });
-        manageBtn.innerHTML = `${Icons.settings} 管理索引`;
-        manageBtn.addEventListener("click", () => {
-            this.openIndexDrawer();
-        });
-
-        // 创建抽屉面板
-        this.drawer = new Drawer({
-            position: "right",
-            width: "400px",
-            overlay: true
-        });
-        this.containerEl.appendChild(this.drawer.render());
-    }
-
-    private createQuerySection(container: HTMLElement) {
-        const querySection = container.createDiv({ cls: "deeppdf-query-section" });
-
-        // 索引选择器
-        const indexSelectRow = querySection.createDiv({ cls: "deeppdf-index-select-row" });
-        indexSelectRow.createEl("label", {
-            text: "选择索引:",
-            cls: "deeppdf-index-label"
-        });
-
-        this.indexSelect = indexSelectRow.createEl("select", {
-            cls: "deeppdf-index-select"
-        }) as HTMLSelectElement;
-        this.indexSelect.add(new Option("加载中...", ""));
-
-        // 查询输入框
-        const input = querySection.createEl("input", {
-            type: "text",
-            cls: "deeppdf-query-input",
-            placeholder: "输入问题开始查询..."
-        });
-
-        // 提交按钮
-        const submitBtn = querySection.createEl("button", {
-            cls: "deeppdf-btn deeppdf-submit-btn"
-        });
-        submitBtn.innerHTML = `${Icons.search} 提问`;
-
-        // 保存事件监听器引用
-        this.submitHandler = () => this.handleSubmit(input.value, this.indexSelect?.value || "");
-        this.keyPressHandler = (e: KeyboardEvent) => {
-            if (e.key === "Enter") {
-                this.handleSubmit(input.value, this.indexSelect?.value || "");
+        // 创建消息列表组件
+        this.messageList = new MessageList({
+            onRegenerate: (messageId: string) => {
+                this.handleRegenerate(messageId);
+            },
+            onCopy: (messageId: string) => {
+                this.handleCopy(messageId);
+            },
+            onCopyWithCitation: (messageId: string) => {
+                this.handleCopyWithCitation(messageId);
+            },
+            onCitationJump: (citation: CitationData) => {
+                this.handleCitationJump(citation);
             }
-        };
-        this.indexSelectHandler = () => {
-            console.log(`[DeepPDF] 选中的索引: ${this.indexSelect?.value}`);
-        };
+        });
 
-        // 添加事件监听
-        submitBtn.addEventListener("click", this.submitHandler);
-        input.addEventListener("keypress", this.keyPressHandler);
-        this.indexSelect?.addEventListener("change", this.indexSelectHandler);
+        const messageListEl = this.messageList.getElement();
+        if (messageListEl) {
+            section.appendChild(messageListEl);
+        }
     }
 
-    private createResultsSection(container: HTMLElement) {
-        const resultsSection = container.createDiv({ cls: "deeppdf-results-section" });
+    /**
+     * 创建聊天输入区
+     */
+    private createChatInputSection(container: HTMLElement) {
+        const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        const emptyState = resultsSection.createDiv({ cls: "deeppdf-empty-state" });
-        emptyState.innerHTML = `
-            <div style="color: var(--deeppdf-text-muted); opacity: 0.5;">
-                ${Icons.search}
-            </div>
-            <div class="deeppdf-empty-text">输入问题开始查询</div>
-            <div class="deeppdf-empty-hint">选择索引后输入问题即可搜索</div>
-        `;
+        // 创建聊天输入组件
+        this.chatInput = new ChatInput({
+            placeholder: "输入问题开始查询...",
+            onSend: (message: string) => {
+                this.sendMessage(message);
+            }
+        });
+
+        const chatInputEl = this.chatInput.getElement();
+        if (chatInputEl) {
+            section.appendChild(chatInputEl);
+        }
+    }
+
+    // ==================== 消息处理 ====================
+
+    /**
+     * 发送消息
+     */
+    private async sendMessage(message: string): Promise<void> {
+        if (!message.trim() || this.isProcessing) {
+            return;
+        }
+
+        // 检查是否选择了索引
+        if (!this.currentIndexId) {
+            new Notice("请先选择一个索引");
+            return;
+        }
+
+        // 禁用输入
+        this.isProcessing = true;
+        this.chatInput?.setDisabled(true);
+
+        try {
+            // 生成消息 ID（使用单一时间戳避免冲突）
+            const timestamp = Date.now();
+            const userMessageId = `msg-${timestamp}-user`;
+            const aiMessageId = `msg-${timestamp}-ai`;
+
+            // 添加用户消息
+            const userMessageData: MessageData = {
+                id: userMessageId,
+                role: "user" as MessageRole,
+                content: message,
+                timestamp: new Date().toISOString()
+            };
+            this.messageList?.addMessage(userMessageData);
+
+            // 添加 AI 消息（初始为加载状态）
+            const aiMessageData: MessageData = {
+                id: aiMessageId,
+                role: "assistant" as MessageRole,
+                content: "正在思考...",
+                timestamp: new Date().toISOString(),
+                isStreaming: true
+            };
+            this.messageList?.addMessage(aiMessageData);
+
+            // 发送查询请求
+            const result = await this.handleQuery(message, this.currentIndexId);
+
+            // 更新 AI 消息
+            this.messageList?.updateMessage(aiMessageId, {
+                content: result.answer,
+                citations: result.citations,
+                isStreaming: false
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            new Notice(`查询失败: ${errorMessage}`);
+
+            // 添加错误消息
+            const errorId = `msg-${Date.now()}-error`;
+            this.messageList?.addMessage({
+                id: errorId,
+                role: "assistant" as MessageRole,
+                content: `查询失败: ${errorMessage}`,
+                timestamp: new Date().toISOString()
+            });
+        } finally {
+            // 恢复输入
+            this.isProcessing = false;
+            this.chatInput?.setDisabled(false);
+            this.chatInput?.focus();
+        }
+    }
+
+    /**
+     * 处理查询请求
+     */
+    private async handleQuery(query: string, indexId: string): Promise<{
+        answer: string;
+        citations: CitationData[];
+    }> {
+        if (!this.apiClient) {
+            throw new Error("API 客户端未连接");
+        }
+
+        const result = await this.apiClient.queryPDF(query, indexId);
+
+        if (result.status !== "success") {
+            throw new Error("查询失败");
+        }
+
+        // 从 API 响应中获取 PDF 名称（避免依赖可能过时的本地状态）
+        const pdfName = result.index_info?.pdf_name || "未知文档";
+
+        // 格式化响应
+        let answer = "";
+        if (result.query) {
+            answer += `**查询**: ${query}\n\n`;
+        }
+
+        if (!result.results || result.results.length === 0) {
+            answer += "未找到相关结果。请尝试使用不同的关键词重新搜索。";
+            return { answer, citations: [] };
+        }
+
+        // 构建答案
+        answer += `找到 ${result.results.length} 个相关结果：\n\n`;
+
+        result.results.forEach((item, index) => {
+            answer += `${index + 1}. ${this.escapeHtml(item.text || "")}\n\n`;
+        });
+
+        // 构建引用（使用从 API 返回的 pdf_name）
+        const citations: CitationData[] = result.results.map(item => ({
+            pdf_name: pdfName,
+            page: item.metadata?.page || item.metadata?.start_index || 0,
+            snippet: item.text || "",
+            file_path: item.metadata?.node_name || undefined
+        }));
+
+        return { answer, citations };
+    }
+
+    /**
+     * 处理重新生成
+     */
+    private handleRegenerate(messageId: string): void {
+        const message = this.messageList?.getMessage(messageId);
+        if (!message) return;
+
+        const data = message.getData();
+        if (data.role !== "assistant") return;
+
+        // 找到对应的用户消息
+        const messages = this.messageList?.getMessagesData() || [];
+        const userMessageIndex = messages.findIndex(m => m.id === messageId) - 1;
+
+        if (userMessageIndex >= 0 && messages[userMessageIndex].role === "user") {
+            // 重新发送查询
+            this.sendMessage(messages[userMessageIndex].content);
+        }
+    }
+
+    /**
+     * 处理复制
+     */
+    private handleCopy(messageId: string): void {
+        const message = this.messageList?.getMessage(messageId);
+        if (!message) return;
+
+        const content = message.getData().content;
+        this.copyToClipboard(content);
+    }
+
+    /**
+     * 处理复制带引用
+     */
+    private handleCopyWithCitation(messageId: string): void {
+        const message = this.messageList?.getMessage(messageId);
+        if (!message) return;
+
+        const data = message.getData();
+        let content = data.content;
+
+        // 添加引用
+        if (data.citations && data.citations.length > 0) {
+            content += "\n\n**引用来源**:\n";
+            data.citations.forEach((citation, index) => {
+                content += `${index + 1}. ${citation.pdf_name} - 第 ${citation.page} 页\n`;
+            });
+        }
+
+        this.copyToClipboard(content);
+    }
+
+    /**
+     * 处理引用跳转
+     */
+    private handleCitationJump(citation: CitationData): void {
+        // 优先使用 Markdown 路径
+        if (citation.markdown_path) {
+            try {
+                // 使用 Obsidian API 打开 Markdown 文件
+                // openLinkText 参数: (linktext, sourcePath, newLeaf, openViewState)
+                this.app.workspace.openLinkText(
+                    citation.markdown_path,
+                    '',  // sourcePath - 空字符串表示从 vault 根目录
+                    false  // newLeaf - false 表示在当前标签页打开
+                );
+                new Notice(`已打开: ${citation.markdown_path}`);
+                console.log('[DeepPDF] 已打开 Markdown 文件:', citation.markdown_path);
+            } catch (error) {
+                const errorMsg = error instanceof Error ? error.message : String(error);
+                new Notice(`打开文件失败: ${errorMsg}`);
+                console.error('[DeepPDF] 打开 Markdown 文件失败:', error);
+            }
+        } else {
+            // 降级:显示 PDF 信息
+            new Notice(`Markdown 文件未生成,请重新索引 PDF: ${citation.pdf_name}`);
+            console.warn('[DeepPDF] Markdown path not found for citation:', citation);
+        }
     }
 
     async updateStatus(): Promise<void> {
-        if (!this.statusEl) return;
+        if (!this.topNav) return;
 
-        this.statusEl.className = "deeppdf-status deeppdf-status-loading";
-        this.statusEl.innerHTML = `<span></span> 检查中...`;
+        // 设置为加载状态
+        this.topNav.setStatus('loading');
 
         if (!this.apiClient) {
-            this.statusEl.className = "deeppdf-status deeppdf-status-warning";
-            this.statusEl.innerHTML = `<span></span> 未连接`;
+            this.topNav.setStatus('disconnected');
             return;
         }
 
         try {
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
-                this.statusEl.className = "deeppdf-status deeppdf-status-ok";
-                this.statusEl.innerHTML = `<span></span> 已连接`;
+                this.topNav.setStatus('connected');
             } else {
-                this.statusEl.className = "deeppdf-status deeppdf-status-warning";
-                this.statusEl.innerHTML = `<span></span> 未连接`;
+                this.topNav.setStatus('disconnected');
             }
         } catch (error) {
-            this.statusEl.className = "deeppdf-status deeppdf-status-error";
-            this.statusEl.innerHTML = `<span></span> 连接失败`;
+            handleNetworkError(error as Error, { context: 'updateStatus' });
+            this.topNav.setStatus('error');
         }
     }
 
-    openIndexManager() {
-        if (!this.apiClient) {
-            this.showError("API 客户端未连接");
-            return;
-        }
-        new IndexManagerModal(this.app, this.apiClient, () => this.refreshIndexes()).open();
-    }
+    async handleExportMarkdown(indexId: string) {
+        if (!this.apiClient) return;
 
-    private openIndexDrawer() {
-        if (!this.drawer || this.isDrawerOpen) return;
-
-        // 设置抽屉内容
-        const drawerContent = this.createIndexManagerContent();
-        this.drawer.setContent(drawerContent);
-        this.drawer.open();
-        this.isDrawerOpen = true;
-
-        // 加载进行中的任务
-        this.loadActiveTasks();
-    }
-
-    private createIndexManagerContent(): HTMLElement {
-        const container = document.createElement("div");
-        container.addClass("deeppdf-index-manager");
-
-        // 头部
-        const header = container.createEl("header");
-        header.innerHTML = `
-            <div class="deeppdf-drawer-header">
-                <h2>索引管理</h2>
-                <button class="deeppdf-drawer-close" aria-label="关闭">✕</button>
-            </div>
-        `;
-
-        // 关闭按钮事件
-        this.drawerCloseHandler = () => {
-            this.drawer?.close();
-            this.isDrawerOpen = false;
-        };
-        const closeBtn = header.querySelector(".deeppdf-drawer-close");
-        closeBtn?.addEventListener("click", this.drawerCloseHandler);
-
-        // 操作按钮区
-        const actions = container.createEl("div", { cls: "deeppdf-drawer-actions" });
-        actions.innerHTML = `
-            <button class="deeppdf-btn deeppdf-btn-primary">+ 新建索引</button>
-            <button class="deeppdf-btn deeppdf-btn-secondary">刷新</button>
-        `;
-
-        // 任务进度区域
-        const taskSection = container.createEl("div", { cls: "deeppdf-task-section" });
-        taskSection.innerHTML = `
-            <div class="deeppdf-section-header">
-                <h3>⏳ 进行中的任务</h3>
-            </div>
-            <div class="deeppdf-task-list" id="deeppdf-task-list"></div>
-        `;
-
-        // 索引列表容器
-        const listContainer = container.createEl("div", { cls: "deeppdf-index-list" });
-        listContainer.innerHTML = "<p>加载中...</p>";
-
-        // 加载索引列表
-        this.loadIndexesIntoDrawer(listContainer);
-
-        return container;
-    }
-
-    private async loadIndexesIntoDrawer(container: HTMLElement) {
-        if (!this.apiClient) {
-            container.innerHTML = "<p>未连接到服务器</p>";
+        // 查找索引信息
+        const indexList = await this.apiClient.listIndexes();
+        const indexInfo = indexList.indexes.find(i => i.id === indexId);
+        if (!indexInfo) {
+            new Notice("未找到索引信息");
             return;
         }
 
+        new Notice(`开始导出: ${indexInfo.pdf_name}...`);
+
         try {
-            const result = await this.apiClient.listIndexes();
-            container.empty();
+            // 1. 获取完整节点数据
+            const data = await this.apiClient.exportIndex(indexId);
 
-            if (!result.indexes || result.indexes.length === 0) {
-                container.innerHTML = "<p>暂无索引</p>";
-                return;
+            // 2. 前端生成并写入文件
+            // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
+            const result = await exportIndexToMarkdown(this.app, indexInfo.pdf_name, data.nodes);
+
+            if (result.success) {
+                new Notice(`导出成功! 创建了 ${result.filesCreated} 个文件`);
+                // 3. 保存映射回后端
+                await this.apiClient.saveMarkdownMapping(indexId, result.fileMapping);
+            } else {
+                new Notice(`导出失败: ${result.error}`);
             }
-
-            result.indexes.forEach((index: IndexListItem) => {
-                const card = container.createEl("div", { cls: "deeppdf-index-card" });
-                card.innerHTML = `
-                    <div class="deeppdf-index-card-info">
-                        <span class="deeppdf-index-card-name"> ${index.pdf_name}</span>
-                        <span class="deeppdf-index-card-meta">${index.node_count} 节点</span>
-                    </div>
-                    <button class="deeppdf-btn deeppdf-btn-sm deeppdf-btn-danger">删除</button>
-                `;
-            });
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            container.innerHTML = `<p>加载失败: ${errorMessage}</p>`;
+            handleNetworkError(error as Error, { context: 'exportMarkdown' });
         }
     }
 
-    private async loadActiveTasks(): Promise<void> {
+    async handleDeleteIndex(indexId: string) {
         if (!this.apiClient) return;
-
-        // 清理现有的轮询和任务卡片，防止重复
-        this.clearExistingTasks();
-
         try {
-            const activeTasks = await this.apiClient.getActiveTasks();
-
-            for (const task of activeTasks) {
-                await this.addTaskCard(task.id, task);
+            await this.apiClient.deleteIndex(indexId);
+            new Notice("索引已删除");
+            // 刷新列表
+            await this.loadIndexes();
+            // 如果删除的是当前选中项，重置
+            if (this.currentIndexId === indexId) {
+                this.currentIndexId = null;
+                this.currentPdfName = null;
             }
         } catch (error) {
-            console.error('[DeepPDF] 加载进行中的任务失败:', error);
-        }
-    }
-
-    /**
-     * 清理现有的任务轮询和卡片
-     */
-    private clearExistingTasks(): void {
-        // 停止所有轮询
-        const manager = this.getTaskPollingManager();
-        if (manager) {
-            const activeTaskIds = manager.getActiveTaskIds();
-            activeTaskIds.forEach(taskId => {
-                manager.stopPolling(taskId);
-            });
-        }
-
-        // 移除所有任务卡片
-        this.taskCards.forEach((card, taskId) => {
-            card.getElement().remove();
-        });
-        this.taskCards.clear();
-    }
-
-    private async addTaskCard(taskId: string, progress: APITaskProgress): Promise<void> {
-        if (!this.drawer) return;
-
-        const taskList = this.drawer.getElement()?.querySelector("#deeppdf-task-list");
-        if (!taskList) return;
-
-        // 如果已经存在该任务的卡片，跳过
-        if (this.taskCards.has(taskId)) return;
-
-        // 转换 API 的 TaskProgress 为组件需要的格式
-        const componentProgress = toTaskProgress(progress);
-
-        // 创建任务进度卡片
-        const card = new TaskProgressCard(componentProgress, async () => {
-            await this.cancelTask(taskId);
-        });
-
-        // 添加到 DOM
-        taskList.appendChild(card.getElement());
-
-        // 保存引用
-        this.taskCards.set(taskId, card);
-
-        // 开始轮询任务进度
-        const manager = this.getTaskPollingManager();
-        if (manager) {
-            manager.startPolling(taskId, (updatedProgress) => {
-                this.updateTaskCard(taskId, updatedProgress);
-            });
-        }
-    }
-
-    private updateTaskCard(taskId: string, progress: APITaskProgress): void {
-        const card = this.taskCards.get(taskId);
-        if (!card) return;
-
-        // 转换 API 的 TaskProgress 为组件需要的格式
-        const componentProgress = toTaskProgress(progress);
-        card.update(componentProgress);
-
-        // 如果任务完成或失败，处理后续逻辑
-        if (progress.status === "completed" || progress.status === "failed" || progress.status === "cancelled") {
-            this.moveTaskToIndexList(taskId, progress);
-        }
-    }
-
-    private async cancelTask(taskId: string): Promise<void> {
-        if (!this.apiClient) return;
-
-        try {
-            await this.apiClient.cancelTask(taskId);
-
-            // 从 DOM 中移除任务卡片
-            const card = this.taskCards.get(taskId);
-            if (card) {
-                card.getElement().remove();
-                this.taskCards.delete(taskId);
-            }
-
-            // 停止轮询
-            const manager = this.getTaskPollingManager();
-            if (manager) {
-                manager.stopPolling(taskId);
-            }
-
-            new Notice("任务已取消");
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            new Notice(`取消任务失败: ${errorMessage}`);
-        }
-    }
-
-    private async moveTaskToIndexList(taskId: string, progress: APITaskProgress): Promise<void> {
-        // 从任务进度区域移除卡片
-        const card = this.taskCards.get(taskId);
-        if (card) {
-            // 延迟移除，让用户看到完成状态
-            setTimeout(() => {
-                card.getElement().remove();
-                this.taskCards.delete(taskId);
-            }, 2000);
-        }
-
-        // 停止轮询
-        const manager = this.getTaskPollingManager();
-        if (manager) {
-            manager.stopPolling(taskId);
-        }
-
-        // 如果任务完成，刷新索引列表
-        if (progress.status === "completed") {
-            const listContainer = this.drawer?.getElement()?.querySelector(".deeppdf-index-list");
-            if (listContainer) {
-                await this.loadIndexesIntoDrawer(listContainer as HTMLElement);
-            }
+            handleNetworkError(error as Error, { context: 'deleteIndex' });
         }
     }
 
     async refreshIndexes(): Promise<void> {
-        if (this.indexSelect) {
-            await this.loadIndexes();
-        }
+        await this.loadIndexes();
     }
 
-    async handleSubmit(query: string, selectedIndexId: string) {
-        if (!query.trim()) {
-            return;
-        }
 
-        if (!this.apiClient) {
-            this.showError("API 客户端未连接");
-            return;
-        }
-
-        const resultsSection = this.containerEl.querySelector(".deeppdf-results-section");
-        if (!resultsSection) return;
-
-        // 显示加载状态
-        resultsSection.innerHTML = `
-            <div class="deeppdf-loading">
-                <div class="deeppdf-spinner"></div>
-                <span>搜索中...</span>
-            </div>
-        `;
-
-        try {
-            // 检查是否选择了索引
-            if (!selectedIndexId) {
-                resultsSection.innerHTML = `
-                    <div class="deeppdf-error">
-                        <span>${Icons.warning}</span>
-                        <span>请先选择一个索引。如果没有可用索引，请使用"管理索引"创建 PDF 索引。</span>
-                    </div>
-                `;
-                return;
-            }
-
-            const result = await this.apiClient.queryPDF(query, selectedIndexId);
-            this.displayQueryResult(result, query, resultsSection);
-        } catch (error) {
-            resultsSection.innerHTML = `
-                <div class="deeppdf-error">
-                    <span>${Icons.x}</span>
-                    <span>查询失败: ${error}</span>
-                </div>
-            `;
-        }
-    }
 
     private async loadIndexes(): Promise<void> {
-        if (!this.indexSelect) return;
+        if (!this.indexManager) return; // 使用 indexManager
 
         if (!this.apiClient) {
-            this.indexSelect.innerHTML = '<option value="">未连接</option>';
+            this.indexManager.setIndexes([]);
             return;
         }
 
         try {
             const result: ListIndexesResult = await this.apiClient.listIndexes();
-            this.indexSelect.innerHTML = '';
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
-                this.indexSelect.add(new Option("暂无索引", ""));
+                this.indexManager.setIndexes([]);
                 return;
             }
 
-            result.indexes.forEach((index: any) => {
-                const option = new Option(
-                    `${index.pdf_name} (${index.node_count} 节点)`,
-                    index.id
-                );
-                this.indexSelect?.add(option);
-            });
-
+            // 更新索引列表，保持当前选中状态 (如果还在列表中)
+            this.indexManager.setIndexes(result.indexes, this.currentIndexId || undefined);
             console.log(`[DeepPDF] 已加载 ${result.indexes.length} 个索引`);
         } catch (error) {
-            console.error('[DeepPDF] 加载索引列表失败:', error);
-            this.indexSelect.innerHTML = '<option value="">加载失败</option>';
-        }
-    }
-
-    private displayQueryResult(result: QueryPDFResult, query: string, resultsSection: Element): void {
-        if (!result || result.status !== "success") {
-            resultsSection.innerHTML = `
-                <div class="deeppdf-error">
-                    <span>${Icons.x}</span>
-                    <span>查询失败: 未知错误</span>
-                </div>
-            `;
-            return;
-        }
-
-        let resultsHtml = `
-            <div class="deeppdf-query-summary">
-                <strong>查询:</strong> ${this.escapeHtml(query)}
-            </div>
-        `;
-
-        if (result.results && Array.isArray(result.results) && result.results.length > 0) {
-            resultsHtml += `<div class="deeppdf-results-list">`;
-            result.results.forEach((item: any, index: number) => {
-                const pageNumber = item.metadata?.page || item.metadata?.start_index;
-                const section = item.metadata?.section || "未知";
-
-                resultsHtml += `
-                    <div class="deeppdf-result-item" data-index="${index}">
-                        <div class="deeppdf-result-header">
-                            <span class="deeppdf-result-number">${Icons.file} 结果 ${index + 1}</span>
-                            <button class="deeppdf-copy-btn" title="复制内容">
-                                ${Icons.copy}
-                            </button>
-                        </div>
-                        <p class="deeppdf-result-text">${this.escapeHtml(item.text || "无内容")}</p>
-                        <div class="deeppdf-result-meta">
-                            <span class="deeppdf-meta-label">章节:</span>
-                            <span>${this.escapeHtml(section)}</span>
-                            <span class="deeppdf-meta-separator">•</span>
-                            <span class="deeppdf-meta-label">页码:</span>
-                            <span>${pageNumber || "未知"}</span>
-                        </div>
-                    </div>
-                `;
-            });
-            resultsHtml += `</div>`;
-
-            resultsSection.innerHTML = resultsHtml;
-
-            // 添加复制按钮事件
-            resultsSection.querySelectorAll(".deeppdf-copy-btn").forEach((btn) => {
-                btn.addEventListener("click", (e) => {
-                    const card = (e.currentTarget as HTMLElement).closest(".deeppdf-result-item");
-                    const text = card?.querySelector(".deeppdf-result-text")?.textContent || "";
-                    this.copyToClipboard(text);
-                });
-            });
-        } else {
-            resultsSection.innerHTML = resultsHtml + `
-                <div class="deeppdf-empty-state">
-                    <div style="color: var(--deeppdf-text-muted); opacity: 0.5;">
-                        ${Icons.file}
-                    </div>
-                    <div class="deeppdf-empty-text">未找到相关结果</div>
-                    <div class="deeppdf-empty-hint">尝试使用不同的关键词重新搜索</div>
-                </div>
-            `;
+            handleNetworkError(error as Error, { context: 'loadIndexes' });
+            this.indexManager.setIndexes([]);
         }
     }
 
@@ -634,63 +546,55 @@ export class SidebarView extends ItemView {
         });
     }
 
-    private showError(message: string) {
-        const resultsSection = this.containerEl.querySelector(".deeppdf-results-section");
-        if (resultsSection) {
-            resultsSection.innerHTML = `
-                <div class="deeppdf-error">
-                    <span>${Icons.x}</span>
-                    <span>${this.escapeHtml(message)}</span>
-                </div>
-            `;
-        }
-    }
-
     private escapeHtml(text: string): string {
         const div = document.createElement("div");
         div.textContent = text;
         return div.innerHTML;
     }
 
+    /**
+     * 显示错误消息
+     */
+    private showError(message: string): void {
+        new Notice(message);
+        console.error("[DeepPDF]", message);
+    }
+
     async onClose() {
-        // 清理事件监听器
-        const submitBtn = this.containerEl.querySelector(".deeppdf-submit-btn");
-        const input = this.containerEl.querySelector(".deeppdf-query-input");
-        const indexSelect = this.containerEl.querySelector(".deeppdf-index-select");
-
-        if (submitBtn) {
-            submitBtn.removeEventListener("click", this.submitHandler);
-        }
-        if (input) {
-            input.removeEventListener("keypress", this.keyPressHandler);
-        }
-        if (indexSelect) {
-            indexSelect.removeEventListener("change", this.indexSelectHandler);
-        }
-
-        // 清理轮询管理器
-        if (this.taskPollingManager) {
-            this.taskPollingManager.destroy();
-        }
-
-        // 清理任务卡片
-        this.taskCards.clear();
-
-        // 清理抽屉
-        if (this.drawer) {
-            // 清理关闭按钮的事件监听器
-            const closeBtn = this.drawer.getElement()?.querySelector(".deeppdf-drawer-close");
-            if (closeBtn) {
-                closeBtn.removeEventListener("click", this.drawerCloseHandler);
+        try {
+            // 清理 TopNav
+            if (this.topNav) {
+                this.topNav.destroy();
+                this.topNav = null;
             }
 
-            this.drawer.close();
-            const drawerEl = this.drawer.getElement();
-            if (drawerEl) {
-                drawerEl.remove();
+            // 清理消息列表
+            if (this.messageList) {
+                this.messageList.destroy();
+                this.messageList = null;
             }
-            this.drawer = null;
-            this.isDrawerOpen = false;
+
+            // 清理聊天输入
+            if (this.chatInput) {
+                this.chatInput.destroy();
+                this.chatInput = null;
+            }
+
+            // 清理轮询管理器
+            if (this.taskPollingManager) {
+                this.taskPollingManager.destroy();
+                this.taskPollingManager = null;
+            }
+
+            // 清理任务卡片
+            this.taskCards.clear();
+
+            if (this.indexManager) {
+                this.indexManager.destroy();
+                this.indexManager = null;
+            }
+        } catch (error) {
+            console.error('[DeepPDF] Error closing sidebar view:', error);
         }
     }
 }

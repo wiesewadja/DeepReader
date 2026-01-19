@@ -180,13 +180,44 @@ export interface QueryResultItem {
   };
 }
 
+export interface QueryIndexInfo {
+  pdf_name: string;
+  pdf_path: string;
+  node_count: number;
+  created_at: string;
+}
+
 export interface QueryPDFResult {
   status: string;
   query?: string;
   results: QueryResultItem[];
+  index_info?: QueryIndexInfo;
 }
 
 // ==================== HTTP 客户端类 ====================
+
+export interface SaveMarkdownMappingResponse {
+  status: string;
+  index_id: string;
+}
+
+export interface ExportNodeData {
+  node_id: string;
+  node_name: string;
+  section: string;
+  page_range: string;
+  start_index: number | string;
+  end_index: number | string;
+  level: number;
+  text: string;
+}
+
+export interface ExportIndexResponse {
+  status: string;
+  index_id: string;
+  pdf_name: string;
+  nodes: ExportNodeData[];
+}
 
 export class DeepPDFClient {
   private baseUrl: string;
@@ -200,7 +231,7 @@ export class DeepPDFClient {
 
   private async request<T>(
     endpoint: string,
-    options?: RequestInit
+    options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const response = await fetch(url, options);
@@ -570,6 +601,26 @@ export class DeepPDFClient {
 
     // 3. 轮询任务状态
     return this.pollTaskStatus(indexResult.index_id, onIndexProgress);
+  }
+
+  // ==================== 导出 API ====================
+
+  /**
+   * 导出索引数据
+   */
+  async exportIndex(indexId: string): Promise<ExportIndexResponse> {
+    return this.request<ExportIndexResponse>(`/api/export/${indexId}`);
+  }
+
+  /**
+   * 保存 Markdown 文件映射
+   */
+  async saveMarkdownMapping(indexId: string, fileMapping: Record<string, string>): Promise<SaveMarkdownMappingResponse> {
+    return this.request<SaveMarkdownMappingResponse>(`/api/markdown-mapping/${indexId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_mapping: fileMapping })
+    });
   }
 }
 

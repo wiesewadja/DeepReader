@@ -83,7 +83,10 @@ export class TaskProgressCard {
     update(progress: TaskProgress): void {
         this.progress = progress;
         this.el.empty();
-        this.el.appendChild(this.render().childNodes);
+        const newRender = this.render();
+        Array.from(newRender.childNodes).forEach(node => {
+            this.el.appendChild(node);
+        });
     }
 
     getElement(): HTMLElement {

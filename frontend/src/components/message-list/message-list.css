@@ -1,0 +1,203 @@
+/**
+ * DeepPDF 消息列表组件样式
+ * 管理和显示聊天消息列表
+ */
+
+/* ==================== 消息列表容器 ==================== */
+
+.deeppdf-message-list {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	overflow: hidden;
+	position: relative;
+}
+
+/* ==================== 消息容器 ==================== */
+
+.deeppdf-messages-container {
+	flex: 1;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: var(--size-4-4, 1rem);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-4, 1rem);
+
+	/* 自定义滚动条样式 */
+	scrollbar-width: thin;
+	scrollbar-color: var(--background-modifier-border) transparent;
+}
+
+.deeppdf-messages-container::-webkit-scrollbar {
+	width: 6px;
+}
+
+.deeppdf-messages-container::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.deeppdf-messages-container::-webkit-scrollbar-thumb {
+	background: var(--background-modifier-border);
+	border-radius: 3px;
+}
+
+.deeppdf-messages-container::-webkit-scrollbar-thumb:hover {
+	background: var(--background-modifier-border-hover);
+}
+
+/* 隐藏状态 */
+.deeppdf-hidden {
+	display: none !important;
+}
+
+/* ==================== 空状态 ==================== */
+
+.deeppdf-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-4, 1rem);
+	padding: var(--size-4-6, 2rem);
+	height: 100%;
+	color: var(--text-faint);
+	text-align: center;
+	animation: deeppdf-fade-in 0.3s ease;
+}
+
+.deeppdf-empty-icon {
+	font-size: 64px;
+	opacity: 0.3;
+	margin-bottom: var(--size-4-4, 1rem);
+	animation: deeppdf-float 3s ease-in-out infinite;
+}
+
+@keyframes deeppdf-float {
+	0%, 100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-10px);
+	}
+}
+
+.deeppdf-empty-text {
+	font-size: var(--font-ui-large);
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+.deeppdf-empty-hint {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	max-width: 300px;
+	line-height: 1.5;
+}
+
+/* ==================== 消息项动画 ==================== */
+
+.deeppdf-message {
+	animation: deeppdf-message-slide-in 0.3s ease;
+}
+
+@keyframes deeppdf-message-slide-in {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+/* ==================== 加载更多指示器 ==================== */
+
+.deeppdf-loading-more {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2, 0.5rem);
+	padding: var(--size-4-4, 1rem);
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+}
+
+.deeppdf-loading-more-spinner {
+	width: 16px;
+	height: 16px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: deeppdf-spin 0.8s linear infinite;
+}
+
+@keyframes deeppdf-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ==================== 消息分隔符 ==================== */
+
+.deeppdf-message-divider {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-4, 1rem);
+	margin: var(--size-4-4, 1rem) 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.deeppdf-message-divider::before,
+.deeppdf-message-divider::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background: var(--background-modifier-border);
+}
+
+.deeppdf-message-divider-text {
+	padding: 0 var(--size-4-2, 0.5rem);
+	white-space: nowrap;
+}
+
+/* ==================== 响应式设计 ==================== */
+
+@media (max-width: 640px) {
+	.deeppdf-messages-container {
+		padding: var(--size-4-2, 0.5rem);
+		gap: var(--size-4-2, 0.5rem);
+	}
+
+	.deeppdf-empty-icon {
+		font-size: 48px;
+	}
+
+	.deeppdf-empty-text {
+		font-size: var(--font-ui-medium);
+	}
+
+	.deeppdf-empty-hint {
+		font-size: var(--font-ui-smaller);
+		padding: 0 var(--size-4-4, 1rem);
+	}
+}
+
+/* ==================== 打印样式 ==================== */
+
+@media print {
+	.deeppdf-message-list {
+		height: auto;
+		overflow: visible;
+	}
+
+	.deeppdf-messages-container {
+		overflow: visible;
+	}
+
+	.deeppdf-empty-state {
+		display: none;
+	}
+}
