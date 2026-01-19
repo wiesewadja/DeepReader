@@ -100,10 +100,21 @@ def _query_pdf_sync(
         # 格式化最终结果
         final_results = []
         for item in hybrid_result["results"]:
+            node_id = item["metadata"].get("node_id", "")
+            markdown_path = None
+            
+            # 从索引元数据中查找对应的 Markdown 文件路径
+            if "markdown_files" in index_metadata:
+                markdown_path = index_metadata["markdown_files"].get(node_id)
+            
             final_results.append({
                 "text": item["text"],
-                "metadata": item["metadata"]
+                "metadata": {
+                    **item["metadata"],
+                    "markdown_path": markdown_path  # 添加 Markdown 路径
+                }
             })
+
 
         return {
             "status": "success",

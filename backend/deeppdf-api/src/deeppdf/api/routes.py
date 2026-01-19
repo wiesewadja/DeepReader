@@ -14,6 +14,12 @@ from .models import (
     ListIndexesResponse, DeleteIndexResponse,
     TaskProgressResponse
 )
+from .export_models import (
+    ExportIndexResponse,
+    SaveMarkdownMappingRequest,
+    SaveMarkdownMappingResponse
+)
+from .export_handlers import export_index_data, save_markdown_mapping
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index

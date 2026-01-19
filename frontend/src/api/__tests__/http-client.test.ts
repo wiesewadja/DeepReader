@@ -35,7 +35,8 @@ describe('DeepPDFClient', () => {
             const result = await client.healthCheck();
             expect(result).toEqual({ status: 'ok', version: '1.0.0' });
             expect(mockFetch).toHaveBeenCalledWith(
-                'http://localhost:8000/health'
+                'http://localhost:8000/health',
+                {}
             );
         });
 

@@ -416,6 +416,10 @@ def _save_metadata(
     metadata_size = metadata_path.stat().st_size / 1024  # KB
     logger.info(f"[元数据] 已保存: {metadata_path}")
     logger.info(f"[元数据] 文件大小: {metadata_size:.2f} KB")
+    
+    # 返回元数据内容,用于后续的 Markdown 导出
+    return metadata_content
+
 
 
 def _index_pdf_sync(
@@ -586,7 +590,8 @@ def _index_pdf_sync(
         )
 
         # 保存索引元数据
-        _save_metadata(index_id, pdf_path_obj, section_nodes, tree_result, storage_dir, progress_callback)
+        metadata_content = _save_metadata(index_id, pdf_path_obj, section_nodes, tree_result, storage_dir, progress_callback)
+
 
         # 最终总结
         total_time = time.time() - start_time

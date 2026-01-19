@@ -4,25 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-// 模拟 toTaskProgress 函数
-function toTaskProgress(apiProgress: any): any {
-    return {
-        id: apiProgress.id,
-        status: (apiProgress.status === 'pending' || apiProgress.status === 'processing' ||
-                 apiProgress.status === 'completed' || apiProgress.status === 'failed' ||
-                 apiProgress.status === 'cancelled')
-            ? apiProgress.status
-            : 'pending',
-        message: apiProgress.message || '任务进行中',
-        pdf_name: apiProgress.pdf_name,
-        current_step: apiProgress.current_step,
-        progress_percent: apiProgress.progress_percent,
-        total_steps: apiProgress.total_steps,
-        completed_steps: apiProgress.completed_steps,
-        error: apiProgress.error
-    };
-}
+import { toTaskProgress } from '../../src/views/sidebar-view';
 
 // 测试类型转换函数
 describe('toTaskProgress() 类型转换', () => {
