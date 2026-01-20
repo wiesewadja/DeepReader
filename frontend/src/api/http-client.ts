@@ -541,12 +541,13 @@ export class DeepPDFClient {
    */
   async queryPDF(
     query: string,
-    indexId: string
+    indexId: string,
+    maxResults: number = 5
   ): Promise<QueryPDFResult> {
     return this.request<QueryPDFResult>('/api/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, index_id: indexId })
+      body: JSON.stringify({ query, index_id: indexId, max_results: maxResults })
     });
   }
 

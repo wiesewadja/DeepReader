@@ -468,12 +468,12 @@ async def create_index(req: IndexRequest, http_request: Request):
 @router.post("/query", response_model=QueryResponse)
 async def query_index(req: QueryRequest):
     """查询 PDF 内容"""
-    logger.info(f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}'")
+    logger.info(f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', max_results={req.max_results}")
     result = await query_pdf(
         req.query,
         req.index_id,
         str(settings.base_dir),
-        settings.max_results
+        req.max_results or settings.max_results
     )
 
     # 检查是否出错

@@ -56,6 +56,7 @@ class QueryRequest(BaseModel):
     """查询请求"""
     query: str = Field(..., description="查询文本")
     index_id: str = Field(..., description="索引 ID")
+    max_results: Optional[int] = Field(5, description="最大结果数")
 
 
 # ========== 响应模型 ==========
