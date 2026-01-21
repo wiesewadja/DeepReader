@@ -1928,6 +1928,12 @@ def save_result(result: dict, pdf_path: str) -> str:
 
 
 def page_index_main(doc, opt=None, llm_client=None):
+    # 强制输出调试信息 - 使用 logging
+    import logging
+    logging.basicConfig(level=logging.DEBUG, force=True)
+    logging.debug("[DEBUG] page_index_main called")
+    logging.debug(f"[DEBUG] doc={doc}, opt={opt is not None}, llm_client={llm_client is not None}")
+
     logger = JsonLogger(doc)
 
     is_valid_pdf = (
@@ -1938,15 +1944,20 @@ def page_index_main(doc, opt=None, llm_client=None):
             "Unsupported input type. Expected a PDF file path or BytesIO object."
         )
 
+    logging.debug("[DEBUG] About to call get_page_tokens")
     print("Parsing PDF...")
     page_list = get_page_tokens(doc)
+    logging.debug(f"[DEBUG] get_page_tokens returned {len(page_list)} pages")
 
     logger.info({"total_page_number": len(page_list)})
     logger.info({"total_token": sum([page[1] for page in page_list])})
 
     async def page_index_builder():
+        logging.debug("[DEBUG] page_index_builder async function started")
         # 解析 PDF 结构
+        logging.debug("[DEBUG] About to call tree_parser")
         structure = await tree_parser(page_list, opt, doc=doc, logger=logger, llm_client=llm_client)
+        logging.debug(f"[DEBUG] tree_parser returned, structure length: {len(structure) if structure else 0}")
 
         if not structure:
             logger.error("[PageIndex] structure 为空")
@@ -1970,18 +1981,17 @@ def page_index_main(doc, opt=None, llm_client=None):
         # 步骤 2 & 3: 处理文本和摘要
         # 确定是否需要保留文本
         keep_text = add_node_text_config
-        text_temporarily_added = False
 
-        # 如果需要摘要但没有文本，临时添加文本
+        # 如果需要摘要但没有文本，临时添加文本用于摘要生成
         if add_node_summary_config and not add_node_text_config:
-            logger.info("[PageIndex] 临时添加文本用于摘要生成")
-            add_node_text(structure, page_list)
-            text_temporarily_added = True
+            logger.info("[PageIndex] 临时添加文本用于摘要生成（带物理页码标记）")
+            add_node_text_with_labels(structure, page_list)
 
         # 添加文本（如果需要）
-        if add_node_text_config and not text_temporarily_added:
-            add_node_text(structure, page_list)
-            logger.info("[PageIndex] ✓ 节点文本已添加")
+        if add_node_text_config:
+            logger.info("[PageIndex] 添加带物理页码标记的文本")
+            add_node_text_with_labels(structure, page_list)
+            logger.info("[PageIndex] ✓ 节点文本已添加（含 <physical_index_N> 标记）")
 
         # 生成摘要
         if add_node_summary_config:
@@ -1994,10 +2004,10 @@ def page_index_main(doc, opt=None, llm_client=None):
             if first_node and "summary" not in first_node:
                 logger.warning(f"[PageIndex] ⚠ 第一个节点缺少 summary 字段，现有键: {list(first_node.keys())}")
 
-        # 如果是临时添加的文本，现在移除
-        if text_temporarily_added:
-            remove_structure_text(structure)
-            logger.info("[PageIndex] ✓ 临时文本已移除")
+        # 重要变更：不再移除 text 字段
+        # 原始文本(text)和摘要(summary)应该同时保留
+        # text: 原始 PDF 文本
+        # summary: LLM 生成的摘要
 
         # 检查 doc_description 选项
         add_doc_description = (opt.if_add_doc_description if hasattr(opt, 'if_add_doc_description') and isinstance(opt.if_add_doc_description, bool)
@@ -2020,14 +2030,20 @@ def page_index_main(doc, opt=None, llm_client=None):
 
     try:
         # 检查是否已有运行中的事件循环
+        logging.debug("[DEBUG] Checking for running loop...")
         loop = asyncio.get_running_loop()
+        logging.debug(f"[DEBUG] Found running loop: {loop}")
         # 如果已有事件循环，使用 run_until_complete
         import nest_asyncio
         nest_asyncio.apply()
+        logging.debug("[DEBUG] About to run_until_complete")
         result = loop.run_until_complete(page_index_builder())
+        logging.debug("[DEBUG] run_until_complete returned")
     except RuntimeError:
         # 没有运行中的事件循环，使用 asyncio.run()
+        logging.debug("[DEBUG] No running loop, using asyncio.run()")
         result = asyncio.run(page_index_builder())
+        logging.debug("[DEBUG] asyncio.run returned")
 
     # 保存最终结果到 results/ 目录
     save_result(result, doc)
