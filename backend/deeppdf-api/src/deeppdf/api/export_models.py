@@ -1,7 +1,7 @@
 """
 导出相关的 Pydantic 模型
 """
-from typing import List, Dict
+from typing import List
 from pydantic import BaseModel
 
 
@@ -15,6 +15,7 @@ class ExportNodeData(BaseModel):
     end_index: int | str
     level: int
     text: str
+    parent_id: str | None = None  # 新增：父节点 ID
 
 
 class ExportIndexResponse(BaseModel):
@@ -22,15 +23,6 @@ class ExportIndexResponse(BaseModel):
     status: str
     index_id: str
     pdf_name: str
+    total_pages: int          # 新增：PDF 总页数
+    created_at: str           # 新增：创建时间
     nodes: List[ExportNodeData]
-
-
-class SaveMarkdownMappingRequest(BaseModel):
-    """保存 Markdown 映射请求"""
-    file_mapping: Dict[str, str]
-
-
-class SaveMarkdownMappingResponse(BaseModel):
-    """保存 Markdown 映射响应"""
-    status: str
-    message: str

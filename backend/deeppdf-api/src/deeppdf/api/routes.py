@@ -14,12 +14,8 @@ from .models import (
     ListIndexesResponse, DeleteIndexResponse,
     TaskProgressResponse
 )
-from .export_models import (
-    ExportIndexResponse,
-    SaveMarkdownMappingRequest,
-    SaveMarkdownMappingResponse
-)
-from .export_handlers import export_index_data, save_markdown_mapping
+from .export_models import ExportIndexResponse
+from .export_handlers import export_index_data
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
@@ -743,3 +739,16 @@ async def cancel_task_endpoint(task_id: str):
         "task_id": task_id,
         "current_status": "cancelled"
     }
+
+
+@router.get("/export/{index_id}", response_model=ExportIndexResponse)
+async def export_index_endpoint(index_id: str):
+    """
+    导出索引的节点数据,供前端生成 Markdown 文件
+
+    返回所有节点的数据,包括文本内容、章节信息、页码范围等
+    """
+    logger.info(f"[API] 收到导出请求: index_id='{index_id}'")
+    result = await export_index_data(index_id)
+    logger.info(f"[API] 导出完成: 返回 {len(result.get('nodes', []))} 个节点, total_pages={result.get('total_pages', 0)}")
+    return ExportIndexResponse(**result)
