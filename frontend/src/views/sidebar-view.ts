@@ -117,8 +117,12 @@ export class SidebarView extends ItemView {
     private createIndexManager(container: HTMLElement) {
         this.indexManager = new IndexManager({
             app: this.app,
-            onIndexChange: (indexId: string) => {
+            onIndexChange: async (indexId: string) => {
                 this.currentIndexId = indexId;
+                // 保存到设置
+                this.plugin.settings.lastSelectedIndexId = indexId;
+                await this.plugin.saveSettings();
+
                 // 查找 PDF 名称
                 const index = (this.indexManager as any).indexes?.find((i: any) => i.id === indexId);
                 if (index) {
@@ -988,8 +992,25 @@ ${r.text}`;
             });
 
             // 更新索引列表，保持当前选中状态 (如果还在列表中)
-            this.indexManager.setIndexes(result.indexes, this.currentIndexId || undefined);
-            console.log(`[DeepPDF] [loadIndexes] 已加载 ${result.indexes.length} 个索引，当前选中: ${this.currentIndexId || '无'}`);
+            // 如果当前没有选中索引，尝试从设置恢复上次选中的索引
+            let indexToSelect = this.currentIndexId;
+            if (!indexToSelect && this.plugin.settings.lastSelectedIndexId) {
+                // 检查上次选中的索引是否还在列表中
+                const exists = result.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
+                if (exists) {
+                    indexToSelect = this.plugin.settings.lastSelectedIndexId;
+                    this.currentIndexId = indexToSelect;
+                    // 更新 PDF 名称
+                    const index = result.indexes.find(idx => idx.id === indexToSelect);
+                    if (index) {
+                        this.currentPdfName = index.pdf_name;
+                    }
+                    console.log(`[DeepPDF] [loadIndexes] 自动恢复上次选中的索引: ${indexToSelect}`);
+                }
+            }
+
+            this.indexManager.setIndexes(result.indexes, indexToSelect || undefined);
+            console.log(`[DeepPDF] [loadIndexes] 已加载 ${result.indexes.length} 个索引，当前选中: ${indexToSelect || '无'}`);
 
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();

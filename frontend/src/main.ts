@@ -13,6 +13,7 @@ interface DeepPDFSettings {
     maxPagesPerNode: number;
     maxTokensPerNode: number;
     ifAddNodeSummary: boolean;
+    lastSelectedIndexId: string;
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -25,7 +26,8 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     apiUrl: "",
     maxPagesPerNode: 10,
     maxTokensPerNode: 20000,
-    ifAddNodeSummary: true
+    ifAddNodeSummary: true,
+    lastSelectedIndexId: ""
 };
 
 export default class DeepPDFPlugin extends Plugin {

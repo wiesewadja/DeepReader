@@ -3,7 +3,7 @@
  * 实现 ChatGPT 风格的聊天消息界面，支持 Markdown 渲染和流式更新
  */
 
-import { App, MarkdownRenderer, Component } from 'obsidian';
+import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obsidian';
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 
 /**
@@ -125,29 +125,137 @@ function formatTimestamp(isoString: string): string {
 }
 
 /**
- * 处理内部链接的点击事件，使其能在侧边栏中正确跳转
- * 以只读预览模式打开，避免意外修改书籍内容
- * 同时添加简单的 hover preview
+ * 从 Markdown 内容中提取特定块引用的内容
+ * @param content - 完整的 Markdown 内容
+ * @param blockRef - 块引用 ID（如 "page-175"）
+ * @returns 提取的章节内容，如果找不到则返回空字符串
  */
-function setupInternalLinks(contentEl: HTMLElement, app: App): void {
+function extractSectionByBlockRef(content: string, blockRef: string): string {
+	const lines = content.split('\n');
+
+	// 查找块引用的位置 ^blockRef
+	const blockRefPattern = new RegExp(`^\\^${blockRef.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm');
+	let blockIndex = -1;
+
+	for (let i = 0; i < lines.length; i++) {
+		if (blockRefPattern.test(lines[i])) {
+			blockIndex = i;
+			break;
+		}
+	}
+
+	// 如果找到块引用，提取从块引用到下一个标题或块引用之间的内容
+	if (blockIndex !== -1) {
+		const sectionLines: string[] = [];
+
+		// 从块引用之后开始收集内容
+		for (let i = blockIndex + 1; i < lines.length; i++) {
+			const line = lines[i];
+
+			// 遇到任何标题（# 开头）或块引用（^ 开头）时停止
+			if (/^#+\s/.test(line) || /^\^\w+/.test(line)) {
+				break;
+			}
+
+			sectionLines.push(line);
+		}
+
+		const result = sectionLines.join('\n').trim();
+		console.log('[extractSectionByBlockRef] Found block ref at index:', blockIndex);
+		console.log('[extractSectionByBlockRef] Extracted lines:', sectionLines.length);
+		return result;
+	}
+
+	// 如果没有找到块引用，尝试查找包含页码信息的标题
+	// 例如: "### 第 175 页" 或类似格式
+	const pageMatch = blockRef.match(/page-(\d+)/);
+	if (pageMatch) {
+		const pageNumber = parseInt(pageMatch[1]);
+		const pagePattern = new RegExp(`^#+\\s*第\\s*${pageNumber}\\s*页`, 'm');
+
+		for (let i = 0; i < lines.length; i++) {
+			if (pagePattern.test(lines[i])) {
+				const sectionLines: string[] = [lines[i]]; // 包含标题本身
+
+				// 收集标题之后的内容，直到下一个标题
+				for (let j = i + 1; j < lines.length; j++) {
+					const line = lines[j];
+					// 遇到任何标题时停止
+					if (/^#+\s/.test(line)) {
+						break;
+					}
+					sectionLines.push(line);
+				}
+
+				return sectionLines.join('\n').trim();
+			}
+		}
+	}
+
+	// 如果都找不到，返回空字符串
+	return '';
+}
+
+/**
+ * 处理内部链接的点击和悬停事件
+ * - 点击：在侧边栏中以只读预览模式打开链接
+ * - 悬停+Command：Obsidian 原生预览
+ * - 悬停（无按键）：自定义章节预览（只显示引用的章节）
+ * @param disableHoverPreview - 禁用 hover preview（用于 AI 流式传输期间）
+ */
+function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false): void {
 	const links = contentEl.querySelectorAll('a.internal-link');
 
+	// 用于 Command 键的原生预览
+	const hoverParentContainer: HoverParent = {
+		hoverPopover: null
+	};
+
+	// 用于自定义预览
+	let customPopover: HTMLElement | null = null;
+	let showTimer: number | null = null;
+	let hideTimer: number | null = null;
+
+	// 清理 popover 的函数
+	const cleanupPopover = () => {
+		if (customPopover) {
+			customPopover.remove();
+			customPopover = null;
+		}
+		if (showTimer) {
+			window.clearTimeout(showTimer);
+			showTimer = null;
+		}
+		if (hideTimer) {
+			window.clearTimeout(hideTimer);
+			hideTimer = null;
+		}
+	};
+
 	links.forEach(link => {
-		// 获取链接目标
 		const href = link.getAttr('href');
 		if (!href) return;
+
+		// 移除浏览器原生的 title tooltip，避免双重提示
+		link.removeAttribute('title');
+
+		// 使用 MutationObserver 监听并持续移除 title（防止 Obsidian 重新添加）
+		const observer = new MutationObserver(() => {
+			if (link.hasAttribute('title')) {
+				link.removeAttribute('title');
+			}
+		});
+		observer.observe(link, { attributes: true, attributeFilter: ['title'] });
 
 		// 处理点击事件
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
-			// 使用 Obsidian API 打开链接
 			app.workspace.openLinkText(href, '', false);
 
-			// 延迟切换到预览模式（确保文件已打开）
+			// 延迟切换到预览模式
 			setTimeout(() => {
 				const activeLeaf = app.workspace.activeLeaf;
 				if (activeLeaf) {
-					// 强制切换到预览模式
 					activeLeaf.setViewState({
 						type: 'markdown',
 						state: { mode: 'preview' }
@@ -156,28 +264,181 @@ function setupInternalLinks(contentEl: HTMLElement, app: App): void {
 			}, 50);
 		});
 
-		// 添加简单的 hover title 作为临时预览
-		link.addEventListener('mouseenter', () => {
-			// 获取链接目标文件路径
-			const linkPath = app.metadataCache.getFirstLinkpathDest(href, '');
-			if (linkPath) {
-				const fileName = linkPath.path;
-				// 解析链接中的块引用（如果有）
-				const blockRef = href.match(/#\^([a-z-]+)/)?.[1] || '';
+		// 如果禁用 hover preview（AI 流式传输期间），则跳过 hover 事件设置
+		if (disableHoverPreview) {
+			return;
+		}
 
-				let title = fileName;
-				if (blockRef) {
-					// 提取页码
-					const pageMatch = blockRef.match(/page-(\d+)/);
-					if (pageMatch) {
-						title = `${fileName} - 第 ${pageMatch[1]} 页`;
-					}
+		// 处理悬停事件
+		link.addEventListener('mouseenter', (event: MouseEvent) => {
+			console.log('[DeepPDF] mouseenter on link:', href);
+
+			// 清理之前的定时器
+			if (showTimer) {
+				window.clearTimeout(showTimer);
+				showTimer = null;
+			}
+			if (hideTimer) {
+				window.clearTimeout(hideTimer);
+				hideTimer = null;
+			}
+
+			// 如果按住了 Command/Ctrl 键，使用原生预览
+			if (event.metaKey || event.ctrlKey) {
+				console.log('[DeepPDF] Command key pressed, using native preview');
+				cleanupPopover();
+				// 触发 Obsidian 原生 hover preview
+				app.workspace.trigger('hover-link', {
+					event: event,
+					source: 'deeppdf',
+					hoverParent: hoverParentContainer,
+					targetEl: link,
+					linktext: href
+				});
+				return;
+			}
+
+			console.log('[DeepPDF] No Command key, showing custom preview in 200ms');
+
+			// 否则显示自定义章节预览
+			showTimer = window.setTimeout(() => {
+				// 提取纯文件名（去掉块引用部分）
+				const pureFileName = href.split('#')[0];
+				console.log('[DeepPDF] Pure file name:', pureFileName);
+
+				// 提取块引用 ID（如果有）
+				const blockRefMatch = href.match(/#\^([a-z0-9-]+)/);
+				const blockRef = blockRefMatch ? blockRefMatch[1] : null;
+				console.log('[DeepPDF] Block reference:', blockRef);
+
+				// 获取链接目标文件
+				const linkPath = app.metadataCache.getFirstLinkpathDest(pureFileName, '');
+				if (!linkPath) {
+					console.log('[DeepPDF] Link path not found for:', pureFileName);
+					return;
 				}
 
-				// 设置 title 作为简单的 hover 提示
-				link.setAttribute('title', title);
-			}
+				console.log('[DeepPDF] Reading file:', linkPath.path);
+
+				// 移除之前的 popover
+				cleanupPopover();
+
+				// 读取文件内容
+				app.vault.read(linkPath).then((content: string) => {
+					console.log('[DeepPDF] File content loaded, length:', content.length);
+					console.log('[DeepPDF] First 500 chars:', content.substring(0, 500));
+
+					// 提取特定章节内容（如果有块引用）
+					let contentToRender = content;
+					if (blockRef) {
+						const sectionContent = extractSectionByBlockRef(content, blockRef);
+						if (sectionContent) {
+							contentToRender = sectionContent;
+							console.log('[DeepPDF] Section content extracted, length:', sectionContent.length);
+							console.log('[DeepPDF] Section preview:', sectionContent.substring(0, 200));
+						} else {
+							console.log('[DeepPDF] Block reference not found, showing full content');
+						}
+					}
+
+					// 创建 popover 容器
+					const popover = document.createElement('div');
+					popover.addClass('deeppdf-hover-preview');
+
+					// 创建内容区域
+					const popoverContent = popover.createEl('div', {
+						cls: 'deeppdf-hover-preview-content'
+					});
+
+					// 使用 Markdown 渲染内容
+					MarkdownRenderer.render(app, contentToRender, popoverContent, linkPath.path, new Component());
+
+					// 渲染后移除 popover 内部所有链接的 title 属性，避免原生 tooltip
+					popoverContent.querySelectorAll('a').forEach((renderedLink: Element) => {
+						(renderedLink as HTMLElement).removeAttribute('title');
+					});
+
+					// 先添加到 DOM（隐藏状态）
+					popover.style.visibility = 'hidden';
+					popover.style.position = 'fixed';
+					popover.style.left = '0';
+					popover.style.top = '0';
+					document.body.appendChild(popover);
+
+					console.log('[DeepPDF] Popover added to DOM');
+
+					// 计算位置
+					const linkRect = link.getBoundingClientRect();
+					const popoverRect = popover.getBoundingClientRect();
+
+					console.log('[DeepPDF] linkRect:', linkRect, 'popoverRect:', popoverRect);
+
+					let top = linkRect.bottom + 8;
+					let left = linkRect.left;
+
+					// 确保不超出视口
+					if (left + popoverRect.width > window.innerWidth - 16) {
+						left = Math.max(16, window.innerWidth - popoverRect.width - 16);
+					}
+
+					// 如果下方空间不足，显示在上方
+					if (top + popoverRect.height > window.innerHeight - 16) {
+						top = linkRect.top - popoverRect.height - 8;
+						if (top < 16) top = 16;
+					}
+
+					// 设置最终位置并显示
+					popover.style.left = `${left}px`;
+					popover.style.top = `${top}px`;
+					popover.style.visibility = 'visible';
+					popover.style.zIndex = '10000';
+
+					console.log('[DeepPDF] Popover positioned at:', top, left);
+
+					customPopover = popover;
+				}).catch((err) => {
+					console.error('[DeepPDF] Failed to read file for hover preview:', err);
+				});
+			}, 200); // 200ms 延迟
 		});
+
+		// 处理鼠标离开
+		link.addEventListener('mouseleave', () => {
+			// 清除显示定时器
+			if (showTimer) {
+				window.clearTimeout(showTimer);
+				showTimer = null;
+			}
+
+			// 延迟隐藏自定义预览
+			hideTimer = window.setTimeout(() => {
+				cleanupPopover();
+			}, 300);
+		});
+	});
+
+	// 全局 mouseover 处理 - 允许用户移动到自定义 popover 上
+	document.addEventListener('mouseover', (e) => {
+		const target = e.target as HTMLElement;
+
+		// 如果鼠标在自定义 popover 上，取消隐藏
+		if (target.closest('.deeppdf-hover-preview')) {
+			if (hideTimer) {
+				window.clearTimeout(hideTimer);
+				hideTimer = null;
+			}
+			return;
+		}
+
+		// 如果鼠标离开 popover 且不在链接上，延迟隐藏
+		if (customPopover && !target.closest('.deeppdf-hover-preview') && !target.closest('a.internal-link')) {
+			if (hideTimer) {
+				window.clearTimeout(hideTimer);
+			}
+			hideTimer = window.setTimeout(() => {
+				cleanupPopover();
+			}, 300);
+		}
 	});
 }
 
@@ -407,8 +668,9 @@ export class AIMessage extends Message {
 		// 使用 Markdown 渲染
 		if (this.app) {
 			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
-			// 设置内部链接的点击事件
-			setupInternalLinks(content, this.app);
+			// 设置内部链接的点击事件和 hover preview
+			// 如果正在流式传输，禁用 hover preview
+			setupInternalLinks(content, this.app, this.data.isStreaming);
 		} else {
 			content.innerHTML = this.escapeHtml(this.data.content);
 		}
@@ -444,21 +706,13 @@ export class AIMessage extends Message {
 			contentEl.empty();
 			if (this.app) {
 				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
-				// 设置内部链接的点击事件
-				setupInternalLinks(contentEl as HTMLElement, this.app);
+				// 设置内部链接的点击事件和 hover preview
+				// 如果正在流式传输，禁用 hover preview
+				setupInternalLinks(contentEl as HTMLElement, this.app, this.data.isStreaming);
 			} else {
 				contentEl.innerHTML = this.escapeHtml(content);
 			}
 		}
-
-		// 更新流式状态类
-		/*
-		if (this.data.isStreaming) {
-			this.el?.addClass('deeppdf-message-streaming');
-		} else {
-			this.el?.removeClass('deeppdf-message-streaming');
-		}
-		*/
 	}
 
 	private renderActions(container: HTMLElement) {
