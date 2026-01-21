@@ -56,6 +56,9 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
             else:
                 page_range = f"{start_index}-{end_index}"
 
+            # 返回原文（metadata["original_text"]），而非用于向量化的摘要（section["text"]）
+            original_text = node_metadata.get("original_text", section.get("text", ""))
+
             nodes.append({
                 "node_id": section.get("id", ""),
                 "node_name": node_metadata.get("node_name", ""),
@@ -64,7 +67,7 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
                 "start_index": start_index,
                 "end_index": end_index,
                 "level": node_metadata.get("level", 0),
-                "text": section.get("text", ""),
+                "text": original_text,
                 "parent_id": parent_mapping.get(section.get("id", ""))
             })
 
