@@ -567,20 +567,21 @@ export class SidebarView extends ItemView {
         // ========== 优化 2: 优化 System Prompt ==========
         const systemPrompt = this.buildEnhancedSystemPrompt(pdfName, resultsWithContext, citations);
 
-        // ========== 构建读书上下文 ==========
-        let bookContext = "";
+        // ========== 构建读书上下文 (带路径注入) ==========
+        let bookContext = `《${pdfName}》中相关内容：\n\n`;
 
-        // 添加书籍章节信息（自然描述）
-        const sections = resultsWithContext.map((item, index) => {
-            const title = citations[index].title || `第${citations[index].page}页`;
-            return title;
-        });
-        bookContext = `《${pdfName}》中相关内容：\n\n`;
-
-        // 构建 context（自然叙述，不用技术标记）
         bookContext += resultsWithContext.map((r, index) => {
+            const mdPath = r.metadata?.markdown_path || "未生成Markdown";
+            const page = r.metadata?.page || r.metadata?.start_index || "?";
             const title = citations[index].title || `第${index + 1}节`;
-            return `（${title}）\n${r.text}`;
+            
+            // 注入路径和锚点，供 AI 引用
+            return `【来源片段 ${index + 1}】
+文件路径: ${mdPath}
+页码锚点: ^page-${page}
+章节标题: ${title}
+内容:
+${r.text}`;
         }).join("\n\n");
 
         const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
@@ -1111,11 +1112,26 @@ export class SidebarView extends ItemView {
 📄 正在研读：《${pdfName}》
 ${structureInfo}
 
+📋 引用协议 (Citation Protocol) - 极其重要：
+你的知识库是由 Markdown 文件组成的。你必须为你的每一个核心观点提供【可点击的引用链接】。
+
+1. 引用格式：\`[[文件路径#页码锚点|链接文本]]\`
+   - 文件路径：参考【来源片段】中的"文件路径"
+   - 页码锚点：参考【来源片段】中的"页码锚点" (例如 ^page-28)
+   
+2. 示例：
+   - ❌ 错误："纳瓦尔在第28页提到..." (用户无法点击)
+   - ✅ 正确："纳瓦尔认为赚钱是一门技能 [[DeepPDF/纳瓦尔宝典/03-第一章.md#^page-28|来源: P28]]。"
+
+3. 规则：
+   - 凡有论断，必有出处。
+   - 链接必须精准指向对应的 Markdown 块。
+
 📋 回答规范：
-0. 在回答时要提及昭见森名称，表达尊重和关注，避免使用不礼貌的语言。
-1. 所有答案必须源于所读书籍，无一字无来历
-2. 引用时自然注明章节与页码，如"第X章第Y页提到..."
-3. 以清晰逻辑组织答案，展现思辨能力
+0. 在回答时要提及昭见森名称，表达尊重。
+1. 所有答案必须源于所读书籍。
+2. 严格遵守引用协议，生成可点击链接。
+3. 以清晰逻辑组织答案。
 4. 用凝练文字表达，勿冗勿散
 5. 当能回答问题时，如果发现某些具体细节（如"如何做"、"具体方法"、"步骤"）在当前内容中没有详细说明，不要说"书中没有"、"章节没有提及"等
 6. 以用户所用语言作答（中文、英文等）
