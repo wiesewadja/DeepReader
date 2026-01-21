@@ -1,6 +1,7 @@
 """
 DeepPDF 配置管理
 """
+
 import os
 from pathlib import Path
 from typing import Optional
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
 
     # 基础配置
     base_dir: Path = Path(__file__).parent.parent.parent / "data"
-    max_results: int = 5
+    max_results: int = 10
 
     # LLM API 配置
     deepseek_api_key: Optional[str] = None

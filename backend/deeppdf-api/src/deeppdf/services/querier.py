@@ -1,6 +1,7 @@
 """
 PDF 查询服务 - 异步封装
 """
+
 import asyncio
 import json
 import logging
@@ -17,21 +18,17 @@ logger = logging.getLogger(__name__)
 
 
 def _query_pdf_sync(
-    query: str,
-    index_id: str,
-    storage_dir: str,
-    max_results: int = 5
+    query: str, index_id: str, storage_dir: str, max_results: int = 10
 ) -> Dict[str, Any]:
     """
     同步 PDF 查询函数（在线程池中执行）
     """
     if not query or query.strip() == "":
-        return {
-            "status": "error",
-            "error": "Query cannot be empty"
-        }
+        return {"status": "error", "error": "Query cannot be empty"}
 
-    logger.info(f"[查询] query='{query}', index_id='{index_id}', max_results={max_results}")
+    logger.info(
+        f"[查询] query='{query}', index_id='{index_id}', max_results={max_results}"
+    )
 
     try:
         # 初始化存储
@@ -46,18 +43,13 @@ def _query_pdf_sync(
 
         if index_id not in collection_names:
             logger.error(f"[查询] 索引不存在: {index_id}")
-            return {
-                "status": "error",
-                "error": f"Index {index_id} not found"
-            }
+            return {"status": "error", "error": f"Index {index_id} not found"}
 
         logger.info(f"[查询] 集合已找到，执行向量检索...")
 
         # 执行查询
         results = store.query(
-            collection_name=index_id,
-            query_texts=[query],
-            n_results=max_results
+            collection_name=index_id, query_texts=[query], n_results=max_results
         )
 
         # 格式化结果
@@ -75,13 +67,12 @@ def _query_pdf_sync(
 
                 text = results["documents"][0][i] if results["documents"] else ""
 
-                logger.debug(f"  结果 {i+1}: distance={distance:.4f}, section={metadata.get('section', 'N/A')}")
+                logger.debug(
+                    f"  结果 {i+1}: distance={distance:.4f}, section={metadata.get('section', 'N/A')}"
+                )
                 logger.debug(f"    文本预览: {text[:100]}...")
 
-                formatted_results.append({
-                    "text": text,
-                    "metadata": metadata
-                })
+                formatted_results.append({"text": text, "metadata": metadata})
 
         logger.info(f"[查询] 返回 {len(formatted_results)} 个结果")
 
@@ -94,7 +85,7 @@ def _query_pdf_sync(
             query=query,
             index_metadata=index_metadata,
             vector_results=formatted_results,
-            max_results=max_results
+            max_results=max_results,
         )
 
         # 格式化最终结果
@@ -110,20 +101,25 @@ def _query_pdf_sync(
                 markdown_path = index_metadata["markdown_files"].get(node_id)
                 # 【关键日志】记录 markdown_path 查找过程
                 if markdown_path:
-                    logger.info(f"[查询结果] 结果 {i+1}: node_id={node_id} → markdown_path={markdown_path}")
+                    logger.info(
+                        f"[查询结果] 结果 {i+1}: node_id={node_id} → markdown_path={markdown_path}"
+                    )
                 else:
-                    logger.warning(f"[查询结果] 结果 {i+1}: node_id={node_id} → 未找到 markdown_path 映射")
+                    logger.warning(
+                        f"[查询结果] 结果 {i+1}: node_id={node_id} → 未找到 markdown_path 映射"
+                    )
 
-            final_results.append({
-                "text": item["text"],
-                "metadata": {
-                    **item["metadata"],
-                    "markdown_path": markdown_path  # 添加 Markdown 路径
+            final_results.append(
+                {
+                    "text": item["text"],
+                    "metadata": {
+                        **item["metadata"],
+                        "markdown_path": markdown_path,  # 添加 Markdown 路径
+                    },
                 }
-            })
+            )
 
         logger.info(f"[查询结果] 格式化完成，返回 {len(final_results)} 个结果")
-
 
         return {
             "status": "success",
@@ -132,23 +128,17 @@ def _query_pdf_sync(
                 "pdf_name": index_metadata.get("pdf_name", ""),
                 "pdf_path": index_metadata.get("pdf_path", ""),
                 "node_count": index_metadata.get("node_count", 0),
-                "created_at": index_metadata.get("created_at", "")
+                "created_at": index_metadata.get("created_at", ""),
             },
-            "search_method": hybrid_result["method"]
+            "search_method": hybrid_result["method"],
         }
 
     except ValueError as e:
         logger.error(f"[查询] ValueError: {e}")
-        return {
-            "status": "error",
-            "error": str(e)
-        }
+        return {"status": "error", "error": str(e)}
     except Exception as e:
         logger.error(f"[查询] Exception: {e}")
-        return {
-            "status": "error",
-            "error": f"Query failed: {str(e)}"
-        }
+        return {"status": "error", "error": f"Query failed: {str(e)}"}
 
 
 def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
@@ -170,17 +160,16 @@ def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
                 "llm_enabled": data.get("llm_enabled", False),
                 "tree_structure": data.get("tree_structure", {}),
                 "sections": data.get("sections", []),
-                "markdown_files": data.get("markdown_files", {})  # 添加 markdown_files 字段
+                "markdown_files": data.get(
+                    "markdown_files", {}
+                ),  # 添加 markdown_files 字段
             }
 
     return {}
 
 
 async def query_pdf(
-    query: str,
-    index_id: str,
-    storage_dir: str,
-    max_results: int = 5
+    query: str, index_id: str, storage_dir: str, max_results: int = 10
 ) -> Dict[str, Any]:
     """
     异步 PDF 查询
@@ -192,6 +181,6 @@ async def query_pdf(
         query=query,
         index_id=index_id,
         storage_dir=storage_dir,
-        max_results=max_results
+        max_results=max_results,
     )
     return result

@@ -127,29 +127,55 @@ function formatTimestamp(isoString: string): string {
 /**
  * 处理内部链接的点击事件，使其能在侧边栏中正确跳转
  * 以只读预览模式打开，避免意外修改书籍内容
+ * 同时添加简单的 hover preview
  */
 function setupInternalLinks(contentEl: HTMLElement, app: App): void {
 	const links = contentEl.querySelectorAll('a.internal-link');
+
 	links.forEach(link => {
-		// 移除默认的点击行为
+		// 获取链接目标
+		const href = link.getAttr('href');
+		if (!href) return;
+
+		// 处理点击事件
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
-			const href = link.getAttr('href');
-			if (href) {
-				// 使用 Obsidian API 打开链接
-				app.workspace.openLinkText(href, '', false);
+			// 使用 Obsidian API 打开链接
+			app.workspace.openLinkText(href, '', false);
 
-				// 延迟切换到预览模式（确保文件已打开）
-				setTimeout(() => {
-					const activeLeaf = app.workspace.activeLeaf;
-					if (activeLeaf) {
-						// 强制切换到预览模式
-						activeLeaf.setViewState({
-							type: 'markdown',
-							state: { mode: 'preview' }
-						});
+			// 延迟切换到预览模式（确保文件已打开）
+			setTimeout(() => {
+				const activeLeaf = app.workspace.activeLeaf;
+				if (activeLeaf) {
+					// 强制切换到预览模式
+					activeLeaf.setViewState({
+						type: 'markdown',
+						state: { mode: 'preview' }
+					});
+				}
+			}, 50);
+		});
+
+		// 添加简单的 hover title 作为临时预览
+		link.addEventListener('mouseenter', () => {
+			// 获取链接目标文件路径
+			const linkPath = app.metadataCache.getFirstLinkpathDest(href, '');
+			if (linkPath) {
+				const fileName = linkPath.path;
+				// 解析链接中的块引用（如果有）
+				const blockRef = href.match(/#\^([a-z-]+)/)?.[1] || '';
+
+				let title = fileName;
+				if (blockRef) {
+					// 提取页码
+					const pageMatch = blockRef.match(/page-(\d+)/);
+					if (pageMatch) {
+						title = `${fileName} - 第 ${pageMatch[1]} 页`;
 					}
-				}, 50);
+				}
+
+				// 设置 title 作为简单的 hover 提示
+				link.setAttribute('title', title);
 			}
 		});
 	});
@@ -193,14 +219,6 @@ export class Citation {
 			cls: 'deeppdf-citation-page-badge',
 			text: `Page ${this.citation.page}`
 		});
-
-		// 引用内容摘要 (Snippet)
-		if (this.citation.snippet) {
-			citationEl.createEl('div', {
-				cls: 'deeppdf-citation-snippet',
-				text: this.citation.snippet
-			});
-		}
 
 		// 跳转逻辑绑定整个卡片
 		if (this.onJump) {
