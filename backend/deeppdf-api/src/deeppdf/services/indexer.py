@@ -43,7 +43,9 @@ def _extract_nodes_from_tree(
     """
     从 PageIndex 树状结构中提取章节节点
 
-    优先使用 summary，如果没有则使用 text
+    重要变更：同时保留原始文本和摘要
+    - text: 原始 PDF 文本（用于向量化和检索）
+    - summary: LLM 生成的摘要（保存在 metadata 中）
     """
     nodes = []
 
@@ -59,24 +61,32 @@ def _extract_nodes_from_tree(
 
     current_section = f"{parent_section} > {node_name}" if parent_section else node_name
 
-    # 优先使用摘要，如果没有摘要则使用原文
+    # 向量化使用摘要（更好的语义表示）
+    # 原文保存在 metadata 中，供 Markdown 导出使用
     content_for_embedding = node_summary or node_text
 
     # 如果有内容，创建节点
     if content_for_embedding and content_for_embedding.strip():
         full_text_for_embedding = f"【{current_section}】\n{content_for_embedding.strip()}"
+        node_metadata = {
+            "section": current_section,
+            "level": level,
+            "page": start_page,
+            "start_index": start_page,
+            "end_index": end_page,
+            "node_name": node_name,
+            "node_id": node_id,
+        }
+        # 保存摘要和原文到 metadata
+        if node_summary and node_summary.strip():
+            node_metadata["summary"] = node_summary.strip()
+        if node_text and node_text.strip():
+            node_metadata["original_text"] = node_text.strip()
+
         nodes.append({
             "id": node_id or f"node_{len(nodes)}",
             "text": full_text_for_embedding,
-            "metadata": {
-                "section": current_section,
-                "level": level,
-                "page": start_page,
-                "start_index": start_page,
-                "end_index": end_page,
-                "node_name": node_name,
-                "node_id": node_id,
-            }
+            "metadata": node_metadata,
         })
 
     # 递归处理子节点
@@ -258,9 +268,17 @@ def _parse_pdf_structure(
     logger.info(f"[PDF解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}")
     logger.info(f"[PDF解析] 输入文件: {Path(pdf_path).name}")
     logger.info(f"[PDF解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}")
+    logger.info(f"[PDF解析] LLM 客户端: {llm_client is not None}")
+
+    # 更新进度：开始 PDF 解析
+    if progress_callback:
+        progress_callback("parsing_pdf", 55, "正在提取 PDF 页面...")
 
     try:
+        logger.info(f"[PDF解析] 即将调用 page_index_main...")
         tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
+
+        logger.info(f"[PDF解析] page_index_main 返回")
     except Exception as e:
         logger.error(f"[PDF解析] 失败: {type(e).__name__}: {str(e)}")
         logger.error(f"[PDF解析] 耗时: {time.time() - parse_start:.2f} 秒")
@@ -269,6 +287,10 @@ def _parse_pdf_structure(
     parse_time = time.time() - parse_start
     logger.info(f"[PDF解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}")
     logger.info(f"[PDF解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
+
+    # 更新进度：PDF 解析完成，正在生成摘要
+    if progress_callback and config.get('if_add_node_summary'):
+        progress_callback("generating_summaries", 65, "正在生成章节摘要...")
 
     if not tree_result:
         logger.error("[PDF解析] PageIndex 返回 None")
@@ -519,6 +541,7 @@ def _index_pdf_sync(
 
         # 步骤 5: 解析 PDF 结构
         logger.info(f"[步骤 5/6] 开始解析 PDF 结构 (这可能需要几分钟)...")
+        _update_progress("parse_pdf", 50, "正在解析 PDF 结构...")
         logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
         logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config['if_add_node_summary']:
