@@ -33,8 +33,6 @@ export class MessageList extends Component {
 	private emptyState: HTMLElement | null = null;
 	private callbacks: MessageCallbacks;
 	private app?: App;
-	/** 存储每个消息的引用事件处理器，用于清理 */
-	private citationEventHandlers: Map<string, Array<() => void>> = new Map();
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
@@ -95,27 +93,11 @@ export class MessageList extends Component {
 			onQuestionClick: (question: string) => {
 				this.callbacks.onQuestionClick?.(question);
 			},
+			onCitationJump: (citation: CitationData) => {
+				this.callbacks.onCitationJump?.(citation);
+			},
 			app: this.app
 		});
-
-		// 如果消息有引用，需要为每个引用添加跳转回调
-		if (messageData.citations && messageData.citations.length > 0) {
-			const messageEl = message.getElement();
-			if (!messageEl) {
-				throw new Error('Message element is null');
-			}
-			const citations = messageEl.querySelectorAll('.deeppdf-citation-jump-btn');
-			const handlers: Array<() => void> = [];
-			citations.forEach((btn, index) => {
-				const handler = () => {
-					this.callbacks.onCitationJump?.(messageData.citations![index]);
-				};
-				btn.addEventListener('click', handler);
-				handlers.push(handler);
-			});
-			// 存储事件处理器以便后续清理
-			this.citationEventHandlers.set(messageData.id, handlers);
-		}
 
 		// 添加到存储
 		this.messages.set(messageData.id, message);
@@ -145,39 +127,8 @@ export class MessageList extends Component {
 			return;
 		}
 
-		// 更新消息
+		// 更新消息（citations 改变时会自动重新渲染并绑定回调）
 		message.update(updates);
-
-		// 如果更新包含引用，需要重新绑定跳转回调
-		if (updates.citations !== undefined && this.callbacks.onCitationJump) {
-			const messageEl = message.getElement();
-			if (!messageEl) {
-				console.warn(`Message element for ${messageId} is null`);
-				return;
-			}
-			const citations = messageEl.querySelectorAll('.deeppdf-citation-jump-btn');
-
-			// 清理旧的事件处理器
-			this.cleanupCitationHandlers(messageId);
-
-			// 添加新的事件监听器
-			const handlers: Array<() => void> = [];
-			citations.forEach((btn, index) => {
-				// 移除旧的事件监听器
-				const newBtn = btn.cloneNode(true) as HTMLElement;
-				btn.parentNode?.replaceChild(newBtn, btn);
-
-				// 添加新的事件监听器
-				const handler = () => {
-					this.callbacks.onCitationJump?.(updates.citations![index]);
-				};
-				newBtn.addEventListener('click', handler);
-				handlers.push(handler);
-			});
-
-			// 存储新的事件处理器
-			this.citationEventHandlers.set(messageId, handlers);
-		}
 	}
 
 	/**
@@ -225,9 +176,6 @@ export class MessageList extends Component {
 		if (!message) {
 			return;
 		}
-
-		// 清理事件处理器
-		this.cleanupCitationHandlers(messageId);
 
 		// 从 DOM 移除
 		const el = message.getElement();
@@ -291,37 +239,9 @@ export class MessageList extends Component {
 	}
 
 	/**
-	 * 清理指定消息的事件处理器
-	 */
-	private cleanupCitationHandlers(messageId: string): void {
-		const handlers = this.citationEventHandlers.get(messageId);
-		if (!handlers) {
-			return;
-		}
-
-		const message = this.messages.get(messageId);
-		if (message) {
-			const messageEl = message.getElement();
-			if (messageEl) {
-				const citations = messageEl.querySelectorAll('.deeppdf-citation-jump-btn');
-				citations.forEach((btn, index) => {
-					if (handlers[index]) {
-						btn.removeEventListener('click', handlers[index]);
-					}
-				});
-			}
-		}
-
-		this.citationEventHandlers.delete(messageId);
-	}
-
-	/**
 	 * 销毁组件
 	 */
 	override destroy(): void {
-		// 清理所有事件处理器
-		this.citationEventHandlers.clear();
-
 		// 销毁所有消息
 		this.messages.forEach(message => {
 			const el = message.getElement();

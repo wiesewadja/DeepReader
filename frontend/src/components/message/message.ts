@@ -354,6 +354,7 @@ export class AIMessage extends Message {
 	private onCopy?: () => void;
 	private onCopyWithCitation?: () => void;
 	private onQuestionClick?: (question: string) => void;
+	private onCitationJump?: (citation: CitationData) => void;
 
 	constructor(
 		data: MessageData,
@@ -362,6 +363,7 @@ export class AIMessage extends Message {
 			onCopy?: () => void;
 			onCopyWithCitation?: () => void;
 			onQuestionClick?: (question: string) => void;
+			onCitationJump?: (citation: CitationData) => void;
 			app?: App;
 		}
 	) {
@@ -370,6 +372,7 @@ export class AIMessage extends Message {
 		this.onCopy = options?.onCopy;
 		this.onCopyWithCitation = options?.onCopyWithCitation;
 		this.onQuestionClick = options?.onQuestionClick;
+		this.onCitationJump = options?.onCitationJump;
 		this.el = this.render();
 	}
 
@@ -472,7 +475,7 @@ export class AIMessage extends Message {
 		if (this.data.citations && this.data.citations.length > 0) {
 			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
 			this.data.citations.forEach(citation => {
-				const citationEl = new Citation(citation);
+				const citationEl = new Citation(citation, this.onCitationJump);
 				citationsContainer.appendChild(citationEl.getElement());
 			});
 		}
@@ -489,6 +492,7 @@ export function createMessage(
 		onCopy?: () => void;
 		onCopyWithCitation?: () => void;
 		onQuestionClick?: (question: string) => void;
+		onCitationJump?: (citation: CitationData) => void;
 		app?: App;
 	}
 ): Message {

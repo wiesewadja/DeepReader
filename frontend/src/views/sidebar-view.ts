@@ -813,30 +813,65 @@ ${r.text}`;
 
     /**
      * 处理引用跳转
+     * 直接打开 PDF 文件并跳转到指定页面
      */
     private handleCitationJump(citation: CitationData): void {
-        // 优先使用 Markdown 路径
-        if (citation.markdown_path) {
+        if (citation.pdf_name && citation.page) {
             try {
-                // 使用 Obsidian API 打开 Markdown 文件
-                // openLinkText 参数: (linktext, sourcePath, newLeaf, openViewState)
-                this.app.workspace.openLinkText(
-                    citation.markdown_path,
-                    '',  // sourcePath - 空字符串表示从 vault 根目录
-                    false  // newLeaf - false 表示在当前标签页打开
-                );
-                new Notice(`已打开: ${citation.markdown_path}`);
-                console.log('[DeepPDF] 已打开 Markdown 文件:', citation.markdown_path);
+                console.log('[DeepPDF] [引用跳转] 开始查找 PDF');
+                console.log(`[引用跳转] pdf_name: ${citation.pdf_name}`);
+                console.log(`[引用跳转] page: ${citation.page}`);
+
+                // 获取 vault 中所有 PDF 文件
+                const allFiles = this.app.vault.getFiles();
+                const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
+
+                console.log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
+
+                // 根据 pdf_name 查找匹配的 PDF 文件
+                // pdf_name 格式可能是: "纳瓦尔宝典.pdf" 或 "纳瓦尔宝典"
+                const targetName = citation.pdf_name.replace('.pdf', '').toLowerCase();
+
+                const matchedFile = pdfFiles.find(f => {
+                    const fileNameWithoutExt = f.basename.toLowerCase();
+                    return fileNameWithoutExt === targetName || f.path.toLowerCase().endsWith(targetName + '.pdf');
+                });
+
+                if (!matchedFile) {
+                    console.log(`[引用跳转] 未找到匹配的 PDF 文件`);
+                    console.log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
+                    new Notice(`找不到 PDF 文件: ${citation.pdf_name}`);
+                    return;
+                }
+
+                console.log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
+                this.openPdfWithPage(matchedFile.path, citation.page, citation.pdf_name);
+
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error);
-                new Notice(`打开文件失败: ${errorMsg}`);
-                console.error('[DeepPDF] 打开 Markdown 文件失败:', error);
+                new Notice(`打开 PDF 失败: ${errorMsg}`);
+                console.error('[DeepPDF] 打开 PDF 失败:', error);
             }
         } else {
-            // 降级:显示 PDF 信息
-            new Notice(`Markdown 文件未生成,请重新索引 PDF: ${citation.pdf_name}`);
-            console.warn('[DeepPDF] Markdown path not found for citation:', citation);
+            new Notice('引用数据不完整');
+            console.warn('[DeepPDF] 引用数据缺少 pdf_name 或 page:', citation);
         }
+    }
+
+    /**
+     * 打开 PDF 并跳转到指定页面
+     */
+    private openPdfWithPage(pdfPath: string, page: number, displayName: string): void {
+        const pdfLink = `${pdfPath}#page=${page}`;
+
+        this.app.workspace.openLinkText(
+            pdfLink,
+            '',
+            false
+        );
+
+        new Notice(`已打开: ${displayName} 第 ${page} 页`);
+        console.log(`[DeepPDF] 已打开 PDF: ${pdfLink}`);
     }
 
     /**
