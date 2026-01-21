@@ -138,3 +138,12 @@ class TaskProgressResponse(BaseModel):
 
     # 错误信息
     error: Optional[str] = None
+
+class MarkdownMappingBody(BaseModel):
+    """保存 Markdown 映射请求体"""
+    file_mapping: dict = Field(..., description="节点 ID 到 Markdown 路径的映射")
+
+class MarkdownMappingResponse(BaseModel):
+    """保存 Markdown 映射响应"""
+    status: str
+    index_id: str

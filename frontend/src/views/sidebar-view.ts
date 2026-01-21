@@ -524,6 +524,7 @@ export class SidebarView extends ItemView {
             const section = item.metadata?.section || '';
             const nodeName = item.metadata?.node_name || '';
             const page = item.metadata?.page || item.metadata?.start_index || 0;
+            const markdownPath = item.metadata?.markdown_path || '';
 
             // 构建描述性标题
             let title = `Page ${page}`;
@@ -539,7 +540,8 @@ export class SidebarView extends ItemView {
                 snippet: item.text || "",
                 section: section,
                 node_name: nodeName,
-                title: title // 添加标题字段用于显示
+                title: title,
+                markdown_path: markdownPath  // 添加 markdown_path 用于跳转
             };
         });
 
@@ -570,11 +572,33 @@ export class SidebarView extends ItemView {
         // ========== 构建读书上下文 (带路径注入) ==========
         let bookContext = `《${pdfName}》中相关内容：\n\n`;
 
+        console.log('\n========== [AI 引用调试] 构建上下文 ==========');
+        console.log(`[上下文] 查询返回 ${resultsWithContext.length} 个结果`);
+
         bookContext += resultsWithContext.map((r, index) => {
             const mdPath = r.metadata?.markdown_path || "未生成Markdown";
             const page = r.metadata?.page || r.metadata?.start_index || "?";
             const title = citations[index].title || `第${index + 1}节`;
-            
+
+            // 【关键日志】记录每个来源片段的详细信息
+            console.log(`\n[来源片段 ${index + 1}]`);
+            console.log(`  完整路径: ${mdPath}`);
+
+            // 从路径中提取文件名（不含 .md）
+            let filename = mdPath;
+            let displayName = mdPath;
+            if (mdPath !== "未生成Markdown") {
+                const parts = mdPath.split('/');
+                filename = parts[parts.length - 1]; // 最后一部分是文件名
+                // 移除 .md 扩展名
+                displayName = filename.replace('.md', '');
+            }
+            console.log(`  文件名: ${filename}`);
+            console.log(`  显示名: ${displayName}`);
+            console.log(`  页码锚点: ^page-${page}`);
+            console.log(`  章节标题: ${title}`);
+            console.log(`  → 正确引用应该是: [[${displayName}#^page-${page}]]`);
+
             // 注入路径和锚点，供 AI 引用
             return `【来源片段 ${index + 1}】
 文件路径: ${mdPath}
@@ -586,9 +610,10 @@ ${r.text}`;
 
         const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
 
-        console.log(`[DeepPDF] [handleQuery] 查询: "${query}"`);
-        console.log(`[DeepPDF] [handleQuery] 使用 ${resultsWithContext.length}/${result.results.length} 个结果 (token 限制)`);
-        console.log(`[DeepPDF] [handleQuery] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
+        console.log(`\n[上下文] 完整 userPrompt (前 1000 字符):`);
+        console.log(userPrompt.substring(0, 1000) + '...');
+        console.log(`[上下文] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
+        console.log('========== [AI 引用调试] 上下文构建完成 ==========\n');
 
         try {
             await this.streamLLMResponse(
@@ -711,6 +736,16 @@ ${r.text}`;
             // 完成后进行最后一次更新，确保内容完整
             // 解析追问问题
             const { content: cleanedContent, questions: followUpQuestions } = parseFollowUpQuestions(fullContent);
+
+            // ========== 【关键调试】打印 AI 原始回复 ==========
+            console.log('\n========== [AI 原始回复调试] ==========');
+            console.log('【AI 完整原始回复】');
+            console.log(fullContent);
+            console.log('\n【AI 清理后回复】');
+            console.log(cleanedContent);
+            console.log('\n【引用数据】');
+            console.log(JSON.stringify(citations, null, 2));
+            console.log('========== [AI 原始回复调试结束] ==========\n');
 
             this.messageList?.updateMessage(messageId, {
                 content: cleanedContent,
@@ -1112,20 +1147,37 @@ ${r.text}`;
 📄 正在研读：《${pdfName}》
 ${structureInfo}
 
-📋 引用协议 (Citation Protocol) - 极其重要：
-你的知识库是由 Markdown 文件组成的。你必须为你的每一个核心观点提供【可点击的引用链接】。
+📋 引用协议：
+你必须为每个观点提供可点击的文件链接。
 
-1. 引用格式：\`[[文件路径#页码锚点|链接文本]]\`
-   - 文件路径：参考【来源片段】中的"文件路径"
-   - 页码锚点：参考【来源片段】中的"页码锚点" (例如 ^page-28)
-   
-2. 示例：
-   - ❌ 错误："纳瓦尔在第28页提到..." (用户无法点击)
-   - ✅ 正确："纳瓦尔认为赚钱是一门技能 [[DeepPDF/纳瓦尔宝典/03-第一章.md#^page-28|来源: P28]]。"
+【正确格式】
+[[文件名#^页面|文件名 XX页]]
 
-3. 规则：
-   - 凡有论断，必有出处。
-   - 链接必须精准指向对应的 Markdown 块。
+【如何构建引用】
+1. 从【来源片段】的"文件路径"中提取文件名（不含 .md 扩展名）
+2. 使用【来源片段】的"页码锚点"（如 ^page-28）
+3. 组合：[[文件名#^页面|文件名 XX页]]
+   - "|" 前是完整链接（包含锚点）
+   - "|" 后是显示文本（文件名 + 页码）
+
+【示例】
+【来源片段 1】
+文件路径: DeepPDF/纳瓦尔宝典/03-第一章 积累财富.md
+页码锚点: ^page-28
+
+正确引用：[[03-第一章 积累财富#^page-28|03-第一章 积累财富28页]]
+
+【来源片段 2】
+文件路径: DeepPDF/纳瓦尔宝典/73-灵感本易逝，行动应当时。.md
+页码锚点: ^page-199
+
+正确引用：[[73-灵感本易逝，行动应当时。#^page-199|73-灵感本易逝，行动应当时。199页]]
+
+【规则】
+- 使用完整文件名（不含 .md）
+- 锚点格式：#^page-数字
+- "|" 后显示格式：文件名 + 页码 + "页"
+- 不要包含文件夹路径
 
 📋 回答规范：
 0. 在回答时要提及昭见森名称，表达尊重。

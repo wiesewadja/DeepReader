@@ -12,7 +12,8 @@ from .models import (
     IndexRequest, IndexResponse,
     QueryRequest, QueryResponse,
     ListIndexesResponse, DeleteIndexResponse,
-    TaskProgressResponse
+    TaskProgressResponse,
+    MarkdownMappingBody, MarkdownMappingResponse
 )
 from .export_models import ExportIndexResponse
 from .export_handlers import export_index_data
@@ -752,3 +753,26 @@ async def export_index_endpoint(index_id: str):
     result = await export_index_data(index_id)
     logger.info(f"[API] 导出完成: 返回 {len(result.get('nodes', []))} 个节点, total_pages={result.get('total_pages', 0)}")
     return ExportIndexResponse(**result)
+
+@router.post("/markdown-mapping/{index_id}", response_model=MarkdownMappingResponse)
+async def save_markdown_mapping(index_id: str, body: MarkdownMappingBody):
+    """保存 Markdown 文件映射到索引元数据"""
+    logger.info(f"[API] Saving markdown mapping for index: {index_id}, count: {len(body.file_mapping)}")
+
+    try:
+        from ..services.manager import update_index_metadata
+
+        result = await update_index_metadata(
+            index_id=index_id,
+            storage_dir=str(settings.base_dir),
+            updates={"markdown_files": body.file_mapping}
+        )
+
+        if result["status"] == "success":
+            return MarkdownMappingResponse(status="success", index_id=index_id)
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to update metadata"))
+
+    except Exception as e:
+        logger.error(f"[API] Failed to save mapping: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

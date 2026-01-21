@@ -125,6 +125,37 @@ function formatTimestamp(isoString: string): string {
 }
 
 /**
+ * 处理内部链接的点击事件，使其能在侧边栏中正确跳转
+ * 以只读预览模式打开，避免意外修改书籍内容
+ */
+function setupInternalLinks(contentEl: HTMLElement, app: App): void {
+	const links = contentEl.querySelectorAll('a.internal-link');
+	links.forEach(link => {
+		// 移除默认的点击行为
+		link.addEventListener('click', async (e) => {
+			e.preventDefault();
+			const href = link.getAttr('href');
+			if (href) {
+				// 使用 Obsidian API 打开链接
+				app.workspace.openLinkText(href, '', false);
+
+				// 延迟切换到预览模式（确保文件已打开）
+				setTimeout(() => {
+					const activeLeaf = app.workspace.activeLeaf;
+					if (activeLeaf) {
+						// 强制切换到预览模式
+						activeLeaf.setViewState({
+							type: 'markdown',
+							state: { mode: 'preview' }
+						});
+					}
+				}, 50);
+			}
+		});
+	});
+}
+
+/**
  * 引用来源组件
  */
 export class Citation {
@@ -355,6 +386,8 @@ export class AIMessage extends Message {
 		// 使用 Markdown 渲染
 		if (this.app) {
 			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
+			// 设置内部链接的点击事件
+			setupInternalLinks(content, this.app);
 		} else {
 			content.innerHTML = this.escapeHtml(this.data.content);
 		}
@@ -390,6 +423,8 @@ export class AIMessage extends Message {
 			contentEl.empty();
 			if (this.app) {
 				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
+				// 设置内部链接的点击事件
+				setupInternalLinks(contentEl as HTMLElement, this.app);
 			} else {
 				contentEl.innerHTML = this.escapeHtml(content);
 			}

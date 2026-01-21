@@ -9,6 +9,32 @@ import { IndexListItem } from '../../api/http-client.js';
 import { App } from 'obsidian';
 import { ConfirmModal } from '../confirm-modal.js';
 
+/**
+ * 格式化时间显示
+ * - 7天内显示相对时间（如"2小时前"）
+ * - 超过7天显示完整时间（如"1月15日 14:30"）
+ */
+function formatTimeAgo(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return '刚刚';
+    if (diffMins < 60) return `${diffMins}分钟前`;
+    if (diffHours < 24) return `${diffHours}小时前`;
+    if (diffDays < 7) return `${diffDays}天前`;
+
+    // 超过7天显示完整日期和时间
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${month}月${day}日 ${hours}:${minutes}`;
+}
+
 export interface IndexManagerOptions {
     app: App;
     onIndexChange?: (indexId: string) => void;
@@ -214,6 +240,14 @@ export class IndexManager extends Component {
             name.textContent = index.pdf_name;
             content.appendChild(name);
 
+            // 添加时间显示
+            const metaEl = document.createElement('div');
+            metaEl.className = 'deeppdf-index-meta';
+            const timeText = index.created_at ? formatTimeAgo(index.created_at) : '未知时间';
+            const nodeCount = index.node_count || 0;
+            metaEl.innerHTML = `<span class="meta-item">📅 ${timeText}</span><span class="meta-item">📄 ${nodeCount} 节点</span>`;
+            content.appendChild(metaEl);
+
             // 进度条容器 (始终存在，但仅在 processing 时显示)
             const progressContainer = document.createElement('div');
             progressContainer.className = 'deeppdf-index-progress-container';
@@ -286,10 +320,21 @@ export class IndexManager extends Component {
 
             item.appendChild(statusDiv);
 
-            // 4. 操作按钮区 (新增 - 删除按钮)
+            // 4. 操作按钮区 (导出按钮 + 删除按钮)
             const actionsDiv = document.createElement('div');
             actionsDiv.className = 'deeppdf-index-actions';
 
+            // 导出 Markdown 按钮
+            const exportBtn = document.createElement('button');
+            exportBtn.className = 'deeppdf-btn-icon deeppdf-btn-export';
+            exportBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+            exportBtn.title = '导出 Markdown';
+            exportBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.options.onExportMarkdown?.(index.id);
+            });
+
+            // 删除按钮
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'deeppdf-btn-icon deeppdf-btn-danger';
             deleteBtn.innerHTML = Icons.trash;
@@ -311,6 +356,7 @@ export class IndexManager extends Component {
                 ).open();
             });
 
+            actionsDiv.appendChild(exportBtn);
             actionsDiv.appendChild(deleteBtn);
             item.appendChild(actionsDiv);
 

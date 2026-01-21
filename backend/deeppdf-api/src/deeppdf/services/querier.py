@@ -99,14 +99,21 @@ def _query_pdf_sync(
 
         # 格式化最终结果
         final_results = []
-        for item in hybrid_result["results"]:
+        logger.info("[查询结果] 开始格式化结果，添加 markdown_path")
+
+        for i, item in enumerate(hybrid_result["results"]):
             node_id = item["metadata"].get("node_id", "")
             markdown_path = None
-            
+
             # 从索引元数据中查找对应的 Markdown 文件路径
             if "markdown_files" in index_metadata:
                 markdown_path = index_metadata["markdown_files"].get(node_id)
-            
+                # 【关键日志】记录 markdown_path 查找过程
+                if markdown_path:
+                    logger.info(f"[查询结果] 结果 {i+1}: node_id={node_id} → markdown_path={markdown_path}")
+                else:
+                    logger.warning(f"[查询结果] 结果 {i+1}: node_id={node_id} → 未找到 markdown_path 映射")
+
             final_results.append({
                 "text": item["text"],
                 "metadata": {
@@ -114,6 +121,8 @@ def _query_pdf_sync(
                     "markdown_path": markdown_path  # 添加 Markdown 路径
                 }
             })
+
+        logger.info(f"[查询结果] 格式化完成，返回 {len(final_results)} 个结果")
 
 
         return {
@@ -144,14 +153,14 @@ def _query_pdf_sync(
 
 def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
     """
-    加载索引元数据（包含完整的 tree_structure）
+    加载索引元数据（包含完整的 tree_structure 和 markdown_files）
     """
     metadata_path = storage_dir / "indexes" / f"{index_id}.json"
 
     if metadata_path.exists():
         with open(metadata_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            # 返回完整的元数据，包括 tree_structure
+            # 返回完整的元数据，包括 tree_structure 和 markdown_files
             return {
                 "pdf_name": data.get("pdf_name", ""),
                 "pdf_path": data.get("pdf_path", ""),
@@ -160,7 +169,8 @@ def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
                 "indexing_method": data.get("indexing_method", ""),
                 "llm_enabled": data.get("llm_enabled", False),
                 "tree_structure": data.get("tree_structure", {}),
-                "sections": data.get("sections", [])
+                "sections": data.get("sections", []),
+                "markdown_files": data.get("markdown_files", {})  # 添加 markdown_files 字段
             }
 
     return {}

@@ -95,3 +95,37 @@ async def delete_index(index_id: str, storage_dir: str) -> Dict[str, Any]:
     """异步删除索引"""
     result = await asyncio.to_thread(_delete_index_sync, index_id, storage_dir)
     return result
+
+def _update_index_metadata_sync(index_id: str, storage_dir: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    同步更新索引元数据
+    """
+    try:
+        storage_dir_path = Path(storage_dir)
+        metadata_path = storage_dir_path / "indexes" / f"{index_id}.json"
+
+        if not metadata_path.exists():
+            return {"status": "error", "error": f"Index {index_id} not found"}
+
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        # 更新字段 (支持字典深度合并)
+        for key, value in updates.items():
+            if key == "markdown_files" and "markdown_files" in metadata:
+                metadata["markdown_files"].update(value)
+            else:
+                metadata[key] = value
+
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+
+        return {"status": "success"}
+
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+async def update_index_metadata(index_id: str, storage_dir: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+    """异步更新索引元数据"""
+    result = await asyncio.to_thread(_update_index_metadata_sync, index_id, storage_dir, updates)
+    return result

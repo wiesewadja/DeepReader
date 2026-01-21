@@ -47,6 +47,23 @@ function sanitizeFilename(name: string, maxLength: number = 100): string {
 }
 
 /**
+ * 处理物理页码标记
+ * 将 <physical_index_N> 转换为 ### 第 N 页 ^page-N
+ */
+function processPageMarkers(text: string): string {
+    const seenPages = new Set<string>();
+
+    return text.replace(/<(?:physical|start|end)_index_(\d+)>/g, (match, pageNum) => {
+        if (!seenPages.has(pageNum)) {
+            seenPages.add(pageNum);
+            // Obsidian 标准格式：块ID紧跟标题，后面换行
+            return `\n\n### 第 ${pageNum} 页^page-${pageNum}\n\n`;
+        }
+        return ''; // 重复标签直接删除
+    });
+}
+
+/**
  * 生成 Markdown 内容
  */
 function createMarkdownContent(node: NodeData, pdfName: string): string {
@@ -61,7 +78,9 @@ level: ${node.level}
 `;
 
     const title = `# ${node.section}\n\n`;
-    const content = node.text.trim() + "\n\n";
+    // 处理页码标记后再输出
+    const processedText = processPageMarkers(node.text);
+    const content = processedText.trim() + "\n\n";
     const footer = `---
 **来源**: [[${pdfName}]] 第 ${node.page_range} 页
 `;
