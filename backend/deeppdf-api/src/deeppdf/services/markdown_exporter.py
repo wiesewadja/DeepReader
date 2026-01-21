@@ -1,48 +1,29 @@
 """
-Markdown 内容生成服务
-
-注意：此模块只负责生成 Markdown 内容字符串，不涉及文件写入。
-文件写入应由前端（Obsidian 插件）在用户本地完成。
+Markdown 导出服务
+将索引的 PDF 导出为分割的 Markdown 文件
 """
+import json
+import logging
 import re
-from typing import Dict, Any
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_filename(name: str, max_length: int = 100) -> str:
     """
-    清理文件名，移除或替换特殊字符
-
-    Args:
-        name: 原始文件名
-        max_length: 最大长度
-
-    Returns:
-        清理后的文件名
+    清理文件名,移除或替换特殊字符
     """
-    # 替换特殊字符
-    name = name.replace("/", "-")
-    name = name.replace(":", "-")
-    name = name.replace("?", "")
-    name = name.replace("*", "")
-    name = name.replace('"', "")
-    name = name.replace("<", "")
-    name = name.replace(">", "")
-    name = name.replace("|", "")
-    name = name.replace("\\", "-")
-
-    # 移除多余的空格和破折号
+    name = name.replace("/", "-").replace(":", "-").replace("?", "").replace("*", "")
+    name = name.replace('"', "").replace("<", "").replace(">", "").replace("|", "").replace("\\", "-")
     name = re.sub(r'\s+', ' ', name)
     name = re.sub(r'-+', '-', name)
     name = name.strip(' -')
-
-    # 截断过长的文件名
-    if len(name) > max_length:
-        name = name[:max_length].strip(' -')
-
-    return name
+    return name[:max_length].strip(' -') if len(name) > max_length else name
 
 
-def create_markdown_content(
+def _create_markdown_content(
     node: Dict[str, Any],
     pdf_name: str,
     section: str,
@@ -50,88 +31,29 @@ def create_markdown_content(
 ) -> str:
     """
     创建 Markdown 文件内容
-
-    将节点数据转换为 Obsidian 兼容的 Markdown 格式，包含：
-    - YAML Front Matter（含 node_id 用于搜索跳转）
-    - 页码锚点 (^page-N)
-    - 来源链接 ([[pdf.pdf#page=N]])
-
-    Args:
-        node: 节点数据，包含：
-            - id: 节点 ID
-            - text: 节点文本内容（含 <physical_index_N> 标记）
-            - metadata: 元数据（start_index, level 等）
-        pdf_name: PDF 文件名
-        section: 章节路径/标题
-        page_range: 页码范围（如 "1-5"）
-
-    Returns:
-        Markdown 内容字符串
-
-    前端使用示例:
-        >>> # 前端在生成文件时，添加 filepath 到 front matter
-        >>> filepath = "DeepPDF/sample/01-Chapter 1.md"
-        >>> markdown = create_markdown_content(node, pdf_name, section, page_range)
-        >>> # 在第一个 --- 后插入 filepath
-        >>> markdown = markdown.replace('---\\n', f'---\\nfilepath: {filepath}\\n', 1)
-
-    Example:
-        >>> node = {
-        ...     "id": "node_1",
-        ...     "text": "<physical_index_5>\\nContent\\n<physical_index_5>",
-        ...     "metadata": {"start_index": 5, "level": 1}
-        ... }
-        >>> md = create_markdown_content(
-        ...     node=node,
-        ...     pdf_name="sample.pdf",
-        ...     section="Chapter 1",
-        ...     page_range="5-6"
-        ... )
-        >>> print(md)
-        ---
-        pdf_name: sample.pdf
-        node_id: node_1
-        section: Chapter 1
-        page_range: 5-6
-        level: 1
-        tags: [DeepPDF, sample.pdf]
-        ---
-
-        # Chapter 1
-
-        ### 第 5 页 ^page-5
-
-        Content
-
-        ---
-        **来源**: [[sample.pdf#page=5]] (第 5-6 页)
     """
     node_id = node.get("id", "")
     text = node.get("text", "")
     metadata = node.get("metadata", {})
     start_page = metadata.get("start_index", "?")
-
-    # --- 解析物理页码标记 ---
-    # 输入格式: <physical_index_5>\n页面内容\n<physical_index_5>
-    # 输出格式: ### 第 5 页 ^page-5\n页面内容
-
-    # 1. 移除结束标记
-    text = text.strip()
-    text = re.sub(r'<physical_index_\d+>\s*$', '', text)
-    text = re.sub(r'<physical_index_\d+>\s*\n', '\n', text)
-
-    # 2. 替换开始标记为 Obsidian 锚点
+    
+    # --- 核心改进：解析物理页码标记 (防止重复) ---
+    seen_pages = set()
+    
     def replace_page_tag(match):
         page_num = match.group(1)
-        return f"\n\n### 第 {page_num} 页 ^page-{page_num}\n\n"
-
-    text = re.sub(r'<(?:physical|start)_index_(\d+)>', replace_page_tag, text)
-    text = re.sub(r'<end_index_\d+>', '', text)
-
-    # 3. 清理多余空行
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = text.strip()
-
+        if page_num not in seen_pages:
+            seen_pages.add(page_num)
+            return f"\n\n### 第 {page_num} 页 ^page-{page_num}\n\n"
+        else:
+            return "" # 重复出现的标签直接抹除
+    
+    # 统一处理所有可能的标签格式
+    processed_text = re.sub(r'<(?:physical|start|end)_index_(\d+)>', replace_page_tag, text)
+    
+    # 清理多余空行
+    processed_text = re.sub(r'\n{3,}', '\n\n', processed_text).strip()
+    
     # 创建 Front Matter
     front_matter = f"""---
 pdf_name: {pdf_name}
@@ -143,24 +65,68 @@ tags: [DeepPDF, {pdf_name}]
 ---
 
 """
-
-    # 创建标题
     title = f"# {section}\n\n"
-
-    # 内容
-    content = text + "\n\n"
-
-    # 添加来源信息（精确跳转到起始页）
-    footer_link = f"[[{pdf_name}]]"
-    if str(start_page).isdigit():
-        footer_link = f"[[{pdf_name}#page={start_page}]]"
-
-    footer = f"""---
-**来源**: {footer_link} (第 {page_range} 页)
-"""
-
-    return front_matter + title + content + footer
+    footer_link = f"[[{pdf_name}#page={start_page}]]" if str(start_page).isdigit() else f"[[{pdf_name}]]"
+    footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)\n"
+    
+    return front_matter + title + processed_text + footer
 
 
-# 向后兼容：保留旧名称
-_create_markdown_content = create_markdown_content
+def export_pdf_to_markdown(
+    index_id: str,
+    storage_dir: str,
+    vault_path: str,
+    output_folder: str = "DeepPDF"
+) -> Dict[str, Any]:
+    try:
+        storage_dir_path = Path(storage_dir)
+        metadata_path = storage_dir_path / "indexes" / f"{index_id}.json"
+        
+        if not metadata_path.exists():
+            return {"status": "error", "error": f"Index metadata not found: {index_id}"}
+        
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            index_metadata = json.load(f)
+        
+        pdf_name = index_metadata.get("pdf_name", "Unknown")
+        sections = index_metadata.get("sections", [])
+        
+        vault_path_obj = Path(vault_path)
+        pdf_folder_name = pdf_name.replace(".pdf", "").replace("/", "-")
+        output_dir = vault_path_obj / output_folder / pdf_folder_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        file_mapping = {}
+        files_created = 0
+        
+        for idx, node in enumerate(sections, start=1):
+            metadata = node.get("metadata", {})
+            section = metadata.get("section", f"Section {idx}")
+            node_id = node.get("id", f"node_{idx}")
+            node_name = metadata.get("node_name", f"Section {idx}")
+            
+            start_page = metadata.get("start_index", "?")
+            end_page = metadata.get("end_index", "?")
+            page_range = f"{start_page}-{end_page}" if start_page != end_page else str(start_page)
+            
+            filename = f"{idx:02d}-{node_name.replace('/', '-')}.md"
+            file_path = output_dir / filename
+            
+            markdown_content = _create_markdown_content(node, pdf_name, section, page_range)
+            
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+            
+            file_mapping[node_id] = f"{output_folder}/{pdf_folder_name}/{filename}"
+            files_created += 1
+            
+        return {"status": "success", "files_created": files_created, "file_mapping": file_mapping}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+def get_markdown_path_for_node(index_metadata: Dict[str, Any], node_id: str) -> Optional[str]:
+    return index_metadata.get("markdown_files", {}).get(node_id)
+
+
+# 公共别名：外部导入使用
+create_markdown_content = _create_markdown_content
