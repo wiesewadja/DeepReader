@@ -687,6 +687,8 @@ export class DeepPDFClient {
   ): AbortController {
     const controller = new AbortController();
 
+    console.log('[Agent] 开始流式请求:', { query, indexId, baseUrl: this.baseUrl });
+
     fetch(`${this.baseUrl}/api/chat/agent/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -694,6 +696,8 @@ export class DeepPDFClient {
       signal: controller.signal
     })
       .then(response => {
+        console.log('[Agent] 收到响应:', { status: response.status, ok: response.ok, headers: Object.fromEntries(response.headers.entries()) });
+
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
@@ -703,12 +707,15 @@ export class DeepPDFClient {
           throw new Error('Response body is not readable');
         }
 
+        console.log('[Agent] 开始读取流式数据');
         const decoder = new TextDecoder();
         let buffer = '';
+        let chunkCount = 0;
 
         const read = (): Promise<void> => {
           return reader.read().then(({ done, value }) => {
             if (done) {
+              console.log('[Agent] 流式读取完成');
               onComplete?.();
               return;
             }
@@ -725,13 +732,20 @@ export class DeepPDFClient {
                 const jsonStr = line.slice(6);
                 try {
                   const data: AgentStreamChunk = JSON.parse(jsonStr);
+                  chunkCount++;
+
+                  if (chunkCount <= 5) {
+                    console.log('[Agent] 收到数据块:', { chunkCount, data });
+                  }
 
                   if (data.status === 'error') {
+                    console.error('[Agent] 错误状态:', data.error);
                     onError?.(data.error || 'Unknown error');
                     return;
                   }
 
                   if (data.status === 'done') {
+                    console.log('[Agent] 收到完成信号, 总数据块:', chunkCount);
                     onComplete?.();
                     return;
                   }

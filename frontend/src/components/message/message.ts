@@ -740,6 +740,11 @@ export class AIMessage extends Message {
 	private onCopyWithCitation?: () => void;
 	private onQuestionClick?: (question: string) => void;
 	private onCitationJump?: (citation: CitationData) => void;
+	// 思考内容折叠状态
+	private thoughtsCollapsed: boolean = true;
+	// 流式更新状态
+	private isStreamingUpdate: boolean = false;
+	private streamingAnimationFrame: number | null = null;
 
 	constructor(
 		data: MessageData,
@@ -773,16 +778,44 @@ export class AIMessage extends Message {
 			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>AI Agent`;
 		}
 
-		// Agent 思考过程
+		// Agent 思考过程（可折叠）
 		if (this.data.agentThoughts && this.data.agentThoughts.length > 0) {
 			const thoughtsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-thoughts' });
+			// 默认折叠状态
+			if (this.thoughtsCollapsed) {
+				thoughtsContainer.addClass('collapsed');
+			}
 
+			// 可点击的头部
 			const thoughtsHeader = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-header' });
-			thoughtsHeader.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
+			thoughtsHeader.setAttribute('role', 'button');
+			thoughtsHeader.setAttribute('tabindex', '0');
+			thoughtsHeader.innerHTML = `<svg class="thoughts-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
+
+			// 思考内容容器
+			const thoughtsContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thoughts-content' });
 
 			this.data.agentThoughts.forEach(thought => {
-				const thoughtContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-content' });
-				thoughtContent.textContent = thought.content;
+				const thoughtItem = thoughtsContent.createEl('div', { cls: 'deeppdf-agent-thought-content' });
+				thoughtItem.textContent = thought.content;
+			});
+
+			// 点击切换折叠状态
+			const toggleThoughts = () => {
+				this.thoughtsCollapsed = !this.thoughtsCollapsed;
+				if (this.thoughtsCollapsed) {
+					thoughtsContainer.addClass('collapsed');
+				} else {
+					thoughtsContainer.removeClass('collapsed');
+				}
+			};
+
+			thoughtsHeader.addEventListener('click', toggleThoughts);
+			thoughtsHeader.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					toggleThoughts();
+				}
 			});
 		}
 
@@ -855,16 +888,62 @@ export class AIMessage extends Message {
 
 	protected updateContent(content: string): void {
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
-		if (contentEl) {
-			contentEl.empty();
-			if (this.app) {
-				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
-				// 设置内部链接的点击事件和 hover preview
-				// 如果正在流式传输，禁用 hover preview
-				setupInternalLinks(contentEl as HTMLElement, this.app, this.data.isStreaming);
+		if (!contentEl) return;
+
+		// 如果正在流式更新，使用追加模式而非完全重绘
+		if (this.data.isStreaming) {
+			this.streamingUpdateContent(contentEl as HTMLElement, content);
+		} else {
+			// 非流式更新，完全重绘
+			this.fullUpdateContent(contentEl as HTMLElement, content);
+		}
+	}
+
+	/**
+	 * 流式更新 - 使用内容追加减少闪烁
+	 */
+	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
+		// 取消之前的动画帧
+		if (this.streamingAnimationFrame !== null) {
+			cancelAnimationFrame(this.streamingAnimationFrame);
+		}
+
+		// 使用 requestAnimationFrame 批处理更新
+		this.streamingAnimationFrame = requestAnimationFrame(() => {
+			// 获取当前 innerHTML 长度作为参考
+			const currentHTML = contentEl.innerHTML || '';
+			const currentLength = currentHTML.length;
+
+			// 如果新内容更长，说明有新增内容
+			if (newContent.length > (contentEl.textContent || '').length) {
+				// 直接渲染完整内容，但使用 CSS contain 减少重绘
+				if (this.app) {
+					contentEl.empty();
+					MarkdownRenderer.render(this.app, newContent, contentEl, '', new Component());
+				} else {
+					contentEl.innerHTML = this.escapeHtml(newContent);
+				}
 			} else {
-				contentEl.innerHTML = this.escapeHtml(content);
+				// 内容长度未增加或减少，完全重绘
+				this.fullUpdateContent(contentEl, newContent);
 			}
+
+			this.streamingAnimationFrame = null;
+		});
+	}
+
+	/**
+	 * 完全更新内容 - 用于非流式更新或内容变化较大时
+	 */
+	private fullUpdateContent(contentEl: HTMLElement, content: string): void {
+		contentEl.empty();
+		if (this.app) {
+			MarkdownRenderer.render(this.app, content, contentEl, '', new Component());
+			// 设置内部链接的点击事件和 hover preview
+			// 如果正在流式传输，禁用 hover preview
+			setupInternalLinks(contentEl, this.app, this.data.isStreaming);
+		} else {
+			contentEl.innerHTML = this.escapeHtml(content);
 		}
 	}
 

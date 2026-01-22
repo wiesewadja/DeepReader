@@ -922,7 +922,10 @@ async def agent_chat(req: AgentRequest):
 
 async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None]:
     """
-    Agent 流式响应生成器
+    Agent 流式响应生成器 (异步实现)
+
+    通过将同步生成器在独立线程中运行，并使用 asyncio.Queue 进行通信，
+    实现真正的异步流式输出。
 
     Args:
         req: Agent 请求对象
@@ -934,15 +937,67 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
         # 1. 加载 Agent
         agent = await _load_agent_for_request(req.index_id)
 
-        # 2. 流式运行 Agent (带超时控制)
+        # 2. 创建队列用于线程间通信
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+
+        # 3. 定义在线程中运行的同步生成器包装函数
+        def _run_sync_generator():
+            """
+            在独立线程中运行同步生成器，将结果放入队列
+            """
+            try:
+                logger.info(f"[Agent流式] 开始在线程中执行 Agent.run_stream")
+                chunk_count = 0
+                
+                for chunk in agent.run_stream(req.query):
+                    chunk_count += 1
+                    # 将chunk放入队列（线程安全）
+                    loop.call_soon_threadsafe(queue.put_nowait, ('chunk', chunk))
+                    
+                    # 每10个chunk记录一次日志
+                    if chunk_count % 10 == 0:
+                        logger.debug(f"[Agent流式] 已发送 {chunk_count} 个chunk")
+                
+                # 执行完成，发送完成信号
+                loop.call_soon_threadsafe(queue.put_nowait, ('done', None))
+                logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个chunk")
+                
+            except Exception as e:
+                # 发送错误信号
+                error_msg = str(e)
+                logger.error(f"[Agent流式] 生成器执行出错: {error_msg}", exc_info=True)
+                loop.call_soon_threadsafe(queue.put_nowait, ('error', error_msg))
+
+        # 4. 在线程池中启动同步生成器（带超时）
         try:
             async with asyncio.timeout(300):  # 5 分钟超时
-                for chunk in agent.run_stream(req.query):
-                    # 格式化为 SSE
-                    yield f"data: {json.dumps({'content': chunk, 'status': 'streaming'})}\n\n"
+                # 启动后台线程任务
+                task = asyncio.create_task(
+                    asyncio.to_thread(_run_sync_generator)
+                )
 
-            # 发送完成信号
-            yield f"data: {json.dumps({'status': 'done'})}\n\n"
+                # 5. 从队列中读取并yield SSE消息
+                while True:
+                    # 等待队列中的消息（异步）
+                    msg_type, data = await queue.get()
+
+                    if msg_type == 'chunk':
+                        # 发送内容chunk
+                        yield f"data: {json.dumps({'content': data, 'status': 'streaming'})}\n\n"
+
+                    elif msg_type == 'error':
+                        # 发送错误
+                        yield f"data: {json.dumps({'status': 'error', 'error': data})}\n\n"
+                        break
+
+                    elif msg_type == 'done':
+                        # 发送完成信号
+                        yield f"data: {json.dumps({'status': 'done'})}\n\n"
+                        break
+
+                # 等待后台任务完成
+                await task
 
         except asyncio.TimeoutError:
             logger.error(f"[API] Agent 流式执行超时: index_id={req.index_id}")
@@ -956,6 +1011,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
     except Exception as e:
         logger.error(f"[API] Agent 流式执行失败: {e}", exc_info=True)
         yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+
 
 
 @router.post("/chat/agent/stream")

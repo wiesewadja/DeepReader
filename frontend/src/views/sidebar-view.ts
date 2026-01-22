@@ -673,6 +673,10 @@ ${r.text}`;
         let fullContent = '';
         let streamController: AbortController | null = null;
 
+        // 跟踪上一次的 Agent 元数据，避免不必要的全量重绘
+        let lastThoughtsJSON = '';
+        let lastToolCallsJSON = '';
+
         try {
             // 使用流式 Agent API
             streamController = agentAPI.chatStream(
@@ -685,14 +689,32 @@ ${r.text}`;
                     // 解析 Agent 内容（提取思考过程、工具调用等）
                     const { thoughts, toolCalls, cleanedContent } = parseAgentContent(fullContent);
 
-                    // 更新消息显示
-                    this.messageList?.updateMessage(aiMessageId, {
+                    // 检查 Agent 元数据是否真正变化
+                    const currentThoughtsJSON = JSON.stringify(thoughts);
+                    const currentToolCallsJSON = JSON.stringify(toolCalls);
+
+                    const thoughtsChanged = currentThoughtsJSON !== lastThoughtsJSON;
+                    const toolCallsChanged = currentToolCallsJSON !== lastToolCallsJSON;
+
+                    // 构建更新对象（只包含变化的字段）
+                    const updates: any = {
                         content: cleanedContent || '思考中...',
                         isStreaming: true,
-                        isAgentMessage: true,
-                        agentThoughts: thoughts,
-                        agentToolCalls: toolCalls
-                    });
+                        isAgentMessage: true
+                    };
+
+                    // 只在真正变化时才更新 agent 元数据
+                    if (thoughtsChanged) {
+                        updates.agentThoughts = thoughts;
+                        lastThoughtsJSON = currentThoughtsJSON;
+                    }
+                    if (toolCallsChanged) {
+                        updates.agentToolCalls = toolCalls;
+                        lastToolCallsJSON = currentToolCallsJSON;
+                    }
+
+                    // 更新消息显示
+                    this.messageList?.updateMessage(aiMessageId, updates);
                 },
                 // onComplete: 流式完成
                 () => {

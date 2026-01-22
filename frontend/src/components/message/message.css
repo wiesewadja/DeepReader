@@ -108,6 +108,9 @@
 	white-space: normal;
 	/* Markdown 内容由 p 标签控制换行 */
 	color: var(--text-normal);
+	/* 优化流式更新 - 减少重绘范围 */
+	contain: content;
+	will-change: contents;
 }
 
 /* User 消息是纯文本，需要保留换行格式 */
@@ -546,23 +549,74 @@ pointer-events: auto !important;
 	background: var(--background-modifier-form-field);
 	border-radius: 8px;
 	border-left: 3px solid var(--interactive-accent);
+	overflow: hidden;
+	transition: all 0.3s ease;
 }
 
 .deeppdf-agent-thought-header {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 8px;
 	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-muted);
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
+	cursor: pointer;
+	user-select: none;
+	padding: 4px 0;
+	transition: all 0.2s ease;
+	border-radius: 4px;
 }
 
-.deeppdf-agent-thought-header svg {
+.deeppdf-agent-thought-header:hover {
+	color: var(--interactive-accent);
+	background: var(--background-secondary);
+	padding: 4px 8px;
+	margin: 0 -8px;
+}
+
+.deeppdf-agent-thought-header:focus {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.deeppdf-agent-thought-header svg.thoughts-chevron {
 	width: 14px;
 	height: 14px;
 	color: var(--interactive-accent);
+	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.deeppdf-agent-thoughts.collapsed .deeppdf-agent-thought-header svg.thoughts-chevron {
+	transform: rotate(-90deg);
+}
+
+.deeppdf-agent-thought-header svg:not(.thoughts-chevron) {
+	width: 14px;
+	height: 14px;
+	color: var(--interactive-accent);
+}
+
+/* 思考内容容器 - 用于折叠 */
+.deeppdf-agent-thoughts-content {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-height: 500px;
+	overflow: hidden;
+	transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+				opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+				margin-top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	opacity: 1;
+	margin-top: 4px;
+}
+
+.deeppdf-agent-thoughts.collapsed .deeppdf-agent-thoughts-content {
+	max-height: 0;
+	opacity: 0;
+	margin-top: 0;
+	pointer-events: none;
 }
 
 .deeppdf-agent-thought-content {
