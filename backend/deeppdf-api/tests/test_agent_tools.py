@@ -4,7 +4,7 @@ import pytest
 import json
 from pathlib import Path
 from unittest.mock import Mock, patch
-from deeppdf.agent.tools import InspectTocTool, ReadPageTool
+from deeppdf.agent.tools import InspectTocTool, ReadPageTool, HybridSearchTool
 
 
 def test_inspect_toc_with_valid_structure():
@@ -257,8 +257,6 @@ def test_hybrid_search_with_results(temp_index_dir, monkeypatch):
 
     # Mock asyncio.run 和 query_pdf
     with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
-        from deeppdf.agent.tools import HybridSearchTool
-
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
@@ -280,8 +278,6 @@ def test_hybrid_search_no_results(temp_index_dir, monkeypatch):
         }
 
     with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
-        from deeppdf.agent.tools import HybridSearchTool
-
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
@@ -301,8 +297,6 @@ def test_hybrid_search_with_error(temp_index_dir, monkeypatch):
         }
 
     with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
-        from deeppdf.agent.tools import HybridSearchTool
-
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
