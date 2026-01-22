@@ -16,8 +16,7 @@ class TestPromptBuilder:
         """测试: 使用工具描述构建 prompt"""
         builder = PromptBuilder(
             tool_descriptions="## 可用工具\n\n### inspect_toc\n查看目录",
-            enable_few_shot=False,
-            enable_thinking=False
+            enable_few_shot=False
         )
 
         prompt = builder.build()
@@ -30,8 +29,7 @@ class TestPromptBuilder:
         """测试: 包含 Few-Shot 示例"""
         builder = PromptBuilder(
             tool_descriptions="",
-            enable_few_shot=True,
-            enable_thinking=False
+            enable_few_shot=True
         )
 
         prompt = builder.build()
@@ -44,8 +42,7 @@ class TestPromptBuilder:
         """测试: 不包含 Few-Shot 示例"""
         builder = PromptBuilder(
             tool_descriptions="",
-            enable_few_shot=False,
-            enable_thinking=False
+            enable_few_shot=False
         )
 
         prompt = builder.build()
@@ -69,8 +66,7 @@ class TestPromptBuilder:
         """测试: 从 ToolExecutor 创建 PromptBuilder"""
         builder = PromptBuilder.from_tool_executor(
             executor=mock_executor,
-            enable_few_shot=True,
-            enable_thinking=True
+            enable_few_shot=True
         )
 
         prompt = builder.build()

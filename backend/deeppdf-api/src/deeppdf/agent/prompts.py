@@ -2,7 +2,8 @@
 """
 Agent Prompt 管理 - 定义 System Prompt 和路由逻辑
 """
-from typing import TYPE_CHECKING, Any, Dict, List
+import re
+from typing import TYPE_CHECKING, Any, Dict, List, TypedDict
 
 if TYPE_CHECKING:
     from .executor import ToolExecutor
@@ -193,8 +194,7 @@ class PromptBuilder:
     def __init__(
         self,
         tool_descriptions: str = "",
-        enable_few_shot: bool = True,
-        enable_thinking: bool = True
+        enable_few_shot: bool = True
     ):
         """
         初始化构建器
@@ -202,11 +202,9 @@ class PromptBuilder:
         Args:
             tool_descriptions: 工具描述（来自 ToolExecutor.get_tool_descriptions()）
             enable_few_shot: 是否包含 Few-Shot 示例
-            enable_thinking: 是否启用思维可见性
         """
         self.tool_descriptions = tool_descriptions
         self.enable_few_shot = enable_few_shot
-        self.enable_thinking = enable_thinking
 
     def build(self) -> str:
         """
@@ -241,8 +239,7 @@ class PromptBuilder:
     @staticmethod
     def from_tool_executor(
         executor: 'ToolExecutor',
-        enable_few_shot: bool = True,
-        enable_thinking: bool = True
+        enable_few_shot: bool = True
     ) -> 'PromptBuilder':
         """
         从 ToolExecutor 创建 PromptBuilder
@@ -250,15 +247,13 @@ class PromptBuilder:
         Args:
             executor: ToolExecutor 实例
             enable_few_shot: 是否包含 Few-Shot 示例
-            enable_thinking: 是否启用思维可见性
 
         Returns:
             配置好的 PromptBuilder 实例
         """
         return PromptBuilder(
             tool_descriptions=executor.get_tool_descriptions(),
-            enable_few_shot=enable_few_shot,
-            enable_thinking=enable_thinking
+            enable_few_shot=enable_few_shot
         )
 
 
@@ -283,6 +278,15 @@ class RouteDecision:
     # 章节查询关键词
     SECTION_KEYWORDS = [
         "第", "章", "节", "页"
+    ]
+
+    # 预编译的章节引用正则表达式
+    _SECTION_PATTERNS = [
+        re.compile(r'第\s*\d+\s*[章节页]'),     # 第3章、第3页
+        re.compile(r'\d+\s*页'),                 # 3页
+        # 中文数字模式: 第三章、第三页
+        re.compile(r'第\s*[一二三四五六七八九十百千万零〇]+\s*[章节页]'),
+        re.compile(r'第\s*\d+\s*[章节页]'),      # 混合模式（阿拉伯数字，重复以保持兼容性）
     ]
 
     @classmethod
@@ -321,24 +325,7 @@ class RouteDecision:
         Returns:
             是否包含章节引用
         """
-        import re
-
-        # 中文数字映射
-        chinese_nums = '一二三四五六七八九十百千万零〇'
-
-        # 匹配模式:
-        # 1. 阿拉伯数字: "第3章"、"第 3 章"、"3页"
-        # 2. 中文数字: "第三章"、"第 三 章"、"一百页"
-        patterns = [
-            # 阿拉伯数字模式
-            r'第\s*\d+\s*[章节页]',          # 第3章、第3页
-            r'\d+\s*页',                    # 3页
-            # 中文数字模式
-            rf'第\s*[{chinese_nums}]+\s*[章节页]',  # 第三章、第三页
-            r'第\s*\d+\s*[章节页]',          # 混合模式（阿拉伯数字）
-        ]
-
-        return any(re.search(pattern, query) for pattern in patterns)
+        return any(pattern.search(query) for pattern in RouteDecision._SECTION_PATTERNS)
 
     @classmethod
     def suggest_tool(cls, query: str) -> str:
@@ -361,6 +348,14 @@ class RouteDecision:
             return "read_page"
 
 
+# ========== 类型定义 ==========
+
+class ToolCallData(TypedDict):
+    """工具调用数据类型定义"""
+    tool_call: Dict[str, Any]
+    output: str
+
+
 # ========== 函数式 API ==========
 
 def build_system_prompt(tool_descriptions: str) -> str:
@@ -379,8 +374,8 @@ def build_system_prompt(tool_descriptions: str) -> str:
 def build_messages(
     user_query: str,
     history: List[Dict[str, str]],
-    tool_results: List[Dict[str, Any]]
-) -> List[Dict[str, str]]:
+    tool_results: List[ToolCallData],
+) -> List[Dict[str, Any]]:
     """
     构建对话消息列表
 
@@ -427,6 +422,7 @@ __all__ = [
     "DECISION_RULES",
     "PromptBuilder",
     "RouteDecision",
+    "ToolCallData",
     "build_system_prompt",
     "build_messages",
 ]
