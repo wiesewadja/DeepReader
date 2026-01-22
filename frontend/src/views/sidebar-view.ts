@@ -21,8 +21,6 @@ import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { AgentModeToggle, ChatMode } from "../components/agent-mode-toggle/agent-mode-toggle.js";
 import { agentAPI } from "../api/index.js";
-import { ChatSettingsModal } from "../components/chat-settings-modal/index.js";
-import "../components/chat-settings-modal/chat-settings-modal.css";
 
 // ==================== 类型映射 ====================
 
@@ -98,14 +96,12 @@ export class SidebarView extends ItemView {
         // 创建 TopNav 组件 (极简风格)
         this.topNav = new TopNav({
             onSettings: () => {
-                // 打开聊天设置模态框
-                new ChatSettingsModal(this.app, {
-                    initialMode: this.chatMode,
-                    onModeChange: (mode: ChatMode) => {
-                        this.chatMode = mode;
-                        console.log(`[DeepPDF] 模式切换为: ${mode}`);
-                    }
-                }).open();
+                // 打开 Obsidian 设置并定位到 DeepPDF 插件
+                const app = this.app as any;
+                if (app.setting) {
+                    app.setting.open();
+                    app.setting.openTabById('deeppdf');
+                }
             },
             onTitleClick: () => {
                 // 可以在这里显示关于信息或重置
@@ -412,11 +408,16 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建聊天输入组件
+        // 创建聊天输入组件（集成模式切换）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
+            initialMode: this.chatMode,
             onSend: (message: string) => {
                 this.sendMessage(message);
+            },
+            onModeChange: (mode: ChatMode) => {
+                this.chatMode = mode;
+                console.log(`[DeepPDF] 模式切换为: ${mode}`);
             }
         });
 

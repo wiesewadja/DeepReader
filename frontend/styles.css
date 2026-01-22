@@ -1729,6 +1729,48 @@ pointer-events: auto !important;
 	background: var(--text-muted);
 }
 
+/* ==================== 模式切换按钮 ==================== */
+
+.deeppdf-chat-input-mode-btn {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	font-size: 12px;
+	font-weight: 500;
+	font-family: inherit;
+	color: var(--text-muted);
+	background: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	white-space: nowrap;
+}
+
+.deeppdf-chat-input-mode-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.deeppdf-chat-input-mode-btn:hover {
+	background: var(--background-secondary);
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
+.deeppdf-chat-input-mode-btn:active {
+	transform: scale(0.95);
+}
+
+/* Agent 模式下的样式 */
+.deeppdf-chat-input-mode-btn[data-mode="agent"] {
+	color: var(--interactive-accent);
+	border-color: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.3);
+	background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
+}
+
 /* ==================== 按钮包装器 ==================== */
 
 .deeppdf-chat-input-button-wrapper {
