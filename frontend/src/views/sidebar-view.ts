@@ -12,13 +12,15 @@ import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress } from "../types/index.js";
 import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion } from "../components/message/message.js";
+import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { TopNav } from "../components/top-nav/top-nav.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
+import { AgentModeToggle, ChatMode } from "../components/agent-mode-toggle/agent-mode-toggle.js";
+import { agentAPI } from "../api/index.js";
 
 // ==================== 类型映射 ====================
 
@@ -60,9 +62,11 @@ export class SidebarView extends ItemView {
     // 对话界面组件
     private messageList: MessageList | null = null;
     private chatInput: ChatInput | null = null;
+    private agentModeToggle: AgentModeToggle | null = null;
     private currentIndexId: string | null = null;
     private currentPdfName: string | null = null;
     private isProcessing: boolean = false;
+    private chatMode: ChatMode = 'fast';  // 默认快速检索模式
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null, plugin: any) {
         super(leaf);
@@ -405,6 +409,20 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
+        // 创建 Agent 模式切换组件
+        this.agentModeToggle = new AgentModeToggle({
+            initialMode: this.chatMode,
+            onModeChange: (mode: ChatMode) => {
+                this.chatMode = mode;
+                console.log(`[DeepPDF] 模式切换为: ${mode}`);
+            }
+        });
+
+        const agentModeEl = this.agentModeToggle.getElement();
+        if (agentModeEl) {
+            section.appendChild(agentModeEl);
+        }
+
         // 创建聊天输入组件
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
@@ -460,12 +478,19 @@ export class SidebarView extends ItemView {
                 role: "assistant" as MessageRole,
                 content: "正在思考...",
                 timestamp: new Date().toISOString(),
-                isStreaming: true
+                isStreaming: true,
+                isAgentMessage: this.chatMode === 'agent'  // Agent 模式标识
             };
             this.messageList?.addMessage(aiMessageData);
 
-            // 发送查询请求 (handleQuery 将负责更新 UI 和流式输出)
-            await this.handleQuery(message, this.currentIndexId, aiMessageId);
+            // 根据模式选择不同的处理方式
+            if (this.chatMode === 'agent') {
+                // Agent 智能体模式
+                await this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
+            } else {
+                // 快速检索模式
+                await this.handleQuery(message, this.currentIndexId, aiMessageId);
+            }
 
 
         } catch (error) {
@@ -642,6 +667,65 @@ ${r.text}`;
             this.messageList?.updateMessage(aiMessageId, {
                 content: fallbackAnswer,
                 citations: citations,
+                isStreaming: false
+            });
+        }
+    }
+
+    /**
+     * 处理 Agent 查询请求
+     */
+    private async handleAgentQuery(query: string, indexId: string, aiMessageId: string): Promise<void> {
+        if (!this.apiClient) {
+            throw new Error("API 客户端未连接");
+        }
+
+        let fullContent = '';
+        let streamController: AbortController | null = null;
+
+        try {
+            // 使用流式 Agent API
+            streamController = agentAPI.chatStream(
+                query,
+                indexId,
+                // onChunk: 接收流式内容
+                (chunk: string) => {
+                    fullContent += chunk;
+
+                    // 解析 Agent 内容（提取思考过程、工具调用等）
+                    const { thoughts, toolCalls, cleanedContent } = parseAgentContent(fullContent);
+
+                    // 更新消息显示
+                    this.messageList?.updateMessage(aiMessageId, {
+                        content: cleanedContent || '思考中...',
+                        isStreaming: true,
+                        isAgentMessage: true,
+                        agentThoughts: thoughts,
+                        agentToolCalls: toolCalls
+                    });
+                },
+                // onComplete: 流式完成
+                () => {
+                    this.messageList?.updateMessage(aiMessageId, {
+                        isStreaming: false
+                    });
+                },
+                // onError: 错误处理
+                (error: string) => {
+                    this.messageList?.updateMessage(aiMessageId, {
+                        content: `查询失败: ${error}`,
+                        isStreaming: false
+                    });
+                }
+            );
+
+            // 保存 controller 用于取消（如果需要的话）
+            // 可以通过 this.currentStreamController 访问
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.messageList?.updateMessage(aiMessageId, {
+                content: `Agent 查询失败: ${errorMessage}`,
                 isStreaming: false
             });
         }

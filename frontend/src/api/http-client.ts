@@ -196,6 +196,36 @@ export interface QueryPDFResult {
   error?: string;
 }
 
+// ==================== Agent 相关类型 ====================
+
+/**
+ * Agent 请求参数
+ */
+export interface AgentRequest {
+  query: string;
+  index_id: string;
+  stream?: boolean;
+}
+
+/**
+ * Agent 响应（同步）
+ */
+export interface AgentResponse {
+  status: string;
+  answer?: string;
+  error?: string;
+  iterations?: number;
+}
+
+/**
+ * Agent 流式响应数据块
+ */
+export interface AgentStreamChunk {
+  content?: string;
+  status?: 'streaming' | 'done' | 'error';
+  error?: string;
+}
+
 // ==================== HTTP 客户端类 ====================
 
 export interface SaveMarkdownMappingResponse {
@@ -624,6 +654,112 @@ export class DeepPDFClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_mapping: fileMapping })
     });
+  }
+
+  // ==================== Agent API ====================
+
+  /**
+   * Agent 智能对话（同步）
+   */
+  async agentChat(query: string, indexId: string): Promise<AgentResponse> {
+    return this.request<AgentResponse>('/api/chat/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, index_id: indexId })
+    });
+  }
+
+  /**
+   * Agent 智能对话（流式）
+   * @param query 用户查询
+   * @param indexId 索引 ID
+   * @param onChunk 接收流式数据块的回调
+   * @param onComplete 完成回调
+   * @param onError 错误回调
+   * @returns AbortController 用于取消请求
+   */
+  agentChatStream(
+    query: string,
+    indexId: string,
+    onChunk: (chunk: string) => void,
+    onComplete?: () => void,
+    onError?: (error: string) => void
+  ): AbortController {
+    const controller = new AbortController();
+
+    fetch(`${this.baseUrl}/api/chat/agent/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, index_id: indexId }),
+      signal: controller.signal
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('Response body is not readable');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const read = (): Promise<void> => {
+          return reader.read().then(({ done, value }) => {
+            if (done) {
+              onComplete?.();
+              return;
+            }
+
+            // 解码并追加到缓冲区
+            buffer += decoder.decode(value, { stream: true });
+
+            // 处理 SSE 格式: data: {...}\n\n
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; // 保留最后一个不完整的行
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6);
+                try {
+                  const data: AgentStreamChunk = JSON.parse(jsonStr);
+
+                  if (data.status === 'error') {
+                    onError?.(data.error || 'Unknown error');
+                    return;
+                  }
+
+                  if (data.status === 'done') {
+                    onComplete?.();
+                    return;
+                  }
+
+                  if (data.content) {
+                    onChunk(data.content);
+                  }
+                } catch (e) {
+                  console.error('[Agent] Failed to parse SSE data:', jsonStr, e);
+                }
+              }
+            }
+
+            return read(); // 继续读取
+          });
+        };
+
+        return read();
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') {
+          console.log('[Agent] Stream aborted by user');
+        } else {
+          onError?.(err.message || 'Stream request failed');
+        }
+      });
+
+    return controller;
   }
 }
 

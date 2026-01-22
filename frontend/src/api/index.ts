@@ -32,7 +32,10 @@ export type {
   DeleteIndexResult,
   CancelTaskResult,
   QueryResultItem,
-  QueryPDFResult
+  QueryPDFResult,
+  AgentRequest,
+  AgentResponse,
+  AgentStreamChunk
 } from './http-client';
 
 export { ServerManager } from './server-manager';
@@ -178,6 +181,28 @@ export const queryAPI = {
    */
   search: (query: string, indexId: string) =>
     deeppdfClient.queryPDF(query, indexId)
+};
+
+/**
+ * Agent 智能体 API
+ */
+export const agentAPI = {
+  /**
+   * Agent 对话（同步）
+   */
+  chat: (query: string, indexId: string) =>
+    deeppdfClient.agentChat(query, indexId),
+
+  /**
+   * Agent 对话（流式）
+   */
+  chatStream: (
+    query: string,
+    indexId: string,
+    onChunk: (chunk: string) => void,
+    onComplete?: () => void,
+    onError?: (error: string) => void
+  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError)
 };
 
 /**

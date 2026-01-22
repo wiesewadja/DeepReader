@@ -1,0 +1,119 @@
+/* DeepPDF Agent 模式切换组件样式 */
+
+.deeppdf-agent-mode-toggle {
+	margin-bottom: 16px;
+}
+
+.deeppdf-agent-mode-toggle-label {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.deeppdf-agent-mode-options {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.deeppdf-agent-mode-option {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	background: var(--background-secondary);
+}
+
+.deeppdf-agent-mode-option:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+.deeppdf-agent-mode-option-active {
+	background: var(--background-modifier-active);
+	border-color: var(--interactive-accent);
+}
+
+.deeppdf-agent-mode-radio {
+	width: 18px;
+	height: 18px;
+	border: 2px solid var(--text-muted);
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	transition: all 0.2s ease;
+}
+
+.deeppdf-agent-mode-option-active .deeppdf-agent-mode-radio {
+	border-color: var(--interactive-accent);
+}
+
+.deeppdf-agent-mode-radio svg {
+	color: var(--interactive-accent);
+}
+
+.deeppdf-agent-mode-content {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.deeppdf-agent-mode-label-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.deeppdf-agent-mode-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	width: 20px;
+	height: 20px;
+}
+
+.deeppdf-agent-mode-option-active .deeppdf-agent-mode-icon {
+	color: var(--interactive-accent);
+}
+
+.deeppdf-agent-mode-name {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.deeppdf-agent-mode-description {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	line-height: 1.4;
+}
+
+.deeppdf-agent-mode-option-active .deeppdf-agent-mode-description {
+	color: var(--text-normal);
+}
+
+/* 禁用状态 */
+.deeppdf-agent-mode-toggle-disabled {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+/* 响应式调整 */
+@media (max-width: 600px) {
+	.deeppdf-agent-mode-option {
+		padding: 10px;
+	}
+
+	.deeppdf-agent-mode-description {
+		font-size: var(--font-ui-smaller);
+	}
+}

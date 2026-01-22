@@ -42,6 +42,30 @@ export interface FollowUpQuestion {
 }
 
 /**
+ * Agent 工具调用数据结构
+ */
+export interface AgentToolCall {
+	/** 工具名称 */
+	name: string;
+	/** 工具参数 */
+	args: string;
+	/** 执行状态 */
+	status: 'pending' | 'success' | 'error';
+	/** 执行结果 */
+	result?: string;
+}
+
+/**
+ * Agent 思考过程数据结构
+ */
+export interface AgentThought {
+	/** 思考内容 */
+	content: string;
+	/** 步骤编号 */
+	step?: number;
+}
+
+/**
  * 解析追问问题列表
  * 从 AI 回答中提取 <<<QUESTIONS>>> 标记包裹的问题
  * 返回 { content: 清理后的内容, questions: 问题列表 }
@@ -80,6 +104,56 @@ export function parseFollowUpQuestions(content: string): {
 }
 
 /**
+ * 解析 Agent 内容
+ * 从 Agent 返回的内容中提取思考过程和工具调用
+ * 返回 { thoughts, toolCalls, cleanedContent }
+ */
+export function parseAgentContent(content: string): {
+	thoughts: AgentThought[];
+	toolCalls: AgentToolCall[];
+	cleanedContent: string;
+} {
+	const thoughts: AgentThought[] = [];
+	const toolCalls: AgentToolCall[] = [];
+	let cleanedContent = content;
+
+	// 提取 <thought>...</thought> 标签
+	const thoughtRegex = /<thought>([\s\S]*?)<\/thought>/gi;
+	let thoughtMatch;
+	let stepNumber = 1;
+
+	while ((thoughtMatch = thoughtRegex.exec(content)) !== null) {
+		thoughts.push({
+			content: thoughtMatch[1].trim(),
+			step: stepNumber++
+		});
+	}
+
+	// 移除 thought 标签和 invoke 标签
+	cleanedContent = cleanedContent
+		.replace(thoughtRegex, '')
+		.replace(/<invoke>/gi, '')
+		.replace(/<\/invoke>/gi, '')
+		.trim();
+
+	// 提取工具调用（简化版本，用于显示）
+	// 查找格式如: hybrid_search(query="...", top_k=5)
+	const toolCallRegex = /(\w+)\s*\(([^)]*)\)/g;
+	let toolMatch;
+	while ((toolMatch = toolCallRegex.exec(content)) !== null) {
+		const toolName = toolMatch[1];
+		const args = toolMatch[2];
+		toolCalls.push({
+			name: toolName,
+			args: args,
+			status: args.includes('ERROR') ? 'error' : 'success'
+		});
+	}
+
+	return { thoughts, toolCalls, cleanedContent };
+}
+
+/**
  * 消息数据结构
  */
 export interface MessageData {
@@ -97,7 +171,14 @@ export interface MessageData {
 	isStreaming?: boolean;
 	/** 可选：追问问题列表（仅 AI 消息） */
 	followUpQuestions?: FollowUpQuestion[];
+	/** 可选：是否为 Agent 消息 */
+	isAgentMessage?: boolean;
+	/** 可选：Agent 思考过程 */
+	agentThoughts?: AgentThought[];
+	/** 可选：Agent 工具调用列表 */
+	agentToolCalls?: AgentToolCall[];
 }
+
 
 /**
  * HTML 转义工具函数
@@ -659,10 +740,57 @@ export class AIMessage extends Message {
 		const container = this.renderContainer();
 		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
 
-
-
 		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
 
+		// Agent 消息标识
+		if (this.data.isAgentMessage) {
+			const badge = bubble.createEl('div', { cls: 'deeppdf-message-agent-badge' });
+			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>AI Agent`;
+		}
+
+		// Agent 思考过程
+		if (this.data.agentThoughts && this.data.agentThoughts.length > 0) {
+			const thoughtsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-thoughts' });
+
+			const thoughtsHeader = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-header' });
+			thoughtsHeader.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
+
+			this.data.agentThoughts.forEach(thought => {
+				const thoughtContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-content' });
+				thoughtContent.textContent = thought.content;
+			});
+		}
+
+		// Agent 工具调用
+		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
+			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tools' });
+
+			this.data.agentToolCalls.forEach(toolCall => {
+				const toolItem = toolsContainer.createEl('div', { cls: 'deeppdf-agent-tool-call' });
+
+				// 根据状态添加样式类
+				if (toolCall.status === 'success') {
+					toolItem.addClass('deeppdf-agent-tool-call-success');
+				} else if (toolCall.status === 'error') {
+					toolItem.addClass('deeppdf-agent-tool-call-error');
+				}
+
+				const toolHeader = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-header' });
+				toolHeader.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6"></path><path d="M5.64 5.64l4.24 4.24m6.72 6.72l4.24 4.24"></path></svg>调用 <span class="deeppdf-agent-tool-name">${toolCall.name}</span>`;
+
+				if (toolCall.args) {
+					const toolArgs = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-args' });
+					toolArgs.textContent = toolCall.args;
+				}
+
+				if (toolCall.result) {
+					const toolResult = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-result' });
+					toolResult.textContent = toolCall.result;
+				}
+			});
+		}
+
+		// 消息内容
 		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
 		// 使用 Markdown 渲染
