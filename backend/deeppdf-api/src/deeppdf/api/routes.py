@@ -800,6 +800,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     """
     from ..services.manager import load_index_metadata
     from ..agent import DeepPDFAgent
+    import os
 
     # 1. 加载索引元数据
     metadata_result = await load_index_metadata(index_id, str(settings.base_dir))
@@ -819,11 +820,44 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
         logger.warning(f"[API] 索引 {index_id} 没有 tree_structure，使用空结构")
         tree_structure = {}
 
-    # 3. 获取 LLM 配置 (从索引元数据)
+    # 3. 获取 LLM 配置 (从索引元数据或环境变量)
     llm_provider = metadata.get("llm_provider", "deepseek")
     llm_model = metadata.get("model", None)
     api_key = metadata.get("api_key", None)
     base_url = metadata.get("base_url", None)
+
+    # 如果元数据中没有配置，使用默认值或环境变量
+    if llm_provider == "deepseek":
+        # DeepSeek: 优先使用元数据中的 API key，否则使用环境变量
+        api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
+        # DeepSeek 的 model 默认值
+        llm_model = llm_model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        base_url = base_url or "https://api.deepseek.com"
+    elif llm_provider == "openai":
+        # OpenAI: 优先使用元数据中的 API key，否则使用环境变量
+        api_key = api_key or os.getenv("OPENAI_API_KEY")
+        llm_model = llm_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        base_url = base_url or None
+    else:
+        # 其他 provider，必须有明确的 API key
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"无法获取 {llm_provider} 的 API key，请在索引配置中设置"
+            )
+
+    # 验证必需的配置
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"未配置 API key。请设置 {llm_provider.upper()}_API_KEY 环境变量或在索引配置中提供"
+        )
+
+    if not llm_model:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"未配置模型名称。请设置 {llm_provider.upper()}_MODEL 环境变量"
+        )
 
     # 4. 创建 Agent 实例
     logger.info(f"[API] 创建 Agent: provider={llm_provider}, model={llm_model}")
