@@ -1072,8 +1072,9 @@ async def agent_chat_stream(req: AgentRequest, http_request: Request):
     if not is_allowed:
         logger.warning(f"[速率限制] 客户端 {client_ip} 超过 Agent 流式调用限制")
         # 对于流式请求，返回 SSE 格式的错误
+        reset_seconds = rate_info['reset']
         async def rate_limit_error():
-            yield f"data: {json.dumps({'status': 'error', 'error': f'Agent 调用过于频繁，请在 {rate_info[\"reset\"]} 秒后重试。'})}\n\n"
+            yield f"data: {json.dumps({'status': 'error', 'error': f'Agent 调用过于频繁，请在 {reset_seconds} 秒后重试。'})}\n\n"
         return StreamingResponse(rate_limit_error(), media_type="text/event-stream")
 
     return StreamingResponse(
