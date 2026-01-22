@@ -14,6 +14,7 @@ from .prompts import (
     build_system_prompt,
     build_messages,
 )
+from .core import DeepPDFAgent
 
 __all__ = [
     "Tool",
@@ -30,4 +31,5 @@ __all__ = [
     "ToolCallData",
     "build_system_prompt",
     "build_messages",
+    "DeepPDFAgent",
 ]
