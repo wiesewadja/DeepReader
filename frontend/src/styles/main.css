@@ -19,6 +19,7 @@
 @import url('../components/index-manager/index-manager.css');
 @import url('../components/follow-up-questions/follow-up-questions.css');
 @import url('../components/agent-mode-toggle/agent-mode-toggle.css');
+@import url('../components/chat-settings-modal/chat-settings-modal.css');
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {
