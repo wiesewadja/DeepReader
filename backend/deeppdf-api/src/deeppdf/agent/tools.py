@@ -4,8 +4,11 @@ Agent 工具定义
 
 为 DeepPDFAgent 提供可调用的工具集合
 """
+import asyncio
 from typing import Protocol, Dict, Any, List, Optional, TypedDict
 from pathlib import Path
+
+from deeppdf.services.querier import query_pdf
 
 
 class Tool(Protocol):
@@ -164,7 +167,7 @@ class HybridSearchTool:
         self.index_id = index_id
         self.storage_dir = storage_dir
 
-    def __call__(self, query: str, top_k: int = 5, **kwargs: Any) -> str:
+    def __call__(self, query: str, top_k: int = 5) -> str:
         """
         执行混合检索
 
@@ -175,10 +178,15 @@ class HybridSearchTool:
         Returns:
             检索结果的可读文本
         """
-        try:
-            import asyncio
-            from deeppdf.services.querier import query_pdf
+        # 验证查询参数
+        if not query or not isinstance(query, str):
+            return "错误: 查询参数必须是非空字符串"
 
+        # 验证 top_k 参数
+        if top_k < 1 or top_k > 50:
+            return "错误: top_k 必须在 1-50 之间"
+
+        try:
             # 异步调用 query_pdf
             result = asyncio.run(query_pdf(
                 query=query,
@@ -199,17 +207,23 @@ class HybridSearchTool:
             lines = [f"# 检索结果 (共 {len(results)} 条)\n"]
 
             for i, item in enumerate(results, 1):
-                text = item.get("text", "")[:500]
+                original_text = item.get("text", "")
+                text = original_text[:500]
+                if len(original_text) > 500:
+                    text += " [...]"
+
                 metadata = item.get("metadata", {})
                 section = metadata.get("section", "未知章节")
                 score = metadata.get("score", 0)
 
                 lines.append(f"## 结果 {i}: {section}")
                 lines.append(f"相关性: {score:.2f}")
-                lines.append(f"{text}...")
+                lines.append(f"{text}")
                 lines.append("")
 
             return "\n".join(lines)
 
-        except Exception as e:
+        except (ValueError, IOError, OSError, RuntimeError) as e:
             return f"错误: 检索失败 - {str(e)}"
+        except Exception:
+            return "错误: 检索时发生未知错误"

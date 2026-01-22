@@ -256,7 +256,7 @@ def test_hybrid_search_with_results(temp_index_dir, monkeypatch):
         }
 
     # Mock asyncio.run 和 query_pdf
-    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
@@ -277,7 +277,7 @@ def test_hybrid_search_no_results(temp_index_dir, monkeypatch):
             "search_method": "hybrid_title_bm25_vector"
         }
 
-    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
@@ -296,7 +296,7 @@ def test_hybrid_search_with_error(temp_index_dir, monkeypatch):
             "error": "索引不存在"
         }
 
-    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
         tool = HybridSearchTool(
             index_id="test_idx",
             storage_dir=temp_index_dir
