@@ -3,5 +3,13 @@
 Agent 模块 - DeepPDF 智能阅读助手
 """
 from .tools import Tool, InspectTocTool, ReadPageTool, HybridSearchTool
+from .executor import ToolExecutor, create_tool_executor
 
-__all__ = ["Tool", "InspectTocTool", "ReadPageTool", "HybridSearchTool"]
+__all__ = [
+    "Tool",
+    "InspectTocTool",
+    "ReadPageTool",
+    "HybridSearchTool",
+    "ToolExecutor",
+    "create_tool_executor",
+]
