@@ -74,3 +74,66 @@ class InspectTocTool:
             lines.extend(self._format_node(child, level + 1))
 
         return lines
+
+
+class ReadPageTool:
+    """按页读取工具 - 从指定页码读取 PDF 内容"""
+
+    name: str = "read_page"
+    description: str = (
+        "读取 PDF 指定页码的完整内容，返回带段落标记的原始文本。"
+        "适用于需要精确引用或深入分析特定页面的场景。"
+        "参数: page_num (int, 必需) - 要读取的页码（从1开始）"
+    )
+
+    def __init__(self, pageindex_lib_path: str, index_id: str, storage_dir: str):
+        """
+        初始化工具
+
+        Args:
+            pageindex_lib_path: PageIndex 库的路径
+            index_id: 索引 ID
+            storage_dir: 存储目录
+        """
+        self.pageindex_lib_path = pageindex_lib_path
+        self.index_id = index_id
+        self.storage_dir = storage_dir
+        self._pi = None  # 延迟加载
+
+    def _load_page_index(self):
+        """延迟加载 PageIndex 实例"""
+        if self._pi is None:
+            import sys
+            sys.path.insert(0, self.pageindex_lib_path)
+
+            from pageindex import PageIndex
+
+            md_path = f"{self.storage_dir}/indexes/{self.index_id}.md"
+            self._pi = PageIndex.from_file(md_path)
+
+        return self._pi
+
+    def __call__(self, page_num: int, **kwargs) -> str:
+        """
+        读取指定页码的内容
+
+        Args:
+            page_num: 页码（从 1 开始）
+
+        Returns:
+            页面文本内容，带段落标记
+        """
+        try:
+            pi = self._load_page_index()
+
+            # 验证页码范围
+            if page_num < 1 or page_num > pi.page_count:
+                return f"错误: 页码 {page_num} 超出范围（文档共 {pi.page_count} 页）"
+
+            # 获取页面文本
+            text = pi.get_text_with_tags(page_num)
+
+            return f"# 第 {page_num} 页内容\n\n{text}"
+
+        except Exception as e:
+            return f"错误: 读取页面失败 - {str(e)}"
