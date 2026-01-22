@@ -425,4 +425,142 @@ __all__ = [
     "ToolCallData",
     "build_system_prompt",
     "build_messages",
+    "validate_citation_format",
+    "parse_thought_content",
 ]
+
+
+# ========== 输出验证 ==========
+
+
+class OutputValidator:
+    """LLM 输出验证器"""
+
+    # 引用格式正则: [[章节名#^page-N]] 或 [[章节名#^page-N, 第X段]]
+    CITATION_PATTERN = re.compile(r'\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?\]\]')
+
+    # 思考标签正则
+    THOUGHT_OPEN_PATTERN = re.compile(r'<thought>', re.IGNORECASE)
+    THOUGHT_CLOSE_PATTERN = re.compile(r'</thought>', re.IGNORECASE)
+
+    @classmethod
+    def validate_citation_format(cls, text: str) -> List[Dict[str, Any]]:
+        """
+        验证并提取引用格式
+
+        Args:
+            text: LLM 输出文本
+
+        Returns:
+            引用列表，每个引用包含:
+            - section: 章节名
+            - page: 页码
+            - segment: 段号（可选）
+            - valid: 格式是否正确
+        """
+        citations = []
+
+        for match in cls.CITATION_PATTERN.finditer(text):
+            citations.append({
+                "section": match.group(1),
+                "page": int(match.group(2)),
+                "segment": int(match.group(3)) if match.group(3) else None,
+                "valid": True,
+                "raw": match.group(0)
+            })
+
+        return citations
+
+    @classmethod
+    def has_thought_tags(cls, text: str) -> bool:
+        """
+        检查文本是否包含思考标签
+
+        Args:
+            text: LLM 输出文本
+
+        Returns:
+            是否包含思考标签
+        """
+        return bool(cls.THOUGHT_OPEN_PATTERN.search(text))
+
+    @classmethod
+    def extract_thought_content(cls, text: str) -> List[str]:
+        """
+        提取思考内容
+
+        Args:
+            text: LLM 输出文本
+
+        Returns:
+            思考内容列表
+        """
+        thoughts = []
+
+        # 移除闭合标签之间的内容
+        pattern = re.compile(r'<thought>(.*?)</thought>', re.DOTALL | re.IGNORECASE)
+        for match in pattern.finditer(text):
+            thought_content = match.group(1).strip()
+            if thought_content:
+                thoughts.append(thought_content)
+
+        return thoughts
+
+    @classmethod
+    def validate_tool_call_format(cls, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        验证工具调用格式
+
+        Args:
+            tool_calls: 工具调用列表
+
+        Returns:
+            验证结果列表，每个结果包含 valid 和 error 字段
+        """
+        results = []
+        expected_tools = {"inspect_toc", "read_page", "hybrid_search"}
+
+        for tc in tool_calls:
+            result = {"valid": True, "errors": []}
+
+            # 检查必需字段
+            if "id" not in tc:
+                result["valid"] = False
+                result["errors"].append("缺少 id 字段")
+
+            if "type" not in tc:
+                result["valid"] = False
+                result["errors"].append("缺少 type 字段")
+
+            if "function" not in tc:
+                result["valid"] = False
+                result["errors"].append("缺少 function 字段")
+            else:
+                func = tc.get("function", {})
+                if "name" not in func:
+                    result["valid"] = False
+                    result["errors"].append("function 缺少 name 字段")
+                elif func["name"] not in expected_tools:
+                    result["valid"] = False
+                    result["errors"].append(f"未知工具: {func['name']}")
+
+                if "arguments" not in func:
+                    result["valid"] = False
+                    result["errors"].append("function 缺少 arguments 字段")
+
+            results.append(result)
+
+        return results
+
+
+# ========== 便捷函数 ==========
+
+
+def validate_citation_format(text: str) -> List[Dict[str, Any]]:
+    """验证引用格式的便捷函数"""
+    return OutputValidator.validate_citation_format(text)
+
+
+def parse_thought_content(text: str) -> List[str]:
+    """解析思考内容的便捷函数"""
+    return OutputValidator.extract_thought_content(text)

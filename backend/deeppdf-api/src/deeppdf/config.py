@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = 10
     llm_concurrent_limit: int = 3
 
+    # Agent 配置
+    agent_max_iterations: int = 10
+    agent_temperature: float = 0.7
+    agent_top_p: float = 0.95
+
     # Pydantic V2 配置
     model_config = ConfigDict(
         env_file=".env",

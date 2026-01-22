@@ -15,6 +15,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletio
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
 from .prompts import build_system_prompt, ToolCallData
+from ..config import settings
 
 
 logger = logging.getLogger(__name__)
@@ -61,11 +62,6 @@ class DeepPDFAgent:
     - 历史对话管理
     """
 
-    # 默认配置
-    DEFAULT_MAX_ITERATIONS = 10
-    DEFAULT_TEMPERATURE = 0.7
-    DEFAULT_TOP_P = 0.95
-
     # Provider 到 API URL 的映射
     PROVIDER_BASE_URLS = {
         "deepseek": "https://api.deepseek.com",
@@ -84,9 +80,9 @@ class DeepPDFAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         pageindex_lib_path: Optional[str] = None,
-        temperature: float = DEFAULT_TEMPERATURE,
-        top_p: float = DEFAULT_TOP_P,
-        max_iterations: int = DEFAULT_MAX_ITERATIONS,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        max_iterations: Optional[int] = None,
     ):
         """
         初始化 DeepPDFAgent
@@ -109,9 +105,10 @@ class DeepPDFAgent:
         self.tree_structure = tree_structure
         self.llm_provider = llm_provider
         self.llm_model = llm_model or self._get_default_model(llm_provider)
-        self.temperature = temperature
-        self.top_p = top_p
-        self.max_iterations = max_iterations
+        # 使用 settings 中的默认值（如果未提供）
+        self.temperature = temperature if temperature is not None else settings.agent_temperature
+        self.top_p = top_p if top_p is not None else settings.agent_top_p
+        self.max_iterations = max_iterations if max_iterations is not None else settings.agent_max_iterations
 
         # 初始化 LLM 客户端
         self.client = self._init_llm(api_key, base_url)
