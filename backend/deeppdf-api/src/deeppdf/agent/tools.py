@@ -5,6 +5,7 @@ Agent 工具定义
 为 DeepPDFAgent 提供可调用的工具集合
 """
 from typing import Protocol, Dict, Any, List, Optional, TypedDict
+from pathlib import Path
 
 
 class Tool(Protocol):
@@ -106,19 +107,20 @@ class ReadPageTool:
             import sys
             sys.path.insert(0, self.pageindex_lib_path)
 
-            from pageindex import PageIndex
+            from pageindex import PageIndex  # type: ignore
 
-            md_path = f"{self.storage_dir}/indexes/{self.index_id}.md"
-            self._pi = PageIndex.from_file(md_path)
+            md_path = Path(self.storage_dir) / "indexes" / f"{self.index_id}.md"
+            self._pi = PageIndex.from_file(str(md_path))
 
         return self._pi
 
-    def __call__(self, page_num: int, **kwargs) -> str:
+    def __call__(self, page_num: int, **kwargs: Any) -> str:
         """
         读取指定页码的内容
 
         Args:
             page_num: 页码（从 1 开始）
+            **kwargs: 其他参数（兼容性保留）
 
         Returns:
             页面文本内容，带段落标记
@@ -135,5 +137,7 @@ class ReadPageTool:
 
             return f"# 第 {page_num} 页内容\n\n{text}"
 
-        except Exception as e:
+        except (FileNotFoundError, ValueError, IOError, OSError) as e:
             return f"错误: 读取页面失败 - {str(e)}"
+        except Exception:
+            return "错误: 读取页面时发生未知错误"

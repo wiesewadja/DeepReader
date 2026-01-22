@@ -141,8 +141,65 @@ def test_read_page_with_error():
     )
 
     # Mock _load_page_index 方法抛出异常
-    with patch.object(tool, '_load_page_index', side_effect=Exception("文件不存在")):
+    with patch.object(tool, '_load_page_index', side_effect=FileNotFoundError("文件不存在")):
         result = tool(page_num=1)
 
         assert "错误" in result
         assert "读取页面失败" in result
+
+
+def test_read_page_lazy_loading():
+    """测试: 验证延迟加载机制 - PageIndex 只加载一次"""
+    tool = ReadPageTool(
+        pageindex_lib_path="/fake/path",
+        index_id="test_idx",
+        storage_dir="/fake/storage"
+    )
+
+    # 验证初始状态：_pi 为 None
+    assert tool._pi is None, "初始化后 _pi 应该为 None"
+
+    # Mock PageIndex 实例
+    mock_pi = Mock()
+    mock_pi.page_count = 100
+    mock_pi.get_text_with_tags.return_value = "页面内容"
+
+    # 直接设置 _pi，模拟延迟加载完成后的状态
+    tool._pi = mock_pi
+
+    # 调用工具 - 应该使用已有的 _pi，不会重新加载
+    result1 = tool(page_num=1)
+    assert tool._pi is mock_pi, "_pi 应该保持为 mock_pi"
+    assert "第 1 页内容" in result1
+    mock_pi.get_text_with_tags.assert_called_once_with(1)
+
+    # 再次调用 - 仍然使用同一个 _pi 实例
+    result2 = tool(page_num=2)
+    assert tool._pi is mock_pi, "_pi 应该仍然是同一个实例"
+
+    # 验证 get_text_with_tags 被调用了两次（page_num=1 和 page_num=2）
+    assert mock_pi.get_text_with_tags.call_count == 2
+
+
+def test_read_page_with_specific_exceptions():
+    """测试: 具体的异常类型处理"""
+    tool = ReadPageTool(
+        pageindex_lib_path="/fake/path",
+        index_id="test_idx",
+        storage_dir="/fake/storage"
+    )
+
+    # 测试 FileNotFoundError
+    with patch.object(tool, '_load_page_index', side_effect=FileNotFoundError("未找到文件")):
+        result = tool(page_num=1)
+        assert "读取页面失败" in result
+
+    # 测试 ValueError
+    with patch.object(tool, '_load_page_index', side_effect=ValueError("无效值")):
+        result = tool(page_num=1)
+        assert "读取页面失败" in result
+
+    # 测试未知异常
+    with patch.object(tool, '_load_page_index', side_effect=RuntimeError("未知错误")):
+        result = tool(page_num=1)
+        assert "发生未知错误" in result
