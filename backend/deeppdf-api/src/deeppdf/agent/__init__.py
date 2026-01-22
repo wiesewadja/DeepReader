@@ -2,6 +2,6 @@
 """
 Agent 模块 - DeepPDF 智能阅读助手
 """
-from .tools import Tool, InspectTocTool, ReadPageTool
+from .tools import Tool, InspectTocTool, ReadPageTool, HybridSearchTool
 
-__all__ = ["Tool", "InspectTocTool", "ReadPageTool"]
+__all__ = ["Tool", "InspectTocTool", "ReadPageTool", "HybridSearchTool"]

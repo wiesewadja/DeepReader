@@ -141,3 +141,75 @@ class ReadPageTool:
             return f"错误: 读取页面失败 - {str(e)}"
         except Exception:
             return "错误: 读取页面时发生未知错误"
+
+
+class HybridSearchTool:
+    """混合检索工具 - 结合标题匹配、BM25 和向量检索"""
+
+    name: str = "hybrid_search"
+    description: str = (
+        "快速检索与查询相关的文档片段。"
+        "适用于简单事实查询（如'某事发生在哪年'）。"
+        "参数: query (str, 必需) - 搜索关键词; top_k (int, 可选) - 返回结果数，默认5"
+    )
+
+    def __init__(self, index_id: str, storage_dir: str):
+        """
+        初始化工具
+
+        Args:
+            index_id: 索引 ID
+            storage_dir: 存储目录
+        """
+        self.index_id = index_id
+        self.storage_dir = storage_dir
+
+    def __call__(self, query: str, top_k: int = 5, **kwargs: Any) -> str:
+        """
+        执行混合检索
+
+        Args:
+            query: 搜索查询
+            top_k: 返回结果数量
+
+        Returns:
+            检索结果的可读文本
+        """
+        try:
+            import asyncio
+            from deeppdf.services.querier import query_pdf
+
+            # 异步调用 query_pdf
+            result = asyncio.run(query_pdf(
+                query=query,
+                index_id=self.index_id,
+                storage_dir=self.storage_dir,
+                max_results=top_k
+            ))
+
+            if result.get("status") == "error":
+                return f"错误: {result.get('error', '检索失败')}"
+
+            results = result.get("results", [])
+
+            if not results:
+                return f"未找到与 '{query}' 相关的内容"
+
+            # 格式化结果
+            lines = [f"# 检索结果 (共 {len(results)} 条)\n"]
+
+            for i, item in enumerate(results, 1):
+                text = item.get("text", "")[:500]
+                metadata = item.get("metadata", {})
+                section = metadata.get("section", "未知章节")
+                score = metadata.get("score", 0)
+
+                lines.append(f"## 结果 {i}: {section}")
+                lines.append(f"相关性: {score:.2f}")
+                lines.append(f"{text}...")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"错误: 检索失败 - {str(e)}"

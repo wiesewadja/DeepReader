@@ -1,6 +1,8 @@
 # tests/test_agent_tools.py
 """工具模块单元测试"""
 import pytest
+import json
+from pathlib import Path
 from unittest.mock import Mock, patch
 from deeppdf.agent.tools import InspectTocTool, ReadPageTool
 
@@ -203,3 +205,109 @@ def test_read_page_with_specific_exceptions():
     with patch.object(tool, '_load_page_index', side_effect=RuntimeError("未知错误")):
         result = tool(page_num=1)
         assert "发生未知错误" in result
+
+
+@pytest.fixture
+def temp_index_dir(tmp_path):
+    """创建临时索引目录"""
+    index_dir = tmp_path / "indexes"
+    index_dir.mkdir(parents=True)
+
+    # 创建模拟的索引元数据
+    metadata = {
+        "id": "test_idx",
+        "pdf_name": "test.pdf",
+        "node_count": 10,
+        "tree_structure": {
+            "structure": [
+                {
+                    "title": "第一章",
+                    "node_id": "node_1",
+                    "start_index": 1,
+                    "end_index": 10,
+                    "nodes": []
+                }
+            ]
+        }
+    }
+
+    with open(index_dir / "test_idx.json", "w") as f:
+        json.dump(metadata, f)
+
+    return str(tmp_path)
+
+
+def test_hybrid_search_with_results(temp_index_dir, monkeypatch):
+    """测试: 有结果的检索"""
+    # Mock query_pdf 函数
+    async def mock_query_pdf(*args, **kwargs):
+        return {
+            "status": "success",
+            "results": [
+                {
+                    "text": "这是搜索结果的内容",
+                    "metadata": {
+                        "section": "第一章",
+                        "score": 0.95
+                    }
+                }
+            ],
+            "search_method": "hybrid_title_bm25_vector"
+        }
+
+    # Mock asyncio.run 和 query_pdf
+    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+        from deeppdf.agent.tools import HybridSearchTool
+
+        tool = HybridSearchTool(
+            index_id="test_idx",
+            storage_dir=temp_index_dir
+        )
+        result = tool(query="测试查询", top_k=5)
+
+        assert "检索结果" in result
+        assert "第一章" in result
+        assert "0.95" in result
+
+
+def test_hybrid_search_no_results(temp_index_dir, monkeypatch):
+    """测试: 无结果的检索"""
+    async def mock_query_pdf(*args, **kwargs):
+        return {
+            "status": "success",
+            "results": [],
+            "search_method": "hybrid_title_bm25_vector"
+        }
+
+    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+        from deeppdf.agent.tools import HybridSearchTool
+
+        tool = HybridSearchTool(
+            index_id="test_idx",
+            storage_dir=temp_index_dir
+        )
+        result = tool(query="不存在的查询", top_k=5)
+
+        assert "未找到" in result
+        assert "不存在的查询" in result
+
+
+def test_hybrid_search_with_error(temp_index_dir, monkeypatch):
+    """测试: 检索服务错误"""
+    async def mock_query_pdf(*args, **kwargs):
+        return {
+            "status": "error",
+            "error": "索引不存在"
+        }
+
+    with patch('deeppdf.services.querier.query_pdf', mock_query_pdf):
+        from deeppdf.agent.tools import HybridSearchTool
+
+        tool = HybridSearchTool(
+            index_id="test_idx",
+            storage_dir=temp_index_dir
+        )
+        result = tool(query="测试查询", top_k=5)
+
+        assert "错误" in result
+        assert "索引不存在" in result
