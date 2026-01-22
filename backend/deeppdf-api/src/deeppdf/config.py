@@ -5,6 +5,7 @@ DeepPDF 配置管理
 import os
 from pathlib import Path
 from typing import Optional
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -35,10 +36,12 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = 10
     llm_concurrent_limit: int = 3
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # 忽略额外的环境变量
+    # Pydantic V2 配置
+    model_config = ConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra="ignore"  # 忽略额外的环境变量
+    )
 
 
 # 全局配置实例

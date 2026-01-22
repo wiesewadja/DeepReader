@@ -876,7 +876,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
 
 
 @router.post("/chat/agent", response_model=AgentResponse)
-async def agent_chat(req: AgentRequest):
+async def agent_chat(req: AgentRequest, http_request: Request):
     """
     Agent 智能对话 - 同步端点
 
@@ -886,8 +886,30 @@ async def agent_chat(req: AgentRequest):
     - 混合搜索 (hybrid_search)
 
     请求超时: 5 分钟
+    速率限制: 每 60 秒最多 10 个请求
     """
     logger.info(f"[API] 收到 Agent 请求: query='{req.query}', index_id='{req.index_id}'")
+
+    # 速率限制检查（Agent 调用成本高，使用更严格的限制）
+    client_ip = _get_client_ip(http_request)
+    is_allowed, rate_info = _rate_limiter.check_rate_limit(
+        client_ip,
+        max_requests=10,  # 每 60 秒最多 10 个 Agent 请求
+        window_seconds=60  # 60 秒窗口
+    )
+
+    if not is_allowed:
+        logger.warning(f"[速率限制] 客户端 {client_ip} 超过 Agent 调用限制")
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": f"Agent 调用过于频繁，请在 {rate_info['reset']} 秒后重试。",
+                "limit": rate_info['limit'],
+                "window": rate_info['window'],
+                "reset_after": rate_info['reset']
+            }
+        )
 
     try:
         # 1. 加载 Agent
@@ -1028,15 +1050,31 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
 
 
 @router.post("/chat/agent/stream")
-async def agent_chat_stream(req: AgentRequest):
+async def agent_chat_stream(req: AgentRequest, http_request: Request):
     """
     Agent 智能对话 - 流式端点 (SSE)
 
     使用 POST 方法传递请求参数，返回 Server-Sent Events 格式的流式响应
 
     请求超时: 5 分钟
+    速率限制: 每 60 秒最多 10 个请求
     """
     logger.info(f"[API] 收到 Agent 流式请求: query='{req.query}', index_id='{req.index_id}'")
+
+    # 速率限制检查（Agent 调用成本高，使用更严格的限制）
+    client_ip = _get_client_ip(http_request)
+    is_allowed, rate_info = _rate_limiter.check_rate_limit(
+        client_ip,
+        max_requests=10,  # 每 60 秒最多 10 个 Agent 请求
+        window_seconds=60  # 60 秒窗口
+    )
+
+    if not is_allowed:
+        logger.warning(f"[速率限制] 客户端 {client_ip} 超过 Agent 流式调用限制")
+        # 对于流式请求，返回 SSE 格式的错误
+        async def rate_limit_error():
+            yield f"data: {json.dumps({'status': 'error', 'error': f'Agent 调用过于频繁，请在 {rate_info[\"reset\"]} 秒后重试。'})}\n\n"
+        return StreamingResponse(rate_limit_error(), media_type="text/event-stream")
 
     return StreamingResponse(
         _agent_stream_generator(req),

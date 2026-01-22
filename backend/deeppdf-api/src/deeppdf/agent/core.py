@@ -20,6 +20,13 @@ from .prompts import build_system_prompt, ToolCallData
 logger = logging.getLogger(__name__)
 
 
+# ========== 类型定义 ==========
+
+
+# LLM 客户端类型别名（当前所有 Provider 都使用 OpenAI 兼容客户端）
+LLMClient = OpenAI
+
+
 # ========== 异常定义 ==========
 
 
@@ -136,7 +143,7 @@ class DeepPDFAgent:
         }
         return default_models.get(provider, "deepseek-chat")
 
-    def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> OpenAI:
+    def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> LLMClient:
         """
         初始化 LLM 客户端
 
