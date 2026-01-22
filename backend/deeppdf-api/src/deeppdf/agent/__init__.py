@@ -4,6 +4,15 @@ Agent 模块 - DeepPDF 智能阅读助手
 """
 from .tools import Tool, InspectTocTool, ReadPageTool, HybridSearchTool
 from .executor import ToolExecutor, create_tool_executor
+from .prompts import (
+    SYSTEM_PROMPT_TEMPLATE,
+    FEW_SHOT_EXAMPLES,
+    DECISION_RULES,
+    PromptBuilder,
+    RouteDecision,
+    build_system_prompt,
+    build_messages,
+)
 
 __all__ = [
     "Tool",
@@ -12,4 +21,11 @@ __all__ = [
     "HybridSearchTool",
     "ToolExecutor",
     "create_tool_executor",
+    "SYSTEM_PROMPT_TEMPLATE",
+    "FEW_SHOT_EXAMPLES",
+    "DECISION_RULES",
+    "PromptBuilder",
+    "RouteDecision",
+    "build_system_prompt",
+    "build_messages",
 ]
