@@ -12,6 +12,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from openai import OpenAI, Stream
 from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
 
+from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
 from .prompts import build_system_prompt, ToolCallData
 
@@ -56,7 +57,6 @@ class DeepPDFAgent:
         temperature: float = DEFAULT_TEMPERATURE,
         top_p: float = DEFAULT_TOP_P,
         max_iterations: int = DEFAULT_MAX_ITERATIONS,
-        enable_few_shot: bool = True,
     ):
         """
         初始化 DeepPDFAgent
@@ -73,7 +73,6 @@ class DeepPDFAgent:
             temperature: 采样温度
             top_p: nucleus 采样参数
             max_iterations: 最大工具调用迭代次数
-            enable_few_shot: 是否启用 Few-Shot 示例
         """
         self.index_id = index_id
         self.storage_dir = storage_dir
@@ -166,7 +165,7 @@ class DeepPDFAgent:
 
         return schemas
 
-    def _get_tool_parameters(self, name: str, tool: Any) -> Dict[str, Any]:
+    def _get_tool_parameters(self, name: str, tool: Tool) -> Dict[str, Any]:
         """
         获取工具参数的 JSON Schema
 
@@ -322,12 +321,25 @@ class DeepPDFAgent:
 
             # 检查是否有工具调用
             tool_calls = self._extract_tool_calls(response)
+            assistant_message = response.choices[0].message
 
             if not tool_calls:
                 # 没有工具调用，返回最终回答
-                answer = response.choices[0].message.content or ""
+                answer = assistant_message.content or ""
+                # 记录最终回答到历史
+                self.history.append({
+                    "role": "assistant",
+                    "content": answer,
+                })
                 logger.info(f"[Agent完成] 无工具调用，返回最终回答")
                 return answer
+
+            # 记录 assistant 消息（包含工具调用）到历史
+            self.history.append({
+                "role": "assistant",
+                "content": assistant_message.content or "",
+                "tool_calls": [self._format_tool_call(tc) for tc in tool_calls],
+            })
 
             # 执行工具调用
             for tool_call in tool_calls:
@@ -343,6 +355,13 @@ class DeepPDFAgent:
 
                 # 执行工具
                 output = self.executor.execute(tool_name, **args)
+
+                # 记录工具结果到历史
+                self.history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": output,
+                })
 
                 tool_results.append({
                     "tool_call": self._format_tool_call(tool_call),
@@ -432,6 +451,14 @@ class DeepPDFAgent:
 
             # 检查是否有工具调用
             if current_tool_calls:
+                # 记录 assistant 消息（包含工具调用）到历史
+                content_text = "".join(content_buffer) if content_buffer else ""
+                self.history.append({
+                    "role": "assistant",
+                    "content": content_text,
+                    "tool_calls": list(current_tool_calls.values()),
+                })
+
                 # 执行工具调用
                 for tool_call_data in current_tool_calls.values():
                     tool_name = tool_call_data["function"]["name"]
@@ -444,12 +471,24 @@ class DeepPDFAgent:
 
                     output = self.executor.execute(tool_name, **args)
 
+                    # 记录工具结果到历史
+                    self.history.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_data["id"],
+                        "content": output,
+                    })
+
                     tool_results.append({
                         "tool_call": tool_call_data,
                         "output": output,
                     })
             else:
                 # 没有工具调用，完成
+                content_text = "".join(content_buffer) if content_buffer else ""
+                self.history.append({
+                    "role": "assistant",
+                    "content": content_text,
+                })
                 logger.info(f"[Agent流式完成] 无工具调用")
                 return
 

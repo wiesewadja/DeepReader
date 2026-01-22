@@ -370,6 +370,88 @@ def test_get_history(agent):
     assert history is not agent.history
 
 
+def test_run_tracks_history_no_tools(agent):
+    """测试 run() 跟踪历史记录（无工具调用）"""
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "简单回答"
+    mock_response.choices[0].message.tool_calls = None
+
+    agent.client.chat.completions.create = MagicMock(return_value=mock_response)
+
+    result = agent.run("你好")
+
+    assert result == "简单回答"
+    assert len(agent.history) == 1
+    assert agent.history[0]["role"] == "assistant"
+    assert agent.history[0]["content"] == "简单回答"
+
+
+def test_run_tracks_history_with_tools(agent):
+    """测试 run() 跟踪历史记录（带工具调用）"""
+    # 第一次调用: 返回工具调用
+    first_response = MagicMock()
+    first_response.choices = [MagicMock()]
+    first_response.choices[0].message.content = None
+    tool_call = MagicMock()
+    tool_call.id = "call_123"
+    tool_call.type = "function"
+    tool_call.function.name = "inspect_toc"
+    tool_call.function.arguments = "{}"
+    first_response.choices[0].message.tool_calls = [tool_call]
+
+    # 第二次调用: 返回最终回答
+    second_response = MagicMock()
+    second_response.choices = [MagicMock()]
+    second_response.choices[0].message.content = "最终回答"
+    second_response.choices[0].message.tool_calls = None
+
+    agent.client.chat.completions.create = MagicMock(
+        side_effect=[first_response, second_response]
+    )
+
+    result = agent.run("查看目录")
+
+    assert result == "最终回答"
+    # 历史应该包含:
+    # 1. assistant 消息（含工具调用）
+    # 2. tool 消息
+    # 3. assistant 最终回答
+    assert len(agent.history) == 3
+    assert agent.history[0]["role"] == "assistant"
+    assert "tool_calls" in agent.history[0]
+    assert agent.history[1]["role"] == "tool"
+    assert agent.history[1]["tool_call_id"] == "call_123"
+    assert agent.history[2]["role"] == "assistant"
+    assert agent.history[2]["content"] == "最终回答"
+
+
+def test_run_stream_tracks_history(agent):
+    """测试 run_stream() 跟踪历史记录"""
+    # 模拟流式响应（无工具调用）
+    mock_chunk1 = MagicMock()
+    mock_chunk1.choices = [MagicMock()]
+    mock_chunk1.choices[0].delta.content = "你好"
+    mock_chunk1.choices[0].delta.tool_calls = None
+
+    mock_chunk2 = MagicMock()
+    mock_chunk2.choices = [MagicMock()]
+    mock_chunk2.choices[0].delta.content = None
+    mock_chunk2.choices[0].delta.tool_calls = None
+
+    mock_stream = MagicMock()
+    mock_stream.__iter__ = MagicMock(return_value=iter([mock_chunk1, mock_chunk2]))
+
+    agent.client.chat.completions.create = MagicMock(return_value=mock_stream)
+
+    chunks = list(agent.run_stream("测试"))
+
+    assert chunks == ["你好"]
+    assert len(agent.history) == 1
+    assert agent.history[0]["role"] == "assistant"
+    assert agent.history[0]["content"] == "你好"
+
+
 # ========== 测试工具调用格式化 ==========
 
 def test_format_tool_call(agent):
