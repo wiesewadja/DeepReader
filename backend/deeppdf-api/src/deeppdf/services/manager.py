@@ -129,3 +129,45 @@ async def update_index_metadata(index_id: str, storage_dir: str, updates: Dict[s
     """异步更新索引元数据"""
     result = await asyncio.to_thread(_update_index_metadata_sync, index_id, storage_dir, updates)
     return result
+
+
+def _load_index_metadata_sync(index_id: str, storage_dir: str) -> Dict[str, Any]:
+    """
+    同步加载索引元数据
+
+    Args:
+        index_id: 索引 ID
+        storage_dir: 存储目录
+
+    Returns:
+        索引元数据字典
+    """
+    try:
+        storage_dir_path = Path(storage_dir)
+        metadata_path = storage_dir_path / "indexes" / f"{index_id}.json"
+
+        if not metadata_path.exists():
+            return {
+                "status": "error",
+                "error": f"Index {index_id} not found"
+            }
+
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        return {
+            "status": "success",
+            "metadata": metadata
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": f"Failed to load metadata: {str(e)}"
+        }
+
+
+async def load_index_metadata(index_id: str, storage_dir: str) -> Dict[str, Any]:
+    """异步加载索引元数据"""
+    result = await asyncio.to_thread(_load_index_metadata_sync, index_id, storage_dir)
+    return result

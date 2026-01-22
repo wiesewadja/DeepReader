@@ -179,3 +179,23 @@ class MarkdownMappingResponse(BaseModel):
 
     status: str
     index_id: str
+
+
+# ========== Agent 相关模型 ==========
+
+
+class AgentRequest(BaseModel):
+    """Agent 请求"""
+
+    query: str = Field(..., description="用户查询")
+    index_id: str = Field(..., description="索引 ID")
+    stream: Optional[bool] = Field(False, description="是否流式输出")
+
+
+class AgentResponse(BaseModel):
+    """Agent 响应"""
+
+    status: str
+    answer: Optional[str] = None
+    error: Optional[str] = None
+    iterations: Optional[int] = None
