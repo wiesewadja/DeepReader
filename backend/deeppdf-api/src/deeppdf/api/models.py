@@ -187,8 +187,8 @@ class MarkdownMappingResponse(BaseModel):
 class AgentRequest(BaseModel):
     """Agent 请求"""
 
-    query: str = Field(..., description="用户查询")
-    index_id: str = Field(..., description="索引 ID")
+    query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
+    index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
     stream: Optional[bool] = Field(False, description="是否流式输出")
 
 

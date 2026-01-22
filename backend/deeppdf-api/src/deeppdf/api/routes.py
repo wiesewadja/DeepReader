@@ -785,6 +785,61 @@ async def save_markdown_mapping(index_id: str, body: MarkdownMappingBody):
 # ========== Agent 端点 ==========
 
 
+async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
+    """
+    加载索引并创建 Agent 实例（共享辅助函数）
+
+    Args:
+        index_id: 索引 ID
+
+    Returns:
+        DeepPDFAgent 实例
+
+    Raises:
+        HTTPException: 索引不存在时抛出 404 错误
+    """
+    from ..services.manager import load_index_metadata
+    from ..agent import DeepPDFAgent
+
+    # 1. 加载索引元数据
+    metadata_result = await load_index_metadata(index_id, str(settings.base_dir))
+
+    if metadata_result["status"] == "error":
+        logger.error(f"[API] 索引不存在: {index_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"索引 {index_id} 不存在"
+        )
+
+    metadata = metadata_result["metadata"]
+
+    # 2. 获取 tree_structure (Phase 1: 从 metadata 中读取)
+    tree_structure = metadata.get("tree_structure", {})
+    if not tree_structure:
+        logger.warning(f"[API] 索引 {index_id} 没有 tree_structure，使用空结构")
+        tree_structure = {}
+
+    # 3. 获取 LLM 配置 (从索引元数据)
+    llm_provider = metadata.get("llm_provider", "deepseek")
+    llm_model = metadata.get("model", None)
+    api_key = metadata.get("api_key", None)
+    base_url = metadata.get("base_url", None)
+
+    # 4. 创建 Agent 实例
+    logger.info(f"[API] 创建 Agent: provider={llm_provider}, model={llm_model}")
+
+    return DeepPDFAgent(
+        index_id=index_id,
+        storage_dir=str(settings.base_dir),
+        tree_structure=tree_structure,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        api_key=api_key,
+        base_url=base_url,
+        pageindex_lib_path=None,  # Phase 1: 不使用 PageIndex
+    )
+
+
 @router.post("/chat/agent", response_model=AgentResponse)
 async def agent_chat(req: AgentRequest):
     """
@@ -794,53 +849,18 @@ async def agent_chat(req: AgentRequest):
     - 检查目录 (inspect_toc)
     - 读取页面 (read_page)
     - 混合搜索 (hybrid_search)
+
+    请求超时: 5 分钟
     """
     logger.info(f"[API] 收到 Agent 请求: query='{req.query}', index_id='{req.index_id}'")
 
     try:
-        from ..services.manager import load_index_metadata
-        from ..agent import DeepPDFAgent
+        # 1. 加载 Agent
+        agent = await _load_agent_for_request(req.index_id)
 
-        # 1. 加载索引元数据
-        metadata_result = await load_index_metadata(req.index_id, str(settings.base_dir))
-
-        if metadata_result["status"] == "error":
-            logger.error(f"[API] 索引不存在: {req.index_id}")
-            return AgentResponse(
-                status="error",
-                error=f"索引 {req.index_id} 不存在"
-            )
-
-        metadata = metadata_result["metadata"]
-
-        # 2. 获取 tree_structure (Phase 1: 从 metadata 中读取)
-        tree_structure = metadata.get("tree_structure", {})
-        if not tree_structure:
-            logger.warning(f"[API] 索引 {req.index_id} 没有 tree_structure，使用空结构")
-            tree_structure = {}
-
-        # 3. 获取 LLM 配置 (从索引元数据)
-        llm_provider = metadata.get("llm_provider", "deepseek")
-        llm_model = metadata.get("model", None)
-        api_key = metadata.get("api_key", None)
-        base_url = metadata.get("base_url", None)
-
-        # 4. 创建 Agent 实例
-        logger.info(f"[API] 创建 Agent: provider={llm_provider}, model={llm_model}")
-
-        agent = DeepPDFAgent(
-            index_id=req.index_id,
-            storage_dir=str(settings.base_dir),
-            tree_structure=tree_structure,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            api_key=api_key,
-            base_url=base_url,
-            pageindex_lib_path=None,  # Phase 1: 不使用 PageIndex
-        )
-
-        # 5. 运行 Agent
-        answer = agent.run(req.query)
+        # 2. 运行 Agent (使用 asyncio.to_thread 避免阻塞)
+        async with asyncio.timeout(300):  # 5 分钟超时
+            answer = await asyncio.to_thread(agent.run, req.query)
 
         logger.info(f"[API] Agent 完成: answer_length={len(answer)}")
         return AgentResponse(
@@ -849,6 +869,15 @@ async def agent_chat(req: AgentRequest):
             iterations=len([h for h in agent.get_history() if h["role"] == "assistant"])
         )
 
+    except asyncio.TimeoutError:
+        logger.error(f"[API] Agent 执行超时: index_id={req.index_id}")
+        return AgentResponse(
+            status="error",
+            error="请求超时，Agent 执行时间超过 5 分钟"
+        )
+    except HTTPException:
+        # 重新抛出 HTTP 异常（索引不存在等）
+        raise
     except Exception as e:
         logger.error(f"[API] Agent 执行失败: {e}", exc_info=True)
         return AgentResponse(
@@ -857,75 +886,57 @@ async def agent_chat(req: AgentRequest):
         )
 
 
-async def _agent_stream_generator(query: str, index_id: str) -> AsyncGenerator[str, None]:
+async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None]:
     """
     Agent 流式响应生成器
 
     Args:
-        query: 用户查询
-        index_id: 索引 ID
+        req: Agent 请求对象
 
     Yields:
         SSE 格式的文本片段
     """
     try:
-        from ..services.manager import load_index_metadata
-        from ..agent import DeepPDFAgent
+        # 1. 加载 Agent
+        agent = await _load_agent_for_request(req.index_id)
 
-        # 1. 加载索引元数据
-        metadata_result = await load_index_metadata(index_id, str(settings.base_dir))
+        # 2. 流式运行 Agent (带超时控制)
+        try:
+            async with asyncio.timeout(300):  # 5 分钟超时
+                for chunk in agent.run_stream(req.query):
+                    # 格式化为 SSE
+                    yield f"data: {json.dumps({'content': chunk, 'status': 'streaming'})}\n\n"
 
-        if metadata_result["status"] == "error":
-            yield f"data: {json.dumps({'status': 'error', 'error': f'索引 {index_id} 不存在'})}\n\n"
-            return
+            # 发送完成信号
+            yield f"data: {json.dumps({'status': 'done'})}\n\n"
 
-        metadata = metadata_result["metadata"]
+        except asyncio.TimeoutError:
+            logger.error(f"[API] Agent 流式执行超时: index_id={req.index_id}")
+            yield f"data: {json.dumps({'status': 'error', 'error': '请求超时，执行时间超过 5 分钟'})}\n\n"
 
-        # 2. 获取 tree_structure
-        tree_structure = metadata.get("tree_structure", {})
-
-        # 3. 获取 LLM 配置
-        llm_provider = metadata.get("llm_provider", "deepseek")
-        llm_model = metadata.get("model", None)
-        api_key = metadata.get("api_key", None)
-        base_url = metadata.get("base_url", None)
-
-        # 4. 创建 Agent 实例
-        agent = DeepPDFAgent(
-            index_id=index_id,
-            storage_dir=str(settings.base_dir),
-            tree_structure=tree_structure,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            api_key=api_key,
-            base_url=base_url,
-            pageindex_lib_path=None,
-        )
-
-        # 5. 流式运行 Agent
-        for chunk in agent.run_stream(query):
-            # 格式化为 SSE
-            yield f"data: {json.dumps({'content': chunk, 'status': 'streaming'})}\n\n"
-
-        # 发送完成信号
-        yield f"data: {json.dumps({'status': 'done'})}\n\n"
-
+    except HTTPException as e:
+        # HTTP 异常（索引不存在等）
+        error_msg = e.detail if hasattr(e, 'detail') else str(e)
+        logger.error(f"[API] Agent 流式加载失败: {error_msg}")
+        yield f"data: {json.dumps({'status': 'error', 'error': error_msg})}\n\n"
     except Exception as e:
         logger.error(f"[API] Agent 流式执行失败: {e}", exc_info=True)
         yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
 
 
-@router.get("/chat/agent/stream")
-async def agent_chat_stream(query: str, index_id: str):
+@router.post("/chat/agent/stream")
+async def agent_chat_stream(req: AgentRequest):
     """
     Agent 智能对话 - 流式端点 (SSE)
 
-    返回 Server-Sent Events 格式的流式响应
+    使用 POST 方法传递请求参数，返回 Server-Sent Events 格式的流式响应
+
+    请求超时: 5 分钟
     """
-    logger.info(f"[API] 收到 Agent 流式请求: query='{query}', index_id='{index_id}'")
+    logger.info(f"[API] 收到 Agent 流式请求: query='{req.query}', index_id='{req.index_id}'")
 
     return StreamingResponse(
-        _agent_stream_generator(query, index_id),
+        _agent_stream_generator(req),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
