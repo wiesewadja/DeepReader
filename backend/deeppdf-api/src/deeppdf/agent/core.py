@@ -415,24 +415,39 @@ class DeepPDFAgent:
             current_tool_calls: Dict[str, Dict[str, Any]] = {}
             content_buffer: List[str] = []
             has_pending_thought = False  # 标记是否有待包装的思考内容
+            thought_content_buffer: List[str] = []  # 缓冲的思考内容
 
             for chunk in stream:
                 delta = chunk.choices[0].delta
 
                 # 处理内容
                 if delta.content:
-                    # 如果这是工具调用之前的内容，且还没开始 <thought> 标签
-                    if not current_tool_calls and not has_pending_thought:
-                        # 检查是否应该开始思考标签（非第一轮迭代）
-                        if iterations > 1 or tool_results:
-                            yield "<thought>"
-                            has_pending_thought = True
-
                     content_buffer.append(delta.content)
-                    yield delta.content
+
+                    # 如果还没有检测到工具调用，先缓存内容
+                    if not current_tool_calls:
+                        thought_content_buffer.append(delta.content)
+                    else:
+                        # 已检测到工具调用，直接输出
+                        if thought_content_buffer and not has_pending_thought:
+                            # 释放缓存的思考内容并添加标签
+                            if tool_results and iterations > 1:
+                                yield "<thought>"
+                                has_pending_thought = True
+                            yield "".join(thought_content_buffer)
+                            thought_content_buffer = []
+                        yield delta.content
 
                 # 处理工具调用
                 if delta.tool_calls:
+                    # 如果有缓存的思考内容，添加思考标签并输出
+                    if thought_content_buffer and not has_pending_thought:
+                        if tool_results and iterations > 1:
+                            yield "<thought>"
+                            has_pending_thought = True
+                        yield "".join(thought_content_buffer)
+                        thought_content_buffer = []
+
                     # 关闭待处理的思考标签
                     if has_pending_thought:
                         yield "</thought>"
@@ -501,17 +516,23 @@ class DeepPDFAgent:
                         "output": output,
                     })
             else:
-                # 没有工具调用，完成
-                # 关闭待处理的思考标签（如果还没关闭）
+                # 没有工具调用，完成（最终答案）
+                # 释放所有缓存的内容（这些是最终答案，不应该有 thought 标签）
+                if thought_content_buffer:
+                    yield "".join(thought_content_buffer)
+                    thought_content_buffer = []
+
+                # 如果还有待处理的思考标签（异常情况），关闭它
                 if has_pending_thought:
                     yield "</thought>"
+                    has_pending_thought = False
 
                 content_text = "".join(content_buffer) if content_buffer else ""
                 self.history.append({
                     "role": "assistant",
                     "content": content_text,
                 })
-                logger.info(f"[Agent流式完成] 无工具调用")
+                logger.info(f"[Agent流式完成] 无工具调用，返回最终答案")
                 return
 
         # 达到最大迭代次数
