@@ -414,17 +414,30 @@ class DeepPDFAgent:
             # 收集流式响应
             current_tool_calls: Dict[str, Dict[str, Any]] = {}
             content_buffer: List[str] = []
+            has_pending_thought = False  # 标记是否有待包装的思考内容
 
             for chunk in stream:
                 delta = chunk.choices[0].delta
 
                 # 处理内容
                 if delta.content:
+                    # 如果这是工具调用之前的内容，且还没开始 <thought> 标签
+                    if not current_tool_calls and not has_pending_thought:
+                        # 检查是否应该开始思考标签（非第一轮迭代）
+                        if iterations > 1 or tool_results:
+                            yield "<thought>"
+                            has_pending_thought = True
+
                     content_buffer.append(delta.content)
                     yield delta.content
 
                 # 处理工具调用
                 if delta.tool_calls:
+                    # 关闭待处理的思考标签
+                    if has_pending_thought:
+                        yield "</thought>"
+                        has_pending_thought = False
+
                     for tool_call in delta.tool_calls:
                         index = tool_call.index
                         tool_id = tool_call.id
@@ -451,6 +464,11 @@ class DeepPDFAgent:
 
             # 检查是否有工具调用
             if current_tool_calls:
+                # 关闭待处理的思考标签（如果还没关闭）
+                if has_pending_thought:
+                    yield "</thought>"
+                    has_pending_thought = False
+
                 # 记录 assistant 消息（包含工具调用）到历史
                 content_text = "".join(content_buffer) if content_buffer else ""
                 self.history.append({
@@ -484,6 +502,10 @@ class DeepPDFAgent:
                     })
             else:
                 # 没有工具调用，完成
+                # 关闭待处理的思考标签（如果还没关闭）
+                if has_pending_thought:
+                    yield "</thought>"
+
                 content_text = "".join(content_buffer) if content_buffer else ""
                 self.history.append({
                     "role": "assistant",

@@ -118,13 +118,16 @@ export function parseAgentContent(content: string): {
 	let cleanedContent = content;
 
 	// 提取 <thought>...</thought> 标签
-	const thoughtRegex = /<thought>([\s\S]*?)<\/thought>/gi;
+	// 支持多种格式: <thought>, < Thought >, <THOUGHT> 等
+	const thoughtRegex = /<thought\b[^>]*>([\s\S]*?)<\/thought>/gi;
 	let thoughtMatch;
 	let stepNumber = 1;
 
 	while ((thoughtMatch = thoughtRegex.exec(content)) !== null) {
+		const thoughtContent = thoughtMatch[1].trim();
+		console.log(`[parseAgentContent] 提取到思考内容:`, thoughtContent);
 		thoughts.push({
-			content: thoughtMatch[1].trim(),
+			content: thoughtContent,
 			step: stepNumber++
 		});
 	}
@@ -137,18 +140,33 @@ export function parseAgentContent(content: string): {
 		.trim();
 
 	// 提取工具调用（简化版本，用于显示）
-	// 查找格式如: hybrid_search(query="...", top_k=5)
-	const toolCallRegex = /(\w+)\s*\(([^)]*)\)/g;
+	// 只查找特定工具名称: inspect_toc, read_page, hybrid_search
+	const validToolNames = ['inspect_toc', 'read_page', 'hybrid_search'];
+	const toolCallRegex = new RegExp(`(${validToolNames.join('|')})\\s*\\(([^)]*)\\)`, 'gi');
 	let toolMatch;
+	const seenToolCalls = new Set<string>();
+
 	while ((toolMatch = toolCallRegex.exec(content)) !== null) {
-		const toolName = toolMatch[1];
+		const toolName = toolMatch[1].toLowerCase();
 		const args = toolMatch[2];
-		toolCalls.push({
-			name: toolName,
-			args: args,
-			status: args.includes('ERROR') ? 'error' : 'success'
-		});
+
+		// 去重（避免重复显示同一工具调用）
+		const callKey = `${toolName}:${args}`;
+		if (!seenToolCalls.has(callKey)) {
+			seenToolCalls.add(callKey);
+			toolCalls.push({
+				name: toolName,
+				args: args,
+				status: args.includes('ERROR') ? 'error' : 'success'
+			});
+		}
 	}
+
+	console.log(`[parseAgentContent] 解析结果:`, {
+		thoughtCount: thoughts.length,
+		toolCallCount: toolCalls.length,
+		cleanedLength: cleanedContent.length
+	});
 
 	return { thoughts, toolCalls, cleanedContent };
 }
@@ -624,19 +642,26 @@ export abstract class Message {
 		const oldContent = this.data.content;
 		const oldCitations = this.data.citations;
 		const oldFollowUpQuestions = this.data.followUpQuestions;
+		const oldAgentThoughts = this.data.agentThoughts;
+		const oldAgentToolCalls = this.data.agentToolCalls;
 		Object.assign(this.data, data);
 
-		// 如果只是内容变了，且DOM已存在，尝试局部更新
-		// 注意：如果 citations 或 followUpQuestions 变了，我们需要重绘整个 AI 消息
-		// 目前为了简单，如果只有 content 变了，走局部更新；否则走全量
+		// 检查哪些字段发生了变化
 		const citationsChanged = data.citations !== undefined && JSON.stringify(data.citations) !== JSON.stringify(oldCitations);
 		const followUpChanged = data.followUpQuestions !== undefined && JSON.stringify(data.followUpQuestions) !== JSON.stringify(oldFollowUpQuestions);
+		const agentThoughtsChanged = data.agentThoughts !== undefined && JSON.stringify(data.agentThoughts) !== JSON.stringify(oldAgentThoughts);
+		const agentToolCallsChanged = data.agentToolCalls !== undefined && JSON.stringify(data.agentToolCalls) !== JSON.stringify(oldAgentToolCalls);
 
+		// 如果只是内容变了，且DOM已存在，尝试局部更新
+		// 注意：如果 citations、followUpQuestions、agentThoughts 或 agentToolCalls 变了，
+		// 我们需要重绘整个 AI 消息
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
 			!citationsChanged &&
-			!followUpChanged
+			!followUpChanged &&
+			!agentThoughtsChanged &&
+			!agentToolCallsChanged
 		) {
 			this.updateContent(data.content);
 		} else {
