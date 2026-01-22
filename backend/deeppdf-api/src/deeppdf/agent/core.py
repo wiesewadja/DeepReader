@@ -20,6 +20,29 @@ from .prompts import build_system_prompt, ToolCallData
 logger = logging.getLogger(__name__)
 
 
+# ========== 异常定义 ==========
+
+
+class AgentError(Exception):
+    """Agent 基础异常类"""
+    pass
+
+
+class LLMError(AgentError):
+    """LLM 调用失败异常"""
+    pass
+
+
+class ToolExecutionError(AgentError):
+    """工具执行失败异常"""
+    pass
+
+
+class MaxIterationsError(AgentError):
+    """达到最大迭代次数异常"""
+    pass
+
+
 class DeepPDFAgent:
     """
     DeepPDF Agent - 基于 ReAct 模式的 Tool-Calling Agent
@@ -316,8 +339,8 @@ class DeepPDFAgent:
                     top_p=self.top_p,
                 )
             except Exception as e:
-                logger.error(f"[LLM错误] 调用失败: {e}")
-                return f"错误: LLM 调用失败 - {str(e)}"
+                logger.error(f"[LLM错误] 调用失败: {e}", exc_info=True)
+                raise LLMError(f"LLM调用失败: {str(e)}") from e
 
             # 检查是否有工具调用
             tool_calls = self._extract_tool_calls(response)
@@ -415,39 +438,24 @@ class DeepPDFAgent:
             current_tool_calls: Dict[str, Dict[str, Any]] = {}
             content_buffer: List[str] = []
             has_pending_thought = False  # 标记是否有待包装的思考内容
-            thought_content_buffer: List[str] = []  # 缓冲的思考内容
 
             for chunk in stream:
                 delta = chunk.choices[0].delta
 
-                # 处理内容
+                # 处理内容 - 立即输出实现真正的流式体验
                 if delta.content:
                     content_buffer.append(delta.content)
 
-                    # 如果还没有检测到工具调用，先缓存内容
-                    if not current_tool_calls:
-                        thought_content_buffer.append(delta.content)
-                    else:
-                        # 已检测到工具调用，直接输出
-                        if thought_content_buffer and not has_pending_thought:
-                            # 释放缓存的思考内容并添加标签
-                            if tool_results and iterations > 1:
-                                yield "<thought>"
-                                has_pending_thought = True
-                            yield "".join(thought_content_buffer)
-                            thought_content_buffer = []
-                        yield delta.content
+                    # 立即输出内容，不等待
+                    # 如果这是首次输出且后续可能有工具调用，添加思考标签
+                    if not current_tool_calls and not has_pending_thought and tool_results and iterations > 1:
+                        yield "<thought>"
+                        has_pending_thought = True
+
+                    yield delta.content
 
                 # 处理工具调用
                 if delta.tool_calls:
-                    # 如果有缓存的思考内容，添加思考标签并输出
-                    if thought_content_buffer and not has_pending_thought:
-                        if tool_results and iterations > 1:
-                            yield "<thought>"
-                            has_pending_thought = True
-                        yield "".join(thought_content_buffer)
-                        thought_content_buffer = []
-
                     # 关闭待处理的思考标签
                     if has_pending_thought:
                         yield "</thought>"
@@ -517,11 +525,6 @@ class DeepPDFAgent:
                     })
             else:
                 # 没有工具调用，完成（最终答案）
-                # 释放所有缓存的内容（这些是最终答案，不应该有 thought 标签）
-                if thought_content_buffer:
-                    yield "".join(thought_content_buffer)
-                    thought_content_buffer = []
-
                 # 如果还有待处理的思考标签（异常情况），关闭它
                 if has_pending_thought:
                     yield "</thought>"

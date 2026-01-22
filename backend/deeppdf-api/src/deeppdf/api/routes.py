@@ -27,6 +27,7 @@ from ..services.manager import list_indexes, delete_index
 from ..services.config_storage import ConfigStorage
 from ..services.file_storage import FileStorage
 from ..config import settings
+from ..agent.core import AgentError, LLMError
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -908,6 +909,18 @@ async def agent_chat(req: AgentRequest):
         return AgentResponse(
             status="error",
             error="请求超时，Agent 执行时间超过 5 分钟"
+        )
+    except LLMError as e:
+        logger.error(f"[API] LLM 调用失败: {e}")
+        return AgentResponse(
+            status="error",
+            error=f"LLM 调用失败: {str(e)}"
+        )
+    except AgentError as e:
+        logger.error(f"[API] Agent 执行失败: {e}")
+        return AgentResponse(
+            status="error",
+            error=f"Agent 错误: {str(e)}"
         )
     except HTTPException:
         # 重新抛出 HTTP 异常（索引不存在等）

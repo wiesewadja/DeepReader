@@ -187,13 +187,34 @@ class HybridSearchTool:
             return "错误: top_k 必须在 1-50 之间"
 
         try:
-            # 异步调用 query_pdf
-            result = asyncio.run(query_pdf(
-                query=query,
-                index_id=self.index_id,
-                storage_dir=self.storage_dir,
-                max_results=top_k
-            ))
+            # 异步调用 query_pdf - 安全地处理事件循环
+            # 由于项目已在 main.py 中应用 nest_asyncio，可以安全运行嵌套循环
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 已有运行中的循环，nest_asyncio 允许嵌套 run_until_complete
+                    result = loop.run_until_complete(query_pdf(
+                        query=query,
+                        index_id=self.index_id,
+                        storage_dir=self.storage_dir,
+                        max_results=top_k
+                    ))
+                else:
+                    # 循环存在但未运行，使用 run_until_complete
+                    result = loop.run_until_complete(query_pdf(
+                        query=query,
+                        index_id=self.index_id,
+                        storage_dir=self.storage_dir,
+                        max_results=top_k
+                    ))
+            except RuntimeError:
+                # 没有循环，使用 asyncio.run 创建新循环
+                result = asyncio.run(query_pdf(
+                    query=query,
+                    index_id=self.index_id,
+                    storage_dir=self.storage_dir,
+                    max_results=top_k
+                ))
 
             if result.get("status") == "error":
                 return f"错误: {result.get('error', '检索失败')}"

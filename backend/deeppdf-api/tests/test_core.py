@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from deeppdf.agent import DeepPDFAgent
+from deeppdf.agent.core import LLMError
 
 
 # ========== 测试 Fixtures ==========
@@ -272,9 +273,11 @@ def test_run_llm_error(agent):
     """测试 LLM 调用错误处理"""
     agent.client.chat.completions.create = MagicMock(side_effect=Exception("API 错误"))
 
-    result = agent.run("测试查询")
+    # LLM 错误应该抛出 LLMError 异常
+    with pytest.raises(LLMError) as exc_info:
+        agent.run("测试查询")
 
-    assert "错误" in result
+    assert "LLM调用失败" in str(exc_info.value)
 
 
 # ========== 测试流式输出 ==========
