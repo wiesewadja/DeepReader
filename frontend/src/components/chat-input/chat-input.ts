@@ -1,8 +1,7 @@
 /**
  * DeepPDF 聊天输入组件
  * 实现多行文本输入框，支持 Enter 发送、Shift+Enter 换行
- * ChatGPT 风格：发送按钮为图标，位于输入框右侧
- * 集成模式切换：左侧显示当前模式，点击可切换
+ * Gemini 风格：文本框在上方，底部工具栏（左侧模式切换，右侧发送按钮）
  */
 
 import { Icons } from '../../utils/icons.js';
@@ -97,19 +96,17 @@ export class ChatInput {
 		const container = document.createElement('div');
 		container.addClass('deeppdf-chat-input');
 
-		// 输入框包装器
-		const wrapper = container.createEl('div', {
-			cls: 'deeppdf-chat-input-wrapper'
+		// 整体容器 (deeppdf-chat-input-container)
+		const inputContainer = container.createEl('div', {
+			cls: 'deeppdf-chat-input-container'
 		});
 
-		// ========== 模式切换按钮（输入框左侧） ==========
-		this.modeButton = wrapper.createEl('button', {
-			cls: 'deeppdf-chat-input-mode-btn'
+		// 1. 输入区域
+		const inputArea = inputContainer.createEl('div', {
+			cls: 'deeppdf-input-area'
 		});
-		this.updateModeButton();
 
-		// ========== 文本输入框 ==========
-		this.textarea = wrapper.createEl('textarea', {
+		this.textarea = inputArea.createEl('textarea', {
 			cls: 'deeppdf-chat-input-textarea'
 		});
 		this.textarea.placeholder = this.options.placeholder || '';
@@ -117,17 +114,29 @@ export class ChatInput {
 		this.textarea.disabled = this.options.disabled || false;
 		this.textarea.setAttribute('aria-label', '聊天输入框');
 		this.textarea.setAttribute('aria-multiline', 'true');
-
-		// 设置初始样式
 		this.textarea.style.minHeight = 'auto';
 
-		// ========== 按钮包装器（发送按钮） ==========
-		const buttonWrapper = wrapper.createEl('div', {
-			cls: 'deeppdf-chat-input-button-wrapper'
+		// 2. 底部工具栏
+		const toolbar = inputContainer.createEl('div', {
+			cls: 'deeppdf-input-toolbar'
 		});
 
-		// 发送按钮 - 使用图标
-		this.sendButton = buttonWrapper.createEl('button', {
+		// 左侧工具 (模式切换)
+		const leftToolbar = toolbar.createEl('div', {
+			cls: 'deeppdf-toolbar-left'
+		});
+
+		this.modeButton = leftToolbar.createEl('button', {
+			cls: 'deeppdf-mode-switch-btn'
+		});
+		this.updateModeButton();
+
+		// 右侧工具 (发送按钮)
+		const rightToolbar = toolbar.createEl('div', {
+			cls: 'deeppdf-toolbar-right'
+		});
+
+		this.sendButton = rightToolbar.createEl('button', {
 			cls: 'deeppdf-chat-input-send-btn'
 		});
 		this.sendButton.innerHTML = Icons.send;
@@ -151,9 +160,11 @@ export class ChatInput {
 		if (!this.modeButton) return;
 
 		const modeConfig = CHAT_MODES[this.currentMode];
-		this.modeButton.innerHTML = `${modeConfig.icon}<span>${modeConfig.shortName}</span>`;
+		// 极简风格：只显示图标，或者图标+简短名称
+		// 用户要求极简化，左下角。可以使用一个小图标，hover 时显示名称
+		this.modeButton.innerHTML = `<span class="mode-icon">${modeConfig.icon}</span><span class="mode-name">${modeConfig.shortName}</span>`;
 		this.modeButton.setAttribute('aria-label', `当前模式：${modeConfig.name}，点击切换`);
-		this.modeButton.setAttribute('title', modeConfig.name);
+		this.modeButton.setAttribute('title', `点击切换到${this.currentMode === 'fast' ? 'Agent' : '快速'}模式`);
 		this.modeButton.setAttribute('data-mode', this.currentMode);
 	}
 
@@ -403,9 +414,6 @@ export class ChatInput {
 
 		this.currentMode = mode;
 		this.updateModeButton();
-
-		// 触发模式变化回调
-		this.options.onModeChange?.(this.currentMode);
 	}
 
 	/**
