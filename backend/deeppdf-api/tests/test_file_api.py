@@ -1,9 +1,8 @@
 """
 文件管理 API 测试
 """
-import os
+
 import pytest
-from pathlib import Path
 from fastapi.testclient import TestClient
 from deeppdf.main import app
 
@@ -28,7 +27,7 @@ class TestFileUpload:
         """测试成功上传 PDF 文件"""
         response = client.post(
             "/api/files",
-            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")}
+            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")},
         )
         assert response.status_code == 201
         data = response.json()
@@ -42,17 +41,19 @@ class TestFileUpload:
     def test_upload_invalid_file_type(self, client, sample_pdf_content):
         """测试上传非 PDF 文件"""
         response = client.post(
-            "/api/files",
-            files={"file": ("test.txt", b"not a pdf", "text/plain")}
+            "/api/files", files={"file": ("test.txt", b"not a pdf", "text/plain")}
         )
         assert response.status_code == 400
-        assert "pdf" in response.json()["detail"].lower() or "invalid" in response.json()["detail"].lower()
+        assert (
+            "pdf" in response.json()["detail"].lower()
+            or "invalid" in response.json()["detail"].lower()
+        )
 
     def test_upload_file_no_pdf_extension(self, client, sample_pdf_content):
         """测试上传没有 .pdf 扩展名的文件"""
         response = client.post(
             "/api/files",
-            files={"file": ("document", sample_pdf_content, "application/pdf")}
+            files={"file": ("document", sample_pdf_content, "application/pdf")},
         )
         assert response.status_code == 400
         assert "PDF" in response.json()["detail"]
@@ -60,8 +61,7 @@ class TestFileUpload:
     def test_upload_empty_file(self, client):
         """测试上传空文件"""
         response = client.post(
-            "/api/files",
-            files={"file": ("empty.pdf", b"", "application/pdf")}
+            "/api/files", files={"file": ("empty.pdf", b"", "application/pdf")}
         )
         assert response.status_code == 400
         detail = response.json()["detail"]
@@ -87,7 +87,7 @@ class TestListFiles:
         # 先上传一个文件
         upload_response = client.post(
             "/api/files",
-            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")}
+            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")},
         )
         assert upload_response.status_code == 201
         file_id = upload_response.json()["file_id"]
@@ -111,7 +111,7 @@ class TestGetFileInfo:
         # 先上传文件
         upload_response = client.post(
             "/api/files",
-            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")}
+            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")},
         )
         file_id = upload_response.json()["file_id"]
 
@@ -138,7 +138,7 @@ class TestDeleteFile:
         # 先上传文件
         upload_response = client.post(
             "/api/files",
-            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")}
+            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")},
         )
         file_id = upload_response.json()["file_id"]
 
@@ -170,7 +170,7 @@ class TestFileModelIndexing:
         # 上传文件
         upload_response = client.post(
             "/api/files",
-            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")}
+            files={"file": ("test.pdf", sample_pdf_content, "application/pdf")},
         )
         assert upload_response.status_code == 201
         data = upload_response.json()

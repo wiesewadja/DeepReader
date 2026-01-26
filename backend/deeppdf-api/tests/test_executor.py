@@ -1,6 +1,5 @@
 # tests/test_executor.py
 """工具执行器测试"""
-import pytest
 from deeppdf.agent.executor import ToolExecutor, create_tool_executor
 
 
@@ -28,6 +27,7 @@ def test_execute_invalid_tool():
 
 def test_execute_tool_with_exception():
     """测试: 工具抛出异常"""
+
     class BrokenTool:
         name = "broken"
         description = "会抛出异常的工具"
@@ -65,7 +65,7 @@ def test_create_tool_executor():
                 "node_id": "node_1",
                 "start_index": 1,
                 "end_index": 10,
-                "nodes": []
+                "nodes": [],
             }
         ]
     }
@@ -74,7 +74,7 @@ def test_create_tool_executor():
         index_id="test_idx",
         storage_dir="/fake/path",
         tree_structure=tree_structure,
-        pageindex_lib_path=None  # 不包含 read_page
+        pageindex_lib_path=None,  # 不包含 read_page
     )
 
     # 验证工具已注册
@@ -94,18 +94,16 @@ def test_create_tool_executor_with_markdown_locator():
                 "node_id": "node_1",
                 "start_index": 1,
                 "end_index": 10,
-                "nodes": []
+                "nodes": [],
             }
         ]
     }
 
     # 创建一个模拟的 index_metadata
     index_metadata = {
-        "markdown_files": {
-            "node_1": "test_file.md"
-        },
+        "markdown_files": {"node_1": "test_file.md"},
         "pdf_name": "test.pdf",
-        "tree_structure": tree_structure
+        "tree_structure": tree_structure,
     }
 
     # 创建 markdown_locator
@@ -116,7 +114,7 @@ def test_create_tool_executor_with_markdown_locator():
         storage_dir="/fake/path",
         tree_structure=tree_structure,
         pageindex_lib_path=None,
-        markdown_locator=markdown_locator
+        markdown_locator=markdown_locator,
     )
 
     # 验证 markdown_locator 已传递给 HybridSearchTool

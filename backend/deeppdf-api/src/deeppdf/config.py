@@ -2,7 +2,6 @@
 DeepPDF 配置管理
 """
 
-import os
 from pathlib import Path
 from typing import Optional
 from pydantic import ConfigDict
@@ -40,13 +39,13 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 10
     agent_temperature: float = 0.7
     agent_top_p: float = 0.95
-    agent_max_query_length: int = 8000  # 用户查询最大字符长度（启发式，约等于 4K-6K tokens）
+    agent_max_query_length: int = (
+        8000  # 用户查询最大字符长度（启发式，约等于 4K-6K tokens）
+    )
 
     # Pydantic V2 配置
     model_config = ConfigDict(
-        env_file=".env",
-        case_sensitive=False,
-        extra="ignore"  # 忽略额外的环境变量
+        env_file=".env", case_sensitive=False, extra="ignore"  # 忽略额外的环境变量
     )
 
 

@@ -3,12 +3,12 @@
 
 管理上传的 PDF 文件的 CRUD 操作
 """
+
 import json
 import logging
-import os
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime
 
 from ..api.file_models import FileInfo
@@ -52,13 +52,15 @@ class FileStorage:
 
     def _format_size(self, size_bytes: int) -> str:
         """格式化文件大小"""
-        for unit in ['B', 'KB', 'MB', 'GB']:
+        for unit in ["B", "KB", "MB", "GB"]:
             if size_bytes < 1024.0:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f} TB"
 
-    def validate_file(self, filename: str, file_size: int) -> Tuple[bool, Optional[str]]:
+    def validate_file(
+        self, filename: str, file_size: int
+    ) -> Tuple[bool, Optional[str]]:
         """
         验证文件
 
@@ -76,14 +78,19 @@ class FileStorage:
 
         # 检查文件大小
         if file_size > self.MAX_FILE_SIZE:
-            return False, f"文件太大: {self._format_size(file_size)}，最大允许 {self._format_size(self.MAX_FILE_SIZE)}"
+            return (
+                False,
+                f"文件太大: {self._format_size(file_size)}，最大允许 {self._format_size(self.MAX_FILE_SIZE)}",
+            )
 
         if file_size == 0:
             return False, "文件为空"
 
         return True, None
 
-    def save_file(self, filename: str, content: bytes) -> Tuple[bool, Optional[FileInfo], Optional[str]]:
+    def save_file(
+        self, filename: str, content: bytes
+    ) -> Tuple[bool, Optional[FileInfo], Optional[str]]:
         """
         保存上传的文件
 
@@ -117,13 +124,15 @@ class FileStorage:
                 uploaded_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 status="uploaded",
                 indexed=False,
-                indexes=[]
+                indexes=[],
             )
 
             # 保存元数据
             self._save_metadata(file_id, file_info)
 
-            logger.info(f"[文件存储] 文件已保存: {file_id} - {filename} ({self._format_size(len(content))})")
+            logger.info(
+                f"[文件存储] 文件已保存: {file_id} - {filename} ({self._format_size(len(content))})"
+            )
             return True, file_info, None
 
         except Exception as e:
@@ -228,14 +237,18 @@ class FileStorage:
 
             deleted_indexes = len(file_info.indexes)
 
-            logger.info(f"[文件存储] 文件已删除: {file_id}，同时删除 {deleted_indexes} 个索引")
+            logger.info(
+                f"[文件存储] 文件已删除: {file_id}，同时删除 {deleted_indexes} 个索引"
+            )
             return True, None, deleted_indexes
 
         except Exception as e:
             logger.error(f"[文件存储] 删除文件失败 {file_id}: {e}")
             return False, str(e), 0
 
-    def update_file_indexes(self, file_id: str, index_id: str, add: bool = True) -> None:
+    def update_file_indexes(
+        self, file_id: str, index_id: str, add: bool = True
+    ) -> None:
         """
         更新文件的索引列表
 
@@ -259,7 +272,9 @@ class FileStorage:
             file_info.indexed = len(file_info.indexes) > 0
 
         self._save_metadata(file_id, file_info)
-        logger.info(f"[文件存储] 更新索引列表: {file_id} - {index_id} ({'添加' if add else '移除'})")
+        logger.info(
+            f"[文件存储] 更新索引列表: {file_id} - {index_id} ({'添加' if add else '移除'})"
+        )
 
     def get_file_path(self, file_id: str) -> Optional[str]:
         """

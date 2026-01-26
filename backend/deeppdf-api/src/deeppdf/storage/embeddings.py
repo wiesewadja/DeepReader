@@ -2,9 +2,11 @@
 中文文本嵌入函数
 使用 HuggingFaceEmbeddings 加载本地中文向量模型
 """
+
 from typing import List, Optional, Dict
 from pathlib import Path
 from threading import Lock
+
 try:
     from langchain_huggingface import HuggingFaceEmbeddings
 except ImportError:
@@ -41,7 +43,7 @@ class EmbeddingModelCache:
         model_name: str,
         cache_dir: Path,
         device: Optional[str] = None,
-        encode_kwargs: Optional[dict] = None
+        encode_kwargs: Optional[dict] = None,
     ) -> HuggingFaceEmbeddings:
         """
         获取或创建嵌入模型实例
@@ -69,7 +71,7 @@ class EmbeddingModelCache:
                     model_name=model_name,
                     cache_folder=str(cache_dir),
                     model_kwargs=model_kwargs,
-                    encode_kwargs=encode_kwargs or {"normalize_embeddings": True}
+                    encode_kwargs=encode_kwargs or {"normalize_embeddings": True},
                 )
                 self._refs[cache_key] = 1
             else:
@@ -116,7 +118,7 @@ class ChineseEmbeddingFunction:
         model_name: str = DEFAULT_CHINESE_MODEL,
         cache_dir: Optional[Path] = None,
         device: Optional[str] = None,
-        encode_kwargs: Optional[dict] = None
+        encode_kwargs: Optional[dict] = None,
     ):
         """
         初始化中文嵌入函数
@@ -141,14 +143,16 @@ class ChineseEmbeddingFunction:
         """延迟加载模型（使用全局缓存）"""
         if self._embedding_model is None:
             # 生成缓存键
-            self._cache_key = f"{self.model_name}_{self.cache_dir}_{self.device}_{self.encode_kwargs}"
+            self._cache_key = (
+                f"{self.model_name}_{self.cache_dir}_{self.device}_{self.encode_kwargs}"
+            )
 
             # 从全局缓存获取模型
             self._embedding_model = _model_cache.get_model(
                 model_name=self.model_name,
                 cache_dir=self.cache_dir,
                 device=self.device,
-                encode_kwargs=self.encode_kwargs
+                encode_kwargs=self.encode_kwargs,
             )
         return self._embedding_model
 
@@ -191,13 +195,12 @@ class ChineseEmbeddingFunction:
 
     def __del__(self):
         """析构函数，释放模型引用"""
-        if self._cache_key and hasattr(self, '_model_cache'):
+        if self._cache_key and hasattr(self, "_model_cache"):
             _model_cache.release_model(self._cache_key)
 
 
 def create_chinese_embedding_function(
-    model_name: str = DEFAULT_CHINESE_MODEL,
-    cache_dir: Optional[Path] = None
+    model_name: str = DEFAULT_CHINESE_MODEL, cache_dir: Optional[Path] = None
 ) -> ChineseEmbeddingFunction:
     """
     创建中文嵌入函数的便捷函数
@@ -209,10 +212,7 @@ def create_chinese_embedding_function(
     Returns:
         中文嵌入函数实例
     """
-    return ChineseEmbeddingFunction(
-        model_name=model_name,
-        cache_dir=cache_dir
-    )
+    return ChineseEmbeddingFunction(model_name=model_name, cache_dir=cache_dir)
 
 
 # 可用的中文模型列表

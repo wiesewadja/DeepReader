@@ -2,21 +2,20 @@
 导出工具函数测试
 测试 export_utils 中的辅助函数
 """
-import pytest
-from pathlib import Path
+
 from unittest.mock import patch, MagicMock
 from deeppdf.api.export_utils import (
     get_pdf_page_count,
     build_parent_mapping,
     find_parent_id,
-    format_created_at
+    format_created_at,
 )
 
 
 class TestGetPdfPageCount:
     """测试 get_pdf_page_count 函数"""
 
-    @patch('deeppdf.api.export_utils.pypdf.PdfReader')
+    @patch("deeppdf.api.export_utils.pypdf.PdfReader")
     def test_valid_pdf_returns_page_count(self, mock_reader_class):
         """测试有效 PDF 返回页数"""
         mock_reader = MagicMock()
@@ -26,7 +25,7 @@ class TestGetPdfPageCount:
         result = get_pdf_page_count("/path/to/file.pdf")
         assert result == 5
 
-    @patch('deeppdf.api.export_utils.pypdf.PdfReader')
+    @patch("deeppdf.api.export_utils.pypdf.PdfReader")
     def test_pdf_with_zero_pages(self, mock_reader_class):
         """测试空 PDF"""
         mock_reader = MagicMock()
@@ -36,7 +35,7 @@ class TestGetPdfPageCount:
         result = get_pdf_page_count("/path/to/empty.pdf")
         assert result == 0
 
-    @patch('deeppdf.api.export_utils.pypdf.PdfReader')
+    @patch("deeppdf.api.export_utils.pypdf.PdfReader")
     def test_file_not_found_returns_zero(self, mock_reader_class):
         """测试文件不存在返回 0"""
         mock_reader_class.side_effect = FileNotFoundError()
@@ -44,7 +43,7 @@ class TestGetPdfPageCount:
         result = get_pdf_page_count("/nonexistent/file.pdf")
         assert result == 0
 
-    @patch('deeppdf.api.export_utils.pypdf.PdfReader')
+    @patch("deeppdf.api.export_utils.pypdf.PdfReader")
     def test_other_exception_returns_zero(self, mock_reader_class):
         """测试其他异常返回 0"""
         mock_reader_class.side_effect = Exception("Unknown error")
@@ -69,16 +68,12 @@ class TestBuildParentMapping:
                 "node_id": "root",
                 "nodes": [
                     {"node_id": "child1", "nodes": []},
-                    {"node_id": "child2", "nodes": []}
-                ]
+                    {"node_id": "child2", "nodes": []},
+                ],
             }
         ]
         mapping = build_parent_mapping(tree)
-        assert mapping == {
-            "root": None,
-            "child1": "root",
-            "child2": "root"
-        }
+        assert mapping == {"root": None, "child1": "root", "child2": "root"}
 
     def test_three_level_tree(self):
         """测试三层树结构"""
@@ -88,37 +83,25 @@ class TestBuildParentMapping:
                 "nodes": [
                     {
                         "node_id": "child1",
-                        "nodes": [
-                            {"node_id": "grandchild1", "nodes": []}
-                        ]
+                        "nodes": [{"node_id": "grandchild1", "nodes": []}],
                     }
-                ]
+                ],
             }
         ]
         mapping = build_parent_mapping(tree)
-        assert mapping == {
-            "root": None,
-            "child1": "root",
-            "grandchild1": "child1"
-        }
+        assert mapping == {"root": None, "child1": "root", "grandchild1": "child1"}
 
     def test_multiple_root_nodes(self):
         """测试多个根节点"""
-        tree = [
-            {"node_id": "root1", "nodes": []},
-            {"node_id": "root2", "nodes": []}
-        ]
+        tree = [{"node_id": "root1", "nodes": []}, {"node_id": "root2", "nodes": []}]
         mapping = build_parent_mapping(tree)
-        assert mapping == {
-            "root1": None,
-            "root2": None
-        }
+        assert mapping == {"root1": None, "root2": None}
 
     def test_node_without_id_is_skipped(self):
         """测试没有 node_id 的节点被跳过"""
         tree = [
             {"node_id": "root", "nodes": []},
-            {"name": "unnamed", "nodes": []}  # 没有 node_id
+            {"name": "unnamed", "nodes": []},  # 没有 node_id
         ]
         mapping = build_parent_mapping(tree)
         assert mapping == {"root": None}
@@ -140,14 +123,7 @@ class TestFindParentId:
 
     def test_find_child_parent(self):
         """测试查找子节点的父节点"""
-        tree = [
-            {
-                "node_id": "root",
-                "nodes": [
-                    {"node_id": "child1", "nodes": []}
-                ]
-            }
-        ]
+        tree = [{"node_id": "root", "nodes": [{"node_id": "child1", "nodes": []}]}]
         result = find_parent_id("child1", tree)
         assert result == "root"
 
@@ -159,11 +135,9 @@ class TestFindParentId:
                 "nodes": [
                     {
                         "node_id": "child1",
-                        "nodes": [
-                            {"node_id": "grandchild1", "nodes": []}
-                        ]
+                        "nodes": [{"node_id": "grandchild1", "nodes": []}],
                     }
-                ]
+                ],
             }
         ]
         result = find_parent_id("grandchild1", tree)

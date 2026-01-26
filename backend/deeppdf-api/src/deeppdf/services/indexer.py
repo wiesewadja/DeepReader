@@ -1,6 +1,7 @@
 """
 PDF 索引服务 - 异步封装
 """
+
 import asyncio
 import functools
 import hashlib
@@ -19,14 +20,15 @@ from pageindex.llm import UnifiedLLM, get_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import ChromaStore
+
 # 导入配置
 from deeppdf.config import settings
 
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
@@ -36,9 +38,7 @@ cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
 
 
 def _extract_nodes_from_tree(
-    tree: Dict[str, Any],
-    parent_section: str = "",
-    level: int = 0
+    tree: Dict[str, Any], parent_section: str = "", level: int = 0
 ) -> list:
     """
     从 PageIndex 树状结构中提取章节节点
@@ -67,7 +67,9 @@ def _extract_nodes_from_tree(
 
     # 如果有内容，创建节点
     if content_for_embedding and content_for_embedding.strip():
-        full_text_for_embedding = f"【{current_section}】\n{content_for_embedding.strip()}"
+        full_text_for_embedding = (
+            f"【{current_section}】\n{content_for_embedding.strip()}"
+        )
         node_metadata = {
             "section": current_section,
             "level": level,
@@ -83,11 +85,13 @@ def _extract_nodes_from_tree(
         if node_text and node_text.strip():
             node_metadata["original_text"] = node_text.strip()
 
-        nodes.append({
-            "id": node_id or f"node_{len(nodes)}",
-            "text": full_text_for_embedding,
-            "metadata": node_metadata,
-        })
+        nodes.append(
+            {
+                "id": node_id or f"node_{len(nodes)}",
+                "text": full_text_for_embedding,
+                "metadata": node_metadata,
+            }
+        )
 
     # 递归处理子节点
     children = tree.get("nodes", [])
@@ -113,12 +117,18 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
         return {
             "status": "error",
             "error": "When using 'custom' llm_provider, 'api_url' parameter is required. "
-                    "Please provide the base URL of your custom LLM API (e.g., https://api.siliconflow.cn/v1)."
+            "Please provide the base URL of your custom LLM API (e.g., https://api.siliconflow.cn/v1).",
         }
 
-    toc_check_pages = kwargs.get("toc_check_pages") or settings.pdf_index_toc_check_pages
-    max_pages_per_node = kwargs.get("max_pages_per_node") or settings.pdf_index_max_pages_per_node
-    max_tokens_per_node = kwargs.get("max_tokens_per_node") or settings.pdf_index_max_tokens_per_node
+    toc_check_pages = (
+        kwargs.get("toc_check_pages") or settings.pdf_index_toc_check_pages
+    )
+    max_pages_per_node = (
+        kwargs.get("max_pages_per_node") or settings.pdf_index_max_pages_per_node
+    )
+    max_tokens_per_node = (
+        kwargs.get("max_tokens_per_node") or settings.pdf_index_max_tokens_per_node
+    )
 
     # 这些是字符串类型的配置，转换为布尔值
     if_add_node_id_str = kwargs.get("if_add_node_id") or "yes"
@@ -130,7 +140,12 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     if_add_node_id = if_add_node_id_str.lower() in ("yes", "true", "1", "on")
     if_add_node_summary = if_add_node_summary_str.lower() in ("yes", "true", "1", "on")
     if_add_node_text = if_add_node_text_str.lower() in ("yes", "true", "1", "on")
-    if_add_node_description = if_add_doc_description_str.lower() in ("yes", "true", "1", "on")
+    if_add_node_description = if_add_doc_description_str.lower() in (
+        "yes",
+        "true",
+        "1",
+        "on",
+    )
 
     require_llm = kwargs.get("require_llm", True)
     api_key = kwargs.get("api_key")
@@ -174,7 +189,9 @@ def _validate_pdf_file(pdf_path: Path) -> Tuple[bool, Optional[str], Optional[in
         return False, f"Cannot read PDF file: {e}", None
 
 
-def _check_llm_config(require_llm: bool, api_key: Optional[str]) -> Tuple[bool, Optional[str]]:
+def _check_llm_config(
+    require_llm: bool, api_key: Optional[str]
+) -> Tuple[bool, Optional[str]]:
     """
     检查 LLM API 配置
 
@@ -189,18 +206,23 @@ def _check_llm_config(require_llm: bool, api_key: Optional[str]) -> Tuple[bool, 
         return True, None
 
     llm_api_key = api_key or (
-        os.getenv("DEEPSEEK_API_KEY") or
-        os.getenv("CHATGPT_API_KEY") or
-        os.getenv("OPENAI_API_KEY")
+        os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("CHATGPT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
     )
 
     if not llm_api_key:
-        return False, "LLM API key is required for PageIndex tree indexing. Please set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
+        return (
+            False,
+            "LLM API key is required for PageIndex tree indexing. Please set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable.",
+        )
 
     return True, None
 
 
-def _setup_pageindex_config(config: Dict[str, Any], llm_api_key: Optional[str]) -> Tuple[Any, Any]:
+def _setup_pageindex_config(
+    config: Dict[str, Any], llm_api_key: Optional[str]
+) -> Tuple[Any, Any]:
     """
     设置 PageIndex 配置和 LLM 客户端
 
@@ -211,14 +233,14 @@ def _setup_pageindex_config(config: Dict[str, Any], llm_api_key: Optional[str]) 
     Returns:
         (opt, llm_client_instance)
     """
-    from pageindex.core import ConfigLoader
-    from pageindex.llm import UnifiedLLM, get_provider
 
     config_loader = ConfigLoader()
 
     user_opt = {
         "model": config["model"],
-        "if_add_node_summary": config["if_add_node_summary"] if config["require_llm"] else "no",
+        "if_add_node_summary": (
+            config["if_add_node_summary"] if config["require_llm"] else "no"
+        ),
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
         # Note: if_add_node_description is not supported by PageIndex
@@ -248,7 +270,7 @@ def _parse_pdf_structure(
     opt: Any,
     llm_client: Any,
     config: Dict[str, Any],
-    progress_callback=None
+    progress_callback=None,
 ) -> Tuple[Optional[Dict], float]:
     """
     解析 PDF 结构
@@ -267,7 +289,9 @@ def _parse_pdf_structure(
 
     logger.info(f"[PDF解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}")
     logger.info(f"[PDF解析] 输入文件: {Path(pdf_path).name}")
-    logger.info(f"[PDF解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}")
+    logger.info(
+        f"[PDF解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}"
+    )
     logger.info(f"[PDF解析] LLM 客户端: {llm_client is not None}")
 
     # 更新进度：开始 PDF 解析
@@ -275,10 +299,10 @@ def _parse_pdf_structure(
         progress_callback("parsing_pdf", 55, "正在提取 PDF 页面...")
 
     try:
-        logger.info(f"[PDF解析] 即将调用 page_index_main...")
+        logger.info("[PDF解析] 即将调用 page_index_main...")
         tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
 
-        logger.info(f"[PDF解析] page_index_main 返回")
+        logger.info("[PDF解析] page_index_main 返回")
     except Exception as e:
         logger.error(f"[PDF解析] 失败: {type(e).__name__}: {str(e)}")
         logger.error(f"[PDF解析] 耗时: {time.time() - parse_start:.2f} 秒")
@@ -289,7 +313,7 @@ def _parse_pdf_structure(
     logger.info(f"[PDF解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
 
     # 更新进度：PDF 解析完成，正在生成摘要
-    if progress_callback and config.get('if_add_node_summary'):
+    if progress_callback and config.get("if_add_node_summary"):
         progress_callback("generating_summaries", 65, "正在生成章节摘要...")
 
     if not tree_result:
@@ -310,7 +334,7 @@ def _store_to_chromadb(
     index_id: str,
     pdf_path_obj: Path,
     storage_dir: str,
-    progress_callback=None
+    progress_callback=None,
 ) -> float:
     """
     存储到 ChromaDB
@@ -344,12 +368,12 @@ def _store_to_chromadb(
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
         "indexing_method": "pageindex_tree",
-        "llm_enabled": True
+        "llm_enabled": True,
     }
     logger.debug(f"[向量存储] 集合元数据: {collection_metadata}")
 
     store.create_collection(name=index_id, metadata=collection_metadata)
-    logger.info(f"[向量存储] 集合创建成功")
+    logger.info("[向量存储] 集合创建成功")
 
     # 准备文档
     logger.info("[向量存储] 准备向量化文档...")
@@ -357,10 +381,7 @@ def _store_to_chromadb(
         {
             "id": node["id"],
             "text": node["text"],
-            "metadata": {
-                **node["metadata"],
-                "pdf_name": pdf_path_obj.name
-            }
+            "metadata": {**node["metadata"], "pdf_name": pdf_path_obj.name},
         }
         for node in section_nodes
     ]
@@ -369,7 +390,7 @@ def _store_to_chromadb(
     total_text_length = sum(len(doc["text"]) for doc in documents)
     avg_text_length = total_text_length // len(documents) if documents else 0
 
-    logger.info(f"[向量存储] 文档统计:")
+    logger.info("[向量存储] 文档统计:")
     logger.info(f"  - 文档数量: {len(documents)}")
     logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
     logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
@@ -381,7 +402,7 @@ def _store_to_chromadb(
     embed_time = time.time() - embed_start
 
     vector_time = time.time() - vector_start
-    logger.info(f"[向量存储] 向量存储完成:")
+    logger.info("[向量存储] 向量存储完成:")
     logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
     logger.info(f"  - 存储总耗时: {vector_time:.2f} 秒")
     logger.info(f"  - 存储文档数: {len(documents)}")
@@ -395,7 +416,7 @@ def _save_metadata(
     section_nodes: List[Dict],
     tree_result: Dict,
     storage_dir: str,
-    progress_callback=None
+    progress_callback=None,
 ) -> None:
     """
     保存索引元数据
@@ -425,7 +446,7 @@ def _save_metadata(
         "indexing_method": "pageindex_tree",
         "llm_enabled": True,
         "tree_structure": tree_result,
-        "sections": section_nodes
+        "sections": section_nodes,
     }
 
     # 注：此函数在 ThreadPoolExecutor 中运行，使用同步 I/O 是可接受的
@@ -437,17 +458,13 @@ def _save_metadata(
     metadata_size = metadata_path.stat().st_size / 1024  # KB
     logger.info(f"[元数据] 已保存: {metadata_path}")
     logger.info(f"[元数据] 文件大小: {metadata_size:.2f} KB")
-    
+
     # 返回元数据内容,用于后续的 Markdown 导出
     return metadata_content
 
 
-
 def _index_pdf_sync(
-    pdf_path: str,
-    storage_dir: str,
-    progress_callback=None,
-    **kwargs
+    pdf_path: str, storage_dir: str, progress_callback=None, **kwargs
 ) -> Dict[str, Any]:
     """
     同步 PDF 索引函数（在线程池中执行）
@@ -463,9 +480,9 @@ def _index_pdf_sync(
     pdf_path_obj = Path(pdf_path)
     start_time = time.time()
 
-    logger.info("="*60)
+    logger.info("=" * 60)
     logger.info(f"[索引开始] PDF 文件: {pdf_path}")
-    logger.info("="*60)
+    logger.info("=" * 60)
 
     # 辅助函数：安全地调用进度回调
     def _update_progress(step: str, percent: int, message: str):
@@ -491,7 +508,7 @@ def _index_pdf_sync(
     logger.info(f"[配置参数] Add Node Text: {config['if_add_node_text']}")
 
     # 步骤 1: 验证 PDF 文件
-    logger.info(f"[步骤 1/6] 验证 PDF 文件...")
+    logger.info("[步骤 1/6] 验证 PDF 文件...")
     _update_progress("validate_pdf", 10, "验证 PDF 文件...")
     is_valid, error_msg, file_size = _validate_pdf_file(pdf_path_obj)
     if not is_valid:
@@ -503,7 +520,7 @@ def _index_pdf_sync(
         logger.info(f"文件大小: {file_size_mb:.2f} MB ({file_size} bytes)")
 
     # 步骤 2: 检查 LLM API 配置
-    logger.info(f"[步骤 2/6] 检查 LLM API 配置...")
+    logger.info("[步骤 2/6] 检查 LLM API 配置...")
     _update_progress("check_llm_config", 20, "检查 LLM API 配置...")
     is_valid, error_msg = _check_llm_config(config["require_llm"], config["api_key"])
     if not is_valid:
@@ -512,40 +529,46 @@ def _index_pdf_sync(
 
     # 获取 LLM API key
     llm_api_key = config["api_key"] or (
-        os.getenv("DEEPSEEK_API_KEY") or
-        os.getenv("CHATGPT_API_KEY") or
-        os.getenv("OPENAI_API_KEY")
+        os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("CHATGPT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
     )
     if llm_api_key:
-        logger.info(f"LLM API Key: {'*' * min(len(llm_api_key), 12)} ({len(llm_api_key)} 字符)")
+        logger.info(
+            f"LLM API Key: {'*' * min(len(llm_api_key), 12)} ({len(llm_api_key)} 字符)"
+        )
 
     # 生成索引 ID
-    file_hash = hashlib.md5(
-        f"{pdf_path_obj.name}{time.time()}".encode()
-    ).hexdigest()[:12]
+    file_hash = hashlib.md5(f"{pdf_path_obj.name}{time.time()}".encode()).hexdigest()[
+        :12
+    ]
     index_id = f"idx_{file_hash}"
     logger.info(f"索引 ID: {index_id}")
 
     try:
         # 步骤 3: 初始化 PageIndex 配置
-        logger.info(f"[步骤 3/6] 初始化 PageIndex 配置...")
+        logger.info("[步骤 3/6] 初始化 PageIndex 配置...")
         _update_progress("init_pageindex", 30, "初始化 PageIndex 配置...")
         opt, llm_client_instance = _setup_pageindex_config(config, llm_api_key)
         logger.info("PageIndex 配置加载完成")
 
         # 步骤 4: 创建 LLM 客户端（已在 _setup_pageindex_config 中完成）
-        logger.info(f"[步骤 4/6] 创建 LLM 客户端...")
+        logger.info("[步骤 4/6] 创建 LLM 客户端...")
         _update_progress("create_llm_client", 40, "创建 LLM 客户端...")
         if llm_client_instance:
-            logger.info(f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}")
+            logger.info(
+                f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}"
+            )
 
         # 步骤 5: 解析 PDF 结构
-        logger.info(f"[步骤 5/6] 开始解析 PDF 结构 (这可能需要几分钟)...")
+        logger.info("[步骤 5/6] 开始解析 PDF 结构 (这可能需要几分钟)...")
         _update_progress("parse_pdf", 50, "正在解析 PDF 结构...")
         logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
         logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
-        if config['if_add_node_summary']:
-            logger.info(f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})")
+        if config["if_add_node_summary"]:
+            logger.info(
+                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
+            )
 
         tree_result, parse_time = _parse_pdf_structure(
             pdf_path, opt, llm_client_instance, config, progress_callback
@@ -570,7 +593,7 @@ def _index_pdf_sync(
 
         section_nodes = []
         for idx, top_level_node in enumerate(structure_list):
-            node_title = top_level_node.get('title', f'Unknown_{idx}')
+            node_title = top_level_node.get("title", f"Unknown_{idx}")
             logger.debug(f"[章节提取] 处理顶层节点 {idx + 1}: {node_title}")
             logger.debug(f"  - 起始页: {top_level_node.get('start_index', 'Unknown')}")
             logger.debug(f"  - 结束页: {top_level_node.get('end_index', 'Unknown')}")
@@ -593,12 +616,12 @@ def _index_pdf_sync(
 
         # 显示节点详情
         logger.info("-" * 50)
-        logger.info(f"[节点详情] 前 5 个节点信息:")
+        logger.info("[节点详情] 前 5 个节点信息:")
         for i, node in enumerate(section_nodes[:5]):
-            section = node['metadata'].get('section', 'Unknown')
-            page = node['metadata'].get('page', 'Unknown')
-            level = node['metadata'].get('level', 0)
-            text_len = len(node['text'])
+            section = node["metadata"].get("section", "Unknown")
+            page = node["metadata"].get("page", "Unknown")
+            level = node["metadata"].get("level", 0)
+            text_len = len(node["text"])
             logger.info(f"  节点 {i+1}: {section}")
             logger.info(f"    - 页码: {page}, 层级: {level}, 文本长度: {text_len} 字符")
 
@@ -612,22 +635,32 @@ def _index_pdf_sync(
         )
 
         # 保存索引元数据
-        metadata_content = _save_metadata(index_id, pdf_path_obj, section_nodes, tree_result, storage_dir, progress_callback)
-
+        metadata_content = _save_metadata(
+            index_id,
+            pdf_path_obj,
+            section_nodes,
+            tree_result,
+            storage_dir,
+            progress_callback,
+        )
 
         # 最终总结
         total_time = time.time() - start_time
         logger.info("")
         logger.info("=" * 60)
-        logger.info(f"[索引完成] ✓ 索引创建成功!")
+        logger.info("[索引完成] ✓ 索引创建成功!")
         logger.info("=" * 60)
-        logger.info(f"  索引信息:")
+        logger.info("  索引信息:")
         logger.info(f"    - 索引 ID: {index_id}")
         logger.info(f"    - PDF 名称: {pdf_path_obj.name}")
         logger.info(f"    - 节点数量: {len(section_nodes)}")
-        logger.info(f"  时间统计:")
-        logger.info(f"    - PDF 解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)")
-        logger.info(f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)")
+        logger.info("  时间统计:")
+        logger.info(
+            f"    - PDF 解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)"
+        )
+        logger.info(
+            f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)"
+        )
         logger.info(f"    - 总耗时: {total_time:.2f} 秒 ({total_time/60:.1f} 分钟)")
         logger.info("=" * 60)
         logger.info("")
@@ -640,37 +673,29 @@ def _index_pdf_sync(
             "index_id": index_id,
             "node_count": len(section_nodes),
             "pdf_name": pdf_path_obj.name,
-            "indexing_method": "pageindex_tree"
+            "indexing_method": "pageindex_tree",
         }
 
     except Exception as e:
         total_time = time.time() - start_time
         logger.error("")
         logger.error("=" * 60)
-        logger.error(f"[索引失败] ✗ 索引创建失败")
+        logger.error("[索引失败] ✗ 索引创建失败")
         logger.error("=" * 60)
-        logger.error(f"  错误信息:")
+        logger.error("  错误信息:")
         logger.error(f"    - 异常类型: {type(e).__name__}")
         logger.error(f"    - 错误内容: {str(e)}")
-        logger.error(f"  上下文信息:")
+        logger.error("  上下文信息:")
         logger.error(f"    - PDF 文件: {pdf_path}")
         logger.error(f"    - 耗时: {total_time:.2f} 秒")
         logger.error("=" * 60)
         logger.error("", exc_info=True)
 
-        return {
-            "status": "error",
-            "error": f"Unexpected error: {str(e)}"
-        }
-
-
+        return {"status": "error", "error": f"Unexpected error: {str(e)}"}
 
 
 async def index_pdf(
-    pdf_path: str,
-    storage_dir: str,
-    progress_callback=None,
-    **kwargs
+    pdf_path: str, storage_dir: str, progress_callback=None, **kwargs
 ) -> Dict[str, Any]:
     """
     异步 PDF 索引
@@ -686,6 +711,12 @@ async def index_pdf(
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         cpu_executor,
-        functools.partial(_index_pdf_sync, pdf_path=pdf_path, storage_dir=storage_dir, progress_callback=progress_callback, **kwargs)
+        functools.partial(
+            _index_pdf_sync,
+            pdf_path=pdf_path,
+            storage_dir=storage_dir,
+            progress_callback=progress_callback,
+            **kwargs,
+        ),
     )
     return result

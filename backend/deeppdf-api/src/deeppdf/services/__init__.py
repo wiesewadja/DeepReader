@@ -13,5 +13,5 @@ __all__ = [
     "list_indexes",
     "delete_index",
     "hybrid_search",
-    "TreeSearchEngine"
+    "TreeSearchEngine",
 ]

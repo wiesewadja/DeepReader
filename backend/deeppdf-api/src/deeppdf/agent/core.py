@@ -8,14 +8,18 @@ import json
 import logging
 import uuid
 from enum import IntEnum
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional
 
 from openai import OpenAI, Stream
-from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessageToolCall,
+)
 
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
-from .prompts import build_system_prompt, ToolCallData, RouteDecision
+from .prompts import build_system_prompt, RouteDecision
 from ..config import settings
 
 
@@ -38,9 +42,10 @@ class ThoughtState(IntEnum):
 
     用于在流式输出中管理 <thought> 标签的开启和闭合。
     """
-    CLOSED = 0   # 无待闭合标签
+
+    CLOSED = 0  # 无待闭合标签
     PENDING = 1  # 检测到内容，准备输出
-    OPENED = 2   # 已输出 <thought>，待闭合
+    OPENED = 2  # 已输出 <thought>，待闭合
 
 
 # ========== 异常定义 ==========
@@ -48,21 +53,25 @@ class ThoughtState(IntEnum):
 
 class AgentError(Exception):
     """Agent 基础异常类"""
+
     pass
 
 
 class LLMError(AgentError):
     """LLM 调用失败异常"""
+
     pass
 
 
 class ToolExecutionError(AgentError):
     """工具执行失败异常"""
+
     pass
 
 
 class MaxIterationsError(AgentError):
     """达到最大迭代次数异常"""
+
     pass
 
 
@@ -121,9 +130,15 @@ class DeepPDFAgent:
         self.llm_provider = llm_provider
         self.llm_model = llm_model or self._get_default_model(llm_provider)
         # 使用 settings 中的默认值（如果未提供）
-        self.temperature = temperature if temperature is not None else settings.agent_temperature
+        self.temperature = (
+            temperature if temperature is not None else settings.agent_temperature
+        )
         self.top_p = top_p if top_p is not None else settings.agent_top_p
-        self.max_iterations = max_iterations if max_iterations is not None else settings.agent_max_iterations
+        self.max_iterations = (
+            max_iterations
+            if max_iterations is not None
+            else settings.agent_max_iterations
+        )
 
         # 初始化 LLM 客户端
         self.client = self._init_llm(api_key, base_url)
@@ -185,7 +200,9 @@ class DeepPDFAgent:
             base_url=base_url,
         )
 
-    def _get_tool_schemas(self, allowed: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def _get_tool_schemas(
+        self, allowed: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         """
         获取工具的 OpenAI Function Calling 格式 schema
 
@@ -342,7 +359,9 @@ class DeepPDFAgent:
             # 未知类型：允许全部工具
             return None
 
-    def _maybe_open_thought_tag(self, thought_state: Dict[str, Any]) -> Generator[str, None, None]:
+    def _maybe_open_thought_tag(
+        self, thought_state: Dict[str, Any]
+    ) -> Generator[str, None, None]:
         """
         在适当时机输出开启标签
 
@@ -356,7 +375,9 @@ class DeepPDFAgent:
             thought_state["state"] = ThoughtState.OPENED
             yield "<thought>"
 
-    def _flush_thought_tag(self, thought_state: Dict[str, Any]) -> Generator[str, None, None]:
+    def _flush_thought_tag(
+        self, thought_state: Dict[str, Any]
+    ) -> Generator[str, None, None]:
         """
         输出闭合标签（如果需要）
 
@@ -411,11 +432,15 @@ class DeepPDFAgent:
             # 自动路由
             route_type = RouteDecision.classify_query(query)
             allowed_tools = self._get_allowed_tools_for_route(route_type)
-            logger.info(f"[Agent路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+            logger.info(
+                f"[Agent路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}"
+            )
         else:
             # 强制模式
             allowed_tools = self._get_allowed_tools_for_route(force_mode)
-            logger.info(f"[Agent路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}")
+            logger.info(
+                f"[Agent路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}"
+            )
 
         iterations = 0
 
@@ -447,19 +472,23 @@ class DeepPDFAgent:
                 # 没有工具调用，返回最终回答
                 answer = assistant_message.content or ""
                 # 记录最终回答到历史
-                self.history.append({
-                    "role": "assistant",
-                    "content": answer,
-                })
-                logger.info(f"[Agent完成] 无工具调用，返回最终回答")
+                self.history.append(
+                    {
+                        "role": "assistant",
+                        "content": answer,
+                    }
+                )
+                logger.info("[Agent完成] 无工具调用，返回最终回答")
                 return answer
 
             # 记录 assistant 消息（包含工具调用）到历史
-            self.history.append({
-                "role": "assistant",
-                "content": assistant_message.content or "",
-                "tool_calls": [self._format_tool_call(tc) for tc in tool_calls],
-            })
+            self.history.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_message.content or "",
+                    "tool_calls": [self._format_tool_call(tc) for tc in tool_calls],
+                }
+            )
 
             # 执行工具调用
             for tool_call in tool_calls:
@@ -477,11 +506,13 @@ class DeepPDFAgent:
                 output = self.executor.execute(tool_name, **args)
 
                 # 记录工具结果到历史
-                self.history.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": output,
-                })
+                self.history.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": output,
+                    }
+                )
 
         # 达到最大迭代次数
         logger.warning(f"[Agent警告] 达到最大迭代次数 {self.max_iterations}")
@@ -493,7 +524,9 @@ class DeepPDFAgent:
         )
         return response.choices[0].message.content or "抱歉，未能完成您的请求。"
 
-    def run_stream(self, query: str, force_mode: Optional[str] = None) -> Generator[str, None, None]:
+    def run_stream(
+        self, query: str, force_mode: Optional[str] = None
+    ) -> Generator[str, None, None]:
         """
         运行 Agent 主循环 (流式输出)
 
@@ -518,11 +551,15 @@ class DeepPDFAgent:
             # 自动路由
             route_type = RouteDecision.classify_query(query)
             allowed_tools = self._get_allowed_tools_for_route(route_type)
-            logger.info(f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+            logger.info(
+                f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}"
+            )
         else:
             # 强制模式
             allowed_tools = self._get_allowed_tools_for_route(force_mode)
-            logger.info(f"[Agent流式路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}")
+            logger.info(
+                f"[Agent流式路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}"
+            )
 
         # 初始化思考状态机
         thought_state: Dict[str, Any] = {
@@ -541,13 +578,15 @@ class DeepPDFAgent:
                 messages = self._build_messages()
 
                 try:
-                    stream: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
-                        model=self.llm_model,
-                        messages=messages,
-                        tools=self._get_tool_schemas(allowed=allowed_tools),
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        stream=True,
+                    stream: Stream[ChatCompletionChunk] = (
+                        self.client.chat.completions.create(
+                            model=self.llm_model,
+                            messages=messages,
+                            tools=self._get_tool_schemas(allowed=allowed_tools),
+                            temperature=self.temperature,
+                            top_p=self.top_p,
+                            stream=True,
+                        )
                     )
                 except Exception as e:
                     logger.error(f"[LLM流式错误] 调用失败: {e}")
@@ -599,13 +638,13 @@ class DeepPDFAgent:
 
                             if tool_call.function:
                                 if tool_call.function.name:
-                                    current_tool_calls[index]["function"]["name"] = (
-                                        tool_call.function.name
-                                    )
+                                    current_tool_calls[index]["function"][
+                                        "name"
+                                    ] = tool_call.function.name
                                 if tool_call.function.arguments:
-                                    current_tool_calls[index]["function"]["arguments"] += (
-                                        tool_call.function.arguments
-                                    )
+                                    current_tool_calls[index]["function"][
+                                        "arguments"
+                                    ] += tool_call.function.arguments
 
                 # 检查是否有工具调用
                 if current_tool_calls:
@@ -614,11 +653,13 @@ class DeepPDFAgent:
 
                     # 记录 assistant 消息（包含工具调用）到历史
                     content_text = "".join(content_buffer) if content_buffer else ""
-                    self.history.append({
-                        "role": "assistant",
-                        "content": content_text,
-                        "tool_calls": list(current_tool_calls.values()),
-                    })
+                    self.history.append(
+                        {
+                            "role": "assistant",
+                            "content": content_text,
+                            "tool_calls": list(current_tool_calls.values()),
+                        }
+                    )
 
                     # 执行工具调用
                     for tool_call_data in current_tool_calls.values():
@@ -633,22 +674,26 @@ class DeepPDFAgent:
                         output = self.executor.execute(tool_name, **args)
 
                         # 记录工具结果到历史
-                        self.history.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_data["id"],
-                            "content": output,
-                        })
+                        self.history.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call_data["id"],
+                                "content": output,
+                            }
+                        )
                 else:
                     # 没有工具调用，完成（最终答案）
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)
 
                     content_text = "".join(content_buffer) if content_buffer else ""
-                    self.history.append({
-                        "role": "assistant",
-                        "content": content_text,
-                    })
-                    logger.info(f"[Agent流式完成] 无工具调用，返回最终答案")
+                    self.history.append(
+                        {
+                            "role": "assistant",
+                            "content": content_text,
+                        }
+                    )
+                    logger.info("[Agent流式完成] 无工具调用，返回最终答案")
                     return
 
             # 达到最大迭代次数

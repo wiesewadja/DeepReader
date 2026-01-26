@@ -2,9 +2,9 @@
 """工具模块单元测试"""
 import pytest
 import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 from deeppdf.agent.tools import InspectTocTool, ReadPageTool, HybridSearchTool
+from deeppdf.agent.markdown_locator import MarkdownLocator
 
 
 def test_inspect_toc_with_valid_structure():
@@ -22,17 +22,17 @@ def test_inspect_toc_with_valid_structure():
                         "node_id": "node_1_1",
                         "start_index": 1,
                         "end_index": 5,
-                        "nodes": []
+                        "nodes": [],
                     }
-                ]
+                ],
             },
             {
                 "title": "第二章：方法",
                 "node_id": "node_2",
                 "start_index": 11,
                 "end_index": 20,
-                "nodes": []
-            }
+                "nodes": [],
+            },
         ]
     }
 
@@ -74,11 +74,11 @@ def test_inspect_toc_with_nested_structure():
                                 "node_id": "node_1_1_1",
                                 "start_index": 1,
                                 "end_index": 10,
-                                "nodes": []
+                                "nodes": [],
                             }
-                        ]
+                        ],
                     }
-                ]
+                ],
             }
         ]
     }
@@ -97,7 +97,7 @@ def test_read_page_with_valid_page():
     tool = ReadPageTool(
         pageindex_lib_path="/fake/path",
         index_id="test_idx",
-        storage_dir="/fake/storage"
+        storage_dir="/fake/storage",
     )
 
     # Mock PageIndex 实例
@@ -120,7 +120,7 @@ def test_read_page_with_invalid_page():
     tool = ReadPageTool(
         pageindex_lib_path="/fake/path",
         index_id="test_idx",
-        storage_dir="/fake/storage"
+        storage_dir="/fake/storage",
     )
 
     mock_pi = Mock()
@@ -139,11 +139,13 @@ def test_read_page_with_error():
     tool = ReadPageTool(
         pageindex_lib_path="/fake/path",
         index_id="test_idx",
-        storage_dir="/fake/storage"
+        storage_dir="/fake/storage",
     )
 
     # Mock _load_page_index 方法抛出异常
-    with patch.object(tool, '_load_page_index', side_effect=FileNotFoundError("文件不存在")):
+    with patch.object(
+        tool, "_load_page_index", side_effect=FileNotFoundError("文件不存在")
+    ):
         result = tool(page_num=1)
 
         assert "错误" in result
@@ -155,7 +157,7 @@ def test_read_page_lazy_loading():
     tool = ReadPageTool(
         pageindex_lib_path="/fake/path",
         index_id="test_idx",
-        storage_dir="/fake/storage"
+        storage_dir="/fake/storage",
     )
 
     # 验证初始状态：_pi 为 None
@@ -176,7 +178,7 @@ def test_read_page_lazy_loading():
     mock_pi.get_text_with_tags.assert_called_once_with(1)
 
     # 再次调用 - 仍然使用同一个 _pi 实例
-    result2 = tool(page_num=2)
+    tool(page_num=2)
     assert tool._pi is mock_pi, "_pi 应该仍然是同一个实例"
 
     # 验证 get_text_with_tags 被调用了两次（page_num=1 和 page_num=2）
@@ -188,21 +190,23 @@ def test_read_page_with_specific_exceptions():
     tool = ReadPageTool(
         pageindex_lib_path="/fake/path",
         index_id="test_idx",
-        storage_dir="/fake/storage"
+        storage_dir="/fake/storage",
     )
 
     # 测试 FileNotFoundError
-    with patch.object(tool, '_load_page_index', side_effect=FileNotFoundError("未找到文件")):
+    with patch.object(
+        tool, "_load_page_index", side_effect=FileNotFoundError("未找到文件")
+    ):
         result = tool(page_num=1)
         assert "读取页面失败" in result
 
     # 测试 ValueError
-    with patch.object(tool, '_load_page_index', side_effect=ValueError("无效值")):
+    with patch.object(tool, "_load_page_index", side_effect=ValueError("无效值")):
         result = tool(page_num=1)
         assert "读取页面失败" in result
 
     # 测试未知异常
-    with patch.object(tool, '_load_page_index', side_effect=RuntimeError("未知错误")):
+    with patch.object(tool, "_load_page_index", side_effect=RuntimeError("未知错误")):
         result = tool(page_num=1)
         assert "发生未知错误" in result
 
@@ -225,10 +229,10 @@ def temp_index_dir(tmp_path):
                     "node_id": "node_1",
                     "start_index": 1,
                     "end_index": 10,
-                    "nodes": []
+                    "nodes": [],
                 }
             ]
-        }
+        },
     }
 
     with open(index_dir / "test_idx.json", "w") as f:
@@ -238,7 +242,8 @@ def temp_index_dir(tmp_path):
 
 
 def test_hybrid_search_with_results(temp_index_dir, monkeypatch):
-    """测试: 有结果的检索"""
+    """测试: 有结果的检索（旧格式兼容测试）"""
+
     # Mock query_pdf 函数
     async def mock_query_pdf(*args, **kwargs):
         return {
@@ -248,60 +253,250 @@ def test_hybrid_search_with_results(temp_index_dir, monkeypatch):
                     "text": "这是搜索结果的内容",
                     "metadata": {
                         "section": "第一章",
-                        "score": 0.95
-                    }
+                        "score": 0.95,
+                        "node_id": "node_1",
+                        "page": 5,
+                    },
                 }
             ],
-            "search_method": "hybrid_title_bm25_vector"
+            "search_method": "hybrid_title_bm25_vector",
         }
 
     # Mock asyncio.run 和 query_pdf
-    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
-        tool = HybridSearchTool(
-            index_id="test_idx",
-            storage_dir=temp_index_dir
-        )
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
+        tool = HybridSearchTool(index_id="test_idx", storage_dir=temp_index_dir)
         result = tool(query="测试查询", top_k=5)
 
-        assert "检索结果" in result
-        assert "第一章" in result
-        assert "0.95" in result
+        # 解析 JSON 结果
+        results = json.loads(result)
+        assert isinstance(results, list)
+        assert len(results) == 1
+        assert results[0]["text"] == "这是搜索结果的内容"
+        assert results[0]["page"] == 5
 
 
 def test_hybrid_search_no_results(temp_index_dir, monkeypatch):
     """测试: 无结果的检索"""
+
     async def mock_query_pdf(*args, **kwargs):
         return {
             "status": "success",
             "results": [],
-            "search_method": "hybrid_title_bm25_vector"
+            "search_method": "hybrid_title_bm25_vector",
         }
 
-    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
-        tool = HybridSearchTool(
-            index_id="test_idx",
-            storage_dir=temp_index_dir
-        )
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
+        tool = HybridSearchTool(index_id="test_idx", storage_dir=temp_index_dir)
         result = tool(query="不存在的查询", top_k=5)
 
-        assert "未找到" in result
-        assert "不存在的查询" in result
+        # 解析 JSON 结果
+        result_obj = json.loads(result)
+        assert "error" in result_obj
+        assert "未找到" in result_obj["error"]
+        assert "不存在的查询" in result_obj["error"]
 
 
 def test_hybrid_search_with_error(temp_index_dir, monkeypatch):
     """测试: 检索服务错误"""
+
+    async def mock_query_pdf(*args, **kwargs):
+        return {"status": "error", "error": "索引不存在"}
+
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
+        tool = HybridSearchTool(index_id="test_idx", storage_dir=temp_index_dir)
+        result = tool(query="测试查询", top_k=5)
+
+        # 解析 JSON 结果
+        result_obj = json.loads(result)
+        assert "error" in result_obj
+        assert "索引不存在" in result_obj["error"]
+
+
+def test_hybrid_search_with_markdown_locator(temp_index_dir):
+    """测试: 使用 markdown_locator 返回增强的引用元数据"""
+    # 创建 markdown_locator
+    index_metadata = {
+        "markdown_files": {
+            "node_1": "第一章/引言.md",
+            "node_2": "第二章/方法.md",
+        },
+        "pdf_name": "test.pdf",
+    }
+    markdown_locator = MarkdownLocator(index_metadata)
+
+    # Mock query_pdf 返回带有 node_id 的结果
     async def mock_query_pdf(*args, **kwargs):
         return {
-            "status": "error",
-            "error": "索引不存在"
+            "status": "success",
+            "results": [
+                {
+                    "text": "这是搜索结果的内容",
+                    "metadata": {
+                        "section": "第一章",
+                        "node_id": "node_1",
+                        "page": 5,
+                        "score": 0.95,
+                    },
+                },
+                {
+                    "text": "另一个结果",
+                    "metadata": {
+                        "section": "第二章",
+                        "node_id": "node_2",
+                        "page": 10,
+                        "score": 0.85,
+                    },
+                },
+            ],
+            "search_method": "hybrid_title_bm25_vector",
         }
 
-    with patch('deeppdf.agent.tools.query_pdf', mock_query_pdf):
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
         tool = HybridSearchTool(
             index_id="test_idx",
-            storage_dir=temp_index_dir
+            storage_dir=temp_index_dir,
+            markdown_locator=markdown_locator,
         )
         result = tool(query="测试查询", top_k=5)
 
-        assert "错误" in result
-        assert "索引不存在" in result
+        # 解析 JSON 结果
+        results = json.loads(result)
+
+        # 验证结果结构
+        assert isinstance(results, list)
+        assert len(results) == 2
+
+        # 验证第一个结果的引用元数据
+        first_result = results[0]
+        assert first_result["node_id"] == "node_1"
+        assert first_result["obsidian_link"] == "[[第一章/引言.md#^page-5]]"
+        assert first_result["page"] == 5
+        assert first_result["anchor"] == "^page-5"
+        assert first_result["text"] == "这是搜索结果的内容"
+
+        # 验证第二个结果的引用元数据
+        second_result = results[1]
+        assert second_result["node_id"] == "node_2"
+        assert second_result["obsidian_link"] == "[[第二章/方法.md#^page-10]]"
+        assert second_result["page"] == 10
+        assert second_result["anchor"] == "^page-10"
+
+
+def test_hybrid_search_without_markdown_locator(temp_index_dir):
+    """测试: 不使用 markdown_locator 时返回基本元数据（向后兼容）"""
+
+    # Mock query_pdf 返回带有 node_id 的结果
+    async def mock_query_pdf(*args, **kwargs):
+        return {
+            "status": "success",
+            "results": [
+                {
+                    "text": "这是搜索结果的内容",
+                    "metadata": {
+                        "section": "第一章",
+                        "node_id": "node_1",
+                        "page": 5,
+                        "score": 0.95,
+                    },
+                },
+            ],
+            "search_method": "hybrid_title_bm25_vector",
+        }
+
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
+        # 不提供 markdown_locator
+        tool = HybridSearchTool(
+            index_id="test_idx", storage_dir=temp_index_dir, markdown_locator=None
+        )
+        result = tool(query="测试查询", top_k=5)
+
+        # 解析 JSON 结果
+        results = json.loads(result)
+
+        # 验证结果结构
+        assert isinstance(results, list)
+        assert len(results) == 1
+
+        # 验证基本元数据（不包含增强的引用字段）
+        first_result = results[0]
+        assert "text" in first_result
+        assert first_result["text"] == "这是搜索结果的内容"
+        assert "page" in first_result
+        assert first_result["page"] == 5
+        assert "metadata" in first_result
+        assert first_result["metadata"]["node_id"] == "node_1"
+
+        # 验证不包含增强的引用字段
+        assert "node_id" not in first_result
+        assert "obsidian_link" not in first_result
+        assert "anchor" not in first_result
+
+
+def test_hybrid_search_missing_node_id(temp_index_dir):
+    """测试: 结果缺少 node_id 时的回退行为"""
+    # 创建 markdown_locator
+    index_metadata = {
+        "markdown_files": {"node_1": "第一章/引言.md"},
+        "pdf_name": "test.pdf",
+    }
+    markdown_locator = MarkdownLocator(index_metadata)
+
+    # Mock query_pdf 返回没有 node_id 的结果
+    async def mock_query_pdf(*args, **kwargs):
+        return {
+            "status": "success",
+            "results": [
+                {
+                    "text": "没有 node_id 的结果",
+                    "metadata": {
+                        "section": "未知章节",
+                        "page": 3,
+                        "score": 0.75,
+                    },
+                },
+            ],
+            "search_method": "vector",
+        }
+
+    with patch("deeppdf.agent.tools.query_pdf", mock_query_pdf):
+        tool = HybridSearchTool(
+            index_id="test_idx",
+            storage_dir=temp_index_dir,
+            markdown_locator=markdown_locator,
+        )
+        result = tool(query="测试查询", top_k=5)
+
+        # 解析 JSON 结果
+        results = json.loads(result)
+
+        # 验证回退到基本元数据
+        assert isinstance(results, list)
+        assert len(results) == 1
+
+        first_result = results[0]
+        assert "text" in first_result
+        assert first_result["text"] == "没有 node_id 的结果"
+        assert "page" in first_result
+        assert first_result["page"] == 3
+
+        # 验证不包含增强的引用字段（因为缺少 node_id）
+        assert "node_id" not in first_result
+        assert "obsidian_link" not in first_result
+        assert "anchor" not in first_result
+
+
+def test_hybrid_search_invalid_query(temp_index_dir):
+    """测试: 无效查询参数"""
+    tool = HybridSearchTool(index_id="test_idx", storage_dir=temp_index_dir)
+
+    # 测试空字符串
+    result = tool(query="", top_k=5)
+    result_obj = json.loads(result)
+    assert "error" in result_obj
+    assert "查询参数必须是非空字符串" in result_obj["error"]
+
+    # 测试无效的 top_k
+    result = tool(query="测试", top_k=100)
+    result_obj = json.loads(result)
+    assert "error" in result_obj
+    assert "top_k 必须在 1-50 之间" in result_obj["error"]

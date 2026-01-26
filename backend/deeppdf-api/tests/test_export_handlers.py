@@ -2,10 +2,10 @@
 导出处理器测试
 测试 export_index_data 函数
 """
+
 import pytest
 import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from deeppdf.api.export_handlers import export_index_data
 
 
@@ -19,12 +19,7 @@ def mock_metadata():
         "created_at": "2026-01-21 10:00:00",
         "tree_structure": {
             "structure": [
-                {
-                    "node_id": "node_1",
-                    "nodes": [
-                        {"node_id": "node_2", "nodes": []}
-                    ]
-                }
+                {"node_id": "node_1", "nodes": [{"node_id": "node_2", "nodes": []}]}
             ]
         },
         "sections": [
@@ -36,8 +31,8 @@ def mock_metadata():
                     "section": "1 Introduction",
                     "start_index": 1,
                     "end_index": 5,
-                    "level": 1
-                }
+                    "level": 1,
+                },
             },
             {
                 "id": "node_2",
@@ -47,10 +42,10 @@ def mock_metadata():
                     "section": "1.1 Background",
                     "start_index": 6,
                     "end_index": 10,
-                    "level": 2
-                }
-            }
-        ]
+                    "level": 2,
+                },
+            },
+        ],
     }
 
 
@@ -69,12 +64,16 @@ class TestExportIndexData:
     """测试 export_index_data 函数"""
 
     @pytest.mark.asyncio
-    async def test_export_success_returns_all_fields(self, mock_metadata_path, mock_metadata):
+    async def test_export_success_returns_all_fields(
+        self, mock_metadata_path, mock_metadata
+    ):
         """测试成功导出返回所有字段"""
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(mock_metadata_path.parent.parent)
 
-            with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=100):
+            with patch(
+                "deeppdf.api.export_handlers.get_pdf_page_count", return_value=100
+            ):
                 result = await export_index_data("idx_test123")
 
                 assert result["status"] == "success"
@@ -87,10 +86,12 @@ class TestExportIndexData:
     @pytest.mark.asyncio
     async def test_export_nodes_have_parent_id(self, mock_metadata_path, mock_metadata):
         """测试导出的节点包含正确的 parent_id"""
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(mock_metadata_path.parent.parent)
 
-            with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=100):
+            with patch(
+                "deeppdf.api.export_handlers.get_pdf_page_count", return_value=100
+            ):
                 result = await export_index_data("idx_test123")
 
                 nodes = result["nodes"]
@@ -103,12 +104,16 @@ class TestExportIndexData:
                 assert child_node["parent_id"] == "node_1"
 
     @pytest.mark.asyncio
-    async def test_export_page_range_formatting(self, mock_metadata_path, mock_metadata):
+    async def test_export_page_range_formatting(
+        self, mock_metadata_path, mock_metadata
+    ):
         """测试页码范围格式化"""
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(mock_metadata_path.parent.parent)
 
-            with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=100):
+            with patch(
+                "deeppdf.api.export_handlers.get_pdf_page_count", return_value=100
+            ):
                 result = await export_index_data("idx_test123")
 
                 nodes = result["nodes"]
@@ -137,10 +142,10 @@ class TestExportIndexData:
                         "section": "1 Single",
                         "start_index": 5,
                         "end_index": 5,
-                        "level": 1
-                    }
+                        "level": 1,
+                    },
                 }
-            ]
+            ],
         }
 
         indexes_dir = tmp_path / "indexes"
@@ -149,10 +154,12 @@ class TestExportIndexData:
         with open(metadata_file, "w") as f:
             json.dump(metadata, f)
 
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(tmp_path)
 
-            with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=10):
+            with patch(
+                "deeppdf.api.export_handlers.get_pdf_page_count", return_value=10
+            ):
                 result = await export_index_data("idx_same_page")
 
                 assert result["nodes"][0]["page_range"] == "5"
@@ -160,10 +167,11 @@ class TestExportIndexData:
     @pytest.mark.asyncio
     async def test_export_index_not_found(self, tmp_path):
         """测试索引不存在"""
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(tmp_path)
 
             from fastapi import HTTPException
+
             with pytest.raises(HTTPException) as exc_info:
                 await export_index_data("nonexistent")
 
@@ -179,7 +187,7 @@ class TestExportIndexData:
             "pdf_path": "/path/to/empty.pdf",
             "created_at": "2026-01-21 10:00:00",
             "tree_structure": {"structure": []},
-            "sections": []
+            "sections": [],
         }
 
         indexes_dir = tmp_path / "indexes"
@@ -188,10 +196,12 @@ class TestExportIndexData:
         with open(metadata_file, "w") as f:
             json.dump(metadata, f)
 
-        with patch('deeppdf.api.export_handlers.settings') as mock_settings:
+        with patch("deeppdf.api.export_handlers.settings") as mock_settings:
             mock_settings.base_dir = str(tmp_path)
 
-            with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=0):
+            with patch(
+                "deeppdf.api.export_handlers.get_pdf_page_count", return_value=0
+            ):
                 result = await export_index_data("idx_empty")
 
                 assert result["status"] == "success"

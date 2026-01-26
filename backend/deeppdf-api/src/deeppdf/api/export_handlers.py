@@ -1,6 +1,7 @@
 """
 API 路由定义 - 导出相关端点
 """
+
 import asyncio
 import json
 from pathlib import Path
@@ -28,7 +29,7 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
         if not metadata_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Index '{index_id}' not found"
+                detail=f"Index '{index_id}' not found",
             )
 
         # 使用异步 I/O 读取文件
@@ -59,17 +60,19 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
             # 返回原文（metadata["original_text"]），而非用于向量化的摘要（section["text"]）
             original_text = node_metadata.get("original_text", section.get("text", ""))
 
-            nodes.append({
-                "node_id": section.get("id", ""),
-                "node_name": node_metadata.get("node_name", ""),
-                "section": node_metadata.get("section", ""),
-                "page_range": page_range,
-                "start_index": start_index,
-                "end_index": end_index,
-                "level": node_metadata.get("level", 0),
-                "text": original_text,
-                "parent_id": parent_mapping.get(section.get("id", ""))
-            })
+            nodes.append(
+                {
+                    "node_id": section.get("id", ""),
+                    "node_name": node_metadata.get("node_name", ""),
+                    "section": node_metadata.get("section", ""),
+                    "page_range": page_range,
+                    "start_index": start_index,
+                    "end_index": end_index,
+                    "level": node_metadata.get("level", 0),
+                    "text": original_text,
+                    "parent_id": parent_mapping.get(section.get("id", "")),
+                }
+            )
 
         # 获取总页数
         pdf_path = metadata.get("pdf_path", "")
@@ -85,7 +88,7 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
             "pdf_name": metadata.get("pdf_name", ""),
             "total_pages": total_pages,
             "created_at": created_at,
-            "nodes": nodes
+            "nodes": nodes,
         }
 
     except HTTPException:
@@ -93,5 +96,5 @@ async def export_index_data(index_id: str) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to export index data: {str(e)}"
+            detail=f"Failed to export index data: {str(e)}",
         )

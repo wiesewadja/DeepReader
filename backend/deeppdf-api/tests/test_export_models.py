@@ -2,7 +2,7 @@
 导出 API 模型测试
 测试 ExportNodeData 和 ExportIndexResponse 模型
 """
-import pytest
+
 from deeppdf.api.export_models import ExportNodeData, ExportIndexResponse
 
 
@@ -19,7 +19,7 @@ class TestExportNodeData:
             start_index=1,
             end_index=5,
             level=1,
-            text="Sample content"
+            text="Sample content",
         )
         assert node.node_id == "node_1"
         assert node.parent_id is None  # 根节点默认为 None
@@ -35,7 +35,7 @@ class TestExportNodeData:
             end_index=10,
             level=2,
             text="Child content",
-            parent_id="node_1"
+            parent_id="node_1",
         )
         assert node.node_id == "node_2"
         assert node.parent_id == "node_1"
@@ -50,7 +50,7 @@ class TestExportNodeData:
             start_index="?",
             end_index="?",
             level=0,
-            text=""
+            text="",
         )
         assert node.start_index == "?"
         assert node.end_index == "?"
@@ -69,7 +69,7 @@ class TestExportIndexResponse:
             start_index=1,
             end_index=5,
             level=1,
-            text="Content"
+            text="Content",
         )
 
         resp = ExportIndexResponse(
@@ -78,7 +78,7 @@ class TestExportIndexResponse:
             pdf_name="sample.pdf",
             total_pages=150,
             created_at="2026-01-21T10:00:00Z",
-            nodes=[node]
+            nodes=[node],
         )
 
         assert resp.status == "success"
@@ -96,7 +96,7 @@ class TestExportIndexResponse:
             pdf_name="empty.pdf",
             total_pages=0,
             created_at="2026-01-21T10:00:00Z",
-            nodes=[]
+            nodes=[],
         )
         assert len(resp.nodes) == 0
         assert resp.total_pages == 0
@@ -110,9 +110,9 @@ class TestExportIndexResponse:
                 section=f"{i} Section",
                 page_range=f"{i}-{i+2}",
                 start_index=i,
-                end_index=i+2,
+                end_index=i + 2,
                 level=1,
-                text=f"Content {i}"
+                text=f"Content {i}",
             )
             for i in range(1, 4)
         ]
@@ -123,7 +123,7 @@ class TestExportIndexResponse:
             pdf_name="multi.pdf",
             total_pages=10,
             created_at="2026-01-21T10:00:00Z",
-            nodes=nodes
+            nodes=nodes,
         )
 
         assert len(resp.nodes) == 3

@@ -1,9 +1,9 @@
 """
 导出功能辅助函数
 """
+
 import pypdf
-from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 
 def get_pdf_page_count(pdf_path: str) -> int:

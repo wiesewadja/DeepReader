@@ -2,8 +2,7 @@
 """
 测试 DeepPDFAgent 核心类
 """
-import json
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,6 +11,7 @@ from deeppdf.agent.core import LLMError
 
 
 # ========== 测试 Fixtures ==========
+
 
 @pytest.fixture
 def mock_tree_structure():
@@ -60,6 +60,7 @@ def agent(mock_tree_structure, mock_openai_client):
 
 
 # ========== 测试 Agent 初始化 ==========
+
 
 def test_agent_init(mock_tree_structure):
     """测试 Agent 初始化"""
@@ -124,6 +125,7 @@ def test_get_default_model():
 
 # ========== 测试工具 Schema ==========
 
+
 def test_get_tool_schemas(agent):
     """测试获取工具 schema"""
     schemas = agent._get_tool_schemas()
@@ -132,12 +134,16 @@ def test_get_tool_schemas(agent):
     assert len(schemas) >= 2  # inspect_toc, hybrid_search (read_page 可选)
 
     # inspect_toc schema
-    inspect_toc_schema = next(s for s in schemas if s["function"]["name"] == "inspect_toc")
+    inspect_toc_schema = next(
+        s for s in schemas if s["function"]["name"] == "inspect_toc"
+    )
     assert inspect_toc_schema["type"] == "function"
     assert inspect_toc_schema["function"]["parameters"]["type"] == "object"
 
     # hybrid_search schema
-    hybrid_search_schema = next(s for s in schemas if s["function"]["name"] == "hybrid_search")
+    hybrid_search_schema = next(
+        s for s in schemas if s["function"]["name"] == "hybrid_search"
+    )
     assert "query" in hybrid_search_schema["function"]["parameters"]["properties"]
     assert "query" in hybrid_search_schema["function"]["parameters"]["required"]
 
@@ -165,6 +171,7 @@ def test_get_tool_schemas_with_read_page(mock_tree_structure):
 
 # ========== 测试消息构建 ==========
 
+
 def test_build_messages_simple(agent):
     """测试构建简单消息"""
     # 新版本：_build_messages 从 self.history 读取
@@ -182,14 +189,22 @@ def test_build_messages_with_tool_results(agent):
     # 新版本：_build_messages 从 self.history 读取
     agent.history = [
         {"role": "user", "content": "查看目录"},
-        {"role": "assistant", "content": None, "tool_calls": [
-            {
-                "id": "call_123",
-                "type": "function",
-                "function": {"name": "inspect_toc", "arguments": "{}"},
-            }
-        ]},
-        {"role": "tool", "tool_call_id": "call_123", "content": "[SUCCESS] # 目录\n\n- 第一章"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {"name": "inspect_toc", "arguments": "{}"},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_123",
+            "content": "[SUCCESS] # 目录\n\n- 第一章",
+        },
     ]
 
     messages = agent._build_messages()
@@ -204,6 +219,7 @@ def test_build_messages_with_tool_results(agent):
 
 
 # ========== 测试 run() 主循环 ==========
+
 
 def test_run_simple_query_no_tools(agent):
     """测试简单查询（无工具调用）"""
@@ -286,6 +302,7 @@ def test_run_llm_error(agent):
 
 # ========== 测试流式输出 ==========
 
+
 def test_run_stream_simple(agent):
     """测试简单流式输出"""
     # 模拟流式响应
@@ -305,7 +322,9 @@ def test_run_stream_simple(agent):
     mock_chunk3.choices[0].delta.tool_calls = None
 
     mock_stream = MagicMock()
-    mock_stream.__iter__ = MagicMock(return_value=iter([mock_chunk1, mock_chunk2, mock_chunk3]))
+    mock_stream.__iter__ = MagicMock(
+        return_value=iter([mock_chunk1, mock_chunk2, mock_chunk3])
+    )
 
     agent.client.chat.completions.create = MagicMock(return_value=mock_stream)
 
@@ -360,6 +379,7 @@ def test_run_stream_with_tool_call(agent):
 
 
 # ========== 测试历史管理 ==========
+
 
 def test_reset_history(agent):
     """测试重置历史"""
@@ -469,6 +489,7 @@ def test_run_stream_tracks_history(agent):
 
 
 # ========== 测试工具调用格式化 ==========
+
 
 def test_format_tool_call(agent):
     """测试工具调用格式化"""

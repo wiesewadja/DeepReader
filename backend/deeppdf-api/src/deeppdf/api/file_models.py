@@ -1,13 +1,14 @@
 """
 文件管理 API 模型
 """
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from datetime import datetime
 
 
 class FileUploadResponse(BaseModel):
     """文件上传响应"""
+
     file_id: str = Field(..., description="文件唯一标识")
     file_name: str = Field(..., description="原始文件名")
     file_size: int = Field(..., description="文件大小（字节）")
@@ -19,6 +20,7 @@ class FileUploadResponse(BaseModel):
 
 class FileInfo(BaseModel):
     """文件信息"""
+
     file_id: str = Field(..., description="文件唯一标识")
     file_name: str = Field(..., description="原始文件名")
     file_size: int = Field(..., description="文件大小（字节）")
@@ -31,6 +33,7 @@ class FileInfo(BaseModel):
 
 class FileListResponse(BaseModel):
     """文件列表响应"""
+
     status: str
     files: List[FileInfo]
     total: int = Field(..., description="文件总数")
@@ -38,6 +41,7 @@ class FileListResponse(BaseModel):
 
 class FileDetailResponse(BaseModel):
     """文件详情响应"""
+
     status: str
     file: Optional[FileInfo] = None
     message: Optional[str] = None
@@ -45,6 +49,7 @@ class FileDetailResponse(BaseModel):
 
 class FileDeleteResponse(BaseModel):
     """文件删除响应"""
+
     status: str
     message: str
     deleted_indexes: int = Field(0, description="同时删除的索引数量")

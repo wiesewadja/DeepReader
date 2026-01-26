@@ -2,6 +2,7 @@
 ChromaDB 存储封装
 提供 PDF 文档向量存储和检索功能，使用中文嵌入模型
 """
+
 import chromadb
 from chromadb.config import Settings
 from pathlib import Path
@@ -16,7 +17,7 @@ class ChromaStore:
     def __init__(
         self,
         persist_directory: str = None,
-        embedding_function: Optional[Callable] = None
+        embedding_function: Optional[Callable] = None,
     ):
         """
         初始化 ChromaDB 客户端
@@ -37,17 +38,14 @@ class ChromaStore:
         # 初始化 ChromaDB 客户端
         self.client = chromadb.PersistentClient(
             path=str(self.persist_directory),
-            settings=Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
+            settings=Settings(anonymized_telemetry=False, allow_reset=True),
         )
 
     def create_collection(
         self,
         name: str,
         metadata: Optional[Dict[str, Any]] = None,
-        embedding_function: Optional[Callable] = None
+        embedding_function: Optional[Callable] = None,
     ) -> chromadb.Collection:
         """
         创建集合
@@ -70,10 +68,7 @@ class ChromaStore:
 
         # 创建新集合
         # ChromaDB 不接受空 metadata，只有当 metadata 非空时才传递
-        create_kwargs = {
-            "name": name,
-            "embedding_function": embed_fn
-        }
+        create_kwargs = {"name": name, "embedding_function": embed_fn}
         if metadata:
             create_kwargs["metadata"] = metadata
 
@@ -114,7 +109,7 @@ class ChromaStore:
         self,
         collection_name: str,
         documents: List[Dict[str, Any]],
-        embeddings: Optional[List[List[float]]] = None
+        embeddings: Optional[List[List[float]]] = None,
     ) -> None:
         """
         添加文档到集合
@@ -143,10 +138,7 @@ class ChromaStore:
         # 添加文档到集合
         # 如果没有提供 embeddings，ChromaDB 会使用集合的嵌入函数自动生成
         collection.add(
-            ids=ids,
-            documents=texts,
-            metadatas=metadatas,
-            embeddings=embeddings
+            ids=ids, documents=texts, metadatas=metadatas, embeddings=embeddings
         )
 
     def query(
@@ -155,7 +147,7 @@ class ChromaStore:
         query_texts: List[str],
         n_results: int = 5,
         where: Optional[Dict[str, Any]] = None,
-        query_embeddings: Optional[List[List[float]]] = None
+        query_embeddings: Optional[List[List[float]]] = None,
     ) -> Dict[str, Any]:
         """
         查询文档
@@ -176,15 +168,13 @@ class ChromaStore:
             query_texts=query_texts,
             n_results=n_results,
             where=where,
-            query_embeddings=query_embeddings
+            query_embeddings=query_embeddings,
         )
 
         return results
 
     def update_documents(
-        self,
-        collection_name: str,
-        documents: List[Dict[str, Any]]
+        self, collection_name: str, documents: List[Dict[str, Any]]
     ) -> None:
         """
         更新文档
@@ -204,17 +194,9 @@ class ChromaStore:
             texts.append(doc["text"])
             metadatas.append(doc.get("metadata", {}))
 
-        collection.update(
-            ids=ids,
-            documents=texts,
-            metadatas=metadatas
-        )
+        collection.update(ids=ids, documents=texts, metadatas=metadatas)
 
-    def delete_documents(
-        self,
-        collection_name: str,
-        ids: List[str]
-    ) -> None:
+    def delete_documents(self, collection_name: str, ids: List[str]) -> None:
         """
         删除文档
 

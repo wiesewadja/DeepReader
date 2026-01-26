@@ -3,11 +3,11 @@
 
 管理用户配置的 CRUD 操作
 """
+
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 from datetime import datetime
 
 from ..api.config_models import UserConfig, UserConfigUpdate
@@ -136,7 +136,9 @@ class ConfigStorage:
             logger.error(f"[配置存储] 创建配置失败 {config.name}: {e}")
             return False, str(e)
 
-    def update_config(self, name: str, update: UserConfigUpdate) -> Tuple[bool, Optional[str]]:
+    def update_config(
+        self, name: str, update: UserConfigUpdate
+    ) -> Tuple[bool, Optional[str]]:
         """
         更新配置
 
@@ -230,7 +232,9 @@ class ConfigStorage:
                     data = json.load(f)
                     if data.get("is_default"):
                         data["is_default"] = False
-                        data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        data["updated_at"] = datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
                         f.seek(0)
                         f.truncate()
                         json.dump(data, f, ensure_ascii=False, indent=2)

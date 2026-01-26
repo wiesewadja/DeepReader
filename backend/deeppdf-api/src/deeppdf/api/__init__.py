@@ -10,7 +10,7 @@ from deeppdf.api.models import (
     QueryResponse,
     ListIndexesResponse,
     DeleteIndexResponse,
-    HealthResponse
+    HealthResponse,
 )
 
 __all__ = [
@@ -21,5 +21,5 @@ __all__ = [
     "QueryResponse",
     "ListIndexesResponse",
     "DeleteIndexResponse",
-    "HealthResponse"
+    "HealthResponse",
 ]

@@ -2,13 +2,17 @@
 Pydantic 模型测试
 测试请求/响应模型的数据验证
 """
+
 import pytest
 from deeppdf.api.models import (
-    IndexRequest, IndexResponse,
-    QueryRequest, QueryResponse,
+    IndexRequest,
+    IndexResponse,
+    QueryRequest,
+    QueryResponse,
     QueryResultItem,
-    ListIndexesResponse, IndexListItem,
-    DeleteIndexResponse
+    ListIndexesResponse,
+    IndexListItem,
+    DeleteIndexResponse,
 )
 
 
@@ -58,10 +62,7 @@ class TestIndexResponse:
     def test_success_response(self):
         """测试成功的响应"""
         resp = IndexResponse(
-            status="success",
-            index_id="test-id",
-            node_count=10,
-            pdf_name="test.pdf"
+            status="success", index_id="test-id", node_count=10, pdf_name="test.pdf"
         )
         assert resp.status == "success"
         assert resp.index_id == "test-id"
@@ -70,10 +71,7 @@ class TestIndexResponse:
 
     def test_error_response(self):
         """测试错误的响应"""
-        resp = IndexResponse(
-            status="error",
-            error="File not found"
-        )
+        resp = IndexResponse(status="error", error="File not found")
         assert resp.status == "error"
         assert resp.error == "File not found"
 
@@ -85,22 +83,16 @@ class TestQueryResponse:
         """测试带结果的查询响应"""
         item = QueryResultItem(
             text="Sample text",
-            metadata={"page": 1, "section": "Introduction", "start_index": 0}
+            metadata={"page": 1, "section": "Introduction", "start_index": 0},
         )
-        resp = QueryResponse(
-            status="success",
-            results=[item]
-        )
+        resp = QueryResponse(status="success", results=[item])
         assert resp.status == "success"
         assert len(resp.results) == 1
         assert resp.results[0].text == "Sample text"
 
     def test_query_response_empty_results(self):
         """测试空结果的查询响应"""
-        resp = QueryResponse(
-            status="success",
-            results=[]
-        )
+        resp = QueryResponse(status="success", results=[])
         assert resp.status == "success"
         assert len(resp.results) == 0
 
@@ -114,12 +106,9 @@ class TestListIndexesResponse:
             id="test-id",
             pdf_name="test.pdf",
             created_at="2026-01-15T00:00:00",
-            node_count=10
+            node_count=10,
         )
-        resp = ListIndexesResponse(
-            status="success",
-            indexes=[item]
-        )
+        resp = ListIndexesResponse(status="success", indexes=[item])
         assert resp.status == "success"
         assert len(resp.indexes) == 1
         assert resp.indexes[0].pdf_name == "test.pdf"
@@ -130,18 +119,12 @@ class TestDeleteIndexResponse:
 
     def test_delete_success_response(self):
         """测试成功删除响应"""
-        resp = DeleteIndexResponse(
-            status="success",
-            message="Index deleted"
-        )
+        resp = DeleteIndexResponse(status="success", message="Index deleted")
         assert resp.status == "success"
         assert resp.message == "Index deleted"
 
     def test_delete_error_response(self):
         """测试删除失败响应"""
-        resp = DeleteIndexResponse(
-            status="error",
-            message="Index not found"
-        )
+        resp = DeleteIndexResponse(status="error", message="Index not found")
         assert resp.status == "error"
         assert resp.message == "Index not found"

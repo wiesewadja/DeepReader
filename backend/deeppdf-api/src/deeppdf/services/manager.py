@@ -1,6 +1,7 @@
 """
 索引管理服务 - 异步封装
 """
+
 import asyncio
 import json
 from pathlib import Path
@@ -19,36 +20,29 @@ def _list_indexes_sync(storage_dir: str) -> Dict[str, Any]:
         index_dir = storage_dir_path / "indexes"
 
         if not index_dir.exists():
-            return {
-                "status": "success",
-                "indexes": []
-            }
+            return {"status": "success", "indexes": []}
 
         indexes = []
         for metadata_file in index_dir.glob("*.json"):
             try:
                 with open(metadata_file, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
-                    indexes.append({
-                        "id": metadata.get("id", ""),
-                        "pdf_name": metadata.get("pdf_name", ""),
-                        "node_count": metadata.get("node_count", 0),
-                        "created_at": metadata.get("created_at", "")
-                    })
+                    indexes.append(
+                        {
+                            "id": metadata.get("id", ""),
+                            "pdf_name": metadata.get("pdf_name", ""),
+                            "node_count": metadata.get("node_count", 0),
+                            "created_at": metadata.get("created_at", ""),
+                        }
+                    )
             except Exception:
                 # 跳过损坏的元数据文件
                 continue
 
-        return {
-            "status": "success",
-            "indexes": indexes
-        }
+        return {"status": "success", "indexes": indexes}
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error": f"Failed to list indexes: {str(e)}"
-        }
+        return {"status": "error", "error": f"Failed to list indexes: {str(e)}"}
 
 
 def _delete_index_sync(index_id: str, storage_dir: str) -> Dict[str, Any]:
@@ -73,16 +67,10 @@ def _delete_index_sync(index_id: str, storage_dir: str) -> Dict[str, Any]:
                 # 如果集合不存在，继续执行（幂等操作）
                 pass
 
-        return {
-            "status": "success",
-            "message": f"Index {index_id} deleted"
-        }
+        return {"status": "success", "message": f"Index {index_id} deleted"}
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error": f"Failed to delete index: {str(e)}"
-        }
+        return {"status": "error", "error": f"Failed to delete index: {str(e)}"}
 
 
 async def list_indexes(storage_dir: str) -> Dict[str, Any]:
@@ -96,7 +84,10 @@ async def delete_index(index_id: str, storage_dir: str) -> Dict[str, Any]:
     result = await asyncio.to_thread(_delete_index_sync, index_id, storage_dir)
     return result
 
-def _update_index_metadata_sync(index_id: str, storage_dir: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+
+def _update_index_metadata_sync(
+    index_id: str, storage_dir: str, updates: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     同步更新索引元数据
     """
@@ -125,9 +116,14 @@ def _update_index_metadata_sync(index_id: str, storage_dir: str, updates: Dict[s
     except Exception as e:
         return {"status": "error", "error": str(e)}
 
-async def update_index_metadata(index_id: str, storage_dir: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+
+async def update_index_metadata(
+    index_id: str, storage_dir: str, updates: Dict[str, Any]
+) -> Dict[str, Any]:
     """异步更新索引元数据"""
-    result = await asyncio.to_thread(_update_index_metadata_sync, index_id, storage_dir, updates)
+    result = await asyncio.to_thread(
+        _update_index_metadata_sync, index_id, storage_dir, updates
+    )
     return result
 
 
@@ -147,24 +143,15 @@ def _load_index_metadata_sync(index_id: str, storage_dir: str) -> Dict[str, Any]
         metadata_path = storage_dir_path / "indexes" / f"{index_id}.json"
 
         if not metadata_path.exists():
-            return {
-                "status": "error",
-                "error": f"Index {index_id} not found"
-            }
+            return {"status": "error", "error": f"Index {index_id} not found"}
 
         with open(metadata_path, "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
-        return {
-            "status": "success",
-            "metadata": metadata
-        }
+        return {"status": "success", "metadata": metadata}
 
     except Exception as e:
-        return {
-            "status": "error",
-            "error": f"Failed to load metadata: {str(e)}"
-        }
+        return {"status": "error", "error": f"Failed to load metadata: {str(e)}"}
 
 
 async def load_index_metadata(index_id: str, storage_dir: str) -> Dict[str, Any]:

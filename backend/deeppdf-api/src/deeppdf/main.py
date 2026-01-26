@@ -17,7 +17,7 @@ app = FastAPI(
     description="PDF 索引和语义搜索服务",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
 )
 
 # 配置 CORS
@@ -38,7 +38,7 @@ async def root():
         "message": "DeepPDF API",
         "version": "1.0.0",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
 
@@ -53,6 +53,7 @@ async def health_check():
 from deeppdf.api.routes import router
 from deeppdf.api.config_routes import router as config_router
 from deeppdf.api.file_routes import router as file_router
+
 app.include_router(router)
 app.include_router(config_router)
 app.include_router(file_router)
@@ -60,4 +61,5 @@ app.include_router(file_router)
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

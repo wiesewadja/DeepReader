@@ -45,7 +45,7 @@ def _query_pdf_sync(
             logger.error(f"[查询] 索引不存在: {index_id}")
             return {"status": "error", "error": f"Index {index_id} not found"}
 
-        logger.info(f"[查询] 集合已找到，执行向量检索...")
+        logger.info("[查询] 集合已找到，执行向量检索...")
 
         # 执行查询
         results = store.query(
@@ -80,7 +80,7 @@ def _query_pdf_sync(
         index_metadata = _load_index_metadata(storage_dir_path, index_id)
 
         # 使用智能检索
-        logger.info(f"[智能检索] 启动混合检索...")
+        logger.info("[智能检索] 启动混合检索...")
         hybrid_result = hybrid_search(
             query=query,
             index_metadata=index_metadata,

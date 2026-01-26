@@ -1,12 +1,14 @@
 """
 导出相关的 Pydantic 模型
 """
+
 from typing import List
 from pydantic import BaseModel
 
 
 class ExportNodeData(BaseModel):
     """单个节点的导出数据"""
+
     node_id: str
     node_name: str
     section: str
@@ -20,9 +22,10 @@ class ExportNodeData(BaseModel):
 
 class ExportIndexResponse(BaseModel):
     """导出索引响应"""
+
     status: str
     index_id: str
     pdf_name: str
-    total_pages: int          # 新增：PDF 总页数
-    created_at: str           # 新增：创建时间
+    total_pages: int  # 新增：PDF 总页数
+    created_at: str  # 新增：创建时间
     nodes: List[ExportNodeData]

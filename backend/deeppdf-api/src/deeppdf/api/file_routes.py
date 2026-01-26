@@ -3,16 +3,14 @@
 
 提供 PDF 文件的上传、列表、详情和删除接口
 """
+
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File
-from pydantic import ValidationError
 
 from .file_models import (
     FileUploadResponse,
-    FileInfo,
     FileListResponse,
     FileDetailResponse,
     FileDeleteResponse,
@@ -51,10 +49,7 @@ async def upload_file(file: UploadFile = File(...)):
     success, file_info, error = _file_storage.save_file(file.filename, content)
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
     logger.info(f"[文件API] 文件上传成功: {file_info.file_id} - {file_info.file_name}")
 
@@ -65,7 +60,7 @@ async def upload_file(file: UploadFile = File(...)):
         file_path=file_info.file_path,
         uploaded_at=file_info.uploaded_at,
         status=file_info.status,
-        indexed=file_info.indexed
+        indexed=file_info.indexed,
     )
 
 
@@ -85,7 +80,7 @@ async def list_files():
         logger.error(f"[文件API] 列出文件失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list files: {str(e)}"
+            detail=f"Failed to list files: {str(e)}",
         )
 
 
@@ -107,8 +102,7 @@ async def get_file_info(file_id: str):
 
     if not file_info:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"File '{file_id}' not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"File '{file_id}' not found"
         )
 
     logger.info(f"[文件API] 获取文件详情: {file_id}")
@@ -134,15 +128,12 @@ async def delete_file(file_id: str):
     success, error, deleted_indexes = _file_storage.delete_file(file_id)
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=error
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error)
 
     logger.info(f"[文件API] 文件已删除: {file_id}，同时删除 {deleted_indexes} 个索引")
 
     return FileDeleteResponse(
         status="success",
         message=f"File '{file_id}' deleted successfully",
-        deleted_indexes=deleted_indexes
+        deleted_indexes=deleted_indexes,
     )

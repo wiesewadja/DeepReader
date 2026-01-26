@@ -2,10 +2,9 @@
 导出 API 集成测试
 通过 FastAPI TestClient 测试完整的导出端点
 """
+
 import pytest
 import json
-import os
-from pathlib import Path
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
@@ -20,12 +19,7 @@ def mock_metadata():
         "created_at": "2026-01-21 10:00:00",
         "tree_structure": {
             "structure": [
-                {
-                    "node_id": "node_1",
-                    "nodes": [
-                        {"node_id": "node_2", "nodes": []}
-                    ]
-                }
+                {"node_id": "node_1", "nodes": [{"node_id": "node_2", "nodes": []}]}
             ]
         },
         "sections": [
@@ -37,8 +31,8 @@ def mock_metadata():
                     "section": "1 Introduction",
                     "start_index": 1,
                     "end_index": 5,
-                    "level": 1
-                }
+                    "level": 1,
+                },
             },
             {
                 "id": "node_2",
@@ -48,10 +42,10 @@ def mock_metadata():
                     "section": "1.1 Background",
                     "start_index": 6,
                     "end_index": 10,
-                    "level": 2
-                }
-            }
-        ]
+                    "level": 2,
+                },
+            },
+        ],
     }
 
 
@@ -75,26 +69,30 @@ class TestExportApiEndpoint:
     def test_export_endpoint_exists(self, setup_test_env, monkeypatch):
         """测试导出端点存在并可访问"""
         # 在导入前设置环境变量
-        from deeppdf.api.export_handlers import get_pdf_page_count
 
-        with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=100):
+        with patch("deeppdf.api.export_handlers.get_pdf_page_count", return_value=100):
             from deeppdf.main import app
+
             client = TestClient(app)
             response = client.get("/api/export/idx_test123")
 
             # 端点应该存在
-            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            assert (
+                response.status_code == 200
+            ), f"Expected 200, got {response.status_code}: {response.text}"
 
     def test_export_endpoint_returns_all_fields(self, setup_test_env, monkeypatch):
         """测试导出端点返回所有必需字段"""
-        from deeppdf.api.export_handlers import get_pdf_page_count
 
-        with patch('deeppdf.api.export_handlers.get_pdf_page_count', return_value=150):
+        with patch("deeppdf.api.export_handlers.get_pdf_page_count", return_value=150):
             from deeppdf.main import app
+
             client = TestClient(app)
             response = client.get("/api/export/idx_test123")
 
-            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+            assert (
+                response.status_code == 200
+            ), f"Expected 200, got {response.status_code}: {response.text}"
             data = response.json()
 
             # 验证所有字段存在
@@ -110,6 +108,7 @@ class TestExportApiEndpoint:
         monkeypatch.setenv("BASE_DIR", str(tmp_path))
 
         from deeppdf.main import app
+
         client = TestClient(app)
         response = client.get("/api/export/nonexistent")
 

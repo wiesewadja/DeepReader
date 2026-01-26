@@ -3,6 +3,7 @@
 
 提供用户配置的 CRUD 接口
 """
+
 import logging
 from pathlib import Path
 from typing import Optional
@@ -11,8 +12,6 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import ValidationError
 
 from .config_models import (
-    LLMConfig,
-    IndexingConfig,
     UserConfig,
     UserConfigUpdate,
     UserConfigListResponse,
@@ -54,7 +53,7 @@ async def list_configs():
         logger.error(f"[配置API] 列出配置失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list configurations: {str(e)}"
+            detail=f"Failed to list configurations: {str(e)}",
         )
 
 
@@ -71,7 +70,7 @@ async def get_default_config():
         if not config:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="No default configuration found"
+                detail="No default configuration found",
             )
 
         logger.info(f"[配置API] 获取默认配置: {config.name}")
@@ -82,7 +81,7 @@ async def get_default_config():
         logger.error(f"[配置API] 获取默认配置失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get default configuration: {str(e)}"
+            detail=f"Failed to get default configuration: {str(e)}",
         )
 
 
@@ -100,16 +99,13 @@ async def create_config(config: UserConfig):
     try:
         success, error = _config_storage.create_config(config)
         if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
         logger.info(f"[配置API] 创建配置成功: {config.name}")
         return UserConfigResponse(
             status="success",
             config=config,
-            message=f"Configuration '{config.name}' created successfully"
+            message=f"Configuration '{config.name}' created successfully",
         )
     except HTTPException:
         raise
@@ -117,13 +113,13 @@ async def create_config(config: UserConfig):
         logger.error(f"[配置API] 配置验证失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Configuration validation failed: {str(e)}"
+            detail=f"Configuration validation failed: {str(e)}",
         )
     except Exception as e:
         logger.error(f"[配置API] 创建配置失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create configuration: {str(e)}"
+            detail=f"Failed to create configuration: {str(e)}",
         )
 
 
@@ -142,10 +138,7 @@ async def update_config(name: str, update: UserConfigUpdate):
     try:
         success, error = _config_storage.update_config(name, update)
         if not success:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
         # 获取更新后的配置
         config = _config_storage.get_config(name)
@@ -153,7 +146,7 @@ async def update_config(name: str, update: UserConfigUpdate):
         return UserConfigResponse(
             status="success",
             config=config,
-            message=f"Configuration '{name}' updated successfully"
+            message=f"Configuration '{name}' updated successfully",
         )
     except HTTPException:
         raise
@@ -161,7 +154,7 @@ async def update_config(name: str, update: UserConfigUpdate):
         logger.error(f"[配置API] 更新配置失败 {name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to update configuration: {str(e)}"
+            detail=f"Failed to update configuration: {str(e)}",
         )
 
 
@@ -179,16 +172,13 @@ async def delete_config(name: str):
     try:
         success, error = _config_storage.delete_config(name)
         if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error)
 
         logger.info(f"[配置API] 删除配置成功: {name}")
         return UserConfigResponse(
             status="success",
             config=None,
-            message=f"Configuration '{name}' deleted successfully"
+            message=f"Configuration '{name}' deleted successfully",
         )
     except HTTPException:
         raise
@@ -196,7 +186,7 @@ async def delete_config(name: str):
         logger.error(f"[配置API] 删除配置失败 {name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete configuration: {str(e)}"
+            detail=f"Failed to delete configuration: {str(e)}",
         )
 
 
@@ -214,10 +204,7 @@ async def set_default_config(name: str):
     try:
         success, error = _config_storage.set_default_config(name)
         if not success:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=error
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error)
 
         # 获取更新后的配置
         config = _config_storage.get_config(name)
@@ -225,7 +212,7 @@ async def set_default_config(name: str):
         return UserConfigResponse(
             status="success",
             config=config,
-            message=f"Configuration '{name}' set as default"
+            message=f"Configuration '{name}' set as default",
         )
     except HTTPException:
         raise
@@ -233,5 +220,5 @@ async def set_default_config(name: str):
         logger.error(f"[配置API] 设置默认配置失败 {name}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to set default configuration: {str(e)}"
+            detail=f"Failed to set default configuration: {str(e)}",
         )

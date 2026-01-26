@@ -1,7 +1,6 @@
 # tests/test_markdown_locator.py
 """MarkdownLocator 单元测试"""
 
-import pytest
 from deeppdf.agent.markdown_locator import MarkdownLocator
 
 
