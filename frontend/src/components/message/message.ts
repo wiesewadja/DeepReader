@@ -657,6 +657,8 @@ export abstract class Message {
 		const oldFollowUpQuestions = this.data.followUpQuestions;
 		const oldAgentThoughts = this.data.agentThoughts;
 		const oldAgentToolCalls = this.data.agentToolCalls;
+		const wasStreaming = this.data.isStreaming;
+
 		Object.assign(this.data, data);
 
 		// 检查哪些字段发生了变化
@@ -664,6 +666,7 @@ export abstract class Message {
 		const followUpChanged = data.followUpQuestions !== undefined && JSON.stringify(data.followUpQuestions) !== JSON.stringify(oldFollowUpQuestions);
 		const agentThoughtsChanged = data.agentThoughts !== undefined && JSON.stringify(data.agentThoughts) !== JSON.stringify(oldAgentThoughts);
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && JSON.stringify(data.agentToolCalls) !== JSON.stringify(oldAgentToolCalls);
+		const streamingEnded = wasStreaming && data.isStreaming === false;
 
 		// 如果只是内容变了，且DOM已存在，尝试局部更新
 		// 注意：如果 citations、followUpQuestions、agentThoughts 或 agentToolCalls 变了，
@@ -674,9 +677,21 @@ export abstract class Message {
 			!citationsChanged &&
 			!followUpChanged &&
 			!agentThoughtsChanged &&
-			!agentToolCallsChanged
+			!agentToolCallsChanged &&
+			!streamingEnded
 		) {
 			this.updateContent(data.content);
+		} else if (streamingEnded && this.el) {
+			// 流式结束时，进行完整的 Markdown 渲染
+			const contentEl = this.el.querySelector('.deeppdf-message-content');
+			if (contentEl && this.app) {
+				contentEl.empty();
+				MarkdownRenderer.render(this.app, this.data.content, contentEl as HTMLElement, '', new Component());
+				// 设置内部链接的点击事件和 hover preview
+				setupInternalLinks(contentEl as HTMLElement, this.app, false);
+			}
+			// 移除流式状态
+			this.el.removeClass('deeppdf-message-streaming');
 		} else {
 			// 全量重绘
 			const newRender = this.render();
@@ -923,9 +938,10 @@ export class AIMessage extends Message {
 	/**
 	 * 流式更新 - 实时显示思考内容和工具调用
 	 *
-	 * 更新策略:
-	 * 1. 思考内容或工具调用变化时立即更新
-	 * 2. 主内容每增长超过 30 字符或超过 80ms 时更新
+	 * 优化策略:
+	 * 1. 保留 Markdown 渲染以保证格式化显示
+	 * 2. 大幅降低更新频率：200 字符或 300ms
+	 * 3. 使用 GPU 加速优化渲染性能
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -952,19 +968,21 @@ export class AIMessage extends Message {
 
 			// 决定是否需要渲染:
 			// 1. 思考内容发生变化（立即更新）
-			// 2. 内容增长超过 30 字符
-			// 3. 或距离上次渲染超过 80ms
-			const shouldRender = thoughtsChanged || contentGrowth > 30 || timePassed > 80;
+			// 2. 内容增长超过 200 字符（大幅降低更新频率）
+			// 3. 或距离上次渲染超过 300ms（降低刷新率）
+			const shouldRender = thoughtsChanged || contentGrowth > 200 || timePassed > 300;
 
 			if (shouldRender) {
 				// 如果解析出思考内容且发生变化，更新思考组件
 				if (thoughts.length > 0 && thoughtsChanged) {
 					this.data.agentThoughts = thoughts;
-					// 标记 agentThoughts 已变化，触发思考组件更新
 					this._updateThoughtsComponent();
 				}
 
-				// 渲染清理后的内容（不含 thought 标签）
+				// 启用 GPU 加速减少重绘开销
+				contentEl.style.transform = 'translateZ(0)';
+
+				// 渲染 Markdown 内容
 				if (this.app) {
 					contentEl.empty();
 					MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());

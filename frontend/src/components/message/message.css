@@ -108,8 +108,15 @@
 	white-space: normal;
 	/* Markdown 内容由 p 标签控制换行 */
 	color: var(--text-normal);
-	/* 优化流式更新 - 减少重绘范围 */
-	contain: content;
+	/* 优化渲染性能，减少闪烁 */
+	backface-visibility: hidden;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* 流式更新时的额外优化 */
+.deeppdf-message-streaming .deeppdf-message-content {
+	/* 强制合成层，减少重绘 */
 	will-change: contents;
 }
 
@@ -367,24 +374,21 @@
 	border-radius: 50%;
 	margin-left: 4px;
 	vertical-align: baseline;
-	animation: deeppdf-pulse 1s infinite ease-in-out;
-	box-shadow: 0 0 4px var(--interactive-accent);
+	animation: deeppdf-pulse 1.5s infinite ease-in-out;
+	opacity: 0.8;
 }
 
 @keyframes deeppdf-pulse {
-	0% {
-		transform: scale(0.8);
-		opacity: 0.5;
+
+	0%,
+	100% {
+		transform: scale(0.9);
+		opacity: 0.6;
 	}
 
 	50% {
-		transform: scale(1.1);
+		transform: scale(1);
 		opacity: 1;
-	}
-
-	100% {
-		transform: scale(0.8);
-		opacity: 0.5;
 	}
 }
 
@@ -470,7 +474,7 @@
 	padding: 12px;
 	animation: deeppdf-fade-in 0.15s ease;
 	/* 禁用原生 tooltip */
-pointer-events: auto !important;
+	pointer-events: auto !important;
 }
 
 .deeppdf-hover-preview-content {
@@ -537,6 +541,7 @@ pointer-events: auto !important;
 	border-left: 3px solid var(--interactive-accent);
 	color: var(--text-muted);
 }
+
 /* ==================== Agent 消息样式 ==================== */
 
 /* Agent 思考过程 */
@@ -606,8 +611,8 @@ pointer-events: auto !important;
 	max-height: 500px;
 	overflow: hidden;
 	transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-				opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-				margin-top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+		opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+		margin-top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	opacity: 1;
 	margin-top: 4px;
 }

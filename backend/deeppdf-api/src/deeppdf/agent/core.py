@@ -537,29 +537,50 @@ class DeepPDFAgent:
         Yields:
             文本片段
         """
+        # ========== 🎯 阶段1: 初始化 ==========
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("🚀 [Agent推理] 开始新的推理过程")
+        logger.info("=" * 80)
+        logger.info(f"📝 [用户查询] {query}")
+        logger.info(f"📊 [查询长度] {len(query)} 字符")
+        
         # 验证查询长度
         self._validate_query_length(query)
 
         # 启动新轮次: 清空旧历史
         self.history.clear()
+        logger.info("🔄 [历史记录] 已清空，开始新轮次")
 
         # 记录用户查询
         self.history.append({"role": "user", "content": query})
 
+        # ========== 🎯 阶段2: 路由判断 ==========
+        logger.info("")
+        logger.info("-" * 80)
+        logger.info("🧭 [路由判断] 开始分析查询类型")
+        logger.info("-" * 80)
+        
         # 路由判断：根据强制模式或查询类型决定可用工具
         if force_mode is None:
             # 自动路由
             route_type = RouteDecision.classify_query(query)
             allowed_tools = self._get_allowed_tools_for_route(route_type)
-            logger.info(
-                f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}"
-            )
+            logger.info(f"🔍 [自动路由] 查询类型: {route_type}")
+            logger.info(f"🛠️  [可用工具] {allowed_tools or '全部工具'}")
+            
+            # 详细说明路由原因
+            if route_type == "fast":
+                logger.info("💡 [路由说明] 简单事实查询 → 使用 hybrid_search 快速检索")
+            elif route_type == "section":
+                logger.info("💡 [路由说明] 章节定位查询 → 优先使用 read_page")
+            elif route_type == "slow":
+                logger.info("💡 [路由说明] 复杂分析查询 → 使用全部工具进行深度推理")
         else:
             # 强制模式
             allowed_tools = self._get_allowed_tools_for_route(force_mode)
-            logger.info(
-                f"[Agent流式路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}"
-            )
+            logger.info(f"⚡ [强制模式] {force_mode}")
+            logger.info(f"🛠️  [可用工具] {allowed_tools or '全部工具'}")
 
         # 初始化思考状态机
         thought_state: Dict[str, Any] = {
@@ -568,15 +589,36 @@ class DeepPDFAgent:
         }
 
         iterations = 0
+        total_tokens_estimate = 0  # 估算token使用量
 
         try:
             while iterations < self.max_iterations:
                 iterations += 1
-                logger.info(f"[Agent流式迭代] 第 {iterations} 轮")
-
+                
+                # ========== 🎯 阶段3: 迭代推理 ==========
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"🔄 [第 {iterations} 轮迭代] 开始推理")
+                logger.info("=" * 80)
+                
                 # 构建消息（从 self.history 读取）
                 messages = self._build_messages()
+                logger.info(f"📨 [消息构建] 共 {len(messages)} 条消息")
+                logger.info(f"   - System: 1 条")
+                logger.info(f"   - History: {len(messages) - 1} 条")
+                
+                # 估算 token
+                total_chars = sum(len(str(m.get('content', ''))) for m in messages)
+                total_tokens_estimate = total_chars // 3
+                logger.info(f"📊 [Token估算] 约 {total_tokens_estimate} tokens ({total_chars} 字符)")
 
+                # ========== 🎯 阶段4: LLM 调用 ==========
+                logger.info("")
+                logger.info(f"🤖 [LLM调用] 准备调用 {self.llm_model}")
+                logger.info(f"   - Temperature: {self.temperature}")
+                logger.info(f"   - Top-p: {self.top_p}")
+                logger.info(f"   - 工具限制: {allowed_tools or '无限制'}")
+                
                 try:
                     stream: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
@@ -588,16 +630,22 @@ class DeepPDFAgent:
                             stream=True,
                         )
                     )
+                    logger.info("✅ [LLM调用] 成功，开始接收流式响应")
                 except Exception as e:
-                    logger.error(f"[LLM流式错误] 调用失败: {e}")
+                    logger.error(f"❌ [LLM错误] 调用失败: {e}")
                     yield f"错误: LLM 调用失败 - {str(e)}"
                     return
 
+                # ========== 🎯 阶段5: 解析响应 ==========
+                logger.info("📥 [流式解析] 开始处理 LLM 响应流")
+                
                 # 收集流式响应
                 current_tool_calls: Dict[str, Dict[str, Any]] = {}
                 content_buffer: List[str] = []
+                chunk_count = 0
 
                 for chunk in stream:
+                    chunk_count += 1
                     delta = chunk.choices[0].delta
 
                     # 处理内容 - 立即输出实现真正的流式体验
@@ -610,6 +658,7 @@ class DeepPDFAgent:
                             # 如果这是第二轮之后的迭代，准备输出思考标签
                             if len(self.history) > 1 and iterations > 1:
                                 thought_state["state"] = ThoughtState.PENDING
+                                logger.info("💭 [思考标签] 检测到迭代内容，准备添加 <thought> 标签")
 
                         # 如果状态是 PENDING，输出开启标签
                         yield from self._maybe_open_thought_tag(thought_state)
@@ -646,8 +695,17 @@ class DeepPDFAgent:
                                         "arguments"
                                     ] += tool_call.function.arguments
 
+                logger.info(f"📦 [流式完成] 接收了 {chunk_count} 个 chunk")
+                logger.info(f"📝 [内容长度] {len(''.join(content_buffer))} 字符")
+                
+                # ========== 🎯 阶段6: 工具调用处理 ==========
                 # 检查是否有工具调用
                 if current_tool_calls:
+                    logger.info("")
+                    logger.info("🔧 " + "=" * 78)
+                    logger.info(f"🔧 [工具调用] 检测到 {len(current_tool_calls)} 个工具调用")
+                    logger.info("🔧 " + "=" * 78)
+                    
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)
 
@@ -662,16 +720,26 @@ class DeepPDFAgent:
                     )
 
                     # 执行工具调用
-                    for tool_call_data in current_tool_calls.values():
+                    for idx, tool_call_data in enumerate(current_tool_calls.values(), 1):
                         tool_name = tool_call_data["function"]["name"]
                         try:
                             args = json.loads(tool_call_data["function"]["arguments"])
                         except json.JSONDecodeError:
                             args = {}
 
-                        logger.info(f"[流式工具调用] {tool_name} 参数={args}")
-
+                        logger.info("")
+                        logger.info(f"🛠️  [{idx}/{len(current_tool_calls)}] 执行工具: {tool_name}")
+                        logger.info(f"   📋 参数: {json.dumps(args, ensure_ascii=False)}")
+                        
+                        # 执行工具
+                        import time
+                        start_time = time.time()
                         output = self.executor.execute(tool_name, **args)
+                        execution_time = time.time() - start_time
+                        
+                        logger.info(f"   ⏱️  执行耗时: {execution_time:.2f} 秒")
+                        logger.info(f"   📤 返回长度: {len(output)} 字符")
+                        logger.info(f"   📄 返回预览: {output[:200]}..." if len(output) > 200 else f"   📄 返回内容: {output}")
 
                         # 记录工具结果到历史
                         self.history.append(
@@ -681,8 +749,17 @@ class DeepPDFAgent:
                                 "content": output,
                             }
                         )
+                    
+                    logger.info("")
+                    logger.info("✅ [工具执行] 所有工具调用已完成，准备下一轮迭代")
+                    
                 else:
-                    # 没有工具调用，完成（最终答案）
+                    # ========== 🎯 阶段7: 最终答案 ==========
+                    logger.info("")
+                    logger.info("🎉 " + "=" * 78)
+                    logger.info("🎉 [推理完成] LLM 返回最终答案（无工具调用）")
+                    logger.info("🎉 " + "=" * 78)
+                    
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)
 
@@ -693,11 +770,28 @@ class DeepPDFAgent:
                             "content": content_text,
                         }
                     )
-                    logger.info("[Agent流式完成] 无工具调用，返回最终答案")
+                    
+                    logger.info(f"📊 [最终统计]")
+                    logger.info(f"   - 总迭代轮次: {iterations}")
+                    logger.info(f"   - 最终回答长度: {len(content_text)} 字符")
+                    logger.info(f"   - Token估算: ~{total_tokens_estimate} tokens")
+                    logger.info("")
+                    logger.info("=" * 80)
+                    logger.info("✨ [Agent推理] 推理过程结束")
+                    logger.info("=" * 80)
+                    logger.info("")
+                    
                     return
 
-            # 达到最大迭代次数
-            logger.warning(f"[Agent流式警告] 达到最大迭代次数 {self.max_iterations}")
+            # ========== 🎯 阶段8: 达到最大迭代 ==========
+            logger.warning("")
+            logger.warning("⚠️  " + "=" * 78)
+            logger.warning(f"⚠️  [达到上限] 已达到最大迭代次数 {self.max_iterations}")
+            logger.warning("⚠️  " + "=" * 78)
+            logger.warning(f"   - 已执行轮次: {iterations}")
+            logger.warning(f"   - 历史消息数: {len(self.history)}")
+            logger.warning("")
+            
             messages = self._build_messages()
             stream = self.client.chat.completions.create(
                 model=self.llm_model,

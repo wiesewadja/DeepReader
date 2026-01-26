@@ -35,25 +35,45 @@ class ToolExecutor:
         Returns:
             执行结果字符串
         """
+        logger.info(f"      🔍 [工具详情] 名称: {tool_name}")
+        logger.info(f"      🔍 [工具详情] 参数: {kwargs}")
+        
         if tool_name not in self.tools:
-            return f"[ERROR] 未知工具: {tool_name}。可用工具: {', '.join(self.tools.keys())}"
+            error_msg = f"[ERROR] 未知工具: {tool_name}。可用工具: {', '.join(self.tools.keys())}"
+            logger.error(f"      ❌ {error_msg}")
+            return error_msg
 
         tool = self.tools[tool_name]
 
         try:
-            logger.info(f"[工具调用] {tool_name} 参数: {kwargs}")
+            logger.info(f"      ⚙️  [执行中] 调用 {tool_name}...")
             result = tool(**kwargs)
-            logger.info(f"[工具结果] {tool_name} 成功")
+            
+            # 记录返回结果的详细信息
+            result_length = len(result)
+            logger.info(f"      ✅ [执行成功] {tool_name}")
+            logger.info(f"      📏 [返回长度] {result_length} 字符")
+            
+            # 显示结果预览（前200字符）
+            if result_length > 200:
+                preview = result[:200] + "..."
+            else:
+                preview = result
+            logger.info(f"      📄 [结果预览] {preview}")
+            
             return f"[SUCCESS] {result}"
         except ValueError as e:
-            logger.error(f"[工具错误] {tool_name} 参数错误: {e}")
-            return f"[ERROR] 参数错误: {e}"
+            error_msg = f"[ERROR] 参数错误: {e}"
+            logger.error(f"      ❌ [参数错误] {tool_name}: {e}")
+            return error_msg
         except FileNotFoundError as e:
-            logger.error(f"[工具错误] {tool_name} 文件不存在: {e}")
-            return "[ERROR] 文件不存在，请确认索引有效"
+            error_msg = "[ERROR] 文件不存在，请确认索引有效"
+            logger.error(f"      ❌ [文件错误] {tool_name}: {e}")
+            return error_msg
         except Exception as e:
-            logger.error(f"[工具错误] {tool_name} 执行失败: {e}", exc_info=True)
-            return f"[ERROR] 工具执行失败: {str(e)[:100]}"
+            error_msg = f"[ERROR] 工具执行失败: {str(e)[:100]}"
+            logger.error(f"      ❌ [执行失败] {tool_name}: {e}", exc_info=True)
+            return error_msg
 
     def get_tool_descriptions(self) -> str:
         """

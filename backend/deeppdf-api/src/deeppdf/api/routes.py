@@ -878,90 +878,137 @@ def _extract_citations_from_answer(answer: str, index_id: str) -> list[CitationI
 
 async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     """
-    加载索引并创建 Agent 实例（共享辅助函数）
+    为请求加载 DeepPDF Agent
 
     Args:
-        index_id: 索引 ID
+        index_id: PDF 索引 ID
 
     Returns:
-        DeepPDFAgent 实例
+        配置好的 DeepPDFAgent 实例
 
     Raises:
-        HTTPException: 索引不存在时抛出 404 错误
+        HTTPException: 如果索引不存在或加载失败
     """
-    from ..services.manager import load_index_metadata
-    from ..agent import DeepPDFAgent
-    import os
+    logger.info("")
+    logger.info("🔷 " + "=" * 78)
+    logger.info("🔷 [Agent加载] 开始加载 DeepPDF Agent")
+    logger.info("🔷 " + "=" * 78)
+    logger.info(f"📇 [索引ID] {index_id}")
+    
+    # 导入必要的模块
+    from ..agent.core import DeepPDFAgent
+    from pathlib import Path
+    from ..services.manager import list_indexes # Added this import as it's used in the new code
+    from ..config import settings # Added this import as it's used in the new code
 
-    # 1. 加载索引元数据
-    metadata_result = await load_index_metadata(index_id, str(settings.base_dir))
+    # 检查索引是否存在
+    logger.info("🔍 [检查索引] 验证索引是否存在...")
+    result = await list_indexes(str(settings.base_dir))
+    index_exists = any(idx["id"] == index_id for idx in result.get("indexes", []))
 
-    if metadata_result["status"] == "error":
-        logger.error(f"[API] 索引不存在: {index_id}")
+    if not index_exists:
+        logger.error(f"❌ [加载失败] 索引 {index_id} 不存在")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"索引 {index_id} 不存在"
         )
+    
+    logger.info(f"✅ [索引存在] 索引 {index_id} 验证通过")
 
-    metadata = metadata_result["metadata"]
+    # 获取索引元数据
+    logger.info("📋 [加载元数据] 读取索引配置...")
+    storage_dir = Path(settings.base_dir)
+    metadata_path = storage_dir / index_id / "index_metadata.json"
 
-    # 2. 获取 tree_structure (Phase 1: 从 metadata 中读取)
+    try:
+        import json
+
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+        
+        logger.info("✅ [元数据加载] 成功")
+        logger.info(f"   📄 PDF名称: {metadata.get('pdf_name', 'N/A')}")
+        logger.info(f"   📄 节点数: {metadata.get('node_count', 0)}")
+        logger.info(f"   📄 总页数: {metadata.get('total_pages', 0)}")
+        
+    except FileNotFoundError:
+        logger.error(f"❌ [元数据错误] 找不到 index_metadata.json")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"索引 {index_id} 元数据不存在",
+        )
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ [元数据错误] JSON 解析失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="索引元数据损坏",
+        )
+
+
+    # 提取树状结构
     tree_structure = metadata.get("tree_structure", {})
-    if not tree_structure:
-        logger.warning(f"[API] 索引 {index_id} 没有 tree_structure，使用空结构")
-        tree_structure = {}
+    logger.info(f"🌳 [文档结构] 树状层级: {_count_tree_levels(tree_structure)} 层")
+    logger.info(f"🌳 [文档结构] 章节数: {_count_tree_nodes(tree_structure)} 个")
 
-    # 3. 获取 LLM 配置 (从索引元数据或环境变量)
-    llm_provider = metadata.get("llm_provider", "deepseek")
-    llm_model = metadata.get("model", None)
-    api_key = metadata.get("api_key", None)
-    base_url = metadata.get("base_url", None)
-
-    # 如果元数据中没有配置，使用默认值或环境变量
-    if llm_provider == "deepseek":
-        # DeepSeek: 优先使用元数据中的 API key，否则使用环境变量
-        api_key = api_key or os.getenv("DEEPSEEK_API_KEY")
-        # DeepSeek 的 model 默认值
-        llm_model = llm_model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-        base_url = base_url or "https://api.deepseek.com"
-    elif llm_provider == "openai":
-        # OpenAI: 优先使用元数据中的 API key，否则使用环境变量
-        api_key = api_key or os.getenv("OPENAI_API_KEY")
-        llm_model = llm_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        base_url = base_url or None
-    else:
-        # 其他 provider，必须有明确的 API key
-        if not api_key:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"无法获取 {llm_provider} 的 API key，请在索引配置中设置",
-            )
-
-    # 验证必需的配置
-    if not api_key:
+    # 初始化 Agent
+    logger.info("")
+    logger.info("🤖 [初始化Agent] 准备创建 DeepPDFAgent 实例...")
+    logger.info(f"   🔧 Provider: {settings.llm_provider}")
+    logger.info(f"   🔧 Model: {settings.llm_model or '默认'}")
+    logger.info(f"   🔧 Temperature: {settings.agent_temperature}")
+    logger.info(f"   🔧 Max Iterations: {settings.agent_max_iterations}")
+    
+    try:
+        agent = DeepPDFAgent(
+            index_id=index_id,
+            storage_dir=str(settings.base_dir),
+            tree_structure=tree_structure,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm_model,
+            api_key=settings.api_key,
+            base_url=settings.base_url,
+            pageindex_lib_path=str(settings.pageindex_lib_path),
+            temperature=settings.agent_temperature,
+            top_p=settings.agent_top_p,
+            max_iterations=settings.agent_max_iterations,
+        )
+        
+        logger.info("✅ [Agent创建] DeepPDFAgent 实例创建成功")
+        logger.info(f"   🛠️  可用工具数: {len(agent.executor.tools)}")
+        logger.info(f"   🛠️  工具列表: {', '.join(agent.executor.tools.keys())}")
+        logger.info("")
+        logger.info("🔷 " + "=" * 78)
+        logger.info("🔷 [Agent加载] 完成，准备开始推理")
+        logger.info("🔷 " + "=" * 78)
+        logger.info("")
+        
+        return agent
+        
+    except Exception as e:
+        logger.error(f"❌ [Agent创建失败] {e}", exc_info=True)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"未配置 API key。请设置 {llm_provider.upper()}_API_KEY 环境变量或在索引配置中提供",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Agent 初始化失败: {str(e)}",
         )
 
-    if not llm_model:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"未配置模型名称。请设置 {llm_provider.upper()}_MODEL 环境变量",
-        )
 
-    # 4. 创建 Agent 实例
-    logger.info(f"[API] 创建 Agent: provider={llm_provider}, model={llm_model}")
+def _count_tree_levels(tree: dict, level: int = 1) -> int:
+    """递归计算树的最大层级"""
+    if not tree or "children" not in tree:
+        return level
+    if not tree["children"]:
+        return level
+    return max(_count_tree_levels(child, level + 1) for child in tree["children"])
 
-    return DeepPDFAgent(
-        index_id=index_id,
-        storage_dir=str(settings.base_dir),
-        tree_structure=tree_structure,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        api_key=api_key,
-        base_url=base_url,
-        pageindex_lib_path=None,  # Phase 1: 不使用 PageIndex
-    )
+
+def _count_tree_nodes(tree: dict) -> int:
+    """递归计算树的节点数"""
+    if not tree:
+        return 0
+    count = 1
+    if "children" in tree and tree["children"]:
+        count += sum(_count_tree_nodes(child) for child in tree["children"])
+    return count
+
 
 
 @router.post("/chat/agent")
@@ -1075,6 +1122,10 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
     通过将同步生成器在独立线程中运行，并使用 asyncio.Queue 进行通信，
     实现真正的异步流式输出。
 
+    **优化：批量缓冲机制**
+    - 累积至少 50 字符或 0.2 秒后再发送
+    - 减少前端更新频率，避免闪烁
+
     新增功能: 如果 req.include_citations=True，会在流结束后发送引用信息
 
     Args:
@@ -1102,19 +1153,46 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             try:
                 logger.info("[Agent流式] 开始在线程中执行 Agent.run_stream")
                 chunk_count = 0
+                
+                # 批量缓冲参数
+                buffer = []
+                buffer_char_count = 0
+                last_send_time = time.time()
+                MIN_BUFFER_CHARS = 50  # 至少累积 50 字符
+                MAX_BUFFER_TIME = 0.2  # 最多缓冲 0.2 秒
 
                 for chunk in agent.run_stream(req.query, req.force_mode):
                     chunk_count += 1
-                    # 将chunk放入队列（线程安全）
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
-
-                    # 每10个chunk记录一次日志
-                    if chunk_count % 10 == 0:
-                        logger.debug(f"[Agent流式] 已发送 {chunk_count} 个chunk")
+                    buffer.append(chunk)
+                    buffer_char_count += len(chunk)
+                    
+                    current_time = time.time()
+                    time_since_last_send = current_time - last_send_time
+                    
+                    # 检查是否应该发送缓冲区
+                    should_send = (
+                        buffer_char_count >= MIN_BUFFER_CHARS or
+                        time_since_last_send >= MAX_BUFFER_TIME
+                    )
+                    
+                    if should_send:
+                        # 合并缓冲区并发送
+                        batched_chunk = "".join(buffer)
+                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", batched_chunk))
+                        
+                        # 重置缓冲区
+                        buffer = []
+                        buffer_char_count = 0
+                        last_send_time = current_time
+                
+                # 发送剩余缓冲区
+                if buffer:
+                    batched_chunk = "".join(buffer)
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", batched_chunk))
 
                 # 执行完成，发送完成信号
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-                logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个chunk")
+                logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个原始chunk")
 
             except Exception as e:
                 # 发送错误信号
@@ -1175,6 +1253,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
     except Exception as e:
         logger.error(f"[API] Agent 流式执行失败: {e}", exc_info=True)
         yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+
 
 
 @router.post("/chat/agent/stream")
