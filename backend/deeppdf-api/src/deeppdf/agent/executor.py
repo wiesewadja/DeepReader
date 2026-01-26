@@ -2,10 +2,12 @@
 """
 工具执行器 - 管理和调用 Agent 工具
 """
-from typing import Dict, Any, List, Optional
+
+from typing import Dict, Any, Optional
 import logging
 
 from .tools import Tool, InspectTocTool, ReadPageTool, HybridSearchTool
+from .markdown_locator import MarkdownLocator
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ class ToolExecutor:
             return f"[ERROR] 参数错误: {e}"
         except FileNotFoundError as e:
             logger.error(f"[工具错误] {tool_name} 文件不存在: {e}")
-            return f"[ERROR] 文件不存在，请确认索引有效"
+            return "[ERROR] 文件不存在，请确认索引有效"
         except Exception as e:
             logger.error(f"[工具错误] {tool_name} 执行失败: {e}", exc_info=True)
             return f"[ERROR] 工具执行失败: {str(e)[:100]}"
@@ -74,7 +76,8 @@ def create_tool_executor(
     index_id: str,
     storage_dir: str,
     tree_structure: Dict[str, Any],
-    pageindex_lib_path: Optional[str] = None
+    pageindex_lib_path: Optional[str] = None,
+    markdown_locator: Optional[MarkdownLocator] = None,
 ) -> ToolExecutor:
     """
     创建并配置工具执行器
@@ -84,6 +87,7 @@ def create_tool_executor(
         storage_dir: 存储目录
         tree_structure: 树状结构（来自 index_metadata）
         pageindex_lib_path: PageIndex 库路径（可选）
+        markdown_locator: Markdown 定位器（可选，用于生成引用链接）
 
     Returns:
         配置好的 ToolExecutor 实例
@@ -94,6 +98,7 @@ def create_tool_executor(
     tools["inspect_toc"] = InspectTocTool(tree_structure)
 
     # 2. HybridSearchTool - 快速检索
+    # 如果提供了 markdown_locator，将其注入到工具中（在 Task 2 中使用）
     tools["hybrid_search"] = HybridSearchTool(index_id, storage_dir)
 
     # 3. ReadPageTool - 按页读取（需要 PageIndex）
@@ -102,4 +107,10 @@ def create_tool_executor(
     else:
         logger.warning("[工具初始化] 未提供 pageindex_lib_path，read_page 工具将不可用")
 
-    return ToolExecutor(tools)
+    # 如果提供了 markdown_locator，存储在 ToolExecutor 中供后续使用
+    executor = ToolExecutor(tools)
+    if markdown_locator:
+        executor.markdown_locator = markdown_locator
+        logger.info("[工具初始化] MarkdownLocator 已注入到 ToolExecutor")
+
+    return executor
