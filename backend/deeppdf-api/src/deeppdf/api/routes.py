@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request
@@ -36,6 +36,7 @@ from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
 from ..services.config_storage import ConfigStorage
 from ..services.file_storage import FileStorage
+from ..services.chat_storage import chat_storage
 from ..config import settings
 from ..agent.core import AgentError, LLMError
 from pathlib import Path
@@ -45,6 +46,11 @@ router = APIRouter(prefix="/api")
 
 # 全局任务存储：task_id -> {"task": asyncio.Task, "status": str, ...}
 _running_tasks: Dict[str, Dict] = {}
+
+# 全局 Agent 会话缓存：session_key -> Agent 实例
+# session_key 格式: f"{index_id}_{session_id}"
+_agent_sessions: Dict[str, "DeepPDFAgent"] = {}
+
 
 
 # ========== 速率限制器 ==========
@@ -931,7 +937,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
         logger.info(f"   📄 总页数: {metadata.get('total_pages', 0)}")
         
     except FileNotFoundError:
-        logger.error(f"❌ [元数据错误] 找不到 index_metadata.json")
+        logger.error("❌ [元数据错误] 找不到 index_metadata.json")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"索引 {index_id} 元数据不存在",
@@ -1052,12 +1058,38 @@ async def agent_chat(req: AgentRequest, http_request: Request):
         )
 
     try:
-        # 1. 加载 Agent
-        agent = await _load_agent_for_request(req.index_id)
+
+        # 1. 加载或复用 Agent（支持多轮对话）
+        session_key = f"{req.index_id}_{req.session_id or 'default'}"
+        
+        # 如果有 session_id 且缓存中存在，复用 Agent
+        if req.session_id and session_key in _agent_sessions:
+            agent = _agent_sessions[session_key]
+            logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
+        else:
+            # 创建新 Agent
+            agent = await _load_agent_for_request(req.index_id)
+            
+            # 尝试加载历史（如果有 session_id）
+            if req.session_id:
+                history = chat_storage.load_history(req.index_id, req.session_id)
+                if history:
+                    agent.session_history = history
+                    logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
+                
+                # 缓存 Agent
+                _agent_sessions[session_key] = agent
+                logger.info(f"💬 [会话管理] 创建新 Agent 并缓存: {session_key}")
 
         # 2. 运行 Agent (使用 asyncio.to_thread 避免阻塞)
         async with asyncio.timeout(300):  # 5 分钟超时
-            answer = await asyncio.to_thread(agent.run, req.query, req.force_mode)
+            answer = await asyncio.to_thread(
+                agent.run, req.query, req.force_mode, req.keep_history
+            )
+            
+        # 3. 如果保留历史，保存到磁盘
+        if req.session_id and req.keep_history:
+            chat_storage.save_history(req.index_id, req.session_id, agent.session_history)
 
         logger.info(f"[API] Agent 完成: answer_length={len(answer)}")
 
@@ -1135,8 +1167,31 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
         SSE 格式的文本片段
     """
     try:
-        # 1. 加载 Agent
-        agent = await _load_agent_for_request(req.index_id)
+        # 1. 加载或复用 Agent（支持多轮对话）
+        session_key = f"{req.index_id}_{req.session_id or 'default'}"
+        
+        # 如果有 session_id 且缓存中存在，复用 Agent
+        if req.session_id and session_key in _agent_sessions:
+            agent = _agent_sessions[session_key]
+            logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
+            logger.info(f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息")
+        else:
+            # 创建新 Agent
+            agent = await _load_agent_for_request(req.index_id)
+            
+            # 尝试加载历史（如果有 session_id）
+            if req.session_id:
+                history = chat_storage.load_history(req.index_id, req.session_id)
+                if history:
+                    agent.session_history = history
+                    logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
+            
+            # 如果提供了 session_id，缓存 Agent
+            if req.session_id:
+                _agent_sessions[session_key] = agent
+                logger.info(f"💬 [会话管理] 创建新 Agent 并缓存: {session_key}")
+            else:
+                logger.info("💬 [会话管理] 创建临时 Agent（无会话ID）")
 
         # 2. 创建队列用于线程间通信
         loop = asyncio.get_event_loop()
@@ -1161,7 +1216,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                 MIN_BUFFER_CHARS = 50  # 至少累积 50 字符
                 MAX_BUFFER_TIME = 0.2  # 最多缓冲 0.2 秒
 
-                for chunk in agent.run_stream(req.query, req.force_mode):
+                for chunk in agent.run_stream(req.query, req.force_mode, req.keep_history):
                     chunk_count += 1
                     buffer.append(chunk)
                     buffer_char_count += len(chunk)
@@ -1240,6 +1295,10 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
 
                 # 等待后台任务完成
                 await task
+                
+                # 保存历史到磁盘
+                if req.session_id and req.keep_history:
+                    chat_storage.save_history(req.index_id, req.session_id, agent.session_history)
 
         except asyncio.TimeoutError:
             logger.error(f"[API] Agent 流式执行超时: index_id={req.index_id}")
@@ -1299,3 +1358,17 @@ async def agent_chat_stream(req: AgentRequest, http_request: Request):
             "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
         },
     )
+
+
+@router.get("/chat/history/{index_id}/{session_id}")
+async def get_chat_history(index_id: str, session_id: str) -> List[Dict[str, Any]]:
+    """获取指定会话的历史记录"""
+    try:
+        history = chat_storage.load_history(index_id, session_id)
+        return history
+    except Exception as e:
+        logger.error(f"[API] 获取聊天历史失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            detail=f"获取聊天历史失败: {str(e)}"
+        )

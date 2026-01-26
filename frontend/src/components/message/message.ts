@@ -621,6 +621,10 @@ export abstract class Message {
 		this.app = app;
 	}
 
+	public getData(): MessageData {
+		return this.data;
+	}
+
 	/**
 	 * 渲染消息容器
 	 */
@@ -712,10 +716,6 @@ export abstract class Message {
 			throw new Error('Message element not initialized. Call render() first.');
 		}
 		return this.el;
-	}
-
-	getData(): MessageData {
-		return { ...this.data };
 	}
 }
 
