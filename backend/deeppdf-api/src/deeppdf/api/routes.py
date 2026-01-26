@@ -923,7 +923,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     # 获取索引元数据
     logger.info("📋 [加载元数据] 读取索引配置...")
     storage_dir = Path(settings.base_dir)
-    metadata_path = storage_dir / index_id / "index_metadata.json"
+    metadata_path = storage_dir / "indexes" / f"{index_id}.json"
 
     try:
         import json
@@ -937,7 +937,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
         logger.info(f"   📄 总页数: {metadata.get('total_pages', 0)}")
         
     except FileNotFoundError:
-        logger.error("❌ [元数据错误] 找不到 index_metadata.json")
+        logger.error(f"❌ [元数据错误] 找不到索引元数据文件: {metadata_path}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"索引 {index_id} 元数据不存在",
@@ -963,6 +963,13 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     logger.info(f"   🔧 Temperature: {settings.agent_temperature}")
     logger.info(f"   🔧 Max Iterations: {settings.agent_max_iterations}")
     
+    # 根据 provider 选择 API key
+    api_key = None
+    if settings.llm_provider == "deepseek":
+        api_key = settings.deepseek_api_key
+    elif settings.llm_provider == "openai":
+        api_key = settings.openai_api_key
+
     try:
         agent = DeepPDFAgent(
             index_id=index_id,
@@ -970,9 +977,9 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
             tree_structure=tree_structure,
             llm_provider=settings.llm_provider,
             llm_model=settings.llm_model,
-            api_key=settings.api_key,
-            base_url=settings.base_url,
-            pageindex_lib_path=str(settings.pageindex_lib_path),
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            pageindex_lib_path=None,  # read_page 工具可选，不传时禁用
             temperature=settings.agent_temperature,
             top_p=settings.agent_top_p,
             max_iterations=settings.agent_max_iterations,
