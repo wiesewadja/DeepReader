@@ -65,6 +65,7 @@ export class SidebarView extends ItemView {
     private currentPdfName: string | null = null;
     private isProcessing: boolean = false;
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
+    private streamController: AbortController | null = null;  // 流式请求控制器
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -814,6 +815,12 @@ ${r.text}`;
             throw new Error("API 客户端未连接");
         }
 
+        // 取消之前的流式请求（如果有）
+        if (this.streamController) {
+            this.streamController.abort();
+            console.log('[DeepPDF] 取消旧的流式请求');
+        }
+
         let fullContent = '';
         let streamController: AbortController | null = null;
         let agentCitations: CitationInfo[] = []; // 收集 Agent 返回的引用
@@ -898,8 +905,8 @@ ${r.text}`;
                 true        // 启用历史记录
             );
 
-            // 保存 controller 用于取消（如果需要的话）
-            // 可以通过 this.currentStreamController 访问
+            // 保存 controller 用于取消
+            this.streamController = streamController;
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1632,6 +1639,17 @@ ${structureInfo}
 
     async onClose() {
         try {
+            // 清理流式请求
+            if (this.streamController) {
+                try {
+                    this.streamController.abort();
+                    console.log('[DeepPDF] 已取消流式请求');
+                } catch (e) {
+                    console.warn('[DeepPDF] Error aborting streamController:', e);
+                }
+                this.streamController = null;
+            }
+
             // 清理 TopNav
             if (this.topNav) {
                 try {

@@ -144,9 +144,9 @@ export class MessageList extends Component {
 
 	/**
 	 * 获取所有消息数据
+	 * 注意：Map 按照 insertion order 迭代，因此返回的消息顺序与添加顺序一致
 	 */
 	getAllMessages(): MessageData[] {
-		// 对 map values 进行排序可能有问题，Map 保持插入顺序
 		return Array.from(this.messages.values()).map(msg => msg.getData());
 	}
 

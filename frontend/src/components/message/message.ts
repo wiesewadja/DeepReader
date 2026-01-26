@@ -314,8 +314,10 @@ function extractSectionByBlockRef(content: string, blockRef: string): string {
  * - 悬停+Command：Obsidian 原生预览
  * - 悬停（无按键）：自定义章节预览（只显示引用的章节）
  * @param disableHoverPreview - 禁用 hover preview（用于 AI 流式传输期间）
+ * @param observers - 用于跟踪和清理 MutationObserver 的数组（可选）
+ * @returns 返回 mouseover 事件处理器，用于后续清理
  */
-function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false): void {
+function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false, observers?: MutationObserver[]): ((e: Event) => void) | null {
 	const links = contentEl.querySelectorAll('a.internal-link');
 
 	// 用于 Command 键的原生预览
@@ -358,6 +360,11 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 			}
 		});
 		observer.observe(link, { attributes: true, attributeFilter: ['title'] });
+
+		// 将 observer 添加到跟踪数组，以便后续清理
+		if (observers) {
+			observers.push(observer);
+		}
 
 		// 处理点击事件
 		link.addEventListener('click', async (e) => {
@@ -530,7 +537,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 	});
 
 	// 全局 mouseover 处理 - 允许用户移动到自定义 popover 上
-	document.addEventListener('mouseover', (e) => {
+	const mouseoverHandler = (e: Event) => {
 		const target = e.target as HTMLElement;
 
 		// 如果鼠标在自定义 popover 上，取消隐藏
@@ -551,7 +558,12 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 				cleanupPopover();
 			}, 300);
 		}
-	});
+	};
+
+	document.addEventListener('mouseover', mouseoverHandler);
+
+	// 返回 mouseover 处理器，用于后续清理
+	return mouseoverHandler;
 }
 
 /**
@@ -615,6 +627,9 @@ export abstract class Message {
 	protected el: HTMLElement | null = null;
 	protected data: MessageData;
 	protected app?: App;
+	// 资源清理跟踪
+	protected observers: MutationObserver[] = [];
+	protected mouseoverHandler: ((e: Event) => void) | null = null;
 
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
@@ -665,11 +680,24 @@ export abstract class Message {
 
 		Object.assign(this.data, data);
 
-		// 检查哪些字段发生了变化
-		const citationsChanged = data.citations !== undefined && JSON.stringify(data.citations) !== JSON.stringify(oldCitations);
-		const followUpChanged = data.followUpQuestions !== undefined && JSON.stringify(data.followUpQuestions) !== JSON.stringify(oldFollowUpQuestions);
-		const agentThoughtsChanged = data.agentThoughts !== undefined && JSON.stringify(data.agentThoughts) !== JSON.stringify(oldAgentThoughts);
-		const agentToolCallsChanged = data.agentToolCalls !== undefined && JSON.stringify(data.agentToolCalls) !== JSON.stringify(oldAgentToolCalls);
+		// 检查哪些字段发生了变化（优化：使用浅比较而非 JSON.stringify）
+		// 对于数组和对象，先比较引用，再比较长度，避免深序列化
+		const citationsChanged = data.citations !== undefined && (
+			data.citations !== oldCitations &&
+			(data.citations?.length !== oldCitations?.length || data.citations?.[0] !== oldCitations?.[0])
+		);
+		const followUpChanged = data.followUpQuestions !== undefined && (
+			data.followUpQuestions !== oldFollowUpQuestions &&
+			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
+		);
+		const agentThoughtsChanged = data.agentThoughts !== undefined && (
+			data.agentThoughts !== oldAgentThoughts &&
+			(data.agentThoughts?.length !== oldAgentThoughts?.length || data.agentThoughts?.[0]?.content !== oldAgentThoughts?.[0]?.content)
+		);
+		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
+			data.agentToolCalls !== oldAgentToolCalls &&
+			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
+		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
 
 		// 如果只是内容变了，且DOM已存在，尝试局部更新
@@ -689,10 +717,18 @@ export abstract class Message {
 			// 流式结束时，进行完整的 Markdown 渲染
 			const contentEl = this.el.querySelector('.deeppdf-message-content');
 			if (contentEl && this.app) {
+				// 清理旧的 observers 和 mouseover handler
+				this.observers.forEach(obs => obs.disconnect());
+				this.observers = [];
+				if (this.mouseoverHandler) {
+					document.removeEventListener('mouseover', this.mouseoverHandler);
+					this.mouseoverHandler = null;
+				}
+
 				contentEl.empty();
 				MarkdownRenderer.render(this.app, this.data.content, contentEl as HTMLElement, '', new Component());
 				// 设置内部链接的点击事件和 hover preview
-				setupInternalLinks(contentEl as HTMLElement, this.app, false);
+				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
 			}
 			// 移除流式状态
 			this.el.removeClass('deeppdf-message-streaming');
@@ -892,7 +928,7 @@ export class AIMessage extends Message {
 			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
 			// 如果正在流式传输，禁用 hover preview
-			setupInternalLinks(content, this.app, this.data.isStreaming);
+			this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
 		} else {
 			content.innerHTML = this.escapeHtml(this.data.content);
 		}
@@ -939,9 +975,10 @@ export class AIMessage extends Message {
 	 * 流式更新 - 实时显示思考内容和工具调用
 	 *
 	 * 优化策略:
-	 * 1. 保留 Markdown 渲染以保证格式化显示
+	 * 1. 流式更新期间使用 textContent 而非 Markdown 渲染，避免重复解析
 	 * 2. 大幅降低更新频率：200 字符或 300ms
 	 * 3. 使用 GPU 加速优化渲染性能
+	 * 4. 只在内容变化时更新
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -960,6 +997,9 @@ export class AIMessage extends Message {
 			const currentThoughtsJSON = JSON.stringify(thoughts);
 			const thoughtsChanged = currentThoughtsJSON !== JSON.stringify(this.data.agentThoughts || []);
 
+			// 检查内容是否真正变化
+			const contentChanged = cleanedContent !== this.lastRenderedContent;
+
 			// 计算内容增长量
 			const contentGrowth = newContent.length - this.lastRenderedLength;
 
@@ -968,11 +1008,11 @@ export class AIMessage extends Message {
 
 			// 决定是否需要渲染:
 			// 1. 思考内容发生变化（立即更新）
-			// 2. 内容增长超过 200 字符（大幅降低更新频率）
-			// 3. 或距离上次渲染超过 300ms（降低刷新率）
-			const shouldRender = thoughtsChanged || contentGrowth > 200 || timePassed > 300;
+			// 2. 内容真正变化且增长超过 200 字符（大幅降低更新频率）
+			// 3. 内容真正变化且距离上次渲染超过 300ms（降低刷新率）
+			const shouldRender = thoughtsChanged || (contentChanged && (contentGrowth > 200 || timePassed > 300));
 
-			if (shouldRender) {
+			if (shouldRender && contentChanged) {
 				// 如果解析出思考内容且发生变化，更新思考组件
 				if (thoughts.length > 0 && thoughtsChanged) {
 					this.data.agentThoughts = thoughts;
@@ -982,16 +1022,12 @@ export class AIMessage extends Message {
 				// 启用 GPU 加速减少重绘开销
 				contentEl.style.transform = 'translateZ(0)';
 
-				// 渲染 Markdown 内容
-				if (this.app) {
-					contentEl.empty();
-					MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());
-				} else {
-					contentEl.innerHTML = this.escapeHtml(cleanedContent);
-				}
+				// 流式更新期间：使用 textContent 而非 Markdown 渲染
+				// 这避免了重复的 Markdown 解析和 DOM 操作
+				contentEl.textContent = cleanedContent;
 
 				// 更新跟踪变量
-				this.lastRenderedContent = newContent;
+				this.lastRenderedContent = cleanedContent;
 				this.lastRenderTime = now;
 				this.lastRenderedLength = newContent.length;
 			}
@@ -1004,12 +1040,20 @@ export class AIMessage extends Message {
 	 * 完全更新内容 - 用于非流式更新或内容变化较大时
 	 */
 	private fullUpdateContent(contentEl: HTMLElement, content: string): void {
+		// 清理旧的 observers 和 mouseover handler
+		this.observers.forEach(obs => obs.disconnect());
+		this.observers = [];
+		if (this.mouseoverHandler) {
+			document.removeEventListener('mouseover', this.mouseoverHandler);
+			this.mouseoverHandler = null;
+		}
+
 		contentEl.empty();
 		if (this.app) {
 			MarkdownRenderer.render(this.app, content, contentEl, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
 			// 如果正在流式传输，禁用 hover preview
-			setupInternalLinks(contentEl, this.app, this.data.isStreaming);
+			this.mouseoverHandler = setupInternalLinks(contentEl, this.app, this.data.isStreaming, this.observers);
 		} else {
 			contentEl.innerHTML = this.escapeHtml(content);
 		}
@@ -1114,6 +1158,29 @@ export class AIMessage extends Message {
 			console.log('[renderCitations] 引用卡片渲染完成');
 		} else {
 			console.log('[renderCitations] 没有引用数据，跳过渲染');
+		}
+	}
+
+	/**
+	 * 清理资源，防止内存泄漏
+	 */
+	public destroy(): void {
+		// 取消流式动画帧
+		if (this.streamingAnimationFrame !== null) {
+			cancelAnimationFrame(this.streamingAnimationFrame);
+			this.streamingAnimationFrame = null;
+		}
+
+		// 断开所有 MutationObserver
+		this.observers.forEach(observer => {
+			observer.disconnect();
+		});
+		this.observers = [];
+
+		// 移除全局 mouseover 监听器
+		if (this.mouseoverHandler) {
+			document.removeEventListener('mouseover', this.mouseoverHandler);
+			this.mouseoverHandler = null;
 		}
 	}
 }
