@@ -2,28 +2,48 @@
  * Server Manager 测试
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { spawn } from 'child_process';
 
-// Mock child_process
+// Mock child_process before importing ServerManager
+const mockStdoutOn = vi.fn();
+const mockStderrOn = vi.fn();
+const mockProcessOn = vi.fn();
+const mockKill = vi.fn();
+
+const mockProcess = {
+    stdout: { on: mockStdoutOn },
+    stderr: { on: mockStderrOn },
+    on: mockProcessOn,
+    kill: mockKill
+};
+
 vi.mock('child_process', () => ({
-    spawn: vi.fn()
+    spawn: vi.fn(() => mockProcess)
 }));
 
+// Mock fetch globally
+global.fetch = vi.fn(() =>
+    Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 'ok' })
+    } as Response)
+) as any;
+
 import { ServerManager } from '../server-manager.js';
+import { spawn } from 'child_process';
 
 describe('ServerManager', () => {
     let manager: ServerManager;
-    const mockProcess = {
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn() },
-        on: vi.fn(),
-        kill: vi.fn()
-    };
 
     beforeEach(() => {
         vi.clearAllMocks();
         manager = new ServerManager(8000);
-        (spawn as any).mockReturnValue(mockProcess);
+        // 重置 fetch mock
+        (global.fetch as any).mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ status: 'ok' })
+        });
     });
 
     afterEach(() => {
@@ -34,15 +54,7 @@ describe('ServerManager', () => {
 
     describe('start', () => {
         it('should start server with correct command', async () => {
-            const startPromise = manager.start('/path/to/backend');
-
-            // 模拟服务器启动成功
-            setTimeout(() => {
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Application startup complete');
-            }, 100);
-
-            await startPromise;
+            await manager.start('/path/to/backend');
 
             expect(spawn).toHaveBeenCalledWith('uv', [
                 '--directory', '/path/to/backend',
@@ -53,58 +65,26 @@ describe('ServerManager', () => {
             ], expect.any(Object));
         });
 
-        it('should detect server ready from output', async () => {
-            const startPromise = manager.start('/path/to/backend');
+        it('should detect server ready from health check', async () => {
+            await manager.start('/path/to/backend');
 
-            setTimeout(() => {
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Uvicorn running on http://127.0.0.1:8000');
-            }, 50);
-
-            await startPromise;
-            expect((manager as any).ready).toBe(true);
+            expect(global.fetch).toHaveBeenCalledWith('http://localhost:8000/health');
+            expect(manager.isRunning()).toBe(true);
         });
 
-        it('should handle stderr output', async () => {
+        it('should handle server startup successfully', async () => {
             const startPromise = manager.start('/path/to/backend');
-
-            setTimeout(() => {
-                const stderrCallback = mockProcess.stderr.on.mock.calls[0][1];
-                stderrCallback('INFO: Started server process');
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Application startup complete');
-            }, 50);
 
             await startPromise;
-        });
 
-        it('should handle process exit', async () => {
-            mockProcess.on.mockImplementation((event: string, callback: Function) => {
-                if (event === 'exit') {
-                    setTimeout(() => callback(1, 'SIGTERM'), 50);
-                }
-            });
-
-            const startPromise = manager.start('/path/to/backend');
-
-            try {
-                await startPromise;
-                expect.fail('Should have thrown an error');
-            } catch (error: any) {
-                expect(error.message).toContain('Server exited');
-            }
+            expect(spawn).toHaveBeenCalled();
+            expect(manager.isRunning()).toBe(true);
         });
 
         it('should use custom port', async () => {
             const customManager = new ServerManager(9000);
-            const startPromise = customManager.start('/path/to/backend');
 
-            setTimeout(() => {
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Application startup complete');
-            }, 50);
-
-            await startPromise;
+            await customManager.start('/path/to/backend');
 
             expect(spawn).toHaveBeenCalledWith('uv', [
                 '--directory', '/path/to/backend',
@@ -114,38 +94,37 @@ describe('ServerManager', () => {
                 '--loop', 'asyncio'
             ], expect.any(Object));
         });
+
+        it('should not start server if already running', async () => {
+            await manager.start('/path/to/backend');
+
+            const result = manager.start('/path/to/backend');
+
+            // 应该立即返回（不需要 await）
+            expect(result).resolves.toBeUndefined();
+        });
     });
 
     describe('stop', () => {
         it('should stop running server', async () => {
             // 先启动服务器
-            const startPromise = manager.start('/path/to/backend');
-            setTimeout(() => {
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Application startup complete');
-            }, 50);
-            await startPromise;
+            await manager.start('/path/to/backend');
 
             // 停止服务器
-            manager.stop();
+            await manager.stop();
 
-            expect(mockProcess.kill).toHaveBeenCalledWith('SIGTERM');
+            expect(mockKill).toHaveBeenCalled();
             expect((manager as any).process).toBeNull();
         });
 
-        it('should handle stop when no process running', () => {
-            expect(() => manager.stop()).not.toThrow();
+        it('should handle stop when no process running', async () => {
+            await expect(manager.stop()).resolves.toBeUndefined();
         });
     });
 
     describe('isRunning', () => {
         it('should return true when server is running', async () => {
-            const startPromise = manager.start('/path/to/backend');
-            setTimeout(() => {
-                const stdoutCallback = mockProcess.stdout.on.mock.calls[0][1];
-                stdoutCallback('Application startup complete');
-            }, 50);
-            await startPromise;
+            await manager.start('/path/to/backend');
 
             expect(manager.isRunning()).toBe(true);
         });

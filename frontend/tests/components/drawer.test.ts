@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { Drawer } from '../src/components/drawer/drawer';
+import { Drawer } from '../../src/components/drawer/drawer';
 
 describe('Drawer 组件', () => {
     let container: HTMLElement;

@@ -70,3 +70,27 @@ HTMLElement.prototype.empty = function(this: HTMLElement) {
 	}
 	return this;
 };
+
+// Mock Obsidian module globally
+(global as any).obsidian = {
+	App: class MockApp {},
+	MarkdownRenderer: {
+		renderMarkdown: async () => {},
+		renderEl: async () => {},
+	},
+	Component: class MockComponent {
+		onLoad() {}
+		onUnload() {}
+		load() {}
+		unload() {}
+		children: any[] = [];
+	},
+	ItemView: class MockItemView {},
+	WorkspaceLeaf: class MockWorkspaceLeaf {},
+	Notice: class MockNotice {
+		constructor(message: string, duration?: number) {}
+	},
+	HoverParent: class MockHoverParent {},
+	HoverPopover: class MockHoverPopover {},
+	markdownToHTML: (text: string) => text,
+};

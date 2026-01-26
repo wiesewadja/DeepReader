@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { TaskProgressCard } from '../src/components/task-progress-card';
-import { TaskProgress, STEP_CONFIG } from '../src/types/index';
+import { TaskProgressCard } from '../../src/components/task-progress-card';
+import { TaskProgress, STEP_CONFIG } from '../../src/types/index';
 
 describe('TaskProgressCard 组件', () => {
     let container: HTMLElement;

@@ -13,6 +13,14 @@ export default defineConfig({
         globals: true,
         setupFiles: ['./tests/setup.ts'],
         include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-        exclude: ['node_modules']
+        exclude: ['node_modules'],
+        poolOptions: {
+            threads: {
+                singleThread: true
+            }
+        }
+    },
+    define: {
+        'obsidian': '{}'
     }
 });
