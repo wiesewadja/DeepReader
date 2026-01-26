@@ -72,8 +72,8 @@ class TestPromptBuilder:
         prompt = builder.build()
 
         # 验证包含引用格式要求
-        assert "引用格式要求" in prompt
-        assert "基本格式：" in prompt
+        assert "引用协议" in prompt
+        assert "基本格式" in prompt
         assert "[[文件名.md#^page-N]]" in prompt
         assert "根据文档内容，人工智能是计算机科学的一个分支" in prompt
         assert "[[第一章/引言.md#^page-5]]" in prompt
@@ -96,8 +96,8 @@ class TestPromptBuilder:
         prompt = builder.build()
 
         # 验证包含多来源引用示例
-        assert "[[file1.md#^page-5]][[file2.md#^page-8]]" in prompt
-        assert "如果同一信息来自多个来源" in prompt
+        assert "[[第三章/深度学习.md#^page-12]][[第四章/应用.md#^page-8]]" in prompt
+        assert "多个来源" in prompt
 
 
 # ========== RouteDecision 测试 ==========
