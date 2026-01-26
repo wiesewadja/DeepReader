@@ -99,7 +99,9 @@ def create_tool_executor(
 
     # 2. HybridSearchTool - 快速检索
     # 如果提供了 markdown_locator，将其注入到工具中（在 Task 2 中使用）
-    tools["hybrid_search"] = HybridSearchTool(index_id, storage_dir)
+    tools["hybrid_search"] = HybridSearchTool(
+        index_id, storage_dir, markdown_locator=markdown_locator
+    )
 
     # 3. ReadPageTool - 按页读取（需要 PageIndex）
     if pageindex_lib_path:

@@ -81,3 +81,46 @@ def test_create_tool_executor():
     assert "inspect_toc" in executor.tools
     assert "hybrid_search" in executor.tools
     assert "read_page" not in executor.tools  # 未提供 pageindex_lib_path
+
+
+def test_create_tool_executor_with_markdown_locator():
+    """测试: 创建工具执行器时传递 markdown_locator"""
+    from deeppdf.agent.markdown_locator import MarkdownLocator
+
+    tree_structure = {
+        "structure": [
+            {
+                "title": "测试",
+                "node_id": "node_1",
+                "start_index": 1,
+                "end_index": 10,
+                "nodes": []
+            }
+        ]
+    }
+
+    # 创建一个模拟的 index_metadata
+    index_metadata = {
+        "markdown_files": {
+            "node_1": "test_file.md"
+        },
+        "pdf_name": "test.pdf",
+        "tree_structure": tree_structure
+    }
+
+    # 创建 markdown_locator
+    markdown_locator = MarkdownLocator(index_metadata)
+
+    executor = create_tool_executor(
+        index_id="test_idx",
+        storage_dir="/fake/path",
+        tree_structure=tree_structure,
+        pageindex_lib_path=None,
+        markdown_locator=markdown_locator
+    )
+
+    # 验证 markdown_locator 已传递给 HybridSearchTool
+    assert "hybrid_search" in executor.tools
+    hybrid_search_tool = executor.tools["hybrid_search"]
+    assert hybrid_search_tool.markdown_locator is markdown_locator
+    assert hybrid_search_tool.markdown_locator is not None

@@ -4,15 +4,19 @@ Agent 工具定义
 
 为 DeepPDFAgent 提供可调用的工具集合
 """
+
 import asyncio
+import json
 from typing import Protocol, Dict, Any, List, Optional, TypedDict
 from pathlib import Path
 
 from deeppdf.services.querier import query_pdf
+from deeppdf.agent.markdown_locator import MarkdownLocator
 
 
 class Tool(Protocol):
     """工具协议 - 所有工具必须实现此接口"""
+
     name: str
     description: str
 
@@ -23,6 +27,7 @@ class Tool(Protocol):
 
 class ToolResult(TypedDict):
     """工具执行结果"""
+
     success: bool
     result: str
     error: Optional[str]
@@ -69,9 +74,7 @@ class InspectTocTool:
         end_page = node.get("end_index", "?")
         node_id = node.get("node_id", "")
 
-        lines = [
-            f"{indent}- {title} (第 {start_page}-{end_page} 页) [ID: {node_id}]"
-        ]
+        lines = [f"{indent}- {title} (第 {start_page}-{end_page} 页) [ID: {node_id}]"]
 
         # 递归处理子节点
         for child in node.get("nodes", []):
@@ -108,6 +111,7 @@ class ReadPageTool:
         """延迟加载 PageIndex 实例"""
         if self._pi is None:
             import sys
+
             sys.path.insert(0, self.pageindex_lib_path)
 
             from pageindex import PageIndex  # type: ignore
@@ -156,16 +160,23 @@ class HybridSearchTool:
         "参数: query (str, 必需) - 搜索关键词; top_k (int, 可选) - 返回结果数，默认5"
     )
 
-    def __init__(self, index_id: str, storage_dir: str):
+    def __init__(
+        self,
+        index_id: str,
+        storage_dir: str,
+        markdown_locator: Optional[MarkdownLocator] = None,
+    ):
         """
         初始化工具
 
         Args:
             index_id: 索引 ID
             storage_dir: 存储目录
+            markdown_locator: Markdown 定位器（可选），用于生成增强的引用元数据
         """
         self.index_id = index_id
         self.storage_dir = storage_dir
+        self.markdown_locator = markdown_locator
 
     def __call__(self, query: str, top_k: int = 5) -> str:
         """
@@ -176,75 +187,109 @@ class HybridSearchTool:
             top_k: 返回结果数量
 
         Returns:
-            检索结果的可读文本
+            JSON 字符串，包含增强的引用元数据：
+            - 当 markdown_locator 提供时：返回包含 node_id、obsidian_link、page、anchor、text 的结构化数据
+            - 当 markdown_locator 为 None 时：返回基本元数据（text、page、metadata）
+
+            返回格式示例：
+            [
+                {
+                    "node_id": "node_1",
+                    "obsidian_link": "[[file.md#^page-5]]",
+                    "page": 5,
+                    "anchor": "^page-5",
+                    "text": "相关内容..."
+                },
+                ...
+            ]
         """
         # 验证查询参数
         if not query or not isinstance(query, str):
-            return "错误: 查询参数必须是非空字符串"
+            return json.dumps({"error": "查询参数必须是非空字符串"}, ensure_ascii=False)
 
         # 验证 top_k 参数
         if top_k < 1 or top_k > 50:
-            return "错误: top_k 必须在 1-50 之间"
+            return json.dumps({"error": "top_k 必须在 1-50 之间"}, ensure_ascii=False)
 
         try:
             # 异步调用 query_pdf - 安全地处理事件循环
             # 由于项目已在 main.py 中应用 nest_asyncio，可以安全运行嵌套循环
             try:
-                loop = asyncio.get_event_loop()
+                # 使用现代 API 获取事件循环（避免弃用警告）
+                loop = asyncio.get_event_loop_policy().get_event_loop()
                 if loop.is_running():
                     # 已有运行中的循环，nest_asyncio 允许嵌套 run_until_complete
-                    result = loop.run_until_complete(query_pdf(
-                        query=query,
-                        index_id=self.index_id,
-                        storage_dir=self.storage_dir,
-                        max_results=top_k
-                    ))
+                    result = loop.run_until_complete(
+                        query_pdf(
+                            query=query,
+                            index_id=self.index_id,
+                            storage_dir=self.storage_dir,
+                            max_results=top_k,
+                        )
+                    )
                 else:
                     # 循环存在但未运行，使用 run_until_complete
-                    result = loop.run_until_complete(query_pdf(
+                    result = loop.run_until_complete(
+                        query_pdf(
+                            query=query,
+                            index_id=self.index_id,
+                            storage_dir=self.storage_dir,
+                            max_results=top_k,
+                        )
+                    )
+            except RuntimeError:
+                # 没有循环，使用 asyncio.run 创建新循环
+                result = asyncio.run(
+                    query_pdf(
                         query=query,
                         index_id=self.index_id,
                         storage_dir=self.storage_dir,
-                        max_results=top_k
-                    ))
-            except RuntimeError:
-                # 没有循环，使用 asyncio.run 创建新循环
-                result = asyncio.run(query_pdf(
-                    query=query,
-                    index_id=self.index_id,
-                    storage_dir=self.storage_dir,
-                    max_results=top_k
-                ))
+                        max_results=top_k,
+                    )
+                )
 
             if result.get("status") == "error":
-                return f"错误: {result.get('error', '检索失败')}"
+                return json.dumps(
+                    {"error": result.get("error", "检索失败")}, ensure_ascii=False
+                )
 
-            results = result.get("results", [])
+            search_results = result.get("results", [])
 
-            if not results:
-                return f"未找到与 '{query}' 相关的内容"
+            if not search_results:
+                return json.dumps(
+                    {"error": f"未找到与 '{query}' 相关的内容"}, ensure_ascii=False
+                )
 
-            # 格式化结果
-            lines = [f"# 检索结果 (共 {len(results)} 条)\n"]
+            # 构建结构化结果，包含引用元数据
+            structured_results = []
 
-            for i, item in enumerate(results, 1):
-                original_text = item.get("text", "")
-                text = original_text[:500]
-                if len(original_text) > 500:
-                    text += " [...]"
-
+            for item in search_results:
                 metadata = item.get("metadata", {})
-                section = metadata.get("section", "未知章节")
-                score = metadata.get("score", 0)
+                node_id = metadata.get("node_id")
+                page_num = metadata.get("page")
+                text = item.get("text", "")
 
-                lines.append(f"## 结果 {i}: {section}")
-                lines.append(f"相关性: {score:.2f}")
-                lines.append(f"{text}")
-                lines.append("")
+                # 如果提供了 markdown_locator 且有 node_id，生成增强的引用元数据
+                if self.markdown_locator and node_id:
+                    citation = self.markdown_locator.generate_citation_metadata(
+                        node_id=node_id, page_num=page_num, text=text
+                    )
+                    structured_results.append(citation)
+                else:
+                    # 回退到基本元数据
+                    structured_results.append(
+                        {
+                            "text": text,
+                            "page": page_num,
+                            "metadata": metadata,
+                        }
+                    )
 
-            return "\n".join(lines)
+            return json.dumps(structured_results, ensure_ascii=False)
 
         except (ValueError, IOError, OSError, RuntimeError) as e:
-            return f"错误: 检索失败 - {str(e)}"
-        except Exception:
-            return "错误: 检索时发生未知错误"
+            return json.dumps({"error": f"检索失败 - {str(e)}"}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps(
+                {"error": f"检索时发生未知错误 - {str(e)}"}, ensure_ascii=False
+            )
