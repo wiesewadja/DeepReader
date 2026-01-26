@@ -676,6 +676,7 @@ export class DeepPDFClient {
    * @param onChunk 接收流式数据块的回调
    * @param onComplete 完成回调
    * @param onError 错误回调
+   * @param forceMode 强制路由模式（可选）
    * @returns AbortController 用于取消请求
    */
   agentChatStream(
@@ -683,16 +684,23 @@ export class DeepPDFClient {
     indexId: string,
     onChunk: (chunk: string) => void,
     onComplete?: () => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    forceMode?: string
   ): AbortController {
     const controller = new AbortController();
 
-    console.log('[Agent] 开始流式请求:', { query, indexId, baseUrl: this.baseUrl });
+    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, baseUrl: this.baseUrl });
+
+    // 构建请求体
+    const body: any = { query, index_id: indexId };
+    if (forceMode && forceMode !== 'auto') {
+      body.force_mode = forceMode;
+    }
 
     fetch(`${this.baseUrl}/api/chat/agent/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, index_id: indexId }),
+      body: JSON.stringify(body),
       signal: controller.signal
     })
       .then(response => {

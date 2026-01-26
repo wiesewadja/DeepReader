@@ -1,36 +1,11 @@
 /**
  * DeepPDF 聊天输入组件
  * 实现多行文本输入框，支持 Enter 发送、Shift+Enter 换行
- * Gemini 风格：文本框在上方，底部工具栏（左侧模式切换，右侧发送按钮）
+ * Gemini 风格：文本框在上方，底部工具栏（右侧发送按钮）
+ * 注：模式切换已移至设置中的高级选项，默认使用自动路由
  */
 
 import { Icons } from '../../utils/icons.js';
-import { ChatMode } from '../agent-mode-toggle/agent-mode-toggle.js';
-
-/**
- * 聊天模式配置
- */
-interface ChatModeConfig {
-	id: ChatMode;
-	name: string;
-	shortName: string;
-	icon: string;
-}
-
-const CHAT_MODES: Record<ChatMode, ChatModeConfig> = {
-	fast: {
-		id: 'fast',
-		name: '快速检索',
-		shortName: '快速',
-		icon: '⚡'  // Unicode 闪电符号
-	},
-	agent: {
-		id: 'agent',
-		name: 'Agent 问答',
-		shortName: 'Agent',
-		icon: '🤖'  // Unicode 机器人符号
-	}
-};
 
 /**
  * 聊天输入配置选项
@@ -50,10 +25,6 @@ export interface ChatInputOptions {
 	maxRows?: number;
 	/** 最大高度（像素） */
 	maxHeight?: number;
-	/** 初始聊天模式 */
-	initialMode?: ChatMode;
-	/** 模式变化回调 */
-	onModeChange?: (mode: ChatMode) => void;
 }
 
 /**
@@ -63,15 +34,12 @@ export class ChatInput {
 	private el: HTMLElement | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
-	private modeButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
-	private currentMode: ChatMode;
 
 	// 事件处理器引用（用于清理）
 	private inputHandler: (() => void) | null = null;
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private clickHandler: (() => void) | null = null;
-	private modeClickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
 	private resizeAnimationFrame: number | null = null;
 
@@ -82,10 +50,8 @@ export class ChatInput {
 			minRows: 1,
 			maxRows: 5,
 			maxHeight: 150,
-			initialMode: 'fast',
 			...options
 		};
-		this.currentMode = this.options.initialMode || 'fast';
 		this.el = this.render();
 	}
 
@@ -121,16 +87,6 @@ export class ChatInput {
 			cls: 'deeppdf-input-toolbar'
 		});
 
-		// 左侧工具 (模式切换)
-		const leftToolbar = toolbar.createEl('div', {
-			cls: 'deeppdf-toolbar-left'
-		});
-
-		this.modeButton = leftToolbar.createEl('button', {
-			cls: 'deeppdf-mode-switch-btn'
-		});
-		this.updateModeButton();
-
 		// 右侧工具 (发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
@@ -151,21 +107,6 @@ export class ChatInput {
 		this.updateSendButtonState();
 
 		return container;
-	}
-
-	/**
-	 * 更新模式按钮显示
-	 */
-	private updateModeButton(): void {
-		if (!this.modeButton) return;
-
-		const modeConfig = CHAT_MODES[this.currentMode];
-		// 极简风格：只显示图标，或者图标+简短名称
-		// 用户要求极简化，左下角。可以使用一个小图标，hover 时显示名称
-		this.modeButton.innerHTML = `<span class="mode-icon">${modeConfig.icon}</span><span class="mode-name">${modeConfig.shortName}</span>`;
-		this.modeButton.setAttribute('aria-label', `当前模式：${modeConfig.name}，点击切换`);
-		this.modeButton.setAttribute('title', `点击切换到${this.currentMode === 'fast' ? 'Agent' : '快速'}模式`);
-		this.modeButton.setAttribute('data-mode', this.currentMode);
 	}
 
 	/**
@@ -193,14 +134,6 @@ export class ChatInput {
 				this.handleSend();
 			};
 			this.sendButton.addEventListener('click', this.clickHandler);
-		}
-
-		// 点击模式切换按钮
-		if (this.modeButton) {
-			this.modeClickHandler = () => {
-				this.toggleMode();
-			};
-			this.modeButton.addEventListener('click', this.modeClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -388,35 +321,6 @@ export class ChatInput {
 	}
 
 	/**
-	 * 切换聊天模式
-	 */
-	private toggleMode(): void {
-		// 在两种模式之间切换
-		this.currentMode = this.currentMode === 'fast' ? 'agent' : 'fast';
-		this.updateModeButton();
-
-		// 触发模式变化回调
-		this.options.onModeChange?.(this.currentMode);
-	}
-
-	/**
-	 * 获取当前聊天模式
-	 */
-	getMode(): ChatMode {
-		return this.currentMode;
-	}
-
-	/**
-	 * 设置聊天模式
-	 */
-	setMode(mode: ChatMode): void {
-		if (this.currentMode === mode) return;
-
-		this.currentMode = mode;
-		this.updateModeButton();
-	}
-
-	/**
 	 * 获取组件元素
 	 */
 	getElement(): HTMLElement | null {
@@ -454,11 +358,6 @@ export class ChatInput {
 			this.clickHandler = null;
 		}
 
-		if (this.modeButton && this.modeClickHandler) {
-			this.modeButton.removeEventListener('click', this.modeClickHandler);
-			this.modeClickHandler = null;
-		}
-
 		// 从 DOM 中移除元素
 		if (this.el && this.el.parentNode) {
 			this.el.parentNode.removeChild(this.el);
@@ -468,6 +367,5 @@ export class ChatInput {
 		this.el = null;
 		this.textarea = null;
 		this.sendButton = null;
-		this.modeButton = null;
 	}
 }

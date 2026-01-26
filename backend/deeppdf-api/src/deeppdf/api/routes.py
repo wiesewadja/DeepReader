@@ -917,7 +917,7 @@ async def agent_chat(req: AgentRequest, http_request: Request):
 
         # 2. 运行 Agent (使用 asyncio.to_thread 避免阻塞)
         async with asyncio.timeout(300):  # 5 分钟超时
-            answer = await asyncio.to_thread(agent.run, req.query)
+            answer = await asyncio.to_thread(agent.run, req.query, req.force_mode)
 
         logger.info(f"[API] Agent 完成: answer_length={len(answer)}")
         return AgentResponse(
@@ -984,8 +984,8 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             try:
                 logger.info(f"[Agent流式] 开始在线程中执行 Agent.run_stream")
                 chunk_count = 0
-                
-                for chunk in agent.run_stream(req.query):
+
+                for chunk in agent.run_stream(req.query, req.force_mode):
                     chunk_count += 1
                     # 将chunk放入队列（线程安全）
                     loop.call_soon_threadsafe(queue.put_nowait, ('chunk', chunk))

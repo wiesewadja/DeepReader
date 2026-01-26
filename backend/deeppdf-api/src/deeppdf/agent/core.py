@@ -386,12 +386,13 @@ class DeepPDFAgent:
                 f"查询过长（{len(query)} 字符），请精简到 {max_length} 字符以内。"
             )
 
-    def run(self, query: str) -> str:
+    def run(self, query: str, force_mode: Optional[str] = None) -> str:
         """
         运行 Agent 主循环 (非流式)
 
         Args:
             query: 用户查询
+            force_mode: 强制路由模式 (None=自动路由, "fast"/"section"/"slow")
 
         Returns:
             Agent 最终回答
@@ -405,10 +406,16 @@ class DeepPDFAgent:
         # 记录用户查询
         self.history.append({"role": "user", "content": query})
 
-        # 路由判断：根据查询类型决定可用工具
-        route_type = RouteDecision.classify_query(query)
-        allowed_tools = self._get_allowed_tools_for_route(route_type)
-        logger.info(f"[Agent路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+        # 路由判断：根据强制模式或查询类型决定可用工具
+        if force_mode is None:
+            # 自动路由
+            route_type = RouteDecision.classify_query(query)
+            allowed_tools = self._get_allowed_tools_for_route(route_type)
+            logger.info(f"[Agent路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+        else:
+            # 强制模式
+            allowed_tools = self._get_allowed_tools_for_route(force_mode)
+            logger.info(f"[Agent路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}")
 
         iterations = 0
 
@@ -486,12 +493,13 @@ class DeepPDFAgent:
         )
         return response.choices[0].message.content or "抱歉，未能完成您的请求。"
 
-    def run_stream(self, query: str) -> Generator[str, None, None]:
+    def run_stream(self, query: str, force_mode: Optional[str] = None) -> Generator[str, None, None]:
         """
         运行 Agent 主循环 (流式输出)
 
         Args:
             query: 用户查询
+            force_mode: 强制路由模式 (None=自动路由, "fast"/"section"/"slow")
 
         Yields:
             文本片段
@@ -505,10 +513,16 @@ class DeepPDFAgent:
         # 记录用户查询
         self.history.append({"role": "user", "content": query})
 
-        # 路由判断：根据查询类型决定可用工具
-        route_type = RouteDecision.classify_query(query)
-        allowed_tools = self._get_allowed_tools_for_route(route_type)
-        logger.info(f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+        # 路由判断：根据强制模式或查询类型决定可用工具
+        if force_mode is None:
+            # 自动路由
+            route_type = RouteDecision.classify_query(query)
+            allowed_tools = self._get_allowed_tools_for_route(route_type)
+            logger.info(f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+        else:
+            # 强制模式
+            allowed_tools = self._get_allowed_tools_for_route(force_mode)
+            logger.info(f"[Agent流式路由] 强制模式={force_mode}, 可用工具={allowed_tools or '全部'}")
 
         # 初始化思考状态机
         thought_state: Dict[str, Any] = {

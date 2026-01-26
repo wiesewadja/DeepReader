@@ -14,6 +14,7 @@ interface DeepPDFSettings {
     maxTokensPerNode: number;
     ifAddNodeSummary: boolean;
     lastSelectedIndexId: string;
+    forceMode: string;  // 强制路由模式：auto(默认) | fast | section | slow
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -27,7 +28,8 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     maxPagesPerNode: 10,
     maxTokensPerNode: 20000,
     ifAddNodeSummary: true,
-    lastSelectedIndexId: ""
+    lastSelectedIndexId: "",
+    forceMode: "auto"  // 默认使用自动路由
 };
 
 export default class DeepPDFPlugin extends Plugin {
@@ -255,5 +257,27 @@ class DeepPDFSettingTab extends PluginSettingTab {
                     this.plugin.settings.ifAddNodeSummary = value;
                     await this.plugin.saveSettings();
                 }));
+
+        containerEl.createEl('h2', { text: '高级选项' });
+
+        new Setting(containerEl)
+            .setName("强制路由模式")
+            .setDesc("强制指定 Agent 路由模式。auto=根据查询自动选择，fast=仅快速检索，section=优先页面读取，slow=完全分析")
+            .addDropdown(dropdown => dropdown
+                .addOption("auto", "自动路由（推荐）")
+                .addOption("fast", "快速检索（仅搜索）")
+                .addOption("section", "章节优先（搜索+页面读取）")
+                .addOption("slow", "完全分析（所有工具）")
+                .setValue(this.plugin.settings.forceMode)
+                .onChange(async (value) => {
+                    this.plugin.settings.forceMode = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // 添加说明文字
+        containerEl.createEl('p', {
+            text: '提示：大多数情况下使用"自动路由"即可获得最佳体验。强制模式仅用于特定场景的调试或控制。',
+            cls: 'setting-item-description'
+        });
     }
 }

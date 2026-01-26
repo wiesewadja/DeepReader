@@ -201,8 +201,9 @@ export const agentAPI = {
     indexId: string,
     onChunk: (chunk: string) => void,
     onComplete?: () => void,
-    onError?: (error: string) => void
-  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError)
+    onError?: (error: string) => void,
+    forceMode?: string
+  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode)
 };
 
 /**

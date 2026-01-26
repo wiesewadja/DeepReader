@@ -190,6 +190,24 @@ class AgentRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
     index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
     stream: Optional[bool] = Field(False, description="是否流式输出")
+    force_mode: Optional[str] = Field(
+        None,
+        description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)"
+    )
+
+    @field_validator("force_mode")
+    @classmethod
+    def validate_force_mode(cls, v: Optional[str]) -> Optional[str]:
+        """验证强制模式参数"""
+        if v is None or v == "auto":
+            return None  # None 表示自动路由
+        valid_modes = ["fast", "section", "slow"]
+        if v not in valid_modes:
+            mode_list = '", "'.join(valid_modes)
+            raise ValueError(
+                f'force_mode must be one of: "auto", "{mode_list}"'
+            )
+        return v
 
 
 class AgentResponse(BaseModel):

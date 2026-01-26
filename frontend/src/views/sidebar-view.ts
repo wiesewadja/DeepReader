@@ -19,7 +19,6 @@ import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
-import { AgentModeToggle, ChatMode } from "../components/agent-mode-toggle/agent-mode-toggle.js";
 import { agentAPI } from "../api/index.js";
 
 // ==================== 类型映射 ====================
@@ -65,7 +64,6 @@ export class SidebarView extends ItemView {
     private currentIndexId: string | null = null;
     private currentPdfName: string | null = null;
     private isProcessing: boolean = false;
-    private chatMode: ChatMode = 'fast';  // 默认快速检索模式
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null, plugin: any) {
         super(leaf);
@@ -408,16 +406,11 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建聊天输入组件（集成模式切换）
+        // 创建聊天输入组件（默认使用自动路由）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
-            initialMode: this.chatMode,
             onSend: (message: string) => {
                 this.sendMessage(message);
-            },
-            onModeChange: (mode: ChatMode) => {
-                this.chatMode = mode;
-                console.log(`[DeepPDF] 模式切换为: ${mode}`);
             }
         });
 
@@ -469,18 +462,12 @@ export class SidebarView extends ItemView {
                 content: "正在思考...",
                 timestamp: new Date().toISOString(),
                 isStreaming: true,
-                isAgentMessage: this.chatMode === 'agent'  // Agent 模式标识
+                isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
             };
             this.messageList?.addMessage(aiMessageData);
 
-            // 根据模式选择不同的处理方式
-            if (this.chatMode === 'agent') {
-                // Agent 智能体模式
-                await this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
-            } else {
-                // 快速检索模式
-                await this.handleQuery(message, this.currentIndexId, aiMessageId);
-            }
+            // 使用 Agent 智能体模式（支持自动路由）
+            await this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
 
 
         } catch (error) {
@@ -678,7 +665,8 @@ ${r.text}`;
         let lastToolCallsJSON = '';
 
         try {
-            // 使用流式 Agent API
+            // 使用流式 Agent API（从插件设置中读取 force_mode）
+            const forceMode = this.plugin?.settings?.forceMode || 'auto';
             streamController = agentAPI.chatStream(
                 query,
                 indexId,
@@ -728,7 +716,8 @@ ${r.text}`;
                         content: `查询失败: ${error}`,
                         isStreaming: false
                     });
-                }
+                },
+                forceMode  // 传递强制模式参数
             );
 
             // 保存 controller 用于取消（如果需要的话）
