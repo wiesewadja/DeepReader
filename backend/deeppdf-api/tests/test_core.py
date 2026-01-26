@@ -174,20 +174,22 @@ def test_get_tool_schemas_with_read_page(mock_tree_structure):
 
 def test_build_messages_simple(agent):
     """测试构建简单消息"""
-    # 新版本：_build_messages 从 self.history 读取
-    agent.history = [{"role": "user", "content": "测试查询"}]
+    # 新版本：_build_messages 从 session_history 和 current_turn_history 读取
+    agent.current_turn_history = [{"role": "user", "content": "测试查询"}]
     messages = agent._build_messages()
 
+    # system 消息 + current_turn_history 中的 user 消息
     assert len(messages) == 2  # system + user
     assert messages[0]["role"] == "system"
+    assert "PDF 文档分析助手" in messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "测试查询"
 
 
 def test_build_messages_with_tool_results(agent):
     """测试构建带工具结果的消息"""
-    # 新版本：_build_messages 从 self.history 读取
-    agent.history = [
+    # 新版本：_build_messages 从 session_history 和 current_turn_history 读取
+    agent.current_turn_history = [
         {"role": "user", "content": "查看目录"},
         {
             "role": "assistant",
@@ -209,6 +211,7 @@ def test_build_messages_with_tool_results(agent):
 
     messages = agent._build_messages()
 
+    # 只有 system 消息 + current_turn_history 的3条消息
     assert len(messages) == 4  # system + user + assistant + tool
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
@@ -330,7 +333,10 @@ def test_run_stream_simple(agent):
 
     chunks = list(agent.run_stream("你好"))
 
-    assert chunks == ["你好", "世界"]
+    # 新版本的 run_stream 会输出思考标签和进度信息
+    # 检查是否包含实际的文本内容
+    assert "你好" in chunks
+    assert "世界" in chunks
 
 
 def test_run_stream_with_tool_call(agent):
@@ -374,7 +380,8 @@ def test_run_stream_with_tool_call(agent):
 
     chunks = list(agent.run_stream("测试"))
 
-    # 应该收到第二次迭代的最终回答
+    # 新版本的 run_stream 会输出思考标签、进度信息和工具调用信息
+    # 检查是否包含最终的回答内容
     assert "完成" in chunks
 
 
@@ -383,18 +390,20 @@ def test_run_stream_with_tool_call(agent):
 
 def test_reset_history(agent):
     """测试重置历史"""
-    agent.history = [{"role": "user", "content": "test"}]
+    agent.session_history = [{"role": "user", "content": "test"}]
+    agent.current_turn_history = [{"role": "user", "content": "test2"}]
     agent.reset_history()
-    assert agent.history == []
+    assert agent.session_history == []
+    assert agent.current_turn_history == []
 
 
 def test_get_history(agent):
     """测试获取历史"""
-    agent.history = [{"role": "user", "content": "test"}]
+    agent.current_turn_history = [{"role": "user", "content": "test"}]
     history = agent.get_history()
     assert history == [{"role": "user", "content": "test"}]
     # 确保返回的是副本
-    assert history is not agent.history
+    assert history is not agent.current_turn_history
 
 
 def test_run_tracks_history_no_tools(agent):
@@ -409,12 +418,14 @@ def test_run_tracks_history_no_tools(agent):
     result = agent.run("你好")
 
     assert result == "简单回答"
-    # 新版本：历史包含 user query + assistant 回答
-    assert len(agent.history) == 2
-    assert agent.history[0]["role"] == "user"
-    assert agent.history[0]["content"] == "你好"
-    assert agent.history[1]["role"] == "assistant"
-    assert agent.history[1]["content"] == "简单回答"
+    # 新版本：session_history 包含 user query + assistant 回答
+    assert len(agent.session_history) == 2
+    assert agent.session_history[0]["role"] == "user"
+    assert agent.session_history[0]["content"] == "你好"
+    assert agent.session_history[1]["role"] == "assistant"
+    assert agent.session_history[1]["content"] == "简单回答"
+    # current_turn_history 应该被清空
+    assert len(agent.current_turn_history) == 0
 
 
 def test_run_tracks_history_with_tools(agent):
@@ -443,20 +454,18 @@ def test_run_tracks_history_with_tools(agent):
     result = agent.run("查看目录")
 
     assert result == "最终回答"
-    # 新版本：历史应该包含:
+    # 新版本：session_history 应该包含:
     # 1. user query
-    # 2. assistant 消息（含工具调用）
-    # 3. tool 消息
-    # 4. assistant 最终回答
-    assert len(agent.history) == 4
-    assert agent.history[0]["role"] == "user"
-    assert agent.history[0]["content"] == "查看目录"
-    assert agent.history[1]["role"] == "assistant"
-    assert "tool_calls" in agent.history[1]
-    assert agent.history[2]["role"] == "tool"
-    assert agent.history[2]["tool_call_id"] == "call_123"
-    assert agent.history[3]["role"] == "assistant"
-    assert agent.history[3]["content"] == "最终回答"
+    # 2. assistant 最终回答（工具调用被添加到 current_turn_history，最后清空）
+    # 注意：新版本中，工具调用过程记录在 current_turn_history 中，最后被清空
+    # 只有最终的 user query 和 assistant 回答被保存到 session_history
+    assert len(agent.session_history) == 2
+    assert agent.session_history[0]["role"] == "user"
+    assert agent.session_history[0]["content"] == "查看目录"
+    assert agent.session_history[1]["role"] == "assistant"
+    assert agent.session_history[1]["content"] == "最终回答"
+    # current_turn_history 应该被清空
+    assert len(agent.current_turn_history) == 0
 
 
 def test_run_stream_tracks_history(agent):
@@ -479,13 +488,18 @@ def test_run_stream_tracks_history(agent):
 
     chunks = list(agent.run_stream("测试"))
 
-    assert chunks == ["你好"]
-    # 新版本：历史包含 user query + assistant 回答
-    assert len(agent.history) == 2
-    assert agent.history[0]["role"] == "user"
-    assert agent.history[0]["content"] == "测试"
-    assert agent.history[1]["role"] == "assistant"
-    assert agent.history[1]["content"] == "你好"
+    # 新版本的 run_stream 会输出思考标签和进度信息
+    # 检查是否包含实际的文本内容
+    assert "你好" in chunks
+
+    # 新版本：session_history 包含 user query + assistant 回答
+    assert len(agent.session_history) == 2
+    assert agent.session_history[0]["role"] == "user"
+    assert agent.session_history[0]["content"] == "测试"
+    assert agent.session_history[1]["role"] == "assistant"
+    assert agent.session_history[1]["content"] == "你好"
+    # current_turn_history 应该被清空
+    assert len(agent.current_turn_history) == 0
 
 
 # ========== 测试工具调用格式化 ==========
