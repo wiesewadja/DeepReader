@@ -109,42 +109,97 @@ export function parseFollowUpQuestions(content: string): {
 
 /**
  * 解析 Agent 内容
- * 从 Agent 返回的内容中提取思考过程和工具调用
- * 返回 { thoughts, toolCalls, cleanedContent }
+ * 
+ * 简化方案：不再提取 structured data，而是将 XML 标签转换为 HTML/Markdown 格式
+ * 直接利用 Obsidian 的渲染能力。
  */
 export function parseAgentContent(content: string): {
-	thoughts: AgentThought[];
+	thoughts: AgentThought[]; // 保持接口兼容，但返回空数组
 	toolCalls: AgentToolCall[];
 	cleanedContent: string;
+	currentStatus?: string;
 } {
-	const thoughts: AgentThought[] = [];
-	const toolCalls: AgentToolCall[] = [];
-	let cleanedContent = content;
+	// 0. 提取并移除状态行
+	// 策略升级：使用更宽泛的 Emoji 匹配 + 关键词匹配，防止漏网
+	// 常见状态关键词
+	const statusKeywords = ['正在搜索', '正在分析', '正在综合', '正在查找', '正在阅读', 'Writing', 'Reading', 'Searching'];
+	const keywordPattern = statusKeywords.join('|');
 
-	// 提取 <thought>...</thought> 标签
-	// 支持多种格式: <thought>, < Thought >, <THOUGHT> 等
-	const thoughtRegex = /<thought\b[^>]*>([\s\S]*?)<\/thought>/gi;
-	let thoughtMatch;
-	let stepNumber = 1;
+	// 匹配模式：
+	// 1. Emoji 开头 (包括各种变体，扩展 Surrogate Pairs 范围 D83C-D83E) + 可选文本
+	// 2. 关键词开头
+	// 限制长度在 100 字符以内，防止匹配整段正文
+	// 优化 Emoji 范围：覆盖 U+1F000 - U+1FAFF (D83C-D83E high surrogates)
+	const statusLineRegex = new RegExp(`^\\s*(?:[\\*\\-]\\s*)?(?:(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83E][\\uDC00-\\uDFFF])|(?:${keywordPattern}))\\s*.*$`, 'gm');
 
-	while ((thoughtMatch = thoughtRegex.exec(content)) !== null) {
-		const thoughtContent = thoughtMatch[1].trim();
-		console.log(`[parseAgentContent] 提取到思考内容:`, thoughtContent);
-		thoughts.push({
-			content: thoughtContent,
-			step: stepNumber++
-		});
+	let currentStatus: string | undefined;
+	let match;
+
+	// 找到最后一条状态
+	while ((match = statusLineRegex.exec(content)) !== null) {
+		const line = match[0].trim();
+		// 再次确认长度，避免误伤
+		if (line.length < 80) {
+			// 清理一下 Markdown 符号
+			currentStatus = line.replace(/^[\s*\-]*|[\s*]*$/g, '');
+		}
 	}
 
-	// 移除 thought 标签和 invoke 标签
-	cleanedContent = cleanedContent
-		.replace(thoughtRegex, '')
-		.replace(/<invoke>/gi, '')
-		.replace(/<\/invoke>/gi, '')
-		.trim();
+	// 从正文中移除所有符合状态行特征的行
+	let processedContent = content.replace(statusLineRegex, (match) => {
+		return match.length < 80 ? '' : match; // 只移除短行
+	});
 
-	// 提取工具调用（简化版本，用于显示）
-	// 只查找特定工具名称: inspect_toc, read_page, hybrid_search
+	// 1. 提取并合并思考过程
+	const thoughts: string[] = [];
+
+	// 策略修正：优先匹配【闭合】的 thought 标签，只有在明确闭合时才提取。
+	// 防止未闭合标签吞噬整个正文。
+	// 如果确实存在未闭合的标签（流式传输最后），我们尽量只在它明显看起来像 thought 时才处理，
+	// 但为了安全，这里只匹配闭合标签。未闭合的让它留在正文里或者作为文本显示，总比吞噬正文好。
+	const thoughtRegex = /<thought\b[^>]*>([\s\S]*?)<\/thought>/gi;
+
+	processedContent = processedContent.replace(thoughtRegex, (match, thoughtContent) => {
+		const trimmed = thoughtContent.trim();
+		if (trimmed) {
+			thoughts.push(trimmed);
+		}
+		return ''; // 从原位置移除
+	});
+
+	// 补救措施：检查是否有残留的未闭合 thought 标签
+	// 如果存在 <thought> 但没有 </thought>，且它在文本末尾附近（流式传输中），我们可以尝试提取
+	if (processedContent.includes('<thought')) {
+		const unclosedRegex = /<thought\b[^>]*>([\s\S]*)$/i;
+		const unclosedMatch = unclosedRegex.exec(processedContent);
+		if (unclosedMatch) {
+			// 只有当这个未闭合块看起来不像正文（比如没有 Markdown 标题）时才提取？
+			// 或者：在流式传输时，无论如何都提取，因为我们想要“实时”看到思考
+			// 风险：如果正文真的被包在里面了，那就遭了。
+			// 折中：不提取未闭合的。让它原样显示（浏览器可能会把它当作无效标签隐藏，或者作为文本）。
+			// 或者：我们可以在这里简单地移除 `<thought>` 标签本身，让内容作为正文显示，
+			// 这样至少不会被折叠隐藏。
+			processedContent = processedContent.replace(/<thought\b[^>]*>/gi, '\n> *[正在思考...]*\n');
+		}
+	}
+
+	// 如果提取到了思考内容，统一放在顶部的一个 details 块中
+	if (thoughts.length > 0) {
+		const combinedThoughts = thoughts.join('\n\n');
+		// 确保 combinedThoughts 内部没有未转义的 HTML 标签破坏结构
+		// 但我们需要 MarkdownRenderer 渲染它，所以不能 escapeHtml。
+		// 原生 Obsidian details 渲染通常是安全的。
+		const thoughtHtml = `\n<details class="deeppdf-thought"><summary>思考过程</summary>\n${combinedThoughts}\n</details>\n\n`;
+		processedContent = thoughtHtml + processedContent;
+	}
+
+	// 2. 移除 invoke 标签
+	processedContent = processedContent
+		.replace(/<invoke>/gi, '\n')
+		.replace(/<\/invoke>/gi, '\n');
+
+	// 3. 提取工具调用
+	const toolCalls: AgentToolCall[] = [];
 	const validToolNames = ['inspect_toc', 'read_page', 'hybrid_search'];
 	const toolCallRegex = new RegExp(`(${validToolNames.join('|')})\\s*\\(([^)]*)\\)`, 'gi');
 	let toolMatch;
@@ -153,8 +208,6 @@ export function parseAgentContent(content: string): {
 	while ((toolMatch = toolCallRegex.exec(content)) !== null) {
 		const toolName = toolMatch[1].toLowerCase();
 		const args = toolMatch[2];
-
-		// 去重（避免重复显示同一工具调用）
 		const callKey = `${toolName}:${args}`;
 		if (!seenToolCalls.has(callKey)) {
 			seenToolCalls.add(callKey);
@@ -166,13 +219,15 @@ export function parseAgentContent(content: string): {
 		}
 	}
 
-	console.log(`[parseAgentContent] 解析结果:`, {
-		thoughtCount: thoughts.length,
-		toolCallCount: toolCalls.length,
-		cleanedLength: cleanedContent.length
-	});
+	// 清理多余的连续空行
+	processedContent = processedContent.replace(/\n{3,}/g, '\n\n').trim();
 
-	return { thoughts, toolCalls, cleanedContent };
+	return {
+		thoughts: [],
+		toolCalls,
+		cleanedContent: processedContent,
+		currentStatus
+	};
 }
 
 /**
@@ -674,14 +729,12 @@ export abstract class Message {
 		const oldContent = this.data.content;
 		const oldCitations = this.data.citations;
 		const oldFollowUpQuestions = this.data.followUpQuestions;
-		const oldAgentThoughts = this.data.agentThoughts;
 		const oldAgentToolCalls = this.data.agentToolCalls;
 		const wasStreaming = this.data.isStreaming;
 
 		Object.assign(this.data, data);
 
-		// 检查哪些字段发生了变化（优化：使用浅比较而非 JSON.stringify）
-		// 对于数组和对象，先比较引用，再比较长度，避免深序列化
+		// 检查字段变化
 		const citationsChanged = data.citations !== undefined && (
 			data.citations !== oldCitations &&
 			(data.citations?.length !== oldCitations?.length || data.citations?.[0] !== oldCitations?.[0])
@@ -690,34 +743,26 @@ export abstract class Message {
 			data.followUpQuestions !== oldFollowUpQuestions &&
 			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
 		);
-		const agentThoughtsChanged = data.agentThoughts !== undefined && (
-			data.agentThoughts !== oldAgentThoughts &&
-			(data.agentThoughts?.length !== oldAgentThoughts?.length || data.agentThoughts?.[0]?.content !== oldAgentThoughts?.[0]?.content)
-		);
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
 			data.agentToolCalls !== oldAgentToolCalls &&
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
 
-		// 如果只是内容变了，且DOM已存在，尝试局部更新
-		// 注意：如果 citations、followUpQuestions、agentThoughts 或 agentToolCalls 变了，
-		// 我们需要重绘整个 AI 消息
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
 			!citationsChanged &&
 			!followUpChanged &&
-			!agentThoughtsChanged &&
 			!agentToolCallsChanged &&
 			!streamingEnded
 		) {
 			this.updateContent(data.content);
 		} else if (streamingEnded && this.el) {
-			// 流式结束时，进行完整的 Markdown 渲染
+			// 流式结束，完整渲染
 			const contentEl = this.el.querySelector('.deeppdf-message-content');
 			if (contentEl && this.app) {
-				// 清理旧的 observers 和 mouseover handler
+				// 清理资源
 				this.observers.forEach(obs => obs.disconnect());
 				this.observers = [];
 				if (this.mouseoverHandler) {
@@ -725,12 +770,13 @@ export abstract class Message {
 					this.mouseoverHandler = null;
 				}
 
+				// 使用解析后的内容（处理 HTML 标签）
+				const { cleanedContent } = parseAgentContent(this.data.content);
+
 				contentEl.empty();
-				MarkdownRenderer.render(this.app, this.data.content, contentEl as HTMLElement, '', new Component());
-				// 设置内部链接的点击事件和 hover preview
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, '', new Component());
 				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
 			}
-			// 移除流式状态
 			this.el.removeClass('deeppdf-message-streaming');
 		} else {
 			// 全量重绘
@@ -741,6 +787,7 @@ export abstract class Message {
 			this.el = newRender;
 		}
 	}
+
 
 	/**
 	 * 局部更新内容
@@ -804,15 +851,11 @@ export class AIMessage extends Message {
 	private onCopyWithCitation?: () => void;
 	private onQuestionClick?: (question: string) => void;
 	private onCitationJump?: (citation: CitationData) => void;
-	// 思考内容折叠状态
-	private thoughtsCollapsed: boolean = true;
-	// 流式更新状态
-	private isStreamingUpdate: boolean = false;
-	private streamingAnimationFrame: number | null = null;
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
 	private lastRenderTime: number = 0;
 	private lastRenderedLength: number = 0;
+	private streamingAnimationFrame: number | null = null;
 
 	constructor(
 		data: MessageData,
@@ -844,52 +887,20 @@ export class AIMessage extends Message {
 
 		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
 
-		// Agent 消息标识
+		// Agent 消息标识 + 状态显示
+		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
+
+		// 左侧 Badge
 		if (this.data.isAgentMessage) {
-			const badge = bubble.createEl('div', { cls: 'deeppdf-message-agent-badge' });
+			const badge = headerRow.createEl('div', { cls: 'deeppdf-message-agent-badge' });
 			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>AI Agent`;
 		}
 
-		// Agent 思考过程（可折叠）
-		if (this.data.agentThoughts && this.data.agentThoughts.length > 0) {
-			const thoughtsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-thoughts' });
-			// 默认折叠状态
-			if (this.thoughtsCollapsed) {
-				thoughtsContainer.addClass('collapsed');
-			}
-
-			// 可点击的头部
-			const thoughtsHeader = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-header' });
-			thoughtsHeader.setAttribute('role', 'button');
-			thoughtsHeader.setAttribute('tabindex', '0');
-			thoughtsHeader.innerHTML = `<svg class="thoughts-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
-
-			// 思考内容容器
-			const thoughtsContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thoughts-content' });
-
-			this.data.agentThoughts.forEach(thought => {
-				const thoughtItem = thoughtsContent.createEl('div', { cls: 'deeppdf-agent-thought-content' });
-				thoughtItem.textContent = thought.content;
-			});
-
-			// 点击切换折叠状态
-			const toggleThoughts = () => {
-				this.thoughtsCollapsed = !this.thoughtsCollapsed;
-				if (this.thoughtsCollapsed) {
-					thoughtsContainer.addClass('collapsed');
-				} else {
-					thoughtsContainer.removeClass('collapsed');
-				}
-			};
-
-			thoughtsHeader.addEventListener('click', toggleThoughts);
-			thoughtsHeader.addEventListener('keydown', (e) => {
-				if (e.key === 'Enter' || e.key === ' ') {
-					e.preventDefault();
-					toggleThoughts();
-				}
-			});
-		}
+		// 右侧状态文本 (默认隐藏，有状态时显示)
+		const statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+		// 初始化时如果内容里有状态，也可以解析出来显示（但这通常是静态 HTML 渲染）
+		// 对于静态历史消息，通常不显示中间状态，只显示最终结果。
+		// 所以这里留空，只在流式更新时填充。
 
 		// Agent 工具调用
 		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
@@ -923,14 +934,16 @@ export class AIMessage extends Message {
 		// 消息内容
 		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
-		// 使用 Markdown 渲染
+		// 使用 Markdown 渲染（先清理 <thought> 标签）
 		if (this.app) {
-			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
+			const { cleanedContent } = parseAgentContent(this.data.content);
+			MarkdownRenderer.render(this.app, cleanedContent, content, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
 			// 如果正在流式传输，禁用 hover preview
 			this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
 		} else {
-			content.innerHTML = this.escapeHtml(this.data.content);
+			const { cleanedContent } = parseAgentContent(this.data.content);
+			content.innerHTML = this.escapeHtml(cleanedContent);
 		}
 
 		bubble.appendChild(this.renderTimestamp());
@@ -958,6 +971,80 @@ export class AIMessage extends Message {
 		return container;
 	}
 
+	update(data: Partial<MessageData>): void {
+		const oldContent = this.data.content;
+		const oldCitations = this.data.citations;
+		const oldFollowUpQuestions = this.data.followUpQuestions;
+		// const oldAgentThoughts = this.data.agentThoughts; // 不再追踪思考变化，因为它们融合在 content 中
+		const oldAgentToolCalls = this.data.agentToolCalls;
+		const wasStreaming = this.data.isStreaming;
+
+		Object.assign(this.data, data);
+
+		// 检查哪些字段发生了变化（优化：使用浅比较而非 JSON.stringify）
+		const citationsChanged = data.citations !== undefined && (
+			data.citations !== oldCitations &&
+			(data.citations?.length !== oldCitations?.length || data.citations?.[0] !== oldCitations?.[0])
+		);
+		const followUpChanged = data.followUpQuestions !== undefined && (
+			data.followUpQuestions !== oldFollowUpQuestions &&
+			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
+		);
+		// agentThoughts 变化现在由 content 变化隐含处理（HTML 渲染）
+
+		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
+			data.agentToolCalls !== oldAgentToolCalls &&
+			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
+		);
+		const streamingEnded = wasStreaming && data.isStreaming === false;
+
+		// 如果只是内容变了，且DOM已存在，尝试局部更新
+		if (this.el &&
+			data.content !== undefined &&
+			data.content !== oldContent &&
+			!citationsChanged &&
+			!followUpChanged &&
+			!agentToolCallsChanged &&
+			!streamingEnded
+		) {
+			this.updateContent(data.content);
+		} else if (streamingEnded && this.el) {
+			// 流式结束时，进行完整的 Markdown 渲染
+			const contentEl = this.el.querySelector('.deeppdf-message-content');
+			const statusEl = this.el.querySelector('.deeppdf-message-status-text');
+
+			// 结束时隐藏状态
+			if (statusEl) statusEl.textContent = '';
+
+			if (contentEl && this.app) {
+				// 清理旧的 observers 和 mouseover handler
+				this.observers.forEach(obs => obs.disconnect());
+				this.observers = [];
+				if (this.mouseoverHandler) {
+					document.removeEventListener('mouseover', this.mouseoverHandler);
+					this.mouseoverHandler = null;
+				}
+
+				// 处理 HTML 标签
+				const { cleanedContent } = parseAgentContent(this.data.content);
+
+				contentEl.empty();
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, '', new Component());
+				// 设置内部链接的点击事件和 hover preview
+				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
+			}
+			// 移除流式状态
+			this.el.removeClass('deeppdf-message-streaming');
+		} else {
+			// 全量重绘
+			const newRender = this.render();
+			if (this.el) {
+				this.el.replaceWith(newRender);
+			}
+			this.el = newRender;
+		}
+	}
+
 	protected updateContent(content: string): void {
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
 		if (!contentEl) return;
@@ -975,10 +1062,9 @@ export class AIMessage extends Message {
 	 * 流式更新 - 实时显示思考内容和工具调用
 	 *
 	 * 优化策略:
-	 * 1. 流式更新期间使用 textContent 而非 Markdown 渲染，避免重复解析
-	 * 2. 大幅降低更新频率：200 字符或 300ms
-	 * 3. 使用 GPU 加速优化渲染性能
-	 * 4. 只在内容变化时更新
+	 * 1. 【双缓冲渲染】先在离屏 fragment 中渲染 Markdown，完成后再一次性替换 DOM，彻底消除 empty() 导致的白屏闪烁。
+	 * 2. 【状态行优先】状态行更新不通过 Markdown 渲染，直接操作 DOM，保证最高实时性。
+	 * 3. 【动态节流】随着文本变长，自动增加渲染间隔，防止长文卡死。
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -986,50 +1072,93 @@ export class AIMessage extends Message {
 			cancelAnimationFrame(this.streamingAnimationFrame);
 		}
 
-		// 使用 requestAnimationFrame 批处理更新
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
 			const now = Date.now();
 
-			// 解析内容以检查思考内容变化
-			const { cleanedContent, thoughts } = parseAgentContent(newContent);
+			// 1. 优先解析和更新状态（极速）
+			const { cleanedContent, currentStatus } = parseAgentContent(newContent);
 
-			// 检查思考内容是否变化
-			const currentThoughtsJSON = JSON.stringify(thoughts);
-			const thoughtsChanged = currentThoughtsJSON !== JSON.stringify(this.data.agentThoughts || []);
+			// 查找或创建状态行元素（必须在渲染 Markdown 之前处理，否则会被清空）
+			let statusEl = this.el?.querySelector('.deeppdf-message-status-text');
+			if (!statusEl && this.el) {
+				// 如果是第一次出现状态，可能需要插入
+				// 但通常它在 render() 初始化时已创建。如果被意外删除了，我们要找回来。
+				// 这里假设结构还在。
+				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
+				if (headerRow) {
+					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+				}
+			}
+
+			if (statusEl) {
+				if (currentStatus) {
+					// 只有当状态真正改变时才操作 DOM
+					if (statusEl.textContent !== currentStatus) {
+						statusEl.textContent = currentStatus;
+						statusEl.addClass('visible');
+					}
+				} else {
+					if (statusEl.textContent !== '') {
+						statusEl.textContent = '';
+						statusEl.removeClass('visible');
+					}
+				}
+			}
 
 			// 检查内容是否真正变化
 			const contentChanged = cleanedContent !== this.lastRenderedContent;
-
-			// 计算内容增长量
-			const contentGrowth = newContent.length - this.lastRenderedLength;
-
-			// 计算时间间隔
+			const contentLen = newContent.length;
+			const contentGrowth = contentLen - this.lastRenderedLength;
 			const timePassed = now - this.lastRenderTime;
 
-			// 决定是否需要渲染:
-			// 1. 思考内容发生变化（立即更新）
-			// 2. 内容真正变化且增长超过 200 字符（大幅降低更新频率）
-			// 3. 内容真正变化且距离上次渲染超过 300ms（降低刷新率）
-			const shouldRender = thoughtsChanged || (contentChanged && (contentGrowth > 200 || timePassed > 300));
+			// 动态节流策略：内容越长，允许的渲染间隔越长，以维持帧率
+			// < 1000字: 100ms
+			// > 1000字: 300ms
+			// > 3000字: 600ms
+			let throttleThreshold = 100;
+			if (contentLen > 3000) throttleThreshold = 600;
+			else if (contentLen > 1000) throttleThreshold = 300;
 
-			if (shouldRender && contentChanged) {
-				// 如果解析出思考内容且发生变化，更新思考组件
-				if (thoughts.length > 0 && thoughtsChanged) {
-					this.data.agentThoughts = thoughts;
-					this._updateThoughtsComponent();
-				}
+			// 决定是否需要渲染
+			// 1. 内容必须有变化
+			// 2. 只有当 增长超过阈值(50字符) OR 时间超过阈值 时才渲染
+			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
 
-				// 启用 GPU 加速减少重绘开销
+			if (shouldRender) {
+				// 启用硬件加速
 				contentEl.style.transform = 'translateZ(0)';
 
-				// 流式更新期间：使用 textContent 而非 Markdown 渲染
-				// 这避免了重复的 Markdown 解析和 DOM 操作
-				contentEl.textContent = cleanedContent;
+				if (this.app) {
+					// 【双缓冲关键逻辑】
+					// 1. 创建临时的不可见容器
+					const tempContainer = document.createElement('div');
 
-				// 更新跟踪变量
-				this.lastRenderedContent = cleanedContent;
-				this.lastRenderTime = now;
-				this.lastRenderedLength = newContent.length;
+					// 2. 在离屏容器中进行昂贵的 Markdown 渲染
+					MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
+						// 3. 渲染完成后（Promise resolves），一次性替换内容
+						// 注意：此时可能已经有新的流式内容进来了，所以这里可能有微小的竞态，
+						// 但由于我们是基于 RAF 的单线程，且 render 是同步调用的（只是部分插件可能是异步），
+						// Obsidian 的 MarkdownRenderer.render 其实大部分是同步的，但返回 Promise。
+
+						// 安全检查：如果在此期间组件被销毁了，不要操作
+						if (!this.el) return;
+
+						// 使用 replaceChildren (高性能) 或 innerHTML
+						contentEl.innerHTML = tempContainer.innerHTML;
+
+						// 更新跟踪变量
+						// 注意：我们只在真正渲染 DOM 后更新这些，这样如果渲染被跳过（节流），下次还会尝试
+						this.lastRenderedContent = cleanedContent;
+						this.lastRenderTime = Date.now();
+						this.lastRenderedLength = contentLen;
+					});
+				} else {
+					// 降级处理
+					contentEl.innerHTML = cleanedContent;
+					this.lastRenderedContent = cleanedContent;
+					this.lastRenderTime = now;
+					this.lastRenderedLength = contentLen;
+				}
 			}
 
 			this.streamingAnimationFrame = null;
@@ -1037,7 +1166,7 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 完全更新内容 - 用于非流式更新或内容变化较大时
+	 * 完全更新内容
 	 */
 	private fullUpdateContent(contentEl: HTMLElement, content: string): void {
 		// 清理旧的 observers 和 mouseover handler
@@ -1049,71 +1178,16 @@ export class AIMessage extends Message {
 		}
 
 		contentEl.empty();
+
+		const { cleanedContent } = parseAgentContent(content);
+
 		if (this.app) {
-			MarkdownRenderer.render(this.app, content, contentEl, '', new Component());
+			MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
-			// 如果正在流式传输，禁用 hover preview
 			this.mouseoverHandler = setupInternalLinks(contentEl, this.app, this.data.isStreaming, this.observers);
 		} else {
-			contentEl.innerHTML = this.escapeHtml(content);
+			contentEl.innerHTML = this.escapeHtml(cleanedContent);
 		}
-	}
-
-	/**
-	 * 增量更新思考组件（用于流式更新时动态显示思考内容）
-	 */
-	private _updateThoughtsComponent(): void {
-		const bubble = this.el?.querySelector('.deeppdf-message-bubble-ai');
-		if (!bubble || !this.data.agentThoughts) return;
-
-		// 移除旧的思考组件
-		const oldThoughts = bubble.querySelector('.deeppdf-agent-thoughts');
-		if (oldThoughts) oldThoughts.remove();
-
-		// 创建新的思考组件（复用 render() 中的逻辑）
-		const thoughtsContainer = document.createElement('div');
-		thoughtsContainer.addClass('deeppdf-agent-thoughts');
-
-		// 默认折叠状态
-		if (this.thoughtsCollapsed) {
-			thoughtsContainer.addClass('collapsed');
-		}
-
-		// 可点击的头部
-		const thoughtsHeader = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-header' });
-		thoughtsHeader.setAttribute('role', 'button');
-		thoughtsHeader.setAttribute('tabindex', '0');
-		thoughtsHeader.innerHTML = `<svg class="thoughts-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
-
-		// 思考内容容器
-		const thoughtsContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thoughts-content' });
-
-		this.data.agentThoughts.forEach(thought => {
-			const thoughtItem = thoughtsContent.createEl('div', { cls: 'deeppdf-agent-thought-content' });
-			thoughtItem.textContent = thought.content;
-		});
-
-		// 点击切换折叠状态
-		const toggleThoughts = () => {
-			this.thoughtsCollapsed = !this.thoughtsCollapsed;
-			if (this.thoughtsCollapsed) {
-				thoughtsContainer.addClass('collapsed');
-			} else {
-				thoughtsContainer.removeClass('collapsed');
-			}
-		};
-
-		thoughtsHeader.addEventListener('click', toggleThoughts);
-		thoughtsHeader.addEventListener('keydown', (e) => {
-			if (e.key === 'Enter' || e.key === ' ') {
-				e.preventDefault();
-				toggleThoughts();
-			}
-		});
-
-		// 插入到内容区域之前
-		const content = bubble.querySelector('.deeppdf-message-content');
-		bubble.insertBefore(thoughtsContainer, content);
 	}
 
 	private renderActions(container: HTMLElement) {
@@ -1146,24 +1220,15 @@ export class AIMessage extends Message {
 
 	private renderCitations(container: HTMLElement) {
 		console.log('[renderCitations] citations数据:', this.data.citations);
-		console.log('[renderCitations] citations长度:', this.data.citations?.length || 0);
 		if (this.data.citations && this.data.citations.length > 0) {
-			console.log('[renderCitations] 开始渲染引用卡片');
 			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
 			this.data.citations.forEach(citation => {
-				console.log('[renderCitations] 渲染单个引用:', citation);
 				const citationEl = new Citation(citation, this.onCitationJump);
 				citationsContainer.appendChild(citationEl.getElement());
 			});
-			console.log('[renderCitations] 引用卡片渲染完成');
-		} else {
-			console.log('[renderCitations] 没有引用数据，跳过渲染');
 		}
 	}
 
-	/**
-	 * 清理资源，防止内存泄漏
-	 */
 	public destroy(): void {
 		// 取消流式动画帧
 		if (this.streamingAnimationFrame !== null) {
