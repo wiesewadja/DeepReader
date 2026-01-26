@@ -8,6 +8,10 @@ import nest_asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from deeppdf.api.config_routes import router as config_router
+from deeppdf.api.file_routes import router as file_router
+from deeppdf.api.routes import router
+
 # 应用 nest_asyncio（PageIndex 需要）
 nest_asyncio.apply()
 
@@ -50,10 +54,6 @@ async def health_check():
 
 
 # 注册路由
-from deeppdf.api.routes import router
-from deeppdf.api.config_routes import router as config_router
-from deeppdf.api.file_routes import router as file_router
-
 app.include_router(router)
 app.include_router(config_router)
 app.include_router(file_router)

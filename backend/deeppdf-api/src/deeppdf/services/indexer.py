@@ -635,7 +635,7 @@ def _index_pdf_sync(
         )
 
         # 保存索引元数据
-        metadata_content = _save_metadata(
+        _save_metadata(
             index_id,
             pdf_path_obj,
             section_nodes,
