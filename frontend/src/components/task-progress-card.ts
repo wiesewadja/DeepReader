@@ -82,8 +82,19 @@ export class TaskProgressCard {
 
     update(progress: TaskProgress): void {
         this.progress = progress;
+        // 清空当前元素
         this.el.empty();
+        // 清除所有状态类
+        this.el.classList.remove('deeppdf-task-card-completed', 'deeppdf-task-card-failed');
+        // 重新渲染
         const newRender = this.render();
+        // 更新类名
+        if (progress.status === 'completed') {
+            this.el.addClass('deeppdf-task-card-completed');
+        } else if (progress.status === 'failed') {
+            this.el.addClass('deeppdf-task-card-failed');
+        }
+        // 添加新渲染的内容
         Array.from(newRender.childNodes).forEach(node => {
             this.el.appendChild(node);
         });
