@@ -9,6 +9,7 @@ from deeppdf.agent.prompts import (
 
 # ========== PromptBuilder 测试 ==========
 
+
 class TestPromptBuilder:
     """PromptBuilder 测试套件"""
 
@@ -16,7 +17,7 @@ class TestPromptBuilder:
         """测试: 使用工具描述构建 prompt"""
         builder = PromptBuilder(
             tool_descriptions="## 可用工具\n\n### inspect_toc\n查看目录",
-            enable_few_shot=False
+            enable_few_shot=False,
         )
 
         prompt = builder.build()
@@ -27,10 +28,7 @@ class TestPromptBuilder:
 
     def test_build_with_few_shot(self):
         """测试: 包含 Few-Shot 示例"""
-        builder = PromptBuilder(
-            tool_descriptions="",
-            enable_few_shot=True
-        )
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=True)
 
         prompt = builder.build()
 
@@ -40,10 +38,7 @@ class TestPromptBuilder:
 
     def test_build_without_few_shot(self):
         """测试: 不包含 Few-Shot 示例"""
-        builder = PromptBuilder(
-            tool_descriptions="",
-            enable_few_shot=False
-        )
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
 
         prompt = builder.build()
 
@@ -52,10 +47,7 @@ class TestPromptBuilder:
 
     def test_build_chat_message(self):
         """测试: 构建聊天消息格式"""
-        builder = PromptBuilder(
-            tool_descriptions="",
-            enable_few_shot=False
-        )
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
 
         message = builder.build_chat_message()
 
@@ -65,8 +57,7 @@ class TestPromptBuilder:
     def test_from_tool_executor(self, mock_executor):
         """测试: 从 ToolExecutor 创建 PromptBuilder"""
         builder = PromptBuilder.from_tool_executor(
-            executor=mock_executor,
-            enable_few_shot=True
+            executor=mock_executor, enable_few_shot=True
         )
 
         prompt = builder.build()
@@ -74,8 +65,43 @@ class TestPromptBuilder:
         assert "你是一个专业的 PDF 阅读助手" in prompt
         assert "inspect_toc" in prompt  # 来自 mock_executor
 
+    def test_prompt_includes_citation_format_instructions(self):
+        """测试: Prompt 包含引用格式指导"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+
+        prompt = builder.build()
+
+        # 验证包含引用格式要求
+        assert "引用格式要求" in prompt
+        assert "基本格式：" in prompt
+        assert "[[文件名.md#^page-N]]" in prompt
+        assert "根据文档内容，人工智能是计算机科学的一个分支" in prompt
+        assert "[[第一章/引言.md#^page-5]]" in prompt
+
+    def test_prompt_includes_hybrid_search_usage(self):
+        """测试: Prompt 包含 hybrid_search 使用指导"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+
+        prompt = builder.build()
+
+        # 验证包含搜索结果使用指导
+        assert "hybrid_search 工具返回的 JSON 结果包含" in prompt
+        assert "obsidian_link" in prompt
+        assert "直接在回答中嵌入该字段的值" in prompt
+
+    def test_prompt_includes_multiple_citation_example(self):
+        """测试: Prompt 包含多来源引用示例"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+
+        prompt = builder.build()
+
+        # 验证包含多来源引用示例
+        assert "[[file1.md#^page-5]][[file2.md#^page-8]]" in prompt
+        assert "如果同一信息来自多个来源" in prompt
+
 
 # ========== RouteDecision 测试 ==========
+
 
 class TestRouteDecision:
     """RouteDecision 路由决策测试套件"""
@@ -87,7 +113,7 @@ class TestRouteDecision:
             "什么是深度学习?",
             "文档中提到的方法有哪些?",
             "谁发明了电话?",
-            "是否包含这个功能?"
+            "是否包含这个功能?",
         ]
 
         for query in queries:
@@ -101,7 +127,7 @@ class TestRouteDecision:
             "对比文中提到的两种方法",
             "总结第三章的核心观点",
             "为什么这个方法有效?",
-            "如何评价这个策略?"
+            "如何评价这个策略?",
         ]
 
         for query in queries:
@@ -110,16 +136,13 @@ class TestRouteDecision:
 
     def test_classify_section_query(self):
         """测试: 分类章节查询"""
-        queries = [
-            "查看第10页的内容",
-            "阅读第三章",
-            "第5节讲了什么?",
-            "显示第100页"
-        ]
+        queries = ["查看第10页的内容", "阅读第三章", "第5节讲了什么?", "显示第100页"]
 
         for query in queries:
             route = RouteDecision.classify_query(query)
-            assert route == "section", f"查询 '{query}' 应该被分类为 section，实际是 {route}"
+            assert (
+                route == "section"
+            ), f"查询 '{query}' 应该被分类为 section，实际是 {route}"
 
     def test_suggest_tool_fast_track(self):
         """测试: 为快速检索建议工具"""
@@ -175,6 +198,7 @@ class TestRouteDecision:
 
 # ========== 函数式 API 测试 ==========
 
+
 class TestFunctionalAPI:
     """函数式 API 测试套件"""
 
@@ -205,7 +229,7 @@ class TestFunctionalAPI:
 
         history = [
             {"role": "user", "content": "第一个问题"},
-            {"role": "assistant", "content": "第一个回答"}
+            {"role": "assistant", "content": "第一个回答"},
         ]
         messages = build_messages("第二个问题", history, [])
 
@@ -223,9 +247,9 @@ class TestFunctionalAPI:
                 "tool_call": {
                     "id": "call_123",
                     "type": "function",
-                    "function": {"name": "test_tool", "arguments": "{}"}
+                    "function": {"name": "test_tool", "arguments": "{}"},
                 },
-                "output": "工具执行结果"
+                "output": "工具执行结果",
             }
         ]
         messages = build_messages("测试", [], tool_results)
@@ -244,17 +268,15 @@ class TestFunctionalAPI:
         """测试: 构建完整消息（历史 + 工具结果）"""
         from deeppdf.agent.prompts import build_messages
 
-        history = [
-            {"role": "user", "content": "之前的问题"}
-        ]
+        history = [{"role": "user", "content": "之前的问题"}]
         tool_results = [
             {
                 "tool_call": {
                     "id": "call_456",
                     "type": "function",
-                    "function": {"name": "search", "arguments": '{"q": "test"}'}
+                    "function": {"name": "search", "arguments": '{"q": "test"}'},
                 },
-                "output": "搜索结果"
+                "output": "搜索结果",
             }
         ]
         messages = build_messages("新问题", history, tool_results)
@@ -268,23 +290,26 @@ class TestFunctionalAPI:
 
 # ========== Fixture ==========
 
+
 @pytest.fixture
 def mock_executor():
     """模拟 ToolExecutor fixture"""
     from deeppdf.agent.executor import ToolExecutor
     from deeppdf.agent.tools import InspectTocTool
 
-    tool = InspectTocTool({
-        "structure": [
-            {
-                "title": "测试章节",
-                "node_id": "node_1",
-                "start_index": 1,
-                "end_index": 10,
-                "nodes": []
-            }
-        ]
-    })
+    tool = InspectTocTool(
+        {
+            "structure": [
+                {
+                    "title": "测试章节",
+                    "node_id": "node_1",
+                    "start_index": 1,
+                    "end_index": 10,
+                    "nodes": [],
+                }
+            ]
+        }
+    )
 
     executor = ToolExecutor({"inspect_toc": tool})
     return executor

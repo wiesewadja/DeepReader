@@ -51,6 +51,24 @@ SYSTEM_PROMPT_TEMPLATE = """
 - 多个来源: `[[来源1]] [[来源2]]`
 - 页内引用: `[[章节名#^page-N, 第X段]]`
 
+### 引用格式要求
+
+当使用搜索结果（hybrid_search）回答问题时，请使用以下格式引用来源：
+
+**基本格式：** [[文件名.md#^page-N]]
+
+**示例：**
+- 根据文档内容，人工智能是计算机科学的一个分支[[第一章/引言.md#^page-5]]。
+- 研究表明，深度学习在图像识别领域取得了重大突破[[第三章/深度学习.md#^page-12]]。
+
+**注意事项：**
+1. 始终在相关陈述后立即添加引用链接
+2. 如果同一信息来自多个来源，使用多个引用：[[file1.md#^page-5]][[file2.md#^page-8]]
+3. 只引用你实际使用的信息来源
+
+**搜索结果使用：**
+hybrid_search 工具返回的 JSON 结果包含 `obsidian_link` 字段，请直接在回答中嵌入该字段的值。
+
 ## 思维可见
 
 对于复杂任务，请先输出分析思路：
@@ -188,14 +206,11 @@ inspect_toc()
 
 # ========== Prompt 构建器 ==========
 
+
 class PromptBuilder:
     """System Prompt 构建器"""
 
-    def __init__(
-        self,
-        tool_descriptions: str = "",
-        enable_few_shot: bool = True
-    ):
+    def __init__(self, tool_descriptions: str = "", enable_few_shot: bool = True):
         """
         初始化构建器
 
@@ -214,9 +229,7 @@ class PromptBuilder:
             完整的 System Prompt 字符串
         """
         # 基础模板
-        prompt = SYSTEM_PROMPT_TEMPLATE.format(
-            tool_descriptions=self.tool_descriptions
-        )
+        prompt = SYSTEM_PROMPT_TEMPLATE.format(tool_descriptions=self.tool_descriptions)
 
         # 可选: Few-Shot 示例
         if self.enable_few_shot:
@@ -231,16 +244,12 @@ class PromptBuilder:
         Returns:
             {"role": "system", "content": "..."}
         """
-        return {
-            "role": "system",
-            "content": self.build()
-        }
+        return {"role": "system", "content": self.build()}
 
     @staticmethod
     def from_tool_executor(
-        executor: 'ToolExecutor',
-        enable_few_shot: bool = True
-    ) -> 'PromptBuilder':
+        executor: "ToolExecutor", enable_few_shot: bool = True
+    ) -> "PromptBuilder":
         """
         从 ToolExecutor 创建 PromptBuilder
 
@@ -253,40 +262,60 @@ class PromptBuilder:
         """
         return PromptBuilder(
             tool_descriptions=executor.get_tool_descriptions(),
-            enable_few_shot=enable_few_shot
+            enable_few_shot=enable_few_shot,
         )
 
 
 # ========== 路由决策辅助 ==========
+
 
 class RouteDecision:
     """路由决策辅助类 - 帮助 Agent 决定使用哪个工具"""
 
     # 简单事实查询关键词
     FAST_TRACK_KEYWORDS = [
-        "哪年", "何时", "什么时候", "谁", "什么", "是否",
-        "是否", "有没有", "多少", "几", "多少个"
+        "哪年",
+        "何时",
+        "什么时候",
+        "谁",
+        "什么",
+        "是否",
+        "是否",
+        "有没有",
+        "多少",
+        "几",
+        "多少个",
     ]
 
     # 复杂分析关键词
     SLOW_TRACK_KEYWORDS = [
-        "分析", "对比", "比较", "演变", "变化", "发展",
-        "总结", "归纳", "为什么", "如何", "怎样",
-        "评价", "看法", "观点", "关系"
+        "分析",
+        "对比",
+        "比较",
+        "演变",
+        "变化",
+        "发展",
+        "总结",
+        "归纳",
+        "为什么",
+        "如何",
+        "怎样",
+        "评价",
+        "看法",
+        "观点",
+        "关系",
     ]
 
     # 章节查询关键词
-    SECTION_KEYWORDS = [
-        "第", "章", "节", "页"
-    ]
+    SECTION_KEYWORDS = ["第", "章", "节", "页"]
 
     # 预编译的章节引用正则表达式
     _SECTION_PATTERNS = [
-        re.compile(r'第\s*\d+\s*[章节页]'),     # 第3章、第3页
-        re.compile(r'\d+\s*页'),                 # 3页
+        re.compile(r"第\s*\d+\s*[章节页]"),  # 第3章、第3页
+        re.compile(r"\d+\s*页"),  # 3页
         # 中文数字模式: 第三章、第三页
-        re.compile(r'第\s*[一二三四五六七八九十百千万零〇]+\s*[章节页]'),
-        re.compile(r'第\s*\d+\s*[章节页]'),      # 混合模式（阿拉伯数字，重复以保持兼容性）
+        re.compile(r"第\s*[一二三四五六七八九十百千万零〇]+\s*[章节页]"),
+        re.compile(r"第\s*\d+\s*[章节页]"),  # 混合模式（阿拉伯数字，重复以保持兼容性）
     ]
 
     @classmethod
@@ -350,13 +379,16 @@ class RouteDecision:
 
 # ========== 类型定义 ==========
 
+
 class ToolCallData(TypedDict):
     """工具调用数据类型定义"""
+
     tool_call: Dict[str, Any]
     output: str
 
 
 # ========== 函数式 API ==========
+
 
 def build_system_prompt(tool_descriptions: str) -> str:
     """
@@ -400,16 +432,12 @@ def build_messages(
         tool_call = result.get("tool_call", {})
         output = result.get("output", "")
 
-        messages.append({
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [tool_call]
-        })
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.get("id", ""),
-            "content": output
-        })
+        messages.append(
+            {"role": "assistant", "content": None, "tool_calls": [tool_call]}
+        )
+        messages.append(
+            {"role": "tool", "tool_call_id": tool_call.get("id", ""), "content": output}
+        )
 
     return messages
 
@@ -437,11 +465,11 @@ class OutputValidator:
     """LLM 输出验证器"""
 
     # 引用格式正则: [[章节名#^page-N]] 或 [[章节名#^page-N, 第X段]]
-    CITATION_PATTERN = re.compile(r'\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?\]\]')
+    CITATION_PATTERN = re.compile(r"\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?\]\]")
 
     # 思考标签正则
-    THOUGHT_OPEN_PATTERN = re.compile(r'<thought>', re.IGNORECASE)
-    THOUGHT_CLOSE_PATTERN = re.compile(r'</thought>', re.IGNORECASE)
+    THOUGHT_OPEN_PATTERN = re.compile(r"<thought>", re.IGNORECASE)
+    THOUGHT_CLOSE_PATTERN = re.compile(r"</thought>", re.IGNORECASE)
 
     @classmethod
     def validate_citation_format(cls, text: str) -> List[Dict[str, Any]]:
@@ -461,13 +489,15 @@ class OutputValidator:
         citations = []
 
         for match in cls.CITATION_PATTERN.finditer(text):
-            citations.append({
-                "section": match.group(1),
-                "page": int(match.group(2)),
-                "segment": int(match.group(3)) if match.group(3) else None,
-                "valid": True,
-                "raw": match.group(0)
-            })
+            citations.append(
+                {
+                    "section": match.group(1),
+                    "page": int(match.group(2)),
+                    "segment": int(match.group(3)) if match.group(3) else None,
+                    "valid": True,
+                    "raw": match.group(0),
+                }
+            )
 
         return citations
 
@@ -498,7 +528,7 @@ class OutputValidator:
         thoughts = []
 
         # 移除闭合标签之间的内容
-        pattern = re.compile(r'<thought>(.*?)</thought>', re.DOTALL | re.IGNORECASE)
+        pattern = re.compile(r"<thought>(.*?)</thought>", re.DOTALL | re.IGNORECASE)
         for match in pattern.finditer(text):
             thought_content = match.group(1).strip()
             if thought_content:
@@ -507,7 +537,9 @@ class OutputValidator:
         return thoughts
 
     @classmethod
-    def validate_tool_call_format(cls, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def validate_tool_call_format(
+        cls, tool_calls: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """
         验证工具调用格式
 

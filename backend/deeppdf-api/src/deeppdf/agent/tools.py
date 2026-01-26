@@ -157,7 +157,13 @@ class HybridSearchTool:
     description: str = (
         "快速检索与查询相关的文档片段。"
         "适用于简单事实查询（如'某事发生在哪年'）。"
-        "参数: query (str, 必需) - 搜索关键词; top_k (int, 可选) - 返回结果数，默认5"
+        "参数: query (str, 必需) - 搜索关键词; top_k (int, 可选) - 返回结果数，默认5\n\n"
+        "**返回格式：** JSON 数组，每个元素包含：\n"
+        "- text: 文档片段内容\n"
+        "- obsidian_link: Obsidian wiki link（如 [[file.md#^page-5]]）\n"
+        "- page: 页码\n"
+        "- anchor: 锚点（如 ^page-5）\n\n"
+        "**使用方法：** 在回答中直接使用 obsidian_link 字段的值作为引用。"
     )
 
     def __init__(
