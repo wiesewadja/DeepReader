@@ -203,8 +203,9 @@ export const agentAPI = {
     onChunk: (chunk: string, metadata?: { status?: string; citations?: import('./http-client').CitationInfo[] }) => void,
     onComplete?: () => void,
     onError?: (error: string) => void,
-    forceMode?: string
-  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode)
+    forceMode?: string,
+    includeCitations?: boolean
+  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode, includeCitations)
 };
 
 /**

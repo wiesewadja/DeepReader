@@ -729,7 +729,8 @@ ${r.text}`;
                         isStreaming: false
                     });
                 },
-                forceMode  // 传递强制模式参数
+                forceMode,  // 传递强制模式参数
+                true        // 启用引用数据提取
             );
 
             // 保存 controller 用于取消（如果需要的话）

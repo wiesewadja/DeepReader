@@ -689,6 +689,7 @@ export class DeepPDFClient {
    * @param onComplete 完成回调
    * @param onError 错误回调
    * @param forceMode 强制路由模式（可选）
+   * @param includeCitations 是否包含引用数据（可选）
    * @returns AbortController 用于取消请求
    */
   agentChatStream(
@@ -697,16 +698,20 @@ export class DeepPDFClient {
     onChunk: (chunk: string, metadata?: { status?: string; citations?: CitationInfo[] }) => void,
     onComplete?: () => void,
     onError?: (error: string) => void,
-    forceMode?: string
+    forceMode?: string,
+    includeCitations?: boolean
   ): AbortController {
     const controller = new AbortController();
 
-    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, baseUrl: this.baseUrl });
+    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, baseUrl: this.baseUrl });
 
     // 构建请求体
     const body: any = { query, index_id: indexId };
     if (forceMode && forceMode !== 'auto') {
       body.force_mode = forceMode;
+    }
+    if (includeCitations) {
+      body.include_citations = true;
     }
 
     fetch(`${this.baseUrl}/api/chat/agent/stream`, {
