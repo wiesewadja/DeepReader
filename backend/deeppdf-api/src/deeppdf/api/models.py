@@ -190,9 +190,10 @@ class AgentRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
     index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
     stream: Optional[bool] = Field(False, description="是否流式输出")
+    include_citations: Optional[bool] = Field(False, description="是否返回引用信息")
     force_mode: Optional[str] = Field(
         None,
-        description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)"
+        description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)",
     )
 
     @field_validator("force_mode")
@@ -204,16 +205,33 @@ class AgentRequest(BaseModel):
         valid_modes = ["fast", "section", "slow"]
         if v not in valid_modes:
             mode_list = '", "'.join(valid_modes)
-            raise ValueError(
-                f'force_mode must be one of: "auto", "{mode_list}"'
-            )
+            raise ValueError(f'force_mode must be one of: "auto", "{mode_list}"')
         return v
 
 
+class CitationInfo(BaseModel):
+    """单个引用信息"""
+
+    node_id: str = Field(..., description="节点 ID")
+    obsidian_link: str = Field(..., description="Obsidian 链接格式 [[file.md#^page-N]]")
+    page: Optional[int] = Field(None, description="页码")
+    anchor: str = Field("", description="锚点（如 ^page-N）")
+
+
 class AgentResponse(BaseModel):
-    """Agent 响应"""
+    """Agent 响应（旧版本，不包含引用）"""
 
     status: str
     answer: Optional[str] = None
     error: Optional[str] = None
     iterations: Optional[int] = None
+
+
+class AgentResponseWithCitations(BaseModel):
+    """Agent 响应（带引用）"""
+
+    status: str
+    answer: Optional[str] = None
+    error: Optional[str] = None
+    iterations: Optional[int] = None
+    citations: Optional[List[CitationInfo]] = Field(None, description="引用列表")
