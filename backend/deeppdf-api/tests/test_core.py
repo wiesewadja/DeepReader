@@ -167,9 +167,11 @@ def test_get_tool_schemas_with_read_page(mock_tree_structure):
 
 def test_build_messages_simple(agent):
     """测试构建简单消息"""
-    messages = agent._build_messages("测试查询", tool_results=None)
+    # 新版本：_build_messages 从 self.history 读取
+    agent.history = [{"role": "user", "content": "测试查询"}]
+    messages = agent._build_messages()
 
-    assert len(messages) == 2
+    assert len(messages) == 2  # system + user
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "测试查询"
@@ -177,20 +179,22 @@ def test_build_messages_simple(agent):
 
 def test_build_messages_with_tool_results(agent):
     """测试构建带工具结果的消息"""
-    tool_results = [
-        {
-            "tool_call": {
+    # 新版本：_build_messages 从 self.history 读取
+    agent.history = [
+        {"role": "user", "content": "查看目录"},
+        {"role": "assistant", "content": None, "tool_calls": [
+            {
                 "id": "call_123",
                 "type": "function",
                 "function": {"name": "inspect_toc", "arguments": "{}"},
-            },
-            "output": "[SUCCESS] # 目录\n\n- 第一章",
-        }
+            }
+        ]},
+        {"role": "tool", "tool_call_id": "call_123", "content": "[SUCCESS] # 目录\n\n- 第一章"},
     ]
 
-    messages = agent._build_messages("查看目录", tool_results)
+    messages = agent._build_messages()
 
-    assert len(messages) == 4
+    assert len(messages) == 4  # system + user + assistant + tool
     assert messages[0]["role"] == "system"
     assert messages[1]["role"] == "user"
     assert messages[2]["role"] == "assistant"
@@ -385,9 +389,12 @@ def test_run_tracks_history_no_tools(agent):
     result = agent.run("你好")
 
     assert result == "简单回答"
-    assert len(agent.history) == 1
-    assert agent.history[0]["role"] == "assistant"
-    assert agent.history[0]["content"] == "简单回答"
+    # 新版本：历史包含 user query + assistant 回答
+    assert len(agent.history) == 2
+    assert agent.history[0]["role"] == "user"
+    assert agent.history[0]["content"] == "你好"
+    assert agent.history[1]["role"] == "assistant"
+    assert agent.history[1]["content"] == "简单回答"
 
 
 def test_run_tracks_history_with_tools(agent):
@@ -416,17 +423,20 @@ def test_run_tracks_history_with_tools(agent):
     result = agent.run("查看目录")
 
     assert result == "最终回答"
-    # 历史应该包含:
-    # 1. assistant 消息（含工具调用）
-    # 2. tool 消息
-    # 3. assistant 最终回答
-    assert len(agent.history) == 3
-    assert agent.history[0]["role"] == "assistant"
-    assert "tool_calls" in agent.history[0]
-    assert agent.history[1]["role"] == "tool"
-    assert agent.history[1]["tool_call_id"] == "call_123"
-    assert agent.history[2]["role"] == "assistant"
-    assert agent.history[2]["content"] == "最终回答"
+    # 新版本：历史应该包含:
+    # 1. user query
+    # 2. assistant 消息（含工具调用）
+    # 3. tool 消息
+    # 4. assistant 最终回答
+    assert len(agent.history) == 4
+    assert agent.history[0]["role"] == "user"
+    assert agent.history[0]["content"] == "查看目录"
+    assert agent.history[1]["role"] == "assistant"
+    assert "tool_calls" in agent.history[1]
+    assert agent.history[2]["role"] == "tool"
+    assert agent.history[2]["tool_call_id"] == "call_123"
+    assert agent.history[3]["role"] == "assistant"
+    assert agent.history[3]["content"] == "最终回答"
 
 
 def test_run_stream_tracks_history(agent):
@@ -450,9 +460,12 @@ def test_run_stream_tracks_history(agent):
     chunks = list(agent.run_stream("测试"))
 
     assert chunks == ["你好"]
-    assert len(agent.history) == 1
-    assert agent.history[0]["role"] == "assistant"
-    assert agent.history[0]["content"] == "你好"
+    # 新版本：历史包含 user query + assistant 回答
+    assert len(agent.history) == 2
+    assert agent.history[0]["role"] == "user"
+    assert agent.history[0]["content"] == "测试"
+    assert agent.history[1]["role"] == "assistant"
+    assert agent.history[1]["content"] == "你好"
 
 
 # ========== 测试工具调用格式化 ==========

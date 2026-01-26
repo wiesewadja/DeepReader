@@ -910,22 +910,32 @@ export class AIMessage extends Message {
 
 		// 使用 requestAnimationFrame 批处理更新
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
+			// 修复：流式更新时也解析 thought 标签
+			const { cleanedContent, thoughts } = parseAgentContent(newContent);
+
+			// 如果解析出思考内容，更新消息数据
+			if (thoughts.length > 0) {
+				this.data.agentThoughts = thoughts;
+				// 标记 agentThoughts 已变化，触发思考组件更新
+				this._updateThoughtsComponent();
+			}
+
 			// 获取当前 innerHTML 长度作为参考
 			const currentHTML = contentEl.innerHTML || '';
 			const currentLength = currentHTML.length;
 
 			// 如果新内容更长，说明有新增内容
 			if (newContent.length > (contentEl.textContent || '').length) {
-				// 直接渲染完整内容，但使用 CSS contain 减少重绘
+				// 渲染清理后的内容（不含 thought 标签）
 				if (this.app) {
 					contentEl.empty();
-					MarkdownRenderer.render(this.app, newContent, contentEl, '', new Component());
+					MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());
 				} else {
-					contentEl.innerHTML = this.escapeHtml(newContent);
+					contentEl.innerHTML = this.escapeHtml(cleanedContent);
 				}
 			} else {
 				// 内容长度未增加或减少，完全重绘
-				this.fullUpdateContent(contentEl, newContent);
+				this.fullUpdateContent(contentEl, cleanedContent);
 			}
 
 			this.streamingAnimationFrame = null;
@@ -945,6 +955,63 @@ export class AIMessage extends Message {
 		} else {
 			contentEl.innerHTML = this.escapeHtml(content);
 		}
+	}
+
+	/**
+	 * 增量更新思考组件（用于流式更新时动态显示思考内容）
+	 */
+	private _updateThoughtsComponent(): void {
+		const bubble = this.el?.querySelector('.deeppdf-message-bubble-ai');
+		if (!bubble || !this.data.agentThoughts) return;
+
+		// 移除旧的思考组件
+		const oldThoughts = bubble.querySelector('.deeppdf-agent-thoughts');
+		if (oldThoughts) oldThoughts.remove();
+
+		// 创建新的思考组件（复用 render() 中的逻辑）
+		const thoughtsContainer = document.createElement('div');
+		thoughtsContainer.addClass('deeppdf-agent-thoughts');
+
+		// 默认折叠状态
+		if (this.thoughtsCollapsed) {
+			thoughtsContainer.addClass('collapsed');
+		}
+
+		// 可点击的头部
+		const thoughtsHeader = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thought-header' });
+		thoughtsHeader.setAttribute('role', 'button');
+		thoughtsHeader.setAttribute('tabindex', '0');
+		thoughtsHeader.innerHTML = `<svg class="thoughts-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>思考过程`;
+
+		// 思考内容容器
+		const thoughtsContent = thoughtsContainer.createEl('div', { cls: 'deeppdf-agent-thoughts-content' });
+
+		this.data.agentThoughts.forEach(thought => {
+			const thoughtItem = thoughtsContent.createEl('div', { cls: 'deeppdf-agent-thought-content' });
+			thoughtItem.textContent = thought.content;
+		});
+
+		// 点击切换折叠状态
+		const toggleThoughts = () => {
+			this.thoughtsCollapsed = !this.thoughtsCollapsed;
+			if (this.thoughtsCollapsed) {
+				thoughtsContainer.addClass('collapsed');
+			} else {
+				thoughtsContainer.removeClass('collapsed');
+			}
+		};
+
+		thoughtsHeader.addEventListener('click', toggleThoughts);
+		thoughtsHeader.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				toggleThoughts();
+			}
+		});
+
+		// 插入到内容区域之前
+		const content = bubble.querySelector('.deeppdf-message-content');
+		bubble.insertBefore(thoughtsContainer, content);
 	}
 
 	private renderActions(container: HTMLElement) {

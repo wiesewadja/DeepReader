@@ -7,6 +7,7 @@ DeepPDFAgent - Agent 核心类，实现 ReAct 主循环
 import json
 import logging
 import uuid
+from enum import IntEnum
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from openai import OpenAI, Stream
@@ -14,7 +15,7 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk, ChatCompletio
 
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
-from .prompts import build_system_prompt, ToolCallData
+from .prompts import build_system_prompt, ToolCallData, RouteDecision
 from ..config import settings
 
 
@@ -26,6 +27,20 @@ logger = logging.getLogger(__name__)
 
 # LLM 客户端类型别名（当前所有 Provider 都使用 OpenAI 兼容客户端）
 LLMClient = OpenAI
+
+
+# ========== 思考状态枚举 ==========
+
+
+class ThoughtState(IntEnum):
+    """
+    思考标签状态机
+
+    用于在流式输出中管理 <thought> 标签的开启和闭合。
+    """
+    CLOSED = 0   # 无待闭合标签
+    PENDING = 1  # 检测到内容，准备输出
+    OPENED = 2   # 已输出 <thought>，待闭合
 
 
 # ========== 异常定义 ==========
@@ -170,9 +185,12 @@ class DeepPDFAgent:
             base_url=base_url,
         )
 
-    def _get_tool_schemas(self) -> List[Dict[str, Any]]:
+    def _get_tool_schemas(self, allowed: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         获取工具的 OpenAI Function Calling 格式 schema
+
+        Args:
+            allowed: 允许的工具名称列表。如果为 None，返回所有工具的 schema。
 
         Returns:
             工具 schema 列表
@@ -180,6 +198,10 @@ class DeepPDFAgent:
         schemas = []
 
         for name, tool in self.executor.tools.items():
+            # 如果提供了 allowed 列表，只返回允许的工具
+            if allowed is not None and name not in allowed:
+                continue
+
             schema = {
                 "type": "function",
                 "function": {
@@ -238,42 +260,26 @@ class DeepPDFAgent:
             # 默认: 无参数
             return {"type": "object", "properties": {}}
 
-    def _build_messages(
-        self,
-        query: str,
-        tool_results: Optional[List[ToolCallData]] = None,
-    ) -> List[Dict[str, Any]]:
+    def _build_messages(self) -> List[Dict[str, Any]]:
         """
         构建对话消息列表
 
-        Args:
-            query: 用户查询
-            tool_results: 工具执行结果列表
+        从 self.history 读取完整的对话历史，包括：
+        - 用户查询
+        - assistant 消息（可能包含工具调用）
+        - 工具执行结果
 
         Returns:
-            消息列表
+            消息列表，格式为 [System, ...history]
         """
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": query},
-        ]
+        messages = [{"role": "system", "content": self.system_prompt}]
 
-        # 添加工具调用历史
-        if tool_results:
-            for result in tool_results:
-                tool_call = result["tool_call"]
-                output = result["output"]
-
-                messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [tool_call],
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call["id"],
-                    "content": output,
-                })
+        # 验证并添加历史消息
+        for msg in self.history:
+            if "role" not in msg:
+                logger.warning(f"[历史记录] 跳过无效消息: {msg}")
+                continue
+            messages.append(msg)
 
         return messages
 
@@ -313,6 +319,73 @@ class DeepPDFAgent:
             },
         }
 
+    def _get_allowed_tools_for_route(self, route_type: str) -> Optional[List[str]]:
+        """
+        根据路由类型获取允许的工具列表
+
+        Args:
+            route_type: 路由类型 ("fast", "slow", "section")
+
+        Returns:
+            允许的工具名称列表，None 表示允许全部工具
+        """
+        if route_type == "fast":
+            # 简单事实查询：只允许 hybrid_search
+            return ["hybrid_search"]
+        elif route_type == "section":
+            # 章节查询：优先 read_page，保留 hybrid_search 作为备选
+            return ["read_page", "hybrid_search"]
+        elif route_type == "slow":
+            # 复杂分析：允许全部工具
+            return None
+        else:
+            # 未知类型：允许全部工具
+            return None
+
+    def _maybe_open_thought_tag(self, thought_state: Dict[str, Any]) -> Generator[str, None, None]:
+        """
+        在适当时机输出开启标签
+
+        Args:
+            thought_state: 思考状态字典，包含 'state' 和 'has_content' 键
+
+        Yields:
+            "<thought>" 标签（如果需要开启）
+        """
+        if thought_state["state"] == ThoughtState.PENDING:
+            thought_state["state"] = ThoughtState.OPENED
+            yield "<thought>"
+
+    def _flush_thought_tag(self, thought_state: Dict[str, Any]) -> Generator[str, None, None]:
+        """
+        输出闭合标签（如果需要）
+
+        Args:
+            thought_state: 思考状态字典
+
+        Yields:
+            "</thought>" 标签（如果需要闭合）
+        """
+        if thought_state["state"] == ThoughtState.OPENED:
+            thought_state["state"] = ThoughtState.CLOSED
+            yield "</thought>"
+
+    def _validate_query_length(self, query: str) -> None:
+        """
+        验证查询长度
+
+        Args:
+            query: 用户查询字符串
+
+        Raises:
+            AgentError: 如果查询过长
+        """
+        max_length = settings.agent_max_query_length
+        if len(query) > max_length:
+            raise AgentError(
+                f"查询过长（{len(query)} 字符），请精简到 {max_length} 字符以内。"
+            )
+
     def run(self, query: str) -> str:
         """
         运行 Agent 主循环 (非流式)
@@ -323,22 +396,35 @@ class DeepPDFAgent:
         Returns:
             Agent 最终回答
         """
-        tool_results: List[ToolCallData] = []
+        # 验证查询长度
+        self._validate_query_length(query)
+
+        # 启动新轮次: 清空旧历史
+        self.history.clear()
+
+        # 记录用户查询
+        self.history.append({"role": "user", "content": query})
+
+        # 路由判断：根据查询类型决定可用工具
+        route_type = RouteDecision.classify_query(query)
+        allowed_tools = self._get_allowed_tools_for_route(route_type)
+        logger.info(f"[Agent路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+
         iterations = 0
 
         while iterations < self.max_iterations:
             iterations += 1
             logger.info(f"[Agent迭代] 第 {iterations} 轮")
 
-            # 构建消息
-            messages = self._build_messages(query, tool_results)
+            # 构建消息（从 self.history 读取）
+            messages = self._build_messages()
 
-            # 调用 LLM
+            # 调用 LLM（根据路由类型过滤工具）
             try:
                 response = self.client.chat.completions.create(
                     model=self.llm_model,
                     messages=messages,
-                    tools=self._get_tool_schemas(),
+                    tools=self._get_tool_schemas(allowed=allowed_tools),
                     temperature=self.temperature,
                     top_p=self.top_p,
                 )
@@ -390,14 +476,9 @@ class DeepPDFAgent:
                     "content": output,
                 })
 
-                tool_results.append({
-                    "tool_call": self._format_tool_call(tool_call),
-                    "output": output,
-                })
-
         # 达到最大迭代次数
         logger.warning(f"[Agent警告] 达到最大迭代次数 {self.max_iterations}")
-        messages = self._build_messages(query, tool_results)
+        messages = self._build_messages()
         response = self.client.chat.completions.create(
             model=self.llm_model,
             messages=messages,
@@ -415,145 +496,162 @@ class DeepPDFAgent:
         Yields:
             文本片段
         """
-        tool_results: List[ToolCallData] = []
+        # 验证查询长度
+        self._validate_query_length(query)
+
+        # 启动新轮次: 清空旧历史
+        self.history.clear()
+
+        # 记录用户查询
+        self.history.append({"role": "user", "content": query})
+
+        # 路由判断：根据查询类型决定可用工具
+        route_type = RouteDecision.classify_query(query)
+        allowed_tools = self._get_allowed_tools_for_route(route_type)
+        logger.info(f"[Agent流式路由] 查询类型={route_type}, 可用工具={allowed_tools or '全部'}")
+
+        # 初始化思考状态机
+        thought_state: Dict[str, Any] = {
+            "state": ThoughtState.CLOSED,
+            "has_content": False,
+        }
+
         iterations = 0
 
-        while iterations < self.max_iterations:
-            iterations += 1
-            logger.info(f"[Agent流式迭代] 第 {iterations} 轮")
+        try:
+            while iterations < self.max_iterations:
+                iterations += 1
+                logger.info(f"[Agent流式迭代] 第 {iterations} 轮")
 
-            messages = self._build_messages(query, tool_results)
+                # 构建消息（从 self.history 读取）
+                messages = self._build_messages()
 
-            try:
-                stream: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
-                    model=self.llm_model,
-                    messages=messages,
-                    tools=self._get_tool_schemas(),
-                    temperature=self.temperature,
-                    top_p=self.top_p,
-                    stream=True,
-                )
-            except Exception as e:
-                logger.error(f"[LLM流式错误] 调用失败: {e}")
-                yield f"错误: LLM 调用失败 - {str(e)}"
-                return
+                try:
+                    stream: Stream[ChatCompletionChunk] = self.client.chat.completions.create(
+                        model=self.llm_model,
+                        messages=messages,
+                        tools=self._get_tool_schemas(allowed=allowed_tools),
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        stream=True,
+                    )
+                except Exception as e:
+                    logger.error(f"[LLM流式错误] 调用失败: {e}")
+                    yield f"错误: LLM 调用失败 - {str(e)}"
+                    return
 
-            # 收集流式响应
-            current_tool_calls: Dict[str, Dict[str, Any]] = {}
-            content_buffer: List[str] = []
-            has_pending_thought = False  # 标记是否有待包装的思考内容
+                # 收集流式响应
+                current_tool_calls: Dict[str, Dict[str, Any]] = {}
+                content_buffer: List[str] = []
 
-            for chunk in stream:
-                delta = chunk.choices[0].delta
+                for chunk in stream:
+                    delta = chunk.choices[0].delta
 
-                # 处理内容 - 立即输出实现真正的流式体验
-                if delta.content:
-                    content_buffer.append(delta.content)
+                    # 处理内容 - 立即输出实现真正的流式体验
+                    if delta.content:
+                        content_buffer.append(delta.content)
 
-                    # 立即输出内容，不等待
-                    # 如果这是首次输出且后续可能有工具调用，添加思考标签
-                    if not current_tool_calls and not has_pending_thought and tool_results and iterations > 1:
-                        yield "<thought>"
-                        has_pending_thought = True
+                        # 首次检测到内容时，标记为 PENDING
+                        if not thought_state["has_content"]:
+                            thought_state["has_content"] = True
+                            # 如果这是第二轮之后的迭代，准备输出思考标签
+                            if len(self.history) > 1 and iterations > 1:
+                                thought_state["state"] = ThoughtState.PENDING
 
-                    yield delta.content
+                        # 如果状态是 PENDING，输出开启标签
+                        yield from self._maybe_open_thought_tag(thought_state)
 
-                # 处理工具调用
-                if delta.tool_calls:
-                    # 关闭待处理的思考标签
-                    if has_pending_thought:
-                        yield "</thought>"
-                        has_pending_thought = False
+                        # 输出内容
+                        yield delta.content
 
-                    for tool_call in delta.tool_calls:
-                        index = tool_call.index
-                        tool_id = tool_call.id
+                    # 处理工具调用
+                    if delta.tool_calls:
+                        # 关闭待处理的思考标签
+                        yield from self._flush_thought_tag(thought_state)
 
-                        if index not in current_tool_calls:
-                            current_tool_calls[index] = {
-                                "id": tool_id or str(uuid.uuid4()),
-                                "type": "function",
-                                "function": {"name": "", "arguments": ""},
-                            }
+                        for tool_call in delta.tool_calls:
+                            index = tool_call.index
+                            tool_id = tool_call.id
 
-                        if tool_call.id:
-                            current_tool_calls[index]["id"] = tool_call.id
+                            if index not in current_tool_calls:
+                                current_tool_calls[index] = {
+                                    "id": tool_id or str(uuid.uuid4()),
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
 
-                        if tool_call.function:
-                            if tool_call.function.name:
-                                current_tool_calls[index]["function"]["name"] = (
-                                    tool_call.function.name
-                                )
-                            if tool_call.function.arguments:
-                                current_tool_calls[index]["function"]["arguments"] += (
-                                    tool_call.function.arguments
-                                )
+                            if tool_call.id:
+                                current_tool_calls[index]["id"] = tool_call.id
 
-            # 检查是否有工具调用
-            if current_tool_calls:
-                # 关闭待处理的思考标签（如果还没关闭）
-                if has_pending_thought:
-                    yield "</thought>"
-                    has_pending_thought = False
+                            if tool_call.function:
+                                if tool_call.function.name:
+                                    current_tool_calls[index]["function"]["name"] = (
+                                        tool_call.function.name
+                                    )
+                                if tool_call.function.arguments:
+                                    current_tool_calls[index]["function"]["arguments"] += (
+                                        tool_call.function.arguments
+                                    )
 
-                # 记录 assistant 消息（包含工具调用）到历史
-                content_text = "".join(content_buffer) if content_buffer else ""
-                self.history.append({
-                    "role": "assistant",
-                    "content": content_text,
-                    "tool_calls": list(current_tool_calls.values()),
-                })
+                # 检查是否有工具调用
+                if current_tool_calls:
+                    # 确保思考标签已关闭
+                    yield from self._flush_thought_tag(thought_state)
 
-                # 执行工具调用
-                for tool_call_data in current_tool_calls.values():
-                    tool_name = tool_call_data["function"]["name"]
-                    try:
-                        args = json.loads(tool_call_data["function"]["arguments"])
-                    except json.JSONDecodeError:
-                        args = {}
-
-                    logger.info(f"[流式工具调用] {tool_name} 参数={args}")
-
-                    output = self.executor.execute(tool_name, **args)
-
-                    # 记录工具结果到历史
+                    # 记录 assistant 消息（包含工具调用）到历史
+                    content_text = "".join(content_buffer) if content_buffer else ""
                     self.history.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call_data["id"],
-                        "content": output,
+                        "role": "assistant",
+                        "content": content_text,
+                        "tool_calls": list(current_tool_calls.values()),
                     })
 
-                    tool_results.append({
-                        "tool_call": tool_call_data,
-                        "output": output,
+                    # 执行工具调用
+                    for tool_call_data in current_tool_calls.values():
+                        tool_name = tool_call_data["function"]["name"]
+                        try:
+                            args = json.loads(tool_call_data["function"]["arguments"])
+                        except json.JSONDecodeError:
+                            args = {}
+
+                        logger.info(f"[流式工具调用] {tool_name} 参数={args}")
+
+                        output = self.executor.execute(tool_name, **args)
+
+                        # 记录工具结果到历史
+                        self.history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call_data["id"],
+                            "content": output,
+                        })
+                else:
+                    # 没有工具调用，完成（最终答案）
+                    # 确保思考标签已关闭
+                    yield from self._flush_thought_tag(thought_state)
+
+                    content_text = "".join(content_buffer) if content_buffer else ""
+                    self.history.append({
+                        "role": "assistant",
+                        "content": content_text,
                     })
-            else:
-                # 没有工具调用，完成（最终答案）
-                # 如果还有待处理的思考标签（异常情况），关闭它
-                if has_pending_thought:
-                    yield "</thought>"
-                    has_pending_thought = False
+                    logger.info(f"[Agent流式完成] 无工具调用，返回最终答案")
+                    return
 
-                content_text = "".join(content_buffer) if content_buffer else ""
-                self.history.append({
-                    "role": "assistant",
-                    "content": content_text,
-                })
-                logger.info(f"[Agent流式完成] 无工具调用，返回最终答案")
-                return
-
-        # 达到最大迭代次数
-        logger.warning(f"[Agent流式警告] 达到最大迭代次数 {self.max_iterations}")
-        messages = self._build_messages(query, tool_results)
-        stream = self.client.chat.completions.create(
-            model=self.llm_model,
-            messages=messages,
-            temperature=self.temperature,
-            stream=True,
-        )
-        for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+            # 达到最大迭代次数
+            logger.warning(f"[Agent流式警告] 达到最大迭代次数 {self.max_iterations}")
+            messages = self._build_messages()
+            stream = self.client.chat.completions.create(
+                model=self.llm_model,
+                messages=messages,
+                temperature=self.temperature,
+                stream=True,
+            )
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        finally:
+            # 确保思考标签闭合
+            yield from self._flush_thought_tag(thought_state)
 
     def reset_history(self):
         """重置对话历史"""
