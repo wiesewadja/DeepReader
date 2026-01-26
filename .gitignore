@@ -8,7 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
-docs
+# 忽略后端生成的 docs，但保留项目根的 docs 目录
+backend/*/docs
+frontend/*/docs
 
 # Backend runtime data
 backend/logs/
