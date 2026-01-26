@@ -465,7 +465,7 @@ class DeepPDFAgent:
             iterations += 1
             logger.info(f"[Agent迭代] 第 {iterations} 轮")
 
-            # 构建消息（从 self.history 读取）
+            # 构建消息（从 session_history 和 current_turn_history 读取）
             messages = self._build_messages()
 
             # 调用 LLM（根据路由类型过滤工具）
@@ -496,13 +496,16 @@ class DeepPDFAgent:
                     }
                 )
                 logger.info("[Agent完成] 无工具调用，返回最终回答")
-                
+
                 # 保存会话历史（支持多轮对话）
                 if keep_history:
                     self.session_history.append({"role": "user", "content": query})
                     self.session_history.append({"role": "assistant", "content": answer})
                     logger.info("💾 [会话历史] 已保存本轮对话")
-                
+
+                # 清空当前轮次历史
+                self.current_turn_history.clear()
+
                 return answer
 
             # 记录 assistant 消息（包含工具调用）到历史
@@ -547,13 +550,16 @@ class DeepPDFAgent:
             temperature=self.temperature,
         )
         final_answer = response.choices[0].message.content or "抱歉，未能完成您的请求。"
-        
+
         # 保存会话历史（支持多轮对话）
         if keep_history:
             self.session_history.append({"role": "user", "content": query})
             self.session_history.append({"role": "assistant", "content": final_answer})
             logger.info("💾 [会话历史] 已保存本轮对话 (最大迭代)")
-            
+
+        # 清空当前轮次历史
+        self.current_turn_history.clear()
+
         return final_answer
 
     def run_stream(
@@ -640,13 +646,12 @@ class DeepPDFAgent:
                 logger.info("=" * 80)
                 logger.info(f"🔄 [第 {iterations} 轮迭代] 开始推理")
                 logger.info("=" * 80)
-                
-                # 构建消息（从 self.history 读取）
+
+                # 构建消息（从 session_history 和 current_turn_history 读取）
                 messages = self._build_messages()
                 logger.info(f"📨 [消息构建] 共 {len(messages)} 条消息")
                 logger.info("   - System: 1 条")
                 logger.info(f"   - History: {len(messages) - 1} 条")
-                
                 # 估算 token
                 total_chars = sum(len(str(m.get('content', ''))) for m in messages)
                 total_tokens_estimate = total_chars // 3
@@ -702,7 +707,7 @@ class DeepPDFAgent:
                         if not thought_state["has_content"]:
                             thought_state["has_content"] = True
                             # 如果这是第二轮之后的迭代，准备输出思考标签
-                            if len(self.history) > 1 and iterations > 1:
+                            if len(self.current_turn_history) > 1 and iterations > 1:
                                 thought_state["state"] = ThoughtState.PENDING
                                 logger.info("💭 [思考标签] 检测到迭代内容，准备添加 <thought> 标签")
 
@@ -766,7 +771,7 @@ class DeepPDFAgent:
 
                     # 记录 assistant 消息（包含工具调用）到历史
                     content_text = "".join(content_buffer) if content_buffer else ""
-                    self.history.append(
+                    self.current_turn_history.append(
                         {
                             "role": "assistant",
                             "content": content_text,
@@ -825,18 +830,18 @@ class DeepPDFAgent:
                                 logger.info(f"   📋 参数: {json.dumps(args, ensure_ascii=False)}")
                                 logger.info(f"   📤 返回长度: {len(output)} 字符")
                                 logger.info(f"   📄 返回预览: {output[:200]}..." if len(output) > 200 else f"   📄 返回内容: {output}")
-                                
+
                                 # 记录工具结果到历史
-                                self.history.append({
+                                self.current_turn_history.append({
                                     "role": "tool",
                                     "tool_call_id": tool_call_id,
                                     "content": output,
                                 })
-                                
+
                             except Exception as e:
                                 logger.error(f"❌ [工具执行错误] {tool_name}: {e}")
                                 # 即使出错也要记录结果
-                                self.history.append({
+                                self.current_turn_history.append({
                                     "role": "tool",
                                     "tool_call_id": tool_call_id,
                                     "content": f"[ERROR] 工具执行失败: {str(e)}",
@@ -859,7 +864,7 @@ class DeepPDFAgent:
                     yield from self._flush_thought_tag(thought_state)
 
                     content_text = "".join(content_buffer) if content_buffer else ""
-                    self.history.append(
+                    self.current_turn_history.append(
                         {
                             "role": "assistant",
                             "content": content_text,
@@ -875,7 +880,7 @@ class DeepPDFAgent:
                     logger.info("✨ [Agent推理] 推理过程结束")
                     logger.info("=" * 80)
                     logger.info("")
-                    
+
                     # 保存本轮对话到会话历史（支持多轮对话）
                     if keep_history:
                         # 保存用户查询
@@ -884,7 +889,10 @@ class DeepPDFAgent:
                         self.session_history.append({"role": "assistant", "content": content_text})
                         logger.info("💾 [会话历史] 已保存本轮对话")
                         logger.info(f"💾 [会话历史] 当前共有 {len(self.session_history)} 条消息")
-                    
+
+                    # 清空当前轮次历史
+                    self.current_turn_history.clear()
+
                     return
 
             # ========== 🎯 阶段8: 达到最大迭代 ==========
@@ -893,7 +901,7 @@ class DeepPDFAgent:
             logger.warning(f"⚠️  [达到上限] 已达到最大迭代次数 {self.max_iterations}")
             logger.warning("⚠️  " + "=" * 78)
             logger.warning(f"   - 已执行轮次: {iterations}")
-            logger.warning(f"   - 历史消息数: {len(self.history)}")
+            logger.warning(f"   - 当前轮次历史消息数: {len(self.current_turn_history)}")
             logger.warning("")
             
             messages = self._build_messages()
