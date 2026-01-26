@@ -204,7 +204,8 @@ export interface QueryPDFResult {
 export interface AgentRequest {
   query: string;
   index_id: string;
-  stream?: boolean;
+  session_id?: string;
+  keep_history?: boolean;
 }
 
 /**
@@ -673,12 +674,24 @@ export class DeepPDFClient {
   /**
    * Agent 智能对话（同步）
    */
-  async agentChat(query: string, indexId: string): Promise<AgentResponse> {
+  async agentChat(query: string, indexId: string, sessionId?: string, keepHistory?: boolean): Promise<AgentResponse> {
     return this.request<AgentResponse>('/api/chat/agent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, index_id: indexId })
+      body: JSON.stringify({
+        query,
+        index_id: indexId,
+        session_id: sessionId,
+        keep_history: keepHistory
+      })
     });
+  }
+
+  /**
+   * 获取会话历史
+   */
+  async getChatHistory(indexId: string, sessionId: string): Promise<any[]> {
+    return this.request<any[]>(`/api/chat/history/${indexId}/${sessionId}`);
   }
 
   /**
@@ -699,14 +712,21 @@ export class DeepPDFClient {
     onComplete?: () => void,
     onError?: (error: string) => void,
     forceMode?: string,
-    includeCitations?: boolean
+    includeCitations?: boolean,
+    sessionId?: string,
+    keepHistory?: boolean
   ): AbortController {
     const controller = new AbortController();
 
-    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, baseUrl: this.baseUrl });
+    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, sessionId, baseUrl: this.baseUrl });
 
     // 构建请求体
-    const body: any = { query, index_id: indexId };
+    const body: any = {
+      query,
+      index_id: indexId,
+      session_id: sessionId,
+      keep_history: keepHistory
+    };
     if (forceMode && forceMode !== 'auto') {
       body.force_mode = forceMode;
     }

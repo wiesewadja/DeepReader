@@ -64,6 +64,122 @@ export class SidebarView extends ItemView {
     private currentIndexId: string | null = null;
     private currentPdfName: string | null = null;
     private isProcessing: boolean = false;
+    private sessionId: string | null = null;  // 会话ID，用于多轮对话
+
+    /** 生成新的会话ID */
+    private generateSessionId(): string {
+        return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /** 开启新会话 */
+    private async startNewSession(indexId: string) {
+        this.sessionId = this.generateSessionId();
+
+        // 保存到设置
+        if (!this.plugin.settings.savedSessions) {
+            this.plugin.settings.savedSessions = {};
+        }
+        this.plugin.settings.savedSessions[indexId] = this.sessionId;
+        await this.plugin.saveSettings();
+
+        this.showWelcomeMessage();
+    }
+
+    /** 显示欢迎语 */
+    private showWelcomeMessage() {
+        if (!this.messageList) return;
+
+        const welcomeId = `msg-${Date.now()}`;
+        this.messageList.addMessage({
+            id: welcomeId,
+            role: "assistant",
+            content: `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    /** 恢复历史记录到视图 */
+    private restoreHistoryToView(history: any[]) {
+        if (!this.messageList) return;
+
+        history.forEach((msg, index) => {
+            // 跳过 system 消息
+            if (msg.role === 'system') return;
+
+            const msgId = `hist-${Date.now()}-${index}`;
+            this.messageList!.addMessage({
+                id: msgId,
+                role: msg.role as MessageRole,
+                content: msg.content,
+                timestamp: new Date().toISOString(),
+                isAgentMessage: msg.role === 'assistant'
+            });
+        });
+    }
+
+    /** 保存当前对话到本地缓存（带 LRU 清理） */
+    private async saveToCache() {
+        if (!this.sessionId || !this.currentIndexId || !this.messageList) return;
+
+        // 1. 获取当前所有消息
+        // Note: 需要在 MessageList 中实现 getAllMessages
+        const allMessages = (this.messageList as any).getAllMessages();
+
+        // 2. 过滤有效消息
+        const validMsgs = allMessages.filter((m: any) =>
+            (m.role === 'user' || m.role === 'assistant') &&
+            !m.content.includes("已切换到文档") &&
+            m.content !== "正在思考..." &&
+            m.content // 确保有内容
+        );
+
+        if (validMsgs.length === 0) return;
+
+        // 3. 更新设置
+        if (!this.plugin.settings.chatCache) {
+            this.plugin.settings.chatCache = {};
+        }
+
+        this.plugin.settings.chatCache[this.sessionId] = {
+            sessionId: this.sessionId,
+            indexId: this.currentIndexId,
+            lastUpdated: Date.now(),
+            messages: validMsgs
+        };
+
+        // 4. 清理并保存
+        await this.cleanupCache();
+        await this.plugin.saveSettings();
+    }
+
+    /** 清理过期缓存 (LRU, max 5MB) */
+    private async cleanupCache() {
+        const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+        const cache = this.plugin.settings.chatCache;
+        if (!cache) return;
+
+        // 计算当前大小
+        let currentSize = JSON.stringify(cache).length;
+
+        if (currentSize <= MAX_SIZE) return;
+
+        console.log(`[DeepPDF] 缓存大小 (${(currentSize / 1024).toFixed(1)}KB) 超过限制，开始清理...`);
+
+        // 按时间排序
+        const sessionIds = Object.keys(cache).sort((a, b) =>
+            cache[a].lastUpdated - cache[b].lastUpdated
+        );
+
+        // 删除最旧的，直到满足要求
+        while (currentSize > MAX_SIZE && sessionIds.length > 0) {
+            const oldestId = sessionIds.shift();
+            if (oldestId) {
+                delete cache[oldestId];
+                currentSize = JSON.stringify(cache).length;
+                console.log(`[DeepPDF] 已删除过期缓存: ${oldestId}`);
+            }
+        }
+    }
 
     constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null, plugin: any) {
         super(leaf);
@@ -129,6 +245,47 @@ export class SidebarView extends ItemView {
                 if (index) {
                     this.currentPdfName = index.pdf_name;
                     new Notice(`已切换到索引: ${index.pdf_name}`);
+                }
+
+                // 清空当前界面
+                this.messageList?.clear();
+
+                // 尝试恢复会话
+                const savedSessions = this.plugin.settings.savedSessions || {};
+                const savedSessionId = savedSessions[indexId];
+
+                if (savedSessionId) {
+                    try {
+                        console.log(`[DeepPDF] 尝试恢复会话: ${savedSessionId}`);
+                        this.sessionId = savedSessionId;
+
+                        // 1. 尝试从本地缓存恢复
+                        const cached = this.plugin.settings.chatCache?.[savedSessionId];
+                        if (cached && cached.messages && cached.messages.length > 0) {
+                            console.log(`[DeepPDF] 从本地缓存恢复: ${cached.messages.length} 条`);
+                            this.restoreHistoryToView(cached.messages);
+                            new Notice(`已恢复对话 (本地缓存)`);
+                            return;
+                        }
+
+                        // 2. 从后端恢复
+                        const history = await agentAPI.getHistory(indexId, savedSessionId);
+
+                        if (history && history.length > 0) {
+                            console.log(`[DeepPDF] 恢复历史记录: ${history.length} 条`);
+                            this.restoreHistoryToView(history);
+                            new Notice(`已恢复之前的对话记录`);
+                        } else {
+                            // 有 ID 但没历史（可能是后端文件没了），不显示欢迎语，直接当新会话
+                            // 或者显示欢迎语
+                            this.showWelcomeMessage();
+                        }
+                    } catch (e) {
+                        console.error(`[DeepPDF] 恢复会话失败:`, e);
+                        this.startNewSession(indexId);
+                    }
+                } else {
+                    this.startNewSession(indexId);
                 }
             },
             onCreateIndex: () => {
@@ -725,6 +882,8 @@ ${r.text}`;
                     this.messageList?.updateMessage(aiMessageId, {
                         isStreaming: false
                     });
+                    // 保存到缓存
+                    this.saveToCache();
                 },
                 // onError: 错误处理
                 (error: string) => {
@@ -734,7 +893,9 @@ ${r.text}`;
                     });
                 },
                 forceMode,  // 传递强制模式参数
-                true        // 启用引用数据提取
+                true,       // 启用引用数据提取
+                this.sessionId || undefined,  // 传递会话ID
+                true        // 启用历史记录
             );
 
             // 保存 controller 用于取消（如果需要的话）

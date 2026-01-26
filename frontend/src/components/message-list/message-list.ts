@@ -118,6 +118,17 @@ export class MessageList extends Component {
 	}
 
 	/**
+	 * 清空消息列表
+	 */
+	clear(): void {
+		this.messages.forEach(message => {
+			message.getElement().remove();
+		});
+		this.messages.clear();
+		this.updateEmptyState();
+	}
+
+	/**
 	 * 更新消息
 	 */
 	updateMessage(messageId: string, updates: Partial<MessageData>): void {
@@ -129,6 +140,14 @@ export class MessageList extends Component {
 
 		// 更新消息（citations 改变时会自动重新渲染并绑定回调）
 		message.update(updates);
+	}
+
+	/**
+	 * 获取所有消息数据
+	 */
+	getAllMessages(): MessageData[] {
+		// 对 map values 进行排序可能有问题，Map 保持插入顺序
+		return Array.from(this.messages.values()).map(msg => msg.getData());
 	}
 
 	/**

@@ -191,8 +191,8 @@ export const agentAPI = {
   /**
    * Agent 对话（同步）
    */
-  chat: (query: string, indexId: string) =>
-    deeppdfClient.agentChat(query, indexId),
+  chat: (query: string, indexId: string, sessionId?: string, keepHistory?: boolean) =>
+    deeppdfClient.agentChat(query, indexId, sessionId, keepHistory),
 
   /**
    * Agent 对话（流式）
@@ -204,8 +204,16 @@ export const agentAPI = {
     onComplete?: () => void,
     onError?: (error: string) => void,
     forceMode?: string,
-    includeCitations?: boolean
-  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode, includeCitations)
+    includeCitations?: boolean,
+    sessionId?: string,
+    keepHistory?: boolean
+  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode, includeCitations, sessionId, keepHistory),
+
+  /**
+   * 获取会话历史
+   */
+  getHistory: (indexId: string, sessionId: string) =>
+    deeppdfClient.getChatHistory(indexId, sessionId)
 };
 
 /**

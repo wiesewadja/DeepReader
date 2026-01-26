@@ -51,20 +51,28 @@ class InspectTocTool:
             tree_structure: PageIndex 生成的树状结构，来自 index_metadata
         """
         self.tree_structure = tree_structure
+        self._cache: Optional[str] = None  # 添加缓存
 
     def __call__(self, **kwargs) -> str:
-        """返回目录结构的可读文本"""
+        """返回目录结构的可读文本（带缓存）"""
+        # 如果已有缓存，直接返回
+        if self._cache is not None:
+            return self._cache
+        
+        # 首次调用，生成并缓存结果
         structure = self.tree_structure.get("structure", [])
 
         if not structure:
-            return "错误: 文档没有目录结构"
-
-        lines = ["# 文档目录结构\n"]
-
-        for node in structure:
-            lines.extend(self._format_node(node, level=0))
-
-        return "\n".join(lines)
+            result = "错误: 文档没有目录结构"
+        else:
+            lines = ["# 文档目录结构\n"]
+            for node in structure:
+                lines.extend(self._format_node(node, level=0))
+            result = "\n".join(lines)
+        
+        # 缓存结果
+        self._cache = result
+        return result
 
     def _format_node(self, node: Dict[str, Any], level: int) -> List[str]:
         """递归格式化节点为可读文本"""
@@ -183,10 +191,11 @@ class HybridSearchTool:
         self.index_id = index_id
         self.storage_dir = storage_dir
         self.markdown_locator = markdown_locator
+        self._search_cache: Dict[str, str] = {}  # 添加搜索缓存 {query_key: result}
 
     def __call__(self, query: str, top_k: int = 5) -> str:
         """
-        执行混合检索
+        执行混合检索（带缓存）
 
         Args:
             query: 搜索查询
@@ -216,6 +225,13 @@ class HybridSearchTool:
         # 验证 top_k 参数
         if top_k < 1 or top_k > 50:
             return json.dumps({"error": "top_k 必须在 1-50 之间"}, ensure_ascii=False)
+
+        # 构建缓存键
+        cache_key = f"{query}_{top_k}"
+        
+        # 检查缓存
+        if cache_key in self._search_cache:
+            return self._search_cache[cache_key]
 
         try:
             # 异步调用 query_pdf - 安全地处理事件循环
@@ -291,7 +307,13 @@ class HybridSearchTool:
                         }
                     )
 
-            return json.dumps(structured_results, ensure_ascii=False)
+            # 生成结果JSON
+            result = json.dumps(structured_results, ensure_ascii=False)
+            
+            # 缓存结果
+            self._search_cache[cache_key] = result
+            
+            return result
 
         except (ValueError, IOError, OSError, RuntimeError) as e:
             return json.dumps({"error": f"检索失败 - {str(e)}"}, ensure_ascii=False)

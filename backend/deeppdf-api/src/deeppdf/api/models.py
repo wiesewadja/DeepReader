@@ -189,6 +189,8 @@ class AgentRequest(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
     index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
+    session_id: Optional[str] = Field(None, max_length=100, description="会话 ID，用于多轮对话")
+    keep_history: Optional[bool] = Field(True, description="是否保留对话历史（支持追问）")
     stream: Optional[bool] = Field(False, description="是否流式输出")
     include_citations: Optional[bool] = Field(False, description="是否返回引用信息")
     force_mode: Optional[str] = Field(
