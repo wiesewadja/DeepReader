@@ -35,7 +35,8 @@ export type {
   QueryPDFResult,
   AgentRequest,
   AgentResponse,
-  AgentStreamChunk
+  AgentStreamChunk,
+  CitationInfo
 } from './http-client';
 
 export { ServerManager } from './server-manager';
@@ -199,7 +200,7 @@ export const agentAPI = {
   chatStream: (
     query: string,
     indexId: string,
-    onChunk: (chunk: string) => void,
+    onChunk: (chunk: string, metadata?: { status?: string; citations?: import('./http-client').CitationInfo[] }) => void,
     onComplete?: () => void,
     onError?: (error: string) => void,
     forceMode?: string

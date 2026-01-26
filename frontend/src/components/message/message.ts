@@ -29,6 +29,10 @@ export interface CitationData {
 	score?: number;
 	/** 可选：标题 */
 	title?: string;
+	/** 可选：Obsidian 链接 (从 Agent 返回) */
+	obsidian_link?: string;
+	/** 可选：块引用锚点 */
+	anchor?: string;
 }
 
 /**
@@ -297,6 +301,15 @@ function extractSectionByBlockRef(content: string, blockRef: string): string {
 
 /**
  * 处理内部链接的点击和悬停事件
+ *
+ * 注意：Obsidian 链接的解析和渲染由 Obsidian 原生的 MarkdownRenderer 处理。
+ * 我们不使用自定义的 parseObsidianLinks/renderObsidianLink 函数，因为：
+ * 1. MarkdownRenderer 已经完美支持 [[link]] 语法
+ * 2. 避免重复解析导致的性能损失
+ * 3. 利用 Obsidian 原生 API 的稳定性和持续维护
+ * 4. setupInternalLinks 为渲染后的链接添加增强的交互功能
+ *
+ * 此函数为 MarkdownRenderer 渲染的内部链接添加：
  * - 点击：在侧边栏中以只读预览模式打开链接
  * - 悬停+Command：Obsidian 原生预览
  * - 悬停（无按键）：自定义章节预览（只显示引用的章节）

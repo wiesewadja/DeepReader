@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { PDFFileSelectorModal, PDFFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
@@ -659,6 +659,7 @@ ${r.text}`;
 
         let fullContent = '';
         let streamController: AbortController | null = null;
+        let agentCitations: CitationInfo[] = []; // 收集 Agent 返回的引用
 
         // 跟踪上一次的 Agent 元数据，避免不必要的全量重绘
         let lastThoughtsJSON = '';
@@ -671,7 +672,13 @@ ${r.text}`;
                 query,
                 indexId,
                 // onChunk: 接收流式内容
-                (chunk: string) => {
+                (chunk: string, metadata?: { status?: string; citations?: CitationInfo[] }) => {
+                    // 处理引用数据
+                    if (metadata?.citations) {
+                        console.log('[DeepPDF] 收到引用数据:', metadata.citations);
+                        agentCitations = metadata.citations;
+                    }
+
                     fullContent += chunk;
 
                     // 解析 Agent 内容（提取思考过程、工具调用等）
@@ -699,6 +706,11 @@ ${r.text}`;
                     if (toolCallsChanged) {
                         updates.agentToolCalls = toolCalls;
                         lastToolCallsJSON = currentToolCallsJSON;
+                    }
+
+                    // 如果有引用数据，转换为 CitationData 格式并添加
+                    if (agentCitations.length > 0) {
+                        updates.citations = this.convertCitationsToCitationData(agentCitations);
                     }
 
                     // 更新消息显示
@@ -730,6 +742,42 @@ ${r.text}`;
                 isStreaming: false
             });
         }
+    }
+
+    /**
+     * 将 Agent 返回的 CitationInfo 转换为前端的 CitationData 格式
+     */
+    private convertCitationsToCitationData(citations: CitationInfo[]): CitationData[] {
+        return citations.map(citation => {
+            // 从 obsidian_link 中提取信息
+            // 格式: [[filename.md#^page-N]] 或 [[filename.md]]
+            const linkMatch = citation.obsidian_link.match(/\[\[([^\]#]+)(?:#\^([a-z0-9-]+))?\]\]/);
+
+            let filename = '';
+            let page: number | undefined;
+            let anchor: string | undefined;
+
+            if (linkMatch) {
+                filename = linkMatch[1];
+                anchor = linkMatch[2];
+
+                // 从锚点中提取页码
+                if (anchor) {
+                    const pageMatch = anchor.match(/page-(\d+)/);
+                    if (pageMatch) {
+                        page = parseInt(pageMatch[1], 10);
+                    }
+                }
+            }
+
+            return {
+                pdf_name: filename,
+                page: page || citation.page || 0, // 提供默认值
+                snippet: '',
+                obsidian_link: citation.obsidian_link,
+                anchor: citation.anchor || anchor || ''
+            };
+        });
     }
 
     /**

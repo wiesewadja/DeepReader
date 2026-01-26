@@ -208,6 +208,16 @@ export interface AgentRequest {
 }
 
 /**
+ * Agent 引用信息
+ */
+export interface CitationInfo {
+  node_id: string;
+  obsidian_link: string;
+  page?: number;
+  anchor: string;
+}
+
+/**
  * Agent 响应（同步）
  */
 export interface AgentResponse {
@@ -215,6 +225,7 @@ export interface AgentResponse {
   answer?: string;
   error?: string;
   iterations?: number;
+  citations?: CitationInfo[];
 }
 
 /**
@@ -222,8 +233,9 @@ export interface AgentResponse {
  */
 export interface AgentStreamChunk {
   content?: string;
-  status?: 'streaming' | 'done' | 'error';
+  status?: 'streaming' | 'done' | 'error' | 'citations_done';
   error?: string;
+  citations?: CitationInfo[];
 }
 
 // ==================== HTTP 客户端类 ====================
@@ -673,7 +685,7 @@ export class DeepPDFClient {
    * Agent 智能对话（流式）
    * @param query 用户查询
    * @param indexId 索引 ID
-   * @param onChunk 接收流式数据块的回调
+   * @param onChunk 接收流式数据块的回调（包含可选的元数据）
    * @param onComplete 完成回调
    * @param onError 错误回调
    * @param forceMode 强制路由模式（可选）
@@ -682,7 +694,7 @@ export class DeepPDFClient {
   agentChatStream(
     query: string,
     indexId: string,
-    onChunk: (chunk: string) => void,
+    onChunk: (chunk: string, metadata?: { status?: string; citations?: CitationInfo[] }) => void,
     onComplete?: () => void,
     onError?: (error: string) => void,
     forceMode?: string
@@ -758,8 +770,24 @@ export class DeepPDFClient {
                     return;
                   }
 
+                  // 构建元数据对象
+                  const metadata: { status?: string; citations?: CitationInfo[] } = {};
+
+                  if (data.status === 'citations_done') {
+                    console.log('[Agent] 收到引用完成信号');
+                    metadata.status = 'citations_done';
+                  }
+
+                  if (data.citations) {
+                    console.log('[Agent] 收到引用数据:', data.citations);
+                    metadata.citations = data.citations;
+                  }
+
                   if (data.content) {
-                    onChunk(data.content);
+                    onChunk(data.content, metadata);
+                  } else if (metadata.status || metadata.citations) {
+                    // 只有元数据更新，没有新内容
+                    onChunk('', metadata);
                   }
                 } catch (e) {
                   console.error('[Agent] Failed to parse SSE data:', jsonStr, e);

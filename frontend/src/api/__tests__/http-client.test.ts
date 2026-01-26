@@ -136,9 +136,11 @@ describe('DeepPDFClient', () => {
                 'http://localhost:8000/api/query',
                 expect.objectContaining({
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         query: 'test query',
-                        index_id: 'test-index-id'
+                        index_id: 'test-index-id',
+                        max_results: 10
                     })
                 })
             );
