@@ -676,6 +676,7 @@ ${r.text}`;
                     // 处理引用数据
                     if (metadata?.citations) {
                         console.log('[DeepPDF] 收到引用数据:', metadata.citations);
+                        console.log('[DeepPDF] 引用数据数量:', metadata.citations.length);
                         agentCitations = metadata.citations;
                     }
 
@@ -691,29 +692,32 @@ ${r.text}`;
                     const thoughtsChanged = currentThoughtsJSON !== lastThoughtsJSON;
                     const toolCallsChanged = currentToolCallsJSON !== lastToolCallsJSON;
 
-                    // 构建更新对象（只包含变化的字段）
+                    // 构建更新对象 - 始终更新所有字段以确保实时显示
                     const updates: any = {
-                        content: cleanedContent || '思考中...',
+                        content: cleanedContent || '🤔 正在思考...',
                         isStreaming: true,
-                        isAgentMessage: true
+                        isAgentMessage: true,
+                        // 始终传递思考内容（即使没有变化也要传递，确保实时渲染）
+                        agentThoughts: thoughts,
+                        // 始终传递工具调用（即使没有变化也要传递，确保实时渲染）
+                        agentToolCalls: toolCalls
                     };
 
-                    // 只在真正变化时才更新 agent 元数据
-                    if (thoughtsChanged) {
-                        updates.agentThoughts = thoughts;
-                        lastThoughtsJSON = currentThoughtsJSON;
-                    }
-                    if (toolCallsChanged) {
-                        updates.agentToolCalls = toolCalls;
-                        lastToolCallsJSON = currentToolCallsJSON;
-                    }
+                    // 更新跟踪变量
+                    lastThoughtsJSON = currentThoughtsJSON;
+                    lastToolCallsJSON = currentToolCallsJSON;
 
                     // 如果有引用数据，转换为 CitationData 格式并添加
                     if (agentCitations.length > 0) {
-                        updates.citations = this.convertCitationsToCitationData(agentCitations);
+                        console.log('[DeepPDF] 转换引用数据，数量:', agentCitations.length);
+                        const convertedCitations = this.convertCitationsToCitationData(agentCitations);
+                        console.log('[DeepPDF] 转换后的引用数据:', convertedCitations);
+                        updates.citations = convertedCitations;
                     }
 
                     // 更新消息显示
+                    console.log('[DeepPDF] 更新消息，updates keys:', Object.keys(updates));
+                    console.log('[DeepPDF] updates.citations 存在?', !!updates.citations);
                     this.messageList?.updateMessage(aiMessageId, updates);
                 },
                 // onComplete: 流式完成

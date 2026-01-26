@@ -46,24 +46,23 @@ SYSTEM_PROMPT_TEMPLATE = """
 
 ## 引用协议
 
-当使用搜索结果（hybrid_search）回答问题时，请严格遵守以下引用格式：
+使用自然语言结合 Obsidian 链接进行引用：
 
-### 基本格式
+**示例：**
+- 根据《纳瓦尔宝典》第五章在 [[第一章/引言.md#^page-191|191页]] 所说，生命的意义是一个私人问题...
+- 研究表明[[第三章/深度学习.md#^page-12|第12页]]，深度学习在图像识别领域取得了重大突破。
+- 多个来源：根据[[file1.md#^page-5|第5页]]和[[file2.md#^page-8|第8页]]的综合分析...
 
-**单个来源:** `[[文件名.md#^page-N]]`
-- 示例: 根据文档内容，人工智能是计算机科学的一个分支[[第一章/引言.md#^page-5]]。
+**Obsidian 链接格式：**
+- 基本格式：`[[文件名.md#^page-N]]`
+- 带别名格式：`[[文件名.md#^page-N|显示文本]]`
+- 示例：`[[第一章/引言.md#^page-191|191页]]` 会在正文中显示为 "191页"
 
-**多个来源:** `[[文件1.md#^page-N]] [[file2.md#^page-M]]`
-- 示例: 研究表明，深度学习在图像识别领域取得了重大突破[[第三章/深度学习.md#^page-12]][[第四章/应用.md#^page-8]]。
-
-**页内引用:** `[[章节名#^page-N, 第X段]]`
-- 示例: 这一观点在第二段有详细说明[[第一章/引言.md#^page-5, 第2段]]。
-
-### 使用注意事项
-
-1. **及时引用**: 始终在相关陈述后立即添加引用链接
-2. **准确性**: 只引用你实际使用的信息来源
-3. **工具集成**: hybrid_search 工具返回的 JSON 结果包含 `obsidian_link` 字段，请直接在回答中嵌入该字段的值
+**使用注意事项：**
+1. 始终在相关陈述后立即添加引用链接
+2. 使用自然语言引入引用，如"根据...所说"、"研究表明..."、"在...中指出"
+3. 只引用你实际使用的信息来源
+4. hybrid_search 工具返回的 obsidian_link 字段包含了完整链接，请使用别名功能显示友好的页码信息
 
 ## 思维可见
 
@@ -114,7 +113,7 @@ Assistant: 我来快速检索这个问题。
 hybrid_search(query="iPhone 发布 时间", top_k=3)
 </tool_call>
 
-根据检索结果，**iPhone 于 2007 年 6 月 29 日**首次发布 [[产品发布会#^page-5]]。
+根据检索结果，**iPhone 于 2007 年 6 月 29 日**首次发布[[产品发布会.md#^page-5|（第5页）]]。
 
 ### 示例 2: 复杂分析任务
 User: 分析乔布斯管理风格的演变
@@ -140,11 +139,11 @@ read_page(page_num=45)
 
 结合第三章和第五章的内容，乔布斯的管理风格经历了以下演变：
 
-**早期风格** (1976-1985): [[早期创业#^page-12]]
+**早期风格** (1976-1985): 根据[[早期创业.md#^page-12|第12页]]的记载：
 - 理想主义驱动，追求产品完美
 - 管理相对粗放
 
-**成熟期风格** (1997-2011): [[回归苹果#^page-78]]
+**成熟期风格** (1997-2011): 根据[[回归苹果.md#^page-78|第78页]]的分析：
 - 精简产品线，聚焦核心
 - 建立「苹果大学」培养人才
 ...
@@ -173,7 +172,7 @@ Assistant: 让我检索一下文档。
 hybrid_search(query="iPhone 发布")
 </tool_call>
 
-根据文档，iPhone 于 2007 年发布 [[产品发布会#^page-5]]。
+根据文档，iPhone 于 2007 年发布[[产品发布会.md#^page-5|（第5页）]]。
 
 ### 错误 2: 复杂任务使用简单检索
 User: 分析管理风格演变
@@ -459,8 +458,8 @@ __all__ = [
 class OutputValidator:
     """LLM 输出验证器"""
 
-    # 引用格式正则: [[章节名#^page-N]] 或 [[章节名#^page-N, 第X段]]
-    CITATION_PATTERN = re.compile(r"\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?\]\]")
+    # 引用格式正则: [[章节名#^page-N]] 或 [[章节名#^page-N|别名]] 或 [[章节名#^page-N, 第X段]]
+    CITATION_PATTERN = re.compile(r"\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?(?:\|([^\]]+))?\]\]")
 
     # 思考标签正则
     THOUGHT_OPEN_PATTERN = re.compile(r"<thought>", re.IGNORECASE)
@@ -479,7 +478,9 @@ class OutputValidator:
             - section: 章节名
             - page: 页码
             - segment: 段号（可选）
+            - alias: 别名显示文本（可选）
             - valid: 格式是否正确
+            - raw: 原始匹配字符串
         """
         citations = []
 
@@ -489,6 +490,7 @@ class OutputValidator:
                     "section": match.group(1),
                     "page": int(match.group(2)),
                     "segment": int(match.group(3)) if match.group(3) else None,
+                    "alias": match.group(4) if match.group(4) else None,
                     "valid": True,
                     "raw": match.group(0),
                 }

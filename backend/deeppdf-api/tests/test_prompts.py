@@ -73,10 +73,10 @@ class TestPromptBuilder:
 
         # 验证包含引用格式要求
         assert "引用协议" in prompt
-        assert "基本格式" in prompt
+        assert "Obsidian 链接格式" in prompt
         assert "[[文件名.md#^page-N]]" in prompt
-        assert "根据文档内容，人工智能是计算机科学的一个分支" in prompt
-        assert "[[第一章/引言.md#^page-5]]" in prompt
+        assert "[[文件名.md#^page-N|显示文本]]" in prompt
+        assert "根据《纳瓦尔宝典》第五章在" in prompt
 
     def test_prompt_includes_hybrid_search_usage(self):
         """测试: Prompt 包含 hybrid_search 使用指导"""
@@ -85,9 +85,9 @@ class TestPromptBuilder:
         prompt = builder.build()
 
         # 验证包含搜索结果使用指导
-        assert "hybrid_search 工具返回的 JSON 结果包含" in prompt
+        assert "hybrid_search 工具返回的 obsidian_link 字段包含了完整链接" in prompt
         assert "obsidian_link" in prompt
-        assert "直接在回答中嵌入该字段的值" in prompt
+        assert "使用别名功能显示友好的页码信息" in prompt
 
     def test_prompt_includes_multiple_citation_example(self):
         """测试: Prompt 包含多来源引用示例"""
@@ -96,8 +96,8 @@ class TestPromptBuilder:
         prompt = builder.build()
 
         # 验证包含多来源引用示例
-        assert "[[第三章/深度学习.md#^page-12]][[第四章/应用.md#^page-8]]" in prompt
-        assert "多个来源" in prompt
+        assert "多个来源：根据" in prompt
+        assert "[[file1.md#^page-5|第5页]]和[[file2.md#^page-8|第8页]]" in prompt
 
 
 # ========== RouteDecision 测试 ==========

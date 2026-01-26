@@ -758,6 +758,10 @@ export class AIMessage extends Message {
 	// 流式更新状态
 	private isStreamingUpdate: boolean = false;
 	private streamingAnimationFrame: number | null = null;
+	// 节流渲染跟踪变量
+	private lastRenderedContent: string = '';
+	private lastRenderTime: number = 0;
+	private lastRenderedLength: number = 0;
 
 	constructor(
 		data: MessageData,
@@ -776,6 +780,10 @@ export class AIMessage extends Message {
 		this.onCopyWithCitation = options?.onCopyWithCitation;
 		this.onQuestionClick = options?.onQuestionClick;
 		this.onCitationJump = options?.onCitationJump;
+		// 初始化渲染跟踪变量
+		this.lastRenderedContent = data.content;
+		this.lastRenderTime = Date.now();
+		this.lastRenderedLength = data.content.length;
 		this.el = this.render();
 	}
 
@@ -913,7 +921,11 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 流式更新 - 使用内容追加减少闪烁
+	 * 流式更新 - 实时显示思考内容和工具调用
+	 *
+	 * 更新策略:
+	 * 1. 思考内容或工具调用变化时立即更新
+	 * 2. 主内容每增长超过 30 字符或超过 80ms 时更新
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -923,22 +935,35 @@ export class AIMessage extends Message {
 
 		// 使用 requestAnimationFrame 批处理更新
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
-			// 修复：流式更新时也解析 thought 标签
+			const now = Date.now();
+
+			// 解析内容以检查思考内容变化
 			const { cleanedContent, thoughts } = parseAgentContent(newContent);
 
-			// 如果解析出思考内容，更新消息数据
-			if (thoughts.length > 0) {
-				this.data.agentThoughts = thoughts;
-				// 标记 agentThoughts 已变化，触发思考组件更新
-				this._updateThoughtsComponent();
-			}
+			// 检查思考内容是否变化
+			const currentThoughtsJSON = JSON.stringify(thoughts);
+			const thoughtsChanged = currentThoughtsJSON !== JSON.stringify(this.data.agentThoughts || []);
 
-			// 获取当前 innerHTML 长度作为参考
-			const currentHTML = contentEl.innerHTML || '';
-			const currentLength = currentHTML.length;
+			// 计算内容增长量
+			const contentGrowth = newContent.length - this.lastRenderedLength;
 
-			// 如果新内容更长，说明有新增内容
-			if (newContent.length > (contentEl.textContent || '').length) {
+			// 计算时间间隔
+			const timePassed = now - this.lastRenderTime;
+
+			// 决定是否需要渲染:
+			// 1. 思考内容发生变化（立即更新）
+			// 2. 内容增长超过 30 字符
+			// 3. 或距离上次渲染超过 80ms
+			const shouldRender = thoughtsChanged || contentGrowth > 30 || timePassed > 80;
+
+			if (shouldRender) {
+				// 如果解析出思考内容且发生变化，更新思考组件
+				if (thoughts.length > 0 && thoughtsChanged) {
+					this.data.agentThoughts = thoughts;
+					// 标记 agentThoughts 已变化，触发思考组件更新
+					this._updateThoughtsComponent();
+				}
+
 				// 渲染清理后的内容（不含 thought 标签）
 				if (this.app) {
 					contentEl.empty();
@@ -946,9 +971,11 @@ export class AIMessage extends Message {
 				} else {
 					contentEl.innerHTML = this.escapeHtml(cleanedContent);
 				}
-			} else {
-				// 内容长度未增加或减少，完全重绘
-				this.fullUpdateContent(contentEl, cleanedContent);
+
+				// 更新跟踪变量
+				this.lastRenderedContent = newContent;
+				this.lastRenderTime = now;
+				this.lastRenderedLength = newContent.length;
 			}
 
 			this.streamingAnimationFrame = null;
@@ -1056,12 +1083,19 @@ export class AIMessage extends Message {
 	}
 
 	private renderCitations(container: HTMLElement) {
+		console.log('[renderCitations] citations数据:', this.data.citations);
+		console.log('[renderCitations] citations长度:', this.data.citations?.length || 0);
 		if (this.data.citations && this.data.citations.length > 0) {
+			console.log('[renderCitations] 开始渲染引用卡片');
 			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
 			this.data.citations.forEach(citation => {
+				console.log('[renderCitations] 渲染单个引用:', citation);
 				const citationEl = new Citation(citation, this.onCitationJump);
 				citationsContainer.appendChild(citationEl.getElement());
 			});
+			console.log('[renderCitations] 引用卡片渲染完成');
+		} else {
+			console.log('[renderCitations] 没有引用数据，跳过渲染');
 		}
 	}
 }
