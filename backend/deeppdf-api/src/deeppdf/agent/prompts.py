@@ -553,17 +553,23 @@ class ToolCallData(TypedDict):
 # ========== 函数式 API ==========
 
 
-def build_system_prompt(tool_descriptions: str) -> str:
+def build_system_prompt(tool_descriptions: str, version: int = 2) -> str:
     """
     构建 System Prompt
 
     Args:
         tool_descriptions: 工具描述字符串
+        version: 提示词版本（1=旧版, 2=优化版，默认 2）
 
     Returns:
         完整的 System Prompt
     """
-    return SYSTEM_PROMPT_TEMPLATE.format(tool_descriptions=tool_descriptions)
+    builder = PromptBuilder(
+        tool_descriptions=tool_descriptions,
+        enable_few_shot=True,
+        version=version
+    )
+    return builder.build()
 
 
 def build_messages(

@@ -173,7 +173,7 @@ def test_get_tool_schemas_with_read_page(mock_tree_structure):
 
 
 def test_build_messages_simple(agent):
-    """测试构建简单消息"""
+    """测试构建简单消息（使用 V2 默认版本）"""
     # 新版本：_build_messages 从 session_history 和 current_turn_history 读取
     agent.current_turn_history = [{"role": "user", "content": "测试查询"}]
     messages = agent._build_messages()
@@ -181,7 +181,8 @@ def test_build_messages_simple(agent):
     # system 消息 + current_turn_history 中的 user 消息
     assert len(messages) == 2  # system + user
     assert messages[0]["role"] == "system"
-    assert "PDF 文档分析助手" in messages[0]["content"]
+    # V2 版本使用"读书郎"人设
+    assert "读书郎" in messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "测试查询"
 
