@@ -1093,12 +1093,12 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 流式更新 - 实时显示纯文本
+	 * 流式更新 - 实时渲染 Markdown，但将链接显示为文本样式
 	 *
 	 * 优化策略：
-	 * 1. 【纯文本显示】流式时只显示纯文本，避免 Markdown 渲染闪烁
-	 * 2. 【节流更新】减少渲染频率，避免频繁的 DOM 操作
-	 * 3. 【结束渲染】流式结束后统一进行完整的 Markdown 渲染
+	 * 1. 【Markdown 渲染】流式时正常渲染 Markdown 格式
+	 * 2. 【链接文本化】将生成的链接用 CSS 禁用交互效果
+	 * 3. 【节流更新】减少渲染频率，避免频繁的 DOM 操作
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -1123,9 +1123,6 @@ export class AIMessage extends Message {
 			const contentChanged = normalizedNew !== normalizedOld;
 
 			// 动态节流策略
-			// < 500字: 100ms（降低，因为只是纯文本）
-			// > 500字: 200ms
-			// > 1500字: 400ms
 			let throttleThreshold = 100;
 			if (contentLen > 1500) throttleThreshold = 400;
 			else if (contentLen > 500) throttleThreshold = 200;
@@ -1133,16 +1130,35 @@ export class AIMessage extends Message {
 			// 决定是否需要渲染
 			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
 
-			if (shouldRender) {
-				// 【关键优化】流式输出时只显示纯文本，不渲染 Markdown
-				// 这样可以避免 Markdown 渲染导致的闪烁问题
-				// 流式结束后会统一进行完整的 Markdown 渲染
-				contentEl.textContent = cleanedContent;
+			if (shouldRender && this.app) {
+				// 渲染 Markdown（包括 wiki 链接）
+				const tempContainer = document.createElement('div');
 
-				// 更新跟踪变量
-				this.lastRenderedContent = cleanedContent;
-				this.lastRenderTime = Date.now();
-				this.lastRenderedLength = contentLen;
+				MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
+					if (!this.el) return;
+
+					// 渲染 Markdown 内容
+					contentEl.innerHTML = tempContainer.innerHTML;
+
+					// 【关键优化】流式时禁用内部链接的交互效果，避免闪烁
+					// 通过 CSS 让链接看起来像普通文本，但保留视觉样式
+					const links = contentEl.querySelectorAll('a');
+					links.forEach(link => {
+						const href = link.getAttribute('href');
+						// 只处理内部链接（wiki 链接）
+						if (href && (href.includes('#^page-') || href.startsWith('#'))) {
+							(link as HTMLElement).style.pointerEvents = 'none';
+							(link as HTMLElement).style.cursor = 'text';
+							// 保留颜色但移除下划线，让它在流式时不显得"可点击"
+							(link as HTMLElement).style.textDecoration = 'none';
+						}
+					});
+
+					// 更新跟踪变量
+					this.lastRenderedContent = cleanedContent;
+					this.lastRenderTime = Date.now();
+					this.lastRenderedLength = contentLen;
+				});
 			}
 
 			this.streamingAnimationFrame = null;
