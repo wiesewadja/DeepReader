@@ -158,7 +158,9 @@ class DeepPDFAgent:
 
         # 历史记录管理
         self.session_history: List[Dict[str, Any]] = []  # 会话级别的历史（多轮对话）
-        self.current_turn_history: List[Dict[str, Any]] = []  # 当前轮次的历史（工具调用等）
+        self.current_turn_history: List[Dict[str, Any]] = (
+            []
+        )  # 当前轮次的历史（工具调用等）
 
         logger.info(f"[Agent初始化] Provider={llm_provider}, Model={self.llm_model}")
 
@@ -373,7 +375,7 @@ class DeepPDFAgent:
         """
         思考标签功能已禁用。
         用户只需要看到执行状态提示（如"正在搜索..."），不需要看到思考过程。
-        
+
         Args:
             thought_state: 思考状态字典，包含 'state' 和 'has_content' 键
 
@@ -422,7 +424,9 @@ class DeepPDFAgent:
                 f"查询过长（{len(query)} 字符），请精简到 {max_length} 字符以内。"
             )
 
-    def run(self, query: str, force_mode: Optional[str] = None, keep_history: bool = True) -> str:
+    def run(
+        self, query: str, force_mode: Optional[str] = None, keep_history: bool = True
+    ) -> str:
         """
         运行 Agent 主循环 (非流式)
 
@@ -443,13 +447,9 @@ class DeepPDFAgent:
 
         # 清空当前轮次历史，准备新的推理
         self.current_turn_history.clear()
-        
+
         # 记录用户查询到当前轮次
         self.current_turn_history.append({"role": "user", "content": query})
-
-
-
-
 
         # 路由判断：根据强制模式或查询类型决定可用工具
         if force_mode is None:
@@ -507,7 +507,9 @@ class DeepPDFAgent:
                 # 保存会话历史（支持多轮对话）
                 if keep_history:
                     self.session_history.append({"role": "user", "content": query})
-                    self.session_history.append({"role": "assistant", "content": answer})
+                    self.session_history.append(
+                        {"role": "assistant", "content": answer}
+                    )
                     logger.info("💾 [会话历史] 已保存本轮对话")
 
                 # 清空当前轮次历史
@@ -592,7 +594,7 @@ class DeepPDFAgent:
         logger.info(f"📊 [查询长度] {len(query)} 字符")
         logger.info(f"💬 [保留历史] {keep_history}")
         logger.info(f"📚 [会话历史] 当前有 {len(self.session_history)} 条历史消息")
-        
+
         # 验证查询长度
         self._validate_query_length(query)
 
@@ -613,7 +615,7 @@ class DeepPDFAgent:
         logger.info("-" * 80)
         logger.info("🧭 [路由判断] 开始分析查询类型")
         logger.info("-" * 80)
-        
+
         # 路由判断：根据强制模式或查询类型决定可用工具
         if force_mode is None:
             # 自动路由
@@ -621,7 +623,7 @@ class DeepPDFAgent:
             allowed_tools = self._get_allowed_tools_for_route(route_type)
             logger.info(f"🔍 [自动路由] 查询类型: {route_type}")
             logger.info(f"🛠️  [可用工具] {allowed_tools or '全部工具'}")
-            
+
             # 详细说明路由原因
             if route_type == "fast":
                 logger.info("💡 [路由说明] 简单事实查询 → 使用 hybrid_search 快速检索")
@@ -647,7 +649,7 @@ class DeepPDFAgent:
         try:
             while iterations < self.max_iterations:
                 iterations += 1
-                
+
                 # ========== 🎯 阶段3: 迭代推理 ==========
                 logger.info("")
                 logger.info("=" * 80)
@@ -660,9 +662,11 @@ class DeepPDFAgent:
                 logger.info("   - System: 1 条")
                 logger.info(f"   - History: {len(messages) - 1} 条")
                 # 估算 token
-                total_chars = sum(len(str(m.get('content', ''))) for m in messages)
+                total_chars = sum(len(str(m.get("content", ""))) for m in messages)
                 total_tokens_estimate = total_chars // 3
-                logger.info(f"📊 [Token估算] 约 {total_tokens_estimate} tokens ({total_chars} 字符)")
+                logger.info(
+                    f"📊 [Token估算] 约 {total_tokens_estimate} tokens ({total_chars} 字符)"
+                )
 
                 # ========== 🎯 阶段4: LLM 调用 ==========
                 logger.info("")
@@ -670,13 +674,13 @@ class DeepPDFAgent:
                 logger.info(f"   - Temperature: {self.temperature}")
                 logger.info(f"   - Top-p: {self.top_p}")
                 logger.info(f"   - 工具限制: {allowed_tools or '无限制'}")
-                
+
                 # 发送进度提示
                 if iterations == 1:
                     yield "\n\n💭 *正在分析您的问题...*\n\n"
                 else:
                     yield "\n\n💭 *正在综合信息，准备回答...*\n\n"
-                
+
                 try:
                     stream: Stream[ChatCompletionChunk] = (
                         self.client.chat.completions.create(
@@ -696,7 +700,7 @@ class DeepPDFAgent:
 
                 # ========== 🎯 阶段5: 解析响应 ==========
                 logger.info("📥 [流式解析] 开始处理 LLM 响应流")
-                
+
                 # 收集流式响应
                 current_tool_calls: Dict[str, Dict[str, Any]] = {}
                 content_buffer: List[str] = []
@@ -716,7 +720,9 @@ class DeepPDFAgent:
                             # 如果这是第二轮之后的迭代，准备输出思考标签
                             if len(self.current_turn_history) > 1 and iterations > 1:
                                 thought_state["state"] = ThoughtState.PENDING
-                                logger.info("💭 [思考标签] 检测到迭代内容，准备添加 <thought> 标签")
+                                logger.info(
+                                    "💭 [思考标签] 检测到迭代内容，准备添加 <thought> 标签"
+                                )
 
                         # 如果状态是 PENDING，输出开启标签
                         yield from self._maybe_open_thought_tag(thought_state)
@@ -755,24 +761,28 @@ class DeepPDFAgent:
 
                 logger.info(f"📦 [流式完成] 接收了 {chunk_count} 个 chunk")
                 logger.info(f"📝 [内容长度] {len(''.join(content_buffer))} 字符")
-                
+
                 # ========== 🎯 阶段6: 工具调用处理 ==========
                 # 检查是否有工具调用
                 if current_tool_calls:
                     logger.info("")
                     logger.info("🔧 " + "=" * 78)
-                    logger.info(f"🔧 [工具调用] 检测到 {len(current_tool_calls)} 个工具调用")
+                    logger.info(
+                        f"🔧 [工具调用] 检测到 {len(current_tool_calls)} 个工具调用"
+                    )
                     logger.info("🔧 " + "=" * 78)
-                    
+
                     # 发送工具调用进度提示
-                    tool_names = [tc["function"]["name"] for tc in current_tool_calls.values()]
+                    tool_names = [
+                        tc["function"]["name"] for tc in current_tool_calls.values()
+                    ]
                     if "inspect_toc" in tool_names:
                         yield "\n\n🔍 *正在查看文档目录...*\n\n"
                     if "hybrid_search" in tool_names:
                         yield "\n\n🔎 *正在搜索相关内容...*\n\n"
                     if "read_page" in tool_names:
                         yield "\n\n📖 *正在读取指定页面...*\n\n"
-                    
+
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)
 
@@ -789,38 +799,40 @@ class DeepPDFAgent:
                     # 执行工具调用（并行执行以提升性能）
                     from concurrent.futures import ThreadPoolExecutor, as_completed
                     import time
-                    
+
                     # 准备工具调用任务
                     tool_tasks = []
-                    for idx, tool_call_data in enumerate(current_tool_calls.values(), 1):
+                    for idx, tool_call_data in enumerate(
+                        current_tool_calls.values(), 1
+                    ):
                         tool_name = tool_call_data["function"]["name"]
                         try:
                             args = json.loads(tool_call_data["function"]["arguments"])
                         except json.JSONDecodeError:
                             args = {}
-                        
-                        tool_tasks.append({
-                            "idx": idx,
-                            "tool_call_id": tool_call_data["id"],
-                            "tool_name": tool_name,
-                            "args": args
-                        })
-                    
+
+                        tool_tasks.append(
+                            {
+                                "idx": idx,
+                                "tool_call_id": tool_call_data["id"],
+                                "tool_name": tool_name,
+                                "args": args,
+                            }
+                        )
+
                     # 并行执行所有工具
                     total_start_time = time.time()
                     logger.info(f"⚡ [并行执行] 同时执行 {len(tool_tasks)} 个工具...")
-                    
+
                     with ThreadPoolExecutor(max_workers=3) as executor:
                         # 提交所有任务
                         future_to_task = {
                             executor.submit(
-                                self.executor.execute,
-                                task["tool_name"],
-                                **task["args"]
+                                self.executor.execute, task["tool_name"], **task["args"]
                             ): task
                             for task in tool_tasks
                         }
-                        
+
                         # 收集结果（按完成顺序）
                         for future in as_completed(future_to_task):
                             task = future_to_task[future]
@@ -828,45 +840,59 @@ class DeepPDFAgent:
                             tool_name = task["tool_name"]
                             args = task["args"]
                             tool_call_id = task["tool_call_id"]
-                            
+
                             try:
                                 output = future.result()
-                                
+
                                 logger.info("")
-                                logger.info(f"🛠️  [{idx}/{len(tool_tasks)}] 完成工具: {tool_name}")
-                                logger.info(f"   📋 参数: {json.dumps(args, ensure_ascii=False)}")
+                                logger.info(
+                                    f"🛠️  [{idx}/{len(tool_tasks)}] 完成工具: {tool_name}"
+                                )
+                                logger.info(
+                                    f"   📋 参数: {json.dumps(args, ensure_ascii=False)}"
+                                )
                                 logger.info(f"   📤 返回长度: {len(output)} 字符")
-                                logger.info(f"   📄 返回预览: {output[:200]}..." if len(output) > 200 else f"   📄 返回内容: {output}")
+                                logger.info(
+                                    f"   📄 返回预览: {output[:200]}..."
+                                    if len(output) > 200
+                                    else f"   📄 返回内容: {output}"
+                                )
 
                                 # 记录工具结果到历史
-                                self.current_turn_history.append({
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "content": output,
-                                })
+                                self.current_turn_history.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": output,
+                                    }
+                                )
 
                             except Exception as e:
                                 logger.error(f"❌ [工具执行错误] {tool_name}: {e}")
                                 # 即使出错也要记录结果
-                                self.current_turn_history.append({
-                                    "role": "tool",
-                                    "tool_call_id": tool_call_id,
-                                    "content": f"[ERROR] 工具执行失败: {str(e)}",
-                                })
-                    
+                                self.current_turn_history.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call_id,
+                                        "content": f"[ERROR] 工具执行失败: {str(e)}",
+                                    }
+                                )
+
                     total_execution_time = time.time() - total_start_time
-                    
+
                     logger.info("")
                     logger.info("✅ [工具执行] 所有工具调用已完成，准备下一轮迭代")
-                    logger.info(f"⚡ [并行执行] 总耗时: {total_execution_time:.2f} 秒（并行执行）")
-                    
+                    logger.info(
+                        f"⚡ [并行执行] 总耗时: {total_execution_time:.2f} 秒（并行执行）"
+                    )
+
                 else:
                     # ========== 🎯 阶段7: 最终答案 ==========
                     logger.info("")
                     logger.info("🎉 " + "=" * 78)
                     logger.info("🎉 [推理完成] LLM 返回最终答案（无工具调用）")
                     logger.info("🎉 " + "=" * 78)
-                    
+
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)
 
@@ -877,7 +903,7 @@ class DeepPDFAgent:
                             "content": content_text,
                         }
                     )
-                    
+
                     logger.info("📊 [最终统计]")
                     logger.info(f"   - 总迭代轮次: {iterations}")
                     logger.info(f"   - 最终回答长度: {len(content_text)} 字符")
@@ -893,9 +919,13 @@ class DeepPDFAgent:
                         # 保存用户查询
                         self.session_history.append({"role": "user", "content": query})
                         # 保存助手回答
-                        self.session_history.append({"role": "assistant", "content": content_text})
+                        self.session_history.append(
+                            {"role": "assistant", "content": content_text}
+                        )
                         logger.info("💾 [会话历史] 已保存本轮对话")
-                        logger.info(f"💾 [会话历史] 当前共有 {len(self.session_history)} 条消息")
+                        logger.info(
+                            f"💾 [会话历史] 当前共有 {len(self.session_history)} 条消息"
+                        )
 
                     # 清空当前轮次历史
                     self.current_turn_history.clear()
@@ -910,7 +940,7 @@ class DeepPDFAgent:
             logger.warning(f"   - 已执行轮次: {iterations}")
             logger.warning(f"   - 当前轮次历史消息数: {len(self.current_turn_history)}")
             logger.warning("")
-            
+
             messages = self._build_messages()
             stream = self.client.chat.completions.create(
                 model=self.llm_model,
@@ -925,12 +955,14 @@ class DeepPDFAgent:
                     content = chunk.choices[0].delta.content
                     final_content_buffer.append(content)
                     yield content
-            
+
             # 保存会话历史
             if keep_history:
                 final_answer = "".join(final_content_buffer)
                 self.session_history.append({"role": "user", "content": query})
-                self.session_history.append({"role": "assistant", "content": final_answer})
+                self.session_history.append(
+                    {"role": "assistant", "content": final_answer}
+                )
                 logger.info("💾 [会话历史] 已保存本轮对话 (最大迭代)")
         finally:
             # 确保思考标签闭合

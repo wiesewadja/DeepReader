@@ -360,7 +360,7 @@ class PromptBuilder:
         self,
         tool_descriptions: str = "",
         enable_few_shot: bool = True,
-        version: int = 2
+        version: int = 2,
     ):
         """
         初始化构建器
@@ -385,8 +385,7 @@ class PromptBuilder:
             # V2: 使用简化模板 + 核心规则
             core_rules = CORE_RULES
             prompt = SYSTEM_PROMPT_TEMPLATE_V2.format(
-                core_rules=core_rules,
-                tool_descriptions=self.tool_descriptions
+                core_rules=core_rules, tool_descriptions=self.tool_descriptions
             )
         else:
             # V1: 使用原始模板
@@ -565,9 +564,7 @@ def build_system_prompt(tool_descriptions: str, version: int = 2) -> str:
         完整的 System Prompt
     """
     builder = PromptBuilder(
-        tool_descriptions=tool_descriptions,
-        enable_few_shot=True,
-        version=version
+        tool_descriptions=tool_descriptions, enable_few_shot=True, version=version
     )
     return builder.build()
 
@@ -637,7 +634,9 @@ class OutputValidator:
     """LLM 输出验证器"""
 
     # 引用格式正则: [[章节名#^page-N]] 或 [[章节名#^page-N|别名]] 或 [[章节名#^page-N, 第X段]]
-    CITATION_PATTERN = re.compile(r"\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?(?:\|([^\]]+))?\]\]")
+    CITATION_PATTERN = re.compile(
+        r"\[\[([^\]]+?)#\^page-(\d+)(?:,\s*第(\d+)段)?(?:\|([^\]]+))?\]\]"
+    )
 
     # 思考标签正则
     THOUGHT_OPEN_PATTERN = re.compile(r"<thought>", re.IGNORECASE)
