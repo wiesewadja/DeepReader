@@ -1093,12 +1093,12 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 流式更新 - 实时显示思考内容和工具调用
+	 * 流式更新 - 实时显示内容
 	 *
 	 * 优化策略:
-	 * 1. 【双缓冲渲染】先在离屏 fragment 中渲染 Markdown，完成后再一次性替换 DOM，彻底消除 empty() 导致的白屏闪烁。
-	 * 2. 【状态行优先】状态行更新不通过 Markdown 渲染，直接操作 DOM，保证最高实时性。
-	 * 3. 【动态节流】随着文本变长，自动增加渲染间隔，防止长文卡死。
+	 * 1. 【增加节流】减少渲染频率，避免频繁的 DOM 操作
+	 * 2. 【CSS 过渡】使用 opacity 过渡来平滑内容切换
+	 * 3. 【智能跳过】如果内容几乎没变，跳过渲染
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -1109,97 +1109,61 @@ export class AIMessage extends Message {
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
 			const now = Date.now();
 
-			// 1. 优先解析和更新状态（极速）
+			// 1. 解析内容
 			const { cleanedContent, currentStatus } = parseAgentContent(newContent);
 
-			// 调试日志
-			if (currentStatus) {
-				console.log('[DeepPDF] streamingUpdate - 检测到状态:', currentStatus);
-			}
-
-			// 查找或创建状态行元素（必须在渲染 Markdown 之前处理，否则会被清空）
-			let statusEl = this.el?.querySelector('.deeppdf-message-status-text');
-			if (!statusEl && this.el) {
-				// 如果是第一次出现状态，可能需要插入
-				// 但通常它在 render() 初始化时已创建。如果被意外删除了，我们要找回来。
-				// 这里假设结构还在。
-				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-				if (headerRow) {
-					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-					console.log('[DeepPDF] 创建了状态元素');
-				}
-			}
-
-			if (statusEl) {
-				if (currentStatus) {
-					// 只有当状态真正改变时才操作 DOM
-					if (statusEl.textContent !== currentStatus) {
-						statusEl.textContent = currentStatus;
-						statusEl.addClass('visible');
-						console.log('[DeepPDF] 更新状态栏:', currentStatus);
-					}
-				} else {
-					if (statusEl.textContent !== '') {
-						statusEl.textContent = '';
-						statusEl.removeClass('visible');
-					}
-				}
-			}
-
 			// 检查内容是否真正变化
-			const contentChanged = cleanedContent !== this.lastRenderedContent;
-			const contentLen = newContent.length;
+			const contentLen = cleanedContent.length;
 			const contentGrowth = contentLen - this.lastRenderedLength;
 			const timePassed = now - this.lastRenderTime;
 
-			// 动态节流策略：内容越长，允许的渲染间隔越长，以维持帧率
-			// < 1000字: 100ms
-			// > 1000字: 300ms
-			// > 3000字: 600ms
-			let throttleThreshold = 100;
-			if (contentLen > 3000) throttleThreshold = 600;
-			else if (contentLen > 1000) throttleThreshold = 300;
+			// 检查内容是否实质性变化（忽略尾部空格差异）
+			const normalizedNew = cleanedContent.trim();
+			const normalizedOld = this.lastRenderedContent.trim();
+			const contentChanged = normalizedNew !== normalizedOld;
+
+			// 动态节流策略：大幅增加间隔以减少闪烁
+			// < 500字: 200ms
+			// > 500字: 400ms
+			// > 1500字: 800ms
+			let throttleThreshold = 200;
+			if (contentLen > 1500) throttleThreshold = 800;
+			else if (contentLen > 500) throttleThreshold = 400;
 
 			// 决定是否需要渲染
-			// 1. 内容必须有变化
-			// 2. 只有当 增长超过阈值(50字符) OR 时间超过阈值 时才渲染
-			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
+			// 1. 内容必须有实质性变化
+			// 2. 增长超过阈值(100字符) OR 时间超过阈值
+			const shouldRender = contentChanged && (contentGrowth > 100 || timePassed > throttleThreshold);
 
-			if (shouldRender) {
-				// 启用硬件加速
-				contentEl.style.transform = 'translateZ(0)';
+			if (shouldRender && this.app) {
+				// 添加 CSS 类来启用平滑过渡
+				contentEl.style.transition = 'opacity 0.15s ease';
+				contentEl.style.opacity = '0.7';
 
-				if (this.app) {
-					// 【双缓冲关键逻辑】
-					// 1. 创建临时的不可见容器
-					const tempContainer = document.createElement('div');
+				// 创建临时的不可见容器进行离屏渲染
+				const tempContainer = document.createElement('div');
 
-					// 2. 在离屏容器中进行昂贵的 Markdown 渲染
-					MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
-						// 3. 渲染完成后（Promise resolves），一次性替换内容
-						// 注意：此时可能已经有新的流式内容进来了，所以这里可能有微小的竞态，
-						// 但由于我们是基于 RAF 的单线程，且 render 是同步调用的（只是部分插件可能是异步），
-						// Obsidian 的 MarkdownRenderer.render 其实大部分是同步的，但返回 Promise。
+				// 在离屏容器中进行 Markdown 渲染
+				MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
+					// 安全检查
+					if (!this.el) return;
 
-						// 安全检查：如果在此期间组件被销毁了，不要操作
-						if (!this.el) return;
+					// 平滑过渡：先设置内容，然后恢复透明度
+					contentEl.innerHTML = tempContainer.innerHTML;
 
-						// 使用 replaceChildren (高性能) 或 innerHTML
-						contentEl.innerHTML = tempContainer.innerHTML;
-
-						// 更新跟踪变量
-						// 注意：我们只在真正渲染 DOM 后更新这些，这样如果渲染被跳过（节流），下次还会尝试
-						this.lastRenderedContent = cleanedContent;
-						this.lastRenderTime = Date.now();
-						this.lastRenderedLength = contentLen;
+					// 使用 requestAnimationFrame 确保 DOM 更新后才恢复透明度
+					requestAnimationFrame(() => {
+						contentEl.style.opacity = '1';
 					});
-				} else {
-					// 降级处理
-					contentEl.innerHTML = cleanedContent;
+
+					// 更新跟踪变量
 					this.lastRenderedContent = cleanedContent;
-					this.lastRenderTime = now;
+					this.lastRenderTime = Date.now();
 					this.lastRenderedLength = contentLen;
-				}
+				});
+			} else if (!contentChanged) {
+				// 内容没变，确保透明度正常
+				contentEl.style.opacity = '1';
 			}
 
 			this.streamingAnimationFrame = null;

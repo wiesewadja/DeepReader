@@ -822,12 +822,20 @@
 	backface-visibility: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	/* 添加平滑过渡 */
+	transition: opacity 0.15s ease-out;
+	/* 启用硬件加速 */
+	transform: translateZ(0);
+	/* 防止内容跳动 */
+	min-height: 1.5em;
 }
 
 /* 流式更新时的额外优化 */
 .deeppdf-message-streaming .deeppdf-message-content {
 	/* 强制合成层，减少重绘 */
-	will-change: contents;
+	will-change: opacity;
+	/* 保持内容稳定 */
+	contain: layout style;
 }
 
 /* User 消息是纯文本，需要保留换行格式 */
