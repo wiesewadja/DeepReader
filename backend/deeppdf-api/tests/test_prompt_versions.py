@@ -28,7 +28,7 @@ class TestPromptVersioning:
         # V2 应该包含核心规则，但不包含旧版本的说教式内容
         assert "核心约束" in prompt
         assert "格式规范" in prompt
-        assert "引用内化" in prompt  # 更新为"引用内化"
+        assert "引用要求（强制）" in prompt  # 更新关键词
         assert "全面性" in prompt  # 新增的全面性要求
         assert "表达风格" in prompt
         assert "格式禁令" not in prompt
