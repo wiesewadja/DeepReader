@@ -430,7 +430,7 @@ export class IndexManager extends Component {
         }
     }
 
-    private selectIndex(id: string): void {
+    public selectIndex(id: string): void {
         if (this.selectedIndexId === id) return;
         this.selectedIndexId = id;
         this.renderList(); // 重新渲染以更新状态

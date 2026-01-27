@@ -206,12 +206,25 @@ export function parseAgentContent(content: string): {
 		const callKey = `${toolName}:${args}`;
 		if (!seenToolCalls.has(callKey)) {
 			seenToolCalls.add(callKey);
+			// 判断状态：如果此时 args 不完整（流式传输中），或者还没有对应的结果输出，则认为是 pending
+			// 简单的判断：如果 args 里包含 ERROR 则是 error，否则默认 success
+			// 在流式传输中，我们往往只能看到调用开始，很难知道结束，除非有特定的 XML 标记闭合
+			// 假设只要出现了 tool call 文本，就是正在调用
 			toolCalls.push({
 				name: toolName,
 				args: args,
 				status: args.includes('ERROR') ? 'error' : 'success'
 			});
 		}
+	}
+
+	// 后备策略：如果正则没提取到状态，且正文内容还很短(处于工具执行阶段)，尝试推断状态
+	// 一旦正文内容变长，说明已经开始回答，不再显示工具状态
+	if (!currentStatus && toolCalls.length > 0 && processedContent.length < 20) {
+		const lastTool = toolCalls[toolCalls.length - 1];
+		if (lastTool.name === 'inspect_toc') currentStatus = '正在查看目录...';
+		else if (lastTool.name === 'read_page') currentStatus = '正在阅读页面...';
+		else if (lastTool.name === 'hybrid_search') currentStatus = '正在搜索内容...';
 	}
 
 	// 清理多余的连续空行

@@ -220,8 +220,8 @@ export class MessageList extends Component {
 	scrollToBottom(): void {
 		// 使用 requestAnimationFrame 确保 DOM 更新后再滚动
 		requestAnimationFrame(() => {
-			if (this.el) {
-				this.el.scrollTop = this.el.scrollHeight;
+			if (this.messagesContainer) {
+				this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
 			}
 		});
 	}

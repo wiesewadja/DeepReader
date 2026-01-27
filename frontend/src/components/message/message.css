@@ -108,6 +108,11 @@
 	white-space: normal;
 	/* Markdown 内容由 p 标签控制换行 */
 	color: var(--text-normal);
+	/* 【重要】确保文本可以被选中 */
+	user-select: text;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
 	/* 优化渲染性能，减少闪烁 */
 	backface-visibility: hidden;
 	-webkit-font-smoothing: antialiased;
@@ -126,6 +131,11 @@
 	will-change: opacity;
 	/* 保持内容稳定 */
 	contain: layout style;
+	/* 确保流式更新时文本也可以被选中 */
+	user-select: text;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
 }
 
 /* User 消息是纯文本，需要保留换行格式 */

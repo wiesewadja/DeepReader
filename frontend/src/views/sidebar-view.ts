@@ -100,22 +100,34 @@ export class SidebarView extends ItemView {
     }
 
     /** 恢复历史记录到视图 */
-    private restoreHistoryToView(history: any[]) {
+    private restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
 
-        history.forEach((msg, index) => {
-            // 跳过 system 消息
-            if (msg.role === 'system') return;
-
-            const msgId = `hist-${Date.now()}-${index}`;
-            this.messageList!.addMessage({
-                id: msgId,
-                role: msg.role as MessageRole,
-                content: msg.content,
-                timestamp: new Date().toISOString(),
-                isAgentMessage: msg.role === 'assistant'
+        if (fromCache) {
+            // 从缓存恢复，直接使用 MessageData
+            history.forEach(msgData => {
+                try {
+                    this.messageList!.addMessage(msgData);
+                } catch (e) {
+                    console.warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
+                }
             });
-        });
+        } else {
+            // 从后端恢复 (OpenAI 格式)
+            history.forEach((msg, index) => {
+                // 跳过 system 消息
+                if (msg.role === 'system') return;
+
+                const msgId = `hist-${Date.now()}-${index}`;
+                this.messageList!.addMessage({
+                    id: msgId,
+                    role: msg.role as MessageRole,
+                    content: msg.content,
+                    timestamp: new Date().toISOString(),
+                    isAgentMessage: msg.role === 'assistant'
+                });
+            });
+        }
     }
 
     /** 保存当前对话到本地缓存（带 LRU 清理） */
@@ -229,6 +241,8 @@ export class SidebarView extends ItemView {
         }
     }
 
+
+
     /**
      * 创建索引管理区 (折叠面板)
      */
@@ -236,6 +250,7 @@ export class SidebarView extends ItemView {
         this.indexManager = new IndexManager({
             app: this.app,
             onIndexChange: async (indexId: string) => {
+                console.log(`[DeepPDF] onIndexChange triggered: ${indexId}`);
                 this.currentIndexId = indexId;
                 // 保存到设置
                 this.plugin.settings.lastSelectedIndexId = indexId;
@@ -254,6 +269,7 @@ export class SidebarView extends ItemView {
                 // 尝试恢复会话
                 const savedSessions = this.plugin.settings.savedSessions || {};
                 const savedSessionId = savedSessions[indexId];
+                console.log(`[DeepPDF] Saved session ID for ${indexId}: ${savedSessionId}`);
 
                 if (savedSessionId) {
                     try {
@@ -264,21 +280,23 @@ export class SidebarView extends ItemView {
                         const cached = this.plugin.settings.chatCache?.[savedSessionId];
                         if (cached && cached.messages && cached.messages.length > 0) {
                             console.log(`[DeepPDF] 从本地缓存恢复: ${cached.messages.length} 条`);
-                            this.restoreHistoryToView(cached.messages);
+                            this.restoreHistoryToView(cached.messages, true); // true indicates from cache
                             new Notice(`已恢复对话 (本地缓存)`);
                             return;
                         }
 
                         // 2. 从后端恢复
+                        console.log('[DeepPDF] Local cache miss/empty, fetching from backend...');
                         const history = await agentAPI.getHistory(indexId, savedSessionId);
 
                         if (history && history.length > 0) {
                             console.log(`[DeepPDF] 恢复历史记录: ${history.length} 条`);
-                            this.restoreHistoryToView(history);
+                            this.restoreHistoryToView(history, false);
                             new Notice(`已恢复之前的对话记录`);
                         } else {
                             // 有 ID 但没历史（可能是后端文件没了），不显示欢迎语，直接当新会话
                             // 或者显示欢迎语
+                            console.log('[DeepPDF] No history found on backend.');
                             this.showWelcomeMessage();
                         }
                     } catch (e) {
@@ -286,6 +304,7 @@ export class SidebarView extends ItemView {
                         this.startNewSession(indexId);
                     }
                 } else {
+                    console.log('[DeepPDF] No saved session, starting new session.');
                     this.startNewSession(indexId);
                 }
             },
@@ -862,22 +881,25 @@ ${r.text}`;
                     const toolCallsChanged = currentToolCallsJSON !== lastToolCallsJSON;
 
                     // 构建更新对象 - 始终更新所有字段以确保实时显示
-                    // 当内容为空时，直接在内容区域显示状态提示
                     let displayContent = cleanedContent;
-                    if (!cleanedContent || cleanedContent.trim() === '') {
-                        // 如果有状态，显示状态；否则显示默认提示
-                        displayContent = currentStatus
-                            ? `**${currentStatus}**`
-                            : '🤔 正在思考...';
+
+                    // 回滚：在正文中显示默认状态，确保用户能看到反馈
+                    if ((!cleanedContent || cleanedContent.trim() === '') && !currentStatus) {
+                        displayContent = '🤔 正在思考...';
+                    } else if (!cleanedContent || cleanedContent.trim() === '') {
+                        // 如果有状态但没内容，这里可以选择显示状态或者留空
+                        // 为了确保可见性，我们可以让正文也显示状态
+                        // 或者保持之前的逻辑：Header 显示具体状态，正文留空
+                        displayContent = '';
                     }
 
                     const updates: any = {
                         content: displayContent,
                         isStreaming: true,
                         isAgentMessage: true,
-                        // 始终传递思考内容（即使没有变化也要传递，确保实时渲染）
+                        // 始终传递思考内容
                         agentThoughts: thoughts,
-                        // 始终传递工具调用（即使没有变化也要传递，确保实时渲染）
+                        // 始终传递工具调用
                         agentToolCalls: toolCalls,
                         // 传递当前状态（用于在 header 中显示）
                         currentStatus: currentStatus
@@ -1313,26 +1335,28 @@ ${r.text}`;
                 console.log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
             });
 
-            // 更新索引列表，保持当前选中状态 (如果还在列表中)
-            // 如果当前没有选中索引，尝试从设置恢复上次选中的索引
+            // 1. 设置索引列表 (不传递选中项)
+            this.indexManager.setIndexes(result.indexes);
+
+            // 2. 决定要选中的索引
             let indexToSelect = this.currentIndexId;
+
             if (!indexToSelect && this.plugin.settings.lastSelectedIndexId) {
-                // 检查上次选中的索引是否还在列表中
                 const exists = result.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
                 if (exists) {
                     indexToSelect = this.plugin.settings.lastSelectedIndexId;
-                    this.currentIndexId = indexToSelect;
-                    // 更新 PDF 名称
-                    const index = result.indexes.find(idx => idx.id === indexToSelect);
-                    if (index) {
-                        this.currentPdfName = index.pdf_name;
-                    }
-                    console.log(`[DeepPDF] [loadIndexes] 自动恢复上次选中的索引: ${indexToSelect}`);
                 }
             }
 
-            this.indexManager.setIndexes(result.indexes, indexToSelect || undefined);
-            console.log(`[DeepPDF] [loadIndexes] 已加载 ${result.indexes.length} 个索引，当前选中: ${indexToSelect || '无'}`);
+            if (!indexToSelect && result.indexes.length > 0) {
+                indexToSelect = result.indexes[0].id;
+            }
+
+            // 3. 显式选中，触发 onIndexChange -> 加载历史
+            if (indexToSelect) {
+                this.indexManager.selectIndex(indexToSelect);
+                console.log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
+            }
 
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();
