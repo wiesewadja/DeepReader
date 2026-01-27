@@ -208,14 +208,14 @@ class TestFunctionalAPI:
     """函数式 API 测试套件"""
 
     def test_build_system_prompt(self):
-        """测试: 构建 System Prompt"""
+        """测试: 构建 System Prompt（默认 V2 版本）"""
         from deeppdf.agent.prompts import build_system_prompt
 
         tool_desc = "### test_tool\n测试工具描述"
         prompt = build_system_prompt(tool_desc)
 
-        # 新版本的 prompt 文本是 "PDF 文档分析助手" 而不是 "PDF 阅读助手"
-        assert "PDF 文档分析助手" in prompt
+        # V2 版本使用"读书郎"人设
+        assert "读书郎" in prompt
         assert "test_tool" in prompt
         assert "测试工具描述" in prompt
 
