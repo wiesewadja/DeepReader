@@ -1093,12 +1093,12 @@ export class AIMessage extends Message {
 	}
 
 	/**
-	 * 流式更新 - 实时显示内容
+	 * 流式更新 - 实时显示纯文本
 	 *
-	 * 优化策略:
-	 * 1. 【增加节流】减少渲染频率，避免频繁的 DOM 操作
-	 * 2. 【CSS 过渡】使用 opacity 过渡来平滑内容切换
-	 * 3. 【智能跳过】如果内容几乎没变，跳过渲染
+	 * 优化策略：
+	 * 1. 【纯文本显示】流式时只显示纯文本，避免 Markdown 渲染闪烁
+	 * 2. 【节流更新】减少渲染频率，避免频繁的 DOM 操作
+	 * 3. 【结束渲染】流式结束后统一进行完整的 Markdown 渲染
 	 */
 	private streamingUpdateContent(contentEl: HTMLElement, newContent: string): void {
 		// 取消之前的动画帧
@@ -1122,48 +1122,27 @@ export class AIMessage extends Message {
 			const normalizedOld = this.lastRenderedContent.trim();
 			const contentChanged = normalizedNew !== normalizedOld;
 
-			// 动态节流策略：大幅增加间隔以减少闪烁
-			// < 500字: 200ms
-			// > 500字: 400ms
-			// > 1500字: 800ms
-			let throttleThreshold = 200;
-			if (contentLen > 1500) throttleThreshold = 800;
-			else if (contentLen > 500) throttleThreshold = 400;
+			// 动态节流策略
+			// < 500字: 100ms（降低，因为只是纯文本）
+			// > 500字: 200ms
+			// > 1500字: 400ms
+			let throttleThreshold = 100;
+			if (contentLen > 1500) throttleThreshold = 400;
+			else if (contentLen > 500) throttleThreshold = 200;
 
 			// 决定是否需要渲染
-			// 1. 内容必须有实质性变化
-			// 2. 增长超过阈值(100字符) OR 时间超过阈值
-			const shouldRender = contentChanged && (contentGrowth > 100 || timePassed > throttleThreshold);
+			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
 
-			if (shouldRender && this.app) {
-				// 添加 CSS 类来启用平滑过渡
-				contentEl.style.transition = 'opacity 0.15s ease';
-				contentEl.style.opacity = '0.7';
+			if (shouldRender) {
+				// 【关键优化】流式输出时只显示纯文本，不渲染 Markdown
+				// 这样可以避免 Markdown 渲染导致的闪烁问题
+				// 流式结束后会统一进行完整的 Markdown 渲染
+				contentEl.textContent = cleanedContent;
 
-				// 创建临时的不可见容器进行离屏渲染
-				const tempContainer = document.createElement('div');
-
-				// 在离屏容器中进行 Markdown 渲染
-				MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
-					// 安全检查
-					if (!this.el) return;
-
-					// 平滑过渡：先设置内容，然后恢复透明度
-					contentEl.innerHTML = tempContainer.innerHTML;
-
-					// 使用 requestAnimationFrame 确保 DOM 更新后才恢复透明度
-					requestAnimationFrame(() => {
-						contentEl.style.opacity = '1';
-					});
-
-					// 更新跟踪变量
-					this.lastRenderedContent = cleanedContent;
-					this.lastRenderTime = Date.now();
-					this.lastRenderedLength = contentLen;
-				});
-			} else if (!contentChanged) {
-				// 内容没变，确保透明度正常
-				contentEl.style.opacity = '1';
+				// 更新跟踪变量
+				this.lastRenderedContent = cleanedContent;
+				this.lastRenderTime = Date.now();
+				this.lastRenderedLength = contentLen;
 			}
 
 			this.streamingAnimationFrame = null;
