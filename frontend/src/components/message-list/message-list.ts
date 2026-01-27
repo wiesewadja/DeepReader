@@ -140,6 +140,11 @@ export class MessageList extends Component {
 
 		// 更新消息（citations 改变时会自动重新渲染并绑定回调）
 		message.update(updates);
+
+		// 如果正在流式更新，自动滚动到底部以显示最新内容
+		if (updates.isStreaming !== false) {
+			this.scrollToBottom();
+		}
 	}
 
 	/**
