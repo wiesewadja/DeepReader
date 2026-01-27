@@ -296,8 +296,15 @@ class HybridSearchTool:
                     citation = self.markdown_locator.generate_citation_metadata(
                         node_id=node_id, page_num=page_num, text=text
                     )
+                    # 【调试】记录生成的引用
+                    logger.info(f"[工具调用] node_id={node_id}, obsidian_link={citation.get('obsidian_link')}")
                     structured_results.append(citation)
                 else:
+                    # 【调试】记录为什么没有使用 markdown_locator
+                    if not self.markdown_locator:
+                        logger.warning(f"[工具调用] markdown_locator 未初始化，无法生成 obsidian_link")
+                    elif not node_id:
+                        logger.warning(f"[工具调用] 搜索结果缺少 node_id，metadata={metadata}")
                     # 回退到基本元数据
                     structured_results.append(
                         {

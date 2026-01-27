@@ -21,6 +21,16 @@ class MarkdownLocator:
         # 如果 pdf_name 为空字符串，使用默认值 "Unknown"
         self.pdf_name = pdf_name if pdf_name else "Unknown"
 
+        # 调试日志
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[MarkdownLocator] 初始化完成，包含 {len(self.markdown_files)} 个文件映射")
+        if len(self.markdown_files) > 0:
+            # 显示前3个映射作为示例
+            sample_items = list(self.markdown_files.items())[:3]
+            for node_id, md_path in sample_items:
+                logger.info(f"[MarkdownLocator]   {node_id} -> {md_path}")
+
     def find_file(self, node_id: str) -> Optional[str]:
         """
         查找 node_id 对应的 Markdown 文件路径
