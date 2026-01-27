@@ -14,22 +14,23 @@ class TestPromptBuilder:
     """PromptBuilder 测试套件"""
 
     def test_build_with_tool_descriptions(self):
-        """测试: 使用工具描述构建 prompt"""
+        """测试: 使用工具描述构建 prompt (V1 版本)"""
         builder = PromptBuilder(
             tool_descriptions="## 可用工具\n\n### inspect_toc\n查看目录",
             enable_few_shot=False,
+            version=1,  # 明确使用 V1 版本
         )
 
         prompt = builder.build()
 
-        # 新版本的 prompt 文本是 "PDF 文档分析助手" 而不是 "PDF 阅读助手"
+        # V1 版本的 prompt 文本是 "PDF 文档分析助手"
         assert "你是一个专业的 PDF 文档分析助手" in prompt
         assert "### inspect_toc\n查看目录" in prompt
         assert "示例对话" not in prompt  # Few-Shot 被禁用
 
     def test_build_with_few_shot(self):
-        """测试: 包含 Few-Shot 示例"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=True)
+        """测试: 包含 Few-Shot 示例 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=True, version=1)
 
         prompt = builder.build()
 
@@ -38,8 +39,8 @@ class TestPromptBuilder:
         assert "错误示例" in prompt
 
     def test_build_without_few_shot(self):
-        """测试: 不包含 Few-Shot 示例"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+        """测试: 不包含 Few-Shot 示例 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False, version=1)
 
         prompt = builder.build()
 
@@ -47,57 +48,59 @@ class TestPromptBuilder:
         assert "快速检索" in prompt  # 但保留核心内容
 
     def test_build_chat_message(self):
-        """测试: 构建聊天消息格式"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+        """测试: 构建聊天消息格式 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False, version=1)
 
         message = builder.build_chat_message()
 
         assert message["role"] == "system"
-        # 新版本的 prompt 文本是 "PDF 文档分析助手" 而不是 "PDF 阅读助手"
+        # V1 版本的 prompt 文本是 "PDF 文档分析助手"
         assert "你是一个专业的 PDF 文档分析助手" in message["content"]
 
     def test_from_tool_executor(self, mock_executor):
-        """测试: 从 ToolExecutor 创建 PromptBuilder"""
+        """测试: 从 ToolExecutor 创建 PromptBuilder (V1 版本)"""
         builder = PromptBuilder.from_tool_executor(
             executor=mock_executor, enable_few_shot=True
         )
+        # 设置版本为 1 以保持向后兼容测试
+        builder.version = 1
 
         prompt = builder.build()
 
-        # 新版本的 prompt 文本是 "PDF 文档分析助手" 而不是 "PDF 阅读助手"
+        # V1 版本的 prompt 文本是 "PDF 文档分析助手"
         assert "你是一个专业的 PDF 文档分析助手" in prompt
         assert "inspect_toc" in prompt  # 来自 mock_executor
 
     def test_prompt_includes_citation_format_instructions(self):
-        """测试: Prompt 包含引用格式指导"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+        """测试: Prompt 包含引用格式指导 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False, version=1)
 
         prompt = builder.build()
 
         # 验证包含引用格式要求
-        # 新版本的 prompt 文本使用了不同的表述
+        # V1 版本的 prompt 文本使用了不同的表述
         assert "引用格式" in prompt or "引用原则" in prompt
         assert "[[文件名.md#^page-N|显示文本]]" in prompt
 
     def test_prompt_includes_hybrid_search_usage(self):
-        """测试: Prompt 包含 hybrid_search 使用指导"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+        """测试: Prompt 包含 hybrid_search 使用指导 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False, version=1)
 
         prompt = builder.build()
 
         # 验证包含搜索结果使用指导
-        # 新版本的 prompt 中 hybrid_search 的说明在工具使用策略部分
+        # V1 版本的 prompt 中 hybrid_search 的说明在工具使用策略部分
         assert "hybrid_search" in prompt
         assert "快速检索" in prompt
 
     def test_prompt_includes_multiple_citation_example(self):
-        """测试: Prompt 包含多来源引用示例"""
-        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False)
+        """测试: Prompt 包含多来源引用示例 (V1 版本)"""
+        builder = PromptBuilder(tool_descriptions="", enable_few_shot=False, version=1)
 
         prompt = builder.build()
 
         # 验证包含引用示例
-        # 新版本的 prompt 中有引用示例，但格式可能不同
+        # V1 版本的 prompt 中有引用示例，但格式可能不同
         assert "[[chapter" in prompt or "[[analysis" in prompt
         assert "#^page-" in prompt
 
