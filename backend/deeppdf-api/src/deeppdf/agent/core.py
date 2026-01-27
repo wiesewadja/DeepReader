@@ -99,6 +99,7 @@ class DeepPDFAgent:
         storage_dir: str,
         tree_structure: Dict[str, Any],
         *,
+        index_metadata: Optional[Dict[str, Any]] = None,
         llm_provider: str = "deepseek",
         llm_model: Optional[str] = None,
         api_key: Optional[str] = None,
@@ -115,6 +116,7 @@ class DeepPDFAgent:
             index_id: PDF 索引 ID
             storage_dir: 存储目录路径
             tree_structure: 文档树状结构 (来自 index_metadata)
+            index_metadata: 完整的索引元数据（包含 markdown_files 映射）
             llm_provider: LLM 提供商 (deepseek, openai, anthropic)
             llm_model: 模型名称 (默认根据 provider 自动选择)
             api_key: API 密钥 (如果为 None，从环境变量读取)
@@ -127,6 +129,7 @@ class DeepPDFAgent:
         self.index_id = index_id
         self.storage_dir = storage_dir
         self.tree_structure = tree_structure
+        self.index_metadata = index_metadata or {}
         self.llm_provider = llm_provider
         self.llm_model = llm_model or self._get_default_model(llm_provider)
         # 使用 settings 中的默认值（如果未提供）
@@ -143,12 +146,20 @@ class DeepPDFAgent:
         # 初始化 LLM 客户端
         self.client = self._init_llm(api_key, base_url)
 
+        # 创建 MarkdownLocator（如果提供了 index_metadata）
+        markdown_locator = None
+        if index_metadata and index_metadata.get("markdown_files"):
+            from .markdown_locator import MarkdownLocator
+            markdown_locator = MarkdownLocator(index_metadata)
+            logger.info(f"[Agent初始化] MarkdownLocator 已创建，包含 {len(index_metadata.get('markdown_files', {}))} 个文件映射")
+
         # 初始化工具执行器
         self.executor: ToolExecutor = create_tool_executor(
             index_id=index_id,
             storage_dir=storage_dir,
             tree_structure=tree_structure,
             pageindex_lib_path=pageindex_lib_path,
+            markdown_locator=markdown_locator,
         )
 
         # 构建 System Prompt

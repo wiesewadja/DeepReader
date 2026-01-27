@@ -130,8 +130,11 @@ export async function exportIndexToMarkdown(
                 await app.vault.create(filePath, content);
             }
 
-            // 记录映射
-            fileMapping[node.node_id] = filePath;
+            // 记录映射：使用文件名（不含文件夹路径）作为 wiki 链接
+            // Obsidian wiki 链接格式：[[文件名]] 或 [[文件夹/文件名]]
+            // 这里我们使用相对路径（从 PDF 文件夹开始），方便跨文件夹引用
+            const relativePath = `${pdfFolderName}/${filename}`;
+            fileMapping[node.node_id] = relativePath;
             filesCreated++;
         }
 

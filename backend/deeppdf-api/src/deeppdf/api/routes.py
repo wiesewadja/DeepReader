@@ -955,6 +955,10 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     logger.info(f"🌳 [文档结构] 树状层级: {_count_tree_levels(tree_structure)} 层")
     logger.info(f"🌳 [文档结构] 章节数: {_count_tree_nodes(tree_structure)} 个")
 
+    # 检查 markdown_files 映射
+    markdown_files_count = len(metadata.get("markdown_files", {}))
+    logger.info(f"📄 [Markdown映射] 已保存 {markdown_files_count} 个文件映射")
+
     # 初始化 Agent
     logger.info("")
     logger.info("🤖 [初始化Agent] 准备创建 DeepPDFAgent 实例...")
@@ -962,7 +966,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
     logger.info(f"   🔧 Model: {settings.llm_model or '默认'}")
     logger.info(f"   🔧 Temperature: {settings.agent_temperature}")
     logger.info(f"   🔧 Max Iterations: {settings.agent_max_iterations}")
-    
+
     # 根据 provider 选择 API key
     api_key = None
     if settings.llm_provider == "deepseek":
@@ -975,6 +979,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
             index_id=index_id,
             storage_dir=str(settings.base_dir),
             tree_structure=tree_structure,
+            index_metadata=metadata,  # 传递完整的索引元数据（包含 markdown_files）
             llm_provider=settings.llm_provider,
             llm_model=settings.llm_model,
             api_key=api_key,
