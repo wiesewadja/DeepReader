@@ -371,33 +371,40 @@ class DeepPDFAgent:
         self, thought_state: Dict[str, Any]
     ) -> Generator[str, None, None]:
         """
-        在适当时机输出开启标签
-
+        思考标签功能已禁用。
+        用户只需要看到执行状态提示（如"正在搜索..."），不需要看到思考过程。
+        
         Args:
             thought_state: 思考状态字典，包含 'state' 和 'has_content' 键
 
         Yields:
-            "<thought>" 标签（如果需要开启）
+            无输出（功能已禁用）
         """
+        # 禁用思考标签输出 - 用户不需要看到思考过程
         if thought_state["state"] == ThoughtState.PENDING:
             thought_state["state"] = ThoughtState.OPENED
-            yield "<thought>"
+            # 不再 yield "<thought>" 标签
+        return
+        yield  # 保持生成器语义
 
     def _flush_thought_tag(
         self, thought_state: Dict[str, Any]
     ) -> Generator[str, None, None]:
         """
-        输出闭合标签（如果需要）
+        思考标签功能已禁用。
 
         Args:
             thought_state: 思考状态字典
 
         Yields:
-            "</thought>" 标签（如果需要闭合）
+            无输出（功能已禁用）
         """
+        # 禁用思考标签输出
         if thought_state["state"] == ThoughtState.OPENED:
             thought_state["state"] = ThoughtState.CLOSED
-            yield "</thought>"
+            # 不再 yield "</thought>" 标签
+        return
+        yield  # 保持生成器语义
 
     def _validate_query_length(self, query: str) -> None:
         """

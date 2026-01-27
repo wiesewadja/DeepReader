@@ -849,6 +849,11 @@ ${r.text}`;
                     // 解析 Agent 内容（提取思考过程、工具调用、状态等）
                     const { thoughts, toolCalls, cleanedContent, currentStatus } = parseAgentContent(fullContent);
 
+                    // 调试日志
+                    if (currentStatus) {
+                        console.log('[DeepPDF] handleAgentQuery - 检测到状态:', currentStatus);
+                    }
+
                     // 检查 Agent 元数据是否真正变化
                     const currentThoughtsJSON = JSON.stringify(thoughts);
                     const currentToolCallsJSON = JSON.stringify(toolCalls);
@@ -857,8 +862,17 @@ ${r.text}`;
                     const toolCallsChanged = currentToolCallsJSON !== lastToolCallsJSON;
 
                     // 构建更新对象 - 始终更新所有字段以确保实时显示
+                    // 当内容为空时，直接在内容区域显示状态提示
+                    let displayContent = cleanedContent;
+                    if (!cleanedContent || cleanedContent.trim() === '') {
+                        // 如果有状态，显示状态；否则显示默认提示
+                        displayContent = currentStatus
+                            ? `**${currentStatus}**`
+                            : '🤔 正在思考...';
+                    }
+
                     const updates: any = {
-                        content: cleanedContent || '🤔 正在思考...',
+                        content: displayContent,
                         isStreaming: true,
                         isAgentMessage: true,
                         // 始终传递思考内容（即使没有变化也要传递，确保实时渲染）

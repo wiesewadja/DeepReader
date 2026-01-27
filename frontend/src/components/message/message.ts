@@ -120,17 +120,25 @@ export function parseAgentContent(content: string): {
 	currentStatus?: string;
 } {
 	// 0. 提取并移除状态行
-	// 策略升级：使用更宽泛的 Emoji 匹配 + 关键词匹配，防止漏网
-	// 常见状态关键词
-	const statusKeywords = ['正在搜索', '正在分析', '正在综合', '正在查找', '正在阅读', 'Writing', 'Reading', 'Searching'];
+	// 后端发送的状态行格式示例：
+	// - 💭 *正在分析您的问题...*
+	// - 🔍 *正在查看文档目录...*
+	// - 🔎 *正在搜索相关内容...*
+	// - 📖 *正在读取指定页面...*
+	// 
+	// 策略：匹配以 Emoji 开头，后面可能有 Markdown 斜体标记 (*...*) 的短行
+	const statusKeywords = ['正在搜索', '正在分析', '正在综合', '正在查找', '正在阅读', '正在查看', '正在读取'];
 	const keywordPattern = statusKeywords.join('|');
 
 	// 匹配模式：
-	// 1. Emoji 开头 (包括各种变体，扩展 Surrogate Pairs 范围 D83C-D83E) + 可选文本
-	// 2. 关键词开头
-	// 限制长度在 100 字符以内，防止匹配整段正文
-	// 优化 Emoji 范围：覆盖 U+1F000 - U+1FAFF (D83C-D83E high surrogates)
-	const statusLineRegex = new RegExp(`^\\s*(?:[\\*\\-]\\s*)?(?:(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83E][\\uDC00-\\uDFFF])|(?:${keywordPattern}))\\s*.*$`, 'gm');
+	// 1. Emoji 开头 (包括各种变体) + 可选的 Markdown 斜体/粗体 + 状态关键词
+	// 覆盖 U+2300-U+27BF (杂项符号) 和 U+1F000-U+1FAFF (表情符号)
+	// 修复: Emoji 的 high surrogate 范围应该是 D83C-D83E (不是只到 D83E)
+	// 💭 = U+1F4AD = \uD83D\uDCAD (D83D 在范围内)
+	const statusLineRegex = new RegExp(
+		`^\\s*(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83E][\\uDC00-\\uDFFF])\\s*\\*?(?:${keywordPattern})[^\\n]*\\*?\\s*$`,
+		'gm'
+	);
 
 	let currentStatus: string | undefined;
 	let match;
@@ -138,67 +146,54 @@ export function parseAgentContent(content: string): {
 	// 找到最后一条状态
 	while ((match = statusLineRegex.exec(content)) !== null) {
 		const line = match[0].trim();
-		// 再次确认长度，避免误伤
-		if (line.length < 80) {
-			// 清理一下 Markdown 符号
-			currentStatus = line.replace(/^[\s*\-]*|[\s*]*$/g, '');
-		}
+		// 清理 Markdown 符号，只保留纯文本状态
+		currentStatus = line.replace(/^\s*|\*+|\s*$/g, '').trim();
+		console.log('[DeepPDF] 检测到状态行:', currentStatus);
 	}
 
-	// 从正文中移除所有符合状态行特征的行
-	let processedContent = content.replace(statusLineRegex, (match) => {
-		return match.length < 80 ? '' : match; // 只移除短行
-	});
+	// 从正文中移除所有状态行
+	let processedContent = content.replace(statusLineRegex, '');
 
-	// 1. 提取并合并思考过程
-	const thoughts: string[] = [];
+	// 1. 静默移除思考内容（不显示在最终回复中）
+	// 用户只需要看到执行状态提示，不需要看到思考过程
 
-	// 策略修正：优先匹配【闭合】的 thought 标签，只有在明确闭合时才提取。
-	// 防止未闭合标签吞噬整个正文。
-	// 如果确实存在未闭合的标签（流式传输最后），我们尽量只在它明显看起来像 thought 时才处理，
-	// 但为了安全，这里只匹配闭合标签。未闭合的让它留在正文里或者作为文本显示，总比吞噬正文好。
+	// 移除闭合的 thought 标签及其内容
 	const thoughtRegex = /<thought\b[^>]*>([\s\S]*?)<\/thought>/gi;
+	processedContent = processedContent.replace(thoughtRegex, '');
 
-	processedContent = processedContent.replace(thoughtRegex, (match, thoughtContent) => {
-		const trimmed = thoughtContent.trim();
-		if (trimmed) {
-			thoughts.push(trimmed);
-		}
-		return ''; // 从原位置移除
-	});
-
-	// 补救措施：检查是否有残留的未闭合 thought 标签
-	// 如果存在 <thought> 但没有 </thought>，且它在文本末尾附近（流式传输中），我们可以尝试提取
-	if (processedContent.includes('<thought')) {
-		const unclosedRegex = /<thought\b[^>]*>([\s\S]*)$/i;
-		const unclosedMatch = unclosedRegex.exec(processedContent);
-		if (unclosedMatch) {
-			// 只有当这个未闭合块看起来不像正文（比如没有 Markdown 标题）时才提取？
-			// 或者：在流式传输时，无论如何都提取，因为我们想要“实时”看到思考
-			// 风险：如果正文真的被包在里面了，那就遭了。
-			// 折中：不提取未闭合的。让它原样显示（浏览器可能会把它当作无效标签隐藏，或者作为文本）。
-			// 或者：我们可以在这里简单地移除 `<thought>` 标签本身，让内容作为正文显示，
-			// 这样至少不会被折叠隐藏。
-			processedContent = processedContent.replace(/<thought\b[^>]*>/gi, '\n> *[正在思考...]*\n');
-		}
-	}
-
-	// 如果提取到了思考内容，统一放在顶部的一个 details 块中
-	if (thoughts.length > 0) {
-		const combinedThoughts = thoughts.join('\n\n');
-		// 确保 combinedThoughts 内部没有未转义的 HTML 标签破坏结构
-		// 但我们需要 MarkdownRenderer 渲染它，所以不能 escapeHtml。
-		// 原生 Obsidian details 渲染通常是安全的。
-		const thoughtHtml = `\n<details class="deeppdf-thought"><summary>思考过程</summary>\n${combinedThoughts}\n</details>\n\n`;
-		processedContent = thoughtHtml + processedContent;
-	}
+	// 移除未闭合的 thought 标签（流式传输中可能出现）
+	// 移除 <thought...> 到文末的所有内容
+	processedContent = processedContent.replace(/<thought\b[^>]*>[\s\S]*$/i, '');
 
 	// 2. 移除 invoke 标签
 	processedContent = processedContent
 		.replace(/<invoke>/gi, '\n')
 		.replace(/<\/invoke>/gi, '\n');
 
-	// 3. 提取工具调用
+	// 3. 移除 tool_call 标签及其内容
+	processedContent = processedContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
+	processedContent = processedContent.replace(/<tool_call>[\s\S]*$/i, ''); // 未闭合的
+
+	// 4. 移除中间说明文字（LLM 在调用工具前后的冗余说明）
+	// 这些文字通常以特定模式开头，不应该显示给用户
+	const intermediatePatterns = [
+		/^.*让我[先再]*搜索.*[:：]?\s*$/gm,      // "让我搜索..."
+		/^.*让我[先再]*查看.*[:：]?\s*$/gm,      // "让我查看..."
+		/^.*让我[先再]*阅读.*[:：]?\s*$/gm,      // "让我阅读..."
+		/^.*让我[先再]*查找.*[:：]?\s*$/gm,      // "让我查找..."
+		/^.*现在让我.*[:：]?\s*$/gm,             // "现在让我..."
+		/^.*我来[帮]*您搜索.*[:：]?\s*$/gm,      // "我来帮您搜索..."
+		/^.*我来[帮]*您查看.*[:：]?\s*$/gm,      // "我来帮您查看..."
+		/^.*我先查看.*[:：]?\s*$/gm,             // "我先查看..."
+		/^根据目录.*让我.*$/gm,                  // "根据目录...让我..."
+		/^我将.*搜索.*[:：]?\s*$/gm,             // "我将搜索..."
+	];
+
+	for (const pattern of intermediatePatterns) {
+		processedContent = processedContent.replace(pattern, '');
+	}
+
+	// 5. 提取工具调用
 	const toolCalls: AgentToolCall[] = [];
 	const validToolNames = ['inspect_toc', 'read_page', 'hybrid_search'];
 	const toolCallRegex = new RegExp(`(${validToolNames.join('|')})\\s*\\(([^)]*)\\)`, 'gi');
@@ -1000,18 +995,29 @@ export class AIMessage extends Message {
 		const streamingEnded = wasStreaming && data.isStreaming === false;
 		const currentStatusChanged = data.currentStatus !== undefined && data.currentStatus !== oldCurrentStatus;
 
+		// 调试：输出关键变量
+		console.log('[DeepPDF] update() 调用:', {
+			hasEl: !!this.el,
+			dataCurrentStatus: data.currentStatus,
+			oldCurrentStatus: oldCurrentStatus,
+			currentStatusChanged: currentStatusChanged
+		});
+
 		// 优先处理状态更新（不受节流限制，立即更新）
 		if (currentStatusChanged && this.el) {
+			console.log('[DeepPDF] update() - 状态变化:', oldCurrentStatus, '->', data.currentStatus);
 			let statusEl = this.el.querySelector('.deeppdf-message-status-text');
 			if (!statusEl) {
 				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
 				if (headerRow) {
 					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+					console.log('[DeepPDF] update() - 创建状态元素');
 				}
 			}
 
 			if (statusEl) {
-				const newStatus = (this.data as any).currentStatus;
+				const newStatus = this.data.currentStatus;
+				console.log('[DeepPDF] update() - 设置状态:', newStatus);
 				if (newStatus) {
 					if (statusEl.textContent !== newStatus) {
 						statusEl.textContent = newStatus;
@@ -1106,6 +1112,11 @@ export class AIMessage extends Message {
 			// 1. 优先解析和更新状态（极速）
 			const { cleanedContent, currentStatus } = parseAgentContent(newContent);
 
+			// 调试日志
+			if (currentStatus) {
+				console.log('[DeepPDF] streamingUpdate - 检测到状态:', currentStatus);
+			}
+
 			// 查找或创建状态行元素（必须在渲染 Markdown 之前处理，否则会被清空）
 			let statusEl = this.el?.querySelector('.deeppdf-message-status-text');
 			if (!statusEl && this.el) {
@@ -1115,6 +1126,7 @@ export class AIMessage extends Message {
 				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
 				if (headerRow) {
 					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+					console.log('[DeepPDF] 创建了状态元素');
 				}
 			}
 
@@ -1124,6 +1136,7 @@ export class AIMessage extends Message {
 					if (statusEl.textContent !== currentStatus) {
 						statusEl.textContent = currentStatus;
 						statusEl.addClass('visible');
+						console.log('[DeepPDF] 更新状态栏:', currentStatus);
 					}
 				} else {
 					if (statusEl.textContent !== '') {
