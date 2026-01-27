@@ -254,6 +254,8 @@ export interface MessageData {
 	agentThoughts?: AgentThought[];
 	/** 可选：Agent 工具调用列表 */
 	agentToolCalls?: AgentToolCall[];
+	/** 可选：当前状态文本（如"正在搜索..."） */
+	currentStatus?: string;
 }
 
 
@@ -975,8 +977,8 @@ export class AIMessage extends Message {
 		const oldContent = this.data.content;
 		const oldCitations = this.data.citations;
 		const oldFollowUpQuestions = this.data.followUpQuestions;
-		// const oldAgentThoughts = this.data.agentThoughts; // 不再追踪思考变化，因为它们融合在 content 中
 		const oldAgentToolCalls = this.data.agentToolCalls;
+		const oldCurrentStatus = (this.data as any).currentStatus;
 		const wasStreaming = this.data.isStreaming;
 
 		Object.assign(this.data, data);
@@ -990,13 +992,39 @@ export class AIMessage extends Message {
 			data.followUpQuestions !== oldFollowUpQuestions &&
 			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
 		);
-		// agentThoughts 变化现在由 content 变化隐含处理（HTML 渲染）
 
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
 			data.agentToolCalls !== oldAgentToolCalls &&
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
+		const currentStatusChanged = data.currentStatus !== undefined && data.currentStatus !== oldCurrentStatus;
+
+		// 优先处理状态更新（不受节流限制，立即更新）
+		if (currentStatusChanged && this.el) {
+			let statusEl = this.el.querySelector('.deeppdf-message-status-text');
+			if (!statusEl) {
+				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
+				if (headerRow) {
+					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+				}
+			}
+
+			if (statusEl) {
+				const newStatus = (this.data as any).currentStatus;
+				if (newStatus) {
+					if (statusEl.textContent !== newStatus) {
+						statusEl.textContent = newStatus;
+						statusEl.addClass('visible');
+					}
+				} else {
+					if (statusEl.textContent !== '') {
+						statusEl.textContent = '';
+						statusEl.removeClass('visible');
+					}
+				}
+			}
+		}
 
 		// 如果只是内容变了，且DOM已存在，尝试局部更新
 		if (this.el &&

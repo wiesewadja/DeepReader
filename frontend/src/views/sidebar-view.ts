@@ -846,8 +846,8 @@ ${r.text}`;
 
                     fullContent += chunk;
 
-                    // 解析 Agent 内容（提取思考过程、工具调用等）
-                    const { thoughts, toolCalls, cleanedContent } = parseAgentContent(fullContent);
+                    // 解析 Agent 内容（提取思考过程、工具调用、状态等）
+                    const { thoughts, toolCalls, cleanedContent, currentStatus } = parseAgentContent(fullContent);
 
                     // 检查 Agent 元数据是否真正变化
                     const currentThoughtsJSON = JSON.stringify(thoughts);
@@ -864,7 +864,9 @@ ${r.text}`;
                         // 始终传递思考内容（即使没有变化也要传递，确保实时渲染）
                         agentThoughts: thoughts,
                         // 始终传递工具调用（即使没有变化也要传递，确保实时渲染）
-                        agentToolCalls: toolCalls
+                        agentToolCalls: toolCalls,
+                        // 传递当前状态（用于在 header 中显示）
+                        currentStatus: currentStatus
                     };
 
                     // 更新跟踪变量

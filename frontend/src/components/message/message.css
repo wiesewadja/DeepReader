@@ -716,6 +716,15 @@
 	border-radius: 2px;
 }
 
+/* Agent 消息头部行（包含 badge 和状态） */
+.deeppdf-message-header-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
 /* Agent 消息标识 */
 .deeppdf-message-agent-badge {
 	display: inline-flex;
@@ -735,4 +744,22 @@
 .deeppdf-message-agent-badge svg {
 	width: 12px;
 	height: 12px;
+}
+
+/* Agent 消息状态文本（右侧显示） */
+.deeppdf-message-status-text {
+	flex-shrink: 0;
+	font-size: 11px;
+	color: var(--text-muted);
+	opacity: 0;
+	transition: opacity 0.3s ease;
+	margin-left: auto;
+}
+
+.deeppdf-message-status-text.visible {
+	opacity: 1;
+}
+
+.deeppdf-message-status-text:empty {
+	display: none;
 }

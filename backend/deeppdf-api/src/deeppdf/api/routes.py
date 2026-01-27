@@ -1216,42 +1216,17 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                 logger.info("[Agent流式] 开始在线程中执行 Agent.run_stream")
                 chunk_count = 0
                 
-                # 批量缓冲参数
-                buffer = []
-                buffer_char_count = 0
-                last_send_time = time.time()
-                MIN_BUFFER_CHARS = 50  # 至少累积 50 字符
-                MAX_BUFFER_TIME = 0.2  # 最多缓冲 0.2 秒
+                # 移除批量缓冲逻辑，实现真正的实时流式传输
+                # 前端已经实现了双缓冲渲染（Double Buffering）来解决闪烁问题，
+                # 因此后端应该尽可能快地推送数据，而不是在此处因为缓冲而引入延迟。
+                # 特别是对于简短的状态行（如"正在搜索..."），必须立即发送，
+                # 否则会被缓冲卡住，直到下一个长文本块到来才发送，导致状态显示滞后。
 
                 for chunk in agent.run_stream(req.query, req.force_mode, req.keep_history):
                     chunk_count += 1
-                    buffer.append(chunk)
-                    buffer_char_count += len(chunk)
-                    
-                    current_time = time.time()
-                    time_since_last_send = current_time - last_send_time
-                    
-                    # 检查是否应该发送缓冲区
-                    should_send = (
-                        buffer_char_count >= MIN_BUFFER_CHARS or
-                        time_since_last_send >= MAX_BUFFER_TIME
-                    )
-                    
-                    if should_send:
-                        # 合并缓冲区并发送
-                        batched_chunk = "".join(buffer)
-                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", batched_chunk))
-                        
-                        # 重置缓冲区
-                        buffer = []
-                        buffer_char_count = 0
-                        last_send_time = current_time
+                    # 立即发送每一个 chunk
+                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
                 
-                # 发送剩余缓冲区
-                if buffer:
-                    batched_chunk = "".join(buffer)
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", batched_chunk))
-
                 # 执行完成，发送完成信号
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
                 logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个原始chunk")
