@@ -1356,6 +1356,71 @@ async def get_chat_history(index_id: str, session_id: str) -> List[Dict[str, Any
     except Exception as e:
         logger.error(f"[API] 获取聊天历史失败: {e}")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"获取聊天历史失败: {str(e)}"
+        )
+
+
+@router.get("/chat/sessions/{index_id}")
+async def list_sessions(index_id: str) -> Dict[str, Any]:
+    """列出指定索引的所有会话"""
+    try:
+        # 获取会话列表
+        sessions = chat_storage.list_sessions_with_info(index_id)
+
+        # 获取索引的 PDF 名称
+        from ..services.manager import list_indexes
+        indexes_result = await list_indexes(str(settings.base_dir))
+        pdf_name = "Unknown"
+        for idx in indexes_result.get("indexes", []):
+            if idx["id"] == index_id:
+                pdf_name = idx.get("pdf_name", "Unknown")
+                break
+
+        # 为每个会话添加 PDF 名称
+        for session in sessions:
+            session["pdfName"] = pdf_name
+
+        logger.info(f"[API] 列出会话: index_id={index_id}, count={len(sessions)}")
+        return {
+            "status": "success",
+            "sessions": sessions,
+        }
+    except Exception as e:
+        logger.error(f"[API] 列出会话失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"列出会话失败: {str(e)}",
+        )
+
+
+@router.delete("/chat/sessions/{index_id}/{session_id}")
+async def delete_session(index_id: str, session_id: str) -> Dict[str, Any]:
+    """删除指定会话"""
+    try:
+        # 删除会话文件
+        deleted = chat_storage.delete_session(index_id, session_id)
+
+        # 从 Agent 缓存中移除
+        session_key = f"{index_id}_{session_id}"
+        if session_key in _agent_sessions:
+            del _agent_sessions[session_key]
+            logger.info(f"[API] 从 Agent 缓存中移除: {session_key}")
+
+        if deleted:
+            logger.info(f"[API] 删除会话成功: index_id={index_id}, session_id={session_id}")
+            return {
+                "status": "success",
+                "message": "会话已删除",
+            }
+        else:
+            return {
+                "status": "success",
+                "message": "会话不存在",
+            }
+    except Exception as e:
+        logger.error(f"[API] 删除会话失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"删除会话失败: {str(e)}",
         )

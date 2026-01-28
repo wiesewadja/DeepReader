@@ -13,13 +13,13 @@ import { TaskProgress } from "../types/index.js";
 import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
-import { TopNav } from "../components/top-nav/top-nav.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { agentAPI } from "../api/index.js";
+import { ChatHistoryModal, ChatSession } from "../components/chat-history-modal/chat-history-modal.js";
 
 // ==================== 类型映射 ====================
 
@@ -53,10 +53,10 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 export class SidebarView extends ItemView {
     private apiClient: DeepPDFClient | null;
     private plugin: any; // 插件实例，用于访问设置
-    private topNav: TopNav | null = null;
     private indexManager: IndexManager | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
     private taskCards: Map<string, TaskProgressCard> = new Map();
+    private chatHistoryModal: ChatHistoryModal | null = null;
 
     // 对话界面组件
     private messageList: MessageList | null = null;
@@ -97,6 +97,107 @@ export class SidebarView extends ItemView {
             content: `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`,
             timestamp: new Date().toISOString()
         });
+    }
+
+    /** 处理新建会话 */
+    private handleNewChat() {
+        if (!this.currentIndexId) {
+            new Notice("请先选择一个索引");
+            return;
+        }
+        this.startNewSession(this.currentIndexId);
+    }
+
+    /** 处理显示历史 */
+    private async handleShowHistory() {
+        if (!this.currentIndexId) {
+            new Notice("请先选择一个索引");
+            return;
+        }
+
+        try {
+            // 获取会话列表
+            const result = await agentAPI.listSessions(this.currentIndexId);
+            if (result.status !== 'success') {
+                throw new Error('获取会话列表失败');
+            }
+
+            const sessions: ChatSession[] = result.sessions.map(s => ({
+                sessionId: s.sessionId,
+                indexId: s.indexId,
+                pdfName: s.pdfName || this.currentPdfName || 'Unknown',
+                messageCount: s.messageCount,
+                lastMessageTime: s.lastMessageTime,
+                createdTime: s.createdTime
+            }));
+
+            // 创建或更新模态框
+            if (!this.chatHistoryModal) {
+                this.chatHistoryModal = new ChatHistoryModal(this.app, {
+                    onSessionSelect: (sessionId, indexId) => {
+                        this.handleSessionSelect(sessionId, indexId);
+                    },
+                    onSessionDelete: async (sessionId, indexId) => {
+                        await this.handleSessionDelete(sessionId, indexId);
+                    }
+                });
+            }
+
+            this.chatHistoryModal.setSessions(sessions);
+            this.chatHistoryModal.open();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            new Notice(`获取历史失败: ${errorMessage}`);
+        }
+    }
+
+    /** 处理会话选择 */
+    private async handleSessionSelect(sessionId: string, indexId: string) {
+        try {
+            // 切换到选择的会话
+            this.sessionId = sessionId;
+
+            // 保存到设置
+            if (!this.plugin.settings.savedSessions) {
+                this.plugin.settings.savedSessions = {};
+            }
+            this.plugin.settings.savedSessions[indexId] = sessionId;
+            await this.plugin.saveSettings();
+
+            // 清空当前界面
+            this.messageList?.clear();
+
+            // 从后端恢复历史
+            const history = await agentAPI.getHistory(indexId, sessionId);
+            if (history && history.length > 0) {
+                this.restoreHistoryToView(history, false);
+                new Notice(`已加载会话记录`);
+            } else {
+                this.showWelcomeMessage();
+            }
+
+            // 关闭模态框
+            this.chatHistoryModal?.close();
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            new Notice(`加载会话失败: ${errorMessage}`);
+        }
+    }
+
+    /** 处理会话删除 */
+    private async handleSessionDelete(sessionId: string, indexId: string) {
+        try {
+            await agentAPI.deleteSession(indexId, sessionId);
+            console.log(`[DeepPDF] 已删除会话: ${sessionId}`);
+
+            // 如果删除的是当前会话，清空界面
+            if (this.sessionId === sessionId) {
+                this.messageList?.clear();
+                this.showWelcomeMessage();
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 
     /** 恢复历史记录到视图 */
@@ -212,36 +313,6 @@ export class SidebarView extends ItemView {
     getIcon() {
         return "lucide-book-open";
     }
-
-    /**
-     * 创建顶部导航区
-     */
-    /**
-     * 创建顶部导航区
-     */
-    private createTopNavigation(container: HTMLElement) {
-        // 创建 TopNav 组件 (极简风格)
-        this.topNav = new TopNav({
-            onSettings: () => {
-                // 打开 Obsidian 设置并定位到 DeepPDF 插件
-                const app = this.app as any;
-                if (app.setting) {
-                    app.setting.open();
-                    app.setting.openTabById('deeppdf');
-                }
-            },
-            onTitleClick: () => {
-                // 可以在这里显示关于信息或重置
-            }
-        });
-
-        const navEl = this.topNav.getElement();
-        if (navEl) {
-            container.appendChild(navEl);
-        }
-    }
-
-
 
     /**
      * 创建索引管理区 (折叠面板)
@@ -465,6 +536,12 @@ export class SidebarView extends ItemView {
             },
             onDeleteIndex: async (indexId: string) => {
                 await this.handleDeleteIndex(indexId);
+            },
+            onNewChat: () => {
+                this.handleNewChat();
+            },
+            onShowHistory: () => {
+                this.handleShowHistory();
             }
         });
 
@@ -1690,14 +1767,14 @@ ${structureInfo}
                 this.streamController = null;
             }
 
-            // 清理 TopNav
-            if (this.topNav) {
+            // 清理历史模态框
+            if (this.chatHistoryModal) {
                 try {
-                    this.topNav.destroy();
+                    this.chatHistoryModal.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying topNav:', e);
+                    console.warn('[DeepPDF] Error destroying chatHistoryModal:', e);
                 }
-                this.topNav = null;
+                this.chatHistoryModal = null;
             }
 
             // 清理消息列表

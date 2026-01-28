@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 # 全局线程池 - 使用配置中的 worker 数量
-cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
+# 注意：pageindex-lib 需要 asyncio 事件循环，在线程池中运行需要特殊处理
+cpu_executor = ThreadPoolExecutor(max_workers=1)  # 限制为 1 个 worker 以避免并发问题
 
 
 def _extract_nodes_from_tree(
@@ -300,9 +301,24 @@ def _parse_pdf_structure(
 
     try:
         logger.info("[PDF解析] 即将调用 page_index_main...")
-        tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
 
+        # 关键修复：在子线程中调用 page_index_main 时，需要确保没有残留的事件循环
+        # 我们使用 asyncio.run() 在一个全新的事件循环中运行，避免与主线程的事件循环冲突
+        # 注意：page_index_main 本身不是异步函数，但它内部会创建并运行异步代码
+
+        # 首先检查当前线程是否有遗留的事件循环
+        try:
+            existing_loop = asyncio.get_running_loop()
+            logger.warning(f"[PDF解析] 检测到运行中的事件循环: {existing_loop}")
+            logger.warning("[PDF解析] 这可能导致问题，尝试继续...")
+        except RuntimeError:
+            logger.debug("[PDF解析] 当前没有运行中的事件循环（符合预期）")
+
+        # 直接调用 page_index_main
+        # 它会使用 asyncio.run() 在新的事件循环中运行 page_index_builder
+        tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
         logger.info("[PDF解析] page_index_main 返回")
+
     except Exception as e:
         logger.error(f"[PDF解析] 失败: {type(e).__name__}: {str(e)}")
         logger.error(f"[PDF解析] 耗时: {time.time() - parse_start:.2f} 秒")
@@ -567,7 +583,7 @@ def _index_pdf_sync(
         logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config["if_add_node_summary"]:
             logger.info(
-                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
+                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']}"
             )
 
         tree_result, parse_time = _parse_pdf_structure(

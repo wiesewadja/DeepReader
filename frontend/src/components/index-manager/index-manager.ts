@@ -41,6 +41,8 @@ export interface IndexManagerOptions {
     onCreateIndex?: () => void;
     onExportMarkdown?: (indexId: string) => void;
     onDeleteIndex?: (indexId: string) => void;
+    onNewChat?: () => void;
+    onShowHistory?: () => void;
 }
 
 export class IndexManager extends Component {
@@ -56,13 +58,27 @@ export class IndexManager extends Component {
     private toggleIcon: HTMLElement | null = null;
     private currentPdfEl: HTMLElement | null = null;
     private statusDot: HTMLElement | null = null;
+    private dropdownMenu: HTMLElement | null = null;
+    private isDropdownOpen: boolean = false;
 
     constructor(options: IndexManagerOptions) {
         super();
         this.options = options;
         this.app = options.app;
         this.el = this.render();
+
+        // 全局点击监听器，用于关闭下拉菜单
+        this.handleGlobalClick = (e: MouseEvent) => {
+            if (this.isDropdownOpen && this.dropdownMenu && this.headerEl) {
+                if (!this.headerEl.contains(e.target as Node)) {
+                    this.closeDropdown();
+                }
+            }
+        };
+        document.addEventListener('click', this.handleGlobalClick);
     }
+
+    private handleGlobalClick: (e: MouseEvent) => void;
 
     render(): HTMLElement {
         const container = document.createElement('div');
@@ -105,13 +121,39 @@ export class IndexManager extends Component {
         leftSection.appendChild(this.toggleIcon);
         leftSection.appendChild(titleWrapper);
 
-        // 右侧：New Index 按钮
-        const createBtn = document.createElement('button');
-        createBtn.className = 'deeppdf-btn deeppdf-btn-sm deeppdf-btn-primary deeppdf-index-create-btn';
-        createBtn.innerHTML = `${Icons.plus} 添加文档`;
-        createBtn.addEventListener('click', (e) => {
+        // 右侧：操作下拉菜单按钮
+        const actionBtn = document.createElement('button');
+        actionBtn.className = 'deeppdf-btn deeppdf-btn-sm deeppdf-btn-primary deeppdf-index-action-btn';
+        actionBtn.innerHTML = `${Icons.plus} 操作`;
+        actionBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.options.onCreateIndex?.();
+            this.toggleDropdown();
+        });
+
+        // 创建下拉菜单
+        this.dropdownMenu = document.createElement('div');
+        this.dropdownMenu.className = 'deeppdf-dropdown-menu';
+        this.dropdownMenu.style.display = 'none';
+
+        // 菜单项
+        const menuItems = [
+            { icon: Icons.plus, label: '添加文档', action: () => this.options.onCreateIndex?.() },
+            { icon: Icons.messageSquare, label: '新增对话', action: () => this.options.onNewChat?.() },
+            { icon: Icons.history, label: '查看历史', action: () => this.options.onShowHistory?.() }
+        ];
+
+        menuItems.forEach(item => {
+            const menuItem = document.createElement('div');
+            menuItem.className = 'deeppdf-dropdown-item';
+            menuItem.innerHTML = `${item.icon} ${item.label}`;
+            menuItem.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.closeDropdown();
+                item.action();
+            });
+            if (this.dropdownMenu) {
+                this.dropdownMenu.appendChild(menuItem);
+            }
         });
 
         // 中央：当前 PDF 名称（绝对定位居中）
@@ -121,7 +163,8 @@ export class IndexManager extends Component {
 
         this.headerEl.appendChild(leftSection);
         this.headerEl.appendChild(this.currentPdfEl);
-        this.headerEl.appendChild(createBtn);
+        this.headerEl.appendChild(actionBtn);
+        this.headerEl.appendChild(this.dropdownMenu);
 
         // 2. Content (Collapsible)
         this.contentEl = document.createElement('div');
@@ -152,6 +195,26 @@ export class IndexManager extends Component {
                 this.contentEl.classList.remove('visible');
                 this.toggleIcon.style.transform = 'rotate(0deg)';
             }
+        }
+    }
+
+    private toggleDropdown(): void {
+        this.isDropdownOpen = !this.isDropdownOpen;
+        if (this.dropdownMenu) {
+            this.dropdownMenu.style.display = this.isDropdownOpen ? 'block' : 'none';
+            if (this.isDropdownOpen) {
+                this.dropdownMenu.classList.add('open');
+            } else {
+                this.dropdownMenu.classList.remove('open');
+            }
+        }
+    }
+
+    private closeDropdown(): void {
+        this.isDropdownOpen = false;
+        if (this.dropdownMenu) {
+            this.dropdownMenu.style.display = 'none';
+            this.dropdownMenu.classList.remove('open');
         }
     }
 
@@ -436,5 +499,13 @@ export class IndexManager extends Component {
         this.renderList(); // 重新渲染以更新状态
         this.updateCurrentPdfIndicator(); // 更新当前 PDF 指示器
         this.options.onIndexChange?.(id);
+    }
+
+    destroy(): void {
+        // 移除全局点击监听器
+        if (this.handleGlobalClick) {
+            document.removeEventListener('click', this.handleGlobalClick);
+        }
+        super.destroy();
     }
 }

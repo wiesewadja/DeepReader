@@ -836,6 +836,22 @@ export class DeepPDFClient {
 
     return controller;
   }
+
+  /**
+   * 列出指定索引的所有会话
+   */
+  async listSessions(indexId: string): Promise<{ status: string; sessions: any[] }> {
+    return this.request<{ status: string; sessions: any[] }>(`/api/chat/sessions/${indexId}`);
+  }
+
+  /**
+   * 删除指定会话
+   */
+  async deleteSession(indexId: string, sessionId: string): Promise<{ status: string; message: string }> {
+    return this.request<{ status: string; message: string }>(`/api/chat/sessions/${indexId}/${sessionId}`, {
+      method: 'DELETE'
+    });
+  }
 }
 
 // ==================== 默认实例 ====================

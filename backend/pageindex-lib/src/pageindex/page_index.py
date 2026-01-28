@@ -2033,12 +2033,11 @@ def page_index_main(doc, opt=None, llm_client=None):
         logging.debug("[DEBUG] Checking for running loop...")
         loop = asyncio.get_running_loop()
         logging.debug(f"[DEBUG] Found running loop: {loop}")
-        # 如果已有事件循环，使用 run_until_complete
-        import nest_asyncio
-        nest_asyncio.apply()
-        logging.debug("[DEBUG] About to run_until_complete")
-        result = loop.run_until_complete(page_index_builder())
-        logging.debug("[DEBUG] run_until_complete returned")
+        # 如果已有事件循环，直接使用 asyncio.run() 创建新的事件循环
+        # 注意：这会创建一个新的事件循环，不会与现有循环冲突
+        logging.debug("[DEBUG] Using asyncio.run() with existing loop present")
+        result = asyncio.run(page_index_builder())
+        logging.debug("[DEBUG] asyncio.run returned")
     except RuntimeError:
         # 没有运行中的事件循环，使用 asyncio.run()
         logging.debug("[DEBUG] No running loop, using asyncio.run()")

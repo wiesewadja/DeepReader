@@ -213,7 +213,19 @@ export const agentAPI = {
    * 获取会话历史
    */
   getHistory: (indexId: string, sessionId: string) =>
-    deeppdfClient.getChatHistory(indexId, sessionId)
+    deeppdfClient.getChatHistory(indexId, sessionId),
+
+  /**
+   * 列出指定索引的所有会话
+   */
+  listSessions: (indexId: string) =>
+    deeppdfClient.listSessions(indexId),
+
+  /**
+   * 删除指定会话
+   */
+  deleteSession: (indexId: string, sessionId: string) =>
+    deeppdfClient.deleteSession(indexId, sessionId)
 };
 
 /**

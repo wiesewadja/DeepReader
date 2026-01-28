@@ -818,6 +818,11 @@
 	white-space: normal;
 	/* Markdown 内容由 p 标签控制换行 */
 	color: var(--text-normal);
+	/* 【重要】确保文本可以被选中 */
+	user-select: text;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
 	/* 优化渲染性能，减少闪烁 */
 	backface-visibility: hidden;
 	-webkit-font-smoothing: antialiased;
@@ -836,6 +841,11 @@
 	will-change: opacity;
 	/* 保持内容稳定 */
 	contain: layout style;
+	/* 确保流式更新时文本也可以被选中 */
+	user-select: text;
+	-webkit-user-select: text;
+	-moz-user-select: text;
+	-ms-user-select: text;
 }
 
 /* User 消息是纯文本，需要保留换行格式 */
@@ -2735,6 +2745,61 @@
     width: 12px;
     height: 12px;
 }
+/* ==================== 下拉菜单样式 ==================== */
+.deeppdf-index-action-btn {
+    position: relative;
+}
+
+.deeppdf-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    min-width: 150px;
+    z-index: 1000;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: all 0.2s ease;
+    pointer-events: none;
+}
+
+.deeppdf-dropdown-menu.open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.deeppdf-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    user-select: none;
+}
+
+.deeppdf-dropdown-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-dropdown-item svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.deeppdf-dropdown-item:first-child {
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
 /**
  * 追问问题卡片组件样式
  */
