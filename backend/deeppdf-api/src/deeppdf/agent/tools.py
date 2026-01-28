@@ -447,5 +447,122 @@ class LLMTreeSearchTool:
         if not search_results:
             return json.dumps([], ensure_ascii=False)
 
-        # 临时返回 hybrid_result（阶段 2 尚未实现）
-        return hybrid_result
+        # ===== 阶段 2: 精排 =====
+        # 构建候选子树
+        candidate_tree = self._build_candidate_tree(search_results)
+        node_count = self._count_nodes(candidate_tree)
+
+        logger.info(f"[LLM_TREE_SEARCH][STAGE2] 候选子树: {node_count} 个节点")
+
+        # 选择 LLM 模型
+        model_name = self._select_model(node_count)
+        logger.info(f"[LLM_TREE_SEARCH][STAGE2] 使用模型: {model_name}")
+
+        # 构建 Prompt
+        from deeppdf.agent.prompt_builder import PromptBuilder
+
+        prompt_builder = PromptBuilder()
+        prompt = prompt_builder.build(query, candidate_tree)
+
+        # 调用 LLM
+        try:
+            llm_response = self._llm_client.chat(prompt)
+            logger.info("[LLM_TREE_SEARCH][STAGE2] LLM 响应成功")
+        except Exception as e:
+            logger.warning(
+                f"[LLM_TREE_SEARCH][FALLBACK] LLM 调用失败，回退到 hybrid_search: {e}"
+            )
+            self._save_to_cache(query, hybrid_result)
+            return hybrid_result
+
+        # 解析 LLM 响应
+        try:
+            llm_data = self._extract_json(llm_response)
+            node_list = llm_data.get("node_list", [])
+        except Exception as e:
+            logger.warning(
+                f"[LLM_TREE_SEARCH][FALLBACK] JSON 解析失败，回退到 hybrid_search: {e}"
+            )
+            self._save_to_cache(query, hybrid_result)
+            return hybrid_result
+
+        if not node_list:
+            logger.warning(
+                "[LLM_TREE_SEARCH][FALLBACK] 空结果，使用 hybrid_search 原始结果"
+            )
+            self._save_to_cache(query, hybrid_result)
+            return hybrid_result
+
+        # 生成最终结果
+        final_results = self._generate_results(node_list)
+        result_json = json.dumps(final_results, ensure_ascii=False)
+
+        # 缓存并返回
+        self._save_to_cache(query, result_json)
+        logger.info(f"[LLM_TREE_SEARCH][RESULT] 返回 {len(final_results)} 个节点")
+
+        return result_json
+
+    def _build_candidate_tree(self, search_results: list) -> Dict[str, Any]:
+        """从搜索结果构建候选子树"""
+        tree_nodes = []
+        for result in search_results:
+            metadata = result.get("metadata", {})
+            node_id = metadata.get("node_id")
+            if node_id and node_id in self._node_map:
+                node = self._node_map[node_id].copy()
+                tree_nodes.append(
+                    {
+                        "title": node.get("title", ""),
+                        "node_id": node_id,
+                        "summary": node.get("summary", ""),
+                        "prefix_summary": node.get("prefix_summary", ""),
+                        "start_index": node.get("start_index"),
+                    }
+                )
+        return {"structure": tree_nodes}
+
+    def _count_nodes(self, tree: Dict[str, Any]) -> int:
+        """统计树节点数量"""
+
+        def count(node):
+            total = 1
+            for child in node.get("nodes", []):
+                total += count(child)
+            return total
+
+        return sum(count(node) for node in tree.get("structure", []))
+
+    def _select_model(self, node_count: int) -> str:
+        """根据节点数量选择 LLM 模型"""
+        return "lightweight" if node_count <= 10 else "reasoning"
+
+    def _extract_json(self, response: str) -> Dict[str, Any]:
+        """从 LLM 响应中提取 JSON"""
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            if "```json" in response:
+                start = response.find("```json") + 7
+                end = response.rfind("```")
+                if end > start:
+                    return json.loads(response[start:end].strip())
+            raise
+
+    def _generate_results(self, node_list: list) -> list:
+        """根据 node_list 生成最终结果"""
+        results = []
+        for node_id in node_list:
+            if node_id not in self._node_map:
+                logger.warning(
+                    f"[LLM_TREE_SEARCH][RESULT] node_id {node_id} 不在 node_map 中"
+                )
+                continue
+            node = self._node_map[node_id]
+            citation = self._markdown_locator.generate_citation_metadata(
+                node_id=node_id,
+                page_num=node.get("start_index"),
+                text=node.get("text", "")[:500],
+            )
+            results.append(citation)
+        return results

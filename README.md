@@ -312,6 +312,47 @@
   app.plugins.plugins['deeppdf']
 
   ---
+
+  Agent 工具对比
+
+  DeepPDF Agent 提供多种检索工具，针对不同场景优化：
+
+  | 工具 | 适用场景 | 特点 |
+  |------|----------|------|
+  | `hybrid_search` | 特定内容定位、关键词查找、向量相似度匹配 | 快速、低成本，适合简单事实查询 |
+  | `llm_tree_search` | 跨章节推理、模糊问题、需要理解文档逻辑 | 深度理解、两阶段检索，适合复杂分析 |
+
+  启用 LLM 树搜索
+
+  默认情况下，Agent 使用快速路由（仅 `hybrid_search`）。要启用 LLM 树搜索：
+
+  **后端 API 调用**
+  ```python
+  # 在请求体中设置 enable_llm_tree_search=True
+  POST /api/agent/query
+  {
+      "index_id": "your_index_id",
+      "query": "你的问题",
+      "enable_llm_tree_search": true
+  }
+  ```
+
+  **工作原理**
+  - 阶段 1：粗筛（HybridSearchTool，Top-20）
+  - 阶段 2：精排（LLM 推理）
+  - 缓存机制：相同查询直接返回缓存结果
+  - 降级策略：LLM 失败时自动回退到 hybrid_search
+
+  **日志标识**
+  - `[LLM_TREE_SEARCH][CACHE]` - 缓存命中/未命中
+  - `[LLM_TREE_SEARCH][STAGE1]` - 粗筛阶段
+  - `[LLM_TREE_SEARCH][STAGE2]` - 精排阶段
+  - `[LLM_TREE_SEARCH][FALLBACK]` - 降级/回退
+  - `[LLM_TREE_SEARCH][RESULT]` - 最终结果
+
+  详细文档请参考：[LLM 树搜索指南](docs/llm-tree-search-guide.md)
+
+  ---
   相关文档
 
   详细的架构和开发文档请查看 docs/ 目录。核心参考：
@@ -320,7 +361,8 @@
   - 架构设计：docs/设计/架构设计.md
   - 后端开发：docs/开发/后端开发.md
   - 前端开发：docs/开发/前端开发.md
+  - LLM 树搜索：docs/llm-tree-search-guide.md
 
   ---
   版本: v1.0.0
-  最后更新: 2026-01-17
+  最后更新: 2026-01-28

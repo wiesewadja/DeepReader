@@ -61,6 +61,9 @@ line-length = 100
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: 标记集成测试（端到端测试完整流程）",
+]
 
 [dependency-groups]
 dev = [

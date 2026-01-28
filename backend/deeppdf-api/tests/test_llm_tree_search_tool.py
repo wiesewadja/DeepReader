@@ -190,3 +190,108 @@ def test_stage1_hybrid_search_called():
 
     # 验证返回结果是 HybridSearchTool 的结果
     assert result == mock_hybrid_result
+
+
+def test_stage2_llm_called():
+    """测试: 阶段 2 精排时 LLM 被正确调用，且返回格式正确"""
+    import json
+
+    mock_hybrid_search = Mock()
+    mock_markdown_locator = Mock()
+    node_map = {
+        "node_1": {
+            "title": "第一章",
+            "start_index": 1,
+            "end_index": 10,
+            "summary": "第一章摘要",
+            "prefix_summary": "前文摘要",
+            "text": "第一章内容"
+        },
+        "node_2": {
+            "title": "第二章",
+            "start_index": 11,
+            "end_index": 20,
+            "summary": "第二章摘要",
+            "prefix_summary": "第一章摘要",
+            "text": "第二章内容"
+        },
+    }
+    mock_llm_client = Mock()
+
+    # 模拟 HybridSearchTool 的返回结果（包含 metadata）
+    mock_hybrid_result = json.dumps(
+        [
+            {
+                "node_id": "node_1",
+                "obsidian_link": "[[test.md#^page-5]]",
+                "page": 5,
+                "anchor": "^page-5",
+                "text": "测试内容1",
+                "metadata": {"node_id": "node_1", "page": 5},
+            },
+            {
+                "node_id": "node_2",
+                "obsidian_link": "[[test.md#^page-15]]",
+                "page": 15,
+                "anchor": "^page-15",
+                "text": "测试内容2",
+                "metadata": {"node_id": "node_2", "page": 15},
+            },
+        ],
+        ensure_ascii=False,
+    )
+    mock_hybrid_search.return_value = mock_hybrid_result
+
+    # 模拟 LLM 响应
+    mock_llm_response = json.dumps(
+        {"node_list": ["node_1", "node_2"]},
+        ensure_ascii=False
+    )
+    mock_llm_client.chat.return_value = mock_llm_response
+
+    # 模拟 MarkdownLocator 的 generate_citation_metadata
+    mock_markdown_locator.generate_citation_metadata.side_effect = [
+        {
+            "node_id": "node_1",
+            "obsidian_link": "[[test.md#^page-5]]",
+            "page": 5,
+            "anchor": "^page-5",
+            "text": "第一章内容"
+        },
+        {
+            "node_id": "node_2",
+            "obsidian_link": "[[test.md#^page-15]]",
+            "page": 15,
+            "anchor": "^page-15",
+            "text": "第二章内容"
+        },
+    ]
+
+    tool = LLMTreeSearchTool(
+        hybrid_search_tool=mock_hybrid_search,
+        markdown_locator=mock_markdown_locator,
+        node_map=node_map,
+        llm_client=mock_llm_client,
+    )
+
+    # 调用工具
+    query = "测试查询"
+    result = tool(query=query, top_k=5)
+
+    # 验证 HybridSearchTool 被调用
+    mock_hybrid_search.assert_called_once_with(query=query, top_k=20)
+
+    # 验证 LLM 被调用
+    assert mock_llm_client.chat.call_count == 1
+
+    # 解析并验证返回结果
+    result_data = json.loads(result)
+    assert isinstance(result_data, list)
+    assert len(result_data) == 2
+
+    # 验证返回格式包含 obsidian_link
+    for item in result_data:
+        assert "obsidian_link" in item
+        assert "node_id" in item
+        assert "page" in item
+        assert "text" in item

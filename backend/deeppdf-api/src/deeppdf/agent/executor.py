@@ -6,7 +6,13 @@
 from typing import Dict, Any, Optional
 import logging
 
-from .tools import Tool, InspectTocTool, ReadPageTool, HybridSearchTool
+from .tools import (
+    Tool,
+    InspectTocTool,
+    ReadPageTool,
+    HybridSearchTool,
+    LLMTreeSearchTool,
+)
 from .markdown_locator import MarkdownLocator
 
 logger = logging.getLogger(__name__)
@@ -37,7 +43,7 @@ class ToolExecutor:
         """
         logger.info(f"      🔍 [工具详情] 名称: {tool_name}")
         logger.info(f"      🔍 [工具详情] 参数: {kwargs}")
-        
+
         if tool_name not in self.tools:
             error_msg = f"[ERROR] 未知工具: {tool_name}。可用工具: {', '.join(self.tools.keys())}"
             logger.error(f"      ❌ {error_msg}")
@@ -48,19 +54,19 @@ class ToolExecutor:
         try:
             logger.info(f"      ⚙️  [执行中] 调用 {tool_name}...")
             result = tool(**kwargs)
-            
+
             # 记录返回结果的详细信息
             result_length = len(result)
             logger.info(f"      ✅ [执行成功] {tool_name}")
             logger.info(f"      📏 [返回长度] {result_length} 字符")
-            
+
             # 显示结果预览（前200字符）
             if result_length > 200:
                 preview = result[:200] + "..."
             else:
                 preview = result
             logger.info(f"      📄 [结果预览] {preview}")
-            
+
             return f"[SUCCESS] {result}"
         except ValueError as e:
             error_msg = f"[ERROR] 参数错误: {e}"
@@ -98,6 +104,8 @@ def create_tool_executor(
     tree_structure: Dict[str, Any],
     pageindex_lib_path: Optional[str] = None,
     markdown_locator: Optional[MarkdownLocator] = None,
+    enable_llm_tree_search: bool = False,
+    llm_client: Optional[Any] = None,
 ) -> ToolExecutor:
     """
     创建并配置工具执行器
@@ -108,6 +116,8 @@ def create_tool_executor(
         tree_structure: 树状结构（来自 index_metadata）
         pageindex_lib_path: PageIndex 库路径（可选）
         markdown_locator: Markdown 定位器（可选，用于生成引用链接）
+        enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
+        llm_client: LLM 客户端实例（可选，启用 LLM 树搜索时必需）
 
     Returns:
         配置好的 ToolExecutor 实例
@@ -128,6 +138,27 @@ def create_tool_executor(
         tools["read_page"] = ReadPageTool(pageindex_lib_path, index_id, storage_dir)
     else:
         logger.warning("[工具初始化] 未提供 pageindex_lib_path，read_page 工具将不可用")
+
+    # 4. LLMTreeSearchTool - LLM 树搜索（可选）
+    if enable_llm_tree_search:
+        if not llm_client:
+            logger.warning("[工具初始化] 未提供 llm_client，LLMTreeSearchTool 将不可用")
+        else:
+            # 创建 node_map: 从 node_id 到节点元数据的映射
+            from pageindex.structure.converter import structure_to_list
+
+            nodes_list = structure_to_list(tree_structure.get("structure", []))
+            node_map = {
+                node.get("node_id"): node for node in nodes_list if node.get("node_id")
+            }
+
+            tools["llm_tree_search"] = LLMTreeSearchTool(
+                hybrid_search_tool=tools["hybrid_search"],
+                markdown_locator=markdown_locator,
+                node_map=node_map,
+                llm_client=llm_client,
+            )
+            logger.info("[工具初始化] LLMTreeSearchTool 已启用")
 
     # 如果提供了 markdown_locator，存储在 ToolExecutor 中供后续使用
     executor = ToolExecutor(tools)

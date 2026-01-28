@@ -122,3 +122,105 @@ def test_create_tool_executor_with_markdown_locator():
     hybrid_search_tool = executor.tools["hybrid_search"]
     assert hybrid_search_tool.markdown_locator is markdown_locator
     assert hybrid_search_tool.markdown_locator is not None
+
+
+def test_tool_executor_includes_llm_tree_search():
+    """测试: 启用 LLM 树搜索时包含工具"""
+    from deeppdf.agent.markdown_locator import MarkdownLocator
+    from deeppdf.agent.tools import LLMTreeSearchTool
+
+    tree_structure = {
+        "structure": [
+            {
+                "title": "测试",
+                "node_id": "node_1",
+                "start_index": 1,
+                "end_index": 10,
+                "nodes": [],
+            }
+        ]
+    }
+
+    # 创建一个模拟的 index_metadata
+    index_metadata = {
+        "markdown_files": {"node_1": "test_file.md"},
+        "pdf_name": "test.pdf",
+        "tree_structure": tree_structure,
+    }
+
+    # 创建 markdown_locator
+    markdown_locator = MarkdownLocator(index_metadata)
+
+    # 创建模拟的 LLM 客户端
+    class MockLLMClient:
+        def chat(self, prompt: str) -> str:
+            return '{"node_list": ["node_1"]}'
+
+    llm_client = MockLLMClient()
+
+    executor = create_tool_executor(
+        index_id="test_idx",
+        storage_dir="/fake/path",
+        tree_structure=tree_structure,
+        pageindex_lib_path=None,
+        markdown_locator=markdown_locator,
+        enable_llm_tree_search=True,
+        llm_client=llm_client,
+    )
+
+    # 验证 llm_tree_search 工具已注册
+    assert "llm_tree_search" in executor.tools
+    assert isinstance(executor.tools["llm_tree_search"], LLMTreeSearchTool)
+
+
+def test_tool_executor_llm_tree_search_optional():
+    """测试: 禁用 LLM 树搜索时不包含工具"""
+    from deeppdf.agent.markdown_locator import MarkdownLocator
+
+    tree_structure = {
+        "structure": [
+            {
+                "title": "测试",
+                "node_id": "node_1",
+                "start_index": 1,
+                "end_index": 10,
+                "nodes": [],
+            }
+        ]
+    }
+
+    # 创建一个模拟的 index_metadata
+    index_metadata = {
+        "markdown_files": {"node_1": "test_file.md"},
+        "pdf_name": "test.pdf",
+        "tree_structure": tree_structure,
+    }
+
+    # 创建 markdown_locator
+    markdown_locator = MarkdownLocator(index_metadata)
+
+    # 测试默认行为（禁用）
+    executor = create_tool_executor(
+        index_id="test_idx",
+        storage_dir="/fake/path",
+        tree_structure=tree_structure,
+        pageindex_lib_path=None,
+        markdown_locator=markdown_locator,
+    )
+
+    # 验证 llm_tree_search 工具未注册
+    assert "llm_tree_search" not in executor.tools
+
+    # 测试显式禁用
+    executor = create_tool_executor(
+        index_id="test_idx",
+        storage_dir="/fake/path",
+        tree_structure=tree_structure,
+        pageindex_lib_path=None,
+        markdown_locator=markdown_locator,
+        enable_llm_tree_search=False,
+        llm_client=None,
+    )
+
+    # 验证 llm_tree_search 工具未注册
+    assert "llm_tree_search" not in executor.tools
