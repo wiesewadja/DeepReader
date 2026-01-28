@@ -240,3 +240,23 @@ class TestBackwardCompatibility:
 
         assert response.status == "success"
         assert response.citations is None
+
+
+class TestAgentRequestWithLLMTreeSearch:
+    """测试 AgentRequest 的 LLM 树搜索参数"""
+
+    def test_agent_request_default_enable_llm_tree_search(self):
+        """测试 AgentRequest 默认 enable_llm_tree_search=False"""
+        from deeppdf.api.models import AgentRequest
+
+        req = AgentRequest(query="test query", index_id="test_id")
+        assert req.enable_llm_tree_search is False
+
+    def test_agent_request_with_enable_llm_tree_search(self):
+        """测试 AgentRequest 设置 enable_llm_tree_search=True"""
+        from deeppdf.api.models import AgentRequest
+
+        req = AgentRequest(
+            query="test query", index_id="test_id", enable_llm_tree_search=True
+        )
+        assert req.enable_llm_tree_search is True

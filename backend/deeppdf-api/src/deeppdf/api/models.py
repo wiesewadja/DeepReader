@@ -193,6 +193,7 @@ class AgentRequest(BaseModel):
     keep_history: Optional[bool] = Field(True, description="是否保留对话历史（支持追问）")
     stream: Optional[bool] = Field(False, description="是否流式输出")
     include_citations: Optional[bool] = Field(False, description="是否返回引用信息")
+    enable_llm_tree_search: Optional[bool] = Field(False, description="是否启用 LLM 树状结构搜索工具")
     force_mode: Optional[str] = Field(
         None,
         description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)",

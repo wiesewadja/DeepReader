@@ -885,12 +885,13 @@ def _extract_citations_from_answer(answer: str, index_id: str) -> list[CitationI
     return citations
 
 
-async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
+async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = False) -> "DeepPDFAgent":
     """
     为请求加载 DeepPDF Agent
 
     Args:
         index_id: PDF 索引 ID
+        enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
 
     Returns:
         配置好的 DeepPDFAgent 实例
@@ -988,6 +989,7 @@ async def _load_agent_for_request(index_id: str) -> "DeepPDFAgent":
             api_key=api_key,
             base_url=settings.llm_base_url,
             pageindex_lib_path=None,  # read_page 工具可选，不传时禁用
+            enable_llm_tree_search=enable_llm_tree_search,
             temperature=settings.agent_temperature,
             top_p=settings.agent_top_p,
             max_iterations=settings.agent_max_iterations,
@@ -1083,15 +1085,15 @@ async def agent_chat(req: AgentRequest, http_request: Request):
             logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
         else:
             # 创建新 Agent
-            agent = await _load_agent_for_request(req.index_id)
-            
+            agent = await _load_agent_for_request(req.index_id, req.enable_llm_tree_search)
+
             # 尝试加载历史（如果有 session_id）
             if req.session_id:
                 history = chat_storage.load_history(req.index_id, req.session_id)
                 if history:
                     agent.session_history = history
                     logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
-                
+
                 # 缓存 Agent
                 _agent_sessions[session_key] = agent
                 logger.info(f"💬 [会话管理] 创建新 Agent 并缓存: {session_key}")
@@ -1192,15 +1194,15 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             logger.info(f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息")
         else:
             # 创建新 Agent
-            agent = await _load_agent_for_request(req.index_id)
-            
+            agent = await _load_agent_for_request(req.index_id, req.enable_llm_tree_search)
+
             # 尝试加载历史（如果有 session_id）
             if req.session_id:
                 history = chat_storage.load_history(req.index_id, req.session_id)
                 if history:
                     agent.session_history = history
                     logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
-            
+
             # 如果提供了 session_id，缓存 Agent
             if req.session_id:
                 _agent_sessions[session_key] = agent
