@@ -105,6 +105,7 @@ class DeepPDFAgent:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         pageindex_lib_path: Optional[str] = None,
+        enable_llm_tree_search: bool = False,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         max_iterations: Optional[int] = None,
@@ -122,6 +123,7 @@ class DeepPDFAgent:
             api_key: API 密钥 (如果为 None，从环境变量读取)
             base_url: API 基础 URL (如果为 None，使用 provider 默认值)
             pageindex_lib_path: PageIndex 库路径 (用于 read_page 工具)
+            enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
             temperature: 采样温度
             top_p: nucleus 采样参数
             max_iterations: 最大工具调用迭代次数
@@ -150,8 +152,11 @@ class DeepPDFAgent:
         markdown_locator = None
         if index_metadata and index_metadata.get("markdown_files"):
             from .markdown_locator import MarkdownLocator
+
             markdown_locator = MarkdownLocator(index_metadata)
-            logger.info(f"[Agent初始化] MarkdownLocator 已创建，包含 {len(index_metadata.get('markdown_files', {}))} 个文件映射")
+            logger.info(
+                f"[Agent初始化] MarkdownLocator 已创建，包含 {len(index_metadata.get('markdown_files', {}))} 个文件映射"
+            )
 
         # 初始化工具执行器
         self.executor: ToolExecutor = create_tool_executor(
@@ -160,6 +165,8 @@ class DeepPDFAgent:
             tree_structure=tree_structure,
             pageindex_lib_path=pageindex_lib_path,
             markdown_locator=markdown_locator,
+            enable_llm_tree_search=enable_llm_tree_search,
+            llm_client=self.client if enable_llm_tree_search else None,
         )
 
         # 构建 System Prompt

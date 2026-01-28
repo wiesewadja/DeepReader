@@ -542,3 +542,43 @@ def test_extract_tool_calls_empty(agent):
     tool_calls = agent._extract_tool_calls(mock_response)
 
     assert tool_calls == []
+
+
+# ========== 测试 LLM TreeSearch 支持 ==========
+
+
+def test_agent_with_llm_tree_search_enabled(mock_tree_structure, mock_openai_client):
+    """测试启用 LLM 树搜索时参数正确传递"""
+    with patch("deeppdf.agent.core.OpenAI", return_value=mock_openai_client):
+        agent = DeepPDFAgent(
+            index_id="test_index",
+            storage_dir="/tmp/test_storage",
+            tree_structure=mock_tree_structure,
+            llm_provider="deepseek",
+            api_key="test_key",
+            enable_llm_tree_search=True,
+        )
+        # 替换 client 为 mock
+        agent.client = mock_openai_client
+
+        # 验证 llm_tree_search 工具已启用
+        assert "llm_tree_search" in agent.executor.tools
+        assert agent.executor.tools["llm_tree_search"] is not None
+
+
+def test_agent_with_llm_tree_search_disabled(mock_tree_structure, mock_openai_client):
+    """测试禁用 LLM 树搜索时工具不可用"""
+    with patch("deeppdf.agent.core.OpenAI", return_value=mock_openai_client):
+        agent = DeepPDFAgent(
+            index_id="test_index",
+            storage_dir="/tmp/test_storage",
+            tree_structure=mock_tree_structure,
+            llm_provider="deepseek",
+            api_key="test_key",
+            enable_llm_tree_search=False,
+        )
+        # 替换 client 为 mock
+        agent.client = mock_openai_client
+
+        # 验证 llm_tree_search 工具未启用
+        assert "llm_tree_search" not in agent.executor.tools
