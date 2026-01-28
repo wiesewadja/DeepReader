@@ -28,6 +28,9 @@ from .models import (
     AgentResponse,
     AgentResponseWithCitations,
     CitationInfo,
+    SessionInfo,
+    SessionsListResponse,
+    DeleteSessionResponse,
 )
 from .export_models import ExportIndexResponse
 from .export_handlers import export_index_data
@@ -1361,8 +1364,8 @@ async def get_chat_history(index_id: str, session_id: str) -> List[Dict[str, Any
         )
 
 
-@router.get("/chat/sessions/{index_id}")
-async def list_sessions(index_id: str) -> Dict[str, Any]:
+@router.get("/chat/sessions/{index_id}", response_model=SessionsListResponse)
+async def list_sessions(index_id: str) -> SessionsListResponse:
     """列出指定索引的所有会话"""
     try:
         # 获取会话列表
@@ -1382,10 +1385,10 @@ async def list_sessions(index_id: str) -> Dict[str, Any]:
             session["pdfName"] = pdf_name
 
         logger.info(f"[API] 列出会话: index_id={index_id}, count={len(sessions)}")
-        return {
-            "status": "success",
-            "sessions": sessions,
-        }
+        return SessionsListResponse(
+            status="success",
+            sessions=[SessionInfo(**s) for s in sessions]
+        )
     except Exception as e:
         logger.error(f"[API] 列出会话失败: {e}")
         raise HTTPException(
@@ -1394,8 +1397,8 @@ async def list_sessions(index_id: str) -> Dict[str, Any]:
         )
 
 
-@router.delete("/chat/sessions/{index_id}/{session_id}")
-async def delete_session(index_id: str, session_id: str) -> Dict[str, Any]:
+@router.delete("/chat/sessions/{index_id}/{session_id}", response_model=DeleteSessionResponse)
+async def delete_session(index_id: str, session_id: str) -> DeleteSessionResponse:
     """删除指定会话"""
     try:
         # 删除会话文件
@@ -1409,15 +1412,15 @@ async def delete_session(index_id: str, session_id: str) -> Dict[str, Any]:
 
         if deleted:
             logger.info(f"[API] 删除会话成功: index_id={index_id}, session_id={session_id}")
-            return {
-                "status": "success",
-                "message": "会话已删除",
-            }
+            return DeleteSessionResponse(
+                status="success",
+                message="会话已删除"
+            )
         else:
-            return {
-                "status": "success",
-                "message": "会话不存在",
-            }
+            return DeleteSessionResponse(
+                status="success",
+                message="会话不存在"
+            )
     except Exception as e:
         logger.error(f"[API] 删除会话失败: {e}")
         raise HTTPException(

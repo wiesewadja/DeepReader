@@ -237,3 +237,32 @@ class AgentResponseWithCitations(BaseModel):
     error: Optional[str] = None
     iterations: Optional[int] = None
     citations: Optional[List[CitationInfo]] = Field(None, description="引用列表")
+
+
+# ========== 会话管理相关模型 ==========
+
+
+class SessionInfo(BaseModel):
+    """会话信息"""
+
+    sessionId: str = Field(..., description="会话 ID")
+    indexId: str = Field(..., description="索引 ID")
+    pdfName: str = Field(..., description="PDF 文件名")
+    messageCount: int = Field(..., description="消息数量", ge=0)
+    createdTime: str = Field(..., description="创建时间（ISO 8601 格式）")
+    lastMessageTime: str = Field(..., description="最后消息时间（ISO 8601 格式）")
+
+
+class SessionsListResponse(BaseModel):
+    """会话列表响应"""
+
+    status: str
+    sessions: List[SessionInfo]
+
+
+class DeleteSessionResponse(BaseModel):
+    """删除会话响应"""
+
+    status: str
+    message: str
+
