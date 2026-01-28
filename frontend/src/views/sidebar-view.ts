@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { PDFFileSelectorModal, PDFFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo, SessionInfo } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
@@ -19,7 +19,7 @@ import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { agentAPI } from "../api/index.js";
-import { ChatHistoryModal, ChatSession } from "../components/chat-history-modal/chat-history-modal.js";
+import { ChatHistoryModal } from "../components/chat-history-modal/chat-history-modal.js";
 
 // ==================== 类型映射 ====================
 
@@ -122,26 +122,23 @@ export class SidebarView extends ItemView {
                 throw new Error('获取会话列表失败');
             }
 
-            const sessions: ChatSession[] = result.sessions.map(s => ({
-                sessionId: s.sessionId,
-                indexId: s.indexId,
-                pdfName: s.pdfName || this.currentPdfName || 'Unknown',
-                messageCount: s.messageCount,
-                lastMessageTime: s.lastMessageTime,
-                createdTime: s.createdTime
-            }));
+            // 直接使用 API 返回的 SessionInfo，不需要映射
+            const sessions: SessionInfo[] = result.sessions;
 
-            // 创建或更新模态框
-            if (!this.chatHistoryModal) {
-                this.chatHistoryModal = new ChatHistoryModal(this.app, {
-                    onSessionSelect: (sessionId, indexId) => {
-                        this.handleSessionSelect(sessionId, indexId);
-                    },
-                    onSessionDelete: async (sessionId, indexId) => {
-                        await this.handleSessionDelete(sessionId, indexId);
-                    }
-                });
+            // 每次都创建新的 Modal 实例，销毁旧的（如果有）
+            if (this.chatHistoryModal) {
+                this.chatHistoryModal.destroy();
+                this.chatHistoryModal = null;
             }
+
+            this.chatHistoryModal = new ChatHistoryModal(this.app, {
+                onSessionSelect: (sessionId, indexId) => {
+                    this.handleSessionSelect(sessionId, indexId);
+                },
+                onSessionDelete: async (sessionId, indexId) => {
+                    await this.handleSessionDelete(sessionId, indexId);
+                }
+            });
 
             this.chatHistoryModal.setSessions(sessions);
             this.chatHistoryModal.open();

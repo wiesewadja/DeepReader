@@ -5,18 +5,8 @@
 
 import { App, Modal, Notice } from 'obsidian';
 import { Component } from '../component.js';
-
-/**
- * 会话信息接口
- */
-export interface ChatSession {
-	sessionId: string;
-	indexId: string;
-	pdfName: string;
-	messageCount: number;
-	lastMessageTime: string;
-	createdTime: string;
-}
+import { SessionInfo } from '../../api/http-client.js';
+import { formatTimeAgo } from '../../utils/time.js';
 
 /**
  * 历史模态框配置
@@ -32,7 +22,7 @@ export interface ChatHistoryModalOptions {
 export class ChatHistoryModal extends Component {
 	private modal: Modal | null = null;
 	private options: ChatHistoryModalOptions;
-	private sessions: ChatSession[] = [];
+	private sessions: SessionInfo[] = [];
 	private app: App;
 
 	constructor(app: App, options: ChatHistoryModalOptions = {}) {
@@ -44,21 +34,23 @@ export class ChatHistoryModal extends Component {
 	/**
 	 * 设置会话列表
 	 */
-	setSessions(sessions: ChatSession[]): void {
+	setSessions(sessions: SessionInfo[]): void {
 		this.sessions = sessions;
 		this.render();
 	}
 
 	/**
 	 * 打开模态框
+	 * 每次打开时创建新的 Modal 实例，避免事件监听器重复注册
 	 */
 	open(): void {
+		// 如果已有 Modal 实例，先关闭并清空
 		if (this.modal) {
-			this.modal.open();
-			return;
+			this.modal.close();
+			this.modal = null;
 		}
 
-		// 创建 Obsidian 模态框
+		// 创建新的 Obsidian 模态框
 		this.modal = new Modal(this.app);
 
 		// 渲染内容到模态框
@@ -75,6 +67,7 @@ export class ChatHistoryModal extends Component {
 	close(): void {
 		if (this.modal) {
 			this.modal.close();
+			// Obsidian Modal.close() 会自动清理内容，但我们仍应清空引用
 			this.modal = null;
 		}
 	}
@@ -128,7 +121,7 @@ export class ChatHistoryModal extends Component {
 	/**
 	 * 创建会话项
 	 */
-	private createSessionItem(session: ChatSession): HTMLElement {
+	private createSessionItem(session: SessionInfo): HTMLElement {
 		const item = document.createElement('div');
 		item.className = 'deeppdf-session-item';
 
@@ -141,7 +134,7 @@ export class ChatHistoryModal extends Component {
 		const meta = info.createEl('div', { cls: 'deeppdf-session-meta' });
 		meta.innerHTML = `
 			<span class="deeppdf-session-count">${session.messageCount} 条消息</span>
-			<span class="deeppdf-session-time">${this.formatTime(session.lastMessageTime)}</span>
+			<span class="deeppdf-session-time">${formatTimeAgo(session.lastMessageTime)}</span>
 		`;
 
 		info.appendChild(title);
@@ -181,7 +174,7 @@ export class ChatHistoryModal extends Component {
 	/**
 	 * 处理删除会话
 	 */
-	private async handleDeleteSession(session: ChatSession): Promise<void> {
+	private async handleDeleteSession(session: SessionInfo): Promise<void> {
 		const confirm = window.confirm(`确定要删除 "${session.pdfName}" 的会话记录吗？此操作不可撤销。`);
 		if (!confirm) return;
 
@@ -220,34 +213,22 @@ export class ChatHistoryModal extends Component {
 	}
 
 	/**
-	 * 格式化时间
-	 */
-	private formatTime(timeStr: string): string {
-		const date = new Date(timeStr);
-		const now = new Date();
-		const diffMs = now.getTime() - date.getTime();
-		const diffMins = Math.floor(diffMs / 60000);
-		const diffHours = Math.floor(diffMs / 3600000);
-		const diffDays = Math.floor(diffMs / 86400000);
-
-		if (diffMins < 1) {
-			return '刚刚';
-		} else if (diffMins < 60) {
-			return `${diffMins} 分钟前`;
-		} else if (diffHours < 24) {
-			return `${diffHours} 小时前`;
-		} else if (diffDays < 7) {
-			return `${diffDays} 天前`;
-		} else {
-			return date.toLocaleDateString('zh-CN');
-		}
-	}
-
-	/**
 	 * 销毁组件
+	 * 清理所有资源，避免内存泄漏
 	 */
 	override destroy(): void {
+		// 关闭并清空 Modal 引用
 		this.close();
+
+		// 清空会话数据
+		this.sessions = [];
+
+		// 清空回调函数，避免闭包引用
+		this.options = {
+			onSessionSelect: undefined,
+			onSessionDelete: undefined
+		};
+
 		super.destroy();
 	}
 }

@@ -8,32 +8,7 @@ import { Icons } from '../../utils/icons.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { App } from 'obsidian';
 import { ConfirmModal } from '../confirm-modal.js';
-
-/**
- * 格式化时间显示
- * - 7天内显示相对时间（如"2小时前"）
- * - 超过7天显示完整时间（如"1月15日 14:30"）
- */
-function formatTimeAgo(dateString: string): string {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return '刚刚';
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 7) return `${diffDays}天前`;
-
-    // 超过7天显示完整日期和时间
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month}月${day}日 ${hours}:${minutes}`;
-}
+import { formatTimeAgo } from '../../utils/time.js';
 
 export interface IndexManagerOptions {
     app: App;
@@ -61,24 +36,31 @@ export class IndexManager extends Component {
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
 
+    // 全局点击监听器（绑定方法）
+    private handleGlobalClick: (e: MouseEvent) => void;
+
     constructor(options: IndexManagerOptions) {
         super();
         this.options = options;
         this.app = options.app;
         this.el = this.render();
 
-        // 全局点击监听器，用于关闭下拉菜单
-        this.handleGlobalClick = (e: MouseEvent) => {
-            if (this.isDropdownOpen && this.dropdownMenu && this.headerEl) {
-                if (!this.headerEl.contains(e.target as Node)) {
-                    this.closeDropdown();
-                }
-            }
-        };
+        // 绑定全局点击监听器，用于关闭下拉菜单
+        this.handleGlobalClick = this.handleGlobalClickImpl.bind(this);
         document.addEventListener('click', this.handleGlobalClick);
     }
 
-    private handleGlobalClick: (e: MouseEvent) => void;
+    /**
+     * 全局点击处理实现
+     * 当点击下拉菜单外部时关闭菜单
+     */
+    private handleGlobalClickImpl(e: MouseEvent): void {
+        if (this.isDropdownOpen && this.dropdownMenu && this.headerEl) {
+            if (!this.headerEl.contains(e.target as Node)) {
+                this.closeDropdown();
+            }
+        }
+    }
 
     render(): HTMLElement {
         const container = document.createElement('div');
@@ -505,7 +487,18 @@ export class IndexManager extends Component {
         // 移除全局点击监听器
         if (this.handleGlobalClick) {
             document.removeEventListener('click', this.handleGlobalClick);
+            this.handleGlobalClick = null as any;
         }
+
+        // 清空所有 DOM 引用，避免内存泄漏
+        this.headerEl = null;
+        this.contentEl = null;
+        this.listEl = null;
+        this.toggleIcon = null;
+        this.currentPdfEl = null;
+        this.statusDot = null;
+        this.dropdownMenu = null;
+
         super.destroy();
     }
 }

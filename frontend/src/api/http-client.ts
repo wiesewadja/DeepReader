@@ -167,6 +167,21 @@ export interface CancelTaskResult {
   current_status?: string;
 }
 
+// 聊天会话相关类型
+export interface SessionInfo {
+  sessionId: string;
+  indexId: string;
+  pdfName: string;
+  messageCount: number;
+  lastMessageTime: string;
+  createdTime: string;
+}
+
+export interface ListSessionsResult {
+  status: string;
+  sessions: SessionInfo[];
+}
+
 // 查询相关类型
 export interface QueryResultItem {
   text: string;
@@ -840,8 +855,8 @@ export class DeepPDFClient {
   /**
    * 列出指定索引的所有会话
    */
-  async listSessions(indexId: string): Promise<{ status: string; sessions: any[] }> {
-    return this.request<{ status: string; sessions: any[] }>(`/api/chat/sessions/${indexId}`);
+  async listSessions(indexId: string): Promise<ListSessionsResult> {
+    return this.request<ListSessionsResult>(`/api/chat/sessions/${indexId}`);
   }
 
   /**
