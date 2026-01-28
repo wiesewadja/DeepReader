@@ -23,7 +23,7 @@ class TestEpubToTreeBasic:
             "metadata": {"title": "Test Book", "author": "Test Author"},
             "toc": [],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "Chapter 1 content"},
+                {"file_name": "chapter1.xhtml", "content": "Chapter 1 content"},
             ],
         }
 
@@ -79,8 +79,8 @@ class TestEpubTreeConverter:
             "metadata": {"title": "Test Book"},
             "toc": [link1, link2],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "Content 1"},
-                {"title": "chapter2.xhtml", "content": "Content 2"},
+                {"file_name": "chapter1.xhtml", "content": "Content 1"},
+                {"file_name": "chapter2.xhtml", "content": "Content 2"},
             ],
         }
 
@@ -104,9 +104,9 @@ class TestEpubTreeConverter:
             "metadata": {"title": "Test"},
             "toc": [link1, link2, link3],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "Content 1"},
-                {"title": "chapter2.xhtml", "content": "Content 2"},
-                {"title": "chapter3.xhtml", "content": "Content 3"},
+                {"file_name": "chapter1.xhtml", "content": "Content 1"},
+                {"file_name": "chapter2.xhtml", "content": "Content 2"},
+                {"file_name": "chapter3.xhtml", "content": "Content 3"},
             ],
         }
 
@@ -130,8 +130,8 @@ class TestEpubTreeConverter:
             "metadata": {"title": "Test"},
             "toc": [(section, [link1, link2])],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "Content 1"},
-                {"title": "chapter2.xhtml", "content": "Content 2"},
+                {"file_name": "chapter1.xhtml", "content": "Content 1"},
+                {"file_name": "chapter2.xhtml", "content": "Content 2"},
             ],
         }
 
@@ -154,8 +154,8 @@ class TestEpubTreeConverter:
             "metadata": {"title": "Test"},
             "toc": [(section, [link1, link2])],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "Content 1"},
-                {"title": "chapter2.xhtml", "content": "Content 2"},
+                {"file_name": "chapter1.xhtml", "content": "Content 1"},
+                {"file_name": "chapter2.xhtml", "content": "Content 2"},
             ],
         }
 
@@ -178,7 +178,7 @@ class TestEpubTreeConverter:
             "metadata": {"title": "Test"},
             "toc": [link],
             "chapters": [
-                {"title": "chapter1.xhtml", "content": "This is the chapter content."},
+                {"file_name": "chapter1.xhtml", "content": "This is the chapter content."},
             ],
         }
 
@@ -197,7 +197,7 @@ class TestEpubTreeConverter:
         epub_data = {
             "metadata": {"title": "Test"},
             "toc": [link1],
-            "chapters": [{"title": "chapter1.xhtml", "content": "Content"}],
+            "chapters": [{"file_name": "chapter1.xhtml", "content": "Content"}],
         }
 
         converter = EpubTreeConverter()

@@ -20,7 +20,7 @@ class FileStorage:
     """文件存储管理"""
 
     # 允许的文件类型
-    ALLOWED_EXTENSIONS = {".pdf"}
+    ALLOWED_EXTENSIONS = {".pdf", ".epub"}
     # 最大文件大小 (50MB)
     MAX_FILE_SIZE = 50 * 1024 * 1024
 
@@ -38,9 +38,9 @@ class FileStorage:
         logger.info(f"[文件存储] 存储目录: {self.storage_dir}")
         logger.info(f"[文件存储] 元数据目录: {self.metadata_dir}")
 
-    def _get_file_path(self, file_id: str) -> Path:
+    def _get_file_path(self, file_id: str, extension: str = ".pdf") -> Path:
         """获取文件存储路径"""
-        return self.storage_dir / f"{file_id}.pdf"
+        return self.storage_dir / f"{file_id}{extension}"
 
     def _get_metadata_path(self, file_id: str) -> Path:
         """获取元数据文件路径"""
@@ -74,7 +74,7 @@ class FileStorage:
         # 检查文件扩展名
         file_ext = Path(filename).suffix.lower()
         if file_ext not in self.ALLOWED_EXTENSIONS:
-            return False, f"不支持的文件类型: {file_ext}，仅支持 PDF 文件"
+            return False, f"不支持的文件类型: {file_ext}，仅支持 PDF 和 EPUB 文件"
 
         # 检查文件大小
         if file_size > self.MAX_FILE_SIZE:
@@ -108,7 +108,9 @@ class FileStorage:
 
         # 生成文件 ID
         file_id = self._generate_file_id()
-        file_path = self._get_file_path(file_id)
+        # 获取文件扩展名
+        file_ext = Path(filename).suffix.lower()
+        file_path = self._get_file_path(file_id, file_ext)
 
         # 保存文件
         try:
@@ -162,6 +164,11 @@ class FileStorage:
             logger.error(f"[文件存储] 加载元数据失败 {file_id}: {e}")
             return None
 
+    def _get_file_path_from_metadata(self, file_info: FileInfo) -> Path:
+        """从文件元数据获取文件路径"""
+        # 从存储的 file_path 中获取扩展名
+        return Path(file_info.file_path)
+
     def get_file(self, file_id: str) -> Optional[FileInfo]:
         """
         获取文件信息
@@ -174,8 +181,8 @@ class FileStorage:
         """
         file_info = self._load_metadata(file_id)
         if file_info:
-            # 检查文件是否存在
-            file_path = self._get_file_path(file_id)
+            # 检查文件是否存在（使用元数据中存储的路径）
+            file_path = self._get_file_path_from_metadata(file_info)
             if not file_path.exists():
                 logger.warning(f"[文件存储] 文件不存在: {file_id}")
                 return None
@@ -196,8 +203,8 @@ class FileStorage:
                     data = json.load(f)
                     file_info = FileInfo(**data)
 
-                    # 检查文件是否存在
-                    file_path = self._get_file_path(file_info.file_id)
+                    # 检查文件是否存在（使用元数据中存储的路径）
+                    file_path = self._get_file_path_from_metadata(file_info)
                     if file_path.exists():
                         files.append(file_info)
                     else:
@@ -225,8 +232,8 @@ class FileStorage:
             return False, f"文件 '{file_id}' 不存在", 0
 
         try:
-            # 删除文件
-            file_path = self._get_file_path(file_id)
+            # 删除文件（使用元数据中存储的路径）
+            file_path = self._get_file_path_from_metadata(file_info)
             if file_path.exists():
                 file_path.unlink()
 
@@ -286,7 +293,7 @@ class FileStorage:
         Returns:
             文件路径，不存在返回 None
         """
-        file_path = self._get_file_path(file_id)
-        if file_path.exists():
-            return str(file_path)
+        file_info = self.get_file(file_id)
+        if file_info:
+            return file_info.file_path
         return None

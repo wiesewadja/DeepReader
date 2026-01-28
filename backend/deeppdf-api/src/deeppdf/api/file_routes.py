@@ -31,10 +31,10 @@ _file_storage = FileStorage(storage_dir=str(_storage_dir))
 @router.post("", response_model=FileUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_file(file: UploadFile = File(...)):
     """
-    上传 PDF 文件
+    上传 PDF 或 EPUB 文件
 
     Args:
-        file: PDF 文件
+        file: PDF 或 EPUB 文件
 
     Returns:
         上传结果响应

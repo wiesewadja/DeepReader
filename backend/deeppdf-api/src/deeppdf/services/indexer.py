@@ -1,5 +1,5 @@
 """
-PDF 索引服务 - 异步封装
+PDF/EPUB 索引服务 - 异步封装
 """
 
 import asyncio
@@ -274,10 +274,10 @@ def _parse_pdf_structure(
     progress_callback=None,
 ) -> Tuple[Optional[Dict], float]:
     """
-    解析 PDF 结构
+    解析 PDF/EPUB 结构
 
     Args:
-        pdf_path: PDF 文件路径
+        pdf_path: PDF/EPUB 文件路径
         opt: PageIndex 配置
         llm_client: LLM 客户端
         config: LLM 配置字典
@@ -287,20 +287,23 @@ def _parse_pdf_structure(
         (tree_result, parse_time)
     """
     parse_start = time.time()
+    doc_type = _get_doc_type(pdf_path)
 
-    logger.info(f"[PDF解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}")
-    logger.info(f"[PDF解析] 输入文件: {Path(pdf_path).name}")
     logger.info(
-        f"[PDF解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}"
+        f"[{doc_type.upper()}解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}"
     )
-    logger.info(f"[PDF解析] LLM 客户端: {llm_client is not None}")
+    logger.info(f"[{doc_type.upper()}解析] 输入文件: {Path(pdf_path).name}")
+    logger.info(
+        f"[{doc_type.upper()}解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}"
+    )
+    logger.info(f"[{doc_type.upper()}解析] LLM 客户端: {llm_client is not None}")
 
-    # 更新进度：开始 PDF 解析
+    # 更新进度：开始文档解析
     if progress_callback:
-        progress_callback("parsing_pdf", 55, "正在提取 PDF 页面...")
+        progress_callback("parsing_pdf", 55, f"正在提取 {doc_type.upper()} 页面...")
 
     try:
-        logger.info("[PDF解析] 即将调用 page_index_main...")
+        logger.info(f"[{doc_type.upper()}解析] 即将调用 page_index_main...")
 
         # 关键修复：在子线程中调用 page_index_main 时，需要确保没有残留的事件循环
         # 我们使用 asyncio.run() 在一个全新的事件循环中运行，避免与主线程的事件循环冲突
@@ -309,37 +312,47 @@ def _parse_pdf_structure(
         # 首先检查当前线程是否有遗留的事件循环
         try:
             existing_loop = asyncio.get_running_loop()
-            logger.warning(f"[PDF解析] 检测到运行中的事件循环: {existing_loop}")
-            logger.warning("[PDF解析] 这可能导致问题，尝试继续...")
+            logger.warning(
+                f"[{doc_type.upper()}解析] 检测到运行中的事件循环: {existing_loop}"
+            )
+            logger.warning(f"[{doc_type.upper()}解析] 这可能导致问题，尝试继续...")
         except RuntimeError:
-            logger.debug("[PDF解析] 当前没有运行中的事件循环（符合预期）")
+            logger.debug(
+                f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）"
+            )
 
         # 直接调用 page_index_main
         # 它会使用 asyncio.run() 在新的事件循环中运行 page_index_builder
         tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
-        logger.info("[PDF解析] page_index_main 返回")
+        logger.info(f"[{doc_type.upper()}解析] page_index_main 返回")
 
     except Exception as e:
-        logger.error(f"[PDF解析] 失败: {type(e).__name__}: {str(e)}")
-        logger.error(f"[PDF解析] 耗时: {time.time() - parse_start:.2f} 秒")
+        logger.error(f"[{doc_type.upper()}解析] 失败: {type(e).__name__}: {str(e)}")
+        logger.error(
+            f"[{doc_type.upper()}解析] 耗时: {time.time() - parse_start:.2f} 秒"
+        )
         raise
 
     parse_time = time.time() - parse_start
-    logger.info(f"[PDF解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}")
-    logger.info(f"[PDF解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
+    logger.info(
+        f"[{doc_type.upper()}解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}"
+    )
+    logger.info(
+        f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)"
+    )
 
-    # 更新进度：PDF 解析完成，正在生成摘要
+    # 更新进度：文档解析完成，正在生成摘要
     if progress_callback and config.get("if_add_node_summary"):
         progress_callback("generating_summaries", 65, "正在生成章节摘要...")
 
     if not tree_result:
-        logger.error("[PDF解析] PageIndex 返回 None")
+        logger.error(f"[{doc_type.upper()}解析] PageIndex 返回 None")
         raise Exception("PageIndex returned None")
 
     if not tree_result.get("structure"):
-        logger.error("[PDF解析] structure 字段为空")
+        logger.error(f"[{doc_type.upper()}解析] structure 字段为空")
         if "error" in tree_result:
-            logger.error(f"[PDF解析] 错误信息: {tree_result['error']}")
+            logger.error(f"[{doc_type.upper()}解析] 错误信息: {tree_result['error']}")
         raise Exception("PageIndex returned empty tree structure")
 
     return tree_result, parse_time
@@ -350,6 +363,7 @@ def _store_to_chromadb(
     index_id: str,
     pdf_path_obj: Path,
     storage_dir: str,
+    doc_type: str = "pdf",
     progress_callback=None,
 ) -> float:
     """
@@ -358,8 +372,9 @@ def _store_to_chromadb(
     Args:
         section_nodes: 章节节点列表
         index_id: 索引 ID
-        pdf_path_obj: PDF 文件路径对象
+        pdf_path_obj: PDF/EPUB 文件路径对象
         storage_dir: 存储目录
+        doc_type: 文档类型 ("pdf" 或 "epub")
         progress_callback: 进度回调函数
 
     Returns:
@@ -379,6 +394,7 @@ def _store_to_chromadb(
     # 创建集合
     logger.info(f"[向量存储] 创建集合: {index_id}")
     collection_metadata = {
+        "doc_type": doc_type,
         "pdf_name": pdf_path_obj.name,
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -432,6 +448,7 @@ def _save_metadata(
     section_nodes: List[Dict],
     tree_result: Dict,
     storage_dir: str,
+    doc_type: str = "pdf",
     progress_callback=None,
 ) -> None:
     """
@@ -439,10 +456,11 @@ def _save_metadata(
 
     Args:
         index_id: 索引 ID
-        pdf_path_obj: PDF 文件路径对象
+        pdf_path_obj: PDF/EPUB 文件路径对象
         section_nodes: 章节节点列表
         tree_result: PageIndex 树结构结果
         storage_dir: 存储目录
+        doc_type: 文档类型 ("pdf" 或 "epub")
         progress_callback: 进度回调函数
     """
     if progress_callback:
@@ -455,6 +473,7 @@ def _save_metadata(
     metadata_path = index_dir / f"{index_id}.json"
     metadata_content = {
         "id": index_id,
+        "doc_type": doc_type,
         "pdf_name": pdf_path_obj.name,
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -479,25 +498,41 @@ def _save_metadata(
     return metadata_content
 
 
+def _get_doc_type(file_path: str) -> str:
+    """
+    根据文件扩展名自动检测文档类型
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        "pdf" 或 "epub"
+    """
+    if file_path.lower().endswith(".epub"):
+        return "epub"
+    return "pdf"
+
+
 def _index_pdf_sync(
     pdf_path: str, storage_dir: str, progress_callback=None, **kwargs
 ) -> Dict[str, Any]:
     """
-    同步 PDF 索引函数（在线程池中执行）
+    同步 PDF/EPUB 索引函数（在线程池中执行）
 
     这是原始的同步逻辑，被异步包装器调用
 
     参数:
-        pdf_path: PDF 文件路径
+        pdf_path: PDF/EPUB 文件路径
         storage_dir: 存储目录
         progress_callback: 进度回调函数，签名为 (step, percent, message)
         **kwargs: 其他配置参数
     """
     pdf_path_obj = Path(pdf_path)
+    doc_type = _get_doc_type(pdf_path)
     start_time = time.time()
 
     logger.info("=" * 60)
-    logger.info(f"[索引开始] PDF 文件: {pdf_path}")
+    logger.info(f"[索引开始] {doc_type.upper()} 文件: {pdf_path}")
     logger.info("=" * 60)
 
     # 辅助函数：安全地调用进度回调
@@ -523,12 +558,12 @@ def _index_pdf_sync(
     logger.info(f"[配置参数] Add Node Summary: {config['if_add_node_summary']}")
     logger.info(f"[配置参数] Add Node Text: {config['if_add_node_text']}")
 
-    # 步骤 1: 验证 PDF 文件
-    logger.info("[步骤 1/6] 验证 PDF 文件...")
-    _update_progress("validate_pdf", 10, "验证 PDF 文件...")
+    # 步骤 1: 验证文档文件
+    logger.info(f"[步骤 1/6] 验证 {doc_type.upper()} 文件...")
+    _update_progress("validate_pdf", 10, f"验证 {doc_type.upper()} 文件...")
     is_valid, error_msg, file_size = _validate_pdf_file(pdf_path_obj)
     if not is_valid:
-        logger.error(f"PDF 文件验证失败: {error_msg}")
+        logger.error(f"{doc_type.upper()} 文件验证失败: {error_msg}")
         return {"status": "error", "error": error_msg}
 
     if file_size:
@@ -576,31 +611,36 @@ def _index_pdf_sync(
                 f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}"
             )
 
-        # 步骤 5: 解析 PDF 结构
-        logger.info("[步骤 5/6] 开始解析 PDF 结构 (这可能需要几分钟)...")
-        _update_progress("parse_pdf", 50, "正在解析 PDF 结构...")
-        logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
-        logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
+        # 步骤 5: 解析文档结构
+        logger.info(
+            f"[步骤 5/6] 开始解析 {doc_type.upper()} 结构 (这可能需要几分钟)..."
+        )
+        _update_progress("parse_pdf", 50, f"正在解析 {doc_type.upper()} 结构...")
+        if doc_type == "pdf":
+            logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
+            logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config["if_add_node_summary"]:
             logger.info(
-                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']}"
+                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
             )
 
         tree_result, parse_time = _parse_pdf_structure(
             pdf_path, opt, llm_client_instance, config, progress_callback
         )
 
-        # 更新进度：PDF 解析完成
-        _update_progress("parse_complete", 70, "PDF 结构解析完成，正在提取章节...")
+        # 更新进度：文档解析完成
+        _update_progress(
+            "parse_complete", 70, f"{doc_type.upper()} 结构解析完成，正在提取章节..."
+        )
 
         # 记录返回结果的详细信息
-        logger.debug(f"[PDF解析] 原始结果键: {list(tree_result.keys())}")
+        logger.debug(f"[{doc_type.upper()}解析] 原始结果键: {list(tree_result.keys())}")
         for key, value in tree_result.items():
             if key != "structure" and key != "tree":
-                logger.debug(f"[PDF解析] {key}: {value}")
+                logger.debug(f"[{doc_type.upper()}解析] {key}: {value}")
 
         structure_list = tree_result.get("structure", [])
-        logger.info(f"[PDF解析] 顶层节点数: {len(structure_list)}")
+        logger.info(f"[{doc_type.upper()}解析] 顶层节点数: {len(structure_list)}")
 
         # 提取章节节点
         logger.info("=" * 50)
@@ -647,7 +687,12 @@ def _index_pdf_sync(
 
         # 步骤 6: 存储到 ChromaDB
         vector_time = _store_to_chromadb(
-            section_nodes, index_id, pdf_path_obj, storage_dir, progress_callback
+            section_nodes,
+            index_id,
+            pdf_path_obj,
+            storage_dir,
+            doc_type,
+            progress_callback,
         )
 
         # 保存索引元数据
@@ -657,6 +702,7 @@ def _index_pdf_sync(
             section_nodes,
             tree_result,
             storage_dir,
+            doc_type,
             progress_callback,
         )
 
@@ -668,11 +714,12 @@ def _index_pdf_sync(
         logger.info("=" * 60)
         logger.info("  索引信息:")
         logger.info(f"    - 索引 ID: {index_id}")
-        logger.info(f"    - PDF 名称: {pdf_path_obj.name}")
+        logger.info(f"    - 文档类型: {doc_type.upper()}")
+        logger.info(f"    - 文件名称: {pdf_path_obj.name}")
         logger.info(f"    - 节点数量: {len(section_nodes)}")
         logger.info("  时间统计:")
         logger.info(
-            f"    - PDF 解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)"
+            f"    - 文档解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)"
         )
         logger.info(
             f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)"
@@ -687,6 +734,7 @@ def _index_pdf_sync(
         return {
             "status": "success",
             "index_id": index_id,
+            "doc_type": doc_type,
             "node_count": len(section_nodes),
             "pdf_name": pdf_path_obj.name,
             "indexing_method": "pageindex_tree",
@@ -714,12 +762,13 @@ async def index_pdf(
     pdf_path: str, storage_dir: str, progress_callback=None, **kwargs
 ) -> Dict[str, Any]:
     """
-    异步 PDF 索引
+    异步 PDF/EPUB 索引
 
     使用 ThreadPoolExecutor 处理 CPU 密集型任务
+    自动检测文档类型（PDF 或 EPUB）
 
     参数:
-        pdf_path: PDF 文件路径
+        pdf_path: PDF/EPUB 文件路径
         storage_dir: 存储目录
         progress_callback: 进度回调函数，签名为 (step, percent, message)
         **kwargs: 其他配置参数

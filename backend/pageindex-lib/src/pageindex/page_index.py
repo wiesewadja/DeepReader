@@ -1,12 +1,14 @@
 """
 PageIndex 主入口模块
 
-本模块提供 PDF 文档结构分析的主入口函数。
+本模块提供 PDF 和 EPUB 文档结构分析的主入口函数。
 
 主要功能:
-    - page_index_main: PDF 索引的主函数
+    - page_index_main: PDF/EPUB 索引的主函数
     - page_index: 便捷的索引函数
     - tree_parser: 树状结构解析器
+    - _detect_document_type: 检测文档类型 (PDF/EPUB)
+    - _process_epub: 处理 EPUB 文件
 
 使用示例:
     >>> from pageindex import page_index
@@ -15,9 +17,15 @@ PageIndex 主入口模块
     >>> result = page_index("document.pdf")
     >>> print(result["doc_name"])
     >>> print(result["structure"])
+    >>>
+    >>> # 索引 EPUB 文档
+    >>> result = page_index("book.epub")
+    >>> print(result["doc_name"])
+    >>> print(result["structure"])
 
 作者: DeepPDF Team
 创建时间: 2026-01-16
+更新时间: 2026-01-28 (添加 EPUB 支持)
 """
 
 import os
@@ -29,6 +37,8 @@ import re
 import asyncio
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
 
 # 从新模块导入
 from .pdf import PDFParser
@@ -1897,6 +1907,163 @@ async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
     return toc_tree
 
 
+################### EPUB 支持 #########################################################
+def _detect_document_type(file_path: str) -> str:
+    """
+    检测文档类型
+
+    支持的文档类型:
+    - PDF (.pdf)
+    - EPUB (.epub)
+
+    参数:
+        file_path: 文件路径
+
+    返回:
+        "pdf" 或 "epub"
+
+    异常:
+        ValueError: 不支持的文件类型
+
+    检测策略:
+        1. 优先检查文件扩展名
+        2. 备用 magic bytes 检测（防止错误扩展名）
+        3. PDF magic bytes: %PDF
+        4. EPUB magic bytes: PK (EPUB 是 ZIP 格式)
+
+    使用示例:
+        >>> _detect_document_type("document.pdf")
+        'pdf'
+        >>> _detect_document_type("book.epub")
+        'epub'
+    """
+    path = Path(file_path)
+    ext = path.suffix.lower()
+
+    # 优先检查扩展名
+    if ext == ".pdf":
+        return "pdf"
+    elif ext == ".epub":
+        return "epub"
+
+    # magic bytes 检测（防止错误扩展名）
+    try:
+        with open(file_path, "rb") as f:
+            header = f.read(4)
+
+            if header[:4] == b"%PDF":
+                return "pdf"
+            elif header[:2] == b"PK":  # EPUB 是 ZIP 格式
+                return "epub"
+    except Exception as e:
+        print(f"[索引] 警告: 无法读取文件: {e}")
+
+    raise ValueError(f"无法识别的文档类型: {file_path}")
+
+
+def _process_epub(
+    file_path: str,
+    config=None
+) -> Dict[str, Any]:
+    """
+    处理 EPUB 文件
+
+    解析 EPUB 文件并转换为 PageIndex tree_structure 格式。
+
+    参数:
+        file_path: EPUB 文件路径
+        config: 配置字典，可选字段:
+            - use_llm: 是否生成摘要 (bool)
+            - llm_client: LLM 客户端
+
+    返回:
+        PageIndex tree_structure 格式的字典，包含:
+        - title: 书籍标题
+        - structure: 树结构列表
+        - (可选) doc_description: 文档描述
+
+    异常:
+        Exception: EPUB 解析失败
+
+    处理流程:
+        1. 使用 EpubParser 解析 EPUB
+        2. 使用 epub_to_tree 转换为树结构
+        3. (可选) 使用 _generate_summaries 生成摘要
+
+    使用示例:
+        >>> tree = _process_epub("book.epub")
+        >>> print(tree["title"])
+        >>> for node in tree["structure"]:
+        ...     print(f"{node['node_id']}: {node['title']}")
+    """
+    from .epub_parser import EpubParser
+    from .epub_to_tree import epub_to_tree
+
+    print(f"[索引] 开始处理 EPUB: {file_path}")
+
+    # 1. 解析 EPUB
+    parser = EpubParser(file_path)
+    parser.load()
+
+    epub_data = {
+        "metadata": parser.get_metadata(),
+        "toc": parser.get_toc(),
+        "chapters": parser.get_chapters(),
+    }
+
+    # 2. 转换为树结构
+    tree = epub_to_tree(epub_data, assign_node_ids=True)
+    print(f"[索引] EPUB 树结构转换完成，节点数: {_count_nodes(tree)}")
+
+    # 3. 可选：生成摘要
+    if config and config.get("use_llm"):
+        from .utils import generate_summaries_for_structure
+
+        # 需要异步运行
+        async def add_summaries():
+            llm_client = config.get("llm_client")
+            if llm_client is None:
+                print("[索引] 未提供 llm_client，跳过摘要生成")
+                return tree
+            await generate_summaries_for_structure(tree, llm_client=llm_client)
+            print("[索引] EPUB 摘要生成完成")
+            return tree
+
+        # 如果在事件循环中，使用 nest_asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            import nest_asyncio
+            nest_asyncio.apply()
+            tree = loop.run_until_complete(add_summaries())
+        except RuntimeError:
+            tree = asyncio.run(add_summaries())
+
+    print("[索引] EPUB 处理完成")
+
+    return tree
+
+
+def _count_nodes(tree: Dict[str, Any]) -> int:
+    """
+    计算树结构中的节点总数
+
+    参数:
+        tree: PageIndex tree_structure
+
+    返回:
+        节点总数（包括嵌套节点）
+    """
+    def count_recursive(nodes):
+        count = 0
+        for node in nodes:
+            count += 1
+            if "nodes" in node and node["nodes"]:
+                count += count_recursive(node["nodes"])
+        return count
+
+    return count_recursive(tree.get("structure", []))
+
+
 def save_result(result: dict, pdf_path: str) -> str:
     """
     保存最终索引结果到 results/ 目录
@@ -1928,6 +2095,22 @@ def save_result(result: dict, pdf_path: str) -> str:
 
 
 def page_index_main(doc, opt=None, llm_client=None):
+    """
+    主入口：生成文档索引
+
+    支持 PDF 和 EPUB 文档。
+
+    参数:
+        doc: 文档文件路径（.pdf 或 .epub）
+        opt: 配置对象
+        llm_client: LLM 客户端（可选）
+
+    返回:
+        包含 doc_name 和 structure 的字典
+
+    异常:
+        ValueError: 不支持的文档类型
+    """
     # 强制输出调试信息 - 使用 logging
     import logging
     logging.basicConfig(level=logging.DEBUG, force=True)
@@ -1936,9 +2119,60 @@ def page_index_main(doc, opt=None, llm_client=None):
 
     logger = JsonLogger(doc)
 
-    is_valid_pdf = (
+    # 检查是否是 EPUB 文件
+    is_epub = isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".epub")
+    is_pdf = (
         isinstance(doc, str) and os.path.isfile(doc) and doc.lower().endswith(".pdf")
     ) or isinstance(doc, BytesIO)
+
+    if not is_pdf and not is_epub:
+        raise ValueError(
+            "Unsupported input type. Expected a PDF/EPUB file path or PDF BytesIO object."
+        )
+
+    # 如果是 EPUB，使用专门的 EPUB 处理流程
+    if is_epub:
+        logging.debug("[DEBUG] Processing EPUB file")
+        logger.info(f"[索引] 检测到 EPUB 文档: {doc}")
+
+        # 准备配置
+        config = {
+            "use_llm": (opt.if_add_node_summary if opt else False) and (opt.if_add_node_summary == "yes" if isinstance(opt.if_add_node_summary, str) else opt.if_add_node_summary),
+            "llm_client": llm_client,
+        }
+
+        try:
+            # 处理 EPUB
+            tree = _process_epub(doc, config)
+
+            # 添加文档名称
+            doc_name = os.path.basename(doc)
+            result = {
+                "doc_name": doc_name,
+                "structure": tree["structure"],
+            }
+
+            # 可选：添加文档描述
+            if hasattr(opt, 'if_add_doc_description') and opt.if_add_doc_description:
+                from .utils import generate_doc_description, create_clean_structure_for_description
+
+                logger.info("[PageIndex] 生成文档描述")
+                clean_structure = create_clean_structure_for_description(tree["structure"])
+                doc_description = generate_doc_description(clean_structure, llm_client=llm_client)
+                result["doc_description"] = doc_description
+
+            # 保存结果
+            save_result(result, doc)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"[索引] EPUB 处理失败: {e}")
+            raise
+
+    # 如果是 PDF，继续原有的处理流程
+    logging.debug("[DEBUG] Processing PDF file")
+    is_valid_pdf = is_pdf
     if not is_valid_pdf:
         raise ValueError(
             "Unsupported input type. Expected a PDF file path or BytesIO object."

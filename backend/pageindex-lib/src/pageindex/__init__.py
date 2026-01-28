@@ -33,6 +33,7 @@ PageIndex - PDF 文档结构分析库
 模块组织:
     - core: 核心基础设施 (异常、配置)
     - pdf: PDF 处理 (解析、Token 计数)
+    - epub: EPUB 处理 (解析、内容提取)
     - llm: LLM 抽象层 (客户端、Provider)
     - toc: 目录处理 (检测、解析、验证、修复)
     - structure: 结构处理 (树操作、节点操作)
@@ -88,6 +89,10 @@ from .structure import (
 from .json_ops import (
     extract_json,
 )
+from .epub_parser import (
+    EpubParser,
+    parse_epub,
+)
 
 __all__ = [
     # 主入口
@@ -126,4 +131,7 @@ __all__ = [
     "get_leaf_nodes",
     # JSON 模块
     "extract_json",
+    # EPUB 模块
+    "EpubParser",
+    "parse_epub",
 ]

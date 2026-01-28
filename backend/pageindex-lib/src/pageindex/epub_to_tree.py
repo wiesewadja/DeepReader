@@ -129,9 +129,10 @@ class EpubTreeConverter:
         logger.debug(f"[EPUB转换] 开始转换，TOC 项数: {len(toc)}, 章节数: {len(chapters)}")
 
         # ============================================================
-        # 步骤2: 构建章节映射（title → content）
+        # 步骤2: 构建章节映射（file_name → content）
         # ============================================================
-        chapter_map = {ch["title"]: ch for ch in chapters}
+        # 使用 file_name 作为键，因为 TOC 中的 href 指向文件名
+        chapter_map = {ch["file_name"]: ch for ch in chapters}
         logger.debug(f"[EPUB转换] 章节映射构建完成，共 {len(chapter_map)} 个章节")
 
         # ============================================================

@@ -4,6 +4,7 @@ Pydantic 模型测试
 """
 
 import pytest
+from typing import Literal
 from deeppdf.api.models import (
     IndexRequest,
     IndexResponse,
@@ -23,6 +24,16 @@ class TestIndexRequest:
         """测试有效的索引请求"""
         req = IndexRequest(path="/path/to/file.pdf")
         assert req.path == "/path/to/file.pdf"
+
+    def test_valid_index_request_with_epub(self):
+        """测试有效的 EPUB 索引请求"""
+        req = IndexRequest(path="/path/to/file.epub")
+        assert req.path == "/path/to/file.epub"
+
+    def test_invalid_file_extension(self):
+        """测试无效的文件扩展名"""
+        with pytest.raises(ValueError, match="Path must point to a PDF or EPUB file"):
+            IndexRequest(path="/path/to/file.docx")
 
     def test_valid_index_request_with_file_id(self):
         """测试使用 file_id 的索引请求"""
@@ -68,6 +79,57 @@ class TestIndexResponse:
         assert resp.index_id == "test-id"
         assert resp.node_count == 10
         assert resp.pdf_name == "test.pdf"
+
+    def test_success_response_with_epub(self):
+        """测试 EPUB 文档的成功响应"""
+        resp = IndexResponse(
+            status="success",
+            index_id="test-id",
+            node_count=10,
+            pdf_name="test.epub",
+            doc_type="epub"
+        )
+        assert resp.status == "success"
+        assert resp.index_id == "test-id"
+        assert resp.node_count == 10
+        assert resp.pdf_name == "test.epub"
+        assert resp.doc_type == "epub"
+
+    def test_success_response_with_pdf(self):
+        """测试 PDF 文档的成功响应（明确指定 doc_type）"""
+        resp = IndexResponse(
+            status="success",
+            index_id="test-id",
+            node_count=10,
+            pdf_name="test.pdf",
+            doc_type="pdf"
+        )
+        assert resp.status == "success"
+        assert resp.doc_type == "pdf"
+
+    def test_doc_type_validation(self):
+        """测试 doc_type 字段验证"""
+        # 有效的 doc_type 值
+        for doc_type in ["pdf", "epub"]:
+            resp = IndexResponse(
+                status="success",
+                index_id="test-id",
+                node_count=10,
+                pdf_name="test.pdf",
+                doc_type=doc_type
+            )
+            assert resp.doc_type == doc_type
+
+    def test_invalid_doc_type(self):
+        """测试无效的 doc_type 值"""
+        with pytest.raises(ValueError):
+            IndexResponse(
+                status="success",
+                index_id="test-id",
+                node_count=10,
+                pdf_name="test.pdf",
+                doc_type="docx"  # 无效的文档类型
+            )
 
     def test_error_response(self):
         """测试错误的响应"""

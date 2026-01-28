@@ -3,7 +3,7 @@ API 请求/响应模型
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 
 # ========== 请求模型 ==========
@@ -42,12 +42,12 @@ class IndexRequest(BaseModel):
     @field_validator("path")
     @classmethod
     def validate_pdf_path(cls, v: Optional[str]) -> Optional[str]:
-        """验证 PDF 路径，防止路径遍历攻击"""
+        """验证 PDF/EPUB 路径，防止路径遍历攻击"""
         if v is None:
             return v
-        # 检查是否为 .pdf 文件
-        if not v.lower().endswith(".pdf"):
-            raise ValueError("Path must point to a PDF file")
+        # 检查是否为 .pdf 或 .epub 文件
+        if not (v.lower().endswith(".pdf") or v.lower().endswith(".epub")):
+            raise ValueError("Path must point to a PDF or EPUB file")
         # 防止路径遍历攻击
         if ".." in v:
             raise ValueError('Path traversal detected: ".." is not allowed')
@@ -85,6 +85,7 @@ class IndexResponse(BaseModel):
 
     status: str
     index_id: Optional[str] = None
+    doc_type: Optional[Literal["pdf", "epub"]] = None
     node_count: Optional[int] = None
     pdf_name: Optional[str] = None
     indexing_method: Optional[str] = None
@@ -189,11 +190,17 @@ class AgentRequest(BaseModel):
 
     query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
     index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
-    session_id: Optional[str] = Field(None, max_length=100, description="会话 ID，用于多轮对话")
-    keep_history: Optional[bool] = Field(True, description="是否保留对话历史（支持追问）")
+    session_id: Optional[str] = Field(
+        None, max_length=100, description="会话 ID，用于多轮对话"
+    )
+    keep_history: Optional[bool] = Field(
+        True, description="是否保留对话历史（支持追问）"
+    )
     stream: Optional[bool] = Field(False, description="是否流式输出")
     include_citations: Optional[bool] = Field(False, description="是否返回引用信息")
-    enable_llm_tree_search: Optional[bool] = Field(False, description="是否启用 LLM 树状结构搜索工具")
+    enable_llm_tree_search: Optional[bool] = Field(
+        False, description="是否启用 LLM 树状结构搜索工具"
+    )
     force_mode: Optional[str] = Field(
         None,
         description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)",
@@ -266,4 +273,3 @@ class DeleteSessionResponse(BaseModel):
 
     status: str
     message: str
-
