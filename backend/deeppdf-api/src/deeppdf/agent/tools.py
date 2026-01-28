@@ -6,12 +6,16 @@ Agent 工具定义
 """
 
 import asyncio
+import hashlib
 import json
+import logging
 from typing import Protocol, Dict, Any, List, Optional, TypedDict
 from pathlib import Path
 
 from deeppdf.services.querier import query_pdf
 from deeppdf.agent.markdown_locator import MarkdownLocator
+
+logger = logging.getLogger(__name__)
 
 
 class Tool(Protocol):
@@ -58,7 +62,7 @@ class InspectTocTool:
         # 如果已有缓存，直接返回
         if self._cache is not None:
             return self._cache
-        
+
         # 首次调用，生成并缓存结果
         structure = self.tree_structure.get("structure", [])
 
@@ -69,7 +73,7 @@ class InspectTocTool:
             for node in structure:
                 lines.extend(self._format_node(node, level=0))
             result = "\n".join(lines)
-        
+
         # 缓存结果
         self._cache = result
         return result
@@ -228,7 +232,7 @@ class HybridSearchTool:
 
         # 构建缓存键
         cache_key = f"{query}_{top_k}"
-        
+
         # 检查缓存
         if cache_key in self._search_cache:
             return self._search_cache[cache_key]
@@ -297,14 +301,20 @@ class HybridSearchTool:
                         node_id=node_id, page_num=page_num, text=text
                     )
                     # 【调试】记录生成的引用
-                    logger.info(f"[工具调用] node_id={node_id}, obsidian_link={citation.get('obsidian_link')}")
+                    logger.info(
+                        f"[工具调用] node_id={node_id}, obsidian_link={citation.get('obsidian_link')}"
+                    )
                     structured_results.append(citation)
                 else:
                     # 【调试】记录为什么没有使用 markdown_locator
                     if not self.markdown_locator:
-                        logger.warning(f"[工具调用] markdown_locator 未初始化，无法生成 obsidian_link")
+                        logger.warning(
+                            "[工具调用] markdown_locator 未初始化，无法生成 obsidian_link"
+                        )
                     elif not node_id:
-                        logger.warning(f"[工具调用] 搜索结果缺少 node_id，metadata={metadata}")
+                        logger.warning(
+                            f"[工具调用] 搜索结果缺少 node_id，metadata={metadata}"
+                        )
                     # 回退到基本元数据
                     structured_results.append(
                         {
@@ -316,10 +326,10 @@ class HybridSearchTool:
 
             # 生成结果JSON
             result = json.dumps(structured_results, ensure_ascii=False)
-            
+
             # 缓存结果
             self._search_cache[cache_key] = result
-            
+
             return result
 
         except (ValueError, IOError, OSError, RuntimeError) as e:
@@ -328,3 +338,114 @@ class HybridSearchTool:
             return json.dumps(
                 {"error": f"检索时发生未知错误 - {str(e)}"}, ensure_ascii=False
             )
+
+
+class LLMTreeSearchTool:
+    """
+    LLM 树搜索工具 - 基于深度理解的智能检索
+
+    通过分析文档树结构找到相关章节，适合跨章节推理、模糊问题。
+    """
+
+    name: str = "llm_tree_search"
+    description: str = (
+        "基于深度理解的智能检索，通过分析文档逻辑结构找到相关章节。"
+        "适合跨章节推理、模糊问题或需要理解文档整体脉络的查询。"
+        "参数: query (str, 必需) - 搜索问题\n\n"
+        "**返回格式：** JSON 数组，包含 obsidian_link、page、text（与"
+        "hybrid_search 相同）"
+    )
+
+    def __init__(
+        self,
+        hybrid_search_tool: HybridSearchTool,
+        markdown_locator: MarkdownLocator,
+        node_map: Dict[str, Any],
+        llm_client: Any,
+        cache_ttl: int = 300,
+    ):
+        """
+        初始化 LLM 树搜索工具
+
+        Args:
+            hybrid_search_tool: 混合检索工具实例
+            markdown_locator: Markdown 定位器实例
+            node_map: 节点映射表，从 node_id 到节点元数据
+            llm_client: LLM 客户端实例
+            cache_ttl: 缓存生存时间（秒），默认 300
+        """
+        self._hybrid_search = hybrid_search_tool
+        self._markdown_locator = markdown_locator
+        self._node_map = node_map
+        self._llm_client = llm_client
+        self._cache_ttl = cache_ttl
+        self._cache: Dict[str, str] = {}
+
+        logger = logging.getLogger(__name__)
+        logger.info("[LLM_TREE_SEARCH] 工具初始化完成")
+
+    def _get_cache_key(self, query: str) -> str:
+        """生成缓存键"""
+        return hashlib.md5(query.encode()).hexdigest()
+
+    def _get_from_cache(self, query: str) -> Optional[str]:
+        """从缓存获取结果（带过期检查）"""
+        cache_key = self._get_cache_key(query)
+        if cache_key in self._cache:
+            logger.info(f"[LLM_TREE_SEARCH][CACHE] 缓存命中: query='{query[:30]}...'")
+            return self._cache[cache_key]
+        logger.info(f"[LLM_TREE_SEARCH][CACHE] 缓存未命中: query='{query[:30]}...'")
+        return None
+
+    def _save_to_cache(self, query: str, result: str):
+        """保存结果到缓存"""
+        cache_key = self._get_cache_key(query)
+        self._cache[cache_key] = result
+        logger.info("[LLM_TREE_SEARCH][CACHE] 结果已缓存")
+
+    def __call__(self, query: str, top_k: int = 5) -> str:
+        """
+        执行 LLM 树搜索
+
+        Args:
+            query: 搜索查询
+            top_k: 返回结果数量（注意：阶段 1 固定使用 20 进行粗筛）
+
+        Returns:
+            JSON 字符串，与 HybridSearchTool 返回格式一致
+        """
+        logger = logging.getLogger(__name__)
+
+        # 检查缓存
+        cached = self._get_from_cache(query)
+        if cached is not None:
+            return cached
+
+        # ===== 阶段 1: 粗筛 =====
+        logger.info(f"[LLM_TREE_SEARCH][STAGE1] 开始粗筛: query='{query[:30]}...'")
+
+        try:
+            hybrid_result = self._hybrid_search(query=query, top_k=20)
+            logger.info("[LLM_TREE_SEARCH][STAGE1] 粗筛完成")
+        except Exception as e:
+            logger.error(f"[LLM_TREE_SEARCH][STAGE1] 粗筛失败: {e}")
+            return json.dumps({"error": f"检索失败: {str(e)}"}, ensure_ascii=False)
+
+        # 解析 HybridSearchTool 结果
+        try:
+            hybrid_data = json.loads(hybrid_result)
+            if "error" in hybrid_data:
+                return hybrid_result
+            search_results = (
+                hybrid_data
+                if isinstance(hybrid_data, list)
+                else hybrid_data.get("results", [])
+            )
+        except json.JSONDecodeError:
+            search_results = []
+
+        if not search_results:
+            return json.dumps([], ensure_ascii=False)
+
+        # 临时返回 hybrid_result（阶段 2 尚未实现）
+        return hybrid_result
