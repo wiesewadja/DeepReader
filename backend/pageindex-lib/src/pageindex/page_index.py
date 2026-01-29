@@ -2230,6 +2230,63 @@ def page_index_main(doc, opt=None, llm_client=None):
     page_list = get_page_tokens(doc)
     logging.debug(f"[DEBUG] get_page_tokens returned {len(page_list)} pages")
 
+    # 检测是否为视觉密集型 PDF（扫描档）
+    total_text_length = sum([len(page[0]) for page in page_list])
+    avg_text_per_page = total_text_length / len(page_list) if page_list else 0
+    is_likely_visual = avg_text_per_page < 50  # 平均每页少于 50 字符
+
+    if is_likely_visual:
+        logger.info(f"[OCR检测] 检测到可能的扫描档 (平均文本: {avg_text_per_page:.0f} 字符/页)")
+        print(f"[OCR] 检测到扫描档，开始使用 PaddleOCR 提取文本...")
+
+        try:
+            from .pdf.ocr import PaddleOCRExtractor
+            import pymupdf
+
+            # 使用 PaddleOCR 提取文本
+            extractor = PaddleOCRExtractor(use_gpu=False, show_log=False)
+            ocr_texts = extractor.extract_from_pdf(doc, max_pages=None)
+
+            if ocr_texts and len(ocr_texts) == len(page_list):
+                logger.info(f"[OCR] 成功提取 {len(ocr_texts)} 页的文本")
+
+                # 重建 page_list，使用 OCR 文本
+                from .pdf.tokens import count_tokens
+                new_page_list = []
+                for i, (old_text, old_tokens) in enumerate(page_list):
+                    ocr_text = ocr_texts[i]
+                    # 计算新文本的 tokens
+                    new_tokens = count_tokens(ocr_text, opt.model)
+                    new_page_list.append((ocr_text, new_tokens))
+
+                page_list = new_page_list
+
+                # 记录 OCR 后的统计
+                new_total_text = sum([len(page[0]) for page in page_list])
+                new_avg_text = new_total_text / len(page_list)
+                logger.info(f"[OCR] OCR 提取完成 (平均文本: {new_avg_text:.0f} 字符/页)")
+            else:
+                logger.warning(f"[OCR] OCR 提取失败或页数不匹配 (期望 {len(page_list)} 页, 得到 {len(ocr_texts) if ocr_texts else 0} 页)")
+                if ocr_texts:
+                    logger.warning(f"[OCR] 将使用部分 OCR 结果")
+                    # 部分使用 OCR，部分保留原文本
+                    from .pdf.tokens import count_tokens
+                    new_page_list = []
+                    for i, (old_text, old_tokens) in enumerate(page_list):
+                        if i < len(ocr_texts) and ocr_texts[i]:
+                            ocr_text = ocr_texts[i]
+                            new_tokens = count_tokens(ocr_text, opt.model)
+                            new_page_list.append((ocr_text, new_tokens))
+                        else:
+                            new_page_list.append((old_text, old_tokens))
+                    page_list = new_page_list
+        except ImportError as e:
+            logger.warning(f"[OCR] PaddleOCR 未安装或导入失败: {e}")
+            logger.warning(f"[OCR] 将使用原始文本（可能为空）")
+        except Exception as e:
+            logger.error(f"[OCR] OCR 提取失败: {e}")
+            logger.warning(f"[OCR] 将使用原始文本（可能为空）")
+
     logger.info({"total_page_number": len(page_list)})
     logger.info({"total_token": sum([page[1] for page in page_list])})
 
