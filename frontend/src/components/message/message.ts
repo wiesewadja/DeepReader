@@ -125,9 +125,9 @@ export function parseAgentContent(content: string): {
 	// - 🔍 *正在查看文档目录...*
 	// - 🔎 *正在搜索相关内容...*
 	// - 📖 *正在读取指定页面...*
-	// 
+	//
 	// 策略：匹配以 Emoji 开头，后面可能有 Markdown 斜体标记 (*...*) 的短行
-	const statusKeywords = ['正在搜索', '正在分析', '正在综合', '正在查找', '正在阅读', '正在查看', '正在读取'];
+	const statusKeywords = ['搜索中', '分析中', '整理中', '查看中', '阅读中', '查目录'];
 	const keywordPattern = statusKeywords.join('|');
 
 	// 匹配模式：
