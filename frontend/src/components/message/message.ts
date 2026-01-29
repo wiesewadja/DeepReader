@@ -1167,6 +1167,26 @@ export class AIMessage extends Message {
 						}
 					});
 
+					// 【新增】更新状态显示（不受节流限制）
+					if (this.el) {
+						const headerRow = this.el.querySelector('.deeppdf-message-header-row');
+						if (headerRow) {
+							let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
+							if (!statusEl) {
+								statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+							}
+							if (statusEl) {
+								if (currentStatus && statusEl.textContent !== currentStatus) {
+									statusEl.textContent = currentStatus;
+									statusEl.addClass('visible');
+								} else if (!currentStatus && statusEl.textContent !== '') {
+									statusEl.textContent = '';
+									statusEl.removeClass('visible');
+								}
+							}
+						}
+					}
+
 					// 更新跟踪变量
 					this.lastRenderedContent = cleanedContent;
 					this.lastRenderTime = Date.now();
