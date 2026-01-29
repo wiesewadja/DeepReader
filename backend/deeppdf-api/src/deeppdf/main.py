@@ -4,6 +4,15 @@ DeepPDF FastAPI Server
 PDF 索引和语义搜索服务
 """
 
+import warnings
+
+# 过滤 PyTorch 的 pynvml 弃用警告（PyTorch 内部问题，非项目代码）
+warnings.filterwarnings(
+    "ignore",
+    message=".*pynvml package is deprecated.*",
+    category=FutureWarning
+)
+
 import nest_asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
