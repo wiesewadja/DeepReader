@@ -6,17 +6,7 @@ PDF 索引和语义搜索服务
 
 import warnings
 
-# 过滤第三方库的警告（jieba、PyTorch 等）
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    module="jieba"
-)
-warnings.filterwarnings(
-    "ignore",
-    category=SyntaxWarning,
-    module="jieba"
-)
+# 过滤第三方库的警告
 warnings.filterwarnings(
     "ignore",
     message=".*pynvml package is deprecated.*",

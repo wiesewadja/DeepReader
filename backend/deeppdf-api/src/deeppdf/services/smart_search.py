@@ -18,11 +18,28 @@ from difflib import SequenceMatcher
 
 # 中文 NLP 依赖
 try:
-    import jieba
+    import jieba3
     from rank_bm25 import BM25Okapi
+
+    # 创建 jieba3 兼容层（模拟原版 jieba API）
+    class _JiebaCompat:
+        """jieba3 兼容层，模拟原版 jieba API"""
+
+        def cut(self, sentence, cut_all=False):
+            """兼容 jieba.cut()"""
+            # jieba3 只需要基础的分词功能，使用 base 模型
+            return jieba3._cut_text(sentence, model='base', use_hmm=True)
+
+        def cut_for_search(self, sentence):
+            """兼容 jieba.cut_for_search() - 用于搜索引擎的分词"""
+            # 搜索引擎模式使用同样的分词，jieba3 会自动处理
+            return jieba3._cut_text(sentence, model='base', use_hmm=True)
+
+    jieba = _JiebaCompat()
+
 except ImportError:
     logging.warning(
-        "Missing dependencies: jieba or rank_bm25. BM25 search will be disabled."
+        "Missing dependencies: jieba3 or rank_bm25. BM25 search will be disabled."
     )
     jieba = None
     BM25Okapi = None
