@@ -11,19 +11,20 @@ try:
     from paddleocr import PaddleOCR
 except ImportError:
     PaddleOCR = None
-    logging.warning("PaddleOCR not installed.")
+    # PaddleOCR 是可选依赖，只在需要处理扫描文档时才需要
+    # 不在导入时显示警告，避免干扰用户
 
 try:
     import pymupdf  # PyMuPDF
 except ImportError:
     pymupdf = None
-    logging.warning("PyMuPDF not installed.")
+    # PyMuPDF 是可选依赖，只在需要将 PDF 转为图片时才需要
 
 try:
     from PIL import Image
 except ImportError:
     Image = None
-    logging.warning("PIL not installed.")
+    # PIL 是可选依赖
 
 logger = logging.getLogger(__name__)
 
