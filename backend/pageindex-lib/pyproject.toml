@@ -14,7 +14,8 @@ dependencies = [
     "ebooklib>=0.18",
     "beautifulsoup4>=4.12.0",
     "html2text>=2020.1.16",
-    "PaddleOCR>=2.7.0",
+    "paddleocr>=2.7.0",
+    "paddlepaddle>=3.3.0",
 ]
 
 [project.optional-dependencies]

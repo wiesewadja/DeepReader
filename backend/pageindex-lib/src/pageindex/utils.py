@@ -730,6 +730,9 @@ class JsonLogger:
     def error(self, message, **kwargs):
         self.log("ERROR", message, **kwargs)
 
+    def warning(self, message, **kwargs):
+        self.log("WARNING", message, **kwargs)
+
     def debug(self, message, **kwargs):
         self.log("DEBUG", message, **kwargs)
 
