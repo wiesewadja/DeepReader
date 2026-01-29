@@ -43,6 +43,21 @@ class Settings(BaseSettings):
         8000  # 用户查询最大字符长度（启发式，约等于 4K-6K tokens）
     )
 
+    # DeepSeek OCR 配置
+    deepseek_ocr_api_key: Optional[str] = None
+    deepseek_ocr_base_url: str = "https://api.siliconflow.cn/v1"
+    deepseek_ocr_model: str = "deepseek-ai/DeepSeek-OCR"
+    deepseek_ocr_max_tokens: int = 4096
+
+    # PDF 转图片配置
+    pdf_image_dpi: int = 200
+    pdf_image_format: str = "png"
+
+    # PDF 视觉检测阈值（与 pageindex-lib 对齐）
+    visual_detect_sample_pages: int = 10
+    visual_density_threshold: float = 0.3
+    visual_text_threshold: int = 50
+
     # Pydantic V2 配置
     model_config = ConfigDict(
         env_file=".env", case_sensitive=False, extra="ignore"  # 忽略额外的环境变量
