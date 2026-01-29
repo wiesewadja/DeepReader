@@ -40,7 +40,7 @@ cpu_executor = ThreadPoolExecutor(max_workers=1)  # 限制为 1 个 worker 以�
 
 def _extract_nodes_from_tree(
     tree: Dict[str, Any], parent_section: str = "", level: int = 0
-) -> list:
+) -> List[Dict]:
     """
     从 PageIndex 树状结构中提取章节节点
 
@@ -48,7 +48,7 @@ def _extract_nodes_from_tree(
     - text: 原始 PDF 文本（用于向量化和检索）
     - summary: LLM 生成的摘要（保存在 metadata 中）
     """
-    nodes = []
+    nodes: List[Dict] = []
 
     if not tree:
         return nodes
@@ -272,7 +272,7 @@ def _parse_pdf_structure(
     llm_client: Any,
     config: Dict[str, Any],
     progress_callback=None,
-) -> Tuple[Optional[Dict], float]:
+) -> Tuple[Dict, float]:
     """
     解析 PDF/EPUB 结构
 
@@ -449,8 +449,10 @@ def _save_metadata(
     tree_result: Dict,
     storage_dir: str,
     doc_type: str = "pdf",
+    is_visual_heavy: bool = False,
+    visual_detection_result: Optional[Dict[str, Any]] = None,
     progress_callback=None,
-) -> None:
+) -> Dict[str, Any]:
     """
     保存索引元数据
 
@@ -461,6 +463,8 @@ def _save_metadata(
         tree_result: PageIndex 树结构结果
         storage_dir: 存储目录
         doc_type: 文档类型 ("pdf" 或 "epub")
+        is_visual_heavy: 是否为视觉密集型 PDF
+        visual_detection_result: 视觉检测结果详情
         progress_callback: 进度回调函数
     """
     if progress_callback:
@@ -482,7 +486,12 @@ def _save_metadata(
         "llm_enabled": True,
         "tree_structure": tree_result,
         "sections": section_nodes,
+        "visual_heavy": is_visual_heavy,
     }
+
+    # 如果有视觉检测结果，添加详细信息
+    if visual_detection_result:
+        metadata_content["visual_detection"] = visual_detection_result
 
     # 注：此函数在 ThreadPoolExecutor 中运行，使用同步 I/O 是可接受的
     # 因为此函数已被异步包装器 index_pdf() 通过 run_in_executor 隔离
@@ -527,13 +536,6 @@ def _index_pdf_sync(
         progress_callback: 进度回调函数，签名为 (step, percent, message)
         **kwargs: 其他配置参数
     """
-    pdf_path_obj = Path(pdf_path)
-    doc_type = _get_doc_type(pdf_path)
-    start_time = time.time()
-
-    logger.info("=" * 60)
-    logger.info(f"[索引开始] {doc_type.upper()} 文件: {pdf_path}")
-    logger.info("=" * 60)
 
     # 辅助函数：安全地调用进度回调
     def _update_progress(step: str, percent: int, message: str):
@@ -543,6 +545,57 @@ def _index_pdf_sync(
                 progress_callback(step, percent, message)
             except Exception as e:
                 logger.warning(f"进度回调调用失败: {e}")
+
+    pdf_path_obj = Path(pdf_path)
+    doc_type = _get_doc_type(pdf_path)
+    start_time = time.time()
+
+    logger.info("=" * 60)
+    logger.info(f"[索引开始] {doc_type.upper()} 文件: {pdf_path}")
+    logger.info("=" * 60)
+
+    # 步骤 1.5: 检测 PDF 类型（是否需要 OCR）- 仅对 PDF 文档
+    is_visual_heavy = False
+    visual_detection_result = None
+
+    if doc_type == "pdf":
+        from pageindex.pdf.ocr import detect_pdf_type
+
+        logger.info("[步骤 1.5/6] 检测 PDF 视觉类型...")
+        _update_progress("detect_visual", 15, "检测 PDF 视觉类型...")
+
+        try:
+            detector_result = detect_pdf_type(
+                pdf_path,
+                sample_pages=kwargs.get(
+                    "visual_detect_sample_pages", settings.visual_detect_sample_pages
+                ),
+                text_threshold=kwargs.get(
+                    "visual_text_threshold", settings.visual_text_threshold
+                ),
+                image_threshold=kwargs.get(
+                    "visual_density_threshold", settings.visual_density_threshold
+                ),
+            )
+
+            is_visual_heavy = detector_result.is_visual_heavy
+            visual_detection_result = {
+                "text_density": detector_result.text_density,
+                "image_density": detector_result.image_density,
+                "reason": detector_result.reason,
+            }
+
+            logger.info(
+                f"[PDF分类] 检测结果: {'视觉密集型' if is_visual_heavy else '普通文本型'}"
+            )
+            logger.info(
+                f"[PDF分类] 文本密度: {detector_result.text_density:.0f} 字符/页"
+            )
+            logger.info(f"[PDF分类] 图片密度: {detector_result.image_density*100:.1f}%")
+            logger.info(f"[PDF分类] 判断依据: {detector_result.reason}")
+        except Exception as e:
+            logger.warning(f"[PDF分类] 视觉检测失败: {e}，将按普通文本型处理")
+            is_visual_heavy = False
 
     # 解析 LLM 配置
     config = _parse_llm_config(**kwargs)
@@ -703,6 +756,8 @@ def _index_pdf_sync(
             tree_result,
             storage_dir,
             doc_type,
+            is_visual_heavy,
+            visual_detection_result,
             progress_callback,
         )
 
