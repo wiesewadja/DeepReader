@@ -2266,9 +2266,9 @@ def page_index_main(doc, opt=None, llm_client=None):
                 new_avg_text = new_total_text / len(page_list)
                 logger.info(f"[OCR] OCR 提取完成 (平均文本: {new_avg_text:.0f} 字符/页)")
             else:
-                logger.warning(f"[OCR] OCR 提取失败或页数不匹配 (期望 {len(page_list)} 页, 得到 {len(ocr_texts) if ocr_texts else 0} 页)")
+                logger.info(f"[OCR] OCR 提取失败或页数不匹配 (期望 {len(page_list)} 页, 得到 {len(ocr_texts) if ocr_texts else 0} 页)")
                 if ocr_texts:
-                    logger.warning(f"[OCR] 将使用部分 OCR 结果")
+                    logger.info(f"[OCR] 将使用部分 OCR 结果")
                     # 部分使用 OCR，部分保留原文本
                     from .pdf.tokens import count_tokens
                     new_page_list = []
@@ -2281,11 +2281,11 @@ def page_index_main(doc, opt=None, llm_client=None):
                             new_page_list.append((old_text, old_tokens))
                     page_list = new_page_list
         except ImportError as e:
-            logger.warning(f"[OCR] PaddleOCR 未安装或导入失败: {e}")
-            logger.warning(f"[OCR] 将使用原始文本（可能为空）")
+            logger.info(f"[OCR] PaddleOCR 未安装或导入失败: {e}")
+            logger.info(f"[OCR] 将使用原始文本（可能为空）")
         except Exception as e:
             logger.error(f"[OCR] OCR 提取失败: {e}")
-            logger.warning(f"[OCR] 将使用原始文本（可能为空）")
+            logger.info(f"[OCR] 将使用原始文本（可能为空）")
 
     logger.info({"total_page_number": len(page_list)})
     logger.info({"total_token": sum([page[1] for page in page_list])})
