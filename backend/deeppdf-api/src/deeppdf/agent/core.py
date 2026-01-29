@@ -695,9 +695,9 @@ class DeepPDFAgent:
 
                 # 发送进度提示
                 if iterations == 1:
-                    yield "\n\n💭 *正在分析您的问题...*\n\n"
+                    yield "\n\n💭 分析中\n\n"
                 else:
-                    yield "\n\n💭 *正在综合信息，准备回答...*\n\n"
+                    yield "\n\n💭 整理中\n\n"
 
                 try:
                     stream: Stream[ChatCompletionChunk] = (
@@ -795,11 +795,11 @@ class DeepPDFAgent:
                         tc["function"]["name"] for tc in current_tool_calls.values()
                     ]
                     if "inspect_toc" in tool_names:
-                        yield "\n\n🔍 *正在查看文档目录...*\n\n"
+                        yield "\n\n🔍 查目录\n\n"
                     if "hybrid_search" in tool_names:
-                        yield "\n\n🔎 *正在搜索相关内容...*\n\n"
+                        yield "\n\n🔎 查看中\n\n"
                     if "read_page" in tool_names:
-                        yield "\n\n📖 *正在读取指定页面...*\n\n"
+                        yield "\n\n📖 阅读中\n\n"
 
                     # 确保思考标签已关闭
                     yield from self._flush_thought_tag(thought_state)

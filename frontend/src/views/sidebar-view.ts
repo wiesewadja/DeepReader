@@ -242,7 +242,7 @@ export class SidebarView extends ItemView {
         const validMsgs = allMessages.filter((m: any) =>
             (m.role === 'user' || m.role === 'assistant') &&
             !m.content.includes("已切换到文档") &&
-            m.content !== "正在思考..." &&
+            m.content !== "📖 正在翻阅..." &&
             m.content // 确保有内容
         );
 
@@ -756,7 +756,7 @@ export class SidebarView extends ItemView {
             const aiMessageData: MessageData = {
                 id: aiMessageId,
                 role: "assistant" as MessageRole,
-                content: "正在思考...",
+                content: "📖 正在翻阅...",
                 timestamp: new Date().toISOString(),
                 isStreaming: true,
                 isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
@@ -1009,7 +1009,7 @@ ${r.text}`;
 
                     // 回滚：在正文中显示默认状态，确保用户能看到反馈
                     if ((!cleanedContent || cleanedContent.trim() === '') && !currentStatus) {
-                        displayContent = '🤔 正在思考...';
+                        displayContent = '📖 正在翻阅...';
                     } else if (!cleanedContent || cleanedContent.trim() === '') {
                         // 如果有状态但没内容，这里可以选择显示状态或者留空
                         // 为了确保可见性，我们可以让正文也显示状态
