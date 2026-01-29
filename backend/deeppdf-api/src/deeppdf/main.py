@@ -9,13 +9,13 @@ import warnings
 # 过滤第三方库的弃用警告（jieba、PyTorch 等）
 warnings.filterwarnings(
     "ignore",
-    category=FutureWarning,
+    category=UserWarning,
     module="jieba"
 )
 warnings.filterwarnings(
     "ignore",
     message=".*pynvml package is deprecated.*",
-    category=FutureWarning
+    category=UserWarning
 )
 
 import nest_asyncio
