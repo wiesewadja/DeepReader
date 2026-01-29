@@ -70,6 +70,11 @@ from .pdf import (
     get_page_tokens,
     get_text_of_pages,
     count_tokens,
+    # 新增 OCR
+    VisualDetector,
+    detect_pdf_type,
+    VisualDetectionResult,
+    PaddleOCRExtractor,
 )
 from .llm import (
     UnifiedLLM,
@@ -119,6 +124,11 @@ __all__ = [
     "get_page_tokens",
     "get_text_of_pages",
     "count_tokens",
+    # OCR 模块
+    "VisualDetector",
+    "detect_pdf_type",
+    "VisualDetectionResult",
+    "PaddleOCRExtractor",
     # LLM 模块
     "get_llm_provider",
     # TOC 模块
