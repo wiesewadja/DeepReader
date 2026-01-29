@@ -5,35 +5,45 @@
 
 import { App, Modal, FuzzySuggestModal, TFile } from "obsidian";
 
+// ==================== 文档类型 ====================
+export type DocumentType = "pdf" | "epub";
+
 // ==================== SVG 图标 ====================
 const Icons = {
     file: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
     filePdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><text x="7" y="17" font-size="8" fill="currentColor" stroke="none">PDF</text></svg>`,
+    fileEpub: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><text x="6" y="17" font-size="6" fill="currentColor" stroke="none">EPUB</text></svg>`,
     search: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
     folder: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`,
     empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`
 };
 
-// ==================== PDF 文件信息 ====================
-export interface PDFFileInfo {
+// ==================== 文档文件信息 ====================
+export interface DocumentFileInfo {
     file: TFile;
     name: string;
     path: string;
     size: number;
     sizeFormatted: string;
     folder: string;
+    docType: DocumentType;
 }
 
-// ==================== PDF 文件选择器模态框 ====================
+// 保持向后兼容的类型别名
+export interface PDFFileInfo extends Omit<DocumentFileInfo, 'docType'> {
+    docType: 'pdf';
+}
+
+// ==================== 文档文件选择器模态框 ====================
 export class PDFFileSelectorModal extends Modal {
-    private onSelect: (fileInfo: PDFFileInfo) => void;
-    private pdfFiles: PDFFileInfo[] = [];
-    private filteredFiles: PDFFileInfo[] = [];
+    private onSelect: (fileInfo: DocumentFileInfo) => void;
+    private documentFiles: DocumentFileInfo[] = [];
+    private filteredFiles: DocumentFileInfo[] = [];
     private searchInput: HTMLInputElement | null = null;
     private fileListEl: HTMLElement | null = null;
     private fileCountEl: HTMLElement | null = null;
 
-    constructor(app: App, onSelect: (fileInfo: PDFFileInfo) => void) {
+    constructor(app: App, onSelect: (fileInfo: DocumentFileInfo) => void) {
         super(app);
         this.onSelect = onSelect;
     }
@@ -49,8 +59,8 @@ export class PDFFileSelectorModal extends Modal {
         // 创建搜索框
         this.createSearchBox(contentEl);
 
-        // 加载 PDF 文件
-        await this.loadPDFFiles();
+        // 加载文档文件（PDF 和 EPUB）
+        await this.loadDocumentFiles();
 
         // 更新文件计数（在加载完成后）
         if (this.fileCountEl) {
@@ -69,12 +79,12 @@ export class PDFFileSelectorModal extends Modal {
         logo.innerHTML = Icons.filePdf;
 
         headerLeft.createEl("h2", {
-            text: "选择 PDF 文件",
+            text: "选择 PDF 或 EPUB 文件",
             cls: "deeppdf-modal-title"
         });
 
         const description = container.createEl("p", {
-            text: "从当前 vault 中选择要创建索引的 PDF 文件",
+            text: "从当前 vault 中选择要创建索引的 PDF 或 EPUB 文件",
             cls: "deeppdf-modal-description"
         });
     }
@@ -86,7 +96,7 @@ export class PDFFileSelectorModal extends Modal {
 
         this.searchInput = searchWrapper.createEl("input", {
             cls: "deeppdf-search-input",
-            attr: { type: "text", placeholder: "搜索 PDF 文件..." }
+            attr: { type: "text", placeholder: "搜索文档..." }
         });
 
         this.searchInput.addEventListener("input", () => {
@@ -97,15 +107,18 @@ export class PDFFileSelectorModal extends Modal {
         this.fileCountEl = searchContainer.createDiv({ cls: "deeppdf-file-count" });
     }
 
-    private async loadPDFFiles() {
-        // 使用 Obsidian API 获取所有 PDF 文件
+    private async loadDocumentFiles() {
+        // 使用 Obsidian API 获取所有 PDF 和 EPUB 文件
         const allFiles = this.app.vault.getFiles();
-        const pdfFiles = allFiles.filter(f => f.extension === "pdf");
+        const supportedExtensions = ["pdf", "epub"];
+        const documentFiles = allFiles.filter(f =>
+            supportedExtensions.includes(f.extension)
+        );
 
         // 获取 vault 的基础路径
         const basePath = (this.app.vault.adapter as any).basePath || '';
 
-        this.pdfFiles = pdfFiles.map(file => {
+        this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径
             const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
 
@@ -115,11 +128,12 @@ export class PDFFileSelectorModal extends Modal {
                 path: absolutePath, // 使用绝对路径
                 size: file.stat.size,
                 sizeFormatted: this.formatFileSize(file.stat.size),
-                folder: file.parent?.path || "/"
+                folder: file.parent?.path || "/",
+                docType: file.extension as DocumentType
             };
         });
 
-        this.filteredFiles = [...this.pdfFiles];
+        this.filteredFiles = [...this.documentFiles];
     }
 
     private createFileList(container: HTMLElement) {
@@ -141,7 +155,7 @@ export class PDFFileSelectorModal extends Modal {
         });
     }
 
-    private createFileItem(fileInfo: PDFFileInfo, index: number): HTMLElement {
+    private createFileItem(fileInfo: DocumentFileInfo, index: number): HTMLElement {
         const item = document.createElement("div");
         item.addClass("deeppdf-file-item", "deeppdf-animate-fade-in");
         item.style.animationDelay = `${Math.min(index * 30, 300)}ms`;
@@ -150,7 +164,8 @@ export class PDFFileSelectorModal extends Modal {
         const info = item.createDiv({ cls: "deeppdf-file-item-info" });
 
         const icon = info.createDiv({ cls: "deeppdf-file-icon" });
-        icon.innerHTML = Icons.filePdf;
+        // 根据文档类型选择图标
+        icon.innerHTML = fileInfo.docType === "epub" ? Icons.fileEpub : Icons.filePdf;
 
         const details = info.createDiv({ cls: "deeppdf-file-details" });
 
@@ -158,6 +173,11 @@ export class PDFFileSelectorModal extends Modal {
         name.textContent = fileInfo.name;
 
         const meta = details.createDiv({ cls: "deeppdf-file-meta" });
+
+        // 文档类型徽章
+        const typeBadge = meta.createSpan({ cls: "deeppdf-type-badge" });
+        typeBadge.textContent = fileInfo.docType.toUpperCase();
+        typeBadge.setAttribute("data-doc-type", fileInfo.docType);
 
         const folderBadge = meta.createSpan({ cls: "deeppdf-folder-badge" });
         folderBadge.innerHTML = `${Icons.folder} ${fileInfo.folder}`;
@@ -190,11 +210,11 @@ export class PDFFileSelectorModal extends Modal {
         container.innerHTML = `
             <div class="deeppdf-empty-state">
                 <div class="deeppdf-empty-icon">${Icons.empty}</div>
-                <div class="deeppdf-empty-text">未找到 PDF 文件</div>
+                <div class="deeppdf-empty-text">未找到文档</div>
                 <div class="deeppdf-empty-hint">
                     ${this.searchInput && this.searchInput.value
                 ? "尝试使用其他关键词搜索"
-                : "当前 vault 中没有 PDF 文件"}
+                : "当前 vault 中没有 PDF 或 EPUB 文件"}
                 </div>
             </div>
         `;
@@ -204,12 +224,13 @@ export class PDFFileSelectorModal extends Modal {
         const searchTerm = query.toLowerCase().trim();
 
         if (!searchTerm) {
-            this.filteredFiles = [...this.pdfFiles];
+            this.filteredFiles = [...this.documentFiles];
         } else {
-            this.filteredFiles = this.pdfFiles.filter(f =>
+            this.filteredFiles = this.documentFiles.filter(f =>
                 f.name.toLowerCase().includes(searchTerm) ||
                 f.path.toLowerCase().includes(searchTerm) ||
-                f.folder.toLowerCase().includes(searchTerm)
+                f.folder.toLowerCase().includes(searchTerm) ||
+                f.docType.toLowerCase().includes(searchTerm)
             );
         }
 
@@ -229,15 +250,15 @@ export class PDFFileSelectorModal extends Modal {
     }
 
     private updateFileCount(container: HTMLElement) {
-        const total = this.pdfFiles.length;
+        const total = this.documentFiles.length;
         const filtered = this.filteredFiles.length;
 
         if (total === 0) {
-            container.textContent = "当前 vault 中没有 PDF 文件";
+            container.textContent = "当前 vault 中没有文档";
         } else if (filtered === total) {
-            container.textContent = `共 ${total} 个 PDF 文件`;
+            container.textContent = `共 ${total} 个文档`;
         } else {
-            container.textContent = `找到 ${filtered} / ${total} 个 PDF 文件`;
+            container.textContent = `找到 ${filtered} / ${total} 个文档`;
         }
     }
 
@@ -257,25 +278,28 @@ export class PDFFileSelectorModal extends Modal {
 }
 
 // ==================== 快速选择器（FuzzySuggestModal）====================
-export class PDFQuickSelector extends FuzzySuggestModal<PDFFileInfo> {
-    private pdfFiles: PDFFileInfo[] = [];
-    private onSelect: (fileInfo: PDFFileInfo) => void;
+export class PDFQuickSelector extends FuzzySuggestModal<DocumentFileInfo> {
+    private documentFiles: DocumentFileInfo[] = [];
+    private onSelect: (fileInfo: DocumentFileInfo) => void;
 
-    constructor(app: App, onSelect: (fileInfo: PDFFileInfo) => void) {
+    constructor(app: App, onSelect: (fileInfo: DocumentFileInfo) => void) {
         super(app);
         this.onSelect = onSelect;
         this.setPlaceholder("输入文件名搜索...");
     }
 
     async onOpen() {
-        // 加载 PDF 文件
+        // 加载文档文件（PDF 和 EPUB）
         const allFiles = this.app.vault.getFiles();
-        const pdfFiles = allFiles.filter(f => f.extension === "pdf");
+        const supportedExtensions = ["pdf", "epub"];
+        const documentFiles = allFiles.filter(f =>
+            supportedExtensions.includes(f.extension)
+        );
 
         // 获取 vault 的基础路径
         const basePath = (this.app.vault.adapter as any).basePath || '';
 
-        this.pdfFiles = pdfFiles.map(file => {
+        this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径
             const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
 
@@ -285,22 +309,23 @@ export class PDFQuickSelector extends FuzzySuggestModal<PDFFileInfo> {
                 path: absolutePath, // 使用绝对路径
                 size: file.stat.size,
                 sizeFormatted: this.formatFileSize(file.stat.size),
-                folder: file.parent?.path || "/"
+                folder: file.parent?.path || "/",
+                docType: file.extension as DocumentType
             };
         });
 
         super.onOpen();
     }
 
-    getItems(): PDFFileInfo[] {
-        return this.pdfFiles;
+    getItems(): DocumentFileInfo[] {
+        return this.documentFiles;
     }
 
-    getItemText(item: PDFFileInfo): string {
-        return `${item.name} (${item.folder})`;
+    getItemText(item: DocumentFileInfo): string {
+        return `${item.name} (${item.folder}) [${item.docType.toUpperCase()}]`;
     }
 
-    onChooseItem(item: PDFFileInfo, evt: MouseEvent | KeyboardEvent) {
+    onChooseItem(item: DocumentFileInfo, evt: MouseEvent | KeyboardEvent) {
         this.onSelect(item);
     }
 

@@ -4,7 +4,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
-import { PDFFileSelectorModal, PDFFileInfo } from "../ui/pdf-file-selector.js";
+import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo, SessionInfo } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
@@ -378,7 +378,7 @@ export class SidebarView extends ItemView {
             },
             onCreateIndex: () => {
                 // 直接打开 PDF 选择器，不再需要 IndexManagerModal
-                new PDFFileSelectorModal(this.app, async (fileInfo: PDFFileInfo) => {
+                new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
                     try {
                         // 使用 ConfirmModal 替代原生 confirm
                         new ConfirmModal(

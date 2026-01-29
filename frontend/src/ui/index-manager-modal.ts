@@ -6,7 +6,7 @@
 
 import { App, Modal, Notice } from "obsidian";
 import { DeepPDFClient, IndexPDFResult, DeleteIndexResult, ListIndexesResult, IndexListItem, IndexPDFRequest } from "../api/http-client.js";
-import { PDFFileSelectorModal, PDFFileInfo } from "../ui/pdf-file-selector.js";
+import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 // import { TaskQueueManager, createIndexTask } from "../components/task-queue-manager.js";
 import { IndexStatusBadge, formatIndexTime } from "../components/index-status-badge.js";
 
@@ -119,10 +119,10 @@ export class IndexManagerModal extends Modal {
         this.refreshBtn.addEventListener("click", () => this.loadIndexes());
     }
 
-    private pendingPDFs: PDFFileInfo[] = []; // 待索引的 PDF 列表
+    private pendingPDFs: DocumentFileInfo[] = []; // 待索引的 PDF 列表
 
     private selectPDFAndCreateIndex() {
-        new PDFFileSelectorModal(this.app, async (fileInfo: PDFFileInfo) => {
+        new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
             // 添加到待索引列表
             this.pendingPDFs.push(fileInfo);
             new Notice(`已选择 "${fileInfo.name}"，请点击"开始索引"按钮`);
@@ -131,7 +131,7 @@ export class IndexManagerModal extends Modal {
         }).open();
     }
 
-    private async createIndexFromFile(fileInfo: PDFFileInfo, startBtn?: HTMLButtonElement) {
+    private async createIndexFromFile(fileInfo: DocumentFileInfo, startBtn?: HTMLButtonElement) {
         try {
             // 显示创建中提示
             new Notice(`正在为 "${fileInfo.name}" 创建索引...`);
@@ -290,7 +290,7 @@ export class IndexManagerModal extends Modal {
         }
     }
 
-    private createPendingPDFCard(pdfInfo: PDFFileInfo): HTMLElement {
+    private createPendingPDFCard(pdfInfo: DocumentFileInfo): HTMLElement {
         const card = document.createElement("div");
         card.addClass("index-card", "pending-card");
 

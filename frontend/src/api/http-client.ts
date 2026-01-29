@@ -5,6 +5,9 @@
 
 // ==================== 类型定义 ====================
 
+// 文档类型
+export type DocumentType = "pdf" | "epub";
+
 // 基础响应
 export interface APIResponse {
   status: string;
@@ -120,6 +123,7 @@ export interface IndexPDFResult {
   message?: string;
   node_count?: number;
   pdf_name?: string;
+  doc_type?: DocumentType;
   indexing_method?: string;
   error?: string;
 }
