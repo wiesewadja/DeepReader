@@ -1737,6 +1737,37 @@ async def meta_processor(
         item for item in toc_with_page_number if item.get("physical_index") is not None
     ]
 
+    # 如果目录为空，根据 mode 降级到更简单的处理方式
+    if len(toc_with_page_number) == 0:
+        logger.warning("目录解析为空，将降级到无目录模式")
+        if mode == "process_toc_with_page_numbers":
+            # 从有页码的目录降级到无页码目录
+            return await meta_processor(
+                page_list,
+                mode="process_toc_no_page_numbers",
+                toc_content=toc_content,
+                toc_page_list=toc_page_list,
+                start_index=start_index,
+                opt=opt,
+                logger=logger,
+                llm_client=llm_client,
+            )
+        elif mode == "process_toc_no_page_numbers":
+            # 从无页码目录降级到完全无目录模式
+            return await meta_processor(
+                page_list,
+                mode="process_no_toc",
+                start_index=start_index,
+                opt=opt,
+                logger=logger,
+                llm_client=llm_client,
+            )
+        else:
+            # mode="process_no_toc" 且目录为空，说明 LLM 生成目录失败
+            # 返回空数组，让调用者处理
+            logger.warning("无目录模式下 LLM 生成目录失败，返回空结构")
+            return []
+
     toc_with_page_number = validate_and_truncate_physical_indices(
         toc_with_page_number, len(page_list), start_index=start_index, logger=logger
     )
@@ -1897,7 +1928,23 @@ async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
         item for item in toc_with_page_number if item.get("physical_index") is not None
     ]
 
-    toc_tree = post_processing(valid_toc_items, len(page_list))
+    # 如果所有模式都失败，创建一个基本的文档结构
+    if len(valid_toc_items) == 0:
+        logger.warning("所有目录解析模式均失败，创建基本文档结构")
+        # 创建包含整个文档的单个节点
+        from .pdf.tokens import count_tokens
+        total_tokens = sum([page[1] for page in page_list])
+        toc_tree = [{
+            "structure": "1",
+            "title": "文档内容",
+            "start_index": 1,
+            "end_index": len(page_list),
+            "physical_index": 1,
+            "level": 0,
+            "tokens": total_tokens,
+        }]
+    else:
+        toc_tree = post_processing(valid_toc_items, len(page_list))
     tasks = [
         process_large_node_recursively(node, page_list, opt, logger=logger, llm_client=llm_client)
         for node in toc_tree
