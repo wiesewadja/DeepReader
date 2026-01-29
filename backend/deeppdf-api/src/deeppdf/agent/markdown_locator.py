@@ -23,8 +23,11 @@ class MarkdownLocator:
 
         # 调试日志
         import logging
+
         logger = logging.getLogger(__name__)
-        logger.info(f"[MarkdownLocator] 初始化完成，包含 {len(self.markdown_files)} 个文件映射")
+        logger.info(
+            f"[MarkdownLocator] 初始化完成，包含 {len(self.markdown_files)} 个文件映射"
+        )
         if len(self.markdown_files) > 0:
             # 显示前3个映射作为示例
             sample_items = list(self.markdown_files.items())[:3]

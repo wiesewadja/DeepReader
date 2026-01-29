@@ -96,7 +96,7 @@ class InspectTocTool:
 
 
 class ReadPageTool:
-    """按页读取工具 - 从指定页码读取 PDF 内容"""
+    """按页读取工具 - 从指定页码读取 PDF 内容（支持视觉密集型 PDF）"""
 
     name: str = "read_page"
     description: str = (
@@ -105,7 +105,14 @@ class ReadPageTool:
         "参数: page_num (int, 必需) - 要读取的页码（从1开始）"
     )
 
-    def __init__(self, pageindex_lib_path: str, index_id: str, storage_dir: str):
+    def __init__(
+        self,
+        pageindex_lib_path: str,
+        index_id: str,
+        storage_dir: str,
+        index_metadata: Optional[Dict[str, Any]] = None,
+        deepseek_ocr_client: Optional[Any] = None,
+    ):
         """
         初始化工具
 
@@ -113,11 +120,20 @@ class ReadPageTool:
             pageindex_lib_path: PageIndex 库的路径
             index_id: 索引 ID
             storage_dir: 存储目录
+            index_metadata: 索引元数据（包含 visual_heavy 标记）
+            deepseek_ocr_client: DeepSeek OCR 客户端（可选）
         """
         self.pageindex_lib_path = pageindex_lib_path
         self.index_id = index_id
         self.storage_dir = storage_dir
+        self.index_metadata = index_metadata or {}
+        self.deepseek_ocr_client = deepseek_ocr_client
         self._pi = None  # 延迟加载
+
+        # 检测是否为视觉密集型 PDF
+        self.is_visual_heavy = self.index_metadata.get("visual_heavy", False)
+        if self.is_visual_heavy:
+            logger.info(f"[ReadPageTool] 视觉密集型模式: {index_id}")
 
     def _load_page_index(self):
         """延迟加载 PageIndex 实例"""
@@ -142,8 +158,17 @@ class ReadPageTool:
             **kwargs: 其他参数（兼容性保留）
 
         Returns:
-            页面文本内容，带段落标记
+            页面文本内容
         """
+        # 如果是视觉密集型，使用 DeepSeek OCR
+        if self.is_visual_heavy:
+            return self._read_page_visual(page_num)
+
+        # 否则使用普通文本读取
+        return self._read_page_normal(page_num)
+
+    def _read_page_normal(self, page_num: int) -> str:
+        """普通文本读取"""
         try:
             pi = self._load_page_index()
 
@@ -160,6 +185,30 @@ class ReadPageTool:
             return f"错误: 读取页面失败 - {str(e)}"
         except Exception:
             return "错误: 读取页面时发生未知错误"
+
+    def _read_page_visual(self, page_num: int) -> str:
+        """视觉读取（DeepSeek OCR）"""
+        if not self.deepseek_ocr_client:
+            logger.error("[ReadPageTool] DeepSeek OCR 客户端未初始化")
+            return "错误: OCR 客户端未配置"
+
+        try:
+            # 获取 PDF 路径
+            pdf_path = self.index_metadata.get("pdf_path")
+            if not pdf_path:
+                return "错误: 无法找到 PDF 文件路径"
+
+            # 调用 DeepSeek OCR（page_num 转为从 0 开始）
+            result = self.deepseek_ocr_client.read_pdf_page(
+                pdf_path=pdf_path,
+                page_num=page_num - 1,
+            )
+
+            return f"# 第 {page_num} 页内容（OCR识别）\n\n{result}"
+
+        except Exception as e:
+            logger.error(f"[ReadPageTool] 视觉读取失败: {e}")
+            return f"读取失败: {str(e)}"
 
 
 class HybridSearchTool:

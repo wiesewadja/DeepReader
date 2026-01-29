@@ -148,6 +148,18 @@ class DeepPDFAgent:
         # 初始化 LLM 客户端
         self.client = self._init_llm(api_key, base_url)
 
+        # 如果 PDF 是视觉密集型，初始化 DeepSeek OCR 客户端
+        self.deepseek_ocr_client = None
+        if index_metadata and index_metadata.get("visual_heavy"):
+            from ..ocr import DeepSeekOCRClient
+
+            ocr_api_key = api_key or settings.deepseek_ocr_api_key
+            if ocr_api_key:
+                self.deepseek_ocr_client = DeepSeekOCRClient(api_key=ocr_api_key)
+                logger.info("[Agent初始化] DeepSeek OCR 客户端已创建")
+            else:
+                logger.warning("[Agent初始化] visual_heavy=true 但未提供 API Key")
+
         # 创建 MarkdownLocator（如果提供了 index_metadata）
         markdown_locator = None
         if index_metadata and index_metadata.get("markdown_files"):
@@ -167,6 +179,8 @@ class DeepPDFAgent:
             markdown_locator=markdown_locator,
             enable_llm_tree_search=enable_llm_tree_search,
             llm_client=self.client if enable_llm_tree_search else None,
+            index_metadata=index_metadata,
+            deepseek_ocr_client=self.deepseek_ocr_client,
         )
 
         # 构建 System Prompt

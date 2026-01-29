@@ -106,6 +106,8 @@ def create_tool_executor(
     markdown_locator: Optional[MarkdownLocator] = None,
     enable_llm_tree_search: bool = False,
     llm_client: Optional[Any] = None,
+    index_metadata: Optional[Dict[str, Any]] = None,
+    deepseek_ocr_client: Optional[Any] = None,
 ) -> ToolExecutor:
     """
     创建并配置工具执行器
@@ -118,6 +120,8 @@ def create_tool_executor(
         markdown_locator: Markdown 定位器（可选，用于生成引用链接）
         enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
         llm_client: LLM 客户端实例（可选，启用 LLM 树搜索时必需）
+        index_metadata: 索引元数据（包含 visual_heavy 标记）
+        deepseek_ocr_client: DeepSeek OCR 客户端
 
     Returns:
         配置好的 ToolExecutor 实例
@@ -135,7 +139,13 @@ def create_tool_executor(
 
     # 3. ReadPageTool - 按页读取（需要 PageIndex）
     if pageindex_lib_path:
-        tools["read_page"] = ReadPageTool(pageindex_lib_path, index_id, storage_dir)
+        tools["read_page"] = ReadPageTool(
+            pageindex_lib_path,
+            index_id,
+            storage_dir,
+            index_metadata=index_metadata,
+            deepseek_ocr_client=deepseek_ocr_client,
+        )
     else:
         logger.warning("[工具初始化] 未提供 pageindex_lib_path，read_page 工具将不可用")
 
