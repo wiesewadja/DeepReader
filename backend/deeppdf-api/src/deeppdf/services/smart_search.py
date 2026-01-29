@@ -18,15 +18,15 @@ from difflib import SequenceMatcher
 
 # 中文 NLP 依赖
 try:
-    from hanlp import HanLP
+    import jieba
     from rank_bm25 import BM25Okapi
 except ImportError:
     import logging
 
     logging.warning(
-        "Missing dependencies: hanlp or rank_bm25. BM25 search will be disabled."
+        "Missing dependencies: jieba or rank_bm25. BM25 search will be disabled."
     )
-    HanLP = None
+    jieba = None
     BM25Okapi = None
 
 logger = logging.getLogger(__name__)
@@ -74,8 +74,8 @@ class TreeSearchEngine:
         self.bm25_corpus = []
         self.bm25_nodes = []
 
-        if not HanLP or not BM25Okapi:
-            logger.warning("[BM25] 依赖缺失 (hanlp 或 rank_bm25)，BM25 搜索已禁用")
+        if not jieba or not BM25Okapi:
+            logger.warning("[BM25] 依赖缺失 (jieba 或 rank_bm25)，BM25 搜索已禁用")
             self.bm25 = None
             return
 
@@ -88,8 +88,8 @@ class TreeSearchEngine:
                 content = f"{node.get('title', '')} {summary} {text_content}"
 
                 if content.strip():
-                    # 中文分词 - 使用 HanLP
-                    tokens = HanLP.cut(content)
+                    # 中文分词
+                    tokens = list(jieba.cut_for_search(content))
                     self.bm25_corpus.append(tokens)
                     self.bm25_nodes.append(node)
 
@@ -149,11 +149,11 @@ class TreeSearchEngine:
         Returns:
             关键词列表（按长度降序）
         """
-        if not HanLP:
+        if not jieba:
             return [query]
 
-        # 使用 HanLP 分词并提取关键词
-        words = HanLP.cut(query)
+        # 使用 jieba 分词并提取关键词
+        words = list(jieba.cut_for_search(query))
 
         # 过滤停用词和单字符词
         stop_words = {
@@ -200,7 +200,7 @@ class TreeSearchEngine:
         # 过滤停用词、标点、单字符
         keywords = []
         for word in words:
-            word = str(word).strip()
+            word = word.strip()
             if (
                 len(word) > 1
                 and word not in stop_words
@@ -309,10 +309,10 @@ class TreeSearchEngine:
 
     def search_by_bm25(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """BM25 检索"""
-        if not self.bm25 or not HanLP:
+        if not self.bm25 or not jieba:
             return []
 
-        tokenized_query = HanLP.cut(query)
+        tokenized_query = list(jieba.cut_for_search(query))
         scores = self.bm25.get_scores(tokenized_query)
 
         # 获取 Top-K 索引

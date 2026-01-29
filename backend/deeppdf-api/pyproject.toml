@@ -25,8 +25,9 @@ dependencies = [
     # Concurrency control
     "aiofiles>=23.2.1",
     # Search & NLP
-    "hanlp>=2.0",
+    "jieba>=0.42.1",
     "rank-bm25>=0.2.2",
+    "setuptools<81",  # 避免 jieba 的 pkg_resources 弃用警告（setuptools 81+ 将完全移除 pkg_resources）
     # Internal dependencies
     "pageindex",  # workspace dependency
     "python-multipart>=0.0.21",

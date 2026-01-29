@@ -6,7 +6,12 @@ PDF 索引和语义搜索服务
 
 import warnings
 
-# 过滤 PyTorch 的 pynvml 弃用警告（PyTorch 内部问题，非项目代码）
+# 过滤第三方库的弃用警告（jieba、PyTorch 等）
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    module="jieba"
+)
 warnings.filterwarnings(
     "ignore",
     message=".*pynvml package is deprecated.*",
