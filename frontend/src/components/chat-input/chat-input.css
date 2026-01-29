@@ -23,6 +23,45 @@
 	pointer-events: none;
 }
 
+/* AI 回复时的最小化状态 */
+.deeppdf-chat-input-section.minimized {
+	transform: translateX(-50%) translateY(120%) !important;
+	opacity: 0.5 !important;
+	pointer-events: auto;
+	cursor: pointer;
+	transition: transform 0.3s ease, opacity 0.3s ease;
+	height: 40px !important;
+	min-height: 40px !important;
+	max-height: 40px !important;
+}
+
+.deeppdf-chat-input-section.minimized:hover {
+	opacity: 0.8 !important;
+	transform: translateX(-50%) translateY(115%) !important;
+}
+
+/* 最小化时隐藏输入框内容 */
+.deeppdf-chat-input-section.minimized .deeppdf-chat-input {
+	display: none;
+}
+
+/* 最小化时显示一个提示 */
+.deeppdf-chat-input-section.minimized::after {
+	content: "⚡ AI 正在回复...点击恢复";
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	white-space: nowrap;
+	background: var(--background-primary);
+	padding: 8px 16px;
+	border-radius: 20px;
+	border: 1px solid var(--background-modifier-border);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 .deeppdf-chat-input {
 	display: flex;
 	flex-direction: column;

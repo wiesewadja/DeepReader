@@ -66,6 +66,8 @@ export class SidebarView extends ItemView {
     private isProcessing: boolean = false;
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
     private streamController: AbortController | null = null;  // 流式请求控制器
+    private isAiStreaming: boolean = false;  // AI 是否正在流式输出
+    private inputSectionMinimized: boolean = false;  // 输入框是否最小化
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -589,6 +591,7 @@ export class SidebarView extends ItemView {
     /**
      * 设置滚动监听逻辑
      * 当消息列表滚动时隐藏输入框，停止滚动后显示
+     * AI 回复期间，输入框最小化并暂停滚动监听
      */
     private setupScrollHandler(container: HTMLElement) {
         // 使用 setTimeout 延迟查找 DOM 元素，确保它们已被渲染
@@ -605,6 +608,11 @@ export class SidebarView extends ItemView {
             let scrollTimeout: any = null;
 
             messagesContainer.addEventListener('scroll', () => {
+                // AI 流式输出时，不处理滚动事件（由 isAiStreaming 标志控制）
+                if (this.isAiStreaming) {
+                    return;
+                }
+
                 // 滚动时添加 hidden 类
                 inputSection.addClass('hidden');
 
@@ -617,7 +625,43 @@ export class SidebarView extends ItemView {
                     inputSection.removeClass('hidden');
                 }, 300);
             });
+
+            // 点击输入区域恢复显示（从最小化状态）
+            inputSection.addEventListener('click', () => {
+                if (this.inputSectionMinimized) {
+                    inputSection.removeClass('minimized');
+                    this.inputSectionMinimized = false;
+                }
+            });
         }, 100);
+    }
+
+    /**
+     * 最小化输入框（AI 回复时调用）
+     */
+    private minimizeInputSection() {
+        console.log('[DeepPDF] minimizeInputSection called');
+        const inputSection = this.containerEl.querySelector('.deeppdf-chat-input-section');
+        console.log('[DeepPDF] inputSection found:', !!inputSection);
+        if (inputSection) {
+            inputSection.addClass('minimized');
+            this.inputSectionMinimized = true;
+            console.log('[DeepPDF] minimized class added, inputSection classes:', inputSection.className);
+        }
+    }
+
+    /**
+     * 恢复输入框显示（AI 回复结束时调用）
+     */
+    private restoreInputSection() {
+        console.log('[DeepPDF] restoreInputSection called');
+        const inputSection = this.containerEl.querySelector('.deeppdf-chat-input-section');
+        console.log('[DeepPDF] inputSection found:', !!inputSection);
+        if (inputSection) {
+            inputSection.removeClass('minimized', 'hidden');
+            this.inputSectionMinimized = false;
+            console.log('[DeepPDF] minimized/hidden classes removed');
+        }
     }
 
     /**
@@ -687,9 +731,11 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 禁用输入
+        // 禁用输入并最小化输入框
         this.isProcessing = true;
+        this.isAiStreaming = true;
         this.chatInput?.setDisabled(true);
+        this.minimizeInputSection();
 
         try {
             // 生成消息 ID（使用单一时间戳避免冲突）
@@ -718,7 +764,8 @@ export class SidebarView extends ItemView {
             this.messageList?.addMessage(aiMessageData);
 
             // 使用 Agent 智能体模式（支持自动路由）
-            await this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
+            // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
+            this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
 
 
         } catch (error) {
@@ -733,12 +780,15 @@ export class SidebarView extends ItemView {
                 content: `查询失败: ${errorMessage}`,
                 timestamp: new Date().toISOString()
             });
-        } finally {
-            // 恢复输入
+
+            // 出错时也要恢复状态
             this.isProcessing = false;
+            this.isAiStreaming = false;
             this.chatInput?.setDisabled(false);
+            this.restoreInputSection();
             this.chatInput?.focus();
         }
+        // 移除 finally 块，改为在 handleAgentQuery 的回调中处理
     }
 
     /**
@@ -1003,6 +1053,13 @@ ${r.text}`;
                     });
                     // 保存到缓存
                     this.saveToCache();
+
+                    // 恢复输入状态（AI 回复完成）
+                    this.isProcessing = false;
+                    this.isAiStreaming = false;
+                    this.chatInput?.setDisabled(false);
+                    this.restoreInputSection();
+                    this.chatInput?.focus();
                 },
                 // onError: 错误处理
                 (error: string) => {
@@ -1010,6 +1067,13 @@ ${r.text}`;
                         content: `查询失败: ${error}`,
                         isStreaming: false
                     });
+
+                    // 恢复输入状态（出错时）
+                    this.isProcessing = false;
+                    this.isAiStreaming = false;
+                    this.chatInput?.setDisabled(false);
+                    this.restoreInputSection();
+                    this.chatInput?.focus();
                 },
                 forceMode,  // 传递强制模式参数
                 true,       // 启用引用数据提取
