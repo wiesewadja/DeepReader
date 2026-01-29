@@ -21,8 +21,6 @@ try:
     import jieba
     from rank_bm25 import BM25Okapi
 except ImportError:
-    import logging
-
     logging.warning(
         "Missing dependencies: jieba or rank_bm25. BM25 search will be disabled."
     )
