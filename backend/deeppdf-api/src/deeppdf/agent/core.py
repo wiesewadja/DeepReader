@@ -153,12 +153,23 @@ class DeepPDFAgent:
         if index_metadata and index_metadata.get("visual_heavy"):
             from ..ocr import DeepSeekOCRClient
 
-            ocr_api_key = api_key or settings.deepseek_ocr_api_key
+            # 使用专门的 OCR API Key，而不是 LLM 的 API Key
+            ocr_api_key = settings.deepseek_ocr_api_key
             if ocr_api_key:
+                logger.info("=" * 60)
+                logger.info("[Agent初始化] 🔍 视觉密集型 PDF 检测到")
+                logger.info("[Agent初始化]    - 初始化 DeepSeek OCR 客户端...")
+                logger.info(f"[Agent初始化]    - OCR API Key: {ocr_api_key[:12]}...{ocr_api_key[-4:]}")
                 self.deepseek_ocr_client = DeepSeekOCRClient(api_key=ocr_api_key)
-                logger.info("[Agent初始化] DeepSeek OCR 客户端已创建")
+                logger.info("[Agent初始化] ✅ DeepSeek OCR 客户端已创建")
+                logger.info("=" * 60)
             else:
-                logger.warning("[Agent初始化] visual_heavy=true 但未提供 API Key")
+                logger.warning("=" * 60)
+                logger.warning("[Agent初始化] ⚠️  视觉密集型 PDF 但未配置 OCR")
+                logger.warning("[Agent初始化]    - visual_heavy=true")
+                logger.warning("[Agent初始化]    - 缺少 DEEPSEEK_OCR_API_KEY")
+                logger.warning("[Agent初始化]    - 将使用普通文本读取（可能为空）")
+                logger.warning("=" * 60)
 
         # 创建 MarkdownLocator（如果提供了 index_metadata）
         markdown_locator = None

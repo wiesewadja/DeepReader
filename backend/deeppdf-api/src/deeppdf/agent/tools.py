@@ -133,7 +133,12 @@ class ReadPageTool:
         # 检测是否为视觉密集型 PDF
         self.is_visual_heavy = self.index_metadata.get("visual_heavy", False)
         if self.is_visual_heavy:
-            logger.info(f"[ReadPageTool] 视觉密集型模式: {index_id}")
+            logger.info("=" * 60)
+            logger.info(f"[ReadPageTool] 🔍 视觉密集型模式已启用")
+            logger.info(f"[ReadPageTool]    - 索引ID: {index_id}")
+            logger.info(f"[ReadPageTool]    - OCR客户端: {'✅ 已配置' if self.deepseek_ocr_client else '❌ 未配置'}")
+            logger.info(f"[ReadPageTool]    - 读取方式: DeepSeek OCR 视觉推理")
+            logger.info("=" * 60)
 
     def _load_page_index(self):
         """延迟加载 PageIndex 实例"""
@@ -160,11 +165,15 @@ class ReadPageTool:
         Returns:
             页面文本内容
         """
+        logger.info(f"[ReadPageTool] 📖 读取页面请求: 第 {page_num} 页")
+
         # 如果是视觉密集型，使用 DeepSeek OCR
         if self.is_visual_heavy:
+            logger.info(f"[ReadPageTool] → 使用模式: 🖼️ DeepSeek OCR 视觉推理")
             return self._read_page_visual(page_num)
 
         # 否则使用普通文本读取
+        logger.info(f"[ReadPageTool] → 使用模式: 📄 普通文本读取")
         return self._read_page_normal(page_num)
 
     def _read_page_normal(self, page_num: int) -> str:
@@ -188,26 +197,47 @@ class ReadPageTool:
 
     def _read_page_visual(self, page_num: int) -> str:
         """视觉读取（DeepSeek OCR）"""
+        logger.info("=" * 60)
+        logger.info(f"[ReadPageTool] 🖼️  启动 DeepSeek OCR 视觉推理")
+        logger.info(f"[ReadPageTool]    - 目标页码: {page_num}")
+        logger.info("=" * 60)
+
         if not self.deepseek_ocr_client:
-            logger.error("[ReadPageTool] DeepSeek OCR 客户端未初始化")
+            logger.error("=" * 60)
+            logger.error(f"[ReadPageTool] ❌ DeepSeek OCR 客户端未初始化")
+            logger.error(f"[ReadPageTool]    - 请检查 DEEPSEEK_OCR_API_KEY 配置")
+            logger.error("=" * 60)
             return "错误: OCR 客户端未配置"
 
         try:
             # 获取 PDF 路径
             pdf_path = self.index_metadata.get("pdf_path")
             if not pdf_path:
+                logger.error(f"[ReadPageTool] ❌ 无法找到 PDF 文件路径")
                 return "错误: 无法找到 PDF 文件路径"
 
+            logger.info(f"[ReadPageTool] 📁 PDF 路径: {pdf_path}")
+
             # 调用 DeepSeek OCR（page_num 转为从 0 开始）
+            logger.info(f"[ReadPageTool] 🔄 调用 DeepSeek OCR API...")
             result = self.deepseek_ocr_client.read_pdf_page(
                 pdf_path=pdf_path,
                 page_num=page_num - 1,
             )
 
+            logger.info("=" * 60)
+            logger.info(f"[ReadPageTool] ✅ OCR 识别完成")
+            logger.info(f"[ReadPageTool]    - 识别字符数: {len(result)}")
+            logger.info("=" * 60)
+
             return f"# 第 {page_num} 页内容（OCR识别）\n\n{result}"
 
         except Exception as e:
-            logger.error(f"[ReadPageTool] 视觉读取失败: {e}")
+            logger.error("=" * 60)
+            logger.error(f"[ReadPageTool] ❌ 视觉读取失败")
+            logger.error(f"[ReadPageTool]    - 页码: {page_num}")
+            logger.error(f"[ReadPageTool]    - 错误: {e}")
+            logger.error("=" * 60)
             return f"读取失败: {str(e)}"
 
 

@@ -979,6 +979,11 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
         api_key = settings.openai_api_key
 
     try:
+        # 计算 pageindex-lib 的路径
+        from pathlib import Path
+        base_dir = Path(settings.base_dir)
+        pageindex_lib_path = str(base_dir / "pageindex-lib" / "src")
+
         agent = DeepPDFAgent(
             index_id=index_id,
             storage_dir=str(settings.base_dir),
@@ -988,7 +993,7 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
             llm_model=settings.llm_model,
             api_key=api_key,
             base_url=settings.llm_base_url,
-            pageindex_lib_path=None,  # read_page 工具可选，不传时禁用
+            pageindex_lib_path=pageindex_lib_path,  # 启用 read_page 工具
             enable_llm_tree_search=enable_llm_tree_search,
             temperature=settings.agent_temperature,
             top_p=settings.agent_top_p,
