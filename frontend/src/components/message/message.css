@@ -777,6 +777,9 @@
 	border-radius: 12px;
 	font-weight: 500;
 	transform: translateX(10px);
+	/* 确保 always 存在，不要因为 empty 而隐藏 */
+	display: inline-block !important;
+	min-height: 20px;
 }
 
 .deeppdf-message-status-text.visible {

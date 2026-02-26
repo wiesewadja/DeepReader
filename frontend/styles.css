@@ -1487,6 +1487,9 @@
 	border-radius: 12px;
 	font-weight: 500;
 	transform: translateX(10px);
+	/* 确保 always 存在，不要因为 empty 而隐藏 */
+	display: inline-block !important;
+	min-height: 20px;
 }
 
 .deeppdf-message-status-text.visible {
@@ -1861,7 +1864,7 @@
 .deeppdf-input-toolbar {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
+	justify-content: flex-end;
 	padding: 4px 12px 12px 12px;
 }
 
@@ -1870,6 +1873,12 @@
 	display: flex;
 	align-items: center;
 	gap: 8px;
+}
+
+/* 发送按钮容器垂直居中 */
+.deeppdf-toolbar-right {
+	align-items: center;
+	justify-content: center;
 }
 
 /* ==================== 模式切换按钮 ==================== */
@@ -1937,24 +1946,24 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 32px;
-	height: 32px;
+	width: 36px;
+	height: 36px;
 	padding: 0;
-	
+
 	color: var(--text-muted);
 	background: transparent;
-	
+
 	border: none !important;
 	box-shadow: none !important;
 	border-radius: 50%;
-	
+
 	cursor: pointer;
 	transition: all 0.2s ease;
 }
 
 .deeppdf-chat-input-send-btn svg {
-	width: 18px;
-	height: 18px;
+	width: 22px;
+	height: 22px;
 }
 
 .deeppdf-chat-input-send-btn:not(:disabled):hover {

@@ -131,12 +131,10 @@ export function parseAgentContent(content: string): {
 	const keywordPattern = statusKeywords.join('|');
 
 	// 匹配模式：
-	// 1. Emoji 开头 (包括各种变体) + 可选的 Markdown 斜体/粗体 + 状态关键词
-	// 覆盖 U+2300-U+27BF (杂项符号) 和 U+1F000-U+1FAFF (表情符号)
-	// 修复: Emoji 的 high surrogate 范围应该是 D83C-D83E (不是只到 D83E)
-	// 💭 = U+1F4AD = \uD83D\uDCAD (D83D 在范围内)
+	// 状态行可以是纯文本状态关键词，也可以带有 Emoji 前缀
+	// 支持：纯文本（如"分析中"）、带 Emoji（如"💭 分析中"）、带 Markdown 格式（如"*分析中*"）
 	const statusLineRegex = new RegExp(
-		`^\\s*(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83E][\\uDC00-\\uDFFF])\\s*\\*?(?:${keywordPattern})[^\\n]*\\*?\\s*$`,
+		`^\\s*(?:(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83F][\\uDC00-\\uDFFF])\\s*)?\\*?(?:${keywordPattern})[^\\n]*\\*?\\s*$`,
 		'gm'
 	);
 
@@ -866,6 +864,8 @@ export class AIMessage extends Message {
 	private lastRenderTime: number = 0;
 	private lastRenderedLength: number = 0;
 	private streamingAnimationFrame: number | null = null;
+	// 状态显示跟踪：记录上次实际显示在 DOM 中的状态（用于判断是否需要更新）
+	private lastDisplayedStatus: string | undefined = undefined;
 
 	constructor(
 		data: MessageData,
@@ -986,7 +986,6 @@ export class AIMessage extends Message {
 		const oldCitations = this.data.citations;
 		const oldFollowUpQuestions = this.data.followUpQuestions;
 		const oldAgentToolCalls = this.data.agentToolCalls;
-		const oldCurrentStatus = (this.data as any).currentStatus;
 		const wasStreaming = this.data.isStreaming;
 
 		Object.assign(this.data, data);
@@ -1006,42 +1005,51 @@ export class AIMessage extends Message {
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
-		const currentStatusChanged = data.currentStatus !== undefined && data.currentStatus !== oldCurrentStatus;
+
+		// 【关键修复】状态更新逻辑：比较新状态与上次实际显示的状态，而不是 data 中的旧状态
+		// 因为 data.currentStatus 会被持久化存储，导致相同状态不会触发更新
+		const newStatus = data.currentStatus !== undefined ? data.currentStatus : (this.data as any).currentStatus;
+		const statusNeedsUpdate = newStatus !== undefined && newStatus !== this.lastDisplayedStatus;
 
 		// 调试：输出关键变量
 		console.log('[DeepPDF] update() 调用:', {
 			hasEl: !!this.el,
 			dataCurrentStatus: data.currentStatus,
-			oldCurrentStatus: oldCurrentStatus,
-			currentStatusChanged: currentStatusChanged
+			newStatus,
+			lastDisplayedStatus: this.lastDisplayedStatus,
+			statusNeedsUpdate: statusNeedsUpdate
 		});
 
 		// 优先处理状态更新（不受节流限制，立即更新）
-		if (currentStatusChanged && this.el) {
-			console.log('[DeepPDF] update() - 状态变化:', oldCurrentStatus, '->', data.currentStatus);
-			let statusEl = this.el.querySelector('.deeppdf-message-status-text');
-			if (!statusEl) {
-				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-				if (headerRow) {
-					statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-					console.log('[DeepPDF] update() - 创建状态元素');
-				}
+		if (this.el) {
+			// 【简化逻辑】每次都尝试查找和更新状态元素，不管状态是否变化
+			const headerRow = this.el.querySelector('.deeppdf-message-header-row');
+
+			if (!headerRow) {
+				console.error('[DeepPDF] update() - headerRow 不存在，无法显示状态');
+				return;
 			}
 
-			if (statusEl) {
-				const newStatus = this.data.currentStatus;
-				console.log('[DeepPDF] update() - 设置状态:', newStatus);
-				if (newStatus) {
-					if (statusEl.textContent !== newStatus) {
-						statusEl.textContent = newStatus;
-						statusEl.addClass('visible');
-					}
-				} else {
-					if (statusEl.textContent !== '') {
-						statusEl.textContent = '';
-						statusEl.removeClass('visible');
-					}
-				}
+			let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
+
+			// 如果元素不存在，创建它
+			if (!statusEl) {
+				statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+				console.log('[DeepPDF] update() - 创建状态元素');
+			}
+
+			// 更新状态显示
+			if (newStatus) {
+				statusEl.textContent = newStatus;
+				statusEl.addClass('visible');
+				this.lastDisplayedStatus = newStatus;
+				console.log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
+			} else if (!newStatus && this.lastDisplayedStatus) {
+				// 清空状态
+				statusEl.textContent = '';
+				statusEl.removeClass('visible');
+				this.lastDisplayedStatus = undefined;
+				console.log('[DeepPDF] update() - 状态已隐藏');
 			}
 		}
 
@@ -1061,7 +1069,12 @@ export class AIMessage extends Message {
 			const statusEl = this.el.querySelector('.deeppdf-message-status-text');
 
 			// 结束时隐藏状态
-			if (statusEl) statusEl.textContent = '';
+			if (statusEl) {
+				statusEl.textContent = '';
+				statusEl.removeClass('visible');
+			}
+			this.lastDisplayedStatus = undefined;
+			console.log('[DeepPDF] update() - 流式结束，隐藏状态');
 
 			if (contentEl && this.app) {
 				// 清理旧的 observers 和 mouseover handler
@@ -1096,8 +1109,20 @@ export class AIMessage extends Message {
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
 		if (!contentEl) return;
 
-		// 如果正在流式更新，使用追加模式而非完全重绘
-		if (this.data.isStreaming) {
+		// 【关键】流式更新时，如果内容有实际文本（不是空白/只有状态行），自动隐藏状态
+		// 这样用户一旦看到 AI 回复内容，状态提示就自动消失
+		if (this.data.isStreaming && this.el) {
+			const { cleanedContent } = parseAgentContent(content);
+			// 如果有实质内容（长度 > 20 且不只是空白字符），隐藏状态
+			if (cleanedContent.trim().length > 20) {
+				const statusEl = this.el.querySelector('.deeppdf-message-status-text');
+				if (statusEl && statusEl.textContent !== '') {
+					statusEl.textContent = '';
+					statusEl.removeClass('visible');
+					this.lastDisplayedStatus = undefined;
+					console.log('[DeepPDF] updateContent() - 检测到实际内容，自动隐藏状态');
+				}
+			}
 			this.streamingUpdateContent(contentEl as HTMLElement, content);
 		} else {
 			// 非流式更新，完全重绘
@@ -1130,6 +1155,15 @@ export class AIMessage extends Message {
 			const contentGrowth = contentLen - this.lastRenderedLength;
 			const timePassed = now - this.lastRenderTime;
 
+			// 【调试日志】输出解析结果（前 5 次调用）
+			if (this.lastRenderTime === 0 || contentLen < 100) {
+				console.log('[DeepPDF] streamingUpdateContent - 解析结果:', {
+					currentStatus,
+					contentLen,
+					cleanedContentPreview: cleanedContent.substring(0, 50)
+				});
+			}
+
 			// 检查内容是否实质性变化（忽略尾部空格差异）
 			const normalizedNew = cleanedContent.trim();
 			const normalizedOld = this.lastRenderedContent.trim();
@@ -1142,6 +1176,41 @@ export class AIMessage extends Message {
 
 			// 决定是否需要渲染
 			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
+
+			// 【关键修复】状态显示更新不受节流限制，确保实时反馈
+			// 用户需要立即看到"正在搜索..."等状态，不能因为内容变化小而被跳过
+			if (this.el) {
+				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
+				console.log('[DeepPDF] streamingUpdateContent - DOM 查找:', {
+					hasEl: !!this.el,
+					hasHeaderRow: !!headerRow,
+					currentStatus
+				});
+				if (headerRow) {
+					let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
+					if (!statusEl) {
+						statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
+						console.log('[DeepPDF] streamingUpdateContent - 创建状态元素');
+					}
+					if (statusEl) {
+						console.log('[DeepPDF] streamingUpdateContent - 更新状态:', {
+							currentStatus,
+							oldTextContent: statusEl.textContent,
+							willUpdate: currentStatus && statusEl.textContent !== currentStatus
+						});
+						if (currentStatus && statusEl.textContent !== currentStatus) {
+							statusEl.textContent = currentStatus;
+							statusEl.addClass('visible');
+							console.log('[DeepPDF] streamingUpdateContent - 状态已更新并显示:', currentStatus);
+						} else if (!currentStatus && statusEl.textContent !== '') {
+							statusEl.textContent = '';
+							statusEl.removeClass('visible');
+						}
+					}
+				}
+			} else {
+				console.log('[DeepPDF] streamingUpdateContent - this.el 不存在!');
+			}
 
 			if (shouldRender && this.app) {
 				// 渲染 Markdown（包括 wiki 链接）
@@ -1166,26 +1235,6 @@ export class AIMessage extends Message {
 							(link as HTMLElement).style.textDecoration = 'none';
 						}
 					});
-
-					// 【新增】更新状态显示（不受节流限制）
-					if (this.el) {
-						const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-						if (headerRow) {
-							let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
-							if (!statusEl) {
-								statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-							}
-							if (statusEl) {
-								if (currentStatus && statusEl.textContent !== currentStatus) {
-									statusEl.textContent = currentStatus;
-									statusEl.addClass('visible');
-								} else if (!currentStatus && statusEl.textContent !== '') {
-									statusEl.textContent = '';
-									statusEl.removeClass('visible');
-								}
-							}
-						}
-					}
 
 					// 更新跟踪变量
 					this.lastRenderedContent = cleanedContent;
