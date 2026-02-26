@@ -152,7 +152,7 @@ export class SidebarView extends ItemView {
         }
     }
 
-    /** 打开阅读入口 */
+    /** 打开阅读入口（自动同步书籍笔记） */
     private async openReadingPortal(): Promise<void> {
         if (!this.readingPortal) {
             new Notice("DeepPDF 服务未就绪");
@@ -160,6 +160,10 @@ export class SidebarView extends ItemView {
         }
 
         try {
+            // 先同步书籍笔记
+            new Notice("正在同步书籍笔记...");
+            await this.readingPortal.syncAllIndexes();
+            // 再打开阅读入口
             await this.readingPortal.openReadingPortal();
         } catch (error) {
             console.error("[DeepPDF] Failed to open reading portal:", error);

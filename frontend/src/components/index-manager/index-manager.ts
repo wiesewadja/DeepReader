@@ -123,7 +123,7 @@ export class IndexManager extends Component {
             { icon: Icons.plus, label: '添加文档', action: () => this.options.onCreateIndex?.() },
             { icon: Icons.messageSquare, label: '新增对话', action: () => this.options.onNewChat?.() },
             { icon: Icons.history, label: '查看历史', action: () => this.options.onShowHistory?.() },
-            { icon: '📚', label: '阅读入口', action: () => this.options.onOpenReadingPortal?.() }
+            { icon: Icons.bookworm, label: '阅读入口', action: () => this.options.onOpenReadingPortal?.() }
         ];
 
         menuItems.forEach(item => {

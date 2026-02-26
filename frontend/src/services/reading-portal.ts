@@ -5,7 +5,7 @@
  */
 
 import { App, Notice, TFile, normalizePath } from "obsidian";
-import { DeepPDFClient, ReadingProgress } from "../api/http-client";
+import { DeepPDFClient, ReadingProgress, TableOfContents, BookSummary } from "../api/http-client";
 
 // 阅读入口目录名
 const DEEPPDF_DIR = "DeepPDF";
@@ -14,6 +14,7 @@ const ENTRY_FILE = "📚 阅读入口.md";
 // 书籍笔记 frontmatter 结构
 interface BookFrontmatter {
   index_id: string;
+  book_name: string; // 书籍名称
   status: "unread" | "reading" | "completed";
   progress: number;
   total_pages: number;
@@ -42,11 +43,12 @@ export class ReadingPortalService {
 
   /**
    * 获取书籍笔记路径
+   * 笔记存放在书籍文件夹内，文件名固定为 "📖 书籍笔记.md"
    */
   private getBookNotePath(bookName: string): string {
-    // 清理文件名中的非法字符
-    const safeName = bookName.replace(/[\\/:"*?<>|]/g, "_");
-    return normalizePath(`${DEEPPDF_DIR}/${safeName}.md`);
+    // 清理文件名中的非法字符，作为文件夹名
+    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
+    return normalizePath(`${DEEPPDF_DIR}/${safeFolderName}/${safeFolderName}.md`);
   }
 
   /**
@@ -58,6 +60,135 @@ export class ReadingPortalService {
     if (!exists) {
       await this.app.vault.createFolder(dirPath);
     }
+  }
+
+  /**
+   * 同步所有索引到书籍笔记
+   * 从后端获取所有索引，为每个索引创建书籍笔记文件
+   */
+  async syncAllIndexes(): Promise<number> {
+    await this.ensureDir();
+
+    // 从后端获取所有索引
+    const result = await this.client.listIndexes();
+    const indexes = result?.indexes || [];
+    if (indexes.length === 0) {
+      new Notice("没有找到已索引的书籍");
+      return 0;
+    }
+
+    let created = 0;
+    for (const index of indexes) {
+      const bookName = index.pdf_name.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
+      const indexId = index.id;
+
+      try {
+        // 并行获取阅读进度、摘要和目录
+        const [progress, summary, toc] = await Promise.all([
+          this.client.getReadingProgress(indexId),
+          this.client.getBookSummary(indexId).catch(() => null),
+          this.client.getTableOfContents(indexId).catch(() => null),
+        ]);
+
+        const totalPages = progress?.total_pages || 0;
+        const chapters = toc?.chapters;
+
+        // 从章节文件中读取内容生成更详细的摘要
+        const enhancedSummary = await this.generateEnhancedSummary(bookName, summary?.summary, chapters);
+
+        await this.ensureBookNote(indexId, bookName, totalPages, enhancedSummary, chapters);
+        created++;
+      } catch (error) {
+        console.error(`[DeepPDF] Failed to create book note for ${bookName}:`, error);
+      }
+    }
+
+    new Notice(`已同步 ${created} 本书籍笔记`);
+    return created;
+  }
+
+  /**
+   * 从章节文件中读取内容生成增强的摘要
+   */
+  private async generateEnhancedSummary(
+    bookName: string,
+    backendSummary: string | undefined,
+    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
+  ): Promise<string> {
+    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
+    const bookFolderPath = normalizePath(`${DEEPPDF_DIR}/${safeFolderName}`);
+
+    // 检查书籍文件夹是否存在
+    const folderExists = await this.app.vault.adapter.exists(bookFolderPath);
+    if (!folderExists) {
+      return backendSummary || `《${bookName}》是一本已索引的书籍。`;
+    }
+
+    // 读取前 3 个章节的内容
+    const summaryParts: string[] = [];
+    let chapterCount = 0;
+
+    if (chapters && chapters.length > 0) {
+      for (const chapter of chapters) {
+        if (chapterCount >= 3) break;
+
+        // 跳过目录、前言等辅助章节
+        const titleLower = chapter.title.toLowerCase();
+        if (titleLower.includes("目录") || titleLower.includes("toc") ||
+            titleLower.includes("preface") || titleLower.includes("前言") ||
+            titleLower.includes("序") || chapter.level > 0) {
+          continue;
+        }
+
+        // 查找对应的章节文件
+        const files = this.app.vault.getFiles();
+        const chapterFile = files.find(f =>
+          f.path.startsWith(bookFolderPath) &&
+          f.path.endsWith(".md") &&
+          !f.name.startsWith("📖") &&
+          (f.name.includes(chapter.title.substring(0, 10)) ||
+           f.path.includes(`-${chapter.title.substring(0, 10)}`))
+        );
+
+        if (chapterFile) {
+          try {
+            const content = await this.app.vault.read(chapterFile);
+            // 提取前 300 字符作为内容预览
+            const preview = this.extractContentPreview(content, 300);
+            if (preview) {
+              summaryParts.push(`**${chapter.title}**: ${preview}`);
+              chapterCount++;
+            }
+          } catch (e) {
+            console.warn(`[DeepPDF] 读取章节失败: ${chapterFile.path}`, e);
+          }
+        }
+      }
+    }
+
+    // 如果成功提取了章节内容，返回增强摘要
+    if (summaryParts.length > 0) {
+      return `《${bookName}》主要内容包括：${summaryParts.join("；")}。`;
+    }
+
+    return backendSummary || `《${bookName}》是一本已索引的书籍。`;
+  }
+
+  /**
+   * 从 Markdown 内容中提取纯文本预览
+   */
+  private extractContentPreview(content: string, maxLength: number): string {
+    // 移除 frontmatter
+    let text = content.replace(/^---[\s\S]*?---/, "");
+    // 移除页面标记
+    text = text.replace(/### 第 \d+ 页.*?\n/g, "");
+    text = text.replace(/\^page-\d+/g, "");
+    // 移除标题标记
+    text = text.replace(/#+ /g, "");
+    // 移除多余空白
+    text = text.replace(/\n+/g, " ").trim();
+    // 截取指定长度
+    return text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
   }
 
   /**
@@ -75,25 +206,44 @@ deeppdf_entry: true
 > 💡 点击「开始对话」链接即可与 AI 讨论该书
 
 \`\`\`base
-file: DeepPDF
-fields:
-  - name: 书名
-    type: text
-  - name: 状态
-    type: select
-    options: [未开始, 阅读中, 已完成]
-  - name: 进度
-    type: number
-  - name: 总页数
-    type: number
-  - name: 最后阅读
-    type: date
-  - name: 对话轮数
-    type: number
-  - name: 标签
-    type: multiselect
-  - name: 操作
-    type: text
+filters:
+  and:
+    - file.inFolder("DeepPDF")
+    - 'file.ext == "md"'
+    - file.hasProperty("index_id")
+    - file.hasProperty("book_name")
+
+formulas:
+  status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
+  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "开始对话")'
+
+properties:
+  book_name:
+    displayName: "书名"
+  formula.chat_link:
+    displayName: "操作"
+  formula.status_label:
+    displayName: "状态"
+  progress:
+    displayName: "进度%"
+  total_pages:
+    displayName: "总页数"
+  last_read:
+    displayName: "最后阅读"
+  chat_rounds:
+    displayName: "对话"
+
+views:
+  - type: table
+    name: "书籍列表"
+    order:
+      - book_name
+      - formula.chat_link
+      - formula.status_label
+      - progress
+      - total_pages
+      - last_read
+      - chat_rounds
 \`\`\`
 
 ---
@@ -116,12 +266,30 @@ fields:
   private generateBookNoteContent(
     bookName: string,
     indexId: string,
-    totalPages: number
+    totalPages: number,
+    summary?: string,
+    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
   ): string {
     const now = new Date().toISOString().split("T")[0];
+    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
+
+    // 生成摘要部分
+    const summaryContent = summary
+      ? `> [!note] AI 生成摘要\n> ${summary}`
+      : `> [!note] AI 生成摘要\n> 摘要生成中...`;
+
+    // 生成章节目录部分
+    let tocContent = "（待生成）";
+    if (chapters && chapters.length > 0) {
+      tocContent = chapters.map(ch => {
+        const indent = "  ".repeat(ch.level);
+        return `${indent}- ${ch.title} (p.${ch.start_page}-${ch.end_page})`;
+      }).join("\n");
+    }
 
     return `---
 index_id: ${indexId}
+book_name: "${bookName.replace(/"/g, '\\"')}"
 status: unread
 progress: 0
 total_pages: ${totalPages}
@@ -136,12 +304,40 @@ created: ${now}
 
 ## 📖 摘要
 
-> [!note] AI 生成摘要
-> 摘要生成中...（首次对话后将自动生成）
+${summaryContent}
 
 ## 📑 章节目录
 
-（待生成）
+${tocContent}
+
+## 📂 章节文档
+
+\`\`\`base
+filters:
+  and:
+    - file.inFolder("DeepPDF/${safeFolderName}")
+    - file.ext == "md"
+    - '!file.name.startsWith("📖")'
+
+formulas:
+  page_link: '"p." + physical_index'
+
+properties:
+  file.name:
+    displayName: "章节"
+  section:
+    displayName: "标题"
+  page_range:
+    displayName: "页码"
+
+views:
+  - type: table
+    name: "章节列表"
+    order:
+      - file.name
+      - section
+      - page_range
+\`\`\`
 
 ## 💭 阅读笔记
 
@@ -181,21 +377,71 @@ created: ${now}
   async ensureBookNote(
     indexId: string,
     bookName: string,
-    totalPages: number
+    totalPages: number,
+    summary?: string,
+    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
   ): Promise<string> {
     await this.ensureDir();
-    const notePath = this.getBookNotePath(bookName);
 
+    // 清理文件名中的非法字符，作为文件夹名
+    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
+    const bookFolderPath = normalizePath(`${DEEPPDF_DIR}/${safeFolderName}`);
+
+    // 确保书籍文件夹存在
+    const folderExists = await this.app.vault.adapter.exists(bookFolderPath);
+    if (!folderExists) {
+      await this.app.vault.createFolder(bookFolderPath);
+    }
+
+    const notePath = this.getBookNotePath(bookName);
     let file = this.app.vault.getAbstractFileByPath(notePath);
 
     if (!file) {
       // 创建书籍笔记
-      const content = this.generateBookNoteContent(bookName, indexId, totalPages);
+      const content = this.generateBookNoteContent(bookName, indexId, totalPages, summary, chapters);
       file = await this.app.vault.create(notePath, content);
       console.log(`[DeepPDF] Created book note: ${notePath}`);
+    } else {
+      // 更新现有笔记的摘要和目录
+      await this.updateBookNoteContent(file as TFile, summary, chapters);
     }
 
     return notePath;
+  }
+
+  /**
+   * 更新书籍笔记内容（摘要和目录）
+   */
+  private async updateBookNoteContent(
+    file: TFile,
+    summary?: string,
+    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
+  ): Promise<void> {
+    if (!summary && !chapters) return;
+
+    const content = await this.app.vault.read(file);
+
+    // 更新摘要
+    if (summary) {
+      const summaryRegex = /## 📖 摘要\s*\n\n[\s\S]*?(?=\n## )/;
+      const newSummary = `## 📖 摘要\n\n> [!note] AI 生成摘要\n> ${summary}`;
+      if (summaryRegex.test(content)) {
+        content.replace(summaryRegex, newSummary);
+      }
+    }
+
+    // 更新目录
+    if (chapters && chapters.length > 0) {
+      const tocRegex = /## 📑 章节目录\s*\n\n[\s\S]*?(?=\n## )/;
+      const tocContent = chapters.map(ch => {
+        const indent = "  ".repeat(ch.level);
+        return `${indent}- ${ch.title} (p.${ch.start_page}-${ch.end_page})`;
+      }).join("\n");
+      const newToc = `## 📑 章节目录\n\n${tocContent}`;
+      if (tocRegex.test(content)) {
+        content.replace(tocRegex, newToc);
+      }
+    }
   }
 
   /**
@@ -212,23 +458,24 @@ created: ${now}
       return; // 笔记不存在，跳过
     }
 
-    // 更新 frontmatter
-    const frontmatter: BookFrontmatter = {
-      index_id: progress.index_id,
-      status: progress.progress === 0 ? "unread" :
-              progress.progress >= 100 ? "completed" : "reading",
-      progress: Math.round(progress.progress),
-      total_pages: progress.total_pages,
-      read_pages: progress.read_pages.join(","),
-      last_read: progress.last_read_at,
-      chat_rounds: progress.chat_rounds,
-      tags: [],
-      created: new Date().toISOString().split("T")[0],
-    };
-
-    // 使用 processFrontmatter 更新
+    // 使用 processFrontmatter 更新，保留 book_name
     await this.app.fileManager.processFrontMatter(file, (fm) => {
-      Object.assign(fm, frontmatter);
+      fm.index_id = progress.index_id;
+      // 保留已有的 book_name，如果没有则添加
+      if (!fm.book_name) {
+        fm.book_name = bookName;
+      }
+      fm.status = progress.progress === 0 ? "unread" :
+                 progress.progress >= 100 ? "completed" : "reading";
+      fm.progress = Math.round(progress.progress);
+      fm.total_pages = progress.total_pages;
+      fm.read_pages = progress.read_pages.join(",");
+      fm.last_read = progress.last_read_at;
+      fm.chat_rounds = progress.chat_rounds;
+      // 保留已有的 tags，如果没有则初始化为空数组
+      if (!fm.tags) {
+        fm.tags = [];
+      }
     });
   }
 }

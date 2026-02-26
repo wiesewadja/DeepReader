@@ -231,6 +231,29 @@ export interface UpdateProgressRequest {
   pages: number[];
 }
 
+// 章节项
+export interface ChapterItem {
+  title: string;
+  start_page: number;
+  end_page: number;
+  level: number;
+}
+
+// 章节目录响应
+export interface TableOfContents {
+  index_id: string;
+  book_name: string;
+  total_pages: number;
+  chapters: ChapterItem[];
+}
+
+// 摘要响应
+export interface BookSummary {
+  index_id: string;
+  book_name: string;
+  summary: string;
+}
+
 // ==================== Agent 相关类型 ====================
 
 /**
@@ -906,6 +929,24 @@ export class DeepPDFClient {
    */
   async getReadingProgress(indexId: string): Promise<ReadingProgress> {
     return this.request<ReadingProgress>(`/api/reading/${indexId}/progress`, {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取书籍章节目录
+   */
+  async getTableOfContents(indexId: string): Promise<TableOfContents> {
+    return this.request<TableOfContents>(`/api/reading/${indexId}/toc`, {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取书籍摘要
+   */
+  async getBookSummary(indexId: string, regenerate: boolean = false): Promise<BookSummary> {
+    return this.request<BookSummary>(`/api/reading/${indexId}/summary?regenerate=${regenerate}`, {
       method: 'GET'
     });
   }
