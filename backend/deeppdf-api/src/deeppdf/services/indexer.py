@@ -453,15 +453,21 @@ def _save_metadata(
     index_dir.mkdir(parents=True, exist_ok=True)
 
     metadata_path = index_dir / f"{index_id}.json"
-    # 获取 PDF 总页数
+    # 获取文档总页数
     total_pages = 0
-    try:
-        import pypdf
+    if doc_type == "pdf":
+        try:
+            import pypdf
 
-        reader = pypdf.PdfReader(str(pdf_path_obj))
-        total_pages = len(reader.pages)
-    except Exception:
-        pass  # 如果获取失败，保持为 0
+            reader = pypdf.PdfReader(str(pdf_path_obj))
+            total_pages = len(reader.pages)
+        except Exception:
+            pass  # 如果获取失败，保持为 0
+    elif doc_type == "epub":
+        # EPUB 没有页码概念，使用章节数作为"页数"
+        # 这样阅读进度可以基于已读章节数计算
+        total_pages = len(section_nodes)
+        logger.debug(f"[元数据] EPUB 文档，使用章节数作为总页数: {total_pages}")
 
     # 移除文件后缀，保持与前端导出逻辑一致
     pdf_name_clean = pdf_path_obj.stem  # stem 返回不带后缀的文件名
