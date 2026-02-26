@@ -692,3 +692,15 @@
 .deeppdf-dropdown-item:first-child {
     border-bottom: 1px solid var(--background-modifier-border);
 }
+
+/* ==================== 阅读入口按钮样式 ==================== */
+.deeppdf-portal-btn {
+    background: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover)) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.deeppdf-portal-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.3);
+}

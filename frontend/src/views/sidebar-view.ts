@@ -20,6 +20,7 @@ import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { agentAPI } from "../api/index.js";
 import { ChatHistoryModal } from "../components/chat-history-modal/chat-history-modal.js";
+import { ReadingPortalService } from "../services/reading-portal.js";
 
 // ==================== 类型映射 ====================
 
@@ -68,6 +69,7 @@ export class SidebarView extends ItemView {
     private streamController: AbortController | null = null;  // 流式请求控制器
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
     private inputSectionMinimized: boolean = false;  // 输入框是否最小化
+    private readingPortal: ReadingPortalService | null = null;
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -147,6 +149,21 @@ export class SidebarView extends ItemView {
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             new Notice(`获取历史失败: ${errorMessage}`);
+        }
+    }
+
+    /** 打开阅读入口 */
+    private async openReadingPortal(): Promise<void> {
+        if (!this.readingPortal) {
+            new Notice("DeepPDF 服务未就绪");
+            return;
+        }
+
+        try {
+            await this.readingPortal.openReadingPortal();
+        } catch (error) {
+            console.error("[DeepPDF] Failed to open reading portal:", error);
+            new Notice("打开阅读入口失败");
         }
     }
 
@@ -541,7 +558,8 @@ export class SidebarView extends ItemView {
             },
             onShowHistory: () => {
                 this.handleShowHistory();
-            }
+            },
+            onOpenReadingPortal: () => this.openReadingPortal()
         });
 
         const el = this.indexManager.getElement();
@@ -568,6 +586,11 @@ export class SidebarView extends ItemView {
         container.empty();
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
+
+        // 初始化阅读入口服务
+        if (this.apiClient) {
+            this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
+        }
 
         // 创建索引管理区 (新)
         this.createIndexManager(container);

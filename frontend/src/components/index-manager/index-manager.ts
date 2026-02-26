@@ -18,6 +18,7 @@ export interface IndexManagerOptions {
     onDeleteIndex?: (indexId: string) => void;
     onNewChat?: () => void;
     onShowHistory?: () => void;
+    onOpenReadingPortal?: () => void;
 }
 
 export class IndexManager extends Component {
@@ -121,7 +122,8 @@ export class IndexManager extends Component {
         const menuItems = [
             { icon: Icons.plus, label: '添加文档', action: () => this.options.onCreateIndex?.() },
             { icon: Icons.messageSquare, label: '新增对话', action: () => this.options.onNewChat?.() },
-            { icon: Icons.history, label: '查看历史', action: () => this.options.onShowHistory?.() }
+            { icon: Icons.history, label: '查看历史', action: () => this.options.onShowHistory?.() },
+            { icon: '📚', label: '阅读入口', action: () => this.options.onOpenReadingPortal?.() }
         ];
 
         menuItems.forEach(item => {
