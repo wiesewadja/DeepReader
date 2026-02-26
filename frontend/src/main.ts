@@ -78,6 +78,26 @@ export default class DeepPDFPlugin extends Plugin {
             name: "Open DeepPDF sidebar",
             callback: () => this.activateView()
         });
+
+        // 注册 URI 协议处理器
+        this.registerObsidianProtocolHandler("deeppdf-chat", async (params) => {
+            console.log("[DeepPDF] URI handler called with params:", params);
+
+            const indexId = params.index_id;
+            if (!indexId) {
+                new Notice("DeepPDF: 缺少 index_id 参数");
+                return;
+            }
+
+            // 打开侧边栏
+            this.activateView();
+
+            // 等待视图加载
+            setTimeout(() => {
+                // 通过事件通知侧边栏切换到指定索引
+                this.app.workspace.trigger("deeppdf:select-index", indexId);
+            }, 100);
+        });
     }
 
     async loadSettings() {

@@ -586,6 +586,18 @@ export class SidebarView extends ItemView {
 
         // 设置滚动监听：滚动时隐藏输入框
         this.setupScrollHandler(container);
+
+        // 监听 URI 协议触发的索引切换事件
+        // 自定义事件，Obsidian 类型定义不支持，使用 any 绕过
+        const workspace = this.app.workspace as any;
+        this.registerEvent(
+            workspace.on("deeppdf:select-index", (indexId: string) => {
+                console.log("[DeepPDF] Received select-index event:", indexId);
+                if (this.indexManager) {
+                    this.indexManager.selectIndex(indexId);
+                }
+            })
+        );
     }
 
     /**

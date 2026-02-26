@@ -215,6 +215,22 @@ export interface QueryPDFResult {
   error?: string;
 }
 
+// ==================== 阅读进度相关类型 ====================
+
+export interface ReadingProgress {
+  index_id: string;
+  read_pages: number[];
+  total_pages: number;
+  progress: number;
+  status: string;
+  last_read_at: string | null;
+  chat_rounds: number;
+}
+
+export interface UpdateProgressRequest {
+  pages: number[];
+}
+
 // ==================== Agent 相关类型 ====================
 
 /**
@@ -869,6 +885,28 @@ export class DeepPDFClient {
   async deleteSession(indexId: string, sessionId: string): Promise<{ status: string; message: string }> {
     return this.request<{ status: string; message: string }>(`/api/chat/sessions/${indexId}/${sessionId}`, {
       method: 'DELETE'
+    });
+  }
+
+  // ==================== 阅读进度 API ====================
+
+  /**
+   * 更新阅读进度
+   */
+  async updateReadingProgress(indexId: string, pages: number[]): Promise<ReadingProgress> {
+    return this.request<ReadingProgress>(`/api/reading/${indexId}/progress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages })
+    });
+  }
+
+  /**
+   * 获取阅读进度
+   */
+  async getReadingProgress(indexId: string): Promise<ReadingProgress> {
+    return this.request<ReadingProgress>(`/api/reading/${indexId}/progress`, {
+      method: 'GET'
     });
   }
 }

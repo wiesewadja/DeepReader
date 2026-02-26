@@ -36,7 +36,9 @@ export type {
   AgentRequest,
   AgentResponse,
   AgentStreamChunk,
-  CitationInfo
+  CitationInfo,
+  ReadingProgress,
+  UpdateProgressRequest
 } from './http-client';
 
 export { ServerManager } from './server-manager';
@@ -241,6 +243,23 @@ export const baseAPI = {
    * 获取 API 信息
    */
   getInfo: () => deeppdfClient.getAPIInfo()
+};
+
+/**
+ * 阅读进度 API
+ */
+export const readingAPI = {
+  /**
+   * 更新阅读进度
+   */
+  updateProgress: (client: import('./http-client').DeepPDFClient, indexId: string, pages: number[]) =>
+    client.updateReadingProgress(indexId, pages),
+
+  /**
+   * 获取阅读进度
+   */
+  getProgress: (client: import('./http-client').DeepPDFClient, indexId: string) =>
+    client.getReadingProgress(indexId)
 };
 
 // ==================== 使用示例 ====================
