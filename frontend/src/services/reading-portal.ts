@@ -212,6 +212,7 @@ filters:
     - 'file.ext == "md"'
     - file.hasProperty("index_id")
     - file.hasProperty("book_name")
+    - '!file.name.startsWith("📖")'
 
 formulas:
   status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
