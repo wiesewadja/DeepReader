@@ -375,10 +375,10 @@ def _store_to_chromadb(
         "node_count": len(section_nodes),
         "indexing_method": "pageindex_tree",
         "llm_enabled": True,
-        # 新增阅读进度字段
-        "read_pages": [],  # 已阅读页码列表
+        # 新增阅读进度字段（ChromaDB 只支持基本类型，列表用逗号分隔的字符串表示）
+        "read_pages": "",  # 已阅读页码，逗号分隔的字符串
         "chat_rounds": 0,  # 对话轮数
-        "last_read_at": None,  # 最后阅读时间
+        "last_read_at": "",  # 最后阅读时间
     }
     logger.debug(f"[向量存储] 集合元数据: {collection_metadata}")
 
@@ -463,10 +463,13 @@ def _save_metadata(
     except Exception:
         pass  # 如果获取失败，保持为 0
 
+    # 移除文件后缀，保持与前端导出逻辑一致
+    pdf_name_clean = pdf_path_obj.stem  # stem 返回不带后缀的文件名
+
     metadata_content = {
         "id": index_id,
         "doc_type": doc_type,
-        "pdf_name": pdf_path_obj.name,
+        "pdf_name": pdf_name_clean,
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
