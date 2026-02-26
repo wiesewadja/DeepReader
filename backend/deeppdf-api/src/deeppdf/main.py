@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from deeppdf.api.config_routes import router as config_router
 from deeppdf.api.file_routes import router as file_router
+from deeppdf.api.reading_routes import router as reading_router
 from deeppdf.api.routes import router
 
 # 应用 nest_asyncio（PageIndex 需要）
@@ -66,6 +67,7 @@ async def health_check():
 app.include_router(router)
 app.include_router(config_router)
 app.include_router(file_router)
+app.include_router(reading_router)
 
 
 if __name__ == "__main__":
