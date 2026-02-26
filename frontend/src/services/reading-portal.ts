@@ -203,7 +203,7 @@ deeppdf_entry: true
 
 管理所有已索引的 PDF 文档，追踪阅读进度。
 
-> 💡 点击「开始对话」链接即可与 AI 讨论该书
+> 💡 点击书名可跳转到书籍笔记，点击「开始对话」可与 AI 讨论该书
 
 \`\`\`base
 filters:
@@ -217,9 +217,10 @@ filters:
 formulas:
   status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
   chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "开始对话")'
+  book_link: 'link(file.path, book_name)'
 
 properties:
-  book_name:
+  formula.book_link:
     displayName: "书名"
   formula.chat_link:
     displayName: "操作"
@@ -238,7 +239,7 @@ views:
   - type: table
     name: "书籍列表"
     order:
-      - book_name
+      - formula.book_link
       - formula.chat_link
       - formula.status_label
       - progress
@@ -251,7 +252,7 @@ views:
 
 ## 使用说明
 
-1. 点击任意书籍的「开始对话」链接，将打开 DeepPDF 侧边栏
+1. 点击书名可跳转到书籍笔记页面
 2. 在对话过程中，系统会自动记录您阅读过的页面
 3. 阅读进度 = 已覆盖页数 / 总页数
 
