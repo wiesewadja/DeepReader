@@ -242,19 +242,26 @@ class EpubTreeConverter:
         start_index = 0
         end_index = 0
 
-        if href and href in chapter_map:
-            chapter = chapter_map[href]
-            content = chapter.get("content", "")
+        if href:
+            # 去除锚点部分（如 #内文），只保留文件名
+            # href 可能是 "text00002.html#内文" 或 "text00002.html"
+            file_name = href.split('#')[0]
 
-            # 估算 start_index 和 end_index
-            # EPUB 没有页码概念，使用章节序号
-            chapter_keys = list(chapter_map.keys())
-            if href in chapter_keys:
-                chapter_index = chapter_keys.index(href)
-                start_index = chapter_index + 1
-                # 估算 end_index（基于内容长度）
-                word_count = len(content.split())
-                end_index = start_index + max(1, word_count // 1000)
+            if file_name in chapter_map:
+                chapter = chapter_map[file_name]
+                content = chapter.get("content", "")
+
+                # 估算 start_index 和 end_index
+                # EPUB 没有页码概念，使用章节序号
+                chapter_keys = list(chapter_map.keys())
+                if file_name in chapter_keys:
+                    chapter_index = chapter_keys.index(file_name)
+                    start_index = chapter_index + 1
+                    # 估算 end_index（基于内容长度）
+                    word_count = len(content.split())
+                    end_index = start_index + max(1, word_count // 1000)
+            else:
+                logger.debug(f"[EPUB转换] 未找到章节文件: {file_name}")
 
         # ============================================================
         # 步骤4: 构建节点

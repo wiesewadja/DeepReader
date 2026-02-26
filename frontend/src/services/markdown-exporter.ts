@@ -98,8 +98,8 @@ export async function exportIndexToMarkdown(
     outputFolder: string = "DeepPDF"
 ): Promise<ExportResult> {
     try {
-        // 创建输出文件夹
-        const pdfFolderName = sanitizeFilename(pdfName.replace('.pdf', ''));
+        // 创建输出文件夹（同时移除 .pdf 和 .epub 后缀）
+        const pdfFolderName = sanitizeFilename(pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, ''));
         const folderPath = `${outputFolder}/${pdfFolderName}`;
 
         // 确保文件夹存在
