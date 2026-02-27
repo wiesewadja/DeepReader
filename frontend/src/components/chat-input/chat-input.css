@@ -255,6 +255,46 @@
 	color: var(--interactive-accent);
 }
 
+/* ==================== 模式切换按钮 ==================== */
+
+.deeppdf-mode-toggle-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	margin-right: 4px;
+
+	color: var(--text-muted);
+	background: transparent;
+
+	border: none !important;
+	box-shadow: none !important;
+	border-radius: 50%;
+
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.deeppdf-mode-toggle-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.deeppdf-mode-toggle-btn .mode-icon {
+	font-size: 16px;
+	line-height: 1;
+}
+
+.deeppdf-mode-toggle-btn[data-mode="cross"] {
+	color: var(--interactive-accent);
+}
+
+.deeppdf-mode-toggle-btn[data-mode="cross"]:hover {
+	color: var(--interactive-accent);
+}
+
 /* ==================== 动画 ==================== */
 
 @keyframes deeppdf-fade-in {

@@ -229,6 +229,21 @@ export class IndexManager extends Component {
         }
     }
 
+    /**
+     * 设置跨书籍模式显示
+     * @param isCrossBook 是否为跨书籍模式
+     */
+    public setCrossBookMode(isCrossBook: boolean): void {
+        if (!this.currentPdfEl) return;
+
+        if (isCrossBook) {
+            this.currentPdfEl.textContent = '📚 跨书籍阅读';
+            this.currentPdfEl.style.display = 'inline-block';
+        } else {
+            this.updateCurrentPdfIndicator();
+        }
+    }
+
     private renderList(): void {
         if (!this.listEl) return;
         this.listEl.innerHTML = '';

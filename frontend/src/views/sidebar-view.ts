@@ -96,10 +96,14 @@ export class SidebarView extends ItemView {
         if (!this.messageList) return;
 
         const welcomeId = `msg-${Date.now()}`;
+        const welcomeContent = this.crossBookMode
+            ? "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！"
+            : `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
+
         this.messageList.addMessage({
             id: welcomeId,
             role: "assistant",
-            content: `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`,
+            content: welcomeContent,
             timestamp: new Date().toISOString()
         });
     }
@@ -254,7 +258,14 @@ export class SidebarView extends ItemView {
 
     /** 保存当前对话到本地缓存（带 LRU 清理） */
     private async saveToCache() {
-        if (!this.sessionId || !this.currentIndexId || !this.messageList) return;
+        if (!this.sessionId || !this.messageList) return;
+
+        // 跨书籍模式使用特殊标识，单书籍模式使用 currentIndexId
+        const effectiveIndexId = this.crossBookMode
+            ? '__cross_book__'
+            : this.currentIndexId;
+
+        if (!effectiveIndexId) return;
 
         // 1. 获取当前所有消息
         // Note: 需要在 MessageList 中实现 getAllMessages
@@ -265,6 +276,7 @@ export class SidebarView extends ItemView {
             (m.role === 'user' || m.role === 'assistant') &&
             !m.content.includes("已切换到文档") &&
             m.content !== "📖 正在翻阅..." &&
+            m.content !== "🔍 正在跨书籍搜索..." &&
             m.content // 确保有内容
         );
 
@@ -277,10 +289,16 @@ export class SidebarView extends ItemView {
 
         this.plugin.settings.chatCache[this.sessionId] = {
             sessionId: this.sessionId,
-            indexId: this.currentIndexId,
+            indexId: effectiveIndexId,
             lastUpdated: Date.now(),
-            messages: validMsgs
+            messages: validMsgs,
+            isCrossBook: this.crossBookMode || undefined
         };
+
+        // 如果是跨书籍模式，保存会话ID以便下次恢复
+        if (this.crossBookMode) {
+            this.plugin.settings.lastCrossBookSessionId = this.sessionId;
+        }
 
         // 4. 清理并保存
         await this.cleanupCache();
@@ -609,6 +627,9 @@ export class SidebarView extends ItemView {
         // 加载索引列表
         await this.loadIndexes();
 
+        // 恢复跨书籍模式状态
+        await this.restoreCrossBookMode();
+
         // 更新服务器状态
         this.updateStatus();
 
@@ -741,48 +762,15 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建模式切换开关
-        const modeSwitch = section.createDiv({ cls: "deeppdf-mode-switch" });
-        const switchLabel = modeSwitch.createSpan({ cls: "deeppdf-mode-switch-label" });
-        switchLabel.setText("单书籍模式");
-
-        const switchContainer = modeSwitch.createDiv({ cls: "deeppdf-mode-switch-container" });
-        const singleBookBtn = switchContainer.createEl("button", {
-            cls: "deeppdf-mode-btn active",
-            text: "单书籍"
-        });
-        singleBookBtn.setAttr("title", "仅在当前选中的书籍中搜索");
-
-        const crossBookBtn = switchContainer.createEl("button", {
-            cls: "deeppdf-mode-btn",
-            text: "跨书籍"
-        });
-        crossBookBtn.setAttr("title", "在所有已索引书籍中搜索");
-
-        // 添加切换事件
-        singleBookBtn.addEventListener("click", () => {
-            if (this.crossBookMode) {
-                this.crossBookMode = false;
-                singleBookBtn.addClass("active");
-                crossBookBtn.removeClass("active");
-                new Notice("已切换到单书籍模式");
-            }
-        });
-
-        crossBookBtn.addEventListener("click", () => {
-            if (!this.crossBookMode) {
-                this.crossBookMode = true;
-                crossBookBtn.addClass("active");
-                singleBookBtn.removeClass("active");
-                new Notice("已切换到跨书籍模式，将在所有书籍中搜索");
-            }
-        });
-
-        // 创建聊天输入组件（默认使用自动路由）
+        // 创建聊天输入组件（包含模式切换按钮）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
             onSend: (message: string) => {
                 this.sendMessage(message);
+            },
+            searchMode: this.crossBookMode ? 'cross' : 'single',
+            onModeToggle: () => {
+                this.toggleSearchMode();
             }
         });
 
@@ -790,6 +778,68 @@ export class SidebarView extends ItemView {
         if (chatInputEl) {
             section.appendChild(chatInputEl);
         }
+    }
+
+    /**
+     * 切换搜索模式
+     */
+    private async toggleSearchMode() {
+        const previousMode = this.crossBookMode;
+        this.crossBookMode = !this.crossBookMode;
+        this.chatInput?.setSearchMode(this.crossBookMode ? 'cross' : 'single');
+
+        // 更新索引管理器显示
+        this.indexManager?.setCrossBookMode(this.crossBookMode);
+
+        // 持久化跨书籍模式状态
+        this.plugin.settings.lastCrossBookMode = this.crossBookMode;
+        await this.plugin.saveSettings();
+
+        // 如果从单书籍切换到跨书籍模式，清空当前消息并加载跨书籍会话
+        if (!previousMode && this.crossBookMode) {
+            this.messageList?.clear();
+            await this.loadCrossBookSession();
+            new Notice("已切换到跨书籍模式，将在所有书籍中搜索");
+        } else if (previousMode && !this.crossBookMode) {
+            // 从跨书籍切换到单书籍模式
+            new Notice("已切换到单书籍模式");
+        }
+    }
+
+    /**
+     * 恢复跨书籍模式状态
+     */
+    private async restoreCrossBookMode() {
+        // 检查上次是否处于跨书籍模式
+        const wasCrossBookMode = this.plugin.settings.lastCrossBookMode;
+        if (wasCrossBookMode) {
+            console.log('[DeepPDF] 恢复跨书籍模式');
+            this.crossBookMode = true;
+            this.chatInput?.setSearchMode('cross');
+            this.indexManager?.setCrossBookMode(true);
+            await this.loadCrossBookSession();
+        }
+    }
+
+    /**
+     * 加载跨书籍模式的会话
+     */
+    private async loadCrossBookSession() {
+        const sessionId = this.plugin.settings.lastCrossBookSessionId;
+        if (sessionId) {
+            const cached = this.plugin.settings.chatCache?.[sessionId];
+            if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
+                console.log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
+                this.sessionId = sessionId;
+                this.restoreHistoryToView(cached.messages, true);
+                return;
+            }
+        }
+        // 没有缓存的跨书籍会话，开始新会话
+        this.sessionId = `cross-book-${Date.now()}`;
+        this.plugin.settings.lastCrossBookSessionId = this.sessionId;
+        await this.plugin.saveSettings();
+        this.showWelcomeMessage();
     }
 
     // ==================== 消息处理 ====================
@@ -1197,26 +1247,75 @@ ${r.text}`;
                 throw new Error(result.error || '搜索失败');
             }
 
-            // 构建响应内容
-            let responseContent = `在 **${result.books_searched}** 本书中找到 **${result.total_results}** 条相关内容:\n\n`;
-
+            // 如果没有结果，直接返回
             if (result.results.length === 0) {
-                responseContent = "未找到相关内容。请尝试其他关键词。";
-            } else {
-                for (let i = 0; i < result.results.length; i++) {
-                    const r = result.results[i];
-                    // 使用 obsidian_link 格式化可点击链接
-                    const linkText = r.obsidian_link || `第${r.page}页`;
-                    responseContent += `${i + 1}. 【《${r.book_name}》${r.section}】${linkText}\n`;
-                    responseContent += `   ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}\n\n`;
-                }
+                this.messageList?.updateMessage(aiMessageId, {
+                    content: "在所有已索引的书籍中未找到相关内容。请尝试其他关键词。",
+                    isStreaming: false
+                });
+                this.resetProcessingState();
+                return;
             }
 
-            // 更新消息
-            this.messageList?.updateMessage(aiMessageId, {
-                content: responseContent,
-                isStreaming: false
-            });
+            // 检查是否有 API Key
+            const settings = this.plugin.settings;
+            const apiKey = settings.llmProvider === 'openai' ? settings.openaiApiKey : settings.deepseekApiKey;
+            const model = settings.llmModel || (settings.llmProvider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat') || 'deepseek-chat';
+
+            // 如果没有 Key，回退到显示检索片段
+            if (!apiKey) {
+                let responseContent = `在 **${result.books_searched}** 本书中找到 **${result.total_results}** 条相关内容 (请在设置中配置 API Key 以启用 AI 智能回答):\n\n`;
+                for (let i = 0; i < result.results.length; i++) {
+                    const r = result.results[i];
+                    responseContent += `${i + 1}. **《${r.book_name}》${r.section}** (第${r.page}页)\n`;
+                    responseContent += `   ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}\n\n`;
+                }
+
+                this.messageList?.updateMessage(aiMessageId, {
+                    content: responseContent,
+                    isStreaming: false
+                });
+                this.resetProcessingState();
+                return;
+            }
+
+            // 构建跨书籍模式的 System Prompt
+            const systemPrompt = this.buildCrossBookSystemPrompt();
+
+            // 构建上下文
+            let bookContext = `在 ${result.books_searched} 本书中找到的相关内容：\n\n`;
+            bookContext += result.results.map((r: any, index: number) => {
+                return `【来源片段 ${index + 1}】
+书籍: 《${r.book_name}》
+章节: ${r.section}
+页码: ${r.page}
+引用路径: ${r.obsidian_link}
+内容:
+${r.text}`;
+            }).join("\n\n");
+
+            const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
+
+            // 调用 LLM 生成智能回复（跨书籍模式不显示引用列表）
+            await this.streamLLMResponse(
+                settings.llmProvider,
+                apiKey,
+                model,
+                systemPrompt,
+                userPrompt,
+                aiMessageId,
+                []  // 跨书籍模式不传递引用数据，避免显示引用列表
+            );
+
+            // 保存到缓存
+            this.saveToCache();
+
+            // 恢复输入状态（AI 回复完成）
+            this.isProcessing = false;
+            this.isAiStreaming = false;
+            this.chatInput?.setDisabled(false);
+            this.restoreInputSection();
+            this.chatInput?.focus();
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1224,9 +1323,45 @@ ${r.text}`;
                 content: `跨书籍搜索失败: ${errorMessage}`,
                 isStreaming: false
             });
-        } finally {
             this.resetProcessingState();
         }
+    }
+
+    /**
+     * 构建跨书籍模式的 System Prompt
+     */
+    private buildCrossBookSystemPrompt(): string {
+        return `你是一位博学的图书管理员，熟悉书架上的每一本书籍。
+
+📚 你的信条：
+- 你只知晓已索引书籍的内容，除此别无所知
+- 你不援引任何外部知识，不依赖书本之外的任何信息
+- 你用精炼的语言从多本书中综合答案，展示知识的关联性
+- 若所有书中均无相关内容，你便诚实作答：所藏书籍未载此题
+
+🔍 跨书籍回答原则：
+- 对比不同书籍对同一问题的观点
+- 指出概念在不同书籍中的异同
+- 按主题或观点组织答案，而非按书籍罗列
+- 优先引用最相关的来源
+
+📋 引用协议：
+为每个观点提供可点击的文件链接，引用要自然融入叙述中。
+
+【引用格式】
+使用搜索结果中的 obsidian_link 字段作为链接地址。
+
+【示例】
+- 《如何阅读一本书》中提到 [[DeepPDF/如何阅读一本书/01-第一篇.md#^page-45|第45页]]
+- 《纳瓦尔宝典》则认为 [[DeepPDF/纳瓦尔宝典/31-判断力.md#^page-89|判断力]]
+
+【回答风格】
+- 综合性：整合多本书的观点
+- 对比性：指出不同书籍的异同
+- 简洁性：避免冗长，直达要点
+- 引用准确：每个观点都要有来源
+
+请基于以上原则，用中文回答读者的问题。`;
     }
 
     /**
@@ -1379,12 +1514,19 @@ ${r.text}`;
             console.log(JSON.stringify(citations, null, 2));
             console.log('========== [AI 原始回复调试结束] ==========\n');
 
-            this.messageList?.updateMessage(messageId, {
+            // 构建更新对象 - 只有在有引用数据时才传递 citations
+            const updateData: any = {
                 content: cleanedContent,
-                citations: citations,
                 isStreaming: false,
                 followUpQuestions: followUpQuestions.length > 0 ? followUpQuestions : undefined
-            });
+            };
+
+            // 只有在有引用数据时才添加 citations（跨书籍模式传空数组，不显示引用列表）
+            if (citations && citations.length > 0) {
+                updateData.citations = citations;
+            }
+
+            this.messageList?.updateMessage(messageId, updateData);
 
         } catch (error) {
             throw error;

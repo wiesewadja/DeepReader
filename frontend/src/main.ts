@@ -15,6 +15,10 @@ interface DeepPDFSettings {
     ifAddNodeSummary: boolean;
     lastSelectedIndexId: string;
     forceMode: string;  // 强制路由模式：auto(默认) | fast | section | slow
+    // 跨书籍模式状态
+    lastCrossBookMode: boolean;  // 上次是否处于跨书籍模式
+    lastCrossBookSessionId: string;  // 跨书籍模式的会话ID
+    chatCache?: Record<string, any>;  // 对话缓存
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -29,7 +33,9 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     maxTokensPerNode: 20000,
     ifAddNodeSummary: true,
     lastSelectedIndexId: "",
-    forceMode: "auto"  // 默认使用自动路由
+    forceMode: "auto",  // 默认使用自动路由
+    lastCrossBookMode: false,  // 默认不启用跨书籍模式
+    lastCrossBookSessionId: ""  // 跨书籍会话ID
 };
 
 export default class DeepPDFPlugin extends Plugin {

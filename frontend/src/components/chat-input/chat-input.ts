@@ -8,6 +8,11 @@
 import { Icons } from '../../utils/icons.js';
 
 /**
+ * 搜索模式
+ */
+export type SearchMode = 'single' | 'cross';
+
+/**
  * 聊天输入配置选项
  */
 export interface ChatInputOptions {
@@ -25,6 +30,10 @@ export interface ChatInputOptions {
 	maxRows?: number;
 	/** 最大高度（像素） */
 	maxHeight?: number;
+	/** 模式切换回调（可选） */
+	onModeToggle?: () => void;
+	/** 当前搜索模式（可选） */
+	searchMode?: SearchMode;
 }
 
 /**
@@ -34,6 +43,7 @@ export class ChatInput {
 	private el: HTMLElement | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
+	private modeButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
 
 	// 事件处理器引用（用于清理）
@@ -41,6 +51,7 @@ export class ChatInput {
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
+	private modeClickHandler: (() => void) | null = null;
 	private resizeAnimationFrame: number | null = null;
 
 	constructor(options: ChatInputOptions) {
@@ -87,11 +98,19 @@ export class ChatInput {
 			cls: 'deeppdf-input-toolbar'
 		});
 
-		// 右侧工具 (发送按钮)
+		// 右侧工具 (模式切换按钮 + 发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
 		});
 
+		// 模式切换按钮
+		this.modeButton = rightToolbar.createEl('button', {
+			cls: 'deeppdf-mode-toggle-btn'
+		});
+		this.updateModeButtonDisplay();
+		this.modeButton.type = 'button';
+
+		// 发送按钮
 		this.sendButton = rightToolbar.createEl('button', {
 			cls: 'deeppdf-chat-input-send-btn'
 		});
@@ -134,6 +153,14 @@ export class ChatInput {
 				this.handleSend();
 			};
 			this.sendButton.addEventListener('click', this.clickHandler);
+		}
+
+		// 点击模式切换按钮
+		if (this.modeButton && this.options.onModeToggle) {
+			this.modeClickHandler = () => {
+				this.options.onModeToggle?.();
+			};
+			this.modeButton.addEventListener('click', this.modeClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -321,6 +348,32 @@ export class ChatInput {
 	}
 
 	/**
+	 * 设置搜索模式
+	 */
+	setSearchMode(mode: SearchMode): void {
+		this.options.searchMode = mode;
+		this.updateModeButtonDisplay();
+	}
+
+	/**
+	 * 更新模式按钮显示
+	 */
+	private updateModeButtonDisplay(): void {
+		if (!this.modeButton) return;
+
+		const mode = this.options.searchMode || 'single';
+		const isCrossMode = mode === 'cross';
+
+		// 使用书本图标表示模式
+		this.modeButton.innerHTML = isCrossMode
+			? `<span class="mode-icon">📚</span>`
+			: `<span class="mode-icon">📖</span>`;
+
+		this.modeButton.setAttribute('aria-label', isCrossMode ? '跨书籍模式（点击切换）' : '单书籍模式（点击切换）');
+		this.modeButton.setAttribute('data-mode', mode);
+	}
+
+	/**
 	 * 获取组件元素
 	 */
 	getElement(): HTMLElement | null {
@@ -358,6 +411,11 @@ export class ChatInput {
 			this.clickHandler = null;
 		}
 
+		if (this.modeButton && this.modeClickHandler) {
+			this.modeButton.removeEventListener('click', this.modeClickHandler);
+			this.modeClickHandler = null;
+		}
+
 		// 从 DOM 中移除元素
 		if (this.el && this.el.parentNode) {
 			this.el.parentNode.removeChild(this.el);
@@ -367,5 +425,6 @@ export class ChatInput {
 		this.el = null;
 		this.textarea = null;
 		this.sendButton = null;
+		this.modeButton = null;
 	}
 }

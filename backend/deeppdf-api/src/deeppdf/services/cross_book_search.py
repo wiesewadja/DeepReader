@@ -131,8 +131,9 @@ def cross_book_search(
                     section = metadata.get("section", "Unknown")
                     page = metadata.get("page", metadata.get("start_index", 0))
 
-                    # 构建 Obsidian 链接
-                    safe_book_name = book_name.replace("/", "-")
+                    # 构建 Obsidian 链接（移除 .pdf 后缀）
+                    clean_book_name = book_name.removesuffix(".pdf").removesuffix(".PDF")
+                    safe_book_name = clean_book_name.replace("/", "-")
                     safe_section = section.replace("/", "-").replace(">", "-").strip()
                     obsidian_link = f"DeepPDF/{safe_book_name}/{safe_section}.md#^page-{page}"
 

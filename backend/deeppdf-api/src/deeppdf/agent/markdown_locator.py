@@ -18,6 +18,9 @@ class MarkdownLocator:
         """
         self.markdown_files = index_metadata.get("markdown_files", {})
         pdf_name = index_metadata.get("pdf_name", "Unknown")
+        # 移除 .pdf 后缀（如果存在）
+        if pdf_name:
+            pdf_name = pdf_name.removesuffix(".pdf").removesuffix(".PDF")
         # 如果 pdf_name 为空字符串，使用默认值 "Unknown"
         self.pdf_name = pdf_name if pdf_name else "Unknown"
 
