@@ -258,18 +258,26 @@ export class SidebarView extends ItemView {
 
     /** 保存当前对话到本地缓存（带 LRU 清理） */
     private async saveToCache() {
-        if (!this.sessionId || !this.messageList) return;
+        console.log('[DeepPDF] saveToCache called, sessionId:', this.sessionId, 'crossBookMode:', this.crossBookMode);
+        if (!this.sessionId || !this.messageList) {
+            console.log('[DeepPDF] saveToCache early return: no sessionId or messageList');
+            return;
+        }
 
         // 跨书籍模式使用特殊标识，单书籍模式使用 currentIndexId
         const effectiveIndexId = this.crossBookMode
             ? '__cross_book__'
             : this.currentIndexId;
 
-        if (!effectiveIndexId) return;
+        if (!effectiveIndexId) {
+            console.log('[DeepPDF] saveToCache early return: no effectiveIndexId');
+            return;
+        }
 
         // 1. 获取当前所有消息
         // Note: 需要在 MessageList 中实现 getAllMessages
         const allMessages = (this.messageList as any).getAllMessages();
+        console.log('[DeepPDF] saveToCache allMessages count:', allMessages?.length);
 
         // 2. 过滤有效消息
         const validMsgs = allMessages.filter((m: any) =>
@@ -280,7 +288,11 @@ export class SidebarView extends ItemView {
             m.content // 确保有内容
         );
 
-        if (validMsgs.length === 0) return;
+        console.log('[DeepPDF] saveToCache validMsgs count:', validMsgs?.length);
+        if (validMsgs.length === 0) {
+            console.log('[DeepPDF] saveToCache early return: no valid messages');
+            return;
+        }
 
         // 3. 更新设置
         if (!this.plugin.settings.chatCache) {
@@ -292,17 +304,19 @@ export class SidebarView extends ItemView {
             indexId: effectiveIndexId,
             lastUpdated: Date.now(),
             messages: validMsgs,
-            isCrossBook: this.crossBookMode || undefined
+            isCrossBook: this.crossBookMode ? true : undefined  // 明确使用 true 而不是 this.crossBookMode
         };
 
         // 如果是跨书籍模式，保存会话ID以便下次恢复
         if (this.crossBookMode) {
             this.plugin.settings.lastCrossBookSessionId = this.sessionId;
+            console.log('[DeepPDF] 保存跨书籍会话ID:', this.sessionId);
         }
 
         // 4. 清理并保存
         await this.cleanupCache();
         await this.plugin.saveSettings();
+        console.log('[DeepPDF] 缓存已保存, chatCache keys:', Object.keys(this.plugin.settings.chatCache || {}));
     }
 
     /** 清理过期缓存 (LRU, max 5MB) */
@@ -793,7 +807,9 @@ export class SidebarView extends ItemView {
 
         // 持久化跨书籍模式状态
         this.plugin.settings.lastCrossBookMode = this.crossBookMode;
+        console.log('[DeepPDF] toggleSearchMode: 设置 lastCrossBookMode =', this.crossBookMode);
         await this.plugin.saveSettings();
+        console.log('[DeepPDF] toggleSearchMode: 设置已保存');
 
         // 如果从单书籍切换到跨书籍模式，清空当前消息并加载跨书籍会话
         if (!previousMode && this.crossBookMode) {
@@ -812,6 +828,12 @@ export class SidebarView extends ItemView {
     private async restoreCrossBookMode() {
         // 检查上次是否处于跨书籍模式
         const wasCrossBookMode = this.plugin.settings.lastCrossBookMode;
+        console.log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
+        console.log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.plugin.settings.lastCrossBookSessionId);
+        console.log('[DeepPDF] restoreCrossBookMode: chatCache exists =', !!this.plugin.settings.chatCache);
+        if (this.plugin.settings.chatCache) {
+            console.log('[DeepPDF] restoreCrossBookMode: chatCache keys =', Object.keys(this.plugin.settings.chatCache));
+        }
         if (wasCrossBookMode) {
             console.log('[DeepPDF] 恢复跨书籍模式');
             this.crossBookMode = true;
@@ -826,8 +848,14 @@ export class SidebarView extends ItemView {
      */
     private async loadCrossBookSession() {
         const sessionId = this.plugin.settings.lastCrossBookSessionId;
+        console.log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
         if (sessionId) {
             const cached = this.plugin.settings.chatCache?.[sessionId];
+            console.log('[DeepPDF] loadCrossBookSession: cached =', cached ? 'found' : 'not found');
+            if (cached) {
+                console.log('[DeepPDF] loadCrossBookSession: cached.messages.length =', cached.messages?.length);
+                console.log('[DeepPDF] loadCrossBookSession: cached.isCrossBook =', cached.isCrossBook);
+            }
             if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
                 console.log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
                 this.sessionId = sessionId;
@@ -836,6 +864,7 @@ export class SidebarView extends ItemView {
             }
         }
         // 没有缓存的跨书籍会话，开始新会话
+        console.log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
         this.sessionId = `cross-book-${Date.now()}`;
         this.plugin.settings.lastCrossBookSessionId = this.sessionId;
         await this.plugin.saveSettings();

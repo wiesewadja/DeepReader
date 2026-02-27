@@ -22,7 +22,7 @@ def get_all_indexes(storage_dir: str) -> List[Dict[str, Any]]:
         storage_dir: 存储目录路径
 
     Returns:
-        索引列表，每个元素包含 id, book_name, doc_type 等
+        索引列表，每个元素包含 id, book_name, doc_type, markdown_files 等
     """
     storage_path = Path(storage_dir)
     indexes_dir = storage_path / "indexes"
@@ -40,6 +40,7 @@ def get_all_indexes(storage_dir: str) -> List[Dict[str, Any]]:
                     "book_name": metadata.get("pdf_name", "Unknown"),
                     "doc_type": metadata.get("doc_type", "pdf"),
                     "node_count": metadata.get("node_count", 0),
+                    "markdown_files": metadata.get("markdown_files", {}),  # 添加 markdown_files 映射
                 })
         except Exception as e:
             logger.warning(f"读取索引文件失败: {index_file}, 错误: {e}")
@@ -113,6 +114,7 @@ def cross_book_search(
     for idx_info in target_indexes:
         index_id = idx_info["id"]
         book_name = idx_info["book_name"]
+        markdown_files = idx_info.get("markdown_files", {})  # 获取 node_id -> 文件路径映射
 
         try:
             # 在该索引中搜索
@@ -131,11 +133,34 @@ def cross_book_search(
                     section = metadata.get("section", "Unknown")
                     page = metadata.get("page", metadata.get("start_index", 0))
 
-                    # 构建 Obsidian 链接（移除 .pdf 后缀）
-                    clean_book_name = book_name.removesuffix(".pdf").removesuffix(".PDF")
-                    safe_book_name = clean_book_name.replace("/", "-")
-                    safe_section = section.replace("/", "-").replace(">", "-").strip()
-                    obsidian_link = f"DeepPDF/{safe_book_name}/{safe_section}.md#^page-{page}"
+                    # 构建 Obsidian 链接
+                    # 优先使用 markdown_files 映射获取正确的文件名（带序号前缀）
+                    # doc_id 就是 node_id
+                    md_file = markdown_files.get(doc_id)
+
+                    if md_file:
+                        # 从完整路径中提取文件名（不含扩展名）
+                        # 例如: "书名/01-章节名.md" -> "01-章节名"
+                        md_basename = Path(md_file).stem  # 去掉 .md
+                        # 构建链接: DeepPDF/书名/01-章节名.md#^page-N
+                        # 移除常见的文件后缀
+                        clean_book_name = (
+                            book_name
+                            .removesuffix(".pdf").removesuffix(".PDF")
+                            .removesuffix(".epub").removesuffix(".EPUB")
+                        )
+                        safe_book_name = clean_book_name.replace("/", "-")
+                        obsidian_link = f"DeepPDF/{safe_book_name}/{md_basename}.md#^page-{page}"
+                    else:
+                        # 回退：使用 section 构建链接（可能不带序号）
+                        clean_book_name = (
+                            book_name
+                            .removesuffix(".pdf").removesuffix(".PDF")
+                            .removesuffix(".epub").removesuffix(".EPUB")
+                        )
+                        safe_book_name = clean_book_name.replace("/", "-")
+                        safe_section = section.replace("/", "-").replace(">", "-").strip()
+                        obsidian_link = f"DeepPDF/{safe_book_name}/{safe_section}.md#^page-{page}"
 
                     all_results.append({
                         "text": text,
