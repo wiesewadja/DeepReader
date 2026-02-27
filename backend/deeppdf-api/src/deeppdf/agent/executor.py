@@ -12,6 +12,8 @@ from .tools import (
     ReadPageTool,
     HybridSearchTool,
     LLMTreeSearchTool,
+    CrossBookSearchTool,
+    ListAvailableBooksTool,
 )
 from .markdown_locator import MarkdownLocator
 
@@ -177,3 +179,29 @@ def create_tool_executor(
         logger.info("[工具初始化] MarkdownLocator 已注入到 ToolExecutor")
 
     return executor
+
+
+def create_cross_book_executor(
+    storage_dir: str,
+) -> ToolExecutor:
+    """
+    创建跨书籍模式的工具执行器
+
+    Args:
+        storage_dir: 存储目录
+
+    Returns:
+        配置好的 ToolExecutor 实例，包含跨书籍搜索工具
+    """
+    from .tools import CrossBookSearchTool, ListAvailableBooksTool
+
+    tools: Dict[str, Tool] = {}
+
+    # 跨书籍搜索工具
+    tools["cross_book_search"] = CrossBookSearchTool(storage_dir=storage_dir)
+
+    # 列出所有可搜索书籍
+    tools["list_available_books"] = ListAvailableBooksTool(storage_dir=storage_dir)
+
+    logger.info("[工具初始化] 跨书籍模式工具已创建")
+    return ToolExecutor(tools)

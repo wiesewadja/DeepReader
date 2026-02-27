@@ -106,6 +106,7 @@ class DeepPDFAgent:
         base_url: Optional[str] = None,
         pageindex_lib_path: Optional[str] = None,
         enable_llm_tree_search: bool = False,
+        cross_book_mode: bool = False,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         max_iterations: Optional[int] = None,
@@ -124,6 +125,7 @@ class DeepPDFAgent:
             base_url: API 基础 URL (如果为 None，使用 provider 默认值)
             pageindex_lib_path: PageIndex 库路径 (用于 read_page 工具)
             enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
+            cross_book_mode: 是否启用跨书籍模式（默认 False）
             temperature: 采样温度
             top_p: nucleus 采样参数
             max_iterations: 最大工具调用迭代次数
@@ -134,6 +136,7 @@ class DeepPDFAgent:
         self.index_metadata = index_metadata or {}
         self.llm_provider = llm_provider
         self.llm_model = llm_model or self._get_default_model(llm_provider)
+        self.cross_book_mode = cross_book_mode
         # 使用 settings 中的默认值（如果未提供）
         self.temperature = (
             temperature if temperature is not None else settings.agent_temperature
@@ -181,23 +184,39 @@ class DeepPDFAgent:
                 f"[Agent初始化] MarkdownLocator 已创建，包含 {len(index_metadata.get('markdown_files', {}))} 个文件映射"
             )
 
-        # 初始化工具执行器
-        self.executor: ToolExecutor = create_tool_executor(
-            index_id=index_id,
-            storage_dir=storage_dir,
-            tree_structure=tree_structure,
-            pageindex_lib_path=pageindex_lib_path,
-            markdown_locator=markdown_locator,
-            enable_llm_tree_search=enable_llm_tree_search,
-            llm_client=self.client if enable_llm_tree_search else None,
-            index_metadata=index_metadata,
-            deepseek_ocr_client=self.deepseek_ocr_client,
-        )
+        # 根据模式初始化工具执行器
+        if cross_book_mode:
+            # 跨书籍模式：使用跨书籍搜索工具
+            from .executor import create_cross_book_executor
+            self.executor: ToolExecutor = create_cross_book_executor(
+                storage_dir=storage_dir
+            )
+            logger.info("[Agent初始化] 使用跨书籍模式工具集")
+        else:
+            # 单书籍模式：使用标准工具
+            self.executor: ToolExecutor = create_tool_executor(
+                index_id=index_id,
+                storage_dir=storage_dir,
+                tree_structure=tree_structure,
+                pageindex_lib_path=pageindex_lib_path,
+                markdown_locator=markdown_locator,
+                enable_llm_tree_search=enable_llm_tree_search,
+                llm_client=self.client if enable_llm_tree_search else None,
+                index_metadata=index_metadata,
+                deepseek_ocr_client=self.deepseek_ocr_client,
+            )
 
-        # 构建 System Prompt
-        self.system_prompt = build_system_prompt(
-            tool_descriptions=self.executor.get_tool_descriptions()
-        )
+        # 根据 cross_book_mode 构建 System Prompt
+        if cross_book_mode:
+            from .prompts import build_cross_book_prompt
+            self.system_prompt = build_cross_book_prompt(
+                tool_descriptions=self.executor.get_tool_descriptions()
+            )
+            logger.info("[Agent初始化] 使用跨书籍模式 System Prompt")
+        else:
+            self.system_prompt = build_system_prompt(
+                tool_descriptions=self.executor.get_tool_descriptions()
+            )
 
         # 历史记录管理
         self.session_history: List[Dict[str, Any]] = []  # 会话级别的历史（多轮对话）
@@ -318,6 +337,25 @@ class DeepPDFAgent:
                 },
                 "required": ["query"],
             }
+
+        elif name == "cross_book_search":
+            return {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "每本书返回结果数，默认5",
+                    },
+                },
+                "required": ["query"],
+            }
+
+        elif name == "list_available_books":
+            return {"type": "object", "properties": {}}
 
         else:
             # 默认: 无参数

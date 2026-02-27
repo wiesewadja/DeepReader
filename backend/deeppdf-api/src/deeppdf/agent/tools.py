@@ -645,3 +645,93 @@ class LLMTreeSearchTool:
             )
             results.append(citation)
         return results
+
+
+# ============================================================
+# 跨书籍模式工具
+# ============================================================
+
+
+class CrossBookSearchTool:
+    """跨书籍搜索工具 - 在所有已索引书籍中搜索"""
+
+    name: str = "cross_book_search"
+    description: str = (
+        "在所有已索引的书籍中搜索相关内容。"
+        "适用于：主题研究（如'认知偏差在哪些书中提到'）、观点对比、跨书籍知识串联。"
+        "参数: query (str, 必需) - 搜索关键词; top_k (int, 可选) - 每本书返回结果数，默认5\n\n"
+        "**返回格式：** JSON 数组，每个元素包含：\n"
+        "- text: 文档片段内容\n"
+        "- book_name: 来源书籍名称\n"
+        "- section: 章节名\n"
+        "- page: 页码\n"
+        "- obsidian_link: Obsidian wiki 链接\n\n"
+        "**使用方法：** 在回答中引用来源书籍，格式：【《书名》章节名】"
+    )
+
+    def __init__(self, storage_dir: str):
+        self.storage_dir = storage_dir
+
+    def __call__(self, query: str, top_k: int = 5) -> str:
+        from ..services.cross_book_search import cross_book_search
+
+        result = cross_book_search(
+            query=query,
+            storage_dir=self.storage_dir,
+            top_k=top_k
+        )
+
+        if result["status"] != "success":
+            return f"搜索失败: {result.get('error', 'Unknown error')}"
+
+        if not result["results"]:
+            return "未找到相关内容"
+
+        # 格式化输出
+        output_lines = [f"在 {result['books_searched']} 本书中找到 {result['total_results']} 条相关内容:\n"]
+
+        for i, r in enumerate(result["results"], 1):
+            output_lines.append(
+                f"{i}. 【《{r['book_name']}》{r['section']}】(第{r['page']}页)\n"
+                f"   {r['text'][:200]}...\n"
+            )
+
+        return "\n".join(output_lines)
+
+
+class ListAvailableBooksTool:
+    """列出所有可搜索的书籍"""
+
+    name: str = "list_available_books"
+    description: str = (
+        "列出当前所有已索引的可搜索书籍。"
+        "在开始跨书籍研究前，建议先调用此工具了解可用的书籍范围。"
+        "无需任何参数。"
+    )
+
+    def __init__(self, storage_dir: str):
+        self.storage_dir = storage_dir
+        self._cache: Optional[str] = None
+
+    def __call__(self, **kwargs) -> str:
+        if self._cache is not None:
+            return self._cache
+
+        from ..services.cross_book_search import get_all_indexes
+
+        indexes = get_all_indexes(self.storage_dir)
+
+        if not indexes:
+            return "当前没有已索引的书籍"
+
+        lines = [f"当前共有 {len(indexes)} 本已索引的书籍:\n"]
+
+        for i, idx in enumerate(indexes, 1):
+            doc_type_icon = "📘" if idx.get("doc_type") == "epub" else "📕"
+            lines.append(
+                f"{i}. {doc_type_icon} 《{idx['book_name']}》 "
+                f"(节点数: {idx.get('node_count', 'N/A')})"
+            )
+
+        self._cache = "\n".join(lines)
+        return self._cache

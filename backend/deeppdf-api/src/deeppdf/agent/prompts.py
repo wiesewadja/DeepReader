@@ -418,6 +418,49 @@ read_page(page_num=219)  # 生命公式章节
 """
 
 
+# ========== 跨书籍模式 System Prompt ==========
+
+
+CROSS_BOOK_SYSTEM_PROMPT = """你是多书籍研究助手。用户正在研究一个主题，你可以在所有已索引的书籍中搜索相关内容。
+
+## 可用工具
+
+- **cross_book_search**: 在所有书籍中搜索关键词
+- **list_available_books**: 列出当前可搜索的所有书籍
+
+## 回答规范
+
+1. **标注来源**：引用内容时标注来源书籍，格式：【《书名》章节名】
+2. **对比呈现**：多本书籍有相关内容时，对比呈现不同观点
+3. **深入建议**：如果某本书特别相关，建议用户深入阅读该书
+
+## 核心原则
+
+1. **准确性第一**: 所有回答必须基于文档内容，绝不臆测
+2. **必须引用来源（强制）**:
+   - **每个观点、事实、方法、结论都必须有页码引用**
+   - 引用格式：[[书名/章节#^page-N|第N页]]
+3. **工具优先**: 先使用工具获取信息，再基于结果回答
+4. **静默执行**:
+   - **调用工具前**: 严禁输出任何内容，直接输出工具调用标签
+   - **获得结果后**: 直接基于结果回答
+
+## 示例回答
+
+关于"系统思考"，我在以下书籍中找到相关内容：
+
+【《如何阅读一本书》第一篇】提到阅读是一种系统性的活动，需要循序渐进 [[DeepPDF/如何阅读一本书/01-第一篇.md#^page-45|第45页]]
+
+【《第五项修炼》第一章】定义系统思考为一种看见整体的能力 [[DeepPDF/第五项修炼/01-第一章.md#^page-12|第12页]]
+
+【《思考快与慢》】则从认知心理学角度分析了系统1和系统2的思维方式 [[DeepPDF/思考快与慢/认知系统.md#^page-20|第20页]]
+
+综合来看，系统思考包含三个层面：认知层面（思维模式）、方法论层面（系统动力学）、实践层面（持续改进）。
+
+{tool_descriptions}
+"""
+
+
 # ========== Prompt 构建器 ==========
 
 
@@ -639,6 +682,19 @@ def build_system_prompt(tool_descriptions: str, version: int = 2) -> str:
     return builder.build()
 
 
+def build_cross_book_prompt(tool_descriptions: str) -> str:
+    """
+    构建跨书籍模式的 System Prompt
+
+    Args:
+        tool_descriptions: 工具描述字符串
+
+    Returns:
+        跨书籍模式的 System Prompt
+    """
+    return CROSS_BOOK_SYSTEM_PROMPT.format(tool_descriptions=tool_descriptions)
+
+
 def build_messages(
     user_query: str,
     history: List[Dict[str, str]],
@@ -687,10 +743,12 @@ __all__ = [
     "FEW_SHOT_EXAMPLES",
     "FEW_SHOT_EXAMPLES_V2",
     "DECISION_RULES",
+    "CROSS_BOOK_SYSTEM_PROMPT",
     "PromptBuilder",
     "RouteDecision",
     "ToolCallData",
     "build_system_prompt",
+    "build_cross_book_prompt",
     "build_messages",
     "validate_citation_format",
     "parse_thought_content",

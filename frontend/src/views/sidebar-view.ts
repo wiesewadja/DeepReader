@@ -70,6 +70,7 @@ export class SidebarView extends ItemView {
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
     private inputSectionMinimized: boolean = false;  // 输入框是否最小化
     private readingPortal: ReadingPortalService | null = null;
+    private crossBookMode: boolean = false;  // 跨书籍模式开关
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -740,6 +741,43 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
+        // 创建模式切换开关
+        const modeSwitch = section.createDiv({ cls: "deeppdf-mode-switch" });
+        const switchLabel = modeSwitch.createSpan({ cls: "deeppdf-mode-switch-label" });
+        switchLabel.setText("单书籍模式");
+
+        const switchContainer = modeSwitch.createDiv({ cls: "deeppdf-mode-switch-container" });
+        const singleBookBtn = switchContainer.createEl("button", {
+            cls: "deeppdf-mode-btn active",
+            text: "单书籍"
+        });
+        singleBookBtn.setAttr("title", "仅在当前选中的书籍中搜索");
+
+        const crossBookBtn = switchContainer.createEl("button", {
+            cls: "deeppdf-mode-btn",
+            text: "跨书籍"
+        });
+        crossBookBtn.setAttr("title", "在所有已索引书籍中搜索");
+
+        // 添加切换事件
+        singleBookBtn.addEventListener("click", () => {
+            if (this.crossBookMode) {
+                this.crossBookMode = false;
+                singleBookBtn.addClass("active");
+                crossBookBtn.removeClass("active");
+                new Notice("已切换到单书籍模式");
+            }
+        });
+
+        crossBookBtn.addEventListener("click", () => {
+            if (!this.crossBookMode) {
+                this.crossBookMode = true;
+                crossBookBtn.addClass("active");
+                singleBookBtn.removeClass("active");
+                new Notice("已切换到跨书籍模式，将在所有书籍中搜索");
+            }
+        });
+
         // 创建聊天输入组件（默认使用自动路由）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
@@ -764,8 +802,8 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 检查是否选择了索引
-        if (!this.currentIndexId) {
+        // 跨书籍模式不需要选择索引
+        if (!this.crossBookMode && !this.currentIndexId) {
             new Notice("请先选择一个索引");
             return;
         }
@@ -795,16 +833,22 @@ export class SidebarView extends ItemView {
             const aiMessageData: MessageData = {
                 id: aiMessageId,
                 role: "assistant" as MessageRole,
-                content: "📖 正在翻阅...",
+                content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
                 timestamp: new Date().toISOString(),
                 isStreaming: true,
                 isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
             };
             this.messageList?.addMessage(aiMessageData);
 
-            // 使用 Agent 智能体模式（支持自动路由）
-            // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
-            this.handleAgentQuery(message, this.currentIndexId, aiMessageId);
+            // 根据模式选择不同的处理方式
+            if (this.crossBookMode) {
+                // 跨书籍模式：直接调用跨书籍搜索 API
+                this.handleCrossBookSearch(message, aiMessageId);
+            } else {
+                // 单书籍模式：使用 Agent 智能体模式
+                // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
+                this.handleAgentQuery(message, this.currentIndexId!, aiMessageId);
+            }
 
 
         } catch (error) {
@@ -1130,6 +1174,69 @@ ${r.text}`;
                 isStreaming: false
             });
         }
+    }
+
+    /**
+     * 处理跨书籍搜索请求
+     */
+    private async handleCrossBookSearch(query: string, aiMessageId: string): Promise<void> {
+        if (!this.apiClient) {
+            this.messageList?.updateMessage(aiMessageId, {
+                content: "API 客户端未连接",
+                isStreaming: false
+            });
+            this.resetProcessingState();
+            return;
+        }
+
+        try {
+            // 调用跨书籍搜索 API
+            const result = await this.apiClient.crossBookSearch(query, { topK: 5 });
+
+            if (result.status !== 'success') {
+                throw new Error(result.error || '搜索失败');
+            }
+
+            // 构建响应内容
+            let responseContent = `在 **${result.books_searched}** 本书中找到 **${result.total_results}** 条相关内容:\n\n`;
+
+            if (result.results.length === 0) {
+                responseContent = "未找到相关内容。请尝试其他关键词。";
+            } else {
+                for (let i = 0; i < result.results.length; i++) {
+                    const r = result.results[i];
+                    // 使用 obsidian_link 格式化可点击链接
+                    const linkText = r.obsidian_link || `第${r.page}页`;
+                    responseContent += `${i + 1}. 【《${r.book_name}》${r.section}】${linkText}\n`;
+                    responseContent += `   ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}\n\n`;
+                }
+            }
+
+            // 更新消息
+            this.messageList?.updateMessage(aiMessageId, {
+                content: responseContent,
+                isStreaming: false
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.messageList?.updateMessage(aiMessageId, {
+                content: `跨书籍搜索失败: ${errorMessage}`,
+                isStreaming: false
+            });
+        } finally {
+            this.resetProcessingState();
+        }
+    }
+
+    /**
+     * 重置处理状态
+     */
+    private resetProcessingState(): void {
+        this.isProcessing = false;
+        this.isAiStreaming = false;
+        this.chatInput?.setDisabled(false);
+        this.restoreInputSection();
     }
 
     /**

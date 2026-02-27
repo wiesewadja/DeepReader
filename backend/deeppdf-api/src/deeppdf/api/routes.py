@@ -31,6 +31,9 @@ from .models import (
     SessionInfo,
     SessionsListResponse,
     DeleteSessionResponse,
+    CrossBookSearchRequest,
+    CrossBookSearchResponse,
+    CrossBookSearchResult,
 )
 from .export_models import ExportIndexResponse
 from .export_handlers import export_index_data
@@ -1433,4 +1436,66 @@ async def delete_session(index_id: str, session_id: str) -> DeleteSessionRespons
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"删除会话失败: {str(e)}",
+        )
+
+
+# ============================================================
+# 跨书籍搜索 API
+# ============================================================
+
+
+@router.post("/cross-book/search", response_model=CrossBookSearchResponse)
+async def cross_book_search(body: CrossBookSearchRequest):
+    """
+    跨书籍搜索
+
+    在所有已索引的书籍中搜索相关内容
+
+    Args:
+        body: 搜索请求
+
+    Returns:
+        搜索结果，包含来源书籍信息
+    """
+    logger.info(f"[跨书籍搜索] query='{body.query}', index_ids={body.index_ids}, top_k={body.top_k}")
+
+    from ..services.cross_book_search import cross_book_search as do_cross_book_search
+
+    try:
+        result = await asyncio.to_thread(
+            do_cross_book_search,
+            query=body.query,
+            storage_dir=str(settings.base_dir),
+            index_ids=body.index_ids,
+            top_k=body.top_k
+        )
+
+        logger.info(f"[跨书籍搜索] 完成: 搜索了 {result['books_searched']} 本书, 找到 {result['total_results']} 条结果")
+
+        # 转换结果为 Pydantic 模型
+        results = [
+            CrossBookSearchResult(
+                text=r["text"],
+                book_name=r["book_name"],
+                index_id=r["index_id"],
+                section=r["section"],
+                page=r["page"],
+                obsidian_link=r["obsidian_link"]
+            )
+            for r in result.get("results", [])
+        ]
+
+        return CrossBookSearchResponse(
+            status=result["status"],
+            results=results,
+            books_searched=result["books_searched"],
+            total_results=result["total_results"],
+            error=result.get("error")
+        )
+
+    except Exception as e:
+        logger.error(f"[跨书籍搜索] 失败: {e}")
+        return CrossBookSearchResponse(
+            status="error",
+            error=str(e)
         )

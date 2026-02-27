@@ -273,3 +273,35 @@ class DeleteSessionResponse(BaseModel):
 
     status: str
     message: str
+
+
+# ========== 跨书籍搜索模型 ==========
+
+
+class CrossBookSearchRequest(BaseModel):
+    """跨书籍搜索请求"""
+
+    query: str = Field(..., description="搜索关键词", min_length=1)
+    index_ids: Optional[List[str]] = Field(None, description="指定索引 ID 列表，不传则搜索全部")
+    top_k: int = Field(5, description="每本书返回的结果数量", ge=1, le=20)
+
+
+class CrossBookSearchResult(BaseModel):
+    """跨书籍搜索结果项"""
+
+    text: str = Field(..., description="匹配的文本内容")
+    book_name: str = Field(..., description="来源书籍名称")
+    index_id: str = Field(..., description="索引 ID")
+    section: str = Field(..., description="章节名称")
+    page: int = Field(..., description="页码")
+    obsidian_link: str = Field(..., description="Obsidian wiki 链接")
+
+
+class CrossBookSearchResponse(BaseModel):
+    """跨书籍搜索响应"""
+
+    status: str = Field(..., description="状态: success 或 error")
+    results: List[CrossBookSearchResult] = Field(default_factory=list, description="搜索结果列表")
+    books_searched: int = Field(0, description="搜索的书籍数量")
+    total_results: int = Field(0, description="总结果数量")
+    error: Optional[str] = Field(None, description="错误信息")

@@ -297,6 +297,31 @@ export interface AgentStreamChunk {
   citations?: CitationInfo[];
 }
 
+// ==================== 跨书籍搜索相关类型 ====================
+
+/**
+ * 跨书籍搜索结果项
+ */
+export interface CrossBookSearchResult {
+  text: string;
+  book_name: string;
+  index_id: string;
+  section: string;
+  page: number;
+  obsidian_link: string;
+}
+
+/**
+ * 跨书籍搜索响应
+ */
+export interface CrossBookSearchResponse {
+  status: string;
+  results: CrossBookSearchResult[];
+  books_searched: number;
+  total_results: number;
+  error?: string;
+}
+
 // ==================== HTTP 客户端类 ====================
 
 export interface SaveMarkdownMappingResponse {
@@ -948,6 +973,30 @@ export class DeepPDFClient {
   async getBookSummary(indexId: string, regenerate: boolean = false): Promise<BookSummary> {
     return this.request<BookSummary>(`/api/reading/${indexId}/summary?regenerate=${regenerate}`, {
       method: 'GET'
+    });
+  }
+
+  // ==================== 跨书籍搜索 API ====================
+
+  /**
+   * 跨书籍搜索
+   * 在所有已索引的书籍中搜索相关内容
+   */
+  async crossBookSearch(
+    query: string,
+    options?: {
+      indexIds?: string[];
+      topK?: number;
+    }
+  ): Promise<CrossBookSearchResponse> {
+    return this.request<CrossBookSearchResponse>('/api/cross-book/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        index_ids: options?.indexIds,
+        top_k: options?.topK || 5
+      })
     });
   }
 }
