@@ -1,12 +1,12 @@
-# DeepPDF Project Context
+# DeepReader Project Context
 
 ## Project Overview
 
-**DeepPDF** is an intelligent PDF indexing and retrieval plugin for Obsidian, featuring a two-tier architecture with a FastAPI backend for semantic search and a TypeScript frontend Obsidian plugin.
+**DeepReader** is an intelligent PDF indexing and retrieval plugin for Obsidian, featuring a two-tier architecture with a FastAPI backend for semantic search and a TypeScript frontend Obsidian plugin.
 
 ### Core Purpose
 
-DeepPDF enables users to:
+DeepReader enables users to:
 - Index PDF and EPUB documents with intelligent chapter-aware structure parsing
 - Perform hybrid semantic and keyword search across documents
 - Conduct natural language Q&A using LLM-powered agents with multi-tool reasoning
@@ -395,8 +395,8 @@ cp main.js manifest.json styles.css /path/to/obsidian/vault/.obsidian/plugins/de
 ```
 
 In Obsidian:
-1. Settings → Plugins → Enable "DeepPDF"
-2. Settings → DeepPDF → Configure API port (default: 6088)
+1. Settings → Plugins → Enable "DeepReader"
+2. Settings → DeepReader → Configure API port (default: 6088)
 
 ### Troubleshooting
 

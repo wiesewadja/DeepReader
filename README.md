@@ -1,6 +1,6 @@
 
 
-  **DeepPDF** - 为 Obsidian 提供的 PDF 智能索引插件，基于 FastAPI 后端实现语义搜索。
+  **DeepReader** - 为 Obsidian 提供的 PDF 智能索引插件，基于 FastAPI 后端实现语义搜索。
 
   **前端**: Obsidian 插件（TypeScript）
   **后端**: FastAPI 服务（Python）
@@ -315,7 +315,7 @@
 
   Agent 工具对比
 
-  DeepPDF Agent 提供多种检索工具，针对不同场景优化：
+  DeepReader Agent 提供多种检索工具，针对不同场景优化：
 
   | 工具 | 适用场景 | 特点 |
   |------|----------|------|

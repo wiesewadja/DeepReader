@@ -1,4 +1,4 @@
-# DeepPDF Obsidian Plugin
+# DeepReader Obsidian Plugin
 
 PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
 
@@ -24,12 +24,12 @@ PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
    cp -r frontend /path/to/obsidian/vault/.obsidian/plugins/deeppdf
    ```
 
-3. 在 Obsidian 设置中启用 DeepPDF 插件
+3. 在 Obsidian 设置中启用 DeepReader 插件
 
 ## 配置
 
 1. 启动后端服务器：`cd backend && ./scripts/start_server.sh`
-2. 打开 Obsidian 设置 > DeepPDF
+2. 打开 Obsidian 设置 > DeepReader
 3. 设置 API Port（默认：6088，需与后端端口一致）
 4. 调整 Max Results 设置
 
@@ -37,7 +37,7 @@ PDF 智能索引和问答插件，通过 HTTP API 与 FastAPI 后端通信。
 
 ### 索引 PDF
 
-1. 打开 DeepPDF 侧边栏
+1. 打开 DeepReader 侧边栏
 2. 点击"管理索引"
 3. 选择 PDF 文件进行索引
 

@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## 项目定位
-**DeepPDF**: 通过 FastAPI 后端为 Obsidian 提供 PDF 智能索引的插件。
+**DeepReader**: 通过 FastAPI 后端为 Obsidian 提供 PDF 智能索引的插件。
 - **前端**: TypeScript (Obsidian Plugin API)
 - **后端**: Python 3.10+ (FastAPI)，使用 `uv` 包管理
 - **通信**: REST API @ `http://localhost:6088`
