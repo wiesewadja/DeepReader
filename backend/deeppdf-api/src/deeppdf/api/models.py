@@ -282,7 +282,9 @@ class CrossBookSearchRequest(BaseModel):
     """跨书籍搜索请求"""
 
     query: str = Field(..., description="搜索关键词", min_length=1)
-    index_ids: Optional[List[str]] = Field(None, description="指定索引 ID 列表，不传则搜索全部")
+    index_ids: Optional[List[str]] = Field(
+        None, description="指定索引 ID 列表，不传则搜索全部"
+    )
     top_k: int = Field(5, description="每本书返回的结果数量", ge=1, le=20)
 
 
@@ -301,7 +303,63 @@ class CrossBookSearchResponse(BaseModel):
     """跨书籍搜索响应"""
 
     status: str = Field(..., description="状态: success 或 error")
-    results: List[CrossBookSearchResult] = Field(default_factory=list, description="搜索结果列表")
+    results: List[CrossBookSearchResult] = Field(
+        default_factory=list, description="搜索结果列表"
+    )
     books_searched: int = Field(0, description="搜索的书籍数量")
     total_results: int = Field(0, description="总结果数量")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
+# ========== 主题报告模型 ==========
+
+
+class BookPerspective(BaseModel):
+    """单本书的观点"""
+
+    book_name: str = Field(..., description="书籍名称")
+    book_link: str = Field(..., description="Obsidian wiki link")
+    key_points: List[str] = Field(default_factory=list, description="核心观点列表")
+    related_chapter: str = Field("", description="最相关的章节")
+    related_chapter_link: str = Field("", description="章节的 wiki link")
+
+
+class DifferencePosition(BaseModel):
+    """单个立场"""
+
+    book_name: str = Field(..., description="书籍名称")
+    book_link: str = Field(..., description="Obsidian wiki link")
+    position: str = Field(..., description="该书的立场")
+
+
+class DifferencePoint(BaseModel):
+    """分歧点"""
+
+    topic: str = Field(..., description="分歧主题")
+    positions: List[DifferencePosition] = Field(
+        default_factory=list, description="各书立场"
+    )
+
+
+class ThemeReportRequest(BaseModel):
+    """主题报告请求"""
+
+    theme: str = Field(..., description="主题/问题", min_length=1, max_length=500)
+    index_ids: Optional[List[str]] = Field(
+        None, description="指定索引 ID 列表，不传则搜索全部"
+    )
+    top_k_per_book: int = Field(3, description="每本书取多少条结果", ge=1, le=10)
+
+
+class ThemeReportResponse(BaseModel):
+    """主题报告响应"""
+
+    status: str = Field(..., description="状态: success 或 error")
+    theme: str = Field(..., description="主题")
+    unified_summary: str = Field(..., description="整合摘要")
+    book_perspectives: List[BookPerspective] = Field(
+        default_factory=list, description="各书观点"
+    )
+    books_searched: int = Field(0, description="搜索的书籍数量")
+    markdown_path: Optional[str] = Field(None, description="生成的 Markdown 文件路径")
     error: Optional[str] = Field(None, description="错误信息")

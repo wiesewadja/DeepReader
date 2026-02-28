@@ -322,6 +322,41 @@ export interface CrossBookSearchResponse {
   error?: string;
 }
 
+// ==================== 主题报告类型 ====================
+
+/**
+ * 书籍视角（单本书对主题的观点）
+ */
+export interface BookPerspective {
+  book_name: string;
+  book_link: string;
+  key_points: string[];
+  related_chapter: string;
+  related_chapter_link: string;
+}
+
+/**
+ * 主题报告请求参数
+ */
+export interface ThemeReportRequest {
+  theme: string;
+  index_ids?: string[];
+  top_k_per_book?: number;
+}
+
+/**
+ * 主题报告响应
+ */
+export interface ThemeReportResponse {
+  status: string;
+  theme: string;
+  unified_summary: string;
+  book_perspectives: BookPerspective[];
+  books_searched: number;
+  markdown_path?: string;
+  error?: string;
+}
+
 // ==================== HTTP 客户端类 ====================
 
 export interface SaveMarkdownMappingResponse {
@@ -997,6 +1032,30 @@ export class DeepPDFClient {
         index_ids: options?.indexIds,
         top_k: options?.topK || 5
       })
+    });
+  }
+
+  // ==================== 主题报告 API ====================
+
+  /**
+   * 生成主题整合报告
+   * 跨书籍搜索并整合观点，生成 Markdown 报告
+   */
+  async generateThemeReport(
+    theme: string,
+    options?: {
+      indexIds?: string[];
+      topKPerBook?: number;
+    }
+  ): Promise<ThemeReportResponse> {
+    return this.request<ThemeReportResponse>('/api/theme/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        theme,
+        index_ids: options?.indexIds,
+        top_k_per_book: options?.topKPerBook || 3,
+      }),
     });
   }
 }

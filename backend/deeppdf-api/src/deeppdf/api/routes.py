@@ -5,6 +5,7 @@ API 路由定义
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 from collections import defaultdict
@@ -34,6 +35,9 @@ from .models import (
     CrossBookSearchRequest,
     CrossBookSearchResponse,
     CrossBookSearchResult,
+    ThemeReportRequest,
+    ThemeReportResponse,
+    BookPerspective,
 )
 from .export_models import ExportIndexResponse
 from .export_handlers import export_index_data
@@ -1498,4 +1502,80 @@ async def cross_book_search(body: CrossBookSearchRequest):
         return CrossBookSearchResponse(
             status="error",
             error=str(e)
+        )
+
+
+# ============================================================
+# 主题报告 API
+# ============================================================
+
+
+@router.post("/theme/report", response_model=ThemeReportResponse)
+async def create_theme_report(body: ThemeReportRequest):
+    """
+    生成主题整合报告
+
+    在所有已索引书籍中搜索相关内容，整合观点并生成 Markdown 报告
+
+    Args:
+        body: 主题报告请求
+
+    Returns:
+        主题报告响应，包含整合摘要和 Markdown 文件路径
+    """
+    logger.info(f"[主题报告] theme='{body.theme}', index_ids={body.index_ids}, top_k_per_book={body.top_k_per_book}")
+
+    from ..services.theme_report import generate_theme_report
+
+    storage_dir = str(Path(settings.base_dir))
+
+    # 从配置获取 vault 路径（优先使用 settings，回退到环境变量）
+    vault_path = settings.obsidian_vault_path or os.environ.get("OBSIDIAN_VAULT_PATH", "")
+
+    try:
+        result = await generate_theme_report(
+            theme=body.theme,
+            storage_dir=storage_dir,
+            vault_path=vault_path,
+            output_dir="DeepPDF/主题调查",
+            index_ids=body.index_ids,
+            top_k_per_book=body.top_k_per_book,
+        )
+
+        if result.get("status") != "success":
+            logger.error(f"[主题报告] 生成失败: {result.get('error')}")
+            return ThemeReportResponse(
+                status="error",
+                theme=body.theme,
+                unified_summary="",
+                error=result.get("error"),
+            )
+
+        logger.info(f"[主题报告] 完成: 搜索了 {result['books_searched']} 本书")
+
+        return ThemeReportResponse(
+            status="success",
+            theme=result["theme"],
+            unified_summary=result["unified_summary"],
+            book_perspectives=[
+                BookPerspective(
+                    book_name=bp["book_name"],
+                    book_link=bp["book_link"],
+                    key_points=bp["key_points"],
+                    related_chapter=bp.get("related_chapter", ""),
+                    related_chapter_link=bp.get("related_chapter_link", ""),
+                )
+                for bp in result["book_perspectives"]
+            ],
+            books_searched=result["books_searched"],
+            markdown_path=result.get("markdown_path"),
+        )
+
+    except Exception as e:
+        logger.error(f"[主题报告] 失败: {e}")
+        return ThemeReportResponse(
+            status="error",
+            theme=body.theme,
+            unified_summary="",
+            error=str(e),
         )

@@ -1258,149 +1258,76 @@ ${r.text}`;
     /**
      * 处理跨书籍搜索请求
      */
+    /**
+     * 处理跨书籍搜索（生成主题报告）
+     */
     private async handleCrossBookSearch(query: string, aiMessageId: string): Promise<void> {
         if (!this.apiClient) {
             this.messageList?.updateMessage(aiMessageId, {
                 content: "API 客户端未连接",
                 isStreaming: false
             });
-            this.resetProcessingState();
+            this.isProcessing = false;
+            this.isAiStreaming = false;
+            this.chatInput?.setDisabled(false);
+            this.restoreInputSection();
             return;
         }
 
         try {
-            // 调用跨书籍搜索 API
-            const result = await this.apiClient.crossBookSearch(query, { topK: 5 });
+            // 调用主题报告 API
+            console.log('[DeepPDF] 跨书籍搜索开始:', query);
+            const result = await this.apiClient.generateThemeReport(query);
+            console.log('[DeepPDF] 主题报告结果:', result);
 
-            if (result.status !== 'success') {
-                throw new Error(result.error || '搜索失败');
-            }
-
-            // 如果没有结果，直接返回
-            if (result.results.length === 0) {
+            if (result.status !== "success") {
                 this.messageList?.updateMessage(aiMessageId, {
-                    content: "在所有已索引的书籍中未找到相关内容。请尝试其他关键词。",
+                    content: `生成报告失败: ${result.error || "未知错误"}`,
                     isStreaming: false
                 });
-                this.resetProcessingState();
                 return;
             }
 
-            // 检查是否有 API Key
-            const settings = this.plugin.settings;
-            const apiKey = settings.llmProvider === 'openai' ? settings.openaiApiKey : settings.deepseekApiKey;
-            const model = settings.llmModel || (settings.llmProvider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat') || 'deepseek-chat';
+            // 构建显示内容
+            let displayContent = `## 📌 ${result.theme}\n\n${result.unified_summary}\n\n`;
 
-            // 如果没有 Key，回退到显示检索片段
-            if (!apiKey) {
-                let responseContent = `在 **${result.books_searched}** 本书中找到 **${result.total_results}** 条相关内容 (请在设置中配置 API Key 以启用 AI 智能回答):\n\n`;
-                for (let i = 0; i < result.results.length; i++) {
-                    const r = result.results[i];
-                    responseContent += `${i + 1}. **《${r.book_name}》${r.section}** (第${r.page}页)\n`;
-                    responseContent += `   ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}\n\n`;
+            // 添加各书观点摘要
+            if (result.book_perspectives && result.book_perspectives.length > 0) {
+                displayContent += `### 📚 各书观点 (${result.books_searched} 本书)\n\n`;
+                for (const bp of result.book_perspectives) {
+                    const points = bp.key_points && bp.key_points.length > 0
+                        ? bp.key_points.join("；")
+                        : "已提取相关内容";
+                    displayContent += `**[[${bp.book_name}]]**: ${points}\n\n`;
                 }
-
-                this.messageList?.updateMessage(aiMessageId, {
-                    content: responseContent,
-                    isStreaming: false
-                });
-                this.resetProcessingState();
-                return;
             }
 
-            // 构建跨书籍模式的 System Prompt
-            const systemPrompt = this.buildCrossBookSystemPrompt();
+            // 如果生成了 Markdown 文件，添加提示
+            if (result.markdown_path) {
+                displayContent += `\n---\n\n> 📄 完整报告已保存到: [[${result.markdown_path}]]`;
+            }
 
-            // 构建上下文
-            let bookContext = `在 ${result.books_searched} 本书中找到的相关内容：\n\n`;
-            bookContext += result.results.map((r: any, index: number) => {
-                return `【来源片段 ${index + 1}】
-书籍: 《${r.book_name}》
-章节: ${r.section}
-页码: ${r.page}
-引用路径: ${r.obsidian_link}
-内容:
-${r.text}`;
-            }).join("\n\n");
+            this.messageList?.updateMessage(aiMessageId, {
+                content: displayContent,
+                isStreaming: false
+            });
 
-            const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
-
-            // 调用 LLM 生成智能回复（跨书籍模式不显示引用列表）
-            await this.streamLLMResponse(
-                settings.llmProvider,
-                apiKey,
-                model,
-                systemPrompt,
-                userPrompt,
-                aiMessageId,
-                []  // 跨书籍模式不传递引用数据，避免显示引用列表
-            );
-
-            // 保存到缓存
+            // 保存到会话缓存
             this.saveToCache();
 
-            // 恢复输入状态（AI 回复完成）
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.messageList?.updateMessage(aiMessageId, {
+                content: `生成报告失败: ${errorMessage}`,
+                isStreaming: false
+            });
+        } finally {
             this.isProcessing = false;
             this.isAiStreaming = false;
             this.chatInput?.setDisabled(false);
             this.restoreInputSection();
             this.chatInput?.focus();
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            this.messageList?.updateMessage(aiMessageId, {
-                content: `跨书籍搜索失败: ${errorMessage}`,
-                isStreaming: false
-            });
-            this.resetProcessingState();
         }
-    }
-
-    /**
-     * 构建跨书籍模式的 System Prompt
-     */
-    private buildCrossBookSystemPrompt(): string {
-        return `你是一位博学的图书管理员，熟悉书架上的每一本书籍。
-
-📚 你的信条：
-- 你只知晓已索引书籍的内容，除此别无所知
-- 你不援引任何外部知识，不依赖书本之外的任何信息
-- 你用精炼的语言从多本书中综合答案，展示知识的关联性
-- 若所有书中均无相关内容，你便诚实作答：所藏书籍未载此题
-
-🔍 跨书籍回答原则：
-- 对比不同书籍对同一问题的观点
-- 指出概念在不同书籍中的异同
-- 按主题或观点组织答案，而非按书籍罗列
-- 优先引用最相关的来源
-
-📋 引用协议：
-为每个观点提供可点击的文件链接，引用要自然融入叙述中。
-
-【引用格式】
-使用搜索结果中的 obsidian_link 字段作为链接地址。
-
-【示例】
-- 《如何阅读一本书》中提到 [[DeepPDF/如何阅读一本书/01-第一篇.md#^page-45|第45页]]
-- 《纳瓦尔宝典》则认为 [[DeepPDF/纳瓦尔宝典/31-判断力.md#^page-89|判断力]]
-
-【回答风格】
-- 综合性：整合多本书的观点
-- 对比性：指出不同书籍的异同
-- 简洁性：避免冗长，直达要点
-- 引用准确：每个观点都要有来源
-
-请基于以上原则，用中文回答读者的问题。`;
-    }
-
-    /**
-     * 重置处理状态
-     */
-    private resetProcessingState(): void {
-        this.isProcessing = false;
-        this.isAiStreaming = false;
-        this.chatInput?.setDisabled(false);
-        this.restoreInputSection();
     }
 
     /**

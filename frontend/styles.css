@@ -1946,28 +1946,27 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 48px;
+	height: 48px;
 	padding: 0;
 
 	color: var(--text-muted);
-	background: transparent;
+	background: transparent !important;
 
 	border: none !important;
 	box-shadow: none !important;
-	border-radius: 50%;
+	outline: none !important;
 
 	cursor: pointer;
-	transition: all 0.2s ease;
+	transition: color 0.2s ease;
 }
 
 .deeppdf-chat-input-send-btn svg {
-	width: 22px;
-	height: 22px;
+	width: 18px;
+	height: 18px;
 }
 
 .deeppdf-chat-input-send-btn:not(:disabled):hover {
-	background: var(--background-modifier-hover);
 	color: var(--interactive-accent);
 }
 
@@ -1980,44 +1979,56 @@
 	color: var(--interactive-accent);
 }
 
-/* ==================== 模式切换按钮 ==================== */
+/* ==================== 模式切换按钮（Toggle Switch 样式） ==================== */
 
 .deeppdf-mode-toggle-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 32px;
-	height: 32px;
+	position: relative;
+	width: 36px;
+	height: 20px;
 	padding: 0;
-	margin-right: 4px;
+	margin-right: 8px;
 
-	color: var(--text-muted);
-	background: transparent;
-
+	background: var(--background-modifier-border);
 	border: none !important;
 	box-shadow: none !important;
-	border-radius: 50%;
+	border-radius: 10px;
 
 	cursor: pointer;
-	transition: all 0.2s ease;
+	transition: background-color 0.2s ease;
+}
+
+/* 开关滑块 */
+.deeppdf-mode-toggle-btn::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 16px;
+	height: 16px;
+	background: var(--text-normal);
+	border-radius: 50%;
+	transition: transform 0.2s ease, background-color 0.2s ease;
 }
 
 .deeppdf-mode-toggle-btn:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
+	background: var(--background-modifier-border-hover);
 }
 
-.deeppdf-mode-toggle-btn .mode-icon {
-	font-size: 16px;
-	line-height: 1;
-}
-
+/* 开启状态 */
+.deeppdf-mode-toggle-btn.active,
 .deeppdf-mode-toggle-btn[data-mode="cross"] {
-	color: var(--interactive-accent);
+	background: var(--interactive-accent);
 }
 
+.deeppdf-mode-toggle-btn.active::after,
+.deeppdf-mode-toggle-btn[data-mode="cross"]::after {
+	transform: translateX(16px);
+	background: white;
+}
+
+.deeppdf-mode-toggle-btn.active:hover,
 .deeppdf-mode-toggle-btn[data-mode="cross"]:hover {
-	color: var(--interactive-accent);
+	background: var(--interactive-accent-hover, var(--interactive-accent));
 }
 
 /* ==================== 动画 ==================== */

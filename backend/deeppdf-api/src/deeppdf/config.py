@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     base_dir: Path = Path(__file__).parent.parent.parent / "data"
     max_results: int = 10
 
+    # Obsidian 集成配置
+    obsidian_vault_path: Optional[str] = None  # Obsidian vault 根目录路径
+
     # LLM API 配置
     deepseek_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None

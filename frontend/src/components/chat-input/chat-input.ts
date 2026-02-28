@@ -364,12 +364,17 @@ export class ChatInput {
 		const mode = this.options.searchMode || 'single';
 		const isCrossMode = mode === 'cross';
 
-		// 使用书本图标表示模式
-		this.modeButton.innerHTML = isCrossMode
-			? `<span class="mode-icon">📚</span>`
-			: `<span class="mode-icon">📖</span>`;
+		// 使用小圆按钮样式
+		// 跨书籍模式开启时显示高亮实心圆，关闭时显示空心圆
+		this.modeButton.innerHTML = ''; // 清空内容，使用 CSS 绘制圆形
 
-		this.modeButton.setAttribute('aria-label', isCrossMode ? '跨书籍模式（点击切换）' : '单书籍模式（点击切换）');
+		if (isCrossMode) {
+			this.modeButton.addClass('active');
+		} else {
+			this.modeButton.removeClass('active');
+		}
+
+		this.modeButton.setAttribute('aria-label', isCrossMode ? '跨书籍模式已开启（点击关闭）' : '跨书籍模式已关闭（点击开启）');
 		this.modeButton.setAttribute('data-mode', mode);
 	}
 
