@@ -118,6 +118,7 @@ class EpubTreeConverter:
             - 嵌套 TOC → 节点的 nodes 字段
             - 章节内容 → 节点的 text 字段
             - start_index/end_index → 基于章节顺序估算
+            - 未在 TOC 中的章节 → 追加到对应父节点或创建新节点
         """
         # ============================================================
         # 步骤1: 提取数据
@@ -143,13 +144,26 @@ class EpubTreeConverter:
             logger.debug("[EPUB转换] node_id 计数器已重置")
 
         # ============================================================
-        # 步骤4: 转换 TOC 为树结构
+        # 步骤4: 转换 TOC 为树结构，并收集已使用的文件
         # ============================================================
+        self._used_files: set = set()  # 跟踪已被 TOC 引用的文件
         structure = self._toc_to_tree(toc, chapter_map, assign_node_ids)
         logger.debug(f"[EPUB转换] 树结构转换完成，共 {len(structure)} 个顶级节点")
 
         # ============================================================
-        # 步骤5: 返回结果
+        # 步骤5: 添加未在 TOC 中但实际存在的章节
+        # ============================================================
+        unused_chapters = [
+            ch for ch in chapters
+            if ch["file_name"] not in self._used_files
+        ]
+
+        if unused_chapters:
+            logger.info(f"[EPUB转换] 发现 {len(unused_chapters)} 个未在 TOC 中的章节，将添加到树结构")
+            self._add_unused_chapters(structure, unused_chapters, chapter_map, assign_node_ids)
+
+        # ============================================================
+        # 步骤6: 返回结果
         # ============================================================
         return {
             "title": metadata.get("title", ""),
@@ -210,11 +224,22 @@ class EpubTreeConverter:
             # 简单的链接
             link = item
             children = []
+        elif isinstance(item, epub.Section):
+            # Section 作为单独项（没有子节点的 Section）
+            link = item
+            children = []
         elif isinstance(item, tuple) and len(item) >= 1:
             # 嵌套结构
             if isinstance(item[0], (epub.Link, epub.Section)):
                 link = item[0]
-                children = item[1:] if len(item) > 1 else []
+                # 子节点可能是 list 或 tuple
+                children = []
+                if len(item) > 1:
+                    for child in item[1:]:
+                        if isinstance(child, list):
+                            children.extend(child)
+                        else:
+                            children.append(child)
             else:
                 # 不支持的嵌套格式
                 logger.warning(f"[EPUB转换] 无法解析的 TOC 项类型: {type(item[0])}")
@@ -231,7 +256,13 @@ class EpubTreeConverter:
         if not title:
             title = "未命名章节"
 
+        # Section 可能没有 href，只有 title
         href = getattr(link, 'href', None)
+
+        # 如果是 Section，尝试从其属性中获取 href
+        if href is None and isinstance(link, epub.Section):
+            # Section 有时 href 在子节点中
+            href = getattr(link, 'href', None)
 
         logger.debug(f"[EPUB转换] 处理章节: {title} (href={href})")
 
@@ -246,6 +277,9 @@ class EpubTreeConverter:
             # 去除锚点部分（如 #内文），只保留文件名
             # href 可能是 "text00002.html#内文" 或 "text00002.html"
             file_name = href.split('#')[0]
+
+            # 记录此文件已被使用
+            self._used_files.add(file_name)
 
             if file_name in chapter_map:
                 chapter = chapter_map[file_name]
@@ -330,3 +364,70 @@ class EpubTreeConverter:
             flat_list.append(children)
 
         return flat_list
+
+    def _add_unused_chapters(
+        self,
+        structure: List[Dict[str, Any]],
+        unused_chapters: List[Dict[str, str]],
+        chapter_map: Dict[str, Dict[str, str]],
+        assign_node_ids: bool
+    ) -> None:
+        """
+        将未在 TOC 中但实际存在的章节添加到树结构
+
+        这些章节通常是 EPUB 的实际内容文件，但由于 TOC 结构简化，
+        没有被单独列出。我们将它们添加为顶级节点或附加节点。
+
+        参数:
+            structure: 当前树结构（会被修改）
+            unused_chapters: 未使用的章节列表
+            chapter_map: 章节文件名到内容的映射
+            assign_node_ids: 是否分配 node_id
+        """
+        # 按文件名排序，保持原始顺序
+        all_file_names = list(chapter_map.keys())
+
+        for chapter in unused_chapters:
+            file_name = chapter["file_name"]
+            content = chapter.get("content", "")
+
+            # 跳过空内容或太短的内容（可能是封面、空白页等）
+            if len(content.strip()) < 100:
+                logger.debug(f"[EPUB转换] 跳过短内容章节: {file_name}")
+                continue
+
+            # 跳过导航文件和特殊文件
+            if any(skip in file_name.lower() for skip in ['nav', 'toc', 'cover']):
+                logger.debug(f"[EPUB转换] 跳过导航/封面文件: {file_name}")
+                continue
+
+            # 提取标题
+            title = chapter.get("title", file_name)
+
+            # 估算索引
+            if file_name in all_file_names:
+                chapter_index = all_file_names.index(file_name)
+                start_index = chapter_index + 1
+            else:
+                start_index = len(structure) + 1
+
+            word_count = len(content.split())
+            end_index = start_index + max(1, word_count // 1000)
+
+            # 创建节点
+            node: Dict[str, Any] = {
+                "title": title,
+                "text": content,
+                "start_index": start_index,
+                "end_index": end_index,
+            }
+
+            if assign_node_ids:
+                self._node_counter += 1
+                node["node_id"] = str(self._node_counter).zfill(4)
+
+            # 添加到树结构
+            structure.append(node)
+            logger.debug(f"[EPUB转换] 添加未在 TOC 中的章节: {title} ({file_name})")
+
+        logger.info(f"[EPUB转换] 共添加 {len([ch for ch in unused_chapters if len(ch.get('content', '')) >= 100])} 个额外章节")
