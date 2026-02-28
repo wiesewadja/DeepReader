@@ -71,6 +71,7 @@ export class SidebarView extends ItemView {
     private inputSectionMinimized: boolean = false;  // 输入框是否最小化
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
+    private isConnected: boolean = false;  // 后端连接状态
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -110,6 +111,10 @@ export class SidebarView extends ItemView {
 
     /** 处理新建会话 */
     private handleNewChat() {
+        if (!this.isConnected) {
+            new Notice("后端未连接，请先启动后端服务");
+            return;
+        }
         if (!this.currentIndexId) {
             new Notice("请先选择一个索引");
             return;
@@ -119,6 +124,10 @@ export class SidebarView extends ItemView {
 
     /** 处理显示历史 */
     private async handleShowHistory() {
+        if (!this.isConnected) {
+            new Notice("后端未连接，请先启动后端服务");
+            return;
+        }
         if (!this.currentIndexId) {
             new Notice("请先选择一个索引");
             return;
@@ -624,6 +633,77 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
+        // 先检查后端连接状态
+        await this.checkConnectionAndRender(container);
+    }
+
+    /**
+     * 检查后端连接状态并渲染相应界面
+     */
+    private async checkConnectionAndRender(container: HTMLElement): Promise<void> {
+        // 显示加载状态
+        this.showConnectingUI(container);
+
+        // 检查连接
+        let connected = false;
+        if (this.apiClient) {
+            try {
+                const healthResponse = await this.apiClient.healthCheck();
+                connected = healthResponse?.status === 'ok';
+            } catch (e) {
+                console.error('[DeepPDF] Connection check failed:', e);
+            }
+        }
+
+        this.isConnected = connected;
+
+        if (connected) {
+            // 连接成功，渲染主界面
+            this.renderMainUI(container);
+        } else {
+            // 未连接，显示全屏提示
+            this.showDisconnectedUI(container);
+        }
+    }
+
+    /**
+     * 显示连接中状态
+     */
+    private showConnectingUI(container: HTMLElement): void {
+        container.empty();
+        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
+            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "🔄" });
+            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "正在连接..." });
+            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "正在检查后端服务状态" });
+        });
+    }
+
+    /**
+     * 显示未连接全屏提示
+     */
+    private showDisconnectedUI(container: HTMLElement): void {
+        container.empty();
+        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
+            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "⚠️" });
+            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "未连接到后端服务" });
+            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "请确保后端服务正在运行" });
+
+            const infoBox = screen.createDiv({ cls: "deeppdf-disconnected-info" });
+            infoBox.createEl("code", { text: "uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio" });
+
+            const retryBtn = screen.createEl("button", { cls: "deeppdf-retry-btn", text: "重新连接" });
+            retryBtn.addEventListener("click", () => {
+                this.checkConnectionAndRender(container);
+            });
+        });
+    }
+
+    /**
+     * 渲染主界面
+     */
+    private async renderMainUI(container: HTMLElement): Promise<void> {
+        container.empty();
+
         // 初始化阅读入口服务
         if (this.apiClient) {
             this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
@@ -798,6 +878,12 @@ export class SidebarView extends ItemView {
      * 切换搜索模式
      */
     private async toggleSearchMode() {
+        // 检查后端连接状态
+        if (!this.isConnected) {
+            new Notice("后端未连接，请先启动后端服务");
+            return;
+        }
+
         const previousMode = this.crossBookMode;
         this.crossBookMode = !this.crossBookMode;
         this.chatInput?.setSearchMode(this.crossBookMode ? 'cross' : 'single');
@@ -1619,9 +1705,11 @@ ${r.text}`;
 
         // 设置为加载状态
         this.indexManager.setConnectionStatus('loading');
+        this.isConnected = false;
 
         if (!this.apiClient) {
             this.indexManager.setConnectionStatus('disconnected');
+            this.chatInput?.setDisabled(true);
             return;
         }
 
@@ -1629,12 +1717,16 @@ ${r.text}`;
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
                 this.indexManager.setConnectionStatus('connected');
+                this.isConnected = true;
+                this.chatInput?.setDisabled(false);
             } else {
                 this.indexManager.setConnectionStatus('disconnected');
+                this.chatInput?.setDisabled(true);
             }
         } catch (error) {
             handleNetworkError(error as Error, { context: 'updateStatus' });
             this.indexManager.setConnectionStatus('error');
+            this.chatInput?.setDisabled(true);
         }
     }
 

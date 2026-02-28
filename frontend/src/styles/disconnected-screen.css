@@ -1,0 +1,88 @@
+/**
+ * DeepReader - Disconnected Screen Styles
+ * 全屏断开连接提示样式
+ */
+
+.deeppdf-disconnected-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--deeppdf-spacing-2xl, 24px);
+  text-align: center;
+  animation: deeppdf-fade-in 0.3s ease;
+}
+
+.deeppdf-disconnected-icon {
+  font-size: 64px;
+  margin-bottom: var(--deeppdf-spacing-lg, 16px);
+  opacity: 0.8;
+}
+
+.deeppdf-disconnected-title {
+  font-size: var(--deeppdf-font-size-xl, 18px);
+  font-weight: 600;
+  color: var(--deeppdf-text-primary, var(--text-normal));
+  margin-bottom: var(--deeppdf-spacing-sm, 8px);
+}
+
+.deeppdf-disconnected-desc {
+  font-size: var(--deeppdf-font-size-base, 14px);
+  color: var(--deeppdf-text-secondary, var(--text-muted));
+  margin-bottom: var(--deeppdf-spacing-xl, 20px);
+}
+
+.deeppdf-disconnected-info {
+  background: var(--deeppdf-bg-secondary, var(--background-secondary));
+  border: 1px solid var(--deeppdf-border, var(--background-modifier-border));
+  border-radius: var(--deeppdf-radius-md, 6px);
+  padding: var(--deeppdf-spacing-md, 12px);
+  margin-bottom: var(--deeppdf-spacing-xl, 20px);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.deeppdf-disconnected-info code {
+  font-size: var(--deeppdf-font-size-sm, 12px);
+  color: var(--deeppdf-text-primary, var(--text-normal));
+  white-space: nowrap;
+  font-family: var(--font-monospace);
+}
+
+.deeppdf-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--deeppdf-spacing-sm, 8px);
+  padding: var(--deeppdf-spacing-sm, 8px) var(--deeppdf-spacing-xl, 20px);
+  font-size: var(--deeppdf-font-size-base, 14px);
+  font-weight: 500;
+  font-family: inherit;
+  color: white;
+  background: var(--deeppdf-accent, var(--interactive-accent));
+  border: none;
+  border-radius: var(--deeppdf-radius-md, 6px);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.deeppdf-retry-btn:hover {
+  background: var(--deeppdf-accent-hover, var(--interactive-accent-hover));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.deeppdf-retry-btn:active {
+  transform: translateY(0);
+}
+
+/* 深色模式适配 */
+.theme-dark .deeppdf-disconnected-info {
+  background: rgba(30, 41, 59, 0.5);
+}
+
+/* 浅色模式适配 */
+.theme-light .deeppdf-disconnected-info {
+  background: rgba(241, 245, 249, 0.8);
+}
