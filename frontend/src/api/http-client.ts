@@ -357,6 +357,48 @@ export interface ThemeReportResponse {
   error?: string;
 }
 
+// ==================== 书籍摘要类型 ====================
+
+/**
+ * 章节摘要
+ */
+export interface ChapterSummary {
+  node_id: string;
+  title: string;
+  summary: string;
+  key_questions: string[];
+}
+
+/**
+ * 书籍摘要
+ */
+export interface BookSummary {
+  index_id: string;
+  core_thesis: string;
+  author_intents: string[];
+  book_type: 'theoretical' | 'practical' | 'fiction' | 'mixed';
+  chapter_summaries: ChapterSummary[];
+  generated_at?: string;
+  model_used?: string;
+}
+
+/**
+ * 生成摘要请求参数
+ */
+export interface GenerateSummaryRequest {
+  index_id: string;
+  force_regenerate?: boolean;
+}
+
+/**
+ * 生成摘要响应
+ */
+export interface GenerateSummaryResponse {
+  status: string;
+  summary?: BookSummary;
+  error?: string;
+}
+
 // ==================== HTTP 客户端类 ====================
 
 export interface SaveMarkdownMappingResponse {
@@ -1056,6 +1098,33 @@ export class DeepPDFClient {
         index_ids: options?.indexIds,
         top_k_per_book: options?.topKPerBook || 3,
       }),
+    });
+  }
+
+  /**
+   * 生成书籍结构化摘要（新 API）
+   * 包含核心主旨、作者意图、书籍分类
+   */
+  async generateStructuredSummary(
+    indexId: string,
+    forceRegenerate: boolean = false
+  ): Promise<GenerateSummaryResponse> {
+    return this.request<GenerateSummaryResponse>('/api/summary/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        index_id: indexId,
+        force_regenerate: forceRegenerate,
+      }),
+    });
+  }
+
+  /**
+   * 获取书籍结构化摘要（新 API）
+   */
+  async getStructuredSummary(indexId: string): Promise<GenerateSummaryResponse> {
+    return this.request<GenerateSummaryResponse>(`/api/summary/${indexId}`, {
+      method: 'GET',
     });
   }
 }

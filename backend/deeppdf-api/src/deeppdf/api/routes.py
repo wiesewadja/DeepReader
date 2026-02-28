@@ -38,6 +38,10 @@ from .models import (
     ThemeReportRequest,
     ThemeReportResponse,
     BookPerspective,
+    GenerateSummaryRequest,
+    GenerateSummaryResponse,
+    BookSummary,
+    ChapterSummary,
 )
 from .export_models import ExportIndexResponse
 from .export_handlers import export_index_data
@@ -1577,5 +1581,138 @@ async def create_theme_report(body: ThemeReportRequest):
             status="error",
             theme=body.theme,
             unified_summary="",
+            error=str(e),
+        )
+
+
+# ==================== 书籍摘要 API ====================
+
+
+@router.post(
+    "/summary/generate",
+    response_model=GenerateSummaryResponse,
+    summary="生成书籍摘要",
+    description="为指定索引的书籍生成结构化摘要，包括核心主旨、作者意图、书籍分类",
+)
+async def generate_book_summary_endpoint(body: GenerateSummaryRequest):
+    """
+    生成书籍摘要
+
+    - **index_id**: 索引 ID
+    - **force_regenerate**: 是否强制重新生成（即使已有缓存）
+    """
+    logger.info(
+        f"[书籍摘要] index_id={body.index_id}, force_regenerate={body.force_regenerate}"
+    )
+
+    from ..services.book_summary import generate_full_summary
+
+    storage_dir = str(Path(settings.base_dir))
+
+    try:
+        result = await generate_full_summary(
+            index_id=body.index_id,
+            storage_dir=storage_dir,
+            force_regenerate=body.force_regenerate,
+        )
+
+        if result.get("status") != "success":
+            logger.error(f"[书籍摘要] 生成失败: {result.get('error')}")
+            return GenerateSummaryResponse(
+                status="error",
+                error=result.get("error"),
+            )
+
+        summary_data = result.get("summary", {})
+        logger.info(f"[书籍摘要] 完成: {summary_data.get('core_thesis', '')[:50]}...")
+
+        return GenerateSummaryResponse(
+            status="success",
+            summary=BookSummary(
+                index_id=summary_data.get("index_id", body.index_id),
+                core_thesis=summary_data.get("core_thesis", ""),
+                author_intents=summary_data.get("author_intents", []),
+                book_type=summary_data.get("book_type", "mixed"),
+                chapter_summaries=[
+                    ChapterSummary(
+                        node_id=cs.get("node_id", ""),
+                        title=cs.get("title", ""),
+                        summary=cs.get("summary", ""),
+                        key_questions=cs.get("key_questions", []),
+                    )
+                    for cs in summary_data.get("chapter_summaries", [])
+                ],
+                generated_at=summary_data.get("generated_at"),
+                model_used=summary_data.get("model_used"),
+            ),
+        )
+
+    except Exception as e:
+        logger.error(f"[书籍摘要] 失败: {e}")
+        return GenerateSummaryResponse(
+            status="error",
+            error=str(e),
+        )
+
+
+@router.get(
+    "/summary/{index_id}",
+    response_model=GenerateSummaryResponse,
+    summary="获取书籍摘要",
+    description="获取已缓存的书籍摘要，如果没有则返回错误",
+)
+async def get_book_summary_endpoint(index_id: str):
+    """
+    获取已缓存的书籍摘要
+
+    - **index_id**: 索引 ID
+    """
+    from ..services.manager import load_index_metadata
+
+    storage_dir = str(Path(settings.base_dir))
+
+    try:
+        metadata_result = await load_index_metadata(index_id, storage_dir)
+
+        if metadata_result.get("status") != "success":
+            return GenerateSummaryResponse(
+                status="error",
+                error=metadata_result.get("error", "索引不存在"),
+            )
+
+        metadata = metadata_result.get("metadata", {})
+        summary_data = metadata.get("book_summary")
+
+        if not summary_data:
+            return GenerateSummaryResponse(
+                status="error",
+                error="该书籍尚未生成摘要，请先调用 /api/summary/generate 生成",
+            )
+
+        return GenerateSummaryResponse(
+            status="success",
+            summary=BookSummary(
+                index_id=summary_data.get("index_id", index_id),
+                core_thesis=summary_data.get("core_thesis", ""),
+                author_intents=summary_data.get("author_intents", []),
+                book_type=summary_data.get("book_type", "mixed"),
+                chapter_summaries=[
+                    ChapterSummary(
+                        node_id=cs.get("node_id", ""),
+                        title=cs.get("title", ""),
+                        summary=cs.get("summary", ""),
+                        key_questions=cs.get("key_questions", []),
+                    )
+                    for cs in summary_data.get("chapter_summaries", [])
+                ],
+                generated_at=summary_data.get("generated_at"),
+                model_used=summary_data.get("model_used"),
+            ),
+        )
+
+    except Exception as e:
+        logger.error(f"[书籍摘要] 获取失败: {e}")
+        return GenerateSummaryResponse(
+            status="error",
             error=str(e),
         )

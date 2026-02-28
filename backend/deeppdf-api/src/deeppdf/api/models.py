@@ -363,3 +363,46 @@ class ThemeReportResponse(BaseModel):
     books_searched: int = Field(0, description="搜索的书籍数量")
     markdown_path: Optional[str] = Field(None, description="生成的 Markdown 文件路径")
     error: Optional[str] = Field(None, description="错误信息")
+
+
+# ========== 书籍摘要模型 ==========
+
+
+class ChapterSummary(BaseModel):
+    """章节摘要"""
+
+    node_id: str = Field(..., description="节点 ID")
+    title: str = Field(..., description="章节标题")
+    summary: str = Field("", description="一句话摘要")
+    key_questions: List[str] = Field(default_factory=list, description="该章节要解决的问题")
+
+
+class BookSummary(BaseModel):
+    """书籍摘要"""
+
+    index_id: str = Field(..., description="索引 ID")
+    core_thesis: str = Field("", description="核心主旨（1-2句话）")
+    author_intents: List[str] = Field(default_factory=list, description="作者意图（3-5个问题）")
+    book_type: Literal["theoretical", "practical", "fiction", "mixed"] = Field(
+        "mixed", description="书籍分类"
+    )
+    chapter_summaries: List[ChapterSummary] = Field(
+        default_factory=list, description="章节摘要列表"
+    )
+    generated_at: Optional[str] = Field(None, description="生成时间")
+    model_used: Optional[str] = Field(None, description="使用的模型")
+
+
+class GenerateSummaryRequest(BaseModel):
+    """生成摘要请求"""
+
+    index_id: str = Field(..., description="索引 ID")
+    force_regenerate: bool = Field(False, description="是否强制重新生成")
+
+
+class GenerateSummaryResponse(BaseModel):
+    """生成摘要响应"""
+
+    status: str = Field(..., description="状态: success 或 error")
+    summary: Optional[BookSummary] = Field(None, description="书籍摘要")
+    error: Optional[str] = Field(None, description="错误信息")
