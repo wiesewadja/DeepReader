@@ -149,8 +149,18 @@ class ReadPageTool:
 
             from pageindex import PageIndex  # type: ignore
 
+            # 尝试 .json 格式（新格式），回退到 .md 格式（旧格式）
+            json_path = Path(self.storage_dir) / "indexes" / f"{self.index_id}.json"
             md_path = Path(self.storage_dir) / "indexes" / f"{self.index_id}.md"
-            self._pi = PageIndex.from_file(str(md_path))
+
+            if json_path.exists():
+                logger.info(f"[ReadPageTool] 📁 加载索引文件: {json_path}")
+                self._pi = PageIndex.from_file(str(json_path))
+            elif md_path.exists():
+                logger.info(f"[ReadPageTool] 📁 加载索引文件: {md_path}")
+                self._pi = PageIndex.from_file(str(md_path))
+            else:
+                raise FileNotFoundError(f"索引文件不存在: {json_path} 或 {md_path}")
 
         return self._pi
 
@@ -191,9 +201,11 @@ class ReadPageTool:
             return f"# 第 {page_num} 页内容\n\n{text}"
 
         except (FileNotFoundError, ValueError, IOError, OSError) as e:
+            logger.error(f"[ReadPageTool] ❌ 读取页面失败: {e}")
             return f"错误: 读取页面失败 - {str(e)}"
-        except Exception:
-            return "错误: 读取页面时发生未知错误"
+        except Exception as e:
+            logger.error(f"[ReadPageTool] ❌ 读取页面时发生未知错误: {e}", exc_info=True)
+            return f"错误: 读取页面时发生未知错误 - {str(e)}"
 
     def _read_page_visual(self, page_num: int) -> str:
         """视觉读取（DeepSeek OCR）"""
