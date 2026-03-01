@@ -734,8 +734,19 @@ export class SidebarView extends ItemView {
         // 自定义事件，Obsidian 类型定义不支持，使用 any 绕过
         const workspace = this.app.workspace as any;
         this.registerEvent(
-            workspace.on("deeppdf:select-index", (indexId: string) => {
+            workspace.on("deeppdf:select-index", async (indexId: string) => {
                 console.log("[DeepPDF] Received select-index event:", indexId);
+
+                // 如果当前处于跨书籍模式，先切换回单书籍模式
+                if (this.crossBookMode) {
+                    console.log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
+                    this.crossBookMode = false;
+                    this.chatInput?.setSearchMode('single');
+                    this.indexManager?.setCrossBookMode(false);
+                    this.plugin.settings.lastCrossBookMode = false;
+                    await this.plugin.saveSettings();
+                }
+
                 if (this.indexManager) {
                     this.indexManager.selectIndex(indexId);
                 }
