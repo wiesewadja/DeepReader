@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
-from deeppdf.services.cross_book_search import cross_book_search
+from ..cross_book_search import cross_book_search
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class DeepSearcher:
         """
         logger.info(f"[DeepSearcher] 开始搜索 {len(queries)} 个查询")
 
-        all_results: List[SearchResult] []
+        all_results: List[SearchResult] = []
 
         # 并行执行多个查询
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:

@@ -187,14 +187,17 @@ class ReportGenerator:
         logger.info(f"[ReportGenerator] 生成对比矩阵: {len(perspectives)} 本书")
 
         # 构建输入
+        book_names = []
         book_perspectives_text = ""
         for p in perspectives:
+            book_names.append(p.book_name)
             book_perspectives_text += f"\n### 《{p.book_name}》\n"
             book_perspectives_text += f"- 核心观点：{p.core_claim}\n"
             book_perspectives_text += f"- 独特视角：{p.unique_angle}\n"
 
         prompt = COMPARISON_MATRIX_PROMPT.format(
             theme=theme,
+            book_names=" | ".join(book_names),
             book_perspectives=book_perspectives_text,
         )
 

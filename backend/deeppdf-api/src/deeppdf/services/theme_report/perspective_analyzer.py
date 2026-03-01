@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
+from .deep_searcher import SearchResult
 from .prompts import ROLE_PLAY_PROMPTS
 from .report_generator import BookPerspective
 
@@ -188,7 +189,7 @@ class PerspectiveAnalyzer:
         self,
         theme: str,
         book_name: str,
-        excerpts: List[Dict[str, Any]],
+        excerpts: List[SearchResult],
     ) -> BookPerspective:
         """
         从单本书籍中提取与主题相关的观点
@@ -196,7 +197,7 @@ class PerspectiveAnalyzer:
         Args:
             theme: 主题
             book_name: 书籍名称
-            excerpts: 相关片段列表
+            excerpts: 相关片段列表 (SearchResult 对象)
 
         Returns:
             BookPerspective
@@ -207,9 +208,9 @@ class PerspectiveAnalyzer:
         # 格式化片段
         formatted_excerpts = []
         for i, excerpt in enumerate(excerpts[:5], 1):  # 最多 5 个片段
-            text = excerpt.get("text", "")
-            section = excerpt.get("section", "未知章节")
-            page = excerpt.get("page", "未知页码")
+            text = excerpt.text
+            section = excerpt.section
+            page = excerpt.page
 
             # 截断过长的文本
             if len(text) > 600:
@@ -292,7 +293,7 @@ class PerspectiveAnalyzer:
     async def extract_all_perspectives(
         self,
         theme: str,
-        books_excerpts: Dict[str, List[Dict[str, Any]]],
+        books_excerpts: Dict[str, List[SearchResult]],
         max_concurrent: int = 3,
     ) -> Dict[str, BookPerspective]:
         """
@@ -315,7 +316,7 @@ class PerspectiveAnalyzer:
         # 使用信号量控制并发
         semaphore = asyncio.Semaphore(max_concurrent)
 
-        async def extract_one(book_name: str, excerpts: List[Dict[str, Any]]):
+        async def extract_one(book_name: str, excerpts: List[SearchResult]):
             async with semaphore:
                 # 在线程池中执行同步方法
                 loop = asyncio.get_event_loop()
