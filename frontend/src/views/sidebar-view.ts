@@ -975,8 +975,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 发送消息
+     * @param message 用户消息内容
+     * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
      */
-    private async sendMessage(message: string): Promise<void> {
+    private async sendMessage(message: string, regenerateMessageId?: string): Promise<void> {
         if (!message.trim() || this.isProcessing) {
             return;
         }
@@ -994,30 +996,43 @@ export class SidebarView extends ItemView {
         this.minimizeInputSection();
 
         try {
-            // 生成消息 ID（使用单一时间戳避免冲突）
-            const timestamp = Date.now();
-            const userMessageId = `msg-${timestamp}-user`;
-            const aiMessageId = `msg-${timestamp}-ai`;
+            let aiMessageId: string;
 
-            // 添加用户消息
-            const userMessageData: MessageData = {
-                id: userMessageId,
-                role: "user" as MessageRole,
-                content: message,
-                timestamp: new Date().toISOString()
-            };
-            this.messageList?.addMessage(userMessageData);
+            if (regenerateMessageId) {
+                // 重试模式：复用原来的消息 ID，更新消息内容为加载状态
+                aiMessageId = regenerateMessageId;
+                this.messageList?.updateMessage(aiMessageId, {
+                    content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
+                    isStreaming: true,
+                    citations: undefined,
+                    followUpQuestions: undefined
+                });
+            } else {
+                // 正常模式：生成新的消息 ID
+                const timestamp = Date.now();
+                const userMessageId = `msg-${timestamp}-user`;
+                aiMessageId = `msg-${timestamp}-ai`;
 
-            // 添加 AI 消息（初始为加载状态）
-            const aiMessageData: MessageData = {
-                id: aiMessageId,
-                role: "assistant" as MessageRole,
-                content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
-                timestamp: new Date().toISOString(),
-                isStreaming: true,
-                isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
-            };
-            this.messageList?.addMessage(aiMessageData);
+                // 添加用户消息
+                const userMessageData: MessageData = {
+                    id: userMessageId,
+                    role: "user" as MessageRole,
+                    content: message,
+                    timestamp: new Date().toISOString()
+                };
+                this.messageList?.addMessage(userMessageData);
+
+                // 添加 AI 消息（初始为加载状态）
+                const aiMessageData: MessageData = {
+                    id: aiMessageId,
+                    role: "assistant" as MessageRole,
+                    content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
+                    timestamp: new Date().toISOString(),
+                    isStreaming: true,
+                    isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
+                };
+                this.messageList?.addMessage(aiMessageData);
+            }
 
             // 根据模式选择不同的处理方式
             if (this.crossBookMode) {
@@ -1649,8 +1664,8 @@ ${r.text}`;
         const userMessageIndex = messages.findIndex(m => m.id === messageId) - 1;
 
         if (userMessageIndex >= 0 && messages[userMessageIndex].role === "user") {
-            // 重新发送查询
-            this.sendMessage(messages[userMessageIndex].content);
+            // 重新发送查询，传入要替换的 AI 消息 ID
+            this.sendMessage(messages[userMessageIndex].content, messageId);
         }
     }
 
