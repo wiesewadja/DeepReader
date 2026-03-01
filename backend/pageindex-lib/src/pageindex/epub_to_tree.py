@@ -163,7 +163,13 @@ class EpubTreeConverter:
             self._add_unused_chapters(structure, unused_chapters, chapter_map, assign_node_ids)
 
         # ============================================================
-        # 步骤6: 返回结果
+        # 步骤6: 重新编号 node_id（确保连续）
+        # ============================================================
+        if assign_node_ids:
+            self._renumber_node_ids(structure)
+
+        # ============================================================
+        # 步骤7: 返回结果
         # ============================================================
         return {
             "title": metadata.get("title", ""),
@@ -387,12 +393,17 @@ class EpubTreeConverter:
         # 按文件名排序，保持原始顺序
         all_file_names = list(chapter_map.keys())
 
+        # 跟踪已添加的标题，避免重复
+        added_titles: set = set()
+
+        added_count = 0
         for chapter in unused_chapters:
             file_name = chapter["file_name"]
             content = chapter.get("content", "")
 
             # 跳过空内容或太短的内容（可能是封面、空白页等）
-            if len(content.strip()) < 100:
+            # 提高阈值到 200 字符，避免添加碎片内容
+            if len(content.strip()) < 200:
                 logger.debug(f"[EPUB转换] 跳过短内容章节: {file_name}")
                 continue
 
@@ -403,6 +414,26 @@ class EpubTreeConverter:
 
             # 提取标题
             title = chapter.get("title", file_name)
+
+            # 跳过重复标题或太短的标题
+            # 如果标题已经在 TOC 中出现过，或者标题太短（小于 5 个字符），跳过
+            if title in added_titles or len(title) < 5:
+                logger.debug(f"[EPUB转换] 跳过重复/短标题章节: {title} ({file_name})")
+                continue
+
+            # 跳过看起来像文件名的标题（如 "Text/01_13"）
+            if title.startswith("Text/") or title.replace("_", "").replace("-", "").replace("/", "").isdigit():
+                # 尝试从内容中提取更有意义的标题
+                # 取前 30 个字符作为摘要
+                preview = content.strip()[:30]
+                if len(preview) > 20:
+                    title = f"{preview}..."
+                else:
+                    logger.debug(f"[EPUB转换] 跳过文件名式标题: {title}")
+                    continue
+
+            # 记录已添加的标题
+            added_titles.add(title)
 
             # 估算索引
             if file_name in all_file_names:
@@ -428,6 +459,31 @@ class EpubTreeConverter:
 
             # 添加到树结构
             structure.append(node)
+            added_count += 1
             logger.debug(f"[EPUB转换] 添加未在 TOC 中的章节: {title} ({file_name})")
 
-        logger.info(f"[EPUB转换] 共添加 {len([ch for ch in unused_chapters if len(ch.get('content', '')) >= 100])} 个额外章节")
+        logger.info(f"[EPUB转换] 共添加 {added_count} 个额外章节")
+
+    def _renumber_node_ids(self, structure: List[Dict[str, Any]]) -> None:
+        """
+        重新编号所有节点的 node_id（确保连续）
+
+        参数:
+            structure: 树结构（会被修改）
+        """
+        counter = 0
+
+        def renumber_node(node: Dict[str, Any]) -> None:
+            nonlocal counter
+            counter += 1
+            node["node_id"] = str(counter).zfill(4)
+
+            # 递归处理子节点
+            if "nodes" in node:
+                for child in node["nodes"]:
+                    renumber_node(child)
+
+        for node in structure:
+            renumber_node(node)
+
+        logger.debug(f"[EPUB转换] 重新编号完成，共 {counter} 个节点")

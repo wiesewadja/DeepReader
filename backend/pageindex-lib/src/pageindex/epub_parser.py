@@ -289,16 +289,8 @@ class EpubParser:
                 # 转换为纯文本
                 text_content = self._html_to_text(content)
 
-                # 提取标题（从文件名或 HTML <title> 标签）
-                # 移除 .xhtml 或 .html 扩展名
-                title = file_name.replace(".xhtml", "").replace(".html", "")
-                # 尝试从 HTML 中提取 <title> 标签
-                if "<title>" in content.lower():
-                    from bs4 import BeautifulSoup
-                    soup = BeautifulSoup(content, "html.parser")
-                    html_title = soup.find("title")
-                    if html_title and html_title.string:
-                        title = html_title.string.strip()
+                # 提取标题（优先级：<title> 标签 > <h1>/<h2> 标签 > 文件名）
+                title = self._extract_title(content, file_name)
 
                 chapters.append({
                     "title": title,
@@ -345,6 +337,73 @@ class EpubParser:
         text = h.handle(html)
 
         return text
+
+    def _extract_title(self, html: str, file_name: str) -> str:
+        """
+        从 HTML 内容中提取标题
+
+        按优先级尝试：
+        1. HTML <title> 标签
+        2. 第一个 <h1> 或 <h2> 标签（包括 title 属性）
+        3. 文件名（去除扩展名）
+        4. 内容摘要
+
+        参数:
+            html: HTML 内容字符串
+            file_name: 文件名（作为后备）
+
+        返回:
+            提取的标题字符串
+        """
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 1. 尝试从 <title> 标签提取
+        title_tag = soup.find("title")
+        if title_tag and title_tag.string and title_tag.string.strip():
+            return title_tag.string.strip()
+
+        # 2. 尝试从第一个 <h1> 标签提取
+        h1_tag = soup.find("h1")
+        if h1_tag:
+            # 先检查 title 属性（有些隐藏的 h1 会有 title）
+            if h1_tag.get("title"):
+                return h1_tag.get("title").strip()
+            # 再检查文本内容
+            if h1_tag.get_text(strip=True):
+                return h1_tag.get_text(strip=True)
+
+        # 3. 尝试从第一个 <h2> 标签提取
+        h2_tag = soup.find("h2")
+        if h2_tag:
+            if h2_tag.get("title"):
+                return h2_tag.get("title").strip()
+            if h2_tag.get_text(strip=True):
+                return h2_tag.get_text(strip=True)
+
+        # 4. 尝试从第一个 <h3> 标签提取
+        h3_tag = soup.find("h3")
+        if h3_tag:
+            if h3_tag.get("title"):
+                return h3_tag.get("title").strip()
+            if h3_tag.get_text(strip=True):
+                return h3_tag.get_text(strip=True)
+
+        # 5. 使用文件名作为后备（去除扩展名）
+        title = file_name.replace(".xhtml", "").replace(".html", "")
+
+        # 尝试美化文件名（如 "01_04" -> "章节 01_04"）
+        if title.replace("_", "").replace("-", "").replace("/", "").isalnum():
+            # 这是一个不太有意义的文件名，尝试从内容中提取前几个字作为摘要
+            text_content = self._html_to_text(html)
+            if text_content:
+                # 取前50个字符作为摘要标题
+                preview = text_content[:50].strip()
+                if len(preview) > 10:
+                    return f"{preview}..."
+
+        return title
 
 
 # ============================================================
