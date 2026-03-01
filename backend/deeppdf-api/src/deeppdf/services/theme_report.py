@@ -313,8 +313,6 @@ def generate_theme_report_markdown(
 async def generate_theme_report(
     theme: str,
     storage_dir: str,
-    vault_path: str,
-    output_dir: str = "DeepPDF/主题调查",
     index_ids: Optional[List[str]] = None,
     top_k_per_book: int = 3,
     provider: Optional[str] = None,
@@ -326,8 +324,6 @@ async def generate_theme_report(
     Args:
         theme: 主题/问题
         storage_dir: 存储目录路径
-        vault_path: Obsidian vault 路径
-        output_dir: 输出目录（相对于 vault 根目录），默认 "DeepPDF/主题调查"
         index_ids: 可选，指定要搜索的索引 ID 列表
         top_k_per_book: 每本书返回的结果数量
         provider: LLM 提供商
@@ -340,7 +336,8 @@ async def generate_theme_report(
             "unified_summary": "整合摘要",
             "book_perspectives": [...],
             "books_searched": 搜索的书籍数量,
-            "markdown_path": "报告文件路径（如果成功）",
+            "markdown_content": "完整 Markdown 内容",
+            "suggested_filename": "建议的文件名",
             "error": "错误信息（如果失败）"
         }
     """
@@ -413,22 +410,12 @@ async def generate_theme_report(
             book_perspectives=book_perspectives,
         )
 
-        # 7. 保存报告到 Obsidian vault
-        report_dir = Path(vault_path) / output_dir
-        report_dir.mkdir(parents=True, exist_ok=True)
-
+        # 7. 生成建议的文件名
         safe_theme = _safe_filename(theme)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"{safe_theme}_{timestamp}.md"
-        report_path = report_dir / report_filename
+        suggested_filename = f"{safe_theme}_{timestamp}.md"
 
-        with open(report_path, "w", encoding="utf-8") as f:
-            f.write(markdown_content)
-
-        logger.info(f"报告已保存: {report_path}")
-
-        # 计算相对路径（相对于 vault 根目录）
-        markdown_path = str(report_path.relative_to(vault_path)) if vault_path else report_filename
+        logger.info(f"报告生成完成: {suggested_filename}")
 
         return {
             "status": "success",
@@ -445,7 +432,8 @@ async def generate_theme_report(
                 for name, excerpts in books_excerpts.items()
             ],
             "books_searched": len(books_excerpts),
-            "markdown_path": markdown_path,
+            "markdown_content": markdown_content,
+            "suggested_filename": suggested_filename,
         }
 
     except Exception as e:

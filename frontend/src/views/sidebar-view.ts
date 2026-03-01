@@ -1374,6 +1374,20 @@ ${r.text}`;
                 return;
             }
 
+            // 保存 Markdown 文件到 Obsidian vault
+            let savedFilePath: string | null = null;
+            if (result.markdown_content && result.suggested_filename) {
+                try {
+                    savedFilePath = await this.saveThemeReportToVault(
+                        result.suggested_filename,
+                        result.markdown_content
+                    );
+                    console.log('[DeepPDF] 报告已保存到:', savedFilePath);
+                } catch (saveError) {
+                    console.error('[DeepPDF] 保存报告失败:', saveError);
+                }
+            }
+
             // 构建显示内容
             let displayContent = `## 📌 ${result.theme}\n\n${result.unified_summary}\n\n`;
 
@@ -1388,9 +1402,9 @@ ${r.text}`;
                 }
             }
 
-            // 如果生成了 Markdown 文件，添加提示
-            if (result.markdown_path) {
-                displayContent += `\n---\n\n> 📄 完整报告已保存到: [[${result.markdown_path}]]`;
+            // 如果成功保存了文件，添加提示
+            if (savedFilePath) {
+                displayContent += `\n---\n\n> 📄 完整报告已保存到: [[${savedFilePath}]]`;
             }
 
             this.messageList?.updateMessage(aiMessageId, {
@@ -1413,6 +1427,37 @@ ${r.text}`;
             this.chatInput?.setDisabled(false);
             this.restoreInputSection();
             this.chatInput?.focus();
+        }
+    }
+
+    /**
+     * 保存主题报告到 Obsidian vault
+     * @param filename 文件名
+     * @param content Markdown 内容
+     * @returns 保存的文件路径（相对于 vault 根目录）
+     */
+    private async saveThemeReportToVault(filename: string, content: string): Promise<string | null> {
+        try {
+            const { normalizePath } = require('obsidian');
+            const vault = this.app.vault;
+
+            // 目标目录：DeepPDF/主题调查
+            const outputDir = 'DeepPDF/主题调查';
+            const fullPath = normalizePath(`${outputDir}/${filename}`);
+
+            // 确保目录存在
+            const dirExists = await vault.adapter.exists(outputDir);
+            if (!dirExists) {
+                await vault.adapter.mkdir(outputDir);
+            }
+
+            // 写入文件
+            await vault.adapter.write(fullPath, content);
+
+            return fullPath;
+        } catch (error) {
+            console.error('[DeepPDF] 保存主题报告失败:', error);
+            return null;
         }
     }
 

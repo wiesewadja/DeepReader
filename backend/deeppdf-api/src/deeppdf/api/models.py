@@ -361,7 +361,8 @@ class ThemeReportResponse(BaseModel):
         default_factory=list, description="各书观点"
     )
     books_searched: int = Field(0, description="搜索的书籍数量")
-    markdown_path: Optional[str] = Field(None, description="生成的 Markdown 文件路径")
+    markdown_content: Optional[str] = Field(None, description="生成的完整 Markdown 内容")
+    suggested_filename: Optional[str] = Field(None, description="建议的文件名")
     error: Optional[str] = Field(None, description="错误信息")
 
 

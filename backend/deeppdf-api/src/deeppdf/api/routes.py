@@ -1525,7 +1525,7 @@ async def create_theme_report(body: ThemeReportRequest):
         body: 主题报告请求
 
     Returns:
-        主题报告响应，包含整合摘要和 Markdown 文件路径
+        主题报告响应，包含整合摘要和 Markdown 内容
     """
     logger.info(f"[主题报告] theme='{body.theme}', index_ids={body.index_ids}, top_k_per_book={body.top_k_per_book}")
 
@@ -1533,15 +1533,10 @@ async def create_theme_report(body: ThemeReportRequest):
 
     storage_dir = str(Path(settings.base_dir))
 
-    # 从配置获取 vault 路径（优先使用 settings，回退到环境变量）
-    vault_path = settings.obsidian_vault_path or os.environ.get("OBSIDIAN_VAULT_PATH", "")
-
     try:
         result = await generate_theme_report(
             theme=body.theme,
             storage_dir=storage_dir,
-            vault_path=vault_path,
-            output_dir="DeepPDF/主题调查",
             index_ids=body.index_ids,
             top_k_per_book=body.top_k_per_book,
         )
@@ -1572,7 +1567,8 @@ async def create_theme_report(body: ThemeReportRequest):
                 for bp in result["book_perspectives"]
             ],
             books_searched=result["books_searched"],
-            markdown_path=result.get("markdown_path"),
+            markdown_content=result.get("markdown_content"),
+            suggested_filename=result.get("suggested_filename"),
         )
 
     except Exception as e:

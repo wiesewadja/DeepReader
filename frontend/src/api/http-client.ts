@@ -353,7 +353,8 @@ export interface ThemeReportResponse {
   unified_summary: string;
   book_perspectives: BookPerspective[];
   books_searched: number;
-  markdown_path?: string;
+  markdown_content?: string;
+  suggested_filename?: string;
   error?: string;
 }
 
