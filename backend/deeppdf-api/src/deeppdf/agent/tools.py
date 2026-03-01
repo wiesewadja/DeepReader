@@ -141,26 +141,19 @@ class ReadPageTool:
             logger.info("=" * 60)
 
     def _load_page_index(self):
-        """延迟加载 PageIndex 实例"""
+        """延迟加载索引数据"""
         if self._pi is None:
-            import sys
+            import json
 
-            sys.path.insert(0, self.pageindex_lib_path)
-
-            from pageindex import PageIndex  # type: ignore
-
-            # 尝试 .json 格式（新格式），回退到 .md 格式（旧格式）
+            # 尝试 .json 格式
             json_path = Path(self.storage_dir) / "indexes" / f"{self.index_id}.json"
-            md_path = Path(self.storage_dir) / "indexes" / f"{self.index_id}.md"
 
-            if json_path.exists():
-                logger.info(f"[ReadPageTool] 📁 加载索引文件: {json_path}")
-                self._pi = PageIndex.from_file(str(json_path))
-            elif md_path.exists():
-                logger.info(f"[ReadPageTool] 📁 加载索引文件: {md_path}")
-                self._pi = PageIndex.from_file(str(md_path))
-            else:
-                raise FileNotFoundError(f"索引文件不存在: {json_path} 或 {md_path}")
+            if not json_path.exists():
+                raise FileNotFoundError(f"索引文件不存在: {json_path}")
+
+            logger.info(f"[ReadPageTool] 📁 加载索引文件: {json_path}")
+            with open(json_path, 'r', encoding='utf-8') as f:
+                self._pi = json.load(f)
 
         return self._pi
 
@@ -191,14 +184,30 @@ class ReadPageTool:
         try:
             pi = self._load_page_index()
 
+            # 获取总页数
+            total_pages = pi.get('total_pages', 0)
+            if total_pages == 0:
+                # 回退：使用 sections 数量
+                total_pages = len(pi.get('sections', []))
+
             # 验证页码范围
-            if page_num < 1 or page_num > pi.page_count:
-                return f"错误: 页码 {page_num} 超出范围（文档共 {pi.page_count} 页）"
+            if page_num < 1 or page_num > total_pages:
+                return f"错误: 页码 {page_num} 超出范围（文档共 {total_pages} 页）"
 
-            # 获取页面文本
-            text = pi.get_text_with_tags(page_num)
+            # 从 sections 中获取页面内容
+            sections = pi.get('sections', [])
 
-            return f"# 第 {page_num} 页内容\n\n{text}"
+            # 查找对应页码的 section（页码从 1 开始，数组索引从 0 开始）
+            # sections[i] 对应第 i+1 页
+            if page_num <= len(sections):
+                section = sections[page_num - 1]
+                text = section.get('text', '')
+                metadata = section.get('metadata', {})
+                section_name = metadata.get('section', '未知章节')
+
+                return f"# 第 {page_num} 页内容\n\n**章节**: {section_name}\n\n{text}"
+            else:
+                return f"错误: 页码 {page_num} 超出范围（sections 共 {len(sections)} 条）"
 
         except (FileNotFoundError, ValueError, IOError, OSError) as e:
             logger.error(f"[ReadPageTool] ❌ 读取页面失败: {e}")
