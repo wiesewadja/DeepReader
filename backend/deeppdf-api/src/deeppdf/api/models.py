@@ -351,6 +351,26 @@ class ThemeReportRequest(BaseModel):
     top_k_per_book: int = Field(3, description="每本书取多少条结果", ge=1, le=10)
 
 
+class EnhancedThemeReportRequest(BaseModel):
+    """增强版主题报告请求"""
+
+    theme: str = Field(..., description="主题/问题", min_length=1, max_length=500)
+    index_ids: Optional[List[str]] = Field(
+        None, description="指定索引 ID 列表，不传则搜索全部"
+    )
+    top_k_per_book: int = Field(3, description="每本书取多少条结果", ge=1, le=10)
+
+    # 增强选项
+    enable_query_expansion: bool = Field(True, description="启用查询扩展")
+    enable_comparison: bool = Field(True, description="生成对比矩阵")
+    enable_role_play: bool = Field(False, description="启用角色扮演分析（P1）")
+    enable_reflection: bool = Field(False, description="启用自我反思（P1）")
+    max_sub_queries: int = Field(5, description="最大子问题数", ge=1, le=10)
+    report_type: Optional[str] = Field(
+        None, description="报告类型：exploratory/comparative/practical，不传则自动分类"
+    )
+
+
 class ThemeReportResponse(BaseModel):
     """主题报告响应"""
 
@@ -363,6 +383,37 @@ class ThemeReportResponse(BaseModel):
     books_searched: int = Field(0, description="搜索的书籍数量")
     markdown_content: Optional[str] = Field(None, description="生成的完整 Markdown 内容")
     suggested_filename: Optional[str] = Field(None, description="建议的文件名")
+    error: Optional[str] = Field(None, description="错误信息")
+
+
+class EnhancedThemeReportResponse(BaseModel):
+    """增强版主题报告响应"""
+
+    status: str = Field(..., description="状态: success 或 error")
+    theme: str = Field(..., description="主题")
+
+    # 核心内容
+    unified_summary: str = Field(..., description="整合摘要")
+    book_perspectives: List[BookPerspective] = Field(
+        default_factory=list, description="各书观点"
+    )
+    comparison_matrix: Optional[str] = Field(None, description="对比矩阵 Markdown 表格")
+
+    # 元信息
+    expanded_queries: List[str] = Field(default_factory=list, description="扩展的子问题")
+    report_type: str = Field(..., description="实际使用的报告类型")
+    books_searched: int = Field(0, description="搜索的书籍数量")
+    total_sources: int = Field(0, description="总引用数")
+
+    # 质量指标（P1 功能启用时才有值）
+    coverage_score: Optional[float] = Field(None, description="覆盖评分 (1-10)")
+    accuracy_score: Optional[float] = Field(None, description="准确性评分 (1-10)")
+
+    # 输出
+    markdown_content: Optional[str] = Field(None, description="生成的完整 Markdown 内容")
+    suggested_filename: Optional[str] = Field(None, description="建议的文件名")
+
+    # 错误处理
     error: Optional[str] = Field(None, description="错误信息")
 
 

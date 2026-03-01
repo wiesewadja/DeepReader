@@ -37,6 +37,8 @@ from .models import (
     CrossBookSearchResult,
     ThemeReportRequest,
     ThemeReportResponse,
+    EnhancedThemeReportRequest,
+    EnhancedThemeReportResponse,
     BookPerspective,
     GenerateSummaryRequest,
     GenerateSummaryResponse,
@@ -1574,6 +1576,90 @@ async def create_theme_report(body: ThemeReportRequest):
     except Exception as e:
         logger.error(f"[主题报告] 失败: {e}")
         return ThemeReportResponse(
+            status="error",
+            theme=body.theme,
+            unified_summary="",
+            error=str(e),
+        )
+
+
+# ==================== 增强版主题报告 API ====================
+
+
+@router.post("/theme/report/enhanced", response_model=EnhancedThemeReportResponse)
+async def create_enhanced_theme_report(body: EnhancedThemeReportRequest):
+    """
+    生成增强版主题整合报告
+
+    在所有已索引书籍中搜索相关内容，使用多阶段流水线生成高质量报告。
+
+    增强功能：
+    - P0: 查询扩展（将主题拆解为子问题）
+    - P0: 对比矩阵（结构化对比不同书籍观点）
+    - P1: 角色扮演（从批判者、整合者、实践者角度分析）
+    - P1: 自我反思（生成后自我评估和修订）
+
+    Args:
+        body: 增强版主题报告请求
+
+    Returns:
+        增强版主题报告响应
+    """
+    logger.info(
+        f"[增强主题报告] theme='{body.theme}', "
+        f"query_expansion={body.enable_query_expansion}, "
+        f"role_play={body.enable_role_play}, "
+        f"reflection={body.enable_reflection}"
+    )
+
+    from ..services.theme_report.pipeline import (
+        PipelineConfig,
+        ReportOptions,
+        ThemeReportPipeline,
+    )
+
+    # 获取 LLM 客户端
+    from ..services.theme_report import _get_llm_client
+    client = _get_llm_client()
+
+    storage_dir = str(Path(settings.base_dir))
+
+    # 构建配置
+    config = PipelineConfig(
+        llm_client=client,
+        llm_model=settings.llm_model,
+        storage_dir=storage_dir,
+        max_sub_queries=body.max_sub_queries,
+        top_k_per_book=body.top_k_per_book,
+        enable_query_expansion=body.enable_query_expansion,
+        enable_comparison_matrix=body.enable_comparison,
+        enable_role_play=body.enable_role_play,
+        enable_reflection=body.enable_reflection,
+    )
+
+    # 构建选项
+    options = ReportOptions(
+        enable_query_expansion=body.enable_query_expansion,
+        enable_role_play=body.enable_role_play,
+        enable_reflection=body.enable_reflection,
+        include_comparison=body.enable_comparison,
+        max_sub_queries=body.max_sub_queries,
+        report_type=body.report_type,
+    )
+
+    try:
+        pipeline = ThemeReportPipeline(config)
+        result = await pipeline.run(
+            theme=body.theme,
+            index_ids=body.index_ids,
+            options=options,
+        )
+
+        return result
+
+    except Exception as e:
+        logger.error(f"[增强主题报告] 失败: {e}", exc_info=True)
+        return EnhancedThemeReportResponse(
             status="error",
             theme=body.theme,
             unified_summary="",
