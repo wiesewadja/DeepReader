@@ -918,7 +918,31 @@ export class SidebarView extends ItemView {
             new Notice("已切换到跨书籍模式，将在所有书籍中搜索");
         } else if (previousMode && !this.crossBookMode) {
             // 从跨书籍切换到单书籍模式
-            new Notice("已切换到单书籍模式");
+            // 清空跨书籍消息，加载当前选中书籍的会话
+            this.messageList?.clear();
+
+            if (this.currentIndexId) {
+                // 加载当前书籍的会话历史
+                const savedSessions = this.plugin.settings.savedSessions || {};
+                const savedSessionId = savedSessions[this.currentIndexId];
+
+                if (savedSessionId) {
+                    const cached = this.plugin.settings.chatCache?.[savedSessionId];
+                    if (cached && cached.messages && cached.messages.length > 0) {
+                        console.log(`[DeepPDF] 切换到单书籍模式，恢复会话: ${cached.messages.length} 条消息`);
+                        this.sessionId = savedSessionId;
+                        this.restoreHistoryToView(cached.messages, true);
+                        new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
+                        return;
+                    }
+                }
+
+                // 没有历史会话，显示欢迎消息
+                console.log('[DeepPDF] 切换到单书籍模式，无历史会话');
+                this.showWelcomeMessage();
+            }
+
+            new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
         }
     }
 
