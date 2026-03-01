@@ -745,6 +745,9 @@ export class SidebarView extends ItemView {
                     this.indexManager?.setCrossBookMode(false);
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
+
+                    // 清空跨书籍模式的消息，准备加载单书籍会话
+                    this.messageList?.clear();
                 }
 
                 if (this.indexManager) {
