@@ -45,7 +45,9 @@ class TestEpubFileUpload:
         assert data["indexed"] is False
         assert "uploaded_at" in data
 
-    def test_upload_epub_with_pdf_extension_still_works(self, client, sample_pdf_content):
+    def test_upload_epub_with_pdf_extension_still_works(
+        self, client, sample_pdf_content
+    ):
         """测试 PDF 文件上传仍然正常工作"""
         # 确保向后兼容
         pdf_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Count 0\n/Kids []\n>>\nendobj\nxref\n0 3\n0000000000 65535 f\n0000000009 00000 n\n0000000058 00000 n\ntrailer\n<<\n/Size 3\n/Root 1 0 R\n>>\nstartxref\n110\n%%EOF"
@@ -64,24 +66,23 @@ class TestEpubIndexRequest:
     def test_index_request_with_epub_path(self, client):
         """测试使用 EPUB 路径创建索引请求"""
         # 测试请求验证允许 .epub 路径
-        response = client.post(
-            "/api/index",
-            json={"path": "/path/to/document.epub"}
-        )
+        response = client.post("/api/index", json={"path": "/path/to/document.epub"})
         # 应该返回 400（文件不存在）而不是 422（验证错误）
         # 这证明路径验证通过了
         assert response.status_code == 400
         data = response.json()
         # 错误应该是文件不存在，而不是路径格式错误
         assert "detail" in data
-        assert "not found" in data["detail"].lower() or "不存在" in data["detail"] or "pdf" in data["detail"].lower() or "epub" in data["detail"].lower()
+        assert (
+            "not found" in data["detail"].lower()
+            or "不存在" in data["detail"]
+            or "pdf" in data["detail"].lower()
+            or "epub" in data["detail"].lower()
+        )
 
     def test_index_request_rejects_invalid_extensions(self, client):
         """测试索引请求拒绝无效的文件扩展名"""
-        response = client.post(
-            "/api/index",
-            json={"path": "/path/to/document.txt"}
-        )
+        response = client.post("/api/index", json={"path": "/path/to/document.txt"})
         # 应该返回 422（验证错误）
         assert response.status_code == 422
         data = response.json()
@@ -129,7 +130,12 @@ class TestEpubFileStorage:
             is_valid, error = storage.validate_file("test.txt", 1024)
             assert not is_valid
             assert error is not None
-            assert "pdf" in error.lower() or "epub" in error.lower() or "不支持" in error or "invalid" in error.lower()
+            assert (
+                "pdf" in error.lower()
+                or "epub" in error.lower()
+                or "不支持" in error
+                or "invalid" in error.lower()
+            )
 
 
 @pytest.fixture

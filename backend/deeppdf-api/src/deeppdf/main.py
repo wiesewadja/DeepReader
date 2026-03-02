@@ -8,9 +8,7 @@ import warnings
 
 # 过滤第三方库的警告
 warnings.filterwarnings(
-    "ignore",
-    message=".*pynvml package is deprecated.*",
-    category=UserWarning
+    "ignore", message=".*pynvml package is deprecated.*", category=UserWarning
 )
 
 import nest_asyncio

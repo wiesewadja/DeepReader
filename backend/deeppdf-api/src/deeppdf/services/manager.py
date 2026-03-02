@@ -125,7 +125,9 @@ async def update_index_metadata(
     index_id: str, storage_dir: str, updates: Dict[str, Any]
 ) -> Dict[str, Any]:
     """异步更新索引元数据"""
-    result = await asyncio.to_thread(_update_index_metadata_sync, index_id, storage_dir, updates)
+    result = await asyncio.to_thread(
+        _update_index_metadata_sync, index_id, storage_dir, updates
+    )
     return result
 
 
@@ -229,5 +231,7 @@ async def update_reading_progress(
     pages: List[int],
 ) -> Dict[str, Any]:
     """异步更新阅读进度"""
-    result = await asyncio.to_thread(_update_reading_progress_sync, index_id, storage_dir, pages)
+    result = await asyncio.to_thread(
+        _update_reading_progress_sync, index_id, storage_dir, pages
+    )
     return result

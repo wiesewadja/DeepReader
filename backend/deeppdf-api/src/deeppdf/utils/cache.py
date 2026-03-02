@@ -75,7 +75,9 @@ class TTLCache(Generic[K, V]):
     def _cleanup_locked(self) -> int:
         """清理过期条目（需要已持有锁）"""
         now = time.time()
-        expired_keys = [k for k, (_, expire_at) in self._cache.items() if now > expire_at]
+        expired_keys = [
+            k for k, (_, expire_at) in self._cache.items() if now > expire_at
+        ]
 
         for key in expired_keys:
             del self._cache[key]

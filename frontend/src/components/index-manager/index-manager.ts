@@ -280,13 +280,24 @@ export class IndexManager extends Component {
             let statusClass = 'ready';
             let showProgress = false;
 
-            if (['processing', 'indexing', 'started', 'created'].includes(rawStatus)) {
+            // 处理中状态（显示进度）
+            if (['processing', 'indexing', 'started', 'created', 'running', 'active'].includes(rawStatus)) {
                 statusClass = 'processing';
                 showProgress = true;
             } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
                 statusClass = 'queued';
             } else if (['failed', 'error'].includes(rawStatus)) {
                 statusClass = 'failed';
+            } else if (['completed', 'ready', 'success'].includes(rawStatus)) {
+                statusClass = 'ready';
+            }
+
+            // 如果有 progress_percent 且大于 0，始终显示进度
+            if (index.progress_percent && index.progress_percent > 0 && index.progress_percent < 100) {
+                showProgress = true;
+                if (statusClass === 'ready') {
+                    statusClass = 'processing';
+                }
             }
 
             // 简化结构：[状态图标] [书名] [操作按钮]

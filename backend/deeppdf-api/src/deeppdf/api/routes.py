@@ -72,7 +72,6 @@ _agent_sessions: Dict[str, "DeepPDFAgent"] = {}
 _index_list_cache = TTLCache[str, Dict](ttl_seconds=30.0, max_size=10)
 
 
-
 # ========== 速率限制器 ==========
 
 
@@ -912,7 +911,9 @@ def _extract_citations_from_answer(answer: str, index_id: str) -> list[CitationI
     return citations
 
 
-async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = False) -> "DeepPDFAgent":
+async def _load_agent_for_request(
+    index_id: str, enable_llm_tree_search: bool = False
+) -> "DeepPDFAgent":
     """
     为请求加载 DeepPDF Agent
 
@@ -931,12 +932,14 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
     logger.info("🔷 [Agent加载] 开始加载 DeepPDF Agent")
     logger.info("🔷 " + "=" * 78)
     logger.info(f"📇 [索引ID] {index_id}")
-    
+
     # 导入必要的模块
     from ..agent.core import DeepPDFAgent
     from pathlib import Path
-    from ..services.manager import list_indexes # Added this import as it's used in the new code
-    from ..config import settings # Added this import as it's used in the new code
+    from ..services.manager import (
+        list_indexes,
+    )  # Added this import as it's used in the new code
+    from ..config import settings  # Added this import as it's used in the new code
 
     # 检查索引是否存在
     logger.info("🔍 [检查索引] 验证索引是否存在...")
@@ -948,7 +951,7 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"索引 {index_id} 不存在"
         )
-    
+
     logger.info(f"✅ [索引存在] 索引 {index_id} 验证通过")
 
     # 获取索引元数据
@@ -961,12 +964,12 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
 
         with open(metadata_path, "r", encoding="utf-8") as f:
             metadata = json.load(f)
-        
+
         logger.info("✅ [元数据加载] 成功")
         logger.info(f"   📄 PDF名称: {metadata.get('pdf_name', 'N/A')}")
         logger.info(f"   📄 节点数: {metadata.get('node_count', 0)}")
         logger.info(f"   📄 总页数: {metadata.get('total_pages', 0)}")
-        
+
     except FileNotFoundError:
         logger.error(f"❌ [元数据错误] 找不到索引元数据文件: {metadata_path}")
         raise HTTPException(
@@ -979,7 +982,6 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="索引元数据损坏",
         )
-
 
     # 提取树状结构
     tree_structure = metadata.get("tree_structure", {})
@@ -1008,6 +1010,7 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
     try:
         # 计算 pageindex-lib 的路径
         from pathlib import Path
+
         base_dir = Path(settings.base_dir)
         pageindex_lib_path = str(base_dir / "pageindex-lib" / "src")
 
@@ -1026,7 +1029,7 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
             top_p=settings.agent_top_p,
             max_iterations=settings.agent_max_iterations,
         )
-        
+
         logger.info("✅ [Agent创建] DeepPDFAgent 实例创建成功")
         logger.info(f"   🛠️  可用工具数: {len(agent.executor.tools)}")
         logger.info(f"   🛠️  工具列表: {', '.join(agent.executor.tools.keys())}")
@@ -1035,9 +1038,9 @@ async def _load_agent_for_request(index_id: str, enable_llm_tree_search: bool = 
         logger.info("🔷 [Agent加载] 完成，准备开始推理")
         logger.info("🔷 " + "=" * 78)
         logger.info("")
-        
+
         return agent
-        
+
     except Exception as e:
         logger.error(f"❌ [Agent创建失败] {e}", exc_info=True)
         raise HTTPException(
@@ -1063,7 +1066,6 @@ def _count_tree_nodes(tree: dict) -> int:
     if "children" in tree and tree["children"]:
         count += sum(_count_tree_nodes(child) for child in tree["children"])
     return count
-
 
 
 @router.post("/chat/agent")
@@ -1110,14 +1112,16 @@ async def agent_chat(req: AgentRequest, http_request: Request):
 
         # 1. 加载或复用 Agent（支持多轮对话）
         session_key = f"{req.index_id}_{req.session_id or 'default'}"
-        
+
         # 如果有 session_id 且缓存中存在，复用 Agent
         if req.session_id and session_key in _agent_sessions:
             agent = _agent_sessions[session_key]
             logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
         else:
             # 创建新 Agent
-            agent = await _load_agent_for_request(req.index_id, req.enable_llm_tree_search)
+            agent = await _load_agent_for_request(
+                req.index_id, req.enable_llm_tree_search
+            )
 
             # 尝试加载历史（如果有 session_id）
             if req.session_id:
@@ -1135,10 +1139,12 @@ async def agent_chat(req: AgentRequest, http_request: Request):
             answer = await asyncio.to_thread(
                 agent.run, req.query, req.force_mode, req.keep_history
             )
-            
+
         # 3. 如果保留历史，保存到磁盘
         if req.session_id and req.keep_history:
-            chat_storage.save_history(req.index_id, req.session_id, agent.session_history)
+            chat_storage.save_history(
+                req.index_id, req.session_id, agent.session_history
+            )
 
         logger.info(f"[API] Agent 完成: answer_length={len(answer)}")
 
@@ -1218,15 +1224,19 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
     try:
         # 1. 加载或复用 Agent（支持多轮对话）
         session_key = f"{req.index_id}_{req.session_id or 'default'}"
-        
+
         # 如果有 session_id 且缓存中存在，复用 Agent
         if req.session_id and session_key in _agent_sessions:
             agent = _agent_sessions[session_key]
             logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
-            logger.info(f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息")
+            logger.info(
+                f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息"
+            )
         else:
             # 创建新 Agent
-            agent = await _load_agent_for_request(req.index_id, req.enable_llm_tree_search)
+            agent = await _load_agent_for_request(
+                req.index_id, req.enable_llm_tree_search
+            )
 
             # 尝试加载历史（如果有 session_id）
             if req.session_id:
@@ -1257,18 +1267,20 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             try:
                 logger.info("[Agent流式] 开始在线程中执行 Agent.run_stream")
                 chunk_count = 0
-                
+
                 # 移除批量缓冲逻辑，实现真正的实时流式传输
                 # 前端已经实现了双缓冲渲染（Double Buffering）来解决闪烁问题，
                 # 因此后端应该尽可能快地推送数据，而不是在此处因为缓冲而引入延迟。
                 # 特别是对于简短的状态行（如"正在搜索..."），必须立即发送，
                 # 否则会被缓冲卡住，直到下一个长文本块到来才发送，导致状态显示滞后。
 
-                for chunk in agent.run_stream(req.query, req.force_mode, req.keep_history):
+                for chunk in agent.run_stream(
+                    req.query, req.force_mode, req.keep_history
+                ):
                     chunk_count += 1
                     # 立即发送每一个 chunk
                     loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
-                
+
                 # 执行完成，发送完成信号
                 loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
                 logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个原始chunk")
@@ -1319,10 +1331,12 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
 
                 # 等待后台任务完成
                 await task
-                
+
                 # 保存历史到磁盘
                 if req.session_id and req.keep_history:
-                    chat_storage.save_history(req.index_id, req.session_id, agent.session_history)
+                    chat_storage.save_history(
+                        req.index_id, req.session_id, agent.session_history
+                    )
 
         except asyncio.TimeoutError:
             logger.error(f"[API] Agent 流式执行超时: index_id={req.index_id}")
@@ -1336,7 +1350,6 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
     except Exception as e:
         logger.error(f"[API] Agent 流式执行失败: {e}", exc_info=True)
         yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
-
 
 
 @router.post("/chat/agent/stream")
@@ -1394,7 +1407,7 @@ async def get_chat_history(index_id: str, session_id: str) -> List[Dict[str, Any
         logger.error(f"[API] 获取聊天历史失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取聊天历史失败: {str(e)}"
+            detail=f"获取聊天历史失败: {str(e)}",
         )
 
 
@@ -1407,6 +1420,7 @@ async def list_sessions(index_id: str) -> SessionsListResponse:
 
         # 获取索引的 PDF 名称
         from ..services.manager import list_indexes
+
         indexes_result = await list_indexes(str(settings.base_dir))
         pdf_name = "Unknown"
         for idx in indexes_result.get("indexes", []):
@@ -1420,8 +1434,7 @@ async def list_sessions(index_id: str) -> SessionsListResponse:
 
         logger.info(f"[API] 列出会话: index_id={index_id}, count={len(sessions)}")
         return SessionsListResponse(
-            status="success",
-            sessions=[SessionInfo(**s) for s in sessions]
+            status="success", sessions=[SessionInfo(**s) for s in sessions]
         )
     except Exception as e:
         logger.error(f"[API] 列出会话失败: {e}")
@@ -1431,7 +1444,9 @@ async def list_sessions(index_id: str) -> SessionsListResponse:
         )
 
 
-@router.delete("/chat/sessions/{index_id}/{session_id}", response_model=DeleteSessionResponse)
+@router.delete(
+    "/chat/sessions/{index_id}/{session_id}", response_model=DeleteSessionResponse
+)
 async def delete_session(index_id: str, session_id: str) -> DeleteSessionResponse:
     """删除指定会话"""
     try:
@@ -1445,16 +1460,12 @@ async def delete_session(index_id: str, session_id: str) -> DeleteSessionRespons
             logger.info(f"[API] 从 Agent 缓存中移除: {session_key}")
 
         if deleted:
-            logger.info(f"[API] 删除会话成功: index_id={index_id}, session_id={session_id}")
-            return DeleteSessionResponse(
-                status="success",
-                message="会话已删除"
+            logger.info(
+                f"[API] 删除会话成功: index_id={index_id}, session_id={session_id}"
             )
+            return DeleteSessionResponse(status="success", message="会话已删除")
         else:
-            return DeleteSessionResponse(
-                status="success",
-                message="会话不存在"
-            )
+            return DeleteSessionResponse(status="success", message="会话不存在")
     except Exception as e:
         logger.error(f"[API] 删除会话失败: {e}")
         raise HTTPException(
@@ -1481,7 +1492,9 @@ async def cross_book_search(body: CrossBookSearchRequest):
     Returns:
         搜索结果，包含来源书籍信息
     """
-    logger.info(f"[跨书籍搜索] query='{body.query}', index_ids={body.index_ids}, top_k={body.top_k}")
+    logger.info(
+        f"[跨书籍搜索] query='{body.query}', index_ids={body.index_ids}, top_k={body.top_k}"
+    )
 
     from ..services.cross_book_search import cross_book_search as do_cross_book_search
 
@@ -1491,10 +1504,12 @@ async def cross_book_search(body: CrossBookSearchRequest):
             query=body.query,
             storage_dir=str(settings.base_dir),
             index_ids=body.index_ids,
-            top_k=body.top_k
+            top_k=body.top_k,
         )
 
-        logger.info(f"[跨书籍搜索] 完成: 搜索了 {result['books_searched']} 本书, 找到 {result['total_results']} 条结果")
+        logger.info(
+            f"[跨书籍搜索] 完成: 搜索了 {result['books_searched']} 本书, 找到 {result['total_results']} 条结果"
+        )
 
         # 转换结果为 Pydantic 模型
         results = [
@@ -1504,7 +1519,7 @@ async def cross_book_search(body: CrossBookSearchRequest):
                 index_id=r["index_id"],
                 section=r["section"],
                 page=r["page"],
-                obsidian_link=r["obsidian_link"]
+                obsidian_link=r["obsidian_link"],
             )
             for r in result.get("results", [])
         ]
@@ -1514,15 +1529,12 @@ async def cross_book_search(body: CrossBookSearchRequest):
             results=results,
             books_searched=result["books_searched"],
             total_results=result["total_results"],
-            error=result.get("error")
+            error=result.get("error"),
         )
 
     except Exception as e:
         logger.error(f"[跨书籍搜索] 失败: {e}")
-        return CrossBookSearchResponse(
-            status="error",
-            error=str(e)
-        )
+        return CrossBookSearchResponse(status="error", error=str(e))
 
 
 # ============================================================
@@ -1543,7 +1555,9 @@ async def create_theme_report(body: ThemeReportRequest):
     Returns:
         主题报告响应，包含整合摘要和 Markdown 内容
     """
-    logger.info(f"[主题报告] theme='{body.theme}', index_ids={body.index_ids}, top_k_per_book={body.top_k_per_book}")
+    logger.info(
+        f"[主题报告] theme='{body.theme}', index_ids={body.index_ids}, top_k_per_book={body.top_k_per_book}"
+    )
 
     from ..services.theme_report import generate_theme_report
 
@@ -1634,6 +1648,7 @@ async def create_enhanced_theme_report(body: EnhancedThemeReportRequest):
 
     # 获取 LLM 客户端
     from ..services.theme_report import _get_llm_client
+
     client = _get_llm_client()
 
     storage_dir = str(Path(settings.base_dir))

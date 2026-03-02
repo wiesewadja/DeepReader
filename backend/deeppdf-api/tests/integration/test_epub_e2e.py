@@ -21,6 +21,7 @@ from ebooklib import epub
 
 # 使用 PageIndex 和 DeepPDF 索引服务
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from deeppdf.services.indexer import index_pdf
@@ -66,7 +67,7 @@ def sample_epub_file():
         title="Chapter 1",
         file_name="chapter1.xhtml",
         media_type="application/xhtml+xml",
-        content=chapter1_content
+        content=chapter1_content,
     )
     book.add_item(chapter1)
 
@@ -91,7 +92,7 @@ def sample_epub_file():
         title="Chapter 2",
         file_name="chapter2.xhtml",
         media_type="application/xhtml+xml",
-        content=chapter2_content
+        content=chapter2_content,
     )
     book.add_item(chapter2)
 
@@ -115,7 +116,7 @@ def sample_epub_file():
         title="Chapter 3",
         file_name="chapter3.xhtml",
         media_type="application/xhtml+xml",
-        content=chapter3_content
+        content=chapter3_content,
     )
     book.add_item(chapter3)
 
@@ -146,10 +147,7 @@ def sample_epub_file():
     }
     """
     nav_css = epub.EpubItem(
-        uid="style_nav",
-        file_name="style/nav.css",
-        media_type="text/css",
-        content=style
+        uid="style_nav", file_name="style/nav.css", media_type="text/css", content=style
     )
     book.add_item(nav_css)
 
@@ -179,6 +177,7 @@ def temp_storage_dir():
     yield temp_dir
     # 清理临时目录
     import shutil
+
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
@@ -187,7 +186,9 @@ class TestEpubIndexingE2E:
     """测试 EPUB 端到端索引流程"""
 
     @pytest.mark.asyncio
-    async def test_epub_index_creates_correct_metadata(self, sample_epub_file, temp_storage_dir):
+    async def test_epub_index_creates_correct_metadata(
+        self, sample_epub_file, temp_storage_dir
+    ):
         """
         测试：EPUB 索引创建正确的元数据
 
@@ -220,6 +221,7 @@ class TestEpubIndexingE2E:
         assert metadata_path.exists()
 
         import json
+
         with open(metadata_path, "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
@@ -244,7 +246,9 @@ class TestEpubIndexingE2E:
         assert "end_index" in first_node
 
     @pytest.mark.asyncio
-    async def test_epub_index_stores_in_chromadb(self, sample_epub_file, temp_storage_dir):
+    async def test_epub_index_stores_in_chromadb(
+        self, sample_epub_file, temp_storage_dir
+    ):
         """
         测试：EPUB 索引存储到 ChromaDB
 
@@ -270,6 +274,7 @@ class TestEpubIndexingE2E:
 
         # 步骤 3: 验证可以查询集合
         from deeppdf.storage.chroma_store import ChromaStore
+
         store = ChromaStore(persist_directory=str(chroma_dir))
 
         # 获取集合
@@ -286,7 +291,9 @@ class TestEpubSearchE2E:
     """测试 EPUB 搜索功能"""
 
     @pytest.mark.asyncio
-    async def test_epub_search_returns_results(self, sample_epub_file, temp_storage_dir):
+    async def test_epub_search_returns_results(
+        self, sample_epub_file, temp_storage_dir
+    ):
         """
         测试：EPUB 索引后的搜索功能
 
@@ -329,7 +336,9 @@ class TestEpubSearchE2E:
         assert len(first_document) > 0
 
     @pytest.mark.asyncio
-    async def test_epub_search_multiple_queries(self, sample_epub_file, temp_storage_dir):
+    async def test_epub_search_multiple_queries(
+        self, sample_epub_file, temp_storage_dir
+    ):
         """
         测试：多次搜索 EPUB 索引
 

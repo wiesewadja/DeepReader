@@ -420,14 +420,20 @@ async def generate_theme_report(
         return {
             "status": "success",
             "theme": theme,
-            "unified_summary": integrated_content.split("\n\n")[0] if integrated_content else "",
+            "unified_summary": (
+                integrated_content.split("\n\n")[0] if integrated_content else ""
+            ),
             "book_perspectives": [
                 {
                     "book_name": _clean_book_name(name),
                     "book_link": _clean_book_name(name),
                     "key_points": [],  # 可以后续从 perspective 中解析
-                    "related_chapter": excerpts[0].get("section", "") if excerpts else "",
-                    "related_chapter_link": excerpts[0].get("obsidian_link", "") if excerpts else "",
+                    "related_chapter": (
+                        excerpts[0].get("section", "") if excerpts else ""
+                    ),
+                    "related_chapter_link": (
+                        excerpts[0].get("obsidian_link", "") if excerpts else ""
+                    ),
                 }
                 for name, excerpts in books_excerpts.items()
             ],

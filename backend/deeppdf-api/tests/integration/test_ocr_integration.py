@@ -1,4 +1,5 @@
 """OCR 功能端到端测试"""
+
 import pytest
 from pathlib import Path
 from pageindex.pdf.ocr import detect_pdf_type, PaddleOCRExtractor, VisualDetector

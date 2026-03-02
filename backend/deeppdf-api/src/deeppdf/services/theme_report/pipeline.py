@@ -211,17 +211,21 @@ class ThemeReportPipeline:
             state.book_excerpts = self._group_by_book(state.search_result.results)
 
             # Stage 3: 观点提取
-            state.perspectives = await self.perspective_analyzer.extract_all_perspectives(
-                theme=theme,
-                books_excerpts=state.book_excerpts,
+            state.perspectives = (
+                await self.perspective_analyzer.extract_all_perspectives(
+                    theme=theme,
+                    books_excerpts=state.book_excerpts,
+                )
             )
 
             # Stage 4: 对比矩阵
             if options.include_comparison and len(state.perspectives) >= 2:
                 perspective_list = list(state.perspectives.values())
-                state.comparison_matrix = self.report_generator.generate_comparison_matrix(
-                    theme=theme,
-                    perspectives=perspective_list,
+                state.comparison_matrix = (
+                    self.report_generator.generate_comparison_matrix(
+                        theme=theme,
+                        perspectives=perspective_list,
+                    )
                 )
 
             # Stage 5: 角色分析
@@ -404,12 +408,18 @@ class ThemeReportPipeline:
             unified_summary=summary,
             book_perspectives=book_perspectives,
             comparison_matrix=(
-                state.comparison_matrix.markdown_table if state.comparison_matrix else None
+                state.comparison_matrix.markdown_table
+                if state.comparison_matrix
+                else None
             ),
-            expanded_queries=state.expanded_queries[1:] if len(state.expanded_queries) > 1 else [],
+            expanded_queries=(
+                state.expanded_queries[1:] if len(state.expanded_queries) > 1 else []
+            ),
             report_type=state.report_type.value,
             books_searched=len(state.perspectives),
-            total_sources=len(state.search_result.results) if state.search_result else 0,
+            total_sources=(
+                len(state.search_result.results) if state.search_result else 0
+            ),
             coverage_score=state.coverage_score,
             accuracy_score=state.accuracy_score,
             markdown_content=content,

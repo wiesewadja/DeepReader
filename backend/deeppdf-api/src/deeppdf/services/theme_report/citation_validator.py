@@ -49,9 +49,7 @@ class CitationValidator:
     """
 
     # 匹配引用格式的正则
-    CITATION_PATTERN = re.compile(
-        r"【《(.+?)》(.+?)(?:，第(\d+)页)?】"
-    )
+    CITATION_PATTERN = re.compile(r"【《(.+?)》(.+?)(?:，第(\d+)页)?】")
 
     def __init__(
         self,
@@ -252,9 +250,7 @@ class CitationValidator:
 
         return None
 
-    def _extract_claim_near_citation(
-        self, report: str, citation: str
-    ) -> Optional[str]:
+    def _extract_claim_near_citation(self, report: str, citation: str) -> Optional[str]:
         """
         提取引用附近的论断文本
 

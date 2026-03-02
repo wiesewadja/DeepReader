@@ -49,7 +49,9 @@ class DeepSeekOCRClient:
         if not self.api_key:
             raise ValueError("DEEPSEEK_OCR_API_KEY is required")
 
-        logger.debug(f"[DeepSeekOCR] 使用 API Key: {self.api_key[:12]}...{self.api_key[-4:]}")
+        logger.debug(
+            f"[DeepSeekOCR] 使用 API Key: {self.api_key[:12]}...{self.api_key[-4:]}"
+        )
 
         self.client = OpenAI(
             api_key=self.api_key,
@@ -60,7 +62,9 @@ class DeepSeekOCRClient:
         logger.info(f"[DeepSeekOCR] ✅ 客户端初始化成功")
         logger.info(f"[DeepSeekOCR]    - 模型: {self.model}")
         logger.info(f"[DeepSeekOCR]    - API: {self.base_url}")
-        logger.info(f"[DeepSeekOCR]    - API Key: {self.api_key[:12]}...{self.api_key[-4:]}")
+        logger.info(
+            f"[DeepSeekOCR]    - API Key: {self.api_key[:12]}...{self.api_key[-4:]}"
+        )
         logger.info(f"[DeepSeekOCR]    - 最大tokens: {self.max_tokens}")
         logger.info("=" * 60)
 
@@ -129,7 +133,9 @@ class DeepSeekOCRClient:
         logger.info(f"[DeepSeekOCR] 🌐 调用 DeepSeek OCR API...")
         logger.info(f"[DeepSeekOCR]    - 模型: {self.model}")
         logger.info(f"[DeepSeekOCR]    - Base URL: {self.base_url}")
-        logger.info(f"[DeepSeekOCR]    - API Key: {self.api_key[:12]}...{self.api_key[-4:]}")
+        logger.info(
+            f"[DeepSeekOCR]    - API Key: {self.api_key[:12]}...{self.api_key[-4:]}"
+        )
         logger.debug(f"[DeepSeekOCR]    - Prompt: {prompt[:100]}...")
         try:
             response = self.client.chat.completions.create(

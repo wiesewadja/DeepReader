@@ -123,7 +123,7 @@ class QueryExpander:
             # 移除编号前缀（如 "1. ", "- "）
             cleaned = re.sub(r"^[\d\-\.\•\*]+\s*", "", line).strip()
             # 移除引号
-            cleaned = cleaned.strip('"\'""''')
+            cleaned = cleaned.strip('"\'""' "")
             if cleaned and len(cleaned) > 5:
                 queries.append(cleaned)
 
@@ -195,9 +195,7 @@ class QueryExpander:
 
             # 过滤掉已使用的查询
             if previous_queries:
-                sub_queries = [
-                    q for q in sub_queries if q not in previous_queries
-                ]
+                sub_queries = [q for q in sub_queries if q not in previous_queries]
 
             return sub_queries[:3]
 

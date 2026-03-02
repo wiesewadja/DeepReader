@@ -76,7 +76,9 @@ async def update_progress(index_id: str, request: UpdateProgressRequest):
     # 检查索引是否存在
     metadata_result = await load_index_metadata(index_id, storage_dir)
     if metadata_result.get("status") != "success":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}"
+        )
 
     # 更新进度
     result = await update_reading_progress(
@@ -127,7 +129,9 @@ async def get_progress(index_id: str):
 
     metadata_result = await load_index_metadata(index_id, storage_dir)
     if metadata_result.get("status") != "success":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}"
+        )
 
     metadata = metadata_result.get("metadata", {})
     total_pages = metadata.get("total_pages", 0)
@@ -160,8 +164,10 @@ async def get_progress(index_id: str):
 
 # ==================== 章节目录 API ====================
 
+
 class ChapterItem(BaseModel):
     """章节项"""
+
     title: str
     start_page: int
     end_page: int
@@ -170,6 +176,7 @@ class ChapterItem(BaseModel):
 
 class TableOfContentsResponse(BaseModel):
     """章节目录响应"""
+
     index_id: str
     book_name: str
     total_pages: int
@@ -183,12 +190,9 @@ def _extract_chapters(tree_structure: List[dict], level: int = 0) -> List[Chapte
         title = node.get("title", "未命名章节")
         start = node.get("physical_index", node.get("start_index", 1))
         end = node.get("end_index", start)
-        chapters.append(ChapterItem(
-            title=title,
-            start_page=start,
-            end_page=end,
-            level=level
-        ))
+        chapters.append(
+            ChapterItem(title=title, start_page=start, end_page=end, level=level)
+        )
         # 递归处理子章节
         sub_structure = node.get("structure", [])
         if isinstance(sub_structure, list) and sub_structure:
@@ -212,13 +216,17 @@ async def get_table_of_contents(index_id: str):
 
     metadata_result = await load_index_metadata(index_id, storage_dir)
     if metadata_result.get("status") != "success":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}"
+        )
 
     metadata = metadata_result.get("metadata", {})
 
     # 从 tree_structure 提取章节
     tree_structure = metadata.get("tree_structure", {})
-    structure_list = tree_structure.get("structure", []) if isinstance(tree_structure, dict) else []
+    structure_list = (
+        tree_structure.get("structure", []) if isinstance(tree_structure, dict) else []
+    )
     chapters = _extract_chapters(structure_list)
 
     # 获取总页数
@@ -228,7 +236,9 @@ async def get_table_of_contents(index_id: str):
         if pdf_path and Path(pdf_path).exists():
             total_pages = get_pdf_page_count(pdf_path)
 
-    book_name = metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    book_name = (
+        metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    )
 
     logger.info(f"[阅读API] 获取目录: {index_id}, {len(chapters)} 个章节")
 
@@ -242,8 +252,10 @@ async def get_table_of_contents(index_id: str):
 
 # ==================== 摘要生成 API ====================
 
+
 class SummaryResponse(BaseModel):
     """摘要响应"""
+
     index_id: str
     book_name: str
     summary: str
@@ -280,9 +292,7 @@ def _generate_summary_task(index_id: str, storage_dir: str, book_name: str):
 
 @router.get("/{index_id}/summary", response_model=SummaryResponse)
 async def get_or_generate_summary(
-    index_id: str,
-    background_tasks: BackgroundTasks,
-    regenerate: bool = False
+    index_id: str, background_tasks: BackgroundTasks, regenerate: bool = False
 ):
     """
     获取或生成书籍摘要
@@ -299,10 +309,14 @@ async def get_or_generate_summary(
 
     metadata_result = await load_index_metadata(index_id, storage_dir)
     if metadata_result.get("status") != "success":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}"
+        )
 
     metadata = metadata_result.get("metadata", {})
-    book_name = metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    book_name = (
+        metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    )
 
     # 检查是否已有摘要
     existing_summary = metadata.get("summary")
@@ -327,7 +341,10 @@ async def get_or_generate_summary(
 
             # 跳过目录、前言等辅助章节
             section_title = md_path.split("/")[-1].replace(".md", "").lower()
-            if any(skip in section_title for skip in ["目录", "toc", "preface", "前言", "序"]):
+            if any(
+                skip in section_title
+                for skip in ["目录", "toc", "preface", "前言", "序"]
+            ):
                 continue
 
             # 构建完整路径并读取内容
@@ -343,22 +360,29 @@ async def get_or_generate_summary(
                             fm = content[:fm_end]
                             for line in fm.split("\n"):
                                 if line.startswith("section:"):
-                                    section_name = line.split(":", 1)[1].strip().strip('"')
+                                    section_name = (
+                                        line.split(":", 1)[1].strip().strip('"')
+                                    )
                                     break
-                            content = content[fm_end + 3:]
+                            content = content[fm_end + 3 :]
 
                     # 提取前 500 字符作为内容预览
                     # 去除 markdown 标记和页面标记
                     import re
-                    content = re.sub(r'^---[\s\S]*?---', '', content)  # 移除 frontmatter
-                    content = re.sub(r'### 第 \d+ 页.*?\n', '', content)  # 移除页面标记
-                    content = re.sub(r'\^page-\d+', '', content)  # 移除页面锚点
-                    content = re.sub(r'#+ ', '', content)  # 移除标题标记
+
+                    content = re.sub(
+                        r"^---[\s\S]*?---", "", content
+                    )  # 移除 frontmatter
+                    content = re.sub(r"### 第 \d+ 页.*?\n", "", content)  # 移除页面标记
+                    content = re.sub(r"\^page-\d+", "", content)  # 移除页面锚点
+                    content = re.sub(r"#+ ", "", content)  # 移除标题标记
                     content = content.strip()[:500]  # 取前 500 字符
 
                     if content:
                         if section_name:
-                            summary_parts.append(f"**{section_name}**: {content[:200]}...")
+                            summary_parts.append(
+                                f"**{section_name}**: {content[:200]}..."
+                            )
                         chapter_count += 1
                 except Exception as e:
                     logger.warning(f"[阅读API] 读取章节失败: {md_path}, {e}")
@@ -369,7 +393,11 @@ async def get_or_generate_summary(
     else:
         # 回退到从 tree_structure 提取章节标题
         tree_structure = metadata.get("tree_structure", {})
-        structure_list = tree_structure.get("structure", []) if isinstance(tree_structure, dict) else []
+        structure_list = (
+            tree_structure.get("structure", [])
+            if isinstance(tree_structure, dict)
+            else []
+        )
         if structure_list:
             chapter_titles = [node.get("title", "") for node in structure_list[:10]]
             summary = f"《{book_name}》包含以下章节：" + "、".join(chapter_titles)

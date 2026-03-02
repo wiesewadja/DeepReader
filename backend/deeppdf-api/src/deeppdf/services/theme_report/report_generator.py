@@ -245,18 +245,14 @@ class ReportGenerator:
 
         # 提取共识点
         consensus = []
-        consensus_match = re.search(
-            r"共识[点点]?[：:]\s*([\s\S]*?)(?=分歧|$)", content
-        )
+        consensus_match = re.search(r"共识[点点]?[：:]\s*([\s\S]*?)(?=分歧|$)", content)
         if consensus_match:
             items = re.findall(r"[-\d]+\.\s*(.+?)(?=\n|$)", consensus_match.group(1))
             consensus = [item.strip() for item in items if item.strip()]
 
         # 提取分歧点
         divergence = []
-        divergence_match = re.search(
-            r"分歧[点点]?[：:]\s*([\s\S]*?)(?=###|$)", content
-        )
+        divergence_match = re.search(r"分歧[点点]?[：:]\s*([\s\S]*?)(?=###|$)", content)
         if divergence_match:
             items = re.findall(r"[-\d]+\.\s*(.+?)(?=\n|$)", divergence_match.group(1))
             divergence = [item.strip() for item in items if item.strip()]
@@ -266,7 +262,9 @@ class ReportGenerator:
         if markdown_table:
             # 从表头提取维度
             header_line = markdown_table.split("\n")[0]
-            dimensions = [cell.strip() for cell in header_line.split("|") if cell.strip()]
+            dimensions = [
+                cell.strip() for cell in header_line.split("|") if cell.strip()
+            ]
 
         return ComparisonMatrix(
             markdown_table=markdown_table,
@@ -371,9 +369,7 @@ class ReportGenerator:
             logger.error(f"[ReportGenerator] 报告生成失败: {e}")
             raise
 
-    def _format_perspectives(
-        self, perspectives: List[BookPerspective]
-    ) -> str:
+    def _format_perspectives(self, perspectives: List[BookPerspective]) -> str:
         """
         格式化书籍观点为文本
 

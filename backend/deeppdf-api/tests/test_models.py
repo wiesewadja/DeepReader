@@ -87,7 +87,7 @@ class TestIndexResponse:
             index_id="test-id",
             node_count=10,
             pdf_name="test.epub",
-            doc_type="epub"
+            doc_type="epub",
         )
         assert resp.status == "success"
         assert resp.index_id == "test-id"
@@ -102,7 +102,7 @@ class TestIndexResponse:
             index_id="test-id",
             node_count=10,
             pdf_name="test.pdf",
-            doc_type="pdf"
+            doc_type="pdf",
         )
         assert resp.status == "success"
         assert resp.doc_type == "pdf"
@@ -116,7 +116,7 @@ class TestIndexResponse:
                 index_id="test-id",
                 node_count=10,
                 pdf_name="test.pdf",
-                doc_type=doc_type
+                doc_type=doc_type,
             )
             assert resp.doc_type == doc_type
 
@@ -128,7 +128,7 @@ class TestIndexResponse:
                 index_id="test-id",
                 node_count=10,
                 pdf_name="test.pdf",
-                doc_type="docx"  # 无效的文档类型
+                doc_type="docx",  # 无效的文档类型
             )
 
     def test_error_response(self):

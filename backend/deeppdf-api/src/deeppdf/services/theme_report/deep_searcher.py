@@ -186,9 +186,7 @@ class DeepSearcher:
             logger.error(f"[DeepSearcher] 单查询搜索失败: {e}")
             return []
 
-    def _deduplicate_and_merge(
-        self, results: List[SearchResult]
-    ) -> List[SearchResult]:
+    def _deduplicate_and_merge(self, results: List[SearchResult]) -> List[SearchResult]:
         """
         去重并合并结果
 

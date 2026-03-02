@@ -136,7 +136,9 @@ class ReadPageTool:
             logger.info("=" * 60)
             logger.info(f"[ReadPageTool] 🔍 视觉密集型模式已启用")
             logger.info(f"[ReadPageTool]    - 索引ID: {index_id}")
-            logger.info(f"[ReadPageTool]    - OCR客户端: {'✅ 已配置' if self.deepseek_ocr_client else '❌ 未配置'}")
+            logger.info(
+                f"[ReadPageTool]    - OCR客户端: {'✅ 已配置' if self.deepseek_ocr_client else '❌ 未配置'}"
+            )
             logger.info(f"[ReadPageTool]    - 读取方式: DeepSeek OCR 视觉推理")
             logger.info("=" * 60)
 
@@ -152,7 +154,7 @@ class ReadPageTool:
                 raise FileNotFoundError(f"索引文件不存在: {json_path}")
 
             logger.info(f"[ReadPageTool] 📁 加载索引文件: {json_path}")
-            with open(json_path, 'r', encoding='utf-8') as f:
+            with open(json_path, "r", encoding="utf-8") as f:
                 self._pi = json.load(f)
 
         return self._pi
@@ -185,35 +187,39 @@ class ReadPageTool:
             pi = self._load_page_index()
 
             # 获取总页数
-            total_pages = pi.get('total_pages', 0)
+            total_pages = pi.get("total_pages", 0)
             if total_pages == 0:
                 # 回退：使用 sections 数量
-                total_pages = len(pi.get('sections', []))
+                total_pages = len(pi.get("sections", []))
 
             # 验证页码范围
             if page_num < 1 or page_num > total_pages:
                 return f"错误: 页码 {page_num} 超出范围（文档共 {total_pages} 页）"
 
             # 从 sections 中获取页面内容
-            sections = pi.get('sections', [])
+            sections = pi.get("sections", [])
 
             # 查找对应页码的 section（页码从 1 开始，数组索引从 0 开始）
             # sections[i] 对应第 i+1 页
             if page_num <= len(sections):
                 section = sections[page_num - 1]
-                text = section.get('text', '')
-                metadata = section.get('metadata', {})
-                section_name = metadata.get('section', '未知章节')
+                text = section.get("text", "")
+                metadata = section.get("metadata", {})
+                section_name = metadata.get("section", "未知章节")
 
                 return f"# 第 {page_num} 页内容\n\n**章节**: {section_name}\n\n{text}"
             else:
-                return f"错误: 页码 {page_num} 超出范围（sections 共 {len(sections)} 条）"
+                return (
+                    f"错误: 页码 {page_num} 超出范围（sections 共 {len(sections)} 条）"
+                )
 
         except (FileNotFoundError, ValueError, IOError, OSError) as e:
             logger.error(f"[ReadPageTool] ❌ 读取页面失败: {e}")
             return f"错误: 读取页面失败 - {str(e)}"
         except Exception as e:
-            logger.error(f"[ReadPageTool] ❌ 读取页面时发生未知错误: {e}", exc_info=True)
+            logger.error(
+                f"[ReadPageTool] ❌ 读取页面时发生未知错误: {e}", exc_info=True
+            )
             return f"错误: 读取页面时发生未知错误 - {str(e)}"
 
     def _read_page_visual(self, page_num: int) -> str:
@@ -697,9 +703,7 @@ class CrossBookSearchTool:
         from ..services.cross_book_search import cross_book_search
 
         result = cross_book_search(
-            query=query,
-            storage_dir=self.storage_dir,
-            top_k=top_k
+            query=query, storage_dir=self.storage_dir, top_k=top_k
         )
 
         if result["status"] != "success":
@@ -709,7 +713,9 @@ class CrossBookSearchTool:
             return "未找到相关内容"
 
         # 格式化输出
-        output_lines = [f"在 {result['books_searched']} 本书中找到 {result['total_results']} 条相关内容:\n"]
+        output_lines = [
+            f"在 {result['books_searched']} 本书中找到 {result['total_results']} 条相关内容:\n"
+        ]
 
         for i, r in enumerate(result["results"], 1):
             output_lines.append(

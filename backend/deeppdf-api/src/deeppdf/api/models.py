@@ -411,7 +411,9 @@ class ThemeReportResponse(BaseModel):
         default_factory=list, description="各书观点"
     )
     books_searched: int = Field(0, description="搜索的书籍数量")
-    markdown_content: Optional[str] = Field(None, description="生成的完整 Markdown 内容")
+    markdown_content: Optional[str] = Field(
+        None, description="生成的完整 Markdown 内容"
+    )
     suggested_filename: Optional[str] = Field(None, description="建议的文件名")
     error: Optional[str] = Field(None, description="错误信息")
 
@@ -430,7 +432,9 @@ class EnhancedThemeReportResponse(BaseModel):
     comparison_matrix: Optional[str] = Field(None, description="对比矩阵 Markdown 表格")
 
     # 元信息
-    expanded_queries: List[str] = Field(default_factory=list, description="扩展的子问题")
+    expanded_queries: List[str] = Field(
+        default_factory=list, description="扩展的子问题"
+    )
     report_type: ReportType = Field(..., description="实际使用的报告类型")
     books_searched: int = Field(0, description="搜索的书籍数量")
     total_sources: int = Field(0, description="总引用数")
@@ -440,7 +444,9 @@ class EnhancedThemeReportResponse(BaseModel):
     accuracy_score: Optional[float] = Field(None, description="准确性评分 (1-10)")
 
     # 输出
-    markdown_content: Optional[str] = Field(None, description="生成的完整 Markdown 内容")
+    markdown_content: Optional[str] = Field(
+        None, description="生成的完整 Markdown 内容"
+    )
     suggested_filename: Optional[str] = Field(None, description="建议的文件名")
 
     # 错误处理
@@ -456,7 +462,9 @@ class ChapterSummary(BaseModel):
     node_id: str = Field(..., description="节点 ID")
     title: str = Field(..., description="章节标题")
     summary: str = Field("", description="一句话摘要")
-    key_questions: List[str] = Field(default_factory=list, description="该章节要解决的问题")
+    key_questions: List[str] = Field(
+        default_factory=list, description="该章节要解决的问题"
+    )
 
 
 class BookSummary(BaseModel):
@@ -464,7 +472,9 @@ class BookSummary(BaseModel):
 
     index_id: str = Field(..., description="索引 ID")
     core_thesis: str = Field("", description="核心主旨（1-2句话）")
-    author_intents: List[str] = Field(default_factory=list, description="作者意图（3-5个问题）")
+    author_intents: List[str] = Field(
+        default_factory=list, description="作者意图（3-5个问题）"
+    )
     book_type: Literal["theoretical", "practical", "fiction", "mixed"] = Field(
         "mixed", description="书籍分类"
     )

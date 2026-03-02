@@ -142,8 +142,7 @@ def generate_chapter_summary(
         包含 summary 和 key_questions 的字典
     """
     prompt = CHAPTER_SUMMARY_PROMPT.format(
-        title=title,
-        content=content[:3000]  # 限制内容长度
+        title=title, content=content[:3000]  # 限制内容长度
     )
 
     model = model or settings.llm_model
@@ -190,11 +189,13 @@ def generate_book_summary(
         包含 core_thesis, author_intents, book_type 的字典
     """
     # 格式化章节摘要
-    summaries_text = "\n".join([
-        f"- {cs.get('title', '未知章节')}: {cs.get('summary', '')}"
-        for cs in chapter_summaries
-        if cs.get("summary")
-    ])
+    summaries_text = "\n".join(
+        [
+            f"- {cs.get('title', '未知章节')}: {cs.get('summary', '')}"
+            for cs in chapter_summaries
+            if cs.get("summary")
+        ]
+    )
 
     if not summaries_text:
         return {
@@ -204,8 +205,7 @@ def generate_book_summary(
         }
 
     prompt = BOOK_SUMMARY_PROMPT.format(
-        book_name=book_name,
-        chapter_summaries=summaries_text
+        book_name=book_name, chapter_summaries=summaries_text
     )
 
     model = model or settings.llm_model
@@ -302,11 +302,13 @@ async def generate_full_summary(
 
             # 如果有内容且足够长
             if content and len(content) > 100:
-                chapters.append({
-                    "node_id": node_id,
-                    "title": title,
-                    "content": content,
-                })
+                chapters.append(
+                    {
+                        "node_id": node_id,
+                        "title": title,
+                        "content": content,
+                    }
+                )
 
             # 递归处理子章节
             if children:
@@ -335,11 +337,13 @@ async def generate_full_summary(
             content=chapter["content"],
             model=model,
         )
-        chapter_summaries.append({
-            "node_id": chapter["node_id"],
-            "title": chapter["title"],
-            **summary,
-        })
+        chapter_summaries.append(
+            {
+                "node_id": chapter["node_id"],
+                "title": chapter["title"],
+                **summary,
+            }
+        )
 
     # 7. 生成全书摘要
     logger.info("正在生成全书摘要...")

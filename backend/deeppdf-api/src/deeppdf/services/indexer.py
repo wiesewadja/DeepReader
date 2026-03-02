@@ -68,7 +68,9 @@ def _extract_nodes_from_tree(
 
     # 如果有内容，创建节点
     if content_for_embedding and content_for_embedding.strip():
-        full_text_for_embedding = f"【{current_section}】\n{content_for_embedding.strip()}"
+        full_text_for_embedding = (
+            f"【{current_section}】\n{content_for_embedding.strip()}"
+        )
         node_metadata = {
             "section": current_section,
             "level": level,
@@ -119,8 +121,12 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
             "Please provide the base URL of your custom LLM API (e.g., https://api.siliconflow.cn/v1).",
         }
 
-    toc_check_pages = kwargs.get("toc_check_pages") or settings.pdf_index_toc_check_pages
-    max_pages_per_node = kwargs.get("max_pages_per_node") or settings.pdf_index_max_pages_per_node
+    toc_check_pages = (
+        kwargs.get("toc_check_pages") or settings.pdf_index_toc_check_pages
+    )
+    max_pages_per_node = (
+        kwargs.get("max_pages_per_node") or settings.pdf_index_max_pages_per_node
+    )
     max_tokens_per_node = (
         kwargs.get("max_tokens_per_node") or settings.pdf_index_max_tokens_per_node
     )
@@ -184,7 +190,9 @@ def _validate_pdf_file(pdf_path: Path) -> Tuple[bool, Optional[str], Optional[in
         return False, f"Cannot read PDF file: {e}", None
 
 
-def _check_llm_config(require_llm: bool, api_key: Optional[str]) -> Tuple[bool, Optional[str]]:
+def _check_llm_config(
+    require_llm: bool, api_key: Optional[str]
+) -> Tuple[bool, Optional[str]]:
     """
     检查 LLM API 配置
 
@@ -199,7 +207,9 @@ def _check_llm_config(require_llm: bool, api_key: Optional[str]) -> Tuple[bool, 
         return True, None
 
     llm_api_key = api_key or (
-        os.getenv("DEEPSEEK_API_KEY") or os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+        os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("CHATGPT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
     )
 
     if not llm_api_key:
@@ -211,7 +221,9 @@ def _check_llm_config(require_llm: bool, api_key: Optional[str]) -> Tuple[bool, 
     return True, None
 
 
-def _setup_pageindex_config(config: Dict[str, Any], llm_api_key: Optional[str]) -> Tuple[Any, Any]:
+def _setup_pageindex_config(
+    config: Dict[str, Any], llm_api_key: Optional[str]
+) -> Tuple[Any, Any]:
     """
     设置 PageIndex 配置和 LLM 客户端
 
@@ -227,7 +239,9 @@ def _setup_pageindex_config(config: Dict[str, Any], llm_api_key: Optional[str]) 
 
     user_opt = {
         "model": config["model"],
-        "if_add_node_summary": (config["if_add_node_summary"] if config["require_llm"] else "no"),
+        "if_add_node_summary": (
+            config["if_add_node_summary"] if config["require_llm"] else "no"
+        ),
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
         # Note: if_add_node_description is not supported by PageIndex
@@ -275,7 +289,9 @@ def _parse_pdf_structure(
     parse_start = time.time()
     doc_type = _get_doc_type(pdf_path)
 
-    logger.info(f"[{doc_type.upper()}解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}")
+    logger.info(
+        f"[{doc_type.upper()}解析] 开始时间: {datetime.now().strftime('%H:%M:%S')}"
+    )
     logger.info(f"[{doc_type.upper()}解析] 输入文件: {Path(pdf_path).name}")
     logger.info(
         f"[{doc_type.upper()}解析] 配置参数: to_check={config['toc_check_pages']}, max_pages={config['max_pages_per_node']}, max_tokens={config['max_tokens_per_node']}"
@@ -296,10 +312,14 @@ def _parse_pdf_structure(
         # 首先检查当前线程是否有遗留的事件循环
         try:
             existing_loop = asyncio.get_running_loop()
-            logger.warning(f"[{doc_type.upper()}解析] 检测到运行中的事件循环: {existing_loop}")
+            logger.warning(
+                f"[{doc_type.upper()}解析] 检测到运行中的事件循环: {existing_loop}"
+            )
             logger.warning(f"[{doc_type.upper()}解析] 这可能导致问题，尝试继续...")
         except RuntimeError:
-            logger.debug(f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）")
+            logger.debug(
+                f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）"
+            )
 
         # 直接调用 page_index_main
         # 它会使用 asyncio.run() 在新的事件循环中运行 page_index_builder
@@ -308,12 +328,18 @@ def _parse_pdf_structure(
 
     except Exception as e:
         logger.error(f"[{doc_type.upper()}解析] 失败: {type(e).__name__}: {str(e)}")
-        logger.error(f"[{doc_type.upper()}解析] 耗时: {time.time() - parse_start:.2f} 秒")
+        logger.error(
+            f"[{doc_type.upper()}解析] 耗时: {time.time() - parse_start:.2f} 秒"
+        )
         raise
 
     parse_time = time.time() - parse_start
-    logger.info(f"[{doc_type.upper()}解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}")
-    logger.info(f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)")
+    logger.info(
+        f"[{doc_type.upper()}解析] 完成时间: {datetime.now().strftime('%H:%M:%S')}"
+    )
+    logger.info(
+        f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)"
+    )
 
     # 更新进度：文档解析完成，正在生成摘要
     if progress_callback and config.get("if_add_node_summary"):
@@ -573,7 +599,9 @@ def _index_pdf_sync(
                 sample_pages=kwargs.get(
                     "visual_detect_sample_pages", settings.visual_detect_sample_pages
                 ),
-                text_threshold=kwargs.get("visual_text_threshold", settings.visual_text_threshold),
+                text_threshold=kwargs.get(
+                    "visual_text_threshold", settings.visual_text_threshold
+                ),
                 image_threshold=kwargs.get(
                     "visual_density_threshold", settings.visual_density_threshold
                 ),
@@ -586,8 +614,12 @@ def _index_pdf_sync(
                 "reason": detector_result.reason,
             }
 
-            logger.info(f"[PDF分类] 检测结果: {'视觉密集型' if is_visual_heavy else '普通文本型'}")
-            logger.info(f"[PDF分类] 文本密度: {detector_result.text_density:.0f} 字符/页")
+            logger.info(
+                f"[PDF分类] 检测结果: {'视觉密集型' if is_visual_heavy else '普通文本型'}"
+            )
+            logger.info(
+                f"[PDF分类] 文本密度: {detector_result.text_density:.0f} 字符/页"
+            )
             logger.info(f"[PDF分类] 图片密度: {detector_result.image_density*100:.1f}%")
             logger.info(f"[PDF分类] 判断依据: {detector_result.reason}")
         except Exception as e:
@@ -630,13 +662,19 @@ def _index_pdf_sync(
 
     # 获取 LLM API key
     llm_api_key = config["api_key"] or (
-        os.getenv("DEEPSEEK_API_KEY") or os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+        os.getenv("DEEPSEEK_API_KEY")
+        or os.getenv("CHATGPT_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
     )
     if llm_api_key:
-        logger.info(f"LLM API Key: {'*' * min(len(llm_api_key), 12)} ({len(llm_api_key)} 字符)")
+        logger.info(
+            f"LLM API Key: {'*' * min(len(llm_api_key), 12)} ({len(llm_api_key)} 字符)"
+        )
 
     # 生成索引 ID
-    file_hash = hashlib.md5(f"{pdf_path_obj.name}{time.time()}".encode()).hexdigest()[:12]
+    file_hash = hashlib.md5(f"{pdf_path_obj.name}{time.time()}".encode()).hexdigest()[
+        :12
+    ]
     index_id = f"idx_{file_hash}"
     logger.info(f"索引 ID: {index_id}")
 
@@ -651,23 +689,31 @@ def _index_pdf_sync(
         logger.info("[步骤 4/6] 创建 LLM 客户端...")
         _update_progress("create_llm_client", 40, "创建 LLM 客户端...")
         if llm_client_instance:
-            logger.info(f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}")
+            logger.info(
+                f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}"
+            )
 
         # 步骤 5: 解析文档结构
-        logger.info(f"[步骤 5/6] 开始解析 {doc_type.upper()} 结构 (这可能需要几分钟)...")
+        logger.info(
+            f"[步骤 5/6] 开始解析 {doc_type.upper()} 结构 (这可能需要几分钟)..."
+        )
         _update_progress("parse_pdf", 50, f"正在解析 {doc_type.upper()} 结构...")
         if doc_type == "pdf":
             logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
             logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config["if_add_node_summary"]:
-            logger.info(f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})")
+            logger.info(
+                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
+            )
 
         tree_result, parse_time = _parse_pdf_structure(
             pdf_path, opt, llm_client_instance, config, progress_callback
         )
 
         # 更新进度：文档解析完成
-        _update_progress("parse_complete", 70, f"{doc_type.upper()} 结构解析完成，正在提取章节...")
+        _update_progress(
+            "parse_complete", 70, f"{doc_type.upper()} 结构解析完成，正在提取章节..."
+        )
 
         # 记录返回结果的详细信息
         logger.debug(f"[{doc_type.upper()}解析] 原始结果键: {list(tree_result.keys())}")
@@ -756,8 +802,12 @@ def _index_pdf_sync(
         logger.info(f"    - 文件名称: {pdf_path_obj.name}")
         logger.info(f"    - 节点数量: {len(section_nodes)}")
         logger.info("  时间统计:")
-        logger.info(f"    - 文档解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)")
-        logger.info(f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)")
+        logger.info(
+            f"    - 文档解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)"
+        )
+        logger.info(
+            f"    - 向量存储: {vector_time:.2f} 秒 ({vector_time/total_time*100:.1f}%)"
+        )
         logger.info(f"    - 总耗时: {total_time:.2f} 秒 ({total_time/60:.1f} 分钟)")
         logger.info("=" * 60)
         logger.info("")

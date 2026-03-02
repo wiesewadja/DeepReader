@@ -130,7 +130,6 @@ ROLE_PLAY_PROMPTS = {
 4. **过度推断**：是否有从有限证据得出过度结论的情况？
 
 请列出 2-3 个最关键的批判点，每个不超过 50 字。""",
-
     "synthesizer": """你是一位知识整合专家（Synthesizer），请整合以下关于「{theme}」的多本书籍观点：
 
 {perspectives}
@@ -142,7 +141,6 @@ ROLE_PLAY_PROMPTS = {
 4. **知识图谱**：这些观点之间有什么联系？
 
 请列出 2-3 个最有价值的整合发现，每个不超过 50 字。""",
-
     "practitioner": """你是一位实践者（Practitioner），请评估以下关于「{theme}」内容的实用价值：
 
 {content}
@@ -153,7 +151,7 @@ ROLE_PLAY_PROMPTS = {
 3. **潜在挑战**：在实践中可能遇到什么困难？
 4. **效果评估**：如何判断应用是否成功？
 
-请列出 2-3 个最实用的建议，每个不超过 50 字。"""
+请列出 2-3 个最实用的建议，每个不超过 50 字。""",
 }
 
 
@@ -267,7 +265,6 @@ REPORT_TEMPLATES = {
 
 {references}
 """,
-
     "comparative": """# {theme} - 对比分析报告
 
 > 生成时间：{timestamp}
@@ -302,7 +299,6 @@ REPORT_TEMPLATES = {
 
 {references}
 """,
-
     "practical": """# {theme} - 实践指南
 
 > 生成时间：{timestamp}
@@ -336,7 +332,7 @@ REPORT_TEMPLATES = {
 ## 参考文献
 
 {references}
-"""
+""",
 }
 
 

@@ -1,6 +1,7 @@
 """
 跨书籍搜索服务测试
 """
+
 import pytest
 from unittest.mock import patch, MagicMock
 from deeppdf.services.cross_book_search import cross_book_search, get_all_indexes
@@ -27,11 +28,12 @@ class TestCrossBookSearch:
 
         # 创建测试索引文件
         import json
+
         index_data = {
             "id": "test_idx_1",
             "pdf_name": "测试书籍",
             "doc_type": "pdf",
-            "node_count": 10
+            "node_count": 10,
         }
         with open(indexes_dir / "test_idx_1.json", "w", encoding="utf-8") as f:
             json.dump(index_data, f)
@@ -74,11 +76,12 @@ class TestCrossBookSearch:
 
         # 创建索引文件
         import json
+
         index_data = {
             "id": "test_idx_1",
             "pdf_name": "测试书籍",
             "doc_type": "pdf",
-            "node_count": 10
+            "node_count": 10,
         }
         with open(indexes_dir / "test_idx_1.json", "w", encoding="utf-8") as f:
             json.dump(index_data, f)
@@ -88,20 +91,15 @@ class TestCrossBookSearch:
         mock_store.query.return_value = {
             "ids": [["doc1", "doc2"]],
             "documents": [["文档1内容", "文档2内容"]],
-            "metadatas": [[
-                {"section": "第一章", "page": 1},
-                {"section": "第二章", "page": 10}
-            ]],
-            "distances": [[0.1, 0.2]]
+            "metadatas": [
+                [{"section": "第一章", "page": 1}, {"section": "第二章", "page": 10}]
+            ],
+            "distances": [[0.1, 0.2]],
         }
         mock_store_class.return_value = mock_store
 
         # 执行搜索
-        result = cross_book_search(
-            query="测试",
-            storage_dir=str(storage_dir),
-            top_k=2
-        )
+        result = cross_book_search(query="测试", storage_dir=str(storage_dir), top_k=2)
 
         assert result["status"] == "success"
         assert result["books_searched"] == 1
@@ -117,23 +115,26 @@ class TestCrossBookSearch:
 
         # 创建两个索引文件
         import json
+
         for i in range(2):
             index_data = {
                 "id": f"test_idx_{i}",
                 "pdf_name": f"书籍{i}",
                 "doc_type": "pdf",
-                "node_count": 10
+                "node_count": 10,
             }
             with open(indexes_dir / f"test_idx_{i}.json", "w", encoding="utf-8") as f:
                 json.dump(index_data, f)
 
-        with patch("deeppdf.services.cross_book_search.ChromaStore") as mock_store_class:
+        with patch(
+            "deeppdf.services.cross_book_search.ChromaStore"
+        ) as mock_store_class:
             mock_store = MagicMock()
             mock_store.query.return_value = {
                 "ids": [["doc1"]],
                 "documents": [["文档内容"]],
                 "metadatas": [[{"section": "第一章", "page": 1}]],
-                "distances": [[0.1]]
+                "distances": [[0.1]],
             }
             mock_store_class.return_value = mock_store
 
@@ -142,7 +143,7 @@ class TestCrossBookSearch:
                 query="测试",
                 storage_dir=str(storage_dir),
                 index_ids=["test_idx_0"],
-                top_k=1
+                top_k=1,
             )
 
             assert result["status"] == "success"

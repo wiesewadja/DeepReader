@@ -162,7 +162,9 @@ class DeepPDFAgent:
                 logger.info("=" * 60)
                 logger.info("[Agent初始化] 🔍 视觉密集型 PDF 检测到")
                 logger.info("[Agent初始化]    - 初始化 DeepSeek OCR 客户端...")
-                logger.info(f"[Agent初始化]    - OCR API Key: {ocr_api_key[:12]}...{ocr_api_key[-4:]}")
+                logger.info(
+                    f"[Agent初始化]    - OCR API Key: {ocr_api_key[:12]}...{ocr_api_key[-4:]}"
+                )
                 self.deepseek_ocr_client = DeepSeekOCRClient(api_key=ocr_api_key)
                 logger.info("[Agent初始化] ✅ DeepSeek OCR 客户端已创建")
                 logger.info("=" * 60)
@@ -188,6 +190,7 @@ class DeepPDFAgent:
         if cross_book_mode:
             # 跨书籍模式：使用跨书籍搜索工具
             from .executor import create_cross_book_executor
+
             self.executor: ToolExecutor = create_cross_book_executor(
                 storage_dir=storage_dir
             )
@@ -209,6 +212,7 @@ class DeepPDFAgent:
         # 根据 cross_book_mode 构建 System Prompt
         if cross_book_mode:
             from .prompts import build_cross_book_prompt
+
             self.system_prompt = build_cross_book_prompt(
                 tool_descriptions=self.executor.get_tool_descriptions()
             )

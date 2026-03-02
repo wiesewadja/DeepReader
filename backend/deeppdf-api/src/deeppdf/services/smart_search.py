@@ -28,12 +28,12 @@ try:
         def cut(self, sentence, cut_all=False):
             """兼容 jieba.cut()"""
             # jieba3 只需要基础的分词功能，使用 base 模型
-            return jieba3._cut_text(sentence, model='base', use_hmm=True)
+            return jieba3._cut_text(sentence, model="base", use_hmm=True)
 
         def cut_for_search(self, sentence):
             """兼容 jieba.cut_for_search() - 用于搜索引擎的分词"""
             # 搜索引擎模式使用同样的分词，jieba3 会自动处理
-            return jieba3._cut_text(sentence, model='base', use_hmm=True)
+            return jieba3._cut_text(sentence, model="base", use_hmm=True)
 
     jieba = _JiebaCompat()
 

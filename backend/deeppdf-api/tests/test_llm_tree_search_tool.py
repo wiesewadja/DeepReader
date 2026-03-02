@@ -205,7 +205,7 @@ def test_stage2_llm_called():
             "end_index": 10,
             "summary": "第一章摘要",
             "prefix_summary": "前文摘要",
-            "text": "第一章内容"
+            "text": "第一章内容",
         },
         "node_2": {
             "title": "第二章",
@@ -213,7 +213,7 @@ def test_stage2_llm_called():
             "end_index": 20,
             "summary": "第二章摘要",
             "prefix_summary": "第一章摘要",
-            "text": "第二章内容"
+            "text": "第二章内容",
         },
     }
     mock_llm_client = Mock()
@@ -244,8 +244,7 @@ def test_stage2_llm_called():
 
     # 模拟 LLM 响应
     mock_llm_response = json.dumps(
-        {"node_list": ["node_1", "node_2"]},
-        ensure_ascii=False
+        {"node_list": ["node_1", "node_2"]}, ensure_ascii=False
     )
     mock_llm_client.chat.return_value = mock_llm_response
 
@@ -256,14 +255,14 @@ def test_stage2_llm_called():
             "obsidian_link": "[[test.md#^page-5]]",
             "page": 5,
             "anchor": "^page-5",
-            "text": "第一章内容"
+            "text": "第一章内容",
         },
         {
             "node_id": "node_2",
             "obsidian_link": "[[test.md#^page-15]]",
             "page": 15,
             "anchor": "^page-15",
-            "text": "第二章内容"
+            "text": "第二章内容",
         },
     ]
 

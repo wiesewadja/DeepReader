@@ -214,7 +214,9 @@ class PerspectiveAnalyzer:
             # 截断过长的文本
             if len(text) > 600:
                 text = text[:600] + "..."
-            formatted_excerpts.append(f"### 片段 {i}（{section}，第 {page} 页）\n{text}")
+            formatted_excerpts.append(
+                f"### 片段 {i}（{section}，第 {page} 页）\n{text}"
+            )
 
         excerpts_text = "\n\n".join(formatted_excerpts)
 
@@ -292,9 +294,7 @@ class PerspectiveAnalyzer:
         Returns:
             书籍名称到观点的映射
         """
-        logger.info(
-            f"[PerspectiveAnalyzer] 开始提取 {len(books_excerpts)} 本书"
-        )
+        logger.info(f"[PerspectiveAnalyzer] 开始提取 {len(books_excerpts)} 本书")
 
         results: Dict[str, BookPerspective] = {}
 
@@ -321,7 +321,5 @@ class PerspectiveAnalyzer:
             book_name, perspective = await future
             results[book_name] = perspective
 
-        logger.info(
-            f"[PerspectiveAnalyzer] 观点提取完成: {len(results)} 本书"
-        )
+        logger.info(f"[PerspectiveAnalyzer] 观点提取完成: {len(results)} 本书")
         return results

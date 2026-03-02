@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def parse_json_object(content: str, default: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def parse_json_object(
+    content: str, default: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     从字符串中解析 JSON 对象
 
@@ -64,7 +66,7 @@ def parse_json_object(content: str, default: Optional[Dict[str, Any]] = None) ->
     # 尝试提取第一个 JSON 对象
     json_patterns = [
         r"\{[\s\S]*?\}",  # 非贪婪，匹配第一个对象
-        r"\{[\s\S]*\}",   # 贪婪，匹配整个对象（处理嵌套）
+        r"\{[\s\S]*\}",  # 贪婪，匹配整个对象（处理嵌套）
     ]
 
     for pattern in json_patterns:

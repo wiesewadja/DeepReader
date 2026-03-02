@@ -8,6 +8,7 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class ChatStorage:
     """会话历史存储服务
 
@@ -15,7 +16,9 @@ class ChatStorage:
     """
 
     def __init__(self, storage_dir: Optional[str] = None):
-        self.storage_dir = Path(storage_dir) if storage_dir else settings.base_dir / "chats"
+        self.storage_dir = (
+            Path(storage_dir) if storage_dir else settings.base_dir / "chats"
+        )
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_chat_path(self, index_id: str, session_id: str) -> Path:
@@ -24,7 +27,9 @@ class ChatStorage:
         index_dir.mkdir(parents=True, exist_ok=True)
         return index_dir / f"{session_id}.json"
 
-    def save_history(self, index_id: str, session_id: str, history: List[Dict[str, Any]]) -> None:
+    def save_history(
+        self, index_id: str, session_id: str, history: List[Dict[str, Any]]
+    ) -> None:
         """保存会话历史"""
         try:
             file_path = self._get_chat_path(index_id, session_id)
@@ -73,7 +78,9 @@ class ChatStorage:
             logger.error(f"[ChatStorage] 删除会话失败: {e}")
             return False
 
-    def get_session_info(self, index_id: str, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_info(
+        self, index_id: str, session_id: str
+    ) -> Optional[Dict[str, Any]]:
         """获取会话信息（包括消息数量、创建时间等）"""
         try:
             file_path = self._get_chat_path(index_id, session_id)
@@ -112,6 +119,7 @@ class ChatStorage:
         # 按最后消息时间倒序排列
         sessions_info.sort(key=lambda x: x["lastMessageTime"], reverse=True)
         return sessions_info
+
 
 # 全局实例
 chat_storage = ChatStorage()
