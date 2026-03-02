@@ -72,6 +72,7 @@ export class SidebarView extends ItemView {
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private isConnected: boolean = false;  // 后端连接状态
+    private searchFilters: { booklists: string[]; tags: string[] } = { booklists: [], tags: [] };  // 搜索过滤条件
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -97,9 +98,26 @@ export class SidebarView extends ItemView {
         if (!this.messageList) return;
 
         const welcomeId = `msg-${Date.now()}`;
-        const welcomeContent = this.crossBookMode
-            ? "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！"
-            : `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
+        let welcomeContent: string;
+
+        if (this.crossBookMode) {
+            welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
+
+            // 显示过滤条件
+            if (this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0) {
+                const parts: string[] = [];
+                if (this.searchFilters.booklists.length > 0) {
+                    parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
+                }
+                if (this.searchFilters.tags.length > 0) {
+                    parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
+                }
+                welcomeContent += `\n\n🔍 当前过滤条件: ${parts.join("; ")}`;
+                welcomeContent += `\n\n[清除过滤](obsidian://deeppdf-search) | [搜索全部](obsidian://deeppdf-search)`;
+            }
+        } else {
+            welcomeContent = `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
+        }
 
         this.messageList.addMessage({
             id: welcomeId,
@@ -182,6 +200,21 @@ export class SidebarView extends ItemView {
         } catch (error) {
             console.error("[DeepPDF] Failed to open reading portal:", error);
             new Notice("打开阅读入口失败");
+        }
+    }
+
+    /** 打开图书管理入口 */
+    private async openBookManagement(): Promise<void> {
+        if (!this.readingPortal) {
+            new Notice("DeepPDF 服务未就绪");
+            return;
+        }
+
+        try {
+            await this.readingPortal.openBookManagementPortal();
+        } catch (error) {
+            console.error("[DeepPDF] Failed to open book management:", error);
+            new Notice("打开图书管理失败");
         }
     }
 
@@ -605,7 +638,8 @@ export class SidebarView extends ItemView {
             onShowHistory: () => {
                 this.handleShowHistory();
             },
-            onOpenReadingPortal: () => this.openReadingPortal()
+            onOpenReadingPortal: () => this.openReadingPortal(),
+            onOpenBookManagement: () => this.openBookManagement()
         });
 
         const el = this.indexManager.getElement();
@@ -752,6 +786,48 @@ export class SidebarView extends ItemView {
 
                 if (this.indexManager) {
                     this.indexManager.selectIndex(indexId);
+                }
+            })
+        );
+
+        // 监听跨书籍搜索事件（带书单/标签过滤）
+        this.registerEvent(
+            workspace.on("deeppdf:cross-book-search", async (params: { booklists?: string[]; tags?: string[] }) => {
+                console.log("[DeepPDF] Received cross-book-search event:", params);
+
+                // 保存过滤条件
+                this.searchFilters = {
+                    booklists: params.booklists || [],
+                    tags: params.tags || [],
+                };
+
+                // 切换到跨书籍模式
+                if (!this.crossBookMode) {
+                    this.crossBookMode = true;
+                    this.chatInput?.setSearchMode('cross');
+                    this.indexManager?.setCrossBookMode(true);
+                    this.plugin.settings.lastCrossBookMode = true;
+                    await this.plugin.saveSettings();
+
+                    // 清空消息
+                    this.messageList?.clear();
+                }
+            })
+        );
+
+        // 监听主题报告事件
+        this.registerEvent(
+            workspace.on("deeppdf:theme-report", async () => {
+                console.log("[DeepPDF] Received theme-report event");
+                // 切换到跨书籍模式并显示欢迎消息
+                if (!this.crossBookMode) {
+                    this.crossBookMode = true;
+                    this.chatInput?.setSearchMode('cross');
+                    this.indexManager?.setCrossBookMode(true);
+                    this.plugin.settings.lastCrossBookMode = true;
+                    await this.plugin.saveSettings();
+                    this.messageList?.clear();
+                    this.showWelcomeMessage();
                 }
             })
         );
@@ -1414,9 +1490,44 @@ ${r.text}`;
         }
 
         try {
+            // 根据过滤条件获取 indexIds
+            let indexIds: string[] | undefined = undefined;
+            let filterDescription = "";
+
+            if (this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0) {
+                // 初始化 ReadingPortalService（如果需要）
+                if (!this.readingPortal) {
+                    this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
+                }
+
+                indexIds = await this.readingPortal.filterIndexIdsByMetadata(this.searchFilters);
+
+                // 构建过滤描述
+                const parts: string[] = [];
+                if (this.searchFilters.booklists.length > 0) {
+                    parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
+                }
+                if (this.searchFilters.tags.length > 0) {
+                    parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
+                }
+                filterDescription = `（过滤条件: ${parts.join("; ")}）`;
+
+                if (indexIds.length === 0) {
+                    this.messageList?.updateMessage(aiMessageId, {
+                        content: `没有找到符合条件的书籍 ${filterDescription}。请检查书单或标签设置。`,
+                        isStreaming: false
+                    });
+                    this.isProcessing = false;
+                    this.isAiStreaming = false;
+                    this.chatInput?.setDisabled(false);
+                    this.restoreInputSection();
+                    return;
+                }
+            }
+
             // 调用主题报告 API
-            console.log('[DeepPDF] 跨书籍搜索开始:', query);
-            const result = await this.apiClient.generateThemeReport(query);
+            console.log('[DeepPDF] 跨书籍搜索开始:', query, '过滤:', filterDescription, 'indexIds:', indexIds);
+            const result = await this.apiClient.generateThemeReport(query, { indexIds });
             console.log('[DeepPDF] 主题报告结果:', result);
 
             if (result.status !== "success") {

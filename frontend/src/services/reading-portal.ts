@@ -22,6 +22,7 @@ interface BookFrontmatter {
   last_read: string | null;
   chat_rounds: number;
   tags: string[];
+  booklists: string[]; // 所属书单列表
   created: string;
 }
 
@@ -299,6 +300,7 @@ read_pages: ""
 last_read: null
 chat_rounds: 0
 tags: []
+booklists: []
 created: ${now}
 ---
 
@@ -478,6 +480,207 @@ views:
       if (!fm.tags) {
         fm.tags = [];
       }
+      // 保留已有的 booklists，如果没有则初始化为空数组
+      if (!fm.booklists) {
+        fm.booklists = [];
+      }
     });
+  }
+
+  // ==================== 图书管理入口文档 ====================
+
+  /**
+   * 获取所有书籍的元数据（从 frontmatter 读取）
+   * 用于书单/标签过滤
+   */
+  async getAllBooksMetadata(): Promise<Map<string, { booklists: string[]; tags: string[] }>> {
+    const metadataMap = new Map<string, { booklists: string[]; tags: string[] }>();
+
+    // 获取 DeepPDF 目录下的所有书籍笔记
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      if (!file.path.startsWith(DEEPPDF_DIR + "/")) continue;
+      if (file.path.includes("📚") || file.path.includes("📖")) continue;
+
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (frontmatter?.index_id) {
+        metadataMap.set(frontmatter.index_id, {
+          booklists: frontmatter.booklists || [],
+          tags: frontmatter.tags || [],
+        });
+      }
+    }
+
+    return metadataMap;
+  }
+
+  /**
+   * 根据书单/标签过滤索引 ID
+   */
+  async filterIndexIdsByMetadata(
+    options: { booklists?: string[]; tags?: string[] }
+  ): Promise<string[]> {
+    if (!options.booklists?.length && !options.tags?.length) {
+      return []; // 没有过滤条件，返回空表示搜索全部
+    }
+
+    const metadataMap = await this.getAllBooksMetadata();
+    const matchedIds: string[] = [];
+
+    for (const [indexId, meta] of metadataMap) {
+      const booklistMatch = !options.booklists?.length ||
+        options.booklists.some(bl => meta.booklists.includes(bl));
+      const tagMatch = !options.tags?.length ||
+        options.tags.some(tag => meta.tags.includes(tag));
+
+      if (booklistMatch && tagMatch) {
+        matchedIds.push(indexId);
+      }
+    }
+
+    return matchedIds;
+  }
+
+  /**
+   * 获取所有书单列表（去重）
+   */
+  async getAllBooklists(): Promise<string[]> {
+    const metadataMap = await this.getAllBooksMetadata();
+    const booklists = new Set<string>();
+
+    for (const meta of metadataMap.values()) {
+      for (const bl of meta.booklists) {
+        booklists.add(bl);
+      }
+    }
+
+    return Array.from(booklists).sort();
+  }
+
+  /**
+   * 获取所有标签列表（去重）
+   */
+  async getAllTags(): Promise<string[]> {
+    const metadataMap = await this.getAllBooksMetadata();
+    const tags = new Set<string>();
+
+    for (const meta of metadataMap.values()) {
+      for (const tag of meta.tags) {
+        tags.add(tag);
+      }
+    }
+
+    return Array.from(tags).sort();
+  }
+
+  /**
+   * 创建或更新图书管理入口文档
+   */
+  async openBookManagementPortal(): Promise<void> {
+    await this.ensureDir();
+
+    const portalPath = normalizePath(`${DEEPPDF_DIR}/📚 图书管理.md`);
+    let file = this.app.vault.getAbstractFileByPath(portalPath);
+
+    // 获取所有书单和标签
+    const [booklists, tags] = await Promise.all([
+      this.getAllBooklists(),
+      this.getAllTags(),
+    ]);
+
+    const content = this.generateBookManagementContent(booklists, tags);
+
+    if (!file) {
+      file = await this.app.vault.create(portalPath, content);
+      new Notice("已创建图书管理入口文档");
+    } else {
+      await this.app.vault.modify(file as TFile, content);
+      new Notice("已更新图书管理入口文档");
+    }
+
+    // 在新标签页打开
+    const leaf = this.app.workspace.getLeaf(false);
+    await leaf.openFile(file as TFile);
+  }
+
+  /**
+   * 生成图书管理入口文档内容
+   */
+  private generateBookManagementContent(booklists: string[], tags: string[]): string {
+    const vaultName = encodeURIComponent(this.app.vault.getName());
+
+    // 生成书单部分
+    let booklistsSection = "暂无书单，请在书籍笔记中添加 `booklists` 属性";
+    if (booklists.length > 0) {
+      booklistsSection = booklists.map(bl => {
+        const encodedBl = encodeURIComponent(bl);
+        return `### ${bl}
+
+\`\`\`base
+filters:
+  and:
+    - file.inFolder("DeepPDF")
+    - file.ext == "md"
+    - file.hasProperty("booklists")
+    - 'booklists.includes("${bl}")'
+
+properties:
+  book_name:
+    displayName: "书名"
+  progress:
+    displayName: "进度%"
+  status:
+    displayName: "状态"
+
+views:
+  - type: table
+    name: "${bl}书籍"
+\`\`\`
+
+[🔍 搜索此书单](obsidian://deeppdf-search?booklists=${encodedBl})
+`;
+      }).join("\n");
+    }
+
+    // 生成标签云
+    let tagsSection = "暂无标签，请在书籍笔记中添加 `tags` 属性";
+    if (tags.length > 0) {
+      tagsSection = tags.map(tag => {
+        const encodedTag = encodeURIComponent(tag);
+        return `[${tag}](obsidian://deeppdf-search?tags=${encodedTag})`;
+      }).join(" · ");
+    }
+
+    return `---
+deeppdf_book_management: true
+---
+
+# 📚 图书管理
+
+管理所有已索引的书籍，支持书单分类和标签过滤。
+
+> 💡 点击「搜索此书单」可在侧边栏中搜索该书单下的书籍内容
+
+---
+
+## 📖 书单
+
+${booklistsSection}
+
+---
+
+## 🏷️ 标签
+
+${tagsSection}
+
+---
+
+## 📊 快速操作
+
+- [[📚 阅读入口]] - 查看所有书籍列表
+- [打开 DeepPDF 侧边栏](obsidian://open?vault=${vaultName}&command=deeppdf:open-deeppdf-sidebar)
+- [跨书籍搜索（全部）](obsidian://deeppdf-search)
+- [生成主题报告](obsidian://deeppdf-theme-report)
+`;
   }
 }

@@ -85,7 +85,7 @@ export default class DeepPDFPlugin extends Plugin {
             callback: () => this.activateView()
         });
 
-        // 注册 URI 协议处理器
+        // 注册 URI 协议处理器 - 单书籍对话
         this.registerObsidianProtocolHandler("deeppdf-chat", async (params) => {
             console.log("[DeepPDF] URI handler called with params:", params);
 
@@ -102,6 +102,38 @@ export default class DeepPDFPlugin extends Plugin {
             setTimeout(() => {
                 // 通过事件通知侧边栏切换到指定索引
                 this.app.workspace.trigger("deeppdf:select-index", indexId);
+            }, 100);
+        });
+
+        // 注册 URI 协议处理器 - 跨书籍搜索（支持书单/标签过滤）
+        this.registerObsidianProtocolHandler("deeppdf-search", async (params) => {
+            console.log("[DeepPDF] deeppdf-search URI handler called with params:", params);
+
+            // 解析书单和标签参数（逗号分隔）
+            const booklists = params.booklists ? params.booklists.split(",").map(s => decodeURIComponent(s.trim())) : [];
+            const tags = params.tags ? params.tags.split(",").map(s => decodeURIComponent(s.trim())) : [];
+
+            // 打开侧边栏
+            this.activateView();
+
+            // 等待视图加载
+            setTimeout(() => {
+                // 通过事件通知侧边栏启动跨书籍搜索
+                this.app.workspace.trigger("deeppdf:cross-book-search", { booklists, tags });
+            }, 100);
+        });
+
+        // 注册 URI 协议处理器 - 主题报告
+        this.registerObsidianProtocolHandler("deeppdf-theme-report", async (params) => {
+            console.log("[DeepPDF] deeppdf-theme-report URI handler called");
+
+            // 打开侧边栏
+            this.activateView();
+
+            // 等待视图加载
+            setTimeout(() => {
+                // 通过事件通知侧边栏打开主题报告
+                this.app.workspace.trigger("deeppdf:theme-report");
             }, 100);
         });
     }
