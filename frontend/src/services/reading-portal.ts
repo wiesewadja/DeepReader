@@ -648,9 +648,15 @@ properties:
 views:
   - type: table
     name: "全部书籍"
+    columns:
+      - file.link as "书名"
+      - booklists as "书单"
+      - tags as "标签"
+      - progress as "进度%"
+      - status as "状态"
 \`\`\`
 
-> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍
+> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍，多个值用英文逗号分隔
 
 `;
 
@@ -676,6 +682,10 @@ filters:
 properties:
   book_name:
     displayName: "书名"
+  booklists:
+    displayName: "书单"
+  tags:
+    displayName: "标签"
   progress:
     displayName: "进度%"
   status:
@@ -684,6 +694,11 @@ properties:
 views:
   - type: table
     name: "${bl}书籍"
+    columns:
+      - file.link as "书名"
+      - tags as "标签"
+      - progress as "进度%"
+      - status as "状态"
 \`\`\`
 
 [🔍 搜索此书单](obsidian://deeppdf-search?booklists=${encodedBl})
