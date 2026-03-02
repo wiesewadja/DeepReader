@@ -19,7 +19,6 @@ import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { agentAPI } from "../api/index.js";
-import { ChatHistoryModal } from "../components/chat-history-modal/chat-history-modal.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
 
 // ==================== 类型映射 ====================
@@ -57,7 +56,6 @@ export class SidebarView extends ItemView {
     private indexManager: IndexManager | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
     private taskCards: Map<string, TaskProgressCard> = new Map();
-    private chatHistoryModal: ChatHistoryModal | null = null;
 
     // 对话界面组件
     private messageList: MessageList | null = null;
@@ -168,50 +166,6 @@ export class SidebarView extends ItemView {
         this.startNewSession(this.currentIndexId);
     }
 
-    /** 处理显示历史 */
-    private async handleShowHistory() {
-        if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
-            return;
-        }
-        if (!this.currentIndexId) {
-            new Notice("请先选择一个索引");
-            return;
-        }
-
-        try {
-            // 获取会话列表
-            const result = await agentAPI.listSessions(this.currentIndexId);
-            if (result.status !== 'success') {
-                throw new Error('获取会话列表失败');
-            }
-
-            // 直接使用 API 返回的 SessionInfo，不需要映射
-            const sessions: SessionInfo[] = result.sessions;
-
-            // 每次都创建新的 Modal 实例，销毁旧的（如果有）
-            if (this.chatHistoryModal) {
-                this.chatHistoryModal.destroy();
-                this.chatHistoryModal = null;
-            }
-
-            this.chatHistoryModal = new ChatHistoryModal(this.app, {
-                onSessionSelect: (sessionId, indexId) => {
-                    this.handleSessionSelect(sessionId, indexId);
-                },
-                onSessionDelete: async (sessionId, indexId) => {
-                    await this.handleSessionDelete(sessionId, indexId);
-                }
-            });
-
-            this.chatHistoryModal.setSessions(sessions);
-            this.chatHistoryModal.open();
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            new Notice(`获取历史失败: ${errorMessage}`);
-        }
-    }
-
     /** 打开阅读入口（自动同步书籍笔记） */
     private async openReadingPortal(): Promise<void> {
         if (!this.readingPortal) {
@@ -243,55 +197,6 @@ export class SidebarView extends ItemView {
         } catch (error) {
             console.error("[DeepPDF] Failed to open book management:", error);
             new Notice("打开图书管理失败");
-        }
-    }
-
-    /** 处理会话选择 */
-    private async handleSessionSelect(sessionId: string, indexId: string) {
-        try {
-            // 切换到选择的会话
-            this.sessionId = sessionId;
-
-            // 保存到设置
-            if (!this.plugin.settings.savedSessions) {
-                this.plugin.settings.savedSessions = {};
-            }
-            this.plugin.settings.savedSessions[indexId] = sessionId;
-            await this.plugin.saveSettings();
-
-            // 清空当前界面
-            this.messageList?.clear();
-
-            // 从后端恢复历史
-            const history = await agentAPI.getHistory(indexId, sessionId);
-            if (history && history.length > 0) {
-                this.restoreHistoryToView(history, false);
-                new Notice(`已加载会话记录`);
-            } else {
-                this.showWelcomeMessage();
-            }
-
-            // 关闭模态框
-            this.chatHistoryModal?.close();
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            new Notice(`加载会话失败: ${errorMessage}`);
-        }
-    }
-
-    /** 处理会话删除 */
-    private async handleSessionDelete(sessionId: string, indexId: string) {
-        try {
-            await agentAPI.deleteSession(indexId, sessionId);
-            console.log(`[DeepPDF] 已删除会话: ${sessionId}`);
-
-            // 如果删除的是当前会话，清空界面
-            if (this.sessionId === sessionId) {
-                this.messageList?.clear();
-                this.showWelcomeMessage();
-            }
-        } catch (error) {
-            throw error;
         }
     }
 
@@ -662,9 +567,6 @@ export class SidebarView extends ItemView {
             },
             onNewChat: () => {
                 this.handleNewChat();
-            },
-            onShowHistory: () => {
-                this.handleShowHistory();
             },
             onOpenReadingPortal: () => this.openReadingPortal(),
             onOpenBookManagement: () => this.openBookManagement()
@@ -2373,16 +2275,6 @@ ${structureInfo}
                     console.warn('[DeepPDF] Error aborting streamController:', e);
                 }
                 this.streamController = null;
-            }
-
-            // 清理历史模态框
-            if (this.chatHistoryModal) {
-                try {
-                    this.chatHistoryModal.destroy();
-                } catch (e) {
-                    console.warn('[DeepPDF] Error destroying chatHistoryModal:', e);
-                }
-                this.chatHistoryModal = null;
             }
 
             // 清理消息列表

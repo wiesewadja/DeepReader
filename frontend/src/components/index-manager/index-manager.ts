@@ -17,7 +17,6 @@ export interface IndexManagerOptions {
     onExportMarkdown?: (indexId: string) => void;
     onDeleteIndex?: (indexId: string) => void;
     onNewChat?: () => void;
-    onShowHistory?: () => void;
     onOpenReadingPortal?: () => void;
     onOpenBookManagement?: () => void;
 }
@@ -123,7 +122,6 @@ export class IndexManager extends Component {
         const menuItems = [
             { icon: Icons.plus, label: '添加文档', action: () => this.options.onCreateIndex?.() },
             { icon: Icons.messageSquare, label: '新增对话', action: () => this.options.onNewChat?.() },
-            { icon: Icons.history, label: '查看历史', action: () => this.options.onShowHistory?.() },
             { icon: Icons.bookworm, label: '阅读入口', action: () => this.options.onOpenReadingPortal?.() },
             { icon: Icons.library, label: '图书管理', action: () => this.options.onOpenBookManagement?.() }
         ];

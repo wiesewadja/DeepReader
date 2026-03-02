@@ -21,8 +21,6 @@ export interface TopNavOptions {
 	onTitleClick?: () => void;
 	/** 新建会话回调 */
 	onNewChat?: () => void;
-	/** 查看历史回调 */
-	onShowHistory?: () => void;
 }
 
 /**
@@ -34,7 +32,6 @@ export class TopNav extends Component {
 	private statusText: HTMLElement | null = null;
 	private settingsButtonHandler: (() => void) | null = null;
 	private newChatButtonHandler: (() => void) | null = null;
-	private historyButtonHandler: (() => void) | null = null;
 
 	constructor(options: TopNavOptions = {}) {
 		super();
@@ -101,18 +98,6 @@ export class TopNav extends Component {
 		};
 		newChatButton.addEventListener('click', this.newChatButtonHandler);
 
-		// 查看历史按钮
-		const historyButton = document.createElement('button');
-		historyButton.className = 'deeppdf-icon-button';
-		historyButton.innerHTML = Icons.history;
-		historyButton.setAttribute('aria-label', '查看历史');
-		historyButton.setAttribute('title', '查看历史');
-
-		this.historyButtonHandler = () => {
-			this.options.onShowHistory?.();
-		};
-		historyButton.addEventListener('click', this.historyButtonHandler);
-
 		// 设置按钮
 		const settingsButton = document.createElement('button');
 		settingsButton.className = 'deeppdf-icon-button';
@@ -127,7 +112,6 @@ export class TopNav extends Component {
 
 		// 添加按钮到右侧区域
 		rightSection.appendChild(newChatButton);
-		rightSection.appendChild(historyButton);
 		rightSection.appendChild(settingsButton);
 		container.appendChild(rightSection);
 
@@ -180,13 +164,6 @@ export class TopNav extends Component {
 				newChatButton.removeEventListener('click', this.newChatButtonHandler);
 			}
 			this.newChatButtonHandler = null;
-		}
-		if (this.historyButtonHandler) {
-			const historyButton = this.el?.querySelector('button[aria-label="查看历史"]');
-			if (historyButton) {
-				historyButton.removeEventListener('click', this.historyButtonHandler);
-			}
-			this.historyButtonHandler = null;
 		}
 
 		this.statusDot = null;
