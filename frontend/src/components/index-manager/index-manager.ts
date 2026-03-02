@@ -8,7 +8,6 @@ import { Icons } from '../../utils/icons.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { App } from 'obsidian';
 import { ConfirmModal } from '../confirm-modal.js';
-import { formatTimeAgo } from '../../utils/time.js';
 
 export interface IndexManagerOptions {
     app: App;
@@ -248,25 +247,18 @@ export class IndexManager extends Component {
         this.listEl.innerHTML = '';
 
         if (this.indexes.length === 0) {
-            // 友好的空状态设计
+            // 简化的空状态
             const emptyState = document.createElement('div');
-            emptyState.className = 'deeppdf-index-empty-friendly';
+            emptyState.className = 'deeppdf-index-empty-compact';
 
             emptyState.innerHTML = `
                 <div class="empty-icon">📚</div>
-                <div class="empty-title">还没有索引</div>
-                <div class="empty-hint">索引后可以快速检索 PDF 内容并智能问答</div>
-                <button class="deeppdf-btn deeppdf-btn-primary create-first-btn" id="create-first-index">
-                    ✨ 创建第一个索引
+                <div class="empty-hint">还没有索引文档</div>
+                <button class="deeppdf-btn deeppdf-btn-primary deeppdf-btn-sm" id="create-first-index">
+                    添加文档
                 </button>
-                <div class="empty-features">
-                    <div class="feature-item">💡 快速检索 PDF 内容</div>
-                    <div class="feature-item">🤖 智能 AI 问答</div>
-                    <div class="feature-item">📝 导出 Markdown 笔记</div>
-                </div>
             `;
 
-            // 添加点击事件
             emptyState.querySelector('#create-first-index')?.addEventListener('click', () => {
                 if (this.options.onCreateIndex) {
                     this.options.onCreateIndex();
@@ -277,174 +269,99 @@ export class IndexManager extends Component {
             return;
         }
 
+        // 简化的紧凑列表
         this.indexes.forEach(index => {
             const item = document.createElement('div');
-            item.className = `deeppdf-index-item ${index.id === this.selectedIndexId ? 'active' : ''}`;
+            item.className = `deeppdf-index-item-compact ${index.id === this.selectedIndexId ? 'active' : ''}`;
             item.setAttribute('data-index-id', index.id);
 
-            // 新设计结构：
-            // [图标容器] [中间内容区(标题+进度条)] [右侧状态]
-
-            // 1. 左侧图标容器
-            const iconWrapper = document.createElement('div');
-            // 根据文件类型设置样式（目前主要是 PDF）
-            iconWrapper.className = 'deeppdf-index-icon-wrapper pdf';
-            iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
-            item.appendChild(iconWrapper);
-
-            // 2. 中间内容区
-            const content = document.createElement('div');
-            content.className = 'deeppdf-index-content';
-
-            const name = document.createElement('div');
-            name.className = 'deeppdf-index-name';
-            name.textContent = index.pdf_name;
-            content.appendChild(name);
-
-            // 添加时间显示
-            const metaEl = document.createElement('div');
-            metaEl.className = 'deeppdf-index-meta';
-            const timeText = index.created_at ? formatTimeAgo(index.created_at) : '未知时间';
-            const nodeCount = index.node_count || 0;
-            metaEl.innerHTML = `<span class="meta-item">📅 ${timeText}</span><span class="meta-item">📄 ${nodeCount} 节点</span>`;
-            content.appendChild(metaEl);
-
-            // 进度条容器 (始终存在，但仅在 processing 时显示)
-            const progressContainer = document.createElement('div');
-            progressContainer.className = 'deeppdf-index-progress-container';
-            const progressBar = document.createElement('div');
-            progressBar.className = 'deeppdf-index-progress-bar';
-            progressContainer.appendChild(progressBar);
-            content.appendChild(progressContainer);
-
-            item.appendChild(content);
-
-            // 3. 右侧状态区
-            const statusDiv = document.createElement('div');
-
-            // 状态规范化 (转为小写)
+            // 状态判断
             const rawStatus = (index.status || 'unknown').toLowerCase();
-            let displayStatus = 'Unknown';
-            let statusClass = 'unknown';
-
-            // 详细的索引状态日志
-            console.log(`[DeepPDF] [IndexManager] 处理索引状态: id="${index.id}", status="${index.status}", rawStatus="${rawStatus}"`);
+            let statusClass = 'ready';
+            let showProgress = false;
 
             if (['processing', 'indexing', 'started', 'created'].includes(rawStatus)) {
-                displayStatus = 'Indexing...';
                 statusClass = 'processing';
-                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 processing`);
-            } else if (['completed', 'ready', 'success'].includes(rawStatus)) {
-                displayStatus = 'Ready';
-                statusClass = 'ready';
-                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 completed/ready`);
+                showProgress = true;
             } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
-                displayStatus = 'Queued';
                 statusClass = 'queued';
-                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 pending/queued`);
             } else if (['failed', 'error'].includes(rawStatus)) {
-                displayStatus = 'Failed';
                 statusClass = 'failed';
-                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 状态为 failed`);
-            } else {
-                // 如果是其他非空状态，默认显示该状态文本
-                displayStatus = index.status || 'Unknown';
-                console.log(`[DeepPDF] [IndexManager] 索引 ${index.id} 有未知状态: "${index.status}"`);
-                console.log(`[DeepPDF] [IndexManager] 完整索引对象:`, JSON.stringify(index, null, 2));
             }
 
-            statusDiv.className = `deeppdf-index-status ${statusClass}`;
-            statusDiv.innerHTML = `<span>${displayStatus}</span>`;
-
-            // 状态图标
+            // 简化结构：[状态图标] [书名] [操作按钮]
+            const statusIcon = document.createElement('span');
+            statusIcon.className = `deeppdf-index-status-icon ${statusClass}`;
             if (statusClass === 'processing') {
-                const spinner = document.createElement('div');
-                spinner.className = 'spinner';
-                statusDiv.appendChild(spinner);
-
-                // 设置类名以显示进度条
-                item.classList.add('processing');
-
-                // 使用实际进度或默认值
-                const actualProgress = index.progress_percent || 0;
-                setTimeout(() => {
-                    progressBar.style.width = `${actualProgress}%`;
-                }, 100);
+                statusIcon.innerHTML = '<div class="spinner-small"></div>';
             } else if (statusClass === 'ready') {
-                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-            } else if (statusClass === 'queued') {
-                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
+                statusIcon.innerHTML = '✓';
             } else if (statusClass === 'failed') {
-                statusDiv.innerHTML += `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+                statusIcon.innerHTML = '✗';
+            } else {
+                statusIcon.innerHTML = '○';
             }
 
+            const name = document.createElement('span');
+            name.className = 'deeppdf-index-name-compact';
+            // 移除 .pdf 后缀
+            let displayName = index.pdf_name;
+            if (displayName.toLowerCase().endsWith('.pdf')) {
+                displayName = displayName.slice(0, -4);
+            }
+            name.textContent = displayName;
+            name.title = index.pdf_name; // 完整名称在 tooltip 中
 
-            item.appendChild(statusDiv);
+            // 进度条（仅索引进度中时显示）
+            if (showProgress) {
+                const progressEl = document.createElement('span');
+                progressEl.className = 'deeppdf-index-progress-text';
+                const percent = index.progress_percent || 0;
+                progressEl.textContent = `${Math.round(percent)}%`;
+                name.appendChild(progressEl);
+            }
 
-            // 4. 操作按钮区 (导出按钮 + 删除按钮)
+            item.appendChild(statusIcon);
+            item.appendChild(name);
+
+            // 悬停时显示操作按钮
             const actionsDiv = document.createElement('div');
-            actionsDiv.className = 'deeppdf-index-actions';
-
-            // 导出 Markdown 按钮
-            const exportBtn = document.createElement('button');
-            exportBtn.className = 'deeppdf-btn-icon deeppdf-btn-export';
-            exportBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-            exportBtn.title = '导出 Markdown';
-            exportBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.options.onExportMarkdown?.(index.id);
-            });
+            actionsDiv.className = 'deeppdf-index-actions-compact';
 
             // 删除按钮
             const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'deeppdf-btn-icon deeppdf-btn-danger';
+            deleteBtn.className = 'deeppdf-btn-icon-small';
             deleteBtn.innerHTML = Icons.trash;
-            deleteBtn.title = 'Delete Index';
+            deleteBtn.title = '删除';
             deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // 防止触发选择
-
+                e.stopPropagation();
                 new ConfirmModal(
-                    this.app, // 需要传入 app 实例
-                    'Delete Index',
-                    `Are you sure you want to delete index "${index.pdf_name}"?\nThis action cannot be undone.`,
+                    this.app,
+                    '删除索引',
+                    `确定要删除「${index.pdf_name}」的索引吗？`,
                     () => {
                         this.options.onDeleteIndex?.(index.id);
                     },
                     {
-                        confirmLabel: 'Delete',
+                        confirmLabel: '删除',
                         isDestructive: true
                     }
                 ).open();
             });
 
-            actionsDiv.appendChild(exportBtn);
             actionsDiv.appendChild(deleteBtn);
             item.appendChild(actionsDiv);
 
-            // Add click handler to the entire item for selection
+            // 点击选择
             item.addEventListener('click', (e) => {
-                // Don't trigger if clicking on action buttons or inside actionsDiv
                 const target = e.target as HTMLElement;
-                if (!target.closest('button') && !target.closest('.deeppdf-index-actions')) {
+                if (!target.closest('button')) {
                     this.selectIndex(index.id);
                 }
             });
 
             this.listEl!.appendChild(item);
         });
-    }
-
-    private getStatusIcon(status?: string): string {
-        const s = status || 'completed';
-        if (s === 'processing' || s === 'indexing') {
-            return Icons.file || '📄'; // Blue icon for processing
-        } else if (s === 'completed' || s === 'ready') {
-            return Icons.checkCircle || '✅'; // Green checkmark for ready
-        } else if (s === 'pending' || s === 'queued') {
-            return Icons.clock || '⏱️'; // Clock for queued
-        } else {
-            return Icons.file || '📄';
-        }
     }
 
     /**
@@ -454,14 +371,10 @@ export class IndexManager extends Component {
         const item = this.listEl?.querySelector(`[data-index-id="${indexId}"]`);
         if (!item) return;
 
-        const progressFill = item.querySelector('.deeppdf-index-progress-fill') as HTMLElement;
-        const progressPercentEl = item.querySelector('.deeppdf-index-progress-percent') as HTMLElement;
-
-        if (progressFill) {
-            progressFill.style.width = `${progressPercent}%`;
-        }
-        if (progressPercentEl) {
-            progressPercentEl.textContent = `${Math.round(progressPercent)}%`;
+        // 更新进度文本
+        const progressText = item.querySelector('.deeppdf-index-progress-text') as HTMLElement;
+        if (progressText) {
+            progressText.textContent = `${Math.round(progressPercent)}%`;
         }
     }
 

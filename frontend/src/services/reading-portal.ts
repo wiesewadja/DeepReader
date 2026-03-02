@@ -630,33 +630,42 @@ views:
 filters:
   and:
     - file.inFolder("DeepPDF")
-    - file.ext == "md"
+    - 'file.ext == "md"'
     - file.hasProperty("index_id")
+    - '!file.name.startsWith("📖")'
+
+formulas:
+  status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
+  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "对话")'
+  book_link: 'link(file.path, book_name)'
 
 properties:
-  book_name:
+  formula.book_link:
     displayName: "书名"
+  formula.chat_link:
+    displayName: "操作"
   booklists:
     displayName: "书单"
   tags:
     displayName: "标签"
   progress:
     displayName: "进度%"
-  status:
+  formula.status_label:
     displayName: "状态"
 
 views:
   - type: table
     name: "全部书籍"
-    columns:
-      - file.link as "书名"
-      - booklists as "书单"
-      - tags as "标签"
-      - progress as "进度%"
-      - status as "状态"
+    order:
+      - formula.book_link
+      - formula.chat_link
+      - booklists
+      - tags
+      - progress
+      - formula.status_label
 \`\`\`
 
-> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍，多个值用英文逗号分隔
+> 💡 点击「对话」可开始与 AI 讨论，在表格中直接编辑「书单」和「标签」列即可分类书籍
 
 `;
 
@@ -675,30 +684,37 @@ views:
 filters:
   and:
     - file.inFolder("DeepPDF")
-    - file.ext == "md"
+    - 'file.ext == "md"'
     - file.hasProperty("booklists")
     - 'booklists.includes("${bl}")'
+    - '!file.name.startsWith("📖")'
+
+formulas:
+  status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
+  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "对话")'
+  book_link: 'link(file.path, book_name)'
 
 properties:
-  book_name:
+  formula.book_link:
     displayName: "书名"
-  booklists:
-    displayName: "书单"
+  formula.chat_link:
+    displayName: "操作"
   tags:
     displayName: "标签"
   progress:
     displayName: "进度%"
-  status:
+  formula.status_label:
     displayName: "状态"
 
 views:
   - type: table
     name: "${bl}书籍"
-    columns:
-      - file.link as "书名"
-      - tags as "标签"
-      - progress as "进度%"
-      - status as "状态"
+    order:
+      - formula.book_link
+      - formula.chat_link
+      - tags
+      - progress
+      - formula.status_label
 \`\`\`
 
 [🔍 搜索此书单](obsidian://deeppdf-search?booklists=${encodedBl})
