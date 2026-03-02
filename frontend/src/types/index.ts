@@ -14,6 +14,22 @@ export interface TaskProgress {
     error?: string;
 }
 
+/**
+ * 搜索过滤条件
+ */
+export interface SearchFilters {
+    booklists: string[];
+    tags: string[];
+}
+
+/**
+ * 跨书籍搜索事件参数
+ */
+export interface CrossBookSearchParams {
+    booklists?: string[];
+    tags?: string[];
+}
+
 export const STEP_CONFIG: Record<string, { label: string; icon: string; minPercent: number; maxPercent: number }> = {
     "start": { label: "任务开始", icon: "🚀", minPercent: 0, maxPercent: 5 },
     "init_pageindex": { label: "初始化索引配置", icon: "⚙️", minPercent: 5, maxPercent: 30 },

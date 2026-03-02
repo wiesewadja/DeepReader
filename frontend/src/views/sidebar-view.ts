@@ -9,7 +9,7 @@ import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskPr
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
-import { TaskProgress } from "../types/index.js";
+import { TaskProgress, SearchFilters, CrossBookSearchParams } from "../types/index.js";
 import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
@@ -72,7 +72,7 @@ export class SidebarView extends ItemView {
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private isConnected: boolean = false;  // 后端连接状态
-    private searchFilters: { booklists: string[]; tags: string[] } = { booklists: [], tags: [] };  // 搜索过滤条件
+    private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -104,15 +104,8 @@ export class SidebarView extends ItemView {
             welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
 
             // 显示过滤条件
-            if (this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0) {
-                const parts: string[] = [];
-                if (this.searchFilters.booklists.length > 0) {
-                    parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
-                }
-                if (this.searchFilters.tags.length > 0) {
-                    parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
-                }
-                welcomeContent += `\n\n🔍 当前过滤条件: ${parts.join("; ")}`;
+            if (this.hasSearchFilters()) {
+                welcomeContent += `\n\n🔍 当前过滤条件: ${this.buildFilterDescription()}`;
                 welcomeContent += `\n\n[清除过滤](obsidian://deeppdf-search) | [搜索全部](obsidian://deeppdf-search)`;
             }
         } else {
@@ -125,6 +118,41 @@ export class SidebarView extends ItemView {
             content: welcomeContent,
             timestamp: new Date().toISOString()
         });
+    }
+
+    /** 构建过滤条件描述 */
+    private buildFilterDescription(): string {
+        const parts: string[] = [];
+        if (this.searchFilters.booklists.length > 0) {
+            parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
+        }
+        if (this.searchFilters.tags.length > 0) {
+            parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
+        }
+        return parts.join("; ");
+    }
+
+    /** 检查是否有搜索过滤条件 */
+    private hasSearchFilters(): boolean {
+        return this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0;
+    }
+
+    /** 切换到跨书籍模式 */
+    private async switchToCrossBookMode(options: { clearMessages?: boolean; showWelcome?: boolean } = {}): Promise<void> {
+        if (this.crossBookMode) return;
+
+        this.crossBookMode = true;
+        this.chatInput?.setSearchMode('cross');
+        this.indexManager?.setCrossBookMode(true);
+        this.plugin.settings.lastCrossBookMode = true;
+        await this.plugin.saveSettings();
+
+        if (options.clearMessages !== false) {
+            this.messageList?.clear();
+        }
+        if (options.showWelcome) {
+            this.showWelcomeMessage();
+        }
     }
 
     /** 处理新建会话 */
@@ -792,7 +820,7 @@ export class SidebarView extends ItemView {
 
         // 监听跨书籍搜索事件（带书单/标签过滤）
         this.registerEvent(
-            workspace.on("deeppdf:cross-book-search", async (params: { booklists?: string[]; tags?: string[] }) => {
+            workspace.on("deeppdf:cross-book-search", async (params: CrossBookSearchParams) => {
                 console.log("[DeepPDF] Received cross-book-search event:", params);
 
                 // 保存过滤条件
@@ -802,16 +830,7 @@ export class SidebarView extends ItemView {
                 };
 
                 // 切换到跨书籍模式
-                if (!this.crossBookMode) {
-                    this.crossBookMode = true;
-                    this.chatInput?.setSearchMode('cross');
-                    this.indexManager?.setCrossBookMode(true);
-                    this.plugin.settings.lastCrossBookMode = true;
-                    await this.plugin.saveSettings();
-
-                    // 清空消息
-                    this.messageList?.clear();
-                }
+                await this.switchToCrossBookMode({ clearMessages: true });
             })
         );
 
@@ -820,15 +839,7 @@ export class SidebarView extends ItemView {
             workspace.on("deeppdf:theme-report", async () => {
                 console.log("[DeepPDF] Received theme-report event");
                 // 切换到跨书籍模式并显示欢迎消息
-                if (!this.crossBookMode) {
-                    this.crossBookMode = true;
-                    this.chatInput?.setSearchMode('cross');
-                    this.indexManager?.setCrossBookMode(true);
-                    this.plugin.settings.lastCrossBookMode = true;
-                    await this.plugin.saveSettings();
-                    this.messageList?.clear();
-                    this.showWelcomeMessage();
-                }
+                await this.switchToCrossBookMode({ clearMessages: true, showWelcome: true });
             })
         );
     }
@@ -1494,23 +1505,14 @@ ${r.text}`;
             let indexIds: string[] | undefined = undefined;
             let filterDescription = "";
 
-            if (this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0) {
+            if (this.hasSearchFilters()) {
                 // 初始化 ReadingPortalService（如果需要）
                 if (!this.readingPortal) {
                     this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
                 }
 
                 indexIds = await this.readingPortal.filterIndexIdsByMetadata(this.searchFilters);
-
-                // 构建过滤描述
-                const parts: string[] = [];
-                if (this.searchFilters.booklists.length > 0) {
-                    parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
-                }
-                if (this.searchFilters.tags.length > 0) {
-                    parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
-                }
-                filterDescription = `（过滤条件: ${parts.join("; ")}）`;
+                filterDescription = `（过滤条件: ${this.buildFilterDescription()}）`;
 
                 if (indexIds.length === 0) {
                     this.messageList?.updateMessage(aiMessageId, {

@@ -582,13 +582,24 @@ views:
     const portalPath = normalizePath(`${DEEPPDF_DIR}/📚 图书管理.md`);
     let file = this.app.vault.getAbstractFileByPath(portalPath);
 
-    // 获取所有书单和标签
-    const [booklists, tags] = await Promise.all([
-      this.getAllBooklists(),
-      this.getAllTags(),
-    ]);
+    // 只调用一次 getAllBooksMetadata()，然后从中提取书单和标签
+    const metadataMap = await this.getAllBooksMetadata();
+    const booklists = new Set<string>();
+    const tags = new Set<string>();
 
-    const content = this.generateBookManagementContent(booklists, tags);
+    for (const meta of metadataMap.values()) {
+      for (const bl of meta.booklists) {
+        booklists.add(bl);
+      }
+      for (const tag of meta.tags) {
+        tags.add(tag);
+      }
+    }
+
+    const sortedBooklists = Array.from(booklists).sort();
+    const sortedTags = Array.from(tags).sort();
+
+    const content = this.generateBookManagementContent(sortedBooklists, sortedTags);
 
     if (!file) {
       file = await this.app.vault.create(portalPath, content);
