@@ -166,8 +166,9 @@ export class SidebarView extends ItemView {
         this.startNewSession(this.currentIndexId);
     }
 
-    /** 打开阅读入口（自动同步书籍笔记） */
-    private async openReadingPortal(): Promise<void> {
+
+    /** 打开图书管理入口（自动同步书籍笔记 + 打开图书管理文档） */
+    private async openBookManagement(): Promise<void> {
         if (!this.readingPortal) {
             new Notice("DeepPDF 服务未就绪");
             return;
@@ -177,22 +178,7 @@ export class SidebarView extends ItemView {
             // 先同步书籍笔记
             new Notice("正在同步书籍笔记...");
             await this.readingPortal.syncAllIndexes();
-            // 再打开阅读入口
-            await this.readingPortal.openReadingPortal();
-        } catch (error) {
-            console.error("[DeepPDF] Failed to open reading portal:", error);
-            new Notice("打开阅读入口失败");
-        }
-    }
-
-    /** 打开图书管理入口 */
-    private async openBookManagement(): Promise<void> {
-        if (!this.readingPortal) {
-            new Notice("DeepPDF 服务未就绪");
-            return;
-        }
-
-        try {
+            // 再打开图书管理入口
             await this.readingPortal.openBookManagementPortal();
         } catch (error) {
             console.error("[DeepPDF] Failed to open book management:", error);
@@ -568,7 +554,6 @@ export class SidebarView extends ItemView {
             onNewChat: () => {
                 this.handleNewChat();
             },
-            onOpenReadingPortal: () => this.openReadingPortal(),
             onOpenBookManagement: () => this.openBookManagement()
         });
 
