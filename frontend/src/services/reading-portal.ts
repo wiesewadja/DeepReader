@@ -620,12 +620,50 @@ views:
   private generateBookManagementContent(booklists: string[], tags: string[]): string {
     const vaultName = encodeURIComponent(this.app.vault.getName());
 
-    // 生成书单部分
-    let booklistsSection = "暂无书单，请在书籍笔记中添加 `booklists` 属性";
+    // 生成书单部分 - 始终显示全部书籍表格
+    let booklistsSection = "";
+
+    // 全部书籍表格（始终显示）
+    booklistsSection += `### 📋 全部书籍
+
+\`\`\`base
+filters:
+  and:
+    - file.inFolder("DeepPDF")
+    - file.ext == "md"
+    - file.hasProperty("index_id")
+
+properties:
+  book_name:
+    displayName: "书名"
+  booklists:
+    displayName: "书单"
+  tags:
+    displayName: "标签"
+  progress:
+    displayName: "进度%"
+  status:
+    displayName: "状态"
+
+views:
+  - type: table
+    name: "全部书籍"
+\`\`\`
+
+> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍
+
+`;
+
+    // 按书单分组（如果有书单的话）
     if (booklists.length > 0) {
-      booklistsSection = booklists.map(bl => {
+      booklistsSection += `---
+
+### 📁 按书单分类
+
+`;
+      booklistsSection += booklists.map(bl => {
         const encodedBl = encodeURIComponent(bl);
-        return `### ${bl}
+        return `#### ${bl}
 
 \`\`\`base
 filters:
@@ -653,13 +691,15 @@ views:
       }).join("\n");
     }
 
-    // 生成标签云
-    let tagsSection = "暂无标签，请在书籍笔记中添加 `tags` 属性";
+    // 生成标签云 - 始终显示提示
+    let tagsSection = "";
     if (tags.length > 0) {
       tagsSection = tags.map(tag => {
         const encodedTag = encodeURIComponent(tag);
         return `[${tag}](obsidian://deeppdf-search?tags=${encodedTag})`;
       }).join(" · ");
+    } else {
+      tagsSection = "暂无标签，可在上方表格中直接添加";
     }
 
     return `---
@@ -670,11 +710,11 @@ deeppdf_book_management: true
 
 管理所有已索引的书籍，支持书单分类和标签过滤。
 
-> 💡 点击「搜索此书单」可在侧边栏中搜索该书单下的书籍内容
+> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍，多个值用逗号分隔
 
 ---
 
-## 📖 书单
+## 📖 书籍列表
 
 ${booklistsSection}
 
