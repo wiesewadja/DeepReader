@@ -4,13 +4,13 @@
 将用户主题拆解为多个子问题，以便更全面地搜索相关内容。
 """
 
-import json
 import logging
 import re
 from typing import List, Optional
 
 from openai import OpenAI
 
+from deeppdf.utils import parse_json_array
 from .prompts import QUERY_EXPANSION_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -110,23 +110,11 @@ class QueryExpander:
         Returns:
             子问题列表
         """
-        # 尝试直接解析
-        try:
-            result = json.loads(content)
-            if isinstance(result, list):
-                return [str(item) for item in result if item]
-        except json.JSONDecodeError:
-            pass
+        # 使用统一的 JSON 解析工具
+        result = parse_json_array(content, default=[])
 
-        # 尝试提取 JSON 数组
-        json_match = re.search(r"\[.*?\]", content, re.DOTALL)
-        if json_match:
-            try:
-                result = json.loads(json_match.group())
-                if isinstance(result, list):
-                    return [str(item) for item in result if item]
-            except json.JSONDecodeError:
-                pass
+        if result:
+            return [str(item) for item in result if item]
 
         # 尝试按行分割（可能没有 JSON 格式）
         lines = content.strip().split("\n")

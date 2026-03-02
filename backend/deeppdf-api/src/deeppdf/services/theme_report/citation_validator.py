@@ -4,7 +4,6 @@
 验证报告中的引用是否准确反映原始内容，减少幻觉。
 """
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -12,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
+from deeppdf.utils import parse_json_object
 from .deep_searcher import SearchResult
 from .prompts import CITATION_VALIDATION_PROMPT, REFLECTION_PROMPT
 
@@ -291,21 +291,7 @@ class CitationValidator:
         Returns:
             解析后的字典
         """
-        # 尝试直接解析
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # 尝试提取 JSON 块
-        json_match = re.search(r"\{[\s\S]*\}", content)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-
-        return {}
+        return parse_json_object(content, default={})
 
 
 class ReflectionEngine:

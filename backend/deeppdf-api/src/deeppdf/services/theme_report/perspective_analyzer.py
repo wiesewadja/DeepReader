@@ -5,14 +5,13 @@
 """
 
 import asyncio
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
+from deeppdf.utils import parse_json_object
 from .deep_searcher import SearchResult
 from .prompts import ROLE_PLAY_PROMPTS
 from .report_generator import BookPerspective
@@ -274,21 +273,7 @@ class PerspectiveAnalyzer:
 
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
         """解析 JSON 响应"""
-        # 尝试直接解析
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            pass
-
-        # 尝试提取 JSON 对象
-        json_match = re.search(r"\{[\s\S]*\}", content)
-        if json_match:
-            try:
-                return json.loads(json_match.group())
-            except json.JSONDecodeError:
-                pass
-
-        return {}
+        return parse_json_object(content, default={})
 
     async def extract_all_perspectives(
         self,

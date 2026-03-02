@@ -2,8 +2,38 @@
 API 请求/响应模型
 """
 
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Literal
+
+
+# ========== 枚举类型 ==========
+
+
+class TaskStatus(str, Enum):
+    """任务状态"""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ReportType(str, Enum):
+    """报告类型"""
+
+    EXPLORATORY = "exploratory"
+    COMPARATIVE = "comparative"
+    PRACTICAL = "practical"
+
+
+class ConfidenceLevel(str, Enum):
+    """置信度级别"""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 
 # ========== 请求模型 ==========
@@ -149,7 +179,7 @@ class TaskProgressResponse(BaseModel):
     """任务进度响应"""
 
     id: str
-    status: str  # pending, processing, completed, failed, cancelled
+    status: TaskStatus  # 使用枚举类型
     message: str
     pdf_path: Optional[str] = None
     created_at: Optional[str] = None
@@ -366,7 +396,7 @@ class EnhancedThemeReportRequest(BaseModel):
     enable_role_play: bool = Field(False, description="启用角色扮演分析（P1）")
     enable_reflection: bool = Field(False, description="启用自我反思（P1）")
     max_sub_queries: int = Field(5, description="最大子问题数", ge=1, le=10)
-    report_type: Optional[str] = Field(
+    report_type: Optional[ReportType] = Field(
         None, description="报告类型：exploratory/comparative/practical，不传则自动分类"
     )
 
@@ -401,7 +431,7 @@ class EnhancedThemeReportResponse(BaseModel):
 
     # 元信息
     expanded_queries: List[str] = Field(default_factory=list, description="扩展的子问题")
-    report_type: str = Field(..., description="实际使用的报告类型")
+    report_type: ReportType = Field(..., description="实际使用的报告类型")
     books_searched: int = Field(0, description="搜索的书籍数量")
     total_sources: int = Field(0, description="总引用数")
 

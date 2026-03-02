@@ -55,6 +55,7 @@ from ..services.file_storage import FileStorage
 from ..services.chat_storage import chat_storage
 from ..config import settings
 from ..agent.core import AgentError, LLMError
+from ..utils.cache import TTLCache
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,9 @@ _running_tasks: Dict[str, Dict] = {}
 # 全局 Agent 会话缓存：session_key -> Agent 实例
 # session_key 格式: f"{index_id}_{session_id}"
 _agent_sessions: Dict[str, "DeepPDFAgent"] = {}
+
+# 索引列表缓存（TTL 30秒）
+_index_list_cache = TTLCache[str, Dict](ttl_seconds=30.0, max_size=10)
 
 
 
@@ -545,7 +549,17 @@ async def query_index(req: QueryRequest):
 async def list_all_indexes():
     """列出所有索引（包括正在进行的任务）"""
     logger.info("[API] 收到列出索引请求")
-    result = await list_indexes(str(settings.base_dir))
+
+    # 尝试从缓存获取
+    cache_key = "all_indexes"
+    cached_result = _index_list_cache.get(cache_key)
+    if cached_result is not None:
+        logger.debug("[API] 使用缓存的索引列表")
+        result = cached_result
+    else:
+        result = await list_indexes(str(settings.base_dir))
+        _index_list_cache.set(cache_key, result)
+        logger.debug("[API] 索引列表已缓存")
 
     # 为已完成的索引添加 status 字段
     all_indexes = []
