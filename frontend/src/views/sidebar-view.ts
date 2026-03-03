@@ -152,6 +152,9 @@ export class SidebarView extends ItemView {
         this.plugin.settings.lastCrossBookMode = true;
         await this.plugin.saveSettings();
 
+        // 清空当前 PDF 名称（跨书籍模式不显示快捷操作按钮）
+        this.messageList?.setCurrentPdfName('');
+
         if (options.clearMessages !== false) {
             this.messageList?.clear();
         }
@@ -352,6 +355,12 @@ export class SidebarView extends ItemView {
                 const index = (this.indexManager as any).indexes?.find((i: any) => i.id === indexId);
                 if (index) {
                     this.currentPdfName = index.pdf_name;
+                    // 更新消息列表的当前 PDF 名称（用于显示快捷操作）
+                    let displayName = index.pdf_name;
+                    if (displayName.toLowerCase().endsWith('.pdf')) {
+                        displayName = displayName.slice(0, -4);
+                    }
+                    this.messageList?.setCurrentPdfName(displayName);
                     new Notice(`已切换到索引: ${index.pdf_name}`);
                 }
 
@@ -847,6 +856,9 @@ export class SidebarView extends ItemView {
             },
             onQuestionClick: (question: string) => {
                 this.handleQuestionClick(question);
+            },
+            onGenerateOutline: () => {
+                this.handleGenerateOutline();
             }
         }, this.app);
 
@@ -1990,6 +2002,15 @@ ${r.text}`;
         console.log('[DeepPDF] 追问问题点击:', question);
         // 自动发送问题
         this.sendMessage(question);
+    }
+
+    /**
+     * 生成阅读大纲
+     */
+    private handleGenerateOutline(): void {
+        console.log('[DeepPDF] 生成阅读大纲');
+        const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
+        this.sendMessage(prompt);
     }
 
     async updateStatus(): Promise<void> {

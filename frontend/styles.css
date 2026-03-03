@@ -1641,6 +1641,63 @@
 	line-height: 1.5;
 }
 
+/* ==================== 快捷操作按钮 ==================== */
+
+.deeppdf-quick-actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3, 0.75rem);
+	margin-top: var(--size-4-4, 1rem);
+	width: 100%;
+	max-width: 320px;
+}
+
+.deeppdf-quick-action-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-3, 0.75rem);
+	padding: var(--size-4-3, 0.75rem) var(--size-4-4, 1rem);
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	cursor: pointer;
+	transition: all 0.15s ease;
+	text-align: left;
+	width: 100%;
+}
+
+.deeppdf-quick-action-btn:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.deeppdf-quick-action-icon {
+	font-size: 24px;
+	flex-shrink: 0;
+}
+
+.deeppdf-quick-action-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.deeppdf-quick-action-title {
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-normal);
+	margin-bottom: 2px;
+}
+
+.deeppdf-quick-action-desc {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* ==================== 消息项动画 ==================== */
 
 .deeppdf-message {

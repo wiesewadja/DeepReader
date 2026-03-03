@@ -21,6 +21,8 @@ export interface MessageCallbacks {
 	onCitationJump?: (citation: CitationData) => void;
 	/** 追问问题点击 */
 	onQuestionClick?: (question: string) => void;
+	/** 生成阅读大纲点击 */
+	onGenerateOutline?: () => void;
 }
 
 /**
@@ -31,14 +33,24 @@ export class MessageList extends Component {
 	private messages: Map<string, Message> = new Map();
 	private messagesContainer: HTMLElement | null = null;
 	private emptyState: HTMLElement | null = null;
+	private quickActionsEl: HTMLElement | null = null;
 	private callbacks: MessageCallbacks;
 	private app?: App;
+	private currentPdfName: string = '';
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
 		this.callbacks = callbacks;
 		this.app = app;
 		this.el = this.render();
+	}
+
+	/**
+	 * 设置当前 PDF 名称（用于空状态显示）
+	 */
+	setCurrentPdfName(name: string): void {
+		this.currentPdfName = name;
+		this.updateEmptyState();
 	}
 
 	/**
@@ -62,6 +74,11 @@ export class MessageList extends Component {
 		emptyIcon.textContent = '💬';
 		this.emptyState.createEl('div', { cls: 'deeppdf-empty-text', text: '开始对话' });
 		this.emptyState.createEl('div', { cls: 'deeppdf-empty-hint', text: '发送消息开始与 DeepPDF 对话' });
+
+		// 快捷操作区域
+		this.quickActionsEl = this.emptyState.createEl('div', {
+			cls: 'deeppdf-quick-actions'
+		});
 
 		// 初始显示空状态
 		this.updateEmptyState();
@@ -247,7 +264,7 @@ export class MessageList extends Component {
 	 * 更新空状态显示
 	 */
 	private updateEmptyState(): void {
-		if (!this.emptyState || !this.messagesContainer) {
+		if (!this.emptyState || !this.messagesContainer || !this.quickActionsEl) {
 			return;
 		}
 
@@ -259,6 +276,43 @@ export class MessageList extends Component {
 		} else {
 			this.emptyState.removeClass('deeppdf-hidden');
 			this.messagesContainer.addClass('deeppdf-hidden');
+
+			// 更新快捷操作按钮
+			this.renderQuickActions();
+		}
+	}
+
+	/**
+	 * 渲染快捷操作按钮
+	 */
+	private renderQuickActions(): void {
+		if (!this.quickActionsEl) return;
+
+		// 清空现有内容
+		this.quickActionsEl.empty();
+
+		// 如果有当前 PDF 名称，显示生成阅读大纲按钮
+		if (this.currentPdfName && this.callbacks.onGenerateOutline) {
+			const outlineBtn = this.quickActionsEl.createEl('button', {
+				cls: 'deeppdf-quick-action-btn deeppdf-outline-btn'
+			});
+
+			// 图标
+			const icon = outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-icon' });
+			icon.textContent = '📋';
+
+			// 文本容器
+			const textContainer = outlineBtn.createEl('div', { cls: 'deeppdf-quick-action-text' });
+			textContainer.createEl('div', { cls: 'deeppdf-quick-action-title', text: '生成阅读大纲' });
+			textContainer.createEl('div', {
+				cls: 'deeppdf-quick-action-desc',
+				text: `针对《${this.currentPdfName}》的目录，整理重点和阅读方案`
+			});
+
+			// 点击事件
+			outlineBtn.addEventListener('click', () => {
+				this.callbacks.onGenerateOutline?.();
+			});
 		}
 	}
 
