@@ -264,6 +264,16 @@ export interface AgentRequest {
   index_id: string;
   session_id?: string;
   keep_history?: boolean;
+  context_docs?: ContextDoc[];
+}
+
+/**
+ * 上下文文档（章节辅助阅读）
+ */
+export interface ContextDoc {
+  path: string;
+  name: string;
+  content: string;
 }
 
 /**
@@ -875,11 +885,12 @@ export class DeepPDFClient {
     forceMode?: string,
     includeCitations?: boolean,
     sessionId?: string,
-    keepHistory?: boolean
+    keepHistory?: boolean,
+    contextDocs?: ContextDoc[]
   ): AbortController {
     const controller = new AbortController();
 
-    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, sessionId, baseUrl: this.baseUrl });
+    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, sessionId, contextDocs: contextDocs?.length, baseUrl: this.baseUrl });
 
     // 构建请求体
     const body: any = {
@@ -893,6 +904,9 @@ export class DeepPDFClient {
     }
     if (includeCitations) {
       body.include_citations = true;
+    }
+    if (contextDocs && contextDocs.length > 0) {
+      body.context_docs = contextDocs;
     }
 
     fetch(`${this.baseUrl}/api/chat/agent/stream`, {

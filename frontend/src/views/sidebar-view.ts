@@ -20,6 +20,8 @@ import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { agentAPI } from "../api/index.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
+import { ContextManager } from "../services/context-manager.js";
+import { ContextTags } from "../components/context-tags/index.js";
 
 // ==================== 类型映射 ====================
 
@@ -72,6 +74,10 @@ export class SidebarView extends ItemView {
     private isConnected: boolean = false;  // 后端连接状态
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
+
+    // 上下文管理（章节辅助阅读）
+    private contextManager: ContextManager | null = null;
+    private contextTags: ContextTags | null = null;
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -659,6 +665,14 @@ export class SidebarView extends ItemView {
             this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
         }
 
+        // 初始化上下文管理器（章节辅助阅读）
+        this.contextManager = new ContextManager({
+            app: this.app,
+            onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
+                this.contextTags?.updateDocuments(docs);
+            }
+        });
+
         // 创建索引管理区 (新)
         this.createIndexManager(container);
 
@@ -848,7 +862,18 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建聊天输入组件（包含模式切换按钮）
+        // 创建上下文标签组件（显示已加载的文档）
+        this.contextTags = new ContextTags({
+            onRemove: (path: string) => {
+                this.contextManager?.removeDocument(path);
+            }
+        });
+        const contextTagsEl = this.contextTags.getElement();
+        if (contextTagsEl) {
+            section.appendChild(contextTagsEl);
+        }
+
+        // 创建聊天输入组件（包含模式切换按钮和加载文档按钮）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
             onSend: (message: string) => {
@@ -857,13 +882,45 @@ export class SidebarView extends ItemView {
             searchMode: this.crossBookMode ? 'cross' : 'single',
             onModeToggle: () => {
                 this.toggleSearchMode();
-            }
+            },
+            onLoadCurrentDoc: async () => {
+                await this.loadCurrentDocument();
+            },
+            app: this.app
         });
 
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
             section.appendChild(chatInputEl);
         }
+    }
+
+    /**
+     * 加载当前文档到上下文
+     */
+    private async loadCurrentDocument(): Promise<void> {
+        if (!this.contextManager) return;
+
+        const doc = await this.contextManager.loadCurrentDocument();
+        if (doc) {
+            new Notice(`已加载: ${doc.name}`);
+        }
+    }
+
+    /**
+     * 获取上下文文档列表（用于 API 调用）
+     */
+    private getContextDocs(): import("../api/http-client.js").ContextDoc[] | undefined {
+        if (!this.contextManager) return undefined;
+
+        const docs = this.contextManager.getLoadedDocuments();
+        if (docs.size === 0) return undefined;
+
+        return Array.from(docs.values()).map(doc => ({
+            path: doc.path,
+            name: doc.name,
+            content: doc.content
+        }));
     }
 
     /**
@@ -1357,7 +1414,8 @@ ${r.text}`;
                 forceMode,  // 传递强制模式参数
                 true,       // 启用引用数据提取
                 this.sessionId || undefined,  // 传递会话ID
-                true        // 启用历史记录
+                true,       // 启用历史记录
+                this.getContextDocs()  // 传递上下文文档
             );
 
             // 保存 controller 用于取消

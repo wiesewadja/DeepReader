@@ -4,7 +4,7 @@ API 请求/响应模型
 
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal
 
 
 # ========== 枚举类型 ==========
@@ -234,6 +234,9 @@ class AgentRequest(BaseModel):
     force_mode: Optional[str] = Field(
         None,
         description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)",
+    )
+    context_docs: Optional[List[Dict[str, Any]]] = Field(
+        None, description="用户加载的上下文文档列表，每个文档包含 path, name, content"
     )
 
     @field_validator("force_mode")

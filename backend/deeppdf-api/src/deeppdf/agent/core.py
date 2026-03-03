@@ -228,6 +228,9 @@ class DeepPDFAgent:
             []
         )  # 当前轮次的历史（工具调用等）
 
+        # 上下文文档（用户加载的章节、笔记等）
+        self.context_docs: Optional[List[Dict[str, Any]]] = None
+
         logger.info(f"[Agent初始化] Provider={llm_provider}, Model={self.llm_model}")
 
     def _get_default_model(self, provider: str) -> str:
@@ -692,8 +695,23 @@ class DeepPDFAgent:
         self.current_turn_history.clear()
         logger.info("🔄 [当前轮次] 已清空，开始新轮次")
 
+        # 构建用户消息（包含上下文文档）
+        user_content = query
+        if self.context_docs and len(self.context_docs) > 0:
+            # 构建上下文文档部分
+            context_parts = ["\n\n---\n**用户提供的参考文档：**\n"]
+            for doc in self.context_docs:
+                doc_name = doc.get("name", "未知文档")
+                doc_content = doc.get("content", "")
+                context_parts.append(f"\n### 📄 {doc_name}\n\n{doc_content}\n")
+            context_parts.append("\n---\n")
+
+            # 将上下文附加到用户查询前
+            user_content = "".join(context_parts) + "\n\n**用户问题：**\n" + query
+            logger.info(f"📚 [上下文文档] 已加载 {len(self.context_docs)} 个文档")
+
         # 记录用户查询到当前轮次
-        self.current_turn_history.append({"role": "user", "content": query})
+        self.current_turn_history.append({"role": "user", "content": user_content})
 
         # ========== 🎯 阶段2: 路由判断 ==========
         logger.info("")

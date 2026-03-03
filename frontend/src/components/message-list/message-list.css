@@ -20,11 +20,12 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 增加底部 padding，防止被悬浮输入框遮挡 */
-	padding: 16px 16px 110px 16px;
+	/* 与输入框对齐：左右留白 5%，增加底部 padding 防止被悬浮输入框遮挡 */
+	padding: 16px 5% 110px 5%;
 
 	display: flex;
 	flex-direction: column;
+	align-items: center;
 	gap: 16px;
 
 	/* 自定义滚动条样式 */
@@ -174,7 +175,8 @@
 
 @media (max-width: 640px) {
 	.deeppdf-messages-container {
-		padding: var(--size-4-2, 0.5rem);
+		/* 小屏幕减少留白 */
+		padding: var(--size-4-2, 0.5rem) 3% 110px 3%;
 		gap: var(--size-4-2, 0.5rem);
 	}
 

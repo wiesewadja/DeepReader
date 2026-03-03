@@ -1,0 +1,69 @@
+/**
+ * DeepPDF 上下文标签组件样式
+ */
+
+.deeppdf-context-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-context-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.deeppdf-context-tag-icon {
+    font-size: 10px;
+}
+
+.deeppdf-context-tag-name {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.deeppdf-context-tag-count {
+    opacity: 0.8;
+    font-size: 10px;
+}
+
+.deeppdf-context-tag-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-left: 2px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.deeppdf-context-tag-remove:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.deeppdf-context-summary {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-muted);
+}

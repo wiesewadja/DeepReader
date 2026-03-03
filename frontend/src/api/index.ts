@@ -37,6 +37,7 @@ export type {
   AgentResponse,
   AgentStreamChunk,
   CitationInfo,
+  ContextDoc,
   ReadingProgress,
   UpdateProgressRequest
 } from './http-client';
@@ -208,8 +209,9 @@ export const agentAPI = {
     forceMode?: string,
     includeCitations?: boolean,
     sessionId?: string,
-    keepHistory?: boolean
-  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode, includeCitations, sessionId, keepHistory),
+    keepHistory?: boolean,
+    contextDocs?: import('./http-client').ContextDoc[]
+  ) => deeppdfClient.agentChatStream(query, indexId, onChunk, onComplete, onError, forceMode, includeCitations, sessionId, keepHistory, contextDocs),
 
   /**
    * 获取会话历史

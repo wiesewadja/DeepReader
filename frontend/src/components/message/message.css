@@ -18,7 +18,7 @@
 }
 
 .deeppdf-message-assistant {
-	justify-content: flex-start;
+	justify-content: flex-end;
 }
 
 /* ==================== 消息包装器 ==================== */
@@ -27,7 +27,7 @@
 	display: flex;
 	align-items: flex-start;
 	gap: var(--size-4-2, 0.55rem);
-	max-width: 95%;
+	width: 100%;
 }
 
 .deeppdf-message-user .deeppdf-message-wrapper {
@@ -35,7 +35,7 @@
 }
 
 .deeppdf-message-assistant .deeppdf-message-wrapper {
-	flex-direction: row;
+	flex-direction: row-reverse;
 }
 
 /* ==================== AI 头像 ==================== */

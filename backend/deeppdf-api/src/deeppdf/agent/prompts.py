@@ -3,7 +3,7 @@
 Agent Prompt 管理 - 定义 System Prompt 和路由逻辑
 """
 import re
-from typing import TYPE_CHECKING, Any, Dict, List, TypedDict
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 
 if TYPE_CHECKING:
     from .executor import ToolExecutor
@@ -699,6 +699,7 @@ def build_messages(
     user_query: str,
     history: List[Dict[str, str]],
     tool_results: List[ToolCallData],
+    context_docs: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """
     构建对话消息列表
@@ -707,6 +708,7 @@ def build_messages(
         user_query: 用户查询
         history: 历史对话
         tool_results: 工具执行结果
+        context_docs: 用户加载的上下文文档列表
 
     Returns:
         消息列表
@@ -716,8 +718,22 @@ def build_messages(
     # 添加历史对话
     messages.extend(history)
 
+    # 构建用户查询（包含上下文文档）
+    query_content = user_query
+    if context_docs and len(context_docs) > 0:
+        # 构建上下文文档部分
+        context_parts = ["\n\n---\n**用户提供的参考文档：**\n"]
+        for doc in context_docs:
+            doc_name = doc.get("name", "未知文档")
+            doc_content = doc.get("content", "")
+            context_parts.append(f"\n### 📄 {doc_name}\n\n{doc_content}\n")
+        context_parts.append("\n---\n")
+
+        # 将上下文附加到用户查询前
+        query_content = "".join(context_parts) + "\n\n**用户问题：**\n" + user_query
+
     # 添加当前查询
-    messages.append({"role": "user", "content": user_query})
+    messages.append({"role": "user", "content": query_content})
 
     # 添加工具调用结果
     for result in tool_results:

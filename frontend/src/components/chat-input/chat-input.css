@@ -9,23 +9,20 @@
 .deeppdf-chat-input-section {
 	position: absolute;
 	bottom: 40px;
-	left: 50%;
-	transform: translateX(-50%);
+	left: 5%;
+	right: 5%;
 	width: 90%;
-	max-width: 800px;
 	z-index: 100;
 	transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
 .deeppdf-chat-input-section.hidden {
-	transform: translateX(-50%) translateY(150%);
 	opacity: 0;
 	pointer-events: none;
 }
 
 /* AI 回复时的最小化状态 */
 .deeppdf-chat-input-section.minimized {
-	transform: translateX(-50%) translateY(120%) !important;
 	opacity: 0.5 !important;
 	pointer-events: auto;
 	cursor: pointer;
@@ -37,7 +34,6 @@
 
 .deeppdf-chat-input-section.minimized:hover {
 	opacity: 0.8 !important;
-	transform: translateX(-50%) translateY(115%) !important;
 }
 
 /* 最小化时隐藏输入框内容 */
@@ -323,10 +319,16 @@
 /* ==================== 响应式微调 ==================== */
 
 @media (max-width: 600px) {
+	.deeppdf-chat-input-section {
+		left: 3%;
+		right: 3%;
+		width: 94%;
+	}
+
 	.deeppdf-mode-switch-btn .mode-name {
 		display: none; /* 移动端只显示图标 */
 	}
-	
+
 	.deeppdf-mode-switch-btn {
 		padding: 6px;
 		border-radius: 50%;

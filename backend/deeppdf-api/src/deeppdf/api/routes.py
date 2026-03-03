@@ -5,9 +5,8 @@ API 路由定义
 import asyncio
 import json
 import logging
-import os
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request
@@ -912,7 +911,9 @@ def _extract_citations_from_answer(answer: str, index_id: str) -> list[CitationI
 
 
 async def _load_agent_for_request(
-    index_id: str, enable_llm_tree_search: bool = False
+    index_id: str,
+    enable_llm_tree_search: bool = False,
+    context_docs: Optional[List[Dict[str, Any]]] = None,
 ) -> "DeepPDFAgent":
     """
     为请求加载 DeepPDF Agent
@@ -920,6 +921,7 @@ async def _load_agent_for_request(
     Args:
         index_id: PDF 索引 ID
         enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
+        context_docs: 用户加载的上下文文档列表
 
     Returns:
         配置好的 DeepPDFAgent 实例
@@ -1030,6 +1032,11 @@ async def _load_agent_for_request(
             max_iterations=settings.agent_max_iterations,
         )
 
+        # 设置上下文文档（章节辅助阅读）
+        if context_docs:
+            agent.context_docs = context_docs
+            logger.info(f"📚 [上下文文档] 已加载 {len(context_docs)} 个文档到 Agent")
+
         logger.info("✅ [Agent创建] DeepPDFAgent 实例创建成功")
         logger.info(f"   🛠️  可用工具数: {len(agent.executor.tools)}")
         logger.info(f"   🛠️  工具列表: {', '.join(agent.executor.tools.keys())}")
@@ -1117,10 +1124,14 @@ async def agent_chat(req: AgentRequest, http_request: Request):
         if req.session_id and session_key in _agent_sessions:
             agent = _agent_sessions[session_key]
             logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
+            # 更新上下文文档（即使是复用的 Agent）
+            if req.context_docs:
+                agent.context_docs = req.context_docs
+                logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
         else:
             # 创建新 Agent
             agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search
+                req.index_id, req.enable_llm_tree_search, req.context_docs
             )
 
             # 尝试加载历史（如果有 session_id）
@@ -1232,10 +1243,14 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             logger.info(
                 f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息"
             )
+            # 更新上下文文档（即使是复用的 Agent）
+            if req.context_docs:
+                agent.context_docs = req.context_docs
+                logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
         else:
             # 创建新 Agent
             agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search
+                req.index_id, req.enable_llm_tree_search, req.context_docs
             )
 
             # 尝试加载历史（如果有 session_id）
