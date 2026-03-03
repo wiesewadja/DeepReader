@@ -108,7 +108,7 @@ export class SidebarView extends ItemView {
                 welcomeContent += `\n\n[清除过滤](obsidian://deeppdf-search) | [搜索全部](obsidian://deeppdf-search)`;
             }
         } else {
-            welcomeContent = `已切换到文档 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
+            welcomeContent = `已切换到书籍 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
         }
 
         this.messageList.addMessage({
@@ -244,9 +244,9 @@ export class SidebarView extends ItemView {
         // 2. 过滤有效消息
         const validMsgs = allMessages.filter((m: any) =>
             (m.role === 'user' || m.role === 'assistant') &&
-            !m.content.includes("已切换到文档") &&
+            !m.content.includes("已切换到书籍") &&
             m.content !== "📖 正在翻阅..." &&
-            m.content !== "🔍 正在跨书籍搜索..." &&
+            m.content !== "🔍 正在跨书籍查阅..." &&
             m.content // 确保有内容
         );
 
@@ -1004,7 +1004,7 @@ export class SidebarView extends ItemView {
                 // 重试模式：复用原来的消息 ID，更新消息内容为加载状态
                 aiMessageId = regenerateMessageId;
                 this.messageList?.updateMessage(aiMessageId, {
-                    content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
+                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
                     isStreaming: true,
                     citations: undefined,
                     followUpQuestions: undefined
@@ -1028,7 +1028,7 @@ export class SidebarView extends ItemView {
                 const aiMessageData: MessageData = {
                     id: aiMessageId,
                     role: "assistant" as MessageRole,
-                    content: this.crossBookMode ? "🔍 正在跨书籍搜索..." : "📖 正在翻阅...",
+                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true  // 默认使用 Agent 模式（自动路由）

@@ -3049,31 +3049,46 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 20px;
+    height: 20px;
     border-radius: 4px;
-    border: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary);
-    color: var(--text-muted);
+    border: none;
+    background: transparent;
+    /* 使用 text-normal 而非 text-muted 确保可见性，并提供备用值 */
+    color: var(--text-normal, #e0e0e0);
     cursor: pointer;
     padding: 0;
     transition: all 0.15s;
+    /* 确保内容可见 */
+    opacity: 1 !important;
+    visibility: visible !important;
 }
 
 .deeppdf-btn-icon-small:hover {
-    background: var(--background-modifier-hover);
-    color: var(--text-normal);
-    border-color: var(--background-modifier-border-hover);
+    background: var(--background-modifier-hover, #3a3a3a);
+    color: var(--text-on-accent, #ffffff);
+    /* hover 时使用主题强调色背景增强可见性 */
+    background-color: var(--interactive-accent, #7c3aed) !important;
 }
 
 .deeppdf-btn-icon-small.delete:hover {
-    color: var(--color-red, #ef4444);
-    border-color: var(--color-red, #ef4444);
+    color: #ffffff !important;
+    background-color: var(--color-red, #ef4444) !important;
 }
 
+/* 确保 SVG 图标继承颜色并可见 */
 .deeppdf-btn-icon-small svg {
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
+    stroke: currentColor;
+    fill: none;
+    /* 强制继承 */
+    color: inherit;
+}
+
+.deeppdf-btn-icon-small:hover svg {
+    stroke: currentColor;
+    color: inherit;
 }
 
 /**
