@@ -60,15 +60,18 @@ class MarkdownLocator:
             page_num: 页码（可选）
 
         Returns:
-            Obsidian 链接格式: [[file.md#^page-N]] 或 [[file.md]]
+            Obsidian 链接格式: [[file.md#^page-N|第N页]] 或 [[pdf_name#^page-N|第N页]]
         """
         markdown_file = self.find_file(node_id)
-        if not markdown_file:
-            return f"[[{self.pdf_name}]]"
+        # 确定链接目标：优先使用 Markdown 文件，否则使用 PDF 名称
+        link_target = markdown_file if markdown_file else self.pdf_name
+
         if page_num is not None:
-            return f"[[{markdown_file}#^page-{page_num}]]"
+            # 带页码的链接：[[目标#^page-N|第N页]]
+            return f"[[{link_target}#^page-{page_num}|第{page_num}页]]"
         else:
-            return f"[[{markdown_file}]]"
+            # 无页码的链接：[[目标]]
+            return f"[[{link_target}]]"
 
     def generate_citation_metadata(
         self, node_id: str, page_num: Optional[int], text: str

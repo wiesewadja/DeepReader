@@ -421,11 +421,27 @@ class HybridSearchTool:
                         logger.warning(
                             f"[工具调用] 搜索结果缺少 node_id，metadata={metadata}"
                         )
-                    # 回退到基本元数据
+                    # 回退到基本元数据，但仍需生成 obsidian_link
+                    # 使用 markdown_locator 的 pdf_name 或从 metadata 获取
+                    pdf_name = "Unknown"
+                    if self.markdown_locator and hasattr(self.markdown_locator, 'pdf_name'):
+                        pdf_name = self.markdown_locator.pdf_name
+                    elif metadata.get("pdf_name"):
+                        pdf_name = metadata.get("pdf_name")
+                        # 移除 .pdf 后缀
+                        if pdf_name:
+                            pdf_name = pdf_name.removesuffix(".pdf").removesuffix(".PDF")
+
+                    anchor = f"^page-{page_num}" if page_num is not None else ""
+                    display_text = f"第{page_num}页" if page_num is not None else ""
+                    obsidian_link = f"[[{pdf_name}#{anchor}|{display_text}]]" if anchor else f"[[{pdf_name}]]"
+
                     structured_results.append(
                         {
                             "text": text,
                             "page": page_num,
+                            "obsidian_link": obsidian_link,
+                            "anchor": anchor,
                             "metadata": metadata,
                         }
                     )
