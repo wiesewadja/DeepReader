@@ -908,6 +908,48 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 解析消息中的文档引用并自动加载
+     * 支持 [[文件名]] 格式的引用
+     */
+    private async parseAndLoadReferences(message: string): Promise<void> {
+        if (!this.contextManager) return;
+
+        // 匹配 [[文件名]] 格式
+        const wikilinkRegex = /\[\[([^\]]+)\]\]/g;
+        const matches = [...message.matchAll(wikilinkRegex)];
+
+        if (matches.length === 0) return;
+
+        // 获取所有 Markdown 文件
+        const files = this.app.vault.getMarkdownFiles();
+        const loadedNames: string[] = [];
+
+        for (const match of matches) {
+            const fileName = match[1];
+
+            // 查找匹配的文件
+            const file = files.find(f =>
+                f.basename === fileName ||
+                f.basename.toLowerCase() === fileName.toLowerCase() ||
+                f.path.endsWith(fileName) ||
+                f.path.toLowerCase().endsWith(fileName.toLowerCase())
+            );
+
+            if (file) {
+                const doc = await this.contextManager.loadByPath(file.path, 'wikilink');
+                if (doc) {
+                    loadedNames.push(doc.name);
+                }
+            }
+        }
+
+        // 显示加载提示
+        if (loadedNames.length > 0) {
+            new Notice(`已加载引用文档: ${loadedNames.join(', ')}`);
+        }
+    }
+
+    /**
      * 获取上下文文档列表（用于 API 调用）
      */
     private getContextDocs(): import("../api/http-client.js").ContextDoc[] | undefined {
@@ -1047,6 +1089,9 @@ export class SidebarView extends ItemView {
             new Notice("请先选择一个索引");
             return;
         }
+
+        // 解析并加载消息中的 [[文件名]] 引用
+        await this.parseAndLoadReferences(message);
 
         // 禁用输入并最小化输入框
         this.isProcessing = true;
@@ -1789,49 +1834,136 @@ ${r.text}`;
 
     /**
      * 处理引用跳转
-     * 直接打开 PDF 文件并跳转到指定页面
+     * 支持 PDF 文件和 Markdown 文档的跳转
      */
     private handleCitationJump(citation: CitationData): void {
-        if (citation.pdf_name && citation.page) {
-            try {
-                console.log('[DeepPDF] [引用跳转] 开始查找 PDF');
-                console.log(`[引用跳转] pdf_name: ${citation.pdf_name}`);
-                console.log(`[引用跳转] page: ${citation.page}`);
+        try {
+            console.log('[DeepPDF] [引用跳转] 开始处理引用跳转');
+            console.log(`[引用跳转] citation:`, citation);
 
-                // 获取 vault 中所有 PDF 文件
-                const allFiles = this.app.vault.getFiles();
-                const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
+            // 优先处理用户加载的 Markdown 文档
+            if (citation.is_loaded_doc && (citation.document_path || citation.markdown_path)) {
+                const docPath = citation.document_path || citation.markdown_path;
+                this.openMarkdownDocument(docPath!, citation.anchor);
+                return;
+            }
 
-                console.log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
+            // 处理有 markdown_path 的引用（来自索引的 Markdown 文件）
+            if (citation.markdown_path && !citation.page) {
+                this.openMarkdownDocument(citation.markdown_path, citation.anchor);
+                return;
+            }
 
-                // 根据 pdf_name 查找匹配的 PDF 文件
-                // pdf_name 格式可能是: "纳瓦尔宝典.pdf" 或 "纳瓦尔宝典"
-                const targetName = citation.pdf_name.replace('.pdf', '').toLowerCase();
-
-                const matchedFile = pdfFiles.find(f => {
-                    const fileNameWithoutExt = f.basename.toLowerCase();
-                    return fileNameWithoutExt === targetName || f.path.toLowerCase().endsWith(targetName + '.pdf');
-                });
-
-                if (!matchedFile) {
-                    console.log(`[引用跳转] 未找到匹配的 PDF 文件`);
-                    console.log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
-                    new Notice(`找不到 PDF 文件: ${citation.pdf_name}`);
+            // 处理 PDF 文件跳转
+            if (citation.pdf_name && citation.page) {
+                // 如果有 markdown_path，优先打开 Markdown 文件
+                if (citation.markdown_path) {
+                    this.openMarkdownDocument(citation.markdown_path, citation.anchor);
                     return;
                 }
 
-                console.log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
-                this.openPdfWithPage(matchedFile.path, citation.page, citation.pdf_name);
-
-            } catch (error) {
-                const errorMsg = error instanceof Error ? error.message : String(error);
-                new Notice(`打开 PDF 失败: ${errorMsg}`);
-                console.error('[DeepPDF] 打开 PDF 失败:', error);
+                // 否则打开 PDF 文件
+                this.openPdfCitation(citation);
+                return;
             }
-        } else {
+
+            // 处理有 obsidian_link 的引用
+            if (citation.obsidian_link) {
+                this.openByObsidianLink(citation.obsidian_link);
+                return;
+            }
+
             new Notice('引用数据不完整');
-            console.warn('[DeepPDF] 引用数据缺少 pdf_name 或 page:', citation);
+            console.warn('[DeepPDF] 引用数据缺少跳转信息:', citation);
+
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            new Notice(`打开文档失败: ${errorMsg}`);
+            console.error('[DeepPDF] 打开文档失败:', error);
         }
+    }
+
+    /**
+     * 打开 Markdown 文档
+     */
+    private openMarkdownDocument(path: string, anchor?: string): void {
+        const file = this.app.vault.getAbstractFileByPath(path);
+
+        if (!file) {
+            new Notice(`找不到文档: ${path}`);
+            console.warn(`[引用跳转] 找不到 Markdown 文件: ${path}`);
+            return;
+        }
+
+        // 检查是否为 TFile 类型
+        if (!('basename' in file)) {
+            new Notice(`无效的文件类型: ${path}`);
+            return;
+        }
+
+        const displayName = file.basename;
+
+        // 构建带锚点的链接
+        const link = anchor ? `${path}#^${anchor}` : path;
+
+        // 使用 Obsidian API 打开文档
+        this.app.workspace.openLinkText(link, '', true).then(() => {
+            new Notice(`已打开: ${displayName}`);
+        }).catch((err) => {
+            // 如果带锚点打开失败，尝试不带锚点
+            if (anchor) {
+                this.app.workspace.openLinkText(path, '', true);
+            } else {
+                throw err;
+            }
+        });
+    }
+
+    /**
+     * 通过 Obsidian 链接打开文档
+     */
+    private openByObsidianLink(link: string): void {
+        // 解析 [[filename.md#^anchor]] 格式
+        const linkMatch = link.match(/\[\[([^\]#]+)(?:#\^([a-z0-9-]+))?\]\]/);
+
+        if (linkMatch) {
+            const path = linkMatch[1];
+            const anchor = linkMatch[2];
+            this.openMarkdownDocument(path, anchor);
+        } else {
+            // 直接尝试打开链接
+            this.app.workspace.openLinkText(link.replace('[[', '').replace(']]', ''), '', true);
+        }
+    }
+
+    /**
+     * 打开 PDF 引用
+     */
+    private openPdfCitation(citation: CitationData): void {
+        // 获取 vault 中所有 PDF 文件
+        const allFiles = this.app.vault.getFiles();
+        const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
+
+        console.log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
+
+        // 根据 pdf_name 查找匹配的 PDF 文件
+        // pdf_name 格式可能是: "纳瓦尔宝典.pdf" 或 "纳瓦尔宝典"
+        const targetName = citation.pdf_name.replace('.pdf', '').toLowerCase();
+
+        const matchedFile = pdfFiles.find(f => {
+            const fileNameWithoutExt = f.basename.toLowerCase();
+            return fileNameWithoutExt === targetName || f.path.toLowerCase().endsWith(targetName + '.pdf');
+        });
+
+        if (!matchedFile) {
+            console.log(`[引用跳转] 未找到匹配的 PDF 文件`);
+            console.log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
+            new Notice(`找不到 PDF 文件: ${citation.pdf_name}`);
+            return;
+        }
+
+        console.log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
+        this.openPdfWithPage(matchedFile.path, citation.page, citation.pdf_name);
     }
 
     /**

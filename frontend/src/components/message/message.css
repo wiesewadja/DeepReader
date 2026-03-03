@@ -375,6 +375,30 @@
 	color: #fff;
 }
 
+/* 用户加载的文档特殊样式 */
+.deeppdf-citation-loaded {
+	border-left: 3px solid var(--color-green, #4caf50);
+}
+
+.deeppdf-citation-loaded:hover {
+	border-left-color: var(--color-green, #4caf50);
+}
+
+.deeppdf-citation-loaded-badge {
+	display: inline-block;
+	padding: 1px 5px;
+	background: var(--color-green, #4caf50);
+	border-radius: 3px;
+	font-size: 9px;
+	font-weight: 500;
+	color: #fff;
+	transition: all 0.2s;
+}
+
+.deeppdf-citation-loaded:hover .deeppdf-citation-loaded-badge {
+	opacity: 0.9;
+}
+
 /* 隐藏不必要的元素 */
 .deeppdf-citation-jump-btn {
 	display: none;

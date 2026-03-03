@@ -7,6 +7,7 @@
 
 import { App, TFile } from 'obsidian';
 import { Icons } from '../../utils/icons.js';
+import { FileSuggest } from '../file-suggest/file-suggest.js';
 
 /**
  * 搜索模式
@@ -44,6 +45,18 @@ export interface ChatInputOptions {
 }
 
 /**
+ * @ 提及触发器信息
+ */
+interface MentionTrigger {
+	/** 触发字符 (@ 或 [[) */
+	trigger: string;
+	/** 搜索查询 */
+	query: string;
+	/** 触发器开始位置 */
+	startPos: number;
+}
+
+/**
  * 聊天输入组件
  */
 export class ChatInput {
@@ -53,6 +66,10 @@ export class ChatInput {
 	private modeButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
+
+	// 文件建议组件
+	private fileSuggest: FileSuggest | null = null;
+	private suggestTrigger: MentionTrigger | null = null;
 
 	// 事件处理器引用（用于清理）
 	private inputHandler: (() => void) | null = null;
@@ -73,6 +90,14 @@ export class ChatInput {
 			...options
 		};
 		this.el = this.render();
+
+		// 初始化文件建议组件
+		if (this.options.app) {
+			this.fileSuggest = new FileSuggest({
+				app: this.options.app,
+				onSelect: (file) => this.insertMention(file)
+			});
+		}
 	}
 
 	/**
@@ -151,15 +176,20 @@ export class ChatInput {
 	private attachEventListeners(): void {
 		if (!this.textarea) return;
 
-		// 输入事件：调整高度和更新按钮状态
+		// 输入事件：调整高度、更新按钮状态和检测 @ 提及
 		this.inputHandler = () => {
 			this.autoResize();
 			this.updateSendButtonState();
+			this.checkMentionTrigger();
 		};
 		this.textarea.addEventListener('input', this.inputHandler);
 
-		// 键盘事件：处理 Enter 和 Shift+Enter
+		// 键盘事件：处理 Enter、Shift+Enter 和文件建议导航
 		this.keydownHandler = (event: KeyboardEvent) => {
+			// 优先处理文件建议的键盘导航
+			if (this.fileSuggest?.handleKeydown(event)) {
+				return;
+			}
 			this.handleKeyDown(event);
 		};
 		this.textarea.addEventListener('keydown', this.keydownHandler);
@@ -197,7 +227,23 @@ export class ChatInput {
 			}, 0);
 		};
 		this.textarea.addEventListener('paste', this.pasteHandler);
+
+		// 点击其他地方时隐藏文件建议
+		document.addEventListener('click', this.handleDocumentClick);
 	}
+
+	/**
+	 * 处理文档点击事件（隐藏文件建议）
+	 */
+	private handleDocumentClick = (event: MouseEvent): void => {
+		if (this.fileSuggest?.isVisible()) {
+			const target = event.target as HTMLElement;
+			if (!target.closest('.deeppdf-file-suggest') && !target.closest('.deeppdf-chat-input-textarea')) {
+				this.fileSuggest.hide();
+				this.suggestTrigger = null;
+			}
+		}
+	};
 
 	/**
 	 * 处理键盘事件
@@ -211,6 +257,121 @@ export class ChatInput {
 			event.preventDefault();
 			this.handleSend();
 		}
+	}
+
+	/**
+	 * 检测 @ 提及触发器
+	 */
+	private checkMentionTrigger(): void {
+		if (!this.textarea || !this.fileSuggest) return;
+
+		const value = this.textarea.value;
+		const cursorPos = this.textarea.selectionStart;
+
+		const trigger = this.detectMentionTrigger(value, cursorPos);
+
+		if (trigger) {
+			this.suggestTrigger = trigger;
+			this.fileSuggest.search(trigger.query);
+			this.positionSuggest();
+		} else {
+			this.fileSuggest.hide();
+			this.suggestTrigger = null;
+		}
+	}
+
+	/**
+	 * 检测提及触发器
+	 * 支持 @ 和 [[ 两种触发方式
+	 */
+	private detectMentionTrigger(value: string, cursorPos: number): MentionTrigger | null {
+		const beforeCursor = value.substring(0, cursorPos);
+
+		// 匹配 [[xxx 格式（Obsidian 风格链接）
+		const wikilinkMatch = beforeCursor.match(/\[\[([^\]\n]*)$/);
+		if (wikilinkMatch) {
+			const query = wikilinkMatch[1];
+			// 如果已经输入了 ]，说明链接已完成，不触发
+			if (query.includes(']]')) return null;
+			return {
+				trigger: '[[',
+				query: query,
+				startPos: cursorPos - query.length - 2
+			};
+		}
+
+		// 匹配 @xxx 格式
+		const atMatch = beforeCursor.match(/@([^@\n\s]*)$/);
+		if (atMatch) {
+			const query = atMatch[1];
+			return {
+				trigger: '@',
+				query: query,
+				startPos: cursorPos - query.length - 1
+			};
+		}
+
+		return null;
+	}
+
+	/**
+	 * 定位文件建议下拉菜单
+	 */
+	private positionSuggest(): void {
+		if (!this.fileSuggest || !this.textarea) return;
+
+		// 获取文本框的位置
+		const rect = this.textarea.getBoundingClientRect();
+
+		// 计算光标位置（简化版：放在文本框下方）
+		const lineHeight = parseInt(getComputedStyle(this.textarea).lineHeight) || 20;
+		const scrollTop = this.textarea.scrollTop;
+
+		// 基本定位：文本框左下角
+		let x = rect.left;
+		let y = rect.bottom + 4;
+
+		// 如果有触发器，尝试定位到触发器位置
+		if (this.suggestTrigger) {
+			// 简化处理：保持在文本框下方
+			// 精确定位需要更复杂的文本测量
+		}
+
+		this.fileSuggest.setPosition(x, y);
+	}
+
+	/**
+	 * 插入选中的文件提及
+	 */
+	private insertMention(file: TFile): void {
+		if (!this.textarea || !this.suggestTrigger) return;
+
+		const value = this.textarea.value;
+		const { startPos, trigger } = this.suggestTrigger;
+		const cursorPos = this.textarea.selectionStart;
+
+		// 替换触发器和查询文本为 [[文件名]] 格式
+		const before = value.substring(0, startPos);
+		const after = value.substring(cursorPos);
+
+		// 使用 Obsidian 的 wikilink 格式
+		const newText = `${before}[[${file.basename}]]${after}`;
+		this.textarea.value = newText;
+
+		// 移动光标到插入内容之后
+		const newCursorPos = startPos + file.basename.length + 4; // 4 = [[ ]].length
+		this.textarea.setSelectionRange(newCursorPos, newCursorPos);
+
+		// 触发文件选择回调
+		this.options.onSelectFile?.(file);
+
+		// 清理状态
+		this.suggestTrigger = null;
+		this.autoResize();
+		this.updateSendButtonState();
+
+		// 重新聚焦文本框
+		this.textarea.focus();
 	}
 
 	/**
@@ -451,6 +612,16 @@ export class ChatInput {
 			this.loadDocClickHandler = null;
 		}
 		this.loadDocButton = null;
+
+		// 移除文档点击事件监听器
+		document.removeEventListener('click', this.handleDocumentClick);
+
+		// 销毁文件建议组件
+		if (this.fileSuggest) {
+			this.fileSuggest.destroy();
+			this.fileSuggest = null;
+		}
+		this.suggestTrigger = null;
 
 		// 从 DOM 中移除元素
 		if (this.el && this.el.parentNode) {

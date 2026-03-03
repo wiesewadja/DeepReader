@@ -1,0 +1,103 @@
+/**
+ * DeepPDF 文件建议下拉组件样式
+ */
+
+.deeppdf-file-suggest {
+	position: fixed;
+	z-index: 1000;
+	min-width: 280px;
+	max-width: 400px;
+	max-height: 320px;
+	overflow-y: auto;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+	animation: deeppdf-suggest-fade-in 0.15s ease;
+}
+
+@keyframes deeppdf-suggest-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.deeppdf-file-suggest::-webkit-scrollbar {
+	width: 6px;
+}
+
+.deeppdf-file-suggest::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.deeppdf-file-suggest::-webkit-scrollbar-thumb {
+	background: var(--background-modifier-border);
+	border-radius: 3px;
+}
+
+.deeppdf-file-suggest::-webkit-scrollbar-thumb:hover {
+	background: var(--background-modifier-border-hover);
+}
+
+.deeppdf-file-suggest-empty {
+	padding: 16px;
+	color: var(--text-muted);
+	font-size: 13px;
+	text-align: center;
+}
+
+.deeppdf-file-suggest-item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 14px;
+	cursor: pointer;
+	transition: background 0.1s ease;
+	border-bottom: 1px solid var(--background-modifier-border-faint);
+}
+
+.deeppdf-file-suggest-item:last-child {
+	border-bottom: none;
+}
+
+.deeppdf-file-suggest-item:hover,
+.deeppdf-file-suggest-item.selected {
+	background: var(--background-modifier-hover);
+}
+
+.deeppdf-file-suggest-item.selected {
+	border-left: 3px solid var(--interactive-accent);
+	padding-left: 11px;
+}
+
+.deeppdf-file-suggest-icon {
+	font-size: 16px;
+	flex-shrink: 0;
+	width: 20px;
+	text-align: center;
+}
+
+.deeppdf-file-suggest-name {
+	flex: 1;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.deeppdf-file-suggest-path {
+	font-size: 11px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+	max-width: 100px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

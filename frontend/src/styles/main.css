@@ -21,6 +21,7 @@
 @import url('../components/agent-mode-toggle/agent-mode-toggle.css');
 @import url('../components/chat-settings-modal/chat-settings-modal.css');
 @import url('../components/context-tags/context-tags.css');
+@import url('../components/file-suggest/file-suggest.css');
 @import url('./disconnected-screen.css');
 
 /* ==================== 全局容器 ==================== */

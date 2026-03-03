@@ -33,6 +33,10 @@ export interface CitationData {
 	obsidian_link?: string;
 	/** 可选：块引用锚点 */
 	anchor?: string;
+	/** 可选：是否来自用户加载的文档（章节辅助阅读） */
+	is_loaded_doc?: boolean;
+	/** 可选：文档路径（用于跳转，可以是 PDF 或 Markdown） */
+	document_path?: string;
 }
 
 /**
@@ -647,13 +651,23 @@ export class Citation {
 		const citationEl = document.createElement('div');
 		citationEl.addClass('deeppdf-citation');
 
+		// 如果是用户加载的文档，添加特殊样式类
+		if (this.citation.is_loaded_doc) {
+			citationEl.addClass('deeppdf-citation-loaded');
+		}
+
 		// 上半部分：Icon + Filename + Page Badge
 		const header = citationEl.createEl('div', { cls: 'deeppdf-citation-header' });
 
-		// Icon
+		// Icon - 根据文档类型显示不同图标
 		const iconWrapper = header.createEl('div', { cls: 'deeppdf-citation-icon' });
-		// Simple document icon
-		iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+		if (this.citation.is_loaded_doc || this.citation.markdown_path) {
+			// Markdown 文档图标
+			iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+		} else {
+			// PDF 文档图标
+			iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
+		}
 
 		const fileInfo = header.createEl('div', { cls: 'deeppdf-citation-file-info' });
 		fileInfo.createEl('span', {
@@ -661,12 +675,22 @@ export class Citation {
 			text: this.citation.pdf_name
 		});
 
-		// Meta info (Page)
+		// Meta info (Page 或文档类型)
 		const meta = fileInfo.createEl('div', { cls: 'deeppdf-citation-meta' });
-		const pageBadge = meta.createEl('span', {
-			cls: 'deeppdf-citation-page-badge',
-			text: `Page ${this.citation.page}`
-		});
+
+		if (this.citation.is_loaded_doc) {
+			// 用户加载的文档显示"笔记"标签
+			const loadedBadge = meta.createEl('span', {
+				cls: 'deeppdf-citation-loaded-badge',
+				text: '笔记'
+			});
+		} else if (this.citation.page > 0) {
+			// PDF 文档显示页码
+			const pageBadge = meta.createEl('span', {
+				cls: 'deeppdf-citation-page-badge',
+				text: `Page ${this.citation.page}`
+			});
+		}
 
 		// 跳转逻辑绑定整个卡片
 		if (this.onJump) {
