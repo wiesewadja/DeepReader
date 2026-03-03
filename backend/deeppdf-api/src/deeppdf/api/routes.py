@@ -284,6 +284,10 @@ async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwarg
             _running_tasks[task_id]["result"] = result
             logger.info(f"[后台任务] 索引完成 [{task_id}]: {result.get('index_id')}")
 
+            # 清除索引列表缓存，确保新索引立即可见
+            _index_list_cache.delete("all_indexes")
+            logger.debug(f"[后台任务] 已清除索引列表缓存 [{task_id}]")
+
     except asyncio.CancelledError:
         _running_tasks[task_id]["status"] = "cancelled"
         logger.info(f"[后台任务] 任务被取消 [{task_id}]")
