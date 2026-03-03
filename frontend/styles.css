@@ -1536,7 +1536,7 @@
 	overflow-x: hidden;
 
 	/* 增加底部 padding，防止被悬浮输入框遮挡 */
-	padding: 16px 16px 100px 16px;
+	padding: 16px 16px 110px 16px;
 
 	display: flex;
 	flex-direction: column;
@@ -1733,7 +1733,7 @@
 
 .deeppdf-chat-input-section {
 	position: absolute;
-	bottom: 24px;
+	bottom: 40px;
 	left: 50%;
 	transform: translateX(-50%);
 	width: 90%;
