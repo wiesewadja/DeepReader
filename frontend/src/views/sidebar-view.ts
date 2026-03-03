@@ -71,6 +71,7 @@ export class SidebarView extends ItemView {
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private isConnected: boolean = false;  // 后端连接状态
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
+    private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -675,6 +676,9 @@ export class SidebarView extends ItemView {
 
         // 更新服务器状态
         this.updateStatus();
+
+        // 启动定期健康检查（每 30 秒）
+        this.startHealthCheck();
 
         // 设置滚动监听：滚动时隐藏输入框
         this.setupScrollHandler(container);
@@ -1828,6 +1832,54 @@ ${r.text}`;
         }
     }
 
+    /**
+     * 启动定期健康检查
+     */
+    private startHealthCheck(): void {
+        // 清除已有的定时器
+        this.stopHealthCheck();
+
+        // 每 30 秒检查一次
+        this.healthCheckInterval = setInterval(async () => {
+            if (!this.apiClient || !this.indexManager) return;
+
+            try {
+                const healthResponse = await this.apiClient.healthCheck();
+                const isHealthy = healthResponse?.status === 'ok';
+                const wasConnected = this.isConnected;
+                this.isConnected = isHealthy;
+
+                if (isHealthy) {
+                    this.indexManager.setConnectionStatus('connected');
+                    // 如果之前是断开的，现在恢复了，刷新索引列表
+                    if (!wasConnected) {
+                        console.log('[DeepPDF] 后端连接恢复，刷新索引列表');
+                        await this.loadIndexes();
+                    }
+                } else {
+                    this.indexManager.setConnectionStatus('disconnected');
+                    if (wasConnected) {
+                        console.log('[DeepPDF] 后端连接断开');
+                    }
+                }
+            } catch (error) {
+                console.error('[DeepPDF] 健康检查失败:', error);
+                this.indexManager.setConnectionStatus('error');
+                this.isConnected = false;
+            }
+        }, 30000); // 30 秒
+    }
+
+    /**
+     * 停止定期健康检查
+     */
+    private stopHealthCheck(): void {
+        if (this.healthCheckInterval) {
+            clearInterval(this.healthCheckInterval);
+            this.healthCheckInterval = null;
+        }
+    }
+
     async handleExportMarkdown(indexId: string) {
         if (!this.apiClient) return;
 
@@ -2251,6 +2303,9 @@ ${structureInfo}
 
     async onClose() {
         try {
+            // 停止健康检查定时器
+            this.stopHealthCheck();
+
             // 清理流式请求
             if (this.streamController) {
                 try {
