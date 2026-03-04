@@ -444,14 +444,6 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 			observers.push(observer);
 		}
 
-		// 阻止 Obsidian 原生的 hover preview（除非按住 Command/Ctrl 键）
-		link.addEventListener('mouseover', (event: MouseEvent) => {
-			// 只有按住 Command/Ctrl 键时才允许原生预览
-			if (!(event.metaKey || event.ctrlKey)) {
-				event.stopPropagation();
-			}
-		});
-
 		// 处理点击事件
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
