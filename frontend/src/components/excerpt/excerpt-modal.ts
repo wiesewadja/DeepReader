@@ -92,11 +92,11 @@ export class ExcerptModal extends Modal {
       cls: 'deeppdf-excerpt-preview-content'
     });
 
-    // 显示引用内容
-    const quoteEl = previewContent.createEl('blockquote', {
-      cls: 'deeppdf-excerpt-quote'
+    // 显示原始内容（不添加引用符号）
+    const contentEl = previewContent.createEl('div', {
+      cls: 'deeppdf-excerpt-content-preview'
     });
-    quoteEl.textContent = this.content.text;
+    contentEl.textContent = this.content.text;
 
     // 显示元数据
     const metaEl = previewContent.createEl('div', {
@@ -152,12 +152,15 @@ export class ExcerptModal extends Modal {
       text: '保存位置'
     });
 
+    // 使用 ExcerptService 生成基于书籍名和日期的默认路径
+    const defaultPath = this.excerptService.getExcerptPath(this.metadata.sourcePdf);
+
     this.pathInput = pathGroup.createEl('input', {
       cls: 'deeppdf-excerpt-path-input',
       attr: {
         type: 'text',
-        placeholder: 'Excerpts/DeepPDF.md',
-        value: 'Excerpts/DeepPDF.md'
+        placeholder: defaultPath,
+        value: defaultPath
       }
     });
 

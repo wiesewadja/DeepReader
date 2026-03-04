@@ -352,10 +352,14 @@ export class SidebarView extends ItemView {
                 this.plugin.settings.lastSelectedIndexId = indexId;
                 await this.plugin.saveSettings();
 
-                // 查找 PDF 名称
-                const index = (this.indexManager as any).indexes?.find((i: any) => i.id === indexId);
+                // 查找文档名称
+                const indexes = (this.indexManager as any).indexes;
+                console.log(`[DeepPDF] indexes count: ${indexes?.length}, indexes:`, indexes?.map((i: any) => ({ id: i.id, pdf_name: i.pdf_name })));
+                const index = indexes?.find((i: any) => i.id === indexId);
+                console.log(`[DeepPDF] found index:`, index);
                 if (index) {
                     this.currentPdfName = index.pdf_name;
+                    console.log(`[DeepPDF] currentPdfName set to: ${this.currentPdfName}`);
                     // 更新消息列表的当前 PDF 名称（用于显示快捷操作）
                     let displayName = index.pdf_name;
                     if (displayName.toLowerCase().endsWith('.pdf')) {
@@ -1106,12 +1110,15 @@ export class SidebarView extends ItemView {
                 const userMessageId = `msg-${timestamp}-user`;
                 aiMessageId = `msg-${timestamp}-ai`;
 
+                console.log(`[DeepPDF] sendMessage - currentPdfName: ${this.currentPdfName}`);
+
                 // 添加用户消息
                 const userMessageData: MessageData = {
                     id: userMessageId,
                     role: "user" as MessageRole,
                     content: message,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    pdfName: this.currentPdfName || undefined
                 };
                 this.messageList?.addMessage(userMessageData);
 
@@ -1122,7 +1129,10 @@ export class SidebarView extends ItemView {
                     content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
-                    isAgentMessage: true  // 默认使用 Agent 模式（自动路由）
+                    isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
+                    pdfName: this.currentPdfName || undefined,
+                    question: message,  // 保存用户的问题
+                    conversationId: this.sessionId || undefined  // 保存会话ID用于双向链接
                 };
                 this.messageList?.addMessage(aiMessageData);
             }

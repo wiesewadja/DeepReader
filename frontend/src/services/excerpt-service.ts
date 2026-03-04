@@ -31,8 +31,8 @@ export class ExcerptService {
     const opts = options || {};
 
     try {
-      // 1. 确定目标文件路径
-      const targetPath = opts.targetPath || await this.getDefaultExcerptPath();
+      // 1. 确定目标文件路径（按书籍和日期组织）
+      const targetPath = opts.targetPath || this.getExcerptPath(metadata.sourcePdf);
 
       // 2. 确保目标文件存在
       await this.ensureExcerptFile(targetPath);
@@ -63,21 +63,39 @@ export class ExcerptService {
   }
 
   /**
-   * 获取默认摘录保存路径
+   * 根据书籍名称和日期生成摘录路径
+   * 格式: 书籍摘录/{书籍名}/摘录-{日期}.md
+   */
+  getExcerptPath(sourcePdf: string): string {
+    const baseFolder = '书籍摘录';
+
+    // 清理书籍名称，移除不安全的文件名字符
+    const bookName = this.sanitizeFilename(sourcePdf);
+
+    // 获取当前日期 (YYYY-MM-DD)
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    return `${baseFolder}/${bookName}/摘录-${dateStr}.md`;
+  }
+
+  /**
+   * 清理文件名，移除不安全字符
+   */
+  private sanitizeFilename(name: string): string {
+    // 移除或替换不安全的文件名字符
+    return name
+      .replace(/[\\/:*?"<>|]/g, '_')  // Windows 不允许的字符
+      .replace(/\.(pdf|epub|txt)$/i, '')  // 移除常见扩展名
+      .trim()
+      .substring(0, 100);  // 限制长度
+  }
+
+  /**
+   * 获取默认摘录保存路径（已废弃，使用 getExcerptPath）
    */
   async getDefaultExcerptPath(): Promise<string> {
-    // 从插件设置获取默认路径
-    // 暂时使用固定路径， 后续从设置读取
-    const defaultFolder = 'Excerpts';
-    const defaultFile = 'DeepPDF.md';
-
-    // 确保文件夹存在
-    const folder = this.app.vault.getAbstractFileByPath(defaultFolder);
-    if (!folder) {
-      await this.app.vault.createFolder(defaultFolder);
-    }
-
-    return `${defaultFolder}/${defaultFile}`;
+    return this.getExcerptPath('Unknown');
   }
 
   /**
@@ -87,19 +105,33 @@ export class ExcerptService {
     const file = this.app.vault.getAbstractFileByPath(path);
 
     if (!file) {
-      // 确保父目录存在
+      // 确保所有父目录都存在（支持嵌套路径）
       const parentPath = path.substring(0, path.lastIndexOf('/'));
       if (parentPath) {
-        const parentFolder = this.app.vault.getAbstractFileByPath(parentPath);
-        if (!parentFolder) {
-          await this.app.vault.createFolder(parentPath);
-        }
+        await this.ensureFolderExists(parentPath);
       }
 
       // 创建文件
       const content = this.generateExcerptFileHeader();
       await this.app.vault.create(path, content);
     }
+  }
+
+  /**
+   * 递归确保文件夹存在
+   */
+  private async ensureFolderExists(folderPath: string): Promise<void> {
+    const folder = this.app.vault.getAbstractFileByPath(folderPath);
+    if (folder) return;
+
+    // 先确保父目录存在
+    const parentPath = folderPath.substring(0, folderPath.lastIndexOf('/'));
+    if (parentPath) {
+      await this.ensureFolderExists(parentPath);
+    }
+
+    // 创建当前目录
+    await this.app.vault.createFolder(folderPath);
   }
 
   /**
@@ -110,7 +142,6 @@ export class ExcerptService {
     metadata: ExcerptMetadata,
     options?: ExcerptOptions
   ): string {
-    const title = this.generateExcerptTitle(content);
     const timestamp = new Date().toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -119,7 +150,12 @@ export class ExcerptService {
       minute: '2-digit'
     });
 
-    let formatted = `## ${timestamp} ${title}\n\n`;
+    // 使用用户问题作为标题，如果没有问题则使用时间戳
+    const title = metadata.question || `摘录 ${timestamp}`;
+    let formatted = `## ${title}\n\n`;
+
+    // 添加时间戳
+    formatted += `📅 ${timestamp}\n\n`;
 
     // 添加引用内容
     formatted += `> ${content.text}\n\n`;
@@ -129,17 +165,10 @@ export class ExcerptService {
     if (metadata.page) {
       formatted += `**页码**: ${metadata.page}\n`;
     }
-    formatted += `**问题**: ${metadata.question}\n`;
 
     // 添加笔记（如果有）
     if (options?.note) {
       formatted += `**笔记**: ${options.note}\n`;
-    }
-
-    // 添加双向链接（如果启用）
-    if (options?.includeBacklink !== false) {
-    formatted += `\n---\n`;
-    formatted += `[[DeepReader对话]](deepreader://conversation/${metadata.conversationId})\n`;
     }
 
     // 添加分隔线
@@ -149,28 +178,18 @@ export class ExcerptService {
   }
 
   /**
-   * 生成摘录标题
-   */
-  private generateExcerptTitle(content: ExcerptContent): string {
-    const text = content.text.trim();
-    // 取第一行作为标题
-    const firstLine = text.split('\n')[0];
-    // 限制标题长度
-    if (firstLine.length > 50) {
-      return firstLine.substring(0, 47) + '...';
-    }
-    return firstLine;
-  }
-
-  /**
    * 生成摘录文件头部
    */
   private generateExcerptFileHeader(): string {
-    return `# DeepPDF 摘录收集
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
 
-自动保存与 AI 的对话摘录。
+    return `# 📚 摘录 - ${dateStr}
+
+本文件自动收集当天的阅读摘录。
 
 ---
+
 `;
   }
 }

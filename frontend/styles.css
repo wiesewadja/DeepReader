@@ -3740,16 +3740,15 @@
   padding: 12px;
 }
 
-.deeppdf-excerpt-quote {
+.deeppdf-excerpt-content-preview {
   margin: 0 0 12px 0;
   padding: 8px 12px;
   background: var(--background-primary);
-  border-left: 3px solid var(--interactive-accent);
-  border-radius: 0 4px 4px 0;
+  border-radius: 4px;
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-normal);
-  max-height: 150px;
+  max-height: 200px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;

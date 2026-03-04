@@ -1398,6 +1398,8 @@ export class AIMessage extends Message {
 	private handleExcerpt(): void {
 		if (!this.onExcerpt) return;
 
+		console.log(`[DeepPDF] handleExcerpt - pdfName: ${this.data.pdfName}`);
+
 		const content: ExcerptContent = {
 			text: this.data.content,
 			rawMarkdown: this.data.content
@@ -1419,6 +1421,7 @@ export class AIMessage extends Message {
 	 * 设置文字选中监听
 	 */
 	private setupSelectionListener(contentEl: HTMLElement): void {
+		console.log(`[DeepPDF] setupSelectionListener - pdfName: ${this.data.pdfName}`);
 		contentEl.addEventListener('mouseup', (e: MouseEvent) => {
 			const selection = window.getSelection();
 			if (!selection) return;
