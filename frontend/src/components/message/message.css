@@ -9,6 +9,7 @@
 .deeppdf-message {
 	display: flex;
 	width: 100%;
+	max-width: 100%;
 	margin-bottom: 16px;
 	animation: deeppdf-fade-in 0.2s ease;
 }
@@ -27,7 +28,8 @@
 	display: flex;
 	align-items: flex-start;
 	gap: 10px;
-	width: 100%;
+	max-width: 100%;
+	flex: 0 1 auto;
 }
 
 .deeppdf-message-user .deeppdf-message-wrapper {
@@ -63,7 +65,7 @@
 	border-radius: 12px;
 	word-wrap: break-word;
 	overflow-wrap: break-word;
-	max-width: 100%;
+	width: 100%;
 }
 
 /* 用户消息气泡 - 右侧蓝色 */

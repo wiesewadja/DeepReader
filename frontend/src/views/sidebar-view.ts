@@ -24,6 +24,8 @@ import { ContextManager } from "../services/context-manager.js";
 import { ContextTags } from "../components/context-tags/index.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
+import { ReadingTopbar } from "../components/reading-topbar/index.js";
+import { LibraryModal } from "../components/library-modal/index.js";
 
 // ==================== 类型映射 ====================
 
@@ -57,9 +59,15 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 export class SidebarView extends ItemView {
     private apiClient: DeepPDFClient | null;
     private plugin: any; // 插件实例，用于访问设置
-    private indexManager: IndexManager | null = null;
+    private readingTopbar: ReadingTopbar | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
+    private indexes: IndexListItem[] = [];  // 索引列表缓存
     private taskCards: Map<string, TaskProgressCard> = new Map();
+
+    /** @deprecated 使用 readingTopbar 代替 */
+    private get indexManager(): ReadingTopbar | null {
+        return this.readingTopbar;
+    }
 
     // 对话界面组件
     private messageList: MessageList | null = null;
@@ -339,244 +347,110 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 创建索引管理区 (折叠面板)
+     * 打开在线书库弹窗
      */
-    private createIndexManager(container: HTMLElement) {
-        this.indexManager = new IndexManager({
+    private openLibraryModal(): void {
+        new LibraryModal(this.app, {
             app: this.app,
-            onIndexChange: async (indexId: string) => {
-                console.log(`[DeepPDF] onIndexChange triggered: ${indexId}`);
-                this.currentIndexId = indexId;
-                // 保存到设置
-                this.plugin.settings.lastSelectedIndexId = indexId;
-                await this.plugin.saveSettings();
+            indexes: this.indexes,
+            selectedIndexId: this.currentIndexId,
+            onIndexChange: (indexId: string) => {
+                this.selectIndex(indexId);
+            },
+            onCreateIndex: async () => {
+                // 刷新索引列表
+                await this.loadIndexes();
+            },
+            onExportMarkdown: (indexId: string) => {
+                this.handleExportMarkdown(indexId);
+            },
+            onDeleteIndex: (indexId: string) => {
+                this.handleDeleteIndex(indexId);
+            },
+            onRefresh: async () => {
+                await this.loadIndexes();
+            },
+            apiClient: this.apiClient,
+            plugin: this.plugin
+        }).open();
+    }
 
-                // 查找文档名称
-                const indexes = (this.indexManager as any).indexes;
-                console.log(`[DeepPDF] indexes count: ${indexes?.length}, indexes:`, indexes?.map((i: any) => ({ id: i.id, pdf_name: i.pdf_name })));
-                const index = indexes?.find((i: any) => i.id === indexId);
-                console.log(`[DeepPDF] found index:`, index);
-                if (index) {
-                    this.currentPdfName = index.pdf_name;
-                    console.log(`[DeepPDF] currentPdfName set to: ${this.currentPdfName}`);
-                    // 更新消息列表的当前 PDF 名称（用于显示快捷操作）
-                    let displayName = index.pdf_name;
-                    if (displayName.toLowerCase().endsWith('.pdf')) {
-                        displayName = displayName.slice(0, -4);
-                    }
-                    this.messageList?.setCurrentPdfName(displayName);
+    /**
+     * 选择索引（从弹窗中调用）
+     */
+    private async selectIndex(indexId: string): Promise<void> {
+        console.log(`[DeepPDF] selectIndex triggered: ${indexId}`);
+        this.currentIndexId = indexId;
+        this.plugin.settings.lastSelectedIndexId = indexId;
+        await this.plugin.saveSettings();
+
+        // 更新顶栏显示 - 使用 this.indexes 而不是 indexManager
+        const index = this.indexes.find(i => i.id === indexId);
+        if (index) {
+            this.currentPdfName = index.pdf_name;
+            let displayName = index.pdf_name;
+            if (displayName.toLowerCase().endsWith('.pdf')) {
+                displayName = displayName.slice(0, -4);
+            }
+            this.messageList?.setCurrentPdfName(displayName);
+            this.readingTopbar?.setCurrentBook(displayName);
+        }
+
+        // 清空消息
+        this.messageList?.clear();
+
+        // 尝试恢复会话
+        const savedSessions = this.plugin.settings.savedSessions || {};
+        const savedSessionId = savedSessions[indexId];
+
+        if (savedSessionId) {
+            try {
+                this.sessionId = savedSessionId;
+
+                // 1. 尝试从本地缓存恢复
+                const cached = this.plugin.settings.chatCache?.[savedSessionId];
+                if (cached && cached.messages && cached.messages.length > 0) {
+                    this.restoreHistoryToView(cached.messages, true);
+                    new Notice(`已恢复对话 (本地缓存)`);
+                    return;
                 }
 
-                // 清空当前界面
-                this.messageList?.clear();
-
-                // 尝试恢复会话
-                const savedSessions = this.plugin.settings.savedSessions || {};
-                const savedSessionId = savedSessions[indexId];
-                console.log(`[DeepPDF] Saved session ID for ${indexId}: ${savedSessionId}`);
-
-                if (savedSessionId) {
-                    try {
-                        console.log(`[DeepPDF] 尝试恢复会话: ${savedSessionId}`);
-                        this.sessionId = savedSessionId;
-
-                        // 1. 尝试从本地缓存恢复
-                        const cached = this.plugin.settings.chatCache?.[savedSessionId];
-                        if (cached && cached.messages && cached.messages.length > 0) {
-                            console.log(`[DeepPDF] 从本地缓存恢复: ${cached.messages.length} 条`);
-                            this.restoreHistoryToView(cached.messages, true); // true indicates from cache
-                            new Notice(`已恢复对话 (本地缓存)`);
-                            return;
-                        }
-
-                        // 2. 从后端恢复
-                        console.log('[DeepPDF] Local cache miss/empty, fetching from backend...');
-                        const history = await agentAPI.getHistory(indexId, savedSessionId);
-
-                        if (history && history.length > 0) {
-                            console.log(`[DeepPDF] 恢复历史记录: ${history.length} 条`);
-                            this.restoreHistoryToView(history, false);
-                            new Notice(`已恢复之前的对话记录`);
-                        } else {
-                            // 有 ID 但没历史（可能是后端文件没了），不显示欢迎语，直接当新会话
-                            // 或者显示欢迎语
-                            console.log('[DeepPDF] No history found on backend.');
-                            this.showWelcomeMessage();
-                        }
-                    } catch (e) {
-                        console.error(`[DeepPDF] 恢复会话失败:`, e);
-                        this.startNewSession(indexId);
-                    }
+                // 2. 从后端恢复
+                const history = await agentAPI.getHistory(indexId, savedSessionId);
+                if (history && history.length > 0) {
+                    this.restoreHistoryToView(history, false);
+                    new Notice(`已恢复对话`);
                 } else {
-                    console.log('[DeepPDF] No saved session, starting new session.');
-                    this.startNewSession(indexId);
+                    this.showWelcomeMessage();
                 }
-            },
-            onCreateIndex: () => {
-                // 直接打开 PDF 选择器，不再需要 IndexManagerModal
-                new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
-                    try {
-                        // 使用 ConfirmModal 替代原生 confirm
-                        new ConfirmModal(
-                            this.app,
-                            'Confirm Indexing',
-                            `Are you sure you want to index "${fileInfo.name}"?\n\nFile size: ${fileInfo.sizeFormatted}\nYou can start AI Q&A after indexing is complete.`,
-                            async () => {
-                                new Notice(`Starting to index "${fileInfo.name}"...`);
+            } catch (e) {
+                console.error(`[DeepPDF] 恢复会话失败:`, e);
+                this.startNewSession(indexId);
+            }
+        } else {
+            this.startNewSession(indexId);
+        }
+    }
 
-                                // 调用 API 创建索引
-                                try {
-                                    const result = await this.apiClient!.indexPDF(fileInfo.path, {
-                                        llmProvider: this.plugin.settings.llmProvider,
-                                        llmModel: this.plugin.settings.llmModel,
-                                        deepseekApiKey: this.plugin.settings.deepseekApiKey,
-                                        openaiApiKey: this.plugin.settings.openaiApiKey,
-                                        apiUrl: this.plugin.settings.apiUrl,
-                                        maxPagesPerNode: this.plugin.settings.maxPagesPerNode,
-                                        maxTokensPerNode: this.plugin.settings.maxTokensPerNode,
-                                        ifAddNodeSummary: this.plugin.settings.ifAddNodeSummary
-                                    });
-
-                                    // 检查返回状态
-                                    if (result.status === 'pending') {
-                                        // 异步任务已创建
-                                        new Notice(
-                                            `Index task created (ID: ${result.index_id}), processing in background...`,
-                                            4000
-                                        );
-
-                                        // 等待一小段时间确保后端任务已注册
-                                        await new Promise(resolve => setTimeout(resolve, 500));
-
-                                        // 刷新索引列表以显示新任务
-                                        await this.loadIndexes();
-
-                                        // 启动任务轮询以更新进度
-                                        const pollingManager = this.getTaskPollingManager();
-                                        if (pollingManager && result.index_id) {
-                                            console.log(`[DeepPDF] 开始轮询任务: ${result.index_id}`);
-                                            pollingManager.startPolling(result.index_id, async (progress) => {
-                                                console.log(`[DeepPDF] 任务进度更新: ${progress.status}, ${progress.progress_percent}%`);
-                                                // 刷新索引列表以显示最新进度
-                                                await this.loadIndexes();
-
-                                                // 如果任务完成，显示通知
-                                                if (progress.status === 'completed') {
-                                                    new Notice(`Indexing completed! Nodes: ${progress.node_count || 0}`, 3000);
-                                                } else if (progress.status === 'failed') {
-                                                    new Notice(`Indexing failed: ${progress.error || 'Unknown error'}`, 5000);
-                                                }
-                                            });
-                                        }
-                                    } else if (result.status === 'success') {
-                                        // 同步完成
-                                        new Notice(`Indexing successful! Nodes: ${result.node_count}`, 3000);
-                                        await this.loadIndexes();
-                                    } else {
-                                        new Notice(`Index status: ${result.status}`, 3000);
-                                        await this.loadIndexes();
-                                    }
-                                } catch (error: any) {
-                                    let errorMessage = 'Indexing failed';
-                                    if (error.message) {
-                                        if (error.message.includes('Too Many Requests') || error.message.includes('速率限制')) {
-                                            errorMessage = 'Rate limit exceeded, please try again later';
-                                        } else if (error.message.includes('API key')) {
-                                            errorMessage = 'API key invalid or missing';
-                                        } else {
-                                            errorMessage = `Indexing failed: ${error.message}`;
-                                        }
-                                    }
-                                    new Notice(errorMessage, 5000);
-                                    console.error('[DeepPDF] Indexing error:', error);
-                                }
-                            },
-                            {
-                                confirmLabel: 'Start Indexing'
-                            }
-                        ).open();
-
-                        // 移除原来的逻辑，因为现在都在 ConfirmModal 的回调里了
-                        return;
-
-                        new Notice(`开始索引 "${fileInfo.name}"...`);
-
-                        // 调用 API 创建索引
-                        const result = await this.apiClient!.indexPDF(fileInfo.path, {
-                            llmProvider: this.plugin.settings.llmProvider,
-                            llmModel: this.plugin.settings.llmModel,
-                            deepseekApiKey: this.plugin.settings.deepseekApiKey,
-                            openaiApiKey: this.plugin.settings.openaiApiKey,
-                            apiUrl: this.plugin.settings.apiUrl,
-                            maxPagesPerNode: this.plugin.settings.maxPagesPerNode,
-                            maxTokensPerNode: this.plugin.settings.maxTokensPerNode,
-                            ifAddNodeSummary: this.plugin.settings.ifAddNodeSummary
-                        });
-
-                        // 检查返回状态
-                        if (result.status === 'pending') {
-                            // 异步任务已创建
-                            new Notice(
-                                `索引任务已创建 (ID: ${result.index_id})，正在后台处理...`,
-                                4000
-                            );
-
-                            // 等待一小段时间确保后端任务已注册
-                            await new Promise(resolve => setTimeout(resolve, 500));
-
-                            // 刷新索引列表以显示新任务
-                            await this.loadIndexes();
-
-
-                        } else if (result.status === 'success') {
-                            // 同步完成（很少见）
-                            new Notice(
-                                `索引创建成功！节点数: ${result.node_count}`,
-                                3000
-                            );
-
-                            // 刷新索引列表
-                            await this.loadIndexes();
-                        } else {
-                            // 其他状态
-                            new Notice(
-                                `索引状态: ${result.status}`,
-                                3000
-                            );
-                            await this.loadIndexes();
-                        }
-                    } catch (error: any) {
-                        let errorMessage = '索引创建失败';
-
-                        if (error.message) {
-                            if (error.message.includes('Too Many Requests') ||
-                                error.message.includes('速率限制')) {
-                                errorMessage = '创建索引过于频繁，请稍后再试';
-                            } else if (error.message.includes('API key')) {
-                                errorMessage = 'API key 未配置或无效，请在设置中检查';
-                            } else {
-                                errorMessage = `索引创建失败: ${error.message}`;
-                            }
-                        }
-
-                        new Notice(errorMessage, 5000);
-                        console.error('[DeepPDF] 索引创建错误:', error);
-                    }
-                }).open();
-            },
-            onExportMarkdown: async (indexId: string) => {
-                await this.handleExportMarkdown(indexId);
-            },
-            onDeleteIndex: async (indexId: string) => {
-                await this.handleDeleteIndex(indexId);
-            },
-            onNewChat: () => {
-                this.handleNewChat();
-            },
-            onOpenBookManagement: () => this.openBookManagement()
+    /**
+     * 创建阅读顶栏 (简化版)
+     */
+    private createReadingTopbar(container: HTMLElement) {
+        this.readingTopbar = new ReadingTopbar({
+            onOpenLibrary: () => this.openLibraryModal(),
+            onNewChat: () => this.handleNewChat(),
+            onOpenBookManagement: () => this.openBookManagement(),
+            onOpenSettings: () => {
+                // 打开设置并定位到 DeepPDF 插件
+                const setting = (this.app as any).setting;
+                if (setting) {
+                    setting.open();
+                    setting.openTabById('deeppdf');
+                }
+            }
         });
 
-        const el = this.indexManager.getElement();
+        const el = this.readingTopbar.getElement();
         if (el) {
             container.appendChild(el);
         }
@@ -689,8 +563,8 @@ export class SidebarView extends ItemView {
             }
         });
 
-        // 创建索引管理区 (新)
-        this.createIndexManager(container);
+        // 创建阅读顶栏 (简化版)
+        this.createReadingTopbar(container);
 
         // 创建消息列表区
         this.createMessageListSection(container);
@@ -2219,10 +2093,8 @@ ${r.text}`;
 
 
     private async loadIndexes(): Promise<void> {
-        if (!this.indexManager) return; // 使用 indexManager
-
         if (!this.apiClient) {
-            this.indexManager.setIndexes([]);
+            this.indexes = [];
             return;
         }
 
@@ -2232,7 +2104,7 @@ ${r.text}`;
             console.log('[DeepPDF] [loadIndexes] API 响应:', JSON.stringify(result, null, 2));
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
-                this.indexManager.setIndexes([]);
+                this.indexes = [];
                 return;
             }
 
@@ -2241,8 +2113,8 @@ ${r.text}`;
                 console.log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
             });
 
-            // 1. 设置索引列表 (不传递选中项)
-            this.indexManager.setIndexes(result.indexes);
+            // 缓存索引列表
+            this.indexes = result.indexes;
 
             // 2. 决定要选中的索引
             let indexToSelect = this.currentIndexId;
@@ -2258,9 +2130,9 @@ ${r.text}`;
                 indexToSelect = result.indexes[0].id;
             }
 
-            // 3. 显式选中，触发 onIndexChange -> 加载历史
+            // 3. 选中索引
             if (indexToSelect) {
-                this.indexManager.selectIndex(indexToSelect);
+                await this.selectIndex(indexToSelect);
                 console.log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
             }
 
@@ -2269,7 +2141,7 @@ ${r.text}`;
         } catch (error) {
             console.error('[DeepPDF] [loadIndexes] 请求失败:', error);
             handleNetworkError(error as Error, { context: 'loadIndexes' });
-            this.indexManager.setIndexes([]);
+            this.indexes = [];
         }
     }
 
@@ -2637,13 +2509,13 @@ ${structureInfo}
             }
 
             // 清理索引管理器
-            if (this.indexManager) {
+            if (this.readingTopbar) {
                 try {
-                    this.indexManager.destroy();
+                    this.readingTopbar.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying indexManager:', e);
+                    console.warn('[DeepPDF] Error destroying readingTopbar:', e);
                 }
-                this.indexManager = null;
+                this.readingTopbar = null;
             }
         } catch (error) {
             console.error('[DeepPDF] Error in onClose:', error);
