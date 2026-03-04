@@ -342,8 +342,8 @@ function extractSectionByBlockRef(content: string, blockRef: string): string {
 		}
 
 		const result = sectionLines.join('\n').trim();
-		console.log('[extractSectionByBlockRef] Found block ref at index:', blockIndex);
-		console.log('[extractSectionByBlockRef] Extracted lines:', sectionLines.length);
+		log('[extractSectionByBlockRef] Found block ref at index:', blockIndex);
+		log('[extractSectionByBlockRef] Extracted lines:', sectionLines.length);
 		return result;
 	}
 
@@ -1402,7 +1402,7 @@ export class AIMessage extends Message {
 	private handleExcerpt(): void {
 		if (!this.onExcerpt) return;
 
-		console.log(`[DeepPDF] handleExcerpt - pdfName: ${this.data.pdfName}`);
+		log(`[DeepPDF] handleExcerpt - pdfName: ${this.data.pdfName}`);
 
 		const content: ExcerptContent = {
 			text: this.data.content,
@@ -1425,7 +1425,7 @@ export class AIMessage extends Message {
 	 * 设置文字选中监听
 	 */
 	private setupSelectionListener(contentEl: HTMLElement): void {
-		console.log(`[DeepPDF] setupSelectionListener - pdfName: ${this.data.pdfName}`);
+		log(`[DeepPDF] setupSelectionListener - pdfName: ${this.data.pdfName}`);
 		contentEl.addEventListener('mouseup', (e: MouseEvent) => {
 			const selection = window.getSelection();
 			if (!selection) return;
@@ -1476,7 +1476,7 @@ export class AIMessage extends Message {
 	}
 
 	private renderCitations(container: HTMLElement) {
-		console.log('[renderCitations] citations数据:', this.data.citations);
+		log('[renderCitations] citations数据:', this.data.citations);
 		if (this.data.citations && this.data.citations.length > 0) {
 			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
 			this.data.citations.forEach(citation => {

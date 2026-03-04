@@ -216,7 +216,7 @@ export class SidebarView extends ItemView {
                 try {
                     this.messageList!.addMessage(msgData);
                 } catch (e) {
-                    console.warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
+                    warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
                 }
             });
         } else {
@@ -311,7 +311,7 @@ export class SidebarView extends ItemView {
 
         if (currentSize <= MAX_SIZE) return;
 
-        console.log(`[DeepPDF] 缓存大小 (${(currentSize / 1024).toFixed(1)}KB) 超过限制，开始清理...`);
+        log(`[DeepPDF] 缓存大小 (${(currentSize / 1024).toFixed(1)}KB) 超过限制，开始清理...`);
 
         // 按时间排序
         const sessionIds = Object.keys(cache).sort((a, b) =>
@@ -324,7 +324,7 @@ export class SidebarView extends ItemView {
             if (oldestId) {
                 delete cache[oldestId];
                 currentSize = JSON.stringify(cache).length;
-                console.log(`[DeepPDF] 已删除过期缓存: ${oldestId}`);
+                log(`[DeepPDF] 已删除过期缓存: ${oldestId}`);
             }
         }
     }
@@ -383,7 +383,7 @@ export class SidebarView extends ItemView {
      * 选择索引（从弹窗中调用）
      */
     private async selectIndex(indexId: string): Promise<void> {
-        console.log(`[DeepPDF] selectIndex triggered: ${indexId}`);
+        log(`[DeepPDF] selectIndex triggered: ${indexId}`);
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
         await this.plugin.saveSettings();
@@ -596,11 +596,11 @@ export class SidebarView extends ItemView {
         const workspace = this.app.workspace as any;
         this.registerEvent(
             workspace.on("deeppdf:select-index", async (indexId: string) => {
-                console.log("[DeepPDF] Received select-index event:", indexId);
+                log("[DeepPDF] Received select-index event:", indexId);
 
                 // 如果当前处于跨书籍模式，先切换回单书籍模式
                 if (this.crossBookMode) {
-                    console.log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
+                    log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
                     this.crossBookMode = false;
                     this.chatInput?.setSearchMode('single');
                     this.indexManager?.setCrossBookMode(false);
@@ -620,7 +620,7 @@ export class SidebarView extends ItemView {
         // 监听跨书籍搜索事件（带书单/标签过滤）
         this.registerEvent(
             workspace.on("deeppdf:cross-book-search", async (params: CrossBookSearchParams) => {
-                console.log("[DeepPDF] Received cross-book-search event:", params);
+                log("[DeepPDF] Received cross-book-search event:", params);
 
                 // 保存过滤条件
                 this.searchFilters = {
@@ -636,7 +636,7 @@ export class SidebarView extends ItemView {
         // 监听主题报告事件
         this.registerEvent(
             workspace.on("deeppdf:theme-report", async () => {
-                console.log("[DeepPDF] Received theme-report event");
+                log("[DeepPDF] Received theme-report event");
                 // 切换到跨书籍模式并显示欢迎消息
                 await this.switchToCrossBookMode({ clearMessages: true, showWelcome: true });
             })
@@ -876,7 +876,7 @@ export class SidebarView extends ItemView {
                 if (savedSessionId) {
                     const cached = this.plugin.settings.chatCache?.[savedSessionId];
                     if (cached && cached.messages && cached.messages.length > 0) {
-                        console.log(`[DeepPDF] 切换到单书籍模式，恢复会话: ${cached.messages.length} 条消息`);
+                        log(`[DeepPDF] 切换到单书籍模式，恢复会话: ${cached.messages.length} 条消息`);
                         this.sessionId = savedSessionId;
                         this.restoreHistoryToView(cached.messages, true);
                         new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
@@ -926,7 +926,7 @@ export class SidebarView extends ItemView {
                 log('[DeepPDF] loadCrossBookSession: cached.isCrossBook =', cached.isCrossBook);
             }
             if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
-                console.log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
+                log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
                 this.sessionId = sessionId;
                 this.restoreHistoryToView(cached.messages, true);
                 return;
@@ -985,7 +985,7 @@ export class SidebarView extends ItemView {
                 const userMessageId = `msg-${timestamp}-user`;
                 aiMessageId = `msg-${timestamp}-ai`;
 
-                console.log(`[DeepPDF] sendMessage - currentPdfName: ${this.currentPdfName}`);
+                log(`[DeepPDF] sendMessage - currentPdfName: ${this.currentPdfName}`);
 
                 // 添加用户消息
                 const userMessageData: MessageData = {
@@ -1075,7 +1075,7 @@ export class SidebarView extends ItemView {
         // ========== 优化 3: Re-ranking 机制 ==========
         // 在应用 token 限制之前，先对结果进行 Re-ranking
         const rerankedResults = this.rerankResults(result.results, query);
-        console.log(`[DeepPDF] [handleQuery] Re-ranking 完成，结果顺序已优化`);
+        log(`[DeepPDF] [handleQuery] Re-ranking 完成，结果顺序已优化`);
 
         // ========== 优化 1: Context token 限制 ==========
         const MAX_CONTEXT_TOKENS = 12000;
@@ -1925,7 +1925,7 @@ ${r.text}`;
         );
 
         new Notice(`已打开: ${displayName} 第 ${page} 页`);
-        console.log(`[DeepPDF] 已打开 PDF: ${pdfLink}`);
+        log(`[DeepPDF] 已打开 PDF: ${pdfLink}`);
     }
 
     /**
@@ -2114,7 +2114,7 @@ ${r.text}`;
 
             // 打印每个索引的状态
             result.indexes.forEach((idx, i) => {
-                console.log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
+                log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
             });
 
             // 缓存索引列表
@@ -2137,7 +2137,7 @@ ${r.text}`;
             // 3. 选中索引
             if (indexToSelect) {
                 await this.selectIndex(indexToSelect);
-                console.log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
+                log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
             }
 
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
@@ -2158,38 +2158,38 @@ ${r.text}`;
             return;
         }
 
-        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 当前选中: ${this.currentIndexId}`);
+        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 当前选中: ${this.currentIndexId}`);
 
         // 如果当前选中的是 task_id，查询任务状态获取实际的 index_id
         if (this.currentIndexId.startsWith('task_')) {
-            console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 检测到 task_id，查询状态...`);
+            log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 检测到 task_id，查询状态...`);
             try {
                 const taskStatus = await this.apiClient.getIndexStatus(this.currentIndexId);
-                console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态响应:`, JSON.stringify(taskStatus, null, 2));
+                log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态响应:`, JSON.stringify(taskStatus, null, 2));
 
                 if (taskStatus.status === 'completed' && taskStatus.index_id) {
                     // 任务已完成，更新为实际的 index_id
-                    console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
+                    log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
                     this.currentIndexId = taskStatus.index_id;
                     // 更新索引管理器的选中状态
                     if (this.indexManager) {
                         (this.indexManager as any).selectedIndexId = taskStatus.index_id;
                         (this.indexManager as any).renderList();
-                        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新索引管理器选中状态`);
+                        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新索引管理器选中状态`);
                     }
                     // 更新 PDF 名称
                     if (taskStatus.pdf_name) {
                         this.currentPdfName = taskStatus.pdf_name;
-                        console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新 PDF 名称: ${taskStatus.pdf_name}`);
+                        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新 PDF 名称: ${taskStatus.pdf_name}`);
                     }
                 } else {
-                    console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态: ${taskStatus.status}，未完成或无 index_id`);
+                    log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态: ${taskStatus.status}，未完成或无 index_id`);
                 }
             } catch (error) {
-                console.warn(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
+                warn(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
             }
         } else {
-            console.log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 不是 task_id，跳过查询`);
+            log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 不是 task_id，跳过查询`);
         }
     }
 
@@ -2215,7 +2215,7 @@ ${r.text}`;
     private rerankResults(results: any[], query: string): any[] {
         if (results.length === 0) return results;
 
-        console.log(`[DeepPDF] [rerank] 开始 Re-ranking ${results.length} 个结果`);
+        log(`[DeepPDF] [rerank] 开始 Re-ranking ${results.length} 个结果`);
 
         const queryLower = query.toLowerCase();
         const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
@@ -2288,7 +2288,7 @@ ${r.text}`;
         for (const result of results) {
             const tokens = this.estimateTokens(result.text || "");
             if (currentTokens + tokens > maxTokens) {
-                console.log(`[DeepPDF] [buildContext] 达到 token 限制 (${currentTokens}/${maxTokens})，剩余 ${results.length - limitedResults.length} 个结果被截断`);
+                log(`[DeepPDF] [buildContext] 达到 token 限制 (${currentTokens}/${maxTokens})，剩余 ${results.length - limitedResults.length} 个结果被截断`);
                 break;
             }
             limitedResults.push(result);
