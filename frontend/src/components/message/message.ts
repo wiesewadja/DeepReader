@@ -7,6 +7,7 @@ import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obs
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
+import { log } from '../../utils/logger.js';
 
 /**
  * 消息角色类型
@@ -152,7 +153,7 @@ export function parseAgentContent(content: string): {
 		const line = match[0].trim();
 		// 清理 Markdown 符号，只保留纯文本状态
 		currentStatus = line.replace(/^\s*|\*+|\s*$/g, '').trim();
-		console.log('[DeepPDF] 检测到状态行:', currentStatus);
+		log('[DeepPDF] 检测到状态行:', currentStatus);
 	}
 
 	// 从正文中移除所有状态行
@@ -467,7 +468,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 
 		// 处理悬停事件
 		link.addEventListener('mouseenter', (event: MouseEvent) => {
-			console.log('[DeepPDF] mouseenter on link:', href);
+			log('[DeepPDF] mouseenter on link:', href);
 
 			// 清理之前的定时器
 			if (showTimer) {
@@ -481,7 +482,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 
 			// 如果按住了 Command/Ctrl 键，使用原生预览
 			if (event.metaKey || event.ctrlKey) {
-				console.log('[DeepPDF] Command key pressed, using native preview');
+				log('[DeepPDF] Command key pressed, using native preview');
 				cleanupPopover();
 				// 触发 Obsidian 原生 hover preview
 				app.workspace.trigger('hover-link', {
@@ -494,35 +495,35 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 				return;
 			}
 
-			console.log('[DeepPDF] No Command key, showing custom preview in 200ms');
+			log('[DeepPDF] No Command key, showing custom preview in 200ms');
 
 			// 否则显示自定义章节预览
 			showTimer = window.setTimeout(() => {
 				// 提取纯文件名（去掉块引用部分）
 				const pureFileName = href.split('#')[0];
-				console.log('[DeepPDF] Pure file name:', pureFileName);
+				log('[DeepPDF] Pure file name:', pureFileName);
 
 				// 提取块引用 ID（如果有）
 				const blockRefMatch = href.match(/#\^([a-z0-9-]+)/);
 				const blockRef = blockRefMatch ? blockRefMatch[1] : null;
-				console.log('[DeepPDF] Block reference:', blockRef);
+				log('[DeepPDF] Block reference:', blockRef);
 
 				// 获取链接目标文件
 				const linkPath = app.metadataCache.getFirstLinkpathDest(pureFileName, '');
 				if (!linkPath) {
-					console.log('[DeepPDF] Link path not found for:', pureFileName);
+					log('[DeepPDF] Link path not found for:', pureFileName);
 					return;
 				}
 
-				console.log('[DeepPDF] Reading file:', linkPath.path);
+				log('[DeepPDF] Reading file:', linkPath.path);
 
 				// 移除之前的 popover
 				cleanupPopover();
 
 				// 读取文件内容
 				app.vault.read(linkPath).then((content: string) => {
-					console.log('[DeepPDF] File content loaded, length:', content.length);
-					console.log('[DeepPDF] First 500 chars:', content.substring(0, 500));
+					log('[DeepPDF] File content loaded, length:', content.length);
+					log('[DeepPDF] First 500 chars:', content.substring(0, 500));
 
 					// 提取特定章节内容（如果有块引用）
 					let contentToRender = content;
@@ -530,10 +531,10 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 						const sectionContent = extractSectionByBlockRef(content, blockRef);
 						if (sectionContent) {
 							contentToRender = sectionContent;
-							console.log('[DeepPDF] Section content extracted, length:', sectionContent.length);
-							console.log('[DeepPDF] Section preview:', sectionContent.substring(0, 200));
+							log('[DeepPDF] Section content extracted, length:', sectionContent.length);
+							log('[DeepPDF] Section preview:', sectionContent.substring(0, 200));
 						} else {
-							console.log('[DeepPDF] Block reference not found, showing full content');
+							log('[DeepPDF] Block reference not found, showing full content');
 						}
 					}
 
@@ -561,13 +562,13 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					popover.style.top = '0';
 					document.body.appendChild(popover);
 
-					console.log('[DeepPDF] Popover added to DOM');
+					log('[DeepPDF] Popover added to DOM');
 
 					// 计算位置
 					const linkRect = link.getBoundingClientRect();
 					const popoverRect = popover.getBoundingClientRect();
 
-					console.log('[DeepPDF] linkRect:', linkRect, 'popoverRect:', popoverRect);
+					log('[DeepPDF] linkRect:', linkRect, 'popoverRect:', popoverRect);
 
 					let top = linkRect.bottom + 8;
 					let left = linkRect.left;
@@ -589,7 +590,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					popover.style.visibility = 'visible';
 					popover.style.zIndex = '10000';
 
-					console.log('[DeepPDF] Popover positioned at:', top, left);
+					log('[DeepPDF] Popover positioned at:', top, left);
 
 					customPopover = popover;
 				}).catch((err) => {
@@ -1056,7 +1057,7 @@ export class AIMessage extends Message {
 		const statusNeedsUpdate = newStatus !== undefined && newStatus !== this.lastDisplayedStatus;
 
 		// 调试：输出关键变量
-		console.log('[DeepPDF] update() 调用:', {
+		log('[DeepPDF] update() 调用:', {
 			hasEl: !!this.el,
 			dataCurrentStatus: data.currentStatus,
 			newStatus,
@@ -1079,7 +1080,7 @@ export class AIMessage extends Message {
 			// 如果元素不存在，创建它
 			if (!statusEl) {
 				statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-				console.log('[DeepPDF] update() - 创建状态元素');
+				log('[DeepPDF] update() - 创建状态元素');
 			}
 
 			// 更新状态显示
@@ -1087,13 +1088,13 @@ export class AIMessage extends Message {
 				statusEl.textContent = newStatus;
 				statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
-				console.log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
+				log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				// 清空状态
 				statusEl.textContent = '';
 				statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
-				console.log('[DeepPDF] update() - 状态已隐藏');
+				log('[DeepPDF] update() - 状态已隐藏');
 			}
 		}
 
@@ -1133,7 +1134,7 @@ export class AIMessage extends Message {
 				statusEl.removeClass('visible');
 			}
 			this.lastDisplayedStatus = undefined;
-			console.log('[DeepPDF] update() - 流式结束，隐藏状态');
+			log('[DeepPDF] update() - 流式结束，隐藏状态');
 
 			if (contentEl && this.app) {
 				// 清理旧的 observers 和 mouseover handler
@@ -1182,7 +1183,7 @@ export class AIMessage extends Message {
 					statusEl.textContent = '';
 					statusEl.removeClass('visible');
 					this.lastDisplayedStatus = undefined;
-					console.log('[DeepPDF] updateContent() - 检测到实际内容，自动隐藏状态');
+					log('[DeepPDF] updateContent() - 检测到实际内容，自动隐藏状态');
 				}
 			}
 			this.streamingUpdateContent(contentEl as HTMLElement, content);
@@ -1245,7 +1246,7 @@ export class AIMessage extends Message {
 
 			// 【调试日志】输出解析结果（前 5 次调用）
 			if (this.lastRenderTime === 0 || contentLen < 100) {
-				console.log('[DeepPDF] streamingUpdateContent - 解析结果:', {
+				log('[DeepPDF] streamingUpdateContent - 解析结果:', {
 					currentStatus,
 					contentLen,
 					cleanedContentPreview: cleanedContent.substring(0, 50)
@@ -1269,7 +1270,7 @@ export class AIMessage extends Message {
 			// 用户需要立即看到"正在搜索..."等状态，不能因为内容变化小而被跳过
 			if (this.el) {
 				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-				console.log('[DeepPDF] streamingUpdateContent - DOM 查找:', {
+				log('[DeepPDF] streamingUpdateContent - DOM 查找:', {
 					hasEl: !!this.el,
 					hasHeaderRow: !!headerRow,
 					currentStatus
@@ -1278,10 +1279,10 @@ export class AIMessage extends Message {
 					let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
 					if (!statusEl) {
 						statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-						console.log('[DeepPDF] streamingUpdateContent - 创建状态元素');
+						log('[DeepPDF] streamingUpdateContent - 创建状态元素');
 					}
 					if (statusEl) {
-						console.log('[DeepPDF] streamingUpdateContent - 更新状态:', {
+						log('[DeepPDF] streamingUpdateContent - 更新状态:', {
 							currentStatus,
 							oldTextContent: statusEl.textContent,
 							willUpdate: currentStatus && statusEl.textContent !== currentStatus
@@ -1289,7 +1290,7 @@ export class AIMessage extends Message {
 						if (currentStatus && statusEl.textContent !== currentStatus) {
 							statusEl.textContent = currentStatus;
 							statusEl.addClass('visible');
-							console.log('[DeepPDF] streamingUpdateContent - 状态已更新并显示:', currentStatus);
+							log('[DeepPDF] streamingUpdateContent - 状态已更新并显示:', currentStatus);
 						} else if (!currentStatus && statusEl.textContent !== '') {
 							statusEl.textContent = '';
 							statusEl.removeClass('visible');
@@ -1297,7 +1298,7 @@ export class AIMessage extends Message {
 					}
 				}
 			} else {
-				console.log('[DeepPDF] streamingUpdateContent - this.el 不存在!');
+				log('[DeepPDF] streamingUpdateContent - this.el 不存在!');
 			}
 
 			if (shouldRender && this.app) {

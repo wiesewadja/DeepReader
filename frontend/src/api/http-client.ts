@@ -3,6 +3,8 @@
  * 完整的 API 调用封装
  */
 
+import { log, error as logError } from '../utils/logger.js';
+
 // ==================== 类型定义 ====================
 
 // 文档类型
@@ -890,7 +892,7 @@ export class DeepPDFClient {
   ): AbortController {
     const controller = new AbortController();
 
-    console.log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, sessionId, contextDocs: contextDocs?.length, baseUrl: this.baseUrl });
+    log('[Agent] 开始流式请求:', { query, indexId, forceMode, includeCitations, sessionId, contextDocs: contextDocs?.length, baseUrl: this.baseUrl });
 
     // 构建请求体
     const body: any = {
@@ -916,7 +918,7 @@ export class DeepPDFClient {
       signal: controller.signal
     })
       .then(response => {
-        console.log('[Agent] 收到响应:', { status: response.status, ok: response.ok, headers: Object.fromEntries((response.headers as any).entries()) });
+        log('[Agent] 收到响应:', { status: response.status, ok: response.ok, headers: Object.fromEntries((response.headers as any).entries()) });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -927,7 +929,7 @@ export class DeepPDFClient {
           throw new Error('Response body is not readable');
         }
 
-        console.log('[Agent] 开始读取流式数据');
+        log('[Agent] 开始读取流式数据');
         const decoder = new TextDecoder();
         let buffer = '';
         let chunkCount = 0;
@@ -935,7 +937,7 @@ export class DeepPDFClient {
         const read = (): Promise<void> => {
           return reader.read().then(({ done, value }) => {
             if (done) {
-              console.log('[Agent] 流式读取完成');
+              log('[Agent] 流式读取完成');
               onComplete?.();
               return;
             }
@@ -955,17 +957,17 @@ export class DeepPDFClient {
                   chunkCount++;
 
                   if (chunkCount <= 5) {
-                    console.log('[Agent] 收到数据块:', { chunkCount, data });
+                    log('[Agent] 收到数据块:', { chunkCount, data });
                   }
 
                   if (data.status === 'error') {
-                    console.error('[Agent] 错误状态:', data.error);
+                    logError('[Agent] 错误状态:', data.error);
                     onError?.(data.error || 'Unknown error');
                     return;
                   }
 
                   if (data.status === 'done') {
-                    console.log('[Agent] 收到完成信号, 总数据块:', chunkCount);
+                    log('[Agent] 收到完成信号, 总数据块:', chunkCount);
                     onComplete?.();
                     return;
                   }
@@ -974,12 +976,12 @@ export class DeepPDFClient {
                   const metadata: { status?: string; citations?: CitationInfo[] } = {};
 
                   if (data.status === 'citations_done') {
-                    console.log('[Agent] 收到引用完成信号');
+                    log('[Agent] 收到引用完成信号');
                     metadata.status = 'citations_done';
                   }
 
                   if (data.citations) {
-                    console.log('[Agent] 收到引用数据:', data.citations);
+                    log('[Agent] 收到引用数据:', data.citations);
                     metadata.citations = data.citations;
                   }
 
@@ -990,7 +992,7 @@ export class DeepPDFClient {
                     onChunk('', metadata);
                   }
                 } catch (e) {
-                  console.error('[Agent] Failed to parse SSE data:', jsonStr, e);
+                  logError('[Agent] Failed to parse SSE data:', jsonStr, e);
                 }
               }
             }
@@ -1003,7 +1005,7 @@ export class DeepPDFClient {
       })
       .catch(err => {
         if (err.name === 'AbortError') {
-          console.log('[Agent] Stream aborted by user');
+          log('[Agent] Stream aborted by user');
         } else {
           onError?.(err.message || 'Stream request failed');
         }

@@ -1,6 +1,7 @@
 import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
+import { setLogEnabled, log, warn, error } from "./utils/logger.js";
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -19,6 +20,7 @@ interface DeepPDFSettings {
     lastCrossBookMode: boolean;  // 上次是否处于跨书籍模式
     lastCrossBookSessionId: string;  // 跨书籍模式的会话ID
     chatCache?: Record<string, any>;  // 对话缓存
+    enableDebugLog: boolean;  // 是否启用调试日志
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -35,7 +37,8 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     lastSelectedIndexId: "",
     forceMode: "auto",  // 默认使用自动路由
     lastCrossBookMode: false,  // 默认不启用跨书籍模式
-    lastCrossBookSessionId: ""  // 跨书籍会话ID
+    lastCrossBookSessionId: "",  // 跨书籍会话ID
+    enableDebugLog: false  // 默认关闭调试日志
 };
 
 export default class DeepPDFPlugin extends Plugin {
@@ -43,9 +46,12 @@ export default class DeepPDFPlugin extends Plugin {
     apiClient: DeepPDFClient | null = null;
 
     async onload() {
-        console.log('[DeepPDF] Loading plugin');
-
         await this.loadSettings();
+
+        // 设置日志开关
+        setLogEnabled(this.settings.enableDebugLog);
+
+        log('Loading plugin');
 
         // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
@@ -54,13 +60,13 @@ export default class DeepPDFPlugin extends Plugin {
         try {
             const isHealthy = await this.apiClient.healthCheck();
             if (!isHealthy) {
-                console.log('[DeepPDF] Server not running or unhealthy at localhost:' + this.settings.apiPort);
+                log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
                 new Notice(`DeepPDF: 无法连接到服务器 (localhost:${this.settings.apiPort})。请启动后端服务。`);
             } else {
-                console.log('[DeepPDF] Server connected successfully');
+                log('Server connected successfully');
             }
-        } catch (error) {
-            console.warn('[DeepPDF] Failed to connect to server:', error);
+        } catch (err) {
+            warn('Failed to connect to server:', err);
             new Notice(`DeepPDF: 连接失败 (localhost:${this.settings.apiPort})。请检查后端是否运行。`);
         }
 
@@ -140,10 +146,14 @@ export default class DeepPDFPlugin extends Plugin {
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        // 更新日志开关状态
+        setLogEnabled(this.settings.enableDebugLog);
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
+        // 更新日志开关状态
+        setLogEnabled(this.settings.enableDebugLog);
     }
 
     async onunload() {
@@ -329,6 +339,16 @@ class DeepPDFSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.forceMode)
                 .onChange(async (value) => {
                     this.plugin.settings.forceMode = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName("启用调试日志")
+            .setDesc("开启后会在控制台输出详细运行日志，用于问题排查。默认关闭以减少日志噪音。")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableDebugLog)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableDebugLog = value;
                     await this.plugin.saveSettings();
                 }));
 

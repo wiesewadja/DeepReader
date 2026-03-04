@@ -26,8 +26,10 @@ import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import { LibraryModal } from "../components/library-modal/index.js";
+import { log, warn, error as logError } from "../utils/logger.js";
 
-// ==================== 类型映射 ====================
+// 在文件顶部使用一次 log 以避免 unused import 警告
+void log;
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -237,9 +239,9 @@ export class SidebarView extends ItemView {
 
     /** 保存当前对话到本地缓存（带 LRU 清理） */
     private async saveToCache() {
-        console.log('[DeepPDF] saveToCache called, sessionId:', this.sessionId, 'crossBookMode:', this.crossBookMode);
+        log('[DeepPDF] saveToCache called, sessionId:', this.sessionId, 'crossBookMode:', this.crossBookMode);
         if (!this.sessionId || !this.messageList) {
-            console.log('[DeepPDF] saveToCache early return: no sessionId or messageList');
+            log('[DeepPDF] saveToCache early return: no sessionId or messageList');
             return;
         }
 
@@ -249,14 +251,14 @@ export class SidebarView extends ItemView {
             : this.currentIndexId;
 
         if (!effectiveIndexId) {
-            console.log('[DeepPDF] saveToCache early return: no effectiveIndexId');
+            log('[DeepPDF] saveToCache early return: no effectiveIndexId');
             return;
         }
 
         // 1. 获取当前所有消息
         // Note: 需要在 MessageList 中实现 getAllMessages
         const allMessages = (this.messageList as any).getAllMessages();
-        console.log('[DeepPDF] saveToCache allMessages count:', allMessages?.length);
+        log('[DeepPDF] saveToCache allMessages count:', allMessages?.length);
 
         // 2. 过滤有效消息
         const validMsgs = allMessages.filter((m: any) =>
@@ -267,9 +269,9 @@ export class SidebarView extends ItemView {
             m.content // 确保有内容
         );
 
-        console.log('[DeepPDF] saveToCache validMsgs count:', validMsgs?.length);
+        log('[DeepPDF] saveToCache validMsgs count:', validMsgs?.length);
         if (validMsgs.length === 0) {
-            console.log('[DeepPDF] saveToCache early return: no valid messages');
+            log('[DeepPDF] saveToCache early return: no valid messages');
             return;
         }
 
@@ -289,13 +291,13 @@ export class SidebarView extends ItemView {
         // 如果是跨书籍模式，保存会话ID以便下次恢复
         if (this.crossBookMode) {
             this.plugin.settings.lastCrossBookSessionId = this.sessionId;
-            console.log('[DeepPDF] 保存跨书籍会话ID:', this.sessionId);
+            log('[DeepPDF] 保存跨书籍会话ID:', this.sessionId);
         }
 
         // 4. 清理并保存
         await this.cleanupCache();
         await this.plugin.saveSettings();
-        console.log('[DeepPDF] 缓存已保存, chatCache keys:', Object.keys(this.plugin.settings.chatCache || {}));
+        log('[DeepPDF] 缓存已保存, chatCache keys:', Object.keys(this.plugin.settings.chatCache || {}));
     }
 
     /** 清理过期缓存 (LRU, max 5MB) */
@@ -495,7 +497,7 @@ export class SidebarView extends ItemView {
                 const healthResponse = await this.apiClient.healthCheck();
                 connected = healthResponse?.status === 'ok';
             } catch (e) {
-                console.error('[DeepPDF] Connection check failed:', e);
+                logError('[DeepPDF] Connection check failed:', e);
             }
         }
 
@@ -654,7 +656,7 @@ export class SidebarView extends ItemView {
             const inputSection = container.querySelector('.deeppdf-chat-input-section');
 
             if (!messagesContainer || !inputSection) {
-                console.warn('[DeepPDF] Scroll handler setup failed: elements not found');
+                warn('[DeepPDF] Scroll handler setup failed: elements not found');
                 return;
             }
 
@@ -853,9 +855,9 @@ export class SidebarView extends ItemView {
 
         // 持久化跨书籍模式状态
         this.plugin.settings.lastCrossBookMode = this.crossBookMode;
-        console.log('[DeepPDF] toggleSearchMode: 设置 lastCrossBookMode =', this.crossBookMode);
+        log('[DeepPDF] toggleSearchMode: 设置 lastCrossBookMode =', this.crossBookMode);
         await this.plugin.saveSettings();
-        console.log('[DeepPDF] toggleSearchMode: 设置已保存');
+        log('[DeepPDF] toggleSearchMode: 设置已保存');
 
         // 如果从单书籍切换到跨书籍模式，清空当前消息并加载跨书籍会话
         if (!previousMode && this.crossBookMode) {
@@ -883,7 +885,7 @@ export class SidebarView extends ItemView {
                 }
 
                 // 没有历史会话，显示欢迎消息
-                console.log('[DeepPDF] 切换到单书籍模式，无历史会话');
+                log('[DeepPDF] 切换到单书籍模式，无历史会话');
                 this.showWelcomeMessage();
             }
         }
@@ -895,14 +897,14 @@ export class SidebarView extends ItemView {
     private async restoreCrossBookMode() {
         // 检查上次是否处于跨书籍模式
         const wasCrossBookMode = this.plugin.settings.lastCrossBookMode;
-        console.log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
-        console.log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.plugin.settings.lastCrossBookSessionId);
-        console.log('[DeepPDF] restoreCrossBookMode: chatCache exists =', !!this.plugin.settings.chatCache);
+        log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
+        log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.plugin.settings.lastCrossBookSessionId);
+        log('[DeepPDF] restoreCrossBookMode: chatCache exists =', !!this.plugin.settings.chatCache);
         if (this.plugin.settings.chatCache) {
-            console.log('[DeepPDF] restoreCrossBookMode: chatCache keys =', Object.keys(this.plugin.settings.chatCache));
+            log('[DeepPDF] restoreCrossBookMode: chatCache keys =', Object.keys(this.plugin.settings.chatCache));
         }
         if (wasCrossBookMode) {
-            console.log('[DeepPDF] 恢复跨书籍模式');
+            log('[DeepPDF] 恢复跨书籍模式');
             this.crossBookMode = true;
             this.chatInput?.setSearchMode('cross');
             this.indexManager?.setCrossBookMode(true);
@@ -915,13 +917,13 @@ export class SidebarView extends ItemView {
      */
     private async loadCrossBookSession() {
         const sessionId = this.plugin.settings.lastCrossBookSessionId;
-        console.log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
+        log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
         if (sessionId) {
             const cached = this.plugin.settings.chatCache?.[sessionId];
-            console.log('[DeepPDF] loadCrossBookSession: cached =', cached ? 'found' : 'not found');
+            log('[DeepPDF] loadCrossBookSession: cached =', cached ? 'found' : 'not found');
             if (cached) {
-                console.log('[DeepPDF] loadCrossBookSession: cached.messages.length =', cached.messages?.length);
-                console.log('[DeepPDF] loadCrossBookSession: cached.isCrossBook =', cached.isCrossBook);
+                log('[DeepPDF] loadCrossBookSession: cached.messages.length =', cached.messages?.length);
+                log('[DeepPDF] loadCrossBookSession: cached.isCrossBook =', cached.isCrossBook);
             }
             if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
                 console.log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
@@ -931,7 +933,7 @@ export class SidebarView extends ItemView {
             }
         }
         // 没有缓存的跨书籍会话，开始新会话
-        console.log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
+        log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
         this.sessionId = `cross-book-${Date.now()}`;
         this.plugin.settings.lastCrossBookSessionId = this.sessionId;
         await this.plugin.saveSettings();
@@ -1211,7 +1213,7 @@ ${r.text}`;
             return;
         }
 
-        console.log('[DeepPDF] 用户中断 AI 生成');
+        log('[DeepPDF] 用户中断 AI 生成');
         this.streamController.abort();
         this.streamController = null;
         this.isAiStreaming = false;
@@ -1250,7 +1252,7 @@ ${r.text}`;
         // 取消之前的流式请求（如果有）
         if (this.streamController) {
             this.streamController.abort();
-            console.log('[DeepPDF] 取消旧的流式请求');
+            log('[DeepPDF] 取消旧的流式请求');
         }
 
         let fullContent = '';
@@ -1271,8 +1273,8 @@ ${r.text}`;
                 (chunk: string, metadata?: { status?: string; citations?: CitationInfo[] }) => {
                     // 处理引用数据
                     if (metadata?.citations) {
-                        console.log('[DeepPDF] 收到引用数据:', metadata.citations);
-                        console.log('[DeepPDF] 引用数据数量:', metadata.citations.length);
+                        log('[DeepPDF] 收到引用数据:', metadata.citations);
+                        log('[DeepPDF] 引用数据数量:', metadata.citations.length);
                         agentCitations = metadata.citations;
                     }
 
@@ -1283,7 +1285,7 @@ ${r.text}`;
 
                     // 调试日志
                     if (currentStatus) {
-                        console.log('[DeepPDF] handleAgentQuery - 检测到状态:', currentStatus);
+                        log('[DeepPDF] handleAgentQuery - 检测到状态:', currentStatus);
                     }
 
                     // 检查 Agent 元数据是否真正变化
@@ -1324,15 +1326,15 @@ ${r.text}`;
 
                     // 如果有引用数据，转换为 CitationData 格式并添加
                     if (agentCitations.length > 0) {
-                        console.log('[DeepPDF] 转换引用数据，数量:', agentCitations.length);
+                        log('[DeepPDF] 转换引用数据，数量:', agentCitations.length);
                         const convertedCitations = this.convertCitationsToCitationData(agentCitations);
-                        console.log('[DeepPDF] 转换后的引用数据:', convertedCitations);
+                        log('[DeepPDF] 转换后的引用数据:', convertedCitations);
                         updates.citations = convertedCitations;
                     }
 
                     // 更新消息显示
-                    console.log('[DeepPDF] 更新消息，updates keys:', Object.keys(updates));
-                    console.log('[DeepPDF] updates.citations 存在?', !!updates.citations);
+                    log('[DeepPDF] 更新消息，updates keys:', Object.keys(updates));
+                    log('[DeepPDF] updates.citations 存在?', !!updates.citations);
                     this.messageList?.updateMessage(aiMessageId, updates);
                 },
                 // onComplete: 流式完成
@@ -1439,9 +1441,9 @@ ${r.text}`;
             }
 
             // 调用主题报告 API
-            console.log('[DeepPDF] 跨书籍搜索开始:', query, '过滤:', filterDescription, 'indexIds:', indexIds);
+            log('[DeepPDF] 跨书籍搜索开始:', query, '过滤:', filterDescription, 'indexIds:', indexIds);
             const result = await this.apiClient.generateThemeReport(query, { indexIds });
-            console.log('[DeepPDF] 主题报告结果:', result);
+            log('[DeepPDF] 主题报告结果:', result);
 
             if (result.status !== "success") {
                 this.messageList?.updateMessage(aiMessageId, {
@@ -1459,9 +1461,9 @@ ${r.text}`;
                         result.suggested_filename,
                         result.markdown_content
                     );
-                    console.log('[DeepPDF] 报告已保存到:', savedFilePath);
+                    log('[DeepPDF] 报告已保存到:', savedFilePath);
                 } catch (saveError) {
-                    console.error('[DeepPDF] 保存报告失败:', saveError);
+                    logError('[DeepPDF] 保存报告失败:', saveError);
                 }
             }
 
@@ -1534,7 +1536,7 @@ ${r.text}`;
 
             return fullPath;
         } catch (error) {
-            console.error('[DeepPDF] 保存主题报告失败:', error);
+            logError('[DeepPDF] 保存主题报告失败:', error);
             return null;
         }
     }
@@ -1782,7 +1784,7 @@ ${r.text}`;
      */
     private handleCitationJump(citation: CitationData): void {
         try {
-            console.log('[DeepPDF] [引用跳转] 开始处理引用跳转');
+            log('[DeepPDF] [引用跳转] 开始处理引用跳转');
             console.log(`[引用跳转] citation:`, citation);
 
             // 优先处理用户加载的 Markdown 文档
@@ -1818,12 +1820,12 @@ ${r.text}`;
             }
 
             new Notice('引用数据不完整');
-            console.warn('[DeepPDF] 引用数据缺少跳转信息:', citation);
+            warn('[DeepPDF] 引用数据缺少跳转信息:', citation);
 
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error);
             new Notice(`打开文档失败: ${errorMsg}`);
-            console.error('[DeepPDF] 打开文档失败:', error);
+            logError('[DeepPDF] 打开文档失败:', error);
         }
     }
 
@@ -1931,7 +1933,7 @@ ${r.text}`;
      * 自动发送追问问题
      */
     private handleQuestionClick(question: string): void {
-        console.log('[DeepPDF] 追问问题点击:', question);
+        log('[DeepPDF] 追问问题点击:', question);
         // 自动发送问题
         this.sendMessage(question);
     }
@@ -1940,7 +1942,7 @@ ${r.text}`;
      * 生成阅读大纲
      */
     private handleGenerateOutline(): void {
-        console.log('[DeepPDF] 生成阅读大纲');
+        log('[DeepPDF] 生成阅读大纲');
         const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
         this.sendMessage(prompt);
     }
@@ -2011,17 +2013,17 @@ ${r.text}`;
                     this.indexManager.setConnectionStatus('connected');
                     // 如果之前是断开的，现在恢复了，刷新索引列表
                     if (!wasConnected) {
-                        console.log('[DeepPDF] 后端连接恢复，刷新索引列表');
+                        log('[DeepPDF] 后端连接恢复，刷新索引列表');
                         await this.loadIndexes();
                     }
                 } else {
                     this.indexManager.setConnectionStatus('disconnected');
                     if (wasConnected) {
-                        console.log('[DeepPDF] 后端连接断开');
+                        log('[DeepPDF] 后端连接断开');
                     }
                 }
             } catch (error) {
-                console.error('[DeepPDF] 健康检查失败:', error);
+                logError('[DeepPDF] 健康检查失败:', error);
                 this.indexManager.setConnectionStatus('error');
                 this.isConnected = false;
             }
@@ -2101,9 +2103,9 @@ ${r.text}`;
         }
 
         try {
-            console.log('[DeepPDF] [loadIndexes] 开始请求索引列表...');
+            log('[DeepPDF] [loadIndexes] 开始请求索引列表...');
             const result: ListIndexesResult = await this.apiClient.listIndexes();
-            console.log('[DeepPDF] [loadIndexes] API 响应:', JSON.stringify(result, null, 2));
+            log('[DeepPDF] [loadIndexes] API 响应:', JSON.stringify(result, null, 2));
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
                 this.indexes = [];
@@ -2141,7 +2143,7 @@ ${r.text}`;
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();
         } catch (error) {
-            console.error('[DeepPDF] [loadIndexes] 请求失败:', error);
+            logError('[DeepPDF] [loadIndexes] 请求失败:', error);
             handleNetworkError(error as Error, { context: 'loadIndexes' });
             this.indexes = [];
         }
@@ -2152,7 +2154,7 @@ ${r.text}`;
      */
     private async updateCurrentIndexIdIfNeeded(): Promise<void> {
         if (!this.currentIndexId || !this.apiClient) {
-            console.log('[DeepPDF] [updateCurrentIndexIdIfNeeded] 跳过：无 currentIndexId 或 apiClient');
+            log('[DeepPDF] [updateCurrentIndexIdIfNeeded] 跳过：无 currentIndexId 或 apiClient');
             return;
         }
 
@@ -2466,9 +2468,9 @@ ${structureInfo}
             if (this.streamController) {
                 try {
                     this.streamController.abort();
-                    console.log('[DeepPDF] 已取消流式请求');
+                    log('[DeepPDF] 已取消流式请求');
                 } catch (e) {
-                    console.warn('[DeepPDF] Error aborting streamController:', e);
+                    warn('[DeepPDF] Error aborting streamController:', e);
                 }
                 this.streamController = null;
             }
@@ -2478,7 +2480,7 @@ ${structureInfo}
                 try {
                     this.messageList.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying messageList:', e);
+                    warn('[DeepPDF] Error destroying messageList:', e);
                 }
                 this.messageList = null;
             }
@@ -2488,7 +2490,7 @@ ${structureInfo}
                 try {
                     this.chatInput.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying chatInput:', e);
+                    warn('[DeepPDF] Error destroying chatInput:', e);
                 }
                 this.chatInput = null;
             }
@@ -2498,7 +2500,7 @@ ${structureInfo}
                 try {
                     this.taskPollingManager.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying taskPollingManager:', e);
+                    warn('[DeepPDF] Error destroying taskPollingManager:', e);
                 }
                 this.taskPollingManager = null;
             }
@@ -2507,7 +2509,7 @@ ${structureInfo}
             try {
                 this.taskCards.clear();
             } catch (e) {
-                console.warn('[DeepPDF] Error clearing taskCards:', e);
+                warn('[DeepPDF] Error clearing taskCards:', e);
             }
 
             // 清理索引管理器
@@ -2515,12 +2517,12 @@ ${structureInfo}
                 try {
                     this.readingTopbar.destroy();
                 } catch (e) {
-                    console.warn('[DeepPDF] Error destroying readingTopbar:', e);
+                    warn('[DeepPDF] Error destroying readingTopbar:', e);
                 }
                 this.readingTopbar = null;
             }
         } catch (error) {
-            console.error('[DeepPDF] Error in onClose:', error);
+            logError('[DeepPDF] Error in onClose:', error);
             // 不要重新抛出错误，避免影响 Obsidian 的 UI
         }
     }
