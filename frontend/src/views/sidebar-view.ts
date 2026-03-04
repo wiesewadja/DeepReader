@@ -679,6 +679,8 @@ export class SidebarView extends ItemView {
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
                 this.contextTags?.updateDocuments(docs);
+                // 更新消息列表的底部间距，避免被上下文标签遮挡
+                this.updateMessageListPadding(docs.size > 0);
             }
         });
 
@@ -2011,6 +2013,21 @@ ${r.text}`;
         console.log('[DeepPDF] 生成阅读大纲');
         const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
         this.sendMessage(prompt);
+    }
+
+    /**
+     * 更新消息列表的底部间距
+     * 当有上下文标签时，增加间距避免遮挡
+     */
+    private updateMessageListPadding(hasContextTags: boolean): void {
+        const messagesContainer = this.containerEl?.querySelector('.deeppdf-messages-container') as HTMLElement;
+        if (!messagesContainer) return;
+
+        // 基础间距 110px + 上下文标签高度约 40px
+        const basePadding = 110;
+        const contextTagsHeight = hasContextTags ? 44 : 0;
+
+        messagesContainer.style.paddingBottom = `${basePadding + contextTagsHeight}px`;
     }
 
     async updateStatus(): Promise<void> {
