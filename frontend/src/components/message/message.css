@@ -113,12 +113,10 @@
 	-webkit-user-select: text;
 	-moz-user-select: text;
 	-ms-user-select: text;
-	/* 优化渲染性能，减少闪烁 */
+	/* 优化渲染性能 */
 	backface-visibility: hidden;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
-	/* 添加平滑过渡 */
-	transition: opacity 0.15s ease-out;
 	/* 启用硬件加速 */
 	transform: translateZ(0);
 	/* 防止内容跳动 */
@@ -127,9 +125,7 @@
 
 /* 流式更新时的额外优化 */
 .deeppdf-message-streaming .deeppdf-message-content {
-	/* 强制合成层，减少重绘 */
-	will-change: opacity;
-	/* 保持内容稳定 */
+	/* 保持内容稳定 - 使用 contain 而非 will-change 避免闪烁 */
 	contain: layout style;
 	/* 确保流式更新时文本也可以被选中 */
 	user-select: text;

@@ -1077,7 +1077,22 @@ export class AIMessage extends Message {
 			}
 		}
 
-		// 如果只是内容变了，且DOM已存在，尝试局部更新
+		// 【优化】流式更新期间，只做增量更新，避免全量重绘导致闪烁
+		// 只有在流式结束时（streamingEnded）才做完整重绘
+		if (this.el && this.data.isStreaming && !streamingEnded) {
+			// 流式期间：增量更新内容
+			if (data.content !== undefined && data.content !== oldContent) {
+				this.updateContent(data.content);
+			}
+			// 流式期间：增量更新工具调用（如果需要）
+			if (agentToolCallsChanged && data.agentToolCalls) {
+				this.updateToolCalls(data.agentToolCalls);
+			}
+			// 流式期间：不处理引用和追问变化，等到流式结束再处理
+			return;
+		}
+
+		// 非流式期间或流式结束时，使用原有逻辑
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
@@ -1151,6 +1166,32 @@ export class AIMessage extends Message {
 		} else {
 			// 非流式更新，完全重绘
 			this.fullUpdateContent(contentEl as HTMLElement, content);
+		}
+	}
+
+	/**
+	 * 增量更新工具调用（流式期间避免全量重绘）
+	 */
+	protected updateToolCalls(toolCalls: AgentToolCall[]): void {
+		if (!this.el) return;
+
+		// 查找工具调用容器
+		const toolCallsEl = this.el.querySelector('.deeppdf-agent-tool-calls');
+		if (!toolCallsEl) {
+			// 如果容器不存在，需要创建它（但不触发全量重绘）
+			const thoughtsEl = this.el.querySelector('.deeppdf-agent-thoughts');
+			if (thoughtsEl && thoughtsEl.parentElement) {
+				thoughtsEl.parentElement.createEl('div', { cls: 'deeppdf-agent-tool-calls' });
+			}
+			return;
+		}
+
+		// 清空并重新渲染工具调用
+		toolCallsEl.empty();
+		for (const call of toolCalls) {
+			const callEl = toolCallsEl.createEl('div', { cls: 'deeppdf-agent-tool-call' });
+			callEl.createEl('div', { cls: 'deeppdf-agent-tool-name', text: call.name });
+			callEl.createEl('div', { cls: 'deeppdf-agent-tool-status', text: call.status });
 		}
 	}
 
