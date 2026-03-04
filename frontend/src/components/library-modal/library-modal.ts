@@ -23,8 +23,8 @@ export interface LibraryModalOptions {
     onIndexChange?: (indexId: string) => void;
     onCreateIndex?: () => Promise<void>;
     onExportMarkdown?: (indexId: string) => void;
-    onDeleteIndex?: (indexId: string) => void;
-    onRefresh?: () => Promise<void>;
+    onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
+    onRefresh?: () => Promise<IndexListItem[]>;
     apiClient: any;
     plugin: any;
 }
@@ -260,7 +260,8 @@ export class LibraryModal extends Modal {
             '删除索引',
             `确定要删除「${index.pdf_name}」的索引吗？此操作不可撤销。`,
             async () => {
-                this.options.onDeleteIndex?.(index.id);
+                await this.options.onDeleteIndex?.(index.id);
+                // onDeleteIndex 已经调用了 loadIndexes，这里直接用返回的最新数据
                 await this.refreshIndexes();
             },
             { confirmLabel: '删除', isDestructive: true }
@@ -268,8 +269,12 @@ export class LibraryModal extends Modal {
     }
 
     private async refreshIndexes(): Promise<void> {
-        await this.options.onRefresh?.();
-        this.indexes = [...this.options.indexes];
+        const newIndexes = await this.options.onRefresh?.();
+        if (newIndexes) {
+            this.indexes = [...newIndexes];
+        } else {
+            this.indexes = [...this.options.indexes];
+        }
         this.renderList();
     }
 

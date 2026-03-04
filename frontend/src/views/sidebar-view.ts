@@ -364,11 +364,13 @@ export class SidebarView extends ItemView {
             onExportMarkdown: (indexId: string) => {
                 this.handleExportMarkdown(indexId);
             },
-            onDeleteIndex: (indexId: string) => {
-                this.handleDeleteIndex(indexId);
+            onDeleteIndex: async (indexId: string) => {
+                await this.handleDeleteIndex(indexId);
+                return this.indexes;
             },
             onRefresh: async () => {
                 await this.loadIndexes();
+                return this.indexes;
             },
             apiClient: this.apiClient,
             plugin: this.plugin
