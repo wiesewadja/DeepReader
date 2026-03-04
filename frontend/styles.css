@@ -719,6 +719,7 @@
 .deeppdf-message {
 	display: flex;
 	width: 100%;
+	max-width: 100%;
 	margin-bottom: 16px;
 	animation: deeppdf-fade-in 0.2s ease;
 }
@@ -737,7 +738,8 @@
 	display: flex;
 	align-items: flex-start;
 	gap: 10px;
-	width: 100%;
+	max-width: 100%;
+	flex: 0 1 auto;
 }
 
 .deeppdf-message-user .deeppdf-message-wrapper {
@@ -773,7 +775,7 @@
 	border-radius: 12px;
 	word-wrap: break-word;
 	overflow-wrap: break-word;
-	max-width: 100%;
+	width: 100%;
 }
 
 /* 用户消息气泡 - 右侧蓝色 */
@@ -1609,6 +1611,11 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+}
+
+.deeppdf-quick-action-icon svg {
+	stroke: rgb(110, 102, 102);
+	fill: none;
 }
 
 .deeppdf-quick-action-label {
@@ -3826,6 +3833,457 @@
 .deeppdf-selection-menu-btn svg {
     width: 18px;
     height: 18px;
+}
+
+/**
+ * DeepPDF 阅读顶栏样式
+ * 极简透明风格：只显示书籍名称、状态和操作入口
+ */
+
+/* 顶栏容器 - 透明背景，无边框 */
+.deeppdf-reading-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    background: transparent;
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-shrink: 0;
+    min-height: 36px;
+}
+
+/* 左侧区域 - 固定宽度占位 */
+.deeppdf-topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 40px;
+}
+
+/* 中间区域 - 书名居中 */
+.deeppdf-topbar-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-width: 0;
+}
+
+/* 当前书籍显示 - 居中 */
+.deeppdf-current-book {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    max-width: 100%;
+    transition: color 0.15s ease;
+}
+
+.deeppdf-current-book.has-book {
+    color: var(--text-normal);
+}
+
+/* 右侧区域 */
+.deeppdf-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    min-width: 80px;
+    justify-content: flex-end;
+    position: relative;
+}
+
+/* 状态点 - 小圆点 */
+.deeppdf-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+    transition: background 0.3s ease;
+}
+
+.deeppdf-status-dot.status-loading {
+    background: var(--text-warning, #f59e0b);
+    animation: status-pulse 1.5s infinite;
+}
+
+.deeppdf-status-dot.status-ok {
+    background: var(--text-success, #10b981);
+}
+
+.deeppdf-status-dot.status-error {
+    background: var(--text-error, #ef4444);
+}
+
+@keyframes status-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+/* 操作按钮 - 极简 */
+.deeppdf-topbar-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.deeppdf-topbar-action-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.deeppdf-topbar-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 下拉菜单 - 浮动卡片 */
+.deeppdf-topbar-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 140px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    z-index: 1000;
+    opacity: 0;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: all 0.15s ease;
+}
+
+.deeppdf-topbar-dropdown.open {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.deeppdf-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--text-normal);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+}
+
+.deeppdf-dropdown-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-dropdown-item svg {
+    width: 14px;
+    height: 14px;
+    color: var(--text-muted);
+}
+
+.deeppdf-dropdown-item:hover svg {
+    color: var(--text-normal);
+}
+
+.deeppdf-dropdown-divider {
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 4px 8px;
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+    .deeppdf-reading-topbar {
+        padding: 6px 10px;
+    }
+
+    .deeppdf-current-book {
+        font-size: 12px;
+    }
+}
+
+/**
+ * DeepPDF 文档库弹窗样式
+ * 简约风格设计
+ */
+
+/* 弹窗容器 */
+.deeppdf-library-modal {
+    width: auto !important;
+    max-width: 520px !important;
+    min-width: 360px !important;
+}
+
+.deeppdf-library-modal .modal-content {
+    padding: 0 !important;
+}
+
+/* 头部 */
+.deeppdf-lib-header {
+    padding: 20px 20px 0;
+}
+
+.deeppdf-lib-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-normal);
+}
+
+/* 工具栏 */
+.deeppdf-lib-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-lib-search {
+    flex: 1;
+}
+
+.deeppdf-lib-search-input {
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.deeppdf-lib-search-input::placeholder {
+    color: var(--text-faint);
+}
+
+.deeppdf-lib-search-input:focus {
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-lib-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.deeppdf-lib-add-btn:hover {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: #fff;
+}
+
+/* 列表 */
+.deeppdf-lib-list {
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.deeppdf-lib-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.deeppdf-lib-list::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+}
+
+/* 列表项 */
+.deeppdf-lib-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.deeppdf-lib-item:last-child {
+    margin-bottom: 0;
+}
+
+.deeppdf-lib-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-lib-item.active {
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
+}
+
+.deeppdf-lib-item.active .deeppdf-lib-item-name {
+    color: var(--interactive-accent);
+}
+
+/* 主信息区 */
+.deeppdf-lib-item-main {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.deeppdf-lib-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.deeppdf-lib-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+
+/* 状态徽章 */
+.deeppdf-lib-status {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.deeppdf-lib-status.status-ready {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+}
+
+.deeppdf-lib-status.status-processing {
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.12);
+    color: var(--interactive-accent);
+}
+
+.deeppdf-lib-status.status-queued {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+}
+
+.deeppdf-lib-status.status-failed {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+.deeppdf-lib-progress,
+.deeppdf-lib-nodes {
+    color: var(--text-muted);
+}
+
+/* 操作按钮 */
+.deeppdf-lib-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.deeppdf-lib-item:hover .deeppdf-lib-item-actions {
+    opacity: 1;
+}
+
+.deeppdf-lib-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.deeppdf-lib-action-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.deeppdf-lib-action-btn.delete:hover {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+/* 空状态 */
+.deeppdf-lib-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+    text-align: center;
+}
+
+.deeppdf-lib-empty-icon {
+    color: var(--text-faint);
+    opacity: 0.4;
+    margin-bottom: 12px;
+}
+
+.deeppdf-lib-empty-text {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* 响应式 */
+@media (max-width: 480px) {
+    .deeppdf-library-modal {
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .deeppdf-lib-header,
+    .deeppdf-lib-toolbar {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .deeppdf-lib-item {
+        padding: 10px;
+    }
+
+    .deeppdf-lib-item-actions {
+        opacity: 1;
+    }
 }
 
 /**

@@ -122,6 +122,11 @@
 	justify-content: center;
 }
 
+.deeppdf-quick-action-icon svg {
+	stroke: rgb(110, 102, 102);
+	fill: none;
+}
+
 .deeppdf-quick-action-label {
 	white-space: nowrap;
 }
