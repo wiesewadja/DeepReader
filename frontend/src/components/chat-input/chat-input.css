@@ -33,23 +33,25 @@
 .deeppdf-chat-input-container {
 	display: flex;
 	flex-direction: column;
-	
+
 	/* 严格使用 Obsidian 主题变量 */
 	background-color: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	
-	border-radius: 24px; /* Gemini 风格大圆角 */
-	
+
+	/* 默认紧凑状态：较小圆角 */
+	border-radius: 16px;
+
 	/* 阴影效果：暗色/亮色模式通用适配 */
 	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-	
-	transition: all 0.2s ease;
+
+	transition: border-radius 0.25s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 	overflow: hidden;
 }
 
-/* 聚焦状态 */
+/* 聚焦状态：展开为更大圆角 */
 .deeppdf-chat-input-container:focus-within {
 	border-color: var(--interactive-accent);
+	border-radius: 24px;
 	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
 }
 
@@ -57,7 +59,19 @@
 
 .deeppdf-input-area {
 	width: 100%;
+	/* 默认折叠状态 */
+	max-height: 0;
+	padding: 0 16px;
+	overflow: hidden;
+	opacity: 0;
+	transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+}
+
+/* 聚焦或 streaming 状态：展开文本输入区 */
+.deeppdf-chat-input-container:focus-within .deeppdf-input-area {
+	max-height: 200px;
 	padding: 12px 16px 4px 16px;
+	opacity: 1;
 }
 
 .deeppdf-chat-input-textarea {
@@ -263,6 +277,29 @@
 .deeppdf-mode-toggle-btn.active:hover,
 .deeppdf-mode-toggle-btn[data-mode="cross"]:hover {
 	background: var(--interactive-accent-hover, var(--interactive-accent));
+}
+
+/* ==================== 流式输出状态 ==================== */
+
+/* AI 回复时，输入框变矮（隐藏文本输入区） */
+.deeppdf-chat-input-streaming .deeppdf-input-area {
+	display: none;
+}
+
+.deeppdf-chat-input-streaming .deeppdf-chat-input-container {
+	/* 减小圆角，更紧凑 */
+	border-radius: 16px;
+}
+
+/* 流式状态下的停止按钮 */
+.deeppdf-chat-input-streaming .deeppdf-chat-input-send-btn {
+	color: var(--text-error) !important;
+}
+
+.deeppdf-chat-input-streaming .deeppdf-chat-input-send-btn:hover {
+	color: var(--text-error) !important;
+	background: var(--background-modifier-error) !important;
+	border-radius: 50%;
 }
 
 /* ==================== 动画 ==================== */

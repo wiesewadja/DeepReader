@@ -40,6 +40,10 @@ export interface ChatInputOptions {
 	onSelectFile?: (file: TFile) => void;
 	/** App 实例（可选，用于文件搜索) */
 	app?: App;
+	/** 停止生成回调（可选，AI 回复时点击停止按钮） */
+	onStop?: () => void;
+	/** 高度变化回调（可选，用于动态调整消息列表间距） */
+	onHeightChange?: (height: number) => void;
 }
 
 /**
@@ -59,10 +63,12 @@ interface MentionTrigger {
  */
 export class ChatInput {
 	private el: HTMLElement | null = null;
+	private inputContainer: HTMLElement | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private modeButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
+	private isStreaming: boolean = false;
 
 	// 文件建议组件
 	private fileSuggest: FileSuggest | null = null;
@@ -74,6 +80,7 @@ export class ChatInput {
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
 	private modeClickHandler: (() => void) | null = null;
+	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 	private resizeAnimationFrame: number | null = null;
 
 	constructor(options: ChatInputOptions) {
@@ -97,6 +104,49 @@ export class ChatInput {
 	}
 
 	/**
+	 * 设置流式输出状态
+	 * @param streaming 是否正在流式输出
+	 */
+	setStreaming(streaming: boolean): void {
+		this.isStreaming = streaming;
+		if (!this.el || !this.sendButton) return;
+
+		if (streaming) {
+			this.el.addClass('deeppdf-chat-input-streaming');
+			// 更新发送按钮为停止按钮
+			this.sendButton.innerHTML = Icons.stop || '⏹';
+			this.sendButton.setAttribute('aria-label', '停止生成');
+			this.sendButton.disabled = false;
+		} else {
+			this.el.removeClass('deeppdf-chat-input-streaming');
+			// 恢复发送按钮
+			this.sendButton.innerHTML = Icons.send;
+			this.sendButton.setAttribute('aria-label', '发送消息');
+			this.updateSendButtonState();
+		}
+
+		// 通知高度变化
+		this.notifyHeightChange();
+	}
+
+	/**
+	 * 获取当前输入框高度
+	 */
+	getHeight(): number {
+		return this.inputContainer?.offsetHeight || 0;
+	}
+
+	/**
+	 * 通知高度变化
+	 */
+	private notifyHeightChange(): void {
+		if (this.options.onHeightChange) {
+			const height = this.getHeight();
+			this.options.onHeightChange(height);
+		}
+	}
+
+	/**
 	 * 渲染聊天输入组件
 	 */
 	private render(): HTMLElement {
@@ -104,9 +154,10 @@ export class ChatInput {
 		container.addClass('deeppdf-chat-input');
 
 		// 整体容器 (deeppdf-chat-input-container)
-		const inputContainer = container.createEl('div', {
+		this.inputContainer = container.createEl('div', {
 			cls: 'deeppdf-chat-input-container'
 		});
+		const inputContainer = this.inputContainer;
 
 		// 1. 输入区域
 		const inputArea = inputContainer.createEl('div', {
@@ -185,7 +236,12 @@ export class ChatInput {
 		// 点击发送按钮
 		if (this.sendButton) {
 			this.clickHandler = () => {
-				this.handleSend();
+				// 如果正在流式输出，点击停止
+				if (this.isStreaming) {
+					this.options.onStop?.();
+				} else {
+					this.handleSend();
+				}
 			};
 			this.sendButton.addEventListener('click', this.clickHandler);
 		}
@@ -207,6 +263,30 @@ export class ChatInput {
 			}, 0);
 		};
 		this.textarea.addEventListener('paste', this.pasteHandler);
+
+		// 点击容器时聚焦 textarea（折叠状态下也能点击）
+		this.containerClickHandler = (event: MouseEvent) => {
+			// 如果正在流式输出，不处理
+			if (this.isStreaming) return;
+
+			// 如果点击的是按钮，不处理（让按钮自己处理）
+			const target = event.target as HTMLElement;
+			if (target.closest('button')) return;
+
+			// 聚焦 textarea
+			this.textarea?.focus();
+		};
+		this.inputContainer?.addEventListener('click', this.containerClickHandler);
+
+		// 聚焦/失焦时通知高度变化（用于动态调整消息列表间距）
+		this.textarea.addEventListener('focus', () => {
+			// 延迟通知，等待 CSS 过渡完成
+			setTimeout(() => this.notifyHeightChange(), 300);
+		});
+		this.textarea.addEventListener('blur', () => {
+			// 延迟通知，等待 CSS 过渡完成
+			setTimeout(() => this.notifyHeightChange(), 300);
+		});
 
 		// 点击其他地方时隐藏文件建议
 		document.addEventListener('click', this.handleDocumentClick);
@@ -585,6 +665,11 @@ export class ChatInput {
 		if (this.modeButton && this.modeClickHandler) {
 			this.modeButton.removeEventListener('click', this.modeClickHandler);
 			this.modeClickHandler = null;
+		}
+
+		if (this.inputContainer && this.containerClickHandler) {
+			this.inputContainer.removeEventListener('click', this.containerClickHandler);
+			this.containerClickHandler = null;
 		}
 
 		// 移除文档点击事件监听器

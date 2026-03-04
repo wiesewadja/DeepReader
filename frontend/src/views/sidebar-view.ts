@@ -863,7 +863,14 @@ export class SidebarView extends ItemView {
             onModeToggle: () => {
                 this.toggleSearchMode();
             },
-            app: this.app
+            app: this.app,
+            onStop: () => {
+                this.stopGeneration();
+            },
+            onHeightChange: (height: number) => {
+                // 动态调整消息列表的底部间距
+                this.messageList?.updateBottomPadding(height);
+            }
         });
 
         const chatInputEl = this.chatInput.getElement();
@@ -1074,6 +1081,7 @@ export class SidebarView extends ItemView {
         this.isProcessing = true;
         this.isAiStreaming = true;
         this.chatInput?.setDisabled(true);
+        this.chatInput?.setStreaming(true);
 
         try {
             let aiMessageId: string;
@@ -1141,6 +1149,7 @@ export class SidebarView extends ItemView {
             // 出错时也要恢复状态
             this.isProcessing = false;
             this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
             this.chatInput?.setDisabled(false);
             this.chatInput?.focus();
         }
@@ -1307,6 +1316,42 @@ ${r.text}`;
     }
 
     /**
+     * 停止 AI 生成
+     */
+    private stopGeneration(): void {
+        if (!this.isAiStreaming || !this.streamController) {
+            return;
+        }
+
+        console.log('[DeepPDF] 用户中断 AI 生成');
+        this.streamController.abort();
+        this.streamController = null;
+        this.isAiStreaming = false;
+        this.isProcessing = false;
+
+        // 恢复输入框状态
+        this.chatInput?.setStreaming(false);
+        this.chatInput?.setDisabled(false);
+
+        // 更新最后一条 AI 消息，显示用户已中断
+        const messages = this.messageList?.getMessages() || [];
+        const lastAiMessage = [...messages].reverse().find(m => {
+            const data = m.getData();
+            return data.role === 'assistant' && data.isStreaming;
+        });
+        if (lastAiMessage) {
+            const data = lastAiMessage.getData();
+            this.messageList?.updateMessage(data.id, {
+                content: data.content + '\n\n*用户已中断*',
+                isStreaming: false
+            });
+        }
+
+        // 保存当前状态到缓存
+        this.saveToCache();
+    }
+
+    /**
      * 处理 Agent 查询请求
      */
     private async handleAgentQuery(query: string, indexId: string, aiMessageId: string): Promise<void> {
@@ -1413,8 +1458,9 @@ ${r.text}`;
                     // 恢复输入状态（AI 回复完成）
                     this.isProcessing = false;
                     this.isAiStreaming = false;
+                    this.chatInput?.setStreaming(false);
                     this.chatInput?.setDisabled(false);
-                    
+
                     this.chatInput?.focus();
                 },
                 // onError: 错误处理
@@ -1427,8 +1473,9 @@ ${r.text}`;
                     // 恢复输入状态（出错时）
                     this.isProcessing = false;
                     this.isAiStreaming = false;
+                    this.chatInput?.setStreaming(false);
                     this.chatInput?.setDisabled(false);
-                    
+
                     this.chatInput?.focus();
                 },
                 forceMode,  // 传递强制模式参数
@@ -1447,6 +1494,11 @@ ${r.text}`;
                 content: `Agent 查询失败: ${errorMessage}`,
                 isStreaming: false
             });
+            // 恢复输入状态
+            this.isProcessing = false;
+            this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
+            this.chatInput?.setDisabled(false);
         }
     }
 
@@ -1464,8 +1516,9 @@ ${r.text}`;
             });
             this.isProcessing = false;
             this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
             this.chatInput?.setDisabled(false);
-            
+
             return;
         }
 
@@ -1490,8 +1543,9 @@ ${r.text}`;
                     });
                     this.isProcessing = false;
                     this.isAiStreaming = false;
+                    this.chatInput?.setStreaming(false);
                     this.chatInput?.setDisabled(false);
-                    
+
                     return;
                 }
             }
@@ -1559,8 +1613,9 @@ ${r.text}`;
         } finally {
             this.isProcessing = false;
             this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
             this.chatInput?.setDisabled(false);
-            
+
             this.chatInput?.focus();
         }
     }

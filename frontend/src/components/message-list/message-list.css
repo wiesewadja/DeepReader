@@ -20,8 +20,8 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 与输入框对齐：左右留白 5%，增加底部 padding 防止被悬浮输入框遮挡 */
-	padding: 16px 5% 110px 5%;
+	/* 与输入框对齐：左右留白 5%，底部 padding 动态适应输入框高度 */
+	padding: 16px 5% 80px 5%;
 
 	display: flex;
 	flex-direction: column;
