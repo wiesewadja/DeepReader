@@ -44,6 +44,8 @@ export interface ChatInputOptions {
 	onStop?: () => void;
 	/** 高度变化回调（可选，用于动态调整消息列表间距） */
 	onHeightChange?: (height: number) => void;
+	/** 加载当前文档回调（可选） */
+	onLoadCurrentDoc?: () => void;
 }
 
 /**
@@ -67,6 +69,7 @@ export class ChatInput {
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private modeButton: HTMLButtonElement | null = null;
+	private loadDocButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
 
@@ -80,6 +83,7 @@ export class ChatInput {
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
 	private modeClickHandler: (() => void) | null = null;
+	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 	private resizeAnimationFrame: number | null = null;
 
@@ -179,6 +183,21 @@ export class ChatInput {
 			cls: 'deeppdf-input-toolbar'
 		});
 
+		// 左侧工具 (加载文档按钮)
+		const leftToolbar = toolbar.createEl('div', {
+			cls: 'deeppdf-toolbar-left'
+		});
+
+		// 加载当前文档按钮（使用文档图标）
+		if (this.options.onLoadCurrentDoc) {
+			this.loadDocButton = leftToolbar.createEl('button', {
+				cls: 'deeppdf-load-doc-btn'
+			});
+			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+			this.loadDocButton.setAttribute('aria-label', '加载当前文档到上下文');
+			this.loadDocButton.type = 'button';
+		}
+
 		// 右侧工具 (模式切换按钮 + 发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
@@ -252,6 +271,16 @@ export class ChatInput {
 				this.options.onModeToggle?.();
 			};
 			this.modeButton.addEventListener('click', this.modeClickHandler);
+		}
+
+		// 点击加载文档按钮
+		if (this.loadDocButton && this.options.onLoadCurrentDoc) {
+			this.loadDocClickHandler = () => {
+				this.options.onLoadCurrentDoc?.();
+				// 点击后自动聚焦到输入框
+				this.focus();
+			};
+			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -602,6 +631,18 @@ export class ChatInput {
 	}
 
 	/**
+	 * 设置加载按钮的激活状态
+	 */
+	setLoadBtnActive(active: boolean): void {
+		if (!this.loadDocButton) return;
+		if (active) {
+			this.loadDocButton.classList.add('active');
+		} else {
+			this.loadDocButton.classList.remove('active');
+		}
+	}
+
+	/**
 	 * 更新模式按钮显示
 	 */
 	private updateModeButtonDisplay(): void {
@@ -667,6 +708,11 @@ export class ChatInput {
 			this.modeClickHandler = null;
 		}
 
+		if (this.loadDocButton && this.loadDocClickHandler) {
+			this.loadDocButton.removeEventListener('click', this.loadDocClickHandler);
+			this.loadDocClickHandler = null;
+		}
+
 		if (this.inputContainer && this.containerClickHandler) {
 			this.inputContainer.removeEventListener('click', this.containerClickHandler);
 			this.containerClickHandler = null;
@@ -692,5 +738,6 @@ export class ChatInput {
 		this.textarea = null;
 		this.sendButton = null;
 		this.modeButton = null;
+		this.loadDocButton = null;
 	}
 }

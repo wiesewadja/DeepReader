@@ -114,16 +114,15 @@ export class SidebarView extends ItemView {
                 welcomeContent += `\n\n🔍 当前过滤条件: ${this.buildFilterDescription()}`;
                 welcomeContent += `\n\n[清除过滤](obsidian://deeppdf-search) | [搜索全部](obsidian://deeppdf-search)`;
             }
-        } else {
-            welcomeContent = `已切换到书籍 **${this.currentPdfName || '未命名'}**。您可以开始提问了！`;
-        }
 
-        this.messageList.addMessage({
-            id: welcomeId,
-            role: "assistant",
-            content: welcomeContent,
-            timestamp: new Date().toISOString()
-        });
+            this.messageList.addMessage({
+                id: welcomeId,
+                role: "assistant",
+                content: welcomeContent,
+                timestamp: new Date().toISOString()
+            });
+        }
+        // 单书籍模式：不添加欢迎消息，让空状态的"生成阅读大纲"按钮显示
     }
 
     /** 构建过滤条件描述 */
@@ -366,7 +365,6 @@ export class SidebarView extends ItemView {
                         displayName = displayName.slice(0, -4);
                     }
                     this.messageList?.setCurrentPdfName(displayName);
-                    new Notice(`已切换到索引: ${index.pdf_name}`);
                 }
 
                 // 清空当前界面
@@ -684,6 +682,8 @@ export class SidebarView extends ItemView {
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
                 this.contextTags?.updateDocuments(docs);
+                // 更新加载按钮的激活状态
+                this.chatInput?.setLoadBtnActive(docs.size > 0);
                 // 更新消息列表的底部间距，避免被上下文标签遮挡
                 this.updateMessageListPadding(docs.size > 0);
             }
@@ -848,13 +848,10 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建上下文标签组件（显示已加载的文档，包含加载按钮）
+        // 创建上下文标签组件（显示已加载的文档）
         this.contextTags = new ContextTags({
             onRemove: (path: string) => {
                 this.contextManager?.removeDocument(path);
-            },
-            onLoadCurrentDoc: async () => {
-                await this.loadCurrentDocument();
             }
         });
         const contextTagsEl = this.contextTags.getElement();
@@ -879,6 +876,9 @@ export class SidebarView extends ItemView {
             onHeightChange: (height: number) => {
                 // 动态调整消息列表的底部间距
                 this.messageList?.updateBottomPadding(height);
+            },
+            onLoadCurrentDoc: async () => {
+                await this.loadCurrentDocument();
             }
         });
 
@@ -985,7 +985,6 @@ export class SidebarView extends ItemView {
         if (!previousMode && this.crossBookMode) {
             this.messageList?.clear();
             await this.loadCrossBookSession();
-            new Notice("已切换到跨书籍模式，将在所有书籍中搜索");
         } else if (previousMode && !this.crossBookMode) {
             // 从跨书籍切换到单书籍模式
             // 清空跨书籍消息，加载当前选中书籍的会话
@@ -1011,8 +1010,6 @@ export class SidebarView extends ItemView {
                 console.log('[DeepPDF] 切换到单书籍模式，无历史会话');
                 this.showWelcomeMessage();
             }
-
-            new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
         }
     }
 

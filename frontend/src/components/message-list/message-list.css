@@ -62,101 +62,108 @@
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: var(--size-4-4, 1rem);
-	padding: var(--size-4-6, 2rem);
+	padding: var(--size-4-8, 2rem);
 	height: 100%;
-	color: var(--text-faint);
 	text-align: center;
 	animation: deeppdf-fade-in 0.3s ease;
+	position: relative;
 }
 
-.deeppdf-empty-icon {
-	font-size: 64px;
-	opacity: 0.3;
-	margin-bottom: var(--size-4-4, 1rem);
-	animation: deeppdf-float 3s ease-in-out infinite;
-}
-
-@keyframes deeppdf-float {
-
-	0%,
-	100% {
-		transform: translateY(0);
-	}
-
-	50% {
-		transform: translateY(-10px);
-	}
-}
-
-.deeppdf-empty-text {
-	font-size: var(--font-ui-large);
-	font-weight: 600;
-	color: var(--text-muted);
-}
-
-.deeppdf-empty-hint {
-	font-size: var(--font-ui-small);
-	color: var(--text-faint);
-	max-width: 300px;
-	line-height: 1.5;
-}
-
-/* ==================== 快捷操作按钮 ==================== */
-
-.deeppdf-quick-actions {
+/* 快捷操作区域 - 作为主要容器 */
+.deeppdf-empty-state .deeppdf-quick-actions {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-3, 0.75rem);
-	margin-top: var(--size-4-4, 1rem);
+	align-items: center;
+	justify-content: center;
 	width: 100%;
-	max-width: 320px;
+	height: 100%;
+	position: relative;
 }
 
+/* 右上角按钮区域 */
+.deeppdf-empty-header {
+	position: absolute;
+	top: 0;
+	right: 0;
+}
+
+/* 快捷操作按钮 - 简洁胶囊样式 */
 .deeppdf-quick-action-btn {
-	display: flex;
+	display: inline-flex;
 	align-items: center;
-	gap: var(--size-4-3, 0.75rem);
-	padding: var(--size-4-3, 0.75rem) var(--size-4-4, 1rem);
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m, 8px);
+	justify-content: center;
+	gap: var(--size-4-1, 0.25rem);
+	padding: 6px 12px;
+	background: var(--interactive-accent);
+	border: none;
+	border-radius: 16px;
 	cursor: pointer;
 	transition: all 0.15s ease;
-	text-align: left;
-	width: 100%;
+	color: white;
+	font-size: var(--font-ui-smaller);
+	font-weight: 500;
 }
 
 .deeppdf-quick-action-btn:hover {
-	background: var(--background-modifier-hover);
-	border-color: var(--interactive-accent);
+	background: var(--interactive-accent-hover);
 	transform: translateY(-1px);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.deeppdf-quick-action-btn:active {
+	transform: translateY(0);
 }
 
 .deeppdf-quick-action-icon {
-	font-size: 24px;
 	flex-shrink: 0;
+	color: white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
 }
 
-.deeppdf-quick-action-text {
-	flex: 1;
-	min-width: 0;
-}
-
-.deeppdf-quick-action-title {
-	font-size: var(--font-ui-small);
-	font-weight: 600;
-	color: var(--text-normal);
-	margin-bottom: 2px;
-}
-
-.deeppdf-quick-action-desc {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
-	overflow: hidden;
-	text-overflow: ellipsis;
+.deeppdf-quick-action-label {
 	white-space: nowrap;
+}
+
+/* 中心书籍图标 */
+.deeppdf-empty-center-icon {
+	color: var(--text-muted);
+	opacity: 0.15;
+}
+
+/* 空状态占位符 */
+.deeppdf-empty-placeholder {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-4-4, 1rem);
+	padding: var(--size-4-8, 2rem);
+}
+
+.deeppdf-empty-icon {
+	color: var(--text-faint);
+	opacity: 0.4;
+}
+
+.deeppdf-empty-title {
+	font-size: var(--font-ui-medium);
+	font-weight: 500;
+	color: var(--text-muted);
+}
+
+.deeppdf-empty-desc {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+}
+
+@keyframes deeppdf-fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
 }
 
 /* ==================== 消息项动画 ==================== */

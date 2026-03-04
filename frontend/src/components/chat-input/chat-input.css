@@ -127,6 +127,39 @@
 .deeppdf-toolbar-right {
 	align-items: center;
 	justify-content: center;
+	margin-left: auto;
+}
+
+/* ==================== 加载文档按钮 ==================== */
+
+.deeppdf-load-doc-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: none;
+	border-radius: 8px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.deeppdf-load-doc-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.deeppdf-load-doc-btn.active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.deeppdf-load-doc-btn svg {
+	width: 16px;
+	height: 16px;
 }
 
 /* ==================== 模式切换按钮 ==================== */

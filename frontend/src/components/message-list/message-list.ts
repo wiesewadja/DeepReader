@@ -72,13 +72,8 @@ export class MessageList extends Component {
 		this.emptyState = container.createEl('div', {
 			cls: 'deeppdf-empty-state'
 		});
-		// 使用 DOM 方法而非 innerHTML 以避免 XSS 风险
-		const emptyIcon = this.emptyState.createEl('div', { cls: 'deeppdf-empty-icon' });
-		emptyIcon.textContent = '💬';
-		this.emptyState.createEl('div', { cls: 'deeppdf-empty-text', text: '开始对话' });
-		this.emptyState.createEl('div', { cls: 'deeppdf-empty-hint', text: '发送消息开始与 DeepPDF 对话' });
 
-		// 快捷操作区域
+		// 快捷操作区域（包含所有内容）
 		this.quickActionsEl = this.emptyState.createEl('div', {
 			cls: 'deeppdf-quick-actions'
 		});
@@ -299,26 +294,35 @@ export class MessageList extends Component {
 
 		// 如果有当前 PDF 名称，显示生成阅读大纲按钮
 		if (this.currentPdfName && this.callbacks.onGenerateOutline) {
-			const outlineBtn = this.quickActionsEl.createEl('button', {
-				cls: 'deeppdf-quick-action-btn deeppdf-outline-btn'
+			// 右上角按钮区域
+			const headerArea = this.quickActionsEl.createEl('div', { cls: 'deeppdf-empty-header' });
+			const outlineBtn = headerArea.createEl('button', {
+				cls: 'deeppdf-quick-action-btn'
 			});
 
-			// 图标
-			const icon = outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-icon' });
-			icon.textContent = '📋';
+			// 图标（使用 SVG）
+			const iconEl = outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-icon' });
+			iconEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
 
-			// 文本容器
-			const textContainer = outlineBtn.createEl('div', { cls: 'deeppdf-quick-action-text' });
-			textContainer.createEl('div', { cls: 'deeppdf-quick-action-title', text: '生成阅读大纲' });
-			textContainer.createEl('div', {
-				cls: 'deeppdf-quick-action-desc',
-				text: `针对《${this.currentPdfName}》的目录，整理重点和阅读方案`
-			});
+			// 简洁文本
+			outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-label', text: '生成阅读大纲' });
 
 			// 点击事件
 			outlineBtn.addEventListener('click', () => {
 				this.callbacks.onGenerateOutline?.();
 			});
+
+			// 中心书籍图标
+			const centerIcon = this.quickActionsEl.createEl('div', { cls: 'deeppdf-empty-center-icon' });
+			centerIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
+		} else {
+			// 无 PDF 选中时的提示
+			const placeholder = this.quickActionsEl.createEl('div', {
+				cls: 'deeppdf-empty-placeholder'
+			});
+			placeholder.createEl('div', { cls: 'deeppdf-empty-icon' }).innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2"></path><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path><path d="M7 12h.01"></path><path d="M12 12h.01"></path><path d="M17 12h.01"></path></svg>`;
+			placeholder.createEl('div', { cls: 'deeppdf-empty-title', text: '选择一本书籍开始阅读' });
+			placeholder.createEl('div', { cls: 'deeppdf-empty-desc', text: '从左侧列表中选择要阅读的书籍' });
 		}
 	}
 
