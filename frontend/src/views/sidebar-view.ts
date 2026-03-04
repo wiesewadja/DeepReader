@@ -68,7 +68,6 @@ export class SidebarView extends ItemView {
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
     private streamController: AbortController | null = null;  // 流式请求控制器
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
-    private inputSectionMinimized: boolean = false;  // 输入框是否最小化
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private isConnected: boolean = false;  // 后端连接状态
@@ -797,43 +796,7 @@ export class SidebarView extends ItemView {
                     inputSection.removeClass('hidden');
                 }, 300);
             });
-
-            // 点击输入区域恢复显示（从最小化状态）
-            inputSection.addEventListener('click', () => {
-                if (this.inputSectionMinimized) {
-                    inputSection.removeClass('minimized');
-                    this.inputSectionMinimized = false;
-                }
-            });
         }, 100);
-    }
-
-    /**
-     * 最小化输入框（AI 回复时调用）
-     */
-    private minimizeInputSection() {
-        console.log('[DeepPDF] minimizeInputSection called');
-        const inputSection = this.containerEl.querySelector('.deeppdf-chat-input-section');
-        console.log('[DeepPDF] inputSection found:', !!inputSection);
-        if (inputSection) {
-            inputSection.addClass('minimized');
-            this.inputSectionMinimized = true;
-            console.log('[DeepPDF] minimized class added, inputSection classes:', inputSection.className);
-        }
-    }
-
-    /**
-     * 恢复输入框显示（AI 回复结束时调用）
-     */
-    private restoreInputSection() {
-        console.log('[DeepPDF] restoreInputSection called');
-        const inputSection = this.containerEl.querySelector('.deeppdf-chat-input-section');
-        console.log('[DeepPDF] inputSection found:', !!inputSection);
-        if (inputSection) {
-            inputSection.removeClass('minimized', 'hidden');
-            this.inputSectionMinimized = false;
-            console.log('[DeepPDF] minimized/hidden classes removed');
-        }
     }
 
     /**
@@ -1107,11 +1070,10 @@ export class SidebarView extends ItemView {
         // 解析并加载消息中的 [[文件名]] 引用
         await this.parseAndLoadReferences(message);
 
-        // 禁用输入并最小化输入框
+        // 禁用输入
         this.isProcessing = true;
         this.isAiStreaming = true;
         this.chatInput?.setDisabled(true);
-        this.minimizeInputSection();
 
         try {
             let aiMessageId: string;
@@ -1180,7 +1142,6 @@ export class SidebarView extends ItemView {
             this.isProcessing = false;
             this.isAiStreaming = false;
             this.chatInput?.setDisabled(false);
-            this.restoreInputSection();
             this.chatInput?.focus();
         }
         // 移除 finally 块，改为在 handleAgentQuery 的回调中处理
@@ -1453,7 +1414,7 @@ ${r.text}`;
                     this.isProcessing = false;
                     this.isAiStreaming = false;
                     this.chatInput?.setDisabled(false);
-                    this.restoreInputSection();
+                    
                     this.chatInput?.focus();
                 },
                 // onError: 错误处理
@@ -1467,7 +1428,7 @@ ${r.text}`;
                     this.isProcessing = false;
                     this.isAiStreaming = false;
                     this.chatInput?.setDisabled(false);
-                    this.restoreInputSection();
+                    
                     this.chatInput?.focus();
                 },
                 forceMode,  // 传递强制模式参数
@@ -1504,7 +1465,7 @@ ${r.text}`;
             this.isProcessing = false;
             this.isAiStreaming = false;
             this.chatInput?.setDisabled(false);
-            this.restoreInputSection();
+            
             return;
         }
 
@@ -1530,7 +1491,7 @@ ${r.text}`;
                     this.isProcessing = false;
                     this.isAiStreaming = false;
                     this.chatInput?.setDisabled(false);
-                    this.restoreInputSection();
+                    
                     return;
                 }
             }
@@ -1599,7 +1560,7 @@ ${r.text}`;
             this.isProcessing = false;
             this.isAiStreaming = false;
             this.chatInput?.setDisabled(false);
-            this.restoreInputSection();
+            
             this.chatInput?.focus();
         }
     }
