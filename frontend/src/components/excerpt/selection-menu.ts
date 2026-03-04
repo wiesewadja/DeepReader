@@ -50,12 +50,15 @@ export class SelectionMenu {
 		this.menuEl.style.left = `${x}px`;
 		this.menuEl.style.top = `${y}px`;
 
-		// 添加摘录按钮
-		const excerptBtn = this.menuEl.createEl('button', {
-			cls: 'deeppdf-selection-menu-btn',
-			text: '摘录'
-		});
+		// 添加摘录按钮（使用图标）
+		const excerptBtn = document.createElement('button');
+		excerptBtn.className = 'deeppdf-selection-menu-btn';
+		excerptBtn.setAttribute('aria-label', '保存为摘录');
+		excerptBtn.setAttribute('title', '摘录到笔记');
+		// 书签图标 (bookmark)
+		excerptBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21l-7-5-7 5V5a2 2 2 0 1 2h10a2 2 0 1-2v16z"/></svg>`;
 		excerptBtn.addEventListener('click', () => this.handleExcerpt());
+		this.menuEl.appendChild(excerptBtn);
 
 		// 添加到 DOM
 		document.body.appendChild(this.menuEl);
@@ -69,8 +72,8 @@ export class SelectionMenu {
 	/**
 	 * 隐藏悬浮菜单
 	 */
-	 hide(): void {
-        if (this.menuEl) {
+	hide(): void {
+	 if (this.menuEl) {
             this.menuEl.remove();
             this.menuEl = null;
             document.removeEventListener('click', this.boundHandleOutsideClick);
@@ -81,36 +84,36 @@ export class SelectionMenu {
 	 * 处理摘录点击
 	 */
 	private handleExcerpt(): void {
-		const content: ExcerptContent = {
-			text: this.options.selectedText
-		};
+        const content: ExcerptContent = {
+            text: this.options.selectedText
+        };
 
-		const metadata: ExcerptMetadata = {
-			sourcePdf: this.options.sourcePdf || 'Unknown',
-			page: this.options.page,
-			question: this.options.question,
-			createdAt: new Date().toISOString(),
-			conversationId: this.options.conversationId,
-			messageId: this.options.messageId
-		};
+        const metadata: ExcerptMetadata = {
+            sourcePdf: this.options.sourcePdf || 'Unknown',
+            page: this.options.page,
+            question: this.options.question,
+            createdAt: new Date().toISOString(),
+            conversationId: this.options.conversationId,
+            messageId: this.options.messageId
+        };
 
-		// 打开摘录模态框
-		const modal = new ExcerptModal({
-			content,
-			metadata,
-			app: this.options.app
-		});
-		modal.open();
+        // 打开摘录模态框
+        const modal = new ExcerptModal({
+            content,
+            metadata,
+            app: this.options.app
+        });
+        modal.open();
 
-		this.hide();
-	}
+        this.hide();
+    }
 
 	/**
 	 * 处理点击外部关闭菜单
 	 */
 	private handleOutsideClick(e: MouseEvent): void {
-		if (this.menuEl && !this.menuEl.contains(e.target as Node)) {
-			this.hide();
-		}
-	}
+        if (this.menuEl && !this.menuEl.contains(e.target as Node)) {
+            this.hide();
+        }
+    }
 }
