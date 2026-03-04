@@ -1154,6 +1154,9 @@ export class AIMessage extends Message {
 			}
 			// 移除流式状态
 			this.el.removeClass('deeppdf-message-streaming');
+
+			// 【关键修复】流式结束后设置选中监听器
+			this.setupSelectionListener(contentEl as HTMLElement);
 		} else {
 			// 全量重绘
 			const newRender = this.render();
