@@ -87,6 +87,15 @@ export class ExcerptService {
     const file = this.app.vault.getAbstractFileByPath(path);
 
     if (!file) {
+      // 确保父目录存在
+      const parentPath = path.substring(0, path.lastIndexOf('/'));
+      if (parentPath) {
+        const parentFolder = this.app.vault.getAbstractFileByPath(parentPath);
+        if (!parentFolder) {
+          await this.app.vault.createFolder(parentPath);
+        }
+      }
+
       // 创建文件
       const content = this.generateExcerptFileHeader();
       await this.app.vault.create(path, content);
