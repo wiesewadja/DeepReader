@@ -40,6 +40,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* 为顶栏圆角留出空间 */
+  padding: 0 2px;
 }
 
 /* ==================== 顶部导航区 ==================== */

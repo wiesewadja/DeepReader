@@ -7,8 +7,12 @@
 .deeppdf-index-manager {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 0 0 12px 12px;
+    /* 顶部无圆角，与窗口齐平 */
+    background: var(--background-primary);
+    margin: 0 10px 10px 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 /* Header (Collapsible) */
@@ -17,14 +21,13 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 16px;
+    padding: 12px 16px;
     transition: background 0.2s;
     user-select: none;
     transition: background 0.2s ease;
     flex-shrink: 0;
-    min-height: 44px;
+    min-height: 48px;
     position: relative;
-    /* 为绝对定位的 PDF 名称提供定位上下文 */
 }
 
 .deeppdf-index-manager-header:hover {
@@ -154,6 +157,8 @@
     overflow: hidden;
     transition: all 0.3s;
     border-top: 1px solid var(--background-modifier-border);
+    border-radius: 0 0 12px 12px;
+    /* 底部圆角 */
 }
 
 /* List (Use flex for tight wrapping) */

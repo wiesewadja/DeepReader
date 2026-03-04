@@ -651,13 +651,15 @@ export class ChatInput {
 		const mode = this.options.searchMode || 'single';
 		const isCrossMode = mode === 'cross';
 
-		// 使用小圆按钮样式
-		// 跨书籍模式开启时显示高亮实心圆，关闭时显示空心圆
-		this.modeButton.innerHTML = ''; // 清空内容，使用 CSS 绘制圆形
-
+		// 使用书籍图标（Lucide library 图标）
+		// 跨书籍模式：多本书图标；单书籍模式：单本书图标
 		if (isCrossMode) {
+			// 多本书叠加图标
+			this.modeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M8 7h6"></path><path d="M8 11h8"></path></svg>`;
 			this.modeButton.addClass('active');
 		} else {
+			// 单本书图标
+			this.modeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
 			this.modeButton.removeClass('active');
 		}
 
