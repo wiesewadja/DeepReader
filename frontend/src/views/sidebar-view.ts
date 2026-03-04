@@ -876,10 +876,13 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建上下文标签组件（显示已加载的文档）
+        // 创建上下文标签组件（显示已加载的文档，包含加载按钮）
         this.contextTags = new ContextTags({
             onRemove: (path: string) => {
                 this.contextManager?.removeDocument(path);
+            },
+            onLoadCurrentDoc: async () => {
+                await this.loadCurrentDocument();
             }
         });
         const contextTagsEl = this.contextTags.getElement();
@@ -887,7 +890,7 @@ export class SidebarView extends ItemView {
             section.appendChild(contextTagsEl);
         }
 
-        // 创建聊天输入组件（包含模式切换按钮和加载文档按钮）
+        // 创建聊天输入组件
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
             onSend: (message: string) => {
@@ -896,9 +899,6 @@ export class SidebarView extends ItemView {
             searchMode: this.crossBookMode ? 'cross' : 'single',
             onModeToggle: () => {
                 this.toggleSearchMode();
-            },
-            onLoadCurrentDoc: async () => {
-                await this.loadCurrentDocument();
             },
             app: this.app
         });

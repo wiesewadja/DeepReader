@@ -1816,7 +1816,7 @@
 
 .deeppdf-chat-input-section {
 	position: absolute;
-	bottom: 40px;
+	bottom: 8px;
 	left: 5%;
 	right: 5%;
 	width: 90%;
@@ -3503,12 +3503,55 @@
 
 .deeppdf-context-tags {
     display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: transparent;
+}
+
+/* 加载当前文档按钮 */
+.deeppdf-load-doc-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.deeppdf-load-doc-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-load-doc-btn.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-load-doc-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 标签列表容器 */
+.deeppdf-context-tags-list {
+    display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    padding: 8px 12px;
-    background: var(--background-secondary);
-    border-bottom: 1px solid var(--background-modifier-border);
+    flex: 1;
+    min-width: 0;
 }
 
 .deeppdf-context-tag {

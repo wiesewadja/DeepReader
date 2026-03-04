@@ -8,11 +8,16 @@ import { LoadedDocument } from '../../services/context-manager.js';
 export interface ContextTagsOptions {
     /** 文档移除回调 */
     onRemove?: (path: string) => void;
+    /** 加载当前文档回调 */
+    onLoadCurrentDoc?: () => void;
 }
 
 export class ContextTags {
     private el: HTMLElement | null = null;
     private options: ContextTagsOptions;
+    private loadBtn: HTMLButtonElement | null = null;
+    private tagsContainer: HTMLElement | null = null;
+    private loadBtnClickHandler: (() => void) | null = null;
 
     constructor(options: ContextTagsOptions = {}) {
         this.options = options;
@@ -25,26 +30,63 @@ export class ContextTags {
     private render(): HTMLElement {
         const container = document.createElement('div');
         container.className = 'deeppdf-context-tags';
-        container.style.display = 'none'; // 默认隐藏
+
+        // 加载当前文档按钮
+        this.loadBtn = container.createEl('button', {
+            cls: 'deeppdf-load-doc-btn'
+        });
+        this.loadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+        this.loadBtn.setAttribute('aria-label', '加载当前文档到上下文');
+        this.loadBtn.type = 'button';
+
+        // 绑定点击事件
+        if (this.options.onLoadCurrentDoc) {
+            this.loadBtnClickHandler = () => {
+                this.options.onLoadCurrentDoc?.();
+            };
+            this.loadBtn.addEventListener('click', this.loadBtnClickHandler);
+        }
+
+        // 标签容器
+        this.tagsContainer = container.createEl('div', {
+            cls: 'deeppdf-context-tags-list'
+        });
+        this.tagsContainer.style.display = 'none';
 
         return container;
+    }
+
+    /**
+     * 设置加载按钮的激活状态
+     */
+    setLoadBtnActive(active: boolean): void {
+        if (!this.loadBtn) return;
+        if (active) {
+            this.loadBtn.classList.add('active');
+        } else {
+            this.loadBtn.classList.remove('active');
+        }
     }
 
     /**
      * 更新显示的文档标签
      */
     updateDocuments(docs: Map<string, LoadedDocument>): void {
-        if (!this.el) return;
+        if (!this.tagsContainer) return;
 
         // 清空现有内容
-        this.el.innerHTML = '';
+        this.tagsContainer.innerHTML = '';
 
         if (docs.size === 0) {
-            this.el.style.display = 'none';
+            this.tagsContainer.style.display = 'none';
+            // 更新加载按钮状态
+            this.setLoadBtnActive(false);
             return;
         }
 
-        this.el.style.display = 'flex';
+        this.tagsContainer.style.display = 'flex';
+        // 更新加载按钮状态
+        this.setLoadBtnActive(true);
 
         // 添加标签
         for (const doc of docs.values()) {
@@ -64,7 +106,7 @@ export class ContextTags {
                 this.options.onRemove?.(doc.path);
             });
 
-            this.el.appendChild(tag);
+            this.tagsContainer.appendChild(tag);
         }
 
         // 添加总字符数
@@ -72,7 +114,7 @@ export class ContextTags {
         const summary = document.createElement('span');
         summary.className = 'deeppdf-context-summary';
         summary.textContent = `共 ${this.formatCharCount(total)}`;
-        this.el.appendChild(summary);
+        this.tagsContainer.appendChild(summary);
     }
 
     /**
@@ -116,9 +158,17 @@ export class ContextTags {
      * 销毁组件
      */
     destroy(): void {
+        // 移除加载按钮事件
+        if (this.loadBtn && this.loadBtnClickHandler) {
+            this.loadBtn.removeEventListener('click', this.loadBtnClickHandler);
+            this.loadBtnClickHandler = null;
+        }
+        this.loadBtn = null;
+
         if (this.el && this.el.parentNode) {
             this.el.parentNode.removeChild(this.el);
         }
         this.el = null;
+        this.tagsContainer = null;
     }
 }

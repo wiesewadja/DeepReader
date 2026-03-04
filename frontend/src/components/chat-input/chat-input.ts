@@ -36,8 +36,6 @@ export interface ChatInputOptions {
 	onModeToggle?: () => void;
 	/** 当前搜索模式（可选） */
 	searchMode?: SearchMode;
-	/** 加载当前文档回调（可选） */
-	onLoadCurrentDoc?: () => void;
 	/** 选择文件回调（可选，用于 @ 提及) */
 	onSelectFile?: (file: TFile) => void;
 	/** App 实例（可选，用于文件搜索) */
@@ -64,7 +62,6 @@ export class ChatInput {
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private modeButton: HTMLButtonElement | null = null;
-	private loadDocButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
 
 	// 文件建议组件
@@ -77,7 +74,6 @@ export class ChatInput {
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
 	private modeClickHandler: (() => void) | null = null;
-	private loadDocClickHandler: (() => void) | null = null;
 	private resizeAnimationFrame: number | null = null;
 
 	constructor(options: ChatInputOptions) {
@@ -136,14 +132,6 @@ export class ChatInput {
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
 		});
-
-		// 加载当前文档按钮
-		this.loadDocButton = rightToolbar.createEl('button', {
-			cls: 'deeppdf-load-doc-btn'
-		});
-		this.loadDocButton.innerHTML = Icons.file;
-		this.loadDocButton.setAttribute('aria-label', '加载当前文档到上下文');
-		this.loadDocButton.type = 'button';
 
 		// 模式切换按钮
 		this.modeButton = rightToolbar.createEl('button', {
@@ -208,14 +196,6 @@ export class ChatInput {
 				this.options.onModeToggle?.();
 			};
 			this.modeButton.addEventListener('click', this.modeClickHandler);
-		}
-
-		// 点击加载当前文档按钮
-		if (this.loadDocButton && this.options.onLoadCurrentDoc) {
-			this.loadDocClickHandler = () => {
-				this.options.onLoadCurrentDoc?.();
-			};
-			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -606,12 +586,6 @@ export class ChatInput {
 			this.modeButton.removeEventListener('click', this.modeClickHandler);
 			this.modeClickHandler = null;
 		}
-
-		if (this.loadDocButton && this.loadDocClickHandler) {
-			this.loadDocButton.removeEventListener('click', this.loadDocClickHandler);
-			this.loadDocClickHandler = null;
-		}
-		this.loadDocButton = null;
 
 		// 移除文档点击事件监听器
 		document.removeEventListener('click', this.handleDocumentClick);
