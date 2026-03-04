@@ -820,6 +820,15 @@
 	min-height: 1.6em;
 }
 
+/* 确保 MarkdownRenderer 渲染的内容继承 Obsidian 主题样式 */
+.deeppdf-message-content .markdown-preview-view,
+.deeppdf-message-content .markdown-renderer {
+	/* 继承 Obsidian 主题的 Markdown 样式 */
+	font-size: inherit;
+	line-height: inherit;
+	color: inherit;
+}
+
 /* 流式更新时的额外优化 */
 .deeppdf-message-streaming .deeppdf-message-content {
 	contain: layout style;
@@ -833,84 +842,22 @@
 	color: var(--text-on-accent);
 }
 
-/* AI 消息内容的 Markdown 样式修正 */
-.deeppdf-message-content p {
-	margin-top: 0;
-	margin-bottom: 12px;
-	line-height: 1.6;
+/* AI 消息内容继承 Obsidian 原生 Markdown 样式 */
+/* 不再覆盖 MarkdownRenderer 渲染的样式，让 Obsidian 主题样式完全生效 */
+.deeppdf-message-bubble-ai .deeppdf-message-content .markdown-preview-view,
+.deeppdf-message-bubble-ai .deeppdf-message-content .markdown-renderer {
+	/* 确保继承容器的字体设置 */
+	font-size: inherit;
+	line-height: inherit;
+	color: inherit;
 }
 
-.deeppdf-message-content p:last-child {
-	margin-bottom: 0;
-}
-
-.deeppdf-message-content ul,
-.deeppdf-message-content ol {
-	margin-top: 6px;
-	margin-bottom: 12px;
-	padding-left: 22px;
-}
-
-.deeppdf-message-content li {
-	margin-bottom: 4px;
-}
-
-.deeppdf-message-content h1,
-.deeppdf-message-content h2,
-.deeppdf-message-content h3,
-.deeppdf-message-content h4 {
-	margin-top: 18px;
-	margin-bottom: 8px;
-	font-size: 1.1em;
-	font-weight: 600;
-	line-height: 1.4;
-	color: var(--text-normal);
-}
-
-/* 首个标题不需要上方间距 */
-.deeppdf-message-content>h1:first-child,
-.deeppdf-message-content>h2:first-child,
-.deeppdf-message-content>h3:first-child {
-	margin-top: 0;
-}
-
-/* Strong / Bold */
-.deeppdf-message-content strong {
-	font-weight: 600;
-	color: var(--interactive-accent);
-}
-
-/* Code blocks */
-.deeppdf-message-content code {
-	font-size: 0.9em;
-	padding: 2px 5px;
-	border-radius: 4px;
-	background: var(--background-modifier-form-field);
-	color: var(--text-muted);
-}
-
-.deeppdf-message-content pre {
-	margin: 8px 0;
-	padding: 10px;
-	border-radius: 6px;
-	background: var(--background-secondary);
-	overflow-x: auto;
-}
-
-/* 引用块 */
-.deeppdf-message-content blockquote {
-	margin: 8px 0;
-	padding-left: 12px;
-	border-left: 3px solid var(--interactive-accent);
-	color: var(--text-muted);
-}
-
-/* 移除首尾多余空白 */
-.deeppdf-message-content>*:first-child {
+/* 只做必要的布局调整，不覆盖颜色和具体样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content > *:first-child {
 	margin-top: 0 !important;
 }
 
-.deeppdf-message-content>*:last-child {
+.deeppdf-message-bubble-ai .deeppdf-message-content > *:last-child {
 	margin-bottom: 0 !important;
 }
 
