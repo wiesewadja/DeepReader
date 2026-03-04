@@ -7,6 +7,7 @@ import { App, Modal, Notice } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo } from '../../ui/pdf-file-selector.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
+import { Icons } from '../../utils/icons.js';
 
 export interface LibraryModalOptions {
     app: App;
@@ -89,6 +90,14 @@ export class LibraryModal extends Modal {
             this.searchQuery = (e.target as HTMLInputElement).value;
             this.renderList();
         });
+
+        // 添加按钮
+        const addBtn = toolbar.createEl('button', {
+            cls: 'deeppdf-library-add-btn',
+        });
+        addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
+        addBtn.setAttribute('title', '添加文档');
+        addBtn.addEventListener('click', () => this.handleAddDocument());
 
         // 文档列表容器
         const listContainer = contentEl.createDiv({ cls: 'deeppdf-library-list-container' });
@@ -264,10 +273,7 @@ export class LibraryModal extends Modal {
         this.close();
     }
 
-    /**
-     * 打开添加文档对话框
-     */
-    public openAddDocument(): void {
+    private async handleAddDocument(): Promise<void> {
         new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
             try {
                 new ConfirmModal(
