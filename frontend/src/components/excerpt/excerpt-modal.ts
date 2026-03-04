@@ -32,7 +32,6 @@ export class ExcerptModal extends Modal {
   // 表单元素
   private noteInput: HTMLTextAreaElement | null = null;
   private pathInput: HTMLInputElement | null = null;
-  private includeBacklinkToggle: HTMLInputElement | null = null;
 
   // 服务
   private excerptService: ExcerptService;
@@ -59,12 +58,6 @@ export class ExcerptModal extends Modal {
    * 渲染模态框内容
    */
   private renderContent(container: HTMLElement): void {
-    // 鸢出说明
-    container.createEl('p', {
-      cls: 'deeppdf-excerpt-modal-desc',
-      text: '将 AI 回复保存为摘录笔记'
-    });
-
     // 预览区域
     this.renderPreview(container);
 
@@ -83,36 +76,36 @@ export class ExcerptModal extends Modal {
       cls: 'deeppdf-excerpt-preview-section'
     });
 
-    previewSection.createEl('h3', {
-      cls: 'deeppdf-excerpt-preview-title',
-      text: '预览'
+    // 预览内容卡片
+    const previewCard = previewSection.createEl('div', {
+      cls: 'deeppdf-excerpt-preview-card'
     });
 
-    const previewContent = previewSection.createEl('div', {
-      cls: 'deeppdf-excerpt-preview-content'
-    });
-
-    // 显示原始内容（不添加引用符号）
-    const contentEl = previewContent.createEl('div', {
+    // 显示原始内容
+    const contentEl = previewCard.createEl('div', {
       cls: 'deeppdf-excerpt-content-preview'
     });
     contentEl.textContent = this.content.text;
 
-    // 显示元数据
-    const metaEl = previewContent.createEl('div', {
-      cls: 'deeppdf-excerpt-meta'
+    // 元数据标签
+    const metaEl = previewCard.createEl('div', {
+      cls: 'deeppdf-excerpt-meta-tags'
     });
 
-    metaEl.createEl('span', {
-      cls: 'deeppdf-excerpt-source',
-      text: `来源: ${this.metadata.sourcePdf}`
+    // 来源标签
+    const sourceTag = metaEl.createEl('span', {
+      cls: 'deeppdf-excerpt-tag deeppdf-excerpt-tag-source'
     });
+    sourceTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📖' });
+    sourceTag.createEl('span', { text: this.metadata.sourcePdf });
 
+    // 页码标签（如果有）
     if (this.metadata.page) {
-      metaEl.createEl('span', {
-        cls: 'deeppdf-excerpt-page',
-        text: ` · 第 ${this.metadata.page} 页`
+      const pageTag = metaEl.createEl('span', {
+        cls: 'deeppdf-excerpt-tag deeppdf-excerpt-tag-page'
       });
+      pageTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📄' });
+      pageTag.createEl('span', { text: `第 ${this.metadata.page} 页` });
     }
   }
 
@@ -131,14 +124,14 @@ export class ExcerptModal extends Modal {
 
     noteGroup.createEl('label', {
       cls: 'deeppdf-excerpt-form-label',
-      text: '我的笔记'
+      text: '添加笔记'
     });
 
     this.noteInput = noteGroup.createEl('textarea', {
       cls: 'deeppdf-excerpt-note-input',
       attr: {
-        placeholder: '添加你的想法...',
-        rows: '3'
+        placeholder: '写下你的想法...',
+        rows: '2'
       }
     });
 
@@ -163,35 +156,6 @@ export class ExcerptModal extends Modal {
         value: defaultPath
       }
     });
-
-    // 浏览按钮
-    const browseBtn = pathGroup.createEl('button', {
-      cls: 'deeppdf-excerpt-browse-btn',
-      text: '浏览...'
-    });
-    browseBtn.addEventListener('click', () => this.browseFile());
-
-    // 选项
-    const optionsGroup = formSection.createEl('div', {
-      cls: 'deeppdf-excerpt-form-group'
-    });
-
-    this.includeBacklinkToggle = optionsGroup.createEl('input', {
-      cls: 'deeppdf-excerpt-toggle',
-      attr: {
-        type: 'checkbox',
-        id: 'include-backlink'
-      }
-    });
-    (this.includeBacklinkToggle as HTMLInputElement).checked = true;
-
-    const toggleLabel = optionsGroup.createEl('label', {
-      cls: 'deeppdf-excerpt-toggle-label',
-      attr: {
-        for: 'include-backlink'
-      }
-    });
-    toggleLabel.textContent = '包含双向链接（可跳转回原对话）';
   }
 
   /**
@@ -218,26 +182,16 @@ export class ExcerptModal extends Modal {
   }
 
   /**
-   * 浏览文件
-   */
-  private async browseFile(): Promise<void> {
-    // 简化：让用户输入路径
-    // 完整实现可以使用 Obsidian 的 FileSuggest
-    new Notice('请直接输入文件路径，或使用默认路径');
-  }
-
-  /**
    * 处理保存
    */
   private async handleSave(): Promise<void> {
     const note = this.noteInput?.value || '';
-    const targetPath = this.pathInput?.value || 'Excerpts/DeepPDF.md';
-    const includeBacklink = (this.includeBacklinkToggle as HTMLInputElement)?.checked ?? true;
+    const targetPath = this.pathInput?.value || this.excerptService.getExcerptPath(this.metadata.sourcePdf);
 
     const options: ExcerptOptions = {
       note,
       targetPath,
-      includeBacklink
+      includeBacklink: false
     };
 
     const savedPath = await this.excerptService.saveExcerpt(

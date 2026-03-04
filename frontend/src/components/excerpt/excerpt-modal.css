@@ -1,64 +1,65 @@
 /**
  * DeepPDF 摘录模态框样式
+ * 简洁优雅的设计
  */
 
-/* 模态框说明 */
-.deeppdf-excerpt-modal-desc {
-  color: var(--text-muted);
-  font-size: 14px;
-  margin-bottom: 16px;
-}
-
-/* 预览区域 */
+/* ==================== 预览区域 ==================== */
 .deeppdf-excerpt-preview-section {
   margin-bottom: 20px;
 }
 
-.deeppdf-excerpt-preview-title {
-  margin: 0 0 12px 0;
-  color: var(--text-normal);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.deeppdf-excerpt-preview-content {
+.deeppdf-excerpt-preview-card {
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
-  padding: 12px;
+  overflow: hidden;
 }
 
 .deeppdf-excerpt-content-preview {
-  margin: 0 0 12px 0;
-  padding: 8px 12px;
-  background: var(--background-primary);
-  border-radius: 4px;
+  padding: 14px 16px;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text-normal);
-  max-height: 200px;
+  max-height: 160px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.deeppdf-excerpt-meta {
+.deeppdf-excerpt-meta-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 10px 16px;
+  background: var(--background-primary-alt);
+}
+
+.deeppdf-excerpt-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 4px;
   font-size: 12px;
+  font-weight: 500;
+}
+
+.deeppdf-excerpt-tag-source {
+  background: var(--interactive-accent);
+  color: white;
+}
+
+.deeppdf-excerpt-tag-page {
+  background: var(--background-modifier-border);
   color: var(--text-muted);
 }
 
-.deeppdf-excerpt-source {
-  color: var(--text-muted);
+.deeppdf-excerpt-tag-icon {
+  font-size: 11px;
 }
 
-.deeppdf-excerpt-page {
-  color: var(--text-muted);
-}
-
-/* 表单区域 */
+/* ==================== 表单区域 ==================== */
 .deeppdf-excerpt-form-section {
   display: flex;
   flex-direction: column;
@@ -67,21 +68,20 @@
 
 .deeppdf-excerpt-form-group {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .deeppdf-excerpt-form-label {
-  min-width: 80px;
-  padding-top: 6px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .deeppdf-excerpt-note-input {
-  flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: var(--background-primary);
@@ -89,14 +89,13 @@
   font-family: inherit;
   font-size: 13px;
   line-height: 1.5;
-  resize: vertical;
-  min-height: 60px;
+  resize: none;
 }
 
 .deeppdf-excerpt-note-input:focus {
   outline: none;
   border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.15);
 }
 
 .deeppdf-excerpt-note-input::placeholder {
@@ -104,71 +103,39 @@
 }
 
 .deeppdf-excerpt-path-input {
-  flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: var(--background-primary);
   color: var(--text-normal);
-  font-family: inherit;
-  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
 }
 
 .deeppdf-excerpt-path-input:focus {
   outline: none;
   border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
+  box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.15);
 }
 
-.deeppdf-excerpt-browse-btn {
-  padding: 8px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  background: var(--background-secondary);
-  color: var(--text-muted);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.deeppdf-excerpt-browse-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-/* 开关选项 */
-.deeppdf-excerpt-toggle {
-  width: 16px;
-  height: 16px;
-  margin-top: 4px;
-  cursor: pointer;
-  accent-color: var(--interactive-accent);
-}
-
-.deeppdf-excerpt-toggle-label {
-  font-size: 13px;
-  color: var(--text-normal);
-  cursor: pointer;
-  line-height: 1.4;
-}
-
-/* 按钮区域 */
+/* ==================== 按钮区域 ==================== */
 .deeppdf-excerpt-button-section {
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   margin-top: 20px;
   padding-top: 16px;
   border-top: 1px solid var(--background-modifier-border);
 }
 
 .deeppdf-excerpt-cancel-btn {
-  padding: 8px 16px;
+  padding: 8px 18px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -176,15 +143,16 @@
 .deeppdf-excerpt-cancel-btn:hover {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
+  border-color: var(--background-modifier-border-hover);
 }
 
 .deeppdf-excerpt-save-btn {
-  padding: 8px 16px;
+  padding: 8px 20px;
   border: none;
   border-radius: 6px;
   background: var(--interactive-accent);
   color: white;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -192,4 +160,10 @@
 
 .deeppdf-excerpt-save-btn:hover {
   background: var(--interactive-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.deeppdf-excerpt-save-btn:active {
+  transform: translateY(0);
 }
