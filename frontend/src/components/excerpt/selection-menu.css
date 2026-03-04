@@ -1,0 +1,49 @@
+/**
+ * DeepPDF 文字选中悬浮菜单样式
+ */
+
+.deeppdf-selection-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  animation: deeppdf-selection-menu-fade-in 0.15s ease;
+}
+
+@keyframes deeppdf-selection-menu-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.deeppdf-selection-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.deeppdf-selection-menu-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.deeppdf-selection-menu-btn svg {
+  width: 14px;
+  height: 14px;
+}

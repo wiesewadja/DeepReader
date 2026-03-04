@@ -5,6 +5,8 @@
 
 import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obsidian';
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
+import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import { SelectionMenu } from '../excerpt/selection-menu';
 
 /**
  * 消息角色类型
@@ -266,6 +268,14 @@ export interface MessageData {
 	agentToolCalls?: AgentToolCall[];
 	/** 可选：当前状态文本（如"正在搜索..."） */
 	currentStatus?: string;
+	/** 可选：关联的 PDF 文件名 */
+	pdfName?: string;
+	/** 可选：关联的页码 */
+	page?: number;
+	/** 可选：关联的用户问题 */
+	question?: string;
+	/** 可选：对话 ID */
+	conversationId?: string;
 }
 
 
@@ -883,6 +893,7 @@ export class AIMessage extends Message {
 	private onCopyWithCitation?: () => void;
 	private onQuestionClick?: (question: string) => void;
 	private onCitationJump?: (citation: CitationData) => void;
+	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
 	private lastRenderTime: number = 0;
@@ -890,6 +901,8 @@ export class AIMessage extends Message {
 	private streamingAnimationFrame: number | null = null;
 	// 状态显示跟踪：记录上次实际显示在 DOM 中的状态（用于判断是否需要更新）
 	private lastDisplayedStatus: string | undefined = undefined;
+	// 文字选中悬浮菜单
+	private selectionMenu: SelectionMenu | null = null;
 
 	constructor(
 		data: MessageData,
@@ -899,6 +912,7 @@ export class AIMessage extends Message {
 			onCopyWithCitation?: () => void;
 			onQuestionClick?: (question: string) => void;
 			onCitationJump?: (citation: CitationData) => void;
+			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 			app?: App;
 		}
 	) {
@@ -908,6 +922,7 @@ export class AIMessage extends Message {
 		this.onCopyWithCitation = options?.onCopyWithCitation;
 		this.onQuestionClick = options?.onQuestionClick;
 		this.onCitationJump = options?.onCitationJump;
+		this.onExcerpt = options?.onExcerpt;
 		// 初始化渲染跟踪变量
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
@@ -997,9 +1012,14 @@ export class AIMessage extends Message {
 
 		// 如果正在流式传输，添加光标效果 (由 CSS 处理 .deeppdf-message-streaming)
 		if (this.data.isStreaming) {
-			container.addClass('deeppdf-message-streaming');
-		} else {
-			container.removeClass('deeppdf-message-streaming');
+		 container.addClass('deeppdf-message-streaming');
+        } else {
+            container.removeClass('deeppdf-message-streaming');
+        }
+
+		// 设置文字选中监听（仅对非流式消息）
+		if (!this.data.isStreaming) {
+			this.setupSelectionListener(content);
 		}
 
 		return container;
@@ -1338,7 +1358,7 @@ export class AIMessage extends Message {
 	}
 
 	private renderActions(container: HTMLElement) {
-		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0));
+		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) || this.onExcerpt);
 		if (hasActions) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
 			if (this.onRegenerate) {
@@ -1362,7 +1382,90 @@ export class AIMessage extends Message {
 				btn.title = "Copy with Citations";
 				btn.addEventListener('click', () => this.onCopyWithCitation?.());
 			}
+			if (this.onExcerpt) {
+				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				// Icon: Bookmark/Save
+				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+				btn.title = "Save as Excerpt";
+				btn.addEventListener('click', () => this.handleExcerpt());
+			}
 		}
+	}
+
+	/**
+	 * 处理摘录保存
+	 */
+	private handleExcerpt(): void {
+		if (!this.onExcerpt) return;
+
+		const content: ExcerptContent = {
+			text: this.data.content,
+			rawMarkdown: this.data.content
+		};
+
+		const metadata: ExcerptMetadata = {
+			sourcePdf: this.data.pdfName || 'Unknown',
+			page: this.data.page,
+			question: this.data.question,
+			createdAt: new Date().toISOString(),
+			conversationId: this.data.conversationId,
+			messageId: this.data.id
+		};
+
+		this.onExcerpt(content, metadata);
+	}
+
+	/**
+	 * 设置文字选中监听
+	 */
+	private setupSelectionListener(contentEl: HTMLElement): void {
+		contentEl.addEventListener('mouseup', (e: MouseEvent) => {
+			const selection = window.getSelection();
+			if (!selection) return;
+
+			const selectedText = selection.toString().trim();
+			if (selectedText.length < 10) {
+				// 选中文本太短，不显示菜单
+				this.selectionMenu?.hide();
+				return;
+			}
+
+			// 检查选区是否在当前元素内
+			const range = selection.getRangeAt(0);
+			if (!contentEl.contains(range.commonAncestorContainer)) {
+				this.selectionMenu?.hide();
+				return;
+			}
+
+			// 创建或更新选中菜单
+			if (!this.selectionMenu) {
+				this.selectionMenu = new SelectionMenu({
+					selectedText,
+					sourcePdf: this.data.pdfName,
+					page: this.data.page,
+					question: this.data.question,
+					conversationId: this.data.conversationId,
+					messageId: this.data.id,
+					app: this.app!
+				});
+			} else {
+				// 更新选项
+				(this.selectionMenu as any).options = {
+					selectedText,
+					sourcePdf: this.data.pdfName,
+					page: this.data.page,
+					question: this.data.question,
+					conversationId: this.data.conversationId,
+					messageId: this.data.id,
+					app: this.app!
+				};
+			}
+
+			// 显示菜单（在鼠标位置附近）
+			const menuX = e.clientX + 10;
+			const menuY = e.clientY + 10;
+			this.selectionMenu.show(menuX, menuY);
+		});
 	}
 
 	private renderCitations(container: HTMLElement) {
@@ -1394,6 +1497,12 @@ export class AIMessage extends Message {
 			document.removeEventListener('mouseover', this.mouseoverHandler);
 			this.mouseoverHandler = null;
 		}
+
+		// 清理选中菜单
+		if (this.selectionMenu) {
+			this.selectionMenu.hide();
+			this.selectionMenu = null;
+		}
 	}
 }
 
@@ -1408,6 +1517,7 @@ export function createMessage(
 		onCopyWithCitation?: () => void;
 		onQuestionClick?: (question: string) => void;
 		onCitationJump?: (citation: CitationData) => void;
+		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 		app?: App;
 	}
 ): Message {

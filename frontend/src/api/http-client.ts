@@ -916,7 +916,7 @@ export class DeepPDFClient {
       signal: controller.signal
     })
       .then(response => {
-        console.log('[Agent] 收到响应:', { status: response.status, ok: response.ok, headers: Object.fromEntries(response.headers.entries()) });
+        console.log('[Agent] 收到响应:', { status: response.status, ok: response.ok, headers: Object.fromEntries((response.headers as any).entries()) });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);

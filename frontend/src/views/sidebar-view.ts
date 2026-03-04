@@ -22,6 +22,8 @@ import { agentAPI } from "../api/index.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
 import { ContextTags } from "../components/context-tags/index.js";
+import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
+import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 
 // ==================== 类型映射 ====================
 
@@ -824,6 +826,9 @@ export class SidebarView extends ItemView {
             },
             onGenerateOutline: () => {
                 this.handleGenerateOutline();
+            },
+            onExcerpt: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => {
+                this.handleExcerpt(messageId, content, metadata);
             }
         }, this.app);
 
@@ -1860,6 +1865,32 @@ ${r.text}`;
         }
 
         this.copyToClipboard(content);
+    }
+
+    /**
+     * 处理摘录保存
+     */
+    private handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
+        const message = this.messageList?.getMessage(messageId);
+        if (!message) return;
+
+        const data = message.getData();
+
+        // 更新元数据中的来源信息
+        if (data.pdfName) {
+            metadata.sourcePdf = data.pdfName;
+        }
+
+        // 打开摘录模态框
+        const modal = new ExcerptModal({
+            content,
+            metadata,
+            app: this.app,
+            onSave: (path: string) => {
+                new Notice(`摘录已保存到 ${path}`);
+            }
+        });
+        modal.open();
     }
 
     /**

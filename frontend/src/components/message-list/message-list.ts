@@ -6,6 +6,7 @@
 import { App } from 'obsidian';
 import { Component } from '../component';
 import { createMessage, Message, MessageData, CitationData } from '../message/message';
+import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 
 /**
  * 消息操作回调接口
@@ -23,6 +24,8 @@ export interface MessageCallbacks {
 	onQuestionClick?: (question: string) => void;
 	/** 生成阅读大纲点击 */
 	onGenerateOutline?: () => void;
+	/** 保存摘录 */
+	onExcerpt?: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => void;
 }
 
 /**
@@ -112,6 +115,9 @@ export class MessageList extends Component {
 			},
 			onCitationJump: (citation: CitationData) => {
 				this.callbacks.onCitationJump?.(citation);
+			},
+			onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) => {
+				this.callbacks.onExcerpt?.(messageData.id, content, metadata);
 			},
 			app: this.app
 		});
