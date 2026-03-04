@@ -88,7 +88,7 @@ export class IndexManager extends Component {
 
         const title = document.createElement('span');
         title.className = 'deeppdf-index-manager-title';
-        title.textContent = '文档库';
+        title.textContent = '在线书库';
 
         // 连接状态指示器
         this.statusDot = document.createElement('span');

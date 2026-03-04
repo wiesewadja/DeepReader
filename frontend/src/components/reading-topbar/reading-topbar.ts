@@ -76,7 +76,6 @@ export class ReadingTopbar extends Component {
 
         const menuItems = [
             { icon: Icons.library, label: '在线书库', action: () => this.options.onOpenLibrary?.() },
-            { icon: Icons.plus, label: '添加文档', action: () => this.options.onOpenLibrary?.() },
             { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
             { icon: Icons.bookworm, label: '图书管理', action: () => this.options.onOpenBookManagement?.() },
             { divider: true },
