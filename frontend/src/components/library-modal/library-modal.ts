@@ -53,6 +53,11 @@ export class LibraryModal extends Modal {
 
     onClose() {
         const { contentEl, modalEl } = this;
+        // 清除轮询
+        if (this.pollingInterval) {
+            window.clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
         contentEl.empty();
         modalEl.removeClass('deeppdf-library-modal');
     }
@@ -228,11 +233,10 @@ export class LibraryModal extends Modal {
                             ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
                         });
 
-                        if (result.status === 'pending') {
+                        if (result.status === 'pending' || result.status === 'processing') {
                             new Notice(`索引任务已创建，正在后台处理...`, 4000);
-                            await new Promise(r => setTimeout(r, 500));
-                            await this.options.onRefresh?.();
-                            await this.refreshIndexes();
+                            // 开始轮询更新进度
+                            this.startProgressPolling();
                         } else if (result.status === 'success') {
                             new Notice(`索引成功！节点数: ${result.node_count}`, 3000);
                             await this.refreshIndexes();
@@ -252,6 +256,38 @@ export class LibraryModal extends Modal {
                 { confirmLabel: '开始索引' }
             ).open();
         }).open();
+    }
+
+    private pollingInterval: number | null = null;
+
+    private startProgressPolling(): void {
+        // 清除之前的轮询
+        if (this.pollingInterval) {
+            window.clearInterval(this.pollingInterval);
+        }
+
+        // 每 2 秒刷新一次进度
+        this.pollingInterval = window.setInterval(async () => {
+            await this.refreshIndexes();
+
+            // 检查是否所有索引都已完成（没有 processing 状态的）
+            const hasProcessing = this.indexes.some(idx => {
+                const status = (idx.status || '').toLowerCase();
+                return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(status);
+            });
+
+            if (!hasProcessing) {
+                // 所有索引都已完成，停止轮询
+                if (this.pollingInterval) {
+                    window.clearInterval(this.pollingInterval);
+                    this.pollingInterval = null;
+                }
+                new Notice('索引处理完成', 3000);
+            }
+        }, 2000);
+
+        // 立即刷新一次
+        this.refreshIndexes();
     }
 
     private handleDelete(index: IndexListItem): void {
