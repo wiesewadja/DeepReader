@@ -55,19 +55,12 @@
 
 .deeppdf-input-area {
 	width: 100%;
-	/* 默认折叠状态 */
-	max-height: 0;
-	padding: 0 12px;
-	overflow: hidden;
-	opacity: 0;
-	transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
-}
-
-/* 聚焦或 streaming 状态：展开文本输入区 */
-.deeppdf-chat-input-container:focus-within .deeppdf-input-area {
+	/* 始终展开状态 */
 	max-height: 200px;
 	padding: 10px 12px 4px 12px;
+	overflow: hidden;
 	opacity: 1;
+	transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
 }
 
 .deeppdf-chat-input-textarea {
