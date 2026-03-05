@@ -44,8 +44,8 @@ from .models import (
     BookSummary,
     ChapterSummary,
 )
-from .export_models import ExportIndexResponse
-from .export_handlers import export_index_data
+from .export_models import ExportIndexResponse, CoverResponse
+from .export_handlers import export_index_data, export_cover_data
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
@@ -834,6 +834,23 @@ async def export_index_endpoint(index_id: str):
         f"[API] 导出完成: 返回 {len(result.get('nodes', []))} 个节点, total_pages={result.get('total_pages', 0)}"
     )
     return ExportIndexResponse(**result)
+
+
+@router.get("/export/{index_id}/cover", response_model=CoverResponse)
+async def export_cover_endpoint(index_id: str):
+    """
+    导出书籍封面
+
+    从 PDF/EPUB 文件中提取封面图片，如果没有封面则生成默认封面
+    返回 base64 编码的封面图片数据
+    """
+    logger.info(f"[API] 收到封面导出请求: index_id='{index_id}'")
+    result = await export_cover_data(index_id)
+    logger.info(
+        f"[API] 封面导出完成: pdf_name='{result.get('pdf_name')}', "
+        f"has_custom_cover={result.get('has_custom_cover')}"
+    )
+    return CoverResponse(**result)
 
 
 @router.post("/markdown-mapping/{index_id}", response_model=MarkdownMappingResponse)

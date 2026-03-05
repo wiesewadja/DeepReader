@@ -439,6 +439,16 @@ export interface ExportIndexResponse {
   nodes: ExportNodeData[];
 }
 
+// 封面响应
+export interface CoverResponse {
+  status: string;
+  index_id: string;
+  pdf_name: string;
+  cover_data: string;  // base64 编码的图片数据
+  mime_type: string;
+  has_custom_cover: boolean;  // 是否有自定义封面（True=提取的，False=生成的默认封面）
+}
+
 export class DeepPDFClient {
   private baseUrl: string;
   private readonly DEFAULT_PORT = 6088;
@@ -831,6 +841,14 @@ export class DeepPDFClient {
    */
   async exportIndex(indexId: string): Promise<ExportIndexResponse> {
     return this.request<ExportIndexResponse>(`/api/export/${indexId}`);
+  }
+
+  /**
+   * 导出书籍封面
+   * 从 PDF/EPUB 文件中提取封面，如果没有则生成默认封面
+   */
+  async exportCover(indexId: string): Promise<CoverResponse> {
+    return this.request<CoverResponse>(`/api/export/${indexId}/cover`);
   }
 
   /**

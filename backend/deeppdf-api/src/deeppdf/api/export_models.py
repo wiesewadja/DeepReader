@@ -2,7 +2,7 @@
 导出相关的 Pydantic 模型
 """
 
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -29,3 +29,14 @@ class ExportIndexResponse(BaseModel):
     total_pages: int  # 新增：PDF 总页数
     created_at: str  # 新增：创建时间
     nodes: List[ExportNodeData]
+
+
+class CoverResponse(BaseModel):
+    """封面响应"""
+
+    status: str
+    index_id: str
+    pdf_name: str
+    cover_data: str  # base64 编码的图片数据
+    mime_type: str = "image/png"
+    has_custom_cover: bool  # 是否有自定义封面（True=提取的，False=生成的默认封面）

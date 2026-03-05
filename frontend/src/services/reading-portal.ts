@@ -39,6 +39,60 @@ export class ReadingPortalService {
   }
 
   /**
+   * 下载书籍封面到本地
+   * @param indexId 索引 ID
+   * @param pdfName PDF/EPUB 文件名
+   * @returns 封面的 Obsidian 内部链接路径
+   */
+  async downloadBookCover(indexId: string, pdfName: string): Promise<string | null> {
+    try {
+      // 获取封面数据
+      const coverData = await this.client.exportCover(indexId);
+
+      // 清理文件名
+      const sanitizedName = pdfName
+        .replace(/\.pdf$/i, '')
+        .replace(/\.epub$/i, '')
+        .replace(/[/:\\*?"<>|]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // 封面保存路径
+      const coversFolder = normalizePath(`${DEEPPDF_DIR}/covers`);
+      const coverPath = normalizePath(`${coversFolder}/${sanitizedName}.png`);
+
+      // 确保封面目录存在
+      const folder = this.app.vault.getAbstractFileByPath(coversFolder);
+      if (!folder) {
+        await this.app.vault.createFolder(coversFolder);
+      }
+
+      // 将 base64 转换为 ArrayBuffer
+      const binaryString = atob(coverData.cover_data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      // 检查文件是否存在
+      const existingFile = this.app.vault.getAbstractFileByPath(coverPath);
+      if (existingFile instanceof TFile) {
+        await this.app.vault.modifyBinary(existingFile, bytes.buffer);
+      } else {
+        await this.app.vault.createBinary(coverPath, bytes.buffer);
+      }
+
+      log('[DeepPDF] 封面下载成功:', coverPath);
+
+      // 返回 Obsidian 内部链接格式
+      return `[[${coverPath}]]`;
+    } catch (error) {
+      // 封面下载失败不影响主流程，只记录日志
+      logError('[DeepPDF] 封面下载失败:', error);
+      return null;
+    }
+  }
+  /**
    * 确保目录存在
    */
   private async ensureDir(): Promise<void> {
@@ -75,6 +129,13 @@ export class ReadingPortalService {
         const totalPages = progress?.total_pages || 0;
 
         await this.ensureBookNote(indexId, bookName, totalPages);
+
+        // 下载封面并更新笔记的 cover 字段
+        const coverLink = await this.downloadBookCover(indexId, index.pdf_name);
+        if (coverLink) {
+          await this.updateBookCover(bookName, coverLink);
+        }
+
         created++;
       } catch (error) {
         logError(`[DeepPDF-ERROR] Failed to create book note for ${bookName}:`, error);
@@ -281,6 +342,25 @@ created: ${now}
     });
   }
 
+  /**
+   * 更新书籍笔记的封面字段
+   */
+  async updateBookCover(bookName: string, coverLink: string): Promise<void> {
+    const notePath = this.getBookNotePath(bookName);
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+
+    if (!file || !(file instanceof TFile)) {
+      return; // 笔记不存在，跳过
+    }
+
+    // 使用 processFrontmatter 更新 cover 字段
+    await this.app.fileManager.processFrontMatter(file, (fm) => {
+      fm.cover = coverLink;
+    });
+
+    log('[DeepPDF] 更新书籍封面字段:', bookName, coverLink);
+  }
+
   // ==================== 图书管理入口文档 ====================
 
   /**
@@ -424,39 +504,42 @@ created: ${now}
 filters:
   and:
     - file.inFolder("DeepReader")
-    - 'file.ext == "md"'
+    - file.ext == "md"
     - file.hasProperty("index_id")
     - '!file.name.startsWith("📖")'
-
 formulas:
-  status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
-  chat_link: 'link("obsidian://deepreader-chat?index_id=" + index_id, "对话")'
-  book_link: 'link(file.path, book_name)'
-
+  status_label: if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))
+  chat_link: link("obsidian://deepreader-chat?index_id=" + index_id, "对话")
+  book_link: link(file.path, book_name)
 properties:
+  cover:
+    displayName: 封面
   formula.book_link:
-    displayName: "书名"
+    displayName: 书名
   formula.chat_link:
-    displayName: "操作"
+    displayName: 操作
   booklists:
-    displayName: "书单"
+    displayName: 书单
   tags:
-    displayName: "标签"
+    displayName: 标签
   progress:
-    displayName: "进度%"
+    displayName: 进度%
   formula.status_label:
-    displayName: "状态"
-
+    displayName: 状态
 views:
-  - type: table
-    name: "全部书籍"
+  - type: cards
+    name: 封面视图
     order:
       - formula.book_link
+      - formula.status_label
       - formula.chat_link
       - booklists
+      - status
       - tags
-      - progress
-      - formula.status_label
+    image: note.cover
+    imageFit: contain
+    cardSize: 200
+    imageAspectRatio: 1.35
 \`\`\`
 
 > 💡 点击「对话」可开始与 AI 讨论，在表格中直接编辑「书单」和「标签」列即可分类书籍
@@ -478,37 +561,42 @@ views:
 filters:
   and:
     - file.inFolder("DeepReader")
-    - 'file.ext == "md"'
+    - file.ext == "md"
     - file.hasProperty("booklists")
     - 'booklists.includes("${bl}")'
     - '!file.name.startsWith("📖")'
-
 formulas:
-  status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
-  chat_link: 'link("obsidian://deepreader-chat?index_id=" + index_id, "对话")'
-  book_link: 'link(file.path, book_name)'
-
+  status_label: if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))
+  chat_link: link("obsidian://deepreader-chat?index_id=" + index_id, "对话")
+  book_link: link(file.path, book_name)
 properties:
+  cover:
+    displayName: 封面
   formula.book_link:
-    displayName: "书名"
+    displayName: 书名
   formula.chat_link:
-    displayName: "操作"
+    displayName: 操作
   tags:
-    displayName: "标签"
+    displayName: 标签
   progress:
-    displayName: "进度%"
+    displayName: 进度%
   formula.status_label:
-    displayName: "状态"
-
+    displayName: 状态
 views:
-  - type: table
-    name: "${bl}书籍"
+  - type: cards
+    name: 封面视图
     order:
+      - cover
       - formula.book_link
-      - formula.chat_link
-      - tags
-      - progress
       - formula.status_label
+      - formula.chat_link
+      - booklists
+      - status
+      - tags
+    image: note.cover
+    imageFit: contain
+    cardSize: 200
+    imageAspectRatio: 1.35
 \`\`\`
 
 [🔍 搜索此书单](obsidian://deepreader-search?booklists=${encodedBl})

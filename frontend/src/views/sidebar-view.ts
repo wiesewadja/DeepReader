@@ -2116,6 +2116,15 @@ ${r.text}`;
                 new Notice(`导出成功! 创建了 ${result.filesCreated} 个文件`);
                 // 3. 保存映射回后端
                 await this.apiClient.saveMarkdownMapping(indexId, result.fileMapping);
+
+                // 4. 同时下载封面图片并更新书籍笔记
+                if (this.readingPortal) {
+                    const coverLink = await this.readingPortal.downloadBookCover(indexId, indexInfo.pdf_name);
+                    if (coverLink) {
+                        const bookName = indexInfo.pdf_name.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
+                        await this.readingPortal.updateBookCover(bookName, coverLink);
+                    }
+                }
             } else {
                 new Notice(`导出失败: ${result.error}`);
             }
