@@ -3,7 +3,7 @@
  * 简约风格设计
  */
 
-import { App, Modal, Notice } from 'obsidian';
+import { App, Modal, Notice, TFile } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo } from '../../ui/pdf-file-selector.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
@@ -171,7 +171,20 @@ export class LibraryModal extends Modal {
         const icon = infoWrapper.createDiv({ cls: 'deeppdf-file-icon' });
         // 根据文档类型选择图标
         const docType = index.pdf_name.toLowerCase().endsWith('.epub') ? 'epub' : 'pdf';
-        icon.innerHTML = statusClass === 'processing' ? Icons.loading : (docType === 'epub' ? Icons.fileEpub : Icons.filePdf);
+
+        // 尝试加载书籍封面图
+        const coverPath = `DeepReader/covers/${name}.png`;
+        const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+
+        if (coverFile && statusClass !== 'processing') {
+            // 显示书籍封面图
+            const imgEl = icon.createEl('img', { cls: 'deeppdf-cover-img' });
+            imgEl.src = this.app.vault.getResourcePath(coverFile as TFile);
+            imgEl.alt = name;
+        } else {
+            // 回退到图标
+            icon.innerHTML = statusClass === 'processing' ? Icons.loading : (docType === 'epub' ? Icons.fileEpub : Icons.filePdf);
+        }
 
         const details = infoWrapper.createDiv({ cls: 'deeppdf-file-details' });
 

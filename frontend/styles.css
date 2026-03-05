@@ -5634,6 +5634,14 @@
   height: 22px;
 }
 
+/* 封面图片样式 */
+.deeppdf-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
 .deeppdf-file-details {
   display: flex;
   flex-direction: column;
