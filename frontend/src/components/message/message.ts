@@ -984,16 +984,22 @@ export class AIMessage extends Message {
 		// 消息内容
 		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
-		// 使用 Markdown 渲染（先清理 <thought> 标签）
-		if (this.app) {
-			const { cleanedContent } = parseAgentContent(this.data.content);
-			MarkdownRenderer.render(this.app, cleanedContent, content, '', new Component());
-			// 设置内部链接的点击事件和 hover preview
-			// 如果正在流式传输，禁用 hover preview
-			this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
+		// 如果正在流式传输且内容为空，显示加载动画
+		if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
+			content.addClass('deeppdf-message-loading');
+			content.innerHTML = `<div class="deeppdf-loading-dots"><span></span><span></span><span></span></div>`;
 		} else {
-			const { cleanedContent } = parseAgentContent(this.data.content);
-			content.innerHTML = this.escapeHtml(cleanedContent);
+			// 使用 Markdown 渲染（先清理 <thought> 标签）
+			if (this.app) {
+				const { cleanedContent } = parseAgentContent(this.data.content);
+				MarkdownRenderer.render(this.app, cleanedContent, content, '', new Component());
+				// 设置内部链接的点击事件和 hover preview
+				// 如果正在流式传输，禁用 hover preview
+				this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
+			} else {
+				const { cleanedContent } = parseAgentContent(this.data.content);
+				content.innerHTML = this.escapeHtml(cleanedContent);
+			}
 		}
 
 		bubble.appendChild(this.renderTimestamp());
@@ -1362,6 +1368,10 @@ export class AIMessage extends Message {
 	}
 
 	private renderActions(container: HTMLElement) {
+		// 流式传输中不渲染操作按钮
+		if (this.data.isStreaming) {
+			return;
+		}
 		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) || this.onExcerpt);
 		if (hasActions) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
