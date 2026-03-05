@@ -76,7 +76,7 @@ export class ReadingTopbar extends Component {
         this.dropdownMenu.className = 'deeppdf-topbar-dropdown';
 
         const menuItems = [
-            { icon: Icons.library, label: '在线书库', action: () => this.options.onOpenLibrary?.() },
+            { icon: Icons.library, label: '切换书籍', action: () => this.options.onOpenLibrary?.() },
             { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
             { icon: Icons.bookworm, label: '同步图书', action: () => this.options.onOpenBookManagement?.() },
             { divider: true },
