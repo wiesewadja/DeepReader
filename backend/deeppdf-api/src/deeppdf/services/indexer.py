@@ -100,7 +100,10 @@ def _extract_nodes_from_tree(
         # 保存摘要和原文到 metadata
         if node_summary and node_summary.strip():
             node_metadata["summary"] = node_summary.strip()
-        if node_text and node_text.strip():
+        # 保存格式化后的文本（供 Markdown 导出使用）
+        if formatted_content and formatted_content.strip():
+            node_metadata["original_text"] = formatted_content
+        elif node_text and node_text.strip():
             node_metadata["original_text"] = node_text.strip()
 
         nodes.append(
