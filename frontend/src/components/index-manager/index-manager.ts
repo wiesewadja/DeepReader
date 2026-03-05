@@ -121,7 +121,7 @@ export class IndexManager extends Component {
         const menuItems = [
             { icon: Icons.plus, label: '添加文档', action: () => this.options.onCreateIndex?.() },
             { icon: Icons.messageSquare, label: '新增对话', action: () => this.options.onNewChat?.() },
-            { icon: Icons.library, label: '图书管理', action: () => this.options.onOpenBookManagement?.() }
+            { icon: Icons.library, label: '同步图书', action: () => this.options.onOpenBookManagement?.() }
         ];
 
         menuItems.forEach(item => {
