@@ -159,6 +159,8 @@ export interface TaskProgress {
   node_count?: number;
   pdf_name?: string;
   error?: string;
+  /** 章节文件映射，key 是 node_id，value 是文件路径 */
+  markdown_files?: Record<string, string>;
 }
 
 export interface DeleteIndexResult {

@@ -197,11 +197,11 @@ export class LibraryModal extends Modal {
         if (statusClass === 'ready') {
             const selectBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-primary' });
             selectBtn.textContent = '选择';
-            selectBtn.addEventListener('click', async (e) => {
+            selectBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
 
                 // 检查书籍章节是否存在
-                const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
+                const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
                 if (!chaptersExist) {
                     // 章节不存在，显示下载确认弹窗
                     new ConfirmModal(
@@ -248,43 +248,27 @@ export class LibraryModal extends Modal {
 
     /**
      * 检查书籍章节是否已下载到本地
-     * 通过检查后端保存的 markdown_mapping 来判断
+     * 直接检查本地 DeepReader 文件夹中是否存在章节文件
      */
-    private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
-        try {
-            // 调用后端 API 获取该索引的 markdown_mapping
-            const indexInfo = this.indexes.find(idx => idx.pdf_name === pdfName);
-            if (!indexInfo || !this.options.apiClient) {
-                return false;
-            }
+    private checkBookChaptersExist(pdfName: string): boolean {
+        const folderName = this.getFolderName(pdfName);
+        const folderPath = `DeepReader/${folderName}`;
 
-            // 尝试获取索引状态（包含 markdown_mapping）
-            const status = await this.options.apiClient.getIndexStatus(indexInfo.id);
-
-            // 检查是否有 markdown_mapping 且不为空
-            if (status && status.markdown_mapping && Object.keys(status.markdown_mapping).length > 0) {
-                return true;
-            }
-
+        // 检查文件夹是否存在
+        const folder = this.app.vault.getAbstractFileByPath(folderPath);
+        if (!folder) {
             return false;
-        } catch (error) {
-            // 如果 API 调用失败，回退到检查本地文件
-            const folderName = this.getFolderName(pdfName);
-            const folderPath = `DeepReader/${folderName}`;
-            const folder = this.app.vault.getAbstractFileByPath(folderPath);
-
-            if (!folder) {
-                return false;
-            }
-
-            // 检查文件夹中是否有 .md 文件（章节文件）
-            const files = this.app.vault.getMarkdownFiles();
-            const chapterFiles = files.filter(f =>
-                f.path.startsWith(folderPath + '/')
-            );
-
-            return chapterFiles.length > 0;
         }
+
+        // 检查文件夹中是否有 .md 章节文件
+        // 章节文件命名格式: 01-章节名.md, 02-章节名.md, ...
+        const files = this.app.vault.getMarkdownFiles();
+        const chapterFiles = files.filter(f =>
+            f.path.startsWith(folderPath + '/')
+        );
+
+        // 至少有 3 个章节文件才算已下载
+        return chapterFiles.length > 3;
     }
 
     /**
