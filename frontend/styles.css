@@ -718,8 +718,8 @@
 
 .deeppdf-message {
 	display: flex;
-	width: 100%;
-	max-width: 100%;
+	width: 95%;
+	max-width: 95%;
 	margin-bottom: 16px;
 	animation: deeppdf-fade-in 0.2s ease;
 }
@@ -738,7 +738,7 @@
 	display: flex;
 	align-items: flex-start;
 	gap: 10px;
-	max-width: 100%;
+	width: 100%;
 	flex: 0 1 auto;
 }
 
@@ -1458,8 +1458,8 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 与输入框对齐：左右留白 5%，底部 padding 动态适应输入框高度 */
-	padding: 16px 5% 80px 5%;
+	/* 底部 padding 动态适应输入框高度 */
+	padding: 16px 1% 80px 1%;
 
 	display: flex;
 	flex-direction: column;
