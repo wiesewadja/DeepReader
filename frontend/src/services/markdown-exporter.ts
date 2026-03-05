@@ -96,7 +96,7 @@ export async function exportIndexToMarkdown(
     app: App,
     pdfName: string,
     nodes: NodeData[],
-    outputFolder: string = "DeepPDF"
+    outputFolder: string = "DeepReader"
 ): Promise<ExportResult> {
     try {
         // 创建输出文件夹（同时移除 .pdf 和 .epub 后缀）

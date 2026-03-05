@@ -59,7 +59,7 @@ export class TopNav extends Component {
 		// 标题
 		const title = document.createElement('h1');
 		title.className = 'deeppdf-header-title';
-		title.textContent = 'DeepPDF';
+		title.textContent = 'DeepReader';
 		if (this.options.onTitleClick) {
 			title.style.cursor = 'pointer';
 			title.addEventListener('click', this.options.onTitleClick);

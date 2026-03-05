@@ -341,7 +341,7 @@ export class SidebarView extends ItemView {
     }
 
     getDisplayText() {
-        return "DeepPDF";
+        return "DeepReader";
     }
 
     getIcon() {
@@ -415,7 +415,7 @@ export class SidebarView extends ItemView {
                 const cached = this.plugin.settings.chatCache?.[savedSessionId];
                 if (cached && cached.messages && cached.messages.length > 0) {
                     this.restoreHistoryToView(cached.messages, true);
-                    new Notice(`已恢复对话 (本地缓存)`);
+                    // new Notice(`已恢复对话 (本地缓存)`);
                     return;
                 }
 
@@ -423,7 +423,7 @@ export class SidebarView extends ItemView {
                 const history = await agentAPI.getHistory(indexId, savedSessionId);
                 if (history && history.length > 0) {
                     this.restoreHistoryToView(history, false);
-                    new Notice(`已恢复对话`);
+                    //new Notice(`已恢复对话`);
                 } else {
                     this.showWelcomeMessage();
                 }

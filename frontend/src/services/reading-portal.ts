@@ -9,7 +9,7 @@ import { DeepPDFClient, ReadingProgress, TableOfContents, BookSummary } from "..
 import { log, warn, error as logError } from "../utils/logger.js";
 
 // 阅读入口目录名
-const DEEPPDF_DIR = "DeepPDF";
+const DEEPPDF_DIR = "DeepReader";
 const ENTRY_FILE = "📚 阅读入口.md";
 
 // 书籍笔记 frontmatter 结构
@@ -210,7 +210,7 @@ deeppdf_entry: true
 \`\`\`base
 filters:
   and:
-    - file.inFolder("DeepPDF")
+    - file.inFolder("DeepReader")
     - 'file.ext == "md"'
     - file.hasProperty("index_id")
     - file.hasProperty("book_name")
@@ -630,7 +630,7 @@ views:
 \`\`\`base
 filters:
   and:
-    - file.inFolder("DeepPDF")
+    - file.inFolder("DeepReader")
     - 'file.ext == "md"'
     - file.hasProperty("index_id")
     - '!file.name.startsWith("📖")'
@@ -684,7 +684,7 @@ views:
 \`\`\`base
 filters:
   and:
-    - file.inFolder("DeepPDF")
+    - file.inFolder("DeepReader")
     - 'file.ext == "md"'
     - file.hasProperty("booklists")
     - 'booklists.includes("${bl}")'
