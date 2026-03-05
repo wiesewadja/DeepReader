@@ -219,8 +219,8 @@ class TestEpubParserHtmlToText:
         assert "<h1>" not in text
         assert "<p>" not in text
 
-    def test_html_to_text_ignores_links(self):
-        """测试忽略链接"""
+    def test_html_to_text_preserves_links(self):
+        """测试保留链接（转换为 Markdown 格式）"""
         parser = EpubParser("/dummy/path.epub")
 
         html = '<html><body><p>Check <a href="http://example.com">this link</a></p></body></html>'
@@ -229,7 +229,8 @@ class TestEpubParserHtmlToText:
         assert "Check" in text
         assert "this link" in text
         assert '<a' not in text
-        assert "href" not in text
+        # 新行为：链接被保留为 Markdown 格式 [text](url)
+        assert "http://example.com" in text
 
     def test_html_to_text_ignores_images(self):
         """测试忽略图片"""
@@ -242,8 +243,8 @@ class TestEpubParserHtmlToText:
         assert "more text" in text
         assert "<img" not in text
 
-    def test_html_to_text_ignores_emphasis(self):
-        """测试忽略强调标记"""
+    def test_html_to_text_preserves_emphasis(self):
+        """测试保留强调标记（转换为 Markdown 格式）"""
         parser = EpubParser("/dummy/path.epub")
 
         html = "<html><body><p>This is <strong>bold</strong> and <em>italic</em> text</p></body></html>"
@@ -256,6 +257,7 @@ class TestEpubParserHtmlToText:
         assert "text" in text
         assert "<strong>" not in text
         assert "<em>" not in text
+        # 新行为：强调被保留为 Markdown 格式 (**bold**, *italic*)
 
 
 class TestEpubParserWithRealEpub:

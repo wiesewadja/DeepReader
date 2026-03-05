@@ -40,6 +40,7 @@ PageIndex EPUB 解析器模块
 """
 
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
@@ -306,35 +307,85 @@ class EpubParser:
 
     def _html_to_text(self, html: str) -> str:
         """
-        将 HTML 内容转换为纯文本
+        将 HTML 内容转换为 Markdown 格式文本
 
-        使用 html2text 库进行转换，自动忽略链接、图片和强调标记。
+        使用 html2text 库进行转换，保留链接和强调标记以提供更丰富的语义信息。
 
         参数:
             html: HTML 内容字符串
 
         返回:
-            纯文本内容
+            Markdown 格式文本内容
 
         使用示例:
             >>> parser = EpubParser("dummy.epub")
             >>> html = "<h1>Title</h1><p>Paragraph with <a href='link'>link</a></p>"
             >>> text = parser._html_to_text(html)
-            >>> print(text)  # 纯文本，无 HTML 标签
+            >>> print(text)  # Markdown 格式，保留链接
         """
         # ============================================================
-        # 步骤1: 配置 html2text
+        # 步骤1: 配置 html2text - 保留语义信息
         # ============================================================
         h = html2text.HTML2Text()
-        h.ignore_links = True  # 忽略链接
+        h.ignore_links = False  # 保留链接
         h.ignore_images = True  # 忽略图片
-        h.ignore_emphasis = True  # 忽略强调标记
-        h.body_width = 0  # 不换行
+        h.ignore_emphasis = False  # 保留强调
+        h.body_width = 0  # 不自动换行
+        h.unicode_snob = True  # 使用 Unicode
+        h.skip_internal_links = True  # 跳过内部链接
+        h.inline_links = True  # 内联链接
+        h.protect_links = True  # 保护链接不被拆分
 
         # ============================================================
-        # 步骤2: 转换 HTML 为纯文本
+        # 步骤2: 转换 HTML 为 Markdown
         # ============================================================
         text = h.handle(html)
+
+        # ============================================================
+        # 步骤3: 后处理 Markdown
+        # ============================================================
+        text = self._post_process_markdown(text)
+
+        return text
+
+    def _post_process_markdown(self, text: str) -> str:
+        """
+        对 Markdown 文本进行后处理优化
+
+        处理内容包括：
+        - 清理多余空行（3个以上 -> 2个）
+        - 修复链接格式
+        - 优化列表格式
+        - 优化引用块格式
+
+        参数:
+            text: 原始 Markdown 文本
+
+        返回:
+            优化后的 Markdown 文本
+        """
+        # 1. 清理多余空行（3个或更多连续空行 -> 2个）
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        # 2. 修复链接格式 - 移除链接文本前后多余空格
+        # 例如：[ text ](url) -> [text](url)
+        text = re.sub(r'\[\s+', '[', text)
+        text = re.sub(r'\s+\]', ']', text)
+
+        # 3. 优化列表格式 - 确保列表项前后有适当的空行
+        # 无序列表项前如果没有空行，添加一个
+        text = re.sub(r'([^\n])\n([-*+])', r'\1\n\n\2', text)
+        # 有序列表项前如果没有空行，添加一个
+        text = re.sub(r'([^\n])\n(\d+\.)', r'\1\n\n\2', text)
+
+        # 4. 优化引用块格式 - 确保引用块前后有适当的空行
+        text = re.sub(r'([^\n])\n(>)', r'\1\n\n\2', text)
+
+        # 5. 清理行尾空白
+        text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)
+
+        # 6. 确保文件结尾只有一个换行符
+        text = text.strip() + '\n'
 
         return text
 
