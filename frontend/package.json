@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "DeepReader - 深度阅读插件",
   "main": "main.js",
   "scripts": {
@@ -15,6 +15,7 @@
   "keywords": [
     "obsidian",
     "pdf",
+    "epub",
     "knowledge",
     "search"
   ],

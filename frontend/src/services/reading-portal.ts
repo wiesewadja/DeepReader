@@ -540,6 +540,15 @@ views:
     imageFit: contain
     cardSize: 200
     imageAspectRatio: 1.35
+  - type: table
+    name: "全部书籍"
+    order:
+      - formula.book_link
+      - formula.chat_link
+      - booklists
+      - tags
+      - progress
+      - formula.status_label
 \`\`\`
 
 > 💡 点击「对话」可开始与 AI 讨论，在表格中直接编辑「书单」和「标签」列即可分类书籍
