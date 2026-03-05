@@ -2,6 +2,7 @@ import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "o
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
+import { ReadingModeService } from './components/reading-mode/index.js';
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -44,6 +45,7 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
     apiClient: DeepPDFClient | null = null;
+    private readingModeService: ReadingModeService | null = null;
 
     async onload() {
         await this.loadSettings();
@@ -147,6 +149,11 @@ export default class DeepPDFPlugin extends Plugin {
                 this.app.workspace.trigger("deeppdf:theme-report");
             }, 100);
         });
+
+        // 初始化阅读模式服务
+        this.readingModeService = new ReadingModeService(this.app);
+        this.readingModeService.start();
+        console.log('[DeepPDF] Reading mode service started');
     }
 
     async loadSettings() {
@@ -164,6 +171,12 @@ export default class DeepPDFPlugin extends Plugin {
     async onunload() {
         // 卸载时手动清理视图，虽然 Obsidian 会自动处理，但显式清理更安全
         this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
+
+        // 清理阅读模式服务
+        if (this.readingModeService) {
+            this.readingModeService.stop();
+            this.readingModeService = null;
+        }
     }
 
     activateView() {
