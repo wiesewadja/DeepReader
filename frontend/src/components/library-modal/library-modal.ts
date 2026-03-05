@@ -14,7 +14,9 @@ const Icons = {
     add: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
     download: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
     trash: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
-    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`
+    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+    book: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    loading: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`
 };
 
 export interface LibraryModalOptions {
@@ -138,7 +140,7 @@ export class LibraryModal extends Modal {
 
     private createIndexItem(index: IndexListItem): HTMLElement {
         const item = document.createElement('div');
-        item.className = 'deeppdf-lib-item';
+        item.className = 'deeppdf-file-item';
         if (index.id === this.selectedIndexId) item.classList.add('active');
 
         // 状态判断
@@ -157,18 +159,24 @@ export class LibraryModal extends Modal {
             statusLabel = '失败';
         }
 
-        // 名称
+        // 名称处理
         let name = index.pdf_name;
         if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
+        if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
 
-        // 主信息区
-        const main = item.createDiv({ cls: 'deeppdf-lib-item-main' });
+        // 左侧：图标
+        const icon = item.createDiv({ cls: 'deeppdf-file-icon' });
+        icon.innerHTML = statusClass === 'processing' ? Icons.loading : Icons.book;
 
-        const nameEl = main.createDiv({ cls: 'deeppdf-lib-item-name', text: name });
+        // 文件信息区
+        const info = item.createDiv({ cls: 'deeppdf-file-details' });
+
+        // 名称
+        const nameEl = info.createDiv({ cls: 'deeppdf-file-name', text: name });
         nameEl.title = index.pdf_name;
 
-        // 元信息
-        const meta = main.createDiv({ cls: 'deeppdf-lib-item-meta' });
+        // 元信息行
+        const meta = info.createDiv({ cls: 'deeppdf-file-meta' });
 
         const statusBadge = meta.createSpan({ cls: `deeppdf-lib-status status-${statusClass}` });
         statusBadge.textContent = statusLabel;
@@ -181,11 +189,18 @@ export class LibraryModal extends Modal {
             meta.createSpan({ cls: 'deeppdf-lib-nodes', text: `${index.node_count} 节点` });
         }
 
-        // 操作区
+        // 右侧: 操作按钮
         if (statusClass === 'ready') {
-            const actions = item.createDiv({ cls: 'deeppdf-lib-item-actions' });
+            const selectBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-primary' });
+            selectBtn.textContent = '选择';
+            selectBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.selectedIndexId = index.id;
+                this.options.onIndexChange?.(index.id);
+                this.close();
+            });
 
-            const exportBtn = actions.createEl('button', { cls: 'deeppdf-lib-action-btn' });
+            const exportBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-secondary' });
             exportBtn.innerHTML = Icons.download;
             exportBtn.title = '导出';
             exportBtn.addEventListener('click', (e) => {
@@ -193,7 +208,7 @@ export class LibraryModal extends Modal {
                 this.options.onExportMarkdown?.(index.id);
             });
 
-            const deleteBtn = actions.createEl('button', { cls: 'deeppdf-lib-action-btn delete' });
+            const deleteBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-ghost' });
             deleteBtn.innerHTML = Icons.trash;
             deleteBtn.title = '删除';
             deleteBtn.addEventListener('click', (e) => {
@@ -202,16 +217,7 @@ export class LibraryModal extends Modal {
             });
         }
 
-        // 点击选择
-        item.addEventListener('click', () => {
-            if (statusClass === 'ready') {
-                this.selectedIndexId = index.id;
-                this.options.onIndexChange?.(index.id);
-                this.close();
-            }
-        });
-
-        return item;
+        return item
     }
 
     private async handleAddDocument(): Promise<void> {
