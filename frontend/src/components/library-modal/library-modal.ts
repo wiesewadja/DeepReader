@@ -9,13 +9,14 @@ import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError } from '../../utils/logger.js';
 
-// SVG 图标 - 简约风格
+// SVG 图标 - 简约风格（与 pdf-file-selector 保持一致）
 const Icons = {
     add: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
     download: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
     trash: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
     empty: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`,
-    book: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    filePdf: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><text x="7" y="17" font-size="8" fill="currentColor" stroke="none">PDF</text></svg>`,
+    fileEpub: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><text x="6" y="17" font-size="6" fill="currentColor" stroke="none">EPUB</text></svg>`,
     loading: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`
 };
 
@@ -164,19 +165,22 @@ export class LibraryModal extends Modal {
         if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
         if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
 
-        // 左侧：图标
-        const icon = item.createDiv({ cls: 'deeppdf-file-icon' });
-        icon.innerHTML = statusClass === 'processing' ? Icons.loading : Icons.book;
+        // 图标和文件名（与 pdf-file-selector 保持一致的结构）
+        const infoWrapper = item.createDiv({ cls: 'deeppdf-file-item-info' });
 
-        // 文件信息区
-        const info = item.createDiv({ cls: 'deeppdf-file-details' });
+        const icon = infoWrapper.createDiv({ cls: 'deeppdf-file-icon' });
+        // 根据文档类型选择图标
+        const docType = index.pdf_name.toLowerCase().endsWith('.epub') ? 'epub' : 'pdf';
+        icon.innerHTML = statusClass === 'processing' ? Icons.loading : (docType === 'epub' ? Icons.fileEpub : Icons.filePdf);
+
+        const details = infoWrapper.createDiv({ cls: 'deeppdf-file-details' });
 
         // 名称
-        const nameEl = info.createDiv({ cls: 'deeppdf-file-name', text: name });
+        const nameEl = details.createDiv({ cls: 'deeppdf-file-name', text: name });
         nameEl.title = index.pdf_name;
 
         // 元信息行
-        const meta = info.createDiv({ cls: 'deeppdf-file-meta' });
+        const meta = details.createDiv({ cls: 'deeppdf-file-meta' });
 
         const statusBadge = meta.createSpan({ cls: `deeppdf-lib-status status-${statusClass}` });
         statusBadge.textContent = statusLabel;
