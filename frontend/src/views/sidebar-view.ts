@@ -774,7 +774,7 @@ export class SidebarView extends ItemView {
 
         const doc = await this.contextManager.loadCurrentDocument();
         if (doc) {
-            new Notice(`已加载: ${doc.name}`);
+            // new Notice(`已加载: ${doc.name}`);
         }
     }
 
@@ -815,9 +815,9 @@ export class SidebarView extends ItemView {
         }
 
         // 显示加载提示
-        if (loadedNames.length > 0) {
-            new Notice(`已加载引用文档: ${loadedNames.join(', ')}`);
-        }
+        // if (loadedNames.length > 0) {
+        //     new Notice(`已加载引用文档: ${loadedNames.join(', ')}`);
+        // }
     }
 
     /**
