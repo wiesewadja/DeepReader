@@ -5,15 +5,56 @@
 
 import { App, TFile, EventRef } from 'obsidian';
 import { log } from '../utils/logger.js';
+import { SelectionToolbar, SelectionToolbarOptions } from '../components/reading-mode/selection-toolbar.js';
+
+export interface ReadingModeCallbacks {
+    onTranslate: (text: string) => void;
+    onAsk: (text: string) => void;
+    onExcerpt: (text: string) => void;
+}
 
 export class ReadingModeService {
     private app: App;
     private isActive: boolean = false;
     private currentFile: TFile | null = null;
     private fileOpenHandler: EventRef | null = null;
+    private selectionToolbar: SelectionToolbar | null = null;
+    private callbacks: ReadingModeCallbacks | null = null;
 
-    constructor(app: App) {
+    constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
+        this.callbacks = callbacks || null;
+    }
+
+    /**
+     * 设置回调函数
+     */
+    setCallbacks(callbacks: ReadingModeCallbacks): void {
+        this.callbacks = callbacks;
+        // 如果工具栏已初始化，需要重新创建以使用新回调
+        if (this.selectionToolbar) {
+            this.selectionToolbar.destroy();
+            this.initSelectionToolbar();
+        }
+    }
+
+    /**
+     * 初始化悬浮工具栏
+     */
+    private initSelectionToolbar(): void {
+        if (!this.callbacks) {
+            log('[ReadingMode] No callbacks set, skipping toolbar init');
+            return;
+        }
+
+        this.selectionToolbar = new SelectionToolbar({
+            app: this.app,
+            onTranslate: this.callbacks.onTranslate,
+            onAsk: this.callbacks.onAsk,
+            onExcerpt: this.callbacks.onExcerpt,
+        });
+        this.selectionToolbar.init();
+        log('[ReadingMode] Selection toolbar initialized');
     }
 
     /**
@@ -72,6 +113,11 @@ export class ReadingModeService {
      * 启动服务（监听文件打开事件）
      */
     start(): void {
+        // 初始化悬浮工具栏
+        if (this.callbacks) {
+            this.initSelectionToolbar();
+        }
+
         this.fileOpenHandler = this.app.workspace.on('file-open', (file) => {
             if (file && this.isChapterFile(file)) {
                 this.activate(file);
@@ -95,6 +141,10 @@ export class ReadingModeService {
         if (this.fileOpenHandler) {
             this.app.workspace.offref(this.fileOpenHandler);
             this.fileOpenHandler = null;
+        }
+        if (this.selectionToolbar) {
+            this.selectionToolbar.destroy();
+            this.selectionToolbar = null;
         }
     }
 

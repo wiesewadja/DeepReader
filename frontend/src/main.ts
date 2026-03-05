@@ -2,7 +2,7 @@ import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "o
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
-import { ReadingModeService } from './components/reading-mode/index.js';
+import { ReadingModeService, type ReadingModeCallbacks } from './components/reading-mode/index.js';
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -151,7 +151,24 @@ export default class DeepPDFPlugin extends Plugin {
         });
 
         // 初始化阅读模式服务
-        this.readingModeService = new ReadingModeService(this.app);
+        const readingModeCallbacks: ReadingModeCallbacks = {
+            onTranslate: (text: string) => {
+                this.activateView();
+                setTimeout(() => {
+                    this.app.workspace.trigger('deeppdf:translate-selection', text);
+                }, 100);
+            },
+            onAsk: (text: string) => {
+                this.activateView();
+                setTimeout(() => {
+                    this.app.workspace.trigger('deeppdf:ask-selection', text);
+                }, 100);
+            },
+            onExcerpt: (text: string) => {
+                this.app.workspace.trigger('deeppdf:excerpt-selection', text);
+            },
+        };
+        this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
         this.readingModeService.start();
         console.log('[DeepPDF] Reading mode service started');
     }

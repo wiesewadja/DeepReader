@@ -24,6 +24,9 @@ from deeppdf.storage.chroma_store import ChromaStore
 # 导入配置
 from deeppdf.config import settings
 
+# 导入文本格式化服务
+from deeppdf.services.text_formatter import TextFormatter
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -39,7 +42,11 @@ cpu_executor = ThreadPoolExecutor(max_workers=1)  # 限制为 1 个 worker 以�
 
 
 def _extract_nodes_from_tree(
-    tree: Dict[str, Any], parent_section: str = "", level: int = 0
+    tree: Dict[str, Any],
+    parent_section: str = "",
+    level: int = 0,
+    doc_type: str = "pdf",
+    formatter: Optional[TextFormatter] = None,
 ) -> List[Dict]:
     """
     从 PageIndex 树状结构中提取章节节点
@@ -47,6 +54,13 @@ def _extract_nodes_from_tree(
     重要变更：同时保留原始文本和摘要
     - text: 原始 PDF 文本（用于向量化和检索）
     - summary: LLM 生成的摘要（保存在 metadata 中）
+
+    Args:
+        tree: PageIndex 树结构
+        parent_section: 父级章节名称
+        level: 当前层级
+        doc_type: 文档类型 (pdf/epub)
+        formatter: 文本格式化器实例（可选）
     """
     nodes: List[Dict] = []
 
@@ -68,9 +82,12 @@ def _extract_nodes_from_tree(
 
     # 如果有内容，创建节点
     if content_for_embedding and content_for_embedding.strip():
-        full_text_for_embedding = (
-            f"【{current_section}】\n{content_for_embedding.strip()}"
-        )
+        # 格式化文本（如果提供了格式化器）
+        formatted_content = content_for_embedding.strip()
+        if formatter:
+            formatted_content = formatter.format(formatted_content, doc_type)
+
+        full_text_for_embedding = f"【{current_section}】\n{formatted_content}"
         node_metadata = {
             "section": current_section,
             "level": level,
@@ -97,7 +114,11 @@ def _extract_nodes_from_tree(
     # 递归处理子节点
     children = tree.get("nodes", [])
     for child in children:
-        nodes.extend(_extract_nodes_from_tree(child, current_section, level + 1))
+        nodes.extend(
+            _extract_nodes_from_tree(
+                child, current_section, level + 1, doc_type, formatter
+            )
+        )
 
     return nodes
 
@@ -729,6 +750,12 @@ def _index_pdf_sync(
         logger.info("[章节提取] 开始从树状结构提取节点")
         logger.info("=" * 50)
 
+        # 创建文本格式化器
+        enable_text_formatting = kwargs.get("enable_text_formatting", True)
+        formatter = TextFormatter() if enable_text_formatting else None
+        if formatter:
+            logger.info("[章节提取] 文本格式化已启用")
+
         section_nodes = []
         for idx, top_level_node in enumerate(structure_list):
             node_title = top_level_node.get("title", f"Unknown_{idx}")
@@ -737,7 +764,9 @@ def _index_pdf_sync(
             logger.debug(f"  - 结束页: {top_level_node.get('end_index', 'Unknown')}")
             logger.debug(f"  - 节点ID: {top_level_node.get('node_id', 'Unknown')}")
 
-            nodes = _extract_nodes_from_tree(top_level_node)
+            nodes = _extract_nodes_from_tree(
+                top_level_node, doc_type=doc_type, formatter=formatter
+            )
             section_nodes.extend(nodes)
             if nodes:
                 logger.info(f"  ✓ {node_title}: {len(nodes)} 个节点")

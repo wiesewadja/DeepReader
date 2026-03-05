@@ -485,6 +485,10 @@ async def create_index(req: IndexRequest, http_request: Request):
         llm_config["if_add_node_summary"] = "yes" if req.if_add_node_summary else "no"
         logger.info(f"[LLM配置]  Add Node Summary (覆盖): {req.if_add_node_summary}")
 
+    # 文本格式化配置
+    llm_config["enable_text_formatting"] = req.enable_text_formatting
+    logger.info(f"[LLM配置]  Enable Text Formatting: {req.enable_text_formatting}")
+
     # 初始化任务状态
     _running_tasks[task_id] = {
         "status": "pending",

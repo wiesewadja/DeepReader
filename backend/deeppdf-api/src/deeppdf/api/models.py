@@ -68,6 +68,10 @@ class IndexRequest(BaseModel):
     if_add_node_summary: Optional[bool] = Field(
         None, description="Add node summary using LLM"
     )
+    # 文本格式化配置
+    enable_text_formatting: bool = Field(
+        True, description="启用文本格式化（合并软换行、规范化段落等）"
+    )
 
     @field_validator("path")
     @classmethod
