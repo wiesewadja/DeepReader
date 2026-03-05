@@ -86,34 +86,39 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 添加命令
         this.addCommand({
-            id: "open-deeppdf-sidebar",
-            name: "Open DeepPDF sidebar",
+            id: "open-deepreader-sidebar",
+            name: "Open DeepReader sidebar",
             callback: () => this.activateView()
         });
 
         // 注册 URI 协议处理器 - 单书籍对话
-        this.registerObsidianProtocolHandler("deeppdf-chat", async (params) => {
-            log("[DeepPDF] URI handler called with params:", params);
+        this.registerObsidianProtocolHandler("deepreader-chat", async (params) => {
+            log("[DeepReader] URI handler called with params:", params);
 
             const indexId = params.index_id;
             if (!indexId) {
-                new Notice("DeepPDF: 缺少 index_id 参数");
+                new Notice("DeepReader: 缺少 index_id 参数");
                 return;
             }
+
+            // 先重置跨书籍模式状态，确保打开侧边栏时不会恢复跨书籍模式
+            this.settings.lastCrossBookMode = false;
+            this.settings.lastCrossBookSessionId = "";
+            await this.saveSettings();
 
             // 打开侧边栏
             this.activateView();
 
-            // 等待视图加载
+            // 等待视图加载（增加延迟确保 renderMainUI 完成）
             setTimeout(() => {
                 // 通过事件通知侧边栏切换到指定索引
                 this.app.workspace.trigger("deeppdf:select-index", indexId);
-            }, 100);
+            }, 300);
         });
 
         // 注册 URI 协议处理器 - 跨书籍搜索（支持书单/标签过滤）
-        this.registerObsidianProtocolHandler("deeppdf-search", async (params) => {
-            log("[DeepPDF] deeppdf-search URI handler called with params:", params);
+        this.registerObsidianProtocolHandler("deepreader-search", async (params) => {
+            log("[DeepReader] deepreader-search URI handler called with params:", params);
 
             // 解析书单和标签参数（逗号分隔）
             const booklists = params.booklists ? params.booklists.split(",").map(s => decodeURIComponent(s.trim())) : [];
@@ -130,8 +135,8 @@ export default class DeepPDFPlugin extends Plugin {
         });
 
         // 注册 URI 协议处理器 - 主题报告
-        this.registerObsidianProtocolHandler("deeppdf-theme-report", async (params) => {
-            log("[DeepPDF] deeppdf-theme-report URI handler called");
+        this.registerObsidianProtocolHandler("deepreader-theme-report", async (params) => {
+            log("[DeepReader] deepreader-theme-report URI handler called");
 
             // 打开侧边栏
             this.activateView();

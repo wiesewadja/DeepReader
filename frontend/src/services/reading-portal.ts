@@ -5,27 +5,12 @@
  */
 
 import { App, Notice, TFile, normalizePath } from "obsidian";
-import { DeepPDFClient, ReadingProgress, TableOfContents, BookSummary } from "../api/http-client";
-import { log, warn, error as logError } from "../utils/logger.js";
+import { DeepPDFClient, ReadingProgress } from "../api/http-client";
+import { log, error as logError } from "../utils/logger.js";
 
 // 阅读入口目录名
 const DEEPPDF_DIR = "DeepReader";
 const ENTRY_FILE = "📚 阅读入口.md";
-
-// 书籍笔记 frontmatter 结构
-interface BookFrontmatter {
-  index_id: string;
-  book_name: string; // 书籍名称
-  status: "unread" | "reading" | "completed";
-  progress: number;
-  total_pages: number;
-  read_pages: string; // 逗号分隔的页码
-  last_read: string | null;
-  chat_rounds: number;
-  tags: string[];
-  booklists: string[]; // 所属书单列表
-  created: string;
-}
 
 export class ReadingPortalService {
   private app: App;
@@ -85,20 +70,11 @@ export class ReadingPortalService {
       const indexId = index.id;
 
       try {
-        // 并行获取阅读进度、摘要和目录
-        const [progress, summary, toc] = await Promise.all([
-          this.client.getReadingProgress(indexId),
-          this.client.getBookSummary(indexId).catch(() => null),
-          this.client.getTableOfContents(indexId).catch(() => null),
-        ]);
-
+        // 获取阅读进度
+        const progress = await this.client.getReadingProgress(indexId);
         const totalPages = progress?.total_pages || 0;
-        const chapters = toc?.chapters;
 
-        // 从章节文件中读取内容生成更详细的摘要
-        const enhancedSummary = await this.generateEnhancedSummary(bookName, summary?.summary, chapters);
-
-        await this.ensureBookNote(indexId, bookName, totalPages, enhancedSummary, chapters);
+        await this.ensureBookNote(indexId, bookName, totalPages);
         created++;
       } catch (error) {
         logError(`[DeepPDF-ERROR] Failed to create book note for ${bookName}:`, error);
@@ -107,90 +83,6 @@ export class ReadingPortalService {
 
     new Notice(`已同步 ${created} 本书籍笔记`);
     return created;
-  }
-
-  /**
-   * 从章节文件中读取内容生成增强的摘要
-   */
-  private async generateEnhancedSummary(
-    bookName: string,
-    backendSummary: string | undefined,
-    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
-  ): Promise<string> {
-    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
-    const bookFolderPath = normalizePath(`${DEEPPDF_DIR}/${safeFolderName}`);
-
-    // 检查书籍文件夹是否存在
-    const folderExists = await this.app.vault.adapter.exists(bookFolderPath);
-    if (!folderExists) {
-      return backendSummary || `《${bookName}》是一本已索引的书籍。`;
-    }
-
-    // 读取前 3 个章节的内容
-    const summaryParts: string[] = [];
-    let chapterCount = 0;
-
-    if (chapters && chapters.length > 0) {
-      for (const chapter of chapters) {
-        if (chapterCount >= 3) break;
-
-        // 跳过目录、前言等辅助章节
-        const titleLower = chapter.title.toLowerCase();
-        if (titleLower.includes("目录") || titleLower.includes("toc") ||
-            titleLower.includes("preface") || titleLower.includes("前言") ||
-            titleLower.includes("序") || chapter.level > 0) {
-          continue;
-        }
-
-        // 查找对应的章节文件
-        const files = this.app.vault.getFiles();
-        const chapterFile = files.find(f =>
-          f.path.startsWith(bookFolderPath) &&
-          f.path.endsWith(".md") &&
-          !f.name.startsWith("📖") &&
-          (f.name.includes(chapter.title.substring(0, 10)) ||
-           f.path.includes(`-${chapter.title.substring(0, 10)}`))
-        );
-
-        if (chapterFile) {
-          try {
-            const content = await this.app.vault.read(chapterFile);
-            // 提取前 300 字符作为内容预览
-            const preview = this.extractContentPreview(content, 300);
-            if (preview) {
-              summaryParts.push(`**${chapter.title}**: ${preview}`);
-              chapterCount++;
-            }
-          } catch (e) {
-            warn(`[DeepPDF-WARN] 读取章节失败: ${chapterFile.path}`, e);
-          }
-        }
-      }
-    }
-
-    // 如果成功提取了章节内容，返回增强摘要
-    if (summaryParts.length > 0) {
-      return `《${bookName}》主要内容包括：${summaryParts.join("；")}。`;
-    }
-
-    return backendSummary || `《${bookName}》是一本已索引的书籍。`;
-  }
-
-  /**
-   * 从 Markdown 内容中提取纯文本预览
-   */
-  private extractContentPreview(content: string, maxLength: number): string {
-    // 移除 frontmatter
-    let text = content.replace(/^---[\s\S]*?---/, "");
-    // 移除页面标记
-    text = text.replace(/### 第 \d+ 页.*?\n/g, "");
-    text = text.replace(/\^page-\d+/g, "");
-    // 移除标题标记
-    text = text.replace(/#+ /g, "");
-    // 移除多余空白
-    text = text.replace(/\n+/g, " ").trim();
-    // 截取指定长度
-    return text.length > maxLength ? text.substring(0, maxLength) + "..." : text;
   }
 
   /**
@@ -218,7 +110,7 @@ filters:
 
 formulas:
   status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
-  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "开始对话")'
+  chat_link: 'link("obsidian://deepreader-chat?index_id=" + index_id, "开始对话")'
   book_link: 'link(file.path, book_name)'
 
 properties:
@@ -260,7 +152,7 @@ views:
 
 ## 快速操作
 
-- [打开 DeepPDF 侧边栏](obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&command=deeppdf:open-deeppdf-sidebar)
+- [打开 DeepPDF 侧边栏](obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&command=deepreader:open-deepreader-sidebar)
 `;
   }
 
@@ -270,26 +162,9 @@ views:
   private generateBookNoteContent(
     bookName: string,
     indexId: string,
-    totalPages: number,
-    summary?: string,
-    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
+    totalPages: number
   ): string {
     const now = new Date().toISOString().split("T")[0];
-    const safeFolderName = bookName.replace(/[\\/:"*?<>|]/g, "_");
-
-    // 生成摘要部分
-    const summaryContent = summary
-      ? `> [!note] AI 生成摘要\n> ${summary}`
-      : `> [!note] AI 生成摘要\n> 摘要生成中...`;
-
-    // 生成章节目录部分
-    let tocContent = "（待生成）";
-    if (chapters && chapters.length > 0) {
-      tocContent = chapters.map(ch => {
-        const indent = "  ".repeat(ch.level);
-        return `${indent}- ${ch.title} (p.${ch.start_page}-${ch.end_page})`;
-      }).join("\n");
-    }
 
     return `---
 index_id: ${indexId}
@@ -307,51 +182,9 @@ created: ${now}
 
 # 📖 ${bookName}
 
-## 📖 摘要
-
-${summaryContent}
-
-## 📑 章节目录
-
-${tocContent}
-
-## 📂 章节文档
-
-\`\`\`base
-filters:
-  and:
-    - file.inFolder("DeepPDF/${safeFolderName}")
-    - file.ext == "md"
-    - '!file.name.startsWith("📖")'
-
-formulas:
-  page_link: '"p." + physical_index'
-
-properties:
-  file.name:
-    displayName: "章节"
-  section:
-    displayName: "标题"
-  page_range:
-    displayName: "页码"
-
-views:
-  - type: table
-    name: "章节列表"
-    order:
-      - file.name
-      - section
-      - page_range
-\`\`\`
-
 ## 💭 阅读笔记
 
 （在这里记录您的阅读心得）
-
-## 🔗 相关链接
-
-- [[📚 阅读入口]] - 返回书籍列表
-- [开始对话](obsidian://deeppdf-chat?index_id=${indexId}) - 与 AI 讨论
 `;
   }
 
@@ -382,9 +215,7 @@ views:
   async ensureBookNote(
     indexId: string,
     bookName: string,
-    totalPages: number,
-    summary?: string,
-    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
+    totalPages: number
   ): Promise<string> {
     await this.ensureDir();
 
@@ -403,50 +234,12 @@ views:
 
     if (!file) {
       // 创建书籍笔记
-      const content = this.generateBookNoteContent(bookName, indexId, totalPages, summary, chapters);
+      const content = this.generateBookNoteContent(bookName, indexId, totalPages);
       file = await this.app.vault.create(notePath, content);
       log(`[DeepPDF] Created book note: ${notePath}`);
-    } else {
-      // 更新现有笔记的摘要和目录
-      await this.updateBookNoteContent(file as TFile, summary, chapters);
     }
 
     return notePath;
-  }
-
-  /**
-   * 更新书籍笔记内容（摘要和目录）
-   */
-  private async updateBookNoteContent(
-    file: TFile,
-    summary?: string,
-    chapters?: { title: string; start_page: number; end_page: number; level: number }[]
-  ): Promise<void> {
-    if (!summary && !chapters) return;
-
-    const content = await this.app.vault.read(file);
-
-    // 更新摘要
-    if (summary) {
-      const summaryRegex = /## 📖 摘要\s*\n\n[\s\S]*?(?=\n## )/;
-      const newSummary = `## 📖 摘要\n\n> [!note] AI 生成摘要\n> ${summary}`;
-      if (summaryRegex.test(content)) {
-        content.replace(summaryRegex, newSummary);
-      }
-    }
-
-    // 更新目录
-    if (chapters && chapters.length > 0) {
-      const tocRegex = /## 📑 章节目录\s*\n\n[\s\S]*?(?=\n## )/;
-      const tocContent = chapters.map(ch => {
-        const indent = "  ".repeat(ch.level);
-        return `${indent}- ${ch.title} (p.${ch.start_page}-${ch.end_page})`;
-      }).join("\n");
-      const newToc = `## 📑 章节目录\n\n${tocContent}`;
-      if (tocRegex.test(content)) {
-        content.replace(tocRegex, newToc);
-      }
-    }
   }
 
   /**
@@ -637,7 +430,7 @@ filters:
 
 formulas:
   status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
-  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "对话")'
+  chat_link: 'link("obsidian://deepreader-chat?index_id=" + index_id, "对话")'
   book_link: 'link(file.path, book_name)'
 
 properties:
@@ -692,7 +485,7 @@ filters:
 
 formulas:
   status_label: 'if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))'
-  chat_link: 'link("obsidian://deeppdf-chat?index_id=" + index_id, "对话")'
+  chat_link: 'link("obsidian://deepreader-chat?index_id=" + index_id, "对话")'
   book_link: 'link(file.path, book_name)'
 
 properties:
@@ -718,7 +511,7 @@ views:
       - formula.status_label
 \`\`\`
 
-[🔍 搜索此书单](obsidian://deeppdf-search?booklists=${encodedBl})
+[🔍 搜索此书单](obsidian://deepreader-search?booklists=${encodedBl})
 `;
       }).join("\n");
     }
@@ -728,7 +521,7 @@ views:
     if (tags.length > 0) {
       tagsSection = tags.map(tag => {
         const encodedTag = encodeURIComponent(tag);
-        return `[${tag}](obsidian://deeppdf-search?tags=${encodedTag})`;
+        return `[${tag}](obsidian://deepreader-search?tags=${encodedTag})`;
       }).join(" · ");
     } else {
       tagsSection = "暂无标签，可在上方表格中直接添加";
@@ -760,10 +553,9 @@ ${tagsSection}
 
 ## 📊 快速操作
 
-- [[📚 阅读入口]] - 查看所有书籍列表
-- [打开 DeepPDF 侧边栏](obsidian://open?vault=${vaultName}&command=deeppdf:open-deeppdf-sidebar)
-- [跨书籍搜索（全部）](obsidian://deeppdf-search)
-- [生成主题报告](obsidian://deeppdf-theme-report)
+- [打开 DeepPDF 侧边栏](obsidian://open?vault=${vaultName}&command=deepreader:open-deepreader-sidebar)
+- [跨书籍搜索（全部）](obsidian://deepreader-search)
+- [生成主题报告](obsidian://deepreader-theme-report)
 `;
   }
 }

@@ -122,7 +122,7 @@ export class SidebarView extends ItemView {
             // 显示过滤条件
             if (this.hasSearchFilters()) {
                 welcomeContent += `\n\n🔍 当前过滤条件: ${this.buildFilterDescription()}`;
-                welcomeContent += `\n\n[清除过滤](obsidian://deeppdf-search) | [搜索全部](obsidian://deeppdf-search)`;
+                welcomeContent += `\n\n[清除过滤](obsidian://deepreader-search) | [搜索全部](obsidian://deepreader-search)`;
             }
 
             this.messageList.addMessage({
@@ -662,9 +662,9 @@ export class SidebarView extends ItemView {
                     this.messageList?.clear();
                 }
 
-                if (this.indexManager) {
-                    this.indexManager.selectIndex(indexId);
-                }
+                // 直接调用 selectIndex 方法，确保顶栏正确更新
+                // 而不是通过 indexManager.selectIndex 间接调用
+                await this.selectIndex(indexId);
             })
         );
 

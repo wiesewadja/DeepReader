@@ -161,6 +161,8 @@ export class ReadingTopbar extends Component {
             this.currentBookEl.textContent = '跨书籍阅读';
             this.currentBookEl.classList.add('has-book');
         }
+        // 注意：当 isCrossBook 为 false 时，不在这里更新显示
+        // 应该由调用方通过 setCurrentBook() 设置正确的书籍名称
     }
 
     /**

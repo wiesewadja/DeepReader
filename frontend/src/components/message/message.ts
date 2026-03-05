@@ -1373,8 +1373,20 @@ export class AIMessage extends Message {
 			return;
 		}
 		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) || this.onExcerpt);
-		if (hasActions) {
+		// AI 消息始终显示操作按钮区域（包含跳转到顶部按钮）
+		const isAssistant = this.data.role === 'assistant';
+		if (hasActions || isAssistant) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
+
+			// AI 消息：在开头添加"跳转到顶部"按钮
+			if (isAssistant) {
+				const scrollToTopBtn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				// Icon: Arrow Up
+				scrollToTopBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>`;
+				scrollToTopBtn.title = "跳转到回复开头";
+				scrollToTopBtn.addEventListener('click', () => this.scrollToMessageTop());
+			}
+
 			if (this.onRegenerate) {
 				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
 				// Icon: Refresh CW
@@ -1403,6 +1415,28 @@ export class AIMessage extends Message {
 				btn.title = "Save as Excerpt";
 				btn.addEventListener('click', () => this.handleExcerpt());
 			}
+		}
+	}
+
+	/**
+	 * 滚动到消息顶部
+	 */
+	private scrollToMessageTop(): void {
+		if (!this.el) return;
+
+		// 找到消息容器（可滚动的父元素）
+		const messagesContainer = this.el.closest('.deeppdf-messages-container');
+		if (messagesContainer) {
+			// 计算消息元素相对于容器的位置
+			const containerRect = messagesContainer.getBoundingClientRect();
+			const messageRect = this.el.getBoundingClientRect();
+			const offset = messageRect.top - containerRect.top + messagesContainer.scrollTop;
+
+			// 平滑滚动到消息顶部
+			messagesContainer.scrollTo({
+				top: offset - 10, // 留 10px 的边距
+				behavior: 'smooth'
+			});
 		}
 	}
 
