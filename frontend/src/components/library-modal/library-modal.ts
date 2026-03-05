@@ -197,11 +197,33 @@ export class LibraryModal extends Modal {
         if (statusClass === 'ready') {
             const selectBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-primary' });
             selectBtn.textContent = '选择';
-            selectBtn.addEventListener('click', (e) => {
+            selectBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                this.selectedIndexId = index.id;
-                this.options.onIndexChange?.(index.id);
-                this.close();
+
+                // 检查书籍章节是否存在
+                const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
+                if (!chaptersExist) {
+                    // 章节不存在，显示下载确认弹窗
+                    new ConfirmModal(
+                        this.app,
+                        '下载书籍章节',
+                        `「${this.getDisplayName(index.pdf_name)}」的章节尚未下载到本地。\n\n是否立即下载章节？下载后可以在离线状态下阅读和引用。`,
+                        async () => {
+                            await this.options.onExportMarkdown?.(index.id);
+                            new Notice('章节下载中...', 3000);
+                            // 下载完成后自动选择
+                            this.selectedIndexId = index.id;
+                            this.options.onIndexChange?.(index.id);
+                            this.close();
+                        },
+                        { confirmLabel: '下载章节' }
+                    ).open();
+                } else {
+                    // 章节存在，直接选择
+                    this.selectedIndexId = index.id;
+                    this.options.onIndexChange?.(index.id);
+                    this.close();
+                }
             });
 
             const exportBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-secondary' });
@@ -221,7 +243,69 @@ export class LibraryModal extends Modal {
             });
         }
 
-        return item
+        return item;
+    }
+
+    /**
+     * 检查书籍章节是否已下载到本地
+     * 通过检查后端保存的 markdown_mapping 来判断
+     */
+    private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
+        try {
+            // 调用后端 API 获取该索引的 markdown_mapping
+            const indexInfo = this.indexes.find(idx => idx.pdf_name === pdfName);
+            if (!indexInfo || !this.options.apiClient) {
+                return false;
+            }
+
+            // 尝试获取索引状态（包含 markdown_mapping）
+            const status = await this.options.apiClient.getIndexStatus(indexInfo.id);
+
+            // 检查是否有 markdown_mapping 且不为空
+            if (status && status.markdown_mapping && Object.keys(status.markdown_mapping).length > 0) {
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            // 如果 API 调用失败，回退到检查本地文件
+            const folderName = this.getFolderName(pdfName);
+            const folderPath = `DeepReader/${folderName}`;
+            const folder = this.app.vault.getAbstractFileByPath(folderPath);
+
+            if (!folder) {
+                return false;
+            }
+
+            // 检查文件夹中是否有 .md 文件（章节文件）
+            const files = this.app.vault.getMarkdownFiles();
+            const chapterFiles = files.filter(f =>
+                f.path.startsWith(folderPath + '/')
+            );
+
+            return chapterFiles.length > 0;
+        }
+    }
+
+    /**
+     * 获取书籍文件夹名称（去掉扩展名）
+     */
+    private getFolderName(pdfName: string): string {
+        let name = pdfName;
+        if (name.toLowerCase().endsWith('.pdf')) {
+            name = name.slice(0, -4);
+        }
+        if (name.toLowerCase().endsWith('.epub')) {
+            name = name.slice(0, -5);
+        }
+        return name;
+    }
+
+    /**
+     * 获取显示名称
+     */
+    private getDisplayName(pdfName: string): string {
+        return this.getFolderName(pdfName);
     }
 
     private async handleAddDocument(): Promise<void> {

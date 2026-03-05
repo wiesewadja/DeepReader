@@ -349,7 +349,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打开在线书库弹窗
+     * 打开切换书籍弹窗
      */
     private openLibraryModal(): void {
         new LibraryModal(this.app, {
@@ -380,6 +380,38 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 检查书籍章节是否已下载到本地
+     * @param pdfName PDF 文件名
+     * @returns 是否存在章节文件
+     */
+    private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
+        // 获取书籍文件夹名称（去掉扩展名）
+        let folderName = pdfName;
+        if (folderName.toLowerCase().endsWith('.pdf')) {
+            folderName = folderName.slice(0, -4);
+        }
+        if (folderName.toLowerCase().endsWith('.epub')) {
+            folderName = folderName.slice(0, -5);
+        }
+
+        // 检查 DeepReader/{folderName} 文件夹是否存在
+        const folderPath = `DeepReader/${folderName}`;
+        const folder = this.app.vault.getAbstractFileByPath(folderPath);
+
+        if (!folder) {
+            return false;
+        }
+
+        // 检查文件夹中是否有 .md 文件（章节文件）
+        const files = this.app.vault.getMarkdownFiles();
+        const chapterFiles = files.filter(f =>
+            f.path.startsWith(folderPath + '/')
+        );
+
+        return chapterFiles.length > 0;
+    }
+
+    /**
      * 选择索引（从弹窗中调用）
      */
     private async selectIndex(indexId: string): Promise<void> {
@@ -396,8 +428,27 @@ export class SidebarView extends ItemView {
             if (displayName.toLowerCase().endsWith('.pdf')) {
                 displayName = displayName.slice(0, -4);
             }
+            if (displayName.toLowerCase().endsWith('.epub')) {
+                displayName = displayName.slice(0, -5);
+            }
             this.messageList?.setCurrentPdfName(displayName);
             this.readingTopbar?.setCurrentBook(displayName);
+
+            // === 检查书籍章节是否已下载到本地 ===
+            const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
+            if (!chaptersExist) {
+                // 章节不存在，提示用户下载
+                new ConfirmModal(
+                    this.app,
+                    '下载书籍章节',
+                    `「${displayName}」的章节尚未下载到本地。\n\n是否立即下载章节？下载后可以在离线状态下阅读和引用。`,
+                    async () => {
+                        await this.handleExportMarkdown(indexId);
+                    },
+                    { confirmLabel: '下载章节' }
+                ).open();
+                return; // 用户取消下载，不继续加载书籍
+            }
         }
 
         // 清空消息
