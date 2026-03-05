@@ -53,7 +53,7 @@ export class ExcerptService {
       }
 
       // 5. 显示成功提示
-      new Notice(`摘录已保存到 ${targetPath}`);
+      // new Notice(`摘录已保存到 ${targetPath}`);
 
       return targetPath;
     } catch (error) {
