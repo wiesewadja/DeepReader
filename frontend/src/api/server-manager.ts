@@ -3,6 +3,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
+import { log, error as logError } from '../utils/logger.js';
 
 export class ServerManager {
   private process: ChildProcess | null = null;
@@ -17,11 +18,11 @@ export class ServerManager {
    */
   async start(serverPath: string): Promise<void> {
     if (this.process) {
-      console.log('[ServerManager] Server already running');
+      log('[ServerManager] Server already running');
       return;
     }
 
-    console.log('[ServerManager] Starting FastAPI server...');
+    log('[ServerManager] Starting FastAPI server...');
 
     this.process = spawn('uv', [
       '--directory',
@@ -36,15 +37,15 @@ export class ServerManager {
     ]);
 
     this.process.stdout?.on('data', (data) => {
-      console.log(`[Server] ${data}`);
+      log(`[Server] ${data}`);
     });
 
     this.process.stderr?.on('data', (data) => {
-      console.error(`[Server Error] ${data}`);
+      logError(`[Server Error] ${data}`);
     });
 
     this.process.on('close', (code) => {
-      console.log(`[ServerManager] Server process exited with code ${code}`);
+      log(`[ServerManager] Server process exited with code ${code}`);
       this.process = null;
     });
 
@@ -57,11 +58,11 @@ export class ServerManager {
    */
   async stop(): Promise<void> {
     if (!this.process) {
-      console.log('[ServerManager] No server process running');
+      log('[ServerManager] No server process running');
       return;
     }
 
-    console.log('[ServerManager] Stopping server...');
+    log('[ServerManager] Stopping server...');
     this.process.kill();
     this.process = null;
   }
@@ -76,7 +77,7 @@ export class ServerManager {
       try {
         const response = await fetch(`http://localhost:${this.port}/health`);
         if (response.ok) {
-          console.log('[ServerManager] Server is ready');
+          log('[ServerManager] Server is ready');
           return true;
         }
       } catch {

@@ -7,7 +7,7 @@ import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obs
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
-import { log } from '../../utils/logger.js';
+import { log, error as logError } from '../../utils/logger.js';
 
 /**
  * 消息角色类型
@@ -594,7 +594,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 
 					customPopover = popover;
 				}).catch((err) => {
-					console.error('[DeepPDF] Failed to read file for hover preview:', err);
+					logError('[DeepPDF] Failed to read file for hover preview:', err);
 				});
 			}, 200); // 200ms 延迟
 		});
@@ -1071,7 +1071,7 @@ export class AIMessage extends Message {
 			const headerRow = this.el.querySelector('.deeppdf-message-header-row');
 
 			if (!headerRow) {
-				console.error('[DeepPDF] update() - headerRow 不存在，无法显示状态');
+				logError('[DeepPDF] update() - headerRow 不存在，无法显示状态');
 				return;
 			}
 

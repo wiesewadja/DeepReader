@@ -6,7 +6,7 @@
 
 import { App, Notice, TFile, normalizePath } from "obsidian";
 import { DeepPDFClient, ReadingProgress, TableOfContents, BookSummary } from "../api/http-client";
-import { log } from "../utils/logger.js";
+import { log, warn, error as logError } from "../utils/logger.js";
 
 // 阅读入口目录名
 const DEEPPDF_DIR = "DeepPDF";
@@ -101,7 +101,7 @@ export class ReadingPortalService {
         await this.ensureBookNote(indexId, bookName, totalPages, enhancedSummary, chapters);
         created++;
       } catch (error) {
-        console.error(`[DeepPDF-ERROR] Failed to create book note for ${bookName}:`, error);
+        logError(`[DeepPDF-ERROR] Failed to create book note for ${bookName}:`, error);
       }
     }
 
@@ -162,7 +162,7 @@ export class ReadingPortalService {
               chapterCount++;
             }
           } catch (e) {
-            console.warn(`[DeepPDF-WARN] 读取章节失败: ${chapterFile.path}`, e);
+            warn(`[DeepPDF-WARN] 读取章节失败: ${chapterFile.path}`, e);
           }
         }
       }

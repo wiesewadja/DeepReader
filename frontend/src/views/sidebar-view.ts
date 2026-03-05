@@ -201,7 +201,7 @@ export class SidebarView extends ItemView {
             // 再打开图书管理入口
             await this.readingPortal.openBookManagementPortal();
         } catch (error) {
-            console.error("[DeepPDF] Failed to open book management:", error);
+            logError("[DeepPDF] Failed to open book management:", error);
             new Notice("打开图书管理失败");
         }
     }
@@ -428,7 +428,7 @@ export class SidebarView extends ItemView {
                     this.showWelcomeMessage();
                 }
             } catch (e) {
-                console.error(`[DeepPDF] 恢复会话失败:`, e);
+                logError(`[DeepPDF] 恢复会话失败:`, e);
                 this.startNewSession(indexId);
             }
         } else {
@@ -1134,8 +1134,8 @@ export class SidebarView extends ItemView {
         // ========== 构建读书上下文 (带路径注入) ==========
         let bookContext = `《${pdfName}》中相关内容：\n\n`;
 
-        console.log('\n========== [AI 引用调试] 构建上下文 ==========');
-        console.log(`[上下文] 查询返回 ${resultsWithContext.length} 个结果`);
+        log('\n========== [AI 引用调试] 构建上下文 ==========');
+        log(`[上下文] 查询返回 ${resultsWithContext.length} 个结果`);
 
         bookContext += resultsWithContext.map((r, index) => {
             const mdPath = r.metadata?.markdown_path || "未生成Markdown";
@@ -1143,8 +1143,8 @@ export class SidebarView extends ItemView {
             const title = citations[index].title || `第${index + 1}节`;
 
             // 【关键日志】记录每个来源片段的详细信息
-            console.log(`\n[来源片段 ${index + 1}]`);
-            console.log(`  完整路径: ${mdPath}`);
+            log(`\n[来源片段 ${index + 1}]`);
+            log(`  完整路径: ${mdPath}`);
 
             // 从路径中提取文件名（不含 .md）
             let filename = mdPath;
@@ -1155,11 +1155,11 @@ export class SidebarView extends ItemView {
                 // 移除 .md 扩展名
                 displayName = filename.replace('.md', '');
             }
-            console.log(`  文件名: ${filename}`);
-            console.log(`  显示名: ${displayName}`);
-            console.log(`  页码锚点: ^page-${page}`);
-            console.log(`  章节标题: ${title}`);
-            console.log(`  → 正确引用应该是: [[${displayName}#^page-${page}]]`);
+            log(`  文件名: ${filename}`);
+            log(`  显示名: ${displayName}`);
+            log(`  页码锚点: ^page-${page}`);
+            log(`  章节标题: ${title}`);
+            log(`  → 正确引用应该是: [[${displayName}#^page-${page}]]`);
 
             // 注入路径和锚点，供 AI 引用
             return `【来源片段 ${index + 1}】
@@ -1172,10 +1172,10 @@ ${r.text}`;
 
         const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
 
-        console.log(`\n[上下文] 完整 userPrompt (前 1000 字符):`);
-        console.log(userPrompt.substring(0, 1000) + '...');
-        console.log(`[上下文] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
-        console.log('========== [AI 引用调试] 上下文构建完成 ==========\n');
+        log(`\n[上下文] 完整 userPrompt (前 1000 字符):`);
+        log(userPrompt.substring(0, 1000) + '...');
+        log(`[上下文] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
+        log('========== [AI 引用调试] 上下文构建完成 ==========\n');
 
         try {
             await this.streamLLMResponse(
@@ -1188,7 +1188,7 @@ ${r.text}`;
                 citations
             );
         } catch (err: any) {
-            console.error("LLM Error:", err);
+            logError("LLM Error:", err);
 
             // 失败时的回退显示
             let fallbackAnswer = `AI 生成失败: ${err.message || 'Unknown error'}\n\n但我们找到了以下相关内容：\n\n`;
@@ -1648,7 +1648,7 @@ ${r.text}`;
                                 hasNewContent = true;
                             }
                         } catch (e) {
-                            console.warn("Error parsing stream chunk", e);
+                            warn("Error parsing stream chunk", e);
                         }
                     }
                 }
@@ -1672,14 +1672,14 @@ ${r.text}`;
             const { content: cleanedContent, questions: followUpQuestions } = parseFollowUpQuestions(fullContent);
 
             // ========== 【关键调试】打印 AI 原始回复 ==========
-            console.log('\n========== [AI 原始回复调试] ==========');
-            console.log('【AI 完整原始回复】');
-            console.log(fullContent);
-            console.log('\n【AI 清理后回复】');
-            console.log(cleanedContent);
-            console.log('\n【引用数据】');
-            console.log(JSON.stringify(citations, null, 2));
-            console.log('========== [AI 原始回复调试结束] ==========\n');
+            log('\n========== [AI 原始回复调试] ==========');
+            log('【AI 完整原始回复】');
+            log(fullContent);
+            log('\n【AI 清理后回复】');
+            log(cleanedContent);
+            log('\n【引用数据】');
+            log(JSON.stringify(citations, null, 2));
+            log('========== [AI 原始回复调试结束] ==========\n');
 
             // 构建更新对象 - 只有在有引用数据时才传递 citations
             const updateData: any = {
@@ -1785,7 +1785,7 @@ ${r.text}`;
     private handleCitationJump(citation: CitationData): void {
         try {
             log('[DeepPDF] [引用跳转] 开始处理引用跳转');
-            console.log(`[引用跳转] citation:`, citation);
+            log(`[引用跳转] citation:`, citation);
 
             // 优先处理用户加载的 Markdown 文档
             if (citation.is_loaded_doc && (citation.document_path || citation.markdown_path)) {
@@ -1837,7 +1837,7 @@ ${r.text}`;
 
         if (!file) {
             new Notice(`找不到文档: ${path}`);
-            console.warn(`[引用跳转] 找不到 Markdown 文件: ${path}`);
+            warn(`[引用跳转] 找不到 Markdown 文件: ${path}`);
             return;
         }
 
@@ -1890,7 +1890,7 @@ ${r.text}`;
         const allFiles = this.app.vault.getFiles();
         const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
 
-        console.log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
+        log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
 
         // 根据 pdf_name 查找匹配的 PDF 文件
         // pdf_name 格式可能是: "纳瓦尔宝典.pdf" 或 "纳瓦尔宝典"
@@ -1902,13 +1902,13 @@ ${r.text}`;
         });
 
         if (!matchedFile) {
-            console.log(`[引用跳转] 未找到匹配的 PDF 文件`);
-            console.log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
+            log(`[引用跳转] 未找到匹配的 PDF 文件`);
+            log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
             new Notice(`找不到 PDF 文件: ${citation.pdf_name}`);
             return;
         }
 
-        console.log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
+        log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
         this.openPdfWithPage(matchedFile.path, citation.page, citation.pdf_name);
     }
 
@@ -2456,7 +2456,7 @@ ${structureInfo}
      */
     private showError(message: string): void {
         new Notice(message);
-        console.error("[DeepPDF]", message);
+        logError("[DeepPDF]", message);
     }
 
     async onClose() {

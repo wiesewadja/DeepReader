@@ -7,6 +7,7 @@ import { App } from 'obsidian';
 import { Component } from '../component';
 import { createMessage, Message, MessageData, CitationData } from '../message/message';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import { warn } from '../../utils/logger.js';
 
 /**
  * 消息操作回调接口
@@ -152,7 +153,7 @@ export class MessageList extends Component {
 	updateMessage(messageId: string, updates: Partial<MessageData>): void {
 		const message = this.messages.get(messageId);
 		if (!message) {
-			console.warn(`Message with id ${messageId} not found`);
+			warn(`Message with id ${messageId} not found`);
 			return;
 		}
 
@@ -255,7 +256,7 @@ export class MessageList extends Component {
 
 		const el = message.getElement();
 		if (!el) {
-			console.warn(`Message element for ${messageId} is null`);
+			warn(`Message element for ${messageId} is null`);
 			return;
 		}
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });

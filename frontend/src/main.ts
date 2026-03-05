@@ -93,7 +93,7 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 注册 URI 协议处理器 - 单书籍对话
         this.registerObsidianProtocolHandler("deeppdf-chat", async (params) => {
-            console.log("[DeepPDF] URI handler called with params:", params);
+            log("[DeepPDF] URI handler called with params:", params);
 
             const indexId = params.index_id;
             if (!indexId) {
@@ -113,7 +113,7 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 注册 URI 协议处理器 - 跨书籍搜索（支持书单/标签过滤）
         this.registerObsidianProtocolHandler("deeppdf-search", async (params) => {
-            console.log("[DeepPDF] deeppdf-search URI handler called with params:", params);
+            log("[DeepPDF] deeppdf-search URI handler called with params:", params);
 
             // 解析书单和标签参数（逗号分隔）
             const booklists = params.booklists ? params.booklists.split(",").map(s => decodeURIComponent(s.trim())) : [];
@@ -131,7 +131,7 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 注册 URI 协议处理器 - 主题报告
         this.registerObsidianProtocolHandler("deeppdf-theme-report", async (params) => {
-            console.log("[DeepPDF] deeppdf-theme-report URI handler called");
+            log("[DeepPDF] deeppdf-theme-report URI handler called");
 
             // 打开侧边栏
             this.activateView();

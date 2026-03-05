@@ -4,6 +4,7 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
+import { error as logError } from '../utils/logger.js';
 
 /**
  * 节点数据接口
@@ -145,7 +146,7 @@ export async function exportIndexToMarkdown(
         };
 
     } catch (error) {
-        console.error('[DeepPDF] Markdown export failed:', error);
+        logError('[DeepPDF] Markdown export failed:', error);
         return {
             success: false,
             filesCreated: 0,

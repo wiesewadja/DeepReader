@@ -4,6 +4,7 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
+import { error as logError } from '../utils/logger.js';
 
 /**
  * 已加载的文档信息
@@ -112,7 +113,7 @@ export class ContextManager {
             content = await this.app.vault.read(file);
         } catch (error) {
             new Notice('读取文件失败');
-            console.error('[ContextManager] 读取文件失败:', error);
+            logError('[ContextManager] 读取文件失败:', error);
             return null;
         }
 

@@ -5,6 +5,7 @@
 
 import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
+import { log } from '../../utils/logger.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
@@ -166,14 +167,14 @@ export class ReadingTopbar extends Component {
      * 选择索引（兼容接口）
      */
     public selectIndex(indexId: string): void {
-        console.log(`[ReadingTopbar] selectIndex called: ${indexId}`);
+        log(`[ReadingTopbar] selectIndex called: ${indexId}`);
     }
 
     /**
      * 设置索引列表（兼容接口）
      */
     public setIndexes(indexes: any[]): void {
-        console.log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
+        log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
     }
 
     /**

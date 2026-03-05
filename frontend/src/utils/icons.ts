@@ -3,6 +3,8 @@
  * 集中管理所有 SVG 图标，确保整个应用使用统一的图标系统
  */
 
+import { warn } from './logger.js';
+
 // ==================== 图标集合 ====================
 
 /**
@@ -160,7 +162,7 @@ export function getIcon(name: IconName, options?: IconOptions): string {
 	let svg = Icons[name] as string;
 
 	if (!svg) {
-		console.warn(`[Icons] 图标 "${name}" 不存在，使用默认图标`);
+		warn(`[Icons] 图标 "${name}" 不存在，使用默认图标`);
 		svg = Icons.info as string;
 	}
 
@@ -199,12 +201,12 @@ export function createIconElement(name: IconName, options?: IconOptions): HTMLEl
 	const svg = div.firstElementChild;
 
 	if (!svg) {
-		console.warn(`[Icons] 无法创建图标元素 "${name}"`);
+		warn(`[Icons] 无法创建图标元素 "${name}"`);
 		return div;
 	}
 
 	if (!(svg instanceof HTMLElement)) {
-		console.warn(`[Icons] 图标元素不是 HTMLElement "${name}"`);
+		warn(`[Icons] 图标元素不是 HTMLElement "${name}"`);
 		return div;
 	}
 

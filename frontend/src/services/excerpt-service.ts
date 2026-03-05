@@ -5,6 +5,7 @@
 
 import { App, Notice, TFile, TFolder } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata, ExcerptOptions } from '../types/excerpt';
+import { error as logError } from '../utils/logger.js';
 
 /**
  * 摘录服务类
@@ -56,7 +57,7 @@ export class ExcerptService {
 
       return targetPath;
     } catch (error) {
-      console.error('保存摘录失败:', error);
+      logError('保存摘录失败:', error);
       new Notice('保存摘录失败，请查看控制台');
       return null;
     }

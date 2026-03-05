@@ -4,6 +4,7 @@
  */
 
 import { Notice } from 'obsidian';
+import { warn } from './logger.js';
 
 // ==================== 错误类型定义 ====================
 
@@ -314,7 +315,7 @@ export class ErrorHandler {
 		switch (error.severity) {
 			case ErrorSeverity.INFO:
 			case ErrorSeverity.WARNING:
-				console.warn(`[${timestamp}]`, error.getFullErrorInfo());
+				warn(`[${timestamp}]`, error.getFullErrorInfo());
 				break;
 			case ErrorSeverity.ERROR:
 			case ErrorSeverity.FATAL:
@@ -376,7 +377,7 @@ export class ErrorHandler {
 
 		// 如果同一错误频繁发生，升级严重程度
 		if (count >= 5 && error.severity !== ErrorSeverity.FATAL) {
-			console.warn(`[DeepPDF] 错误频繁发生 (${count}次): ${key}`);
+			warn(`[DeepPDF] 错误频繁发生 (${count}次): ${key}`);
 		}
 	}
 

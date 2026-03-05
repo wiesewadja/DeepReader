@@ -4,6 +4,7 @@
  */
 
 import { DeepPDFClient, TaskProgress } from "../api/http-client.js";
+import { error as logError } from "./logger.js";
 
 export class TaskPollingManager {
     private pollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
@@ -39,7 +40,7 @@ export class TaskPollingManager {
                     this.stopPolling(taskId);
                 }
             } catch (error) {
-                console.error(`[任务轮询] 获取任务 ${taskId} 进度失败:`, error);
+                logError(`[任务轮询] 获取任务 ${taskId} 进度失败:`, error);
                 // API 调用失败时停止轮询并通知回调
                 this.stopPolling(taskId);
                 onUpdate({

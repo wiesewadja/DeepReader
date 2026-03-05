@@ -9,6 +9,7 @@ import { DeepPDFClient, IndexPDFResult, DeleteIndexResult, ListIndexesResult, In
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 // import { TaskQueueManager, createIndexTask } from "../components/task-queue-manager.js";
 import { IndexStatusBadge, formatIndexTime } from "../components/index-status-badge.js";
+import { debug, error as logError } from "../utils/logger.js";
 
 // ==================== SVG 图标系统 ====================
 const Icons = {
@@ -199,7 +200,7 @@ export class IndexManagerModal extends Modal {
             }
 
             new Notice(errorMessage, 5000);
-            console.error('[DeepPDF] 索引创建错误:', error);
+            logError('[DeepPDF] 索引创建错误:', error);
 
             // 恢复按钮状态
             if (startBtn) {
@@ -455,7 +456,7 @@ export class IndexManagerModal extends Modal {
                 }
             } catch (error) {
                 // 忽略错误，可能是索引已被删除
-                console.debug(`[DeepPDF] 获取索引 ${indexId} 状态失败:`, error);
+                debug(`[DeepPDF] 获取索引 ${indexId} 状态失败:`, error);
             }
         }
     }

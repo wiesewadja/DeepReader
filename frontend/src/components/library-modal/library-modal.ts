@@ -7,6 +7,7 @@ import { App, Modal, Notice } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo } from '../../ui/pdf-file-selector.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
+import { error as logError } from '../../utils/logger.js';
 
 // SVG 图标 - 简约风格
 const Icons = {
@@ -250,7 +251,7 @@ export class LibraryModal extends Modal {
                         else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
                         else if (error.message) msg = `索引创建失败: ${error.message}`;
                         new Notice(msg, 5000);
-                        console.error('[DeepPDF] 索引创建错误:', error);
+                        logError('[DeepPDF] 索引创建错误:', error);
                     }
                 },
                 { confirmLabel: '开始索引' }
