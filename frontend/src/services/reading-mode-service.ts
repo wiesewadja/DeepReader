@@ -74,10 +74,15 @@ export class ReadingModeService {
         // 3. 检查 frontmatter 是否包含 node_id 或 pdf_name
         const cache = this.app.metadataCache.getFileCache(file);
         if (!cache?.frontmatter) {
+            console.warn('[DeepPDF] No frontmatter for:', file.path);
             return false;
         }
 
-        return !!(cache.frontmatter.node_id || cache.frontmatter.pdf_name);
+        const hasValidMetadata = !!(cache.frontmatter.node_id || cache.frontmatter.pdf_name);
+        if (hasValidMetadata) {
+            console.log('[DeepPDF] Chapter file detected:', file.path);
+        }
+        return hasValidMetadata;
     }
 
     /**

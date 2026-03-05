@@ -123,15 +123,35 @@ class TextFormatter:
         prev_stripped = prev_line.rstrip()
         curr_stripped = curr_line.strip()
 
-        # 当前行以小写字母开头 -> 可能需要合并
-        if curr_stripped and curr_stripped[0].islower():
-            # 但如果上一行以句子结束符结尾，不合并
-            if prev_stripped and prev_stripped[-1] in ".!?。！？":
-                return False
+        if not prev_stripped or not curr_stripped:
+            return False
+
+        # 上一行以句子结束符结尾 -> 不合并（新段落开始）
+        if prev_stripped[-1] in ".!?。！？":
+            return False
+
+        # 当前行以小写字母开头 -> 需要合并（英文规则）
+        if curr_stripped[0].islower():
             return True
 
         # 上一行以单个连字符结尾 -> 合并（断词处理）
         if prev_stripped.endswith("-") and not prev_stripped.endswith("--"):
+            return True
+
+        # 中文规则：如果上一行不是以句号结尾，且当前行不是明显的新段落开始
+        # 检测段落开头的常见模式
+        paragraph_start_patterns = [
+            r'^第[一二三四五六七八九十百千万]+[章节篇部]',  # 第X章/节
+            r'^\d+[\.、]\s',  # 1. 或 1、
+            r'^[（(]\d+[)）]',  # (1) 或 （1）
+            r'^[•·※]\s',  # 列表项
+        ]
+        for pattern in paragraph_start_patterns:
+            if re.match(pattern, curr_stripped):
+                return False
+
+        # 如果上一行以逗号、分号等结尾，当前行应该合并
+        if prev_stripped[-1] in ',，;；:：、':
             return True
 
         return False
@@ -142,30 +162,36 @@ class TextFormatter:
 
         规则：
         1. 多个连续空行 -> 单个空行
-        2. 识别段落边界（编号、缩进等）
-        3. 段落内合并为连续文本
+        2. 保持段落间的分隔（双换行）
+        3. 清理段落内的多余空白
         """
         # 先合并多余的空行
         text = re.sub(r"\n{3,}", "\n\n", text)
 
-        # 分割为段落块
+        # 分割为段落块（以双换行分隔）
         blocks = text.split("\n\n")
         result = []
 
         for block in blocks:
-            lines = block.strip().split("\n")
+            # 清理块内的首尾空白
+            block = block.strip()
+            if not block:
+                continue
+
+            lines = block.split("\n")
             if not lines:
                 continue
 
             # 检查是否为特殊块（列表、代码等）
             if self._is_list_block(lines):
                 # 保持列表格式
-                result.append("\n".join(lines))
+                result.append("\n".join(line.strip() for line in lines))
             else:
-                # 合并为段落
-                paragraph = " ".join(line.strip() for line in lines if line.strip())
-                if paragraph:
-                    result.append(paragraph)
+                # 普通段落：保持内容不变（_merge_soft_line_breaks 已经处理过）
+                # 只清理行首尾空白
+                cleaned_lines = [line.strip() for line in lines if line.strip()]
+                if cleaned_lines:
+                    result.append("\n".join(cleaned_lines))
 
         return "\n\n".join(result)
 
