@@ -1,4 +1,4 @@
-import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice } from "obsidian";
+import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
@@ -93,16 +93,23 @@ export default class DeepPDFPlugin extends Plugin {
             callback: () => this.activateView()
         });
 
-        // 添加文件菜单命令 - AI 格式化当前文档
+        // Add command - AI format current document
         this.addCommand({
             id: "format-current-document",
-            name: "AI 格式化当前文档",
-            editorCallback: async (editor) => {
+            name: "AI format current document",
+            callback: async () => {
                 const file = this.app.workspace.getActiveFile();
                 if (!file || file.extension.toLowerCase() !== 'md') {
-                    new Notice("此命令仅适用于 Markdown 文件");
+                    new Notice("This command only works for Markdown files");
                     return;
                 }
+                // Get editor from active view
+                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!view) {
+                    new Notice("No active Markdown view");
+                    return;
+                }
+                const editor = view.editor;
                 await this.formatCurrentDocument(file, editor);
             }
         });
@@ -201,15 +208,15 @@ export default class DeepPDFPlugin extends Plugin {
 
     async formatCurrentDocument(file: any, editor: any) {
         if (!this.apiClient) {
-            new Notice("API 客户端未初始化");
+            new Notice("API client not initialized");
             return;
         }
 
         try {
-            new Notice("正在格式化文档...");
+            new Notice("Formatting document...");
             const content = await this.app.vault.read(file);
 
-            // 根据文件扩展名判断文档类型
+            // Determine document type from file extension
             const docType = file.extension.toLowerCase() === 'epub' ? 'epub' : 'pdf';
 
             const result = await this.apiClient.formatSingleText(
@@ -219,15 +226,16 @@ export default class DeepPDFPlugin extends Plugin {
             );
 
             if (result.status === 'success' && result.formatted_text) {
-                // 更新编辑器内容
+                // Update editor content and save to file
                 editor.setValue(result.formatted_text);
-                new Notice("文档格式化完成");
+                await this.app.vault.modify(file, result.formatted_text);
+                new Notice("Document formatted successfully");
             } else {
-                new Notice("格式化失败");
+                new Notice("Formatting failed");
             }
         } catch (err) {
-            error('格式化文档失败:', err);
-            new Notice(`格式化失败: ${err instanceof Error ? err.message : String(err)}`);
+            error('Failed to format document:', err);
+            new Notice(`Formatting failed: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
 

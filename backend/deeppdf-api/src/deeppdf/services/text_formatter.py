@@ -12,9 +12,9 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 # LLM 格式化的最大文本长度（避免超出上下文限制）
-MAX_LLM_FORMAT_LENGTH = 8000
+MAX_LLM_FORMAT_LENGTH = 80000
 # 每次处理的块大小
-CHUNK_SIZE = 3000
+CHUNK_SIZE = 30000
 
 
 class TextFormatter:
@@ -47,17 +47,53 @@ class TextFormatter:
         if not text or not text.strip():
             return text
 
-        # 先进行基于规则的格式化
+        # 提取并保护 frontmatter
+        frontmatter, content = self._extract_frontmatter(text)
+
+        # 先进行基于规则的格式化（只处理内容部分）
         if doc_type == "pdf":
-            text = self._format_pdf(text)
+            content = self._format_pdf(content)
         elif doc_type == "epub":
-            text = self._format_epub(text)
+            content = self._format_epub(content)
 
-        # 如果启用 LLM，进行智能格式化
+        # 如果启用 LLM，进行智能格式化（只处理内容部分）
         if self.use_llm and self.llm_client:
-            text = self._format_with_llm(text, doc_type)
+            content = self._format_with_llm(content, doc_type)
 
-        return text
+        # 重新组合 frontmatter 和内容
+        if frontmatter:
+            return frontmatter + "\n\n" + content
+        return content
+
+    def _extract_frontmatter(self, text: str) -> tuple:
+        """
+        提取 YAML frontmatter
+
+        Args:
+            text: 原始文本
+
+        Returns:
+            (frontmatter, content) 元组，如果没有 frontmatter 则返回 ("", text)
+        """
+        if not text.startswith("---"):
+            return ("", text)
+
+        # 查找 frontmatter 结束标记
+        lines = text.split("\n")
+        end_index = -1
+
+        for i in range(1, len(lines)):
+            if lines[i].strip() == "---":
+                end_index = i
+                break
+
+        if end_index == -1:
+            return ("", text)
+
+        frontmatter = "\n".join(lines[:end_index + 1])
+        content = "\n".join(lines[end_index + 1:]).strip()
+
+        return (frontmatter, content)
 
     def _format_pdf(self, text: str) -> str:
         """格式化 PDF 提取的文本"""
@@ -202,7 +238,8 @@ class TextFormatter:
 
 ## 输出要求
 
-直接输出格式化后的 Markdown 文本，不要添加任何解释或说明。"""
+直接输出格式化后的 Markdown 文本，不要添加任何解释或说明。
+不要使用 ```markdown 代码块包裹，直接输出纯文本。"""
 
         try:
             # 调用 LLM - OpenAI 兼容的 API
@@ -468,7 +505,9 @@ class TextFormatter:
         lines = [line.rstrip() for line in text.split("\n")]
         text = "\n".join(lines)
 
-        # 文件开头和结尾的空白
-        text = text.strip()
+        # 注意：不调用 strip()，保护段落结构
+        # 只移除开头和结尾的空行（保留至少一个换行）
+        text = re.sub(r"^\n+", "", text)
+        text = re.sub(r"\n+$", "\n", text)
 
         return text
