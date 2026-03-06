@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo, SessionInfo } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
@@ -25,6 +25,7 @@ import { ContextTags } from "../components/context-tags/index.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
+import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
 import { log, warn, error as logError } from "../utils/logger.js";
 
@@ -89,6 +90,10 @@ export class SidebarView extends ItemView {
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
     private contextTags: ContextTags | null = null;
+
+    // 引用卡片管理
+    private quotesContainer: HTMLElement | null = null;
+    private quotes: import("../components/chat-input/chat-input.js").QuoteItem[] = [];
 
     /** 生成新的会话ID */
     private generateSessionId(): string {
@@ -692,6 +697,167 @@ export class SidebarView extends ItemView {
                 await this.switchToCrossBookMode({ clearMessages: true, showWelcome: true });
             })
         );
+
+        // 监听阅读模式引用事件
+        this.registerEvent(
+            workspace.on("deeppdf:quote-selection", async (text: string) => {
+                log("[DeepPDF] Received quote-selection event");
+                this.handleQuoteSelection(text);
+            })
+        );
+
+        this.registerEvent(
+            workspace.on("deeppdf:excerpt-selection", async (text: string) => {
+                log("[DeepPDF] Received excerpt-selection event");
+                this.handleExcerptSelection(text);
+            })
+        );
+    }
+
+    /**
+     * 处理引用选中文字
+     * 在消息列表顶部添加引用卡片
+     */
+    private handleQuoteSelection(text: string): void {
+        const activeFile = this.app.workspace.getActiveFile();
+        const source = activeFile?.basename || undefined;
+
+        // 创建引用数据
+        const quote: QuoteItem = {
+            id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            text: text.trim(),
+            source
+        };
+
+        // 添加到引用列表
+        this.quotes.push(quote);
+
+        // 渲染引用卡片
+        this.renderQuoteCard(quote);
+
+        // 聚焦输入框
+        this.chatInput?.focus();
+    }
+
+    /**
+     * 渲染引用卡片（层叠样式）
+     */
+    private renderQuoteCard(quote: QuoteItem): void {
+        if (!this.quotesContainer) return;
+
+        // 添加容器类和更新计数
+        this.quotesContainer.addClass('deeppdf-quotes-container');
+        this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
+
+        // 更新消息列表底部间距（延迟执行，等待 DOM 渲染完成）
+        requestAnimationFrame(() => {
+            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
+            this.updateMessageListPadding(hasContextTags);
+        });
+
+        // 创建小正方形卡片，使用 title 属性显示完整文本作为 tooltip
+        const displayText = quote.text.length > 30
+            ? quote.text.substring(0, 30) + '...'
+            : quote.text;
+
+        const card = this.quotesContainer.createDiv({
+            cls: 'deeppdf-quote-card',
+            attr: {
+                'data-quote-id': quote.id,
+                'title': `${quote.source ? quote.source + ': ' : ''}"${quote.text}"`,
+                'aria-label': `引用: ${displayText}`
+            }
+        });
+
+        // 引用图标（居中显示）
+        const iconEl = card.createEl('span', {
+            cls: 'deeppdf-quote-icon'
+        });
+        iconEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`;
+
+        // 移除按钮（悬浮时显示在右上角）
+        const removeBtn = card.createEl('button', {
+            cls: 'deeppdf-quote-remove-btn',
+            attr: { 'aria-label': '移除引用', type: 'button' }
+        });
+        removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6"></line><line x1="6" y1="18"></line></svg>`;
+
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeQuote(quote.id);
+        });
+    }
+
+    /**
+     * 移除引用
+     */
+    private removeQuote(quoteId: string): void {
+        this.quotes = this.quotes.filter(q => q.id !== quoteId);
+
+        // 移除卡片 DOM
+        if (this.quotesContainer) {
+            const card = this.quotesContainer.querySelector(`[data-quote-id="${quoteId}"]`);
+            if (card) {
+                card.remove();
+            }
+            // 更新计数
+            this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
+        }
+
+        // 更新消息列表底部间距
+        requestAnimationFrame(() => {
+            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
+            this.updateMessageListPadding(hasContextTags);
+        });
+    }
+
+    /**
+     * 清空所有引用
+     */
+    private clearQuotes(): void {
+        this.quotes = [];
+        if (this.quotesContainer) {
+            this.quotesContainer.empty();
+        }
+
+        // 更新消息列表底部间距
+        requestAnimationFrame(() => {
+            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
+            this.updateMessageListPadding(hasContextTags);
+        });
+    }
+
+    /**
+     * 获取所有引用
+     */
+    private getQuotes(): QuoteItem[] {
+        return [...this.quotes];
+    }
+
+    /**
+     * 处理摘录选中文字
+     */
+    private handleExcerptSelection(text: string): void {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            new Notice("No active file");
+            return;
+        }
+
+        const metadata: ExcerptMetadata = {
+            sourcePdf: activeFile.basename,
+            createdAt: new Date().toISOString(),
+        };
+
+        const modal = new ExcerptModal({
+            app: this.app,
+            content: { text },
+            metadata,
+            onSave: async (path: string) => {
+                new Notice(`Excerpt saved to ${path}`);
+            },
+        });
+        modal.open();
     }
 
     /**
@@ -769,6 +935,7 @@ export class SidebarView extends ItemView {
         if (messageListEl) {
             section.appendChild(messageListEl);
         }
+        // 注意：引用卡片容器已移至 createChatInputSection
     }
 
     /**
@@ -776,6 +943,35 @@ export class SidebarView extends ItemView {
      */
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
+
+        // 创建聊天输入组件（在最上方）
+        this.chatInput = new ChatInput({
+            placeholder: "输入以开始对话...",
+            onSend: (message: string, quotes) => {
+                this.sendMessage(message, quotes);
+            },
+            searchMode: this.crossBookMode ? 'cross' : 'single',
+            onModeToggle: () => {
+                this.toggleSearchMode();
+            },
+            app: this.app,
+            onStop: () => {
+                this.stopGeneration();
+            },
+            onHeightChange: (height: number) => {
+                // 动态调整消息列表的底部间距（包含引用卡片高度）
+                const quotesHeight = this.quotesContainer?.offsetHeight || 0;
+                this.messageList?.updateBottomPadding(height, quotesHeight);
+            },
+            onLoadCurrentDoc: async () => {
+                await this.loadCurrentDocument();
+            }
+        });
+
+        const chatInputEl = this.chatInput.getElement();
+        if (chatInputEl) {
+            section.appendChild(chatInputEl);
+        }
 
         // 创建上下文标签组件（显示已加载的文档）
         this.contextTags = new ContextTags({
@@ -788,33 +984,8 @@ export class SidebarView extends ItemView {
             section.appendChild(contextTagsEl);
         }
 
-        // 创建聊天输入组件
-        this.chatInput = new ChatInput({
-            placeholder: "输入以开始对话...",
-            onSend: (message: string) => {
-                this.sendMessage(message);
-            },
-            searchMode: this.crossBookMode ? 'cross' : 'single',
-            onModeToggle: () => {
-                this.toggleSearchMode();
-            },
-            app: this.app,
-            onStop: () => {
-                this.stopGeneration();
-            },
-            onHeightChange: (height: number) => {
-                // 动态调整消息列表的底部间距
-                this.messageList?.updateBottomPadding(height);
-            },
-            onLoadCurrentDoc: async () => {
-                await this.loadCurrentDocument();
-            }
-        });
-
-        const chatInputEl = this.chatInput.getElement();
-        if (chatInputEl) {
-            section.appendChild(chatInputEl);
-        }
+        // 创建引用卡片容器（在输入框下方）
+        this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
     }
 
     /**
@@ -996,10 +1167,12 @@ export class SidebarView extends ItemView {
     /**
      * 发送消息
      * @param message 用户消息内容
+     * @param quotes 引用内容（可选）
      * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
      */
-    private async sendMessage(message: string, regenerateMessageId?: string): Promise<void> {
-        if (!message.trim() || this.isProcessing) {
+    private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
+        // 允许只有引用没有文本的情况
+        if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
             return;
         }
 
@@ -1070,7 +1243,7 @@ export class SidebarView extends ItemView {
             } else {
                 // 单书籍模式：使用 Agent 智能体模式
                 // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
-                this.handleAgentQuery(message, this.currentIndexId!, aiMessageId);
+                this.handleAgentQuery(message, this.currentIndexId!, aiMessageId, quotes);
             }
 
 
@@ -1294,8 +1467,17 @@ ${r.text}`;
 
     /**
      * 处理 Agent 查询请求
+     * @param query 用户查询
+     * @param indexId 索引 ID
+     * @param aiMessageId AI 消息 ID
+     * @param quotes 引用内容（可选）
      */
-    private async handleAgentQuery(query: string, indexId: string, aiMessageId: string): Promise<void> {
+    private async handleAgentQuery(
+        query: string,
+        indexId: string,
+        aiMessageId: string,
+        quotes?: import("../components/chat-input/chat-input.js").QuoteItem[]
+    ): Promise<void> {
         if (!this.apiClient) {
             throw new Error("API 客户端未连接");
         }
@@ -1314,9 +1496,22 @@ ${r.text}`;
         let lastThoughtsJSON = '';
         let lastToolCallsJSON = '';
 
+        // 将引用转换为上下文文档
+        const contextDocs: ContextDoc[] | undefined = quotes?.map(q => ({
+            path: q.source || '引用',
+            name: q.source || '引用',
+            content: q.text
+        }));
+
         try {
             // 使用流式 Agent API（从插件设置中读取 force_mode）
             const forceMode = this.plugin?.settings?.forceMode || 'auto';
+
+            // 合并引用和现有上下文文档
+            const existingDocs = this.getContextDocs() || [];
+            const quoteDocs = contextDocs || [];
+            const allContextDocs = [...quoteDocs, ...existingDocs];
+
             streamController = agentAPI.chatStream(
                 query,
                 indexId,
@@ -1423,7 +1618,7 @@ ${r.text}`;
                 true,       // 启用引用数据提取
                 this.sessionId || undefined,  // 传递会话ID
                 true,       // 启用历史记录
-                this.getContextDocs()  // 传递上下文文档
+                allContextDocs.length > 0 ? allContextDocs : undefined  // 传递上下文文档（包含引用）
             );
 
             // 保存 controller 用于取消
@@ -1766,8 +1961,8 @@ ${r.text}`;
         const userMessageIndex = messages.findIndex(m => m.id === messageId) - 1;
 
         if (userMessageIndex >= 0 && messages[userMessageIndex].role === "user") {
-            // 重新发送查询，传入要替换的 AI 消息 ID
-            this.sendMessage(messages[userMessageIndex].content, messageId);
+            // 重新发送查询，传入要替换的 AI 消息 ID（重试不需要引用）
+            this.sendMessage(messages[userMessageIndex].content, [], messageId);
         }
     }
 
@@ -2000,17 +2195,18 @@ ${r.text}`;
 
     /**
      * 更新消息列表的底部间距
-     * 当有上下文标签时，增加间距避免遮挡
+     * 当有上下文标签或引用卡片时，增加间距避免遮挡
      */
     private updateMessageListPadding(hasContextTags: boolean): void {
         const messagesContainer = this.containerEl?.querySelector('.deeppdf-messages-container') as HTMLElement;
         if (!messagesContainer) return;
 
-        // 基础间距 110px + 上下文标签高度约 40px
+        // 基础间距 110px + 上下文标签高度约 40px + 引用卡片高度
         const basePadding = 110;
         const contextTagsHeight = hasContextTags ? 44 : 0;
+        const quotesHeight = this.quotesContainer?.offsetHeight || 0;
 
-        messagesContainer.style.paddingBottom = `${basePadding + contextTagsHeight}px`;
+        messagesContainer.style.paddingBottom = `${basePadding + contextTagsHeight + quotesHeight}px`;
     }
 
     async updateStatus(): Promise<void> {

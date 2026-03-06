@@ -330,15 +330,16 @@ export class MessageList extends Component {
 	/**
 	 * 更新底部间距（适应输入框高度变化）
 	 * @param inputHeight 输入框的高度（像素）
+	 * @param quotesHeight 引用卡片容器的高度（像素），可选
 	 */
-	updateBottomPadding(inputHeight: number): void {
+	updateBottomPadding(inputHeight: number, quotesHeight: number = 0): void {
 		if (!this.messagesContainer) return;
 
-		// 基础间距 + 输入框高度 + 额外间距
-		// 基础间距 16px（顶部）+ 额外间距 16px（消息与输入框之间的视觉间距）
+		// 基础间距 + 输入框高度 + 引用卡片高度 + 额外间距
+		// 基础间距 16px（顶部）+ 额外间距 8px（消息与输入框之间的视觉间距）
 		const basePadding = 16;
-		const extraGap = 16;
-		const bottomPadding = basePadding + inputHeight + extraGap;
+		const extraGap = 8;
+		const bottomPadding = basePadding + inputHeight + quotesHeight + extraGap;
 
 		this.messagesContainer.style.paddingBottom = `${bottomPadding}px`;
 	}

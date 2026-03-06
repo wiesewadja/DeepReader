@@ -3,6 +3,8 @@
  * 实现多行文本输入框，支持 Enter 发送、Shift+Enter 换行
  * Gemini 风格：文本框在上方，底部工具栏（右侧发送按钮）
  * 注：模式切换已移至设置中的高级选项，默认使用自动路由
+ *
+ * 支持引用功能：选中文本后添加引用卡片，发送时引用作为上下文
  */
 
 import { App, TFile } from 'obsidian';
@@ -15,11 +17,23 @@ import { FileSuggest } from '../file-suggest/file-suggest.js';
 export type SearchMode = 'single' | 'cross';
 
 /**
+ * 引用数据结构
+ */
+export interface QuoteItem {
+	/** 唯一标识 */
+	id: string;
+	/** 引用文本内容 */
+	text: string;
+	/** 来源文件名（可选） */
+	source?: string;
+}
+
+/**
  * 聊天输入配置选项
  */
 export interface ChatInputOptions {
-	/** 发送回调 */
-	onSend: (message: string) => void;
+	/** 发送回调（带引用） */
+	onSend: (message: string, quotes: QuoteItem[]) => void;
 	/** 键盘事件回调（可选） */
 	onKeyDown?: (event: KeyboardEvent) => void;
 	/** 初始占位符文本 */
@@ -46,6 +60,10 @@ export interface ChatInputOptions {
 	onHeightChange?: (height: number) => void;
 	/** 加载当前文档回调（可选） */
 	onLoadCurrentDoc?: () => void;
+	/** 引用添加回调（可选，用于在对话界面显示引用卡片） */
+	onQuoteAdded?: (quote: QuoteItem) => void;
+	/** 引用移除回调（可选） */
+	onQuoteRemoved?: (quoteId: string) => void;
 }
 
 /**
@@ -77,6 +95,10 @@ export class ChatInput {
 	private fileSuggest: FileSuggest | null = null;
 	private suggestTrigger: MentionTrigger | null = null;
 
+	// 引用卡片相关
+	private quotes: QuoteItem[] = [];
+	private resizeAnimationFrame: number | null = null;
+
 	// 事件处理器引用（用于清理）
 	private inputHandler: (() => void) | null = null;
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
@@ -85,7 +107,6 @@ export class ChatInput {
 	private modeClickHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
-	private resizeAnimationFrame: number | null = null;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -174,7 +195,7 @@ export class ChatInput {
 		this.textarea.placeholder = this.options.placeholder || '';
 		this.textarea.rows = this.options.minRows || 1;
 		this.textarea.disabled = this.options.disabled || false;
-		this.textarea.setAttribute('aria-label', '聊天输入框');
+		this.textarea.setAttribute('aria-label', '');
 		this.textarea.setAttribute('aria-multiline', 'true');
 		this.textarea.style.minHeight = 'auto';
 
@@ -475,15 +496,17 @@ export class ChatInput {
 		const value = this.getValue();
 		const trimmedValue = value.trim();
 
-		if (trimmedValue.length === 0) {
+		// 允许只有引用没有文本的情况
+		if (trimmedValue.length === 0 && this.quotes.length === 0) {
 			return;
 		}
 
-		// 触发发送回调
-		this.options.onSend(trimmedValue);
+		// 触发发送回调（带引用）
+		this.options.onSend(trimmedValue, [...this.quotes]);
 
-		// 清空输入框
+		// 清空输入框和引用
 		this.clear();
+		this.clearQuotes();
 
 		// 重新聚焦
 		this.focus();
@@ -566,9 +589,63 @@ export class ChatInput {
 		if (!this.sendButton || !this.textarea) return;
 
 		const value = this.getValue().trim();
-		const isDisabled = value.length === 0 || this.textarea.disabled;
+		// 有引用或有文本时都可以发送
+		const isDisabled = (value.length === 0 && this.quotes.length === 0) || this.textarea.disabled;
 
 		this.sendButton.disabled = isDisabled;
+	}
+
+	// ==================== 引用相关方法 ====================
+
+	/**
+	 * 添加引用
+	 * @param text 引用文本
+	 * @param source 来源文件名（可选）
+	 */
+	addQuote(text: string, source?: string): void {
+		if (!text.trim()) return;
+
+		const quote: QuoteItem = {
+			id: `quote-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+			text: text.trim(),
+			source
+		};
+
+		this.quotes.push(quote);
+		this.updateSendButtonState();
+		this.notifyHeightChange();
+
+		// 通过回调通知外部渲染引用卡片
+		this.options.onQuoteAdded?.(quote);
+	}
+
+	/**
+	 * 移除引用
+	 * @param quoteId 引用 ID
+	 */
+	removeQuote(quoteId: string): void {
+		this.quotes = this.quotes.filter(q => q.id !== quoteId);
+		this.updateSendButtonState();
+		this.notifyHeightChange();
+
+		// 通过回调通知外部
+		this.options.onQuoteRemoved?.(quoteId);
+	}
+
+	/**
+	 * 清空所有引用
+	 */
+	clearQuotes(): void {
+		this.quotes = [];
+		this.updateSendButtonState();
+		this.notifyHeightChange();
+	}
+
+	/**
+	 * 获取所有引用
+	 */
+	getQuotes(): QuoteItem[] {
+		return [...this.quotes];
 	}
 
 	/**
