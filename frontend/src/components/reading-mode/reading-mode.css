@@ -151,18 +151,18 @@
     font-weight: 600;
 }
 
-/* ==================== 悬浮工具栏样式 ==================== */
+/* ==================== 悬浮工具栏样式（极简图标模式） ==================== */
 
 .deeppdf-selection-toolbar {
     position: absolute;
     z-index: 1000;
     display: none;
-    gap: 4px;
-    padding: 6px 8px;
+    gap: 6px;
+    padding: 6px;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     transition: opacity 0.15s ease;
     opacity: 0;
 }
@@ -175,20 +175,21 @@
 .deeppdf-toolbar-btn {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 6px 12px;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
     background: transparent;
     border: none;
-    border-radius: 6px;
-    color: var(--text-normal);
-    font-size: 13px;
+    border-radius: 4px;
+    color: var(--text-muted);
     cursor: pointer;
-    transition: background 0.15s ease;
-    white-space: nowrap;
+    transition: all 0.15s ease;
 }
 
 .deeppdf-toolbar-btn:hover {
     background: var(--background-modifier-hover);
+    color: var(--text-normal);
 }
 
 .deeppdf-toolbar-btn.primary {
@@ -202,4 +203,6 @@
 
 .deeppdf-toolbar-btn svg {
     flex-shrink: 0;
+    width: 16px;
+    height: 16px;
 }

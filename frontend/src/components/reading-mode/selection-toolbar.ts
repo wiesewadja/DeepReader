@@ -1,15 +1,18 @@
 /**
  * 悬浮工具栏组件
- * 选中文字后显示翻译/提问/摘录操作
+ * 选中文字后显示翻译/提问/摘录操作（极简图标模式）
  */
 
 import { App, Notice } from 'obsidian';
 
-// 图标
+// 极简图标（与 AI 回复气泡图标一致）
 const Icons = {
+    // 翻译图标
     translate: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>`,
-    chat: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
-    excerpt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>`
+    // 提问图标
+    ask: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    // 摘录图标（bookmark，与 AI 回复气泡一致）
+    excerpt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`
 };
 
 export interface SelectionToolbarOptions {
@@ -23,6 +26,7 @@ export class SelectionToolbar {
     private app: App;
     private options: SelectionToolbarOptions;
     private toolbarEl: HTMLElement | null = null;
+    private lastMousePosition: { x: number; y: number } = { x: 0, y: 0 };
 
     constructor(options: SelectionToolbarOptions) {
         this.app = options.app;
@@ -33,17 +37,17 @@ export class SelectionToolbar {
      * 初始化工具栏
      */
     init(): void {
-        // 创建工具栏 DOM
+        // 创建工具栏 DOM（极简图标模式）
         this.toolbarEl = document.body.createDiv({ cls: 'deeppdf-selection-toolbar' });
         this.toolbarEl.innerHTML = `
-            <button class="deeppdf-toolbar-btn" data-action="translate">
-                ${Icons.translate} 翻译
+            <button class="deeppdf-toolbar-btn" data-action="translate" title="翻译">
+                ${Icons.translate}
             </button>
-            <button class="deeppdf-toolbar-btn primary" data-action="ask">
-                ${Icons.chat} 提问
+            <button class="deeppdf-toolbar-btn primary" data-action="ask" title="提问">
+                ${Icons.ask}
             </button>
-            <button class="deeppdf-toolbar-btn" data-action="excerpt">
-                ${Icons.excerpt} 摘录
+            <button class="deeppdf-toolbar-btn" data-action="excerpt" title="摘录">
+                ${Icons.excerpt}
             </button>
         `;
 
@@ -57,10 +61,19 @@ export class SelectionToolbar {
             });
         });
 
+        // 监听鼠标移动（记录光标位置）
+        document.addEventListener('mousemove', this.handleMouseMove);
         // 监听选中事件
         document.addEventListener('mouseup', this.handleMouseUp);
         document.addEventListener('keydown', this.handleKeyDown);
     }
+
+    /**
+     * 记录鼠标位置
+     */
+    private handleMouseMove = (e: MouseEvent): void => {
+        this.lastMousePosition = { x: e.clientX, y: e.clientY };
+    };
 
     /**
      * 处理鼠标松开事件
@@ -123,13 +136,14 @@ export class SelectionToolbar {
         // 存储选中文本
         (this.toolbarEl as any).__selectedText = text;
 
-        // 计算位置
-        const rect = range.getBoundingClientRect();
+        // 使用鼠标光标位置定位
         const toolbarRect = this.toolbarEl.getBoundingClientRect();
         const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
 
-        let left = rect.left + rect.width / 2 - toolbarRect.width / 2;
-        let top = rect.top - toolbarRect.height - 8;
+        // 基于鼠标位置计算
+        let left = this.lastMousePosition.x - toolbarRect.width / 2;
+        let top = this.lastMousePosition.y - toolbarRect.height - 12;
 
         // 边界检查
         if (left < 10) left = 10;
@@ -137,7 +151,8 @@ export class SelectionToolbar {
             left = viewportWidth - toolbarRect.width - 10;
         }
         if (top < 10) {
-            top = rect.bottom + 8; // 显示在下方
+            // 显示在鼠标下方
+            top = this.lastMousePosition.y + 16;
         }
 
         this.toolbarEl.style.left = `${left}px`;
@@ -178,6 +193,7 @@ export class SelectionToolbar {
      * 销毁组件
      */
     destroy(): void {
+        document.removeEventListener('mousemove', this.handleMouseMove);
         document.removeEventListener('mouseup', this.handleMouseUp);
         document.removeEventListener('keydown', this.handleKeyDown);
         this.toolbarEl?.remove();
