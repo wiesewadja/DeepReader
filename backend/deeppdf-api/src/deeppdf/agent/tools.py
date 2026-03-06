@@ -102,7 +102,8 @@ class ReadPageTool:
     description: str = (
         "读取 PDF 指定页码的完整内容，返回带段落标记的原始文本。"
         "适用于需要精确引用或深入分析特定页面的场景。"
-        "参数: page_num (int, 必需) - 要读取的页码（从1开始）"
+        "参数: page_num (int, 必需) - 要读取的页码（从1开始）；"
+        "force_visual (bool, 可选) - 是否强制使用视觉OCR（用于分析图片/图表，默认False）"
     )
 
     def __init__(
@@ -112,6 +113,7 @@ class ReadPageTool:
         storage_dir: str,
         index_metadata: Optional[Dict[str, Any]] = None,
         deepseek_ocr_client: Optional[Any] = None,
+        markdown_locator: Optional["MarkdownLocator"] = None,
     ):
         """
         初始化工具
@@ -122,12 +124,14 @@ class ReadPageTool:
             storage_dir: 存储目录
             index_metadata: 索引元数据（包含 visual_heavy 标记）
             deepseek_ocr_client: DeepSeek OCR 客户端（可选）
+            markdown_locator: Markdown 定位器（用于从已有文件读取内容）
         """
         self.pageindex_lib_path = pageindex_lib_path
         self.index_id = index_id
         self.storage_dir = storage_dir
         self.index_metadata = index_metadata or {}
         self.deepseek_ocr_client = deepseek_ocr_client
+        self.markdown_locator = markdown_locator
         self._pi = None  # 延迟加载
 
         # 检测是否为视觉密集型 PDF
@@ -139,7 +143,10 @@ class ReadPageTool:
             logger.info(
                 f"[ReadPageTool]    - OCR客户端: {'✅ 已配置' if self.deepseek_ocr_client else '❌ 未配置'}"
             )
-            logger.info(f"[ReadPageTool]    - 读取方式: DeepSeek OCR 视觉推理")
+            logger.info(
+                f"[ReadPageTool]    - MarkdownLocator: {'✅ 已配置' if self.markdown_locator else '❌ 未配置'}"
+            )
+            logger.info(f"[ReadPageTool]    - 读取策略: 优先使用已有索引，仅视觉分析时调用OCR")
             logger.info("=" * 60)
 
     def _load_page_index(self):
@@ -159,12 +166,13 @@ class ReadPageTool:
 
         return self._pi
 
-    def __call__(self, page_num: int, **kwargs: Any) -> str:
+    def __call__(self, page_num: int, force_visual: bool = False, **kwargs: Any) -> str:
         """
         读取指定页码的内容
 
         Args:
             page_num: 页码（从 1 开始）
+            force_visual: 是否强制使用视觉OCR（用于分析图片/图表）
             **kwargs: 其他参数（兼容性保留）
 
         Returns:
@@ -172,14 +180,190 @@ class ReadPageTool:
         """
         logger.info(f"[ReadPageTool] 📖 读取页面请求: 第 {page_num} 页")
 
-        # 如果是视觉密集型，使用 DeepSeek OCR
+        # 如果是视觉密集型 PDF
         if self.is_visual_heavy:
-            logger.info(f"[ReadPageTool] → 使用模式: 🖼️ DeepSeek OCR 视觉推理")
+            # 如果明确要求视觉分析，直接使用 OCR
+            if force_visual:
+                logger.info(f"[ReadPageTool] → 使用模式: 🖼️ DeepSeek OCR 视觉推理（强制）")
+                return self._read_page_visual(page_num)
+
+            # 否则优先尝试从 markdown 文件读取
+            markdown_content = self._read_page_from_markdown(page_num)
+            if markdown_content:
+                logger.info(f"[ReadPageTool] → 使用模式: 📄 从已有索引读取（缓存命中）")
+                return markdown_content
+
+            # markdown 文件不存在或无内容，回退到 OCR
+            logger.info(f"[ReadPageTool] → 使用模式: 🖼️ DeepSeek OCR 视觉推理（索引未命中）")
             return self._read_page_visual(page_num)
 
-        # 否则使用普通文本读取
+        # 非 visual_heavy，使用普通文本读取
         logger.info(f"[ReadPageTool] → 使用模式: 📄 普通文本读取")
         return self._read_page_normal(page_num)
+
+    def _find_markdown_file_for_page(self, page_num: int) -> Optional[str]:
+        """
+        根据页码找到对应的 markdown 文件路径
+
+        Args:
+            page_num: 页码（从 1 开始）
+
+        Returns:
+            markdown 文件路径，未找到返回 None
+        """
+        if not self.markdown_locator:
+            return None
+
+        # 遍历所有 node，找到包含该页码的章节
+        tree_structure = self.index_metadata.get("tree_structure", {})
+        structure = tree_structure.get("structure", [])
+
+        def find_all_nodes_with_page(nodes: List[Dict], target_page: int) -> List[Dict]:
+            """递归查找所有包含目标页码的节点，返回节点信息列表"""
+            matches = []
+            for node in nodes:
+                start_page = node.get("start_index", 0)
+                end_page = node.get("end_index", 0)
+                node_id = node.get("node_id", "")
+
+                # 检查页码是否在此节点范围内
+                if start_page <= target_page <= end_page and node_id:
+                    # 计算范围大小，用于后续选择最精确匹配
+                    range_size = end_page - start_page
+                    matches.append({
+                        "node_id": node_id,
+                        "range_size": range_size,
+                        "start_page": start_page,
+                        "end_page": end_page
+                    })
+
+                # 递归检查子节点
+                matches.extend(find_all_nodes_with_page(node.get("nodes", []), target_page))
+
+            return matches
+
+        all_matches = find_all_nodes_with_page(structure, page_num)
+
+        if not all_matches:
+            return None
+
+        # 选择范围最小的节点（最精确匹配）
+        best_match = min(all_matches, key=lambda x: x["range_size"])
+        node_id = best_match["node_id"]
+
+        logger.debug(f"[ReadPageTool] 页码 {page_num} 匹配到节点 {node_id} (范围: {best_match['range_size']}页)")
+
+        return self.markdown_locator.find_file(node_id)
+
+    def _read_page_from_markdown(self, page_num: int) -> Optional[str]:
+        """
+        从已有的 markdown 文件中读取页面内容
+
+        Args:
+            page_num: 页码（从 1 开始）
+
+        Returns:
+            页面内容，如果无法读取则返回 None
+        """
+        if not self.markdown_locator:
+            return None
+
+        try:
+            # 找到对应的 markdown 文件
+            md_file_path = self._find_markdown_file_for_page(page_num)
+            if not md_file_path:
+                logger.debug(f"[ReadPageTool] 未找到第 {page_num} 页对应的 markdown 文件")
+                return None
+
+            # 构建完整路径
+            # markdown_files 存储的是相对路径，需要结合 vault 路径
+            pdf_path = self.index_metadata.get("pdf_path", "")
+            if not pdf_path:
+                logger.warning(f"[ReadPageTool] 无法确定 vault 路径")
+                return None
+
+            # vault 路径是 pdf_path 的爷目录
+            vault_path = Path(pdf_path).parent.parent
+
+            # 尝试多个可能的位置
+            possible_paths = [
+                vault_path / "DeepReader" / md_file_path,  # DeepReader 子目录
+                vault_path / md_file_path,  # 直接在 vault 根目录
+            ]
+
+            full_md_path = None
+            for path in possible_paths:
+                if path.exists():
+                    full_md_path = path
+                    break
+
+            if not full_md_path:
+                logger.warning(
+                    f"[ReadPageTool] Markdown 文件不存在，尝试路径: {[str(p) for p in possible_paths]}"
+                )
+                return None
+
+            logger.debug(f"[ReadPageTool] 找到 Markdown 文件: {full_md_path}")
+
+            # 读取文件并提取页面内容
+            with open(full_md_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # 提取特定页面的内容（页面之间用 ### 第 N 页^page-N 分隔）
+            page_content = self._extract_page_from_markdown(content, page_num)
+            if page_content:
+                return f"# 第 {page_num} 页内容（索引缓存）\n\n{page_content}"
+
+            return None
+
+        except Exception as e:
+            logger.error(f"[ReadPageTool] 从 markdown 读取失败: {e}")
+            return None
+
+    def _extract_page_from_markdown(self, markdown_content: str, page_num: int) -> Optional[str]:
+        """
+        从 markdown 内容中提取特定页面的文本
+
+        Args:
+            markdown_content: 完整的 markdown 文件内容
+            page_num: 页码（从 1 开始）
+
+        Returns:
+            页面文本内容
+        """
+        import re
+
+        # 页面分隔符格式: ### 第 N 页^page-N
+        # 使用正则找到目标页面和下一页的位置
+        page_pattern = rf"###\s*第\s*{page_num}\s*页\s*\^page-{page_num}"
+        next_page_pattern = r"###\s*第\s*\d+\s*页\s*\^page-\d+"
+
+        # 找到目标页面的起始位置
+        page_match = re.search(page_pattern, markdown_content)
+        if not page_match:
+            logger.debug(f"[ReadPageTool] 未找到第 {page_num} 页的分隔符")
+            return None
+
+        start_pos = page_match.end()
+
+        # 找到下一页的位置（如果存在）
+        remaining_content = markdown_content[start_pos:]
+        next_page_match = re.search(next_page_pattern, remaining_content)
+
+        if next_page_match:
+            page_content = remaining_content[:next_page_match.start()]
+        else:
+            # 没有下一页，取到文件末尾
+            page_content = remaining_content
+
+        # 清理内容
+        page_content = page_content.strip()
+
+        if len(page_content) < 50:  # 内容太少，可能有问题
+            logger.debug(f"[ReadPageTool] 第 {page_num} 页内容过短: {len(page_content)} 字符")
+            return None
+
+        return page_content
 
     def _read_page_normal(self, page_num: int) -> str:
         """普通文本读取"""

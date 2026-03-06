@@ -352,6 +352,10 @@ class DeepPDFAgent:
                     "page_num": {
                         "type": "integer",
                         "description": "要读取的页码（从1开始）",
+                    },
+                    "force_visual": {
+                        "type": "boolean",
+                        "description": "是否强制使用视觉OCR分析图片/图表（默认False，优先使用已有索引）",
                     }
                 },
                 "required": ["page_num"],

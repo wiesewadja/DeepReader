@@ -147,6 +147,7 @@ def create_tool_executor(
             storage_dir,
             index_metadata=index_metadata,
             deepseek_ocr_client=deepseek_ocr_client,
+            markdown_locator=markdown_locator,
         )
     else:
         logger.warning("[工具初始化] 未提供 pageindex_lib_path，read_page 工具将不可用")
