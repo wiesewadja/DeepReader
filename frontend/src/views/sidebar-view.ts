@@ -740,7 +740,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 渲染引用卡片（层叠样式）
+     * 渲染引用卡片（带文段显示）
      */
     private renderQuoteCard(quote: QuoteItem): void {
         if (!this.quotesContainer) return;
@@ -755,9 +755,9 @@ export class SidebarView extends ItemView {
             this.updateMessageListPadding(hasContextTags);
         });
 
-        // 创建小正方形卡片，使用 title 属性显示完整文本作为 tooltip
-        const displayText = quote.text.length > 30
-            ? quote.text.substring(0, 30) + '...'
+        // 截取引用文本显示（前20个字符）
+        const displayText = quote.text.length > 20
+            ? quote.text.substring(0, 20) + '...'
             : quote.text;
 
         const card = this.quotesContainer.createDiv({
@@ -769,11 +769,17 @@ export class SidebarView extends ItemView {
             }
         });
 
-        // 引用图标（居中显示）
+        // 引用图标（居左显示）
         const iconEl = card.createEl('span', {
             cls: 'deeppdf-quote-icon'
         });
         iconEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`;
+
+        // 引用文本
+        const textEl = card.createEl('span', {
+            cls: 'deeppdf-quote-text',
+            text: displayText
+        });
 
         // 移除按钮（悬浮时显示在右上角）
         const removeBtn = card.createEl('button', {
