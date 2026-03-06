@@ -134,7 +134,7 @@ export class ContextManager {
 
         this.loadedDocs.set(path, doc);
         this.notifyChange();
-        new Notice(`已加载: ${doc.name}`);
+        // new Notice(`已加载: ${doc.name}`);
 
         return doc;
     }

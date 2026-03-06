@@ -94,13 +94,6 @@
   flex-direction: column;
 }
 
-/* ==================== 聊天输入区 ==================== */
-.deeppdf-chat-input-section {
-  flex-shrink: 0;
-  padding: var(--deeppdf-spacing-md) var(--deeppdf-spacing-lg);
-  border-top: 1px solid var(--deeppdf-border-subtle);
-  background: var(--deeppdf-bg-secondary);
-}
 
 /* ==================== 头部 ==================== */
 .deeppdf-header {

@@ -8,8 +8,7 @@ import { log } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions } from '../components/reading-mode/selection-toolbar.js';
 
 export interface ReadingModeCallbacks {
-    onTranslate: (text: string) => void;
-    onAsk: (text: string) => void;
+    onQuote: (text: string) => void;
     onExcerpt: (text: string) => void;
 }
 
@@ -49,8 +48,7 @@ export class ReadingModeService {
 
         this.selectionToolbar = new SelectionToolbar({
             app: this.app,
-            onTranslate: this.callbacks.onTranslate,
-            onAsk: this.callbacks.onAsk,
+            onQuote: this.callbacks.onQuote,
             onExcerpt: this.callbacks.onExcerpt,
         });
         this.selectionToolbar.init();

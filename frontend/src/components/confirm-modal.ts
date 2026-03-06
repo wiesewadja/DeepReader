@@ -1,67 +1,65 @@
+/**
+ * 确认弹窗组件
+ */
 
-import { App, Modal, Setting } from 'obsidian';
+import { App, Modal, Setting } from "obsidian";
+
+export interface ConfirmModalOptions {
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+}
 
 export class ConfirmModal extends Modal {
     private title: string;
     private message: string;
-    private onConfirm: () => void;
-    private confirmLabel: string;
-    private cancelLabel: string;
-    private isDestructive: boolean;
+    private onConfirm: () => void | Promise<void>;
+    private options: ConfirmModalOptions;
 
     constructor(
         app: App,
         title: string,
         message: string,
-        onConfirm: () => void,
-        options: {
-            confirmLabel?: string;
-            cancelLabel?: string;
-            isDestructive?: boolean;
-        } = {}
+        onConfirm: () => void | Promise<void>,
+        options: ConfirmModalOptions = {}
     ) {
         super(app);
         this.title = title;
         this.message = message;
         this.onConfirm = onConfirm;
-        this.confirmLabel = options.confirmLabel || 'Confirm';
-        this.cancelLabel = options.cancelLabel || 'Cancel';
-        this.isDestructive = options.isDestructive || false;
+        this.options = options;
     }
 
     onOpen() {
         const { contentEl } = this;
-        contentEl.empty();
+        const { confirmLabel = "Confirm", cancelLabel = "Cancel" } = this.options;
 
-        contentEl.createEl('h2', { text: this.title });
+        // 标题
+        contentEl.createEl("h2", { text: this.title });
 
-        // 支持多行消息
-        const lines = this.message.split('\\n');
-        lines.forEach(line => {
-            contentEl.createEl('p', { text: line });
-        });
+        // 消息（支持换行）
+        const messageEl = contentEl.createEl("p");
+        messageEl.style.whiteSpace = "pre-wrap";
+        messageEl.textContent = this.message;
 
-        const buttonContainer = contentEl.createDiv('modal-button-container');
-
-        // Cancel Button
-        const cancelBtn = buttonContainer.createEl('button', { text: this.cancelLabel });
-        cancelBtn.addEventListener('click', () => {
-            this.close();
-        });
-
-        // Confirm Button
-        const confirmBtn = buttonContainer.createEl('button', {
-            text: this.confirmLabel,
-            cls: this.isDestructive ? 'mod-warning' : 'mod-cta'
-        });
-
-        // 聚焦主按钮
-        setTimeout(() => confirmBtn.focus(), 50);
-
-        confirmBtn.addEventListener('click', () => {
-            this.onConfirm();
-            this.close();
-        });
+        // 按钮区域
+        new Setting(contentEl)
+            .addButton((btn) =>
+                btn
+                    .setButtonText(cancelLabel)
+                    .onClick(() => {
+                        this.close();
+                    })
+            )
+            .addButton((btn) =>
+                btn
+                    .setButtonText(confirmLabel)
+                    .setCta()
+                    .onClick(async () => {
+                        await this.onConfirm();
+                        this.close();
+                    })
+            );
     }
 
     onClose() {

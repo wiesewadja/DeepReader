@@ -1,24 +1,21 @@
 /**
  * 悬浮工具栏组件
- * 选中文字后显示翻译/提问/摘录操作（极简图标模式）
+ * 选中文字后显示引用/摘录操作（极简图标模式）
  */
 
 import { App, Notice } from 'obsidian';
 
 // 极简图标（与 AI 回复气泡图标一致）
 const Icons = {
-    // 翻译图标
-    translate: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>`,
-    // 提问图标
-    ask: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    // 引用图标（quote，用于添加到对话上下文）
+    quote: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`,
     // 摘录图标（bookmark，与 AI 回复气泡一致）
     excerpt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`
 };
 
 export interface SelectionToolbarOptions {
     app: App;
-    onTranslate: (text: string) => void;
-    onAsk: (text: string) => void;
+    onQuote: (text: string) => void;
     onExcerpt: (text: string) => void;
 }
 
@@ -40,11 +37,8 @@ export class SelectionToolbar {
         // 创建工具栏 DOM（极简图标模式）
         this.toolbarEl = document.body.createDiv({ cls: 'deeppdf-selection-toolbar' });
         this.toolbarEl.innerHTML = `
-            <button class="deeppdf-toolbar-btn" data-action="translate" title="翻译">
-                ${Icons.translate}
-            </button>
-            <button class="deeppdf-toolbar-btn primary" data-action="ask" title="提问">
-                ${Icons.ask}
+            <button class="deeppdf-toolbar-btn primary" data-action="quote" title="引用">
+                ${Icons.quote}
             </button>
             <button class="deeppdf-toolbar-btn" data-action="excerpt" title="摘录">
                 ${Icons.excerpt}
@@ -177,11 +171,8 @@ export class SelectionToolbar {
         this.hide();
 
         switch (action) {
-            case 'translate':
-                this.options.onTranslate(text);
-                break;
-            case 'ask':
-                this.options.onAsk(text);
+            case 'quote':
+                this.options.onQuote(text);
                 break;
             case 'excerpt':
                 this.options.onExcerpt(text);

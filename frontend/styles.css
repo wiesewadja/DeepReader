@@ -1781,6 +1781,9 @@
 /* ==================== 悬浮聊天输入框容器 ==================== */
 
 .deeppdf-chat-input-section {
+	display: flex;
+	flex-direction: column;
+
 	position: absolute;
 	bottom: 8px;
 	left: 5%;
@@ -2045,6 +2048,9 @@
 
 @media (max-width: 600px) {
 	.deeppdf-chat-input-section {
+	display: flex;
+	flex-direction: column;
+
 		left: 3%;
 		right: 3%;
 		width: 94%;
@@ -2058,6 +2064,143 @@
 		padding: 4px;
 		border-radius: 6px;
 	}
+}
+
+/* ==================== 引用卡片容器（并排显示模式） ==================== */
+
+.deeppdf-quotes-container {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 4px 12px;
+	margin-bottom: 0;
+	min-height: 0;
+	animation: deeppdf-fade-in 0.2s ease;
+	z-index: 50;
+}
+
+/* ==================== 单个引用卡片（小正方形样式） ==================== */
+
+.deeppdf-quote-card {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+
+	cursor: pointer;
+	animation: deeppdf-quote-enter 0.2s ease;
+	transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.deeppdf-quote-card:hover {
+	background-color: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+	transform: scale(1.05);
+}
+
+@keyframes deeppdf-quote-enter {
+	from {
+		opacity: 0;
+		transform: scale(0.8);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+/* 引用图标（居中显示） */
+.deeppdf-quote-icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.deeppdf-quote-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* 来源章节 - 隐藏以节省空间 */
+.deeppdf-quote-source {
+	display: none;
+}
+
+/* 引用文本 - 隐藏，改为 hover tooltip 显示 */
+.deeppdf-quote-text {
+	display: none;
+}
+
+/* 移除按钮 - 悬浮时显示在右上角 */
+.deeppdf-quote-remove-btn {
+	position: absolute;
+	top: -4px;
+	right: -4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	padding: 0;
+
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
+
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0;
+
+	transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.deeppdf-quote-card:hover .deeppdf-quote-remove-btn {
+	opacity: 1;
+}
+
+.deeppdf-quote-remove-btn:hover {
+	background: var(--text-error);
+	color: var(--background-primary);
+	border-color: var(--text-error);
+}
+
+.deeppdf-quote-remove-btn svg {
+	width: 8px;
+	height: 8px;
+}
+
+/* 展开更多按钮 */
+.deeppdf-quotes-more {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+
+	background-color: var(--background-secondary-alt);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.deeppdf-quotes-more:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
 }
 
 /**
@@ -4645,13 +4788,6 @@
   flex-direction: column;
 }
 
-/* ==================== 聊天输入区 ==================== */
-.deeppdf-chat-input-section {
-  flex-shrink: 0;
-  padding: var(--deeppdf-spacing-md) var(--deeppdf-spacing-lg);
-  border-top: 1px solid var(--deeppdf-border-subtle);
-  background: var(--deeppdf-bg-secondary);
-}
 
 /* ==================== 头部 ==================== */
 .deeppdf-header {

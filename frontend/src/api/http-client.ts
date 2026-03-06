@@ -779,6 +779,21 @@ export class DeepPDFClient {
     });
   }
 
+  /**
+   * 翻译文本
+   */
+  async translateText(
+    text: string,
+    targetLanguage: string = 'Chinese',
+    provider: string = 'deepseek'
+  ): Promise<{ status: string; original_text: string; translated_text: string }> {
+    return this.request('/api/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, target_language: targetLanguage, provider })
+    });
+  }
+
   // ==================== 实用方法 ====================
 
   /**

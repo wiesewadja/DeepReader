@@ -173,16 +173,10 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化阅读模式服务
         const readingModeCallbacks: ReadingModeCallbacks = {
-            onTranslate: (text: string) => {
+            onQuote: (text: string) => {
                 this.activateView();
                 setTimeout(() => {
-                    this.app.workspace.trigger('deeppdf:translate-selection', text);
-                }, 100);
-            },
-            onAsk: (text: string) => {
-                this.activateView();
-                setTimeout(() => {
-                    this.app.workspace.trigger('deeppdf:ask-selection', text);
+                    this.app.workspace.trigger('deeppdf:quote-selection', text);
                 }, 100);
             },
             onExcerpt: (text: string) => {
