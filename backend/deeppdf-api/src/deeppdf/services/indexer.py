@@ -97,14 +97,21 @@ def _extract_nodes_from_tree(
             "node_name": node_name,
             "node_id": node_id,
         }
-        # 保存摘要和原文到 metadata
+        # 保存摘要到 metadata（如果有）
         if node_summary and node_summary.strip():
             node_metadata["summary"] = node_summary.strip()
-        # 保存格式化后的文本（供 Markdown 导出使用）
-        if formatted_content and formatted_content.strip():
-            node_metadata["original_text"] = formatted_content
-        elif node_text and node_text.strip():
-            node_metadata["original_text"] = node_text.strip()
+
+        # 重要：original_text 必须保存原文（node_text），而不是摘要
+        # 这样导出 Markdown 时才能获得原始内容
+        if node_text and node_text.strip():
+            # 对原文进行格式化处理
+            original_text_formatted = node_text.strip()
+            if formatter:
+                try:
+                    original_text_formatted = formatter.format(original_text_formatted, doc_type)
+                except Exception:
+                    pass  # 格式化失败时使用原文
+            node_metadata["original_text"] = original_text_formatted
 
         nodes.append(
             {

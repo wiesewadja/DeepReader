@@ -6,6 +6,7 @@ DeepPDFAgent - Agent 核心类，实现 ReAct 主循环
 """
 import json
 import logging
+import re
 import uuid
 from enum import IntEnum
 from typing import Any, Dict, Generator, List, Optional
@@ -31,6 +32,33 @@ logger = logging.getLogger(__name__)
 
 # LLM 客户端类型别名（当前所有 Provider 都使用 OpenAI 兼容客户端）
 LLMClient = OpenAI
+
+
+# DeepSeek 内部标签清理正则（用于过滤非标准输出）
+# 匹配 <|DSML|function_calls>...</|DSML|function_calls> 等内部格式
+# 注意：DeepSeek 使用全角字符 ｜ (U+FF5C)，需要同时匹配半角和全角
+DEEPSEEK_INTERNAL_TAG_PATTERN = re.compile(
+    r"<[|｜]DSML[|｜]function_calls[|｜]>.*?</[|｜]DSML[|｜]function_calls[|｜]>|"
+    r"<[|｜]DSML[|｜][^>]*>.*?</[|｜]DSML[|｜][^>]*>|"
+    r"</?[|｜]DSML[|｜][^>]*>",
+    re.DOTALL
+)
+
+
+def clean_deepseek_internal_tags(text: str) -> str:
+    """
+    清理 DeepSeek 模型的内部标签
+
+    DeepSeek 在某些情况下会输出 <|DSML|function_calls> 等内部格式标签，
+    这些标签不应该传递给用户，需要过滤掉。
+
+    Args:
+        text: 原始文本
+
+    Returns:
+        清理后的文本
+    """
+    return DEEPSEEK_INTERNAL_TAG_PATTERN.sub("", text).strip()
 
 
 # ========== 思考状态枚举 ==========
@@ -1045,6 +1073,13 @@ class DeepPDFAgent:
             logger.warning("")
 
             messages = self._build_messages()
+            # 添加明确的指令，让模型直接回答，不要再尝试工具调用
+            # 这是解决 DeepSeek 模型在历史中有工具调用时，即使不传 tools 参数
+            # 仍可能输出 <|DSML|function_calls> 格式的问题
+            messages.append({
+                "role": "user",
+                "content": "注意：已达到工具调用次数上限。请直接基于已有信息回答用户问题，不要再尝试调用任何工具。"
+            })
             stream = self.client.chat.completions.create(
                 model=self.llm_model,
                 messages=messages,
@@ -1056,8 +1091,11 @@ class DeepPDFAgent:
             for chunk in stream:
                 if chunk.choices[0].delta.content:
                     content = chunk.choices[0].delta.content
-                    final_content_buffer.append(content)
-                    yield content
+                    # 清理可能出现的 DeepSeek 内部标签（防御性过滤）
+                    cleaned_content = clean_deepseek_internal_tags(content)
+                    if cleaned_content:
+                        final_content_buffer.append(cleaned_content)
+                        yield cleaned_content
 
             # 保存会话历史
             if keep_history:

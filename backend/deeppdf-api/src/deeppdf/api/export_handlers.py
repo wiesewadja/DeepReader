@@ -62,6 +62,23 @@ async def export_index_data(
         # 在循环外构建一次父子映射（性能优化）
         parent_mapping = build_parent_mapping(tree_structure)
 
+        # 构建 node_id -> tree_node 的映射，用于获取原文
+        # tree_structure 中的 text 字段保存的是原始 OCR 文本
+        def build_tree_text_map(tree_nodes: list) -> dict:
+            """递归构建 node_id -> text 的映射"""
+            text_map = {}
+            for node in tree_nodes:
+                node_id = node.get("node_id", "")
+                if node_id:
+                    text_map[node_id] = node.get("text", "")
+                # 递归处理子节点
+                children = node.get("nodes", [])
+                if children:
+                    text_map.update(build_tree_text_map(children))
+            return text_map
+
+        tree_text_map = build_tree_text_map(tree_structure)
+
         for section in metadata.get("sections", []):
             node_metadata = section.get("metadata", {})
             start_index = node_metadata.get("start_index", "?")
@@ -73,8 +90,14 @@ async def export_index_data(
             else:
                 page_range = f"{start_index}-{end_index}"
 
-            # 获取原文
-            original_text = node_metadata.get("original_text", section.get("text", ""))
+            # 获取原文：优先从 tree_structure 获取真正的原文
+            # 这是修复现有索引数据的关键步骤
+            section_id = section.get("id", "")
+            original_text = tree_text_map.get(section_id, "")
+
+            # 如果 tree_structure 中没有，再尝试从 metadata 获取
+            if not original_text:
+                original_text = node_metadata.get("original_text", section.get("text", ""))
 
             # 应用基于规则的格式化（不使用 LLM）
             formatted_text = original_text
