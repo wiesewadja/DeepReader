@@ -1,8 +1,8 @@
-import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
+import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView, TFile } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
-import { ReadingModeService, type ReadingModeCallbacks } from './components/reading-mode/index.js';
+import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -182,10 +182,95 @@ export default class DeepPDFPlugin extends Plugin {
             onExcerpt: (text: string) => {
                 this.app.workspace.trigger('deeppdf:excerpt-selection', text);
             },
+            onSaveHighlight: async (text: string, color: HighlightColorId) => {
+                await this.saveHighlightToFile(text, color);
+            },
+            onRemoveHighlight: async (text: string) => {
+                await this.removeHighlightFromFile(text);
+            },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
         this.readingModeService.start();
         console.log('[DeepPDF] Reading mode service started');
+    }
+
+    /**
+     * 保存高亮到文件
+     */
+    private async saveHighlightToFile(text: string, color: HighlightColorId): Promise<void> {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            new Notice("无法保存高亮：没有活动文件");
+            return;
+        }
+
+        try {
+            const content = await this.app.vault.read(activeFile);
+
+            // 检查文本是否已存在
+            if (!content.includes(text)) {
+                new Notice("无法保存高亮：未找到文本");
+                return;
+            }
+
+            // 使用 HTML mark 标签保存彩色高亮
+            const bgColor = this.getHighlightBgColor(color);
+            const highlightedText = `<mark style="background: ${bgColor}">${text}</mark>`;
+
+            // 只替换第一次出现的位置
+            const newContent = content.replace(text, highlightedText);
+
+            await this.app.vault.modify(activeFile, newContent);
+            log('[DeepPDF] Highlight saved to file with color:', color);
+        } catch (err) {
+            error('[DeepPDF] Failed to save highlight:', err);
+            new Notice("保存高亮失败");
+        }
+    }
+
+    /**
+     * 从文件中移除高亮
+     */
+    private async removeHighlightFromFile(text: string): Promise<void> {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) {
+            return;
+        }
+
+        try {
+            const content = await this.app.vault.read(activeFile);
+
+            // 匹配并移除 HTML mark 标签（支持任意颜色）
+            const regex = new RegExp(`<mark style="background: [^"]*">${this.escapeRegex(text)}</mark>`, 'g');
+            if (regex.test(content)) {
+                const newContent = content.replace(regex, text);
+                await this.app.vault.modify(activeFile, newContent);
+                log('[DeepPDF] Highlight removed from file');
+            }
+        } catch (err) {
+            error('[DeepPDF] Failed to remove highlight:', err);
+        }
+    }
+
+    /**
+     * 获取高亮背景颜色
+     */
+    private getHighlightBgColor(color: HighlightColorId): string {
+        const colors: Record<HighlightColorId, string> = {
+            yellow: 'rgba(255, 235, 59, 0.5)',
+            green: 'rgba(76, 175, 80, 0.4)',
+            blue: 'rgba(33, 150, 243, 0.4)',
+            pink: 'rgba(233, 30, 99, 0.4)',
+            orange: 'rgba(255, 152, 0, 0.4)',
+        };
+        return colors[color] || colors.yellow;
+    }
+
+    /**
+     * 转义正则表达式特殊字符
+     */
+    private escapeRegex(str: string): string {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     async loadSettings() {

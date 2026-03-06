@@ -3,6 +3,8 @@
  */
 
 export { ReadingModeService } from '../../services/reading-mode-service.js';
-export type { ReadingModeCallbacks } from '../../services/reading-mode-service.js';
-export { SelectionToolbar } from './selection-toolbar.js';
-export type { SelectionToolbarOptions } from './selection-toolbar.js';
+export type { ReadingModeCallbacks, ChapterNavigation } from '../../services/reading-mode-service.js';
+export { SelectionToolbar, HIGHLIGHT_COLORS } from './selection-toolbar.js';
+export type { SelectionToolbarOptions, HighlightColorId } from './selection-toolbar.js';
+export { ChapterNav } from './chapter-nav.js';
+export type { ChapterNavOptions } from './chapter-nav.js';
