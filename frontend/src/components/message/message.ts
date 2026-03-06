@@ -1131,6 +1131,7 @@ export class AIMessage extends Message {
 			this.updateContent(data.content);
 		} else if (streamingEnded && this.el) {
 			// 流式结束时，进行完整的 Markdown 渲染
+			const bubble = this.el.querySelector('.deeppdf-message-bubble');
 			const contentEl = this.el.querySelector('.deeppdf-message-content');
 			const statusEl = this.el.querySelector('.deeppdf-message-status-text');
 
@@ -1164,6 +1165,11 @@ export class AIMessage extends Message {
 
 			// 【关键修复】流式结束后设置选中监听器
 			this.setupSelectionListener(contentEl as HTMLElement);
+
+			// 【关键修复】流式结束后渲染操作按钮
+			if (bubble) {
+				this.renderActions(bubble as HTMLElement);
+			}
 		} else {
 			// 全量重绘
 			const newRender = this.render();
@@ -1372,6 +1378,13 @@ export class AIMessage extends Message {
 		if (this.data.isStreaming) {
 			return;
 		}
+
+		// 先移除已有的操作按钮区域（避免重复）
+		const existingActions = container.querySelector('.deeppdf-message-actions');
+		if (existingActions) {
+			existingActions.remove();
+		}
+
 		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) || this.onExcerpt);
 		// AI 消息始终显示操作按钮区域（包含跳转到顶部按钮）
 		const isAssistant = this.data.role === 'assistant';
@@ -1485,6 +1498,12 @@ export class AIMessage extends Message {
 			const range = selection.getRangeAt(0);
 			if (!contentEl.contains(range.commonAncestorContainer)) {
 				this.selectionMenu?.hide();
+				return;
+			}
+
+			// 阅读模式下不显示摘录菜单（由 SelectionToolbar 处理）
+			const isReadingMode = document.body.classList.contains('deeppdf-reading-mode');
+			if (isReadingMode) {
 				return;
 			}
 
