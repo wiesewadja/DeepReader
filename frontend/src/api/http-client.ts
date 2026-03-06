@@ -838,9 +838,51 @@ export class DeepPDFClient {
 
   /**
    * 导出索引数据
+   * @param indexId 索引 ID
+   * 注意：导出时仅使用基于规则的快速格式化
    */
   async exportIndex(indexId: string): Promise<ExportIndexResponse> {
     return this.request<ExportIndexResponse>(`/api/export/${indexId}`);
+  }
+
+  /**
+   * 使用 LLM 格式化单个节点/章节的文本
+   * @param indexId 索引 ID
+   * @param nodeIds 要格式化的节点 ID 列表（可选，默认全部）
+   * @param provider LLM 提供商
+   */
+  async formatTextWithLLM(
+    indexId: string,
+    nodeIds?: string[],
+    provider: string = 'deepseek'
+  ): Promise<{ status: string; formatted_count: number; failed_count: number; formatted_nodes: any[] }> {
+    const body: any = { provider };
+    if (nodeIds && nodeIds.length > 0) {
+      body.node_ids = nodeIds;
+    }
+    return this.request(`/api/export/${indexId}/format-llm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }
+
+  /**
+   * 使用 LLM 格式化单段文本（不依赖索引）
+   * @param text 原始文本内容
+   * @param docType 文档类型 (pdf/epub)
+   * @param provider LLM 提供商
+   */
+  async formatSingleText(
+    text: string,
+    docType: string = 'pdf',
+    provider: string = 'deepseek'
+  ): Promise<{ status: string; formatted_text: string }> {
+    return this.request('/api/format-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, doc_type: docType, provider })
+    });
   }
 
   /**

@@ -753,11 +753,11 @@ def _index_pdf_sync(
         logger.info("[章节提取] 开始从树状结构提取节点")
         logger.info("=" * 50)
 
-        # 创建文本格式化器
+        # 创建文本格式化器（仅使用基于规则的处理，LLM 格式化在导出时可选）
         enable_text_formatting = kwargs.get("enable_text_formatting", True)
         formatter = TextFormatter() if enable_text_formatting else None
         if formatter:
-            logger.info("[章节提取] 文本格式化已启用")
+            logger.info("[章节提取] 文本格式化已启用（基于规则）")
 
         section_nodes = []
         for idx, top_level_node in enumerate(structure_list):

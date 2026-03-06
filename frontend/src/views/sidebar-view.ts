@@ -2102,33 +2102,49 @@ ${r.text}`;
             return;
         }
 
-        new Notice(`开始导出: ${indexInfo.pdf_name}...`);
+        // 直接执行导出（不再显示选项弹窗）
+        await this.doExportMarkdown(indexId, indexInfo.pdf_name);
+    }
+
+    /**
+     * 执行导出 Markdown 操作
+     */
+    private async doExportMarkdown(indexId: string, pdfName: string) {
+        if (!this.apiClient) return;
+
+        // 创建一个长时间显示的 Notice
+        const loadingNotice = new Notice(`📚 开始导出: ${pdfName}`, 0); // 0 = 永不自动消失
 
         try {
-            // 1. 获取完整节点数据
+            // 1. 获取完整节点数据（仅使用基于规则的快速格式化）
             const data = await this.apiClient.exportIndex(indexId);
 
             // 2. 前端生成并写入文件
             // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
-            const result = await exportIndexToMarkdown(this.app, indexInfo.pdf_name, data.nodes);
+            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes);
+
+            // 关闭加载提示
+            loadingNotice.hide();
 
             if (result.success) {
-                new Notice(`导出成功! 创建了 ${result.filesCreated} 个文件`);
+                new Notice(`✅ 导出成功! 创建了 ${result.filesCreated} 个文件`, 5000);
                 // 3. 保存映射回后端
                 await this.apiClient.saveMarkdownMapping(indexId, result.fileMapping);
 
                 // 4. 同时下载封面图片并更新书籍笔记
                 if (this.readingPortal) {
-                    const coverLink = await this.readingPortal.downloadBookCover(indexId, indexInfo.pdf_name);
+                    const coverLink = await this.readingPortal.downloadBookCover(indexId, pdfName);
                     if (coverLink) {
-                        const bookName = indexInfo.pdf_name.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
+                        const bookName = pdfName.replace(/\.pdf$/i, "").replace(/\.epub$/i, "");
                         await this.readingPortal.updateBookCover(bookName, coverLink);
                     }
                 }
             } else {
-                new Notice(`导出失败: ${result.error}`);
+                new Notice(`❌ 导出失败: ${result.error}`, 5000);
             }
         } catch (error) {
+            // 关闭加载提示
+            loadingNotice.hide();
             handleNetworkError(error as Error, { context: 'exportMarkdown' });
         }
     }

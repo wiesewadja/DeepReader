@@ -44,8 +44,15 @@ from .models import (
     BookSummary,
     ChapterSummary,
 )
-from .export_models import ExportIndexResponse, CoverResponse
-from .export_handlers import export_index_data, export_cover_data
+from .export_models import (
+    ExportIndexResponse,
+    CoverResponse,
+    LLMFormatRequest,
+    LLMFormatResponse,
+    FormatTextRequest,
+    FormatTextResponse,
+)
+from .export_handlers import export_index_data, export_cover_data, format_text_with_llm, format_single_text
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
@@ -826,11 +833,17 @@ async def cancel_task_endpoint(task_id: str):
 
 
 @router.get("/export/{index_id}", response_model=ExportIndexResponse)
-async def export_index_endpoint(index_id: str):
+async def export_index_endpoint(
+    index_id: str,
+):
     """
     导出索引的节点数据,供前端生成 Markdown 文件
 
+    参数:
+    - index_id: 索引 ID
+
     返回所有节点的数据,包括文本内容、章节信息、页码范围等
+    注意：导出时仅使用基于规则的快速格式化，如需 AI 格式化请使用 /api/export/{index_id}/format-llm 端点
     """
     logger.info(f"[API] 收到导出请求: index_id='{index_id}'")
     result = await export_index_data(index_id)
@@ -855,6 +868,59 @@ async def export_cover_endpoint(index_id: str):
         f"has_custom_cover={result.get('has_custom_cover')}"
     )
     return CoverResponse(**result)
+
+
+@router.post("/export/{index_id}/format-llm", response_model=LLMFormatResponse)
+async def format_with_llm_endpoint(index_id: str, body: LLMFormatRequest):
+    """
+    使用 LLM 重新格式化索引中的文本
+
+    可选参数:
+    - node_ids: 指定要格式化的节点 ID 列表（默认全部）
+    - provider: LLM 提供商（默认 deepseek）
+
+    此操作会更新索引元数据中的 original_text 字段
+    """
+    logger.info(
+        f"[API] 收到 LLM 格式化请求: index_id='{index_id}', "
+        f"node_ids={body.node_ids}, provider={body.provider}"
+    )
+    result = await format_text_with_llm(
+        index_id=index_id,
+        node_ids=body.node_ids,
+        provider=body.provider,
+    )
+    logger.info(
+        f"[API] LLM 格式化完成: formatted={result['formatted_count']}, "
+        f"failed={result['failed_count']}"
+    )
+    return LLMFormatResponse(**result)
+
+
+@router.post("/format-text", response_model=FormatTextResponse)
+async def format_text_endpoint(body: FormatTextRequest):
+    """
+    使用 LLM 格式化单段文本
+
+    这是一个简化的 API，直接接收文本内容，返回格式化后的文本。
+    适用于前端对已下载的章节文件进行 AI 格式化。
+
+    请求体:
+    - text: 原始文本内容
+    - doc_type: 文档类型 (pdf/epub，默认 pdf)
+    - provider: LLM 提供商 (默认 deepseek)
+    """
+    logger.info(
+        f"[API] 收到文本格式化请求: text_length={len(body.text)}, "
+        f"doc_type={body.doc_type}, provider={body.provider}"
+    )
+    result = await format_single_text(
+        text=body.text,
+        doc_type=body.doc_type,
+        provider=body.provider,
+    )
+    logger.info(f"[API] 文本格式化完成: result_length={len(result['formatted_text'])}")
+    return FormatTextResponse(**result)
 
 
 @router.post("/markdown-mapping/{index_id}", response_model=MarkdownMappingResponse)
