@@ -3,7 +3,7 @@
  * 管理章节文件的书籍化阅读体验
  */
 
-import { App, TFile, EventRef } from 'obsidian';
+import { App, TFile, EventRef, MarkdownView } from 'obsidian';
 import { log } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions } from '../components/reading-mode/selection-toolbar.js';
 
@@ -59,30 +59,21 @@ export class ReadingModeService {
 
     /**
      * 判断文件是否为 DeepReader 章节文件
+     * 只要文件在 DeepReader 文件夹下且是 Markdown 文件即可
      */
     isChapterFile(file: TFile): boolean {
-        // 1. 路径以 DeepReader/ 开头
+        // 必须是 Markdown 文件
+        if (file.extension !== 'md') {
+            return false;
+        }
+
+        // 路径以 DeepReader/ 开头
         if (!file.path.startsWith('DeepReader/')) {
             return false;
         }
 
-        // 2. 文件名格式为 NN-章节名.md
-        if (!/^\d{2}-/.test(file.name)) {
-            return false;
-        }
-
-        // 3. 检查 frontmatter 是否包含 node_id 或 pdf_name
-        const cache = this.app.metadataCache.getFileCache(file);
-        if (!cache?.frontmatter) {
-            console.warn('[DeepPDF] No frontmatter for:', file.path);
-            return false;
-        }
-
-        const hasValidMetadata = !!(cache.frontmatter.node_id || cache.frontmatter.pdf_name);
-        if (hasValidMetadata) {
-            console.log('[DeepPDF] Chapter file detected:', file.path);
-        }
-        return hasValidMetadata;
+        log('[ReadingMode] Chapter file detected:', file.path);
+        return true;
     }
 
     /**
@@ -97,9 +88,23 @@ export class ReadingModeService {
         this.currentFile = file;
         this.isActive = true;
 
+        // 切换到阅读视图
+        this.switchToReadingView();
+
         // 添加阅读模式 CSS 类
         document.body.classList.add('deeppdf-reading-mode');
         log('[ReadingMode] Activated for:', file.path);
+    }
+
+    /**
+     * 切换当前 leaf 到阅读视图
+     */
+    private switchToReadingView(): void {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view && view.getMode() !== 'preview') {
+            view.setState({ ...view.getState(), mode: 'preview' }, { history: false });
+            log('[ReadingMode] Switched to reading view');
+        }
     }
 
     /**
