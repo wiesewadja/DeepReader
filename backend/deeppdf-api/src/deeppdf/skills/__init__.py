@@ -13,6 +13,7 @@ from .models import Skill, SkillConfig, SkillMeta, RoutingResult
 from .loader import SkillLoader
 from .registry import SkillRegistry
 from .router import SkillRouter
+from .intent_router import IntentRouter
 
 logger = logging.getLogger(__name__)
 
@@ -63,5 +64,6 @@ __all__ = [
     "SkillLoader",
     "SkillRegistry",
     "SkillRouter",
+    "IntentRouter",
     "get_skill_registry",
 ]

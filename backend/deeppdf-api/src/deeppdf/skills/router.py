@@ -122,7 +122,10 @@ class SkillRouter:
         """
         按关键词匹配 Skill
 
-        使用词频统计进行评分，返回匹配关键词数量最多的 Skill。
+        使用加权评分进行匹配：
+        1. 短语/多词关键词匹配权重更高
+        2. 精确匹配权重更高
+        3. 考虑匹配关键词的覆盖率和绝对数量
 
         Args:
             query: 用户查询
@@ -141,14 +144,30 @@ class SkillRouter:
                 continue
 
             matched = []
-            for keyword in skill.keywords:
-                if keyword.lower() in query_lower:
-                    matched.append(keyword)
+            skill_score = 0.0
 
-            if len(matched) > len(best_keywords):
+            for keyword in skill.keywords:
+                keyword_lower = keyword.lower()
+                if keyword_lower in query_lower:
+                    matched.append(keyword)
+                    # 加权评分：
+                    # - 多词短语（包含空格）权重更高，因为更具体
+                    # - 较长的关键词权重更高
+                    keyword_words = keyword.split()
+                    if len(keyword_words) > 1:
+                        # 短语匹配，权重 2.0
+                        skill_score += 2.0
+                    else:
+                        # 单词匹配，权重 1.0
+                        skill_score += 1.0
+                    # 额外奖励：关键词长度（越长越具体）
+                    skill_score += len(keyword) * 0.01
+
+            if skill_score > best_score:
                 best_skill = skill
                 best_keywords = matched
-                # 评分 = 匹配关键词数量 / 总关键词数量
-                best_score = len(matched) / len(skill.keywords)
+                # 最终评分 = 加权得分 / (关键词数量 * 2.0) 归一化到 0-1
+                max_possible_score = len(skill.keywords) * 2.0
+                best_score = skill_score / max_possible_score if max_possible_score > 0 else 0.0
 
         return best_skill, best_keywords, best_score
