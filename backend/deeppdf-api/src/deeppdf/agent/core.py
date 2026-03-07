@@ -274,6 +274,10 @@ class DeepPDFAgent:
             []
         )  # 当前轮次的历史（工具调用等）
 
+        # Skill 分区历史：每个 Skill 有独立的历史记录，避免上下文混乱
+        self._skill_histories: Dict[str, List[Dict[str, Any]]] = {}
+        self._current_skill_name: Optional[str] = None  # 当前活跃的 Skill 名称
+
         # 上下文文档（用户加载的章节、笔记等）
         self.context_docs: Optional[List[Dict[str, Any]]] = None
 

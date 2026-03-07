@@ -106,13 +106,13 @@ class RoutingResult(BaseModel):
     """
     路由结果模型
 
-    SkillRouter 的返回结果。
+    SkillRouter 和 IntentRouter 的返回结果。
     """
 
     skill: Skill = Field(..., description="匹配到的 Skill")
     match_type: str = Field(
         ...,
-        description="匹配类型: manual, book_type, keyword, default",
+        description="匹配类型: manual, book_type, keyword, llm_intent, default",
     )
     confidence: float = Field(
         default=1.0,
@@ -121,4 +121,12 @@ class RoutingResult(BaseModel):
     matched_keywords: Optional[List[str]] = Field(
         default=None,
         description="匹配到的关键词（仅 keyword 匹配时有值）",
+    )
+    extracted_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="从用户问题中提取的参数（仅 LLM 路由时有值）",
+    )
+    reason: Optional[str] = Field(
+        default=None,
+        description="选择原因（仅 LLM 路由时有值）",
     )
