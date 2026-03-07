@@ -93,6 +93,31 @@ export default class DeepPDFPlugin extends Plugin {
             callback: () => this.activateView()
         });
 
+        // Skills 重载命令
+        this.addCommand({
+            id: "reload-skills",
+            name: "Reload DeepReader Skills",
+            callback: async () => {
+                if (!this.apiClient) {
+                    new Notice("API client not initialized");
+                    return;
+                }
+                try {
+                    new Notice("正在重载 Skills...");
+                    const result = await this.apiClient.reloadSkills();
+                    if (result.success) {
+                        new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
+                        log('[DeepReader] Skills reloaded:', result.skills);
+                    } else {
+                        new Notice(`Skills 重载失败: ${result.message}`);
+                    }
+                } catch (err) {
+                    error('[DeepReader] Failed to reload skills:', err);
+                    new Notice(`Skills 重载失败: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        });
+
         // Add command - AI format current document
         this.addCommand({
             id: "format-current-document",
@@ -523,6 +548,44 @@ class DeepPDFSettingTab extends PluginSettingTab {
         // 添加说明文字
         containerEl.createEl('p', {
             text: '提示：大多数情况下使用"自动路由"即可获得最佳体验。强制模式仅用于特定场景的调试或控制。',
+            cls: 'setting-item-description'
+        });
+
+        // Skills 管理区域
+        containerEl.createEl('h2', { text: 'Skills 管理' });
+
+        new Setting(containerEl)
+            .setName("重载 Skills")
+            .setDesc("重新加载所有 Skills（包括内置和用户自定义）。当你添加了新的 Skill 文件后，点击此按钮使其生效。")
+            .addButton(button => button
+                .setButtonText("重载 Skills")
+                .setCta()
+                .onClick(async () => {
+                    if (!this.plugin.apiClient) {
+                        new Notice("API client not initialized");
+                        return;
+                    }
+                    try {
+                        button.setDisabled(true);
+                        button.setButtonText("重载中...");
+                        const result = await this.plugin.apiClient.reloadSkills();
+                        button.setDisabled(false);
+                        button.setButtonText("重载 Skills");
+                        if (result.success) {
+                            new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
+                        } else {
+                            new Notice(`Skills 重载失败: ${result.message}`);
+                        }
+                    } catch (err) {
+                        button.setDisabled(false);
+                        button.setButtonText("重载 Skills");
+                        const errMsg = err instanceof Error ? err.message : String(err);
+                        new Notice(`Skills 重载失败: ${errMsg}`);
+                    }
+                }));
+
+        containerEl.createEl('p', {
+            text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',
             cls: 'setting-item-description'
         });
     }

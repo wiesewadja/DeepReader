@@ -20,8 +20,9 @@ from openai.types.chat import (
 
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
-from .prompts import build_system_prompt, RouteDecision
+from .prompts import build_system_prompt, build_skill_system_prompt, RouteDecision
 from ..config import settings
+from ..skills import Skill, get_skill_registry
 
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,7 @@ class DeepPDFAgent:
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         max_iterations: Optional[int] = None,
+        skill: Optional[Skill] = None,
     ):
         """
         初始化 DeepPDFAgent
@@ -157,6 +159,7 @@ class DeepPDFAgent:
             temperature: 采样温度
             top_p: nucleus 采样参数
             max_iterations: 最大工具调用迭代次数
+            skill: Skill 对象（可选，用于定制 Agent 行为）
         """
         self.index_id = index_id
         self.storage_dir = storage_dir
@@ -237,7 +240,10 @@ class DeepPDFAgent:
                 deepseek_ocr_client=self.deepseek_ocr_client,
             )
 
-        # 根据 cross_book_mode 构建 System Prompt
+        # 根据 cross_book_mode 或 skill 构建 System Prompt
+        # 获取可用 Skills 列表（用于回答"你支持哪些技能"）
+        available_skills_info = self._get_available_skills_info()
+
         if cross_book_mode:
             from .prompts import build_cross_book_prompt
 
@@ -245,10 +251,22 @@ class DeepPDFAgent:
                 tool_descriptions=self.executor.get_tool_descriptions()
             )
             logger.info("[Agent初始化] 使用跨书籍模式 System Prompt")
+        elif skill:
+            # 使用 Skill 专属 Prompt
+            self.skill = skill
+            skill_prompt = skill.prompt_content or ""
+            self.system_prompt = build_skill_system_prompt(
+                tool_descriptions=self.executor.get_tool_descriptions(),
+                skill_prompt=skill_prompt,
+                available_skills=available_skills_info,
+            )
+            logger.info(f"[Agent初始化] 使用 Skill 专属 Prompt: {skill.name}")
         else:
             self.system_prompt = build_system_prompt(
-                tool_descriptions=self.executor.get_tool_descriptions()
+                tool_descriptions=self.executor.get_tool_descriptions(),
+                available_skills=available_skills_info,
             )
+            self.skill = None
 
         # 历史记录管理
         self.session_history: List[Dict[str, Any]] = []  # 会话级别的历史（多轮对话）
@@ -269,6 +287,35 @@ class DeepPDFAgent:
             "anthropic": "claude-3-5-sonnet-20241022",
         }
         return default_models.get(provider, "deepseek-chat")
+
+    def _get_available_skills_info(self) -> Optional[str]:
+        """
+        获取可用的 Skills 列表信息
+
+        Returns:
+            格式化的 Skills 列表字符串，用于添加到 System Prompt
+        """
+        try:
+            from ..skills import get_skill_registry
+
+            registry = get_skill_registry()
+            skills = registry.list_all()
+
+            if not skills:
+                return None
+
+            # 格式化 Skills 列表
+            skill_lines = []
+            for skill in skills:
+                skill_line = f"- **{skill.name}**: {skill.description}"
+                if skill.keywords:
+                    skill_line += f"\n  - 触发关键词: {', '.join(skill.keywords[:5])}"
+                skill_lines.append(skill_line)
+
+            return "\n".join(skill_lines)
+        except Exception as e:
+            logger.warning(f"[Agent初始化] 获取 Skills 列表失败: {e}")
+            return None
 
     def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> LLMClient:
         """

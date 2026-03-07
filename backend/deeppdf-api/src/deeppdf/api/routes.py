@@ -1005,6 +1005,7 @@ async def _load_agent_for_request(
     index_id: str,
     enable_llm_tree_search: bool = False,
     context_docs: Optional[List[Dict[str, Any]]] = None,
+    query: Optional[str] = None,
 ) -> "DeepPDFAgent":
     """
     为请求加载 DeepPDF Agent
@@ -1013,6 +1014,7 @@ async def _load_agent_for_request(
         index_id: PDF 索引 ID
         enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
         context_docs: 用户加载的上下文文档列表
+        query: 用户查询内容（用于 Skill 自动路由）
 
     Returns:
         配置好的 DeepPDFAgent 实例
@@ -1107,6 +1109,24 @@ async def _load_agent_for_request(
         base_dir = Path(settings.base_dir)
         pageindex_lib_path = str(base_dir / "pageindex-lib" / "src")
 
+        # Skill 自动路由
+        skill = None
+        if query:
+            from ..skills import SkillRouter, get_skill_registry
+
+            registry = get_skill_registry()
+            skill_router = SkillRouter(registry)
+            routing_result = skill_router.route(query=query)
+
+            if routing_result.skill:
+                skill = routing_result.skill
+                logger.info(f"🎯 [Skill路由] 匹配到 Skill: {skill.name}")
+                logger.info(f"   📍 匹配类型: {routing_result.match_type}")
+                if routing_result.matched_keywords:
+                    logger.info(f"   🏷️  匹配关键词: {routing_result.matched_keywords}")
+            else:
+                logger.info("🎯 [Skill路由] 未匹配到 Skill，使用默认行为")
+
         agent = DeepPDFAgent(
             index_id=index_id,
             storage_dir=str(settings.base_dir),
@@ -1121,6 +1141,7 @@ async def _load_agent_for_request(
             temperature=settings.agent_temperature,
             top_p=settings.agent_top_p,
             max_iterations=settings.agent_max_iterations,
+            skill=skill,  # 传递路由到的 Skill
         )
 
         # 设置上下文文档（章节辅助阅读）
@@ -1220,9 +1241,9 @@ async def agent_chat(req: AgentRequest, http_request: Request):
                 agent.context_docs = req.context_docs
                 logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
         else:
-            # 创建新 Agent
+            # 创建新 Agent（传递 query 用于 Skill 路由）
             agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search, req.context_docs
+                req.index_id, req.enable_llm_tree_search, req.context_docs, req.query
             )
 
             # 尝试加载历史（如果有 session_id）
@@ -1339,9 +1360,9 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                 agent.context_docs = req.context_docs
                 logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
         else:
-            # 创建新 Agent
+            # 创建新 Agent（传递 query 用于 Skill 路由）
             agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search, req.context_docs
+                req.index_id, req.enable_llm_tree_search, req.context_docs, req.query
             )
 
             # 尝试加载历史（如果有 session_id）

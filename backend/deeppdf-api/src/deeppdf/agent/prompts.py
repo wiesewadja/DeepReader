@@ -665,13 +665,14 @@ class ToolCallData(TypedDict):
 # ========== 函数式 API ==========
 
 
-def build_system_prompt(tool_descriptions: str, version: int = 2) -> str:
+def build_system_prompt(tool_descriptions: str, version: int = 2, available_skills: Optional[str] = None) -> str:
     """
     构建 System Prompt
 
     Args:
         tool_descriptions: 工具描述字符串
         version: 提示词版本（1=旧版, 2=优化版，默认 2）
+        available_skills: 可用 Skills 列表描述（可选）
 
     Returns:
         完整的 System Prompt
@@ -679,7 +680,13 @@ def build_system_prompt(tool_descriptions: str, version: int = 2) -> str:
     builder = PromptBuilder(
         tool_descriptions=tool_descriptions, enable_few_shot=True, version=version
     )
-    return builder.build()
+    prompt = builder.build()
+
+    # 添加 Skills 列表信息（如果有）
+    if available_skills:
+        prompt += f"\n\n## 可用的阅读技能\n\n当用户询问你支持哪些技能时，你可以告诉他以下是我支持的阅读模式：\n\n{available_skills}"
+
+    return prompt
 
 
 def build_cross_book_prompt(tool_descriptions: str) -> str:
@@ -693,6 +700,56 @@ def build_cross_book_prompt(tool_descriptions: str) -> str:
         跨书籍模式的 System Prompt
     """
     return CROSS_BOOK_SYSTEM_PROMPT.format(tool_descriptions=tool_descriptions)
+
+
+def build_skill_system_prompt(
+    tool_descriptions: str,
+    skill_prompt: str,
+    version: int = 2,
+    available_skills: Optional[str] = None,
+) -> str:
+    """
+    构建 Skill 专属的 System Prompt
+
+    使用"组合合并"策略：将工具描述与 Skill Prompt 组合。
+
+    Args:
+        tool_descriptions: 工具描述字符串
+        skill_prompt: Skill 专属的 Prompt 内容
+        version: 基础模板版本（1=旧版, 2=优化版）
+        available_skills: 可用 Skills 列表描述（可选）
+
+    Returns:
+        完整的 Skill System Prompt
+    """
+    # 选择基础模板
+    if version == 2:
+        base_template = SYSTEM_PROMPT_TEMPLATE_V2
+        core_rules = CORE_RULES
+        # V2 模板使用 {core_rules} 占位符
+        base_prompt = base_template.format(
+            core_rules=core_rules,
+            tool_descriptions=tool_descriptions,
+        )
+    else:
+        base_template = SYSTEM_PROMPT_TEMPLATE
+        base_prompt = base_template.format(tool_descriptions=tool_descriptions)
+
+    # 组合合并：基础工具说明 + Skill 专属 Prompt
+    # 使用分隔符明确区分两部分
+    combined_prompt = f"""{tool_descriptions}
+
+---
+
+# 技能专属指令
+
+{skill_prompt}"""
+
+    # 添加 Skills 列表信息（如果有）
+    if available_skills:
+        combined_prompt += f"\n\n---\n\n## 可用的阅读技能\n\n当用户询问你支持哪些技能时，你可以告诉他以下是我支持的阅读模式：\n\n{available_skills}"
+
+    return combined_prompt
 
 
 def build_messages(
@@ -765,6 +822,7 @@ __all__ = [
     "ToolCallData",
     "build_system_prompt",
     "build_cross_book_prompt",
+    "build_skill_system_prompt",
     "build_messages",
     "validate_citation_format",
     "parse_thought_content",

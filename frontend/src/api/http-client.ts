@@ -311,6 +311,69 @@ export interface AgentStreamChunk {
   citations?: CitationInfo[];
 }
 
+// ==================== Skills 相关类型 ====================
+
+/**
+ * Skill 信息
+ */
+export interface SkillInfo {
+  name: string;
+  description: string;
+  tools?: string[];
+  keywords?: string[];
+  book_types?: string[];
+  is_builtin: boolean;
+  has_prompt: boolean;
+}
+
+/**
+ * Skills 列表响应
+ */
+export interface SkillListResponse {
+  skills: SkillInfo[];
+  total: number;
+  default_skill?: string;
+}
+
+/**
+ * Skill 详情
+ */
+export interface SkillDetail {
+  name: string;
+  description: string;
+  tools?: string[];
+  default_params?: Record<string, Record<string, unknown>>;
+  keywords?: string[];
+  book_types?: string[];
+  prompt_content?: string;
+  meta?: {
+    version?: string;
+    author?: string;
+    tags?: string[];
+  };
+  is_builtin: boolean;
+  source_path?: string;
+}
+
+/**
+ * Skill 路由请求
+ */
+export interface SkillRouteRequest {
+  query?: string;
+  book_type?: string;
+  skill_name?: string;
+}
+
+/**
+ * Skill 路由响应
+ */
+export interface SkillRouteResponse {
+  skill: SkillInfo;
+  match_type: 'manual' | 'book_type' | 'keyword' | 'default';
+  confidence: number;
+  matched_keywords?: string[];
+}
+
 // ==================== 跨书籍搜索相关类型 ====================
 
 /**
@@ -1144,6 +1207,65 @@ export class DeepPDFClient {
   async getBookSummary(indexId: string, regenerate: boolean = false): Promise<BookSummary> {
     return this.request<BookSummary>(`/api/reading/${indexId}/summary?regenerate=${regenerate}`, {
       method: 'GET'
+    });
+  }
+
+  // ==================== Skills API ====================
+
+  /**
+   * 获取所有可用的 Skills
+   */
+  async listSkills(): Promise<SkillListResponse> {
+    return this.request<SkillListResponse>('/api/skills', {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取内置 Skills 列表
+   */
+  async listBuiltinSkills(): Promise<SkillListResponse> {
+    return this.request<SkillListResponse>('/api/skills/builtin', {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取用户自定义 Skills 列表
+   */
+  async listUserSkills(): Promise<SkillListResponse> {
+    return this.request<SkillListResponse>('/api/skills/user', {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取 Skill 详情
+   */
+  async getSkillDetail(skillName: string): Promise<SkillDetail> {
+    return this.request<SkillDetail>(`/api/skills/${skillName}`, {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 路由到合适的 Skill
+   * @param request 路由请求参数
+   */
+  async routeSkill(request: SkillRouteRequest): Promise<SkillRouteResponse> {
+    return this.request<SkillRouteResponse>('/api/skills/route', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+  }
+
+  /**
+   * 重新加载所有 Skills
+   */
+  async reloadSkills(): Promise<{ success: boolean; message: string; skills: string[] }> {
+    return this.request<{ success: boolean; message: string; skills: string[] }>('/api/skills/reload', {
+      method: 'POST'
     });
   }
 

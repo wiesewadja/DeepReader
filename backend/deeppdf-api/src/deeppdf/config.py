@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     visual_density_threshold: float = 0.3
     visual_text_threshold: int = 50
 
+    # Skills 配置
+    user_skills_dir: Optional[str] = None  # 用户自定义 Skills 目录路径
+
     # Pydantic V2 配置
     model_config = ConfigDict(
         env_file=".env", case_sensitive=False, extra="ignore"  # 忽略额外的环境变量
