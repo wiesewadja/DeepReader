@@ -412,9 +412,10 @@ class SubAgentExecutor:
                 function = tool_call.function
                 tool_name = function.name
 
-                # 发送工具调用状态
-                tool_display_name = self._get_tool_display_name(tool_name)
-                yield f"🔧 {tool_display_name}...\n\n"
+                # 发送工具调用状态（使用前端识别的格式）
+                # 前端 parseAgentContent 识别的关键词：搜索中、分析中、整理中、查看中、阅读中、查目录
+                status_text = self._get_tool_status_text(tool_name)
+                yield f"\n{status_text}\n"
 
                 try:
                     args = json.loads(function.arguments)
@@ -449,19 +450,22 @@ class SubAgentExecutor:
         else:
             yield "\n\n⚠️ 达到最大搜索轮次，未能完成完整分析。请尝试简化您的问题。"
 
-    def _get_tool_display_name(self, tool_name: str) -> str:
+    def _get_tool_status_text(self, tool_name: str) -> str:
         """
-        获取工具的显示名称（用于状态更新）
+        获取工具的状态文本（用于前端状态显示）
+
+        前端 parseAgentContent 识别的关键词：
+        - 搜索中、分析中、整理中、查看中、阅读中、查目录
 
         Args:
             tool_name: 工具名称
 
         Returns:
-            用户友好的显示名称
+            前端可识别的状态文本
         """
-        tool_names = {
-            "inspect_toc": "查看目录结构",
-            "hybrid_search": "搜索相关内容",
-            "read_page": "阅读页面",
+        status_map = {
+            "inspect_toc": "🔍 *查目录中*",
+            "hybrid_search": "🔎 *搜索中*",
+            "read_page": "📖 *阅读中*",
         }
-        return tool_names.get(tool_name, f"调用 {tool_name}")
+        return status_map.get(tool_name, "⚙️ *处理中*")
