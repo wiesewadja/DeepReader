@@ -1323,7 +1323,7 @@ export class SidebarView extends ItemView {
             if (!isHealthy) {
                 this.isConnected = false;
                 this.indexManager?.setConnectionStatus('disconnected');
-                new Notice("后端未连接，请先启动后端服务");
+                new Notice("后端未连接，请先连接后端服务");
                 return;
             }
         } catch (e) {
