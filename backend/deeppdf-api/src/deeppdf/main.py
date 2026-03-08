@@ -19,8 +19,6 @@ from deeppdf.api.config_routes import router as config_router
 from deeppdf.api.file_routes import router as file_router
 from deeppdf.api.reading_routes import router as reading_router
 from deeppdf.api.routes import router
-from deeppdf.api.skills_routes import router as skills_router
-
 # 应用 nest_asyncio（PageIndex 需要）
 nest_asyncio.apply()
 
@@ -67,7 +65,6 @@ app.include_router(router)
 app.include_router(config_router)
 app.include_router(file_router)
 app.include_router(reading_router)
-app.include_router(skills_router)
 
 
 if __name__ == "__main__":
