@@ -31,7 +31,7 @@ _DEEPSEEK_INTERNAL_TAG_PATTERN = re.compile(
 )
 
 
-def _clean_deepseek_internal_tags(text: str) -> str:
+def _clean_deepseek_internal_tags(text: str, preserve_whitespace: bool = False) -> str:
     """
     清理 DeepSeek 模型的内部标签
 
@@ -40,11 +40,15 @@ def _clean_deepseek_internal_tags(text: str) -> str:
 
     Args:
         text: 原始文本
+        preserve_whitespace: 是否保留首尾空白（流式输出时需要）
 
     Returns:
         清理后的文本
     """
-    return _DEEPSEEK_INTERNAL_TAG_PATTERN.sub("", text).strip()
+    cleaned = _DEEPSEEK_INTERNAL_TAG_PATTERN.sub("", text)
+    if not preserve_whitespace:
+        cleaned = cleaned.strip()
+    return cleaned
 
 
 class SubAgentExecutor:
@@ -373,8 +377,10 @@ class SubAgentExecutor:
                     for chunk in stream_response:
                         if chunk.choices and chunk.choices[0].delta.content:
                             content = chunk.choices[0].delta.content
-                            # 清理 DeepSeek 内部标签
-                            content = _clean_deepseek_internal_tags(content)
+                            # 清理 DeepSeek 内部标签（保留空白，因为流式输出需要换行符）
+                            content = _clean_deepseek_internal_tags(
+                                content, preserve_whitespace=True
+                            )
                             if content:
                                 yield content
 
