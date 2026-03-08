@@ -488,3 +488,38 @@ async def _query_with_llm_tree_search(
 - [PageIndex 官方文档](https://docs.pageindex.ai)
 - [PageIndex Tree Search Tutorial](https://github.com/VectifyAI/PageIndex/tree/main/tutorials/tree-search)
 - [Vectorless RAG Notebook](https://github.com/VectifyAI/PageIndex/blob/main/cookbook/pageindex_RAG_simple.ipynb)
+
+---
+
+## 实现状态
+
+- [x] Task 1: 创建 LLM 树搜索核心模块
+- [x] Task 2: 实现树结构格式化函数
+- [x] Task 3: 实现 Prompt 构建函数
+- [x] Task 4: 实现 LLM 响应解析函数
+- [x] Task 5: 实现节点提取函数
+- [x] Task 6: 实现核心 LLM 树搜索函数
+- [x] Task 7: 扩展 API 模型
+- [x] Task 8: 修改 querier.py 添加 LLM 树搜索支持
+- [x] Task 9: 修改 API 路由
+- [x] Task 10: 集成测试
+- [x] Task 11: 最终验证和文档
+
+**实现完成日期**: 2026-03-08
+
+### 测试覆盖
+
+- 单元测试: 15 个测试 (`tests/test_llm_tree_search.py`)
+- 集成测试: 3 个测试 (`tests/test_llm_tree_search_integration.py`)
+- 总计: 18 个测试全部通过
+
+### 文件改动
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `services/llm_tree_search.py` | 新建 | LLM 树搜索核心模块 |
+| `services/querier.py` | 修改 | 添加 LLM 树搜索支持和降级逻辑 |
+| `api/models.py` | 修改 | 扩展 QueryRequest 和 QueryResponse |
+| `api/routes.py` | 修改 | 透传 use_llm_tree_search 参数 |
+| `tests/test_llm_tree_search.py` | 新建 | 单元测试 |
+| `tests/test_llm_tree_search_integration.py` | 新建 | 集成测试 |
