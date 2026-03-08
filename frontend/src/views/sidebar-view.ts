@@ -1317,9 +1317,17 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 检查后端连接状态
-        if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
+        // 实时检查后端连接状态（不依赖缓存的 isConnected）
+        try {
+            const isHealthy = await this.apiClient?.healthCheck();
+            if (!isHealthy) {
+                this.isConnected = false;
+                new Notice("后端未连接，请先启动后端服务");
+                return;
+            }
+        } catch (e) {
+            this.isConnected = false;
+            new Notice("后端连接失败，请检查后端服务");
             return;
         }
 
