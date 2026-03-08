@@ -554,13 +554,15 @@ async def generate_node_summary(node, llm_client=None):
     return response
 
 
-async def generate_summaries_for_structure(structure, llm_client=None):
+async def generate_summaries_for_structure(structure, llm_client=None, progress_callback=None, batch_size=5):
     """
-    为结构中的所有节点生成摘要
+    为结构中的所有节点生成摘要（带进度回调和批量并发控制）
 
     参数:
         structure: 树状结构
         llm_client: LLM 客户端
+        progress_callback: 进度回调函数 (current, total, message)
+        batch_size: 每批并发数（默认 5，避免 API 限流）
 
     返回:
         添加了 summary 字段的结构
@@ -575,12 +577,37 @@ async def generate_summaries_for_structure(structure, llm_client=None):
     from .structure.converter import structure_to_list
 
     nodes = structure_to_list(structure)
-    tasks = [generate_node_summary(node, llm_client=llm_client) for node in nodes]
-    summaries = await asyncio.gather(*tasks, return_exceptions=True)
+    total = len(nodes)
 
-    for node, summary in zip(nodes, summaries):
-        if not isinstance(summary, Exception):
-            node["summary"] = summary
+    if total == 0:
+        return structure
+
+    logger.info(f"[摘要生成] 共 {total} 个节点，批量大小: {batch_size}")
+
+    # 分批处理，避免 API 限流
+    completed = 0
+    for batch_start in range(0, total, batch_size):
+        batch_end = min(batch_start + batch_size, total)
+        batch_nodes = nodes[batch_start:batch_end]
+
+        # 并行处理当前批次
+        tasks = [generate_node_summary(node, llm_client=llm_client) for node in batch_nodes]
+        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for node, summary in zip(batch_nodes, summaries):
+            if not isinstance(summary, Exception):
+                node["summary"] = summary
+            else:
+                logger.warning(f"[摘要生成] 节点摘要失败: {summary}")
+
+        completed = batch_end
+
+        # 更新进度
+        if progress_callback:
+            progress_callback(completed, total, f"正在生成摘要 ({completed}/{total})")
+
+        logger.info(f"[摘要生成] 进度: {completed}/{total}")
+
     return structure
 
 

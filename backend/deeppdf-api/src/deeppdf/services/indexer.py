@@ -332,16 +332,25 @@ def _parse_pdf_structure(
     )
     logger.info(f"[{doc_type.upper()}解析] LLM 客户端: {llm_client is not None}")
 
+    # 创建内部进度回调，将 pageindex-lib 的进度映射到外部进度
+    # 注意：pageindex-lib 内部已经完成了进度映射，这里只需要透传
+    # 进度范围说明：
+    #   50-55%: 加载文档 (indexer.py 直接控制)
+    #   55-60%: 解析结构 (page_index.py 控制)
+    #   60-85%: 生成摘要 (page_index.py 控制，批量并行)
+    #   85-95%: 向量存储 (indexer.py 直接控制)
+    #   95-100%: 保存元数据 (indexer.py 直接控制)
+    def internal_progress_callback(step: str, percent: int, message: str):
+        if progress_callback:
+            # 直接透传进度，pageindex-lib 内部已完成映射
+            progress_callback(step, percent, message)
+
     # 更新进度：开始文档解析
     if progress_callback:
-        progress_callback("parsing_pdf", 55, f"正在提取 {doc_type.upper()} 页面...")
+        progress_callback("parsing_pdf", 50, f"正在加载 {doc_type.upper()} 文件...")
 
     try:
         logger.info(f"[{doc_type.upper()}解析] 即将调用 page_index_main...")
-
-        # 关键修复：在子线程中调用 page_index_main 时，需要确保没有残留的事件循环
-        # 我们使用 asyncio.run() 在一个全新的事件循环中运行，避免与主线程的事件循环冲突
-        # 注意：page_index_main 本身不是异步函数，但它内部会创建并运行异步代码
 
         # 首先检查当前线程是否有遗留的事件循环
         try:
@@ -355,9 +364,13 @@ def _parse_pdf_structure(
                 f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）"
             )
 
-        # 直接调用 page_index_main
-        # 它会使用 asyncio.run() 在新的事件循环中运行 page_index_builder
-        tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
+        # 调用 page_index_main 并传递进度回调
+        tree_result = page_index_main(
+            str(pdf_path),
+            opt=opt,
+            llm_client=llm_client,
+            progress_callback=internal_progress_callback
+        )
         logger.info(f"[{doc_type.upper()}解析] page_index_main 返回")
 
     except Exception as e:
@@ -375,9 +388,9 @@ def _parse_pdf_structure(
         f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)"
     )
 
-    # 更新进度：文档解析完成，正在生成摘要
-    if progress_callback and config.get("if_add_node_summary"):
-        progress_callback("generating_summaries", 65, "正在生成章节摘要...")
+    # 更新进度：解析完成
+    if progress_callback:
+        progress_callback("parse_complete", 85, f"{doc_type.upper()} 结构解析完成")
 
     if not tree_result:
         logger.error(f"[{doc_type.upper()}解析] PageIndex 返回 None")

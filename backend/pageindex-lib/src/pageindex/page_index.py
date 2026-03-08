@@ -2141,7 +2141,7 @@ def save_result(result: dict, pdf_path: str) -> str:
     return result_filepath
 
 
-def page_index_main(doc, opt=None, llm_client=None):
+def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
     """
     主入口：生成文档索引
 
@@ -2151,6 +2151,7 @@ def page_index_main(doc, opt=None, llm_client=None):
         doc: 文档文件路径（.pdf 或 .epub）
         opt: 配置对象
         llm_client: LLM 客户端（可选）
+        progress_callback: 进度回调函数 (step, percent, message) （可选）
 
     返回:
         包含 doc_name 和 structure 的字典
@@ -2292,10 +2293,23 @@ def page_index_main(doc, opt=None, llm_client=None):
 
     async def page_index_builder():
         logging.debug("[DEBUG] page_index_builder async function started")
-        # 解析 PDF 结构
+
+        # 辅助函数：安全调用进度回调
+        def update_progress(step, percent, message):
+            if progress_callback:
+                try:
+                    progress_callback(step, percent, message)
+                except Exception as e:
+                    logger.warning(f"[进度回调] 调用失败: {e}")
+
+        # 解析 PDF 结构 (55-60%)
+        update_progress("parsing_structure", 55, "正在解析文档结构...")
         logging.debug("[DEBUG] About to call tree_parser")
         structure = await tree_parser(page_list, opt, doc=doc, logger=logger, llm_client=llm_client)
         logging.debug(f"[DEBUG] tree_parser returned, structure length: {len(structure) if structure else 0}")
+
+        # 结构解析完成，更新到 60%
+        update_progress("structure_parsed", 60, "文档结构解析完成")
 
         if not structure:
             logger.error("[PageIndex] structure 为空")
@@ -2312,6 +2326,7 @@ def page_index_main(doc, opt=None, llm_client=None):
         logger.info(f"[PageIndex] 配置: add_node_id={add_node_id}, add_node_text={add_node_text_config}, add_node_summary={add_node_summary_config}")
 
         # 步骤 1: 添加节点 ID
+        update_progress("adding_ids", 60, "正在添加节点 ID...")
         if add_node_id:
             write_node_id(structure)
             logger.info("[PageIndex] ✓ 节点 ID 已添加")
@@ -2327,15 +2342,36 @@ def page_index_main(doc, opt=None, llm_client=None):
 
         # 添加文本（如果需要）
         if add_node_text_config:
+            update_progress("adding_text", 62, "正在添加节点文本...")
             logger.info("[PageIndex] 添加带物理页码标记的文本")
             add_node_text_with_labels(structure, page_list)
             logger.info("[PageIndex] ✓ 节点文本已添加（含 <physical_index_N> 标记）")
 
-        # 生成摘要
+        # 生成摘要（带进度回调，60-85%）
         if add_node_summary_config:
             logger.info(f"[PageIndex] 开始生成摘要 (llm_client={'None' if llm_client is None else 'available'})")
-            await generate_summaries_for_structure(structure, llm_client=llm_client)
+
+            # 创建摘要进度回调包装器，将进度映射到 60-85%
+            def summary_progress_callback(current, total, message):
+                # 将摘要进度 (0-100%) 映射到 60-85% 的范围
+                base_percent = 60
+                range_percent = 25  # 60-85
+                if total > 0:
+                    ratio = current / total
+                else:
+                    ratio = 0
+                percent = base_percent + int(ratio * range_percent)
+                update_progress("generating_summaries", percent, f"{message} ({current}/{total})")
+
+            await generate_summaries_for_structure(
+                structure,
+                llm_client=llm_client,
+                progress_callback=summary_progress_callback
+            )
             logger.info("[PageIndex] ✓ 摘要生成完成")
+
+            # 摘要完成，更新到 85%
+            update_progress("summaries_complete", 85, "摘要生成完成")
 
             # 验证摘要是否添加成功
             first_node = structure[0] if structure else None
