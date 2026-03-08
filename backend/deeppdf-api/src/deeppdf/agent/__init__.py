@@ -7,7 +7,6 @@ from .executor import ToolExecutor, create_tool_executor
 from .prompts import (
     SYSTEM_PROMPT_TEMPLATE,
     FEW_SHOT_EXAMPLES,
-    DECISION_RULES,
     PromptBuilder,
     RouteDecision,
     ToolCallData,
@@ -27,7 +26,6 @@ __all__ = [
     "SubAgentExecutor",
     "SYSTEM_PROMPT_TEMPLATE",
     "FEW_SHOT_EXAMPLES",
-    "DECISION_RULES",
     "PromptBuilder",
     "RouteDecision",
     "ToolCallData",

@@ -52,7 +52,12 @@ from .export_models import (
     FormatTextRequest,
     FormatTextResponse,
 )
-from .export_handlers import export_index_data, export_cover_data, format_text_with_llm, format_single_text
+from .export_handlers import (
+    export_index_data,
+    export_cover_data,
+    format_text_with_llm,
+    format_single_text,
+)
 from ..services.indexer import index_pdf
 from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
@@ -1131,6 +1136,7 @@ async def _load_agent_for_request(
                 # LLM 客户端不可用，回退到纯关键词路由
                 logger.warning(f"[Skill路由] LLM 客户端不可用，使用关键词路由: {e}")
                 from ..skills import SkillRouter
+
                 skill_router = SkillRouter(registry)
                 routing_result = skill_router.route(query=query)
 
@@ -1411,11 +1417,14 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                     # LLM 不可用，使用关键词路由（仍然传递 current_skill）
                     logger.warning(f"[Skill路由] LLM 不可用，使用关键词路由: {e}")
                     from ..skills import SkillRouter
+
                     skill_router = SkillRouter(registry)
                     routing_result = skill_router.route(query=req.query)
 
                 # 如果路由结果变化，更新 Agent 的 Skill
-                new_skill_name = routing_result.skill.name if routing_result.skill else None
+                new_skill_name = (
+                    routing_result.skill.name if routing_result.skill else None
+                )
                 if new_skill_name != current_skill_name:
                     logger.info(
                         f"🔄 [Skill切换] {current_skill_name or 'default'} → {new_skill_name}"
@@ -1424,6 +1433,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                         agent.skill = routing_result.skill
                         # 更新 System Prompt
                         from ..agent.prompts import build_skill_system_prompt
+
                         agent.system_prompt = build_skill_system_prompt(
                             tool_descriptions=agent.executor.get_tool_descriptions(),
                             skill_prompt=routing_result.skill.prompt_content or "",
@@ -1431,7 +1441,9 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                         )
                         logger.info("   📝 已更新 System Prompt")
                 else:
-                    logger.info(f"🎯 [Skill保持] 继续使用 {current_skill_name or 'default'}")
+                    logger.info(
+                        f"🎯 [Skill保持] 继续使用 {current_skill_name or 'default'}"
+                    )
         else:
             # 创建新 Agent（传递 query 用于 Skill 路由）
             agent = await _load_agent_for_request(
@@ -1453,7 +1465,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
                 logger.info("💬 [会话管理] 创建临时 Agent（无会话ID）")
 
         # 2. 记录本次回答使用的 Skill
-        if hasattr(agent, 'skill') and agent.skill:
+        if hasattr(agent, "skill") and agent.skill:
             skill = agent.skill
             logger.info("=" * 60)
             logger.info(f"🎯 [当前 Skill] {skill.name}")
