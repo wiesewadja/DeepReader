@@ -109,6 +109,10 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="查询文本")
     index_id: str = Field(..., description="索引 ID")
     max_results: Optional[int] = Field(10, description="最大结果数")
+    use_llm_tree_search: bool = Field(
+        False,
+        description="是否使用 LLM 树搜索（深度思考模式）"
+    )
 
 
 # ========== 响应模型 ==========
@@ -141,6 +145,9 @@ class QueryResponse(BaseModel):
     error: Optional[str] = None
     index_info: Optional[dict] = None
     search_method: Optional[str] = None
+    thinking: Optional[str] = None           # 新增: LLM 推理过程
+    fallback: Optional[bool] = None          # 新增: 是否发生降级
+    fallback_reason: Optional[str] = None    # 新增: 降级原因
 
 
 class IndexListItem(BaseModel):
