@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         8000  # 用户查询最大字符长度（启发式，约等于 4K-6K tokens）
     )
 
+    # Agent 历史记录配置
+    agent_max_history_turns: int = 15  # 保留完整对话的最大轮数
+    agent_history_compress_threshold: int = 5  # 超过 max_history_turns 后累积多少轮触发摘要压缩
+
     # DeepSeek OCR 配置
     deepseek_ocr_api_key: Optional[str] = None
     deepseek_ocr_base_url: str = "https://api.siliconflow.cn/v1"

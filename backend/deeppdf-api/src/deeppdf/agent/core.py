@@ -63,6 +63,149 @@ def clean_deepseek_internal_tags(text: str) -> str:
     return DEEPSEEK_INTERNAL_TAG_PATTERN.sub("", text).strip()
 
 
+# ========== 历史记录摘要函数 ==========
+
+
+# 摘要消息的内部标记
+_SUMMARY_MARKER = "_is_history_summary"
+
+
+def _is_summary_message(msg: Dict[str, Any]) -> bool:
+    """检查消息是否是历史摘要"""
+    return msg.get(_SUMMARY_MARKER, False) or msg.get("role") == "user" and msg.get("content", "").startswith("[历史对话摘要]")
+
+
+def _summarize_history_turns(
+    messages: List[Dict[str, Any]],
+    client: OpenAI,
+    model: str,
+) -> str:
+    """
+    将历史消息压缩成摘要
+
+    Args:
+        messages: 要压缩的消息列表（通常是 5 轮对话 = 10 条消息）
+        client: OpenAI 客户端
+        model: 模型名称
+
+    Returns:
+        摘要文本
+    """
+    # 构建摘要提示
+    history_text = ""
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if role == "user":
+            history_text += f"用户: {content}\n"
+        elif role == "assistant":
+            history_text += f"助手: {content[:500]}...\n" if len(content) > 500 else f"助手: {content}\n"
+
+    summary_prompt = f"""请将以下对话历史压缩成一段简洁的摘要，保留关键信息、用户关注点和重要结论。
+
+对话历史:
+{history_text}
+
+要求:
+1. 保留用户的核心问题和关注点
+2. 保留助手提供的关键信息和结论
+3. 使用第三人称叙述
+4. 控制在 200 字以内
+5. 直接输出摘要内容，不要有其他说明"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": summary_prompt}],
+            max_tokens=300,
+            temperature=0.3,
+        )
+        summary = response.choices[0].message.content or "历史对话摘要生成失败"
+        return summary.strip()
+    except Exception as e:
+        logger.error(f"[历史摘要] 生成失败: {e}")
+        # 降级：返回简化的摘要
+        return f"前几轮对话涉及{len(messages)//2}个问题，详情请参考完整历史。"
+
+
+def _compress_session_history(
+    session_history: List[Dict[str, Any]],
+    client: OpenAI,
+    model: str,
+    max_turns: int = 15,
+    compress_count: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    压缩会话历史（滑动窗口 + 摘要）
+
+    当历史记录超过 max_turns + compress_count 时，将前面的 compress_count 轮
+    压缩成一条摘要消息。
+
+    Args:
+        session_history: 当前会话历史
+        client: OpenAI 客户端
+        model: 模型名称
+        max_turns: 保留完整对话的最大轮数
+        compress_count: 每次压缩的轮数
+
+    Returns:
+        压缩后的会话历史
+    """
+    # 计算当前轮数（每轮 = user + assistant 两条消息）
+    # 摘要消息算 1 条，但代表多轮
+    current_count = len(session_history)
+
+    # 触发阈值：max_turns 对应的消息数 + compress_count 对应的消息数
+    # 例如: 15轮 = 30条消息，5轮 = 10条消息，阈值 = 40条
+    threshold = (max_turns * 2) + (compress_count * 2)
+
+    if current_count <= threshold:
+        return session_history
+
+    logger.info(
+        f"[历史压缩] 触发压缩: 当前 {current_count} 条消息 > 阈值 {threshold} 条"
+    )
+
+    # 找到要压缩的消息
+    # 如果第一条是摘要，需要合并到新摘要中
+    messages_to_compress = []
+    start_index = 0
+
+    # 检查第一条是否是摘要
+    if session_history and _is_summary_message(session_history[0]):
+        # 将旧摘要也纳入压缩范围
+        messages_to_compress.append(session_history[0])
+        start_index = 1
+        logger.debug("[历史压缩] 检测到旧摘要，将合并压缩")
+
+    # 收集要压缩的对话（compress_count 轮 = compress_count * 2 条消息）
+    remaining_to_compress = compress_count * 2
+    while start_index < len(session_history) and remaining_to_compress > 0:
+        messages_to_compress.append(session_history[start_index])
+        remaining_to_compress -= 1
+        start_index += 1
+
+    # 生成摘要
+    logger.info(f"[历史压缩] 压缩 {len(messages_to_compress)} 条消息")
+    summary_text = _summarize_history_turns(messages_to_compress, client, model)
+
+    # 创建摘要消息
+    summary_message = {
+        "role": "user",
+        "content": f"[历史对话摘要]\n\n{summary_text}",
+        _SUMMARY_MARKER: True,  # 内部标记
+    }
+
+    # 构建新的历史：摘要 + 剩余对话
+    new_history = [summary_message] + session_history[start_index:]
+
+    logger.info(
+        f"[历史压缩] 完成: {current_count} 条 → {len(new_history)} 条 (压缩了 {current_count - len(new_history)} 条)"
+    )
+
+    return new_history
+
+
 # ========== 思考状态枚举 ==========
 
 
@@ -520,6 +663,48 @@ class DeepPDFAgent:
             # 默认: 无参数
             return {"type": "object", "properties": {}}
 
+    def _save_to_history(
+        self, user_query: str, assistant_answer: str, mode: str = "normal"
+    ) -> None:
+        """
+        保存对话到会话历史，并自动触发历史压缩
+
+        Args:
+            user_query: 用户查询
+            assistant_answer: 助手回答
+            mode: 模式标记（用于日志，如 "normal", "Skill", "最大迭代"）
+        """
+        # 保存用户查询和助手回答
+        self.session_history.append({"role": "user", "content": user_query})
+        self.session_history.append({"role": "assistant", "content": assistant_answer})
+
+        current_count = len(self.session_history)
+        logger.info(f"💾 [会话历史] 已保存本轮对话 ({mode}模式), 当前共 {current_count} 条消息")
+
+        # 检查是否需要压缩历史
+        max_turns = settings.agent_max_history_turns
+        compress_threshold = settings.agent_history_compress_threshold
+        trigger_threshold = max_turns + compress_threshold
+
+        # 历史条数 = 轮数 * 2（每轮有 user + assistant 两条）
+        # 所以触发阈值 = (max_turns + compress_threshold) * 2
+        trigger_count = trigger_threshold * 2
+
+        if current_count > trigger_count:
+            logger.info(
+                f"🗜️ [历史压缩] 触发压缩: {current_count} 条 > {trigger_count} 条 "
+                f"(保留 {max_turns} 轮 + {compress_threshold} 轮缓冲)"
+            )
+            # 调用压缩函数
+            self.session_history = _compress_session_history(
+                session_history=self.session_history,
+                max_turns=max_turns,
+                compress_count=compress_threshold,
+                client=self.client,
+                model=self.llm_model,
+            )
+            logger.info(f"✅ [历史压缩] 压缩后: {len(self.session_history)} 条消息")
+
     def _build_messages(self) -> List[Dict[str, Any]]:
         """
         构建对话消息列表
@@ -739,11 +924,7 @@ class DeepPDFAgent:
 
                 # 保存会话历史（支持多轮对话）
                 if keep_history:
-                    self.session_history.append({"role": "user", "content": query})
-                    self.session_history.append(
-                        {"role": "assistant", "content": answer}
-                    )
-                    logger.info("💾 [会话历史] 已保存本轮对话")
+                    self._save_to_history(query, answer, mode="normal")
 
                 # 清空当前轮次历史
                 self.current_turn_history.clear()
@@ -795,9 +976,7 @@ class DeepPDFAgent:
 
         # 保存会话历史（支持多轮对话）
         if keep_history:
-            self.session_history.append({"role": "user", "content": query})
-            self.session_history.append({"role": "assistant", "content": final_answer})
-            logger.info("💾 [会话历史] 已保存本轮对话 (最大迭代)")
+            self._save_to_history(query, final_answer, mode="最大迭代")
 
         # 清空当前轮次历史
         self.current_turn_history.clear()
@@ -889,11 +1068,7 @@ class DeepPDFAgent:
 
                 # 保存会话历史
                 if keep_history:
-                    self.session_history.append({"role": "user", "content": query})
-                    self.session_history.append(
-                        {"role": "assistant", "content": full_response}
-                    )
-                    logger.info("💾 [会话历史] 已保存本轮对话 (Skill 模式)")
+                    self._save_to_history(query, full_response, mode="Skill")
 
                 # 清空当前轮次历史
                 self.current_turn_history.clear()
@@ -1201,16 +1376,7 @@ class DeepPDFAgent:
 
                     # 保存本轮对话到会话历史（支持多轮对话）
                     if keep_history:
-                        # 保存用户查询
-                        self.session_history.append({"role": "user", "content": query})
-                        # 保存助手回答
-                        self.session_history.append(
-                            {"role": "assistant", "content": content_text}
-                        )
-                        logger.info("💾 [会话历史] 已保存本轮对话")
-                        logger.info(
-                            f"💾 [会话历史] 当前共有 {len(self.session_history)} 条消息"
-                        )
+                        self._save_to_history(query, content_text)
 
                     # 清空当前轮次历史
                     self.current_turn_history.clear()
@@ -1256,11 +1422,7 @@ class DeepPDFAgent:
             # 保存会话历史
             if keep_history:
                 final_answer = "".join(final_content_buffer)
-                self.session_history.append({"role": "user", "content": query})
-                self.session_history.append(
-                    {"role": "assistant", "content": final_answer}
-                )
-                logger.info("💾 [会话历史] 已保存本轮对话 (最大迭代)")
+                self._save_to_history(query, final_answer, mode="最大迭代")
         finally:
             # 确保思考标签闭合
             yield from self._flush_thought_tag(thought_state)
