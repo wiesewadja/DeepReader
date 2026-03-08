@@ -62,3 +62,72 @@ TREE_SEARCH_PROMPT = """你是一个专业的文档检索助手。你的任务�
 - 如果父章节的摘要已经涵盖了问题内容，也可以选择父章节
 - node_id 必须是目录结构中存在的值
 """
+
+
+def format_tree_structure(
+    tree_structure: Dict[str, Any],
+    indent: int = 0,
+    max_text_length: int = 150,
+) -> str:
+    """
+    将树结构格式化为可读的文本格式
+
+    Args:
+        tree_structure: PageIndex 生成的树结构（可能是 dict 或 list）
+        indent: 缩进级别
+        max_text_length: 摘要最大长度
+
+    Returns:
+        格式化后的文本
+
+    输出示例:
+    ├── 第一章 投资入门 (node_id: 0001)
+    │   摘要: 介绍投资的基本概念...
+    │   ├── 1.1 什么是投资 (node_id: 0002)
+    │   │   摘要: 投资的定义和分类...
+    """
+    lines = []
+
+    # 处理 structure 字段（PageIndex 返回的是 {"structure": [...]} 格式）
+    if isinstance(tree_structure, dict):
+        nodes = tree_structure.get("structure", [])
+    elif isinstance(tree_structure, list):
+        nodes = tree_structure
+    else:
+        return ""
+
+    for i, node in enumerate(nodes):
+        if not isinstance(node, dict):
+            continue
+
+        title = node.get("title", "未知章节")
+        node_id = node.get("node_id", "")
+        summary = node.get("summary", "")
+
+        # 构建当前行的缩进和符号
+        current_prefix = "    " * indent
+        current_prefix += "├── " if i < len(nodes) - 1 else "└── "
+
+        # 添加标题行
+        lines.append(f"{current_prefix}{title} (node_id: {node_id})")
+
+        # 添加摘要（如果有）
+        if summary:
+            truncated_summary = (
+                summary[:max_text_length] + "..." if len(summary) > max_text_length else summary
+            )
+            summary_prefix = "    " * (indent + 1) + "摘要: "
+            lines.append(f"{summary_prefix}{truncated_summary}")
+
+        # 递归处理子节点
+        children = node.get("nodes", [])
+        if children:
+            child_text = format_tree_structure(
+                {"structure": children},
+                indent=indent + 1,
+                max_text_length=max_text_length,
+            )
+            if child_text:
+                lines.append(child_text)
+
+    return "\n".join(lines)
