@@ -3,6 +3,17 @@
 Skills 数据模型定义
 
 使用 Pydantic 定义 Skill 的结构化数据模型。
+
+设计哲学:
+    Skill 是知识，不是配置
+    - 知识告诉模型"怎么做"（通过 prompt_content）
+    - 工具让模型自己选择（不限制可用工具）
+    - 参数让模型自己填写（不预设默认参数）
+
+    这样设计的好处:
+    1. Skill 更轻量，专注于传递领域知识
+    2. 模型有更大的自主权，可以根据实际情况灵活选择工具和参数
+    3. 减少"配置地狱"，让 Skill 更易于编写和维护
 """
 
 from typing import Optional, List, Dict, Any
@@ -24,22 +35,20 @@ class Skill(BaseModel):
     Skill 定义模型
 
     对应一个 Markdown + YAML frontmatter 格式的 skill 文件。
+
+    核心设计: Skill 是知识载体，不是工具配置
+    - 移除了 tools 字段: 让模型根据 prompt_content 自主选择合适的工具
+    - 移除了 default_params 字段: 让模型根据上下文自主决定参数值
     """
 
     # 必填字段
     name: str = Field(..., description="Skill 唯一标识符，如 academic-reading")
     description: str = Field(..., description="Skill 简短描述")
 
-    # 工具配置
-    tools: Optional[List[str]] = Field(
+    # Prompt 内容（Markdown body 部分）- Skill 的核心
+    prompt_content: Optional[str] = Field(
         default=None,
-        description="允许使用的工具列表，None 表示使用所有工具",
-    )
-
-    # 默认参数
-    default_params: Optional[Dict[str, Dict[str, Any]]] = Field(
-        default=None,
-        description="工具默认参数配置，如 {'hybrid_search': {'top_k': 10}}",
+        description="Skill 专属的 Prompt 内容（Markdown 格式），告诉模型'怎么做'",
     )
 
     # 自动路由相关
@@ -50,12 +59,6 @@ class Skill(BaseModel):
     book_types: Optional[List[str]] = Field(
         default=None,
         description="适用的书籍类型列表，如 ['academic_paper', 'fiction']",
-    )
-
-    # Prompt 内容（Markdown body 部分）
-    prompt_content: Optional[str] = Field(
-        default=None,
-        description="Skill 专属的 Prompt 内容（Markdown 格式）",
     )
 
     # 元数据
