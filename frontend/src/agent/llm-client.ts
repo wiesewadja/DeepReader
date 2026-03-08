@@ -150,9 +150,8 @@ export class LLMClient {
                   }
                 }
               }
-            } catch (parseError) {
-              // 忽略解析错误，继续处理下一个 chunk
-              console.warn('Error parsing stream chunk:', parseError);
+            } catch {
+              // 忽略解析错误，继续处理下一个 chunk（SSE chunk 边界问题）
             }
           }
         }
@@ -164,7 +163,6 @@ export class LLMClient {
           );
           if (toolCalls.length > 0) {
             callbacks.onToolCall(toolCalls);
-            finishReason = 'tool_calls';
           }
         }
 
@@ -174,7 +172,14 @@ export class LLMClient {
           // 请求被取消，正常情况，不视为错误
           return controller;
         }
-        throw readError;
+        callbacks.onError(readError instanceof Error ? readError.message : 'Stream read error');
+      } finally {
+        // 确保 reader 被释放
+        try {
+          reader.cancel();
+        } catch {
+          // ignore
+        }
       }
     } catch (error) {
       const errorMessage =
