@@ -131,3 +131,31 @@ def format_tree_structure(
                 lines.append(child_text)
 
     return "\n".join(lines)
+
+
+def build_tree_prompt(
+    tree_structure: Dict[str, Any],
+    query: str,
+    doc_name: str = "",
+    max_results: int = 5,
+) -> str:
+    """
+    构建带层级路径的 Prompt
+
+    Args:
+        tree_structure: PageIndex 生成的树结构
+        query: 用户查询
+        doc_name: 文档名称
+        max_results: 最大返回节点数
+
+    Returns:
+        完整的 Prompt 字符串
+    """
+    tree_text = format_tree_structure(tree_structure)
+
+    return TREE_SEARCH_PROMPT.format(
+        doc_name=doc_name or "未知文档",
+        tree_structure_text=tree_text,
+        query=query,
+        max_results=max_results,
+    )
