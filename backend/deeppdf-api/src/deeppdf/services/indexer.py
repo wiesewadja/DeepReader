@@ -19,7 +19,7 @@ from pageindex.core import ConfigLoader
 from pageindex.llm import UnifiedLLM, get_provider
 
 # 导入存储模块
-from deeppdf.storage.chroma_store import ChromaStore
+from deeppdf.storage.chroma_store import get_chroma_store
 
 # 导入配置
 from deeppdf.config import settings
@@ -108,7 +108,9 @@ def _extract_nodes_from_tree(
             original_text_formatted = node_text.strip()
             if formatter:
                 try:
-                    original_text_formatted = formatter.format(original_text_formatted, doc_type)
+                    original_text_formatted = formatter.format(
+                        original_text_formatted, doc_type
+                    )
                 except Exception:
                     pass  # 格式化失败时使用原文
             node_metadata["original_text"] = original_text_formatted
@@ -420,7 +422,7 @@ def _store_to_chromadb(
     logger.info(f"[向量存储] ChromaDB 目录: {chroma_dir}")
 
     vector_start = time.time()
-    store = ChromaStore(persist_directory=str(chroma_dir))
+    store = get_chroma_store(persist_directory=str(chroma_dir))
 
     # 创建集合
     logger.info(f"[向量存储] 创建集合: {index_id}")

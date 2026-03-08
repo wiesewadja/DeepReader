@@ -9,12 +9,80 @@ from pathlib import Path
 from typing import Dict, Any
 
 # 导入存储模块
-from deeppdf.storage.chroma_store import ChromaStore
+from deeppdf.storage.chroma_store import get_chroma_store
 
 # 导入智能检索
 from .smart_search import hybrid_search
 
+# 导入缓存工具
+from deeppdf.utils.cache import TTLCache
+
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 索引元数据缓存（TTL 5分钟，最多缓存 50 个索引）
+# ============================================================
+_index_metadata_cache: TTLCache[str, Dict[str, Any]] = TTLCache(
+    ttl_seconds=300.0,  # 5 分钟 TTL
+    max_size=50,
+)
+
+
+def get_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
+    """
+    获取索引元数据（带缓存）
+
+    使用 TTLCache 缓存索引元数据，避免每次查询都从磁盘读取。
+
+    Args:
+        storage_dir: 存储目录
+        index_id: 索引 ID
+
+    Returns:
+        索引元数据字典
+    """
+    # 生成缓存键
+    cache_key = f"{storage_dir}:{index_id}"
+
+    # 检查缓存
+    cached = _index_metadata_cache.get(cache_key)
+    if cached is not None:
+        logger.debug(f"[元数据缓存] 命中: {index_id}")
+        return cached
+
+    # 缓存未命中，从磁盘加载
+    logger.debug(f"[元数据缓存] 未命中，从磁盘加载: {index_id}")
+    metadata = _load_index_metadata_from_disk(storage_dir, index_id)
+
+    # 存入缓存
+    if metadata:
+        _index_metadata_cache.set(cache_key, metadata)
+
+    return metadata
+
+
+def invalidate_index_metadata(storage_dir: Path, index_id: str) -> bool:
+    """
+    使索引元数据缓存失效
+
+    当索引更新或删除时调用此函数。
+
+    Args:
+        storage_dir: 存储目录
+        index_id: 索引 ID
+
+    Returns:
+        是否成功删除缓存
+    """
+    cache_key = f"{storage_dir}:{index_id}"
+    return _index_metadata_cache.delete(cache_key)
+
+
+def clear_metadata_cache() -> None:
+    """清空所有元数据缓存"""
+    _index_metadata_cache.clear()
+    logger.info("[元数据缓存] 已清空")
 
 
 def _query_pdf_sync(
@@ -31,11 +99,12 @@ def _query_pdf_sync(
     )
 
     try:
-        # 初始化存储
+        # 初始化存储（使用缓存）
         storage_dir_path = Path(storage_dir)
         chroma_dir = storage_dir_path / "chroma"
 
-        store = ChromaStore(persist_directory=str(chroma_dir))
+        # 使用带缓存的 ChromaStore 获取方法
+        store = get_chroma_store(persist_directory=str(chroma_dir))
 
         # 检查集合是否存在
         collections = store.list_collections()
@@ -76,8 +145,8 @@ def _query_pdf_sync(
 
         logger.info(f"[查询] 返回 {len(formatted_results)} 个结果")
 
-        # 加载索引元数据（包含 tree_structure）
-        index_metadata = _load_index_metadata(storage_dir_path, index_id)
+        # 加载索引元数据（包含 tree_structure）- 使用带缓存的版本
+        index_metadata = get_index_metadata(storage_dir_path, index_id)
 
         # 使用智能检索
         logger.info("[智能检索] 启动混合检索...")
@@ -141,9 +210,11 @@ def _query_pdf_sync(
         return {"status": "error", "error": f"Query failed: {str(e)}"}
 
 
-def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
+def _load_index_metadata_from_disk(storage_dir: Path, index_id: str) -> Dict[str, Any]:
     """
-    加载索引元数据（包含完整的 tree_structure 和 markdown_files）
+    从磁盘加载索引元数据（包含完整的 tree_structure 和 markdown_files）
+
+    注意：这是内部函数，请使用 get_index_metadata() 获取带缓存的元数据。
     """
     metadata_path = storage_dir / "indexes" / f"{index_id}.json"
 
@@ -166,6 +237,10 @@ def _load_index_metadata(storage_dir: Path, index_id: str) -> Dict[str, Any]:
             }
 
     return {}
+
+
+# 保留旧函数名作为别名（向后兼容）
+_load_index_metadata = _load_index_metadata_from_disk
 
 
 async def query_pdf(

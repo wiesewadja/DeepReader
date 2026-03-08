@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from deeppdf.storage.chroma_store import ChromaStore
+from deeppdf.storage.chroma_store import get_chroma_store
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ def cross_book_search(
             "total_results": 0,
         }
 
-    # 初始化 ChromaStore
-    store = ChromaStore(persist_directory=str(chroma_dir))
+    # 初始化 ChromaStore（使用缓存）
+    store = get_chroma_store(persist_directory=str(chroma_dir))
 
     all_results = []
     books_searched = 0

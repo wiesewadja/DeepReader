@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 # 导入存储模块
-from deeppdf.storage.chroma_store import ChromaStore
+from deeppdf.storage.chroma_store import get_chroma_store
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def _delete_index_sync(index_id: str, storage_dir: str) -> Dict[str, Any]:
         chroma_dir = storage_dir_path / "chroma"
         if chroma_dir.exists():
             try:
-                store = ChromaStore(persist_directory=str(chroma_dir))
+                store = get_chroma_store(persist_directory=str(chroma_dir))
                 store.delete_collection(index_id)
             except Exception:
                 # 如果集合不存在，继续执行（幂等操作）
