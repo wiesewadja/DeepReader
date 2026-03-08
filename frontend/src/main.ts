@@ -22,6 +22,8 @@ interface DeepPDFSettings {
     lastCrossBookSessionId: string;  // 跨书籍模式的会话ID
     chatCache?: Record<string, any>;  // 对话缓存
     enableDebugLog: boolean;  // 是否启用调试日志
+    // 深度思考模式（LLM 树搜索）
+    lastDeepSearchMode: boolean;  // 上次是否启用深度思考模式
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -39,7 +41,8 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     forceMode: "auto",  // 默认使用自动路由
     lastCrossBookMode: false,  // 默认不启用跨书籍模式
     lastCrossBookSessionId: "",  // 跨书籍会话ID
-    enableDebugLog: false  // 默认关闭调试日志
+    enableDebugLog: false,  // 默认关闭调试日志
+    lastDeepSearchMode: false  // 默认不启用深度思考模式
 };
 
 export default class DeepPDFPlugin extends Plugin {

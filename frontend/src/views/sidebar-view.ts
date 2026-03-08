@@ -88,6 +88,7 @@ export class SidebarView extends ItemView {
     private isConnected: boolean = false;  // 后端连接状态
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
+    private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
@@ -1067,6 +1068,10 @@ export class SidebarView extends ItemView {
             onModeToggle: () => {
                 this.toggleSearchMode();
             },
+            deepSearchMode: this.useLLMTreeSearch,
+            onDeepSearchToggle: () => {
+                this.toggleDeepSearchMode();
+            },
             app: this.app,
             onStop: () => {
                 this.stopGeneration();
@@ -1227,6 +1232,21 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 切换深度思考模式
+     */
+    public async toggleDeepSearchMode(): Promise<void> {
+        this.useLLMTreeSearch = !this.useLLMTreeSearch;
+        const modeText = this.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
+        new Notice(modeText);
+        log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
+        // 同步更新按钮状态
+        this.chatInput?.setDeepSearchMode(this.useLLMTreeSearch);
+        // 持久化设置
+        this.plugin.settings.lastDeepSearchMode = this.useLLMTreeSearch;
+        await this.plugin.saveSettings();
+    }
+
+    /**
      * 恢复跨书籍模式状态
      */
     private async restoreCrossBookMode() {
@@ -1244,6 +1264,14 @@ export class SidebarView extends ItemView {
             this.chatInput?.setSearchMode('cross');
             this.indexManager?.setCrossBookMode(true);
             await this.loadCrossBookSession();
+        }
+
+        // 恢复深度思考模式状态
+        const wasDeepSearchMode = this.plugin.settings.lastDeepSearchMode;
+        if (wasDeepSearchMode) {
+            log('[DeepPDF] 恢复深度思考模式');
+            this.useLLMTreeSearch = true;
+            this.chatInput?.setDeepSearchMode(true);
         }
     }
 
@@ -1391,7 +1419,7 @@ export class SidebarView extends ItemView {
             throw new Error("API 客户端未连接");
         }
 
-        const result = await this.apiClient.queryPDF(query, indexId);
+        const result = await this.apiClient.queryPDF(query, indexId, 10, this.useLLMTreeSearch);
 
         if (result.status !== "success") {
             throw new Error(result.error || "查询失败");
@@ -1400,10 +1428,21 @@ export class SidebarView extends ItemView {
         // 从 API 响应中获取 PDF 名称
         const pdfName = result.index_info?.pdf_name || "未知文档";
 
+        // 处理 LLM 树搜索的 thinking 和降级信息
+        let thinkingContent = "";
+        let fallbackInfo = "";
+
+        if (result.thinking) {
+            thinkingContent = `### 🧠 深度思考\n\n${result.thinking}\n\n`;
+        }
+        if (result.fallback) {
+            fallbackInfo = `⚠️ 已自动切换到混合检索\n\n原因: ${result.fallback_reason || '未知'}\n\n`;
+        }
+
         // 如果没有相关结果
         if (!result.results || result.results.length === 0) {
             this.messageList?.updateMessage(aiMessageId, {
-                content: "未找到相关结果。请尝试使用不同的关键词重新搜索。",
+                content: thinkingContent + fallbackInfo + "未找到相关结果。请尝试使用不同的关键词重新搜索。",
                 isStreaming: false
             });
             return;
@@ -1616,6 +1655,7 @@ ${r.text}`;
                 indexId: indexId,
                 pdfName: this.currentPdfName || '未知文档',
                 markdownFiles: this.currentMarkdownFiles,
+                useLLMTreeSearch: this.useLLMTreeSearch,
             };
 
             // 构建用户消息（包含引用内容）

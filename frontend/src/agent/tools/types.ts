@@ -12,6 +12,8 @@ export interface ToolContext {
   pdfName: string;
   /** node_id 到 Markdown 文件路径的映射 */
   markdownFiles?: Record<string, string>;
+  /** 是否使用 LLM 树搜索（深度思考模式） */
+  useLLMTreeSearch?: boolean;
 }
 
 /**

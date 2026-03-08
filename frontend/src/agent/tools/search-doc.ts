@@ -76,20 +76,38 @@ export const searchDocTool: ToolExecutor = {
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const query = args.query as string;
     const topK = (args.top_k as number) ?? 5;
+    const useLLMTreeSearch = context.useLLMTreeSearch ?? false;
 
     if (!query) {
       return 'Error: query parameter is required';
     }
 
     try {
-      log('[search_doc] 执行搜索:', { query, topK, indexId: context.indexId });
+      log('[search_doc] 执行搜索:', { query, topK, indexId: context.indexId, useLLMTreeSearch });
       log('[search_doc] context.pdfName:', context.pdfName);
       log('[search_doc] context.markdownFiles:', context.markdownFiles ? `${Object.keys(context.markdownFiles).length} 个映射` : '无');
 
-      const result = await deeppdfClient.queryPDF(query, context.indexId, topK);
+      const result = await deeppdfClient.queryPDF(query, context.indexId, topK, useLLMTreeSearch);
 
       if (result.status !== 'success' || !result.results || result.results.length === 0) {
-        return `No results found for query: "${query}"`;
+        // 即使没有结果，也返回 thinking 信息（如果有）
+        let noResultMsg = `No results found for query: "${query}"`;
+        if (result.thinking) {
+          noResultMsg = `### 🧠 Deep Search Thinking\n\n${result.thinking}\n\n---\n\n${noResultMsg}`;
+        }
+        if (result.fallback) {
+          noResultMsg = `⚠️ Fallback to hybrid search: ${result.fallback_reason || 'Unknown reason'}\n\n${noResultMsg}`;
+        }
+        return noResultMsg;
+      }
+
+      // 构建结果前缀（包含 thinking 和 fallback 信息）
+      let resultPrefix = '';
+      if (result.thinking) {
+        resultPrefix += `### 🧠 Deep Search Thinking\n\n${result.thinking}\n\n---\n\n`;
+      }
+      if (result.fallback) {
+        resultPrefix += `⚠️ Fallback to hybrid search: ${result.fallback_reason || 'Unknown reason'}\n\n`;
       }
 
       // 格式化搜索结果，包含 obsidian_link
@@ -119,7 +137,7 @@ export const searchDocTool: ToolExecutor = {
         .join('\n\n');
 
       log('[search_doc] 找到', result.results.length, '条结果');
-      return formattedResults;
+      return resultPrefix + formattedResults;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       logError('[search_doc] 搜索失败:', errorMsg);
