@@ -1322,11 +1322,13 @@ export class SidebarView extends ItemView {
             const isHealthy = await this.apiClient?.healthCheck();
             if (!isHealthy) {
                 this.isConnected = false;
+                this.indexManager?.setConnectionStatus('disconnected');
                 new Notice("后端未连接，请先启动后端服务");
                 return;
             }
         } catch (e) {
             this.isConnected = false;
+            this.indexManager?.setConnectionStatus('error');
             new Notice("后端连接失败，请检查后端服务");
             return;
         }
