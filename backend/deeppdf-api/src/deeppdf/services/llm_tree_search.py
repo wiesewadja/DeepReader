@@ -273,3 +273,149 @@ def extract_nodes_by_ids(
             ordered_results.append(id_to_node[nid])
 
     return ordered_results
+
+
+async def llm_tree_search(
+    query: str,
+    tree_structure: Dict[str, Any],
+    llm_client,  # OpenAI 客户端
+    model: str,
+    doc_name: str = "",
+    max_results: int = 5,
+    timeout: int = 15,
+    max_retries: int = 2,
+) -> LLMTreeSearchResult:
+    """
+    使用 LLM 在文档树结构上进行推理检索
+
+    Args:
+        query: 用户查询
+        tree_structure: PageIndex 生成的树结构
+        llm_client: OpenAI 客户端
+        model: 模型名称
+        doc_name: 文档名称
+        max_results: 最大返回节点数
+        timeout: 单次调用超时（秒）
+        max_retries: 最大重试次数
+
+    Returns:
+        LLMTreeSearchResult
+    """
+    if not tree_structure:
+        return LLMTreeSearchResult(
+            success=False,
+            error="tree_structure is empty",
+        )
+
+    # 构建 Prompt
+    prompt = build_tree_prompt(
+        tree_structure=tree_structure,
+        query=query,
+        doc_name=doc_name,
+        max_results=max_results,
+    )
+
+    # 重试逻辑
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            logger.info(f"[LLM树搜索] 尝试 {attempt + 1}/{max_retries + 1}")
+
+            # 调用 LLM（带超时）
+            response = await asyncio.wait_for(
+                _call_llm_async(llm_client, model, prompt),
+                timeout=timeout,
+            )
+
+            # 解析响应
+            result = parse_llm_response(response)
+
+            if result.success:
+                # 验证 node_ids 是否存在
+                valid_ids = _validate_node_ids(tree_structure, result.node_ids)
+                if len(valid_ids) != len(result.node_ids):
+                    logger.warning(
+                        f"[LLM树搜索] 部分 node_id 无效: {result.node_ids} -> {valid_ids}"
+                    )
+                    result.node_ids = valid_ids
+
+                if not valid_ids:
+                    return LLMTreeSearchResult(
+                        success=False,
+                        error="No valid node_ids in LLM response",
+                    )
+
+                logger.info(f"[LLM树搜索] 成功: node_ids={result.node_ids}")
+                return result
+            else:
+                last_error = result.error
+                logger.warning(f"[LLM树搜索] 解析失败: {last_error}")
+
+        except asyncio.TimeoutError:
+            last_error = f"Timeout after {timeout}s"
+            logger.warning(f"[LLM树搜索] 超时: {last_error}")
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
+            logger.error(f"[LLM树搜索] 错误: {last_error}")
+
+    return LLMTreeSearchResult(
+        success=False,
+        error=f"Failed after {max_retries + 1} attempts: {last_error}",
+    )
+
+
+async def _call_llm_async(client, model: str, prompt: str) -> str:
+    """
+    异步调用 LLM
+
+    Args:
+        client: OpenAI 客户端
+        model: 模型名称
+        prompt: Prompt 字符串
+
+    Returns:
+        LLM 响应文本
+    """
+    # OpenAI 客户端的异步调用
+    response = await asyncio.to_thread(
+        client.chat.completions.create,
+        model=model,
+        messages=[
+            {"role": "system", "content": "你是一个专业的文档检索助手。"},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.3,
+        max_tokens=1000,
+    )
+
+    return response.choices[0].message.content or ""
+
+
+def _validate_node_ids(tree_structure: Dict[str, Any], node_ids: List[str]) -> List[str]:
+    """
+    验证 node_ids 是否存在于树结构中
+
+    Returns:
+        有效的 node_id 列表
+    """
+    valid_ids = set()
+
+    def collect_ids(nodes):
+        for node in nodes:
+            node_id = node.get("node_id")
+            if node_id:
+                valid_ids.add(node_id)
+            children = node.get("nodes", [])
+            if children:
+                collect_ids(children)
+
+    if isinstance(tree_structure, dict):
+        nodes = tree_structure.get("structure", [])
+    elif isinstance(tree_structure, list):
+        nodes = tree_structure
+    else:
+        return []
+
+    collect_ids(nodes)
+
+    return [nid for nid in node_ids if nid in valid_ids]
