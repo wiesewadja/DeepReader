@@ -293,11 +293,13 @@ class SubAgentExecutor:
         max_turns: int = 10,
     ) -> Generator[str, None, None]:
         """
-        流式执行 Skill，实时输出
+        流式执行 Skill，全程实时输出
 
-        设计：
-        - 工具调用期间：发送状态更新（如 "🔍 正在搜索..."）
-        - LLM 回答期间：真正的流式输出
+        优化设计：
+        - 每轮都使用流式 API，用户感知到即时反馈
+        - 工具调用前：流式输出思考过程
+        - 工具调用期间：发送状态更新（如 "🔍 *搜索中*"）
+        - 最终回答：流式输出
 
         Args:
             skill_knowledge: Skill 的 System Prompt 内容
@@ -309,13 +311,13 @@ class SubAgentExecutor:
             文本片段（流式输出）
         """
         logger.info("=" * 60)
-        logger.info("[SubAgent-Stream] 开始流式执行")
+        logger.info("[SubAgent-Stream] 开始全流式执行")
         logger.info(f"  Query: {user_query[:50]}...")
         logger.info(f"  Max Turns: {max_turns}")
         logger.info("=" * 60)
 
         # 1. 构建隔离的消息历史
-        sub_messages = [
+        sub_messages: List[Dict[str, Any]] = [
             {
                 "role": "system",
                 "content": skill_knowledge,
@@ -330,101 +332,119 @@ class SubAgentExecutor:
         tool_schemas = self._get_tool_schemas(available_tools)
         logger.info(f"[SubAgent-Stream] 工具数量: {len(tool_schemas)}")
 
-        # 3. ReAct 循环
+        # 3. ReAct 循环（全流式）
         last_assistant_content = ""
         for turn in range(max_turns):
             logger.info(f"[SubAgent-Stream] 第 {turn + 1} 轮迭代")
 
+            # 流式调用 LLM（带工具支持）
             try:
-                # 非流式调用（获取工具调用信息）
-                response = self.client.chat.completions.create(
+                stream_response = self.client.chat.completions.create(
                     model=self.model,
                     max_tokens=4096,
                     messages=sub_messages,
                     tools=tool_schemas,
                     temperature=self.temperature,
                     top_p=self.top_p,
+                    stream=True,  # 全程流式
                 )
             except Exception as e:
                 logger.error(f"[SubAgent-Stream] LLM 调用失败: {e}")
                 yield f"\n\n❌ 执行失败: {str(e)}"
                 return
 
-            # 检查响应状态
-            assistant_message = response.choices[0].message
-            last_assistant_content = assistant_message.content or ""
+            # 收集流式响应（不立即输出，等确认无工具调用后再输出）
+            content_buffer = ""
+            tool_calls_buffer: Dict[int, Dict[str, Any]] = {}  # index -> tool_call data
 
-            # 检查是否有工具调用
-            tool_calls = assistant_message.tool_calls or []
+            for chunk in stream_response:
+                if not chunk.choices:
+                    continue
 
-            if not tool_calls:
-                # 没有工具调用，流式输出最终回答
-                logger.info(
-                    f"[SubAgent-Stream] 第 {turn + 1} 轮完成，无工具调用，开始流式输出"
-                )
+                delta = chunk.choices[0].delta
 
-                # 流式调用 LLM
-                try:
-                    stream_response = self.client.chat.completions.create(
-                        model=self.model,
-                        max_tokens=4096,
-                        messages=sub_messages,
-                        temperature=self.temperature,
-                        top_p=self.top_p,
-                        stream=True,  # 启用流式
+                # 1. 收集内容到 buffer（不立即输出）
+                if delta.content:
+                    raw_content = delta.content
+                    # 清理 DeepSeek 内部标签
+                    clean_content = _clean_deepseek_internal_tags(
+                        raw_content, preserve_whitespace=True
                     )
+                    if clean_content:
+                        content_buffer += clean_content
 
-                    for chunk in stream_response:
-                        if chunk.choices and chunk.choices[0].delta.content:
-                            content = chunk.choices[0].delta.content
-                            # 清理 DeepSeek 内部标签（保留空白，因为流式输出需要换行符）
-                            content = _clean_deepseek_internal_tags(
-                                content, preserve_whitespace=True
-                            )
-                            if content:
-                                yield content
+                # 2. 收集工具调用（流式累积）
+                if delta.tool_calls:
+                    for tc_chunk in delta.tool_calls:
+                        idx = tc_chunk.index
+                        if idx not in tool_calls_buffer:
+                            tool_calls_buffer[idx] = {
+                                "id": tc_chunk.id or "",
+                                "name": "",
+                                "arguments": "",
+                            }
+                        # 累积工具调用数据
+                        if tc_chunk.id:
+                            tool_calls_buffer[idx]["id"] = tc_chunk.id
+                        if tc_chunk.function:
+                            if tc_chunk.function.name:
+                                tool_calls_buffer[idx]["name"] = tc_chunk.function.name
+                            if tc_chunk.function.arguments:
+                                tool_calls_buffer[idx]["arguments"] += tc_chunk.function.arguments
 
-                except Exception as e:
-                    logger.error(f"[SubAgent-Stream] 流式输出失败: {e}")
-                    # 降级为非流式
-                    if last_assistant_content:
-                        yield _clean_deepseek_internal_tags(last_assistant_content)
+            # 3. 检查是否有完整的工具调用
+            tool_calls_list = list(tool_calls_buffer.values())
+            has_tool_calls = any(tc["id"] for tc in tool_calls_list)
 
-                logger.info("[SubAgent-Stream] 流式输出完成")
+            if not has_tool_calls:
+                # 没有工具调用，这是最终回答，现在输出收集的内容
+                logger.info(
+                    f"[SubAgent-Stream] 第 {turn + 1} 轮完成，无工具调用，输出最终回答"
+                )
+                if content_buffer:
+                    yield content_buffer
                 return
 
-            # 有工具调用，发送状态更新
+            # 更新最后的 assistant 内容（用于达到最大轮次时的降级输出）
+            last_assistant_content = content_buffer
+
+            # 4. 有工具调用，构建消息记录
+            logger.info(f"[SubAgent-Stream] 检测到 {len(tool_calls_list)} 个工具调用")
+
             # 记录 assistant 消息（包含工具调用）
             sub_messages.append(
                 {
                     "role": "assistant",
-                    "content": assistant_message.content,
+                    "content": content_buffer or None,
                     "tool_calls": [
                         {
-                            "id": tc.id,
-                            "type": tc.type,
+                            "id": tc["id"],
+                            "type": "function",
                             "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
+                                "name": tc["name"],
+                                "arguments": tc["arguments"],
                             },
                         }
-                        for tc in tool_calls
+                        for tc in tool_calls_list
+                        if tc["id"]  # 只包含有效的工具调用
                     ],
                 }
             )
 
-            # 执行每个工具调用
-            for tool_call in tool_calls:
-                function = tool_call.function
-                tool_name = function.name
+            # 5. 执行每个工具调用
+            for tc in tool_calls_list:
+                if not tc["id"]:
+                    continue
+
+                tool_name = tc["name"]
+                tool_id = tc["id"]
 
                 # 发送工具调用状态（使用前端识别的格式）
-                # 前端 parseAgentContent 识别的关键词：搜索中、分析中、整理中、查看中、阅读中、查目录
                 status_text = self._get_tool_status_text(tool_name)
-                yield f"\n{status_text}\n"
+                yield f"\n\n{status_text}\n\n"
 
                 try:
-                    args = json.loads(function.arguments)
+                    args = json.loads(tc["arguments"])
                 except json.JSONDecodeError:
                     args = {}
 
@@ -442,7 +462,7 @@ class SubAgentExecutor:
                 sub_messages.append(
                     {
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": tool_id,
                         "content": output,
                     }
                 )
@@ -451,8 +471,7 @@ class SubAgentExecutor:
         logger.warning(f"[SubAgent-Stream] 达到最大轮次 {max_turns}")
 
         if last_assistant_content:
-            yield "\n\n"
-            yield _clean_deepseek_internal_tags(last_assistant_content)
+            yield "\n\n⚠️ 达到最大搜索轮次，以上是部分分析结果。"
         else:
             yield "\n\n⚠️ 达到最大搜索轮次，未能完成完整分析。请尝试简化您的问题。"
 
