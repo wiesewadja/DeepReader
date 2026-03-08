@@ -39,7 +39,7 @@ const CORE_CONSTRAINTS = `## 核心约束
 
 const TOOL_DESCRIPTIONS = `## 可用工具
 
-- **search_pdf**: 搜索 PDF 内容，参数: {query: "搜索词", top_k: 数量}。返回结果包含 Link 字段，直接用作引用。
+- **search_doc**: 搜索文档内容（支持 PDF、EPUB 等），参数: {query: "搜索词", top_k: 数量}。返回结果包含 Link 字段，直接用作引用。
 - **get_toc**: 获取书籍目录结构
 - **get_chapter**: 获取指定章节全文，参数: {node_id: "章节ID"}
 - **Skill**: 加载专业技能知识，参数: {skill: "技能名"}`;

@@ -1,5 +1,5 @@
 /**
- * search_pdf Tool - 搜索 PDF 内容
+ * search_doc Tool - 搜索文档内容（支持 PDF、EPUB 等）
  */
 
 import type { ToolDefinition } from '../types.js';
@@ -7,17 +7,17 @@ import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
 import { log, error as logError } from '../../utils/logger.js';
 
-const SEARCH_PDF_DEFINITION: ToolDefinition = {
+const SEARCH_DOC_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
-    name: 'search_pdf',
-    description: 'Search PDF content for relevant information. Use this to find specific passages, quotes, or information about a topic.',
+    name: 'search_doc',
+    description: 'Search document content for relevant information. Use this to find specific passages, quotes, or information about a topic. Supports PDF, EPUB and other document formats.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query to find relevant content in the PDF',
+          description: 'The search query to find relevant content in the document',
         },
         top_k: {
           type: 'number',
@@ -45,12 +45,12 @@ function extractChapterName(filename: string): string {
  *
  * 优先级：
  * 1. 如果有 nodeId 对应的 Markdown 文件，链接到该文件，显示章节名
- * 2. 否则链接到 PDF 名称（fallback）
+ * 2. 否则链接到文档名称（fallback）
  */
 function generateObsidianLink(
   nodeId: string | undefined,
   section: string | undefined,
-  pdfName: string,
+  docName: string,
   markdownFiles?: Record<string, string>
 ): string {
   // 查找对应的 Markdown 文件
@@ -63,15 +63,15 @@ function generateObsidianLink(
     return `[[${markdownFile}|${chapterName}]]`;
   }
 
-  // Fallback: 没有章节文件，使用 section 或 PDF 名称
+  // Fallback: 没有章节文件，使用 section 或文档名称
   if (section) {
-    return `[[${pdfName}|${section}]]`;
+    return `[[${docName}|${section}]]`;
   }
-  return `[[${pdfName}]]`;
+  return `[[${docName}]]`;
 }
 
-export const searchPdfTool: ToolExecutor = {
-  definition: SEARCH_PDF_DEFINITION,
+export const searchDocTool: ToolExecutor = {
+  definition: SEARCH_DOC_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const query = args.query as string;
@@ -82,9 +82,9 @@ export const searchPdfTool: ToolExecutor = {
     }
 
     try {
-      log('[search_pdf] 执行搜索:', { query, topK, indexId: context.indexId });
-      log('[search_pdf] context.pdfName:', context.pdfName);
-      log('[search_pdf] context.markdownFiles:', context.markdownFiles ? `${Object.keys(context.markdownFiles).length} 个映射` : '无');
+      log('[search_doc] 执行搜索:', { query, topK, indexId: context.indexId });
+      log('[search_doc] context.pdfName:', context.pdfName);
+      log('[search_doc] context.markdownFiles:', context.markdownFiles ? `${Object.keys(context.markdownFiles).length} 个映射` : '无');
 
       const result = await deeppdfClient.queryPDF(query, context.indexId, topK);
 
@@ -110,7 +110,7 @@ export const searchPdfTool: ToolExecutor = {
             context.markdownFiles
           );
 
-          log(`[search_pdf] 结果 ${index + 1}: node_id=${nodeId}, page=${page}, link=${obsidianLink}`);
+          log(`[search_doc] 结果 ${index + 1}: node_id=${nodeId}, page=${page}, link=${obsidianLink}`);
 
           return `${index + 1}. **${section}**${page ? ` (Page ${page})` : ''}${distance}
    Link: ${obsidianLink}
@@ -118,12 +118,12 @@ export const searchPdfTool: ToolExecutor = {
         })
         .join('\n\n');
 
-      log('[search_pdf] 找到', result.results.length, '条结果');
+      log('[search_doc] 找到', result.results.length, '条结果');
       return formattedResults;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
-      logError('[search_pdf] 搜索失败:', errorMsg);
-      return `Error searching PDF: ${errorMsg}`;
+      logError('[search_doc] 搜索失败:', errorMsg);
+      return `Error searching document: ${errorMsg}`;
     }
   },
 };

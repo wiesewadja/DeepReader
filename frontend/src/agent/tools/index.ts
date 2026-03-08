@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
-import { searchPdfTool } from './search-pdf.js';
+import { searchDocTool } from './search-doc.js';
 import { getTocTool } from './get-toc.js';
 import { getChapterTool } from './get-chapter.js';
 import { createSkillTool } from './skill.js';
@@ -15,7 +15,7 @@ import { log } from '../../utils/logger.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 
 // 导出各个工具
-export { searchPdfTool } from './search-pdf.js';
+export { searchDocTool } from './search-doc.js';
 export { getTocTool } from './get-toc.js';
 export { getChapterTool } from './get-chapter.js';
 export { createSkillTool } from './skill.js';
@@ -30,7 +30,7 @@ export function createToolRegistry(
   const registry: ToolRegistry = new Map();
 
   // 注册基础工具
-  registry.set('search_pdf', searchPdfTool);
+  registry.set('search_doc', searchDocTool);
   registry.set('get_toc', getTocTool);
   registry.set('get_chapter', getChapterTool);
 
