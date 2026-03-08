@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LLMTreeSearchResult:
     """LLM 树搜索结果"""
+
     node_ids: List[str] = field(default_factory=list)  # LLM 选中的节点 ID
     thinking: str = ""  # LLM 推理过程
     success: bool = True
@@ -24,6 +25,7 @@ class LLMTreeSearchResult:
 
 class LLMTreeSearchError(Exception):
     """LLM 树搜索错误"""
+
     def __init__(self, message: str, error_type: str = "unknown"):
         self.message = message
         self.error_type = error_type  # timeout, parse_error, invalid_node, no_api_key
@@ -114,7 +116,9 @@ def format_tree_structure(
         # 添加摘要（如果有）
         if summary:
             truncated_summary = (
-                summary[:max_text_length] + "..." if len(summary) > max_text_length else summary
+                summary[:max_text_length] + "..."
+                if len(summary) > max_text_length
+                else summary
             )
             summary_prefix = "    " * (indent + 1) + "摘要: "
             lines.append(f"{summary_prefix}{truncated_summary}")
@@ -173,7 +177,7 @@ def parse_llm_response(response_text: str) -> LLMTreeSearchResult:
     """
     try:
         # 尝试提取 JSON 块
-        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
+        json_match = re.search(r"```json\s*([\s\S]*?)\s*```", response_text)
         if json_match:
             json_str = json_match.group(1)
         else:
@@ -240,15 +244,17 @@ def extract_nodes_by_ids(
 
             # 如果当前节点在目标列表中
             if node_id in node_ids_set:
-                results.append({
-                    "node_id": node_id,
-                    "title": title,
-                    "text": node.get("text", ""),
-                    "summary": node.get("summary", ""),
-                    "path": current_path,
-                    "start_index": node.get("start_index"),
-                    "end_index": node.get("end_index"),
-                })
+                results.append(
+                    {
+                        "node_id": node_id,
+                        "title": title,
+                        "text": node.get("text", ""),
+                        "summary": node.get("summary", ""),
+                        "path": current_path,
+                        "start_index": node.get("start_index"),
+                        "end_index": node.get("end_index"),
+                    }
+                )
 
             # 递归处理子节点
             children = node.get("nodes", [])
@@ -391,7 +397,9 @@ async def _call_llm_async(client, model: str, prompt: str) -> str:
     return response.choices[0].message.content or ""
 
 
-def _validate_node_ids(tree_structure: Dict[str, Any], node_ids: List[str]) -> List[str]:
+def _validate_node_ids(
+    tree_structure: Dict[str, Any], node_ids: List[str]
+) -> List[str]:
     """
     验证 node_ids 是否存在于树结构中
 

@@ -3,15 +3,12 @@ API 路由定义
 """
 
 import asyncio
-import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request
-from fastapi.responses import StreamingResponse
-from typing import AsyncGenerator
 
 from .models import (
     IndexRequest,
