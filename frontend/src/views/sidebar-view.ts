@@ -100,6 +100,12 @@ export class SidebarView extends ItemView {
     // 前端 Agent
     private frontendAgent: FrontendAgent | null = null;
 
+    /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
+    private currentMarkdownFiles: Record<string, string> = {};
+
+    /** 前端 Agent 对话历史 */
+    private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
+
     /** 生成新的会话ID */
     private generateSessionId(): string {
         return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -158,6 +164,9 @@ export class SidebarView extends ItemView {
     /** 开启新会话 */
     private async startNewSession(indexId: string) {
         this.sessionId = this.generateSessionId();
+
+        // 清空前端 Agent 对话历史
+        this.agentChatHistory = [];
 
         // 保存到设置
         if (!this.plugin.settings.savedSessions) {
@@ -270,11 +279,22 @@ export class SidebarView extends ItemView {
     private restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
 
+        // 同时恢复 agentChatHistory
+        const chatMessages: import("../agent/types.js").ChatMessage[] = [];
+
         if (fromCache) {
             // 从缓存恢复，直接使用 MessageData
             history.forEach(msgData => {
                 try {
                     this.messageList!.addMessage(msgData);
+
+                    // 同时构建 ChatMessage 格式
+                    if (msgData.role === 'user' || msgData.role === 'assistant') {
+                        chatMessages.push({
+                            role: msgData.role,
+                            content: msgData.content,
+                        });
+                    }
                 } catch (e) {
                     warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
                 }
@@ -293,7 +313,25 @@ export class SidebarView extends ItemView {
                     timestamp: new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 });
+
+                // 同时构建 ChatMessage 格式
+                if (msg.role === 'user' || msg.role === 'assistant') {
+                    chatMessages.push({
+                        role: msg.role,
+                        content: msg.content,
+                    });
+                }
             });
+        }
+
+        // 恢复 agentChatHistory（前面加上 system 消息）
+        if (chatMessages.length > 0 && this.frontendAgent) {
+            const systemPrompt = this.frontendAgent.getSystemPrompt();
+            this.agentChatHistory = [
+                { role: 'system', content: systemPrompt },
+                ...chatMessages
+            ];
+            log('[DeepPDF] 恢复 agentChatHistory，消息数:', this.agentChatHistory.length);
         }
     }
 
@@ -493,6 +531,20 @@ export class SidebarView extends ItemView {
             }
             this.messageList?.setCurrentPdfName(displayName);
             this.readingTopbar?.setCurrentBook(displayName);
+
+            // === 获取 Markdown 文件映射 ===
+            try {
+                if (this.apiClient) {
+                    const indexStatus = await this.apiClient.getIndexStatus(indexId);
+                    if (indexStatus.markdown_files) {
+                        this.currentMarkdownFiles = indexStatus.markdown_files;
+                        log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
+                    }
+                }
+            } catch (e) {
+                logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+                this.currentMarkdownFiles = {};
+            }
 
             // === 检查书籍章节是否已下载到本地 ===
             const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
@@ -1563,6 +1615,7 @@ ${r.text}`;
             const context: ToolContext = {
                 indexId: indexId,
                 pdfName: this.currentPdfName || '未知文档',
+                markdownFiles: this.currentMarkdownFiles,
             };
 
             // 构建用户消息（包含引用内容）
@@ -1572,84 +1625,108 @@ ${r.text}`;
                 userMessage = `${query}\n\n---\n**引用内容：**\n${quotesText}`;
             }
 
-            // 调用 FrontendAgent.chat()
-            await this.frontendAgent.chat(
-                userMessage,
-                context,
-                {
-                    // onContent: 接收流式内容
-                    onContent: (text: string) => {
-                        fullContent += text;
+            // 判断是否是新对话（历史为空或只有 system 消息）
+            const isNewConversation = this.agentChatHistory.length <= 1;
 
-                        // 构建更新对象
-                        let displayContent = fullContent;
+            // 回调函数
+            const callbacks = {
+                // onContent: 接收流式内容
+                onContent: (text: string) => {
+                    fullContent += text;
 
-                        // 如果没有内容，显示默认状态
-                        if (!fullContent || fullContent.trim() === '') {
-                            displayContent = currentStatus || '📖 正在翻阅...';
-                        }
+                    // 构建更新对象
+                    let displayContent = fullContent;
 
-                        const updates: any = {
-                            content: displayContent,
-                            isStreaming: true,
-                            isAgentMessage: true,
-                        };
+                    // 如果没有内容，显示默认状态
+                    if (!fullContent || fullContent.trim() === '') {
+                        displayContent = currentStatus || '📖 正在翻阅...';
+                    }
 
-                        // 如果有状态，添加到更新中
-                        if (currentStatus) {
-                            updates.currentStatus = currentStatus;
-                        }
+                    const updates: any = {
+                        content: displayContent,
+                        isStreaming: true,
+                        isAgentMessage: true,
+                    };
 
-                        this.messageList?.updateMessage(aiMessageId, updates);
-                    },
-                    // onProgress: 接收进度更新
-                    onProgress: (status: string) => {
-                        log('[DeepPDF] Agent 进度:', status);
-                        currentStatus = status;
+                    // 如果有状态，添加到更新中
+                    if (currentStatus) {
+                        updates.currentStatus = currentStatus;
+                    }
 
-                        // 更新消息显示状态
-                        this.messageList?.updateMessage(aiMessageId, {
-                            currentStatus: status,
-                            isStreaming: true,
-                            isAgentMessage: true,
-                        });
-                    },
-                    // onComplete: 流式完成
-                    onComplete: () => {
-                        this.messageList?.updateMessage(aiMessageId, {
-                            isStreaming: false
-                        });
-                        // 保存到缓存
-                        this.saveToCache();
+                    this.messageList?.updateMessage(aiMessageId, updates);
+                },
+                // onProgress: 接收进度更新
+                onProgress: (status: string) => {
+                    log('[DeepPDF] Agent 进度:', status);
+                    currentStatus = status;
 
-                        // 恢复输入状态（AI 回复完成）
-                        this.isProcessing = false;
-                        this.isAiStreaming = false;
-                        this.chatInput?.setStreaming(false);
-                        this.chatInput?.setDisabled(false);
+                    // 更新消息显示状态
+                    this.messageList?.updateMessage(aiMessageId, {
+                        currentStatus: status,
+                        isStreaming: true,
+                        isAgentMessage: true,
+                    });
+                },
+                // onComplete: 流式完成
+                onComplete: () => {
+                    this.messageList?.updateMessage(aiMessageId, {
+                        isStreaming: false
+                    });
+                    // 保存到缓存
+                    this.saveToCache();
 
-                        this.chatInput?.focus();
-                        this.streamController = null;
-                    },
-                    // onError: 错误处理
-                    onError: (error: string) => {
-                        logError('[DeepPDF] Agent 错误:', error);
-                        this.messageList?.updateMessage(aiMessageId, {
-                            content: `查询失败: ${error}`,
-                            isStreaming: false
-                        });
+                    // 恢复输入状态（AI 回复完成）
+                    this.isProcessing = false;
+                    this.isAiStreaming = false;
+                    this.chatInput?.setStreaming(false);
+                    this.chatInput?.setDisabled(false);
 
-                        // 恢复输入状态（出错时）
-                        this.isProcessing = false;
-                        this.isAiStreaming = false;
-                        this.chatInput?.setStreaming(false);
-                        this.chatInput?.setDisabled(false);
+                    this.chatInput?.focus();
+                    this.streamController = null;
+                },
+                // onError: 错误处理
+                onError: (error: string) => {
+                    logError('[DeepPDF] Agent 错误:', error);
+                    this.messageList?.updateMessage(aiMessageId, {
+                        content: `查询失败: ${error}`,
+                        isStreaming: false
+                    });
 
-                        this.chatInput?.focus();
-                        this.streamController = null;
-                    },
-                }
-            );
+                    // 恢复输入状态（出错时）
+                    this.isProcessing = false;
+                    this.isAiStreaming = false;
+                    this.chatInput?.setStreaming(false);
+                    this.chatInput?.setDisabled(false);
+
+                    this.chatInput?.focus();
+                    this.streamController = null;
+                },
+                abortSignal: this.streamController.signal,
+            };
+
+            // 根据是否有历史选择不同的方法
+            let updatedHistory: import("../agent/types.js").ChatMessage[];
+            if (isNewConversation) {
+                // 新对话，使用 chat()
+                updatedHistory = await this.frontendAgent.chat(
+                    userMessage,
+                    context,
+                    callbacks
+                );
+            } else {
+                // 继续对话，使用 continueChat()
+                log('[DeepPDF] 继续对话，历史消息数:', this.agentChatHistory.length);
+                updatedHistory = await this.frontendAgent.continueChat(
+                    this.agentChatHistory,
+                    userMessage,
+                    context,
+                    callbacks
+                );
+            }
+
+            // 更新对话历史
+            this.agentChatHistory = updatedHistory;
+            log('[DeepPDF] 对话历史已更新，消息数:', this.agentChatHistory.length);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

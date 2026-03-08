@@ -10,6 +10,8 @@ import type { ToolDefinition } from '../types.js';
 export interface ToolContext {
   indexId: string;
   pdfName: string;
+  /** node_id 到 Markdown 文件路径的映射 */
+  markdownFiles?: Record<string, string>;
 }
 
 /**
