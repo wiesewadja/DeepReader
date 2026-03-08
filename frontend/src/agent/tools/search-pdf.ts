@@ -30,15 +30,26 @@ const SEARCH_PDF_DEFINITION: ToolDefinition = {
 };
 
 /**
+ * 从文件名中提取章节名
+ * 例如: "09-苏秦合纵.md" -> "苏秦合纵"
+ */
+function extractChapterName(filename: string): string {
+  const name = filename.replace('.md', '');
+  // 移除开头的数字和连缀（如 "09-", "1-", "001-"）
+  const match = name.match(/^\d+[-\s]*(.+)$/);
+  return match ? match[1] : name;
+}
+
+/**
  * 生成 Obsidian wiki 链接
  *
  * 优先级：
- * 1. 如果有 nodeId 对应的 Markdown 文件，链接到该文件（不带页码锚点，因为章节文件本身就是最小定位单元）
+ * 1. 如果有 nodeId 对应的 Markdown 文件，链接到该文件，显示章节名
  * 2. 否则链接到 PDF 名称（fallback）
  */
 function generateObsidianLink(
   nodeId: string | undefined,
-  page: number | undefined,
+  section: string | undefined,
   pdfName: string,
   markdownFiles?: Record<string, string>
 ): string {
@@ -46,15 +57,15 @@ function generateObsidianLink(
   const markdownFile = nodeId && markdownFiles ? markdownFiles[nodeId] : undefined;
 
   if (markdownFile) {
-    // 有对应的章节文件，直接链接到文件（章节级别的定位）
-    // 显示文字使用章节信息会更友好，但这里只有 page，暂时保留
-    const displayName = page !== undefined ? `第${page}页` : markdownFile.split('/').pop()?.replace('.md', '') || '查看';
-    return `[[${markdownFile}|${displayName}]]`;
+    // 有对应的章节文件，使用章节名作为显示文字
+    const filename = markdownFile.split('/').pop() || '';
+    const chapterName = extractChapterName(filename);
+    return `[[${markdownFile}|${chapterName}]]`;
   }
 
-  // Fallback: 没有章节文件，链接到 PDF 名称
-  if (page !== undefined) {
-    return `[[${pdfName}#^page-${page}|第${page}页]]`;
+  // Fallback: 没有章节文件，使用 section 或 PDF 名称
+  if (section) {
+    return `[[${pdfName}|${section}]]`;
   }
   return `[[${pdfName}]]`;
 }
@@ -94,7 +105,7 @@ export const searchPdfTool: ToolExecutor = {
           // 生成 obsidian_link
           const obsidianLink = generateObsidianLink(
             nodeId,
-            page,
+            section,
             context.pdfName,
             context.markdownFiles
           );
