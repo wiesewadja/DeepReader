@@ -21,6 +21,7 @@ from openai.types.chat import (
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
 from .prompts import build_system_prompt, build_skill_system_prompt, RouteDecision
+from .sub_agent import SubAgentExecutor
 from ..config import settings
 from ..skills import Skill, get_skill_registry
 
@@ -42,7 +43,7 @@ DEEPSEEK_INTERNAL_TAG_PATTERN = re.compile(
     r"<[|｜]DSML[|｜]function_calls[|｜]>.*?</[|｜]DSML[|｜]function_calls[|｜]>|"
     r"<[|｜]DSML[|｜][^>]*>.*?</[|｜]DSML[|｜][^>]*>|"
     r"</?[|｜]DSML[|｜][^>]*>",
-    re.DOTALL
+    re.DOTALL,
 )
 
 
@@ -281,6 +282,11 @@ class DeepPDFAgent:
         # 上下文文档（用户加载的章节、笔记等）
         self.context_docs: Optional[List[Dict[str, Any]]] = None
 
+        # Skills 集成
+        self.skills: Dict[str, Skill] = {}
+        self.sub_agent: Optional[SubAgentExecutor] = None
+        self._load_skills()
+
         logger.info(f"[Agent初始化] Provider={llm_provider}, Model={self.llm_model}")
 
     def _get_default_model(self, provider: str) -> str:
@@ -320,6 +326,69 @@ class DeepPDFAgent:
         except Exception as e:
             logger.warning(f"[Agent初始化] 获取 Skills 列表失败: {e}")
             return None
+
+    def _load_skills(self) -> None:
+        """
+        加载 Skills 并初始化 SubAgentExecutor
+
+        从全局 Skill 注册表加载所有可用的 Skills，
+        并创建子 Agent 执行器用于执行 Skill。
+        """
+        try:
+            registry = get_skill_registry()
+            skills = registry.list_all()
+
+            if skills:
+                # 构建 skills 字典
+                for skill in skills:
+                    self.skills[skill.name] = skill
+                logger.info(f"[Agent初始化] 加载了 {len(skills)} 个 Skills")
+
+                # 创建 SubAgentExecutor
+                self.sub_agent = SubAgentExecutor(
+                    client=self.client,
+                    model=self.llm_model,
+                    executor=self.executor,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                )
+                logger.info("[Agent初始化] SubAgentExecutor 已创建")
+            else:
+                logger.info("[Agent初始化] 没有可用的 Skills")
+
+        except Exception as e:
+            logger.warning(f"[Agent初始化] 加载 Skills 失败: {e}")
+            self.skills = {}
+            self.sub_agent = None
+
+    def _should_use_skill(self, message: str) -> Optional[str]:
+        """
+        检查是否应该使用某个 Skill
+
+        通过关键词匹配判断用户查询是否适合使用特定的 Skill。
+
+        Args:
+            message: 用户查询消息
+
+        Returns:
+            匹配的 Skill 名称，如果没有匹配则返回 None
+        """
+        if not self.skills or not self.sub_agent:
+            return None
+
+        message_lower = message.lower()
+
+        # 遍历所有 Skill，检查关键词匹配
+        for skill_name, skill in self.skills.items():
+            if skill.keywords:
+                for keyword in skill.keywords:
+                    if keyword.lower() in message_lower:
+                        logger.info(
+                            f"[Skill路由] 匹配到 Skill: {skill_name} (关键词: {keyword})"
+                        )
+                        return skill_name
+
+        return None
 
     def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> LLMClient:
         """
@@ -407,7 +476,7 @@ class DeepPDFAgent:
                     "force_visual": {
                         "type": "boolean",
                         "description": "是否强制使用视觉OCR分析图片/图表（默认False，优先使用已有索引）",
-                    }
+                    },
                 },
                 "required": ["page_num"],
             }
@@ -796,12 +865,44 @@ class DeepPDFAgent:
         # 记录用户查询到当前轮次
         self.current_turn_history.append({"role": "user", "content": user_content})
 
-        # ========== 🎯 阶段2: 路由判断 ==========
+        # ========== 🎯 阶段2: Skill 路由判断 ==========
         logger.info("")
         logger.info("-" * 80)
         logger.info("🧭 [路由判断] 开始分析查询类型")
         logger.info("-" * 80)
 
+        # 检查是否匹配某个 Skill
+        matched_skill_name = self._should_use_skill(query)
+        if matched_skill_name and self.sub_agent:
+            matched_skill = self.skills.get(matched_skill_name)
+            if matched_skill and matched_skill.prompt_content:
+                logger.info(f"🎯 [Skill路由] 使用 Skill: {matched_skill_name}")
+                logger.info(f"   - Skill 描述: {matched_skill.description}")
+
+                # 使用 SubAgentExecutor 执行 Skill
+                skill_knowledge = matched_skill.prompt_content
+                result = self.sub_agent.execute(
+                    skill_knowledge=skill_knowledge,
+                    user_query=user_content,
+                    max_turns=self.max_iterations,
+                )
+
+                # 保存会话历史
+                if keep_history:
+                    self.session_history.append({"role": "user", "content": query})
+                    self.session_history.append(
+                        {"role": "assistant", "content": result}
+                    )
+                    logger.info("💾 [会话历史] 已保存本轮对话 (Skill 模式)")
+
+                # 清空当前轮次历史
+                self.current_turn_history.clear()
+
+                # 返回结果
+                yield result
+                return
+
+        # ========== 🎯 阶段3: 常规路由判断 ==========
         # 路由判断：根据强制模式或查询类型决定可用工具
         if force_mode is None:
             # 自动路由
@@ -1131,10 +1232,12 @@ class DeepPDFAgent:
             # 添加明确的指令，让模型直接回答，不要再尝试工具调用
             # 这是解决 DeepSeek 模型在历史中有工具调用时，即使不传 tools 参数
             # 仍可能输出 <|DSML|function_calls> 格式的问题
-            messages.append({
-                "role": "user",
-                "content": "注意：已达到工具调用次数上限。请直接基于已有信息回答用户问题，不要再尝试调用任何工具。"
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "注意：已达到工具调用次数上限。请直接基于已有信息回答用户问题，不要再尝试调用任何工具。",
+                }
+            )
             stream = self.client.chat.completions.create(
                 model=self.llm_model,
                 messages=messages,
