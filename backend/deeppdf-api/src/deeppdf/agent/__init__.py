@@ -15,6 +15,7 @@ from .prompts import (
     build_messages,
 )
 from .core import DeepPDFAgent
+from .sub_agent import SubAgentExecutor
 
 __all__ = [
     "Tool",
@@ -23,6 +24,7 @@ __all__ = [
     "HybridSearchTool",
     "ToolExecutor",
     "create_tool_executor",
+    "SubAgentExecutor",
     "SYSTEM_PROMPT_TEMPLATE",
     "FEW_SHOT_EXAMPLES",
     "DECISION_RULES",
