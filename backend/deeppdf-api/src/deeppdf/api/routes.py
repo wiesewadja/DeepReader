@@ -528,27 +528,30 @@ async def create_index(req: IndexRequest, http_request: Request):
 
 @router.post("/query", response_model=QueryResponse)
 async def query_index(req: QueryRequest):
-    """查询 PDF 内容"""
+    """查询 PDF 内容（支持 LLM 树搜索）"""
     logger.info(
-        f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', max_results={req.max_results}"
+        f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', "
+        f"max_results={req.max_results}, use_llm_tree_search={req.use_llm_tree_search}"
     )
+
     result = await query_pdf(
         req.query,
         req.index_id,
         str(settings.base_dir),
         req.max_results or settings.max_results,
+        use_llm_tree_search=req.use_llm_tree_search,
     )
 
     # 检查是否出错
     if result.get("status") == "error":
         error_msg = result.get("error", "Unknown error")
         logger.warning(f"[API] 查询失败: {error_msg}")
-        # 返回错误响应，状态码仍然为 200（由 response_model 保证一致性）
-        # 前端可以通过 status="error" 判断
         return QueryResponse(status="error", results=None, error=error_msg)
 
     result_count = len(result.get("results", []))
-    logger.info(f"[API] 查询完成: 返回 {result_count} 个结果")
+    search_method = result.get("search_method", "unknown")
+    logger.info(f"[API] 查询完成: method={search_method}, 返回 {result_count} 个结果")
+
     return QueryResponse(**result)
 
 
