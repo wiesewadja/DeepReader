@@ -85,6 +85,7 @@ class SkillLoader:
                 "book_types": frontmatter.get("book_types"),
                 "prompt_content": body.strip() if body else None,
                 "source_path": source_path,
+                "is_default": frontmatter.get("default", False),
             }
 
             # 解析元数据

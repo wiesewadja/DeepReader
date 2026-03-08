@@ -76,6 +76,10 @@ class Skill(BaseModel):
         default=False,
         description="是否为内置 Skill",
     )
+    is_default: bool = Field(
+        default=False,
+        description="是否为默认 Skill",
+    )
 
 
 class SkillConfig(BaseModel):
@@ -112,13 +116,13 @@ class RoutingResult(BaseModel):
     SkillRouter 和 IntentRouter 的返回结果。
     """
 
-    skill: Skill = Field(..., description="匹配到的 Skill")
+    skill: Optional[Skill] = Field(None, description="匹配到的 Skill，None 表示使用主 Agent 默认行为")
     match_type: str = Field(
-        ...,
-        description="匹配类型: manual, book_type, keyword, llm_intent, default",
+        default="none",
+        description="匹配类型: manual, book_type, keyword, llm_intent, default, none",
     )
     confidence: float = Field(
-        default=1.0,
+        default=0.0,
         description="匹配置信度 (0-1)",
     )
     matched_keywords: Optional[List[str]] = Field(

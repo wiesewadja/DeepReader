@@ -509,6 +509,7 @@ class DeepPDFAgent:
         检查是否应该使用某个 Skill
 
         通过关键词匹配判断用户查询是否适合使用特定的 Skill。
+        如果没有匹配到任何 Skill，不使用 SubAgent（让主 Agent 处理）。
 
         Args:
             message: 用户查询消息
@@ -531,6 +532,8 @@ class DeepPDFAgent:
                         )
                         return skill_name
 
+        # 没有匹配到任何 Skill，不使用 SubAgent
+        logger.info("[Skill路由] 无匹配 Skill，使用主 Agent 处理")
         return None
 
     def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> LLMClient:

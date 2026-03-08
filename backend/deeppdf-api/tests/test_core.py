@@ -181,8 +181,8 @@ def test_build_messages_simple(agent):
     # system 消息 + current_turn_history 中的 user 消息
     assert len(messages) == 2  # system + user
     assert messages[0]["role"] == "system"
-    # V2 版本使用"读书郎"人设
-    assert "读书郎" in messages[0]["content"]
+    # V2 版本使用"耽书"人设
+    assert "耽书" in messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert messages[1]["content"] == "测试查询"
 

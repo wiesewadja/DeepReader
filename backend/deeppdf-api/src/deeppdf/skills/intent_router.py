@@ -110,7 +110,13 @@ class IntentRouter:
                     match_type="default",
                     confidence=0.0,
                 )
-            raise RuntimeError("没有可用的 Skill")
+            # 没有默认 Skill，返回 None，使用主 Agent 默认行为
+            logger.info("[IntentRouter] 无默认 Skill，使用主 Agent 默认行为")
+            return RoutingResult(
+                skill=None,
+                match_type="none",
+                confidence=0.0,
+            )
 
         if len(candidates) == 1:
             # 只有一个候选，直接返回

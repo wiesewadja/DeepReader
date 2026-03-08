@@ -98,8 +98,13 @@ class SkillRouter:
                 confidence=0.0,
             )
 
-        # 5. 没有任何可用 Skill
-        raise RuntimeError("没有可用的 Skill，请确保至少注册了一个默认 Skill")
+        # 5. 没有任何可用 Skill - 返回 None，使用主 Agent 默认行为
+        logger.info("[SkillRouter] 没有匹配到任何 Skill，使用主 Agent 默认行为")
+        return RoutingResult(
+            skill=None,
+            match_type="none",
+            confidence=0.0,
+        )
 
     def _match_by_book_type(self, book_type: str) -> Optional[Skill]:
         """

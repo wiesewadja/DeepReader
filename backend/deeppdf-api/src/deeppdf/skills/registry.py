@@ -58,6 +58,11 @@ class SkillRegistry:
             self._skills[skill.name] = skill
             logger.debug(f"[SkillRegistry] 注册 Skill: {skill.name}")
 
+        # 自动设置为默认 Skill
+        if skill.is_default:
+            self._default_skill_name = skill.name
+            logger.info(f"[SkillRegistry] 设置默认 Skill: {skill.name}")
+
     def get(self, name: str) -> Optional[Skill]:
         """
         获取 Skill
