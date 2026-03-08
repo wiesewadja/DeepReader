@@ -1114,44 +1114,6 @@ async def _load_agent_for_request(
         base_dir = Path(settings.base_dir)
         pageindex_lib_path = str(base_dir / "pageindex-lib" / "src")
 
-        # Skill 智能路由（使用 IntentRouter）
-        skill = None
-        routing_result = None
-        if query:
-            from ..skills import IntentRouter, get_skill_registry
-            from ..utils.llm_client import get_llm_client
-
-            registry = get_skill_registry()
-
-            # 获取 LLM 客户端用于智能路由
-            try:
-                llm_client, llm_model = get_llm_client()
-                intent_router = IntentRouter(
-                    registry=registry,
-                    llm_client=llm_client,
-                    llm_model=llm_model,
-                )
-                routing_result = intent_router.route(query=query, use_llm=True)
-            except Exception as e:
-                # LLM 客户端不可用，回退到纯关键词路由
-                logger.warning(f"[Skill路由] LLM 客户端不可用，使用关键词路由: {e}")
-                from ..skills import SkillRouter
-
-                skill_router = SkillRouter(registry)
-                routing_result = skill_router.route(query=query)
-
-            if routing_result and routing_result.skill:
-                skill = routing_result.skill
-                logger.info(f"🎯 [Skill路由] 匹配到 Skill: {skill.name}")
-                logger.info(f"   📍 匹配类型: {routing_result.match_type}")
-                logger.info(f"   📊 置信度: {routing_result.confidence:.2f}")
-                if routing_result.matched_keywords:
-                    logger.info(f"   🏷️  匹配关键词: {routing_result.matched_keywords}")
-                if routing_result.reason:
-                    logger.info(f"   💡 选择原因: {routing_result.reason}")
-            else:
-                logger.info("🎯 [Skill路由] 未匹配到 Skill，使用默认行为")
-
         agent = DeepPDFAgent(
             index_id=index_id,
             storage_dir=str(settings.base_dir),
@@ -1166,7 +1128,6 @@ async def _load_agent_for_request(
             temperature=settings.agent_temperature,
             top_p=settings.agent_top_p,
             max_iterations=settings.agent_max_iterations,
-            skill=skill,  # 传递路由到的 Skill
         )
 
         # 设置上下文文档（章节辅助阅读）
@@ -1384,70 +1345,10 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             if req.context_docs:
                 agent.context_docs = req.context_docs
                 logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
-
-            # 每次查询重新评估 Skill（混合策略 + 粘性策略）
-            if req.query:
-                from ..skills import IntentRouter, get_skill_registry
-                from ..utils.llm_client import get_llm_client
-
-                registry = get_skill_registry()
-                current_skill = agent.skill  # 传递当前 Skill 用于粘性策略
-                current_skill_name = current_skill.name if current_skill else None
-
-                try:
-                    llm_client, llm_model = get_llm_client()
-                    intent_router = IntentRouter(
-                        registry=registry,
-                        llm_client=llm_client,
-                        llm_model=llm_model,
-                    )
-                    # 传递 current_skill 启用粘性策略
-                    routing_result = intent_router.route(
-                        query=req.query,
-                        use_llm=True,
-                        current_skill=current_skill,
-                        switch_threshold=0.3,  # 需要显著更高的置信度才切换
-                    )
-                    logger.info(
-                        f"🎯 [Skill路由] 匹配类型: {routing_result.match_type}, "
-                        f"置信度: {routing_result.confidence:.2f}, "
-                        f"原因: {routing_result.reason or 'N/A'}"
-                    )
-                except Exception as e:
-                    # LLM 不可用，使用关键词路由（仍然传递 current_skill）
-                    logger.warning(f"[Skill路由] LLM 不可用，使用关键词路由: {e}")
-                    from ..skills import SkillRouter
-
-                    skill_router = SkillRouter(registry)
-                    routing_result = skill_router.route(query=req.query)
-
-                # 如果路由结果变化，更新 Agent 的 Skill
-                new_skill_name = (
-                    routing_result.skill.name if routing_result.skill else None
-                )
-                if new_skill_name != current_skill_name:
-                    logger.info(
-                        f"🔄 [Skill切换] {current_skill_name or 'default'} → {new_skill_name}"
-                    )
-                    if routing_result.skill:
-                        agent.skill = routing_result.skill
-                        # 更新 System Prompt
-                        from ..agent.prompts import build_skill_system_prompt
-
-                        agent.system_prompt = build_skill_system_prompt(
-                            tool_descriptions=agent.executor.get_tool_descriptions(),
-                            skill_prompt=routing_result.skill.prompt_content or "",
-                            available_skills=None,  # TODO: 可选传递
-                        )
-                        logger.info("   📝 已更新 System Prompt")
-                else:
-                    logger.info(
-                        f"🎯 [Skill保持] 继续使用 {current_skill_name or 'default'}"
-                    )
         else:
-            # 创建新 Agent（传递 query 用于 Skill 路由）
+            # 创建新 Agent
             agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search, req.context_docs, req.query
+                req.index_id, req.enable_llm_tree_search, req.context_docs
             )
 
             # 尝试加载历史（如果有 session_id）
@@ -1464,21 +1365,7 @@ async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None
             else:
                 logger.info("💬 [会话管理] 创建临时 Agent（无会话ID）")
 
-        # 2. 记录本次回答使用的 Skill
-        if hasattr(agent, "skill") and agent.skill:
-            skill = agent.skill
-            logger.info("=" * 60)
-            logger.info(f"🎯 [当前 Skill] {skill.name}")
-            logger.info(f"   📝 描述: {skill.description}")
-            if skill.keywords:
-                logger.info(f"   🏷️  关键词: {', '.join(skill.keywords[:5])}")
-            logger.info("=" * 60)
-        else:
-            logger.info("=" * 60)
-            logger.info("🎯 [当前 Skill] 未使用特定 Skill（默认行为）")
-            logger.info("=" * 60)
-
-        # 3. 创建队列用于线程间通信
+        # 2. 创建队列用于线程间通信
         loop = asyncio.get_event_loop()
         queue: asyncio.Queue = asyncio.Queue()
 

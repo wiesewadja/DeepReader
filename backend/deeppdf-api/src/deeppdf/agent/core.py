@@ -20,10 +20,8 @@ from openai.types.chat import (
 
 from .tools import Tool
 from .executor import ToolExecutor, create_tool_executor
-from .prompts import build_system_prompt, build_skill_system_prompt, RouteDecision
-from .sub_agent import SubAgentExecutor
+from .prompts import build_system_prompt, RouteDecision
 from ..config import settings
-from ..skills import Skill, get_skill_registry
 
 
 logger = logging.getLogger(__name__)
@@ -283,7 +281,6 @@ class DeepPDFAgent:
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
         max_iterations: Optional[int] = None,
-        skill: Optional[Skill] = None,
     ):
         """
         初始化 DeepPDFAgent
@@ -303,7 +300,6 @@ class DeepPDFAgent:
             temperature: 采样温度
             top_p: nucleus 采样参数
             max_iterations: 最大工具调用迭代次数
-            skill: Skill 对象（可选，用于定制 Agent 行为）
         """
         self.index_id = index_id
         self.storage_dir = storage_dir
@@ -384,10 +380,7 @@ class DeepPDFAgent:
                 deepseek_ocr_client=self.deepseek_ocr_client,
             )
 
-        # 根据 cross_book_mode 或 skill 构建 System Prompt
-        # 获取可用 Skills 列表（用于回答"你支持哪些技能"）
-        available_skills_info = self._get_available_skills_info()
-
+        # 根据 cross_book_mode 构建 System Prompt
         if cross_book_mode:
             from .prompts import build_cross_book_prompt
 
@@ -395,22 +388,10 @@ class DeepPDFAgent:
                 tool_descriptions=self.executor.get_tool_descriptions()
             )
             logger.info("[Agent初始化] 使用跨书籍模式 System Prompt")
-        elif skill:
-            # 使用 Skill 专属 Prompt
-            self.skill = skill
-            skill_prompt = skill.prompt_content or ""
-            self.system_prompt = build_skill_system_prompt(
-                tool_descriptions=self.executor.get_tool_descriptions(),
-                skill_prompt=skill_prompt,
-                available_skills=available_skills_info,
-            )
-            logger.info(f"[Agent初始化] 使用 Skill 专属 Prompt: {skill.name}")
         else:
             self.system_prompt = build_system_prompt(
-                tool_descriptions=self.executor.get_tool_descriptions(),
-                available_skills=available_skills_info,
+                tool_descriptions=self.executor.get_tool_descriptions()
             )
-            self.skill = None
 
         # 历史记录管理
         self.session_history: List[Dict[str, Any]] = []  # 会话级别的历史（多轮对话）
@@ -418,17 +399,8 @@ class DeepPDFAgent:
             []
         )  # 当前轮次的历史（工具调用等）
 
-        # Skill 分区历史：每个 Skill 有独立的历史记录，避免上下文混乱
-        self._skill_histories: Dict[str, List[Dict[str, Any]]] = {}
-        self._current_skill_name: Optional[str] = None  # 当前活跃的 Skill 名称
-
         # 上下文文档（用户加载的章节、笔记等）
         self.context_docs: Optional[List[Dict[str, Any]]] = None
-
-        # Skills 集成
-        self.skills: Dict[str, Skill] = {}
-        self.sub_agent: Optional[SubAgentExecutor] = None
-        self._load_skills()
 
         logger.info(f"[Agent初始化] Provider={llm_provider}, Model={self.llm_model}")
 
@@ -440,110 +412,6 @@ class DeepPDFAgent:
             "anthropic": "claude-3-5-sonnet-20241022",
         }
         return default_models.get(provider, "deepseek-chat")
-
-    def _get_available_skills_info(self) -> Optional[str]:
-        """
-        获取可用的 Skills 列表信息
-
-        Returns:
-            格式化的 Skills 列表字符串，用于添加到 System Prompt
-        """
-        # 如果 Skills 功能已禁用，直接返回 None
-        if not settings.enable_skills:
-            return None
-
-        try:
-            from ..skills import get_skill_registry
-
-            registry = get_skill_registry()
-            skills = registry.list_all()
-
-            if not skills:
-                return None
-
-            # 格式化 Skills 列表
-            skill_lines = []
-            for skill in skills:
-                skill_line = f"- **{skill.name}**: {skill.description}"
-                if skill.keywords:
-                    skill_line += f"\n  - 触发关键词: {', '.join(skill.keywords[:5])}"
-                skill_lines.append(skill_line)
-
-            return "\n".join(skill_lines)
-        except Exception as e:
-            logger.warning(f"[Agent初始化] 获取 Skills 列表失败: {e}")
-            return None
-
-    def _load_skills(self) -> None:
-        """
-        加载 Skills 并初始化 SubAgentExecutor
-
-        从全局 Skill 注册表加载所有可用的 Skills，
-        并创建子 Agent 执行器用于执行 Skill。
-        """
-        # 检查是否启用 Skills 功能
-        if not settings.enable_skills:
-            logger.info("[Agent初始化] Skills 功能已禁用 (enable_skills=False)")
-            return
-
-        try:
-            registry = get_skill_registry()
-            skills = registry.list_all()
-
-            if skills:
-                # 构建 skills 字典
-                for skill in skills:
-                    self.skills[skill.name] = skill
-                logger.info(f"[Agent初始化] 加载了 {len(skills)} 个 Skills")
-
-                # 创建 SubAgentExecutor
-                self.sub_agent = SubAgentExecutor(
-                    client=self.client,
-                    model=self.llm_model,
-                    executor=self.executor,
-                    temperature=self.temperature,
-                    top_p=self.top_p,
-                )
-                logger.info("[Agent初始化] SubAgentExecutor 已创建")
-            else:
-                logger.info("[Agent初始化] 没有可用的 Skills")
-
-        except Exception as e:
-            logger.warning(f"[Agent初始化] 加载 Skills 失败: {e}")
-            self.skills = {}
-            self.sub_agent = None
-
-    def _should_use_skill(self, message: str) -> Optional[str]:
-        """
-        检查是否应该使用某个 Skill
-
-        通过关键词匹配判断用户查询是否适合使用特定的 Skill。
-        如果没有匹配到任何 Skill，不使用 SubAgent（让主 Agent 处理）。
-
-        Args:
-            message: 用户查询消息
-
-        Returns:
-            匹配的 Skill 名称，如果没有匹配则返回 None
-        """
-        if not self.skills or not self.sub_agent:
-            return None
-
-        message_lower = message.lower()
-
-        # 遍历所有 Skill，检查关键词匹配
-        for skill_name, skill in self.skills.items():
-            if skill.keywords:
-                for keyword in skill.keywords:
-                    if keyword.lower() in message_lower:
-                        logger.info(
-                            f"[Skill路由] 匹配到 Skill: {skill_name} (关键词: {keyword})"
-                        )
-                        return skill_name
-
-        # 没有匹配到任何 Skill，不使用 SubAgent
-        logger.info("[Skill路由] 无匹配 Skill，使用主 Agent 处理")
-        return None
 
     def _init_llm(self, api_key: Optional[str], base_url: Optional[str]) -> LLMClient:
         """
@@ -1049,45 +917,12 @@ class DeepPDFAgent:
         # 记录用户查询到当前轮次
         self.current_turn_history.append({"role": "user", "content": user_content})
 
-        # ========== 🎯 阶段2: Skill 路由判断 ==========
+        # ========== 🎯 阶段2: 路由判断 ==========
         logger.info("")
         logger.info("-" * 80)
         logger.info("🧭 [路由判断] 开始分析查询类型")
         logger.info("-" * 80)
 
-        # 检查是否匹配某个 Skill
-        matched_skill_name = self._should_use_skill(query)
-        if matched_skill_name and self.sub_agent:
-            matched_skill = self.skills.get(matched_skill_name)
-            if matched_skill and matched_skill.prompt_content:
-                logger.info(f"🎯 [Skill路由] 使用 Skill: {matched_skill_name}")
-                logger.info(f"   - Skill 描述: {matched_skill.description}")
-
-                # 使用 SubAgentExecutor 流式执行 Skill
-                skill_knowledge = matched_skill.prompt_content
-
-                # 收集完整响应用于保存历史
-                full_response = ""
-
-                # 流式输出
-                for chunk in self.sub_agent.execute_stream(
-                    skill_knowledge=skill_knowledge,
-                    user_query=user_content,
-                    max_turns=self.max_iterations,
-                ):
-                    full_response += chunk
-                    yield chunk
-
-                # 保存会话历史
-                if keep_history:
-                    self._save_to_history(query, full_response, mode="Skill")
-
-                # 清空当前轮次历史
-                self.current_turn_history.clear()
-
-                return
-
-        # ========== 🎯 阶段3: 常规路由判断 ==========
         # 路由判断：根据强制模式或查询类型决定可用工具
         if force_mode is None:
             # 自动路由

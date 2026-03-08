@@ -37,6 +37,7 @@ def _list_indexes_sync(storage_dir: str) -> Dict[str, Any]:
                             "pdf_name": metadata.get("pdf_name", ""),
                             "node_count": metadata.get("node_count", 0),
                             "created_at": metadata.get("created_at", ""),
+                            "markdown_files": metadata.get("markdown_files", {}),
                         }
                     )
             except Exception:

@@ -6,7 +6,6 @@ Agent Prompt 管理 - 定义 System Prompt 和路由逻辑
 - 精简高效：System Prompt 约 1200 tokens，比原版节省 ~60%
 - 按需加载：Few-shot 示例可选，默认不启用
 - 清晰结构：模板 + 规则 + 工具描述 + 可选示例
-- 人设统一：主 Agent 和 SubAgent 共享基础人设
 """
 import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
     from .executor import ToolExecutor
 
 
-# ========== 基础人设（主 Agent 和 SubAgent 共享） ==========
+# ========== 基础人设 ==========
 
 PERSONA_BASE = """你叫"耽书"，小名奚奴，是一个专注书本、拥有天才语言天赋的少年书童。
 此刻，你正在陪伴你的好友 "昭见森"（用户）一同阅览书籍。
@@ -28,12 +27,16 @@ PERSONA_BASE = """你叫"耽书"，小名奚奴，是一个专注书本、拥有
 3. **亲切称呼**: 在对话中，要自然地称呼用户为 "昭见森"或者"昭先生"。"""
 
 
-# ========== 核心约束（主 Agent 和 SubAgent 共享） ==========
+# ========== 核心约束 ==========
 
 CORE_CONSTRAINTS = """
 ## 核心约束
 
-1. **格式规范**: 请用段落式叙述，避免列表和标题。用**加粗**标记重点。
+1. **格式规范**:
+   - 使用段落式叙述，避免列表和标题
+   - 用**加粗**标记重点
+   - **段落之间必须用空行分隔**（即两个换行符）
+   - 每个段落 2-4 句话为宜，保持阅读节奏
 2. **引用要求（强制）**:
    - **每个具体论断都必须有引用**，包括观点、事实、方法、结论等
    - **必须直接使用工具返回的 obsidian_link 字段值作为引用**，不要自己构造链接
@@ -242,26 +245,18 @@ class ToolCallData(TypedDict):
 # ========== 函数式 API ==========
 
 
-def build_system_prompt(
-    tool_descriptions: str, available_skills: Optional[str] = None
-) -> str:
+def build_system_prompt(tool_descriptions: str) -> str:
     """
     构建 System Prompt
 
     Args:
         tool_descriptions: 工具描述字符串
-        available_skills: 可用 Skills 列表描述（可选）
 
     Returns:
         完整的 System Prompt
     """
     builder = PromptBuilder(tool_descriptions=tool_descriptions, enable_few_shot=False)
-    prompt = builder.build()
-
-    if available_skills:
-        prompt += f"\n\n## 可用的阅读技能\n\n{available_skills}"
-
-    return prompt
+    return builder.build()
 
 
 def build_cross_book_prompt(tool_descriptions: str) -> str:
@@ -275,42 +270,6 @@ def build_cross_book_prompt(tool_descriptions: str) -> str:
         跨书籍模式的 System Prompt
     """
     return CROSS_BOOK_SYSTEM_PROMPT.format(tool_descriptions=tool_descriptions)
-
-
-def build_skill_system_prompt(
-    tool_descriptions: str,
-    skill_prompt: str,
-    available_skills: Optional[str] = None,
-) -> str:
-    """
-    构建 Skill 专属的 System Prompt（SubAgent 使用）
-
-    继承主 Agent 的基础人设和核心约束，叠加 Skill 专属指令。
-
-    Args:
-        tool_descriptions: 工具描述字符串
-        skill_prompt: Skill 专属的 Prompt 内容
-        available_skills: 可用 Skills 列表描述（可选）
-
-    Returns:
-        完整的 Skill System Prompt
-    """
-    # 组合：基础人设 + 核心约束 + 工具描述 + Skill 专属指令
-    combined_prompt = f"""{PERSONA_BASE}
-{CORE_CONSTRAINTS}
-{TOOL_STRATEGY}
-{tool_descriptions}
-
----
-
-# 技能专属指令
-
-{skill_prompt}"""
-
-    if available_skills:
-        combined_prompt += f"\n\n---\n\n## 可用的阅读技能\n\n{available_skills}"
-
-    return combined_prompt
 
 
 def build_messages(
@@ -490,7 +449,6 @@ __all__ = [
     "ToolCallData",
     "build_system_prompt",
     "build_cross_book_prompt",
-    "build_skill_system_prompt",
     "build_messages",
     "validate_citation_format",
     "parse_thought_content",
