@@ -872,27 +872,32 @@ class DeepPDFAgent:
                 logger.info(f"🎯 [Skill路由] 使用 Skill: {matched_skill_name}")
                 logger.info(f"   - Skill 描述: {matched_skill.description}")
 
-                # 使用 SubAgentExecutor 执行 Skill
+                # 使用 SubAgentExecutor 流式执行 Skill
                 skill_knowledge = matched_skill.prompt_content
-                result = self.sub_agent.execute(
+
+                # 收集完整响应用于保存历史
+                full_response = ""
+
+                # 流式输出
+                for chunk in self.sub_agent.execute_stream(
                     skill_knowledge=skill_knowledge,
                     user_query=user_content,
                     max_turns=self.max_iterations,
-                )
+                ):
+                    full_response += chunk
+                    yield chunk
 
                 # 保存会话历史
                 if keep_history:
                     self.session_history.append({"role": "user", "content": query})
                     self.session_history.append(
-                        {"role": "assistant", "content": result}
+                        {"role": "assistant", "content": full_response}
                     )
                     logger.info("💾 [会话历史] 已保存本轮对话 (Skill 模式)")
 
                 # 清空当前轮次历史
                 self.current_turn_history.clear()
 
-                # 返回结果
-                yield result
                 return
 
         # ========== 🎯 阶段3: 常规路由判断 ==========

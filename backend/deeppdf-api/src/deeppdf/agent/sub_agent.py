@@ -11,7 +11,7 @@
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from openai import OpenAI
 
@@ -280,3 +280,188 @@ class SubAgentExecutor:
 
         logger.warning(f"[SubAgent] 达到最大轮次 {max_turns}，未能完成任务")
         return "达到最大循环次数，未能完成任务。请尝试简化您的问题或分步骤提问。"
+
+    def execute_stream(
+        self,
+        skill_knowledge: str,
+        user_query: str,
+        available_tools: Optional[List[str]] = None,
+        max_turns: int = 10,
+    ) -> Generator[str, None, None]:
+        """
+        流式执行 Skill，实时输出
+
+        设计：
+        - 工具调用期间：发送状态更新（如 "🔍 正在搜索..."）
+        - LLM 回答期间：真正的流式输出
+
+        Args:
+            skill_knowledge: Skill 的 System Prompt 内容
+            user_query: 用户的问题
+            available_tools: 可选的工具名称列表（None 表示使用所有工具）
+            max_turns: 最大循环次数
+
+        Yields:
+            文本片段（流式输出）
+        """
+        logger.info("=" * 60)
+        logger.info("[SubAgent-Stream] 开始流式执行")
+        logger.info(f"  Query: {user_query[:50]}...")
+        logger.info(f"  Max Turns: {max_turns}")
+        logger.info("=" * 60)
+
+        # 1. 构建隔离的消息历史
+        sub_messages = [
+            {
+                "role": "system",
+                "content": skill_knowledge,
+            },
+            {
+                "role": "user",
+                "content": user_query,
+            },
+        ]
+
+        # 2. 获取工具 schema
+        tool_schemas = self._get_tool_schemas(available_tools)
+        logger.info(f"[SubAgent-Stream] 工具数量: {len(tool_schemas)}")
+
+        # 3. ReAct 循环
+        last_assistant_content = ""
+        for turn in range(max_turns):
+            logger.info(f"[SubAgent-Stream] 第 {turn + 1} 轮迭代")
+
+            try:
+                # 非流式调用（获取工具调用信息）
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    messages=sub_messages,
+                    tools=tool_schemas,
+                    temperature=self.temperature,
+                    top_p=self.top_p,
+                )
+            except Exception as e:
+                logger.error(f"[SubAgent-Stream] LLM 调用失败: {e}")
+                yield f"\n\n❌ 执行失败: {str(e)}"
+                return
+
+            # 检查响应状态
+            assistant_message = response.choices[0].message
+            last_assistant_content = assistant_message.content or ""
+
+            # 检查是否有工具调用
+            tool_calls = assistant_message.tool_calls or []
+
+            if not tool_calls:
+                # 没有工具调用，流式输出最终回答
+                logger.info(
+                    f"[SubAgent-Stream] 第 {turn + 1} 轮完成，无工具调用，开始流式输出"
+                )
+
+                # 流式调用 LLM
+                try:
+                    stream_response = self.client.chat.completions.create(
+                        model=self.model,
+                        max_tokens=4096,
+                        messages=sub_messages,
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                        stream=True,  # 启用流式
+                    )
+
+                    for chunk in stream_response:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            content = chunk.choices[0].delta.content
+                            # 清理 DeepSeek 内部标签
+                            content = _clean_deepseek_internal_tags(content)
+                            if content:
+                                yield content
+
+                except Exception as e:
+                    logger.error(f"[SubAgent-Stream] 流式输出失败: {e}")
+                    # 降级为非流式
+                    if last_assistant_content:
+                        yield _clean_deepseek_internal_tags(last_assistant_content)
+
+                logger.info("[SubAgent-Stream] 流式输出完成")
+                return
+
+            # 有工具调用，发送状态更新
+            # 记录 assistant 消息（包含工具调用）
+            sub_messages.append(
+                {
+                    "role": "assistant",
+                    "content": assistant_message.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                }
+            )
+
+            # 执行每个工具调用
+            for tool_call in tool_calls:
+                function = tool_call.function
+                tool_name = function.name
+
+                # 发送工具调用状态
+                tool_display_name = self._get_tool_display_name(tool_name)
+                yield f"🔧 {tool_display_name}...\n\n"
+
+                try:
+                    args = json.loads(function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
+
+                logger.info(f"  [工具调用] {tool_name} 参数={args}")
+
+                # 执行工具
+                try:
+                    output = self.executor.execute(tool_name, **args)
+                    logger.info(f"  [工具结果] 长度={len(output)}")
+                except Exception as e:
+                    logger.error(f"  [工具错误] {e}")
+                    output = f"工具执行失败: {str(e)}"
+
+                # 记录工具结果
+                sub_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": output,
+                    }
+                )
+
+        # 达到最大迭代次数
+        logger.warning(f"[SubAgent-Stream] 达到最大轮次 {max_turns}")
+
+        if last_assistant_content:
+            yield "\n\n"
+            yield _clean_deepseek_internal_tags(last_assistant_content)
+        else:
+            yield "\n\n⚠️ 达到最大搜索轮次，未能完成完整分析。请尝试简化您的问题。"
+
+    def _get_tool_display_name(self, tool_name: str) -> str:
+        """
+        获取工具的显示名称（用于状态更新）
+
+        Args:
+            tool_name: 工具名称
+
+        Returns:
+            用户友好的显示名称
+        """
+        tool_names = {
+            "inspect_toc": "查看目录结构",
+            "hybrid_search": "搜索相关内容",
+            "read_page": "阅读页面",
+        }
+        return tool_names.get(tool_name, f"调用 {tool_name}")
