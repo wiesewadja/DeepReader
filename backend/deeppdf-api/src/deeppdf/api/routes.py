@@ -577,30 +577,42 @@ async def list_all_indexes():
             f"[API] 已完成索引: id={idx['id']}, pdf_name={idx.get('pdf_name', 'N/A')}, status=completed"
         )
 
-    # 添加正在运行的任务到列表中
+    # 添加任务到列表中（包括正在运行的和已失败的）
     running_task_count = 0
+    failed_task_count = 0
     for task_id, task_info in _running_tasks.items():
-        if task_info["status"] in ["pending", "processing"]:
-            all_indexes.append(
-                {
-                    "id": task_id,
-                    "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
-                    "node_count": 0,  # 任务未完成时节点数为 0
-                    "status": task_info["status"],
-                    "created_at": task_info.get("created_at", ""),
-                    "message": task_info.get("message", ""),
-                    "progress_percent": task_info.get(
-                        "progress_percent", 0
-                    ),  # 添加进度信息
-                }
-            )
-            running_task_count += 1
-            logger.info(
-                f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}, progress={task_info.get('progress_percent', 0)}%"
-            )
+        # 包含 pending, processing 和 failed 状态的任务
+        if task_info["status"] in ["pending", "processing", "failed"]:
+            task_entry = {
+                "id": task_id,
+                "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
+                "node_count": 0,  # 任务未完成时节点数为 0
+                "status": task_info["status"],
+                "created_at": task_info.get("created_at", ""),
+                "message": task_info.get("message", ""),
+                "progress_percent": task_info.get(
+                    "progress_percent", 0
+                ),  # 添加进度信息
+            }
+            # 如果任务失败，添加错误信息
+            if task_info["status"] == "failed" and task_info.get("error"):
+                task_entry["message"] = task_info.get("error", "Unknown error")
+
+            all_indexes.append(task_entry)
+
+            if task_info["status"] in ["pending", "processing"]:
+                running_task_count += 1
+                logger.info(
+                    f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}, progress={task_info.get('progress_percent', 0)}%"
+                )
+            elif task_info["status"] == "failed":
+                failed_task_count += 1
+                logger.info(
+                    f"[API] 失败的任务: id={task_id}, error={task_info.get('error', 'Unknown')}"
+                )
 
     logger.info(
-        f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count}, 运行中: {running_task_count})"
+        f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count - failed_task_count}, 运行中: {running_task_count}, 失败: {failed_task_count})"
     )
     return ListIndexesResponse(
         status=result.get("status", "success"), indexes=all_indexes

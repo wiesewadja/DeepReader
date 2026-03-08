@@ -67,6 +67,8 @@ export async function runAgentLoop(
 
     iterations++;
     log(`[AgentLoop] Iteration ${iterations}/${maxIterations}`);
+    log(`[AgentLoop] 当前消息数: ${workingMessages.length}`);
+    log(`[AgentLoop] 可用工具数: ${tools.length}`);
 
     let accumulatedContent = '';
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
@@ -105,10 +107,13 @@ export async function runAgentLoop(
 
     // 如果没有 tool_calls，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
-      log('[AgentLoop] No more tool calls, finishing');
+      log(`[AgentLoop] No more tool calls, finishing. finishReason=${finishReason}, toolCalls.length=${toolCalls.length}`);
+      log(`[AgentLoop] accumulatedContent 长度: ${accumulatedContent.length}`);
       options.onComplete();
       break;
     }
+
+    log(`[AgentLoop] 收到 ${toolCalls.length} 个工具调用:`, toolCalls.map(tc => tc.name).join(', '));
 
     // 构建 assistant 消息（包含 tool_calls）
     const assistantMessage: ChatMessage = {

@@ -190,7 +190,12 @@ export class LibraryModal extends Modal {
 
         // 名称
         const nameEl = details.createDiv({ cls: 'deeppdf-file-name', text: name });
-        nameEl.title = index.pdf_name;
+        // 失败时显示错误信息
+        if (statusClass === 'failed' && index.message) {
+            nameEl.title = `${index.pdf_name}\n错误: ${index.message}`;
+        } else {
+            nameEl.title = index.pdf_name;
+        }
 
         // 元信息行
         const meta = details.createDiv({ cls: 'deeppdf-file-meta' });
@@ -204,6 +209,21 @@ export class LibraryModal extends Modal {
 
         if (index.node_count && statusClass === 'ready') {
             meta.createSpan({ cls: 'deeppdf-lib-nodes', text: `${index.node_count} 节点` });
+        }
+
+        // 失败时显示错误信息和重试按钮
+        if (statusClass === 'failed' && index.message) {
+            const errorEl = details.createDiv({ cls: 'deeppdf-lib-error' });
+            errorEl.textContent = index.message;
+
+            // 重试按钮
+            const retryBtn = item.createEl('button', { cls: 'deeppdf-btn deeppdf-btn-secondary' });
+            retryBtn.textContent = '重试';
+            retryBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // 重新触发索引
+                this.retryIndex(index);
+            });
         }
 
         // 右侧: 操作按钮
@@ -374,12 +394,32 @@ export class LibraryModal extends Modal {
                     window.clearInterval(this.pollingInterval);
                     this.pollingInterval = null;
                 }
-                new Notice('索引处理完成', 3000);
+
+                // 检查是否有失败的索引
+                const failedIndexes = this.indexes.filter(idx => {
+                    const status = (idx.status || '').toLowerCase();
+                    return ['failed', 'error'].includes(status);
+                });
+
+                if (failedIndexes.length > 0) {
+                    // 有失败的索引
+                    const failedNames = failedIndexes.map(idx => this.getDisplayName(idx.pdf_name)).join('、');
+                    new Notice(`索引失败: ${failedNames}，请检查 API Key 配置`, 5000);
+                } else {
+                    new Notice('索引处理完成', 3000);
+                }
             }
         }, 2000);
 
         // 立即刷新一次
         this.refreshIndexes();
+    }
+
+    private retryIndex(index: IndexListItem): void {
+        // 提示用户重新添加文档
+        new Notice(`请重新添加「${this.getDisplayName(index.pdf_name)}」进行索引`, 5000);
+        // 触发添加文档流程
+        this.handleAddDocument();
     }
 
     private handleDelete(index: IndexListItem): void {

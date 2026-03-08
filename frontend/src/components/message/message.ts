@@ -133,31 +133,54 @@ export function parseAgentContent(content: string): {
 	// - 🔎 *正在搜索相关内容...*
 	// - 📖 *正在读取指定页面...*
 	//
-	// 策略：匹配以 Emoji 开头，后面可能有 Markdown 斜体标记 (*...*) 的短行
-	const statusKeywords = ['搜索中', '分析中', '整理中', '查看中', '阅读中', '查目录'];
+	// 策略：状态行必须满足以下条件之一（避免误匹配正文中的普通句子）：
+	// 1. 以 Emoji 开头，后跟可选斜体标记和状态关键词（最可靠）
+	// 2. 整行以斜体标记包裹（*...*），且包含状态关键词，且长度 < 50 字符（备用）
+	const statusKeywords = ['搜索中', '分析中', '整理中', '查看中', '阅读中', '查目录', '正在'];
 	const keywordPattern = statusKeywords.join('|');
 
-	// 匹配模式：
-	// 状态行可以是纯文本状态关键词，也可以带有 Emoji 前缀
-	// 支持：纯文本（如"分析中"）、带 Emoji（如"💭 分析中"）、带 Markdown 格式（如"*分析中*"）
-	const statusLineRegex = new RegExp(
-		`^\\s*(?:(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83F][\\uDC00-\\uDFFF])\\s*)?\\*?(?:${keywordPattern})[^\\n]*\\*?\\s*$`,
+	// Emoji 范围：Miscellaneous Symbols, Dingbats, 以及 Emoji 范围
+	const emojiPattern = '(?:[\\u2300-\\u27BF]|[\\uD83C-\\uD83E][\\uDC00-\\uDFFF]|[\\u2600-\\u26FF])';
+
+	// 匹配模式 1：以 Emoji 开头的状态行（最可靠）
+	// 例如：💭 *正在分析您的问题...*
+	const emojiStatusRegex = new RegExp(
+		`^\\s*${emojiPattern}\\s*\\*?(?:${keywordPattern})[^\\n]*\\*?\\s*$`,
+		'gm'
+	);
+
+	// 匹配模式 2：纯斜体包裹的短状态行（备用，需满足长度限制）
+	// 例如：*正在搜索...* （必须 < 50 字符）
+	const italicStatusRegex = new RegExp(
+		`^\\s*\\*(?:${keywordPattern})[^\\n]{0,40}\\*\\s*$`,
 		'gm'
 	);
 
 	let currentStatus: string | undefined;
-	let match;
 
-	// 找到最后一条状态
-	while ((match = statusLineRegex.exec(content)) !== null) {
+	// 优先从 Emoji 状态行提取
+	let match;
+	while ((match = emojiStatusRegex.exec(content)) !== null) {
 		const line = match[0].trim();
 		// 清理 Markdown 符号，只保留纯文本状态
 		currentStatus = line.replace(/^\s*|\*+|\s*$/g, '').trim();
-		log('[DeepPDF] 检测到状态行:', currentStatus);
+		log('[DeepPDF] 检测到 Emoji 状态行:', currentStatus);
 	}
 
-	// 从正文中移除所有状态行
-	let processedContent = content.replace(statusLineRegex, '');
+	// 如果没有 Emoji 状态行，尝试匹配斜体状态行
+	if (!currentStatus) {
+		while ((match = italicStatusRegex.exec(content)) !== null) {
+			const line = match[0].trim();
+			// 额外检查：整行长度必须 < 50（排除长句子）
+			if (line.length < 50) {
+				currentStatus = line.replace(/^\s*|\*+|\s*$/g, '').trim();
+				log('[DeepPDF] 检测到斜体状态行:', currentStatus);
+			}
+		}
+	}
+
+	// 从正文中移除所有状态行（两种模式都移除）
+	let processedContent = content.replace(emojiStatusRegex, '').replace(italicStatusRegex, '');
 
 	// 1. 静默移除思考内容（不显示在最终回复中）
 	// 用户只需要看到执行状态提示，不需要看到思考过程
@@ -205,20 +228,26 @@ export function parseAgentContent(content: string): {
 	let toolMatch;
 	const seenToolCalls = new Set<string>();
 
+	// 错误指示符列表（用于判断工具调用是否失败）
+	const errorIndicators = ['ERROR', 'error', 'Error', 'FAILED', 'failed', 'Failed', 'Exception', 'exception'];
+
 	while ((toolMatch = toolCallRegex.exec(content)) !== null) {
 		const toolName = toolMatch[1].toLowerCase();
 		const args = toolMatch[2];
 		const callKey = `${toolName}:${args}`;
 		if (!seenToolCalls.has(callKey)) {
 			seenToolCalls.add(callKey);
-			// 判断状态：如果此时 args 不完整（流式传输中），或者还没有对应的结果输出，则认为是 pending
-			// 简单的判断：如果 args 里包含 ERROR 则是 error，否则默认 success
-			// 在流式传输中，我们往往只能看到调用开始，很难知道结束，除非有特定的 XML 标记闭合
-			// 假设只要出现了 tool call 文本，就是正在调用
+			// 判断状态：
+			// - error: args 包含明确的错误指示符（如 "ERROR:", "Exception:", "FAILED"）
+			// - success: 其他情况（默认成功，因为工具调用已完成并返回了结果）
+			//
+			// 注意：这里只检查 args 是否包含错误信息，因为工具调用语法本身出现
+			// 就意味着调用已经完成（成功或失败）
+			const hasError = errorIndicators.some(indicator => args.includes(indicator));
 			toolCalls.push({
 				name: toolName,
 				args: args,
-				status: args.includes('ERROR') ? 'error' : 'success'
+				status: hasError ? 'error' : 'success'
 			});
 		}
 	}
