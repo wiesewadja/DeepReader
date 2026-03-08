@@ -159,3 +159,57 @@ def build_tree_prompt(
         query=query,
         max_results=max_results,
     )
+
+
+def parse_llm_response(response_text: str) -> LLMTreeSearchResult:
+    """
+    解析 LLM 响应，提取 node_list 和 thinking
+
+    Args:
+        response_text: LLM 返回的原始文本
+
+    Returns:
+        LLMTreeSearchResult
+    """
+    try:
+        # 尝试提取 JSON 块
+        json_match = re.search(r'```json\s*([\s\S]*?)\s*```', response_text)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            # 尝试直接解析为 JSON
+            json_str = response_text.strip()
+
+        # 解析 JSON
+        data = json.loads(json_str)
+
+        thinking = data.get("thinking", "")
+        node_list = data.get("node_list", [])
+
+        # 验证 node_list 是列表
+        if not isinstance(node_list, list):
+            return LLMTreeSearchResult(
+                success=False,
+                error=f"node_list is not a list: {type(node_list)}",
+            )
+
+        # 验证所有元素是字符串
+        if not all(isinstance(n, str) for n in node_list):
+            node_list = [str(n) for n in node_list]
+
+        return LLMTreeSearchResult(
+            node_ids=node_list,
+            thinking=thinking,
+            success=True,
+        )
+
+    except json.JSONDecodeError as e:
+        return LLMTreeSearchResult(
+            success=False,
+            error=f"JSON parse error: {str(e)}",
+        )
+    except Exception as e:
+        return LLMTreeSearchResult(
+            success=False,
+            error=f"Parse error: {str(e)}",
+        )

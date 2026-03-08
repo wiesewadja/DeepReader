@@ -3,6 +3,7 @@
 from deeppdf.services.llm_tree_search import (
     format_tree_structure,
     build_tree_prompt,
+    parse_llm_response,
     LLMTreeSearchResult,
 )
 
@@ -110,3 +111,48 @@ class TestBuildTreePrompt:
 
         assert "未知文档" in prompt
         assert "最多 3 个" in prompt
+
+
+class TestParseLLMResponse:
+    """测试 LLM 响应解析"""
+
+    def test_valid_json_with_markdown(self):
+        """测试带 markdown 代码块的有效 JSON"""
+        response = '''```json
+{
+  "thinking": "用户问的是投资相关内容",
+  "node_list": ["0001", "0003"]
+}
+```'''
+        result = parse_llm_response(response)
+        assert result.success is True
+        assert result.node_ids == ["0001", "0003"]
+        assert "投资相关" in result.thinking
+
+    def test_valid_json_without_markdown(self):
+        """测试不带 markdown 的有效 JSON"""
+        response = '{"thinking": "推理过程", "node_list": ["0001"]}'
+        result = parse_llm_response(response)
+        assert result.success is True
+        assert result.node_ids == ["0001"]
+
+    def test_invalid_json(self):
+        """测试无效 JSON"""
+        response = "这不是 JSON"
+        result = parse_llm_response(response)
+        assert result.success is False
+        assert "JSON parse error" in result.error
+
+    def test_node_list_not_list(self):
+        """测试 node_list 不是列表"""
+        response = '{"thinking": "test", "node_list": "0001"}'
+        result = parse_llm_response(response)
+        assert result.success is False
+        assert "not a list" in result.error
+
+    def test_node_list_with_numbers(self):
+        """测试 node_list 包含数字（自动转换）"""
+        response = '{"thinking": "test", "node_list": [1, 2, 3]}'
+        result = parse_llm_response(response)
+        assert result.success is True
+        assert result.node_ids == ["1", "2", "3"]
