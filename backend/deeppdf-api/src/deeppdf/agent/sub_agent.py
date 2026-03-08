@@ -10,15 +10,41 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
 from .executor import ToolExecutor
 from .tools import Tool
-from .core import clean_deepseek_internal_tags
 
 logger = logging.getLogger(__name__)
+
+# DeepSeek 内部标签清理正则（用于过滤非标准输出）
+# 匹配 <|DSML|function_calls>...</|DSML|function_calls> 等内部格式
+# 注意：DeepSeek 使用全角字符 ｜ (U+FF5C)，需要同时匹配半角和全角
+_DEEPSEEK_INTERNAL_TAG_PATTERN = re.compile(
+    r"<[|｜]DSML[|｜]function_calls[|｜]>.*?</[|｜]DSML[|｜]function_calls[|｜]>|"
+    r"<[|｜]DSML[|｜][^>]*>.*?</[|｜]DSML[|｜][^>]*>|"
+    r"</?[|｜]DSML[|｜][^>]*>",
+    re.DOTALL,
+)
+
+
+def _clean_deepseek_internal_tags(text: str) -> str:
+    """
+    清理 DeepSeek 模型的内部标签
+
+    DeepSeek 在某些情况下会输出 <|DSML|function_calls> 等内部格式标签，
+    这些标签不应该传递给用户，需要过滤掉。
+
+    Args:
+        text: 原始文本
+
+    Returns:
+        清理后的文本
+    """
+    return _DEEPSEEK_INTERNAL_TAG_PATTERN.sub("", text).strip()
 
 
 class SubAgentExecutor:
@@ -174,6 +200,7 @@ class SubAgentExecutor:
         logger.info(f"[SubAgent] 工具数量: {len(tool_schemas)}")
 
         # 3. ReAct 循环
+        last_assistant_message = None  # 保存最后一轮的 assistant 消息
         for turn in range(max_turns):
             logger.info(f"[SubAgent] 第 {turn + 1} 轮迭代")
             try:
@@ -190,13 +217,14 @@ class SubAgentExecutor:
                 return f"SubAgent 执行失败: {str(e)}"
             # 检查响应状态
             assistant_message = response.choices[0].message
+            last_assistant_message = assistant_message  # 保存最后一轮消息
             # 检查是否有工具调用
             tool_calls = assistant_message.tool_calls or []
             if not tool_calls:
                 # 没有工具调用，返回最终回答
                 answer = assistant_message.content or ""
                 # 清理可能的 DeepSeek 内部标签
-                answer = clean_deepseek_internal_tags(answer)
+                answer = _clean_deepseek_internal_tags(answer)
                 logger.info(
                     f"[SubAgent] 第 {turn + 1} 轮迭代完成,无工具调用,返回最终回答"
                 )
@@ -240,5 +268,15 @@ class SubAgentExecutor:
                         "content": output,
                     }
                 )
-        # 达到最大迭代次数
-        return "达到最大循环次数，未能完成任务"
+
+        # 达到最大迭代次数，尝试获取最后一轮的回答
+        # 如果最后一轮有内容，返回它；否则返回提示信息
+        if last_assistant_message and last_assistant_message.content:
+            answer = _clean_deepseek_internal_tags(last_assistant_message.content)
+            logger.warning(
+                f"[SubAgent] 达到最大轮次 {max_turns}，返回当前部分回答（{len(answer)} 字符）"
+            )
+            return answer
+
+        logger.warning(f"[SubAgent] 达到最大轮次 {max_turns}，未能完成任务")
+        return "达到最大循环次数，未能完成任务。请尝试简化您的问题或分步骤提问。"
