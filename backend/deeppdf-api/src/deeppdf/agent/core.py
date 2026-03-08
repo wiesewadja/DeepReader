@@ -590,24 +590,17 @@ class DeepPDFAgent:
         """
         根据路由类型获取允许的工具列表
 
+        简化版：路由由模型推理决定，不再基于关键词限制工具选择。
+        始终返回 None，允许模型使用全部工具。
+
         Args:
-            route_type: 路由类型 ("fast", "slow", "section")
+            route_type: 路由类型 (仅用于日志记录)
 
         Returns:
-            允许的工具名称列表，None 表示允许全部工具
+            None (允许全部工具)
         """
-        if route_type == "fast":
-            # 简单事实查询：只允许 hybrid_search
-            return ["hybrid_search"]
-        elif route_type == "section":
-            # 章节查询：优先 read_page，保留 hybrid_search 作为备选
-            return ["read_page", "hybrid_search"]
-        elif route_type == "slow":
-            # 复杂分析：允许全部工具
-            return None
-        else:
-            # 未知类型：允许全部工具
-            return None
+        # 简化：始终允许全部工具，让模型自行决定
+        return None
 
     def _maybe_open_thought_tag(
         self, thought_state: Dict[str, Any]

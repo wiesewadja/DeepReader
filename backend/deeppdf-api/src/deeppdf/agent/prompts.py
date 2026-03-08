@@ -193,19 +193,6 @@ CORE_RULES = """
 """
 
 
-# ========== 强制决策规则 ==========
-
-DECISION_RULES = """
-## 强制规则
-
-1. 如果问题包含"哪年"、"何时"、"谁"、"什么"、"是否" → 必须用 `hybrid_search`
-2. 如果问题包含"分析"、"对比"、"演变"、"总结"、"为什么" → 必须用 `inspect_toc` + `read_page`
-3. 如果用户提到章节名 → 优先用 `read_page` 定位
-4. 每次工具调用后，必须分析结果再决定下一步
-5. 引用必须包含具体页码
-"""
-
-
 # ========== Few-Shot 示例 ==========
 
 FEW_SHOT_EXAMPLES = """
@@ -546,95 +533,33 @@ class PromptBuilder:
 
 
 class RouteDecision:
-    """路由决策辅助类 - 帮助 Agent 决定使用哪个工具"""
+    """
+    路由决策辅助类 - 简化版
 
-    # 简单事实查询关键词
-    FAST_TRACK_KEYWORDS = [
-        "哪年",
-        "何时",
-        "什么时候",
-        "谁",
-        "什么",
-        "是否",
-        "有没有",
-        "多少",
-        "几",
-        "多少个",
-    ]
+    设计原则：路由由模型推理决定，不需要复杂的规则。
+    信任模型的推理能力，保持简洁。
 
-    # 复杂分析关键词
-    SLOW_TRACK_KEYWORDS = [
-        "分析",
-        "对比",
-        "比较",
-        "演变",
-        "变化",
-        "发展",
-        "总结",
-        "归纳",
-        "为什么",
-        "如何",
-        "怎样",
-        "评价",
-        "看法",
-        "观点",
-        "关系",
-    ]
-
-    # 章节查询关键词
-    SECTION_KEYWORDS = ["第", "章", "节", "页"]
-
-    # 预编译的章节引用正则表达式
-    _SECTION_PATTERNS = [
-        re.compile(r"第\s*\d+\s*[章节页]"),  # 第3章、第3页
-        re.compile(r"\d+\s*页"),  # 3页
-        # 中文数字模式: 第三章、第三页
-        re.compile(r"第\s*[一二三四五六七八九十百千万零〇]+\s*[章节页]"),
-        re.compile(r"第\s*\d+\s*[章节页]"),  # 混合模式（阿拉伯数字，重复以保持兼容性）
-    ]
+    保留基础的分类方法用于日志记录和调试，但不限制模型工具选择。
+    """
 
     @classmethod
     def classify_query(cls, query: str) -> str:
         """
-        分类用户查询意图
+        分类用户查询意图（仅用于日志记录）
 
         Args:
             query: 用户查询字符串
 
         Returns:
-            路由类型: "fast" | "slow" | "section"
+            路由类型: "default" (始终返回默认值，让模型自行决定)
         """
-        # 1. 优先检查复杂分析 (最高优先级)
-        # 因为分析任务可能包含章节引用，但本质是分析任务
-        if any(kw in query for kw in cls.SLOW_TRACK_KEYWORDS):
-            return "slow"
-
-        # 2. 检查章节查询
-        if any(kw in query for kw in cls.SECTION_KEYWORDS):
-            # 进一步检查是否真的是章节查询
-            if cls._has_section_reference(query):
-                return "section"
-
-        # 3. 默认快速检索
-        return "fast"
-
-    @staticmethod
-    def _has_section_reference(query: str) -> bool:
-        """
-        检查是否包含明确的章节引用
-
-        Args:
-            query: 用户查询字符串
-
-        Returns:
-            是否包含章节引用
-        """
-        return any(pattern.search(query) for pattern in RouteDecision._SECTION_PATTERNS)
+        # 简化：始终返回 default，让模型自行决定使用哪个工具
+        return "default"
 
     @classmethod
     def suggest_tool(cls, query: str) -> str:
         """
-        建议使用的工具
+        建议使用的工具（仅用于日志记录）
 
         Args:
             query: 用户查询字符串
@@ -642,14 +567,8 @@ class RouteDecision:
         Returns:
             工具名称
         """
-        route = cls.classify_query(query)
-
-        if route == "fast":
-            return "hybrid_search"
-        elif route == "slow":
-            return "inspect_toc"  # 先看目录，再决定读哪些页
-        else:  # section
-            return "read_page"
+        # 简化：不再基于关键词推荐，由模型自行决定
+        return "auto"
 
 
 # ========== 类型定义 ==========
@@ -665,7 +584,9 @@ class ToolCallData(TypedDict):
 # ========== 函数式 API ==========
 
 
-def build_system_prompt(tool_descriptions: str, version: int = 2, available_skills: Optional[str] = None) -> str:
+def build_system_prompt(
+    tool_descriptions: str, version: int = 2, available_skills: Optional[str] = None
+) -> str:
     """
     构建 System Prompt
 
@@ -716,25 +637,12 @@ def build_skill_system_prompt(
     Args:
         tool_descriptions: 工具描述字符串
         skill_prompt: Skill 专属的 Prompt 内容
-        version: 基础模板版本（1=旧版, 2=优化版）
+        version: 基础模板版本（1=旧版, 2=优化版）- 当前未使用，保留用于未来扩展
         available_skills: 可用 Skills 列表描述（可选）
 
     Returns:
         完整的 Skill System Prompt
     """
-    # 选择基础模板
-    if version == 2:
-        base_template = SYSTEM_PROMPT_TEMPLATE_V2
-        core_rules = CORE_RULES
-        # V2 模板使用 {core_rules} 占位符
-        base_prompt = base_template.format(
-            core_rules=core_rules,
-            tool_descriptions=tool_descriptions,
-        )
-    else:
-        base_template = SYSTEM_PROMPT_TEMPLATE
-        base_prompt = base_template.format(tool_descriptions=tool_descriptions)
-
     # 组合合并：基础工具说明 + Skill 专属 Prompt
     # 使用分隔符明确区分两部分
     combined_prompt = f"""{tool_descriptions}
@@ -815,7 +723,6 @@ __all__ = [
     "CORE_RULES",
     "FEW_SHOT_EXAMPLES",
     "FEW_SHOT_EXAMPLES_V2",
-    "DECISION_RULES",
     "CROSS_BOOK_SYSTEM_PROMPT",
     "PromptBuilder",
     "RouteDecision",
