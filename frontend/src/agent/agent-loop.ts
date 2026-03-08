@@ -15,6 +15,7 @@ import { log } from '../utils/logger';
 
 export interface AgentLoopOptions {
   maxIterations?: number; // default 10
+  abortSignal?: AbortSignal; // 用于取消请求
   onContent: (text: string) => void;
   onProgress: (status: string) => void;
   onComplete: () => void;
@@ -49,8 +50,21 @@ export async function runAgentLoop(
   const maxIterations = options.maxIterations || 10;
   let iterations = 0;
   const workingMessages = [...messages];
+  let hadError = false; // 跟踪是否发生了错误
 
   while (iterations < maxIterations) {
+    // 检查是否被取消
+    if (options.abortSignal?.aborted) {
+      log('[AgentLoop] Aborted by signal');
+      break;
+    }
+
+    // 如果之前发生了错误，终止循环
+    if (hadError) {
+      log('[AgentLoop] Error occurred, terminating loop');
+      break;
+    }
+
     iterations++;
     log(`[AgentLoop] Iteration ${iterations}/${maxIterations}`);
 
@@ -60,27 +74,33 @@ export async function runAgentLoop(
 
     // 调用 LLM（流式）
     await new Promise<void>((resolve) => {
-      client.streamChat(workingMessages, tools, {
-        onContent: (text) => {
-          accumulatedContent += text;
-          options.onContent(text);
+      client.streamChat(
+        workingMessages,
+        tools,
+        {
+          onContent: (text) => {
+            accumulatedContent += text;
+            options.onContent(text);
+          },
+          onToolCall: (calls) => {
+            toolCalls = calls;
+            finishReason = 'tool_calls';
+          },
+          onComplete: (reason) => {
+            // 只有在没有收到 tool_calls 时才更新 finishReason
+            if (finishReason !== 'tool_calls') {
+              finishReason = reason;
+            }
+            resolve();
+          },
+          onError: (error) => {
+            hadError = true;
+            options.onError(error);
+            resolve();
+          },
         },
-        onToolCall: (calls) => {
-          toolCalls = calls;
-          finishReason = 'tool_calls';
-        },
-        onComplete: (reason) => {
-          // 只有在没有收到 tool_calls 时才更新 finishReason
-          if (finishReason !== 'tool_calls') {
-            finishReason = reason;
-          }
-          resolve();
-        },
-        onError: (error) => {
-          options.onError(error);
-          resolve();
-        },
-      });
+        { signal: options.abortSignal } // 传递取消信号
+      );
     });
 
     // 如果没有 tool_calls，循环结束

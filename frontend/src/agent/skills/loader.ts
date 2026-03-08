@@ -63,9 +63,25 @@ export class SkillLoader {
 
   /**
    * 解析单个 Skill .md 文件
+   * 包含路径遍历攻击防护
    */
   private parseSkillFile(filePath: string): Skill | null {
     try {
+      // 安全检查：确保文件路径在 skillsDir 范围内，防止路径遍历攻击
+      const resolvedPath = path.resolve(filePath);
+      const resolvedDir = path.resolve(this.skillsDir);
+
+      if (!resolvedPath.startsWith(resolvedDir)) {
+        logError('[SkillLoader] 路径遍历攻击检测，拒绝访问:', filePath);
+        return null;
+      }
+
+      // 额外检查：确保文件扩展名是 .md
+      if (!resolvedPath.endsWith('.md')) {
+        logError('[SkillLoader] 拒绝非 .md 文件:', filePath);
+        return null;
+      }
+
       const content = fs.readFileSync(filePath, 'utf-8');
 
       // 解析 YAML frontmatter（不使用 s 标志）

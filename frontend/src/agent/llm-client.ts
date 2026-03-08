@@ -18,6 +18,10 @@ export interface StreamCallbacks {
   onError: (error: string) => void;
 }
 
+export interface StreamOptions {
+  signal?: AbortSignal; // 外部传入的取消信号
+}
+
 /**
  * 用于累积流式响应中的 tool_calls
  */
@@ -28,14 +32,36 @@ interface AccumulatedToolCall {
 }
 
 export class LLMClient {
-  private apiKey: string;
+  // 使用私有变量保护 API Key，防止意外序列化到日志
+  #apiKey: string;
   private baseUrl: string;
   private model: string;
 
   constructor(options: LLMClientOptions) {
-    this.apiKey = options.apiKey;
+    this.#apiKey = options.apiKey;
     this.baseUrl = options.baseUrl || 'https://api.deepseek.com';
     this.model = options.model || 'deepseek-chat';
+  }
+
+  /**
+   * 获取 API Key 的掩码版本（用于日志/调试）
+   */
+  get maskedApiKey(): string {
+    if (!this.#apiKey || this.#apiKey.length < 8) {
+      return '***';
+    }
+    return `${this.#apiKey.slice(0, 4)}...${this.#apiKey.slice(-4)}`;
+  }
+
+  /**
+   * 防止对象被 JSON.stringify 时泄露 API Key
+   */
+  toJSON(): Record<string, unknown> {
+    return {
+      baseUrl: this.baseUrl,
+      model: this.model,
+      apiKey: this.maskedApiKey,
+    };
   }
 
   /**
@@ -43,14 +69,27 @@ export class LLMClient {
    * @param messages 对话消息列表
    * @param tools 可用的工具定义
    * @param callbacks 流式回调
+   * @param options 可选配置（包括 abortSignal）
    * @returns AbortController 用于取消请求
    */
   async streamChat(
     messages: ChatMessage[],
     tools: ToolDefinition[],
-    callbacks: StreamCallbacks
+    callbacks: StreamCallbacks,
+    options?: StreamOptions
   ): Promise<AbortController> {
     const controller = new AbortController();
+
+    // 如果外部提供了 AbortSignal，监听它并转发到内部的 controller
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        options.signal.addEventListener('abort', () => {
+          controller.abort();
+        });
+      }
+    }
 
     const apiUrl = `${this.baseUrl}/chat/completions`;
 
@@ -59,7 +98,7 @@ export class LLMClient {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${this.#apiKey}`,
         },
         body: JSON.stringify({
           model: this.model,
@@ -95,15 +134,23 @@ export class LLMClient {
       const toolCallsMap = new Map<number, AccumulatedToolCall>();
       let finishReason: 'stop' | 'tool_calls' | 'length' = 'stop';
 
+      // SSE buffer：用于处理跨 chunk 的不完整行
+      let sseBuffer = '';
+
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+          // 将新数据追加到 buffer
+          sseBuffer += decoder.decode(value, { stream: true });
+
+          // 按换行符分割，保留最后一个可能不完整的行
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || ''; // 保留最后一个（可能不完整的）行
 
           for (const line of lines) {
+            if (line.trim() === '') continue;
             if (!line.startsWith('data: ')) continue;
 
             const data = line.slice(6);
@@ -156,6 +203,22 @@ export class LLMClient {
           }
         }
 
+        // 处理 buffer 中剩余的内容
+        if (sseBuffer.trim() !== '' && sseBuffer.startsWith('data: ')) {
+          const data = sseBuffer.slice(6);
+          if (data !== '[DONE]') {
+            try {
+              const parsed: StreamChunk = JSON.parse(data);
+              const choice = parsed.choices?.[0];
+              if (choice?.finish_reason) {
+                finishReason = choice.finish_reason;
+              }
+            } catch {
+              // 忽略解析错误
+            }
+          }
+        }
+
         // 流结束，处理累积的 tool_calls
         if (toolCallsMap.size > 0) {
           const toolCalls = Array.from(toolCallsMap.values()).filter(
@@ -174,11 +237,13 @@ export class LLMClient {
         }
         callbacks.onError(readError instanceof Error ? readError.message : 'Stream read error');
       } finally {
-        // 确保 reader 被释放
+        // 确保 reader 被正确释放
+        // 使用 releaseLock() 而非 cancel()，因为 cancel() 可能抛出异常
+        // releaseLock() 更安全，它允许 reader 被垃圾回收
         try {
-          reader.cancel();
+          reader.releaseLock();
         } catch {
-          // ignore
+          // ignore - reader 可能已经释放
         }
       }
     } catch (error) {
@@ -204,7 +269,7 @@ export class LLMClient {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: `Bearer ${this.#apiKey}`,
       },
       body: JSON.stringify({
         model: this.model,

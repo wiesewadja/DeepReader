@@ -51,13 +51,19 @@ export function getToolDefinitions(registry: ToolRegistry): ToolDefinition[] {
 }
 
 /**
- * 执行指定工具
+ * 执行指定工具（带超时保护）
+ * @param registry 工具注册表
+ * @param name 工具名称
+ * @param args 工具参数
+ * @param context 工具上下文
+ * @param timeout 超时时间（毫秒），默认 30 秒
  */
 export async function executeTool(
   registry: ToolRegistry,
   name: string,
   args: Record<string, unknown>,
-  context: ToolContext
+  context: ToolContext,
+  timeout: number = 30000
 ): Promise<string> {
   const executor = registry.get(name);
 
@@ -69,7 +75,13 @@ export async function executeTool(
   log('[executeTool] 执行工具:', name, '参数:', args);
 
   try {
-    const result = await executor.execute(args, context);
+    // 使用 Promise.race 实现超时保护
+    const result = await Promise.race([
+      executor.execute(args, context),
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error(`Tool execution timeout after ${timeout}ms`)), timeout)
+      ),
+    ]);
     log('[executeTool] 工具执行成功:', name, '结果长度:', result.length);
     return result;
   } catch (e) {
