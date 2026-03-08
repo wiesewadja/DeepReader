@@ -1317,6 +1317,12 @@ export class SidebarView extends ItemView {
             return;
         }
 
+        // 检查后端连接状态
+        if (!this.isConnected) {
+            new Notice("后端未连接，请先启动后端服务");
+            return;
+        }
+
         // 跨书籍模式不需要选择索引
         if (!this.crossBookMode && !this.currentIndexId) {
             new Notice("请先选择一个索引");
