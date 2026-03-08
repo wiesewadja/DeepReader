@@ -33,6 +33,12 @@ def get_skill_registry() -> SkillRegistry:
     if _skill_registry is None:
         from ..config import settings
 
+        # 检查是否启用 Skills 功能
+        if not settings.enable_skills:
+            logger.info("[Skills] Skills 功能已禁用 (enable_skills=False)")
+            _skill_registry = SkillRegistry()  # 返回空注册表
+            return _skill_registry
+
         _skill_registry = SkillRegistry()
 
         # 1. 加载内置 Skills

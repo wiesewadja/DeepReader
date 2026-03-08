@@ -448,6 +448,10 @@ class DeepPDFAgent:
         Returns:
             格式化的 Skills 列表字符串，用于添加到 System Prompt
         """
+        # 如果 Skills 功能已禁用，直接返回 None
+        if not settings.enable_skills:
+            return None
+
         try:
             from ..skills import get_skill_registry
 
@@ -477,6 +481,11 @@ class DeepPDFAgent:
         从全局 Skill 注册表加载所有可用的 Skills，
         并创建子 Agent 执行器用于执行 Skill。
         """
+        # 检查是否启用 Skills 功能
+        if not settings.enable_skills:
+            logger.info("[Agent初始化] Skills 功能已禁用 (enable_skills=False)")
+            return
+
         try:
             registry = get_skill_registry()
             skills = registry.list_all()

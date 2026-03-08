@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     visual_text_threshold: int = 50
 
     # Skills 配置
+    enable_skills: bool = False  # 是否启用 Skills 功能
     user_skills_dir: Optional[str] = None  # 用户自定义 Skills 目录路径
 
     # Pydantic V2 配置
