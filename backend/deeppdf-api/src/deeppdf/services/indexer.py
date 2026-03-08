@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 
 # 全局线程池 - 使用配置中的 worker 数量
-# 注意：pageindex-lib 需要 asyncio 事件循环，在线程池中运行需要特殊处理
-cpu_executor = ThreadPoolExecutor(max_workers=1)  # 限制为 1 个 worker 以避免并发问题
+# 注意：pageindex-lib 内部使用 asyncio，但在 ThreadPoolExecutor 中运行时
+# 通过 asyncio.run() 创建独立的事件循环，因此可以安全并发
+cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
 
 
 def _extract_nodes_from_tree(
