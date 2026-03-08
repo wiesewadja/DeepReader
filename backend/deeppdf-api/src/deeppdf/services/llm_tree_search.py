@@ -213,3 +213,63 @@ def parse_llm_response(response_text: str) -> LLMTreeSearchResult:
             success=False,
             error=f"Parse error: {str(e)}",
         )
+
+
+def extract_nodes_by_ids(
+    tree_structure: Dict[str, Any],
+    node_ids: List[str],
+) -> List[Dict[str, Any]]:
+    """
+    根据 node_id 列表从 tree_structure 中提取节点内容
+
+    Args:
+        tree_structure: PageIndex 生成的树结构
+        node_ids: 要提取的节点 ID 列表
+
+    Returns:
+        List of {node_id, title, text, summary, path, start_index, end_index}
+    """
+    results = []
+    node_ids_set = set(node_ids)
+
+    def traverse(nodes: List[Dict], parent_path: str = ""):
+        for node in nodes:
+            node_id = node.get("node_id", "")
+            title = node.get("title", "")
+            current_path = f"{parent_path} > {title}" if parent_path else title
+
+            # 如果当前节点在目标列表中
+            if node_id in node_ids_set:
+                results.append({
+                    "node_id": node_id,
+                    "title": title,
+                    "text": node.get("text", ""),
+                    "summary": node.get("summary", ""),
+                    "path": current_path,
+                    "start_index": node.get("start_index"),
+                    "end_index": node.get("end_index"),
+                })
+
+            # 递归处理子节点
+            children = node.get("nodes", [])
+            if children:
+                traverse(children, current_path)
+
+    # 处理 structure 字段
+    if isinstance(tree_structure, dict):
+        nodes = tree_structure.get("structure", [])
+    elif isinstance(tree_structure, list):
+        nodes = tree_structure
+    else:
+        return []
+
+    traverse(nodes)
+
+    # 按照 node_ids 的顺序排序
+    id_to_node = {n["node_id"]: n for n in results}
+    ordered_results = []
+    for nid in node_ids:
+        if nid in id_to_node:
+            ordered_results.append(id_to_node[nid])
+
+    return ordered_results

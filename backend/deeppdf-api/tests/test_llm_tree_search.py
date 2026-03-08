@@ -4,6 +4,7 @@ from deeppdf.services.llm_tree_search import (
     format_tree_structure,
     build_tree_prompt,
     parse_llm_response,
+    extract_nodes_by_ids,
     LLMTreeSearchResult,
 )
 
@@ -156,3 +157,87 @@ class TestParseLLMResponse:
         result = parse_llm_response(response)
         assert result.success is True
         assert result.node_ids == ["1", "2", "3"]
+
+
+class TestExtractNodesByIds:
+    """测试节点提取"""
+
+    def test_extract_single_node(self):
+        """测试提取单个节点"""
+        tree = {
+            "structure": [
+                {
+                    "title": "第一章",
+                    "node_id": "0001",
+                    "text": "章节内容",
+                    "summary": "摘要",
+                    "start_index": 1,
+                    "end_index": 10,
+                    "nodes": [],
+                }
+            ]
+        }
+        results = extract_nodes_by_ids(tree, ["0001"])
+
+        assert len(results) == 1
+        assert results[0]["node_id"] == "0001"
+        assert results[0]["title"] == "第一章"
+        assert results[0]["text"] == "章节内容"
+
+    def test_extract_multiple_nodes(self):
+        """测试提取多个节点"""
+        tree = {
+            "structure": [
+                {
+                    "title": "第一章",
+                    "node_id": "0001",
+                    "nodes": [
+                        {
+                            "title": "1.1 子章节",
+                            "node_id": "0002",
+                            "text": "子章节内容",
+                            "nodes": [],
+                        }
+                    ],
+                },
+                {
+                    "title": "第二章",
+                    "node_id": "0003",
+                    "nodes": [],
+                },
+            ]
+        }
+        results = extract_nodes_by_ids(tree, ["0002", "0003"])
+
+        assert len(results) == 2
+        # 验证顺序保持
+        assert results[0]["node_id"] == "0002"
+        assert results[1]["node_id"] == "0003"
+
+    def test_extract_nonexistent_node(self):
+        """测试提取不存在的节点"""
+        tree = {"structure": [{"title": "章节", "node_id": "0001", "nodes": []}]}
+        results = extract_nodes_by_ids(tree, ["9999"])
+
+        assert len(results) == 0
+
+    def test_extract_with_path(self):
+        """测试路径构建"""
+        tree = {
+            "structure": [
+                {
+                    "title": "第一章",
+                    "node_id": "0001",
+                    "nodes": [
+                        {
+                            "title": "1.1 子章节",
+                            "node_id": "0002",
+                            "nodes": [],
+                        }
+                    ],
+                }
+            ]
+        }
+        results = extract_nodes_by_ids(tree, ["0002"])
+
+        assert results[0]["path"] == "第一章 > 1.1 子章节"
