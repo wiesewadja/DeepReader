@@ -2207,8 +2207,10 @@ ${r.text}`;
             metadata.sourcePdf = data.pdfName;
         }
 
-        // 设置为对话摘录类型
+        // 设置为对话摘录类型，并清除不需要的字段
         metadata.sourceType = 'chat';
+        delete metadata.chapterPath;
+        delete metadata.chapterName;
 
         // 打开摘录模态框
         const modal = new ExcerptModal({
