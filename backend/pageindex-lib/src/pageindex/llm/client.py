@@ -260,25 +260,13 @@ class UnifiedLLM:
         total_chars = sum(len(str(msg.get("content", ""))) for msg in messages)
         estimated_tokens = total_chars // 4
 
-        # 记录日志
+        # 只在 DEBUG 级别打印详细日志（utils.py 已经打印了更友好的日志）
         if context_str:
-            logging.info(f"[LLM请求 #{call_id}] {context_str}")
+            logging.debug(f"[LLM #{call_id}] {context_str} - 请求 ~{estimated_tokens} tokens")
         else:
-            logging.info(f"[LLM请求 #{call_id}] {call_type.upper()}")
+            logging.debug(f"[LLM #{call_id}] 请求 ~{estimated_tokens} tokens")
 
-        logging.info(f"  - 模型: {self.model}")
-        logging.info(f"  - 温度: {temperature}")
-        logging.info(f"  - 消息数: {len(messages)}")
-        logging.info(f"  - 估算请求 tokens: ~{estimated_tokens}")
-        logging.info(f"  - 提示词长度: {total_chars} 字符")
-
-        # 显示第一条消息预览
-        if messages:
-            first_msg_content = str(messages[0].get("content", ""))
-            preview = first_msg_content[:200]
-            if len(first_msg_content) > 200:
-                preview += "..."
-            logging.debug(f"  - 提示词预览: {preview}")
+        logging.debug(f"[LLM #{call_id}] 模型: {self.model}, 温度: {temperature}, 消息数: {len(messages)}")
 
         return call_id, time.time()
 
@@ -300,16 +288,8 @@ class UnifiedLLM:
         response_chars = len(content)
         estimated_tokens = response_chars // 4
 
-        logging.info(f"[LLM响应 #{call_id}] 完成")
-        logging.info(f"  - 耗时: {elapsed:.2f} 秒")
-        logging.info(f"  - 响应长度: {response_chars} 字符")
-        logging.info(f"  - 估算响应 tokens: ~{estimated_tokens}")
-
-        # 显示响应预览
-        preview = content[:300]
-        if len(content) > 300:
-            preview += "..."
-        logging.debug(f"  - 响应内容预览: {preview}")
+        # 只在 DEBUG 级别打印（utils.py 已经打印了更友好的日志）
+        logging.debug(f"[LLM #{call_id}] 响应 ~{estimated_tokens} tokens, 耗时 {elapsed:.1f}s")
 
         return elapsed
 

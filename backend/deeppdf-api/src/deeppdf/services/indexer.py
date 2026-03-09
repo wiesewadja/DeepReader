@@ -16,7 +16,7 @@ from datetime import datetime
 
 from pageindex import page_index_main
 from pageindex.core import ConfigLoader
-from pageindex.llm import UnifiedLLM, get_provider
+from pageindex.llm import UnifiedLLM, get_provider, get_multi_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import get_chroma_store
@@ -261,6 +261,8 @@ def _setup_pageindex_config(
 
     config_loader = ConfigLoader()
 
+    # 构建多 Provider 配置
+    # 使用默认的三个 Provider: DeepSeek, SiliconFlow, Zhipu
     user_opt = {
         "model": config["model"],
         "if_add_node_summary": (
@@ -275,20 +277,31 @@ def _setup_pageindex_config(
         "toc_check_page_num": config["toc_check_pages"],
         "max_page_num_each_node": config["max_pages_per_node"],
         "max_token_num_each_node": config["max_tokens_per_node"],
-        "llm_provider": {
-            "type": config["llm_provider"],
-            "api_key": llm_api_key,
-            "base_url": config["base_url"],
-        },
+        # 使用多 Provider 模式（配置文件中的 llm_providers 会生效）
     }
 
     opt = config_loader.load(user_opt)
 
-    # 创建 LLM client
+    # 创建 LLM client（使用配置文件中的 llm_providers）
     llm_client_instance = None
-    if config["require_llm"] and llm_api_key:
-        provider = get_provider(user_opt["llm_provider"])
-        llm_client_instance = UnifiedLLM(provider=provider, model=opt.model)
+    if config["require_llm"]:
+        # 使用 ConfigLoader 的 get_llm_client 方法创建客户端
+        # 这会自动读取 config.yaml 中的 llm_providers 配置
+        # API Key 从环境变量读取 (DEEPSEEK_API_KEY, SILICONFLOW_API_KEY, ZHIPU_API_KEY)
+        try:
+            llm_client_instance = config_loader.get_llm_client(user_opt)
+        except Exception as e:
+            logger.warning(f"LLM 客户端创建失败: {e}")
+            # 如果创建失败，尝试使用传入的 API Key 作为备用
+            if llm_api_key:
+                logger.info("尝试使用传入的 API Key 创建单 Provider 客户端...")
+                from pageindex.llm import UnifiedLLM, get_provider
+                provider = get_provider({
+                    "type": config.get("llm_provider", "deepseek"),
+                    "api_key": llm_api_key,
+                    "base_url": config.get("base_url"),
+                })
+                llm_client_instance = UnifiedLLM(provider=provider, model=config["model"])
 
     return opt, llm_client_instance
 
@@ -739,9 +752,17 @@ def _index_pdf_sync(
         logger.info("[步骤 4/6] 创建 LLM 客户端...")
         _update_progress("create_llm_client", 40, "创建 LLM 客户端...")
         if llm_client_instance:
-            logger.info(
-                f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}"
-            )
+            # 检测是否使用 MultiProvider
+            from pageindex.llm.providers import MultiProvider
+            provider = getattr(llm_client_instance, 'provider', None)
+            if isinstance(provider, MultiProvider):
+                logger.info(
+                    f"LLM 客户端创建成功: MultiProvider ({len(provider.providers)} 个 Provider)"
+                )
+            else:
+                logger.info(
+                    f"LLM 客户端创建成功: {type(provider).__name__}/{config['model']}"
+                )
 
         # 步骤 5: 解析文档结构
         logger.info(
@@ -752,9 +773,17 @@ def _index_pdf_sync(
             logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
             logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config["if_add_node_summary"]:
-            logger.info(
-                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
-            )
+            # 检测是否使用 MultiProvider
+            from pageindex.llm.providers import MultiProvider
+            provider = getattr(llm_client_instance, 'provider', None) if llm_client_instance else None
+            if isinstance(provider, MultiProvider):
+                logger.info(
+                    f"  - 生成摘要 (使用 MultiProvider: {len(provider.providers)} 个并行)"
+                )
+            else:
+                logger.info(
+                    f"  - 生成摘要 (使用 {config.get('llm_provider', 'default')}/{config['model']})"
+                )
 
         tree_result, parse_time = _parse_pdf_structure(
             pdf_path, opt, llm_client_instance, config, progress_callback

@@ -262,9 +262,10 @@ class ConfigLoader:
         创建 LLM 客户端实例
 
         根据配置创建相应的 LLM provider 和 UnifiedLLM 实例。
+        支持单 Provider 和多 Provider 两种模式。
 
         参数:
-            user_opt: 用户配置（可选），格式同 load() 方法
+            user_opt: 用户配置（可选）。格式同 load() 方法
 
         返回:
             UnifiedLLM 客户端实例
@@ -276,7 +277,7 @@ class ConfigLoader:
         使用示例:
             >>> loader = ConfigLoader()
             >>>
-            >>> # 使用默认配置
+            >>> # 使用默认配置（单 Provider）
             >>> llm_client = loader.get_llm_client()
             >>>
             >>> # 使用自定义配置
@@ -284,9 +285,18 @@ class ConfigLoader:
             ...     "model": "gpt-4",
             ...     "llm_provider": {"type": "openai", "api_key": "..."}
             ... })
+            >>>
+            >>> # 使用多 Provider 并行模式
+            >>> llm_client = loader.get_llm_client({
+            ...     "model": "deepseek-chat",
+            ...     "llm_providers": [
+            ...         {"type": "deepseek", "weight": 1},
+            ...         {"type": "siliconflow", "weight": 1}
+            ...     ]
+            ... })
         """
         # 延迟导入，避免循环依赖
-        from ..llm import get_provider, UnifiedLLM
+        from ..llm import get_provider, get_multi_provider, UnifiedLLM
 
         # ============================================================
         # 步骤1: 加载配置
@@ -294,32 +304,30 @@ class ConfigLoader:
         cfg = self.load(user_opt)
 
         # ============================================================
-        # 步骤2: 获取 LLM Provider 配置
+        # 步骤2: 获取多 Provider 配置
         # ============================================================
-        provider_config = getattr(cfg, "llm_provider", {})
-        if not provider_config:
+        providers_config = getattr(cfg, "llm_providers", None)
+
+        if not providers_config:
             raise ValidationError(
-                "缺少 llm_provider 配置",
-                parameter="llm_provider",
+                "缺少 llm_providers 配置，请在 config.yaml 中配置 llm_providers",
+                parameter="llm_providers",
             )
 
-        logger.debug(f"LLM Provider 配置: type={provider_config.get('type')}")
-
-        # ============================================================
-        # 步骤3: 创建 Provider 实例
-        # ============================================================
+        # 多 Provider 模式
+        logger.debug(f"使用多 Provider 模式: {len(providers_config)} 个 Provider")
         try:
-            provider = get_provider(provider_config)
+            provider = get_multi_provider(providers_config)
         except Exception as e:
             raise ValidationError(
-                f"LLM Provider 创建失败: {e}",
-                parameter="llm_provider",
-                value=provider_config,
+                f"MultiProvider 创建失败: {e}",
+                parameter="llm_providers",
+                value=providers_config,
                 original_error=e,
             )
 
         # ============================================================
-        # 步骤4: 创建 UnifiedLLM 实例
+        # 步骤3: 创建 UnifiedLLM 实例
         # ============================================================
         # model 是必需配置项，不应该有默认值
         if not hasattr(cfg, "model") or not cfg.model:
@@ -331,7 +339,8 @@ class ConfigLoader:
         model = cfg.model
         llm_client = UnifiedLLM(provider=provider, model=model)
 
-        logger.info(f"LLM 客户端创建成功: model={model}, provider={type(provider).__name__}")
+        provider_info = f"MultiProvider({len(providers_config)} 个)"
+        logger.info(f"LLM 客户端创建成功: model={model}, provider={provider_info}")
 
         return llm_client
 

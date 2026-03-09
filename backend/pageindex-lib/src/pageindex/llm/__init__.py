@@ -57,8 +57,15 @@ from .providers import (
     DeepSeekProvider,
     GoogleProvider,
     CustomProvider,
+    SiliconFlowProvider,
+    ZhipuProvider,
+    MultiProvider,
     get_provider,
+    get_multi_provider,
 )
+
+# 为了向后兼容，创建别名
+UnifiedLLM = UnifiedLLM
 
 __all__ = [
     # 核心客户端
@@ -69,7 +76,11 @@ __all__ = [
     "DeepSeekProvider",
     "GoogleProvider",
     "CustomProvider",
+    "SiliconFlowProvider",
+    "ZhipuProvider",
+    "MultiProvider",
     "LLMProviderFactory",
     # 便捷函数
     "get_provider",
+    "get_multi_provider",
 ]

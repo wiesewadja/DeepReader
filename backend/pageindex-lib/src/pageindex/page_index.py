@@ -28,6 +28,7 @@ PageIndex 主入口模块
 更新时间: 2026-01-28 (添加 EPUB 支持)
 """
 
+import logging
 import os
 import json
 import copy
@@ -39,6 +40,9 @@ from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
+
+# 配置日志
+logger = logging.getLogger(__name__)
 
 # 从新模块导入
 from .pdf import PDFParser
@@ -2046,7 +2050,7 @@ def _process_epub(
     from .epub_parser import EpubParser
     from .epub_to_tree import epub_to_tree
 
-    print(f"[索引] 开始处理 EPUB: {file_path}")
+    logger.info(f"[EPUB] 开始处理: {Path(file_path).name}")
 
     # 1. 解析 EPUB
     parser = EpubParser(file_path)
@@ -2060,10 +2064,10 @@ def _process_epub(
 
     # 2. 转换为树结构
     tree = epub_to_tree(epub_data, assign_node_ids=True)
-    print(f"[索引] EPUB 树结构转换完成，节点数: {_count_nodes(tree)}")
+    node_count = _count_nodes(tree)
+    logger.info(f"[EPUB] 树结构转换完成，{node_count} 个节点")
 
     # 3. 可选：生成摘要
-    print(f"[索引] EPUB 摘要配置: config={config is not None}, use_llm={config.get('use_llm') if config else 'N/A'}")
     if config and config.get("use_llm"):
         from .utils import generate_summaries_for_structure
 
@@ -2074,34 +2078,28 @@ def _process_epub(
         # 需要异步运行
         async def add_summaries():
             llm_client = config.get("llm_client")
-            print(f"[索引] EPUB {mode_str}生成: llm_client={llm_client is not None}")
             if llm_client is None:
-                print(f"[索引] 未提供 llm_client，跳过{mode_str}生成")
+                logger.warning(f"[EPUB] 未提供 llm_client，跳过{mode_str}生成")
                 return tree
-            print(f"[索引] EPUB 开始生成{mode_str}，节点数: {_count_nodes(tree)}")
+            logger.info(f"[EPUB] 开始生成{mode_str}，节点数: {node_count}")
             await generate_summaries_for_structure(tree, llm_client=llm_client, format_text=format_text)
-            print(f"[索引] EPUB {mode_str}生成完成")
             # 验证摘要是否生成
             from .structure.converter import structure_to_list
             nodes = structure_to_list(tree)
             with_summary = sum(1 for n in nodes if n.get("summary"))
-            print(f"[索引] EPUB 摘要验证: {with_summary}/{len(nodes)} 个节点有摘要")
+            logger.info(f"[EPUB] {mode_str}完成: {with_summary}/{len(nodes)} 个节点")
             return tree
 
         # 如果在事件循环中，使用 nest_asyncio
         try:
             loop = asyncio.get_running_loop()
-            print(f"[索引] EPUB 检测到运行中的事件循环: {loop}")
             import nest_asyncio
             nest_asyncio.apply()
             tree = loop.run_until_complete(add_summaries())
-        except RuntimeError as e:
-            print(f"[索引] EPUB 没有运行中的事件循环，使用 asyncio.run(): {e}")
+        except RuntimeError:
             tree = asyncio.run(add_summaries())
-    else:
-        print(f"[索引] EPUB 跳过摘要生成: config={config is not None}, use_llm={config.get('use_llm') if config else 'N/A'}")
 
-    print("[索引] EPUB 处理完成")
+    logger.info("[EPUB] 处理完成")
 
     return tree
 
@@ -2175,12 +2173,6 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
     异常:
         ValueError: 不支持的文档类型
     """
-    # 强制输出调试信息 - 使用 logging
-    import logging
-    logging.basicConfig(level=logging.DEBUG, force=True)
-    logging.debug("[DEBUG] page_index_main called")
-    logging.debug(f"[DEBUG] doc={doc}, opt={opt is not None}, llm_client={llm_client is not None}")
-
     logger = JsonLogger(doc)
 
     # 检查是否是 EPUB 文件

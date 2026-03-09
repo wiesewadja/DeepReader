@@ -542,11 +542,22 @@ async def generate_node_summary(node, llm_client=None, format_text=False):
         >>> summary = await generate_node_summary(node, llm_client)
         >>> formatted_text, summary = await generate_node_summary(node, llm_client, format_text=True)
     """
+    import time
     title = node.get("title", "未知章节")
     original_text = node.get("text", "")
+    title_short = title[:30] + "..." if len(title) > 30 else title
 
     if not original_text or not original_text.strip():
         return ("", "") if format_text else ""
+
+    # 获取当前使用的 Provider 名称
+    from .llm.providers import MultiProvider
+    provider = getattr(llm_client, 'provider', None) if llm_client else None
+    if isinstance(provider, MultiProvider):
+        # MultiProvider 模式：获取当前轮询到的 Provider
+        provider_name = f"MultiProvider"
+    else:
+        provider_name = type(provider).__name__ if provider else "Unknown"
 
     if format_text:
         # 同时格式化文本和生成摘要
@@ -576,55 +587,82 @@ async def generate_node_summary(node, llm_client=None, format_text=False):
   "summary": "章节摘要（100-200字）"
 }}"""
 
-        context = f"格式化+摘要-章节'{title[:30]}...'"
+        context = f"格式化+摘要 | 章节: {title_short}"
+        start_time = time.time()
+        logger.info(f"[LLM请求] 章节「{title_short}」| Provider: {provider_name}")
         response = await llm_client.chat_async(prompt, context=context)
+        elapsed = time.time() - start_time
+        logger.info(f"[LLM响应] 章节「{title_short}」| Provider: {provider_name} | 耗时: {elapsed:.1f}s")
 
         # 解析 JSON 响应
         try:
             import json
+            import re
             # 尝试提取 JSON
             json_str = response.strip()
+
+            # 方法1: 移除代码块标记
             if json_str.startswith("```"):
-                # 移除代码块标记
                 lines = json_str.split("\n")
-                json_str = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+                # 移除第一行（```json 或 ```）和最后一行（```）
+                json_str = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
+
+            # 方法2: 尝试提取 JSON 对象（处理 LLM 在 JSON 前后添加文字的情况）
+            json_match = re.search(r'\{[\s\S]*\}', json_str)
+            if json_match:
+                json_str = json_match.group(0)
+
+            # 注意：不要简单替换换行符，这会破坏 JSON 结构
+            # JSON 中的换行符应该已经被 LLM 正确转义为 \n
 
             result = json.loads(json_str)
             formatted_text = result.get("formatted_text", original_text)
             summary = result.get("summary", "")
 
             if not summary:
-                # 如果摘要为空，生成一个简单的摘要
                 summary = f"本章节「{title}」的内容已格式化处理。"
 
+            logger.debug(f"[JSON解析] 章节「{title_short}」成功")
             return (formatted_text, summary)
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"[格式化+摘要] JSON 解析失败: {e}，使用原文")
+            logger.warning(f"[JSON解析] 章节「{title_short}」失败: {e}，使用原文")
+            logger.debug(f"[JSON解析] 原始响应前500字符: {response[:500]}")
             # 降级：返回原文和简单摘要
             return (original_text, f"本章节「{title}」的内容。")
     else:
-        # 只生成摘要（原有逻辑）
-        prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+        # 只生成摘要（优化后的中文 prompt）
+        prompt = f"""请为以下文档片段生成一段简洁的摘要（100-200字）。
 
-    Partial Document Text: {node["text"]}
+要求：
+- 概括主要内容、核心观点或关键信息
+- 语言简洁，逻辑清晰
+- 直接输出摘要内容，不要包含其他文字
 
-    Directly return the description, do not include any other text.
-    """
-        context = f"摘要生成-章节'{title[:30]}...'"
+章节标题：{title}
+
+文档内容：
+{node["text"]}
+"""
+        context = f"摘要生成 | 章节: {title_short}"
+        start_time = time.time()
+        logger.info(f"[LLM请求] 章节「{title_short}」| Provider: {provider_name}")
         response = await llm_client.chat_async(prompt, context=context)
+        elapsed = time.time() - start_time
+        logger.info(f"[LLM响应] 章节「{title_short}」| Provider: {provider_name} | 耗时: {elapsed:.1f}s")
         return response
 
 
-async def generate_summaries_for_structure(structure, llm_client=None, progress_callback=None, batch_size=5, format_text=False):
+async def generate_summaries_for_structure(structure, llm_client=None, progress_callback=None, batch_size=5, format_text=False, concurrent_limit=10):
     """
-    为结构中的所有节点生成摘要，可选同时格式化文本（带进度回调和批量并发控制）
+    为结构中的所有节点生成摘要，可选同时格式化文本（带进度回调和并发控制）
 
     参数:
         structure: 树状结构
-        llm_client: LLM 客户端
+        llm_client: LLM 客户端（支持 MultiProvider 并行）
         progress_callback: 进度回调函数 (current, total, message)
-        batch_size: 每批并发数（默认 5，避免 API 限流）
+        batch_size: 保留参数，向后兼容（实际使用 concurrent_limit）
         format_text: 是否同时格式化文本（默认 False）
+        concurrent_limit: 最大并发数（默认 10，多 Provider 模式下可提高）
 
     返回:
         添加了 summary（和 formatted text）字段的结构
@@ -646,37 +684,51 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
         return structure
 
     mode_str = "格式化+摘要" if format_text else "摘要"
-    logger.info(f"[{mode_str}生成] 共 {total} 个节点，批量大小: {batch_size}")
 
-    # 分批处理，避免 API 限流
-    completed = 0
-    for batch_start in range(0, total, batch_size):
-        batch_end = min(batch_start + batch_size, total)
-        batch_nodes = nodes[batch_start:batch_end]
+    # 检测是否使用 MultiProvider（多 LLM 并行）
+    from .llm.providers import MultiProvider
+    # llm_client 是 UnifiedLLM 类型，provider 属性才是实际的 provider
+    provider = getattr(llm_client, 'provider', None) if llm_client else None
+    is_multi_provider = isinstance(provider, MultiProvider)
 
-        # 并行处理当前批次
-        tasks = [generate_node_summary(node, llm_client=llm_client, format_text=format_text) for node in batch_nodes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+    if is_multi_provider:
+        logger.info(f"[{mode_str}生成] 共 {total} 个节点，使用多 Provider 并行模式，并发限制: {concurrent_limit}")
+    else:
+        logger.info(f"[{mode_str}生成] 共 {total} 个节点，单 Provider 模式，并发限制: {concurrent_limit}")
 
-        for node, result in zip(batch_nodes, results):
-            if not isinstance(result, Exception):
+    # 使用 Semaphore 控制并发数，完全并行处理
+    semaphore = asyncio.Semaphore(concurrent_limit)
+    completed = [0]  # 使用列表以便在闭包中修改
+    lock = asyncio.Lock()  # 用于安全更新计数器
+
+    async def process_node(node):
+        """处理单个节点，带并发控制"""
+        async with semaphore:
+            try:
+                result = await generate_node_summary(node, llm_client=llm_client, format_text=format_text)
                 if format_text:
                     formatted_text, summary = result
                     node["text"] = formatted_text  # 更新文本
                     node["summary"] = summary
                 else:
                     node["summary"] = result
-            else:
-                logger.warning(f"[{mode_str}生成] 节点处理失败: {result}")
+            except Exception as e:
+                logger.warning(f"[{mode_str}生成] 节点处理失败: {e}")
+            finally:
+                # 安全更新进度
+                async with lock:
+                    completed[0] += 1
+                    current = completed[0]
+                    if progress_callback:
+                        progress_callback(current, total, f"正在生成{mode_str} ({current}/{total})")
+                    if current % 5 == 0 or current == total:  # 每 5 个或完成时记录日志
+                        logger.info(f"[{mode_str}生成] 进度: {current}/{total}")
 
-        completed = batch_end
+    # 完全并行处理所有节点
+    tasks = [process_node(node) for node in nodes]
+    await asyncio.gather(*tasks)
 
-        # 更新进度
-        if progress_callback:
-            progress_callback(completed, total, f"正在生成摘要 ({completed}/{total})")
-
-        logger.info(f"[{mode_str}生成] 进度: {completed}/{total}")
-
+    logger.info(f"[{mode_str}生成] 完成，共处理 {total} 个节点")
     return structure
 
 
