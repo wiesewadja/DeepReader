@@ -261,35 +261,6 @@ class SummaryResponse(BaseModel):
     summary: str
 
 
-def _generate_summary_task(index_id: str, storage_dir: str, book_name: str):
-    """后台任务：生成书籍摘要"""
-    try:
-        from ..agent.core import AgentCore
-        import asyncio
-
-        # 创建新的事件循环
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def generate():
-            agent = AgentCore(index_id=index_id, storage_dir=storage_dir)
-            query = f"请为《{book_name}》这本书生成一个简洁的摘要（200字以内），介绍这本书的主题、核心内容和价值。"
-            result = await agent.run(query)
-            return result
-
-        summary = loop.run_until_complete(generate())
-        loop.close()
-
-        logger.info(f"[阅读API] 摘要生成完成: {index_id}")
-
-        # TODO: 将摘要保存到索引元数据中
-        return summary
-
-    except Exception as e:
-        logger.error(f"[阅读API] 摘要生成失败: {e}")
-        return None
-
-
 @router.get("/{index_id}/summary", response_model=SummaryResponse)
 async def get_or_generate_summary(
     index_id: str, background_tasks: BackgroundTasks, regenerate: bool = False

@@ -3,18 +3,13 @@ API 路由定义
 """
 
 import asyncio
-import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from collections import defaultdict
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, Request
-from fastapi.responses import StreamingResponse
-from typing import AsyncGenerator
 
-if TYPE_CHECKING:
-    from ..agent import DeepPDFAgent
 from .models import (
     IndexRequest,
     IndexResponse,
@@ -24,10 +19,6 @@ from .models import (
     TaskProgressResponse,
     MarkdownMappingBody,
     MarkdownMappingResponse,
-    AgentRequest,
-    AgentResponse,
-    AgentResponseWithCitations,
-    CitationInfo,
     SessionInfo,
     SessionsListResponse,
     DeleteSessionResponse,
@@ -65,7 +56,6 @@ from ..services.config_storage import ConfigStorage
 from ..services.file_storage import FileStorage
 from ..services.chat_storage import chat_storage
 from ..config import settings
-from ..agent.core import AgentError, LLMError
 from ..utils.cache import TTLCache
 from pathlib import Path
 
@@ -74,10 +64,6 @@ router = APIRouter(prefix="/api")
 
 # 全局任务存储：task_id -> {"task": asyncio.Task, "status": str, ...}
 _running_tasks: Dict[str, Dict] = {}
-
-# 全局 Agent 会话缓存：session_key -> Agent 实例
-# session_key 格式: f"{index_id}_{session_id}"
-_agent_sessions: Dict[str, "DeepPDFAgent"] = {}
 
 # 索引列表缓存（TTL 30秒）
 _index_list_cache = TTLCache[str, Dict](ttl_seconds=30.0, max_size=10)
@@ -539,80 +525,85 @@ async def create_index(req: IndexRequest, http_request: Request):
 
 @router.post("/query", response_model=QueryResponse)
 async def query_index(req: QueryRequest):
-    """查询 PDF 内容"""
+    """查询 PDF 内容（支持 LLM 树搜索）"""
     logger.info(
-        f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', max_results={req.max_results}"
+        f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', "
+        f"max_results={req.max_results}, use_llm_tree_search={req.use_llm_tree_search}"
     )
+
     result = await query_pdf(
         req.query,
         req.index_id,
         str(settings.base_dir),
         req.max_results or settings.max_results,
+        use_llm_tree_search=req.use_llm_tree_search,
     )
 
     # 检查是否出错
     if result.get("status") == "error":
         error_msg = result.get("error", "Unknown error")
         logger.warning(f"[API] 查询失败: {error_msg}")
-        # 返回错误响应，状态码仍然为 200（由 response_model 保证一致性）
-        # 前端可以通过 status="error" 判断
         return QueryResponse(status="error", results=None, error=error_msg)
 
     result_count = len(result.get("results", []))
-    logger.info(f"[API] 查询完成: 返回 {result_count} 个结果")
+    search_method = result.get("search_method", "unknown")
+    logger.info(f"[API] 查询完成: method={search_method}, 返回 {result_count} 个结果")
+
     return QueryResponse(**result)
 
 
 @router.get("/indexes", response_model=ListIndexesResponse)
 async def list_all_indexes():
     """列出所有索引（包括正在进行的任务）"""
-    logger.info("[API] 收到列出索引请求")
-
     # 尝试从缓存获取
     cache_key = "all_indexes"
     cached_result = _index_list_cache.get(cache_key)
     if cached_result is not None:
-        logger.debug("[API] 使用缓存的索引列表")
         result = cached_result
     else:
         result = await list_indexes(str(settings.base_dir))
         _index_list_cache.set(cache_key, result)
-        logger.debug("[API] 索引列表已缓存")
 
     # 为已完成的索引添加 status 字段
     all_indexes = []
     for idx in result.get("indexes", []):
         idx["status"] = "completed"
         all_indexes.append(idx)
-        logger.info(
-            f"[API] 已完成索引: id={idx['id']}, pdf_name={idx.get('pdf_name', 'N/A')}, status=completed"
-        )
 
-    # 添加正在运行的任务到列表中
+    # 添加任务到列表中（包括正在运行的和已失败的）
     running_task_count = 0
+    failed_task_count = 0
     for task_id, task_info in _running_tasks.items():
-        if task_info["status"] in ["pending", "processing"]:
-            all_indexes.append(
-                {
-                    "id": task_id,
-                    "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
-                    "node_count": 0,  # 任务未完成时节点数为 0
-                    "status": task_info["status"],
-                    "created_at": task_info.get("created_at", ""),
-                    "message": task_info.get("message", ""),
-                    "progress_percent": task_info.get(
-                        "progress_percent", 0
-                    ),  # 添加进度信息
-                }
-            )
-            running_task_count += 1
-            logger.info(
-                f"[API] 正在运行的任务: id={task_id}, status={task_info['status']}, progress={task_info.get('progress_percent', 0)}%"
-            )
+        # 包含 pending, processing 和 failed 状态的任务
+        if task_info["status"] in ["pending", "processing", "failed"]:
+            task_entry = {
+                "id": task_id,
+                "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
+                "node_count": 0,  # 任务未完成时节点数为 0
+                "status": task_info["status"],
+                "created_at": task_info.get("created_at", ""),
+                "message": task_info.get("message", ""),
+                "progress_percent": task_info.get(
+                    "progress_percent", 0
+                ),  # 添加进度信息
+            }
+            # 如果任务失败，添加错误信息
+            if task_info["status"] == "failed" and task_info.get("error"):
+                task_entry["message"] = task_info.get("error", "Unknown error")
 
-    logger.info(
-        f"[API] 返回 {len(all_indexes)} 个索引/任务 (已完成: {len(all_indexes) - running_task_count}, 运行中: {running_task_count})"
+            all_indexes.append(task_entry)
+
+            if task_info["status"] in ["pending", "processing"]:
+                running_task_count += 1
+            elif task_info["status"] == "failed":
+                failed_task_count += 1
+
+    # 不再打印索引列表的轮询日志（前端频繁轮询会产生大量日志）
+    # 如需调试，可启用 DEBUG 级别
+    logger.debug(
+        f"[API] 索引列表: {len(all_indexes)} 个 (完成: {len(all_indexes) - running_task_count - failed_task_count}, 运行中: {running_task_count}, 失败: {failed_task_count})"
     )
+
     return ListIndexesResponse(
         status=result.get("status", "success"), indexes=all_indexes
     )
@@ -626,13 +617,9 @@ async def get_index_status(index_id: str):
     - 如果是 task_id 开头，返回后台任务状态
     - 如果是 idx_id 开头，检查索引是否存在
     """
-    logger.info(f"[API] 收到索引状态查询请求: index_id='{index_id}'")
-
     # 查询后台任务状态
     if index_id.startswith("task_"):
-        logger.info("[API] 查询类型: 任务状态 (task_id)")
         if index_id not in _running_tasks:
-            logger.warning(f"[API] 任务不存在: {index_id}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"任务 {index_id} 不存在"
             )
@@ -664,34 +651,21 @@ async def get_index_status(index_id: str):
                     "pdf_name": task_info["result"].get("pdf_name"),
                 }
             )
-            logger.info(
-                f"[API] 任务已完成，返回 index_id={task_info['result'].get('index_id')}"
-            )
         elif task_info["status"] == "failed":
             response["error"] = task_info.get("error", "Unknown error")
-            logger.info(f"[API] 任务失败: {task_info.get('error', 'Unknown error')}")
 
-        logger.info(
-            f"[API] 返回任务状态: status={response['status']}, index_id={response.get('index_id', 'N/A')}"
-        )
         return response
 
     # 查询已完成的索引
     else:
-        logger.info("[API] 查询类型: 已完成索引 (idx_id)")
         result = await list_indexes(str(settings.base_dir))
-        logger.info(f"[API] list_indexes 返回 {len(result.get('indexes', []))} 个索引")
 
         for idx in result.get("indexes", []):
             if idx["id"] == index_id:
                 # 添加 status 字段以保持与任务状态的兼容性
                 idx["status"] = "completed"
-                logger.info(
-                    f"[API] 找到索引: id={idx['id']}, status={idx['status']}, pdf_name={idx.get('pdf_name', 'N/A')}"
-                )
                 return idx
 
-        logger.warning(f"[API] 索引不存在: {index_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"索引 {index_id} 不存在"
         )
@@ -956,558 +930,9 @@ async def save_markdown_mapping(index_id: str, body: MarkdownMappingBody):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ========== Agent 端点 ==========
-
-
-def _extract_citations_from_answer(answer: str, index_id: str) -> list[CitationInfo]:
-    """
-    从 Agent 回答中提取 Obsidian 链接引用
-
-    Args:
-        answer: Agent 的回答文本
-        index_id: 索引 ID，用于生成 node_id
-
-    Returns:
-        CitationInfo 对象列表
-    """
-    import re
-
-    # 匹配 [[file.md#^page-N]] 或 [[file.md]] 格式
-    pattern = r"\[\[([^\]#]+)(?:#(\^page-))?(\d+)?\]\]"
-    matches = re.findall(pattern, answer)
-
-    citations = []
-    seen_links = set()  # 去重
-
-    for file_path, anchor_prefix, page_num in matches:
-        # 构造完整的 Obsidian 链接
-        if page_num:
-            anchor = f"^page-{page_num}"
-            obsidian_link = f"[[{file_path}#{anchor}]]"
-        else:
-            anchor = ""
-            obsidian_link = f"[[{file_path}]]"
-
-        # 去重
-        if obsidian_link in seen_links:
-            continue
-        seen_links.add(obsidian_link)
-
-        # 创建引用信息
-        citations.append(
-            CitationInfo(
-                node_id=f"{index_id}_page_{page_num if page_num else 'unknown'}",
-                obsidian_link=obsidian_link,
-                page=int(page_num) if page_num else None,
-                anchor=anchor,
-            )
-        )
-
-    return citations
-
-
-async def _load_agent_for_request(
-    index_id: str,
-    enable_llm_tree_search: bool = False,
-    context_docs: Optional[List[Dict[str, Any]]] = None,
-    query: Optional[str] = None,
-) -> "DeepPDFAgent":
-    """
-    为请求加载 DeepPDF Agent
-
-    Args:
-        index_id: PDF 索引 ID
-        enable_llm_tree_search: 是否启用 LLM 树搜索工具（默认 False）
-        context_docs: 用户加载的上下文文档列表
-        query: 用户查询内容（用于 Skill 自动路由）
-
-    Returns:
-        配置好的 DeepPDFAgent 实例
-
-    Raises:
-        HTTPException: 如果索引不存在或加载失败
-    """
-    logger.info("")
-    logger.info("🔷 " + "=" * 78)
-    logger.info("🔷 [Agent加载] 开始加载 DeepPDF Agent")
-    logger.info("🔷 " + "=" * 78)
-    logger.info(f"📇 [索引ID] {index_id}")
-
-    # 导入必要的模块
-    from ..agent.core import DeepPDFAgent
-    from pathlib import Path
-    from ..services.manager import (
-        list_indexes,
-    )  # Added this import as it's used in the new code
-    from ..config import settings  # Added this import as it's used in the new code
-
-    # 检查索引是否存在
-    logger.info("🔍 [检查索引] 验证索引是否存在...")
-    result = await list_indexes(str(settings.base_dir))
-    index_exists = any(idx["id"] == index_id for idx in result.get("indexes", []))
-
-    if not index_exists:
-        logger.error(f"❌ [加载失败] 索引 {index_id} 不存在")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引 {index_id} 不存在"
-        )
-
-    logger.info(f"✅ [索引存在] 索引 {index_id} 验证通过")
-
-    # 获取索引元数据
-    logger.info("📋 [加载元数据] 读取索引配置...")
-    storage_dir = Path(settings.base_dir)
-    metadata_path = storage_dir / "indexes" / f"{index_id}.json"
-
-    try:
-        import json
-
-        with open(metadata_path, "r", encoding="utf-8") as f:
-            metadata = json.load(f)
-
-        logger.info("✅ [元数据加载] 成功")
-        logger.info(f"   📄 PDF名称: {metadata.get('pdf_name', 'N/A')}")
-        logger.info(f"   📄 节点数: {metadata.get('node_count', 0)}")
-        logger.info(f"   📄 总页数: {metadata.get('total_pages', 0)}")
-
-    except FileNotFoundError:
-        logger.error(f"❌ [元数据错误] 找不到索引元数据文件: {metadata_path}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"索引 {index_id} 元数据不存在",
-        )
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ [元数据错误] JSON 解析失败: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="索引元数据损坏",
-        )
-
-    # 提取树状结构
-    tree_structure = metadata.get("tree_structure", {})
-    logger.info(f"🌳 [文档结构] 树状层级: {_count_tree_levels(tree_structure)} 层")
-    logger.info(f"🌳 [文档结构] 章节数: {_count_tree_nodes(tree_structure)} 个")
-
-    # 检查 markdown_files 映射
-    markdown_files_count = len(metadata.get("markdown_files", {}))
-    logger.info(f"📄 [Markdown映射] 已保存 {markdown_files_count} 个文件映射")
-
-    # 初始化 Agent
-    logger.info("")
-    logger.info("🤖 [初始化Agent] 准备创建 DeepPDFAgent 实例...")
-    logger.info(f"   🔧 Provider: {settings.llm_provider}")
-    logger.info(f"   🔧 Model: {settings.llm_model or '默认'}")
-    logger.info(f"   🔧 Temperature: {settings.agent_temperature}")
-    logger.info(f"   🔧 Max Iterations: {settings.agent_max_iterations}")
-
-    # 根据 provider 选择 API key
-    api_key = None
-    if settings.llm_provider == "deepseek":
-        api_key = settings.deepseek_api_key
-    elif settings.llm_provider == "openai":
-        api_key = settings.openai_api_key
-
-    try:
-        # 计算 pageindex-lib 的路径
-        from pathlib import Path
-
-        base_dir = Path(settings.base_dir)
-        pageindex_lib_path = str(base_dir / "pageindex-lib" / "src")
-
-        agent = DeepPDFAgent(
-            index_id=index_id,
-            storage_dir=str(settings.base_dir),
-            tree_structure=tree_structure,
-            index_metadata=metadata,  # 传递完整的索引元数据（包含 markdown_files）
-            llm_provider=settings.llm_provider,
-            llm_model=settings.llm_model,
-            api_key=api_key,
-            base_url=settings.llm_base_url,
-            pageindex_lib_path=pageindex_lib_path,  # 启用 read_page 工具
-            enable_llm_tree_search=enable_llm_tree_search,
-            temperature=settings.agent_temperature,
-            top_p=settings.agent_top_p,
-            max_iterations=settings.agent_max_iterations,
-        )
-
-        # 设置上下文文档（章节辅助阅读）
-        if context_docs:
-            agent.context_docs = context_docs
-            logger.info(f"📚 [上下文文档] 已加载 {len(context_docs)} 个文档到 Agent")
-
-        logger.info("✅ [Agent创建] DeepPDFAgent 实例创建成功")
-        logger.info(f"   🛠️  可用工具数: {len(agent.executor.tools)}")
-        logger.info(f"   🛠️  工具列表: {', '.join(agent.executor.tools.keys())}")
-        logger.info("")
-        logger.info("🔷 " + "=" * 78)
-        logger.info("🔷 [Agent加载] 完成，准备开始推理")
-        logger.info("🔷 " + "=" * 78)
-        logger.info("")
-
-        return agent
-
-    except Exception as e:
-        logger.error(f"❌ [Agent创建失败] {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent 初始化失败: {str(e)}",
-        )
-
-
-def _count_tree_levels(tree: dict, level: int = 1) -> int:
-    """递归计算树的最大层级"""
-    if not tree or "children" not in tree:
-        return level
-    if not tree["children"]:
-        return level
-    return max(_count_tree_levels(child, level + 1) for child in tree["children"])
-
-
-def _count_tree_nodes(tree: dict) -> int:
-    """递归计算树的节点数"""
-    if not tree:
-        return 0
-    count = 1
-    if "children" in tree and tree["children"]:
-        count += sum(_count_tree_nodes(child) for child in tree["children"])
-    return count
-
-
-@router.post("/chat/agent")
-async def agent_chat(req: AgentRequest, http_request: Request):
-    """
-    Agent 智能对话 - 同步端点
-
-    使用 ReAct 模式的 Agent 进行智能问答，支持:
-    - 检查目录 (inspect_toc)
-    - 读取页面 (read_page)
-    - 混合搜索 (hybrid_search)
-
-    请求超时: 5 分钟
-    速率限制: 每 60 秒最多 10 个请求
-
-    新增功能: 设置 include_citations=true 可返回引用信息
-    """
-    logger.info(
-        f"[API] 收到 Agent 请求: query='{req.query}', index_id='{req.index_id}', include_citations={req.include_citations}"
-    )
-
-    # 速率限制检查（Agent 调用成本高，使用更严格的限制）
-    client_ip = _get_client_ip(http_request)
-    is_allowed, rate_info = _rate_limiter.check_rate_limit(
-        client_ip,
-        max_requests=10,  # 每 60 秒最多 10 个 Agent 请求
-        window_seconds=60,  # 60 秒窗口
-    )
-
-    if not is_allowed:
-        logger.warning(f"[速率限制] 客户端 {client_ip} 超过 Agent 调用限制")
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "error": "Rate limit exceeded",
-                "message": f"Agent 调用过于频繁，请在 {rate_info['reset']} 秒后重试。",
-                "limit": rate_info["limit"],
-                "window": rate_info["window"],
-                "reset_after": rate_info["reset"],
-            },
-        )
-
-    try:
-
-        # 1. 加载或复用 Agent（支持多轮对话）
-        session_key = f"{req.index_id}_{req.session_id or 'default'}"
-
-        # 如果有 session_id 且缓存中存在，复用 Agent
-        if req.session_id and session_key in _agent_sessions:
-            agent = _agent_sessions[session_key]
-            logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
-            # 更新上下文文档（即使是复用的 Agent）
-            if req.context_docs:
-                agent.context_docs = req.context_docs
-                logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
-        else:
-            # 创建新 Agent（传递 query 用于 Skill 路由）
-            agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search, req.context_docs, req.query
-            )
-
-            # 尝试加载历史（如果有 session_id）
-            if req.session_id:
-                history = chat_storage.load_history(req.index_id, req.session_id)
-                if history:
-                    agent.session_history = history
-                    logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
-
-                # 缓存 Agent
-                _agent_sessions[session_key] = agent
-                logger.info(f"💬 [会话管理] 创建新 Agent 并缓存: {session_key}")
-
-        # 2. 运行 Agent (使用 asyncio.to_thread 避免阻塞)
-        async with asyncio.timeout(300):  # 5 分钟超时
-            answer = await asyncio.to_thread(
-                agent.run, req.query, req.force_mode, req.keep_history
-            )
-
-        # 3. 如果保留历史，保存到磁盘
-        if req.session_id and req.keep_history:
-            chat_storage.save_history(
-                req.index_id, req.session_id, agent.session_history
-            )
-
-        logger.info(f"[API] Agent 完成: answer_length={len(answer)}")
-
-        # 3. 根据请求决定是否返回引用
-        if req.include_citations:
-            citations = _extract_citations_from_answer(answer, req.index_id)
-            logger.info(f"[API] 提取到 {len(citations)} 个引用")
-            return AgentResponseWithCitations(
-                status="success",
-                answer=answer,
-                iterations=len(
-                    [h for h in agent.get_history() if h["role"] == "assistant"]
-                ),
-                citations=citations,
-            )
-        else:
-            return AgentResponse(
-                status="success",
-                answer=answer,
-                iterations=len(
-                    [h for h in agent.get_history() if h["role"] == "assistant"]
-                ),
-            )
-
-    except asyncio.TimeoutError:
-        logger.error(f"[API] Agent 执行超时: index_id={req.index_id}")
-        if req.include_citations:
-            return AgentResponseWithCitations(
-                status="error", error="请求超时，Agent 执行时间超过 5 分钟"
-            )
-        return AgentResponse(
-            status="error", error="请求超时，Agent 执行时间超过 5 分钟"
-        )
-    except LLMError as e:
-        logger.error(f"[API] LLM 调用失败: {e}")
-        if req.include_citations:
-            return AgentResponseWithCitations(
-                status="error", error=f"LLM 调用失败: {str(e)}"
-            )
-        return AgentResponse(status="error", error=f"LLM 调用失败: {str(e)}")
-    except AgentError as e:
-        logger.error(f"[API] Agent 执行失败: {e}")
-        if req.include_citations:
-            return AgentResponseWithCitations(
-                status="error", error=f"Agent 错误: {str(e)}"
-            )
-        return AgentResponse(status="error", error=f"Agent 错误: {str(e)}")
-    except HTTPException:
-        # 重新抛出 HTTP 异常（索引不存在等）
-        raise
-    except Exception as e:
-        logger.error(f"[API] Agent 执行失败: {e}", exc_info=True)
-        if req.include_citations:
-            return AgentResponseWithCitations(status="error", error=str(e))
-        return AgentResponse(status="error", error=str(e))
-
-
-async def _agent_stream_generator(req: AgentRequest) -> AsyncGenerator[str, None]:
-    """
-    Agent 流式响应生成器 (异步实现)
-
-    通过将同步生成器在独立线程中运行，并使用 asyncio.Queue 进行通信，
-    实现真正的异步流式输出。
-
-    **优化：批量缓冲机制**
-    - 累积至少 50 字符或 0.2 秒后再发送
-    - 减少前端更新频率，避免闪烁
-
-    新增功能: 如果 req.include_citations=True，会在流结束后发送引用信息
-
-    Args:
-        req: Agent 请求对象
-
-    Yields:
-        SSE 格式的文本片段
-    """
-    try:
-        # 1. 加载或复用 Agent（支持多轮对话）
-        session_key = f"{req.index_id}_{req.session_id or 'default'}"
-
-        # 如果有 session_id 且缓存中存在，复用 Agent
-        if req.session_id and session_key in _agent_sessions:
-            agent = _agent_sessions[session_key]
-            logger.info(f"💬 [会话管理] 复用已有 Agent: {session_key}")
-            logger.info(
-                f"💬 [会话管理] 当前会话历史: {len(agent.session_history)} 条消息"
-            )
-            # 更新上下文文档（即使是复用的 Agent）
-            if req.context_docs:
-                agent.context_docs = req.context_docs
-                logger.info(f"📚 [上下文文档] 更新 {len(req.context_docs)} 个文档")
-        else:
-            # 创建新 Agent
-            agent = await _load_agent_for_request(
-                req.index_id, req.enable_llm_tree_search, req.context_docs
-            )
-
-            # 尝试加载历史（如果有 session_id）
-            if req.session_id:
-                history = chat_storage.load_history(req.index_id, req.session_id)
-                if history:
-                    agent.session_history = history
-                    logger.info(f"📂 [持久化] 已恢复历史记录: {len(history)} 条")
-
-            # 如果提供了 session_id，缓存 Agent
-            if req.session_id:
-                _agent_sessions[session_key] = agent
-                logger.info(f"💬 [会话管理] 创建新 Agent 并缓存: {session_key}")
-            else:
-                logger.info("💬 [会话管理] 创建临时 Agent（无会话ID）")
-
-        # 2. 创建队列用于线程间通信
-        loop = asyncio.get_event_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        # 用于收集完整的回答文本（用于提取引用）
-        full_answer_parts = []
-
-        # 3. 定义在线程中运行的同步生成器包装函数
-        def _run_sync_generator():
-            """
-            在独立线程中运行同步生成器，将结果放入队列
-            """
-            try:
-                logger.info("[Agent流式] 开始在线程中执行 Agent.run_stream")
-                chunk_count = 0
-
-                # 移除批量缓冲逻辑，实现真正的实时流式传输
-                # 前端已经实现了双缓冲渲染（Double Buffering）来解决闪烁问题，
-                # 因此后端应该尽可能快地推送数据，而不是在此处因为缓冲而引入延迟。
-                # 特别是对于简短的状态行（如"正在搜索..."），必须立即发送，
-                # 否则会被缓冲卡住，直到下一个长文本块到来才发送，导致状态显示滞后。
-
-                for chunk in agent.run_stream(
-                    req.query, req.force_mode, req.keep_history
-                ):
-                    chunk_count += 1
-                    # 立即发送每一个 chunk
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
-
-                # 执行完成，发送完成信号
-                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
-                logger.info(f"[Agent流式] 生成器执行完成，共 {chunk_count} 个原始chunk")
-
-            except Exception as e:
-                # 发送错误信号
-                error_msg = str(e)
-                logger.error(f"[Agent流式] 生成器执行出错: {error_msg}", exc_info=True)
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", error_msg))
-
-        # 4. 在线程池中启动同步生成器（带超时）
-        try:
-            async with asyncio.timeout(300):  # 5 分钟超时
-                # 启动后台线程任务
-                task = asyncio.create_task(asyncio.to_thread(_run_sync_generator))
-
-                # 5. 从队列中读取并yield SSE消息
-                while True:
-                    # 等待队列中的消息（异步）
-                    msg_type, data = await queue.get()
-
-                    if msg_type == "chunk":
-                        # 发送内容chunk
-                        yield f"data: {json.dumps({'content': data, 'status': 'streaming'})}\n\n"
-                        # 收集完整回答
-                        full_answer_parts.append(data)
-
-                    elif msg_type == "error":
-                        # 发送错误
-                        yield f"data: {json.dumps({'status': 'error', 'error': data})}\n\n"
-                        break
-
-                    elif msg_type == "done":
-                        # 发送完成信号
-                        yield f"data: {json.dumps({'status': 'done'})}\n\n"
-
-                        # 如果需要引用，提取并发送
-                        if req.include_citations:
-                            full_answer = "".join(full_answer_parts)
-                            citations = _extract_citations_from_answer(
-                                full_answer, req.index_id
-                            )
-                            logger.info(f"[API流式] 提取到 {len(citations)} 个引用")
-                            # 发送引用信息
-                            yield f"data: {json.dumps({'status': 'citations_done', 'citations': [c.model_dump() for c in citations]})}\n\n"
-
-                        break
-
-                # 等待后台任务完成
-                await task
-
-                # 保存历史到磁盘
-                if req.session_id and req.keep_history:
-                    chat_storage.save_history(
-                        req.index_id, req.session_id, agent.session_history
-                    )
-
-        except asyncio.TimeoutError:
-            logger.error(f"[API] Agent 流式执行超时: index_id={req.index_id}")
-            yield f"data: {json.dumps({'status': 'error', 'error': '请求超时，执行时间超过 5 分钟'})}\n\n"
-
-    except HTTPException as e:
-        # HTTP 异常（索引不存在等）
-        error_msg = e.detail if hasattr(e, "detail") else str(e)
-        logger.error(f"[API] Agent 流式加载失败: {error_msg}")
-        yield f"data: {json.dumps({'status': 'error', 'error': error_msg})}\n\n"
-    except Exception as e:
-        logger.error(f"[API] Agent 流式执行失败: {e}", exc_info=True)
-        yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
-
-
-@router.post("/chat/agent/stream")
-async def agent_chat_stream(req: AgentRequest, http_request: Request):
-    """
-    Agent 智能对话 - 流式端点 (SSE)
-
-    使用 POST 方法传递请求参数，返回 Server-Sent Events 格式的流式响应
-
-    请求超时: 5 分钟
-    速率限制: 每 60 秒最多 10 个请求
-
-    新增功能: 设置 include_citations=true 会在流结束后发送引用信息
-    """
-    logger.info(
-        f"[API] 收到 Agent 流式请求: query='{req.query}', index_id='{req.index_id}', include_citations={req.include_citations}"
-    )
-
-    # 速率限制检查（Agent 调用成本高，使用更严格的限制）
-    client_ip = _get_client_ip(http_request)
-    is_allowed, rate_info = _rate_limiter.check_rate_limit(
-        client_ip,
-        max_requests=10,  # 每 60 秒最多 10 个 Agent 请求
-        window_seconds=60,  # 60 秒窗口
-    )
-
-    if not is_allowed:
-        logger.warning(f"[速率限制] 客户端 {client_ip} 超过 Agent 流式调用限制")
-        # 对于流式请求，返回 SSE 格式的错误
-        reset_seconds = rate_info["reset"]
-
-        async def rate_limit_error():
-            yield f"data: {json.dumps({'status': 'error', 'error': f'Agent 调用过于频繁，请在 {reset_seconds} 秒后重试。'})}\n\n"
-
-        return StreamingResponse(rate_limit_error(), media_type="text/event-stream")
-
-    return StreamingResponse(
-        _agent_stream_generator(req),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
-        },
-    )
+# ============================================================
+# 会话管理 API（历史记录持久化）
+# ============================================================
 
 
 @router.get("/chat/history/{index_id}/{session_id}")
@@ -1565,12 +990,6 @@ async def delete_session(index_id: str, session_id: str) -> DeleteSessionRespons
     try:
         # 删除会话文件
         deleted = chat_storage.delete_session(index_id, session_id)
-
-        # 从 Agent 缓存中移除
-        session_key = f"{index_id}_{session_id}"
-        if session_key in _agent_sessions:
-            del _agent_sessions[session_key]
-            logger.info(f"[API] 从 Agent 缓存中移除: {session_key}")
 
         if deleted:
             logger.info(

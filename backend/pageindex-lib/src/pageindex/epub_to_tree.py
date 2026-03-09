@@ -60,7 +60,7 @@ def epub_to_tree(
 
     返回:
         PageIndex tree_structure 格式的字典，包含:
-            - title: 书籍标题
+            - doc_name: 书籍标题（与 PDF 格式一致）
             - structure: 树结构列表
 
     使用示例:
@@ -69,7 +69,7 @@ def epub_to_tree(
         >>>
         >>> epub_data = parse_epub("book.epub")
         >>> tree = epub_to_tree(epub_data)
-        >>> print(f"标题: {tree['title']}")
+        >>> print(f"标题: {tree['doc_name']}")
     """
     converter = EpubTreeConverter()
     return converter.convert(epub_data, assign_node_ids)
@@ -111,7 +111,9 @@ class EpubTreeConverter:
             assign_node_ids: 是否分配 node_id
 
         返回:
-            PageIndex tree_structure 格式
+            PageIndex tree_structure 格式，包含:
+                - doc_name: 书籍标题（与 PDF 格式一致）
+                - structure: 树结构列表
 
         转换规则:
             - EPUB Link → 树节点
@@ -171,10 +173,21 @@ class EpubTreeConverter:
         # ============================================================
         # 步骤7: 返回结果
         # ============================================================
-        return {
-            "title": metadata.get("title", ""),
+        # 返回与 PDF 一致的结构格式，同时保留 EPUB 特有的元数据
+        # PDF 返回: {"doc_name": "xxx.pdf", "structure": [...]}
+        # EPUB 返回: {"doc_name": "书名", "author": "作者", "structure": [...]}
+        result = {
+            "doc_name": metadata.get("title", ""),
             "structure": structure,
         }
+
+        # 添加可选的元数据字段
+        if metadata.get("author"):
+            result["author"] = metadata["author"]
+        if metadata.get("language"):
+            result["language"] = metadata["language"]
+
+        return result
 
     def _toc_to_tree(
         self,

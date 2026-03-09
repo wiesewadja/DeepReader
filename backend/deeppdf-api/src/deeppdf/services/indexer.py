@@ -16,7 +16,7 @@ from datetime import datetime
 
 from pageindex import page_index_main
 from pageindex.core import ConfigLoader
-from pageindex.llm import UnifiedLLM, get_provider
+from pageindex.llm import UnifiedLLM, get_provider, get_multi_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import get_chroma_store
@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 
 # 全局线程池 - 使用配置中的 worker 数量
-# 注意：pageindex-lib 需要 asyncio 事件循环，在线程池中运行需要特殊处理
-cpu_executor = ThreadPoolExecutor(max_workers=1)  # 限制为 1 个 worker 以避免并发问题
+# 注意：pageindex-lib 内部使用 asyncio，但在 ThreadPoolExecutor 中运行时
+# 通过 asyncio.run() 创建独立的事件循环，因此可以安全并发
+cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
 
 
 def _extract_nodes_from_tree(
@@ -97,23 +98,9 @@ def _extract_nodes_from_tree(
             "node_name": node_name,
             "node_id": node_id,
         }
-        # 保存摘要到 metadata（如果有）
-        if node_summary and node_summary.strip():
-            node_metadata["summary"] = node_summary.strip()
-
-        # 重要：original_text 必须保存原文（node_text），而不是摘要
-        # 这样导出 Markdown 时才能获得原始内容
-        if node_text and node_text.strip():
-            # 对原文进行格式化处理
-            original_text_formatted = node_text.strip()
-            if formatter:
-                try:
-                    original_text_formatted = formatter.format(
-                        original_text_formatted, doc_type
-                    )
-                except Exception:
-                    pass  # 格式化失败时使用原文
-            node_metadata["original_text"] = original_text_formatted
+        # 注意：不再在 sections.metadata 中存储 original_text 和 summary
+        # 这些数据已经在 tree_structure 中保存，避免冗余
+        # export_handlers.py 会从 tree_structure 中获取这些数据
 
         nodes.append(
             {
@@ -165,10 +152,12 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     )
 
     # 这些是字符串类型的配置，转换为布尔值
+    # 优先使用 kwargs，其次使用 settings 配置
     if_add_node_id_str = kwargs.get("if_add_node_id") or "yes"
-    if_add_node_summary_str = kwargs.get("if_add_node_summary") or "yes"
-    if_add_node_text_str = kwargs.get("if_add_node_text") or "yes"
-    if_add_doc_description_str = kwargs.get("if_add_doc_description") or "no"
+    if_add_node_summary_str = kwargs.get("if_add_node_summary") or ("yes" if settings.pdf_index_if_add_node_summary else "no")
+    if_add_node_text_str = kwargs.get("if_add_node_text") or ("yes" if settings.pdf_index_if_add_node_text else "no")
+    if_add_doc_description_str = kwargs.get("if_add_doc_description") or ("yes" if settings.pdf_index_if_add_doc_description else "no")
+    format_text_with_llm_str = kwargs.get("format_text_with_llm") or ("yes" if settings.pdf_index_format_text_with_llm else "no")
 
     # 转换为布尔值
     if_add_node_id = if_add_node_id_str.lower() in ("yes", "true", "1", "on")
@@ -180,6 +169,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
         "1",
         "on",
     )
+    format_text_with_llm = format_text_with_llm_str.lower() in ("yes", "true", "1", "on")
 
     require_llm = kwargs.get("require_llm", True)
     api_key = kwargs.get("api_key")
@@ -195,6 +185,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
         "if_add_node_summary": if_add_node_summary,
         "if_add_node_text": if_add_node_text,
         "if_add_node_description": if_add_node_description,
+        "format_text_with_llm": format_text_with_llm,
         "require_llm": require_llm,
         "api_key": api_key,
     }
@@ -270,6 +261,8 @@ def _setup_pageindex_config(
 
     config_loader = ConfigLoader()
 
+    # 构建多 Provider 配置
+    # 使用默认的三个 Provider: DeepSeek, SiliconFlow, Zhipu
     user_opt = {
         "model": config["model"],
         "if_add_node_summary": (
@@ -277,24 +270,38 @@ def _setup_pageindex_config(
         ),
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
+        "format_text_with_llm": (
+            "yes" if config.get("format_text_with_llm", False) else "no"
+        ),
         # Note: if_add_node_description is not supported by PageIndex
         "toc_check_page_num": config["toc_check_pages"],
         "max_page_num_each_node": config["max_pages_per_node"],
         "max_token_num_each_node": config["max_tokens_per_node"],
-        "llm_provider": {
-            "type": config["llm_provider"],
-            "api_key": llm_api_key,
-            "base_url": config["base_url"],
-        },
+        # 使用多 Provider 模式（配置文件中的 llm_providers 会生效）
     }
 
     opt = config_loader.load(user_opt)
 
-    # 创建 LLM client
+    # 创建 LLM client（使用配置文件中的 llm_providers）
     llm_client_instance = None
-    if config["require_llm"] and llm_api_key:
-        provider = get_provider(user_opt["llm_provider"])
-        llm_client_instance = UnifiedLLM(provider=provider, model=opt.model)
+    if config["require_llm"]:
+        # 使用 ConfigLoader 的 get_llm_client 方法创建客户端
+        # 这会自动读取 config.yaml 中的 llm_providers 配置
+        # API Key 从环境变量读取 (DEEPSEEK_API_KEY, SILICONFLOW_API_KEY, ZHIPU_API_KEY)
+        try:
+            llm_client_instance = config_loader.get_llm_client(user_opt)
+        except Exception as e:
+            logger.warning(f"LLM 客户端创建失败: {e}")
+            # 如果创建失败，尝试使用传入的 API Key 作为备用
+            if llm_api_key:
+                logger.info("尝试使用传入的 API Key 创建单 Provider 客户端...")
+                from pageindex.llm import UnifiedLLM, get_provider
+                provider = get_provider({
+                    "type": config.get("llm_provider", "deepseek"),
+                    "api_key": llm_api_key,
+                    "base_url": config.get("base_url"),
+                })
+                llm_client_instance = UnifiedLLM(provider=provider, model=config["model"])
 
     return opt, llm_client_instance
 
@@ -331,16 +338,25 @@ def _parse_pdf_structure(
     )
     logger.info(f"[{doc_type.upper()}解析] LLM 客户端: {llm_client is not None}")
 
+    # 创建内部进度回调，将 pageindex-lib 的进度映射到外部进度
+    # 注意：pageindex-lib 内部已经完成了进度映射，这里只需要透传
+    # 进度范围说明：
+    #   50-55%: 加载文档 (indexer.py 直接控制)
+    #   55-60%: 解析结构 (page_index.py 控制)
+    #   60-85%: 生成摘要 (page_index.py 控制，批量并行)
+    #   85-95%: 向量存储 (indexer.py 直接控制)
+    #   95-100%: 保存元数据 (indexer.py 直接控制)
+    def internal_progress_callback(step: str, percent: int, message: str):
+        if progress_callback:
+            # 直接透传进度，pageindex-lib 内部已完成映射
+            progress_callback(step, percent, message)
+
     # 更新进度：开始文档解析
     if progress_callback:
-        progress_callback("parsing_pdf", 55, f"正在提取 {doc_type.upper()} 页面...")
+        progress_callback("parsing_pdf", 50, f"正在加载 {doc_type.upper()} 文件...")
 
     try:
         logger.info(f"[{doc_type.upper()}解析] 即将调用 page_index_main...")
-
-        # 关键修复：在子线程中调用 page_index_main 时，需要确保没有残留的事件循环
-        # 我们使用 asyncio.run() 在一个全新的事件循环中运行，避免与主线程的事件循环冲突
-        # 注意：page_index_main 本身不是异步函数，但它内部会创建并运行异步代码
 
         # 首先检查当前线程是否有遗留的事件循环
         try:
@@ -354,9 +370,13 @@ def _parse_pdf_structure(
                 f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）"
             )
 
-        # 直接调用 page_index_main
-        # 它会使用 asyncio.run() 在新的事件循环中运行 page_index_builder
-        tree_result = page_index_main(str(pdf_path), opt=opt, llm_client=llm_client)
+        # 调用 page_index_main 并传递进度回调
+        tree_result = page_index_main(
+            str(pdf_path),
+            opt=opt,
+            llm_client=llm_client,
+            progress_callback=internal_progress_callback
+        )
         logger.info(f"[{doc_type.upper()}解析] page_index_main 返回")
 
     except Exception as e:
@@ -374,9 +394,9 @@ def _parse_pdf_structure(
         f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)"
     )
 
-    # 更新进度：文档解析完成，正在生成摘要
-    if progress_callback and config.get("if_add_node_summary"):
-        progress_callback("generating_summaries", 65, "正在生成章节摘要...")
+    # 更新进度：解析完成
+    if progress_callback:
+        progress_callback("parse_complete", 85, f"{doc_type.upper()} 结构解析完成")
 
     if not tree_result:
         logger.error(f"[{doc_type.upper()}解析] PageIndex 返回 None")
@@ -531,10 +551,14 @@ def _save_metadata(
     # 移除文件后缀，保持与前端导出逻辑一致
     pdf_name_clean = pdf_path_obj.stem  # stem 返回不带后缀的文件名
 
+    # 从 tree_result 中提取文档名称（EPUB 可能是书名而非文件名）
+    doc_name = tree_result.get("doc_name", pdf_name_clean)
+
     metadata_content = {
         "id": index_id,
         "doc_type": doc_type,
-        "pdf_name": pdf_name_clean,
+        "pdf_name": doc_name,  # 使用 doc_name，EPUB 为书名，PDF 为文件名
+        "file_name": pdf_path_obj.name,  # 始终保留原始文件名
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
@@ -550,6 +574,12 @@ def _save_metadata(
         "chat_rounds": 0,
         "last_read_at": None,
     }
+
+    # 添加 EPUB 特有的元数据（作者、语言等）
+    if tree_result.get("author"):
+        metadata_content["author"] = tree_result["author"]
+    if tree_result.get("language"):
+        metadata_content["language"] = tree_result["language"]
 
     # 如果有视觉检测结果，添加详细信息
     if visual_detection_result:
@@ -722,9 +752,17 @@ def _index_pdf_sync(
         logger.info("[步骤 4/6] 创建 LLM 客户端...")
         _update_progress("create_llm_client", 40, "创建 LLM 客户端...")
         if llm_client_instance:
-            logger.info(
-                f"LLM 客户端创建成功: {config['llm_provider']}/{config['model']}"
-            )
+            # 检测是否使用 MultiProvider
+            from pageindex.llm.providers import MultiProvider
+            provider = getattr(llm_client_instance, 'provider', None)
+            if isinstance(provider, MultiProvider):
+                logger.info(
+                    f"LLM 客户端创建成功: MultiProvider ({len(provider.providers)} 个 Provider)"
+                )
+            else:
+                logger.info(
+                    f"LLM 客户端创建成功: {type(provider).__name__}/{config['model']}"
+                )
 
         # 步骤 5: 解析文档结构
         logger.info(
@@ -735,9 +773,17 @@ def _index_pdf_sync(
             logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
             logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
         if config["if_add_node_summary"]:
-            logger.info(
-                f"  - 生成摘要 (使用 {config['llm_provider']}/{config['model']})"
-            )
+            # 检测是否使用 MultiProvider
+            from pageindex.llm.providers import MultiProvider
+            provider = getattr(llm_client_instance, 'provider', None) if llm_client_instance else None
+            if isinstance(provider, MultiProvider):
+                logger.info(
+                    f"  - 生成摘要 (使用 MultiProvider: {len(provider.providers)} 个并行)"
+                )
+            else:
+                logger.info(
+                    f"  - 生成摘要 (使用 {config.get('llm_provider', 'default')}/{config['model']})"
+                )
 
         tree_result, parse_time = _parse_pdf_structure(
             pdf_path, opt, llm_client_instance, config, progress_callback

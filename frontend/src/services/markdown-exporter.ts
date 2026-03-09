@@ -18,6 +18,7 @@ export interface NodeData {
     end_index: number | string;
     level: number;
     text: string;
+    summary?: string;  // 章节摘要（可选）
 }
 
 /**
@@ -79,6 +80,19 @@ level: ${node.level}
 `;
 
     const title = `# ${node.section}\n\n`;
+
+    // 生成摘要块（如果有摘要）
+    let summaryBlock = "";
+    if (node.summary && node.summary.trim()) {
+        // 将摘要格式化为 Obsidian callout 块
+        const summaryLines = node.summary.trim().split("\n");
+        summaryBlock = "> [!summary] 章节摘要\n";
+        for (const line of summaryLines) {
+            summaryBlock += `> ${line}\n`;
+        }
+        summaryBlock += "\n";
+    }
+
     // 处理页码标记后再输出
     const processedText = processPageMarkers(node.text);
     const content = processedText.trim() + "\n\n";
@@ -86,7 +100,7 @@ level: ${node.level}
 **来源**: [[${pdfName}]] 第 ${node.page_range} 页
 `;
 
-    return frontMatter + title + content + footer;
+    return frontMatter + title + summaryBlock + content + footer;
 }
 
 /**
@@ -131,9 +145,9 @@ export async function exportIndexToMarkdown(
                 await app.vault.create(filePath, content);
             }
 
-            // 记录映射：使用文件名（不含文件夹路径）作为 wiki 链接
-            // Obsidian wiki 链接格式：[[文件名]] 或 [[文件夹/文件名]]
-            // 这里我们使用相对路径（从 PDF 文件夹开始），方便跨文件夹引用
+            // 记录映射：使用相对于 vault 根目录的路径
+            // Obsidian wiki 链接会自动搜索匹配的文件，所以不需要完整路径
+            // 使用 pdfFolderName/filename 格式即可（如：极简资治通鉴/04-三家分晋.md）
             const relativePath = `${pdfFolderName}/${filename}`;
             fileMapping[node.node_id] = relativePath;
             filesCreated++;

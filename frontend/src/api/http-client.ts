@@ -217,6 +217,11 @@ export interface QueryPDFResult {
   results: QueryResultItem[];
   index_info?: QueryIndexInfo;
   error?: string;
+  // LLM 树搜索相关字段
+  search_method?: string;        // "llm_tree_search" 或 "hybrid_..."
+  thinking?: string;             // LLM 推理过程
+  fallback?: boolean;            // 是否发生降级
+  fallback_reason?: string;      // 降级原因
 }
 
 // ==================== 阅读进度相关类型 ====================
@@ -829,16 +834,26 @@ export class DeepPDFClient {
 
   /**
    * 查询 PDF
+   * @param query 查询文本
+   * @param indexId 索引 ID
+   * @param maxResults 最大结果数
+   * @param useLLMTreeSearch 是否使用 LLM 树搜索（深度思考模式）
    */
   async queryPDF(
     query: string,
     indexId: string,
-    maxResults: number = 10
+    maxResults: number = 10,
+    useLLMTreeSearch: boolean = false
   ): Promise<QueryPDFResult> {
     return this.request<QueryPDFResult>('/api/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, index_id: indexId, max_results: maxResults })
+      body: JSON.stringify({
+        query,
+        index_id: indexId,
+        max_results: maxResults,
+        use_llm_tree_search: useLLMTreeSearch
+      })
     });
   }
 

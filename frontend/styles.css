@@ -1898,6 +1898,7 @@
 
 .deeppdf-load-doc-btn,
 .deeppdf-mode-toggle-btn,
+.deeppdf-deep-search-btn,
 .deeppdf-chat-input-send-btn {
 	display: flex;
 	align-items: center;
@@ -1919,6 +1920,7 @@
 
 .deeppdf-load-doc-btn:hover,
 .deeppdf-mode-toggle-btn:hover,
+.deeppdf-deep-search-btn:hover,
 .deeppdf-chat-input-send-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
@@ -1926,6 +1928,7 @@
 
 .deeppdf-load-doc-btn svg,
 .deeppdf-mode-toggle-btn svg,
+.deeppdf-deep-search-btn svg,
 .deeppdf-chat-input-send-btn svg {
 	width: 16px;
 	height: 16px;
@@ -1950,6 +1953,17 @@
 
 .deeppdf-mode-toggle-btn.active:hover,
 .deeppdf-mode-toggle-btn[data-mode="cross"]:hover {
+	background: var(--background-modifier-hover);
+	color: var(--interactive-accent);
+}
+
+/* ==================== 深度思考模式按钮 ==================== */
+
+.deeppdf-deep-search-btn.active {
+	color: var(--interactive-accent);
+}
+
+.deeppdf-deep-search-btn.active:hover {
 	background: var(--background-modifier-hover);
 	color: var(--interactive-accent);
 }
@@ -4343,6 +4357,16 @@
 .deeppdf-lib-progress,
 .deeppdf-lib-nodes {
     color: var(--text-muted);
+}
+
+/* 错误信息 */
+.deeppdf-lib-error {
+    font-size: 11px;
+    color: #ef4444;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* 操作按钮 */

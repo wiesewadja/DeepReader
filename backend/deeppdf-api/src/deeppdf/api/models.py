@@ -4,7 +4,7 @@ API 请求/响应模型
 
 from enum import Enum
 from pydantic import BaseModel, Field, field_validator
-from typing import Any, Dict, List, Optional, Literal
+from typing import List, Optional, Literal
 
 
 # ========== 枚举类型 ==========
@@ -109,6 +109,9 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="查询文本")
     index_id: str = Field(..., description="索引 ID")
     max_results: Optional[int] = Field(10, description="最大结果数")
+    use_llm_tree_search: bool = Field(
+        False, description="是否使用 LLM 树搜索（深度思考模式）"
+    )
 
 
 # ========== 响应模型 ==========
@@ -141,6 +144,9 @@ class QueryResponse(BaseModel):
     error: Optional[str] = None
     index_info: Optional[dict] = None
     search_method: Optional[str] = None
+    thinking: Optional[str] = None  # 新增: LLM 推理过程
+    fallback: Optional[bool] = None  # 新增: 是否发生降级
+    fallback_reason: Optional[str] = None  # 新增: 降级原因
 
 
 class IndexListItem(BaseModel):
@@ -214,74 +220,6 @@ class MarkdownMappingResponse(BaseModel):
 
     status: str
     index_id: str
-
-
-# ========== Agent 相关模型 ==========
-
-
-class AgentRequest(BaseModel):
-    """Agent 请求"""
-
-    query: str = Field(..., min_length=1, max_length=2000, description="用户查询")
-    index_id: str = Field(..., min_length=1, max_length=100, description="索引 ID")
-    session_id: Optional[str] = Field(
-        None, max_length=100, description="会话 ID，用于多轮对话"
-    )
-    keep_history: Optional[bool] = Field(
-        True, description="是否保留对话历史（支持追问）"
-    )
-    stream: Optional[bool] = Field(False, description="是否流式输出")
-    include_citations: Optional[bool] = Field(False, description="是否返回引用信息")
-    enable_llm_tree_search: Optional[bool] = Field(
-        False, description="是否启用 LLM 树状结构搜索工具"
-    )
-    force_mode: Optional[str] = Field(
-        None,
-        description="强制路由模式：auto(默认自动路由) | fast(只允许hybrid_search) | section(read_page+hybrid_search) | slow(全部工具)",
-    )
-    context_docs: Optional[List[Dict[str, Any]]] = Field(
-        None, description="用户加载的上下文文档列表，每个文档包含 path, name, content"
-    )
-
-    @field_validator("force_mode")
-    @classmethod
-    def validate_force_mode(cls, v: Optional[str]) -> Optional[str]:
-        """验证强制模式参数"""
-        if v is None or v == "auto":
-            return None  # None 表示自动路由
-        valid_modes = ["fast", "section", "slow"]
-        if v not in valid_modes:
-            mode_list = '", "'.join(valid_modes)
-            raise ValueError(f'force_mode must be one of: "auto", "{mode_list}"')
-        return v
-
-
-class CitationInfo(BaseModel):
-    """单个引用信息"""
-
-    node_id: str = Field(..., description="节点 ID")
-    obsidian_link: str = Field(..., description="Obsidian 链接格式 [[file.md#^page-N]]")
-    page: Optional[int] = Field(None, description="页码")
-    anchor: str = Field("", description="锚点（如 ^page-N）")
-
-
-class AgentResponse(BaseModel):
-    """Agent 响应（旧版本，不包含引用）"""
-
-    status: str
-    answer: Optional[str] = None
-    error: Optional[str] = None
-    iterations: Optional[int] = None
-
-
-class AgentResponseWithCitations(BaseModel):
-    """Agent 响应（带引用）"""
-
-    status: str
-    answer: Optional[str] = None
-    error: Optional[str] = None
-    iterations: Optional[int] = None
-    citations: Optional[List[CitationInfo]] = Field(None, description="引用列表")
 
 
 # ========== 会话管理相关模型 ==========

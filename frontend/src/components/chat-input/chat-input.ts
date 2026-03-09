@@ -65,6 +65,10 @@ export interface ChatInputOptions {
 	onQuoteAdded?: (quote: QuoteItem) => void;
 	/** 引用移除回调（可选） */
 	onQuoteRemoved?: (quoteId: string) => void;
+	/** 深度思考模式切换回调（可选） */
+	onDeepSearchToggle?: () => void;
+	/** 当前深度思考模式状态（可选） */
+	deepSearchMode?: boolean;
 }
 
 /**
@@ -89,6 +93,7 @@ export class ChatInput {
 	private sendButton: HTMLButtonElement | null = null;
 	private modeButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
+	private deepSearchButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
 
@@ -107,6 +112,7 @@ export class ChatInput {
 	private pasteHandler: (() => void) | null = null;
 	private modeClickHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
+	private deepSearchClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 
 	constructor(options: ChatInputOptions) {
@@ -220,6 +226,15 @@ export class ChatInput {
 			this.loadDocButton.type = 'button';
 		}
 
+		// 深度思考模式按钮（使用大脑图标）
+		if (this.options.onDeepSearchToggle) {
+			this.deepSearchButton = leftToolbar.createEl('button', {
+				cls: 'deeppdf-deep-search-btn'
+			});
+			this.updateDeepSearchButtonDisplay();
+			this.deepSearchButton.type = 'button';
+		}
+
 		// 右侧工具 (模式切换按钮 + 发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
@@ -303,6 +318,14 @@ export class ChatInput {
 				this.focus();
 			};
 			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
+		}
+
+		// 点击深度思考模式按钮
+		if (this.deepSearchButton && this.options.onDeepSearchToggle) {
+			this.deepSearchClickHandler = () => {
+				this.options.onDeepSearchToggle?.();
+			};
+			this.deepSearchButton.addEventListener('click', this.deepSearchClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -746,6 +769,37 @@ export class ChatInput {
 	}
 
 	/**
+	 * 更新深度思考模式按钮显示
+	 */
+	private updateDeepSearchButtonDisplay(): void {
+		if (!this.deepSearchButton) return;
+
+		const isActive = this.options.deepSearchMode || false;
+
+		// 使用大脑图标（Brain - Lucide）
+		// 激活状态：填充大脑图标；非激活状态：轮廓大脑图标
+		if (isActive) {
+			// 填充大脑图标
+			this.deepSearchButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"></path></svg>`;
+			this.deepSearchButton.addClass('active');
+		} else {
+			// 轮廓大脑图标
+			this.deepSearchButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"></path></svg>`;
+			this.deepSearchButton.removeClass('active');
+		}
+
+		this.deepSearchButton.setAttribute('aria-label', isActive ? '深度思考模式已开启（点击关闭）' : '深度思考模式已关闭（点击开启）');
+	}
+
+	/**
+	 * 设置深度思考模式状态
+	 */
+	setDeepSearchMode(enabled: boolean): void {
+		this.options.deepSearchMode = enabled;
+		this.updateDeepSearchButtonDisplay();
+	}
+
+	/**
 	 * 获取组件元素
 	 */
 	getElement(): HTMLElement | null {
@@ -793,6 +847,11 @@ export class ChatInput {
 			this.loadDocClickHandler = null;
 		}
 
+		if (this.deepSearchButton && this.deepSearchClickHandler) {
+			this.deepSearchButton.removeEventListener('click', this.deepSearchClickHandler);
+			this.deepSearchClickHandler = null;
+		}
+
 		if (this.inputContainer && this.containerClickHandler) {
 			this.inputContainer.removeEventListener('click', this.containerClickHandler);
 			this.containerClickHandler = null;
@@ -819,5 +878,6 @@ export class ChatInput {
 		this.sendButton = null;
 		this.modeButton = null;
 		this.loadDocButton = null;
+		this.deepSearchButton = null;
 	}
 }

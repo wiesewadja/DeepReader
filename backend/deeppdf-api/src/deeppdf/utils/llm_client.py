@@ -3,6 +3,7 @@ LLM 客户端工厂模块
 提供统一的 LLM 客户端创建和管理
 """
 
+import hashlib
 import logging
 from typing import Optional, Tuple
 
@@ -14,6 +15,26 @@ logger = logging.getLogger(__name__)
 
 # 客户端缓存
 _client_cache: dict = {}
+
+
+def _make_cache_key(provider: str, api_key: str, base_url: Optional[str], model: str) -> str:
+    """
+    生成安全的缓存键
+
+    使用 API Key 的哈希值而非明文片段，避免敏感信息泄露到日志中。
+
+    Args:
+        provider: LLM 提供商
+        api_key: API 密钥
+        base_url: API 基础 URL
+        model: 模型名称
+
+    Returns:
+        缓存键字符串
+    """
+    # 使用 SHA256 哈希 API Key（仅用于缓存键，非加密用途）
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    return f"{provider}:{key_hash}:{base_url}:{model}"
 
 
 def get_llm_client(
@@ -59,8 +80,8 @@ def get_llm_client(
     # 确定模型
     model = model or settings.llm_model
 
-    # 检查缓存
-    cache_key = f"{provider}:{api_key[:8]}:{base_url}:{model}"
+    # 检查缓存（使用安全的缓存键）
+    cache_key = _make_cache_key(provider, api_key, base_url, model)
     if use_cache and cache_key in _client_cache:
         return _client_cache[cache_key]
 

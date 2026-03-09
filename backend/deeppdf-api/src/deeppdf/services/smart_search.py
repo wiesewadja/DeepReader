@@ -12,6 +12,7 @@
 - 例如：查询"财富"匹配"第一章"，其子节点内容也获得加权
 """
 
+import hashlib
 import logging
 from typing import Dict, Any, List
 from difflib import SequenceMatcher
@@ -465,13 +466,17 @@ def hybrid_search(
             }
         )
 
-    # 6. 去重（按 node_id，若无则使用文本 hash）
+    # 6. 去重（按 node_id，若无则使用文本 hashlib 哈希）
     seen = set()
     unique_results = []
     for result in all_results:
         node_id = result["metadata"].get("node_id")
-        # 使用 node_id 或文本 hash 作为去重依据
-        key = node_id if node_id else hash(result["text"][:100])
+        # 使用 node_id 或文本 hashlib 哈希作为去重依据
+        # 注意：使用 md5 替代 hash() 以保证跨进程一致性（Python hash() 有随机化）
+        if node_id:
+            key = node_id
+        else:
+            key = hashlib.md5(result["text"][:100].encode("utf-8"), usedforsecurity=False).hexdigest()
         if key not in seen:
             seen.add(key)
             unique_results.append(result)

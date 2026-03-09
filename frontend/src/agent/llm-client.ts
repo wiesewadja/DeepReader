@@ -1,0 +1,311 @@
+/**
+ * LLMClient - 支持 Tool Calling 的流式 LLM 客户端
+ * 用于前端 Agent 直接调用 DeepSeek API
+ */
+
+import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
+
+export interface LLMClientOptions {
+  apiKey: string;
+  baseUrl?: string;
+  model?: string;
+}
+
+export interface StreamCallbacks {
+  onContent: (text: string) => void;
+  onToolCall: (toolCalls: { id: string; name: string; arguments: string }[]) => void;
+  onComplete: (finishReason: 'stop' | 'tool_calls' | 'length') => void;
+  onError: (error: string) => void;
+}
+
+export interface StreamOptions {
+  signal?: AbortSignal; // 外部传入的取消信号
+}
+
+/**
+ * 用于累积流式响应中的 tool_calls
+ */
+interface AccumulatedToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export class LLMClient {
+  // 使用私有变量保护 API Key，防止意外序列化到日志
+  #apiKey: string;
+  private baseUrl: string;
+  private model: string;
+
+  constructor(options: LLMClientOptions) {
+    this.#apiKey = options.apiKey;
+    this.baseUrl = options.baseUrl || 'https://api.deepseek.com';
+    this.model = options.model || 'deepseek-chat';
+  }
+
+  /**
+   * 获取 API Key 的掩码版本（用于日志/调试）
+   */
+  get maskedApiKey(): string {
+    if (!this.#apiKey || this.#apiKey.length < 8) {
+      return '***';
+    }
+    return `${this.#apiKey.slice(0, 4)}...${this.#apiKey.slice(-4)}`;
+  }
+
+  /**
+   * 防止对象被 JSON.stringify 时泄露 API Key
+   */
+  toJSON(): Record<string, unknown> {
+    return {
+      baseUrl: this.baseUrl,
+      model: this.model,
+      apiKey: this.maskedApiKey,
+    };
+  }
+
+  /**
+   * 流式聊天，支持 Tool Calling
+   * @param messages 对话消息列表
+   * @param tools 可用的工具定义
+   * @param callbacks 流式回调
+   * @param options 可选配置（包括 abortSignal）
+   * @returns AbortController 用于取消请求
+   */
+  async streamChat(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    callbacks: StreamCallbacks,
+    options?: StreamOptions
+  ): Promise<AbortController> {
+    const controller = new AbortController();
+
+    // 如果外部提供了 AbortSignal，监听它并转发到内部的 controller
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        options.signal.addEventListener('abort', () => {
+          controller.abort();
+        });
+      }
+    }
+
+    const apiUrl = `${this.baseUrl}/chat/completions`;
+
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.#apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: messages,
+          tools: tools.length > 0 ? tools : undefined,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `API returned ${response.status}`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        callbacks.onError(errorMessage);
+        return controller;
+      }
+
+      if (!response.body) {
+        callbacks.onError('ReadableStream not supported in this environment');
+        return controller;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+
+      // 用于累积 tool_calls（因为它们分块到达）
+      const toolCallsMap = new Map<number, AccumulatedToolCall>();
+      let finishReason: 'stop' | 'tool_calls' | 'length' = 'stop';
+
+      // SSE buffer：用于处理跨 chunk 的不完整行
+      let sseBuffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 将新数据追加到 buffer
+          sseBuffer += decoder.decode(value, { stream: true });
+
+          // 按换行符分割，保留最后一个可能不完整的行
+          const lines = sseBuffer.split('\n');
+          sseBuffer = lines.pop() || ''; // 保留最后一个（可能不完整的）行
+
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            if (!line.startsWith('data: ')) continue;
+
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+
+            try {
+              const parsed: StreamChunk = JSON.parse(data);
+              const choice = parsed.choices?.[0];
+              if (!choice) continue;
+
+              // 处理 finish_reason
+              if (choice.finish_reason) {
+                finishReason = choice.finish_reason;
+              }
+
+              const delta = choice.delta;
+
+              // 处理文本内容
+              if (delta.content) {
+                callbacks.onContent(delta.content);
+              }
+
+              // 处理 tool_calls（增量累积）
+              if (delta.tool_calls) {
+                for (const tc of delta.tool_calls) {
+                  const idx = tc.index;
+
+                  // 获取或创建累积的 tool call
+                  let accumulated = toolCallsMap.get(idx);
+                  if (!accumulated) {
+                    accumulated = { id: '', name: '', arguments: '' };
+                    toolCallsMap.set(idx, accumulated);
+                  }
+
+                  // 累积各个字段
+                  if (tc.id) {
+                    accumulated.id = tc.id;
+                  }
+                  if (tc.function?.name) {
+                    accumulated.name = tc.function.name;
+                  }
+                  if (tc.function?.arguments) {
+                    accumulated.arguments += tc.function.arguments;
+                  }
+                }
+              }
+            } catch {
+              // 忽略解析错误，继续处理下一个 chunk（SSE chunk 边界问题）
+            }
+          }
+        }
+
+        // 处理 buffer 中剩余的内容
+        if (sseBuffer.trim() !== '' && sseBuffer.startsWith('data: ')) {
+          const data = sseBuffer.slice(6);
+          if (data !== '[DONE]') {
+            try {
+              const parsed: StreamChunk = JSON.parse(data);
+              const choice = parsed.choices?.[0];
+              if (choice?.finish_reason) {
+                finishReason = choice.finish_reason;
+              }
+            } catch {
+              // 忽略解析错误
+            }
+          }
+        }
+
+        // 流结束，处理累积的 tool_calls
+        if (toolCallsMap.size > 0) {
+          const toolCalls = Array.from(toolCallsMap.values()).filter(
+            (tc) => tc.id && tc.name
+          );
+          if (toolCalls.length > 0) {
+            callbacks.onToolCall(toolCalls);
+          }
+        }
+
+        callbacks.onComplete(finishReason);
+      } catch (readError) {
+        if (readError instanceof Error && readError.name === 'AbortError') {
+          // 请求被取消，正常情况，不视为错误
+          return controller;
+        }
+        callbacks.onError(readError instanceof Error ? readError.message : 'Stream read error');
+      } finally {
+        // 确保 reader 被正确释放
+        // 使用 releaseLock() 而非 cancel()，因为 cancel() 可能抛出异常
+        // releaseLock() 更安全，它允许 reader 被垃圾回收
+        try {
+          reader.releaseLock();
+        } catch {
+          // ignore - reader 可能已经释放
+        }
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      callbacks.onError(errorMessage);
+    }
+
+    return controller;
+  }
+
+  /**
+   * 非流式聊天（用于简单场景）
+   */
+  async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<{
+    content: string;
+    toolCalls: { id: string; name: string; arguments: string }[];
+    finishReason: 'stop' | 'tool_calls' | 'length';
+  }> {
+    const apiUrl = `${this.baseUrl}/chat/completions`;
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.#apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: messages,
+        tools: tools.length > 0 ? tools : undefined,
+        stream: false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API returned ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0];
+
+    if (!choice) {
+      throw new Error('No choices in response');
+    }
+
+    const toolCalls: { id: string; name: string; arguments: string }[] = [];
+    if (choice.message?.tool_calls) {
+      for (const tc of choice.message.tool_calls) {
+        toolCalls.push({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        });
+      }
+    }
+
+    return {
+      content: choice.message?.content || '',
+      toolCalls,
+      finishReason: choice.finish_reason || 'stop',
+    };
+  }
+}

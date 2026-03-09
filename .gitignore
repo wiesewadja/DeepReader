@@ -31,3 +31,4 @@ frontend/coverage/
 # Git worktrees
 .worktrees/
 output/
+backend/data/

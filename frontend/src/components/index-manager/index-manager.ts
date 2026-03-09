@@ -321,7 +321,12 @@ export class IndexManager extends Component {
                 displayName = displayName.slice(0, -4);
             }
             name.textContent = displayName;
-            name.title = index.pdf_name; // 完整名称在 tooltip 中
+            // 完整名称在 tooltip 中，失败时显示错误信息
+            if (statusClass === 'failed' && index.message) {
+                name.title = `${index.pdf_name}\n错误: ${index.message}`;
+            } else {
+                name.title = index.pdf_name;
+            }
 
             // 进度条（仅索引进度中时显示）
             if (showProgress) {

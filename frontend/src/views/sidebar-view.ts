@@ -28,6 +28,8 @@ import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
 import { log, warn, error as logError } from "../utils/logger.js";
+import { FrontendAgent } from "../agent/index.js";
+import type { ToolContext } from "../agent/tools/types.js";
 
 // 在文件顶部使用一次 log 以避免 unused import 警告
 void log;
@@ -86,6 +88,7 @@ export class SidebarView extends ItemView {
     private isConnected: boolean = false;  // 后端连接状态
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
+    private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
@@ -95,14 +98,76 @@ export class SidebarView extends ItemView {
     private quotesContainer: HTMLElement | null = null;
     private quotes: import("../components/chat-input/chat-input.js").QuoteItem[] = [];
 
+    // 前端 Agent
+    private frontendAgent: FrontendAgent | null = null;
+
+    /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
+    private currentMarkdownFiles: Record<string, string> = {};
+
+    /** 前端 Agent 对话历史 */
+    private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
+
     /** 生成新的会话ID */
     private generateSessionId(): string {
         return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    /**
+     * 初始化前端 Agent
+     * 使用懒加载模式，仅在第一次需要时初始化
+     */
+    private async initializeFrontendAgent(): Promise<void> {
+        if (this.frontendAgent) {
+            return; // 已初始化
+        }
+
+        const settings = this.plugin.settings;
+        // @ts-ignore - Obsidian FileSystemAdapter.getBasePath() 返回 string，但类型定义未暴露
+        const vaultPath = this.app.vault.adapter.getBasePath() as string;
+
+        // 使用 Node.js 的 path 和 fs 模块
+        // @ts-ignore - Obsidian 的 adapter.getBasePath() 返回 string
+        const path = require('path') as typeof import('path');
+        // @ts-ignore
+        const fs = require('fs') as typeof import('fs');
+
+        const skillsDir = path.join(vaultPath, 'DeepReader', 'skills');
+
+        // 确保 skills 目录存在
+        if (!fs.existsSync(skillsDir)) {
+            fs.mkdirSync(skillsDir, { recursive: true });
+            log('[DeepPDF] 创建 skills 目录:', skillsDir);
+
+            // 从插件资源目录复制默认 skills
+            const assetsPath = path.join(this.plugin.manifest.dir || '', 'assets', 'skills');
+            if (fs.existsSync(assetsPath)) {
+                const files = fs.readdirSync(assetsPath).filter((f: string) => f.endsWith('.md'));
+                for (const file of files) {
+                    fs.copyFileSync(path.join(assetsPath, file), path.join(skillsDir, file));
+                }
+                log(`[DeepPDF] 复制了 ${files.length} 个默认 skill 文件`);
+            }
+        }
+
+        // 创建 FrontendAgent 实例
+        this.frontendAgent = new FrontendAgent({
+            apiKey: settings.deepseekApiKey || '',
+            baseUrl: settings.deepseekBaseUrl,
+            model: settings.deepseekModel || 'deepseek-chat',
+            skillsDir,
+        });
+
+        // 初始化 Agent（加载 skills）
+        await this.frontendAgent.initialize();
+        log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', this.frontendAgent.listSkills());
+    }
+
     /** 开启新会话 */
     private async startNewSession(indexId: string) {
         this.sessionId = this.generateSessionId();
+
+        // 清空前端 Agent 对话历史
+        this.agentChatHistory = [];
 
         // 保存到设置
         if (!this.plugin.settings.savedSessions) {
@@ -215,11 +280,22 @@ export class SidebarView extends ItemView {
     private restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
 
+        // 同时恢复 agentChatHistory
+        const chatMessages: import("../agent/types.js").ChatMessage[] = [];
+
         if (fromCache) {
             // 从缓存恢复，直接使用 MessageData
             history.forEach(msgData => {
                 try {
                     this.messageList!.addMessage(msgData);
+
+                    // 同时构建 ChatMessage 格式
+                    if (msgData.role === 'user' || msgData.role === 'assistant') {
+                        chatMessages.push({
+                            role: msgData.role,
+                            content: msgData.content,
+                        });
+                    }
                 } catch (e) {
                     warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
                 }
@@ -238,7 +314,25 @@ export class SidebarView extends ItemView {
                     timestamp: new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 });
+
+                // 同时构建 ChatMessage 格式
+                if (msg.role === 'user' || msg.role === 'assistant') {
+                    chatMessages.push({
+                        role: msg.role,
+                        content: msg.content,
+                    });
+                }
             });
+        }
+
+        // 恢复 agentChatHistory（前面加上 system 消息）
+        if (chatMessages.length > 0 && this.frontendAgent) {
+            const systemPrompt = this.frontendAgent.getSystemPrompt();
+            this.agentChatHistory = [
+                { role: 'system', content: systemPrompt },
+                ...chatMessages
+            ];
+            log('[DeepPDF] 恢复 agentChatHistory，消息数:', this.agentChatHistory.length);
         }
     }
 
@@ -417,9 +511,9 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 选择索引（从弹窗中调用）
+     * 选择索引（从弹窗中调用或自动切换）
      */
-    private async selectIndex(indexId: string): Promise<void> {
+    public async selectIndex(indexId: string): Promise<void> {
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
@@ -439,6 +533,20 @@ export class SidebarView extends ItemView {
             this.messageList?.setCurrentPdfName(displayName);
             this.readingTopbar?.setCurrentBook(displayName);
 
+            // === 获取 Markdown 文件映射 ===
+            try {
+                if (this.apiClient) {
+                    const indexStatus = await this.apiClient.getIndexStatus(indexId);
+                    if (indexStatus.markdown_files) {
+                        this.currentMarkdownFiles = indexStatus.markdown_files;
+                        log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
+                    }
+                }
+            } catch (e) {
+                logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+                this.currentMarkdownFiles = {};
+            }
+
             // === 检查书籍章节是否已下载到本地 ===
             const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
             if (!chaptersExist) {
@@ -452,6 +560,9 @@ export class SidebarView extends ItemView {
                     },
                     { confirmLabel: '下载章节' }
                 ).open();
+                // 用户取消下载时，仍需清空消息列表并显示欢迎消息
+                this.messageList?.clear();
+                this.showWelcomeMessage();
                 return; // 用户取消下载，不继续加载书籍
             }
         }
@@ -489,6 +600,40 @@ export class SidebarView extends ItemView {
             }
         } else {
             this.startNewSession(indexId);
+        }
+    }
+
+    /**
+     * 获取当前选中的索引 ID
+     */
+    public getCurrentIndexId(): string | null {
+        return this.currentIndexId;
+    }
+
+    /**
+     * 通过书名选择索引（自动切换时使用）
+     */
+    public async selectBookByName(bookName: string): Promise<void> {
+        log('[DeepPDF] Selecting book by name:', bookName);
+
+        // 在已加载的索引列表中查找
+        const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+
+        const index = this.indexes.find(idx => {
+            const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+            return idxName === normalizedBookName || idx.pdf_name === bookName;
+        });
+
+        if (index) {
+            // 检查是否已经是当前书籍
+            if (this.currentIndexId === index.id) {
+                log('[DeepPDF] Already on the same book');
+                return;
+            }
+            log('[DeepPDF] Found index by name:', index.id);
+            await this.selectIndex(index.id);
+        } else {
+            log('[DeepPDF] Book not found in index list:', bookName);
         }
     }
 
@@ -960,6 +1105,10 @@ export class SidebarView extends ItemView {
             onModeToggle: () => {
                 this.toggleSearchMode();
             },
+            deepSearchMode: this.useLLMTreeSearch,
+            onDeepSearchToggle: () => {
+                this.toggleDeepSearchMode();
+            },
             app: this.app,
             onStop: () => {
                 this.stopGeneration();
@@ -1120,6 +1269,21 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 切换深度思考模式
+     */
+    public async toggleDeepSearchMode(): Promise<void> {
+        this.useLLMTreeSearch = !this.useLLMTreeSearch;
+        const modeText = this.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
+        new Notice(modeText);
+        log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
+        // 同步更新按钮状态
+        this.chatInput?.setDeepSearchMode(this.useLLMTreeSearch);
+        // 持久化设置
+        this.plugin.settings.lastDeepSearchMode = this.useLLMTreeSearch;
+        await this.plugin.saveSettings();
+    }
+
+    /**
      * 恢复跨书籍模式状态
      */
     private async restoreCrossBookMode() {
@@ -1137,6 +1301,14 @@ export class SidebarView extends ItemView {
             this.chatInput?.setSearchMode('cross');
             this.indexManager?.setCrossBookMode(true);
             await this.loadCrossBookSession();
+        }
+
+        // 恢复深度思考模式状态
+        const wasDeepSearchMode = this.plugin.settings.lastDeepSearchMode;
+        if (wasDeepSearchMode) {
+            log('[DeepPDF] 恢复深度思考模式');
+            this.useLLMTreeSearch = true;
+            this.chatInput?.setDeepSearchMode(true);
         }
     }
 
@@ -1179,6 +1351,22 @@ export class SidebarView extends ItemView {
     private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
         // 允许只有引用没有文本的情况
         if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
+            return;
+        }
+
+        // 实时检查后端连接状态（不依赖缓存的 isConnected）
+        try {
+            const isHealthy = await this.apiClient?.healthCheck();
+            if (!isHealthy) {
+                this.isConnected = false;
+                this.indexManager?.setConnectionStatus('disconnected');
+                new Notice("后端未连接，请先连接后端服务");
+                return;
+            }
+        } catch (e) {
+            this.isConnected = false;
+            this.indexManager?.setConnectionStatus('error');
+            new Notice("后端连接失败，请检查后端服务");
             return;
         }
 
@@ -1284,7 +1472,7 @@ export class SidebarView extends ItemView {
             throw new Error("API 客户端未连接");
         }
 
-        const result = await this.apiClient.queryPDF(query, indexId);
+        const result = await this.apiClient.queryPDF(query, indexId, 10, this.useLLMTreeSearch);
 
         if (result.status !== "success") {
             throw new Error(result.error || "查询失败");
@@ -1293,10 +1481,21 @@ export class SidebarView extends ItemView {
         // 从 API 响应中获取 PDF 名称
         const pdfName = result.index_info?.pdf_name || "未知文档";
 
+        // 处理 LLM 树搜索的 thinking 和降级信息
+        let thinkingContent = "";
+        let fallbackInfo = "";
+
+        if (result.thinking) {
+            thinkingContent = `### 🧠 深度思考\n\n${result.thinking}\n\n`;
+        }
+        if (result.fallback) {
+            fallbackInfo = `⚠️ 已自动切换到混合检索\n\n原因: ${result.fallback_reason || '未知'}\n\n`;
+        }
+
         // 如果没有相关结果
         if (!result.results || result.results.length === 0) {
             this.messageList?.updateMessage(aiMessageId, {
-                content: "未找到相关结果。请尝试使用不同的关键词重新搜索。",
+                content: thinkingContent + fallbackInfo + "未找到相关结果。请尝试使用不同的关键词重新搜索。",
                 isStreaming: false
             });
             return;
@@ -1484,113 +1683,85 @@ ${r.text}`;
         aiMessageId: string,
         quotes?: import("../components/chat-input/chat-input.js").QuoteItem[]
     ): Promise<void> {
-        if (!this.apiClient) {
-            throw new Error("API 客户端未连接");
-        }
-
-        // 取消之前的流式请求（如果有）
-        if (this.streamController) {
-            this.streamController.abort();
-            log('[DeepPDF] 取消旧的流式请求');
-        }
-
-        let fullContent = '';
-        let streamController: AbortController | null = null;
-        let agentCitations: CitationInfo[] = []; // 收集 Agent 返回的引用
-
-        // 跟踪上一次的 Agent 元数据，避免不必要的全量重绘
-        let lastThoughtsJSON = '';
-        let lastToolCallsJSON = '';
-
-        // 将引用转换为上下文文档
-        const contextDocs: ContextDoc[] | undefined = quotes?.map(q => ({
-            path: q.source || '引用',
-            name: q.source || '引用',
-            content: q.text
-        }));
-
         try {
-            // 使用流式 Agent API（从插件设置中读取 force_mode）
-            const forceMode = this.plugin?.settings?.forceMode || 'auto';
+            // 初始化 FrontendAgent（懒加载）
+            await this.initializeFrontendAgent();
 
-            // 合并引用和现有上下文文档
-            const existingDocs = this.getContextDocs() || [];
-            const quoteDocs = contextDocs || [];
-            const allContextDocs = [...quoteDocs, ...existingDocs];
+            if (!this.frontendAgent) {
+                throw new Error("FrontendAgent 初始化失败");
+            }
 
-            streamController = agentAPI.chatStream(
-                query,
-                indexId,
-                // onChunk: 接收流式内容
-                (chunk: string, metadata?: { status?: string; citations?: CitationInfo[] }) => {
-                    // 处理引用数据
-                    if (metadata?.citations) {
-                        log('[DeepPDF] 收到引用数据:', metadata.citations);
-                        log('[DeepPDF] 引用数据数量:', metadata.citations.length);
-                        agentCitations = metadata.citations;
-                    }
+            // 取消之前的流式请求（如果有）
+            if (this.streamController) {
+                this.streamController.abort();
+                log('[DeepPDF] 取消旧的流式请求');
+            }
 
-                    fullContent += chunk;
+            // 创建新的 AbortController
+            this.streamController = new AbortController();
 
-                    // 解析 Agent 内容（提取思考过程、工具调用、状态等）
-                    const { thoughts, toolCalls, cleanedContent, currentStatus } = parseAgentContent(fullContent);
+            let fullContent = '';
+            let currentStatus = '';
 
-                    // 调试日志
-                    if (currentStatus) {
-                        log('[DeepPDF] handleAgentQuery - 检测到状态:', currentStatus);
-                    }
+            // 构建 ToolContext
+            const context: ToolContext = {
+                indexId: indexId,
+                pdfName: this.currentPdfName || '未知文档',
+                markdownFiles: this.currentMarkdownFiles,
+                useLLMTreeSearch: this.useLLMTreeSearch,
+            };
 
-                    // 检查 Agent 元数据是否真正变化
-                    const currentThoughtsJSON = JSON.stringify(thoughts);
-                    const currentToolCallsJSON = JSON.stringify(toolCalls);
+            // 构建用户消息（包含引用内容）
+            let userMessage = query;
+            if (quotes && quotes.length > 0) {
+                const quotesText = quotes.map(q => `> ${q.text}\n> — ${q.source || '引用'}`).join('\n\n');
+                userMessage = `${query}\n\n---\n**引用内容：**\n${quotesText}`;
+            }
 
-                    const thoughtsChanged = currentThoughtsJSON !== lastThoughtsJSON;
-                    const toolCallsChanged = currentToolCallsJSON !== lastToolCallsJSON;
+            // 判断是否是新对话（历史为空或只有 system 消息）
+            const isNewConversation = this.agentChatHistory.length <= 1;
 
-                    // 构建更新对象 - 始终更新所有字段以确保实时显示
-                    let displayContent = cleanedContent;
+            // 回调函数
+            const callbacks = {
+                // onContent: 接收流式内容
+                onContent: (text: string) => {
+                    fullContent += text;
 
-                    // 回滚：在正文中显示默认状态，确保用户能看到反馈
-                    if ((!cleanedContent || cleanedContent.trim() === '') && !currentStatus) {
-                        displayContent = '📖 正在翻阅...';
-                    } else if (!cleanedContent || cleanedContent.trim() === '') {
-                        // 如果有状态但没内容，这里可以选择显示状态或者留空
-                        // 为了确保可见性，我们可以让正文也显示状态
-                        // 或者保持之前的逻辑：Header 显示具体状态，正文留空
-                        displayContent = '';
+                    // 构建更新对象
+                    let displayContent = fullContent;
+
+                    // 如果没有内容，显示默认状态
+                    if (!fullContent || fullContent.trim() === '') {
+                        displayContent = currentStatus || '📖 正在翻阅...';
                     }
 
                     const updates: any = {
                         content: displayContent,
                         isStreaming: true,
                         isAgentMessage: true,
-                        // 始终传递思考内容
-                        agentThoughts: thoughts,
-                        // 始终传递工具调用
-                        agentToolCalls: toolCalls,
-                        // 传递当前状态（用于在 header 中显示）
-                        currentStatus: currentStatus
                     };
 
-                    // 更新跟踪变量
-                    lastThoughtsJSON = currentThoughtsJSON;
-                    lastToolCallsJSON = currentToolCallsJSON;
-
-                    // 如果有引用数据，转换为 CitationData 格式并添加
-                    if (agentCitations.length > 0) {
-                        log('[DeepPDF] 转换引用数据，数量:', agentCitations.length);
-                        const convertedCitations = this.convertCitationsToCitationData(agentCitations);
-                        log('[DeepPDF] 转换后的引用数据:', convertedCitations);
-                        updates.citations = convertedCitations;
+                    // 如果有状态，添加到更新中
+                    if (currentStatus) {
+                        updates.currentStatus = currentStatus;
                     }
 
-                    // 更新消息显示
-                    log('[DeepPDF] 更新消息，updates keys:', Object.keys(updates));
-                    log('[DeepPDF] updates.citations 存在?', !!updates.citations);
                     this.messageList?.updateMessage(aiMessageId, updates);
                 },
+                // onProgress: 接收进度更新
+                onProgress: (status: string) => {
+                    log('[DeepPDF] Agent 进度:', status);
+                    currentStatus = status;
+
+                    // 更新消息显示状态
+                    this.messageList?.updateMessage(aiMessageId, {
+                        currentStatus: status,
+                        isStreaming: true,
+                        isAgentMessage: true,
+                    });
+                },
                 // onComplete: 流式完成
-                () => {
+                onComplete: () => {
                     this.messageList?.updateMessage(aiMessageId, {
                         isStreaming: false
                     });
@@ -1604,9 +1775,11 @@ ${r.text}`;
                     this.chatInput?.setDisabled(false);
 
                     this.chatInput?.focus();
+                    this.streamController = null;
                 },
                 // onError: 错误处理
-                (error: string) => {
+                onError: (error: string) => {
+                    logError('[DeepPDF] Agent 错误:', error);
                     this.messageList?.updateMessage(aiMessageId, {
                         content: `查询失败: ${error}`,
                         isStreaming: false
@@ -1619,19 +1792,38 @@ ${r.text}`;
                     this.chatInput?.setDisabled(false);
 
                     this.chatInput?.focus();
+                    this.streamController = null;
                 },
-                forceMode,  // 传递强制模式参数
-                true,       // 启用引用数据提取
-                this.sessionId || undefined,  // 传递会话ID
-                true,       // 启用历史记录
-                allContextDocs.length > 0 ? allContextDocs : undefined  // 传递上下文文档（包含引用）
-            );
+                abortSignal: this.streamController.signal,
+            };
 
-            // 保存 controller 用于取消
-            this.streamController = streamController;
+            // 根据是否有历史选择不同的方法
+            let updatedHistory: import("../agent/types.js").ChatMessage[];
+            if (isNewConversation) {
+                // 新对话，使用 chat()
+                updatedHistory = await this.frontendAgent.chat(
+                    userMessage,
+                    context,
+                    callbacks
+                );
+            } else {
+                // 继续对话，使用 continueChat()
+                log('[DeepPDF] 继续对话，历史消息数:', this.agentChatHistory.length);
+                updatedHistory = await this.frontendAgent.continueChat(
+                    this.agentChatHistory,
+                    userMessage,
+                    context,
+                    callbacks
+                );
+            }
+
+            // 更新对话历史
+            this.agentChatHistory = updatedHistory;
+            log('[DeepPDF] 对话历史已更新，消息数:', this.agentChatHistory.length);
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
+            logError('[DeepPDF] handleAgentQuery 错误:', error);
             this.messageList?.updateMessage(aiMessageId, {
                 content: `Agent 查询失败: ${errorMessage}`,
                 isStreaming: false

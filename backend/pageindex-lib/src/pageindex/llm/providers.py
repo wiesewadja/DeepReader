@@ -38,7 +38,7 @@ PageIndex LLM Provider 模块
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List
 
 import openai
 import os
@@ -48,6 +48,12 @@ load_dotenv()
 
 # 支持 CHATGPT_API_KEY（向后兼容）和 OPENAI_API_KEY（更通用）
 CHATGPT_API_KEY = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+
+# SiliconFlow API Key（用于多 Provider 并行）
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+
+# 智谱 API Key（用于多 Provider 并行）
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 
 # 可选依赖
 try:
@@ -227,11 +233,16 @@ class DeepSeekProvider(LLMProvider):
         初始化 DeepSeek Provider
 
         参数:
-            api_key: DeepSeek API 密钥
+            api_key: DeepSeek API 密钥 (None 时从 DEEPSEEK_API_KEY 环境变量读取)
             base_url: API 基础 URL (默认 https://api.deepseek.com)
             timeout: 请求超时时间 (秒，可选，默认从配置文件读取)
         """
         self.base_url = base_url or "https://api.deepseek.com"
+
+        # 从参数或环境变量获取 API Key
+        if api_key is None:
+            api_key = os.environ.get("DEEPSEEK_API_KEY")
+
         self.api_key = api_key
 
         # 从配置文件读取默认 timeout
@@ -246,7 +257,7 @@ class DeepSeekProvider(LLMProvider):
         self.timeout = timeout
 
         logger.debug(
-            f"DeepSeekProvider 初始化: base_url={self.base_url}, timeout={timeout}"
+            f"DeepSeekProvider 初始化: base_url={self.base_url}, api_key={'***' if self.api_key else 'None'}, timeout={timeout}"
         )
 
     def chat(self, model: str, messages: list, temperature: float = 0) -> str:
@@ -339,6 +350,114 @@ class GoogleProvider(LLMProvider):
         return await loop.run_in_executor(
             None, self.chat, model, messages, temperature
         )
+
+
+# ============================================================
+# Multi Provider (负载均衡)
+# ============================================================
+# 注意: SiliconFlowProvider 和 ZhipuProvider 在 CustomProvider 之后定义
+
+class MultiProvider(LLMProvider):
+    """
+    多 Provider 负载均衡器
+
+    支持多个 LLM Provider 轮询和并行处理，实现负载均衡。
+    每个 Provider 可以配置独立的模型名称。
+
+    特性:
+        - 轮询分发请求到不同的 Provider
+        - 每个 Provider 使用自己的模型名称
+        - 支持权重配置
+        - 单个 Provider 失败不影响整体
+
+    使用示例:
+        >>> providers = [
+        ...     DeepSeekProvider(api_key="..."),
+        ...     SiliconFlowProvider(api_key="..."),
+        ... ]
+        >>> models = ["deepseek-chat", "deepseek-ai/DeepSeek-V3"]
+        >>> multi = MultiProvider(providers, models=models)
+        >>> # 调用时忽略传入的 model，使用 Provider 自己的模型
+        >>> response = multi.chat("", [{"role": "user", "content": "Hello"}])
+    """
+
+    def __init__(
+        self,
+        providers: List[LLMProvider],
+        weights: Optional[List[int]] = None,
+        names: Optional[List[str]] = None,
+        models: Optional[List[str]] = None,
+    ):
+        """
+        初始化 MultiProvider
+
+        参数:
+            providers: Provider 实例列表
+            weights: 各 Provider 的权重 (用于负载均衡)
+            names: Provider 名称列表 (用于日志)
+            models: 各 Provider 使用的模型名称列表
+        """
+        if not providers:
+            raise ValueError("providers 列表不能为空")
+
+        self.providers = providers
+        self.weights = weights or [1] * len(providers)
+        self.names = names or [f"Provider_{i}" for i in range(len(providers))]
+        self.models = models or [""] * len(providers)  # 每个 Provider 的模型
+
+        # 构建加权索引池
+        self._weighted_indices = []
+        for i, w in enumerate(self.weights):
+            self._weighted_indices.extend([i] * w)
+
+        self._current_index = 0
+        self._lock = asyncio.Lock()  # 用于线程安全的轮询
+
+        logger.info(
+            f"[MultiProvider] 初始化完成: "
+            f"{len(providers)} 个 Provider, 权重={self.weights}, 模型={self.models}"
+        )
+
+    def _get_next_provider_index(self) -> int:
+        """获取下一个 Provider 索引（轮询）"""
+        index = self._weighted_indices[self._current_index]
+        self._current_index = (self._current_index + 1) % len(self._weighted_indices)
+        return index
+
+    async def _get_next_provider_index_async(self) -> int:
+        """异步获取下一个 Provider 索引（线程安全）"""
+        async with self._lock:
+            return self._get_next_provider_index()
+
+    def chat(self, model: str, messages: list, temperature: float = 0) -> str:
+        """
+        同步调用（使用下一个 Provider 及其配置的模型）
+
+        注意: model 参数会被忽略，使用 Provider 配置的模型
+        """
+        idx = self._get_next_provider_index()
+        provider = self.providers[idx]
+        provider_model = self.models[idx] or model  # 优先使用配置的模型
+        logger.debug(f"[MultiProvider] 使用 {self.names[idx]} (model={provider_model})")
+        return provider.chat(provider_model, messages, temperature)
+
+    async def chat_async(
+        self, model: str, messages: list, temperature: float = 0
+    ) -> str:
+        """
+        异步调用（使用下一个 Provider 及其配置的模型）
+
+        注意: model 参数会被忽略，使用 Provider 配置的模型
+        """
+        idx = await self._get_next_provider_index_async()
+        provider = self.providers[idx]
+        provider_model = self.models[idx] or model  # 优先使用配置的模型
+        logger.debug(f"[MultiProvider] 使用 {self.names[idx]} (model={provider_model})")
+        return await provider.chat_async(provider_model, messages, temperature)
+
+    def get_provider(self, index: int) -> LLMProvider:
+        """获取指定索引的 Provider"""
+        return self.providers[index]
 
 
 # ============================================================
@@ -441,6 +560,104 @@ class CustomProvider(LLMProvider):
 
 
 # ============================================================
+# SiliconFlow Provider
+# ============================================================
+
+class SiliconFlowProvider(CustomProvider):
+    """
+    硅基流动 API Provider
+
+    硅基流动（SiliconFlow）提供多种开源模型的 API 服务，
+    使用 OpenAI 兼容的 API 格式。
+
+    支持的模型:
+        - deepseek-ai/DeepSeek-V3
+        - Qwen/Qwen2.5-72B-Instruct
+        - meta-llama/Llama-3.3-70B-Instruct
+        - 等等
+
+    使用示例:
+        >>> provider = SiliconFlowProvider(api_key="sk-...")
+        >>> response = provider.chat(
+        ...     "deepseek-ai/DeepSeek-V3",
+        ...     [{"role": "user", "content": "Hello"}]
+        ... )
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ):
+        """
+        初始化 SiliconFlow Provider
+
+        参数:
+            api_key: SiliconFlow API 密钥 (可选，默认使用环境变量)
+            timeout: 请求超时时间 (秒，可选)
+        """
+        # 从环境变量获取 API Key
+        api_key = api_key or SILICONFLOW_API_KEY
+
+        # 调用父类初始化，使用 SiliconFlow 的 base_url
+        super().__init__(
+            base_url="https://api.siliconflow.cn/v1",
+            api_key=api_key,
+            model_param="model",
+            timeout=timeout,
+        )
+
+        logger.info(f"[SiliconFlowProvider] 初始化完成")
+
+
+# ============================================================
+# Zhipu Provider
+# ============================================================
+
+class ZhipuProvider(CustomProvider):
+    """
+    智谱 AI Provider
+
+    智谱 GLM 系列 API， 官方文档: https://open.bigmodel.cn/dev/api
+
+    支持的模型:
+        - GLM-4-Flash (推荐，速度快、便宜)
+        - GLM-4-Plus
+        - GLM-4-0520
+
+    使用示例:
+        >>> provider = ZhipuProvider(api_key="...")
+        >>> response = provider.chat(
+        ...     "GLM-4-Flash",
+        ...     [{"role": "user", "content": "Hello"}]
+        ... )
+    """
+
+    def __init__(
+        self, api_key: Optional[str] = None, timeout: Optional[float] = None
+    ):
+        """
+        初始化智谱 Provider
+
+        参数:
+            api_key: 智谱 API 密钥 (可选，默认使用环境变量)
+            timeout: 请求超时时间 (秒，可选)
+        """
+        # 从环境变量获取 API Key
+        api_key = api_key or ZHIPU_API_KEY
+
+        # 调用父类初始化，使用智谱的 base_url
+        super().__init__(
+            base_url="https://open.bigmodel.cn/api/paas/v4",
+            api_key=api_key,
+            model_param="model",
+            timeout=timeout,
+        )
+
+        logger.info(f"[ZhipuProvider] 初始化完成")
+
+
+# ============================================================
 # Provider 工厂
 # ============================================================
 
@@ -455,6 +672,7 @@ class LLMProviderFactory:
         - deepseek: DeepSeekProvider
         - google: GoogleProvider
         - custom: CustomProvider
+        - siliconflow: SiliconFlowProvider
 
     使用示例:
         >>> # 创建 OpenAI Provider
@@ -472,6 +690,8 @@ class LLMProviderFactory:
         "google": GoogleProvider,
         "deepseek": DeepSeekProvider,
         "custom": CustomProvider,
+        "siliconflow": SiliconFlowProvider,
+        "zhipu": ZhipuProvider,
     }
 
     @classmethod
@@ -572,8 +792,9 @@ def get_provider(provider_config) -> LLMProvider:
     # 构建工厂参数
     factory_kwargs = {}
 
-    # 处理 custom Provider 的特殊参数
+    # 处理不同 Provider 的特殊参数
     if provider_type == "custom":
+        # Custom Provider 需要 base_url 和 model_param
         base_url = (
             provider_config.get("base_url")
             if hasattr(provider_config, "get")
@@ -586,13 +807,16 @@ def get_provider(provider_config) -> LLMProvider:
         )
         factory_kwargs["base_url"] = base_url
         factory_kwargs["model_param"] = model_param
-    else:
+    elif provider_type in ("openai", "deepseek"):
+        # OpenAI 和 DeepSeek 支持 base_url 覆盖
         base_url = (
             provider_config.get("base_url")
             if hasattr(provider_config, "get")
             else getattr(provider_config, "base_url", None)
         )
-        factory_kwargs["base_url"] = base_url
+        if base_url:
+            factory_kwargs["base_url"] = base_url
+    # 其他 Provider (siliconflow, zhipu, google) 不需要 base_url 参数
 
     # 获取 API 密钥
     api_key = (
@@ -612,3 +836,71 @@ def get_provider(provider_config) -> LLMProvider:
 
     # 创建 Provider
     return LLMProviderFactory.create(provider_type, **factory_kwargs)
+
+
+def get_multi_provider(providers_config) -> MultiProvider:
+    """
+    从配置创建 MultiProvider 实例（多 Provider 并行处理）
+
+    参数:
+        providers_config: Provider 列表配置
+            [
+                {"type": "deepseek", "model": "deepseek-chat", "weight": 1},
+                {"type": "siliconflow", "model": "deepseek-ai/DeepSeek-V3", "weight": 1},
+                {"type": "zhipu", "model": "GLM-4-Flash", "weight": 1}
+            ]
+
+    返回:
+        MultiProvider 实例
+
+    使用示例:
+        >>> config = [
+        ...     {"type": "deepseek", "model": "deepseek-chat", "weight": 1},
+        ...     {"type": "siliconflow", "model": "deepseek-ai/DeepSeek-V3", "weight": 1}
+        ... ]
+        >>> multi_provider = get_multi_provider(config)
+        >>> # 轮询使用不同 Provider，每个 Provider 使用自己的模型
+        >>> response1 = await multi_provider.chat_async("", [...])  # DeepSeek + deepseek-chat
+        >>> response2 = await multi_provider.chat_async("", [...])  # SiliconFlow + DeepSeek-V3
+    """
+    if not providers_config:
+        raise ValueError("providers_config 不能为空")
+
+    providers = []
+    weights = []
+    names = []
+    models = []
+
+    for i, cfg in enumerate(providers_config):
+        # 获取权重
+        weight = (
+            cfg.get("weight", 1)
+            if hasattr(cfg, "get")
+            else getattr(cfg, "weight", 1)
+        )
+
+        # 获取名称
+        name = (
+            cfg.get("name", f"provider_{i}")
+            if hasattr(cfg, "get")
+            else getattr(cfg, "name", f"provider_{i}")
+        )
+
+        # 获取模型（每个 Provider 独立配置）
+        model = (
+            cfg.get("model", "")
+            if hasattr(cfg, "get")
+            else getattr(cfg, "model", "")
+        )
+
+        # 创建单个 Provider
+        provider = get_provider(cfg)
+
+        providers.append(provider)
+        weights.append(weight)
+        names.append(name)
+        models.append(model)
+
+        logger.info(f"[MultiProvider] 添加 Provider: {name}, model={model}, 权重={weight}")
+
+    return MultiProvider(providers=providers, weights=weights, names=names, models=models)

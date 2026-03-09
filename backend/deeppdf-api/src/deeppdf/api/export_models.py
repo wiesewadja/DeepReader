@@ -17,7 +17,8 @@ class ExportNodeData(BaseModel):
     end_index: int | str
     level: int
     text: str
-    parent_id: str | None = None  # 新增：父节点 ID
+    summary: str | None = None  # 章节摘要（LLM 生成）
+    parent_id: str | None = None  # 父节点 ID
 
 
 class ExportIndexResponse(BaseModel):

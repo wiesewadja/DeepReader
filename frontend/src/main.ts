@@ -22,6 +22,8 @@ interface DeepPDFSettings {
     lastCrossBookSessionId: string;  // 跨书籍模式的会话ID
     chatCache?: Record<string, any>;  // 对话缓存
     enableDebugLog: boolean;  // 是否启用调试日志
+    // 深度思考模式（LLM 树搜索）
+    lastDeepSearchMode: boolean;  // 上次是否启用深度思考模式
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -39,7 +41,8 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     forceMode: "auto",  // 默认使用自动路由
     lastCrossBookMode: false,  // 默认不启用跨书籍模式
     lastCrossBookSessionId: "",  // 跨书籍会话ID
-    enableDebugLog: false  // 默认关闭调试日志
+    enableDebugLog: false,  // 默认关闭调试日志
+    lastDeepSearchMode: false  // 默认不启用深度思考模式
 };
 
 export default class DeepPDFPlugin extends Plugin {
@@ -213,6 +216,10 @@ export default class DeepPDFPlugin extends Plugin {
             onRemoveHighlight: async (text: string) => {
                 await this.removeHighlightFromFile(text);
             },
+            onBookDetected: (indexId: string, bookName: string) => {
+                // 检测到书籍章节，自动切换到对应书籍的聊天记录
+                this.switchToBook(indexId, bookName);
+            },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
         this.readingModeService.start();
@@ -351,6 +358,55 @@ export default class DeepPDFPlugin extends Plugin {
         if (this.readingModeService) {
             this.readingModeService.stop();
             this.readingModeService = null;
+        }
+    }
+
+    /**
+     * 切换到指定书籍（自动检测到书籍章节时调用）
+     */
+    private async switchToBook(indexId: string, bookName: string): Promise<void> {
+        log('[DeepPDF] Auto-switching to book:', bookName, 'indexId:', indexId);
+
+        // 获取 sidebar view 实例
+        const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+        if (leaves.length === 0) {
+            log('[DeepPDF] No sidebar view found, activating...');
+            this.activateView();
+            // 等待视图加载后再切换
+            setTimeout(() => {
+                this.performBookSwitch(indexId, bookName);
+            }, 200);
+            return;
+        }
+
+        // 视图已存在，直接切换
+        await this.performBookSwitch(indexId, bookName);
+    }
+
+    /**
+     * 执行书籍切换
+     */
+    private async performBookSwitch(indexId: string, bookName: string): Promise<void> {
+        const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+        if (leaves.length === 0) return;
+
+        const view = leaves[0].view;
+        if (view instanceof SidebarView) {
+            // 如果有 indexId，检查是否已经是当前选中的书籍
+            if (indexId) {
+                const currentIndexId = view.getCurrentIndexId();
+                if (currentIndexId === indexId) {
+                    log('[DeepPDF] Already on the same book, skipping switch');
+                    return;
+                }
+                // 直接通过 indexId 切换
+                log('[DeepPDF] Switching to book by indexId:', indexId);
+                await view.selectIndex(indexId);
+            } else {
+                // 没有 indexId，通过书名查找
+                log('[DeepPDF] Switching to book by name:', bookName);
+                await view.selectBookByName(bookName);
+            }
         }
     }
 

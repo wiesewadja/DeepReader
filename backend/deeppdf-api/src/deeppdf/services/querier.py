@@ -14,6 +14,12 @@ from deeppdf.storage.chroma_store import get_chroma_store
 # 导入智能检索
 from .smart_search import hybrid_search
 
+# 导入 LLM 树搜索
+from .llm_tree_search import llm_tree_search, extract_nodes_by_ids, LLMTreeSearchError
+
+# 导入 LLM 客户端
+from deeppdf.utils.llm_client import get_llm_client
+
 # 导入缓存工具
 from deeppdf.utils.cache import TTLCache
 
@@ -244,18 +250,126 @@ _load_index_metadata = _load_index_metadata_from_disk
 
 
 async def query_pdf(
-    query: str, index_id: str, storage_dir: str, max_results: int = 10
+    query: str,
+    index_id: str,
+    storage_dir: str,
+    max_results: int = 10,
+    use_llm_tree_search: bool = False,
 ) -> Dict[str, Any]:
     """
     异步 PDF 查询
 
-    使用 asyncio.to_thread 处理 I/O 密集型任务
+    支持两种检索模式:
+    1. 混合检索（默认）: 向量 + BM25 + 标题匹配
+    2. LLM 树搜索: 使用 LLM 推理定位章节
+
+    Args:
+        query: 查询文本
+        index_id: 索引 ID
+        storage_dir: 存储目录
+        max_results: 最大结果数
+        use_llm_tree_search: 是否使用 LLM 树搜索
+
+    Returns:
+        查询结果字典
     """
-    result = await asyncio.to_thread(
+    storage_dir_path = Path(storage_dir)
+    index_metadata = get_index_metadata(storage_dir_path, index_id)
+    tree_structure = index_metadata.get("tree_structure", {})
+
+    # LLM 树搜索模式
+    if use_llm_tree_search and tree_structure:
+        try:
+            result = await _query_with_llm_tree_search(
+                query=query,
+                tree_structure=tree_structure,
+                index_metadata=index_metadata,
+                max_results=max_results,
+            )
+            return result
+        except LLMTreeSearchError as e:
+            # 静默降级到混合检索
+            logger.warning(f"[LLM树搜索] 失败，降级到混合检索: {e}")
+            fallback_result = await asyncio.to_thread(
+                _query_pdf_sync,
+                query=query,
+                index_id=index_id,
+                storage_dir=storage_dir,
+                max_results=max_results,
+            )
+            fallback_result["fallback"] = True
+            fallback_result["fallback_reason"] = str(e)
+            return fallback_result
+
+    # 默认：混合检索
+    return await asyncio.to_thread(
         _query_pdf_sync,
         query=query,
         index_id=index_id,
         storage_dir=storage_dir,
         max_results=max_results,
     )
-    return result
+
+
+async def _query_with_llm_tree_search(
+    query: str,
+    tree_structure: Dict[str, Any],
+    index_metadata: Dict[str, Any],
+    max_results: int,
+) -> Dict[str, Any]:
+    """LLM 树搜索实现"""
+
+    # 1. 获取 LLM 客户端
+    try:
+        client, model = get_llm_client()
+    except ValueError as e:
+        raise LLMTreeSearchError(str(e), "no_api_key")
+
+    # 2. 执行 LLM 树搜索
+    search_result = await llm_tree_search(
+        query=query,
+        tree_structure=tree_structure,
+        llm_client=client,
+        model=model,
+        doc_name=index_metadata.get("pdf_name", ""),
+        max_results=max_results,
+        timeout=15,
+        max_retries=2,
+    )
+
+    if not search_result.success:
+        raise LLMTreeSearchError(search_result.error or "Unknown error", "llm_error")
+
+    # 3. 提取节点内容
+    nodes = extract_nodes_by_ids(tree_structure, search_result.node_ids)
+
+    # 4. 格式化返回结果
+    results = []
+    for node in nodes:
+        content = node.get("text") or node.get("summary", "")
+        results.append(
+            {
+                "text": content,
+                "metadata": {
+                    "section": node.get("path", ""),
+                    "node_id": node.get("node_id"),
+                    "node_name": node.get("title"),
+                    "page": node.get("start_index"),
+                    "start_index": node.get("start_index"),
+                    "end_index": node.get("end_index"),
+                },
+            }
+        )
+
+    return {
+        "status": "success",
+        "results": results,
+        "search_method": "llm_tree_search",
+        "thinking": search_result.thinking,
+        "index_info": {
+            "pdf_name": index_metadata.get("pdf_name", ""),
+            "pdf_path": index_metadata.get("pdf_path", ""),
+            "node_count": index_metadata.get("node_count", 0),
+            "created_at": index_metadata.get("created_at", ""),
+        },
+    }
