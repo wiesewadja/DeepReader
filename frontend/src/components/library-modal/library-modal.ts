@@ -70,9 +70,9 @@ export class LibraryModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        // 标题栏
+        // 标题行
         const header = contentEl.createDiv({ cls: 'deeppdf-lib-header' });
-        header.createDiv({ cls: 'deeppdf-lib-title', text: '在线书库' });
+        header.createEl('h2', { text: '在线书库', cls: 'deeppdf-lib-title' });
 
         // 工具栏：搜索 + 添加
         const toolbar = contentEl.createDiv({ cls: 'deeppdf-lib-toolbar' });
