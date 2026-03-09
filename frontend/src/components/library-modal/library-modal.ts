@@ -326,6 +326,18 @@ export class LibraryModal extends Modal {
     }
 
     private async handleAddDocument(): Promise<void> {
+        // 检查后端连接状态
+        if (!this.options.apiClient) {
+            new ConfirmModal(
+                this.app,
+                "需要后端服务",
+                "此功能需要连接后端服务才能使用。\n\n请启动后端：\n```bash\nuv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio\n```",
+                () => {},
+                { confirmLabel: "知道了", cancelLabel: "取消" }
+            ).open();
+            return;
+        }
+
         new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
             new ConfirmModal(
                 this.app,
