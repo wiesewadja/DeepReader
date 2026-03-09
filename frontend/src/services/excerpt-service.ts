@@ -193,8 +193,10 @@ export class ExcerptService {
     const contentLines = calloutContent.trimEnd().split('\n');
     const calloutBody = contentLines.map(line => `> ${line}`).join('\n');
 
+    // 标题行格式: > [!type]+锚点 标题内容
+    // 如果有笔记，只显示笔记；如果没有笔记，显示时间戳
     const formatted = `
-> [!${calloutType}]+-${timeAnchor} ${calloutTitle}
+> [!${calloutType}]+${timeAnchor} ${calloutTitle}
 ${calloutBody}
 `;
 
