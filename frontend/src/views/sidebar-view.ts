@@ -56,6 +56,9 @@ export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
     };
 }
 
+/** 连接状态类型 */
+type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
+
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
 /** 任务完成后显示延迟时间（毫秒） */
@@ -85,7 +88,12 @@ export class SidebarView extends ItemView {
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
-    private isConnected: boolean = false;  // 后端连接状态
+    private connectionStatus: ConnectionStatus = 'connecting';  // 后端连接状态
+
+    /** 向后兼容：返回是否已连接 */
+    private get isConnected(): boolean {
+        return this.connectionStatus === 'connected';
+    }
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
@@ -704,7 +712,7 @@ export class SidebarView extends ItemView {
         }
 
         // 更新连接状态
-        this.isConnected = connected;
+        this.connectionStatus = connected ? 'connected' : 'disconnected';
         this.readingTopbar?.setConnectionStatus(connected ? 'connected' : 'disconnected');
     }
 
@@ -1321,13 +1329,13 @@ export class SidebarView extends ItemView {
         try {
             const isHealthy = await this.apiClient?.healthCheck();
             if (!isHealthy) {
-                this.isConnected = false;
+                this.connectionStatus = 'disconnected';
                 this.indexManager?.setConnectionStatus('disconnected');
                 new Notice("后端未连接，请先连接后端服务");
                 return;
             }
         } catch (e) {
-            this.isConnected = false;
+            this.connectionStatus = 'disconnected';
             this.indexManager?.setConnectionStatus('error');
             new Notice("后端连接失败，请检查后端服务");
             return;
@@ -2375,7 +2383,7 @@ ${r.text}`;
 
         // 设置为加载状态
         this.indexManager.setConnectionStatus('loading');
-        this.isConnected = false;
+        this.connectionStatus = 'disconnected';
 
         if (!this.apiClient) {
             this.indexManager.setConnectionStatus('disconnected');
@@ -2387,7 +2395,7 @@ ${r.text}`;
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
                 this.indexManager.setConnectionStatus('connected');
-                this.isConnected = true;
+                this.connectionStatus = 'connected';
                 this.chatInput?.setDisabled(false);
             } else {
                 this.indexManager.setConnectionStatus('disconnected');
@@ -2415,7 +2423,7 @@ ${r.text}`;
                 const healthResponse = await this.apiClient.healthCheck();
                 const isHealthy = healthResponse?.status === 'ok';
                 const wasConnected = this.isConnected;
-                this.isConnected = isHealthy;
+                this.connectionStatus = isHealthy ? 'connected' : 'disconnected';
 
                 if (isHealthy) {
                     this.indexManager.setConnectionStatus('connected');
@@ -2433,7 +2441,7 @@ ${r.text}`;
             } catch (error) {
                 logError('[DeepPDF] 健康检查失败:', error);
                 this.indexManager.setConnectionStatus('error');
-                this.isConnected = false;
+                this.connectionStatus = 'disconnected';
             }
         }, 30000); // 30 秒
     }
