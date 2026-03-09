@@ -153,11 +153,7 @@ export class ExcerptService {
       minute: '2-digit'
     });
 
-    // 生成时间戳锚点（用于同一文件中定位）
-    const timeAnchor = `${new Date().getFullYear()}${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}`;
-
     // 随机选择 Obsidian 内置 callout 类型，增加视觉多样性
-    // 可用的美观类型: quote, note, info, tip, success, question, warning, failure, danger, bug, example
     const calloutTypes = ['quote', 'note', 'info', 'tip', 'success', 'example'];
     const randomCalloutType = calloutTypes[Math.floor(Math.random() * calloutTypes.length)];
 
@@ -191,9 +187,9 @@ export class ExcerptService {
     const contentLines = calloutContent.trimEnd().split('\n');
     const calloutBody = contentLines.map(line => `> ${line}`).join('\n');
 
-    // 标题行格式: > [!type]+锚点 标题内容
+    // 标题行格式: > [!type]+ 标题内容
     const formatted = `
-> [!${randomCalloutType}]+${timeAnchor} ${calloutTitle}
+> [!${randomCalloutType}]+ ${calloutTitle}
 ${calloutBody}
 `;
 
