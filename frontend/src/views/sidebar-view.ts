@@ -968,18 +968,44 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 处理摘录选中文字
+     * 处理摘录选中文字（阅读模式中的摘录）
+     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
+     * 链接：链接到章节文件
      */
     private handleExcerptSelection(text: string): void {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
-            new Notice("No active file");
+            new Notice("没有打开的文件");
             return;
         }
 
+        // 从文件的 frontmatter 或路径中提取书籍信息
+        const cache = this.app.metadataCache.getFileCache(activeFile);
+        let bookName = cache?.frontmatter?.pdf_name || '';
+        let indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '';
+
+        // 如果没有从 frontmatter 获取到书名，从路径提取
+        if (!bookName) {
+            const pathParts = activeFile.path.split('/');
+            // 假设路径格式是 DeepReader/{书名}/章节.md 或 {书名}/章节.md
+            if (pathParts.length >= 2) {
+                if (pathParts[0] === 'DeepReader') {
+                    bookName = pathParts[1];
+                } else {
+                    bookName = pathParts[0];
+                }
+            } else {
+                bookName = activeFile.basename;
+            }
+        }
+
+        // 构建元数据
         const metadata: ExcerptMetadata = {
-            sourcePdf: activeFile.basename,
+            sourcePdf: bookName,
             createdAt: new Date().toISOString(),
+            sourceType: 'reading',
+            chapterPath: activeFile.path,
+            chapterName: activeFile.basename,
         };
 
         const modal = new ExcerptModal({
@@ -987,7 +1013,7 @@ export class SidebarView extends ItemView {
             content: { text },
             metadata,
             onSave: async (path: string) => {
-                new Notice(`Excerpt saved to ${path}`);
+                new Notice(`摘录已保存到 ${path}`);
             },
         });
         modal.open();
@@ -2166,7 +2192,9 @@ ${r.text}`;
     }
 
     /**
-     * 处理摘录保存
+     * 处理摘录保存（对话中的摘录）
+     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
+     * 链接：只链接到书籍，不需要章节
      */
     private handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
         const message = this.messageList?.getMessage(messageId);
@@ -2178,6 +2206,9 @@ ${r.text}`;
         if (data.pdfName) {
             metadata.sourcePdf = data.pdfName;
         }
+
+        // 设置为对话摘录类型
+        metadata.sourceType = 'chat';
 
         // 打开摘录模态框
         const modal = new ExcerptModal({

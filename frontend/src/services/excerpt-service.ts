@@ -136,7 +136,7 @@ export class ExcerptService {
   }
 
   /**
-   * 格式化摘录内容
+   * 格式化摘录内容（使用 Obsidian callout 美化）
    */
   private formatExcerpt(
     content: ExcerptContent,
@@ -151,29 +151,55 @@ export class ExcerptService {
       minute: '2-digit'
     });
 
-    // 使用用户问题作为标题，如果没有问题则使用时间戳
-    const title = metadata.question || `摘录 ${timestamp}`;
-    let formatted = `## ${title}\n\n`;
+    // 生成时间戳锚点（用于 callout 标题行）
+    const timeAnchor = `${new Date().getFullYear()}-${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}`;
 
-    // 添加时间戳
-    formatted += `📅 ${timestamp}\n\n`;
+    // 根据来源类型选择不同的 callout 样式和标题
+    let calloutType = 'quote';
+    let calloutTitle = '📖 摘录';
 
-    // 添加引用内容
-    formatted += `> ${content.text}\n\n`;
+    if (metadata.sourceType === 'reading' && metadata.chapterPath) {
+      // 阅读摘录：链接到章节
+      calloutType = 'reading';
+      calloutTitle = '📖 章节摘录';
+    } else if (metadata.sourceType === 'chat') {
+      // 对话摘录：只链接到书籍
+      calloutType = 'chat';
+      calloutTitle = '💬 对话摘录';
+    }
 
-    // 添加元数据
-    formatted += `**来源**: [[${metadata.sourcePdf}]]\n`;
+    // 构建 callout 内容
+    let calloutContent = '';
+
+    // 摘录内容
+    calloutContent += `${content.text}\n`;
+
+    // 来源信息（根据类型显示不同链接）
+    calloutContent += '\n---\n';
+    if (metadata.sourceType === 'reading' && metadata.chapterPath) {
+      // 阅读摘录：链接到章节文件
+      const chapterDisplay = metadata.chapterName || metadata.chapterPath.split('/').pop()?.replace('.md', '') || metadata.chapterPath;
+      calloutContent += `📍 来源: [[${metadata.chapterPath}|${chapterDisplay}]]\n`;
+    } else {
+      // 对话摘录或默认：只链接到书籍
+      calloutContent += `📍 来源: [[${metadata.sourcePdf}]]\n`;
+    }
+
+    // 页码信息（如果有）
     if (metadata.page) {
-      formatted += `**页码**: ${metadata.page}\n`;
+      calloutContent += `📄 页码: 第 ${metadata.page} 页\n`;
     }
 
-    // 添加笔记（如果有）
+    // 笔记（如果有）
     if (options?.note) {
-      formatted += `**笔记**: ${options.note}\n`;
+      calloutContent += `\n💭 笔记: ${options.note}\n`;
     }
 
-    // 添加分隔线
-    formatted += '\n---\n';
+    // 组装完整的 callout
+    const formatted = `
+> [!${calloutType}]+-${timeAnchor} ${calloutTitle} ${timestamp}
+> ${calloutContent.split('\n').join('\n> ')}
+`;
 
     return formatted;
   }

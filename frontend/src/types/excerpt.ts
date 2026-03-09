@@ -16,9 +16,9 @@ export interface ExcerptContent {
  * 摘录元数据
  */
 export interface ExcerptMetadata {
-	/** 来源 PDF 文件名 */
+	/** 来源 PDF/EPUB 文件名（书籍名） */
 	sourcePdf: string;
-	/** 页码（可选) */
+	/** 页码（可选，PDF 使用） */
 	page?: number;
 	/** 用户的问题 */
 	question?: string;
@@ -32,6 +32,12 @@ export interface ExcerptMetadata {
 	conversationId?: string;
 	/** 消息 ID（用于双向链接） */
 	messageId?: string;
+	/** 章节文件路径（可选，阅读模式摘录时使用） */
+	chapterPath?: string;
+	/** 章节名称（可选，用于显示） */
+	chapterName?: string;
+	/** 摘录来源类型 */
+	sourceType?: 'reading' | 'chat';
 }
 
 /**
