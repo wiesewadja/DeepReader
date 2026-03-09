@@ -347,16 +347,24 @@ async def _query_with_llm_tree_search(
     results = []
     for node in nodes:
         content = node.get("text") or node.get("summary", "")
+        node_id = node.get("node_id")
+
+        # 从索引元数据中查找对应的 Markdown 文件路径
+        markdown_path = None
+        if "markdown_files" in index_metadata:
+            markdown_path = index_metadata["markdown_files"].get(node_id)
+
         results.append(
             {
                 "text": content,
                 "metadata": {
                     "section": node.get("path", ""),
-                    "node_id": node.get("node_id"),
+                    "node_id": node_id,
                     "node_name": node.get("title"),
                     "page": node.get("start_index"),
                     "start_index": node.get("start_index"),
                     "end_index": node.get("end_index"),
+                    "markdown_path": markdown_path,
                 },
             }
         )

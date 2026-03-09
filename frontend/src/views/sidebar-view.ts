@@ -564,24 +564,28 @@ export class SidebarView extends ItemView {
 
             // 加载书籍封面
             this.loadBookCover(displayName);
-
-            // === 获取 Markdown 文件映射 ===
-            try {
-                if (this.apiClient) {
-                    const indexStatus = await this.apiClient.getIndexStatus(indexId);
-                    if (indexStatus.markdown_files) {
-                        this.currentMarkdownFiles = indexStatus.markdown_files;
-                        log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
-                    }
-                }
-            } catch (e) {
-                logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
-                this.currentMarkdownFiles = {};
-            }
-
-            // 注意：章节下载逻辑已移至 library-modal.ts
-            // 这里不再重复触发导出，避免出现两次 notice
         }
+
+        // === 获取 Markdown 文件映射（移到 if 块外部，确保总是更新) ===
+        try {
+            if (this.apiClient) {
+                const indexStatus = await this.apiClient.getIndexStatus(indexId);
+                if (indexStatus.markdown_files) {
+                    this.currentMarkdownFiles = indexStatus.markdown_files;
+                    log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
+                } else {
+                    // 如果没有 markdown_files， 清空映射
+                    this.currentMarkdownFiles = {};
+                    log(`[DeepPDF] 索引 ${indexId} 没有 markdown_files 映射，已清空`);
+                }
+            }
+        } catch (e) {
+            logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+            this.currentMarkdownFiles = {};
+        }
+
+        // 注意：章节下载逻辑已移至 library-modal.ts
+        // 这里不再重复触发导出，避免出现两次 notice
 
         // 清空消息
         this.messageList?.clear();
