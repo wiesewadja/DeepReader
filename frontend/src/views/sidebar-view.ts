@@ -253,10 +253,7 @@ export class SidebarView extends ItemView {
 
     /** 处理新建会话 */
     private handleNewChat() {
-        if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
-            return;
-        }
+        // 不再检查连接状态，允许用户在未连接时创建新会话
         if (!this.currentIndexId) {
             new Notice("请先选择一个索引");
             return;
@@ -1188,9 +1185,9 @@ export class SidebarView extends ItemView {
      * 切换搜索模式
      */
     private async toggleSearchMode() {
-        // 检查后端连接状态
+        // 跨书籍搜索需要后端支持
         if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
+            new Notice("跨书籍搜索需要后端服务。请启动后端以使用此功能。");
             return;
         }
 
@@ -1325,21 +1322,8 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 实时检查后端连接状态（不依赖缓存的 isConnected）
-        try {
-            const isHealthy = await this.apiClient?.healthCheck();
-            if (!isHealthy) {
-                this.connectionStatus = 'disconnected';
-                this.indexManager?.setConnectionStatus('disconnected');
-                new Notice("后端未连接，请先连接后端服务");
-                return;
-            }
-        } catch (e) {
-            this.connectionStatus = 'disconnected';
-            this.indexManager?.setConnectionStatus('disconnected');
-            new Notice("后端连接失败，请检查后端服务");
-            return;
-        }
+        // 不再在发送消息前检查连接状态
+        // 前端 Agent 可以在无后端的情况下工作
 
         // 跨书籍模式不需要选择索引
         if (!this.crossBookMode && !this.currentIndexId) {
