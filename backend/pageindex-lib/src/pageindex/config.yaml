@@ -33,10 +33,10 @@ page_group_overlap_pages: 1  # 页面分组时的重叠页数
 # 节点内容配置
 # ============================================================
 if_add_node_id: "yes"  # 添加节点 ID
-if_add_node_summary: "yes"  # 添加节点摘要（需要 LLM）
+if_add_node_summary: "no"  # 添加节点摘要（默认关闭，耗时较长）
 if_add_doc_description: "no"  # 添加文档描述
 if_add_node_text: "yes"  # 添加节点文本内容
-format_text_with_llm: "yes"  # 是否用 LLM 格式化文本（同时生成摘要，减少 API 调用）
+format_text_with_llm: "no"  # 是否用 LLM 格式化文本（默认关闭，耗时较长）
 
 # ============================================================
 # LLM Provider 配置
