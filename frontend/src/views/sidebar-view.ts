@@ -515,6 +515,30 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 加载书籍封面
+     * @param bookName 书籍名称（不含扩展名）
+     */
+    private loadBookCover(bookName: string): void {
+        const coverPath = `DeepReader/covers/${bookName}.png`;
+        const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+
+        if (coverFile) {
+            // 使用 Obsidian 的 getResourcePath 获取可用的 URL
+            const { TFile } = require('obsidian');
+            if (coverFile instanceof TFile) {
+                const coverUrl = this.app.vault.getResourcePath(coverFile as any);
+                this.readingTopbar?.setBookCover(coverUrl);
+                log(`[DeepPDF] 加载书籍封面: ${coverPath}`);
+                return;
+            }
+        }
+
+        // 封面不存在，使用默认图标
+        this.readingTopbar?.setBookCover(null);
+        log(`[DeepPDF] 书籍封面不存在: ${coverPath}`);
+    }
+
+    /**
      * 选择索引（从弹窗中调用或自动切换）
      * @param indexId 索引 ID
      */
@@ -537,6 +561,9 @@ export class SidebarView extends ItemView {
             }
             this.messageList?.setCurrentPdfName(displayName);
             this.readingTopbar?.setCurrentBook(displayName);
+
+            // 加载书籍封面
+            this.loadBookCover(displayName);
 
             // === 获取 Markdown 文件映射 ===
             try {

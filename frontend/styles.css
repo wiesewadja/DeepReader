@@ -3993,76 +3993,105 @@
 
 /**
  * DeepPDF 阅读顶栏样式
- * 极简透明风格：只显示书籍名称、状态和操作入口
+ * 极简风格：左侧书籍封面+书名，右侧操作按钮
  */
 
-/* 顶栏容器 - 透明背景，无边框 */
+/* 顶栏容器 */
 .deeppdf-reading-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
+    padding: 10px 12px;
     background: transparent;
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
-    min-height: 36px;
+    min-height: 48px;
 }
 
-/* 左侧区域 - 固定宽度占位 */
+/* 左侧区域 - 书籍封面 + 书名信息 */
 .deeppdf-topbar-left {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
-    min-width: 40px;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    position: relative;
 }
 
-/* 中间区域 - 书名居中 */
-.deeppdf-topbar-center {
+/* 书籍封面 - 圆角矩形 */
+.deeppdf-book-cover {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background: var(--background-modifier-hover);
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 1;
-    min-width: 0;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: all 0.2s ease;
 }
 
-/* 当前书籍显示 - 居中 */
-.deeppdf-current-book {
+.deeppdf-book-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.deeppdf-book-cover svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+}
+
+/* 书籍信息容器 */
+.deeppdf-book-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* 书名 */
+.deeppdf-book-title {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-muted);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    text-align: center;
-    max-width: 100%;
+    line-height: 1.3;
     transition: color 0.15s ease;
 }
 
-.deeppdf-current-book.has-book {
+.deeppdf-book-title.has-book {
     color: var(--text-normal);
 }
 
-/* 右侧区域 */
-.deeppdf-topbar-right {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
-    min-width: 80px;
-    justify-content: flex-end;
-    position: relative;
+/* 作者/状态 */
+.deeppdf-book-author {
+    font-size: 11px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
 }
 
-/* 状态点 - 小圆点 */
+/* 状态点 - 小圆点，覆盖在封面右下角 */
 .deeppdf-status-dot {
-    width: 6px;
-    height: 6px;
+    position: absolute;
+    left: 26px;
+    top: 26px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     background: var(--text-muted);
+    border: 2px solid var(--background-primary);
     flex-shrink: 0;
     transition: background 0.3s ease;
+    z-index: 1;
 }
 
 .deeppdf-status-dot--connecting {
@@ -4083,16 +4112,25 @@
     50% { opacity: 0.4; }
 }
 
+/* 右侧区域 */
+.deeppdf-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+    position: relative;
+}
+
 /* 操作按钮 - 极简 */
 .deeppdf-topbar-action-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
@@ -4105,8 +4143,8 @@
 }
 
 .deeppdf-topbar-action-btn svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
 }
 
 /* 下拉菜单 - 浮动卡片 */
@@ -4168,11 +4206,27 @@
 /* 响应式 */
 @media (max-width: 600px) {
     .deeppdf-reading-topbar {
-        padding: 6px 10px;
+        padding: 8px 10px;
     }
 
-    .deeppdf-current-book {
+    .deeppdf-book-title {
         font-size: 12px;
+    }
+
+    .deeppdf-book-author {
+        font-size: 10px;
+    }
+
+    .deeppdf-book-cover {
+        width: 28px;
+        height: 28px;
+    }
+
+    .deeppdf-status-dot {
+        left: 22px;
+        top: 22px;
+        width: 7px;
+        height: 7px;
     }
 }
 
@@ -4927,8 +4981,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  /* 为顶栏圆角留出空间 */
-  padding: 0 2px;
+  /* 移除 padding，让顶栏与左边栏对齐 */
+  padding: 0;
 }
 
 /* ==================== 顶部导航区 ==================== */

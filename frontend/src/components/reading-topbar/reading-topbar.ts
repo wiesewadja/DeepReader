@@ -1,6 +1,6 @@
 /**
  * DeepPDF 阅读顶栏组件
- * 极简透明风格：只显示当前书籍名称、操作入口和连接状态
+ * 极简风格：左侧书籍封面+书名，右侧操作按钮
  */
 
 import { Component } from '../component.js';
@@ -16,7 +16,9 @@ export interface ReadingTopbarOptions {
 
 export class ReadingTopbar extends Component {
     private options: ReadingTopbarOptions;
-    private currentBookEl: HTMLElement | null = null;
+    private bookCoverEl: HTMLElement | null = null;
+    private bookTitleEl: HTMLElement | null = null;
+    private bookAuthorEl: HTMLElement | null = null;
     private statusDot: HTMLElement | null = null;
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
@@ -38,28 +40,40 @@ export class ReadingTopbar extends Component {
         const container = document.createElement('div');
         container.className = 'deeppdf-reading-topbar';
 
-        // 左侧：占位（保持平衡）
+        // 左侧：书籍封面 + 书名信息
         const leftSection = document.createElement('div');
         leftSection.className = 'deeppdf-topbar-left';
 
-        // 状态点放在左侧
+        // 书籍封面（圆形）
+        this.bookCoverEl = document.createElement('div');
+        this.bookCoverEl.className = 'deeppdf-book-cover';
+        // 默认显示书籍图标
+        this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+        leftSection.appendChild(this.bookCoverEl);
+
+        // 书名和作者信息
+        const bookInfo = document.createElement('div');
+        bookInfo.className = 'deeppdf-book-info';
+
+        this.bookTitleEl = document.createElement('div');
+        this.bookTitleEl.className = 'deeppdf-book-title';
+        this.bookTitleEl.textContent = '未选择文档';
+        bookInfo.appendChild(this.bookTitleEl);
+
+        this.bookAuthorEl = document.createElement('div');
+        this.bookAuthorEl.className = 'deeppdf-book-author';
+        this.bookAuthorEl.textContent = '点击选择书籍';
+        bookInfo.appendChild(this.bookAuthorEl);
+
+        leftSection.appendChild(bookInfo);
+
+        // 状态点（小圆点，放在封面右下角）
         this.statusDot = document.createElement('span');
         this.statusDot.className = 'deeppdf-status-dot';
         this.statusDot.title = '连接中...';
         leftSection.appendChild(this.statusDot);
 
         container.appendChild(leftSection);
-
-        // 中间：当前书籍名称（居中）
-        const centerSection = document.createElement('div');
-        centerSection.className = 'deeppdf-topbar-center';
-
-        this.currentBookEl = document.createElement('div');
-        this.currentBookEl.className = 'deeppdf-current-book';
-        this.currentBookEl.textContent = '未选择文档';
-        centerSection.appendChild(this.currentBookEl);
-
-        container.appendChild(centerSection);
 
         // 右侧：操作按钮
         const rightSection = document.createElement('div');
@@ -138,19 +152,42 @@ export class ReadingTopbar extends Component {
     /**
      * 设置当前书籍名称
      */
-    public setCurrentBook(name: string | null): void {
-        if (!this.currentBookEl) return;
+    public setCurrentBook(name: string | null, author?: string): void {
+        if (!this.bookTitleEl || !this.bookAuthorEl) return;
 
         if (name) {
             let displayName = name;
             if (displayName.toLowerCase().endsWith('.pdf')) {
                 displayName = displayName.slice(0, -4);
             }
-            this.currentBookEl.textContent = displayName;
-            this.currentBookEl.classList.add('has-book');
+            if (displayName.toLowerCase().endsWith('.epub')) {
+                displayName = displayName.slice(0, -5);
+            }
+            this.bookTitleEl.textContent = displayName;
+            this.bookTitleEl.classList.add('has-book');
+            this.bookAuthorEl.textContent = author || '已加载';
         } else {
-            this.currentBookEl.textContent = '未选择文档';
-            this.currentBookEl.classList.remove('has-book');
+            this.bookTitleEl.textContent = '未选择文档';
+            this.bookTitleEl.classList.remove('has-book');
+            this.bookAuthorEl.textContent = '点击选择书籍';
+        }
+    }
+
+    /**
+     * 设置书籍封面
+     * @param coverUrl 封面图片 URL（通过 vault.getResourcePath 获取）
+     */
+    public setBookCover(coverUrl: string | null): void {
+        if (!this.bookCoverEl) return;
+
+        if (coverUrl) {
+            // 显示封面图片
+            this.bookCoverEl.innerHTML = `<img src="${coverUrl}" alt="书籍封面" />`;
+            this.bookCoverEl.classList.add('has-cover');
+        } else {
+            // 回退到默认图标
+            this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+            this.bookCoverEl.classList.remove('has-cover');
         }
     }
 
@@ -158,11 +195,12 @@ export class ReadingTopbar extends Component {
      * 设置跨书籍模式
      */
     public setCrossBookMode(isCrossBook: boolean): void {
-        if (!this.currentBookEl) return;
+        if (!this.bookTitleEl || !this.bookAuthorEl) return;
 
         if (isCrossBook) {
-            this.currentBookEl.textContent = '跨书籍阅读';
-            this.currentBookEl.classList.add('has-book');
+            this.bookTitleEl.textContent = '跨书籍阅读';
+            this.bookTitleEl.classList.add('has-book');
+            this.bookAuthorEl.textContent = '多本书籍';
         }
         // 注意：当 isCrossBook 为 false 时，不在这里更新显示
         // 应该由调用方通过 setCurrentBook() 设置正确的书籍名称
@@ -204,7 +242,9 @@ export class ReadingTopbar extends Component {
         if (this.handleGlobalClick) {
             document.removeEventListener('click', this.handleGlobalClick);
         }
-        this.currentBookEl = null;
+        this.bookCoverEl = null;
+        this.bookTitleEl = null;
+        this.bookAuthorEl = null;
         this.statusDot = null;
         this.dropdownMenu = null;
         super.destroy();
