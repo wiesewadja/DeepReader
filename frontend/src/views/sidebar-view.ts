@@ -2576,8 +2576,8 @@ ${r.text}`;
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();
         } catch (error) {
+            // 后端是可选的，加载索引列表失败时只记录日志
             logError('[DeepPDF] [loadIndexes] 请求失败:', error);
-            handleNetworkError(error as Error, { context: 'loadIndexes' });
             this.indexes = [];
         }
     }
