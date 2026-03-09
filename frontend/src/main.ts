@@ -61,19 +61,8 @@ export default class DeepPDFPlugin extends Plugin {
         // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
-        // 检查服务器连接状态
-        try {
-            const isHealthy = await this.apiClient.healthCheck();
-            if (!isHealthy) {
-                log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
-                new Notice(`DeepPDF: 无法连接到服务器 (localhost:${this.settings.apiPort})。请启动后端服务。`);
-            } else {
-                log('Server connected successfully');
-            }
-        } catch (err) {
-            warn('Failed to connect to server:', err);
-            new Notice(`DeepPDF: 连接失败 (localhost:${this.settings.apiPort})。请检查后端是否运行。`);
-        }
+        // 异步检查服务器连接状态（不阻塞插件加载）
+        this.checkServerConnection();
 
         // 注册侧边栏视图
         this.registerView(
@@ -430,6 +419,32 @@ export default class DeepPDFPlugin extends Plugin {
 
         if (leaf) {
             workspace.revealLeaf(leaf);
+        }
+    }
+
+    /**
+     * 异步检查服务器连接状态（不阻塞插件加载）
+     */
+    private async checkServerConnection(): Promise<void> {
+        // 使用短暂超时，避免阻塞
+        const timeout = 3000; // 3 秒超时
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            const isHealthy = await this.apiClient!.healthCheck();
+            clearTimeout(timeoutId);
+
+            if (!isHealthy) {
+                log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
+                new Notice(`DeepPDF: 后端服务未响应 (localhost:${this.settings.apiPort})。部分功能不可用。`);
+            } else {
+                log('Server connected successfully');
+            }
+        } catch (err) {
+            warn('Failed to connect to server:', err);
+            new Notice(`DeepPDF: 后端未连接 (localhost:${this.settings.apiPort})。请启动后端服务以使用完整功能。`);
         }
     }
 }
