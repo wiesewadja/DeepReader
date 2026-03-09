@@ -336,13 +336,10 @@ export default class DeepPDFPlugin extends Plugin {
 deeppdf_book_management: true
 ---
 
-# 📚 图书管理
+# 📚 我的书架
 
-管理所有已索引的书籍，支持书单分类和标签过滤。
+> 管理所有已上传的书籍，支持书单分类和标签过滤。
 
-> 💡 在表格中直接编辑「书单」和「标签」列即可分类书籍，多个值用逗号分隔
-
----
 
 ## 📖 书籍列表
 
@@ -353,15 +350,12 @@ filters:
   and:
     - file.inFolder("DeepReader")
     - file.ext == "md"
-    - file.hasProperty("index_id")
-    - '!file.name.startsWith("📖")'
+    - file.hasProperty("cover")
 formulas:
   status_label: if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))
   chat_link: link("obsidian://deepreader-chat?index_id=" + index_id, "对话")
   book_link: link(file.path, book_name)
 properties:
-  cover:
-    displayName: 封面
   formula.book_link:
     displayName: 书名
   formula.chat_link:
@@ -382,15 +376,15 @@ views:
       - formula.status_label
       - formula.chat_link
       - booklists
-      - status
       - tags
-    image: note.cover
-    imageFit: contain
-    cardSize: 200
-    imageAspectRatio: 1.35
+      - author
+    image: cover
+    cardSize: 230
+    imageAspectRatio: 1.25
   - type: table
-    name: "全部书籍"
+    name: 全部书籍
     order:
+      - cover
       - formula.book_link
       - formula.chat_link
       - booklists

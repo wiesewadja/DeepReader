@@ -69,22 +69,38 @@ function processPageMarkers(text: string): string {
  * 生成 Markdown 内容
  */
 function createMarkdownContent(node: NodeData, pdfName: string): string {
-    const frontMatter = `---
-pdf_name: ${pdfName}
-node_id: ${node.node_id}
-section: ${node.section}
-page_range: ${node.page_range}
-level: ${node.level}
----
+    // 构建 frontmatter
+    let frontMatterLines = [
+        '---',
+        `pdf_name: ${pdfName}`,
+        `node_id: ${node.node_id}`,
+        `section: ${node.section}`,
+        `page_range: ${node.page_range}`,
+        `level: ${node.level}`,
+    ];
 
-`;
+    // 如果有摘要，添加到 frontmatter（使用多行字符串格式）
+    if (node.summary && node.summary.trim()) {
+        const summaryText = node.summary.trim();
+        // 如果摘要包含换行，使用 YAML 块标量
+        if (summaryText.includes('\n')) {
+            frontMatterLines.push('summary: |');
+            for (const line of summaryText.split('\n')) {
+                frontMatterLines.push(`  ${line}`);
+            }
+        } else {
+            frontMatterLines.push(`summary: "${summaryText.replace(/"/g, '\\"')}"`);
+        }
+    }
+    frontMatterLines.push('---');
+    frontMatterLines.push('');
 
+    const frontMatter = frontMatterLines.join('\n');
     const title = `# ${node.section}\n\n`;
 
-    // 生成摘要块（如果有摘要）
+    // 生成摘要块（如果有摘要）- 同时保留 callout 展示
     let summaryBlock = "";
     if (node.summary && node.summary.trim()) {
-        // 将摘要格式化为 Obsidian callout 块
         const summaryLines = node.summary.trim().split("\n");
         summaryBlock = "> [!summary] 章节摘要\n";
         for (const line of summaryLines) {
@@ -110,14 +126,18 @@ async function createBookNote(
     app: App,
     bookName: string,
     folderPath: string,
+    indexId: string,
     author?: string
 ): Promise<void> {
     const bookNotePath = `${folderPath}/${bookName}.md`;
+    const coverPath = `DeepReader/covers/${bookName}.png`;
 
     // 构建 frontmatter
     let frontMatterLines = [
         '---',
         `book_name: ${bookName}`,
+        `cover: ${coverPath}`,
+        `index_id: ${indexId}`,
     ];
     if (author) {
         // 用引号包裹作者名，避免 YAML 解析特殊字符（如方括号）出错
@@ -126,8 +146,37 @@ async function createBookNote(
     frontMatterLines.push('---');
     frontMatterLines.push('');
 
+    // 构建章节列表 Base 代码块
+    const chapterListBase = `## 📖 章节目录
+
+\`\`\`base
+filters:
+  and:
+    - file.inFolder("${folderPath}")
+    - file.ext == "md"
+    - file.name != "${bookName}"
+formulas:
+  chapter_link: link(file.path, section)
+properties:
+  formula.chapter_link:
+    displayName: 章节
+  summary:
+    displayName: 摘要
+views:
+  - type: list
+    name: 章节列表
+    order:
+      - formula.chapter_link
+      - summary
+    rowHeight: tall
+    indentProperties: true
+    markers: number
+\`\`\`
+
+`;
+
     // 构建内容
-    const content = frontMatterLines.join('\n') + `# ${bookName}\n\n`;
+    const content = frontMatterLines.join('\n') + `# ${bookName}\n\n` + chapterListBase;
 
     // 检查文件是否存在
     const existingFile = app.vault.getAbstractFileByPath(bookNotePath);
@@ -137,15 +186,27 @@ async function createBookNote(
         // 检查是否有 frontmatter
         const frontmatterMatch = existingContent.match(/^---\n([\s\S]*?)\n---/);
         if (frontmatterMatch) {
-            // 有 frontmatter，更新作者信息
+            // 有 frontmatter，更新作者和封面信息
             let frontmatter = frontmatterMatch[1];
-            // 如果作者信息已存在且不同，更新它
+            // 如果作者信息不存在，添加它
             if (author && !frontmatter.includes('author:')) {
-                // 用引号包裹作者名，避免 YAML 解析特殊字符（如方括号）出错
                 frontmatter += `\nauthor: "${author}"`;
             }
-            // 重新构建文件内容
-            const newContent = `---\n${frontmatter}\n---${existingContent.substring(frontmatterMatch[0].length)}`;
+            // 如果封面信息不存在，添加它
+            if (!frontmatter.includes('cover:')) {
+                frontmatter += `\ncover: ${coverPath}`;
+            }
+            // 如果 index_id 不存在，添加它
+            if (!frontmatter.includes('index_id:')) {
+                frontmatter += `\nindex_id: ${indexId}`;
+            }
+            // 重新构建文件内容（保留 frontmatter 之后的内容，但如果是新建的模板则更新）
+            let bodyContent = existingContent.substring(frontmatterMatch[0].length);
+            // 检查是否已有章节目录，如果没有则添加
+            if (!bodyContent.includes('## 📖 章节目录')) {
+                bodyContent = '\n\n' + chapterListBase + bodyContent.trim();
+            }
+            const newContent = `---\n${frontmatter}\n---${bodyContent}`;
             await app.vault.modify(existingFile, newContent);
         } else {
             // 没有 frontmatter，添加到开头
@@ -164,6 +225,7 @@ export async function exportIndexToMarkdown(
     app: App,
     pdfName: string,
     nodes: NodeData[],
+    indexId: string,
     outputFolder: string = "DeepReader",
     author?: string
 ): Promise<ExportResult> {
@@ -179,7 +241,7 @@ export async function exportIndexToMarkdown(
         }
 
         // 创建或更新书籍主 note 文件
-        await createBookNote(app, pdfFolderName, folderPath, author);
+        await createBookNote(app, pdfFolderName, folderPath, indexId, author);
 
         // 导出每个节点
         const fileMapping: Record<string, string> = {};
