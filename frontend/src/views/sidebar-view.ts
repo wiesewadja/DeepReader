@@ -680,17 +680,18 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
-        // 先检查后端连接状态
-        await this.checkConnectionAndRender(container);
+        // 直接渲染主 UI（不阻塞）
+        this.renderMainUI(container);
+
+        // 异步检查连接状态并更新指示器
+        this.checkConnectionAndRender();
     }
 
     /**
-     * 检查后端连接状态并渲染相应界面
+     * 检查后端连接状态并更新状态指示器
+     * 注意：不再渲染界面，仅更新连接状态
      */
-    private async checkConnectionAndRender(container: HTMLElement): Promise<void> {
-        // 显示加载状态
-        this.showConnectingUI(container);
-
+    private async checkConnectionAndRender(): Promise<void> {
         // 检查连接
         let connected = false;
         if (this.apiClient) {
@@ -702,47 +703,9 @@ export class SidebarView extends ItemView {
             }
         }
 
+        // 更新连接状态
         this.isConnected = connected;
-
-        if (connected) {
-            // 连接成功，渲染主界面
-            this.renderMainUI(container);
-        } else {
-            // 未连接，显示全屏提示
-            this.showDisconnectedUI(container);
-        }
-    }
-
-    /**
-     * 显示连接中状态
-     */
-    private showConnectingUI(container: HTMLElement): void {
-        container.empty();
-        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
-            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "🔄" });
-            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "正在连接..." });
-            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "正在检查后端服务状态" });
-        });
-    }
-
-    /**
-     * 显示未连接全屏提示
-     */
-    private showDisconnectedUI(container: HTMLElement): void {
-        container.empty();
-        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
-            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "⚠️" });
-            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "未连接到后端服务" });
-            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "请确保后端服务正在运行" });
-
-            const infoBox = screen.createDiv({ cls: "deeppdf-disconnected-info" });
-            infoBox.createEl("code", { text: "uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio" });
-
-            const retryBtn = screen.createEl("button", { cls: "deeppdf-retry-btn", text: "重新连接" });
-            retryBtn.addEventListener("click", () => {
-                this.checkConnectionAndRender(container);
-            });
-        });
+        this.readingTopbar?.setConnectionStatus(connected ? 'connected' : 'disconnected');
     }
 
     /**
