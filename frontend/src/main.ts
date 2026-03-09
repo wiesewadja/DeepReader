@@ -425,27 +425,22 @@ export default class DeepPDFPlugin extends Plugin {
     /**
      * 异步检查服务器连接状态（不阻塞插件加载）
      */
-    private async checkServerConnection(): Promise<void> {
-        // 使用短暂超时，避免阻塞
-        const timeout = 3000; // 3 秒超时
-
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-            const isHealthy = await this.apiClient!.healthCheck();
-            clearTimeout(timeoutId);
-
-            if (!isHealthy) {
-                log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
-                new Notice(`DeepPDF: 后端服务未响应 (localhost:${this.settings.apiPort})。部分功能不可用。`);
-            } else {
-                log('Server connected successfully');
-            }
-        } catch (err) {
-            warn('Failed to connect to server:', err);
-            new Notice(`DeepPDF: 后端未连接 (localhost:${this.settings.apiPort})。请启动后端服务以使用完整功能。`);
-        }
+    private checkServerConnection(): void {
+        // 异步检查，不阻塞插件加载
+        this.apiClient!.healthCheck()
+            .then(isHealthy => {
+                if (!isHealthy) {
+                    log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
+                    new Notice(`DeepPDF: 后端服务未响应 (localhost:${this.settings.apiPort})。部分功能不可用。`);
+                } else {
+                    log('Server connected successfully');
+                }
+            })
+            .catch(err => {
+                warn('Failed to connect to server:', err);
+                // 降低提示级别，因为后端是可选的
+                log(`DeepPDF: 后端未连接 (localhost:${this.settings.apiPort})。部分功能需要后端支持。`);
+            });
     }
 }
 
