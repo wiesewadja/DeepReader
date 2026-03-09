@@ -69,18 +69,24 @@ TREE_SEARCH_PROMPT = """你是一个专业的文档检索助手。你的任务�
 def format_tree_structure(
     tree_structure: Dict[str, Any],
     indent: int = 0,
-    max_text_length: int = 150,
-) -> str:
+    max_text_length: int = 100,
+    max_depth: int = 4,
+    max_total_chars: int = 50000,
+    _current_chars: int = 0,
+) -> tuple[str, int]:
     """
-    将树结构格式化为可读的文本格式
+    将树结构格式化为可读的文本格式（带字符预算控制）
 
     Args:
         tree_structure: PageIndex 生成的树结构（可能是 dict 或 list）
         indent: 缩进级别
-        max_text_length: 摘要最大长度
+        max_text_length: 单个摘要最大长度
+        max_depth: 最大递归深度（控制层级）
+        max_total_chars: 总字符数预算（防止超 token）
+        _current_chars: 内部使用，当前已用字符数
 
     Returns:
-        格式化后的文本
+        (格式化后的文本, 使用的字符数)
 
     输出示例:
     ├── 第一章 投资入门 (node_id: 0001)
@@ -96,7 +102,10 @@ def format_tree_structure(
     elif isinstance(tree_structure, list):
         nodes = tree_structure
     else:
-        return ""
+        return "", _current_chars
+
+    # 深度限制：超过 max_depth 只显示标题，不显示摘要
+    show_summary = indent < max_depth
 
     for i, node in enumerate(nodes):
         if not isinstance(node, dict):
@@ -104,16 +113,25 @@ def format_tree_structure(
 
         title = node.get("title", "未知章节")
         node_id = node.get("node_id", "")
-        summary = node.get("summary", "")
+        summary = node.get("summary", "") if show_summary else ""
 
         # 构建当前行的缩进和符号
         current_prefix = "    " * indent
         current_prefix += "├── " if i < len(nodes) - 1 else "└── "
 
         # 添加标题行
-        lines.append(f"{current_prefix}{title} (node_id: {node_id})")
+        title_line = f"{current_prefix}{title} (node_id: {node_id})"
+        line_chars = len(title_line)
 
-        # 添加摘要（如果有）
+        # 检查预算
+        if _current_chars + line_chars > max_total_chars:
+            lines.append(f"\n... [已达到长度限制，省略 {len(nodes) - i} 个节点]")
+            break
+
+        lines.append(title_line)
+        _current_chars += line_chars
+
+        # 添加摘要（如果有且在深度限制内）
         if summary:
             truncated_summary = (
                 summary[:max_text_length] + "..."
@@ -121,20 +139,29 @@ def format_tree_structure(
                 else summary
             )
             summary_prefix = "    " * (indent + 1) + "摘要: "
-            lines.append(f"{summary_prefix}{truncated_summary}")
+            summary_line = f"{summary_prefix}{truncated_summary}"
+            summary_chars = len(summary_line)
+
+            # 检查预算
+            if _current_chars + summary_chars <= max_total_chars:
+                lines.append(summary_line)
+                _current_chars += summary_chars
 
         # 递归处理子节点
         children = node.get("nodes", [])
-        if children:
-            child_text = format_tree_structure(
+        if children and indent < max_depth:
+            child_text, _current_chars = format_tree_structure(
                 {"structure": children},
                 indent=indent + 1,
                 max_text_length=max_text_length,
+                max_depth=max_depth,
+                max_total_chars=max_total_chars,
+                _current_chars=_current_chars,
             )
             if child_text:
                 lines.append(child_text)
 
-    return "\n".join(lines)
+    return "\n".join(lines), _current_chars
 
 
 def build_tree_prompt(
@@ -142,6 +169,7 @@ def build_tree_prompt(
     query: str,
     doc_name: str = "",
     max_results: int = 5,
+    max_tree_chars: int = 50000,
 ) -> str:
     """
     构建带层级路径的 Prompt
@@ -151,11 +179,18 @@ def build_tree_prompt(
         query: 用户查询
         doc_name: 文档名称
         max_results: 最大返回节点数
+        max_tree_chars: 树结构最大字符数（防止超 token）
 
     Returns:
         完整的 Prompt 字符串
     """
-    tree_text = format_tree_structure(tree_structure)
+    tree_text, used_chars = format_tree_structure(
+        tree_structure,
+        max_total_chars=max_tree_chars,
+    )
+
+    if used_chars >= max_tree_chars:
+        logger.warning(f"[LLM树搜索] 树结构已截断: {used_chars}/{max_tree_chars} 字符")
 
     return TREE_SEARCH_PROMPT.format(
         doc_name=doc_name or "未知文档",
@@ -222,6 +257,7 @@ def parse_llm_response(response_text: str) -> LLMTreeSearchResult:
 def extract_nodes_by_ids(
     tree_structure: Dict[str, Any],
     node_ids: List[str],
+    max_text_length: int = 8000,
 ) -> List[Dict[str, Any]]:
     """
     根据 node_id 列表从 tree_structure 中提取节点内容
@@ -229,6 +265,7 @@ def extract_nodes_by_ids(
     Args:
         tree_structure: PageIndex 生成的树结构
         node_ids: 要提取的节点 ID 列表
+        max_text_length: 单个节点文本最大长度（防止返回内容过长）
 
     Returns:
         List of {node_id, title, text, summary, path, start_index, end_index}
@@ -244,11 +281,17 @@ def extract_nodes_by_ids(
 
             # 如果当前节点在目标列表中
             if node_id in node_ids_set:
+                # 截断过长的文本
+                text = node.get("text", "")
+                if len(text) > max_text_length:
+                    text = text[:max_text_length] + "...[内容已截断]"
+                    logger.info(f"[提取节点] {node_id} 文本已截断: {len(node.get('text', ''))} -> {max_text_length}")
+
                 results.append(
                     {
                         "node_id": node_id,
                         "title": title,
-                        "text": node.get("text", ""),
+                        "text": text,
                         "summary": node.get("summary", ""),
                         "path": current_path,
                         "start_index": node.get("start_index"),

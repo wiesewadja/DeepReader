@@ -41,6 +41,12 @@ def _create_markdown_content(
     metadata = node.get("metadata", {})
     start_page = metadata.get("start_index", "?")
 
+    # 获取原始文本（如果有）或使用 text
+    original_text = metadata.get("original_text", text)
+
+    # 获取摘要（如果有）
+    summary = metadata.get("summary", "")
+
     # --- 核心改进：解析物理页码标记 (防止重复) ---
     seen_pages = set()
 
@@ -54,7 +60,7 @@ def _create_markdown_content(
 
     # 统一处理所有可能的标签格式
     processed_text = re.sub(
-        r"<(?:physical|start|end)_index_(\d+)>", replace_page_tag, text
+        r"<(?:physical|start|end)_index_(\d+)>", replace_page_tag, original_text
     )
 
     # 清理多余空行
@@ -72,6 +78,13 @@ tags: [DeepPDF, {pdf_name}]
 
 """
     title = f"# {section}\n\n"
+
+    # 添加摘要引用块（如果有）
+    summary_block = ""
+    if summary and summary.strip():
+        # 将摘要格式化为 Obsidian callout 块
+        summary_block = f"> [!summary] 章节摘要\n> {summary.strip().replace(chr(10), chr(10) + '> ')}\n\n"
+
     footer_link = (
         f"[[{pdf_name}#page={start_page}]]"
         if str(start_page).isdigit()
@@ -79,7 +92,7 @@ tags: [DeepPDF, {pdf_name}]
     )
     footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)\n"
 
-    return front_matter + title + processed_text + footer
+    return front_matter + title + summary_block + processed_text + footer
 
 
 def export_pdf_to_markdown(

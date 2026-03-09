@@ -560,6 +560,9 @@ export class SidebarView extends ItemView {
                     },
                     { confirmLabel: '下载章节' }
                 ).open();
+                // 用户取消下载时，仍需清空消息列表并显示欢迎消息
+                this.messageList?.clear();
+                this.showWelcomeMessage();
                 return; // 用户取消下载，不继续加载书籍
             }
         }

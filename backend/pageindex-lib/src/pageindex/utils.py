@@ -522,56 +522,119 @@ def format_structure(structure, order=None):
 # LLM 摘要生成
 # ============================================================
 
-async def generate_node_summary(node, llm_client=None):
+async def generate_node_summary(node, llm_client=None, format_text=False):
     """
-    为单个节点生成摘要
+    为单个节点生成摘要，可选同时格式化文本
 
     参数:
         node: 节点对象，必须包含 "text" 字段
         llm_client: LLM 客户端
+        format_text: 是否同时格式化文本（默认 False，只生成摘要）
 
     返回:
-        节点摘要文本
+        如果 format_text=False: 返回摘要文本
+        如果 format_text=True: 返回 (formatted_text, summary) 元组
 
     异常:
         ValueError: 如果 llm_client 为 None
 
     使用示例:
         >>> summary = await generate_node_summary(node, llm_client)
-        >>> print(summary)
-        "本章介绍了..."
+        >>> formatted_text, summary = await generate_node_summary(node, llm_client, format_text=True)
     """
-    prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+    title = node.get("title", "未知章节")
+    original_text = node.get("text", "")
+
+    if not original_text or not original_text.strip():
+        return ("", "") if format_text else ""
+
+    if format_text:
+        # 同时格式化文本和生成摘要
+        prompt = f"""你是一个专业的文档编辑。请完成以下两个任务：
+
+## 任务1：格式化文本
+将原始文本转换为结构清晰的 Markdown 格式：
+- 保留原文的所有信息，不要遗漏任何内容
+- 添加适当的标题层级（##, ###）
+- 使用列表、引用等格式增强可读性
+- 修正明显的格式问题（如乱码、断句）
+- 原文中的小标题、章节名用二级或三级标题表示
+
+## 任务2：生成摘要
+基于格式化后的文本，生成一段简洁的摘要（100-200字），概括本章节的主要内容。
+
+## 章节标题
+{title}
+
+## 原始文本
+{original_text}
+
+## 输出格式（JSON）
+请严格按以下 JSON 格式返回，不要包含其他内容：
+{{
+  "formatted_text": "格式化后的 Markdown 文本（保留所有原文内容）",
+  "summary": "章节摘要（100-200字）"
+}}"""
+
+        context = f"格式化+摘要-章节'{title[:30]}...'"
+        response = await llm_client.chat_async(prompt, context=context)
+
+        # 解析 JSON 响应
+        try:
+            import json
+            # 尝试提取 JSON
+            json_str = response.strip()
+            if json_str.startswith("```"):
+                # 移除代码块标记
+                lines = json_str.split("\n")
+                json_str = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+
+            result = json.loads(json_str)
+            formatted_text = result.get("formatted_text", original_text)
+            summary = result.get("summary", "")
+
+            if not summary:
+                # 如果摘要为空，生成一个简单的摘要
+                summary = f"本章节「{title}」的内容已格式化处理。"
+
+            return (formatted_text, summary)
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"[格式化+摘要] JSON 解析失败: {e}，使用原文")
+            # 降级：返回原文和简单摘要
+            return (original_text, f"本章节「{title}」的内容。")
+    else:
+        # 只生成摘要（原有逻辑）
+        prompt = f"""You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
 
     Partial Document Text: {node["text"]}
 
     Directly return the description, do not include any other text.
     """
-    # 添加上下文信息
-    title = node.get("title", "未知章节")
-    context = f"摘要生成-章节'{title[:30]}...'"
-    response = await llm_client.chat_async(prompt, context=context)
-    return response
+        context = f"摘要生成-章节'{title[:30]}...'"
+        response = await llm_client.chat_async(prompt, context=context)
+        return response
 
 
-async def generate_summaries_for_structure(structure, llm_client=None, progress_callback=None, batch_size=5):
+async def generate_summaries_for_structure(structure, llm_client=None, progress_callback=None, batch_size=5, format_text=False):
     """
-    为结构中的所有节点生成摘要（带进度回调和批量并发控制）
+    为结构中的所有节点生成摘要，可选同时格式化文本（带进度回调和批量并发控制）
 
     参数:
         structure: 树状结构
         llm_client: LLM 客户端
         progress_callback: 进度回调函数 (current, total, message)
         batch_size: 每批并发数（默认 5，避免 API 限流）
+        format_text: 是否同时格式化文本（默认 False）
 
     返回:
-        添加了 summary 字段的结构
+        添加了 summary（和 formatted text）字段的结构
 
     异常:
         ValueError: 如果 llm_client 为 None
 
     使用示例:
         >>> result = await generate_summaries_for_structure(tree, llm_client)
+        >>> result = await generate_summaries_for_structure(tree, llm_client, format_text=True)
     """
     # 导入 structure_to_list 从新模块
     from .structure.converter import structure_to_list
@@ -582,7 +645,8 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
     if total == 0:
         return structure
 
-    logger.info(f"[摘要生成] 共 {total} 个节点，批量大小: {batch_size}")
+    mode_str = "格式化+摘要" if format_text else "摘要"
+    logger.info(f"[{mode_str}生成] 共 {total} 个节点，批量大小: {batch_size}")
 
     # 分批处理，避免 API 限流
     completed = 0
@@ -591,14 +655,19 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
         batch_nodes = nodes[batch_start:batch_end]
 
         # 并行处理当前批次
-        tasks = [generate_node_summary(node, llm_client=llm_client) for node in batch_nodes]
-        summaries = await asyncio.gather(*tasks, return_exceptions=True)
+        tasks = [generate_node_summary(node, llm_client=llm_client, format_text=format_text) for node in batch_nodes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for node, summary in zip(batch_nodes, summaries):
-            if not isinstance(summary, Exception):
-                node["summary"] = summary
+        for node, result in zip(batch_nodes, results):
+            if not isinstance(result, Exception):
+                if format_text:
+                    formatted_text, summary = result
+                    node["text"] = formatted_text  # 更新文本
+                    node["summary"] = summary
+                else:
+                    node["summary"] = result
             else:
-                logger.warning(f"[摘要生成] 节点摘要失败: {summary}")
+                logger.warning(f"[{mode_str}生成] 节点处理失败: {result}")
 
         completed = batch_end
 
@@ -606,7 +675,7 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
         if progress_callback:
             progress_callback(completed, total, f"正在生成摘要 ({completed}/{total})")
 
-        logger.info(f"[摘要生成] 进度: {completed}/{total}")
+        logger.info(f"[{mode_str}生成] 进度: {completed}/{total}")
 
     return structure
 

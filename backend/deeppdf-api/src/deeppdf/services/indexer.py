@@ -98,23 +98,9 @@ def _extract_nodes_from_tree(
             "node_name": node_name,
             "node_id": node_id,
         }
-        # 保存摘要到 metadata（如果有）
-        if node_summary and node_summary.strip():
-            node_metadata["summary"] = node_summary.strip()
-
-        # 重要：original_text 必须保存原文（node_text），而不是摘要
-        # 这样导出 Markdown 时才能获得原始内容
-        if node_text and node_text.strip():
-            # 对原文进行格式化处理
-            original_text_formatted = node_text.strip()
-            if formatter:
-                try:
-                    original_text_formatted = formatter.format(
-                        original_text_formatted, doc_type
-                    )
-                except Exception:
-                    pass  # 格式化失败时使用原文
-            node_metadata["original_text"] = original_text_formatted
+        # 注意：不再在 sections.metadata 中存储 original_text 和 summary
+        # 这些数据已经在 tree_structure 中保存，避免冗余
+        # export_handlers.py 会从 tree_structure 中获取这些数据
 
         nodes.append(
             {
@@ -166,10 +152,12 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     )
 
     # 这些是字符串类型的配置，转换为布尔值
+    # 优先使用 kwargs，其次使用 settings 配置
     if_add_node_id_str = kwargs.get("if_add_node_id") or "yes"
-    if_add_node_summary_str = kwargs.get("if_add_node_summary") or "yes"
-    if_add_node_text_str = kwargs.get("if_add_node_text") or "yes"
-    if_add_doc_description_str = kwargs.get("if_add_doc_description") or "no"
+    if_add_node_summary_str = kwargs.get("if_add_node_summary") or ("yes" if settings.pdf_index_if_add_node_summary else "no")
+    if_add_node_text_str = kwargs.get("if_add_node_text") or ("yes" if settings.pdf_index_if_add_node_text else "no")
+    if_add_doc_description_str = kwargs.get("if_add_doc_description") or ("yes" if settings.pdf_index_if_add_doc_description else "no")
+    format_text_with_llm_str = kwargs.get("format_text_with_llm") or ("yes" if settings.pdf_index_format_text_with_llm else "no")
 
     # 转换为布尔值
     if_add_node_id = if_add_node_id_str.lower() in ("yes", "true", "1", "on")
@@ -181,6 +169,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
         "1",
         "on",
     )
+    format_text_with_llm = format_text_with_llm_str.lower() in ("yes", "true", "1", "on")
 
     require_llm = kwargs.get("require_llm", True)
     api_key = kwargs.get("api_key")
@@ -196,6 +185,7 @@ def _parse_llm_config(**kwargs) -> Dict[str, Any]:
         "if_add_node_summary": if_add_node_summary,
         "if_add_node_text": if_add_node_text,
         "if_add_node_description": if_add_node_description,
+        "format_text_with_llm": format_text_with_llm,
         "require_llm": require_llm,
         "api_key": api_key,
     }
@@ -278,6 +268,9 @@ def _setup_pageindex_config(
         ),
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
+        "format_text_with_llm": (
+            "yes" if config.get("format_text_with_llm", False) else "no"
+        ),
         # Note: if_add_node_description is not supported by PageIndex
         "toc_check_page_num": config["toc_check_pages"],
         "max_page_num_each_node": config["max_pages_per_node"],
@@ -545,10 +538,14 @@ def _save_metadata(
     # 移除文件后缀，保持与前端导出逻辑一致
     pdf_name_clean = pdf_path_obj.stem  # stem 返回不带后缀的文件名
 
+    # 从 tree_result 中提取文档名称（EPUB 可能是书名而非文件名）
+    doc_name = tree_result.get("doc_name", pdf_name_clean)
+
     metadata_content = {
         "id": index_id,
         "doc_type": doc_type,
-        "pdf_name": pdf_name_clean,
+        "pdf_name": doc_name,  # 使用 doc_name，EPUB 为书名，PDF 为文件名
+        "file_name": pdf_path_obj.name,  # 始终保留原始文件名
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
@@ -564,6 +561,12 @@ def _save_metadata(
         "chat_rounds": 0,
         "last_read_at": None,
     }
+
+    # 添加 EPUB 特有的元数据（作者、语言等）
+    if tree_result.get("author"):
+        metadata_content["author"] = tree_result["author"]
+    if tree_result.get("language"):
+        metadata_content["language"] = tree_result["language"]
 
     # 如果有视觉检测结果，添加详细信息
     if visual_detection_result:

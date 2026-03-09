@@ -2025,7 +2025,7 @@ def _process_epub(
 
     返回:
         PageIndex tree_structure 格式的字典，包含:
-        - title: 书籍标题
+        - doc_name: 书籍标题（与 PDF 格式一致）
         - structure: 树结构列表
         - (可选) doc_description: 文档描述
 
@@ -2039,7 +2039,7 @@ def _process_epub(
 
     使用示例:
         >>> tree = _process_epub("book.epub")
-        >>> print(tree["title"])
+        >>> print(tree["doc_name"])
         >>> for node in tree["structure"]:
         ...     print(f"{node['node_id']}: {node['title']}")
     """
@@ -2063,27 +2063,43 @@ def _process_epub(
     print(f"[索引] EPUB 树结构转换完成，节点数: {_count_nodes(tree)}")
 
     # 3. 可选：生成摘要
+    print(f"[索引] EPUB 摘要配置: config={config is not None}, use_llm={config.get('use_llm') if config else 'N/A'}")
     if config and config.get("use_llm"):
         from .utils import generate_summaries_for_structure
+
+        # 检查是否启用 LLM 格式化
+        format_text = config.get("format_text_with_llm", False)
+        mode_str = "格式化+摘要" if format_text else "摘要"
 
         # 需要异步运行
         async def add_summaries():
             llm_client = config.get("llm_client")
+            print(f"[索引] EPUB {mode_str}生成: llm_client={llm_client is not None}")
             if llm_client is None:
-                print("[索引] 未提供 llm_client，跳过摘要生成")
+                print(f"[索引] 未提供 llm_client，跳过{mode_str}生成")
                 return tree
-            await generate_summaries_for_structure(tree, llm_client=llm_client)
-            print("[索引] EPUB 摘要生成完成")
+            print(f"[索引] EPUB 开始生成{mode_str}，节点数: {_count_nodes(tree)}")
+            await generate_summaries_for_structure(tree, llm_client=llm_client, format_text=format_text)
+            print(f"[索引] EPUB {mode_str}生成完成")
+            # 验证摘要是否生成
+            from .structure.converter import structure_to_list
+            nodes = structure_to_list(tree)
+            with_summary = sum(1 for n in nodes if n.get("summary"))
+            print(f"[索引] EPUB 摘要验证: {with_summary}/{len(nodes)} 个节点有摘要")
             return tree
 
         # 如果在事件循环中，使用 nest_asyncio
         try:
             loop = asyncio.get_running_loop()
+            print(f"[索引] EPUB 检测到运行中的事件循环: {loop}")
             import nest_asyncio
             nest_asyncio.apply()
             tree = loop.run_until_complete(add_summaries())
-        except RuntimeError:
+        except RuntimeError as e:
+            print(f"[索引] EPUB 没有运行中的事件循环，使用 asyncio.run(): {e}")
             tree = asyncio.run(add_summaries())
+    else:
+        print(f"[索引] EPUB 跳过摘要生成: config={config is not None}, use_llm={config.get('use_llm') if config else 'N/A'}")
 
     print("[索引] EPUB 处理完成")
 
@@ -2183,22 +2199,34 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
         logging.debug("[DEBUG] Processing EPUB file")
         logger.info(f"[索引] 检测到 EPUB 文档: {doc}")
 
+        # 检查是否启用 LLM 格式化
+        format_text_config = (opt.format_text_with_llm if hasattr(opt, 'format_text_with_llm') else "no")
+        format_text = format_text_config.lower() in ("yes", "true", "1", "on")
+
         # 准备配置
         config = {
             "use_llm": (opt.if_add_node_summary if opt else False) and (opt.if_add_node_summary == "yes" if isinstance(opt.if_add_node_summary, str) else opt.if_add_node_summary),
             "llm_client": llm_client,
+            "format_text_with_llm": format_text,
         }
 
         try:
             # 处理 EPUB
             tree = _process_epub(doc, config)
 
-            # 添加文档名称
-            doc_name = os.path.basename(doc)
+            # 构建结果，保留 EPUB 的书名作为 doc_name
+            # 同时保留文件名作为 file_name 字段（用于区分不同版本）
             result = {
-                "doc_name": doc_name,
+                "doc_name": tree.get("doc_name", os.path.basename(doc)),  # 优先使用书名
+                "file_name": os.path.basename(doc),  # 文件名
                 "structure": tree["structure"],
             }
+
+            # 保留 EPUB 特有的元数据
+            if tree.get("author"):
+                result["author"] = tree["author"]
+            if tree.get("language"):
+                result["language"] = tree["language"]
 
             # 可选：添加文档描述
             if hasattr(opt, 'if_add_doc_description') and opt.if_add_doc_description:
@@ -2351,6 +2379,11 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
         if add_node_summary_config:
             logger.info(f"[PageIndex] 开始生成摘要 (llm_client={'None' if llm_client is None else 'available'})")
 
+            # 检查是否启用 LLM 格式化
+            format_text_config = (opt.format_text_with_llm if hasattr(opt, 'format_text_with_llm') else "no")
+            format_text = format_text_config.lower() in ("yes", "true", "1", "on")
+            logger.info(f"[PageIndex] LLM 格式化文本: {format_text}")
+
             # 创建摘要进度回调包装器，将进度映射到 60-85%
             def summary_progress_callback(current, total, message):
                 # 将摘要进度 (0-100%) 映射到 60-85% 的范围
@@ -2361,12 +2394,14 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
                 else:
                     ratio = 0
                 percent = base_percent + int(ratio * range_percent)
-                update_progress("generating_summaries", percent, f"{message} ({current}/{total})")
+                mode_str = "格式化+摘要" if format_text else "摘要"
+                update_progress("generating_summaries", percent, f"正在生成{mode_str} ({current}/{total})")
 
             await generate_summaries_for_structure(
                 structure,
                 llm_client=llm_client,
-                progress_callback=summary_progress_callback
+                progress_callback=summary_progress_callback,
+                format_text=format_text
             )
             logger.info("[PageIndex] ✓ 摘要生成完成")
 

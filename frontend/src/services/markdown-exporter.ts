@@ -18,6 +18,7 @@ export interface NodeData {
     end_index: number | string;
     level: number;
     text: string;
+    summary?: string;  // 章节摘要（可选）
 }
 
 /**
@@ -79,6 +80,19 @@ level: ${node.level}
 `;
 
     const title = `# ${node.section}\n\n`;
+
+    // 生成摘要块（如果有摘要）
+    let summaryBlock = "";
+    if (node.summary && node.summary.trim()) {
+        // 将摘要格式化为 Obsidian callout 块
+        const summaryLines = node.summary.trim().split("\n");
+        summaryBlock = "> [!summary] 章节摘要\n";
+        for (const line of summaryLines) {
+            summaryBlock += `> ${line}\n`;
+        }
+        summaryBlock += "\n";
+    }
+
     // 处理页码标记后再输出
     const processedText = processPageMarkers(node.text);
     const content = processedText.trim() + "\n\n";
@@ -86,7 +100,7 @@ level: ${node.level}
 **来源**: [[${pdfName}]] 第 ${node.page_range} 页
 `;
 
-    return frontMatter + title + content + footer;
+    return frontMatter + title + summaryBlock + content + footer;
 }
 
 /**

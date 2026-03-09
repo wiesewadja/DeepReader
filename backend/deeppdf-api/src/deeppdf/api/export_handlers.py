@@ -62,22 +62,28 @@ async def export_index_data(
         # 在循环外构建一次父子映射（性能优化）
         parent_mapping = build_parent_mapping(tree_structure)
 
-        # 构建 node_id -> tree_node 的映射，用于获取原文
+        # 构建 node_id -> tree_node 的映射，用于获取原文和摘要
         # tree_structure 中的 text 字段保存的是原始 OCR 文本
-        def build_tree_text_map(tree_nodes: list) -> dict:
-            """递归构建 node_id -> text 的映射"""
-            text_map = {}
+        # summary 字段保存的是 LLM 生成的摘要
+        def build_tree_info_map(tree_nodes: list) -> dict:
+            """递归构建 node_id -> {text, summary} 的映射"""
+            info_map = {}
             for node in tree_nodes:
                 node_id = node.get("node_id", "")
                 if node_id:
-                    text_map[node_id] = node.get("text", "")
+                    info_map[node_id] = {
+                        "text": node.get("text", ""),
+                        "summary": node.get("summary", ""),
+                    }
                 # 递归处理子节点
                 children = node.get("nodes", [])
                 if children:
-                    text_map.update(build_tree_text_map(children))
-            return text_map
+                    # 合并子节点的映射
+                    child_map = build_tree_info_map(children)
+                    info_map.update(child_map)
+            return info_map
 
-        tree_text_map = build_tree_text_map(tree_structure)
+        tree_info_map = build_tree_info_map(tree_structure)
 
         for section in metadata.get("sections", []):
             node_metadata = section.get("metadata", {})
@@ -90,14 +96,20 @@ async def export_index_data(
             else:
                 page_range = f"{start_index}-{end_index}"
 
-            # 获取原文：优先从 tree_structure 获取真正的原文
+            # 获取原文和摘要：优先从 tree_structure 获取
             # 这是修复现有索引数据的关键步骤
             section_id = section.get("id", "")
-            original_text = tree_text_map.get(section_id, "")
+            tree_info = tree_info_map.get(section_id, {})
+            original_text = tree_info.get("text", "")
+            node_summary = tree_info.get("summary", "")
 
-            # 如果 tree_structure 中没有，再尝试从 metadata 获取
+            # 如果 tree_structure 中没有原文，再尝试从 metadata 获取
             if not original_text:
                 original_text = node_metadata.get("original_text", section.get("text", ""))
+
+            # 如果 tree_structure 中没有摘要，再尝试从 metadata 获取
+            if not node_summary:
+                node_summary = node_metadata.get("summary", "")
 
             # 应用基于规则的格式化（不使用 LLM）
             formatted_text = original_text
@@ -118,6 +130,7 @@ async def export_index_data(
                     "end_index": end_index,
                     "level": node_metadata.get("level", 0),
                     "text": formatted_text,
+                    "summary": node_summary,  # 添加摘要字段
                     "parent_id": parent_mapping.get(section.get("id", "")),
                 }
             )

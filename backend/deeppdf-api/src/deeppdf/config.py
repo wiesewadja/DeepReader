@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     pdf_index_max_pages_per_node: int = 10
     pdf_index_max_tokens_per_node: int = 20000
     pdf_index_if_add_node_summary: bool = True
+    pdf_index_if_add_node_text: bool = True
+    pdf_index_if_add_doc_description: bool = False
+    pdf_index_format_text_with_llm: bool = True  # 是否用 LLM 格式化文本（同时生成摘要）
 
     # 并发配置
     cpu_workers: int = 2

@@ -14,8 +14,9 @@ class TestFormatTreeStructure:
 
     def test_empty_structure(self):
         """测试空结构"""
-        result = format_tree_structure({})
-        assert result == ""
+        text, chars = format_tree_structure({})
+        assert text == ""
+        assert chars == 0
 
     def test_single_node(self):
         """测试单个节点"""
@@ -29,10 +30,11 @@ class TestFormatTreeStructure:
                 }
             ]
         }
-        result = format_tree_structure(tree)
-        assert "第一章" in result
-        assert "node_id: 0001" in result
-        assert "摘要: 这是摘要" in result
+        text, chars = format_tree_structure(tree)
+        assert "第一章" in text
+        assert "node_id: 0001" in text
+        assert "摘要: 这是摘要" in text
+        assert chars > 0
 
     def test_nested_nodes(self):
         """测试嵌套节点"""
@@ -53,11 +55,11 @@ class TestFormatTreeStructure:
                 }
             ]
         }
-        result = format_tree_structure(tree)
-        assert "第一章" in result
-        assert "1.1 子章节" in result
-        assert "node_id: 0001" in result
-        assert "node_id: 0002" in result
+        text, chars = format_tree_structure(tree)
+        assert "第一章" in text
+        assert "1.1 子章节" in text
+        assert "node_id: 0001" in text
+        assert "node_id: 0002" in text
 
     def test_truncates_long_summary(self):
         """测试截断长摘要"""
@@ -72,9 +74,72 @@ class TestFormatTreeStructure:
                 }
             ]
         }
-        result = format_tree_structure(tree, max_text_length=50)
-        assert "..." in result
-        assert len([line for line in result.split("\n") if "摘要" in line][0]) < 100
+        text, chars = format_tree_structure(tree, max_text_length=50)
+        assert "..." in text
+        assert len([line for line in text.split("\n") if "摘要" in line][0]) < 100
+
+    def test_respects_max_total_chars(self):
+        """测试总字符数限制"""
+        # 创建一个大树
+        tree = {
+            "structure": [
+                {
+                    "title": f"章节 {i}",
+                    "node_id": f"{i:04d}",
+                    "summary": "x" * 500,
+                    "nodes": [],
+                }
+                for i in range(100)
+            ]
+        }
+        text, chars = format_tree_structure(tree, max_total_chars=1000)
+        assert chars <= 1100  # 允许少量超出（省略提示）
+        assert "已达到长度限制" in text or chars < 1000
+
+    def test_depth_limit(self):
+        """测试深度限制"""
+        # 创建深度嵌套的树
+        tree = {
+            "structure": [
+                {
+                    "title": "Level 1",
+                    "node_id": "001",
+                    "summary": "Summary 1",
+                    "nodes": [
+                        {
+                            "title": "Level 2",
+                            "node_id": "002",
+                            "summary": "Summary 2",
+                            "nodes": [
+                                {
+                                    "title": "Level 3",
+                                    "node_id": "003",
+                                    "summary": "Summary 3",
+                                    "nodes": [
+                                        {
+                                            "title": "Level 4",
+                                            "node_id": "004",
+                                            "summary": "Summary 4",
+                                            "nodes": [
+                                                {
+                                                    "title": "Level 5",
+                                                    "node_id": "005",
+                                                    "summary": "Summary 5",  # 超过默认深度 4
+                                                    "nodes": [],
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        text, chars = format_tree_structure(tree, max_depth=4)
+        assert "Summary 4" in text  # 第 4 层应该有摘要
+        # 注意：第 5 层的标题会显示，但摘要不会
 
 
 class TestBuildTreePrompt:

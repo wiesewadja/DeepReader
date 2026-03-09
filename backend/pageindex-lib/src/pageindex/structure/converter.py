@@ -36,7 +36,11 @@ def structure_to_list(structure: Any) -> List[Dict[str, Any]]:
     保留所有原始字段，只移除 nodes 字段。
 
     参数:
-        structure: 树状结构 (dict 或 list)
+        structure: 树状结构，支持以下格式:
+            - {"doc_name": "书名", "structure": [...]} - PageIndex 统一格式（PDF/EPUB）
+            - {"structure": [...]} - PageIndex 简化格式
+            - [...] - 节点列表
+            - 单个节点 dict
 
     返回:
         扁平的节点列表
@@ -59,6 +63,13 @@ def structure_to_list(structure: Any) -> List[Dict[str, Any]]:
         >>> print(flat[1]["title"])  # "第一节"
     """
     if isinstance(structure, dict):
+        # 检查是否是 PageIndex 统一格式 {"doc_name": "书名", "structure": [...]}
+        # 或简化格式 {"structure": [...]}
+        # 这种情况下，我们应该处理 structure 字段，而不是整个 dict
+        if "structure" in structure and isinstance(structure["structure"], list):
+            # 递归处理 structure 列表
+            return structure_to_list(structure["structure"])
+
         # 复制当前节点
         nodes = [structure]
         # 如果有子节点，递归添加
