@@ -137,6 +137,7 @@ export class ExcerptService {
 
   /**
    * 格式化摘录内容（使用 Obsidian callout 美化）
+   * 标题行：用户笔记（如果有），否则显示时间戳
    */
   private formatExcerpt(
     content: ExcerptContent,
@@ -151,22 +152,19 @@ export class ExcerptService {
       minute: '2-digit'
     });
 
-    // 生成时间戳锚点（用于 callout 标题行）
+    // 生成时间戳锚点（用于同一文件中定位）
     const timeAnchor = `${new Date().getFullYear()}-${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}`;
 
-    // 根据来源类型选择不同的 callout 样式和标题
+    // 根据来源类型选择不同的 callout 样式
     let calloutType = 'quote';
-    let calloutTitle = '📖 摘录';
-
     if (metadata.sourceType === 'reading' && metadata.chapterPath) {
-      // 阅读摘录：链接到章节
       calloutType = 'reading';
-      calloutTitle = '📖 章节摘录';
     } else if (metadata.sourceType === 'chat') {
-      // 对话摘录：只链接到书籍
       calloutType = 'chat';
-      calloutTitle = '💬 对话摘录';
     }
+
+    // 标题行：优先使用用户笔记，否则显示时间戳
+    const calloutTitle = options?.note?.trim() || timestamp;
 
     // 构建 callout 内容
     let calloutContent = '';
@@ -190,18 +188,13 @@ export class ExcerptService {
       calloutContent += `📄 页码: 第 ${metadata.page} 页\n`;
     }
 
-    // 笔记（如果有）
-    if (options?.note) {
-      calloutContent += `\n💭 笔记: ${options.note}\n`;
-    }
-
     // 组装完整的 callout
     // 先移除末尾的空白行，再处理每行前缀
     const contentLines = calloutContent.trimEnd().split('\n');
     const calloutBody = contentLines.map(line => `> ${line}`).join('\n');
 
     const formatted = `
-> [!${calloutType}]+-${timeAnchor} ${calloutTitle} ${timestamp}
+> [!${calloutType}]+-${timeAnchor} ${calloutTitle}
 ${calloutBody}
 `;
 
