@@ -186,38 +186,18 @@ export class ReadingTopbar extends Component {
      * 设置连接状态
      */
     public setConnectionStatus(status: 'connected' | 'disconnected' | 'connecting'): void {
-        // 查找或创建状态指示器元素
-        let statusEl = this.el?.querySelector('.deeppdf-connection-status') as HTMLElement | null;
+        if (!this.statusDot) return;
 
-        if (!statusEl && this.el) {
-            statusEl = this.el.createDiv({
-                cls: `deeppdf-connection-status deeppdf-connection-status--${status}`
-            });
-        }
+        // 更新状态点的样式
+        this.statusDot.className = `deeppdf-status-dot deeppdf-status-dot--${status}`;
 
-        if (!statusEl) return;
-
-        // 更新类名
-        statusEl.className = `deeppdf-connection-status deeppdf-connection-status--${status}`;
-
-        // 更新内容
-        const labels: Record<string, string> = {
-            connected: '已连接',
-            disconnected: '未连接',
-            connecting: '连接中'
-        };
-
-        statusEl.empty();
-        statusEl.createSpan({ cls: 'deeppdf-connection-status__dot' });
-        statusEl.createSpan({ text: labels[status] });
-
-        // 添加 tooltip
+        // 更新 tooltip
         const tooltips: Record<string, string> = {
             connected: '后端已连接，所有功能可用',
             disconnected: '后端未连接，部分功能不可用',
             connecting: '正在连接后端服务...'
         };
-        statusEl.setAttribute('aria-label', tooltips[status]);
+        this.statusDot.title = tooltips[status];
     }
 
     destroy(): void {
