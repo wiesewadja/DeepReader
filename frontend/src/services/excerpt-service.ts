@@ -138,6 +138,7 @@ export class ExcerptService {
   /**
    * 格式化摘录内容（使用 Obsidian callout 美化）
    * 标题行：用户笔记（如果有），否则显示时间戳
+   * 随机使用不同的 callout 类型增加视觉多样性
    */
   private formatExcerpt(
     content: ExcerptContent,
@@ -153,15 +154,12 @@ export class ExcerptService {
     });
 
     // 生成时间戳锚点（用于同一文件中定位）
-    const timeAnchor = `${new Date().getFullYear()}-${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}`;
+    const timeAnchor = `${new Date().getFullYear()}${String(new Date().getHours()).padStart(2, '0')}${String(new Date().getMinutes()).padStart(2, '0')}`;
 
-    // 根据来源类型选择不同的 callout 样式
-    let calloutType = 'quote';
-    if (metadata.sourceType === 'reading' && metadata.chapterPath) {
-      calloutType = 'reading';
-    } else if (metadata.sourceType === 'chat') {
-      calloutType = 'chat';
-    }
+    // 随机选择 Obsidian 内置 callout 类型，增加视觉多样性
+    // 可用的美观类型: quote, note, info, tip, success, question, warning, failure, danger, bug, example
+    const calloutTypes = ['quote', 'note', 'info', 'tip', 'success', 'example'];
+    const randomCalloutType = calloutTypes[Math.floor(Math.random() * calloutTypes.length)];
 
     // 标题行：优先使用用户笔记，否则显示时间戳
     const calloutTitle = options?.note?.trim() || timestamp;
@@ -194,9 +192,8 @@ export class ExcerptService {
     const calloutBody = contentLines.map(line => `> ${line}`).join('\n');
 
     // 标题行格式: > [!type]+锚点 标题内容
-    // 如果有笔记，只显示笔记；如果没有笔记，显示时间戳
     const formatted = `
-> [!${calloutType}]+${timeAnchor} ${calloutTitle}
+> [!${randomCalloutType}]+${timeAnchor} ${calloutTitle}
 ${calloutBody}
 `;
 
