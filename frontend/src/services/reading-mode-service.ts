@@ -127,20 +127,23 @@ export class ReadingModeService {
     private notifyBookDetected(file: TFile): void {
         if (!this.callbacks?.onBookDetected) return;
 
-        // 从文件的 frontmatter 获取 index_id
+        // 从文件的 frontmatter 获取 index_id 或 pdf_name
         const cache = this.app.metadataCache.getFileCache(file);
-        const indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id;
+        let indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id;
+        let bookName = cache?.frontmatter?.pdf_name || '';
 
-        // 从文件路径提取书籍名称（DeepReader/书名/章节.md）
-        const pathParts = file.path.split('/');
-        let bookName = '';
-        if (pathParts.length >= 2 && pathParts[0] === 'DeepReader') {
-            bookName = pathParts[1];
+        // 如果没有 index_id，从文件路径提取书籍名称
+        if (!bookName) {
+            const pathParts = file.path.split('/');
+            if (pathParts.length >= 2 && pathParts[0] === 'DeepReader') {
+                bookName = pathParts[1];
+            }
         }
 
-        if (indexId && bookName) {
-            log('[ReadingMode] Book detected:', bookName, 'indexId:', indexId);
-            this.callbacks.onBookDetected(indexId, bookName);
+        // 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
+        if (bookName) {
+            log('[ReadingMode] Book detected:', bookName, 'indexId:', indexId || 'will search by name');
+            this.callbacks.onBookDetected(indexId || '', bookName);
         }
     }
 

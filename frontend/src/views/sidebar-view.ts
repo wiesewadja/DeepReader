@@ -611,6 +611,33 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 通过书名选择索引（自动切换时使用）
+     */
+    public async selectBookByName(bookName: string): Promise<void> {
+        log('[DeepPDF] Selecting book by name:', bookName);
+
+        // 在已加载的索引列表中查找
+        const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+
+        const index = this.indexes.find(idx => {
+            const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+            return idxName === normalizedBookName || idx.pdf_name === bookName;
+        });
+
+        if (index) {
+            // 检查是否已经是当前书籍
+            if (this.currentIndexId === index.id) {
+                log('[DeepPDF] Already on the same book');
+                return;
+            }
+            log('[DeepPDF] Found index by name:', index.id);
+            await this.selectIndex(index.id);
+        } else {
+            log('[DeepPDF] Book not found in index list:', bookName);
+        }
+    }
+
+    /**
      * 创建阅读顶栏 (简化版)
      */
     private createReadingTopbar(container: HTMLElement) {

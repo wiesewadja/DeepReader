@@ -392,16 +392,21 @@ export default class DeepPDFPlugin extends Plugin {
 
         const view = leaves[0].view;
         if (view instanceof SidebarView) {
-            // 检查是否已经是当前选中的书籍
-            const currentIndexId = view.getCurrentIndexId();
-            if (currentIndexId === indexId) {
-                log('[DeepPDF] Already on the same book, skipping switch');
-                return;
+            // 如果有 indexId，检查是否已经是当前选中的书籍
+            if (indexId) {
+                const currentIndexId = view.getCurrentIndexId();
+                if (currentIndexId === indexId) {
+                    log('[DeepPDF] Already on the same book, skipping switch');
+                    return;
+                }
+                // 直接通过 indexId 切换
+                log('[DeepPDF] Switching to book by indexId:', indexId);
+                await view.selectIndex(indexId);
+            } else {
+                // 没有 indexId，通过书名查找
+                log('[DeepPDF] Switching to book by name:', bookName);
+                await view.selectBookByName(bookName);
             }
-
-            // 切换到新书籍
-            log('[DeepPDF] Switching to book:', bookName);
-            await view.selectIndex(indexId);
         }
     }
 
