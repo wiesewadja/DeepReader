@@ -428,7 +428,12 @@ export default class DeepPDFPlugin extends Plugin {
     private checkServerConnection(): void {
         // 异步检查，不阻塞插件加载
         // 后端是可选的，连接状态通过 UI 指示器显示，不需要 Notice 弹窗
-        this.apiClient!.healthCheck()
+        if (!this.apiClient) {
+            log('API client not initialized');
+            return;
+        }
+
+        this.apiClient.healthCheck()
             .then(isHealthy => {
                 if (!isHealthy) {
                     log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
@@ -437,6 +442,7 @@ export default class DeepPDFPlugin extends Plugin {
                 }
             })
             .catch(err => {
+                // 静默处理，后端是可选的
                 warn('Failed to connect to server:', err);
             });
     }

@@ -4065,16 +4065,16 @@
     transition: background 0.3s ease;
 }
 
-.deeppdf-status-dot.status-loading {
+.deeppdf-status-dot--connecting {
     background: var(--text-warning, #f59e0b);
     animation: status-pulse 1.5s infinite;
 }
 
-.deeppdf-status-dot.status-ok {
+.deeppdf-status-dot--connected {
     background: var(--text-success, #10b981);
 }
 
-.deeppdf-status-dot.status-error {
+.deeppdf-status-dot--disconnected {
     background: var(--text-error, #ef4444);
 }
 

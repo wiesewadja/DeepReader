@@ -14,7 +14,6 @@ import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
-import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
@@ -517,6 +516,7 @@ export class SidebarView extends ItemView {
 
     /**
      * 选择索引（从弹窗中调用或自动切换）
+     * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
@@ -553,22 +553,15 @@ export class SidebarView extends ItemView {
             }
 
             // === 检查书籍章节是否已下载到本地 ===
+            // 自动下载模式：如果章节不存在，在后台自动下载，不阻塞用户操作
             const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
             if (!chaptersExist) {
-                // 章节不存在，提示用户下载
-                new ConfirmModal(
-                    this.app,
-                    '下载书籍章节',
-                    `「${displayName}」的章节尚未下载到本地。\n\n是否立即下载章节？下载后可以在离线状态下阅读和引用。`,
-                    async () => {
-                        await this.handleExportMarkdown(indexId);
-                    },
-                    { confirmLabel: '下载章节' }
-                ).open();
-                // 用户取消下载时，仍需清空消息列表并显示欢迎消息
-                this.messageList?.clear();
-                this.showWelcomeMessage();
-                return; // 用户取消下载，不继续加载书籍
+                // 章节不存在，自动在后台下载（不阻塞，不弹窗）
+                log(`[DeepPDF] 书籍「${displayName}」章节未下载，开始后台自动下载...`);
+                this.handleExportMarkdown(indexId).catch(err => {
+                    warn(`[DeepPDF] 后台下载章节失败:`, err);
+                });
+                // 继续加载书籍，不等待下载完成
             }
         }
 
