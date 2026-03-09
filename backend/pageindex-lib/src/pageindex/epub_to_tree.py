@@ -176,8 +176,12 @@ class EpubTreeConverter:
         # 返回与 PDF 一致的结构格式，同时保留 EPUB 特有的元数据
         # PDF 返回: {"doc_name": "xxx.pdf", "structure": [...]}
         # EPUB 返回: {"doc_name": "书名", "author": "作者", "structure": [...]}
+        # 清理书名：移除括号内的营销文案（如"（全新版本...）"）
+        raw_title = metadata.get("title", "")
+        clean_title = self._clean_book_title(raw_title)
+
         result = {
-            "doc_name": metadata.get("title", ""),
+            "doc_name": clean_title,
             "structure": structure,
         }
 
@@ -500,3 +504,54 @@ class EpubTreeConverter:
             renumber_node(node)
 
         logger.debug(f"[EPUB转换] 重新编号完成，共 {counter} 个节点")
+
+    def _clean_book_title(self, title: str) -> str:
+        """
+        清理书名，移除营销文案
+
+        处理规则：
+        1. 移除中文全角括号内的内容（如"（全新版本，重磅上市！...）"）
+        2. 移除英文半角括号内的内容（如 "(New Edition)"）
+        3. 如果括号在书名末尾，直接移除
+        4. 如果括号在书名中间（如"书名（副标题）其余"，保留"书名 其余"）
+        5. 清理多余的空白
+
+        参数:
+            title: 原始书名
+
+        返回:
+            清理后的简短书名
+        """
+        import re
+
+        if not title:
+            return title
+
+        original_title = title
+
+        # 移除中文全角括号及其内容
+        # 匹配：（任意内容）
+        title = re.sub(r'（[^）]*）', '', title)
+
+        # 移除英文半角括号及其内容
+        # 匹配：(任意内容)
+        title = re.sub(r'\([^)]*\)', '', title)
+
+        # 移除中文方括号及其内容
+        # 匹配：[任意内容]
+        title = re.sub(r'【[^】]*】', '', title)
+
+        # 清理多余空白
+        title = ' '.join(title.split())
+
+        # 如果清理后为空，返回原标题
+        if not title.strip():
+            logger.warning(f"[EPUB转换] 书名清理后为空，使用原标题: {original_title}")
+            return original_title
+
+        # 如果清理后标题变化很大（长度减少超过50%），记录日志
+        if len(title) < len(original_title) * 0.5:
+            logger.info(f"[EPUB转换] 书名清理: '{original_title}' -> '{title}'")
+
+        return title.strip()
+

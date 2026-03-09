@@ -524,6 +524,12 @@ export class SidebarView extends ItemView {
      * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
+        // 如果已经选中了同一个索引，跳过以避免闪烁
+        if (this.currentIndexId === indexId) {
+            log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
+            return;
+        }
+
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
@@ -573,17 +579,8 @@ export class SidebarView extends ItemView {
                 this.currentMarkdownFiles = {};
             }
 
-            // === 检查书籍章节是否已下载到本地 ===
-            // 自动下载模式：如果章节不存在，在后台自动下载，不阻塞用户操作
-            const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
-            if (!chaptersExist) {
-                // 章节不存在，自动在后台下载（不阻塞，不弹窗）
-                log(`[DeepPDF] 书籍「${displayName}」章节未下载，开始后台自动下载...`);
-                this.handleExportMarkdown(indexId).catch(err => {
-                    warn(`[DeepPDF] 后台下载章节失败:`, err);
-                });
-                // 继续加载书籍，不等待下载完成
-            }
+            // 注意：章节下载逻辑已移至 library-modal.ts
+            // 这里不再重复触发导出，避免出现两次 notice
         }
 
         // 清空消息
