@@ -29,6 +29,9 @@ export class ReadingTopbar extends Component {
 
         this.handleGlobalClick = this.handleGlobalClickImpl.bind(this);
         document.addEventListener('click', this.handleGlobalClick);
+
+        // 初始化连接状态（默认为 connecting）
+        this.setConnectionStatus('connecting');
     }
 
     render(): HTMLElement {
@@ -182,28 +185,39 @@ export class ReadingTopbar extends Component {
     /**
      * 设置连接状态
      */
-    public setConnectionStatus(status: 'loading' | 'connected' | 'disconnected' | 'error'): void {
-        if (!this.statusDot) return;
+    public setConnectionStatus(status: 'connected' | 'disconnected' | 'connecting'): void {
+        // 查找或创建状态指示器元素
+        let statusEl = this.el?.querySelector('.deeppdf-connection-status') as HTMLElement | null;
 
-        this.statusDot.removeClass('status-loading');
-        this.statusDot.removeClass('status-ok');
-        this.statusDot.removeClass('status-error');
-
-        switch (status) {
-            case 'loading':
-                this.statusDot.addClass('status-loading');
-                this.statusDot.title = '连接中...';
-                break;
-            case 'connected':
-                this.statusDot.addClass('status-ok');
-                this.statusDot.title = '已连接';
-                break;
-            case 'disconnected':
-            case 'error':
-                this.statusDot.addClass('status-error');
-                this.statusDot.title = '未连接';
-                break;
+        if (!statusEl && this.el) {
+            statusEl = this.el.createDiv({
+                cls: `deeppdf-connection-status deeppdf-connection-status--${status}`
+            });
         }
+
+        if (!statusEl) return;
+
+        // 更新类名
+        statusEl.className = `deeppdf-connection-status deeppdf-connection-status--${status}`;
+
+        // 更新内容
+        const labels: Record<string, string> = {
+            connected: '已连接',
+            disconnected: '未连接',
+            connecting: '连接中'
+        };
+
+        statusEl.empty();
+        statusEl.createSpan({ cls: 'deeppdf-connection-status__dot' });
+        statusEl.createSpan({ text: labels[status] });
+
+        // 添加 tooltip
+        const tooltips: Record<string, string> = {
+            connected: '后端已连接，所有功能可用',
+            disconnected: '后端未连接，部分功能不可用',
+            connecting: '正在连接后端服务...'
+        };
+        statusEl.setAttribute('aria-label', tooltips[status]);
     }
 
     destroy(): void {

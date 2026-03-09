@@ -1336,7 +1336,7 @@ export class SidebarView extends ItemView {
             }
         } catch (e) {
             this.connectionStatus = 'disconnected';
-            this.indexManager?.setConnectionStatus('error');
+            this.indexManager?.setConnectionStatus('disconnected');
             new Notice("后端连接失败，请检查后端服务");
             return;
         }
@@ -2382,7 +2382,7 @@ ${r.text}`;
         if (!this.indexManager) return;
 
         // 设置为加载状态
-        this.indexManager.setConnectionStatus('loading');
+        this.indexManager.setConnectionStatus('connecting');
         this.connectionStatus = 'disconnected';
 
         if (!this.apiClient) {
@@ -2403,7 +2403,7 @@ ${r.text}`;
             }
         } catch (error) {
             handleNetworkError(error as Error, { context: 'updateStatus' });
-            this.indexManager.setConnectionStatus('error');
+            this.indexManager.setConnectionStatus('disconnected');
             this.chatInput?.setDisabled(true);
         }
     }
@@ -2440,7 +2440,7 @@ ${r.text}`;
                 }
             } catch (error) {
                 logError('[DeepPDF] 健康检查失败:', error);
-                this.indexManager.setConnectionStatus('error');
+                this.indexManager.setConnectionStatus('disconnected');
                 this.connectionStatus = 'disconnected';
             }
         }, 30000); // 30 秒
