@@ -70,7 +70,11 @@ export class LibraryModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
 
-        // 工具栏：搜索 + 添加（移除标题行，节省空间）
+        // 标题栏
+        const header = contentEl.createDiv({ cls: 'deeppdf-lib-header' });
+        header.createDiv({ cls: 'deeppdf-lib-title', text: '在线书库' });
+
+        // 工具栏：搜索 + 添加
         const toolbar = contentEl.createDiv({ cls: 'deeppdf-lib-toolbar' });
 
         const searchWrap = toolbar.createDiv({ cls: 'deeppdf-lib-search' });
@@ -277,22 +281,14 @@ export class LibraryModal extends Modal {
 
     private handleSelect(index: IndexListItem): void {
         const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
-        const displayName = this.getDisplayName(index.pdf_name);
 
         if (!chaptersExist) {
-            new ConfirmModal(
-                this.app,
-                '下载书籍章节',
-                `「${displayName}」的章节尚未下载到本地。\n\n是否立即下载章节？下载后可以在离线状态下阅读和引用。`,
-                async () => {
-                    await this.options.onExportMarkdown?.(index.id);
-                    new Notice('章节下载中...', 3000);
-                    this.selectedIndexId = index.id;
-                    this.options.onIndexChange?.(index.id);
-                    this.close();
-                },
-                { confirmLabel: '下载章节' }
-            ).open();
+            // 章节不存在，直接下载并选择（无弹窗提示）
+            new Notice('章节下载中...', 3000);
+            this.options.onExportMarkdown?.(index.id);
+            this.selectedIndexId = index.id;
+            this.options.onIndexChange?.(index.id);
+            this.close();
         } else {
             this.selectedIndexId = index.id;
             this.options.onIndexChange?.(index.id);
@@ -333,45 +329,38 @@ export class LibraryModal extends Modal {
         }
 
         new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
-            new ConfirmModal(
-                this.app,
-                '确认索引',
-                `确定要索引「${fileInfo.name}」吗？\n\n文件大小: ${fileInfo.sizeFormatted}\n索引完成后即可开始 AI 问答。`,
-                async () => {
-                    new Notice(`开始索引「${fileInfo.name}」...`);
-                    try {
-                        const result = await this.options.apiClient.indexPDF(fileInfo.path, {
-                            llmProvider: this.options.plugin.settings.llmProvider,
-                            llmModel: this.options.plugin.settings.llmModel,
-                            deepseekApiKey: this.options.plugin.settings.deepseekApiKey,
-                            openaiApiKey: this.options.plugin.settings.openaiApiKey,
-                            apiUrl: this.options.plugin.settings.apiUrl,
-                            maxPagesPerNode: this.options.plugin.settings.maxPagesPerNode,
-                            maxTokensPerNode: this.options.plugin.settings.maxTokensPerNode,
-                            ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
-                        });
+            // 直接开始索引，无需确认弹窗
+            new Notice(`开始索引「${fileInfo.name}」...`);
+            try {
+                const result = await this.options.apiClient.indexPDF(fileInfo.path, {
+                    llmProvider: this.options.plugin.settings.llmProvider,
+                    llmModel: this.options.plugin.settings.llmModel,
+                    deepseekApiKey: this.options.plugin.settings.deepseekApiKey,
+                    openaiApiKey: this.options.plugin.settings.openaiApiKey,
+                    apiUrl: this.options.plugin.settings.apiUrl,
+                    maxPagesPerNode: this.options.plugin.settings.maxPagesPerNode,
+                    maxTokensPerNode: this.options.plugin.settings.maxTokensPerNode,
+                    ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
+                });
 
-                        if (result.status === 'pending' || result.status === 'processing') {
-                            new Notice(`索引任务已创建，正在后台处理...`, 4000);
-                            this.startProgressPolling();
-                        } else if (result.status === 'success') {
-                            new Notice(`索引成功！节点数: ${result.node_count}`, 3000);
-                            await this.refreshIndexes();
-                        } else {
-                            new Notice(`索引状态: ${result.status}`, 3000);
-                            await this.refreshIndexes();
-                        }
-                    } catch (error: any) {
-                        let msg = '索引创建失败';
-                        if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稍后再试';
-                        else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
-                        else if (error.message) msg = `索引创建失败: ${error.message}`;
-                        new Notice(msg, 5000);
-                        logError('[DeepPDF] 索引创建错误:', error);
-                    }
-                },
-                { confirmLabel: '开始索引' }
-            ).open();
+                if (result.status === 'pending' || result.status === 'processing') {
+                    new Notice(`索引任务已创建，正在后台处理...`, 4000);
+                    this.startProgressPolling();
+                } else if (result.status === 'success') {
+                    new Notice(`索引成功！节点数: ${result.node_count}`, 3000);
+                    await this.refreshIndexes();
+                } else {
+                    new Notice(`索引状态: ${result.status}`, 3000);
+                    await this.refreshIndexes();
+                }
+            } catch (error: any) {
+                let msg = '索引创建失败';
+                if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稍后再试';
+                else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
+                else if (error.message) msg = `索引创建失败: ${error.message}`;
+                new Notice(msg, 5000);
+                logError('[DeepPDF] 索引创建错误:', error);
+            }
         }).open();
     }
 
