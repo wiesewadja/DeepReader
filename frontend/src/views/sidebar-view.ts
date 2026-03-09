@@ -2390,7 +2390,8 @@ ${r.text}`;
                 this.readingTopbar?.setConnectionStatus('disconnected');
             }
         } catch (error) {
-            handleNetworkError(error as Error, { context: 'updateStatus' });
+            // 后端是可选的，只记录日志，不显示 Notice
+            warn('[DeepPDF] updateStatus: 后端连接失败', error);
             this.indexManager.setConnectionStatus('disconnected');
             this.readingTopbar?.setConnectionStatus('disconnected');
         }
