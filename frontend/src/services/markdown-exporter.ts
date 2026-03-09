@@ -104,13 +104,66 @@ level: ${node.level}
 }
 
 /**
+ * 创建书籍主 note 文件
+ */
+async function createBookNote(
+    app: App,
+    bookName: string,
+    folderPath: string,
+    author?: string
+): Promise<void> {
+    const bookNotePath = `${folderPath}/${bookName}.md`;
+
+    // 构建 frontmatter
+    let frontMatterLines = [
+        '---',
+        `book_name: ${bookName}`,
+    ];
+    if (author) {
+        frontMatterLines.push(`author: ${author}`);
+    }
+    frontMatterLines.push('---');
+    frontMatterLines.push('');
+
+    // 构建内容
+    const content = frontMatterLines.join('\n') + `# ${bookName}\n\n`;
+
+    // 检查文件是否存在
+    const existingFile = app.vault.getAbstractFileByPath(bookNotePath);
+    if (existingFile instanceof TFile) {
+        // 读取现有内容并更新 frontmatter
+        const existingContent = await app.vault.read(existingFile);
+        // 检查是否有 frontmatter
+        const frontmatterMatch = existingContent.match(/^---\n([\s\S]*?)\n---/);
+        if (frontmatterMatch) {
+            // 有 frontmatter，更新作者信息
+            let frontmatter = frontmatterMatch[1];
+            // 如果作者信息已存在且不同，更新它
+            if (author && !frontmatter.includes('author:')) {
+                frontmatter += `\nauthor: ${author}`;
+            }
+            // 重新构建文件内容
+            const newContent = `---\n${frontmatter}\n---${existingContent.substring(frontmatterMatch[0].length)}`;
+            await app.vault.modify(existingFile, newContent);
+        } else {
+            // 没有 frontmatter，添加到开头
+            await app.vault.modify(existingFile, content + existingContent);
+        }
+    } else {
+        // 创建新文件
+        await app.vault.create(bookNotePath, content);
+    }
+}
+
+/**
  * 导出索引为 Markdown 文件
  */
 export async function exportIndexToMarkdown(
     app: App,
     pdfName: string,
     nodes: NodeData[],
-    outputFolder: string = "DeepReader"
+    outputFolder: string = "DeepReader",
+    author?: string
 ): Promise<ExportResult> {
     try {
         // 创建输出文件夹（同时移除 .pdf 和 .epub 后缀）
@@ -123,9 +176,12 @@ export async function exportIndexToMarkdown(
             await app.vault.createFolder(folderPath);
         }
 
+        // 创建或更新书籍主 note 文件
+        await createBookNote(app, pdfFolderName, folderPath, author);
+
         // 导出每个节点
         const fileMapping: Record<string, string> = {};
-        let filesCreated = 0;
+        let filesCreated = 1; // 包含书籍主 note
 
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];

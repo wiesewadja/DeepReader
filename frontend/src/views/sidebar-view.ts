@@ -2506,9 +2506,9 @@ ${r.text}`;
             // 1. 获取完整节点数据（仅使用基于规则的快速格式化）
             const data = await this.apiClient.exportIndex(indexId);
 
-            // 2. 前端生成并写入文件
+            // 2. 前端生成并写入文件（传递作者信息）
             // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
-            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes);
+            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes, "DeepReader", data.author);
 
             // 关闭加载提示
             loadingNotice.hide();

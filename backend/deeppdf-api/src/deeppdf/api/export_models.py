@@ -27,8 +27,9 @@ class ExportIndexResponse(BaseModel):
     status: str
     index_id: str
     pdf_name: str
-    total_pages: int  # 新增：PDF 总页数
-    created_at: str  # 新增：创建时间
+    author: Optional[str] = None  # 作者（EPUB 特有）
+    total_pages: int  # PDF 总页数
+    created_at: str  # 创建时间
     nodes: List[ExportNodeData]
 
 

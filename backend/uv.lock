@@ -663,7 +663,7 @@ dev = [
 
 [[package]]
 name = "deeppdf-backend"
-version = "1.0.0"
+version = "0.9.1"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
