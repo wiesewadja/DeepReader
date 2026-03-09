@@ -2373,7 +2373,7 @@ ${r.text}`;
         this.readingTopbar?.setConnectionStatus('disconnected');
 
         if (!this.apiClient) {
-            this.indexManager.setConnectionStatus('disconnected');
+            this.indexManager?.setConnectionStatus('disconnected');
             // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             return;
         }
@@ -2381,18 +2381,18 @@ ${r.text}`;
         try {
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
-                this.indexManager.setConnectionStatus('connected');
+                this.indexManager?.setConnectionStatus('connected');
                 this.connectionStatus = 'connected';
                 this.readingTopbar?.setConnectionStatus('connected');
                 // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             } else {
-                this.indexManager.setConnectionStatus('disconnected');
+                this.indexManager?.setConnectionStatus('disconnected');
                 this.readingTopbar?.setConnectionStatus('disconnected');
             }
         } catch (error) {
             // 后端是可选的，只记录日志，不显示 Notice
             warn('[DeepPDF] updateStatus: 后端连接失败', error);
-            this.indexManager.setConnectionStatus('disconnected');
+            this.indexManager?.setConnectionStatus('disconnected');
             this.readingTopbar?.setConnectionStatus('disconnected');
         }
     }
@@ -2431,7 +2431,7 @@ ${r.text}`;
                 }
             } catch (error) {
                 logError('[DeepPDF] 健康检查失败:', error);
-                this.indexManager.setConnectionStatus('disconnected');
+                this.indexManager?.setConnectionStatus('disconnected');
                 this.readingTopbar?.setConnectionStatus('disconnected');
                 this.connectionStatus = 'disconnected';
             }
