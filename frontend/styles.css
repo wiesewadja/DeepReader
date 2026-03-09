@@ -4251,7 +4251,7 @@
 
 /* 头部 */
 .deeppdf-lib-header {
-    display: none; /* 隐藏标题行，节省空间 */
+    padding: 6px 20px 0;
 }
 
 .deeppdf-lib-title {

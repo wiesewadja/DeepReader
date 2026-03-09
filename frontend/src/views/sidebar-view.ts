@@ -261,25 +261,6 @@ export class SidebarView extends ItemView {
     }
 
 
-    /** 打开图书管理入口（自动同步书籍笔记 + 打开图书管理文档） */
-    private async openBookManagement(): Promise<void> {
-        if (!this.readingPortal) {
-            new Notice("DeepPDF 服务未就绪");
-            return;
-        }
-
-        try {
-            // 先同步书籍笔记
-            new Notice("正在同步书籍笔记...");
-            await this.readingPortal.syncAllIndexes();
-            // 再打开图书管理入口
-            await this.readingPortal.openBookManagementPortal();
-        } catch (error) {
-            logError("[DeepPDF] Failed to open book management:", error);
-            new Notice("打开图书管理失败");
-        }
-    }
-
     /** 恢复历史记录到视图 */
     private restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
@@ -679,7 +660,6 @@ export class SidebarView extends ItemView {
         this.readingTopbar = new ReadingTopbar({
             onOpenLibrary: () => this.openLibraryModal(),
             onNewChat: () => this.handleNewChat(),
-            onOpenBookManagement: () => this.openBookManagement(),
             onOpenSettings: () => {
                 // 打开设置并定位到 DeepPDF 插件
                 const setting = (this.app as any).setting;

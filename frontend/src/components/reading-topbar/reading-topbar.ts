@@ -10,7 +10,6 @@ import { log } from '../../utils/logger.js';
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onNewChat?: () => void;
-    onOpenBookManagement?: () => void;
     onOpenSettings?: () => void;
 }
 
@@ -95,7 +94,6 @@ export class ReadingTopbar extends Component {
         const menuItems = [
             { icon: Icons.library, label: '切换书籍', action: () => this.options.onOpenLibrary?.() },
             { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
-            { icon: Icons.bookworm, label: '同步图书', action: () => this.options.onOpenBookManagement?.() },
             { divider: true },
             { icon: Icons.settings, label: '设置', action: () => this.options.onOpenSettings?.() }
         ];
