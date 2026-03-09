@@ -196,9 +196,13 @@ export class ExcerptService {
     }
 
     // 组装完整的 callout
+    // 先移除末尾的空白行，再处理每行前缀
+    const contentLines = calloutContent.trimEnd().split('\n');
+    const calloutBody = contentLines.map(line => `> ${line}`).join('\n');
+
     const formatted = `
 > [!${calloutType}]+-${timeAnchor} ${calloutTitle} ${timestamp}
-> ${calloutContent.split('\n').join('\n> ')}
+${calloutBody}
 `;
 
     return formatted;
