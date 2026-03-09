@@ -228,7 +228,7 @@ export class LibraryModal extends Modal {
             deleteBtn.title = '删除索引';
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.handleDelete(index);
+                this.confirmDelete(index);
             });
         }
 
@@ -407,14 +407,17 @@ export class LibraryModal extends Modal {
         this.handleAddDocument();
     }
 
-    private handleDelete(index: IndexListItem): void {
+    private confirmDelete(index: IndexListItem): void {
         new ConfirmModal(
             this.app,
             '删除索引',
-            `确定要删除「${index.pdf_name}」的索引吗？此操作不可撤销。`,
+            `确定要删除「${index.pdf_name}」吗？此操作不可撤销。`,
             async () => {
-                await this.options.onDeleteIndex?.(index.id);
-                await this.refreshIndexes();
+                const newIndexes = await this.options.onDeleteIndex?.(index.id);
+                if (newIndexes) {
+                    this.indexes = [...newIndexes];
+                    this.renderGrid();
+                }
             },
             { confirmLabel: '删除', isDestructive: true }
         ).open();
