@@ -542,14 +542,17 @@ export class SidebarView extends ItemView {
             }
             this.messageList?.setCurrentPdfName(displayName);
 
-            // 获取书籍元数据（作者信息）
-            let author: string | undefined;
-            if (this.readingPortal) {
+            // 获取作者信息：优先使用索引中的 author，其次从元数据获取
+            let author: string | undefined = index.author;
+            log(`[DeepPDF] 索引中的作者信息: index.author="${index.author}"`);
+            if (!author && this.readingPortal) {
                 const metadata = await this.readingPortal.getBookMetadata(displayName);
+                log(`[DeepPDF] 从元数据获取: metadata.author="${metadata?.author}"`);
                 if (metadata) {
                     author = metadata.author;
                 }
             }
+            log(`[DeepPDF] 最终使用的作者: author="${author}"`);
 
             this.readingTopbar?.setCurrentBook(displayName, author);
 

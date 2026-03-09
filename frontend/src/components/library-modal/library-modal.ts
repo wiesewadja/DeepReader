@@ -282,6 +282,15 @@ export class LibraryModal extends Modal {
     }
 
     private handleSelect(index: IndexListItem): void {
+        // 检查索引状态
+        const rawStatus = (index.status || 'unknown').toLowerCase();
+        const isProcessing = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(rawStatus);
+
+        if (isProcessing) {
+            // 索引还在处理中，不响应点击
+            return;
+        }
+
         const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
 
         if (!chaptersExist) {

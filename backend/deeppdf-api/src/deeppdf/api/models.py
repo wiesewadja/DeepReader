@@ -154,6 +154,7 @@ class IndexListItem(BaseModel):
 
     id: str
     pdf_name: str
+    author: Optional[str] = None  # 作者（EPUB 特有）
     node_count: int
     created_at: str
     status: Optional[str] = None

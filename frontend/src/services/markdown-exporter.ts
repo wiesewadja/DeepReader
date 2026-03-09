@@ -120,7 +120,8 @@ async function createBookNote(
         `book_name: ${bookName}`,
     ];
     if (author) {
-        frontMatterLines.push(`author: ${author}`);
+        // 用引号包裹作者名，避免 YAML 解析特殊字符（如方括号）出错
+        frontMatterLines.push(`author: "${author}"`);
     }
     frontMatterLines.push('---');
     frontMatterLines.push('');
@@ -140,7 +141,8 @@ async function createBookNote(
             let frontmatter = frontmatterMatch[1];
             // 如果作者信息已存在且不同，更新它
             if (author && !frontmatter.includes('author:')) {
-                frontmatter += `\nauthor: ${author}`;
+                // 用引号包裹作者名，避免 YAML 解析特殊字符（如方括号）出错
+                frontmatter += `\nauthor: "${author}"`;
             }
             // 重新构建文件内容
             const newContent = `---\n${frontmatter}\n---${existingContent.substring(frontmatterMatch[0].length)}`;
