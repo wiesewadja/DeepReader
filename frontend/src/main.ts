@@ -427,19 +427,17 @@ export default class DeepPDFPlugin extends Plugin {
      */
     private checkServerConnection(): void {
         // 异步检查，不阻塞插件加载
+        // 后端是可选的，连接状态通过 UI 指示器显示，不需要 Notice 弹窗
         this.apiClient!.healthCheck()
             .then(isHealthy => {
                 if (!isHealthy) {
                     log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
-                    new Notice(`DeepPDF: 后端服务未响应 (localhost:${this.settings.apiPort})。部分功能不可用。`);
                 } else {
                     log('Server connected successfully');
                 }
             })
             .catch(err => {
                 warn('Failed to connect to server:', err);
-                // 降低提示级别，因为后端是可选的
-                log(`DeepPDF: 后端未连接 (localhost:${this.settings.apiPort})。部分功能需要后端支持。`);
             });
     }
 }
