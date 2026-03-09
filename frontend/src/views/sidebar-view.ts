@@ -2369,9 +2369,12 @@ ${r.text}`;
         this.indexManager.setConnectionStatus('connecting');
         this.connectionStatus = 'disconnected';
 
+        // 更新 readingTopbar 连接状态
+        this.readingTopbar?.setConnectionStatus('disconnected');
+
         if (!this.apiClient) {
             this.indexManager.setConnectionStatus('disconnected');
-            this.chatInput?.setDisabled(true);
+            // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             return;
         }
 
@@ -2380,15 +2383,16 @@ ${r.text}`;
             if (isHealthy) {
                 this.indexManager.setConnectionStatus('connected');
                 this.connectionStatus = 'connected';
-                this.chatInput?.setDisabled(false);
+                this.readingTopbar?.setConnectionStatus('connected');
+                // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             } else {
                 this.indexManager.setConnectionStatus('disconnected');
-                this.chatInput?.setDisabled(true);
+                this.readingTopbar?.setConnectionStatus('disconnected');
             }
         } catch (error) {
             handleNetworkError(error as Error, { context: 'updateStatus' });
             this.indexManager.setConnectionStatus('disconnected');
-            this.chatInput?.setDisabled(true);
+            this.readingTopbar?.setConnectionStatus('disconnected');
         }
     }
 
@@ -2409,15 +2413,17 @@ ${r.text}`;
                 const wasConnected = this.isConnected;
                 this.connectionStatus = isHealthy ? 'connected' : 'disconnected';
 
+                // 更新 indexManager 和 readingTopbar 的连接状态
+                this.indexManager.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
+                this.readingTopbar?.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
+
                 if (isHealthy) {
-                    this.indexManager.setConnectionStatus('connected');
                     // 如果之前是断开的，现在恢复了，刷新索引列表
                     if (!wasConnected) {
                         log('[DeepPDF] 后端连接恢复，刷新索引列表');
                         await this.loadIndexes();
                     }
                 } else {
-                    this.indexManager.setConnectionStatus('disconnected');
                     if (wasConnected) {
                         log('[DeepPDF] 后端连接断开');
                     }
@@ -2425,6 +2431,7 @@ ${r.text}`;
             } catch (error) {
                 logError('[DeepPDF] 健康检查失败:', error);
                 this.indexManager.setConnectionStatus('disconnected');
+                this.readingTopbar?.setConnectionStatus('disconnected');
                 this.connectionStatus = 'disconnected';
             }
         }, 30000); // 30 秒
