@@ -511,9 +511,9 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 选择索引（从弹窗中调用）
+     * 选择索引（从弹窗中调用或自动切换）
      */
-    private async selectIndex(indexId: string): Promise<void> {
+    public async selectIndex(indexId: string): Promise<void> {
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
@@ -601,6 +601,13 @@ export class SidebarView extends ItemView {
         } else {
             this.startNewSession(indexId);
         }
+    }
+
+    /**
+     * 获取当前选中的索引 ID
+     */
+    public getCurrentIndexId(): string | null {
+        return this.currentIndexId;
     }
 
     /**

@@ -13,6 +13,7 @@ export interface ReadingModeCallbacks {
     onExcerpt: (text: string) => void;
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;
+    onBookDetected?: (indexId: string, bookName: string) => void;  // 检测到书籍章节时回调
 }
 
 export interface ChapterNavigation {
@@ -114,7 +115,33 @@ export class ReadingModeService {
             this.chapterNav?.update();
         }, 100);
 
+        // 通知书籍检测回调
+        this.notifyBookDetected(file);
+
         log('[ReadingMode] Activated for:', file.path);
+    }
+
+    /**
+     * 通知检测到书籍章节
+     */
+    private notifyBookDetected(file: TFile): void {
+        if (!this.callbacks?.onBookDetected) return;
+
+        // 从文件的 frontmatter 获取 index_id
+        const cache = this.app.metadataCache.getFileCache(file);
+        const indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id;
+
+        // 从文件路径提取书籍名称（DeepReader/书名/章节.md）
+        const pathParts = file.path.split('/');
+        let bookName = '';
+        if (pathParts.length >= 2 && pathParts[0] === 'DeepReader') {
+            bookName = pathParts[1];
+        }
+
+        if (indexId && bookName) {
+            log('[ReadingMode] Book detected:', bookName, 'indexId:', indexId);
+            this.callbacks.onBookDetected(indexId, bookName);
+        }
     }
 
     /**
