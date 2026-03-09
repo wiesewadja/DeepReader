@@ -27,7 +27,6 @@
 @import url('../components/reading-topbar/reading-topbar.css');
 @import url('../components/library-modal/library-modal.css');
 @import url('../components/reading-mode/reading-mode.css');
-@import url('./disconnected-screen.css');
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {
