@@ -560,7 +560,17 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
             this.messageList?.setCurrentPdfName(displayName);
-            this.readingTopbar?.setCurrentBook(displayName);
+
+            // 获取书籍元数据（作者信息）
+            let author: string | undefined;
+            if (this.readingPortal) {
+                const metadata = await this.readingPortal.getBookMetadata(displayName);
+                if (metadata) {
+                    author = metadata.author;
+                }
+            }
+
+            this.readingTopbar?.setCurrentBook(displayName, author);
 
             // 加载书籍封面
             this.loadBookCover(displayName);

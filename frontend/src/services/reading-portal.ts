@@ -389,6 +389,35 @@ created: ${now}
   }
 
   /**
+   * 获取单本书籍的元数据（从 frontmatter 读取）
+   * @param bookName 书籍名称（不含扩展名）
+   * @returns 书籍元数据，包括作者、书单、标签等
+   */
+  async getBookMetadata(bookName: string): Promise<{
+    author?: string;
+    booklists: string[];
+    tags: string[];
+  } | null> {
+    // 查找书籍笔记文件
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      if (!file.path.startsWith(DEEPPDF_DIR + "/")) continue;
+      if (file.basename !== bookName) continue;
+
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (frontmatter) {
+        return {
+          author: frontmatter.author || undefined,
+          booklists: frontmatter.booklists || [],
+          tags: frontmatter.tags || [],
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * 根据书单/标签过滤索引 ID
    */
   async filterIndexIdsByMetadata(
