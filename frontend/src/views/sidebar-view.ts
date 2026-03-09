@@ -433,7 +433,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打开切换书籍弹窗
+     * 打在线书库弹窗
      */
     private openLibraryModal(): void {
         new LibraryModal(this.app, {

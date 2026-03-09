@@ -14,7 +14,8 @@ const Icons = {
     add: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
     download: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
     trash: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
-    check: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
+    check: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`,
+    checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" fill="#10b981" stroke="#10b981"/><polyline points="16 9 10.5 14.5 8 12" stroke="white" stroke-width="2.5"/></svg>`,
     book: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
     loading: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
     empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
@@ -143,27 +144,23 @@ export class LibraryModal extends Modal {
 
     private createBookCard(index: IndexListItem): HTMLElement {
         const card = document.createElement('div');
-        card.className = 'deeppdf-book-card';
+        card.className = 'deeppdf-lib-book-card';
+
+        const isSelected = index.id === this.selectedIndexId;
+        if (isSelected) {
+            card.classList.add('selected');
+        }
 
         // 状态判断
         const rawStatus = (index.status || 'unknown').toLowerCase();
         let statusClass = 'ready';
-        let statusLabel = '就绪';
 
         if (['processing', 'indexing', 'started', 'created', 'running', 'active'].includes(rawStatus)) {
             statusClass = 'processing';
-            statusLabel = '索引中';
         } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
             statusClass = 'queued';
-            statusLabel = '等待中';
         } else if (['failed', 'error'].includes(rawStatus)) {
             statusClass = 'failed';
-            statusLabel = '失败';
-        }
-
-        // 选中状态
-        if (index.id === this.selectedIndexId) {
-            card.classList.add('selected');
         }
 
         // 书名处理
@@ -172,18 +169,36 @@ export class LibraryModal extends Modal {
         if (bookName.toLowerCase().endsWith('.epub')) bookName = bookName.slice(0, -5);
 
         // 封面区域
-        const coverEl = card.createDiv({ cls: 'deeppdf-book-cover' });
+        const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover' });
 
         if (statusClass === 'processing') {
-            // 索引中显示加载动画
-            coverEl.innerHTML = `<div class="deeppdf-cover-loading">${Icons.loading}</div>`;
+            // 索引中显示加载动画 + 进度
+            coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading">${Icons.loading}</div>`;
+
+            // 进度条
+            const progress = index.progress_percent || 0;
+            const progressEl = coverEl.createDiv({ cls: 'deeppdf-lib-progress-overlay' });
+            progressEl.createDiv({ cls: 'deeppdf-lib-progress-bar', attr: { style: `width: ${progress}%` } });
+            progressEl.createDiv({ cls: 'deeppdf-lib-progress-text', text: `${Math.round(progress)}%` });
+        } else if (statusClass === 'failed') {
+            // 失败状态显示错误图标
+            coverEl.innerHTML = this.createCoverPlaceholder(bookName, true);
+
+            // 重试按钮
+            const retryBtn = coverEl.createDiv({ cls: 'deeppdf-lib-cover-btn retry' });
+            retryBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`;
+            retryBtn.title = '重试索引';
+            retryBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.retryIndex(index);
+            });
         } else {
             // 尝试加载封面图片
             const coverPath = `DeepReader/covers/${bookName}.png`;
             const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
 
             if (coverFile && coverFile instanceof TFile) {
-                const imgEl = coverEl.createEl('img', { cls: 'deeppdf-cover-img' });
+                const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
                 imgEl.src = this.app.vault.getResourcePath(coverFile);
                 imgEl.alt = bookName;
                 imgEl.onerror = () => {
@@ -194,87 +209,74 @@ export class LibraryModal extends Modal {
                 // 显示占位符
                 coverEl.innerHTML = this.createCoverPlaceholder(bookName);
             }
-        }
 
-        // 信息区域
-        const infoEl = card.createDiv({ cls: 'deeppdf-book-info' });
+            // 悬停时显示操作按钮
+            const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
 
-        // 书名
-        const titleEl = infoEl.createDiv({ cls: 'deeppdf-book-title', text: bookName });
-        titleEl.title = index.pdf_name;
-
-        // 作者
-        if (index.author) {
-            infoEl.createDiv({ cls: 'deeppdf-book-author', text: index.author });
-        }
-
-        // 元信息
-        const metaEl = infoEl.createDiv({ cls: 'deeppdf-book-meta' });
-
-        const statusBadge = metaEl.createSpan({ cls: `deeppdf-book-status status-${statusClass}` });
-        statusBadge.textContent = statusLabel;
-
-        if (statusClass === 'processing' && index.progress_percent && index.progress_percent > 0) {
-            statusBadge.textContent = `索引中 ${Math.round(index.progress_percent)}%`;
-        }
-
-        if (index.node_count && statusClass === 'ready') {
-            metaEl.createSpan({ cls: 'deeppdf-book-nodes', text: `${index.node_count} 节` });
-        }
-
-        // 失败时显示错误
-        if (statusClass === 'failed' && index.message) {
-            const errorEl = infoEl.createDiv({ cls: 'deeppdf-book-error', text: index.message });
-            errorEl.title = index.message;
-        }
-
-        // 操作按钮（悬停显示）
-        if (statusClass === 'ready') {
-            const actionsEl = card.createDiv({ cls: 'deeppdf-book-actions' });
-
-            const selectBtn = actionsEl.createEl('button', { cls: 'deeppdf-action-btn primary' });
-            selectBtn.innerHTML = Icons.check;
-            selectBtn.title = '选择';
-            selectBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.handleSelect(index);
-            });
-
-            const exportBtn = actionsEl.createEl('button', { cls: 'deeppdf-action-btn' });
-            exportBtn.innerHTML = Icons.download;
-            exportBtn.title = '导出';
-            exportBtn.addEventListener('click', (e) => {
+            // 下载按钮
+            const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
+            downloadBtn.innerHTML = Icons.download;
+            downloadBtn.title = '导出 Markdown';
+            downloadBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.options.onExportMarkdown?.(index.id);
             });
 
-            const deleteBtn = actionsEl.createEl('button', { cls: 'deeppdf-action-btn danger' });
+            // 删除按钮
+            const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
             deleteBtn.innerHTML = Icons.trash;
-            deleteBtn.title = '删除';
+            deleteBtn.title = '删除索引';
             deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.handleDelete(index);
             });
-        } else if (statusClass === 'failed') {
-            const actionsEl = card.createDiv({ cls: 'deeppdf-book-actions' });
-            const retryBtn = actionsEl.createEl('button', { cls: 'deeppdf-action-btn primary' });
-            retryBtn.textContent = '重试';
-            retryBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.retryIndex(index);
-            });
         }
+
+        // 选中时在封面上显示绿色对勾
+        if (isSelected && statusClass === 'ready') {
+            const checkMark = coverEl.createDiv({ cls: 'deeppdf-lib-cover-check' });
+            checkMark.innerHTML = Icons.checkCircle;
+        }
+
+        // 信息区域：书名 + 作者
+        const infoEl = card.createDiv({ cls: 'deeppdf-lib-book-info' });
+
+        // 书名
+        const titleEl = infoEl.createDiv({ cls: 'deeppdf-lib-book-title', text: bookName });
+        titleEl.title = index.pdf_name;
+
+        // 作者
+        if (index.author) {
+            infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
+        }
+
+        // 点击选择
+        card.addEventListener('click', () => {
+            if (statusClass === 'ready') {
+                this.handleSelect(index);
+            }
+        });
 
         return card;
     }
 
-    private createCoverPlaceholder(bookName: string): string {
+    private createCoverPlaceholder(bookName: string, isFailed: boolean = false): string {
         // 生成基于书名的占位符
         const displayName = bookName.length > 6 ? bookName.substring(0, 6) : bookName;
+        if (isFailed) {
+            return `
+                <div class="deeppdf-lib-cover-placeholder failed">
+                    <div class="deeppdf-lib-cover-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    </div>
+                    <div class="deeppdf-lib-cover-text">索引失败</div>
+                </div>
+            `;
+        }
         return `
-            <div class="deeppdf-cover-placeholder">
-                <div class="deeppdf-cover-icon">${Icons.book}</div>
-                <div class="deeppdf-cover-text">${displayName}</div>
+            <div class="deeppdf-lib-cover-placeholder">
+                <div class="deeppdf-lib-cover-icon">${Icons.book}</div>
+                <div class="deeppdf-lib-cover-text">${displayName}</div>
             </div>
         `;
     }
