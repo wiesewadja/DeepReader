@@ -69,9 +69,20 @@ export async function runAgentLoop(
     }
 
     iterations++;
-    agentLog(`[AgentLoop] Iteration ${iterations}/${maxIterations}`);
-    agentLog(`[AgentLoop] 当前消息数: ${workingMessages.length}`);
-    agentLog(`[AgentLoop] 可用工具数: ${tools.length}`);
+
+    // 详细的迭代开始日志
+    agentLog(`\n${'='.repeat(60)}`);
+    agentLog(`[AgentLoop] 迭代 ${iterations}/${maxIterations}`);
+    agentLog(`[AgentLoop] 消息历史: ${workingMessages.length} 条, 工具: ${tools.length} 个`);
+
+    // 记录最后一条用户消息的内容（用于理解上下文）
+    const lastUserMsg = [...workingMessages].reverse().find(m => m.role === 'user');
+    if (lastUserMsg) {
+      const contentPreview = typeof lastUserMsg.content === 'string'
+        ? lastUserMsg.content.slice(0, 100)
+        : '(复杂内容)';
+      agentLog(`[AgentLoop] 用户问题: "${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
+    }
 
     let accumulatedContent = '';
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
@@ -115,7 +126,24 @@ export async function runAgentLoop(
       break;
     }
 
-    agentLog(`[AgentLoop] 收到 ${toolCalls.length} 个工具调用:`, toolCalls.map(tc => tc.name).join(', '));
+    // 详细的工具调用日志
+    agentLog(`\n${'─'.repeat(60)}`);
+    agentLog(`[AgentLoop] 🤖 LLM 决定调用 ${toolCalls.length} 个工具:`);
+    toolCalls.forEach((tc, idx) => {
+      agentLog(`  [${idx + 1}] ${tc.name}`);
+      // 尝试解析参数并显示关键信息
+      try {
+        const args = JSON.parse(tc.arguments);
+        const keyParams = Object.entries(args)
+          .slice(0, 3) // 最多显示3个参数
+          .map(([k, v]) => `${k}=${typeof v === 'string' ? `"${v.slice(0, 30)}${v.length > 30 ? '...' : ''}"` : JSON.stringify(v)}`)
+          .join(', ');
+        agentLog(`      参数: ${keyParams}${Object.keys(args).length > 3 ? ', ...' : ''}`);
+      } catch {
+        agentLog(`      参数: (解析失败)`);
+      }
+    });
+    agentLog(`${'─'.repeat(60)}\n`);
 
     // 构建 assistant 消息（包含 tool_calls）
     const assistantMessage: ChatMessage = {
@@ -134,7 +162,8 @@ export async function runAgentLoop(
 
     // 依次执行每个 tool call
     for (const tc of toolCalls) {
-      agentLog(`[AgentLoop] Executing tool: ${tc.name}`);
+      const startTime = Date.now();
+      agentLog(`\n[AgentLoop] ▶ 开始执行: ${tc.name}`);
       options.onProgress(`正在执行: ${tc.name}...`);
 
       let args: Record<string, unknown>;
@@ -144,35 +173,55 @@ export async function runAgentLoop(
         args = {};
       }
 
-      const result = await executeTool(toolRegistry, tc.name, args, context);
-
-      // 检查是否返回了隐藏消息（用于用户画像更新等）
       try {
-        const parsed = JSON.parse(result);
-        if (parsed.success && parsed.hiddenMessage) {
-          // 注入隐藏消息到对话历史（不显示但发送给 LLM）
-          workingMessages.push({
-            role: parsed.hiddenMessage.role,
-            content: parsed.hiddenMessage.content,
-            hidden: true,
-          });
-          agentLog('[AgentLoop] 注入隐藏消息:', parsed.hiddenMessage.content.substring(0, 50));
-        }
-      } catch {
-        // 不是 JSON 格式，正常处理
-      }
+        const result = await executeTool(toolRegistry, tc.name, args, context);
+        const duration = Date.now() - startTime;
 
-      // 添加 tool result 消息
-      workingMessages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: result,
-      });
+        // 简洁的成功日志
+        const resultPreview = result.length > 100
+          ? `${result.slice(0, 100)}... (${result.length} chars)`
+          : result;
+        agentLog(`[AgentLoop] ✓ 完成: ${tc.name} (${duration}ms) → ${resultPreview}`);
+
+        // 检查是否返回了隐藏消息（用于用户画像更新等）
+        try {
+          const parsed = JSON.parse(result);
+          if (parsed.success && parsed.hiddenMessage) {
+            // 注入隐藏消息到对话历史（不显示但发送给 LLM）
+            workingMessages.push({
+              role: parsed.hiddenMessage.role,
+              content: parsed.hiddenMessage.content,
+              hidden: true,
+            });
+            agentLog(`[AgentLoop] 📝 隐藏消息: "${parsed.hiddenMessage.content.slice(0, 50)}..."`);
+          }
+        } catch {
+          // 不是 JSON 格式，正常处理
+        }
+
+        // 添加 tool result 消息
+        workingMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: result,
+        });
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        agentLog(`[AgentLoop] ✗ 失败: ${tc.name} (${duration}ms) → ${errorMsg}`);
+
+        // 添加错误结果
+        workingMessages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: `Error: ${errorMsg}`,
+        });
+      }
     }
   }
 
   if (iterations >= maxIterations) {
-    agentLog.warn('[AgentLoop] Reached max iterations');
+    agentLog('[AgentLoop] ⚠️ 达到最大迭代次数，即将结束');
     options.onProgress('达到最大轮数，正在总结...');
   }
 
