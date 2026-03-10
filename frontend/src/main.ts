@@ -4,6 +4,7 @@ import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
+import { FrontendAgent } from './agent/index.js';
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -50,6 +51,8 @@ export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
     apiClient: DeepPDFClient | null = null;
     private readingModeService: ReadingModeService | null = null;
+    frontendAgent: FrontendAgent | null = null;
+    private skillsDir: string = '';
 
     async onload() {
         await this.loadSettings();
@@ -65,17 +68,23 @@ export default class DeepPDFPlugin extends Plugin {
         // 同步 Skills 到 vault（插件启动时执行）
         await this.syncSkillsToVault();
 
+        // 初始化 FrontendAgent（插件启动时初始化）
+        await this.getFrontendAgent();
+
         // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
         // 异步检查服务器连接状态（不阻塞插件加载）
         this.checkServerConnection();
 
-        // 注册侧边栏视图
+        // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
             SIDEBAR_VIEW_TYPE,
             (leaf) => new SidebarView(leaf, this.apiClient, this)
         );
+
+        // 自动打开侧边栏
+        this.activateView();
 
         // 添加设置面板
         this.addSettingTab(new DeepPDFSettingTab(this.app, this));
@@ -97,13 +106,9 @@ export default class DeepPDFPlugin extends Plugin {
             id: "reload-skills",
             name: "Reload DeepReader Skills",
             callback: async () => {
-                if (!this.apiClient) {
-                    new Notice("API client not initialized");
-                    return;
-                }
                 try {
                     new Notice("正在重载 Skills...");
-                    const result = await this.apiClient.reloadSkills();
+                    const result = await this.reloadSkills();
                     if (result.success) {
                         new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
                         log('[DeepReader] Skills reloaded:', result.skills);
@@ -337,6 +342,12 @@ export default class DeepPDFPlugin extends Plugin {
     private async syncSkillsToVault(): Promise<void> {
         const SKILLS_DIR = "DeepReader/skills";
 
+        // 保存 skillsDir 供后续使用
+        // @ts-ignore - ObsidianFileSystemAdapter.getBasePath() 返回 string
+        const vaultPath = this.app.vault.adapter.getBasePath() as string;
+        const path = require('path') as typeof import('path');
+        this.skillsDir = path.join(vaultPath, SKILLS_DIR);
+
         try {
             // 1. 确保 skills 目录存在
             const dirExists = await this.app.vault.adapter.exists(SKILLS_DIR);
@@ -365,6 +376,43 @@ export default class DeepPDFPlugin extends Plugin {
         } catch (err) {
             // Skills 同步失败不应阻止插件加载
             error('[DeepPDF] Skills sync failed:', err);
+        }
+    }
+
+    /**
+     * 获取或初始化 FrontendAgent
+     */
+    async getFrontendAgent(): Promise<FrontendAgent> {
+        if (!this.frontendAgent) {
+            this.frontendAgent = new FrontendAgent({
+                apiKey: this.settings.deepseekApiKey || '',
+                baseUrl: this.settings.apiUrl || undefined,
+                model: this.settings.llmModel || 'deepseek-chat',
+                skillsDir: this.skillsDir,
+                app: this.app,
+            });
+            await this.frontendAgent.initialize();
+            log('[DeepPDF] FrontendAgent initialized, skills:', this.frontendAgent.listSkills());
+        }
+        return this.frontendAgent;
+    }
+
+    /**
+     * 重载 Skills
+     */
+    async reloadSkills(): Promise<{ success: boolean; message: string; skills: string[] }> {
+        try {
+            // 如果 Agent 已初始化，重载 skills
+            if (this.frontendAgent) {
+                await this.frontendAgent.reloadSkills();
+                const skills = this.frontendAgent.listSkills();
+                return { success: true, message: 'Skills 重载成功', skills };
+            }
+            // Agent 未初始化，下次使用时会自动加载最新 skills
+            return { success: true, message: 'Skills 将在首次使用时加载', skills: [] };
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { success: false, message, skills: [] };
         }
     }
 
@@ -784,14 +832,10 @@ class DeepPDFSettingTab extends PluginSettingTab {
                 .setButtonText("重载 Skills")
                 .setCta()
                 .onClick(async () => {
-                    if (!this.plugin.apiClient) {
-                        new Notice("API client not initialized");
-                        return;
-                    }
                     try {
                         button.setDisabled(true);
                         button.setButtonText("重载中...");
-                        const result = await this.plugin.apiClient.reloadSkills();
+                        const result = await this.plugin.reloadSkills();
                         button.setDisabled(false);
                         button.setButtonText("重载 Skills");
                         if (result.success) {

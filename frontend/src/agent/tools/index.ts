@@ -10,6 +10,7 @@ import { getChapterTool } from './get-chapter.js';
 import { createSkillTool } from './skill.js';
 import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool } from './create-sub-agent.js';
+import { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 import { SkillLoader } from '../skills/loader.js';
 import { log } from '../../utils/logger.js';
 
@@ -23,6 +24,7 @@ export { getChapterTool } from './get-chapter.js';
 export { createSkillTool } from './skill.js';
 export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
+export { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -47,6 +49,11 @@ export function createToolRegistry(
 
   // 注册子 Agent 工具
   registry.set('create_sub_agent', createSubAgentTool);
+
+  // 注册记忆工具
+  registry.set('add_memory', addMemoryTool);
+  registry.set('search_memory', searchMemoryTool);
+  registry.set('summarize_memory', summarizeMemoryTool);
 
   log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 

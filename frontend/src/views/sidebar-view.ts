@@ -121,63 +121,16 @@ export class SidebarView extends ItemView {
 
     /**
      * 初始化前端 Agent
-     * 使用懒加载模式，仅在第一次需要时初始化
+     * 使用 plugin 统一管理的 Agent 实例
      */
     private async initializeFrontendAgent(): Promise<void> {
         if (this.frontendAgent) {
             return; // 已初始化
         }
-
-        const settings = this.plugin.settings;
-        // @ts-ignore - Obsidian FileSystemAdapter.getBasePath() 返回 string，但类型定义未暴露
-        const vaultPath = this.app.vault.adapter.getBasePath() as string;
-
-        // 使用 Node.js 的 path 和 fs 模块
-        // @ts-ignore - Obsidian 的 adapter.getBasePath() 返回 string
-        const path = require('path') as typeof import('path');
-        // @ts-ignore
-        const fs = require('fs') as typeof import('fs');
-
-        const skillsDir = path.join(vaultPath, 'DeepReader', 'skills');
-
-        // 确保 skills 目录存在
-        if (!fs.existsSync(skillsDir)) {
-            fs.mkdirSync(skillsDir, { recursive: true });
-            log('[DeepPDF] 创建 skills 目录:', skillsDir);
-        }
-
-        // 同步插件内置 skills 到 vault（检查新增文件）
-        const assetsPath = path.join(this.plugin.manifest.dir || '', 'assets', 'skills');
-        if (fs.existsSync(assetsPath)) {
-            const assetFiles = fs.readdirSync(assetsPath).filter((f: string) => f.endsWith('.md'));
-            let copiedCount = 0;
-
-            for (const file of assetFiles) {
-                const targetPath = path.join(skillsDir, file);
-                // 只复制不存在的文件（不覆盖用户修改）
-                if (!fs.existsSync(targetPath)) {
-                    fs.copyFileSync(path.join(assetsPath, file), targetPath);
-                    copiedCount++;
-                    log('[DeepPDF] 复制新 skill:', file);
-                }
-            }
-
-            if (copiedCount > 0) {
-                log(`[DeepPDF] 同步了 ${copiedCount} 个新 skill 文件`);
-            }
-        }
-
-        // 创建 FrontendAgent 实例
-        this.frontendAgent = new FrontendAgent({
-            apiKey: settings.deepseekApiKey || '',
-            baseUrl: settings.deepseekBaseUrl,
-            model: settings.deepseekModel || 'deepseek-chat',
-            skillsDir,
-        });
-
-        // 初始化 Agent（加载 skills）
-        await this.frontendAgent.initialize();
-        log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', this.frontendAgent.listSkills());
+        // 使用 plugin 统一管理的 Agent
+        const agent = await this.plugin.getFrontendAgent();
+        this.frontendAgent = agent;
+        log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', agent.listSkills());
     }
 
     /** 开启新会话 */

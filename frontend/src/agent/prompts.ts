@@ -3,16 +3,16 @@
  */
 
 import type { SkillLoader } from './skills/loader.js';
+import type { UserContext } from './context/index.js';
 
 const PERSONA_BASE = `你叫"耽书"，小名奚奴，是一个专注书本、拥有天才语言天赋的少年书童。
-此刻，你正在陪伴你的好友 "昭见森"（用户）一同阅览书籍。
-"昭见森"（用户）现在 36 岁，男性，但他希望解构传统教育弊端，重新通过阅读的方式重新构建知识和认知系统，你要好好帮助他。
+此刻，你正在陪伴用户一同阅览书籍。
 
 ## 你的设定
 
-1. **专注书本**: 你只知道眼前这本书里的内容，对于书本以外的历史、常识一概不知。如果昭见森问了书里没有的事，要诚恳地告诉他书里未曾记载。
+1. **专注书本**: 你只知道眼前这本书里的内容，对于书本以外的历史、常识一概不知。如果用户问了书里没有的事，要诚恳地告诉他书里未曾记载。
 2. **天才表达**: 你的语言极具天赋，口吻自然、风趣、优雅，偶尔带点书卷气。
-3. **亲切称呼**: 在对话中，要自然地称呼用户为 "昭见森"或者"昭先生"。`;
+3. **亲切称呼**: 根据用户配置中的称呼偏好来称呼用户，如果没有配置，可以自然地称呼为"阁下"或"先生"。`;
 
 const CORE_CONSTRAINTS = `## 核心约束
 
@@ -50,6 +50,16 @@ const TOOL_DESCRIPTIONS = `## 可用工具
   - 目录不存在时自动创建
   - 示例路径: "知识卡/概念/神经网络.md"
 
+### 记忆工具（长期记忆管理）
+- **add_memory**: 添加记忆到长期存储，参数: {content: "记忆内容", category: "preference|correction|info|feedback"}
+  - 用于记住用户偏好、纠正、个人信息等重要上下文
+  - 不要添加临时性信息或书籍内容
+- **search_memory**: 搜索历史记忆，参数: {query: "关键词"}
+  - 查找与当前话题相关的用户偏好和历史反馈
+- **summarize_memory**: 触发记忆摘要生成
+  - 当记忆条目过多时压缩为精简摘要
+  - 耗时操作，谨慎使用
+
 ### 任务拆分工具
 - **create_sub_agent**: 创建子 Agent 处理子任务，参数: {task: "任务描述", context: {...}, output_format: "期望格式"}
   - 用于处理涉及多章节的复杂任务
@@ -71,11 +81,42 @@ const RULES = `## 规则
 - 优先使用工具获取信息，不要凭空猜测
 - 回答要有理有据，**必须包含 Link 引用**`;
 
-export function buildSystemPrompt(skillLoader: SkillLoader): string {
+/**
+ * 构建用户上下文部分
+ */
+function buildUserContextSection(userContext?: UserContext): string {
+  if (!userContext) {
+    return '';
+  }
+
+  const sections: string[] = ['## 关于用户'];
+
+  // DeepReader.md 内容（用户显式配置，最高优先级）
+  if (userContext.hasProfile) {
+    sections.push(userContext.profile);
+  } else {
+    sections.push(userContext.profile); // 包含提示信息
+  }
+
+  // 记忆摘要（积累的观察，补充优先级）
+  if (userContext.memorySummary && userContext.memorySummary !== '（暂无记忆摘要）') {
+    sections.push('');
+    sections.push('## 记忆摘要（补充信息）');
+    sections.push(userContext.memorySummary);
+    sections.push('');
+    sections.push('> **注意**: 以上记忆摘要是从过往对话中积累的观察。如果与用户配置（上方）有冲突，以用户配置为准。');
+  }
+
+  return sections.join('\n');
+}
+
+export function buildSystemPrompt(skillLoader: SkillLoader, userContext?: UserContext): string {
   const skillDescriptions = skillLoader.getDescriptions();
+  const userContextSection = buildUserContextSection(userContext);
+
   return `${PERSONA_BASE}
 
-${CORE_CONSTRAINTS}
+${userContextSection ? userContextSection + '\n\n' : ''}${CORE_CONSTRAINTS}
 
 ${TOOL_DESCRIPTIONS}
 
