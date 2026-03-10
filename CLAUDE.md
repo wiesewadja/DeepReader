@@ -9,6 +9,24 @@
 
 ---
 
+## 架构说明
+
+### 前后端解耦
+
+DeepReader 采用前后端解耦架构：
+
+- **前端（Obsidian 插件）**：完全独立，可以正常加载和运行
+- **后端（FastAPI）**：可选的增强服务，提供 PDF 索引、文档搜索等功能
+- **前端 Agent**：独立使用 LLM API，后端未连接时仍可工作
+
+### 连接状态管理
+
+- 状态类型：`connected | disconnected | connecting`
+- 状态指示器：ReadingTopbar 右侧显示
+- 健康检查：每 30 秒自动检查后端状态
+
+---
+
 ## 命令
 
 ### 后端 (`/backend`)
@@ -63,3 +81,4 @@
 - **Pydantic**: `Extra inputs not permitted`。**修复**: 检查 `.env` 与 `Settings` 类匹配，或设置 `extra="ignore"`
 
 - **Obsidian**: 如果类型检查失败，确保存在 `obsidian` 类型包，或使用 `// @ts-ignore` 并注明原因， 测试部署的 vault 路径： `/Users/lizhao/Nutstore Files/readinglibrary2030`
+- 无明确指定，不要自行提交代码

@@ -14,7 +14,6 @@ import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
-import { ConfirmModal } from "../components/confirm-modal.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
@@ -56,6 +55,9 @@ export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
     };
 }
 
+/** 连接状态类型 */
+type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
+
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
 /** 任务完成后显示延迟时间（毫秒） */
@@ -85,7 +87,12 @@ export class SidebarView extends ItemView {
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
-    private isConnected: boolean = false;  // 后端连接状态
+    private connectionStatus: ConnectionStatus = 'connecting';  // 后端连接状态
+
+    /** 向后兼容：返回是否已连接 */
+    private get isConnected(): boolean {
+        return this.connectionStatus === 'connected';
+    }
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
@@ -245,10 +252,7 @@ export class SidebarView extends ItemView {
 
     /** 处理新建会话 */
     private handleNewChat() {
-        if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
-            return;
-        }
+        // 不再检查连接状态，允许用户在未连接时创建新会话
         if (!this.currentIndexId) {
             new Notice("请先选择一个索引");
             return;
@@ -256,25 +260,6 @@ export class SidebarView extends ItemView {
         this.startNewSession(this.currentIndexId);
     }
 
-
-    /** 打开图书管理入口（自动同步书籍笔记 + 打开图书管理文档） */
-    private async openBookManagement(): Promise<void> {
-        if (!this.readingPortal) {
-            new Notice("DeepPDF 服务未就绪");
-            return;
-        }
-
-        try {
-            // 先同步书籍笔记
-            new Notice("正在同步书籍笔记...");
-            await this.readingPortal.syncAllIndexes();
-            // 再打开图书管理入口
-            await this.readingPortal.openBookManagementPortal();
-        } catch (error) {
-            logError("[DeepPDF] Failed to open book management:", error);
-            new Notice("打开图书管理失败");
-        }
-    }
 
     /** 恢复历史记录到视图 */
     private restoreHistoryToView(history: any[], fromCache: boolean = false) {
@@ -448,7 +433,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打开切换书籍弹窗
+     * 打在线书库弹窗
      */
     private openLibraryModal(): void {
         new LibraryModal(this.app, {
@@ -511,9 +496,40 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 加载书籍封面
+     * @param bookName 书籍名称（不含扩展名）
+     */
+    private loadBookCover(bookName: string): void {
+        const coverPath = `DeepReader/covers/${bookName}.png`;
+        const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+
+        if (coverFile) {
+            // 使用 Obsidian 的 getResourcePath 获取可用的 URL
+            const { TFile } = require('obsidian');
+            if (coverFile instanceof TFile) {
+                const coverUrl = this.app.vault.getResourcePath(coverFile as any);
+                this.readingTopbar?.setBookCover(coverUrl);
+                log(`[DeepPDF] 加载书籍封面: ${coverPath}`);
+                return;
+            }
+        }
+
+        // 封面不存在，使用默认图标
+        this.readingTopbar?.setBookCover(null);
+        log(`[DeepPDF] 书籍封面不存在: ${coverPath}`);
+    }
+
+    /**
      * 选择索引（从弹窗中调用或自动切换）
+     * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
+        // 如果已经选中了同一个索引，跳过以避免闪烁
+        if (this.currentIndexId === indexId) {
+            log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
+            return;
+        }
+
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
@@ -531,41 +547,45 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
             this.messageList?.setCurrentPdfName(displayName);
-            this.readingTopbar?.setCurrentBook(displayName);
 
-            // === 获取 Markdown 文件映射 ===
-            try {
-                if (this.apiClient) {
-                    const indexStatus = await this.apiClient.getIndexStatus(indexId);
-                    if (indexStatus.markdown_files) {
-                        this.currentMarkdownFiles = indexStatus.markdown_files;
-                        log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
-                    }
+            // 获取作者信息：优先使用索引中的 author，其次从元数据获取
+            let author: string | undefined = index.author;
+            log(`[DeepPDF] 索引中的作者信息: index.author="${index.author}"`);
+            if (!author && this.readingPortal) {
+                const metadata = await this.readingPortal.getBookMetadata(displayName);
+                log(`[DeepPDF] 从元数据获取: metadata.author="${metadata?.author}"`);
+                if (metadata) {
+                    author = metadata.author;
                 }
-            } catch (e) {
-                logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
-                this.currentMarkdownFiles = {};
             }
+            log(`[DeepPDF] 最终使用的作者: author="${author}"`);
 
-            // === 检查书籍章节是否已下载到本地 ===
-            const chaptersExist = await this.checkBookChaptersExist(index.pdf_name);
-            if (!chaptersExist) {
-                // 章节不存在，提示用户下载
-                new ConfirmModal(
-                    this.app,
-                    '下载书籍章节',
-                    `「${displayName}」的章节尚未下载到本地。\n\n是否立即下载章节？下载后可以在离线状态下阅读和引用。`,
-                    async () => {
-                        await this.handleExportMarkdown(indexId);
-                    },
-                    { confirmLabel: '下载章节' }
-                ).open();
-                // 用户取消下载时，仍需清空消息列表并显示欢迎消息
-                this.messageList?.clear();
-                this.showWelcomeMessage();
-                return; // 用户取消下载，不继续加载书籍
-            }
+            this.readingTopbar?.setCurrentBook(displayName, author);
+
+            // 加载书籍封面
+            this.loadBookCover(displayName);
         }
+
+        // === 获取 Markdown 文件映射（移到 if 块外部，确保总是更新) ===
+        try {
+            if (this.apiClient) {
+                const indexStatus = await this.apiClient.getIndexStatus(indexId);
+                if (indexStatus.markdown_files) {
+                    this.currentMarkdownFiles = indexStatus.markdown_files;
+                    log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
+                } else {
+                    // 如果没有 markdown_files， 清空映射
+                    this.currentMarkdownFiles = {};
+                    log(`[DeepPDF] 索引 ${indexId} 没有 markdown_files 映射，已清空`);
+                }
+            }
+        } catch (e) {
+            logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+            this.currentMarkdownFiles = {};
+        }
+
+        // 注意：章节下载逻辑已移至 library-modal.ts
+        // 这里不再重复触发导出，避免出现两次 notice
 
         // 清空消息
         this.messageList?.clear();
@@ -644,7 +664,6 @@ export class SidebarView extends ItemView {
         this.readingTopbar = new ReadingTopbar({
             onOpenLibrary: () => this.openLibraryModal(),
             onNewChat: () => this.handleNewChat(),
-            onOpenBookManagement: () => this.openBookManagement(),
             onOpenSettings: () => {
                 // 打开设置并定位到 DeepPDF 插件
                 const setting = (this.app as any).setting;
@@ -680,17 +699,18 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
-        // 先检查后端连接状态
-        await this.checkConnectionAndRender(container);
+        // 直接渲染主 UI（不阻塞）
+        this.renderMainUI(container);
+
+        // 异步检查连接状态并更新指示器
+        this.checkConnectionAndRender();
     }
 
     /**
-     * 检查后端连接状态并渲染相应界面
+     * 检查后端连接状态并更新状态指示器
+     * 注意：不再渲染界面，仅更新连接状态
      */
-    private async checkConnectionAndRender(container: HTMLElement): Promise<void> {
-        // 显示加载状态
-        this.showConnectingUI(container);
-
+    private async checkConnectionAndRender(): Promise<void> {
         // 检查连接
         let connected = false;
         if (this.apiClient) {
@@ -702,47 +722,9 @@ export class SidebarView extends ItemView {
             }
         }
 
-        this.isConnected = connected;
-
-        if (connected) {
-            // 连接成功，渲染主界面
-            this.renderMainUI(container);
-        } else {
-            // 未连接，显示全屏提示
-            this.showDisconnectedUI(container);
-        }
-    }
-
-    /**
-     * 显示连接中状态
-     */
-    private showConnectingUI(container: HTMLElement): void {
-        container.empty();
-        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
-            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "🔄" });
-            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "正在连接..." });
-            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "正在检查后端服务状态" });
-        });
-    }
-
-    /**
-     * 显示未连接全屏提示
-     */
-    private showDisconnectedUI(container: HTMLElement): void {
-        container.empty();
-        container.createDiv({ cls: "deeppdf-disconnected-screen" }, (screen) => {
-            screen.createDiv({ cls: "deeppdf-disconnected-icon", text: "⚠️" });
-            screen.createDiv({ cls: "deeppdf-disconnected-title", text: "未连接到后端服务" });
-            screen.createDiv({ cls: "deeppdf-disconnected-desc", text: "请确保后端服务正在运行" });
-
-            const infoBox = screen.createDiv({ cls: "deeppdf-disconnected-info" });
-            infoBox.createEl("code", { text: "uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio" });
-
-            const retryBtn = screen.createEl("button", { cls: "deeppdf-retry-btn", text: "重新连接" });
-            retryBtn.addEventListener("click", () => {
-                this.checkConnectionAndRender(container);
-            });
-        });
+        // 更新连接状态
+        this.connectionStatus = connected ? 'connected' : 'disconnected';
+        this.readingTopbar?.setConnectionStatus(connected ? 'connected' : 'disconnected');
     }
 
     /**
@@ -986,18 +968,44 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 处理摘录选中文字
+     * 处理摘录选中文字（阅读模式中的摘录）
+     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
+     * 链接：链接到章节文件
      */
     private handleExcerptSelection(text: string): void {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
-            new Notice("No active file");
+            new Notice("没有打开的文件");
             return;
         }
 
+        // 从文件的 frontmatter 或路径中提取书籍信息
+        const cache = this.app.metadataCache.getFileCache(activeFile);
+        let bookName = cache?.frontmatter?.pdf_name || '';
+        let indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '';
+
+        // 如果没有从 frontmatter 获取到书名，从路径提取
+        if (!bookName) {
+            const pathParts = activeFile.path.split('/');
+            // 假设路径格式是 DeepReader/{书名}/章节.md 或 {书名}/章节.md
+            if (pathParts.length >= 2) {
+                if (pathParts[0] === 'DeepReader') {
+                    bookName = pathParts[1];
+                } else {
+                    bookName = pathParts[0];
+                }
+            } else {
+                bookName = activeFile.basename;
+            }
+        }
+
+        // 构建元数据
         const metadata: ExcerptMetadata = {
-            sourcePdf: activeFile.basename,
+            sourcePdf: bookName,
             createdAt: new Date().toISOString(),
+            sourceType: 'reading',
+            chapterPath: activeFile.path,
+            chapterName: activeFile.basename,
         };
 
         const modal = new ExcerptModal({
@@ -1005,7 +1013,7 @@ export class SidebarView extends ItemView {
             content: { text },
             metadata,
             onSave: async (path: string) => {
-                new Notice(`Excerpt saved to ${path}`);
+                new Notice(`摘录已保存到 ${path}`);
             },
         });
         modal.open();
@@ -1217,9 +1225,9 @@ export class SidebarView extends ItemView {
      * 切换搜索模式
      */
     private async toggleSearchMode() {
-        // 检查后端连接状态
+        // 跨书籍搜索需要后端支持
         if (!this.isConnected) {
-            new Notice("后端未连接，请先启动后端服务");
+            new Notice("跨书籍搜索需要后端服务。请启动后端以使用此功能。");
             return;
         }
 
@@ -1354,21 +1362,8 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 实时检查后端连接状态（不依赖缓存的 isConnected）
-        try {
-            const isHealthy = await this.apiClient?.healthCheck();
-            if (!isHealthy) {
-                this.isConnected = false;
-                this.indexManager?.setConnectionStatus('disconnected');
-                new Notice("后端未连接，请先连接后端服务");
-                return;
-            }
-        } catch (e) {
-            this.isConnected = false;
-            this.indexManager?.setConnectionStatus('error');
-            new Notice("后端连接失败，请检查后端服务");
-            return;
-        }
+        // 不再在发送消息前检查连接状态
+        // 前端 Agent 可以在无后端的情况下工作
 
         // 跨书籍模式不需要选择索引
         if (!this.crossBookMode && !this.currentIndexId) {
@@ -2198,7 +2193,9 @@ ${r.text}`;
     }
 
     /**
-     * 处理摘录保存
+     * 处理摘录保存（对话中的摘录）
+     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
+     * 链接：只链接到书籍，不需要章节
      */
     private handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
         const message = this.messageList?.getMessage(messageId);
@@ -2210,6 +2207,11 @@ ${r.text}`;
         if (data.pdfName) {
             metadata.sourcePdf = data.pdfName;
         }
+
+        // 设置为对话摘录类型，并清除不需要的字段
+        metadata.sourceType = 'chat';
+        delete metadata.chapterPath;
+        delete metadata.chapterName;
 
         // 打开摘录模态框
         const modal = new ExcerptModal({
@@ -2412,29 +2414,34 @@ ${r.text}`;
         if (!this.indexManager) return;
 
         // 设置为加载状态
-        this.indexManager.setConnectionStatus('loading');
-        this.isConnected = false;
+        this.indexManager.setConnectionStatus('connecting');
+        this.connectionStatus = 'disconnected';
+
+        // 更新 readingTopbar 连接状态
+        this.readingTopbar?.setConnectionStatus('disconnected');
 
         if (!this.apiClient) {
-            this.indexManager.setConnectionStatus('disconnected');
-            this.chatInput?.setDisabled(true);
+            this.indexManager?.setConnectionStatus('disconnected');
+            // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             return;
         }
 
         try {
             const isHealthy = await this.apiClient.healthCheck();
             if (isHealthy) {
-                this.indexManager.setConnectionStatus('connected');
-                this.isConnected = true;
-                this.chatInput?.setDisabled(false);
+                this.indexManager?.setConnectionStatus('connected');
+                this.connectionStatus = 'connected';
+                this.readingTopbar?.setConnectionStatus('connected');
+                // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
             } else {
-                this.indexManager.setConnectionStatus('disconnected');
-                this.chatInput?.setDisabled(true);
+                this.indexManager?.setConnectionStatus('disconnected');
+                this.readingTopbar?.setConnectionStatus('disconnected');
             }
         } catch (error) {
-            handleNetworkError(error as Error, { context: 'updateStatus' });
-            this.indexManager.setConnectionStatus('error');
-            this.chatInput?.setDisabled(true);
+            // 后端是可选的，只记录日志，不显示 Notice
+            warn('[DeepPDF] updateStatus: 后端连接失败', error);
+            this.indexManager?.setConnectionStatus('disconnected');
+            this.readingTopbar?.setConnectionStatus('disconnected');
         }
     }
 
@@ -2453,25 +2460,28 @@ ${r.text}`;
                 const healthResponse = await this.apiClient.healthCheck();
                 const isHealthy = healthResponse?.status === 'ok';
                 const wasConnected = this.isConnected;
-                this.isConnected = isHealthy;
+                this.connectionStatus = isHealthy ? 'connected' : 'disconnected';
+
+                // 更新 indexManager 和 readingTopbar 的连接状态
+                this.indexManager.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
+                this.readingTopbar?.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
 
                 if (isHealthy) {
-                    this.indexManager.setConnectionStatus('connected');
                     // 如果之前是断开的，现在恢复了，刷新索引列表
                     if (!wasConnected) {
                         log('[DeepPDF] 后端连接恢复，刷新索引列表');
                         await this.loadIndexes();
                     }
                 } else {
-                    this.indexManager.setConnectionStatus('disconnected');
                     if (wasConnected) {
                         log('[DeepPDF] 后端连接断开');
                     }
                 }
             } catch (error) {
                 logError('[DeepPDF] 健康检查失败:', error);
-                this.indexManager.setConnectionStatus('error');
-                this.isConnected = false;
+                this.indexManager?.setConnectionStatus('disconnected');
+                this.readingTopbar?.setConnectionStatus('disconnected');
+                this.connectionStatus = 'disconnected';
             }
         }, 30000); // 30 秒
     }
@@ -2514,9 +2524,9 @@ ${r.text}`;
             // 1. 获取完整节点数据（仅使用基于规则的快速格式化）
             const data = await this.apiClient.exportIndex(indexId);
 
-            // 2. 前端生成并写入文件
+            // 2. 前端生成并写入文件（传递作者信息）
             // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
-            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes);
+            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes, indexId, "DeepReader", data.author);
 
             // 关闭加载提示
             loadingNotice.hide();
@@ -2614,8 +2624,8 @@ ${r.text}`;
             // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
             await this.updateCurrentIndexIdIfNeeded();
         } catch (error) {
+            // 后端是可选的，加载索引列表失败时只记录日志
             logError('[DeepPDF] [loadIndexes] 请求失败:', error);
-            handleNetworkError(error as Error, { context: 'loadIndexes' });
             this.indexes = [];
         }
     }

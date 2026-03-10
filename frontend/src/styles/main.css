@@ -27,14 +27,13 @@
 @import url('../components/reading-topbar/reading-topbar.css');
 @import url('../components/library-modal/library-modal.css');
 @import url('../components/reading-mode/reading-mode.css');
-@import url('./disconnected-screen.css');
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {
   font-family: var(--deeppdf-font-family);
   color: var(--deeppdf-text-primary);
   line-height: 1.5;
-  padding: 0;
+  padding: 4px 12px 12px !important;
 }
 
 /* 对话界面容器 */
@@ -43,8 +42,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  /* 为顶栏圆角留出空间 */
-  padding: 0 2px;
+  /* 移除 padding，让顶栏与左边栏对齐 */
+  padding: 0;
 }
 
 /* ==================== 顶部导航区 ==================== */
@@ -1493,4 +1492,67 @@
   .deeppdf-file-item .deeppdf-btn {
     width: 100%;
   }
+}
+
+/* ==================== 连接状态指示器 ==================== */
+.deeppdf-connection-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: help;
+    transition: all 0.2s ease;
+}
+
+.deeppdf-connection-status--connected {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4caf50;
+}
+
+.deeppdf-connection-status--disconnected {
+    background: rgba(244, 67, 54, 0.15);
+    color: #f44336;
+}
+
+.deeppdf-connection-status--connecting {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ff9800;
+}
+
+.deeppdf-connection-status__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.deeppdf-connection-status--connected .deeppdf-connection-status__dot {
+    background: #4caf50;
+}
+
+.deeppdf-connection-status--disconnected .deeppdf-connection-status__dot {
+    background: #f44336;
+}
+
+.deeppdf-connection-status--connecting .deeppdf-connection-status__dot {
+    background: #ff9800;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ==================== 禁用按钮样式 ==================== */
+.deeppdf-btn--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.deeppdf-btn--disabled:hover {
+    opacity: 0.5;
 }

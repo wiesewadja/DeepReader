@@ -35,6 +35,7 @@ def _list_indexes_sync(storage_dir: str) -> Dict[str, Any]:
                         {
                             "id": metadata.get("id", ""),
                             "pdf_name": metadata.get("pdf_name", ""),
+                            "author": metadata.get("author"),  # 作者（EPUB 特有）
                             "node_count": metadata.get("node_count", 0),
                             "created_at": metadata.get("created_at", ""),
                             "markdown_files": metadata.get("markdown_files", {}),

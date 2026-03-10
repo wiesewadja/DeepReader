@@ -92,12 +92,36 @@ export class ExcerptModal extends Modal {
       cls: 'deeppdf-excerpt-meta-tags'
     });
 
-    // 来源标签
+    // 来源类型标签
+    const typeTag = metaEl.createEl('span', {
+      cls: 'deeppdf-excerpt-tag deeppdf-excerpt-tag-type'
+    });
+    if (this.metadata.sourceType === 'reading') {
+      typeTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📖' });
+      typeTag.createEl('span', { text: '章节摘录' });
+    } else if (this.metadata.sourceType === 'chat') {
+      typeTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '💬' });
+      typeTag.createEl('span', { text: '对话摘录' });
+    } else {
+      typeTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📝' });
+      typeTag.createEl('span', { text: '摘录' });
+    }
+
+    // 书籍标签
     const sourceTag = metaEl.createEl('span', {
       cls: 'deeppdf-excerpt-tag deeppdf-excerpt-tag-source'
     });
-    sourceTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📖' });
+    sourceTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📚' });
     sourceTag.createEl('span', { text: this.metadata.sourcePdf });
+
+    // 章节标签（如果是阅读摘录）
+    if (this.metadata.sourceType === 'reading' && this.metadata.chapterName) {
+      const chapterTag = metaEl.createEl('span', {
+        cls: 'deeppdf-excerpt-tag deeppdf-excerpt-tag-chapter'
+      });
+      chapterTag.createEl('span', { cls: 'deeppdf-excerpt-tag-icon', text: '📑' });
+      chapterTag.createEl('span', { text: this.metadata.chapterName });
+    }
 
     // 页码标签（如果有）
     if (this.metadata.page) {

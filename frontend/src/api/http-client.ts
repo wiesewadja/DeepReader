@@ -133,6 +133,7 @@ export interface IndexPDFResult {
 export interface IndexListItem {
   id: string;
   pdf_name: string;
+  author?: string;  // 作者（EPUB 特有）
   node_count: number;
   created_at: string;
   status?: string;
@@ -504,6 +505,9 @@ export interface ExportIndexResponse {
   status: string;
   index_id: string;
   pdf_name: string;
+  author?: string;  // 作者（EPUB 特有）
+  total_pages: number;
+  created_at: string;
   nodes: ExportNodeData[];
 }
 

@@ -143,10 +143,14 @@ async def export_index_data(
         created_at_raw = metadata.get("created_at", "")
         created_at = format_created_at(created_at_raw)
 
+        # 获取作者信息（EPUB 特有）
+        author = metadata.get("author")
+
         return {
             "status": "success",
             "index_id": index_id,
             "pdf_name": metadata.get("pdf_name", ""),
+            "author": author,
             "total_pages": total_pages,
             "created_at": created_at,
             "nodes": nodes,
