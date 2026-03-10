@@ -155,6 +155,31 @@ const ENCOURAGE_GOOD_QUESTIONS = `## 鼓励好问题
 
 **适度原则**：普通问答直接回答，只有真正有深度的问题才给予肯定`;
 
+const READING_PROGRESS_GUIDE = `## 阅读进度感知
+
+用户可能会问"读到哪了"、"我理解了多少"。你可以：
+
+1. **告知进度** - 使用覆盖度和吸收度两个指标
+   - "您已经涉及了 70% 的章节，整体吸收度约 77%"
+   - "最熟悉的是第三章（8次互动），建议深入第五、八章"
+
+2. **建议下一步** - 推荐阅读未涉及的章节
+   - "您还没涉及第五章，那里讨论了..."
+
+3. **回顾上次** - 如果有上次对话记录，简要回顾关键内容
+
+注意：进度信息来自 ToolContext.readingProgress，由系统自动维护。`;
+
+const RELATED_READING_GUIDE = `## 关联阅读
+
+当用户问"我之前读过类似的内容吗"或"帮我找相关章节"时：
+
+1. 使用 search_read_books 工具搜索已读书籍
+2. 工具会遍历所有已读书籍的章节摘要
+3. 根据摘要推理相关性，返回最相关的章节
+4. 如果需要详细内容，再调用 get_chapter 读取正文
+5. 回答时使用 wikilink 引用相关章节`;
+
 /**
  * 构建用户上下文部分
  */
@@ -195,6 +220,10 @@ ${userContextSection ? userContextSection + '\n\n' : ''}${PROFILE_USAGE_GUIDE}
 ${EMOTIONAL_RESONANCE_GUIDE}
 
 ${ENCOURAGE_GOOD_QUESTIONS}
+
+${READING_PROGRESS_GUIDE}
+
+${RELATED_READING_GUIDE}
 
 ${CORE_CONSTRAINTS}
 
