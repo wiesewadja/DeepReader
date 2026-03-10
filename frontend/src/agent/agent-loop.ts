@@ -144,6 +144,22 @@ export async function runAgentLoop(
 
       const result = await executeTool(toolRegistry, tc.name, args, context);
 
+      // 检查是否返回了隐藏消息（用于用户画像更新等）
+      try {
+        const parsed = JSON.parse(result);
+        if (parsed.success && parsed.hiddenMessage) {
+          // 注入隐藏消息到对话历史（不显示但发送给 LLM）
+          workingMessages.push({
+            role: parsed.hiddenMessage.role,
+            content: parsed.hiddenMessage.content,
+            hidden: true,
+          });
+          log('[AgentLoop] 注入隐藏消息:', parsed.hiddenMessage.content.substring(0, 50));
+        }
+      } catch {
+        // 不是 JSON 格式，正常处理
+      }
+
       // 添加 tool result 消息
       workingMessages.push({
         role: 'tool',
