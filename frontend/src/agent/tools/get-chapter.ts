@@ -2,6 +2,7 @@
  * get_chapter Tool - 获取章节完整内容
  */
 
+import { TFile } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
@@ -37,6 +38,26 @@ export const getChapterTool: ToolExecutor = {
 
     try {
       log('[get_chapter] 获取章节:', { nodeId, indexId: context.indexId });
+
+      // 优先从本地读取
+      if (context.markdownFiles && context.markdownFiles[nodeId] && context.app) {
+        const localPath = context.markdownFiles[nodeId];
+        log('[get_chapter] 尝试从本地读取:', localPath);
+
+        try {
+          const file = context.app.vault.getAbstractFileByPath(localPath);
+          if (file instanceof TFile) {
+            const content = await context.app.vault.read(file);
+            log('[get_chapter] 本地读取成功:', localPath);
+            return content;
+          }
+        } catch (localError) {
+          log('[get_chapter] 本地读取失败，fallback 到后端:', localError);
+        }
+      }
+
+      // Fallback: 从后端获取
+      log('[get_chapter] 从后端获取章节');
 
       // 导出索引数据并查找指定节点
       const exportData = await deeppdfClient.exportIndex(context.indexId);

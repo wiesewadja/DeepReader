@@ -8,6 +8,8 @@ import { searchDocTool } from './search-doc.js';
 import { getTocTool } from './get-toc.js';
 import { getChapterTool } from './get-chapter.js';
 import { createSkillTool } from './skill.js';
+import { writeNoteTool } from './write-note.js';
+import { createSubAgentTool } from './create-sub-agent.js';
 import { SkillLoader } from '../skills/loader.js';
 import { log } from '../../utils/logger.js';
 
@@ -19,6 +21,8 @@ export { searchDocTool } from './search-doc.js';
 export { getTocTool } from './get-toc.js';
 export { getChapterTool } from './get-chapter.js';
 export { createSkillTool } from './skill.js';
+export { writeNoteTool } from './write-note.js';
+export { createSubAgentTool } from './create-sub-agent.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -37,6 +41,12 @@ export function createToolRegistry(
   // 注册 Skill 工具（需要依赖注入）
   const skillTool = createSkillTool(skillLoader);
   registry.set('Skill', skillTool);
+
+  // 注册写入工具
+  registry.set('write_note', writeNoteTool);
+
+  // 注册子 Agent 工具
+  registry.set('create_sub_agent', createSubAgentTool);
 
   log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 

@@ -39,10 +39,30 @@ const CORE_CONSTRAINTS = `## 核心约束
 
 const TOOL_DESCRIPTIONS = `## 可用工具
 
-- **search_doc**: 搜索文档内容（支持 PDF、EPUB 等），参数: {query: "搜索词", top_k: 数量}。返回结果包含 Link 字段，直接用作引用。
+### 读取工具（从书籍获取信息）
+- **search_doc**: 语义搜索文档内容，参数: {query: "搜索词", top_k: 数量}。返回结果包含 Link 字段，直接用作引用。
 - **get_toc**: 获取书籍目录结构
-- **get_chapter**: 获取指定章节全文，参数: {node_id: "章节ID"}
+- **get_chapter**: 获取指定章节全文，参数: {node_id: "章节ID"}。优先从本地读取，更快。
+
+### 写入工具（保存到 Obsidian）
+- **write_note**: 保存笔记到 Obsidian vault，参数: {path: "相对路径", content: "内容", mode: "create|overwrite|append"}
+  - 只能创建或修改带有 aicreate frontmatter 的文件
+  - 目录不存在时自动创建
+  - 示例路径: "知识卡/概念/神经网络.md"
+
+### 任务拆分工具
+- **create_sub_agent**: 创建子 Agent 处理子任务，参数: {task: "任务描述", context: {...}, output_format: "期望格式"}
+  - 用于处理涉及多章节的复杂任务
+  - 子 Agent 串行执行，不可并行
+
+### 技能加载
 - **Skill**: 加载专业技能知识，参数: {skill: "技能名"}`;
+
+const AI_DOCUMENT_RULES = `## AI 文档操作规则
+
+- 使用 write_note 创建的文档会自动添加 aicreate: true 标记
+- AI 只能修改带有 aicreate 标记的文档
+- 用户手动创建的文档不会被 AI 覆盖`;
 
 const RULES = `## 规则
 
@@ -58,6 +78,8 @@ export function buildSystemPrompt(skillLoader: SkillLoader): string {
 ${CORE_CONSTRAINTS}
 
 ${TOOL_DESCRIPTIONS}
+
+${AI_DOCUMENT_RULES}
 
 ## 可用技能 (Skill 工具)
 

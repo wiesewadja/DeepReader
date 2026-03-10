@@ -23,6 +23,16 @@ export interface ToolCall {
 
 // ==================== 工具类型 ====================
 
+// 支持嵌套的参数属性类型
+export interface ToolParameterProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: ToolParameterProperty;
+  properties?: Record<string, ToolParameterProperty>;
+  required?: string[];
+}
+
 export interface ToolDefinition {
   type: 'function';
   function: {
@@ -30,11 +40,7 @@ export interface ToolDefinition {
     description: string;
     parameters: {
       type: 'object';
-      properties: Record<string, {
-        type: string;
-        description?: string;
-        enum?: string[];
-      }>;
+      properties: Record<string, ToolParameterProperty>;
       required?: string[];
     };
   };

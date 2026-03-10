@@ -1709,6 +1709,7 @@ ${r.text}`;
                 pdfName: this.currentPdfName || '未知文档',
                 markdownFiles: this.currentMarkdownFiles,
                 useLLMTreeSearch: this.useLLMTreeSearch,
+                app: this.app,
             };
 
             // 构建用户消息（包含引用内容）
