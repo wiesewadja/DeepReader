@@ -144,15 +144,26 @@ export class SidebarView extends ItemView {
         if (!fs.existsSync(skillsDir)) {
             fs.mkdirSync(skillsDir, { recursive: true });
             log('[DeepPDF] 创建 skills 目录:', skillsDir);
+        }
 
-            // 从插件资源目录复制默认 skills
-            const assetsPath = path.join(this.plugin.manifest.dir || '', 'assets', 'skills');
-            if (fs.existsSync(assetsPath)) {
-                const files = fs.readdirSync(assetsPath).filter((f: string) => f.endsWith('.md'));
-                for (const file of files) {
-                    fs.copyFileSync(path.join(assetsPath, file), path.join(skillsDir, file));
+        // 同步插件内置 skills 到 vault（检查新增文件）
+        const assetsPath = path.join(this.plugin.manifest.dir || '', 'assets', 'skills');
+        if (fs.existsSync(assetsPath)) {
+            const assetFiles = fs.readdirSync(assetsPath).filter((f: string) => f.endsWith('.md'));
+            let copiedCount = 0;
+
+            for (const file of assetFiles) {
+                const targetPath = path.join(skillsDir, file);
+                // 只复制不存在的文件（不覆盖用户修改）
+                if (!fs.existsSync(targetPath)) {
+                    fs.copyFileSync(path.join(assetsPath, file), targetPath);
+                    copiedCount++;
+                    log('[DeepPDF] 复制新 skill:', file);
                 }
-                log(`[DeepPDF] 复制了 ${files.length} 个默认 skill 文件`);
+            }
+
+            if (copiedCount > 0) {
+                log(`[DeepPDF] 同步了 ${copiedCount} 个新 skill 文件`);
             }
         }
 
