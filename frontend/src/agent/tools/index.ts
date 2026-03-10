@@ -12,6 +12,7 @@ import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
+import { updateFamiliarityTool } from './familiarity.js';
 import { SkillLoader } from '../skills/loader.js';
 import { log } from '../../utils/logger.js';
 
@@ -27,6 +28,7 @@ export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 export { updateProfileTool } from './profile.js';
+export { updateFamiliarityTool } from './familiarity.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -59,6 +61,9 @@ export function createToolRegistry(
 
   // 注册用户画像工具
   registry.set('update_profile', updateProfileTool);
+
+  // 注册熟悉度工具
+  registry.set('update_familiarity', updateFamiliarityTool);
 
   log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 
