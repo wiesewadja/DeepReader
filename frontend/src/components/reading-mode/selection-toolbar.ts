@@ -4,6 +4,7 @@
  */
 
 import { App, Notice } from 'obsidian';
+import { uiLog } from '../../utils/logger.js';
 
 // 极简图标（与 AI 回复气泡图标一致）
 const Icons = {
@@ -212,7 +213,7 @@ export class SelectionToolbar {
                 this.options.onSaveHighlight(text, color);
             }
         } catch (err) {
-            console.error('[DeepPDF] Failed to highlight text:', err);
+            uiLog.error('[DeepPDF] Failed to highlight text:', err);
             new Notice('高亮失败');
         }
     }
@@ -269,7 +270,7 @@ export class SelectionToolbar {
                 this.options.onRemoveHighlight(text);
             }
         } catch (err) {
-            console.error('[DeepPDF] Failed to remove highlight:', err);
+            uiLog.error('[DeepPDF] Failed to remove highlight:', err);
         }
 
         this.hide();

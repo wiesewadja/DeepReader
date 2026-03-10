@@ -1,10 +1,13 @@
 import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView, TFile } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
-import { setLogEnabled, log, warn, error } from "./utils/logger.js";
+import { setLogEnabled, serviceLog, warn, error } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
+
+// 使用 service 模块日志器
+const log = serviceLog;
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -224,7 +227,7 @@ export default class DeepPDFPlugin extends Plugin {
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
         this.readingModeService.start();
-        console.log('[DeepPDF] Reading mode service started');
+        serviceLog('[DeepPDF] Reading mode service started');
     }
 
     /**

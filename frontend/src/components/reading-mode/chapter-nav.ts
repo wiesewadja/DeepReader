@@ -4,6 +4,7 @@
  */
 
 import { App, TFile } from 'obsidian';
+import { uiLog } from '../../utils/logger.js';
 
 const Icons = {
     prev: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>`,
@@ -104,18 +105,18 @@ export class ChapterNav {
      * 更新导航状态并插入到阅读视图中
      */
     update(): void {
-        console.log('[DeepPDF] ChapterNav.update() called');
+        uiLog('[DeepPDF] ChapterNav.update() called');
 
         if (!this.navEl) {
             this.createNavElement();
-            console.log('[DeepPDF] ChapterNav: created nav element');
+            uiLog('[DeepPDF] ChapterNav: created nav element');
         }
 
         const nav = this.options.getNavigation();
-        console.log('[DeepPDF] ChapterNav: navigation data:', nav);
+        uiLog('[DeepPDF] ChapterNav: navigation data:', nav);
 
         if (!nav) {
-            console.log('[DeepPDF] ChapterNav: no navigation data, hiding');
+            uiLog('[DeepPDF] ChapterNav: no navigation data, hiding');
             this.hide();
             return;
         }
@@ -145,7 +146,7 @@ export class ChapterNav {
     private insertIntoPreview(): void {
         if (!this.navEl) return;
 
-        console.log('[DeepPDF] ChapterNav: trying to insert into preview');
+        uiLog('[DeepPDF] ChapterNav: trying to insert into preview');
 
         // 尝试多种选择器，找到阅读视图的内容容器
         const selectors = [
@@ -159,13 +160,13 @@ export class ChapterNav {
         for (const selector of selectors) {
             container = document.querySelector(selector) as HTMLElement;
             if (container) {
-                console.log('[DeepPDF] ChapterNav: found container with selector:', selector);
+                uiLog('[DeepPDF] ChapterNav: found container with selector:', selector);
                 break;
             }
         }
 
         if (!container) {
-            console.warn('[DeepPDF] Chapter nav: container not found');
+            uiLog.warn('[DeepPDF] Chapter nav: container not found');
             return;
         }
 
@@ -178,7 +179,7 @@ export class ChapterNav {
         // 如果当前容器不包含导航栏，插入
         if (!container.contains(this.navEl)) {
             container.appendChild(this.navEl);
-            console.log('[DeepPDF] ChapterNav: inserted into container');
+            uiLog('[DeepPDF] ChapterNav: inserted into container');
         }
     }
 

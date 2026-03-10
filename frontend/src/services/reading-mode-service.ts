@@ -4,7 +4,7 @@
  */
 
 import { App, TFile, EventRef, MarkdownView } from 'obsidian';
-import { serviceLog as log } from '../utils/logger.js';
+import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
 
@@ -55,7 +55,7 @@ export class ReadingModeService {
      */
     private initSelectionToolbar(): void {
         if (!this.callbacks) {
-            log('[ReadingMode] No callbacks set, skipping toolbar init');
+            serviceLog('[ReadingMode] No callbacks set, skipping toolbar init');
             return;
         }
 
@@ -67,7 +67,7 @@ export class ReadingModeService {
             onRemoveHighlight: this.callbacks.onRemoveHighlight,
         });
         this.selectionToolbar.init();
-        log('[ReadingMode] Selection toolbar initialized');
+        serviceLog('[ReadingMode] Selection toolbar initialized');
     }
 
     /**
@@ -85,7 +85,7 @@ export class ReadingModeService {
             return false;
         }
 
-        log('[ReadingMode] Chapter file detected:', file.path);
+        serviceLog('[ReadingMode] Chapter file detected:', file.path);
         return true;
     }
 
@@ -98,7 +98,7 @@ export class ReadingModeService {
             return; // 同一个文件，无需重新激活
         }
 
-        console.log('[DeepPDF] ReadingMode activating for:', file.path);
+        serviceLog('[DeepPDF] ReadingMode activating for:', file.path);
 
         this.currentFile = file;
         this.isActive = true;
@@ -111,14 +111,14 @@ export class ReadingModeService {
 
         // 延迟更新章节导航，等待视图渲染完成
         setTimeout(() => {
-            console.log('[DeepPDF] ReadingMode: calling chapterNav.update()');
+            serviceLog('[DeepPDF] ReadingMode: calling chapterNav.update()');
             this.chapterNav?.update();
         }, 100);
 
         // 通知书籍检测回调
         this.notifyBookDetected(file);
 
-        log('[ReadingMode] Activated for:', file.path);
+        serviceLog('[ReadingMode] Activated for:', file.path);
     }
 
     /**
@@ -142,7 +142,7 @@ export class ReadingModeService {
 
         // 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
         if (bookName) {
-            log('[ReadingMode] Book detected:', bookName, 'indexId:', indexId || 'will search by name');
+            serviceLog('[ReadingMode] Book detected:', bookName, 'indexId:', indexId || 'will search by name');
             this.callbacks.onBookDetected(indexId || '', bookName);
         }
     }
@@ -154,7 +154,7 @@ export class ReadingModeService {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view && view.getMode() !== 'preview') {
             view.setState({ ...view.getState(), mode: 'preview' }, { history: false });
-            log('[ReadingMode] Switched to reading view');
+            serviceLog('[ReadingMode] Switched to reading view');
         }
     }
 
@@ -168,14 +168,14 @@ export class ReadingModeService {
         this.chapterNav?.hide();
         this.isActive = false;
         this.currentFile = null;
-        log('[ReadingMode] Deactivated');
+        serviceLog('[ReadingMode] Deactivated');
     }
 
     /**
      * 启动服务（监听文件打开事件）
      */
     start(): void {
-        console.log('[DeepPDF] ReadingMode service starting...');
+        serviceLog('[DeepPDF] ReadingMode service starting...');
 
         // 初始化悬浮工具栏
         if (this.callbacks) {
@@ -186,7 +186,7 @@ export class ReadingModeService {
         this.initChapterNav();
 
         this.fileOpenHandler = this.app.workspace.on('file-open', (file) => {
-            console.log('[DeepPDF] file-open event:', file?.path);
+            serviceLog('[DeepPDF] file-open event:', file?.path);
             if (file && this.isChapterFile(file)) {
                 this.activate(file);
             } else {
@@ -212,7 +212,7 @@ export class ReadingModeService {
             getNavigation: () => this.getChapterNavigation(),
         });
         this.chapterNav.init();
-        log('[ReadingMode] Chapter navigation initialized');
+        serviceLog('[ReadingMode] Chapter navigation initialized');
     }
 
     /**
