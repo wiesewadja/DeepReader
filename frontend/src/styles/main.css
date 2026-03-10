@@ -33,7 +33,7 @@
   font-family: var(--deeppdf-font-family);
   color: var(--deeppdf-text-primary);
   line-height: 1.5;
-  padding: 0;
+  padding: 4px 12px 12px !important;
 }
 
 /* 对话界面容器 */

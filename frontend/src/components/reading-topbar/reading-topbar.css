@@ -3,12 +3,14 @@
  * 极简风格：左侧书籍封面+书名，右侧操作按钮
  */
 
-/* 顶栏容器 */
+/* 顶栏容器 - 与左侧边栏对齐 */
 .deeppdf-reading-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
+    padding: 8px 2px 8px 0;
+    margin: -12px -12px 0 -12px;
+    padding: 8px 14px 8px 12px;
     background: transparent;
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
@@ -213,7 +215,8 @@
 /* 响应式 */
 @media (max-width: 600px) {
     .deeppdf-reading-topbar {
-        padding: 8px 10px;
+        margin: -10px -10px 0 -10px;
+        padding: 6px 10px 6px 8px;
     }
 
     .deeppdf-book-title {

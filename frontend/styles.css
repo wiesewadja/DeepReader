@@ -937,23 +937,29 @@
 .deeppdf-message-action-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 5px 10px;
-	font-size: 12px;
+	gap: 3px;
+	padding: 3px 7px;
+	font-size: 11px;
 	font-family: inherit;
 	font-weight: 500;
-	background: transparent;
+	background: rgba(var(--text-muted-rgb, 128, 128, 128), 0.08);
 	color: var(--text-muted);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
+	border: none;
+	border-radius: 4px;
 	cursor: pointer;
 	transition: all 0.15s ease;
+	opacity: 0.7;
 }
 
 .deeppdf-message-action-btn:hover {
-	background: var(--background-modifier-hover);
+	background: rgba(var(--interactive-accent-rgb), 0.15);
 	color: var(--interactive-accent);
-	border-color: var(--interactive-accent);
+	opacity: 1;
+}
+
+.deeppdf-message-action-btn svg {
+	width: 12px;
+	height: 12px;
 }
 
 .deeppdf-message-action-btn:active {
@@ -3996,12 +4002,14 @@
  * 极简风格：左侧书籍封面+书名，右侧操作按钮
  */
 
-/* 顶栏容器 */
+/* 顶栏容器 - 与左侧边栏对齐 */
 .deeppdf-reading-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
+    padding: 8px 2px 8px 0;
+    margin: -12px -12px 0 -12px;
+    padding: 8px 14px 8px 12px;
     background: transparent;
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
@@ -4206,7 +4214,8 @@
 /* 响应式 */
 @media (max-width: 600px) {
     .deeppdf-reading-topbar {
-        padding: 8px 10px;
+        margin: -10px -10px 0 -10px;
+        padding: 6px 10px 6px 8px;
     }
 
     .deeppdf-book-title {
@@ -5082,7 +5091,7 @@
   font-family: var(--deeppdf-font-family);
   color: var(--deeppdf-text-primary);
   line-height: 1.5;
-  padding: 0;
+  padding: 4px 12px 12px !important;
 }
 
 /* 对话界面容器 */
