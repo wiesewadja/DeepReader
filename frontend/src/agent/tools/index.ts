@@ -11,6 +11,7 @@ import { createSkillTool } from './skill.js';
 import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
+import { updateProfileTool } from './profile.js';
 import { SkillLoader } from '../skills/loader.js';
 import { log } from '../../utils/logger.js';
 
@@ -25,6 +26,7 @@ export { createSkillTool } from './skill.js';
 export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
+export { updateProfileTool } from './profile.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -54,6 +56,9 @@ export function createToolRegistry(
   registry.set('add_memory', addMemoryTool);
   registry.set('search_memory', searchMemoryTool);
   registry.set('summarize_memory', summarizeMemoryTool);
+
+  // 注册用户画像工具
+  registry.set('update_profile', updateProfileTool);
 
   log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 
