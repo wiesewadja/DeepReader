@@ -1,0 +1,98 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Data (will be mounted as volume)
+data/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Environment files (except example)
+.env
+.env.local
+.env.*.local
+
+# Results and temporary files
+results/
+temp/
+tmp/
+
+# Cache
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+
+# Model cache (large files)
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+models/
+model_cache/
+.huggingface/
+.cache/
+
+# Data and uploads
+data/
+uploads/
+*.pdf
+*.epub
+
+# Test files
+tests/
+test/
+*_test.py
+*_tests.py
+
+# Node (if any)
+node_modules/
+npm-debug.log*
