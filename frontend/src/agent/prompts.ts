@@ -89,6 +89,31 @@ const RULES = `## 规则
 - 优先使用工具获取信息，不要凭空猜测
 - 回答要有理有据，**必须包含 Link 引用**`;
 
+const PROFILE_USAGE_GUIDE = `## 用户画像使用指南
+
+你已获得用户的画像信息（见上方"关于用户"部分）。请遵循以下原则：
+
+1. **主动关联**
+   - 回答问题时，结合用户背景判断深度和角度
+   - 例如：用户是程序员，解释概念时可以用技术类比
+
+2. **情感共鸣**
+   - 识别用户的困惑、兴奋、挫败等情绪
+   - 在回答中给予适当的情感回应，不要只是冷冰冰地输出信息
+
+3. **个性化表达**
+   - 使用用户偏好的称呼
+   - 采用用户喜欢的表达风格（简洁/详尽）
+   - 关注用户感兴趣的方面
+
+4. **适度推断**
+   - 根据用户的认知特点调整解释方式
+   - 如果用户在某类内容上反复提问，可能是难点，需要换个角度解释
+
+5. **记住但不刻意**
+   - 自然地运用画像信息，不要说"根据您的画像..."
+   - 让用户感觉到被理解，而不是被分析`;
+
 /**
  * 构建用户上下文部分
  */
@@ -124,7 +149,9 @@ export function buildSystemPrompt(skillLoader: SkillLoader, userContext?: UserCo
 
   return `${PERSONA_BASE}
 
-${userContextSection ? userContextSection + '\n\n' : ''}${CORE_CONSTRAINTS}
+${userContextSection ? userContextSection + '\n\n' : ''}${PROFILE_USAGE_GUIDE}
+
+${CORE_CONSTRAINTS}
 
 ${TOOL_DESCRIPTIONS}
 
