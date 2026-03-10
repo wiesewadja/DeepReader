@@ -13,6 +13,7 @@ import { createSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
 import { updateFamiliarityTool } from './familiarity.js';
+import { searchReadBooksTool } from './search-read-books.js';
 import { SkillLoader } from '../skills/loader.js';
 import { log } from '../../utils/logger.js';
 
@@ -29,6 +30,7 @@ export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, summarizeMemoryTool } from './memory.js';
 export { updateProfileTool } from './profile.js';
 export { updateFamiliarityTool } from './familiarity.js';
+export { searchReadBooksTool } from './search-read-books.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -64,6 +66,9 @@ export function createToolRegistry(
 
   // 注册熟悉度工具
   registry.set('update_familiarity', updateFamiliarityTool);
+
+  // 注册关联阅读工具
+  registry.set('search_read_books', searchReadBooksTool);
 
   log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 
