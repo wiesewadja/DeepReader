@@ -15,7 +15,7 @@ import { updateProfileTool } from './profile.js';
 import { updateFamiliarityTool } from './familiarity.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { SkillLoader } from '../skills/loader.js';
-import { log } from '../../utils/logger.js';
+import { toolsLogger } from '../../utils/logger.js';
 
 // 导出类型
 export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
@@ -70,7 +70,7 @@ export function createToolRegistry(
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);
 
-  log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
+  toolsLogger.log('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 
   return registry;
 }
@@ -104,7 +104,7 @@ export async function executeTool(
     return `Error: Unknown tool "${name}". Available tools: ${availableTools}`;
   }
 
-  log('[executeTool] 执行工具:', name, '参数:', args);
+  toolsLogger.log('[executeTool] 执行工具:', name, '参数:', args);
 
   try {
     // 使用 Promise.race 实现超时保护
@@ -114,11 +114,11 @@ export async function executeTool(
         setTimeout(() => reject(new Error(`Tool execution timeout after ${timeout}ms`)), timeout)
       ),
     ]);
-    log('[executeTool] 工具执行成功:', name, '结果长度:', result.length);
+    toolsLogger.log('[executeTool] 成功:', name, '结果长度:', result.length);
     return result;
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e);
-    log('[executeTool] 工具执行失败:', name, errorMsg);
+    toolsLogger.error('[executeTool] 失败:', name, errorMsg);
     return `Error executing tool ${name}: ${errorMsg}`;
   }
 }

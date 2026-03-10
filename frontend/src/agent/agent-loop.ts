@@ -11,7 +11,7 @@ import type { ChatMessage, ToolDefinition } from './types';
 import { LLMClient } from './llm-client';
 import type { ToolRegistry, ToolContext } from './tools/types';
 import { executeTool } from './tools/index';
-import { log } from '../utils/logger';
+import { agentLogger } from '../utils/logger';
 
 export interface AgentLoopOptions {
   maxIterations?: number; // default 10
@@ -55,20 +55,20 @@ export async function runAgentLoop(
   while (iterations < maxIterations) {
     // 检查是否被取消
     if (options.abortSignal?.aborted) {
-      log('[AgentLoop] Aborted by signal');
+      agentLogger.log('[AgentLoop] Aborted by signal');
       break;
     }
 
     // 如果之前发生了错误，终止循环
     if (hadError) {
-      log('[AgentLoop] Error occurred, terminating loop');
+      agentLogger.log('[AgentLoop] Error occurred, terminating loop');
       break;
     }
 
     iterations++;
-    log(`[AgentLoop] Iteration ${iterations}/${maxIterations}`);
-    log(`[AgentLoop] 当前消息数: ${workingMessages.length}`);
-    log(`[AgentLoop] 可用工具数: ${tools.length}`);
+    agentLogger.log(`[AgentLoop] Iteration ${iterations}/${maxIterations}`);
+    agentLogger.log(`[AgentLoop] 当前消息数: ${workingMessages.length}`);
+    agentLogger.log(`[AgentLoop] 可用工具数: ${tools.length}`);
 
     let accumulatedContent = '';
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
@@ -107,13 +107,12 @@ export async function runAgentLoop(
 
     // 如果没有 tool_calls，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
-      log(`[AgentLoop] No more tool calls, finishing. finishReason=${finishReason}, toolCalls.length=${toolCalls.length}`);
-      log(`[AgentLoop] accumulatedContent 长度: ${accumulatedContent.length}`);
+      agentLogger.log(`[AgentLoop] 完成. finishReason=${finishReason}, 内容长度=${accumulatedContent.length}`);
       options.onComplete();
       break;
     }
 
-    log(`[AgentLoop] 收到 ${toolCalls.length} 个工具调用:`, toolCalls.map(tc => tc.name).join(', '));
+    agentLogger.log(`[AgentLoop] 收到 ${toolCalls.length} 个工具调用:`, toolCalls.map(tc => tc.name).join(', '));
 
     // 构建 assistant 消息（包含 tool_calls）
     const assistantMessage: ChatMessage = {
@@ -132,7 +131,7 @@ export async function runAgentLoop(
 
     // 依次执行每个 tool call
     for (const tc of toolCalls) {
-      log(`[AgentLoop] Executing tool: ${tc.name}`);
+      agentLogger.log(`[AgentLoop] Executing tool: ${tc.name}`);
       options.onProgress(`正在执行: ${tc.name}...`);
 
       let args: Record<string, unknown>;
@@ -154,7 +153,7 @@ export async function runAgentLoop(
             content: parsed.hiddenMessage.content,
             hidden: true,
           });
-          log('[AgentLoop] 注入隐藏消息:', parsed.hiddenMessage.content.substring(0, 50));
+          agentLogger.log('[AgentLoop] 注入隐藏消息:', parsed.hiddenMessage.content.substring(0, 50));
         }
       } catch {
         // 不是 JSON 格式，正常处理
@@ -170,7 +169,7 @@ export async function runAgentLoop(
   }
 
   if (iterations >= maxIterations) {
-    log('[AgentLoop] Reached max iterations');
+    agentLogger.warn('[AgentLoop] Reached max iterations');
     options.onProgress('达到最大轮数，正在总结...');
   }
 
