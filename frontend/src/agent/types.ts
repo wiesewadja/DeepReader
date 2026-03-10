@@ -10,6 +10,8 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   name?: string;
+  /** 标记是否对用户隐藏（用于画像更新消息注入，不显示在界面但发送给 LLM） */
+  hidden?: boolean;
 }
 
 export interface ToolCall {
