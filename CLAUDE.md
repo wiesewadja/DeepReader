@@ -80,5 +80,5 @@ DeepReader 采用前后端解耦架构：
 
 - **Pydantic**: `Extra inputs not permitted`。**修复**: 检查 `.env` 与 `Settings` 类匹配，或设置 `extra="ignore"`
 
-- **Obsidian**: 如果类型检查失败，确保存在 `obsidian` 类型包，或使用 `// @ts-ignore` 并注明原因， 测试部署的 vault 路径： `/Users/lizhao/Nutstore Files/readinglibrary2030`
+- **Obsidian**: 如果类型检查失败，确保存在 `obsidian` 类型包，或使用 `// @ts-ignore` 并注明原因， 测试部署的 vault 路径： `/Users/lizhao/workspace/deepreadertest`
 - 无明确指定，不要自行提交代码
