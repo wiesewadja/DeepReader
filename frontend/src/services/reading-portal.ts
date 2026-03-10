@@ -234,11 +234,15 @@ aicreate: true
 status: unread
 progress: 0
 total_pages: ${totalPages}
+total_chapters: 0
 read_pages: ""
 last_read: null
 chat_rounds: 0
 tags: []
 booklists: []
+chapter_familiarity:
+total_interactions: 0
+last_active: ${now}
 created: ${now}
 ---
 

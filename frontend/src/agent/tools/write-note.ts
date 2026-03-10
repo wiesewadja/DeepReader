@@ -11,6 +11,7 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { TFile, normalizePath } from 'obsidian';
 import { log, error as logError } from '../../utils/logger.js';
+import { parseFrontmatter } from '../utils/book-note.js';
 
 const WRITE_NOTE_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -78,11 +79,10 @@ ${content}`;
 async function hasAicreateFrontmatter(app: any, file: TFile): Promise<boolean> {
   try {
     const content = await app.vault.read(file);
-    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!frontmatterMatch) return false;
+    const parsed = parseFrontmatter(content);
+    if (!parsed) return false;
 
-    const frontmatter = frontmatterMatch[1];
-    return frontmatter.includes('aicreate: true');
+    return parsed.frontmatter.includes('aicreate: true');
   } catch {
     return false;
   }

@@ -7,6 +7,7 @@
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { log, error as logError } from '../../utils/logger.js';
+import { BOOK_NOTES_DIR } from '../utils/book-note.js';
 
 const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -106,7 +107,7 @@ export const searchReadBooksTool: ToolExecutor = {
       log('[search_read_books] 搜索已读书籍:', query);
 
       // 1. 获取已读书籍目录
-      const notesDir = '读书笔记';
+      const notesDir = BOOK_NOTES_DIR;
       const exists = await context.app.vault.adapter.exists(notesDir);
 
       if (!exists) {
