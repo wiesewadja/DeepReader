@@ -95,6 +95,23 @@ export class MessageList extends Component {
 			throw new Error(`Message with id ${messageData.id} already exists`);
 		}
 
+		// 跳过隐藏消息的 UI 渲染（但仍保存到存储中）
+		if (messageData.hidden) {
+			// 创建消息但不添加到 DOM
+			const message = createMessage(messageData, {
+				onRegenerate: () => this.callbacks.onRegenerate?.(messageData.id),
+				onCopy: () => this.callbacks.onCopy?.(messageData.id),
+				onCopyWithCitation: () => this.callbacks.onCopyWithCitation?.(messageData.id),
+				onQuestionClick: (question: string) => this.callbacks.onQuestionClick?.(question),
+				onCitationJump: (citation: CitationData) => this.callbacks.onCitationJump?.(citation),
+				onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) =>
+					this.callbacks.onExcerpt?.(messageData.id, content, metadata),
+				app: this.app
+			});
+			this.messages.set(messageData.id, message);
+			return message;
+		}
+
 		// 创建消息组件
 		const message = createMessage(messageData, {
 			onRegenerate: () => {

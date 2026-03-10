@@ -306,6 +306,8 @@ export interface MessageData {
 	question?: string;
 	/** 可选：对话 ID */
 	conversationId?: string;
+	/** 可选：是否隐藏（用于画像更新消息，不显示但发送给 LLM） */
+	hidden?: boolean;
 }
 
 
