@@ -6,6 +6,30 @@ import type { App } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 
 /**
+ * 阅读进度信息
+ */
+export interface ReadingProgress {
+  bookName: string;
+  totalChapters: number;
+
+  // 熟悉度数据
+  chapterFamiliarity: Record<number, number>;
+  totalInteractions: number;
+
+  // 计算指标
+  coverage: number;      // 覆盖度 %
+  absorption: number;    // 吸收度 %
+
+  // 热点章节
+  mostFamiliarChapter: string;
+  leastFamiliarChapters: string[];
+
+  // 时间信息
+  lastActiveTime: string;
+  daysSinceLastRead: number;
+}
+
+/**
  * Tool 执行上下文
  */
 export interface ToolContext {
@@ -17,6 +41,8 @@ export interface ToolContext {
   useLLMTreeSearch?: boolean;
   /** Obsidian App 实例（用于 vault 操作） */
   app?: App;
+  /** 阅读进度信息 */
+  readingProgress?: ReadingProgress;
 }
 
 /**
