@@ -98,6 +98,54 @@
 - 用户手动编辑的字段优先级最高
 - 每次更新在对话结束时执行，不打断对话流程
 
+### 隐藏消息注入机制（关键设计）
+
+**问题**：一本书只有一个长期会话，用户画像更新后需要立即生效，但不能频繁修改 System Prompt。
+
+**解决方案**：将画像更新作为**隐藏消息**注入对话历史。
+
+```
+对话历史：
+┌─────────────────────────────────────┐
+│ System: [固定的 System Prompt]       │  ← 不变
+├─────────────────────────────────────┤
+│ User: 这本书的核心观点是什么？        │
+│ Assistant: ...                       │
+│ User: 以后请叫我小明                  │
+│ Assistant: 好的小明，已记住。          │
+│ [隐藏] User: [画像更新] 称呼=小明     │  ← 注入但不可见
+├─────────────────────────────────────┤
+│ User: 再解释一下                      │  ← AI 知道叫"小明"了
+└─────────────────────────────────────┘
+```
+
+**实现方式**：
+
+```typescript
+// ChatMessage 类型扩展
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  hidden?: boolean;  // 标记是否对用户隐藏
+}
+
+// update_profile 工具执行后
+const profileUpdateMessage: ChatMessage = {
+  role: 'user',
+  content: `[用户画像更新]\n${section} - ${field}: ${value}`,
+  hidden: true  // 界面不显示，但会发送给 LLM
+};
+
+// 注入到对话历史
+messages.push(profileUpdateMessage);
+```
+
+**优点**：
+1. **System Prompt 稳定** — 不需要动态重构
+2. **实时生效** — 画像更新立即反映在后续对话中
+3. **用户无感** — 隐藏消息不显示在界面上
+4. **成本可控** — 不增加额外的 API 调用
+
 ---
 
 ## 三、System Prompt 增强
@@ -192,6 +240,9 @@ DeepReader/
 - [ ] 实现 `update_profile` 工具
 - [ ] 注册工具到 ToolRegistry
 - [ ] 更新 System Prompt 添加工具说明
+- [ ] 实现隐藏消息注入机制
+- [ ] 更新 ChatMessage 类型添加 `hidden` 字段
+- [ ] 修改消息渲染逻辑，过滤 hidden 消息
 
 ### Phase 3: System Prompt 增强
 - [ ] 添加"用户画像使用指南"到 System Prompt
