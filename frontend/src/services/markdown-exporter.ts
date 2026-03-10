@@ -136,6 +136,7 @@ async function createBookNote(
     let frontMatterLines = [
         '---',
         `book_name: ${bookName}`,
+        `aicreate: true`,
         `cover: ${coverPath}`,
         `index_id: ${indexId}`,
     ];
@@ -199,6 +200,10 @@ views:
             // 如果 index_id 不存在，添加它
             if (!frontmatter.includes('index_id:')) {
                 frontmatter += `\nindex_id: ${indexId}`;
+            }
+            // 如果 aicreate 不存在，添加它
+            if (!frontmatter.includes('aicreate:')) {
+                frontmatter += `\naicreate: true`;
             }
             // 重新构建文件内容（保留 frontmatter 之后的内容，但如果是新建的模板则更新）
             let bodyContent = existingContent.substring(frontmatterMatch[0].length);
