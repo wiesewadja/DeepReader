@@ -230,6 +230,7 @@ views:
     return `---
 index_id: ${indexId}
 book_name: "${bookName.replace(/"/g, '\\"')}"
+aicreate: true
 status: unread
 progress: 0
 total_pages: ${totalPages}
@@ -242,6 +243,18 @@ created: ${now}
 ---
 
 # 📖 ${bookName}
+
+## 阅读进度
+
+> 最后阅读：暂无
+> 当前进度：未开始 (0%)
+> 已读章节：暂无
+
+## 阅读目标
+
+> 截止日期：未设定
+> 每日目标：未设定
+> 状态：⚪ 未设定目标
 
 ## 💭 阅读笔记
 

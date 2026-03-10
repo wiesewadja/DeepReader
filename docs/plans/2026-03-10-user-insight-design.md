@@ -328,19 +328,73 @@ DeepReader/
 - "上次聊到哪？"
 - "这本书还剩多少？"
 
-**实现方式**：
-- ToolContext 扩展，包含当前书籍的阅读进度
-- 对话历史持久化，支持回顾上次对话
+**存储位置**：书籍笔记文件（AI 可直接修改）
+
+**书籍笔记结构**（已添加 `aicreate: true`）：
+
+```markdown
+---
+index_id: xxx
+book_name: "西方史纲"
+aicreate: true          # AI 可修改标记
+status: reading
+progress: 25
+total_pages: 400
+read_pages: "1-100"
+last_read: 2026-03-10
+chat_rounds: 5
+tags: [历史, 西方文明]
+booklists: []
+created: 2026-03-01
+---
+
+# 📖 西方史纲
+
+## 阅读进度
+
+> 最后阅读：2026-03-10
+> 当前进度：第三章 古罗马 (25%)
+> 已读章节：第一章, 第二章, 第三章
+
+## 阅读目标
+
+> 截止日期：2026-04-10
+> 每日目标：2章
+> 状态：🟢 按计划进行
+
+## 💭 阅读笔记
+
+（用户或 AI 的阅读心得）
+```
+
+**进度推断信号**：
+
+| 信号 | 权重 | 说明 |
+|------|------|------|
+| `get_chapter` 调用 | 高 | 明确获取了某章节内容 |
+| 用户提问内容 | 中 | 问题涉及某章节 = 至少读到那里 |
+| 用户主动标记 | 最高 | "我读完了这一章" |
+
+**ToolContext 扩展**：
 
 ```typescript
 interface ToolContext {
   // ... 现有字段
   readingProgress?: {
-    currentChapter: string;      // 当前章节
-    currentChapterIndex: number; // 章节索引
-    totalChapters: number;       // 总章节数
-    percentage: number;          // 完成百分比
-    lastReadTime: string;        // 上次阅读时间
+    currentChapter: string;
+    currentChapterIndex: number;
+    totalChapters: number;
+    percentage: number;
+    lastReadTime: string;
+    daysSinceLastRead: number;
+
+    // 阅读目标（如果有）
+    goal?: {
+      deadline: string;
+      dailyTarget: number;
+      daysRemaining: number;
+      isOnTrack: boolean;
+    };
   };
 }
 ```
@@ -352,7 +406,12 @@ interface ToolContext {
 用户可能会问"读到哪了"、"上次聊到哪"。你可以：
 1. 告知当前进度（章节、百分比）
 2. 回顾上次对话的关键内容
-3. 建议下一步阅读
+3. 如果有阅读目标，提醒进度状态
+4. 建议下一步阅读
+
+## 更新阅读进度
+
+当用户明确说"我读完了这一章"时，使用 update_reading_progress 工具更新进度。
 ```
 
 ### 8.2 关联阅读

@@ -83,7 +83,7 @@ export class SelectionToolbar {
                 e.stopPropagation();
                 const action = (btn as HTMLElement).dataset.action;
                 if (action === 'highlight') {
-                    this.toggleColorPicker();
+                    this.handleHighlight(this.getRandomColor());
                 } else {
                     this.handleAction(action!);
                 }
@@ -232,6 +232,15 @@ export class SelectionToolbar {
     }
 
     /**
+     * 随机获取一个高亮颜色
+     */
+    private getRandomColor(): HighlightColorId {
+        const colorIds = HIGHLIGHT_COLORS.map(c => c.id);
+        const randomIndex = Math.floor(Math.random() * colorIds.length);
+        return colorIds[randomIndex];
+    }
+
+    /**
      * 移除高亮
      */
     private removeHighlight(): void {
@@ -359,7 +368,7 @@ export class SelectionToolbar {
                 e.stopPropagation();
                 const action = (btn as HTMLElement).dataset.action;
                 if (action === 'highlight') {
-                    this.toggleColorPicker();
+                    this.handleHighlight(this.getRandomColor());
                 } else if (action === 'remove-highlight') {
                     this.removeHighlight();
                 } else {
