@@ -3,7 +3,7 @@
  * 完整的 API 调用封装
  */
 
-import { log, error as logError } from '../utils/logger.js';
+import { apiLog as log, error as logError } from '../utils/logger.js';
 
 // ==================== 类型定义 ====================
 

@@ -10,7 +10,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 
 const CREATE_SUB_AGENT_DEFINITION: ToolDefinition = {
   type: 'function',

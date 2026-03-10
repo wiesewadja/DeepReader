@@ -6,7 +6,7 @@
 
 import { App, Notice, TFile, normalizePath } from "obsidian";
 import { DeepPDFClient, ReadingProgress } from "../api/http-client";
-import { log, error as logError } from "../utils/logger.js";
+import { serviceLog as log, error as logError } from "../utils/logger.js";
 
 // 阅读入口目录名
 const DEEPPDF_DIR = "DeepReader";

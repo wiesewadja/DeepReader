@@ -5,7 +5,7 @@
 
 import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
-import { log } from '../../utils/logger.js';
+import { uiLog as log } from '../../utils/logger.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;

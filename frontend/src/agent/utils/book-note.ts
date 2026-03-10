@@ -6,7 +6,7 @@
 
 import type { App } from 'obsidian';
 import { TFile, normalizePath } from 'obsidian';
-import { log, error } from '../../utils/logger.js';
+import { toolsLog as log, error } from '../../utils/logger.js';
 
 // ==================== 常量定义 ====================
 

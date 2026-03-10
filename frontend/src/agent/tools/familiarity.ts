@@ -8,7 +8,7 @@
 import type { App } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { log, error } from '../../utils/logger.js';
+import { toolsLog as log, error } from '../../utils/logger.js';
 import {
   updateBookFamiliarity,
   FAMILIARITY_DELTAS,

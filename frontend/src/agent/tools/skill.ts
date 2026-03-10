@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 
 // SkillLoader 类型定义（从 skills/loader.ts 导入）
 interface SkillLoader {

@@ -4,7 +4,7 @@
  */
 
 import { App, TFile, EventRef, MarkdownView } from 'obsidian';
-import { log } from '../utils/logger.js';
+import { serviceLog as log } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
 

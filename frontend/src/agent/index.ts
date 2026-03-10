@@ -31,7 +31,7 @@ import { buildSystemPrompt } from './prompts.js';
 import type { ChatMessage } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
-import { log } from '../utils/logger.js';
+import { agentLog as log } from '../utils/logger.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;

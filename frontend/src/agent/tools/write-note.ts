@@ -10,7 +10,7 @@
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { TFile, normalizePath } from 'obsidian';
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import { parseFrontmatter } from '../utils/book-note.js';
 
 const WRITE_NOTE_DEFINITION: ToolDefinition = {

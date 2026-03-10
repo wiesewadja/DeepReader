@@ -8,7 +8,7 @@
  */
 
 import { App } from 'obsidian';
-import { log, error } from '../../utils/logger.js';
+import { contextLog as log, error } from '../../utils/logger.js';
 
 export interface UserContext {
   profile: string;       // DeepReader.md 内容

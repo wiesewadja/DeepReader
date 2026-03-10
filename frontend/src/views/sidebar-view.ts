@@ -26,12 +26,9 @@ import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
-import { log, warn, error as logError } from "../utils/logger.js";
+import { uiLog as log, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
-
-// 在文件顶部使用一次 log 以避免 unused import 警告
-void log;
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式

@@ -6,7 +6,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import { BOOK_NOTES_DIR } from '../utils/book-note.js';
 
 const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {

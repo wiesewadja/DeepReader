@@ -7,7 +7,7 @@ import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obs
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
-import { log, error as logError } from '../../utils/logger.js';
+import { uiLog as log, error as logError } from '../../utils/logger.js';
 
 /**
  * 消息角色类型

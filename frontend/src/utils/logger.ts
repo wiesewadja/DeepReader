@@ -95,9 +95,9 @@ function formatPrefix(level: LogLevel, module: string): string {
 }
 
 /**
- * 创建模块日志器
+ * 创建模块日志函数（返回可直接调用的函数）
  */
-function createModuleLogger(module: LogModule) {
+function createLogFunctions(module: LogModule) {
     return {
         debug: (...args: any[]) => {
             if (shouldLog(module)) {
@@ -126,14 +126,22 @@ function createModuleLogger(module: LogModule) {
     };
 }
 
-// 预创建各模块日志器
-export const agentLogger = createModuleLogger('agent');
-export const toolsLogger = createModuleLogger('tools');
-export const contextLogger = createModuleLogger('context');
-export const uiLogger = createModuleLogger('ui');
-export const serviceLogger = createModuleLogger('service');
-export const apiLogger = createModuleLogger('api');
-export const otherLogger = createModuleLogger('other');
+// 预创建各模块日志函数
+const _agentLog = createLogFunctions('agent');
+const _toolsLog = createLogFunctions('tools');
+const _contextLog = createLogFunctions('context');
+const _uiLog = createLogFunctions('ui');
+const _serviceLog = createLogFunctions('service');
+const _apiLog = createLogFunctions('api');
+const _otherLog = createLogFunctions('other');
+
+// 导出可直接调用的 log 函数（每个模块一个）
+export const agentLog = Object.assign((...args: any[]) => _agentLog.log(...args), _agentLog);
+export const toolsLog = Object.assign((...args: any[]) => _toolsLog.log(...args), _toolsLog);
+export const contextLog = Object.assign((...args: any[]) => _contextLog.log(...args), _contextLog);
+export const uiLog = Object.assign((...args: any[]) => _uiLog.log(...args), _uiLog);
+export const serviceLog = Object.assign((...args: any[]) => _serviceLog.log(...args), _serviceLog);
+export const apiLog = Object.assign((...args: any[]) => _apiLog.log(...args), _apiLog);
 
 // ============ 向后兼容的全局函数 ============
 // 这些函数使用 'other' 模块，默认关闭
@@ -179,14 +187,13 @@ export default {
     setModuleEnabled,
     setModulesEnabled,
     getModuleConfig,
-    // 模块日志器
-    agentLogger,
-    toolsLogger,
-    contextLogger,
-    uiLogger,
-    serviceLogger,
-    apiLogger,
-    otherLogger,
+    // 模块日志函数
+    agentLog,
+    toolsLog,
+    contextLog,
+    uiLog,
+    serviceLog,
+    apiLog,
     // 向后兼容
     debug,
     info,

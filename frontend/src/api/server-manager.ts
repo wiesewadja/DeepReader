@@ -3,7 +3,7 @@
  */
 
 import { spawn, ChildProcess } from 'child_process';
-import { log, error as logError } from '../utils/logger.js';
+import { apiLog as log, error as logError } from '../utils/logger.js';
 
 export class ServerManager {
   private process: ChildProcess | null = null;

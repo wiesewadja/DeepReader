@@ -8,7 +8,7 @@
  * 这种分层设计保持 System Prompt 稳定，支持 Prompt Cache 复用
  */
 
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import type { Skill } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';

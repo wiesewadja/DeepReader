@@ -6,7 +6,7 @@ import { TFile } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
-import { log, error as logError } from '../../utils/logger.js';
+import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import {
   updateBookFamiliarity,
   extractChapterIndexFromNodeId,
