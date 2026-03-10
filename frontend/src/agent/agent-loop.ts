@@ -13,6 +13,9 @@ import type { ToolRegistry, ToolContext } from './tools/types';
 import { executeTool } from './tools/index';
 import { agentLog } from '../utils/logger';
 
+// 导出日志函数供控制台使用
+export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../utils/logger';
+
 export interface AgentLoopOptions {
   maxIterations?: number; // default 10
   abortSignal?: AbortSignal; // 用于取消请求

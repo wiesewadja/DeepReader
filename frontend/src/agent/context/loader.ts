@@ -10,6 +10,9 @@
 import { App } from 'obsidian';
 import { contextLog as log, error } from '../../utils/logger.js';
 
+// 导出日志函数供控制台使用
+export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
+
 export interface UserContext {
   profile: string;       // DeepReader.md 内容
   memorySummary: string; // 记忆摘要

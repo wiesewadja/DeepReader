@@ -17,6 +17,9 @@ import { searchReadBooksTool } from './search-read-books.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
 
+// 导出日志函数供控制台使用
+export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
+
 // 导出类型
 export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 
