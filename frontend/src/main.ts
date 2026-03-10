@@ -228,6 +228,26 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     /**
+     * 分离 Markdown 文件的 frontmatter 和 body
+     * @returns { frontmatter, body, hasFrontmatter } 如果没有 frontmatter，frontmatter 为空字符串
+     */
+    private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
+        const match = content.match(/^(---\n[\s\S]*?\n---)(\n*)/);
+        if (match) {
+            return {
+                frontmatter: match[0],
+                body: content.slice(match[0].length),
+                hasFrontmatter: true,
+            };
+        }
+        return {
+            frontmatter: '',
+            body: content,
+            hasFrontmatter: false,
+        };
+    }
+
+    /**
      * 保存高亮到文件
      */
     private async saveHighlightToFile(text: string, color: HighlightColorId): Promise<void> {
@@ -240,8 +260,11 @@ export default class DeepPDFPlugin extends Plugin {
         try {
             const content = await this.app.vault.read(activeFile);
 
-            // 检查文本是否已存在
-            if (!content.includes(text)) {
+            // 分离 frontmatter 和 body，只在 body 中替换
+            const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
+
+            // 检查文本是否在 body 中存在
+            if (!body.includes(text)) {
                 new Notice("无法保存高亮：未找到文本");
                 return;
             }
@@ -250,8 +273,9 @@ export default class DeepPDFPlugin extends Plugin {
             const bgColor = this.getHighlightBgColor(color);
             const highlightedText = `<mark style="background: ${bgColor}">${text}</mark>`;
 
-            // 只替换第一次出现的位置
-            const newContent = content.replace(text, highlightedText);
+            // 只在 body 部分替换第一次出现的位置
+            const newBody = body.replace(text, highlightedText);
+            const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
 
             await this.app.vault.modify(activeFile, newContent);
             log('[DeepPDF] Highlight saved to file with color:', color);
@@ -273,10 +297,14 @@ export default class DeepPDFPlugin extends Plugin {
         try {
             const content = await this.app.vault.read(activeFile);
 
+            // 分离 frontmatter 和 body，只在 body 中移除
+            const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
+
             // 匹配并移除 HTML mark 标签（支持任意颜色）
             const regex = new RegExp(`<mark style="background: [^"]*">${this.escapeRegex(text)}</mark>`, 'g');
-            if (regex.test(content)) {
-                const newContent = content.replace(regex, text);
+            if (regex.test(body)) {
+                const newBody = body.replace(regex, text);
+                const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
                 await this.app.vault.modify(activeFile, newContent);
                 log('[DeepPDF] Highlight removed from file');
             }
