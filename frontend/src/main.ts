@@ -3,6 +3,7 @@ import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { setLogEnabled, log, warn, error } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
+import { BUILT_IN_SKILLS } from './built-in-skills.js';
 
 interface DeepPDFSettings {
     apiPort: number;
@@ -60,6 +61,9 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化 DeepReader 目录和图书管理文档
         await this.ensureInitialization();
+
+        // 同步 Skills 到 vault（插件启动时执行）
+        await this.syncSkillsToVault();
 
         // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
@@ -323,6 +327,44 @@ export default class DeepPDFPlugin extends Plugin {
         } catch (err) {
             // 初始化失败不应阻止插件加载，只记录错误
             error('[DeepPDF] Initialization failed:', err);
+        }
+    }
+
+    /**
+     * 同步内置 Skills 到 vault
+     * 在插件启动时执行，将硬编码的 Skills 写入 Obsidian vault
+     */
+    private async syncSkillsToVault(): Promise<void> {
+        const SKILLS_DIR = "DeepReader/skills";
+
+        try {
+            // 1. 确保 skills 目录存在
+            const dirExists = await this.app.vault.adapter.exists(SKILLS_DIR);
+            if (!dirExists) {
+                await this.app.vault.createFolder(SKILLS_DIR);
+                log('[DeepPDF] Created skills directory');
+            }
+
+            // 2. 写入内置 Skills（只写入不存在的文件，不覆盖用户修改）
+            let createdCount = 0;
+
+            for (const skill of BUILT_IN_SKILLS) {
+                const targetPath = `${SKILLS_DIR}/${skill.filename}`;
+                const targetExists = await this.app.vault.adapter.exists(targetPath);
+
+                if (!targetExists) {
+                    await this.app.vault.adapter.write(targetPath, skill.content);
+                    createdCount++;
+                    log('[DeepPDF] Created built-in skill:', skill.filename);
+                }
+            }
+
+            if (createdCount > 0) {
+                log(`[DeepPDF] Synced ${createdCount} built-in skills`);
+            }
+        } catch (err) {
+            // Skills 同步失败不应阻止插件加载
+            error('[DeepPDF] Skills sync failed:', err);
         }
     }
 
