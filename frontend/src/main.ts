@@ -1,7 +1,7 @@
 import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView, TFile } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
-import { setLogEnabled, serviceLog, warn, error } from "./utils/logger.js";
+import { serviceLog, warn, error } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
@@ -60,9 +60,7 @@ export default class DeepPDFPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        // 设置日志开关
-        setLogEnabled(this.settings.enableDebugLog);
-
+        // 日志系统默认开启，通过模块开关控制输出
         log('Loading plugin');
 
         // 初始化 DeepReader 目录和图书管理文档
@@ -119,7 +117,7 @@ export default class DeepPDFPlugin extends Plugin {
                         new Notice(`Skills 重载失败: ${result.message}`);
                     }
                 } catch (err) {
-                    error('[DeepReader] Failed to reload skills:', err);
+                    log.error('[DeepReader] Failed to reload skills:', err);
                     new Notice(`Skills 重载失败: ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
@@ -283,7 +281,7 @@ export default class DeepPDFPlugin extends Plugin {
             await this.app.vault.modify(activeFile, newContent);
             log('[DeepPDF] Highlight saved to file with color:', color);
         } catch (err) {
-            error('[DeepPDF] Failed to save highlight:', err);
+            log.error('[DeepPDF] Failed to save highlight:', err);
             new Notice("保存高亮失败");
         }
     }
@@ -312,7 +310,7 @@ export default class DeepPDFPlugin extends Plugin {
                 log('[DeepPDF] Highlight removed from file');
             }
         } catch (err) {
-            error('[DeepPDF] Failed to remove highlight:', err);
+            log.error('[DeepPDF] Failed to remove highlight:', err);
         }
     }
 
@@ -362,7 +360,7 @@ export default class DeepPDFPlugin extends Plugin {
             }
         } catch (err) {
             // 初始化失败不应阻止插件加载，只记录错误
-            error('[DeepPDF] Initialization failed:', err);
+            log.error('[DeepPDF] Initialization failed:', err);
         }
     }
 
@@ -406,7 +404,7 @@ export default class DeepPDFPlugin extends Plugin {
             }
         } catch (err) {
             // Skills 同步失败不应阻止插件加载
-            error('[DeepPDF] Skills sync failed:', err);
+            log.error('[DeepPDF] Skills sync failed:', err);
         }
     }
 
@@ -528,14 +526,10 @@ views:
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-        // 更新日志开关状态
-        setLogEnabled(this.settings.enableDebugLog);
     }
 
     async saveSettings() {
         await this.saveData(this.settings);
-        // 更新日志开关状态
-        setLogEnabled(this.settings.enableDebugLog);
     }
 
     async formatCurrentDocument(file: any, editor: any) {
@@ -566,7 +560,7 @@ views:
                 new Notice("Formatting failed");
             }
         } catch (err) {
-            error('Failed to format document:', err);
+            log.error('Failed to format document:', err);
             new Notice(`Formatting failed: ${err instanceof Error ? err.message : String(err)}`);
         }
     }
@@ -675,7 +669,7 @@ views:
             })
             .catch(err => {
                 // 静默处理，后端是可选的
-                warn('Failed to connect to server:', err);
+                log.warn('Failed to connect to server:', err);
             });
     }
 }
