@@ -4211,6 +4211,41 @@
     margin: 4px 8px;
 }
 
+/* 聚焦模式按钮 */
+.deeppdf-focus-mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.deeppdf-focus-mode-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.deeppdf-focus-mode-btn.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.deeppdf-focus-mode-btn.active:hover {
+    background: var(--interactive-accent-hover);
+}
+
+.deeppdf-focus-mode-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
 /* 响应式 */
 @media (max-width: 600px) {
     .deeppdf-reading-topbar {
@@ -5083,6 +5118,50 @@
 
 .deeppdf-nav-tooltip.visible {
     opacity: 1;
+}
+
+/* ==================== 聚焦模式 (Focus Mode) ==================== */
+/* 聚焦模式依赖阅读模式，只在 .deeppdf-reading-mode 存在时生效 */
+
+/* CSS 变量定义 */
+.deeppdf-reading-mode.deeppdf-focus-mode {
+    --deeppdf-unfocused-level: 0.2;
+    --deeppdf-focus-font: "Iowan Old Style", "Charter", "Georgia", "Times New Roman", serif;
+    --deeppdf-focus-font-size: 18px;
+    --deeppdf-focus-line-height: 1.9;
+}
+
+/* 淡化视口外的内容 - 只针对阅读视图中的直接子元素 */
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > p,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > li,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > blockquote {
+    opacity: var(--deeppdf-unfocused-level, 0.2);
+    transition: opacity 0.4s ease;
+}
+
+/* 视口内可见的内容 - 高亮显示 */
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > p.deeppdf-in-view,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > li.deeppdf-in-view,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > blockquote.deeppdf-in-view {
+    opacity: 1;
+    font-family: var(--deeppdf-focus-font);
+    font-size: var(--deeppdf-focus-font-size);
+    line-height: var(--deeppdf-focus-line-height);
+}
+
+/* 标题半透明显示 */
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h1,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h2,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h3 {
+    opacity: 0.6;
+    transition: opacity 0.4s ease;
+}
+
+/* 代码块和表格保持可见 */
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view pre,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view table {
+    opacity: 0.5;
+    transition: opacity 0.4s ease;
 }
 
 

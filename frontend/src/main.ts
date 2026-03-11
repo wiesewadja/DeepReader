@@ -10,6 +10,7 @@ import {
     extractChapterIndexFromNodeId,
     FAMILIARITY_DELTAS,
 } from './agent/utils/book-note.js';
+import type { FocusFontFamily } from './services/focus-mode-service.js';
 
 // 使用 service 模块日志器
 const log = serviceLog;
@@ -34,6 +35,13 @@ interface DeepPDFSettings {
     enableDebugLog: boolean;  // 是否启用调试日志
     // 深度思考模式（LLM 树搜索）
     lastDeepSearchMode: boolean;  // 上次是否启用深度思考模式
+    // 聚焦模式设置
+    focusModeEnabled: boolean;      // 聚焦模式是否启用
+    focusModeAutoEnable: boolean;   // 打开章节时自动启用聚焦模式
+    focusModeUnfocusedLevel: number;
+    focusModeFontFamily: string;
+    focusModeFontSize: number;
+    focusModeLineHeight: number;
 }
 
 const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -52,13 +60,20 @@ const DEFAULT_SETTINGS: DeepPDFSettings = {
     lastCrossBookMode: false,  // 默认不启用跨书籍模式
     lastCrossBookSessionId: "",  // 跨书籍会话ID
     enableDebugLog: false,  // 默认关闭调试日志
-    lastDeepSearchMode: false  // 默认不启用深度思考模式
+    lastDeepSearchMode: false,  // 默认不启用深度思考模式
+    // 聚焦模式默认值
+    focusModeEnabled: false,
+    focusModeAutoEnable: false,
+    focusModeUnfocusedLevel: 0.2,
+    focusModeFontFamily: 'iowan',
+    focusModeFontSize: 18,
+    focusModeLineHeight: 1.9,
 };
 
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
     apiClient: DeepPDFClient | null = null;
-    private readingModeService: ReadingModeService | null = null;
+    readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
     private skillsDir: string = '';
 
@@ -229,6 +244,31 @@ export default class DeepPDFPlugin extends Plugin {
             },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
+
+        // 应用聚焦模式设置
+        const focusService = this.readingModeService.getFocusModeService();
+        if (focusService) {
+            focusService.updateSettings({
+                enabled: this.settings.focusModeEnabled,
+                autoEnable: this.settings.focusModeAutoEnable,
+                unfocusedLevel: this.settings.focusModeUnfocusedLevel,
+                fontFamily: this.settings.focusModeFontFamily as FocusFontFamily,
+                fontSize: this.settings.focusModeFontSize,
+                lineHeight: this.settings.focusModeLineHeight,
+            });
+
+            // 设置设置变更回调
+            focusService.setOnSettingsChange((settings) => {
+                this.settings.focusModeEnabled = settings.enabled;
+                this.settings.focusModeAutoEnable = settings.autoEnable;
+                this.settings.focusModeUnfocusedLevel = settings.unfocusedLevel;
+                this.settings.focusModeFontFamily = settings.fontFamily;
+                this.settings.focusModeFontSize = settings.fontSize;
+                this.settings.focusModeLineHeight = settings.lineHeight;
+                this.saveSettings();
+            });
+        }
+
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');
     }
@@ -1086,6 +1126,86 @@ class DeepPDFSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.enableDebugLog = value;
                     await this.plugin.saveSettings();
+                }));
+
+        // 聚焦模式设置区域
+        containerEl.createEl('h2', { text: '阅读聚焦模式' });
+
+        new Setting(containerEl)
+            .setName("自动启用聚焦模式")
+            .setDesc("打开章节时自动启用聚焦模式")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.focusModeAutoEnable)
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeAutoEnable = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ autoEnable: value });
+                }));
+
+        new Setting(containerEl)
+            .setName("启用聚焦模式")
+            .setDesc("手动切换聚焦模式（也可按 f 键快速切换）")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.focusModeEnabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeEnabled = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ enabled: value });
+                }));
+
+        new Setting(containerEl)
+            .setName("淡化程度")
+            .setDesc("非聚焦内容的透明度（0.1 = 最淡，0.5 = 较清晰）")
+            .addSlider(slider => slider
+                .setLimits(0.1, 0.5, 0.05)
+                .setValue(this.plugin.settings.focusModeUnfocusedLevel)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeUnfocusedLevel = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ unfocusedLevel: value });
+                }));
+
+        new Setting(containerEl)
+            .setName("聚焦字体")
+            .setDesc("选择聚焦段落的显示字体")
+            .addDropdown(dropdown => dropdown
+                .addOption("iowan", "Iowan Old Style（推荐）")
+                .addOption("charter", "Charter")
+                .addOption("georgia", "Georgia")
+                .addOption("athelas", "Athelas")
+                .addOption("seravek", "Seravek（无衬线）")
+                .setValue(this.plugin.settings.focusModeFontFamily)
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeFontFamily = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ fontFamily: value as FocusFontFamily });
+                }));
+
+        new Setting(containerEl)
+            .setName("聚焦字号")
+            .setDesc("聚焦段落的字体大小（像素）")
+            .addSlider(slider => slider
+                .setLimits(14, 24, 1)
+                .setValue(this.plugin.settings.focusModeFontSize)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeFontSize = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ fontSize: value });
+                }));
+
+        new Setting(containerEl)
+            .setName("聚焦行高")
+            .setDesc("聚焦段落的行高（1.5 = 紧凑，2.4 = 宽松）")
+            .addSlider(slider => slider
+                .setLimits(1.5, 2.4, 0.1)
+                .setValue(this.plugin.settings.focusModeLineHeight)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.focusModeLineHeight = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.updateFocusModeSettings({ lineHeight: value });
                 }));
 
         // 添加说明文字

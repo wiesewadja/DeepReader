@@ -212,6 +212,41 @@
     margin: 4px 8px;
 }
 
+/* 聚焦模式按钮 */
+.deeppdf-focus-mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.deeppdf-focus-mode-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.deeppdf-focus-mode-btn.active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.deeppdf-focus-mode-btn.active:hover {
+    background: var(--interactive-accent-hover);
+}
+
+.deeppdf-focus-mode-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
 /* 响应式 */
 @media (max-width: 600px) {
     .deeppdf-reading-topbar {

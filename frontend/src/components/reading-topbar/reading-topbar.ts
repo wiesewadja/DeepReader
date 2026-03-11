@@ -11,6 +11,7 @@ export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onNewChat?: () => void;
     onOpenSettings?: () => void;
+    onToggleFocusMode?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -21,6 +22,8 @@ export class ReadingTopbar extends Component {
     private statusDot: HTMLElement | null = null;
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
+    private focusModeBtn: HTMLElement | null = null;
+    private isFocusModeEnabled: boolean = false;
     private handleGlobalClick: (e: MouseEvent) => void;
 
     constructor(options: ReadingTopbarOptions) {
@@ -115,6 +118,17 @@ export class ReadingTopbar extends Component {
                 this.dropdownMenu?.appendChild(menuItem);
             }
         });
+
+        // 聚焦模式按钮
+        this.focusModeBtn = document.createElement('button');
+        this.focusModeBtn.className = 'deeppdf-focus-mode-btn';
+        this.focusModeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v2m0 16v2M2 12h2m16 0h2"></path></svg>`;
+        this.focusModeBtn.title = '聚焦模式';
+        this.focusModeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onToggleFocusMode?.();
+        });
+        rightSection.insertBefore(this.focusModeBtn, actionBtn);
 
         rightSection.appendChild(actionBtn);
         rightSection.appendChild(this.dropdownMenu);
@@ -236,6 +250,22 @@ export class ReadingTopbar extends Component {
         this.statusDot.title = tooltips[status];
     }
 
+    /**
+     * 设置聚焦模式状态
+     */
+    public setFocusMode(enabled: boolean): void {
+        this.isFocusModeEnabled = enabled;
+        if (this.focusModeBtn) {
+            if (enabled) {
+                this.focusModeBtn.classList.add('active');
+                this.focusModeBtn.title = '聚焦模式 (已启用)';
+            } else {
+                this.focusModeBtn.classList.remove('active');
+                this.focusModeBtn.title = '聚焦模式';
+            }
+        }
+    }
+
     destroy(): void {
         if (this.handleGlobalClick) {
             document.removeEventListener('click', this.handleGlobalClick);
@@ -245,6 +275,7 @@ export class ReadingTopbar extends Component {
         this.bookAuthorEl = null;
         this.statusDot = null;
         this.dropdownMenu = null;
+        this.focusModeBtn = null;
         super.destroy();
     }
 }
