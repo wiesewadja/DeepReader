@@ -438,17 +438,30 @@ class TextFormatter:
         1. 数字编号模式：1. 1.1 第1章 Chapter 1
         2. 全大写行（短行）
         3. 短行且后面紧跟段落
+        4. 短段落（<50字符）且不以句号结尾 -> 三级标题
         """
         lines = text.split("\n")
         result = []
 
-        # 标题模式
+        # 标题模式（优先级高）
         heading_patterns = [
             (r"^第[一二三四五六七八九十百千万]+[章节篇部]", 1),  # 中文章节
             (r"^Chapter\s+\d+", 1),  # 英文章节
             (r"^\d+\.\s+[^\d]", 2),  # 数字编号 1. Title
             (r"^\d+\.\d+\s+", 3),  # 二级编号 1.1 Title
             (r"^\d+\.\d+\.\d+\s+", 4),  # 三级编号 1.1.1 Title
+        ]
+
+        # 句子结束标点（如果段落以这些结尾，不是标题）
+        sentence_end_punctuation = ".。!！?？"
+
+        # 不应作为标题的内容模式
+        non_heading_patterns = [
+            r"^[\d\s]+$",  # 纯数字
+            r"^[-—–]+",  # 分隔线
+            r"^\*+$",  # 星号分隔线
+            r"^=\s*$",  # 等号分隔线
+            r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}",  # 日期
         ]
 
         for i, line in enumerate(lines):
@@ -472,6 +485,21 @@ class TextFormatter:
                 alpha_chars = [c for c in stripped if c.isalpha()]
                 if alpha_chars and all(c.isupper() for c in alpha_chars):
                     heading_level = 2
+
+            # 新规则：短段落（<50字符）且不以句号结尾 -> 三级标题
+            if heading_level is None and len(stripped) < 50:
+                # 检查是否以句子结束标点结尾
+                last_char = stripped[-1]
+                if last_char not in sentence_end_punctuation:
+                    # 排除一些不应作为标题的内容
+                    is_non_heading = False
+                    for pattern in non_heading_patterns:
+                        if re.match(pattern, stripped):
+                            is_non_heading = True
+                            break
+
+                    if not is_non_heading:
+                        heading_level = 3
 
             if heading_level:
                 # 添加 Markdown 标题标记

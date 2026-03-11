@@ -55,3 +55,64 @@ More content here."""
         result = self.formatter.format(text, "pdf")
         assert "# 第一章 测试" in result
         assert "## 1.1 小节" in result
+
+    def test_short_paragraph_as_heading(self):
+        """测试短段落（<50字符，无句号）识别为三级标题"""
+        # 短段落，没有句号结尾 -> 应该是三级标题
+        text = "这是一个小节标题\n\n正文内容在这里。"
+        result = self.formatter._detect_headings(text)
+        assert "### 这是一个小节标题" in result
+
+    def test_short_paragraph_with_period_not_heading(self):
+        """测试以句号结尾的短段落不应识别为标题"""
+        # 短段落，但有句号结尾 -> 不应该是标题
+        text = "这是一个完整的句子。\n\n正文内容在这里。"
+        result = self.formatter._detect_headings(text)
+        assert "### 这是一个完整的句子。" not in result
+
+    def test_long_paragraph_not_heading(self):
+        """测试长段落不应识别为标题"""
+        # 长段落（>=50字符），没有句号结尾 -> 不应该是标题
+        # 生成一个确定超过 50 字符的长文本
+        long_text = "这是一段测试文本内容，它包含了足够多的字符数量以超过五十个字符的限制要求"
+        # 确保长度超过 50
+        while len(long_text) < 55:
+            long_text += "测试"
+        assert len(long_text) >= 50, f"测试文本长度 {len(long_text)} 不满足 >= 50"
+        text = f"{long_text}\n\n正文内容在这里。"
+        result = self.formatter._detect_headings(text)
+        assert f"### {long_text}" not in result
+
+    def test_short_paragraph_with_various_endings(self):
+        """测试各种句子结束标点"""
+        # 以感叹号结尾 -> 不是标题
+        text1 = "太棒了！\n\n正文。"
+        result1 = self.formatter._detect_headings(text1)
+        assert "### 太棒了！" not in result1
+
+        # 以问号结尾 -> 不是标题
+        text2 = "为什么？\n\n正文。"
+        result2 = self.formatter._detect_headings(text2)
+        assert "### 为什么？" not in result2
+
+        # 无标点结尾 -> 是标题
+        text3 = "重要提示\n\n正文。"
+        result3 = self.formatter._detect_headings(text3)
+        assert "### 重要提示" in result3
+
+    def test_non_heading_patterns_excluded(self):
+        """测试不应作为标题的模式被排除"""
+        # 纯数字不应是标题
+        text1 = "123\n\n正文。"
+        result1 = self.formatter._detect_headings(text1)
+        assert "### 123" not in result1
+
+        # 分隔线不应是标题
+        text2 = "---\n\n正文。"
+        result2 = self.formatter._detect_headings(text2)
+        assert "### ---" not in result2
+
+        # 日期不应是标题
+        text3 = "2024-03-11\n\n正文。"
+        result3 = self.formatter._detect_headings(text3)
+        assert "### 2024-03-11" not in result3
