@@ -113,8 +113,16 @@ class TextFormatter:
 
     def _format_epub(self, text: str) -> str:
         """格式化 EPUB 提取的文本"""
-        # EPUB 已经通过 html2text 处理，主要做清理工作
+        # EPUB 已经通过 html2text 处理，但仍需格式化
+        # 1. 规范化段落
+        text = self._normalize_paragraphs(text)
+
+        # 2. 检测标题（基于规则）
+        text = self._detect_headings(text)
+
+        # 3. 清理多余空白
         text = self._clean_whitespace(text)
+
         return text
 
     def _format_with_llm(self, text: str, doc_type: str) -> str:
@@ -468,6 +476,11 @@ class TextFormatter:
             stripped = line.strip()
 
             if not stripped:
+                result.append(line)
+                continue
+
+            # 检查是否已经是 Markdown 标题（以 # 开头）
+            if stripped.startswith("#"):
                 result.append(line)
                 continue
 
