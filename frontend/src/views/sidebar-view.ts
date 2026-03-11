@@ -122,9 +122,6 @@ export class SidebarView extends ItemView {
     /** 前端 Agent 对话历史 */
     private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
 
-    /** 聚焦模式变化事件监听器绑定引用 */
-    private boundHandleFocusModeChange: EventListenerOrEventListenerObject | null = null;
-
     /** 生成新的会话ID */
     private generateSessionId(): string {
         return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -233,17 +230,6 @@ export class SidebarView extends ItemView {
             return;
         }
         this.startNewSession(this.currentIndexId);
-    }
-
-    /** 切换聚焦模式 */
-    private toggleFocusMode(): void {
-        if (!this.plugin?.readingModeService) return;
-
-        const focusService = this.plugin.readingModeService.getFocusModeService();
-        if (!focusService) return;
-
-        const enabled = focusService.toggle();
-        this.readingTopbar?.setFocusMode(enabled);
     }
 
 
@@ -548,13 +534,6 @@ export class SidebarView extends ItemView {
 
             this.readingTopbar?.setCurrentBook(displayName, author);
 
-            // 同步聚焦模式状态
-            const focusService = this.plugin?.readingModeService?.getFocusModeService();
-            if (focusService) {
-                const settings = focusService.getSettings();
-                this.readingTopbar?.setFocusMode(settings.enabled);
-            }
-
             // 加载书籍封面
             this.loadBookCover(displayName);
         }
@@ -664,8 +643,7 @@ export class SidebarView extends ItemView {
                     setting.open();
                     setting.openTabById('deeppdf');
                 }
-            },
-            onToggleFocusMode: () => this.toggleFocusMode()
+            }
         });
 
         const el = this.readingTopbar.getElement();
@@ -693,8 +671,8 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
-        // 设置聚焦模式变化监听
-        this.setupFocusModeListener();
+        // 设置聚焦模式变化监听（已移除）
+        // this.setupFocusModeListener();
 
         // 直接渲染主 UI（不阻塞）
         this.renderMainUI(container);
@@ -3048,37 +3026,8 @@ ${structureInfo}
         logError("[DeepPDF]", message);
     }
 
-    /**
-     * 设置聚焦模式变化监听
-     */
-    private setupFocusModeListener(): void {
-        this.boundHandleFocusModeChange = this.handleFocusModeChange.bind(this);
-        document.body.addEventListener('deeppdf:focus-mode-change', this.boundHandleFocusModeChange as EventListener);
-    }
-
-    /**
-     * 处理聚焦模式变化事件
-     */
-    private handleFocusModeChange(e: Event): void {
-        const customEvent = e as CustomEvent<{ enabled: boolean }>;
-        const { enabled } = customEvent.detail;
-        this.readingTopbar?.setFocusMode(enabled);
-    }
-
-    /**
-     * 移除聚焦模式变化监听
-     */
-    private removeFocusModeListener(): void {
-        if (this.boundHandleFocusModeChange) {
-            document.body.removeEventListener('deeppdf:focus-mode-change', this.boundHandleFocusModeChange);
-            this.boundHandleFocusModeChange = null;
-        }
-    }
-
     async onClose() {
         try {
-            // 移除聚焦模式监听
-            this.removeFocusModeListener();
 
             // 停止健康检查定时器
             this.stopHealthCheck();

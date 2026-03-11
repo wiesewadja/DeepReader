@@ -7,7 +7,6 @@ import { App, TFile, EventRef, MarkdownView } from 'obsidian';
 import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
-import { FocusModeService, FocusModeSettings, DEFAULT_FOCUS_SETTINGS, FocusFontFamily } from './focus-mode-service.js';
 
 export interface ReadingModeCallbacks {
     onQuote: (text: string) => void;
@@ -33,13 +32,11 @@ export class ReadingModeService {
     private selectionToolbar: SelectionToolbar | null = null;
     private chapterNav: ChapterNav | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
-    private focusModeService: FocusModeService | null = null;
-    private keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+    private autoEnable: boolean = true;  // 自动启用阅读模式（默认开启）
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
         this.callbacks = callbacks || null;
-        this.focusModeService = new FocusModeService();
     }
 
     /**
@@ -55,35 +52,17 @@ export class ReadingModeService {
     }
 
     /**
-     * 获取聚焦模式服务
+     * 设置是否自动启用阅读模式
      */
-    getFocusModeService(): FocusModeService | null {
-        return this.focusModeService;
+    setAutoEnable(value: boolean): void {
+        this.autoEnable = value;
     }
 
     /**
-     * 切换聚焦模式
-     * @returns 切换后的状态
+     * 获取是否自动启用阅读模式
      */
-    toggleFocusMode(): boolean {
-        if (!this.focusModeService) return false;
-        const enabled = this.focusModeService.toggle();
-        return enabled;
-    }
-
-    /**
-     * 更新聚焦模式设置
-     */
-    updateFocusModeSettings(settings: Partial<FocusModeSettings>): void {
-        if (!this.focusModeService) return;
-        this.focusModeService.updateSettings(settings);
-    }
-
-    /**
-     * 获取聚焦模式设置
-     */
-    getFocusModeSettings(): FocusModeSettings {
-        return this.focusModeService?.getSettings() || DEFAULT_FOCUS_SETTINGS;
+    getAutoEnable(): boolean {
+        return this.autoEnable;
     }
 
     /**
@@ -154,16 +133,6 @@ export class ReadingModeService {
         // 通知书籍检测回调
         this.notifyBookDetected(file);
 
-        // 自动启用聚焦模式（如果设置了 autoEnable）
-        if (this.focusModeService?.shouldAutoEnable()) {
-            this.focusModeService.enable();
-        }
-
-        // 刷新聚焦模式观察（延迟执行，等待内容渲染）
-        setTimeout(() => {
-            this.focusModeService?.refresh();
-        }, 200);
-
         serviceLog('[ReadingMode] Activated for:', file.path);
     }
 
@@ -210,11 +179,6 @@ export class ReadingModeService {
     deactivate(): void {
         if (!this.isActive) return;
 
-        // 停用聚焦模式（保留 enabled 设置，仅移除 DOM 效果）
-        if (this.focusModeService?.getSettings().enabled) {
-            this.focusModeService.updateSettings({ enabled: false });
-        }
-
         document.body.classList.remove('deeppdf-reading-mode');
         this.chapterNav?.hide();
         this.isActive = false;
@@ -236,13 +200,13 @@ export class ReadingModeService {
         // 初始化章节导航
         this.initChapterNav();
 
-        // 初始化键盘快捷键
-        this.setupKeydownHandler();
-
         this.fileOpenHandler = this.app.workspace.on('file-open', (file) => {
             serviceLog('[DeepPDF] file-open event:', file?.path);
+            // 只有在自动启用开启时才自动激活阅读模式
             if (file && this.isChapterFile(file)) {
-                this.activate(file);
+                if (this.autoEnable) {
+                    this.activate(file);
+                }
             } else {
                 this.deactivate();
             }
@@ -250,7 +214,7 @@ export class ReadingModeService {
 
         // 检查当前打开的文件
         const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile && this.isChapterFile(activeFile)) {
+        if (activeFile && this.isChapterFile(activeFile) && this.autoEnable) {
             this.activate(activeFile);
         }
     }
@@ -274,7 +238,6 @@ export class ReadingModeService {
      */
     stop(): void {
         this.deactivate();
-        this.removeKeydownHandler();
         if (this.fileOpenHandler) {
             this.app.workspace.offref(this.fileOpenHandler);
             this.fileOpenHandler = null;
@@ -286,10 +249,6 @@ export class ReadingModeService {
         if (this.chapterNav) {
             this.chapterNav.destroy();
             this.chapterNav = null;
-        }
-        if (this.focusModeService) {
-            this.focusModeService.destroy();
-            this.focusModeService = null;
         }
     }
 
@@ -307,51 +266,6 @@ export class ReadingModeService {
         if (!this.currentFile) return null;
         const cache = this.app.metadataCache.getFileCache(this.currentFile);
         return cache?.frontmatter?.index_id || null;
-    }
-
-    /**
-     * 移除键盘快捷键监听（在 Task 7 中实现）
-     */
-    private removeKeydownHandler(): void {
-        if (this.keydownHandler) {
-            document.removeEventListener('keydown', this.keydownHandler);
-            this.keydownHandler = null;
-        }
-    }
-
-    /**
-     * 设置键盘快捷键监听
-     */
-    private setupKeydownHandler(): void {
-        if (this.keydownHandler) return;
-
-        this.keydownHandler = (e: KeyboardEvent) => {
-            // 只在阅读模式激活时响应
-            if (!this.isActive) return;
-
-            // 按 f 键切换聚焦模式
-            if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                // 检查是否在输入框中
-                const activeEl = document.activeElement;
-                if (activeEl && (
-                    activeEl.tagName === 'INPUT' ||
-                    activeEl.tagName === 'TEXTAREA' ||
-                    activeEl.getAttribute('contenteditable') === 'true'
-                )) {
-                    return;
-                }
-
-                e.preventDefault();
-                const enabled = this.toggleFocusMode();
-
-                // 通过事件通知 UI 更新
-                document.body.dispatchEvent(new CustomEvent('deeppdf:focus-mode-change', {
-                    detail: { enabled }
-                }));
-            }
-        };
-
-        document.addEventListener('keydown', this.keydownHandler);
     }
 
     /**
