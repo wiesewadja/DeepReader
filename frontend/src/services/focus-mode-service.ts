@@ -223,14 +223,14 @@ export class FocusModeService {
      * 观察阅读视图中的段落元素
      */
     private observeElements(): void {
-        const previewView = document.querySelector('.deeppdf-reading-mode .markdown-preview-view');
+        const previewView = document.querySelector('.markdown-preview-view');
         if (!previewView) {
             serviceLog('[FocusMode] Preview view not found');
             return;
         }
 
-        // 只选择直接子元素中的段落，避免影响消息列表等
-        const elements = previewView.querySelectorAll(':scope > div > p, :scope > div > li, :scope > div > blockquote');
+        // 选择阅读视图中的段落元素
+        const elements = previewView.querySelectorAll('p, li, blockquote');
         elements.forEach(el => {
             this.observer?.observe(el);
         });

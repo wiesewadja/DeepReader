@@ -469,18 +469,18 @@
     --deeppdf-focus-line-height: 1.9;
 }
 
-/* 淡化视口外的内容 - 只针对阅读视图中的直接子元素 */
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > p,
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > li,
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > blockquote {
+/* 淡化视口外的内容 - 针对阅读视图中的段落元素 */
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote {
     opacity: var(--deeppdf-unfocused-level, 0.2);
     transition: opacity 0.4s ease;
 }
 
 /* 视口内可见的内容 - 高亮显示 */
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > p.deeppdf-in-view,
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > li.deeppdf-in-view,
-.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view > div > blockquote.deeppdf-in-view {
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p.deeppdf-in-view,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li.deeppdf-in-view,
+.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote.deeppdf-in-view {
     opacity: 1;
     font-family: var(--deeppdf-focus-font);
     font-size: var(--deeppdf-focus-font-size);
