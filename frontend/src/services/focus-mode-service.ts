@@ -172,7 +172,7 @@ export class FocusModeService {
 
         const fontFamily = FONT_FAMILIES[this.settings.fontFamily];
         this.styleElement.textContent = `
-            .deeppdf-reading-mode.deeppdf-focus-mode {
+            body.deeppdf-reading-mode.deeppdf-focus-mode {
                 --deeppdf-unfocused-level: ${this.settings.unfocusedLevel};
                 --deeppdf-focus-font: ${fontFamily};
                 --deeppdf-focus-font-size: ${this.settings.fontSize}px;
