@@ -27,6 +27,8 @@ export interface MessageCallbacks {
 	onGenerateOutline?: () => void;
 	/** 保存摘录 */
 	onExcerpt?: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => void;
+	/** 引用文字到对话 */
+	onQuote?: (text: string) => void;
 }
 
 /**
@@ -131,6 +133,9 @@ export class MessageList extends Component {
 			},
 			onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) => {
 				this.callbacks.onExcerpt?.(messageData.id, content, metadata);
+			},
+			onQuote: (text: string) => {
+				this.callbacks.onQuote?.(text);
 			},
 			app: this.app
 		});

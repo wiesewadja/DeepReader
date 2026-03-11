@@ -926,6 +926,7 @@ export class AIMessage extends Message {
 	private onQuestionClick?: (question: string) => void;
 	private onCitationJump?: (citation: CitationData) => void;
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
+	private onQuote?: (text: string) => void;
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
 	private lastRenderTime: number = 0;
@@ -945,6 +946,7 @@ export class AIMessage extends Message {
 			onQuestionClick?: (question: string) => void;
 			onCitationJump?: (citation: CitationData) => void;
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
+			onQuote?: (text: string) => void;
 			app?: App;
 		}
 	) {
@@ -955,6 +957,7 @@ export class AIMessage extends Message {
 		this.onQuestionClick = options?.onQuestionClick;
 		this.onCitationJump = options?.onCitationJump;
 		this.onExcerpt = options?.onExcerpt;
+		this.onQuote = options?.onQuote;
 		// 初始化渲染跟踪变量
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
@@ -1547,7 +1550,12 @@ export class AIMessage extends Message {
 					question: this.data.question,
 					conversationId: this.data.conversationId,
 					messageId: this.data.id,
-					app: this.app!
+					app: this.app!,
+					onQuote: (text: string) => {
+						if (this.onQuote) {
+							this.onQuote(text);
+						}
+					}
 				});
 			} else {
 				// 更新选项
@@ -1558,7 +1566,12 @@ export class AIMessage extends Message {
 					question: this.data.question,
 					conversationId: this.data.conversationId,
 					messageId: this.data.id,
-					app: this.app!
+					app: this.app!,
+					onQuote: (text: string) => {
+						if (this.onQuote) {
+							this.onQuote(text);
+						}
+					}
 				};
 			}
 
@@ -1619,6 +1632,7 @@ export function createMessage(
 		onQuestionClick?: (question: string) => void;
 		onCitationJump?: (citation: CitationData) => void;
 		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
+		onQuote?: (text: string) => void;
 		app?: App;
 	}
 ): Message {

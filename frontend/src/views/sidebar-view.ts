@@ -1048,6 +1048,9 @@ export class SidebarView extends ItemView {
             },
             onExcerpt: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => {
                 this.handleExcerpt(messageId, content, metadata);
+            },
+            onQuote: (text: string) => {
+                this.handleQuoteSelection(text);
             }
         }, this.app);
 

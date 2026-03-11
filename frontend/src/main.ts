@@ -250,6 +250,7 @@ export default class DeepPDFPlugin extends Plugin {
 
     /**
      * 保存高亮到文件
+     * 多行文本分行处理，每行独立高亮但使用同一颜色
      */
     private async saveHighlightToFile(text: string, color: HighlightColorId): Promise<void> {
         const activeFile = this.app.workspace.getActiveFile();
@@ -263,23 +264,36 @@ export default class DeepPDFPlugin extends Plugin {
 
             // 分离 frontmatter 和 body，只在 body 中替换
             const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
+            const bgColor = this.getHighlightBgColor(color);
 
-            // 检查文本是否在 body 中存在
-            if (!body.includes(text)) {
+            // 将文本按行分割
+            const lines = text.split('\n').filter(line => line.trim().length > 0);
+
+            let newBody = body;
+            let highlightedCount = 0;
+
+            // 逐行处理高亮
+            for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) continue;
+
+                // 使用新的查找方法
+                const matchResult = this.findTextInMarkdown(newBody, trimmedLine);
+                if (matchResult) {
+                    const highlightedText = `<mark style="background: ${bgColor}">${matchResult.matched}</mark>`;
+                    newBody = newBody.substring(0, matchResult.index) + highlightedText + newBody.substring(matchResult.index + matchResult.matched.length);
+                    highlightedCount++;
+                }
+            }
+
+            if (highlightedCount === 0) {
                 new Notice("无法保存高亮：未找到文本");
                 return;
             }
 
-            // 使用 HTML mark 标签保存彩色高亮
-            const bgColor = this.getHighlightBgColor(color);
-            const highlightedText = `<mark style="background: ${bgColor}">${text}</mark>`;
-
-            // 只在 body 部分替换第一次出现的位置
-            const newBody = body.replace(text, highlightedText);
             const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
-
             await this.app.vault.modify(activeFile, newContent);
-            log('[DeepPDF] Highlight saved to file with color:', color);
+            log('[DeepPDF] Highlight saved:', highlightedCount, 'lines with color:', color);
         } catch (err) {
             log.error('[DeepPDF] Failed to save highlight:', err);
             new Notice("保存高亮失败");
@@ -287,7 +301,124 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     /**
+     * 在 markdown 内容中查找纯文本
+     * 支持处理 **、__、*、_、[[]] 等标记
+     */
+    private findTextInMarkdown(content: string, plainText: string): { matched: string, index: number } | null {
+        // 1. 先尝试精确匹配
+        const exactIndex = content.indexOf(plainText);
+        if (exactIndex !== -1) {
+            return { matched: plainText, index: exactIndex };
+        }
+
+        // 2. 尝试在整体前后加可选的 markdown 标记
+        // 例如："国家和教会分离" -> "**国家和教会分离**"
+        const escaped = this.escapeRegex(plainText);
+        const wrappedPatterns = [
+            '(\\*\\*)' + escaped + '(\\*\\*)',      // **text**
+            '(__)' + escaped + '(__)',              // __text__
+            '(\\*)' + escaped + '(\\*)',            // *text*
+            '(_)' + escaped + '(_)',                // _text_
+            '(\\[\\[)' + escaped + '(\\]\\])',      // [[text]]
+            '(`)' + escaped + '(`)',                // `text`
+        ];
+
+        for (const pattern of wrappedPatterns) {
+            const regex = new RegExp(pattern, 's');
+            const match = content.match(regex);
+            if (match) {
+                return {
+                    matched: match[0],
+                    index: match.index!
+                };
+            }
+        }
+
+        // 3. 尝试部分匹配：文本的一部分可能被标记包裹
+        // 例如："国家和教会分离：利用..." 可能是 "**国家和教会分离**：利用..."
+        const punctIndex = plainText.search(/[：:，,。！？、；;\s]/);
+        if (punctIndex > 0) {
+            const beforePunct = plainText.substring(0, punctIndex);
+            const afterPunct = plainText.substring(punctIndex);
+
+            const beforeEscaped = this.escapeRegex(beforePunct);
+            const afterEscaped = this.escapeRegex(afterPunct);
+
+            const partialPatterns = [
+                '(\\*\\*)' + beforeEscaped + '(\\*\\*)' + afterEscaped,
+                '(__)' + beforeEscaped + '(__)' + afterEscaped,
+                '(\\*)' + beforeEscaped + '(\\*)' + afterEscaped,
+                '(_)' + beforeEscaped + '(_)' + afterEscaped,
+            ];
+
+            for (const pattern of partialPatterns) {
+                const regex = new RegExp(pattern, 's');
+                const match = content.match(regex);
+                if (match) {
+                    return {
+                        matched: match[0],
+                        index: match.index!
+                    };
+                }
+            }
+        }
+
+        // 4. 尝试中间被标记包裹的情况
+        // 例如："揭示了文化可以转化为硬实力和政治优势" -> "揭示了**文化可以转化为硬实力和政治优势**"
+        // 在文本开头和结尾寻找可能的分割点
+        const middleMatch = this.findMiddleMarkdownMatch(content, plainText);
+        if (middleMatch) {
+            return middleMatch;
+        }
+
+        return null;
+    }
+
+    /**
+     * 查找中间被 markdown 标记包裹的文本
+     * 例如："prefix + text + suffix" -> "prefix + **text** + suffix"
+     */
+    private findMiddleMarkdownMatch(content: string, plainText: string): { matched: string, index: number } | null {
+        // 尝试从开头逐步增加前缀长度，寻找被标记包裹的部分
+        for (let i = 1; i < plainText.length - 1; i++) {
+            const prefix = plainText.substring(0, i);
+            const rest = plainText.substring(i);
+
+            // 如果 rest 以标点或空格开头，跳过（这种情况已经在前面处理过了）
+            if (/^[：:，,。！？、；;\s]/.test(rest)) {
+                continue;
+            }
+
+            const prefixEscaped = this.escapeRegex(prefix);
+            const restEscaped = this.escapeRegex(rest);
+
+            // 尝试 rest 部分被标记包裹
+            const patterns = [
+                prefixEscaped + '(\\*\\*)' + restEscaped + '(\\*\\*)',
+                prefixEscaped + '(__)' + restEscaped + '(__)',
+                prefixEscaped + '(\\*)' + restEscaped + '(\\*)',
+                prefixEscaped + '(_)' + restEscaped + '(_)',
+                prefixEscaped + '(\\[\\[)' + restEscaped + '(\\]\\])',
+            ];
+
+            for (const pattern of patterns) {
+                const regex = new RegExp(pattern, 's');
+                const match = content.match(regex);
+                if (match) {
+                    return {
+                        matched: match[0],
+                        index: match.index!
+                    };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * 从文件中移除高亮
+     * 检测相邻的段落/列表项是否也有相同颜色的高亮，一并移除
      */
     private async removeHighlightFromFile(text: string): Promise<void> {
         const activeFile = this.app.workspace.getActiveFile();
@@ -301,17 +432,82 @@ export default class DeepPDFPlugin extends Plugin {
             // 分离 frontmatter 和 body，只在 body 中移除
             const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
 
-            // 匹配并移除 HTML mark 标签（支持任意颜色）
-            const regex = new RegExp(`<mark style="background: [^"]*">${this.escapeRegex(text)}</mark>`, 'g');
-            if (regex.test(body)) {
-                const newBody = body.replace(regex, text);
-                const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
-                await this.app.vault.modify(activeFile, newContent);
-                log('[DeepPDF] Highlight removed from file');
+            // 首先找到当前文本所在的高亮标签，获取其颜色
+            const colorInfo = this.findHighlightColor(body, text);
+            if (!colorInfo) {
+                log('[DeepPDF] No highlight found for text');
+                return;
             }
+
+            const { bgColor, matchedText } = colorInfo;
+
+            // 移除当前高亮
+            let newBody = body;
+            const escapedMatched = this.escapeRegex(matchedText);
+            const currentMarkRegex = new RegExp(`<mark style="background: ${this.escapeRegex(bgColor)}">${escapedMatched}</mark>`, 's');
+            newBody = newBody.replace(currentMarkRegex, matchedText);
+
+            // 检测并移除相邻的相同颜色高亮（列表项或段落）
+            newBody = this.removeAdjacentHighlights(newBody, bgColor);
+
+            const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
+            await this.app.vault.modify(activeFile, newContent);
+            log('[DeepPDF] Highlight removed from file');
         } catch (err) {
             log.error('[DeepPDF] Failed to remove highlight:', err);
         }
+    }
+
+    /**
+     * 查找文本所在高亮的颜色
+     */
+    private findHighlightColor(body: string, text: string): { bgColor: string, matchedText: string } | null {
+        // 尝试精确匹配
+        const exactRegex = new RegExp(`<mark style="background: ([^"]*)">${this.escapeRegex(text)}</mark>`, 's');
+        const exactMatch = body.match(exactRegex);
+        if (exactMatch) {
+            return { bgColor: exactMatch[1], matchedText: text };
+        }
+
+        // 尝试模糊匹配
+        const matchResult = this.findTextInMarkdown(body, text);
+        if (matchResult) {
+            const fuzzyRegex = new RegExp(`<mark style="background: ([^"]*)">${this.escapeRegex(matchResult.matched)}</mark>`, 's');
+            const fuzzyMatch = body.match(fuzzyRegex);
+            if (fuzzyMatch) {
+                return { bgColor: fuzzyMatch[1], matchedText: matchResult.matched };
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 移除相邻的相同颜色高亮
+     * 检测连续的列表项（1. 2. 3. 或 - *）或段落是否有相同颜色的高亮
+     */
+    private removeAdjacentHighlights(body: string, bgColor: string): string {
+        const escapedBgColor = this.escapeRegex(bgColor);
+
+        // 对于每个匹配到的行，检查是否是目标颜色，如果是则移除
+        // 使用简单的逐行处理
+        const lines = body.split('\n');
+        const processedLines: string[] = [];
+
+        for (const line of lines) {
+            // 检查这行是否有目标颜色的高亮
+            const highlightRegex = new RegExp(`<mark style="background: ${escapedBgColor}">([^<]+)</mark>`, 'g');
+
+            if (highlightRegex.test(line)) {
+                // 移除该行的高亮标签
+                const cleanLine = line.replace(highlightRegex, '$1');
+                processedLines.push(cleanLine);
+            } else {
+                processedLines.push(line);
+            }
+        }
+
+        return processedLines.join('\n');
     }
 
     /**
