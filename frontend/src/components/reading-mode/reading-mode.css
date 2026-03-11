@@ -37,7 +37,7 @@
     font-family: "Charter", "Georgia", "Noto Serif SC", serif;
     font-size: 26px;
     font-weight: 700;
-    margin-bottom: 0.8em;
+    margin-bottom: 0.6em;
     margin-top: 0;
     color: var(--text-normal);
     line-height: 1.4;
@@ -46,9 +46,9 @@
 
 .deeppdf-reading-mode .markdown-preview-view h2 {
     font-family: "Charter", "Georgia", "Noto Serif SC", serif;
-    font-size: 20px;
+    font-size: 25px;
     font-weight: 600;
-    margin-top: 2.5em;
+    margin-top: 3em !important;
     margin-bottom: 1em;
     color: var(--text-normal);
     line-height: 1.4;
@@ -56,10 +56,10 @@
 
 .deeppdf-reading-mode .markdown-preview-view h3 {
     font-family: "Charter", "Georgia", "Noto Serif SC", serif;
-    font-size: 17px;
+    font-size: 22px;
     font-weight: 600;
-    margin-top: 2em;
-    margin-bottom: 0.8em;
+    margin-top: 2.5em !important;
+    margin-bottom: 0.5em;
     color: var(--text-muted);
 }
 
@@ -76,7 +76,7 @@
     /* 两端对齐，书籍排版 */
     text-align: justify;
     /* 段落间距 */
-    margin-bottom: 1.4em;
+    margin-bottom: 0.5em;
     margin-top: 0;
     /* 降低对比度，保护眼睛 */
     color: var(--text-normal);
@@ -101,7 +101,7 @@
     font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", serif;
     font-size: 17px;
     line-height: 1.9;
-    margin-bottom: 1.4em;
+    margin-bottom: 0.8em;
     margin-top: 0;
     padding-left: 1.5em;
 }
@@ -119,7 +119,7 @@
 .deeppdf-reading-mode .markdown-preview-view blockquote {
     font-family: "Charter", "Georgia", serif;
     font-style: italic;
-    margin: 1.8em 0;
+    margin: 1.2em 0;
     padding: 1em 1.5em;
     border-left: 3px solid var(--interactive-accent);
     background: var(--background-secondary);
