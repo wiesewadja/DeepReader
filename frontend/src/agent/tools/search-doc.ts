@@ -132,6 +132,7 @@ export const searchDocTool: ToolExecutor = {
 
           return `${index + 1}. **${section}**${page ? ` (Page ${page})` : ''}${distance}
    Link: ${obsidianLink}
+   node_id: ${nodeId || 'N/A'}
    ${item.text.trim()}`;
         })
         .join('\n\n');
