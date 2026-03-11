@@ -128,8 +128,9 @@ export class ReadingTopbar extends Component {
             e.stopPropagation();
             this.options.onToggleFocusMode?.();
         });
-        rightSection.insertBefore(this.focusModeBtn, actionBtn);
 
+        // 先添加聚焦按钮，再添加 actionBtn（这样聚焦按钮在左边）
+        rightSection.appendChild(this.focusModeBtn);
         rightSection.appendChild(actionBtn);
         rightSection.appendChild(this.dropdownMenu);
         container.appendChild(rightSection);

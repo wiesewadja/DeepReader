@@ -12,6 +12,14 @@ import { LLMClient } from './llm-client';
 import type { ToolRegistry, ToolContext } from './tools/types';
 import { executeTool } from './tools/index';
 import { agentLog } from '../utils/logger';
+import {
+  validateAndCorrectLinks,
+  extractReferencedChapters,
+} from './utils/link-validator.js';
+import {
+  updateReadingProgress,
+  FAMILIARITY_DELTAS,
+} from './utils/book-note.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../utils/logger';
@@ -23,6 +31,11 @@ export interface AgentLoopOptions {
   onProgress: (status: string) => void;
   onComplete: () => void;
   onError: (error: string) => void;
+  /**
+   * 当 AI 回复完成时调用（包含完整内容）
+   * 用于校验链接和更新熟悉度
+   */
+  onContentComplete?: (content: string) => Promise<string>;
 }
 
 /**
@@ -122,6 +135,16 @@ export async function runAgentLoop(
     // 如果没有 tool_calls，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
       agentLog(`[AgentLoop] 完成. finishReason=${finishReason}, 内容长度=${accumulatedContent.length}`);
+
+      // 调用内容完成回调（用于链接校验和熟悉度更新）
+      if (options.onContentComplete && accumulatedContent) {
+        try {
+          await options.onContentComplete(accumulatedContent);
+        } catch (err) {
+          agentLog('[AgentLoop] onContentComplete 回调失败:', err);
+        }
+      }
+
       options.onComplete();
       break;
     }

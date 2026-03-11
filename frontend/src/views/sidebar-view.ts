@@ -32,6 +32,14 @@ import type { ToolContext } from "../agent/tools/types.js";
 import type { ReadingProgress } from "../agent/tools/types.js";
 import { getBookReadingProgress } from "../agent/utils/book-note.js";
 import { calculateProgressMetrics } from "../agent/utils/plugin-data.js";
+import {
+    validateAndCorrectLinks,
+    extractReferencedChapters,
+} from "../agent/utils/link-validator.js";
+import {
+    updateReadingProgress,
+    FAMILIARITY_DELTAS,
+} from "../agent/utils/book-note.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -1789,6 +1797,60 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                     }
 
                     this.messageList?.updateMessage(aiMessageId, updates);
+                },
+                // onContentComplete: AI 回复完成时校验链接并更新熟悉度
+                onContentComplete: async (content: string): Promise<string> => {
+                    if (!this.currentPdfName || !context.app) {
+                        return content;
+                    }
+
+                    try {
+                        // 1. 校验并纠正 wiki 链接
+                        const { correctedContent, validatedLinks } = await validateAndCorrectLinks(
+                            this.app,
+                            content
+                        );
+
+                        // 2. 提取引用的章节索引
+                        const chapterIndices = extractReferencedChapters(validatedLinks);
+
+                        // 3. 更新熟悉度（ai_reference 触发）
+                        if (chapterIndices.length > 0) {
+                            const indexId = this.currentIndexId || this.currentPdfName;
+                            const totalChapters = context.readingProgress?.totalChapters || 100;
+
+                            for (const chapterIndex of chapterIndices) {
+                                try {
+                                    await updateReadingProgress(
+                                        this.app,
+                                        this.currentPdfName,
+                                        indexId,
+                                        totalChapters,
+                                        chapterIndex,
+                                        FAMILIARITY_DELTAS.ai_reference
+                                    );
+                                    log('[DeepPDF] AI 引用熟悉度更新成功，章节:', chapterIndex);
+                                } catch (err) {
+                                    logError('[DeepPDF] AI 引用熟悉度更新失败:', err);
+                                }
+                            }
+                        }
+
+                        // 4. 如果内容被纠正，更新消息显示
+                        if (correctedContent !== content) {
+                            log('[DeepPDF] 链接已纠正，更新消息');
+                            this.messageList?.updateMessage(aiMessageId, {
+                                content: correctedContent,
+                            });
+                            // 更新 fullContent 以便后续保存
+                            fullContent = correctedContent;
+                        }
+
+                        return correctedContent;
+                    } catch (err) {
+                        logError('[DeepPDF] 链接校验失败:', err);
+                        return content;
+                    }
                 },
                 // onProgress: 接收进度更新
                 onProgress: (status: string) => {
