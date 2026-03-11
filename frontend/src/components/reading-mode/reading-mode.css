@@ -463,41 +463,52 @@
 
 /* CSS 变量定义 */
 body.deeppdf-reading-mode.deeppdf-focus-mode {
-    --deeppdf-unfocused-level: 0.2;
+    --deeppdf-unfocused-level: 0.25;
     --deeppdf-focus-font: "Iowan Old Style", "Charter", "Georgia", "Times New Roman", serif;
     --deeppdf-focus-font-size: 18px;
     --deeppdf-focus-line-height: 1.9;
 }
 
-/* 淡化视口外的内容 - 针对阅读视图中的段落元素 */
+/* 淡化所有段落 - 使用 hover 实现聚焦效果 */
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p,
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li,
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote {
-    opacity: var(--deeppdf-unfocused-level, 0.2);
-    transition: opacity 0.4s ease;
+    opacity: var(--deeppdf-unfocused-level, 0.25);
+    transition: opacity 0.3s ease;
 }
 
-/* 视口内可见的内容 - 高亮显示 */
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p.deeppdf-in-view,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li.deeppdf-in-view,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote.deeppdf-in-view {
+/* hover 时高亮显示 */
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p:hover,
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li:hover,
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote:hover {
     opacity: 1;
     font-family: var(--deeppdf-focus-font);
     font-size: var(--deeppdf-focus-font-size);
     line-height: var(--deeppdf-focus-line-height);
 }
 
-/* 标题半透明显示 */
+/* 标题保持可见但稍淡 */
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h1,
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h2,
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h3 {
-    opacity: 0.6;
-    transition: opacity 0.4s ease;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h1:hover,
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h2:hover,
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h3:hover {
+    opacity: 1;
 }
 
 /* 代码块和表格保持可见 */
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view pre,
 body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view table {
-    opacity: 0.5;
-    transition: opacity 0.4s ease;
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
+}
+
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view pre:hover,
+body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view table:hover {
+    opacity: 1;
 }

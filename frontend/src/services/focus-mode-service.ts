@@ -1,6 +1,6 @@
 /**
- * 聚焦模式服务
- * 使用 IntersectionObserver 检测视口内的段落，实现聚焦阅读效果
+ * 聚焦模式服务（简化版）
+ * 使用纯 CSS :hover 实现聚焦效果，无需 IntersectionObserver
  *
  * 依赖：聚焦模式必须在阅读模式激活后才能启用
  */
@@ -21,7 +21,7 @@ export interface FocusModeSettings {
 export const DEFAULT_FOCUS_SETTINGS: FocusModeSettings = {
     enabled: false,
     autoEnable: false,
-    unfocusedLevel: 0.2,
+    unfocusedLevel: 0.25,
     fontFamily: 'iowan',
     fontSize: 18,
     lineHeight: 1.9,
@@ -37,7 +37,6 @@ export const FONT_FAMILIES: Record<FocusFontFamily, string> = {
 
 export class FocusModeService {
     private settings: FocusModeSettings;
-    private observer: IntersectionObserver | null = null;
     private isActive: boolean = false;
     private styleElement: HTMLStyleElement | null = null;
     private onSettingsChange?: (settings: FocusModeSettings) => void;
@@ -121,12 +120,9 @@ export class FocusModeService {
         document.body.classList.add('deeppdf-focus-mode');
         this.isActive = true;
 
-        // 注入字体样式
+        // 注入动态样式（字体配置）
         this.injectStyles();
         this.applyFontStyles();
-
-        // 设置 IntersectionObserver
-        this.setupObserver();
 
         serviceLog('[FocusMode] Activated');
     }
@@ -140,12 +136,6 @@ export class FocusModeService {
         // 移除 body 类
         document.body.classList.remove('deeppdf-focus-mode');
         this.isActive = false;
-
-        // 移除所有聚焦类
-        this.clearAllFocusClasses();
-
-        // 断开 observer
-        this.disconnectObserver();
 
         // 移除样式
         this.removeStyles();
@@ -165,7 +155,7 @@ export class FocusModeService {
     }
 
     /**
-     * 应用字体样式
+     * 应用字体样式（动态配置）
      */
     private applyFontStyles(): void {
         if (!this.styleElement) return;
@@ -192,81 +182,11 @@ export class FocusModeService {
     }
 
     /**
-     * 设置 IntersectionObserver
-     */
-    private setupObserver(): void {
-        if (this.observer) {
-            this.disconnectObserver();
-        }
-
-        const options: IntersectionObserverInit = {
-            root: null,
-            rootMargin: '-10% 0px -10% 0px', // 视口上下各留 10% 边距
-            threshold: 0.1, // 10% 可见时触发
-        };
-
-        this.observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('deeppdf-in-view');
-                } else {
-                    entry.target.classList.remove('deeppdf-in-view');
-                }
-            });
-        }, options);
-
-        // 观察所有段落
-        this.observeElements();
-    }
-
-    /**
-     * 观察阅读视图中的段落元素
-     */
-    private observeElements(): void {
-        const previewView = document.querySelector('.markdown-preview-view');
-        if (!previewView) {
-            serviceLog('[FocusMode] Preview view not found');
-            return;
-        }
-
-        // 选择阅读视图中的段落元素
-        const elements = previewView.querySelectorAll('p, li, blockquote');
-        elements.forEach(el => {
-            this.observer?.observe(el);
-        });
-        serviceLog('[FocusMode] Observing', elements.length, 'elements');
-    }
-
-    /**
-     * 清除所有聚焦类
-     */
-    private clearAllFocusClasses(): void {
-        const elements = document.querySelectorAll('.deeppdf-in-view');
-        elements.forEach(el => {
-            el.classList.remove('deeppdf-in-view');
-        });
-    }
-
-    /**
-     * 断开 IntersectionObserver
-     */
-    private disconnectObserver(): void {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
-        }
-    }
-
-    /**
-     * 刷新观察（当内容变化时调用）
+     * 刷新（当内容变化时调用）- 简化版无需操作
      */
     refresh(): void {
-        if (!this.isActive) return;
-
-        this.clearAllFocusClasses();
-        this.disconnectObserver();
-        this.setupObserver();
-        serviceLog('[FocusMode] Refreshed observer');
+        // 使用 CSS :hover 实现，无需刷新
+        serviceLog('[FocusMode] Refresh (no-op for CSS-based implementation)');
     }
 
     /**
