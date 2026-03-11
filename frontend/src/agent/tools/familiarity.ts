@@ -5,12 +5,11 @@
  * - update_familiarity: 更新章节熟悉度
  */
 
-import type { App } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { toolsLog as log, error } from '../../utils/logger.js';
 import {
-  updateBookFamiliarity,
+  updateReadingProgress,
   FAMILIARITY_DELTAS,
   FamiliarityReason,
 } from '../utils/book-note.js';
@@ -58,7 +57,7 @@ const updateFamiliarityDefinition: ToolDefinition = {
 /**
  * 创建 update_familiarity 工具执行器
  */
-export function createUpdateFamiliarityTool(app: App): ToolExecutor {
+export function createUpdateFamiliarityTool(): ToolExecutor {
   return {
     definition: updateFamiliarityDefinition,
     async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
@@ -78,9 +77,15 @@ export function createUpdateFamiliarityTool(app: App): ToolExecutor {
         return 'Error: pdfName 不可用，无法更新熟悉度';
       }
 
-      const success = await updateBookFamiliarity(
+      // 获取 indexId 和 totalChapters（从 context）
+      const indexId = context.indexId || context.pdfName;
+      const totalChapters = context.readingProgress?.totalChapters || 100; // 默认值
+
+      const success = await updateReadingProgress(
         context.app,
         context.pdfName,
+        indexId,
+        totalChapters,
         chapterIndex,
         delta
       );
@@ -88,7 +93,7 @@ export function createUpdateFamiliarityTool(app: App): ToolExecutor {
       if (success) {
         return `章节 ${chapterIndex} 熟悉度已更新 (+${delta})，原因: ${reason}`;
       } else {
-        return `更新熟悉度失败，可能书籍笔记不存在`;
+        return `更新熟悉度失败`;
       }
     },
   };
@@ -98,9 +103,6 @@ export function createUpdateFamiliarityTool(app: App): ToolExecutor {
 export const updateFamiliarityTool: ToolExecutor = {
   definition: updateFamiliarityDefinition,
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    if (!context.app) {
-      return 'Error: Obsidian App 实例不可用';
-    }
-    return createUpdateFamiliarityTool(context.app).execute(args, context);
+    return createUpdateFamiliarityTool().execute(args, context);
   },
 };

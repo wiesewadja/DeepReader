@@ -11,6 +11,11 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { ContextLoader } from '../context/loader.js';
 import { toolsLog as log, error } from '../../utils/logger.js';
+import {
+  MEMORY_DATA_DIR,
+  MEMORY_ENTRIES_DIR,
+  ensurePluginDataDirs,
+} from '../utils/plugin-data.js';
 
 /**
  * add_memory 工具定义
@@ -190,19 +195,20 @@ export function createSearchMemoryTool(app: any): ToolExecutor {
  * 注意：实际的摘要生成需要 LLM 参与，这里只做基础整合
  * 完整实现需要调用 LLM API 来生成摘要
  */
-export function createSummarizeMemoryTool(app: any): ToolExecutor {
+export function createSummarizeMemoryTool(): ToolExecutor {
   return {
     definition: summarizeMemoryDefinition,
-    async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+    async execute(_args: Record<string, unknown>, context: ToolContext): Promise<string> {
       if (!context.app) {
         return 'Error: Obsidian App 实例不可用';
       }
 
-      const loader = new ContextLoader(context.app);
-
       try {
-        // 读取所有记忆条目
-        const entriesDir = 'DeepReader/memory/entries';
+        // 确保目录存在
+        await ensurePluginDataDirs(context.app);
+
+        // 读取所有记忆条目（从插件数据目录）
+        const entriesDir = MEMORY_ENTRIES_DIR;
         const exists = await context.app.vault.adapter.exists(entriesDir);
 
         if (!exists) {
@@ -236,8 +242,8 @@ ${entries.join('\n\n')}
 ---
 *此摘要由系统自动生成，包含 ${entries.length} 条记忆条目*`;
 
-        // 写入摘要文件
-        const summaryPath = 'DeepReader/memory/summary.md';
+        // 写入摘要文件（到插件数据目录）
+        const summaryPath = `${MEMORY_DATA_DIR}/summary.md`;
         await context.app.vault.adapter.write(summaryPath, summaryContent);
 
         log('[summarize_memory] 摘要已生成，包含', entries.length, '条记忆');
@@ -280,9 +286,6 @@ export const searchMemoryTool: ToolExecutor = {
 export const summarizeMemoryTool: ToolExecutor = {
   definition: summarizeMemoryDefinition,
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    if (!context.app) {
-      return 'Error: Obsidian App 实例不可用';
-    }
-    return createSummarizeMemoryTool(context.app).execute(args, context);
+    return createSummarizeMemoryTool().execute(args, context);
   },
 };

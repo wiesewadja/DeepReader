@@ -3,12 +3,17 @@
  *
  * 分层加载策略：
  * - Layer 1: DeepReader.md（用户配置，始终加载）
- * - Layer 2: memory/summary.md（记忆摘要，始终加载）
- * - Layer 3: memory/entries/*.md（详细记忆，按需加载）
+ * - Layer 2: memory/summary.md（记忆摘要，始终加载，位于插件数据目录）
+ * - Layer 3: memory/entries/*.md（详细记忆，按需加载，位于插件数据目录）
  */
 
 import { App } from 'obsidian';
 import { contextLog as log, error } from '../../utils/logger.js';
+import {
+  MEMORY_DATA_DIR,
+  MEMORY_ENTRIES_DIR,
+  ensurePluginDataDirs,
+} from '../utils/plugin-data.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -77,10 +82,10 @@ export class ContextLoader {
   }
 
   /**
-   * Layer 2: 加载记忆摘要 (memory/summary.md)
+   * Layer 2: 加载记忆摘要 (memory/summary.md，位于插件数据目录)
    */
   private async loadMemorySummary(): Promise<string> {
-    const summaryPath = `${this.deepReaderDir}/memory/summary.md`;
+    const summaryPath = `${MEMORY_DATA_DIR}/summary.md`;
 
     try {
       const exists = await this.app.vault.adapter.exists(summaryPath);
@@ -97,10 +102,10 @@ export class ContextLoader {
   }
 
   /**
-   * Layer 3: 搜索详细记忆（按需调用）
+   * Layer 3: 搜索详细记忆（按需调用，位于插件数据目录）
    */
   async searchMemory(query: string): Promise<string[]> {
-    const entriesDir = `${this.deepReaderDir}/memory/entries`;
+    const entriesDir = MEMORY_ENTRIES_DIR;
 
     try {
       const exists = await this.app.vault.adapter.exists(entriesDir);
@@ -135,20 +140,17 @@ export class ContextLoader {
   }
 
   /**
-   * 添加新记忆条目
+   * 添加新记忆条目（存储到插件数据目录）
    */
   async addMemoryEntry(content: string): Promise<boolean> {
-    const entriesDir = `${this.deepReaderDir}/memory/entries`;
+    const entriesDir = MEMORY_ENTRIES_DIR;
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const fileName = `${timestamp}-${Date.now()}.md`;
     const filePath = `${entriesDir}/${fileName}`;
 
     try {
-      // 确保目录存在
-      const dirExists = await this.app.vault.adapter.exists(entriesDir);
-      if (!dirExists) {
-        await this.app.vault.createFolder(entriesDir);
-      }
+      // 确保插件数据目录存在
+      await ensurePluginDataDirs(this.app);
 
       // 写入记忆条目
       const entryContent = `# 记忆条目 - ${timestamp}\n\n${content}`;
@@ -166,18 +168,14 @@ export class ContextLoader {
    * 确保目录结构存在
    */
   async ensureDirectories(): Promise<void> {
-    const dirs = [
-      this.deepReaderDir,
-      `${this.deepReaderDir}/memory`,
-      `${this.deepReaderDir}/memory/entries`,
-    ];
+    // 确保插件数据目录（memory 等存放在这里）
+    await ensurePluginDataDirs(this.app);
 
-    for (const dir of dirs) {
-      const exists = await this.app.vault.adapter.exists(dir);
-      if (!exists) {
-        await this.app.vault.createFolder(dir);
-        log('[ContextLoader] Created directory:', dir);
-      }
+    // 保留 DeepReader 目录（用于用户配置文件）
+    const exists = await this.app.vault.adapter.exists(this.deepReaderDir);
+    if (!exists) {
+      await this.app.vault.createFolder(this.deepReaderDir);
+      log('[ContextLoader] Created directory:', this.deepReaderDir);
     }
   }
 
@@ -186,7 +184,7 @@ export class ContextLoader {
    * 当条目数超过阈值时返回 true
    */
   async needsSummarization(): Promise<boolean> {
-    const entriesDir = `${this.deepReaderDir}/memory/entries`;
+    const entriesDir = MEMORY_ENTRIES_DIR;
     const THRESHOLD = 10;
 
     try {

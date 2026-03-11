@@ -5,8 +5,15 @@
  */
 
 import type { App } from 'obsidian';
-import { TFile, normalizePath } from 'obsidian';
+import { normalizePath } from 'obsidian';
 import { toolsLog as log, error } from '../../utils/logger.js';
+import {
+  readReadingProgress,
+  writeReadingProgress,
+  createEmptyReadingProgress,
+  calculateProgressMetrics,
+  type ReadingProgressData,
+} from './plugin-data.js';
 
 // ==================== 常量定义 ====================
 
@@ -66,76 +73,6 @@ export function parseFrontmatter(content: string): {
   };
 }
 
-// ==================== 熟悉度更新 ====================
-
-/**
- * 更新书籍笔记的章节熟悉度
- *
- * 使用 Obsidian 的 processFrontMatter API 安全更新 frontmatter
- *
- * @param app Obsidian App 实例
- * @param bookName 书名
- * @param chapterIndex 章节索引
- * @param delta 增量值
- * @returns 是否更新成功
- */
-export async function updateBookFamiliarity(
-  app: App,
-  bookName: string,
-  chapterIndex: number,
-  delta: number
-): Promise<boolean> {
-  const notePath = getBookNotePath(bookName);
-
-  log('[updateBookFamiliarity] 开始更新', {
-    bookName,
-    notePath,
-    chapterIndex,
-    delta
-  });
-
-  try {
-    const file = app.vault.getAbstractFileByPath(notePath);
-
-    if (!file || !(file instanceof TFile)) {
-      log('[updateBookFamiliarity] 书籍笔记不存在:', notePath);
-      return false;
-    }
-
-    log('[updateBookFamiliarity] 找到文件:', file.path);
-
-    // 使用 Obsidian API 安全更新 frontmatter
-    await app.fileManager.processFrontMatter(file, (fm) => {
-      log('[updateBookFamiliarity] 当前 frontmatter:', JSON.stringify(fm));
-
-      // 获取或初始化 chapter_familiarity
-      const familiarity: Record<string, number> = fm.chapter_familiarity || {};
-
-      // 更新指定章节的熟悉度
-      const key = String(chapterIndex);
-      familiarity[key] = (familiarity[key] || 0) + delta;
-
-      // 写回 frontmatter
-      fm.chapter_familiarity = familiarity;
-
-      // 更新总互动次数
-      const totalInteractions = Object.values(familiarity).reduce((a, b) => a + b, 0);
-      fm.total_interactions = totalInteractions;
-
-      // 更新最后活跃日期
-      fm.last_active = new Date().toISOString().split('T')[0];
-
-      log('[updateBookFamiliarity] 更新后 frontmatter:', JSON.stringify(fm));
-    });
-
-    log('[updateBookFamiliarity] 章节', chapterIndex, '熟悉度+', delta, '更新成功');
-    return true;
-  } catch (err) {
-    error('[updateBookFamiliarity] 更新失败:', err);
-    return false;
-  }
-}
-
 /**
  * 从 nodeId 提取章节索引
  * 格式如 "western-history_03-第一章" -> 3
@@ -143,4 +80,95 @@ export async function updateBookFamiliarity(
 export function extractChapterIndexFromNodeId(nodeId: string): number | null {
   const match = nodeId.match(/_(\d+)-/);
   return match ? parseInt(match[1], 10) : null;
+}
+
+// ==================== 阅读进度存储（插件数据目录）====================
+
+/**
+ * 更新书籍阅读进度（存储到插件数据目录）
+ *
+ * @param app Obsidian App 实例
+ * @param bookName 书名
+ * @param bookId 书籍 ID（index_id）
+ * @param totalChapters 总章节数
+ * @param chapterIndex 章节索引
+ * @param delta 增量值
+ * @returns 是否更新成功
+ */
+export async function updateReadingProgress(
+  app: App,
+  bookName: string,
+  bookId: string,
+  totalChapters: number,
+  chapterIndex: number,
+  delta: number
+): Promise<boolean> {
+  try {
+    // 读取现有进度或创建新的
+    let progress =
+      (await readReadingProgress(app, bookName)) ||
+      createEmptyReadingProgress(bookName, bookId, totalChapters);
+
+    // 更新章节熟悉度
+    const key = String(chapterIndex);
+    progress.chapterFamiliarity[key] =
+      (progress.chapterFamiliarity[key] || 0) + delta;
+
+    // 更新总互动次数
+    progress.totalInteractions = Object.values(
+      progress.chapterFamiliarity
+    ).reduce((a, b) => a + b, 0);
+
+    // 计算指标
+    const metrics = calculateProgressMetrics(progress);
+    progress.coverage = metrics.coverage;
+    progress.absorption = metrics.absorption;
+
+    // 写入
+    const success = await writeReadingProgress(app, progress);
+
+    if (success) {
+      log(
+        '[updateReadingProgress]',
+        bookName,
+        '章节',
+        chapterIndex,
+        '熟悉度+',
+        delta
+      );
+    }
+
+    return success;
+  } catch (err) {
+    error('[updateReadingProgress] 更新失败:', err);
+    return false;
+  }
+}
+
+/**
+ * 获取书籍阅读进度
+ */
+export async function getBookReadingProgress(
+  app: App,
+  bookName: string
+): Promise<ReadingProgressData | null> {
+  return readReadingProgress(app, bookName);
+}
+
+// ==================== 向后兼容（已废弃）====================
+
+/**
+ * 更新书籍笔记的章节熟悉度
+ * @deprecated 已废弃，请使用 updateReadingProgress。数据现在存储在插件数据目录而非 frontmatter。
+ */
+export async function updateBookFamiliarity(
+  app: App,
+  bookName: string,
+  chapterIndex: number,
+  delta: number
+): Promise<boolean> {
+  // 转发到新函数
+  const indexId = bookName;
+  const totalChapters = 100; // 默认值
+  return updateReadingProgress(app, bookName, indexId, totalChapters, chapterIndex, delta);
 }

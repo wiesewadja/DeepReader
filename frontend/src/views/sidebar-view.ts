@@ -29,6 +29,9 @@ import { LibraryModal } from "../components/library-modal/index.js";
 import { uiLog as log, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
+import type { ReadingProgress } from "../agent/tools/types.js";
+import { getBookReadingProgress } from "../agent/utils/book-note.js";
+import { calculateProgressMetrics } from "../agent/utils/plugin-data.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -1670,6 +1673,44 @@ ${r.text}`;
                 useLLMTreeSearch: this.useLLMTreeSearch,
                 app: this.app,
             };
+
+            // 加载阅读进度
+            if (this.currentPdfName) {
+                try {
+                    const progressData = await getBookReadingProgress(this.app, this.currentPdfName);
+                    if (progressData) {
+                        // 找到最熟悉的章节
+                        const familiarity = progressData.chapterFamiliarity;
+                        const entries = Object.entries(familiarity);
+                        const mostFamiliar = entries.reduce(
+                            (a, b) => (b[1] > a[1] ? b : a),
+                            ['0', 0]
+                        );
+                        const leastFamiliar = entries
+                            .filter(([, v]) => v === 0)
+                            .map(([k]) => k);
+
+                        context.readingProgress = {
+                            bookName: progressData.bookName,
+                            totalChapters: progressData.totalChapters,
+                            chapterFamiliarity: familiarity,
+                            totalInteractions: progressData.totalInteractions,
+                            coverage: progressData.coverage,
+                            absorption: progressData.absorption,
+                            mostFamiliarChapter: mostFamiliar[0],
+                            leastFamiliarChapters: leastFamiliar,
+                            lastActiveTime: progressData.lastUpdated,
+                            daysSinceLastRead: Math.floor(
+                                (Date.now() - new Date(progressData.lastUpdated).getTime()) /
+                                (1000 * 60 * 60 * 24)
+                            ),
+                        };
+                    }
+                } catch (err) {
+                    // 阅读进度加载失败不影响主流程
+                    log('[DeepPDF] 加载阅读进度失败:', err);
+                }
+            }
 
             // 构建用户消息（包含引用内容）
             let userMessage = query;

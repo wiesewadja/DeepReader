@@ -258,17 +258,38 @@ get_chapter 工具（本地读取时）会返回用户在该章节的高亮标�
 
 ## 五、文件结构
 
+### 5.1 用户可见文件（Vault 根目录）
+
 ```
 DeepReader/
-├── DeepReader.md          # 用户画像（整合配置 + 偏好 + 轨迹）
-└── memory/
-    ├── summary.md         # 记忆摘要
-    └── entries/           # 详细记忆条目
+└── DeepReader.md          # 用户画像（静态配置 + 结构化偏好）
 ```
 
+### 5.2 插件内部数据（隐藏目录）
+
+```
+.obsidian/plugins/deepreader/
+├── data.json              # 插件配置
+└── data/                  # 内部数据目录
+    ├── reading-progress/  # 阅读进度数据
+    │   ├── 西方史纲.json
+    │   └── 如何阅读一本书.json
+    └── memory/            # 对话记忆条目
+        ├── summary.md     # 记忆摘要
+        └── entries/       # 详细记忆条目
+            ├── 2026-03-01-first-reading.md
+            └── ...
+```
+
+**设计理由**：
+- `.obsidian/plugins/deepreader/data/` 是隐藏目录，用户不会误删或篡改
+- 跟随插件，卸载时一并清理
+- JSON 格式便于程序读写和调试
+- 如果需要同步，用户可以通过 Obsidian Sync 选择是否同步插件数据
+
 **分工**:
-- `DeepReader.md`：用户画像（静态配置 + 结构化偏好 + 阅读轨迹）— "我是谁"
-- `memory/`：对话记忆（动态积累的具体事件）— "发生过什么"
+- `DeepReader.md`（用户可见）：用户画像 — "我是谁"
+- `.obsidian/plugins/deepreader/data/`（隐藏）：对话记忆 + 阅读进度 — "发生过什么"
 
 ---
 
@@ -294,33 +315,32 @@ DeepReader/
 - [ ] 优化 PERSONA_BASE 增强情感表达
 
 ### Phase 4: 阅读进度智能感知
-- [ ] 扩展书籍笔记 frontmatter，添加熟悉度字段
-- [ ] 实现 `update_familiarity` 工具
-- [ ] 扩展 ToolContext 添加阅读进度信息
+- [ ] 设计阅读进度 JSON 数据格式（reading-progress/*.json）
+- [ ] 实现 `update_reading_progress` 工具（写入插件数据目录）
+- [ ] 扩展 ToolContext，从插件数据目录读取阅读进度
 - [ ] 实现 get_chapter 自动更新熟悉度（+2）
+- [ ] 实现高亮时自动更新熟悉度（+2）
 - [ ] 更新 System Prompt 添加阅读进度感知指引
-- [ ] 实现书籍笔记正文的可视化摘要更新
 
 ### Phase 5: 高亮标注集成
 - [ ] 扩展 `get_chapter` 工具返回高亮信息（仅本地读取）
 - [ ] 更新 System Prompt 添加高亮处理指引
-- [ ] 高亮时自动更新熟悉度（+2）
 - [ ] 测试本地读取与后端读取的兼容性
 
 ### Phase 6: 关联阅读
 - [ ] 实现 `search_read_books` 工具
-- [ ] 遍历已读书籍的章节摘要
+- [ ] 从插件数据目录读取已读书籍的阅读进度
 - [ ] 更新 System Prompt 添加关联阅读指引
 
 ### Phase 7: 反复阅读支持
-- [ ] 书籍笔记 frontmatter 添加 reading_history 结构
+- [ ] 阅读进度 JSON 支持 reading_history 结构
 - [ ] 实现"重读这本书"的轮次切换逻辑
 
 ---
 
 ## 七、扩展功能设计
 
-### 8.1 阅读进度智能感知系统
+### 7.1 阅读进度智能感知系统
 
 **核心思路**：基于章节熟悉度计算阅读吸收度，而非简单的百分比进度。
 
@@ -335,53 +355,93 @@ DeepReader/
 | 用户高亮该章节内容 | +2 | 标注代表关注 |
 | AI 回答引用该章节 | +1 | 说明讨论深入 |
 
-#### 存储位置：书籍笔记
+#### 存储位置：插件内部数据目录
 
-**Frontmatter 存储原始数据**：
+**设计思路**：
+- 阅读进度是动态积累的数据，放在隐藏的插件目录中
+- 用户不会误删或篡改，跟随插件生命周期
+
+**存储路径**：`.obsidian/plugins/deepreader/data/reading-progress/`
+
+**文件格式**（JSON，便于程序读写）：
+
+```json
+// .obsidian/plugins/deepreader/data/reading-progress/西方史纲.json
+{
+  "bookName": "西方史纲",
+  "bookId": "xxx",
+  "totalChapters": 10,
+  "chapterFamiliarity": {
+    "0": 5,
+    "1": 3,
+    "2": 8,
+    "3": 1,
+    "4": 0,
+    "5": 2,
+    "6": 4,
+    "7": 0,
+    "8": 0,
+    "9": 0
+  },
+  "totalInteractions": 23,
+  "coverage": 70,
+  "absorption": 77,
+  "created": "2026-03-01T00:00:00Z",
+  "lastUpdated": "2026-03-10T15:30:00Z",
+  "readingHistory": [
+    {
+      "round": 1,
+      "started": "2026-01-01",
+      "finished": "2026-02-01",
+      "finalFamiliarity": {"0": 8, "1": 6, "2": 9, "3": 7, "4": 5, "5": 4, "6": 6, "7": 3, "8": 2, "9": 1}
+    },
+    {
+      "round": 2,
+      "started": "2026-03-10",
+      "currentRound": true
+    }
+  ],
+  "currentRound": 2
+}
+```
+
+**Memory 条目格式**（可选，用于 AI 上下文）：
+
+```yaml
+# DeepReader/memory/entries/reading-progress-summary.md
+---
+type: reading_progress_summary
+created: 2026-03-10
+---
+
+# 📚 阅读进度摘要
+
+## 当前在读
+- **西方史纲**：覆盖 70%，吸收 77%，最熟悉第 2-3 章（古罗马、古希腊）
+
+## 已完成
+- 如何阅读一本书：2026-02-01 完成
+- 枪炮、病菌与钢铁：2026-01-15 完成
+```
+
+**书籍笔记 Frontmatter 保持简洁**：
 
 ```yaml
 ---
-aicreate: true           # AI 可修改标记
+aicreate: true
 index_id: xxx
 book_name: "西方史纲"
 status: reading
-
-# 阅读统计
-total_chapters: 10
-chapter_familiarity:
-  0: 5   # 第一章，熟悉度5
-  1: 3   # 第二章，熟悉度3
-  2: 8   # 第三章，熟悉度8（最熟悉）
-  3: 1
-  4: 0   # 未涉及
-total_interactions: 19
-last_active: 2026-03-10
 created: 2026-03-01
 ---
 ```
 
-**正文展示可视化摘要**（AI 可更新）：
-
-```markdown
-## 📊 阅读进度
-
-> 覆盖度：60%（6/10 章节已涉及）
-> 吸收度：63%（深度理解中）
-
-### 章节熟悉度
-
-| 章节 | 熟悉度 | 状态 |
-|------|--------|------|
-| 第三章 古罗马 | ████████░░ 8 | 🟥 深入 |
-| 第一章 古希腊 | █████░░░░░ 5 | 🟥 深入 |
-| 第六章 基督教 | ████░░░░░░ 4 | 🟧 中等 |
-| 第二章 雅典民主 | ███░░░░░░░ 3 | 🟧 中等 |
-| 第四章 罗马帝国 | █░░░░░░░░░ 1 | 🟨 初涉 |
-| 第五、八、九章 | ░░░░░░░░░░ 0 | ⬜ 未涉及 |
-
-### 章节热力图
-🟥🟧🟥🟨⬜🟨🟧⬜⬜⬜
-```
+**优点**：
+1. **职责分离**：书籍笔记关注书籍内容本身，阅读进度作为记忆独立存储
+2. **避免 frontmatter 膨胀**：熟悉度数据可能很大（几十个章节）
+3. **与 memory 系统集成**：AI 自然地通过 memory 获取进度信息
+4. **支持多本书**：每本书有独立的阅读进度 memory 条目
+5. **保留历史**：阅读历史记录更丰富
 
 #### 进度计算公式
 
@@ -404,16 +464,18 @@ created: 2026-03-01
 吸收度 = (5+3+8+1+0+2+4+0+0+0) / (10×3) = 23/30 ≈ 77%
 ```
 
-#### 新增工具：`update_familiarity`
+#### 新增工具：`update_reading_progress`
 
 ```typescript
 {
-  name: "update_familiarity",
-  description: "更新章节熟悉度",
+  name: "update_reading_progress",
+  description: "更新书籍的阅读进度",
   parameters: {
+    bookName: "书籍名称",
     chapterIndex: "章节索引",
-    delta: "增量（默认1）",
-    reason: "原因：get_chapter|user_question|highlight|ai_reference"
+    delta: "熟悉度增量（默认1）",
+    reason: "原因：get_chapter|user_question|highlight|ai_reference",
+    note: "可选的阅读笔记"
   }
 }
 ```
@@ -422,6 +484,35 @@ created: 2026-03-01
 - `get_chapter` 工具执行后自动调用（+2）
 - 用户高亮时自动调用（+2）
 - 对话分析后按需调用（+1）
+
+#### 存储实现：插件内部数据
+
+**读取进度**：从插件数据目录读取 JSON 文件
+
+```typescript
+// 在 ToolContext 构建时
+const progressFile = `.obsidian/plugins/deepreader/data/reading-progress/${bookName}.json`;
+const progress = await plugin.loadData(progressFile);
+
+// 数据结构
+interface ReadingProgress {
+  bookName: string;
+  bookId: string;
+  totalChapters: number;
+  chapterFamiliarity: Record<number, number>;  // {0: 5, 1: 3, 2: 8, ...}
+  totalInteractions: number;
+  readingHistory: Array<{
+    round: number;
+    started: string;
+    finished?: string;
+    finalFamiliarity?: Record<number, number>;
+  }>;
+  currentRound: number;
+  lastUpdated: string;
+}
+```
+
+**更新进度**：通过 `update_reading_progress` 工具更新 JSON 文件
 
 #### ToolContext 扩展
 
@@ -480,24 +571,38 @@ interface ToolContext {
 
 #### 反复阅读支持
 
-书籍可能会反复阅读，存储结构支持多轮阅读：
+书籍可能会反复阅读，数据结构支持多轮阅读：
 
-```yaml
-reading_history:
-  - round: 1
-    started: 2026-01-01
-    finished: 2026-02-01
-    final_familiarity: {0:8, 1:6, 2:9, 3:7, 4:5, 5:4, 6:6, 7:3, 8:2, 9:1}
-  - round: 2
-    started: 2026-03-10
-    chapter_familiarity: {0:5, 1:3, 2:8}
-
-current_round: 2
+```json
+// .obsidian/plugins/deepreader/data/reading-progress/西方史纲.json
+{
+  "bookName": "西方史纲",
+  "bookId": "xxx",
+  "totalChapters": 10,
+  "currentRound": 2,
+  "readingHistory": [
+    {
+      "round": 1,
+      "started": "2026-01-01",
+      "finished": "2026-02-01",
+      "finalFamiliarity": {"0": 8, "1": 6, "2": 9, "3": 7, "4": 5, "5": 4, "6": 6, "7": 3, "8": 2, "9": 1},
+      "coverage": 100,
+      "absorption": 87,
+      "notes": "重点关注了古希腊民主和罗马政治"
+    },
+    {
+      "round": 2,
+      "started": "2026-03-10",
+      "chapterFamiliarity": {"0": 5, "1": 3, "2": 8},
+      "notes": "深入理解基督教与政治的关系"
+    }
+  ]
+}
 ```
 
 用户说"我要重读这本书"时，开始新的阅读轮次
 
-### 8.2 关联阅读
+### 7.2 关联阅读
 
 **触发方式**：用户主动提问
 - "帮我找下读过书籍中与这个主题类似的章节"
@@ -505,7 +610,7 @@ current_round: 2
 
 **实现逻辑**：
 
-1. **遍历已读书籍** — 从用户画像或书籍笔记获取已读书籍列表
+1. **获取已读书籍** — 从插件数据目录读取所有 `reading-progress/*.json` 文件
 2. **读取章节摘要** — 获取每个章节的 `summary` 字段
 3. **AI 推理相关性** — 基于 summary 判断是否与用户问题相关
 4. **读取正文回答** — 确认相关后读取章节正文
@@ -520,6 +625,53 @@ current_round: 2
     query: "搜索主题/关键词",
     maxResults: "最大返回数量（默认5）"
   }
+}
+```
+
+**实现方式**：
+```typescript
+async function searchReadBooks(query: string, maxResults: number) {
+  // 1. 从插件数据目录获取所有阅读进度文件
+  const progressDir = '.obsidian/plugins/deepreader/data/reading-progress/';
+  const files = await plugin.app.vault.adapter.list(progressDir);
+
+  // 2. 提取已读书籍列表
+  const readBooks = [];
+  for (const file of files) {
+    const progress = await plugin.loadData(progressDir + file);
+    if (progress && progress.totalInteractions > 0) {
+      readBooks.push({
+        bookName: progress.bookName,
+        bookId: progress.bookId
+      });
+    }
+  }
+  const readBooks = progressEntries.map(entry => ({
+    bookName: entry.frontmatter.book_name,
+    bookId: entry.frontmatter.book_id
+  }));
+
+  // 3. 遍历每本书的索引，搜索章节摘要
+  const results = [];
+  for (const book of readBooks) {
+    const index = await loadBookIndex(book.bookId);
+    for (const chapter of index.chapters) {
+      // 4. AI 判断相关性（或使用向量搜索）
+      const relevance = await checkRelevance(query, chapter.summary);
+      if (relevance.score > 0.5) {
+        results.push({
+          bookName: book.bookName,
+          chapterTitle: chapter.title,
+          chapterIndex: chapter.index,
+          summary: chapter.summary,
+          relevance: relevance.reason,
+          link: `[[${book.bookName}/${chapter.file}]]`
+        });
+      }
+    }
+  }
+
+  return results.slice(0, maxResults);
 }
 ```
 
@@ -546,13 +698,13 @@ current_round: 2
 当用户问"我之前读过类似的内容吗"或"帮我找相关章节"时：
 
 1. 使用 search_read_books 工具搜索已读书籍
-2. 工具会遍历所有已读书籍的章节摘要
+2. 工具会从 memory 中获取已读书籍，遍历章节摘要
 3. 根据摘要推理相关性，返回最相关的章节
 4. 如果需要详细内容，再调用 get_chapter 读取正文
 5. 回答时使用 wikilink 引用相关章节
 ```
 
-### 8.3 鼓励好问题
+### 7.3 鼓励好问题
 
 **核心价值**：对用户提出的好问题给予鼓励，增强成就感，激励更深入的思考。
 
