@@ -12,6 +12,10 @@ import {
   FAMILIARITY_DELTAS,
 } from '../utils/book-note.js';
 
+// 性能优化常量：限制返回内容大小，防止 token 膨胀
+const MAX_TEXT_LENGTH_PER_RESULT = 1500;  // 单条结果最大字符数
+const DEFAULT_TOP_K = 3;                   // 默认返回结果数（从 5 减少到 3）
+
 const SEARCH_DOC_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
@@ -26,7 +30,7 @@ const SEARCH_DOC_DEFINITION: ToolDefinition = {
         },
         top_k: {
           type: 'number',
-          description: 'Maximum number of results to return (default: 5)',
+          description: `Maximum number of results to return (default: ${DEFAULT_TOP_K})`,
         },
       },
       required: ['query'],
@@ -80,7 +84,7 @@ export const searchDocTool: ToolExecutor = {
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const query = args.query as string;
-    const topK = (args.top_k as number) ?? 5;
+    const topK = (args.top_k as number) ?? DEFAULT_TOP_K;
     const useLLMTreeSearch = context.useLLMTreeSearch ?? false;
 
     if (!query) {
@@ -115,7 +119,7 @@ export const searchDocTool: ToolExecutor = {
         resultPrefix += `⚠️ Fallback to hybrid search: ${result.fallback_reason || 'Unknown reason'}\n\n`;
       }
 
-      // 格式化搜索结果，包含 obsidian_link
+      // 格式化搜索结果，包含 obsidian_link（限制长度防止 token 膨胀）
       const formattedResults = result.results
         .map((item, index) => {
           const section = item.metadata.section || item.metadata.node_name || 'Unknown Section';
@@ -135,10 +139,16 @@ export const searchDocTool: ToolExecutor = {
 
           log(`[search_doc] 结果 ${index + 1}: node_id=${nodeId}, page=${page}, link=${obsidianLink}`);
 
+          // 截断过长的文本内容
+          const trimmedText = item.text.trim();
+          const truncatedText = trimmedText.length > MAX_TEXT_LENGTH_PER_RESULT
+            ? trimmedText.slice(0, MAX_TEXT_LENGTH_PER_RESULT) + '...[已截断]'
+            : trimmedText;
+
           return `${index + 1}. **${section}**${page ? ` (Page ${page})` : ''}${distance}
    Link: ${obsidianLink}
    node_id: ${nodeId || 'N/A'}
-   ${item.text.trim()}`;
+   ${truncatedText}`;
         })
         .join('\n\n');
 

@@ -91,14 +91,14 @@ export function getToolDefinitions(registry: ToolRegistry): ToolDefinition[] {
  * @param name 工具名称
  * @param args 工具参数
  * @param context 工具上下文
- * @param timeout 超时时间（毫秒），默认 30 秒
+ * @param timeout 超时时间（毫秒），默认 60 秒（search_doc 需要更长时间）
  */
 export async function executeTool(
   registry: ToolRegistry,
   name: string,
   args: Record<string, unknown>,
   context: ToolContext,
-  timeout: number = 30000
+  timeout: number = 60000  // 从 30s 增加到 60s
 ): Promise<string> {
   const executor = registry.get(name);
 

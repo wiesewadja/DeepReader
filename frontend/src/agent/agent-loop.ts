@@ -38,6 +38,58 @@ export interface AgentLoopOptions {
   onContentComplete?: (content: string) => Promise<string>;
 }
 
+// ============================================================================
+// 性能分析日志系统
+// ============================================================================
+
+interface PerformanceMetrics {
+  totalMs: number;
+  llmMs: number;
+  toolsMs: number;
+  iterations: number;
+  toolCalls: Array<{ name: string; duration: number; resultChars: number; compressedChars: number }>;
+  tokenEstimate: { start: number; end: number };
+  userQuestion: string;
+}
+
+/**
+ * 打印清晰简洁的性能分析报告
+ */
+function printPerformanceReport(metrics: PerformanceMetrics): void {
+  const llmPercent = Math.round((metrics.llmMs / metrics.totalMs) * 100);
+  const toolsPercent = Math.round((metrics.toolsMs / metrics.totalMs) * 100);
+  const tokenDelta = metrics.tokenEstimate.end - metrics.tokenEstimate.start;
+
+  console.log(`
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            📊 Agent 性能分析报告                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+│ 用户问题: ${metrics.userQuestion.slice(0, 60).padEnd(60)}│
+├──────────────────────────────────────────────────────────────────────────────┤
+│ ⏱️  总耗时: ${(metrics.totalMs / 1000).toFixed(1)}s                                                            │
+│    ├─ 🤖 LLM 调用: ${(metrics.llmMs / 1000).toFixed(1)}s (${llmPercent}%)                                            │
+│    └─ 🔧 工具执行: ${(metrics.toolsMs / 1000).toFixed(1)}s (${toolsPercent}%)                                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 📦 Token 估算: ${metrics.tokenEstimate.start} → ${metrics.tokenEstimate.end} (${tokenDelta >= 0 ? '+' : ''}${tokenDelta})                                    │
+│ 🔄 迭代次数: ${metrics.iterations}                                                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ 🔧 工具调用详情:                                                              │`.trim());
+
+  if (metrics.toolCalls.length === 0) {
+    console.log('│    (无)                                                                      │');
+  } else {
+    metrics.toolCalls.forEach((tc, idx) => {
+      const compressed = tc.resultChars !== tc.compressedChars
+        ? ` → ${tc.compressedChars} (压缩 ${(100 - Math.round(tc.compressedChars / tc.resultChars * 100))}%)`
+        : '';
+      console.log(`│    [${idx + 1}] ${tc.name.padEnd(20)} ${(tc.duration / 1000).toFixed(1)}s, ${tc.resultChars}字符${compressed}`);
+    });
+  }
+
+  console.log(`╚══════════════════════════════════════════════════════════════════════════════╝
+`);
+}
+
 /**
  * 格式化耗时（毫秒转换为可读格式）
  */
@@ -63,6 +115,85 @@ function estimateTokens(messages: ChatMessage[]): number {
   }
   // 粗略估算：中文字符/1.5 + 英文字符/4
   return Math.round(totalChars / 2);
+}
+
+/**
+ * 性能优化常量
+ */
+const MAX_TOOL_RESULT_LENGTH = 8000;  // 工具结果最大长度（字符）
+const MAX_CONTEXT_TOKENS = 40000;     // 消息历史最大 token 数
+
+/**
+ * 压缩工具结果（防止 token 膨胀）
+ */
+function compressToolResult(result: string, maxLength: number = MAX_TOOL_RESULT_LENGTH): string {
+  if (result.length <= maxLength) {
+    return result;
+  }
+  const truncated = result.slice(0, maxLength);
+  const omitted = result.length - maxLength;
+  return `${truncated}\n\n... [已省略 ${omitted} 字符，完整内容可再次查询]`;
+}
+
+/**
+ * 管理消息历史（防止 token 无限增长）
+ *
+ * 策略：
+ * 1. 保留系统消息和最新的用户消息
+ * 2. 压缩旧的工具调用结果
+ * 3. 移除过期的隐藏消息
+ */
+function manageMessageHistory(messages: ChatMessage[]): ChatMessage[] {
+  const currentTokens = estimateTokens(messages);
+
+  if (currentTokens <= MAX_CONTEXT_TOKENS) {
+    return messages;
+  }
+
+  agentLog(`[AgentLoop] ⚠️ Token 超限 (${currentTokens} > ${MAX_CONTEXT_TOKENS})，开始压缩历史...`);
+
+  const managedMessages: ChatMessage[] = [];
+  let savedTokens = 0;
+  const targetTokens = MAX_CONTEXT_TOKENS * 0.8; // 压缩到 80%
+
+  // 从后往前处理，保留最新的消息
+  const reversedMessages = [...messages].reverse();
+
+  for (const msg of reversedMessages) {
+    const msgTokens = estimateTokens([msg]);
+
+    // 如果已经节省了足够的 token，直接保留剩余消息
+    if (savedTokens >= currentTokens - targetTokens) {
+      managedMessages.unshift(msg);
+      continue;
+    }
+
+    // 处理 tool 结果消息 - 进一步压缩
+    if (msg.role === 'tool' && typeof msg.content === 'string' && msg.content.length > 2000) {
+      const furtherCompressed = compressToolResult(msg.content, 2000);
+      managedMessages.unshift({
+        ...msg,
+        content: furtherCompressed,
+      });
+      savedTokens += msgTokens - estimateTokens([{ ...msg, content: furtherCompressed }]);
+      continue;
+    }
+
+    // 移除旧的隐藏消息（不重要的上下文）
+    if (msg.hidden) {
+      savedTokens += msgTokens;
+      agentLog(`[AgentLoop] 🗑️ 移除隐藏消息: "${msg.content?.slice(0, 30)}..."`);
+      continue;
+    }
+
+    // 其他消息直接保留
+    managedMessages.unshift(msg);
+  }
+
+  const newTokens = estimateTokens(managedMessages);
+  agentLog(`[AgentLoop] ✅ 嶈息历史压缩完成: ${messages.length} -> ${managedMessages.length} 条, ${currentTokens} -> ${newTokens} tokens`);
+
+  return managedMessages;
 }
 
 /**
@@ -92,13 +223,23 @@ export async function runAgentLoop(
 ): Promise<ChatMessage[]> {
   const maxIterations = options.maxIterations || 10;
   let iterations = 0;
-  const workingMessages = [...messages];
+  let workingMessages = [...messages];
   let hadError = false; // 跟踪是否发生了错误
 
   // 🕐 总计时
   const totalStartTime = Date.now();
   let llmTotalTime = 0;      // LLM 调用总耗时
   let toolsTotalTime = 0;     // 工具执行总耗时
+
+  // 📊 性能指标收集
+  const startTokens = estimateTokens(workingMessages);
+  const toolCallMetrics: Array<{ name: string; duration: number; resultChars: number; compressedChars: number }> = [];
+
+  // 提取用户问题（用于报告）
+  const userQuestion = [...messages].reverse().find(m => m.role === 'user');
+  const questionText = typeof userQuestion?.content === 'string'
+    ? userQuestion.content.slice(0, 60)
+    : '(复杂内容)';
 
   while (iterations < maxIterations) {
     // 检查是否被取消
@@ -116,20 +257,8 @@ export async function runAgentLoop(
     iterations++;
     const iterationStartTime = Date.now();
 
-    // 详细的迭代开始日志
-    agentLog(`\n${'='.repeat(60)}`);
-    agentLog(`[AgentLoop] 🔄 迭代 ${iterations}/${maxIterations} 开始`);
-    agentLog(`[AgentLoop] 📊 消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
-    agentLog(`[AgentLoop] 🔧 可用工具: ${tools.length} 个`);
-
-    // 记录最后一条用户消息的内容（用于理解上下文）
-    const lastUserMsg = [...workingMessages].reverse().find(m => m.role === 'user');
-    if (lastUserMsg) {
-      const contentPreview = typeof lastUserMsg.content === 'string'
-        ? lastUserMsg.content.slice(0, 100)
-        : '(复杂内容)';
-      agentLog(`[AgentLoop] ❓ 用户问题: "${contentPreview}${contentPreview.length >= 100 ? '...' : ''}"`);
-    }
+    // 迭代开始（简洁日志）
+    agentLog(`\n[AgentLoop] ┓ agentsetIterationContext 迭代 ${iterations}/${maxIterations}`);
 
     let accumulatedContent = '';
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
@@ -234,8 +363,7 @@ export async function runAgentLoop(
     const toolsStartTime = Date.now();
     for (const tc of toolCalls) {
       const toolStartTime = Date.now();
-      agentLog(`\n[AgentLoop] ▶ 开始执行: ${tc.name}`);
-      options.onProgress(`正在执行: ${tc.name}...`);
+      agentLog(`\n[AgentLoop] ▶ 执行: ${tc.name}`);
 
       let args: Record<string, unknown>;
       try {
@@ -247,14 +375,22 @@ export async function runAgentLoop(
       try {
         const result = await executeTool(toolRegistry, tc.name, args, context);
         const duration = Date.now() - toolStartTime;
-
-        // 简洁的成功日志（包含结果长度）
         const resultLength = result.length;
-        const resultPreview = resultLength > 100
-          ? `${result.slice(0, 100)}...`
-          : result;
-        agentLog(`[AgentLoop] ✓ 完成: ${tc.name} (${formatDuration(duration)}, 结果: ${resultLength} 字符)`);
-        agentLog(`[AgentLoop]    预览: ${resultPreview}`);
+
+        // 压缩工具结果（防止 token 膨胀）
+        const compressedResult = compressToolResult(result);
+        const compressedLength = compressedResult.length;
+
+        // 记录工具调用指标
+        toolCallMetrics.push({
+          name: tc.name,
+          duration,
+          resultChars: resultLength,
+          compressedChars: compressedLength,
+        });
+
+        // 日志
+        agentLog(`[AgentLoop] ✓ ${tc.name}: ${formatDuration(duration)}, ${resultLength}字符${resultLength !== compressedLength ? ` → ${compressedLength} (压缩${Math.round((1 - compressedLength / resultLength) * 100)}%)` : ''}`);
 
         // 检查是否返回了隐藏消息（用于用户画像更新等）
         try {
@@ -276,11 +412,20 @@ export async function runAgentLoop(
         workingMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: result,
+          content: compressedResult,
         });
       } catch (error) {
         const duration = Date.now() - toolStartTime;
         const errorMsg = error instanceof Error ? error.message : String(error);
+
+        // 记录失败的工具调用指标
+        toolCallMetrics.push({
+          name: tc.name,
+          duration,
+          resultChars: 0,
+          compressedChars: 0,
+        });
+
         agentLog(`[AgentLoop] ✗ 失败: ${tc.name} (${formatDuration(duration)}) → ${errorMsg}`);
 
         // 添加错误结果
@@ -298,6 +443,9 @@ export async function runAgentLoop(
     const iterationDuration = Date.now() - iterationStartTime;
     agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)}`);
     agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
+
+    // 管理消息历史（防止 token 无限增长）
+    workingMessages = manageMessageHistory(workingMessages);
   }
 
   if (iterations >= maxIterations) {
@@ -305,16 +453,20 @@ export async function runAgentLoop(
     options.onProgress('达到最大轮数，正在总结...');
   }
 
-  // 最终统计
+  // 最终统计 - 打印清晰的性能报告
   const totalDuration = Date.now() - totalStartTime;
-  agentLog(`\n${'='.repeat(60)}`);
-  agentLog(`[AgentLoop] 🏁 Agent 循环结束`);
-  agentLog(`[AgentLoop] 📊 总迭代: ${iterations} 次`);
-  agentLog(`[AgentLoop] 📊 总耗时: ${formatDuration(totalDuration)}`);
-  agentLog(`[AgentLoop] 📊   - LLM 调用: ${formatDuration(llmTotalTime)} (${Math.round(llmTotalTime / totalDuration * 100)}%)`);
-  agentLog(`[AgentLoop] 📊   - 工具执行: ${formatDuration(toolsTotalTime)} (${Math.round(toolsTotalTime / totalDuration * 100)}%)`);
-  agentLog(`[AgentLoop] 📊 最终消息数: ${workingMessages.length} 条`);
-  agentLog(`${'='.repeat(60)}\n`);
+  const endTokens = estimateTokens(workingMessages);
+
+  const metrics: PerformanceMetrics = {
+    totalMs: totalDuration,
+    llmMs: llmTotalTime,
+    toolsMs: toolsTotalTime,
+    iterations: iterations,
+    toolCalls: toolCallMetrics,
+    tokenEstimate: { start: startTokens, end: endTokens },
+    userQuestion: questionText,
+  };
+  printPerformanceReport(metrics);
 
   return workingMessages;
 }
