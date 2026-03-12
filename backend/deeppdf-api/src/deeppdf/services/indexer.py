@@ -418,6 +418,7 @@ def _store_to_chromadb(
     storage_dir: str,
     doc_type: str = "pdf",
     progress_callback=None,
+    original_filename: Optional[str] = None,
 ) -> float:
     """
     存储到 ChromaDB
@@ -446,9 +447,11 @@ def _store_to_chromadb(
 
     # 创建集合
     logger.info(f"[向量存储] 创建集合: {index_id}")
+    # 优先使用原始文件名，否则使用服务器文件名
+    display_name = Path(original_filename).stem if original_filename else pdf_path_obj.stem
     collection_metadata = {
         "doc_type": doc_type,
-        "pdf_name": pdf_path_obj.name,
+        "pdf_name": display_name,
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
@@ -466,11 +469,13 @@ def _store_to_chromadb(
 
     # 准备文档
     logger.info("[向量存储] 准备向量化文档...")
+    # 使用原始文件名（不含扩展名）作为 pdf_name
+    display_name = Path(original_filename).stem if original_filename else pdf_path_obj.stem
     documents = [
         {
             "id": node["id"],
             "text": node["text"],
-            "metadata": {**node["metadata"], "pdf_name": pdf_path_obj.name},
+            "metadata": {**node["metadata"], "pdf_name": display_name},
         }
         for node in section_nodes
     ]
@@ -509,6 +514,7 @@ def _save_metadata(
     is_visual_heavy: bool = False,
     visual_detection_result: Optional[Dict[str, Any]] = None,
     progress_callback=None,
+    original_filename: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     保存索引元数据
@@ -549,17 +555,48 @@ def _save_metadata(
         logger.debug(f"[元数据] EPUB 文档，使用章节数作为总页数: {total_pages}")
 
     # 移除文件后缀，保持与前端导出逻辑一致
-    pdf_name_clean = pdf_path_obj.stem  # stem 返回不带后缀的文件名
+    # pdf_path_obj 是服务器上的实际文件路径（可能是 file_id.pdf）
+    # original_filename 是用户上传时的原始文件名
+    pdf_name_clean = pdf_path_obj.stem  # 服务器文件名的 stem（可能是 file_id）
 
-    # 从 tree_result 中提取文档名称（EPUB 可能是书名而非文件名）
-    doc_name = tree_result.get("doc_name", pdf_name_clean)
+    # 优先使用原始文件名
+    if original_filename:
+        original_stem = Path(original_filename).stem
+        doc_name = tree_result.get("doc_name", original_stem)
+    else:
+        # 如果没有传递原始文件名，使用服务器文件名
+        doc_name = tree_result.get("doc_name", pdf_name_clean)
+        original_filename = pdf_path_obj.name
+        original_stem = pdf_name_clean
+
+    # 提取并缓存封面图片
+    cover_path = None
+    try:
+        from deeppdf.services.cover_extractor import extract_or_generate_cover
+
+        cover_dir = storage_dir_path / "covers"
+        cover_dir.mkdir(parents=True, exist_ok=True)
+        cover_file_path = cover_dir / f"{index_id}.png"
+
+        # 提取或生成封面
+        cover_data, _ = extract_or_generate_cover(str(pdf_path_obj), doc_name)
+
+        # 保存封面到缓存目录
+        with open(cover_file_path, "wb") as f:
+            f.write(cover_data)
+
+        cover_path = str(cover_file_path)
+        logger.info(f"[封面缓存] 封面已保存: {cover_file_path}")
+    except Exception as e:
+        logger.warning(f"[封面缓存] 封面提取失败: {e}")
 
     metadata_content = {
         "id": index_id,
         "doc_type": doc_type,
-        "pdf_name": doc_name,  # 使用 doc_name，EPUB 为书名，PDF 为文件名
-        "file_name": pdf_path_obj.name,  # 始终保留原始文件名
+        "pdf_name": doc_name or original_stem,  # 使用 doc_name，EPUB 为书名，否则用原始文件名
+        "file_name": original_filename,  # 始终保留原始文件名
         "pdf_path": str(pdf_path_obj.absolute()),
+        "cover_path": cover_path,  # 缓存的封面路径
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
         "indexing_method": "pageindex_tree",
@@ -642,8 +679,13 @@ def _index_pdf_sync(
     doc_type = _get_doc_type(pdf_path)
     start_time = time.time()
 
+    # 获取原始文件名（用于显示和元数据）
+    original_filename = kwargs.get("original_filename") or pdf_path_obj.name
+    # 提取不带扩展名的文件名用于显示
+    original_stem = Path(original_filename).stem
+
     logger.info("=" * 60)
-    logger.info(f"[索引开始] {doc_type.upper()} 文件: {pdf_path}")
+    logger.info(f"[索引开始] {doc_type.upper()} 文件: {original_filename}")
     logger.info("=" * 60)
 
     # 步骤 1.5: 检测 PDF 类型（是否需要 OCR）- 仅对 PDF 文档
@@ -764,30 +806,60 @@ def _index_pdf_sync(
                     f"LLM 客户端创建成功: {type(provider).__name__}/{config['model']}"
                 )
 
-        # 步骤 5: 解析文档结构
+        # 步骤 5: 解析文档结构（检查是否有可复用的 results 文件）
         logger.info(
             f"[步骤 5/6] 开始解析 {doc_type.upper()} 结构 (这可能需要几分钟)..."
         )
         _update_progress("parse_pdf", 50, f"正在解析 {doc_type.upper()} 结构...")
-        if doc_type == "pdf":
-            logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
-            logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
-        if config["if_add_node_summary"]:
-            # 检测是否使用 MultiProvider
-            from pageindex.llm.providers import MultiProvider
-            provider = getattr(llm_client_instance, 'provider', None) if llm_client_instance else None
-            if isinstance(provider, MultiProvider):
-                logger.info(
-                    f"  - 生成摘要 (使用 MultiProvider: {len(provider.providers)} 个并行)"
-                )
-            else:
-                logger.info(
-                    f"  - 生成摘要 (使用 {config.get('llm_provider', 'default')}/{config['model']})"
-                )
 
-        tree_result, parse_time = _parse_pdf_structure(
-            pdf_path, opt, llm_client_instance, config, progress_callback
-        )
+        # 检查是否有可复用的 results 文件
+        tree_result = None
+        # results 目录在 backend/results/（从 deeppdf-api/src/deeppdf/services/ 出发向上 5 级）
+        results_dir = Path(__file__).parent.parent.parent.parent.parent / "results"
+        # 使用原始文件名（不含扩展名）来匹配 results 文件
+        file_stem = original_stem
+
+        if results_dir.exists():
+            # 查找匹配的 results 文件（按文件名前缀匹配）
+            matching_files = sorted(
+                results_dir.glob(f"{file_stem}_*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,  # 按修改时间降序，优先使用最新的
+            )
+
+            if matching_files:
+                latest_result = matching_files[0]
+                logger.info(f"[结果复用] 发现已有的 pageindex 结果: {latest_result.name}")
+                try:
+                    with open(latest_result, "r", encoding="utf-8") as f:
+                        tree_result = json.load(f)
+                    logger.info(f"[结果复用] 成功加载，跳过 LLM 解析步骤")
+                    parse_time = 0  # 复用结果，解析时间为 0
+                except Exception as e:
+                    logger.warning(f"[结果复用] 加载失败: {e}，将重新解析")
+                    tree_result = None
+
+        if tree_result is None:
+            # 没有可复用的结果，执行正常的解析流程
+            if doc_type == "pdf":
+                logger.info(f"  - 检测目录 (前 {config['toc_check_pages']} 页)")
+                logger.info(f"  - 分割章节 (每节点最多 {config['max_pages_per_node']} 页)")
+            if config["if_add_node_summary"]:
+                # 检测是否使用 MultiProvider
+                from pageindex.llm.providers import MultiProvider
+                provider = getattr(llm_client_instance, 'provider', None) if llm_client_instance else None
+                if isinstance(provider, MultiProvider):
+                    logger.info(
+                        f"  - 生成摘要 (使用 MultiProvider: {len(provider.providers)} 个并行)"
+                    )
+                else:
+                    logger.info(
+                        f"  - 生成摘要 (使用 {config.get('llm_provider', 'default')}/{config['model']})"
+                    )
+
+            tree_result, parse_time = _parse_pdf_structure(
+                pdf_path, opt, llm_client_instance, config, progress_callback
+            )
 
         # 更新进度：文档解析完成
         _update_progress(
@@ -862,6 +934,7 @@ def _index_pdf_sync(
             storage_dir,
             doc_type,
             progress_callback,
+            original_filename,
         )
 
         # 保存索引元数据
@@ -875,6 +948,7 @@ def _index_pdf_sync(
             is_visual_heavy,
             visual_detection_result,
             progress_callback,
+            original_filename,
         )
 
         # 最终总结
@@ -886,7 +960,7 @@ def _index_pdf_sync(
         logger.info("  索引信息:")
         logger.info(f"    - 索引 ID: {index_id}")
         logger.info(f"    - 文档类型: {doc_type.upper()}")
-        logger.info(f"    - 文件名称: {pdf_path_obj.name}")
+        logger.info(f"    - 文件名称: {original_filename}")
         logger.info(f"    - 节点数量: {len(section_nodes)}")
         logger.info("  时间统计:")
         logger.info(
@@ -907,7 +981,7 @@ def _index_pdf_sync(
             "index_id": index_id,
             "doc_type": doc_type,
             "node_count": len(section_nodes),
-            "pdf_name": pdf_path_obj.name,
+            "pdf_name": original_stem,  # 使用原始文件名（不含扩展名）
             "indexing_method": "pageindex_tree",
         }
 

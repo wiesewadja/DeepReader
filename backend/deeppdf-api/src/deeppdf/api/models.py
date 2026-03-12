@@ -121,11 +121,16 @@ class IndexResponse(BaseModel):
     """创建索引响应"""
 
     status: str
+    task_id: Optional[str] = None
+    message: Optional[str] = None
+    file_id: Optional[str] = None
+    pdf_path: Optional[str] = None
     index_id: Optional[str] = None
     doc_type: Optional[Literal["pdf", "epub"]] = None
     node_count: Optional[int] = None
     pdf_name: Optional[str] = None
     indexing_method: Optional[str] = None
+    reused: Optional[bool] = None  # 是否复用了已有数据
     error: Optional[str] = None
 
 

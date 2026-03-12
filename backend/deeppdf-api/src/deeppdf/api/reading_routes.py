@@ -14,6 +14,7 @@ from ..services.manager import (
     update_reading_progress,
 )
 from .export_utils import get_pdf_page_count
+from .export_handlers import get_source_file_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reading", tags=["Reading"])
@@ -137,12 +138,12 @@ async def get_progress(index_id: str):
     total_pages = metadata.get("total_pages", 0)
     read_pages = metadata.get("read_pages", [])
 
-    # 如果 total_pages 为 0，尝试从 PDF 文件获取
+    # 如果 total_pages 为 0，尝试从源文件获取（使用统一辅助函数）
     if total_pages == 0:
-        pdf_path = metadata.get("pdf_path")
-        if pdf_path and Path(pdf_path).exists():
-            total_pages = get_pdf_page_count(pdf_path)
-            logger.info(f"[阅读API] 从 PDF 获取页数: {pdf_path} -> {total_pages} 页")
+        file_path = get_source_file_path(metadata, storage_dir)
+        if file_path:
+            total_pages = get_pdf_page_count(file_path)
+            logger.info(f"[阅读API] 从文件获取页数: {file_path} -> {total_pages} 页")
 
     if total_pages > 0:
         progress = round(len(read_pages) / total_pages * 100, 1)

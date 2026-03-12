@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from fastapi import HTTPException, status
 from ..config import settings
 from .export_utils import get_pdf_page_count, build_parent_mapping, format_created_at
@@ -20,6 +20,74 @@ from ..services.text_formatter import TextFormatter
 from ..utils.llm_client import get_llm_client
 
 logger = logging.getLogger(__name__)
+
+
+def get_source_file_path(
+    metadata: Dict[str, Any], storage_dir: Path
+) -> Optional[str]:
+    """
+    从元数据获取源文件路径（优先从 uploads 目录获取）
+
+    Args:
+        metadata: 索引元数据
+        storage_dir: 存储目录路径
+
+    Returns:
+        文件路径，如果找不到返回 None
+    """
+    pdf_path = metadata.get("pdf_path", "")
+
+    # 1. 检查 pdf_path 是否在 uploads 目录内（后端管理的文件）
+    if pdf_path:
+        pdf_path_obj = Path(pdf_path)
+        uploads_dir = storage_dir / "uploads"
+
+        try:
+            is_in_uploads = (
+                uploads_dir in pdf_path_obj.parents
+                or pdf_path_obj.parent == uploads_dir
+            )
+        except (ValueError, TypeError):
+            is_in_uploads = False
+
+        # 如果在 uploads 目录内或文件存在，直接使用
+        if is_in_uploads and pdf_path_obj.exists():
+            return pdf_path
+        elif pdf_path_obj.exists():
+            return pdf_path
+
+    # 2. 通过 file_id 或 file_name 从 uploads 目录查找
+    file_id = metadata.get("file_id", "")
+    file_name = metadata.get("file_name", "")
+
+    files_meta_dir = storage_dir / "files_meta"
+    uploads_dir = storage_dir / "uploads"
+
+    # 2.1 如果有 file_id，直接使用
+    if file_id:
+        ext = ".epub" if file_name.lower().endswith(".epub") else ".pdf"
+        candidate = uploads_dir / f"{file_id}{ext}"
+        if candidate.exists():
+            return str(candidate)
+
+    # 2.2 遍历 files_meta 查找匹配的文件名
+    if file_name:
+        for meta_file in files_meta_dir.glob("*.json"):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    file_meta = json.load(f)
+                if file_meta.get("file_name") == file_name:
+                    found_file_id = file_meta.get("file_id")
+                    if found_file_id:
+                        ext = ".epub" if file_name.lower().endswith(".epub") else ".pdf"
+                        candidate = uploads_dir / f"{found_file_id}{ext}"
+                        if candidate.exists():
+                            return str(candidate)
+                        break
+            except Exception:
+                continue
+
+    return None
 
 
 async def export_index_data(
@@ -169,6 +237,11 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
     """
     导出书籍封面
 
+    优先级：
+    1. 从后端缓存的封面文件读取（cover_path）
+    2. 从源文件提取封面
+    3. 生成默认封面
+
     Args:
         index_id: 索引 ID
 
@@ -195,40 +268,56 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
 
         pdf_name = metadata.get("pdf_name", "Unknown")
         pdf_path = metadata.get("pdf_path", "")
+        cover_path = metadata.get("cover_path", "")  # 缓存的封面路径
 
-        # 检查源文件是否存在
-        source_file_exists = pdf_path and Path(pdf_path).exists()
+        cover_data = None
+        mime_type = "image/png"
+        has_custom_cover = False
 
-        if source_file_exists:
-            # 尝试从源文件提取封面
+        # 优先级 1: 从缓存的封面文件读取
+        if cover_path and Path(cover_path).exists():
+            logger.info(f"[封面导出] 从缓存读取封面: {cover_path}")
+
+            def _read_cached_cover():
+                with open(cover_path, "rb") as f:
+                    return f.read()
+
+            cover_data = await asyncio.to_thread(_read_cached_cover)
+            # 缓存的封面可能是自定义的，尝试判断
+            has_custom_cover = True  # 假设有自定义封面（因为缓存了）
+
+        # 优先级 2: 从 uploads 目录获取源文件（使用统一辅助函数）
+        actual_file_path = get_source_file_path(metadata, storage_dir)
+
+        if cover_data is None and actual_file_path:
+            logger.info(f"[封面导出] 从源文件提取封面: {actual_file_path}")
+
             def _extract_cover():
-                cover_data, mime_type = extract_or_generate_cover(pdf_path, pdf_name)
-                return cover_data, mime_type
+                return extract_or_generate_cover(actual_file_path, pdf_name)
 
             cover_data, mime_type = await asyncio.to_thread(_extract_cover)
 
-            # 检查是否有自定义封面（通过尝试单独提取）
+            # 检查是否有自定义封面
             def _check_custom_cover():
-                if pdf_path.lower().endswith(".pdf"):
-                    return extract_pdf_cover(pdf_path) is not None
-                elif pdf_path.lower().endswith(".epub"):
-                    return extract_epub_cover(pdf_path) is not None
+                if actual_file_path.lower().endswith(".pdf"):
+                    return extract_pdf_cover(actual_file_path) is not None
+                elif actual_file_path.lower().endswith(".epub"):
+                    return extract_epub_cover(actual_file_path) is not None
                 return False
 
             has_custom_cover = await asyncio.to_thread(_check_custom_cover)
-        else:
-            # 源文件不存在，仅使用书名生成默认封面
+
+        # 优先级 3: 生成默认封面
+        if cover_data is None:
             logger.warning(
-                f"[封面导出] 源文件不存在: {pdf_path}, 使用书名生成默认封面: {pdf_name}"
+                f"[封面导出] 无法获取封面，生成默认封面: {pdf_name}"
             )
 
             def _generate_cover():
                 from ..services.cover_extractor import generate_default_cover
+                return generate_default_cover(pdf_name)
 
-                cover_data = generate_default_cover(pdf_name)
-                return cover_data, "image/png"
-
-            cover_data, mime_type = await asyncio.to_thread(_generate_cover)
+            cover_data = await asyncio.to_thread(_generate_cover)
             has_custom_cover = False
 
         # 转换为 base64
