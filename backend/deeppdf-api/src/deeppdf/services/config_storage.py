@@ -27,7 +27,7 @@ class ConfigStorage:
         """
         self.storage_dir = Path(storage_dir) / "configs"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"[配置存储] 存储目录: {self.storage_dir}")
+        logger.debug(f"[配置存储] 存储目录: {self.storage_dir}")
 
     def _get_config_path(self, name: str) -> Path:
         """获取配置文件路径"""

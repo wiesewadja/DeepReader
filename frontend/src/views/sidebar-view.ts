@@ -430,6 +430,13 @@ export class SidebarView extends ItemView {
                 await this.loadIndexes();
                 return this.indexes;
             },
+            onDownloadCover: async (indexId: string, pdfName: string) => {
+                if (!this.apiClient) return null;
+                if (!this.readingPortal) {
+                    this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
+                }
+                return await this.readingPortal.downloadBookCover(indexId, pdfName);
+            },
             apiClient: this.apiClient,
             plugin: this.plugin
         }).open();
@@ -470,24 +477,13 @@ export class SidebarView extends ItemView {
     /**
      * 加载书籍封面
      * @param bookName 书籍名称（不含扩展名）
+     *
+     * 优先级：
+     * 1. 本地 Obsidian vault (DeepReader/covers/{bookName}.png)
+     * 2. 后端 API (仅当本地不存在时才调用)
      */
     private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
-        // 优先从后端 API 获取封面
-        if (indexId && this.apiClient) {
-            try {
-                const coverData = await this.apiClient.exportCover(indexId);
-                if (coverData && coverData.cover_data) {
-                    const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
-                    this.readingTopbar?.setBookCover(coverUrl);
-                    log(`[DeepPDF] 从后端加载书籍封面: ${indexId}`);
-                    return;
-                }
-            } catch (error) {
-                log(`[DeepPDF] 后端封面获取失败，尝试本地: ${error}`);
-            }
-        }
-
-        // 回退到本地 Obsidian vault
+        // 优先从本地 Obsidian vault 加载
         const coverPath = `DeepReader/covers/${bookName}.png`;
         const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
 
@@ -497,8 +493,23 @@ export class SidebarView extends ItemView {
             if (coverFile instanceof TFile) {
                 const coverUrl = this.app.vault.getResourcePath(coverFile as any);
                 this.readingTopbar?.setBookCover(coverUrl);
-                log(`[DeepPDF] 加载书籍封面: ${coverPath}`);
+                log(`[DeepPDF] 从本地加载书籍封面: ${coverPath}`);
                 return;
+            }
+        }
+
+        // 本地不存在，尝试从后端 API 获取（仅当本地没有时才调用）
+        if (indexId && this.apiClient) {
+            try {
+                const coverData = await this.apiClient.exportCover(indexId);
+                if (coverData && coverData.cover_data) {
+                    const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
+                    this.readingTopbar?.setBookCover(coverUrl);
+                    log(`[DeepPDF] 本地封面不存在，从后端加载: ${indexId}`);
+                    return;
+                }
+            } catch (error) {
+                log(`[DeepPDF] 后端封面获取失败: ${error}`);
             }
         }
 

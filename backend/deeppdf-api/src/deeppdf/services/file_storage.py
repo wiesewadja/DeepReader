@@ -37,8 +37,8 @@ class FileStorage:
         self.metadata_dir = Path(storage_dir) / "files_meta"
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir = Path(storage_dir).parent / "results"  # results 目录
-        logger.info(f"[文件存储] 存储目录: {self.storage_dir}")
-        logger.info(f"[文件存储] 元数据目录: {self.metadata_dir}")
+        logger.debug(f"[文件存储] 存储目录: {self.storage_dir}")
+        logger.debug(f"[文件存储] 元数据目录: {self.metadata_dir}")
 
     def _get_file_path(self, file_id: str, extension: str = ".pdf") -> Path:
         """获取文件存储路径"""

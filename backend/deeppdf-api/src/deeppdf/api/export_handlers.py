@@ -276,7 +276,7 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
 
         # 优先级 1: 从缓存的封面文件读取
         if cover_path and Path(cover_path).exists():
-            logger.info(f"[封面导出] 从缓存读取封面: {cover_path}")
+            logger.debug(f"[封面导出] 从缓存读取封面: {cover_path}")
 
             def _read_cached_cover():
                 with open(cover_path, "rb") as f:
@@ -290,7 +290,7 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
         actual_file_path = get_source_file_path(metadata, storage_dir)
 
         if cover_data is None and actual_file_path:
-            logger.info(f"[封面导出] 从源文件提取封面: {actual_file_path}")
+            logger.debug(f"[封面导出] 从源文件提取封面: {actual_file_path}")
 
             def _extract_cover():
                 return extract_or_generate_cover(actual_file_path, pdf_name)
@@ -323,7 +323,7 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
         # 转换为 base64
         cover_base64 = base64.b64encode(cover_data).decode("utf-8")
 
-        logger.info(
+        logger.debug(
             f"[封面导出] 成功导出封面: {pdf_name}, 自定义封面: {has_custom_cover}"
         )
 

@@ -11,6 +11,9 @@ import warnings
 warnings.filterwarnings(
     "ignore", message=".*pynvml package is deprecated.*", category=UserWarning
 )
+warnings.filterwarnings(
+    "ignore", message=".*No ccache found.*", category=UserWarning
+)
 
 # ============================================================
 # 日志配置 - 在导入其他模块前配置

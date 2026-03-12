@@ -30,6 +30,7 @@ export interface LibraryModalOptions {
     onExportMarkdown?: (indexId: string) => void;
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
+    onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
     apiClient: any;
     plugin: any;
 }
@@ -286,25 +287,14 @@ export class LibraryModal extends Modal {
 
     /**
      * 异步加载封面并更新显示
+     *
+     * 优先级：
+     * 1. 本地 Obsidian vault (DeepReader/covers/{bookName}.png)
+     * 2. 后端 API (仅当本地不存在时才调用)
      */
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
-            // 先从后端加载
-            const loaded = await this.loadCoverFromBackend(indexId);
-            if (loaded) {
-                const coverUrl = this.coverCache.get(indexId);
-                if (coverUrl) {
-                    coverEl.innerHTML = '';
-                    const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
-                    imgEl.src = coverUrl;
-                    imgEl.alt = bookName;
-                    // 重新添加操作按钮
-                    this.addCoverActions(coverEl, indexId);
-                }
-                return;
-            }
-
-            // 后端没有，尝试从本地加载
+            // 优先从本地 Obsidian vault 加载
             const coverPath = `DeepReader/covers/${bookName}.png`;
             const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
 
@@ -317,6 +307,21 @@ export class LibraryModal extends Modal {
                 imgEl.alt = bookName;
                 // 重新添加操作按钮
                 this.addCoverActions(coverEl, indexId);
+                return;
+            }
+
+            // 本地不存在，从后端加载（仅当本地没有时才调用）
+            const loaded = await this.loadCoverFromBackend(indexId);
+            if (loaded) {
+                const coverUrl = this.coverCache.get(indexId);
+                if (coverUrl) {
+                    coverEl.innerHTML = '';
+                    const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+                    imgEl.src = coverUrl;
+                    imgEl.alt = bookName;
+                    // 重新添加操作按钮
+                    this.addCoverActions(coverEl, indexId);
+                }
             }
         } catch (error) {
             // 加载失败，保持占位符
@@ -638,7 +643,7 @@ export class LibraryModal extends Modal {
     /**
      * 增量更新卡片
      */
-    private updateCardsIncrementally(changedIndexes: IndexListItem[], completedIndexes: IndexListItem[]): void {
+    private async updateCardsIncrementally(changedIndexes: IndexListItem[], completedIndexes: IndexListItem[]): Promise<void> {
         // 更新变化的卡片
         changedIndexes.forEach(idx => {
             const card = this.cardElements.get(idx.id);
@@ -658,8 +663,8 @@ export class LibraryModal extends Modal {
             });
         });
 
-        // 对刚完成的索引，请求封面
-        completedIndexes.forEach(idx => {
+        // 对刚完成的索引，先下载封面到本地，然后显示
+        for (const idx of completedIndexes) {
             if (!this.coverCache.has(idx.id) && !this.loadingCovers.has(idx.id)) {
                 this.loadingCovers.add(idx.id);
                 const card = this.cardElements.get(idx.id);
@@ -667,11 +672,16 @@ export class LibraryModal extends Modal {
                     const coverEl = card.querySelector('.deeppdf-lib-book-cover');
                     if (coverEl) {
                         const bookName = this.getDisplayName(idx.pdf_name);
-                        this.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
+                        // 先下载封面到本地
+                        if (this.options.onDownloadCover) {
+                            await this.options.onDownloadCover(idx.id, idx.pdf_name);
+                        }
+                        // 然后从本地加载显示
+                        await this.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
                     }
                 }
             }
-        });
+        }
     }
 
     public updateIndexes(indexes: IndexListItem[], selectedId?: string): void {

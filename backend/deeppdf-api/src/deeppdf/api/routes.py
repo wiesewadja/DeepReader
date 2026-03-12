@@ -885,9 +885,9 @@ async def export_cover_endpoint(index_id: str):
     从 PDF/EPUB 文件中提取封面图片，如果没有封面则生成默认封面
     返回 base64 编码的封面图片数据
     """
-    logger.info(f"[API] 收到封面导出请求: index_id='{index_id}'")
+    logger.debug(f"[API] 收到封面导出请求: index_id='{index_id}'")
     result = await export_cover_data(index_id)
-    logger.info(
+    logger.debug(
         f"[API] 封面导出完成: pdf_name='{result.get('pdf_name')}', "
         f"has_custom_cover={result.get('has_custom_cover')}"
     )
