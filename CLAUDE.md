@@ -39,6 +39,7 @@ DeepReader 采用前后端解耦架构：
 - **开发**: `npm run dev`（监听模式）-> 在 Obsidian 中重新加载（Cmd+R）
 - **构建**: `npm run build`（包含类型检查）
 - **测试**: `npm run test:run`（Vitest）
+- ***部署**： `npm run deploy && obsidian plugin:reload id=deepreader`
 
 ---
 
