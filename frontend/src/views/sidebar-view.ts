@@ -2028,20 +2028,25 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                         }
                         lastUpdateTime = now;
 
-                        // 如果还没有内容，使用拟人化状态作为临时显示
-                        if (!fullContent || fullContent.trim() === '') {
-                            // 创建拟人化状态元素
-                            const statusEl = createHumanizedStatusElement(progress);
-                            // 将元素转换为 HTML 字符串作为内容
-                            const statusHtml = statusEl.outerHTML;
+                        // 🔍 调试日志：追踪拟人化进度更新
+                        log('[DeepPDF] 🎭 拟人化进度更新:', {
+                            mainAction: progress.mainAction,
+                            stepsCount: progress.readingSteps.length,
+                            hasContent: !!progress.generatedContent,
+                            progress: progress.overallProgress
+                        });
 
-                            this.messageList?.updateMessage(aiMessageId, {
-                                content: statusHtml,
-                                isStreaming: true,
-                                isAgentMessage: true,
-                                currentStatus: progress.mainAction.detail,
-                            });
-                        }
+                        // 创建拟人化状态元素
+                        const statusEl = createHumanizedStatusElement(progress);
+                        const statusHtml = statusEl.outerHTML;
+
+                        // 始终更新拟人化状态显示
+                        this.messageList?.updateMessage(aiMessageId, {
+                            content: statusHtml,
+                            isStreaming: true,
+                            isAgentMessage: true,
+                            currentStatus: progress.mainAction.detail,
+                        });
                     };
                 })()),
                 abortSignal: this.streamController.signal,
