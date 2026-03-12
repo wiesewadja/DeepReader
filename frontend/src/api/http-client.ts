@@ -540,14 +540,29 @@ export class DeepPDFClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    const response = await fetch(url, options);
+    const method = options.method || 'GET';
+    const timerId = `api:${endpoint}`;
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-      throw new Error(error.detail || error.message || 'Request failed');
+    log(`[HTTP] ${method} ${endpoint}`);
+    const startTime = performance.now();
+
+    try {
+      const response = await fetch(url, options);
+      const duration = performance.now() - startTime;
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+        logError(`[HTTP] ${method} ${endpoint} 失败 (${response.status}):`, error.detail || error.message);
+        throw new Error(error.detail || error.message || 'Request failed');
+      }
+
+      log(`[HTTP] ${method} ${endpoint} 成功 (${duration.toFixed(0)}ms)`);
+      return response.json();
+    } catch (e) {
+      const duration = performance.now() - startTime;
+      logError(`[HTTP] ${method} ${endpoint} 异常 (${duration.toFixed(0)}ms):`, e);
+      throw e;
     }
-
-    return response.json();
   }
 
   // ==================== 基础 API ====================

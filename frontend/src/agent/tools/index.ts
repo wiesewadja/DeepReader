@@ -86,7 +86,7 @@ export function getToolDefinitions(registry: ToolRegistry): ToolDefinition[] {
 }
 
 /**
- * 执行指定工具（带超时保护）
+ * 执行指定工具（带超时保护和详细日志）
  * @param registry 工具注册表
  * @param name 工具名称
  * @param args 工具参数
@@ -104,10 +104,18 @@ export async function executeTool(
 
   if (!executor) {
     const availableTools = Array.from(registry.keys()).join(', ');
+    toolsLog.error(`[Tool] ❌ 未知工具: ${name}，可用: ${availableTools}`);
     return `Error: Unknown tool "${name}". Available tools: ${availableTools}`;
   }
 
-  toolsLog('[executeTool] 执行工具:', name, '参数:', args);
+  // 简化参数日志（只显示关键信息）
+  const argsPreview = Object.entries(args)
+    .slice(0, 3)
+    .map(([k, v]) => `${k}=${typeof v === 'string' ? `"${v.slice(0, 30)}${v.length > 30 ? '...' : ''}"` : JSON.stringify(v)}`)
+    .join(', ');
+  toolsLog(`[Tool] ▶ 开始执行: ${name}(${argsPreview}${Object.keys(args).length > 3 ? ', ...' : ''})`);
+
+  const startTime = performance.now();
 
   try {
     // 使用 Promise.race 实现超时保护
@@ -117,11 +125,20 @@ export async function executeTool(
         setTimeout(() => reject(new Error(`Tool execution timeout after ${timeout}ms`)), timeout)
       ),
     ]);
-    toolsLog('[executeTool] 成功:', name, '结果长度:', result.length);
+
+    const duration = performance.now() - startTime;
+    const durationStr = duration < 1000 ? `${duration.toFixed(0)}ms` : `${(duration / 1000).toFixed(1)}s`;
+
+    // 结果摘要（显示前100字符和长度）
+    const resultPreview = result.length > 100 ? `${result.slice(0, 100)}...` : result;
+    toolsLog(`[Tool] ✓ 完成: ${name} [${durationStr}, ${result.length}字符]`);
+
     return result;
   } catch (e) {
+    const duration = performance.now() - startTime;
+    const durationStr = duration < 1000 ? `${duration.toFixed(0)}ms` : `${(duration / 1000).toFixed(1)}s`;
     const errorMsg = e instanceof Error ? e.message : String(e);
-    toolsLog.error('[executeTool] 失败:', name, errorMsg);
+    toolsLog.error(`[Tool] ✗ 失败: ${name} [${durationStr}] - ${errorMsg}`);
     return `Error executing tool ${name}: ${errorMsg}`;
   }
 }

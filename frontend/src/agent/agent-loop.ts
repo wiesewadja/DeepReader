@@ -69,38 +69,44 @@ interface PerformanceMetrics {
  * 打印清晰简洁的性能分析报告
  */
 function printPerformanceReport(metrics: PerformanceMetrics): void {
+  // 使用 agentLog 而不是 console.log，确保日志可控
+  agentLog('╔══════════════════════════════════════════════════════════════════════════════╗');
+  agentLog('║                            📊 Agent 性能分析报告                              ║');
+  agentLog('╠══════════════════════════════════════════════════════════════════════════════╣');
+
+  const questionPreview = metrics.userQuestion.length > 55
+    ? metrics.userQuestion.slice(0, 55) + '...'
+    : metrics.userQuestion;
+  agentLog(`║ 用户问题: ${questionPreview.padEnd(69)}║`);
+
+  agentLog('├──────────────────────────────────────────────────────────────────────────────┤');
+
   const llmPercent = Math.round((metrics.llmMs / metrics.totalMs) * 100);
   const toolsPercent = Math.round((metrics.toolsMs / metrics.totalMs) * 100);
   const tokenDelta = metrics.tokenEstimate.end - metrics.tokenEstimate.start;
 
-  console.log(`
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                            📊 Agent 性能分析报告                              ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-│ 用户问题: ${metrics.userQuestion.slice(0, 60).padEnd(60)}│
-├──────────────────────────────────────────────────────────────────────────────┤
-│ ⏱️  总耗时: ${(metrics.totalMs / 1000).toFixed(1)}s                                                            │
-│    ├─ 🤖 LLM 调用: ${(metrics.llmMs / 1000).toFixed(1)}s (${llmPercent}%)                                            │
-│    └─ 🔧 工具执行: ${(metrics.toolsMs / 1000).toFixed(1)}s (${toolsPercent}%)                                            │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ 📦 Token 估算: ${metrics.tokenEstimate.start} → ${metrics.tokenEstimate.end} (${tokenDelta >= 0 ? '+' : ''}${tokenDelta})                                    │
-│ 🔄 迭代次数: ${metrics.iterations}                                                                │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ 🔧 工具调用详情:                                                              │`.trim());
+  agentLog(`║ ⏱️  总耗时: ${(metrics.totalMs / 1000).toFixed(1)}s                                                              ║`);
+  agentLog(`║    ├─ 🤖 LLM 调用: ${(metrics.llmMs / 1000).toFixed(1)}s (${llmPercent}%)                                            ║`);
+  agentLog(`║    └─ 🔧 工具执行: ${(metrics.toolsMs / 1000).toFixed(1)}s (${toolsPercent}%)                                            ║`);
+  agentLog('├──────────────────────────────────────────────────────────────────────────────┤');
+  agentLog(`║ 📦 Token 估算: ${metrics.tokenEstimate.start} → ${metrics.tokenEstimate.end} (${tokenDelta >= 0 ? '+' : ''}${tokenDelta})`.padEnd(69) + '║');
+  agentLog(`║ 🔄 迭代次数: ${metrics.iterations}`.padEnd(69) + '║');
+  agentLog('├──────────────────────────────────────────────────────────────────────────────┤');
+  agentLog('║ 🔧 工具调用详情:                                                              ║');
 
   if (metrics.toolCalls.length === 0) {
-    console.log('│    (无)                                                                      │');
+    agentLog('║    (无工具调用)                                                              ║');
   } else {
     metrics.toolCalls.forEach((tc, idx) => {
       const compressed = tc.resultChars !== tc.compressedChars
-        ? ` → ${tc.compressedChars} (压缩 ${(100 - Math.round(tc.compressedChars / tc.resultChars * 100))}%)`
+        ? ` → ${tc.compressedChars} (压缩 ${100 - Math.round(tc.compressedChars / tc.resultChars * 100)}%)`
         : '';
-      console.log(`│    [${idx + 1}] ${tc.name.padEnd(20)} ${(tc.duration / 1000).toFixed(1)}s, ${tc.resultChars}字符${compressed}`);
+      const line = `║    [${idx + 1}] ${tc.name.padEnd(18)} ${(tc.duration / 1000).toFixed(1)}s, ${tc.resultChars}字符${compressed}`;
+      agentLog(line.padEnd(78) + '║');
     });
   }
 
-  console.log(`╚══════════════════════════════════════════════════════════════════════════════╝
-`);
+  agentLog('╚══════════════════════════════════════════════════════════════════════════════╝');
 }
 
 /**
