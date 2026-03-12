@@ -431,29 +431,83 @@ class MultiProvider(LLMProvider):
 
     def chat(self, model: str, messages: list, temperature: float = 0) -> str:
         """
-        同步调用（使用下一个 Provider 及其配置的模型）
+        同步调用（使用下一个 Provider 及其配置的模型，失败时自动切换到下一个）
 
         注意: model 参数会被忽略，使用 Provider 配置的模型
         """
-        idx = self._get_next_provider_index()
-        provider = self.providers[idx]
-        provider_model = self.models[idx] or model  # 优先使用配置的模型
-        logger.debug(f"[MultiProvider] 使用 {self.names[idx]} (model={provider_model})")
-        return provider.chat(provider_model, messages, temperature)
+        # 记录已尝试的 Provider，避免重复尝试同一个
+        tried_indices = set()
+        last_error = None
+
+        while len(tried_indices) < len(self.providers):
+            idx = self._get_next_provider_index()
+
+            # 如果已经尝试过这个 Provider，跳过
+            if idx in tried_indices:
+                continue
+
+            tried_indices.add(idx)
+            provider = self.providers[idx]
+            provider_model = self.models[idx] or model
+
+            logger.info(f"[MultiProvider] 尝试 {self.names[idx]} (model={provider_model})")
+
+            try:
+                return provider.chat(provider_model, messages, temperature)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"[MultiProvider] {self.names[idx]} 失败: {type(e).__name__}: {str(e)[:100]}"
+                )
+                # 继续尝试下一个 Provider
+                continue
+
+        # 所有 Provider 都失败
+        raise RuntimeError(
+            f"[MultiProvider] 所有 {len(self.providers)} 个 Provider 都失败。"
+            f"最后错误: {type(last_error).__name__}: {str(last_error)[:200]}"
+        )
 
     async def chat_async(
         self, model: str, messages: list, temperature: float = 0
     ) -> str:
         """
-        异步调用（使用下一个 Provider 及其配置的模型）
+        异步调用（使用下一个 Provider 及其配置的模型，失败时自动切换到下一个）
 
         注意: model 参数会被忽略，使用 Provider 配置的模型
         """
-        idx = await self._get_next_provider_index_async()
-        provider = self.providers[idx]
-        provider_model = self.models[idx] or model  # 优先使用配置的模型
-        logger.debug(f"[MultiProvider] 使用 {self.names[idx]} (model={provider_model})")
-        return await provider.chat_async(provider_model, messages, temperature)
+        # 记录已尝试的 Provider，避免重复尝试同一个
+        tried_indices = set()
+        last_error = None
+
+        while len(tried_indices) < len(self.providers):
+            idx = await self._get_next_provider_index_async()
+
+            # 如果已经尝试过这个 Provider，跳过
+            if idx in tried_indices:
+                continue
+
+            tried_indices.add(idx)
+            provider = self.providers[idx]
+            provider_model = self.models[idx] or model
+
+            logger.info(f"[MultiProvider] 尝试 {self.names[idx]} (model={provider_model})")
+
+            try:
+                return await provider.chat_async(provider_model, messages, temperature)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    f"[MultiProvider] {self.names[idx]} 失败: {type(e).__name__}: {str(e)[:100]}"
+                )
+                # 继续尝试下一个 Provider
+                continue
+
+        # 所有 Provider 都失败
+        raise RuntimeError(
+            f"[MultiProvider] 所有 {len(self.providers)} 个 Provider 都失败。"
+            f"最后错误: {type(last_error).__name__}: {str(last_error)[:200]}"
+        )
 
     def get_provider(self, index: int) -> LLMProvider:
         """获取指定索引的 Provider"""
