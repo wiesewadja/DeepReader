@@ -331,8 +331,8 @@ async def llm_tree_search(
     model: str,
     doc_name: str = "",
     max_results: int = 5,
-    timeout: int = 15,
-    max_retries: int = 2,
+    timeout: int = 30,  # 从 15s 增加到 30s，DeepSeek API 响应较慢
+    max_retries: int = 3,  # 增加重试次数到 3
 ) -> LLMTreeSearchResult:
     """
     使用 LLM 在文档树结构上进行推理检索

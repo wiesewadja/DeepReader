@@ -329,7 +329,7 @@ async def _query_with_llm_tree_search(
         logger.error(f"[LLM树搜索] 获取客户端失败: {e}")
         raise LLMTreeSearchError(str(e), "no_api_key")
 
-    # 2. 执行 LLM 树搜索
+    # 2. 执行 LLM 树搜索（增加超时到 30s，适应 DeepSeek API 较慢的响应速度）
     search_result = await llm_tree_search(
         query=query,
         tree_structure=tree_structure,
@@ -337,7 +337,7 @@ async def _query_with_llm_tree_search(
         model=model,
         doc_name=index_metadata.get("pdf_name", ""),
         max_results=max_results,
-        timeout=15,
+        timeout=30,  # 从 15s 增加到 30s
         max_retries=2,
     )
 
