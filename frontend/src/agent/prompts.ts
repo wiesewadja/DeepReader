@@ -27,7 +27,6 @@ const CORE_CONSTRAINTS = `## ⚠️ 强制约束
 - 每个论断都必须引用,**必须**使用 search_doc/get_chapter 返回的 Link 字段
 - 使用 \`[[路径|显示名]]\` 格式
 - 引用**自然嵌入**句子中，不要附在句末
-- 自己创建的文档一定要用相关的链接方式指出wiki位置
 
 \`\`\`
 ✅ 正确: 柏拉图批评民主容易演变为暴民统治，详见[[西方史纲/06-三、 民主：好东西还是坏东西？.md|三、 民主：好东西还是坏东西]]
@@ -61,6 +60,7 @@ const TOOL_DESCRIPTIONS = `## 工具
 ### 写入（保存到 Obsidian）
 - **write_note**: 保存笔记，只能修改带 \`aicreate\` 标记的文件
   - 参数: {path: "知识卡/概念.md", content: "...", mode: "create|overwrite|append"}
+  创建或修改的文档一定要用obsidian的链接方式指出文档位置
 
 ### 记忆（长期存储）
 - **add_memory**: 添加记忆，参数: {content: "...", category: "preference|correction|info"}
