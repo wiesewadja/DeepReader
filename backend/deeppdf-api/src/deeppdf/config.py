@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     """应用配置"""
 
     # 基础配置
-    base_dir: Path = Path(__file__).parent.parent.parent / "data"
+    # base_dir 指向 backend/data/ 目录（从 deeppdf-api/src/deeppdf/ 出发向上 4 级）
+    base_dir: Path = Path(__file__).parent.parent.parent.parent / "data"
     max_results: int = 10
 
     # LLM API 配置
