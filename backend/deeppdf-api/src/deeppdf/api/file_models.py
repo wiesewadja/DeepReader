@@ -16,6 +16,9 @@ class FileUploadResponse(BaseModel):
     uploaded_at: str = Field(..., description="上传时间")
     status: str = Field("uploaded", description="文件状态")
     indexed: bool = Field(False, description="是否已索引")
+    reused: bool = Field(False, description="是否复用了已有文件")
+    has_result: bool = Field(False, description="是否已有解析结果可复用")
+    cover_url: Optional[str] = Field(None, description="封面图片 URL")
 
 
 class FileInfo(BaseModel):

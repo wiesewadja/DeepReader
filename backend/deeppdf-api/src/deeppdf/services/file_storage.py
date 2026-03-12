@@ -4,11 +4,12 @@
 管理上传的 PDF 文件的 CRUD 操作
 """
 
+import hashlib
 import json
 import logging
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from datetime import datetime
 
 from ..api.file_models import FileInfo
@@ -35,6 +36,7 @@ class FileStorage:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir = Path(storage_dir) / "files_meta"
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
+        self.results_dir = Path(storage_dir).parent / "results"  # results 目录
         logger.info(f"[文件存储] 存储目录: {self.storage_dir}")
         logger.info(f"[文件存储] 元数据目录: {self.metadata_dir}")
 
@@ -50,6 +52,10 @@ class FileStorage:
         """生成唯一的文件 ID"""
         return f"f_{uuid.uuid4().hex[:12]}"
 
+    def _compute_content_hash(self, content: bytes) -> str:
+        """计算文件内容的 MD5 hash"""
+        return hashlib.md5(content).hexdigest()
+
     def _format_size(self, size_bytes: int) -> str:
         """格式化文件大小"""
         for unit in ["B", "KB", "MB", "GB"]:
@@ -57,6 +63,69 @@ class FileStorage:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f} TB"
+
+    def _find_existing_file_by_hash(
+        self, content_hash: str, filename: str
+    ) -> Optional[FileInfo]:
+        """
+        通过内容 hash 查找已存在的文件
+
+        Args:
+            content_hash: 文件内容的 MD5 hash
+            filename: 文件名（用于匹配扩展名）
+
+        Returns:
+            如果找到返回 FileInfo，否则返回 None
+        """
+        file_ext = Path(filename).suffix.lower()
+
+        for meta_file in self.metadata_dir.glob("*.json"):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                # 检查 hash 是否匹配
+                if data.get("content_hash") == content_hash:
+                    file_info = FileInfo(**data)
+                    # 检查文件是否还存在
+                    if Path(file_info.file_path).exists():
+                        logger.info(
+                            f"[文件存储] 找到相同内容的文件: {file_info.file_id} ({file_info.file_name})"
+                        )
+                        return file_info
+            except Exception:
+                continue
+
+        return None
+
+    def _find_matching_result_file(self, filename: str) -> Optional[Path]:
+        """
+        在 results 目录查找匹配的结果文件
+
+        Args:
+            filename: 原始文件名（不含扩展名）
+
+        Returns:
+            匹配的结果文件路径，如果没有找到返回 None
+        """
+        if not self.results_dir.exists():
+            return None
+
+        # 去掉扩展名的文件名
+        stem = Path(filename).stem
+
+        # 查找匹配的结果文件
+        matching_files = list(
+            self.results_dir.glob(f"{stem}_*.json")
+        )
+
+        if matching_files:
+            # 返回最新的文件
+            latest = max(matching_files, key=lambda p: p.stat().st_mtime)
+            logger.info(f"[文件存储] 找到匹配的 results 文件: {latest.name}")
+            return latest
+
+        return None
 
     def validate_file(
         self, filename: str, file_size: int
@@ -89,22 +158,67 @@ class FileStorage:
         return True, None
 
     def save_file(
-        self, filename: str, content: bytes
-    ) -> Tuple[bool, Optional[FileInfo], Optional[str]]:
+        self,
+        filename: str,
+        content: bytes,
+        check_duplicate: bool = True,
+    ) -> Tuple[bool, Optional[FileInfo], Optional[str], Optional[Dict[str, Any]]]:
         """
-        保存上传的文件
+        保存上传的文件（支持去重和结果复用）
 
         Args:
             filename: 原始文件名
             content: 文件内容
+            check_duplicate: 是否检查重复文件
 
         Returns:
-            (success, file_info, error_message)
+            (success, file_info, error_message, reuse_info)
+            - reuse_info: 如果复用了已有数据，包含 {'existing_file': FileInfo, 'result_file': Path, 'index_id': str}
         """
         # 验证文件
         is_valid, error = self.validate_file(filename, len(content))
         if not is_valid:
-            return False, None, error
+            return False, None, error, None
+
+        reuse_info = None
+
+        # 检查重复文件
+        if check_duplicate:
+            content_hash = self._compute_content_hash(content)
+            existing_file = self._find_existing_file_by_hash(content_hash, filename)
+
+            if existing_file:
+                logger.info(
+                    f"[文件存储] 检测到重复文件，复用已有文件: {existing_file.file_id}"
+                )
+
+                # 查找是否有对应的索引
+                index_id = None
+                result_file = None
+
+                # 1. 检查已有索引
+                if existing_file.indexes:
+                    index_id = existing_file.indexes[0]
+                    logger.info(f"[文件存储] 已有索引: {index_id}")
+
+                # 2. 尝试从 results 目录查找（无论是否有索引都检查）
+                result_file = self._find_matching_result_file(filename)
+                if result_file:
+                    logger.info(f"[文件存储] 从 results 复用: {result_file.name}")
+                    # 如果没有索引 ID，从结果文件生成一个
+                    if not index_id:
+                        index_id = f"idx_{hashlib.md5(result_file.stem.encode()).hexdigest()[:12]}"
+
+                # 无论是否有索引/results，都复用已有文件（避免重复存储）
+                reuse_info = {
+                    "existing_file": existing_file,
+                    "result_file": result_file,
+                    "index_id": index_id,
+                    "content_hash": content_hash,
+                }
+
+                # 更新文件的引用计数（不重新保存文件内容）
+                return True, existing_file, None, reuse_info
 
         # 生成文件 ID
         file_id = self._generate_file_id()
@@ -116,6 +230,9 @@ class FileStorage:
         try:
             with open(file_path, "wb") as f:
                 f.write(content)
+
+            # 计算内容 hash
+            content_hash = self._compute_content_hash(content)
 
             # 创建元数据
             file_info = FileInfo(
@@ -129,13 +246,15 @@ class FileStorage:
                 indexes=[],
             )
 
-            # 保存元数据
-            self._save_metadata(file_id, file_info)
+            # 添加内容 hash 到元数据
+            # 注意：FileInfo 模型可能需要添加 content_hash 字段
+            # 这里我们通过保存时额外写入
+            self._save_metadata_with_hash(file_id, file_info, content_hash)
 
             logger.info(
                 f"[文件存储] 文件已保存: {file_id} - {filename} ({self._format_size(len(content))})"
             )
-            return True, file_info, None
+            return True, file_info, None, None
 
         except Exception as e:
             logger.error(f"[文件存储] 保存文件失败: {e}")
@@ -149,6 +268,16 @@ class FileStorage:
         metadata_path = self._get_metadata_path(file_id)
         with open(metadata_path, "w", encoding="utf-8") as f:
             json.dump(file_info.model_dump(), f, ensure_ascii=False, indent=2)
+
+    def _save_metadata_with_hash(
+        self, file_id: str, file_info: FileInfo, content_hash: str
+    ) -> None:
+        """保存文件元数据（包含内容 hash）"""
+        metadata_path = self._get_metadata_path(file_id)
+        data = file_info.model_dump()
+        data["content_hash"] = content_hash
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     def _load_metadata(self, file_id: str) -> Optional[FileInfo]:
         """加载文件元数据"""
@@ -296,4 +425,136 @@ class FileStorage:
         file_info = self.get_file(file_id)
         if file_info:
             return file_info.file_path
+        return None
+
+    def import_from_path(
+        self, source_path: str, filename: Optional[str] = None
+    ) -> Tuple[bool, Optional[FileInfo], Optional[str], Optional[Dict[str, Any]]]:
+        """
+        从本地路径导入文件到 uploads 目录（支持去重和复用）
+
+        Args:
+            source_path: 源文件路径
+            filename: 可选的文件名（默认使用源文件名）
+
+        Returns:
+            (success, file_info, error_message, reuse_info)
+            - reuse_info: 如果可以复用已有数据，包含复用信息
+        """
+        source = Path(source_path)
+
+        if not source.exists():
+            return False, None, f"源文件不存在: {source_path}", None
+
+        # 使用源文件名或指定的文件名
+        actual_filename = filename or source.name
+
+        # 读取文件内容
+        try:
+            with open(source, "rb") as f:
+                content = f.read()
+        except Exception as e:
+            return False, None, f"读取文件失败: {e}", None
+
+        # 保存到 uploads（启用去重检查）
+        success, file_info, error, reuse_info = self.save_file(
+            actual_filename, content, check_duplicate=True
+        )
+
+        # 如果找到重复文件，尝试查找匹配的索引
+        if reuse_info and file_info:
+            # 查找匹配的索引文件
+            index_file = self._find_matching_index_file(actual_filename)
+            if index_file:
+                reuse_info["index_file"] = str(index_file)
+                logger.info(f"[文件导入] 找到匹配的索引: {index_file.name}")
+
+        return success, file_info, error, reuse_info
+
+    def _find_existing_file_by_hash(
+        self, content_hash: str, filename: str
+    ) -> Optional[FileInfo]:
+        """
+        通过内容 hash 查找已存在的文件
+
+        Args:
+            content_hash: 文件内容的 MD5 hash
+            filename: 文件名（用于匹配扩展名）
+
+        Returns:
+            如果找到返回 FileInfo，否则返回 None
+        """
+        file_ext = Path(filename).suffix.lower()
+
+        for meta_file in self.metadata_dir.glob("*.json"):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+                # 检查 hash 是否匹配
+                if data.get("content_hash") == content_hash:
+                    file_info = FileInfo(**data)
+                    # 检查文件是否还存在
+                    if Path(file_info.file_path).exists():
+                        logger.info(
+                            f"[文件存储] 找到相同内容的文件: {file_info.file_id} ({file_info.file_name})"
+                        )
+                        return file_info
+            except Exception:
+                continue
+
+        return None
+
+    def _find_matching_result_file(self, filename: str) -> Optional[Path]:
+        """
+        在 results 目录查找匹配的结果文件
+
+        Args:
+            filename: 原始文件名（可能含扩展名）
+
+        Returns:
+            匹配的结果文件路径，如果没有找到返回 None
+        """
+        if not self.results_dir.exists():
+            return None
+
+        # 去掉扩展名的文件名
+        stem = Path(filename).stem
+
+        # 查找匹配的结果文件
+        matching_files = list(self.results_dir.glob(f"{stem}_*.json"))
+
+        if matching_files:
+            # 返回最新的文件
+            latest = max(matching_files, key=lambda p: p.stat().st_mtime)
+            logger.info(f"[文件存储] 找到匹配的 results 文件: {latest.name}")
+            return latest
+
+        return None
+
+    def _find_matching_index_file(self, filename: str) -> Optional[Path]:
+        """
+        在 indexes 目录查找匹配的索引文件
+
+        Args:
+            filename: 原始文件名
+
+        Returns:
+            匹配的索引文件路径，如果没有找到返回 None
+        """
+        indexes_dir = self.metadata_dir.parent / "indexes"
+        if not indexes_dir.exists():
+            return None
+
+        # 遍历所有索引文件，查找 file_name 匹配的
+        for index_file in indexes_dir.glob("*.json"):
+            try:
+                with open(index_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("file_name") == filename or data.get("pdf_name") == Path(filename).stem:
+                    logger.info(f"[文件存储] 找到匹配的索引文件: {index_file.name}")
+                    return index_file
+            except Exception:
+                continue
+
         return None

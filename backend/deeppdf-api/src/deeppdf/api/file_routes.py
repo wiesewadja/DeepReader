@@ -45,13 +45,48 @@ async def upload_file(file: UploadFile = File(...)):
     # 读取文件内容
     content = await file.read()
 
-    # 验证并保存文件
-    success, file_info, error = _file_storage.save_file(file.filename, content)
+    # 验证并保存文件（启用去重检查）
+    success, file_info, error, reuse_info = _file_storage.save_file(
+        file.filename, content, check_duplicate=True
+    )
 
     if not success:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error)
 
-    logger.info(f"[文件API] 文件上传成功: {file_info.file_id} - {file_info.file_name}")
+    # 判断是否复用了已有文件
+    reused = reuse_info is not None
+    has_result = reuse_info is not None and reuse_info.get("result_file") is not None
+
+    logger.info(
+        f"[文件API] 文件上传成功: {file_info.file_id} - {file_info.file_name}"
+        f"{' (复用已有文件)' if reused else ''}"
+        f"{' (有解析结果)' if has_result else ''}"
+    )
+
+    # 提取封面图片
+    cover_url = None
+    try:
+        from ..services.cover_extractor import extract_or_generate_cover
+
+        # 清理书名（去除扩展名）
+        book_name = Path(file_info.file_name).stem
+
+        # 提取或生成封面
+        cover_data, _ = extract_or_generate_cover(file_info.file_path, book_name)
+
+        # 保存封面到 covers 目录
+        covers_dir = _storage_dir / "covers"
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        cover_path = covers_dir / f"{file_info.file_id}.png"
+
+        with open(cover_path, "wb") as f:
+            f.write(cover_data)
+
+        # 返回封面 URL
+        cover_url = f"/api/files/{file_info.file_id}/cover"
+        logger.info(f"[文件API] 封面已提取: {cover_path}")
+    except Exception as e:
+        logger.warning(f"[文件API] 封面提取失败: {e}")
 
     return FileUploadResponse(
         file_id=file_info.file_id,
@@ -61,6 +96,9 @@ async def upload_file(file: UploadFile = File(...)):
         uploaded_at=file_info.uploaded_at,
         status=file_info.status,
         indexed=file_info.indexed,
+        reused=reused,
+        has_result=has_result,
+        cover_url=cover_url,
     )
 
 
@@ -107,6 +145,57 @@ async def get_file_info(file_id: str):
 
     logger.info(f"[文件API] 获取文件详情: {file_id}")
     return FileDetailResponse(status="success", file=file_info)
+
+
+@router.get("/{file_id}/cover")
+async def get_file_cover(file_id: str):
+    """
+    获取文件封面图片
+
+    Args:
+        file_id: 文件 ID
+
+    Returns:
+        封面图片（PNG 格式）
+    """
+    from fastapi.responses import Response
+    import base64
+
+    # 检查文件是否存在
+    file_info = _file_storage.get_file(file_id)
+    if not file_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"File '{file_id}' not found"
+        )
+
+    # 查找封面文件
+    cover_path = _storage_dir / "covers" / f"{file_id}.png"
+    if not cover_path.exists():
+        # 封面不存在，尝试生成
+        try:
+            from ..services.cover_extractor import extract_or_generate_cover
+
+            book_name = Path(file_info.file_name).stem
+            cover_data, _ = extract_or_generate_cover(file_info.file_path, book_name)
+
+            # 保存封面
+            covers_dir = _storage_dir / "covers"
+            covers_dir.mkdir(parents=True, exist_ok=True)
+            with open(cover_path, "wb") as f:
+                f.write(cover_data)
+
+            logger.info(f"[文件API] 生成封面: {cover_path}")
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Cover not found for file '{file_id}': {str(e)}",
+            )
+
+    # 读取封面文件
+    with open(cover_path, "rb") as f:
+        cover_data = f.read()
+
+    return Response(content=cover_data, media_type="image/png")
 
 
 @router.delete("/{file_id}", response_model=FileDeleteResponse)
