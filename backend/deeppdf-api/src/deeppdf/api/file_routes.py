@@ -159,7 +159,6 @@ async def get_file_cover(file_id: str):
         封面图片（PNG 格式）
     """
     from fastapi.responses import Response
-    import base64
 
     # 检查文件是否存在
     file_info = _file_storage.get_file(file_id)

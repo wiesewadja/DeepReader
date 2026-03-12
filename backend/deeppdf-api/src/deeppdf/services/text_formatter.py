@@ -461,7 +461,7 @@ class TextFormatter:
         ]
 
         # 句子结束标点（如果段落以这些结尾，不是标题）
-        sentence_end_punctuation = ".。!！?？"
+        sentence_end_punctuation = ".。!！?？；”"
 
         # 不应作为标题的内容模式
         non_heading_patterns = [

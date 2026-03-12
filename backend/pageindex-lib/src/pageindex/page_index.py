@@ -1914,7 +1914,7 @@ async def process_large_node_recursively(node, page_list, opt=None, logger=None,
 
 
 async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None, progress_callback=None):
-    # 更新进度：开始检测目录
+    # 更新进度：开始检测目录 (55%)
     if progress_callback:
         progress_callback("detecting_toc", 55, "正在检测文档目录...")
 
@@ -2346,8 +2346,12 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
                 except Exception as e:
                     logger.warning(f"[进度回调] 调用失败: {e}")
 
-        # 解析 PDF 结构 (55-60%)
+        # 初始进度：开始文档解析 (50%)
+        update_progress("start_parsing", 50, "开始解析文档结构...")
+
+        # 解析 PDF 结构 (50-60%)
         # 注意：进度更新由 tree_parser 内部控制
+        update_progress("detecting_toc", 52, "正在检测文档目录...")
         logging.debug("[DEBUG] About to call tree_parser")
         structure = await tree_parser(
             page_list, opt, doc=doc, logger=logger, llm_client=llm_client,

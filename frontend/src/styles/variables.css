@@ -7,36 +7,81 @@
  */
 
 /* ==================== CSS 变量 ==================== */
-/* ==================== CSS 变量 ==================== */
 :root {
   /* 核心色板 - 适配主题 */
   --deeppdf-bg-app: var(--background-primary);
   --deeppdf-bg-panel: var(--background-secondary);
   --deeppdf-bg-card: var(--background-primary);
   --deeppdf-bg-card-hover: var(--background-modifier-hover);
+  --deeppdf-bg-primary: var(--background-primary);
+  --deeppdf-bg-secondary: var(--background-secondary);
+  --deeppdf-bg-tertiary: var(--background-tertiary, var(--background-modifier-border));
+  --deeppdf-bg-hover: var(--background-modifier-hover);
 
   /* 品牌色 */
-  --deeppdf-accent: var(--interactive-accent);
-  --deeppdf-accent-gradient: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover));
-  --deeppdf-accent-glow: 0 0 15px rgba(var(--interactive-accent-rgb), 0.3);
+  --deeppdf-primary: var(--interactive-accent);
+  --deeppdf-primary-hover: var(--interactive-accent-hover);
+  --deeppdf-primary-light: var(--interactive-accent);
 
   /* 状态色 */
   --deeppdf-status-ready: var(--color-green, #10B981);
   --deeppdf-status-indexing: var(--color-blue, #3B82F6);
   --deeppdf-status-queued: var(--color-orange, #F59E0B);
+  --deeppdf-success: var(--color-green, #10B981);
+  --deeppdf-success-bg: rgba(16, 185, 129, 0.15);
+  --deeppdf-warning: var(--color-orange, #F59E0B);
+  --deeppdf-warning-bg: rgba(245, 158, 11, 0.15);
+  --deeppdf-error: var(--color-red, #EF4444);
+  --deeppdf-error-bg: rgba(239, 68, 68, 0.15);
+  --deeppdf-info: var(--color-blue, #3B82F6);
+  --deeppdf-info-bg: rgba(59, 130, 246, 0.15);
 
   /* 边框与分割线 */
   --deeppdf-border: var(--background-modifier-border);
+  --deeppdf-border-default: var(--background-modifier-border);
+  --deeppdf-border-subtle: var(--background-modifier-border);
+  --deeppdf-border-strong: var(--background-modifier-border-hover);
   --deeppdf-border-highlight: var(--interactive-accent);
 
   /* 文字颜色 - 修复：使用主题变量 */
   --deeppdf-text-primary: var(--text-normal);
   --deeppdf-text-secondary: var(--text-muted);
   --deeppdf-text-tertiary: var(--text-faint);
+  --deeppdf-text-muted: var(--text-muted);
 
-  /* 阴影与模糊 */
+  /* 字体 */
+  --deeppdf-font-family: var(--font-interface);
+  --deeppdf-font-size-xs: 0.75rem;
+  --deeppdf-font-size-sm: 0.85rem;
+  --deeppdf-font-size-base: 0.875rem;
+  --deeppdf-font-size-lg: 1rem;
+  --deeppdf-font-size-xl: 1.125rem;
+
+  /* 间距 */
+  --deeppdf-spacing-xs: 4px;
+  --deeppdf-spacing-sm: 8px;
+  --deeppdf-spacing-md: 12px;
+  --deeppdf-spacing-lg: 16px;
+  --deeppdf-spacing-xl: 20px;
+
+  /* 圆角 */
+  --deeppdf-radius-sm: 4px;
+  --deeppdf-radius-md: 8px;
+  --deeppdf-radius-lg: 12px;
+  --deeppdf-radius-full: 9999px;
+
+  /* 阴影 */
   --deeppdf-shadow-glass: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --deeppdf-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --deeppdf-shadow-glow: 0 0 15px rgba(var(--interactive-accent-rgb), 0.3);
   --deeppdf-backdrop-blur: blur(12px);
+
+  /* 过渡 */
+  --deeppdf-transition-fast: 0.15s ease;
+  --deeppdf-transition-normal: 0.25s ease;
+
+  /* Z-index */
+  --deeppdf-z-tooltip: 1000;
 }
 
 /* 强制重置容器样式以匹配设计 */

@@ -524,7 +524,7 @@ async def create_index(req: IndexRequest, http_request: Request):
     llm_config["enable_text_formatting"] = req.enable_text_formatting
     logger.info(f"[LLM配置]  Enable Text Formatting: {req.enable_text_formatting}")
 
-    # 获取原始文件名
+    # 获取原始文件名（用于初始化任务状态和后台任务）
     original_filename = file_info.file_name if file_info else None
 
     # 初始化任务状态
@@ -540,9 +540,6 @@ async def create_index(req: IndexRequest, http_request: Request):
 
     # 创建异步任务
     logger.info("[任务信息] 创建后台任务...")
-
-    # 获取原始文件名
-    original_filename = file_info.file_name if file_info else None
 
     task = asyncio.create_task(
         _run_index_task(task_id, pdf_path_str, str(settings.base_dir),
@@ -631,6 +628,7 @@ async def list_all_indexes():
                 "progress_percent": task_info.get(
                     "progress_percent", 0
                 ),  # 添加进度信息
+                "current_step": task_info.get("current_step", ""),  # 添加当前步骤
             }
             # 如果任务失败，添加错误信息
             if task_info["status"] == "failed" and task_info.get("error"):
@@ -754,6 +752,27 @@ async def get_task_progress(task_id: str):
         response.error = task_info.get("error", "Unknown error")
 
     return response
+
+
+@router.get("/tasks")
+async def list_running_tasks():
+    """
+    获取所有正在运行的任务
+    """
+    tasks = []
+    for task_id, task_info in _running_tasks.items():
+        # 只返回处理中的任务
+        if task_info["status"] == "processing":
+            tasks.append({
+                "id": task_id,
+                "status": task_info["status"],
+                "message": task_info.get("message"),
+                "progress_percent": task_info.get("progress_percent", 0),
+                "current_step": task_info.get("current_step"),
+                "created_at": task_info.get("created_at"),
+                "pdf_name": task_info.get("pdf_name"),
+            })
+    return {"status": "success", "tasks": tasks}
 
 
 @router.delete("/indexes/{index_id}")

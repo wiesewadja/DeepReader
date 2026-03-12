@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field, field_validator
 from pathlib import Path

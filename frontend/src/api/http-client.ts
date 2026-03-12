@@ -142,6 +142,7 @@ export interface IndexListItem {
   status?: string;
   message?: string;
   progress_percent?: number;  // 索引进度 0-100
+  current_step?: string;  // 当前进骤标识
 }
 
 export interface ListIndexesResult {

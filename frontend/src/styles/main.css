@@ -1077,6 +1077,113 @@
   color: var(--deeppdf-text-muted);
 }
 
+/* ==================== 增强进度展示样式 ==================== */
+.deeppdf-task-name {
+  font-size: var(--deeppdf-font-size-base);
+  font-weight: 600;
+  color: var(--deeppdf-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--deeppdf-spacing-sm);
+}
+
+.deeppdf-task-progress-bar {
+  height: 8px;
+  background: var(--deeppdf-bg-tertiary);
+  border-radius: var(--deeppdf-radius-full);
+  overflow: hidden;
+  position: relative;
+}
+
+.deeppdf-task-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--deeppdf-primary), var(--deeppdf-primary-light));
+  border-radius: var(--deeppdf-radius-full);
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+/* 进度条动画效果 */
+.deeppdf-task-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent);
+  animation: deeppdf-progress-shine 1.5s infinite;
+}
+
+.deeppdf-task-progress-text {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--deeppdf-font-size-sm);
+  color: var(--deeppdf-text-secondary);
+  margin-top: var(--deeppdf-spacing-xs);
+}
+
+.deeppdf-task-step {
+  display: flex;
+  align-items: center;
+  gap: var(--deeppdf-spacing-xs);
+}
+
+.deeppdf-task-percent {
+  font-weight: 600;
+  color: var(--deeppdf-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.deeppdf-task-phase {
+  display: flex;
+  align-items: center;
+  gap: var(--deeppdf-spacing-xs);
+  margin-top: var(--deeppdf-spacing-xs);
+}
+
+.deeppdf-phase-label {
+  font-size: var(--deeppdf-font-size-xs);
+  padding: 2px var(--deeppdf-spacing-sm);
+  border-radius: var(--deeppdf-radius-full);
+  background: var(--deeppdf-bg-tertiary);
+  color: var(--deeppdf-text-muted);
+}
+
+.deeppdf-task-cancel-btn {
+  align-self: flex-end;
+  margin-top: var(--deeppdf-spacing-sm);
+}
+
+/* 阶段颜色指示 */
+.deeppdf-phase-preparation .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #94a3b8, #64748b);
+}
+
+.deeppdf-phase-init .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #60a5fa, #3b82f6);
+}
+
+.deeppdf-phase-parse .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.deeppdf-phase-summary .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+}
+
+.deeppdf-phase-store .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #34d399, #10b981);
+}
+
+.deeppdf-phase-complete .deeppdf-task-progress-fill {
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+}
+
 /* ==================== 索引状态徽章样式 ==================== */
 .deeppdf-index-status-badge {
   display: inline-flex;
@@ -1159,6 +1266,79 @@
 .deeppdf-badge-time {
   color: var(--deeppdf-text-muted);
   background: transparent;
+}
+
+/* ==================== 详细进度展示样式 ==================== */
+.deeppdf-status-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--deeppdf-spacing-sm);
+}
+
+.deeppdf-step-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--deeppdf-spacing-xs);
+  padding: var(--deeppdf-spacing-sm);
+  background: var(--deeppdf-bg-secondary);
+  border-radius: var(--deeppdf-radius-md);
+  margin-top: var(--deeppdf-spacing-xs);
+}
+
+.deeppdf-step-label {
+  display: flex;
+  align-items: center;
+  gap: var(--deeppdf-spacing-xs);
+  font-size: var(--deeppdf-font-size-sm);
+  color: var(--deeppdf-text-secondary);
+  font-weight: 500;
+}
+
+.deeppdf-progress-bar-container {
+  width: 100%;
+}
+
+.deeppdf-progress-bar {
+  height: 6px;
+  background: var(--deeppdf-bg-tertiary);
+  border-radius: var(--deeppdf-radius-full);
+  overflow: hidden;
+}
+
+.deeppdf-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--deeppdf-primary), var(--deeppdf-primary-light));
+  border-radius: var(--deeppdf-radius-full);
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.deeppdf-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.3),
+      transparent);
+  animation: deeppdf-progress-shine 1.5s infinite;
+}
+
+.deeppdf-step-message {
+  font-size: var(--deeppdf-font-size-xs);
+  color: var(--deeppdf-text-muted);
+  line-height: 1.4;
+}
+
+.deeppdf-badge-step {
+  color: var(--deeppdf-text-secondary);
+  background: var(--deeppdf-bg-tertiary);
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ==================== 文件选择器样式 ==================== */

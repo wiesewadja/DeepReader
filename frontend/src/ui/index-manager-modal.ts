@@ -163,15 +163,16 @@ export class IndexManagerModal extends Modal {
                     this.onIndexCreated();
                 }
             } else if (result && result.status === 'pending') {
-                // 异步处理中
-                new Notice(`索引任务已创建，ID: ${result.index_id}。请稍后在索引列表中查看进度。`);
+                // 异步处理中 - 立即刷新索引列表以显示正在进行的任务
+                new Notice(`索引任务已创建，正在后台处理中...`, 3000);
 
                 // 从待索引列表中移除
                 this.pendingPDFs = this.pendingPDFs.filter(p => p.path !== fileInfo.path);
 
-                // 关闭模态框，让用户回到主界面查看索引状态
-                this.close();
+                // 立即刷新索引列表（包括正在运行的任务）
+                await this.loadIndexes();
 
+                // 不关闭模态框，让用户能看到进度
                 if (this.onIndexCreated) {
                     this.onIndexCreated();
                 }
@@ -352,11 +353,16 @@ export class IndexManagerModal extends Modal {
         const dateItem = meta.createDiv({ cls: "index-card-meta-item" });
         dateItem.innerHTML = `${Icons.calendar} ${formatIndexTime(index.created_at)}`;
 
-        // 状态徽章
+        // 状态徽章 - 传递完整的进度信息
         const status = IndexStatusBadge.fromAPIStatus(index.status || 'unknown');
         const badgeContainer = info.createDiv({ cls: "index-card-status" });
-        const badge = new IndexStatusBadge(badgeContainer, status);
-        badgeContainer.appendChild(badge.render());
+        new IndexStatusBadge(
+            badgeContainer,
+            status,
+            index.progress_percent,
+            index.current_step,
+            index.message
+        );
 
         // 右侧操作区域
         const actions = card.createDiv({ cls: "index-card-actions" });
@@ -421,10 +427,10 @@ export class IndexManagerModal extends Modal {
      * 启动状态轮询 - 更新索引卡片上的状态徽章
      */
     private startStatusPolling(): void {
-        // 每 5 秒更新一次索引状态
+        // 每 1 秒更新一次索引状态（更频繁的更新以显示实时进度)
         const pollInterval = window.setInterval(async () => {
             await this.updateIndexStatuses();
-        }, 5000);
+        }, 1000);
 
         // 在模态框关闭时清除定时器
         this.onClose = () => {
@@ -450,9 +456,15 @@ export class IndexManagerModal extends Modal {
                 const badgeContainer = card.querySelector(".index-card-status");
                 if (badgeContainer) {
                     const status = IndexStatusBadge.fromAPIStatus(progress.status);
-                    const badge = new IndexStatusBadge(badgeContainer as HTMLElement, status, progress.progress_percent);
+                    // 清空容器后创建新的徽章（构造函数会自动渲染并追加）
                     badgeContainer.innerHTML = '';
-                    badgeContainer.appendChild(badge.render());
+                    new IndexStatusBadge(
+                        badgeContainer as HTMLElement,
+                        status,
+                        progress.progress_percent,
+                        progress.current_step,
+                        progress.message
+                    );
                 }
             } catch (error) {
                 // 忽略错误，可能是索引已被删除
