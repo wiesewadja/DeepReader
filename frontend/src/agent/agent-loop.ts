@@ -407,9 +407,10 @@ export async function runAgentLoop(
         args = {};
       }
 
-      // 记录工具调用开始（拟人化）
+      // 记录工具调用开始（拟人化）- 使用工具调用 ID 进行精确跟踪
+      let toolCallId = '';
       if (humanizer) {
-        humanizer.recordToolStart(tc.name, args);
+        toolCallId = humanizer.recordToolStart(tc.name, args);
         options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
       }
 
@@ -430,9 +431,9 @@ export async function runAgentLoop(
           compressedChars: compressedLength,
         });
 
-        // 记录工具调用完成（拟人化）
+        // 记录工具调用完成（拟人化）- 优先使用 ID
         if (humanizer) {
-          humanizer.recordToolComplete(tc.name, duration);
+          humanizer.recordToolComplete(toolCallId || tc.name, duration);
           options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
         }
 
@@ -473,9 +474,9 @@ export async function runAgentLoop(
           compressedChars: 0,
         });
 
-        // 记录工具调用失败（拟人化）
+        // 记录工具调用失败（拟人化）- 优先使用 ID
         if (humanizer) {
-          humanizer.recordToolFailed(tc.name);
+          humanizer.recordToolFailed(toolCallId || tc.name);
           options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
         }
 

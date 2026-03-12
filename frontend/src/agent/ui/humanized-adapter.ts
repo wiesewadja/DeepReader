@@ -12,10 +12,21 @@ import { TOOL_TO_ACTION, generateThoughtBubble } from './humanized-types';
  * 工具调用记录（内部）
  */
 interface ToolCallRecord {
+	/** 唯一标识符（用于区分同名工具的多次调用） */
+	id: string;
+	/** 工具名称 */
 	name: string;
+	/** 工具参数 */
 	args: Record<string, unknown>;
+	/** 调用状态 */
 	status: 'running' | 'completed' | 'failed';
+	/** 执行时长（毫秒） */
 	duration?: number;
+}
+
+/** 生成唯一 ID */
+function generateId(): string {
+	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export class HumanizedProgressAdapter {
@@ -23,36 +34,92 @@ export class HumanizedProgressAdapter {
 	private currentContent: string = '';
 	private iteration: number = 0;
 	private maxIterations: number = 10;
+	/** 当前运行中工具的 ID 映射（工具名 -> ID 列表） */
+	private runningByTool: Map<string, string[]> = new Map();
 
 	/**
 	 * 记录工具调用开始
+	 * @returns 工具调用 ID，用于后续 complete/failed 调用
 	 */
-	recordToolStart(name: string, args: Record<string, unknown>): void {
+	recordToolStart(name: string, args: Record<string, unknown>): string {
+		const id = generateId();
 		this.toolCalls.push({
+			id,
 			name,
 			args,
 			status: 'running',
 		});
+
+		// 追踪运行中的工具
+		const running = this.runningByTool.get(name) || [];
+		running.push(id);
+		this.runningByTool.set(name, running);
+
+		return id;
 	}
 
 	/**
 	 * 记录工具调用完成
+	 * @param idOrName 工具调用 ID 或工具名（兼容旧代码）
 	 */
-	recordToolComplete(name: string, duration: number): void {
-		const tool = this.toolCalls.find((t) => t.name === name && t.status === 'running');
-		if (tool) {
-			tool.status = 'completed';
-			tool.duration = duration;
+	recordToolComplete(idOrName: string, duration: number): void {
+		// 先尝试按 ID 查找
+		const byId = this.toolCalls.find((t) => t.id === idOrName && t.status === 'running');
+		if (byId) {
+			byId.status = 'completed';
+			byId.duration = duration;
+			this.removeFromRunning(byId.name, byId.id);
+			return;
+		}
+
+		// 兼容旧代码：按名称查找最后一个运行中的
+		const running = this.runningByTool.get(idOrName);
+		if (running && running.length > 0) {
+			const lastId = running[running.length - 1];
+			const tool = this.toolCalls.find((t) => t.id === lastId);
+			if (tool) {
+				tool.status = 'completed';
+				tool.duration = duration;
+				this.removeFromRunning(idOrName, lastId);
+			}
 		}
 	}
 
 	/**
 	 * 记录工具调用失败
+	 * @param idOrName 工具调用 ID 或工具名（兼容旧代码）
 	 */
-	recordToolFailed(name: string): void {
-		const tool = this.toolCalls.find((t) => t.name === name && t.status === 'running');
-		if (tool) {
-			tool.status = 'failed';
+	recordToolFailed(idOrName: string): void {
+		// 先尝试按 ID 查找
+		const byId = this.toolCalls.find((t) => t.id === idOrName && t.status === 'running');
+		if (byId) {
+			byId.status = 'failed';
+			this.removeFromRunning(byId.name, byId.id);
+			return;
+		}
+
+		// 兼容旧代码：按名称查找最后一个运行中的
+		const running = this.runningByTool.get(idOrName);
+		if (running && running.length > 0) {
+			const lastId = running[running.length - 1];
+			const tool = this.toolCalls.find((t) => t.id === lastId);
+			if (tool) {
+				tool.status = 'failed';
+				this.removeFromRunning(idOrName, lastId);
+			}
+		}
+	}
+
+	/**
+	 * 从运行中列表移除
+	 */
+	private removeFromRunning(name: string, id: string): void {
+		const running = this.runningByTool.get(name);
+		if (running) {
+			const idx = running.indexOf(id);
+			if (idx >= 0) {
+				running.splice(idx, 1);
+			}
 		}
 	}
 

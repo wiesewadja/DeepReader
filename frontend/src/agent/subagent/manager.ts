@@ -155,45 +155,56 @@ export class SubagentManager {
 		tools: ToolDefinition[],
 		abortSignal: AbortSignal
 	): Promise<string> {
+		// 检查是否已取消
+		if (abortSignal.aborted) {
+			throw new Error('任务已取消');
+		}
+
 		let accumulatedContent = '';
+		let timeout: ReturnType<typeof setTimeout> | null = null;
+		let abortHandler: (() => void) | null = null;
 
-		await new Promise<void>((resolve, reject) => {
-			// 检查是否已取消
-			if (abortSignal.aborted) {
-				reject(new Error('任务已取消'));
-				return;
-			}
+		try {
+			await new Promise<void>((resolve, reject) => {
+				// 设置超时
+				timeout = setTimeout(() => {
+					reject(new Error('子 Agent 超时'));
+				}, this.config.timeout);
 
-			const timeout = setTimeout(() => {
-				reject(new Error('子 Agent 超时'));
-			}, this.config.timeout);
+				// 监听取消事件
+				abortHandler = () => {
+					if (timeout) clearTimeout(timeout);
+					reject(new Error('任务已取消'));
+				};
+				abortSignal.addEventListener('abort', abortHandler);
 
-			// 监听取消事件
-			const abortHandler = () => {
-				clearTimeout(timeout);
-				reject(new Error('任务已取消'));
-			};
-			abortSignal.addEventListener('abort', abortHandler);
-
-			runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
-				maxIterations: this.config.maxIterations,
-				abortSignal,  // 传递取消信号
-				onContent: (text) => {
-					accumulatedContent += text;
-				},
-				onProgress: () => {},
-				onComplete: () => {
-					clearTimeout(timeout);
-					abortSignal.removeEventListener('abort', abortHandler);
-					resolve();
-				},
-				onError: (error) => {
-					clearTimeout(timeout);
-					abortSignal.removeEventListener('abort', abortHandler);
-					reject(new Error(error));
-				},
+				try {
+					runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
+						maxIterations: this.config.maxIterations,
+						abortSignal,  // 传递取消信号
+						onContent: (text) => {
+							accumulatedContent += text;
+						},
+						onProgress: () => {},
+						onComplete: () => {
+							resolve();
+						},
+						onError: (error) => {
+							reject(new Error(error));
+						},
+					});
+				} catch (syncError) {
+					// 处理 runAgentLoop 同步抛出的异常
+					reject(syncError);
+				}
 			});
-		});
+		} finally {
+			// 确保清理资源
+			if (timeout) clearTimeout(timeout);
+			if (abortHandler) {
+				abortSignal.removeEventListener('abort', abortHandler);
+			}
+		}
 
 		return accumulatedContent;
 	}
