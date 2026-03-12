@@ -214,23 +214,21 @@
     font-weight: 500;
 }
 
-/* 封面操作按钮容器 */
+/* 封面操作按钮容器 - 固定在右下角，默认隐藏 */
 .deeppdf-lib-cover-actions {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    bottom: 8px;
+    right: 8px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    background: rgba(0, 0, 0, 0.5);
+    gap: 4px;
+    z-index: 10;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.15s ease;
 }
 
-.deeppdf-lib-book-card:hover .deeppdf-lib-cover-actions {
+/* 悬停封面时显示按钮 */
+.deeppdf-lib-book-cover:hover .deeppdf-lib-cover-actions {
     opacity: 1;
 }
 
@@ -239,18 +237,20 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
     color: var(--text-normal);
     cursor: pointer;
     transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .deeppdf-lib-cover-btn:hover {
     transform: scale(1.1);
     background: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 .deeppdf-lib-cover-btn.download:hover {

@@ -42,6 +42,14 @@ export class LibraryModal extends Modal {
     private gridEl: HTMLElement | null = null;
     private searchInputEl: HTMLInputElement | null = null;
     private pollingInterval: number | null = null;
+    // 封面缓存：避免重复请求
+    private coverCache: Map<string, string> = new Map();
+    // 正在加载封面的索引 ID 集合
+    private loadingCovers: Set<string> = new Set();
+    // 上一次的索引状态快照（用于增量更新）
+    private lastIndexStates: Map<string, { status: string; progress: number }> = new Map();
+    // 卡片 DOM 引用（用于增量更新）
+    private cardElements: Map<string, HTMLElement> = new Map();
 
     constructor(app: App, options: LibraryModalOptions) {
         super(app);
@@ -100,6 +108,10 @@ export class LibraryModal extends Modal {
 
     private renderGrid(): void {
         if (!this.gridEl) return;
+
+        // 清空卡片引用
+        this.cardElements.clear();
+
         this.gridEl.innerHTML = '';
 
         // 过滤
@@ -126,6 +138,13 @@ export class LibraryModal extends Modal {
         sorted.forEach(index => {
             const card = this.createBookCard(index);
             this.gridEl!.appendChild(card);
+            // 保存卡片引用
+            this.cardElements.set(index.id, card);
+            // 保存初始状态
+            this.lastIndexStates.set(index.id, {
+                status: index.status || 'unknown',
+                progress: index.progress_percent || 0
+            });
         });
     }
 
@@ -193,43 +212,30 @@ export class LibraryModal extends Modal {
                 this.retryIndex(index);
             });
         } else {
-            // 尝试加载封面图片
-            const coverPath = `DeepReader/covers/${bookName}.png`;
-            const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
-
-            if (coverFile && coverFile instanceof TFile) {
+            // 索引完成状态：显示封面或占位符
+            // 先检查缓存
+            const cachedCover = this.coverCache.get(index.id);
+            if (cachedCover) {
+                // 使用缓存的封面
+                coverEl.innerHTML = '';
                 const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
-                imgEl.src = this.app.vault.getResourcePath(coverFile);
+                imgEl.src = cachedCover;
                 imgEl.alt = bookName;
-                imgEl.onerror = () => {
-                    // 图片加载失败，显示占位符
-                    coverEl.innerHTML = this.createCoverPlaceholder(bookName);
-                };
             } else {
-                // 显示占位符
+                // 没有缓存，先显示占位符
                 coverEl.innerHTML = this.createCoverPlaceholder(bookName);
+
+                // 只在缓存中没有且不在加载中时才请求封面
+                if (!this.loadingCovers.has(index.id)) {
+                    this.loadingCovers.add(index.id);
+
+                    // 异步加载封面（不阻塞渲染）
+                    this.loadCoverAndDisplay(index.id, bookName, coverEl);
+                }
             }
 
-            // 悬停时显示操作按钮
-            const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
-
-            // 下载按钮
-            const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
-            downloadBtn.innerHTML = Icons.download;
-            downloadBtn.title = '导出 Markdown';
-            downloadBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.options.onExportMarkdown?.(index.id);
-            });
-
-            // 删除按钮
-            const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
-            deleteBtn.innerHTML = Icons.trash;
-            deleteBtn.title = '删除索引';
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.confirmDelete(index);
-            });
+            // 添加操作按钮（下载、删除）
+            this.addCoverActions(coverEl, index.id);
         }
 
         // 选中时在封面上显示绿色对勾
@@ -258,6 +264,121 @@ export class LibraryModal extends Modal {
         });
 
         return card;
+    }
+
+    /**
+     * 从后端加载封面
+     * @returns 是否成功加载
+     */
+    private async loadCoverFromBackend(indexId: string): Promise<boolean> {
+        try {
+            const coverData = await this.options.apiClient.exportCover(indexId);
+            if (coverData && coverData.cover_data) {
+                const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
+                this.coverCache.set(indexId, coverUrl);
+                return true;
+            }
+        } catch (error) {
+            // 后端获取失败
+        }
+        return false;
+    }
+
+    /**
+     * 异步加载封面并更新显示
+     */
+    private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
+        try {
+            // 先从后端加载
+            const loaded = await this.loadCoverFromBackend(indexId);
+            if (loaded) {
+                const coverUrl = this.coverCache.get(indexId);
+                if (coverUrl) {
+                    coverEl.innerHTML = '';
+                    const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+                    imgEl.src = coverUrl;
+                    imgEl.alt = bookName;
+                    // 重新添加操作按钮
+                    this.addCoverActions(coverEl, indexId);
+                }
+                return;
+            }
+
+            // 后端没有，尝试从本地加载
+            const coverPath = `DeepReader/covers/${bookName}.png`;
+            const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+
+            if (coverFile && coverFile instanceof TFile) {
+                const localCoverUrl = this.app.vault.getResourcePath(coverFile);
+                this.coverCache.set(indexId, localCoverUrl);
+                coverEl.innerHTML = '';
+                const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+                imgEl.src = localCoverUrl;
+                imgEl.alt = bookName;
+                // 重新添加操作按钮
+                this.addCoverActions(coverEl, indexId);
+            }
+        } catch (error) {
+            // 加载失败，保持占位符
+        } finally {
+            this.loadingCovers.delete(indexId);
+        }
+    }
+
+    /**
+     * 添加封面操作按钮（下载、删除）
+     */
+    private addCoverActions(coverEl: HTMLElement, indexId: string): void {
+        const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
+
+        // 下载按钮
+        const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
+        downloadBtn.innerHTML = Icons.download;
+        downloadBtn.title = '导出 Markdown';
+        downloadBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onExportMarkdown?.(indexId);
+        });
+
+        // 删除按钮
+        const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
+        deleteBtn.innerHTML = Icons.trash;
+        deleteBtn.title = '删除索引';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = this.indexes.find(idx => idx.id === indexId);
+            if (index) {
+                this.confirmDelete(index);
+            }
+        });
+    }
+
+    /**
+     * 更新单个卡片的封面显示
+     */
+    private updateCardCover(indexId: string, coverUrl: string, bookName: string): void {
+        if (!this.gridEl) return;
+
+        // 查找对应的卡片
+        const cards = this.gridEl.querySelectorAll('.deeppdf-lib-book-card');
+        cards.forEach(card => {
+            // 通过卡片中的书名或其他标识找到对应的卡片
+            const titleEl = card.querySelector('.deeppdf-lib-book-title');
+            if (titleEl && titleEl.textContent === bookName) {
+                const coverEl = card.querySelector('.deeppdf-lib-book-cover');
+                if (coverEl) {
+                    coverEl.innerHTML = '';
+                    const imgEl = document.createElement('img');
+                    imgEl.className = 'deeppdf-lib-cover-img';
+                    imgEl.src = coverUrl;
+                    imgEl.alt = bookName;
+                    imgEl.onerror = () => {
+                        coverEl.innerHTML = this.createCoverPlaceholder(bookName);
+                    };
+                    coverEl.prepend(imgEl);
+                }
+            }
+        });
     }
 
     private createCoverPlaceholder(bookName: string, isFailed: boolean = false): string {
@@ -434,12 +555,123 @@ export class LibraryModal extends Modal {
 
     private async refreshIndexes(): Promise<void> {
         const newIndexes = await this.options.onRefresh?.();
+        console.log('[LibraryModal] refreshIndexes called, newIndexes:', newIndexes?.length);
+
         if (newIndexes) {
+            // 检测新增的索引
+            const newAddedIndexes = this.detectNewIndexes(newIndexes);
+            // 检测状态变化的索引
+            const changedIndexes = this.detectChangedIndexes(newIndexes);
+            // 检测刚完成的索引
+            const completedIndexes = this.detectCompletedIndexes(newIndexes);
+
+            // console.log('[LibraryModal] detected:', {
+            //     newAdded: newAddedIndexes.length,
+            //     changed: changedIndexes.length,
+            //     completed: completedIndexes.length,
+            //     lastIndexStates: this.lastIndexStates.size
+            // });
+
             this.indexes = [...newIndexes];
+
+            // 如果有新增的索引，需要重新渲染整个网格（因为要插入新卡片）
+            if (newAddedIndexes.length > 0) {
+                // console.log('[LibraryModal] new indexes detected, re-rendering grid');
+                this.renderGrid();
+            } else if (changedIndexes.length > 0 || completedIndexes.length > 0) {
+                // 只有状态变化，增量更新
+                console.log('[LibraryModal] updating cards incrementally');
+                this.updateCardsIncrementally(changedIndexes, completedIndexes);
+            }
         } else {
             this.indexes = [...this.options.indexes];
         }
-        this.renderGrid();
+    }
+
+    /**
+     * 检测新增的索引
+     */
+    private detectNewIndexes(newIndexes: IndexListItem[]): IndexListItem[] {
+        return newIndexes.filter(idx => !this.lastIndexStates.has(idx.id));
+    }
+
+    /**
+     * 检测状态或进度变化的索引（已存在的）
+     */
+    private detectChangedIndexes(newIndexes: IndexListItem[]): IndexListItem[] {
+        return newIndexes.filter(idx => {
+            const lastState = this.lastIndexStates.get(idx.id);
+            if (!lastState) return false; // 新索引不在这里处理
+
+            const newStatus = (idx.status || 'unknown').toLowerCase();
+            const newProgress = idx.progress_percent || 0;
+
+            return lastState.status.toLowerCase() !== newStatus ||
+                   Math.abs(lastState.progress - newProgress) >= 5; // 进度变化超过 5% 才更新
+        });
+    }
+
+    /**
+     * 检测从处理中变为完成的索引
+     */
+    private detectCompletedIndexes(newIndexes: IndexListItem[]): IndexListItem[] {
+        const completedIds: string[] = [];
+
+        newIndexes.forEach(idx => {
+            const lastState = this.lastIndexStates.get(idx.id);
+            const processingStatuses = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'];
+            const readyStatuses = ['ready', 'completed', 'success'];
+
+            if (lastState) {
+                const wasProcessing = processingStatuses.includes(lastState.status.toLowerCase());
+                const isNowReady = readyStatuses.includes((idx.status || '').toLowerCase());
+
+                if (wasProcessing && isNowReady) {
+                    completedIds.push(idx.id);
+                }
+            }
+        });
+
+        return newIndexes.filter(idx => completedIds.includes(idx.id));
+    }
+
+    /**
+     * 增量更新卡片
+     */
+    private updateCardsIncrementally(changedIndexes: IndexListItem[], completedIndexes: IndexListItem[]): void {
+        // 更新变化的卡片
+        changedIndexes.forEach(idx => {
+            const card = this.cardElements.get(idx.id);
+            if (card) {
+                // 重新创建该卡片
+                const newCard = this.createBookCard(idx);
+                card.replaceWith(newCard);
+                this.cardElements.set(idx.id, newCard);
+            }
+        });
+
+        // 更新状态快照
+        changedIndexes.forEach(idx => {
+            this.lastIndexStates.set(idx.id, {
+                status: idx.status || 'unknown',
+                progress: idx.progress_percent || 0
+            });
+        });
+
+        // 对刚完成的索引，请求封面
+        completedIndexes.forEach(idx => {
+            if (!this.coverCache.has(idx.id) && !this.loadingCovers.has(idx.id)) {
+                this.loadingCovers.add(idx.id);
+                const card = this.cardElements.get(idx.id);
+                if (card) {
+                    const coverEl = card.querySelector('.deeppdf-lib-book-cover');
+                    if (coverEl) {
+                        const bookName = this.getDisplayName(idx.pdf_name);
+                        this.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
+                    }
+                }
+            }
+        });
     }
 
     public updateIndexes(indexes: IndexListItem[], selectedId?: string): void {
