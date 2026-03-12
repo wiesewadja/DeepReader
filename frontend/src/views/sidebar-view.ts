@@ -1777,11 +1777,17 @@ ${r.text}`;
             // 添加阅读进度上下文（如果有）
             if (context.readingProgress) {
                 const progress = context.readingProgress;
+                // coverage 和 absorption 已经是 0-100 的百分比，直接使用
+                // 限制最大值避免异常数据
+                const coveragePercent = Math.min(100, progress.coverage || 0);
+                const absorptionPercent = Math.min(100, progress.absorption || 0);
+                const coveredChapters = Math.round((coveragePercent / 100) * progress.totalChapters);
+
                 const progressContext = `
 ## 当前阅读进度
 - 书籍：${progress.bookName}
-- 覆盖度：${Math.round(progress.coverage * 100)}%（已涉及 ${Math.round(progress.coverage * progress.totalChapters)} / ${progress.totalChapters} 个章节）
-- 吸收度：${Math.round(progress.absorption * 100)}%
+- 覆盖度：${coveragePercent}%（已涉及 ${coveredChapters} / ${progress.totalChapters} 个章节）
+- 吸收度：${absorptionPercent}%
 - 总互动：${progress.totalInteractions} 次
 ${progress.mostFamiliarChapter ? `- 最熟悉章节：第 ${progress.mostFamiliarChapter} 章` : ''}
 ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? `- 未涉及章节：第 ${progress.leastFamiliarChapters.slice(0, 5).join('、')} 章` : ''}
