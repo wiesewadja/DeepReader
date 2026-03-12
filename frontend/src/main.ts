@@ -93,8 +93,11 @@ export default class DeepPDFPlugin extends Plugin {
             (leaf) => new SidebarView(leaf, this.apiClient, this)
         );
 
-        // 自动打开侧边栏
-        this.activateView();
+        // 自动打开侧边栏（延迟执行，等待 workspace 完全初始化）
+        // 使用 onLayoutReady 确保 workspace DOM 结构已就绪
+        this.app.workspace.onLayoutReady(() => {
+            this.activateView();
+        });
 
         // 添加设置面板
         this.addSettingTab(new DeepPDFSettingTab(this.app, this));
