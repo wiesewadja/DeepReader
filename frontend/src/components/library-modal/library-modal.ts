@@ -682,6 +682,27 @@ export class LibraryModal extends Modal {
                 }
             }
         }
+
+        // 对正在进行中且进度 >= 50 的索引，也加载封面（后端已提前提取）
+        for (const idx of changedIndexes) {
+            // 检查是否是正在处理中且进度 >= 50
+            const progress = idx.progress_percent || 0;
+            const processingStatuses = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'];
+            const isProcessing = processingStatuses.includes((idx.status || '').toLowerCase());
+
+            if (isProcessing && progress >= 50 && !this.coverCache.has(idx.id) && !this.loadingCovers.has(idx.id)) {
+                this.loadingCovers.add(idx.id);
+                const card = this.cardElements.get(idx.id);
+                if (card) {
+                    const coverEl = card.querySelector('.deeppdf-lib-book-cover');
+                    if (coverEl) {
+                        const bookName = this.getDisplayName(idx.pdf_name);
+                        // 从后端加载封面（后端在 50% 时已提取）
+                        await this.loadCoverAndDisplay(idx.id, bookName, coverEl as HTMLElement);
+                    }
+                }
+            }
+        }
     }
 
     public updateIndexes(indexes: IndexListItem[], selectedId?: string): void {

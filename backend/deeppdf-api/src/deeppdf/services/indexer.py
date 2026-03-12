@@ -16,7 +16,6 @@ from datetime import datetime
 
 from pageindex import page_index_main
 from pageindex.core import ConfigLoader
-from pageindex.llm import UnifiedLLM, get_provider, get_multi_provider
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import get_chroma_store
@@ -338,22 +337,18 @@ def _parse_pdf_structure(
     )
     logger.info(f"[{doc_type.upper()}解析] LLM 客户端: {llm_client is not None}")
 
-    # 创建内部进度回调，将 pageindex-lib 的进度映射到外部进度
-    # 注意：pageindex-lib 内部已经完成了进度映射，这里只需要透传
+    # 创建内部进度回调，将 pageindex-lib 的进度透传到外部
     # 进度范围说明：
-    #   50-55%: 加载文档 (indexer.py 直接控制)
-    #   55-60%: 解析结构 (page_index.py 控制)
-    #   60-85%: 生成摘要 (page_index.py 控制，批量并行)
-    #   85-95%: 向量存储 (indexer.py 直接控制)
-    #   95-100%: 保存元数据 (indexer.py 直接控制)
+    #   0-50%: 由 _index_pdf_sync 控制（验证、配置、初始化等）
+    #   50-85%: 由 pageindex-lib 控制（解析结构、生成摘要）
+    #   85-100%: 由 _index_pdf_sync 控制（向量存储、保存元数据）
     def internal_progress_callback(step: str, percent: int, message: str):
         if progress_callback:
-            # 直接透传进度，pageindex-lib 内部已完成映射
+            # 直接透传进度
+            logger.debug(f"[进度透传] {step}: {percent}% - {message}")
             progress_callback(step, percent, message)
 
-    # 更新进度：开始文档解析
-    if progress_callback:
-        progress_callback("parsing_pdf", 50, f"正在加载 {doc_type.upper()} 文件...")
+    # 注意：不在此处硬编码进度，由 pageindex-lib 内部控制 50-85% 的进度
 
     try:
         logger.info(f"[{doc_type.upper()}解析] 即将调用 page_index_main...")
@@ -394,9 +389,8 @@ def _parse_pdf_structure(
         f"[{doc_type.upper()}解析] 总耗时: {parse_time:.2f} 秒 ({parse_time/60:.1f} 分钟)"
     )
 
-    # 更新进度：解析完成
-    if progress_callback:
-        progress_callback("parse_complete", 85, f"{doc_type.upper()} 结构解析完成")
+    # 注意：不在此处更新进度，由外部 _index_pdf_sync 统一更新
+    # 避免进度跳跃或重复更新
 
     if not tree_result:
         logger.error(f"[{doc_type.upper()}解析] PageIndex 返回 None")
@@ -515,6 +509,7 @@ def _save_metadata(
     visual_detection_result: Optional[Dict[str, Any]] = None,
     progress_callback=None,
     original_filename: Optional[str] = None,
+    temp_cover_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     保存索引元数据
@@ -529,6 +524,7 @@ def _save_metadata(
         is_visual_heavy: 是否为视觉密集型 PDF
         visual_detection_result: 视觉检测结果详情
         progress_callback: 进度回调函数
+        temp_cover_path: 早期提取的封面临时文件路径（可选）
     """
     if progress_callback:
         progress_callback("save_metadata", 95, "保存索引元数据...")
@@ -570,25 +566,34 @@ def _save_metadata(
         original_stem = pdf_name_clean
 
     # 提取并缓存封面图片
+    # 优先使用早期提取的封面（在 50% 进度时已提取）
     cover_path = None
     try:
-        from deeppdf.services.cover_extractor import extract_or_generate_cover
-
         cover_dir = storage_dir_path / "covers"
         cover_dir.mkdir(parents=True, exist_ok=True)
         cover_file_path = cover_dir / f"{index_id}.png"
 
-        # 提取或生成封面
-        cover_data, _ = extract_or_generate_cover(str(pdf_path_obj), doc_name)
-
-        # 保存封面到缓存目录
-        with open(cover_file_path, "wb") as f:
-            f.write(cover_data)
+        # 检查是否有早期提取的暂存封面
+        if temp_cover_path and Path(temp_cover_path).exists():
+            # 使用早期提取的封面
+            logger.info(f"[封面缓存] 使用早期提取的封面: {temp_cover_path}")
+            import shutil
+            shutil.copy(temp_cover_path, cover_file_path)
+            # 删除临时文件
+            Path(temp_cover_path).unlink()
+            logger.info(f"[封面缓存] 封面已保存: {cover_file_path}")
+        else:
+            # 没有暂存封面，现在提取（兜底逻辑）
+            logger.info("[封面缓存] 未找到暂存封面，重新提取...")
+            from deeppdf.services.cover_extractor import extract_or_generate_cover
+            cover_data, _ = extract_or_generate_cover(str(pdf_path_obj), doc_name)
+            with open(cover_file_path, "wb") as f:
+                f.write(cover_data)
+            logger.info(f"[封面缓存] 封面已保存: {cover_file_path}")
 
         cover_path = str(cover_file_path)
-        logger.info(f"[封面缓存] 封面已保存: {cover_file_path}")
     except Exception as e:
-        logger.warning(f"[封面缓存] 封面提取失败: {e}")
+        logger.warning(f"[封面缓存] 封面处理失败: {e}")
 
     metadata_content = {
         "id": index_id,
@@ -812,6 +817,29 @@ def _index_pdf_sync(
         )
         _update_progress("parse_pdf", 50, f"正在解析 {doc_type.upper()} 结构...")
 
+        # 步骤 5.5: 提前提取封面（在解析文档结构的同时进行）
+        # 这样前端可以在索引过程中立即显示封面
+        storage_dir_path = Path(storage_dir)
+        temp_cover_path = None  # 初始化变量，后续在 try 块中赋值
+        try:
+            from deeppdf.services.cover_extractor import extract_or_generate_cover
+
+            logger.info("[封面提取] 开始提取封面...")
+            # 提取或生成封面（使用原始文件名作为书名）
+            doc_name_for_cover = original_stem  # 用于封面生成的名称
+            cover_data, _ = extract_or_generate_cover(str(pdf_path_obj), doc_name_for_cover)
+
+            # 暂存封面数据，后续在 _save_metadata 中保存
+            # 使用临时文件存储，避免在内存中传递大量二进制数据
+            temp_cover_path = storage_dir_path / "temp_cover.bin"
+            with open(temp_cover_path, "wb") as f:
+                f.write(cover_data)
+
+            logger.info(f"[封面提取] 封面已提取并暂存: {temp_cover_path}")
+
+        except Exception as e:
+            logger.warning(f"[封面提取] 封面提取失败: {e}")
+
         # 检查是否有可复用的 results 文件
         tree_result = None
         # results 目录在 backend/results/（从 deeppdf-api/src/deeppdf/services/ 出发向上 5 级）
@@ -833,7 +861,7 @@ def _index_pdf_sync(
                 try:
                     with open(latest_result, "r", encoding="utf-8") as f:
                         tree_result = json.load(f)
-                    logger.info(f"[结果复用] 成功加载，跳过 LLM 解析步骤")
+                    logger.info("[结果复用] 成功加载，跳过 LLM 解析步骤")
                     parse_time = 0  # 复用结果，解析时间为 0
                 except Exception as e:
                     logger.warning(f"[结果复用] 加载失败: {e}，将重新解析")
@@ -861,9 +889,10 @@ def _index_pdf_sync(
                 pdf_path, opt, llm_client_instance, config, progress_callback
             )
 
-        # 更新进度：文档解析完成
+        # 更新进度：文档解析完成（pageindex-lib 内部已更新到 85%）
+        # 这里统一更新到 85%，表示解析阶段完全结束
         _update_progress(
-            "parse_complete", 70, f"{doc_type.upper()} 结构解析完成，正在提取章节..."
+            "parse_complete", 85, f"{doc_type.upper()} 结构解析完成，正在提取章节..."
         )
 
         # 记录返回结果的详细信息
@@ -949,6 +978,7 @@ def _index_pdf_sync(
             visual_detection_result,
             progress_callback,
             original_filename,
+            temp_cover_path=str(temp_cover_path) if temp_cover_path else None,
         )
 
         # 最终总结

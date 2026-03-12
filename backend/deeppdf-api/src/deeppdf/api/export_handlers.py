@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 from fastapi import HTTPException, status
 from ..config import settings
 from .export_utils import get_pdf_page_count, build_parent_mapping, format_created_at
@@ -267,15 +267,27 @@ async def export_cover_data(index_id: str) -> Dict[str, Any]:
         metadata = await asyncio.to_thread(_load_metadata)
 
         pdf_name = metadata.get("pdf_name", "Unknown")
-        pdf_path = metadata.get("pdf_path", "")
         cover_path = metadata.get("cover_path", "")  # 缓存的封面路径
 
         cover_data = None
         mime_type = "image/png"
         has_custom_cover = False
 
+        # 优先级 0: 从临时封面文件读取（索引进行中早期提取的封面）
+        # 当索引正在进行时，封面可能还未保存到最终位置
+        temp_cover_path = storage_dir / "temp_cover.bin"
+        if cover_data is None and temp_cover_path.exists():
+            logger.debug(f"[封面导出] 从临时文件读取封面: {temp_cover_path}")
+
+            def _read_temp_cover():
+                with open(temp_cover_path, "rb") as f:
+                    return f.read()
+
+            cover_data = await asyncio.to_thread(_read_temp_cover)
+            has_custom_cover = True  # 假设有自定义封面
+
         # 优先级 1: 从缓存的封面文件读取
-        if cover_path and Path(cover_path).exists():
+        if cover_data is None and cover_path and Path(cover_path).exists():
             logger.debug(f"[封面导出] 从缓存读取封面: {cover_path}")
 
             def _read_cached_cover():
