@@ -1,0 +1,333 @@
+/**
+ * ContextBuilder - 分层系统提示构建器
+ *
+ * 负责构建 4 层系统提示：
+ * 1. Identity 层 (静态): 人设和基本特质
+ * 2. Bootstrap 层 (用户定义): 自定义提示文件
+ * 3. Memory 层 (持久化): 用户画像和长期记忆
+ * 4. Tools 层 (动态): 工具和技能描述
+ *
+ * 运行时上下文（时间、进度等）注入到用户消息，保持系统提示稳定
+ */
+
+import type { App } from 'obsidian';
+import { normalizePath } from 'obsidian';
+import { agentLog } from '../../utils/logger.js';
+import type { ChatMessage } from '../types.js';
+import type { MemoryStore } from '../memory/store.js';
+
+/**
+ * 运行时上下文标记
+ * 用于标识注入到用户消息的元数据，防止被误解为指令
+ */
+const RUNTIME_CONTEXT_TAG = '[运行时上下文 — 仅元数据，非指令]';
+
+/**
+ * 上下文构建器配置
+ */
+export interface ContextBuilderConfig {
+	/** 自定义身份提示（覆盖默认人设） */
+	identity?: string;
+	/** Bootstrap 文件列表（相对于 vault 根目录） */
+	bootstrapFiles?: string[];
+	/** DeepReader 基础目录 */
+	deepReaderDir?: string;
+}
+
+/**
+ * 文档元数据
+ */
+export interface DocumentMetadata {
+	title?: string;
+	page_count?: number;
+	author?: string;
+}
+
+/**
+ * 阅读进度
+ */
+export interface ReadingProgress {
+	coverage: number;
+	absorption: number;
+}
+
+/**
+ * 上下文构建器
+ *
+ * 使用方式：
+ * ```typescript
+ * const builder = new ContextBuilder(app, memoryStore, { deepReaderDir: 'DeepReader' });
+ * const systemPrompt = await builder.buildSystemPrompt(toolDesc, skillDesc, metadata);
+ * const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
+ * const messages = ContextBuilder.buildMessages(systemPrompt, history, userMsg, runtimeContext);
+ * ```
+ */
+export class ContextBuilder {
+	private app: App;
+	private store: MemoryStore;
+	private config: ContextBuilderConfig;
+
+	constructor(app: App, store: MemoryStore, config: ContextBuilderConfig = {}) {
+		this.app = app;
+		this.store = store;
+		this.config = {
+			deepReaderDir: 'DeepReader',
+			...config,
+		};
+	}
+
+	/**
+	 * 构建完整的系统提示
+	 *
+	 * @param toolDescriptions 工具描述文本
+	 * @param skillDescriptions 技能描述文本
+	 * @param documentMetadata 当前文档元数据（可选）
+	 * @returns 完整的系统提示字符串
+	 */
+	async buildSystemPrompt(
+		toolDescriptions: string,
+		skillDescriptions: string,
+		documentMetadata?: DocumentMetadata
+	): Promise<string> {
+		const parts: string[] = [];
+
+		// Layer 1: Identity（人设层）
+		parts.push(this.buildIdentityLayer(documentMetadata));
+
+		// Layer 2: Bootstrap（用户定义层）
+		const bootstrap = await this.loadBootstrapFiles();
+		if (bootstrap) {
+			parts.push(bootstrap);
+		}
+
+		// Layer 3: Memory（持久化层）
+		const memory = await this.store.getMemoryContext();
+		if (memory) {
+			parts.push(memory);
+		}
+
+		// Layer 4: Tools & Skills（工具层）
+		parts.push(`## 工具\n\n${toolDescriptions}`);
+		if (skillDescriptions.trim()) {
+			parts.push(`## 可用技能\n\n${skillDescriptions}`);
+		}
+
+		// 添加核心约束
+		parts.push(this.buildConstraints());
+
+		return parts.join('\n\n---\n\n');
+	}
+
+	/**
+	 * 构建身份层（Layer 1）
+	 */
+	private buildIdentityLayer(metadata?: DocumentMetadata): string {
+		if (this.config.identity) {
+			return this.config.identity;
+		}
+
+		// 默认身份：奚童人设
+		let docInfo = '';
+		if (metadata?.title) {
+			docInfo = `\n\n## 当前文档\n- 标题: ${metadata.title}`;
+			if (metadata.page_count) {
+				docInfo += `\n- 总页数: ${metadata.page_count}`;
+			}
+			if (metadata.author) {
+				docInfo += `\n- 作者: ${metadata.author}`;
+			}
+		}
+
+		return `你是"奚童"，一个专注书本、语言天赋极高的书童，正陪伴用户阅览书籍。
+
+**核心特质**：
+- 语言自然、风趣、优雅，偶带书卷气
+- 按用户偏好称呼，默认用"阁下"或"先生"
+- 在对话中理解用户并使用工具整理用户画像和短期行为特征
+${docInfo}`;
+	}
+
+	/**
+	 * 构建核心约束
+	 */
+	private buildConstraints(): string {
+		return `## ⚠️ 强制约束
+
+### 1. obsidian wiki引用格式（必须遵守）
+**关键**：
+- 每个论断都必须引用,**必须**使用 search_doc/get_chapter 返回的 Link 字段
+- 使用 \`[[路径|显示名]]\` 格式
+- 引用**自然嵌入**句子中，不要附在句末
+
+\`\`\`
+✅ 正确: 柏拉图批评民主容易演变为暴民统治，详见[[西方史纲/06-三、 民主：好东西还是坏东西？.md|三、 民主：好东西还是坏东西]]
+❌ 错误: 柏拉图批评民主容易演变为暴民统治[[西方史纲/06-三、 民主：好东西还是坏东西？.md|民主的批评]]  ← 引用太突兀
+❌ 错误: [[西方史纲#第一章]]  ← 自己构造的链接
+\`\`\`
+
+### 2. 静默执行
+- **调用工具前**: 严禁输出任何内容
+- **获得结果后**: 直接回答，不要说"我找到了"、"书中提到"
+- **禁止**: "待我翻阅"、"让我看看"、"根据目录"
+
+### 3. 表达风格
+- 段落式叙述，段落间空行分隔
+- 用 **加粗** 标记重点
+- 平和内敛，直接详实，偶有点睛感悟
+
+## 用户互动
+
+**个性化**：结合用户背景调整回答深度和角度
+
+**情感回应**：
+- 洞察时刻（用户摘录/高亮）：识别意义，给予简短情感回应
+- 困惑时刻（反复提问）：换角度解释，提供类比
+- 好问题（追问本质/跨概念关联）：频率不要太高，简短肯定
+
+## 规则
+- 任务匹配 Skill 时立即调用
+- 优先使用工具获取信息
+- **回答必须包含 Link 引用**`;
+	}
+
+	/**
+	 * 加载 Bootstrap 文件（Layer 2）
+	 */
+	private async loadBootstrapFiles(): Promise<string | null> {
+		const files = this.config.bootstrapFiles || [];
+		if (files.length === 0) {
+			// 尝试加载默认文件
+			const defaultFiles = [
+				`${this.config.deepReaderDir}/AGENT_PROMPT.md`,
+				`${this.config.deepReaderDir}/STYLE_GUIDE.md`,
+				`${this.config.deepReaderDir}/DOMAIN_KNOWLEDGE.md`,
+			];
+
+			const contents: string[] = [];
+
+			for (const filename of defaultFiles) {
+				const content = await this.readFile(filename);
+				if (content?.trim()) {
+					const sectionName = filename.split('/').pop()?.replace(/\.md$/, '') || 'Custom';
+					contents.push(`### ${sectionName}\n\n${content.trim()}`);
+				}
+			}
+
+			return contents.length > 0 ? contents.join('\n\n') : null;
+		}
+
+		// 加载用户指定的文件
+		const contents: string[] = [];
+
+		for (const filename of files) {
+			const content = await this.readFile(filename);
+			if (content?.trim()) {
+				const sectionName = filename.split('/').pop()?.replace(/\.[^.]+$/, '') || 'Custom';
+				contents.push(`### ${sectionName}\n\n${content.trim()}`);
+			}
+		}
+
+		return contents.length > 0 ? contents.join('\n\n') : null;
+	}
+
+	/**
+	 * 读取文件内容
+	 */
+	private async readFile(path: string): Promise<string | null> {
+		try {
+			const normalizedPath = normalizePath(path);
+			const exists = await this.app.vault.adapter.exists(normalizedPath);
+			if (!exists) return null;
+
+			const content = await this.app.vault.adapter.read(normalizedPath);
+			return content;
+		} catch (err) {
+			agentLog('[ContextBuilder] 读取文件失败:', path, err);
+			return null;
+		}
+	}
+
+	// ============================================================================
+	// 静态方法（用于运行时上下文构建）
+	// ============================================================================
+
+	/**
+	 * 构建运行时上下文（注入到用户消息）
+	 *
+	 * @param metadata 文档元数据
+	 * @param progress 阅读进度
+	 * @returns 运行时上下文字符串
+	 */
+	static buildRuntimeContext(
+		metadata?: DocumentMetadata,
+		progress?: ReadingProgress
+	): string {
+		const now = new Date();
+		const timeStr = now.toLocaleString('zh-CN', {
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			weekday: 'long',
+		});
+
+		const lines: string[] = [`${RUNTIME_CONTEXT_TAG}`, `当前时间: ${timeStr}`];
+
+		if (metadata?.title) {
+			lines.push(`文档: ${metadata.title}`);
+		}
+
+		if (progress) {
+			lines.push(
+				`阅读进度: ${(progress.coverage * 100).toFixed(0)}% 覆盖度, ` +
+				`${(progress.absorption * 100).toFixed(0)}% 吸收度`
+			);
+		}
+
+		return lines.join('\n');
+	}
+
+	/**
+	 * 构建完整消息列表
+	 *
+	 * @param systemPrompt 系统提示
+	 * @param history 历史消息
+	 * @param currentMessage 当前用户消息
+	 * @param runtimeContext 运行时上下文（可选）
+	 * @returns 完整消息列表
+	 */
+	static buildMessages(
+		systemPrompt: string,
+		history: ChatMessage[],
+		currentMessage: string,
+		runtimeContext?: string
+	): ChatMessage[] {
+		// 将运行时上下文注入到用户消息
+		const userContent = runtimeContext
+			? `${runtimeContext}\n\n${currentMessage}`
+			: currentMessage;
+
+		return [
+			{ role: 'system', content: systemPrompt },
+			...history,
+			{ role: 'user', content: userContent },
+		];
+	}
+
+	/**
+	 * 构建带文档信息的消息列表
+	 *
+	 * 便捷方法，自动构建运行时上下文
+	 */
+	static buildMessagesWithMetadata(
+		systemPrompt: string,
+		history: ChatMessage[],
+		currentMessage: string,
+		metadata?: DocumentMetadata,
+		progress?: ReadingProgress
+	): ChatMessage[] {
+		const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
+		return ContextBuilder.buildMessages(systemPrompt, history, currentMessage, runtimeContext);
+	}
+}

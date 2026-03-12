@@ -5,10 +5,16 @@
  * 1. 聚焦核心功能：引用书籍章节
  * 2. 精简重复内容
  * 3. 突出关键约束
+ *
+ * Phase 4 更新：
+ * - 支持 ContextBuilder 构建分层提示
+ * - 运行时上下文注入到用户消息（保持系统提示稳定）
  */
 
 import type { SkillLoader } from './skills/loader.js';
 import type { UserContext } from './context/index.js';
+import type { ChatMessage } from './types.js';
+import { ContextBuilder, type DocumentMetadata, type ReadingProgress } from './context/builder.js';
 
 // ============ 核心设定 ============
 const PERSONA_BASE = `你是"奚童"，一个专注书本、语言天赋极高的书童，正陪伴用户阅览书籍。
@@ -83,26 +89,24 @@ const USER_INTERACTION_GUIDE = `## 用户互动
 
 // ============ 构建函数 ============
 function buildUserContextSection(userContext?: UserContext): string {
-  if (!userContext) {
-    return '';
-  }
+	if (!userContext) {
+		return '';
+	}
 
-  const sections: string[] = ['## 关于用户'];
+	const sections: string[] = ['## 关于用户'];
 
-  if (userContext.hasProfile) {
-    sections.push(userContext.profile);
-  } else {
-    sections.push(userContext.profile);
-  }
+	// 直接添加用户画像（无论是否有完整配置）
+	sections.push(userContext.profile);
 
-  if (userContext.memorySummary && userContext.memorySummary !== '（暂无记忆摘要）') {
-    sections.push('');
-    sections.push('## 记忆摘要');
-    sections.push(userContext.memorySummary);
-    sections.push('> 与用户配置冲突时，以用户配置为准');
-  }
+	// 添加记忆摘要（如果存在且非空）
+	if (userContext.memorySummary && userContext.memorySummary !== '（暂无记忆摘要）') {
+		sections.push('');
+		sections.push('## 记忆摘要');
+		sections.push(userContext.memorySummary);
+		sections.push('> 与用户配置冲突时，以用户配置为准');
+	}
 
-  return sections.join('\n');
+	return sections.join('\n');
 }
 
 export function buildSystemPrompt(skillLoader: SkillLoader, userContext?: UserContext): string {
@@ -124,4 +128,46 @@ ${skillDescriptions}
 - 任务匹配 Skill 时立即调用
 - 优先使用工具获取信息
 - **回答必须包含 Link 引用**`;
+}
+
+// ============================================================================
+// Phase 4: 运行时上下文支持
+// ============================================================================
+
+/**
+ * 构建运行时上下文（注入到用户消息）
+ *
+ * 使用 ContextBuilder.buildRuntimeContext 的便捷包装
+ */
+export function buildRuntimeContext(
+	metadata?: DocumentMetadata,
+	progress?: ReadingProgress
+): string {
+	return ContextBuilder.buildRuntimeContext(metadata, progress);
+}
+
+/**
+ * 构建带运行时上下文的完整消息列表
+ *
+ * @param systemPrompt 系统提示
+ * @param history 历史消息
+ * @param userMessage 当前用户消息
+ * @param metadata 文档元数据（可选）
+ * @param progress 阅读进度（可选）
+ * @returns 完整消息列表
+ */
+export function buildMessagesWithRuntime(
+	systemPrompt: string,
+	history: ChatMessage[],
+	userMessage: string,
+	metadata?: DocumentMetadata,
+	progress?: ReadingProgress
+): ChatMessage[] {
+	return ContextBuilder.buildMessagesWithMetadata(
+		systemPrompt,
+		history,
+		userMessage,
+		metadata,
+		progress
+	);
 }
