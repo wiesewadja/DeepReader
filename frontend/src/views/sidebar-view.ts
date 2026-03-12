@@ -471,7 +471,23 @@ export class SidebarView extends ItemView {
      * 加载书籍封面
      * @param bookName 书籍名称（不含扩展名）
      */
-    private loadBookCover(bookName: string): void {
+    private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
+        // 优先从后端 API 获取封面
+        if (indexId && this.apiClient) {
+            try {
+                const coverData = await this.apiClient.exportCover(indexId);
+                if (coverData && coverData.cover_data) {
+                    const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
+                    this.readingTopbar?.setBookCover(coverUrl);
+                    log(`[DeepPDF] 从后端加载书籍封面: ${indexId}`);
+                    return;
+                }
+            } catch (error) {
+                log(`[DeepPDF] 后端封面获取失败，尝试本地: ${error}`);
+            }
+        }
+
+        // 回退到本地 Obsidian vault
         const coverPath = `DeepReader/covers/${bookName}.png`;
         const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
 
@@ -534,8 +550,8 @@ export class SidebarView extends ItemView {
 
             this.readingTopbar?.setCurrentBook(displayName, author);
 
-            // 加载书籍封面
-            this.loadBookCover(displayName);
+            // 加载书籍封面（传入 indexId 以便从后端获取）
+            this.loadBookCover(displayName, indexId);
         }
 
         // === 获取 Markdown 文件映射（移到 if 块外部，确保总是更新) ===

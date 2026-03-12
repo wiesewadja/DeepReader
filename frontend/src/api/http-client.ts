@@ -42,6 +42,9 @@ export interface FileUploadResponse {
   uploaded_at: string;
   status: string;
   indexed: boolean;
+  reused?: boolean;
+  has_result?: boolean;
+  cover_url?: string;
 }
 
 export interface FileListResponse {
