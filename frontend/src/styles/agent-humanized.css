@@ -1,0 +1,242 @@
+/* Agent Humanized Status Styles */
+
+.deepreader-agent-humanized {
+	padding: 16px;
+	margin: 12px 0;
+	background: linear-gradient(135deg, var(--background-secondary) 0%, var(--background-primary) 100%);
+	border-radius: 12px;
+	border-left: 3px solid var(--interactive-accent);
+	animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+	from { opacity: 0; transform: translateY(10px); }
+	to { opacity: 1; transform: translateY(0); }
+}
+
+/* 主动作区域 */
+.agent-action-area {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 15px;
+	margin-bottom: 12px;
+}
+
+.action-icon {
+	font-size: 20px;
+	animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+	0%, 100% { transform: translateY(0); }
+	50% { transform: translateY(-3px); }
+}
+
+.action-text {
+	font-weight: 500;
+	color: var(--text-normal);
+}
+
+/* 打字效果 */
+.typing-text::after {
+	content: '▋';
+	animation: blink 0.8s infinite;
+	margin-left: 2px;
+}
+
+@keyframes blink {
+	0%, 50% { opacity: 1; }
+	51%, 100% { opacity: 0; }
+}
+
+/* 思考效果 */
+.thinking-text {
+	animation: pulse-opacity 2s infinite;
+}
+
+@keyframes pulse-opacity {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.6; }
+}
+
+/* 阅读进度区域 */
+.agent-reading-area {
+	background: var(--background-primary);
+	border-radius: 8px;
+	padding: 12px;
+	margin-bottom: 12px;
+}
+
+.reading-title {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 10px;
+}
+
+.reading-steps {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 10px;
+}
+
+.step-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	transition: all 0.3s ease;
+}
+
+.step-item.step-done {
+	color: var(--text-success);
+	background: var(--background-secondary);
+}
+
+.step-item.step-current {
+	color: var(--text-normal);
+	background: var(--interactive-accent-hover);
+	animation: highlight 1.5s infinite;
+}
+
+@keyframes highlight {
+	0%, 100% { background: var(--interactive-accent-hover); }
+	50% { background: var(--background-secondary); }
+}
+
+.step-item.step-pending {
+	color: var(--text-muted);
+}
+
+.step-status {
+	font-family: monospace;
+	width: 20px;
+	text-align: center;
+}
+
+.step-action {
+	flex: 1;
+}
+
+.step-duration {
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+/* 进度条 */
+.progress-bar-container {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.progress-bar {
+	flex: 1;
+	height: 6px;
+	background: var(--background-modifier-border);
+	border-radius: 3px;
+	overflow: hidden;
+}
+
+.progress-bar::after {
+	content: '';
+	display: block;
+	height: 100%;
+	width: var(--progress, 0%);
+	background: linear-gradient(90deg, var(--interactive-accent), var(--text-accent));
+	border-radius: 3px;
+	transition: width 0.5s ease;
+}
+
+.progress-text {
+	font-size: 12px;
+	color: var(--text-muted);
+	min-width: 35px;
+	text-align: right;
+}
+
+/* 思考气泡 */
+.agent-thought-bubble {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 14px;
+	background: var(--background-primary);
+	border-radius: 16px;
+	margin-bottom: 12px;
+	font-size: 14px;
+	color: var(--text-muted);
+	font-style: italic;
+	position: relative;
+}
+
+.agent-thought-bubble::before {
+	content: '';
+	position: absolute;
+	left: 20px;
+	bottom: -8px;
+	width: 16px;
+	height: 16px;
+	background: var(--background-primary);
+	transform: rotate(45deg);
+}
+
+.thought-icon {
+	font-size: 18px;
+}
+
+.thought-text {
+	animation: fade-in-out 3s infinite;
+}
+
+@keyframes fade-in-out {
+	0%, 100% { opacity: 0.7; }
+	50% { opacity: 1; }
+}
+
+/* 生成内容区域 */
+.agent-content-area {
+	margin-top: 12px;
+}
+
+.content-title {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 8px;
+}
+
+.content-box {
+	padding: 12px;
+	background: var(--background-primary);
+	border-radius: 8px;
+	font-size: 14px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.content-box.streaming::after {
+	content: ' ▋';
+	animation: blink 0.8s infinite;
+}
+
+/* 暗色主题 */
+.theme-dark .deepreader-agent-humanized {
+	background: linear-gradient(135deg, var(--background-secondary-alt) 0%, var(--background-primary-alt) 100%);
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+	.deepreader-agent-humanized {
+		padding: 12px;
+		margin: 8px 0;
+	}
+
+	.step-item {
+		font-size: 12px;
+	}
+}

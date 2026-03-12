@@ -20,6 +20,8 @@ import {
   updateReadingProgress,
   FAMILIARITY_DELTAS,
 } from './utils/book-note.js';
+import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
+import type { HumanizedProgress } from './ui/humanized-types.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../utils/logger';
@@ -42,6 +44,11 @@ export interface AgentLoopOptions {
    * 返回新的 lastConsolidated 索引
    */
   onMemoryConsolidation?: (messages: ChatMessage[], lastConsolidated: number) => Promise<number>;
+  /**
+   * 拟人化进度回调（可选）
+   * 用于在 UI 中显示用户友好的状态
+   */
+  onHumanizedProgress?: (progress: HumanizedProgress) => void;
 }
 
 // ============================================================================
@@ -232,6 +239,11 @@ export async function runAgentLoop(
   let workingMessages = [...messages];
   let hadError = false; // 跟踪是否发生了错误
 
+  // 拟人化进度适配器（可选）
+  const humanizer = options.onHumanizedProgress
+    ? new HumanizedProgressAdapter()
+    : null;
+
   // 🕐 总计时
   const totalStartTime = Date.now();
   let llmTotalTime = 0;      // LLM 调用总耗时
@@ -246,6 +258,12 @@ export async function runAgentLoop(
   const questionText = typeof userQuestion?.content === 'string'
     ? userQuestion.content.slice(0, 60)
     : '(复杂内容)';
+
+  // 初始化拟人化状态
+  if (humanizer) {
+    humanizer.setIteration(0, maxIterations);
+    options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+  }
 
   while (iterations < maxIterations) {
     // 检查是否被取消
@@ -262,6 +280,12 @@ export async function runAgentLoop(
 
     iterations++;
     const iterationStartTime = Date.now();
+
+    // 更新拟人化状态
+    if (humanizer) {
+      humanizer.setIteration(iterations, maxIterations);
+      options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+    }
 
     // 迭代开始（简洁日志）
     agentLog(`\n[AgentLoop] ┓ agentsetIterationContext 迭代 ${iterations}/${maxIterations}`);
@@ -282,6 +306,11 @@ export async function runAgentLoop(
           onContent: (text) => {
             accumulatedContent += text;
             options.onContent(text);
+            // 更新拟人化内容状态
+            if (humanizer) {
+              humanizer.updateContent(accumulatedContent);
+              options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+            }
           },
           onToolCall: (calls) => {
             toolCalls = calls;
@@ -378,6 +407,12 @@ export async function runAgentLoop(
         args = {};
       }
 
+      // 记录工具调用开始（拟人化）
+      if (humanizer) {
+        humanizer.recordToolStart(tc.name, args);
+        options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+      }
+
       try {
         const result = await executeTool(toolRegistry, tc.name, args, context);
         const duration = Date.now() - toolStartTime;
@@ -394,6 +429,12 @@ export async function runAgentLoop(
           resultChars: resultLength,
           compressedChars: compressedLength,
         });
+
+        // 记录工具调用完成（拟人化）
+        if (humanizer) {
+          humanizer.recordToolComplete(tc.name, duration);
+          options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+        }
 
         // 日志
         agentLog(`[AgentLoop] ✓ ${tc.name}: ${formatDuration(duration)}, ${resultLength}字符${resultLength !== compressedLength ? ` → ${compressedLength} (压缩${Math.round((1 - compressedLength / resultLength) * 100)}%)` : ''}`);
@@ -431,6 +472,12 @@ export async function runAgentLoop(
           resultChars: 0,
           compressedChars: 0,
         });
+
+        // 记录工具调用失败（拟人化）
+        if (humanizer) {
+          humanizer.recordToolFailed(tc.name);
+          options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+        }
 
         agentLog(`[AgentLoop] ✗ 失败: ${tc.name} (${formatDuration(duration)}) → ${errorMsg}`);
 

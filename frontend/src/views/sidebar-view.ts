@@ -43,6 +43,8 @@ import {
 import { MemoryStore } from "../agent/memory/store.js";
 import { MemoryConsolidator } from "../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
+import { createHumanizedStatusElement } from "../agent/ui/humanized-view.js";
+import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -2012,6 +2014,36 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                     this.chatInput?.focus();
                     this.streamController = null;
                 },
+                // onHumanizedProgress: 拟人化进度更新（带节流）
+                // 注意：使用闭包变量实现简单节流
+                onHumanizedProgress: ((() => {
+                    let lastUpdateTime = 0;
+                    const THROTTLE_MS = 150; // 150ms 节流间隔
+
+                    return (progress: HumanizedProgress) => {
+                        const now = Date.now();
+                        // 节流检查：距离上次更新不足 150ms 则跳过
+                        if (now - lastUpdateTime < THROTTLE_MS) {
+                            return;
+                        }
+                        lastUpdateTime = now;
+
+                        // 如果还没有内容，使用拟人化状态作为临时显示
+                        if (!fullContent || fullContent.trim() === '') {
+                            // 创建拟人化状态元素
+                            const statusEl = createHumanizedStatusElement(progress);
+                            // 将元素转换为 HTML 字符串作为内容
+                            const statusHtml = statusEl.outerHTML;
+
+                            this.messageList?.updateMessage(aiMessageId, {
+                                content: statusHtml,
+                                isStreaming: true,
+                                isAgentMessage: true,
+                                currentStatus: progress.mainAction.detail,
+                            });
+                        }
+                    };
+                })()),
                 abortSignal: this.streamController.signal,
             };
 
