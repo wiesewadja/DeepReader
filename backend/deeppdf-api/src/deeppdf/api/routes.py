@@ -239,8 +239,16 @@ async def _ensure_cleanup_task_running():
         logger.info("[任务清理] 已启动后台任务清理器")
 
 
-async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwargs):
-    """后台运行索引任务（支持取消）"""
+async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, original_filename: str = None, **kwargs):
+    """后台运行索引任务（支持取消）
+
+    Args:
+        task_id: 任务 ID
+        pdf_path: PDF 文件路径
+        storage_dir: 存储目录
+        original_filename: 原始文件名（用于显示和元数据）
+        **kwargs: 其他参数（LLM 配置等）
+    """
 
     # 创建进度回调函数
     def progress_callback(step: str, percent: int, message: str):
@@ -264,7 +272,8 @@ async def _run_index_task(task_id: str, pdf_path: str, storage_dir: str, **kwarg
         _running_tasks[task_id]["progress_percent"] = 0
 
         result = await index_pdf(
-            pdf_path, storage_dir, progress_callback=progress_callback, **kwargs
+            pdf_path, storage_dir, progress_callback=progress_callback,
+            original_filename=original_filename, **kwargs
         )
 
         # 再次检查是否在处理过程中被取消
@@ -362,9 +371,37 @@ async def create_index(req: IndexRequest, http_request: Request):
         logger.info(f"[请求参数] 文件 ID: {req.file_id}")
         logger.info(f"[请求参数] 文件名: {file_info.file_name}")
     elif req.path:
-        # 直接使用提供的路径
-        pdf_path_str = req.path
-        logger.info(f"[请求参数] PDF 路径: {req.path}")
+        # 从本地路径导入文件到 uploads 目录
+        logger.info(f"[文件导入] 从本地路径导入: {req.path}")
+        success, imported_file_info, error, reuse_info = _file_storage.import_from_path(req.path)
+        if not success:
+            logger.error(f"[文件导入] ✗ 导入失败: {error}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to import file: {error}",
+            )
+
+        file_id = imported_file_info.file_id
+        file_info = imported_file_info
+        pdf_path_str = imported_file_info.file_path
+        logger.info(f"[文件导入] ✓ 导入成功: {file_id} -> {pdf_path_str}")
+
+        # 检查是否可以复用已有索引（秒索引）
+        if reuse_info and reuse_info.get("index_file"):
+            logger.info(f"[秒索引] 检测到已有索引，复用: {reuse_info['index_file']}")
+            # 直接返回成功，跳过索引任务
+            index_file = Path(reuse_info["index_file"])
+            index_id = index_file.stem
+
+            return IndexResponse(
+                status="success",
+                task_id=f"task_reuse_{hashlib.md5(f'{pdf_path_str}'.encode()).hexdigest()[:12]}",
+                message=f"复用已有索引: {imported_file_info.file_name}",
+                file_id=file_id,
+                pdf_path=pdf_path_str,
+                index_id=index_id,  # 返回已有的索引 ID
+                reused=True,
+            )
     else:
         logger.error("[API请求] ✗ 必须提供 file_id 或 path")
         raise HTTPException(
@@ -487,12 +524,16 @@ async def create_index(req: IndexRequest, http_request: Request):
     llm_config["enable_text_formatting"] = req.enable_text_formatting
     logger.info(f"[LLM配置]  Enable Text Formatting: {req.enable_text_formatting}")
 
+    # 获取原始文件名
+    original_filename = file_info.file_name if file_info else None
+
     # 初始化任务状态
     _running_tasks[task_id] = {
         "status": "pending",
         "message": "任务已创建，等待处理",
         "pdf_path": pdf_path_str,
         "file_id": file_id,
+        "original_filename": original_filename or pdf_path_str.split("/")[-1],
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "cancelled": False,
     }
@@ -500,8 +541,12 @@ async def create_index(req: IndexRequest, http_request: Request):
     # 创建异步任务
     logger.info("[任务信息] 创建后台任务...")
 
+    # 获取原始文件名
+    original_filename = file_info.file_name if file_info else None
+
     task = asyncio.create_task(
-        _run_index_task(task_id, pdf_path_str, str(settings.base_dir), **llm_config)
+        _run_index_task(task_id, pdf_path_str, str(settings.base_dir),
+                       original_filename=original_filename, **llm_config)
     )
     _running_tasks[task_id]["task"] = task
 
@@ -578,7 +623,7 @@ async def list_all_indexes():
         if task_info["status"] in ["pending", "processing", "failed"]:
             task_entry = {
                 "id": task_id,
-                "pdf_name": task_info.get("pdf_path", "Unknown").split("/")[-1],
+                "pdf_name": task_info.get("original_filename", task_info.get("pdf_path", "Unknown").split("/")[-1]),
                 "node_count": 0,  # 任务未完成时节点数为 0
                 "status": task_info["status"],
                 "created_at": task_info.get("created_at", ""),
