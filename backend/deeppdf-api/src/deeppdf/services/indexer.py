@@ -565,6 +565,11 @@ def _save_metadata(
         original_filename = pdf_path_obj.name
         original_stem = pdf_name_clean
 
+    # 简化书名：截取分隔符前的部分
+    # 例如 "遥远的救世主:根据本书改编的电视剧《天道》正在全国掀起极大反响" → "遥远的救世主"
+    if doc_name:
+        doc_name = _simplify_book_name(doc_name)
+
     # 提取并缓存封面图片
     # 优先使用早期提取的封面（在 50% 进度时已提取）
     cover_path = None
@@ -654,6 +659,34 @@ def _get_doc_type(file_path: str) -> str:
     if file_path.lower().endswith(".epub"):
         return "epub"
     return "pdf"
+
+
+def _simplify_book_name(name: str) -> str:
+    """
+    简化书名：截取分隔符前的部分
+
+    例如:
+    - "遥远的救世主:根据本书改编的电视剧《天道》正在全国掀起极大反响" → "遥远的救世主"
+    - "三体:地球往事" → "三体"
+
+    Args:
+        name: 原始书名
+
+    Returns:
+        简化后的书名
+    """
+    if not name:
+        return name
+
+    # 常见分隔符（中文和英文）
+    separators = ['：', ':', '—', '-', '｜', '|']
+
+    for sep in separators:
+        if sep in name:
+            name = name.split(sep)[0].strip()
+            break
+
+    return name
 
 
 def _index_pdf_sync(
