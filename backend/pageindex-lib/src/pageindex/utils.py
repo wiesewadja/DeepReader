@@ -554,8 +554,12 @@ async def generate_node_summary(node, llm_client=None, format_text=False):
     from .llm.providers import MultiProvider
     provider = getattr(llm_client, 'provider', None) if llm_client else None
     if isinstance(provider, MultiProvider):
-        # MultiProvider 模式：获取当前轮询到的 Provider
-        provider_name = f"MultiProvider"
+        # MultiProvider 模式：获取当前轮询到的 Provider 和模型
+        idx = provider._current_index % len(provider.providers)
+        actual_provider = provider.providers[idx]
+        actual_name = provider.names[idx] if provider.names else type(actual_provider).__name__
+        actual_model = provider.models[idx] if provider.models else ""
+        provider_name = f"{actual_name}/{actual_model}" if actual_model else actual_name
     else:
         provider_name = type(provider).__name__ if provider else "Unknown"
 

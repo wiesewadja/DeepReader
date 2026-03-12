@@ -1065,11 +1065,13 @@ def remove_first_physical_index_section(text):
 
 
 ### add verify completeness
-async def generate_toc_continue(toc_content, part, llm_client=None):
+async def generate_toc_continue(toc_content, part, llm_client=None, progress_callback=None):
     if llm_client is None:
         raise ValueError("llm_client is required for generate_toc_continue")
 
-    print("start generate_toc_continue")
+    logger.info("[TOC生成] 开始续接目录结构...")
+    if progress_callback:
+        progress_callback("generating_toc_continue", 58, "正在完善目录结构...")
     prompt = """
     You are an expert in extracting hierarchical tree structure from documents.
     You are given the previous tree structure and need to continue it for the current document part.
@@ -1144,11 +1146,13 @@ Directly return the final JSON structure for the NEW sections only. Do not outpu
 
 
 ### add verify completeness
-async def generate_toc_init(part, llm_client=None):
+async def generate_toc_init(part, llm_client=None, progress_callback=None):
     if llm_client is None:
         raise ValueError("llm_client is required for generate_toc_init")
 
-    print("start generate_toc_init")
+    logger.info("[TOC生成] 开始生成初始目录结构...")
+    if progress_callback:
+        progress_callback("generating_toc_init", 56, "正在生成初始目录...")
 
     # 计算文本长度并添加到日志
     part_length = len(part)
@@ -1231,7 +1235,7 @@ Directly return the final JSON structure. Do not output anything else."""
         raise Exception(f"finish reason: {finish_reason}")
 
 
-async def process_no_toc(page_list, start_index=1, llm_client=None, logger=None):
+async def process_no_toc(page_list, start_index=1, llm_client=None, logger=None, progress_callback=None):
     if llm_client is None:
         raise ValueError("llm_client is required for process_no_toc")
 
@@ -1244,10 +1248,19 @@ async def process_no_toc(page_list, start_index=1, llm_client=None, logger=None)
     group_texts = page_list_to_group_text(page_contents, token_lengths)
     logger.info(f"len(group_texts): {len(group_texts)}")
 
-    toc_with_page_number = await generate_toc_init(group_texts[0], llm_client)
-    for group_text in group_texts[1:]:
+    # 生成初始目录
+    toc_with_page_number = await generate_toc_init(group_texts[0], llm_client, progress_callback=progress_callback)
+
+    # 续接目录
+    total_groups = len(group_texts)
+    for i, group_text in enumerate(group_texts[1:], start=1):
+        # 更新进度：58-60% 范围内按比例更新
+        if progress_callback and total_groups > 1:
+            progress_in_range = int(58 + (2 * i / (total_groups - 1)))
+            progress_callback("generating_toc_continue", progress_in_range, f"正在完善目录结构 ({i+1}/{total_groups})...")
+
         toc_with_page_number_additional = await generate_toc_continue(
-            toc_with_page_number, group_text, llm_client
+            toc_with_page_number, group_text, llm_client, progress_callback=progress_callback
         )
         toc_with_page_number.extend(toc_with_page_number_additional)
     logger.info(f"generate_toc: {toc_with_page_number}")
@@ -1708,9 +1721,9 @@ async def meta_processor(
     opt=None,
     logger=None,
     llm_client=None,
+    progress_callback=None,
 ):
-    print(mode)
-    print(f"start_index: {start_index}")
+    logger.info(f"[目录处理] 模式: {mode}, 起始页: {start_index}")
 
     if mode == "process_toc_with_page_numbers":
         toc_with_page_number = await process_toc_with_page_numbers(
@@ -1735,6 +1748,7 @@ async def meta_processor(
             start_index=start_index,
             llm_client=llm_client,
             logger=logger,
+            progress_callback=progress_callback,
         )
 
     toc_with_page_number = [
@@ -1755,6 +1769,7 @@ async def meta_processor(
                 opt=opt,
                 logger=logger,
                 llm_client=llm_client,
+                progress_callback=progress_callback,
             )
         elif mode == "process_toc_no_page_numbers":
             # 从无页码目录降级到完全无目录模式
@@ -1765,6 +1780,7 @@ async def meta_processor(
                 opt=opt,
                 logger=logger,
                 llm_client=llm_client,
+                progress_callback=progress_callback,
             )
         else:
             # mode="process_no_toc" 且目录为空，说明 LLM 生成目录失败
@@ -1814,6 +1830,7 @@ async def meta_processor(
                 opt=opt,
                 logger=logger,
                 llm_client=llm_client,
+                progress_callback=progress_callback,
             )
         elif mode == "process_toc_no_page_numbers":
             return await meta_processor(
@@ -1823,6 +1840,7 @@ async def meta_processor(
                 opt=opt,
                 logger=logger,
                 llm_client=llm_client,
+                progress_callback=progress_callback,
             )
         else:
             raise Exception("Processing failed")
@@ -1895,7 +1913,11 @@ async def process_large_node_recursively(node, page_list, opt=None, logger=None,
     return node
 
 
-async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
+async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None, progress_callback=None):
+    # 更新进度：开始检测目录
+    if progress_callback:
+        progress_callback("detecting_toc", 55, "正在检测文档目录...")
+
     check_toc_result = await check_toc(page_list, opt, llm_client=llm_client)
     logger.info(check_toc_result)
 
@@ -1913,10 +1935,12 @@ async def tree_parser(page_list, opt, doc=None, logger=None, llm_client=None):
             opt=opt,
             logger=logger,
             llm_client=llm_client,
+            progress_callback=progress_callback,
         )
     else:
         toc_with_page_number = await meta_processor(
-            page_list, mode="process_no_toc", start_index=1, opt=opt, logger=logger, llm_client=llm_client
+            page_list, mode="process_no_toc", start_index=1, opt=opt, logger=logger, llm_client=llm_client,
+            progress_callback=progress_callback,
         )
 
     toc_with_page_number = add_preface_if_needed(toc_with_page_number)
@@ -2323,9 +2347,12 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
                     logger.warning(f"[进度回调] 调用失败: {e}")
 
         # 解析 PDF 结构 (55-60%)
-        update_progress("parsing_structure", 55, "正在解析文档结构...")
+        # 注意：进度更新由 tree_parser 内部控制
         logging.debug("[DEBUG] About to call tree_parser")
-        structure = await tree_parser(page_list, opt, doc=doc, logger=logger, llm_client=llm_client)
+        structure = await tree_parser(
+            page_list, opt, doc=doc, logger=logger, llm_client=llm_client,
+            progress_callback=lambda step, pct, msg: update_progress(step, pct, msg)
+        )
         logging.debug(f"[DEBUG] tree_parser returned, structure length: {len(structure) if structure else 0}")
 
         # 结构解析完成，更新到 60%
