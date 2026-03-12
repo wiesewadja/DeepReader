@@ -4490,23 +4490,21 @@
     font-weight: 500;
 }
 
-/* 封面操作按钮容器 */
+/* 封面操作按钮容器 - 固定在右下角，默认隐藏 */
 .deeppdf-lib-cover-actions {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    bottom: 8px;
+    right: 8px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    background: rgba(0, 0, 0, 0.5);
+    gap: 4px;
+    z-index: 10;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.15s ease;
 }
 
-.deeppdf-lib-book-card:hover .deeppdf-lib-cover-actions {
+/* 悬停封面时显示按钮 */
+.deeppdf-lib-book-cover:hover .deeppdf-lib-cover-actions {
     opacity: 1;
 }
 
@@ -4515,18 +4513,20 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.9);
     color: var(--text-normal);
     cursor: pointer;
     transition: all 0.15s ease;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .deeppdf-lib-cover-btn:hover {
     transform: scale(1.1);
     background: #fff;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 .deeppdf-lib-cover-btn.download:hover {
@@ -4661,23 +4661,27 @@
 }
 
 /**
- * DeepReader 阅读模式样式
- * 为章节文件提供书籍化阅读体验
+ * DeepReader 沉浸式阅读模式
+ * 提供书籍般的阅读体验
  */
 
 /* ==================== 阅读模式容器 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view {
-    max-width: 800px;
+    /* 限制行宽，减少眼球疲劳 (约 60-65 字符) */
+    max-width: 640px;
     margin: 0 auto;
-    padding: 40px 24px;
+    /* 增加上下留白 */
+    padding: 80px 40px 120px;
     font-family: var(--font-text);
+    /* 沉浸式背景 */
+    background: var(--background-primary);
 }
 
 .deeppdf-reading-mode .markdown-source-view {
-    max-width: 800px;
+    max-width: 640px;
     margin: 0 auto;
-    padding: 20px 24px;
+    padding: 40px;
 }
 
 /* 隐藏 frontmatter */
@@ -4692,127 +4696,170 @@
 /* ==================== 标题样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view h1 {
-    font-size: 28px;
+    font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+    font-size: 26px;
     font-weight: 700;
-    margin-bottom: 24px;
+    margin-bottom: 0.6em;
+    margin-top: 0;
     color: var(--text-normal);
-    line-height: 1.3;
+    line-height: 1.4;
+    letter-spacing: -0.02em;
 }
 
 .deeppdf-reading-mode .markdown-preview-view h2 {
-    font-size: 22px;
+    font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+    font-size: 25px;
     font-weight: 600;
-    margin-top: 36px;
-    margin-bottom: 16px;
+    margin-top: 3em !important;
+    margin-bottom: 1em;
     color: var(--text-normal);
-    border-bottom: 1px solid var(--background-modifier-border);
-    padding-bottom: 8px;
+    line-height: 1.4;
 }
 
 .deeppdf-reading-mode .markdown-preview-view h3 {
-    font-size: 18px;
+    font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+    font-size: 22px;
     font-weight: 600;
-    margin-top: 28px;
-    margin-bottom: 12px;
+    margin-top: 2.5em !important;
+    margin-bottom: 0.5em;
     color: var(--text-muted);
-    padding-left: 12px;
-    border-left: 3px solid var(--interactive-accent);
 }
 
-/* ==================== 段落样式 ==================== */
+/* ==================== 段落样式（沉浸式核心） ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view p {
-    line-height: 1.8;
-    font-size: 16px;
+    /* 优雅的衬线字体 */
+    font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+    font-size: 17px;
+    /* 宽松的行高，营造呼吸感 */
+    line-height: 1.9;
+    /* 微妙的字间距 */
+    letter-spacing: 0.01em;
+    /* 两端对齐，书籍排版 */
     text-align: justify;
-    margin-bottom: 16px;
+    /* 段落间距 */
+    margin-bottom: 0.5em;
+    margin-top: 0;
+    /* 降低对比度，保护眼睛 */
     color: var(--text-normal);
+    /* 优化渲染 */
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* 文字断词优化 */
+    hyphens: auto;
+    word-wrap: break-word;
+}
+
+/* 首段加大间距 */
+.deeppdf-reading-mode .markdown-preview-view h1 + p {
+    margin-top: 0.5em;
 }
 
 /* ==================== 列表样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view ul,
 .deeppdf-reading-mode .markdown-preview-view ol {
-    line-height: 1.8;
-    margin-bottom: 16px;
-    padding-left: 24px;
+    font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", serif;
+    font-size: 17px;
+    line-height: 1.9;
+    margin-bottom: 0.8em;
+    margin-top: 0;
+    padding-left: 1.5em;
 }
 
 .deeppdf-reading-mode .markdown-preview-view li {
-    margin-bottom: 8px;
+    margin-bottom: 0.4em;
+}
+
+.deeppdf-reading-mode .markdown-preview-view li > p {
+    margin-bottom: 0.4em;
 }
 
 /* ==================== 引用块样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view blockquote {
-    margin: 16px 0;
-    padding: 12px 16px;
-    border-left: 4px solid var(--interactive-accent);
+    font-family: "Charter", "Georgia", serif;
+    font-style: italic;
+    margin: 1.2em 0;
+    padding: 1em 1.5em;
+    border-left: 3px solid var(--interactive-accent);
     background: var(--background-secondary);
-    border-radius: 0 8px 8px 0;
+    border-radius: 0 6px 6px 0;
 }
 
 .deeppdf-reading-mode .markdown-preview-view blockquote p {
     margin-bottom: 0;
+    font-size: 16px;
+    line-height: 1.8;
     color: var(--text-muted);
 }
 
 /* ==================== 代码块样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view pre {
-    margin: 16px 0;
-    padding: 16px;
-    border-radius: 8px;
+    margin: 1.5em 0;
+    padding: 1em 1.2em;
+    border-radius: 6px;
     background: var(--background-secondary);
     font-size: 14px;
     line-height: 1.6;
+    overflow-x: auto;
 }
 
 .deeppdf-reading-mode .markdown-preview-view code {
     font-family: var(--font-monospace);
     background: var(--background-secondary-alt);
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
     font-size: 0.9em;
+}
+
+.deeppdf-reading-mode .markdown-preview-view pre code {
+    background: transparent;
+    padding: 0;
 }
 
 /* ==================== 链接样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view a {
     color: var(--link-color);
-    text-decoration: underline;
-    text-underline-offset: 2px;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease;
 }
 
 .deeppdf-reading-mode .markdown-preview-view a:hover {
-    color: var(--link-color-hover);
+    border-bottom-color: var(--link-color);
 }
 
 /* ==================== 选中文本样式 ==================== */
 
 .deeppdf-reading-mode ::selection {
-    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.3);
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.25);
 }
 
 /* ==================== 水平分隔线 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view hr {
-    margin: 32px 0;
+    margin: 3em 0;
     border: none;
     border-top: 1px solid var(--background-modifier-border);
+    opacity: 0.5;
 }
 
 /* ==================== 表格样式 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view table {
     width: 100%;
-    margin: 16px 0;
+    margin: 1.5em 0;
     border-collapse: collapse;
+    font-size: 15px;
 }
 
 .deeppdf-reading-mode .markdown-preview-view th,
 .deeppdf-reading-mode .markdown-preview-view td {
-    padding: 10px 12px;
+    padding: 0.6em 0.8em;
     border: 1px solid var(--background-modifier-border);
     text-align: left;
 }
@@ -4822,7 +4869,7 @@
     font-weight: 600;
 }
 
-/* ==================== 悬浮工具栏样式（极简图标模式） ==================== */
+/* ==================== 悬浮工具栏样式 ==================== */
 
 .deeppdf-selection-toolbar {
     position: absolute;
@@ -4967,9 +5014,9 @@
     align-items: center;
     justify-content: space-between;
     padding: 24px 16px;
-    margin-top: 40px;
-    border-top: 1px solid var(--background-modifier-border, #e0e0e0);
-    background: var(--background-primary, #fff);
+    margin-top: 3em;
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
     border-radius: 8px;
     min-height: 60px;
     width: 100%;
@@ -4981,78 +5028,13 @@
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    background: var(--background-secondary, #f5f5f5);
-    border: 1px solid var(--background-modifier-border, #e0e0e0);
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
-    color: var(--text-normal, #333);
+    color: var(--text-normal);
     font-size: 14px;
     cursor: pointer;
     transition: all 0.15s ease;
-}
-
-.deeppdf-nav-btn:hover:not(.disabled) {
-    background: var(--background-modifier-hover, #e8e8e8);
-    border-color: var(--interactive-accent, #7c3aed);
-    color: var(--interactive-accent, #7c3aed);
-}
-
-.deeppdf-nav-btn.disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-    pointer-events: none;
-}
-
-.deeppdf-nav-btn svg {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-}
-
-.deeppdf-nav-btn .nav-label {
-    display: none;
-}
-
-@media (min-width: 500px) {
-    .deeppdf-nav-btn .nav-label {
-        display: inline;
-    }
-}
-
-.deeppdf-nav-info {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-muted, #888);
-    font-size: 14px;
-}
-
-.deeppdf-nav-info .nav-position {
-    padding: 6px 14px;
-    background: var(--background-secondary-alt, #eee);
-    border-radius: 6px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-}
-
-/* 导航提示 */
-.deeppdf-nav-tooltip {
-    position: fixed;
-    bottom: 80px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--background-primary, #fff);
-    color: var(--text-normal, #333);
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 14px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1002;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.deeppdf-nav-tooltip.visible {
-    opacity: 1;
 }
 
 .deeppdf-nav-btn:hover:not(.disabled) {
@@ -5117,61 +5099,6 @@
 }
 
 .deeppdf-nav-tooltip.visible {
-    opacity: 1;
-}
-
-/* ==================== 聚焦模式 (Focus Mode) ==================== */
-/* 聚焦模式依赖阅读模式，只在 body 同时有两个类时生效 */
-
-/* CSS 变量定义 */
-body.deeppdf-reading-mode.deeppdf-focus-mode {
-    --deeppdf-unfocused-level: 0.25;
-    --deeppdf-focus-font: "Iowan Old Style", "Charter", "Georgia", "Times New Roman", serif;
-    --deeppdf-focus-font-size: 18px;
-    --deeppdf-focus-line-height: 1.9;
-}
-
-/* 淡化所有段落 - 使用 hover 实现聚焦效果 */
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote {
-    opacity: var(--deeppdf-unfocused-level, 0.25);
-    transition: opacity 0.3s ease;
-}
-
-/* hover 时高亮显示 */
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view p:hover,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view li:hover,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view blockquote:hover {
-    opacity: 1;
-    font-family: var(--deeppdf-focus-font);
-    font-size: var(--deeppdf-focus-font-size);
-    line-height: var(--deeppdf-focus-line-height);
-}
-
-/* 标题保持可见但稍淡 */
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h1,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h2,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h3 {
-    opacity: 0.7;
-    transition: opacity 0.3s ease;
-}
-
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h1:hover,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h2:hover,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view h3:hover {
-    opacity: 1;
-}
-
-/* 代码块和表格保持可见 */
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view pre,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view table {
-    opacity: 0.6;
-    transition: opacity 0.3s ease;
-}
-
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view pre:hover,
-body.deeppdf-reading-mode.deeppdf-focus-mode .markdown-preview-view table:hover {
     opacity: 1;
 }
 
