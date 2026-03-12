@@ -257,7 +257,7 @@ def parse_llm_response(response_text: str) -> LLMTreeSearchResult:
 def extract_nodes_by_ids(
     tree_structure: Dict[str, Any],
     node_ids: List[str],
-    max_text_length: int = 8000,
+    max_text_length: int = 12000,
 ) -> List[Dict[str, Any]]:
     """
     根据 node_id 列表从 tree_structure 中提取节点内容
@@ -350,6 +350,8 @@ async def llm_tree_search(
     Returns:
         LLMTreeSearchResult
     """
+    import time
+
     if not tree_structure:
         return LLMTreeSearchResult(
             success=False,
@@ -364,17 +366,30 @@ async def llm_tree_search(
         max_results=max_results,
     )
 
+    # 日志：输出关键信息
+    logger.info(f"[LLM树搜索] 开始搜索 - 文档: {doc_name}, 模型: {model}")
+    logger.info(f"[LLM树搜索] 查询: {query[:100]}{'...' if len(query) > 100 else ''}")
+    logger.info(f"[LLM树搜索] Prompt 长度: {len(prompt)} 字符, 超时设置: {timeout}s")
+
+    # 获取客户端的 base_url 信息
+    client_base_url = getattr(llm_client, 'base_url', 'unknown')
+    logger.info(f"[LLM树搜索] API 基础 URL: {client_base_url}")
+
     # 重试逻辑
     last_error = None
     for attempt in range(max_retries + 1):
         try:
             logger.info(f"[LLM树搜索] 尝试 {attempt + 1}/{max_retries + 1}")
+            call_start_time = time.time()
 
             # 调用 LLM（带超时）
             response = await asyncio.wait_for(
                 _call_llm_async(llm_client, model, prompt),
                 timeout=timeout,
             )
+
+            call_elapsed = time.time() - call_start_time
+            logger.info(f"[LLM树搜索] API 调用成功，耗时: {call_elapsed:.2f}s")
 
             # 解析响应
             result = parse_llm_response(response)
@@ -401,12 +416,18 @@ async def llm_tree_search(
                 logger.warning(f"[LLM树搜索] 解析失败: {last_error}")
 
         except asyncio.TimeoutError:
-            last_error = f"Timeout after {timeout}s"
+            call_elapsed = time.time() - call_start_time
+            last_error = f"Timeout after {timeout}s (actual: {call_elapsed:.2f}s)"
             logger.warning(f"[LLM树搜索] 超时: {last_error}")
+            logger.warning(f"[LLM树搜索] 超时可能原因: 1) 模型响应慢 2) Prompt 过长({len(prompt)}字符) 3) 网络问题 4) API 限流")
+        except asyncio.CancelledError:
+            last_error = "Request was cancelled"
+            logger.warning(f"[LLM树搜索] 请求被取消: {last_error}")
         except Exception as e:
             last_error = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"[LLM树搜索] 错误: {last_error}")
+            logger.error(f"[LLM树搜索] 错误: {last_error}", exc_info=True)
 
+    logger.error(f"[LLM树搜索] 所有尝试失败 - 模型: {model}, 最后错误: {last_error}")
     return LLMTreeSearchResult(
         success=False,
         error=f"Failed after {max_retries + 1} attempts: {last_error}",
@@ -425,19 +446,37 @@ async def _call_llm_async(client, model: str, prompt: str) -> str:
     Returns:
         LLM 响应文本
     """
-    # OpenAI 客户端的异步调用
-    response = await asyncio.to_thread(
-        client.chat.completions.create,
-        model=model,
-        messages=[
-            {"role": "system", "content": "你是一个专业的文档检索助手。"},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,
-        max_tokens=1000,
-    )
+    import time
 
-    return response.choices[0].message.content or ""
+    logger.debug(f"[LLM树搜索] 开始调用 API - 模型: {model}")
+
+    try:
+        start_time = time.time()
+
+        # OpenAI 客户端的异步调用
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=model,
+            messages=[
+                {"role": "system", "content": "你是一个专业的文档检索助手。"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+        )
+
+        elapsed = time.time() - start_time
+        logger.debug(f"[LLM树搜索] API 响应耗时: {elapsed:.2f}s")
+
+        content = response.choices[0].message.content or ""
+        logger.debug(f"[LLM树搜索] 响应内容长度: {len(content)} 字符")
+
+        return content
+
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"[LLM树搜索] API 调用异常 (耗时 {elapsed:.2f}s): {type(e).__name__}: {str(e)}")
+        raise
 
 
 def _validate_node_ids(

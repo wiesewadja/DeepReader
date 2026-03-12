@@ -32,7 +32,7 @@ export type HighlightColorId = typeof HIGHLIGHT_COLORS[number]['id'];
 export interface SelectionToolbarOptions {
     app: App;
     onQuote: (text: string) => void;
-    onExcerpt: (text: string) => void;
+    onExcerpt: (text: string, range: Range) => void;  // 添加 range 参数
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;
 }
@@ -423,7 +423,8 @@ export class SelectionToolbar {
                 this.options.onQuote(text);
                 break;
             case 'excerpt':
-                this.options.onExcerpt(text);
+                // 传递选中的 range 给回调
+                this.options.onExcerpt(text, this.savedRange!);
                 break;
         }
     }

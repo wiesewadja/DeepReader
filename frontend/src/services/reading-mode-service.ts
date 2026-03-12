@@ -10,7 +10,7 @@ import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapte
 
 export interface ReadingModeCallbacks {
     onQuote: (text: string) => void;
-    onExcerpt: (text: string) => void;
+    onExcerpt: (text: string, range: Range) => void;  // 添加 range 参数
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;
     onBookDetected?: (indexId: string, bookName: string) => void;  // 检测到书籍章节时回调
@@ -331,6 +331,26 @@ export class ReadingModeService {
         const leaf = this.app.workspace.getLeaf(false);
         if (leaf) {
             await leaf.openFile(file, { active: true });
+        }
+    }
+
+    /**
+     * 标记摘录文本（添加虚线下划线）
+     * @param range 选中的文本范围
+     */
+    markExcerpt(range: Range): void {
+        try {
+            const excerptMark = document.createElement('mark');
+            excerptMark.setAttribute('data-excerpt', 'true');
+
+            // 使用 extractContents 和 insertNode 来包装选中内容
+            const fragment = range.extractContents();
+            excerptMark.appendChild(fragment);
+            range.insertNode(excerptMark);
+
+            serviceLog('[ReadingMode] Marked excerpt text');
+        } catch (err) {
+            serviceLog.error('[ReadingMode] Failed to mark excerpt:', err);
         }
     }
 }

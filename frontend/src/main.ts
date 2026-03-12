@@ -221,8 +221,8 @@ export default class DeepPDFPlugin extends Plugin {
                     this.app.workspace.trigger('deeppdf:quote-selection', text);
                 }, 100);
             },
-            onExcerpt: (text: string) => {
-                this.app.workspace.trigger('deeppdf:excerpt-selection', text);
+            onExcerpt: (text: string, range: Range) => {
+                this.app.workspace.trigger('deeppdf:excerpt-selection', text, range);
             },
             onSaveHighlight: async (text: string, color: HighlightColorId) => {
                 await this.saveHighlightToFile(text, color);

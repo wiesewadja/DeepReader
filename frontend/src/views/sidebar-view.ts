@@ -836,9 +836,9 @@ export class SidebarView extends ItemView {
         );
 
         this.registerEvent(
-            workspace.on("deeppdf:excerpt-selection", async (text: string) => {
+            workspace.on("deeppdf:excerpt-selection", async (text: string, range: Range) => {
                 log("[DeepPDF] Received excerpt-selection event");
-                this.handleExcerptSelection(text);
+                this.handleExcerptSelection(text, range);
             })
         );
     }
@@ -974,7 +974,7 @@ export class SidebarView extends ItemView {
      * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
      * 链接：链接到章节文件
      */
-    private handleExcerptSelection(text: string): void {
+    private handleExcerptSelection(text: string, range: Range): void {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
             new Notice("没有打开的文件");
@@ -1016,9 +1016,30 @@ export class SidebarView extends ItemView {
             metadata,
             onSave: async (path: string) => {
                 new Notice(`摘录已保存到 ${path}`);
+                // 摘录成功后，在阅读界面标记文本（添加虚线下划线）
+                this.markExcerptText(range);
             },
         });
         modal.open();
+    }
+
+    /**
+     * 在阅读界面标记摘录文本（添加虚线下划线）
+     */
+    private markExcerptText(range: Range): void {
+        try {
+            const excerptMark = document.createElement('mark');
+            excerptMark.setAttribute('data-excerpt', 'true');
+
+            // 使用 extractContents 和 insertNode 来包装选中内容
+            const fragment = range.extractContents();
+            excerptMark.appendChild(fragment);
+            range.insertNode(excerptMark);
+
+            log('[DeepPDF] Marked excerpt text with dotted underline');
+        } catch (err) {
+            log('[DeepPDF] Failed to mark excerpt text:', err);
+        }
     }
 
     /**

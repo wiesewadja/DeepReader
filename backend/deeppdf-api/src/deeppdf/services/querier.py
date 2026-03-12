@@ -322,7 +322,11 @@ async def _query_with_llm_tree_search(
     # 1. 获取 LLM 客户端
     try:
         client, model = get_llm_client()
+        # 获取客户端配置信息用于日志
+        client_base_url = getattr(client, 'base_url', 'unknown')
+        logger.info(f"[LLM树搜索] 客户端配置 - 模型: {model}, Base URL: {client_base_url}")
     except ValueError as e:
+        logger.error(f"[LLM树搜索] 获取客户端失败: {e}")
         raise LLMTreeSearchError(str(e), "no_api_key")
 
     # 2. 执行 LLM 树搜索

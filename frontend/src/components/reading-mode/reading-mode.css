@@ -439,3 +439,18 @@
 .deeppdf-nav-tooltip.visible {
     opacity: 1;
 }
+
+/* ==================== 摘录标记样式（虚线下划线） ==================== */
+
+.deeppdf-reading-mode mark[data-excerpt="true"] {
+    background: transparent;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--interactive-accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+}
+
+.deeppdf-reading-mode mark[data-excerpt="true"]:hover {
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
+}
