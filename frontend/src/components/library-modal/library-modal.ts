@@ -448,8 +448,20 @@ export class LibraryModal extends Modal {
 
     private getDisplayName(pdfName: string): string {
         let name = pdfName;
+        // 移除文件扩展名
         if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
         if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
+
+        // 简化书名：截取冒号/破折号前的主标题
+        // 例如 "遥远的救世主：根据本书改编..." -> "遥远的救世主"
+        const separators = ['：', ':', '—', '-', '｜', '|'];
+        for (const sep of separators) {
+            if (name.includes(sep)) {
+                name = name.split(sep)[0].trim();
+                break;
+            }
+        }
+
         return name;
     }
 
