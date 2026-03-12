@@ -19,6 +19,11 @@ backend/deeppdf-api/logs/
 
 # Node modules
 frontend/node_modules/
+node_modules/
+
+# Package lock files (keep yarn.lock if using yarn)
+package-lock.json
+**/package-lock.json
 
 # Build outputs
 frontend/main.js
