@@ -31,6 +31,8 @@ export interface SubagentTask {
 	completedAt?: number;
 	/** 所属会话 ID */
 	sessionId?: string;
+	/** 取消控制器 */
+	abortController?: AbortController;
 }
 
 /**

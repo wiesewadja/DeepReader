@@ -50,6 +50,9 @@ export class SubagentManager {
 		const displayLabel =
 			label || (description.length > 30 ? description.slice(0, 30) + '...' : description);
 
+		// 创建取消控制器
+		const abortController = new AbortController();
+
 		const task: SubagentTask = {
 			taskId,
 			description,
@@ -57,12 +60,13 @@ export class SubagentManager {
 			status: 'running',
 			createdAt: Date.now(),
 			sessionId,
+			abortController,
 		};
 
 		this.taskInfo.set(taskId, task);
 
 		// 启动异步任务
-		const promise = this.runSubagent(taskId, description);
+		const promise = this.runSubagent(taskId, description, abortController.signal);
 		this.runningTasks.set(taskId, promise);
 
 		// 关联到会话
@@ -80,11 +84,18 @@ export class SubagentManager {
 	/**
 	 * 执行子 Agent
 	 */
-	private async runSubagent(taskId: string, description: string): Promise<void> {
+	private async runSubagent(taskId: string, description: string, abortSignal: AbortSignal): Promise<void> {
 		const task = this.taskInfo.get(taskId);
 		if (!task) return;
 
 		try {
+			// 检查是否已取消
+			if (abortSignal.aborted) {
+				task.status = 'cancelled';
+				task.completedAt = Date.now();
+				return;
+			}
+
 			// 构建子 Agent 的系统提示
 			const systemPrompt = this.buildSubagentPrompt();
 
@@ -98,7 +109,14 @@ export class SubagentManager {
 			];
 
 			// 运行子 Agent 循环
-			const result = await this.runLoop(taskId, messages, tools);
+			const result = await this.runLoop(taskId, messages, tools, abortSignal);
+
+			// 再次检查是否已取消
+			if (abortSignal.aborted) {
+				task.status = 'cancelled';
+				task.completedAt = Date.now();
+				return;
+			}
 
 			// 更新任务状态
 			task.status = 'completed';
@@ -107,11 +125,17 @@ export class SubagentManager {
 
 			agentLog(`[Subagent] 任务 ${taskId} 完成`);
 		} catch (error) {
-			task.status = 'failed';
-			task.error = error instanceof Error ? error.message : String(error);
+			// 检查是否是取消导致的错误
+			if (abortSignal.aborted) {
+				task.status = 'cancelled';
+				task.error = '任务已取消';
+			} else {
+				task.status = 'failed';
+				task.error = error instanceof Error ? error.message : String(error);
+			}
 			task.completedAt = Date.now();
 
-			agentLog(`[Subagent] 任务 ${taskId} 失败: ${task.error}`);
+			agentLog(`[Subagent] 任务 ${taskId} ${task.status}: ${task.error || ''}`);
 		} finally {
 			this.runningTasks.delete(taskId);
 
@@ -128,27 +152,44 @@ export class SubagentManager {
 	private async runLoop(
 		taskId: string,
 		messages: ChatMessage[],
-		tools: ToolDefinition[]
+		tools: ToolDefinition[],
+		abortSignal: AbortSignal
 	): Promise<string> {
 		let accumulatedContent = '';
 
 		await new Promise<void>((resolve, reject) => {
+			// 检查是否已取消
+			if (abortSignal.aborted) {
+				reject(new Error('任务已取消'));
+				return;
+			}
+
 			const timeout = setTimeout(() => {
 				reject(new Error('子 Agent 超时'));
 			}, this.config.timeout);
 
+			// 监听取消事件
+			const abortHandler = () => {
+				clearTimeout(timeout);
+				reject(new Error('任务已取消'));
+			};
+			abortSignal.addEventListener('abort', abortHandler);
+
 			runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
 				maxIterations: this.config.maxIterations,
+				abortSignal,  // 传递取消信号
 				onContent: (text) => {
 					accumulatedContent += text;
 				},
 				onProgress: () => {},
 				onComplete: () => {
 					clearTimeout(timeout);
+					abortSignal.removeEventListener('abort', abortHandler);
 					resolve();
 				},
 				onError: (error) => {
 					clearTimeout(timeout);
+					abortSignal.removeEventListener('abort', abortHandler);
 					reject(new Error(error));
 				},
 			});
@@ -221,11 +262,13 @@ export class SubagentManager {
 			return false;
 		}
 
+		// 使用 AbortController 取消任务
+		if (task.abortController) {
+			task.abortController.abort();
+		}
+
 		task.status = 'cancelled';
 		task.completedAt = Date.now();
-
-		// 注意：实际的取消需要 AbortController 支持
-		// 这里只是标记状态
 
 		agentLog(`[Subagent] 取消任务 ${taskId}`);
 		return true;
