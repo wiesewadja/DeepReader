@@ -36,6 +36,12 @@ export interface AgentLoopOptions {
    * 用于校验链接和更新熟悉度
    */
   onContentComplete?: (content: string) => Promise<string>;
+  /**
+   * 记忆整合回调（可选）
+   * 当检测到需要整合时调用，传入当前消息和 lastConsolidated 索引
+   * 返回新的 lastConsolidated 索引
+   */
+  onMemoryConsolidation?: (messages: ChatMessage[], lastConsolidated: number) => Promise<number>;
 }
 
 // ============================================================================
@@ -102,7 +108,7 @@ function formatDuration(ms: number): string {
 /**
  * 估算消息历史的 token 数（粗略估算：1 token ≈ 1.5 中文字符或 4 英文字符）
  */
-function estimateTokens(messages: ChatMessage[]): number {
+export function estimateTokens(messages: ChatMessage[]): number {
   let totalChars = 0;
   for (const msg of messages) {
     if (typeof msg.content === 'string') {

@@ -40,6 +40,9 @@ import {
     updateReadingProgress,
     FAMILIARITY_DELTAS,
 } from "../agent/utils/book-note.js";
+import { MemoryStore } from "../agent/memory/store.js";
+import { MemoryConsolidator } from "../agent/memory/consolidator.js";
+import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -336,12 +339,17 @@ export class SidebarView extends ItemView {
             this.plugin.settings.chatCache = {};
         }
 
+        // 获取之前的 lastConsolidated（如果存在）
+        const existingCache = this.plugin.settings.chatCache[this.sessionId];
+        const lastConsolidated = existingCache?.lastConsolidated ?? 0;
+
         this.plugin.settings.chatCache[this.sessionId] = {
             sessionId: this.sessionId,
             indexId: effectiveIndexId,
             lastUpdated: Date.now(),
             messages: validMsgs,
-            isCrossBook: this.crossBookMode ? true : undefined  // 明确使用 true 而不是 this.crossBookMode
+            isCrossBook: this.crossBookMode ? true : undefined,  // 明确使用 true 而不是 this.crossBookMode
+            lastConsolidated,  // 保留已整合到长期记忆的消息索引
         };
 
         // 如果是跨书籍模式，保存会话ID以便下次恢复
@@ -382,6 +390,77 @@ export class SidebarView extends ItemView {
                 currentSize = JSON.stringify(cache).length;
                 log(`[DeepPDF] 已删除过期缓存: ${oldestId}`);
             }
+        }
+    }
+
+    /**
+     * 检查并执行记忆整合（如果需要）
+     *
+     * 当对话 token 数超过阈值时，自动将旧消息整合到 MEMORY.md 和 HISTORY.md
+     */
+    private async maybeConsolidateMemory(): Promise<void> {
+        try {
+            // 确保 sessionId 存在
+            if (!this.sessionId) {
+                return;
+            }
+
+            const sessionId = this.sessionId;
+            const cache = this.plugin.settings.chatCache?.[sessionId];
+            if (!cache || !cache.messages || cache.messages.length === 0) {
+                return;
+            }
+
+            const messages = cache.messages;
+            const lastConsolidated = cache.lastConsolidated ?? 0;
+
+            // 简单的 token 估算
+            const estimateTokens = (msgs: any[]): number => {
+                let totalChars = 0;
+                for (const msg of msgs) {
+                    if (typeof msg.content === 'string') {
+                        totalChars += msg.content.length;
+                    }
+                }
+                return Math.round(totalChars / 2);
+            };
+
+            const currentTokens = estimateTokens(messages);
+
+            // 检查是否需要整合
+            if (currentTokens < DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold) {
+                return;
+            }
+
+            log(`[DeepPDF] 记忆整合触发: ${currentTokens} tokens >= ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
+
+            // 创建整合器
+            const store = new MemoryStore(this.app);
+            const consolidator = new MemoryConsolidator(
+                store,
+                this.frontendAgent?.getLLMClient() as any, // 使用公共方法获取 LLM 客户端
+                DEFAULT_CONSOLIDATOR_CONFIG
+            );
+
+            // 执行整合
+            const newLastConsolidated = await consolidator.maybeConsolidate(
+                messages,
+                lastConsolidated,
+                (newIndex) => {
+                    // 更新缓存中的 lastConsolidated
+                    if (this.plugin.settings.chatCache?.[sessionId]) {
+                        this.plugin.settings.chatCache[sessionId].lastConsolidated = newIndex;
+                        this.plugin.saveSettings();
+                        log(`[DeepPDF] lastConsolidated 更新为 ${newIndex}`);
+                    }
+                }
+            );
+
+            if (newLastConsolidated > lastConsolidated) {
+                log(`[DeepPDF] 记忆整合完成: ${lastConsolidated} -> ${newLastConsolidated}`);
+            }
+        } catch (err) {
+            logError('[DeepPDF] 记忆整合失败:', err);
         }
     }
 
@@ -1903,6 +1982,9 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                     });
                     // 保存到缓存
                     this.saveToCache();
+
+                    // 检查是否需要记忆整合（异步执行，不阻塞）
+                    this.maybeConsolidateMemory();
 
                     // 恢复输入状态（AI 回复完成）
                     this.isProcessing = false;

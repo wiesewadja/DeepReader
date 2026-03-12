@@ -63,6 +63,9 @@ export class FrontendAgent {
       // 确保目录结构存在
       await this.contextLoader.ensureDirectories();
 
+      // 初始化 MEMORY.md（如果不存在）
+      await this.contextLoader.initializeMemoryFile();
+
       // 加载 Skills
       await this.skillLoader.loadSkills();
 
@@ -128,5 +131,12 @@ export class FrontendAgent {
   async reloadContext(): Promise<void> {
     this.userContext = await this.contextLoader.loadContext();
     log('[FrontendAgent] User context reloaded');
+  }
+
+  /**
+   * 获取 LLM 客户端（用于记忆整合等内部功能）
+   */
+  getLLMClient(): LLMClient {
+    return this.llmClient;
   }
 }

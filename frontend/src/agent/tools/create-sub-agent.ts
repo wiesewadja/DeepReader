@@ -1,120 +1,237 @@
 /**
  * create_sub_agent Tool - 创建子 Agent 处理子任务
  *
- * 行为规则：
- * 1. 子 Agent 与主 Agent 串行执行（不允许多个子 Agent 并行）
- * 2. 子 Agent 通过 task_context 获取必要上下文
- * 3. 子 Agent 使用专属 log 标识
- * 4. 超时或取消时直接报错
+ * 子 Agent 用于：
+ * - 并行检索多个章节
+ * - 深度分析特定内容
+ * - 后台执行不需要立即响应的任务
+ *
+ * 使用 SubagentManager 管理任务生命周期
  */
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
+import type { SubagentManager } from '../subagent/manager.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 
+/**
+ * create_sub_agent 工具定义
+ */
 const CREATE_SUB_AGENT_DEFINITION: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'create_sub_agent',
-    description: `Create a sub-agent to handle a subtask. Use this when:
-- The task involves multiple chapters
-- Context might overflow
-- Need focused processing on a specific part
+	type: 'function',
+	function: {
+		name: 'create_sub_agent',
+		description: `创建一个子助手在后台执行任务，用于并行处理或复杂分析。
 
-The sub-agent executes independently and returns results to the main agent.`,
-    parameters: {
-      type: 'object',
-      properties: {
-        task: {
-          type: 'string',
-          description: 'Clear description of the subtask',
-        },
-        context: {
-          type: 'object',
-          properties: {
-            book_structure: {
-              type: 'string',
-              description: 'Book structure (TOC) information',
-            },
-            previous_results: {
-              type: 'string',
-              description: 'Results from previous steps',
-            },
-            focus_nodes: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Node IDs to focus on',
-            },
-            tool_context: {
-              type: 'object',
-              description: 'ToolContext info (indexId, pdfName, markdownFiles)',
-            },
-          },
-        },
-        output_format: {
-          type: 'string',
-          description: 'Expected output format (e.g., "概念列表，包含名称、定义、所在章节")',
-        },
-      },
-      required: ['task'],
-    },
-  },
+使用场景：
+- 需要同时检索多个章节时
+- 需要对特定内容进行深度分析时
+- 任务可以独立完成，不需要立即与用户交互时
+
+注意：
+- 子助手使用受限的工具集（搜索、阅读章节等）
+- 子助手不能创建新的子任务
+- 子助手完成后会返回结果摘要`,
+		parameters: {
+			type: 'object',
+			properties: {
+				task: {
+					type: 'string',
+					description: '子助手要执行的任务描述（清晰具体）',
+				},
+				label: {
+					type: 'string',
+					description: '任务的显示标签（可选，用于识别任务）',
+				},
+				wait_for_result: {
+					type: 'boolean',
+					description: '是否等待结果返回（默认 false，异步执行）',
+				},
+			},
+			required: ['task'],
+		},
+	},
 };
 
+/**
+ * check_sub_agent 工具定义
+ */
+const CHECK_SUB_AGENT_DEFINITION: ToolDefinition = {
+	type: 'function',
+	function: {
+		name: 'check_sub_agent',
+		description: `检查子助手的执行状态和结果。
+
+返回：
+- 任务状态（running/completed/failed/cancelled）
+- 执行结果（如果已完成）
+- 错误信息（如果失败）`,
+		parameters: {
+			type: 'object',
+			properties: {
+				task_id: {
+					type: 'string',
+					description: '要检查的任务 ID',
+				},
+			},
+			required: ['task_id'],
+		},
+	},
+};
+
+/**
+ * 创建 SubagentManager 工厂
+ *
+ * 由于 SubagentManager 需要在会话级别管理，
+ * 这个工厂函数允许延迟注入 manager
+ */
+let globalSubagentManager: SubagentManager | null = null;
+
+/**
+ * 设置全局 SubagentManager
+ */
+export function setSubagentManager(manager: SubagentManager): void {
+	globalSubagentManager = manager;
+	log('[SubAgent] SubagentManager 已设置');
+}
+
+/**
+ * 获取全局 SubagentManager
+ */
+export function getSubagentManager(): SubagentManager | null {
+	return globalSubagentManager;
+}
+
+/**
+ * 创建 create_sub_agent 工具执行器
+ */
+export function makeCreateSubAgentTool(_app: any): ToolExecutor {
+	return {
+		definition: CREATE_SUB_AGENT_DEFINITION,
+
+		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+			const task = args.task as string;
+			const label = args.label as string | undefined;
+			const waitForResult = args.wait_for_result as boolean | false;
+
+			if (!task || typeof task !== 'string') {
+				return 'Error: task 参数是必需的，且必须是字符串';
+			}
+
+			const manager = getSubagentManager();
+			if (!manager) {
+				return 'Error: SubagentManager 未初始化。请确保在会话开始时设置 SubagentManager。';
+			}
+
+			try {
+				log('[SubAgent] 创建子任务:', task.slice(0, 50));
+
+				// 获取当前会话 ID
+				const sessionId = context.sessionId;
+
+				// 创建子任务
+				const taskId = manager.spawn(task, label, sessionId);
+
+				// 如果需要等待结果
+				if (waitForResult) {
+					log('[SubAgent] 等待任务完成:', taskId);
+
+					// 使用 manager.waitFor 替代轮询
+					const taskInfo = await manager.waitFor(taskId, 60000);
+
+					if (taskInfo) {
+						if (taskInfo.status === 'completed') {
+							return `子任务完成：\n${taskInfo.result || '(无结果)'}`;
+						} else if (taskInfo.status === 'failed') {
+							return `子任务失败：${taskInfo.error || '未知错误'}`;
+						} else if (taskInfo.status === 'cancelled') {
+							return `子任务已取消`;
+						} else {
+							return `子任务超时（等待了 60 秒）。任务 ID: ${taskId}，状态: ${taskInfo.status}`;
+						}
+					}
+
+					return `任务不存在: ${taskId}`;
+				}
+
+				// 异步执行，立即返回任务 ID
+				return JSON.stringify({
+					success: true,
+					taskId,
+					message: `子助手已启动，任务 ID: ${taskId}`,
+					note: '子助手完成后，使用 check_sub_agent 工具检查结果',
+				});
+			} catch (e) {
+				const errorMsg = e instanceof Error ? e.message : String(e);
+				logError('[SubAgent] 执行失败:', errorMsg);
+				return `Error in sub-agent execution: ${errorMsg}`;
+			}
+		},
+	};
+}
+
+/**
+ * 创建 check_sub_agent 工具执行器
+ */
+export function makeCheckSubAgentTool(_app: any): ToolExecutor {
+	return {
+		definition: CHECK_SUB_AGENT_DEFINITION,
+
+		async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
+			const taskId = args.task_id as string;
+
+			if (!taskId || typeof taskId !== 'string') {
+				return 'Error: task_id 参数是必需的，且必须是字符串';
+			}
+
+			const manager = getSubagentManager();
+			if (!manager) {
+				return 'Error: SubagentManager 未初始化。';
+			}
+
+			try {
+				const task = manager.getTask(taskId);
+
+				if (!task) {
+					return JSON.stringify({
+						success: false,
+						error: '任务不存在',
+						taskId,
+					});
+				}
+
+				return JSON.stringify({
+					success: true,
+					taskId: task.taskId,
+					label: task.label,
+					status: task.status,
+					result: task.result,
+					error: task.error,
+					createdAt: task.createdAt,
+					completedAt: task.completedAt,
+				});
+			} catch (e) {
+				const errorMsg = e instanceof Error ? e.message : String(e);
+				logError('[SubAgent] 检查任务失败:', errorMsg);
+				return `Error checking sub-agent: ${errorMsg}`;
+			}
+		},
+	};
+}
+
+// 导出默认工具实例
 export const createSubAgentTool: ToolExecutor = {
-  definition: CREATE_SUB_AGENT_DEFINITION,
+	definition: CREATE_SUB_AGENT_DEFINITION,
+	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+		const tool = makeCreateSubAgentTool(context.app);
+		return tool.execute(args, context);
+	},
+};
 
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const task = args.task as string;
-    const contextData = args.context as Record<string, unknown> | undefined;
-    const outputFormat = args.output_format as string | undefined;
-
-    if (!task) {
-      return 'Error: task parameter is required';
-    }
-
-    try {
-      log('[SubAgent] 创建子 Agent:', task);
-
-      // 构建子 Agent 的 system prompt
-      const subSystemPrompt = `你是一个专门处理子任务的 AI 助手。
-
-## 任务
-${task}
-
-## 上下文
-${contextData?.book_structure ? `书籍结构：\n${contextData.book_structure}` : ''}
-${contextData?.previous_results ? `前置结果：\n${contextData.previous_results}` : ''}
-${contextData?.focus_nodes ? `关注章节：${(contextData.focus_nodes as string[]).join(', ')}` : ''}
-
-## 输出格式
-${outputFormat || '根据任务要求自然输出'}
-
-## 规则
-- 专注完成指定任务
-- 使用可用工具获取信息
-- 完成后直接返回结果，不要多余的解释`;
-
-      // 创建子 Agent 的 LLM 客户端（复用主 Agent 的配置）
-      // 注意：这里需要从 context 或全局获取 API 配置
-      // 暂时返回提示信息，实际实现需要获取 LLM 配置
-      log('[SubAgent] 子 Agent 任务已定义，等待实际实现');
-      log('[SubAgent] task:', task);
-      log('[SubAgent] context:', JSON.stringify(contextData, null, 2));
-      log('[SubAgent] output_format:', outputFormat);
-
-      // TODO: 实际调用 runAgentLoop
-      // 需要从外部传入 LLM 配置（apiKey, baseUrl, model 等）
-      // 当前返回占位信息
-
-      return `[SubAgent] 任务已接收：${task}
-
-注意：create_sub_agent 工具需要 LLM 配置才能完整执行。
-当前版本为占位实现，请在后续版本中完善。`;
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      logError('[SubAgent] 执行失败:', errorMsg);
-      return `Error in sub-agent execution: ${errorMsg}`;
-    }
-  },
+export const checkSubAgentTool: ToolExecutor = {
+	definition: CHECK_SUB_AGENT_DEFINITION,
+	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+		const tool = makeCheckSubAgentTool(context.app);
+		return tool.execute(args, context);
+	},
 };

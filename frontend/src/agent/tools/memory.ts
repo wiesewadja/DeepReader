@@ -2,290 +2,232 @@
  * Memory 工具 - Agent 记忆管理
  *
  * 提供：
- * - add_memory: 添加记忆条目
- * - search_memory: 搜索记忆
- * - summarize_memory: 触发记忆摘要
+ * - save_memory: 保存重要信息到长期记忆 + 追加历史日志
+ * - search_memory: 搜索记忆内容
+ *
+ * 设计参考: nanobot 的 memory.py
  */
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { ContextLoader } from '../context/loader.js';
+import { MemoryStore } from '../memory/store.js';
 import { toolsLog as log, error } from '../../utils/logger.js';
-import {
-  MEMORY_DATA_DIR,
-  MEMORY_ENTRIES_DIR,
-  ensurePluginDataDirs,
-} from '../utils/plugin-data.js';
 
 /**
- * add_memory 工具定义
+ * save_memory 工具定义
+ *
+ * 这是 LLM 调用的工具，用于：
+ * 1. 将重要对话内容追加到 HISTORY.md
+ * 2. 更新 MEMORY.md（用户画像、偏好等）
  */
-const addMemoryDefinition: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'add_memory',
-    description: `添加一条记忆到用户的长期记忆中。
+export const saveMemoryDefinition: ToolDefinition = {
+	type: 'function',
+	function: {
+		name: 'save_memory',
+		description: `保存重要信息到用户的长期记忆中。
+
+这个工具会做两件事：
+1. 将对话摘要追加到 HISTORY.md（时间线日志）
+2. 更新 MEMORY.md 中的用户画像和偏好（如果有新的重要信息）
 
 使用场景：
 - 用户明确表达了偏好（如"我喜欢简洁的总结"）
 - 用户纠正了你的行为（如"不要用列表形式"）
 - 用户提供了个人信息（如"我是程序员"）
-- 重要的对话上下文需要记住
+- 完成了一次重要的对话，值得记录
 
-注意：
-- 不要添加临时性信息（如"当前正在读第三章"）
-- 不要添加书籍内容本身
-- 每条记忆应该是一个独立、有价值的观察`,
-    parameters: {
-      type: 'object',
-      properties: {
-        content: {
-          type: 'string',
-          description: '要记住的内容，应该简洁明了，例如："用户偏好使用段落式叙述而非列表"',
-        },
-        category: {
-          type: 'string',
-          description: '记忆类别（可选）',
-          enum: ['preference', 'correction', 'info', 'feedback'],
-        },
-      },
-      required: ['content'],
-    },
-  },
+参数说明：
+- history_entry: 对话摘要，写入 HISTORY.md
+- memory_update: 需要更新到 MEMORY.md 的内容（可选）`,
+		parameters: {
+			type: 'object',
+			properties: {
+				history_entry: {
+					type: 'string',
+					description: '对话摘要，简洁描述本次对话的要点',
+				},
+				memory_update: {
+					type: 'string',
+					description: '需要更新到 MEMORY.md 的内容（用户画像、偏好变化等）',
+				},
+			},
+			required: ['history_entry'],
+		},
+	},
 };
 
 /**
  * search_memory 工具定义
  */
 const searchMemoryDefinition: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'search_memory',
-    description: `搜索用户的长期记忆，查找与当前话题相关的历史信息。
+	type: 'function',
+	function: {
+		name: 'search_memory',
+		description: `搜索用户的长期记忆，查找与当前话题相关的历史信息。
 
 使用场景：
 - 用户提到之前的偏好，你想确认具体内容
 - 想了解用户对某个话题的历史反馈
 - 不确定是否已经记录过某个信息
 
-返回匹配的记忆条目列表。`,
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: '搜索关键词，用空格分隔多个词',
-        },
-      },
-      required: ['query'],
-    },
-  },
+返回匹配的记忆内容。`,
+		parameters: {
+			type: 'object',
+			properties: {
+				query: {
+					type: 'string',
+					description: '搜索关键词，用空格分隔多个词',
+				},
+			},
+			required: ['query'],
+		},
+	},
 };
 
 /**
- * summarize_memory 工具定义
+ * 创建 save_memory 工具执行器
  */
-const summarizeMemoryDefinition: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'summarize_memory',
-    description: `触发记忆摘要生成。
+export function createSaveMemoryTool(_app: any): ToolExecutor {
+	return {
+		definition: saveMemoryDefinition,
+		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+			const historyEntry = args.history_entry as string;
+			const memoryUpdate = args.memory_update as string | undefined;
 
-当记忆条目积累较多时，将详细记忆压缩为摘要。
-这个操作会读取所有记忆条目，生成一个精简的摘要文件。
+			if (!historyEntry || typeof historyEntry !== 'string') {
+				return 'Error: history_entry 参数是必需的，且必须是字符串';
+			}
 
-使用场景：
-- 系统提示需要压缩时
-- 记忆条目过多时（超过 10 条）
+			if (!context.app) {
+				return 'Error: Obsidian App 实例不可用';
+			}
 
-注意：这是一个耗时操作，谨慎使用。`,
-    parameters: {
-      type: 'object',
-      properties: {},
-      required: [],
-    },
-  },
-};
+			const store = new MemoryStore(context.app);
 
-/**
- * 创建 add_memory 工具执行器
- */
-export function createAddMemoryTool(app: any): ToolExecutor {
-  return {
-    definition: addMemoryDefinition,
-    async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-      const content = args.content as string;
-      const category = args.category as string | undefined;
+			try {
+				// 1. 追加历史条目
+				await store.appendHistory(historyEntry);
 
-      if (!content || typeof content !== 'string') {
-        return 'Error: content 参数是必需的，且必须是字符串';
-      }
+				// 2. 更新长期记忆（如果有）
+				if (memoryUpdate) {
+					const existingMemory = await store.readLongTermMemory();
+					const timestamp = new Date().toISOString().split('T')[0];
 
-      if (!context.app) {
-        return 'Error: Obsidian App 实例不可用';
-      }
+					if (existingMemory) {
+						// 追加更新
+						const updatedMemory = `${existingMemory.trim()}\n\n### ${timestamp}\n${memoryUpdate}`;
+						await store.writeLongTermMemory(updatedMemory);
+					} else {
+						// 创建新的记忆文件
+						const newMemory = `# 长期记忆
 
-      const loader = new ContextLoader(context.app);
+此文件存储关于用户的重要信息，会在对话中自动更新。
 
-      try {
-        // 添加分类标签（如果有）
-        const entryContent = category
-          ? `[${category}] ${content}`
-          : content;
+---
 
-        const success = await loader.addMemoryEntry(entryContent);
+### ${timestamp}
+${memoryUpdate}
 
-        if (success) {
-          // 检查是否需要摘要
-          const needsSummary = await loader.needsSummarization();
-          if (needsSummary) {
-            log('[add_memory] 记忆条目已达阈值，建议触发摘要');
-            return `记忆已保存。提示：记忆条目已较多，可以考虑使用 summarize_memory 工具压缩记忆。`;
-          }
-          return '记忆已成功保存。';
-        } else {
-          return '保存记忆失败，请稍后重试。';
-        }
-      } catch (err) {
-        error('[add_memory] 执行失败:', err);
-        return `保存记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    },
-  };
+---
+
+*此文件由 DeepReader Agent 自动维护，你也可以直接编辑*`;
+						await store.writeLongTermMemory(newMemory);
+					}
+				}
+
+				log('[save_memory] 记忆已保存');
+				return '记忆已成功保存。';
+			} catch (err) {
+				error('[save_memory] 执行失败:', err);
+				return `保存记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
+			}
+		},
+	};
 }
 
 /**
  * 创建 search_memory 工具执行器
  */
-export function createSearchMemoryTool(app: any): ToolExecutor {
-  return {
-    definition: searchMemoryDefinition,
-    async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-      const query = args.query as string;
+export function createSearchMemoryTool(_app: any): ToolExecutor {
+	return {
+		definition: searchMemoryDefinition,
+		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+			const query = args.query as string;
 
-      if (!query || typeof query !== 'string') {
-        return 'Error: query 参数是必需的，且必须是字符串';
-      }
+			if (!query || typeof query !== 'string') {
+				return 'Error: query 参数是必需的，且必须是字符串';
+			}
 
-      if (!context.app) {
-        return 'Error: Obsidian App 实例不可用';
-      }
+			if (!context.app) {
+				return 'Error: Obsidian App 实例不可用';
+			}
 
-      const loader = new ContextLoader(context.app);
+			const store = new MemoryStore(context.app);
 
-      try {
-        const results = await loader.searchMemory(query);
+			try {
+				// 读取长期记忆
+				const longTermMemory = await store.readLongTermMemory();
 
-        if (results.length === 0) {
-          return `未找到与 "${query}" 相关的记忆。`;
-        }
+				// 读取历史记录
+				const history = await store.readHistory(20);
 
-        return `找到 ${results.length} 条相关记忆：\n\n${results.map((r, i) => `--- 记忆 ${i + 1} ---\n${r}`).join('\n\n')}`;
-      } catch (err) {
-        error('[search_memory] 执行失败:', err);
-        return `搜索记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    },
-  };
-}
+				// 合并内容
+				const allContent = `${longTermMemory || ''}\n${history}`;
 
-/**
- * 创建 summarize_memory 工具执行器
- *
- * 注意：实际的摘要生成需要 LLM 参与，这里只做基础整合
- * 完整实现需要调用 LLM API 来生成摘要
- */
-export function createSummarizeMemoryTool(): ToolExecutor {
-  return {
-    definition: summarizeMemoryDefinition,
-    async execute(_args: Record<string, unknown>, context: ToolContext): Promise<string> {
-      if (!context.app) {
-        return 'Error: Obsidian App 实例不可用';
-      }
+				if (!allContent.trim()) {
+					return `未找到任何记忆内容。`;
+				}
 
-      try {
-        // 确保目录存在
-        await ensurePluginDataDirs(context.app);
+				// 简单关键词搜索
+				const keywords = query.toLowerCase().split(/\s+/);
+				const lines = allContent.split('\n');
+				const matches: string[] = [];
 
-        // 读取所有记忆条目（从插件数据目录）
-        const entriesDir = MEMORY_ENTRIES_DIR;
-        const exists = await context.app.vault.adapter.exists(entriesDir);
+				for (const line of lines) {
+					const lineLower = line.toLowerCase();
+					if (keywords.some((kw) => lineLower.includes(kw)) && line.trim().length > 10) {
+						matches.push(line.trim());
+					}
+				}
 
-        if (!exists) {
-          return '没有记忆条目需要摘要。';
-        }
+				if (matches.length === 0) {
+					return `未找到与 "${query}" 相关的记忆。`;
+				}
 
-        const files = await context.app.vault.adapter.list(entriesDir);
-        const mdFiles = files.files.filter((f: string) => f.endsWith('.md'));
+				// 去重并限制数量
+				const uniqueMatches = [...new Set(matches)].slice(0, 10);
 
-        if (mdFiles.length === 0) {
-          return '没有记忆条目需要摘要。';
-        }
-
-        // 读取所有条目内容
-        const entries: string[] = [];
-        for (const file of mdFiles) {
-          const content = await context.app.vault.adapter.read(file);
-          entries.push(content);
-        }
-
-        // 简单合并为摘要（实际应用中应该调用 LLM 生成）
-        const summaryContent = `# 记忆摘要
-
-> 生成时间: ${new Date().toISOString().split('T')[0]}
-> 条目数: ${entries.length}
-
-## 用户偏好
-
-${entries.join('\n\n')}
-
----
-*此摘要由系统自动生成，包含 ${entries.length} 条记忆条目*`;
-
-        // 写入摘要文件（到插件数据目录）
-        const summaryPath = `${MEMORY_DATA_DIR}/summary.md`;
-        await context.app.vault.adapter.write(summaryPath, summaryContent);
-
-        log('[summarize_memory] 摘要已生成，包含', entries.length, '条记忆');
-
-        return `记忆摘要已生成，整合了 ${entries.length} 条记忆条目。
-
-注意：当前使用简单合并方式生成摘要。如需更智能的摘要，可以考虑：
-1. 在后端实现 LLM 摘要服务
-2. 或者在前端使用 Agent 自身来生成摘要`;
-      } catch (err) {
-        error('[summarize_memory] 执行失败:', err);
-        return `生成摘要时出错: ${err instanceof Error ? err.message : String(err)}`;
-      }
-    },
-  };
+				return `找到 ${uniqueMatches.length} 条相关记忆：\n\n${uniqueMatches.map((m, i) => `${i + 1}. ${m}`).join('\n')}`;
+			} catch (err) {
+				error('[search_memory] 执行失败:', err);
+				return `搜索记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
+			}
+		},
+	};
 }
 
 // 导出工具定义（用于注册）
-export const addMemoryTool: ToolExecutor = {
-  definition: addMemoryDefinition,
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    // 这个默认导出需要 app 实例，实际使用时应该用 createAddMemoryTool
-    if (!context.app) {
-      return 'Error: Obsidian App 实例不可用';
-    }
-    return createAddMemoryTool(context.app).execute(args, context);
-  },
+export const saveMemoryTool: ToolExecutor = {
+	definition: saveMemoryDefinition,
+	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+		if (!context.app) {
+			return 'Error: Obsidian App 实例不可用';
+		}
+		return createSaveMemoryTool(context.app).execute(args, context);
+	},
 };
 
 export const searchMemoryTool: ToolExecutor = {
-  definition: searchMemoryDefinition,
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    if (!context.app) {
-      return 'Error: Obsidian App 实例不可用';
-    }
-    return createSearchMemoryTool(context.app).execute(args, context);
-  },
+	definition: searchMemoryDefinition,
+	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+		if (!context.app) {
+			return 'Error: Obsidian App 实例不可用';
+		}
+		return createSearchMemoryTool(context.app).execute(args, context);
+	},
 };
 
-export const summarizeMemoryTool: ToolExecutor = {
-  definition: summarizeMemoryDefinition,
-  async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    return createSummarizeMemoryTool().execute(args, context);
-  },
-};
+// 兼容旧名称（废弃，但保持向后兼容）
+export const addMemoryDefinition = saveMemoryDefinition;
+export const createAddMemoryTool = createSaveMemoryTool;
+export const addMemoryTool = saveMemoryTool;

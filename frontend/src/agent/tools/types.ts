@@ -43,6 +43,8 @@ export interface ToolContext {
   app?: App;
   /** 阅读进度信息 */
   readingProgress?: ReadingProgress;
+  /** 会话 ID（用于子任务关联） */
+  sessionId?: string;
 }
 
 /**
