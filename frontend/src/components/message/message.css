@@ -759,7 +759,7 @@
 
 /* Agent 消息状态文本（Badge 正下方） */
 .deeppdf-message-status-text {
-	font-size: 11px;
+	font-size: 12px;
 	color: var(--text-muted);
 	opacity: 0;
 	transition: opacity 0.2s ease;
@@ -771,6 +771,17 @@
 
 .deeppdf-message-status-text.visible {
 	opacity: 1;
+	animation: status-breathe 2s ease-in-out infinite;
+}
+
+/* 呼吸动画 - 泛白效果 */
+@keyframes status-breathe {
+	0%, 100% {
+		opacity: 0.6;
+	}
+	50% {
+		opacity: 1;
+	}
 }
 
 .deeppdf-message-status-text:empty {
