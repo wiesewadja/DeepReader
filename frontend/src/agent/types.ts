@@ -12,6 +12,8 @@ export interface ChatMessage {
   name?: string;
   /** 标记是否对用户隐藏（用于画像更新消息注入，不显示在界面但发送给 LLM） */
   hidden?: boolean;
+  /** 消息时间戳（ISO 格式） */
+  timestamp?: string;
 }
 
 export interface ToolCall {

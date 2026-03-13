@@ -300,13 +300,15 @@ export class SidebarView extends ItemView {
             return false; // 过滤掉 tool 和其他角色消息
         });
 
+        // 将过滤后的消息添加到 UI
         displayMessages.forEach((msg, index) => {
             try {
                 const msgData = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
                     content: msg.content || '',
-                    timestamp: new Date().toISOString(),
+                    // 使用消息本身的时间戳，如果没有则使用当前时间
+                    timestamp: msg.timestamp || new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
                 this.messageList!.addMessage(msgData);

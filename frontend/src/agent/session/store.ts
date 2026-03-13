@@ -353,6 +353,7 @@ export class SessionStore {
 						tool_call_id: msgLine.tool_call_id,
 						name: msgLine.name,
 						hidden: msgLine.hidden,
+						timestamp: msgLine.timestamp,
 					});
 				} catch (e) {
 					log(`[SessionStore] 解析消息行失败: ${i}`, e);

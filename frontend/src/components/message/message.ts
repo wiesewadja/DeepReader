@@ -308,6 +308,8 @@ export interface MessageData {
 	conversationId?: string;
 	/** 可选：是否隐藏（用于画像更新消息，不显示但发送给 LLM） */
 	hidden?: boolean;
+	/** 可选：是否折叠（用于长消息的折叠显示） */
+	collapsed?: boolean;
 }
 
 
@@ -811,6 +813,8 @@ export class AIMessage extends Message {
 	private selectionMenu: SelectionMenu | null = null;
 	// 状态文本元素引用
 	private statusEl: HTMLElement | null = null;
+	// 折叠状态
+	private isCollapsed: boolean = false;
 
 	constructor(
 		data: MessageData,
@@ -861,6 +865,22 @@ export class AIMessage extends Message {
 			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
 		}
 
+		// 右侧折叠按钮（非流式时显示）
+		if (!this.data.isStreaming) {
+			const rightContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-right' });
+			const collapseBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-collapse-btn' });
+			if (this.isCollapsed) {
+				// 展开图标（向下箭头）
+				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+				collapseBtn.title = "展开";
+			} else {
+				// 折叠图标（向上箭头）
+				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+				collapseBtn.title = "折叠";
+			}
+			collapseBtn.addEventListener('click', () => this.toggleCollapse());
+		}
+
 		// Agent 工具调用
 		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
 			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tools' });
@@ -892,6 +912,11 @@ export class AIMessage extends Message {
 
 		// 消息内容
 		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
+
+		// 应用折叠状态
+		if (this.isCollapsed) {
+			content.addClass('deeppdf-message-collapsed');
+		}
 
 		// 如果正在流式传输且内容为空，显示加载动画
 		if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
@@ -1302,7 +1327,7 @@ export class AIMessage extends Message {
 		if (hasActions || isAssistant) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
 
-			// AI 消息：在开头添加"跳转到顶部"按钮
+			// AI 消息：添加"跳转到顶部"按钮
 			if (isAssistant) {
 				const scrollToTopBtn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
 				// Icon: Arrow Up
@@ -1362,6 +1387,41 @@ export class AIMessage extends Message {
 				behavior: 'smooth'
 			});
 		}
+	}
+
+	/**
+	 * 切换折叠状态
+	 */
+	private toggleCollapse(): void {
+		this.isCollapsed = !this.isCollapsed;
+
+		if (!this.el) return;
+
+		// 获取内容元素
+		const contentEl = this.el.querySelector('.deeppdf-message-content');
+		if (contentEl) {
+			if (this.isCollapsed) {
+				contentEl.addClass('deeppdf-message-collapsed');
+			} else {
+				contentEl.removeClass('deeppdf-message-collapsed');
+			}
+		}
+
+		// 更新头部折叠按钮图标和提示
+		const collapseBtn = this.el.querySelector('.deeppdf-message-collapse-btn');
+		if (collapseBtn) {
+			if (this.isCollapsed) {
+				// 展开图标（向下箭头）
+				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
+				collapseBtn.setAttribute('title', "展开");
+			} else {
+				// 折叠图标（向上箭头）
+				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
+				collapseBtn.setAttribute('title', "折叠");
+			}
+		}
+
+		log(`[DeepPDF] Message collapsed: ${this.isCollapsed}`);
 	}
 
 	/**

@@ -1477,11 +1477,13 @@
 	border-radius: 2px;
 }
 
-/* Agent 消息头部行（包含左侧容器） */
+/* Agent 消息头部行（包含左侧容器和右侧按钮） */
 .deeppdf-message-header-row {
 	display: flex;
-	flex-direction: column;
-	gap: 4px;
+	flex-direction: row;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 8px;
 	margin-bottom: 8px;
 }
 
@@ -1541,6 +1543,62 @@
 
 .deeppdf-message-status-text:empty {
 	display: none;
+}
+
+/* ==================== 消息头部右侧 ==================== */
+
+.deeppdf-message-header-right {
+	margin-left: auto;
+	display: flex;
+	align-items: flex-start;
+	padding-top: 2px;
+}
+
+/* 折叠按钮 */
+.deeppdf-message-collapse-btn {
+	background: transparent;
+	border: none;
+	padding: 4px;
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0.5;
+	transition: opacity 0.15s ease, color 0.15s ease;
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.deeppdf-message-collapse-btn:hover {
+	opacity: 1;
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.deeppdf-message-collapse-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ==================== 消息折叠 ==================== */
+
+/* 折叠状态的内容 */
+.deeppdf-message-collapsed {
+	max-height: 80px !important;
+	overflow: hidden !important;
+	position: relative;
+}
+
+/* 折叠时的渐变遮罩 */
+.deeppdf-message-collapsed::after {
+	content: '';
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 40px;
+	background: linear-gradient(to bottom, transparent, var(--deeppdf-bg-card));
+	pointer-events: none;
 }
 /**
  * DeepPDF 消息列表组件样式
