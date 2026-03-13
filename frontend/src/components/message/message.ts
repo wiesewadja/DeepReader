@@ -429,11 +429,6 @@ function extractSectionByBlockRef(content: string, blockRef: string): string {
 function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false, observers?: MutationObserver[]): ((e: Event) => void) | null {
 	const links = contentEl.querySelectorAll('a.internal-link');
 
-	// 用于 Command 键的原生预览
-	const hoverParentContainer: HoverParent = {
-		hoverPopover: null
-	};
-
 	// 用于自定义预览
 	let customPopover: HTMLElement | null = null;
 	let showTimer: number | null = null;
@@ -458,6 +453,25 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 	links.forEach(link => {
 		const href = link.getAttr('href');
 		if (!href) return;
+
+		// 检测链接指向的文件是否存在于 vault 中
+		// href 格式可能为: filename#heading 或 filename|displaytext#heading
+		// 需要先移除 | 后的显示文本，再移除 # 后的块引用
+		let linkPath = href;
+		// 移除显示文本（| 后面的部分）
+		if (linkPath.includes('|')) {
+			linkPath = linkPath.split('|')[0];
+		}
+		// 移除块引用（# 后面的部分）
+		if (linkPath.includes('#')) {
+			linkPath = linkPath.split('#')[0];
+		}
+
+		const linkedFile = app.metadataCache.getFirstLinkpathDest(linkPath, '');
+		if (!linkedFile) {
+			// 文件不存在，添加 is-unresolved 类（Obsidian 原生支持的类名）
+			link.addClass('is-unresolved');
+		}
 
 		// 移除浏览器原生的 title tooltip，避免双重提示
 		link.removeAttribute('title');
@@ -497,7 +511,7 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 			return;
 		}
 
-		// 处理悬停事件
+		// 处理悬停事件 - 默认使用 Obsidian 原生 hover preview
 		link.addEventListener('mouseenter', (event: MouseEvent) => {
 			log('[DeepPDF] mouseenter on link:', href);
 
@@ -511,168 +525,27 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 				hideTimer = null;
 			}
 
-			// 如果按住了 Command/Ctrl 键，使用原生预览
-			if (event.metaKey || event.ctrlKey) {
-				log('[DeepPDF] Command key pressed, using native preview');
-				cleanupPopover();
-				// 触发 Obsidian 原生 hover preview
-				app.workspace.trigger('hover-link', {
-					event: event,
-					source: 'deeppdf',
-					hoverParent: hoverParentContainer,
-					targetEl: link,
-					linktext: href
-				});
-				return;
-			}
+			// 清理自定义 popover
+			cleanupPopover();
 
-			log('[DeepPDF] No Command key, showing custom preview in 200ms');
+			// 创建一个有效的 HoverParent 对象
+			// Obsidian 的 hover-link 事件需要一个实现了 HoverParent 接口的对象
+			const hoverParent: HoverParent = {
+				hoverPopover: null
+			};
 
-			// 否则显示自定义章节预览
-			showTimer = window.setTimeout(() => {
-				// 提取纯文件名（去掉块引用部分）
-				const pureFileName = href.split('#')[0];
-				log('[DeepPDF] Pure file name:', pureFileName);
-
-				// 提取块引用 ID（如果有）
-				const blockRefMatch = href.match(/#\^([a-z0-9-]+)/);
-				const blockRef = blockRefMatch ? blockRefMatch[1] : null;
-				log('[DeepPDF] Block reference:', blockRef);
-
-				// 获取链接目标文件
-				const linkPath = app.metadataCache.getFirstLinkpathDest(pureFileName, '');
-				if (!linkPath) {
-					log('[DeepPDF] Link path not found for:', pureFileName);
-					return;
-				}
-
-				log('[DeepPDF] Reading file:', linkPath.path);
-
-				// 移除之前的 popover
-				cleanupPopover();
-
-				// 读取文件内容
-				app.vault.read(linkPath).then((content: string) => {
-					log('[DeepPDF] File content loaded, length:', content.length);
-					log('[DeepPDF] First 500 chars:', content.substring(0, 500));
-
-					// 提取特定章节内容（如果有块引用）
-					let contentToRender = content;
-					if (blockRef) {
-						const sectionContent = extractSectionByBlockRef(content, blockRef);
-						if (sectionContent) {
-							contentToRender = sectionContent;
-							log('[DeepPDF] Section content extracted, length:', sectionContent.length);
-							log('[DeepPDF] Section preview:', sectionContent.substring(0, 200));
-						} else {
-							log('[DeepPDF] Block reference not found, showing full content');
-						}
-					}
-
-					// 创建 popover 容器
-					const popover = document.createElement('div');
-					popover.addClass('deeppdf-hover-preview');
-
-					// 创建内容区域
-					const popoverContent = popover.createEl('div', {
-						cls: 'deeppdf-hover-preview-content'
-					});
-
-					// 使用 Markdown 渲染内容
-					MarkdownRenderer.render(app, contentToRender, popoverContent, linkPath.path, new Component());
-
-					// 渲染后移除 popover 内部所有链接的 title 属性，避免原生 tooltip
-					popoverContent.querySelectorAll('a').forEach((renderedLink: Element) => {
-						(renderedLink as HTMLElement).removeAttribute('title');
-					});
-
-					// 先添加到 DOM（隐藏状态）
-					popover.style.visibility = 'hidden';
-					popover.style.position = 'fixed';
-					popover.style.left = '0';
-					popover.style.top = '0';
-					document.body.appendChild(popover);
-
-					log('[DeepPDF] Popover added to DOM');
-
-					// 计算位置
-					const linkRect = link.getBoundingClientRect();
-					const popoverRect = popover.getBoundingClientRect();
-
-					log('[DeepPDF] linkRect:', linkRect, 'popoverRect:', popoverRect);
-
-					let top = linkRect.bottom + 8;
-					let left = linkRect.left;
-
-					// 确保不超出视口
-					if (left + popoverRect.width > window.innerWidth - 16) {
-						left = Math.max(16, window.innerWidth - popoverRect.width - 16);
-					}
-
-					// 如果下方空间不足，显示在上方
-					if (top + popoverRect.height > window.innerHeight - 16) {
-						top = linkRect.top - popoverRect.height - 8;
-						if (top < 16) top = 16;
-					}
-
-					// 设置最终位置并显示
-					popover.style.left = `${left}px`;
-					popover.style.top = `${top}px`;
-					popover.style.visibility = 'visible';
-					popover.style.zIndex = '10000';
-
-					log('[DeepPDF] Popover positioned at:', top, left);
-
-					customPopover = popover;
-				}).catch((err) => {
-					logError('[DeepPDF] Failed to read file for hover preview:', err);
-				});
-			}, 200); // 200ms 延迟
-		});
-
-		// 处理鼠标离开
-		link.addEventListener('mouseleave', () => {
-			// 清除显示定时器
-			if (showTimer) {
-				window.clearTimeout(showTimer);
-				showTimer = null;
-			}
-
-			// 延迟隐藏自定义预览
-			hideTimer = window.setTimeout(() => {
-				cleanupPopover();
-			}, 300);
+			// 触发 Obsidian 原生 hover preview（支持所有文件类型，包括 Canvas）
+			app.workspace.trigger('hover-link', {
+				event: event,
+				source: 'deeppdf',
+				hoverParent: hoverParent,
+				targetEl: link,
+				linktext: href
+			});
 		});
 	});
 
-	// 全局 mouseover 处理 - 允许用户移动到自定义 popover 上
-	const mouseoverHandler = (e: Event) => {
-		const target = e.target as HTMLElement;
-
-		// 如果鼠标在自定义 popover 上，取消隐藏
-		if (target.closest('.deeppdf-hover-preview')) {
-			if (hideTimer) {
-				window.clearTimeout(hideTimer);
-				hideTimer = null;
-			}
-			return;
-		}
-
-		// 如果鼠标离开 popover 且不在链接上，延迟隐藏
-		if (customPopover && !target.closest('.deeppdf-hover-preview') && !target.closest('a.internal-link')) {
-			if (hideTimer) {
-				window.clearTimeout(hideTimer);
-			}
-			hideTimer = window.setTimeout(() => {
-				cleanupPopover();
-			}, 300);
-		}
-	};
-
-	document.addEventListener('mouseover', mouseoverHandler);
-
-	// 返回 mouseover 处理器，用于后续清理
-	return mouseoverHandler;
+	return null;
 }
 
 /**

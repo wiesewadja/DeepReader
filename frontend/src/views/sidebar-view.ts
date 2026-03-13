@@ -286,10 +286,19 @@ export class SidebarView extends ItemView {
 
         log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length, 'lastConsolidated:', session.lastConsolidated);
 
-        // 1. 恢复消息到 UI（过滤掉 tool 消息，只显示 user 和 assistant）
-        const displayMessages = session.messages.filter(msg =>
-            msg.role === 'user' || msg.role === 'assistant'
-        );
+        // 1. 恢复消息到 UI
+        // 过滤规则：
+        // - user 消息：全部显示
+        // - assistant 消息：只显示最终回复（没有 tool_calls 的），过滤掉中间过程消息
+        const displayMessages = session.messages.filter(msg => {
+            if (msg.role === 'user') return true;
+            if (msg.role === 'assistant') {
+                // 过滤掉带有 tool_calls 的中间消息（这些是工具调用前的思考/动作消息）
+                // 只显示最终的 assistant 回复（没有 tool_calls 的）
+                return !msg.tool_calls || msg.tool_calls.length === 0;
+            }
+            return false; // 过滤掉 tool 和其他角色消息
+        });
 
         displayMessages.forEach((msg, index) => {
             try {
