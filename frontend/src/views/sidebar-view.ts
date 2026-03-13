@@ -285,14 +285,11 @@ export class SidebarView extends ItemView {
             return false;
         }
 
-        log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length);
+        log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length, 'lastConsolidated:', session.lastConsolidated);
 
-        // 恢复消息到 UI
-        const chatMessages: import("../agent/types.js").ChatMessage[] = [];
-
+        // 1. 恢复全部消息到 UI
         session.messages.forEach((msg, index) => {
             try {
-                // 构建 MessageData 格式（ChatMessage 没有 id/timestamp，需要生成）
                 const msgData = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
@@ -300,29 +297,21 @@ export class SidebarView extends ItemView {
                     timestamp: new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
-
                 this.messageList!.addMessage(msgData);
-
-                // 同时构建 ChatMessage 格式（用于 agentChatHistory）
-                if (msg.role === 'user' || msg.role === 'assistant') {
-                    chatMessages.push({
-                        role: msg.role,
-                        content: msg.content || '',
-                    });
-                }
             } catch (e) {
                 warn(`[DeepPDF] Failed to restore message:`, e);
             }
         });
 
-        // 恢复 agentChatHistory（前面加上 system 消息）
-        if (chatMessages.length > 0 && this.frontendAgent) {
+        // 2. 使用 getLLMHistory() 加载 LLM 上下文（只加载未整合消息）
+        if (this.frontendAgent) {
+            const llmHistory = await this.sessionStore!.getLLMHistory(sessionId);
             const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
             this.agentChatHistory = [
                 { role: 'system', content: systemPrompt },
-                ...chatMessages
+                ...llmHistory
             ];
-            log('[DeepPDF] 恢复 agentChatHistory，消息数:', this.agentChatHistory.length);
+            log('[DeepPDF] 恢复 agentChatHistory (LLM), 未整合消息数:', llmHistory.length, '总历史数:', session.messages.length);
         }
 
         return true;
