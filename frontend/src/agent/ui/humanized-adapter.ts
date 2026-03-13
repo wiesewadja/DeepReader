@@ -36,6 +36,15 @@ export class HumanizedProgressAdapter {
 	private maxIterations: number = 10;
 	/** 当前运行中工具的 ID 映射（工具名 -> ID 列表） */
 	private runningByTool: Map<string, string[]> = new Map();
+	/** markdown 文件映射（node_id -> 文件路径） */
+	private markdownFiles?: Record<string, string>;
+
+	/**
+	 * 设置 markdown 文件映射
+	 */
+	setMarkdownFiles(files: Record<string, string> | undefined): void {
+		this.markdownFiles = files;
+	}
 
 	/**
 	 * 记录工具调用开始
@@ -170,6 +179,7 @@ export class HumanizedProgressAdapter {
 	 */
 	private determineMainAction(): AgentAction {
 		const runningTools = this.toolCalls.filter((t) => t.status === 'running');
+		const context = { markdownFiles: this.markdownFiles };
 
 		if (runningTools.length > 0) {
 			const tool = runningTools[runningTools.length - 1];
@@ -180,20 +190,20 @@ export class HumanizedProgressAdapter {
 				tool.name.includes('get_chapter') ||
 				tool.name.includes('toc')
 			) {
-				return { type: 'reading', detail: actionFn?.(tool.args) || '阅读中...' };
+				return { type: 'reading', detail: actionFn?.(tool.args, context) || '阅读中...' };
 			}
 
 			if (tool.name.includes('memory')) {
-				return { type: 'thinking', detail: actionFn?.(tool.args) || '回忆中...' };
+				return { type: 'thinking', detail: actionFn?.(tool.args, context) || '回忆中...' };
 			}
 
 			if (tool.name.includes('note') || tool.name.includes('write')) {
-				return { type: 'writing', detail: actionFn?.(tool.args) || '整理中...' };
+				return { type: 'writing', detail: actionFn?.(tool.args, context) || '整理中...' };
 			}
 
 			// 默认使用工具名对应的动作
 			if (actionFn) {
-				return { type: 'reading', detail: actionFn(tool.args) };
+				return { type: 'reading', detail: actionFn(tool.args, context) };
 			}
 		}
 
@@ -208,9 +218,10 @@ export class HumanizedProgressAdapter {
 	 * 生成阅读步骤列表
 	 */
 	private generateReadingSteps(): ReadingProgressItem[] {
+		const context = { markdownFiles: this.markdownFiles };
 		return this.toolCalls.map((tool) => {
 			const actionFn = TOOL_TO_ACTION[tool.name];
-			const action = actionFn?.(tool.args) || tool.name;
+			const action = actionFn?.(tool.args, context) || tool.name;
 
 			let status: ReadingProgressItem['status'] = 'pending';
 			if (tool.status === 'completed') status = 'done';

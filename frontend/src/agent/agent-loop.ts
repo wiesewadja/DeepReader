@@ -232,7 +232,7 @@ function manageMessageHistory(messages: ChatMessage[]): ChatMessage[] {
  * 1. 调用 LLM with tools
  * 2. 如果返回 tool_calls，执行工具并循环
  * 3. 如果返回 stop，结束循环
- * 4. 最多执行 10 轮
+ * 4. 最多执行 20 轮
  */
 export async function runAgentLoop(
   client: LLMClient,
@@ -242,7 +242,7 @@ export async function runAgentLoop(
   context: ToolContext,
   options: AgentLoopOptions
 ): Promise<ChatMessage[]> {
-  const maxIterations = options.maxIterations || 10;
+  const maxIterations = options.maxIterations || 20;
   let iterations = 0;
   let workingMessages = [...messages];
   let hadError = false; // 跟踪是否发生了错误
@@ -251,6 +251,11 @@ export async function runAgentLoop(
   const humanizer = options.onHumanizedProgress
     ? new HumanizedProgressAdapter()
     : null;
+
+  // 设置 markdown 文件映射（用于显示章节名称）
+  if (humanizer && context.markdownFiles) {
+    humanizer.setMarkdownFiles(context.markdownFiles);
+  }
 
   // 🕐 总计时
   const totalStartTime = Date.now();

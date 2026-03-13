@@ -307,6 +307,18 @@ export class SidebarView extends ItemView {
             }
         });
 
+        // 如果最后一条消息是 user 消息（没有对应的 assistant 回复），添加空的 AI 占位气泡
+        if (displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === 'user') {
+            this.messageList!.addMessage({
+                id: `restored-placeholder-${Date.now()}`,
+                role: 'assistant' as MessageRole,
+                content: '',
+                timestamp: new Date().toISOString(),
+                isAgentMessage: true
+            });
+            log('[DeepPDF] 添加空的 AI 占位气泡，方便用户重试');
+        }
+
         // 2. 使用 getLLMHistory() 加载 LLM 上下文（只加载未整合消息）
         if (this.frontendAgent) {
             const llmHistory = await this.sessionStore!.getLLMHistory(sessionId);

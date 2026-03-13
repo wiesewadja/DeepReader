@@ -43,11 +43,40 @@ export interface HumanizedProgress {
 }
 
 /**
- * 工具名称到拟人化动作的映射
+ * 从 markdown 文件路径中提取章节名称
+ * 例如: "如何阅读一本书/05-第二章 阅读的层次.md" -> "第二章 阅读的层次"
  */
-export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>) => string> = {
+function extractChapterNameFromPath(path: string): string | null {
+	const filename = path.split('/').pop() || '';
+	// 移除扩展名
+	const nameWithoutExt = filename.replace(/\.md$/, '');
+	// 尝试提取章节名（格式: "数字-章节名" 或 "数字_章节名"）
+	const match = nameWithoutExt.match(/^\d+[-_](.+)$/);
+	if (match) {
+		return match[1];
+	}
+	// 如果没有数字前缀，直接返回名称
+	return nameWithoutExt || null;
+}
+
+/**
+ * 工具名称到拟人化动作的映射
+ * @param args 工具参数
+ * @param context 可选的上下文信息（包含 markdownFiles 映射）
+ */
+export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, context?: { markdownFiles?: Record<string, string> }) => string> = {
 	search_doc: (args) => `搜索「${String(args.query || '相关内容').slice(0, 20)}」`,
-	get_chapter: (args) => `翻阅「${String(args.chapter || '章节')}」`,
+	get_chapter: (args, context) => {
+		const nodeId = String(args.node_id || '');
+		// 尝试从 markdownFiles 中获取章节名称
+		if (context?.markdownFiles && nodeId && context.markdownFiles[nodeId]) {
+			const chapterName = extractChapterNameFromPath(context.markdownFiles[nodeId]);
+			if (chapterName) {
+				return `翻阅「${chapterName}」`;
+			}
+		}
+		return `翻阅章节`;
+	},
 	get_toc: () => '浏览目录结构',
 	search_read_books: (args) => `在已读书中查找「${String(args.query || '相关内容').slice(0, 15)}」`,
 	add_memory: () => '记下这个要点',
