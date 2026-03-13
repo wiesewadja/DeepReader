@@ -516,6 +516,17 @@ export class SidebarView extends ItemView {
 
                 if (newLastConsolidated > session.lastConsolidated) {
                     log(`[DeepPDF] 记忆整合完成: ${session.lastConsolidated} -> ${newLastConsolidated}`);
+
+                    // 关键：整合后刷新 agentChatHistory（只保留未整合消息）
+                    const newLLMHistory = await this.sessionStore!.getLLMHistory(this.sessionId!);
+                    if (this.frontendAgent && newLLMHistory.length >= 0) {
+                        const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
+                        this.agentChatHistory = [
+                            { role: 'system', content: systemPrompt },
+                            ...newLLMHistory
+                        ];
+                        log(`[DeepPDF] agentChatHistory 已刷新，当前消息数: ${this.agentChatHistory.length}`);
+                    }
                 }
             } finally {
                 this.sessionStore.releaseLock(this.sessionId);
