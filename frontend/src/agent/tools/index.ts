@@ -14,6 +14,7 @@ import { addMemoryTool, searchMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
 import { updateFamiliarityTool } from './familiarity.js';
 import { searchReadBooksTool } from './search-read-books.js';
+import { createCanvasTool } from './canvas.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
 
@@ -34,6 +35,7 @@ export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool }
 export { updateProfileTool } from './profile.js';
 export { updateFamiliarityTool } from './familiarity.js';
 export { searchReadBooksTool } from './search-read-books.js';
+export { createCanvasTool } from './canvas.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -72,6 +74,11 @@ export function createToolRegistry(
 
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);
+
+  // 注册 Canvas 工具（需要 Obsidian App 实例）
+  if (context.app) {
+    registry.set('canvas', createCanvasTool(context.app));
+  }
 
   toolsLog('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 

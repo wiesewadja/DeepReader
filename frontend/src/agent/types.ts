@@ -33,6 +33,7 @@ export interface ToolParameterProperty {
   items?: ToolParameterProperty;
   properties?: Record<string, ToolParameterProperty>;
   required?: string[];
+  default?: unknown;
 }
 
 export interface ToolDefinition {

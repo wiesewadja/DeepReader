@@ -5,7 +5,8 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
-            '@tests': path.resolve(__dirname, './tests')
+            '@tests': path.resolve(__dirname, './tests'),
+            'obsidian': path.resolve(__dirname, './tests/__mocks__/obsidian.ts')
         }
     },
     test: {
@@ -19,8 +20,5 @@ export default defineConfig({
                 singleThread: true
             }
         }
-    },
-    define: {
-        'obsidian': '{}'
     }
 });
