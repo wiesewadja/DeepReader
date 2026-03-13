@@ -45,6 +45,12 @@ export interface ToolContext {
   readingProgress?: ReadingProgress;
   /** 会话 ID（用于子任务关联） */
   sessionId?: string;
+  /** 文档元数据（用于 ContextBuilder） */
+  documentMetadata?: {
+    title?: string;
+    page_count?: number;
+    author?: string;
+  };
 }
 
 /**

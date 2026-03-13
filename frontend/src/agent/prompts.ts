@@ -109,6 +109,12 @@ function buildUserContextSection(userContext?: UserContext): string {
 	return sections.join('\n');
 }
 
+/**
+ * @deprecated 使用 ContextBuilder.buildSystemPrompt 替代
+ *
+ * 此函数不再被 FrontendAgent 使用，保留仅为了向后兼容。
+ * 新代码应使用 ContextBuilder 获得分层系统提示支持。
+ */
 export function buildSystemPrompt(skillLoader: SkillLoader, userContext?: UserContext): string {
   const skillDescriptions = skillLoader.getDescriptions();
   const userContextSection = buildUserContextSection(userContext);

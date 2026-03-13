@@ -254,7 +254,7 @@ export class SidebarView extends ItemView {
 
 
     /** 恢复历史记录到视图 */
-    private restoreHistoryToView(history: any[], fromCache: boolean = false) {
+    private async restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
 
         // 同时恢复 agentChatHistory
@@ -304,7 +304,7 @@ export class SidebarView extends ItemView {
 
         // 恢复 agentChatHistory（前面加上 system 消息）
         if (chatMessages.length > 0 && this.frontendAgent) {
-            const systemPrompt = this.frontendAgent.getSystemPrompt();
+            const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
             this.agentChatHistory = [
                 { role: 'system', content: systemPrompt },
                 ...chatMessages
@@ -707,7 +707,7 @@ export class SidebarView extends ItemView {
                 // 1. 尝试从本地缓存恢复
                 const cached = this.plugin.settings.chatCache?.[savedSessionId];
                 if (cached && cached.messages && cached.messages.length > 0) {
-                    this.restoreHistoryToView(cached.messages, true);
+                    await this.restoreHistoryToView(cached.messages, true);
                     // new Notice(`已恢复对话 (本地缓存)`);
                     return;
                 }
@@ -715,7 +715,7 @@ export class SidebarView extends ItemView {
                 // 2. 从后端恢复
                 const history = await agentAPI.getHistory(indexId, savedSessionId);
                 if (history && history.length > 0) {
-                    this.restoreHistoryToView(history, false);
+                    await this.restoreHistoryToView(history, false);
                     //new Notice(`已恢复对话`);
                 } else {
                     this.showWelcomeMessage();
@@ -1396,7 +1396,7 @@ export class SidebarView extends ItemView {
                     if (cached && cached.messages && cached.messages.length > 0) {
                         log(`[DeepPDF] 切换到单书籍模式，恢复会话: ${cached.messages.length} 条消息`);
                         this.sessionId = savedSessionId;
-                        this.restoreHistoryToView(cached.messages, true);
+                        await this.restoreHistoryToView(cached.messages, true);
                         new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
                         return;
                     }
@@ -2093,6 +2093,9 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                 })()),
                 abortSignal: this.streamController.signal,
             };
+
+            // 初始化 SubagentManager（用于 create_sub_agent 工具）
+            this.frontendAgent.setupSubagentManager(context);
 
             // 根据是否有历史选择不同的方法
             let updatedHistory: import("../agent/types.js").ChatMessage[];
