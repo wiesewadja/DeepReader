@@ -287,8 +287,12 @@ export class SidebarView extends ItemView {
 
         log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length, 'lastConsolidated:', session.lastConsolidated);
 
-        // 1. 恢复全部消息到 UI
-        session.messages.forEach((msg, index) => {
+        // 1. 恢复消息到 UI（过滤掉 tool 消息，只显示 user 和 assistant）
+        const displayMessages = session.messages.filter(msg =>
+            msg.role === 'user' || msg.role === 'assistant'
+        );
+
+        displayMessages.forEach((msg, index) => {
             try {
                 const msgData = {
                     id: `restored-${Date.now()}-${index}`,
@@ -326,17 +330,20 @@ export class SidebarView extends ItemView {
 
         if (fromCache) {
             // 从缓存恢复，直接使用 MessageData
-            history.forEach(msgData => {
+            // 过滤掉 tool 消息（中间过程数据，不需要显示）
+            const displayMessages = history.filter(msgData =>
+                msgData.role === 'user' || msgData.role === 'assistant'
+            );
+
+            displayMessages.forEach(msgData => {
                 try {
                     this.messageList!.addMessage(msgData);
 
                     // 同时构建 ChatMessage 格式
-                    if (msgData.role === 'user' || msgData.role === 'assistant') {
-                        chatMessages.push({
-                            role: msgData.role,
-                            content: msgData.content,
-                        });
-                    }
+                    chatMessages.push({
+                        role: msgData.role,
+                        content: msgData.content,
+                    });
                 } catch (e) {
                     warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
                 }
@@ -399,13 +406,26 @@ export class SidebarView extends ItemView {
 
         // 1. 从 agentChatHistory 获取完整消息（包括 tool 消息）
         // 排除 system 消息（每次动态生成）和占位消息
-        const messagesToSave = this.agentChatHistory.filter(m =>
-            m.role !== 'system' &&
-            m.content && // 确保有内容
-            !m.content.includes("已切换到书籍") &&
-            m.content !== "📖 正在翻阅..." &&
-            m.content !== "🔍 正在跨书籍查阅..."
-        );
+        // 同时剥离用户消息中的运行时上下文（不持久化）
+        const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
+        const messagesToSave = this.agentChatHistory
+            .filter(m =>
+                m.role !== 'system' &&
+                m.content && // 确保有内容
+                !m.content.includes("已切换到书籍") &&
+                m.content !== "📖 正在翻阅..." &&
+                m.content !== "🔍 正在跨书籍查阅..."
+            )
+            .map(m => {
+                // 剥离用户消息中的运行时上下文
+                if (m.role === 'user' && m.content && RUNTIME_CONTEXT_PATTERN.test(m.content)) {
+                    return {
+                        ...m,
+                        content: m.content.replace(RUNTIME_CONTEXT_PATTERN, '')
+                    };
+                }
+                return m;
+            });
 
         log('[DeepPDF] saveToCache messagesToSave count:', messagesToSave.length);
         if (messagesToSave.length === 0) {
@@ -1965,30 +1985,12 @@ ${r.text}`;
                 }
             }
 
-            // 构建用户消息（包含引用内容和阅读进度）
+            // 构建用户消息
+            // 注意：运行时上下文（阅读进度等）由 FrontendAgent.buildMessages() 注入
+            // 这里只处理用户主动附加的引用内容
             let userMessage = query;
 
-            // 添加阅读进度上下文（如果有）
-            if (context.readingProgress) {
-                const progress = context.readingProgress;
-                // coverage 和 absorption 已经是 0-100 的百分比，直接使用
-                // 限制最大值避免异常数据
-                const coveragePercent = Math.min(100, progress.coverage || 0);
-                const absorptionPercent = Math.min(100, progress.absorption || 0);
-                const coveredChapters = Math.round((coveragePercent / 100) * progress.totalChapters);
-
-                const progressContext = `
-## 当前阅读进度
-- 书籍：${progress.bookName}
-- 覆盖度：${coveragePercent}%（已涉及 ${coveredChapters} / ${progress.totalChapters} 个章节）
-- 吸收度：${absorptionPercent}%
-- 总互动：${progress.totalInteractions} 次
-${progress.mostFamiliarChapter ? `- 最熟悉章节：第 ${progress.mostFamiliarChapter} 章` : ''}
-${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? `- 未涉及章节：第 ${progress.leastFamiliarChapters.slice(0, 5).join('、')} 章` : ''}
-`;
-                userMessage = `${progressContext}\n---\n\n${query}`;
-            }
-
+            // 添加引用内容（用户主动附加的上下文）
             if (quotes && quotes.length > 0) {
                 const quotesText = quotes.map(q => `> ${q.text}\n> — ${q.source || '引用'}`).join('\n\n');
                 userMessage = `${userMessage}\n\n---\n**引用内容：**\n${quotesText}`;
@@ -2120,8 +2122,8 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                     this.messageList?.updateMessage(aiMessageId, {
                         isStreaming: false
                     });
-                    // 保存到缓存
-                    this.saveToCache();
+                    // 注意：不在这里调用 saveToCache()，因为 agentChatHistory 还未更新
+                    // saveToCache() 将在 agentChatHistory 更新后调用
 
                     // 检查是否需要记忆整合（异步执行，不阻塞）
                     this.maybeConsolidateMemory();
@@ -2207,6 +2209,9 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
             // 更新对话历史
             this.agentChatHistory = updatedHistory;
             log('[DeepPDF] 对话历史已更新，消息数:', this.agentChatHistory.length);
+
+            // 保存到缓存（在 agentChatHistory 更新后调用）
+            await this.saveToCache();
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

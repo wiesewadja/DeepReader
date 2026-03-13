@@ -358,10 +358,22 @@ export async function runAgentLoop(
       // 调用内容完成回调（用于链接校验和熟悉度更新）
       if (options.onContentComplete && accumulatedContent) {
         try {
-          await options.onContentComplete(accumulatedContent);
+          const correctedContent = await options.onContentComplete(accumulatedContent);
+          // 如果回调返回了纠正后的内容，使用纠正后的版本
+          if (correctedContent && correctedContent !== accumulatedContent) {
+            accumulatedContent = correctedContent;
+          }
         } catch (err) {
           agentLog('[AgentLoop] onContentComplete 回调失败:', err);
         }
+      }
+
+      // 将最终的 assistant 消息添加到历史（关键：确保最终回复被保存）
+      if (accumulatedContent) {
+        workingMessages.push({
+          role: 'assistant',
+          content: accumulatedContent,
+        });
       }
 
       options.onComplete();

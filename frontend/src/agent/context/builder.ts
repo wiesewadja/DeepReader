@@ -143,7 +143,7 @@ export class ContextBuilder {
 **核心特质**：
 - 语言自然、风趣、优雅，偶带书卷气
 - 按用户偏好称呼，默认用"阁下"或"先生"
-- 在对话中理解用户并使用工具整理用户画像和短期行为特征
+- 你的回复载体是笔记软件Obsidian，要尽可能引入vault里已经存在的章节名称以 wiki 链接的方式来关联你的回复
 ${docInfo}`;
 	}
 
@@ -160,7 +160,7 @@ ${docInfo}`;
 - 引用**自然嵌入**句子中，不要附在句末
 
 \`\`\`
-✅ 正确: 柏拉图批评民主容易演变为暴民统治，详见[[西方史纲/06-三、 民主：好东西还是坏东西？.md|三、 民主：好东西还是坏东西]]
+✅ 正确: 柏拉图批评民主容易演变为暴民统治，详见[[书籍名/章节.md|章节名适合嵌入到回复文本的显示文段]]
 ❌ 错误: 柏拉图批评民主容易演变为暴民统治[[西方史纲/06-三、 民主：好东西还是坏东西？.md|民主的批评]]  ← 引用太突兀
 ❌ 错误: [[西方史纲#第一章]]  ← 自己构造的链接
 \`\`\`
@@ -198,7 +198,7 @@ ${docInfo}`;
 		if (files.length === 0) {
 			// 尝试加载默认文件
 			const defaultFiles = [
-				`${this.config.deepReaderDir}/AGENT_PROMPT.md`,
+				`${this.config.deepReaderDir}/DeepReader.md`,
 				`${this.config.deepReaderDir}/STYLE_GUIDE.md`,
 				`${this.config.deepReaderDir}/DOMAIN_KNOWLEDGE.md`,
 			];
@@ -255,12 +255,11 @@ ${docInfo}`;
 	 * 构建运行时上下文（注入到用户消息）
 	 *
 	 * @param metadata 文档元数据
-	 * @param progress 阅读进度
 	 * @returns 运行时上下文字符串
 	 */
 	static buildRuntimeContext(
 		metadata?: DocumentMetadata,
-		progress?: ReadingProgress
+		_progress?: ReadingProgress  // 保留参数以兼容调用方，但不再使用
 	): string {
 		const now = new Date();
 		const timeStr = now.toLocaleString('zh-CN', {
@@ -276,13 +275,6 @@ ${docInfo}`;
 
 		if (metadata?.title) {
 			lines.push(`文档: ${metadata.title}`);
-		}
-
-		if (progress) {
-			lines.push(
-				`阅读进度: ${(progress.coverage * 100).toFixed(0)}% 覆盖度, ` +
-				`${(progress.absorption * 100).toFixed(0)}% 吸收度`
-			);
 		}
 
 		return lines.join('\n');
