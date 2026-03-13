@@ -5162,113 +5162,104 @@
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
-/* Agent Humanized Status Styles */
+/* Agent Humanized Status Styles - 简化版 */
 
-.deepreader-agent-humanized {
-	padding: 16px;
-	margin: 12px 0;
-	background: linear-gradient(135deg, var(--background-secondary) 0%, var(--background-primary) 100%);
-	border-radius: 12px;
-	border-left: 3px solid var(--interactive-accent);
+/* 思考中状态 */
+.deepreader-thinking {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 16px;
+	margin: 8px 0;
+	color: var(--text-muted);
+	font-size: 14px;
 	animation: fadeIn 0.3s ease;
 }
 
 @keyframes fadeIn {
-	from { opacity: 0; transform: translateY(10px); }
-	to { opacity: 1; transform: translateY(0); }
+	from { opacity: 0; }
+	to { opacity: 1; }
 }
 
-/* 主动作区域 */
-.agent-action-area {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	font-size: 15px;
-	margin-bottom: 12px;
-}
-
-.action-icon {
+.thinking-icon {
 	font-size: 20px;
-	animation: bounce 1s infinite;
+	animation: bounce 1.5s infinite;
 }
 
 @keyframes bounce {
 	0%, 100% { transform: translateY(0); }
-	50% { transform: translateY(-3px); }
+	50% { transform: translateY(-4px); }
 }
 
-.action-text {
-	font-weight: 500;
-	color: var(--text-normal);
-}
-
-/* 打字效果 */
-.typing-text::after {
-	content: '▋';
-	animation: blink 0.8s infinite;
-	margin-left: 2px;
-}
-
-@keyframes blink {
-	0%, 50% { opacity: 1; }
-	51%, 100% { opacity: 0; }
-}
-
-/* 思考效果 */
 .thinking-text {
-	animation: pulse-opacity 2s infinite;
+	animation: pulse 2s infinite;
 }
 
-@keyframes pulse-opacity {
+@keyframes pulse {
 	0%, 100% { opacity: 1; }
 	50% { opacity: 0.6; }
 }
 
-/* 阅读进度区域 */
+/* 兼容旧版 class */
+.deepreader-agent-humanized {
+	padding: 12px 16px;
+	margin: 8px 0;
+	color: var(--text-muted);
+	font-size: 14px;
+	animation: fadeIn 0.3s ease;
+}
+
+.agent-action-area {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.action-icon {
+	font-size: 18px;
+	animation: bounce 1.5s infinite;
+}
+
+.action-text {
+	font-weight: 500;
+}
+
+/* 阅读进度区域 - 简化版 */
 .agent-reading-area {
 	background: var(--background-primary);
 	border-radius: 8px;
-	padding: 12px;
-	margin-bottom: 12px;
+	padding: 10px;
+	margin-bottom: 8px;
 }
 
 .reading-title {
-	font-size: 13px;
+	font-size: 12px;
 	color: var(--text-muted);
-	margin-bottom: 10px;
+	margin-bottom: 8px;
 }
 
 .reading-steps {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
-	margin-bottom: 10px;
+	gap: 4px;
 }
 
 .step-item {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	font-size: 13px;
-	padding: 4px 8px;
+	gap: 6px;
+	font-size: 12px;
+	padding: 2px 6px;
 	border-radius: 4px;
-	transition: all 0.3s ease;
 }
 
 .step-item.step-done {
 	color: var(--text-success);
-	background: var(--background-secondary);
 }
 
 .step-item.step-current {
 	color: var(--text-normal);
-	background: var(--interactive-accent-hover);
-	animation: highlight 1.5s infinite;
-}
-
-@keyframes highlight {
-	0%, 100% { background: var(--interactive-accent-hover); }
-	50% { background: var(--background-secondary); }
 }
 
 .step-item.step-pending {
@@ -5277,31 +5268,22 @@
 
 .step-status {
 	font-family: monospace;
-	width: 20px;
-	text-align: center;
-}
-
-.step-action {
-	flex: 1;
-}
-
-.step-duration {
-	font-size: 11px;
-	color: var(--text-faint);
+	width: 16px;
 }
 
 /* 进度条 */
 .progress-bar-container {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 8px;
+	margin-top: 8px;
 }
 
 .progress-bar {
 	flex: 1;
-	height: 6px;
+	height: 4px;
 	background: var(--background-modifier-border);
-	border-radius: 3px;
+	border-radius: 2px;
 	overflow: hidden;
 }
 
@@ -5310,46 +5292,31 @@
 	display: block;
 	height: 100%;
 	width: var(--progress, 0%);
-	background: linear-gradient(90deg, var(--interactive-accent), var(--text-accent));
-	border-radius: 3px;
-	transition: width 0.5s ease;
+	background: var(--interactive-accent);
+	transition: width 0.3s ease;
 }
 
 .progress-text {
-	font-size: 12px;
+	font-size: 11px;
 	color: var(--text-muted);
-	min-width: 35px;
-	text-align: right;
 }
 
-/* 思考气泡 */
+/* 思考气泡 - 简化版 */
 .agent-thought-bubble {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	padding: 10px 14px;
+	padding: 8px 12px;
 	background: var(--background-primary);
-	border-radius: 16px;
-	margin-bottom: 12px;
-	font-size: 14px;
+	border-radius: 12px;
+	margin-bottom: 8px;
+	font-size: 13px;
 	color: var(--text-muted);
 	font-style: italic;
-	position: relative;
-}
-
-.agent-thought-bubble::before {
-	content: '';
-	position: absolute;
-	left: 20px;
-	bottom: -8px;
-	width: 16px;
-	height: 16px;
-	background: var(--background-primary);
-	transform: rotate(45deg);
 }
 
 .thought-icon {
-	font-size: 18px;
+	font-size: 16px;
 }
 
 .thought-text {
@@ -5361,50 +5328,42 @@
 	50% { opacity: 1; }
 }
 
-/* 生成内容区域 */
+/* 生成内容区域 - 简化版 */
 .agent-content-area {
-	margin-top: 12px;
+	margin-top: 8px;
 }
 
 .content-title {
-	font-size: 13px;
+	font-size: 12px;
 	color: var(--text-muted);
-	margin-bottom: 8px;
+	margin-bottom: 6px;
 }
 
 .content-box {
-	padding: 12px;
+	padding: 10px;
 	background: var(--background-primary);
-	border-radius: 8px;
-	font-size: 14px;
-	line-height: 1.6;
+	border-radius: 6px;
+	font-size: 13px;
+	line-height: 1.5;
 	white-space: pre-wrap;
-	max-height: 200px;
+	max-height: 150px;
 	overflow-y: auto;
 }
 
-.content-box.streaming::after {
-	content: ' ▋';
-	animation: blink 0.8s infinite;
-}
-
 /* 暗色主题 */
+.theme-dark .deepreader-thinking,
 .theme-dark .deepreader-agent-humanized {
-	background: linear-gradient(135deg, var(--background-secondary-alt) 0%, var(--background-primary-alt) 100%);
+	color: var(--text-muted);
 }
 
 /* 响应式 */
 @media (max-width: 600px) {
+	.deepreader-thinking,
 	.deepreader-agent-humanized {
-		padding: 12px;
-		margin: 8px 0;
-	}
-
-	.step-item {
-		font-size: 12px;
+		padding: 10px 12px;
+		margin: 6px 0;
 	}
 }
-
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {

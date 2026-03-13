@@ -43,7 +43,6 @@ import {
 import { MemoryStore } from "../agent/memory/store.js";
 import { MemoryConsolidator } from "../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
-import { createHumanizedStatusElement } from "../agent/ui/humanized-view.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 
 /**
@@ -1884,27 +1883,40 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
             // 判断是否是新对话（历史为空或只有 system 消息）
             const isNewConversation = this.agentChatHistory.length <= 1;
 
+            // 简化状态追踪：thinking（思考中）vs answering（回答中）
+            let agentState: 'thinking' | 'answering' = 'thinking';
+
             // 回调函数
             const callbacks = {
                 // onContent: 接收流式内容
                 onContent: (text: string) => {
                     fullContent += text;
 
-                    // 构建更新对象
-                    let displayContent = fullContent;
-
-                    // 如果没有内容，显示默认状态
-                    if (!fullContent || fullContent.trim() === '') {
-                        displayContent = currentStatus || '📖 正在翻阅...';
+                    // 切换到回答阶段：一旦有实际内容（超过 10 字符）
+                    if (agentState === 'thinking' && fullContent.trim().length > 10) {
+                        agentState = 'answering';
                     }
 
+                    // 思考阶段：只更新状态，不更新内容
+                    if (agentState === 'thinking') {
+                        const updates: any = {
+                            isStreaming: true,
+                            isAgentMessage: true,
+                        };
+                        if (currentStatus) {
+                            updates.currentStatus = currentStatus;
+                        }
+                        this.messageList?.updateMessage(aiMessageId, updates);
+                        return;
+                    }
+
+                    // 回答阶段：显示流式内容
                     const updates: any = {
-                        content: displayContent,
+                        content: fullContent,
                         isStreaming: true,
                         isAgentMessage: true,
                     };
 
-                    // 如果有状态，添加到更新中
                     if (currentStatus) {
                         updates.currentStatus = currentStatus;
                     }
@@ -2014,38 +2026,29 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                     this.chatInput?.focus();
                     this.streamController = null;
                 },
-                // onHumanizedProgress: 拟人化进度更新（带节流）
-                // 注意：使用闭包变量实现简单节流
+                // onHumanizedProgress: 思考阶段的状态更新
+                // 简化版：只更新状态文字，不更新 content
                 onHumanizedProgress: ((() => {
                     let lastUpdateTime = 0;
-                    const THROTTLE_MS = 150; // 150ms 节流间隔
+                    const THROTTLE_MS = 200;
 
                     return (progress: HumanizedProgress) => {
                         const now = Date.now();
-                        // 节流检查：距离上次更新不足 150ms 则跳过
                         if (now - lastUpdateTime < THROTTLE_MS) {
                             return;
                         }
                         lastUpdateTime = now;
 
-                        // 🔍 调试日志：追踪拟人化进度更新
-                        log('[DeepPDF] 🎭 拟人化进度更新:', {
-                            mainAction: progress.mainAction,
-                            stepsCount: progress.readingSteps.length,
-                            hasContent: !!progress.generatedContent,
-                            progress: progress.overallProgress
-                        });
+                        // 思考阶段才更新状态
+                        if (agentState !== 'thinking') {
+                            return;
+                        }
 
-                        // 创建拟人化状态元素
-                        const statusEl = createHumanizedStatusElement(progress);
-                        const statusHtml = statusEl.outerHTML;
-
-                        // 始终更新拟人化状态显示
+                        // 只更新状态文字，不更新 content
                         this.messageList?.updateMessage(aiMessageId, {
-                            content: statusHtml,
+                            currentStatus: progress.mainAction.detail,
                             isStreaming: true,
                             isAgentMessage: true,
-                            currentStatus: progress.mainAction.detail,
                         });
                     };
                 })()),

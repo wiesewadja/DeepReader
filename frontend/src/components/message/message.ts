@@ -1348,34 +1348,47 @@ export class AIMessage extends Message {
 			}
 
 			if (shouldRender && this.app) {
-				// 渲染 Markdown（包括 wiki 链接）
-				const tempContainer = document.createElement('div');
+				// 【拟人化 UI 支持】检测是否是拟人化 UI 的 HTML 内容
+				// 拟人化 UI 包含特定的 class 标识，可以直接渲染 HTML
+				const isHumanizedUI = newContent.includes('deepreader-agent-humanized');
 
-				MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
-					if (!this.el) return;
-
-					// 渲染 Markdown 内容
-					contentEl.innerHTML = tempContainer.innerHTML;
-
-					// 【关键优化】流式时禁用内部链接的交互效果，避免闪烁
-					// 通过 CSS 让链接看起来像普通文本，但保留视觉样式
-					const links = contentEl.querySelectorAll('a');
-					links.forEach(link => {
-						const href = link.getAttribute('href');
-						// 只处理内部链接（wiki 链接）
-						if (href && (href.includes('#^page-') || href.startsWith('#'))) {
-							(link as HTMLElement).style.pointerEvents = 'none';
-							(link as HTMLElement).style.cursor = 'text';
-							// 保留颜色但移除下划线，让它在流式时不显得"可点击"
-							(link as HTMLElement).style.textDecoration = 'none';
-						}
-					});
-
+				if (isHumanizedUI) {
+					// 直接渲染 HTML（拟人化 UI）
+					contentEl.innerHTML = cleanedContent;
 					// 更新跟踪变量
 					this.lastRenderedContent = cleanedContent;
 					this.lastRenderTime = Date.now();
 					this.lastRenderedLength = contentLen;
-				});
+				} else {
+					// 渲染 Markdown（包括 wiki 链接）
+					const tempContainer = document.createElement('div');
+
+					MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
+						if (!this.el) return;
+
+						// 渲染 Markdown 内容
+						contentEl.innerHTML = tempContainer.innerHTML;
+
+						// 【关键优化】流式时禁用内部链接的交互效果，避免闪烁
+						// 通过 CSS 让链接看起来像普通文本，但保留视觉样式
+						const links = contentEl.querySelectorAll('a');
+						links.forEach(link => {
+							const href = link.getAttribute('href');
+							// 只处理内部链接（wiki 链接）
+							if (href && (href.includes('#^page-') || href.startsWith('#'))) {
+								(link as HTMLElement).style.pointerEvents = 'none';
+								(link as HTMLElement).style.cursor = 'text';
+								// 保留颜色但移除下划线，让它在流式时不显得"可点击"
+								(link as HTMLElement).style.textDecoration = 'none';
+							}
+						});
+
+						// 更新跟踪变量
+						this.lastRenderedContent = cleanedContent;
+						this.lastRenderTime = Date.now();
+						this.lastRenderedLength = contentLen;
+					});
+				}
 			}
 
 			this.streamingAnimationFrame = null;
@@ -1398,7 +1411,13 @@ export class AIMessage extends Message {
 
 		const { cleanedContent } = parseAgentContent(content);
 
-		if (this.app) {
+		// 【拟人化 UI 支持】检测是否是拟人化 UI 的 HTML 内容
+		const isHumanizedUI = content.includes('deepreader-agent-humanized');
+
+		if (isHumanizedUI) {
+			// 直接渲染 HTML（拟人化 UI）
+			contentEl.innerHTML = cleanedContent;
+		} else if (this.app) {
 			MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
 			this.mouseoverHandler = setupInternalLinks(contentEl, this.app, this.data.isStreaming, this.observers);
