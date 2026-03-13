@@ -17,7 +17,6 @@ import { IndexManager } from "../components/index-manager/index-manager.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
-import { agentAPI } from "../api/index.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
 import { ContextTags } from "../components/context-tags/index.js";
@@ -331,69 +330,6 @@ export class SidebarView extends ItemView {
         }
 
         return true;
-    }
-
-    /** 恢复历史记录到视图（旧方法，保留兼容后端恢复） */
-    private async restoreHistoryToView(history: any[], fromCache: boolean = false) {
-        if (!this.messageList) return;
-
-        // 同时恢复 agentChatHistory
-        const chatMessages: import("../agent/types.js").ChatMessage[] = [];
-
-        if (fromCache) {
-            // 从缓存恢复，直接使用 MessageData
-            // 过滤掉 tool 消息（中间过程数据，不需要显示）
-            const displayMessages = history.filter(msgData =>
-                msgData.role === 'user' || msgData.role === 'assistant'
-            );
-
-            displayMessages.forEach(msgData => {
-                try {
-                    this.messageList!.addMessage(msgData);
-
-                    // 同时构建 ChatMessage 格式
-                    chatMessages.push({
-                        role: msgData.role,
-                        content: msgData.content,
-                    });
-                } catch (e) {
-                    warn(`[DeepPDF] Failed to restore cached message ${msgData.id}:`, e);
-                }
-            });
-        } else {
-            // 从后端恢复 (OpenAI 格式)
-            history.forEach((msg, index) => {
-                // 跳过 system 消息
-                if (msg.role === 'system') return;
-
-                const msgId = `hist-${Date.now()}-${index}`;
-                this.messageList!.addMessage({
-                    id: msgId,
-                    role: msg.role as MessageRole,
-                    content: msg.content,
-                    timestamp: new Date().toISOString(),
-                    isAgentMessage: msg.role === 'assistant'
-                });
-
-                // 同时构建 ChatMessage 格式
-                if (msg.role === 'user' || msg.role === 'assistant') {
-                    chatMessages.push({
-                        role: msg.role,
-                        content: msg.content,
-                    });
-                }
-            });
-        }
-
-        // 恢复 agentChatHistory（前面加上 system 消息）
-        if (chatMessages.length > 0 && this.frontendAgent) {
-            const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
-            this.agentChatHistory = [
-                { role: 'system', content: systemPrompt },
-                ...chatMessages
-            ];
-            log('[DeepPDF] 恢复 agentChatHistory，消息数:', this.agentChatHistory.length);
-        }
     }
 
     /** 保存当前对话到 SessionStore（JSONL 文件） */
@@ -790,29 +726,15 @@ export class SidebarView extends ItemView {
             try {
                 this.sessionId = savedSessionId;
 
-                // 1. 优先从 SessionStore（JSONL 文件）恢复
+                // 从 SessionStore（JSONL 文件）恢复
                 const restored = await this.restoreFromSessionStore(savedSessionId);
                 if (restored) {
                     log('[DeepPDF] 从 SessionStore 恢复会话成功');
                     return;
                 }
 
-                // 2. 回退：从旧的 chatCache 恢复（兼容）
-                const cached = this.plugin.settings.chatCache?.[savedSessionId];
-                if (cached && cached.messages && cached.messages.length > 0) {
-                    await this.restoreHistoryToView(cached.messages, true);
-                    log('[DeepPDF] 从 chatCache 恢复会话（旧格式）');
-                    return;
-                }
-
-                // 3. 回退：从后端恢复
-                const history = await agentAPI.getHistory(indexId, savedSessionId);
-                if (history && history.length > 0) {
-                    await this.restoreHistoryToView(history, false);
-                    log('[DeepPDF] 从后端恢复会话');
-                } else {
-                    this.showWelcomeMessage();
-                }
+                // 没有找到会话，显示欢迎消息
+                this.showWelcomeMessage();
             } catch (e) {
                 logError(`[DeepPDF] 恢复会话失败:`, e);
                 this.startNewSession(indexId);
@@ -1494,15 +1416,6 @@ export class SidebarView extends ItemView {
                         new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
                         return;
                     }
-
-                    // 2. 回退：从旧的 chatCache 恢复
-                    const cached = this.plugin.settings.chatCache?.[savedSessionId];
-                    if (cached && cached.messages && cached.messages.length > 0) {
-                        log(`[DeepPDF] 切换到单书籍模式，从 chatCache 恢复会话: ${cached.messages.length} 条消息`);
-                        await this.restoreHistoryToView(cached.messages, true);
-                        new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
-                        return;
-                    }
                 }
 
                 // 没有历史会话，显示欢迎消息
@@ -1535,10 +1448,6 @@ export class SidebarView extends ItemView {
         const wasCrossBookMode = this.plugin.settings.lastCrossBookMode;
         log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
         log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.plugin.settings.lastCrossBookSessionId);
-        log('[DeepPDF] restoreCrossBookMode: chatCache exists =', !!this.plugin.settings.chatCache);
-        if (this.plugin.settings.chatCache) {
-            log('[DeepPDF] restoreCrossBookMode: chatCache keys =', Object.keys(this.plugin.settings.chatCache));
-        }
         if (wasCrossBookMode) {
             log('[DeepPDF] 恢复跨书籍模式');
             this.crossBookMode = true;
@@ -1566,23 +1475,10 @@ export class SidebarView extends ItemView {
         if (sessionId) {
             this.sessionId = sessionId;
 
-            // 1. 优先从 SessionStore 恢复
+            // 从 SessionStore 恢复
             const restored = await this.restoreFromSessionStore(sessionId);
             if (restored) {
                 log('[DeepPDF] loadCrossBookSession: 从 SessionStore 恢复成功');
-                return;
-            }
-
-            // 2. 回退：从旧的 chatCache 恢复
-            const cached = this.plugin.settings.chatCache?.[sessionId];
-            log('[DeepPDF] loadCrossBookSession: cached =', cached ? 'found' : 'not found');
-            if (cached) {
-                log('[DeepPDF] loadCrossBookSession: cached.messages.length =', cached.messages?.length);
-                log('[DeepPDF] loadCrossBookSession: cached.isCrossBook =', cached.isCrossBook);
-            }
-            if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
-                log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
-                await this.restoreHistoryToView(cached.messages, true);
                 return;
             }
         }
