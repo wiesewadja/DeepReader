@@ -1109,15 +1109,15 @@ export class AIMessage extends Message {
 
 		// 优先处理状态更新（不受节流限制，立即更新）
 		if (this.el && this.statusEl) {
-			// 更新状态显示（带闪烁点动画）
+			// 更新状态显示
 			if (newStatus) {
-				this.statusEl.innerHTML = `<span class="deeppdf-status-dot"><span></span><span></span><span></span></span>${newStatus}`;
+				this.statusEl.textContent = newStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
 				log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				// 清空状态
-				this.statusEl.innerHTML = '';
+				this.statusEl.textContent = '';
 				this.statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
 				log('[DeepPDF] update() - 状态已隐藏');
