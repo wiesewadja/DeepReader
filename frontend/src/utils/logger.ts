@@ -42,7 +42,7 @@ const defaultConfig: LogConfig = {
         context: true,     // 上下文加载
         ui: false,         // UI 组件（默认关闭，噪音较多）
         service: true,     // 服务层
-        api: true,         // API 调用
+        api: false,         // API 调用
         other: true,       // 其他
     },
 };
