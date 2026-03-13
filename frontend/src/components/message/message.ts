@@ -936,6 +936,8 @@ export class AIMessage extends Message {
 	private lastDisplayedStatus: string | undefined = undefined;
 	// 文字选中悬浮菜单
 	private selectionMenu: SelectionMenu | null = null;
+	// 状态文本元素引用
+	private statusEl: HTMLElement | null = null;
 
 	constructor(
 		data: MessageData,
@@ -974,17 +976,17 @@ export class AIMessage extends Message {
 		// Agent 消息标识 + 状态显示
 		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
 
-		// 左侧 Badge
+		// 左侧容器：Badge + 状态文本（垂直排列）
 		if (this.data.isAgentMessage) {
-			const badge = headerRow.createEl('div', { cls: 'deeppdf-message-agent-badge' });
-			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>AI Agent`;
-		}
+			const leftContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-left' });
 
-		// 右侧状态文本 (默认隐藏，有状态时显示)
-		const statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-		// 初始化时如果内容里有状态，也可以解析出来显示（但这通常是静态 HTML 渲染）
-		// 对于静态历史消息，通常不显示中间状态，只显示最终结果。
-		// 所以这里留空，只在流式更新时填充。
+			// Badge
+			const badge = leftContainer.createEl('div', { cls: 'deeppdf-message-agent-badge' });
+			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>奚童`;
+
+			// 状态文本（Badge 正下方）
+			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
+		}
 
 		// Agent 工具调用
 		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
@@ -1106,33 +1108,17 @@ export class AIMessage extends Message {
 		});
 
 		// 优先处理状态更新（不受节流限制，立即更新）
-		if (this.el) {
-			// 【简化逻辑】每次都尝试查找和更新状态元素，不管状态是否变化
-			const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-
-			if (!headerRow) {
-				logError('[DeepPDF] update() - headerRow 不存在，无法显示状态');
-				return;
-			}
-
-			let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
-
-			// 如果元素不存在，创建它
-			if (!statusEl) {
-				statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-				log('[DeepPDF] update() - 创建状态元素');
-			}
-
-			// 更新状态显示
+		if (this.el && this.statusEl) {
+			// 更新状态显示（带闪烁点动画）
 			if (newStatus) {
-				statusEl.textContent = newStatus;
-				statusEl.addClass('visible');
+				this.statusEl.innerHTML = `<span class="deeppdf-status-dot"><span></span><span></span><span></span></span>${newStatus}`;
+				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
 				log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				// 清空状态
-				statusEl.textContent = '';
-				statusEl.removeClass('visible');
+				this.statusEl.innerHTML = '';
+				this.statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
 				log('[DeepPDF] update() - 状态已隐藏');
 			}
@@ -1167,12 +1153,11 @@ export class AIMessage extends Message {
 			// 流式结束时，进行完整的 Markdown 渲染
 			const bubble = this.el.querySelector('.deeppdf-message-bubble');
 			const contentEl = this.el.querySelector('.deeppdf-message-content');
-			const statusEl = this.el.querySelector('.deeppdf-message-status-text');
 
 			// 结束时隐藏状态
-			if (statusEl) {
-				statusEl.textContent = '';
-				statusEl.removeClass('visible');
+			if (this.statusEl) {
+				this.statusEl.innerHTML = '';
+				this.statusEl.removeClass('visible');
 			}
 			this.lastDisplayedStatus = undefined;
 			log('[DeepPDF] update() - 流式结束，隐藏状态');
