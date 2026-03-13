@@ -61,7 +61,9 @@ export class MemoryConsolidator {
 	 */
 	needsConsolidation(messages: ChatMessage[]): boolean {
 		const tokens = estimateTokens(messages);
-		return tokens >= this.config.tokenThreshold;
+		const needs = tokens >= this.config.tokenThreshold;
+		agentLog(`[Consolidator] needsConsolidation: ${tokens} tokens >= ${this.config.tokenThreshold} threshold = ${needs}`);
+		return needs;
 	}
 
 	/**
@@ -101,6 +103,8 @@ export class MemoryConsolidator {
 
 	/**
 	 * 执行整合（调用 LLM）
+	 *
+	 * 注意：MEMORY.md 整合聚焦于用户特征，HISTORY.md 由 MilestoneRecorder 负责
 	 */
 	async consolidate(
 		messages: ChatMessage[],
@@ -115,25 +119,34 @@ export class MemoryConsolidator {
 		const currentMemory = (await this.store.readLongTermMemory()) || '(空)';
 		const formattedMessages = this.formatMessages(toConsolidate);
 
-		const prompt = `处理这段对话并调用 save_memory 工具保存整合结果。
+		// 聚焦于用户特征的 prompt
+		const prompt = `分析这段对话，提取用户的阅读倾向、情绪变化、个人特征，并调用 save_memory 工具更新长期记忆。
 
 ## 当前长期记忆
 ${currentMemory}
 
-## 待处理对话
-${formattedMessages}`;
+## 待分析对话
+${formattedMessages}
+
+## 分析要点
+1. **阅读倾向**：用户偏好深度讨论还是泛泛了解？对概念定义感兴趣吗？
+2. **情绪变化**：用户在讨论中表现出什么情绪？（兴奋、困惑、低落等）
+3. **个人成长**：用户的思维方式是否有变化？
+4. **偏好发现**：用户对什么类型的书籍/话题感兴趣？
+
+注意：
+- history_entry 可以留空（阅读日志由系统自动记录）
+- 只在有新的用户特征发现时才更新 memory_update`;
 
 		try {
 			// 调用 LLM
 			const response = await this.callLLM(prompt);
 
 			if (response) {
-				// 写入文件
-				if (response.historyEntry) {
-					await this.store.appendHistory(response.historyEntry);
-				}
-				if (response.memoryUpdate) {
+				// 只更新 MEMORY.md，不再写入 HISTORY.md（由 MilestoneRecorder 负责）
+				if (response.memoryUpdate && response.memoryUpdate.trim()) {
 					await this.store.writeLongTermMemory(response.memoryUpdate);
+					agentLog('[Consolidator] MEMORY.md 已更新');
 				}
 				return response;
 			}

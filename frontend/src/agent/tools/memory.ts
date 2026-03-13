@@ -63,20 +63,25 @@ const searchMemoryDefinition: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'search_memory',
-		description: `搜索用户的长期记忆，查找与当前话题相关的历史信息。
+		description: `搜索用户的记忆和阅读历程。
+
+搜索范围：
+- MEMORY.md：用户画像、阅读偏好、兴趣主题
+- HISTORY.md：阅读里程碑（读了什么书、进度、切换记录等）
 
 使用场景：
-- 用户提到之前的偏好，你想确认具体内容
+- 用户问"我读过什么书"
+- 用户问"《XX》读到哪里了"
 - 想了解用户对某个话题的历史反馈
-- 不确定是否已经记录过某个信息
+- 确认用户的偏好或兴趣
 
-返回匹配的记忆内容。`,
+返回匹配的记录内容。`,
 		parameters: {
 			type: 'object',
 			properties: {
 				query: {
 					type: 'string',
-					description: '搜索关键词，用空格分隔多个词',
+					description: '搜索关键词，用空格分隔多个词（如"学会提问 批判性思维"）',
 				},
 			},
 			required: ['query'],
@@ -165,39 +170,35 @@ export function createSearchMemoryTool(_app: any): ToolExecutor {
 			const store = new MemoryStore(context.app);
 
 			try {
-				// 读取长期记忆
+				const results: string[] = [];
+
+				// 1. 搜索长期记忆 (MEMORY.md)
 				const longTermMemory = await store.readLongTermMemory();
-
-				// 读取历史记录
-				const history = await store.readHistory(20);
-
-				// 合并内容
-				const allContent = `${longTermMemory || ''}\n${history}`;
-
-				if (!allContent.trim()) {
-					return `未找到任何记忆内容。`;
-				}
-
-				// 简单关键词搜索
-				const keywords = query.toLowerCase().split(/\s+/);
-				const lines = allContent.split('\n');
-				const matches: string[] = [];
-
-				for (const line of lines) {
-					const lineLower = line.toLowerCase();
-					if (keywords.some((kw) => lineLower.includes(kw)) && line.trim().length > 10) {
-						matches.push(line.trim());
+				if (longTermMemory) {
+					const keywords = query.toLowerCase().split(/\s+/);
+					const lines = longTermMemory.split('\n');
+					for (const line of lines) {
+						const lineLower = line.toLowerCase();
+						if (keywords.some((kw) => lineLower.includes(kw)) && line.trim().length > 10) {
+							results.push(`[记忆] ${line.trim()}`);
+						}
 					}
 				}
 
-				if (matches.length === 0) {
+				// 2. 搜索阅读历程 (HISTORY.md)
+				const historyMatches = await store.searchHistory(query, 10);
+				for (const match of historyMatches) {
+					results.push(`[历程] ${match}`);
+				}
+
+				if (results.length === 0) {
 					return `未找到与 "${query}" 相关的记忆。`;
 				}
 
 				// 去重并限制数量
-				const uniqueMatches = [...new Set(matches)].slice(0, 10);
+				const uniqueResults = [...new Set(results)].slice(0, 15);
 
-				return `找到 ${uniqueMatches.length} 条相关记忆：\n\n${uniqueMatches.map((m, i) => `${i + 1}. ${m}`).join('\n')}`;
+				return `找到 ${uniqueResults.length} 条相关记录：\n\n${uniqueResults.map((m, i) => `${i + 1}. ${m}`).join('\n')}`;
 			} catch (err) {
 				error('[search_memory] 执行失败:', err);
 				return `搜索记忆时出错: ${err instanceof Error ? err.message : String(err)}`;

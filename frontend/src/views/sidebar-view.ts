@@ -43,6 +43,7 @@ import {
 import { MemoryStore } from "../agent/memory/store.js";
 import { MemoryConsolidator } from "../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
+import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 
 /**
@@ -120,6 +121,9 @@ export class SidebarView extends ItemView {
     // 前端 Agent
     private frontendAgent: FrontendAgent | null = null;
 
+    // 阅读里程碑记录器
+    private milestoneRecorder: MilestoneRecorder | null = null;
+
     /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
     private currentMarkdownFiles: Record<string, string> = {};
 
@@ -143,6 +147,18 @@ export class SidebarView extends ItemView {
         const agent = await this.plugin.getFrontendAgent();
         this.frontendAgent = agent;
         log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', agent.listSkills());
+    }
+
+    /**
+     * 初始化里程碑记录器
+     */
+    private async initializeMilestoneRecorder(): Promise<void> {
+        if (this.milestoneRecorder) {
+            return; // 已初始化
+        }
+        this.milestoneRecorder = new MilestoneRecorder(this.app);
+        await this.milestoneRecorder.initializeCache();
+        log('[DeepPDF] MilestoneRecorder 初始化完成');
     }
 
     /** 开启新会话 */
@@ -428,12 +444,16 @@ export class SidebarView extends ItemView {
 
             const currentTokens = estimateTokens(messages);
 
+            // 🔍 调试日志：每次都输出 token 状态
+            log(`[DeepPDF] Memory 状态检查: ${currentTokens} tokens (阈值: ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}), 消息数: ${messages.length}, lastConsolidated: ${lastConsolidated}`);
+
             // 检查是否需要整合
             if (currentTokens < DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold) {
+                log(`[DeepPDF] Memory 未触发整合: ${currentTokens} < ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
                 return;
             }
 
-            log(`[DeepPDF] 记忆整合触发: ${currentTokens} tokens >= ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
+            log(`[DeepPDF] ✅ Memory 整合触发: ${currentTokens} tokens >= ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
 
             // 创建整合器
             const store = new MemoryStore(this.app);
@@ -617,6 +637,7 @@ export class SidebarView extends ItemView {
         // 更新顶栏显示 - 使用 this.indexes 而不是 indexManager
         const index = this.indexes.find(i => i.id === indexId);
         if (index) {
+            const previousBook = this.currentPdfName;
             this.currentPdfName = index.pdf_name;
             let displayName = index.pdf_name;
             if (displayName.toLowerCase().endsWith('.pdf')) {
@@ -626,6 +647,12 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
             this.messageList?.setCurrentPdfName(displayName);
+
+            // 记录书籍切换里程碑
+            await this.initializeMilestoneRecorder();
+            if (this.milestoneRecorder && previousBook !== displayName) {
+                await this.milestoneRecorder.handleBookSwitch(displayName);
+            }
 
             // 获取作者信息：优先使用索引中的 author，其次从元数据获取
             let author: string | undefined = index.author;
@@ -1957,6 +1984,18 @@ ${progress.leastFamiliarChapters && progress.leastFamiliarChapters.length > 0 ? 
                                     log('[DeepPDF] AI 引用熟悉度更新成功，章节:', chapterIndex);
                                 } catch (err) {
                                     logError('[DeepPDF] AI 引用熟悉度更新失败:', err);
+                                }
+                            }
+
+                            // 检测进度里程碑
+                            if (this.milestoneRecorder && this.currentPdfName) {
+                                try {
+                                    const progress = await getBookReadingProgress(this.app, this.currentPdfName);
+                                    if (progress) {
+                                        await this.milestoneRecorder.checkProgressMilestones(progress);
+                                    }
+                                } catch (err) {
+                                    logError('[DeepPDF] 里程碑检测失败:', err);
                                 }
                             }
                         }

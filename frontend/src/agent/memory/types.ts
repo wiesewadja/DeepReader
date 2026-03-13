@@ -62,9 +62,13 @@ export interface ConsolidatorConfig {
 
 /**
  * 默认整合器配置
+ *
+ * tokenThreshold: 触发整合的阈值
+ *   - 40000 太高，普通对话很难触发
+ *   - 降低到 8000（约 16000 中文字符），约 10-15 轮对话后触发
  */
 export const DEFAULT_CONSOLIDATOR_CONFIG: ConsolidatorConfig = {
-	tokenThreshold: 40000,
+	tokenThreshold: 8000,  // 降低阈值，更容易触发整合
 	targetRatio: 0.5,
 	maxRounds: 5,
 };

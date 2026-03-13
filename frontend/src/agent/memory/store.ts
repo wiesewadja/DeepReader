@@ -3,7 +3,8 @@
  *
  * 文件位置: Obsidian Vault/DeepReader/
  * - MEMORY.md: 长期记忆（用户画像、偏好）
- * - HISTORY.md: 时间线日志（对话历史）
+ * - HISTORY.md: 阅读历程（里程碑日志，最近 30 天）
+ * - history/: 归档目录（按月归档）
  *
  * 参考: nanobot 的 memory.py 设计
  */
@@ -13,6 +14,15 @@ import { agentLog } from '../../utils/logger';
 
 /** DeepReader 目录名 */
 const DEEPREADER_DIR = 'DeepReader';
+
+/** 历史归档目录 */
+const HISTORY_ARCHIVE_DIR = `${DEEPREADER_DIR}/history`;
+
+/** 历史记录保留天数 */
+const HISTORY_RETENTION_DAYS = 30;
+
+/** 历史记录最大条目数 */
+const MAX_HISTORY_ENTRIES = 200;
 
 export class MemoryStore {
 	private app: App;
@@ -40,6 +50,13 @@ export class MemoryStore {
 	 */
 	private get historyPath(): string {
 		return normalizePath(`${DEEPREADER_DIR}/HISTORY.md`);
+	}
+
+	/**
+	 * 获取归档目录路径
+	 */
+	private get historyArchivePath(): string {
+		return normalizePath(HISTORY_ARCHIVE_DIR);
 	}
 
 	/**
@@ -80,8 +97,11 @@ export class MemoryStore {
 		if (exists) {
 			const existing = await this.app.vault.adapter.read(this.historyPath);
 			await this.app.vault.adapter.write(this.historyPath, existing + formattedEntry);
+
+			// 检查是否需要归档
+			await this.maybeArchiveHistory();
 		} else {
-			const header = `# 对话历史\n\n> 此文件记录与 DeepReader Agent 的对话摘要\n\n---\n\n`;
+			const header = `# 阅读历程\n\n> 此文件记录阅读里程碑（最近 30 天）\n\n---\n\n`;
 			await this.app.vault.adapter.write(this.historyPath, header + formattedEntry);
 		}
 
@@ -101,6 +121,158 @@ export class MemoryStore {
 		} catch (err) {
 			agentLog('[MemoryStore] 读取 HISTORY.md 失败:', err);
 			return '';
+		}
+	}
+
+	/**
+	 * 搜索历史记录
+	 *
+	 * @param query 搜索关键词
+	 * @param limit 返回条目数
+	 */
+	async searchHistory(query: string, limit: number = 20): Promise<string[]> {
+		try {
+			const content = await this.readHistory(100);
+			if (!content) return [];
+
+			const keywords = query.toLowerCase().split(/\s+/);
+			const entries = content.split(/\n\n---\n\n/);
+			const matches: string[] = [];
+
+			for (const entry of entries) {
+				const entryLower = entry.toLowerCase();
+				if (keywords.some((kw) => entryLower.includes(kw)) && entry.trim().length > 10) {
+					matches.push(entry.trim());
+				}
+			}
+
+			return matches.slice(0, limit);
+		} catch (err) {
+			agentLog('[MemoryStore] 搜索历史失败:', err);
+			return [];
+		}
+	}
+
+	/**
+	 * 获取阅读统计摘要
+	 */
+	async getReadingSummary(): Promise<string> {
+		try {
+			const content = await this.readHistory(100);
+			if (!content) return '暂无阅读记录';
+
+			const entries = content.split(/\n\n---\n\n/).filter((e) => e.trim());
+
+			// 统计书籍
+			const books = new Set<string>();
+			const bookPattern = /《(.+?)》/g;
+
+			for (const entry of entries) {
+				const matches = entry.matchAll(bookPattern);
+				for (const match of matches) {
+					books.add(match[1]);
+				}
+			}
+
+			// 统计里程碑类型
+			const milestones = {
+				'📖': 0, // 开始阅读
+				'🔄': 0, // 切换书籍
+				'📍': 0, // 进度里程碑
+				'💡': 0, // 吸收度提升
+				'✅': 0, // 完成阅读
+				'🔁': 0, // 新一轮
+			};
+
+			for (const entry of entries) {
+				for (const [emoji] of Object.entries(milestones)) {
+					if (entry.includes(emoji)) {
+						milestones[emoji as keyof typeof milestones]++;
+					}
+				}
+			}
+
+			// 生成摘要
+			const lines = [
+				`📚 已阅读书籍: ${books.size} 本`,
+				`📖 开始阅读: ${milestones['📖']} 次`,
+				`📍 进度里程碑: ${milestones['📍']} 次`,
+				`💡 吸收度提升: ${milestones['💡']} 次`,
+				`✅ 完成阅读: ${milestones['✅']} 次`,
+			];
+
+			if (books.size > 0) {
+				lines.push(`\n最近阅读: ${Array.from(books).slice(-5).join('、')}`);
+			}
+
+			return lines.join('\n');
+		} catch (err) {
+			agentLog('[MemoryStore] 获取阅读摘要失败:', err);
+			return '获取阅读摘要失败';
+		}
+	}
+
+	/**
+	 * 检查并归档旧历史记录
+	 *
+	 * 当条目超过 MAX_HISTORY_ENTRIES 或有超过 HISTORY_RETENTION_DAYS 天的记录时触发
+	 */
+	private async maybeArchiveHistory(): Promise<void> {
+		try {
+			const content = await this.app.vault.adapter.read(this.historyPath);
+			const entries = content.split(/\n\n---\n\n/).filter((e) => e.trim());
+
+			// 检查是否需要归档
+			if (entries.length <= MAX_HISTORY_ENTRIES) {
+				return;
+			}
+
+			// 找出需要归档的条目（保留最近 150 条）
+			const keepCount = 150;
+			const toArchive = entries.slice(0, entries.length - keepCount);
+			const toKeep = entries.slice(entries.length - keepCount);
+
+			if (toArchive.length === 0) return;
+
+			// 确定归档月份（使用最早条目的日期）
+			const firstEntry = toArchive[0];
+			const dateMatch = firstEntry.match(/\[(\d{4}-\d{2})/);
+			const archiveMonth = dateMatch ? dateMatch[1] : new Date().toISOString().slice(0, 7);
+
+			// 创建归档文件
+			await this.ensureHistoryArchiveDir();
+			const archivePath = normalizePath(`${HISTORY_ARCHIVE_DIR}/${archiveMonth}.md`);
+
+			// 检查归档文件是否已存在
+			let archiveContent = '';
+			if (await this.app.vault.adapter.exists(archivePath)) {
+				archiveContent = await this.app.vault.adapter.read(archivePath);
+			} else {
+				archiveContent = `# 阅读历程归档 - ${archiveMonth}\n\n---\n\n`;
+			}
+
+			// 追加到归档文件
+			const archiveEntries = toArchive.join('\n\n---\n\n');
+			await this.app.vault.adapter.write(archivePath, archiveContent + archiveEntries + '\n\n---\n\n');
+
+			// 更新主历史文件
+			const header = `# 阅读历程\n\n> 此文件记录阅读里程碑（最近 30 天）\n> 归档文件位于 history/ 目录\n\n---\n\n`;
+			await this.app.vault.adapter.write(this.historyPath, header + toKeep.join('\n\n---\n\n'));
+
+			agentLog(`[MemoryStore] 归档了 ${toArchive.length} 条历史记录到 ${archiveMonth}.md`);
+		} catch (err) {
+			agentLog('[MemoryStore] 归档历史失败:', err);
+		}
+	}
+
+	/**
+	 * 确保归档目录存在
+	 */
+	private async ensureHistoryArchiveDir(): Promise<void> {
+		const exists = await this.app.vault.adapter.exists(this.historyArchivePath);
+		if (!exists) {
+			await this.app.vault.adapter.mkdir(this.historyArchivePath);
+			agentLog('[MemoryStore] 创建归档目录');
 		}
 	}
 
