@@ -27,6 +27,20 @@ const SESSIONS_DIR = '.obsidian/plugins/deepreader/sessions';
 /** 索引文件名 */
 const INDEX_FILE = 'index.json';
 
+/**
+ * 获取本地时间字符串（YYYY-MM-DD HH:mm:ss 格式）
+ */
+function getLocalTimestamp(): string {
+	const now = new Date();
+	const year = now.getFullYear();
+	const month = String(now.getMonth() + 1).padStart(2, '0');
+	const day = String(now.getDate()).padStart(2, '0');
+	const hours = String(now.getHours()).padStart(2, '0');
+	const minutes = String(now.getMinutes()).padStart(2, '0');
+	const seconds = String(now.getSeconds()).padStart(2, '0');
+	return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 export class SessionStore {
 	private app: App;
 	private config: Required<SessionStoreConfig>;
@@ -133,7 +147,7 @@ export class SessionStore {
 			const msgLine: SessionMessageLine = {
 				role: msg.role as 'user' | 'assistant' | 'tool',
 				content: msg.content,
-				timestamp: new Date().toISOString(),
+				timestamp: getLocalTimestamp(),
 				tool_calls: msg.tool_calls,
 				tool_call_id: msg.tool_call_id,
 				name: msg.name,
@@ -260,7 +274,7 @@ export class SessionStore {
 		const msgLine: SessionMessageLine = {
 			role: message.role as 'user' | 'assistant' | 'tool',
 			content: message.content,
-			timestamp: new Date().toISOString(),
+			timestamp: getLocalTimestamp(),
 			tool_calls: message.tool_calls,
 			tool_call_id: message.tool_call_id,
 			name: message.name,
