@@ -380,8 +380,8 @@ export class SidebarView extends ItemView {
     /** 保存当前对话到 SessionStore（JSONL 文件） */
     private async saveToCache() {
         log('[DeepPDF] saveToCache called, sessionId:', this.sessionId);
-        if (!this.sessionId || !this.messageList) {
-            log('[DeepPDF] saveToCache early return: no sessionId or messageList');
+        if (!this.sessionId) {
+            log('[DeepPDF] saveToCache early return: no sessionId');
             return;
         }
 
@@ -397,26 +397,23 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 1. 获取当前所有消息
-        const allMessages = (this.messageList as any).getAllMessages();
-        log('[DeepPDF] saveToCache allMessages count:', allMessages?.length);
-
-        // 2. 过滤有效消息
-        const validMsgs = allMessages.filter((m: any) =>
-            (m.role === 'user' || m.role === 'assistant') &&
+        // 1. 从 agentChatHistory 获取完整消息（包括 tool 消息）
+        // 排除 system 消息（每次动态生成）和占位消息
+        const messagesToSave = this.agentChatHistory.filter(m =>
+            m.role !== 'system' &&
+            m.content && // 确保有内容
             !m.content.includes("已切换到书籍") &&
             m.content !== "📖 正在翻阅..." &&
-            m.content !== "🔍 正在跨书籍查阅..." &&
-            m.content // 确保有内容
+            m.content !== "🔍 正在跨书籍查阅..."
         );
 
-        log('[DeepPDF] saveToCache validMsgs count:', validMsgs?.length);
-        if (validMsgs.length === 0) {
-            log('[DeepPDF] saveToCache early return: no valid messages');
+        log('[DeepPDF] saveToCache messagesToSave count:', messagesToSave.length);
+        if (messagesToSave.length === 0) {
+            log('[DeepPDF] saveToCache early return: no messages to save');
             return;
         }
 
-        // 3. 获取会话并追加新消息
+        // 2. 获取会话
         let session = await this.sessionStore!.get(this.sessionId);
         if (!session) {
             // 会话不存在，创建新的
@@ -427,20 +424,26 @@ export class SidebarView extends ItemView {
             );
         }
 
-        // 4. 只追加新消息（增量保存）
-        const newMsgCount = validMsgs.length - session.messageCount;
-        if (newMsgCount > 0) {
-            const newMessages = validMsgs.slice(session.messageCount);
-            for (const msg of newMessages) {
-                await this.sessionStore!.appendMessage(this.sessionId, {
-                    role: msg.role,
-                    content: msg.content,
-                });
+        // 3. 只追加新消息（增量保存，使用内容哈希去重）
+        const existingHashes = new Set(
+            session.messages.map(m => `${m.role}:${m.content?.slice(0, 100)}`)
+        );
+
+        let savedCount = 0;
+        for (const msg of messagesToSave) {
+            const msgHash = `${msg.role}:${msg.content?.slice(0, 100)}`;
+            if (!existingHashes.has(msgHash)) {
+                await this.sessionStore!.appendMessage(this.sessionId, msg);
+                existingHashes.add(msgHash); // 防止同一批次重复
+                savedCount++;
             }
-            log(`[DeepPDF] 保存 ${newMsgCount} 条新消息到 SessionStore`);
         }
 
-        // 5. 如果是跨书籍模式，保存会话ID
+        if (savedCount > 0) {
+            log(`[DeepPDF] 保存 ${savedCount} 条新消息到 SessionStore`);
+        }
+
+        // 4. 如果是跨书籍模式，保存会话ID
         if (this.crossBookMode) {
             this.plugin.settings.lastCrossBookSessionId = this.sessionId;
             await this.plugin.saveSettings();

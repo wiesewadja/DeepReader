@@ -39,12 +39,6 @@ export interface AgentLoopOptions {
    */
   onContentComplete?: (content: string) => Promise<string>;
   /**
-   * 记忆整合回调（可选）
-   * 当检测到需要整合时调用，传入当前消息和 lastConsolidated 索引
-   * 返回新的 lastConsolidated 索引
-   */
-  onMemoryConsolidation?: (messages: ChatMessage[], lastConsolidated: number) => Promise<number>;
-  /**
    * 拟人化进度回调（可选）
    * 用于在 UI 中显示用户友好的状态
    */
@@ -137,10 +131,18 @@ export function estimateTokens(messages: ChatMessage[]): number {
 }
 
 /**
+ * 延迟函数（用于重试退避）
+ */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * 性能优化常量
  */
 const MAX_TOOL_RESULT_LENGTH = 8000;  // 工具结果最大长度（字符）
 const MAX_CONTEXT_TOKENS = 40000;     // 消息历史最大 token 数
+const TOOL_MAX_RETRIES = 2;           // 工具失败最大重试次数
 
 /**
  * 压缩工具结果（防止 token 膨胀）
@@ -421,7 +423,29 @@ export async function runAgentLoop(
       }
 
       try {
-        const result = await executeTool(toolRegistry, tc.name, args, context);
+        // 工具执行（带重试机制）
+        let result: string | null = null;
+        let lastError: Error | null = null;
+
+        for (let attempt = 0; attempt <= TOOL_MAX_RETRIES; attempt++) {
+          try {
+            result = await executeTool(toolRegistry, tc.name, args, context);
+            break; // 成功则跳出重试循环
+          } catch (error) {
+            lastError = error as Error;
+            if (attempt < TOOL_MAX_RETRIES) {
+              const delayMs = 1000 * (attempt + 1); // 指数退避: 1s, 2s, 3s
+              agentLog(`[AgentLoop] ⚠️ 工具失败，重试 ${attempt + 1}/${TOOL_MAX_RETRIES}... (${tc.name})`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+          }
+        }
+
+        // 如果所有重试都失败
+        if (result === null) {
+          throw lastError;
+        }
+
         const duration = Date.now() - toolStartTime;
         const resultLength = result.length;
 
@@ -488,11 +512,11 @@ export async function runAgentLoop(
 
         agentLog(`[AgentLoop] ✗ 失败: ${tc.name} (${formatDuration(duration)}) → ${errorMsg}`);
 
-        // 添加错误结果
+        // 添加错误结果（包含更友好的提示）
         workingMessages.push({
           role: 'tool',
           tool_call_id: tc.id,
-          content: `Error: ${errorMsg}`,
+          content: `Error: ${errorMsg}\n\n请尝试其他方法，或简化你的请求。`,
         });
       }
     }
@@ -504,14 +528,19 @@ export async function runAgentLoop(
     agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)}`);
     agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
 
-    // 管理消息历史（防止 token 无限增长）
-    workingMessages = manageMessageHistory(workingMessages);
+    // 注意：不在循环内压缩消息历史，保留完整上下文供后续工具调用使用
+    // 压缩移到循环结束后统一处理
   }
 
   if (iterations >= maxIterations) {
     agentLog('[AgentLoop] ⚠️ 达到最大迭代次数，即将结束');
     options.onProgress('达到最大轮数，正在总结...');
   }
+
+  // 循环结束后统一管理消息历史（防止 token 无限增长）
+  // 保留对话过程中的完整上下文，只在最后压缩
+  workingMessages = manageMessageHistory(workingMessages);
+  agentLog(`[AgentLoop] 📊 最终消息历史: ${workingMessages.length} 条`);
 
   // 最终统计 - 打印清晰的性能报告
   const totalDuration = Date.now() - totalStartTime;
