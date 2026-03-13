@@ -87,7 +87,10 @@ export class ReadingModeService {
 
     /**
      * 判断文件是否为 DeepReader 章节文件
-     * 只要文件在 DeepReader 文件夹下且是 Markdown 文件即可
+     * 条件：
+     * 1. 必须是 Markdown 文件
+     * 2. 路径以 DeepReader/ 开头
+     * 3. frontmatter 中必须包含 pdf_name 和 node_id
      */
     isChapterFile(file: TFile): boolean {
         // 必须是 Markdown 文件
@@ -97,6 +100,14 @@ export class ReadingModeService {
 
         // 路径以 DeepReader/ 开头
         if (!file.path.startsWith('DeepReader/')) {
+            return false;
+        }
+
+        // 检查 frontmatter 中是否有 pdf_name 和 node_id
+        const cache = this.app.metadataCache.getFileCache(file);
+        const frontmatter = cache?.frontmatter;
+        if (!frontmatter?.pdf_name || !frontmatter?.node_id) {
+            serviceLog('[ReadingMode] File missing pdf_name or node_id:', file.path);
             return false;
         }
 
