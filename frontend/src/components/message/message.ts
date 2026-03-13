@@ -1412,8 +1412,8 @@ export class AIMessage extends Message {
 	}
 
 	private renderActions(container: HTMLElement) {
-		// 流式传输中不渲染操作按钮
-		if (this.data.isStreaming) {
+		// 流式传输中不渲染操作按钮（严格检查 true）
+		if (this.data.isStreaming === true) {
 			return;
 		}
 

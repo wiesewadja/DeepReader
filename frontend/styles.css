@@ -1477,65 +1477,65 @@
 	border-radius: 2px;
 }
 
-/* Agent 消息头部行（包含 badge 和状态） */
+/* Agent 消息头部行（包含左侧容器） */
 .deeppdf-message-header-row {
 	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
+	flex-direction: column;
+	gap: 4px;
 	margin-bottom: 8px;
+}
+
+/* 左侧容器（Badge + 状态文本） */
+.deeppdf-message-header-left {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
 }
 
 /* Agent 消息标识 */
 .deeppdf-message-agent-badge {
 	display: inline-flex;
 	align-items: center;
-	gap: 4px;
-	padding: 3px 8px;
+	gap: 5px;
+	padding: 4px 10px;
 	background: rgba(var(--interactive-accent-rgb), 0.1);
-	border-radius: 12px;
-	font-size: 10px;
+	border-radius: 14px;
+	font-size: 11px;
 	font-weight: 600;
 	color: var(--interactive-accent);
-	margin-bottom: 8px;
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 }
 
 .deeppdf-message-agent-badge svg {
-	width: 12px;
-	height: 12px;
+	width: 14px;
+	height: 14px;
 }
 
-/* Agent 消息状态文本（右侧显示） */
+/* Agent 消息状态文本（Badge 正下方） */
 .deeppdf-message-status-text {
-	flex-shrink: 0;
 	font-size: 12px;
-	color: var(--text-accent);
+	color: var(--text-muted);
 	opacity: 0;
-	transition: opacity 0.2s ease, transform 0.2s ease;
-	margin-left: auto;
-	padding: 4px 10px;
-	background: rgba(var(--interactive-accent-rgb), 0.1);
-	border-radius: 12px;
+	transition: opacity 0.2s ease;
+	padding: 2px 8px;
 	font-weight: 500;
-	transform: translateX(10px);
-	display: inline-block !important;
-	min-height: 20px;
+	min-height: 16px;
+	line-height: 1.4;
 }
 
 .deeppdf-message-status-text.visible {
 	opacity: 1;
-	transform: translateX(0);
-	animation: status-pulse 1.5s infinite;
+	animation: status-breathe 2s ease-in-out infinite;
 }
 
-@keyframes status-pulse {
+/* 呼吸动画 - 泛白效果 */
+@keyframes status-breathe {
 	0%, 100% {
-		opacity: 1;
+		opacity: 0.6;
 	}
 	50% {
-		opacity: 0.6;
+		opacity: 1;
 	}
 }
 
