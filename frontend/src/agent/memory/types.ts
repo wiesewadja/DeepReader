@@ -2,7 +2,7 @@
  * 记忆系统类型定义
  *
  * 双层记忆系统：
- * - Session (短期): data.json 中的 chatCache
+ * - Session (短期): JSONL 文件存储（SessionStore）
  * - MEMORY.md (长期): 用户画像、偏好
  * - HISTORY.md (时间线): 对话历史日志
  */
@@ -15,7 +15,8 @@ import type { ChatMessage } from '../types';
 export type MemoryCategory = 'preference' | 'correction' | 'info' | 'insight';
 
 /**
- * 会话缓存条目（存储在 data.json 的 chatCache 中）
+ * 会话缓存条目（旧格式，保留用于回退兼容）
+ * @deprecated 使用 SessionStore 替代
  */
 export interface ChatCacheEntry {
 	sessionId: string;

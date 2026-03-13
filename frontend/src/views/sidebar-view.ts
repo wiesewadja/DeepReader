@@ -45,6 +45,7 @@ import { MemoryConsolidator } from "../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
 import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
+import { SessionStore } from "../agent/session/index.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -124,6 +125,9 @@ export class SidebarView extends ItemView {
     // 阅读里程碑记录器
     private milestoneRecorder: MilestoneRecorder | null = null;
 
+    // 会话存储（JSONL 文件）
+    private sessionStore: SessionStore | null = null;
+
     /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
     private currentMarkdownFiles: Record<string, string> = {};
 
@@ -161,6 +165,17 @@ export class SidebarView extends ItemView {
         log('[DeepPDF] MilestoneRecorder 初始化完成');
     }
 
+    /**
+     * 初始化会话存储
+     */
+    private async initializeSessionStore(): Promise<void> {
+        if (this.sessionStore) {
+            return; // 已初始化
+        }
+        this.sessionStore = new SessionStore(this.app);
+        log('[DeepPDF] SessionStore 初始化完成');
+    }
+
     /** 开启新会话 */
     private async startNewSession(indexId: string) {
         this.sessionId = this.generateSessionId();
@@ -168,7 +183,12 @@ export class SidebarView extends ItemView {
         // 清空前端 Agent 对话历史
         this.agentChatHistory = [];
 
-        // 保存到设置
+        // 在 SessionStore 中创建会话
+        await this.initializeSessionStore();
+        const effectiveIndexId = this.crossBookMode ? '__cross_book__' : indexId;
+        await this.sessionStore!.create(this.sessionId, effectiveIndexId, this.crossBookMode);
+
+        // 保存到设置（兼容旧逻辑）
         if (!this.plugin.settings.savedSessions) {
             this.plugin.settings.savedSessions = {};
         }
@@ -253,7 +273,62 @@ export class SidebarView extends ItemView {
     }
 
 
-    /** 恢复历史记录到视图 */
+    /** 从 SessionStore 恢复历史记录到视图 */
+    private async restoreFromSessionStore(sessionId: string): Promise<boolean> {
+        if (!this.messageList) return false;
+
+        await this.initializeSessionStore();
+        const session = await this.sessionStore!.get(sessionId);
+
+        if (!session || session.messages.length === 0) {
+            log('[DeepPDF] SessionStore 中没有找到会话或会话为空:', sessionId);
+            return false;
+        }
+
+        log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length);
+
+        // 恢复消息到 UI
+        const chatMessages: import("../agent/types.js").ChatMessage[] = [];
+
+        session.messages.forEach((msg, index) => {
+            try {
+                // 构建 MessageData 格式（ChatMessage 没有 id/timestamp，需要生成）
+                const msgData = {
+                    id: `restored-${Date.now()}-${index}`,
+                    role: msg.role as MessageRole,
+                    content: msg.content || '',
+                    timestamp: new Date().toISOString(),
+                    isAgentMessage: msg.role === 'assistant'
+                };
+
+                this.messageList!.addMessage(msgData);
+
+                // 同时构建 ChatMessage 格式（用于 agentChatHistory）
+                if (msg.role === 'user' || msg.role === 'assistant') {
+                    chatMessages.push({
+                        role: msg.role,
+                        content: msg.content || '',
+                    });
+                }
+            } catch (e) {
+                warn(`[DeepPDF] Failed to restore message:`, e);
+            }
+        });
+
+        // 恢复 agentChatHistory（前面加上 system 消息）
+        if (chatMessages.length > 0 && this.frontendAgent) {
+            const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
+            this.agentChatHistory = [
+                { role: 'system', content: systemPrompt },
+                ...chatMessages
+            ];
+            log('[DeepPDF] 恢复 agentChatHistory，消息数:', this.agentChatHistory.length);
+        }
+
+        return true;
+    }
+
+    /** 恢复历史记录到视图（旧方法，保留兼容后端恢复） */
     private async restoreHistoryToView(history: any[], fromCache: boolean = false) {
         if (!this.messageList) return;
 
@@ -313,15 +388,17 @@ export class SidebarView extends ItemView {
         }
     }
 
-    /** 保存当前对话到本地缓存（带 LRU 清理） */
+    /** 保存当前对话到 SessionStore（JSONL 文件） */
     private async saveToCache() {
-        log('[DeepPDF] saveToCache called, sessionId:', this.sessionId, 'crossBookMode:', this.crossBookMode);
+        log('[DeepPDF] saveToCache called, sessionId:', this.sessionId);
         if (!this.sessionId || !this.messageList) {
             log('[DeepPDF] saveToCache early return: no sessionId or messageList');
             return;
         }
 
-        // 跨书籍模式使用特殊标识，单书籍模式使用 currentIndexId
+        // 确保 SessionStore 已初始化
+        await this.initializeSessionStore();
+
         const effectiveIndexId = this.crossBookMode
             ? '__cross_book__'
             : this.currentIndexId;
@@ -332,7 +409,6 @@ export class SidebarView extends ItemView {
         }
 
         // 1. 获取当前所有消息
-        // Note: 需要在 MessageList 中实现 getAllMessages
         const allMessages = (this.messageList as any).getAllMessages();
         log('[DeepPDF] saveToCache allMessages count:', allMessages?.length);
 
@@ -351,62 +427,35 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 3. 更新设置
-        if (!this.plugin.settings.chatCache) {
-            this.plugin.settings.chatCache = {};
+        // 3. 获取会话并追加新消息
+        let session = await this.sessionStore!.get(this.sessionId);
+        if (!session) {
+            // 会话不存在，创建新的
+            session = await this.sessionStore!.create(
+                this.sessionId,
+                effectiveIndexId,
+                this.crossBookMode
+            );
         }
 
-        // 获取之前的 lastConsolidated（如果存在）
-        const existingCache = this.plugin.settings.chatCache[this.sessionId];
-        const lastConsolidated = existingCache?.lastConsolidated ?? 0;
+        // 4. 只追加新消息（增量保存）
+        const newMsgCount = validMsgs.length - session.messageCount;
+        if (newMsgCount > 0) {
+            const newMessages = validMsgs.slice(session.messageCount);
+            for (const msg of newMessages) {
+                await this.sessionStore!.appendMessage(this.sessionId, {
+                    role: msg.role,
+                    content: msg.content,
+                });
+            }
+            log(`[DeepPDF] 保存 ${newMsgCount} 条新消息到 SessionStore`);
+        }
 
-        this.plugin.settings.chatCache[this.sessionId] = {
-            sessionId: this.sessionId,
-            indexId: effectiveIndexId,
-            lastUpdated: Date.now(),
-            messages: validMsgs,
-            isCrossBook: this.crossBookMode ? true : undefined,  // 明确使用 true 而不是 this.crossBookMode
-            lastConsolidated,  // 保留已整合到长期记忆的消息索引
-        };
-
-        // 如果是跨书籍模式，保存会话ID以便下次恢复
+        // 5. 如果是跨书籍模式，保存会话ID
         if (this.crossBookMode) {
             this.plugin.settings.lastCrossBookSessionId = this.sessionId;
+            await this.plugin.saveSettings();
             log('[DeepPDF] 保存跨书籍会话ID:', this.sessionId);
-        }
-
-        // 4. 清理并保存
-        await this.cleanupCache();
-        await this.plugin.saveSettings();
-        log('[DeepPDF] 缓存已保存, chatCache keys:', Object.keys(this.plugin.settings.chatCache || {}));
-    }
-
-    /** 清理过期缓存 (LRU, max 5MB) */
-    private async cleanupCache() {
-        const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-        const cache = this.plugin.settings.chatCache;
-        if (!cache) return;
-
-        // 计算当前大小
-        let currentSize = JSON.stringify(cache).length;
-
-        if (currentSize <= MAX_SIZE) return;
-
-        log(`[DeepPDF] 缓存大小 (${(currentSize / 1024).toFixed(1)}KB) 超过限制，开始清理...`);
-
-        // 按时间排序
-        const sessionIds = Object.keys(cache).sort((a, b) =>
-            cache[a].lastUpdated - cache[b].lastUpdated
-        );
-
-        // 删除最旧的，直到满足要求
-        while (currentSize > MAX_SIZE && sessionIds.length > 0) {
-            const oldestId = sessionIds.shift();
-            if (oldestId) {
-                delete cache[oldestId];
-                currentSize = JSON.stringify(cache).length;
-                log(`[DeepPDF] 已删除过期缓存: ${oldestId}`);
-            }
         }
     }
 
@@ -417,19 +466,17 @@ export class SidebarView extends ItemView {
      */
     private async maybeConsolidateMemory(): Promise<void> {
         try {
-            // 确保 sessionId 存在
-            if (!this.sessionId) {
+            // 确保 sessionId 和 SessionStore 存在
+            if (!this.sessionId || !this.sessionStore) {
                 return;
             }
 
-            const sessionId = this.sessionId;
-            const cache = this.plugin.settings.chatCache?.[sessionId];
-            if (!cache || !cache.messages || cache.messages.length === 0) {
+            const session = await this.sessionStore.get(this.sessionId);
+            if (!session || session.messages.length === 0) {
                 return;
             }
 
-            const messages = cache.messages;
-            const lastConsolidated = cache.lastConsolidated ?? 0;
+            const unconsolidated = session.messages.slice(session.lastConsolidated);
 
             // 简单的 token 估算
             const estimateTokens = (msgs: any[]): number => {
@@ -442,10 +489,10 @@ export class SidebarView extends ItemView {
                 return Math.round(totalChars / 2);
             };
 
-            const currentTokens = estimateTokens(messages);
+            const currentTokens = estimateTokens(unconsolidated);
 
             // 🔍 调试日志：每次都输出 token 状态
-            log(`[DeepPDF] Memory 状态检查: ${currentTokens} tokens (阈值: ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}), 消息数: ${messages.length}, lastConsolidated: ${lastConsolidated}`);
+            log(`[DeepPDF] Memory 状态检查: ${currentTokens} tokens (阈值: ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}), 未整合消息数: ${unconsolidated.length}, lastConsolidated: ${session.lastConsolidated}`);
 
             // 检查是否需要整合
             if (currentTokens < DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold) {
@@ -455,30 +502,34 @@ export class SidebarView extends ItemView {
 
             log(`[DeepPDF] ✅ Memory 整合触发: ${currentTokens} tokens >= ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
 
-            // 创建整合器
-            const store = new MemoryStore(this.app);
-            const consolidator = new MemoryConsolidator(
-                store,
-                this.frontendAgent?.getLLMClient() as any, // 使用公共方法获取 LLM 客户端
-                DEFAULT_CONSOLIDATOR_CONFIG
-            );
+            // 获取会话锁（防止并发整合）
+            await this.sessionStore.acquireLock(this.sessionId);
 
-            // 执行整合
-            const newLastConsolidated = await consolidator.maybeConsolidate(
-                messages,
-                lastConsolidated,
-                (newIndex) => {
-                    // 更新缓存中的 lastConsolidated
-                    if (this.plugin.settings.chatCache?.[sessionId]) {
-                        this.plugin.settings.chatCache[sessionId].lastConsolidated = newIndex;
-                        this.plugin.saveSettings();
+            try {
+                // 创建整合器
+                const store = new MemoryStore(this.app);
+                const consolidator = new MemoryConsolidator(
+                    store,
+                    this.frontendAgent?.getLLMClient() as any,
+                    DEFAULT_CONSOLIDATOR_CONFIG
+                );
+
+                // 执行整合
+                const newLastConsolidated = await consolidator.maybeConsolidate(
+                    session.messages,
+                    session.lastConsolidated,
+                    async (newIndex) => {
+                        // 更新 SessionStore 中的 lastConsolidated
+                        await this.sessionStore!.updateLastConsolidated(this.sessionId!, newIndex);
                         log(`[DeepPDF] lastConsolidated 更新为 ${newIndex}`);
                     }
-                }
-            );
+                );
 
-            if (newLastConsolidated > lastConsolidated) {
-                log(`[DeepPDF] 记忆整合完成: ${lastConsolidated} -> ${newLastConsolidated}`);
+                if (newLastConsolidated > session.lastConsolidated) {
+                    log(`[DeepPDF] 记忆整合完成: ${session.lastConsolidated} -> ${newLastConsolidated}`);
+                }
+            } finally {
+                this.sessionStore.releaseLock(this.sessionId);
             }
         } catch (err) {
             logError('[DeepPDF] 记忆整合失败:', err);
@@ -704,19 +755,26 @@ export class SidebarView extends ItemView {
             try {
                 this.sessionId = savedSessionId;
 
-                // 1. 尝试从本地缓存恢复
-                const cached = this.plugin.settings.chatCache?.[savedSessionId];
-                if (cached && cached.messages && cached.messages.length > 0) {
-                    await this.restoreHistoryToView(cached.messages, true);
-                    // new Notice(`已恢复对话 (本地缓存)`);
+                // 1. 优先从 SessionStore（JSONL 文件）恢复
+                const restored = await this.restoreFromSessionStore(savedSessionId);
+                if (restored) {
+                    log('[DeepPDF] 从 SessionStore 恢复会话成功');
                     return;
                 }
 
-                // 2. 从后端恢复
+                // 2. 回退：从旧的 chatCache 恢复（兼容）
+                const cached = this.plugin.settings.chatCache?.[savedSessionId];
+                if (cached && cached.messages && cached.messages.length > 0) {
+                    await this.restoreHistoryToView(cached.messages, true);
+                    log('[DeepPDF] 从 chatCache 恢复会话（旧格式）');
+                    return;
+                }
+
+                // 3. 回退：从后端恢复
                 const history = await agentAPI.getHistory(indexId, savedSessionId);
                 if (history && history.length > 0) {
                     await this.restoreHistoryToView(history, false);
-                    //new Notice(`已恢复对话`);
+                    log('[DeepPDF] 从后端恢复会话');
                 } else {
                     this.showWelcomeMessage();
                 }
@@ -1392,10 +1450,20 @@ export class SidebarView extends ItemView {
                 const savedSessionId = savedSessions[this.currentIndexId];
 
                 if (savedSessionId) {
+                    this.sessionId = savedSessionId;
+
+                    // 1. 优先从 SessionStore 恢复
+                    const restored = await this.restoreFromSessionStore(savedSessionId);
+                    if (restored) {
+                        log(`[DeepPDF] 切换到单书籍模式，从 SessionStore 恢复会话`);
+                        new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
+                        return;
+                    }
+
+                    // 2. 回退：从旧的 chatCache 恢复
                     const cached = this.plugin.settings.chatCache?.[savedSessionId];
                     if (cached && cached.messages && cached.messages.length > 0) {
-                        log(`[DeepPDF] 切换到单书籍模式，恢复会话: ${cached.messages.length} 条消息`);
-                        this.sessionId = savedSessionId;
+                        log(`[DeepPDF] 切换到单书籍模式，从 chatCache 恢复会话: ${cached.messages.length} 条消息`);
                         await this.restoreHistoryToView(cached.messages, true);
                         new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
                         return;
@@ -1459,7 +1527,18 @@ export class SidebarView extends ItemView {
     private async loadCrossBookSession() {
         const sessionId = this.plugin.settings.lastCrossBookSessionId;
         log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
+
         if (sessionId) {
+            this.sessionId = sessionId;
+
+            // 1. 优先从 SessionStore 恢复
+            const restored = await this.restoreFromSessionStore(sessionId);
+            if (restored) {
+                log('[DeepPDF] loadCrossBookSession: 从 SessionStore 恢复成功');
+                return;
+            }
+
+            // 2. 回退：从旧的 chatCache 恢复
             const cached = this.plugin.settings.chatCache?.[sessionId];
             log('[DeepPDF] loadCrossBookSession: cached =', cached ? 'found' : 'not found');
             if (cached) {
@@ -1468,16 +1547,21 @@ export class SidebarView extends ItemView {
             }
             if (cached && cached.messages && cached.messages.length > 0 && cached.isCrossBook) {
                 log(`[DeepPDF] 恢复跨书籍会话: ${cached.messages.length} 条消息`);
-                this.sessionId = sessionId;
-                this.restoreHistoryToView(cached.messages, true);
+                await this.restoreHistoryToView(cached.messages, true);
                 return;
             }
         }
+
         // 没有缓存的跨书籍会话，开始新会话
         log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
         this.sessionId = `cross-book-${Date.now()}`;
         this.plugin.settings.lastCrossBookSessionId = this.sessionId;
         await this.plugin.saveSettings();
+
+        // 在 SessionStore 中创建跨书籍会话
+        await this.initializeSessionStore();
+        await this.sessionStore!.create(this.sessionId, '__cross_book__', true);
+
         this.showWelcomeMessage();
     }
 
