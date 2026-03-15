@@ -240,7 +240,9 @@ ${formattedMessages}
 			const boundary = this.pickConsolidationBoundary(messages, newLastConsolidated, tokensToRemove);
 
 			if (boundary === null) {
-				agentLog(`[Consolidator] 第 ${round + 1} 轮: 无法找到安全边界`);
+				// 正常情况：当前对话轮次未完成，没有用户消息边界可切割
+				// 等用户发送下一条消息后，就会有新的边界
+				agentLog(`[Consolidator] 跳过整合: 当前轮次未完成，无安全边界`);
 				break;
 			}
 
