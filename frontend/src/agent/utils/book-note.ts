@@ -75,11 +75,26 @@ export function parseFrontmatter(content: string): {
 
 /**
  * 从 nodeId 提取章节索引
- * 格式如 "western-history_03-第一章" -> 3
+ * 支持多种格式：
+ * - "western-history_03-第一章" -> 3
+ * - "0008" -> 8
+ * - "03-something" -> 3
  */
 export function extractChapterIndexFromNodeId(nodeId: string): number | null {
-  const match = nodeId.match(/_(\d+)-/);
-  return match ? parseInt(match[1], 10) : null;
+  // 优先匹配带分隔符的格式：_数字- 或 _数字_
+  const match = nodeId.match(/_(\d+)(?:[-_]|$)/);
+  if (match) {
+    return parseInt(match[1], 10);
+  }
+
+  // 如果整个 nodeId 就是纯数字，直接返回
+  if (/^\d+$/.test(nodeId)) {
+    return parseInt(nodeId, 10);
+  }
+
+  // 尝试匹配开头的数字：03-something
+  const leadingMatch = nodeId.match(/^(\d+)(?:[-_]|$)/);
+  return leadingMatch ? parseInt(leadingMatch[1], 10) : null;
 }
 
 // ==================== 阅读进度存储（插件数据目录）====================

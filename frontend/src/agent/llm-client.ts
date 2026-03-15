@@ -4,6 +4,7 @@
  */
 
 import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
+import { agentLog } from '../utils/logger';
 
 export interface LLMClientOptions {
   apiKey: string;
@@ -93,7 +94,20 @@ export class LLMClient {
 
     const apiUrl = `${this.baseUrl}/chat/completions`;
 
+    // 🕐 性能计时
+    const t0 = performance.now();
+    let ttfb = 0; // Time to First Byte
+    let firstChunk = true;
+    let chunkCount = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
+    // 估算输入 token 数（粗略）
+    const inputEstimate = Math.round(JSON.stringify(messages).length / 2);
+    agentLog(`[LLM] 📤 发送请求: ${messages.length} 条消息, ~${inputEstimate} tokens, ${tools.length} 个工具`);
+
     try {
+      const fetchStart = performance.now();
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -108,6 +122,10 @@ export class LLMClient {
         }),
         signal: controller.signal,
       });
+
+      const fetchEnd = performance.now();
+      ttfb = fetchEnd - fetchStart;
+      agentLog(`[LLM] ⏱️ 请求响应: ${ttfb.toFixed(0)}ms (TTFB)`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -142,8 +160,18 @@ export class LLMClient {
           const { done, value } = await reader.read();
           if (done) break;
 
+          chunkCount++;
+
+          // 首次收到数据的日志
+          if (firstChunk) {
+            const firstChunkTime = performance.now() - t0;
+            agentLog(`[LLM] 📥 首个数据块: ${firstChunkTime.toFixed(0)}ms`);
+            firstChunk = false;
+          }
+
           // 将新数据追加到 buffer
           sseBuffer += decoder.decode(value, { stream: true });
+          chunkCount++;
 
           // 按换行符分割，保留最后一个可能不完整的行
           const lines = sseBuffer.split('\n');
@@ -228,6 +256,11 @@ export class LLMClient {
             callbacks.onToolCall(toolCalls);
           }
         }
+
+        // 🕐 流结束统计
+        const totalTime = performance.now() - t0;
+        const streamingTime = totalTime - ttfb;
+        agentLog(`[LLM] 📊 流式统计: 总计 ${totalTime.toFixed(0)}ms | TTFB ${ttfb.toFixed(0)}ms | 流传输 ${streamingTime.toFixed(0)}ms | ${chunkCount} 个chunk | finish=${finishReason}`);
 
         callbacks.onComplete(finishReason);
       } catch (readError) {

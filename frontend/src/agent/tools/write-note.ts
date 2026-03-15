@@ -147,7 +147,10 @@ export const writeNoteTool: ToolExecutor = {
 
         await app.vault.modify(existingFile, newContent);
         log('[write_note] 文件已更新:', normalizedPath);
-        return `Note updated successfully: ${path}`;
+
+        // 提取文件名作为显示文本
+        const displayName = normalizedPath.split('/').pop()?.replace(/\.md$/, '') || normalizedPath;
+        return `✅ 笔记已更新: [[${normalizedPath}|${displayName}]]`;
       }
 
       // 文件不存在，创建新文件
@@ -165,7 +168,10 @@ export const writeNoteTool: ToolExecutor = {
       await app.vault.create(normalizedPath, newContent);
 
       log('[write_note] 文件已创建:', normalizedPath);
-      return `Note created successfully: ${path}`;
+
+      // 提取文件名作为显示文本，返回 wiki 链接格式
+      const displayName = normalizedPath.split('/').pop()?.replace(/\.md$/, '') || normalizedPath;
+      return `✅ 笔记已创建: [[${normalizedPath}|${displayName}]]`;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
       logError('[write_note] 写入失败:', errorMsg);
