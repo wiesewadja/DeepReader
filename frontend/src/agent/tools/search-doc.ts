@@ -20,7 +20,9 @@ const SEARCH_DOC_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'search_doc',
-    description: 'Search document content for relevant information. Use this to find specific passages, quotes, or information about a topic. Supports PDF, EPUB and other document formats.',
+    description: `【检视阅读】搜索文档中与查询相关的内容。
+适用场景：快速了解书籍、回答"讲什么"、"总结"类问题、找到相关章节。
+返回：匹配的段落片段和 wiki 链接。`,
     parameters: {
       type: 'object',
       properties: {

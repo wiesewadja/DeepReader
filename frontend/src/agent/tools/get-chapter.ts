@@ -20,7 +20,9 @@ const GET_CHAPTER_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'get_chapter',
-    description: 'Get the text content of a specific chapter/section. Returns up to max_length characters by default. If you need more content, increase max_length or use start_offset to read from a specific position.',
+    description: `【分析阅读】获取章节的完整文本内容。
+适用场景：深入阅读特定章节、回答"详细解释"、"为什么"类问题。
+支持分页读取（max_length + start_offset）。`,
     parameters: {
       type: 'object',
       properties: {

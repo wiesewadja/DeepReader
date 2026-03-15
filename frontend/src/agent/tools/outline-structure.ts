@@ -15,8 +15,9 @@ const OUTLINE_STRUCTURE_DEFINITION: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'outline_structure',
-		description:
-			'分析阅读（规则2-3）：提取书籍整体结构和纲要。返回书籍核心主题、章节层级结构和各部分的功能说明。用于深入理解书籍的组织架构。',
+		description: `【分析阅读·规则2-3】提取书籍整体结构和纲要。
+适用场景：理解书籍架构、回答"结构如何"、"如何组织"类问题。
+返回：核心主题、章节层级、各部分功能说明。`,
 		parameters: {
 			type: 'object',
 			properties: {

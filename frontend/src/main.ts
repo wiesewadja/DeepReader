@@ -144,6 +144,24 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
+        // 调试命令：测试分析阅读工具
+        this.addCommand({
+            id: "debug-analytical-reading",
+            name: "Debug: Test analytical reading tools",
+            callback: () => {
+                this.sendTestMessage("分析这本书的整体结构和纲要");
+            }
+        });
+
+        // 调试命令：测试主题阅读
+        this.addCommand({
+            id: "debug-syntopical-reading",
+            name: "Debug: Test syntopical reading",
+            callback: () => {
+                this.sendTestMessage("在已读书中搜索关于经济危机的内容");
+            }
+        });
+
         // Add command - AI format current document
         this.addCommand({
             id: "format-current-document",

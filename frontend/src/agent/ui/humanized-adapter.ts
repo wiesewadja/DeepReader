@@ -38,6 +38,8 @@ export class HumanizedProgressAdapter {
 	private runningByTool: Map<string, string[]> = new Map();
 	/** markdown 文件映射（node_id -> 文件路径） */
 	private markdownFiles?: Record<string, string>;
+	/** 会话中达到的最高阅读层次（持续显示） */
+	private sessionHighestLevel: ReadingLevel | undefined;
 
 	/**
 	 * 设置 markdown 文件映射
@@ -299,6 +301,7 @@ export class HumanizedProgressAdapter {
 	/**
 	 * 确定当前阅读层次
 	 * 根据已调用和正在调用的工具，返回最高层次
+	 * 同时更新会话最高层次（用于持续显示）
 	 */
 	private determineReadingLevel(): ReadingLevel | undefined {
 		const levelPriority: ReadingLevel[] = ['syntopical', 'analytical', 'inspectional', 'elementary'];
@@ -306,25 +309,39 @@ export class HumanizedProgressAdapter {
 		// 检查所有已调用和正在调用的工具
 		const activeTools = this.toolCalls.filter((t) => t.status === 'running' || t.status === 'completed');
 
+		let currentLevel: ReadingLevel | undefined;
+
 		for (const level of levelPriority) {
 			const hasLevelTool = activeTools.some((tool) => {
 				const toolLevel = TOOL_TO_READING_LEVEL[tool.name];
 				return toolLevel === level;
 			});
 			if (hasLevelTool) {
-				return level;
+				currentLevel = level;
+				break;
 			}
 		}
 
-		return undefined;
+		// 更新会话最高层次（只升级不降级）
+		if (currentLevel) {
+			const currentIndex = levelPriority.indexOf(currentLevel);
+			const sessionIndex = this.sessionHighestLevel ? levelPriority.indexOf(this.sessionHighestLevel) : -1;
+			if (currentIndex < sessionIndex || sessionIndex === -1) {
+				this.sessionHighestLevel = currentLevel;
+			}
+		}
+
+		// 返回会话最高层次（持续显示，而非仅当前工具层次）
+		return this.sessionHighestLevel;
 	}
 
 	/**
-	 * 重置
+	 * 重置（新会话时调用）
 	 */
 	reset(): void {
 		this.toolCalls = [];
 		this.currentContent = '';
 		this.iteration = 0;
+		this.sessionHighestLevel = undefined;
 	}
 }

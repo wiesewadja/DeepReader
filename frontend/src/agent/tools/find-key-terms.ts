@@ -15,8 +15,9 @@ const FIND_KEY_TERMS_DEFINITION: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'find_key_terms',
-		description:
-			'分析阅读（规则5）：识别章节或全书中的关键词汇和专业术语。返回术语列表、定义和上下文。用于理解作者使用的核心概念。',
+		description: `【分析阅读·规则5】识别章节或全书中的关键词汇和专业术语。
+适用场景：理解专业概念、回答"术语含义"、"关键概念"类问题。
+返回：术语列表、定义、上下文示例。`,
 		parameters: {
 			type: 'object',
 			properties: {

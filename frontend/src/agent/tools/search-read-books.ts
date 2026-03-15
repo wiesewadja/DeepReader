@@ -13,14 +13,9 @@ const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'search_read_books',
-    description: `在已读书籍中搜索与某个主题相关的章节。
-
-使用场景：
-- 用户问"我之前读过类似的内容吗？"
-- 用户问"帮我找下读过书籍中与这个主题相关的章节"
-- 需要建立跨书籍的知识关联
-
-返回最相关的章节列表，包含摘要和 wikilink。`,
+    description: `【主题阅读】在已读书籍中搜索与某个主题相关的章节。
+适用场景：跨书比较、回答"比较"、"其他书"、"关联"类问题、建立知识网络。
+返回：最相关的章节列表，包含摘要和 wikilink。`,
     parameters: {
       type: 'object',
       properties: {
