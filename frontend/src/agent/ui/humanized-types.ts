@@ -17,6 +17,10 @@ export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
 	search_doc: 'inspectional',
 	get_chapter: 'analytical',
 	search_read_books: 'syntopical',
+	// 分析阅读工具（规则2-6）
+	outline_structure: 'analytical',
+	find_key_terms: 'analytical',
+	extract_propositions: 'analytical',
 };
 
 /**
