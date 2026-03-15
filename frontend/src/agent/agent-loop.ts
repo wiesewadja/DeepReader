@@ -27,7 +27,7 @@ import type { HumanizedProgress } from './ui/humanized-types.js';
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../utils/logger';
 
 export interface AgentLoopOptions {
-  maxIterations?: number; // default 10
+  maxIterations?: number; // default 6 (reduced from 20 for faster response)
   abortSignal?: AbortSignal; // 用于取消请求
   onContent: (text: string) => void;
   onProgress: (status: string) => void;
@@ -140,8 +140,8 @@ function delay(ms: number): Promise<void> {
 /**
  * 性能优化常量
  */
-const MAX_TOOL_RESULT_LENGTH = 8000;  // 工具结果最大长度（字符）
-const MAX_CONTEXT_TOKENS = 40000;     // 消息历史最大 token 数
+const MAX_TOOL_RESULT_LENGTH = 4000;  // 工具结果最大长度（字符）- 降低以减少 token 膨胀
+const MAX_CONTEXT_TOKENS = 20000;     // 消息历史最大 token 数 - 降低以更早触发压缩
 const TOOL_MAX_RETRIES = 2;           // 工具失败最大重试次数
 
 /**
@@ -242,15 +242,18 @@ export async function runAgentLoop(
   context: ToolContext,
   options: AgentLoopOptions
 ): Promise<ChatMessage[]> {
-  const maxIterations = options.maxIterations || 20;
+  const maxIterations = options.maxIterations || 10;  // Balanced for complex tasks with skills
   let iterations = 0;
   let workingMessages = [...messages];
   let hadError = false; // 跟踪是否发生了错误
+  let completedNormally = false; // 跟踪是否正常完成（非强制总结）
 
   // 拟人化进度适配器（可选）
   const humanizer = options.onHumanizedProgress
     ? new HumanizedProgressAdapter()
     : null;
+
+  agentLog(`[AgentLoop] humanizer 状态: ${humanizer ? '已创建' : '未创建'}, onHumanizedProgress: ${options.onHumanizedProgress ? '已提供' : '未提供'}`);
 
   // 设置 markdown 文件映射（用于显示章节名称）
   if (humanizer && context.markdownFiles) {
@@ -382,6 +385,7 @@ export async function runAgentLoop(
       }
 
       options.onComplete();
+      completedNormally = true;  // 标记为正常完成
       break;
     }
 
@@ -419,79 +423,114 @@ export async function runAgentLoop(
     };
     workingMessages.push(assistantMessage);
 
-    // 依次执行每个 tool call
+    // 🚀 并行执行所有 tool calls（而非串行）
     const toolsStartTime = Date.now();
-    for (const tc of toolCalls) {
-      const toolStartTime = Date.now();
-      agentLog(`\n[AgentLoop] ▶ 执行: ${tc.name}`);
 
+    // 记录所有工具调用开始（拟人化）
+    const toolCallIds: string[] = [];
+    for (const tc of toolCalls) {
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(tc.arguments);
       } catch {
         args = {};
       }
-
-      // 记录工具调用开始（拟人化）- 使用工具调用 ID 进行精确跟踪
-      let toolCallId = '';
+      agentLog(`\n[AgentLoop] ▶ 执行: ${tc.name}`);
       if (humanizer) {
-        toolCallId = humanizer.recordToolStart(tc.name, args);
-        options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
+        const id = humanizer.recordToolStart(tc.name, args);
+        toolCallIds.push(id || tc.name);
+        const progress = humanizer.toHumanizedProgress();
+        agentLog(`[AgentLoop] onHumanizedProgress 调用: mainAction=${progress.mainAction.detail}`);
+        options.onHumanizedProgress?.(progress);
       }
+    }
 
-      try {
-        // 工具执行（带重试机制）
-        let result: string | null = null;
-        let lastError: Error | null = null;
+    // 并行执行所有工具
+    const toolResults = await Promise.all(
+      toolCalls.map(async (tc, index) => {
+        const toolStartTime = Date.now();
 
-        for (let attempt = 0; attempt <= TOOL_MAX_RETRIES; attempt++) {
-          try {
-            result = await executeTool(toolRegistry, tc.name, args, context);
-            break; // 成功则跳出重试循环
-          } catch (error) {
-            lastError = error as Error;
-            if (attempt < TOOL_MAX_RETRIES) {
-              const delayMs = 1000 * (attempt + 1); // 指数退避: 1s, 2s, 3s
-              agentLog(`[AgentLoop] ⚠️ 工具失败，重试 ${attempt + 1}/${TOOL_MAX_RETRIES}... (${tc.name})`);
-              await new Promise(resolve => setTimeout(resolve, delayMs));
+        let args: Record<string, unknown>;
+        try {
+          args = JSON.parse(tc.arguments);
+        } catch {
+          args = {};
+        }
+
+        try {
+          // 工具执行（带重试机制）
+          let result: string | null = null;
+          let lastError: Error | null = null;
+
+          for (let attempt = 0; attempt <= TOOL_MAX_RETRIES; attempt++) {
+            try {
+              result = await executeTool(toolRegistry, tc.name, args, context);
+              break;
+            } catch (error) {
+              lastError = error as Error;
+              if (attempt < TOOL_MAX_RETRIES) {
+                const delayMs = 1000 * (attempt + 1);
+                agentLog(`[AgentLoop] ⚠️ 工具失败，重试 ${attempt + 1}/${TOOL_MAX_RETRIES}... (${tc.name})`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+              }
             }
           }
+
+          if (result === null) {
+            throw lastError;
+          }
+
+          const duration = Date.now() - toolStartTime;
+          const resultLength = result.length;
+
+          return {
+            success: true,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            humanizerId: toolCallIds[index],
+            result,
+            duration,
+            resultLength,
+          };
+        } catch (error) {
+          const duration = Date.now() - toolStartTime;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+
+          return {
+            success: false,
+            toolCallId: tc.id,
+            toolName: tc.name,
+            humanizerId: toolCallIds[index],
+            error: errorMsg,
+            duration,
+          };
         }
+      })
+    );
 
-        // 如果所有重试都失败
-        if (result === null) {
-          throw lastError;
-        }
-
-        const duration = Date.now() - toolStartTime;
-        const resultLength = result.length;
-
-        // 压缩工具结果（防止 token 膨胀）
-        const compressedResult = compressToolResult(result);
-        const compressedLength = compressedResult.length;
-
+    // 处理所有结果
+    for (const res of toolResults) {
+      if (res.success) {
         // 记录工具调用指标
         toolCallMetrics.push({
-          name: tc.name,
-          duration,
-          resultChars: resultLength,
-          compressedChars: compressedLength,
+          name: res.toolName,
+          duration: res.duration,
+          resultChars: res.resultLength!,
+          compressedChars: res.resultLength!,
         });
 
-        // 记录工具调用完成（拟人化）- 优先使用 ID
+        // 记录工具调用完成（拟人化）
         if (humanizer) {
-          humanizer.recordToolComplete(toolCallId || tc.name, duration);
+          humanizer.recordToolComplete(res.humanizerId, res.duration);
           options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
         }
 
-        // 日志
-        agentLog(`[AgentLoop] ✓ ${tc.name}: ${formatDuration(duration)}, ${resultLength}字符${resultLength !== compressedLength ? ` → ${compressedLength} (压缩${Math.round((1 - compressedLength / resultLength) * 100)}%)` : ''}`);
+        agentLog(`[AgentLoop] ✓ ${res.toolName}: ${formatDuration(res.duration)}, ${res.resultLength || 0}字符`);
 
-        // 检查是否返回了隐藏消息（用于用户画像更新等）
+        // 检查是否返回了隐藏消息
         try {
-          const parsed = JSON.parse(result);
+          const parsed = JSON.parse(res.result!);
           if (parsed.success && parsed.hiddenMessage) {
-            // 注入隐藏消息到对话历史（不显示但发送给 LLM）
             workingMessages.push({
               role: parsed.hiddenMessage.role,
               content: parsed.hiddenMessage.content,
@@ -506,52 +545,118 @@ export async function runAgentLoop(
         // 添加 tool result 消息
         workingMessages.push({
           role: 'tool',
-          tool_call_id: tc.id,
-          content: compressedResult,
+          tool_call_id: res.toolCallId,
+          content: res.result!,
         });
-      } catch (error) {
-        const duration = Date.now() - toolStartTime;
-        const errorMsg = error instanceof Error ? error.message : String(error);
-
+      } else {
         // 记录失败的工具调用指标
         toolCallMetrics.push({
-          name: tc.name,
-          duration,
+          name: res.toolName,
+          duration: res.duration,
           resultChars: 0,
           compressedChars: 0,
         });
 
-        // 记录工具调用失败（拟人化）- 优先使用 ID
+        // 记录工具调用失败（拟人化）
         if (humanizer) {
-          humanizer.recordToolFailed(toolCallId || tc.name);
+          humanizer.recordToolFailed(res.humanizerId);
           options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
         }
 
-        agentLog(`[AgentLoop] ✗ 失败: ${tc.name} (${formatDuration(duration)}) → ${errorMsg}`);
+        agentLog(`[AgentLoop] ✗ 失败: ${res.toolName} (${formatDuration(res.duration)}) → ${res.error}`);
 
-        // 添加错误结果（包含更友好的提示）
         workingMessages.push({
           role: 'tool',
-          tool_call_id: tc.id,
-          content: `Error: ${errorMsg}\n\n请尝试其他方法，或简化你的请求。`,
+          tool_call_id: res.toolCallId,
+          content: `Error: ${res.error}\n\n请尝试其他方法，或简化你的请求。`,
         });
       }
     }
+
     const toolsDuration = Date.now() - toolsStartTime;
     toolsTotalTime += toolsDuration;
 
     // 迭代结束统计
     const iterationDuration = Date.now() - iterationStartTime;
-    agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)}`);
+    agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)} (并行执行 ${toolCalls.length} 个工具)`);
     agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
 
-    // 注意：不在循环内压缩消息历史，保留完整上下文供后续工具调用使用
-    // 压缩移到循环结束后统一处理
+    // 🔄 循环内压缩： 当 token 超过阈值时，提前压缩以保持上下文大小可控
+    const currentTokens = estimateTokens(workingMessages);
+    if (currentTokens > MAX_CONTEXT_TOKENS) {
+      agentLog(`[AgentLoop] ⚠️ Token 超限 (${currentTokens} > ${MAX_CONTEXT_TOKENS})，执行循环内压缩...`);
+      workingMessages = manageMessageHistory(workingMessages);
+      agentLog(`[AgentLoop] ✅ 压缩后: ${workingMessages.length} 条, tokens: ~${estimateTokens(workingMessages)}`);
+    }
   }
 
-  if (iterations >= maxIterations) {
-    agentLog('[AgentLoop] ⚠️ 达到最大迭代次数，即将结束');
-    options.onProgress('达到最大轮数，正在总结...');
+  // 只有在非正常完成且达到最大迭代次数时才强制总结
+  if (!completedNormally && iterations >= maxIterations) {
+    agentLog('[AgentLoop] ⚠️ 达到最大迭代次数，强制生成总结...');
+
+    // 强制生成总结性回复
+    const forceSummaryMessage: ChatMessage = {
+      role: 'user',
+      content: '基于已收集的信息，请立即给出你的回答。使用已获取的资料，不要继续搜索。',
+    };
+    workingMessages.push(forceSummaryMessage);
+
+    let summaryContent = '';
+    let summaryFinishReason: 'stop' | 'tool_calls' | 'length' = 'stop';
+
+    const summaryStartTime = Date.now();
+    agentLog('[AgentLoop] 🤖 开始强制总结调用...');
+
+    await new Promise<void>((resolve) => {
+      client.streamChat(
+        workingMessages,
+        [], // 不传工具，强制 LLM 直接回复
+        {
+          onContent: (text) => {
+            summaryContent += text;
+            options.onContent(text);
+          },
+          onToolCall: () => {
+            // 不应该有工具调用，因为没传工具
+          },
+          onComplete: (reason) => {
+            summaryFinishReason = reason;
+            resolve();
+          },
+          onError: (error) => {
+            options.onError(error);
+            resolve();
+          },
+        },
+        { signal: options.abortSignal }
+      );
+    });
+
+    const summaryDuration = Date.now() - summaryStartTime;
+    llmTotalTime += summaryDuration;
+    agentLog(`[AgentLoop] 🤖 强制总结完成: ${formatDuration(summaryDuration)}, 内容长度: ${summaryContent.length}`);
+
+    // 添加总结消息到历史
+    if (summaryContent) {
+      workingMessages.push({
+        role: 'assistant',
+        content: summaryContent,
+      });
+
+      // 调用内容完成回调
+      if (options.onContentComplete) {
+        try {
+          const correctedContent = await options.onContentComplete(summaryContent);
+          if (correctedContent && correctedContent !== summaryContent) {
+            summaryContent = correctedContent;
+          }
+        } catch (err) {
+          agentLog('[AgentLoop] onContentComplete 回调失败:', err);
+        }
+      }
+    }
+
+    options.onComplete();
   }
 
   // 循环结束后统一管理消息历史（防止 token 无限增长）

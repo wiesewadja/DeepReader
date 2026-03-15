@@ -7,7 +7,7 @@ import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obs
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
-import { uiLog as log, error as logError } from '../../utils/logger.js';
+import { uiLog as log, error as logError, serviceLog } from '../../utils/logger.js';
 
 /**
  * 消息角色类型
@@ -198,6 +198,14 @@ export function parseAgentContent(content: string): {
 		.replace(/<invoke>/gi, '\n')
 		.replace(/<\/invoke>/gi, '\n');
 
+	// 2.1 移除 DSML 格式标签（DeepSeek API 返回的特殊格式）
+	// 格式如: </｜DSML｜invoke>, </｜DSML｜function_calls>, <｜DSML｜...>
+	processedContent = processedContent
+		.replace(/<\/?｜DSML｜[^>]*>/gi, '')  // 闭合标签
+		.replace(/<｜DSML｜[^>]*$/gi, '')     // 未闭合标签
+		.replace(/<\/?DSML_[^>]*>/gi, '')    // DSML_xxx 格式
+		.replace(/｜DSML｜/gi, '');           // 纯文本残留
+
 	// 3. 移除 tool_call 标签及其内容
 	processedContent = processedContent.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
 	processedContent = processedContent.replace(/<tool_call>[\s\S]*$/i, ''); // 未闭合的
@@ -205,6 +213,7 @@ export function parseAgentContent(content: string): {
 	// 4. 移除中间说明文字（LLM 在调用工具前后的冗余说明）
 	// 这些文字通常以特定模式开头，不应该显示给用户
 	const intermediatePatterns = [
+		// 整行模式
 		/^.*让我[先再]*搜索.*[:：]?\s*$/gm,      // "让我搜索..."
 		/^.*让我[先再]*查看.*[:：]?\s*$/gm,      // "让我查看..."
 		/^.*让我[先再]*阅读.*[:：]?\s*$/gm,      // "让我阅读..."
@@ -215,11 +224,23 @@ export function parseAgentContent(content: string): {
 		/^.*我先查看.*[:：]?\s*$/gm,             // "我先查看..."
 		/^根据目录.*让我.*$/gm,                  // "根据目录...让我..."
 		/^我将.*搜索.*[:：]?\s*$/gm,             // "我将搜索..."
+		// 段落内模式（可能不是单独一行）
+		/^让我[获取查找搜索查看阅读].*[,，].*$/gm,  // "让我获取...,以便..."
+		/^现在让我[开始]*.*[,，].*$/gm,           // "现在让我开始创建..."
+		/^基于.*让我.*$/gm,                       // "基于...让我..."
+		/^.*让我继续.*$/gm,                       // "让我继续获取..."
+		/^.*让我使用.*技能.*$/gm,                 // "让我使用知识卡片生成技能..."
+		/^首先让我.*$/gm,                         // "首先让我..."
+		/^.*我先[创建生成写].*$/gm,               // "我先创建..."
+		/^现在[创建生成写].*$/gm,                  // "现在创建..."
 	];
 
 	for (const pattern of intermediatePatterns) {
 		processedContent = processedContent.replace(pattern, '');
 	}
+
+	// 4.1 移除连续的空行（由上面的替换产生）
+	processedContent = processedContent.replace(/\n{3,}/g, '\n\n');
 
 	// 5. 提取工具调用
 	const toolCalls: AgentToolCall[] = [];
@@ -997,8 +1018,9 @@ export class AIMessage extends Message {
 		const statusNeedsUpdate = newStatus !== undefined && newStatus !== this.lastDisplayedStatus;
 
 		// 调试：输出关键变量
-		log('[DeepPDF] update() 调用:', {
+		serviceLog('[DeepPDF] Message.update() 调用:', {
 			hasEl: !!this.el,
+			hasStatusEl: !!this.statusEl,
 			dataCurrentStatus: data.currentStatus,
 			newStatus,
 			lastDisplayedStatus: this.lastDisplayedStatus,
@@ -1012,13 +1034,13 @@ export class AIMessage extends Message {
 				this.statusEl.textContent = newStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
-				log('[DeepPDF] update() - ✓ 状态已显示:', newStatus);
+				serviceLog('[DeepPDF] Message.update() - ✓ 状态已显示:', newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				// 清空状态
 				this.statusEl.textContent = '';
 				this.statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
-				log('[DeepPDF] update() - 状态已隐藏');
+				serviceLog('[DeepPDF] Message.update() - 状态已隐藏');
 			}
 		}
 

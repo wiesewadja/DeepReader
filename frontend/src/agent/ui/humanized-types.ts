@@ -84,7 +84,8 @@ export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, cont
 	write_note: (args) => `整理笔记「${String(args.path || '')}」`,
 	create_sub_agent: () => '分头查找资料',
 	check_sub_agent: () => '等待子任务完成',
-	skill: (args) => `加载技能「${String(args.skillName || '专业知识')}」`,
+	Skill: (args) => `加载技能「${String(args.skill || '专业知识')}」`,
+	skill: (args) => `加载技能「${String(args.skill || '专业知识')}」`, // 兼容小写
 };
 
 /**

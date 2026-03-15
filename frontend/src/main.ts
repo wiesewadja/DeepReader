@@ -135,6 +135,15 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
+        // 调试命令：发送测试消息
+        this.addCommand({
+            id: "debug-send-message",
+            name: "Debug: Send test message",
+            callback: () => {
+                this.sendTestMessage("这本书主要讲了什么");
+            }
+        });
+
         // Add command - AI format current document
         this.addCommand({
             id: "format-current-document",
@@ -881,6 +890,34 @@ views:
                 await view.selectBookByName(bookName);
             }
         }
+    }
+
+    /**
+     * 发送测试消息（用于调试状态显示）
+     */
+    async sendTestMessage(query: string): Promise<void> {
+        log('[DeepPDF] sendTestMessage called with:', query);
+
+        // 确保 sidebar 已打开
+        const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+        if (leaves.length === 0) {
+            log('[DeepPDF] No sidebar view, activating...');
+            this.activateView();
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        // 重新获取 leaves
+        const activeLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+        if (activeLeaves.length === 0) {
+            new Notice("无法打开侧边栏");
+            return;
+        }
+
+        const view = activeLeaves[0].view as SidebarView;
+
+        // 使用 public 方法发送消息
+        log('[DeepPDF] Calling view.sendMessageWithInput...');
+        await view.sendMessageWithInput(query);
     }
 
     activateView() {

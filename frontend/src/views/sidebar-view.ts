@@ -25,7 +25,7 @@ import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
-import { uiLog as log, warn, error as logError } from "../utils/logger.js";
+import { uiLog as log, warn, error as logError, serviceLog } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import type { ReadingProgress } from "../agent/tools/types.js";
@@ -290,7 +290,8 @@ export class SidebarView extends ItemView {
         // 过滤规则：
         // - user 消息：全部显示
         // - assistant 消息：只显示最终回复（没有 tool_calls 的），过滤掉中间过程消息
-        const displayMessages = session.messages.filter(msg => {
+        // - 对于重试产生的多个 AI 回复，只保留最新的一个
+        const allDisplayMessages = session.messages.filter(msg => {
             if (msg.role === 'user') return true;
             if (msg.role === 'assistant') {
                 // 过滤掉带有 tool_calls 的中间消息（这些是工具调用前的思考/动作消息）
@@ -299,6 +300,21 @@ export class SidebarView extends ItemView {
             }
             return false; // 过滤掉 tool 和其他角色消息
         });
+
+        // 去重：对于连续的多个 assistant 消息，只保留最新的一个
+        // 这是为了处理重试（regenerate）产生的重复 AI 回复
+        const displayMessages: typeof allDisplayMessages = [];
+        for (let i = 0; i < allDisplayMessages.length; i++) {
+            const msg = allDisplayMessages[i];
+            const nextMsg = allDisplayMessages[i + 1];
+
+            // 如果当前是 assistant 消息，且下一个也是 assistant 消息，跳过当前的（保留最新的）
+            if (msg.role === 'assistant' && nextMsg?.role === 'assistant') {
+                log(`[DeepPDF] 跳过旧的 AI 回复（有更新的版本）`);
+                continue;
+            }
+            displayMessages.push(msg);
+        }
 
         // 将过滤后的消息添加到 UI
         displayMessages.forEach((msg, index) => {
@@ -1510,6 +1526,15 @@ export class SidebarView extends ItemView {
     // ==================== 消息处理 ====================
 
     /**
+     * 公开方法：从外部发送消息（用于调试）
+     * @param message 用户消息内容
+     */
+    public async sendMessageWithInput(message: string): Promise<void> {
+        log('[DeepPDF] sendMessageWithInput called:', message);
+        await this.sendMessage(message);
+    }
+
+    /**
      * 发送消息
      * @param message 用户消息内容
      * @param quotes 引用内容（可选）
@@ -1551,6 +1576,16 @@ export class SidebarView extends ItemView {
                     citations: undefined,
                     followUpQuestions: undefined
                 });
+
+                // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）
+                // 这样重新生成时，新的回复不会导致重复
+                const lastUserIndex = this.agentChatHistory.findLastIndex(m => m.role === 'user');
+                if (lastUserIndex >= 0) {
+                    const beforeRegenerate = this.agentChatHistory.length;
+                    // 只保留到最后一条 user 消息（包含）
+                    this.agentChatHistory = this.agentChatHistory.slice(0, lastUserIndex + 1);
+                    log(`[DeepPDF] 重试模式：清理了 ${beforeRegenerate - this.agentChatHistory.length} 条旧消息`);
+                }
             } else {
                 // 正常模式：生成新的消息 ID
                 const timestamp = Date.now();
@@ -1920,6 +1955,12 @@ ${r.text}`;
 
             // 简化状态追踪：thinking（思考中）vs answering（回答中）
             let agentState: 'thinking' | 'answering' = 'thinking';
+            // 追踪是否收到过工具调用（用于判断是否是最终回复阶段）
+            let hadToolCalls = false;
+
+            // 🕐 性能统计：记录从用户提交问题到首字节响应的时间
+            const queryStartTime = Date.now();
+            let firstContentLogged = false;
 
             // 回调函数
             const callbacks = {
@@ -1927,12 +1968,35 @@ ${r.text}`;
                 onContent: (text: string) => {
                     fullContent += text;
 
-                    // 切换到回答阶段：一旦有实际内容（超过 10 字符）
-                    if (agentState === 'thinking' && fullContent.trim().length > 10) {
+                    // 🕐 记录首字节响应时间（仅首次）
+                    if (!firstContentLogged && fullContent.trim().length > 0) {
+                        firstContentLogged = true;
+                        const ttfc = Date.now() - queryStartTime;
+                        log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
+                    }
+
+                    // 优化：立即切换到回答阶段
+                    // 条件：收到实际内容（非空白字符）
+                    if (agentState === 'thinking' && fullContent.trim().length > 0) {
                         agentState = 'answering';
                     }
 
                     // 思考阶段：只更新状态，不更新内容
+                    // 例外：如果之前没有工具调用（直接回复），立即显示内容
+                    if (agentState === 'thinking' && !hadToolCalls) {
+                        // 直接回复场景：立即显示流式内容
+                        const updates: any = {
+                            content: fullContent,
+                            isStreaming: true,
+                            isAgentMessage: true,
+                        };
+                        if (currentStatus) {
+                            updates.currentStatus = currentStatus;
+                        }
+                        this.messageList?.updateMessage(aiMessageId, updates);
+                        return;
+                    }
+
                     if (agentState === 'thinking') {
                         const updates: any = {
                             isStreaming: true,
@@ -2086,10 +2150,27 @@ ${r.text}`;
                         }
                         lastUpdateTime = now;
 
-                        // 思考阶段才更新状态
-                        if (agentState !== 'thinking') {
+                        serviceLog('[DeepPDF] onHumanizedProgress 回调:', {
+                            agentState,
+                            mainAction: progress.mainAction,
+                            readingStepsCount: progress.readingSteps.length,
+                            readingStepsStatus: progress.readingSteps.map(s => s.status)
+                        });
+
+                        // 检测是否有工具调用（readingSteps 中有已完成的步骤）
+                        if (progress.readingSteps.some(step => step.status === 'done' || step.status === 'current')) {
+                            hadToolCalls = true;
+                        }
+
+                        // 只要有正在进行的工具调用，就更新状态（不管 agentState）
+                        // 这样可以在多轮工具调用时持续显示状态
+                        const hasRunningTools = progress.readingSteps.some(step => step.status === 'current');
+                        if (agentState !== 'thinking' && !hasRunningTools) {
+                            serviceLog('[DeepPDF] onHumanizedProgress 跳过: agentState=' + agentState + ', hasRunningTools=' + hasRunningTools);
                             return;
                         }
+
+                        serviceLog('[DeepPDF] onHumanizedProgress 更新状态:', progress.mainAction.detail);
 
                         // 只更新状态文字，不更新 content
                         this.messageList?.updateMessage(aiMessageId, {

@@ -201,6 +201,11 @@ export class HumanizedProgressAdapter {
 				return { type: 'writing', detail: actionFn?.(tool.args, context) || '整理中...' };
 			}
 
+			// Skill 工具 - 加载专业技能
+			if (tool.name.toLowerCase() === 'skill') {
+				return { type: 'thinking', detail: actionFn?.(tool.args, context) || '加载专业技能...' };
+			}
+
 			// 默认使用工具名对应的动作
 			if (actionFn) {
 				return { type: 'reading', detail: actionFn(tool.args, context) };
