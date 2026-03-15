@@ -29,16 +29,11 @@ import { uiLog as log, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import type { ReadingProgress } from "../agent/tools/types.js";
-import { getBookReadingProgress } from "../agent/utils/book-note.js";
+import { readReadingProgress } from "../agent/utils/plugin-data.js";
 import { calculateProgressMetrics } from "../agent/utils/plugin-data.js";
 import {
     validateAndCorrectLinks,
-    extractReferencedChapters,
 } from "../agent/utils/link-validator.js";
-import {
-    updateReadingProgress,
-    FAMILIARITY_DELTAS,
-} from "../agent/utils/book-note.js";
 import { MemoryStore } from "../agent/memory/store.js";
 import { MemoryConsolidator } from "../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
@@ -1726,7 +1721,7 @@ export class SidebarView extends ItemView {
             // 加载阅读进度
             if (this.currentPdfName) {
                 try {
-                    const progressData = await getBookReadingProgress(this.app, this.currentPdfName);
+                    const progressData = await readReadingProgress(this.app, this.currentPdfName);
                     if (progressData) {
                         // 找到最熟悉的章节
                         const familiarity = progressData.chapterFamiliarity;
@@ -1857,44 +1852,7 @@ export class SidebarView extends ItemView {
                             content
                         );
 
-                        // 2. 提取引用的章节索引
-                        const chapterIndices = extractReferencedChapters(validatedLinks);
-
-                        // 3. 更新熟悉度（ai_reference 触发）
-                        if (chapterIndices.length > 0) {
-                            const indexId = this.currentIndexId || this.currentPdfName;
-                            const totalChapters = context.readingProgress?.totalChapters || 100;
-
-                            for (const chapterIndex of chapterIndices) {
-                                try {
-                                    await updateReadingProgress(
-                                        this.app,
-                                        this.currentPdfName,
-                                        indexId,
-                                        totalChapters,
-                                        chapterIndex,
-                                        FAMILIARITY_DELTAS.ai_reference
-                                    );
-                                    log('[DeepPDF] AI 引用熟悉度更新成功，章节:', chapterIndex);
-                                } catch (err) {
-                                    logError('[DeepPDF] AI 引用熟悉度更新失败:', err);
-                                }
-                            }
-
-                            // 检测进度里程碑
-                            if (this.milestoneRecorder && this.currentPdfName) {
-                                try {
-                                    const progress = await getBookReadingProgress(this.app, this.currentPdfName);
-                                    if (progress) {
-                                        await this.milestoneRecorder.checkProgressMilestones(progress);
-                                    }
-                                } catch (err) {
-                                    logError('[DeepPDF] 里程碑检测失败:', err);
-                                }
-                            }
-                        }
-
-                        // 4. 如果内容被纠正，更新消息显示
+                        // 2. 如果内容被纠正，更新消息显示
                         if (correctedContent !== content) {
                             log('[DeepPDF] 链接已纠正，更新消息');
                             this.messageList?.updateMessage(aiMessageId, {

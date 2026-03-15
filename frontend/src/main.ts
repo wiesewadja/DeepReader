@@ -5,11 +5,6 @@ import { serviceLog, warn, error } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
-import {
-    updateReadingProgress,
-    extractChapterIndexFromNodeId,
-    FAMILIARITY_DELTAS,
-} from './agent/utils/book-note.js';
 
 // 使用 service 模块日志器
 const log = serviceLog;
@@ -338,54 +333,9 @@ export default class DeepPDFPlugin extends Plugin {
             await this.app.vault.modify(activeFile, newContent);
             log('[DeepPDF] Highlight saved:', highlightedCount, 'lines with color:', color);
 
-            // 更新阅读进度（高亮触发 +2）
-            await this.updateFamiliarityForHighlight(activeFile.path);
-
         } catch (err) {
             log.error('[DeepPDF] Failed to save highlight:', err);
             new Notice("保存高亮失败");
-        }
-    }
-
-    /**
-     * 高亮时更新章节熟悉度
-     */
-    private async updateFamiliarityForHighlight(filePath: string): Promise<void> {
-        try {
-            // 从文件路径提取书名和章节索引
-            // 路径格式: DeepReader/书名/00-章节名.md
-            const pathParts = filePath.split('/');
-            if (pathParts.length < 3 || pathParts[0] !== 'DeepReader') {
-                return; // 不是书籍笔记，跳过
-            }
-
-            const bookName = pathParts[1];
-            const fileName = pathParts[pathParts.length - 1];
-
-            // 从文件名提取章节索引
-            const chapterIndex = extractChapterIndexFromNodeId(fileName.replace('.md', ''));
-            if (chapterIndex === null) {
-                return;
-            }
-
-            // 更新阅读进度
-            const indexId = bookName; // 简化处理
-            const totalChapters = 100; // 默认值
-            const success = await updateReadingProgress(
-                this.app,
-                bookName,
-                indexId,
-                totalChapters,
-                chapterIndex,
-                FAMILIARITY_DELTAS.highlight // +2
-            );
-
-            if (success) {
-                log('[DeepPDF] 熟悉度更新成功（高亮）:', bookName, '章节', chapterIndex);
-            }
-        } catch (err) {
-            // 熟悉度更新失败不影响主流程
-            log('[DeepPDF] 熟悉度更新失败（高亮）:', err);
         }
     }
 

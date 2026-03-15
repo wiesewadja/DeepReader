@@ -12,7 +12,6 @@ import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
-import { updateFamiliarityTool } from './familiarity.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { createCanvasTool } from './canvas.js';
 import { outlineStructureTool } from './outline-structure.js';
@@ -36,7 +35,6 @@ export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool } from './memory.js';
 export { updateProfileTool } from './profile.js';
-export { updateFamiliarityTool } from './familiarity.js';
 export { searchReadBooksTool } from './search-read-books.js';
 export { createCanvasTool } from './canvas.js';
 export { outlineStructureTool } from './outline-structure.js';
@@ -75,8 +73,6 @@ export function createToolRegistry(
   // 注册用户画像工具
   registry.set('update_profile', updateProfileTool);
 
-  // 注册熟悉度工具
-  registry.set('update_familiarity', updateFamiliarityTool);
 
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);

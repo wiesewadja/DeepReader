@@ -14,12 +14,7 @@ import { executeTool } from './tools/index';
 import { agentLog } from '../utils/logger';
 import {
   validateAndCorrectLinks,
-  extractReferencedChapters,
 } from './utils/link-validator.js';
-import {
-  updateReadingProgress,
-  FAMILIARITY_DELTAS,
-} from './utils/book-note.js';
 import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
 import type { HumanizedProgress } from './ui/humanized-types.js';
 

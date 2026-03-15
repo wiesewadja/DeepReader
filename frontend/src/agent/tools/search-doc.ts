@@ -6,11 +6,6 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
-import {
-  updateReadingProgress,
-  extractChapterIndexFromNodeId,
-  FAMILIARITY_DELTAS,
-} from '../utils/book-note.js';
 
 // 性能优化常量：限制返回内容大小，防止 token 膨胀
 const MAX_TEXT_LENGTH_PER_RESULT = 1500;  // 单条结果最大字符数
@@ -156,9 +151,6 @@ export const searchDocTool: ToolExecutor = {
 
       log('[search_doc] 找到', result.results.length, '条结果');
 
-      // 自动更新搜索结果的章节熟悉度（user_question 触发）
-      scheduleFamiliarityUpdateForSearchResults(result.results, context);
-
       return resultPrefix + formattedResults;
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -167,51 +159,3 @@ export const searchDocTool: ToolExecutor = {
     }
   },
 };
-
-/**
- * 为搜索结果自动更新熟悉度（fire-and-forget）
- * 用户提问涉及的章节 +1
- */
-function scheduleFamiliarityUpdateForSearchResults(
-  results: Array<{ metadata: { node_id?: string } }>,
-  context: ToolContext
-): void {
-  if (!context.app || !context.pdfName) {
-    log('[search_doc] 缺少 app 或 pdfName，跳过熟悉度更新');
-    return;
-  }
-
-  // 收集所有唯一的章节索引
-  const chapterIndices = new Set<number>();
-  for (const result of results) {
-    const nodeId = result.metadata.node_id;
-    if (nodeId) {
-      const chapterIndex = extractChapterIndexFromNodeId(nodeId);
-      if (chapterIndex !== null) {
-        chapterIndices.add(chapterIndex);
-      }
-    }
-  }
-
-  // 异步更新每个章节的熟悉度
-  void (async () => {
-    const indexId = context.indexId || context.pdfName;
-    const totalChapters = context.readingProgress?.totalChapters || 100;
-
-    for (const chapterIndex of chapterIndices) {
-      try {
-        await updateReadingProgress(
-          context.app!,
-          context.pdfName!,
-          indexId,
-          totalChapters,
-          chapterIndex,
-          FAMILIARITY_DELTAS.user_question
-        );
-        log('[search_doc] 熟悉度更新成功，章节:', chapterIndex);
-      } catch (err) {
-        logError('[search_doc] 熟悉度更新失败，章节:', chapterIndex, err);
-      }
-    }
-  })();
-}

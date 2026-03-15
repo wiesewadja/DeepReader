@@ -7,11 +7,6 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
-import {
-  updateBookFamiliarity,
-  extractChapterIndexFromNodeId,
-  FAMILIARITY_DELTAS,
-} from '../utils/book-note.js';
 
 // 默认最大返回长度（字符）
 const DEFAULT_MAX_LENGTH = 4000;
@@ -87,8 +82,6 @@ export const getChapterTool: ToolExecutor = {
             section = '';
             pageRange = '';
 
-            // 异步更新熟悉度（不阻塞主流程）
-            scheduleFamiliarityUpdate(nodeId, context);
           } else {
             throw new Error('File not found in vault');
           }
@@ -122,62 +115,6 @@ export const getChapterTool: ToolExecutor = {
 };
 
 /**
- * 调度熟悉度更新（fire-and-forget，但保证错误被捕获）
- */
-function scheduleFamiliarityUpdate(nodeId: string, context: ToolContext): void {
-  log('[get_chapter] 开始调度熟悉度更新', {
-    nodeId,
-    hasApp: !!context.app,
-    pdfName: context.pdfName,
-  });
-
-  // 使用 void 显式标记 fire-and-forget，并确保错误被捕获
-  void (async () => {
-    try {
-      const chapterIndex = extractChapterIndexFromNodeId(nodeId);
-      log('[get_chapter] 提取章节索引结果:', { nodeId, chapterIndex });
-
-      if (chapterIndex === null) {
-        log('[get_chapter] 无法从 nodeId 提取章节索引:', nodeId);
-        return;
-      }
-
-      if (!context.app || !context.pdfName) {
-        log('[get_chapter] 缺少 app 或 pdfName，跳过熟悉度更新', {
-          hasApp: !!context.app,
-          pdfName: context.pdfName,
-        });
-        return;
-      }
-
-      log('[get_chapter] 准备调用 updateBookFamiliarity', {
-        pdfName: context.pdfName,
-        chapterIndex,
-        delta: FAMILIARITY_DELTAS.get_chapter,
-      });
-
-      const success = await updateBookFamiliarity(
-        context.app,
-        context.pdfName,
-        chapterIndex,
-        FAMILIARITY_DELTAS.get_chapter
-      );
-
-      log('[get_chapter] updateBookFamiliarity 返回:', success);
-
-      if (success) {
-        log('[get_chapter] 熟悉度更新成功，章节:', chapterIndex);
-      } else {
-        log('[get_chapter] 熟悉度更新失败，章节:', chapterIndex);
-      }
-    } catch (err) {
-      // 熟悉度更新失败不影响主流程，但记录错误
-      logError('[get_chapter] 熟悉度更新异常:', err);
-    }
-  })();
-}
-
-/**
  * 从后端获取章节内容
  */
 async function fetchFromBackend(
@@ -201,9 +138,6 @@ async function fetchFromBackend(
   }
 
   log('[get_chapter] 找到章节:', node.node_name);
-
-  // 异步更新熟悉度（不阻塞主流程）
-  scheduleFamiliarityUpdate(nodeId, context);
 
   // 返回章节内容
   const header = `## ${node.node_name}
