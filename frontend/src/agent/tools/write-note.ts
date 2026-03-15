@@ -41,7 +41,56 @@ const WRITE_NOTE_DEFINITION: ToolDefinition = {
 };
 
 /**
+ * 检测内容是否包含 frontmatter
+ */
+function parseContentFrontmatter(content: string): { frontmatter: Record<string, unknown>; body: string } | null {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+  if (!match) return null;
+
+  const frontmatterText = match[1];
+  const body = content.slice(match[0].length);
+  const frontmatter: Record<string, unknown> = {};
+
+  // 简单解析 YAML frontmatter
+  for (const line of frontmatterText.split('\n')) {
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const key = line.slice(0, colonIndex).trim();
+      const value = line.slice(colonIndex + 1).trim();
+      // 处理数组格式 [a, b, c]
+      if (value.startsWith('[') && value.endsWith(']')) {
+        frontmatter[key] = value
+          .slice(1, -1)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+      } else {
+        frontmatter[key] = value;
+      }
+    }
+  }
+
+  return { frontmatter, body };
+}
+
+/**
+ * 将 frontmatter 对象转换为 YAML 字符串
+ */
+function frontmatterToString(frontmatter: Record<string, unknown>): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}: [${value.join(', ')}]`);
+    } else {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
  * 生成带有 aicreate frontmatter 的内容
+ * 如果传入的内容已包含 frontmatter，会智能合并
  */
 function generateContentWithFrontmatter(
   content: string,
@@ -50,27 +99,40 @@ function generateContentWithFrontmatter(
 ): string {
   const now = new Date().toISOString();
 
-  if (mode === 'create') {
-    return `---
-aicreate: true
-created_at: ${now}
----
-
-${content}`;
+  // append: 直接追加，不修改 frontmatter
+  if (mode === 'append' && existingContent) {
+    return existingContent + '\n\n' + content;
   }
+
+  // 检测内容是否已包含 frontmatter
+  const parsed = parseContentFrontmatter(content);
+  const bodyContent = parsed ? parsed.body : content;
+  const existingFrontmatter = parsed?.frontmatter || {};
+
+  // 合并 frontmatter：AI 必需字段 + 用户自定义字段
+  const mergedFrontmatter: Record<string, unknown> = {
+    ...existingFrontmatter,
+    aicreate: true,
+    created_at: now,
+  };
 
   if (mode === 'overwrite') {
-    return `---
-aicreate: true
-created_at: ${now}
-updated_at: ${now}
----
-
-${content}`;
+    mergedFrontmatter.updated_at = now;
   }
 
-  // append: 直接追加，不修改 frontmatter
-  return existingContent + '\n\n' + content;
+  // 如果用户提供了 created/created_at，保留用户的时间（但 created_at 会被覆盖为 now）
+  // 优先使用用户定义的 created 字段
+  if (existingFrontmatter.created && !existingFrontmatter.created_at) {
+    // 用户有自己的 created 字段，保持它
+  }
+
+  const frontmatterStr = frontmatterToString(mergedFrontmatter);
+
+  return `---
+${frontmatterStr}
+---
+
+${bodyContent}`;
 }
 
 /**
