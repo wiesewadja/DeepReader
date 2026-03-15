@@ -7,7 +7,8 @@
  * 3. 简洁明了，不复杂
  */
 
-import type { HumanizedProgress, AgentAction } from './humanized-types';
+import type { HumanizedProgress, AgentAction, ReadingLevel } from './humanized-types';
+import { READING_LEVEL_DESCRIPTIONS } from './humanized-types';
 
 /**
  * 创建简洁的思考中状态元素
@@ -16,6 +17,14 @@ import type { HumanizedProgress, AgentAction } from './humanized-types';
 export function createThinkingStatusElement(progress: HumanizedProgress): HTMLElement {
 	const container = document.createElement('div');
 	container.className = 'deepreader-thinking';
+
+	// 阅读层次徽章
+	if (progress.currentReadingLevel) {
+		const badge = container.createDiv({ cls: 'reading-level-badge' });
+		const levelInfo = READING_LEVEL_DESCRIPTIONS[progress.currentReadingLevel];
+		badge.textContent = `${levelInfo.icon} ${levelInfo.name}`;
+		badge.addClass(`reading-level-${progress.currentReadingLevel}`);
+	}
 
 	// 图标和文字
 	const icon = container.createDiv({ cls: 'thinking-icon' });
@@ -42,7 +51,24 @@ export function updateHumanizedStatusElement(
 	element: HTMLElement,
 	progress: HumanizedProgress
 ): void {
-	// 简化版：只更新文字
+	// 更新阅读层次徽章
+	let badge = element.querySelector('.reading-level-badge') as HTMLElement;
+	if (progress.currentReadingLevel) {
+		const levelInfo = READING_LEVEL_DESCRIPTIONS[progress.currentReadingLevel];
+		if (!badge) {
+			badge = document.createElement('div');
+			badge.className = 'reading-level-badge';
+			element.insertBefore(badge, element.firstChild);
+		}
+		badge.textContent = `${levelInfo.icon} ${levelInfo.name}`;
+		// 更新样式类
+		badge.className = 'reading-level-badge';
+		badge.classList.add(`reading-level-${progress.currentReadingLevel}`);
+	} else if (badge) {
+		badge.remove();
+	}
+
+	// 更新文字
 	const textEl = element.querySelector('.thinking-text');
 	if (textEl) {
 		textEl.textContent = progress.mainAction.detail || '思考中...';

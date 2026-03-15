@@ -5,6 +5,31 @@
  */
 
 /**
+ * 阅读层次（基于《如何阅读一本书》四层次阅读法）
+ */
+export type ReadingLevel = 'elementary' | 'inspectional' | 'analytical' | 'syntopical';
+
+/**
+ * 工具到阅读层次的映射
+ */
+export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
+	get_toc: 'inspectional',
+	search_doc: 'inspectional',
+	get_chapter: 'analytical',
+	search_read_books: 'syntopical',
+};
+
+/**
+ * 阅读层次描述
+ */
+export const READING_LEVEL_DESCRIPTIONS: Record<ReadingLevel, { name: string; action: string; icon: string }> = {
+	elementary: { name: '基础阅读', action: '理解基本概念', icon: '📖' },
+	inspectional: { name: '检视阅读', action: '浏览结构，抓取要点', icon: '🔍' },
+	analytical: { name: '分析阅读', action: '深入阅读，咀嚼消化', icon: '🧐' },
+	syntopical: { name: '主题阅读', action: '跨书比较，建立关联', icon: '📚' },
+};
+
+/**
  * Agent 动作类型（拟人化）
  */
 export type AgentAction =
@@ -40,6 +65,8 @@ export interface HumanizedProgress {
 	generatedContent: string;
 	/** 整体进度 0-100 */
 	overallProgress: number;
+	/** 当前阅读层次 */
+	currentReadingLevel?: ReadingLevel;
 }
 
 /**

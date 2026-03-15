@@ -5,8 +5,8 @@
  * 输出: 用户友好的动作描述
  */
 
-import type { HumanizedProgress, ReadingProgressItem, AgentAction } from './humanized-types';
-import { TOOL_TO_ACTION, generateThoughtBubble } from './humanized-types';
+import type { HumanizedProgress, ReadingProgressItem, AgentAction, ReadingLevel } from './humanized-types';
+import { TOOL_TO_ACTION, generateThoughtBubble, TOOL_TO_READING_LEVEL } from './humanized-types';
 
 /**
  * 工具调用记录（内部）
@@ -165,12 +165,16 @@ export class HumanizedProgressAdapter {
 		// 计算整体进度
 		const overallProgress = this.calculateProgress();
 
+		// 确定当前阅读层次
+		const currentReadingLevel = this.determineReadingLevel();
+
 		return {
 			mainAction,
 			readingSteps,
 			thoughtBubble,
 			generatedContent: this.currentContent,
 			overallProgress,
+			currentReadingLevel,
 		};
 	}
 
@@ -290,6 +294,29 @@ export class HumanizedProgressAdapter {
 		const contentProgress = this.currentContent ? 40 : 0;
 
 		return Math.min(100, toolProgress + contentProgress);
+	}
+
+	/**
+	 * 确定当前阅读层次
+	 * 根据已调用和正在调用的工具，返回最高层次
+	 */
+	private determineReadingLevel(): ReadingLevel | undefined {
+		const levelPriority: ReadingLevel[] = ['syntopical', 'analytical', 'inspectional', 'elementary'];
+
+		// 检查所有已调用和正在调用的工具
+		const activeTools = this.toolCalls.filter((t) => t.status === 'running' || t.status === 'completed');
+
+		for (const level of levelPriority) {
+			const hasLevelTool = activeTools.some((tool) => {
+				const toolLevel = TOOL_TO_READING_LEVEL[tool.name];
+				return toolLevel === level;
+			});
+			if (hasLevelTool) {
+				return level;
+			}
+		}
+
+		return undefined;
 	}
 
 	/**
