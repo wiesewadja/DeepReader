@@ -25,7 +25,7 @@ import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
-import { uiLog as log, warn, error as logError, serviceLog } from "../utils/logger.js";
+import { uiLog as log, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import type { ReadingProgress } from "../agent/tools/types.js";
@@ -2150,13 +2150,6 @@ ${r.text}`;
                         }
                         lastUpdateTime = now;
 
-                        serviceLog('[DeepPDF] onHumanizedProgress 回调:', {
-                            agentState,
-                            mainAction: progress.mainAction,
-                            readingStepsCount: progress.readingSteps.length,
-                            readingStepsStatus: progress.readingSteps.map(s => s.status)
-                        });
-
                         // 检测是否有工具调用（readingSteps 中有已完成的步骤）
                         if (progress.readingSteps.some(step => step.status === 'done' || step.status === 'current')) {
                             hadToolCalls = true;
@@ -2166,11 +2159,8 @@ ${r.text}`;
                         // 这样可以在多轮工具调用时持续显示状态
                         const hasRunningTools = progress.readingSteps.some(step => step.status === 'current');
                         if (agentState !== 'thinking' && !hasRunningTools) {
-                            serviceLog('[DeepPDF] onHumanizedProgress 跳过: agentState=' + agentState + ', hasRunningTools=' + hasRunningTools);
                             return;
                         }
-
-                        serviceLog('[DeepPDF] onHumanizedProgress 更新状态:', progress.mainAction.detail);
 
                         // 只更新状态文字，不更新 content
                         this.messageList?.updateMessage(aiMessageId, {

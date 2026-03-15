@@ -7,7 +7,7 @@ import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obs
 import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
-import { uiLog as log, error as logError, serviceLog } from '../../utils/logger.js';
+import { uiLog as log, error as logError } from '../../utils/logger.js';
 
 /**
  * 消息角色类型
@@ -1015,17 +1015,6 @@ export class AIMessage extends Message {
 		// 【关键修复】状态更新逻辑：比较新状态与上次实际显示的状态，而不是 data 中的旧状态
 		// 因为 data.currentStatus 会被持久化存储，导致相同状态不会触发更新
 		const newStatus = data.currentStatus !== undefined ? data.currentStatus : (this.data as any).currentStatus;
-		const statusNeedsUpdate = newStatus !== undefined && newStatus !== this.lastDisplayedStatus;
-
-		// 调试：输出关键变量
-		serviceLog('[DeepPDF] Message.update() 调用:', {
-			hasEl: !!this.el,
-			hasStatusEl: !!this.statusEl,
-			dataCurrentStatus: data.currentStatus,
-			newStatus,
-			lastDisplayedStatus: this.lastDisplayedStatus,
-			statusNeedsUpdate: statusNeedsUpdate
-		});
 
 		// 优先处理状态更新（不受节流限制，立即更新）
 		if (this.el && this.statusEl) {
@@ -1034,13 +1023,11 @@ export class AIMessage extends Message {
 				this.statusEl.textContent = newStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
-				serviceLog('[DeepPDF] Message.update() - ✓ 状态已显示:', newStatus);
 			} else if (!newStatus && this.lastDisplayedStatus) {
 				// 清空状态
 				this.statusEl.textContent = '';
 				this.statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
-				serviceLog('[DeepPDF] Message.update() - 状态已隐藏');
 			}
 		}
 
