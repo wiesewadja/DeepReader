@@ -211,6 +211,22 @@ class TreeSearchEngine:
             "吧",
             "哈",
             "嗯",
+            # 书籍标题常见通用词（新增）
+            "回顾",
+            "回顾了",
+            "历史",
+            "历程",
+            "故事",
+            "概述",
+            "简介",
+            "介绍",
+            "分析",
+            "探讨",
+            "研究",
+            "总结",
+            "讲述",
+            "讨论",
+            "阐述",
         }
 
         # 过滤停用词、标点、单字符
@@ -250,6 +266,10 @@ class TreeSearchEngine:
         # 提取关键词用于匹配
         keywords = self._extract_keywords(query)
 
+        # 如果没有有效关键词，跳过标题匹配
+        if not keywords or (len(keywords) == 1 and len(keywords[0]) <= 2):
+            return results
+
         for title, nodes in self.title_index.items():
             title_lower = title.lower()
             match_found = False
@@ -262,14 +282,22 @@ class TreeSearchEngine:
                 match_score = 1.0
                 match_type = "title_exact"
 
-            # 2. 检查关键词是否在标题中
-            for keyword in keywords:
-                if keyword.lower() in title_lower:
-                    match_found = True
-                    # 关键词匹配分数 = 0.9（略低于完全匹配）
-                    match_score = max(match_score, 0.9)
-                    match_type = "title_keyword"
-                    break
+            # 2. 检查关键词覆盖率（改进：不再只看是否匹配，而是看覆盖率）
+            if not match_found and keywords:
+                matched_count = 0
+                for keyword in keywords:
+                    if keyword.lower() in title_lower:
+                        matched_count += 1
+
+                if matched_count > 0:
+                    # 覆盖率 = 匹配的关键词数 / 总关键词数
+                    coverage = matched_count / len(keywords)
+                    # 只有覆盖率 >= 50% 才算有效匹配
+                    if coverage >= 0.5:
+                        match_found = True
+                        # 分数 = 基础分 * 覆盖率，最高0.9
+                        match_score = min(0.9, 0.6 + coverage * 0.3)
+                        match_type = "title_keyword"
 
             # 3. 如果没有直接匹配，计算模糊相似度
             if not match_found:

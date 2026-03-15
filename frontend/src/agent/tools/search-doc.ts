@@ -17,13 +17,15 @@ const SEARCH_DOC_DEFINITION: ToolDefinition = {
     name: 'search_doc',
     description: `【检视阅读】搜索文档中与查询相关的内容。
 适用场景：快速了解书籍、回答"讲什么"、"总结"类问题、找到相关章节。
-返回：匹配的段落片段和 wiki 链接。`,
+返回：匹配的段落片段和 wiki 链接。
+
+⚠️ **重要**：直接传入用户的完整问题，不要提取关键词。后端使用语义搜索，能理解完整句子的含义。`,
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query to find relevant content in the document',
+          description: '用户的完整问题（不要简化为关键词）',
         },
         top_k: {
           type: 'number',
