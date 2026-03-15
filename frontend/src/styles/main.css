@@ -1354,10 +1354,11 @@
   position: relative;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .deeppdf-search-input {
-  width: 100%;
+  flex: 1;
   padding: 12px 16px;
   font-size: 14px;
   font-family: inherit;
@@ -1366,6 +1367,39 @@
   border: 2px solid var(--background-modifier-border);
   border-radius: 12px;
   transition: all 0.2s ease;
+}
+
+/* 上传按钮 */
+.deeppdf-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.deeppdf-upload-btn:hover {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: #fff;
+}
+
+.deeppdf-upload-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 隐藏的文件输入 */
+.deeppdf-hidden-input {
+  display: none;
 }
 
 .deeppdf-search-input::placeholder {

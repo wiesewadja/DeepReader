@@ -11,6 +11,7 @@ export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onNewChat?: () => void;
     onOpenSettings?: () => void;
+    onSystemUpload?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -22,6 +23,7 @@ export class ReadingTopbar extends Component {
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
     private handleGlobalClick: (e: MouseEvent) => void;
+    private hiddenFileInput: HTMLInputElement | null = null;
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -93,6 +95,7 @@ export class ReadingTopbar extends Component {
 
         const menuItems = [
             { icon: Icons.library, label: '在线书库', action: () => this.options.onOpenLibrary?.() },
+            { icon: Icons.upload, label: '从系统上传', action: () => this.triggerSystemUpload() },
             { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
             { divider: true },
             { icon: Icons.settings, label: '设置', action: () => this.options.onOpenSettings?.() }
@@ -145,6 +148,28 @@ export class ReadingTopbar extends Component {
         if (this.dropdownMenu) {
             this.dropdownMenu.classList.remove('open');
         }
+    }
+
+    /**
+     * 触发系统文件上传
+     */
+    private triggerSystemUpload(): void {
+        // 创建隐藏的文件输入
+        if (!this.hiddenFileInput) {
+            this.hiddenFileInput = document.createElement('input');
+            this.hiddenFileInput.type = 'file';
+            this.hiddenFileInput.accept = '.pdf,.epub';
+            this.hiddenFileInput.style.display = 'none';
+            this.hiddenFileInput.addEventListener('change', () => {
+                if (this.hiddenFileInput?.files?.length) {
+                    this.options.onSystemUpload?.();
+                }
+            });
+            document.body.appendChild(this.hiddenFileInput);
+        }
+
+        // 触发文件选择
+        this.hiddenFileInput.click();
     }
 
     /**

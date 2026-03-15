@@ -4,7 +4,8 @@
  */
 
 import { App, Modal, Notice, TFile } from 'obsidian';
-import { PDFFileSelectorModal, DocumentFileInfo } from '../../ui/pdf-file-selector.js';
+import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../../ui/pdf-file-selector.js';
+import type { TaskProgress } from '../../api/http-client.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError } from '../../utils/logger.js';
@@ -477,20 +478,47 @@ export class LibraryModal extends Modal {
             return;
         }
 
-        new PDFFileSelectorModal(this.app, async (fileInfo: DocumentFileInfo) => {
+        new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
             // 直接开始索引，无需确认弹窗
             new Notice(`开始索引「${fileInfo.name}」...`);
             try {
-                const result = await this.options.apiClient.indexPDF(fileInfo.path, {
-                    llmProvider: this.options.plugin.settings.llmProvider,
-                    llmModel: this.options.plugin.settings.llmModel,
-                    deepseekApiKey: this.options.plugin.settings.deepseekApiKey,
-                    openaiApiKey: this.options.plugin.settings.openaiApiKey,
-                    apiUrl: this.options.plugin.settings.apiUrl,
-                    maxPagesPerNode: this.options.plugin.settings.maxPagesPerNode,
-                    maxTokensPerNode: this.options.plugin.settings.maxTokensPerNode,
-                    ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
-                });
+                let result;
+
+                // 判断是系统上传文件还是 Vault 文件
+                if (isSystemFileInfo(fileInfo)) {
+                    // 系统文件：先上传再索引
+                    result = await this.options.apiClient.uploadAndIndex(
+                        fileInfo.file,
+                        undefined,
+                        (progress: number) => {
+                            // 上传进度回调
+                            if (progress < 100) {
+                                new Notice(`上传中... ${progress}%`, 2000);
+                            }
+                        },
+                        (taskProgress: TaskProgress) => {
+                            // 索引进度回调
+                            if (taskProgress.progress_percent !== undefined) {
+                                const progressPercent = Math.round(taskProgress.progress_percent);
+                                if (progressPercent % 25 === 0) {
+                                    new Notice(`索引进度: ${progressPercent}%`, 2000);
+                                }
+                            }
+                        }
+                    );
+                } else {
+                    // Vault 文件：直接使用路径索引
+                    result = await this.options.apiClient.indexPDF(fileInfo.path, {
+                        llmProvider: this.options.plugin.settings.llmProvider,
+                        llmModel: this.options.plugin.settings.llmModel,
+                        deepseekApiKey: this.options.plugin.settings.deepseekApiKey,
+                        openaiApiKey: this.options.plugin.settings.openaiApiKey,
+                        apiUrl: this.options.plugin.settings.apiUrl,
+                        maxPagesPerNode: this.options.plugin.settings.maxPagesPerNode,
+                        maxTokensPerNode: this.options.plugin.settings.maxTokensPerNode,
+                        ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
+                    });
+                }
 
                 if (result.status === 'pending' || result.status === 'processing') {
                     new Notice(`索引任务已创建，正在后台处理...`, 4000);
@@ -504,7 +532,7 @@ export class LibraryModal extends Modal {
                 }
             } catch (error: any) {
                 let msg = '索引创建失败';
-                if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稍后再试';
+                if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稀后再试';
                 else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
                 else if (error.message) msg = `索引创建失败: ${error.message}`;
                 new Notice(msg, 5000);
