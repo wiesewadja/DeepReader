@@ -4,7 +4,6 @@
  */
 
 import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obsidian';
-import { FollowUpQuestions } from '../follow-up-questions/follow-up-questions.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { SelectionMenu } from '../excerpt/selection-menu';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
@@ -13,44 +12,6 @@ import { uiLog as log, error as logError } from '../../utils/logger.js';
  * 消息角色类型
  */
 export type MessageRole = 'user' | 'assistant';
-
-/**
- * 引用来源数据结构
- */
-export interface CitationData {
-	/** PDF 文件名 */
-	pdf_name: string;
-	/** 页码 */
-	page: number;
-	/** 引用文本片段 */
-	snippet: string;
-	/** 可选：PDF 文件路径 */
-	file_path?: string;
-	/** 可选：Markdown 文件路径 (相对于 vault) */
-	markdown_path?: string;
-	/** 相关性得分 */
-	score?: number;
-	/** 可选：标题 */
-	title?: string;
-	/** 可选：Obsidian 链接 (从 Agent 返回) */
-	obsidian_link?: string;
-	/** 可选：块引用锚点 */
-	anchor?: string;
-	/** 可选：是否来自用户加载的文档（章节辅助阅读） */
-	is_loaded_doc?: boolean;
-	/** 可选：文档路径（用于跳转，可以是 PDF 或 Markdown） */
-	document_path?: string;
-}
-
-/**
- * 追问问题数据结构
- */
-export interface FollowUpQuestion {
-	/** 问题内容 */
-	question: string;
-	/** 问题索引（用于点击事件） */
-	index: number;
-}
 
 /**
  * Agent 工具调用数据结构
@@ -77,46 +38,8 @@ export interface AgentThought {
 }
 
 /**
- * 解析追问问题列表
- * 从 AI 回答中提取 <<<QUESTIONS>>> 标记包裹的问题
- * 返回 { content: 清理后的内容, questions: 问题列表 }
- */
-export function parseFollowUpQuestions(content: string): {
-	content: string;
-	questions: FollowUpQuestion[];
-} {
-	const questions: FollowUpQuestion[] = [];
-	let cleanedContent = content;
-
-	// 匹配 <<<QUESTIONS>>>...</QUESTIONS>>> 标记
-	const questionRegex = /<<<QUESTIONS>>>([\s\S]*?)<\/QUESTIONS>>>/;
-	const match = content.match(questionRegex);
-
-	if (match) {
-		// 提取问题部分
-		const questionsText = match[1];
-		// 按行分割，提取以 "- " 开头的问题
-		const lines = questionsText.split('\n');
-		lines.forEach((line, index) => {
-			const trimmed = line.trim();
-			if (trimmed.startsWith('- ')) {
-				questions.push({
-					question: trimmed.slice(2).trim(),
-					index: index
-				});
-			}
-		});
-
-		// 移除追问标记部分
-		cleanedContent = content.replace(questionRegex, '').trim();
-	}
-
-	return { content: cleanedContent, questions };
-}
-
-/**
  * 解析 Agent 内容
- * 
+ *
  * 简化方案：不再提取 structured data，而是将 XML 标签转换为 HTML/Markdown 格式
  * 直接利用 Obsidian 的渲染能力。
  */
@@ -305,12 +228,8 @@ export interface MessageData {
 	content: string;
 	/** 时间戳 */
 	timestamp: string;
-	/** 可选：引用来源（仅 AI 消息） */
-	citations?: CitationData[];
 	/** 可选：是否正在生成 */
 	isStreaming?: boolean;
-	/** 可选：追问问题列表（仅 AI 消息） */
-	followUpQuestions?: FollowUpQuestion[];
 	/** 可选：是否为 Agent 消息 */
 	isAgentMessage?: boolean;
 	/** 可选：Agent 思考过程 */
@@ -319,6 +238,10 @@ export interface MessageData {
 	agentToolCalls?: AgentToolCall[];
 	/** 可选：当前状态文本（如"正在搜索..."） */
 	currentStatus?: string;
+	/** 可选：当前阅读层次 */
+	readingLevel?: 'elementary' | 'inspectional' | 'analytical' | 'syntopical' | 'skill';
+	/** 可选：已完成步骤列表 */
+	completedSteps?: string[];
 	/** 可选：关联的 PDF 文件名 */
 	pdfName?: string;
 	/** 可选：关联的页码 */
@@ -572,80 +495,6 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 }
 
 /**
- * 引用来源组件
- */
-export class Citation {
-	private el: HTMLElement;
-	private citation: CitationData;
-	private onJump?: (citation: CitationData) => void;
-
-	constructor(citation: CitationData, onJump?: (citation: CitationData) => void) {
-		this.citation = citation;
-		this.onJump = onJump;
-		this.el = this.render();
-	}
-
-	private render(): HTMLElement {
-		const citationEl = document.createElement('div');
-		citationEl.addClass('deeppdf-citation');
-
-		// 如果是用户加载的文档，添加特殊样式类
-		if (this.citation.is_loaded_doc) {
-			citationEl.addClass('deeppdf-citation-loaded');
-		}
-
-		// 上半部分：Icon + Filename + Page Badge
-		const header = citationEl.createEl('div', { cls: 'deeppdf-citation-header' });
-
-		// Icon - 根据文档类型显示不同图标
-		const iconWrapper = header.createEl('div', { cls: 'deeppdf-citation-icon' });
-		if (this.citation.is_loaded_doc || this.citation.markdown_path) {
-			// Markdown 文档图标
-			iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
-		} else {
-			// PDF 文档图标
-			iconWrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>`;
-		}
-
-		const fileInfo = header.createEl('div', { cls: 'deeppdf-citation-file-info' });
-		fileInfo.createEl('span', {
-			cls: 'deeppdf-citation-filename',
-			text: this.citation.pdf_name
-		});
-
-		// Meta info (Page 或文档类型)
-		const meta = fileInfo.createEl('div', { cls: 'deeppdf-citation-meta' });
-
-		if (this.citation.is_loaded_doc) {
-			// 用户加载的文档显示"笔记"标签
-			const loadedBadge = meta.createEl('span', {
-				cls: 'deeppdf-citation-loaded-badge',
-				text: '笔记'
-			});
-		} else if (this.citation.page > 0) {
-			// PDF 文档显示页码
-			const pageBadge = meta.createEl('span', {
-				cls: 'deeppdf-citation-page-badge',
-				text: `Page ${this.citation.page}`
-			});
-		}
-
-		// 跳转逻辑绑定整个卡片
-		if (this.onJump) {
-			citationEl.addEventListener('click', () => {
-				this.onJump?.(this.citation);
-			});
-		}
-
-		return citationEl;
-	}
-
-	getElement(): HTMLElement {
-		return this.el;
-	}
-}
-
-/**
  * 消息基类
  */
 export abstract class Message {
@@ -697,22 +546,12 @@ export abstract class Message {
 	 */
 	update(data: Partial<MessageData>): void {
 		const oldContent = this.data.content;
-		const oldCitations = this.data.citations;
-		const oldFollowUpQuestions = this.data.followUpQuestions;
 		const oldAgentToolCalls = this.data.agentToolCalls;
 		const wasStreaming = this.data.isStreaming;
 
 		Object.assign(this.data, data);
 
 		// 检查字段变化
-		const citationsChanged = data.citations !== undefined && (
-			data.citations !== oldCitations &&
-			(data.citations?.length !== oldCitations?.length || data.citations?.[0] !== oldCitations?.[0])
-		);
-		const followUpChanged = data.followUpQuestions !== undefined && (
-			data.followUpQuestions !== oldFollowUpQuestions &&
-			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
-		);
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
 			data.agentToolCalls !== oldAgentToolCalls &&
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
@@ -722,8 +561,6 @@ export abstract class Message {
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
-			!citationsChanged &&
-			!followUpChanged &&
 			!agentToolCallsChanged &&
 			!streamingEnded
 		) {
@@ -818,9 +655,7 @@ export class UserMessage extends Message {
 export class AIMessage extends Message {
 	private onRegenerate?: () => void;
 	private onCopy?: () => void;
-	private onCopyWithCitation?: () => void;
 	private onQuestionClick?: (question: string) => void;
-	private onCitationJump?: (citation: CitationData) => void;
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	private onQuote?: (text: string) => void;
 	// 节流渲染跟踪变量
@@ -842,9 +677,7 @@ export class AIMessage extends Message {
 		options?: {
 			onRegenerate?: () => void;
 			onCopy?: () => void;
-			onCopyWithCitation?: () => void;
 			onQuestionClick?: (question: string) => void;
-			onCitationJump?: (citation: CitationData) => void;
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 			onQuote?: (text: string) => void;
 			app?: App;
@@ -853,9 +686,7 @@ export class AIMessage extends Message {
 		super(data, options?.app);
 		this.onRegenerate = options?.onRegenerate;
 		this.onCopy = options?.onCopy;
-		this.onCopyWithCitation = options?.onCopyWithCitation;
 		this.onQuestionClick = options?.onQuestionClick;
-		this.onCitationJump = options?.onCitationJump;
 		this.onExcerpt = options?.onExcerpt;
 		this.onQuote = options?.onQuote;
 		// 初始化渲染跟踪变量
@@ -959,18 +790,8 @@ export class AIMessage extends Message {
 
 		bubble.appendChild(this.renderTimestamp());
 
-		// 渲染操作按钮和引用
+		// 渲染操作按钮
 		this.renderActions(bubble);
-		this.renderCitations(bubble);
-
-		// 渲染追问问题卡片（在 wrapper 中，bubble 之后）
-		if (this.data.followUpQuestions && this.data.followUpQuestions.length > 0) {
-			const followUpComponent = new FollowUpQuestions({
-				questions: this.data.followUpQuestions,
-				onQuestionClick: this.onQuestionClick
-			});
-			wrapper.appendChild(followUpComponent.getElement());
-		}
 
 		// 如果正在流式传输，添加光标效果 (由 CSS 处理 .deeppdf-message-streaming)
 		if (this.data.isStreaming) {
@@ -989,23 +810,12 @@ export class AIMessage extends Message {
 
 	update(data: Partial<MessageData>): void {
 		const oldContent = this.data.content;
-		const oldCitations = this.data.citations;
-		const oldFollowUpQuestions = this.data.followUpQuestions;
 		const oldAgentToolCalls = this.data.agentToolCalls;
 		const wasStreaming = this.data.isStreaming;
 
 		Object.assign(this.data, data);
 
 		// 检查哪些字段发生了变化（优化：使用浅比较而非 JSON.stringify）
-		const citationsChanged = data.citations !== undefined && (
-			data.citations !== oldCitations &&
-			(data.citations?.length !== oldCitations?.length || data.citations?.[0] !== oldCitations?.[0])
-		);
-		const followUpChanged = data.followUpQuestions !== undefined && (
-			data.followUpQuestions !== oldFollowUpQuestions &&
-			(data.followUpQuestions?.length !== oldFollowUpQuestions?.length || data.followUpQuestions?.[0] !== oldFollowUpQuestions?.[0])
-		);
-
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
 			data.agentToolCalls !== oldAgentToolCalls &&
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
@@ -1050,8 +860,6 @@ export class AIMessage extends Message {
 		if (this.el &&
 			data.content !== undefined &&
 			data.content !== oldContent &&
-			!citationsChanged &&
-			!followUpChanged &&
 			!agentToolCallsChanged &&
 			!streamingEnded
 		) {
@@ -1330,7 +1138,7 @@ export class AIMessage extends Message {
 			existingActions.remove();
 		}
 
-		const hasActions = !!(this.onRegenerate || this.onCopy || (this.onCopyWithCitation && this.data.citations && this.data.citations.length > 0) || this.onExcerpt);
+		const hasActions = !!(this.onRegenerate || this.onCopy || this.onExcerpt);
 		// AI 消息始终显示操作按钮区域（包含跳转到顶部按钮）
 		const isAssistant = this.data.role === 'assistant';
 		if (hasActions || isAssistant) {
@@ -1358,13 +1166,6 @@ export class AIMessage extends Message {
 				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
 				btn.title = "Copy";
 				btn.addEventListener('click', () => this.onCopy?.());
-			}
-			if (this.onCopyWithCitation && this.data.citations?.length) {
-				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
-				// Icon: Copy with headers/list
-				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
-				btn.title = "Copy with Citations";
-				btn.addEventListener('click', () => this.onCopyWithCitation?.());
 			}
 			if (this.onExcerpt) {
 				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
@@ -1528,17 +1329,6 @@ export class AIMessage extends Message {
 		});
 	}
 
-	private renderCitations(container: HTMLElement) {
-		log('[renderCitations] citations数据:', this.data.citations);
-		if (this.data.citations && this.data.citations.length > 0) {
-			const citationsContainer = container.createEl('div', { cls: 'deeppdf-message-citations' });
-			this.data.citations.forEach(citation => {
-				const citationEl = new Citation(citation, this.onCitationJump);
-				citationsContainer.appendChild(citationEl.getElement());
-			});
-		}
-	}
-
 	public destroy(): void {
 		// 取消流式动画帧
 		if (this.streamingAnimationFrame !== null) {
@@ -1574,9 +1364,7 @@ export function createMessage(
 	options?: {
 		onRegenerate?: () => void;
 		onCopy?: () => void;
-		onCopyWithCitation?: () => void;
 		onQuestionClick?: (question: string) => void;
-		onCitationJump?: (citation: CitationData) => void;
 		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 		onQuote?: (text: string) => void;
 		app?: App;

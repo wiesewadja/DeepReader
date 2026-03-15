@@ -6,8 +6,9 @@
 
 /**
  * 阅读层次（基于《如何阅读一本书》四层次阅读法）
+ * 注意：'skill' 是特殊类型，不属于阅读层次，但需要追踪
  */
-export type ReadingLevel = 'elementary' | 'inspectional' | 'analytical' | 'syntopical';
+export type ReadingLevel = 'elementary' | 'inspectional' | 'analytical' | 'syntopical' | 'skill';
 
 /**
  * 工具到阅读层次的映射
@@ -21,6 +22,9 @@ export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
 	outline_structure: 'analytical',
 	find_key_terms: 'analytical',
 	extract_propositions: 'analytical',
+	// 辅助工具
+	Skill: 'skill',
+	skill: 'skill',
 };
 
 /**
@@ -31,6 +35,7 @@ export const READING_LEVEL_DESCRIPTIONS: Record<ReadingLevel, { name: string; ac
 	inspectional: { name: '检视阅读', action: '浏览结构，抓取要点', icon: '🔍' },
 	analytical: { name: '分析阅读', action: '深入阅读，咀嚼消化', icon: '🧐' },
 	syntopical: { name: '主题阅读', action: '跨书比较，建立关联', icon: '📚' },
+	skill: { name: '加载技能', action: '获取专业指导', icon: '🎓' },
 };
 
 /**

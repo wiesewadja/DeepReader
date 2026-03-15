@@ -5,14 +5,14 @@
 
 import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, CitationInfo, SessionInfo, ContextDoc } from "../api/http-client.js";
+import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress, SearchFilters, CrossBookSearchParams } from "../types/index.js";
 import { MessageList } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, CitationData, parseFollowUpQuestions, FollowUpQuestion, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
+import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
@@ -1245,12 +1245,6 @@ export class SidebarView extends ItemView {
             onCopy: (messageId: string) => {
                 this.handleCopy(messageId);
             },
-            onCopyWithCitation: (messageId: string) => {
-                this.handleCopyWithCitation(messageId);
-            },
-            onCitationJump: (citation: CitationData) => {
-                this.handleCitationJump(citation);
-            },
             onQuestionClick: (question: string) => {
                 this.handleQuestionClick(question);
             },
@@ -1572,9 +1566,7 @@ export class SidebarView extends ItemView {
                 aiMessageId = regenerateMessageId;
                 this.messageList?.updateMessage(aiMessageId, {
                     content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
-                    isStreaming: true,
-                    citations: undefined,
-                    followUpQuestions: undefined
+                    isStreaming: true
                 });
 
                 // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）
@@ -1651,176 +1643,6 @@ export class SidebarView extends ItemView {
             this.chatInput?.focus();
         }
         // 移除 finally 块，改为在 handleAgentQuery 的回调中处理
-    }
-
-    /**
-     * 处理查询请求
-     */
-    private async handleQuery(query: string, indexId: string, aiMessageId: string): Promise<void> {
-        if (!this.apiClient) {
-            throw new Error("API 客户端未连接");
-        }
-
-        const result = await this.apiClient.queryPDF(query, indexId, 10, this.useLLMTreeSearch);
-
-        if (result.status !== "success") {
-            throw new Error(result.error || "查询失败");
-        }
-
-        // 从 API 响应中获取 PDF 名称
-        const pdfName = result.index_info?.pdf_name || "未知文档";
-
-        // 处理 LLM 树搜索的 thinking 和降级信息
-        let thinkingContent = "";
-        let fallbackInfo = "";
-
-        if (result.thinking) {
-            thinkingContent = `### 🧠 深度思考\n\n${result.thinking}\n\n`;
-        }
-        if (result.fallback) {
-            fallbackInfo = `⚠️ 已自动切换到混合检索\n\n原因: ${result.fallback_reason || '未知'}\n\n`;
-        }
-
-        // 如果没有相关结果
-        if (!result.results || result.results.length === 0) {
-            this.messageList?.updateMessage(aiMessageId, {
-                content: thinkingContent + fallbackInfo + "未找到相关结果。请尝试使用不同的关键词重新搜索。",
-                isStreaming: false
-            });
-            return;
-        }
-
-        // ========== 优化 3: Re-ranking 机制 ==========
-        // 在应用 token 限制之前，先对结果进行 Re-ranking
-        const rerankedResults = this.rerankResults(result.results, query);
-        log(`[DeepPDF] [handleQuery] Re-ranking 完成，结果顺序已优化`);
-
-        // ========== 优化 1: Context token 限制 ==========
-        const MAX_CONTEXT_TOKENS = 12000;
-        const resultsWithContext = this.buildContextWithTokenLimit(rerankedResults, MAX_CONTEXT_TOKENS);
-
-        // 构建包含完整信息的引用
-        const citations: CitationData[] = resultsWithContext.map((item, index) => {
-            const section = item.metadata?.section || '';
-            const nodeName = item.metadata?.node_name || '';
-            const page = item.metadata?.page || item.metadata?.start_index || 0;
-            const markdownPath = item.metadata?.markdown_path || '';
-
-            // 构建描述性标题
-            let title = `Page ${page}`;
-            if (nodeName) {
-                title = `${nodeName} (p.${page})`;
-            } else if (section) {
-                title = `${section} (p.${page})`;
-            }
-
-            return {
-                pdf_name: pdfName,
-                page: page,
-                snippet: item.text || "",
-                section: section,
-                node_name: nodeName,
-                title: title,
-                markdown_path: markdownPath  // 添加 markdown_path 用于跳转
-            };
-        });
-
-        // 检查是否有 DeepSeek/OpenAI API Key
-        const settings = this.plugin.settings;
-        const apiKey = settings.llmProvider === 'openai' ? settings.openaiApiKey : settings.deepseekApiKey;
-        const model = settings.llmModel || (settings.llmProvider === 'openai' ? 'gpt-3.5-turbo' : 'deepseek-chat') || 'deepseek-chat';
-
-        // 如果没有 Key，回退到显示检索片段
-        if (!apiKey) {
-            let answer = `找到 ${resultsWithContext.length} 个相关结果 (请在设置中配置 API Key 以启用 AI 智能回答)：\n\n`;
-            resultsWithContext.forEach((item, index) => {
-                const title = citations[index].title || `Page ${citations[index].page}`;
-                answer += `${index + 1}. **${title}**: ${this.escapeHtml(item.text || "").substring(0, 150)}...\n\n`;
-            });
-
-            this.messageList?.updateMessage(aiMessageId, {
-                content: answer,
-                citations: citations,
-                isStreaming: false
-            });
-            return;
-        }
-
-        // ========== 优化 2: 优化 System Prompt ==========
-        const systemPrompt = this.buildEnhancedSystemPrompt(pdfName, resultsWithContext, citations);
-
-        // ========== 构建读书上下文 (带路径注入) ==========
-        let bookContext = `《${pdfName}》中相关内容：\n\n`;
-
-        log('\n========== [AI 引用调试] 构建上下文 ==========');
-        log(`[上下文] 查询返回 ${resultsWithContext.length} 个结果`);
-
-        bookContext += resultsWithContext.map((r, index) => {
-            const mdPath = r.metadata?.markdown_path || "未生成Markdown";
-            const page = r.metadata?.page || r.metadata?.start_index || "?";
-            const title = citations[index].title || `第${index + 1}节`;
-
-            // 【关键日志】记录每个来源片段的详细信息
-            log(`\n[来源片段 ${index + 1}]`);
-            log(`  完整路径: ${mdPath}`);
-
-            // 从路径中提取文件名（不含 .md）
-            let filename = mdPath;
-            let displayName = mdPath;
-            if (mdPath !== "未生成Markdown") {
-                const parts = mdPath.split('/');
-                filename = parts[parts.length - 1]; // 最后一部分是文件名
-                // 移除 .md 扩展名
-                displayName = filename.replace('.md', '');
-            }
-            log(`  文件名: ${filename}`);
-            log(`  显示名: ${displayName}`);
-            log(`  页码锚点: ^page-${page}`);
-            log(`  章节标题: ${title}`);
-            log(`  → 正确引用应该是: [[${displayName}#^page-${page}]]`);
-
-            // 注入路径和锚点，供 AI 引用
-            return `【来源片段 ${index + 1}】
-文件路径: ${mdPath}
-页码锚点: ^page-${page}
-章节标题: ${title}
-内容:
-${r.text}`;
-        }).join("\n\n");
-
-        const userPrompt = `${bookContext}\n\n读者提问: ${query}`;
-
-        log(`\n[上下文] 完整 userPrompt (前 1000 字符):`);
-        log(userPrompt.substring(0, 1000) + '...');
-        log(`[上下文] 估计 token 数: ${this.estimateTokens(userPrompt)}`);
-        log('========== [AI 引用调试] 上下文构建完成 ==========\n');
-
-        try {
-            await this.streamLLMResponse(
-                settings.llmProvider,
-                apiKey,
-                model,
-                systemPrompt,
-                userPrompt,
-                aiMessageId,
-                citations
-            );
-        } catch (err: any) {
-            logError("LLM Error:", err);
-
-            // 失败时的回退显示
-            let fallbackAnswer = `AI 生成失败: ${err.message || 'Unknown error'}\n\n但我们找到了以下相关内容：\n\n`;
-            resultsWithContext.forEach((item, index) => {
-                const title = citations[index].title || `Page ${citations[index].page}`;
-                fallbackAnswer += `${index + 1}. **${title}**: ${this.escapeHtml(item.text || "").substring(0, 150)}...\n\n`;
-            });
-
-            this.messageList?.updateMessage(aiMessageId, {
-                content: fallbackAnswer,
-                citations: citations,
-                isStreaming: false
-            });
-        }
     }
 
     /**
@@ -2138,7 +1960,7 @@ ${r.text}`;
                     this.streamController = null;
                 },
                 // onHumanizedProgress: 思考阶段的状态更新
-                // 简化版：只更新状态文字，不更新 content
+                // 更新状态文字、阅读层次徽章、已完成步骤
                 onHumanizedProgress: ((() => {
                     let lastUpdateTime = 0;
                     const THROTTLE_MS = 200;
@@ -2162,9 +1984,16 @@ ${r.text}`;
                             return;
                         }
 
-                        // 只更新状态文字，不更新 content
+                        // 提取已完成的步骤
+                        const completedSteps = progress.readingSteps
+                            .filter(step => step.status === 'done')
+                            .map(step => step.action);
+
+                        // 更新状态、阅读层次、已完成步骤
                         this.messageList?.updateMessage(aiMessageId, {
                             currentStatus: progress.mainAction.detail,
+                            readingLevel: progress.currentReadingLevel,
+                            completedSteps: completedSteps.length > 0 ? completedSteps : undefined,
                             isStreaming: true,
                             isAgentMessage: true,
                         });
@@ -2368,165 +2197,6 @@ ${r.text}`;
     }
 
     /**
-     * 将 Agent 返回的 CitationInfo 转换为前端的 CitationData 格式
-     */
-    private convertCitationsToCitationData(citations: CitationInfo[]): CitationData[] {
-        return citations.map(citation => {
-            // 从 obsidian_link 中提取信息
-            // 格式: [[filename.md#^page-N]] 或 [[filename.md]]
-            const linkMatch = citation.obsidian_link.match(/\[\[([^\]#]+)(?:#\^([a-z0-9-]+))?\]\]/);
-
-            let filename = '';
-            let page: number | undefined;
-            let anchor: string | undefined;
-
-            if (linkMatch) {
-                filename = linkMatch[1];
-                anchor = linkMatch[2];
-
-                // 从锚点中提取页码
-                if (anchor) {
-                    const pageMatch = anchor.match(/page-(\d+)/);
-                    if (pageMatch) {
-                        page = parseInt(pageMatch[1], 10);
-                    }
-                }
-            }
-
-            return {
-                pdf_name: filename,
-                page: page || citation.page || 0, // 提供默认值
-                snippet: '',
-                obsidian_link: citation.obsidian_link,
-                anchor: citation.anchor || anchor || ''
-            };
-        });
-    }
-
-    /**
-     * 调用 LLM API 并流式输出 (带节流优化)
-     */
-    private async streamLLMResponse(
-        provider: string,
-        apiKey: string,
-        model: string,
-        systemPrompt: string,
-        userPrompt: string,
-        messageId: string,
-        citations: CitationData[]
-    ): Promise<void> {
-        const apiUrl = provider === 'openai'
-            ? 'https://api.openai.com/v1/chat/completions'
-            : 'https://api.deepseek.com/chat/completions'; // DeepSeek 兼容 OpenAI 格式
-
-        try {
-            const response = await fetch(apiUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: userPrompt }
-                    ],
-                    stream: true,
-                    temperature: 0.3
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`LLM API returned ${response.status}: ${errorText}`);
-            }
-
-            if (!response.body) {
-                throw new Error("ReadableStream not supported in this environment");
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            let fullContent = "";
-            let lastUpdateTime = 0;
-            const UPDATE_INTERVAL = 100; // 100ms 节流，避免频繁渲染导致闪烁
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n').filter(line => line.trim() !== '');
-
-                let hasNewContent = false;
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        if (data === '[DONE]') continue;
-
-                        try {
-                            const parsed = JSON.parse(data);
-                            const content = parsed.choices?.[0]?.delta?.content || "";
-                            if (content) {
-                                fullContent += content;
-                                hasNewContent = true;
-                            }
-                        } catch (e) {
-                            warn("Error parsing stream chunk", e);
-                        }
-                    }
-                }
-
-                // 节流更新 UI
-                if (hasNewContent) {
-                    const now = Date.now();
-                    if (now - lastUpdateTime > UPDATE_INTERVAL) {
-                        this.messageList?.updateMessage(messageId, {
-                            content: fullContent,
-                            citations: citations, // 保持引用显示
-                            isStreaming: true
-                        });
-                        lastUpdateTime = now;
-                    }
-                }
-            }
-
-            // 完成后进行最后一次更新，确保内容完整
-            // 解析追问问题
-            const { content: cleanedContent, questions: followUpQuestions } = parseFollowUpQuestions(fullContent);
-
-            // ========== 【关键调试】打印 AI 原始回复 ==========
-            log('\n========== [AI 原始回复调试] ==========');
-            log('【AI 完整原始回复】');
-            log(fullContent);
-            log('\n【AI 清理后回复】');
-            log(cleanedContent);
-            log('\n【引用数据】');
-            log(JSON.stringify(citations, null, 2));
-            log('========== [AI 原始回复调试结束] ==========\n');
-
-            // 构建更新对象 - 只有在有引用数据时才传递 citations
-            const updateData: any = {
-                content: cleanedContent,
-                isStreaming: false,
-                followUpQuestions: followUpQuestions.length > 0 ? followUpQuestions : undefined
-            };
-
-            // 只有在有引用数据时才添加 citations（跨书籍模式传空数组，不显示引用列表）
-            if (citations && citations.length > 0) {
-                updateData.citations = citations;
-            }
-
-            this.messageList?.updateMessage(messageId, updateData);
-
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    /**
      * 处理重新生成
      */
     private handleRegenerate(messageId: string): void {
@@ -2554,27 +2224,6 @@ ${r.text}`;
         if (!message) return;
 
         const content = message.getData().content;
-        this.copyToClipboard(content);
-    }
-
-    /**
-     * 处理复制带引用
-     */
-    private handleCopyWithCitation(messageId: string): void {
-        const message = this.messageList?.getMessage(messageId);
-        if (!message) return;
-
-        const data = message.getData();
-        let content = data.content;
-
-        // 添加引用
-        if (data.citations && data.citations.length > 0) {
-            content += "\n\n**引用来源**:\n";
-            data.citations.forEach((citation, index) => {
-                content += `${index + 1}. ${citation.pdf_name} - 第 ${citation.page} 页\n`;
-            });
-        }
-
         this.copyToClipboard(content);
     }
 
@@ -2609,156 +2258,6 @@ ${r.text}`;
             }
         });
         modal.open();
-    }
-
-    /**
-     * 处理引用跳转
-     * 支持 PDF 文件和 Markdown 文档的跳转
-     */
-    private handleCitationJump(citation: CitationData): void {
-        try {
-            log('[DeepPDF] [引用跳转] 开始处理引用跳转');
-            log(`[引用跳转] citation:`, citation);
-
-            // 优先处理用户加载的 Markdown 文档
-            if (citation.is_loaded_doc && (citation.document_path || citation.markdown_path)) {
-                const docPath = citation.document_path || citation.markdown_path;
-                this.openMarkdownDocument(docPath!, citation.anchor);
-                return;
-            }
-
-            // 处理有 markdown_path 的引用（来自索引的 Markdown 文件）
-            if (citation.markdown_path && !citation.page) {
-                this.openMarkdownDocument(citation.markdown_path, citation.anchor);
-                return;
-            }
-
-            // 处理 PDF 文件跳转
-            if (citation.pdf_name && citation.page) {
-                // 如果有 markdown_path，优先打开 Markdown 文件
-                if (citation.markdown_path) {
-                    this.openMarkdownDocument(citation.markdown_path, citation.anchor);
-                    return;
-                }
-
-                // 否则打开 PDF 文件
-                this.openPdfCitation(citation);
-                return;
-            }
-
-            // 处理有 obsidian_link 的引用
-            if (citation.obsidian_link) {
-                this.openByObsidianLink(citation.obsidian_link);
-                return;
-            }
-
-            new Notice('引用数据不完整');
-            warn('[DeepPDF] 引用数据缺少跳转信息:', citation);
-
-        } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            new Notice(`打开文档失败: ${errorMsg}`);
-            logError('[DeepPDF] 打开文档失败:', error);
-        }
-    }
-
-    /**
-     * 打开 Markdown 文档
-     */
-    private openMarkdownDocument(path: string, anchor?: string): void {
-        const file = this.app.vault.getAbstractFileByPath(path);
-
-        if (!file) {
-            new Notice(`找不到文档: ${path}`);
-            warn(`[引用跳转] 找不到 Markdown 文件: ${path}`);
-            return;
-        }
-
-        // 检查是否为 TFile 类型
-        if (!('basename' in file)) {
-            new Notice(`无效的文件类型: ${path}`);
-            return;
-        }
-
-        const displayName = file.basename;
-
-        // 构建带锚点的链接
-        const link = anchor ? `${path}#^${anchor}` : path;
-
-        // 使用 Obsidian API 打开文档
-        this.app.workspace.openLinkText(link, '', true).then(() => {
-            new Notice(`已打开: ${displayName}`);
-        }).catch((err) => {
-            // 如果带锚点打开失败，尝试不带锚点
-            if (anchor) {
-                this.app.workspace.openLinkText(path, '', true);
-            } else {
-                throw err;
-            }
-        });
-    }
-
-    /**
-     * 通过 Obsidian 链接打开文档
-     */
-    private openByObsidianLink(link: string): void {
-        // 解析 [[filename.md#^anchor]] 格式
-        const linkMatch = link.match(/\[\[([^\]#]+)(?:#\^([a-z0-9-]+))?\]\]/);
-
-        if (linkMatch) {
-            const path = linkMatch[1];
-            const anchor = linkMatch[2];
-            this.openMarkdownDocument(path, anchor);
-        } else {
-            // 直接尝试打开链接
-            this.app.workspace.openLinkText(link.replace('[[', '').replace(']]', ''), '', true);
-        }
-    }
-
-    /**
-     * 打开 PDF 引用
-     */
-    private openPdfCitation(citation: CitationData): void {
-        // 获取 vault 中所有 PDF 文件
-        const allFiles = this.app.vault.getFiles();
-        const pdfFiles = allFiles.filter(f => f.extension === 'pdf');
-
-        log(`[引用跳转] Vault 中共有 ${pdfFiles.length} 个 PDF 文件`);
-
-        // 根据 pdf_name 查找匹配的 PDF 文件
-        // pdf_name 格式可能是: "纳瓦尔宝典.pdf" 或 "纳瓦尔宝典"
-        const targetName = citation.pdf_name.replace('.pdf', '').toLowerCase();
-
-        const matchedFile = pdfFiles.find(f => {
-            const fileNameWithoutExt = f.basename.toLowerCase();
-            return fileNameWithoutExt === targetName || f.path.toLowerCase().endsWith(targetName + '.pdf');
-        });
-
-        if (!matchedFile) {
-            log(`[引用跳转] 未找到匹配的 PDF 文件`);
-            log(`[引用跳转] 所有 PDF 文件:`, pdfFiles.map(f => `${f.basename} (${f.path})`).join(', '));
-            new Notice(`找不到 PDF 文件: ${citation.pdf_name}`);
-            return;
-        }
-
-        log(`[引用跳转] 找到 PDF: ${matchedFile.path}`);
-        this.openPdfWithPage(matchedFile.path, citation.page, citation.pdf_name);
-    }
-
-    /**
-     * 打开 PDF 并跳转到指定页面
-     */
-    private openPdfWithPage(pdfPath: string, page: number, displayName: string): void {
-        const pdfLink = `${pdfPath}#page=${page}`;
-
-        this.app.workspace.openLinkText(
-            pdfLink,
-            '',
-            false
-        );
-
-        new Notice(`已打开: ${displayName} 第 ${page} 页`);
-        log(`[DeepPDF] 已打开 PDF: ${pdfLink}`);
     }
 
     /**
@@ -3178,144 +2677,6 @@ ${r.text}`;
 
         // 中文: ~2 字符/token, 英文: ~4 字符/token
         return Math.ceil(chineseChars / 2 + englishChars / 4);
-    }
-
-    /**
-     * 构建增强的系统提示词，包含 PDF 结构信息
-     */
-    private buildEnhancedSystemPrompt(pdfName: string, results: any[], citations: any[]): string {
-        // 提取结构信息
-        const structureInfo = this.extractStructureInfo(results);
-
-        return `你是一位与昭见森对谈的专注的读书郎，毕生沉浸于典籍研读，对文字有着敏锐的洞察力和深刻的思辨能力。
-
-📚 你的信条：
-- 你只知晓眼前这本书的内容，除此别无所知
-- 你不援引任何外部知识，不依赖书本之外的任何信息
-- 你用精炼的语言和严密的逻辑，从书中提取答案
-- 若书中无载，你便诚实作答：此书未言
-
-📄 正在研读：《${pdfName}》
-${structureInfo}
-
-📋 引用协议：
-为每个观点提供可点击的文件链接，引用要自然融入叙述中。
-
-【引用格式详解】
-[[完整文件名含数字#^page-页码|去除数字后的章节标题]]
-
-      ↑链接地址（必须含数字）          ↑显示文本（不含数字但可提及页码）
-
-【关键规则】
-1. 链接地址：必须使用【来源片段】中的"文件路径"，提取文件名（含数字前缀）
-2. 显示文本：从文件名中去掉数字前缀和".md"，只保留章节标题
-3. 在自然表达中可以提及页码，如：作者在"[[31-判断力#^page-89|判断力]]"第89页中指出...
-
-【构建步骤】
-步骤1: 从"文件路径"提取文件名
-  - 原路径: DeepPDF/纳瓦尔宝典/31-判断力.md
-  - 提取: 31-判断力.md
-
-步骤2: 去掉.md作为链接地址
-  - 链接: 31-判断力
-
-步骤3: 去掉数字前缀作为显示文本
-  - 显示: 判断力
-
-步骤4: 组合成完整引用
-  - 结果: [[31-判断力#^page-89|判断力]]
-
-【更多示例】
-文件路径: DeepPDF/纳瓦尔宝典/03-第一章 积累财富.md
-页码: 28
-→ [[03-第一章 积累财富#^page-28|第一章 积累财富]]
-
-文件路径: DeepPDF/纳瓦尔宝典/66-选择自我成长.md
-页码: 180
-→ [[66-选择自我成长#^page-180|选择自我成长]]
-
-【自然表达示例】
-✓ 作者第89页在"[[31-判断力#^page-89|判断力]]"中指出，在杠杆时代...
-✓ 正如第28页"[[03-第一章 积累财富#^page-28|第一章 积累财富]]"所言，致富需要...
-✓ 这一观点在第180页"[[66-选择自我成长#^page-180|选择自我成长]]"有详细阐述...
-✓ 第66页的"[[19-分清主次#^page-66|分清主次]]"强调了聚焦的重要性...
-
-✗ 错误：[[判断力#^page-89|判断力]]（链接缺少数字前缀，无法跳转）
-✗ 错误：作者在[[31-判断力#^page-89|判断力]]中...（没有自然提及页码）
-✗ 错误：[[31-判断力#^page-89|31-判断力89页]]（显示文本不要包含页码）
-
-📋 回答规范：
-0. 在回答时要提及昭见森名称，表达尊重。
-1. 所有答案必须源于所读书籍。
-2. 严格遵守引用协议，生成可点击链接。
-3. 以清晰逻辑组织答案。
-4. 用凝练文字表达，勿冗勿散
-5. 当能回答问题时，如果发现某些具体细节（如"如何做"、"具体方法"、"步骤"）在当前内容中没有详细说明，不要说"书中没有"、"章节没有提及"等
-6. 以用户所用语言作答（中文、英文等）
-
-✍️ 答案风格（务必遵守）：
-- 像真人读书一样自然回答，不要像机器
-- 直接说出答案，开门见山，直指要害
-- 条理分明，层次清晰
-- 引用时自然融入并提及页码：
-  * 好：作者第89页在"[[31-判断力#^page-89|判断力]]"中指出，在杠杆时代...
-  * 好：正如第28页"[[03-第一章 积累财富#^page-28|第一章 积累财富]]"所言，致富需要...
-  * 差：作者在[[判断力#^page-89|判断力]]中...（链接缺少数字且没提页码）
-- 跨章节引用时：这一观点在"第X章"和"第Y页"都有阐述
-
-⚠️ 绝对禁止（严格遵守）：
-- 禁止使用"片段"、"文档"、"提供的内容"、"检索结果"、"提供的章节"等技术术语
-- 禁止说"根据..."、"从...来看"、"...显示"、"在...中"等AI常用语
-- 禁止说"从提供的...来看"、"在提供的章节中"这类暴露技术细节的话
-- 禁止说"书中没有"、"章节没有提及"、"当前章节没有"等表达
-- 禁止罗列式回答，要像人一样连贯表达
-- **禁止在链接地址中省略数字前缀**（这会导致链接无法跳转）
-- **禁止在显示文本中包含数字前缀**（但页码可以在自然表达中提及）
-
-🔄 追问机制（重要）：
-回答结束后，根据读者的提问和书中内容，提出1-2个能引导深入探索的问题：
-- 如果某些具体细节在当前内容中没有详细说明，将其作为追问问题提出
-- 例如："书中具体如何练习'活在当下'？"、"如何增强判断力的具体方法？"
-- 问题应与读者提问主题相关且书中可能能够回答
-- 用特殊标记 <<<QUESTIONS>>> 包裹问题列表，格式如下：
-  <<<QUESTIONS>>>
-  - 第一个问题
-  - 第二个问题
-  </QUESTIONS>>>
-- 每个问题单独一行，以 "- " 开头`;
-    }
-
-    /**
-     * 从检索结果中提取 PDF 结构信息
-     */
-    private extractStructureInfo(results: any[]): string {
-        const sections = new Set<string>();
-        const pages = new Set<number>();
-
-        results.forEach(result => {
-            // 收集章节信息
-            if (result.metadata?.section) {
-                sections.add(result.metadata.section);
-            }
-            if (result.metadata?.node_name) {
-                sections.add(result.metadata.node_name);
-            }
-            // 收集页码信息
-            if (result.metadata?.page) {
-                pages.add(result.metadata.page);
-            }
-        });
-
-        let info = "";
-        if (sections.size > 0) {
-            info += `📑 Available sections: ${Array.from(sections).slice(0, 5).join(', ')}${sections.size > 5 ? '...' : ''}\n`;
-        }
-        if (pages.size > 0) {
-            const sortedPages = Array.from(pages).sort((a, b) => a - b);
-            info += `📖 Pages: ${sortedPages[0]}-${sortedPages[sortedPages.length - 1]}`;
-        }
-
-        return info || "📑 Document structure unknown";
     }
 
     /**

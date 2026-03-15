@@ -302,12 +302,16 @@ export class HumanizedProgressAdapter {
 	 * 确定当前阅读层次
 	 * 根据已调用和正在调用的工具，返回最高层次
 	 * 同时更新会话最高层次（用于持续显示）
+	 * 注意：skill 不属于阅读层次，不影响徽章显示
 	 */
 	private determineReadingLevel(): ReadingLevel | undefined {
+		// 阅读层次优先级（skill 不参与层次判断）
 		const levelPriority: ReadingLevel[] = ['syntopical', 'analytical', 'inspectional', 'elementary'];
 
-		// 检查所有已调用和正在调用的工具
-		const activeTools = this.toolCalls.filter((t) => t.status === 'running' || t.status === 'completed');
+		// 检查所有已调用和正在调用的工具（排除 skill）
+		const activeTools = this.toolCalls.filter(
+			(t) => (t.status === 'running' || t.status === 'completed') && t.name.toLowerCase() !== 'skill'
+		);
 
 		let currentLevel: ReadingLevel | undefined;
 

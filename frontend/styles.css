@@ -1011,142 +1011,6 @@
 	transform: scale(0.98);
 }
 
-/* ==================== 引用来源 (Grid Layout) ==================== */
-
-.deeppdf-message-citations {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-	gap: 8px;
-	margin-top: 12px;
-	padding-top: 10px;
-	border-top: 1px dashed var(--background-modifier-border);
-}
-
-.deeppdf-citation {
-	display: flex;
-	flex-direction: column;
-	padding: 10px 12px;
-	background: var(--background-secondary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: 10px;
-	font-size: 13px;
-	transition: all 0.15s ease;
-	cursor: pointer;
-	overflow: hidden;
-	position: relative;
-}
-
-.deeppdf-citation:hover {
-	border-color: var(--interactive-accent);
-	background: var(--background-secondary-alt);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-/* 引用头部布局 */
-.deeppdf-citation-header {
-	display: flex;
-	align-items: flex-start;
-	gap: 10px;
-	width: 100%;
-}
-
-/* 图标 */
-.deeppdf-citation-icon {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 24px;
-	height: 24px;
-	background: var(--background-modifier-form-field);
-	border-radius: 6px;
-	color: var(--text-muted);
-	flex-shrink: 0;
-}
-
-.deeppdf-citation-icon svg {
-	width: 14px;
-	height: 14px;
-}
-
-.deeppdf-citation:hover .deeppdf-citation-icon {
-	color: var(--interactive-accent);
-	background: rgba(var(--interactive-accent-rgb), 0.1);
-}
-
-/* 文件信息区 */
-.deeppdf-citation-file-info {
-	display: flex;
-	flex-direction: column;
-	flex: 1;
-	min-width: 0;
-	gap: 4px;
-}
-
-.deeppdf-citation-filename {
-	font-weight: 600;
-	color: var(--text-normal);
-	font-size: 14px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	line-height: 1.3;
-}
-
-.deeppdf-citation:hover .deeppdf-citation-filename {
-	color: var(--interactive-accent);
-}
-
-/* 页码作为元数据 */
-.deeppdf-citation-meta {
-	display: flex;
-	align-items: center;
-	justify-content: flex-start;
-}
-
-.deeppdf-citation-page-badge {
-	display: inline-block;
-	padding: 3px 8px;
-	background: var(--background-modifier-form-field);
-	border-radius: 6px;
-	font-size: 11px;
-	font-weight: 500;
-	color: var(--text-muted);
-	transition: all 0.15s ease;
-}
-
-.deeppdf-citation:hover .deeppdf-citation-page-badge {
-	background: var(--interactive-accent);
-	color: #fff;
-}
-
-/* 用户加载的文档特殊样式 */
-.deeppdf-citation-loaded {
-	border-left: 3px solid var(--color-green, #4caf50);
-}
-
-.deeppdf-citation-loaded:hover {
-	border-left-color: var(--color-green, #4caf50);
-}
-
-.deeppdf-citation-loaded-badge {
-	display: inline-block;
-	padding: 3px 8px;
-	background: var(--color-green, #4caf50);
-	border-radius: 6px;
-	font-size: 11px;
-	font-weight: 500;
-	color: #fff;
-}
-
-.deeppdf-citation-loaded:hover .deeppdf-citation-loaded-badge {
-	opacity: 0.9;
-}
-
-/* 隐藏不必要的元素 */
-.deeppdf-citation-jump-btn {
-	display: none;
-}
-
 /* ==================== 流式输出状态 ==================== */
 
 /* 使用伪元素制作优雅的圆形光标 */
@@ -1189,12 +1053,6 @@
 		width: 24px;
 		height: 24px;
 		font-size: 12px;
-	}
-
-	.deeppdf-citation-header {
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 4px;
 	}
 
 	.deeppdf-message-actions {
@@ -3374,83 +3232,6 @@
     color: inherit;
 }
 
-/**
- * 追问问题卡片组件样式
- */
-
-.deeppdf-followup-questions {
-	margin-top: 12px;
-	padding: 0;
-}
-
-.deeppdf-followup-header {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	font-size: var(--font-ui-smaller, 12px);
-	color: var(--text-muted, var(--text-faint));
-	margin-bottom: 8px;
-	font-weight: 500;
-}
-
-.deeppdf-followup-icon {
-	font-size: 14px;
-}
-
-.deeppdf-followup-list {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
-.deeppdf-followup-card {
-	padding: 10px 14px;
-	background: var(--background-secondary, var(--color-background-secondary));
-	border: 1px solid var(--background-modifier-border, var(--color-border));
-	border-radius: 12px;
-	font-size: var(--font-ui-small, 13px);
-	color: var(--text-normal, var(--color-text));
-	cursor: pointer;
-	transition: all 0.2s ease;
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.deeppdf-followup-card::before {
-	content: "→";
-	flex-shrink: 0;
-	color: var(--interactive-accent, var(--color-accent));
-	opacity: 0.6;
-	transition: all 0.2s ease;
-}
-
-.deeppdf-followup-card:hover {
-	background: var(--background-modifier-hover, var(--color-background-hover));
-	border-color: var(--interactive-accent, var(--color-accent));
-	transform: translateX(2px);
-}
-
-.deeppdf-followup-card:hover::before {
-	opacity: 1;
-	transform: translateX(2px);
-}
-
-.deeppdf-followup-card:active {
-	transform: translateX(3px) scale(0.98);
-}
-
-/* 暗色主题优化 */
-.theme-dark .deeppdf-followup-card {
-	background: rgba(0, 0, 0, 0.2);
-	border-color: rgba(255, 255, 255, 0.1);
-}
-
-.theme-dark .deeppdf-followup-card:hover {
-	background: rgba(0, 0, 0, 0.3);
-	border-color: var(--interactive-accent, var(--color-accent));
-}
-
 /* DeepPDF Agent 模式切换组件样式 */
 
 .deeppdf-agent-mode-toggle {
@@ -5220,7 +5001,7 @@
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
-/* Agent Humanized Status Styles - 简化版 */
+/* Agent Humanized Status Styles - 增强版 */
 
 /* 阅读层次徽章 */
 .reading-level-badge {
@@ -5252,6 +5033,11 @@
 	color: #7b1fa2;
 }
 
+.reading-level-skill {
+	background: #e8f5e9;
+	color: #2e7d32;
+}
+
 /* 暗色主题下的阅读层次徽章 */
 .theme-dark .reading-level-elementary {
 	background: #3a3a3a;
@@ -5273,12 +5059,15 @@
 	color: #ce93d8;
 }
 
-/* 思考中状态 */
+.theme-dark .reading-level-skill {
+	background: #1b3a1b;
+	color: #a5d6a7;
+}
+
+/* 思考中状态 - 增强版 */
 .deepreader-thinking {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 10px;
+	flex-direction: column;
 	padding: 12px 16px;
 	margin: 8px 0;
 	color: var(--text-muted);
@@ -5286,9 +5075,12 @@
 	animation: fadeIn 0.3s ease;
 }
 
-@keyframes fadeIn {
-	from { opacity: 0; }
-	to { opacity: 1; }
+/* 当前动作（突出显示） */
+.thinking-current-action {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 0;
 }
 
 .thinking-icon {
@@ -5296,18 +5088,58 @@
 	animation: bounce 1.5s infinite;
 }
 
+.thinking-text {
+	font-size: 15px;
+	font-weight: 500;
+	color: var(--text-normal);
+	animation: pulse 2s infinite;
+}
+
+/* 已完成步骤区域 */
+.thinking-steps {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.thinking-steps-title {
+	font-size: 12px;
+	color: var(--text-faint);
+	margin-bottom: 6px;
+}
+
+.thinking-steps-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.thinking-step {
+	font-size: 12px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-muted);
+}
+
+.thinking-step.done {
+	color: var(--text-success);
+}
+
+/* 动画 */
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
 @keyframes bounce {
 	0%, 100% { transform: translateY(0); }
 	50% { transform: translateY(-4px); }
 }
 
-.thinking-text {
-	animation: pulse 2s infinite;
-}
-
 @keyframes pulse {
 	0%, 100% { opacity: 1; }
-	50% { opacity: 0.6; }
+	50% { opacity: 0.7; }
 }
 
 /* 兼容旧版 class */
@@ -5430,12 +5262,7 @@
 }
 
 .thought-text {
-	animation: fade-in-out 3s infinite;
-}
-
-@keyframes fade-in-out {
-	0%, 100% { opacity: 0.7; }
-	50% { opacity: 1; }
+	animation: pulse 3s infinite;
 }
 
 /* 生成内容区域 - 简化版 */
@@ -5474,6 +5301,7 @@
 		margin: 6px 0;
 	}
 }
+
 
 /* ==================== 全局容器 ==================== */
 .deeppdf-container {

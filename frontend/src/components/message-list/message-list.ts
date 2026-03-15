@@ -5,7 +5,7 @@
 
 import { App } from 'obsidian';
 import { Component } from '../component';
-import { createMessage, Message, MessageData, CitationData } from '../message/message';
+import { createMessage, Message, MessageData } from '../message/message';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { warn } from '../../utils/logger.js';
 
@@ -17,10 +17,6 @@ export interface MessageCallbacks {
 	onRegenerate?: (messageId: string) => void;
 	/** 复制消息 */
 	onCopy?: (messageId: string) => void;
-	/** 复制消息和引用 */
-	onCopyWithCitation?: (messageId: string) => void;
-	/** 跳转到引用 */
-	onCitationJump?: (citation: CitationData) => void;
 	/** 追问问题点击 */
 	onQuestionClick?: (question: string) => void;
 	/** 生成阅读大纲点击 */
@@ -103,9 +99,7 @@ export class MessageList extends Component {
 			const message = createMessage(messageData, {
 				onRegenerate: () => this.callbacks.onRegenerate?.(messageData.id),
 				onCopy: () => this.callbacks.onCopy?.(messageData.id),
-				onCopyWithCitation: () => this.callbacks.onCopyWithCitation?.(messageData.id),
 				onQuestionClick: (question: string) => this.callbacks.onQuestionClick?.(question),
-				onCitationJump: (citation: CitationData) => this.callbacks.onCitationJump?.(citation),
 				onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) =>
 					this.callbacks.onExcerpt?.(messageData.id, content, metadata),
 				app: this.app
@@ -122,14 +116,8 @@ export class MessageList extends Component {
 			onCopy: () => {
 				this.callbacks.onCopy?.(messageData.id);
 			},
-			onCopyWithCitation: () => {
-				this.callbacks.onCopyWithCitation?.(messageData.id);
-			},
 			onQuestionClick: (question: string) => {
 				this.callbacks.onQuestionClick?.(question);
-			},
-			onCitationJump: (citation: CitationData) => {
-				this.callbacks.onCitationJump?.(citation);
 			},
 			onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) => {
 				this.callbacks.onExcerpt?.(messageData.id, content, metadata);
@@ -179,7 +167,7 @@ export class MessageList extends Component {
 			return;
 		}
 
-		// 更新消息（citations 改变时会自动重新渲染并绑定回调）
+		// 更新消息
 		message.update(updates);
 
 		// 始终滚动到底部：

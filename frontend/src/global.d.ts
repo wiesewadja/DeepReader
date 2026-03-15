@@ -3,8 +3,6 @@
  * 扩展 DOM 类型以支持 Obsidian API
  */
 
-import { CitationData } from './components/message/message';
-
 /**
  * Obsidian 对 HTMLElement 的扩展
  */
