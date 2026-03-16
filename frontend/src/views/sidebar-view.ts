@@ -1786,6 +1786,10 @@ export class SidebarView extends ItemView {
                 markdownFiles: this.currentMarkdownFiles,
                 useLLMTreeSearch: this.useLLMTreeSearch,
                 app: this.app,
+                // 添加文档元数据（用于 Agent 上下文）
+                documentMetadata: {
+                    title: this.currentPdfName || '未知文档',
+                },
             };
 
             // 加载阅读进度

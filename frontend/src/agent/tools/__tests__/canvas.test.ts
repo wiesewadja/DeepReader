@@ -54,9 +54,9 @@ describe('Canvas Tool', () => {
       expect(params.required).toContain('action');
     });
 
-    it('should support create, add_node, add_edge, get, list actions', () => {
+    it('should support create, add_node, add_edge, get, list, mindmap actions', () => {
       const actionEnum = canvasTool.definition.function.parameters.properties.action.enum;
-      expect(actionEnum).toEqual(['create', 'add_node', 'add_edge', 'get', 'list']);
+      expect(actionEnum).toEqual(['create', 'add_node', 'add_edge', 'get', 'list', 'mindmap']);
     });
   });
 
@@ -326,6 +326,193 @@ describe('Canvas Tool', () => {
 
       expect(result).toContain('Error');
       expect(result).toContain('Unknown action');
+    });
+  });
+
+  describe('mindmap action', () => {
+    it('should create mindmap with topic and branches', async () => {
+      const mockFile = { path: 'Canvas/test-mindmap.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      const result = await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test-mindmap.canvas',
+        topic: 'Test Topic',
+        branches: [
+          { label: 'Branch 1', children: ['Child 1', 'Child 2'] },
+          { label: 'Branch 2', children: [] }
+        ]
+      }, context);
+
+      expect(mockApp.vault.create).toHaveBeenCalledWith(
+        'Canvas/test-mindmap.canvas',
+        expect.stringContaining('"nodes"')
+      );
+      expect(result).toContain('Created mindmap');
+      expect(result).toContain('Test Topic');
+      expect(result).toContain('Branches: 2');
+    });
+
+    it('should return error when path is missing', async () => {
+      const result = await canvasTool.execute({
+        action: 'mindmap',
+        topic: 'Test Topic',
+        branches: []
+      }, context);
+
+      expect(result).toContain('Error');
+      expect(result).toContain('path is required');
+    });
+
+    it('should return error when topic is missing', async () => {
+      const result = await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        branches: []
+      }, context);
+
+      expect(result).toContain('Error');
+      expect(result).toContain('topic is required');
+    });
+
+    it('should create center node with color 1', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [{ label: 'B1' }]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+      const centerNode = canvasData.nodes.find((n: any) => n.text === 'Center');
+
+      expect(centerNode).toBeDefined();
+      expect(centerNode.color).toBe('1');
+    });
+
+    it('should assign different colors to branches', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [
+          { label: 'Branch 1' },
+          { label: 'Branch 2' },
+          { label: 'Branch 3' }
+        ]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+      const branchNodes = canvasData.nodes.filter((n: any) =>
+        n.type === 'text' && n.text.startsWith('Branch')
+      );
+
+      const colors = branchNodes.map((n: any) => n.color);
+      expect(new Set(colors).size).toBeGreaterThan(1); // 至少有两种不同颜色
+    });
+
+    it('should create edges connecting nodes', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [
+          { label: 'Branch 1', children: ['Child 1'] }
+        ]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+
+      // 1 中心 + 1 分支 + 1 子节点 = 3 个节点
+      // 2 条边（中心-分支，分支-子节点）
+      expect(canvasData.edges.length).toBe(2);
+    });
+
+    it('should create group nodes for branches', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [
+          { label: 'Branch 1', children: ['Child 1'] },
+          { label: 'Branch 2', children: [] }
+        ]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+      const groupNodes = canvasData.nodes.filter((n: any) => n.type === 'group');
+
+      expect(groupNodes.length).toBe(2); // 每个分支一个 group
+    });
+
+    it('should handle nested children', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [
+          {
+            label: 'Branch 1',
+            children: [
+              'Child 1',
+              { label: 'Child 2', children: ['Grandchild'] }
+            ]
+          }
+        ]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+      const textNodes = canvasData.nodes.filter((n: any) => n.type === 'text');
+
+      // 1 中心 + 1 分支 + 2 子节点 + 1 孙节点 = 5
+      expect(textNodes.length).toBe(5);
+    });
+
+    it('should set correct fromSide and toSide based on angle', async () => {
+      const mockFile = { path: 'Canvas/test.canvas' };
+      mockApp.vault.create.mockResolvedValue(mockFile);
+
+      await canvasTool.execute({
+        action: 'mindmap',
+        path: 'Canvas/test.canvas',
+        topic: 'Center',
+        branches: [
+          { label: 'Right' },  // 角度 ~0，应该在右侧
+          { label: 'Bottom' }, // 角度 ~π/2，应该在下方
+          { label: 'Left' },   // 角度 ~π，应该在左侧
+          { label: 'Top' }     // 角度 ~3π/2，应该在上方
+        ]
+      }, context);
+
+      const createCall = mockApp.vault.create.mock.calls[0];
+      const canvasData = JSON.parse(createCall[1]);
+      const edges = canvasData.edges;
+
+      // 检查边的方向是否合理
+      const fromSides = new Set(edges.map((e: any) => e.fromSide));
+      const toSides = new Set(edges.map((e: any) => e.toSide));
+
+      expect(fromSides.size).toBeGreaterThan(1); // 应该有多个不同方向
     });
   });
 });
