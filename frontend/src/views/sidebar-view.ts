@@ -139,10 +139,7 @@ export class SidebarView extends ItemView {
      * 使用 plugin 统一管理的 Agent 实例
      */
     private async initializeFrontendAgent(): Promise<void> {
-        if (this.frontendAgent) {
-            return; // 已初始化
-        }
-        // 使用 plugin 统一管理的 Agent
+        // 每次都从 plugin 获取最新的 Agent（支持设置切换后立即生效）
         const agent = await this.plugin.getFrontendAgent();
         this.frontendAgent = agent;
         log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', agent.listSkills());
