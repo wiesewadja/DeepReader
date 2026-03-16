@@ -311,6 +311,8 @@ def _parse_pdf_structure(
     llm_client: Any,
     config: Dict[str, Any],
     progress_callback=None,
+    index_id: str = None,
+    storage_dir: str = None,
 ) -> Tuple[Dict, float]:
     """
     解析 PDF/EPUB 结构
@@ -321,6 +323,8 @@ def _parse_pdf_structure(
         llm_client: LLM 客户端
         config: LLM 配置字典
         progress_callback: 进度回调函数
+        index_id: 索引 ID（用于 EPUB 图片提取）
+        storage_dir: 存储目录（用于 EPUB 图片提取）
 
     Returns:
         (tree_result, parse_time)
@@ -364,6 +368,14 @@ def _parse_pdf_structure(
             logger.debug(
                 f"[{doc_type.upper()}解析] 当前没有运行中的事件循环（符合预期）"
             )
+
+        # 为 EPUB 文档设置图片提取参数
+        if doc_type == "epub" and index_id and storage_dir:
+            # 在 opt 对象上添加图片提取参数
+            opt.extract_images = True
+            opt.image_output_dir = str(Path(storage_dir) / "epub_images")
+            opt.index_id = index_id
+            logger.info(f"[EPUB解析] 启用图片提取: {opt.image_output_dir}/{index_id}")
 
         # 调用 page_index_main 并传递进度回调
         tree_result = page_index_main(
@@ -919,7 +931,9 @@ def _index_pdf_sync(
                     )
 
             tree_result, parse_time = _parse_pdf_structure(
-                pdf_path, opt, llm_client_instance, config, progress_callback
+                pdf_path, opt, llm_client_instance, config, progress_callback,
+                index_id=index_id,
+                storage_dir=storage_dir,
             )
 
         # 更新进度：文档解析完成（pageindex-lib 内部已更新到 85%）

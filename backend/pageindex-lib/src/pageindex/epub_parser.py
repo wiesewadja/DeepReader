@@ -8,13 +8,20 @@ PageIndex EPUB 解析器模块
     - 元数据提取（title, author, language）
     - 目录结构（TOC）提取
     - 章节内容提取和转换为纯文本
-    - HTML 转纯文本（忽略链接、图片、强调）
+    - HTML 转纯文本（保留链接、图片、强调）
+    - 图片提取和路径映射
 
 使用示例:
     >>> from pageindex.epub_parser import EpubParser
     >>>
-    >>> # 解析 EPUB
+    >>> # 解析 EPUB（不含图片）
     >>> parser = EpubParser("book.epub")
+    >>> parser.load()
+    >>>
+    >>> # 解析 EPUB（含图片提取）
+    >>> parser = EpubParser("book.epub", extract_images=True,
+    ...                     image_output_dir=Path("data/epub_images"),
+    ...                     index_id="idx_123")
     >>> parser.load()
     >>>
     >>> # 获取元数据
@@ -49,6 +56,8 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import html2text
 
+from .epub_images import EpubImageExtractor, resolve_epub_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,11 +66,15 @@ class EpubParser:
     EPUB 解析器类
 
     提供 EPUB 文件解析的统一接口，支持元数据提取、目录提取和章节内容
-    提取。
+    提取。支持可选的图片提取功能。
 
     属性:
         epub_path: EPUB 文件路径
         book: 加载的 EPUB 书籍对象
+        extract_images: 是否提取图片
+        image_output_dir: 图片输出目录
+        index_id: 索引 ID
+        image_map: 图片路径映射表
 
     使用示例:
         >>> parser = EpubParser("book.epub")
@@ -70,23 +83,43 @@ class EpubParser:
         >>> print(f"共 {len(parser.get_toc())} 章")
     """
 
-    def __init__(self, epub_path: str):
+    def __init__(
+        self,
+        epub_path: str,
+        extract_images: bool = False,
+        image_output_dir: Optional[Path] = None,
+        index_id: Optional[str] = None,
+    ):
         """
         初始化 EPUB 解析器
 
         参数:
             epub_path: EPUB 文件路径
+            extract_images: 是否提取图片 (默认 False)
+            image_output_dir: 图片输出目录 (提取图片时必需)
+            index_id: 索引 ID (提取图片时必需)
 
         异常:
-            ValueError: 如果 epub_path 为空
+            ValueError: 如果 epub_path 为空，或提取图片时缺少必要参数
         """
         if not epub_path:
             raise ValueError("EPUB 文件路径不能为空")
 
+        if extract_images:
+            if not image_output_dir:
+                raise ValueError("提取图片时必须指定 image_output_dir")
+            if not index_id:
+                raise ValueError("提取图片时必须指定 index_id")
+
         self.epub_path = epub_path
         self.book: Optional[epub.EpubBook] = None
+        self.extract_images = extract_images
+        self.image_output_dir = image_output_dir
+        self.index_id = index_id
+        self.image_map: Dict[str, str] = {}  # 原始路径 -> 新文件名
+        self._image_extractor: Optional[EpubImageExtractor] = None
 
-        logger.debug(f"EpubParser 初始化: {epub_path}")
+        logger.debug(f"EpubParser 初始化: {epub_path}, 提取图片: {extract_images}")
 
     def load(self) -> None:
         """
@@ -243,11 +276,13 @@ class EpubParser:
         获取 EPUB 章节内容
 
         提取所有章节的内容，并将 HTML 转换为纯文本。
+        如果启用了图片提取，会在处理章节前先提取所有图片。
 
         返回:
             章节列表，每个元素是包含以下键的字典:
                 - title: 章节标题
-                - content: 章节内容（纯文本）
+                - file_name: 文件名
+                - content: 章节内容（纯文本，可能包含图片占位符）
 
         异常:
             ValueError: 如果 EPUB 文件未加载
@@ -269,7 +304,15 @@ class EpubParser:
         logger.debug("提取章节内容")
 
         # ============================================================
-        # 步骤2: 遍历所有项目
+        # 步骤2: 如果启用图片提取，先提取所有图片
+        # ============================================================
+        if self.extract_images and self.image_output_dir and self.index_id:
+            self._image_extractor = EpubImageExtractor(self.image_output_dir, self.index_id)
+            self.image_map = self._image_extractor.extract_images(self.book)
+            logger.info(f"图片提取完成: {len(self.image_map)} 张")
+
+        # ============================================================
+        # 步骤3: 遍历所有项目
         # ============================================================
         chapters: List[Dict[str, str]] = []
 
@@ -287,8 +330,8 @@ class EpubParser:
                 # 读取内容
                 content = item.get_content().decode("utf-8")
 
-                # 转换为纯文本
-                text_content = self._html_to_text(content)
+                # 转换为纯文本（包含图片占位符）
+                text_content = self._html_to_text(content, file_name)
 
                 # 提取标题（优先级：<title> 标签 > <h1>/<h2> 标签 > 文件名）
                 title = self._extract_title(content, file_name)
@@ -305,14 +348,16 @@ class EpubParser:
 
         return chapters
 
-    def _html_to_text(self, html: str) -> str:
+    def _html_to_text(self, html: str, file_name: str = "") -> str:
         """
         将 HTML 内容转换为 Markdown 格式文本
 
         使用 html2text 库进行转换，保留链接和强调标记以提供更丰富的语义信息。
+        如果启用了图片提取，会替换图片路径为 API URL。
 
         参数:
             html: HTML 内容字符串
+            file_name: 当前 HTML 文件路径（用于解析图片相对路径）
 
         返回:
             Markdown 格式文本内容
@@ -324,11 +369,17 @@ class EpubParser:
             >>> print(text)  # Markdown 格式，保留链接
         """
         # ============================================================
-        # 步骤1: 配置 html2text - 保留语义信息
+        # 步骤1: 如果启用图片提取，先替换图片路径
+        # ============================================================
+        if self.extract_images and self.image_map:
+            html = self._replace_image_src(html, file_name)
+
+        # ============================================================
+        # 步骤2: 配置 html2text - 保留语义信息
         # ============================================================
         h = html2text.HTML2Text()
         h.ignore_links = False  # 保留链接
-        h.ignore_images = True  # 忽略图片
+        h.ignore_images = not self.extract_images  # 根据配置决定是否忽略图片
         h.ignore_emphasis = False  # 保留强调
         h.body_width = 0  # 不自动换行
         h.unicode_snob = True  # 使用 Unicode
@@ -337,16 +388,57 @@ class EpubParser:
         h.protect_links = True  # 保护链接不被拆分
 
         # ============================================================
-        # 步骤2: 转换 HTML 为 Markdown
+        # 步骤3: 转换 HTML 为 Markdown
         # ============================================================
         text = h.handle(html)
 
         # ============================================================
-        # 步骤3: 后处理 Markdown
+        # 步骤4: 后处理 Markdown
         # ============================================================
         text = self._post_process_markdown(text)
 
         return text
+
+    def _replace_image_src(self, html: str, file_name: str) -> str:
+        """
+        替换 HTML 中的图片 src 为 API URL
+
+        解析 EPUB 内的相对路径，查找映射的新文件名，
+        替换为 API 访问 URL。
+
+        参数:
+            html: HTML 内容字符串
+            file_name: 当前 HTML 文件路径
+
+        返回:
+            替换后的 HTML 内容
+
+        使用示例:
+            >>> html = '<img src="../images/fig1.jpg" alt="图1">'
+            >>> result = parser._replace_image_src(html, "OEBPS/chapters/ch1.xhtml")
+            >>> # result: '<img src="/api/epub-images/idx_xxx/abc123.jpg" alt="图1">'
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+
+        for img in soup.find_all('img'):
+            src = img.get('src', '')
+            if not src:
+                continue
+
+            # 解析相对路径 → EPUB 内绝对路径
+            actual_path = resolve_epub_path(src, file_name)
+
+            # 查找映射的新文件名
+            new_name = self.image_map.get(actual_path)
+            if new_name:
+                # 替换为 API URL
+                api_url = f"/api/epub-images/{self.index_id}/{new_name}"
+                img['src'] = api_url
+                logger.debug(f"[图片路径] {src} ({actual_path}) -> {api_url}")
+            else:
+                logger.warning(f"[图片路径] 未找到映射: {src} (解析为: {actual_path})")
+
+        return str(soup)
 
     def _post_process_markdown(self, text: str) -> str:
         """
@@ -447,7 +539,7 @@ class EpubParser:
         # 尝试美化文件名（如 "01_04" -> "章节 01_04"）
         if title.replace("_", "").replace("-", "").replace("/", "").isalnum():
             # 这是一个不太有意义的文件名，尝试从内容中提取前几个字作为摘要
-            text_content = self._html_to_text(html)
+            text_content = self._html_to_text(html, file_name)
             if text_content:
                 # 取前50个字符作为摘要标题
                 preview = text_content[:50].strip()
@@ -463,6 +555,9 @@ class EpubParser:
 
 def parse_epub(
     epub_path: str,
+    extract_images: bool = False,
+    image_output_dir: Optional[str] = None,
+    index_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     解析 EPUB 文件并返回所有信息
@@ -471,12 +566,16 @@ def parse_epub(
 
     参数:
         epub_path: EPUB 文件路径
+        extract_images: 是否提取图片 (默认 False)
+        image_output_dir: 图片输出目录 (提取图片时必需)
+        index_id: 索引 ID (提取图片时必需)
 
     返回:
         包含以下键的字典:
             - metadata: 元数据字典
             - toc: 目录列表
             - chapters: 章节列表
+            - image_map: 图片映射表 (仅当 extract_images=True)
 
     异常:
         Exception: 如果解析失败
@@ -487,11 +586,22 @@ def parse_epub(
         >>> print(f"书名: {result['metadata']['title']}")
         >>> print(f"章节数: {len(result['chapters'])}")
     """
-    parser = EpubParser(epub_path)
+    parser = EpubParser(
+        epub_path,
+        extract_images=extract_images,
+        image_output_dir=Path(image_output_dir) if image_output_dir else None,
+        index_id=index_id,
+    )
     parser.load()
 
-    return {
+    result = {
         "metadata": parser.get_metadata(),
         "toc": parser.get_toc(),
         "chapters": parser.get_chapters(),
     }
+
+    # 添加图片映射（如果启用了图片提取）
+    if extract_images and parser.image_map:
+        result["image_map"] = parser.image_map
+
+    return result

@@ -2076,8 +2076,18 @@ def _process_epub(
 
     logger.info(f"[EPUB] 开始处理: {Path(file_path).name}")
 
-    # 1. 解析 EPUB
-    parser = EpubParser(file_path)
+    # 获取图片提取配置
+    extract_images = config.get("extract_images", False) if config else False
+    image_output_dir = config.get("image_output_dir") if config else None
+    index_id = config.get("index_id") if config else None
+
+    # 1. 解析 EPUB（支持图片提取）
+    parser = EpubParser(
+        file_path,
+        extract_images=extract_images,
+        image_output_dir=Path(image_output_dir) if image_output_dir else None,
+        index_id=index_id,
+    )
     parser.load()
 
     epub_data = {
@@ -2085,6 +2095,10 @@ def _process_epub(
         "toc": parser.get_toc(),
         "chapters": parser.get_chapters(),
     }
+
+    # 如果启用了图片提取，记录图片数量
+    if extract_images and parser.image_map:
+        logger.info(f"[EPUB] 图片提取完成: {len(parser.image_map)} 张")
 
     # 2. 转换为树结构
     tree = epub_to_tree(epub_data, assign_node_ids=True)
@@ -2224,6 +2238,10 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
             "use_llm": (opt.if_add_node_summary if opt else False) and (opt.if_add_node_summary == "yes" if isinstance(opt.if_add_node_summary, str) else opt.if_add_node_summary),
             "llm_client": llm_client,
             "format_text_with_llm": format_text,
+            # 图片提取配置（从 opt 或其他来源获取）
+            "extract_images": getattr(opt, 'extract_images', True) if opt else True,  # 默认启用
+            "image_output_dir": getattr(opt, 'image_output_dir', None) if opt else None,
+            "index_id": getattr(opt, 'index_id', None) if opt else None,
         }
 
         try:

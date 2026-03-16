@@ -4,7 +4,8 @@
  */
 
 import { App, TFile, Notice } from 'obsidian';
-import { error as logError } from '../utils/logger.js';
+import { error as logError, info as logInfo } from '../utils/logger.js';
+import { deeppdfClient } from '../api/http-client.js';
 
 /**
  * 节点数据接口
@@ -117,6 +118,112 @@ function createMarkdownContent(node: NodeData, pdfName: string): string {
 `;
 
     return frontMatter + title + summaryBlock + content + footer;
+}
+
+/**
+ * 从内容中提取图片引用
+ * 匹配格式: ![alt](/api/epub-images/index_id/image_name)
+ */
+function extractImageReferences(content: string): Array<{ alt: string; indexId: string; imageName: string; full: string }> {
+    const imageRegex = /!\[([^\]]*)\]\(\/api\/epub-images\/([^\/]+)\/([^)]+)\)/g;
+    const images: Array<{ alt: string; indexId: string; imageName: string; full: string }> = [];
+
+    let match;
+    while ((match = imageRegex.exec(content)) !== null) {
+        images.push({
+            alt: match[1],
+            indexId: match[2],
+            imageName: match[3],
+            full: match[0]
+        });
+    }
+
+    return images;
+}
+
+/**
+ * 下载 EPUB 图片到 Obsidian vault
+ * @param app Obsidian App 实例
+ * @param indexId 索引 ID
+ * @param bookName 书名
+ * @param imageNames 图片文件名列表
+ * @param outputFolder 输出文件夹
+ * @returns 下载的图片映射 {原始文件名: Obsidian 路径}
+ */
+async function downloadEpubImages(
+    app: App,
+    indexId: string,
+    bookName: string,
+    imageNames: string[],
+    outputFolder: string = "DeepReader"
+): Promise<Record<string, string>> {
+    const imageMapping: Record<string, string> = {};
+    const imagesFolderPath = `${outputFolder}/images/${bookName}`;
+
+    // 确保图片文件夹存在
+    const folder = app.vault.getAbstractFileByPath(imagesFolderPath);
+    if (!folder) {
+        await app.vault.createFolder(imagesFolderPath);
+        // 可能需要创建父目录
+        const parentFolder = imagesFolderPath.substring(0, imagesFolderPath.lastIndexOf('/'));
+        const parent = app.vault.getAbstractFileByPath(parentFolder);
+        if (!parent) {
+            await app.vault.createFolder(parentFolder);
+        }
+    }
+
+    for (const imageName of imageNames) {
+        try {
+            // 检查图片是否已存在
+            const imagePath = `${imagesFolderPath}/${imageName}`;
+            const existingFile = app.vault.getAbstractFileByPath(imagePath);
+
+            if (existingFile instanceof TFile) {
+                // 图片已存在，跳过下载
+                logInfo(`[EPUB图片] 图片已存在，跳过: ${imagePath}`);
+                imageMapping[imageName] = imagePath;
+                continue;
+            }
+
+            // 下载图片
+            const imageData = await deeppdfClient.getEpubImage(indexId, imageName);
+
+            // 保存到 vault
+            await app.vault.createBinary(imagePath, imageData);
+            imageMapping[imageName] = imagePath;
+
+            logInfo(`[EPUB图片] 下载成功: ${imageName}`);
+        } catch (error) {
+            logError(`[EPUB图片] 下载失败: ${imageName}`, error);
+            // 继续处理其他图片
+        }
+    }
+
+    return imageMapping;
+}
+
+/**
+ * 替换内容中的图片链接为 Obsidian 格式
+ * ![alt](/api/epub-images/idx/img.png) → ![[DeepReader/images/书名/img.png|alt]]
+ */
+function replaceImageLinks(
+    content: string,
+    bookName: string,
+    imageMapping: Record<string, string>
+): string {
+    const imageRegex = /!\[([^\]]*)\]\(\/api\/epub-images\/([^\/]+)\/([^)]+)\)/g;
+
+    return content.replace(imageRegex, (match, alt, indexId, imageName) => {
+        // 使用映射中的路径，或者构建默认路径
+        const obsidianPath = imageMapping[imageName] || `DeepReader/images/${bookName}/${imageName}`;
+
+        // Obsidian 格式: ![[路径|alt]]
+        if (alt) {
+            return `![[${obsidianPath}|${alt}]]`;
+        } else {
+            return `![[${obsidianPath}]]`;
+        }
+    });
 }
 
 /**
@@ -245,6 +352,36 @@ export async function exportIndexToMarkdown(
             await app.vault.createFolder(folderPath);
         }
 
+        // 步骤 1: 收集所有节点中的图片引用
+        const allImageRefs = new Map<string, { alt: string; indexId: string; imageName: string }>();
+        for (const node of nodes) {
+            const images = extractImageReferences(node.text);
+            for (const img of images) {
+                if (!allImageRefs.has(img.imageName)) {
+                    allImageRefs.set(img.imageName, img);
+                }
+            }
+        }
+
+        // 步骤 2: 下载图片到 Obsidian vault
+        let imageMapping: Record<string, string> = {};
+        if (allImageRefs.size > 0) {
+            logInfo(`[EPUB图片] 开始下载 ${allImageRefs.size} 张图片...`);
+            const imageNames = Array.from(allImageRefs.keys());
+            // 获取第一个图片的 indexId（所有图片应该属于同一个索引）
+            const firstImage = allImageRefs.values().next().value;
+            if (firstImage) {
+                imageMapping = await downloadEpubImages(
+                    app,
+                    firstImage.indexId,
+                    pdfFolderName,
+                    imageNames,
+                    outputFolder
+                );
+                logInfo(`[EPUB图片] 下载完成: ${Object.keys(imageMapping).length} 张`);
+            }
+        }
+
         // 创建或更新书籍主 note 文件
         await createBookNote(app, pdfFolderName, folderPath, indexId, author);
 
@@ -257,8 +394,14 @@ export async function exportIndexToMarkdown(
             const filename = `${String(i + 1).padStart(2, '0')}-${sanitizeFilename(node.node_name)}.md`;
             const filePath = `${folderPath}/${filename}`;
 
+            // 替换图片链接为 Obsidian 格式
+            const processedNode = {
+                ...node,
+                text: replaceImageLinks(node.text, pdfFolderName, imageMapping)
+            };
+
             // 生成 Markdown 内容
-            const content = createMarkdownContent(node, pdfName);
+            const content = createMarkdownContent(processedNode, pdfName);
 
             // 检查文件是否存在
             const existingFile = app.vault.getAbstractFileByPath(filePath);

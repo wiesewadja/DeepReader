@@ -895,6 +895,52 @@ export class DeepPDFClient {
     });
   }
 
+  // ==================== EPUB 图片 API ====================
+
+  /**
+   * 获取 EPUB 图片 URL
+   * @param indexId 索引 ID
+   * @param imageName 图片文件名
+   * @returns 图片的完整 API URL
+   */
+  getEpubImageUrl(indexId: string, imageName: string): string {
+    return `${this.baseUrl}/api/epub-images/${indexId}/${imageName}`;
+  }
+
+  /**
+   * 列出 EPUB 中的所有图片
+   * @param indexId 索引 ID
+   */
+  async listEpubImages(indexId: string): Promise<{
+    status: string;
+    index_id: string;
+    image_count: number;
+    images: Array<{
+      name: string;
+      url: string;
+      size: number;
+    }>;
+  }> {
+    return this.request(`/api/epub-images/${indexId}`);
+  }
+
+  /**
+   * 获取 EPUB 图片数据（二进制）
+   * @param indexId 索引 ID
+   * @param imageName 图片文件名
+   * @returns 图片的 ArrayBuffer 数据
+   */
+  async getEpubImage(indexId: string, imageName: string): Promise<ArrayBuffer> {
+    const url = `${this.baseUrl}/api/epub-images/${indexId}/${imageName}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+
+    return response.arrayBuffer();
+  }
+
   // ==================== 实用方法 ====================
 
   /**

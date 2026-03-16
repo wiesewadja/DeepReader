@@ -111,8 +111,9 @@ export class LibraryModal extends Modal {
     private renderGrid(): void {
         if (!this.gridEl) return;
 
-        // 清空卡片引用
+        // 清空所有缓存和引用
         this.cardElements.clear();
+        this.lastIndexStates.clear();
 
         this.gridEl.innerHTML = '';
 
@@ -176,7 +177,7 @@ export class LibraryModal extends Modal {
         const rawStatus = (index.status || 'unknown').toLowerCase();
         let statusClass = 'ready';
 
-        if (['processing', 'indexing', 'started', 'created', 'running', 'active'].includes(rawStatus)) {
+        if (['processing', 'indexing', 'started', 'created', 'running', 'active', 'uploading'].includes(rawStatus)) {
             statusClass = 'processing';
         } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
             statusClass = 'queued';
@@ -479,8 +480,25 @@ export class LibraryModal extends Modal {
         }
 
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
-            // 直接开始索引，无需确认弹窗
-            new Notice(`开始索引「${fileInfo.name}」...`);
+            // 生成临时 ID 用于追踪
+            const tempId = `temp_${Date.now()}`;
+            const displayName = this.getDisplayName(fileInfo.name);
+
+            // 立即添加一个临时的"正在索引"占位卡片
+            const tempIndex: IndexListItem = {
+                id: tempId,
+                pdf_name: fileInfo.name,
+                node_count: 0,
+                created_at: new Date().toISOString(),
+                status: 'uploading',
+                progress_percent: 0
+            };
+
+            // 添加到索引列表并重新渲染
+            this.indexes.unshift(tempIndex);
+            this.renderGrid();
+
+            new Notice(`开始索引「${displayName}」...`);
             try {
                 let result;
 
@@ -491,23 +509,29 @@ export class LibraryModal extends Modal {
                         fileInfo.file,
                         undefined,
                         (progress: number) => {
-                            // 上传进度回调
+                            // 更新上传进度
                             if (progress < 100) {
-                                new Notice(`上传中... ${progress}%`, 2000);
+                                tempIndex.progress_percent = progress;
+                                tempIndex.status = 'uploading';
+                                this.updateCardProgress(tempId, progress, 'uploading');
                             }
                         },
                         (taskProgress: TaskProgress) => {
-                            // 索引进度回调
+                            // 更新索引进度
                             if (taskProgress.progress_percent !== undefined) {
                                 const progressPercent = Math.round(taskProgress.progress_percent);
-                                if (progressPercent % 25 === 0) {
-                                    new Notice(`索引进度: ${progressPercent}%`, 2000);
-                                }
+                                tempIndex.progress_percent = progressPercent;
+                                tempIndex.status = 'processing';
+                                this.updateCardProgress(tempId, progressPercent, 'processing');
                             }
                         }
                     );
                 } else {
                     // Vault 文件：直接使用路径索引
+                    // 更新状态为"索引中"
+                    tempIndex.status = 'processing';
+                    this.updateCardProgress(tempId, 0, 'processing');
+
                     result = await this.options.apiClient.indexPDF(fileInfo.path, {
                         llmProvider: this.options.plugin.settings.llmProvider,
                         llmModel: this.options.plugin.settings.llmModel,
@@ -520,8 +544,14 @@ export class LibraryModal extends Modal {
                     });
                 }
 
+                // 移除临时卡片
+                this.indexes = this.indexes.filter(idx => idx.id !== tempId);
+                this.cardElements.delete(tempId);
+
                 if (result.status === 'pending' || result.status === 'processing') {
                     new Notice(`索引任务已创建，正在后台处理...`, 4000);
+                    // 立即刷新以显示真实的索引卡片
+                    await this.refreshIndexes();
                     this.startProgressPolling();
                 } else if (result.status === 'success') {
                     new Notice(`索引成功！节点数: ${result.node_count}`, 3000);
@@ -531,6 +561,11 @@ export class LibraryModal extends Modal {
                     await this.refreshIndexes();
                 }
             } catch (error: any) {
+                // 移除临时卡片
+                this.indexes = this.indexes.filter(idx => idx.id !== tempId);
+                this.cardElements.delete(tempId);
+                this.renderGrid();
+
                 let msg = '索引创建失败';
                 if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稀后再试';
                 else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
@@ -539,6 +574,25 @@ export class LibraryModal extends Modal {
                 logError('[DeepPDF] 索引创建错误:', error);
             }
         }).open();
+    }
+
+    /**
+     * 更新卡片进度显示
+     */
+    private updateCardProgress(indexId: string, progress: number, status: string): void {
+        const card = this.cardElements.get(indexId);
+        if (!card) return;
+
+        // 更新进度条
+        const progressBar = card.querySelector('.deeppdf-lib-progress-bar') as HTMLElement;
+        const progressText = card.querySelector('.deeppdf-lib-progress-text') as HTMLElement;
+
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        if (progressText) {
+            progressText.textContent = `${Math.round(progress)}%`;
+        }
     }
 
     private startProgressPolling(): void {
@@ -551,7 +605,7 @@ export class LibraryModal extends Modal {
 
             const hasProcessing = this.indexes.some(idx => {
                 const status = (idx.status || '').toLowerCase();
-                return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(status);
+                return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued', 'uploading'].includes(status);
             });
 
             if (!hasProcessing) {
@@ -583,19 +637,86 @@ export class LibraryModal extends Modal {
     }
 
     private confirmDelete(index: IndexListItem): void {
+        const displayName = this.getDisplayName(index.pdf_name);
+
         new ConfirmModal(
             this.app,
             '删除索引',
-            `确定要删除「${index.pdf_name}」吗？此操作不可撤销。`,
-            async () => {
-                const newIndexes = await this.options.onDeleteIndex?.(index.id);
-                if (newIndexes) {
-                    this.indexes = [...newIndexes];
-                    this.renderGrid();
+            `确定要删除「${displayName}」吗？此操作不可撤销。`,
+            async (deleteLocalData?: boolean) => {
+                // 1. 乐观更新：立即从本地列表中移除
+                const indexToRemove = index.id;
+                this.indexes = this.indexes.filter(idx => idx.id !== indexToRemove);
+
+                // 清除选中状态
+                if (this.selectedIndexId === indexToRemove) {
+                    this.selectedIndexId = null;
                 }
+
+                // 立即重新渲染
+                this.renderGrid();
+
+                // 2. 如果选择了删除本地数据，异步删除本地文件
+                if (deleteLocalData) {
+                    this.deleteLocalData(displayName).catch(error => {
+                        console.error('[LibraryModal] 删除本地数据失败:', error);
+                        new Notice('删除本地数据失败，请手动删除');
+                    });
+                }
+
+                // 3. 异步调用后端删除（不阻塞 UI）
+                this.options.onDeleteIndex?.(indexToRemove).catch(error => {
+                    console.error('[LibraryModal] 后端删除失败:', error);
+                });
             },
-            { confirmLabel: '删除', isDestructive: true }
+            {
+                confirmLabel: '删除',
+                isDestructive: true,
+                checkbox: {
+                    label: '同时删除本地导出数据',
+                    checked: true,
+                    description: '删除 Obsidian vault 中的 Markdown 文件和图片'
+                }
+            }
         ).open();
+    }
+
+    /**
+     * 删除本地导出的数据（Markdown 文件和图片）
+     */
+    private async deleteLocalData(bookName: string): Promise<void> {
+        const { vault } = this.app;
+        const basePath = `DeepReader/${bookName}`;
+        const imagesPath = `DeepReader/images/${bookName}`;
+
+        try {
+            // 删除书籍文件夹
+            const bookFolder = vault.getAbstractFileByPath(basePath);
+            if (bookFolder) {
+                await vault.trash(bookFolder, true);
+                console.log(`[LibraryModal] 已删除本地数据: ${basePath}`);
+            }
+
+            // 删除图片文件夹
+            const imagesFolder = vault.getAbstractFileByPath(imagesPath);
+            if (imagesFolder) {
+                await vault.trash(imagesFolder, true);
+                console.log(`[LibraryModal] 已删除图片: ${imagesPath}`);
+            }
+
+            // 删除封面图片
+            const coverPath = `DeepReader/covers/${bookName}.png`;
+            const coverFile = vault.getAbstractFileByPath(coverPath);
+            if (coverFile) {
+                await vault.trash(coverFile, true);
+                console.log(`[LibraryModal] 已删除封面: ${coverPath}`);
+            }
+
+            new Notice(`已删除「${bookName}」的本地数据`);
+        } catch (error) {
+            console.error('[LibraryModal] 删除本地数据错误:', error);
+            throw error;
+        }
     }
 
     private async refreshIndexes(): Promise<void> {
