@@ -1,58 +1,16 @@
-import { Plugin, PluginSettingTab, App, Setting, WorkspaceLeaf, Notice, MarkdownView, TFile } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
-import { serviceLog, warn, error } from "./utils/logger.js";
+import { serviceLog } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
+import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
+import { getProviderConfig } from './config/providers.js';
+import { DeepPDFSettingTab } from './settings/setting-tab.js';
 
 // 使用 service 模块日志器
 const log = serviceLog;
-
-interface DeepPDFSettings {
-    apiPort: number;
-    maxResults: number;
-    deepseekApiKey: string;
-    openaiApiKey: string;
-    llmProvider: string;
-    llmModel: string;
-    apiUrl: string;
-    maxPagesPerNode: number;
-    maxTokensPerNode: number;
-    ifAddNodeSummary: boolean;
-    lastSelectedIndexId: string;
-    forceMode: string;  // 强制路由模式：auto(默认) | fast | section | slow
-    // 跨书籍模式状态
-    lastCrossBookMode: boolean;  // 上次是否处于跨书籍模式
-    lastCrossBookSessionId: string;  // 跨书籍模式的会话ID
-    chatCache?: Record<string, any>;  // 对话缓存
-    enableDebugLog: boolean;  // 是否启用调试日志
-    // 深度思考模式（LLM 树搜索）
-    lastDeepSearchMode: boolean;  // 上次是否启用深度思考模式
-    // 阅读模式设置
-    autoEnableReadingMode: boolean;  // 自动进入阅读模式（默认开启）
-}
-
-const DEFAULT_SETTINGS: DeepPDFSettings = {
-    apiPort: 6088,
-    maxResults: 5,
-    deepseekApiKey: "",
-    openaiApiKey: "",
-    llmProvider: "deepseek",
-    llmModel: "deepseek-chat",
-    apiUrl: "",
-    maxPagesPerNode: 10,
-    maxTokensPerNode: 20000,
-    ifAddNodeSummary: true,
-    lastSelectedIndexId: "",
-    forceMode: "auto",  // 默认使用自动路由
-    lastCrossBookMode: false,  // 默认不启用跨书籍模式
-    lastCrossBookSessionId: "",  // 跨书籍会话ID
-    enableDebugLog: false,  // 默认关闭调试日志
-    lastDeepSearchMode: false,  // 默认不启用深度思考模式
-    // 阅读模式默认值
-    autoEnableReadingMode: true,  // 默认自动进入阅读模式
-};
 
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
@@ -648,17 +606,28 @@ export default class DeepPDFPlugin extends Plugin {
      */
     async getFrontendAgent(): Promise<FrontendAgent> {
         if (!this.frontendAgent) {
+            const config = getProviderConfig(this.settings);
+            const apiKey = this.settings[config.apiKeyField] as string || '';
+
             this.frontendAgent = new FrontendAgent({
-                apiKey: this.settings.deepseekApiKey || '',
-                baseUrl: this.settings.apiUrl || undefined,
-                model: this.settings.llmModel || 'deepseek-chat',
+                apiKey: apiKey,
+                baseUrl: config.baseUrl || undefined,
+                model: this.settings.llmModel || config.defaultModel || 'deepseek-chat',
                 skillsDir: this.skillsDir,
                 app: this.app,
             });
             await this.frontendAgent.initialize();
-            log('[DeepPDF] FrontendAgent initialized, skills:', this.frontendAgent.listSkills());
+            log('[DeepPDF] FrontendAgent initialized with provider:', this.settings.llmProvider);
         }
         return this.frontendAgent;
+    }
+
+    /**
+     * 重置 FrontendAgent（切换服务商时调用）
+     */
+    resetFrontendAgent(): void {
+        this.frontendAgent = null;
+        log('[DeepPDF] FrontendAgent reset, will reinitialize with new config');
     }
 
     /**
@@ -934,228 +903,5 @@ views:
                 // 静默处理，后端是可选的
                 log.warn('Failed to connect to server:', err);
             });
-    }
-}
-
-class DeepPDFSettingTab extends PluginSettingTab {
-    plugin: DeepPDFPlugin;
-
-    constructor(app: App, plugin: DeepPDFPlugin) {
-        super(app, plugin);
-        this.plugin = plugin;
-    }
-
-    display(): void {
-        const { containerEl } = this;
-        containerEl.empty();
-
-        containerEl.createEl('h2', { text: 'API Server 设置' });
-
-        new Setting(containerEl)
-            .setName("API Port")
-            .setDesc("FastAPI 服务器端口（默认 localhost:6088）")
-            .addText(text => text
-                .setPlaceholder("6088")
-                .setValue(String(this.plugin.settings.apiPort))
-                .onChange(async (value) => {
-                    this.plugin.settings.apiPort = parseInt(value) || 6088;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Max Results")
-            .setDesc("Maximum number of results to return")
-            .addSlider(slider => slider
-                .setLimits(1, 20, 1)
-                .setValue(this.plugin.settings.maxResults)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxResults = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        containerEl.createEl('h2', { text: 'LLM API 设置' });
-
-        new Setting(containerEl)
-            .setName("LLM Provider")
-            .setDesc("Select LLM provider for PDF indexing")
-            .addDropdown(dropdown => dropdown
-                .addOption("deepseek", "DeepSeek")
-                .addOption("openai", "OpenAI")
-                .addOption("google", "Google")
-                .addOption("custom", "Custom")
-                .setValue(this.plugin.settings.llmProvider)
-                .onChange(async (value) => {
-                    this.plugin.settings.llmProvider = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("LLM Model")
-            .setDesc("Model name to use (e.g., deepseek-chat, gpt-4)")
-            .addText(text => text
-                .setPlaceholder("deepseek-chat")
-                .setValue(this.plugin.settings.llmModel)
-                .onChange(async (value) => {
-                    this.plugin.settings.llmModel = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("DeepSeek API Key")
-            .setDesc("DeepSeek API key for LLM indexing")
-            .addText(text => text
-                .setPlaceholder("sk-...")
-                .setValue(this.plugin.settings.deepseekApiKey)
-                .onChange(async (value) => {
-                    this.plugin.settings.deepseekApiKey = value;
-                    await this.plugin.saveSettings();
-                }))
-            .then(setting => {
-                const inputEl = setting.controlEl.querySelector('input');
-                if (inputEl) inputEl.type = 'password';
-            });
-
-        new Setting(containerEl)
-            .setName("OpenAI API Key")
-            .setDesc("OpenAI API key (for OpenAI provider)")
-            .addText(text => text
-                .setPlaceholder("sk-...")
-                .setValue(this.plugin.settings.openaiApiKey)
-                .onChange(async (value) => {
-                    this.plugin.settings.openaiApiKey = value;
-                    await this.plugin.saveSettings();
-                }))
-            .then(setting => {
-                const inputEl = setting.controlEl.querySelector('input');
-                if (inputEl) inputEl.type = 'password';
-            });
-
-        new Setting(containerEl)
-            .setName("API Base URL")
-            .setDesc("Custom API endpoint (optional, for custom provider)")
-            .addText(text => text
-                .setPlaceholder("https://api.example.com/v1")
-                .setValue(this.plugin.settings.apiUrl)
-                .onChange(async (value) => {
-                    this.plugin.settings.apiUrl = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        containerEl.createEl('h2', { text: 'PDF 索引设置' });
-
-        new Setting(containerEl)
-            .setName("Max Pages Per Node")
-            .setDesc("Maximum pages per section node")
-            .addSlider(slider => slider
-                .setLimits(1, 50, 1)
-                .setValue(this.plugin.settings.maxPagesPerNode)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxPagesPerNode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Max Tokens Per Node")
-            .setDesc("Maximum tokens per section node")
-            .addSlider(slider => slider
-                .setLimits(1000, 50000, 1000)
-                .setValue(this.plugin.settings.maxTokensPerNode)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxTokensPerNode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("Add Node Summary")
-            .setDesc("Use LLM to generate section summaries")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.ifAddNodeSummary)
-                .onChange(async (value) => {
-                    this.plugin.settings.ifAddNodeSummary = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        containerEl.createEl('h2', { text: '高级选项' });
-
-        new Setting(containerEl)
-            .setName("强制路由模式")
-            .setDesc("强制指定 Agent 路由模式。auto=根据查询自动选择，fast=仅快速检索，section=优先页面读取，slow=完全分析")
-            .addDropdown(dropdown => dropdown
-                .addOption("auto", "自动路由（推荐）")
-                .addOption("fast", "快速检索（仅搜索）")
-                .addOption("section", "章节优先（搜索+页面读取）")
-                .addOption("slow", "完全分析（所有工具）")
-                .setValue(this.plugin.settings.forceMode)
-                .onChange(async (value) => {
-                    this.plugin.settings.forceMode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(containerEl)
-            .setName("启用调试日志")
-            .setDesc("开启后会在控制台输出详细运行日志，用于问题排查。默认关闭以减少日志噪音。")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.enableDebugLog)
-                .onChange(async (value) => {
-                    this.plugin.settings.enableDebugLog = value;
-                    await this.plugin.saveSettings();
-                }));
-
-               // 道阅读模式设置区域
-        containerEl.createEl('h2', { text: '阅读模式' });
-
-        new Setting(containerEl)
-            .setName("自动进入阅读模式")
-            .setDesc("打开 DeepReader 章节文件时自动进入沉浸式阅读模式")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.autoEnableReadingMode)
-                .onChange(async (value) => {
-                    this.plugin.settings.autoEnableReadingMode = value;
-                    await this.plugin.saveSettings();
-                    this.plugin.readingModeService?.setAutoEnable(value);
-                }));
-
-        // 添加说明文字
-        containerEl.createEl('p', {
-            text: '提示：关闭后，打开章节文件将使用普通编辑模式，启用后则进入沉浸式阅读模式。',
-            cls: 'setting-item-description'
-        });
-
-        // Skills 管理区域
-        containerEl.createEl('h2', { text: 'Skills 管理' });
-
-        new Setting(containerEl)
-            .setName("重载 Skills")
-            .setDesc("重新加载所有 Skills（包括内置和用户自定义）。当你添加了新的 Skill 文件后，点击此按钮使其生效。")
-            .addButton(button => button
-                .setButtonText("重载 Skills")
-                .setCta()
-                .onClick(async () => {
-                    try {
-                        button.setDisabled(true);
-                        button.setButtonText("重载中...");
-                        const result = await this.plugin.reloadSkills();
-                        button.setDisabled(false);
-                        button.setButtonText("重载 Skills");
-                        if (result.success) {
-                            new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
-                        } else {
-                            new Notice(`Skills 重载失败: ${result.message}`);
-                        }
-                    } catch (err) {
-                        button.setDisabled(false);
-                        button.setButtonText("重载 Skills");
-                        const errMsg = err instanceof Error ? err.message : String(err);
-                        new Notice(`Skills 重载失败: ${errMsg}`);
-                    }
-                }));
-
-        containerEl.createEl('p', {
-            text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',
-            cls: 'setting-item-description'
-        });
     }
 }

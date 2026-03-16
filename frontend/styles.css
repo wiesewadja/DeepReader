@@ -5001,6 +5001,119 @@
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
+/**
+ * DeepReader 设置页面样式
+ * 顶部水平 Tab 导航布局
+ */
+
+/* ==================== 设置页面主容器 ==================== */
+.deeppdf-settings {
+    padding: 0;
+}
+
+/* Tab 布局容器 */
+.deeppdf-settings-tabs {
+    display: flex;
+    flex-direction: column;
+    min-height: 400px;
+}
+
+/* ==================== 顶部导航 ==================== */
+.deeppdf-settings-nav {
+    display: flex;
+    gap: 4px;
+    padding: 0 0 16px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 20px;
+}
+
+/* 导航项 */
+.deeppdf-settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.15s ease;
+    border-radius: 6px;
+    background: transparent;
+}
+
+.deeppdf-settings-nav-item:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+/* 激活状态 */
+.deeppdf-settings-nav-item.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-weight: 500;
+}
+
+/* 导航图标 */
+.deeppdf-settings-nav-icon {
+    font-size: 14px;
+}
+
+/* 导航名称 */
+.deeppdf-settings-nav-name {
+    font-size: 13px;
+}
+
+/* ==================== 内容区 ==================== */
+.deeppdf-settings-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.deeppdf-settings-content h3 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* ==================== 设置项优化 ==================== */
+.deeppdf-settings-content .setting-item {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-settings-content .setting-item:last-child {
+    border-bottom: none;
+}
+
+.deeppdf-settings-content .setting-item-name {
+    font-weight: 500;
+}
+
+.deeppdf-settings-content .setting-item-description {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* ==================== 响应式适配 ==================== */
+@media (max-width: 600px) {
+    .deeppdf-settings-nav {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+
+    .deeppdf-settings-nav-item {
+        padding: 6px 12px;
+        flex: 1;
+        justify-content: center;
+        min-width: fit-content;
+    }
+
+    .deeppdf-settings-nav-name {
+        font-size: 12px;
+    }
+}
+
 /* Agent Humanized Status Styles - 增强版 */
 
 /* 阅读层次徽章 */
@@ -6629,10 +6742,11 @@
   position: relative;
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .deeppdf-search-input {
-  width: 100%;
+  flex: 1;
   padding: 12px 16px;
   font-size: 14px;
   font-family: inherit;
@@ -6641,6 +6755,39 @@
   border: 2px solid var(--background-modifier-border);
   border-radius: 12px;
   transition: all 0.2s ease;
+}
+
+/* 上传按钮 */
+.deeppdf-upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.deeppdf-upload-btn:hover {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: #fff;
+}
+
+.deeppdf-upload-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 隐藏的文件输入 */
+.deeppdf-hidden-input {
+  display: none;
 }
 
 .deeppdf-search-input::placeholder {
