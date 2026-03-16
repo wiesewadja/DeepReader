@@ -49,7 +49,7 @@ export class LibraryModal extends Modal {
     // 正在加载封面的索引 ID 集合
     private loadingCovers: Set<string> = new Set();
     // 上一次的索引状态快照（用于增量更新）
-    private lastIndexStates: Map<string, { status: string; progress: number }> = new Map();
+    private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     // 卡片 DOM 引用（用于增量更新）
     private cardElements: Map<string, HTMLElement> = new Map();
 
@@ -146,7 +146,8 @@ export class LibraryModal extends Modal {
             // 保存初始状态
             this.lastIndexStates.set(index.id, {
                 status: index.status || 'unknown',
-                progress: index.progress_percent || 0
+                progress: index.progress_percent || 0,
+                message: index.message || ''
             });
         });
     }
@@ -197,11 +198,20 @@ export class LibraryModal extends Modal {
             // 索引中显示加载动画 + 进度
             coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading">${Icons.loading}</div>`;
 
-            // 进度条
+            // 进度条 + 详细消息
             const progress = index.progress_percent || 0;
+            const message = index.message || '';
             const progressEl = coverEl.createDiv({ cls: 'deeppdf-lib-progress-overlay' });
             progressEl.createDiv({ cls: 'deeppdf-lib-progress-bar', attr: { style: `width: ${progress}%` } });
-            progressEl.createDiv({ cls: 'deeppdf-lib-progress-text', text: `${Math.round(progress)}%` });
+
+            // 进度信息容器
+            const progressInfo = progressEl.createDiv({ cls: 'deeppdf-lib-progress-info' });
+            progressInfo.createDiv({ cls: 'deeppdf-lib-progress-text', text: `${Math.round(progress)}%` });
+
+            // 详细消息（如"正在生成摘要 (5/20)"）
+            if (message) {
+                progressInfo.createDiv({ cls: 'deeppdf-lib-progress-message', text: message });
+            }
         } else if (statusClass === 'failed') {
             // 失败状态显示错误图标
             coverEl.innerHTML = this.createCoverPlaceholder(bookName, true);
@@ -522,7 +532,8 @@ export class LibraryModal extends Modal {
                                 const progressPercent = Math.round(taskProgress.progress_percent);
                                 tempIndex.progress_percent = progressPercent;
                                 tempIndex.status = 'processing';
-                                this.updateCardProgress(tempId, progressPercent, 'processing');
+                                tempIndex.message = taskProgress.message;
+                                this.updateCardProgress(tempId, progressPercent, 'processing', taskProgress.message);
                             }
                         }
                     );
@@ -579,19 +590,23 @@ export class LibraryModal extends Modal {
     /**
      * 更新卡片进度显示
      */
-    private updateCardProgress(indexId: string, progress: number, status: string): void {
+    private updateCardProgress(indexId: string, progress: number, status: string, message?: string): void {
         const card = this.cardElements.get(indexId);
         if (!card) return;
 
         // 更新进度条
         const progressBar = card.querySelector('.deeppdf-lib-progress-bar') as HTMLElement;
         const progressText = card.querySelector('.deeppdf-lib-progress-text') as HTMLElement;
+        const progressMessage = card.querySelector('.deeppdf-lib-progress-message') as HTMLElement;
 
         if (progressBar) {
             progressBar.style.width = `${progress}%`;
         }
         if (progressText) {
             progressText.textContent = `${Math.round(progress)}%`;
+        }
+        if (progressMessage && message) {
+            progressMessage.textContent = message;
         }
     }
 
@@ -771,9 +786,12 @@ export class LibraryModal extends Modal {
 
             const newStatus = (idx.status || 'unknown').toLowerCase();
             const newProgress = idx.progress_percent || 0;
+            const newMessage = idx.message || '';
 
+            // 状态变化、进度变化超过 5%、或消息变化时更新
             return lastState.status.toLowerCase() !== newStatus ||
-                   Math.abs(lastState.progress - newProgress) >= 5; // 进度变化超过 5% 才更新
+                   Math.abs(lastState.progress - newProgress) >= 5 ||
+                   (lastState.message || '') !== newMessage;
         });
     }
 
@@ -820,7 +838,8 @@ export class LibraryModal extends Modal {
         changedIndexes.forEach(idx => {
             this.lastIndexStates.set(idx.id, {
                 status: idx.status || 'unknown',
-                progress: idx.progress_percent || 0
+                progress: idx.progress_percent || 0,
+                message: idx.message || ''
             });
         });
 
