@@ -364,29 +364,27 @@ export class MessageList extends Component {
 		// 清空现有内容
 		this.quickActionsEl.empty();
 
-		// 如果有当前 PDF 名称，显示生成阅读大纲按钮
-		if (this.currentPdfName && this.callbacks.onGenerateOutline) {
-			// 右上角按钮区域
-			const headerArea = this.quickActionsEl.createEl('div', { cls: 'deeppdf-empty-header' });
-			const outlineBtn = headerArea.createEl('button', {
-				cls: 'deeppdf-quick-action-btn'
-			});
-
-			// 图标（使用 SVG）
-			const iconEl = outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-icon' });
-			iconEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>`;
-
-			// 简洁文本
-			outlineBtn.createEl('span', { cls: 'deeppdf-quick-action-label', text: '生成阅读大纲' });
-
-			// 点击事件
-			outlineBtn.addEventListener('click', () => {
-				this.callbacks.onGenerateOutline?.();
-			});
-
+		// 如果有当前 PDF 名称，显示引导按钮
+		if (this.currentPdfName && this.callbacks.onGuidanceClick) {
 			// 中心书籍图标
 			const centerIcon = this.quickActionsEl.createEl('div', { cls: 'deeppdf-empty-center-icon' });
 			centerIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
+
+			// 按钮网格容器
+			const gridContainer = this.quickActionsEl.createEl('div', { cls: 'deeppdf-guidance-grid' });
+
+			// 创建 6 个引导按钮
+			GUIDANCE_BUTTONS.forEach((button) => {
+				const btn = gridContainer.createEl('button', {
+					cls: 'deeppdf-guidance-btn'
+				});
+				btn.createEl('span', { cls: 'deeppdf-guidance-label', text: button.label });
+
+				// 点击事件
+				btn.addEventListener('click', () => {
+					this.callbacks.onGuidanceClick?.(button.type);
+				});
+			});
 		} else {
 			// 无 PDF 选中时的提示
 			const placeholder = this.quickActionsEl.createEl('div', {
