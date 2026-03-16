@@ -41,6 +41,7 @@ export interface FrontendAgentOptions {
   apiKey: string;
   baseUrl?: string;
   model?: string;
+  providerName?: string; // 服务商显示名称（用于日志）
   skillsDir: string;
   app: any; // Obsidian App instance
 }
@@ -58,6 +59,7 @@ export class FrontendAgent {
       apiKey: options.apiKey,
       baseUrl: options.baseUrl,
       model: options.model,
+      providerName: options.providerName,
     });
     this.skillLoader = new SkillLoader(options.skillsDir);
     this.contextLoader = new ContextLoader(options.app);

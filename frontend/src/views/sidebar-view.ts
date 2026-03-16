@@ -21,6 +21,7 @@ import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
 import { ContextTags } from "../components/context-tags/index.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
+import { ConfirmModal } from "../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
@@ -1320,6 +1321,9 @@ export class SidebarView extends ItemView {
             },
             onQuote: (text: string) => {
                 this.handleQuoteSelection(text);
+            },
+            onDelete: (messageId: string) => {
+                this.handleDeleteMessagePair(messageId);
             }
         }, this.app);
 
@@ -1843,6 +1847,8 @@ export class SidebarView extends ItemView {
             let agentState: 'thinking' | 'answering' = 'thinking';
             // 追踪是否收到过工具调用（用于判断是否是最终回复阶段）
             let hadToolCalls = false;
+            // 累积推理内容（Kimi K2.5 / DeepSeek R1 等思考模型）
+            let reasoningContent = '';
 
             // 🕐 性能统计：记录从用户提交问题到首字节响应的时间
             const queryStartTime = Date.now();
@@ -1945,6 +1951,23 @@ export class SidebarView extends ItemView {
                     // 更新消息显示状态
                     this.messageList?.updateMessage(aiMessageId, {
                         currentStatus: status,
+                        isStreaming: true,
+                        isAgentMessage: true,
+                    });
+                },
+                // onReasoning: 接收推理过程（Kimi K2.5 / DeepSeek R1 等思考模型）
+                onReasoning: (text: string) => {
+                    log('[DeepPDF] onReasoning 回调被调用, text:', text.slice(0, 50));
+                    reasoningContent += text;
+                    // 在状态栏显示思考过程（截取第一行，最多 50 字符）
+                    const firstLine = reasoningContent.split('\n')[0].slice(0, 50);
+                    const displayReasoning = firstLine.length < reasoningContent.split('\n')[0].length
+                        ? firstLine + '...'
+                        : firstLine;
+
+                    log('[DeepPDF] onReasoning 更新状态:', displayReasoning);
+                    this.messageList?.updateMessage(aiMessageId, {
+                        currentStatus: displayReasoning ? `💭 ${displayReasoning}` : undefined,
                         isStreaming: true,
                         isAgentMessage: true,
                     });
@@ -2252,6 +2275,124 @@ export class SidebarView extends ItemView {
 
         const content = message.getData().content;
         this.copyToClipboard(content);
+    }
+
+    /**
+     * 处理删除消息对
+     * 删除 AI 回复时，同时删除对应的用户问题和所有相关 tool 消息
+     */
+    private handleDeleteMessagePair(aiMessageId: string): void {
+        // 弹窗确认
+        const modal = new ConfirmModal(
+            this.app,
+            "删除对话",
+            "此操作不可撤销",
+            async () => {
+                await this.doDeleteMessagePair(aiMessageId);
+            },
+            {
+                confirmLabel: "删除",
+                cancelLabel: "取消",
+                isDestructive: true
+            }
+        );
+        modal.open();
+    }
+
+    /**
+     * 执行删除消息对
+     */
+    private async doDeleteMessagePair(aiMessageId: string): Promise<void> {
+        if (!this.sessionId || !this.sessionStore) {
+            new Notice("无法删除：会话不存在");
+            return;
+        }
+
+        try {
+            // 1. 从 SessionStore 获取完整消息列表
+            const session = await this.sessionStore.get(this.sessionId);
+            if (!session) {
+                new Notice("无法删除：会话数据不存在");
+                return;
+            }
+
+            // 2. 在 UI 消息列表中找到 AI 消息的索引
+            const uiMessages = this.messageList?.getMessagesData() || [];
+            const uiAiIndex = uiMessages.findIndex(m => m.id === aiMessageId);
+            if (uiAiIndex === -1) {
+                new Notice("无法删除：消息未找到");
+                return;
+            }
+
+            // 3. 找到对应的 user 消息（向前查找）
+            let uiUserIndex = uiAiIndex - 1;
+            while (uiUserIndex >= 0 && uiMessages[uiUserIndex].role !== 'user') {
+                uiUserIndex--;
+            }
+            if (uiUserIndex < 0) {
+                new Notice("无法删除：未找到对应的用户问题");
+                return;
+            }
+
+            // 4. 收集要删除的 UI 消息 ID（从 user 消息到下一个 user 消息之前）
+            const uiIdsToDelete: string[] = [];
+            for (let i = uiUserIndex; i < uiMessages.length; i++) {
+                if (i > uiUserIndex && uiMessages[i].role === 'user') {
+                    break;
+                }
+                uiIdsToDelete.push(uiMessages[i].id);
+            }
+
+            // 5. 在 SessionStore 的消息数组中找到对应的索引
+            const userContent = uiMessages[uiUserIndex].content;
+            const storeIndicesToDelete: number[] = [];
+
+            // 找到 user 消息在 store 中的索引（通过内容匹配）
+            let storeUserIndex = -1;
+            for (let i = 0; i < session.messages.length; i++) {
+                if (session.messages[i].role === 'user' &&
+                    session.messages[i].content === userContent) {
+                    storeUserIndex = i;
+                    break;
+                }
+            }
+
+            if (storeUserIndex === -1) {
+                new Notice("无法删除：存储中未找到对应消息");
+                return;
+            }
+
+            // 6. 收集要删除的 store 消息索引（从 user 到下一个 user 之前）
+            for (let i = storeUserIndex; i < session.messages.length; i++) {
+                if (i > storeUserIndex && session.messages[i].role === 'user') {
+                    break;
+                }
+                storeIndicesToDelete.push(i);
+            }
+
+            // 7. 从 SessionStore 删除
+            await this.sessionStore.deleteMessages(this.sessionId, storeIndicesToDelete);
+
+            // 8. 更新 agentChatHistory（重新加载 LLM 历史）
+            if (this.frontendAgent && this.sessionStore) {
+                const llmHistory = await this.sessionStore.getLLMHistory(this.sessionId);
+                const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
+                this.agentChatHistory = [
+                    { role: 'system', content: systemPrompt },
+                    ...llmHistory
+                ];
+            }
+
+            // 9. 从 UI 删除
+            this.messageList?.removeMessages(uiIdsToDelete);
+
+            new Notice("对话已删除");
+            log('[DeepPDF] 删除了消息对:', uiIdsToDelete);
+
+        } catch (error) {
+            logError('[DeepPDF] 删除消息对失败:', error);
+            new Notice("删除失败，请重试");
+        }
     }
 
     /**

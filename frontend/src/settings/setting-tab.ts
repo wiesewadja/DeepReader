@@ -154,7 +154,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.llmModel)
                 .onChange(async (value) => {
                     this.plugin.settings.llmModel = value;
+                    // 重置 FrontendAgent 以使用新模型
+                    this.plugin.resetFrontendAgent();
                     await this.plugin.saveSettings();
+                    console.log('[DeepPDF] 模型名称已更新为:', value);
                 }));
 
         // 只显示当前服务商的 API Key 输入框
@@ -177,6 +180,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.apiUrl)
                     .onChange(async (value) => {
                         this.plugin.settings.apiUrl = value;
+                        // 重置 FrontendAgent 以使用新的 Base URL
+                        this.plugin.resetFrontendAgent();
                         await this.plugin.saveSettings();
                     }));
         }
@@ -213,6 +218,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings[field] as string)
                 .onChange(async (value) => {
                     (this.plugin.settings as unknown as Record<string, string>)[field] = value;
+                    // 重置 FrontendAgent 以使用新的 API Key
+                    this.plugin.resetFrontendAgent();
                     await this.plugin.saveSettings();
                 }));
 

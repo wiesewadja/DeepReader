@@ -10,6 +10,7 @@ export interface LLMClientOptions {
   apiKey: string;
   baseUrl?: string;
   model?: string;
+  providerName?: string; // 服务商显示名称（用于日志）
 }
 
 export interface StreamCallbacks {
@@ -17,6 +18,7 @@ export interface StreamCallbacks {
   onToolCall: (toolCalls: { id: string; name: string; arguments: string }[]) => void;
   onComplete: (finishReason: 'stop' | 'tool_calls' | 'length') => void;
   onError: (error: string) => void;
+  onReasoning?: (text: string) => void; // 可选：处理 DeepSeek 的 reasoning_content
 }
 
 export interface StreamOptions {
@@ -37,11 +39,13 @@ export class LLMClient {
   #apiKey: string;
   private baseUrl: string;
   private model: string;
+  private providerName: string;
 
   constructor(options: LLMClientOptions) {
     this.#apiKey = options.apiKey;
     this.baseUrl = options.baseUrl || 'https://api.deepseek.com';
     this.model = options.model || 'deepseek-chat';
+    this.providerName = options.providerName || 'Unknown';
   }
 
   /**
@@ -59,6 +63,7 @@ export class LLMClient {
    */
   toJSON(): Record<string, unknown> {
     return {
+      providerName: this.providerName,
       baseUrl: this.baseUrl,
       model: this.model,
       apiKey: this.maskedApiKey,
@@ -94,6 +99,22 @@ export class LLMClient {
 
     const apiUrl = `${this.baseUrl}/chat/completions`;
 
+    // Kimi K2.5 / DeepSeek R1 等模型启用 thinking 功能时
+    // 需要保留 assistant 消息中的 reasoning_content 字段
+    // 只清理非 assistant 消息中的 reasoning_content（user/system 消息不应该有这个字段）
+    const cleanedMessages = messages.map((msg, idx) => {
+      // 打印每条消息的结构（调试用）
+      agentLog(`[LLM] 消息[${idx}] role=${msg.role}, content=${(msg.content || '').substring(0, 50)}..., tool_calls=${(msg as any).tool_calls?.length || 0}, reasoning=${(msg as any).reasoning_content ? 'yes' : 'no'}`);
+
+      // assistant 消息保留 reasoning_content
+      if (msg.role === 'assistant') {
+        return msg;
+      }
+      // 其他消息清理 reasoning_content
+      const { reasoning_content, ...rest } = msg as any;
+      return rest;
+    });
+
     // 🕐 性能计时
     const t0 = performance.now();
     let ttfb = 0; // Time to First Byte
@@ -104,6 +125,7 @@ export class LLMClient {
 
     // 估算输入 token 数（粗略）
     const inputEstimate = Math.round(JSON.stringify(messages).length / 2);
+    agentLog(`[LLM] 🤖 使用服务商: ${this.providerName} | 模型: ${this.model} | API: ${this.baseUrl}`);
     agentLog(`[LLM] 📤 发送请求: ${messages.length} 条消息, ~${inputEstimate} tokens, ${tools.length} 个工具`);
 
     try {
@@ -116,7 +138,7 @@ export class LLMClient {
         },
         body: JSON.stringify({
           model: this.model,
-          messages: messages,
+          messages: cleanedMessages,
           tools: tools.length > 0 ? tools : undefined,
           stream: true,
         }),
@@ -199,6 +221,13 @@ export class LLMClient {
               // 处理文本内容
               if (delta.content) {
                 callbacks.onContent(delta.content);
+              }
+
+              // 处理 DeepSeek 的 reasoning_content（思考过程）
+              // 忽略它，避免 API 报错 "thinking is enabled but reasoning_content is missing"
+              // 如果需要显示思考过程，可以通过 onReasoning 回调
+              if ((delta as any).reasoning_content && callbacks.onReasoning) {
+                callbacks.onReasoning((delta as any).reasoning_content);
               }
 
               // 处理 tool_calls（增量累积）

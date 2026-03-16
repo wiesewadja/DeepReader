@@ -658,6 +658,7 @@ export class AIMessage extends Message {
 	private onQuestionClick?: (question: string) => void;
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	private onQuote?: (text: string) => void;
+	private onDelete?: () => void;
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
 	private lastRenderTime: number = 0;
@@ -680,6 +681,7 @@ export class AIMessage extends Message {
 			onQuestionClick?: (question: string) => void;
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 			onQuote?: (text: string) => void;
+			onDelete?: () => void;
 			app?: App;
 		}
 	) {
@@ -689,6 +691,7 @@ export class AIMessage extends Message {
 		this.onQuestionClick = options?.onQuestionClick;
 		this.onExcerpt = options?.onExcerpt;
 		this.onQuote = options?.onQuote;
+		this.onDelete = options?.onDelete;
 		// 初始化渲染跟踪变量
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
@@ -1138,7 +1141,7 @@ export class AIMessage extends Message {
 			existingActions.remove();
 		}
 
-		const hasActions = !!(this.onRegenerate || this.onCopy || this.onExcerpt);
+		const hasActions = !!(this.onRegenerate || this.onCopy || this.onExcerpt || this.onDelete);
 		// AI 消息始终显示操作按钮区域（包含跳转到顶部按钮）
 		const isAssistant = this.data.role === 'assistant';
 		if (hasActions || isAssistant) {
@@ -1173,6 +1176,14 @@ export class AIMessage extends Message {
 				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
 				btn.title = "Save as Excerpt";
 				btn.addEventListener('click', () => this.handleExcerpt());
+			}
+			// 删除按钮（hover 时显示）
+			if (this.onDelete) {
+				const btn = actions.createEl('button', { cls: 'deeppdf-message-action-btn deeppdf-message-delete-btn' });
+				// Icon: Trash
+				btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`;
+				btn.title = "删除此对话";
+				btn.addEventListener('click', () => this.onDelete?.());
 			}
 		}
 	}
@@ -1367,6 +1378,7 @@ export function createMessage(
 		onQuestionClick?: (question: string) => void;
 		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 		onQuote?: (text: string) => void;
+		onDelete?: () => void;
 		app?: App;
 	}
 ): Message {

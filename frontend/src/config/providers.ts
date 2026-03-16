@@ -24,7 +24,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
     },
     kimi: {
         baseUrl: 'https://api.moonshot.cn/v1',
-        defaultModel: 'moonshot-v1-8k',
+        defaultModel: 'kimi-k2.5',
         apiKeyField: 'kimiApiKey',
     },
     zhipu: {

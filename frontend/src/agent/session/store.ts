@@ -474,6 +474,46 @@ export class SessionStore {
 		log(`[SessionStore] 删除会话: ${sessionId}`);
 	}
 
+	/**
+	 * 删除指定消息（重写整个文件）
+	 * @param sessionId 会话 ID
+	 * @param messageIndices 要删除的消息索引数组（在 session.messages 中的索引）
+	 */
+	async deleteMessages(sessionId: string, messageIndices: number[]): Promise<void> {
+		const session = await this.get(sessionId);
+		if (!session) {
+			throw new Error(`Session not found: ${sessionId}`);
+		}
+
+		if (messageIndices.length === 0) {
+			return;
+		}
+
+		// 按索引降序排序，从后往前删除（避免索引偏移问题）
+		const sortedIndices = [...messageIndices].sort((a, b) => b - a);
+
+		// 删除消息
+		for (const index of sortedIndices) {
+			if (index >= 0 && index < session.messages.length) {
+				session.messages.splice(index, 1);
+			}
+		}
+
+		// 更新元数据
+		session.messageCount = session.messages.length;
+		session.updatedAt = Date.now();
+
+		// 如果 lastConsolidated 指向已删除的消息，需要调整
+		if (session.lastConsolidated > session.messages.length) {
+			session.lastConsolidated = session.messages.length;
+		}
+
+		// 重写整个文件
+		await this.save(session);
+
+		log(`[SessionStore] 删除了 ${messageIndices.length} 条消息: ${sessionId}`);
+	}
+
 	// ==================== 并发控制 ====================
 
 	/**

@@ -6,7 +6,7 @@ import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } 
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
-import { getProviderConfig } from './config/providers.js';
+import { getProviderConfig, PROVIDER_LABELS } from './config/providers.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 
 // 使用 service 模块日志器
@@ -608,26 +608,34 @@ export default class DeepPDFPlugin extends Plugin {
         if (!this.frontendAgent) {
             const config = getProviderConfig(this.settings);
             const apiKey = this.settings[config.apiKeyField] as string || '';
+            const providerName = PROVIDER_LABELS[config.provider] || config.provider;
+            const model = this.settings.llmModel || config.defaultModel || 'deepseek-chat';
 
             this.frontendAgent = new FrontendAgent({
                 apiKey: apiKey,
                 baseUrl: config.baseUrl || undefined,
-                model: this.settings.llmModel || config.defaultModel || 'deepseek-chat',
+                model: model,
+                providerName: providerName,
                 skillsDir: this.skillsDir,
                 app: this.app,
             });
             await this.frontendAgent.initialize();
-            log('[DeepPDF] FrontendAgent initialized with provider:', this.settings.llmProvider);
+            log('[DeepPDF] FrontendAgent 初始化完成');
+            log('[DeepPDF]   服务商:', providerName);
+            log('[DeepPDF]   模型:', model, this.settings.llmModel ? '(用户设置)' : '(默认)');
+            log('[DeepPDF]   API:', config.baseUrl);
         }
         return this.frontendAgent;
     }
 
     /**
-     * 重置 FrontendAgent（切换服务商时调用）
+     * 重置 FrontendAgent（切换服务商/模型/API Key 时调用）
      */
     resetFrontendAgent(): void {
-        this.frontendAgent = null;
-        log('[DeepPDF] FrontendAgent reset, will reinitialize with new config');
+        if (this.frontendAgent) {
+            this.frontendAgent = null;
+            log('[DeepPDF] FrontendAgent 已重置，下次对话将使用新配置');
+        }
     }
 
     /**

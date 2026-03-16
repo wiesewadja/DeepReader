@@ -25,6 +25,8 @@ export interface MessageCallbacks {
 	onExcerpt?: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	/** 引用文字到对话 */
 	onQuote?: (text: string) => void;
+	/** 删除消息对（删除 AI 回复时同时删除对应的用户问题） */
+	onDelete?: (messageId: string) => void;
 }
 
 /**
@@ -124,6 +126,9 @@ export class MessageList extends Component {
 			},
 			onQuote: (text: string) => {
 				this.callbacks.onQuote?.(text);
+			},
+			onDelete: () => {
+				this.callbacks.onDelete?.(messageData.id);
 			},
 			app: this.app
 		});
@@ -240,6 +245,24 @@ export class MessageList extends Component {
 		this.messages.delete(messageId);
 
 		// 更新空状态
+		this.updateEmptyState();
+	}
+
+	/**
+	 * 批量删除多条消息
+	 * @param messageIds 要删除的消息 ID 数组
+	 */
+	removeMessages(messageIds: string[]): void {
+		for (const id of messageIds) {
+			const message = this.messages.get(id);
+			if (message) {
+				const el = message.getElement();
+				if (el && el.parentNode) {
+					el.parentNode.removeChild(el);
+				}
+				this.messages.delete(id);
+			}
+		}
 		this.updateEmptyState();
 	}
 

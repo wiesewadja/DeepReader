@@ -256,6 +256,22 @@
 	transform: scale(0.98);
 }
 
+/* 删除按钮特殊样式 */
+.deeppdf-message-delete-btn {
+	opacity: 0.3;
+	transition: opacity 0.2s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.deeppdf-message:hover .deeppdf-message-delete-btn {
+	opacity: 0.6;
+}
+
+.deeppdf-message-delete-btn:hover {
+	background: rgba(var(--text-error-rgb, 230, 70, 70), 0.15) !important;
+	color: var(--text-error) !important;
+	opacity: 1 !important;
+}
+
 /* ==================== 流式输出状态 ==================== */
 
 /* 使用伪元素制作优雅的圆形光标 */
