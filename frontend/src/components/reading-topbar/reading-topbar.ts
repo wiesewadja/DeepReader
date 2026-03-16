@@ -95,7 +95,7 @@ export class ReadingTopbar extends Component {
 
         const menuItems = [
             { icon: Icons.library, label: '在线书库', action: () => this.options.onOpenLibrary?.() },
-            { icon: Icons.upload, label: '从系统上传', action: () => this.triggerSystemUpload() },
+            // { icon: Icons.upload, label: '从系统上传', action: () => this.triggerSystemUpload() },
             { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
             { divider: true },
             { icon: Icons.settings, label: '设置', action: () => this.options.onOpenSettings?.() }
