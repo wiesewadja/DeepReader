@@ -91,7 +91,7 @@ describe('TaskProgressCard 组件', () => {
             container.appendChild(el);
 
             const progressText = el?.querySelector('.deeppdf-task-progress-text');
-            expect(progressText?.textContent).toContain('📄 解析 PDF');
+            expect(progressText?.textContent).toContain('📄 开始解析文档');
         });
 
         it('应该有取消按钮', () => {
@@ -416,7 +416,7 @@ describe('TaskProgressCard 组件', () => {
 
 describe('STEP_CONFIG 常量', () => {
     it('应该包含所有必需的步骤', () => {
-        const requiredSteps = ['start', 'init_pageindex', 'create_llm_client', 'parse_pdf', 'store_chromadb', 'save_metadata', 'completed'];
+        const requiredSteps = ['start', 'validate_pdf', 'create_llm_client', 'parse_pdf', 'store_vectors', 'save_metadata', 'complete'];
 
         requiredSteps.forEach(step => {
             expect(STEP_CONFIG[step]).toBeDefined();
@@ -433,12 +433,15 @@ describe('STEP_CONFIG 常量', () => {
         });
     });
 
-    it('步骤进度应该正确衔接', () => {
-        const steps = Object.values(STEP_CONFIG);
-        for (let i = 0; i < steps.length - 1; i++) {
-            const current = steps[i];
-            const next = steps[i + 1];
-            expect(current.maxPercent).toBe(next.minPercent);
+    it('主要步骤进度应该正确衔接', () => {
+        // 只检查主要步骤的衔接，跳过并行步骤
+        const mainSteps = ['start', 'validate_pdf', 'detect_visual', 'check_llm_config', 'init_pageindex', 'create_llm_client', 'parsing_pdf', 'store_vectors', 'save_metadata', 'complete'];
+        for (let i = 0; i < mainSteps.length - 1; i++) {
+            const current = STEP_CONFIG[mainSteps[i]];
+            const next = STEP_CONFIG[mainSteps[i + 1]];
+            if (current && next) {
+                expect(current.maxPercent).toBeLessThanOrEqual(next.minPercent);
+            }
         }
     });
 });

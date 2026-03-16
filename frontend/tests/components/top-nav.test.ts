@@ -50,7 +50,7 @@ describe('TopNav', () => {
 			const title = el?.querySelector('.deeppdf-header-title');
 
 			expect(title).toBeTruthy();
-			expect(title?.textContent).toBe('DeepPDF');
+			expect(title?.textContent).toBe('DeepReader');
 		});
 
 		it('应该渲染状态指示器', () => {
@@ -140,7 +140,9 @@ describe('TopNav', () => {
 	describe('按钮交互', () => {
 		it('点击设置按钮应该触发 onSettings 回调', () => {
 			const el = topNav.getElement();
-			const settingsBtn = el?.querySelector('.deeppdf-icon-button') as HTMLButtonElement;
+			// 设置按钮是第二个按钮（第一个是新建对话按钮）
+			const buttons = el?.querySelectorAll('.deeppdf-icon-button');
+			const settingsBtn = buttons?.[1] as HTMLButtonElement;
 
 			settingsBtn.click();
 
@@ -160,7 +162,9 @@ describe('TopNav', () => {
 	describe('可访问性', () => {
 		it('设置按钮应该有正确的 aria-label', () => {
 			const el = topNav.getElement();
-			const settingsBtn = el?.querySelector('.deeppdf-icon-button');
+			// 设置按钮是第二个按钮
+			const buttons = el?.querySelectorAll('.deeppdf-icon-button');
+			const settingsBtn = buttons?.[1];
 
 			expect(settingsBtn?.getAttribute('aria-label')).toBe('设置');
 			expect(settingsBtn?.getAttribute('title')).toBe('设置');

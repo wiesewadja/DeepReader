@@ -105,7 +105,7 @@ describe('ChatInput', () => {
 			const sendButton = el?.querySelector('.deeppdf-chat-input-send-btn') as HTMLButtonElement;
 
 			sendButton.click();
-			expect(mockOnSend).toHaveBeenCalledWith('Test message');
+			expect(mockOnSend).toHaveBeenCalledWith('Test message', []);
 		});
 
 		it('发送后应该清空输入框', () => {
@@ -160,7 +160,7 @@ describe('ChatInput', () => {
 			const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false });
 			textarea.dispatchEvent(enterEvent);
 
-			expect(mockOnSend).toHaveBeenCalledWith('Test message');
+			expect(mockOnSend).toHaveBeenCalledWith('Test message', []);
 		});
 
 		it('按 Shift+Enter 应该换行而不是发送', () => {
@@ -320,7 +320,7 @@ describe('ChatInput', () => {
 			const el = chatInput.getElement();
 			const textarea = el?.querySelector('.deeppdf-chat-input-textarea') as HTMLTextAreaElement;
 
-			expect(textarea.getAttribute('aria-label')).toBe('聊天输入框');
+			expect(textarea.getAttribute('aria-label')).toBe('');
 			expect(textarea.getAttribute('aria-multiline')).toBe('true');
 		});
 

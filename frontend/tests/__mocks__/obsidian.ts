@@ -3,6 +3,8 @@
  * 用于测试环境
  */
 
+import { vi } from 'vitest';
+
 // Mock TFile 类
 export class TFile {
   path: string;
@@ -67,21 +69,27 @@ export const MarkdownView = class MarkdownView {};
 export const WorkspaceLeaf = class WorkspaceLeaf {};
 export const normalizePath = (path: string) => path.replace(/\\/g, '/');
 
-// 添加 vi fn 用于 mock
-function vi() {}
-vi.fn = () => {
-  const fn: any = (...args: any[]) => fn._returnValue;
-  fn._returnValue = undefined;
-  fn.mockReturnValue = (v: any) => {
-    fn._returnValue = v;
-    return fn;
-  };
-  fn.mockResolvedValue = (v: any) => {
-    fn._returnValue = Promise.resolve(v);
-    return fn;
-  };
-  fn.mockImplementation = (impl: any) => {
-    return impl;
-  };
-  return fn;
+// Mock Component and related classes for Markdown rendering
+export class Component {
+  load() {}
+  unload() {}
+  addChild() {}
+  removeChild() {}
+}
+
+// Mock MarkdownRenderer
+export const MarkdownRenderer = {
+  render: vi.fn().mockResolvedValue(undefined),
+  renderMarkdown: vi.fn().mockResolvedValue(undefined)
 };
+
+// Mock HoverParent
+export class HoverParent {
+  hoverPopover: any = null;
+}
+
+// Mock HoverPopover
+export class HoverPopover {
+  constructor() {}
+  hide() {}
+}

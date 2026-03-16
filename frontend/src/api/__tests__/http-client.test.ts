@@ -140,7 +140,8 @@ describe('DeepPDFClient', () => {
                     body: JSON.stringify({
                         query: 'test query',
                         index_id: 'test-index-id',
-                        max_results: 10
+                        max_results: 10,
+                        use_llm_tree_search: false
                     })
                 })
             );
