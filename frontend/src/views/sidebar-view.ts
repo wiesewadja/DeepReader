@@ -266,6 +266,74 @@ export class SidebarView extends ItemView {
         this.startNewSession(this.currentIndexId);
     }
 
+    /**
+     * 处理系统文件上传
+     */
+    private async handleSystemUpload(): Promise<void> {
+        // 创建隐藏的文件输入
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.epub';
+                input.style.display = 'none';
+                document.body.appendChild(input);
+
+                input.onchange = async () => {
+                        if (!input.files || input.files.length === 0) return;
+
+                        const file = input.files[0];
+                        const extension = file.name.split('.').pop()?.toLowerCase() || '';
+
+                        if (!extension || !['pdf', 'epub'].includes(extension)) {
+                            new Notice('仅支持 PDF 和 EPUB 文件');
+                            return;
+                        }
+
+                        if (!this.apiClient) {
+                            new Notice('后端未连接，无法上传文件');
+                            return;
+                        }
+
+                        try {
+                            new Notice(`开始上传「${file.name}」...`);
+
+                            const result = await this.apiClient.uploadAndIndex(
+                                file,
+                                undefined,
+                                (uploadProgress: number) => {
+                                    if (uploadProgress < 100) {
+                                        new Notice(`上传中... ${uploadProgress}%`, 2000);
+                                    }
+                                },
+                                (taskProgress: APITaskProgress) => {
+                                    if (taskProgress.progress_percent !== undefined) {
+                                        const progressPercent = Math.round(taskProgress.progress_percent);
+                                        if (progressPercent % 25 === 0) {
+                                            new Notice(`索引进度: ${progressPercent}%`, 2000);
+                                        }
+                                    }
+                                }
+                            );
+
+                            if (result.status === 'success') {
+                                new Notice(`文件上传并索引成功！`, 3000);
+                                // 刷新索引列表
+                                await this.loadIndexes();
+                            } else {
+                                new Notice(`索引状态: ${result.status}`, 3000);
+                            }
+                        } catch (error: any) {
+                            let msg = '上传失败';
+                            if (error.message) msg = `上传失败: ${error.message}`;
+                            new Notice(msg, 5000);
+                        }
+
+                        // 清理
+                        document.body.removeChild(input);
+                    };
+
+                input.click();
+            }
+
 
     /** 从 SessionStore 恢复历史记录到视图 */
     private async restoreFromSessionStore(sessionId: string): Promise<boolean> {
@@ -814,7 +882,8 @@ export class SidebarView extends ItemView {
                     setting.open();
                     setting.openTabById('deeppdf');
                 }
-            }
+            },
+            onSystemUpload: () => this.handleSystemUpload(),
         });
 
         const el = this.readingTopbar.getElement();
