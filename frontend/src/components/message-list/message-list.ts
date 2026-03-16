@@ -10,6 +10,42 @@ import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { warn } from '../../utils/logger.js';
 
 /**
+ * 引导按钮类型
+ */
+export type GuidanceType =
+	| 'overview'        // 这本书讲了什么
+	| 'core-views'      // 核心观点
+	| 'chapter-nav'     // 章节导航
+	| 'key-concepts'    // 关键概念
+	| 'author-info'     // 作者背景
+	| 'explore';        // 探索这本书
+
+/**
+ * 引导按钮配置
+ */
+export interface GuidanceButton {
+	type: GuidanceType;
+	label: string;
+	prompt: string;
+}
+
+/**
+ * 引导按钮配置列表
+ */
+export const GUIDANCE_BUTTONS: GuidanceButton[] = [
+	{ type: 'overview', label: '这本书讲了什么', prompt: '这本书主要讲了什么内容？请给我一个概览' },
+	{ type: 'core-views', label: '核心观点', prompt: '这本书的核心观点和主要论点是什么？' },
+	{ type: 'chapter-nav', label: '章节导航', prompt: '请介绍一下这本书的章节结构，帮助我了解全书的框架' },
+	{ type: 'key-concepts', label: '关键概念', prompt: '这本书有哪些关键概念和重要术语？' },
+	{ type: 'author-info', label: '作者背景', prompt: '请介绍一下这本书的作者及其背景' },
+	{
+		type: 'explore',
+		label: '探索这本书',
+		prompt: '用户刚刚开始阅读这本书，请主动发起对话，询问用户想以什么方式阅读：如果想快速了解，可以推荐检视阅读（概览、章节导航）；如果想深入理解，可以推荐分析阅读（重点章节、核心观点）；如果想建立关联，可以推荐主题阅读（与已读书籍对比）。用自然友好的语气，不要过于结构化。'
+	},
+];
+
+/**
  * 消息操作回调接口
  */
 export interface MessageCallbacks {
@@ -21,6 +57,8 @@ export interface MessageCallbacks {
 	onQuestionClick?: (question: string) => void;
 	/** 生成阅读大纲点击 */
 	onGenerateOutline?: () => void;
+	/** 引导按钮点击 */
+	onGuidanceClick?: (type: GuidanceType) => void;
 	/** 保存摘录 */
 	onExcerpt?: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	/** 引用文字到对话 */
