@@ -10,6 +10,62 @@ export interface BuiltInSkill {
 
 export const BUILT_IN_SKILLS: BuiltInSkill[] = [
     {
+        filename: "reading-methodology.md",
+        content: `---
+name: reading-methodology
+description: 分层阅读方法论 - 根据问题类型选择检视/分析/主题阅读，匹配最优工具
+default: true
+keywords:
+  - 怎么读
+  - 用什么方法
+  - 阅读方法
+  - 四层次
+---
+
+# 分层阅读方法论
+
+## 四层次阅读法
+
+### 检视阅读
+- **触发**: "讲什么"、"总结"、"概览"
+- **目标**: 快速抓取重点，了解整体结构
+- **策略**: get_toc + search_doc 并行调用
+
+### 分析阅读
+- **触发**: "为什么"、"详细解释"、"深入分析"
+- **目标**: 完整理解，咀嚼消化
+- **策略**: get_chapter 逐段分析
+
+### 主题阅读
+- **触发**: "比较"、"其他书"、"关联"
+- **目标**: 跨书比较，建立关联
+- **策略**: search_read_books 搜索已读书库
+
+## 工具选择指南
+
+| 问题类型 | 首选工具 | 阅读层次 |
+|---------|---------|---------|
+| "讲什么/总结" | get_toc + search_doc | 检视阅读 |
+| "结构/纲要" | outline_structure | 分析阅读 |
+| "详细解释" | get_chapter | 分析阅读 |
+| "术语/概念" | find_key_terms | 分析阅读 |
+| "论点/主旨" | extract_propositions | 分析阅读 |
+| "比较/关联" | search_read_books | 主题阅读 |
+
+## 并行调用规则
+
+- "讲什么/总结"类问题 → 同时调用 get_toc 和 search_doc
+- 需要多个章节 → 一次调用多个 get_chapter
+- 每轮尽可能多调用工具，减少迭代次数
+
+## 效率原则
+
+1. 获得 2-3 个相关章节后立即回答
+2. 避免重复获取同一内容
+3. 如果检视阅读已能回答，不主动升级到分析阅读
+`
+    },
+    {
         filename: "reading-progress.md",
         content: `---
 name: reading-progress
