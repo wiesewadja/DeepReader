@@ -32,37 +32,16 @@ class LLMTreeSearchError(Exception):
         super().__init__(message)
 
 
-# Prompt 模板
-TREE_SEARCH_PROMPT = """你是一个专业的文档检索助手。你的任务是根据用户的问题，在文档目录结构中找到最相关的章节。
+# Prompt 模板（精简版）
+TREE_SEARCH_PROMPT = """在目录中找到与问题最相关的 {max_results} 个章节。
 
-## 文档信息
-文档名称: {doc_name}
+文档: {doc_name}
 
-## 目录结构
 {tree_structure_text}
 
-## 用户问题
-{query}
+问题: {query}
 
-## 你的任务
-1. 仔细分析用户问题，理解其核心需求
-2. 在目录结构中找到最可能包含答案的章节
-3. 返回最相关的章节 ID 列表（最多 {max_results} 个）
-
-## 响应格式
-请严格按照以下 JSON 格式返回，不要添加任何其他内容：
-```json
-{{
-  "thinking": "你的推理过程：分析问题的关键词，说明为什么选择这些章节...",
-  "node_list": ["0001", "0003", "0005"]
-}}
-```
-
-## 注意事项
-- 优先选择叶子节点（最具体的章节）
-- 如果问题涉及多个主题，可以跨章节选择
-- 如果父章节的摘要已经涵盖了问题内容，也可以选择父章节
-- node_id 必须是目录结构中存在的值
+返回 JSON: {{"node_list": ["node_id"], "thinking": "简短推理"}}
 """
 
 
@@ -453,12 +432,11 @@ async def _call_llm_async(client, model: str, prompt: str) -> str:
     try:
         start_time = time.time()
 
-        # OpenAI 客户端的异步调用
+        # OpenAI 客户端的异步调用（不需要系统消息，prompt 已自包含）
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model=model,
             messages=[
-                {"role": "system", "content": "你是一个专业的文档检索助手。"},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.3,
