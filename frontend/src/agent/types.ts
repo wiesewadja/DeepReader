@@ -14,6 +14,8 @@ export interface ChatMessage {
   hidden?: boolean;
   /** 消息时间戳（ISO 格式） */
   timestamp?: string;
+  /** DeepSeek 推理过程（仅 assistant 消息） */
+  reasoning_content?: string;
 }
 
 export interface ToolCall {

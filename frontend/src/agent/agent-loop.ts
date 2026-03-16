@@ -38,6 +38,11 @@ export interface AgentLoopOptions {
    * 用于在 UI 中显示用户友好的状态
    */
   onHumanizedProgress?: (progress: HumanizedProgress) => void;
+  /**
+   * 推理过程回调（可选）
+   * 用于显示 Kimi K2.5 / DeepSeek R1 等思考模型的推理过程
+   */
+  onReasoning?: (text: string) => void;
 }
 
 // ============================================================================
@@ -302,6 +307,7 @@ export async function runAgentLoop(
     agentLog(`\n[AgentLoop] ┓ agentsetIterationContext 迭代 ${iterations}/${maxIterations}`);
 
     let accumulatedContent = '';
+    let accumulatedReasoning = ''; // 累积推理内容（Kimi K2.5 / DeepSeek R1 兼容）
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
     let toolCalls: { id: string; name: string; arguments: string }[] = [];
 
@@ -322,6 +328,12 @@ export async function runAgentLoop(
               humanizer.updateContent(accumulatedContent);
               options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
             }
+          },
+          onReasoning: (text) => {
+            // 累积推理内容（Kimi K2.5 / DeepSeek R1 兼容）
+            accumulatedReasoning += text;
+            // 传递给外部回调（用于 UI 显示）
+            options.onReasoning?.(text);
           },
           onToolCall: (calls) => {
             toolCalls = calls;
@@ -376,6 +388,8 @@ export async function runAgentLoop(
         workingMessages.push({
           role: 'assistant',
           content: accumulatedContent,
+          // 保留 reasoning_content（Kimi K2.5 / DeepSeek R1 兼容）
+          ...(accumulatedReasoning ? { reasoning_content: accumulatedReasoning } : {}),
         });
       }
 
@@ -403,7 +417,7 @@ export async function runAgentLoop(
     });
     agentLog(`${'─'.repeat(60)}\n`);
 
-    // 构建 assistant 消息（包含 tool_calls）
+    // 构建 assistant 消息（包含 tool_calls 和 reasoning_content）
     const assistantMessage: ChatMessage = {
       role: 'assistant',
       content: accumulatedContent || '',
@@ -415,6 +429,8 @@ export async function runAgentLoop(
           arguments: tc.arguments,
         },
       })),
+      // 保留 reasoning_content（Kimi K2.5 / DeepSeek R1 兼容）
+      ...(accumulatedReasoning ? { reasoning_content: accumulatedReasoning } : {}),
     };
     workingMessages.push(assistantMessage);
 

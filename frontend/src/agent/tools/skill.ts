@@ -28,15 +28,13 @@ function createSkillDefinition(skillLoader: SkillLoader): ToolDefinition {
       description: `加载专业技能指导。
 
 可用技能：
-${skillDescriptions}
-
-适用场景：需要专业操作指南、特定领域方法论、或详细的执行步骤时调用。`,
+${skillDescriptions}`,
       parameters: {
         type: 'object',
         properties: {
           skill: {
             type: 'string',
-            description: '要加载的技能名称（必须是上面列出的可用技能之一）',
+            description: '要加载的技能名称',
           },
         },
         required: ['skill'],

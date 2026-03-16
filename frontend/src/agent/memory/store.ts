@@ -24,6 +24,9 @@ const HISTORY_RETENTION_DAYS = 30;
 /** 历史记录最大条目数 */
 const MAX_HISTORY_ENTRIES = 200;
 
+/** MEMORY.md 最大行数 */
+const MAX_MEMORY_LINES = 200;
+
 export class MemoryStore {
 	private app: App;
 
@@ -81,6 +84,28 @@ export class MemoryStore {
 		await this.ensureDirectory();
 		await this.app.vault.adapter.write(this.memoryPath, content);
 		agentLog('[MemoryStore] MEMORY.md 已更新');
+	}
+
+	/**
+	 * 获取 MEMORY.md 行数
+	 */
+	async getMemoryLineCount(): Promise<number> {
+		try {
+			const content = await this.readLongTermMemory();
+			if (!content) return 0;
+			return content.split('\n').length;
+		} catch {
+			return 0;
+		}
+	}
+
+	/**
+	 * 检查是否需要压缩
+	 */
+	needsCompression(): boolean {
+		// 这里用同步方式检查（在上次读取后缓存）
+		// 实际压缩会在 consolidator 中异步执行
+		return false; // 由外部调用方决定
 	}
 
 	/**
@@ -289,12 +314,15 @@ export class MemoryStore {
 	async getMemoryContext(): Promise<string> {
 		const longTerm = await this.readLongTermMemory();
 		if (longTerm) {
-			// 移除 frontmatter 和标题，只保留内容
+			// 移除 frontmatter、标题和冗余说明
 			const content = longTerm
 				.replace(/^---[\s\S]*?---\n/, '')
-				.replace(/^# 长期记忆\n/, '')
-				.replace(/^# Long-term Memory\n/, '');
-			return `## 长期记忆\n${content.trim()}`;
+				.replace(/^# 长期记忆\n\n?/, '')
+				.replace(/^# Long-term Memory\n\n?/, '')
+				.replace(/此文件存储关于用户的重要信息.*\n/, '')
+				.replace(/\*此文件由.*\*\n?/, '')
+				.replace(/\n---\n*$/, ''); // 移除末尾的分隔符
+			return `## 长期记忆\n\n${content.trim()}`;
 		}
 		return '';
 	}

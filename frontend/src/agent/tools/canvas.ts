@@ -58,7 +58,7 @@ const CANVAS_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'canvas',
-    description: 'Create or modify Obsidian Canvas files. Use this to create visual diagrams, mind maps, or knowledge graphs.',
+    description: '创建/修改 Obsidian Canvas 文件。用于构建可视化图表、思维导图、知识图谱。',
     parameters: {
       type: 'object',
       properties: {

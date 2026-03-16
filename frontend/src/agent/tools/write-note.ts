@@ -17,7 +17,7 @@ const WRITE_NOTE_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'write_note',
-    description: 'Write a note to Obsidian vault. AI-created notes are marked with aicreate frontmatter and can only be modified by AI.',
+    description: '写入笔记到 Obsidian vault。AI 创建的笔记带 aicreate 标记，只能由 AI 修改。',
     parameters: {
       type: 'object',
       properties: {

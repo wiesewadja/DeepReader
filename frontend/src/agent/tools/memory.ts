@@ -24,21 +24,7 @@ export const saveMemoryDefinition: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'save_memory',
-		description: `保存重要信息到用户的长期记忆中。
-
-这个工具会做两件事：
-1. 将对话摘要追加到 HISTORY.md（时间线日志）
-2. 更新 MEMORY.md 中的用户画像和偏好（如果有新的重要信息）
-
-使用场景：
-- 用户明确表达了偏好（如"我喜欢简洁的总结"）
-- 用户纠正了你的行为（如"不要用列表形式"）
-- 用户提供了个人信息（如"我是程序员"）
-- 完成了一次重要的对话，值得记录
-
-参数说明：
-- history_entry: 对话摘要，写入 HISTORY.md
-- memory_update: 需要更新到 MEMORY.md 的内容（可选）`,
+		description: `保存重要信息到长期记忆。写入对话摘要到 HISTORY.md，更新用户画像到 MEMORY.md。用于用户表达偏好、纠正行为、提供个人信息时。`,
 		parameters: {
 			type: 'object',
 			properties: {
@@ -63,19 +49,7 @@ const searchMemoryDefinition: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'search_memory',
-		description: `搜索用户的记忆和阅读历程。
-
-搜索范围：
-- MEMORY.md：用户画像、阅读偏好、兴趣主题
-- HISTORY.md：阅读里程碑（读了什么书、进度、切换记录等）
-
-使用场景：
-- 用户问"我读过什么书"
-- 用户问"《XX》读到哪里了"
-- 想了解用户对某个话题的历史反馈
-- 确认用户的偏好或兴趣
-
-返回匹配的记录内容。`,
+		description: `搜索用户记忆和阅读历程（MEMORY.md + HISTORY.md）。用于"我读过什么书"、"读到哪里了"等查询。`,
 		parameters: {
 			type: 'object',
 			properties: {

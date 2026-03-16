@@ -45,6 +45,32 @@ const SAVE_MEMORY_TOOL = [
 	},
 ];
 
+/** MEMORY.md 最大行数 */
+const MAX_MEMORY_LINES = 200;
+
+/**
+ * compress_memory 工具定义
+ */
+const COMPRESS_MEMORY_TOOL = [
+	{
+		type: 'function',
+		function: {
+			name: 'compress_memory',
+			description: '压缩长期记忆，合并重复条目，保持在 200 行以内。',
+			parameters: {
+				type: 'object',
+				properties: {
+					compressed_memory: {
+						type: 'string',
+						description: '压缩后的长期记忆（markdown 格式）。合并相似条目，删除冗余。',
+					},
+				},
+				required: ['compressed_memory'],
+			},
+		},
+	},
+];
+
 export class MemoryConsolidator {
 	private store: MemoryStore;
 	private client: LLMClient;
@@ -147,6 +173,9 @@ ${formattedMessages}
 				if (response.memoryUpdate && response.memoryUpdate.trim()) {
 					await this.store.writeLongTermMemory(response.memoryUpdate);
 					agentLog('[Consolidator] MEMORY.md 已更新');
+
+					// 检查是否需要压缩
+					await this.maybeCompressMemory();
 				}
 				return response;
 			}
@@ -265,5 +294,79 @@ ${formattedMessages}
 		}
 
 		return newLastConsolidated;
+	}
+
+	/**
+	 * 检查并压缩 MEMORY.md（如果超过 200 行）
+	 */
+	private async maybeCompressMemory(): Promise<void> {
+		const lineCount = await this.store.getMemoryLineCount();
+		agentLog(`[Consolidator] MEMORY.md 当前 ${lineCount} 行`);
+
+		if (lineCount <= MAX_MEMORY_LINES) {
+			return;
+		}
+
+		agentLog(`[Consolidator] 触发压缩: ${lineCount} 行 > ${MAX_MEMORY_LINES} 行`);
+
+		const currentMemory = await this.store.readLongTermMemory();
+		if (!currentMemory) return;
+
+		const compressed = await this.compressMemoryWithLLM(currentMemory);
+		if (compressed) {
+			await this.store.writeLongTermMemory(compressed);
+			agentLog(`[Consolidator] 压缩完成: ${lineCount} 行 -> ${compressed.split('\n').length} 行`);
+		}
+	}
+
+	/**
+	 * 使用 LLM 压缩记忆
+	 */
+	private async compressMemoryWithLLM(currentMemory: string): Promise<string | null> {
+		const prompt = `压缩以下长期记忆，合并重复条目，保持在 200 行以内。
+
+## 当前记忆
+${currentMemory}
+
+## 压缩规则
+1. **合并相似特征**：如"政策分析者"、"经济下行研究者"合并为"社会经济研究者"
+2. **删除冗余**：去除意思重复的条目
+3. **保持结构**：保留用户画像/阅读偏好/兴趣主题三个部分
+4. **保留核心**：不要丢失关键信息
+5. **简洁表达**：用短语而非长句
+
+调用 compress_memory 工具返回压缩后的记忆。`;
+
+		let result: string | null = null;
+
+		await new Promise<void>((resolve) => {
+			this.client.streamChat(
+				[
+					{
+						role: 'system',
+						content: '你是记忆压缩助手。压缩记忆并调用 compress_memory 工具。',
+					},
+					{ role: 'user', content: prompt },
+				],
+				COMPRESS_MEMORY_TOOL as any,
+				{
+					onContent: () => {},
+					onToolCall: (calls) => {
+						if (calls.length > 0 && calls[0].name === 'compress_memory') {
+							try {
+								const args = JSON.parse(calls[0].arguments);
+								result = args.compressed_memory || null;
+							} catch {
+								// 解析失败
+							}
+						}
+					},
+					onComplete: () => resolve(),
+					onError: () => resolve(),
+				}
+			);
+		});
+
+		return result;
 	}
 }

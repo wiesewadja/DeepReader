@@ -16,17 +16,7 @@ const updateProfileDefinition: ToolDefinition = {
   type: 'function',
   function: {
     name: 'update_profile',
-    description: `更新用户画像的某个字段。
-
-使用场景：
-- 用户明确表达了新的偏好（如"我喜欢简洁的回答"）
-- 用户纠正了你的行为（如"不要用列表形式"）
-- 用户提供了个人信息（如"我是程序员"）
-
-注意：
-- 只更新明确提及的信息，不要过度推断
-- 每次只更新一个字段
-- 更新后会立即在后续对话中生效`,
+    description: `更新用户画像字段。用于用户表达新偏好、纠正行为、提供个人信息时。每次只更新一个字段。`,
     parameters: {
       type: 'object',
       properties: {

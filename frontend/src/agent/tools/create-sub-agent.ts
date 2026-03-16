@@ -21,17 +21,7 @@ const CREATE_SUB_AGENT_DEFINITION: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'create_sub_agent',
-		description: `创建一个子助手在后台执行任务，用于并行处理或复杂分析。
-
-使用场景：
-- 需要同时检索多个章节时
-- 需要对特定内容进行深度分析时
-- 任务可以独立完成，不需要立即与用户交互时
-
-注意：
-- 子助手使用受限的工具集（搜索、阅读章节等）
-- 子助手不能创建新的子任务
-- 子助手完成后会返回结果摘要`,
+		description: `创建子代理执行后台任务。用于并行检索多章节、深度分析。子助手受限工具集，不能创建新子任务。`,
 		parameters: {
 			type: 'object',
 			properties: {
