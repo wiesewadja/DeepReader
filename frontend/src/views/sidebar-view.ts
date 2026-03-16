@@ -10,7 +10,7 @@ import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress, SearchFilters, CrossBookSearchParams } from "../types/index.js";
-import { MessageList } from "../components/message-list/message-list.js";
+import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
@@ -1313,6 +1313,9 @@ export class SidebarView extends ItemView {
             onGenerateOutline: () => {
                 this.handleGenerateOutline();
             },
+            onGuidanceClick: (type: GuidanceType) => {
+                this.handleGuidanceClick(type);
+            },
             onExcerpt: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => {
                 this.handleExcerpt(messageId, content, metadata);
             },
@@ -2446,6 +2449,23 @@ export class SidebarView extends ItemView {
         log('[DeepPDF] 生成阅读大纲');
         const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
         this.sendMessage(prompt);
+    }
+
+    /**
+     * 处理引导按钮点击
+     */
+    private handleGuidanceClick(type: GuidanceType): void {
+        log('[DeepPDF] 引导按钮点击:', type);
+
+        // 查找对应的提示词
+        const button = GUIDANCE_BUTTONS.find(b => b.type === type);
+        if (!button) {
+            warn('[DeepPDF] 未找到引导按钮配置:', type);
+            return;
+        }
+
+        // 发送问题
+        this.sendMessage(button.prompt);
     }
 
     /**
