@@ -91,12 +91,30 @@ export class ChapterNav {
         // 只在阅读模式下响应
         if (!document.body.classList.contains('deeppdf-reading-mode')) return;
 
+        // 检查是否有打开的弹窗
+        const hasOpenModal = document.querySelector('.modal-container, .modal-bg, .deeppdf-library-modal');
+        if (hasOpenModal) return;
+
+        // 检查焦点是否在可编辑元素上
+        const activeElement = document.activeElement;
+        const isEditable = activeElement && (
+            activeElement.tagName === 'INPUT' ||
+            activeElement.tagName === 'TEXTAREA' ||
+            activeElement.getAttribute('contenteditable') === 'true' ||
+            activeElement.classList.contains('cm-content') ||  // CodeMirror 编辑器
+            activeElement.closest('.chat-input-container') ||  // 聊天输入框
+            activeElement.closest('[contenteditable="true"]')
+        );
+        if (isEditable) return;
+
         // 左箭头：上一章
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+            e.preventDefault();
             this.options.onNavigatePrev();
         }
         // 右箭头：下一章
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+            e.preventDefault();
             this.options.onNavigateNext();
         }
     }
