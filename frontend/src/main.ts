@@ -115,6 +115,24 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
+        // 调试命令：测试知识图谱/思维导图 skill（用于性能分析）
+        this.addCommand({
+            id: "debug-mindmap-skill",
+            name: "Debug: Test mindmap skill",
+            callback: () => {
+                this.sendTestMessage("帮我整理这本书的整体框架，画一个思维导图");
+            }
+        });
+
+        // 调试命令：测试知识卡片 skill（用于性能分析 write_note）
+        this.addCommand({
+            id: "debug-knowledge-cards",
+            name: "Debug: Test knowledge cards skill",
+            callback: () => {
+                this.sendTestMessage("帮我提取这本书的核心概念，生成知识卡片");
+            }
+        });
+
         // Add command - AI format current document
         this.addCommand({
             id: "format-current-document",

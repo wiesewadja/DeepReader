@@ -33,6 +33,8 @@ export interface SubagentTask {
 	sessionId?: string;
 	/** 取消控制器 */
 	abortController?: AbortController;
+	/** 是否来自缓存 */
+	fromCache?: boolean;
 }
 
 /**
@@ -45,6 +47,8 @@ export interface SubagentConfig {
 	allowedTools?: string[];
 	/** 超时时间（毫秒，默认 60000） */
 	timeout: number;
+	/** 缓存 TTL（毫秒，默认 300000 = 5分钟） */
+	cacheTTL?: number;
 }
 
 /**
@@ -53,11 +57,21 @@ export interface SubagentConfig {
 export type SubagentCallback = (task: SubagentTask) => void;
 
 /**
+ * 缓存条目
+ */
+interface CacheEntry {
+	result: string;
+	timestamp: number;
+	taskId: string;
+}
+
+/**
  * 默认子 Agent 配置
  */
 export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = {
 	maxIterations: 5,
 	timeout: 60000,
+	cacheTTL: 300000, // 5 分钟
 };
 
 /**
@@ -69,3 +83,18 @@ export const DEFAULT_SUBAGENT_TOOLS = [
 	'get_toc',
 	'search_read_books',
 ];
+
+/**
+ * 生成任务描述的缓存键
+ * 使用简单哈希避免过长的键
+ */
+export function hashDescription(description: string): string {
+	let hash = 0;
+	for (let i = 0; i < description.length; i++) {
+		const char = description.charCodeAt(i);
+		hash = ((hash << 5) - hash) + char;
+		hash = hash & hash; // Convert to 32bit integer
+	}
+	return `cache_${Math.abs(hash).toString(36)}`;
+}
+

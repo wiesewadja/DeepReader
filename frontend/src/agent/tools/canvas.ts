@@ -75,8 +75,10 @@ interface LayoutNode {
   text: string;
   level: number;        // 0=中心, 1=一级分支, 2+=子节点
   branchIndex: number;  // 所属分支索引（-1 表示中心）
-  angle: number;        // 角度（弧度）
-  distance: number;     // 距离中心的距离
+  x: number;            // x 坐标
+  y: number;            // y 坐标
+  angle: number;        // 角度（弧度，用于边的方向）
+  distance: number;     // 距离中心的距离（用于边的方向）
   color: string;
   parentId?: string;
 }
@@ -175,14 +177,36 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
+/**
+ * 确保目录存在
+ */
+async function ensureFolderExists(app: any, folderPath: string): Promise<void> {
+  const parts = folderPath.split('/');
+  let currentPath = '';
+
+  for (const part of parts) {
+    currentPath = currentPath ? `${currentPath}/${part}` : part;
+    const folder = app.vault.getAbstractFileByPath(currentPath);
+
+    if (!folder) {
+      await app.vault.createFolder(currentPath);
+      log('[Canvas] 创建目录:', currentPath);
+    }
+  }
+}
+
 // ============ Mindmap 布局常量和函数 ============
 
 const MINDMAP_COLORS = ['2', '3', '4', '5', '6']; // 分支颜色（1 保留给中心）
 const MINDMAP_TOPIC_SIZE = { width: 300, height: 80 };
 const MINDMAP_BRANCH_SIZE = { width: 250, height: 60 };
 const MINDMAP_CHILD_SIZE = { width: 200, height: 50 };
-const MINDMAP_BRANCH_RADIUS = 350;  // 一级分支距离中心
-const MINDMAP_CHILD_SPACING = 220;  // 子节点层间距
+
+// 层级半径（每层距离中心的距离）- 更松散的布局
+const MINDMAP_LEVEL_RADII = [0, 500, 950, 1400]; // 中心、一级、二级、三级
+
+// 角度间隙（弧度），用于防止节点重叠
+const MINDMAP_ANGLE_GAP = 0.15; // 约 8.5 度
 
 /**
  * 根据角度确定连接线的 fromSide/toSide
@@ -204,8 +228,27 @@ function getSideFromAngle(angle: number): { fromSide: 'top' | 'right' | 'bottom'
 }
 
 /**
- * 计算思维导图的布局
- * 返回所有节点的布局信息
+ * 计算子树需要的角度范围（递归计算）
+ * 基于子节点数量和层级
+ */
+function calculateSubtreeAngle(children: MindmapChildNode[]): number {
+  if (!children || children.length === 0) return 0;
+
+  let totalAngle = 0;
+  children.forEach((child) => {
+    const grandChildren = typeof child === 'string' ? [] : (child.children || []);
+    const childSubtreeAngle = calculateSubtreeAngle(grandChildren);
+    // 每个节点至少占用一个最小角度
+    const nodeAngle = Math.max(MINDMAP_ANGLE_GAP * 2, childSubtreeAngle);
+    totalAngle += nodeAngle;
+  });
+
+  return totalAngle;
+}
+
+/**
+ * 计算思维导图的放射状布局
+ * 同层级节点在同一圆环上对齐
  */
 function calculateMindmapLayout(topic: string, branches: MindmapBranch[]): LayoutNode[] {
   const nodes: LayoutNode[] = [];
@@ -217,103 +260,144 @@ function calculateMindmapLayout(topic: string, branches: MindmapBranch[]): Layou
     text: topic,
     level: 0,
     branchIndex: -1,
+    x: 0,
+    y: 0,
     angle: 0,
     distance: 0,
-    color: '1' // 中心使用醒目颜色
+    color: '1'
   });
 
-  // 计算每个分支的角度
-  const branchCount = branches.length;
-  const branchAngleStep = (2 * Math.PI) / branchCount;
+  // 计算每个分支需要的角度范围
+  const branchAngles: number[] = branches.map((branch) => {
+    const subtreeAngle = calculateSubtreeAngle(branch.children || []);
+    // 每个分支至少占用一定角度
+    return Math.max(Math.PI / 4, subtreeAngle); // 最小 45 度
+  });
 
-  // 处理每个分支
+  // 计算总角度并归一化
+  const totalAngle = branchAngles.reduce((sum, a) => sum + a, 0);
+  const scale = (2 * Math.PI - MINDMAP_ANGLE_GAP * branches.length) / totalAngle;
+
+  // 分配角度范围（从顶部开始，顺时针）
+  let currentAngle = -Math.PI / 2; // 从顶部开始
+
   branches.forEach((branch, branchIndex) => {
-    const branchAngle = branchIndex * branchAngleStep - Math.PI / 2; // 从顶部开始
     const branchId = generateId();
     const branchColor = MINDMAP_COLORS[branchIndex % MINDMAP_COLORS.length];
 
-    // 一级分支节点
+    // 分配给这个分支的角度范围
+    const branchAngleRange = branchAngles[branchIndex] * scale;
+    const branchCenterAngle = currentAngle + branchAngleRange / 2;
+
+    // 一级分支节点（在第一层圆环上）
+    const branchRadius = MINDMAP_LEVEL_RADII[1];
     nodes.push({
       id: branchId,
       text: branch.label,
       level: 1,
       branchIndex,
-      angle: branchAngle,
-      distance: MINDMAP_BRANCH_RADIUS,
+      x: branchRadius * Math.cos(branchCenterAngle),
+      y: branchRadius * Math.sin(branchCenterAngle),
+      angle: branchCenterAngle,
+      distance: branchRadius,
       color: branchColor,
       parentId: topicId
     });
 
     // 递归处理子节点
     if (branch.children && branch.children.length > 0) {
-      processChildren(
+      layoutRadialChildren(
         nodes,
         branch.children,
         branchId,
-        branchAngle,
-        MINDMAP_BRANCH_RADIUS + MINDMAP_CHILD_SPACING,
+        currentAngle,
+        branchAngleRange,
         2,
         branchIndex,
         branchColor
       );
     }
+
+    currentAngle += branchAngleRange + MINDMAP_ANGLE_GAP;
   });
 
   return nodes;
 }
 
 /**
- * 递归处理子节点
+ * 递归布局子节点（放射状，同层对齐）
  */
-function processChildren(
+function layoutRadialChildren(
   nodes: LayoutNode[],
   children: MindmapChildNode[],
   parentId: string,
-  parentAngle: number,
-  startDistance: number,
+  startAngle: number,
+  angleRange: number,
   level: number,
   branchIndex: number,
   color: string
 ): void {
+  if (level > 3) return; // 最多支持 3 层子节点
+
   const childCount = children.length;
-  // 子节点在父节点方向上分布，角度有小幅偏移
-  const angleSpread = Math.PI / 6; // 子节点角度展开范围
-  const angleStep = childCount > 1 ? angleSpread / (childCount - 1) : 0;
-  const startAngle = parentAngle - angleSpread / 2;
+  if (childCount === 0) return;
+
+  // 计算每个子节点需要的角度
+  const childAngles: number[] = children.map((child) => {
+    const grandChildren = typeof child === 'string' ? [] : (child.children || []);
+    return calculateSubtreeAngle(grandChildren);
+  });
+
+  const totalChildAngle = childAngles.reduce((sum, a) => sum + a, 0);
+  const childScale = totalChildAngle > 0
+    ? (angleRange - MINDMAP_ANGLE_GAP * (childCount - 1)) / totalChildAngle
+    : 1;
+
+  // 当前层级半径
+  const levelRadius = MINDMAP_LEVEL_RADII[Math.min(level, 3)];
+  let currentAngle = startAngle;
 
   children.forEach((child, index) => {
-    const childAngle = childCount > 1 ? startAngle + index * angleStep : parentAngle;
     const childId = generateId();
-
-    // 解析子节点
     const childText = typeof child === 'string' ? child : child.label;
     const grandChildren = typeof child === 'string' ? undefined : child.children;
 
-    // 添加子节点
+    // 分配给这个子节点的角度范围
+    const childAngleRange = Math.max(
+      MINDMAP_ANGLE_GAP * 2,
+      childAngles[index] * childScale
+    );
+    const childCenterAngle = currentAngle + childAngleRange / 2;
+
+    // 子节点位置（在当前层级的圆环上）
     nodes.push({
       id: childId,
       text: childText,
       level,
       branchIndex,
-      angle: childAngle,
-      distance: startDistance,
+      x: levelRadius * Math.cos(childCenterAngle),
+      y: levelRadius * Math.sin(childCenterAngle),
+      angle: childCenterAngle,
+      distance: levelRadius,
       color,
       parentId
     });
 
     // 递归处理孙节点
     if (grandChildren && grandChildren.length > 0) {
-      processChildren(
+      layoutRadialChildren(
         nodes,
         grandChildren,
         childId,
-        childAngle,
-        startDistance + MINDMAP_CHILD_SPACING,
+        currentAngle,
+        childAngleRange,
         level + 1,
         branchIndex,
         color
       );
     }
+
+    currentAngle += childAngleRange + MINDMAP_ANGLE_GAP;
   });
 }
 
@@ -322,11 +406,10 @@ function processChildren(
  */
 function buildMindmapCanvas(
   layoutNodes: LayoutNode[]
-): { nodes: CanvasNode[]; edges: CanvasEdge[]; groups: CanvasNode[] } {
+): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   const canvasNodes: CanvasNode[] = [];
   const edges: CanvasEdge[] = [];
-  const groups: CanvasNode[] = [];
-  const branchGroups: Map<number, { minX: number; minY: number; maxX: number; maxY: number }> = new Map();
+  const branchGroups: Map<number, { minX: number; minY: number; maxX: number; maxY: number; label: string; color: string }> = new Map();
 
   // 创建节点
   layoutNodes.forEach((node) => {
@@ -343,9 +426,9 @@ function buildMindmapCanvas(
       height = MINDMAP_CHILD_SIZE.height;
     }
 
-    // 计算位置（节点中心在 distance 处）
-    const x = Math.round(node.distance * Math.cos(node.angle) - width / 2);
-    const y = Math.round(node.distance * Math.sin(node.angle) - height / 2);
+    // 使用预计算的 x, y 坐标（节点左上角）
+    const x = Math.round(node.x - width / 2);
+    const y = Math.round(node.y - height / 2);
 
     canvasNodes.push({
       id: node.id,
@@ -358,13 +441,15 @@ function buildMindmapCanvas(
       color: node.color
     });
 
-    // 记录分支边界（用于 group）
+    // 记录分支边界（用于 group）- 只记录非中心节点
     if (node.level >= 1 && node.branchIndex >= 0) {
       const bounds = branchGroups.get(node.branchIndex) || {
         minX: x,
         minY: y,
         maxX: x + width,
-        maxY: y + height
+        maxY: y + height,
+        label: node.level === 1 ? node.text : '',
+        color: node.color
       };
       bounds.minX = Math.min(bounds.minX, x);
       bounds.minY = Math.min(bounds.minY, y);
@@ -387,9 +472,10 @@ function buildMindmapCanvas(
     }
   });
 
-  // 创建分组
+  // 创建分组（为每个分支创建一个 group）
+  const groups: CanvasNode[] = [];
   branchGroups.forEach((bounds, branchIndex) => {
-    const padding = 20;
+    const padding = 30;
     groups.push({
       id: `group-${branchIndex}`,
       type: 'group',
@@ -397,12 +483,15 @@ function buildMindmapCanvas(
       y: bounds.minY - padding,
       width: bounds.maxX - bounds.minX + padding * 2,
       height: bounds.maxY - bounds.minY + padding * 2,
-      color: MINDMAP_COLORS[branchIndex % MINDMAP_COLORS.length],
-      label: layoutNodes.find(n => n.level === 1 && n.branchIndex === branchIndex)?.text || ''
+      color: bounds.color,
+      label: bounds.label
     });
   });
 
-  return { nodes: canvasNodes, edges, groups };
+  // 组合所有节点（group 在底层，普通节点在上层）
+  const allNodes = [...groups, ...canvasNodes];
+
+  return { nodes: allNodes, edges };
 }
 
 /**
@@ -600,17 +689,20 @@ export function createCanvasTool(app: any): ToolExecutor {
           }
 
           try {
+            // 确保目录存在
+            const folderPath = (path as string).substring(0, (path as string).lastIndexOf('/'));
+            if (folderPath) {
+              await ensureFolderExists(app, folderPath);
+            }
+
             // 计算布局
             const layoutNodes = calculateMindmapLayout(topic, branches);
 
             // 构建 canvas 节点和边
-            const { nodes: canvasNodes, edges: canvasEdges, groups } = buildMindmapCanvas(layoutNodes);
-
-            // 组合所有节点（group 在底层，普通节点在上层）
-            const allNodes = [...groups, ...canvasNodes];
+            const { nodes: canvasNodes, edges: canvasEdges } = buildMindmapCanvas(layoutNodes);
 
             const canvasData: CanvasData = {
-              nodes: allNodes,
+              nodes: canvasNodes,
               edges: canvasEdges
             };
 

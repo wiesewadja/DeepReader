@@ -10,9 +10,16 @@ import type { ChatMessage, ToolDefinition } from '../types';
 import type { LLMClient } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 import type { SubagentTask, SubagentConfig, SubagentCallback } from './types';
-import { DEFAULT_SUBAGENT_CONFIG, DEFAULT_SUBAGENT_TOOLS } from './types';
+import { DEFAULT_SUBAGENT_CONFIG, DEFAULT_SUBAGENT_TOOLS, hashDescription } from './types';
 import { runAgentLoop } from '../agent-loop';
 import { agentLog } from '../../utils/logger';
+
+/** 缓存条目类型 */
+interface CacheEntry {
+	result: string;
+	timestamp: number;
+	taskId: string;
+}
 
 export class SubagentManager {
 	private client: LLMClient;
@@ -27,6 +34,8 @@ export class SubagentManager {
 	private taskInfo: Map<string, SubagentTask> = new Map();
 	/** 会话任务映射 */
 	private sessionTasks: Map<string, Set<string>> = new Map();
+	/** 结果缓存 */
+	private cache: Map<string, CacheEntry> = new Map();
 
 	constructor(
 		client: LLMClient,
@@ -43,9 +52,99 @@ export class SubagentManager {
 	}
 
 	/**
+	 * 检查缓存是否有有效结果
+	 */
+	private checkCache(description: string): CacheEntry | null {
+		const key = hashDescription(description);
+		const entry = this.cache.get(key);
+
+		if (!entry) return null;
+
+		const ttl = this.config.cacheTTL || 300000;
+		const now = Date.now();
+
+		if (now - entry.timestamp > ttl) {
+			// 缓存过期
+			this.cache.delete(key);
+			return null;
+		}
+
+		return entry;
+	}
+
+	/**
+	 * 保存结果到缓存
+	 */
+	private saveToCache(description: string, result: string, taskId: string): void {
+		const key = hashDescription(description);
+		this.cache.set(key, {
+			result,
+			timestamp: Date.now(),
+			taskId,
+		});
+		agentLog(`[Subagent] 缓存结果: ${key}`);
+	}
+
+	/**
+	 * 清理过期缓存
+	 */
+	cleanupCache(): number {
+		const ttl = this.config.cacheTTL || 300000;
+		const now = Date.now();
+		let count = 0;
+
+		for (const [key, entry] of this.cache) {
+			if (now - entry.timestamp > ttl) {
+				this.cache.delete(key);
+				count++;
+			}
+		}
+
+		if (count > 0) {
+			agentLog(`[Subagent] 清理 ${count} 个过期缓存`);
+		}
+		return count;
+	}
+
+	/**
 	 * 创建并启动子 Agent 任务
 	 */
 	spawn(description: string, label?: string, sessionId?: string): string {
+		// 先检查缓存
+		const cached = this.checkCache(description);
+		if (cached) {
+			agentLog(`[Subagent] 命中缓存: ${cached.taskId}`);
+			// 直接返回缓存结果
+			const taskId = uuidv4().slice(0, 8);
+			const task: SubagentTask = {
+				taskId,
+				description,
+				label: label || description.slice(0, 30),
+				status: 'completed',
+				result: cached.result,
+				createdAt: Date.now(),
+				completedAt: Date.now(),
+				sessionId,
+				fromCache: true,
+			};
+			this.taskInfo.set(taskId, task);
+
+			// 关联到会话
+			if (sessionId) {
+				if (!this.sessionTasks.has(sessionId)) {
+					this.sessionTasks.set(sessionId, new Set());
+				}
+				this.sessionTasks.get(sessionId)!.add(taskId);
+			}
+
+			// 触发回调
+			if (this.onResult) {
+				setTimeout(() => this.onResult!(task), 0);
+			}
+
+			return taskId;
+		}
+
 		const taskId = uuidv4().slice(0, 8);
 		const displayLabel =
 			label || (description.length > 30 ? description.slice(0, 30) + '...' : description);
@@ -122,6 +221,9 @@ export class SubagentManager {
 			task.status = 'completed';
 			task.result = result;
 			task.completedAt = Date.now();
+
+			// 保存到缓存
+			this.saveToCache(description, result, taskId);
 
 			agentLog(`[Subagent] 任务 ${taskId} 完成`);
 		} catch (error) {
