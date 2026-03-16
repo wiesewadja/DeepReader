@@ -16,9 +16,7 @@ const EXTRACT_PROPOSITIONS_DEFINITION: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'extract_propositions',
-		description: `【分析阅读·规则6】从章节中提取作者的核心主旨和论点。
-适用场景：理解作者观点、回答"主要论点"、"核心主张"类问题。
-返回：关键句子、主旨陈述、论证结构。`,
+		description: `【分析阅读】提取核心论点和主旨。用于理解作者观点。`,
 		parameters: {
 			type: 'object',
 			properties: {

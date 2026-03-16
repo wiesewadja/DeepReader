@@ -11,9 +11,7 @@ const GET_TOC_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'get_toc',
-    description: `【检视阅读】获取书籍的目录结构。
-适用场景：了解书籍组织架构、回答"讲什么"、"目录"类问题、定位相关章节。
-返回：层级目录列表和页码范围。`,
+    description: `【检视阅读】获取文档目录结构。用于了解书籍整体框架。`,
     parameters: {
       type: 'object',
       properties: {},

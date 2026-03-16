@@ -13,9 +13,7 @@ const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'search_read_books',
-    description: `【主题阅读】在已读书籍中搜索与某个主题相关的章节。
-适用场景：跨书比较、回答"比较"、"其他书"、"关联"类问题、建立知识网络。
-返回：最相关的章节列表，包含摘要和 wikilink。`,
+    description: `【主题阅读】搜索已读书库。用于跨书比较和关联。`,
     parameters: {
       type: 'object',
       properties: {

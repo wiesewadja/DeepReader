@@ -15,9 +15,7 @@ const GET_CHAPTER_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'get_chapter',
-    description: `【分析阅读】获取章节的完整文本内容。
-适用场景：深入阅读特定章节、回答"详细解释"、"为什么"类问题。
-支持分页读取（max_length + start_offset）。`,
+    description: `【分析阅读】获取章节完整内容。用于"详细解释/为什么"类问题。支持分页读取。`,
     parameters: {
       type: 'object',
       properties: {
