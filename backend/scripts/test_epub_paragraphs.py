@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "pageindex-lib" / "src"))
 from deeppdf.services.indexer import (
     _extract_all_paragraphs,
     _split_text_to_chunks,
+    _store_to_chromadb,
     PARAGRAPH_CHUNK_TARGET,
     PARAGRAPH_CHUNK_MAX,
 )
@@ -44,24 +45,31 @@ def parse_epub(epub_path: str):
 
     # 直接使用 EpubParser 解析
     parser = EpubParser(str(epub_path), extract_images=False)
-    chapters = parser.extract_chapters()
+    parser.load()
+    chapters = parser.get_chapters()
 
     print(f"提取章节: {len(chapters)} 章")
 
     # 转换为树结构
-    book_title = parser.get_book_title()
+    metadata = parser.get_metadata()
     toc = parser.get_toc()
-    tree = epub_to_tree(chapters, toc, book_title)
+
+    # 构造 epub_data 字典
+    epub_data = {
+        "metadata": metadata,
+        "toc": toc,
+        "chapters": chapters,
+    }
+    tree = epub_to_tree(epub_data)
 
     parse_time = time.time() - start_time
     print(f"解析完成，耗时: {parse_time:.2f} 秒")
 
-    # 从 tree 中获取 structure
+    # 从 tree 中获取 structure 和 doc_name
     structure = tree.get("structure", [])
+    doc_name = tree.get("doc_name", epub_path.stem)
     print(f"顶层结构数: {len(structure)}")
-
-    # 清理书名
-    doc_name = book_title.split("（")[0].split(":")[0].strip() if book_title else epub_path.stem
+    print(f"文档名: {doc_name}")
 
     return structure, doc_name
 
@@ -120,6 +128,45 @@ def preview_chunks(chunks, limit=10):
             print(f"full_paragraph ({len(m['full_paragraph'])} 字): {m['full_paragraph'][:80]}...")
 
 
+def export_chunks(chunks, output_path, doc_name):
+    """导出 chunks 到文件"""
+    import json
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # 构建导出数据
+    export_data = {
+        "doc_name": doc_name,
+        "total_chunks": len(chunks),
+        "chunks": []
+    }
+
+    for c in chunks:
+        m = c['metadata']
+        export_data["chunks"].append({
+            "id": c['id'],
+            "text": c['text'],
+            "metadata": {
+                "block_id": m['block_id'],
+                "parent_section": m['parent_section'],
+                "page": m['page'],
+                "chunk_index": m['chunk_index'],
+                "total_chunks": m['total_chunks'],
+                "full_paragraph": m.get('full_paragraph', ''),
+            }
+        })
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+    print(f"\n{'='*60}")
+    print(f"导出完成")
+    print(f"{'='*60}")
+    print(f"文件: {output_file}")
+    print(f"大小: {output_file.stat().st_size / 1024:.1f} KB")
+
+
 def store_to_chromadb(chunks, doc_name, storage_dir):
     """存储到 ChromaDB"""
     print(f"\n{'='*60}")
@@ -167,7 +214,11 @@ def verify_storage(index_id, storage_dir):
     import chromadb
 
     chroma_dir = Path(storage_dir) / "chroma"
-    client = chromadb.PersistentClient(path=str(chroma_dir))
+    # 使用与 indexer 相同的设置，避免缓存冲突
+    client = chromadb.PersistentClient(
+        path=str(chroma_dir),
+        settings=chromadb.Settings(anonymized_telemetry=False)
+    )
 
     try:
         coll = client.get_collection(name=index_id)
@@ -196,6 +247,7 @@ def main():
     parser.add_argument("epub_path", help="EPUB 文件路径")
     parser.add_argument("--store", action="store_true", help="存储到 ChromaDB")
     parser.add_argument("--storage-dir", default="data", help="存储目录")
+    parser.add_argument("--output", "-o", help="导出解析数据到 JSON 文件")
     args = parser.parse_args()
 
     epub_path = Path(args.epub_path)
@@ -211,6 +263,10 @@ def main():
 
     # 3. 预览
     preview_chunks(chunks)
+
+    # 3.5 导出（可选）
+    if args.output:
+        export_chunks(chunks, args.output, doc_name)
 
     # 4. 存储（可选）
     if args.store:
