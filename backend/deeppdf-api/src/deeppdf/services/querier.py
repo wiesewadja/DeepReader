@@ -147,7 +147,17 @@ def _query_pdf_sync(
                 )
                 logger.debug(f"    文本预览: {text[:100]}...")
 
-                formatted_results.append({"text": text, "metadata": metadata})
+                formatted_results.append({
+                    "text": text,
+                    "metadata": {
+                        **metadata,
+                        # 确保段落相关字段被透传
+                        "type": metadata.get("type", "section"),
+                        "block_id": metadata.get("block_id"),
+                        "full_paragraph": metadata.get("full_paragraph"),
+                        "parent_section": metadata.get("parent_section"),
+                    },
+                })
 
         logger.info(f"[查询] 返回 {len(formatted_results)} 个结果")
 
@@ -189,6 +199,11 @@ def _query_pdf_sync(
                     "text": item["text"],
                     "metadata": {
                         **item["metadata"],
+                        # 确保段落相关字段被透传
+                        "type": item["metadata"].get("type", "section"),
+                        "block_id": item["metadata"].get("block_id"),
+                        "full_paragraph": item["metadata"].get("full_paragraph"),
+                        "parent_section": item["metadata"].get("parent_section"),
                         "markdown_path": markdown_path,  # 添加 Markdown 路径
                     },
                 }

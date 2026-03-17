@@ -121,6 +121,328 @@ def _extract_nodes_from_tree(
     return nodes
 
 
+# ============================================================================
+# 段落切分参数（用于段落向量化）
+# ============================================================================
+PARAGRAPH_CHUNK_MIN = 300      # 目标最小字数
+PARAGRAPH_CHUNK_TARGET = 400   # 理想目标字数
+PARAGRAPH_CHUNK_MAX = 500      # 硬性上限
+PARAGRAPH_MIN_KEEP = 100       # 小于此值不切分
+
+
+def _split_text_to_chunks(text: str) -> List[Dict[str, Any]]:
+    """
+    将长文本按句子边界切分成 300-400 字的 chunk
+
+    切分策略：
+    - 短文本（< 100 字）：不切分，直接返回
+    - 中等文本（<= 500 字）：不切分
+    - 长文本：按句子边界（。！？\\n）切分，贪心合并到目标字数
+
+    Args:
+        text: 待切分的文本
+
+    Returns:
+        切分结果列表，每个元素包含:
+        - text: 切分后的文本
+        - char_start: 在原文中的起始字符位置
+        - char_end: 在原文中的结束字符位置
+    """
+    import re
+
+    text_len = len(text)
+
+    # 短文本不切分
+    if text_len < PARAGRAPH_MIN_KEEP:
+        return [{"text": text, "char_start": 0, "char_end": text_len}]
+
+    # 中等文本不切分
+    if text_len <= PARAGRAPH_CHUNK_MAX:
+        return [{"text": text, "char_start": 0, "char_end": text_len}]
+
+    # 长文本：按句子边界切分
+    # 使用正则表达式按句子边界切分（保留分隔符）
+    # 句子边界：。！？以及换行符
+    sentence_pattern = r'([^。！？\n]+[。！？\n]?)'
+    sentences = re.findall(sentence_pattern, text)
+
+    # 过滤掉空字符串
+    sentences = [s for s in sentences if s.strip()]
+
+    if not sentences:
+        # 如果正则没匹配到，返回原文
+        return [{"text": text, "char_start": 0, "char_end": text_len}]
+
+    # 贪心合并句子到目标字数
+    chunks: List[Dict[str, Any]] = []
+    current_chunk_start = 0
+    current_pos = 0  # 当前在原文中的位置
+
+    for sentence in sentences:
+        sentence_len = len(sentence)
+        current_chunk_len = current_pos - current_chunk_start
+
+        # 检查是否需要开始新的 chunk
+        if current_chunk_len >= PARAGRAPH_CHUNK_TARGET:
+            # 当前 chunk 已达到目标，保存并开始新的
+            chunk_text = text[current_chunk_start:current_pos]
+            chunks.append({
+                "text": chunk_text,
+                "char_start": current_chunk_start,
+                "char_end": current_pos
+            })
+            current_chunk_start = current_pos
+
+        # 检查单个句子是否超过上限
+        if sentence_len > PARAGRAPH_CHUNK_MAX:
+            # 先保存当前 chunk（如果有内容）
+            if current_pos > current_chunk_start:
+                chunk_text = text[current_chunk_start:current_pos]
+                chunks.append({
+                    "text": chunk_text,
+                    "char_start": current_chunk_start,
+                    "char_end": current_pos
+                })
+                current_chunk_start = current_pos
+
+            # 切分长句子
+            sub_chunks = _split_long_sentence(sentence, current_pos)
+            chunks.extend(sub_chunks)
+            current_chunk_start = current_pos + sentence_len
+            current_pos = current_chunk_start
+        else:
+            # 正常添加句子
+            current_pos += sentence_len
+
+    # 处理最后一个 chunk
+    if current_pos > current_chunk_start:
+        chunk_text = text[current_chunk_start:current_pos]
+        chunks.append({
+            "text": chunk_text,
+            "char_start": current_chunk_start,
+            "char_end": current_pos
+        })
+
+    return chunks
+
+
+def _split_long_sentence(sentence: str, start_pos: int) -> List[Dict[str, Any]]:
+    """
+    处理单个句子超过 500 字的情况
+
+    切分策略：
+    - 优先在逗号处切分
+    - 如果无逗号，硬切分（按 PARAGRAPH_CHUNK_TARGET 字数切分）
+
+    Args:
+        sentence: 待切分的长句子
+        start_pos: 句子在原文中的起始位置
+
+    Returns:
+        切分结果列表
+    """
+    sentence_len = len(sentence)
+
+    # 如果不超过上限，直接返回
+    if sentence_len <= PARAGRAPH_CHUNK_MAX:
+        return [{
+            "text": sentence,
+            "char_start": start_pos,
+            "char_end": start_pos + sentence_len
+        }]
+
+    chunks: List[Dict[str, Any]] = []
+
+    # 尝试在逗号处切分
+    if '，' in sentence or ',' in sentence:
+        # 按逗号切分（同时支持中英文逗号）
+        import re
+        parts = re.split(r'([，,])', sentence)
+
+        # 重新组合：将分隔符附加到前一部分
+        segments = []
+        i = 0
+        while i < len(parts):
+            if i + 1 < len(parts) and parts[i + 1] in ('，', ','):
+                segments.append(parts[i] + parts[i + 1])
+                i += 2
+            else:
+                if parts[i].strip():
+                    segments.append(parts[i])
+                i += 1
+
+        # 贪心合并 segments
+        current_segment_start = 0
+        current_pos = 0
+
+        for seg in segments:
+            seg_len = len(seg)
+
+            # 如果当前 chunk + 这个 segment 会超过上限，先保存当前 chunk
+            if current_pos - current_segment_start + seg_len > PARAGRAPH_CHUNK_MAX:
+                if current_pos > current_segment_start:
+                    chunk_text = sentence[current_segment_start:current_pos]
+                    chunks.append({
+                        "text": chunk_text,
+                        "char_start": start_pos + current_segment_start,
+                        "char_end": start_pos + current_pos
+                    })
+                    current_segment_start = current_pos
+
+            current_pos += seg_len
+
+        # 处理最后一段
+        if current_pos > current_segment_start:
+            chunk_text = sentence[current_segment_start:current_pos]
+            chunks.append({
+                "text": chunk_text,
+                "char_start": start_pos + current_segment_start,
+                "char_end": start_pos + current_pos
+            })
+    else:
+        # 无逗号，硬切分
+        pos = 0
+        while pos < sentence_len:
+            chunk_end = min(pos + PARAGRAPH_CHUNK_TARGET, sentence_len)
+            chunk_text = sentence[pos:chunk_end]
+            chunks.append({
+                "text": chunk_text,
+                "char_start": start_pos + pos,
+                "char_end": start_pos + chunk_end
+            })
+            pos = chunk_end
+
+    return chunks
+
+
+def _extract_paragraphs_from_tree(
+    tree: Dict[str, Any],
+    doc_type: str,
+    pdf_name: str,
+    chapter_index: int,
+    parent_section: str = "",
+) -> List[Dict[str, Any]]:
+    """
+    从 PageIndex 树节点中提取物理段落并生成向量化 chunk
+
+    处理流程：
+    1. 从节点的 text 字段按换行符分割物理段落
+    2. 为每个段落生成 block_id（格式：^ch{章节序号}-p{段落序号}）
+    3. 调用 _split_text_to_chunks 切分长段落
+    4. 递归处理子节点
+
+    Args:
+        tree: PageIndex 树节点
+        doc_type: 文档类型 (pdf/epub)
+        pdf_name: PDF 文件名
+        chapter_index: 章节序号（从 0 开始）
+        parent_section: 父级章节名称
+
+    Returns:
+        段落 chunk 列表，每个 chunk 包含:
+        - id: chunk 唯一 ID
+        - text: chunk 文本内容
+        - metadata: 元数据字典
+    """
+    chunks: List[Dict[str, Any]] = []
+
+    if not tree:
+        return chunks
+
+    node_id = tree.get("node_id", "")
+    node_name = tree.get("title", "")
+    node_text = tree.get("text", "")
+    start_page = tree.get("start_index")
+
+    current_section = f"{parent_section} > {node_name}" if parent_section else node_name
+
+    # 按双换行符分割物理段落（支持 \n\n 和 \r\n\r\n）
+    # 先统一换行符，然后按双换行分割
+    normalized_text = node_text.replace("\r\n", "\n").replace("\r", "\n")
+    paragraphs = [p.strip() for p in normalized_text.split("\n\n") if p.strip()]
+
+    for para_idx, paragraph in enumerate(paragraphs):
+        # 生成 block_id（Obsidian 引用标识）
+        block_id = f"^ch{chapter_index}-p{para_idx}"
+
+        # 调用切分函数处理长段落
+        para_chunks = _split_text_to_chunks(paragraph)
+
+        for chunk_idx, chunk_data in enumerate(para_chunks):
+            if node_id:
+                chunk_id = f"{node_id}_p{para_idx}-c{chunk_idx}"
+            else:
+                chunk_id = f"para_{chapter_index}_{para_idx}_c{chunk_idx}"
+
+            chunk_metadata = {
+                "type": "paragraph",
+                "block_id": block_id,
+                "chunk_index": chunk_idx,
+                "total_chunks": len(para_chunks),
+                "full_paragraph": paragraph,
+                "parent_node_id": node_id,
+                "parent_section": current_section,
+                "page": start_page,
+                "paragraph_index": para_idx,
+                "char_start": chunk_data["char_start"],
+                "char_end": chunk_data["char_end"],
+                "pdf_name": pdf_name,
+            }
+
+            chunks.append({
+                "id": chunk_id,
+                "text": chunk_data["text"],
+                "metadata": chunk_metadata,
+            })
+
+    # 递归处理子节点
+    children = tree.get("nodes", [])
+    for child in children:
+        chunks.extend(
+            _extract_paragraphs_from_tree(
+                child,
+                doc_type,
+                pdf_name,
+                chapter_index,
+                current_section,
+            )
+        )
+
+    return chunks
+
+
+def _extract_all_paragraphs(
+    tree_list: List[Dict[str, Any]],
+    doc_type: str,
+    pdf_name: str,
+) -> List[Dict[str, Any]]:
+    """
+    从 PageIndex 顶层结构列表中提取所有段落
+
+    遍历顶层结构列表，为每个顶层节点调用 _extract_paragraphs_from_tree
+
+    Args:
+        tree_list: PageIndex 顶层结构列表
+        doc_type: 文档类型 (pdf/epub)
+        pdf_name: PDF 文件名
+
+    Returns:
+        所有段落 chunk 的列表
+    """
+    all_chunks: List[Dict[str, Any]] = []
+
+    for chapter_index, tree in enumerate(tree_list):
+        chunks = _extract_paragraphs_from_tree(
+            tree,
+            doc_type,
+            pdf_name,
+            chapter_index,
+        )
+        all_chunks.extend(chunks)
+
+    return all_chunks
+
+
 def _parse_llm_config(**kwargs) -> Dict[str, Any]:
     """
     解析 LLM 配置参数
@@ -425,7 +747,8 @@ def _store_to_chromadb(
     doc_type: str = "pdf",
     progress_callback=None,
     original_filename: Optional[str] = None,
-) -> float:
+    paragraph_chunks: Optional[List[Dict]] = None,
+) -> Tuple[float, int]:
     """
     存储到 ChromaDB
 
@@ -436,9 +759,11 @@ def _store_to_chromadb(
         storage_dir: 存储目录
         doc_type: 文档类型 ("pdf" 或 "epub")
         progress_callback: 进度回调函数
+        paragraph_chunks: 段落 chunk 列表（可选）
 
     Returns:
         vector_time: 向量存储耗时（秒）
+        paragraph_count: 存储的段落数量
     """
     if progress_callback:
         progress_callback("store_vectors", 80, "正在向量化并存储到 ChromaDB...")
@@ -461,6 +786,7 @@ def _store_to_chromadb(
         "pdf_path": str(pdf_path_obj.absolute()),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "node_count": len(section_nodes),
+        "paragraph_count": len(paragraph_chunks) if paragraph_chunks else 0,
         "indexing_method": "pageindex_tree",
         "llm_enabled": True,
         # 新增阅读进度字段（ChromaDB 只支持基本类型，列表用逗号分隔的字符串表示）
@@ -481,7 +807,7 @@ def _store_to_chromadb(
         {
             "id": node["id"],
             "text": node["text"],
-            "metadata": {**node["metadata"], "pdf_name": display_name},
+            "metadata": {**node["metadata"], "pdf_name": display_name, "type": "section"},
         }
         for node in section_nodes
     ]
@@ -501,13 +827,32 @@ def _store_to_chromadb(
     store.add_documents(index_id, documents)
     embed_time = time.time() - embed_start
 
-    vector_time = time.time() - vector_start
-    logger.info("[向量存储] 向量存储完成:")
+    logger.info("[向量存储] 章节向量存储完成:")
     logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
-    logger.info(f"  - 存储总耗时: {vector_time:.2f} 秒")
-    logger.info(f"  - 存储文档数: {len(documents)}")
+    logger.info(f"  - 存储章节数: {len(documents)}")
 
-    return vector_time
+    # 存储段落向量（如果有）
+    paragraph_count = 0
+    if paragraph_chunks:
+        if progress_callback:
+            progress_callback("store_paragraphs", 88, "正在向量化并存储段落...")
+
+        logger.info("[向量存储] 正在存储段落向量...")
+        para_start = time.time()
+        store.add_documents(index_id, paragraph_chunks)
+        para_time = time.time() - para_start
+
+        paragraph_count = len(paragraph_chunks)
+        logger.info("[向量存储] 段落向量存储完成:")
+        logger.info(f"  - 段落向量化耗时: {para_time:.2f} 秒")
+        logger.info(f"  - 存储段落数: {paragraph_count}")
+
+    vector_time = time.time() - vector_start
+    logger.info("[向量存储] 全部向量存储完成:")
+    logger.info(f"  - 存储总耗时: {vector_time:.2f} 秒")
+    logger.info(f"  - 章节数: {len(documents)}, 段落数: {paragraph_count}")
+
+    return vector_time, paragraph_count
 
 
 def _save_metadata(
@@ -1002,8 +1347,13 @@ def _index_pdf_sync(
             logger.info(f"  ... 还有 {len(section_nodes) - 5} 个节点")
         logger.info("-" * 50)
 
+        # 提取段落 chunks
+        logger.info("[段落提取] 正在提取段落 chunks...")
+        paragraph_chunks = _extract_all_paragraphs(structure_list, doc_type, original_stem)
+        logger.info(f"[段落提取] 共提取 {len(paragraph_chunks)} 个段落 chunks")
+
         # 步骤 6: 存储到 ChromaDB
-        vector_time = _store_to_chromadb(
+        vector_time, paragraph_count = _store_to_chromadb(
             section_nodes,
             index_id,
             pdf_path_obj,
@@ -1011,6 +1361,7 @@ def _index_pdf_sync(
             doc_type,
             progress_callback,
             original_filename,
+            paragraph_chunks,
         )
 
         # 保存索引元数据
@@ -1039,6 +1390,7 @@ def _index_pdf_sync(
         logger.info(f"    - 文档类型: {doc_type.upper()}")
         logger.info(f"    - 文件名称: {original_filename}")
         logger.info(f"    - 节点数量: {len(section_nodes)}")
+        logger.info(f"    - 段落数量: {paragraph_count}")
         logger.info("  时间统计:")
         logger.info(
             f"    - 文档解析: {parse_time:.2f} 秒 ({parse_time/total_time*100:.1f}%)"
@@ -1058,6 +1410,7 @@ def _index_pdf_sync(
             "index_id": index_id,
             "doc_type": doc_type,
             "node_count": len(section_nodes),
+            "paragraph_count": paragraph_count,
             "pdf_name": original_stem,  # 使用原始文件名（不含扩展名）
             "indexing_method": "pageindex_tree",
         }
