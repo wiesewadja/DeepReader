@@ -20,8 +20,9 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 底部 padding 动态适应输入框高度 */
+	/* 底部 padding 动态适应输入框高度，右侧为 minimap 留空间 */
 	padding: 16px 1% 80px 1%;
+	padding-right: 22px;
 
 	display: flex;
 	flex-direction: column;

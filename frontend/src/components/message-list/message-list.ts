@@ -8,6 +8,7 @@ import { Component } from '../component';
 import { createMessage, Message, MessageData } from '../message/message';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import { warn } from '../../utils/logger.js';
+import { QuestionMinimap } from '../question-minimap';
 
 /**
  * 引导按钮类型
@@ -79,6 +80,7 @@ export class MessageList extends Component {
 	private callbacks: MessageCallbacks;
 	private app?: App;
 	private currentPdfName: string = '';
+	private minimap: QuestionMinimap | null = null;
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
@@ -119,6 +121,16 @@ export class MessageList extends Component {
 
 		// 初始显示空状态
 		this.updateEmptyState();
+
+		// 创建 minimap（在消息容器后）
+		this.minimap = new QuestionMinimap({
+			containerEl: this.messagesContainer,
+			onMessageClick: (id) => this.scrollToMessage(id),
+		});
+		const minimapEl = this.minimap.getElement();
+		if (minimapEl) {
+			container.appendChild(minimapEl);
+		}
 
 		this.el = container;
 		return container;
@@ -185,6 +197,9 @@ export class MessageList extends Component {
 
 		// 自动滚动到底部
 		this.scrollToBottom();
+
+		// 更新 minimap
+		this.updateMinimap();
 
 		return message;
 	}
@@ -284,6 +299,9 @@ export class MessageList extends Component {
 
 		// 更新空状态
 		this.updateEmptyState();
+
+		// 更新 minimap
+		this.updateMinimap();
 	}
 
 	/**
@@ -331,6 +349,18 @@ export class MessageList extends Component {
 			return;
 		}
 		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	}
+
+	/**
+	 * 更新 minimap
+	 */
+	private updateMinimap(): void {
+		if (this.minimap) {
+			// 延迟更新，等待 DOM 渲染完成
+			requestAnimationFrame(() => {
+				this.minimap?.updateMessages(this.getMessagesData());
+			});
+		}
 	}
 
 	/**
@@ -417,6 +447,12 @@ export class MessageList extends Component {
 	 * 销毁组件
 	 */
 	override destroy(): void {
+		// 销毁 minimap
+		if (this.minimap) {
+			this.minimap.destroy();
+			this.minimap = null;
+		}
+
 		// 销毁所有消息
 		this.messages.forEach(message => {
 			const el = message.getElement();
