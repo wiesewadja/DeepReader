@@ -379,21 +379,21 @@ keywords:
 `
     },
     {
-        filename: "mindmap.md",
+        filename: "topic-mindmap.md",
         content: `---
-name: mindmap
-description: 创建放射状思维导图 - 将知识点整理为可视化导图，支持任意粒度的知识结构化呈现
+name: topic-mindmap
+description: 创建主题思维导图 - 将特定主题/概念整理为可视化导图，适用于章节级、概念级的知识结构化
 keywords:
   - 思维导图
   - 脑图
   - 知识梳理
   - 结构化
   - 导图
-  - 知识图谱
   - 概念图
+  - 主题导图
 ---
 
-# Mindmap 思维导图
+# Topic Mindmap 主题思维导图
 
 ## 触发场景
 
@@ -647,11 +647,11 @@ keywords:
 4. 节点文本简洁，突出核心概念
 5. 每个节点附加章节链接 \`[[章节标题]]\`
 
-## 与 mindmap skill 的区别
+## 与 topic-mindmap skill 的区别
 
-| 维度 | mindmap | book-mindmap |
-|------|---------|--------------|
-| 适用范围 | 任意概念/主题 | 整本书 |
+| 维度 | topic-mindmap | book-mindmap |
+|------|---------------|--------------|
+| 适用范围 | 主题/概念 | 整本书 |
 | 结构来源 | 用户/Agent 自由组织 | 书籍类型模板 |
 | 提取方式 | 基于上下文 | 基于目录+章节分析 |
 | 节点跳转 | 无 | 有（章节链接） |
