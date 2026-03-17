@@ -46,15 +46,16 @@ keywords:
 | 问题类型 | 首选工具 | 阅读层次 |
 |---------|---------|---------|
 | "讲什么/总结" | get_toc + search_doc | 检视阅读 |
-| "结构/纲要" | outline_structure | 分析阅读 |
+| "结构/纲要" | get_toc(detail="normal") | 分析阅读 |
 | "详细解释" | get_chapter | 分析阅读 |
-| "术语/概念" | find_key_terms | 分析阅读 |
-| "论点/主旨" | extract_propositions | 分析阅读 |
+| "术语/概念" | analyze_chapter(type="terms") | 分析阅读 |
+| "论点/主旨" | analyze_chapter(type="propositions") | 分析阅读 |
 | "比较/关联" | search_read_books | 主题阅读 |
 
 ## 并行调用规则
 
 - "讲什么/总结"类问题 → 同时调用 get_toc 和 search_doc
+- 需要术语+论点 → 调用 analyze_chapter(type="both")
 - 需要多个章节 → 一次调用多个 get_chapter
 - 每轮尽可能多调用工具，减少迭代次数
 

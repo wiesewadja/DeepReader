@@ -967,13 +967,11 @@
 .deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link {
 	color: var(--link-color, var(--text-accent));
 	text-decoration: none;
-	border-bottom: 1px solid var(--link-external-color, var(--text-accent));
 	transition: all 0.15s ease;
 }
 
 .deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link:hover {
 	color: var(--link-color-hover, var(--text-accent-hover));
-	border-bottom-color: var(--link-color-hover, var(--text-accent-hover));
 	background: rgba(var(--text-accent-rgb), 0.1);
 }
 
@@ -981,7 +979,6 @@
 .deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved {
 	color: var(--text-muted);
 	opacity: 0.7;
-	border-bottom-style: dashed;
 }
 
 .deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved:hover {
@@ -991,8 +988,7 @@
 /* 用户消息中的内部链接 */
 .deeppdf-message-bubble-user .deeppdf-message-content a.internal-link {
 	color: var(--text-on-accent);
-	text-decoration: underline;
-	text-underline-offset: 2px;
+	text-decoration: none;
 }
 
 .deeppdf-message-bubble-user .deeppdf-message-content a.internal-link:hover {
