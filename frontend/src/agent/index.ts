@@ -96,6 +96,9 @@ export class FrontendAgent {
   ): Promise<string> {
     await this.initialize();
 
+    // 🔄 检查并压缩过大的 MEMORY.md
+    await this.maybeCompressMemory();
+
     // 获取 Skills XML Summary（用于 System Prompt）
     const skillsSummary = this.skillLoader.buildSkillsSummary();
 
@@ -104,6 +107,66 @@ export class FrontendAgent {
       skillsSummary,
       documentMetadata
     );
+  }
+
+  /**
+   * 检查并压缩过大的 MEMORY.md
+   * 在每次构建 System Prompt 时检查，主动触发压缩
+   */
+  private async maybeCompressMemory(): Promise<void> {
+    const needsCompression = await this.memoryStore.needsCompression();
+    if (!needsCompression) return;
+
+    log('[FrontendAgent] 🔄 MEMORY.md 超限，触发主动压缩...');
+
+    // 读取当前记忆内容
+    const currentMemory = await this.memoryStore.readLongTermMemory();
+    if (!currentMemory) return;
+
+    // 使用 LLM 压缩
+    const compressed = await this.compressMemoryWithLLM(currentMemory);
+    if (compressed && compressed.length < currentMemory.length) {
+      await this.memoryStore.writeLongTermMemory(compressed);
+      log(`[FrontendAgent] ✅ MEMORY.md 压缩完成: ${currentMemory.length} -> ${compressed.length} 字符`);
+    }
+  }
+
+  /**
+   * 使用 LLM 压缩记忆（简化版）
+   */
+  private async compressMemoryWithLLM(currentMemory: string): Promise<string | null> {
+    const lineCount = currentMemory.split('\n').length;
+    const charCount = currentMemory.length;
+
+    const prompt = `激进压缩以下长期记忆，目标：100 行以内，8000 字符以内。
+
+## 当前记忆 (${lineCount} 行, ${charCount} 字符)
+${currentMemory}
+
+## 压缩规则（必须严格执行）
+1. **合并重复**：同一概念只保留一次（如"社会中心主义"出现多次 → 只保留一次）
+2. **删除临时状态**：
+   - 删除"正在阅读"、"当前关注"等会过时的状态
+   - 删除过于详细的描述
+3. **极简表达**：
+   - 用关键词替代完整句子
+   - 用"-"列表替代段落
+4. **保持结构**：用户画像/阅读偏好/兴趣主题/阅读习惯
+
+直接返回压缩后的 Markdown 内容，不要任何解释。`;
+
+    try {
+      // 使用非流式调用获取完整响应
+      const response = await this.llmClient.chat([
+        { role: 'system', content: '你是记忆压缩助手。直接返回压缩后的内容，不要解释。' },
+        { role: 'user', content: prompt },
+      ], []);
+
+      return response.content || null;
+    } catch (err) {
+      log('[FrontendAgent] 压缩失败:', err);
+      return null;
+    }
   }
 
   /**

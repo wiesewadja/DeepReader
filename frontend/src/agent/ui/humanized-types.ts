@@ -18,10 +18,8 @@ export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
 	search_doc: 'inspectional',
 	get_chapter: 'analytical',
 	search_read_books: 'syntopical',
-	// 分析阅读工具（规则2-6）
-	outline_structure: 'analytical',
-	find_key_terms: 'analytical',
-	extract_propositions: 'analytical',
+	// 分析阅读工具（合并：术语+论点分析）
+	analyze_chapter: 'analytical',
 	// 辅助工具
 	Skill: 'skill',
 	skill: 'skill',
@@ -113,7 +111,17 @@ export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, cont
 		}
 		return `翻阅章节`;
 	},
-	get_toc: () => '浏览目录结构',
+	get_toc: (args) => {
+		const detail = String(args.detail || 'simple');
+		if (detail === 'simple') return '浏览目录结构';
+		return `分析书籍架构（${detail}）`;
+	},
+	analyze_chapter: (args) => {
+		const type = String(args.type || 'both');
+		if (type === 'terms') return '识别关键术语';
+		if (type === 'propositions') return '提取核心论点';
+		return '分析章节内容';
+	},
 	search_read_books: (args) => `在已读书中查找「${String(args.query || '相关内容').slice(0, 15)}」`,
 	add_memory: () => '记下这个要点',
 	search_memory: () => '回忆之前的内容',

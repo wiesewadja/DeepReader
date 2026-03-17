@@ -46,7 +46,10 @@ const SAVE_MEMORY_TOOL = [
 ];
 
 /** MEMORY.md 最大行数 */
-const MAX_MEMORY_LINES = 200;
+const MAX_MEMORY_LINES = 100;
+
+/** MEMORY.md 最大字符数（约 5000 tokens） */
+const MAX_MEMORY_CHARS = 8000;
 
 /**
  * compress_memory 工具定义
@@ -297,25 +300,28 @@ ${formattedMessages}
 	}
 
 	/**
-	 * 检查并压缩 MEMORY.md（如果超过 200 行）
+	 * 检查并压缩 MEMORY.md（如果超过限制）
 	 */
 	private async maybeCompressMemory(): Promise<void> {
-		const lineCount = await this.store.getMemoryLineCount();
-		agentLog(`[Consolidator] MEMORY.md 当前 ${lineCount} 行`);
+		const currentMemory = await this.store.readLongTermMemory();
+		if (!currentMemory) return;
 
-		if (lineCount <= MAX_MEMORY_LINES) {
+		const lineCount = currentMemory.split('\n').length;
+		const charCount = currentMemory.length;
+
+		agentLog(`[Consolidator] MEMORY.md 当前 ${lineCount} 行, ${charCount} 字符`);
+
+		// 同时检查行数和字符数
+		if (lineCount <= MAX_MEMORY_LINES && charCount <= MAX_MEMORY_CHARS) {
 			return;
 		}
 
-		agentLog(`[Consolidator] 触发压缩: ${lineCount} 行 > ${MAX_MEMORY_LINES} 行`);
-
-		const currentMemory = await this.store.readLongTermMemory();
-		if (!currentMemory) return;
+		agentLog(`[Consolidator] 触发压缩: ${lineCount} 行 / ${charCount} 字符 超限`);
 
 		const compressed = await this.compressMemoryWithLLM(currentMemory);
 		if (compressed) {
 			await this.store.writeLongTermMemory(compressed);
-			agentLog(`[Consolidator] 压缩完成: ${lineCount} 行 -> ${compressed.split('\n').length} 行`);
+			agentLog(`[Consolidator] 压缩完成: ${lineCount} 行 -> ${compressed.split('\n').length} 行, ${charCount} 字符 -> ${compressed.length} 字符`);
 		}
 	}
 
@@ -323,17 +329,24 @@ ${formattedMessages}
 	 * 使用 LLM 压缩记忆
 	 */
 	private async compressMemoryWithLLM(currentMemory: string): Promise<string | null> {
-		const prompt = `压缩以下长期记忆，合并重复条目，保持在 200 行以内。
+		const prompt = `激进压缩以下长期记忆，目标：100 行以内，8000 字符以内。
 
-## 当前记忆
+## 当前记忆 (${currentMemory.split('\n').length} 行, ${currentMemory.length} 字符)
 ${currentMemory}
 
-## 压缩规则
-1. **合并相似特征**：如"政策分析者"、"经济下行研究者"合并为"社会经济研究者"
-2. **删除冗余**：去除意思重复的条目
-3. **保持结构**：保留用户画像/阅读偏好/兴趣主题三个部分
-4. **保留核心**：不要丢失关键信息
-5. **简洁表达**：用短语而非长句
+## 压缩规则（必须严格执行）
+1. **激进合并**：相同概念只保留一次，用逗号连接多个值
+2. **删除冗余**：
+   - 删除"正在阅读"、"当前关注"等临时状态（这些会过时）
+   - 删除重复出现的概念（如"社会中心主义"出现多次 → 只保留一次）
+   - 删除过于详细的描述
+3. **极简表达**：
+   - 用关键词替代完整句子
+   - 用"-"列表替代段落
+4. **保持结构**：用户画像/阅读偏好/兴趣主题/阅读习惯
+
+## 输出格式
+保持 Markdown 格式，但极度精简。
 
 调用 compress_memory 工具返回压缩后的记忆。`;
 

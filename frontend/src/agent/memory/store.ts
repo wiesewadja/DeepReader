@@ -100,15 +100,6 @@ export class MemoryStore {
 	}
 
 	/**
-	 * 检查是否需要压缩
-	 */
-	needsCompression(): boolean {
-		// 这里用同步方式检查（在上次读取后缓存）
-		// 实际压缩会在 consolidator 中异步执行
-		return false; // 由外部调用方决定
-	}
-
-	/**
 	 * 追加历史条目
 	 */
 	async appendHistory(entry: string): Promise<void> {
@@ -308,12 +299,24 @@ export class MemoryStore {
 		}
 	}
 
+	/** MEMORY.md 最大字符数（约 4000 tokens） */
+	static readonly MAX_MEMORY_CHARS = 8000;
+
 	/**
 	 * 获取记忆上下文（用于 System Prompt）
 	 */
 	async getMemoryContext(): Promise<string> {
 		const longTerm = await this.readLongTermMemory();
 		if (longTerm) {
+			// 检查大小
+			const charCount = longTerm.length;
+			const lineCount = longTerm.split('\n').length;
+
+			if (charCount > MemoryStore.MAX_MEMORY_CHARS) {
+				agentLog(`[MemoryStore] ⚠️ MEMORY.md 过大: ${charCount} 字符, ${lineCount} 行 (限制: ${MemoryStore.MAX_MEMORY_CHARS} 字符)`);
+				agentLog(`[MemoryStore] ⚠️ 建议: 发送一条消息触发压缩，或手动精简 MEMORY.md`);
+			}
+
 			// 移除 frontmatter、标题和冗余说明
 			const content = longTerm
 				.replace(/^---[\s\S]*?---\n/, '')
@@ -325,6 +328,15 @@ export class MemoryStore {
 			return `## 长期记忆\n\n${content.trim()}`;
 		}
 		return '';
+	}
+
+	/**
+	 * 检查 MEMORY.md 是否需要压缩
+	 */
+	async needsCompression(): Promise<boolean> {
+		const content = await this.readLongTermMemory();
+		if (!content) return false;
+		return content.length > MemoryStore.MAX_MEMORY_CHARS;
 	}
 
 	/**
