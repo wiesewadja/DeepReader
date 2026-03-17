@@ -4,6 +4,7 @@
  */
 
 import { apiLog as log, error as logError } from '../utils/logger.js';
+import { getDebugLogger } from '../agent/debug/index.js';
 
 // ==================== 类型定义 ====================
 
@@ -512,6 +513,8 @@ export interface ExportNodeData {
   end_index: number | string;
   level: number;
   text: string;
+  summary?: string;  // 章节摘要（LLM 生成）
+  parent_id?: string;  // 父节点 ID
 }
 
 export interface ExportIndexResponse {
@@ -550,10 +553,20 @@ export class DeepPDFClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const method = options.method || 'GET';
-    const timerId = `api:${endpoint}`;
 
     log(`[HTTP] ${method} ${endpoint}`);
     const startTime = performance.now();
+
+    // 🐛 调试日志：记录请求
+    const debugLogger = getDebugLogger();
+    let requestBody: unknown = undefined;
+    if (options.body) {
+      try {
+        requestBody = JSON.parse(options.body as string);
+      } catch {
+        requestBody = options.body;
+      }
+    }
 
     try {
       const response = await fetch(url, options);
@@ -562,11 +575,34 @@ export class DeepPDFClient {
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Request failed' }));
         logError(`[HTTP] ${method} ${endpoint} 失败 (${response.status}):`, error.detail || error.message);
+
+        // 🐛 调试日志：记录失败响应
+        debugLogger?.logBackendCall({
+          url,
+          method,
+          requestBody,
+          responseStatus: response.status,
+          responseBody: error,
+          duration,
+        });
+
         throw new Error(error.detail || error.message || 'Request failed');
       }
 
+      const result = await response.json();
       log(`[HTTP] ${method} ${endpoint} 成功 (${duration.toFixed(0)}ms)`);
-      return response.json();
+
+      // 🐛 调试日志：记录成功响应
+      debugLogger?.logBackendCall({
+        url,
+        method,
+        requestBody,
+        responseStatus: response.status,
+        responseBody: result,
+        duration,
+      });
+
+      return result;
     } catch (e) {
       const duration = performance.now() - startTime;
       logError(`[HTTP] ${method} ${endpoint} 异常 (${duration.toFixed(0)}ms):`, e);

@@ -16,6 +16,7 @@ export { runAgentLoop } from './agent-loop.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
 export { dumpSystemPrompt, quickDump } from './debug/system-prompt-dump.js';
+export { initDebugLogger, getDebugLogger, DEBUG_LOG_ENABLED } from './debug/index.js';
 export type { AgentLoopOptions } from './agent-loop.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
@@ -38,6 +39,7 @@ import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
 import { agentLog as log } from '../utils/logger.js';
+import { initDebugLogger } from './debug/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -71,6 +73,11 @@ export class FrontendAgent {
       deepReaderDir: 'DeepReader',
     });
     this.intentRouter = new IntentRouter();
+
+    // 🐛 初始化调试日志器
+    initDebugLogger(options.app, {
+      logDir: 'debug-logs',
+    });
   }
 
   async initialize(): Promise<void> {

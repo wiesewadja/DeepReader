@@ -71,6 +71,20 @@ export class LLMClient {
   }
 
   /**
+   * 获取 API URL（供调试日志使用）
+   */
+  getApiUrl(): string {
+    return `${this.baseUrl}/chat/completions`;
+  }
+
+  /**
+   * 获取模型名称（供调试日志使用）
+   */
+  getModel(): string {
+    return this.model;
+  }
+
+  /**
    * 流式聊天，支持 Tool Calling
    * @param messages 对话消息列表
    * @param tools 可用的工具定义

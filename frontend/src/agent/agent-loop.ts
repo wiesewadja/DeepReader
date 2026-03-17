@@ -17,6 +17,7 @@ import {
 } from './utils/link-validator.js';
 import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
 import type { HumanizedProgress } from './ui/humanized-types.js';
+import { getDebugLogger } from './debug/index.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../utils/logger';
@@ -308,6 +309,15 @@ export async function runAgentLoop(
     options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
   }
 
+  // 🐛 调试日志：开始会话
+  const debugLogger = getDebugLogger();
+  if (debugLogger?.isEnabled()) {
+    const fullQuestion = typeof userQuestion?.content === 'string'
+      ? userQuestion.content
+      : '(复杂内容)';
+    await debugLogger.startSession(fullQuestion);
+  }
+
   while (iterations < maxIterations) {
     // 检查是否被取消
     if (options.abortSignal?.aborted) {
@@ -323,6 +333,10 @@ export async function runAgentLoop(
 
     iterations++;
     const iterationStartTime = Date.now();
+
+    // 🐛 调试日志：开始迭代
+    debugLogger?.startIteration(iterations);
+    debugLogger?.logMessages(workingMessages);
 
     // 更新拟人化状态
     if (humanizer) {
@@ -341,6 +355,26 @@ export async function runAgentLoop(
     // 🕐 调用 LLM（流式）- 记录耗时
     const llmStartTime = Date.now();
     agentLog(`[AgentLoop] 🤖 开始调用 LLM...`);
+
+    // 🐛 调试日志：记录 LLM 请求
+    const systemMsg = workingMessages.find(m => m.role === 'system');
+    if (systemMsg) {
+      debugLogger?.logSystemPrompt(typeof systemMsg.content === 'string' ? systemMsg.content : '');
+    }
+    debugLogger?.logLLMRequest({
+      url: client.getApiUrl(),
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ***', // 掩码
+      },
+      body: {
+        model: client.getModel(),
+        messages: workingMessages,
+        tools: tools,
+        stream: true,
+      },
+    });
 
     await new Promise<void>((resolve) => {
       client.streamChat(
@@ -386,6 +420,21 @@ export async function runAgentLoop(
     const llmDuration = Date.now() - llmStartTime;
     llmTotalTime += llmDuration;
     agentLog(`[AgentLoop] 🤖 LLM 响应完成: ${formatDuration(llmDuration)}, finishReason=${finishReason}`);
+
+    // 🐛 调试日志：记录 LLM 响应
+    debugLogger?.logLLMResponse({
+      metadata: {
+        model: client.getModel(),
+        finishReason: finishReason || 'stop',
+        ttfb: llmDuration,
+      },
+      content: accumulatedContent,
+      toolCalls: toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.parse(tc.arguments),
+      })),
+    });
 
     // 如果没有 tool_calls，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
@@ -495,6 +544,9 @@ export async function runAgentLoop(
           args = {};
         }
 
+        // 🐛 调试日志：工具开始
+        debugLogger?.logToolStart(tc.id, tc.name, args);
+
         try {
           // 工具执行（带重试机制）
           let result: string | null = null;
@@ -521,6 +573,9 @@ export async function runAgentLoop(
           const duration = Date.now() - toolStartTime;
           const resultLength = result.length;
 
+          // 🐛 调试日志：工具结果
+          debugLogger?.logToolResult(tc.id, result, duration);
+
           return {
             success: true,
             toolCallId: tc.id,
@@ -533,6 +588,9 @@ export async function runAgentLoop(
         } catch (error) {
           const duration = Date.now() - toolStartTime;
           const errorMsg = error instanceof Error ? error.message : String(error);
+
+          // 🐛 调试日志：工具错误
+          debugLogger?.logToolError(tc.id, errorMsg, duration);
 
           return {
             success: false,
@@ -618,6 +676,15 @@ export async function runAgentLoop(
     const iterationDuration = Date.now() - iterationStartTime;
     agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)} (并行执行 ${toolCalls.length} 个工具)`);
     agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
+
+    // 🐛 调试日志：结束迭代
+    await debugLogger?.endIteration({
+      duration: iterationDuration,
+      llmDuration: llmDuration,
+      toolsDuration: toolsDuration,
+      tokenStart: startTokens,
+      tokenEnd: estimateTokens(workingMessages),
+    });
 
     // 🔄 循环内压缩： 当 token 超过阈值时，提前压缩以保持上下文大小可控
     const currentTokens = estimateTokens(workingMessages);
@@ -716,6 +783,9 @@ export async function runAgentLoop(
     userQuestion: questionText,
   };
   printPerformanceReport(metrics);
+
+  // 🐛 调试日志：结束会话
+  await debugLogger?.endSession();
 
   // 🧹 Memory GC: 清理中间消息，只保留用户对话
   const compactedMessages = compactMessages(workingMessages);
