@@ -13,17 +13,21 @@ export interface QuestionMinimapProps {
 }
 
 /**
- * Minimap 块数据
+ * 对话组数据（问题 + 回答）
  */
-export interface MinimapBlock {
-	id: string;
-	role: 'user' | 'assistant';
-	/** 块在 minimap 中的 Y 位置（像素） */
-	top: number;
-	/** 块的高度 */
-	height: number;
-	/** tooltip 内容（仅用户消息） */
-	tooltipContent?: string;
+interface ConversationGroup {
+	/** 用户消息 ID */
+	userId: string;
+	/** 用户块位置 */
+	userTop: number;
+	/** 用户块高度 */
+	userHeight: number;
+	/** 整个组的位置（从用户块到下一个用户块之前） */
+	groupTop: number;
+	/** 整个组的高度 */
+	groupHeight: number;
+	/** tooltip 内容 */
+	tooltipContent: string;
 }
 
 // 常量定义
@@ -37,7 +41,7 @@ const AI_BLOCK_HEIGHT = 6;
 export class QuestionMinimap extends Component {
 	private props: QuestionMinimapProps;
 	private messages: MessageData[] = [];
-	private blocks: MinimapBlock[] = [];
+	private groups: ConversationGroup[] = [];
 	private trackEl: HTMLElement | null = null;
 	private viewportEl: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
@@ -99,16 +103,15 @@ export class QuestionMinimap extends Component {
 	 */
 	updateMessages(messages: MessageData[]): void {
 		this.messages = messages.filter(m => !m.hidden);
-		this.calculateBlocks();
+		this.calculateGroups();
 		this.renderBlocks();
-		// 更新视口位置
 		this.updateViewportPosition();
 	}
 
 	/**
-	 * 计算块位置
+	 * 计算对话组位置
 	 */
-	private calculateBlocks(): void {
+	private calculateGroups(): void {
 		if (!this.trackEl) return;
 
 		const minimapHeight = this.trackEl.clientHeight;
@@ -116,35 +119,59 @@ export class QuestionMinimap extends Component {
 
 		if (containerScrollHeight === 0 || minimapHeight === 0) return;
 
-		this.blocks = [];
+		this.groups = [];
 
-		for (const msg of this.messages) {
-			const msgEl = this.props.containerEl.querySelector(
-				`[data-message-id="${msg.id}"]`
+		// 找出所有用户消息的索引
+		const userIndices: number[] = [];
+		this.messages.forEach((msg, idx) => {
+			if (msg.role === 'user') {
+				userIndices.push(idx);
+			}
+		});
+
+		// 为每个用户消息创建对话组
+		for (let i = 0; i < userIndices.length; i++) {
+			const userIdx = userIndices[i];
+			const userMsg = this.messages[userIdx];
+			const nextUserIdx = userIndices[i + 1];
+
+			// 获取用户消息元素
+			const userEl = this.props.containerEl.querySelector(
+				`[data-message-id="${userMsg.id}"]`
 			) as HTMLElement;
 
-			if (!msgEl) continue;
+			if (!userEl) continue;
 
-			const msgTop = msgEl.offsetTop;
-			const msgHeight = msgEl.offsetHeight;
+			const userTop = userEl.offsetTop;
+			const userHeight = userEl.offsetHeight;
+
+			// 计算组的结束位置（下一个用户消息之前，或者到末尾）
+			let groupEndTop = containerScrollHeight;
+			if (nextUserIdx !== undefined) {
+				const nextUserMsg = this.messages[nextUserIdx];
+				const nextUserEl = this.props.containerEl.querySelector(
+					`[data-message-id="${nextUserMsg.id}"]`
+				) as HTMLElement;
+				if (nextUserEl) {
+					groupEndTop = nextUserEl.offsetTop;
+				}
+			}
+
+			const groupHeight = groupEndTop - userTop;
 
 			// 按比例计算位置
-			const topPercent = msgTop / containerScrollHeight;
-			const heightPercent = msgHeight / containerScrollHeight;
+			const userTopPercent = userTop / containerScrollHeight;
+			const groupTopPercent = userTop / containerScrollHeight;
+			const groupHeightPercent = groupHeight / containerScrollHeight;
+			const userHeightPercent = userHeight / containerScrollHeight;
 
-			const top = topPercent * minimapHeight;
-			const height = Math.max(
-				heightPercent * minimapHeight,
-				msg.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT
-			);
-
-			this.blocks.push({
-				id: msg.id,
-				role: msg.role,
-				top,
-				height,
-				tooltipContent:
-					msg.role === 'user' ? this.truncateText(msg.content, 50) : undefined,
+			this.groups.push({
+				userId: userMsg.id,
+				userTop: userTopPercent * minimapHeight,
+				userHeight: Math.max(userHeightPercent * minimapHeight, USER_BLOCK_HEIGHT),
+				groupTop: groupTopPercent * minimapHeight,
+				groupHeight: Math.max(groupHeightPercent * minimapHeight, USER_BLOCK_HEIGHT),
+				tooltipContent: this.truncateText(userMsg.content, 50),
 			});
 		}
 	}
@@ -158,55 +185,68 @@ export class QuestionMinimap extends Component {
 		// 清空现有块
 		this.trackEl.empty();
 
-		for (const block of this.blocks) {
-			const blockEl = this.trackEl.createEl('div', {
-				cls: `deeppdf-minimap-block deeppdf-minimap-block-${block.role}`,
+		for (const group of this.groups) {
+			// 1. 创建整个对话组的交互层（透明，覆盖问题+回答）
+			const groupHitArea = this.trackEl.createEl('div', {
+				cls: 'deeppdf-minimap-group-hitarea',
 				attr: {
-					'data-message-id': block.id,
+					'data-message-id': group.userId,
 				},
 			});
+			groupHitArea.style.top = `${group.groupTop}px`;
+			groupHitArea.style.height = `${group.groupHeight}px`;
 
-			// 设置位置和高度
-			blockEl.style.top = `${block.top}px`;
-			blockEl.style.height = `${block.height}px`;
+			// 绑定 tooltip 事件到整个组
+			groupHitArea.addEventListener('mouseenter', (e) => {
+				this.showTooltip(group.tooltipContent, e);
+			});
+			groupHitArea.addEventListener('mousemove', (e) => {
+				this.updateTooltipPosition(e);
+			});
+			groupHitArea.addEventListener('mouseleave', () => {
+				this.hideTooltip();
+			});
 
-			// 用户块可交互
-			if (block.role === 'user') {
-				blockEl.setAttribute('role', 'button');
-				blockEl.setAttribute('tabindex', '0');
-				blockEl.setAttribute(
-					'aria-label',
-					`跳转到：${block.tooltipContent}`
-				);
+			// 点击跳转
+			groupHitArea.addEventListener('click', (e) => {
+				e.stopPropagation();
+				this.hideTooltip();
+				this.props.onMessageClick(group.userId);
+			});
 
-				// hover 显示 tooltip
-				blockEl.addEventListener('mouseenter', (e) => {
-					this.showTooltip(block.tooltipContent || '', e);
-				});
+			// 2. 渲染用户块（高亮显示）
+			const userBlock = this.trackEl.createEl('div', {
+				cls: 'deeppdf-minimap-block deeppdf-minimap-block-user',
+				attr: {
+					'data-message-id': group.userId,
+					role: 'button',
+					tabindex: '0',
+					'aria-label': `跳转到：${group.tooltipContent}`,
+				},
+			});
+			userBlock.style.top = `${group.userTop}px`;
+			userBlock.style.height = `${group.userHeight}px`;
 
-				blockEl.addEventListener('mousemove', (e) => {
-					this.updateTooltipPosition(e);
-				});
-
-				blockEl.addEventListener('mouseleave', () => {
+			// 键盘支持
+			userBlock.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
 					this.hideTooltip();
-				});
+					this.props.onMessageClick(group.userId);
+				}
+			});
 
-				// 点击跳转
-				blockEl.addEventListener('click', (e) => {
-					e.stopPropagation();
-					this.hideTooltip();
-					this.props.onMessageClick(block.id);
-				});
+			// 3. 渲染 AI 块（如果有）
+			// AI 块的位置是从用户块下方到组结束
+			const aiBlockTop = group.userTop + group.userHeight;
+			const aiBlockHeight = group.groupHeight - group.userHeight;
 
-				// 键盘支持
-				blockEl.addEventListener('keydown', (e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						this.hideTooltip();
-						this.props.onMessageClick(block.id);
-					}
+			if (aiBlockHeight > 2) {
+				const aiBlock = this.trackEl.createEl('div', {
+					cls: 'deeppdf-minimap-block deeppdf-minimap-block-assistant',
 				});
+				aiBlock.style.top = `${aiBlockTop}px`;
+				aiBlock.style.height = `${aiBlockHeight}px`;
 			}
 		}
 	}
@@ -252,7 +292,6 @@ export class QuestionMinimap extends Component {
 	private updateTooltipPosition(event: MouseEvent): void {
 		if (!this.tooltipEl) return;
 
-		// 获取 minimap 的位置
 		const minimapRect = this.el?.getBoundingClientRect();
 		if (!minimapRect) return;
 
@@ -284,11 +323,9 @@ export class QuestionMinimap extends Component {
 	 * 销毁组件
 	 */
 	override destroy(): void {
-		// 移除滚动监听
 		if (this.scrollHandler) {
 			this.props.containerEl.removeEventListener('scroll', this.scrollHandler);
 		}
-		// 移除 tooltip
 		if (this.tooltipEl && this.tooltipEl.parentNode) {
 			this.tooltipEl.parentNode.removeChild(this.tooltipEl);
 		}

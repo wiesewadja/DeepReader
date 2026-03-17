@@ -25,6 +25,23 @@
 	width: 100%;
 }
 
+/* ==================== 对话组交互层 ==================== */
+
+.deeppdf-minimap-group-hitarea {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	cursor: pointer;
+	/* 透明但可交互 */
+	background: transparent;
+	z-index: 2;
+}
+
+.deeppdf-minimap-group-hitarea:hover {
+	/* hover 时显示轻微背景 */
+	background: var(--background-modifier-hover);
+}
+
 /* ==================== 消息块 ==================== */
 
 .deeppdf-minimap-block {
@@ -33,6 +50,8 @@
 	width: calc(100% - 4px);
 	border-radius: 2px;
 	transition: all 0.15s ease;
+	/* 块在交互层下方 */
+	z-index: 1;
 }
 
 /* 用户消息块 - 突出显示 */
