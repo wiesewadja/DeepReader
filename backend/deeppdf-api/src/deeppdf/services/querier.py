@@ -317,6 +317,7 @@ def _query_pdf_sync(
                 "pdf_path": index_metadata.get("pdf_path", ""),
                 "node_count": index_metadata.get("node_count", 0),
                 "created_at": index_metadata.get("created_at", ""),
+                "doc_description": index_metadata.get("doc_description", ""),  # 全书摘要
             },
             "search_method": hybrid_result["method"],
         }
@@ -496,5 +497,6 @@ async def _query_with_llm_tree_search(
             "pdf_path": index_metadata.get("pdf_path", ""),
             "node_count": index_metadata.get("node_count", 0),
             "created_at": index_metadata.get("created_at", ""),
+            "doc_description": index_metadata.get("doc_description", ""),  # 全书摘要
         },
     }

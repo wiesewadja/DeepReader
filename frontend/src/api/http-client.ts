@@ -222,6 +222,7 @@ export interface QueryIndexInfo {
   pdf_path: string;
   node_count: number;
   created_at: string;
+  doc_description?: string;  // 全书摘要
 }
 
 export interface QueryPDFResult {
