@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     pdf_index_max_tokens_per_node: int = 20000
     pdf_index_if_add_node_summary: bool = False  # 是否生成章节摘要（默认关闭，耗时较长）
     pdf_index_if_add_node_text: bool = True
-    pdf_index_if_add_doc_description: bool = False
+    pdf_index_if_add_doc_description: bool = True  # 是否生成全书摘要（默认开启，用于宏观检索）
     pdf_index_format_text_with_llm: bool = False  # 是否用 LLM 格式化文本（默认关闭，耗时较长）
 
     # 并发配置

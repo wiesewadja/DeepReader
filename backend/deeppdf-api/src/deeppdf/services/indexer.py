@@ -591,10 +591,12 @@ def _setup_pageindex_config(
         ),
         "if_add_node_text": config["if_add_node_text"],
         "if_add_node_id": config["if_add_node_id"],
+        "if_add_doc_description": (
+            "yes" if config.get("if_add_node_description", False) else "no"
+        ),
         "format_text_with_llm": (
             "yes" if config.get("format_text_with_llm", False) else "no"
         ),
-        # Note: if_add_node_description is not supported by PageIndex
         "toc_check_page_num": config["toc_check_pages"],
         "max_page_num_each_node": config["max_pages_per_node"],
         "max_token_num_each_node": config["max_tokens_per_node"],

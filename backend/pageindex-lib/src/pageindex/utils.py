@@ -843,14 +843,14 @@ async def _generate_container_summary(node: Dict[str, Any], llm_client=None) -> 
 
 def generate_doc_description(structure, llm_client=None):
     """
-    生成文档描述
+    生成文档描述（全书摘要）
 
     参数:
-        structure: 文档结构
+        structure: 文档结构（已清理，只包含 title 和 summary）
         llm_client: LLM 客户端
 
     返回:
-        文档描述文本
+        文档描述文本（300-500 字，包含书籍类型标识）
 
     异常:
         ValueError: 如果 llm_client 为 None
@@ -858,17 +858,38 @@ def generate_doc_description(structure, llm_client=None):
     使用示例:
         >>> desc = generate_doc_description(tree, llm_client)
         >>> print(desc)
-        "这是一本关于..."
+        "【商业思维类】本书系统阐述了..."
     """
-    prompt = f"""Your are an expert in generating descriptions for a document.
-    You are given a structure of a document. Your task is to generate a one-sentence description for the document, which makes it easy to distinguish the document from other documents.
+    prompt = f"""你是一位专业的图书编辑，擅长撰写书籍简介。
 
-    Document Structure: {structure}
+请根据以下文档的章节结构，生成一段 300-500 字的书籍摘要。
 
-    Directly return the description, do not include any other text.
-    """
-    # 添加上下文信息
-    response = llm_client.chat(prompt, context="文档描述生成")
+## 要求
+1. **标识书籍类型**：开头用【】标注书籍类型，如：
+   - 【商业思维类】（如：战略思维、管理、营销）
+   - 【技术教程类】（如：编程、数据科学、工程）
+   - 【人文社科类】（如：历史、哲学、社会学）
+   - 【文学艺术类】（如：小说、散文、艺术理论）
+   - 【自然科学类】（如：物理、生物、心理学）
+   - 【自我提升类】（如：时间管理、沟通技巧、学习方法）
+   - 【工具参考类】（如：词典、手册、指南）
+   - 其他适当类型
+
+2. **内容要求**：
+   - 概括书籍的核心主题和主旨
+   - 介绍主要框架、方法或观点
+   - 说明目标读者群体
+   - 提及作者的独特视角或贡献（如有）
+
+3. **格式要求**：
+   - 直接输出摘要内容，不要包含"摘要："等前缀
+   - 语言简洁专业，避免过度营销语气
+
+## 文档章节结构
+
+{structure}
+"""
+    response = llm_client.chat(prompt, context="全书摘要生成")
     return response
 
 
