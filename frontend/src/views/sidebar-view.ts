@@ -126,6 +126,9 @@ export class SidebarView extends ItemView {
     /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
     private currentMarkdownFiles: Record<string, string> = {};
 
+    /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
+    private currentDocDescription: string | null = null;
+
     /** 前端 Agent 对话历史 */
     private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
 
@@ -798,6 +801,24 @@ export class SidebarView extends ItemView {
         } catch (e) {
             logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
             this.currentMarkdownFiles = {};
+        }
+
+        // === 获取全书摘要（doc_description）===
+        try {
+            if (this.apiClient && indexId) {
+                // 通过轻量级查询获取索引元数据（包含 doc_description）
+                const queryResult = await this.apiClient.queryPDF('', indexId, 1, false);
+                if (queryResult.index_info?.doc_description) {
+                    this.currentDocDescription = queryResult.index_info.doc_description;
+                    log('[DeepPDF] 获取到全书摘要，长度:', this.currentDocDescription.length);
+                } else {
+                    this.currentDocDescription = null;
+                    log('[DeepPDF] 索引没有 doc_description 字段');
+                }
+            }
+        } catch (e) {
+            logError('[DeepPDF] 获取 doc_description 失败:', e);
+            this.currentDocDescription = null;
         }
 
         // 注意：章节下载逻辑已移至 library-modal.ts
@@ -1793,6 +1814,8 @@ export class SidebarView extends ItemView {
                 documentMetadata: {
                     title: this.currentPdfName || '未知文档',
                 },
+                // 添加全书摘要（用于系统提示）
+                docDescription: this.currentDocDescription || undefined,
             };
 
             // 加载阅读进度

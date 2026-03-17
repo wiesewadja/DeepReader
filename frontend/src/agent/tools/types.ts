@@ -51,6 +51,8 @@ export interface ToolContext {
     page_count?: number;
     author?: string;
   };
+  /** 全书摘要（由路由器生成，用于注入系统提示） */
+  docDescription?: string;
 }
 
 /**

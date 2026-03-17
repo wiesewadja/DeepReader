@@ -32,7 +32,8 @@ import { createToolRegistry, getToolDefinitions } from './tools/index.js';
 import { runAgentLoop } from './agent-loop.js';
 import { SubagentManager } from './subagent/manager.js';
 import { setSubagentManager } from './tools/create-sub-agent.js';
-import type { ChatMessage } from './types.js';
+import { IntentRouter } from './router/index.js';
+import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
 import { agentLog as log } from '../utils/logger.js';
@@ -52,6 +53,7 @@ export class FrontendAgent {
   private contextLoader: ContextLoader;
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
+  private intentRouter: IntentRouter;
   private initialized = false;
 
   constructor(private options: FrontendAgentOptions) {
@@ -67,6 +69,7 @@ export class FrontendAgent {
     this.contextBuilder = new ContextBuilder(options.app, this.memoryStore, {
       deepReaderDir: 'DeepReader',
     });
+    this.intentRouter = new IntentRouter();
   }
 
   async initialize(): Promise<void> {
@@ -92,7 +95,8 @@ export class FrontendAgent {
    * 注意：Tools 通过 Function Calling API 传递，不在 System Prompt 中
    */
   async getSystemPromptAsync(
-    documentMetadata?: DocumentMetadata
+    documentMetadata?: DocumentMetadata,
+    docDescription?: string
   ): Promise<string> {
     await this.initialize();
 
@@ -105,7 +109,8 @@ export class FrontendAgent {
     // Tools 不再放在 System Prompt 中，仅通过 Function Calling API 传递
     return this.contextBuilder.buildSystemPrompt(
       skillsSummary,
-      documentMetadata
+      documentMetadata,
+      docDescription
     );
   }
 
@@ -177,14 +182,16 @@ ${currentMemory}
     history: ChatMessage[],
     userMessage: string,
     metadata?: DocumentMetadata,
-    progress?: ReadingProgress
+    progress?: ReadingProgress,
+    systemNote?: string
   ): ChatMessage[] {
     return ContextBuilder.buildMessagesWithMetadata(
       systemPrompt,
       history,
       userMessage,
       metadata,
-      progress
+      progress,
+      systemNote
     );
   }
 
@@ -195,22 +202,31 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 使用 ContextBuilder 构建系统提示
-    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata);
+    // 1. 意图路由
+    const intentResult = this.intentRouter.analyze(userMessage);
+    log('[Router] 检测意图:', intentResult.detectedIntents);
+    log('[Router] 允许工具:', intentResult.allowedTools);
 
+    // 2. 过滤工具定义
     const toolRegistry = createToolRegistry(this.skillLoader, context);
-    const tools = getToolDefinitions(toolRegistry);
+    const allTools = getToolDefinitions(toolRegistry);
+    const filteredTools = this.filterToolDefinitions(allTools, intentResult.allowedTools);
 
-    // 构建消息（带运行时上下文）
+    // 3. 构建系统提示（注入 docDescription）
+    const docDescription = context.docDescription;
+    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata, docDescription);
+
+    // 4. 构建消息列表（注入 systemNote）
     const messages = this.buildMessages(
       systemPrompt,
       [],
       userMessage,
       context.documentMetadata,
-      context.readingProgress
+      context.readingProgress,
+      intentResult.systemNote
     );
 
-    return runAgentLoop(this.llmClient, messages, tools, toolRegistry, context, callbacks);
+    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, callbacks);
   }
 
   async continueChat(
@@ -221,22 +237,41 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 使用 ContextBuilder 构建系统提示
-    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata);
+    // 1. 意图路由
+    const intentResult = this.intentRouter.analyze(userMessage);
+    log('[Router] 检测意图:', intentResult.detectedIntents);
+    log('[Router] 允许工具:', intentResult.allowedTools);
 
+    // 2. 过滤工具定义
     const toolRegistry = createToolRegistry(this.skillLoader, context);
-    const tools = getToolDefinitions(toolRegistry);
+    const allTools = getToolDefinitions(toolRegistry);
+    const filteredTools = this.filterToolDefinitions(allTools, intentResult.allowedTools);
 
-    // 构建消息（带运行时上下文）
+    // 3. 构建系统提示（注入 docDescription）
+    const docDescription = context.docDescription;
+    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata, docDescription);
+
+    // 4. 构建消息列表（注入 systemNote）
     const messages = this.buildMessages(
       systemPrompt,
       history,
       userMessage,
       context.documentMetadata,
-      context.readingProgress
+      context.readingProgress,
+      intentResult.systemNote
     );
 
-    return runAgentLoop(this.llmClient, messages, tools, toolRegistry, context, callbacks);
+    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, callbacks);
+  }
+
+  /**
+   * 过滤工具定义，只保留允许的工具
+   */
+  private filterToolDefinitions(
+    allTools: ToolDefinition[],
+    allowed: string[]
+  ): ToolDefinition[] {
+    return allTools.filter(tool => allowed.includes(tool.function.name));
   }
 
   async reloadSkills(): Promise<void> {

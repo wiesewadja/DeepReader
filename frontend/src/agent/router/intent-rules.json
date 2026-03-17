@@ -1,0 +1,46 @@
+{
+  "version": "1.0",
+  "description": "基于《如何阅读一本书》的意图路由规则",
+
+  "rules": [
+    {
+      "id": "macro_overview",
+      "pattern": "总结|大纲|概括|全书|核心观点|讲了什么|总体结构|主旨|脉络|框架|读后感|核心思想|思维导图|脑图",
+      "intent": "检视阅读",
+      "tools": ["get_toc"],
+      "priority": 1
+    },
+    {
+      "id": "locate_chapter",
+      "pattern": "第[0-9一二三四五六七八九十百]+[章|节|部分|页]|引言|结语|附录|前言",
+      "intent": "分析阅读-定位",
+      "tools": ["get_toc", "get_chapter", "analyze_chapter"],
+      "priority": 2
+    },
+    {
+      "id": "syntopical",
+      "pattern": "对比|结合|另一本|异同|其他书|不同文献|主题阅读|联系起来|比较",
+      "intent": "主题阅读",
+      "tools": ["search_read_books"],
+      "priority": 1
+    },
+    {
+      "id": "action_output",
+      "pattern": "画一个|画张|做个图|制作.*图表|总结成表格|做.*卡片|闪卡|写.*笔记|思维导图",
+      "intent": "动作输出",
+      "tools": ["excalidraw", "write_note", "canvas"],
+      "priority": 3
+    }
+  ],
+
+  "fallback": {
+    "intent": "分析阅读-微观检索",
+    "tools": ["search_doc"]
+  },
+
+  "tool_aliases": {
+    "toc": "get_toc",
+    "chapter": "get_chapter",
+    "search": "search_doc"
+  }
+}

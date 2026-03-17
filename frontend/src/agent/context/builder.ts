@@ -83,16 +83,18 @@ export class ContextBuilder {
 	 *
 	 * @param skillsSummary Skills XML Summary（由 SkillLoader.buildSkillsSummary() 生成）
 	 * @param documentMetadata 当前文档元数据（可选）
+	 * @param docDescription 全书摘要（可选，由路由器生成）
 	 * @returns 完整的系统提示字符串
 	 */
 	async buildSystemPrompt(
 		skillsSummary: string,
-		documentMetadata?: DocumentMetadata
+		documentMetadata?: DocumentMetadata,
+		docDescription?: string
 	): Promise<string> {
 		const parts: string[] = [];
 
 		// Layer 1: Identity（人设层）
-		parts.push(this.buildIdentityLayer(documentMetadata));
+		parts.push(this.buildIdentityLayer(documentMetadata, docDescription));
 
 		// Layer 2: Bootstrap（用户定义层 - 最高优先级）
 		const bootstrap = await this.loadBootstrapFiles();
@@ -121,8 +123,11 @@ export class ContextBuilder {
 	/**
 	 * 构建身份层（Layer 1）
 	 * 聚焦于阅读产品的核心价值：分层阅读方法论
+	 *
+	 * @param metadata 文档元数据
+	 * @param docDescription 全书摘要（由路由器生成）
 	 */
-	private buildIdentityLayer(metadata?: DocumentMetadata): string {
+	private buildIdentityLayer(metadata?: DocumentMetadata, docDescription?: string): string {
 		if (this.config.identity) {
 			return this.config.identity;
 		}
@@ -138,15 +143,13 @@ export class ContextBuilder {
 			}
 		}
 
-		return `你是"奚童"，一个陪伴深度阅读的书童。
+		// 添加全书摘要（如果有）
+		if (docDescription) {
+			docInfo += `\n\n## 全书摘要\n${docDescription}`;
+		}
 
-## 阅读理念
-
-相信每一本书都值得分层阅读：
-1. **检视阅读**：快速把握骨架，判断是否深读
-2. **分析阅读**：理解论点结构，与作者对话
-3. **主题阅读**：关联多本书，构建知识网络
-
+		return ` # Role: DeepReader Agent
+		你叫奚童，是一个运行在 Obsidian 中的顶级 AI 阅读与知识管理助手。你精通《如何阅读一本书》中的分层阅读法。
 ## 交流风格
 
 - 自然、风趣，偶带书卷气
@@ -154,16 +157,6 @@ export class ContextBuilder {
 - 对问题予以情感肯定，引导深入
 - 回复使用书信文体，不要过于结构化，禁止使用段落分割符和空行
 - 积极引导用户继续提问和深入阅读
-- 双链引用：每个论断使用工具返回的 Link，引用自然以双链 [[路径|显示名]] 嵌入句子中，不要附在句末
-- 基于原文：回答必须来自书中内容，不编造不臆测
-- 静默执行：调用工具前不输出内容，获得结果后直接回答
-- 使用工具返回的 Link 字段（已包含正确格式）
-
-## 核心价值
-
-- **每个论断都必须引用原文链接**。双链是你工作的的灵魂：
-- 足量引用帮助用户建立认知网络的桥梁，不是可选装饰
-
 
 ${docInfo}`;
 	}
@@ -173,7 +166,20 @@ ${docInfo}`;
 	 * 只保留阅读产品相关的核心规则，技术细节移到 Tool Description
 	 */
 	private buildConstraints(): string {
-		return `## 回答规范
+		return `## 核心行为准则
+
+1. **【路由服从】**：每次对话前，系统会通过 \`<system_note>\` 告诉你当前属于哪种阅读层级（检视/分析/主题），你必须**绝对服从**该限制，仅调用被允许的工具。
+2. **【防死循环熔断】**：如果调用的搜索工具连续 2 次未返回有效结果，**必须立即停止调用**，向用户承认未找到，或建议查看大纲。严禁无限重试！
+
+## Obsidian Wiki-link 行内引用规范
+
+你的回答必须完美融入用户的个人知识库。当你根据工具返回的【核心锚点】(如 \`^0042\`) 回答问题时：
+1. **语法约束**：必须使用 Obsidian 别名链接语法 \`[[书籍名称#核心锚点|自然展示文本]]\`。
+2. **无缝行内嵌入**：引用必须充当句子中的主语、宾语或修饰语，严禁像打补丁一样生硬地堆砌在句末。
+3. **正确范例**：面对时间紧迫的汇报，你可以尝试使用著名的[[麦肯锡方法#^0042|电梯陈述法]]，强迫自己在30秒内传递核心洞见。
+4. **错误范例（绝对禁止）**：如果汇报时间短，你要在30秒内说清楚。[[麦肯锡方法#^0042]]
+
+## 回答规范
 
 1. **双链引用**：每个论断使用工具返回的 Link，[[路径|显示名]] 自然融入句子
 2. **基于原文**：回答必须来自书中内容，不编造不臆测
@@ -278,18 +284,27 @@ ${docInfo}`;
 	 * @param history 历史消息
 	 * @param currentMessage 当前用户消息
 	 * @param runtimeContext 运行时上下文（可选）
+	 * @param systemNote 路由器动态指令（可选，会拼接到用户消息前）
 	 * @returns 完整消息列表
 	 */
 	static buildMessages(
 		systemPrompt: string,
 		history: ChatMessage[],
 		currentMessage: string,
-		runtimeContext?: string
+		runtimeContext?: string,
+		systemNote?: string
 	): ChatMessage[] {
-		// 将运行时上下文注入到用户消息
-		const userContent = runtimeContext
-			? `${runtimeContext}\n\n${currentMessage}`
-			: currentMessage;
+		// 构建用户消息内容
+		// 顺序：systemNote + runtimeContext + 用户消息
+		let userContent = currentMessage;
+
+		if (runtimeContext) {
+			userContent = `${runtimeContext}\n\n${userContent}`;
+		}
+
+		if (systemNote) {
+			userContent = `${systemNote}\n\n${userContent}`;
+		}
 
 		// 过滤掉 history 中已有的系统提示词（避免重复）
 		const filteredHistory = history.filter(m => m.role !== 'system');
@@ -305,15 +320,23 @@ ${docInfo}`;
 	 * 构建带文档信息的消息列表
 	 *
 	 * 便捷方法，自动构建运行时上下文
+	 *
+	 * @param systemPrompt 系统提示
+	 * @param history 历史消息
+	 * @param currentMessage 当前用户消息
+	 * @param metadata 文档元数据
+	 * @param progress 阅读进度
+	 * @param systemNote 路由器动态指令（可选）
 	 */
 	static buildMessagesWithMetadata(
 		systemPrompt: string,
 		history: ChatMessage[],
 		currentMessage: string,
 		metadata?: DocumentMetadata,
-		progress?: ReadingProgress
+		progress?: ReadingProgress,
+		systemNote?: string
 	): ChatMessage[] {
 		const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
-		return ContextBuilder.buildMessages(systemPrompt, history, currentMessage, runtimeContext);
+		return ContextBuilder.buildMessages(systemPrompt, history, currentMessage, runtimeContext, systemNote);
 	}
 }
