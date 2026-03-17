@@ -1,19 +1,19 @@
 /* frontend/src/components/question-minimap/question-minimap.css */
 
-/* ==================== Minimap 容器 ==================== */
+/* ==================== Minimap 容器 - 融合设计 ==================== */
 
 .deeppdf-question-minimap {
 	position: absolute;
 	left: 0;
 	top: 0;
 	bottom: 0;
-	width: 36px;
+	width: 24px;
 	display: flex;
 	flex-direction: column;
-	padding: 8px 3px;
+	padding: 8px 2px;
 	pointer-events: auto;
-	background: var(--background-secondary);
-	border-right: 1px solid var(--background-modifier-border);
+	/* 无背景，完全融合 */
+	background: transparent;
 	z-index: 10;
 }
 
@@ -29,29 +29,29 @@
 
 .deeppdf-minimap-block {
 	position: absolute;
-	left: 2px;
-	width: calc(100% - 4px);
+	left: 1px;
+	width: calc(100% - 2px);
 	border-radius: 2px;
 	transition: all 0.15s ease;
 }
 
-/* 用户消息块 - 突出显示 */
+/* 用户消息块 - 更浅的颜色 */
 .deeppdf-minimap-block-user {
-	background: var(--interactive-accent);
-	opacity: 0.7;
+	background: var(--text-muted);
+	opacity: 0.25;
 	cursor: pointer;
-	min-height: 16px;
+	min-height: 14px;
 }
 
 .deeppdf-minimap-block-user:hover {
-	opacity: 1;
+	opacity: 0.5;
 }
 
-/* AI 消息块 - 淡色 */
+/* AI 消息块 - 非常淡 */
 .deeppdf-minimap-block-assistant {
-	background: var(--background-modifier-hover);
+	background: var(--text-faint);
+	opacity: 0.1;
 	min-height: 6px;
-	pointer-events: none;
 }
 
 /* ==================== 视口指示器 ==================== */
@@ -61,24 +61,24 @@
 	left: 0;
 	width: 100%;
 	background: var(--text-faint);
-	opacity: 0.3;
+	opacity: 0.15;
 	border-radius: 2px;
 	pointer-events: none;
-	transition: top 0.1s ease, height 0.1s ease;
+	transition: opacity 0.15s ease;
 }
 
 /* ==================== Tooltip ==================== */
 
 .deeppdf-minimap-tooltip {
 	position: fixed;
-	max-width: 250px;
-	padding: 8px 12px;
+	max-width: 220px;
+	padding: 6px 10px;
 	font-size: 12px;
 	color: var(--text-normal);
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 	pointer-events: none;
 	z-index: 1000;
 	word-break: break-word;
@@ -93,6 +93,7 @@
 
 @media (max-width: 640px) {
 	.deeppdf-question-minimap {
-		width: 28px;
+		width: 18px;
+		padding: 6px 1px;
 	}
 }

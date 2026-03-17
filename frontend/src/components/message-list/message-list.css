@@ -22,7 +22,7 @@
 
 	/* 底部 padding 动态适应输入框高度，左侧为 minimap 留空间 */
 	padding: 16px 1% 80px 1%;
-	padding-left: 42px;
+	padding-left: 28px;
 
 	display: flex;
 	flex-direction: column;
@@ -247,7 +247,7 @@
 	.deeppdf-messages-container {
 		/* 小屏幕减少留白 */
 		padding: var(--size-4-2, 0.5rem) 3% 110px 3%;
-		padding-left: 32px;
+		padding-left: 22px;
 		gap: var(--size-4-2, 0.5rem);
 	}
 
