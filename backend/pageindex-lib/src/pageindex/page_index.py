@@ -2036,6 +2036,271 @@ def _detect_document_type(file_path: str) -> str:
     raise ValueError(f"无法识别的文档类型: {file_path}")
 
 
+# ============================================================
+# EPUB 节点拆分函数
+# ============================================================
+
+def _split_large_epub_nodes(
+    tree: Dict[str, Any],
+    max_tokens: int = 20000,
+    model: str = "gpt-4"
+) -> Dict[str, Any]:
+    """
+    递归拆分过大的 EPUB 节点
+
+    策略：
+    1. 按 Markdown 标题（## 或 ###）拆分
+    2. 如果仍过大，按段落拆分
+
+    参数:
+        tree: PageIndex tree_structure
+        max_tokens: 每个节点的最大 token 数
+        model: 用于 token 计数的模型名称
+
+    返回:
+        拆分后的树结构
+    """
+    structure = tree.get("structure", [])
+    new_structure = []
+
+    for node in structure:
+        split_nodes = _split_epub_node_if_needed(node, max_tokens, model)
+        new_structure.extend(split_nodes)
+
+    tree["structure"] = new_structure
+    # 重新分配 node_id
+    _reassign_epub_node_ids(tree)
+
+    return tree
+
+
+def _split_epub_node_if_needed(
+    node: Dict[str, Any],
+    max_tokens: int,
+    model: str
+) -> List[Dict[str, Any]]:
+    """
+    检查并拆分单个 EPUB 节点
+
+    参数:
+        node: 树节点
+        max_tokens: 最大 token 数
+        model: 模型名称
+
+    返回:
+        拆分后的节点列表（如果不需要拆分则返回原节点）
+    """
+    text = node.get("text", "")
+    token_count = count_tokens(text, model)
+
+    if token_count <= max_tokens:
+        # 不需要拆分，但需要递归处理子节点
+        if "nodes" in node and node["nodes"]:
+            new_sub_nodes = []
+            for child in node["nodes"]:
+                new_sub_nodes.extend(_split_epub_node_if_needed(child, max_tokens, model))
+            node["nodes"] = new_sub_nodes
+        return [node]
+
+    logger.info(f"[EPUB拆分] 节点 '{node.get('title', 'Unknown')}' 超过限制 ({token_count} > {max_tokens} tokens)，开始拆分")
+
+    # 尝试按 Markdown 标题拆分
+    sub_nodes = _split_epub_by_markdown_headers(node, max_tokens, model)
+
+    if len(sub_nodes) > 1:
+        logger.info(f"[EPUB拆分] 按标题拆分为 {len(sub_nodes)} 个子节点")
+        return sub_nodes
+
+    # 标题拆分失败，按段落拆分
+    sub_nodes = _split_epub_by_paragraphs(node, max_tokens, model)
+    logger.info(f"[EPUB拆分] 按段落拆分为 {len(sub_nodes)} 个子节点")
+
+    return sub_nodes
+
+
+def _split_epub_by_markdown_headers(
+    node: Dict[str, Any],
+    max_tokens: int,
+    model: str
+) -> List[Dict[str, Any]]:
+    """
+    按 Markdown 标题（## 或 ###）拆分 EPUB 节点
+
+    参数:
+        node: 树节点
+        max_tokens: 最大 token 数
+        model: 模型名称
+
+    返回:
+        拆分后的节点列表
+    """
+    text = node.get("text", "")
+    title = node.get("title", "")
+
+    # 匹配 ## 或 ### 标题（行首开始）
+    pattern = r'^(#{2,3})\s+(.+)$'
+    lines = text.split('\n')
+
+    sections = []  # [(header_level, header_text, content_lines)]
+    current_section = {"level": 0, "title": "", "lines": []}
+
+    for line in lines:
+        match = re.match(pattern, line)
+        if match:
+            # 保存当前 section
+            if current_section["lines"]:
+                sections.append(current_section.copy())
+            # 开始新 section
+            current_section = {
+                "level": len(match.group(1)),
+                "title": match.group(2).strip(),
+                "lines": [line]
+            }
+        else:
+            current_section["lines"].append(line)
+
+    # 保存最后一个 section
+    if current_section["lines"]:
+        sections.append(current_section.copy())
+
+    if len(sections) <= 1:
+        # 没有找到合适的标题，返回原节点
+        return [node]
+
+    # 构建子节点
+    sub_nodes = []
+    for i, section in enumerate(sections):
+        section_text = '\n'.join(section["lines"])
+        section_tokens = count_tokens(section_text, model)
+
+        # 构建子节点标题
+        if section["title"]:
+            section_title = f"{title} - {section['title']}"
+        else:
+            section_title = title
+
+        sub_node = {
+            "title": section_title,
+            "text": section_text,
+            "start_index": node.get("start_index", 0),
+            "end_index": node.get("end_index", 0),
+            "parent_title": title,
+        }
+
+        # 复制原节点的其他属性（除了 text, title）
+        for key in node:
+            if key not in ["text", "title", "start_index", "end_index"]:
+                if key != "nodes":  # nodes 需要特殊处理
+                    sub_node[key] = node[key]
+
+        # 如果子节点仍然过大，递归按段落拆分
+        if section_tokens > max_tokens:
+            further_split = _split_epub_by_paragraphs(sub_node, max_tokens, model)
+            sub_nodes.extend(further_split)
+        else:
+            sub_nodes.append(sub_node)
+
+    return sub_nodes
+
+
+def _split_epub_by_paragraphs(
+    node: Dict[str, Any],
+    max_tokens: int,
+    model: str
+) -> List[Dict[str, Any]]:
+    """
+    按段落拆分 EPUB 节点（保持段落完整性）
+
+    参数:
+        node: 树节点
+        max_tokens: 最大 token 数
+        model: 模型名称
+
+    返回:
+        拆分后的节点列表
+    """
+    text = node.get("text", "")
+    title = node.get("title", "")
+
+    # 按双换行分割段落
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+    if len(paragraphs) <= 1:
+        # 无法按段落拆分，返回原节点
+        return [node]
+
+    sub_nodes = []
+    current_text = ""
+    current_tokens = 0
+    part_num = 1
+
+    for para in paragraphs:
+        para_tokens = count_tokens(para, model)
+
+        if current_tokens + para_tokens > max_tokens and current_text:
+            # 保存当前节点
+            sub_node = {
+                "title": f"{title} (Part {part_num})",
+                "text": current_text.strip(),
+                "start_index": node.get("start_index", 0),
+                "end_index": node.get("end_index", 0),
+                "parent_title": title,
+            }
+            # 复制原节点的其他属性
+            for key in node:
+                if key not in ["text", "title", "start_index", "end_index", "nodes"]:
+                    sub_node[key] = node[key]
+            sub_nodes.append(sub_node)
+
+            part_num += 1
+            current_text = para
+            current_tokens = para_tokens
+        else:
+            if current_text:
+                current_text += '\n\n' + para
+            else:
+                current_text = para
+            current_tokens += para_tokens
+
+    # 保存最后一个节点
+    if current_text:
+        sub_node = {
+            "title": f"{title} (Part {part_num})" if part_num > 1 else title,
+            "text": current_text.strip(),
+            "start_index": node.get("start_index", 0),
+            "end_index": node.get("end_index", 0),
+        }
+        if part_num > 1:
+            sub_node["parent_title"] = title
+        # 复制原节点的其他属性
+        for key in node:
+            if key not in ["text", "title", "start_index", "end_index", "nodes"]:
+                sub_node[key] = node[key]
+        sub_nodes.append(sub_node)
+
+    return sub_nodes if sub_nodes else [node]
+
+
+def _reassign_epub_node_ids(tree: Dict[str, Any]) -> None:
+    """
+    重新分配树结构中所有节点的 node_id
+
+    参数:
+        tree: PageIndex tree_structure（会被修改）
+    """
+    counter = [0]  # 使用列表以便在嵌套函数中修改
+
+    def assign_ids(nodes):
+        for node in nodes:
+            counter[0] += 1
+            node["node_id"] = str(counter[0]).zfill(4)
+            if "nodes" in node and node["nodes"]:
+                assign_ids(node["nodes"])
+
+    structure = tree.get("structure", [])
+    assign_ids(structure)
+
+
 def _process_epub(
     file_path: str,
     config=None
@@ -2105,7 +2370,15 @@ def _process_epub(
     node_count = _count_nodes(tree)
     logger.info(f"[EPUB] 树结构转换完成，{node_count} 个节点")
 
-    # 3. 可选：生成摘要
+    # 3. 拆分过大的节点
+    max_tokens = config.get("max_tokens_per_node", 20000) if config else 20000
+    model = config.get("model", "gpt-4") if config else "gpt-4"
+    tree = _split_large_epub_nodes(tree, max_tokens=max_tokens, model=model)
+    new_node_count = _count_nodes(tree)
+    if new_node_count > node_count:
+        logger.info(f"[EPUB] 节点拆分完成，{node_count} -> {new_node_count} 个节点")
+
+    # 4. 可选：生成摘要
     if config and config.get("use_llm"):
         from .utils import generate_summaries_for_structure
 
@@ -2242,6 +2515,9 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
             "extract_images": getattr(opt, 'extract_images', True) if opt else True,  # 默认启用
             "image_output_dir": getattr(opt, 'image_output_dir', None) if opt else None,
             "index_id": getattr(opt, 'index_id', None) if opt else None,
+            # 节点拆分配置
+            "max_tokens_per_node": getattr(opt, 'max_token_num_each_node', 20000) if opt else 20000,
+            "model": getattr(opt, 'model', 'gpt-4') if opt else 'gpt-4',
         }
 
         try:

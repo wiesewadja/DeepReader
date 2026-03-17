@@ -14,7 +14,328 @@ from unittest.mock import MagicMock, patch
 # 添加 src 目录到 Python 路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pageindex.page_index import _detect_document_type, _process_epub, page_index_main
+from pageindex.page_index import (
+    _detect_document_type,
+    _process_epub,
+    page_index_main,
+    _split_large_epub_nodes,
+    _split_epub_node_if_needed,
+    _split_epub_by_markdown_headers,
+    _split_epub_by_paragraphs,
+    _reassign_epub_node_ids,
+)
+
+
+class TestSplitEpubNodes:
+    """测试 EPUB 节点拆分功能"""
+
+    def test_split_small_node_unchanged(self):
+        """测试小节点不被拆分"""
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": "This is a short chapter.",
+                    "start_index": 1,
+                    "end_index": 2,
+                }
+            ]
+        }
+
+        result = _split_large_epub_nodes(tree, max_tokens=1000, model="gpt-4")
+
+        assert len(result["structure"]) == 1
+        assert result["structure"][0]["title"] == "Chapter 1"
+        assert result["structure"][0]["node_id"] == "0001"
+
+    def test_split_by_markdown_headers(self):
+        """测试按 Markdown 标题拆分"""
+        # 创建一个包含多个 ## 标题的长文本
+        long_text = """## Section 1
+
+This is the content of section 1. It has some text here.
+
+## Section 2
+
+This is the content of section 2. More text here.
+
+## Section 3
+
+This is the content of section 3. Even more text."""
+
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": long_text,
+                    "start_index": 1,
+                    "end_index": 2,
+                }
+            ]
+        }
+
+        # 使用较小的 max_tokens 触发拆分
+        result = _split_large_epub_nodes(tree, max_tokens=50, model="gpt-4")
+
+        # 应该拆分为 3 个子节点
+        assert len(result["structure"]) == 3
+        assert "Section 1" in result["structure"][0]["title"]
+        assert "Section 2" in result["structure"][1]["title"]
+        assert "Section 3" in result["structure"][2]["title"]
+
+    def test_split_by_paragraphs(self):
+        """测试按段落拆分（无标题时）"""
+        # 创建一个没有标题的长文本
+        paragraphs = []
+        for i in range(10):
+            paragraphs.append(f"Paragraph {i}: " + "word " * 100)
+
+        long_text = "\n\n".join(paragraphs)
+
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": long_text,
+                    "start_index": 1,
+                    "end_index": 2,
+                }
+            ]
+        }
+
+        # 使用较小的 max_tokens 触发拆分
+        result = _split_large_epub_nodes(tree, max_tokens=200, model="gpt-4")
+
+        # 应该拆分为多个部分
+        assert len(result["structure"]) > 1
+        # 检查标题格式
+        assert "Part" in result["structure"][1]["title"]
+
+    def test_node_id_reassignment(self):
+        """测试 node_id 重新分配"""
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {"node_id": "old1", "title": "Node 1", "text": "text1"},
+                {"node_id": "old2", "title": "Node 2", "text": "text2"},
+                {"node_id": "old3", "title": "Node 3", "text": "text3"},
+            ]
+        }
+
+        _reassign_epub_node_ids(tree)
+
+        assert tree["structure"][0]["node_id"] == "0001"
+        assert tree["structure"][1]["node_id"] == "0002"
+        assert tree["structure"][2]["node_id"] == "0003"
+
+    def test_nested_node_split(self):
+        """测试嵌套节点的拆分"""
+        # 创建包含多个段落的长文本（确保可以按段落拆分）
+        paragraphs = ["Paragraph " + str(i) + ": " + "word " * 50 for i in range(10)]
+        long_text = "\n\n".join(paragraphs)
+
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": "short text",
+                    "nodes": [
+                        {
+                            "node_id": "0002",
+                            "title": "Subchapter 1",
+                            "text": long_text,
+                        }
+                    ]
+                }
+            ]
+        }
+
+        result = _split_large_epub_nodes(tree, max_tokens=100, model="gpt-4")
+
+        # 子节点应该被拆分
+        assert len(result["structure"][0]["nodes"]) > 1
+
+    def test_preserve_node_attributes(self):
+        """测试拆分时保留节点属性"""
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": "## Section 1\n\nContent 1\n\n## Section 2\n\nContent 2",
+                    "start_index": 1,
+                    "end_index": 5,
+                    "custom_attr": "custom_value",
+                }
+            ]
+        }
+
+        result = _split_large_epub_nodes(tree, max_tokens=20, model="gpt-4")
+
+        # 检查属性是否保留
+        for node in result["structure"]:
+            assert "custom_attr" in node
+            assert node["custom_attr"] == "custom_value"
+
+    def test_parent_title_set(self):
+        """测试拆分后设置 parent_title"""
+        # 创建足够长的文本以触发拆分
+        sections = []
+        for i in range(3):
+            sections.append(f"## Section {i+1}\n\n" + "Content " * 100)
+        long_text = "\n\n".join(sections)
+
+        tree = {
+            "doc_name": "Test Book",
+            "structure": [
+                {
+                    "node_id": "0001",
+                    "title": "Chapter 1",
+                    "text": long_text,
+                    "start_index": 1,
+                    "end_index": 5,
+                }
+            ]
+        }
+
+        result = _split_large_epub_nodes(tree, max_tokens=50, model="gpt-4")
+
+        # 应该被拆分
+        assert len(result["structure"]) > 1
+        # 检查 parent_title 是否设置
+        for node in result["structure"]:
+            assert "parent_title" in node
+            assert node["parent_title"] == "Chapter 1"
+
+
+class TestSplitByMarkdownHeaders:
+    """测试按 Markdown 标题拆分"""
+
+    def test_split_by_h2_headers(self):
+        """测试按 ## 标题拆分"""
+        text = """## First Section
+
+Content of first section.
+
+## Second Section
+
+Content of second section."""
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_markdown_headers(node, max_tokens=1000, model="gpt-4")
+
+        assert len(result) == 2
+        assert "First Section" in result[0]["title"]
+        assert "Second Section" in result[1]["title"]
+
+    def test_split_by_h3_headers(self):
+        """测试按 ### 标题拆分"""
+        text = """### Subsection 1
+
+Content 1.
+
+### Subsection 2
+
+Content 2."""
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_markdown_headers(node, max_tokens=1000, model="gpt-4")
+
+        assert len(result) == 2
+
+    def test_no_headers_returns_original(self):
+        """测试无标题时返回原节点"""
+        text = "Just some content without any headers."
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_markdown_headers(node, max_tokens=10, model="gpt-4")
+
+        assert len(result) == 1
+        assert result[0] == node
+
+
+class TestSplitByParagraphs:
+    """测试按段落拆分"""
+
+    def test_split_multiple_paragraphs(self):
+        """测试拆分多个段落"""
+        paragraphs = []
+        for i in range(5):
+            paragraphs.append("Paragraph " + str(i) + ": " + "word " * 50)
+
+        text = "\n\n".join(paragraphs)
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_paragraphs(node, max_tokens=100, model="gpt-4")
+
+        assert len(result) > 1
+
+    def test_single_paragraph_returns_original(self):
+        """测试单段落返回原节点"""
+        text = "Single paragraph without double newlines."
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_paragraphs(node, max_tokens=10, model="gpt-4")
+
+        assert len(result) == 1
+
+    def test_part_numbering(self):
+        """测试部分编号"""
+        paragraphs = ["Paragraph " + str(i) + ": " + "word " * 100 for i in range(5)]
+        text = "\n\n".join(paragraphs)
+
+        node = {
+            "title": "Chapter",
+            "text": text,
+            "start_index": 1,
+            "end_index": 2,
+        }
+
+        result = _split_epub_by_paragraphs(node, max_tokens=150, model="gpt-4")
+
+        # 检查编号
+        for i, sub_node in enumerate(result):
+            if i > 0:
+                assert f"Part {i+1}" in sub_node["title"] or f"Part {i}" in sub_node["title"]
 
 
 class TestDetectDocumentType:
