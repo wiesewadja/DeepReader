@@ -49,6 +49,10 @@ export interface SubagentConfig {
 	timeout: number;
 	/** 缓存 TTL（毫秒，默认 300000 = 5分钟） */
 	cacheTTL?: number;
+	/** 速率限制重试次数（默认 3） */
+	maxRetries?: number;
+	/** 速率限制重试延迟（毫秒，默认 5000） */
+	retryDelay?: number;
 }
 
 /**
@@ -72,6 +76,8 @@ export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = {
 	maxIterations: 5,
 	timeout: 60000,
 	cacheTTL: 300000, // 5 分钟
+	maxRetries: 3,
+	retryDelay: 5000, // 5 秒
 };
 
 /**

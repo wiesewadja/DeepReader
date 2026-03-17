@@ -240,6 +240,12 @@ export interface ExcalidrawAutomate {
   clear(): void;
 
   /**
+   * 将工作台中的元素提交到场景（关键！）
+   * 这是将创建的元素持久化到 Excalidraw 文件的核心方法
+   */
+  addElementsToView(): Promise<void>;
+
+  /**
    * 保存当前画布
    */
   save(): Promise<void>;

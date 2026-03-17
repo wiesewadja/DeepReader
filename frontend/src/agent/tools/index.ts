@@ -9,7 +9,7 @@ import { getTocTool } from './get-toc.js';
 import { getChapterTool } from './get-chapter.js';
 import { createSkillTool } from './skill.js';
 import { writeNoteTool } from './write-note.js';
-import { createSubAgentTool } from './create-sub-agent.js';
+import { createSubAgentTool, checkSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
 import { searchReadBooksTool } from './search-read-books.js';
@@ -66,6 +66,7 @@ export function createToolRegistry(
 
   // 注册子 Agent 工具
   registry.set('create_sub_agent', createSubAgentTool);
+  registry.set('check_sub_agent', checkSubAgentTool);
 
   // 注册记忆工具
   registry.set('add_memory', addMemoryTool);

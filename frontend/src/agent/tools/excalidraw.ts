@@ -99,14 +99,14 @@ const EXCALIDRAW_DEFINITION: ToolDefinition = {
         },
         branches: {
           type: 'array',
-          description: '思维导图分支（mindmap action 必需）',
+          description: '思维导图分支（mindmap action 必需）。children 子节点可以是字符串数组，如 ["子项1", "子项2"]，或对象数组',
           items: {
             type: 'object',
             properties: {
               label: { type: 'string', description: '分支标签' },
               children: {
                 type: 'array',
-                description: '子节点',
+                description: '子节点数组。可以是字符串（如"子项1"）或对象（如{"label":"子项1"}）',
                 items: {
                   type: 'object',
                   properties: {
@@ -115,7 +115,8 @@ const EXCALIDRAW_DEFINITION: ToolDefinition = {
                   }
                 }
               }
-            }
+            },
+            required: ['label']
           }
         },
         // Knowledge graph 参数
@@ -214,6 +215,13 @@ function getBoxTypeForNodeType(type?: string): BoxType {
 
 /**
  * 创建思维导图（放射状布局，美观样式）
+ *
+ * 重要：ExcalidrawAutomate API 的工作流程是：
+ * 1. 先清空工作区 (clear)
+ * 2. 添加所有元素到工作区
+ * 3. 最后调用 create() 创建文件 - 这会自动保存工作区内容
+ *
+ * 注意：create() 后 targetView 为 null，无法使用 addElementsToView()
  */
 async function createMindmap(
   ea: ExcalidrawAutomate,
@@ -222,11 +230,21 @@ async function createMindmap(
   filename: string,
   folder: string
 ): Promise<string> {
-  // 创建新文件
-  await ea.create({
-    filename,
-    foldername: folder,
+  // 调试日志：记录接收到的 branches 和 children 信息
+  log('[Excalidraw] createMindmap 接收参数:');
+  log('  - topic:', topic);
+  log('  - branches 数量:', branches.length);
+  branches.forEach((b, i) => {
+    log(`  - branch[${i}]: "${b.label}", children: ${b.children?.length || 0}`);
+    if (b.children && b.children.length > 0) {
+      b.children.forEach((c, j) => {
+        const childText = typeof c === 'string' ? c : c?.label;
+        log(`    - child[${j}]: "${childText}"`);
+      });
+    }
   });
+
+  // 清空工作区（在 create 之前）
   ea.clear();
 
   // 设置全局样式（手绘风格，适度的粗糙感）
@@ -320,16 +338,21 @@ async function createMindmap(
 
       // 子节点之间的间距（中心点距离 = 节点尺寸 + 间隙）
       // 确保间距足够大，避免节点重叠
-      const gap = 30;  // 节点之间的空隙
+      const gap = 50;  // 节点之间的空隙（增大以避免堆叠）
       const childSpacing = isVerticalLayout
         ? NODE_SIZES.child.height + gap   // 垂直布局：基于高度
         : NODE_SIZES.child.width + gap;   // 水平布局：基于宽度
 
-      // 子节点到分支的距离
-      const childDistance = 180;
+      // 子节点到分支的距离（增大以容纳更多连接线）
+      const childDistance = 220;
 
       branch.children.forEach((child, childIndex) => {
-        const childText = typeof child === 'string' ? child : child.label;
+        // 处理子节点文本 - 支持 string 或 { label: string } 格式
+        const childText = typeof child === 'string' ? child : (child?.label || JSON.stringify(child));
+        if (!childText) {
+          log('[Excalidraw] 警告: 子节点缺少文本内容', child);
+          return; // 跳过无效子节点
+        }
 
         let childX: number, childY: number;
         let connectFromSide: ConnectionPoint, connectToSide: ConnectionPoint;
@@ -396,19 +419,90 @@ async function createMindmap(
           endArrowHead: 'arrow',
         });
         edgeCount++;
+
+        // 递归处理嵌套的 children（叶节点）
+        if (typeof child !== 'string' && child?.children && child.children.length > 0) {
+          const leafCount = child.children.length;
+          const leafGap = 40;  // 叶节点之间的空隙（增大以避免堆叠）
+          const leafSpacing = isVerticalLayout
+            ? NODE_SIZES.leaf.height + leafGap
+            : NODE_SIZES.leaf.width + leafGap;
+          const leafDistance = 160; // 叶节点到子节点的距离（增大以容纳更多连接线）
+
+          child.children.forEach((leaf, leafIndex) => {
+            const leafText = typeof leaf === 'string' ? leaf : (leaf?.label || JSON.stringify(leaf));
+            if (!leafText) return;
+
+            let leafX: number, leafY: number;
+            let leafFromSide: ConnectionPoint, leafToSide: ConnectionPoint;
+
+            if (isVerticalLayout) {
+              const offsetLeafY = (leafIndex - (leafCount - 1) / 2) * leafSpacing;
+              if (Math.cos(angle) > 0) {
+                leafX = childX + NODE_SIZES.child.width + leafDistance;
+                leafY = childY + NODE_SIZES.child.height / 2 + offsetLeafY - NODE_SIZES.leaf.height / 2;
+                leafFromSide = 'right';
+                leafToSide = 'left';
+              } else {
+                leafX = childX - leafDistance - NODE_SIZES.leaf.width;
+                leafY = childY + NODE_SIZES.child.height / 2 + offsetLeafY - NODE_SIZES.leaf.height / 2;
+                leafFromSide = 'left';
+                leafToSide = 'right';
+              }
+            } else {
+              const offsetLeafX = (leafIndex - (leafCount - 1) / 2) * leafSpacing;
+              if (Math.sin(angle) < 0) {
+                leafX = childX + NODE_SIZES.child.width / 2 + offsetLeafX - NODE_SIZES.leaf.width / 2;
+                leafY = childY - leafDistance - NODE_SIZES.leaf.height;
+                leafFromSide = 'top';
+                leafToSide = 'bottom';
+              } else {
+                leafX = childX + NODE_SIZES.child.width / 2 + offsetLeafX - NODE_SIZES.leaf.width / 2;
+                leafY = childY + NODE_SIZES.child.height + leafDistance;
+                leafFromSide = 'bottom';
+                leafToSide = 'top';
+              }
+            }
+
+            // 叶节点使用更浅的颜色
+            if (style) {
+              style.backgroundColor = colorScheme.fill + '88';  // 更透明
+            }
+
+            const leafId = ea.addText(
+              leafX,
+              leafY,
+              leafText,
+              {
+                width: NODE_SIZES.leaf.width,
+                height: NODE_SIZES.leaf.height,
+                textAlign: 'center',
+                verticalAlign: 'middle',
+                box: 'box',
+                boxPadding: 6,
+              }
+            );
+            nodeCount++;
+
+            ea.connectObjects(childId, leafFromSide, leafId, leafToSide, {
+              numberOfPoints: 0,
+              startArrowHead: 'none',
+              endArrowHead: 'arrow',
+            });
+            edgeCount++;
+          });
+        }
       });
     }
   });
 
-  // 显式保存以确保内容写入文件
-  if (typeof ea.save === 'function') {
-    try {
-      await ea.save();
-      log('[Excalidraw] 保存成功');
-    } catch (e) {
-      log('[Excalidraw] 保存失败:', e);
-    }
-  }
+  // 最后一步：创建文件 - 这会自动保存工作区中的所有元素
+  log('[Excalidraw] 创建文件，节点:', nodeCount, '边:', edgeCount);
+  await ea.create({
+    filename,
+    foldername: folder,
+  });
+  log('[Excalidraw] 文件创建完成');
 
   const filePath = `${folder}/${filename}.excalidraw.md`;
   return `Created Excalidraw mindmap: ${filePath}
@@ -428,11 +522,7 @@ async function createKnowledgeGraph(
   filename: string,
   folder: string
 ): Promise<string> {
-  // 创建新文件
-  await ea.create({
-    filename,
-    foldername: folder,
-  });
+  // 清空工作区（在 create 之前）
   ea.clear();
 
   // 计算网格布局
@@ -475,15 +565,13 @@ async function createKnowledgeGraph(
     }
   });
 
-  // 显式保存以确保内容写入文件
-  if (typeof ea.save === 'function') {
-    try {
-      await ea.save();
-      log('[Excalidraw] 知识图谱保存成功');
-    } catch (e) {
-      log('[Excalidraw] 知识图谱保存失败:', e);
-    }
-  }
+  // 最后一步：创建文件 - 这会自动保存工作区中的所有元素
+  log('[Excalidraw] 创建知识图谱文件，节点:', nodes.length, '边:', edgeCount);
+  await ea.create({
+    filename,
+    foldername: folder,
+  });
+  log('[Excalidraw] 知识图谱文件创建完成');
 
   const filePath = `${folder}/${filename}.excalidraw.md`;
   return `Created Excalidraw knowledge graph: ${filePath}

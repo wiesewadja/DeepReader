@@ -181,71 +181,99 @@ export class SubagentManager {
 	}
 
 	/**
-	 * 执行子 Agent
+	 * 执行子 Agent（带速率限制重试）
 	 */
 	private async runSubagent(taskId: string, description: string, abortSignal: AbortSignal): Promise<void> {
 		const task = this.taskInfo.get(taskId);
 		if (!task) return;
 
-		try {
-			// 检查是否已取消
-			if (abortSignal.aborted) {
-				task.status = 'cancelled';
+		const maxRetries = this.config.maxRetries || 3;
+		const retryDelay = this.config.retryDelay || 5000;
+		let lastError: string = '';
+
+		for (let attempt = 0; attempt <= maxRetries; attempt++) {
+			try {
+				// 检查是否已取消
+				if (abortSignal.aborted) {
+					task.status = 'cancelled';
+					task.completedAt = Date.now();
+					return;
+				}
+
+				// 构建子 Agent 的系统提示
+				const systemPrompt = this.buildSubagentPrompt();
+
+				// 获取允许的工具
+				const tools = this.getAllowedTools();
+
+				// 初始消息
+				const messages: ChatMessage[] = [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: description },
+				];
+
+				// 运行子 Agent 循环
+				const result = await this.runLoop(taskId, messages, tools, abortSignal);
+
+				// 再次检查是否已取消
+				if (abortSignal.aborted) {
+					task.status = 'cancelled';
+					task.completedAt = Date.now();
+					return;
+				}
+
+				// 更新任务状态
+				task.status = 'completed';
+				task.result = result;
 				task.completedAt = Date.now();
-				return;
-			}
 
-			// 构建子 Agent 的系统提示
-			const systemPrompt = this.buildSubagentPrompt();
+				// 保存到缓存
+				this.saveToCache(description, result, taskId);
 
-			// 获取允许的工具
-			const tools = this.getAllowedTools();
+				agentLog(`[Subagent] 任务 ${taskId} 完成`);
+				return; // 成功，退出
 
-			// 初始消息
-			const messages: ChatMessage[] = [
-				{ role: 'system', content: systemPrompt },
-				{ role: 'user', content: description },
-			];
+			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : String(error);
+				lastError = errorMsg;
 
-			// 运行子 Agent 循环
-			const result = await this.runLoop(taskId, messages, tools, abortSignal);
+				// 检查是否是速率限制错误
+				const isRateLimit = errorMsg.includes('速率限制') ||
+				                    errorMsg.includes('rate limit') ||
+				                    errorMsg.includes('429');
 
-			// 再次检查是否已取消
-			if (abortSignal.aborted) {
-				task.status = 'cancelled';
-				task.completedAt = Date.now();
-				return;
-			}
+				// 检查是否是取消导致的错误
+				if (abortSignal.aborted) {
+					task.status = 'cancelled';
+					task.error = '任务已取消';
+					task.completedAt = Date.now();
+					agentLog(`[Subagent] 任务 ${taskId} 已取消`);
+					return;
+				}
 
-			// 更新任务状态
-			task.status = 'completed';
-			task.result = result;
-			task.completedAt = Date.now();
-
-			// 保存到缓存
-			this.saveToCache(description, result, taskId);
-
-			agentLog(`[Subagent] 任务 ${taskId} 完成`);
-		} catch (error) {
-			// 检查是否是取消导致的错误
-			if (abortSignal.aborted) {
-				task.status = 'cancelled';
-				task.error = '任务已取消';
-			} else {
-				task.status = 'failed';
-				task.error = error instanceof Error ? error.message : String(error);
-			}
-			task.completedAt = Date.now();
-
-			agentLog(`[Subagent] 任务 ${taskId} ${task.status}: ${task.error || ''}`);
-		} finally {
-			this.runningTasks.delete(taskId);
-
-			// 触发回调
-			if (this.onResult) {
-				this.onResult(task);
+				if (isRateLimit && attempt < maxRetries) {
+					// 速率限制，等待后重试
+					const delay = retryDelay * (attempt + 1); // 递增延迟
+					agentLog(`[Subagent] 任务 ${taskId} 遇到速率限制，${delay/1000}秒后重试 (${attempt + 1}/${maxRetries})`);
+					await new Promise(resolve => setTimeout(resolve, delay));
+					continue;
+				} else {
+					// 其他错误或重试次数用尽
+					task.status = 'failed';
+					task.error = errorMsg;
+					task.completedAt = Date.now();
+					agentLog(`[Subagent] 任务 ${taskId} 失败: ${errorMsg}`);
+					return;
+				}
 			}
 		}
+
+		// 所有重试都失败
+		task.status = 'failed';
+		task.error = lastError;
+		task.completedAt = Date.now();
+
+		agentLog(`[Subagent] 任务 ${taskId} 失败（重试${maxRetries}次后）: ${lastError}`);
 	}
 
 	/**
@@ -280,25 +308,31 @@ export class SubagentManager {
 				};
 				abortSignal.addEventListener('abort', abortHandler);
 
-				try {
-					runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
-						maxIterations: this.config.maxIterations,
-						abortSignal,  // 传递取消信号
-						onContent: (text) => {
-							accumulatedContent += text;
-						},
-						onProgress: () => {},
-						onComplete: () => {
-							resolve();
-						},
-						onError: (error) => {
-							reject(new Error(error));
-						},
-					});
-				} catch (syncError) {
-					// 处理 runAgentLoop 同步抛出的异常
-					reject(syncError);
-				}
+				// 正确处理 async 函数返回的 Promise
+				runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
+					maxIterations: this.config.maxIterations,
+					abortSignal,  // 传递取消信号
+					onContent: (text) => {
+						accumulatedContent += text;
+					},
+					onProgress: () => {},
+					onComplete: () => {
+						if (timeout) clearTimeout(timeout);
+						resolve();
+					},
+					onError: (error) => {
+						if (timeout) clearTimeout(timeout);
+						reject(new Error(error));
+					},
+				}).then(() => {
+					// runAgentLoop 正常完成（返回消息历史）
+					// 注意：onComplete 已经在上面被调用了
+				}).catch((err) => {
+					// 捕获 runAgentLoop 内部的异步错误
+					agentLog(`[Subagent] runAgentLoop Promise 异常: ${err}`);
+					if (timeout) clearTimeout(timeout);
+					reject(err);
+				});
 			});
 		} finally {
 			// 确保清理资源
@@ -313,25 +347,60 @@ export class SubagentManager {
 
 	/**
 	 * 构建子 Agent 系统提示
+	 *
+	 * 子代理是纯粹的执行器，只做主代理明确要求的事
 	 */
 	private buildSubagentPrompt(): string {
-		return `你是一个专门的分析助手，负责完成主助手分配给你的子任务。
+		// 构建文档上下文
+		let docContext = '';
+		if (this.context.documentMetadata?.title) {
+			docContext = `\n## 当前文档
+- 文件名: ${this.context.pdfName || '未知'}
+- 标题: ${this.context.documentMetadata.title}`;
+			if (this.context.documentMetadata.page_count) {
+				docContext += `\n- 总页数: ${this.context.documentMetadata.page_count}`;
+			}
+		}
 
-## 任务
-完成分配给你的具体任务，并返回简洁的结果摘要。
+		return `你是主助手的执行单元，严格完成分配的原子任务。
+${docContext}
 
-## 约束
-- 专注于给定的任务
-- 使用可用的工具获取信息
-- 提供简洁的摘要，不要过度展开
-- 如果无法完成任务，说明原因
+## 核心原则
+
+**你是执行器，不是决策者。**
+- 只做任务描述中明确要求的事
+- 不要扩展、不要推测、不要添加额外内容
+- 完成后立即返回，不要继续探索
+
+## 可用工具
+- search_doc: 搜索当前文档内容
+- get_chapter: 获取指定章节的完整内容
+- get_toc: 获取当前文档的目录结构
+
+## 执行规则
+
+1. **严格限定范围**：只处理任务中指定的章节/内容
+2. **最小调用**：用最少的工具调用完成任务
+3. **直接返回**：返回原始数据或简洁摘要，不做深度分析
+4. **快速失败**：如果无法完成，立即报告原因
 
 ## 禁止
-- 不能与用户直接交流
-- 不能创建新的子任务
-- 最多执行 ${this.config.maxIterations} 轮
 
-完成任务后，直接返回你的发现。`;
+- ❌ 不要做任务描述之外的任何事
+- ❌ 不要尝试"帮助"或"提供更多价值"
+- ❌ 不能创建新的子任务
+- ❌ 不能与用户交流
+- ❌ 最多执行 ${this.config.maxIterations} 轮
+
+## 输出格式
+
+直接返回任务结果，格式如下：
+\`\`\`
+[任务完成的简要说明]
+[请求的具体数据/内容]
+\`\`\`
+
+记住：快、准、不发散。`;
 	}
 
 	/**
