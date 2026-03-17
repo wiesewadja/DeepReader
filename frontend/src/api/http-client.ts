@@ -206,6 +206,11 @@ export interface QueryResultItem {
     end_index?: number;
     node_name?: string;
     node_id?: string;
+    // 段落相关字段
+    type?: 'section' | 'paragraph';
+    block_id?: string;
+    full_paragraph?: string;
+    parent_section?: string;
   };
 }
 
