@@ -128,23 +128,19 @@ export const searchDocTool: ToolExecutor = {
             const blockId = item.metadata.block_id || '';
             const parentSection = item.metadata.parent_section || 'Unknown';
             const page = item.metadata.page;
-            const fullParagraph = item.metadata.full_paragraph || item.text;
 
             // 生成 Obsidian block 链接
             const obsidianLink = `[[${context.pdfName}#${blockId}]]`;
 
             log(`[search_doc] 段落结果 ${index + 1}: block_id=${blockId}, page=${page}`);
 
-            // 截断过长的文本
-            const trimmedText = fullParagraph.trim();
-            const truncatedText = trimmedText.length > MAX_TEXT_LENGTH_PER_RESULT
-              ? trimmedText.slice(0, MAX_TEXT_LENGTH_PER_RESULT) + '...[已截断]'
-              : trimmedText;
+            // text 已经包含上下文（后端合并了上一段+当前段+下一段）
+            const displayText = item.text.trim();
 
             return `${index + 1}. **${parentSection}** (Page ${page})${distance} [段落]
    Link: ${obsidianLink}
    block_id: ${blockId}
-   ${truncatedText}`;
+   ${displayText}`;
           } else {
             // 章节结果格式（保持现有逻辑）
             const section = item.metadata.section || item.metadata.node_name || 'Unknown Section';

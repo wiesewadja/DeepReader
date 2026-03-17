@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 # 导入存储模块
 from deeppdf.storage.chroma_store import get_chroma_store
@@ -24,6 +24,68 @@ from deeppdf.utils.llm_client import get_llm_client
 from deeppdf.utils.cache import TTLCache
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 相邻段落获取
+# ============================================================
+def _get_adjacent_paragraphs(
+    collection,
+    parent_node_id: str,
+    current_paragraph_index: int,
+) -> Dict[str, Optional[str]]:
+    """
+    获取相邻段落的文本
+
+    Args:
+        collection: ChromaDB collection 对象
+        parent_node_id: 父节点 ID（章节）
+        current_paragraph_index: 当前段落索引
+
+    Returns:
+        {
+            "prev_paragraph": "上一段文本或 None",
+            "next_paragraph": "下一段文本或 None",
+        }
+    """
+    result = {"prev_paragraph": None, "next_paragraph": None}
+
+    try:
+        # 查找前一段：paragraph_index = current - 1
+        if current_paragraph_index > 0:
+            prev_results = collection.get(
+                where={
+                    "$and": [
+                        {"type": "paragraph"},
+                        {"parent_node_id": parent_node_id},
+                        {"paragraph_index": current_paragraph_index - 1},
+                    ]
+                },
+                include=["documents"],
+                limit=1,
+            )
+            if prev_results["documents"]:
+                result["prev_paragraph"] = prev_results["documents"][0]
+
+        # 查找后一段：paragraph_index = current + 1
+        next_results = collection.get(
+            where={
+                "$and": [
+                    {"type": "paragraph"},
+                    {"parent_node_id": parent_node_id},
+                    {"paragraph_index": current_paragraph_index + 1},
+                ]
+            },
+            include=["documents"],
+            limit=1,
+        )
+        if next_results["documents"]:
+            result["next_paragraph"] = next_results["documents"][0]
+
+    except Exception as e:
+        logger.warning(f"[相邻段落] 获取失败: {e}")
+
+    return result
 
 
 # ============================================================
@@ -122,6 +184,9 @@ def _query_pdf_sync(
 
         logger.info("[查询] 集合已找到，执行向量检索...")
 
+        # 获取 collection 对象（用于后续查询相邻段落）
+        collection = store.client.get_collection(name=index_id)
+
         # 执行查询
         results = store.query(
             collection_name=index_id, query_texts=[query], n_results=max_results
@@ -194,20 +259,53 @@ def _query_pdf_sync(
                         f"[查询结果] 结果 {i+1}: node_id={node_id} → 未找到 markdown_path 映射"
                     )
 
-            final_results.append(
-                {
-                    "text": item["text"],
-                    "metadata": {
-                        **item["metadata"],
-                        # 确保段落相关字段被透传
-                        "type": item["metadata"].get("type", "section"),
-                        "block_id": item["metadata"].get("block_id"),
-                        "full_paragraph": item["metadata"].get("full_paragraph"),
-                        "parent_section": item["metadata"].get("parent_section"),
-                        "markdown_path": markdown_path,  # 添加 Markdown 路径
-                    },
-                }
-            )
+            # 构建基础结果
+            result_item = {
+                "text": item["text"],
+                "metadata": {
+                    **item["metadata"],
+                    # 确保段落相关字段被透传
+                    "type": item["metadata"].get("type", "section"),
+                    "block_id": item["metadata"].get("block_id"),
+                    "full_paragraph": item["metadata"].get("full_paragraph"),
+                    "parent_section": item["metadata"].get("parent_section"),
+                    "markdown_path": markdown_path,  # 添加 Markdown 路径
+                },
+            }
+
+            # 如果是段落类型，获取相邻段落并合并成带上下文的完整文本
+            if item["metadata"].get("type") == "paragraph":
+                parent_node_id = item["metadata"].get("parent_node_id")
+                paragraph_index = item["metadata"].get("paragraph_index")
+
+                if parent_node_id is not None and paragraph_index is not None:
+                    adjacent = _get_adjacent_paragraphs(
+                        collection=collection,
+                        parent_node_id=parent_node_id,
+                        current_paragraph_index=paragraph_index,
+                    )
+
+                    # 合并上下文：上一段 + 当前段 + 下一段
+                    context_parts = []
+                    prev_text = adjacent.get("prev_paragraph")
+                    next_text = adjacent.get("next_paragraph")
+                    current_text = item["text"]
+
+                    if prev_text:
+                        context_parts.append(prev_text.strip())
+                    context_parts.append(current_text.strip())
+                    if next_text:
+                        context_parts.append(next_text.strip())
+
+                    # 替换 text 为带上下文的完整文本（用换行分隔）
+                    result_item["text"] = "\n\n".join(context_parts)
+
+                    logger.debug(
+                        f"[查询结果] 段落上下文合并: prev={bool(prev_text)}, "
+                        f"next={bool(next_text)}, 总长度={len(result_item['text'])}"
+                    )
+
+            final_results.append(result_item)
 
         logger.info(f"[查询结果] 格式化完成，返回 {len(final_results)} 个结果")
 

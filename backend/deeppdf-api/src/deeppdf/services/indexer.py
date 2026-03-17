@@ -812,24 +812,28 @@ def _store_to_chromadb(
         for node in section_nodes
     ]
 
-    # 计算总文本长度和统计信息
-    total_text_length = sum(len(doc["text"]) for doc in documents)
-    avg_text_length = total_text_length // len(documents) if documents else 0
+    # 添加章节文档（如果有）
+    if documents:
+        # 计算总文本长度和统计信息
+        total_text_length = sum(len(doc["text"]) for doc in documents)
+        avg_text_length = total_text_length // len(documents) if documents else 0
 
-    logger.info("[向量存储] 文档统计:")
-    logger.info(f"  - 文档数量: {len(documents)}")
-    logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
-    logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
+        logger.info("[向量存储] 文档统计:")
+        logger.info(f"  - 文档数量: {len(documents)}")
+        logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
+        logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
 
-    # 添加文档到向量数据库
-    logger.info("[向量存储] 正在向量化并添加到数据库...")
-    embed_start = time.time()
-    store.add_documents(index_id, documents)
-    embed_time = time.time() - embed_start
+        # 添加文档到向量数据库
+        logger.info("[向量存储] 正在向量化并添加到数据库...")
+        embed_start = time.time()
+        store.add_documents(index_id, documents)
+        embed_time = time.time() - embed_start
 
-    logger.info("[向量存储] 章节向量存储完成:")
-    logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
-    logger.info(f"  - 存储章节数: {len(documents)}")
+        logger.info("[向量存储] 章节向量存储完成:")
+        logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
+        logger.info(f"  - 存储章节数: {len(documents)}")
+    else:
+        logger.info("[向量存储] 无章节文档，跳过章节向量化")
 
     # 存储段落向量（如果有）
     paragraph_count = 0

@@ -2512,7 +2512,8 @@ def page_index_main(doc, opt=None, llm_client=None, progress_callback=None):
             "llm_client": llm_client,
             "format_text_with_llm": format_text,
             # 图片提取配置（从 opt 或其他来源获取）
-            "extract_images": getattr(opt, 'extract_images', True) if opt else True,  # 默认启用
+            # 默认关闭图片提取，除非明确指定了 image_output_dir
+            "extract_images": getattr(opt, 'extract_images', False) if opt else False,
             "image_output_dir": getattr(opt, 'image_output_dir', None) if opt else None,
             "index_id": getattr(opt, 'index_id', None) if opt else None,
             # 节点拆分配置
