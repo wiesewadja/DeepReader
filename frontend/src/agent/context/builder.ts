@@ -291,9 +291,12 @@ ${docInfo}`;
 			? `${runtimeContext}\n\n${currentMessage}`
 			: currentMessage;
 
+		// 过滤掉 history 中已有的系统提示词（避免重复）
+		const filteredHistory = history.filter(m => m.role !== 'system');
+
 		return [
 			{ role: 'system', content: systemPrompt },
-			...history,
+			...filteredHistory,
 			{ role: 'user', content: userContent },
 		];
 	}
