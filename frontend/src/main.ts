@@ -184,6 +184,64 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
+        // 调试命令：抓取系统提示词
+        this.addCommand({
+            id: "dump-system-prompt",
+            name: "Debug: Dump System Prompt",
+            callback: async () => {
+                try {
+                    // 获取当前选中的书籍信息
+                    const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (leaves.length === 0) {
+                        new Notice("请先打开 DeepReader 侧边栏");
+                        return;
+                    }
+
+                    const sidebarView = leaves[0].view as SidebarView;
+                    const currentBook = sidebarView.getCurrentBookInfo?.();
+
+                    if (!currentBook?.title) {
+                        new Notice("请先选择一本书籍");
+                        return;
+                    }
+
+                    new Notice(`正在抓取《${currentBook.title}》的系统提示词...`);
+
+                    const agent = await this.getFrontendAgent();
+                    const systemPrompt = await agent.getSystemPromptAsync(
+                        { title: currentBook.title, page_count: currentBook.page_count },
+                        currentBook.docDescription ?? undefined
+                    );
+
+                    // 确保调试目录存在
+                    const debugDir = 'DeepReader/debug';
+                    const dirExists = await this.app.vault.adapter.exists(debugDir);
+                    if (!dirExists) {
+                        await this.app.vault.createFolder(debugDir);
+                    }
+
+                    // 保存到调试目录
+                    const filename = `system-prompt-${Date.now()}.md`;
+                    const bookInfo = `<!-- 书籍: ${currentBook.title} -->\n<!-- 生成时间: ${new Date().toISOString()} -->\n\n`;
+                    await this.app.vault.create(`${debugDir}/${filename}`, bookInfo + systemPrompt);
+
+                    // 打印到控制台
+                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    console.log(`%c系统提示词 - 《${currentBook.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
+                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    console.log('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
+                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    console.log(`%c提示词长度: ${systemPrompt.length} 字符`, 'color: #9E9E9E');
+
+                    new Notice(`系统提示词已保存到 DeepReader/debug/${filename}`);
+                } catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    new Notice(`抓取失败: ${msg}`);
+                    console.error('[DumpSystemPrompt] 错误:', err);
+                }
+            }
+        });
+
         // 调试命令：测试 Excalidraw 思维导图生成
         this.addCommand({
             id: "debug-excalidraw-mindmap",

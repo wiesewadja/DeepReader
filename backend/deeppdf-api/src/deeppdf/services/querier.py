@@ -354,6 +354,7 @@ def _load_index_metadata_from_disk(storage_dir: Path, index_id: str) -> Dict[str
                 "markdown_files": data.get(
                     "markdown_files", {}
                 ),  # 添加 markdown_files 字段
+                "doc_description": data.get("doc_description", ""),  # 全书摘要
             }
 
     return {}

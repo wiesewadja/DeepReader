@@ -2967,4 +2967,15 @@ export class SidebarView extends ItemView {
             // 不要重新抛出错误，避免影响 Obsidian 的 UI
         }
     }
+
+    /**
+     * 获取当前书籍信息（供调试命令使用）
+     */
+    getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
+        return {
+            title: this.currentPdfName,
+            page_count: 100, // 暂时硬编码，后续可从索引元数据获取
+            docDescription: this.currentDocDescription,
+        };
+    }
 }
