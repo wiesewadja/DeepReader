@@ -25,23 +25,6 @@
 	width: 100%;
 }
 
-/* ==================== 对话组交互层 ==================== */
-
-.deeppdf-minimap-group-hitarea {
-	position: absolute;
-	left: 0;
-	width: 100%;
-	cursor: pointer;
-	/* 透明但可交互 */
-	background: transparent;
-	z-index: 2;
-}
-
-.deeppdf-minimap-group-hitarea:hover {
-	/* hover 时显示轻微背景 */
-	background: var(--background-modifier-hover);
-}
-
 /* ==================== 消息块 ==================== */
 
 .deeppdf-minimap-block {
@@ -50,8 +33,6 @@
 	width: calc(100% - 4px);
 	border-radius: 2px;
 	transition: all 0.15s ease;
-	/* 块在交互层下方 */
-	z-index: 1;
 }
 
 /* 用户消息块 - 突出显示 */
@@ -59,18 +40,18 @@
 	background: var(--interactive-accent);
 	opacity: 0.7;
 	cursor: pointer;
-	min-height: 12px;
+	min-height: 16px;
 }
 
 .deeppdf-minimap-block-user:hover {
 	opacity: 1;
-	transform: scaleX(1.05);
 }
 
 /* AI 消息块 - 淡色 */
 .deeppdf-minimap-block-assistant {
 	background: var(--background-modifier-hover);
 	min-height: 6px;
+	pointer-events: none;
 }
 
 /* ==================== 视口指示器 ==================== */
@@ -83,11 +64,7 @@
 	opacity: 0.3;
 	border-radius: 2px;
 	pointer-events: none;
-	transition: opacity 0.15s ease;
-}
-
-.deeppdf-minimap-viewport-hidden {
-	opacity: 0;
+	transition: top 0.1s ease, height 0.1s ease;
 }
 
 /* ==================== Tooltip ==================== */
