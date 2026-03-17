@@ -154,6 +154,98 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
+        // Excalidraw 命令 - 导出当前 Canvas 到 Excalidraw
+        this.addCommand({
+            id: "export-canvas-to-excalidraw",
+            name: "Export Canvas to Excalidraw",
+            checkCallback: (checking: boolean) => {
+                const file = this.app.workspace.getActiveFile();
+                if (file && file.extension === 'canvas') {
+                    if (!checking) {
+                        this.exportCanvasToExcalidraw(file.path);
+                    }
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        // Excalidraw 命令 - 检查 Excalidraw 插件状态
+        this.addCommand({
+            id: "check-excalidraw-status",
+            name: "Check Excalidraw Plugin Status",
+            callback: () => {
+                const ea = (window as any).ExcalidrawAutomate;
+                if (ea) {
+                    new Notice(`Excalidraw 插件已安装 (版本: ${ea.version || '未知'})`);
+                } else {
+                    new Notice("Excalidraw 插件未安装。请在社区插件市场安装 Excalidraw 插件。");
+                }
+            }
+        });
+
+        // 调试命令：测试 Excalidraw 思维导图生成
+        this.addCommand({
+            id: "debug-excalidraw-mindmap",
+            name: "Debug: Test Excalidraw mindmap",
+            callback: async () => {
+                const ea = (window as any).ExcalidrawAutomate;
+                if (!ea) {
+                    new Notice("Excalidraw 插件未安装");
+                    return;
+                }
+
+                try {
+                    new Notice("正在生成测试思维导图...");
+
+                    // 创建新文件
+                    await ea.create({
+                        filename: "test-mindmap",
+                        foldername: "DeepReader/Excalidraw",
+                    });
+                    ea.clear();
+
+                    // 中心主题
+                    const centerId = ea.addText(400, 300, "DeepReader", {
+                        width: 200,
+                        height: 60,
+                        textAlign: "center",
+                        box: "ellipse",
+                    });
+
+                    // 分支
+                    const branches = ["PDF阅读", "AI对话", "知识管理", "可视化"];
+                    const radius = 300;
+
+                    branches.forEach((label, index) => {
+                        const angle = (2 * Math.PI * index) / branches.length - Math.PI / 2;
+                        const x = 400 + radius * Math.cos(angle) - 75;
+                        const y = 300 + radius * Math.sin(angle) - 20;
+
+                        const branchId = ea.addText(x, y, label, {
+                            width: 150,
+                            height: 40,
+                            textAlign: "center",
+                            box: "box",
+                        });
+
+                        // 连接到中心
+                        const sides = ["right", "bottom", "left", "top"] as const;
+                        ea.connectObjects(centerId, sides[index], branchId, sides[(index + 2) % 4], {
+                            endArrowHead: "arrow",
+                        });
+                    });
+
+                    // Excalidraw Automate 会自动保存
+                    new Notice("测试思维导图已生成: DeepReader/Excalidraw/test-mindmap.excalidraw.md");
+                } catch (error) {
+                    const errorMsg = error instanceof Error ? error.message : String(error);
+                    new Notice(`生成失败: ${errorMsg}`);
+                    console.error("[DeepReader] Excalidraw 测试失败:", error);
+                }
+            }
+        });
+
         // 注册 URI 协议处理器 - 单书籍对话
         this.registerObsidianProtocolHandler("deepreader-chat", async (params) => {
             log("[DeepReader] URI handler called with params:", params);
@@ -792,6 +884,40 @@ views:
         } catch (err) {
             log.error('Failed to format document:', err);
             new Notice(`Formatting failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
+    /**
+     * 导出 Canvas 文件到 Excalidraw
+     */
+    async exportCanvasToExcalidraw(canvasPath: string) {
+        // 检查 Excalidraw 插件是否可用
+        const ea = (window as any).ExcalidrawAutomate;
+        if (!ea) {
+            new Notice("请先安装 Excalidraw 插件（社区插件市场）");
+            return;
+        }
+
+        try {
+            new Notice("正在导出到 Excalidraw...");
+
+            // 动态导入 ExcalidrawService
+            const { ExcalidrawService } = await import('./services/excalidraw-service.js');
+            const service = new ExcalidrawService({
+                app: this.app,
+                defaultFolder: 'DeepReader/Excalidraw',
+            });
+
+            const result = await service.convertFromCanvasFile(canvasPath);
+
+            if (result.success) {
+                new Notice(`导出成功: ${result.filePath}`);
+            } else {
+                new Notice(`导出失败: ${result.error}`);
+            }
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            new Notice(`导出失败: ${errorMsg}`);
         }
     }
 

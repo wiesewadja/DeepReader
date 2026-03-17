@@ -14,6 +14,7 @@ import { addMemoryTool, searchMemoryTool } from './memory.js';
 import { updateProfileTool } from './profile.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { createCanvasTool } from './canvas.js';
+import { createExcalidrawTool } from './excalidraw.js';
 import { outlineStructureTool } from './outline-structure.js';
 import { findKeyTermsTool } from './find-key-terms.js';
 import { extractPropositionsTool } from './extract-propositions.js';
@@ -37,6 +38,7 @@ export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool }
 export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
 export { createCanvasTool } from './canvas.js';
+export { createExcalidrawTool } from './excalidraw.js';
 export { outlineStructureTool } from './outline-structure.js';
 export { findKeyTermsTool } from './find-key-terms.js';
 export { extractPropositionsTool } from './extract-propositions.js';
@@ -86,6 +88,9 @@ export function createToolRegistry(
   if (context.app) {
     registry.set('canvas', createCanvasTool(context.app));
   }
+
+  // 注册 Excalidraw 工具（独立于 Canvas，直接生成 Excalidraw 图形）
+  registry.set('excalidraw', createExcalidrawTool());
 
   toolsLog('[ToolRegistry] 已注册', registry.size, '个工具:', Array.from(registry.keys()));
 

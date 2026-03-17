@@ -411,28 +411,42 @@ keywords:
 - 💡 任意知识点的结构化梳理
 - 🎯 大到全书框架，小到一个概念
 
-## 使用方式
+---
 
-调用 \`canvas\` 工具，使用 \`mindmap\` action：
+## ⚠️ 重要：工具选择规则
+
+**必须使用 \`excalidraw\` 工具，不要使用 canvas！**
+
+\`\`\`
+❌ 错误：使用 canvas 工具
+✅ 正确：使用 excalidraw 工具的 mindmap action
+\`\`\`
+
+唯一例外：用户**明确**说"用 canvas"或"使用原生画布"时才用 canvas，否则一律用 excalidraw。
+
+---
+
+## 调用示例
 
 \`\`\`json
 {
-  "action": "mindmap",
-  "path": "Canvas/主题名称.canvas",
-  "topic": "中心主题",
-  "branches": [
-    {
-      "label": "分支1",
-      "children": ["子项1", "子项2"]
-    },
-    {
-      "label": "分支2",
-      "children": [
-        "子项A",
-        { "label": "子项B", "children": ["更深层级"] }
-      ]
-    }
-  ]
+  "tool": "excalidraw",
+  "arguments": {
+    "action": "mindmap",
+    "topic": "中心主题",
+    "branches": [
+      {
+        "label": "分支1",
+        "children": ["子项1", "子项2"]
+      },
+      {
+        "label": "分支2",
+        "children": ["子项A", "子项B"]
+      }
+    ],
+    "filename": "主题名称",
+    "folder": "DeepReader/Excalidraw"
+  }
 }
 \`\`\`
 
@@ -441,17 +455,16 @@ keywords:
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | action | string | 是 | 固定为 "mindmap" |
-| path | string | 是 | Canvas 文件路径，如 "Canvas/主题.canvas" |
 | topic | string | 是 | 中心主题（书名、概念名、问题等） |
 | branches | array | 是 | 分支数组，每个分支包含 label 和可选的 children |
-| branches[].label | string | 是 | 分支名称 |
-| branches[].children | array | 否 | 子节点（支持无限嵌套，可以是字符串或对象） |
+| filename | string | 否 | 文件名（不含扩展名），默认为 topic |
+| folder | string | 否 | 输出文件夹，默认 "DeepReader/Excalidraw" |
 
 ## 特性
 
 - **放射状布局**：从中心向外辐射，层级清晰
-- **自动着色**：不同分支使用不同颜色区分
-- **分支分组**：每个分支用 group 节点包裹
+- **手绘风格**：Excalidraw 特色的手绘美感
+- **可编辑**：生成后可在 Excalidraw 中进一步调整
 - **无限层级**：支持任意深度嵌套
 
 ## 执行流程
@@ -459,8 +472,8 @@ keywords:
 1. **理解用户意图**：识别用户想要整理的知识范围
 2. **提取知识结构**：从文档/上下文中提取相关知识
 3. **组织分支结构**：将知识组织为逻辑清晰的分支
-4. **调用 canvas 工具**：使用 mindmap action 创建导图
-5. **告知用户结果**：返回创建的 canvas 文件路径
+4. **调用 excalidraw 工具**：使用 mindmap action 创建导图
+5. **告知用户结果**：返回创建的文件路径
 
 ## 示例
 
@@ -470,23 +483,26 @@ keywords:
 
 \`\`\`json
 {
-  "action": "mindmap",
-  "path": "Canvas/反向传播算法.canvas",
-  "topic": "反向传播算法",
-  "branches": [
-    {
-      "label": "核心概念",
-      "children": ["链式法则", "梯度计算", "误差传播"]
-    },
-    {
-      "label": "实现步骤",
-      "children": ["前向传播", "计算损失", "反向传播", "参数更新"]
-    },
-    {
-      "label": "应用场景",
-      "children": ["神经网络训练", "深度学习框架"]
-    }
-  ]
+  "tool": "excalidraw",
+  "arguments": {
+    "action": "mindmap",
+    "topic": "反向传播算法",
+    "branches": [
+      {
+        "label": "核心概念",
+        "children": ["链式法则", "梯度计算", "误差传播"]
+      },
+      {
+        "label": "实现步骤",
+        "children": ["前向传播", "计算损失", "反向传播", "参数更新"]
+      },
+      {
+        "label": "应用场景",
+        "children": ["神经网络训练", "深度学习框架"]
+      }
+    ],
+    "filename": "反向传播算法"
+  }
 }
 \`\`\`
 
@@ -496,27 +512,30 @@ keywords:
 
 \`\`\`json
 {
-  "action": "mindmap",
-  "path": "Canvas/深度学习-全书框架.canvas",
-  "topic": "深度学习",
-  "branches": [
-    {
-      "label": "基础理论",
-      "children": ["线性代数", "概率论", "优化算法"]
-    },
-    {
-      "label": "神经网络",
-      "children": ["感知机", "多层网络", "激活函数"]
-    },
-    {
-      "label": "卷积网络",
-      "children": ["卷积层", "池化层", "经典架构"]
-    },
-    {
-      "label": "循环网络",
-      "children": ["RNN", "LSTM", "GRU"]
-    }
-  ]
+  "tool": "excalidraw",
+  "arguments": {
+    "action": "mindmap",
+    "topic": "深度学习",
+    "branches": [
+      {
+        "label": "基础理论",
+        "children": ["线性代数", "概率论", "优化算法"]
+      },
+      {
+        "label": "神经网络",
+        "children": ["感知机", "多层网络", "激活函数"]
+      },
+      {
+        "label": "卷积网络",
+        "children": ["卷积层", "池化层", "经典架构"]
+      },
+      {
+        "label": "循环网络",
+        "children": ["RNN", "LSTM", "GRU"]
+      }
+    ],
+    "filename": "深度学习-全书框架"
+  }
 }
 \`\`\`
 

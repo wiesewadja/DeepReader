@@ -17,6 +17,7 @@ import { toolsLog as log } from '../../utils/logger.js';
 interface TFileLike {
   path: string;
   extension: string;
+  basename?: string;
 }
 
 // 检查是否是 TFile
@@ -93,14 +94,14 @@ const CANVAS_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'canvas',
-    description: '创建/修改 Obsidian Canvas 文件。用于构建可视化图表、思维导图、知识图谱。',
+    description: '创建/修改 Obsidian Canvas 文件。用于构建可视化图表、思维导图、知识图谱。支持导出到 Excalidraw（需要安装 Excalidraw 插件）。',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['create', 'add_node', 'add_edge', 'get', 'list', 'mindmap'],
-          description: 'Action to perform'
+          enum: ['create', 'add_node', 'add_edge', 'get', 'list', 'mindmap', 'export_to_excalidraw'],
+          description: 'Action to perform. export_to_excalidraw 将 Canvas 转换为 Excalidraw 文件（需要安装 Excalidraw 插件）'
         },
         path: {
           type: 'string',
@@ -163,6 +164,14 @@ const CANVAS_DEFINITION: ToolDefinition = {
               }
             }
           }
+        },
+        excalidraw_filename: {
+          type: 'string',
+          description: 'Output filename for export_to_excalidraw action (without extension). Default: same as canvas filename'
+        },
+        excalidraw_folder: {
+          type: 'string',
+          description: 'Output folder for export_to_excalidraw action. Default: DeepReader/Excalidraw'
         }
       },
       required: ['action']
@@ -722,6 +731,60 @@ export function createCanvasTool(app: any): ToolExecutor {
           } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
             log('[Canvas] Mindmap 创建失败:', errorMsg);
+            return `Error: ${errorMsg}`;
+          }
+        }
+
+        case 'export_to_excalidraw': {
+          if (!path) {
+            return 'Error: path is required for export_to_excalidraw action (Canvas file to convert)';
+          }
+
+          // 检查 Excalidraw 插件是否可用
+          const ea = (window as any).ExcalidrawAutomate;
+          if (!ea) {
+            return 'Error: Excalidraw 插件未安装。请在社区插件市场安装 Excalidraw 插件后重试。';
+          }
+
+          try {
+            // 读取 Canvas 文件
+            const canvasFile = app.vault.getAbstractFileByPath(path as string);
+            if (!canvasFile || !isTFile(canvasFile)) {
+              return `Error: Canvas 文件不存在: ${path}`;
+            }
+
+            const content = await app.vault.read(canvasFile);
+            const canvasData: CanvasData = JSON.parse(content);
+
+            // 确定输出文件名和文件夹
+            const outputFilename = (args.excalidraw_filename as string) || canvasFile.basename || 'converted';
+            const outputFolder = (args.excalidraw_folder as string) || 'DeepReader/Excalidraw';
+
+            // 动态导入 ExcalidrawService
+            const { ExcalidrawService } = await import('../../services/excalidraw-service.js');
+            const excalidrawService = new ExcalidrawService({
+              app,
+              defaultFolder: outputFolder,
+            });
+
+            // 转换
+            const result = await excalidrawService.convertCanvasToExcalidraw(
+              canvasData,
+              outputFilename,
+              outputFolder
+            );
+
+            if (result.success) {
+              log('[Canvas] 导出 Excalidraw 成功:', result.filePath);
+              return `Exported to Excalidraw: ${result.filePath}
+- Nodes: ${result.nodeCount}
+- Edges: ${result.edgeCount}`;
+            } else {
+              return `Error: ${result.error}`;
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            log('[Canvas] 导出 Excalidraw 失败:', errorMsg);
             return `Error: ${errorMsg}`;
           }
         }
