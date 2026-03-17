@@ -277,6 +277,9 @@ export class MessageList extends Component {
 
 		// 更新空状态
 		this.updateEmptyState();
+
+		// 更新 minimap
+		this.updateMinimap();
 	}
 
 	/**
@@ -320,6 +323,7 @@ export class MessageList extends Component {
 			}
 		}
 		this.updateEmptyState();
+		this.updateMinimap();
 	}
 
 	/**
