@@ -5096,6 +5096,114 @@
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
+/* frontend/src/components/question-minimap/question-minimap.css */
+
+/* ==================== Minimap 容器 ==================== */
+
+.deeppdf-question-minimap {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	width: 18px;
+	display: flex;
+	flex-direction: column;
+	padding: 4px 2px;
+	pointer-events: none;
+}
+
+.deeppdf-question-minimap:hover {
+	pointer-events: auto;
+}
+
+/* ==================== 标记轨道 ==================== */
+
+.deeppdf-minimap-track {
+	flex: 1;
+	position: relative;
+	width: 14px;
+	margin: 0 auto;
+}
+
+/* ==================== 消息块 ==================== */
+
+.deeppdf-minimap-block {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	border-radius: 2px;
+	transition: opacity 0.15s ease;
+}
+
+/* 用户消息块 - 深色 */
+.deeppdf-minimap-block-user {
+	background: var(--text-muted);
+	cursor: pointer;
+}
+
+.deeppdf-minimap-block-user:hover {
+	background: var(--text-normal);
+	opacity: 0.9;
+}
+
+/* AI 消息块 - 浅色 */
+.deeppdf-minimap-block-assistant {
+	background: var(--background-modifier-hover);
+	cursor: default;
+}
+
+/* ==================== 视口指示器 ==================== */
+
+.deeppdf-minimap-viewport {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	background: var(--text-faint);
+	border-radius: 2px;
+	opacity: 0.3;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+}
+
+.deeppdf-minimap-viewport-hidden {
+	opacity: 0;
+}
+
+/* ==================== Tooltip ==================== */
+
+.deeppdf-minimap-tooltip {
+	position: fixed;
+	max-width: 200px;
+	padding: 6px 10px;
+	font-size: 12px;
+	color: var(--text-normal);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	pointer-events: none;
+	z-index: 1000;
+	word-break: break-word;
+	transition: opacity 0.1s ease;
+}
+
+.deeppdf-minimap-tooltip-hidden {
+	opacity: 0;
+	visibility: hidden;
+}
+
+/* ==================== 响应式 ==================== */
+
+@media (max-width: 640px) {
+	.deeppdf-question-minimap {
+		width: 14px;
+	}
+
+	.deeppdf-minimap-track {
+		width: 10px;
+	}
+}
+
 /**
  * DeepReader 设置页面样式
  * 顶部水平 Tab 导航布局
