@@ -41,6 +41,7 @@ export class QuestionMinimap extends Component {
 	private viewportEl: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
 	private scrollHandler: (() => void) | null = null;
+	private isDragging = false;
 
 	constructor(props: QuestionMinimapProps) {
 		super();
@@ -76,8 +77,43 @@ export class QuestionMinimap extends Component {
 		};
 		this.props.containerEl.addEventListener('scroll', this.scrollHandler);
 
+		// 拖动滚动功能
+		this.el?.addEventListener('mousedown', (e) => {
+			this.isDragging = true;
+			this.scrollToPosition(e);
+			e.preventDefault();
+		});
+
+		document.addEventListener('mousemove', (e) => {
+			if (this.isDragging) {
+				this.scrollToPosition(e);
+			}
+		});
+
+		document.addEventListener('mouseup', () => {
+			this.isDragging = false;
+		});
+
 		requestAnimationFrame(() => {
 			this.updateViewportPosition();
+		});
+	}
+
+	/**
+	 * 根据 minimap 位置滚动到对应位置
+	 */
+	private scrollToPosition(event: MouseEvent): void {
+		if (!this.trackEl) return;
+
+		const rect = this.trackEl.getBoundingClientRect();
+		const y = event.clientY - rect.top;
+		const percent = Math.max(0, Math.min(1, y / rect.height));
+
+		const container = this.props.containerEl;
+		const maxScroll = container.scrollHeight - container.clientHeight;
+		container.scrollTo({
+			top: percent * maxScroll,
+			behavior: this.isDragging ? 'auto' : 'smooth'
 		});
 	}
 
@@ -237,7 +273,9 @@ export class QuestionMinimap extends Component {
 		if (!this.tooltipEl) return;
 		const minimapRect = this.el?.getBoundingClientRect();
 		if (!minimapRect) return;
-		const x = minimapRect.right + 10;
+		// tooltip 显示在 minimap 左侧
+		const tooltipWidth = this.tooltipEl.offsetWidth || 200;
+		const x = minimapRect.left - tooltipWidth - 10;
 		const y = event.clientY;
 		this.tooltipEl.style.left = `${x}px`;
 		this.tooltipEl.style.top = `${y}px`;

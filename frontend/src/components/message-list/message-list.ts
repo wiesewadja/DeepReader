@@ -352,7 +352,7 @@ export class MessageList extends Component {
 			warn(`Message element for ${messageId} is null`);
 			return;
 		}
-		el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
 	/**

@@ -1496,34 +1496,20 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 底部 padding 动态适应输入框高度 */
-	padding: 16px 1% 80px 1%;
+	/* 底部 padding 动态适应输入框高度，右侧为 minimap 留空间 */
+	padding: 16px 28px 80px 1%;
 
 	display: flex;
 	flex-direction: column;
 	align-items: center;
 	gap: 16px;
 
-	/* 自定义滚动条样式 */
-	scrollbar-width: thin;
-	scrollbar-color: var(--background-modifier-border) transparent;
+	/* 隐藏滚动条，用 minimap 代替 */
+	scrollbar-width: none;
 }
 
 .deeppdf-messages-container::-webkit-scrollbar {
-	width: 6px;
-}
-
-.deeppdf-messages-container::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.deeppdf-messages-container::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border);
-	border-radius: 3px;
-}
-
-.deeppdf-messages-container::-webkit-scrollbar-thumb:hover {
-	background: var(--background-modifier-border-hover);
+	display: none;
 }
 
 /* 隐藏状态 */
@@ -1720,8 +1706,8 @@
 
 @media (max-width: 640px) {
 	.deeppdf-messages-container {
-		/* 小屏幕减少留白 */
-		padding: var(--size-4-2, 0.5rem) 3% 110px 3%;
+		/* 小屏幕减少留白，右侧为 minimap 留空间 */
+		padding: var(--size-4-2, 0.5rem) 24px 110px 3%;
 		gap: var(--size-4-2, 0.5rem);
 	}
 
@@ -1818,6 +1804,7 @@
 		max-width: 180px;
 	}
 }
+
 /**
  * DeepPDF 聊天输入组件样式
  * 简约风格：扁平、紧凑、统一
@@ -5098,22 +5085,21 @@
 
 /* frontend/src/components/question-minimap/question-minimap.css */
 
-/* ==================== Minimap 容器 ==================== */
+/* ==================== Minimap 容器 - 融合设计 ==================== */
 
 .deeppdf-question-minimap {
 	position: absolute;
 	right: 0;
 	top: 0;
 	bottom: 0;
-	width: 18px;
+	width: 20px;
 	display: flex;
 	flex-direction: column;
-	padding: 4px 2px;
-	pointer-events: none;
-}
-
-.deeppdf-question-minimap:hover {
+	padding: 8px 3px;
 	pointer-events: auto;
+	/* 无背景，完全融合 */
+	background: transparent;
+	z-index: 10;
 }
 
 /* ==================== 标记轨道 ==================== */
@@ -5121,35 +5107,36 @@
 .deeppdf-minimap-track {
 	flex: 1;
 	position: relative;
-	width: 14px;
-	margin: 0 auto;
+	width: 100%;
 }
 
 /* ==================== 消息块 ==================== */
 
 .deeppdf-minimap-block {
 	position: absolute;
-	left: 0;
-	width: 100%;
+	left: 1px;
+	width: calc(100% - 2px);
 	border-radius: 2px;
-	transition: opacity 0.15s ease;
+	transition: all 0.15s ease;
 }
 
-/* 用户消息块 - 深色 */
+/* 用户消息块 - 更浅的颜色 */
 .deeppdf-minimap-block-user {
 	background: var(--text-muted);
+	opacity: 0.25;
 	cursor: pointer;
+	min-height: 14px;
 }
 
 .deeppdf-minimap-block-user:hover {
-	background: var(--text-normal);
-	opacity: 0.9;
+	opacity: 0.5;
 }
 
-/* AI 消息块 - 浅色 */
+/* AI 消息块 - 非常淡 */
 .deeppdf-minimap-block-assistant {
-	background: var(--background-modifier-hover);
-	cursor: default;
+	background: var(--text-faint);
+	opacity: 0.1;
+	min-height: 6px;
 }
 
 /* ==================== 视口指示器 ==================== */
@@ -5159,32 +5146,27 @@
 	left: 0;
 	width: 100%;
 	background: var(--text-faint);
+	opacity: 0.15;
 	border-radius: 2px;
-	opacity: 0.3;
 	pointer-events: none;
 	transition: opacity 0.15s ease;
-}
-
-.deeppdf-minimap-viewport-hidden {
-	opacity: 0;
 }
 
 /* ==================== Tooltip ==================== */
 
 .deeppdf-minimap-tooltip {
 	position: fixed;
-	max-width: 200px;
+	max-width: 220px;
 	padding: 6px 10px;
 	font-size: 12px;
 	color: var(--text-normal);
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 	pointer-events: none;
 	z-index: 1000;
 	word-break: break-word;
-	transition: opacity 0.1s ease;
 }
 
 .deeppdf-minimap-tooltip-hidden {
@@ -5196,11 +5178,8 @@
 
 @media (max-width: 640px) {
 	.deeppdf-question-minimap {
-		width: 14px;
-	}
-
-	.deeppdf-minimap-track {
-		width: 10px;
+		width: 16px;
+		padding: 6px 2px;
 	}
 }
 
