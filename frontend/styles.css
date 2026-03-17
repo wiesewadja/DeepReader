@@ -961,6 +961,98 @@
 	margin-bottom: 0 !important;
 }
 
+/* ==================== 内部链接样式 ==================== */
+
+/* AI 消息中的内部链接 */
+.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link {
+	color: var(--link-color, var(--text-accent));
+	text-decoration: none;
+	border-bottom: 1px solid var(--link-external-color, var(--text-accent));
+	transition: all 0.15s ease;
+}
+
+.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link:hover {
+	color: var(--link-color-hover, var(--text-accent-hover));
+	border-bottom-color: var(--link-color-hover, var(--text-accent-hover));
+	background: rgba(var(--text-accent-rgb), 0.1);
+}
+
+/* 未解析的链接（文件不存在） */
+.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved {
+	color: var(--text-muted);
+	opacity: 0.7;
+	border-bottom-style: dashed;
+}
+
+.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved:hover {
+	opacity: 1;
+}
+
+/* 用户消息中的内部链接 */
+.deeppdf-message-bubble-user .deeppdf-message-content a.internal-link {
+	color: var(--text-on-accent);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.deeppdf-message-bubble-user .deeppdf-message-content a.internal-link:hover {
+	opacity: 0.9;
+}
+
+/* ==================== 代码块样式 ==================== */
+
+/* 行内代码 */
+.deeppdf-message-bubble-ai .deeppdf-message-content code {
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: var(--background-modifier-form-field);
+	color: var(--text-normal);
+}
+
+/* 代码块 */
+.deeppdf-message-bubble-ai .deeppdf-message-content pre {
+	margin: 8px 0;
+	padding: 12px 16px;
+	border-radius: 8px;
+	background: var(--background-primary-alt);
+	border: 1px solid var(--background-modifier-border);
+	overflow-x: auto;
+}
+
+.deeppdf-message-bubble-ai .deeppdf-message-content pre code {
+	padding: 0;
+	background: transparent;
+	border: none;
+	font-size: var(--font-code-size, 13px);
+	line-height: 1.5;
+}
+
+/* 用户消息中的代码 */
+.deeppdf-message-bubble-user .deeppdf-message-content code {
+	font-family: var(--font-monospace);
+	font-size: 0.9em;
+	padding: 2px 6px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.15);
+	color: var(--text-on-accent);
+}
+
+.deeppdf-message-bubble-user .deeppdf-message-content pre {
+	margin: 8px 0;
+	padding: 12px 16px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.1);
+	overflow-x: auto;
+}
+
+.deeppdf-message-bubble-user .deeppdf-message-content pre code {
+	padding: 0;
+	background: transparent;
+	color: var(--text-on-accent);
+}
+
 /* ==================== 时间戳 ==================== */
 
 .deeppdf-message-time {

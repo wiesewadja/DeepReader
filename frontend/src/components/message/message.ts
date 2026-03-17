@@ -581,8 +581,7 @@ export abstract class Message {
 				const { cleanedContent } = parseAgentContent(this.data.content);
 
 				contentEl.empty();
-				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component());
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, '', new Component());
 				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
 			}
 			this.el.removeClass('deeppdf-message-streaming');
@@ -628,8 +627,7 @@ export class UserMessage extends Message {
 
 		// 用户消息支持 Markdown 渲染（如果 app 存在）
 		if (this.app) {
-			const sourcePath = this.data.pdfName || '';
-			MarkdownRenderer.render(this.app, this.data.content, content, sourcePath, new Component());
+			MarkdownRenderer.render(this.app, this.data.content, content, '', new Component());
 		} else {
 			content.innerHTML = this.escapeHtml(this.data.content);
 		}
@@ -643,8 +641,7 @@ export class UserMessage extends Message {
 		if (contentEl) {
 			contentEl.empty();
 			if (this.app) {
-				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, sourcePath, new Component());
+				MarkdownRenderer.render(this.app, content, contentEl as HTMLElement, '', new Component());
 			} else {
 				contentEl.innerHTML = this.escapeHtml(content);
 			}
@@ -784,9 +781,7 @@ export class AIMessage extends Message {
 			// 使用 Markdown 渲染（先清理 <thought> 标签）
 			if (this.app) {
 				const { cleanedContent } = parseAgentContent(this.data.content);
-				// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
-				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component());
+				MarkdownRenderer.render(this.app, cleanedContent, content, '', new Component());
 				// 设置内部链接的点击事件和 hover preview
 				// 如果正在流式传输，禁用 hover preview
 				this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
@@ -898,8 +893,7 @@ export class AIMessage extends Message {
 				const { cleanedContent } = parseAgentContent(this.data.content);
 
 				contentEl.empty();
-				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component());
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, '', new Component());
 				// 设置内部链接的点击事件和 hover preview
 				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
 			}
@@ -1071,9 +1065,8 @@ export class AIMessage extends Message {
 				} else {
 					// 渲染 Markdown（包括 wiki 链接）
 					const tempContainer = document.createElement('div');
-					const sourcePath = this.data.pdfName || '';
 
-					MarkdownRenderer.render(this.app, cleanedContent, tempContainer, sourcePath, new Component()).then(() => {
+					MarkdownRenderer.render(this.app, cleanedContent, tempContainer, '', new Component()).then(() => {
 						if (!this.el) return;
 
 						// 渲染 Markdown 内容
@@ -1128,8 +1121,7 @@ export class AIMessage extends Message {
 			// 直接渲染 HTML（拟人化 UI）
 			contentEl.innerHTML = cleanedContent;
 		} else if (this.app) {
-			const sourcePath = this.data.pdfName || '';
-			MarkdownRenderer.render(this.app, cleanedContent, contentEl, sourcePath, new Component());
+			MarkdownRenderer.render(this.app, cleanedContent, contentEl, '', new Component());
 			// 设置内部链接的点击事件和 hover preview
 			this.mouseoverHandler = setupInternalLinks(contentEl, this.app, this.data.isStreaming, this.observers);
 		} else {
