@@ -218,6 +218,33 @@ function manageMessageHistory(messages: ChatMessage[]): ChatMessage[] {
 }
 
 /**
+ * 清理 ReAct 循环产生的中间消息
+ *
+ * 只保留 User 和 Assistant 的最终对话，删除 tool 调用和结果
+ * 用于 Memory GC，防止上下文爆炸
+ */
+function compactMessages(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+
+  for (const msg of messages) {
+    // 只保留 user 和 assistant 角色
+    if (msg.role === 'user' || msg.role === 'assistant') {
+      const cleaned: ChatMessage = {
+        role: msg.role,
+        content: msg.content,
+      };
+      // 保留 name 字段（如果有）
+      if (msg.name) cleaned.name = msg.name;
+      result.push(cleaned);
+    }
+    // 丢弃 role='tool' 的消息和 tool_calls 字段
+  }
+
+  agentLog(`[AgentLoop] 🧹 消息清理: ${messages.length} -> ${result.length} 条`);
+  return result;
+}
+
+/**
  * 运行 Agent 执行循环
  *
  * @param client LLM 客户端实例
@@ -690,5 +717,8 @@ export async function runAgentLoop(
   };
   printPerformanceReport(metrics);
 
-  return workingMessages;
+  // 🧹 Memory GC: 清理中间消息，只保留用户对话
+  const compactedMessages = compactMessages(workingMessages);
+
+  return compactedMessages;
 }
