@@ -16,25 +16,26 @@ interface SkillLoader {
 
 /**
  * 动态生成 Skill 工具定义
- * 将可用技能列表嵌入描述中，让 LLM 知道有哪些技能可用
+ * 技能列表在 System Prompt 的 <skills> 标签中，这里不再重复
  */
 function createSkillDefinition(skillLoader: SkillLoader): ToolDefinition {
-  const skillDescriptions = skillLoader.getDescriptions();
+  const skillNames = skillLoader.listSkills();
 
   return {
     type: 'function',
     function: {
       name: 'Skill',
-      description: `加载专业技能指导。
+      description: `加载专业技能的完整指导内容。
 
-可用技能：
-${skillDescriptions}`,
+查看 System Prompt 中的 <skills> 标签获取可用技能列表。
+每个 Skill 包含特定场景的详细工作流程和指令。`,
       parameters: {
         type: 'object',
         properties: {
           skill: {
             type: 'string',
             description: '要加载的技能名称',
+            enum: skillNames.length > 0 ? skillNames : undefined,
           },
         },
         required: ['skill'],

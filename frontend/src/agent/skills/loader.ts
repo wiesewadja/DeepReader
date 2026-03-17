@@ -163,6 +163,7 @@ export class SkillLoader {
   /**
    * Layer 1: 获取 Skill 描述列表（用于 System Prompt）
    * 格式: "- skill_name: skill description"
+   * @deprecated 使用 buildSkillsSummary() 替代，生成 XML 格式
    */
   getDescriptions(): string {
     if (this.skills.size === 0) {
@@ -172,6 +173,48 @@ export class SkillLoader {
     return Array.from(this.skills.values())
       .map((skill) => `- ${skill.name}: ${skill.description}`)
       .join('\n');
+  }
+
+  /**
+   * 构建 Skills XML Summary（用于 System Prompt）
+   * 类似 nanobot 的 <skills> 标签格式
+   */
+  buildSkillsSummary(): string {
+    if (this.skills.size === 0) {
+      return '';
+    }
+
+    const skillEntries = Array.from(this.skills.values())
+      .map((skill) => {
+        let entry = `  <skill>\n    <name>${this.escapeXml(skill.name)}</name>\n    <description>${this.escapeXml(skill.description)}</description>`;
+        if (skill.keywords && skill.keywords.length > 0) {
+          entry += `\n    <keywords>${skill.keywords.map((k) => this.escapeXml(k)).join(', ')}</keywords>`;
+        }
+        if (skill.isDefault) {
+          entry += `\n    <default>true</default>`;
+        }
+        entry += '\n  </skill>';
+        return entry;
+      })
+      .join('\n');
+
+    return `<skills>
+${skillEntries}
+</skills>
+
+To load a skill's full instructions, use the Skill tool with the skill name.`;
+  }
+
+  /**
+   * XML 转义辅助方法
+   */
+  private escapeXml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
   }
 
   /**

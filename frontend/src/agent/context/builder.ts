@@ -5,8 +5,9 @@
  * 1. Identity 层 (静态): 人设和基本特质
  * 2. Bootstrap 层 (用户定义): 自定义提示文件
  * 3. Memory 层 (持久化): 用户画像和长期记忆
- * 4. Tools 层 (动态): 工具和技能描述
+ * 4. Skills 层 (XML Summary): 可用技能列表
  *
+ * Tools 通过 Function Calling API 传递，不在 System Prompt 中
  * 运行时上下文（时间、进度等）注入到用户消息，保持系统提示稳定
  */
 
@@ -57,7 +58,8 @@ export interface ReadingProgress {
  * 使用方式：
  * ```typescript
  * const builder = new ContextBuilder(app, memoryStore, { deepReaderDir: 'DeepReader' });
- * const systemPrompt = await builder.buildSystemPrompt(toolDesc, skillDesc, metadata);
+ * const skillsSummary = skillLoader.buildSkillsSummary(); // XML 格式
+ * const systemPrompt = await builder.buildSystemPrompt(skillsSummary, metadata);
  * const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
  * const messages = ContextBuilder.buildMessages(systemPrompt, history, userMsg, runtimeContext);
  * ```
@@ -79,14 +81,12 @@ export class ContextBuilder {
 	/**
 	 * 构建完整的系统提示
 	 *
-	 * @param toolDescriptions 工具描述文本
-	 * @param skillDescriptions 技能描述文本
+	 * @param skillsSummary Skills XML Summary（由 SkillLoader.buildSkillsSummary() 生成）
 	 * @param documentMetadata 当前文档元数据（可选）
 	 * @returns 完整的系统提示字符串
 	 */
 	async buildSystemPrompt(
-		toolDescriptions: string,
-		skillDescriptions: string,
+		skillsSummary: string,
 		documentMetadata?: DocumentMetadata
 	): Promise<string> {
 		const parts: string[] = [];
@@ -106,8 +106,11 @@ export class ContextBuilder {
 			parts.push(memory);
 		}
 
-		// Layer 4: Tools（工具层）
-		parts.push(`## 工具\n\n${toolDescriptions}`);
+		// Layer 4: Skills（技能层 - XML Summary）
+		// Tools 通过 Function Calling API 传递，不在 System Prompt 中
+		if (skillsSummary && skillsSummary.trim()) {
+			parts.push(`## 可用技能\n\n${skillsSummary}`);
+		}
 
 		// 添加核心约束
 		parts.push(this.buildConstraints());
@@ -159,9 +162,8 @@ export class ContextBuilder {
 在 Obsidian 笔记软件中工作：
 - 使用工具返回的 Link 字段（已包含正确格式）
 - 引用自然以双链 [[路径|显示名]] 嵌入句子中，不要附在句末
-- 引用文档时使用 [[文档路径|展示文本]] 指出位置
 - 回复使用书信文体，不要过于结构化，禁止使用---分割符和空行，
-- 写入到 obsidian vault 里的文档使用[[文档路径]] 指出位置
+- 写入到 obsidian vault 里的文档使用双链[[文档路径]] 指出位置
 ${docInfo}`;
 	}
 
@@ -179,7 +181,7 @@ ${docInfo}`;
 ## 任务处理策略
 
 ### 复杂任务判断
-涉及 3+ 章节或 2+ 独立信息源的任务**必须使用子代理**：
+涉及3 个以上章节或2 个独立信息源的任务**必须使用子代理**：
 - 跨章节查询（如"整理全书框架"）
 - 需要整合分析（如"比较不同章节观点"）
 - 结构化输出（如思维导图、读书笔记）

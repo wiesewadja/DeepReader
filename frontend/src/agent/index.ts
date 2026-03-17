@@ -88,30 +88,20 @@ export class FrontendAgent {
 
   /**
    * 获取系统提示（异步，使用 ContextBuilder）
+   *
+   * 注意：Tools 通过 Function Calling API 传递，不在 System Prompt 中
    */
   async getSystemPromptAsync(
     documentMetadata?: DocumentMetadata
   ): Promise<string> {
     await this.initialize();
 
-    // 获取工具描述
-    const tempContext = { app: this.options.app } as ToolContext;
-    const toolRegistry = createToolRegistry(this.skillLoader, tempContext);
-    const tools = getToolDefinitions(toolRegistry);
+    // 获取 Skills XML Summary（用于 System Prompt）
+    const skillsSummary = this.skillLoader.buildSkillsSummary();
 
-    // 构建工具描述文本
-    const toolDescriptions = tools.map(t => {
-      const func = t.function;
-      return `### ${func.name}\n${func.description}`;
-    }).join('\n\n');
-
-    // 获取技能描述
-    const skillDescriptions = this.skillLoader.getDescriptions();
-
-    // 使用 ContextBuilder 构建完整的系统提示
+    // Tools 不再放在 System Prompt 中，仅通过 Function Calling API 传递
     return this.contextBuilder.buildSystemPrompt(
-      toolDescriptions,
-      skillDescriptions,
+      skillsSummary,
       documentMetadata
     );
   }
