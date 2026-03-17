@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from pydantic import BaseModel, Field, field_validator
 from pathlib import Path
@@ -173,6 +173,7 @@ class ChapterItem(BaseModel):
     start_page: int
     end_page: int
     level: int = 0
+    summary: Optional[str] = None  # 章节摘要（LLM 生成）
 
 
 class TableOfContentsResponse(BaseModel):
@@ -191,8 +192,10 @@ def _extract_chapters(tree_structure: List[dict], level: int = 0) -> List[Chapte
         title = node.get("title", "未命名章节")
         start = node.get("physical_index", node.get("start_index", 1))
         end = node.get("end_index", start)
+        # 提取章节摘要（LLM 生成）
+        summary = node.get("summary")
         chapters.append(
-            ChapterItem(title=title, start_page=start, end_page=end, level=level)
+            ChapterItem(title=title, start_page=start, end_page=end, level=level, summary=summary)
         )
         # 递归处理子章节
         sub_structure = node.get("structure", [])

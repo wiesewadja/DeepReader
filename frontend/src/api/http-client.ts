@@ -261,6 +261,7 @@ export interface ChapterItem {
   start_page: number;
   end_page: number;
   level: number;
+  summary?: string;  // 章节摘要（LLM 生成）
 }
 
 // 章节目录响应

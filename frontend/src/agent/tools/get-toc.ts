@@ -40,6 +40,7 @@ interface ChapterInfo {
   title: string;
   start_page: number;
   end_page: number;
+  summary?: string;  // 章节摘要（LLM 生成）
 }
 
 /**
@@ -51,6 +52,7 @@ interface NodeInfo {
   section: string;
   page_range: string;
   text: string;
+  summary?: string;  // 章节摘要（LLM 生成）
 }
 
 export const getTocTool: ToolExecutor = {
@@ -62,7 +64,7 @@ export const getTocTool: ToolExecutor = {
     try {
       log('[get_toc] 获取目录:', { indexId: context.indexId, detail });
 
-      // 根据详细程度决定是否获取导出数据
+      // 获取目录（包含 summary）
       const toc = await deeppdfClient.getTableOfContents(context.indexId);
 
       if (!toc.chapters || toc.chapters.length === 0) {
@@ -74,15 +76,19 @@ export const getTocTool: ToolExecutor = {
         return formatSimpleToc(toc.book_name, toc.chapters, toc.total_pages);
       }
 
-      // 其他模式需要导出数据
+      // brief 模式：仅主要章节
+      if (detail === 'brief') {
+        return formatBriefOutline(toc.book_name, toc.chapters);
+      }
+
+      // normal/detailed 模式：需要额外获取导出数据（用于架构分析和完整文本）
       const exportData = await deeppdfClient.exportIndex(context.indexId);
 
       switch (detail) {
-        case 'brief':
-          return formatBriefOutline(toc.book_name, toc.chapters);
         case 'normal':
           return formatNormalOutline(toc.book_name, toc.chapters, exportData.nodes);
         case 'detailed':
+          // detailed 模式下，优先使用 toc.chapters 中的 summary
           return formatDetailedOutline(toc.book_name, toc.chapters, exportData.nodes);
         default:
           return formatSimpleToc(toc.book_name, toc.chapters, toc.total_pages);
@@ -225,8 +231,8 @@ function formatDetailedOutline(bookName: string, chapters: ChapterInfo[], nodes:
 
     lines.push(`### ${chapter.title} (${pageRange})`);
 
-    // 添加章节摘要
-    const summary = getChapterSummary(chapter.title, nodes);
+    // 添加章节摘要（优先从 chapters 获取，其次从 nodes）
+    const summary = getChapterSummary(chapter.title, chapters, nodes);
     if (summary) {
       lines.push('');
       lines.push(`> ${summary}`);
@@ -310,14 +316,38 @@ function extractKeywords(text: string): string[] {
 
 /**
  * 获取章节摘要
+ * 优先从 chapters（toc API）中获取 summary，其次从 nodes（export API）中提取
  */
-function getChapterSummary(chapterTitle: string, nodes: NodeInfo[]): string {
+function getChapterSummary(chapterTitle: string, chapters: ChapterInfo[], nodes: NodeInfo[]): string {
+  // 优先从 chapters 获取 LLM 生成的 summary
+  const matchingChapter = chapters.find(
+    (ch) => ch.title === chapterTitle || chapterTitle.includes(ch.title)
+  );
+  if (matchingChapter?.summary) {
+    const summary = matchingChapter.summary.trim();
+    if (summary.length > 150) {
+      return summary.slice(0, 150) + '...';
+    }
+    return summary;
+  }
+
+  // fallback: 从 nodes 中提取
   const matchingNode = nodes.find(
     (n) => n.node_name === chapterTitle || n.node_name.includes(chapterTitle)
   );
 
   if (!matchingNode) return '';
 
+  // 优先使用 node 的 summary 字段
+  if (matchingNode.summary && matchingNode.summary.trim()) {
+    const summary = matchingNode.summary.trim();
+    if (summary.length > 150) {
+      return summary.slice(0, 150) + '...';
+    }
+    return summary;
+  }
+
+  // fallback: 从 text 中提取
   const firstParagraph = matchingNode.text.split('\n\n')[0];
   if (firstParagraph && firstParagraph.length > 50) {
     return firstParagraph.slice(0, 150) + (firstParagraph.length > 150 ? '...' : '');
