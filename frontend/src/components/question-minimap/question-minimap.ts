@@ -6,7 +6,9 @@ import type { MessageData } from '../message/message';
  * Minimap 组件属性
  */
 export interface QuestionMinimapProps {
+	/** 消息容器元素（用于计算滚动位置） */
 	containerEl: HTMLElement;
+	/** 点击回调，返回消息 ID */
 	onMessageClick: (messageId: string) => void;
 }
 
@@ -18,31 +20,27 @@ interface MinimapBlock {
 	role: 'user' | 'assistant';
 	top: number;
 	height: number;
+	/** tooltip 内容（用户块为问题内容，AI 块为对应问题内容） */
 	tooltipContent?: string;
+	/** 对应的用户消息 ID（AI 块用） */
 	userId?: string;
-	/** 消息在容器中的实际位置 */
-	msgTop: number;
-	msgHeight: number;
 }
 
 // 常量定义
-const USER_BLOCK_HEIGHT = 14;
+const USER_BLOCK_HEIGHT = 16;  // 放大用户块
 const AI_BLOCK_HEIGHT = 6;
-/** 视口上下扩展比例（1.0 = 上下各扩展 100% 视口高度） */
-const VIEWPORT_EXTEND_RATIO = 1.0;
 
 /**
  * Question Minimap 组件
- * 滑动窗口模式：只显示当前视口附近的消息
  */
 export class QuestionMinimap extends Component {
 	private props: QuestionMinimapProps;
 	private messages: MessageData[] = [];
-	private allBlocks: MinimapBlock[] = [];
+	private blocks: MinimapBlock[] = [];
 	private trackEl: HTMLElement | null = null;
+	private viewportEl: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
 	private scrollHandler: (() => void) | null = null;
-	private rafId: number | null = null;
 
 	constructor(props: QuestionMinimapProps) {
 		super();
@@ -59,6 +57,10 @@ export class QuestionMinimap extends Component {
 			cls: 'deeppdf-minimap-track'
 		});
 
+		this.viewportEl = container.createEl('div', {
+			cls: 'deeppdf-minimap-viewport'
+		});
+
 		this.tooltipEl = document.body.createEl('div', {
 			cls: 'deeppdf-minimap-tooltip deeppdf-minimap-tooltip-hidden'
 		});
@@ -70,42 +72,33 @@ export class QuestionMinimap extends Component {
 
 	private bindEvents(): void {
 		this.scrollHandler = () => {
-			this.scheduleUpdate();
+			this.updateViewportPosition();
 		};
 		this.props.containerEl.addEventListener('scroll', this.scrollHandler);
 
-		// 初始渲染
 		requestAnimationFrame(() => {
-			this.calculateAllBlocks();
-			this.renderVisibleBlocks();
+			this.updateViewportPosition();
 		});
 	}
 
-	/**
-	 * 节流更新
-	 */
-	private scheduleUpdate(): void {
-		if (this.rafId !== null) return;
-		this.rafId = requestAnimationFrame(() => {
-			this.rafId = null;
-			this.renderVisibleBlocks();
-		});
-	}
-
-	/**
-	 * 更新消息数据
-	 */
 	updateMessages(messages: MessageData[]): void {
 		this.messages = messages.filter(m => !m.hidden);
-		this.calculateAllBlocks();
-		this.renderVisibleBlocks();
+		this.calculateBlocks();
+		this.renderBlocks();
+		this.updateViewportPosition();
 	}
 
-	/**
-	 * 计算所有消息块的位置信息
-	 */
-	private calculateAllBlocks(): void {
-		this.allBlocks = [];
+	private calculateBlocks(): void {
+		if (!this.trackEl) return;
+
+		const minimapHeight = this.trackEl.clientHeight;
+		const containerScrollHeight = this.props.containerEl.scrollHeight;
+
+		if (containerScrollHeight === 0 || minimapHeight === 0) return;
+
+		this.blocks = [];
+
+		// 记录最近一个用户消息的内容，用于 AI 块的 tooltip
 		let lastUserContent = '';
 		let lastUserId = '';
 
@@ -119,26 +112,32 @@ export class QuestionMinimap extends Component {
 			const msgTop = msgEl.offsetTop;
 			const msgHeight = msgEl.offsetHeight;
 
+			const topPercent = msgTop / containerScrollHeight;
+			const heightPercent = msgHeight / containerScrollHeight;
+
+			const top = topPercent * minimapHeight;
+			const height = Math.max(
+				heightPercent * minimapHeight,
+				msg.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT
+			);
+
 			if (msg.role === 'user') {
 				lastUserContent = this.truncateText(msg.content, 50);
 				lastUserId = msg.id;
-				this.allBlocks.push({
+				this.blocks.push({
 					id: msg.id,
 					role: msg.role,
-					msgTop,
-					msgHeight,
-					top: 0, // 稍后计算
-					height: USER_BLOCK_HEIGHT,
+					top,
+					height,
 					tooltipContent: lastUserContent,
 				});
 			} else {
-				this.allBlocks.push({
+				// AI 块使用对应问题的内容
+				this.blocks.push({
 					id: msg.id,
 					role: msg.role,
-					msgTop,
-					msgHeight,
-					top: 0,
-					height: AI_BLOCK_HEIGHT,
+					top,
+					height,
 					tooltipContent: lastUserContent,
 					userId: lastUserId,
 				});
@@ -146,76 +145,41 @@ export class QuestionMinimap extends Component {
 		}
 	}
 
-	/**
-	 * 渲染当前视口附近的块
-	 */
-	private renderVisibleBlocks(): void {
-		if (!this.trackEl || this.allBlocks.length === 0) return;
+	private renderBlocks(): void {
+		if (!this.trackEl) return;
 
-		const container = this.props.containerEl;
-		const viewportHeight = container.clientHeight;
-		const scrollTop = container.scrollTop;
-
-		// 计算可见窗口范围
-		const windowTop = Math.max(0, scrollTop - viewportHeight * VIEWPORT_EXTEND_RATIO);
-		const windowBottom = scrollTop + viewportHeight + viewportHeight * VIEWPORT_EXTEND_RATIO;
-
-		// 筛选窗口内的块
-		const visibleBlocks = this.allBlocks.filter(block => {
-			const blockBottom = block.msgTop + block.msgHeight;
-			return block.msgTop < windowBottom && blockBottom > windowTop;
-		});
-
-		if (visibleBlocks.length === 0) {
-			this.trackEl.empty();
-			return;
-		}
-
-		// 计算窗口范围
-		const windowRangeStart = visibleBlocks[0].msgTop;
-		const windowRangeEnd = Math.max(
-			...visibleBlocks.map(b => b.msgTop + b.msgHeight)
-		);
-		const windowRange = windowRangeEnd - windowRangeStart;
-
-		if (windowRange === 0) return;
-
-		// 计算每个块在 minimap 中的位置
-		const minimapHeight = this.trackEl.clientHeight;
-
-		for (const block of visibleBlocks) {
-			const relativeTop = block.msgTop - windowRangeStart;
-			block.top = (relativeTop / windowRange) * minimapHeight;
-
-			const relativeHeight = block.msgHeight / windowRange;
-			block.height = Math.max(
-				relativeHeight * minimapHeight,
-				block.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT
-			);
-		}
-
-		// 渲染
 		this.trackEl.empty();
 
-		for (const block of visibleBlocks) {
+		for (const block of this.blocks) {
 			const blockEl = this.trackEl.createEl('div', {
 				cls: `deeppdf-minimap-block deeppdf-minimap-block-${block.role}`,
+				attr: {
+					'data-message-id': block.id,
+				},
 			});
 
 			blockEl.style.top = `${block.top}px`;
 			blockEl.style.height = `${block.height}px`;
 
-			// 绑定交互
-			this.bindBlockEvents(
-				blockEl,
-				block.role === 'assistant' ? (block.userId || block.id) : block.id,
-				block.tooltipContent || ''
-			);
+			// 用户块可交互
+			if (block.role === 'user') {
+				blockEl.setAttribute('role', 'button');
+				blockEl.setAttribute('tabindex', '0');
+				blockEl.setAttribute('aria-label', `跳转到：${block.tooltipContent}`);
+
+				this.bindBlockEvents(blockEl, block.id, block.tooltipContent || '');
+			}
+
+			// AI 块也添加 tooltip（显示对应问题内容）和点击跳转
+			if (block.role === 'assistant' && block.tooltipContent) {
+				// 点击跳转到对应的用户问题
+				this.bindBlockEvents(blockEl, block.userId || block.id, block.tooltipContent);
+			}
 		}
 	}
 
 	/**
-	 * 绑定块事件
+	 * 为块绑定事件
 	 */
 	private bindBlockEvents(
 		blockEl: HTMLElement,
@@ -241,6 +205,27 @@ export class QuestionMinimap extends Component {
 		});
 	}
 
+	private updateViewportPosition(): void {
+		if (!this.viewportEl || !this.trackEl) return;
+
+		const container = this.props.containerEl;
+		const viewportHeight = container.clientHeight;
+		const scrollHeight = container.scrollHeight;
+		const scrollTop = container.scrollTop;
+
+		if (scrollHeight === 0) return;
+
+		const minimapHeight = this.trackEl.clientHeight;
+		const viewportPercent = viewportHeight / scrollHeight;
+		const scrollTopPercent = scrollTop / scrollHeight;
+
+		const top = scrollTopPercent * minimapHeight;
+		const height = Math.max(viewportPercent * minimapHeight, 10);
+
+		this.viewportEl.style.top = `${top}px`;
+		this.viewportEl.style.height = `${height}px`;
+	}
+
 	private showTooltip(content: string, event: MouseEvent): void {
 		if (!this.tooltipEl) return;
 		this.tooltipEl.textContent = content;
@@ -252,8 +237,10 @@ export class QuestionMinimap extends Component {
 		if (!this.tooltipEl) return;
 		const minimapRect = this.el?.getBoundingClientRect();
 		if (!minimapRect) return;
-		this.tooltipEl.style.left = `${minimapRect.right + 10}px`;
-		this.tooltipEl.style.top = `${event.clientY}px`;
+		const x = minimapRect.right + 10;
+		const y = event.clientY;
+		this.tooltipEl.style.left = `${x}px`;
+		this.tooltipEl.style.top = `${y}px`;
 	}
 
 	private hideTooltip(): void {
@@ -267,9 +254,6 @@ export class QuestionMinimap extends Component {
 	}
 
 	override destroy(): void {
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-		}
 		if (this.scrollHandler) {
 			this.props.containerEl.removeEventListener('scroll', this.scrollHandler);
 		}

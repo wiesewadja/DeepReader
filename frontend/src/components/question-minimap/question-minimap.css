@@ -12,6 +12,7 @@
 	flex-direction: column;
 	padding: 8px 2px;
 	pointer-events: auto;
+	/* 无背景，完全融合 */
 	background: transparent;
 	z-index: 10;
 }
@@ -22,7 +23,6 @@
 	flex: 1;
 	position: relative;
 	width: 100%;
-	overflow: hidden;
 }
 
 /* ==================== 消息块 ==================== */
@@ -32,25 +32,39 @@
 	left: 1px;
 	width: calc(100% - 2px);
 	border-radius: 2px;
-	transition: opacity 0.15s ease;
+	transition: all 0.15s ease;
 }
 
-/* 用户消息块 */
+/* 用户消息块 - 更浅的颜色 */
 .deeppdf-minimap-block-user {
 	background: var(--text-muted);
 	opacity: 0.25;
 	cursor: pointer;
+	min-height: 14px;
 }
 
 .deeppdf-minimap-block-user:hover {
 	opacity: 0.5;
 }
 
-/* AI 消息块 */
+/* AI 消息块 - 非常淡 */
 .deeppdf-minimap-block-assistant {
 	background: var(--text-faint);
 	opacity: 0.1;
-	cursor: pointer;
+	min-height: 6px;
+}
+
+/* ==================== 视口指示器 ==================== */
+
+.deeppdf-minimap-viewport {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	background: var(--text-faint);
+	opacity: 0.15;
+	border-radius: 2px;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
 }
 
 /* ==================== Tooltip ==================== */
