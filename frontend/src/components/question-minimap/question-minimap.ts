@@ -20,7 +20,10 @@ interface MinimapBlock {
 	role: 'user' | 'assistant';
 	top: number;
 	height: number;
+	/** tooltip 内容（用户块为问题内容，AI 块为对应问题内容） */
 	tooltipContent?: string;
+	/** 对应的用户消息 ID（AI 块用） */
+	userId?: string;
 }
 
 // 常量定义
@@ -95,6 +98,10 @@ export class QuestionMinimap extends Component {
 
 		this.blocks = [];
 
+		// 记录最近一个用户消息的内容，用于 AI 块的 tooltip
+		let lastUserContent = '';
+		let lastUserId = '';
+
 		for (const msg of this.messages) {
 			const msgEl = this.props.containerEl.querySelector(
 				`[data-message-id="${msg.id}"]`
@@ -114,14 +121,27 @@ export class QuestionMinimap extends Component {
 				msg.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT
 			);
 
-			this.blocks.push({
-				id: msg.id,
-				role: msg.role,
-				top,
-				height,
-				tooltipContent:
-					msg.role === 'user' ? this.truncateText(msg.content, 50) : undefined,
-			});
+			if (msg.role === 'user') {
+				lastUserContent = this.truncateText(msg.content, 50);
+				lastUserId = msg.id;
+				this.blocks.push({
+					id: msg.id,
+					role: msg.role,
+					top,
+					height,
+					tooltipContent: lastUserContent,
+				});
+			} else {
+				// AI 块使用对应问题的内容
+				this.blocks.push({
+					id: msg.id,
+					role: msg.role,
+					top,
+					height,
+					tooltipContent: lastUserContent,
+					userId: lastUserId,
+				});
+			}
 		}
 	}
 
@@ -147,34 +167,42 @@ export class QuestionMinimap extends Component {
 				blockEl.setAttribute('tabindex', '0');
 				blockEl.setAttribute('aria-label', `跳转到：${block.tooltipContent}`);
 
-				// tooltip
-				blockEl.addEventListener('mouseenter', (e) => {
-					this.showTooltip(block.tooltipContent || '', e);
-				});
-				blockEl.addEventListener('mousemove', (e) => {
-					this.updateTooltipPosition(e);
-				});
-				blockEl.addEventListener('mouseleave', () => {
-					this.hideTooltip();
-				});
+				this.bindBlockEvents(blockEl, block.id, block.tooltipContent || '');
+			}
 
-				// 点击跳转
-				blockEl.addEventListener('click', (e) => {
-					e.stopPropagation();
-					this.hideTooltip();
-					this.props.onMessageClick(block.id);
-				});
-
-				// 键盘
-				blockEl.addEventListener('keydown', (e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						this.hideTooltip();
-						this.props.onMessageClick(block.id);
-					}
-				});
+			// AI 块也添加 tooltip（显示对应问题内容）和点击跳转
+			if (block.role === 'assistant' && block.tooltipContent) {
+				// 点击跳转到对应的用户问题
+				this.bindBlockEvents(blockEl, block.userId || block.id, block.tooltipContent);
 			}
 		}
+	}
+
+	/**
+	 * 为块绑定事件
+	 */
+	private bindBlockEvents(
+		blockEl: HTMLElement,
+		clickId: string,
+		tooltipContent: string
+	): void {
+		// tooltip
+		blockEl.addEventListener('mouseenter', (e) => {
+			this.showTooltip(tooltipContent, e);
+		});
+		blockEl.addEventListener('mousemove', (e) => {
+			this.updateTooltipPosition(e);
+		});
+		blockEl.addEventListener('mouseleave', () => {
+			this.hideTooltip();
+		});
+
+		// 点击跳转
+		blockEl.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.hideTooltip();
+			this.props.onMessageClick(clickId);
+		});
 	}
 
 	private updateViewportPosition(): void {
