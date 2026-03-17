@@ -232,6 +232,10 @@ def add_node_text(node: Any, pdf_pages: List[tuple]) -> None:
 
     text 字段包含从 start_index 到 end_index 的页面文本。
 
+    容器型节点处理：
+    - 如果节点被标记为容器（is_container=True），不提取 text
+    - 容器型节点的 summary 应该汇总子章节
+
     参数:
         node: 树状结构 (dict 或 list)
         pdf_pages: 页面列表，格式为 [(page_text, token_count), ...]
@@ -246,7 +250,12 @@ def add_node_text(node: Any, pdf_pages: List[tuple]) -> None:
     if isinstance(node, dict):
         start_page = node.get("start_index")
         end_page = node.get("end_index")
-        node["text"] = get_text_of_pdf_pages(pdf_pages, start_page, end_page)
+
+        # 容器型节点不提取 text
+        if node.get("is_container"):
+            node["text"] = ""
+        else:
+            node["text"] = get_text_of_pdf_pages(pdf_pages, start_page, end_page)
 
         if "nodes" in node:
             add_node_text(node["nodes"], pdf_pages)
@@ -263,6 +272,10 @@ def add_node_text_with_labels(node: Any, pdf_pages: List[tuple]) -> None:
     与 add_node_text 的区别是，这个函数添加物理索引标记。
     例如: "<physical_index_1>\n页面内容\n<physical_index_1>"
 
+    容器型节点处理：
+    - 如果节点被标记为容器（is_container=True），不提取 text
+    - 容器型节点的 summary 应该汇总子章节
+
     参数:
         node: 树状结构 (dict 或 list)
         pdf_pages: 页面列表
@@ -277,9 +290,14 @@ def add_node_text_with_labels(node: Any, pdf_pages: List[tuple]) -> None:
     if isinstance(node, dict):
         start_page = node.get("start_index")
         end_page = node.get("end_index")
-        node["text"] = get_text_of_pdf_pages_with_labels(
-            pdf_pages, start_page, end_page
-        )
+
+        # 容器型节点不提取 text
+        if node.get("is_container"):
+            node["text"] = ""
+        else:
+            node["text"] = get_text_of_pdf_pages_with_labels(
+                pdf_pages, start_page, end_page
+            )
 
         if "nodes" in node:
             add_node_text_with_labels(node["nodes"], pdf_pages)

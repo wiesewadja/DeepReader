@@ -290,13 +290,31 @@ class EpubTreeConverter:
         logger.debug(f"[EPUB转换] 处理章节: {title} (href={href})")
 
         # ============================================================
-        # 步骤3: 查找章节内容
+        # 步骤3: 检测一级章节是否为容器
+        # ============================================================
+        # 如果一级章节有子节点，检查第一个子节点的 href 是否与一级章节相同
+        # 如果相同，说明一级章节只是容器，不提取自己的内容
+        is_container = False
+        if children:
+            flat_children = self._flatten_children(children)
+            if flat_children:
+                first_child = flat_children[0]
+                first_child_href = self._extract_href(first_child)
+                if first_child_href and href:
+                    # 比较 href（包括锚点）
+                    if first_child_href == href:
+                        is_container = True
+                        logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（href 与子节点相同）")
+
+        # ============================================================
+        # 步骤4: 查找章节内容
         # ============================================================
         content = ""
         start_index = 0
         end_index = 0
 
-        if href:
+        # 如果是容器，不提取内容（内容由子节点提供）
+        if href and not is_container:
             # 去除锚点部分（如 #内文），只保留文件名
             # href 可能是 "text00002.html#内文" 或 "text00002.html"
             file_name = href.split('#')[0]
@@ -321,7 +339,7 @@ class EpubTreeConverter:
                 logger.debug(f"[EPUB转换] 未找到章节文件: {file_name}")
 
         # ============================================================
-        # 步骤4: 构建节点
+        # 步骤5: 构建节点
         # ============================================================
         node: Dict[str, Any] = {
             "title": title,
@@ -330,6 +348,10 @@ class EpubTreeConverter:
             "end_index": end_index,
         }
 
+        # 标记容器型节点（用于 summary 生成）
+        if is_container:
+            node["is_container"] = True
+
         # 分配 node_id
         if assign_node_ids:
             self._node_counter += 1
@@ -337,7 +359,7 @@ class EpubTreeConverter:
             logger.debug(f"[EPUB转换] 分配 node_id: {node['node_id']}")
 
         # ============================================================
-        # 步骤5: 递归处理子节点
+        # 步骤6: 递归处理子节点
         # ============================================================
         if children:
             node["nodes"] = []
@@ -357,6 +379,23 @@ class EpubTreeConverter:
             logger.debug(f"[EPUB转换] 节点 '{title}' 有 {len(node['nodes'])} 个子节点")
 
         return node
+
+    def _extract_href(self, item: Any) -> Optional[str]:
+        """
+        从 TOC 项中提取 href
+
+        参数:
+            item: TOC 项，可能是 epub.Link、epub.Section 或元组
+
+        返回:
+            href 字符串，如果无法提取则返回 None
+        """
+        if isinstance(item, (epub.Link, epub.Section)):
+            return getattr(item, 'href', None)
+        elif isinstance(item, tuple) and len(item) >= 1:
+            if isinstance(item[0], (epub.Link, epub.Section)):
+                return getattr(item[0], 'href', None)
+        return None
 
     def _flatten_children(self, children: Any) -> List[Any]:
         """

@@ -27,7 +27,9 @@ import pypdf
 import re
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace as config
+from typing import Dict, Any
 
 import yaml
 
@@ -357,8 +359,8 @@ def post_processing(structure, end_physical_index):
         ... ]
         >>> tree = post_processing(flat, 10)
     """
-    # 导入 list_to_tree 从新模块
-    from .structure.tree import list_to_tree
+    # 导入 list_to_tree 和 fix_parent_indices 从新模块
+    from .structure.tree import list_to_tree, fix_parent_indices
 
     # First convert page_number to start_index in flat list
     for i, item in enumerate(structure):
@@ -372,6 +374,8 @@ def post_processing(structure, end_physical_index):
             item["end_index"] = end_physical_index
     tree = list_to_tree(structure)
     if len(tree) != 0:
+        # 修复父节点的 start_index 和 end_index
+        tree = fix_parent_indices(tree)
         return tree
     else:
         ### remove appear_start
@@ -700,13 +704,19 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
     else:
         logger.info(f"[{mode_str}生成] 共 {total} 个节点，单 Provider 模式，并发限制: {concurrent_limit}")
 
+    # 分离容器型节点和非容器型节点
+    container_nodes = [n for n in nodes if n.get("is_container")]
+    leaf_nodes = [n for n in nodes if not n.get("is_container")]
+
+    logger.info(f"[{mode_str}生成] 容器型节点: {len(container_nodes)}, 非容器型节点: {len(leaf_nodes)}")
+
     # 使用 Semaphore 控制并发数，完全并行处理
     semaphore = asyncio.Semaphore(concurrent_limit)
     completed = [0]  # 使用列表以便在闭包中修改
     lock = asyncio.Lock()  # 用于安全更新计数器
 
-    async def process_node(node):
-        """处理单个节点，带并发控制"""
+    async def process_leaf_node(node):
+        """处理非容器型节点，带并发控制"""
         async with semaphore:
             try:
                 result = await generate_node_summary(node, llm_client=llm_client, format_text=format_text)
@@ -728,12 +738,107 @@ async def generate_summaries_for_structure(structure, llm_client=None, progress_
                     if current % 5 == 0 or current == total:  # 每 5 个或完成时记录日志
                         logger.info(f"[{mode_str}生成] 进度: {current}/{total}")
 
-    # 完全并行处理所有节点
-    tasks = [process_node(node) for node in nodes]
+    async def process_container_node(node):
+        """处理容器型节点（在子节点处理完成后）"""
+        try:
+            summary = await _generate_container_summary(node, llm_client)
+            node["summary"] = summary
+        except Exception as e:
+            logger.warning(f"[{mode_str}生成] 容器节点处理失败: {e}")
+        finally:
+            # 安全更新进度
+            async with lock:
+                completed[0] += 1
+                current = completed[0]
+                if progress_callback:
+                    progress_callback(current, total, f"正在生成{mode_str} ({current}/{total})")
+
+    # 步骤1: 先处理所有非容器型节点（叶子节点）
+    logger.info(f"[{mode_str}生成] 步骤1: 处理 {len(leaf_nodes)} 个非容器型节点")
+    tasks = [process_leaf_node(node) for node in leaf_nodes]
+    await asyncio.gather(*tasks)
+
+    # 步骤2: 再处理容器型节点（此时子节点的 summary 已生成）
+    logger.info(f"[{mode_str}生成] 步骤2: 处理 {len(container_nodes)} 个容器型节点")
+    tasks = [process_container_node(node) for node in container_nodes]
     await asyncio.gather(*tasks)
 
     logger.info(f"[{mode_str}生成] 完成，共处理 {total} 个节点")
     return structure
+
+
+async def _generate_container_summary(node: Dict[str, Any], llm_client=None) -> str:
+    """
+    为容器型节点生成汇总摘要
+
+    容器型节点没有自己的内容，其 summary 应该汇总所有子节点的 summary。
+
+    参数:
+        node: 容器型节点（必须有 nodes 字段）
+        llm_client: LLM 客户端
+
+    返回:
+        汇总后的摘要文本
+    """
+    import time
+
+    title = node.get("title", "未知章节")
+    children = node.get("nodes", [])
+
+    if not children:
+        return f"本章节「{title}」包含多个子章节。"
+
+    # 收集所有子节点的 summary
+    child_summaries = []
+    for child in children:
+        child_title = child.get("title", "")
+        child_summary = child.get("summary", "")
+        if child_summary:
+            child_summaries.append(f"【{child_title}】{child_summary}")
+
+    if not child_summaries:
+        return f"本章节「{title}」包含 {len(children)} 个子章节。"
+
+    # 如果子节点 summary 较少，直接拼接
+    if len(child_summaries) <= 3:
+        combined = "；".join(child_summaries)
+        return f"本章节「{title}」包含以下内容：{combined}"
+
+    # 如果子节点 summary 较多，使用 LLM 汇总
+    prompt = f"""请为以下章节生成一段汇总摘要（100-200字）。
+
+章节标题：{title}
+
+子章节摘要：
+{chr(10).join(child_summaries)}
+
+要求：
+- 概括本章节的主要内容
+- 突出核心观点
+- 语言简洁，逻辑清晰
+- 直接输出摘要内容，不要包含其他文字"""
+
+    # 获取当前使用的 Provider 名称
+    from .llm.providers import MultiProvider
+    provider = getattr(llm_client, 'provider', None) if llm_client else None
+    if isinstance(provider, MultiProvider):
+        idx = provider._current_index % len(provider.providers)
+        actual_provider = provider.providers[idx]
+        actual_name = provider.names[idx] if provider.names else type(actual_provider).__name__
+        actual_model = provider.models[idx] if provider.models else ""
+        provider_name = f"{actual_name}/{actual_model}" if actual_model else actual_name
+    else:
+        provider_name = type(provider).__name__ if provider else "Unknown"
+
+    title_short = title[:30] + "..." if len(title) > 30 else title
+    context = f"容器摘要汇总 | 章节: {title_short}"
+    start_time = time.time()
+    logger.info(f"[LLM请求] 容器章节「{title_short}」| Provider: {provider_name}")
+    response = await llm_client.chat_async(prompt, context=context)
+    elapsed = time.time() - start_time
+    logger.info(f"[LLM响应] 容器章节「{title_short}」| Provider: {provider_name} | 耗时: {elapsed:.1f}s")
+
+    return response
 
 
 def generate_doc_description(structure, llm_client=None):

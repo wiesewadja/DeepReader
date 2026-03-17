@@ -168,6 +168,64 @@ def list_to_tree(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [clean_node(node) for node in root_nodes]
 
 
+def fix_parent_indices(tree: List[Dict[str, Any]], mark_container: bool = True) -> List[Dict[str, Any]]:
+    """
+    修复父节点的 start_index 和 end_index，并标记容器型节点
+
+    确保父节点的页面范围覆盖所有子节点：
+    - start_index = min(自己的 start_index, 所有子节点的 start_index)
+    - end_index = max(自己的 end_index, 所有子节点的 end_index)
+
+    容器型节点标记：
+    - 如果父节点的 start_index 与第一个子节点相同，标记为容器
+    - 容器型节点的 text 应该为空，summary 应该汇总子章节
+
+    参数:
+        tree: 树状结构列表
+        mark_container: 是否标记容器型节点（默认 True）
+
+    返回:
+        修复后的树状结构
+
+    使用示例:
+        >>> tree = fix_parent_indices(tree)
+    """
+    def fix_node(node: Dict[str, Any]) -> Dict[str, Any]:
+        """递归修复节点"""
+        # 先递归处理子节点
+        if "nodes" in node and node["nodes"]:
+            for child in node["nodes"]:
+                fix_node(child)
+
+            # 修复当前节点的索引
+            child_start_indices = [child.get("start_index") for child in node["nodes"] if child.get("start_index") is not None]
+            child_end_indices = [child.get("end_index") for child in node["nodes"] if child.get("end_index") is not None]
+
+            if child_start_indices:
+                min_child_start = min(child_start_indices)
+                if node.get("start_index") is None or min_child_start < node["start_index"]:
+                    node["start_index"] = min_child_start
+
+            if child_end_indices:
+                max_child_end = max(child_end_indices)
+                if node.get("end_index") is None or max_child_end > node["end_index"]:
+                    node["end_index"] = max_child_end
+
+            # 标记容器型节点
+            # 如果父节点的 start_index 与第一个子节点相同，说明父节点没有独立内容
+            if mark_container and child_start_indices:
+                first_child_start = child_start_indices[0]
+                if node.get("start_index") == first_child_start:
+                    node["is_container"] = True
+
+        return node
+
+    for node in tree:
+        fix_node(node)
+
+    return tree
+
+
 def tree_to_list(tree: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     将树状结构转换为扁平列表

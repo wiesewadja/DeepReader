@@ -32,7 +32,7 @@ PageIndex 结构处理模块
 创建时间: 2026-01-16
 """
 
-from .tree import list_to_tree
+from .tree import list_to_tree, fix_parent_indices
 from .nodes import (
     get_nodes,
     get_leaf_nodes,
@@ -47,6 +47,7 @@ from .converter import structure_to_list
 __all__ = [
     # 树操作
     "list_to_tree",
+    "fix_parent_indices",
     # 节点操作
     "get_nodes",
     "get_leaf_nodes",
