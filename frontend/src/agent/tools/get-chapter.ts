@@ -1,5 +1,10 @@
 /**
- * get_chapter Tool - 获取章节完整内容
+ * get_chapter Tool - 获取章节内容
+ *
+ * 优化策略：
+ * - 默认返回 summary（精炼摘要，~500 字符）
+ * - detail=true 时返回原文（用于深度分析）
+ * - 支持分页读取长章节
  */
 
 import { TFile } from 'obsidian';
@@ -8,28 +13,35 @@ import type { ToolExecutor, ToolContext } from './types.js';
 import { deeppdfClient } from '../../api/http-client.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 
-// 默认最大返回长度（字符）
+// 默认最大返回长度（字符）- 用于 detail 模式
 const DEFAULT_MAX_LENGTH = 4000;
 
 const GET_CHAPTER_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
     name: 'get_chapter',
-    description: `【分析阅读】获取章节完整内容。用于"详细解释/为什么"类问题。支持分页读取。`,
+    description: `【分析阅读】获取章节内容。
+- 默认返回精炼摘要（~500字符），适合快速了解
+- detail=true 返回原文，用于深度分析
+- 支持分页读取长章节（start_offset + max_length）`,
     parameters: {
       type: 'object',
       properties: {
         node_id: {
           type: 'string',
-          description: 'The unique identifier of the chapter/node to retrieve',
+          description: '章节唯一标识符',
+        },
+        detail: {
+          type: 'boolean',
+          description: '是否返回原文（默认 false，只返回摘要）',
         },
         max_length: {
           type: 'number',
-          description: 'Maximum characters to return (default: 4000). Increase if you need more content.',
+          description: '原文最大字符数（默认 4000，仅 detail=true 时有效）',
         },
         start_offset: {
           type: 'number',
-          description: 'Start reading from this character position (for reading long chapters in parts)',
+          description: '从该位置开始读取原文（用于分页，仅 detail=true 时有效）',
         },
       },
       required: ['node_id'],
@@ -42,6 +54,7 @@ export const getChapterTool: ToolExecutor = {
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const nodeId = args.node_id as string;
+    const detail = args.detail === true;
     const maxLength = (args.max_length as number) || DEFAULT_MAX_LENGTH;
     const startOffset = (args.start_offset as number) || 0;
 
@@ -50,7 +63,7 @@ export const getChapterTool: ToolExecutor = {
     }
 
     try {
-      log('[get_chapter] 获取章节:', { nodeId, maxLength, startOffset, indexId: context.indexId });
+      log('[get_chapter] 获取章节:', { nodeId, detail, maxLength, startOffset });
 
       let fullContent: string;
       let nodeName: string;
@@ -61,7 +74,7 @@ export const getChapterTool: ToolExecutor = {
       if (context.markdownFiles && context.markdownFiles[nodeId] && context.app) {
         let localPath = context.markdownFiles[nodeId];
 
-        // 确保路径以 DeepReader/ 开头（后端返回的路径可能缺少这个前缀）
+        // 确保路径以 DeepReader/ 开头
         if (!localPath.startsWith('DeepReader/')) {
           localPath = `DeepReader/${localPath}`;
         }
@@ -74,7 +87,7 @@ export const getChapterTool: ToolExecutor = {
             fullContent = await context.app.vault.read(file);
             log('[get_chapter] 本地读取成功:', localPath, '长度:', fullContent.length);
 
-            // 从内容中提取标题（第一行通常是 # 标题）
+            // 从内容中提取标题
             const titleMatch = fullContent.match(/^#\s+(.+)$/m);
             nodeName = titleMatch ? titleMatch[1] : localPath.split('/').pop()?.replace('.md', '') || nodeId;
             section = '';
@@ -101,7 +114,12 @@ export const getChapterTool: ToolExecutor = {
         pageRange = backendResult.pageRange;
       }
 
-      // 应用长度限制和偏移
+      // 🔄 优化：默认返回 summary，detail=true 返回原文
+      if (!detail) {
+        return formatSummaryResult(fullContent, nodeName, section, pageRange, nodeId);
+      }
+
+      // detail 模式：返回原文（支持分页）
       return formatChapterResult(fullContent, nodeName, section, pageRange, maxLength, startOffset, nodeId);
 
     } catch (e) {
@@ -153,7 +171,61 @@ async function fetchFromBackend(
 }
 
 /**
- * 格式化章节结果（应用长度限制和偏移）
+ * 从 frontmatter 提取 summary 字段
+ */
+function extractSummary(content: string): string | null {
+  // 匹配 frontmatter 中的 summary 字段
+  // 支持两种格式：
+  // summary: "xxx"
+  // summary: xxx
+  const summaryMatch = content.match(/^---\n[\s\S]*?^summary:\s*"?([^"\n]+)"?\s*$/m);
+  if (summaryMatch) {
+    return summaryMatch[1].trim();
+  }
+  return null;
+}
+
+/**
+ * 格式化摘要结果（默认模式）
+ * 返回精炼的 summary，大幅减少 token 消耗
+ */
+function formatSummaryResult(
+  fullContent: string,
+  nodeName: string,
+  section: string,
+  pageRange: string,
+  nodeId: string
+): string {
+  // 提取 summary
+  const summary = extractSummary(fullContent);
+
+  if (summary) {
+    const totalLength = fullContent.length;
+    return `📖 **${nodeName}**
+📍 ${section} | 📄 ${pageRange}
+
+> ${summary}
+
+💡 如需详细内容：\`get_chapter(node_id="${nodeId}", detail=true)\`
+📊 原文共 ${totalLength} 字符`;
+  }
+
+  // 如果没有 summary，返回前 500 字符作为摘要
+  const contentWithoutFrontmatter = fullContent.replace(/^---[\s\S]*?---\n/, '');
+  const preview = contentWithoutFrontmatter.slice(0, 500);
+  const totalLength = fullContent.length;
+
+  return `📖 **${nodeName}**
+📍 ${section} | 📄 ${pageRange}
+
+${preview}${totalLength > 500 ? '...' : ''}
+
+💡 如需详细内容：\`get_chapter(node_id="${nodeId}", detail=true)\`
+📊 原文共 ${totalLength} 字符`;
+}
+
+/**
+ * 格式化章节结果（detail 模式 - 返回原文）
  */
 function formatChapterResult(
   fullContent: string,

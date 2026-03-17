@@ -15,9 +15,7 @@ import { updateProfileTool } from './profile.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { createCanvasTool } from './canvas.js';
 import { createExcalidrawTool } from './excalidraw.js';
-import { outlineStructureTool } from './outline-structure.js';
-import { findKeyTermsTool } from './find-key-terms.js';
-import { extractPropositionsTool } from './extract-propositions.js';
+import { analyzeChapterTool } from './analyze-chapter.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
 
@@ -39,9 +37,7 @@ export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
 export { createCanvasTool } from './canvas.js';
 export { createExcalidrawTool } from './excalidraw.js';
-export { outlineStructureTool } from './outline-structure.js';
-export { findKeyTermsTool } from './find-key-terms.js';
-export { extractPropositionsTool } from './extract-propositions.js';
+export { analyzeChapterTool } from './analyze-chapter.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -80,10 +76,8 @@ export function createToolRegistry(
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);
 
-  // 注册分析阅读工具（对应《如何阅读一本书》规则2-6）
-  registry.set('outline_structure', outlineStructureTool);
-  registry.set('find_key_terms', findKeyTermsTool);
-  registry.set('extract_propositions', extractPropositionsTool);
+  // 注册分析阅读工具（合并：术语+论点分析）
+  registry.set('analyze_chapter', analyzeChapterTool);
 
   // 注册 Canvas 工具（需要 Obsidian App 实例）
   if (context.app) {
