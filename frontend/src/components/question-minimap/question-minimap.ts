@@ -20,19 +20,19 @@ export interface MinimapBlock {
 	role: 'user' | 'assistant';
 	/** 块在 minimap 中的 Y 位置（像素） */
 	top: number;
-	/** 块的高度（固定：用户 8px，AI 3px） */
+	/** 块的高度 */
 	height: number;
 	/** tooltip 内容（仅用户消息） */
 	tooltipContent?: string;
 }
 
 // 常量定义
-const USER_BLOCK_HEIGHT = 8;
-const AI_BLOCK_HEIGHT = 3;
+const USER_BLOCK_HEIGHT = 12;
+const AI_BLOCK_HEIGHT = 6;
 
 /**
  * Question Minimap 组件
- * 在消息列表右侧显示对话导航 minimap
+ * 在消息列表左侧显示对话导航 minimap
  */
 export class QuestionMinimap extends Component {
 	private props: QuestionMinimapProps;
@@ -41,7 +41,6 @@ export class QuestionMinimap extends Component {
 	private trackEl: HTMLElement | null = null;
 	private viewportEl: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
-	private isHovering = false;
 	private scrollHandler: (() => void) | null = null;
 
 	constructor(props: QuestionMinimapProps) {
@@ -63,13 +62,13 @@ export class QuestionMinimap extends Component {
 			cls: 'deeppdf-minimap-track'
 		});
 
-		// 视口指示器（默认隐藏）
+		// 视口指示器
 		this.viewportEl = container.createEl('div', {
-			cls: 'deeppdf-minimap-viewport deeppdf-minimap-viewport-hidden'
+			cls: 'deeppdf-minimap-viewport'
 		});
 
-		// Tooltip（默认隐藏）
-		this.tooltipEl = container.createEl('div', {
+		// Tooltip
+		this.tooltipEl = document.body.createEl('div', {
 			cls: 'deeppdf-minimap-tooltip deeppdf-minimap-tooltip-hidden'
 		});
 
@@ -83,27 +82,16 @@ export class QuestionMinimap extends Component {
 	 * 绑定事件
 	 */
 	private bindEvents(): void {
-		if (!this.el) return;
-
-		// hover 显示视口指示器
-		this.el.addEventListener('mouseenter', () => {
-			this.isHovering = true;
-			this.showViewport();
-		});
-
-		this.el.addEventListener('mouseleave', () => {
-			this.isHovering = false;
-			this.hideTooltip();
-			this.hideViewport();
-		});
-
-		// 滚动同步
+		// 滚动同步 - 始终更新视口位置
 		this.scrollHandler = () => {
-			if (this.isHovering) {
-				this.updateViewportPosition();
-			}
+			this.updateViewportPosition();
 		};
 		this.props.containerEl.addEventListener('scroll', this.scrollHandler);
+
+		// 初始更新视口
+		requestAnimationFrame(() => {
+			this.updateViewportPosition();
+		});
 	}
 
 	/**
@@ -113,6 +101,8 @@ export class QuestionMinimap extends Component {
 		this.messages = messages.filter(m => !m.hidden);
 		this.calculateBlocks();
 		this.renderBlocks();
+		// 更新视口位置
+		this.updateViewportPosition();
 	}
 
 	/**
@@ -124,6 +114,8 @@ export class QuestionMinimap extends Component {
 		const minimapHeight = this.trackEl.clientHeight;
 		const containerScrollHeight = this.props.containerEl.scrollHeight;
 
+		if (containerScrollHeight === 0 || minimapHeight === 0) return;
+
 		this.blocks = [];
 
 		for (const msg of this.messages) {
@@ -134,16 +126,25 @@ export class QuestionMinimap extends Component {
 			if (!msgEl) continue;
 
 			const msgTop = msgEl.offsetTop;
+			const msgHeight = msgEl.offsetHeight;
+
+			// 按比例计算位置
 			const topPercent = msgTop / containerScrollHeight;
-			const height = msg.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT;
+			const heightPercent = msgHeight / containerScrollHeight;
+
+			const top = topPercent * minimapHeight;
+			const height = Math.max(
+				heightPercent * minimapHeight,
+				msg.role === 'user' ? USER_BLOCK_HEIGHT : AI_BLOCK_HEIGHT
+			);
 
 			this.blocks.push({
 				id: msg.id,
 				role: msg.role,
-				top: topPercent * (minimapHeight - height),
+				top,
 				height,
 				tooltipContent:
-					msg.role === 'user' ? this.truncateText(msg.content, 30) : undefined,
+					msg.role === 'user' ? this.truncateText(msg.content, 50) : undefined,
 			});
 		}
 	}
@@ -162,9 +163,12 @@ export class QuestionMinimap extends Component {
 				cls: `deeppdf-minimap-block deeppdf-minimap-block-${block.role}`,
 				attr: {
 					'data-message-id': block.id,
-					style: `top: ${block.top}px; height: ${block.height}px;`,
 				},
 			});
+
+			// 设置位置和高度
+			blockEl.style.top = `${block.top}px`;
+			blockEl.style.height = `${block.height}px`;
 
 			// 用户块可交互
 			if (block.role === 'user') {
@@ -189,7 +193,8 @@ export class QuestionMinimap extends Component {
 				});
 
 				// 点击跳转
-				blockEl.addEventListener('click', () => {
+				blockEl.addEventListener('click', (e) => {
+					e.stopPropagation();
 					this.hideTooltip();
 					this.props.onMessageClick(block.id);
 				});
@@ -207,23 +212,6 @@ export class QuestionMinimap extends Component {
 	}
 
 	/**
-	 * 显示视口指示器
-	 */
-	private showViewport(): void {
-		if (!this.viewportEl) return;
-		this.viewportEl.removeClass('deeppdf-minimap-viewport-hidden');
-		this.updateViewportPosition();
-	}
-
-	/**
-	 * 隐藏视口指示器
-	 */
-	private hideViewport(): void {
-		if (!this.viewportEl) return;
-		this.viewportEl.addClass('deeppdf-minimap-viewport-hidden');
-	}
-
-	/**
 	 * 更新视口位置
 	 */
 	private updateViewportPosition(): void {
@@ -234,12 +222,14 @@ export class QuestionMinimap extends Component {
 		const scrollHeight = container.scrollHeight;
 		const scrollTop = container.scrollTop;
 
+		if (scrollHeight === 0) return;
+
 		const minimapHeight = this.trackEl.clientHeight;
 		const viewportPercent = viewportHeight / scrollHeight;
 		const scrollTopPercent = scrollTop / scrollHeight;
 
 		const top = scrollTopPercent * minimapHeight;
-		const height = Math.max(viewportPercent * minimapHeight, 20);
+		const height = Math.max(viewportPercent * minimapHeight, 10);
 
 		this.viewportEl.style.top = `${top}px`;
 		this.viewportEl.style.height = `${height}px`;
@@ -262,8 +252,13 @@ export class QuestionMinimap extends Component {
 	private updateTooltipPosition(event: MouseEvent): void {
 		if (!this.tooltipEl) return;
 
-		const x = event.clientX - 10;
-		const y = event.clientY + 10;
+		// 获取 minimap 的位置
+		const minimapRect = this.el?.getBoundingClientRect();
+		if (!minimapRect) return;
+
+		// tooltip 显示在 minimap 右侧
+		const x = minimapRect.right + 10;
+		const y = event.clientY;
 
 		this.tooltipEl.style.left = `${x}px`;
 		this.tooltipEl.style.top = `${y}px`;
@@ -292,6 +287,10 @@ export class QuestionMinimap extends Component {
 		// 移除滚动监听
 		if (this.scrollHandler) {
 			this.props.containerEl.removeEventListener('scroll', this.scrollHandler);
+		}
+		// 移除 tooltip
+		if (this.tooltipEl && this.tooltipEl.parentNode) {
+			this.tooltipEl.parentNode.removeChild(this.tooltipEl);
 		}
 		super.destroy();
 	}

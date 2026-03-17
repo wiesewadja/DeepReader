@@ -20,9 +20,9 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 底部 padding 动态适应输入框高度，右侧为 minimap 留空间 */
+	/* 底部 padding 动态适应输入框高度，左侧为 minimap 留空间 */
 	padding: 16px 1% 80px 1%;
-	padding-right: 22px;
+	padding-left: 42px;
 
 	display: flex;
 	flex-direction: column;
@@ -247,6 +247,7 @@
 	.deeppdf-messages-container {
 		/* 小屏幕减少留白 */
 		padding: var(--size-4-2, 0.5rem) 3% 110px 3%;
+		padding-left: 32px;
 		gap: var(--size-4-2, 0.5rem);
 	}
 
