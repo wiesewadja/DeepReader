@@ -21,33 +21,37 @@ const CREATE_SUB_AGENT_DEFINITION: ToolDefinition = {
 	type: 'function',
 	function: {
 		name: 'create_sub_agent',
-		description: `【复杂任务必用】创建子代理执行独立检索任务。
+		description: `创建子代理执行独立检索任务。
 
 **何时必须使用**：
-- 需要读取 3 个及以上章节时
-- 跨多个信息源查询时
-- 任务可拆分为多个独立子任务时
+- 需要读取 3 个及以上章节
+- 跨多个信息源查询
+- 任务可拆分为独立子任务
 
-**子代理优势**：
-- 隔离执行，不会干扰主对话上下文
-- 专注单一任务，结果更准确
-- 支持 wait_for_result=true 同步等待
+**任务必须是原子化的**：
+✅ "读取第1章，返回所有核心概念"
+✅ "读取第2章，提取关键论点"
+✅ "搜索包含'神经网络'的段落"
+❌ "分析这本书"（太宽泛）
+❌ "理解第1章"（不够具体）
 
-**可用工具**：search_doc, get_chapter, get_toc（受限集，不能创建新子任务）`,
+**并行执行**：多个独立子任务可同时调用本工具（wait_for_result=true）
+
+**可用工具**：search_doc, get_chapter, get_toc`,
 		parameters: {
 			type: 'object',
 			properties: {
 				task: {
 					type: 'string',
-					description: '子助手要执行的原子任务（如"读取第7章，提取架构分析规则"）',
+					description: '子代理要执行的原子任务，必须有明确输出',
 				},
 				label: {
 					type: 'string',
-					description: '任务的显示标签（可选，用于识别任务）',
+					description: '任务标签（可选，用于识别）',
 				},
 				wait_for_result: {
 					type: 'boolean',
-					description: '是否等待结果返回（建议设为 true，同步执行更可靠）',
+					description: '是否等待结果（建议 true）',
 				},
 			},
 			required: ['task'],
