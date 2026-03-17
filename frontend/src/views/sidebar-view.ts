@@ -26,7 +26,7 @@ import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
 import { LibraryModal } from "../components/library-modal/index.js";
-import { uiLog as log, warn, error as logError } from "../utils/logger.js";
+import { uiLog as log, serviceLog, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import type { ReadingProgress } from "../agent/tools/types.js";
@@ -807,13 +807,17 @@ export class SidebarView extends ItemView {
         try {
             if (this.apiClient && indexId) {
                 // 通过轻量级查询获取索引元数据（包含 doc_description）
-                const queryResult = await this.apiClient.queryPDF('', indexId, 1, false);
+                // 注意：query 不能为空，否则 index_info 会返回 null
+                serviceLog('[DeepPDF] 正在获取 doc_description, indexId:', indexId);
+                const queryResult = await this.apiClient.queryPDF('概要', indexId, 1, false);
+                serviceLog('[DeepPDF] queryPDF 完整返回 keys:', Object.keys(queryResult));
+                serviceLog('[DeepPDF] queryResult.index_info 存在:', !!queryResult.index_info);
                 if (queryResult.index_info?.doc_description) {
                     this.currentDocDescription = queryResult.index_info.doc_description;
-                    log('[DeepPDF] 获取到全书摘要，长度:', this.currentDocDescription.length);
+                    serviceLog('[DeepPDF] 获取到全书摘要，长度:', this.currentDocDescription.length);
                 } else {
                     this.currentDocDescription = null;
-                    log('[DeepPDF] 索引没有 doc_description 字段');
+                    serviceLog('[DeepPDF] 索引没有 doc_description 字段');
                 }
             }
         } catch (e) {
