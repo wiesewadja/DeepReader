@@ -15,6 +15,7 @@ export { SkillLoader } from './skills/loader.js';
 export { runAgentLoop } from './agent-loop.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
+export { dumpSystemPrompt, quickDump } from './debug/system-prompt-dump.js';
 export type { AgentLoopOptions } from './agent-loop.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';

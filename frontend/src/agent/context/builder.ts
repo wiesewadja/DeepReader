@@ -138,9 +138,7 @@ export class ContextBuilder {
 			if (metadata.author) {
 				docInfo += ` · ${metadata.author}`;
 			}
-			if (metadata.page_count) {
-				docInfo += ` · ${metadata.page_count}页`;
-			}
+			
 		}
 
 		// 添加全书摘要（如果有）
@@ -153,9 +151,7 @@ export class ContextBuilder {
 ## 交流风格
 
 - 自然、风趣，偶带书卷气
-- 称呼用户为"阁下"或按用户称呼
 - 对问题予以情感肯定，引导深入
-- 回复使用书信文体，不要过于结构化，禁止使用段落分割符和空行
 - 积极引导用户继续提问和深入阅读
 
 ${docInfo}`;
@@ -180,7 +176,7 @@ ${docInfo}`;
 4. **错误范例（绝对禁止）**：如果汇报时间短，你要在30秒内说清楚。[[麦肯锡方法#^0042]]
 
 ## 回答规范
-
+0. 按用户名称称呼或者阁下
 1. **双链引用**：每个论断使用工具返回的 Link，[[路径|显示名]] 自然融入句子
 2. **基于原文**：回答必须来自书中内容，不编造不臆测
 3. **静默执行**：调用工具前不输出内容，获得结果后直接回答
@@ -250,14 +246,11 @@ ${docInfo}`;
 
 	/**
 	 * 构建运行时上下文（注入到用户消息）
+	 * 文档信息已在 Identity 层展示，此处仅返回时间
 	 *
-	 * @param metadata 文档元数据
 	 * @returns 运行时上下文字符串
 	 */
-	static buildRuntimeContext(
-		metadata?: DocumentMetadata,
-		_progress?: ReadingProgress  // 保留参数以兼容调用方，但不再使用
-	): string {
+	static buildRuntimeContext(): string {
 		const now = new Date();
 		const timeStr = now.toLocaleString('zh-CN', {
 			year: 'numeric',
@@ -268,13 +261,7 @@ ${docInfo}`;
 			weekday: 'long',
 		});
 
-		const lines: string[] = [`${RUNTIME_CONTEXT_TAG}`, `当前时间: ${timeStr}`];
-
-		if (metadata?.title) {
-			lines.push(`文档: ${metadata.title}`);
-		}
-
-		return lines.join('\n');
+		return `${RUNTIME_CONTEXT_TAG}\n当前时间: ${timeStr}`;
 	}
 
 	/**
@@ -324,19 +311,19 @@ ${docInfo}`;
 	 * @param systemPrompt 系统提示
 	 * @param history 历史消息
 	 * @param currentMessage 当前用户消息
-	 * @param metadata 文档元数据
-	 * @param progress 阅读进度
+	 * @param _metadata 文档元数据（保留参数兼容调用方，但不再使用）
+	 * @param _progress 阅读进度（保留参数兼容调用方，但不再使用）
 	 * @param systemNote 路由器动态指令（可选）
 	 */
 	static buildMessagesWithMetadata(
 		systemPrompt: string,
 		history: ChatMessage[],
 		currentMessage: string,
-		metadata?: DocumentMetadata,
-		progress?: ReadingProgress,
+		_metadata?: DocumentMetadata,
+		_progress?: ReadingProgress,
 		systemNote?: string
 	): ChatMessage[] {
-		const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
+		const runtimeContext = ContextBuilder.buildRuntimeContext();
 		return ContextBuilder.buildMessages(systemPrompt, history, currentMessage, runtimeContext, systemNote);
 	}
 }
