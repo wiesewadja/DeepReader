@@ -378,13 +378,46 @@ def hybrid_search(
     index_metadata: Dict[str, Any],
     vector_results: List[Dict[str, Any]],
     max_results: int = 10,
+    scope_node_ids: List[str] = None,
 ) -> Dict[str, Any]:
     """
     混合检索：结合树状结构搜索、BM25 和向量搜索
+
+    Args:
+        query: 查询文本
+        index_metadata: 索引元数据
+        vector_results: 向量搜索结果
+        max_results: 最大结果数
+        scope_node_ids: 范围锁定的节点 ID 列表（只返回这些节点及其子节点的结果）
     """
     tree_structure = index_metadata.get("tree_structure", {})
     if not tree_structure:
         return {"method": "vector_only", "results": vector_results}
+
+    # 如果有范围锁定，构建允许的节点 ID 集合（包括子节点）
+    allowed_node_ids = None
+    if scope_node_ids and len(scope_node_ids) > 0:
+        allowed_node_ids = set(scope_node_ids)
+        # 收集所有子节点 ID
+        def collect_child_ids(nodes):
+            child_ids = set()
+            for node in nodes:
+                node_id = node.get("node_id")
+                if node_id and node_id in allowed_node_ids:
+                    # 收集这个节点的所有子节点
+                    def add_children(n):
+                        for child in n.get("nodes", []):
+                            child_id = child.get("node_id")
+                            if child_id:
+                                child_ids.add(child_id)
+                            add_children(child)
+                    add_children(node)
+                # 继续递归
+                collect_child_ids(node.get("nodes", []))
+
+        collect_child_ids(tree_structure.get("structure", []))
+        allowed_node_ids = allowed_node_ids | child_ids if child_ids else allowed_node_ids
+        logger.info(f"[智能检索] 范围锁定: 允许的节点 ID = {allowed_node_ids}")
 
     engine = TreeSearchEngine(tree_structure)
 
@@ -425,6 +458,12 @@ def hybrid_search(
     # 添加标题匹配结果（权重 2.5）
     for match in title_matches:
         node = match["node"]
+        node_id = node.get("node_id", "")
+
+        # 范围锁定过滤：只保留在允许范围内的节点
+        if allowed_node_ids is not None and node_id not in allowed_node_ids:
+            continue
+
         text_content = node.get("text", "")
         depth = match.get("depth", 0)
 
@@ -462,11 +501,20 @@ def hybrid_search(
     # 添加 BM25 匹配结果（权重 1.5）
     # 修复：移除魔法值，只在有 BM25 匹配时处理
     if bm25_matches:
-        max_bm25_score = max([m["score"] for m in bm25_matches])
-
+        # 先过滤在范围内的 BM25 匹配
+        filtered_bm25_matches = []
         for match in bm25_matches:
             node = match["node"]
-            norm_score = match["score"] / max_bm25_score if max_bm25_score > 0 else 0
+            node_id = node.get("node_id", "")
+            if allowed_node_ids is None or node_id in allowed_node_ids:
+                filtered_bm25_matches.append(match)
+
+        if filtered_bm25_matches:
+            max_bm25_score = max([m["score"] for m in filtered_bm25_matches])
+
+            for match in filtered_bm25_matches:
+                node = match["node"]
+                norm_score = match["score"] / max_bm25_score if max_bm25_score > 0 else 0
 
             all_results.append(
                 {

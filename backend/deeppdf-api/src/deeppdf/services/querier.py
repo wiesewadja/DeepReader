@@ -265,6 +265,7 @@ def _query_pdf_sync(
             index_metadata=index_metadata,
             vector_results=formatted_results,
             max_results=max_results,
+            scope_node_ids=scope_node_ids,
         )
 
         # 格式化最终结果

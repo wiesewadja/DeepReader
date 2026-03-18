@@ -263,21 +263,6 @@
 
 ---
 
-### POST /api/agent/query
-
-Agent 查询（LLM Tree Search）
-
-**请求体:**
-```json
-{
-  "query": "string",
-  "index_id": "string",
-  "mode": "auto|fast|section|slow"
-}
-```
-
----
-
 ## 阅读进度 API (/api/reading)
 
 ### GET /api/reading/{index_id}/toc

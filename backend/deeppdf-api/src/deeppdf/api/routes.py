@@ -560,6 +560,17 @@ async def query_index(req: QueryRequest):
         f"scope_node_ids={req.scope_node_ids}"
     )
 
+    # 验证：空查询
+    if not req.query or not req.query.strip():
+        logger.warning("[API] 查询失败: 查询内容为空")
+        return QueryResponse(status="error", results=None, error="查询内容不能为空")
+
+    # 验证：索引是否存在
+    metadata_path = settings.base_dir / "indexes" / f"{req.index_id}.json"
+    if not metadata_path.exists():
+        logger.warning(f"[API] 查询失败: 索引不存在 - {req.index_id}")
+        return QueryResponse(status="error", results=None, error=f"索引不存在: {req.index_id}")
+
     result = await query_pdf(
         req.query,
         req.index_id,
