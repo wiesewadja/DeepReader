@@ -13,11 +13,6 @@ import { Icons } from '../../utils/icons.js';
 import { FileSuggest } from '../file-suggest/file-suggest.js';
 
 /**
- * 搜索模式
- */
-export type SearchMode = 'single' | 'cross';
-
-/**
  * 引用数据结构
  */
 export interface QuoteItem {
@@ -47,10 +42,6 @@ export interface ChatInputOptions {
 	maxRows?: number;
 	/** 最大高度（像素） */
 	maxHeight?: number;
-	/** 模式切换回调（可选） */
-	onModeToggle?: () => void;
-	/** 当前搜索模式（可选） */
-	searchMode?: SearchMode;
 	/** 选择文件回调（可选，用于 @ 提及) */
 	onSelectFile?: (file: TFile) => void;
 	/** App 实例（可选，用于文件搜索) */
@@ -91,7 +82,6 @@ export class ChatInput {
 	private inputContainer: HTMLElement | null = null;
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
-	private modeButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
 	private deepSearchButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
@@ -110,7 +100,6 @@ export class ChatInput {
 	private keydownHandler: ((event: KeyboardEvent) => void) | null = null;
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
-	private modeClickHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
 	private deepSearchClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
@@ -235,17 +224,10 @@ export class ChatInput {
 			this.deepSearchButton.type = 'button';
 		}
 
-		// 右侧工具 (模式切换按钮 + 发送按钮)
+		// 右侧工具 (发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
 		});
-
-		// 模式切换按钮
-		this.modeButton = rightToolbar.createEl('button', {
-			cls: 'deeppdf-mode-toggle-btn'
-		});
-		this.updateModeButtonDisplay();
-		this.modeButton.type = 'button';
 
 		// 发送按钮
 		this.sendButton = rightToolbar.createEl('button', {
@@ -300,14 +282,6 @@ export class ChatInput {
 				}
 			};
 			this.sendButton.addEventListener('click', this.clickHandler);
-		}
-
-		// 点击模式切换按钮
-		if (this.modeButton && this.options.onModeToggle) {
-			this.modeClickHandler = () => {
-				this.options.onModeToggle?.();
-			};
-			this.modeButton.addEventListener('click', this.modeClickHandler);
 		}
 
 		// 点击加载文档按钮
@@ -724,14 +698,6 @@ export class ChatInput {
 	}
 
 	/**
-	 * 设置搜索模式
-	 */
-	setSearchMode(mode: SearchMode): void {
-		this.options.searchMode = mode;
-		this.updateModeButtonDisplay();
-	}
-
-	/**
 	 * 设置加载按钮的激活状态
 	 */
 	setLoadBtnActive(active: boolean): void {
@@ -741,31 +707,6 @@ export class ChatInput {
 		} else {
 			this.loadDocButton.classList.remove('active');
 		}
-	}
-
-	/**
-	 * 更新模式按钮显示
-	 */
-	private updateModeButtonDisplay(): void {
-		if (!this.modeButton) return;
-
-		const mode = this.options.searchMode || 'single';
-		const isCrossMode = mode === 'cross';
-
-		// 使用书籍图标（Lucide library 图标）
-		// 跨书籍模式：多本书图标；单书籍模式：单本书图标
-		if (isCrossMode) {
-			// 多本书叠加图标
-			this.modeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path><path d="M8 7h6"></path><path d="M8 11h8"></path></svg>`;
-			this.modeButton.addClass('active');
-		} else {
-			// 单本书图标
-			this.modeButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
-			this.modeButton.removeClass('active');
-		}
-
-		this.modeButton.setAttribute('aria-label', isCrossMode ? '跨书籍模式已开启（点击关闭）' : '跨书籍模式已关闭（点击开启）');
-		this.modeButton.setAttribute('data-mode', mode);
 	}
 
 	/**
@@ -837,11 +778,6 @@ export class ChatInput {
 			this.clickHandler = null;
 		}
 
-		if (this.modeButton && this.modeClickHandler) {
-			this.modeButton.removeEventListener('click', this.modeClickHandler);
-			this.modeClickHandler = null;
-		}
-
 		if (this.loadDocButton && this.loadDocClickHandler) {
 			this.loadDocButton.removeEventListener('click', this.loadDocClickHandler);
 			this.loadDocClickHandler = null;
@@ -876,7 +812,6 @@ export class ChatInput {
 		this.el = null;
 		this.textarea = null;
 		this.sendButton = null;
-		this.modeButton = null;
 		this.loadDocButton = null;
 		this.deepSearchButton = null;
 	}

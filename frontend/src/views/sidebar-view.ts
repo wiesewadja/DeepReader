@@ -9,7 +9,7 @@ import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskPr
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
-import { TaskProgress, SearchFilters, CrossBookSearchParams } from "../types/index.js";
+import { TaskProgress, SearchFilters } from "../types/index.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
@@ -241,7 +241,6 @@ export class SidebarView extends ItemView {
         if (this.crossBookMode) return;
 
         this.crossBookMode = true;
-        this.chatInput?.setSearchMode('cross');
         this.indexManager?.setCrossBookMode(true);
         this.plugin.settings.lastCrossBookMode = true;
         await this.plugin.saveSettings();
@@ -1026,7 +1025,6 @@ export class SidebarView extends ItemView {
                 if (this.crossBookMode) {
                     log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
                     this.crossBookMode = false;
-                    this.chatInput?.setSearchMode('single');
                     this.indexManager?.setCrossBookMode(false);
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
@@ -1038,31 +1036,6 @@ export class SidebarView extends ItemView {
                 // 直接调用 selectIndex 方法，确保顶栏正确更新
                 // 而不是通过 indexManager.selectIndex 间接调用
                 await this.selectIndex(indexId);
-            })
-        );
-
-        // 监听跨书籍搜索事件（带书单/标签过滤）
-        this.registerEvent(
-            workspace.on("deeppdf:cross-book-search", async (params: CrossBookSearchParams) => {
-                log("[DeepPDF] Received cross-book-search event:", params);
-
-                // 保存过滤条件
-                this.searchFilters = {
-                    booklists: params.booklists || [],
-                    tags: params.tags || [],
-                };
-
-                // 切换到跨书籍模式
-                await this.switchToCrossBookMode({ clearMessages: true });
-            })
-        );
-
-        // 监听主题报告事件
-        this.registerEvent(
-            workspace.on("deeppdf:theme-report", async () => {
-                log("[DeepPDF] Received theme-report event");
-                // 切换到跨书籍模式并显示欢迎消息
-                await this.switchToCrossBookMode({ clearMessages: true, showWelcome: true });
             })
         );
 
@@ -1490,56 +1463,8 @@ export class SidebarView extends ItemView {
      * 切换搜索模式
      */
     private async toggleSearchMode() {
-        // 跨书籍搜索需要后端支持
-        if (!this.isConnected) {
-            new Notice("跨书籍搜索需要后端服务。请启动后端以使用此功能。");
-            return;
-        }
-
-        const previousMode = this.crossBookMode;
-        this.crossBookMode = !this.crossBookMode;
-        this.chatInput?.setSearchMode(this.crossBookMode ? 'cross' : 'single');
-
-        // 更新索引管理器显示
-        this.indexManager?.setCrossBookMode(this.crossBookMode);
-
-        // 持久化跨书籍模式状态
-        this.plugin.settings.lastCrossBookMode = this.crossBookMode;
-        log('[DeepPDF] toggleSearchMode: 设置 lastCrossBookMode =', this.crossBookMode);
-        await this.plugin.saveSettings();
-        log('[DeepPDF] toggleSearchMode: 设置已保存');
-
-        // 如果从单书籍切换到跨书籍模式，清空当前消息并加载跨书籍会话
-        if (!previousMode && this.crossBookMode) {
-            this.messageList?.clear();
-            await this.loadCrossBookSession();
-        } else if (previousMode && !this.crossBookMode) {
-            // 从跨书籍切换到单书籍模式
-            // 清空跨书籍消息，加载当前选中书籍的会话
-            this.messageList?.clear();
-
-            if (this.currentIndexId) {
-                // 加载当前书籍的会话历史
-                const savedSessions = this.plugin.settings.savedSessions || {};
-                const savedSessionId = savedSessions[this.currentIndexId];
-
-                if (savedSessionId) {
-                    this.sessionId = savedSessionId;
-
-                    // 1. 优先从 SessionStore 恢复
-                    const restored = await this.restoreFromSessionStore(savedSessionId);
-                    if (restored) {
-                        log(`[DeepPDF] 切换到单书籍模式，从 SessionStore 恢复会话`);
-                        new Notice(`已切换到单书籍模式: ${this.currentPdfName || '未知书籍'}`);
-                        return;
-                    }
-                }
-
-                // 没有历史会话，显示欢迎消息
-                log('[DeepPDF] 切换到单书籍模式，无历史会话');
-                this.showWelcomeMessage();
-            }
-        }
+        // 跨书籍搜索功能已移除
+        new Notice("跨书籍搜索功能已移除");
     }
 
     /**
@@ -1707,15 +1632,9 @@ export class SidebarView extends ItemView {
                 this.messageList?.addMessage(aiMessageData);
             }
 
-            // 根据模式选择不同的处理方式
-            if (this.crossBookMode) {
-                // 跨书籍模式：直接调用跨书籍搜索 API
-                this.handleCrossBookSearch(message, aiMessageId);
-            } else {
-                // 单书籍模式：使用 Agent 智能体模式
-                // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
-                this.handleAgentQuery(message, this.currentIndexId!, aiMessageId, quotes);
-            }
+            // 使用 Agent 智能体模式
+            // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
+            this.handleAgentQuery(message, this.currentIndexId!, aiMessageId, quotes);
 
 
         } catch (error) {
@@ -2128,155 +2047,6 @@ export class SidebarView extends ItemView {
             this.isAiStreaming = false;
             this.chatInput?.setStreaming(false);
             this.chatInput?.setDisabled(false);
-        }
-    }
-
-    /**
-     * 处理跨书籍搜索请求
-     */
-    /**
-     * 处理跨书籍搜索（生成主题报告）
-     */
-    private async handleCrossBookSearch(query: string, aiMessageId: string): Promise<void> {
-        if (!this.apiClient) {
-            this.messageList?.updateMessage(aiMessageId, {
-                content: "API 客户端未连接",
-                isStreaming: false
-            });
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-
-            return;
-        }
-
-        try {
-            // 根据过滤条件获取 indexIds
-            let indexIds: string[] | undefined = undefined;
-            let filterDescription = "";
-
-            if (this.hasSearchFilters()) {
-                // 初始化 ReadingPortalService（如果需要）
-                if (!this.readingPortal) {
-                    this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
-                }
-
-                indexIds = await this.readingPortal.filterIndexIdsByMetadata(this.searchFilters);
-                filterDescription = `（过滤条件: ${this.buildFilterDescription()}）`;
-
-                if (indexIds.length === 0) {
-                    this.messageList?.updateMessage(aiMessageId, {
-                        content: `没有找到符合条件的书籍 ${filterDescription}。请检查书单或标签设置。`,
-                        isStreaming: false
-                    });
-                    this.isProcessing = false;
-                    this.isAiStreaming = false;
-                    this.chatInput?.setStreaming(false);
-                    this.chatInput?.setDisabled(false);
-
-                    return;
-                }
-            }
-
-            // 调用主题报告 API
-            log('[DeepPDF] 跨书籍搜索开始:', query, '过滤:', filterDescription, 'indexIds:', indexIds);
-            const result = await this.apiClient.generateThemeReport(query, { indexIds });
-            log('[DeepPDF] 主题报告结果:', result);
-
-            if (result.status !== "success") {
-                this.messageList?.updateMessage(aiMessageId, {
-                    content: `生成报告失败: ${result.error || "未知错误"}`,
-                    isStreaming: false
-                });
-                return;
-            }
-
-            // 保存 Markdown 文件到 Obsidian vault
-            let savedFilePath: string | null = null;
-            if (result.markdown_content && result.suggested_filename) {
-                try {
-                    savedFilePath = await this.saveThemeReportToVault(
-                        result.suggested_filename,
-                        result.markdown_content
-                    );
-                    log('[DeepPDF] 报告已保存到:', savedFilePath);
-                } catch (saveError) {
-                    logError('[DeepPDF] 保存报告失败:', saveError);
-                }
-            }
-
-            // 构建显示内容
-            let displayContent = `## 📌 ${result.theme}\n\n${result.unified_summary}\n\n`;
-
-            // 添加各书观点摘要
-            if (result.book_perspectives && result.book_perspectives.length > 0) {
-                displayContent += `### 📚 各书观点 (${result.books_searched} 本书)\n\n`;
-                for (const bp of result.book_perspectives) {
-                    const points = bp.key_points && bp.key_points.length > 0
-                        ? bp.key_points.join("；")
-                        : "已提取相关内容";
-                    displayContent += `**[[${bp.book_name}]]**: ${points}\n\n`;
-                }
-            }
-
-            // 如果成功保存了文件，添加提示
-            if (savedFilePath) {
-                displayContent += `\n---\n\n> 📄 完整报告已保存到: [[${savedFilePath}]]`;
-            }
-
-            this.messageList?.updateMessage(aiMessageId, {
-                content: displayContent,
-                isStreaming: false
-            });
-
-            // 保存到会话缓存
-            this.saveToCache();
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            this.messageList?.updateMessage(aiMessageId, {
-                content: `生成报告失败: ${errorMessage}`,
-                isStreaming: false
-            });
-        } finally {
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-
-            this.chatInput?.focus();
-        }
-    }
-
-    /**
-     * 保存主题报告到 Obsidian vault
-     * @param filename 文件名
-     * @param content Markdown 内容
-     * @returns 保存的文件路径（相对于 vault 根目录）
-     */
-    private async saveThemeReportToVault(filename: string, content: string): Promise<string | null> {
-        try {
-            const { normalizePath } = require('obsidian');
-            const vault = this.app.vault;
-
-            // 目标目录：DeepPDF/主题调查
-            const outputDir = 'DeepPDF/主题调查';
-            const fullPath = normalizePath(`${outputDir}/${filename}`);
-
-            // 确保目录存在
-            const dirExists = await vault.adapter.exists(outputDir);
-            if (!dirExists) {
-                await vault.adapter.mkdir(outputDir);
-            }
-
-            // 写入文件
-            await vault.adapter.write(fullPath, content);
-
-            return fullPath;
-        } catch (error) {
-            logError('[DeepPDF] 保存主题报告失败:', error);
-            return null;
         }
     }
 

@@ -23,14 +23,6 @@ export interface SearchFilters {
 }
 
 /**
- * 跨书籍搜索事件参数
- */
-export interface CrossBookSearchParams {
-    booklists?: string[];
-    tags?: string[];
-}
-
-/**
  * 索引进度步骤配置
  *
  * 进度流程说明（后端 indexer.py + pageindex-lib）：

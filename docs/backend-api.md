@@ -314,9 +314,6 @@ Agent 查询（LLM Tree Search）
 
 ---
 
-### GET /api/skills
-
-获取可用 Skills 列表
 
 ---
 
