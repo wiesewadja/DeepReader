@@ -276,6 +276,9 @@ export async function runAgentLoop(
   let hadError = false; // 跟踪是否发生了错误
   let completedNormally = false; // 跟踪是否正常完成（非强制总结）
 
+  // 🐛 调试日志：显示动态迭代上限
+  agentLog(`[AgentLoop] 🔄 动态迭代上限: ${maxIterations} (来自 options.maxIterations=${options.maxIterations})`);
+
   // 拟人化进度适配器（可选）
   const humanizer = options.onHumanizedProgress
     ? new HumanizedProgressAdapter()
