@@ -281,6 +281,7 @@ export interface SubChapter {
 
 export interface TocSection {
   level_1: string;
+  node_id?: string;  // 一级章节节点 ID
   summary?: string;
   sub_chapters: SubChapter[];
 }

@@ -188,6 +188,7 @@ class TocSection(BaseModel):
     """2 级扁平章节结构（骨架+叶子）"""
 
     level_1: str  # 一级章节标题
+    node_id: Optional[str] = None  # 一级章节节点 ID（用于 get_chapter）
     summary: Optional[str] = None  # 一级章节摘要
     sub_chapters: List[SubChapter] = []  # 二级章节列表
 
@@ -261,6 +262,7 @@ def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSec
 
     for node in tree_structure:
         title = node.get("title", "未命名章节")
+        node_id = node.get("node_id")  # 一级章节节点 ID
         summary = node.get("summary")  # LLM 生成的摘要
 
         # 获取子章节
@@ -276,6 +278,7 @@ def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSec
         # 添加当前一级章节及其子章节
         result.append(TocSection(
             level_1=title,
+            node_id=node_id,
             summary=summary,
             sub_chapters=sub_chapters
         ))

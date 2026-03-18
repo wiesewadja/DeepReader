@@ -414,11 +414,16 @@ function formatFlatSimple(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    // 一级章节
-    lines.push(`### ${section.level_1}`);
+    // 一级章节（带 node_id）
+    const level1Link = section.node_id
+      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
+      : section.level_1;
+    lines.push(`### ${level1Link}`);
     // 二级章节
     for (const sub of section.sub_chapters) {
-      const link = sub.node_id ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]` : sub.title;
+      const link = sub.node_id
+        ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
+        : sub.title;
       lines.push(`- ${link}`);
     }
     lines.push('');
@@ -437,7 +442,10 @@ function formatFlatBrief(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    lines.push(`## ${section.level_1}`);
+    const level1Link = section.node_id
+      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
+      : section.level_1;
+    lines.push(`## ${level1Link}`);
     lines.push('');
   }
 
@@ -456,12 +464,18 @@ function formatFlatNormal(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    lines.push(`## ${section.level_1}`);
+    const level1Link = section.node_id
+      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
+      : section.level_1;
+    lines.push(`## ${level1Link}`);
     lines.push('');
 
     if (section.sub_chapters.length > 0) {
       for (const sub of section.sub_chapters) {
-        lines.push(`- ${sub.title}`);
+        const subLink = sub.node_id
+          ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
+          : sub.title;
+        lines.push(`- ${subLink}`);
       }
     } else {
       lines.push('_（无子章节）_');
@@ -484,7 +498,10 @@ function formatFlatDetailed(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    lines.push(`## ${section.level_1}`);
+    const level1Link = section.node_id
+      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
+      : section.level_1;
+    lines.push(`## ${level1Link}`);
 
     // 添加摘要
     if (section.summary) {
@@ -498,8 +515,10 @@ function formatFlatDetailed(flatToc: TableOfContentsFlat): string {
     if (section.sub_chapters.length > 0) {
       lines.push('### 本章节目录');
       for (const sub of section.sub_chapters) {
-        const link = sub.node_id ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]` : sub.title;
-        lines.push(`- ${link}`);
+        const subLink = sub.node_id
+          ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
+          : sub.title;
+        lines.push(`- ${subLink}`);
       }
     }
 
