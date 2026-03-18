@@ -6,6 +6,9 @@ PDF 索引和语义搜索服务
 
 import logging
 import warnings
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from datetime import datetime
 
 # 过滤第三方库的警告
 warnings.filterwarnings(
@@ -16,14 +19,45 @@ warnings.filterwarnings(
 )
 
 # ============================================================
-# 日志配置 - 在导入其他模块前配置
+# 日志配置 - 滚轮型日志，最大 100M
 # ============================================================
-# 设置根日志级别
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+
+# 日志目录
+LOG_DIR = Path(__file__).parent.parent.parent.parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "deeppdf.log"
+
+# 创建格式化器（使用本地时间）
+formatter = logging.Formatter(
+    fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# 创建滚轮型文件处理器
+# maxBytes=100MB, backupCount=5（保留 5 个备份文件）
+file_handler = RotatingFileHandler(
+    filename=LOG_FILE,
+    maxBytes=100 * 1024 * 1024,  # 100MB
+    backupCount=5,
+    encoding="utf-8",
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+# 创建控制台处理器
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(formatter)
+
+# 配置根日志
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(file_handler)
+root_logger.addHandler(console_handler)
+
+# 记录日志启动信息
+logging.info(f"[日志] 日志文件: {LOG_FILE}")
+logging.info(f"[日志] 最大大小: 100MB, 备份数: 5")
 
 # 静默第三方库的 DEBUG 日志
 THIRD_PARTY_LOGGERS = [

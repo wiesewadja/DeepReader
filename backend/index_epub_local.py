@@ -27,6 +27,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, str(Path(__file__).parent / "deeppdf-api" / "src"))
 
 from deeppdf.storage.chroma_store import ChromaStore
+from deeppdf.services.bm25_indexer import build_bm25_index_from_paragraphs
 
 
 class LocalEPUBIndexer:
@@ -260,7 +261,31 @@ class LocalEPUBIndexer:
         print(f"    存储 {len(paragraphs)} 个段落")
         print(f"    耗时: {embed_time:.2f} 秒")
 
-        # 4. 保存元数据
+        # 4. 构建 BM25 索引
+        print(f"\n[4] 构建 BM25 索引...")
+        try:
+            # 将段落转换为 BM25 索引器需要的格式
+            bm25_paragraphs = [
+                {
+                    "id": p["id"],
+                    "text": p["text"],
+                    "metadata": p["metadata"],
+                }
+                for p in paragraphs
+            ]
+            bm25_index = build_bm25_index_from_paragraphs(
+                paragraphs=bm25_paragraphs,
+                storage_dir=str(self.storage_dir),
+                index_id=index_id,
+            )
+            if bm25_index:
+                print(f"    BM25 索引构建成功: {len(bm25_index.doc_ids)} 个段落")
+            else:
+                print(f"    BM25 索引构建失败，将使用向量检索")
+        except Exception as e:
+            print(f"    BM25 索引构建异常: {e}")
+
+        # 5. 保存元数据
         print(f"\n[4] 保存元数据...")
 
         # 构建树结构（用于标题匹配）

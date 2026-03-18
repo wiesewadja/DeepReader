@@ -62,7 +62,14 @@ class QueryAPITester:
             data = resp.json()
             indexes = data.get("indexes", [])
             if indexes:
-                self.index_id = indexes[0].get("id")
+                # 优先使用带 BM25 的测试索引
+                for idx in indexes:
+                    idx_id = idx.get("id")
+                    if "bm25_test" in idx_id:
+                        self.index_id = idx_id
+                        break
+                if not self.index_id:
+                    self.index_id = indexes[0].get("id")
                 self.log(f"使用索引: {self.index_id}")
                 return True
         self.log("没有找到可用索引", "ERROR")

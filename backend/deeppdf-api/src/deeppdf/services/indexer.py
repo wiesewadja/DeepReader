@@ -29,12 +29,7 @@ from deeppdf.services.text_formatter import TextFormatter
 # 导入 BM25 索引服务
 from deeppdf.services.bm25_indexer import build_bm25_index_from_paragraphs
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# 配置日志（使用根日志配置）
 logger = logging.getLogger(__name__)
 
 
