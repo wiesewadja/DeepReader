@@ -7,7 +7,7 @@ import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 import { searchDocTool } from './search-doc.js';
 import { getTocTool } from './get-toc.js';
 import { getChapterTool } from './get-chapter.js';
-import { createSkillTool } from './skill.js';
+import { createSkillTool } from './skill.js';  // TODO: 暂时屏蔽 Skills 功能
 import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool, checkSubAgentTool } from './create-sub-agent.js';
 import { addMemoryTool, searchMemoryTool } from './memory.js';
@@ -54,8 +54,9 @@ export function createToolRegistry(
   registry.set('get_chapter', getChapterTool);
 
   // 注册 Skill 工具（需要依赖注入）
-  const skillTool = createSkillTool(skillLoader);
-  registry.set('Skill', skillTool);
+  // TODO: 暂时屏蔽 Skills 功能
+  // const skillTool = createSkillTool(skillLoader);
+  // registry.set('Skill', skillTool);
 
   // 注册写入工具
   registry.set('write_note', writeNoteTool);

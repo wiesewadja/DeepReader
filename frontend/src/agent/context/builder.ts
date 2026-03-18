@@ -110,9 +110,10 @@ export class ContextBuilder {
 
 		// Layer 4: Skills（技能层 - XML Summary）
 		// Tools 通过 Function Calling API 传递，不在 System Prompt 中
-		if (skillsSummary && skillsSummary.trim()) {
-			parts.push(`## 可用技能\n\n${skillsSummary}`);
-		}
+		// TODO: 暂时屏蔽 Skills 功能
+		// if (skillsSummary && skillsSummary.trim()) {
+		// 	parts.push(`## 可用技能\n\n${skillsSummary}`);
+		// }
 
 		// 添加核心约束
 		parts.push(this.buildConstraints());

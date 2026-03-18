@@ -52,7 +52,7 @@
 
   "fallback": {
     "intent": "分析阅读-微观检索",
-    "tools": ["search_doc"],
+    "tools": ["get_toc,search_doc","get_chapter"],
     "maxIterations": 4,
     "comment": "兜底场景，给予足够空间"
   },
