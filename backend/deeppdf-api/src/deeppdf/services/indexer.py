@@ -801,49 +801,27 @@ def _store_to_chromadb(
     store.create_collection(name=index_id, metadata=collection_metadata)
     logger.info("[向量存储] 集合创建成功")
 
-    # 准备文档
-    logger.info("[向量存储] 准备向量化文档...")
     # 使用原始文件名（不含扩展名）作为 pdf_name
     display_name = Path(original_filename).stem if original_filename else pdf_path_obj.stem
-    documents = [
-        {
-            "id": node["id"],
-            "text": node["text"],
-            "metadata": {**node["metadata"], "pdf_name": display_name, "type": "section"},
-        }
-        for node in section_nodes
-    ]
 
-    # 添加章节文档（如果有）
-    if documents:
-        # 计算总文本长度和统计信息
-        total_text_length = sum(len(doc["text"]) for doc in documents)
-        avg_text_length = total_text_length // len(documents) if documents else 0
-
-        logger.info("[向量存储] 文档统计:")
-        logger.info(f"  - 文档数量: {len(documents)}")
-        logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
-        logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
-
-        # 添加文档到向量数据库
-        logger.info("[向量存储] 正在向量化并添加到数据库...")
-        embed_start = time.time()
-        store.add_documents(index_id, documents)
-        embed_time = time.time() - embed_start
-
-        logger.info("[向量存储] 章节向量存储完成:")
-        logger.info(f"  - 向量化耗时: {embed_time:.2f} 秒")
-        logger.info(f"  - 存储章节数: {len(documents)}")
-    else:
-        logger.info("[向量存储] 无章节文档，跳过章节向量化")
-
-    # 存储段落向量（如果有）
+    # 只存储段落向量（不再存储章节级别的向量）
+    # 章节信息仍然保留在 tree_structure 中用于标题匹配和 BM25 搜索
     paragraph_count = 0
+
     if paragraph_chunks:
         if progress_callback:
             progress_callback("store_paragraphs", 88, "正在向量化并存储段落...")
 
-        logger.info("[向量存储] 正在存储段落向量...")
+        # 计算统计信息
+        total_text_length = sum(len(chunk["text"]) for chunk in paragraph_chunks)
+        avg_text_length = total_text_length // len(paragraph_chunks) if paragraph_chunks else 0
+
+        logger.info("[向量存储] 段落文档统计:")
+        logger.info(f"  - 段落数量: {len(paragraph_chunks)}")
+        logger.info(f"  - 总文本长度: {total_text_length:,} 字符")
+        logger.info(f"  - 平均文本长度: {avg_text_length:,} 字符")
+
+        logger.info("[向量存储] 正在向量化并存储段落...")
         para_start = time.time()
         store.add_documents(index_id, paragraph_chunks)
         para_time = time.time() - para_start
@@ -852,11 +830,15 @@ def _store_to_chromadb(
         logger.info("[向量存储] 段落向量存储完成:")
         logger.info(f"  - 段落向量化耗时: {para_time:.2f} 秒")
         logger.info(f"  - 存储段落数: {paragraph_count}")
+    else:
+        logger.warning("[向量存储] 无段落 chunks，向量数据库将为空")
+        logger.info("[向量存储] 提示：章节信息仍可通过 tree_structure 进行标题匹配和 BM25 搜索")
 
     vector_time = time.time() - vector_start
-    logger.info("[向量存储] 全部向量存储完成:")
+    logger.info("[向量存储] 向量存储完成:")
     logger.info(f"  - 存储总耗时: {vector_time:.2f} 秒")
-    logger.info(f"  - 章节数: {len(documents)}, 段落数: {paragraph_count}")
+    logger.info(f"  - 段落数: {paragraph_count}")
+    logger.info(f"  - 章节数: {len(section_nodes)} (仅用于 tree_structure，未向量化)")
 
     return vector_time, paragraph_count
 

@@ -112,6 +112,9 @@ class QueryRequest(BaseModel):
     use_llm_tree_search: bool = Field(
         False, description="是否使用 LLM 树搜索（深度思考模式）"
     )
+    scope_node_ids: Optional[List[str]] = Field(
+        None, description="范围锁定的节点 ID 列表（只在这些节点范围内搜索）"
+    )
 
 
 # ========== 响应模型 ==========

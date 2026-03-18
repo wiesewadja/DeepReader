@@ -273,6 +273,24 @@ export interface TableOfContents {
   chapters: ChapterItem[];
 }
 
+// 扁平化章节目录响应（2 级结构）
+export interface SubChapter {
+  title: string;
+  node_id?: string;
+}
+
+export interface TocSection {
+  level_1: string;
+  summary?: string;
+  sub_chapters: SubChapter[];
+}
+
+export interface TableOfContentsFlat {
+  status: string;
+  book_title: string;
+  toc: TocSection[];
+}
+
 // 摘要响应
 export interface BookSummary {
   index_id: string;
@@ -908,12 +926,14 @@ export class DeepPDFClient {
    * @param indexId 索引 ID
    * @param maxResults 最大结果数
    * @param useLLMTreeSearch 是否使用 LLM 树搜索（深度思考模式）
+   * @param scopeNodeIds 范围锁定的节点 ID 列表（只在这些节点范围内搜索）
    */
   async queryPDF(
     query: string,
     indexId: string,
     maxResults: number = 10,
-    useLLMTreeSearch: boolean = false
+    useLLMTreeSearch: boolean = false,
+    scopeNodeIds?: string[]
   ): Promise<QueryPDFResult> {
     return this.request<QueryPDFResult>('/api/query', {
       method: 'POST',
@@ -922,7 +942,8 @@ export class DeepPDFClient {
         query,
         index_id: indexId,
         max_results: maxResults,
-        use_llm_tree_search: useLLMTreeSearch
+        use_llm_tree_search: useLLMTreeSearch,
+        scope_node_ids: scopeNodeIds
       })
     });
   }
@@ -1328,6 +1349,15 @@ export class DeepPDFClient {
    */
   async getTableOfContents(indexId: string): Promise<TableOfContents> {
     return this.request<TableOfContents>(`/api/reading/${indexId}/toc`, {
+      method: 'GET'
+    });
+  }
+
+  /**
+   * 获取书籍扁平化章节目录（2 级结构：骨架+叶子）
+   */
+  async getTableOfContentsFlat(indexId: string): Promise<TableOfContentsFlat> {
+    return this.request<TableOfContentsFlat>(`/api/reading/${indexId}/toc/flat`, {
       method: 'GET'
     });
   }

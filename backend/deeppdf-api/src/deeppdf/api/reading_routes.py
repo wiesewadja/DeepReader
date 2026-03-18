@@ -177,6 +177,21 @@ class ChapterItem(BaseModel):
     obsidian_link: Optional[str] = None  # Obsidian Markdown 文件链接
 
 
+class SubChapter(BaseModel):
+    """二级章节项"""
+
+    title: str
+    node_id: Optional[str] = None  # 节点 ID（用于 get_chapter）
+
+
+class TocSection(BaseModel):
+    """2 级扁平章节结构（骨架+叶子）"""
+
+    level_1: str  # 一级章节标题
+    summary: Optional[str] = None  # 一级章节摘要
+    sub_chapters: List[SubChapter] = []  # 二级章节列表
+
+
 class TableOfContentsResponse(BaseModel):
     """章节目录响应"""
 
@@ -184,6 +199,14 @@ class TableOfContentsResponse(BaseModel):
     book_name: str
     total_pages: int
     chapters: List[ChapterItem]
+
+
+class TableOfContentsFlatResponse(BaseModel):
+    """扁平化章节目录响应（2 级结构）"""
+
+    status: str = "success"
+    book_title: str
+    toc: List[TocSection]
 
 
 def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str = "") -> List[ChapterItem]:
@@ -221,6 +244,54 @@ def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str
         if isinstance(sub_structure, list) and sub_structure:
             chapters.extend(_extract_chapters(sub_structure, level + 1, book_name))
     return chapters
+
+
+def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSection]:
+    """
+    提取扁平化的 2 级章节结构（骨架+叶子）
+
+    Args:
+        tree_structure: 树状结构数据
+        level: 当前层级
+
+    Returns:
+        扁平化的 2 级章节列表
+    """
+    result: List[TocSection] = []
+
+    for node in tree_structure:
+        title = node.get("title", "未命名章节")
+        summary = node.get("summary")  # LLM 生成的摘要
+
+        # 获取子章节
+        sub_structure = node.get("structure", [])
+        sub_chapters: List[SubChapter] = []
+
+        if isinstance(sub_structure, list) and sub_structure:
+            for sub_node in sub_structure:
+                sub_title = sub_node.get("title", "未命名章节")
+                sub_node_id = sub_node.get("node_id")
+                sub_chapters.append(SubChapter(title=sub_title, node_id=sub_node_id))
+
+        # 添加当前一级章节及其子章节
+        result.append(TocSection(
+            level_1=title,
+            summary=summary,
+            sub_chapters=sub_chapters
+        ))
+
+        # 递归处理子结构（如果有的话，继续添加到当前一级章节下）
+        if isinstance(sub_structure, list) and sub_structure:
+            for sub_node in sub_structure:
+                nested_structure = sub_node.get("structure", [])
+                if isinstance(nested_structure, list) and nested_structure:
+                    # 将更深层级的章节添加到当前一级章节的 sub_chapters 中
+                    for nested_node in nested_structure:
+                        nested_title = nested_node.get("title", "未命名章节")
+                        nested_node_id = nested_node.get("node_id")
+                        sub_chapters.append(SubChapter(title=nested_title, node_id=nested_node_id))
+
+    return result
 
 
 @router.get("/{index_id}/toc", response_model=TableOfContentsResponse)
@@ -273,6 +344,67 @@ async def get_table_of_contents(index_id: str):
         book_name=book_name,
         total_pages=total_pages,
         chapters=chapters,
+    )
+
+
+@router.get("/{index_id}/toc/flat", response_model=TableOfContentsFlatResponse)
+async def get_table_of_contents_flat(index_id: str):
+    """
+    获取书籍扁平化章节目录（2 级结构：骨架+叶子）
+
+    返回格式：
+    {
+        "status": "success",
+        "book_title": "书籍名称",
+        "toc": [
+            {
+                "level_1": "第一部分：...",
+                "summary": "本部分摘要...",
+                "sub_chapters": [
+                    {"title": "第1章：...", "node_id": "xxx"},
+                    {"title": "第2章：...", "node_id": "xxx"}
+                ]
+            }
+        ]
+    }
+
+    Args:
+        index_id: 索引 ID
+
+    Returns:
+        扁平化章节目录信息
+    """
+    _validate_index_id(index_id)
+    storage_dir = str(Path(settings.base_dir))
+
+    metadata_result = await load_index_metadata(index_id, storage_dir)
+    if metadata_result.get("status") != "success":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"索引不存在: {index_id}"
+        )
+
+    metadata = metadata_result.get("metadata", {})
+
+    # 从 tree_structure 提取章节
+    tree_structure = metadata.get("tree_structure", {})
+    structure_list = (
+        tree_structure.get("structure", []) if isinstance(tree_structure, dict) else []
+    )
+
+    # 获取书籍名称
+    book_name = (
+        metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    )
+
+    # 提取扁平化 2 级结构
+    flat_toc = _extract_flat_toc(structure_list)
+
+    logger.info(f"[阅读API] 获取扁平目录: {index_id}, {len(flat_toc)} 个一级章节")
+
+    return TableOfContentsFlatResponse(
+        status="success",
+        book_title=book_name,
+        toc=flat_toc,
     )
 
 

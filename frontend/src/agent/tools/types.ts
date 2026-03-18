@@ -39,6 +39,8 @@ export interface ToolContext {
   markdownFiles?: Record<string, string>;
   /** 是否使用 LLM 树搜索（深度思考模式） */
   useLLMTreeSearch?: boolean;
+  /** 范围锁定的节点 ID 列表（只在这些节点范围内搜索） */
+  scopeNodeIds?: string[];
   /** Obsidian App 实例（用于 vault 操作） */
   app?: App;
   /** 阅读进度信息 */

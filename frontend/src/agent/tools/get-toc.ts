@@ -7,6 +7,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
+import type { TableOfContentsFlat } from '../../api/http-client.js';
 import { deeppdfClient } from '../../api/http-client.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 
@@ -15,16 +16,14 @@ const GET_TOC_DEFINITION: ToolDefinition = {
   function: {
     name: 'get_toc',
     description: `【检视阅读】获取文档目录和结构。detail 控制详细程度：
-- simple（默认）：简单目录列表
-- brief：仅主要章节
-- normal：包含架构分析
+- normal：仅包含整体架构大纲
 - detailed：包含章节摘要`,
     parameters: {
       type: 'object',
       properties: {
         detail: {
           type: 'string',
-          enum: ['simple', 'brief', 'normal', 'detailed'],
+          enum: [ 'normal', 'detailed'],
           description: '详细程度：simple（默认，简单列表）、brief（主要章节）、normal（含分析）、detailed（含摘要）',
         },
       },
@@ -65,34 +64,25 @@ export const getTocTool: ToolExecutor = {
     try {
       log('[get_toc] 获取目录:', { indexId: context.indexId, detail });
 
-      // 获取目录（包含 summary）
-      const toc = await deeppdfClient.getTableOfContents(context.indexId);
+      // 优先使用扁平化 API（2 级结构）
+      const flatToc = await deeppdfClient.getTableOfContentsFlat(context.indexId);
 
-      if (!toc.chapters || toc.chapters.length === 0) {
+      if (!flatToc.toc || flatToc.toc.length === 0) {
         return `No table of contents available for "${context.pdfName}"`;
       }
 
-      // simple 模式：简单列表（最快）
-      if (detail === 'simple') {
-        return formatSimpleToc(toc.book_name, toc.chapters, toc.total_pages);
-      }
-
-      // brief 模式：仅主要章节
-      if (detail === 'brief') {
-        return formatBriefOutline(toc.book_name, toc.chapters);
-      }
-
-      // normal/detailed 模式：需要额外获取导出数据（用于架构分析和完整文本）
-      const exportData = await deeppdfClient.exportIndex(context.indexId);
-
+      // 根据 detail 参数格式化输出
       switch (detail) {
+        case 'simple':
+          return formatFlatSimple(flatToc);
+        case 'brief':
+          return formatFlatBrief(flatToc);
         case 'normal':
-          return formatNormalOutline(toc.book_name, toc.chapters, exportData.nodes);
+          return formatFlatNormal(flatToc);
         case 'detailed':
-          // detailed 模式下，优先使用 toc.chapters 中的 summary
-          return formatDetailedOutline(toc.book_name, toc.chapters, exportData.nodes);
+          return formatFlatDetailed(flatToc);
         default:
-          return formatSimpleToc(toc.book_name, toc.chapters, toc.total_pages);
+          return formatFlatSimple(flatToc);
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -410,4 +400,111 @@ function generateStructureAnalysis(chapters: ChapterInfo[]): string {
   }
 
   return analysis.join(' ');
+}
+
+// ==================== 扁平化 TOC 格式化函数 ====================
+
+/**
+ * 简单模式：扁平化列表
+ */
+function formatFlatSimple(flatToc: TableOfContentsFlat): string {
+  const lines: string[] = [];
+
+  lines.push(`📖 **${flatToc.book_title}**`);
+  lines.push('');
+
+  for (const section of flatToc.toc) {
+    // 一级章节
+    lines.push(`### ${section.level_1}`);
+    // 二级章节
+    for (const sub of section.sub_chapters) {
+      const link = sub.node_id ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]` : sub.title;
+      lines.push(`- ${link}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * 简要模式：仅一级章节
+ */
+function formatFlatBrief(flatToc: TableOfContentsFlat): string {
+  const lines: string[] = [];
+
+  lines.push(`# 《${flatToc.book_title}》结构纲要`);
+  lines.push('');
+
+  for (const section of flatToc.toc) {
+    lines.push(`## ${section.level_1}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * 普通模式：含子章节列表
+ */
+function formatFlatNormal(flatToc: TableOfContentsFlat): string {
+  const lines: string[] = [];
+
+  lines.push(`# 《${flatToc.book_title}》结构纲要`);
+  lines.push('');
+  lines.push(`**章节数**: ${flatToc.toc.length} 个一级章节`);
+  lines.push('');
+
+  for (const section of flatToc.toc) {
+    lines.push(`## ${section.level_1}`);
+    lines.push('');
+
+    if (section.sub_chapters.length > 0) {
+      for (const sub of section.sub_chapters) {
+        lines.push(`- ${sub.title}`);
+      }
+    } else {
+      lines.push('_（无子章节）_');
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * 详细模式：含摘要
+ */
+function formatFlatDetailed(flatToc: TableOfContentsFlat): string {
+  const lines: string[] = [];
+
+  lines.push(`# 《${flatToc.book_title}》详细纲要`);
+  lines.push('');
+  lines.push(`**章节数**: ${flatToc.toc.length} 个一级章节`);
+  lines.push('');
+
+  for (const section of flatToc.toc) {
+    lines.push(`## ${section.level_1}`);
+
+    // 添加摘要
+    if (section.summary) {
+      lines.push('');
+      lines.push(`> ${section.summary}`);
+    }
+
+    lines.push('');
+
+    // 子章节列表
+    if (section.sub_chapters.length > 0) {
+      lines.push('### 本章节目录');
+      for (const sub of section.sub_chapters) {
+        const link = sub.node_id ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]` : sub.title;
+        lines.push(`- ${link}`);
+      }
+    }
+
+    lines.push('');
+  }
+
+  return lines.join('\n');
 }

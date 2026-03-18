@@ -81,17 +81,18 @@ export const searchDocTool: ToolExecutor = {
     const query = args.query as string;
     const topK = (args.top_k as number) ?? DEFAULT_TOP_K;
     const useLLMTreeSearch = context.useLLMTreeSearch ?? false;
+    const scopeNodeIds = context.scopeNodeIds;
 
     if (!query) {
       return 'Error: query parameter is required';
     }
 
     try {
-      log('[search_doc] 执行搜索:', { query, topK, indexId: context.indexId, useLLMTreeSearch });
+      log('[search_doc] 执行搜索:', { query, topK, indexId: context.indexId, useLLMTreeSearch, scopeNodeIds });
       log('[search_doc] context.pdfName:', context.pdfName);
       log('[search_doc] context.markdownFiles:', context.markdownFiles ? `${Object.keys(context.markdownFiles).length} 个映射` : '无');
 
-      const result = await deeppdfClient.queryPDF(query, context.indexId, topK, useLLMTreeSearch);
+      const result = await deeppdfClient.queryPDF(query, context.indexId, topK, useLLMTreeSearch, scopeNodeIds);
 
       if (result.status !== 'success' || !result.results || result.results.length === 0) {
         // 即使没有结果，也返回 thinking 信息（如果有）

@@ -567,10 +567,11 @@ async def create_index(req: IndexRequest, http_request: Request):
 
 @router.post("/query", response_model=QueryResponse)
 async def query_index(req: QueryRequest):
-    """查询 PDF 内容（支持 LLM 树搜索）"""
+    """查询 PDF 内容（支持 LLM 树搜索和范围锁定）"""
     logger.info(
         f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', "
-        f"max_results={req.max_results}, use_llm_tree_search={req.use_llm_tree_search}"
+        f"max_results={req.max_results}, use_llm_tree_search={req.use_llm_tree_search}, "
+        f"scope_node_ids={req.scope_node_ids}"
     )
 
     result = await query_pdf(
@@ -579,6 +580,7 @@ async def query_index(req: QueryRequest):
         str(settings.base_dir),
         req.max_results or settings.max_results,
         use_llm_tree_search=req.use_llm_tree_search,
+        scope_node_ids=req.scope_node_ids,
     )
 
     # 检查是否出错

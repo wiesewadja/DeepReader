@@ -494,24 +494,59 @@ def hybrid_search(
             }
         )
 
-    # 6. 去重（按 node_id，若无则使用文本 hashlib 哈希）
+    # 6. 去重（按 node_id + type 组合，确保章节和段落不互相覆盖）
     seen = set()
     unique_results = []
     for result in all_results:
         node_id = result["metadata"].get("node_id")
-        # 使用 node_id 或文本 hashlib 哈希作为去重依据
-        # 注意：使用 md5 替代 hash() 以保证跨进程一致性（Python hash() 有随机化）
+        result_type = result["metadata"].get("type", "section")
+        # 使用 (node_id 或 parent_node_id, type) 作为去重依据
+        # 这样同一章节的段落和章节本身会被视为不同结果
         if node_id:
-            key = node_id
+            key = (node_id, result_type)
         else:
-            key = hashlib.md5(result["text"][:100].encode("utf-8"), usedforsecurity=False).hexdigest()
+            # 段落结果可能没有 node_id，使用 parent_node_id + block_id
+            parent_node_id = result["metadata"].get("parent_node_id", "")
+            block_id = result["metadata"].get("block_id", "")
+            if parent_node_id and block_id:
+                key = (f"{parent_node_id}_{block_id}", result_type)
+            else:
+                key = (hashlib.md5(result["text"][:100].encode("utf-8"), usedforsecurity=False).hexdigest(), result_type)
         if key not in seen:
             seen.add(key)
             unique_results.append(result)
 
-    # 7. 排序并返回 Top-K
-    unique_results.sort(key=lambda x: x["score"], reverse=True)
-    top_results = unique_results[:max_results]
+    # 7. 分离章节和段落结果，确保混合返回
+    section_results = [r for r in unique_results if r["metadata"].get("type") != "paragraph"]
+    paragraph_results = [r for r in unique_results if r["metadata"].get("type") == "paragraph"]
+
+    # 各自按分数排序
+    section_results.sort(key=lambda x: x["score"], reverse=True)
+    paragraph_results.sort(key=lambda x: x["score"], reverse=True)
+
+    logger.info(f"[智能检索] 去重后: {len(section_results)} 章节 + {len(paragraph_results)} 段落")
+
+    # 8. 智能合并：确保结果中包含段落（如果有）
+    top_results = []
+
+    # 如果有段落结果，确保至少包含一些（最多占 40% 的位置）
+    if paragraph_results:
+        # 计算段落结果的目标数量（最多 max_results 的 40%，至少 1 个）
+        target_paragraph_count = max(1, int(max_results * 0.4))
+        # 实际取 min(可用数量, 目标数量)
+        paragraph_count = min(len(paragraph_results), target_paragraph_count)
+
+        # 先取高分章节结果
+        remaining_slots = max_results - paragraph_count
+        top_section_results = section_results[:remaining_slots]
+        top_paragraph_results = paragraph_results[:paragraph_count]
+
+        # 合并并按分数重新排序
+        top_results = top_section_results + top_paragraph_results
+        top_results.sort(key=lambda x: x["score"], reverse=True)
+    else:
+        # 没有段落结果，直接取章节结果
+        top_results = section_results[:max_results]
 
     # 确定使用的检索方法日志
     method_str = []
@@ -527,7 +562,8 @@ def hybrid_search(
     logger.info(f"[智能检索] 方法: {method}, 结果数: {len(top_results)}")
     for i, result in enumerate(top_results):
         match_type = result["metadata"].get("match_type", "unknown")
+        result_type = result["metadata"].get("type", "section")
         score = result["score"]
-        logger.info(f"  结果 {i+1}: type={match_type}, score={score:.4f}")
+        logger.info(f"  结果 {i+1}: type={result_type}, match={match_type}, score={score:.4f}")
 
     return {"method": method, "results": top_results}

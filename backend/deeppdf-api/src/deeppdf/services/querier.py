@@ -154,16 +154,28 @@ def clear_metadata_cache() -> None:
 
 
 def _query_pdf_sync(
-    query: str, index_id: str, storage_dir: str, max_results: int = 10
+    query: str,
+    index_id: str,
+    storage_dir: str,
+    max_results: int = 10,
+    scope_node_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     同步 PDF 查询函数（在线程池中执行）
+
+    Args:
+        query: 查询文本
+        index_id: 索引 ID
+        storage_dir: 存储目录
+        max_results: 最大结果数
+        scope_node_ids: 范围锁定的节点 ID 列表（只在这些节点范围内搜索）
     """
     if not query or query.strip() == "":
         return {"status": "error", "error": "Query cannot be empty"}
 
     logger.info(
-        f"[查询] query='{query}', index_id='{index_id}', max_results={max_results}"
+        f"[查询] query='{query}', index_id='{index_id}', max_results={max_results}, "
+        f"scope_node_ids={scope_node_ids}"
     )
 
     try:
@@ -187,10 +199,27 @@ def _query_pdf_sync(
         # 获取 collection 对象（用于后续查询相邻段落）
         collection = store.client.get_collection(name=index_id)
 
+        # 构建查询参数
+        query_params = {
+            "collection_name": index_id,
+            "query_texts": [query],
+            "n_results": max_results * 2 if scope_node_ids else max_results,  # 范围搜索时多取一些
+        }
+
+        # 如果有范围锁定，添加 where 过滤条件
+        if scope_node_ids and len(scope_node_ids) > 0:
+            # 构建 where 条件：匹配 parent_node_id 在 scope_node_ids 中的段落
+            if len(scope_node_ids) == 1:
+                query_params["where"] = {"parent_node_id": scope_node_ids[0]}
+            else:
+                # 多个节点时使用 $or 组合
+                query_params["where"] = {
+                    "$or": [{"parent_node_id": nid} for nid in scope_node_ids]
+                }
+            logger.info(f"[查询] 范围锁定: {scope_node_ids}")
+
         # 执行查询
-        results = store.query(
-            collection_name=index_id, query_texts=[query], n_results=max_results
-        )
+        results = store.query(**query_params)
 
         # 格式化结果
         formatted_results = []
@@ -370,6 +399,7 @@ async def query_pdf(
     storage_dir: str,
     max_results: int = 10,
     use_llm_tree_search: bool = False,
+    scope_node_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     异步 PDF 查询
@@ -384,6 +414,7 @@ async def query_pdf(
         storage_dir: 存储目录
         max_results: 最大结果数
         use_llm_tree_search: 是否使用 LLM 树搜索
+        scope_node_ids: 范围锁定的节点 ID 列表（只在这些节点范围内搜索）
 
     Returns:
         查询结果字典
@@ -400,6 +431,7 @@ async def query_pdf(
                 tree_structure=tree_structure,
                 index_metadata=index_metadata,
                 max_results=max_results,
+                scope_node_ids=scope_node_ids,
             )
             return result
         except LLMTreeSearchError as e:
@@ -411,6 +443,7 @@ async def query_pdf(
                 index_id=index_id,
                 storage_dir=storage_dir,
                 max_results=max_results,
+                scope_node_ids=scope_node_ids,
             )
             fallback_result["fallback"] = True
             fallback_result["fallback_reason"] = str(e)
@@ -423,6 +456,7 @@ async def query_pdf(
         index_id=index_id,
         storage_dir=storage_dir,
         max_results=max_results,
+        scope_node_ids=scope_node_ids,
     )
 
 
@@ -431,8 +465,18 @@ async def _query_with_llm_tree_search(
     tree_structure: Dict[str, Any],
     index_metadata: Dict[str, Any],
     max_results: int,
+    scope_node_ids: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """LLM 树搜索实现"""
+    """
+    LLM 树搜索实现
+
+    Args:
+        query: 查询文本
+        tree_structure: 树结构
+        index_metadata: 索引元数据
+        max_results: 最大结果数
+        scope_node_ids: 范围锁定的节点 ID 列表
+    """
 
     # 1. 获取 LLM 客户端
     try:
