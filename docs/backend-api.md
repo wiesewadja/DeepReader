@@ -41,7 +41,7 @@
 **请求体:**
 ```json
 {
-  "file_id": "string",           // 文件 ID（必需）
+  "file_id": "string",
   "pdf_index_toc_check_pages": 20,
   "pdf_index_max_pages_per_node": 10,
   "pdf_index_max_tokens_per_node": 20000,
@@ -68,8 +68,8 @@
 **请求体:**
 ```json
 {
-  "query": "string",             // 搜索查询（必需）
-  "index_id": "string",          // 索引 ID（必需）
+  "query": "string",
+  "index_id": "string",
   "top_k": 5,
   "use_llm_tree_search": false
 }
@@ -314,40 +314,7 @@ Agent 查询（LLM Tree Search）
 
 ---
 
-
----
-
 ## 阅读进度 API (/api/reading)
-
-### POST /api/reading/{index_id}/progress
-
-更新阅读进度
-
-**请求体:**
-```json
-{
-  "pages": [1, 2, 3]
-}
-```
-
----
-
-### GET /api/reading/{index_id}/progress
-
-获取阅读进度
-
-**响应:**
-```json
-{
-  "index_id": "string",
-  "progress": {
-    "read_pages": [1, 2, 3],
-    "last_read_page": 3
-  }
-}
-```
-
----
 
 ### GET /api/reading/{index_id}/toc
 

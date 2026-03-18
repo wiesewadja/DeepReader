@@ -308,38 +308,6 @@ export default class DeepPDFPlugin extends Plugin {
             }, 300);
         });
 
-        // 注册 URI 协议处理器 - 跨书籍搜索（支持书单/标签过滤）
-        this.registerObsidianProtocolHandler("deepreader-search", async (params) => {
-            log("[DeepReader] deepreader-search URI handler called with params:", params);
-
-            // 解析书单和标签参数（逗号分隔）
-            const booklists = params.booklists ? params.booklists.split(",").map(s => decodeURIComponent(s.trim())) : [];
-            const tags = params.tags ? params.tags.split(",").map(s => decodeURIComponent(s.trim())) : [];
-
-            // 打开侧边栏
-            this.activateView();
-
-            // 等待视图加载
-            setTimeout(() => {
-                // 通过事件通知侧边栏启动跨书籍搜索
-                this.app.workspace.trigger("deeppdf:cross-book-search", { booklists, tags });
-            }, 100);
-        });
-
-        // 注册 URI 协议处理器 - 主题报告
-        this.registerObsidianProtocolHandler("deepreader-theme-report", async (params) => {
-            log("[DeepReader] deepreader-theme-report URI handler called");
-
-            // 打开侧边栏
-            this.activateView();
-
-            // 等待视图加载
-            setTimeout(() => {
-                // 通过事件通知侧边栏打开主题报告
-                this.app.workspace.trigger("deeppdf:theme-report");
-            }, 100);
-        });
-
         // 初始化阅读模式服务
         const readingModeCallbacks: ReadingModeCallbacks = {
             onQuote: (text: string) => {
