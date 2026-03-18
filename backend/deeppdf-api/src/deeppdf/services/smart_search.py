@@ -516,21 +516,21 @@ def hybrid_search(
                 node = match["node"]
                 norm_score = match["score"] / max_bm25_score if max_bm25_score > 0 else 0
 
-            all_results.append(
-                {
-                    "text": f"【关键词匹配 (BM25)】\n{node.get('text', '')[:500]}...",
-                    "metadata": {
-                        "section": node.get("title", ""),
-                        "node_name": node.get("title", ""),
-                        "node_id": node.get("node_id", ""),
-                        "page": node.get("start_index"),
-                        "match_type": "bm25",
+                all_results.append(
+                    {
+                        "text": f"【关键词匹配 (BM25)】\n{node.get('text', '')[:500]}...",
+                        "metadata": {
+                            "section": node.get("title", ""),
+                            "node_name": node.get("title", ""),
+                            "node_id": node.get("node_id", ""),
+                            "page": node.get("start_index"),
+                            "match_type": "bm25",
+                            "score": norm_score * 1.5,
+                            "raw_score": match["score"],
+                        },
                         "score": norm_score * 1.5,
-                        "raw_score": match["score"],
-                    },
-                    "score": norm_score * 1.5,
-                }
-            )
+                    }
+                )
 
     # 添加向量搜索结果（权重 1.0）
     for result in vector_with_scores:

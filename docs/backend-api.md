@@ -263,7 +263,7 @@
 
 ---
 
-## 阅读进度 API (/api/reading)
+## 阅读 API (/api/reading)
 
 ### GET /api/reading/{index_id}/toc
 
