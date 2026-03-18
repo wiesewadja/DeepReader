@@ -35,6 +35,8 @@ htmlcov/
 data/chroma/
 data/configs/
 data/indexes/
+src/data/
+storage/
 
 # Logs
 *.log
