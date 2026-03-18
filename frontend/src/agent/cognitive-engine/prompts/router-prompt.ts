@@ -22,12 +22,15 @@ export const PROMPT_S0_ROUTER = `<role>
 </depth_rules>
 
 <output_format>
-你必须且只能输出合法的 JSON 格式，不要包含任何 Markdown 代码块修饰符：
-{
-  "standalone_query": "重写后的独立提问",
-  "depth": 数字 (0, 1, 2, 3),
-  "reason": "一句话分类理由"
-}
+你必须输出合法的 JSON 对象（不要用代码块包裹，不要包含任何其他文字）：
+
+{"standalone_query": "重写后的独立提问", "depth": 2, "reason": "一句话分类理由"}
+
+重要规则：
+- standalone_query 和 reason 中不能包含双引号，如有需要用单引号代替
+- depth 必须是数字 0, 1, 2, 或 3
+- 不要使用 Markdown 代码块
+- 只输出这一行 JSON，不要有任何其他内容
 </output_format>
 `;
 

@@ -199,6 +199,33 @@ export class DebugLogger {
   }
 
   /**
+   * 记录状态信息（用于没有 LLM 调用的状态，如 Router 的 regex 路由）
+   */
+  logStateInfo(stateName: string, info: {
+    depth?: number;
+    standaloneQuery?: string;
+    scopeNodeIds?: string[];
+  }): void {
+    if (!this.config.enabled || !this.currentIterationLog) return;
+
+    // 将状态信息存储到 llmResponse 的 metadata 中
+    if (!this.currentIterationLog.llmResponse) {
+      this.currentIterationLog.llmResponse = {
+        timestamp: new Date().toISOString(),
+        callStack: getCallStack(),
+        metadata: {
+          model: 'skip',
+          finishReason: 'regex_route',
+          ...info,
+        },
+        content: `${stateName} 阶段使用正则快速路由，无需 LLM 调用`,
+        toolCalls: [],
+        rawChunks: [],
+      };
+    }
+  }
+
+  /**
    * 记录消息列表
    */
   logMessages(messages: unknown[]): void {

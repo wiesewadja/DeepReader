@@ -4,6 +4,8 @@
 
 import type { SharedContext, StateResult, ReadingDepth, SearchResult } from './types';
 import type { ChatMessage } from '../types';
+import type { LLMClient } from '../llm-client';
+import type { ToolRegistry, ToolContext } from '../tools/types';
 
 /**
  * Factory function to create a new SharedContext
@@ -15,6 +17,10 @@ export function createSharedContext(params: {
   chatHistory?: ChatMessage[];
   markdownFiles?: Record<string, string>;
   abortSignal?: AbortSignal;
+  // Engine dependencies
+  llmClient?: LLMClient;
+  toolRegistry?: ToolRegistry;
+  toolContext?: ToolContext;
 }): SharedContextImpl {
   return new SharedContextImpl(
     params.indexId,
@@ -22,7 +28,10 @@ export function createSharedContext(params: {
     params.rawUserQuery,
     params.chatHistory || [],
     params.markdownFiles,
-    params.abortSignal
+    params.abortSignal,
+    params.llmClient,
+    params.toolRegistry,
+    params.toolContext
   );
 }
 
@@ -57,6 +66,11 @@ export class SharedContextImpl implements SharedContext {
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
 
+  // Engine Dependencies
+  llmClient?: LLMClient;
+  toolRegistry?: ToolRegistry;
+  toolContext?: ToolContext;
+
   // State tracking
   executedStates: Set<string>;
   stateResults: Map<string, StateResult>;
@@ -67,7 +81,10 @@ export class SharedContextImpl implements SharedContext {
     rawUserQuery: string,
     chatHistory: ChatMessage[],
     markdownFiles?: Record<string, string>,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    llmClient?: LLMClient,
+    toolRegistry?: ToolRegistry,
+    toolContext?: ToolContext
   ) {
     this.indexId = indexId;
     this.pdfName = pdfName;
@@ -75,6 +92,9 @@ export class SharedContextImpl implements SharedContext {
     this.chatHistory = chatHistory;
     this.markdownFiles = markdownFiles;
     this.abortSignal = abortSignal;
+    this.llmClient = llmClient;
+    this.toolRegistry = toolRegistry;
+    this.toolContext = toolContext;
     this.executedStates = new Set();
     this.stateResults = new Map();
   }

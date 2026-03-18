@@ -16,6 +16,7 @@ import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prom
 import { IntentRouter } from '../../router/intent-router';
 import DEFAULT_RULES_JSON from '../../router/intent-rules.json';
 import type { IntentRulesConfig } from '../../router/types';
+import { runStateLoop } from './run-state-loop';
 
 // Schema for router output
 const RouterOutputSchema = z.object({
@@ -65,12 +66,37 @@ export class RouterState extends StateNode {
         return;
       }
 
-      // 2. LLM fallback for query rewrite
-      // Note: In production, this would call the actual LLM
-      // For now, we use the regex result with the original query
-      if (regexResult) {
+      // 2. LLM fallback for query rewrite (when needed)
+      if (regexResult && regexResult.needsRewrite && ctx.llmClient && ctx.toolRegistry && ctx.toolContext) {
+        try {
+          const response = await runStateLoop(
+            ctx.llmClient,
+            ctx.toolRegistry,
+            ctx.toolContext,
+            {
+              model: this.model,
+              systemPrompt: PROMPT_S0_ROUTER,
+              userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory),
+              availableTools: [],
+              maxIterations: 1,
+              abortSignal: ctx.abortSignal,
+            }
+          );
+
+          const parsed = parseStateOutput(response.content, RouterOutputSchema);
+          ctx.depth = (parsed.depth ?? regexResult.depth) as 0 | 1 | 2 | 3;
+          ctx.standaloneQuery = parsed.standalone_query || ctx.rawUserQuery;
+          ctx.detectedIntents = regexResult.intents;
+        } catch {
+          // LLM failed, use regex result
+          ctx.depth = regexResult.depth as 0 | 1 | 2 | 3;
+          ctx.standaloneQuery = ctx.rawUserQuery;
+          ctx.detectedIntents = regexResult.intents;
+        }
+      } else if (regexResult) {
+        // No LLM available, use regex result
         ctx.depth = regexResult.depth as 0 | 1 | 2 | 3;
-        ctx.standaloneQuery = ctx.rawUserQuery; // TODO: Call LLM for rewrite
+        ctx.standaloneQuery = ctx.rawUserQuery;
         ctx.detectedIntents = regexResult.intents;
       } else {
         // Fallback to depth 2

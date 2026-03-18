@@ -7,6 +7,7 @@
  * - 用户上下文（通过 ContextBuilder）
  * - 工具注册
  * - 对话管理
+ * - 认知状态机（替代原 ReAct 循环）
  */
 
 // Re-export everything
@@ -24,6 +25,24 @@ export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata, ReadingProgress } from './context/builder.js';
 
+// 认知状态机导出
+export {
+  runCognitiveEngine,
+  createSharedContext,
+  CognitiveEngineAdapter,
+  createCognitiveEngineAdapter,
+} from './cognitive-engine/index.js';
+export type {
+  SharedContext,
+  StateResult,
+  SearchResult,
+  ReadingDepth,
+  ModelType,
+  StateNodeOptions,
+  EngineCallbacks,
+  ToolInterceptor,
+} from './cognitive-engine/index.js';
+
 // Import for FrontendAgent class
 import { LLMClient } from './llm-client.js';
 import { SkillLoader } from './skills/loader.js';
@@ -35,11 +54,13 @@ import { runAgentLoop } from './agent-loop.js';
 import { SubagentManager } from './subagent/manager.js';
 import { setSubagentManager } from './tools/create-sub-agent.js';
 import { IntentRouter } from './router/index.js';
+import { runCognitiveEngine, createSharedContext } from './cognitive-engine/index.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
+import type { EngineCallbacks } from './cognitive-engine/types.js';
 import { agentLog as log } from '../utils/logger.js';
-import { initDebugLogger } from './debug/index.js';
+import { initDebugLogger, getDebugLogger } from './debug/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -210,36 +231,37 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 1. 意图路由
-    const intentResult = this.intentRouter.analyze(userMessage);
-    log('[Router] 检测意图:', intentResult.detectedIntents);
-    log('[Router] 允许工具:', intentResult.allowedTools);
-    log('[Router] 动态迭代上限:', intentResult.maxIterations);
-
-    // 2. 过滤工具定义
+    // 创建工具注册表
     const toolRegistry = createToolRegistry(this.skillLoader, context);
-    const allTools = getToolDefinitions(toolRegistry);
-    const filteredTools = this.filterToolDefinitions(allTools, intentResult.allowedTools);
 
-    // 3. 构建系统提示（注入 docDescription）
-    const docDescription = context.docDescription;
-    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata, docDescription);
+    // 创建认知引擎所需的回调
+    const engineCallbacks: EngineCallbacks = {
+      onProgress: callbacks.onProgress || (() => {}),
+      onContent: callbacks.onContent || (() => {}),
+      onReasoning: callbacks.onReasoning,
+      onComplete: callbacks.onComplete || (() => {}),
+      onError: callbacks.onError || (() => {}),
+    };
 
-    // 4. 构建消息列表（注入 systemNote）
-    const messages = this.buildMessages(
-      systemPrompt,
-      [],
-      userMessage,
-      context.documentMetadata,
-      context.readingProgress,
-      intentResult.systemNote
-    );
-
-    // 5. 传递动态迭代上限
-    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, {
-      ...callbacks,
-      maxIterations: intentResult.maxIterations,
+    // 创建 SharedContext
+    const ctx = createSharedContext({
+      indexId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      rawUserQuery: userMessage,
+      chatHistory: [],
+      markdownFiles: context.markdownFiles,
+      abortSignal: callbacks.abortSignal,
+      // 传递引擎依赖
+      llmClient: this.llmClient,
+      toolRegistry: toolRegistry,
+      toolContext: context,
     });
+
+    // 运行认知引擎
+    await runCognitiveEngine(ctx, engineCallbacks);
+
+    // 返回更新后的消息历史
+    return ctx.chatHistory;
   }
 
   async continueChat(
@@ -250,36 +272,40 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 1. 意图路由
-    const intentResult = this.intentRouter.analyze(userMessage);
-    log('[Router] 检测意图:', intentResult.detectedIntents);
-    log('[Router] 允许工具:', intentResult.allowedTools);
-    log('[Router] 动态迭代上限:', intentResult.maxIterations);
-
-    // 2. 过滤工具定义
+    // 创建工具注册表
     const toolRegistry = createToolRegistry(this.skillLoader, context);
-    const allTools = getToolDefinitions(toolRegistry);
-    const filteredTools = this.filterToolDefinitions(allTools, intentResult.allowedTools);
 
-    // 3. 构建系统提示（注入 docDescription）
-    const docDescription = context.docDescription;
-    const systemPrompt = await this.getSystemPromptAsync(context.documentMetadata, docDescription);
+    // 创建认知引擎所需的回调
+    const engineCallbacks: EngineCallbacks = {
+      onProgress: callbacks.onProgress || (() => {}),
+      onContent: callbacks.onContent || (() => {}),
+      onReasoning: callbacks.onReasoning,
+      onComplete: callbacks.onComplete || (() => {}),
+      onError: callbacks.onError || (() => {}),
+    };
 
-    // 4. 构建消息列表（注入 systemNote）
-    const messages = this.buildMessages(
-      systemPrompt,
-      history,
-      userMessage,
-      context.documentMetadata,
-      context.readingProgress,
-      intentResult.systemNote
-    );
+    // 提取纯净历史（只有 user 和 assistant 消息）
+    const cleanHistory = history.filter(m => m.role === 'user' || m.role === 'assistant');
 
-    // 5. 传递动态迭代上限
-    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, {
-      ...callbacks,
-      maxIterations: intentResult.maxIterations,
+    // 创建 SharedContext
+    const ctx = createSharedContext({
+      indexId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      rawUserQuery: userMessage,
+      chatHistory: cleanHistory,
+      markdownFiles: context.markdownFiles,
+      abortSignal: callbacks.abortSignal,
+      // 传递引擎依赖
+      llmClient: this.llmClient,
+      toolRegistry: toolRegistry,
+      toolContext: context,
     });
+
+    // 运行认知引擎
+    await runCognitiveEngine(ctx, engineCallbacks);
+
+    // 返回更新后的消息历史
+    return ctx.chatHistory;
   }
 
   /**

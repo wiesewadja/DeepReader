@@ -39,3 +39,7 @@ export { createScopeInterceptor } from './interceptor/scope-interceptor';
 
 // Utilities
 export { parseStateOutput } from './parse';
+
+// Integration
+export { CognitiveEngineAdapter, createCognitiveEngineAdapter } from './integration/adapter';
+export type { CognitiveEngineAdapterOptions } from './integration/adapter';

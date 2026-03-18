@@ -13,6 +13,7 @@ import { StateNode } from './base';
 import type { SharedContext } from '../types';
 import { parseStateOutput } from '../parse';
 import { PROMPT_S1_INSPECTIONAL, buildInspectionalUserMessage } from '../prompts/inspectional-prompt';
+import { runStateLoop } from './run-state-loop';
 
 // Schema for inspectional output
 const InspectionalOutputSchema = z.object({
@@ -37,26 +38,45 @@ export class InspectionalState extends StateNode {
     const startTime = Date.now();
 
     try {
-      // Note: In production, this would:
-      // 1. Call get_toc tool via LLM
-      // 2. Parse the LLM response to extract scopeNodeIds
-      // For now, we set a placeholder
+      // Check if engine dependencies are available
+      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+        // Fallback to placeholder for testing
+        ctx.scopeNodeIds = ['node_c1', 'node_c2'];
+        ctx.tocSummary = 'Based on TOC analysis, chapters 1 and 2 are most relevant.';
+        ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+        return;
+      }
 
-      // The actual implementation would use runStateLoop:
-      // const response = await runStateLoop({
-      //   model: this.model,
-      //   systemPrompt: this.buildSystemPrompt(ctx),
-      //   userMessage: ctx.standaloneQuery,
-      //   availableTools: this.tools,
-      //   // Note: No chatHistory passed!
-      // });
-      // const parsed = parseStateOutput(response.content, InspectionalOutputSchema);
-      // ctx.scopeNodeIds = parsed.scopeNodeIds;
-      // ctx.tocSummary = parsed.tocSummary;
+      // Use runStateLoop for actual LLM calls
+      const response = await runStateLoop(
+        ctx.llmClient,
+        ctx.toolRegistry,
+        ctx.toolContext,
+        {
+          model: this.model,
+          systemPrompt: this.buildSystemPrompt(ctx),
+          userMessage: buildInspectionalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
+          availableTools: this.tools,
+          maxIterations: 3,
+          abortSignal: ctx.abortSignal,
+        }
+      );
 
-      // Placeholder for testing
-      ctx.scopeNodeIds = ['node_c1', 'node_c2'];
-      ctx.tocSummary = 'Based on TOC analysis, chapters 1 and 2 are most relevant.';
+      // Parse the output with fallback
+      const defaultOutput = {
+        scopeNodeIds: ['root'],
+        tocSummary: '无法解析目录范围，使用全局搜索。',
+      };
+
+      try {
+        const parsed = parseStateOutput(response.content, InspectionalOutputSchema, defaultOutput);
+        ctx.scopeNodeIds = parsed.scopeNodeIds;
+        ctx.tocSummary = parsed.tocSummary;
+      } catch {
+        // Use fallback on parse error
+        ctx.scopeNodeIds = defaultOutput.scopeNodeIds;
+        ctx.tocSummary = defaultOutput.tocSummary;
+      }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
     } catch (error) {

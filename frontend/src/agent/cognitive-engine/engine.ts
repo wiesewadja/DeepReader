@@ -14,13 +14,63 @@ import { InspectionalState } from './states/inspectional';
 import { AnalyticalState } from './states/analytical';
 import { SyntopicalState } from './states/syntopical';
 import { FormatterState } from './states/formatter';
+import { getDebugLogger } from '../debug/logger';
 
-// State instances
+// State instances (stateless, can be reused)
 const routerState = new RouterState();
 const inspectionalState = new InspectionalState();
 const analyticalState = new AnalyticalState();
 const syntopicalState = new SyntopicalState();
-const formatterState = new FormatterState();
+
+/**
+ * Execute a state with debug logging
+ */
+async function executeStateWithLogging(
+  stateName: string,
+  state: { execute: (ctx: SharedContext) => Promise<void> },
+  ctx: SharedContext,
+  callbacks: EngineCallbacks
+): Promise<void> {
+  const logger = getDebugLogger();
+  const startTime = Date.now();
+
+  if (logger?.isEnabled()) {
+    logger.startIteration(ctx.stateResults.size + 1);
+    // 记录状态信息（即使没有 LLM 调用）
+    logger.logStateInfo(stateName, {
+      depth: ctx.depth,
+      standaloneQuery: ctx.standaloneQuery,
+      scopeNodeIds: ctx.scopeNodeIds,
+    });
+  }
+
+  try {
+    await state.execute(ctx);
+
+    if (logger?.isEnabled()) {
+      const duration = Date.now() - startTime;
+      await logger.endIteration({
+        duration,
+        llmDuration: duration, // Approximate
+        toolsDuration: 0,
+        tokenStart: 0,
+        tokenEnd: 0,
+      });
+    }
+  } catch (error) {
+    if (logger?.isEnabled()) {
+      const duration = Date.now() - startTime;
+      await logger.endIteration({
+        duration,
+        llmDuration: duration,
+        toolsDuration: 0,
+        tokenStart: 0,
+        tokenEnd: 0,
+      });
+    }
+    throw error;
+  }
+}
 
 /**
  * Main orchestrator for the cognitive engine
@@ -29,54 +79,79 @@ export async function runCognitiveEngine(
   ctx: SharedContext,
   callbacks: EngineCallbacks
 ): Promise<string> {
-  // 1. S0: Router + Query Rewrite
-  callbacks.onProgress('🌀 正在研判问题深度...');
-  await routerState.execute(ctx);
+  const logger = getDebugLogger();
 
-  // 2. Route based on depth
-  switch (ctx.depth) {
-    case 0:
-      // Casual chat, skip to S4
-      callbacks.onProgress('💬 日常闲聊模式...');
-      break;
-
-    case 1:
-      // Inspectional reading
-      callbacks.onProgress('🗺️ 正在扫描书籍宏观框架...');
-      await inspectionalState.execute(ctx);
-      break;
-
-    case 2:
-      // Analytical reading (S2 internally calls S1 if needed)
-      callbacks.onProgress('🔍 正在与作者达成共识并解构逻辑...');
-      await analyticalState.execute(ctx);
-      break;
-
-    case 3:
-      // Syntopical reading (deferred, downgrade to depth 2)
-      callbacks.onProgress('⚠️ 主题阅读暂未实现，降级为分析阅读...');
-      ctx.depth = 2;
-      await analyticalState.execute(ctx);
-      break;
+  // Start debug session
+  if (logger?.isEnabled()) {
+    await logger.startSession(ctx.rawUserQuery);
   }
 
-  // 3. S4: Format output
-  callbacks.onProgress('📝 正在排版双链笔记...');
-  await formatterState.execute(ctx);
+  try {
+    // Create formatter with callbacks for streaming
+    const formatterState = new FormatterState(callbacks);
 
-  // 4. Generate output (placeholder)
-  const output = generateOutput(ctx);
-  callbacks.onContent(output);
+    // 1. S0: Router + Query Rewrite
+    callbacks.onProgress('🌀 正在研判问题深度...');
+    await executeStateWithLogging('Router', routerState, ctx, callbacks);
 
-  // 5. Save session (only clean chat history)
-  saveSession(ctx, output);
+    // 2. Route based on depth
+    switch (ctx.depth) {
+      case 0:
+        // Casual chat, skip to S4
+        callbacks.onProgress('💬 日常闲聊模式...');
+        break;
 
-  callbacks.onComplete();
-  return output;
+      case 1:
+        // Inspectional reading
+        callbacks.onProgress('🗺️ 正在扫描书籍宏观框架...');
+        await executeStateWithLogging('Inspectional', inspectionalState, ctx, callbacks);
+        break;
+
+      case 2:
+        // Analytical reading (S2 internally calls S1 if needed)
+        callbacks.onProgress('🔍 正在与作者达成共识并解构逻辑...');
+        await executeStateWithLogging('Analytical', analyticalState, ctx, callbacks);
+        break;
+
+      case 3:
+        // Syntopical reading (deferred, downgrade to depth 2)
+        callbacks.onProgress('⚠️ 主题阅读暂未实现，降级为分析阅读...');
+        ctx.depth = 2;
+        await executeStateWithLogging('Analytical', analyticalState, ctx, callbacks);
+        break;
+    }
+
+    // 3. S4: Format output (content is streamed via callbacks)
+    callbacks.onProgress('📝 正在排版双链笔记...');
+    await executeStateWithLogging('Formatter', formatterState, ctx, callbacks);
+
+    // 4. Generate output (fallback when no LLM available)
+    const output = generateOutput(ctx);
+
+    // 5. Save session (only clean chat history)
+    saveSession(ctx, output);
+
+    callbacks.onComplete();
+
+    // End debug session
+    if (logger?.isEnabled()) {
+      await logger.endSession();
+    }
+
+    return output;
+  } catch (error) {
+    // End debug session on error
+    if (logger?.isEnabled()) {
+      await logger.endSession();
+    }
+    throw error;
+  }
 }
 
 /**
  * Generate formatted output from context
+ * This serves as fallback when LLM is not available,
+ * or provides the content for history when streaming is used
  */
 function generateOutput(ctx: SharedContext): string {
   if (ctx.depth === 0) {
@@ -84,7 +159,6 @@ function generateOutput(ctx: SharedContext): string {
   }
 
   if (ctx.analysisResult) {
-    // In production, this would be the LLM-formatted output
     return ctx.analysisResult;
   }
 

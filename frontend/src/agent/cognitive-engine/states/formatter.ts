@@ -10,8 +10,9 @@
  */
 
 import { StateNode } from './base';
-import type { SharedContext } from '../types';
+import type { SharedContext, EngineCallbacks } from '../types';
 import { PROMPT_S4_FORMATTER, buildFormatterUserMessage, MAX_HISTORY_MESSAGES } from '../prompts/formatter-prompt';
+import { runStateLoop } from './run-state-loop';
 
 export { MAX_HISTORY_MESSAGES };
 
@@ -23,8 +24,11 @@ export class FormatterState extends StateNode {
   readonly model = 'main' as const;
   readonly tools: string[] = []; // No tools!
 
-  constructor() {
+  private callbacks?: EngineCallbacks;
+
+  constructor(callbacks?: EngineCallbacks) {
     super();
+    this.callbacks = callbacks;
     this.options = { timeout: 30000, retries: 1 };
   }
 
@@ -32,22 +36,55 @@ export class FormatterState extends StateNode {
     const startTime = Date.now();
 
     try {
+      // Check if engine dependencies are available
+      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+        // Fallback for testing - output raw analysis
+        const output = ctx.analysisResult || 'No analysis result available.';
+        this.callbacks?.onContent?.(output);
+        ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+        return;
+      }
+
       // Token limit: truncate history
       const recentHistory = ctx.chatHistory.slice(-MAX_HISTORY_MESSAGES);
 
-      // Build messages for LLM
-      // Note: In production, this would call streamLLM
-      // const messages = [
-      //   { role: 'system', content: this.buildSystemPrompt(ctx) },
-      //   ...recentHistory,
-      //   { role: 'user', content: buildFormatterUserMessage(...) }
-      // ];
-      // await streamLLM({ model: this.model, messages, onContent: ... });
+      // Use runStateLoop for actual LLM calls
+      const response = await runStateLoop(
+        ctx.llmClient,
+        ctx.toolRegistry,
+        ctx.toolContext,
+        {
+          model: this.model,
+          systemPrompt: this.buildSystemPrompt(ctx),
+          userMessage: buildFormatterUserMessage(
+            ctx.standaloneQuery || ctx.rawUserQuery,
+            ctx.analysisResult || '',
+            ctx.rawResults,
+            ctx.pdfName,
+            recentHistory,  // Pass history for context continuity
+            ctx.tocSummary  // Pass tocSummary for depth=1 cases
+          ),
+          availableTools: [],
+          maxIterations: 1,
+          abortSignal: ctx.abortSignal,
+        },
+        {
+          onContent: (text) => {
+            this.callbacks?.onContent?.(text);
+          },
+          onProgress: (status) => {
+            this.callbacks?.onProgress?.(status);
+          },
+        }
+      );
 
-      // Placeholder: The formatted output would be streamed to onContent callback
-      // For now, we just mark the state as executed
+      // The content is already streamed via callbacks
+      // Store final content for history
+      const finalContent = response.content;
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+
+      return finalContent ? undefined : undefined;
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

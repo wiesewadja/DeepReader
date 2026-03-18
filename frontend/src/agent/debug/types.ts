@@ -18,6 +18,14 @@ export interface IterationLog {
   toolExecutions: ToolExecutionLog[];
   backendCalls: BackendCallLog[];
   stats: IterationStats;
+  /** 状态信息（用于非 LLM 调用的状态） */
+  stateInfo?: {
+    stateName: string;
+    depth?: number;
+    standaloneQuery?: string;
+    scopeNodeIds?: string[];
+    method?: 'regex' | 'llm';
+  };
 }
 
 export interface LLMRequestLog {

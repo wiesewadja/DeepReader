@@ -11,9 +11,11 @@
 
 import { StateNode } from './base';
 import type { SharedContext } from '../types';
+import type { SearchResult } from '../types';
 import { buildAnalyticalSystemPrompt, buildAnalyticalUserMessage } from '../prompts/analytical-prompt';
 import { InspectionalState } from './inspectional';
 import { createScopeInterceptor } from '../interceptor/scope-interceptor';
+import { runStateLoop } from './run-state-loop';
 
 /**
  * S2: Analytical Reading State
@@ -43,23 +45,51 @@ export class AnalyticalState extends StateNode {
       // 2. Create scope interceptor
       const interceptor = createScopeInterceptor(ctx.scopeNodeIds!);
 
-      // 3. Execute LLM loop with interceptor
-      // Note: In production, this would use runStateLoop with toolInterceptor
-      // const response = await runStateLoop({
-      //   model: this.model,
-      //   systemPrompt: this.buildSystemPrompt(ctx),
-      //   userMessage: ctx.standaloneQuery,
-      //   availableTools: this.tools,
-      //   toolInterceptor: interceptor,
-      // });
-      // ctx.analysisResult = response.content;
-      // ctx.rawResults = response.toolResults;
+      // 3. Check if engine dependencies are available
+      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+        // Fallback to placeholder for testing
+        ctx.analysisResult = 'MECE stands for Mutually Exclusive, Collectively Exhaustive. [^block_123]';
+        ctx.rawResults = [
+          { node_id: 'node_c1', block_id: 'block_123', text: 'MECE definition...', score: 0.95 },
+        ];
+        ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+        return;
+      }
 
-      // Placeholder for testing
-      ctx.analysisResult = 'MECE stands for Mutually Exclusive, Collectively Exhaustive. [^block_123]';
-      ctx.rawResults = [
-        { node_id: 'node_c1', block_id: 'block_123', text: 'MECE definition...', score: 0.95 },
-      ];
+      // 4. Execute LLM loop with interceptor
+      const response = await runStateLoop(
+        ctx.llmClient,
+        ctx.toolRegistry,
+        ctx.toolContext,
+        {
+          model: this.model,
+          systemPrompt: this.buildSystemPrompt(ctx),
+          userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
+          availableTools: this.tools,
+          toolInterceptor: interceptor,
+          maxIterations: 5,
+          abortSignal: ctx.abortSignal,
+        }
+      );
+
+      // 5. Store results
+      ctx.analysisResult = response.content;
+      // Extract search results from tool calls
+      ctx.rawResults = response.toolResults
+        .filter(tr => tr.toolName === 'search_doc')
+        .flatMap(tr => {
+          try {
+            const data = JSON.parse(tr.result);
+            return (data.results || []).map((r: SearchResult) => ({
+              node_id: r.node_id,
+              block_id: r.block_id,
+              text: r.text,
+              score: r.score,
+            }));
+          } catch {
+            return [];
+          }
+        });
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
     } catch (error) {

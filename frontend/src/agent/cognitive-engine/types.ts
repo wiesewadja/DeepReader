@@ -3,6 +3,8 @@
  */
 
 import type { ChatMessage } from '../types';
+import type { LLMClient } from '../llm-client';
+import type { ToolRegistry, ToolContext } from '../tools/types';
 
 /**
  * Reading depth levels based on Adler's methodology
@@ -71,6 +73,14 @@ export interface SharedContext {
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
+
+  // ===== Engine Dependencies =====
+  /** LLM client for API calls */
+  llmClient?: LLMClient;
+  /** Tool registry for tool execution */
+  toolRegistry?: ToolRegistry;
+  /** Tool context for tool execution */
+  toolContext?: ToolContext;
 
   // ===== State Execution Tracking =====
   executedStates: Set<string>;
