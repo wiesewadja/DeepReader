@@ -172,6 +172,35 @@ npm run test:run
 npm run test:ui          # Vitest UI
 ```
 
+### Backend Logging
+
+后端使用滚轮型日志，用于问题排查：
+
+| 配置项 | 值 |
+|-------|-----|
+| 日志文件 | `backend/logs/deeppdf.log` |
+| 最大大小 | 100MB |
+| 备份数量 | 5 个 |
+| 时间格式 | 本地时间 `YYYY-MM-DD HH:MM:SS` |
+
+**排查命令：**
+```bash
+# 查看最新日志
+tail -100 backend/logs/deeppdf.log
+
+# 实时监控
+tail -f backend/logs/deeppdf.log
+
+# 搜索错误
+grep -i "error\|exception\|failed" backend/logs/deeppdf.log
+```
+
+**常见日志关键词：**
+- `[索引]` - PDF 索引相关
+- `[查询]` - 搜索查询相关
+- `[BM25]` - BM25 索引/检索相关
+- `[智能检索]` - 混合搜索相关
+
 ### Code Quality Tools
 
 **Backend:**
