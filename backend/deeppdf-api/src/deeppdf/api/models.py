@@ -20,14 +20,6 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class ReportType(str, Enum):
-    """报告类型"""
-
-    EXPLORATORY = "exploratory"
-    COMPARATIVE = "comparative"
-    PRACTICAL = "practical"
-
-
 class ConfidenceLevel(str, Enum):
     """置信度级别"""
 

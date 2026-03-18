@@ -133,27 +133,6 @@ export default class DeepPDFPlugin extends Plugin {
             }
         });
 
-        // Add command - AI format current document
-        this.addCommand({
-            id: "format-current-document",
-            name: "AI format current document",
-            callback: async () => {
-                const file = this.app.workspace.getActiveFile();
-                if (!file || file.extension.toLowerCase() !== 'md') {
-                    new Notice("This command only works for Markdown files");
-                    return;
-                }
-                // Get editor from active view
-                const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-                if (!view) {
-                    new Notice("No active Markdown view");
-                    return;
-                }
-                const editor = view.editor;
-                await this.formatCurrentDocument(file, editor);
-            }
-        });
-
         // Excalidraw 命令 - 导出当前 Canvas 到 Excalidraw
         this.addCommand({
             id: "export-canvas-to-excalidraw",
@@ -910,39 +889,6 @@ views:
 
     async saveSettings() {
         await this.saveData(this.settings);
-    }
-
-    async formatCurrentDocument(file: any, editor: any) {
-        if (!this.apiClient) {
-            new Notice("API client not initialized");
-            return;
-        }
-
-        try {
-            new Notice("Formatting document...");
-            const content = await this.app.vault.read(file);
-
-            // Determine document type from file extension
-            const docType = file.extension.toLowerCase() === 'epub' ? 'epub' : 'pdf';
-
-            const result = await this.apiClient.formatSingleText(
-                content,
-                docType,
-                this.settings.llmProvider
-            );
-
-            if (result.status === 'success' && result.formatted_text) {
-                // Update editor content and save to file
-                editor.setValue(result.formatted_text);
-                await this.app.vault.modify(file, result.formatted_text);
-                new Notice("Document formatted successfully");
-            } else {
-                new Notice("Formatting failed");
-            }
-        } catch (err) {
-            log.error('Failed to format document:', err);
-            new Notice(`Formatting failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
     }
 
     /**
