@@ -214,6 +214,7 @@ ${currentMemory}
     const intentResult = this.intentRouter.analyze(userMessage);
     log('[Router] 检测意图:', intentResult.detectedIntents);
     log('[Router] 允许工具:', intentResult.allowedTools);
+    log('[Router] 动态迭代上限:', intentResult.maxIterations);
 
     // 2. 过滤工具定义
     const toolRegistry = createToolRegistry(this.skillLoader, context);
@@ -234,7 +235,11 @@ ${currentMemory}
       intentResult.systemNote
     );
 
-    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, callbacks);
+    // 5. 传递动态迭代上限
+    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, {
+      ...callbacks,
+      maxIterations: intentResult.maxIterations,
+    });
   }
 
   async continueChat(
@@ -249,6 +254,7 @@ ${currentMemory}
     const intentResult = this.intentRouter.analyze(userMessage);
     log('[Router] 检测意图:', intentResult.detectedIntents);
     log('[Router] 允许工具:', intentResult.allowedTools);
+    log('[Router] 动态迭代上限:', intentResult.maxIterations);
 
     // 2. 过滤工具定义
     const toolRegistry = createToolRegistry(this.skillLoader, context);
@@ -269,7 +275,11 @@ ${currentMemory}
       intentResult.systemNote
     );
 
-    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, callbacks);
+    // 5. 传递动态迭代上限
+    return runAgentLoop(this.llmClient, messages, filteredTools, toolRegistry, context, {
+      ...callbacks,
+      maxIterations: intentResult.maxIterations,
+    });
   }
 
   /**

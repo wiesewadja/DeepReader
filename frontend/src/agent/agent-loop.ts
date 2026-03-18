@@ -715,10 +715,11 @@ export async function runAgentLoop(
   if (!completedNormally && iterations >= maxIterations) {
     agentLog('[AgentLoop] 🛑 触发熔断机制：达到最大迭代次数，执行优雅降级...');
 
-    // 1. 注入强制终结指令（通过 system 消息，不污染 user 消息）
-    const forceSummarySystem: ChatMessage = {
-      role: 'system',
-      content: `【系统强制介入：触发熔断机制】
+    // 1. 注入强制终结指令（通过 user 消息 + <system_note> 包裹，前端不渲染）
+    const forceSummaryMessage: ChatMessage = {
+      role: 'user',
+      content: `<system_note>
+【系统强制介入：触发熔断机制】
 你的检索和思考次数已达上限，必须立即终止调查！
 请基于你前几次迭代中收集到的**所有零散线索**，向用户做一次"阶段性汇报"。
 
@@ -726,10 +727,12 @@ export async function runAgentLoop(
 1. 坦诚说明你尽力了，但未能找到完美/完整的答案。
 2. 总结你目前已经查到的部分有用信息（必须带上对应的引用）。
 3. 给出下一步的建议（例如建议用户换个关键词，或者建议阅读某个具体章节）。
-4. 语气要诚恳、专业，不要编造不存在的信息。`,
+4. 语气要诚恳、专业，不要编造不存在的信息。
+</system_note>`,
+      hidden: true, // 标记为隐藏消息，前端不渲染
     };
 
-    const messagesWithSummary = [...workingMessages, forceSummarySystem];
+    workingMessages.push(forceSummaryMessage);
 
     // 2. 发起最后一次"无工具"请求（物理缴械）
     let summaryContent = '';
@@ -737,7 +740,7 @@ export async function runAgentLoop(
 
     await new Promise<void>((resolve) => {
       client.streamChat(
-        messagesWithSummary,
+        workingMessages,
         [], // 👈 关键：剥夺所有工具！
         {
           onContent: (text) => {

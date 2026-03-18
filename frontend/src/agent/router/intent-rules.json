@@ -8,41 +8,53 @@
       "pattern": "总结|大纲|概括|全书|核心观点|讲了什么|总体结构|主旨|脉络|框架|读后感|核心思想|思维导图|脑图",
       "intent": "检视阅读",
       "tools": ["get_toc"],
-      "priority": 1
+      "priority": 1,
+      "maxIterations": 2,
+      "comment": "拿大纲不需要反复查，两次拿不到就是系统问题"
     },
     {
       "id": "locate_chapter",
       "pattern": "第[0-9一二三四五六七八九十百]+[章|节|部分|页]|引言|结语|附录|前言",
       "intent": "分析阅读-定位",
       "tools": ["get_toc", "get_chapter", "analyze_chapter"],
-      "priority": 2
+      "priority": 2,
+      "maxIterations": 3,
+      "comment": "定位章节，允许少量重试"
     },
     {
       "id": "concept_inquiry",
       "pattern": "如何理解|什么是|解释一下|详细说说|内涵|定义|概念|什么意思|指的是|含义",
       "intent": "分析阅读-概念探究",
       "tools": ["search_doc", "get_toc", "get_chapter"],
-      "priority": 2
+      "priority": 2,
+      "maxIterations": 3,
+      "comment": "概念检索，允许换关键词重试"
     },
     {
       "id": "syntopical",
       "pattern": "对比|结合|另一本|异同|其他书|不同文献|主题阅读|联系起来|比较",
       "intent": "主题阅读",
       "tools": ["search_read_books"],
-      "priority": 1
+      "priority": 1,
+      "maxIterations": 6,
+      "comment": "跨书检索，需要更多空间"
     },
     {
       "id": "action_output",
       "pattern": "画一个|画张|做个图|制作.*图表|总结成表格|做.*卡片|闪卡|写.*笔记|思维导图",
       "intent": "动作输出",
       "tools": ["excalidraw", "write_note", "canvas"],
-      "priority": 3
+      "priority": 3,
+      "maxIterations": 3,
+      "comment": "输出动作，中等迭代"
     }
   ],
 
   "fallback": {
     "intent": "分析阅读-微观检索",
-    "tools": ["search_doc"]
+    "tools": ["search_doc"],
+    "maxIterations": 4,
+    "comment": "兜底场景，给予足够空间"
   },
 
   "tool_aliases": {

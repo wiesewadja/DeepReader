@@ -14,6 +14,8 @@ describe('IntentRouter', () => {
       expect(result.allowedTools).toContain('excalidraw');
       expect(result.allowedTools).not.toContain('search_doc');
       expect(result.systemNote).toContain('检视阅读');
+      // 动态迭代：取两个规则中较大的值（action_output 的 3）
+      expect(result.maxIterations).toBe(3);
     });
   });
 
@@ -25,6 +27,8 @@ describe('IntentRouter', () => {
       expect(result.allowedTools).toContain('get_toc');
       expect(result.allowedTools).toContain('get_chapter');
       expect(result.allowedTools).toContain('analyze_chapter');
+      // 定位章节：maxIterations = 3
+      expect(result.maxIterations).toBe(3);
     });
   });
 
@@ -36,6 +40,8 @@ describe('IntentRouter', () => {
       expect(result.allowedTools).toContain('search_doc');
       expect(result.allowedTools).toContain('get_toc');
       expect(result.allowedTools).toContain('get_chapter');
+      // 概念检索：maxIterations = 3
+      expect(result.maxIterations).toBe(3);
     });
   });
 
@@ -45,6 +51,8 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('主题阅读');
       expect(result.allowedTools).toContain('search_read_books');
+      // 主题阅读：maxIterations = 4
+      expect(result.maxIterations).toBe(4);
     });
   });
 
@@ -56,6 +64,8 @@ describe('IntentRouter', () => {
       expect(result.detectedIntents).toContain('分析阅读-定位');
       expect(result.allowedTools).toContain('get_toc');
       expect(result.allowedTools).toContain('get_chapter');
+      // 取两个规则中较大的值（locate_chapter 的 3）
+      expect(result.maxIterations).toBe(3);
     });
   });
 
@@ -66,6 +76,8 @@ describe('IntentRouter', () => {
       expect(result.detectedIntents).toContain('分析阅读-微观检索');
       expect(result.allowedTools).toContain('search_doc');
       expect(result.allowedTools).not.toContain('get_toc');
+      // 兜底：maxIterations = 4
+      expect(result.maxIterations).toBe(4);
     });
   });
 
@@ -76,6 +88,19 @@ describe('IntentRouter', () => {
       expect(result.detectedIntents).toContain('分析阅读-概念探究');
       expect(result.allowedTools).toContain('search_doc');
       expect(result.allowedTools).toContain('get_toc');
+      // 概念检索：maxIterations = 3
+      expect(result.maxIterations).toBe(3);
+    });
+  });
+
+  describe('测试 H: "给我一个全书大纲"', () => {
+    it('应命中 macro_overview，迭代次数最小', () => {
+      const result = router.analyze('给我一个全书大纲');
+
+      expect(result.detectedIntents).toContain('检视阅读');
+      expect(result.allowedTools).toContain('get_toc');
+      // 检视阅读：maxIterations = 2（最小）
+      expect(result.maxIterations).toBe(2);
     });
   });
 });
