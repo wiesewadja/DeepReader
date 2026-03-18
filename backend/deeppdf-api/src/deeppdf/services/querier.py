@@ -23,6 +23,9 @@ from deeppdf.utils.llm_client import get_llm_client
 # 导入缓存工具
 from deeppdf.utils.cache import TTLCache
 
+# 导入 BM25 索引
+from .bm25_indexer import bm25_search
+
 logger = logging.getLogger(__name__)
 
 
@@ -253,17 +256,31 @@ def _query_pdf_sync(
                     },
                 })
 
-        logger.info(f"[查询] 返回 {len(formatted_results)} 个结果")
+        logger.info(f"[查询] 向量检索返回 {len(formatted_results)} 个结果")
 
         # 加载索引元数据（包含 tree_structure）- 使用带缓存的版本
         index_metadata = get_index_metadata(storage_dir_path, index_id)
 
-        # 使用智能检索
+        # BM25 独立检索
+        bm25_results = []
+        try:
+            bm25_results = bm25_search(
+                query=query,
+                storage_dir=storage_dir,
+                index_id=index_id,
+                top_k=max_results * 2,  # 取更多结果用于合并
+            )
+            logger.info(f"[查询] BM25 检索返回 {len(bm25_results)} 个结果")
+        except Exception as e:
+            logger.warning(f"[查询] BM25 检索失败: {e}")
+
+        # 使用智能检索（合并向量 + BM25 结果）
         logger.info("[智能检索] 启动混合检索...")
         hybrid_result = hybrid_search(
             query=query,
             index_metadata=index_metadata,
             vector_results=formatted_results,
+            bm25_results=bm25_results,
             max_results=max_results,
             scope_node_ids=scope_node_ids,
         )
@@ -273,7 +290,13 @@ def _query_pdf_sync(
         logger.info("[查询结果] 开始格式化结果，添加 markdown_path")
 
         for i, item in enumerate(hybrid_result["results"]):
-            node_id = item["metadata"].get("node_id", "")
+            # 获取 node_id：对于段落使用 parent_node_id，对于章节使用 node_id
+            result_type = item["metadata"].get("type", "section")
+            if result_type == "paragraph":
+                node_id = item["metadata"].get("parent_node_id", "")
+            else:
+                node_id = item["metadata"].get("node_id", "")
+
             markdown_path = None
 
             # 从索引元数据中查找对应的 Markdown 文件路径
@@ -295,7 +318,8 @@ def _query_pdf_sync(
                 "metadata": {
                     **item["metadata"],
                     # 确保段落相关字段被透传
-                    "type": item["metadata"].get("type", "section"),
+                    "type": result_type,
+                    "node_id": node_id,  # 确保 node_id 被正确返回
                     "block_id": item["metadata"].get("block_id"),
                     "full_paragraph": item["metadata"].get("full_paragraph"),
                     "parent_section": item["metadata"].get("parent_section"),

@@ -26,6 +26,9 @@ from deeppdf.config import settings
 # 导入文本格式化服务
 from deeppdf.services.text_formatter import TextFormatter
 
+# 导入 BM25 索引服务
+from deeppdf.services.bm25_indexer import build_bm25_index_from_paragraphs
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -1351,6 +1354,22 @@ def _index_pdf_sync(
             original_filename,
             paragraph_chunks,
         )
+
+        # 步骤 6.5: 构建 BM25 索引
+        logger.info("[BM25索引] 开始构建 BM25 全文索引...")
+        _update_progress("build_bm25", 92, "正在构建 BM25 索引...")
+        try:
+            bm25_index = build_bm25_index_from_paragraphs(
+                paragraphs=paragraph_chunks,
+                storage_dir=storage_dir,
+                index_id=index_id,
+            )
+            if bm25_index:
+                logger.info(f"[BM25索引] BM25 索引构建成功: {len(bm25_index.doc_ids)} 个段落")
+            else:
+                logger.warning("[BM25索引] BM25 索引构建失败，将使用向量检索")
+        except Exception as e:
+            logger.warning(f"[BM25索引] BM25 索引构建异常: {e}")
 
         # 保存索引元数据
         _save_metadata(
