@@ -27,6 +27,9 @@ dependencies = [
     # Search & NLP
     "jieba3>=0.42.1",
     "rank-bm25>=0.2.2",
+    # Reranking
+    "FlagEmbedding>=4.6.3",
+    "FlagReranker>=2.3.0",
     # Internal dependencies
     "pageindex",  # workspace dependency
     "python-multipart>=0.0.21",

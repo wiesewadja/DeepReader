@@ -1,10 +1,11 @@
 """
-智能检索服务 - 合并向量检索和 BM25 检索结果
+智能检索服务 - 多路召回 + 重排序
 
 核心思路：
-1. 向量检索 - 语义相似度匹配
-2. BM25 检索 - 关键词精确匹配（独立检索）
-3. 混合评分 - 合并两种检索结果
+1. 向量检索 - 语义相似度匹配（召回 RECALL_TOP_K 条）
+2. BM25 检索 - 关键词精确匹配（召回 RECALL_TOP_K 条）
+3. 多路召回合并 - 去重后合并
+4. 重排序 - 使用 BGE Reranker 对合并结果精排序
 
 注意：只返回段落级别的精确匹配。
 """
@@ -13,7 +14,13 @@ import hashlib
 import logging
 from typing import Dict, Any, List, Optional
 
+from .reranker import rerank_results
+
 logger = logging.getLogger(__name__)
+
+# 多路召回配置
+RECALL_TOP_K = 20  # 每路召回数量
+RERANK_TOP_K = 10  # 重排序后返回数量
 
 
 def hybrid_search(
@@ -207,22 +214,48 @@ def hybrid_search(
             seen.add(key)
             unique_results.append(result)
 
-    # 8. 截断到 max_results
-    top_results = unique_results[:max_results]
+    # 8. 重排序（使用 BGE Reranker）
+    # 先取合并分数较高的候选结果进行重排序
+    candidate_count = min(len(unique_results), RECALL_TOP_K * 2)  # 取较多候选
+    candidates = unique_results[:candidate_count]
+
+    if len(candidates) > 0:
+        try:
+            # 执行重排序
+            reranked = rerank_results(
+                query=query,
+                results=candidates,
+                top_k=max_results
+            )
+
+            # 更新分数为重排序分数
+            top_results = []
+            for item in reranked:
+                item["metadata"]["rerank_score"] = item.get("score", 0)
+                item["metadata"]["match_type"] = "reranked"
+                top_results.append(item)
+
+            logger.info(f"[智能检索] 重排序完成: {len(top_results)} 个结果")
+
+        except Exception as e:
+            logger.warning(f"[智能检索] 重排序失败，使用混合分数: {e}")
+            top_results = unique_results[:max_results]
+    else:
+        top_results = []
 
     # 统计
     paragraph_count = sum(1 for r in top_results if r["metadata"].get("type") == "paragraph")
     section_count = len(top_results) - paragraph_count
 
     # 统计匹配类型
-    hybrid_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "hybrid")
+    hybrid_count = sum(1 for r in top_results if r["metadata"].get("match_type") in ("hybrid", "reranked"))
     vector_only_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "vector")
     bm25_only_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "bm25")
 
     logger.info(
         f"[智能检索] 最终结果: {len(top_results)} 个 "
         f"({section_count} 章节 + {paragraph_count} 段落) | "
-        f"匹配类型: hybrid={hybrid_count}, vector={vector_only_count}, bm25={bm25_only_count}"
+        f"匹配类型: hybrid/reranked={hybrid_count}, vector={vector_only_count}, bm25={bm25_only_count}"
     )
 
     # 确定方法名

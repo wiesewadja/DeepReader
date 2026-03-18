@@ -12,7 +12,7 @@ from typing import Dict, Any, List, Optional
 from deeppdf.storage.chroma_store import get_chroma_store
 
 # 导入智能检索
-from .smart_search import hybrid_search
+from .smart_search import hybrid_search, RECALL_TOP_K
 
 # 导入 LLM 树搜索
 from .llm_tree_search import llm_tree_search, extract_nodes_by_ids, LLMTreeSearchError
@@ -202,11 +202,11 @@ def _query_pdf_sync(
         # 获取 collection 对象（用于后续查询相邻段落）
         collection = store.client.get_collection(name=index_id)
 
-        # 构建查询参数
+        # 构建查询参数 - 多路召回策略
         query_params = {
             "collection_name": index_id,
             "query_texts": [query],
-            "n_results": max_results * 2 if scope_node_ids else max_results,  # 范围搜索时多取一些
+            "n_results": RECALL_TOP_K,  # 多路召回：固定召回 20 条
         }
 
         # 如果有范围锁定，添加 where 过滤条件
@@ -261,14 +261,14 @@ def _query_pdf_sync(
         # 加载索引元数据（包含 tree_structure）- 使用带缓存的版本
         index_metadata = get_index_metadata(storage_dir_path, index_id)
 
-        # BM25 独立检索
+        # BM25 独立检索 - 多路召回策略
         bm25_results = []
         try:
             bm25_results = bm25_search(
                 query=query,
                 storage_dir=storage_dir,
                 index_id=index_id,
-                top_k=max_results * 2,  # 取更多结果用于合并
+                top_k=RECALL_TOP_K,  # 多路召回：固定召回 20 条
             )
             logger.info(f"[查询] BM25 检索返回 {len(bm25_results)} 个结果")
         except Exception as e:
