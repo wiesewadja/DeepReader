@@ -41,6 +41,7 @@ interface ChapterInfo {
   start_page: number;
   end_page: number;
   summary?: string;  // 章节摘要（LLM 生成）
+  obsidian_link?: string;  // Obsidian Markdown 文件链接
 }
 
 /**
@@ -102,6 +103,17 @@ export const getTocTool: ToolExecutor = {
 };
 
 /**
+ * 生成 Obsidian wikilink
+ */
+function generateObsidianLink(link?: string, displayText?: string): string {
+  if (!link) return '';
+  if (displayText) {
+    return `[[${link}|${displayText}]]`;
+  }
+  return `[[${link}]]`;
+}
+
+/**
  * 简单目录格式（原 get_toc）
  */
 function formatSimpleToc(bookName: string, chapters: ChapterInfo[], totalPages: number): string {
@@ -115,11 +127,14 @@ function formatSimpleToc(bookName: string, chapters: ChapterInfo[], totalPages: 
       ? `p.${chapter.start_page}`
       : `p.${chapter.start_page}-${chapter.end_page}`;
 
+    // 生成 Obsidian 链接
+    const link = chapter.obsidian_link ? generateObsidianLink(chapter.obsidian_link, chapter.title) : chapter.title;
+
     const isMain = isMainChapter(chapter.title);
     if (isMain) {
-      lines.push(`- ${chapter.title} (${pageRange})`);
+      lines.push(`- ${link} (${pageRange})`);
     } else {
-      lines.push(`  - ${chapter.title} (${pageRange})`);
+      lines.push(`  - ${link} (${pageRange})`);
     }
   }
 
@@ -144,7 +159,9 @@ function formatBriefOutline(bookName: string, chapters: ChapterInfo[]): string {
     const pageRange = chapter.start_page === chapter.end_page
       ? `p.${chapter.start_page}`
       : `p.${chapter.start_page}-${chapter.end_page}`;
-    lines.push(`### ${chapter.title} (${pageRange})`);
+    // 生成 Obsidian 链接
+    const link = chapter.obsidian_link ? generateObsidianLink(chapter.obsidian_link, chapter.title) : chapter.title;
+    lines.push(`### ${link} (${pageRange})`);
     lines.push('');
   }
 
@@ -180,11 +197,14 @@ function formatNormalOutline(bookName: string, chapters: ChapterInfo[], nodes: N
       ? `p.${chapter.start_page}`
       : `p.${chapter.start_page}-${chapter.end_page}`;
 
+    // 生成 Obsidian 链接
+    const link = chapter.obsidian_link ? generateObsidianLink(chapter.obsidian_link, chapter.title) : chapter.title;
+
     const isMain = isMainChapter(chapter.title);
     const prefix = isMain ? '### ' : '- ';
     const indent = isMain ? '' : '  ';
 
-    lines.push(`${indent}${prefix}${chapter.title} (${pageRange})`);
+    lines.push(`${indent}${prefix}${link} (${pageRange})`);
   }
 
   // 添加架构分析
@@ -229,7 +249,10 @@ function formatDetailedOutline(bookName: string, chapters: ChapterInfo[], nodes:
       ? `p.${chapter.start_page}`
       : `p.${chapter.start_page}-${chapter.end_page}`;
 
-    lines.push(`### ${chapter.title} (${pageRange})`);
+    // 生成 Obsidian 链接
+    const link = chapter.obsidian_link ? generateObsidianLink(chapter.obsidian_link, chapter.title) : chapter.title;
+
+    lines.push(`### ${link} (${pageRange})`);
 
     // 添加章节摘要（优先从 chapters 获取，其次从 nodes）
     const summary = getChapterSummary(chapter.title, chapters, nodes);

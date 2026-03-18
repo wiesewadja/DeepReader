@@ -445,8 +445,9 @@ export class SidebarView extends ItemView {
 
         // 1. 从 agentChatHistory 获取完整消息（包括 tool 消息）
         // 排除 system 消息（每次动态生成）和占位消息
-        // 同时剥离用户消息中的运行时上下文（不持久化）
+        // 同时剥离用户消息中的运行时上下文和 system_note（不持久化，每次动态生成）
         const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
+        const SYSTEM_NOTE_PATTERN = /<system_note>[\s\S]*?<\/system_note>\n\n/g;
         const messagesToSave = this.agentChatHistory
             .filter(m =>
                 m.role !== 'system' &&
@@ -456,12 +457,14 @@ export class SidebarView extends ItemView {
                 m.content !== "🔍 正在跨书籍查阅..."
             )
             .map(m => {
-                // 剥离用户消息中的运行时上下文
-                if (m.role === 'user' && m.content && RUNTIME_CONTEXT_PATTERN.test(m.content)) {
-                    return {
-                        ...m,
-                        content: m.content.replace(RUNTIME_CONTEXT_PATTERN, '')
-                    };
+                // 剥离用户消息中的运行时上下文和 system_note
+                if (m.role === 'user' && m.content) {
+                    let content = m.content;
+                    // 先剥离 system_note（可能有多个）
+                    content = content.replace(SYSTEM_NOTE_PATTERN, '');
+                    // 再剥离运行时上下文
+                    content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+                    return { ...m, content };
                 }
                 return m;
             });

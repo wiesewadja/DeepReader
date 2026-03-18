@@ -408,6 +408,7 @@ export class SessionStore {
 
 	/**
 	 * 获取会话的 LLM 历史格式（unconsolidated + 对齐）
+	 * 会自动剥离用户消息中的 system_note 和运行时上下文（这些是动态生成的，不应持久化）
 	 */
 	async getLLMHistory(sessionId: string): Promise<ChatMessage[]> {
 		const session = await this.get(sessionId);
@@ -425,7 +426,21 @@ export class SessionStore {
 		const alignedStart = trimmed.findIndex(m => m.role === 'user');
 		const aligned = alignedStart >= 0 ? trimmed.slice(alignedStart) : trimmed;
 
-		return aligned;
+		// 4. 剥离用户消息中的 system_note 和运行时上下文（每次动态生成）
+		const SYSTEM_NOTE_PATTERN = /<system_note>[\s\S]*?<\/system_note>\n\n/g;
+		const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
+
+		return aligned.map(m => {
+			if (m.role === 'user' && typeof m.content === 'string') {
+				let content = m.content;
+				// 剥离 system_note（可能有多个）
+				content = content.replace(SYSTEM_NOTE_PATTERN, '');
+				// 剥离运行时上下文
+				content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+				return { ...m, content };
+			}
+			return m;
+		});
 	}
 
 	// ==================== 会话查找 ====================

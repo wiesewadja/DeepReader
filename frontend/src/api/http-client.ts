@@ -262,6 +262,7 @@ export interface ChapterItem {
   end_page: number;
   level: number;
   summary?: string;  // 章节摘要（LLM 生成）
+  obsidian_link?: string;  // Obsidian Markdown 文件链接
 }
 
 // 章节目录响应

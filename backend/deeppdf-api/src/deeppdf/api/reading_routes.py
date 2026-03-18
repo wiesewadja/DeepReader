@@ -174,6 +174,7 @@ class ChapterItem(BaseModel):
     end_page: int
     level: int = 0
     summary: Optional[str] = None  # 章节摘要（LLM 生成）
+    obsidian_link: Optional[str] = None  # Obsidian Markdown 文件链接
 
 
 class TableOfContentsResponse(BaseModel):
@@ -185,22 +186,40 @@ class TableOfContentsResponse(BaseModel):
     chapters: List[ChapterItem]
 
 
-def _extract_chapters(tree_structure: List[dict], level: int = 0) -> List[ChapterItem]:
+def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str = "") -> List[ChapterItem]:
     """从 tree_structure 提取章节列表"""
     chapters = []
-    for node in tree_structure:
+    for idx, node in enumerate(tree_structure):
         title = node.get("title", "未命名章节")
         start = node.get("physical_index", node.get("start_index", 1))
         end = node.get("end_index", start)
         # 提取章节摘要（LLM 生成）
         summary = node.get("summary")
+
+        # 生成 Obsidian 链接（Markdown 文件路径）
+        obsidian_link = None
+        if book_name:
+            # 清理书籍名称（移除 .pdf/.epub 后缀）
+            folder_name = book_name.replace(".pdf", "").replace(".epub", "")
+            # 清理章节标题，生成文件名
+            safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
+            filename = f"{idx + 1:02d}-{safe_title}.md"
+            obsidian_link = f"{folder_name}/{filename}"
+
         chapters.append(
-            ChapterItem(title=title, start_page=start, end_page=end, level=level, summary=summary)
+            ChapterItem(
+                title=title,
+                start_page=start,
+                end_page=end,
+                level=level,
+                summary=summary,
+                obsidian_link=obsidian_link
+            )
         )
         # 递归处理子章节
         sub_structure = node.get("structure", [])
         if isinstance(sub_structure, list) and sub_structure:
-            chapters.extend(_extract_chapters(sub_structure, level + 1))
+            chapters.extend(_extract_chapters(sub_structure, level + 1, book_name))
     return chapters
 
 
@@ -231,7 +250,14 @@ async def get_table_of_contents(index_id: str):
     structure_list = (
         tree_structure.get("structure", []) if isinstance(tree_structure, dict) else []
     )
-    chapters = _extract_chapters(structure_list)
+
+    # 获取书籍名称（用于生成 Obsidian 链接）
+    book_name = (
+        metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
+    )
+
+    # 提取章节（传入 book_name 以生成 obsidian_link）
+    chapters = _extract_chapters(structure_list, 0, book_name)
 
     # 获取总页数
     total_pages = metadata.get("total_pages", 0)
@@ -239,10 +265,6 @@ async def get_table_of_contents(index_id: str):
         pdf_path = metadata.get("pdf_path")
         if pdf_path and Path(pdf_path).exists():
             total_pages = get_pdf_page_count(pdf_path)
-
-    book_name = (
-        metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
-    )
 
     logger.info(f"[阅读API] 获取目录: {index_id}, {len(chapters)} 个章节")
 
