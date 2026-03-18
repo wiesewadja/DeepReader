@@ -49,14 +49,6 @@ DeepReader 采用前后端解耦架构：
 ### 后端日志
 - **位置**: `backend/logs/deeppdf.log`
 - **类型**: 滚轮型日志（RotatingFileHandler）
-- **最大大小**: 100MB
-- **备份数量**: 5 个（`deeppdf.log.1` ~ `deeppdf.log.5`）
-- **时间格式**: 本地时间 `YYYY-MM-DD HH:MM:SS`
-- **编码**: UTF-8
-
-### 日志级别
-- **文件**: DEBUG（记录所有详细信息）
-- **控制台**: INFO（只显示重要信息）
 
 
 ## 架构与文件映射

@@ -87,7 +87,12 @@ class IndexRequest(BaseModel):
     def validate_llm_provider(cls, v: Optional[str]) -> Optional[str]:
         """验证 LLM provider"""
         if v is not None:
-            valid_providers = ["deepseek", "openai", "google", "custom", "anthropic"]
+            # 前端支持的 provider：deepseek, kimi, zhipu, openai, custom
+            # 后端兼容所有前端支持的 provider
+            valid_providers = [
+                "deepseek", "openai", "google", "custom", "anthropic",
+                "kimi", "zhipu"  # 前端支持的国内 LLM 服务商
+            ]
             if v.lower() not in valid_providers:
                 raise ValueError(
                     f'llm_provider must be one of: {", ".join(valid_providers)}'
