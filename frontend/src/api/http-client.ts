@@ -212,6 +212,7 @@ export interface QueryResultItem {
     block_id?: string;
     full_paragraph?: string;
     parent_section?: string;
+    markdown_path?: string;  // 导出的 Markdown 文件路径
     // 相邻段落（上下文）
     prev_paragraph?: string;
     next_paragraph?: string;

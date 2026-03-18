@@ -38,10 +38,11 @@ def _fetch_paragraphs_from_chroma(index_id: str, chroma_path: str) -> Dict[str, 
         Dict[node_id, List[paragraph_info]] - 每个节点下的段落列表
     """
     try:
-        import chromadb
+        from ..storage.chroma_store import get_chroma_store
 
-        client = chromadb.PersistentClient(path=chroma_path)
-        collection = client.get_collection(name=index_id)
+        # 使用缓存的 ChromaStore 实例，避免重复创建客户端
+        store = get_chroma_store(persist_directory=chroma_path)
+        collection = store.client.get_collection(name=index_id)
 
         # 获取所有段落数据
         results = collection.get(
