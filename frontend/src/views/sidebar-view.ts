@@ -1347,10 +1347,6 @@ export class SidebarView extends ItemView {
             onSend: (message: string, quotes) => {
                 this.sendMessage(message, quotes);
             },
-            searchMode: this.crossBookMode ? 'cross' : 'single',
-            onModeToggle: () => {
-                this.toggleSearchMode();
-            },
             deepSearchMode: this.useLLMTreeSearch,
             onDeepSearchToggle: () => {
                 this.toggleDeepSearchMode();
@@ -1493,7 +1489,6 @@ export class SidebarView extends ItemView {
         if (wasCrossBookMode) {
             log('[DeepPDF] 恢复跨书籍模式');
             this.crossBookMode = true;
-            this.chatInput?.setSearchMode('cross');
             this.indexManager?.setCrossBookMode(true);
             await this.loadCrossBookSession();
         }

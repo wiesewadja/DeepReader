@@ -27,7 +27,6 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, str(Path(__file__).parent / "deeppdf-api" / "src"))
 
 from deeppdf.storage.chroma_store import ChromaStore
-from deeppdf.services.pageindex import PageIndexService
 
 
 class LocalEPUBIndexer:
@@ -153,21 +152,28 @@ class LocalEPUBIndexer:
             for chunk_idx, chunk in enumerate(chunks):
                 chunk_id = f"{node_id}_p{para_idx}-c{chunk_idx}"
 
+                # 构建元数据（确保没有 None 值）
+                metadata = {
+                    "type": "paragraph",
+                    "block_id": block_id,
+                    "chunk_index": chunk_idx,
+                    "total_chunks": len(chunks),
+                    "full_paragraph": para_text if chunk_idx == 0 else "",
+                    "parent_node_id": node_id,
+                    "parent_section": section_title,
+                    "page": chapter_index + 1,
+                    "paragraph_index": para_idx,
+                    "pdf_name": book_name,
+                }
+
+                # 移除空字符串的 optional 字段
+                if chunk_idx > 0:
+                    del metadata["full_paragraph"]
+
                 paragraph = {
                     "id": chunk_id,
                     "text": chunk,
-                    "metadata": {
-                        "type": "paragraph",
-                        "block_id": block_id,
-                        "chunk_index": chunk_idx,
-                        "total_chunks": len(chunks),
-                        "full_paragraph": para_text if chunk_idx == 0 else None,
-                        "parent_node_id": node_id,
-                        "parent_section": section_title,
-                        "page": chapter_index + 1,
-                        "paragraph_index": para_idx,
-                        "pdf_name": book_name,
-                    }
+                    "metadata": metadata,
                 }
                 paragraphs.append(paragraph)
 
