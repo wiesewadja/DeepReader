@@ -16,6 +16,7 @@ frontend/*/docs
 backend/logs/
 backend/deeppdf-api/data/
 backend/deeppdf-api/logs/
+logs/
 
 # Node modules
 frontend/node_modules/
