@@ -43,7 +43,7 @@ class RerankerCache:
         with self._lock:
             if model_name not in self._models:
                 try:
-                    from FlagReranker import FlagReranker
+                    from FlagEmbedding import FlagReranker
 
                     logger.info(f"[重排序] 加载模型: {model_name}")
                     self._models[model_name] = FlagReranker(
