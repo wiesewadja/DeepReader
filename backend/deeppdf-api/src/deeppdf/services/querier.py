@@ -394,6 +394,8 @@ def _query_pdf_sync(
                 "doc_description": index_metadata.get("doc_description", ""),  # 全书摘要
             },
             "search_method": hybrid_result["method"],
+            "query_type": hybrid_result.get("query_type", "general"),
+            "weights": hybrid_result.get("weights", {"vector": 0.5, "bm25": 0.5}),
         }
 
     except ValueError as e:

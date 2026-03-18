@@ -149,6 +149,8 @@ class QueryResponse(BaseModel):
     error: Optional[str] = None
     index_info: Optional[dict] = None
     search_method: Optional[str] = None
+    query_type: Optional[str] = None  # 查询类型: how_to | definition | fact | general
+    weights: Optional[dict] = None  # RRF 权重: {"vector": 0.7, "bm25": 0.3}
     thinking: Optional[str] = None  # 新增: LLM 推理过程
     fallback: Optional[bool] = None  # 新增: 是否发生降级
     fallback_reason: Optional[str] = None  # 新增: 降级原因
