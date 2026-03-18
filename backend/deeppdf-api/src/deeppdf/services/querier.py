@@ -300,11 +300,31 @@ def _query_pdf_sync(
             markdown_path = None
 
             # 从索引元数据中查找对应的 Markdown 文件路径
-            if "markdown_files" in index_metadata:
+            # 优先使用 block_mapping（支持分片导出），其次使用 markdown_files（向后兼容）
+            block_id = item["metadata"].get("block_id", "")
+
+            if "block_mapping" in index_metadata and node_id in index_metadata["block_mapping"]:
+                # 新格式：使用 block_id 精确查找对应的子文件
+                node_block_mapping = index_metadata["block_mapping"].get(node_id, {})
+                if block_id and block_id in node_block_mapping:
+                    markdown_path = node_block_mapping[block_id]
+                    logger.debug(
+                        f"[查询结果] 结果 {i+1}: block_id={block_id} → markdown_path={markdown_path}"
+                    )
+                else:
+                    # 如果 block_id 不在映射中，使用该节点的第一个文件
+                    first_block_path = next(iter(node_block_mapping.values()), None) if node_block_mapping else None
+                    if first_block_path:
+                        markdown_path = first_block_path
+                        logger.debug(
+                            f"[查询结果] 结果 {i+1}: node_id={node_id} → fallback to first file={markdown_path}"
+                        )
+            elif "markdown_files" in index_metadata:
+                # 旧格式：向后兼容
                 markdown_path = index_metadata["markdown_files"].get(node_id)
                 # 【关键日志】记录 markdown_path 查找过程
                 if markdown_path:
-                    logger.info(
+                    logger.debug(
                         f"[查询结果] 结果 {i+1}: node_id={node_id} → markdown_path={markdown_path}"
                     )
                 else:
@@ -405,9 +425,8 @@ def _load_index_metadata_from_disk(storage_dir: Path, index_id: str) -> Dict[str
                 "llm_enabled": data.get("llm_enabled", False),
                 "tree_structure": data.get("tree_structure", {}),
                 "sections": data.get("sections", []),
-                "markdown_files": data.get(
-                    "markdown_files", {}
-                ),  # 添加 markdown_files 字段
+                "markdown_files": data.get("markdown_files", {}),
+                "block_mapping": data.get("block_mapping", {}),  # 新增：block_id 到文件的映射
                 "doc_description": data.get("doc_description", ""),  # 全书摘要
             }
 

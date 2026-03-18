@@ -115,26 +115,19 @@ export const searchDocTool: ToolExecutor = {
         resultPrefix += `⚠️ Fallback to hybrid search: ${result.fallback_reason || 'Unknown reason'}\n\n`;
       }
 
-      // 格式化搜索结果，区分章节和段落
+      // 格式化搜索结果
       const formattedResults = result.results
         .map((item, index) => {
           const type = item.metadata.type || 'section';
           const isParagraph = type === 'paragraph';
-          const distance = item.metadata.distance !== undefined
-            ? ` (relevance: ${(1 - item.metadata.distance).toFixed(2)})`
-            : '';
+          const page = item.metadata.page;
+          const nodeId = (item.metadata as any).node_id || (item.metadata as any).parent_node_id || 'N/A';
 
+          // 生成 Obsidian 链接
+          let obsidianLink: string;
           if (isParagraph) {
-            // 段落结果格式
             const blockId = item.metadata.block_id || '';
-            const parentSection = item.metadata.parent_section || 'Unknown';
-            const page = item.metadata.page;
             const markdownPath = item.metadata.markdown_path;
-
-            // 生成 Obsidian block 链接
-            // 优先使用 markdown_path（指向导出的 Markdown 文件中的 block）
-            // 否则 fallback 到 PDF 文件名
-            let obsidianLink: string;
             if (markdownPath && blockId) {
               obsidianLink = `[[${markdownPath}#${blockId}]]`;
             } else if (blockId) {
@@ -142,41 +135,28 @@ export const searchDocTool: ToolExecutor = {
             } else {
               obsidianLink = `[[${context.pdfName}]]`;
             }
-
-            log(`[search_doc] 段落结果 ${index + 1}: block_id=${blockId}, page=${page}, markdown_path=${markdownPath}`);
-
-            // text 已经包含上下文（后端合并了上一段+当前段+下一段）
-            const displayText = item.text.trim();
-
-            return `${index + 1}. **${parentSection}** (Page ${page})${distance} [段落]
-   Link: ${obsidianLink}
-   block_id: ${blockId}
-   ${displayText}`;
           } else {
-            // 章节结果格式（保持现有逻辑）
-            const section = item.metadata.section || item.metadata.node_name || 'Unknown Section';
-            const page = item.metadata.page;
-            const nodeId = item.metadata.node_id;
-
-            const obsidianLink = generateObsidianLink(
-              nodeId,
+            const section = item.metadata.section || item.metadata.node_name || 'Unknown';
+            obsidianLink = generateObsidianLink(
+              nodeId !== 'N/A' ? nodeId : undefined,
               section,
               context.pdfName,
               context.markdownFiles
             );
-
-            log(`[search_doc] 章节结果 ${index + 1}: node_id=${nodeId}, page=${page}`);
-
-            const trimmedText = item.text.trim();
-            const truncatedText = trimmedText.length > MAX_TEXT_LENGTH_PER_RESULT
-              ? trimmedText.slice(0, MAX_TEXT_LENGTH_PER_RESULT) + '...[已截断]'
-              : trimmedText;
-
-            return `${index + 1}. **${section}**${page ? ` (Page ${page})` : ''}${distance}
-   Link: ${obsidianLink}
-   node_id: ${nodeId || 'N/A'}
-   ${truncatedText}`;
           }
+
+          // 内容处理：截断过长文本
+          const trimmedText = item.text.trim();
+          const truncatedText = trimmedText.length > MAX_TEXT_LENGTH_PER_RESULT
+            ? trimmedText.slice(0, MAX_TEXT_LENGTH_PER_RESULT) + '...[已截断]'
+            : trimmedText;
+
+          // 统一格式：Link + nodeId + 页码 + 内容
+          const pageInfo = page ? `p.${page}` : '';
+          const nodeInfo = `node: ${nodeId}`;
+
+          return `${index + 1}. ${obsidianLink} (${pageInfo}, ${nodeInfo})
+> ${truncatedText.replace(/\n/g, '\n> ')}`;
         })
         .join('\n\n');
 

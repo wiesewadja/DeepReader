@@ -12,6 +12,7 @@ import logging
 from threading import Lock
 
 from .embeddings import ChineseEmbeddingFunction
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class ChromaStore:
             _from_cache: 内部参数，标记是否从缓存创建（跳过嵌入函数初始化）
         """
         if persist_directory is None:
-            persist_directory = Path(__file__).parent.parent.parent / "data" / "chroma"
+            persist_directory = settings.base_dir / "chroma"
 
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
@@ -181,6 +182,7 @@ class ChromaStore:
         name: str,
         metadata: Optional[Dict[str, Any]] = None,
         embedding_function: Optional[Callable] = None,
+        force_recreate: bool = False,
     ) -> chromadb.Collection:
         """
         创建集合
@@ -189,14 +191,23 @@ class ChromaStore:
             name: 集合名称
             metadata: 集合元数据
             embedding_function: 嵌入函数，默认使用实例的嵌入函数
+            force_recreate: 是否强制重新创建（删除已存在的集合）
 
         Returns:
             ChromaDB 集合对象
         """
         # 检查集合是否已存在
         existing_collections = [c.name for c in self.client.list_collections()]
+
         if name in existing_collections:
-            return self.client.get_collection(name)
+            if force_recreate:
+                # 强制删除已存在的集合
+                logger.info(f"[ChromaStore] 删除已存在的集合: {name}")
+                self.client.delete_collection(name)
+            else:
+                # 返回现有集合（注意：不会更新嵌入函数）
+                logger.warning(f"[ChromaStore] 集合已存在，返回现有集合: {name}")
+                return self.client.get_collection(name)
 
         # 使用指定的嵌入函数或默认的中文嵌入函数
         embed_fn = embedding_function or self.embedding_function
@@ -208,6 +219,7 @@ class ChromaStore:
             create_kwargs["metadata"] = metadata
 
         collection = self.client.create_collection(**create_kwargs)
+        logger.info(f"[ChromaStore] 集合创建成功: {name}, 嵌入函数: {type(embed_fn).__name__}")
         return collection
 
     def get_collection(self, name: str) -> chromadb.Collection:
@@ -220,7 +232,7 @@ class ChromaStore:
         Returns:
             ChromaDB 集合对象
         """
-        return self.client.get_collection(name)
+        return self.client.get_collection(name, embedding_function=self.embedding_function)
 
     def delete_collection(self, name: str) -> None:
         """

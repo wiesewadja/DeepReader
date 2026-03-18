@@ -966,11 +966,15 @@ export class DeepPDFClient {
   /**
    * 保存 Markdown 文件映射
    */
-  async saveMarkdownMapping(indexId: string, fileMapping: Record<string, string>): Promise<SaveMarkdownMappingResponse> {
+  async saveMarkdownMapping(
+    indexId: string,
+    fileMapping: Record<string, string>,
+    blockMapping?: Record<string, Record<string, string>>
+  ): Promise<SaveMarkdownMappingResponse> {
     return this.request<SaveMarkdownMappingResponse>(`/api/markdown-mapping/${indexId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file_mapping: fileMapping })
+      body: JSON.stringify({ file_mapping: fileMapping, block_mapping: blockMapping })
     });
   }
 

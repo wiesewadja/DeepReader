@@ -796,7 +796,8 @@ def _store_to_chromadb(
     }
     logger.debug(f"[向量存储] 集合元数据: {collection_metadata}")
 
-    store.create_collection(name=index_id, metadata=collection_metadata)
+    # 创建集合（force_recreate=True 确保使用最新的嵌入函数）
+    store.create_collection(name=index_id, metadata=collection_metadata, force_recreate=True)
     logger.info("[向量存储] 集合创建成功")
 
     # 使用原始文件名（不含扩展名）作为 pdf_name

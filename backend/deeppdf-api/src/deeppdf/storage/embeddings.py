@@ -169,17 +169,26 @@ class ChineseEmbeddingFunction:
         embeddings = self.embedding_model.embed_documents(input)
         return embeddings
 
-    def embed_query(self, text: str) -> List[float]:
+    def embed_query(self, input) -> List[List[float]]:
         """
         嵌入单个查询文本
 
         Args:
-            text: 查询文本
+            input: 查询文本（字符串或列表）
 
         Returns:
-            嵌入向量
+            嵌入向量 List[List[float]]（ChromaDB 要求的格式）
         """
-        return self.embedding_model.embed_query(text)
+        # ChromaDB 可能传递列表或字符串
+        if isinstance(input, list):
+            # 如果是列表，取第一个元素
+            text = input[0] if input else ""
+        else:
+            text = input
+
+        # 生成嵌入向量，返回嵌套列表格式
+        embedding = self.embedding_model.embed_query(text)
+        return [embedding]  # 包装成 List[List[float]]
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
@@ -192,6 +201,15 @@ class ChineseEmbeddingFunction:
             嵌入向量列表
         """
         return self.embedding_model.embed_documents(texts)
+
+    def name(self) -> str:
+        """
+        返回嵌入函数名称（ChromaDB 要求）
+
+        Returns:
+            嵌入函数名称
+        """
+        return self.model_name
 
     def __del__(self):
         """析构函数，释放模型引用"""

@@ -1,11 +1,16 @@
 """
-智能检索服务 - 多路召回 + 重排序
+智能检索服务 - 多路召回 + RRF 融合
 
 核心思路：
 1. 向量检索 - 语义相似度匹配（召回 RECALL_TOP_K 条）
 2. BM25 检索 - 关键词精确匹配（召回 RECALL_TOP_K 条）
-3. 多路召回合并 - 去重后合并
-4. 重排序 - 使用 BGE Reranker 对合并结果精排序
+3. RRF 融合 - 使用 Reciprocal Rank Fusion 合并排名
+
+RRF 公式：RRF_Score = 1/(k + rank_BM25) + 1/(k + rank_Vector)
+- k = 60（业界经验值）
+- rank = 各自检索结果中的名次（1, 2, 3...）
+
+优点：无需分数归一化，即插即用，极其稳定。
 
 注意：只返回段落级别的精确匹配。
 """
@@ -14,13 +19,13 @@ import hashlib
 import logging
 from typing import Dict, Any, List, Optional
 
-from .reranker import rerank_results
-
 logger = logging.getLogger(__name__)
 
 # 多路召回配置
 RECALL_TOP_K = 20  # 每路召回数量
-RERANK_TOP_K = 10  # 重排序后返回数量
+
+# RRF 融合参数
+RRF_K = 60  # 平滑常数（业界经验值）
 
 
 def hybrid_search(
@@ -127,135 +132,121 @@ def hybrid_search(
 
         logger.info(f"[智能检索] BM25 结果: {len(bm25_results)} -> 过滤后 {len(bm25_by_id)}")
 
-    # 3. 合并结果
-    merged = {}
+    # 3. 构建 RRF 排名索引（rank 从 1 开始）
+    vector_ranks = {}  # para_id -> rank (1, 2, 3...)
+    for rank, para_id in enumerate(vector_by_id.keys(), start=1):
+        vector_ranks[para_id] = rank
 
-    # 添加向量结果
-    for para_id, item in vector_by_id.items():
-        merged[para_id] = {
-            "text": item["text"],
-            "metadata": item["metadata"],
-            "vector_score": item["vector_score"],
-            "bm25_score": 0.0,
-        }
+    bm25_ranks = {}
+    for rank, para_id in enumerate(bm25_by_id.keys(), start=1):
+        bm25_ranks[para_id] = rank
 
-    # 添加/更新 BM25 结果
-    for para_id, item in bm25_by_id.items():
-        if para_id in merged:
-            # 向量也有这个段落，合并分数
-            merged[para_id]["bm25_score"] = item["bm25_score"]
-        else:
-            # 只有 BM25 有这个段落
-            merged[para_id] = {
-                "text": item["text"],
-                "metadata": item["metadata"],
-                "vector_score": 0.0,
-                "bm25_score": item["bm25_score"],
-            }
+    # 4. 收集所有唯一的 para_id
+    all_para_ids = set(vector_by_id.keys()) | set(bm25_by_id.keys())
 
-    logger.info(f"[智能检索] 合并后: {len(merged)} 个段落")
+    # 5. 计算 RRF 分数
+    rrf_scores = {}
+    for para_id in all_para_ids:
+        # RRF 公式：1/(k + rank_bm25) + 1/(k + rank_vector)
+        # 如果某个列表中没有该段落，则该项为 0
+        vector_rank = vector_ranks.get(para_id)
+        bm25_rank = bm25_ranks.get(para_id)
 
-    if not merged:
-        return {"method": "empty", "results": []}
+        rrf_score = 0.0
+        if vector_rank is not None:
+            rrf_score += 1.0 / (RRF_K + vector_rank)
+        if bm25_rank is not None:
+            rrf_score += 1.0 / (RRF_K + bm25_rank)
 
-    # 4. 计算混合分数
-    for para_id, item in merged.items():
-        # 混合分数：向量 60% + BM25 40%
-        combined_score = item["vector_score"] * 0.6 + item["bm25_score"] * 0.4
-        item["combined_score"] = combined_score
+        rrf_scores[para_id] = rrf_score
 
         # 确定匹配类型
-        if item["vector_score"] > 0 and item["bm25_score"] > 0:
+        if vector_rank is not None and bm25_rank is not None:
             match_type = "hybrid"
-        elif item["vector_score"] > 0:
+        elif vector_rank is not None:
             match_type = "vector"
         else:
             match_type = "bm25"
 
-        item["match_type"] = match_type
+        # 获取文本和元数据（优先使用向量结果，其次 BM25）
+        if para_id in vector_by_id:
+            source = vector_by_id[para_id]
+        else:
+            source = bm25_by_id[para_id]
 
-    # 5. 排序
-    sorted_results = sorted(
-        merged.items(),
-        key=lambda x: x[1]["combined_score"],
+        rrf_scores[para_id] = {
+            "rrf_score": rrf_score,
+            "match_type": match_type,
+            "vector_rank": vector_rank,
+            "bm25_rank": bm25_rank,
+            "text": source["text"],
+            "metadata": source["metadata"],
+        }
+
+    logger.info(
+        f"[智能检索] RRF 融合: 向量 {len(vector_ranks)} + BM25 {len(bm25_ranks)} = "
+        f"合并 {len(all_para_ids)} 个段落"
+    )
+
+    if not rrf_scores:
+        return {"method": "empty", "results": []}
+
+    # 6. 按 RRF 分数排序
+    sorted_para_ids = sorted(
+        rrf_scores.keys(),
+        key=lambda pid: rrf_scores[pid]["rrf_score"],
         reverse=True
     )
 
-    # 6. 格式化输出
-    all_results = []
-    for para_id, item in sorted_results:
-        all_results.append({
-            "text": item["text"],
-            "metadata": {
-                **item["metadata"],
-                "match_type": item["match_type"],
-                "vector_score": item["vector_score"],
-                "bm25_score": item["bm25_score"],
-                "combined_score": item["combined_score"],
-            },
-            "score": item["combined_score"],
-        })
-
-    # 7. 去重（按 parent_node_id + block_id）
+    # 7. 格式化输出并去重
     seen = set()
-    unique_results = []
-    for result in all_results:
-        metadata = result.get("metadata", {})
+    top_results = []
+
+    for para_id in sorted_para_ids:
+        item = rrf_scores[para_id]
+        metadata = item["metadata"]
         parent_node_id = metadata.get("parent_node_id", "")
         block_id = metadata.get("block_id", "")
         result_type = metadata.get("type", "paragraph")
 
+        # 去重 key
         if parent_node_id and block_id:
             key = (parent_node_id, block_id, result_type)
         else:
-            key = (hashlib.md5(result["text"][:100].encode("utf-8"), usedforsecurity=False).hexdigest(), result_type)
+            key = (hashlib.md5(item["text"][:100].encode("utf-8"), usedforsecurity=False).hexdigest(), result_type)
 
-        if key not in seen:
-            seen.add(key)
-            unique_results.append(result)
+        if key in seen:
+            continue
+        seen.add(key)
 
-    # 8. 重排序（使用 BGE Reranker）
-    # 先取合并分数较高的候选结果进行重排序
-    candidate_count = min(len(unique_results), RECALL_TOP_K * 2)  # 取较多候选
-    candidates = unique_results[:candidate_count]
+        top_results.append({
+            "text": item["text"],
+            "metadata": {
+                **metadata,
+                "match_type": item["match_type"],
+                "rrf_score": item["rrf_score"],
+                "vector_rank": item["vector_rank"],
+                "bm25_rank": item["bm25_rank"],
+            },
+            "score": item["rrf_score"],
+        })
 
-    if len(candidates) > 0:
-        try:
-            # 执行重排序
-            reranked = rerank_results(
-                query=query,
-                results=candidates,
-                top_k=max_results
-            )
-
-            # 更新分数为重排序分数
-            top_results = []
-            for item in reranked:
-                item["metadata"]["rerank_score"] = item.get("score", 0)
-                item["metadata"]["match_type"] = "reranked"
-                top_results.append(item)
-
-            logger.info(f"[智能检索] 重排序完成: {len(top_results)} 个结果")
-
-        except Exception as e:
-            logger.warning(f"[智能检索] 重排序失败，使用混合分数: {e}")
-            top_results = unique_results[:max_results]
-    else:
-        top_results = []
+        if len(top_results) >= max_results:
+            break
 
     # 统计
     paragraph_count = sum(1 for r in top_results if r["metadata"].get("type") == "paragraph")
     section_count = len(top_results) - paragraph_count
 
     # 统计匹配类型
-    hybrid_count = sum(1 for r in top_results if r["metadata"].get("match_type") in ("hybrid", "reranked"))
+    hybrid_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "hybrid")
     vector_only_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "vector")
     bm25_only_count = sum(1 for r in top_results if r["metadata"].get("match_type") == "bm25")
 
     logger.info(
-        f"[智能检索] 最终结果: {len(top_results)} 个 "
+        f"[智能检索] RRF 最终结果: {len(top_results)} 个 "
         f"({section_count} 章节 + {paragraph_count} 段落) | "
-        f"匹配类型: hybrid/reranked={hybrid_count}, vector={vector_only_count}, bm25={bm25_only_count}"
+        f"匹配类型: hybrid={hybrid_count}, vector={vector_only_count}, bm25={bm25_only_count}"
     )
 
     # 确定方法名

@@ -29,7 +29,130 @@ export interface ExportResult {
     success: boolean;
     filesCreated: number;
     fileMapping: Record<string, string>;
+    blockMapping: Record<string, Record<string, string>>;  // node_id -> {block_id -> file_path}
     error?: string;
+}
+
+/**
+ * Markdown 切分配置
+ */
+const MARKDOWN_CHUNK_TARGET = 4000;  // 目标字符数
+const MARKDOWN_CHUNK_MAX = 6000;     // 最大字符数
+
+/**
+ * 段落数据结构（从文本中解析）
+ */
+interface ParsedParagraph {
+    text: string;
+    blockId: string;
+    isHeading: boolean;
+}
+
+/**
+ * 从带 block_id 的文本中解析段落
+ * 格式：普通段落 text ^blockId 或 ### 标题 ^blockId
+ */
+function parseParagraphsFromText(text: string): ParsedParagraph[] {
+    const paragraphs: ParsedParagraph[] = [];
+    // 按双换行分割段落
+    const blocks = text.split(/\n\n+/);
+
+    for (const block of blocks) {
+        if (!block.trim()) continue;
+
+        // 匹配 block_id：格式为空格后跟 ^xxx
+        const blockIdMatch = block.match(/\s*\^([a-zA-Z0-9_-]+)\s*$/);
+        const blockId = blockIdMatch ? blockIdMatch[1] : '';
+
+        // 移除 block_id 标记得到纯文本
+        let cleanText = blockIdMatch ? block.replace(blockIdMatch[0], '') : block;
+        cleanText = cleanText.trim();
+
+        if (!cleanText) continue;
+
+        // 检测是否是标题（以 ### 开头）
+        const isHeading = cleanText.startsWith('###');
+
+        // 移除标题前缀（如果有）
+        if (isHeading) {
+            cleanText = cleanText.replace(/^###\s*/, '');
+        }
+
+        paragraphs.push({
+            text: cleanText,
+            blockId,
+            isHeading
+        });
+    }
+
+    return paragraphs;
+}
+
+/**
+ * 按字符数切分段落
+ * 保持段落完整性
+ */
+function splitParagraphsBySize(paragraphs: ParsedParagraph[]): ParsedParagraph[][] {
+    if (!paragraphs.length) return [];
+
+    // 计算段落的显示长度（包括 block_id 和换行）
+    const getParaLength = (para: ParsedParagraph): number => {
+        // 估算：文本 + block_id (^xxx) + 换行
+        const blockIdLen = para.blockId ? para.blockId.length + 2 : 0;  // +2 for ^ and space
+        const headingLen = para.isHeading ? 4 : 0;  // ### + space
+        return para.text.length + blockIdLen + headingLen + 4;  // +4 for newlines
+    };
+
+    const groups: ParsedParagraph[][] = [];
+    let currentGroup: ParsedParagraph[] = [];
+    let currentLength = 0;
+
+    for (const para of paragraphs) {
+        const paraLen = getParaLength(para);
+
+        // 检查是否需要开始新组
+        if (currentGroup.length > 0) {
+            // 如果加入这个段落会超过 max_chars，开始新组
+            if (currentLength + paraLen > MARKDOWN_CHUNK_MAX) {
+                groups.push(currentGroup);
+                currentGroup = [];
+                currentLength = 0;
+            }
+            // 如果当前组已达到目标，考虑开始新组
+            else if (currentLength >= MARKDOWN_CHUNK_TARGET && paraLen > 0) {
+                groups.push(currentGroup);
+                currentGroup = [];
+                currentLength = 0;
+            }
+        }
+
+        currentGroup.push(para);
+        currentLength += paraLen;
+    }
+
+    // 处理最后一组
+    if (currentGroup.length > 0) {
+        groups.push(currentGroup);
+    }
+
+    return groups;
+}
+
+/**
+ * 从段落组重建文本
+ */
+function buildTextFromParagraphGroup(paragraphs: ParsedParagraph[]): string {
+    return paragraphs.map(para => {
+        if (para.isHeading) {
+            return para.blockId
+                ? `### ${para.text} ^${para.blockId}`
+                : `### ${para.text}`;
+        } else {
+            return para.blockId
+                ? `${para.text} ^${para.blockId}`
+                : para.text;
+        }
+    }).join('\n\n');
 }
 
 /**
@@ -67,23 +190,40 @@ function processPageMarkers(text: string): string {
 }
 
 /**
- * 生成 Markdown 内容
+ * 生成 Markdown 内容（支持分片）
  */
-function createMarkdownContent(node: NodeData, pdfName: string): string {
+function createMarkdownContent(
+    node: NodeData,
+    pdfName: string,
+    partNum: number = 1,
+    totalParts: number = 1,
+    partialText?: string
+): string {
+    // 使用传入的部分文本，或完整文本
+    const textContent = partialText || node.text;
+
     // 构建 frontmatter
     let frontMatterLines = [
         '---',
         `pdf_name: ${pdfName}`,
         `node_id: ${node.node_id}`,
+    ];
+
+    // 如果是分片，添加 part_id
+    if (totalParts > 1) {
+        frontMatterLines.push(`part_id: ${node.node_id}_part${partNum}`);
+    }
+
+    frontMatterLines.push(
         `section: ${node.section}`,
         `page_range: ${node.page_range}`,
         `level: ${node.level}`,
-    ];
+        `part: ${partNum}/${totalParts}`
+    );
 
-    // 如果有摘要，添加到 frontmatter（使用多行字符串格式）
-    if (node.summary && node.summary.trim()) {
+    // 如果有摘要且是第一部分，添加到 frontmatter
+    if (node.summary && node.summary.trim() && partNum === 1) {
         const summaryText = node.summary.trim();
-        // 如果摘要包含换行，使用 YAML 块标量
         if (summaryText.includes('\n')) {
             frontMatterLines.push('summary: |');
             for (const line of summaryText.split('\n')) {
@@ -93,15 +233,21 @@ function createMarkdownContent(node: NodeData, pdfName: string): string {
             frontMatterLines.push(`summary: "${summaryText.replace(/"/g, '\\"')}"`);
         }
     }
+
+    frontMatterLines.push(`tags: [DeepPDF, ${pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '')}]`);
     frontMatterLines.push('---');
     frontMatterLines.push('');
 
     const frontMatter = frontMatterLines.join('\n');
-    const title = `# ${node.section}\n\n`;
 
-    // 生成摘要块（如果有摘要）- 同时保留 callout 展示
+    // 标题（分片时添加序号）
+    const title = totalParts > 1
+        ? `# ${node.section} (${partNum}/${totalParts})\n\n`
+        : `# ${node.section}\n\n`;
+
+    // 摘要块（仅第一部分显示）
     let summaryBlock = "";
-    if (node.summary && node.summary.trim()) {
+    if (node.summary && node.summary.trim() && partNum === 1) {
         const summaryLines = node.summary.trim().split("\n");
         summaryBlock = "> [!summary] 章节摘要\n";
         for (const line of summaryLines) {
@@ -110,11 +256,17 @@ function createMarkdownContent(node: NodeData, pdfName: string): string {
         summaryBlock += "\n";
     }
 
-    // 处理页码标记后再输出
-    const processedText = processPageMarkers(node.text);
+    // 处理页码标记
+    const processedText = processPageMarkers(textContent);
     const content = processedText.trim() + "\n\n";
+
+    // 页脚链接
+    const startPage = typeof node.start_index === 'number' ? node.start_index : parseInt(String(node.start_index));
+    const footerLink = !isNaN(startPage)
+        ? `[[${pdfName}#page=${startPage}]]`
+        : `[[${pdfName}]]`;
     const footer = `---
-**来源**: [[${pdfName}]] 第 ${node.page_range} 页
+**来源**: ${footerLink} (第 ${node.page_range} 页)
 `;
 
     return frontMatter + title + summaryBlock + content + footer;
@@ -332,6 +484,7 @@ views:
 
 /**
  * 导出索引为 Markdown 文件
+ * 支持按字符数切分长章节，同时维护 block_id 到子文件的映射
  */
 export async function exportIndexToMarkdown(
     app: App,
@@ -368,7 +521,6 @@ export async function exportIndexToMarkdown(
         if (allImageRefs.size > 0) {
             logInfo(`[EPUB图片] 开始下载 ${allImageRefs.size} 张图片...`);
             const imageNames = Array.from(allImageRefs.keys());
-            // 获取第一个图片的 indexId（所有图片应该属于同一个索引）
             const firstImage = allImageRefs.values().next().value;
             if (firstImage) {
                 imageMapping = await downloadEpubImages(
@@ -385,46 +537,83 @@ export async function exportIndexToMarkdown(
         // 创建或更新书籍主 note 文件
         await createBookNote(app, pdfFolderName, folderPath, indexId, author);
 
-        // 导出每个节点
-        const fileMapping: Record<string, string> = {};
+        // 导出每个节点（支持切分）
+        const fileMapping: Record<string, string> = {};  // node_id -> 主文件路径
+        const blockMapping: Record<string, Record<string, string>> = {};  // node_id -> {block_id -> file_path}
         let filesCreated = 1; // 包含书籍主 note
 
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
-            const filename = `${String(i + 1).padStart(2, '0')}-${sanitizeFilename(node.node_name)}.md`;
-            const filePath = `${folderPath}/${filename}`;
 
             // 替换图片链接为 Obsidian 格式
-            const processedNode = {
-                ...node,
-                text: replaceImageLinks(node.text, pdfFolderName, imageMapping)
-            };
+            const processedText = replaceImageLinks(node.text, pdfFolderName, imageMapping);
 
-            // 生成 Markdown 内容
-            const content = createMarkdownContent(processedNode, pdfName);
+            // 解析段落并按字符数切分
+            const paragraphs = parseParagraphsFromText(processedText);
+            const paragraphGroups = splitParagraphsBySize(paragraphs);
+            const totalParts = paragraphGroups.length;
 
-            // 检查文件是否存在
-            const existingFile = app.vault.getAbstractFileByPath(filePath);
-            if (existingFile instanceof TFile) {
-                // 覆盖现有文件
-                await app.vault.modify(existingFile, content);
-            } else {
-                // 创建新文件
-                await app.vault.create(filePath, content);
+            logInfo(`[导出] 节点 ${node.node_id}: ${paragraphs.length} 个段落, 切分为 ${totalParts} 个文件`);
+
+            // 清理章节名称用于文件名
+            const safeNodeName = sanitizeFilename(node.node_name, 50);
+            const nodeBlockMapping: Record<string, string> = {};
+
+            // 为每个段落组创建文件
+            for (let partIdx = 0; partIdx < paragraphGroups.length; partIdx++) {
+                const paraGroup = paragraphGroups[partIdx];
+                const partNum = partIdx + 1;
+
+                // 构建文件名
+                const filename = totalParts === 1
+                    ? `${String(i + 1).padStart(2, '0')}-${safeNodeName}.md`
+                    : `${String(i + 1).padStart(2, '0')}-${safeNodeName}-${partNum}.md`;
+
+                const filePath = `${folderPath}/${filename}`;
+                const relativePath = `${pdfFolderName}/${filename}`;
+
+                // 从段落组重建文本
+                const partialText = buildTextFromParagraphGroup(paraGroup);
+
+                // 生成 Markdown 内容
+                const content = createMarkdownContent(node, pdfName, partNum, totalParts, partialText);
+
+                // 检查文件是否存在
+                const existingFile = app.vault.getAbstractFileByPath(filePath);
+                if (existingFile instanceof TFile) {
+                    await app.vault.modify(existingFile, content);
+                } else {
+                    await app.vault.create(filePath, content);
+                }
+
+                filesCreated++;
+
+                // 记录这个文件中包含的所有 block_id
+                for (const para of paraGroup) {
+                    if (para.blockId) {
+                        nodeBlockMapping[para.blockId] = relativePath;
+                    }
+                }
+
+                // 第一部分作为主文件（向后兼容）
+                if (partNum === 1) {
+                    fileMapping[node.node_id] = relativePath;
+                }
             }
 
-            // 记录映射：使用相对于 vault 根目录的路径
-            // Obsidian wiki 链接会自动搜索匹配的文件，所以不需要完整路径
-            // 使用 pdfFolderName/filename 格式即可（如：极简资治通鉴/04-三家分晋.md）
-            const relativePath = `${pdfFolderName}/${filename}`;
-            fileMapping[node.node_id] = relativePath;
-            filesCreated++;
+            // 记录该节点的 block 映射
+            if (Object.keys(nodeBlockMapping).length > 0) {
+                blockMapping[node.node_id] = nodeBlockMapping;
+            }
         }
+
+        logInfo(`[导出] 完成: ${filesCreated} 个文件, ${Object.keys(blockMapping).length} 个节点有 block 映射`);
 
         return {
             success: true,
             filesCreated,
-            fileMapping
+            fileMapping,
+            blockMapping
         };
 
     } catch (error) {
@@ -433,6 +622,7 @@ export async function exportIndexToMarkdown(
             success: false,
             filesCreated: 0,
             fileMapping: {},
+            blockMapping: {},
             error: error instanceof Error ? error.message : String(error)
         };
     }

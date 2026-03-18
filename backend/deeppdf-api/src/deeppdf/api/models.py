@@ -219,6 +219,10 @@ class MarkdownMappingBody(BaseModel):
     """保存 Markdown 映射请求体"""
 
     file_mapping: dict = Field(..., description="节点 ID 到 Markdown 路径的映射")
+    block_mapping: Optional[dict] = Field(
+        default=None,
+        description="节点 ID -> block_id -> Markdown 路径的映射（支持分片导出）",
+    )
 
 
 class MarkdownMappingResponse(BaseModel):

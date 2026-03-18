@@ -916,16 +916,23 @@ async def export_cover_endpoint(index_id: str):
 async def save_markdown_mapping(index_id: str, body: MarkdownMappingBody):
     """保存 Markdown 文件映射到索引元数据"""
     logger.info(
-        f"[API] Saving markdown mapping for index: {index_id}, count: {len(body.file_mapping)}"
+        f"[API] Saving markdown mapping for index: {index_id}, "
+        f"file_mapping count: {len(body.file_mapping)}, "
+        f"block_mapping: {bool(body.block_mapping)}"
     )
 
     try:
         from ..services.manager import update_index_metadata
 
+        # 构建更新数据
+        updates = {"markdown_files": body.file_mapping}
+        if body.block_mapping:
+            updates["block_mapping"] = body.block_mapping
+
         result = await update_index_metadata(
             index_id=index_id,
             storage_dir=str(settings.base_dir),
-            updates={"markdown_files": body.file_mapping},
+            updates=updates,
         )
 
         if result["status"] == "success":

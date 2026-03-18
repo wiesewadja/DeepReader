@@ -2402,8 +2402,8 @@ export class SidebarView extends ItemView {
 
             if (result.success) {
                 new Notice(`✅ 导出成功! 创建了 ${result.filesCreated} 个文件`, 5000);
-                // 3. 保存映射回后端
-                await this.apiClient.saveMarkdownMapping(indexId, result.fileMapping);
+                // 3. 保存映射回后端（包含 block_mapping）
+                await this.apiClient.saveMarkdownMapping(indexId, result.fileMapping, result.blockMapping);
 
                 // 4. 同时下载封面图片并更新书籍笔记
                 if (this.readingPortal) {

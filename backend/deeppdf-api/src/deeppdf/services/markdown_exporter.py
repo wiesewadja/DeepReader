@@ -7,9 +7,13 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Markdown 文件切分配置
+MARKDOWN_CHUNK_TARGET = 4000  # 目标字符数
+MARKDOWN_CHUNK_MAX = 6000     # 最大字符数（允许溢出以保持段落完整）
 
 
 def _sanitize_filename(name: str, max_length: int = 100) -> str:
@@ -164,6 +168,154 @@ def _build_text_from_paragraphs(paragraphs: List[Dict[str, Any]]) -> str:
     return "\n\n".join(result_paragraphs)
 
 
+def _split_paragraphs_by_size(
+    paragraphs: List[Dict[str, Any]],
+    target_chars: int = MARKDOWN_CHUNK_TARGET,
+    max_chars: int = MARKDOWN_CHUNK_MAX,
+) -> List[List[Dict[str, Any]]]:
+    """
+    将段落按字符数切分成组，保持段落完整性
+
+    切分策略：
+    - 目标每组 ~4000 字符
+    - 保持段落完整（不跨组切分）
+    - 允许溢出到 max_chars 以保持段落完整
+    - 单个段落超过 max_chars 时单独成组
+
+    Args:
+        paragraphs: 段落列表
+        target_chars: 目标字符数
+        max_chars: 最大字符数
+
+    Returns:
+        段落组列表，每组是一个段落列表
+    """
+    if not paragraphs:
+        return []
+
+    # 计算每个段落的长度（包括 block_id 和换行）
+    def get_para_length(para: Dict[str, Any]) -> int:
+        text = para.get("text", "")
+        block_id = para.get("block_id", "")
+        # 估算长度：文本 + block_id + 2个换行
+        return len(text) + len(block_id) + 4
+
+    groups: List[List[Dict[str, Any]]] = []
+    current_group: List[Dict[str, Any]] = []
+    current_length = 0
+
+    for para in paragraphs:
+        para_len = get_para_length(para)
+
+        # 检查是否需要开始新组
+        if current_group:
+            # 如果加入这个段落会超过 max_chars，且当前组已有内容，开始新组
+            if current_length + para_len > max_chars:
+                groups.append(current_group)
+                current_group = []
+                current_length = 0
+            # 如果当前组已达到目标，且这个段落会使其超过目标，考虑开始新组
+            elif current_length >= target_chars and para_len > 0:
+                groups.append(current_group)
+                current_group = []
+                current_length = 0
+
+        # 添加段落到当前组
+        current_group.append(para)
+        current_length += para_len
+
+    # 处理最后一组
+    if current_group:
+        groups.append(current_group)
+
+    return groups
+
+
+def _create_markdown_content_partial(
+    node: Dict[str, Any],
+    pdf_name: str,
+    section: str,
+    page_range: str,
+    paragraphs: List[Dict[str, Any]],
+    part_num: int,
+    total_parts: int,
+) -> str:
+    """
+    创建 Markdown 文件内容（分片版本）
+
+    Args:
+        node: 节点数据
+        pdf_name: PDF 名称
+        section: 章节名称
+        page_range: 页码范围
+        paragraphs: 该分片的段落信息
+        part_num: 分片序号（从 1 开始）
+        total_parts: 总分片数
+    """
+    node_id = node.get("id", "")
+    metadata = node.get("metadata", {})
+    start_page = metadata.get("start_index", "?")
+
+    # 获取摘要（只在第一部分显示）
+    summary = metadata.get("summary", "") if part_num == 1 else ""
+
+    # 从段落重建文本
+    processed_text = _build_text_from_paragraphs(paragraphs)
+
+    # 解析物理页码标记
+    seen_pages = set()
+
+    def replace_page_tag(match):
+        page_num = match.group(1)
+        if page_num not in seen_pages:
+            seen_pages.add(page_num)
+            return f"\n\n### 第 {page_num} 页 ^page-{page_num}\n\n"
+        return ""
+
+    processed_text = re.sub(
+        r"<(?:physical|start|end)_index_(\d+)>", replace_page_tag, processed_text
+    )
+    processed_text = re.sub(r"\n{3,}", "\n\n", processed_text).strip()
+
+    # 构建 part_id
+    part_id = f"{node_id}_part{part_num}" if total_parts > 1 else node_id
+
+    # 创建 Front Matter
+    front_matter = f"""---
+pdf_name: {pdf_name}
+node_id: {node_id}
+part_id: {part_id}
+section: {section}
+page_range: {page_range}
+level: {metadata.get('level', 0)}
+part: {part_num}/{total_parts}
+tags: [DeepPDF, {pdf_name}]
+---
+
+"""
+
+    # 标题（分片时添加序号）
+    if total_parts > 1:
+        title = f"# {section} ({part_num}/{total_parts})\n\n"
+    else:
+        title = f"# {section}\n\n"
+
+    # 摘要（仅第一部分）
+    summary_block = ""
+    if summary and summary.strip():
+        summary_block = f"> [!summary] 章节摘要\n> {summary.strip().replace(chr(10), chr(10) + '> ')}\n\n"
+
+    # 页脚
+    footer_link = (
+        f"[[{pdf_name}#page={start_page}]]"
+        if str(start_page).isdigit()
+        else f"[[{pdf_name}]]"
+    )
+    footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)\n"
+
+    return front_matter + title + summary_block + processed_text + footer
+
+
 def _create_markdown_content(
     node: Dict[str, Any],
     pdf_name: str,
@@ -251,6 +403,33 @@ tags: [DeepPDF, {pdf_name}]
 def export_pdf_to_markdown(
     index_id: str, storage_dir: str, vault_path: str, output_folder: str = "DeepPDF"
 ) -> Dict[str, Any]:
+    """
+    导出 PDF 为 Markdown 文件
+
+    当章节内容超过目标字符数时，自动切分成多个文件，
+    保持段落完整性，并维护 block_id 与文件的映射关系。
+
+    Returns:
+        {
+            "status": "success" | "error",
+            "files_created": int,
+            "file_mapping": {
+                "node_id": "path/to/file.md",  # 单文件时的映射
+                ...
+            },
+            "block_mapping": {
+                "node_id": {
+                    "block_id": "path/to/file.md",  # block_id 到文件的映射
+                    ...
+                },
+                ...
+            },
+            "markdown_files": {
+                "node_id": "path/to/file.md",  # 兼容旧格式
+                ...
+            }
+        }
+    """
     try:
         storage_dir_path = Path(storage_dir)
         metadata_path = storage_dir_path / "indexes" / f"{index_id}.json"
@@ -273,7 +452,9 @@ def export_pdf_to_markdown(
         output_dir = vault_path_obj / output_folder / pdf_folder_name
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        file_mapping = {}
+        file_mapping = {}  # node_id -> 主文件路径（向后兼容）
+        block_mapping = {}  # node_id -> {block_id -> 文件路径}
+        markdown_files = {}  # 兼容旧格式
         files_created = 0
 
         for idx, node in enumerate(sections, start=1):
@@ -293,25 +474,65 @@ def export_pdf_to_markdown(
             # 获取该节点的段落信息
             node_paragraphs = paragraphs_by_node.get(node_id, [])
 
-            filename = f"{idx:02d}-{node_name.replace('/', '-')}.md"
-            file_path = output_dir / filename
+            # 按字符数切分段落
+            paragraph_groups = _split_paragraphs_by_size(node_paragraphs)
+            total_parts = len(paragraph_groups)
 
-            markdown_content = _create_markdown_content(
-                node, pdf_name, section, page_range, node_paragraphs
-            )
+            # 清理章节名称用于文件名
+            safe_node_name = _sanitize_filename(node_name, max_length=50)
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(markdown_content)
+            # 为每个段落组创建文件
+            node_block_mapping = {}
 
-            file_mapping[node_id] = f"{output_folder}/{pdf_folder_name}/{filename}"
-            files_created += 1
+            for part_idx, para_group in enumerate(paragraph_groups, start=1):
+                # 构建文件名
+                if total_parts == 1:
+                    filename = f"{idx:02d}-{safe_node_name}.md"
+                else:
+                    filename = f"{idx:02d}-{safe_node_name}-{part_idx}.md"
+
+                file_path = output_dir / filename
+                relative_path = f"{output_folder}/{pdf_folder_name}/{filename}"
+
+                # 创建 Markdown 内容
+                markdown_content = _create_markdown_content_partial(
+                    node, pdf_name, section, page_range, para_group, part_idx, total_parts
+                )
+
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(markdown_content)
+
+                files_created += 1
+
+                # 记录这个文件中包含的所有 block_id
+                for para in para_group:
+                    block_id = para.get("block_id", "")
+                    if block_id:
+                        node_block_mapping[block_id] = relative_path
+
+                # 第一部分作为主文件（向后兼容）
+                if part_idx == 1:
+                    file_mapping[node_id] = relative_path
+                    markdown_files[node_id] = relative_path
+
+            # 记录该节点的 block 映射
+            if node_block_mapping:
+                block_mapping[node_id] = node_block_mapping
+
+        logger.info(
+            f"[导出] 完成: {files_created} 个文件, "
+            f"{len(block_mapping)} 个节点有 block 映射"
+        )
 
         return {
             "status": "success",
             "files_created": files_created,
             "file_mapping": file_mapping,
+            "block_mapping": block_mapping,
+            "markdown_files": markdown_files,  # 兼容旧格式
         }
     except Exception as e:
+        logger.error(f"[导出] 失败: {e}")
         return {"status": "error", "error": str(e)}
 
 
