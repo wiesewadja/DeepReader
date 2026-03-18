@@ -383,8 +383,11 @@ export async function runAgentLoop(
         {
           onContent: (text) => {
             accumulatedContent += text;
-            options.onContent(text);
-            // 更新拟人化内容状态
+            // 🔴 关键修改：不再实时输出内容，而是先累积
+            // 只有在 onComplete 时判断是否有 tool_calls 才决定是否输出
+            // options.onContent(text); // 移除实时输出
+
+            // 更新拟人化内容状态（用于状态显示，不是内容显示）
             if (humanizer) {
               humanizer.updateContent(accumulatedContent);
               options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
@@ -399,12 +402,25 @@ export async function runAgentLoop(
           onToolCall: (calls) => {
             toolCalls = calls;
             finishReason = 'tool_calls';
+            // 🟡 拦截日志：记录 LLM 的"自言自语"
+            if (accumulatedContent) {
+              agentLog(`[AgentLoop] 🔴 拦截到 LLM 自言自语（有 tool_calls）: "${accumulatedContent.slice(0, 100)}..."`);
+            }
           },
           onComplete: (reason) => {
             // 只有在没有收到 tool_calls 时才更新 finishReason
             if (finishReason !== 'tool_calls') {
               finishReason = reason;
             }
+
+            // 🟢 关键修改：只有没有 tool_calls 时才输出内容到前端
+            if (finishReason !== 'tool_calls' && accumulatedContent) {
+              agentLog(`[AgentLoop] 🟢 最终回复，输出内容: ${accumulatedContent.length} 字符`);
+              options.onContent(accumulatedContent);
+            } else if (finishReason === 'tool_calls') {
+              agentLog(`[AgentLoop] 🔴 有 tool_calls，丢弃中间内容: ${accumulatedContent.length} 字符`);
+            }
+
             resolve();
           },
           onError: (error) => {
@@ -695,27 +711,34 @@ export async function runAgentLoop(
     }
   }
 
-  // 只有在非正常完成且达到最大迭代次数时才强制总结
+  // 🛑 优雅降级：达到最大迭代次数时，强制总结
   if (!completedNormally && iterations >= maxIterations) {
-    agentLog('[AgentLoop] ⚠️ 达到最大迭代次数，强制生成总结...');
+    agentLog('[AgentLoop] 🛑 触发熔断机制：达到最大迭代次数，执行优雅降级...');
 
-    // 强制生成总结性回复
-    const forceSummaryMessage: ChatMessage = {
-      role: 'user',
-      content: '基于已收集的信息，请立即给出你的回答。使用已获取的资料，不要继续搜索。',
+    // 1. 注入强制终结指令（通过 system 消息，不污染 user 消息）
+    const forceSummarySystem: ChatMessage = {
+      role: 'system',
+      content: `【系统强制介入：触发熔断机制】
+你的检索和思考次数已达上限，必须立即终止调查！
+请基于你前几次迭代中收集到的**所有零散线索**，向用户做一次"阶段性汇报"。
+
+要求：
+1. 坦诚说明你尽力了，但未能找到完美/完整的答案。
+2. 总结你目前已经查到的部分有用信息（必须带上对应的引用）。
+3. 给出下一步的建议（例如建议用户换个关键词，或者建议阅读某个具体章节）。
+4. 语气要诚恳、专业，不要编造不存在的信息。`,
     };
-    workingMessages.push(forceSummaryMessage);
 
+    const messagesWithSummary = [...workingMessages, forceSummarySystem];
+
+    // 2. 发起最后一次"无工具"请求（物理缴械）
     let summaryContent = '';
-    let summaryFinishReason: 'stop' | 'tool_calls' | 'length' = 'stop';
-
     const summaryStartTime = Date.now();
-    agentLog('[AgentLoop] 🤖 开始强制总结调用...');
 
     await new Promise<void>((resolve) => {
       client.streamChat(
-        workingMessages,
-        [], // 不传工具，强制 LLM 直接回复
+        messagesWithSummary,
+        [], // 👈 关键：剥夺所有工具！
         {
           onContent: (text) => {
             summaryContent += text;
@@ -725,11 +748,15 @@ export async function runAgentLoop(
             // 不应该有工具调用，因为没传工具
           },
           onComplete: (reason) => {
-            summaryFinishReason = reason;
             resolve();
           },
           onError: (error) => {
-            options.onError(error);
+            agentLog('[AgentLoop] 优雅降级总结失败:', error);
+            // 即使失败，也输出一个默认的降级消息
+            if (!summaryContent) {
+              summaryContent = '抱歉，我在多次检索后仍未能找到完整的答案。建议您尝试使用更具体的关键词重新提问，或查阅相关章节的目录结构。';
+              options.onContent(summaryContent);
+            }
             resolve();
           },
         },
@@ -739,7 +766,7 @@ export async function runAgentLoop(
 
     const summaryDuration = Date.now() - summaryStartTime;
     llmTotalTime += summaryDuration;
-    agentLog(`[AgentLoop] 🤖 强制总结完成: ${formatDuration(summaryDuration)}, 内容长度: ${summaryContent.length}`);
+    agentLog(`[AgentLoop] 🛑 优雅降级总结完成: ${formatDuration(summaryDuration)}, 内容长度: ${summaryContent.length}`);
 
     // 添加总结消息到历史
     if (summaryContent) {

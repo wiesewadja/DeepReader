@@ -29,12 +29,13 @@ describe('IntentRouter', () => {
   });
 
   describe('测试 C: "什么是第一天的答案？"', () => {
-    it('应使用兜底策略', () => {
+    it('应命中 concept_inquiry（概念探究）', () => {
       const result = router.analyze("什么是'第一天的答案'？");
 
-      expect(result.detectedIntents).toContain('分析阅读-微观检索');
+      expect(result.detectedIntents).toContain('分析阅读-概念探究');
       expect(result.allowedTools).toContain('search_doc');
-      expect(result.allowedTools).not.toContain('get_toc');
+      expect(result.allowedTools).toContain('get_toc');
+      expect(result.allowedTools).toContain('get_chapter');
     });
   });
 
@@ -55,6 +56,26 @@ describe('IntentRouter', () => {
       expect(result.detectedIntents).toContain('分析阅读-定位');
       expect(result.allowedTools).toContain('get_toc');
       expect(result.allowedTools).toContain('get_chapter');
+    });
+  });
+
+  describe('测试 F: "这本书的作者是谁"', () => {
+    it('应使用兜底策略（无匹配规则）', () => {
+      const result = router.analyze('这本书的作者是谁');
+
+      expect(result.detectedIntents).toContain('分析阅读-微观检索');
+      expect(result.allowedTools).toContain('search_doc');
+      expect(result.allowedTools).not.toContain('get_toc');
+    });
+  });
+
+  describe('测试 G: "如何理解金字塔原理的核心思想"', () => {
+    it('应命中 concept_inquiry（概念探究）', () => {
+      const result = router.analyze('如何理解金字塔原理的核心思想');
+
+      expect(result.detectedIntents).toContain('分析阅读-概念探究');
+      expect(result.allowedTools).toContain('search_doc');
+      expect(result.allowedTools).toContain('get_toc');
     });
   });
 });
