@@ -7,7 +7,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -30,24 +30,176 @@ def _sanitize_filename(name: str, max_length: int = 100) -> str:
     return name[:max_length].strip(" -") if len(name) > max_length else name
 
 
+def _fetch_paragraphs_from_chroma(index_id: str, chroma_path: str) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    从 ChromaDB 获取段落信息，按 parent_node_id 分组
+
+    Returns:
+        Dict[node_id, List[paragraph_info]] - 每个节点下的段落列表
+    """
+    try:
+        import chromadb
+
+        client = chromadb.PersistentClient(path=chroma_path)
+        collection = client.get_collection(name=index_id)
+
+        # 获取所有段落数据
+        results = collection.get(
+            where={"type": "paragraph"},
+            include=["metadatas", "documents"]
+        )
+
+        # 按 parent_node_id 分组
+        paragraphs_by_node: Dict[str, List[Dict[str, Any]]] = {}
+
+        if results and results["metadatas"]:
+            for i, (doc, meta) in enumerate(zip(results["documents"], results["metadatas"])):
+                parent_node_id = meta.get("parent_node_id", "")
+                block_id = meta.get("block_id", "")
+                paragraph_index = meta.get("paragraph_index", 0)
+                full_paragraph = meta.get("full_paragraph", doc)
+
+                if not parent_node_id:
+                    continue
+
+                if parent_node_id not in paragraphs_by_node:
+                    paragraphs_by_node[parent_node_id] = []
+
+                # 避免重复添加同一个 block_id
+                existing = [p for p in paragraphs_by_node[parent_node_id] if p["block_id"] == block_id]
+                if not existing:
+                    paragraphs_by_node[parent_node_id].append({
+                        "block_id": block_id,
+                        "paragraph_index": paragraph_index,
+                        "text": full_paragraph,
+                    })
+
+        # 对每个节点内的段落按 paragraph_index 排序
+        for node_id in paragraphs_by_node:
+            paragraphs_by_node[node_id].sort(key=lambda x: x["paragraph_index"])
+
+        logger.info(f"[导出] 从 ChromaDB 获取到 {sum(len(v) for v in paragraphs_by_node.values())} 个段落，分布在 {len(paragraphs_by_node)} 个节点")
+        return paragraphs_by_node
+
+    except Exception as e:
+        logger.warning(f"[导出] 无法从 ChromaDB 获取段落: {e}")
+        return {}
+
+
+def _is_likely_heading(text: str) -> bool:
+    """
+    判断文本是否可能是标题
+
+    规则：短句（<=50字符）且末尾没有标点符号
+    """
+    if not text:
+        return False
+
+    # 去除首尾空白
+    text = text.strip()
+
+    # 如果已经有 # 前缀，说明是标题，需要处理
+    # 但不在这里判断，在 _build_text_from_paragraphs 中处理
+
+    # 太长的不是标题
+    if len(text) > 50:
+        return False
+
+    # 检查末尾是否有标点符号
+    # 常见的中文和英文标点
+    punctuation_chars = '。！？，、；：""''）】》…—·.,!?;:)\'">]}'
+
+    # 如果末尾是标点，不是标题
+    if text[-1] in punctuation_chars:
+        return False
+
+    return True
+
+
+def _strip_heading_prefix(text: str) -> str:
+    """
+    移除文本中的 Markdown 标题前缀（# 符号）
+    """
+    text = text.strip()
+    # 移除开头的 # 符号和空格
+    while text.startswith('#'):
+        text = text[1:]
+    return text.strip()
+
+
+def _build_text_from_paragraphs(paragraphs: List[Dict[str, Any]]) -> str:
+    """
+    从 ChromaDB 段落重建带 block_id 的文本
+
+    Args:
+        paragraphs: 段落信息列表（已排序）
+
+    Returns:
+        带 block_id 标记的文本
+    """
+    if not paragraphs:
+        return ""
+
+    result_paragraphs = []
+    for para_info in paragraphs:
+        text = para_info.get("text", "")
+        block_id = para_info.get("block_id", "")
+        if text:
+            # 判断是否可能是标题
+            if _is_likely_heading(text):
+                # 移除可能存在的 # 前缀，然后用 H3 格式处理
+                clean_text = _strip_heading_prefix(text)
+                if block_id:
+                    result_paragraphs.append(f"### {clean_text} {block_id}")
+                else:
+                    result_paragraphs.append(f"### {clean_text}")
+            else:
+                # 普通段落
+                if block_id:
+                    result_paragraphs.append(f"{text} {block_id}")
+                else:
+                    result_paragraphs.append(text)
+
+    return "\n\n".join(result_paragraphs)
+
+
 def _create_markdown_content(
-    node: Dict[str, Any], pdf_name: str, section: str, page_range: str
+    node: Dict[str, Any],
+    pdf_name: str,
+    section: str,
+    page_range: str,
+    paragraphs: List[Dict[str, Any]] = None,
 ) -> str:
     """
     创建 Markdown 文件内容
+
+    Args:
+        node: 节点数据
+        pdf_name: PDF 名称
+        section: 章节名称
+        page_range: 页码范围
+        paragraphs: 该节点的段落信息（从 ChromaDB 获取，用于重建带 block_id 的文本）
     """
     node_id = node.get("id", "")
-    text = node.get("text", "")
     metadata = node.get("metadata", {})
     start_page = metadata.get("start_index", "?")
-
-    # 获取原始文本（如果有）或使用 text
-    original_text = metadata.get("original_text", text)
 
     # 获取摘要（如果有）
     summary = metadata.get("summary", "")
 
-    # --- 核心改进：解析物理页码标记 (防止重复) ---
+    # --- 核心改进：使用 ChromaDB 中的段落重建文本（带 block_id）---
+    if paragraphs:
+        # 从 ChromaDB 段落重建文本（每个段落已有 block_id）
+        processed_text = _build_text_from_paragraphs(paragraphs)
+        logger.debug(f"[导出] 节点 {node_id}: 从 ChromaDB 重建 {len(paragraphs)} 个段落")
+    else:
+        # 如果没有 ChromaDB 数据，使用 sections 中的摘要作为 fallback
+        text = node.get("text", "")
+        original_text = metadata.get("original_text", text)
+        processed_text = original_text
+        logger.debug(f"[导出] 节点 {node_id}: 无 ChromaDB 数据，使用原始文本")
+
+    # --- 解析物理页码标记 (防止重复) ---
     seen_pages = set()
 
     def replace_page_tag(match):
@@ -60,7 +212,7 @@ def _create_markdown_content(
 
     # 统一处理所有可能的标签格式
     processed_text = re.sub(
-        r"<(?:physical|start|end)_index_(\d+)>", replace_page_tag, original_text
+        r"<(?:physical|start|end)_index_(\d+)>", replace_page_tag, processed_text
     )
 
     # 清理多余空行
@@ -111,6 +263,10 @@ def export_pdf_to_markdown(
         pdf_name = index_metadata.get("pdf_name", "Unknown")
         sections = index_metadata.get("sections", [])
 
+        # --- 从 ChromaDB 获取段落信息 ---
+        chroma_path = str(storage_dir_path / "chroma")
+        paragraphs_by_node = _fetch_paragraphs_from_chroma(index_id, chroma_path)
+
         vault_path_obj = Path(vault_path)
         pdf_folder_name = pdf_name.replace(".pdf", "").replace("/", "-")
         output_dir = vault_path_obj / output_folder / pdf_folder_name
@@ -133,11 +289,14 @@ def export_pdf_to_markdown(
                 else str(start_page)
             )
 
+            # 获取该节点的段落信息
+            node_paragraphs = paragraphs_by_node.get(node_id, [])
+
             filename = f"{idx:02d}-{node_name.replace('/', '-')}.md"
             file_path = output_dir / filename
 
             markdown_content = _create_markdown_content(
-                node, pdf_name, section, page_range
+                node, pdf_name, section, page_range, node_paragraphs
             )
 
             with open(file_path, "w", encoding="utf-8") as f:
@@ -163,3 +322,5 @@ def get_markdown_path_for_node(
 
 # 公共别名：外部导入使用
 create_markdown_content = _create_markdown_content
+fetch_paragraphs_from_chroma = _fetch_paragraphs_from_chroma
+build_text_from_paragraphs = _build_text_from_paragraphs

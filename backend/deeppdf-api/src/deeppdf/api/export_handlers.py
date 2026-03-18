@@ -18,6 +18,10 @@ from ..services.cover_extractor import (
 )
 from ..services.text_formatter import TextFormatter
 from ..utils.llm_client import get_llm_client
+from ..services.markdown_exporter import (
+    fetch_paragraphs_from_chroma,
+    build_text_from_paragraphs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +127,14 @@ async def export_index_data(
         # 创建基于规则的格式化器（不使用 LLM）
         formatter = TextFormatter()
 
+        # --- 从 ChromaDB 获取带 block_id 的段落数据 ---
+        chroma_path = str(storage_dir / "chroma")
+        paragraphs_by_node = await asyncio.to_thread(
+            fetch_paragraphs_from_chroma, index_id, chroma_path
+        )
+        if paragraphs_by_node:
+            logger.info(f"[导出] 从 ChromaDB 获取到 {sum(len(v) for v in paragraphs_by_node.values())} 个段落")
+
         # 提取节点数据
         nodes = []
         tree_structure = metadata.get("tree_structure", {}).get("structure", [])
@@ -179,14 +191,21 @@ async def export_index_data(
             if not node_summary:
                 node_summary = node_metadata.get("summary", "")
 
-            # 应用基于规则的格式化（不使用 LLM）
-            formatted_text = original_text
-            if formatter and original_text:
-                try:
-                    doc_type = "epub" if metadata.get("pdf_path", "").lower().endswith(".epub") else "pdf"
-                    formatted_text = formatter.format(original_text, doc_type)
-                except Exception as e:
-                    logger.warning(f"[导出] 节点格式化失败: {e}, 使用原文")
+            # --- 核心改进：使用 ChromaDB 中的段落重建文本（带 block_id）---
+            node_paragraphs = paragraphs_by_node.get(section_id, [])
+            if node_paragraphs:
+                # 从 ChromaDB 段落重建文本（每个段落已有 block_id）
+                formatted_text = build_text_from_paragraphs(node_paragraphs)
+                logger.debug(f"[导出] 节点 {section_id}: 从 ChromaDB 重建 {len(node_paragraphs)} 个段落")
+            else:
+                # 如果没有 ChromaDB 数据，使用原来的格式化逻辑作为 fallback
+                formatted_text = original_text
+                if formatter and original_text:
+                    try:
+                        doc_type = "epub" if metadata.get("pdf_path", "").lower().endswith(".epub") else "pdf"
+                        formatted_text = formatter.format(original_text, doc_type)
+                    except Exception as e:
+                        logger.warning(f"[导出] 节点格式化失败: {e}, 使用原文")
 
             nodes.append(
                 {
