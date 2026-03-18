@@ -405,6 +405,27 @@ function generateStructureAnalysis(chapters: ChapterInfo[]): string {
 // ==================== 扁平化 TOC 格式化函数 ====================
 
 /**
+ * 生成 Obsidian 链接
+ * 优先使用 obsidian_link（Markdown 文件），其次使用 node_id（block 引用）
+ */
+function generateTocLink(
+  title: string,
+  obsidianLink?: string,
+  nodeId?: string,
+  bookTitle?: string
+): string {
+  if (obsidianLink) {
+    // 指向 Markdown 文件: [[书籍名/01-章节.md|显示文本]]
+    return `[[${obsidianLink}|${title}]]`;
+  }
+  if (nodeId && bookTitle) {
+    // 指向 block: [[书籍名#^blockid|显示文本]]
+    return `[[${bookTitle}#${nodeId}|${title}]]`;
+  }
+  return title;
+}
+
+/**
  * 简单模式：扁平化列表
  */
 function formatFlatSimple(flatToc: TableOfContentsFlat): string {
@@ -414,16 +435,22 @@ function formatFlatSimple(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    // 一级章节（带 node_id）
-    const level1Link = section.node_id
-      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
-      : section.level_1;
+    // 一级章节
+    const level1Link = generateTocLink(
+      section.level_1,
+      section.obsidian_link,
+      section.node_id,
+      flatToc.book_title
+    );
     lines.push(`### ${level1Link}`);
     // 二级章节
     for (const sub of section.sub_chapters) {
-      const link = sub.node_id
-        ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
-        : sub.title;
+      const link = generateTocLink(
+        sub.title,
+        sub.obsidian_link,
+        sub.node_id,
+        flatToc.book_title
+      );
       lines.push(`- ${link}`);
     }
     lines.push('');
@@ -442,9 +469,12 @@ function formatFlatBrief(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    const level1Link = section.node_id
-      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
-      : section.level_1;
+    const level1Link = generateTocLink(
+      section.level_1,
+      section.obsidian_link,
+      section.node_id,
+      flatToc.book_title
+    );
     lines.push(`## ${level1Link}`);
     lines.push('');
   }
@@ -464,17 +494,23 @@ function formatFlatNormal(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    const level1Link = section.node_id
-      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
-      : section.level_1;
+    const level1Link = generateTocLink(
+      section.level_1,
+      section.obsidian_link,
+      section.node_id,
+      flatToc.book_title
+    );
     lines.push(`## ${level1Link}`);
     lines.push('');
 
     if (section.sub_chapters.length > 0) {
       for (const sub of section.sub_chapters) {
-        const subLink = sub.node_id
-          ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
-          : sub.title;
+        const subLink = generateTocLink(
+          sub.title,
+          sub.obsidian_link,
+          sub.node_id,
+          flatToc.book_title
+        );
         lines.push(`- ${subLink}`);
       }
     } else {
@@ -498,9 +534,12 @@ function formatFlatDetailed(flatToc: TableOfContentsFlat): string {
   lines.push('');
 
   for (const section of flatToc.toc) {
-    const level1Link = section.node_id
-      ? `[[${flatToc.book_title}#${section.node_id}|${section.level_1}]]`
-      : section.level_1;
+    const level1Link = generateTocLink(
+      section.level_1,
+      section.obsidian_link,
+      section.node_id,
+      flatToc.book_title
+    );
     lines.push(`## ${level1Link}`);
 
     // 添加摘要
@@ -515,9 +554,12 @@ function formatFlatDetailed(flatToc: TableOfContentsFlat): string {
     if (section.sub_chapters.length > 0) {
       lines.push('### 本章节目录');
       for (const sub of section.sub_chapters) {
-        const subLink = sub.node_id
-          ? `[[${flatToc.book_title}#${sub.node_id}|${sub.title}]]`
-          : sub.title;
+        const subLink = generateTocLink(
+          sub.title,
+          sub.obsidian_link,
+          sub.node_id,
+          flatToc.book_title
+        );
         lines.push(`- ${subLink}`);
       }
     }

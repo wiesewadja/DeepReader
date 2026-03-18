@@ -277,11 +277,13 @@ export interface TableOfContents {
 export interface SubChapter {
   title: string;
   node_id?: string;
+  obsidian_link?: string;  // Obsidian Markdown 文件链接
 }
 
 export interface TocSection {
   level_1: string;
   node_id?: string;  // 一级章节节点 ID
+  obsidian_link?: string;  // Obsidian Markdown 文件链接
   summary?: string;
   sub_chapters: SubChapter[];
 }

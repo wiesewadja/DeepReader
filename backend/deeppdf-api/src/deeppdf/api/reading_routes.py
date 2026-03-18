@@ -182,6 +182,7 @@ class SubChapter(BaseModel):
 
     title: str
     node_id: Optional[str] = None  # 节点 ID（用于 get_chapter）
+    obsidian_link: Optional[str] = None  # Obsidian Markdown 文件链接
 
 
 class TocSection(BaseModel):
@@ -189,6 +190,7 @@ class TocSection(BaseModel):
 
     level_1: str  # 一级章节标题
     node_id: Optional[str] = None  # 一级章节节点 ID（用于 get_chapter）
+    obsidian_link: Optional[str] = None  # Obsidian Markdown 文件链接
     summary: Optional[str] = None  # 一级章节摘要
     sub_chapters: List[SubChapter] = []  # 二级章节列表
 
@@ -247,12 +249,13 @@ def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str
     return chapters
 
 
-def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSection]:
+def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: int = 0) -> List[TocSection]:
     """
     提取扁平化的 2 级章节结构（骨架+叶子）
 
     Args:
         tree_structure: 树状结构数据
+        book_name: 书籍名称（用于生成 Obsidian 链接）
         level: 当前层级
 
     Returns:
@@ -260,25 +263,48 @@ def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSec
     """
     result: List[TocSection] = []
 
-    for node in tree_structure:
+    # 清理书籍名称（移除 .pdf/.epub 后缀）
+    folder_name = book_name.replace(".pdf", "").replace(".epub", "") if book_name else ""
+
+    for idx, node in enumerate(tree_structure):
         title = node.get("title", "未命名章节")
         node_id = node.get("node_id")  # 一级章节节点 ID
         summary = node.get("summary")  # LLM 生成的摘要
+
+        # 生成 Obsidian Markdown 文件链接
+        obsidian_link = None
+        if folder_name:
+            safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
+            filename = f"{idx + 1:02d}-{safe_title}.md"
+            obsidian_link = f"{folder_name}/{filename}"
 
         # 获取子章节
         sub_structure = node.get("structure", [])
         sub_chapters: List[SubChapter] = []
 
         if isinstance(sub_structure, list) and sub_structure:
-            for sub_node in sub_structure:
+            for sub_idx, sub_node in enumerate(sub_structure):
                 sub_title = sub_node.get("title", "未命名章节")
                 sub_node_id = sub_node.get("node_id")
-                sub_chapters.append(SubChapter(title=sub_title, node_id=sub_node_id))
+
+                # 生成子章节的 Obsidian 链接
+                sub_obsidian_link = None
+                if folder_name:
+                    sub_safe_title = "".join(c for c in sub_title if c.isalnum() or c in " -_").strip()
+                    sub_filename = f"{idx + 1:02d}-{sub_safe_title}.md"
+                    sub_obsidian_link = f"{folder_name}/{sub_filename}"
+
+                sub_chapters.append(SubChapter(
+                    title=sub_title,
+                    node_id=sub_node_id,
+                    obsidian_link=sub_obsidian_link
+                ))
 
         # 添加当前一级章节及其子章节
         result.append(TocSection(
             level_1=title,
             node_id=node_id,
+            obsidian_link=obsidian_link,
             summary=summary,
             sub_chapters=sub_chapters
         ))
@@ -292,7 +318,11 @@ def _extract_flat_toc(tree_structure: List[dict], level: int = 0) -> List[TocSec
                     for nested_node in nested_structure:
                         nested_title = nested_node.get("title", "未命名章节")
                         nested_node_id = nested_node.get("node_id")
-                        sub_chapters.append(SubChapter(title=nested_title, node_id=nested_node_id))
+                        sub_chapters.append(SubChapter(
+                            title=nested_title,
+                            node_id=nested_node_id,
+                            obsidian_link=None  # 深层级的链接在父级处理
+                        ))
 
     return result
 
@@ -400,7 +430,7 @@ async def get_table_of_contents_flat(index_id: str):
     )
 
     # 提取扁平化 2 级结构
-    flat_toc = _extract_flat_toc(structure_list)
+    flat_toc = _extract_flat_toc(structure_list, book_name)
 
     logger.info(f"[阅读API] 获取扁平目录: {index_id}, {len(flat_toc)} 个一级章节")
 
