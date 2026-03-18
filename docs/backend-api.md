@@ -263,42 +263,6 @@
 
 ---
 
-### POST /api/cross-book/search
-
-跨书搜索
-
-**请求体:**
-```json
-{
-  "query": "string",
-  "index_ids": ["id1", "id2"],
-  "top_k": 5
-}
-```
-
----
-
-### POST /api/theme/report
-
-主题报告生成
-
-**请求体:**
-```json
-{
-  "index_id": "string",
-  "theme": "string",
-  "depth": "brief|normal|deep"
-}
-```
-
----
-
-### POST /api/theme/report/enhanced
-
-增强主题报告生成
-
----
-
 ### POST /api/agent/query
 
 Agent 查询（LLM Tree Search）
