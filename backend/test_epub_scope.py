@@ -13,9 +13,11 @@ import asyncio
 import httpx
 import time
 import sys
+import json
 from pathlib import Path
 
 API_BASE = "http://localhost:6088/api"
+HEALTH_URL = "http://localhost:6088/health"
 
 class EPUBTester:
     def __init__(self):
@@ -29,9 +31,10 @@ class EPUBTester:
         print("="*50)
 
         try:
-            resp = self.client.get(f"{API_BASE.replace('/api', '')}/health")
-            print(f"   状态: {resp.json()}")
-            return resp.status_code == 200
+            resp = self.client.get(HEALTH_URL)
+            data = resp.json()
+            print(f"   状态: {data}")
+            return resp.status_code == 200 and data.get("status") == "ok"
         except Exception as e:
             print(f"   ❌ 连接失败: {e}")
             return False
