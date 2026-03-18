@@ -129,11 +129,21 @@ export const searchDocTool: ToolExecutor = {
             const blockId = item.metadata.block_id || '';
             const parentSection = item.metadata.parent_section || 'Unknown';
             const page = item.metadata.page;
+            const markdownPath = item.metadata.markdown_path;
 
             // 生成 Obsidian block 链接
-            const obsidianLink = `[[${context.pdfName}#${blockId}]]`;
+            // 优先使用 markdown_path（指向导出的 Markdown 文件中的 block）
+            // 否则 fallback 到 PDF 文件名
+            let obsidianLink: string;
+            if (markdownPath && blockId) {
+              obsidianLink = `[[${markdownPath}#${blockId}]]`;
+            } else if (blockId) {
+              obsidianLink = `[[${context.pdfName}#${blockId}]]`;
+            } else {
+              obsidianLink = `[[${context.pdfName}]]`;
+            }
 
-            log(`[search_doc] 段落结果 ${index + 1}: block_id=${blockId}, page=${page}`);
+            log(`[search_doc] 段落结果 ${index + 1}: block_id=${blockId}, page=${page}, markdown_path=${markdownPath}`);
 
             // text 已经包含上下文（后端合并了上一段+当前段+下一段）
             const displayText = item.text.trim();
