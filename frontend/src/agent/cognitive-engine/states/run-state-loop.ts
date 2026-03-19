@@ -330,11 +330,72 @@ export async function runStateLoop(
     accumulatedReasoning = '';
   }
 
-  // 达到最大迭代次数
+  // 达到最大迭代次数，强制让 LLM 输出最终结论
+  if (iterations >= maxIterations && toolResults.length > 0) {
+    // 构建强制结论请求
+    const forcedConclusionPrompt = `你已达到工具调用次数上限（${maxIterations}次）。
+
+现在请基于已收集的所有信息，输出你的最终分析结论。
+
+要求：
+1. 综合所有工具调用结果
+2. 输出完整的分析内容，不要再次调用工具
+3. 如果信息不足，基于已有信息给出尽可能完整的回答`;
+
+    messages.push({
+      role: 'user',
+      content: forcedConclusionPrompt,
+    });
+
+    // 记录强制结论请求
+    if (logger?.isEnabled()) {
+      logger.logMessages([{ role: 'user', content: forcedConclusionPrompt }]);
+    }
+
+    // 最后一次 LLM 调用，强制输出结论
+    await new Promise<void>((resolve) => {
+      llmClient.streamChat(
+        messages,
+        [], // 不提供工具，强制输出文本
+        {
+          onContent: (text) => {
+            accumulatedContent += text;
+            callbacks.onContent?.(text);
+            if (logger?.isEnabled()) {
+              logger.addLLMChunk(text);
+            }
+          },
+          onReasoning: (text) => {
+            accumulatedReasoning += text;
+            callbacks.onReasoning?.(text);
+          },
+          onToolCall: () => {
+            // 强制结论阶段不应该有工具调用，忽略
+          },
+          onComplete: () => resolve(),
+          onError: (error) => {
+            console.error('[StateLoop] Forced conclusion error:', error);
+            resolve();
+          },
+        },
+        { signal: abortSignal }
+      );
+    });
+
+    // 记录最终响应
+    if (logger?.isEnabled()) {
+      logger.logLLMResponse({
+        metadata: { model, finishReason: 'forced_conclusion' },
+        content: accumulatedContent,
+        toolCalls: [],
+      });
+    }
+  }
+
   return {
     content: accumulatedContent,
     toolResults,
     iterations,
-    finishReason: 'max_iterations',
+    finishReason: iterations >= maxIterations ? 'max_iterations' : 'stop',
   };
 }

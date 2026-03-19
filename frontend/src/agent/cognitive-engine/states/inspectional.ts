@@ -16,8 +16,9 @@ import { PROMPT_S1_INSPECTIONAL, buildInspectionalUserMessage } from '../prompts
 import { runStateLoop } from './run-state-loop';
 
 // Schema for inspectional output
+// scopeNodeIds 允许空数组（表示全局搜索）
 const InspectionalOutputSchema = z.object({
-  scopeNodeIds: z.array(z.string()).min(1).max(5),
+  scopeNodeIds: z.array(z.string()).max(5),
   tocSummary: z.string(),
 });
 
@@ -63,8 +64,9 @@ export class InspectionalState extends StateNode {
       );
 
       // Parse the output with fallback
+      // 空数组表示全局搜索，后端会自动跳过 scope 过滤
       const defaultOutput = {
-        scopeNodeIds: ['root'],
+        scopeNodeIds: [] as string[],
         tocSummary: '无法解析目录范围，使用全局搜索。',
       };
 

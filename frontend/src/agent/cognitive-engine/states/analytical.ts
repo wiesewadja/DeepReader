@@ -11,11 +11,13 @@
 
 import { StateNode } from './base';
 import type { SharedContext } from '../types';
-import type { SearchResult } from '../types';
 import { buildAnalyticalSystemPrompt, buildAnalyticalUserMessage } from '../prompts/analytical-prompt';
 import { InspectionalState } from './inspectional';
 import { createScopeInterceptor } from '../interceptor/scope-interceptor';
 import { runStateLoop } from './run-state-loop';
+import type { StateLoopResult } from './run-state-loop';
+
+type ToolResult = StateLoopResult['toolResults'][number];
 
 /**
  * S2: Analytical Reading State
@@ -73,24 +75,11 @@ export class AnalyticalState extends StateNode {
       );
 
       // 5. Store results
-      ctx.analysisResult = response.content;
-      // Extract search results from tool calls
-      // Store as RawToolResult format (block_id, text, toolName)
-      ctx.rawResults = response.toolResults
-        .filter(tr => tr.toolName === 'search_doc')
-        .flatMap(tr => {
-          try {
-            const data = JSON.parse(tr.result);
-            // search_doc returns results with block_id
-            return (data.results || []).map((r: SearchResult) => ({
-            block_id: r.block_id || '',
-              text: r.text,
-              toolName: 'search_doc',
-            }));
-          } catch {
-            return [];
-          }
-        });
+      // 分析结果：如果没有最终输出，使用工具调用摘要
+      ctx.analysisResult = response.content || this.summarizeToolResults(response.toolResults);
+
+      // 提取关键信息给 Formatter（精简版，避免 token 膨胀）
+      ctx.rawResults = this.extractEssentialResults(response.toolResults);
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
@@ -106,5 +95,74 @@ export class AnalyticalState extends StateNode {
 
   buildSystemPrompt(ctx: SharedContext): string {
     return buildAnalyticalSystemPrompt(ctx.scopeNodeIds || []);
+  }
+
+  /**
+   * 当 LLM 未输出最终分析时，从工具结果中提取摘要
+   */
+  private summarizeToolResults(toolResults: ToolResult[]): string {
+    if (toolResults.length === 0) {
+      return '';
+    }
+
+    const summary = toolResults
+      .map(tr => `【${tr.toolName}】\n${tr.result.slice(0, 500)}...`)
+      .join('\n\n');
+
+    return `[工具调用摘要]\n${summary}`;
+  }
+
+  /**
+   * 提取关键信息给 Formatter（精简版，避免 token 膨胀）
+   *
+   * 策略：
+   * - get_toc: 只提取章节链接 [[...|...]]，不保留摘要
+   * - search_doc: 保留完整结果（已包含 block_id 链接）
+   * - get_chapter: 只提取前 1000 字符 + block_id
+   */
+  private extractEssentialResults(toolResults: ToolResult[]): Array<{ block_id: string; text: string; toolName: string }> {
+    return toolResults.map(tr => {
+      if (tr.toolName === 'get_toc') {
+        // 只提取 Obsidian 章节链接，丢弃大段摘要
+        const links = this.extractObsidianLinks(tr.result);
+        return {
+          block_id: '',
+          text: links.length > 0 ? `## 目录链接\n${links.join('\n')}` : '(目录已获取)',
+          toolName: tr.toolName,
+        };
+      }
+
+      if (tr.toolName === 'get_chapter') {
+        // 截断章节内容，保留关键部分
+        const truncated = tr.result.length > 1500
+          ? tr.result.slice(0, 1500) + '\n...[章节内容已截断]'
+          : tr.result;
+        return {
+          block_id: '',
+          text: truncated,
+          toolName: tr.toolName,
+        };
+      }
+
+      // search_doc 保持原样（已经包含 block_id 链接）
+      return {
+        block_id: '',
+        text: tr.result,
+        toolName: tr.toolName,
+      };
+    });
+  }
+
+  /**
+   * 从文本中提取 Obsidian 链接 [[...|...]]
+   */
+  private extractObsidianLinks(text: string): string[] {
+    const linkRegex = /\[\[([^\]]+)\|([^\]]+)\]\]/g;
+    const links: string[] = [];
+    let match;
+    while ((match = linkRegex.exec(text)) !== null) {
+      links.push(`[[${match[1]}|${match[2]}]]`);
+    }
+    return links;
   }
 }
