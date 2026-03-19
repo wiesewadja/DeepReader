@@ -7,13 +7,13 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 # Markdown 文件切分配置
 MARKDOWN_CHUNK_TARGET = 4000  # 目标字符数
-MARKDOWN_CHUNK_MAX = 6000     # 最大字符数（允许溢出以保持段落完整）
+MARKDOWN_CHUNK_MAX = 6000  # 最大字符数（允许溢出以保持段落完整）
 
 
 def _sanitize_filename(name: str, max_length: int = 100) -> str:
@@ -34,7 +34,9 @@ def _sanitize_filename(name: str, max_length: int = 100) -> str:
     return name[:max_length].strip(" -") if len(name) > max_length else name
 
 
-def _fetch_paragraphs_from_chroma(index_id: str, chroma_path: str) -> Dict[str, List[Dict[str, Any]]]:
+def _fetch_paragraphs_from_chroma(
+    index_id: str, chroma_path: str
+) -> Dict[str, List[Dict[str, Any]]]:
     """
     从 ChromaDB 获取段落信息，按 parent_node_id 分组
 
@@ -50,15 +52,16 @@ def _fetch_paragraphs_from_chroma(index_id: str, chroma_path: str) -> Dict[str, 
 
         # 获取所有段落数据
         results = collection.get(
-            where={"type": "paragraph"},
-            include=["metadatas", "documents"]
+            where={"type": "paragraph"}, include=["metadatas", "documents"]
         )
 
         # 按 parent_node_id 分组
         paragraphs_by_node: Dict[str, List[Dict[str, Any]]] = {}
 
         if results and results["metadatas"]:
-            for i, (doc, meta) in enumerate(zip(results["documents"], results["metadatas"])):
+            for i, (doc, meta) in enumerate(
+                zip(results["documents"], results["metadatas"])
+            ):
                 parent_node_id = meta.get("parent_node_id", "")
                 block_id = meta.get("block_id", "")
                 paragraph_index = meta.get("paragraph_index", 0)
@@ -71,19 +74,27 @@ def _fetch_paragraphs_from_chroma(index_id: str, chroma_path: str) -> Dict[str, 
                     paragraphs_by_node[parent_node_id] = []
 
                 # 避免重复添加同一个 block_id
-                existing = [p for p in paragraphs_by_node[parent_node_id] if p["block_id"] == block_id]
+                existing = [
+                    p
+                    for p in paragraphs_by_node[parent_node_id]
+                    if p["block_id"] == block_id
+                ]
                 if not existing:
-                    paragraphs_by_node[parent_node_id].append({
-                        "block_id": block_id,
-                        "paragraph_index": paragraph_index,
-                        "text": full_paragraph,
-                    })
+                    paragraphs_by_node[parent_node_id].append(
+                        {
+                            "block_id": block_id,
+                            "paragraph_index": paragraph_index,
+                            "text": full_paragraph,
+                        }
+                    )
 
         # 对每个节点内的段落按 paragraph_index 排序
         for node_id in paragraphs_by_node:
             paragraphs_by_node[node_id].sort(key=lambda x: x["paragraph_index"])
 
-        logger.info(f"[导出] 从 ChromaDB 获取到 {sum(len(v) for v in paragraphs_by_node.values())} 个段落，分布在 {len(paragraphs_by_node)} 个节点")
+        logger.info(
+            f"[导出] 从 ChromaDB 获取到 {sum(len(v) for v in paragraphs_by_node.values())} 个段落，分布在 {len(paragraphs_by_node)} 个节点"
+        )
         return paragraphs_by_node
 
     except Exception as e:
@@ -112,7 +123,7 @@ def _is_likely_heading(text: str) -> bool:
 
     # 检查末尾是否有标点符号
     # 常见的中文和英文标点
-    punctuation_chars = '。！？，、；：""''）】》…—·.,!?;:)\'">]}'
+    punctuation_chars = '。！？，、；：""' "）】》…—·.,!?;:)'\">]}"
 
     # 如果末尾是标点，不是标题
     if text[-1] in punctuation_chars:
@@ -127,7 +138,7 @@ def _strip_heading_prefix(text: str) -> str:
     """
     text = text.strip()
     # 移除开头的 # 符号和空格
-    while text.startswith('#'):
+    while text.startswith("#"):
         text = text[1:]
     return text.strip()
 
@@ -291,6 +302,7 @@ section: {section}
 page_range: {page_range}
 level: {metadata.get('level', 0)}
 part: {part_num}/{total_parts}
+total_parts: {total_parts}
 tags: [DeepPDF, {pdf_name}]
 ---
 
@@ -318,7 +330,26 @@ tags: [DeepPDF, {pdf_name}]
         if str(start_page).isdigit()
         else f"[[{pdf_name}]]"
     )
-    footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)\n"
+    footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)"
+
+    # 分片导航（仅多部分文件显示）
+    if total_parts > 1 and base_filename:
+        nav_parts = []
+        if part_num > 1:
+            # 上一部分：第一部分无后缀，其他部分带序号
+            prev_file = (
+                base_filename if part_num == 2 else f"{base_filename}-{part_num - 1}"
+            )
+            nav_parts.append(f"← 上一部分：[[{prev_file}]]")
+        if part_num < total_parts:
+            # 下一部分：总是带序号
+            next_file = f"{base_filename}-{part_num + 1}"
+            nav_parts.append(f"下一部分：[[{next_file}]] →")
+
+        nav = " | ".join(nav_parts)
+        footer += f"\n\n{nav}"
+
+    footer += "\n"
 
     return front_matter + header + processed_text + footer
 
@@ -351,7 +382,9 @@ def _create_markdown_content(
     if paragraphs:
         # 从 ChromaDB 段落重建文本（每个段落已有 block_id）
         processed_text = _build_text_from_paragraphs(paragraphs)
-        logger.debug(f"[导出] 节点 {node_id}: 从 ChromaDB 重建 {len(paragraphs)} 个段落")
+        logger.debug(
+            f"[导出] 节点 {node_id}: 从 ChromaDB 重建 {len(paragraphs)} 个段落"
+        )
     else:
         # 如果没有 ChromaDB 数据，使用 sections 中的摘要作为 fallback
         text = node.get("text", "")
@@ -504,8 +537,17 @@ def export_pdf_to_markdown(
                 relative_path = f"{output_folder}/{pdf_folder_name}/{filename}"
 
                 # 创建 Markdown 内容
+                # base_filename 用于导航链接（不带 .md 后缀）
+                base_filename = f"{idx:02d}-{safe_node_name}"
                 markdown_content = _create_markdown_content_partial(
-                    node, pdf_name, section, page_range, para_group, part_idx, total_parts
+                    node,
+                    pdf_name,
+                    section,
+                    page_range,
+                    para_group,
+                    part_idx,
+                    total_parts,
+                    base_filename=base_filename,
                 )
 
                 with open(file_path, "w", encoding="utf-8") as f:
