@@ -2,6 +2,7 @@
  * get_document_outline Tool - 获取文档大纲
  *
  * 对标 Linux tree/ls，用于检视阅读阶段了解书籍整体结构
+ * 返回 node_id 用于 scope 锁定
  */
 
 import type { ToolDefinition } from '../../types.js';
@@ -15,7 +16,14 @@ const GET_OUTLINE_DEFINITION: ToolDefinition = {
     name: 'get_document_outline',
     description: `【检视阅读】获取当前书籍的目录大纲。用于了解书籍整体结构、定位章节。
 - 无参数：返回完整层级树
-- max_depth: 限制层级深度（如 max_depth=2 只显示到 H2）`,
+- max_depth: 限制层级深度（如 max_depth=2 只显示到 H2）
+
+【输出字段】
+- node_id: 章节唯一标识（用于 scope 锁定）
+- heading: 章节标题
+- level: 层级深度
+- summary: 章节摘要（如有）
+- link: Obsidian 双链格式`,
     parameters: {
       type: 'object',
       properties: {
@@ -55,7 +63,7 @@ export const getDocumentOutlineTool: ToolExecutor = {
       }
 
       // 构建大纲树
-      const outline = buildOutlineTree(files, app, maxDepth);
+      const outline = buildOutlineTree(files, app, pdfName, maxDepth);
 
       return JSON.stringify({
         status: 'SUCCESS',
@@ -79,6 +87,7 @@ export const getDocumentOutlineTool: ToolExecutor = {
 function buildOutlineTree(
   files: any[],
   app: any,
+  bookName: string,
   maxDepth?: number
 ): OutlineNode[] {
   const nodes: OutlineNode[] = [];
@@ -93,15 +102,21 @@ function buildOutlineTree(
     // 根据深度过滤
     if (maxDepth && path.length > maxDepth) continue;
 
+    const heading = path[path.length - 1] || extractHeadingFromPath(file.path);
+
     nodes.push({
-      heading: path[path.length - 1] || extractHeadingFromPath(file.path),
+      node_id: metadata.node_id,
+      heading: heading,
+      level: metadata.level || path.length,
       line: 1,
       summary: metadata.summary,
+      link: `[[${file.path}|${heading}]]`,
       children: []
     });
   }
 
-  // TODO: 构建层级树（按 section 路径嵌套）
-  // 当前版本返回扁平列表，后续迭代优化
+  // 按 node_id 排序
+  nodes.sort((a, b) => a.node_id.localeCompare(b.node_id));
+
   return nodes;
 }

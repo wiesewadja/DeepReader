@@ -37,23 +37,27 @@ export interface ChapterMetadata {
  * 搜索命中结果
  */
 export interface SearchHit {
+  node_id: string;         // 章节 ID（用于 scope 锁定）
   location: {
-    heading: string;
-    path: string[];
-    file_path: string;
+    heading: string;       // 最内层标题
+    path: string[];        // 标题路径（层级）
+    file_path: string;     // 文件路径
   };
-  line_number: number;
-  snippet: string;
-  block_id: string;
+  line_number: number;     // 段落行号
+  snippet: string;         // 内容摘要
+  block_id: string;        // 块引用 ID（带 ^ 前缀）
 }
 
 /**
  * 大纲节点
  */
 export interface OutlineNode {
-  heading: string;
+  node_id: string;        // 章节 ID（用于 scope 锁定）
+  heading: string;        // 章节标题
+  level: number;          // 层级深度
   line: number;
   summary?: string;
   block_id?: string;
+  link?: string;          // Obsidian 双链格式 [[path|display]]
   children?: OutlineNode[];
 }
