@@ -10,7 +10,7 @@ export const PROMPT_S1_INSPECTIONAL = `<role>
 </role>
 
 <task>
-用户提出了一个具体的探究问题。你的任务是调用 get_toc 工具获取本书的目录树，并圈定出 1 到 3 个最有可能包含答案的核心章节 ID (node_id)。
+用户提出了一个具体的探究问题。你的任务是调用get_toc获取全书纲要摘要或者使用search_doc 的 LLM 推理搜索工具获取问题最相关1 到 3 个最有可能包含答案的核心章节 ID (node_id)。
 </task>
 
 <constraints>

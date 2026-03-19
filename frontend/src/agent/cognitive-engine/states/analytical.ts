@@ -50,7 +50,7 @@ export class AnalyticalState extends StateNode {
         // Fallback to placeholder for testing
         ctx.analysisResult = 'MECE stands for Mutually Exclusive, Collectively Exhaustive. [^block_123]';
         ctx.rawResults = [
-          { node_id: 'node_c1', block_id: 'block_123', text: 'MECE definition...', score: 0.95 },
+          { block_id: 'block_123', text: 'MECE definition...', toolName: 'search_doc' },
         ];
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
@@ -75,16 +75,17 @@ export class AnalyticalState extends StateNode {
       // 5. Store results
       ctx.analysisResult = response.content;
       // Extract search results from tool calls
+      // Store as RawToolResult format (block_id, text, toolName)
       ctx.rawResults = response.toolResults
         .filter(tr => tr.toolName === 'search_doc')
         .flatMap(tr => {
           try {
             const data = JSON.parse(tr.result);
+            // search_doc returns results with block_id
             return (data.results || []).map((r: SearchResult) => ({
-              node_id: r.node_id,
-              block_id: r.block_id,
+              block_id: r.block_id || '',
               text: r.text,
-              score: r.score,
+              toolName: 'search_doc',
             }));
           } catch {
             return [];

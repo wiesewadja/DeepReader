@@ -37,6 +37,16 @@ export interface SearchResult {
 }
 
 /**
+ * Raw tool result for formatter
+ * Extended to support TOC results (which don't have block_id)
+ */
+export interface RawToolResult {
+  block_id?: string;
+  text: string;
+  toolName?: string;
+}
+
+/**
  * Shared context passed between all states
  */
 export interface SharedContext {
@@ -59,8 +69,8 @@ export interface SharedContext {
   tocSummary?: string;
 
   // ===== S2 Output =====
-  /** Raw search results with block_id */
-  rawResults?: SearchResult[];
+  /** Raw search results with block_id (from search_doc) or tool results (from get_toc) */
+  rawResults?: RawToolResult[];
   /** Analysis conclusion */
   analysisResult?: string;
 

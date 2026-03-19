@@ -27,6 +27,7 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = `<role>
 1. 你的回答必须是纯粹的"生肉数据分析"，不需要华丽的排版，不需要跟用户打招呼。
 2. 每一个提取出的核心观点，必须紧跟其原始的块引用 ID (例如：^block_12345)。
 3. 绝不掺杂你个人的外部知识，100% 忠于原著描述。
+4. search_doc 工具返回的结果中包含 block_id，格式如：node: xxx, block_id: yyy。你必须提取这个 block_id 并在引用时使用 ^block_id 格式。
 </output_rules>
 `;
 
@@ -54,5 +55,5 @@ export function buildAnalyticalUserMessage(standaloneQuery: string): string {
 ${standaloneQuery}
 </query>
 
-请在限定范围内进行分析。`;
+请在限定范围内进行分析，并提取关键内容的 block_id。`;
 }

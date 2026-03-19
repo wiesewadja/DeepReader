@@ -27,7 +27,7 @@ const InspectionalOutputSchema = z.object({
 export class InspectionalState extends StateNode {
   readonly name = 'Inspectional';
   readonly model = 'fast' as const;
-  readonly tools = ['get_toc']; // Only get_toc!
+  readonly tools = ['get_toc','search_doc']; // Only get_toc!
 
   constructor() {
     super();
@@ -76,6 +76,16 @@ export class InspectionalState extends StateNode {
         // Use fallback on parse error
         ctx.scopeNodeIds = defaultOutput.scopeNodeIds;
         ctx.tocSummary = defaultOutput.tocSummary;
+      }
+
+      // Store tool results for Formatter (contains Obsidian links)
+      // For depth=1 (inspectional reading), these are the primary data source
+      if (response.toolResults.length > 0) {
+        ctx.rawResults = response.toolResults.map(tr => ({
+          block_id: '',  // TOC results don't have block_id
+          text: tr.result,
+          toolName: tr.toolName,
+        }));
       }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
