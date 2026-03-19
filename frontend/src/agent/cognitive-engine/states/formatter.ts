@@ -79,12 +79,12 @@ export class FormatterState extends StateNode {
       );
 
       // The content is already streamed via callbacks
-      // Store final content for history
-      const finalContent = response.content;
+      // Store final content to ctx.analysisResult for saveSession
+      if (response.content) {
+        ctx.analysisResult = response.content;
+      }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
-
-      return finalContent ? undefined : undefined;
     } catch (error) {
       ctx.markStateExecuted(
         this.name,
