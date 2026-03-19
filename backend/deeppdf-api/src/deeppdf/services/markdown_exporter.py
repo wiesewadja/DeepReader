@@ -239,6 +239,7 @@ def _create_markdown_content_partial(
     paragraphs: List[Dict[str, Any]],
     part_num: int,
     total_parts: int,
+    base_filename: str = "",  # 新增：用于生成导航链接
 ) -> str:
     """
     创建 Markdown 文件内容（分片版本）
@@ -251,6 +252,7 @@ def _create_markdown_content_partial(
         paragraphs: 该分片的段落信息
         part_num: 分片序号（从 1 开始）
         total_parts: 总分片数
+        base_filename: 基础文件名（不含 .md 后缀），用于生成导航链接
     """
     node_id = node.get("id", "")
     metadata = node.get("metadata", {})
@@ -294,16 +296,21 @@ tags: [DeepPDF, {pdf_name}]
 
 """
 
-    # 标题（分片时添加序号）
+    # 标题
+    title = f"# {section}\n\n"
+
+    # 分片指示（仅分片文件显示）
+    part_indicator = ""
     if total_parts > 1:
-        title = f"# {section} ({part_num}/{total_parts})\n\n"
-    else:
-        title = f"# {section}\n\n"
+        part_indicator = f"> 📖 第 {part_num}/{total_parts} 部分\n\n"
 
     # 摘要（仅第一部分）
     summary_block = ""
     if summary and summary.strip():
         summary_block = f"> [!summary] 章节摘要\n> {summary.strip().replace(chr(10), chr(10) + '> ')}\n\n"
+
+    # 组装头部：标题 + 分片指示 + 摘要
+    header = title + part_indicator + summary_block
 
     # 页脚
     footer_link = (
@@ -313,7 +320,7 @@ tags: [DeepPDF, {pdf_name}]
     )
     footer = f"\n\n---\n**来源**: {footer_link} (第 {page_range} 页)\n"
 
-    return front_matter + title + summary_block + processed_text + footer
+    return front_matter + header + processed_text + footer
 
 
 def _create_markdown_content(
@@ -485,8 +492,10 @@ def export_pdf_to_markdown(
             node_block_mapping = {}
 
             for part_idx, para_group in enumerate(paragraph_groups, start=1):
-                # 构建文件名
+                # 构建文件名：第一部分不带序号，后续部分从 2 开始
                 if total_parts == 1:
+                    filename = f"{idx:02d}-{safe_node_name}.md"
+                elif part_idx == 1:
                     filename = f"{idx:02d}-{safe_node_name}.md"
                 else:
                     filename = f"{idx:02d}-{safe_node_name}-{part_idx}.md"
