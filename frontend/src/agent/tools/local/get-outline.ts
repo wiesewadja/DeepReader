@@ -83,6 +83,7 @@ export const getDocumentOutlineTool: ToolExecutor = {
 
 /**
  * 构建大纲树
+ * 去重：同一 node_id 的多个 part 文件只保留一个节点
  */
 function buildOutlineTree(
   files: any[],
@@ -90,7 +91,7 @@ function buildOutlineTree(
   bookName: string,
   maxDepth?: number
 ): OutlineNode[] {
-  const nodes: OutlineNode[] = [];
+  const nodeMap = new Map<string, OutlineNode>();
 
   for (const file of files) {
     const cache = app.metadataCache.getFileCache(file);
@@ -103,19 +104,24 @@ function buildOutlineTree(
     if (maxDepth && path.length > maxDepth) continue;
 
     const heading = path[path.length - 1] || extractHeadingFromPath(file.path);
+    const nodeId = metadata.node_id;
 
-    nodes.push({
-      node_id: metadata.node_id,
-      heading: heading,
-      level: metadata.level || path.length,
-      line: 1,
-      summary: metadata.summary,
-      link: `[[${file.path}|${heading}]]`,
-      children: []
-    });
+    // 去重：同一 node_id 只保留第一个（通常是 part 1）
+    if (!nodeMap.has(nodeId)) {
+      nodeMap.set(nodeId, {
+        node_id: nodeId,
+        heading: heading,
+        level: metadata.level || path.length,
+        line: 1,
+        summary: metadata.summary,
+        link: `[[${file.path}|${heading}]]`,
+        children: []
+      });
+    }
   }
 
   // 按 node_id 排序
+  const nodes = Array.from(nodeMap.values());
   nodes.sort((a, b) => a.node_id.localeCompare(b.node_id));
 
   return nodes;
