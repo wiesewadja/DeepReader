@@ -21,8 +21,8 @@ DeepReader enables users to:
 | **Backend** | Python 3.10+, FastAPI | PDF indexing, vector search, LLM orchestration |
 | **Vector Database** | ChromaDB | Semantic vector storage with bge-small-zh-v1.5 embeddings |
 | **PDF Processing** | PyMuPDF, pypdf, pageindex-lib | Chapter structure extraction, text extraction |
-| **LLM Providers** | DeepSeek, OpenAI, custom (OpenAI-compatible API) |摘要生成、智能问答 |
-| **包管理** | uv (backend), npm (frontend) | Dependency management |
+| **LLM Providers** | DeepSeek, OpenAI, custom (OpenAI-compatible API) | Summary generation, intelligent Q&A |
+| **Package Management** | uv (backend), npm (frontend) | Dependency management |
 
 ## Architecture
 
@@ -57,14 +57,58 @@ DeepReader enables users to:
 │  │  - chroma_store.py: ChromaDB wrapper                       │  │
 │  │  - embeddings.py: bge-small-zh-v1.5 configuration          │  │
 │  └───────────────────────────────────────────────────────────┘  │
-│                               ▼                                 │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Agent Layer (deeppdf/agent/)                              │  │
-│  │  - core.py: ReAct Agent with Tool-Calling                  │  │
-│  │  - tools.py: Search, PageRead, CrossBook tools             │  │
-│  │  - executor.py: Tool execution orchestration               │  │
-│  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
+```
+
+## Agent System
+
+### Cognitive Engine (State Machine)
+
+The frontend implements a state machine based on Adler's "How to Read a Book" methodology:
+
+```
+┌─────────┐    ┌──────────────┐    ┌─────────────┐    ┌───────────┐
+│  S0     │    │     S1       │    │     S2      │    │    S4     │
+│ Router  │───▶│ Inspectional │───▶│ Analytical  │───▶│ Formatter │
+│         │    │              │    │             │    │           │
+│ Intent  │    │ Scope Lock   │    │ Deep Read   │    │ Output    │
+│ Detect  │    │ (get_toc)    │    │ (search_doc)│    │ Format    │
+└─────────┘    └──────────────┘    └─────────────┘    └───────────┘
+```
+
+| State | Purpose | Tools | Model |
+|-------|---------|-------|-------|
+| **S0 Router** | Intent detection, depth assessment | None | fast |
+| **S1 Inspectional** | Lock chapter scope (1-3 chapters) | `get_toc` | fast |
+| **S2 Analytical** | Deep content analysis within scope | `search_doc`, `get_chapter` | main |
+| **S3 Syntopical** | Cross-book synthesis (deferred) | `search_read_books` | main |
+| **S4 Formatter** | Format output with citations | None | fast |
+
+### Agent Tools
+
+| Tool | Purpose | Parameters |
+|------|---------|------------|
+| `search_doc` | Semantic + keyword search in indexed PDF | `query`, `index_id`, `scopeNodeIds?`, `top_k?` |
+| `get_toc` | Get table of contents with summaries | `index_id` |
+| `get_chapter` | Get full chapter content | `index_id`, `node_id` |
+| `analyze_chapter` | Combined term + argument analysis | `index_id`, `node_id`, `query` |
+| `search_read_books` | Cross-book search across all indexed docs | `query`, `top_k?` |
+| `write_note` | Write content to Obsidian note | `path`, `content`, `mode?` |
+| `add_memory` | Add memory entry | `content`, `tags?` |
+| `search_memory` | Search memory entries | `query`, `limit?` |
+| `update_profile` | Update user profile | `updates` |
+| `create_sub_agent` | Create sub-agent for complex tasks | `task`, `tools` |
+| `check_sub_agent` | Check sub-agent status | `task_id` |
+| `canvas` | Create Obsidian Canvas file | `nodes`, `edges` |
+| `excalidraw` | Create Excalidraw diagram | `elements` |
+
+### Tool Interceptor
+
+The `scope-interceptor` physically locks search scope to prevent LLM from accessing chapters outside the locked scope:
+
+```typescript
+// When scopeNodeIds is empty, no scope filtering is applied (global search)
+export function createScopeInterceptor(scopeNodeIds: string[]): ToolInterceptor
 ```
 
 ## Key Directories
@@ -73,15 +117,14 @@ DeepReader enables users to:
 
 ```
 ├── api/
-│   ├── routes.py              # FastAPI endpoints (POST /api/index, /api/query, etc.)
+│   ├── routes.py              # FastAPI endpoints
 │   ├── models.py              # Pydantic request/response models
-│   ├── export_models.py       # Markdown export data models
-│   ├── export_handlers.py     # Export API logic
-│   ├── config_routes.py       # Configuration management endpoints
-│   ├── file_routes.py         # File upload and management endpoints
+│   ├── export_handlers.py     # Markdown export API logic
+│   ├── config_routes.py       # Configuration management
+│   ├── file_routes.py         # File upload and management
 │   └── reading_routes.py      # Reading session endpoints
 ├── services/
-│   ├── indexer.py             # PDF/EPUB indexing (CPU-bound → ThreadPoolExecutor)
+│   ├── indexer.py             # PDF/EPUB indexing
 │   ├── querier.py             # Search with hybrid/LLM tree search
 │   ├── manager.py             # Index listing/deletion
 │   ├── chat_storage.py        # Session storage
@@ -89,39 +132,26 @@ DeepReader enables users to:
 ├── storage/
 │   ├── chroma_store.py        # ChromaDB wrapper
 │   └── embeddings.py          # Embedding model config
-├── agent/
-│   ├── core.py                # DeepPDFAgent ReAct implementation
-│   ├── tools.py               # Tool definitions (HybridSearch, PageRead, etc.)
-│   ├── executor.py            # Tool execution orchestration
-│   ├── prompt_builder.py      # Prompt engineering
-│   └── prompts.py             # System prompts and routing logic
-├── knowledge_graph/           # Knowledge graph integration
-├── ocr/                       # DeepSeek OCR integration for image-based PDFs
-├── utils/                     # Utility functions
-├── main.py                    # FastAPI app entry point
-└── config.py                  # Global configuration (Settings class)
+└── main.py                    # FastAPI app entry point
 ```
 
-### `/frontend/src/`
+### `/frontend/src/agent/`
 
 ```
-├── main.ts                    # Plugin entry point, command registration
-├── api/
-│   ├── http-client.ts         # HTTP client for backend communication
-│   └── server-manager.ts      # Backend server management
-├── views/
-│   └── sidebar-view.ts        # Chat interface sidebar
-├── ui/
-│   ├── index-manager-modal.ts # Index management UI
-│   ├── chat-input.ts          # Chat input component
-│   ├── message.ts             # Message display
-│   ├── message-list.ts        # Chat history
-│   └── ...                    # Other UI components
-├── components/                # Reusable React-style components
-├── services/                  # Business logic services
-├── types/                     # TypeScript type definitions
-├── utils/                     # Utility functions
-└── styles/                    # CSS styles
+├── cognitive-engine/          # State machine implementation
+│   ├── states/                # State nodes (Router, Inspectional, etc.)
+│   ├── prompts/               # System prompts for each state
+│   ├── interceptor/           # Tool interceptors
+│   └── integration/           # Backend adapters
+├── tools/                     # Tool implementations
+│   ├── search-doc.ts          # Semantic search
+│   ├── get-toc.ts             # TOC retrieval
+│   ├── get-chapter.ts         # Chapter content
+│   └── ...                    # Other tools
+├── router/                    # Intent routing
+├── memory/                    # Memory management
+├── session/                   # Chat session storage
+└── debug/                     # Debug logging
 ```
 
 ## Building and Running
@@ -174,32 +204,26 @@ npm run test:ui          # Vitest UI
 
 ### Backend Logging
 
-后端使用滚轮型日志，用于问题排查：
+Backend uses rotating log files for troubleshooting:
 
-| 配置项 | 值 |
-|-------|-----|
-| 日志文件 | `backend/logs/deeppdf.log` |
-| 最大大小 | 100MB |
-| 备份数量 | 5 个 |
-| 时间格式 | 本地时间 `YYYY-MM-DD HH:MM:SS` |
+| Config | Value |
+|--------|-------|
+| Log file | `backend/logs/deeppdf.log` |
+| Max size | 100MB |
+| Backup count | 5 |
+| Time format | Local time `YYYY-MM-DD HH:MM:SS` |
 
-**排查命令：**
+**Troubleshooting commands:**
 ```bash
-# 查看最新日志
+# View latest logs
 tail -100 backend/logs/deeppdf.log
 
-# 实时监控
+# Real-time monitoring
 tail -f backend/logs/deeppdf.log
 
-# 搜索错误
+# Search errors
 grep -i "error\|exception\|failed" backend/logs/deeppdf.log
 ```
-
-**常见日志关键词：**
-- `[索引]` - PDF 索引相关
-- `[查询]` - 搜索查询相关
-- `[BM25]` - BM25 索引/检索相关
-- `[智能检索]` - 混合搜索相关
 
 ### Code Quality Tools
 
@@ -298,28 +322,6 @@ MAX_CONCURRENT_REQUESTS=10
 LLM_CONCURRENT_LIMIT=3
 ```
 
-**Configuration file**: `deeppdf/config.py` uses `pydantic-settings` with `ConfigDict(extra="ignore")` to ignore unknown variables.
-
-### API Design Patterns
-
-**Error Responses**: Always return structured responses with status field:
-```python
-# Success
-return QueryResponse(status="success", results=[...])
-
-# Error
-return QueryResponse(status="error", results=None, error="description")
-```
-
-**Rate Limiting**: Implemented per IP address in `routes.py` via `RateLimiter` class.
-
-**Task-based Operations**: Long-running operations (indexing) return immediately with task_id:
-```
-POST /api/index → Returns task_id
-GET /api/indexes/{task_id} → Query status
-DELETE /api/indexes/{task_id} → Cancel task
-```
-
 ## Key Workflows
 
 ### Indexing Flow
@@ -334,154 +336,14 @@ User uploads PDF
   → Metadata saved to storage/indexes/{index_id}.json
 ```
 
-### Query Flow (Basic Search)
+### Query Flow (Agent)
 
 ```
 User query 
-  → Query embedding (bge-small-zh-v1.5)
-  → ChromaDB hybrid search (vector + keyword)
-  → Return top-K similar nodes with metadata
-  → Format response with citations
-```
-
-### Query Flow (Agent/LLM Tree Search)
-
-```
-User query 
-  → Agent routing decision (fast/section/slow/auto)
-  → HybridSearchTool: Retrieve top-20 candidates
-  → LLMInferenceTool: Re-rank and extract relevant sections
-  → MarkdownLocatorTool: Find exact page locations
-  → Format answer with citations and jump links
-```
-
-### Agent Tools
-
-| Tool | Purpose | Use Case |
-|------|---------|----------|
-| `HybridSearchTool` | Fast vector + keyword search | Simple factual queries |
-| `LLMInferenceTool` | Two-stage reranking with LLM | Complex reasoning, cross-chapter |
-| `MarkdownLocatorTool` | Find exact page ranges | Citation accuracy |
-| `PageReadTool` | Read specific PDF pages | Detailed content extraction |
-| `CrossBookSearchTool` | Search across multiple indexes | Knowledge graph queries |
-
-### Data Flow: PDF → Vector Database
-
-1. **PageIndex Layer**: `pageindex.py` extracts text, identifies structure, generates summaries
-2. **Indexer Layer**: `_extract_nodes_from_tree()` builds node structures with:
-   - `text`: `"【Section Title】\n{summary}"` (for embedding)
-   - `metadata.original_text`: Original PDF text (for export)
-   - `metadata.summary`: LLM-generated summary
-3. **Storage Layer**: ChromaDB embeds the `text` field using `bge-small-zh-v1.5`
-4. **Persistence**: Full metadata saved to `storage/indexes/{index_id}.json`
-
-**Design principle**: Use summary for vectorization (better semantic results), preserve original text for exports.
-
-## Testing
-
-### Backend Tests
-
-Location: `backend/deeppdf-api/tests/`
-
-```bash
-# Run all tests
-uv run pytest tests/ -v
-
-# Run specific test file
-uv run pytest tests/test_api.py -v
-
-# Run with coverage
-uv run pytest tests/ --cov=deeppdf --cov-report=html
-```
-
-Test files include:
-- `test_api.py`: Endpoint integration tests
-- `test_agent_tools.py`: Agent tool logic
-- `test_llm_tree_search_tool.py`: Two-stage search
-- `test_cross_book_search.py`: Multi-index queries
-- `integration/test_*`: End-to-end tests
-
-### Frontend Tests
-
-Location: `frontend/tests/` and `frontend/src/**/__tests__/*.test.ts`
-
-```bash
-# Run tests in CI mode
-npm run test:run
-
-# Run with UI
-npm run test:ui
-```
-
-## Deployment
-
-### Frontend to Obsidian
-
-```bash
-cd frontend
-npm run build
-cp main.js manifest.json styles.css /path/to/obsidian/vault/.obsidian/plugins/deeppdf/
-```
-
-In Obsidian:
-1. Settings → Plugins → Enable "DeepReader"
-2. Settings → DeepReader → Configure API port (default: 6088)
-
-### Troubleshooting
-
-| Issue | Root Cause | Solution |
-|-------|------------|----------|
-| `ValueError: Can't patch loop of type uvloop` | Missing `--loop asyncio` | Use `uv run uvicorn ... --loop asyncio` |
-| Pydantic `Extra inputs not permitted` | Unknown env variables | Add `extra="ignore"` or remove from `.env` |
-| TypeScript type errors | Missing Obsidian types | Install `@types/obsidian` or use `// @ts-ignore` |
-| Plugin can't connect to backend | Port mismatch or backend down | Check `apiPort` setting, verify backend running |
-
-### Debugging
-
-**Backend**: Use Python logging
-```python
-logger = logging.getLogger(__name__)
-logger.info("message")
-logger.debug("detailed info")
-```
-
-**Frontend**: Use Obsidian Developer Tools
-- Mac: `Cmd+Option+I`
-- Windows/Linux: `Ctrl+Shift+I`
-
-Access plugin instance:
-```javascript
-app.plugins.plugins['deeppdf']
-```
-
-## Configuration Reference
-
-### Default Settings (Frontend)
-
-```typescript
-{
-  apiPort: 6088,
-  maxResults: 5,
-  llmProvider: "deepseek",
-  llmModel: "deepseek-chat",
-  maxPagesPerNode: 10,
-  maxTokensPerNode: 20000,
-  ifAddNodeSummary: true,
-  forceMode: "auto",  // auto | fast | section | slow
-}
-```
-
-### Default Settings (Backend)
-
-```python
-# deeppdf/config.py
-settings.cpu_workers = 2
-settings.max_concurrent_requests = 10
-settings.llm_concurrent_limit = 3
-settings.pdf_index_toc_check_pages = 20
-settings.pdf_index_max_pages_per_node = 10
-settings.pdf_index_max_tokens_per_node = 20000
-settings.base_dir = Path("backend/data")  # ChromaDB storage
+  → S0 Router: Detect intent, assess depth
+  → S1 Inspectional: Lock scope (1-3 chapters)
+  → S2 Analytical: Deep analysis within scope
+  → S4 Formatter: Format output with citations
 ```
 
 ## API Documentation
@@ -493,11 +355,9 @@ Once backend is running, visit:
 Key endpoints:
 - `POST /api/index` - Create PDF index
 - `POST /api/query` - Search PDF
-- `POST /api/agent/query` - Agent-powered Q&A
 - `GET /api/indexes` - List all indexes
 - `GET /api/export/{index_id}` - Export Markdown data
 - `POST /api/session` - Create chat session
-- `POST /api/cross-book-search` - Multi-index search
 
 ## Important Notes for AI Assistants
 
@@ -507,37 +367,20 @@ Key endpoints:
 
 3. **Loop Type**: Backend **must** use `--loop asyncio` with uvicorn, not uvloop.
 
-4. **Data Flow**: The separation of `text` (for embedding) vs `original_text` (for export) is critical - don't mix them up.
+4. **Scope Interceptor**: Empty `scopeNodeIds` array means global search (no scope filtering).
 
-5. **Agent Routing**: The `forceMode` setting in frontend controls agent behavior:
-   - `auto`: Automatically choose tool based on query
-   - `fast`: Only fast retrieval (HybridSearch)
-   - `section`: HybridSearch + PageRead
-   - `slow`: Full agent with all tools
+5. **Agent Routing**: The state machine routes queries based on Adler's reading methodology.
 
 6. **Rate Limiting**: Backend implements per-IP rate limiting for indexing (20 requests per 10 minutes).
 
-7. **LLM Provider**: Supports DeepSeek, OpenAI, and custom OpenAI-compatible APIs. API key can be configured per-request or via environment.
+7. **LLM Provider**: Supports DeepSeek, OpenAI, and custom OpenAI-compatible APIs.
 
-8. **Testing**: Always run tests after code changes. Backend tests use pytest + pytest-asyncio; frontend uses Vitest.
+8. **Testing**: Always run tests after code changes. Backend uses pytest + pytest-asyncio; frontend uses Vitest.
 
 9. **Code Quality**: Run `ruff check` and `black` on Python; ensure TypeScript compiles before committing.
 
-10. **Cross-Booking Search**: The agent supports searching across multiple PDF indexes simultaneously for knowledge graph queries.
-
-## Related Documentation
-
-- `README.md` - User-facing documentation (Chinese)
-- `USER_GUIDE.md` - User workflow guide
-- `CLAUDE.md` - Claude-specific context
-- `gemini.md` - Gemini-specific context
-- `WARP.md` - WARP-specific context
-- `backend/docs/` - Architecture and analysis documents
-- `backend/docs/llm-tree-search-guide.md` - Agent search guide
-- `frontend/README.md` - Frontend development guide
-
 ---
 
-**Version**: v1.0.0  
-**Last Updated**: 2026-01-28  
+**Version**: v0.9.1  
+**Last Updated**: 2026-03-19  
 **Status**: Production-ready
