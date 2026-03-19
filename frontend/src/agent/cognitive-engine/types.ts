@@ -85,6 +85,8 @@ export interface SharedContext {
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
+  /** 全书摘要（LLM 生成的文档描述，帮助 S1 更好地判断意图） */
+  docDescription?: string;
 
   // ===== Engine Dependencies =====
   /** LLM client for API calls */

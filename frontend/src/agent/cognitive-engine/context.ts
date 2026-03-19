@@ -17,6 +17,8 @@ export function createSharedContext(params: {
   chatHistory?: ChatMessage[];
   markdownFiles?: Record<string, string>;
   abortSignal?: AbortSignal;
+  /** 全书摘要（帮助 S1 更好地判断意图） */
+  docDescription?: string;
   // Engine dependencies
   llmClient?: LLMClient;
   toolRegistry?: ToolRegistry;
@@ -29,6 +31,7 @@ export function createSharedContext(params: {
     params.chatHistory || [],
     params.markdownFiles,
     params.abortSignal,
+    params.docDescription,
     params.llmClient,
     params.toolRegistry,
     params.toolContext
@@ -65,6 +68,8 @@ export class SharedContextImpl implements SharedContext {
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
+  /** 全书摘要（帮助 S1 更好地判断意图） */
+  docDescription?: string;
 
   // Engine Dependencies
   llmClient?: LLMClient;
@@ -82,6 +87,7 @@ export class SharedContextImpl implements SharedContext {
     chatHistory: ChatMessage[],
     markdownFiles?: Record<string, string>,
     abortSignal?: AbortSignal,
+    docDescription?: string,
     llmClient?: LLMClient,
     toolRegistry?: ToolRegistry,
     toolContext?: ToolContext
@@ -92,6 +98,7 @@ export class SharedContextImpl implements SharedContext {
     this.chatHistory = chatHistory;
     this.markdownFiles = markdownFiles;
     this.abortSignal = abortSignal;
+    this.docDescription = docDescription;
     this.llmClient = llmClient;
     this.toolRegistry = toolRegistry;
     this.toolContext = toolContext;

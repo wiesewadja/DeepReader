@@ -113,11 +113,6 @@ export async function runStateLoop(
 
   const logger = getDebugLogger();
 
-  // 记录系统提示词
-  if (logger?.isEnabled()) {
-    logger.logSystemPrompt(systemPrompt);
-  }
-
   // 构建工具定义（只包含允许的工具）
   const toolDefinitions: ToolDefinition[] = [];
   for (const toolName of availableTools) {
@@ -133,8 +128,9 @@ export async function runStateLoop(
     { role: 'user', content: userMessage },
   ];
 
-  // 记录消息列表
+  // 向后兼容：记录系统提示词和消息列表
   if (logger?.isEnabled()) {
+    logger.logSystemPrompt(systemPrompt);
     logger.logMessages(messages);
   }
 
@@ -160,7 +156,19 @@ export async function runStateLoop(
     let finishReason: 'stop' | 'tool_calls' | null = null;
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
-    // 记录 LLM 请求
+    // 新版日志：开始 LLM 交互
+    if (logger?.isEnabled()) {
+      logger.startLLMInteraction({
+        model: llmClient.getModel(),
+        modelType: model,
+        systemPrompt,
+        userMessage,
+        toolCount: toolDefinitions.length,
+        messageCount: messages.length,
+      });
+    }
+
+    // 向后兼容：记录 LLM 请求
     if (logger?.isEnabled()) {
       logger.logLLMRequest({
         url: 'stream',
@@ -208,7 +216,21 @@ export async function runStateLoop(
 
     const llmDuration = Date.now() - llmStartTime;
 
-    // 记录 LLM 响应
+    // 新版日志：结束 LLM 交互
+    if (logger?.isEnabled()) {
+      logger.endLLMInteraction({
+        finishReason: finishReason || 'stop',
+        content: accumulatedContent,
+        toolCallRequests: toolCalls.map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: JSON.parse(tc.arguments || '{}'),
+        })),
+        ttfb: llmDuration,
+      });
+    }
+
+    // 向后兼容：记录 LLM 响应
     if (logger?.isEnabled()) {
       logger.logLLMResponse({
         metadata: {
@@ -256,12 +278,20 @@ export async function runStateLoop(
         args = {};
       }
 
+      // 保存原始参数
+      const originalArgs = { ...args };
+
       // 应用工具拦截器
+      let interceptorNote: string | undefined;
       if (toolInterceptor) {
-        args = toolInterceptor(tc.name, args);
+        const interceptedArgs = toolInterceptor(tc.name, args);
+        if (JSON.stringify(interceptedArgs) !== JSON.stringify(originalArgs)) {
+          interceptorNote = `scopeNodeIds 注入`;
+        }
+        args = interceptedArgs;
       }
 
-      // 记录工具调用开始
+      // 向后兼容：记录工具调用开始
       if (logger?.isEnabled()) {
         logger.logToolStart(tc.id, tc.name, args);
       }
@@ -275,6 +305,17 @@ export async function runStateLoop(
         });
         if (logger?.isEnabled()) {
           logger.logToolError(tc.id, args._error as string, 0);
+          // 新版日志
+          logger.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args,
+            interceptorNote,
+            status: 'error',
+            error: args._error as string,
+            duration: 0,
+          });
         }
         continue;
       }
@@ -301,9 +342,20 @@ export async function runStateLoop(
           content: result,
         });
 
-        // 记录工具调用结果
+        // 向后兼容：记录工具调用结果
         if (logger?.isEnabled()) {
           logger.logToolResult(tc.id, result, toolExecDuration);
+          // 新版日志
+          logger.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args !== originalArgs ? args : undefined,
+            interceptorNote,
+            status: 'success',
+            result,
+            duration: toolExecDuration,
+          });
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -315,9 +367,18 @@ export async function runStateLoop(
           content: `Error: ${errorMsg}`,
         });
 
-        // 记录工具调用错误
+        // 向后兼容：记录工具调用错误
         if (logger?.isEnabled()) {
           logger.logToolError(tc.id, errorMsg, toolExecDuration);
+          // 新版日志
+          logger.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            status: 'error',
+            error: errorMsg,
+            duration: toolExecDuration,
+          });
         }
       }
     }

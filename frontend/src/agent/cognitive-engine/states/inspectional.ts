@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { StateNode } from './base';
 import type { SharedContext } from '../types';
 import { parseStateOutput } from '../parse';
-import { PROMPT_S1_INSPECTIONAL, buildInspectionalUserMessage } from '../prompts/inspectional-prompt';
+import { PROMPT_S1_INSPECTIONAL, buildInspectionalUserMessage, buildInspectionalSystemPrompt } from '../prompts/inspectional-prompt';
 import { runStateLoop } from './run-state-loop';
 
 // Schema for inspectional output
@@ -102,7 +102,7 @@ export class InspectionalState extends StateNode {
     }
   }
 
-  buildSystemPrompt(_ctx: SharedContext): string {
-    return PROMPT_S1_INSPECTIONAL;
+  buildSystemPrompt(ctx: SharedContext): string {
+    return buildInspectionalSystemPrompt(ctx.docDescription);
   }
 }
