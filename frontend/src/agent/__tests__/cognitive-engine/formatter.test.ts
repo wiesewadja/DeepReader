@@ -37,8 +37,35 @@ describe('FormatterState', () => {
 
     expect(prompt).toContain('奚童');
     expect(prompt).toContain('双链');
-    // The prompt uses template syntax {{book_name}}
-    expect(prompt).toContain('{{book_name}}#^block_id');
+    // The prompt uses syntax [[{书名}/{文件基本名}#{block_id}|...]]
+    expect(prompt).toContain('block_id');
+  });
+
+  it('should include memory context in system prompt when available', () => {
+    // 设置长期记忆
+    ctx.memoryContext = `## 长期记忆
+
+## 用户画像
+- 昭先生是一位热爱阅读的知识工作者
+- 对结构化思维方法感兴趣
+
+## 阅读偏好
+- 喜欢简洁、有逻辑的回答`;
+
+    const prompt = formatterState.buildSystemPrompt(ctx);
+
+    // 提示词应包含记忆上下文
+    expect(prompt).toContain('<memory>');
+    expect(prompt).toContain('昭先生是一位热爱阅读');
+  });
+
+  it('should not include memory section when memoryContext is empty', () => {
+    ctx.memoryContext = undefined;
+
+    const prompt = formatterState.buildSystemPrompt(ctx);
+
+    // 提示词不应包含 memory 标签
+    expect(prompt).not.toContain('<memory>');
   });
 
   it('should truncate chat history to MAX_HISTORY_MESSAGES', () => {

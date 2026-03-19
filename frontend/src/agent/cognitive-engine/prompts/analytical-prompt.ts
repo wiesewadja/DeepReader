@@ -84,9 +84,12 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 </keyword_strategy>
 
 <output_rules>
-1. 你的输出必须是纯粹的"生肉数据分析"，只向 S4 排版官提供逻辑骨架。
-2. 【核心铁律】：每一个提取出的核心观点或原话，必须紧跟其 block_id（格式：^block_id）。
-3. 绝不掺杂个人的外部知识，100% 忠于原著描述。
+1. 输出"逻辑骨架"：定义、主旨、论述结构。
+2. **双链铁律**：每个核心观点必须用 Obsidian 链接标注来源：
+   - 格式：\`[[书名/文件名#^block_id|融入语境的文本]]\`
+   - file_path="DeepReader/书名/文件.md" → 提取"书名/文件"
+   - 链接紧贴前文（无空格），显示文本独特（不重复）
+3. 绝不掺杂个人知识，100% 忠于原著。
 </output_rules>
 `;
 }
@@ -118,5 +121,5 @@ export function buildAnalyticalUserMessage(standaloneQuery: string): string {
 ${standaloneQuery}
 </query>
 
-请在限定范围内进行分析，并提取关键内容的 block_id。`;
+请在限定范围内进行分析，输出逻辑骨架。每个核心观点必须附带 \`[[书名/文件名#^block_id|文本]]\` 格式的链接。`;
 }

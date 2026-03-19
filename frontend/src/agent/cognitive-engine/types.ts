@@ -39,16 +39,6 @@ export interface SearchResult {
 }
 
 /**
- * Raw tool result for formatter
- * Extended to support TOC results (which don't have block_id)
- */
-export interface RawToolResult {
-  block_id?: string;
-  text: string;
-  toolName?: string;
-}
-
-/**
  * Shared context passed between all states
  */
 export interface SharedContext {
@@ -71,9 +61,7 @@ export interface SharedContext {
   tocSummary?: string;
 
   // ===== S2 Output =====
-  /** Raw search results with block_id (from search_markdown_text) or tool results (from get_document_outline) */
-  rawResults?: RawToolResult[];
-  /** Analysis conclusion */
+  /** Analysis conclusion (may S2 Analytical) */
   analysisResult?: string;
 
   // ===== S3 Output (deferred) =====
@@ -87,6 +75,8 @@ export interface SharedContext {
   markdownFiles?: Record<string, string>;
   /** 全书摘要（LLM 生成的文档描述，帮助 S1 更好地判断意图） */
   docDescription?: string;
+  /** 长期记忆上下文（来自 MEMORY.md，用于 S4 个性化输出） */
+  memoryContext?: string;
 
   // ===== Engine Dependencies =====
   /** LLM client for API calls */

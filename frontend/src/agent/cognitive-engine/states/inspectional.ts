@@ -2,18 +2,24 @@
  * S1: Inspectional Reading State
  *
  * Responsibilities:
- * - Get document outline and lock chapter scope
- * - Only has get_document_outline tool (physically deprived of search_markdown_text)
+ * - Get document outline directly (code-level call, not LLM tool call)
+ * - Format tree structure into system prompt
+ * - LLM directly reasons and outputs scopeNodeIds
  *
- * Key constraint: Does NOT see chat history, only uses standaloneQuery
+ * Key improvement: Reduces 2 LLM calls to 1 by embedding tree in prompt
  */
 
 import { z } from 'zod';
 import { StateNode } from './base';
 import type { SharedContext } from '../types';
 import { parseStateOutput } from '../parse';
-import { PROMPT_S1_INSPECTIONAL, buildInspectionalUserMessage, buildInspectionalSystemPrompt } from '../prompts/inspectional-prompt';
-import { runStateLoop } from './run-state-loop';
+import {
+  formatTreeStructure,
+  buildInspectionalSystemPrompt,
+  buildInspectionalUserMessage,
+} from '../prompts/inspectional-prompt';
+import type { OutlineNode } from '../../tools/local/types';
+import { getDebugLogger } from '../../debug/index.js';
 
 // Schema for inspectional output
 // scopeNodeIds 允许空数组（表示全局搜索）
@@ -24,12 +30,27 @@ const InspectionalOutputSchema = z.object({
 });
 
 /**
+ * Parse outline JSON from get_document_outline result
+ */
+function parseOutlineResult(result: string): OutlineNode[] {
+  try {
+    const parsed = JSON.parse(result);
+    if (parsed.status === 'SUCCESS' && Array.isArray(parsed.outline)) {
+      return parsed.outline as OutlineNode[];
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return [];
+}
+
+/**
  * S1: Inspectional Reading State
  */
 export class InspectionalState extends StateNode {
   readonly name = 'Inspectional';
   readonly model = 'fast' as const;
-  readonly tools = ['get_document_outline']; // Only get_document_outline!
+  readonly tools: string[] = []; // No tools needed - tree is embedded in prompt
 
   constructor() {
     super();
@@ -38,6 +59,7 @@ export class InspectionalState extends StateNode {
 
   async execute(ctx: SharedContext): Promise<void> {
     const startTime = Date.now();
+    const logger = getDebugLogger();
 
     try {
       // Check if engine dependencies are available
@@ -49,22 +71,76 @@ export class InspectionalState extends StateNode {
         return;
       }
 
-      // Use runStateLoop for actual LLM calls
-      const response = await runStateLoop(
-        ctx.llmClient,
-        ctx.toolRegistry,
-        ctx.toolContext,
-        {
-          model: this.model,
-          systemPrompt: this.buildSystemPrompt(ctx),
-          userMessage: buildInspectionalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
-          availableTools: this.tools,
-          maxIterations: 3,
-          abortSignal: ctx.abortSignal,
-        }
+      // Step 1: Get document outline directly (code-level call)
+      const outlineStartTime = Date.now();
+      const outlineResult = await this.getOutline(ctx);
+      const outlineNodes = parseOutlineResult(outlineResult);
+
+      // Log tool call for outline
+      if (logger?.isEnabled()) {
+        logger.logToolCall({
+          callId: 'get_outline_direct',
+          toolName: 'get_document_outline',
+          originalArgs: {},
+          status: 'success',
+          result: outlineResult,
+          duration: Date.now() - outlineStartTime,
+        });
+      }
+
+      if (outlineNodes.length === 0) {
+        // No outline available, fallback to global search
+        ctx.scopeNodeIds = [];
+        ctx.tocSummary = '无法获取目录结构，使用全局搜索。';
+        ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+        return;
+      }
+
+      // Step 2: Format tree structure for prompt
+      const treeText = formatTreeStructure(outlineNodes);
+
+      // Step 3: Build system prompt with embedded tree
+      const systemPrompt = buildInspectionalSystemPrompt(
+        treeText,
+        ctx.pdfName,
+        ctx.docDescription
+      );
+      const userMessage = buildInspectionalUserMessage(
+        ctx.standaloneQuery || ctx.rawUserQuery
       );
 
-      // Parse the output with fallback
+      // Log LLM interaction
+      if (logger?.isEnabled()) {
+        logger.startLLMInteraction({
+          model: ctx.llmClient.getModel(),
+          modelType: this.model,
+          systemPrompt,
+          userMessage,
+          toolCount: 0,
+          messageCount: 2,
+        });
+      }
+
+      // Step 4: Call LLM directly (no tools needed)
+      const llmStartTime = Date.now();
+      const response = await ctx.llmClient.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        [] // No tools
+      );
+      const llmDuration = Date.now() - llmStartTime;
+
+      // Log LLM response
+      if (logger?.isEnabled()) {
+        logger.endLLMInteraction({
+          finishReason: 'stop',
+          content: response.content,
+        });
+      }
+
+      // Step 5: Parse the output with fallback
       // 空数组表示全局搜索，后端会自动跳过 scope 过滤
       const defaultOutput = {
         scopeNodeIds: [] as string[],
@@ -81,17 +157,7 @@ export class InspectionalState extends StateNode {
         ctx.tocSummary = defaultOutput.tocSummary;
       }
 
-      // Store tool results for Formatter (contains Obsidian links)
-      // For depth=1 (inspectional reading), these are the primary data source
-      if (response.toolResults.length > 0) {
-        ctx.rawResults = response.toolResults.map(tr => ({
-          block_id: '',  // TOC results don't have block_id
-          text: tr.result,
-          toolName: tr.toolName,
-        }));
-      }
-
-      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
+      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
     } catch (error) {
       ctx.markStateExecuted(
         this.name,
@@ -103,7 +169,25 @@ export class InspectionalState extends StateNode {
     }
   }
 
+  /**
+   * Get document outline by calling get_document_outline tool directly
+   */
+  private async getOutline(ctx: SharedContext): Promise<string> {
+    const executor = ctx.toolRegistry!.get('get_document_outline');
+    if (!executor) {
+      throw new Error('get_document_outline tool not found in registry');
+    }
+
+    return await executor.execute({}, ctx.toolContext!);
+  }
+
   buildSystemPrompt(ctx: SharedContext): string {
-    return buildInspectionalSystemPrompt(ctx.docDescription);
+    // This method is kept for backward compatibility
+    // The actual prompt is built in execute() with the tree embedded
+    return buildInspectionalSystemPrompt(
+      '(目录将在执行时获取)',
+      ctx.pdfName,
+      ctx.docDescription
+    );
   }
 }

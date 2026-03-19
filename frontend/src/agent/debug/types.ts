@@ -135,6 +135,8 @@ export interface StateOutputLog {
   standaloneQuery?: string;
   /** 锁定的章节范围 */
   scopeNodeIds?: string[];
+  /** 锁定的章节标题（用于显示） */
+  scopeNodeTitles?: string[];
   /** 目录摘要 */
   tocSummary?: string;
   /** 分析结果 */
@@ -191,8 +193,8 @@ export interface LLMRequestDetail {
   model: string;
   /** 模型类型 */
   modelType: 'fast' | 'main';
-  /** 系统提示词（摘要） */
-  systemPromptPreview: string;
+  /** 系统提示词（完整） */
+  systemPrompt: string;
   /** 系统提示词长度 */
   systemPromptLength: number;
   /** 用户消息 */

@@ -326,7 +326,7 @@ export class DebugLogger {
       request: {
         model: request.model,
         modelType: request.modelType,
-        systemPromptPreview: request.systemPrompt.slice(0, 200) + '...',
+        systemPrompt: request.systemPrompt,
         systemPromptLength: request.systemPrompt.length,
         userMessage: request.userMessage,
         toolCount: request.toolCount,
@@ -341,6 +341,8 @@ export class DebugLogger {
     };
 
     console.log(`[DebugLogger]    🤖 LLM 调用 #${this.currentLLMInteraction.index} (${request.modelType})`);
+    console.log(`[DebugLogger]       系统提示词: ${request.systemPrompt.length} 字符`);
+    console.log(`[DebugLogger]       用户消息: ${request.userMessage.length} 字符`);
   }
 
   /**
@@ -690,7 +692,57 @@ export class DebugLogger {
     md += `> **书籍**: ${log.bookName || '-'}\n`;
     md += `> **问题**: ${log.userQuery}\n\n`;
 
-    // 状态流转图
+    // ===== 快速摘要 =====
+    md += `---\n\n`;
+    md += `## 🎯 快速摘要\n\n`;
+
+    // 提取关键决策
+    const routerState = log.stateExecutions.find(s => s.stateName === 'Router');
+    const inspectionalState = log.stateExecutions.find(s => s.stateName === 'Inspectional');
+    const analyticalState = log.stateExecutions.find(s => s.stateName === 'Analytical');
+    const formatterState = log.stateExecutions.find(s => s.stateName === 'Formatter');
+
+    md += `| 阶段 | 决策 |\n`;
+    md += `|------|------|\n`;
+
+    if (routerState) {
+      md += `| 🔍 路由 | 深度 ${routerState.output.depth ?? '-'} |\n`;
+    }
+
+    if (inspectionalState) {
+      const scopeCount = inspectionalState.output.scopeNodeIds?.length || 0;
+      const scopeText = scopeCount > 0 ? `锁定 ${scopeCount} 个章节` : '全局搜索';
+      md += `| 📖 检视 | ${scopeText} |\n`;
+    }
+
+    if (analyticalState) {
+      const searchCount = analyticalState.toolCalls.filter(t => t.toolName === 'search_markdown_text').length;
+      const totalHits = analyticalState.toolCalls
+        .filter(t => t.toolName === 'search_markdown_text')
+        .reduce((sum, t) => sum + (t.parsedResult?.hits || 0), 0);
+      md += `| 🔬 分析 | ${searchCount} 次搜索 → ${totalHits} 条结果 |\n`;
+    }
+
+    if (formatterState) {
+      const outputLen = formatterState.output.content?.length || formatterState.output.analysisResult?.length || 0;
+      const hasMemory = formatterState.llmInteractions[0]?.request.systemPrompt?.includes('<memory_context>');
+      md += `| 📝 格式化 | ${outputLen} 字符${hasMemory ? ' | 用户画像 ✅' : ''} |\n`;
+    }
+
+    md += `\n`;
+
+    // ===== 时间分布 =====
+    md += `**总耗时**: ${(log.stats.totalDuration / 1000).toFixed(1)}s\n\n`;
+    md += `\`\`\`\n`;
+    for (const state of log.stateExecutions) {
+      const emoji = this.getStateEmoji(state.stateName);
+      const duration = (state.duration / 1000).toFixed(1);
+      const bar = '█'.repeat(Math.round(state.duration / log.stats.totalDuration * 20));
+      md += `${emoji} ${state.stateName.padEnd(12)} ${bar} ${duration}s\n`;
+    }
+    md += `\`\`\`\n\n`;
+
+    // ===== 状态流转图 =====
     md += `---\n\n`;
     md += `## 📊 状态流转\n\n`;
     md += `\`\`\`\n`;
@@ -767,118 +819,225 @@ export class DebugLogger {
     md += `# ${emoji} ${state.stateName}\n\n`;
     md += `> **迭代**: ${state.iteration} | **耗时**: ${duration}s\n\n`;
 
-    // 输入
+    // ===== 决策摘要（关键信息一目了然） =====
     md += `---\n\n`;
-    md += `## 📥 输入\n\n`;
-    md += `| 字段 | 值 |\n`;
-    md += `|------|-----|\n`;
-    if (state.input.query) {
-      md += `| 查询 | ${state.input.query} |\n`;
-    }
-    md += `| 历史消息 | ${state.input.historyCount} 条 |\n`;
-    if (state.input.availableTools.length > 0) {
-      md += `| 可用工具 | ${state.input.availableTools.join(', ')} |\n`;
-    }
-    if (state.input.scopeNodeIds && state.input.scopeNodeIds.length > 0) {
-      md += `| 范围锁定 | ${state.input.scopeNodeIds.slice(0, 5).join(', ')}${state.input.scopeNodeIds.length > 5 ? '...' : ''} |\n`;
+    md += `## 🎯 决策摘要\n\n`;
+
+    // 根据状态类型显示不同的摘要信息
+    if (state.stateName === 'Router') {
+      md += `| 决策 | 值 |\n`;
+      md += `|------|-----|\n`;
+      md += `| 阅读深度 | ${state.output.depth ?? '-'} |\n`;
+      md += `| 独立查询 | ${state.output.standaloneQuery || state.input.query || '-'} |\n`;
+      if (state.llmInteractions.length > 0 && state.llmInteractions[0].response.content) {
+        const content = state.llmInteractions[0].response.content;
+        // 尝试提取 reason
+        const reasonMatch = content.match(/"reason"\s*:\s*"([^"]+)"/);
+        if (reasonMatch) {
+          md += `| 分类理由 | ${reasonMatch[1]} |\n`;
+        }
+      }
+    } else if (state.stateName === 'Inspectional') {
+      md += `| 决策 | 值 |\n`;
+      md += `|------|-----|\n`;
+      if (state.output.scopeNodeIds && state.output.scopeNodeIds.length > 0) {
+        md += `| 锁定章节 | ${state.output.scopeNodeIds.length} 个 |\n`;
+        if (state.output.scopeNodeTitles && state.output.scopeNodeTitles.length > 0) {
+          md += `| 章节列表 | ${state.output.scopeNodeTitles.slice(0, 5).join('、')}${state.output.scopeNodeTitles.length > 5 ? '...' : ''} |\n`;
+        } else {
+          md += `| 章节 ID | ${state.output.scopeNodeIds.slice(0, 5).join(', ')} |\n`;
+        }
+      } else {
+        md += `| 锁定章节 | 全局搜索 |\n`;
+      }
+      if (state.output.tocSummary) {
+        const summary = state.output.tocSummary.length > 200
+          ? state.output.tocSummary.slice(0, 200) + '...'
+          : state.output.tocSummary;
+        md += `| 搜索建议 | ${summary} |\n`;
+      }
+    } else if (state.stateName === 'Analytical') {
+      md += `| 决策 | 值 |\n`;
+      md += `|------|-----|\n`;
+      md += `| LLM 调用 | ${state.stats.llmCallCount} 次 |\n`;
+      md += `| 工具调用 | ${state.stats.toolCallCount} 次 |\n`;
+      // 统计搜索关键词
+      const searchTools = state.toolCalls.filter(t => t.toolName === 'search_markdown_text');
+      if (searchTools.length > 0) {
+        const keywords = searchTools.map(t => t.originalArgs?.query || t.originalArgs?.keyword).filter(Boolean);
+        if (keywords.length > 0) {
+          md += `| 搜索关键词 | ${[...new Set(keywords)].slice(0, 5).join('、')} |\n`;
+        }
+        const totalHits = searchTools.reduce((sum, t) => sum + (t.parsedResult?.hits || 0), 0);
+        md += `| 搜索结果 | ${totalHits} 条 |\n`;
+      }
+    } else if (state.stateName === 'Formatter') {
+      md += `| 决策 | 值 |\n`;
+      md += `|------|-----|\n`;
+      md += `| 输出长度 | ${state.output.content?.length || state.output.analysisResult?.length || 0} 字符 |\n`;
+      // 检查是否有 memory_context
+      if (state.llmInteractions.length > 0 && state.llmInteractions[0].request.systemPrompt) {
+        const hasMemory = state.llmInteractions[0].request.systemPrompt.includes('<memory_context>');
+        md += `| 用户画像 | ${hasMemory ? '✅ 已注入' : '❌ 无'} |\n`;
+      }
     }
     md += `\n`;
 
-    // 输出
-    md += `---\n\n`;
-    md += `## 📤 输出\n\n`;
-    md += `| 字段 | 值 |\n`;
-    md += `|------|-----|\n`;
-    if (state.output.depth !== undefined) {
-      md += `| 阅读深度 | ${state.output.depth} |\n`;
+    // ===== 时间分布 =====
+    if (state.stats.llmCallCount > 0 || state.stats.toolCallCount > 0) {
+      md += `**时间分布**: `;
+      const parts: string[] = [];
+      if (state.stats.llmDuration > 0) {
+        parts.push(`LLM ${(state.stats.llmDuration / 1000).toFixed(1)}s`);
+      }
+      if (state.stats.toolDuration > 0) {
+        parts.push(`工具 ${(state.stats.toolDuration / 1000).toFixed(1)}s`);
+      }
+      const otherDuration = state.duration - state.stats.llmDuration - state.stats.toolDuration;
+      if (otherDuration > 100) {
+        parts.push(`其他 ${(otherDuration / 1000).toFixed(1)}s`);
+      }
+      md += parts.join(' | ') + '\n\n';
     }
-    if (state.output.standaloneQuery) {
-      md += `| 独立查询 | ${state.output.standaloneQuery} |\n`;
-    }
-    if (state.output.scopeNodeIds && state.output.scopeNodeIds.length > 0) {
-      md += `| 锁定范围 | ${state.output.scopeNodeIds.slice(0, 5).join(', ')} |\n`;
-    }
-    md += `| 完成原因 | ${state.output.finishReason} |\n`;
-    md += `\n`;
 
-    // LLM 交互
+    // ===== 工具调用摘要 =====
+    if (state.toolCalls.length > 0) {
+      md += `**工具调用**:\n`;
+      for (const tool of state.toolCalls) {
+        const status = tool.status === 'success' ? '✅' : '❌';
+        let summary = `${status} \`${tool.toolName}\``;
+        if (tool.parsedResult?.hits) {
+          summary += ` → ${tool.parsedResult.hits} 条结果`;
+        }
+        if (tool.interceptorNote) {
+          summary += ` [拦截: ${tool.interceptorNote}]`;
+        }
+        md += `- ${summary}\n`;
+      }
+      md += `\n`;
+    }
+
+    // ===== 迭代时间线 =====
+    if (state.llmInteractions.length > 1) {
+      md += `**迭代时间线**:\n`;
+      md += `\`\`\`\n`;
+      let toolIndex = 0;
+      for (const llm of state.llmInteractions) {
+        const time = (llm.duration / 1000).toFixed(1);
+        if (llm.response.finishReason === 'tool_calls') {
+          const tools = llm.response.toolCallRequests.map(t => t.name);
+          for (const toolName of tools) {
+            const tool = state.toolCalls[toolIndex];
+            const toolTime = tool ? (tool.duration / 1000).toFixed(2) : '0';
+            let result = '';
+            if (tool?.parsedResult) {
+              if (tool.parsedResult.status === 'ERROR_TOO_BROAD') {
+                result = ` → ⚠️ 太泛`;
+              } else if (tool.parsedResult.status === 'ERROR_NOT_FOUND') {
+                result = ` → ❌ 未找到`;
+              } else if (tool.parsedResult.hits) {
+                result = ` → ${tool.parsedResult.hits} 条`;
+              }
+            }
+            if (tool?.status === 'error') {
+              result += ' ❌';
+            }
+            md += `  │  LLM(${time}s) → ${toolName}(${toolTime}s)${result}\n`;
+            toolIndex++;
+          }
+        } else {
+          md += `  └─ LLM(${time}s) → 输出完成\n`;
+        }
+      }
+      md += `\`\`\`\n\n`;
+    }
+
+    // ===== 详细信息（折叠） =====
+    md += `---\n\n`;
+    md += `## 📋 详细信息\n\n`;
+
+    // LLM 交互（简化版）
     if (state.llmInteractions.length > 0) {
-      md += `---\n\n`;
-      md += `## 🤖 LLM 交互 (${state.llmInteractions.length} 次)\n\n`;
+      md += `### 🤖 LLM 调用 (${state.llmInteractions.length} 次)\n\n`;
+
+      // 迭代流程图
+      md += `**迭代流程**:\n`;
+      md += `\`\`\`\n`;
+      for (let i = 0; i < state.llmInteractions.length; i++) {
+        const llm = state.llmInteractions[i];
+        const tools = llm.response.toolCallRequests.map(t => t.name).join(', ');
+        if (llm.response.finishReason === 'tool_calls') {
+          md += `#${llm.index} LLM → [${tools || '工具'}] → `;
+        } else {
+          md += `#${llm.index} LLM → 输出 (${(llm.duration / 1000).toFixed(1)}s)\n`;
+        }
+      }
+      md += `\`\`\`\n\n`;
 
       for (const llm of state.llmInteractions) {
-        md += `### 调用 #${llm.index}\n\n`;
-        md += `| 指标 | 值 |\n`;
-        md += `|------|-----|\n`;
-        md += `| 模型 | ${llm.request.modelType} (${llm.request.model}) |\n`;
-        md += `| 耗时 | ${(llm.duration / 1000).toFixed(1)}s |\n`;
-        if (llm.response.ttfb) {
-          md += `| TTFB | ${llm.response.ttfb}ms |\n`;
+        md += `<details>\n`;
+        const tools = llm.response.toolCallRequests.map(t => t.name).join(', ');
+        const summaryLabel = llm.response.finishReason === 'tool_calls'
+          ? `调用工具: ${tools}`
+          : `输出完成`;
+        md += `<summary>调用 #${llm.index}: ${llm.request.modelType} | ${(llm.duration / 1000).toFixed(1)}s | ${summaryLabel}</summary>\n\n`;
+
+        // 系统提示词
+        if (llm.request.systemPrompt) {
+          md += `**系统提示词** (${llm.request.systemPromptLength} 字符):\n`;
+          md += `\`\`\`\n${llm.request.systemPrompt}\n\`\`\`\n\n`;
         }
-        if (llm.response.inputTokens && llm.response.outputTokens) {
-          md += `| Token | ${llm.response.inputTokens} + ${llm.response.outputTokens} |\n`;
+
+        // 用户消息
+        if (llm.request.userMessage) {
+          md += `**用户消息**:\n`;
+          md += `\`\`\`\n${llm.request.userMessage}\n\`\`\`\n\n`;
         }
-        md += `| 完成原因 | ${llm.response.finishReason} |\n`;
-        md += `\n`;
 
         // 工具调用请求
         if (llm.response.toolCallRequests.length > 0) {
-          md += `**工具请求**:\n`;
-          for (const tc of llm.response.toolCallRequests) {
-            md += `- \`${tc.name}\`\n`;
-          }
-          md += `\n`;
+          md += `**工具请求**: ${llm.response.toolCallRequests.map(t => t.name).join(', ')}\n\n`;
         }
 
-        // 输出内容（截断）
+        // 输出内容
         if (llm.response.content) {
-          const content = llm.response.content.length > 500
-            ? llm.response.content.slice(0, 500) + '...'
+          const content = llm.response.content.length > 1000
+            ? llm.response.content.slice(0, 1000) + '\n...[已截断]'
             : llm.response.content;
-          md += `**输出**:\n\`\`\`\n${content}\n\`\`\`\n\n`;
+          md += `**输出**:\n\`\`\`\n${content}\n\`\`\`\n`;
         }
+
+        md += `\n</details>\n\n`;
       }
     }
 
-    // 工具调用
+    // 工具调用详情
     if (state.toolCalls.length > 0) {
-      md += `---\n\n`;
-      md += `## 🛠️ 工具调用 (${state.toolCalls.length} 次)\n\n`;
+      md += `### 🛠️ 工具调用详情\n\n`;
 
       for (const tool of state.toolCalls) {
-        const status = tool.status === 'success' ? '✅' : '❌';
-        md += `### ${status} ${tool.toolName}\n\n`;
-        md += `> 耗时: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
+        md += `<details>\n`;
+        md += `<summary>${tool.status === 'success' ? '✅' : '❌'} ${tool.toolName} (${(tool.duration / 1000).toFixed(2)}s)</summary>\n\n`;
 
-        // 参数
         md += `**参数**:\n\`\`\`json\n${JSON.stringify(tool.originalArgs, null, 2)}\n\`\`\`\n\n`;
 
-        // 拦截器
         if (tool.interceptedArgs && tool.interceptorNote) {
-          md += `**拦截器**: ${tool.interceptorNote}\n\n`;
+          md += `**拦截器**: ${tool.interceptorNote}\n`;
+          md += `**修改后参数**:\n\`\`\`json\n${JSON.stringify(tool.interceptedArgs, null, 2)}\n\`\`\`\n\n`;
         }
 
-        // 结果
         if (tool.error) {
-          md += `**错误**: ${tool.error}\n\n`;
+          md += `**错误**: ${tool.error}\n`;
         } else if (tool.result) {
-          const result = tool.result.length > 1000
-            ? tool.result.slice(0, 1000) + '\n...[已截断]'
+          const result = tool.result.length > 2000
+            ? tool.result.slice(0, 2000) + '\n...[已截断]'
             : tool.result;
-          md += `**结果**:\n\`\`\`json\n${result}\n\`\`\`\n\n`;
+          md += `**结果**:\n\`\`\`json\n${result}\n\`\`\`\n`;
         }
+
+        md += `\n</details>\n\n`;
       }
     }
-
-    // 统计
-    md += `---\n\n`;
-    md += `## 📊 统计\n\n`;
-    md += `| 指标 | 值 |\n`;
-    md += `|------|-----|\n`;
-    md += `| LLM 调用 | ${state.stats.llmCallCount} 次 |\n`;
-    md += `| LLM 耗时 | ${(state.stats.llmDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具调用 | ${state.stats.toolCallCount} 次 |\n`;
-    md += `| 工具耗时 | ${(state.stats.toolDuration / 1000).toFixed(1)}s |\n`;
 
     return md;
   }

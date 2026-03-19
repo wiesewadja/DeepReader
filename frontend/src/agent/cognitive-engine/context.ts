@@ -19,6 +19,8 @@ export function createSharedContext(params: {
   abortSignal?: AbortSignal;
   /** 全书摘要（帮助 S1 更好地判断意图） */
   docDescription?: string;
+  /** 长期记忆上下文（用于 S4 个性化输出） */
+  memoryContext?: string;
   // Engine dependencies
   llmClient?: LLMClient;
   toolRegistry?: ToolRegistry;
@@ -32,6 +34,7 @@ export function createSharedContext(params: {
     params.markdownFiles,
     params.abortSignal,
     params.docDescription,
+    params.memoryContext,
     params.llmClient,
     params.toolRegistry,
     params.toolContext
@@ -56,7 +59,6 @@ export class SharedContextImpl implements SharedContext {
   tocSummary?: string;
 
   // S2 output
-  rawResults?: SearchResult[];
   analysisResult?: string;
 
   // S3 output (deferred)
@@ -70,6 +72,8 @@ export class SharedContextImpl implements SharedContext {
   markdownFiles?: Record<string, string>;
   /** 全书摘要（帮助 S1 更好地判断意图） */
   docDescription?: string;
+  /** 长期记忆上下文（用于 S4 个性化输出） */
+  memoryContext?: string;
 
   // Engine Dependencies
   llmClient?: LLMClient;
@@ -88,6 +92,7 @@ export class SharedContextImpl implements SharedContext {
     markdownFiles?: Record<string, string>,
     abortSignal?: AbortSignal,
     docDescription?: string,
+    memoryContext?: string,
     llmClient?: LLMClient,
     toolRegistry?: ToolRegistry,
     toolContext?: ToolContext
@@ -99,6 +104,7 @@ export class SharedContextImpl implements SharedContext {
     this.markdownFiles = markdownFiles;
     this.abortSignal = abortSignal;
     this.docDescription = docDescription;
+    this.memoryContext = memoryContext;
     this.llmClient = llmClient;
     this.toolRegistry = toolRegistry;
     this.toolContext = toolContext;

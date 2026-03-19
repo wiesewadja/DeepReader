@@ -243,6 +243,9 @@ ${currentMemory}
       onError: callbacks.onError || (() => {}),
     };
 
+    // 读取长期记忆上下文（用于 S4 个性化输出）
+    const memoryContext = await this.memoryStore.getMemoryContext();
+
     // 创建 SharedContext
     const ctx = createSharedContext({
       indexId: context.indexId || '',
@@ -252,6 +255,7 @@ ${currentMemory}
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
       docDescription: context.docDescription,  // 全书摘要
+      memoryContext,  // 长期记忆
       // 传递引擎依赖
       llmClient: this.llmClient,
       toolRegistry: toolRegistry,
@@ -288,6 +292,9 @@ ${currentMemory}
     // 提取纯净历史（只有 user 和 assistant 消息）
     const cleanHistory = history.filter(m => m.role === 'user' || m.role === 'assistant');
 
+    // 读取长期记忆上下文（用于 S4 个性化输出）
+    const memoryContext = await this.memoryStore.getMemoryContext();
+
     // 创建 SharedContext
     const ctx = createSharedContext({
       indexId: context.indexId || '',
@@ -297,6 +304,7 @@ ${currentMemory}
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
       docDescription: context.docDescription,  // 全书摘要
+      memoryContext,  // 长期记忆
       // 传递引擎依赖
       llmClient: this.llmClient,
       toolRegistry: toolRegistry,

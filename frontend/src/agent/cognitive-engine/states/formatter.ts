@@ -11,7 +11,7 @@
 
 import { StateNode } from './base';
 import type { SharedContext, EngineCallbacks } from '../types';
-import { PROMPT_S4_FORMATTER, buildFormatterUserMessage, MAX_HISTORY_MESSAGES } from '../prompts/formatter-prompt';
+import { PROMPT_S4_FORMATTER, buildFormatterUserMessage, buildFormatterSystemPrompt, MAX_HISTORY_MESSAGES } from '../prompts/formatter-prompt';
 import { runStateLoop } from './run-state-loop';
 
 export { MAX_HISTORY_MESSAGES };
@@ -59,10 +59,9 @@ export class FormatterState extends StateNode {
           userMessage: buildFormatterUserMessage(
             ctx.standaloneQuery || ctx.rawUserQuery,
             ctx.analysisResult || '',
-            ctx.rawResults,
             ctx.pdfName,
-            recentHistory,  // Pass history for context continuity
-            ctx.tocSummary  // Pass tocSummary for depth=1 cases
+            recentHistory,
+            ctx.tocSummary
           ),
           availableTools: [],
           maxIterations: 1,
@@ -96,7 +95,7 @@ export class FormatterState extends StateNode {
     }
   }
 
-  buildSystemPrompt(_ctx: SharedContext): string {
-    return PROMPT_S4_FORMATTER;
+  buildSystemPrompt(ctx: SharedContext): string {
+    return buildFormatterSystemPrompt(ctx.memoryContext);
   }
 }
