@@ -13,12 +13,17 @@ const READ_SECTION_DEFINITION: ToolDefinition = {
   function: {
     name: 'read_markdown_section',
     description: `【分析阅读】读取指定章节的完整内容。用于精读某个小节。
+- node_id: 章节 ID（推荐，如 "0004"）
 - heading: 标题名称（包含匹配，如 "MECE" 可匹配 "### MECE 原则"）
 - block_id: 块引用 ID（如 "^ch2-p1"，自动定位到包含该块的章节）
-二选一，优先 heading。`,
+优先级: node_id > heading > block_id`,
     parameters: {
       type: 'object',
       properties: {
+        node_id: {
+          type: 'string',
+          description: '章节 ID（推荐，如 "0004"）'
+        },
         heading: {
           type: 'string',
           description: '标题名称（包含匹配）'
@@ -38,6 +43,7 @@ export const readMarkdownSectionTool: ToolExecutor = {
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const { app, pdfName } = context;
+    const nodeId = args.node_id as string | undefined;
     const heading = args.heading as string | undefined;
     const blockId = args.block_id as string | undefined;
 
@@ -48,10 +54,10 @@ export const readMarkdownSectionTool: ToolExecutor = {
       });
     }
 
-    if (!heading && !blockId) {
+    if (!nodeId && !heading && !blockId) {
       return JSON.stringify({
         status: 'ERROR_INVALID_PARAMS',
-        message: '必须提供 heading 或 block_id 参数'
+        message: '必须提供 node_id、heading 或 block_id 参数'
       });
     }
 
@@ -62,7 +68,22 @@ export const readMarkdownSectionTool: ToolExecutor = {
       let targetFile = null;
       const candidates: string[] = [];
 
-      if (heading) {
+      // 优先级: node_id > heading > block_id
+      if (nodeId) {
+        // 按 node_id 查找（推荐方式）
+        const nodeIdIndex = cache.nodeIdIndex;
+        if (nodeIdIndex?.has(nodeId)) {
+          const filePath = nodeIdIndex.get(nodeId)!;
+          targetFile = files.find(f => f.path === filePath);
+        }
+
+        if (!targetFile) {
+          return JSON.stringify({
+            status: 'ERROR_NOT_FOUND',
+            message: `未找到 node_id: ${nodeId}`
+          });
+        }
+      } else if (heading) {
         // 按标题查找
         const normalizedQuery = normalizeHeading(heading);
 

@@ -7,7 +7,6 @@
 
 export interface AnalyticalPromptContext {
   scopeNodeIds?: string[];
-  tocSummary?: string;
 }
 
 export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
@@ -47,6 +46,10 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 
 第二步：聚焦精读 (Exploitation)
 - 仔细阅读返回的 hits。一旦发现高潜力的 \`heading\` 或 \`block_id\`，调用 \`read_markdown_section\` 获取完整上下文。
+- \`read_markdown_section\` 支持三种参数：
+  - node_id: 章节 ID（推荐，如 "0004"）
+  - heading: 标题名称（包含匹配）
+  - block_id: 块引用 ID（如 "^ch2-p17"）
 - \`read_markdown_section\` 返回格式：
   {
     "status": "SUCCESS_FULL_SECTION",
@@ -84,12 +87,9 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 </keyword_strategy>
 
 <output_rules>
-1. 输出"逻辑骨架"：定义、主旨、论述结构。
-2. **双链铁律**：每个核心观点必须用 Obsidian 链接标注来源：
-   - 格式：\`[[书名/文件名#^block_id|融入语境的文本]]\`
-   - file_path="DeepReader/书名/文件.md" → 提取"书名/文件"
-   - 链接紧贴前文（无空格），显示文本独特（不重复）
-3. 绝不掺杂个人知识，100% 忠于原著。
+1. 你的输出必须是纯粹的"生肉数据分析"，只向 S4 排版官提供逻辑骨架。
+2. 【核心铁律】：每一个提取出的核心观点或原话，必须紧跟其 block_id（格式：^block_id）。
+3. 绝不掺杂个人的外部知识，100% 忠于原著描述。
 </output_rules>
 `;
 }
@@ -121,5 +121,5 @@ export function buildAnalyticalUserMessage(standaloneQuery: string): string {
 ${standaloneQuery}
 </query>
 
-请在限定范围内进行分析，输出逻辑骨架。每个核心观点必须附带 \`[[书名/文件名#^block_id|文本]]\` 格式的链接。`;
+请在限定范围内进行分析，并提取关键内容的 block_id。`;
 }
