@@ -359,7 +359,7 @@ def _create_markdown_content(
     pdf_name: str,
     section: str,
     page_range: str,
-    paragraphs: List[Dict[str, Any]] = None,
+    paragraphs: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     创建 Markdown 文件内容

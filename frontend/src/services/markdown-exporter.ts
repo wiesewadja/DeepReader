@@ -564,10 +564,15 @@ export async function exportIndexToMarkdown(
                 const paraGroup = paragraphGroups[partIdx];
                 const partNum = partIdx + 1;
 
-                // 构建文件名
-                const filename = totalParts === 1
-                    ? `${String(i + 1).padStart(2, '0')}-${safeNodeName}.md`
-                    : `${String(i + 1).padStart(2, '0')}-${safeNodeName}-${partNum}.md`;
+                // 构建文件名：第一部分不带序号，后续部分从 2 开始
+                let filename: string;
+                if (totalParts === 1) {
+                    filename = `${String(i + 1).padStart(2, '0')}-${safeNodeName}.md`;
+                } else if (partNum === 1) {
+                    filename = `${String(i + 1).padStart(2, '0')}-${safeNodeName}.md`;
+                } else {
+                    filename = `${String(i + 1).padStart(2, '0')}-${safeNodeName}-${partNum}.md`;
+                }
 
                 const filePath = `${folderPath}/${filename}`;
                 const relativePath = `${pdfFolderName}/${filename}`;

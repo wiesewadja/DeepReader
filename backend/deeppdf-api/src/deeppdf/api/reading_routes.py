@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 from pathlib import Path
@@ -11,7 +11,6 @@ from pathlib import Path
 from ..config import settings
 from ..services.manager import load_index_metadata
 from .export_utils import get_pdf_page_count
-from .export_handlers import get_source_file_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reading", tags=["Reading"])
@@ -74,22 +73,30 @@ class TableOfContentsFlatResponse(BaseModel):
     toc: List[TocSection]
 
 
-def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str = "") -> List[ChapterItem]:
+def _extract_chapters(
+    tree_structure: List[dict],
+    level: int = 0,
+    book_name: str = "",
+    markdown_files: Optional[Dict[str, str]] = None,
+) -> List[ChapterItem]:
     """从 tree_structure 提取章节列表"""
     chapters = []
     for idx, node in enumerate(tree_structure):
         title = node.get("title", "未命名章节")
+        node_id = node.get("node_id")
         start = node.get("physical_index", node.get("start_index", 1))
         end = node.get("end_index", start)
         # 提取章节摘要（LLM 生成）
         summary = node.get("summary")
 
         # 生成 Obsidian 链接（Markdown 文件路径）
+        # 优先使用 markdown_files 映射（来自实际导出的文件）
         obsidian_link = None
-        if book_name:
-            # 清理书籍名称（移除 .pdf/.epub 后缀）
+        if markdown_files and node_id and node_id in markdown_files:
+            obsidian_link = markdown_files[node_id]
+        elif book_name:
+            # 回退：自己生成文件名（可能与实际导出不一致）
             folder_name = book_name.replace(".pdf", "").replace(".epub", "")
-            # 清理章节标题，生成文件名
             safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
             filename = f"{idx + 1:02d}-{safe_title}.md"
             obsidian_link = f"{folder_name}/{filename}"
@@ -101,23 +108,31 @@ def _extract_chapters(tree_structure: List[dict], level: int = 0, book_name: str
                 end_page=end,
                 level=level,
                 summary=summary,
-                obsidian_link=obsidian_link
+                obsidian_link=obsidian_link,
             )
         )
         # 递归处理子章节
         sub_structure = node.get("structure", [])
         if isinstance(sub_structure, list) and sub_structure:
-            chapters.extend(_extract_chapters(sub_structure, level + 1, book_name))
+            chapters.extend(
+                _extract_chapters(sub_structure, level + 1, book_name, markdown_files)
+            )
     return chapters
 
 
-def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: int = 0) -> List[TocSection]:
+def _extract_flat_toc(
+    tree_structure: List[dict],
+    book_name: str = "",
+    markdown_files: Optional[Dict[str, str]] = None,
+    level: int = 0,
+) -> List[TocSection]:
     """
     提取扁平化的 2 级章节结构（骨架+叶子）
 
     Args:
         tree_structure: 树状结构数据
         book_name: 书籍名称（用于生成 Obsidian 链接）
+        markdown_files: node_id -> 文件路径的映射（来自索引元数据）
         level: 当前层级
 
     Returns:
@@ -126,7 +141,9 @@ def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: in
     result: List[TocSection] = []
 
     # 清理书籍名称（移除 .pdf/.epub 后缀）
-    folder_name = book_name.replace(".pdf", "").replace(".epub", "") if book_name else ""
+    folder_name = (
+        book_name.replace(".pdf", "").replace(".epub", "") if book_name else ""
+    )
 
     for idx, node in enumerate(tree_structure):
         title = node.get("title", "未命名章节")
@@ -134,8 +151,12 @@ def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: in
         summary = node.get("summary")  # LLM 生成的摘要
 
         # 生成 Obsidian Markdown 文件链接
+        # 优先使用 markdown_files 映射（来自实际导出的文件）
         obsidian_link = None
-        if folder_name:
+        if markdown_files and node_id and node_id in markdown_files:
+            obsidian_link = markdown_files[node_id]
+        elif folder_name:
+            # 回退：自己生成文件名（可能与实际导出不一致）
             safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
             filename = f"{idx + 1:02d}-{safe_title}.md"
             obsidian_link = f"{folder_name}/{filename}"
@@ -150,26 +171,35 @@ def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: in
                 sub_node_id = sub_node.get("node_id")
 
                 # 生成子章节的 Obsidian 链接
+                # 优先使用 markdown_files 映射
                 sub_obsidian_link = None
-                if folder_name:
-                    sub_safe_title = "".join(c for c in sub_title if c.isalnum() or c in " -_").strip()
+                if markdown_files and sub_node_id and sub_node_id in markdown_files:
+                    sub_obsidian_link = markdown_files[sub_node_id]
+                elif folder_name:
+                    sub_safe_title = "".join(
+                        c for c in sub_title if c.isalnum() or c in " -_"
+                    ).strip()
                     sub_filename = f"{idx + 1:02d}-{sub_safe_title}.md"
                     sub_obsidian_link = f"{folder_name}/{sub_filename}"
 
-                sub_chapters.append(SubChapter(
-                    title=sub_title,
-                    node_id=sub_node_id,
-                    obsidian_link=sub_obsidian_link
-                ))
+                sub_chapters.append(
+                    SubChapter(
+                        title=sub_title,
+                        node_id=sub_node_id,
+                        obsidian_link=sub_obsidian_link,
+                    )
+                )
 
         # 添加当前一级章节及其子章节
-        result.append(TocSection(
-            level_1=title,
-            node_id=node_id,
-            obsidian_link=obsidian_link,
-            summary=summary,
-            sub_chapters=sub_chapters
-        ))
+        result.append(
+            TocSection(
+                level_1=title,
+                node_id=node_id,
+                obsidian_link=obsidian_link,
+                summary=summary,
+                sub_chapters=sub_chapters,
+            )
+        )
 
         # 递归处理子结构（如果有的话，继续添加到当前一级章节下）
         if isinstance(sub_structure, list) and sub_structure:
@@ -180,11 +210,23 @@ def _extract_flat_toc(tree_structure: List[dict], book_name: str = "", level: in
                     for nested_node in nested_structure:
                         nested_title = nested_node.get("title", "未命名章节")
                         nested_node_id = nested_node.get("node_id")
-                        sub_chapters.append(SubChapter(
-                            title=nested_title,
-                            node_id=nested_node_id,
-                            obsidian_link=None  # 深层级的链接在父级处理
-                        ))
+
+                        # 优先使用 markdown_files 映射
+                        nested_obsidian_link = None
+                        if (
+                            markdown_files
+                            and nested_node_id
+                            and nested_node_id in markdown_files
+                        ):
+                            nested_obsidian_link = markdown_files[nested_node_id]
+
+                        sub_chapters.append(
+                            SubChapter(
+                                title=nested_title,
+                                node_id=nested_node_id,
+                                obsidian_link=nested_obsidian_link,
+                            )
+                        )
 
     return result
 
@@ -222,8 +264,11 @@ async def get_table_of_contents(index_id: str):
         metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
     )
 
-    # 提取章节（传入 book_name 以生成 obsidian_link）
-    chapters = _extract_chapters(structure_list, 0, book_name)
+    # 获取 markdown_files 映射（用于生成正确的 obsidian_link）
+    markdown_files = metadata.get("markdown_files", {})
+
+    # 提取章节（传入 book_name 和 markdown_files 以生成 obsidian_link）
+    chapters = _extract_chapters(structure_list, 0, book_name, markdown_files)
 
     # 获取总页数
     total_pages = metadata.get("total_pages", 0)
@@ -291,8 +336,11 @@ async def get_table_of_contents_flat(index_id: str):
         metadata.get("pdf_name", "未知书籍").replace(".pdf", "").replace(".epub", "")
     )
 
+    # 获取 markdown_files 映射（用于生成正确的 obsidian_link）
+    markdown_files = metadata.get("markdown_files", {})
+
     # 提取扁平化 2 级结构
-    flat_toc = _extract_flat_toc(structure_list, book_name)
+    flat_toc = _extract_flat_toc(structure_list, book_name, markdown_files)
 
     logger.info(f"[阅读API] 获取扁平目录: {index_id}, {len(flat_toc)} 个一级章节")
 
