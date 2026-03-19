@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  * - Deep analysis within locked scope
- * - Tools: search_doc, get_chapter
+ * - Tools: search_markdown_text, read_markdown_section
  *
  * Key mechanism: ToolInterceptor physically locks search scope
  * Cumulative: Calls S1 if scopeNodeIds not set
@@ -25,7 +25,7 @@ type ToolResult = StateLoopResult['toolResults'][number];
 export class AnalyticalState extends StateNode {
   readonly name = 'Analytical';
   readonly model = 'main' as const;
-  readonly tools = ['search_doc', 'get_chapter'];
+  readonly tools = ['search_markdown_text', 'read_markdown_section'];
 
   private inspectionalState: InspectionalState;
 
@@ -52,7 +52,7 @@ export class AnalyticalState extends StateNode {
         // Fallback to placeholder for testing
         ctx.analysisResult = 'MECE stands for Mutually Exclusive, Collectively Exhaustive. [^block_123]';
         ctx.rawResults = [
-          { block_id: 'block_123', text: 'MECE definition...', toolName: 'search_doc' },
+          { block_id: 'block_123', text: 'MECE definition...', toolName: 'search_markdown_text' },
         ];
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
@@ -116,13 +116,13 @@ export class AnalyticalState extends StateNode {
    * 提取关键信息给 Formatter（精简版，避免 token 膨胀）
    *
    * 策略：
-   * - get_toc: 只提取章节链接 [[...|...]]，不保留摘要
-   * - search_doc: 保留完整结果（已包含 block_id 链接）
-   * - get_chapter: 只提取前 1000 字符 + block_id
+   * - get_document_outline: 只提取章节链接 [[...|...]]，不保留摘要
+   * - search_markdown_text: 保留完整结果（已包含 block_id 链接）
+   * - read_markdown_section: 只提取前 1000 字符 + block_id
    */
   private extractEssentialResults(toolResults: ToolResult[]): Array<{ block_id: string; text: string; toolName: string }> {
     return toolResults.map(tr => {
-      if (tr.toolName === 'get_toc') {
+      if (tr.toolName === 'get_document_outline') {
         // 只提取 Obsidian 章节链接，丢弃大段摘要
         const links = this.extractObsidianLinks(tr.result);
         return {
@@ -132,7 +132,7 @@ export class AnalyticalState extends StateNode {
         };
       }
 
-      if (tr.toolName === 'get_chapter') {
+      if (tr.toolName === 'read_markdown_section') {
         // 截断章节内容，保留关键部分
         const truncated = tr.result.length > 1500
           ? tr.result.slice(0, 1500) + '\n...[章节内容已截断]'
@@ -144,7 +144,7 @@ export class AnalyticalState extends StateNode {
         };
       }
 
-      // search_doc 保持原样（已经包含 block_id 链接）
+      // search_markdown_text 保持原样（已经包含 block_id 链接）
       return {
         block_id: '',
         text: tr.result,

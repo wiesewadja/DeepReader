@@ -2,8 +2,8 @@
  * S1: Inspectional Reading State
  *
  * Responsibilities:
- * - Get TOC and lock chapter scope
- * - Only has get_toc tool (physically deprived of search_doc)
+ * - Get document outline and lock chapter scope
+ * - Only has get_document_outline tool (physically deprived of search_markdown_text)
  *
  * Key constraint: Does NOT see chat history, only uses standaloneQuery
  */
@@ -28,7 +28,7 @@ const InspectionalOutputSchema = z.object({
 export class InspectionalState extends StateNode {
   readonly name = 'Inspectional';
   readonly model = 'fast' as const;
-  readonly tools = ['get_toc','search_doc']; // Only get_toc!
+  readonly tools = ['get_document_outline']; // Only get_document_outline!
 
   constructor() {
     super();

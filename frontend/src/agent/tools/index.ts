@@ -4,11 +4,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
-import { searchDocTool } from './search-doc.js';
-import { getTocTool } from './get-toc.js';
-import { getChapterTool } from './get-chapter.js';
-
-// 本地 Markdown 工具（零外部依赖）
+// 本地 Markdown 工具（零外部依赖）- 主要工具
 import {
   getDocumentOutlineTool,
   searchMarkdownTextTool,
@@ -22,7 +18,7 @@ import { updateProfileTool } from './profile.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { createCanvasTool } from './canvas.js';
 import { createExcalidrawTool } from './excalidraw.js';
-import { analyzeChapterTool } from './analyze-chapter.js';
+import { searchDocTool } from './search-doc.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
 
@@ -31,11 +27,6 @@ export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../util
 
 // 导出类型
 export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
-
-// 导出各个工具
-export { searchDocTool } from './search-doc.js';
-export { getTocTool } from './get-toc.js';
-export { getChapterTool } from './get-chapter.js';
 
 // 本地 Markdown 工具
 export {
@@ -51,7 +42,7 @@ export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
 export { createCanvasTool } from './canvas.js';
 export { createExcalidrawTool } from './excalidraw.js';
-export { analyzeChapterTool } from './analyze-chapter.js';
+export { searchDocTool } from './search-doc.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -62,12 +53,7 @@ export function createToolRegistry(
 ): ToolRegistry {
   const registry: ToolRegistry = new Map();
 
-  // 注册基础工具
-  registry.set('search_doc', searchDocTool);
-  registry.set('get_toc', getTocTool);
-  registry.set('get_chapter', getChapterTool);
-
-  // 注册本地 Markdown 工具（零外部依赖）
+  // 注册本地 Markdown 工具（零外部依赖）- 主要工具
   registry.set('get_document_outline', getDocumentOutlineTool);
   registry.set('search_markdown_text', searchMarkdownTextTool);
   registry.set('read_markdown_section', readMarkdownSectionTool);
@@ -96,8 +82,8 @@ export function createToolRegistry(
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);
 
-  // 注册分析阅读工具（合并：术语+论点分析）
-  registry.set('analyze_chapter', analyzeChapterTool);
+  // 注册后端搜索工具（用于 PDF/EPUB 等非 Markdown 文档）
+  registry.set('search_doc', searchDocTool);
 
   // 注册 Canvas 工具（需要 Obsidian App 实例）
   if (context.app) {

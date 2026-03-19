@@ -71,7 +71,7 @@ export interface SharedContext {
   tocSummary?: string;
 
   // ===== S2 Output =====
-  /** Raw search results with block_id (from search_doc) or tool results (from get_toc) */
+  /** Raw search results with block_id (from search_markdown_text) or tool results (from get_document_outline) */
   rawResults?: RawToolResult[];
   /** Analysis conclusion */
   analysisResult?: string;

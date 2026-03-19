@@ -20,21 +20,21 @@ describe('InspectionalState', () => {
   it('should have correct metadata', () => {
     expect(inspectionalState.name).toBe('Inspectional');
     expect(inspectionalState.model).toBe('fast');
-    expect(inspectionalState.tools).toEqual(['get_toc']);
+    expect(inspectionalState.tools).toEqual(['get_document_outline']);
   });
 
-  it('should only have get_toc tool (no search_doc)', () => {
-    // Critical: S1 should NOT have search_doc to prevent LLM from reading body
-    expect(inspectionalState.tools).not.toContain('search_doc');
-    expect(inspectionalState.tools).toContain('get_toc');
+  it('should only have get_document_outline tool (no search_markdown_text)', () => {
+    // Critical: S1 should NOT have search_markdown_text to prevent LLM from reading body
+    expect(inspectionalState.tools).not.toContain('search_markdown_text');
+    expect(inspectionalState.tools).toContain('get_document_outline');
   });
 
   it('should build correct system prompt', () => {
     const prompt = inspectionalState.buildSystemPrompt(ctx);
 
-    expect(prompt).toContain('get_toc');
+    // Prompt should contain inspectional reading concepts
     expect(prompt).toContain('scopeNodeIds');
-    expect(prompt).toContain('tocSummary');
+    expect(prompt).toContain('检视阅读');
   });
 
   it('should mark state as executed after execution', async () => {

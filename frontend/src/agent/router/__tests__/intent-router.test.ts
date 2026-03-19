@@ -10,9 +10,9 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('检视阅读');
       expect(result.detectedIntents).toContain('动作输出');
-      expect(result.allowedTools).toContain('get_toc');
+      expect(result.allowedTools).toContain('get_document_outline');
       expect(result.allowedTools).toContain('excalidraw');
-      expect(result.allowedTools).not.toContain('search_doc');
+      expect(result.allowedTools).not.toContain('search_markdown_text');
       expect(result.systemNote).toContain('检视阅读');
       // 动态迭代：取两个规则中较大的值（action_output 的 3）
       expect(result.maxIterations).toBe(3);
@@ -24,8 +24,8 @@ describe('IntentRouter', () => {
       const result = router.analyze('帮我总结一下第3章');
 
       expect(result.detectedIntents).toContain('分析阅读-定位');
-      expect(result.allowedTools).toContain('get_toc');
-      expect(result.allowedTools).toContain('get_chapter');
+      expect(result.allowedTools).toContain('get_document_outline');
+      expect(result.allowedTools).toContain('read_markdown_section');
       expect(result.allowedTools).toContain('analyze_chapter');
       // 定位章节：maxIterations = 3
       expect(result.maxIterations).toBe(3);
@@ -37,9 +37,9 @@ describe('IntentRouter', () => {
       const result = router.analyze("什么是'第一天的答案'？");
 
       expect(result.detectedIntents).toContain('分析阅读-概念探究');
-      expect(result.allowedTools).toContain('search_doc');
-      expect(result.allowedTools).toContain('get_toc');
-      expect(result.allowedTools).toContain('get_chapter');
+      expect(result.allowedTools).toContain('search_markdown_text');
+      expect(result.allowedTools).toContain('get_document_outline');
+      expect(result.allowedTools).toContain('read_markdown_section');
       // 概念检索：maxIterations = 3
       expect(result.maxIterations).toBe(3);
     });
@@ -51,8 +51,8 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('主题阅读');
       expect(result.allowedTools).toContain('search_read_books');
-      // 主题阅读：maxIterations = 4
-      expect(result.maxIterations).toBe(4);
+      // 主题阅读：maxIterations = 6
+      expect(result.maxIterations).toBe(6);
     });
   });
 
@@ -62,8 +62,8 @@ describe('IntentRouter', () => {
 
       expect(result.detectedIntents).toContain('检视阅读');
       expect(result.detectedIntents).toContain('分析阅读-定位');
-      expect(result.allowedTools).toContain('get_toc');
-      expect(result.allowedTools).toContain('get_chapter');
+      expect(result.allowedTools).toContain('get_document_outline');
+      expect(result.allowedTools).toContain('read_markdown_section');
       // 取两个规则中较大的值（locate_chapter 的 3）
       expect(result.maxIterations).toBe(3);
     });
@@ -74,8 +74,9 @@ describe('IntentRouter', () => {
       const result = router.analyze('这本书的作者是谁');
 
       expect(result.detectedIntents).toContain('分析阅读-微观检索');
-      expect(result.allowedTools).toContain('search_doc');
-      expect(result.allowedTools).not.toContain('get_toc');
+      expect(result.allowedTools).toContain('search_markdown_text');
+      expect(result.allowedTools).toContain('read_markdown_section');
+      expect(result.allowedTools).not.toContain('get_document_outline');
       // 兜底：maxIterations = 4
       expect(result.maxIterations).toBe(4);
     });
@@ -86,8 +87,8 @@ describe('IntentRouter', () => {
       const result = router.analyze('如何理解金字塔原理的核心思想');
 
       expect(result.detectedIntents).toContain('分析阅读-概念探究');
-      expect(result.allowedTools).toContain('search_doc');
-      expect(result.allowedTools).toContain('get_toc');
+      expect(result.allowedTools).toContain('search_markdown_text');
+      expect(result.allowedTools).toContain('get_document_outline');
       // 概念检索：maxIterations = 3
       expect(result.maxIterations).toBe(3);
     });
@@ -98,7 +99,7 @@ describe('IntentRouter', () => {
       const result = router.analyze('给我一个全书大纲');
 
       expect(result.detectedIntents).toContain('检视阅读');
-      expect(result.allowedTools).toContain('get_toc');
+      expect(result.allowedTools).toContain('get_document_outline');
       // 检视阅读：maxIterations = 2（最小）
       expect(result.maxIterations).toBe(2);
     });

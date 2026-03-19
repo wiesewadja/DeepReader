@@ -19,20 +19,20 @@ export function createScopeInterceptor(scopeNodeIds: string[]): ToolInterceptor 
   const hasScope = scopeNodeIds.length > 0;
 
   return (toolName: string, toolArgs: Record<string, unknown>): Record<string, unknown> => {
-    // Intercept search_doc: inject scope only when has valid scope
-    if (toolName === 'search_doc') {
+    // Intercept search_markdown_text: inject scope only when has valid scope
+    if (toolName === 'search_markdown_text') {
       if (hasScope) {
         return {
           ...toolArgs,
           scopeNodeIds: scopeNodeIds,
         };
       }
-      // 空数组时不注入 scopeNodeIds，让后端使用全局搜索
+      // 空数组时不注入 scopeNodeIds，让工具使用全局搜索
       return toolArgs;
     }
 
-    // Intercept get_chapter: check if in scope (only when scope is locked)
-    if (toolName === 'get_chapter' && toolArgs.node_id && hasScope) {
+    // Intercept read_markdown_section: check if in scope (only when scope is locked)
+    if (toolName === 'read_markdown_section' && toolArgs.node_id && hasScope) {
       if (!scopeNodeIds.includes(toolArgs.node_id as string)) {
         console.warn(`[Interceptor] node_id ${toolArgs.node_id} out of scope`);
         return {

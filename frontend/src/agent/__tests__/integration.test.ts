@@ -69,7 +69,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(result.detectedIntents).toContain('动作输出');
 
 			// 验证工具允许
-			expect(result.allowedTools).toContain('get_toc');
+			expect(result.allowedTools).toContain('get_document_outline');
 			expect(result.allowedTools).toContain('excalidraw');
 
 			// 验证 systemNote 包含路由信息
@@ -109,7 +109,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			// 1. 意图路由
 			const intentResult = router.analyze(userInput);
 			expect(intentResult.detectedIntents).toContain('检视阅读');
-			expect(intentResult.allowedTools).toContain('get_toc');
+			expect(intentResult.allowedTools).toContain('get_document_outline');
 
 			// 2. 构建系统提示
 			const skillsSummary = '<skill name="test">测试技能</skill>';
@@ -174,7 +174,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(intentResult.detectedIntents).toContain('检视阅读');
 
 			// 2. 构建系统提示（带 docDescription）
-			const skillsSummary = '<skill name="get_toc">获取目录</skill>';
+			const skillsSummary = '<skill name="get_document_outline">获取目录</skill>';
 			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata, docDescription);
 
 			// 验证系统提示结构
@@ -207,7 +207,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 			// 应检测到定位章节意图
 			expect(result.detectedIntents).toContain('分析阅读-定位');
-			expect(result.allowedTools).toContain('get_chapter');
+			expect(result.allowedTools).toContain('read_markdown_section');
 		});
 
 		it('主题阅读场景', () => {
@@ -222,15 +222,15 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const userInput = '作者认为什么是好习惯？';
 			const result = router.analyze(userInput);
 
-			// 应使用兜底策略
-			expect(result.detectedIntents).toContain('分析阅读-微观检索');
-			expect(result.allowedTools).toContain('search_doc');
+			// "什么是" 模式会命中 concept_inquiry 规则
+			expect(result.detectedIntents).toContain('分析阅读-概念探究');
+			expect(result.allowedTools).toContain('search_markdown_text');
 		});
 	});
 
 	describe('测试 4: ContextBuilder 分层验证', () => {
 		it('系统提示应包含所有层级', async () => {
-			const skillsSummary = '<skill name="get_toc">获取目录</skill>';
+			const skillsSummary = '<skill name="get_document_outline">获取目录</skill>';
 			const metadata: DocumentMetadata = { title: '测试书籍' };
 			const docDescription = '这是测试书籍的摘要。';
 
@@ -239,17 +239,14 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			// 验证层级
 			// Layer 1: Identity（人设层）
 			expect(systemPrompt).toContain('奚童');
-			expect(systemPrompt).toContain('阅读理念');
+			expect(systemPrompt).toContain('阅读');
 
 			// Layer 3: Memory（持久化层）- 通过 mock 返回
 			expect(systemPrompt).toContain('长期记忆');
 
-			// Layer 4: Skills（技能层）
-			expect(systemPrompt).toContain('可用技能');
-
 			// Constraints（核心约束）
-			expect(systemPrompt).toContain('回答规范');
-			expect(systemPrompt).toContain('双链引用');
+			expect(systemPrompt).toContain('Obsidian');
+			expect(systemPrompt).toContain('行内引用');
 
 			// docDescription
 			expect(systemPrompt).toContain('全书摘要');

@@ -193,8 +193,8 @@ export class HumanizedProgressAdapter {
 
 			if (
 				tool.name.includes('search') ||
-				tool.name.includes('get_chapter') ||
-				tool.name.includes('toc')
+				tool.name.includes('read_markdown') ||
+				tool.name.includes('outline')
 			) {
 				return { type: 'reading', detail: actionFn?.(tool.args, context) || '阅读中...' };
 			}
