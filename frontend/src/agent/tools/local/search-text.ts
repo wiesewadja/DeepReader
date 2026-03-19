@@ -74,15 +74,19 @@ export const searchMarkdownTextTool: ToolExecutor = {
 
       // 构建 node_id -> file 映射（用于 scope 过滤）
       // 规范化：去除前导零，确保 "0010" 和 "10" 匹配
-      const normalizeNodeId = (id: string) => id.replace(/^0+/, '') || '0';
+      // 注意：YAML 解析器可能将 0010 解析为数字 10，所以先转字符串
+      const normalizeNodeId = (id: string | number | undefined) => {
+        if (id === undefined || id === null) return '';
+        return String(id).replace(/^0+/, '') || '0';
+      };
       const scopeSet = scopeNodeIds && scopeNodeIds.length > 0
         ? new Set(scopeNodeIds.map(normalizeNodeId))
         : null;
 
       for (const file of files) {
         const fileCache = app.metadataCache.getFileCache(file);
-        const rawNodeId = fileCache?.frontmatter?.node_id as string;
-        const nodeId = normalizeNodeId(rawNodeId || '');
+        const rawNodeId = fileCache?.frontmatter?.node_id;
+        const nodeId = normalizeNodeId(rawNodeId);
 
         // Scope 过滤：如果设置了 scope，只搜索范围内的文件
         if (scopeSet && !scopeSet.has(nodeId)) {
