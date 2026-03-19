@@ -2,16 +2,37 @@
  * DebugLogger - Agent 调试日志记录器
  *
  * 记录完整的 Agent 执行过程，包括：
- * - 系统提示词
- * - LLM 请求/响应
- * - 工具调用
- * - 后端 API 通信
+ * - 意图路由决策
+ * - 认知状态机流转
+ * - SharedContext 变化
+ * - LLM 交互
+ * - 工具调用与拦截
+ * - 记忆系统操作
+ *
+ * 日志输出格式：
+ * debug-logs/
+ *   └── 2026-03-19_14-30-00/           # 会话目录
+ *       ├── 00-summary.md              # 总览
+ *       ├── 01-router.md               # S0 路由状态
+ *       ├── 02-inspectional.md         # S1 检视状态
+ *       ├── 03-analytical.md           # S2 分析状态
+ *       ├── 04-formatter.md            # S4 格式化状态
+ *       └── session.json               # 完整 JSON 数据
  */
 
 import type { App } from 'obsidian';
 import { normalizePath } from 'obsidian';
 import type {
   DebugLogConfig,
+  AgentSessionLog,
+  IntentRoutingLog,
+  StateExecutionLog,
+  StateInputLog,
+  StateOutputLog,
+  LLMInteractionLog,
+  ToolCallLog,
+  SessionStats,
+  // 向后兼容
   IterationLog,
   LLMRequestLog,
   LLMResponseLog,
@@ -20,6 +41,7 @@ import type {
   IterationStats,
   SessionSummary,
 } from './types.js';
+import { DEFAULT_DEBUG_CONFIG } from './types.js';
 
 /**
  * 🔧 调试日志开关
@@ -29,20 +51,17 @@ export const DEBUG_LOG_ENABLED = true;
 
 /**
  * 获取调用栈信息
- * 解析 Error.stack 并格式化为可读的调用链
  */
 export function getCallStack(): string {
   const stack = new Error().stack?.split('\n') || [];
 
   const relevantLines = stack
     .filter(line => {
-      // 过滤掉 node_modules 和内部实现
       return line.includes('.ts:') &&
              !line.includes('node_modules') &&
              !line.includes('logger.ts');
     })
     .map(line => {
-      // 提取文件名、行号和函数名
       const match = line.match(/at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/);
       if (match) {
         const fnName = match[1] || '<anonymous>';
@@ -67,6 +86,13 @@ export class DebugLogger {
   private app: App;
   private config: DebugLogConfig;
   private sessionDir: string | null = null;
+
+  // ===== 新版日志数据 =====
+  private sessionLog: AgentSessionLog | null = null;
+  private currentStateLog: StateExecutionLog | null = null;
+  private currentLLMInteraction: LLMInteractionLog | null = null;
+
+  // ===== 向后兼容 =====
   private currentIteration = 0;
   private currentIterationLog: IterationLog | null = null;
   private sessionStartTime = 0;
@@ -75,11 +101,7 @@ export class DebugLogger {
 
   constructor(app: App, config?: Partial<DebugLogConfig>) {
     this.app = app;
-    this.config = {
-      enabled: DEBUG_LOG_ENABLED,
-      logDir: 'debug-logs',
-      ...config,
-    };
+    this.config = { ...DEFAULT_DEBUG_CONFIG, ...config };
   }
 
   /**
@@ -89,16 +111,15 @@ export class DebugLogger {
     return this.config.enabled;
   }
 
+  // ============================================================================
+  // 会话管理
+  // ============================================================================
+
   /**
    * 开始新的调试会话
    */
-  async startSession(userQuery: string): Promise<void> {
+  async startSession(userQuery: string, bookName: string = '', indexId: string = ''): Promise<void> {
     if (!this.config.enabled) return;
-
-    this.sessionQuery = userQuery;
-    this.sessionStartTime = Date.now();
-    this.currentIteration = 0;
-    this.allIterationLogs = [];
 
     // 创建会话目录
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -106,42 +127,366 @@ export class DebugLogger {
 
     const dirPath = normalizePath(this.sessionDir);
 
-    // 确保父目录存在
+    // 确保目录存在
     try {
       await this.app.vault.adapter.mkdir(this.config.logDir);
-    } catch {
-      // 目录可能已存在
-    }
+    } catch { /* ignore */ }
 
     try {
       await this.app.vault.adapter.mkdir(dirPath);
-    } catch {
-      // 目录可能已存在
-    }
+    } catch { /* ignore */ }
+
+    // 初始化会话日志
+    this.sessionLog = {
+      sessionId: timestamp,
+      startTime: new Date().toISOString(),
+      userQuery,
+      bookName,
+      indexId,
+      stateExecutions: [],
+      stats: {
+        totalDuration: 0,
+        stateCount: 0,
+        llmCallCount: 0,
+        llmDuration: 0,
+        toolCallCount: 0,
+        toolDuration: 0,
+        tokens: { input: 0, output: 0, total: 0 },
+        toolDistribution: {},
+      },
+      files: [],
+    };
+
+    // 向后兼容
+    this.sessionQuery = userQuery;
+    this.sessionStartTime = Date.now();
+    this.currentIteration = 0;
+    this.allIterationLogs = [];
 
     console.log(`[DebugLogger] 📁 开始调试会话: ${this.sessionDir}`);
   }
 
   /**
-   * 结束调试会话，写入摘要
+   * 结束调试会话
    */
   async endSession(): Promise<void> {
-    if (!this.config.enabled || !this.sessionDir) return;
+    if (!this.config.enabled || !this.sessionDir || !this.sessionLog) return;
+
+    // 更新会话结束时间
+    this.sessionLog.endTime = new Date().toISOString();
+    this.sessionLog.stats.totalDuration = Date.now() - new Date(this.sessionLog.startTime).getTime();
 
     // 写入摘要文件
-    await this.writeSummary();
+    await this.writeSummaryMarkdown();
 
-    // 写入所有迭代的 JSON 文件
-    for (const log of this.allIterationLogs) {
-      await this.writeIterationJson(log);
+    // 写入完整 JSON
+    await this.writeSessionJson();
+
+    // 写入各状态详细日志
+    for (const stateLog of this.sessionLog.stateExecutions) {
+      await this.writeStateMarkdown(stateLog);
     }
 
     console.log(`[DebugLogger] ✅ 调试会话结束: ${this.sessionDir}`);
     this.sessionDir = null;
+    this.sessionLog = null;
+  }
+
+  // ============================================================================
+  // 意图路由日志
+  // ============================================================================
+
+  /**
+   * 记录意图路由结果
+   */
+  logIntentRouting(routing: IntentRoutingLog): void {
+    if (!this.config.enabled || !this.sessionLog) return;
+
+    this.sessionLog.intentRouting = routing;
+
+    console.log(`[DebugLogger] 🎯 意图路由: ${routing.detectedIntents.join(', ')}`);
+    console.log(`[DebugLogger]    允许工具: ${routing.allowedTools.join(', ')}`);
+  }
+
+  // ============================================================================
+  // 状态执行日志
+  // ============================================================================
+
+  /**
+   * 开始状态执行
+   */
+  startStateExecution(stateName: string, input: Partial<StateInputLog>): void {
+    if (!this.config.enabled || !this.sessionLog) return;
+
+    const iteration = this.sessionLog.stateExecutions.length + 1;
+
+    this.currentStateLog = {
+      stateName,
+      iteration,
+      startTime: new Date().toISOString(),
+      duration: 0,
+      input: {
+        historyCount: 0,
+        availableTools: [],
+        ...input,
+      },
+      output: {
+        finishReason: 'stop',
+      },
+      llmInteractions: [],
+      toolCalls: [],
+      stats: {
+        llmCallCount: 0,
+        llmDuration: 0,
+        toolCallCount: 0,
+        toolDuration: 0,
+      },
+    };
+
+    // 向后兼容
+    this.currentIteration = iteration;
+    this.startIteration(iteration);
+
+    console.log(`[DebugLogger] ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`[DebugLogger] ┃ 🔄 状态 ${iteration}: ${stateName}`);
+    console.log(`[DebugLogger] ┃    输入: ${input.query || '(无查询)'}`);
+    console.log(`[DebugLogger] ┃    工具: ${input.availableTools?.join(', ') || '(无工具)'}`);
   }
 
   /**
-   * 开始新迭代
+   * 结束状态执行
+   */
+  endStateExecution(output: Partial<StateOutputLog>): void {
+    if (!this.config.enabled || !this.sessionLog || !this.currentStateLog) return;
+
+    // 更新输出
+    this.currentStateLog.output = {
+      ...this.currentStateLog.output,
+      ...output,
+    };
+
+    // 计算耗时
+    this.currentStateLog.duration = Date.now() - new Date(this.currentStateLog.startTime).getTime();
+    this.currentStateLog.endTime = new Date().toISOString();
+
+    // 添加到会话日志
+    this.sessionLog.stateExecutions.push(this.currentStateLog);
+
+    // 更新统计
+    this.sessionLog.stats.stateCount++;
+    this.sessionLog.stats.llmCallCount += this.currentStateLog.stats.llmCallCount;
+    this.sessionLog.stats.llmDuration += this.currentStateLog.stats.llmDuration;
+    this.sessionLog.stats.toolCallCount += this.currentStateLog.stats.toolCallCount;
+    this.sessionLog.stats.toolDuration += this.currentStateLog.stats.toolDuration;
+
+    // 输出摘要
+    const duration = (this.currentStateLog.duration / 1000).toFixed(1);
+    console.log(`[DebugLogger] ┃ ✅ 完成: ${duration}s`);
+    if (output.depth !== undefined) {
+      console.log(`[DebugLogger] ┃    深度: ${output.depth}`);
+    }
+    if (output.scopeNodeIds && output.scopeNodeIds.length > 0) {
+      console.log(`[DebugLogger] ┃    范围: ${output.scopeNodeIds.slice(0, 3).join(', ')}${output.scopeNodeIds.length > 3 ? '...' : ''}`);
+    }
+    console.log(`[DebugLogger] ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+    // 向后兼容
+    this.endIteration({
+      duration: this.currentStateLog.duration,
+      llmDuration: this.currentStateLog.stats.llmDuration,
+      toolsDuration: this.currentStateLog.stats.toolDuration,
+      tokenStart: 0,
+      tokenEnd: 0,
+    });
+
+    this.currentStateLog = null;
+  }
+
+  // ============================================================================
+  // LLM 交互日志
+  // ============================================================================
+
+  /**
+   * 开始 LLM 交互
+   */
+  startLLMInteraction(request: {
+    model: string;
+    modelType: 'fast' | 'main';
+    systemPrompt: string;
+    userMessage: string;
+    toolCount: number;
+    messageCount: number;
+  }): void {
+    if (!this.config.enabled || !this.currentStateLog) return;
+
+    this.currentLLMInteraction = {
+      index: this.currentStateLog.llmInteractions.length + 1,
+      startTime: new Date().toISOString(),
+      duration: 0,
+      request: {
+        model: request.model,
+        modelType: request.modelType,
+        systemPromptPreview: request.systemPrompt.slice(0, 200) + '...',
+        systemPromptLength: request.systemPrompt.length,
+        userMessage: request.userMessage,
+        toolCount: request.toolCount,
+        messageCount: request.messageCount,
+      },
+      response: {
+        finishReason: 'stop',
+        content: '',
+        contentLength: 0,
+        toolCallRequests: [],
+      },
+    };
+
+    console.log(`[DebugLogger]    🤖 LLM 调用 #${this.currentLLMInteraction.index} (${request.modelType})`);
+  }
+
+  /**
+   * 结束 LLM 交互
+   */
+  endLLMInteraction(response: {
+    finishReason: 'stop' | 'tool_calls' | 'length' | 'error';
+    content: string;
+    toolCallRequests?: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
+    ttfb?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  }): void {
+    if (!this.config.enabled || !this.currentStateLog || !this.currentLLMInteraction) return;
+
+    // 更新响应
+    this.currentLLMInteraction.response = {
+      finishReason: response.finishReason,
+      content: response.content,
+      contentLength: response.content.length,
+      toolCallRequests: response.toolCallRequests || [],
+      ttfb: response.ttfb,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+    };
+
+    // 计算耗时
+    this.currentLLMInteraction.duration = Date.now() - new Date(this.currentLLMInteraction.startTime).getTime();
+
+    // 添加到状态日志
+    this.currentStateLog.llmInteractions.push(this.currentLLMInteraction);
+
+    // 更新状态统计
+    this.currentStateLog.stats.llmCallCount++;
+    this.currentStateLog.stats.llmDuration += this.currentLLMInteraction.duration;
+
+    // 更新会话 Token 统计
+    if (this.sessionLog && response.inputTokens && response.outputTokens) {
+      this.sessionLog.stats.tokens.input += response.inputTokens;
+      this.sessionLog.stats.tokens.output += response.outputTokens;
+      this.sessionLog.stats.tokens.total += response.inputTokens + response.outputTokens;
+    }
+
+    // 输出摘要
+    const duration = (this.currentLLMInteraction.duration / 1000).toFixed(1);
+    const tokens = response.inputTokens && response.outputTokens
+      ? ` | ${response.inputTokens}+${response.outputTokens} tokens`
+      : '';
+    console.log(`[DebugLogger]    🤖 LLM 响应: ${response.finishReason} | ${duration}s${tokens}`);
+
+    if (response.toolCallRequests && response.toolCallRequests.length > 0) {
+      console.log(`[DebugLogger]       工具请求: ${response.toolCallRequests.map(t => t.name).join(', ')}`);
+    }
+
+    this.currentLLMInteraction = null;
+  }
+
+  // ============================================================================
+  // 工具调用日志
+  // ============================================================================
+
+  /**
+   * 记录工具调用
+   */
+  logToolCall(toolCall: {
+    callId: string;
+    toolName: string;
+    originalArgs: Record<string, unknown>;
+    interceptedArgs?: Record<string, unknown>;
+    interceptorNote?: string;
+    status: 'success' | 'error';
+    result?: string;
+    error?: string;
+    duration: number;
+  }): void {
+    if (!this.config.enabled || !this.currentStateLog) return;
+
+    const toolLog: ToolCallLog = {
+      callId: toolCall.callId,
+      toolName: toolCall.toolName,
+      startTime: new Date().toISOString(),
+      duration: toolCall.duration,
+      originalArgs: toolCall.originalArgs,
+      interceptedArgs: toolCall.interceptedArgs,
+      interceptorNote: toolCall.interceptorNote,
+      status: toolCall.status,
+      result: toolCall.result,
+      resultLength: toolCall.result?.length,
+      error: toolCall.error,
+    };
+
+    // 解析结果
+    if (toolCall.result) {
+      try {
+        const parsed = JSON.parse(toolCall.result);
+        toolLog.parsedResult = {
+          status: parsed.status,
+          hits: parsed.hits?.length || parsed.total_hits,
+          blockIds: parsed.hits?.map((h: any) => h.block_id).filter(Boolean),
+        };
+      } catch { /* ignore */ }
+    }
+
+    // 添加到状态日志
+    this.currentStateLog.toolCalls.push(toolLog);
+
+    // 更新状态统计
+    this.currentStateLog.stats.toolCallCount++;
+    this.currentStateLog.stats.toolDuration += toolCall.duration;
+
+    // 更新会话工具分布
+    if (this.sessionLog) {
+      const dist = this.sessionLog.stats.toolDistribution[toolCall.toolName] || { count: 0, duration: 0 };
+      this.sessionLog.stats.toolDistribution[toolCall.toolName] = {
+        count: dist.count + 1,
+        duration: dist.duration + toolCall.duration,
+      };
+    }
+
+    // 输出摘要
+    const duration = (toolCall.duration / 1000).toFixed(1);
+    const status = toolCall.status === 'success' ? '✅' : '❌';
+    let summary = `${status} ${toolCall.toolName} (${duration}s)`;
+
+    if (toolLog.parsedResult) {
+      if (toolLog.parsedResult.status) {
+        summary += ` [${toolLog.parsedResult.status}]`;
+      }
+      if (toolLog.parsedResult.hits) {
+        summary += ` ${toolLog.parsedResult.hits} hits`;
+      }
+    }
+
+    if (toolCall.interceptorNote) {
+      summary += ` | 拦截: ${toolCall.interceptorNote}`;
+    }
+
+    console.log(`[DebugLogger]    🔧 ${summary}`);
+  }
+
+  // ============================================================================
+  // 向后兼容方法
+  // ============================================================================
+
+  /**
+   * @deprecated 使用 startStateExecution 替代
    */
   startIteration(iteration: number): void {
     if (!this.config.enabled) return;
@@ -166,44 +511,26 @@ export class DebugLogger {
   }
 
   /**
-   * 结束当前迭代，写入日志文件
+   * @deprecated 使用 endStateExecution 替代
    */
   async endIteration(stats: Partial<IterationStats>): Promise<void> {
     if (!this.config.enabled || !this.currentIterationLog || !this.sessionDir) return;
 
-    // 更新统计信息
     this.currentIterationLog.stats = {
       ...this.currentIterationLog.stats,
       ...stats,
     };
-
-    // 计算 token 变化
     this.currentIterationLog.stats.toolCallCount = this.currentIterationLog.toolExecutions.length;
 
-    // 写入 Markdown 日志
-    await this.writeIterationMarkdown(this.currentIterationLog);
-
-    // 保存到列表
     this.allIterationLogs.push(this.currentIterationLog);
-
     this.currentIterationLog = null;
   }
 
-  /**
-   * 记录系统提示词
-   */
   logSystemPrompt(prompt: string): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
     this.currentIterationLog.systemPrompt = prompt;
   }
 
-  /**
-   * 记录状态信息
-   * @param stateName 状态名称
-   * @param info 状态信息
-   * @param method 路由方法 ('regex' 或 'llm')
-   */
   logStateInfo(stateName: string, info: {
     depth?: number;
     standaloneQuery?: string;
@@ -211,92 +538,52 @@ export class DebugLogger {
     innerIterations?: number;
   }, method: 'regex' | 'llm' = 'llm'): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    // 将状态信息存储到 stateInfo 字段
-    this.currentIterationLog.stateInfo = {
-      stateName,
-      method,
-      ...info,
-    };
+    this.currentIterationLog.stateInfo = { stateName, method, ...info };
   }
 
-  /**
-   * 更新内层迭代次数
-   */
   logInnerIterations(count: number): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
     if (this.currentIterationLog.stateInfo) {
       this.currentIterationLog.stateInfo.innerIterations = count;
     } else {
-      this.currentIterationLog.stateInfo = {
-        stateName: 'Unknown',
-        method: 'llm',
-        innerIterations: count,
-      };
+      this.currentIterationLog.stateInfo = { stateName: 'Unknown', method: 'llm', innerIterations: count };
     }
   }
 
-  /**
-   * 记录消息列表
-   */
   logMessages(messages: unknown[]): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
     this.currentIterationLog.messages = JSON.parse(JSON.stringify(messages));
   }
 
-  /**
-   * 记录 LLM 请求
-   */
   logLLMRequest(request: Omit<LLMRequestLog, 'timestamp' | 'callStack'>): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    this.currentIterationLog!.llmRequest = {
+    this.currentIterationLog.llmRequest = {
       ...request,
       timestamp: new Date().toISOString(),
       callStack: getCallStack(),
     };
   }
 
-  /**
-   * 记录 LLM 响应
-   */
   logLLMResponse(response: Partial<Omit<LLMResponseLog, 'timestamp' | 'callStack'>>): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    this.currentIterationLog!.llmResponse = {
+    this.currentIterationLog.llmResponse = {
       timestamp: new Date().toISOString(),
       callStack: getCallStack(),
-      metadata: response.metadata || {
-        model: '',
-        finishReason: '',
-      },
+      metadata: response.metadata || { model: '', finishReason: '' },
       content: response.content || '',
       toolCalls: response.toolCalls || [],
       rawChunks: response.rawChunks || [],
     };
   }
 
-  /**
-   * 添加 LLM 流式响应块
-   */
   addLLMChunk(chunk: string): void {
     if (!this.config.enabled || !this.currentIterationLog?.llmResponse) return;
-
     this.currentIterationLog.llmResponse.rawChunks.push(chunk);
   }
 
-  /**
-   * 记录工具调用开始
-   */
   logToolStart(toolCallId: string, toolName: string, args: unknown): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    // 工具调用开始时记录，结果稍后更新
-    const existing = this.currentIterationLog.toolExecutions.find(
-      t => t.toolCallId === toolCallId
-    );
+    const existing = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
     if (!existing) {
       this.currentIterationLog.toolExecutions.push({
         timestamp: new Date().toISOString(),
@@ -309,42 +596,26 @@ export class DebugLogger {
     }
   }
 
-  /**
-   * 记录工具调用结果
-   */
   logToolResult(toolCallId: string, result: unknown, duration: number): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    const tool = this.currentIterationLog.toolExecutions.find(
-      t => t.toolCallId === toolCallId
-    );
+    const tool = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
     if (tool) {
       tool.result = result;
       tool.duration = duration;
     }
   }
 
-  /**
-   * 记录工具调用错误
-   */
   logToolError(toolCallId: string, error: string, duration: number): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
-    const tool = this.currentIterationLog.toolExecutions.find(
-      t => t.toolCallId === toolCallId
-    );
+    const tool = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
     if (tool) {
       tool.error = error;
       tool.duration = duration;
     }
   }
 
-  /**
-   * 记录后端 API 调用
-   */
   logBackendCall(call: Omit<BackendCallLog, 'timestamp' | 'callStack'>): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
-
     this.currentIterationLog.backendCalls.push({
       ...call,
       timestamp: new Date().toISOString(),
@@ -353,301 +624,284 @@ export class DebugLogger {
   }
 
   // ============================================================================
-  // 私有方法：文件写入
+  // 文件写入
   // ============================================================================
 
   /**
-   * 写入迭代 Markdown 日志
+   * 写入摘要 Markdown
    */
-  private async writeIterationMarkdown(log: IterationLog): Promise<void> {
-    if (!this.sessionDir) return;
+  private async writeSummaryMarkdown(): Promise<void> {
+    if (!this.sessionDir || !this.sessionLog) return;
 
-    const content = this.formatIterationMarkdown(log);
-    // 使用状态名称作为文件名，如果没有状态名称则使用迭代编号
-    const fileName = log.stateInfo?.stateName
-      ? `${log.iteration}-${log.stateInfo.stateName.toLowerCase()}`
-      : `iteration-${log.iteration}`;
-    const filePath = normalizePath(`${this.sessionDir}/${fileName}.md`);
-
+    const content = this.formatSummaryMarkdown(this.sessionLog);
+    const filePath = normalizePath(`${this.sessionDir}/00-summary.md`);
     await this.app.vault.adapter.write(filePath, content);
-    console.log(`[DebugLogger] 📝 写入: ${fileName}.md`);
+    this.sessionLog.files.push('00-summary.md');
+
+    console.log(`[DebugLogger] 📝 写入: 00-summary.md`);
   }
 
   /**
-   * 写入迭代 JSON 数据
+   * 写入状态 Markdown
    */
-  private async writeIterationJson(log: IterationLog): Promise<void> {
+  private async writeStateMarkdown(stateLog: StateExecutionLog): Promise<void> {
     if (!this.sessionDir) return;
 
-    const content = JSON.stringify(log, null, 2);
-    // 使用与 Markdown 相同的命名规则
-    const fileName = log.stateInfo?.stateName
-      ? `${log.iteration}-${log.stateInfo.stateName.toLowerCase()}`
-      : `iteration-${log.iteration}`;
-    const filePath = normalizePath(`${this.sessionDir}/${fileName}.json`);
-
+    const content = this.formatStateMarkdown(stateLog);
+    const fileName = `${String(stateLog.iteration).padStart(2, '0')}-${stateLog.stateName.toLowerCase()}.md`;
+    const filePath = normalizePath(`${this.sessionDir}/${fileName}`);
     await this.app.vault.adapter.write(filePath, content);
+
+    if (this.sessionLog) {
+      this.sessionLog.files.push(fileName);
+    }
+
+    console.log(`[DebugLogger] 📝 写入: ${fileName}`);
   }
 
   /**
-   * 写入会话摘要
+   * 写入会话 JSON
    */
-  private async writeSummary(): Promise<void> {
-    if (!this.sessionDir) return;
+  private async writeSessionJson(): Promise<void> {
+    if (!this.sessionDir || !this.sessionLog) return;
 
-    const totalDuration = Date.now() - this.sessionStartTime;
-    const tokenStart = this.allIterationLogs[0]?.stats.tokenStart || 0;
-    const tokenEnd = this.allIterationLogs[this.allIterationLogs.length - 1]?.stats.tokenEnd || 0;
-
-    const llmDuration = this.allIterationLogs.reduce((sum, l) => sum + l.stats.llmDuration, 0);
-    const toolsDuration = this.allIterationLogs.reduce((sum, l) => sum + l.stats.toolsDuration, 0);
-    const toolCallCount = this.allIterationLogs.reduce((sum, l) => sum + l.stats.toolCallCount, 0);
-
-    const toolSummary = this.allIterationLogs.flatMap(log =>
-      log.toolExecutions.map(t => ({
-        iteration: log.iteration,
-        toolName: t.toolName,
-        duration: t.duration,
-      }))
-    );
-
-    const summary: SessionSummary = {
-      timestamp: new Date().toISOString(),
-      userQuery: this.sessionQuery,
-      totalIterations: this.allIterationLogs.length,
-      totalDuration,
-      totalStats: {
-        llmDuration,
-        toolsDuration,
-        tokenStart,
-        tokenEnd,
-        toolCallCount,
-      },
-      toolSummary,
-      files: this.allIterationLogs.map(l => {
-        const fileName = l.stateInfo?.stateName
-          ? `${l.iteration}-${l.stateInfo.stateName.toLowerCase()}`
-          : `iteration-${l.iteration}`;
-        return `${fileName}.md`;
-      }),
-    };
-
-    const content = this.formatSummaryMarkdown(summary);
-    const filePath = normalizePath(`${this.sessionDir}/summary.md`);
-
+    const content = JSON.stringify(this.sessionLog, null, 2);
+    const filePath = normalizePath(`${this.sessionDir}/session.json`);
     await this.app.vault.adapter.write(filePath, content);
-    console.log(`[DebugLogger] 📝 写入: summary.md`);
+    this.sessionLog.files.push('session.json');
+
+    console.log(`[DebugLogger] 📝 写入: session.json`);
   }
 
-  /**
-   * 格式化迭代日志为 Markdown（按状态组织）
-   */
-  private formatIterationMarkdown(log: IterationLog): string {
-    // 判断是否是状态机迭代（有 stateInfo 或 systemPrompt）
-    const isStateIteration = log.stateInfo || log.systemPrompt;
+  // ============================================================================
+  // Markdown 格式化
+  // ============================================================================
 
+  /**
+   * 格式化摘要 Markdown
+   */
+  private formatSummaryMarkdown(log: AgentSessionLog): string {
     let md = '';
 
-    // ========================================
-    // 标题区域
-    // ========================================
-    if (isStateIteration && log.stateInfo) {
-      const stateName = log.stateInfo.stateName || 'Unknown';
-      const depthEmoji = ['🔍', '📖', '🔬', '📚'];
-      const emoji = depthEmoji[log.stateInfo.depth ?? 0] || '⚙️';
-      md += `# ${emoji} ${stateName}\n\n`;
-      md += `> **深度**: ${log.stateInfo.depth ?? '-'} | **方法**: ${log.stateInfo.method || 'llm'}`;
-      if (log.stateInfo.innerIterations && log.stateInfo.innerIterations > 1) {
-        md += ` | **内层迭代**: ${log.stateInfo.innerIterations} 轮`;
-      }
-      md += `\n\n`;
-    } else {
-      md += `# ⚙️ 迭代 ${log.iteration}\n\n`;
-    }
+    // 标题
+    md += `# 🤖 Agent 执行日志\n\n`;
+    md += `> **会话 ID**: ${log.sessionId}\n`;
+    md += `> **时间**: ${new Date(log.startTime).toLocaleString()}\n`;
+    md += `> **书籍**: ${log.bookName || '-'}\n`;
+    md += `> **问题**: ${log.userQuery}\n\n`;
 
-    md += `**时间**: ${new Date(log.timestamp).toLocaleTimeString()}\n\n`;
-
-    // ========================================
-    // 状态信息（快速路由，无工具调用）
-    // ========================================
-    if (log.stateInfo && log.toolExecutions.length === 0) {
-      md += `## 📋 概览\n\n`;
-      md += `| 字段 | 值 |\n`;
-      md += `|------|-----|\n`;
-      if (log.stateInfo.standaloneQuery) {
-        md += `| 独立查询 | ${log.stateInfo.standaloneQuery} |\n`;
-      }
-      if (log.stateInfo.scopeNodeIds && log.stateInfo.scopeNodeIds.length > 0) {
-        md += `| 作用域节点 | ${log.stateInfo.scopeNodeIds.slice(0, 3).join(', ')}${log.stateInfo.scopeNodeIds.length > 3 ? '...' : ''} |\n`;
-      }
-      md += `\n`;
-      return md; // 状态机快速路由，无需更多内容
-    }
-
-    // ========================================
-    // LLM 交互
-    // ========================================
-    if (log.llmResponse || log.systemPrompt || log.messages.length > 0) {
-      md += `---\n\n`;
-      md += `## 🤖 LLM 交互\n\n`;
-
-      // 响应元数据
-      if (log.llmResponse?.metadata) {
-        md += `| 指标 | 值 |\n`;
-        md += `|------|-----|\n`;
-        md += `| 模型 | ${log.llmResponse.metadata.model || '-'} |\n`;
-        if (log.llmResponse.metadata.inputTokens) {
-          md += `| 输入 Token | ${log.llmResponse.metadata.inputTokens} |\n`;
-        }
-        if (log.llmResponse.metadata.outputTokens) {
-          md += `| 输出 Token | ${log.llmResponse.metadata.outputTokens} |\n`;
-        }
-        if (log.llmResponse.metadata.ttfb) {
-          md += `| TTFB | ${log.llmResponse.metadata.ttfb}ms |\n`;
-        }
-        md += `\n`;
-      }
-
-      // LLM 输出内容
-      if (log.llmResponse?.content) {
-        md += `### 💬 LLM 输出\n\n`;
-        md += `\`\`\`\n${log.llmResponse.content}\n\`\`\`\n\n`;
-      }
-
-      // 工具调用请求
-      if (log.llmResponse?.toolCalls && log.llmResponse.toolCalls.length > 0) {
-        md += `### 🔧 工具调用请求\n\n`;
-        for (const tc of log.llmResponse.toolCalls) {
-          md += `**${tc.name}**\n`;
-          md += `\`\`\`json\n${JSON.stringify(tc.arguments, null, 2)}\n\`\`\`\n\n`;
-        }
-      }
-    }
-
-    // ========================================
-    // 工具执行
-    // ========================================
-    if (log.toolExecutions.length > 0) {
-      md += `---\n\n`;
-      md += `## 🛠️ 工具执行 (${log.toolExecutions.length} 个)\n\n`;
-
-      for (let i = 0; i < log.toolExecutions.length; i++) {
-        const tool = log.toolExecutions[i];
-        md += `### ${i + 1}. ${tool.toolName}\n`;
-        md += `> 耗时: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
-
-        // 显示参数
-        if (tool.args && Object.keys(tool.args).length > 0) {
-          md += `**参数**:\n\`\`\`json\n${JSON.stringify(tool.args, null, 2)}\n\`\`\`\n\n`;
-        }
-
-        if (tool.error) {
-          md += `❌ **错误**: ${tool.error}\n\n`;
-        } else if (tool.result !== undefined) {
-          // 完整显示结果（不截断）
-          const resultStr = typeof tool.result === 'string'
-            ? tool.result
-            : JSON.stringify(tool.result, null, 2);
-          md += `**结果**:\n\`\`\`\n${resultStr}\n\`\`\`\n\n`;
-        }
-      }
-    }
-
-    // ========================================
-    // 统计信息
-    // ========================================
-    md += `---\n\n`;
-    md += `## 📊 统计\n\n`;
-    md += `| 指标 | 值 |\n`;
-    md += `|------|-----|\n`;
-    md += `| 迭代耗时 | ${(log.stats.duration / 1000).toFixed(1)}s |\n`;
-    md += `| LLM 耗时 | ${(log.stats.llmDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具耗时 | ${(log.stats.toolsDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具调用数 | ${log.stats.toolCallCount} |\n`;
-
-    return md;
-  }
-
-  /**
-   * 格式化摘要为 Markdown
-   */
-  private formatSummaryMarkdown(summary: SessionSummary): string {
-    let md = '';
-
-    // ========================================
-    // 标题区域
-    // ========================================
-    md += `# 🤖 Agent 调试日志\n\n`;
-    md += `> **时间**: ${new Date(summary.timestamp).toLocaleString()}\n`;
-    md += `> **问题**: ${summary.userQuery}\n\n`;
-
-    // ========================================
     // 状态流转图
-    // ========================================
     md += `---\n\n`;
     md += `## 📊 状态流转\n\n`;
     md += `\`\`\`\n`;
     md += `用户输入\n`;
     md += `   │\n`;
+
+    for (const state of log.stateExecutions) {
+      const emoji = this.getStateEmoji(state.stateName);
+      const duration = (state.duration / 1000).toFixed(1);
+      md += `   ▼\n`;
+      md += `${emoji} ${state.stateName} (${duration}s)\n`;
+    }
+
+    md += `   │\n`;
     md += `   ▼\n`;
-    md += `🔍 Router → 📖 Inspectional → 🔬 Analytical → 📝 Formatter\n`;
-    md += `   │           │                  │                │\n`;
-    md += `   │           │                  │                ▼\n`;
-    md += `   │           │                  │           💬 输出回复\n`;
+    md += `💬 输出回复\n`;
     md += `\`\`\`\n\n`;
 
-    // ========================================
-    // 总体统计
-    // ========================================
+    // 意图路由
+    if (log.intentRouting) {
+      md += `---\n\n`;
+      md += `## 🎯 意图路由\n\n`;
+      md += `| 字段 | 值 |\n`;
+      md += `|------|-----|\n`;
+      md += `| 检测意图 | ${log.intentRouting.detectedIntents.join(', ')} |\n`;
+      md += `| 允许工具 | ${log.intentRouting.allowedTools.join(', ')} |\n`;
+      md += `| 最大迭代 | ${log.intentRouting.maxIterations} |\n\n`;
+    }
+
+    // 统计
     md += `---\n\n`;
     md += `## 📈 统计\n\n`;
     md += `| 指标 | 值 |\n`;
     md += `|------|-----|\n`;
-    md += `| 总耗时 | ${(summary.totalDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 状态数 | ${summary.totalIterations} |\n`;
-    md += `| LLM 耗时 | ${(summary.totalStats.llmDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具耗时 | ${(summary.totalStats.toolsDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具调用数 | ${summary.totalStats.toolCallCount} |\n\n`;
+    md += `| 总耗时 | ${(log.stats.totalDuration / 1000).toFixed(1)}s |\n`;
+    md += `| 状态数 | ${log.stats.stateCount} |\n`;
+    md += `| LLM 调用 | ${log.stats.llmCallCount} 次 (${(log.stats.llmDuration / 1000).toFixed(1)}s) |\n`;
+    md += `| 工具调用 | ${log.stats.toolCallCount} 次 (${(log.stats.toolDuration / 1000).toFixed(1)}s) |\n`;
+    md += `| Token 使用 | ${log.stats.tokens.input} + ${log.stats.tokens.output} = ${log.stats.tokens.total} |\n\n`;
 
-    // ========================================
-    // 工具调用汇总（按工具分组）
-    // ========================================
-    if (summary.toolSummary.length > 0) {
-      md += `---\n\n`;
-      md += `## 🛠️ 工具调用\n\n`;
-
-      // 按工具名分组统计
-      const toolStats = new Map<string, { count: number; totalDuration: number }>();
-      for (const t of summary.toolSummary) {
-        const existing = toolStats.get(t.toolName) || { count: 0, totalDuration: 0 };
-        toolStats.set(t.toolName, {
-          count: existing.count + 1,
-          totalDuration: existing.totalDuration + t.duration,
-        });
-      }
-
+    // 工具分布
+    if (Object.keys(log.stats.toolDistribution).length > 0) {
+      md += `### 🛠️ 工具调用分布\n\n`;
       md += `| 工具 | 调用次数 | 总耗时 |\n`;
       md += `|------|----------|--------|\n`;
-      for (const [name, stats] of toolStats) {
-        md += `| ${name} | ${stats.count} | ${(stats.totalDuration / 1000).toFixed(1)}s |\n`;
+      for (const [name, stats] of Object.entries(log.stats.toolDistribution)) {
+        md += `| ${name} | ${stats.count} | ${(stats.duration / 1000).toFixed(1)}s |\n`;
       }
       md += `\n`;
     }
 
-    // ========================================
     // 文件列表
-    // ========================================
     md += `---\n\n`;
     md += `## 📁 详细日志\n\n`;
-    for (const file of summary.files) {
-      md += `- [${file}](./${file})\n`;
+    for (const file of log.files) {
+      if (file !== '00-summary.md' && file !== 'session.json') {
+        md += `- [${file}](./${file})\n`;
+      }
     }
 
     return md;
   }
+
+  /**
+   * 格式化状态 Markdown
+   */
+  private formatStateMarkdown(state: StateExecutionLog): string {
+    let md = '';
+
+    const emoji = this.getStateEmoji(state.stateName);
+    const duration = (state.duration / 1000).toFixed(1);
+
+    // 标题
+    md += `# ${emoji} ${state.stateName}\n\n`;
+    md += `> **迭代**: ${state.iteration} | **耗时**: ${duration}s\n\n`;
+
+    // 输入
+    md += `---\n\n`;
+    md += `## 📥 输入\n\n`;
+    md += `| 字段 | 值 |\n`;
+    md += `|------|-----|\n`;
+    if (state.input.query) {
+      md += `| 查询 | ${state.input.query} |\n`;
+    }
+    md += `| 历史消息 | ${state.input.historyCount} 条 |\n`;
+    if (state.input.availableTools.length > 0) {
+      md += `| 可用工具 | ${state.input.availableTools.join(', ')} |\n`;
+    }
+    if (state.input.scopeNodeIds && state.input.scopeNodeIds.length > 0) {
+      md += `| 范围锁定 | ${state.input.scopeNodeIds.slice(0, 5).join(', ')}${state.input.scopeNodeIds.length > 5 ? '...' : ''} |\n`;
+    }
+    md += `\n`;
+
+    // 输出
+    md += `---\n\n`;
+    md += `## 📤 输出\n\n`;
+    md += `| 字段 | 值 |\n`;
+    md += `|------|-----|\n`;
+    if (state.output.depth !== undefined) {
+      md += `| 阅读深度 | ${state.output.depth} |\n`;
+    }
+    if (state.output.standaloneQuery) {
+      md += `| 独立查询 | ${state.output.standaloneQuery} |\n`;
+    }
+    if (state.output.scopeNodeIds && state.output.scopeNodeIds.length > 0) {
+      md += `| 锁定范围 | ${state.output.scopeNodeIds.slice(0, 5).join(', ')} |\n`;
+    }
+    md += `| 完成原因 | ${state.output.finishReason} |\n`;
+    md += `\n`;
+
+    // LLM 交互
+    if (state.llmInteractions.length > 0) {
+      md += `---\n\n`;
+      md += `## 🤖 LLM 交互 (${state.llmInteractions.length} 次)\n\n`;
+
+      for (const llm of state.llmInteractions) {
+        md += `### 调用 #${llm.index}\n\n`;
+        md += `| 指标 | 值 |\n`;
+        md += `|------|-----|\n`;
+        md += `| 模型 | ${llm.request.modelType} (${llm.request.model}) |\n`;
+        md += `| 耗时 | ${(llm.duration / 1000).toFixed(1)}s |\n`;
+        if (llm.response.ttfb) {
+          md += `| TTFB | ${llm.response.ttfb}ms |\n`;
+        }
+        if (llm.response.inputTokens && llm.response.outputTokens) {
+          md += `| Token | ${llm.response.inputTokens} + ${llm.response.outputTokens} |\n`;
+        }
+        md += `| 完成原因 | ${llm.response.finishReason} |\n`;
+        md += `\n`;
+
+        // 工具调用请求
+        if (llm.response.toolCallRequests.length > 0) {
+          md += `**工具请求**:\n`;
+          for (const tc of llm.response.toolCallRequests) {
+            md += `- \`${tc.name}\`\n`;
+          }
+          md += `\n`;
+        }
+
+        // 输出内容（截断）
+        if (llm.response.content) {
+          const content = llm.response.content.length > 500
+            ? llm.response.content.slice(0, 500) + '...'
+            : llm.response.content;
+          md += `**输出**:\n\`\`\`\n${content}\n\`\`\`\n\n`;
+        }
+      }
+    }
+
+    // 工具调用
+    if (state.toolCalls.length > 0) {
+      md += `---\n\n`;
+      md += `## 🛠️ 工具调用 (${state.toolCalls.length} 次)\n\n`;
+
+      for (const tool of state.toolCalls) {
+        const status = tool.status === 'success' ? '✅' : '❌';
+        md += `### ${status} ${tool.toolName}\n\n`;
+        md += `> 耗时: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
+
+        // 参数
+        md += `**参数**:\n\`\`\`json\n${JSON.stringify(tool.originalArgs, null, 2)}\n\`\`\`\n\n`;
+
+        // 拦截器
+        if (tool.interceptedArgs && tool.interceptorNote) {
+          md += `**拦截器**: ${tool.interceptorNote}\n\n`;
+        }
+
+        // 结果
+        if (tool.error) {
+          md += `**错误**: ${tool.error}\n\n`;
+        } else if (tool.result) {
+          const result = tool.result.length > 1000
+            ? tool.result.slice(0, 1000) + '\n...[已截断]'
+            : tool.result;
+          md += `**结果**:\n\`\`\`json\n${result}\n\`\`\`\n\n`;
+        }
+      }
+    }
+
+    // 统计
+    md += `---\n\n`;
+    md += `## 📊 统计\n\n`;
+    md += `| 指标 | 值 |\n`;
+    md += `|------|-----|\n`;
+    md += `| LLM 调用 | ${state.stats.llmCallCount} 次 |\n`;
+    md += `| LLM 耗时 | ${(state.stats.llmDuration / 1000).toFixed(1)}s |\n`;
+    md += `| 工具调用 | ${state.stats.toolCallCount} 次 |\n`;
+    md += `| 工具耗时 | ${(state.stats.toolDuration / 1000).toFixed(1)}s |\n`;
+
+    return md;
+  }
+
+  /**
+   * 获取状态图标
+   */
+  private getStateEmoji(stateName: string): string {
+    const emojis: Record<string, string> = {
+      'Router': '🔍',
+      'Inspectional': '📖',
+      'Analytical': '🔬',
+      'Syntopical': '📚',
+      'Formatter': '📝',
+    };
+    return emojis[stateName] || '⚙️';
+  }
 }
 
-// 单例实例（由 FrontendAgent 初始化时设置）
+// ============================================================================
+// 单例管理
+// ============================================================================
+
 let _instance: DebugLogger | null = null;
 
 export function initDebugLogger(app: App, config?: Partial<DebugLogConfig>): DebugLogger {
