@@ -509,21 +509,24 @@ export class DebugLogger {
       md += `---\n\n`;
       md += `## 🛠️ 工具执行 (${log.toolExecutions.length} 个)\n\n`;
 
-      for (const tool of log.toolExecutions) {
-        md += `### ${tool.toolName}\n`;
+      for (let i = 0; i < log.toolExecutions.length; i++) {
+        const tool = log.toolExecutions[i];
+        md += `### ${i + 1}. ${tool.toolName}\n`;
         md += `> 耗时: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
+
+        // 显示参数
+        if (tool.args && Object.keys(tool.args).length > 0) {
+          md += `**参数**:\n\`\`\`json\n${JSON.stringify(tool.args, null, 2)}\n\`\`\`\n\n`;
+        }
 
         if (tool.error) {
           md += `❌ **错误**: ${tool.error}\n\n`;
         } else if (tool.result !== undefined) {
-          // 截断过长的结果
+          // 完整显示结果（不截断）
           const resultStr = typeof tool.result === 'string'
             ? tool.result
             : JSON.stringify(tool.result, null, 2);
-          const truncated = resultStr.length > 500
-            ? resultStr.slice(0, 500) + '\n... (已截断)'
-            : resultStr;
-          md += `\`\`\`\n${truncated}\n\`\`\`\n\n`;
+          md += `**结果**:\n\`\`\`\n${resultStr}\n\`\`\`\n\n`;
         }
       }
     }
