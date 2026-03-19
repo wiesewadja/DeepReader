@@ -251,6 +251,7 @@ ${currentMemory}
       chatHistory: [],
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
+      docDescription: context.docDescription,  // 全书摘要
       // 传递引擎依赖
       llmClient: this.llmClient,
       toolRegistry: toolRegistry,
@@ -295,6 +296,7 @@ ${currentMemory}
       chatHistory: cleanHistory,
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
+      docDescription: context.docDescription,  // 全书摘要
       // 传递引擎依赖
       llmClient: this.llmClient,
       toolRegistry: toolRegistry,

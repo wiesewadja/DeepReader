@@ -37,7 +37,8 @@ describe('FormatterState', () => {
 
     expect(prompt).toContain('奚童');
     expect(prompt).toContain('双链');
-    expect(prompt).toContain('[[书籍名称#^block_id');
+    // The prompt uses template syntax {{book_name}}
+    expect(prompt).toContain('{{book_name}}#^block_id');
   });
 
   it('should truncate chat history to MAX_HISTORY_MESSAGES', () => {

@@ -386,7 +386,8 @@ async function createBookNote(
     bookName: string,
     folderPath: string,
     indexId: string,
-    author?: string
+    author?: string,
+    docDescription?: string  // 全书摘要
 ): Promise<void> {
     const bookNotePath = `${folderPath}/${bookName}.md`;
     const coverPath = `DeepReader/covers/${bookName}.png`;
@@ -435,8 +436,13 @@ views:
 
 `;
 
+    // 构建全书摘要部分
+    const descriptionSection = docDescription
+        ? `## 📝 全书摘要\n\n${docDescription}\n\n`
+        : '';
+
     // 构建内容
-    const content = frontMatterLines.join('\n') + `# ${bookName}\n\n` + chapterListBase;
+    const content = frontMatterLines.join('\n') + `# ${bookName}\n\n` + descriptionSection + chapterListBase;
 
     // 检查文件是否存在
     const existingFile = app.vault.getAbstractFileByPath(bookNotePath);
@@ -492,7 +498,8 @@ export async function exportIndexToMarkdown(
     nodes: NodeData[],
     indexId: string,
     outputFolder: string = "DeepReader",
-    author?: string
+    author?: string,
+    docDescription?: string  // 全书摘要
 ): Promise<ExportResult> {
     try {
         // 创建输出文件夹（同时移除 .pdf 和 .epub 后缀）
@@ -535,7 +542,7 @@ export async function exportIndexToMarkdown(
         }
 
         // 创建或更新书籍主 note 文件
-        await createBookNote(app, pdfFolderName, folderPath, indexId, author);
+        await createBookNote(app, pdfFolderName, folderPath, indexId, author, docDescription);
 
         // 导出每个节点（支持切分）
         const fileMapping: Record<string, string> = {};  // node_id -> 主文件路径

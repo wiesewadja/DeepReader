@@ -3,7 +3,7 @@
  * ChatGPT 风格的对话界面
  */
 
-import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
@@ -787,7 +787,7 @@ export class SidebarView extends ItemView {
             this.loadBookCover(displayName, indexId);
         }
 
-        // === 获取 Markdown 文件映射（移到 if 块外部，确保总是更新) ===
+        // === 获取索引元数据（markdown_files）===
         try {
             if (this.apiClient) {
                 const indexStatus = await this.apiClient.getIndexStatus(indexId);
@@ -801,29 +801,35 @@ export class SidebarView extends ItemView {
                 }
             }
         } catch (e) {
-            logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+            logError('[DeepPDF] 获取索引元数据失败:', e);
             this.currentMarkdownFiles = {};
         }
 
-        // === 获取全书摘要（doc_description）===
+        // === 从本地书籍笔记读取全书摘要 ===
         try {
-            if (this.apiClient && indexId) {
-                // 通过轻量级查询获取索引元数据（包含 doc_description）
-                // 注意：query 不能为空，否则 index_info 会返回 null
-                serviceLog('[DeepPDF] 正在获取 doc_description, indexId:', indexId);
-                const queryResult = await this.apiClient.queryPDF('概要', indexId, 1, false);
-                serviceLog('[DeepPDF] queryPDF 完整返回 keys:', Object.keys(queryResult));
-                serviceLog('[DeepPDF] queryResult.index_info 存在:', !!queryResult.index_info);
-                if (queryResult.index_info?.doc_description) {
-                    this.currentDocDescription = queryResult.index_info.doc_description;
-                    serviceLog('[DeepPDF] 获取到全书摘要，长度:', this.currentDocDescription.length);
+            // 书籍笔记路径：DeepReader/{书名}/{书名}.md
+            // 使用 this.currentPdfName（已去除后缀）
+            const bookName = this.currentPdfName;
+            const bookNotePath = `DeepReader/${bookName}/${bookName}.md`;
+            const bookNoteFile = this.app.vault.getAbstractFileByPath(bookNotePath);
+
+            if (bookNoteFile instanceof TFile) {
+                const content = await this.app.vault.read(bookNoteFile);
+                // 提取全书摘要部分（## 📝 全书摘要）
+                const descMatch = content.match(/## 📝 全书摘要\s*\n\n([\s\S]*?)(?=\n## |$)/);
+                if (descMatch && descMatch[1]) {
+                    this.currentDocDescription = descMatch[1].trim();
+                    log(`[DeepPDF] 从本地笔记读取到全书摘要，长度: ${this.currentDocDescription.length}`);
                 } else {
                     this.currentDocDescription = null;
-                    serviceLog('[DeepPDF] 索引没有 doc_description 字段');
+                    console.debug('[DeepPDF] 本地笔记没有全书摘要部分');
                 }
+            } else {
+                this.currentDocDescription = null;
+                console.debug('[DeepPDF] 本地笔记不存在，可能尚未导出');
             }
         } catch (e) {
-            logError('[DeepPDF] 获取 doc_description 失败:', e);
+            logError('[DeepPDF] 读取本地笔记失败:', e);
             this.currentDocDescription = null;
         }
 
@@ -2393,9 +2399,16 @@ export class SidebarView extends ItemView {
             // 1. 获取完整节点数据（仅使用基于规则的快速格式化）
             const data = await this.apiClient.exportIndex(indexId);
 
-            // 2. 前端生成并写入文件（传递作者信息）
-            // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
-            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes, indexId, "DeepReader", data.author);
+            // 2. 前端生成并写入文件（传递作者信息和全书摘要）
+            const result = await exportIndexToMarkdown(
+                this.app,
+                pdfName,
+                data.nodes,
+                indexId,
+                "DeepReader",
+                data.author,
+                data.doc_description  // 全书摘要
+            );
 
             // 关闭加载提示
             loadingNotice.hide();

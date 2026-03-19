@@ -37,6 +37,26 @@ describe('InspectionalState', () => {
     expect(prompt).toContain('检视阅读');
   });
 
+  it('should include docDescription in system prompt when available', () => {
+    // 设置全书摘要
+    ctx.docDescription = '这是一本关于结构化思维方法的书籍，系统介绍了MECE原则、金字塔原理等核心概念。';
+
+    const prompt = inspectionalState.buildSystemPrompt(ctx);
+
+    // 提示词应包含全书摘要
+    expect(prompt).toContain('book_summary');
+    expect(prompt).toContain('MECE原则');
+  });
+
+  it('should not include book_summary section when docDescription is empty', () => {
+    ctx.docDescription = undefined;
+
+    const prompt = inspectionalState.buildSystemPrompt(ctx);
+
+    // 提示词不应包含 book_summary 标签
+    expect(prompt).not.toContain('<book_summary>');
+  });
+
   it('should mark state as executed after execution', async () => {
     await inspectionalState.execute(ctx);
 

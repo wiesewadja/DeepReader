@@ -422,6 +422,7 @@ export interface ExportIndexResponse {
   index_id: string;
   pdf_name: string;
   author?: string;  // 作者（EPUB 特有）
+  doc_description?: string;  // 全书摘要（LLM 生成）
   total_pages: number;
   created_at: string;
   nodes: ExportNodeData[];

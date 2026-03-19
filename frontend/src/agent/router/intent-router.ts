@@ -6,6 +6,7 @@
 
 import type { IntentRule, IntentResult, IntentRulesConfig } from './types.js';
 import { agentLog } from '../../utils/logger.js';
+import { getDebugLogger } from '../debug/logger.js';
 import DEFAULT_RULES_JSON from './intent-rules.json';
 
 // 默认最大迭代次数（当规则未指定时使用）
@@ -29,6 +30,9 @@ export class IntentRouter {
    * 分析用户意图，返回允许的工具、系统指令和最大迭代次数
    */
   analyze(userInput: string): IntentResult {
+    const startTime = Date.now();
+    const logger = getDebugLogger();
+
     const detectedIntents: string[] = [];
     const allowedTools = new Set<string>();
     let maxIterations: number | null = null; // 初始为 null，表示未设置
@@ -71,6 +75,17 @@ export class IntentRouter {
     agentLog(`[IntentRouter] 检测意图: ${detectedIntents.join(', ')}`);
     agentLog(`[IntentRouter] 允许工具: ${Array.from(allowedTools).join(', ')}`);
     agentLog(`[IntentRouter] 动态迭代上限: ${maxIterations}`);
+
+    // 5. 记录意图路由日志
+    if (logger?.isEnabled()) {
+      logger.logIntentRouting({
+        detectedIntents,
+        allowedTools: Array.from(allowedTools),
+        systemNote,
+        maxIterations,
+        duration: Date.now() - startTime,
+      });
+    }
 
     return {
       allowedTools: Array.from(allowedTools),

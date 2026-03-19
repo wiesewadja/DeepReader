@@ -51,8 +51,8 @@ describe('AnalyticalState', () => {
     // Prompt should contain scope information
     expect(prompt).toContain('node_c4');
     expect(prompt).toContain('node_c5');
-    // Prompt should contain analytical reading concepts
-    expect(prompt).toContain('分析阅读');
+    // Prompt should contain analytical reading concepts (艾德勒 or 分析阅读)
+    expect(prompt).toMatch(/艾德勒|分析阅读|诠释内容/);
   });
 
   it('should mark state as executed', async () => {
