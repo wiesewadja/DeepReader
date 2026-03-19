@@ -208,6 +208,7 @@ export class DebugLogger {
     depth?: number;
     standaloneQuery?: string;
     scopeNodeIds?: string[];
+    innerIterations?: number;
   }, method: 'regex' | 'llm' = 'llm'): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
 
@@ -217,6 +218,23 @@ export class DebugLogger {
       method,
       ...info,
     };
+  }
+
+  /**
+   * 更新内层迭代次数
+   */
+  logInnerIterations(count: number): void {
+    if (!this.config.enabled || !this.currentIterationLog) return;
+
+    if (this.currentIterationLog.stateInfo) {
+      this.currentIterationLog.stateInfo.innerIterations = count;
+    } else {
+      this.currentIterationLog.stateInfo = {
+        stateName: 'Unknown',
+        method: 'llm',
+        innerIterations: count,
+      };
+    }
   }
 
   /**
@@ -438,7 +456,11 @@ export class DebugLogger {
       const depthEmoji = ['🔍', '📖', '🔬', '📚'];
       const emoji = depthEmoji[log.stateInfo.depth ?? 0] || '⚙️';
       md += `# ${emoji} ${stateName}\n\n`;
-      md += `> **深度**: ${log.stateInfo.depth ?? '-'} | **方法**: ${log.stateInfo.method || 'llm'}\n\n`;
+      md += `> **深度**: ${log.stateInfo.depth ?? '-'} | **方法**: ${log.stateInfo.method || 'llm'}`;
+      if (log.stateInfo.innerIterations && log.stateInfo.innerIterations > 1) {
+        md += ` | **内层迭代**: ${log.stateInfo.innerIterations} 轮`;
+      }
+      md += `\n\n`;
     } else {
       md += `# ⚙️ 迭代 ${log.iteration}\n\n`;
     }
@@ -446,10 +468,10 @@ export class DebugLogger {
     md += `**时间**: ${new Date(log.timestamp).toLocaleTimeString()}\n\n`;
 
     // ========================================
-    // 状态信息（非 LLM 调用）
+    // 状态信息（快速路由，无工具调用）
     // ========================================
-    if (log.stateInfo) {
-      md += `## 📋 禂览\n\n`;
+    if (log.stateInfo && log.toolExecutions.length === 0) {
+      md += `## 📋 概览\n\n`;
       md += `| 字段 | 值 |\n`;
       md += `|------|-----|\n`;
       if (log.stateInfo.standaloneQuery) {

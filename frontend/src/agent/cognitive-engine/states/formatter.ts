@@ -84,7 +84,7 @@ export class FormatterState extends StateNode {
         ctx.analysisResult = response.content;
       }
 
-      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

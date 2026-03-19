@@ -49,6 +49,12 @@ async function executeStateWithLogging(
 
     if (logger?.isEnabled()) {
       const duration = Date.now() - startTime;
+      // 获取内层迭代次数
+      const stateResult = ctx.stateResults.get(stateName);
+      const innerIterations = stateResult?.innerIterations;
+      if (innerIterations && innerIterations > 1) {
+        logger.logInnerIterations(innerIterations);
+      }
       await logger.endIteration({
         duration,
         llmDuration: duration, // Approximate

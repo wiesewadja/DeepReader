@@ -83,7 +83,7 @@ export class AnalyticalState extends StateNode {
             const data = JSON.parse(tr.result);
             // search_doc returns results with block_id
             return (data.results || []).map((r: SearchResult) => ({
-              block_id: r.block_id || '',
+            block_id: r.block_id || '',
               text: r.text,
               toolName: 'search_doc',
             }));
@@ -92,7 +92,7 @@ export class AnalyticalState extends StateNode {
           }
         });
 
-      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

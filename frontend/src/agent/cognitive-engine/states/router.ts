@@ -73,7 +73,7 @@ export class RouterState extends StateNode {
       ctx.depth = (parsed.depth ?? 2) as 0 | 1 | 2 | 3;
       ctx.standaloneQuery = parsed.standalone_query || ctx.rawUserQuery;
 
-      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
       // 优雅降级：使用默认深度
       ctx.depth = 2;

@@ -106,7 +106,8 @@ export class SharedContextImpl implements SharedContext {
     stateName: string,
     success: boolean,
     error?: string,
-    duration?: number
+    duration?: number,
+    innerIterations?: number
   ): void {
     this.executedStates.add(stateName);
     this.stateResults.set(stateName, {
@@ -114,6 +115,7 @@ export class SharedContextImpl implements SharedContext {
       timestamp: Date.now(),
       error,
       duration,
+      innerIterations,
     });
   }
 

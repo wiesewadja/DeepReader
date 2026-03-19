@@ -25,6 +25,8 @@ export interface IterationLog {
     standaloneQuery?: string;
     scopeNodeIds?: string[];
     method?: 'regex' | 'llm';
+    /** 内层迭代次数（状态机内部的 LLM 调用轮数） */
+    innerIterations?: number;
   };
 }
 

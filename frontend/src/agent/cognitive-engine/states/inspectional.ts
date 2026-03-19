@@ -88,7 +88,7 @@ export class InspectionalState extends StateNode {
         }));
       }
 
-      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
+      ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

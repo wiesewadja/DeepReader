@@ -24,6 +24,8 @@ export interface StateResult {
   timestamp: number;
   error?: string;
   duration?: number;
+  /** 内层迭代次数（LLM 调用轮数） */
+  innerIterations?: number;
 }
 
 /**
@@ -97,7 +99,7 @@ export interface SharedContext {
   stateResults: Map<string, StateResult>;
 
   // ===== Methods =====
-  markStateExecuted(stateName: string, success: boolean, error?: string, duration?: number): void;
+  markStateExecuted(stateName: string, success: boolean, error?: string, duration?: number, innerIterations?: number): void;
   needsStateExecution(stateName: string): boolean;
   isStateSuccessful(stateName: string): boolean;
 }
