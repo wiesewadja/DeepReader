@@ -199,30 +199,24 @@ export class DebugLogger {
   }
 
   /**
-   * 记录状态信息（用于没有 LLM 调用的状态，如 Router 的 regex 路由）
+   * 记录状态信息
+   * @param stateName 状态名称
+   * @param info 状态信息
+   * @param method 路由方法 ('regex' 或 'llm')
    */
   logStateInfo(stateName: string, info: {
     depth?: number;
     standaloneQuery?: string;
     scopeNodeIds?: string[];
-  }): void {
+  }, method: 'regex' | 'llm' = 'llm'): void {
     if (!this.config.enabled || !this.currentIterationLog) return;
 
-    // 将状态信息存储到 llmResponse 的 metadata 中
-    if (!this.currentIterationLog.llmResponse) {
-      this.currentIterationLog.llmResponse = {
-        timestamp: new Date().toISOString(),
-        callStack: getCallStack(),
-        metadata: {
-          model: 'skip',
-          finishReason: 'regex_route',
-          ...info,
-        },
-        content: `${stateName} 阶段使用正则快速路由，无需 LLM 调用`,
-        toolCalls: [],
-        rawChunks: [],
-      };
-    }
+    // 将状态信息存储到 stateInfo 字段
+    this.currentIterationLog.stateInfo = {
+      stateName,
+      method,
+      ...info,
+    };
   }
 
   /**
@@ -351,10 +345,14 @@ export class DebugLogger {
     if (!this.sessionDir) return;
 
     const content = this.formatIterationMarkdown(log);
-    const filePath = normalizePath(`${this.sessionDir}/iteration-${log.iteration}.md`);
+    // 使用状态名称作为文件名，如果没有状态名称则使用迭代编号
+    const fileName = log.stateInfo?.stateName
+      ? `${log.iteration}-${log.stateInfo.stateName.toLowerCase()}`
+      : `iteration-${log.iteration}`;
+    const filePath = normalizePath(`${this.sessionDir}/${fileName}.md`);
 
     await this.app.vault.adapter.write(filePath, content);
-    console.log(`[DebugLogger] 📝 写入: iteration-${log.iteration}.md`);
+    console.log(`[DebugLogger] 📝 写入: ${fileName}.md`);
   }
 
   /**
@@ -364,7 +362,11 @@ export class DebugLogger {
     if (!this.sessionDir) return;
 
     const content = JSON.stringify(log, null, 2);
-    const filePath = normalizePath(`${this.sessionDir}/iteration-${log.iteration}-messages.json`);
+    // 使用与 Markdown 相同的命名规则
+    const fileName = log.stateInfo?.stateName
+      ? `${log.iteration}-${log.stateInfo.stateName.toLowerCase()}`
+      : `iteration-${log.iteration}`;
+    const filePath = normalizePath(`${this.sessionDir}/${fileName}.json`);
 
     await this.app.vault.adapter.write(filePath, content);
   }
@@ -404,7 +406,12 @@ export class DebugLogger {
         toolCallCount,
       },
       toolSummary,
-      files: this.allIterationLogs.map(l => `iteration-${l.iteration}.md`),
+      files: this.allIterationLogs.map(l => {
+        const fileName = l.stateInfo?.stateName
+          ? `${l.iteration}-${l.stateInfo.stateName.toLowerCase()}`
+          : `iteration-${l.iteration}`;
+        return `${fileName}.md`;
+      }),
     };
 
     const content = this.formatSummaryMarkdown(summary);
@@ -415,135 +422,123 @@ export class DebugLogger {
   }
 
   /**
-   * 格式化迭代日志为 Markdown
+   * 格式化迭代日志为 Markdown（按状态组织）
    */
   private formatIterationMarkdown(log: IterationLog): string {
-    const divider = '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    // 判断是否是状态机迭代（有 stateInfo 或 systemPrompt）
+    const isStateIteration = log.stateInfo || log.systemPrompt;
 
-    let md = `# 迭代 ${log.iteration}\n\n`;
-    md += `**时间**: ${log.timestamp}\n\n`;
-    md += divider;
+    let md = '';
 
-    // 调用链
-    md += `## 📍 调用链\n\n\`\`\`\n${log.callStack}\n\`\`\`\n`;
-    md += divider;
-
-    // 发送给 LLM
-    md += `## 📥 发送给 LLM\n\n`;
-
-    // 系统提示词
-    if (log.systemPrompt) {
-      md += `### 系统提示词\n**长度**: ${log.systemPrompt.length} 字符\n\n\`\`\`\n${log.systemPrompt}\n\`\`\`\n\n`;
+    // ========================================
+    // 标题区域
+    // ========================================
+    if (isStateIteration && log.stateInfo) {
+      const stateName = log.stateInfo.stateName || 'Unknown';
+      const depthEmoji = ['🔍', '📖', '🔬', '📚'];
+      const emoji = depthEmoji[log.stateInfo.depth ?? 0] || '⚙️';
+      md += `# ${emoji} ${stateName}\n\n`;
+      md += `> **深度**: ${log.stateInfo.depth ?? '-'} | **方法**: ${log.stateInfo.method || 'llm'}\n\n`;
+    } else {
+      md += `# ⚙️ 迭代 ${log.iteration}\n\n`;
     }
 
-    // 消息历史
-    if (log.messages.length > 0) {
-      md += `### 对话历史\n**消息数**: ${log.messages.length} 条\n\n\`\`\`json\n${JSON.stringify(log.messages, null, 2)}\n\`\`\`\n\n`;
-    }
+    md += `**时间**: ${new Date(log.timestamp).toLocaleTimeString()}\n\n`;
 
-    // LLM 请求
-    if (log.llmRequest) {
-      md += `### 发送的完整请求\n`;
-      md += `**URL**: \`${log.llmRequest.url}\`\n`;
-      md += `**方法**: ${log.llmRequest.method}\n`;
-      md += `**Headers**: \`${JSON.stringify(log.llmRequest.headers)}\`\n\n`;
-      md += `\`\`\`json\n${JSON.stringify(log.llmRequest.body, null, 2)}\n\`\`\`\n`;
-    }
-
-    md += divider;
-
-    // LLM 响应
-    if (log.llmResponse) {
-      md += `## 🤖 LLM 响应\n\n`;
-      md += `📍 调用链:\n\`\`\`\n${log.llmResponse.callStack}\n\`\`\`\n\n`;
-
-      md += `### 响应元数据\n\n`;
+    // ========================================
+    // 状态信息（非 LLM 调用）
+    // ========================================
+    if (log.stateInfo) {
+      md += `## 📋 禂览\n\n`;
       md += `| 字段 | 值 |\n`;
       md += `|------|-----|\n`;
-      md += `| 模型 | ${log.llmResponse.metadata.model} |\n`;
-      md += `| finish_reason | ${log.llmResponse.metadata.finishReason} |\n`;
-      if (log.llmResponse.metadata.inputTokens) {
-        md += `| 输入 Token | ${log.llmResponse.metadata.inputTokens} |\n`;
+      if (log.stateInfo.standaloneQuery) {
+        md += `| 独立查询 | ${log.stateInfo.standaloneQuery} |\n`;
       }
-      if (log.llmResponse.metadata.outputTokens) {
-        md += `| 输出 Token | ${log.llmResponse.metadata.outputTokens} |\n`;
-      }
-      if (log.llmResponse.metadata.ttfb) {
-        md += `| TTFB | ${log.llmResponse.metadata.ttfb}ms |\n`;
+      if (log.stateInfo.scopeNodeIds && log.stateInfo.scopeNodeIds.length > 0) {
+        md += `| 作用域节点 | ${log.stateInfo.scopeNodeIds.slice(0, 3).join(', ')}${log.stateInfo.scopeNodeIds.length > 3 ? '...' : ''} |\n`;
       }
       md += `\n`;
+      return md; // 状态机快速路由，无需更多内容
+    }
 
-      // 流式输出内容
-      if (log.llmResponse.content) {
-        md += `### 流式输出内容\n\n\`\`\`\n${log.llmResponse.content}\n\`\`\`\n\n`;
+    // ========================================
+    // LLM 交互
+    // ========================================
+    if (log.llmResponse || log.systemPrompt || log.messages.length > 0) {
+      md += `---\n\n`;
+      md += `## 🤖 LLM 交互\n\n`;
+
+      // 响应元数据
+      if (log.llmResponse?.metadata) {
+        md += `| 指标 | 值 |\n`;
+        md += `|------|-----|\n`;
+        md += `| 模型 | ${log.llmResponse.metadata.model || '-'} |\n`;
+        if (log.llmResponse.metadata.inputTokens) {
+          md += `| 输入 Token | ${log.llmResponse.metadata.inputTokens} |\n`;
+        }
+        if (log.llmResponse.metadata.outputTokens) {
+          md += `| 输出 Token | ${log.llmResponse.metadata.outputTokens} |\n`;
+        }
+        if (log.llmResponse.metadata.ttfb) {
+          md += `| TTFB | ${log.llmResponse.metadata.ttfb}ms |\n`;
+        }
+        md += `\n`;
+      }
+
+      // LLM 输出内容
+      if (log.llmResponse?.content) {
+        md += `### 💬 LLM 输出\n\n`;
+        md += `\`\`\`\n${log.llmResponse.content}\n\`\`\`\n\n`;
       }
 
       // 工具调用请求
-      if (log.llmResponse.toolCalls.length > 0) {
-        md += `### 工具调用请求\n\n`;
-        md += `| ID | 工具名 | 参数 |\n`;
-        md += `|----|--------|------|\n`;
+      if (log.llmResponse?.toolCalls && log.llmResponse.toolCalls.length > 0) {
+        md += `### 🔧 工具调用请求\n\n`;
         for (const tc of log.llmResponse.toolCalls) {
-          md += `| \`${tc.id}\` | ${tc.name} | 见下方详情 |\n`;
-        }
-        md += `\n`;
-
-        for (const tc of log.llmResponse.toolCalls) {
+          md += `**${tc.name}**\n`;
           md += `\`\`\`json\n${JSON.stringify(tc.arguments, null, 2)}\n\`\`\`\n\n`;
         }
       }
     }
 
-    md += divider;
-
+    // ========================================
     // 工具执行
+    // ========================================
     if (log.toolExecutions.length > 0) {
+      md += `---\n\n`;
+      md += `## 🛠️ 工具执行 (${log.toolExecutions.length} 个)\n\n`;
+
       for (const tool of log.toolExecutions) {
-        md += `## 🔧 工具执行: ${tool.toolName}\n\n`;
-        md += `📍 调用链:\n\`\`\`\n${tool.callStack}\n\`\`\`\n\n`;
+        md += `### ${tool.toolName}\n`;
+        md += `> 耗时: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
 
-        // 关联的后端 API 调用
-        const relatedBackendCall = log.backendCalls.find(
-          bc => bc.timestamp >= tool.timestamp
-        );
-
-        if (relatedBackendCall) {
-          md += `### 🌐 后端 API 请求\n\n`;
-          md += `**URL**: \`${relatedBackendCall.url}\`\n`;
-          md += `**方法**: ${relatedBackendCall.method}\n`;
-          if (relatedBackendCall.requestHeaders) {
-            md += `**Headers**: \`${JSON.stringify(relatedBackendCall.requestHeaders)}\`\n`;
-          }
-          md += `\n**请求体**:\n\`\`\`json\n${JSON.stringify(relatedBackendCall.requestBody, null, 2)}\n\`\`\`\n\n`;
-
-          md += `### 🌐 后端 API 响应\n\n`;
-          md += `**状态码**: ${relatedBackendCall.responseStatus}\n`;
-          md += `**耗时**: ${(relatedBackendCall.duration / 1000).toFixed(2)}s\n\n`;
-          md += `**响应体**:\n\`\`\`json\n${JSON.stringify(relatedBackendCall.responseBody, null, 2)}\n\`\`\`\n`;
-        }
-
-        md += `\n### 工具结果\n\n`;
         if (tool.error) {
-          md += `❌ **错误**: ${tool.error}\n`;
+          md += `❌ **错误**: ${tool.error}\n\n`;
         } else if (tool.result !== undefined) {
-          md += `- **耗时**: ${(tool.duration / 1000).toFixed(2)}s\n\n`;
-          md += `\`\`\`\n${typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}\n\`\`\`\n`;
+          // 截断过长的结果
+          const resultStr = typeof tool.result === 'string'
+            ? tool.result
+            : JSON.stringify(tool.result, null, 2);
+          const truncated = resultStr.length > 500
+            ? resultStr.slice(0, 500) + '\n... (已截断)'
+            : resultStr;
+          md += `\`\`\`\n${truncated}\n\`\`\`\n\n`;
         }
-
-        md += divider;
       }
     }
 
-    // 迭代统计
-    md += `## 📊 迭代 ${log.iteration} 统计\n\n`;
+    // ========================================
+    // 统计信息
+    // ========================================
+    md += `---\n\n`;
+    md += `## 📊 统计\n\n`;
     md += `| 指标 | 值 |\n`;
     md += `|------|-----|\n`;
     md += `| 迭代耗时 | ${(log.stats.duration / 1000).toFixed(1)}s |\n`;
     md += `| LLM 耗时 | ${(log.stats.llmDuration / 1000).toFixed(1)}s |\n`;
     md += `| 工具耗时 | ${(log.stats.toolsDuration / 1000).toFixed(1)}s |\n`;
-    md += `| Token 变化 | ${log.stats.tokenStart} → ${log.stats.tokenEnd} (${log.stats.tokenEnd - log.stats.tokenStart >= 0 ? '+' : ''}${log.stats.tokenEnd - log.stats.tokenStart}) |\n`;
     md += `| 工具调用数 | ${log.stats.toolCallCount} |\n`;
-    md += divider;
 
     return md;
   }
@@ -552,39 +547,75 @@ export class DebugLogger {
    * 格式化摘要为 Markdown
    */
   private formatSummaryMarkdown(summary: SessionSummary): string {
-    const divider = '\n---\n';
+    let md = '';
 
-    let md = `# Agent 调试日志\n\n`;
-    md += `**时间**: ${summary.timestamp}\n`;
-    md += `**用户问题**: ${summary.userQuery}\n`;
-    md += `**总迭代数**: ${summary.totalIterations}\n`;
-    md += `**总耗时**: ${(summary.totalDuration / 1000).toFixed(1)}s\n`;
-    md += divider;
+    // ========================================
+    // 标题区域
+    // ========================================
+    md += `# 🤖 Agent 调试日志\n\n`;
+    md += `> **时间**: ${new Date(summary.timestamp).toLocaleString()}\n`;
+    md += `> **问题**: ${summary.userQuery}\n\n`;
 
-    md += `## 📊 总体统计\n\n`;
+    // ========================================
+    // 状态流转图
+    // ========================================
+    md += `---\n\n`;
+    md += `## 📊 状态流转\n\n`;
+    md += `\`\`\`\n`;
+    md += `用户输入\n`;
+    md += `   │\n`;
+    md += `   ▼\n`;
+    md += `🔍 Router → 📖 Inspectional → 🔬 Analytical → 📝 Formatter\n`;
+    md += `   │           │                  │                │\n`;
+    md += `   │           │                  │                ▼\n`;
+    md += `   │           │                  │           💬 输出回复\n`;
+    md += `\`\`\`\n\n`;
+
+    // ========================================
+    // 总体统计
+    // ========================================
+    md += `---\n\n`;
+    md += `## 📈 统计\n\n`;
     md += `| 指标 | 值 |\n`;
     md += `|------|-----|\n`;
-    md += `| 总 Token 消耗 | ${summary.totalStats.tokenStart} → ${summary.totalStats.tokenEnd} (${summary.totalStats.tokenEnd - summary.totalStats.tokenStart >= 0 ? '+' : ''}${summary.totalStats.tokenEnd - summary.totalStats.tokenStart}) |\n`;
-    md += `| LLM 总耗时 | ${(summary.totalStats.llmDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具总耗时 | ${(summary.totalStats.toolsDuration / 1000).toFixed(1)}s |\n`;
-    md += `| 工具调用总数 | ${summary.totalStats.toolCallCount} |\n`;
-    md += divider;
+    md += `| 总耗时 | ${(summary.totalDuration / 1000).toFixed(1)}s |\n`;
+    md += `| 状态数 | ${summary.totalIterations} |\n`;
+    md += `| LLM 耗时 | ${(summary.totalStats.llmDuration / 1000).toFixed(1)}s |\n`;
+    md += `| 工具耗时 | ${(summary.totalStats.toolsDuration / 1000).toFixed(1)}s |\n`;
+    md += `| 工具调用数 | ${summary.totalStats.toolCallCount} |\n\n`;
 
+    // ========================================
+    // 工具调用汇总（按工具分组）
+    // ========================================
     if (summary.toolSummary.length > 0) {
-      md += `## 🔧 工具调用汇总\n\n`;
-      md += `| 迭代 | 工具 | 耗时 |\n`;
-      md += `|------|------|------|\n`;
+      md += `---\n\n`;
+      md += `## 🛠️ 工具调用\n\n`;
+
+      // 按工具名分组统计
+      const toolStats = new Map<string, { count: number; totalDuration: number }>();
       for (const t of summary.toolSummary) {
-        md += `| ${t.iteration} | ${t.toolName} | ${(t.duration / 1000).toFixed(1)}s |\n`;
+        const existing = toolStats.get(t.toolName) || { count: 0, totalDuration: 0 };
+        toolStats.set(t.toolName, {
+          count: existing.count + 1,
+          totalDuration: existing.totalDuration + t.duration,
+        });
       }
-      md += divider;
+
+      md += `| 工具 | 调用次数 | 总耗时 |\n`;
+      md += `|------|----------|--------|\n`;
+      for (const [name, stats] of toolStats) {
+        md += `| ${name} | ${stats.count} | ${(stats.totalDuration / 1000).toFixed(1)}s |\n`;
+      }
+      md += `\n`;
     }
 
-    md += `## 📁 文件列表\n\n`;
+    // ========================================
+    // 文件列表
+    // ========================================
+    md += `---\n\n`;
+    md += `## 📁 详细日志\n\n`;
     for (const file of summary.files) {
-      const baseName = file.replace('.md', '');
       md += `- [${file}](./${file})\n`;
-      md += `- [${baseName}-messages.json](./${baseName}-messages.json)\n`;
     }
 
     return md;

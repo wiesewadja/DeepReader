@@ -2,10 +2,10 @@
  * S0: Router + Query Rewriter State
  *
  * Responsibilities:
- * 1. Determine reading depth (0, 1, 2, 3)
+ * 1. Determine reading depth (0, 1, 2, 3) using LLM
  * 2. Rewrite ambiguous queries to standalone form
  *
- * Routing: Hybrid (regex first, LLM fallback)
+ * Routing: LLM-based intent classification
  */
 
 import { z } from 'zod';
@@ -13,9 +13,6 @@ import { StateNode } from './base';
 import type { SharedContext } from '../types';
 import { parseStateOutput } from '../parse';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
-import { IntentRouter } from '../../router/intent-router';
-import DEFAULT_RULES_JSON from '../../router/intent-rules.json';
-import type { IntentRulesConfig } from '../../router/types';
 import { runStateLoop } from './run-state-loop';
 
 // Schema for router output
@@ -25,16 +22,6 @@ const RouterOutputSchema = z.object({
   reason: z.string().optional(),
 });
 
-// Depth mapping from intent names
-const INTENT_TO_DEPTH: Record<string, number> = {
-  '检视阅读': 1,
-  '分析阅读': 2,
-  '分析阅读-定位': 2,
-  '分析阅读-概念探究': 2,
-  '分析阅读-微观检索': 2,
-  '主题阅读': 3,
-};
-
 /**
  * S0: Router + Query Rewriter
  */
@@ -43,71 +30,52 @@ export class RouterState extends StateNode {
   readonly model = 'fast' as const;
   readonly tools: string[] = [];
 
-  private intentRouter: IntentRouter;
-
-  constructor(config?: IntentRulesConfig) {
+  constructor() {
     super();
-    this.intentRouter = new IntentRouter(config || (DEFAULT_RULES_JSON as IntentRulesConfig));
-    this.options = { timeout: 5000, retries: 1 };
+    this.options = { timeout: 10000, retries: 1 };
   }
 
   async execute(ctx: SharedContext): Promise<void> {
     const startTime = Date.now();
 
     try {
-      // 1. Try regex routing first
-      const regexResult = this.tryRegexRoute(ctx.rawUserQuery);
-
-      if (regexResult && !regexResult.needsRewrite) {
-        ctx.depth = regexResult.depth as 0 | 1 | 2 | 3;
+      // 检查引擎依赖是否可用
+      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+        // 回退到默认深度 2
+        ctx.depth = 2;
         ctx.standaloneQuery = ctx.rawUserQuery;
-        ctx.detectedIntents = regexResult.intents;
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
       }
 
-      // 2. LLM fallback for query rewrite (when needed)
-      if (regexResult && regexResult.needsRewrite && ctx.llmClient && ctx.toolRegistry && ctx.toolContext) {
-        try {
-          const response = await runStateLoop(
-            ctx.llmClient,
-            ctx.toolRegistry,
-            ctx.toolContext,
-            {
-              model: this.model,
-              systemPrompt: PROMPT_S0_ROUTER,
-              userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory),
-              availableTools: [],
-              maxIterations: 1,
-              abortSignal: ctx.abortSignal,
-            }
-          );
-
-          const parsed = parseStateOutput(response.content, RouterOutputSchema);
-          ctx.depth = (parsed.depth ?? regexResult.depth) as 0 | 1 | 2 | 3;
-          ctx.standaloneQuery = parsed.standalone_query || ctx.rawUserQuery;
-          ctx.detectedIntents = regexResult.intents;
-        } catch {
-          // LLM failed, use regex result
-          ctx.depth = regexResult.depth as 0 | 1 | 2 | 3;
-          ctx.standaloneQuery = ctx.rawUserQuery;
-          ctx.detectedIntents = regexResult.intents;
+      // 使用 LLM 进行意图识别和查询重写
+      const response = await runStateLoop(
+        ctx.llmClient,
+        ctx.toolRegistry,
+        ctx.toolContext,
+        {
+          model: this.model,
+          systemPrompt: PROMPT_S0_ROUTER,
+          userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory),
+          availableTools: [],
+          maxIterations: 1,
+          abortSignal: ctx.abortSignal,
         }
-      } else if (regexResult) {
-        // No LLM available, use regex result
-        ctx.depth = regexResult.depth as 0 | 1 | 2 | 3;
-        ctx.standaloneQuery = ctx.rawUserQuery;
-        ctx.detectedIntents = regexResult.intents;
-      } else {
-        // Fallback to depth 2
-        ctx.depth = 2;
-        ctx.standaloneQuery = ctx.rawUserQuery;
-        ctx.detectedIntents = ['分析阅读-微观检索'];
-      }
+      );
+
+      // 解析 LLM 输出
+      const defaultOutput = {
+        depth: 2 as 0 | 1 | 2 | 3,
+        standalone_query: ctx.rawUserQuery,
+      };
+
+      const parsed = parseStateOutput(response.content, RouterOutputSchema, defaultOutput);
+      ctx.depth = (parsed.depth ?? 2) as 0 | 1 | 2 | 3;
+      ctx.standaloneQuery = parsed.standalone_query || ctx.rawUserQuery;
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
     } catch (error) {
-      // Graceful degradation
+      // 优雅降级：使用默认深度
       ctx.depth = 2;
       ctx.standaloneQuery = ctx.rawUserQuery;
       ctx.markStateExecuted(
@@ -117,30 +85,6 @@ export class RouterState extends StateNode {
         Date.now() - startTime
       );
     }
-  }
-
-  /**
-   * Try to route using regex patterns
-   */
-  private tryRegexRoute(
-    query: string
-  ): { depth: number; needsRewrite: boolean; intents: string[] } | null {
-    const result = this.intentRouter.analyze(query);
-
-    // Map intents to depth
-    let depth = 2; // default
-    for (const intent of result.detectedIntents) {
-      const mappedDepth = INTENT_TO_DEPTH[intent];
-      if (mappedDepth !== undefined) {
-        depth = mappedDepth;
-        break;
-      }
-    }
-
-    // Check if query needs rewrite (contains pronouns or is very short)
-    const needsRewrite = /(它|这个|那个|他|她)/.test(query) || query.length < 10;
-
-    return { depth, needsRewrite, intents: result.detectedIntents };
   }
 
   buildSystemPrompt(_ctx: SharedContext): string {
