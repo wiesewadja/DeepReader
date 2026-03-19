@@ -17,8 +17,9 @@ import { runStateLoop } from './run-state-loop';
 
 // Schema for inspectional output
 // scopeNodeIds 允许空数组（表示全局搜索）
+// max(100) 允许圈定较大范围，宁可大也不要遗漏
 const InspectionalOutputSchema = z.object({
-  scopeNodeIds: z.array(z.string()).max(5),
+  scopeNodeIds: z.array(z.string()).max(100),
   tocSummary: z.string(),
 });
 
