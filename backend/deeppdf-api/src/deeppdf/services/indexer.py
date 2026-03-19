@@ -966,6 +966,11 @@ def _save_metadata(
         "last_read_at": None,
     }
 
+    # 添加全书摘要（doc_description）- 来自 PageIndex 生成的文档描述
+    if tree_result.get("doc_description"):
+        metadata_content["doc_description"] = tree_result["doc_description"]
+        logger.info(f"[元数据] 全书摘要长度: {len(tree_result['doc_description'])} 字符")
+
     # 添加 EPUB 特有的元数据（作者、语言等）
     if tree_result.get("author"):
         metadata_content["author"] = tree_result["author"]

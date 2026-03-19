@@ -233,11 +233,15 @@ async def export_index_data(
         # 获取作者信息（EPUB 特有）
         author = metadata.get("author")
 
+        # 获取全书摘要
+        doc_description = metadata.get("doc_description", "")
+
         return {
             "status": "success",
             "index_id": index_id,
             "pdf_name": metadata.get("pdf_name", ""),
             "author": author,
+            "doc_description": doc_description,  # 全书摘要
             "total_pages": total_pages,
             "created_at": created_at,
             "nodes": nodes,
