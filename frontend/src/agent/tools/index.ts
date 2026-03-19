@@ -7,6 +7,13 @@ import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 import { searchDocTool } from './search-doc.js';
 import { getTocTool } from './get-toc.js';
 import { getChapterTool } from './get-chapter.js';
+
+// 本地 Markdown 工具（零外部依赖）
+import {
+  getDocumentOutlineTool,
+  searchMarkdownTextTool,
+  readMarkdownSectionTool
+} from './local/index.js';
 import { createSkillTool } from './skill.js';  // TODO: 暂时屏蔽 Skills 功能
 import { writeNoteTool } from './write-note.js';
 import { createSubAgentTool, checkSubAgentTool } from './create-sub-agent.js';
@@ -29,6 +36,13 @@ export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 export { searchDocTool } from './search-doc.js';
 export { getTocTool } from './get-toc.js';
 export { getChapterTool } from './get-chapter.js';
+
+// 本地 Markdown 工具
+export {
+  getDocumentOutlineTool,
+  searchMarkdownTextTool,
+  readMarkdownSectionTool
+} from './local/index.js';
 export { createSkillTool } from './skill.js';
 export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
@@ -52,6 +66,11 @@ export function createToolRegistry(
   registry.set('search_doc', searchDocTool);
   registry.set('get_toc', getTocTool);
   registry.set('get_chapter', getChapterTool);
+
+  // 注册本地 Markdown 工具（零外部依赖）
+  registry.set('get_document_outline', getDocumentOutlineTool);
+  registry.set('search_markdown_text', searchMarkdownTextTool);
+  registry.set('read_markdown_section', readMarkdownSectionTool);
 
   // 注册 Skill 工具（需要依赖注入）
   // TODO: 暂时屏蔽 Skills 功能
