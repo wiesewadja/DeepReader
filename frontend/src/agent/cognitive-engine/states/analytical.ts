@@ -88,7 +88,10 @@ export class AnalyticalState extends StateNode {
   }
 
   buildSystemPrompt(ctx: SharedContext): string {
-    return buildAnalyticalSystemPrompt(ctx.scopeNodeIds || []);
+    return buildAnalyticalSystemPrompt({
+      scopeNodeIds: ctx.scopeNodeIds || [],
+      tocSummary: ctx.tocSummary,
+    });
   }
 
   /**

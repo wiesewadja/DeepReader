@@ -68,7 +68,8 @@ export function buildFormatterUserMessage(
   bookName: string,
   recentHistory?: ChatMessage[],
   tocSummary?: string,
-  structuralAnalysis?: string
+  structuralAnalysis?: string,
+  betterQuestion?: string
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? recentHistory
@@ -86,11 +87,14 @@ export function buildFormatterUserMessage(
     ? `\n<structural_analysis>\n${structuralAnalysis}\n</structural_analysis>`
     : '';
 
+  // 使用更好的问题（如果有），否则使用原始问题
+  const effectiveQuery = betterQuestion || rawUserQuery;
+
   return `<history>
 ${historyText}
 </history>
 
-<query>${rawUserQuery}</query>
+<query>${effectiveQuery}</query>
 
 <analysis>
 ${analysisResult || '(无分析结果)'}

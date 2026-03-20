@@ -6,12 +6,19 @@
 
 export interface AnalyticalPromptContext {
   scopeNodeIds?: string[];
+  tocSummary?: string;
+  betterQuestion?: string;
 }
 
 export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
   const scopeText = ctx.scopeNodeIds?.length
     ? ctx.scopeNodeIds.join(', ')
     : '未指定（全局搜索）';
+
+  // 搜索关键词建议
+  const keywordHints = ctx.tocSummary
+    ? `\n<search_hints>\n${ctx.tocSummary}\n</search_hints>`
+    : '';
 
   return `<role>
 你是艾德勒学派的阅读分析师。忠于原著，执行分析阅读方式，深度解构作者思想。
@@ -22,10 +29,11 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 2. 遵守"智慧礼节"：此阶段不对作者观点提出批评或赞同，只负责"懂他"。
 3. 总共只有 5 次工具调用机会，合理分配。
 </constraints>
-
+${keywordHints}
 <workflow>
-0. 如何给定的范围少于 3 个，则直接通过read_markdown_section 读取完整内容，否则执行 1
+0. 若给定的搜索范围少于 3 个，则直接通过read_markdown_section 读取完整内容，否则执行 1
 1. **探索** (不多于2次): 用 search_markdown_text 搜索关键词
+   - 优先使用 search_hints 中建议的关键词
    - ERROR_TOO_BROAD → 换更精准的词
    - ERROR_NOT_FOUND → 尝试同义词
 
@@ -65,11 +73,18 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 /**
  * Build system prompt for analytical state with scope
  */
-export function buildAnalyticalSystemPrompt(scopeNodeIds: string[]): string {
-  const scopeList = scopeNodeIds.map(id => `- ${id}`).join('\n');
+export function buildAnalyticalSystemPrompt(ctx: {
+  scopeNodeIds: string[];
+  tocSummary?: string;
+}): string {
+  const scopeList = ctx.scopeNodeIds.map(id => `- ${id}`).join('\n');
+
+  const searchHints = ctx.tocSummary
+    ? `\n<search_hints>\n${ctx.tocSummary}\n</search_hints>`
+    : '';
 
   return `${PROMPT_S2_ANALYTICAL_TEMPLATE}
-
+${searchHints}
 <locked_scope>
 搜索范围限定：
 ${scopeList}

@@ -57,8 +57,10 @@ export interface SharedContext {
   // ===== S1 Output =====
   /** Locked chapter scope */
   scopeNodeIds?: string[];
-  /** TOC summary reasoning */
+  /** TOC summary reasoning with search keyword suggestions */
   tocSummary?: string;
+  /** Better rephrased question for S2/S4 */
+  betterQuestion?: string;
   /** 全书结构分析（深度1时由 S1 生成，用于 S4 直接输出） */
   structuralAnalysis?: string;
 

@@ -57,12 +57,13 @@ export class FormatterState extends StateNode {
           model: this.model,
           systemPrompt: this.buildSystemPrompt(ctx),
           userMessage: buildFormatterUserMessage(
-            ctx.standaloneQuery || ctx.rawUserQuery,
+            ctx.betterQuestion || ctx.standaloneQuery || ctx.rawUserQuery,
             ctx.analysisResult || '',
             ctx.pdfName,
             recentHistory,
             ctx.tocSummary,
-            ctx.structuralAnalysis
+            ctx.structuralAnalysis,
+            ctx.betterQuestion
           ),
           availableTools: [],
           maxIterations: 1,

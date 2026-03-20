@@ -27,6 +27,7 @@ import { getDebugLogger } from '../../debug/index.js';
 const InspectionalOutputSchema = z.object({
   scopeNodeIds: z.array(z.string()).max(100),
   tocSummary: z.string(),
+  better_question: z.string().optional(),
   structural_analysis: z.string().optional(),
 });
 
@@ -156,11 +157,13 @@ export class InspectionalState extends StateNode {
         const parsed = parseStateOutput(response.content, InspectionalOutputSchema, defaultOutput);
         ctx.scopeNodeIds = parsed.scopeNodeIds;
         ctx.tocSummary = parsed.tocSummary;
+        ctx.betterQuestion = parsed.better_question || ctx.rawUserQuery;
         ctx.structuralAnalysis = parsed.structural_analysis || '';
       } catch {
         // Use fallback on parse error
         ctx.scopeNodeIds = defaultOutput.scopeNodeIds;
         ctx.tocSummary = defaultOutput.tocSummary;
+        ctx.betterQuestion = ctx.rawUserQuery;
         ctx.structuralAnalysis = defaultOutput.structural_analysis;
       }
 
