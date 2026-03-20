@@ -167,6 +167,21 @@ export class DebugLogger {
   }
 
   /**
+   * 记录最终输出（答案）
+   */
+  setFinalOutput(output: string): void {
+    if (!this.config.enabled || !this.sessionLog) return;
+
+    this.sessionLog.finalOutput = output;
+    this.sessionLog.finalOutputLength = output.length;
+
+    console.log(`[DebugLogger] 💬 最终答案: ${output.length} 字符`);
+    // 预览前 100 字符
+    const preview = output.length > 100 ? output.slice(0, 100) + '...' : output;
+    console.log(`[DebugLogger]    预览: ${preview.replace(/\n/g, ' ')}`);
+  }
+
+  /**
    * 结束调试会话
    */
   async endSession(): Promise<void> {
@@ -484,145 +499,137 @@ export class DebugLogger {
   }
 
   // ============================================================================
-  // 向后兼容方法
+  // 便捷方法（简化调用）
   // ============================================================================
 
   /**
-   * @deprecated 使用 startStateExecution 替代
+   * 记录系统提示词（便捷方法）
    */
-  startIteration(iteration: number): void {
+  logSystemPrompt(prompt: string): void {
+    // 新版日志通过 startLLMInteraction 记录，此方法仅用于控制台输出
     if (!this.config.enabled) return;
-
-    this.currentIteration = iteration;
-    this.currentIterationLog = {
-      iteration,
-      timestamp: new Date().toISOString(),
-      callStack: getCallStack(),
-      messages: [],
-      toolExecutions: [],
-      backendCalls: [],
-      stats: {
-        duration: 0,
-        llmDuration: 0,
-        toolsDuration: 0,
-        tokenStart: 0,
-        tokenEnd: 0,
-        toolCallCount: 0,
-      },
-    };
+    console.log(`[DebugLogger]    📝 系统提示词: ${prompt.length} 字符`);
   }
 
   /**
-   * @deprecated 使用 endStateExecution 替代
+   * 记录消息历史（便捷方法）
    */
-  async endIteration(stats: Partial<IterationStats>): Promise<void> {
-    if (!this.config.enabled || !this.currentIterationLog || !this.sessionDir) return;
-
-    this.currentIterationLog.stats = {
-      ...this.currentIterationLog.stats,
-      ...stats,
-    };
-    this.currentIterationLog.stats.toolCallCount = this.currentIterationLog.toolExecutions.length;
-
-    this.allIterationLogs.push(this.currentIterationLog);
-    this.currentIterationLog = null;
+  logMessages(messages: unknown[]): void {
+    // 仅在需要时输出
+    if (!this.config.enabled) return;
+    console.log(`[DebugLogger]    📨 消息历史: ${Array.isArray(messages) ? messages.length : 0} 条`);
   }
 
-  logSystemPrompt(prompt: string): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.systemPrompt = prompt;
+  /**
+   * 记录 LLM 请求（便捷方法，用于 agent-loop 兼容）
+   */
+  logLLMRequest(request: { url: string; method: string; headers: Record<string, string>; body: unknown }): void {
+    if (!this.config.enabled) return;
+    const bodyObj = request.body as { model?: string; messages?: unknown[]; tools?: unknown[] };
+    console.log(`[DebugLogger]    🚀 LLM 请求: ${bodyObj.model || 'unknown'}, ${bodyObj.messages?.length || 0} 条消息, ${bodyObj.tools?.length || 0} 个工具`);
   }
 
+  /**
+   * 记录 LLM 响应（便捷方法，用于 agent-loop 兼容）
+   */
+  logLLMResponse(response: { metadata?: { model?: string; finishReason?: string; ttfb?: number }; content?: string; toolCalls?: Array<{ id: string; name: string; arguments: unknown }> }): void {
+    if (!this.config.enabled) return;
+    const finishReason = response.metadata?.finishReason || 'unknown';
+    const contentLen = response.content?.length || 0;
+    const toolCount = response.toolCalls?.length || 0;
+    console.log(`[DebugLogger]    📥 LLM 响应: ${finishReason}, ${contentLen} 字符, ${toolCount} 个工具调用`);
+  }
+
+  /**
+   * 添加 LLM 输出片段（便捷方法）
+   */
+  addLLMChunk(_chunk: string): void {
+    // 新版日志不需要累积 chunks
+  }
+
+  /**
+   * 记录工具调用开始（便捷方法）
+   */
+  logToolStart(toolCallId: string, toolName: string, args: unknown): void {
+    if (!this.config.enabled) return;
+    console.log(`[DebugLogger]    🔧 工具开始: ${toolName} (${toolCallId})`);
+    // 解析参数中的关键信息
+    try {
+      const argsObj = args as Record<string, unknown>;
+      const keyParams = Object.entries(argsObj)
+        .slice(0, 2)
+        .map(([k, v]) => `${k}=${typeof v === 'string' ? v.slice(0, 30) : JSON.stringify(v)?.slice(0, 30)}`)
+        .join(', ');
+      console.log(`[DebugLogger]       参数: ${keyParams}${Object.keys(argsObj).length > 2 ? '...' : ''}`);
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * 记录工具调用结果（便捷方法）
+   */
+  logToolResult(toolCallId: string, result: unknown, duration: number): void {
+    if (!this.config.enabled) return;
+    const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+    const resultLen = resultStr.length;
+    console.log(`[DebugLogger]    ✅ 工具结果: ${duration}ms, ${resultLen} 字符`);
+  }
+
+  /**
+   * 记录工具调用错误（便捷方法）
+   */
+  logToolError(toolCallId: string, error: string, duration: number): void {
+    if (!this.config.enabled) return;
+    console.log(`[DebugLogger]    ❌ 工具错误: ${error} (${duration}ms)`);
+  }
+
+  /**
+   * 记录状态信息（便捷方法）
+   */
   logStateInfo(stateName: string, info: {
     depth?: number;
     standaloneQuery?: string;
     scopeNodeIds?: string[];
     innerIterations?: number;
-  }, method: 'regex' | 'llm' = 'llm'): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.stateInfo = { stateName, method, ...info };
+  }, _method: 'regex' | 'llm' = 'llm'): void {
+    if (!this.config.enabled) return;
+    if (info.depth !== undefined) {
+      console.log(`[DebugLogger]    📊 深度: ${info.depth}`);
+    }
+    if (info.standaloneQuery) {
+      console.log(`[DebugLogger]    📝 独立查询: ${info.standaloneQuery.slice(0, 50)}...`);
+    }
+    if (info.scopeNodeIds && info.scopeNodeIds.length > 0) {
+      console.log(`[DebugLogger]    🎯 范围锁定: ${info.scopeNodeIds.length} 个章节`);
+    }
   }
 
+  /**
+   * 记录内部迭代次数（便捷方法）
+   */
   logInnerIterations(count: number): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    if (this.currentIterationLog.stateInfo) {
-      this.currentIterationLog.stateInfo.innerIterations = count;
-    } else {
-      this.currentIterationLog.stateInfo = { stateName: 'Unknown', method: 'llm', innerIterations: count };
-    }
+    if (!this.config.enabled) return;
+    console.log(`[DebugLogger]    🔄 内部迭代: ${count} 次`);
   }
 
-  logMessages(messages: unknown[]): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.messages = JSON.parse(JSON.stringify(messages));
+  // ============================================================================
+  // 已废弃方法（保持类型兼容）
+  // ============================================================================
+
+  /** @deprecated 使用 startStateExecution 替代 */
+  startIteration(iteration: number): void {
+    // 向后兼容：转发到新版 API
+    if (!this.config.enabled || !this.sessionLog) return;
+    this.currentIteration = iteration;
   }
 
-  logLLMRequest(request: Omit<LLMRequestLog, 'timestamp' | 'callStack'>): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.llmRequest = {
-      ...request,
-      timestamp: new Date().toISOString(),
-      callStack: getCallStack(),
-    };
+  /** @deprecated 使用 endStateExecution 替代 */
+  async endIteration(_stats: Partial<{ duration: number; llmDuration: number; toolsDuration: number; tokenStart: number; tokenEnd: number }>): Promise<void> {
+    // 向后兼容：无操作
   }
 
-  logLLMResponse(response: Partial<Omit<LLMResponseLog, 'timestamp' | 'callStack'>>): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.llmResponse = {
-      timestamp: new Date().toISOString(),
-      callStack: getCallStack(),
-      metadata: response.metadata || { model: '', finishReason: '' },
-      content: response.content || '',
-      toolCalls: response.toolCalls || [],
-      rawChunks: response.rawChunks || [],
-    };
-  }
-
-  addLLMChunk(chunk: string): void {
-    if (!this.config.enabled || !this.currentIterationLog?.llmResponse) return;
-    this.currentIterationLog.llmResponse.rawChunks.push(chunk);
-  }
-
-  logToolStart(toolCallId: string, toolName: string, args: unknown): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    const existing = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
-    if (!existing) {
-      this.currentIterationLog.toolExecutions.push({
-        timestamp: new Date().toISOString(),
-        callStack: getCallStack(),
-        toolCallId,
-        toolName,
-        args,
-        duration: 0,
-      });
-    }
-  }
-
-  logToolResult(toolCallId: string, result: unknown, duration: number): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    const tool = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
-    if (tool) {
-      tool.result = result;
-      tool.duration = duration;
-    }
-  }
-
-  logToolError(toolCallId: string, error: string, duration: number): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    const tool = this.currentIterationLog.toolExecutions.find(t => t.toolCallId === toolCallId);
-    if (tool) {
-      tool.error = error;
-      tool.duration = duration;
-    }
-  }
-
-  logBackendCall(call: Omit<BackendCallLog, 'timestamp' | 'callStack'>): void {
-    if (!this.config.enabled || !this.currentIterationLog) return;
-    this.currentIterationLog.backendCalls.push({
-      ...call,
-      timestamp: new Date().toISOString(),
-      callStack: getCallStack(),
-    });
+  /** @deprecated 不再使用 */
+  logBackendCall(_call: Omit<BackendCallLog, 'timestamp' | 'callStack'>): void {
+    // 不再记录后端调用
   }
 
   // ============================================================================
@@ -731,6 +738,23 @@ export class DebugLogger {
 
     md += `\n`;
 
+    // ===== 最终答案 =====
+    if (log.finalOutput) {
+      md += `---\n\n`;
+      md += `## 💬 最终答案\n\n`;
+      md += `> **答案长度**: ${log.finalOutputLength || log.finalOutput.length} 字符\n\n`;
+
+      // 截断显示（超过 1000 字符折叠）
+      if (log.finalOutput.length > 1000) {
+        md += `<details>\n`;
+        md += `<summary>点击展开完整答案</summary>\n\n`;
+        md += `${log.finalOutput}\n\n`;
+        md += `</details>\n\n`;
+      } else {
+        md += `${log.finalOutput}\n\n`;
+      }
+    }
+
     // ===== 时间分布 =====
     md += `**总耗时**: ${(log.stats.totalDuration / 1000).toFixed(1)}s\n\n`;
     md += `\`\`\`\n`;
@@ -760,6 +784,108 @@ export class DebugLogger {
     md += `   ▼\n`;
     md += `💬 输出回复\n`;
     md += `\`\`\`\n\n`;
+
+    // ===== 数据流追踪 =====
+    md += `---\n\n`;
+    md += `## 🔄 数据流追踪\n\n`;
+    md += `展示关键信息如何在状态之间流转：\n\n`;
+    md += `\`\`\`\n`;
+
+    // 追踪用户查询的变化
+    md += `📝 查询演变:\n`;
+    md += `   原始问题 → ${log.userQuery.slice(0, 50)}${log.userQuery.length > 50 ? '...' : ''}\n`;
+
+    if (routerState?.output.standaloneQuery) {
+      md += `   独立查询 → ${routerState.output.standaloneQuery.slice(0, 50)}${routerState.output.standaloneQuery.length > 50 ? '...' : ''}\n`;
+    }
+
+    // 追踪范围锁定
+    if (inspectionalState?.output.scopeNodeIds && inspectionalState.output.scopeNodeIds.length > 0) {
+      md += `\n🎯 范围锁定:\n`;
+      md += `   章节 ID → ${inspectionalState.output.scopeNodeIds.slice(0, 3).join(', ')}`;
+      if (inspectionalState.output.scopeNodeIds.length > 3) {
+        md += ` (+${inspectionalState.output.scopeNodeIds.length - 3} 个)`;
+      }
+      md += `\n`;
+    }
+
+    // 追踪分析结果
+    if (analyticalState?.output.analysisResult) {
+      md += `\n🔬 分析结果:\n`;
+      const analysisPreview = analyticalState.output.analysisResult.slice(0, 100);
+      md += `   ${analysisPreview.replace(/\n/g, ' ')}${analyticalState.output.analysisResult.length > 100 ? '...' : ''}\n`;
+    }
+
+    // 追踪最终输出
+    if (log.finalOutput) {
+      md += `\n💬 最终输出:\n`;
+      const outputPreview = log.finalOutput.slice(0, 100);
+      md += `   ${outputPreview.replace(/\n/g, ' ')}${log.finalOutput.length > 100 ? '...' : ''}\n`;
+    }
+
+    md += `\`\`\`\n\n`;
+
+    // ===== 会话时间线 =====
+    md += `---\n\n`;
+    md += `## ⏱️ 会话时间线\n\n`;
+    md += `| 时间 | 事件 |\n`;
+    md += `|------|------|\n`;
+
+    // 会话开始
+    const sessionStartTime = new Date(log.startTime);
+    md += `| ${sessionStartTime.toLocaleTimeString()} | 🚀 会话开始 |\n`;
+
+    // 各状态执行
+    for (const state of log.stateExecutions) {
+      const stateStartTime = new Date(state.startTime);
+      const duration = (state.duration / 1000).toFixed(1);
+      const emoji = this.getStateEmoji(state.stateName);
+
+      // 状态开始
+      let eventDetail = `${emoji} ${state.stateName} 开始`;
+      if (state.input.query && state.input.query !== log.userQuery) {
+        eventDetail += ` (查询: ${state.input.query.slice(0, 30)}...)`;
+      }
+      md += `| ${stateStartTime.toLocaleTimeString()} | ${eventDetail} |\n`;
+
+      // LLM 调用
+      for (const llm of state.llmInteractions) {
+        const llmTime = new Date(llm.startTime);
+        const llmDuration = (llm.duration / 1000).toFixed(1);
+        let llmEvent = `   └─ 🤖 LLM #${llm.index} (${llm.request.modelType})`;
+        if (llm.response.finishReason === 'tool_calls') {
+          const tools = llm.response.toolCallRequests.map(t => t.name).join(', ');
+          llmEvent += ` → [${tools}]`;
+        }
+        md += `| ${llmTime.toLocaleTimeString()} | ${llmEvent} (${llmDuration}s) |\n`;
+      }
+
+      // 工具调用
+      for (const tool of state.toolCalls) {
+        const toolTime = new Date(tool.startTime);
+        const toolDuration = (tool.duration / 1000).toFixed(2);
+        const status = tool.status === 'success' ? '✅' : '❌';
+        let toolEvent = `   └─ ${status} ${tool.toolName}`;
+        if (tool.parsedResult?.hits) {
+          toolEvent += ` (${tool.parsedResult.hits} 条)`;
+        }
+        md += `| ${toolTime.toLocaleTimeString()} | ${toolEvent} (${toolDuration}s) |\n`;
+      }
+
+      // 状态结束
+      if (state.endTime) {
+        const stateEndTime = new Date(state.endTime);
+        md += `| ${stateEndTime.toLocaleTimeString()} | ${emoji} ${state.stateName} 完成 (${duration}s) |\n`;
+      }
+    }
+
+    // 最终输出
+    if (log.endTime) {
+      const sessionEndTime = new Date(log.endTime);
+      md += `| ${sessionEndTime.toLocaleTimeString()} | ✅ 会话结束 |\n`;
+    }
+
+    md += `\n`;
 
     // 意图路由
     if (log.intentRouting) {

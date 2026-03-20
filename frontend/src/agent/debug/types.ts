@@ -55,6 +55,12 @@ export interface AgentSessionLog {
   // ===== 状态机执行 =====
   stateExecutions: StateExecutionLog[];
 
+  // ===== 最终输出 =====
+  /** 最终答案内容 */
+  finalOutput?: string;
+  /** 最终答案长度 */
+  finalOutputLength?: number;
+
   // ===== 统计信息 =====
   stats: SessionStats;
 

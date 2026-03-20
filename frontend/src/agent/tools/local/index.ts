@@ -16,11 +16,13 @@ export type { LocalToolCache, ChapterMetadata, SearchHit, OutlineNode } from './
 // 工具函数
 export {
   buildLocalCache,
+  getOrBuildLocalCache,
   extractChapterMetadata,
   estimateTokens,
   parseSectionPath,
   extractHeadingFromPath,
   normalizeHeading,
+  normalizeNodeId,
   MAX_TOKENS,
   MAX_SEARCH_HITS
 } from './utils.js';

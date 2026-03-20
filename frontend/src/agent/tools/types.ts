@@ -55,6 +55,8 @@ export interface ToolContext {
   };
   /** 全书摘要（由路由器生成，用于注入系统提示） */
   docDescription?: string;
+  /** 本地工具缓存（跨工具复用，避免重复构建索引） */
+  localCache?: import('./local/types.js').LocalToolCache;
 }
 
 /**

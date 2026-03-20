@@ -43,9 +43,8 @@ export interface SearchHit {
     path: string[];        // 标题路径（层级）
     file_path: string;     // 文件路径
   };
-  line_number: number;     // 段落行号
   snippet: string;         // 内容摘要
-  block_id: string;        // 块引用 ID（带 ^ 前缀）
+  block_id: string;        // 块引用 ID（带 ^ 前缀，用于 read_markdown_section）
 }
 
 /**

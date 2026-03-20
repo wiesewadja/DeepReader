@@ -4,12 +4,41 @@
 
 import type { App, TFile } from 'obsidian';
 import type { LocalToolCache, ChapterMetadata } from './types.js';
+import type { ToolContext } from '../types.js';
 
 /**
  * Token 上限常量
  */
 export const MAX_TOKENS = 4000;
 export const MAX_SEARCH_HITS = 10;
+
+/**
+ * 获取或构建本地工具缓存
+ *
+ * 优先从 ToolContext 中获取已构建的缓存，避免重复扫描文件。
+ * 如果缓存不存在，则构建新缓存并存储到 ToolContext 中。
+ *
+ * @param context - 工具上下文
+ * @returns 本地工具缓存
+ */
+export async function getOrBuildLocalCache(
+  context: ToolContext
+): Promise<LocalToolCache> {
+  const { app, pdfName, localCache } = context;
+
+  // 如果已有缓存，直接返回
+  if (localCache?.chapterFiles && localCache.nodeIdIndex) {
+    return localCache;
+  }
+
+  // 构建新缓存
+  const cache = await buildLocalCache(app!, pdfName);
+
+  // 存储到 context 中供后续复用
+  context.localCache = cache;
+
+  return cache;
+}
 
 /**
  * 构建本地工具缓存
@@ -30,10 +59,13 @@ export async function buildLocalCache(
   const headingIndex = new Map<string, string>();
 
   for (const file of files) {
-    // 构建 node_id 索引
+    // 构建 node_id 索引（规范化：去除前导零）
     const cache = app.metadataCache.getFileCache(file);
     if (cache?.frontmatter?.node_id) {
-      nodeIdIndex.set(String(cache.frontmatter.node_id), file.path);
+      const normalizedId = normalizeNodeId(cache.frontmatter.node_id);
+      if (normalizedId) {
+        nodeIdIndex.set(normalizedId, file.path);
+      }
     }
 
     // 构建 heading 索引（从 section 提取）
@@ -110,4 +142,18 @@ export function normalizeHeading(heading: string): string {
     .replace(/[：:]/g, ':')
     .replace(/[，,]/g, ',')
     .toLowerCase();
+}
+
+/**
+ * 规范化 node_id（去除前导零）
+ *
+ * YAML 解析器可能将 "0010" 解析为数字 10，
+ * 所以需要统一规范化，确保 "0010"、"010"、"10" 都能匹配。
+ *
+ * @param id - 原始 node_id（可能是字符串或数字）
+ * @returns 规范化后的 node_id
+ */
+export function normalizeNodeId(id: string | number | undefined | null): string {
+  if (id === undefined || id === null) return '';
+  return String(id).replace(/^0+/, '') || '0';
 }

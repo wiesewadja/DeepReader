@@ -138,6 +138,11 @@ export async function runCognitiveEngine(
     // 5. Save session (only clean chat history)
     saveSession(ctx, output);
 
+    // 6. Record final output in debug log
+    if (logger?.isEnabled()) {
+      logger.setFinalOutput(output);
+    }
+
     callbacks.onComplete();
 
     // End debug session

@@ -66,7 +66,7 @@ export class AnalyticalState extends StateNode {
           userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
           availableTools: this.tools,
           toolInterceptor: interceptor,
-          maxIterations: 5,
+          maxIterations: 8,
           abortSignal: ctx.abortSignal,
         }
       );
