@@ -33,24 +33,29 @@ export const PROMPT_S0_ROUTER = `<role>
 `;
 
 /**
- * Build user message for router with chat history
+ * Build user message for router with chat history and book context
  */
 export function buildRouterUserMessage(
   rawQuery: string,
-  chatHistory: Array<{ role: string; content: string }>
+  chatHistory: Array<{ role: string; content: string }>,
+  bookName?: string
 ): string {
   const historyText = chatHistory
     .slice(-10) // Last 10 messages
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
 
+  const bookContext = bookName
+    ? `\n<current_book>\n当前阅读的书籍是：《${bookName}》\n</current_book>\n`
+    : '';
+
   return `<current_query>
 ${rawQuery}
 </current_query>
-
+${bookContext}
 <chat_history>
 ${historyText || '(无历史记录)'}
 </chat_history>
 
-请分析并输出 JSON。`;
+请分析并输出 JSON。注意：重写 standalone_query 时，如果用户提到"这本书"，请替换为当前书籍的实际名称。`;
 }
