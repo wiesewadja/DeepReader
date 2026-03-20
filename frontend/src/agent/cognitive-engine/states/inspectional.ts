@@ -27,6 +27,7 @@ import { getDebugLogger } from '../../debug/index.js';
 const InspectionalOutputSchema = z.object({
   scopeNodeIds: z.array(z.string()).max(100),
   tocSummary: z.string(),
+  structural_analysis: z.string().optional(),
 });
 
 /**
@@ -99,14 +100,16 @@ export class InspectionalState extends StateNode {
       // Step 2: Format tree structure for prompt
       const treeText = formatTreeStructure(outlineNodes);
 
-      // Step 3: Build system prompt with embedded tree
+      // Step 3: Build system prompt with embedded tree and depth-aware branching
       const systemPrompt = buildInspectionalSystemPrompt(
         treeText,
         ctx.pdfName,
+        ctx.depth,
         ctx.docDescription
       );
       const userMessage = buildInspectionalUserMessage(
-        ctx.standaloneQuery || ctx.rawUserQuery
+        ctx.standaloneQuery || ctx.rawUserQuery,
+        ctx.depth
       );
 
       // Log LLM interaction
@@ -121,14 +124,15 @@ export class InspectionalState extends StateNode {
         });
       }
 
-      // Step 4: Call LLM directly (no tools needed)
+      // Step 4: Call LLM with JSON Mode for structured output
       const llmStartTime = Date.now();
       const response = await ctx.llmClient.chat(
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        [] // No tools
+        [], // No tools
+        { type: 'json_object' } // JSON Mode for structured output
       );
       const llmDuration = Date.now() - llmStartTime;
 
@@ -145,16 +149,19 @@ export class InspectionalState extends StateNode {
       const defaultOutput = {
         scopeNodeIds: [] as string[],
         tocSummary: '无法解析目录范围，使用全局搜索。',
+        structural_analysis: '',
       };
 
       try {
         const parsed = parseStateOutput(response.content, InspectionalOutputSchema, defaultOutput);
         ctx.scopeNodeIds = parsed.scopeNodeIds;
         ctx.tocSummary = parsed.tocSummary;
+        ctx.structuralAnalysis = parsed.structural_analysis || '';
       } catch {
         // Use fallback on parse error
         ctx.scopeNodeIds = defaultOutput.scopeNodeIds;
         ctx.tocSummary = defaultOutput.tocSummary;
+        ctx.structuralAnalysis = defaultOutput.structural_analysis;
       }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
@@ -187,6 +194,7 @@ export class InspectionalState extends StateNode {
     return buildInspectionalSystemPrompt(
       '(目录将在执行时获取)',
       ctx.pdfName,
+      ctx.depth,
       ctx.docDescription
     );
   }

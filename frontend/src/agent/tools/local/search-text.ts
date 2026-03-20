@@ -14,7 +14,7 @@
 import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import type { SearchHit } from './types.js';
-import { getOrBuildLocalCache, normalizeNodeId, MAX_SEARCH_HITS } from './utils.js';
+import { getOrBuildLocalCache, normalizeNodeId, HARD_LIMIT_HITS, TOP_N_HITS } from './utils.js';
 
 const SEARCH_TEXT_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -27,8 +27,9 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
 - 同义词扩展：使用正则 (A|B|C) 在单个关键词内实现 OR
 
 【返回结果】
-- 包含 block_id，可传递给 read_markdown_section 读取完整内容
-- 如命中超过 10 处会报错，请使用更精准的关键词
+- 返回 Top 5 最相关的片段（按词距+标题加权排序）
+- 包含 distribution_map 热力图，显示各章节命中分布
+- 如 total_hits > 20，建议换更精准的词重新搜索
 
 【中文搜索技巧】
 - 提取核心名词，剔除"如何"、"是什么"等修饰语
@@ -60,9 +61,19 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
 /** 滑动窗口大小（上下各取 N 段） */
 const WINDOW_SIZE = 1;
 
+/** 标题加权倍数（标题路径包含关键词 = +50000，降维打击！） */
+const HEADING_BOOST_MULTIPLIER = 50000;
+
 /** 带分数的搜索结果 */
 interface ScoredHit extends SearchHit {
   _score: number;
+}
+
+/** 热力图条目 */
+interface DistributionEntry {
+  count: number;
+  node_id: string;
+  path: string;
 }
 
 export const searchMarkdownTextTool: ToolExecutor = {
@@ -162,6 +173,7 @@ export const searchMarkdownTextTool: ToolExecutor = {
         const content = await app.vault.cachedRead(file);
         const paragraphs = content.split(/\n\n+/);
         const section = (fileCache?.frontmatter?.section as string) || '';
+        const headingPath = section.split('>').map(s => s.trim()).filter(Boolean);
 
         // 🧱 改进一：滑动窗口匹配
         for (let i = 0; i < paragraphs.length; i++) {
@@ -175,16 +187,22 @@ export const searchMarkdownTextTool: ToolExecutor = {
 
           // 在整个窗口内进行 AND 匹配
           if (matchWindow(windowText, keywords, compiledRegexes, useRegex)) {
-            // 📏 改进二：计算词距得分
-            const score = calculateProximityScore(windowText, keywords, compiledRegexes, useRegex);
+            // 📏 词距得分：关键词越紧凑，相关性越高
+            const proximityScore = calculateProximityScore(windowText, keywords, compiledRegexes, useRegex);
+
+            // 🎯 标题加权（降维打击）：整个标题路径包含关键词 → +50000
+            const headingBoost = calculateHeadingBoost(headingPath, keywords, compiledRegexes, useRegex);
+
+            // 最终得分 = 词距分 + 标题加权 * 50000
+            const score = proximityScore + headingBoost * HEADING_BOOST_MULTIPLIER;
 
             const blockId = extractBlockId(para);
 
             hits.push({
               node_id: nodeId,
               location: {
-                heading: section.split('>').pop()?.trim() || file.basename,
-                path: section.split('>').map(s => s.trim()).filter(Boolean),
+                heading: headingPath[headingPath.length - 1] || file.basename,
+                path: headingPath,
                 file_path: file.path
               },
               snippet: extractSnippet(para, keywords, 150),
@@ -192,11 +210,12 @@ export const searchMarkdownTextTool: ToolExecutor = {
               _score: score
             });
 
-            if (hits.length > MAX_SEARCH_HITS) {
+            // 🛡️ 物理防爆阀：超过 200 处直接熔断
+            if (hits.length > HARD_LIMIT_HITS) {
               return JSON.stringify({
                 status: 'ERROR_TOO_BROAD',
-                message: `命中超过 ${MAX_SEARCH_HITS} 处，请使用更精准的关键词或启用 use_regex`,
-                hint: '尝试：1) 增加关键词数量 2) 使用更长的短语 3) 启用 use_regex 进行精确匹配',
+                message: `严重宽泛！前置扫描已命中超过 ${HARD_LIMIT_HITS} 处，系统拒绝执行排序操作。`,
+                hint: '请务必使用更罕见的专有名词，或增加定语缩小范围。',
                 scope_filter: scopeSet ? `已限定在 ${scopeSet.size} 个章节` : '全局搜索',
                 total_hits: hits.length
               });
@@ -219,17 +238,34 @@ export const searchMarkdownTextTool: ToolExecutor = {
         });
       }
 
-      // 按词距得分降序排列
-      hits.sort((a, b) => b._score - a._score);
+      // 🔥 先生成热力图（用于二级排序）
+      const distributionMap = buildDistributionMap(hits);
+
+      // 📊 排序：主键=得分，次键=热力图命中次数（降维打击！）
+      hits.sort((a, b) => {
+        const scoreDiff = b._score - a._score;
+        if (scoreDiff !== 0) return scoreDiff;
+
+        // 得分相同时，热力图命中次数多的章节优先
+        const exactHeading = a.location.heading;
+        const aCount = distributionMap[exactHeading]?.count || 0;
+        const bCount = distributionMap[b.location.heading]?.count || 0;
+        return bCount - aCount;
+      });
+
+      // ✂️ 截断 Top N
+      const topHits = hits.slice(0, TOP_N_HITS);
 
       // 移除内部 _score 字段后返回
-      const sortedHits: SearchHit[] = hits.map(({ _score, ...hit }) => hit);
+      const sortedHits: SearchHit[] = topHits.map(({ _score, ...hit }) => hit);
 
       return JSON.stringify({
         status: 'SUCCESS',
+        total_hits: hits.length,           // 总命中数
+        returned_hits: sortedHits.length,  // 实际返回数
+        distribution_map: distributionMap, // 热力图
         hits: sortedHits,
-        scope_filter: scopeSet ? `已限定在 ${scopeSet.size} 个章节` : '全局搜索',
-        total_hits: sortedHits.length
+        scope_filter: scopeSet ? `已限定在 ${scopeSet.size} 个章节` : '全局搜索'
       });
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -307,6 +343,72 @@ function calculateProximityScore(
 
   // 跨度越小，得分越高（紧密相连的词组大概率是核心定义）
   return Math.floor(10000 / (span + 1));
+}
+
+/**
+ * 🎯 标题命中加权
+ *
+ * 如果关键词出现在章节标题中，说明这节就是专门讲这个的！
+ * 返回匹配的关键词数量，最终乘以 10000 作为加权
+ */
+function calculateHeadingBoost(
+  headingPath: string[],
+  keywords: string[],
+  compiledRegexes: RegExp[],
+  useRegex: boolean
+): number {
+  const headingText = headingPath.join(' ').toLowerCase();
+  let boost = 0;
+
+  if (useRegex) {
+    // 正则模式：每个正则在标题中匹配一次就 +1
+    for (const regex of compiledRegexes) {
+      if (regex.test(headingText)) {
+        boost += 1;
+      }
+    }
+  } else {
+    // 默认模式：每个关键词在标题中出现就 +1
+    for (const kw of keywords) {
+      if (headingText.includes(kw.toLowerCase())) {
+        boost += 1;
+      }
+    }
+  }
+
+  return boost;
+}
+
+/**
+ * 📊 构建分布热力图
+ *
+ * 统计各章节的命中次数，帮助 LLM 找到"老巢"
+ * Key 是最内层标题（可直接传给 read_markdown_section 的 heading 参数）
+ */
+function buildDistributionMap(hits: ScoredHit[]): Record<string, DistributionEntry> {
+  const distribution: Record<string, DistributionEntry> = {};
+
+  for (const hit of hits) {
+    // 取最内层标题作为 key（可直接传给 read 工具）
+    const exactHeading = hit.location.heading;
+    const fullPath = hit.location.path.join(' > ');
+
+    if (!distribution[exactHeading]) {
+      distribution[exactHeading] = {
+        count: 0,
+        node_id: hit.node_id,
+        path: fullPath
+      };
+    }
+    distribution[exactHeading].count += 1;
+  }
+
+  // 按命中次数降序排序，只保留前 10 个
+  const sorted = Object.entries(distribution)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 10);
+
+  return Object.fromEntries(sorted);
 }
 
 /**

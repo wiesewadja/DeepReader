@@ -26,6 +26,13 @@ export interface StreamOptions {
 }
 
 /**
+ * Response format options for structured output
+ */
+export interface ResponseFormat {
+  type: 'json_object' | 'text';
+}
+
+/**
  * 用于累积流式响应中的 tool_calls
  */
 interface AccumulatedToolCall {
@@ -334,7 +341,11 @@ export class LLMClient {
   /**
    * 非流式聊天（用于简单场景）
    */
-  async chat(messages: ChatMessage[], tools: ToolDefinition[] = []): Promise<{
+  async chat(
+    messages: ChatMessage[],
+    tools: ToolDefinition[] = [],
+    responseFormat?: ResponseFormat
+  ): Promise<{
     content: string;
     toolCalls: { id: string; name: string; arguments: string }[];
     finishReason: 'stop' | 'tool_calls' | 'length';
@@ -352,6 +363,7 @@ export class LLMClient {
         messages: messages,
         tools: tools.length > 0 ? tools : undefined,
         stream: false,
+        response_format: responseFormat,
       }),
     });
 

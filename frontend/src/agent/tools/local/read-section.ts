@@ -125,6 +125,7 @@ function buildSuccessResponse(
     node_id: nodeId,
     block_id: extra?.block_id || '',
     heading: extra?.heading || targetFile.basename,
+    file_path: targetFile.path,
     word_count: content.length,
     content
   });

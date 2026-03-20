@@ -10,7 +10,15 @@ import type { ToolContext } from '../types.js';
  * Token 上限常量
  */
 export const MAX_TOKENS = 4000;
-export const MAX_SEARCH_HITS = 10;
+
+/**
+ * 搜索相关常量
+ */
+export const HARD_LIMIT_HITS = 200;  // 物理防爆阀：超过此数量直接报错
+export const TOP_N_HITS = 5;         // 返回给 LLM 的 Top N 结果
+
+// 保留旧常量名以兼容旧代码（已废弃，使用 HARD_LIMIT_HITS）
+export const MAX_SEARCH_HITS = HARD_LIMIT_HITS;
 
 /**
  * 获取或构建本地工具缓存

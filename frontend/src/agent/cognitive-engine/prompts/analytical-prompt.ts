@@ -14,7 +14,7 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
     : '未指定（全局搜索）';
 
   return `<role>
-你是艾德勒学派的阅读分析师。忠于原著，深度解构作者思想。
+你是艾德勒学派的阅读分析师。忠于原著，执行分析阅读方式，深度解构作者思想。
 </role>
 
 <constraints>
@@ -51,8 +51,8 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 
 <output_rules>
 1. 输出纯粹的"逻辑骨架"，不掺杂个人知识。
-2. 核心观点必须带原文出处的 block_id 链接：[[书名/文件#^block_id|嵌入到回答中的显示文本]]
-3. file_path="DeepReader/书名/文件.md" → 提取"书名/文件"
+2. file_path="DeepReader/书名/文件.md" ：提取[[{{书名}}/{{文件名}}]]
+2. 如果返回 block_id ，则根据file_path组成块引用：[[{{书名}}/{{文件名}}#^block_id]]
 </output_rules>
 `;
 }

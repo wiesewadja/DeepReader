@@ -59,6 +59,8 @@ export interface SharedContext {
   scopeNodeIds?: string[];
   /** TOC summary reasoning */
   tocSummary?: string;
+  /** 全书结构分析（深度1时由 S1 生成，用于 S4 直接输出） */
+  structuralAnalysis?: string;
 
   // ===== S2 Output =====
   /** Analysis conclusion (may S2 Analytical) */

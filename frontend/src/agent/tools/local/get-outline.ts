@@ -84,6 +84,7 @@ export const getDocumentOutlineTool: ToolExecutor = {
 /**
  * 构建大纲树
  * 去重：同一 node_id 的多个 part 文件只保留一个节点
+ * 优先保留有 summary 的文件
  */
 function buildOutlineTree(
   files: any[],
@@ -106,8 +107,22 @@ function buildOutlineTree(
     const heading = path[path.length - 1] || extractHeadingFromPath(file.path);
     const nodeId = normalizeNodeId(metadata.node_id);
 
-    // 去重：同一 node_id 只保留第一个（通常是 part 1）
-    if (!nodeMap.has(nodeId)) {
+    const existingNode = nodeMap.get(nodeId);
+
+    // 去重逻辑：优先保留有 summary 的文件
+    if (!existingNode) {
+      // 第一个文件，直接记录
+      nodeMap.set(nodeId, {
+        node_id: nodeId,
+        heading: heading,
+        level: metadata.level || path.length,
+        line: 1,
+        summary: metadata.summary,
+        link: `[[${file.path}|${heading}]]`,
+        children: []
+      });
+    } else if (!existingNode.summary && metadata.summary) {
+      // 新文件有 summary，旧文件没有 → 替换
       nodeMap.set(nodeId, {
         node_id: nodeId,
         heading: heading,
@@ -118,6 +133,7 @@ function buildOutlineTree(
         children: []
       });
     }
+    // 如果两个都有 summary 或都没有，保留第一个
   }
 
   // 按 node_id 数值排序
