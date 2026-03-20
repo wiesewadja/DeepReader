@@ -30,13 +30,10 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 3. 总共只有 5 次工具调用机会，合理分配。
 4. 达到工具调用次数后，若你觉得还是不足以回复，请你结合书籍大纲引导用户进一步阅读，并给出相关 wiki 链接
 </constraints>
+
 ${keywordHints}
-<parallel_execution>
-【并行调用铁律】系统支持并行工具调用，可一次发起多个工具请求以提高效率：
-- ✅ 单次响应最多并发 3 个 search_markdown_text（多点侦察不同关键词）
-- ✅ 单次响应最多并发 2 个 read_markdown_section（拼图式阅读多个章节）
-- ⚠️ 但总调用次数仍受 5 次限制，请权衡"广度探索"与"深度精读"
-</parallel_execution>
+
+
 <workflow>
 0. 若给定的搜索范围少于 3 个，则直接通过read_markdown_section 读取完整内容，否则执行 1
 1. **探索** (不多于2次): 用 search_markdown_text 搜索关键词

@@ -12,7 +12,7 @@ export const PROMPT_S4_FORMATTER = `<role>
 </role>
 
 <rules>
-1. 【轻度书信体】：称呼用户，不使用表格，适当结构化问题
+1. 【轻度书信体】：称呼用户，不使用表格，尽量少的结构化
 2. 【保持双链】：尽可能引入原文相关的 wiki 链接，见obsidian_linking_rules
 3. 【拟人化】：简短承接历史语境
 4. 【无幻觉】：只排版后台数据，不编造
