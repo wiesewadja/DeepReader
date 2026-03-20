@@ -308,8 +308,10 @@ tags: [DeepPDF, {pdf_name}]
 
 """
 
-    # 标题
-    title = f"# {section}\n\n"
+    # 标题：只保留 section 的最后一部分（去除父级路径）
+    # 例如："第一篇 > 第一章" → "第一章"
+    display_title = section.split('>')[-1].strip() if '>' in section else section
+    title = f"# {display_title}\n\n"
 
     # 分片指示（仅分片文件显示）
     part_indicator = ""
@@ -422,7 +424,9 @@ tags: [DeepPDF, {pdf_name}]
 ---
 
 """
-    title = f"# {section}\n\n"
+    # 标题：只保留 section 的最后一部分（去除父级路径）
+    display_title = section.split('>')[-1].strip() if '>' in section else section
+    title = f"# {display_title}\n\n"
 
     # 添加摘要引用块（如果有）
     summary_block = ""
