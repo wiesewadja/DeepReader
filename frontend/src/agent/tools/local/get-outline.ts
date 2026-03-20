@@ -8,7 +8,7 @@
 import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import type { OutlineNode } from './types.js';
-import { buildLocalCache, extractChapterMetadata, parseSectionPath, extractHeadingFromPath } from './utils.js';
+import { buildLocalCache, extractChapterMetadata, parseSectionPath, extractHeadingFromPath, normalizeNodeId } from './utils.js';
 
 const GET_OUTLINE_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -104,7 +104,7 @@ function buildOutlineTree(
     if (maxDepth && path.length > maxDepth) continue;
 
     const heading = path[path.length - 1] || extractHeadingFromPath(file.path);
-    const nodeId = metadata.node_id;
+    const nodeId = normalizeNodeId(metadata.node_id);
 
     // 去重：同一 node_id 只保留第一个（通常是 part 1）
     if (!nodeMap.has(nodeId)) {
@@ -120,9 +120,13 @@ function buildOutlineTree(
     }
   }
 
-  // 按 node_id 排序
+  // 按 node_id 数值排序
   const nodes = Array.from(nodeMap.values());
-  nodes.sort((a, b) => a.node_id.localeCompare(b.node_id));
+  nodes.sort((a, b) => {
+    const numA = parseInt(a.node_id, 10);
+    const numB = parseInt(b.node_id, 10);
+    return numA - numB;
+  });
 
   return nodes;
 }

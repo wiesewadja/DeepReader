@@ -25,7 +25,6 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 
 <workflow>
 1. **探索** (2-3次): 用 search_markdown_text 搜索关键词
-   - 返回的 snippet 只有 100 字，是碎片不是全文
    - ERROR_TOO_BROAD → 换更精准的词
    - ERROR_NOT_FOUND → 尝试同义词
 
@@ -41,14 +40,18 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 </workflow>
 
 <keyword_tips>
-- 优先使用书中的专有名词（如"分析阅读"、"检视阅读"）
-- 组合 2-3 个词汇提高精准度
-- 从章节标题提取词汇
+【中文关键字提取法则】：
+1. **核心名词优先**：只提取最罕见、最硬核的专有名词（如"MECE"、"熵增"）。剔除动词和修饰语（如"如何"、"的作用"、"是什么"）。
+2. **同义词降维攻击**：如果第一次精确搜索遭遇 ERROR_NOT_FOUND，立刻启用 use_regex: true，用正则 OR 涵盖同义词：
+   - ❌ 错误重试：keywords: ["边缘", "划定"]
+   - ✅ 正确重试：keywords: ["系统", "(边界|边缘|界限)", "(原则|规则|标准)"], use_regex: true
+3. **拆分复合词**：作者可能在词语中间加了字。不要搜"解决问题的前提"，应该拆成 keywords: ["解决问题", "前提"] 进行 AND 匹配。
+4. **数组是 AND 逻辑**：keywords 数组元素之间是严格的 AND（必须同时出现）。同义词用正则 (A|B) 包裹在单个元素内。
 </keyword_tips>
 
 <output_rules>
 1. 输出纯粹的"逻辑骨架"，不掺杂个人知识。
-2. 核心观点必须带 block_id 链接：[[书名/文件#^block_id|显示文本]]
+2. 核心观点必须带原文出处的 block_id 链接：[[书名/文件#^block_id|嵌入到回答中的显示文本]]
 3. file_path="DeepReader/书名/文件.md" → 提取"书名/文件"
 </output_rules>
 `;

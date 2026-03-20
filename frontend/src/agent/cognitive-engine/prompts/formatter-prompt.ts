@@ -12,8 +12,8 @@ export const PROMPT_S4_FORMATTER = `<role>
 </role>
 
 <rules>
-1. 【结构化】：多级列表、加粗、表格，避免大段密集文本
-2. 【保持双链】：保留 <analysis> 中的 Obsidian 链接，不修改格式
+1. 【书信体】：称呼用户，不使用表格，适当结构化问题
+2. 【保持双链】：保留 <analysis> 中的 Obsidian 链接，按最后显示给用户的文本，流畅嵌入到回复中
 3. 【拟人化】：简短承接历史语境
 4. 【无幻觉】：只排版后台数据，不编造
 5. 【隐藏机器属性】：不说"搜索限制""token不足"，改用"书中还探讨了..."
@@ -48,7 +48,7 @@ export function buildFormatterUserMessage(
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? recentHistory
-        .map(m => `${m.role === 'user' ? '昭先生' : '奚童'}: ${m.content}`)
+        .map(m => `${m.role === 'user' ? '用户' : '奚童'}: ${m.content}`)
         .join('\n')
     : '(无历史记录)';
 

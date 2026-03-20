@@ -1,12 +1,14 @@
 /**
- * search_markdown_text Tool - 带空间感知的文本搜索
+ * search_markdown_text Tool - 弹性空间搜索
  *
- * 对标增强版 Linux grep，用于检视阅读阶段定位关键词位置
- * 支持 scopeNodeIds 过滤，只在指定章节范围内搜索
+ * 核心算法：滑动窗口 + 词距打分
+ * - 滑动窗口：解决 Markdown 列表/换行切断关键词的问题
+ * - 词距打分：关键词越紧凑，相关性越高
  *
  * 设计原则：
- * - 底层保持极速、愚蠢、透明（纯文本匹配）
- * - 智能逻辑由上层 LLM 承担（分词、同义词、容错）
+ * - 数组元素之间保持严格的 AND 逻辑（交集过滤）
+ * - 同义词扩展由 LLM 通过正则 (A|B|C) 在单个元素内实现
+ * - 底层保持极速、愚蠢、透明
  */
 
 import type { ToolDefinition } from '../../types.js';
@@ -20,15 +22,25 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
     name: 'search_markdown_text',
     description: `在书中搜索关键词，返回匹配的段落位置。
 
-返回结果包含 block_id，可传递给 read_markdown_section 读取完整内容。
-如命中超过 10 处会报错，请使用更精准的关键词。`,
+【搜索逻辑】
+- 数组元素之间是 AND 关系（必须同时匹配所有关键词）
+- 同义词扩展：使用正则 (A|B|C) 在单个关键词内实现 OR
+
+【返回结果】
+- 包含 block_id，可传递给 read_markdown_section 读取完整内容
+- 如命中超过 10 处会报错，请使用更精准的关键词
+
+【中文搜索技巧】
+- 提取核心名词，剔除"如何"、"是什么"等修饰语
+- 同义词用正则："(边界|边缘|界限)"
+- 拆分复合词：不要搜"解决问题的前提"，改用 ["解决问题", "前提"]`,
     parameters: {
       type: 'object',
       properties: {
         keywords: {
           type: 'array',
           items: { type: 'string' },
-          description: '关键词数组，AND 逻辑（所有词必须同时出现在同一段落）'
+          description: '关键词数组，AND 逻辑。同义词请用正则 (A|B|C) 格式'
         },
         scope_node_ids: {
           type: 'array',
@@ -37,13 +49,21 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
         },
         use_regex: {
           type: 'boolean',
-          description: '启用正则表达式匹配（默认 false）'
+          description: '启用正则表达式匹配（默认 false）。开启后支持 (A|B) 同义词'
         }
       },
       required: ['keywords']
     }
   }
 };
+
+/** 滑动窗口大小（上下各取 N 段） */
+const WINDOW_SIZE = 1;
+
+/** 带分数的搜索结果 */
+interface ScoredHit extends SearchHit {
+  _score: number;
+}
 
 export const searchMarkdownTextTool: ToolExecutor = {
   definition: SEARCH_TEXT_DEFINITION,
@@ -68,19 +88,31 @@ export const searchMarkdownTextTool: ToolExecutor = {
       });
     }
 
+    // 预编译正则表达式（如果启用）
+    let compiledRegexes: RegExp[] = [];
+    if (useRegex) {
+      try {
+        compiledRegexes = keywords.map(kw => new RegExp(kw, 'i'));
+      } catch (e) {
+        return JSON.stringify({
+          status: 'ERROR_INVALID_REGEX',
+          message: `正则表达式编译失败: ${e instanceof Error ? e.message : String(e)}`,
+          hint: '检查正则语法，如括号匹配、转义字符等'
+        });
+      }
+    }
+
     try {
-      // P1: 使用缓存复用，避免重复构建索引
       const cache = await getOrBuildLocalCache(context);
       const files = cache.chapterFiles || [];
-      const hits: SearchHit[] = [];
+      const hits: ScoredHit[] = [];
 
-      // 构建 scope 过滤集合（规范化：去除前导零）
+      // 构建 scope 过滤集合
       const scopeSet = scopeNodeIds && scopeNodeIds.length > 0
         ? new Set(scopeNodeIds.map(normalizeNodeId))
         : null;
 
-      // P0: Scope 边界检查
-      // 如果指定了 scope，检查是否有文件在范围内
+      // Scope 边界检查
       if (scopeSet && scopeSet.size > 0) {
         const filesInScope = files.filter(file => {
           const fileCache = app.metadataCache.getFileCache(file);
@@ -90,7 +122,6 @@ export const searchMarkdownTextTool: ToolExecutor = {
         });
 
         if (filesInScope.length === 0) {
-          // 检查是否有文件缺少 node_id
           const filesWithoutNodeId = files.filter(file => {
             const fileCache = app.metadataCache.getFileCache(file);
             return !fileCache?.frontmatter?.node_id;
@@ -117,12 +148,13 @@ export const searchMarkdownTextTool: ToolExecutor = {
         }
       }
 
+      // 遍历文件
       for (const file of files) {
         const fileCache = app.metadataCache.getFileCache(file);
         const rawNodeId = fileCache?.frontmatter?.node_id;
         const nodeId = normalizeNodeId(rawNodeId);
 
-        // Scope 过滤：如果设置了 scope，只搜索范围内的文件
+        // Scope 过滤
         if (scopeSet && !scopeSet.has(nodeId)) {
           continue;
         }
@@ -131,9 +163,21 @@ export const searchMarkdownTextTool: ToolExecutor = {
         const paragraphs = content.split(/\n\n+/);
         const section = (fileCache?.frontmatter?.section as string) || '';
 
-        for (const para of paragraphs) {
+        // 🧱 改进一：滑动窗口匹配
+        for (let i = 0; i < paragraphs.length; i++) {
+          const para = paragraphs[i];
+          if (!para.trim()) continue;
 
-          if (matchParagraph(para, keywords, useRegex)) {
+          // 构建滑动窗口文本（上下各取 WINDOW_SIZE 段）
+          const startIndex = Math.max(0, i - WINDOW_SIZE);
+          const endIndex = Math.min(paragraphs.length - 1, i + WINDOW_SIZE);
+          const windowText = paragraphs.slice(startIndex, endIndex + 1).join('\n');
+
+          // 在整个窗口内进行 AND 匹配
+          if (matchWindow(windowText, keywords, compiledRegexes, useRegex)) {
+            // 📏 改进二：计算词距得分
+            const score = calculateProximityScore(windowText, keywords, compiledRegexes, useRegex);
+
             const blockId = extractBlockId(para);
 
             hits.push({
@@ -143,16 +187,16 @@ export const searchMarkdownTextTool: ToolExecutor = {
                 path: section.split('>').map(s => s.trim()).filter(Boolean),
                 file_path: file.path
               },
-              // Snippet 以关键词为中心，让用户看到匹配位置
               snippet: extractSnippet(para, keywords, 150),
-              block_id: blockId
+              block_id: blockId,
+              _score: score
             });
 
             if (hits.length > MAX_SEARCH_HITS) {
               return JSON.stringify({
                 status: 'ERROR_TOO_BROAD',
                 message: `命中超过 ${MAX_SEARCH_HITS} 处，请使用更精准的关键词或启用 use_regex`,
-                hint: '尝试：1) 增加关键词数量 2) 使用更长的短语 3) 启用 use_regex',
+                hint: '尝试：1) 增加关键词数量 2) 使用更长的短语 3) 启用 use_regex 进行精确匹配',
                 scope_filter: scopeSet ? `已限定在 ${scopeSet.size} 个章节` : '全局搜索',
                 total_hits: hits.length
               });
@@ -168,16 +212,24 @@ export const searchMarkdownTextTool: ToolExecutor = {
         return JSON.stringify({
           status: 'ERROR_NOT_FOUND',
           message: `未找到匹配内容${scopeInfo}`,
-          suggestions: generateSuggestions(keywords),
-          hint: '尝试：1) 拆分关键词 2) 使用同义词 3) 检查拼写 4) 移除 scope 限制'
+          suggestions: generateSuggestions(keywords, useRegex),
+          hint: useRegex
+            ? '尝试：1) 简化正则表达式 2) 检查正则语法 3) 移除 scope 限制'
+            : '尝试：1) 使用单个核心名词 2) 启用 use_regex 并用 (A|B) 匹配同义词 3) 移除 scope 限制'
         });
       }
 
+      // 按词距得分降序排列
+      hits.sort((a, b) => b._score - a._score);
+
+      // 移除内部 _score 字段后返回
+      const sortedHits: SearchHit[] = hits.map(({ _score, ...hit }) => hit);
+
       return JSON.stringify({
         status: 'SUCCESS',
-        hits,
+        hits: sortedHits,
         scope_filter: scopeSet ? `已限定在 ${scopeSet.size} 个章节` : '全局搜索',
-        total_hits: hits.length
+        total_hits: sortedHits.length
       });
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e);
@@ -190,32 +242,75 @@ export const searchMarkdownTextTool: ToolExecutor = {
 };
 
 /**
- * 段落匹配
+ * 滑动窗口匹配
  *
- * 保持简单：纯文本 indexOf 或正则 test
- * 智能逻辑（分词、同义词、容错）由上层 LLM 承担
- *
- * 注意：无论是否使用正则，都保持 AND 逻辑一致性
+ * 保持严格的 AND 逻辑：所有关键词（或正则）必须在窗口内同时出现
  */
-function matchParagraph(para: string, keywords: string[], useRegex: boolean): boolean {
+function matchWindow(
+  windowText: string,
+  keywords: string[],
+  compiledRegexes: RegExp[],
+  useRegex: boolean
+): boolean {
+  const lowerText = windowText.toLowerCase();
+
   if (useRegex) {
-    // 正则模式：所有关键词都必须匹配（AND 逻辑）
-    return keywords.every(kw => {
-      try {
-        return new RegExp(kw).test(para);
-      } catch {
-        return false;  // 无效正则视为不匹配
-      }
-    });
+    // 正则模式：所有正则都必须匹配（AND 逻辑）
+    return compiledRegexes.every(regex => regex.test(windowText));
   }
+
   // 默认模式：所有关键词必须同时出现（AND 逻辑）
-  return keywords.every(kw => para.includes(kw));
+  return keywords.every(kw => lowerText.includes(kw.toLowerCase()));
+}
+
+/**
+ * 📏 词距打分
+ *
+ * 关键词在文本中出现的距离越近，相关度越高
+ * 极简实现：计算最早和最晚出现的关键词之间的字符距离
+ */
+function calculateProximityScore(
+  text: string,
+  keywords: string[],
+  compiledRegexes: RegExp[],
+  useRegex: boolean
+): number {
+  const lowerText = text.toLowerCase();
+  const indices: number[] = [];
+
+  if (useRegex) {
+    // 正则模式：找每个正则的首次匹配位置
+    for (const regex of compiledRegexes) {
+      const match = regex.exec(text);
+      if (match) {
+        indices.push(match.index);
+      }
+    }
+  } else {
+    // 默认模式：找每个关键词的位置
+    for (const kw of keywords) {
+      const idx = lowerText.indexOf(kw.toLowerCase());
+      if (idx !== -1) {
+        indices.push(idx);
+      }
+    }
+  }
+
+  if (indices.length < 2) {
+    return 10000; // 只有一个关键词，给高分
+  }
+
+  // 计算跨度：最早和最晚出现的关键词之间的距离
+  const minIdx = Math.min(...indices);
+  const maxIdx = Math.max(...indices);
+  const span = maxIdx - minIdx;
+
+  // 跨度越小，得分越高（紧密相连的词组大概率是核心定义）
+  return Math.floor(10000 / (span + 1));
 }
 
 /**
  * 提取段落中的 block_id（带 ^ 前缀）
- * 
- * 一个段落只有一个 block_id，位于段落末尾
  */
 function extractBlockId(para: string): string {
   const match = para.match(/\^[\w-]+/);
@@ -224,19 +319,13 @@ function extractBlockId(para: string): string {
 
 /**
  * 以关键词为中心提取 Snippet
- *
- * 让用户看到匹配位置，而不是固定从开头截取
- *
- * @param para - 段落内容
- * @param keywords - 关键词列表
- * @param maxLen - 最大长度
- * @returns 以关键词为中心的摘要
  */
 function extractSnippet(para: string, keywords: string[], maxLen: number = 150): string {
-  // 找到所有匹配关键词的位置，取中位数作为中心
+  const lowerPara = para.toLowerCase();
   const positions: number[] = [];
+
   for (const kw of keywords) {
-    const idx = para.indexOf(kw);
+    const idx = lowerPara.indexOf(kw.toLowerCase());
     if (idx !== -1) {
       positions.push(idx);
     }
@@ -257,7 +346,7 @@ function extractSnippet(para: string, keywords: string[], maxLen: number = 150):
   let start = Math.max(0, centerIdx - halfLen);
   let end = Math.min(para.length, centerIdx + halfLen);
 
-  // 尝试向句边界扩展（中文句号、问号、感叹号、分号）
+  // 尝试向句边界扩展
   start = expandToSentenceBoundary(para, start, 'backward');
   end = expandToSentenceBoundary(para, end, 'forward');
 
@@ -277,27 +366,19 @@ const SENTENCE_DELIMITERS = ['。', '？', '！', '；', '……'];
 
 /**
  * 向句边界扩展
- *
- * @param para - 段落内容
- * @param pos - 当前位置
- * @param direction - 方向：'backward' 向前找分隔符，'forward' 向后找分隔符
- * @returns 调整后的位置
  */
 function expandToSentenceBoundary(para: string, pos: number, direction: 'backward' | 'forward'): number {
-  const maxOffset = 30; // 最多向句边界扩展 30 字符
+  const maxOffset = 30;
   let bestPos = pos;
 
   for (const delim of SENTENCE_DELIMITERS) {
     if (direction === 'backward') {
-      // 向前找最近的分隔符（尽量往右靠）
       const idx = para.lastIndexOf(delim, pos);
       if (idx !== -1 && idx > pos - maxOffset && idx + 1 > bestPos) {
         bestPos = idx + 1;
       }
     } else {
-      // 向后找最近的分隔符（尽量往左靠）
       const idx = para.indexOf(delim, pos);
-      // 修复：找最近的分隔符，条件应该是 idx + 1 < bestPos（初始值是 pos）
       if (idx !== -1 && idx < pos + maxOffset && (bestPos === pos || idx + 1 < bestPos)) {
         bestPos = idx + 1;
       }
@@ -309,11 +390,19 @@ function expandToSentenceBoundary(para: string, pos: number, direction: 'backwar
 
 /**
  * 生成搜索建议
- * 
- * 保持简单，让 LLM 自己处理同义词和分词
  */
-function generateSuggestions(_keywords: string[]): string[] {
-  // 不在底层实现复杂的近似词算法
-  // 让上层 LLM 根据上下文自己调整搜索词
-  return [];
+function generateSuggestions(keywords: string[], useRegex: boolean): string[] {
+  const suggestions: string[] = [];
+
+  if (!useRegex && keywords.length > 1) {
+    // 建议使用正则处理同义词
+    suggestions.push(`尝试启用 use_regex 并使用正则同义词：keywords: ["${keywords.map(kw => `(${kw}|同义词)`).join('", "')}"]`);
+  }
+
+  if (keywords.some(kw => kw.length > 4)) {
+    // 建议拆分长关键词
+    suggestions.push('尝试拆分长关键词为核心名词');
+  }
+
+  return suggestions;
 }

@@ -68,7 +68,7 @@ export function buildInspectionalSystemPrompt(
     : '';
 
   return `<role>
-结构图书管理员。通过目录骨架圈定知识范围。
+结构图书管理员，通过目录骨架圈定知识范围和查询关键词。
 </role>
 
 <document>
@@ -78,7 +78,7 @@ ${treeText}
 </document>
 
 <task>
-根据目录树圈定最相关的章节节点（scopeNodeIds）。
+根据目录树以及章节摘要圈定最相关的章节节点（scopeNodeIds）和搜索哪些关键词。
 </task>
 
 <constraints>

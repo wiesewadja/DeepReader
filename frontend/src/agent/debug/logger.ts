@@ -1032,9 +1032,25 @@ export class DebugLogger {
       for (const tool of state.toolCalls) {
         const status = tool.status === 'success' ? '✅' : '❌';
         let summary = `${status} \`${tool.toolName}\``;
-        if (tool.parsedResult?.hits) {
-          summary += ` → ${tool.parsedResult.hits} 条结果`;
+
+        // 参数预览（显示关键参数）
+        const argsPreview = this.formatArgsPreview(tool.originalArgs);
+        if (argsPreview && argsPreview !== '{}') {
+          summary += ` \`${argsPreview}\``;
         }
+
+        // 结果预览
+        if (tool.parsedResult?.hits) {
+          summary += ` → ${tool.parsedResult.hits} 条`;
+        } else if (tool.parsedResult?.status) {
+          summary += ` → [${tool.parsedResult.status}]`;
+        } else if (tool.result) {
+          const resultPreview = this.formatResultPreview(tool.result);
+          if (resultPreview) {
+            summary += ` → ${resultPreview}`;
+          }
+        }
+
         if (tool.interceptorNote) {
           summary += ` [拦截: ${tool.interceptorNote}]`;
         }
@@ -1180,6 +1196,135 @@ export class DebugLogger {
       'Formatter': '📝',
     };
     return emojis[stateName] || '⚙️';
+  }
+
+  /**
+   * 格式化参数预览（单行，用于摘要）
+   */
+  private formatArgsPreview(args: Record<string, unknown>): string {
+    const entries = Object.entries(args);
+    if (entries.length === 0) return '';
+
+    // 过滤掉空值和不需要显示的参数
+    const filtered = entries.filter(([key, value]) => {
+      if (value === undefined || value === null) return false;
+      if (Array.isArray(value) && value.length === 0) return false;
+      return true;
+    });
+
+    if (filtered.length === 0) return '';
+
+    const parts = filtered.map(([key, value]) => {
+      const valueStr = this.formatValuePreview(value, key);
+      return `${key}=${valueStr}`;
+    });
+
+    const result = parts.join(', ');
+    return result.length > 80 ? result.slice(0, 77) + '...' : result;
+  }
+
+  /**
+   * 格式化值预览
+   */
+  private formatValuePreview(value: unknown, key?: string): string {
+    if (value === null) return 'null';
+    if (value === undefined) return 'undefined';
+
+    if (typeof value === 'string') {
+      // 字符串：显示前 30 字符
+      const truncated = value.length > 30 ? value.slice(0, 30) + '...' : value;
+      return `"${truncated}"`;
+    }
+
+    if (Array.isArray(value)) {
+      // 数组：根据参数名决定显示策略
+      if (value.length === 0) return '[]';
+
+      // scope_node_ids: 显示前 5 个 ID + 总数
+      if (key === 'scope_node_ids' || key === 'scope_node_ids') {
+        if (value.length <= 5) {
+          return `[${value.join(',')}]`;
+        }
+        const first5 = value.slice(0, 5).join(',');
+        return `[${first5}... +${value.length - 5}]`;
+      }
+
+      // keywords: 显示前 3 个关键词
+      if (key === 'keywords') {
+        if (value.length <= 3) {
+          const items = value.map(v => this.formatValuePreview(v)).join(', ');
+          return `[${items}]`;
+        }
+        const first3 = value.slice(0, 3).map(v => String(v).slice(0, 15)).join(', ');
+        return `[${first3}... +${value.length - 3}]`;
+      }
+
+      // 其他数组：显示前几个元素
+      if (value.length <= 3) {
+        const items = value.map(v => this.formatValuePreview(v)).join(', ');
+        return `[${items}]`;
+      }
+      return `[${value.length}项]`;
+    }
+
+    if (typeof value === 'object') {
+      // 对象：显示键名
+      const keys = Object.keys(value as Record<string, unknown>);
+      if (keys.length === 0) return '{}';
+      if (keys.length <= 3) {
+        return `{${keys.join(',')}}`;
+      }
+      return `{${keys.length}个字段}`;
+    }
+
+    if (typeof value === 'boolean') {
+      return value ? 'true' : 'false';
+    }
+
+    return String(value);
+  }
+
+  /**
+   * 格式化结果预览（提取关键信息）
+   */
+  private formatResultPreview(result: string | undefined): string {
+    if (!result) return '';
+
+    try {
+      const parsed = JSON.parse(result);
+
+      // 提取关键状态
+      if (parsed.status) {
+        // SUCCESS 状态：显示关键信息
+        if (parsed.status === 'SUCCESS') {
+          // 搜索结果
+          if (parsed.total_hits !== undefined) {
+            return `${parsed.total_hits} 条`;
+          }
+          // 读取结果
+          if (parsed.word_count !== undefined) {
+            return `${parsed.word_count} 字`;
+          }
+          // 大纲结果
+          if (parsed.total_chapters !== undefined) {
+            return `${parsed.total_chapters} 章`;
+          }
+          return 'SUCCESS';
+        }
+
+        // 错误状态：显示状态和提示
+        let preview = parsed.status;
+        if (parsed.message) {
+          preview += `: ${parsed.message.slice(0, 30)}`;
+        }
+        return preview;
+      }
+
+      return 'JSON结果';
+    } catch {
+      // 非 JSON：显示前 30 字符
+      return result.length > 30 ? result.slice(0, 30) + '...' : result;
+    }
   }
 }
 
