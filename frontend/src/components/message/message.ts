@@ -899,9 +899,15 @@ export class AIMessage extends Message {
 
 				contentEl.empty();
 				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component());
-				// 设置内部链接的点击事件和 hover preview
-				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
+				// 保存 app 引用用于回调
+				const appRef = this.app;
+				// 等待 Markdown 渲染完成后再设置链接事件（关键修复）
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component()).then(() => {
+					// 设置内部链接的点击事件和 hover preview
+					if (appRef) {
+						this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, appRef, false, this.observers);
+					}
+				});
 			}
 			// 移除流式状态
 			this.el.removeClass('deeppdf-message-streaming');
@@ -927,7 +933,7 @@ export class AIMessage extends Message {
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
 		if (!contentEl) return;
 
-		// 【关键】流式更新时，如果内容有实际文本（不是空白/只有状态行），自动隐藏状态
+		// 【关键】流式更新时，如果内容有实际文本（不是空白/只状态行），自动隐藏状态
 		// 这样用户一旦看到 AI 回复内容，状态提示就自动消失
 		if (this.data.isStreaming && this.el) {
 			const { cleanedContent } = parseAgentContent(content);
@@ -943,7 +949,7 @@ export class AIMessage extends Message {
 			}
 			this.streamingUpdateContent(contentEl as HTMLElement, content);
 		} else {
-			// 非流式更新，完全重绘
+			// 非流式更新，完全重绘（异步执行，确保链接事件正确绑定）
 			this.fullUpdateContent(contentEl as HTMLElement, content);
 		}
 	}
@@ -1108,7 +1114,7 @@ export class AIMessage extends Message {
 	/**
 	 * 完全更新内容
 	 */
-	private fullUpdateContent(contentEl: HTMLElement, content: string): void {
+	private async fullUpdateContent(contentEl: HTMLElement, content: string): Promise<void> {
 		// 清理旧的 observers 和 mouseover handler
 		this.observers.forEach(obs => obs.disconnect());
 		this.observers = [];
@@ -1129,7 +1135,8 @@ export class AIMessage extends Message {
 			contentEl.innerHTML = cleanedContent;
 		} else if (this.app) {
 			const sourcePath = this.data.pdfName || '';
-			MarkdownRenderer.render(this.app, cleanedContent, contentEl, sourcePath, new Component());
+			// 等待 Markdown 渲染完成后再设置链接事件
+			await MarkdownRenderer.render(this.app, cleanedContent, contentEl, sourcePath, new Component());
 			// 设置内部链接的点击事件和 hover preview
 			this.mouseoverHandler = setupInternalLinks(contentEl, this.app, this.data.isStreaming, this.observers);
 		} else {

@@ -40,8 +40,10 @@ export interface StateLoopOptions {
   availableTools: string[];
   /** 工具拦截器（可选） */
   toolInterceptor?: ToolInterceptor;
-  /** 最大迭代次数 */
+  /** 最大迭代次数（LLM 调用次数） */
   maxIterations?: number;
+  /** 最大工具调用次数（硬约束） */
+  maxToolCalls?: number;
   /** 超时（毫秒） */
   timeout?: number;
   /** 取消信号 */
@@ -63,7 +65,7 @@ export interface StateLoopResult {
   /** 总迭代次数 */
   iterations: number;
   /** 完成原因 */
-  finishReason: 'stop' | 'max_iterations' | 'timeout' | 'error';
+  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls' | 'timeout' | 'error';
 }
 
 /**
@@ -101,6 +103,7 @@ export async function runStateLoop(
     availableTools,
     toolInterceptor,
     maxIterations = 5,
+    maxToolCalls,
     abortSignal,
   } = options;
 
@@ -126,9 +129,11 @@ export async function runStateLoop(
   logger?.logMessages(messages);
 
   let iterations = 0;
+  let totalToolCalls = 0;
   let accumulatedContent = '';
   let accumulatedReasoning = '';
   const toolResults: StateLoopResult['toolResults'] = [];
+  let hitToolCallLimit = false; // 标记是否达到工具调用限制
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
@@ -138,6 +143,12 @@ export async function runStateLoop(
         iterations,
         finishReason: 'stop',
       };
+    }
+
+    // 如果已达到工具调用限制，跳出循环
+    if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+      hitToolCallLimit = true;
+      break;
     }
 
     iterations++;
@@ -223,10 +234,11 @@ export async function runStateLoop(
       })),
     });
 
-    // 执行工具调用
+    // 执行工具调用（并行执行）
     const toolStartTime = Date.now();
 
-    for (const tc of toolCalls) {
+    // 预处理所有工具调用：解析参数、应用拦截器
+    const preparedCalls = toolCalls.map(tc => {
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(tc.arguments);
@@ -246,80 +258,118 @@ export async function runStateLoop(
         args = interceptedArgs;
       }
 
-      // 记录工具调用开始
-      logger?.logToolStart(tc.id, tc.name, args);
+      return { tc, args, originalArgs, interceptorNote };
+    });
 
-      // 检查拦截器注入的错误
-      if (args._error) {
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: `Error: ${args._error}`,
-        });
-        logger?.logToolCall({
-          callId: tc.id,
-          toolName: tc.name,
-          originalArgs,
-          interceptedArgs: args,
-          interceptorNote,
-          status: 'error',
-          error: args._error as string,
-          duration: 0,
-        });
-        continue;
+    // 检查工具调用次数限制，决定哪些需要执行
+    const callsToExecute: typeof preparedCalls = [];
+    const callsToSkip: typeof preparedCalls = [];
+
+    for (const prepared of preparedCalls) {
+      if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+        callsToSkip.push(prepared);
+      } else {
+        callsToExecute.push(prepared);
+        totalToolCalls++;
       }
+    }
 
-      // 执行工具
-      callbacks.onProgress?.(`执行工具: ${tc.name}`);
-      const toolExecStart = Date.now();
+    // 记录跳过的工具调用
+    for (const { tc } of callsToSkip) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: `已达到工具调用次数上限（${maxToolCalls}次），此工具调用被跳过。`,
+      });
+    }
 
-      try {
-        let result = await executeTool(toolRegistry, tc.name, args, toolContext);
-        result = compressToolResult(result);
+    // 🚀 并行执行所有工具调用
+    callbacks.onProgress?.(`并行执行 ${callsToExecute.length} 个工具...`);
 
-        const toolExecDuration = Date.now() - toolExecStart;
+    const executionResults = await Promise.all(
+      callsToExecute.map(async ({ tc, args, originalArgs, interceptorNote }) => {
+        const toolExecStart = Date.now();
 
+        // 记录工具调用开始
+        logger?.logToolStart(tc.id, tc.name, args);
+
+        // 检查拦截器注入的错误
+        if (args._error) {
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args,
+            interceptorNote,
+            status: 'error',
+            error: args._error as string,
+            duration: 0,
+          });
+          return {
+            tc,
+            result: null,
+            error: args._error as string,
+            duration: 0,
+          };
+        }
+
+        try {
+          let result = await executeTool(toolRegistry, tc.name, args, toolContext);
+          result = compressToolResult(result);
+
+          const toolExecDuration = Date.now() - toolExecStart;
+
+          logger?.logToolResult(tc.id, result, toolExecDuration);
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args !== originalArgs ? args : undefined,
+            interceptorNote,
+            status: 'success',
+            result,
+            duration: toolExecDuration,
+          });
+
+          return { tc, result, error: null, duration: toolExecDuration };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          const toolExecDuration = Date.now() - toolExecStart;
+
+          logger?.logToolError(tc.id, errorMsg, toolExecDuration);
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            status: 'error',
+            error: errorMsg,
+            duration: toolExecDuration,
+          });
+
+          return { tc, result: null, error: errorMsg, duration: toolExecDuration };
+        }
+      })
+    );
+
+    // 将所有执行结果添加到消息和结果列表（保持原始顺序）
+    for (const execResult of executionResults) {
+      const { tc, result, error } = execResult;
+
+      const toolResultContent = error
+        ? `Error: ${error}`
+        : result || '(无结果)';
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: toolResultContent,
+      });
+
+      if (result) {
         toolResults.push({
           toolName: tc.name,
-          args,
+          args: preparedCalls.find(p => p.tc.id === tc.id)!.args,
           result,
-        });
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: result,
-        });
-
-        logger?.logToolResult(tc.id, result, toolExecDuration);
-        logger?.logToolCall({
-          callId: tc.id,
-          toolName: tc.name,
-          originalArgs,
-          interceptedArgs: args !== originalArgs ? args : undefined,
-          interceptorNote,
-          status: 'success',
-          result,
-          duration: toolExecDuration,
-        });
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        const toolExecDuration = Date.now() - toolExecStart;
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: `Error: ${errorMsg}`,
-        });
-
-        logger?.logToolError(tc.id, errorMsg, toolExecDuration);
-        logger?.logToolCall({
-          callId: tc.id,
-          toolName: tc.name,
-          originalArgs,
-          status: 'error',
-          error: errorMsg,
-          duration: toolExecDuration,
         });
       }
     }
@@ -327,14 +377,22 @@ export async function runStateLoop(
     const toolDuration = Date.now() - toolStartTime;
     callbacks.onProgress?.(`工具执行完成 (${toolDuration}ms)`);
 
+    // 如果达到工具调用限制，标记并准备结束
+    if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+      hitToolCallLimit = true;
+    }
+
     // 清空累积内容
     accumulatedContent = '';
     accumulatedReasoning = '';
   }
 
-  // 达到最大迭代次数，强制输出结论
-  if (iterations >= maxIterations && toolResults.length > 0) {
-    const forcedConclusionPrompt = `你已达到工具调用次数上限（${maxIterations}次）。
+  // 达到最大迭代次数或工具调用限制，强制输出结论
+  const needsForcedConclusion = (iterations >= maxIterations || hitToolCallLimit) && toolResults.length > 0;
+  if (needsForcedConclusion) {
+    const limitType = hitToolCallLimit ? '工具调用' : '迭代';
+    const limitValue = hitToolCallLimit ? maxToolCalls : maxIterations;
+    const forcedConclusionPrompt = `你已达到${limitType}次数上限（${limitValue}次）。
 
 现在请基于已收集的所有信息，输出你的最终分析结论。
 
@@ -383,10 +441,18 @@ export async function runStateLoop(
     });
   }
 
+  // 确定完成原因
+  let finishReason: StateLoopResult['finishReason'] = 'stop';
+  if (hitToolCallLimit) {
+    finishReason = 'max_tool_calls';
+  } else if (iterations >= maxIterations) {
+    finishReason = 'max_iterations';
+  }
+
   return {
     content: accumulatedContent,
     toolResults,
     iterations,
-    finishReason: iterations >= maxIterations ? 'max_iterations' : 'stop',
+    finishReason,
   };
 }

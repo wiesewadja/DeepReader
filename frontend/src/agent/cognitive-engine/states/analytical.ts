@@ -67,6 +67,7 @@ export class AnalyticalState extends StateNode {
           availableTools: this.tools,
           toolInterceptor: interceptor,
           maxIterations: 8,
+          maxToolCalls: 5, // 硬约束：最多 5 次工具调用（与提示词一致）
           abortSignal: ctx.abortSignal,
         }
       );

@@ -93,12 +93,14 @@
 	opacity: 0.8;
 }
 
-/* AI 消息气泡 - 使用主题背景色，无边框 */
+/* AI 消息气泡 - 使用主题背景色，无边框，阅读模式字体 */
 .deeppdf-message-bubble-ai {
 	background: var(--background-primary);
 	color: var(--text-normal);
 	border: none;
 	border-radius: 12px;
+	/* 使用与阅读模式相同的衬线字体 */
+	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
 }
 
 .deeppdf-message-bubble-ai:hover {
@@ -187,14 +189,45 @@
 	color: var(--text-on-accent);
 }
 
-/* AI 消息内容继承 Obsidian 原生 Markdown 样式 */
-/* 不再覆盖 MarkdownRenderer 渲染的样式，让 Obsidian 主题样式完全生效 */
+/* AI 消息内容使用阅读模式样式 */
 .deeppdf-message-bubble-ai .deeppdf-message-content .markdown-preview-view,
 .deeppdf-message-bubble-ai .deeppdf-message-content .markdown-renderer {
-	/* 确保继承容器的字体设置 */
 	font-size: inherit;
-	line-height: inherit;
+	line-height: 1.9;
 	color: inherit;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* AI 消息标题样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content h1,
+.deeppdf-message-bubble-ai .deeppdf-message-content h2,
+.deeppdf-message-bubble-ai .deeppdf-message-content h3,
+.deeppdf-message-bubble-ai .deeppdf-message-content h4 {
+	font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+	color: var(--text-normal);
+	line-height: 1.4;
+}
+
+/* AI 消息段落样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content p {
+	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+	line-height: 1.9;
+	letter-spacing: 0.01em;
+}
+
+/* AI 消息列表样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content ul,
+.deeppdf-message-bubble-ai .deeppdf-message-content ol {
+	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", serif;
+	line-height: 1.8;
+}
+
+/* AI 消息引用样式 */
+.deeppdf-message-bubble-ai .deeppdf-message-content blockquote {
+	font-family: "Charter", "Georgia", serif;
+	font-style: italic;
 }
 
 /* 只做必要的布局调整，不覆盖颜色和具体样式 */
