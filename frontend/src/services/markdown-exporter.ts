@@ -240,10 +240,16 @@ function createMarkdownContent(
 
     const frontMatter = frontMatterLines.join('\n');
 
-    // 标题（分片时添加序号）
+    // 标题：只保留 section 的最后一部分（去除父级路径）
+    // 例如："第一篇 > 第一章" → "第一章"
+    const displayTitle = node.section.includes('>')
+        ? node.section.split('>').pop()?.trim() || node.section
+        : node.section;
+
+    // 分片时在标题后添加序号
     const title = totalParts > 1
-        ? `# ${node.section} (${partNum}/${totalParts})\n\n`
-        : `# ${node.section}\n\n`;
+        ? `# ${displayTitle} (${partNum}/${totalParts})\n\n`
+        : `# ${displayTitle}\n\n`;
 
     // 摘要块（仅第一部分显示）
     let summaryBlock = "";
