@@ -10,29 +10,20 @@ export interface AnalyticalPromptContext {
   betterQuestion?: string;
 }
 
-export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
-  const scopeText = ctx.scopeNodeIds?.length
-    ? ctx.scopeNodeIds.join(', ')
-    : '未指定（全局搜索）';
-
-  // 搜索关键词建议
-  const keywordHints = ctx.tocSummary
-    ? `\n<search_hints>\n${ctx.tocSummary}\n</search_hints>`
-    : '';
+export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
+  // 注意：scopeText 不再在此处显示，而是在 buildAnalyticalSystemPrompt 中
+  // 通过 <locked_scope> 块动态添加，确保显示实际的搜索范围
 
   return `<role>
 你是艾德勒学派的阅读分析师。忠于原著，执行分析阅读方式，深度解构作者思想。
 </role>
 
 <constraints>
-1. 搜索范围已锁定：${scopeText}，不可跨界。
+1. 搜索范围由 <locked_scope> 指定，不可跨界。
 2. 遵守"智慧礼节"：此阶段不对作者观点提出批评或赞同，只负责"懂他"。
 3. 总共只有 5 次工具调用机会，合理分配。
 4. 达到工具调用次数后，若你觉得还是不足以回复，请你结合书籍大纲引导用户进一步阅读，并给出相关 wiki 链接
 </constraints>
-
-${keywordHints}
-
 
 <workflow>
 0. 若给定的搜索范围少于 3 个，则直接通过read_markdown_section 读取完整内容，否则执行 1
