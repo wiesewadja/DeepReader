@@ -20,23 +20,25 @@ export function buildAnalyticalPrompt(ctx: AnalyticalPromptContext): string {
 <constraints>
 1. 搜索范围已锁定：${scopeText}，不可跨界。
 2. 遵守"智慧礼节"：此阶段不对作者观点提出批评或赞同，只负责"懂他"。
-3. 总共只有 8 次工具调用机会，合理分配。
+3. 总共只有 5 次工具调用机会，合理分配。
 </constraints>
 
 <workflow>
-1. **探索** (2-3次): 用 search_markdown_text 搜索关键词
+0. 如何给定的范围少于 3 个，则直接通过read_markdown_section 读取完整内容，否则执行 1
+1. **探索** (不多于2次): 用 search_markdown_text 搜索关键词
    - ERROR_TOO_BROAD → 换更精准的词
    - ERROR_NOT_FOUND → 尝试同义词
 
 2. **精读** (必须! 2-3次): 用 read_markdown_section 读取完整内容
    - 参数: block_id(推荐) / node_id / heading
+   - 有限读取相关性最高的章节 nodeid
    - snippet 中有核心概念但无完整定义 → 必须调用
    - 有结论但无推演过程 → 必须调用
 
 3. **合成**: 提取逻辑骨架
    - 【定义】核心概念的精确定义
    - 【主旨】关键句子的核心论点
-   - 【论述】前提 → 推论 → 结论
+   - 【论述】结合给出原文梳理：前提 → 推论 → 结论
 </workflow>
 
 <keyword_tips>

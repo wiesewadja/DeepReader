@@ -152,11 +152,12 @@ describe('formatTreeStructure', () => {
 describe('buildInspectionalSystemPrompt', () => {
   it('should include tree text in prompt', () => {
     const treeText = '├── 第一章 (node_id: 0001)\n│   摘要: 介绍...';
-    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book');
+    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book', 2);
 
     expect(prompt).toContain('Test Book');
     expect(prompt).toContain(treeText);
     expect(prompt).toContain('目录树:');
+    expect(prompt).toContain('深度 2');
   });
 
   it('should include docDescription when provided', () => {
@@ -164,6 +165,7 @@ describe('buildInspectionalSystemPrompt', () => {
     const prompt = buildInspectionalSystemPrompt(
       treeText,
       'Test Book',
+      2,
       '这是一本关于思维方法的书籍。'
     );
 
@@ -173,8 +175,24 @@ describe('buildInspectionalSystemPrompt', () => {
 
   it('should not include book_summary when docDescription is empty', () => {
     const treeText = '├── 第一章 (node_id: 0001)';
-    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book');
+    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book', 1);
 
     expect(prompt).not.toContain('<book_summary>');
+  });
+
+  it('should show macro inspection branch for depth 1', () => {
+    const treeText = '├── 第一章 (node_id: 0001)';
+    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book', 1);
+
+    expect(prompt).toContain('宏观检视');
+    expect(prompt).toContain('structural_analysis');
+  });
+
+  it('should show scope locking branch for depth 2', () => {
+    const treeText = '├── 第一章 (node_id: 0001)';
+    const prompt = buildInspectionalSystemPrompt(treeText, 'Test Book', 2);
+
+    expect(prompt).toContain('圈定战区');
+    expect(prompt).toContain('把答题的任务留给下一阶段');
   });
 });

@@ -61,7 +61,8 @@ export class FormatterState extends StateNode {
             ctx.analysisResult || '',
             ctx.pdfName,
             recentHistory,
-            ctx.tocSummary
+            ctx.tocSummary,
+            ctx.structuralAnalysis
           ),
           availableTools: [],
           maxIterations: 1,

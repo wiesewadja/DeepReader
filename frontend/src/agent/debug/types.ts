@@ -145,6 +145,8 @@ export interface StateOutputLog {
   scopeNodeTitles?: string[];
   /** 目录摘要 */
   tocSummary?: string;
+  /** 全书结构分析（深度1时由 S1 生成） */
+  structuralAnalysis?: string;
   /** 分析结果 */
   analysisResult?: string;
   /** 最终输出内容 */

@@ -17,6 +17,7 @@
  *       ├── 02-inspectional.md         # S1 检视状态
  *       ├── 03-analytical.md           # S2 分析状态
  *       ├── 04-formatter.md            # S4 格式化状态
+ *       ├── tools.md                   # 工具调用日志
  *       └── session.json               # 完整 JSON 数据
  */
 
@@ -201,6 +202,9 @@ export class DebugLogger {
     for (const stateLog of this.sessionLog.stateExecutions) {
       await this.writeStateMarkdown(stateLog);
     }
+
+    // 写入工具调用日志
+    await this.writeToolsMarkdown();
 
     console.log(`[DebugLogger] ✅ 调试会话结束: ${this.sessionDir}`);
     this.sessionDir = null;
@@ -589,6 +593,7 @@ export class DebugLogger {
     depth?: number;
     standaloneQuery?: string;
     scopeNodeIds?: string[];
+    structuralAnalysis?: string;
     innerIterations?: number;
   }, _method: 'regex' | 'llm' = 'llm'): void {
     if (!this.config.enabled) return;
@@ -598,7 +603,9 @@ export class DebugLogger {
     if (info.standaloneQuery) {
       console.log(`[DebugLogger]    📝 独立查询: ${info.standaloneQuery.slice(0, 50)}...`);
     }
-    if (info.scopeNodeIds && info.scopeNodeIds.length > 0) {
+    if (info.structuralAnalysis) {
+      console.log(`[DebugLogger]    🌐 宏观检视: ${info.structuralAnalysis.slice(0, 50)}...`);
+    } else if (info.scopeNodeIds && info.scopeNodeIds.length > 0) {
       console.log(`[DebugLogger]    🎯 范围锁定: ${info.scopeNodeIds.length} 个章节`);
     }
   }
@@ -680,6 +687,20 @@ export class DebugLogger {
     this.sessionLog.files.push('session.json');
 
     console.log(`[DebugLogger] 📝 写入: session.json`);
+  }
+
+  /**
+   * 写入工具调用日志 Markdown
+   */
+  private async writeToolsMarkdown(): Promise<void> {
+    if (!this.sessionDir || !this.sessionLog) return;
+
+    const content = this.formatToolsMarkdown(this.sessionLog);
+    const filePath = normalizePath(`${this.sessionDir}/tools.md`);
+    await this.app.vault.adapter.write(filePath, content);
+    this.sessionLog.files.push('tools.md');
+
+    console.log(`[DebugLogger] 📝 写入: tools.md`);
   }
 
   // ============================================================================
@@ -799,8 +820,14 @@ export class DebugLogger {
       md += `   独立查询 → ${routerState.output.standaloneQuery.slice(0, 50)}${routerState.output.standaloneQuery.length > 50 ? '...' : ''}\n`;
     }
 
-    // 追踪范围锁定
-    if (inspectionalState?.output.scopeNodeIds && inspectionalState.output.scopeNodeIds.length > 0) {
+    // 追踪范围锁定或结构分析
+    if (inspectionalState?.output.structuralAnalysis) {
+      // 深度1：宏观检视
+      md += `\n🌐 宏观检视 (深度1):\n`;
+      const structPreview = inspectionalState.output.structuralAnalysis.slice(0, 100);
+      md += `   ${structPreview.replace(/\n/g, ' ')}${inspectionalState.output.structuralAnalysis.length > 100 ? '...' : ''}\n`;
+    } else if (inspectionalState?.output.scopeNodeIds && inspectionalState.output.scopeNodeIds.length > 0) {
+      // 深度2/3：圈定战区
       md += `\n🎯 范围锁定:\n`;
       md += `   章节 ID → ${inspectionalState.output.scopeNodeIds.slice(0, 3).join(', ')}`;
       if (inspectionalState.output.scopeNodeIds.length > 3) {
@@ -933,6 +960,221 @@ export class DebugLogger {
   }
 
   /**
+   * 格式化工具调用日志 Markdown
+   */
+  private formatToolsMarkdown(log: AgentSessionLog): string {
+    let md = '';
+
+    // 收集所有工具调用
+    const allToolCalls: Array<ToolCallLog & { stateName: string }> = [];
+    for (const state of log.stateExecutions) {
+      for (const toolCall of state.toolCalls) {
+        allToolCalls.push({ ...toolCall, stateName: state.stateName });
+      }
+    }
+
+    // 标题
+    md += `# 🔧 工具调用日志\n\n`;
+    md += `> **会话**: ${log.sessionId}\n`;
+    md += `> **书籍**: ${log.bookName || '-'}\n`;
+    md += `> **总调用**: ${allToolCalls.length} 次\n\n`;
+    md += `---\n\n`;
+
+    // 遍历每个工具调用
+    for (let i = 0; i < allToolCalls.length; i++) {
+      const tool = allToolCalls[i];
+      const num = i + 1;
+
+      // 标题
+      const statusEmoji = tool.status === 'success' ? '✅' : '❌';
+      md += `## ${num}. ${tool.toolName}\n\n`;
+
+      // 元信息
+      const time = new Date(tool.startTime).toLocaleTimeString();
+      const duration = (tool.duration / 1000).toFixed(1);
+      md += `**时间**: ${time}  \n`;
+      md += `**耗时**: ${duration}s  \n`;
+      md += `**状态**: ${statusEmoji} ${tool.status === 'success' ? '成功' : '失败'}  \n`;
+      md += `**状态机**: ${tool.stateName}\n\n`;
+
+      // 参数
+      md += `### 参数\n\n`;
+      md += '```json\n';
+      const args = tool.interceptedArgs || tool.originalArgs;
+      md += JSON.stringify(args, null, 2);
+      md += '\n```\n\n';
+
+      // 拦截器信息
+      if (tool.interceptorNote) {
+        md += `> ⚠️ **拦截器**: ${tool.interceptorNote}\n\n`;
+      }
+
+      // 结果
+      md += `### 返回结果\n\n`;
+
+      if (tool.status === 'error') {
+        md += `❌ **错误**: ${tool.error || '未知错误'}\n\n`;
+      } else if (tool.result) {
+        // 尝试解析 JSON 结果
+        try {
+          const parsed = JSON.parse(tool.result);
+
+          // 根据工具类型格式化输出
+          if (tool.toolName === 'search_doc' || tool.toolName === 'search_markdown_text') {
+            md += this.formatSearchResult(parsed);
+          } else if (tool.toolName === 'get_toc') {
+            md += this.formatTocResult(parsed);
+          } else if (tool.toolName === 'get_chapter') {
+            md += this.formatChapterResult(parsed);
+          } else if (tool.toolName === 'read_markdown_section') {
+            md += this.formatReadResult(parsed, tool.result);
+          } else {
+            // 通用格式
+            md += this.formatGenericResult(parsed);
+          }
+        } catch {
+          // 非 JSON 结果，直接显示
+          const truncated = tool.result.length > 2000
+            ? tool.result.slice(0, 2000) + '\n\n... (内容已截断)'
+            : tool.result;
+          md += '```\n' + truncated + '\n```\n\n';
+        }
+      } else {
+        md += `_无返回结果_\n\n`;
+      }
+
+      md += `---\n\n`;
+    }
+
+    // 统计表格
+    md += `## 统计\n\n`;
+    md += `| 工具 | 调用次数 | 总耗时 |\n`;
+    md += `|------|----------|--------|\n`;
+
+    const toolStats: Record<string, { count: number; duration: number }> = {};
+    for (const tool of allToolCalls) {
+      if (!toolStats[tool.toolName]) {
+        toolStats[tool.toolName] = { count: 0, duration: 0 };
+      }
+      toolStats[tool.toolName].count++;
+      toolStats[tool.toolName].duration += tool.duration;
+    }
+
+    for (const [name, stats] of Object.entries(toolStats)) {
+      md += `| ${name} | ${stats.count} | ${(stats.duration / 1000).toFixed(1)}s |\n`;
+    }
+
+    return md;
+  }
+
+  /**
+   * 格式化搜索结果
+   */
+  private formatSearchResult(parsed: any): string {
+    let md = '';
+
+    const hits = parsed.hits || [];
+    md += `找到 **${hits.length}** 条结果：\n\n`;
+
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      const score = hit.score ? hit.score.toFixed(2) : '-';
+      md += `**结果 ${i + 1}** (score: ${score})\n`;
+
+      // 章节信息
+      if (hit.section || hit.chapter) {
+        md += `> 📖 ${hit.section || hit.chapter}\n`;
+      }
+
+      // 内容
+      const text = hit.text || hit.content || '';
+      const truncated = text.length > 500 ? text.slice(0, 500) + '...' : text;
+      md += `> ${truncated.replace(/\n/g, '\n> ')}\n\n`;
+    }
+
+    return md;
+  }
+
+  /**
+   * 格式化目录结果
+   */
+  private formatTocResult(parsed: any): string {
+    let md = '';
+
+    const nodes = parsed.nodes || parsed.toc || [];
+    md += `共 **${nodes.length}** 个章节：\n\n`;
+
+    for (let i = 0; i < Math.min(nodes.length, 20); i++) {
+      const node = nodes[i];
+      const title = node.title || node.node_name || node.section || '-';
+      const level = node.level || 0;
+      const indent = '  '.repeat(level);
+      md += `${indent}${i + 1}. ${title}\n`;
+    }
+
+    if (nodes.length > 20) {
+      md += `\n_... 还有 ${nodes.length - 20} 个章节_\n`;
+    }
+
+    md += '\n';
+    return md;
+  }
+
+  /**
+   * 格式化章节结果
+   */
+  private formatChapterResult(parsed: any): string {
+    let md = '';
+
+    const title = parsed.title || parsed.section || '章节内容';
+    const text = parsed.text || parsed.content || '';
+    const wordCount = text.length;
+
+    md += `**${title}**（共 ${wordCount} 字）：\n\n`;
+
+    const truncated = text.length > 1000 ? text.slice(0, 1000) + '...' : text;
+    md += `> ${truncated.replace(/\n/g, '\n> ')}\n\n`;
+
+    return md;
+  }
+
+  /**
+   * 格式化读取结果
+   */
+  private formatReadResult(parsed: any, rawResult: string): string {
+    let md = '';
+
+    // 尝试提取文件路径
+    const path = parsed.path || parsed.section_path || '';
+    if (path) {
+      md += `**文件**: \`${path}\`\n\n`;
+    }
+
+    const text = parsed.content || parsed.text || rawResult;
+    const wordCount = text.length;
+
+    md += `文件内容（共 ${wordCount} 字）：\n\n`;
+
+    const truncated = text.length > 1500 ? text.slice(0, 1500) + '\n\n... (内容已截断)' : text;
+    md += '```markdown\n' + truncated + '\n```\n\n';
+
+    return md;
+  }
+
+  /**
+   * 格式化通用结果
+   */
+  private formatGenericResult(parsed: any): string {
+    let md = '';
+
+    const str = JSON.stringify(parsed, null, 2);
+    const truncated = str.length > 2000 ? str.slice(0, 2000) + '\n... (已截断)' : str;
+    md += '```json\n' + truncated + '\n```\n\n';
+
+    return md;
+  }
+
+  /**
    * 格式化状态 Markdown
    */
   private formatStateMarkdown(state: StateExecutionLog): string {
@@ -966,21 +1208,32 @@ export class DebugLogger {
     } else if (state.stateName === 'Inspectional') {
       md += `| 决策 | 值 |\n`;
       md += `|------|-----|\n`;
-      if (state.output.scopeNodeIds && state.output.scopeNodeIds.length > 0) {
-        md += `| 锁定章节 | ${state.output.scopeNodeIds.length} 个 |\n`;
-        if (state.output.scopeNodeTitles && state.output.scopeNodeTitles.length > 0) {
-          md += `| 章节列表 | ${state.output.scopeNodeTitles.slice(0, 5).join('、')}${state.output.scopeNodeTitles.length > 5 ? '...' : ''} |\n`;
-        } else {
-          md += `| 章节 ID | ${state.output.scopeNodeIds.slice(0, 5).join(', ')} |\n`;
-        }
+      // 深度1时显示结构分析
+      if (state.output.structuralAnalysis) {
+        const analysis = state.output.structuralAnalysis.length > 300
+          ? state.output.structuralAnalysis.slice(0, 300) + '...'
+          : state.output.structuralAnalysis;
+        md += `| 模式 | 🌐 宏观检视 (深度1) |\n`;
+        md += `| 结构分析 | ${analysis.replace(/\n/g, ' ')} |\n`;
       } else {
-        md += `| 锁定章节 | 全局搜索 |\n`;
-      }
-      if (state.output.tocSummary) {
-        const summary = state.output.tocSummary.length > 200
-          ? state.output.tocSummary.slice(0, 200) + '...'
-          : state.output.tocSummary;
-        md += `| 搜索建议 | ${summary} |\n`;
+        // 深度2/3时显示范围锁定
+        if (state.output.scopeNodeIds && state.output.scopeNodeIds.length > 0) {
+          md += `| 模式 | 🎯 圈定战区 (深度2/3) |\n`;
+          md += `| 锁定章节 | ${state.output.scopeNodeIds.length} 个 |\n`;
+          if (state.output.scopeNodeTitles && state.output.scopeNodeTitles.length > 0) {
+            md += `| 章节列表 | ${state.output.scopeNodeTitles.slice(0, 5).join('、')}${state.output.scopeNodeTitles.length > 5 ? '...' : ''} |\n`;
+          } else {
+            md += `| 章节 ID | ${state.output.scopeNodeIds.slice(0, 5).join(', ')} |\n`;
+          }
+        } else {
+          md += `| 模式 | 🔍 全局搜索 |\n`;
+        }
+        if (state.output.tocSummary) {
+          const summary = state.output.tocSummary.length > 200
+            ? state.output.tocSummary.slice(0, 200) + '...'
+            : state.output.tocSummary;
+          md += `| 搜索建议 | ${summary} |\n`;
+        }
       }
     } else if (state.stateName === 'Analytical') {
       md += `| 决策 | 值 |\n`;

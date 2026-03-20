@@ -87,7 +87,7 @@ export function buildInspectionalSystemPrompt(
     : `<task_branch name="圈定战区">
 用户的意图是探究某个具体的细节、概念或推演逻辑。
 
-1. 基于目录树和章节摘要，推断最有可能包含答案的核心章节，将其 nodeid 填入 scopeNodeIds
+1. 基于目录树和章节摘要，推断最有可能包含答案的核心章节，将他们的 nodeid 按相关性排序，将其 nodeid 填入 scopeNodeIds
 2. 绝对不要尝试回答用户的具体问题！把答题的任务留给下一阶段
 3. better_question 根据全书摘要重新推断出更能体现用户提问意图的下一阶段问题
 4. structural_analysis 记录一句话简述为什么圈定这几个章节和提问意图改写,
