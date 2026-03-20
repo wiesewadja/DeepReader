@@ -16,9 +16,9 @@ import type { ReadingDepth } from '../types';
  * Similar to backend's format_tree_structure in llm_tree_search.py
  *
  * Output example:
- * ├── 第一章 投资入门 (node_id: 0001)
+ * ├── 第一章 投资入门 (node_id: 0001, link: [[书名/01-第一章]])
  * │   摘要: 介绍投资的基本概念...
- * │   ├── 1.1 什么是投资 (node_id: 0002)
+ * │   ├── 1.1 什么是投资 (node_id: 0002, link: [[书名/01-第一章#1.1]])
  * │   │   摘要: 投资的定义和分类...
  */
 export function formatTreeStructure(
@@ -36,8 +36,8 @@ export function formatTreeStructure(
     // Build prefix
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
-    // Title line with node_id
-    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id})`;
+    // Title line with node_id and link
+    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}, link: ${node.link || ''})`;
     lines.push(titleLine);
 
     // Add summary if available and within depth limit
@@ -81,8 +81,8 @@ export function buildInspectionalSystemPrompt(
 1. 仔细阅读目录树和章节摘要
 2. 直接生成一份详细的《全书结构检视报告》(structural_analysis)
 3. 解答用户的宏观问题，基于目录信息组织回答
-4. 要组装相关章节的obsidian引用链接，如 [[{{书籍名}/{{章节名}}]]
-4. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
+4. 引用章节时，直接使用目录树中每个节点的 link 字段值，不要自己组装链接
+5. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
 </task_branch>`
     : `<task_branch name="圈定战区">
 用户的意图是探究某个具体的细节、概念或推演逻辑。
