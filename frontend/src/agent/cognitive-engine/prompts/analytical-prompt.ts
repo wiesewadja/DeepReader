@@ -82,7 +82,10 @@ export function buildAnalyticalSystemPrompt(ctx: {
   scopeNodeIds: string[];
   tocSummary?: string;
 }): string {
-  const scopeList = ctx.scopeNodeIds.map(id => `- ${id}`).join('\n');
+  // 如果 scopeNodeIds 为空，显示全局搜索提示
+  const scopeList = ctx.scopeNodeIds.length > 0
+    ? ctx.scopeNodeIds.map(id => `- ${id}`).join('\n')
+    : '- (全局搜索，无范围限制)';
 
   const searchHints = ctx.tocSummary
     ? `\n<search_hints>\n${ctx.tocSummary}\n</search_hints>`
