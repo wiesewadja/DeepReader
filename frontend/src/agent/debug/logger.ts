@@ -1020,7 +1020,7 @@ export class DebugLogger {
           const parsed = JSON.parse(tool.result);
 
           // 根据工具类型格式化输出
-          if (tool.toolName === 'search_doc' || tool.toolName === 'search_markdown_text') {
+          if (tool.toolName === 'search_markdown_text') {
             md += this.formatSearchResult(parsed);
           } else if (tool.toolName === 'get_toc') {
             md += this.formatTocResult(parsed);

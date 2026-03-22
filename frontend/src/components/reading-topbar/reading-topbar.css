@@ -88,39 +88,6 @@
     line-height: 1.3;
 }
 
-/* 状态点 - 小圆点，覆盖在封面右下角 */
-.deeppdf-status-dot {
-    position: absolute;
-    left: 26px;
-    top: 26px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    border: 2px solid var(--background-primary);
-    flex-shrink: 0;
-    transition: background 0.3s ease;
-    z-index: 1;
-}
-
-.deeppdf-status-dot--connecting {
-    background: var(--text-warning, #f59e0b);
-    animation: status-pulse 1.5s infinite;
-}
-
-.deeppdf-status-dot--connected {
-    background: var(--text-success, #10b981);
-}
-
-.deeppdf-status-dot--disconnected {
-    background: var(--text-error, #ef4444);
-}
-
-@keyframes status-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-}
-
 /* 右侧区域 */
 .deeppdf-topbar-right {
     display: flex;

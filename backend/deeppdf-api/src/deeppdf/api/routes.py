@@ -3,6 +3,7 @@ API 路由定义
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Any, Dict, List, Tuple
@@ -13,8 +14,6 @@ from fastapi import APIRouter, HTTPException, status, Request
 from .models import (
     IndexRequest,
     IndexResponse,
-    QueryRequest,
-    QueryResponse,
     ListIndexesResponse,
     TaskProgressResponse,
     MarkdownMappingBody,
@@ -36,7 +35,6 @@ from .export_handlers import (
     export_cover_data,
 )
 from ..services.indexer import index_pdf
-from ..services.querier import query_pdf
 from ..services.manager import list_indexes, delete_index
 from ..services.config_storage import ConfigStorage
 from ..services.file_storage import FileStorage
@@ -549,48 +547,6 @@ async def create_index(req: IndexRequest, http_request: Request):
         index_id=task_id,
         message=f"索引任务已创建，使用 GET /api/indexes/{task_id} 查询进度，DELETE /api/indexes/{task_id} 取消任务",
     )
-
-
-@router.post("/query", response_model=QueryResponse)
-async def query_index(req: QueryRequest):
-    """查询 PDF 内容（支持 LLM 树搜索和范围锁定）"""
-    logger.info(
-        f"[API] 收到查询请求: query='{req.query}', index_id='{req.index_id}', "
-        f"max_results={req.max_results}, use_llm_tree_search={req.use_llm_tree_search}, "
-        f"scope_node_ids={req.scope_node_ids}"
-    )
-
-    # 验证：空查询
-    if not req.query or not req.query.strip():
-        logger.warning("[API] 查询失败: 查询内容为空")
-        return QueryResponse(status="error", results=None, error="查询内容不能为空")
-
-    # 验证：索引是否存在
-    metadata_path = settings.base_dir / "indexes" / f"{req.index_id}.json"
-    if not metadata_path.exists():
-        logger.warning(f"[API] 查询失败: 索引不存在 - {req.index_id}")
-        return QueryResponse(status="error", results=None, error=f"索引不存在: {req.index_id}")
-
-    result = await query_pdf(
-        req.query,
-        req.index_id,
-        str(settings.base_dir),
-        req.max_results or settings.max_results,
-        use_llm_tree_search=req.use_llm_tree_search,
-        scope_node_ids=req.scope_node_ids,
-    )
-
-    # 检查是否出错
-    if result.get("status") == "error":
-        error_msg = result.get("error", "Unknown error")
-        logger.warning(f"[API] 查询失败: {error_msg}")
-        return QueryResponse(status="error", results=None, error=error_msg)
-
-    result_count = len(result.get("results", []))
-    search_method = result.get("search_method", "unknown")
-    logger.info(f"[API] 查询完成: method={search_method}, 返回 {result_count} 个结果")
-
-    return QueryResponse(**result)
 
 
 @router.get("/indexes", response_model=ListIndexesResponse)

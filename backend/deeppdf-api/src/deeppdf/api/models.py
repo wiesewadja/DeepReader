@@ -100,20 +100,6 @@ class IndexRequest(BaseModel):
         return v
 
 
-class QueryRequest(BaseModel):
-    """查询请求"""
-
-    query: str = Field(..., description="查询文本")
-    index_id: str = Field(..., description="索引 ID")
-    max_results: Optional[int] = Field(10, description="最大结果数")
-    use_llm_tree_search: bool = Field(
-        False, description="是否使用 LLM 树搜索（深度思考模式）"
-    )
-    scope_node_ids: Optional[List[str]] = Field(
-        None, description="范围锁定的节点 ID 列表（只在这些节点范围内搜索）"
-    )
-
-
 # ========== 响应模型 ==========
 
 
@@ -132,28 +118,6 @@ class IndexResponse(BaseModel):
     indexing_method: Optional[str] = None
     reused: Optional[bool] = None  # 是否复用了已有数据
     error: Optional[str] = None
-
-
-class QueryResultItem(BaseModel):
-    """查询结果项"""
-
-    text: str
-    metadata: dict
-
-
-class QueryResponse(BaseModel):
-    """查询响应"""
-
-    status: str
-    results: Optional[List[QueryResultItem]] = None
-    error: Optional[str] = None
-    index_info: Optional[dict] = None
-    search_method: Optional[str] = None
-    query_type: Optional[str] = None  # 查询类型: how_to | definition | fact | general
-    weights: Optional[dict] = None  # RRF 权重: {"vector": 0.7, "bm25": 0.3}
-    thinking: Optional[str] = None  # 新增: LLM 推理过程
-    fallback: Optional[bool] = None  # 新增: 是否发生降级
-    fallback_reason: Optional[str] = None  # 新增: 降级原因
 
 
 class IndexListItem(BaseModel):

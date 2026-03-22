@@ -18,7 +18,6 @@ import { updateProfileTool } from './profile.js';
 import { searchReadBooksTool } from './search-read-books.js';
 import { createCanvasTool } from './canvas.js';
 import { createExcalidrawTool } from './excalidraw.js';
-import { searchDocTool } from './search-doc.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
 
@@ -42,7 +41,6 @@ export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
 export { createCanvasTool } from './canvas.js';
 export { createExcalidrawTool } from './excalidraw.js';
-export { searchDocTool } from './search-doc.js';
 
 /**
  * 创建并填充 Tool 注册表
@@ -82,9 +80,6 @@ export function createToolRegistry(
   // 注册关联阅读工具
   registry.set('search_read_books', searchReadBooksTool);
 
-  // 注册后端搜索工具（用于 PDF/EPUB 等非 Markdown 文档）
-  registry.set('search_doc', searchDocTool);
-
   // 注册 Canvas 工具（需要 Obsidian App 实例）
   if (context.app) {
     registry.set('canvas', createCanvasTool(context.app));
@@ -111,7 +106,7 @@ export function getToolDefinitions(registry: ToolRegistry): ToolDefinition[] {
  * @param name 工具名称
  * @param args 工具参数
  * @param context 工具上下文
- * @param timeout 超时时间（毫秒），默认 60 秒（search_doc 需要更长时间）
+ * @param timeout 超时时间（毫秒），默认 60 秒
  */
 export async function executeTool(
   registry: ToolRegistry,

@@ -31,7 +31,6 @@ export class IndexManager extends Component {
     private listEl: HTMLElement | null = null;
     private toggleIcon: HTMLElement | null = null;
     private currentPdfEl: HTMLElement | null = null;
-    private statusDot: HTMLElement | null = null;
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
 
@@ -89,13 +88,7 @@ export class IndexManager extends Component {
         title.className = 'deeppdf-index-manager-title';
         title.textContent = '在线书库';
 
-        // 连接状态指示器
-        this.statusDot = document.createElement('span');
-        this.statusDot.className = 'deeppdf-connection-status';
-        this.statusDot.title = '连接中...';
-
         titleRow.appendChild(title);
-        titleRow.appendChild(this.statusDot);
 
         titleWrapper.appendChild(titleRow);
 
@@ -403,32 +396,6 @@ export class IndexManager extends Component {
         }
     }
 
-    setConnectionStatus(status: 'loading' | 'connected' | 'disconnected' | 'error'): void {
-        if (!this.statusDot) return;
-
-        // Remove all status classes
-        this.statusDot.removeClass('status-loading');
-        this.statusDot.removeClass('status-ok');
-        this.statusDot.removeClass('status-error');
-
-        // Add appropriate class and update title
-        switch (status) {
-            case 'loading':
-                this.statusDot.addClass('status-loading');
-                this.statusDot.title = 'Connecting...';
-                break;
-            case 'connected':
-                this.statusDot.addClass('status-ok');
-                this.statusDot.title = 'Connected';
-                break;
-            case 'disconnected':
-            case 'error':
-                this.statusDot.addClass('status-error');
-                this.statusDot.title = 'Disconnected';
-                break;
-        }
-    }
-
     public selectIndex(id: string): void {
         if (this.selectedIndexId === id) return;
         this.selectedIndexId = id;
@@ -450,7 +417,6 @@ export class IndexManager extends Component {
         this.listEl = null;
         this.toggleIcon = null;
         this.currentPdfEl = null;
-        this.statusDot = null;
         this.dropdownMenu = null;
 
         super.destroy();

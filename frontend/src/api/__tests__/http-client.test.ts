@@ -112,57 +112,6 @@ describe('DeepPDFClient', () => {
         });
     });
 
-    describe('queryPDF', () => {
-        it('should query PDF successfully', async () => {
-            const mockResult = {
-                status: 'success',
-                query: 'test query',
-                results: [
-                    {
-                        text: 'Sample text',
-                        metadata: { page: 1, section: 'Introduction' }
-                    }
-                ]
-            };
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => mockResult
-            });
-
-            const result = await client.queryPDF('test query', 'test-index-id');
-
-            expect(result).toEqual(mockResult);
-            expect(mockFetch).toHaveBeenCalledWith(
-                'http://localhost:8000/api/query',
-                expect.objectContaining({
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        query: 'test query',
-                        index_id: 'test-index-id',
-                        max_results: 10,
-                        use_llm_tree_search: false
-                    })
-                })
-            );
-        });
-
-        it('should handle empty results', async () => {
-            const mockResult = {
-                status: 'success',
-                results: []
-            };
-            mockFetch.mockResolvedValueOnce({
-                ok: true,
-                json: async () => mockResult
-            });
-
-            const result = await client.queryPDF('no results query', 'test-index-id');
-
-            expect(result.results).toEqual([]);
-        });
-    });
-
     describe('listIndexes', () => {
         it('should list all indexes', async () => {
             const mockResult = {

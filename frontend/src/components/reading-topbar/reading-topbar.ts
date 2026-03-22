@@ -19,7 +19,6 @@ export class ReadingTopbar extends Component {
     private bookCoverEl: HTMLElement | null = null;
     private bookTitleEl: HTMLElement | null = null;
     private bookAuthorEl: HTMLElement | null = null;
-    private statusDot: HTMLElement | null = null;
     private dropdownMenu: HTMLElement | null = null;
     private isDropdownOpen: boolean = false;
     private handleGlobalClick: (e: MouseEvent) => void;
@@ -32,9 +31,6 @@ export class ReadingTopbar extends Component {
 
         this.handleGlobalClick = this.handleGlobalClickImpl.bind(this);
         document.addEventListener('click', this.handleGlobalClick);
-
-        // 初始化连接状态（默认为 connecting）
-        this.setConnectionStatus('connecting');
     }
 
     render(): HTMLElement {
@@ -67,12 +63,6 @@ export class ReadingTopbar extends Component {
         bookInfo.appendChild(this.bookAuthorEl);
 
         leftSection.appendChild(bookInfo);
-
-        // 状态点（小圆点，放在封面右下角)
-        this.statusDot = document.createElement('span');
-        this.statusDot.className = 'deeppdf-status-dot';
-        this.statusDot.title = '连接中...';
-        leftSection.appendChild(this.statusDot);
 
         container.appendChild(leftSection);
 
@@ -243,24 +233,6 @@ export class ReadingTopbar extends Component {
         log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
     }
 
-    /**
-     * 设置连接状态
-     */
-    public setConnectionStatus(status: 'connected' | 'disconnected' | 'connecting'): void {
-        if (!this.statusDot) return;
-
-        // 更新状态点的样式
-        this.statusDot.className = `deeppdf-status-dot deeppdf-status-dot--${status}`;
-
-        // 更新 tooltip
-        const tooltips: Record<string, string> = {
-            connected: '后端已连接，所有功能可用',
-            disconnected: '后端未连接，部分功能不可用',
-            connecting: '正在连接后端服务...'
-        };
-        this.statusDot.title = tooltips[status];
-    }
-
     destroy(): void {
         if (this.handleGlobalClick) {
             document.removeEventListener('click', this.handleGlobalClick);
@@ -268,7 +240,6 @@ export class ReadingTopbar extends Component {
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
-        this.statusDot = null;
         this.dropdownMenu = null;
         super.destroy();
     }

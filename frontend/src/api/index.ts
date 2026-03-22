@@ -31,8 +31,6 @@ export type {
   TaskProgress,
   DeleteIndexResult,
   CancelTaskResult,
-  QueryResultItem,
-  QueryPDFResult,
   AgentRequest,
   AgentResponse,
   AgentStreamChunk,
@@ -174,17 +172,6 @@ export const indexAPI = {
    * 取消任务
    */
   cancel: (taskId: string) => deeppdfClient.cancelTask(taskId)
-};
-
-/**
- * 查询 API
- */
-export const queryAPI = {
-  /**
-   * 语义搜索
-   */
-  search: (query: string, indexId: string) =>
-    deeppdfClient.queryPDF(query, indexId)
 };
 
 /**

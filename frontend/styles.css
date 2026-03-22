@@ -2629,50 +2629,6 @@
     /* 不阻挡点击事件 */
 }
 
-/* Connection Status Indicator */
-.deeppdf-connection-status {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-faint);
-    border: 2px solid var(--background-modifier-border);
-    flex-shrink: 0;
-    transition: all 0.3s ease;
-}
-
-.deeppdf-connection-status.status-loading {
-    background: var(--text-warning, #F59E0B);
-    border-color: var(--text-warning, #F59E0B);
-    animation: pulse-loading 2s infinite;
-}
-
-.deeppdf-connection-status.status-ok {
-    background: var(--text-success, #10B981);
-    border-color: var(--text-success, #10B981);
-}
-
-.deeppdf-connection-status.status-error {
-    background: var(--text-error, #EF4444);
-    border-color: var(--text-error, #EF4444);
-}
-
-@keyframes pulse-loading {
-    0% {
-        opacity: 0.5;
-        transform: scale(0.9);
-    }
-
-    50% {
-        opacity: 1;
-        transform: scale(1.1);
-    }
-
-    100% {
-        opacity: 0.5;
-        transform: scale(0.9);
-    }
-}
-
 /* New Index Button in Header */
 .deeppdf-index-create-btn {
     flex-shrink: 0;
@@ -4156,39 +4112,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
-}
-
-/* 状态点 - 小圆点，覆盖在封面右下角 */
-.deeppdf-status-dot {
-    position: absolute;
-    left: 26px;
-    top: 26px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
-    border: 2px solid var(--background-primary);
-    flex-shrink: 0;
-    transition: background 0.3s ease;
-    z-index: 1;
-}
-
-.deeppdf-status-dot--connecting {
-    background: var(--text-warning, #f59e0b);
-    animation: status-pulse 1.5s infinite;
-}
-
-.deeppdf-status-dot--connected {
-    background: var(--text-success, #10b981);
-}
-
-.deeppdf-status-dot--disconnected {
-    background: var(--text-error, #ef4444);
-}
-
-@keyframes status-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
 }
 
 /* 右侧区域 */

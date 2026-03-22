@@ -100,50 +100,6 @@
     /* 不阻挡点击事件 */
 }
 
-/* Connection Status Indicator */
-.deeppdf-connection-status {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-faint);
-    border: 2px solid var(--background-modifier-border);
-    flex-shrink: 0;
-    transition: all 0.3s ease;
-}
-
-.deeppdf-connection-status.status-loading {
-    background: var(--text-warning, #F59E0B);
-    border-color: var(--text-warning, #F59E0B);
-    animation: pulse-loading 2s infinite;
-}
-
-.deeppdf-connection-status.status-ok {
-    background: var(--text-success, #10B981);
-    border-color: var(--text-success, #10B981);
-}
-
-.deeppdf-connection-status.status-error {
-    background: var(--text-error, #EF4444);
-    border-color: var(--text-error, #EF4444);
-}
-
-@keyframes pulse-loading {
-    0% {
-        opacity: 0.5;
-        transform: scale(0.9);
-    }
-
-    50% {
-        opacity: 1;
-        transform: scale(1.1);
-    }
-
-    100% {
-        opacity: 0.5;
-        transform: scale(0.9);
-    }
-}
-
 /* New Index Button in Header */
 .deeppdf-index-create-btn {
     flex-shrink: 0;

@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
+import { DeepPDFClient, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
@@ -63,9 +63,6 @@ export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
     };
 }
 
-/** 连接状态类型 */
-type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
-
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
 /** 任务完成后显示延迟时间（毫秒） */
@@ -95,14 +92,7 @@ export class SidebarView extends ItemView {
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
     private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
-    private connectionStatus: ConnectionStatus = 'connecting';  // 后端连接状态
-
-    /** 向后兼容：返回是否已连接 */
-    private get isConnected(): boolean {
-        return this.connectionStatus === 'connected';
-    }
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
-    private healthCheckInterval: ReturnType<typeof setInterval> | null = null;  // 健康检查定时器
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
@@ -620,7 +610,14 @@ export class SidebarView extends ItemView {
     /**
      * 打在线书库弹窗
      */
-    private openLibraryModal(): void {
+    private async openLibraryModal(): Promise<void> {
+        // 检查后端连接
+        const isConnected = await this.checkBackendConnection();
+        if (!isConnected) {
+            new Notice('⚠️ 后端服务未连接，无法打开在线书库', 3000);
+            return;
+        }
+
         new LibraryModal(this.app, {
             app: this.app,
             indexes: this.indexes,
@@ -952,23 +949,13 @@ export class SidebarView extends ItemView {
 
     /**
      * 检查后端连接状态并更新状态指示器
-     * 注意：不再渲染界面，仅更新连接状态
+     * 注意：不再渲染界面，仅初始化服务
      */
     private async checkConnectionAndRender(): Promise<void> {
-        // 检查连接
-        let connected = false;
+        // 初始化阅读入口服务（需要 apiClient）
         if (this.apiClient) {
-            try {
-                const healthResponse = await this.apiClient.healthCheck();
-                connected = healthResponse?.status === 'ok';
-            } catch (e) {
-                logError('[DeepPDF] Connection check failed:', e);
-            }
+            this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
         }
-
-        // 更新连接状态
-        this.connectionStatus = connected ? 'connected' : 'disconnected';
-        this.readingTopbar?.setConnectionStatus(connected ? 'connected' : 'disconnected');
     }
 
     /**
@@ -1007,12 +994,6 @@ export class SidebarView extends ItemView {
 
         // 恢复跨书籍模式状态
         await this.restoreCrossBookMode();
-
-        // 更新服务器状态
-        this.updateStatus();
-
-        // 启动定期健康检查（每 30 秒）
-        this.startHealthCheck();
 
         // 设置滚动监听：滚动时隐藏输入框
         this.setupScrollHandler(container);
@@ -2261,94 +2242,31 @@ export class SidebarView extends ItemView {
         messagesContainer.style.paddingBottom = `${basePadding + contextTagsHeight + quotesHeight}px`;
     }
 
-    async updateStatus(): Promise<void> {
-        if (!this.indexManager) return;
-
-        // 设置为加载状态
-        this.indexManager.setConnectionStatus('connecting');
-        this.connectionStatus = 'disconnected';
-
-        // 更新 readingTopbar 连接状态
-        this.readingTopbar?.setConnectionStatus('disconnected');
-
-        if (!this.apiClient) {
-            this.indexManager?.setConnectionStatus('disconnected');
-            // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
-            return;
-        }
+    /**
+     * 检查后端连接（按需调用）
+     * 只在需要后端的场景中使用
+     */
+    async checkBackendConnection(): Promise<boolean> {
+        if (!this.apiClient) return false;
 
         try {
             const isHealthy = await this.apiClient.healthCheck();
-            if (isHealthy) {
-                this.indexManager?.setConnectionStatus('connected');
-                this.connectionStatus = 'connected';
-                this.readingTopbar?.setConnectionStatus('connected');
-                // 注意：不再禁用输入框，前端 Agent 可以在无后端的情况下工作
-            } else {
-                this.indexManager?.setConnectionStatus('disconnected');
-                this.readingTopbar?.setConnectionStatus('disconnected');
-            }
+            return isHealthy?.status === 'ok';
         } catch (error) {
-            // 后端是可选的，只记录日志，不显示 Notice
-            warn('[DeepPDF] updateStatus: 后端连接失败', error);
-            this.indexManager?.setConnectionStatus('disconnected');
-            this.readingTopbar?.setConnectionStatus('disconnected');
-        }
-    }
-
-    /**
-     * 启动定期健康检查
-     */
-    private startHealthCheck(): void {
-        // 清除已有的定时器
-        this.stopHealthCheck();
-
-        // 每 30 秒检查一次
-        this.healthCheckInterval = setInterval(async () => {
-            if (!this.apiClient || !this.indexManager) return;
-
-            try {
-                const healthResponse = await this.apiClient.healthCheck();
-                const isHealthy = healthResponse?.status === 'ok';
-                const wasConnected = this.isConnected;
-                this.connectionStatus = isHealthy ? 'connected' : 'disconnected';
-
-                // 更新 indexManager 和 readingTopbar 的连接状态
-                this.indexManager.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
-                this.readingTopbar?.setConnectionStatus(isHealthy ? 'connected' : 'disconnected');
-
-                if (isHealthy) {
-                    // 如果之前是断开的，现在恢复了，刷新索引列表
-                    if (!wasConnected) {
-                        log('[DeepPDF] 后端连接恢复，刷新索引列表');
-                        await this.loadIndexes();
-                    }
-                } else {
-                    if (wasConnected) {
-                        log('[DeepPDF] 后端连接断开');
-                    }
-                }
-            } catch (error) {
-                logError('[DeepPDF] 健康检查失败:', error);
-                this.indexManager?.setConnectionStatus('disconnected');
-                this.readingTopbar?.setConnectionStatus('disconnected');
-                this.connectionStatus = 'disconnected';
-            }
-        }, 30000); // 30 秒
-    }
-
-    /**
-     * 停止定期健康检查
-     */
-    private stopHealthCheck(): void {
-        if (this.healthCheckInterval) {
-            clearInterval(this.healthCheckInterval);
-            this.healthCheckInterval = null;
+            warn('[DeepPDF] 后端连接失败:', error);
+            return false;
         }
     }
 
     async handleExportMarkdown(indexId: string) {
         if (!this.apiClient) return;
+
+        // 检查后端连接
+        const isConnected = await this.checkBackendConnection();
+        if (!isConnected) {
+            new Notice('⚠️ 后端服务未连接，无法导出 Markdown', 3000);
+            return;
+        }
 
         // 查找索引信息
         const indexList = await this.apiClient.listIndexes();
@@ -2662,9 +2580,6 @@ export class SidebarView extends ItemView {
 
     async onClose() {
         try {
-
-            // 停止健康检查定时器
-            this.stopHealthCheck();
 
             // 清理流式请求
             if (this.streamController) {

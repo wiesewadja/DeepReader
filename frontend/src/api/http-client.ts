@@ -196,50 +196,6 @@ export interface ListSessionsResult {
   sessions: SessionInfo[];
 }
 
-// 查询相关类型
-export interface QueryResultItem {
-  text: string;
-  metadata: {
-    section?: string;
-    page?: number;
-    distance?: number;
-    start_index?: number;
-    end_index?: number;
-    node_name?: string;
-    node_id?: string;
-    // 段落相关字段
-    type?: 'section' | 'paragraph';
-    block_id?: string;
-    full_paragraph?: string;
-    parent_section?: string;
-    markdown_path?: string;  // 导出的 Markdown 文件路径
-    // 相邻段落（上下文）
-    prev_paragraph?: string;
-    next_paragraph?: string;
-  };
-}
-
-export interface QueryIndexInfo {
-  pdf_name: string;
-  pdf_path: string;
-  node_count: number;
-  created_at: string;
-  doc_description?: string;  // 全书摘要
-}
-
-export interface QueryPDFResult {
-  status: string;
-  query?: string;
-  results: QueryResultItem[];
-  index_info?: QueryIndexInfo;
-  error?: string;
-  // LLM 树搜索相关字段
-  search_method?: string;        // "llm_tree_search" 或 "hybrid_..."
-  thinking?: string;             // LLM 推理过程
-  fallback?: boolean;            // 是否发生降级
-  fallback_reason?: string;      // 降级原因
-}
-
 // ==================== 阅读进度相关类型 ====================
 
 export interface ReadingProgress {
@@ -796,36 +752,6 @@ export class DeepPDFClient {
   async cancelTask(taskId: string): Promise<CancelTaskResult> {
     return this.request<CancelTaskResult>(`/api/tasks/${taskId}`, {
       method: 'DELETE'
-    });
-  }
-
-  // ==================== 查询 API ====================
-
-  /**
-   * 查询 PDF
-   * @param query 查询文本
-   * @param indexId 索引 ID
-   * @param maxResults 最大结果数
-   * @param useLLMTreeSearch 是否使用 LLM 树搜索（深度思考模式）
-   * @param scopeNodeIds 范围锁定的节点 ID 列表（只在这些节点范围内搜索）
-   */
-  async queryPDF(
-    query: string,
-    indexId: string,
-    maxResults: number = 10,
-    useLLMTreeSearch: boolean = false,
-    scopeNodeIds?: string[]
-  ): Promise<QueryPDFResult> {
-    return this.request<QueryPDFResult>('/api/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        index_id: indexId,
-        max_results: maxResults,
-        use_llm_tree_search: useLLMTreeSearch,
-        scope_node_ids: scopeNodeIds
-      })
     });
   }
 
