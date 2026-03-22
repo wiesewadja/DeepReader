@@ -14,9 +14,9 @@ export type ReadingLevel = 'elementary' | 'inspectional' | 'analytical' | 'synto
  * 工具到阅读层次的映射
  */
 export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
-	get_toc: 'inspectional',
-	search_doc: 'inspectional',
-	get_chapter: 'analytical',
+	get_document_outline: 'inspectional',
+	search_markdown_text: 'inspectional',
+	read_markdown_section: 'analytical',
 	search_read_books: 'syntopical',
 	// 分析阅读工具（合并：术语+论点分析）
 	analyze_chapter: 'analytical',
@@ -99,19 +99,15 @@ function extractChapterNameFromPath(path: string): string | null {
  * @param context 可选的上下文信息（包含 markdownFiles 映射）
  */
 export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, context?: { markdownFiles?: Record<string, string> }) => string> = {
-	search_doc: (args) => `搜索「${String(args.query || '相关内容').slice(0, 20)}」`,
-	get_chapter: (args, context) => {
-		const nodeId = String(args.node_id || '');
-		// 尝试从 markdownFiles 中获取章节名称
-		if (context?.markdownFiles && nodeId && context.markdownFiles[nodeId]) {
-			const chapterName = extractChapterNameFromPath(context.markdownFiles[nodeId]);
-			if (chapterName) {
-				return `翻阅「${chapterName}」`;
-			}
+	search_markdown_text: (args) => `搜索「${String(args.query || '相关内容').slice(0, 20)}」`,
+	read_markdown_section: (args, context) => {
+		const heading = String(args.heading || '');
+		if (heading) {
+			return `翻阅「${heading}」`;
 		}
 		return `翻阅章节`;
 	},
-	get_toc: (args) => {
+	get_document_outline: (args) => {
 		const detail = String(args.detail || 'simple');
 		if (detail === 'simple') return '浏览目录结构';
 		return `分析书籍架构（${detail}）`;

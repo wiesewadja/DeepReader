@@ -84,9 +84,9 @@ export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = {
  * 子 Agent 可用的默认工具列表
  */
 export const DEFAULT_SUBAGENT_TOOLS = [
-	'search_doc',
-	'get_chapter',
-	'get_toc',
+	'search_markdown_text',
+	'read_markdown_section',
+	'get_document_outline',
 	'search_read_books',
 ];
 

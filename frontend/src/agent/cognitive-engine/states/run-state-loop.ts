@@ -40,8 +40,10 @@ export interface StateLoopOptions {
   availableTools: string[];
   /** 工具拦截器（可选） */
   toolInterceptor?: ToolInterceptor;
-  /** 最大迭代次数 */
+  /** 最大迭代次数（LLM 调用次数） */
   maxIterations?: number;
+  /** 最大工具调用次数（硬约束） */
+  maxToolCalls?: number;
   /** 超时（毫秒） */
   timeout?: number;
   /** 取消信号 */
@@ -63,7 +65,7 @@ export interface StateLoopResult {
   /** 总迭代次数 */
   iterations: number;
   /** 完成原因 */
-  finishReason: 'stop' | 'max_iterations' | 'timeout' | 'error';
+  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls' | 'timeout' | 'error';
 }
 
 /**
@@ -85,13 +87,6 @@ function compressToolResult(result: string): string {
 
 /**
  * 运行状态循环
- *
- * @param llmClient LLM 客户端
- * @param toolRegistry 工具注册表
- * @param toolContext 工具上下文
- * @param options 循环选项
- * @param callbacks 回调函数
- * @returns 循环结果
  */
 export async function runStateLoop(
   llmClient: LLMClient,
@@ -108,17 +103,13 @@ export async function runStateLoop(
     availableTools,
     toolInterceptor,
     maxIterations = 5,
+    maxToolCalls,
     abortSignal,
   } = options;
 
   const logger = getDebugLogger();
 
-  // 记录系统提示词
-  if (logger?.isEnabled()) {
-    logger.logSystemPrompt(systemPrompt);
-  }
-
-  // 构建工具定义（只包含允许的工具）
+  // 构建工具定义
   const toolDefinitions: ToolDefinition[] = [];
   for (const toolName of availableTools) {
     const executor = toolRegistry.get(toolName);
@@ -133,15 +124,16 @@ export async function runStateLoop(
     { role: 'user', content: userMessage },
   ];
 
-  // 记录消息列表
-  if (logger?.isEnabled()) {
-    logger.logMessages(messages);
-  }
+  // 记录系统提示词和消息
+  logger?.logSystemPrompt(systemPrompt);
+  logger?.logMessages(messages);
 
   let iterations = 0;
+  let totalToolCalls = 0;
   let accumulatedContent = '';
   let accumulatedReasoning = '';
   const toolResults: StateLoopResult['toolResults'] = [];
+  let hitToolCallLimit = false; // 标记是否达到工具调用限制
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
@@ -153,22 +145,27 @@ export async function runStateLoop(
       };
     }
 
+    // 如果已达到工具调用限制，跳出循环
+    if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+      hitToolCallLimit = true;
+      break;
+    }
+
     iterations++;
 
-    // 调用 LLM
+    // 开始 LLM 交互
     const llmStartTime = Date.now();
     let finishReason: 'stop' | 'tool_calls' | null = null;
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
-    // 记录 LLM 请求
-    if (logger?.isEnabled()) {
-      logger.logLLMRequest({
-        url: 'stream',
-        method: 'POST',
-        headers: {},
-        body: { model, messages, tools: toolDefinitions },
-      });
-    }
+    logger?.startLLMInteraction({
+      model: llmClient.getModel(),
+      modelType: model,
+      systemPrompt,
+      userMessage,
+      toolCount: toolDefinitions.length,
+      messageCount: messages.length,
+    });
 
     await new Promise<void>((resolve) => {
       llmClient.streamChat(
@@ -178,10 +175,6 @@ export async function runStateLoop(
           onContent: (text) => {
             accumulatedContent += text;
             callbacks.onContent?.(text);
-            // 记录流式输出
-            if (logger?.isEnabled()) {
-              logger.addLLMChunk(text);
-            }
           },
           onReasoning: (text) => {
             accumulatedReasoning += text;
@@ -208,21 +201,17 @@ export async function runStateLoop(
 
     const llmDuration = Date.now() - llmStartTime;
 
-    // 记录 LLM 响应
-    if (logger?.isEnabled()) {
-      logger.logLLMResponse({
-        metadata: {
-          model: model,
-          finishReason: finishReason || 'unknown',
-        },
-        content: accumulatedContent,
-        toolCalls: toolCalls.map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: JSON.parse(tc.arguments || '{}'),
-        })),
-      });
-    }
+    // 结束 LLM 交互
+    logger?.endLLMInteraction({
+      finishReason: finishReason || 'stop',
+      content: accumulatedContent,
+      toolCallRequests: toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: JSON.parse(tc.arguments || '{}'),
+      })),
+      ttfb: llmDuration,
+    });
 
     // 如果没有工具调用，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
@@ -245,10 +234,11 @@ export async function runStateLoop(
       })),
     });
 
-    // 执行工具调用
+    // 执行工具调用（并行执行）
     const toolStartTime = Date.now();
 
-    for (const tc of toolCalls) {
+    // 预处理所有工具调用：解析参数、应用拦截器
+    const preparedCalls = toolCalls.map(tc => {
       let args: Record<string, unknown>;
       try {
         args = JSON.parse(tc.arguments);
@@ -256,84 +246,153 @@ export async function runStateLoop(
         args = {};
       }
 
+      const originalArgs = { ...args };
+
       // 应用工具拦截器
+      let interceptorNote: string | undefined;
       if (toolInterceptor) {
-        args = toolInterceptor(tc.name, args);
-      }
-
-      // 记录工具调用开始
-      if (logger?.isEnabled()) {
-        logger.logToolStart(tc.id, tc.name, args);
-      }
-
-      // 检查是否有拦截器注入的错误
-      if (args._error) {
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: `Error: ${args._error}`,
-        });
-        if (logger?.isEnabled()) {
-          logger.logToolError(tc.id, args._error as string, 0);
+        const interceptedArgs = toolInterceptor(tc.name, args);
+        if (JSON.stringify(interceptedArgs) !== JSON.stringify(originalArgs)) {
+          interceptorNote = `scopeNodeIds 注入`;
         }
-        continue;
+        args = interceptedArgs;
       }
 
-      // 执行工具
-      callbacks.onProgress?.(`执行工具: ${tc.name}`);
-      const toolExecStart = Date.now();
+      return { tc, args, originalArgs, interceptorNote };
+    });
 
-      try {
-        let result = await executeTool(toolRegistry, tc.name, args, toolContext);
-        result = compressToolResult(result);
+    // 检查工具调用次数限制，决定哪些需要执行
+    const callsToExecute: typeof preparedCalls = [];
+    const callsToSkip: typeof preparedCalls = [];
 
-        const toolExecDuration = Date.now() - toolExecStart;
+    for (const prepared of preparedCalls) {
+      if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+        callsToSkip.push(prepared);
+      } else {
+        callsToExecute.push(prepared);
+        totalToolCalls++;
+      }
+    }
 
+    // 记录跳过的工具调用
+    for (const { tc } of callsToSkip) {
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: `已达到工具调用次数上限（${maxToolCalls}次），此工具调用被跳过。`,
+      });
+    }
+
+    // 🚀 并行执行所有工具调用
+    callbacks.onProgress?.(`并行执行 ${callsToExecute.length} 个工具...`);
+
+    const executionResults = await Promise.all(
+      callsToExecute.map(async ({ tc, args, originalArgs, interceptorNote }) => {
+        const toolExecStart = Date.now();
+
+        // 记录工具调用开始
+        logger?.logToolStart(tc.id, tc.name, args);
+
+        // 检查拦截器注入的错误
+        if (args._error) {
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args,
+            interceptorNote,
+            status: 'error',
+            error: args._error as string,
+            duration: 0,
+          });
+          return {
+            tc,
+            result: null,
+            error: args._error as string,
+            duration: 0,
+          };
+        }
+
+        try {
+          let result = await executeTool(toolRegistry, tc.name, args, toolContext);
+          result = compressToolResult(result);
+
+          const toolExecDuration = Date.now() - toolExecStart;
+
+          logger?.logToolResult(tc.id, result, toolExecDuration);
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            interceptedArgs: args !== originalArgs ? args : undefined,
+            interceptorNote,
+            status: 'success',
+            result,
+            duration: toolExecDuration,
+          });
+
+          return { tc, result, error: null, duration: toolExecDuration };
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          const toolExecDuration = Date.now() - toolExecStart;
+
+          logger?.logToolError(tc.id, errorMsg, toolExecDuration);
+          logger?.logToolCall({
+            callId: tc.id,
+            toolName: tc.name,
+            originalArgs,
+            status: 'error',
+            error: errorMsg,
+            duration: toolExecDuration,
+          });
+
+          return { tc, result: null, error: errorMsg, duration: toolExecDuration };
+        }
+      })
+    );
+
+    // 将所有执行结果添加到消息和结果列表（保持原始顺序）
+    for (const execResult of executionResults) {
+      const { tc, result, error } = execResult;
+
+      const toolResultContent = error
+        ? `Error: ${error}`
+        : result || '(无结果)';
+
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: toolResultContent,
+      });
+
+      if (result) {
         toolResults.push({
           toolName: tc.name,
-          args,
+          args: preparedCalls.find(p => p.tc.id === tc.id)!.args,
           result,
         });
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: result,
-        });
-
-        // 记录工具调用结果
-        if (logger?.isEnabled()) {
-          logger.logToolResult(tc.id, result, toolExecDuration);
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        const toolExecDuration = Date.now() - toolExecStart;
-
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: `Error: ${errorMsg}`,
-        });
-
-        // 记录工具调用错误
-        if (logger?.isEnabled()) {
-          logger.logToolError(tc.id, errorMsg, toolExecDuration);
-        }
       }
     }
 
     const toolDuration = Date.now() - toolStartTime;
     callbacks.onProgress?.(`工具执行完成 (${toolDuration}ms)`);
 
-    // 清空累积内容（工具调用时不输出）
+    // 如果达到工具调用限制，标记并准备结束
+    if (maxToolCalls !== undefined && totalToolCalls >= maxToolCalls) {
+      hitToolCallLimit = true;
+    }
+
+    // 清空累积内容
     accumulatedContent = '';
     accumulatedReasoning = '';
   }
 
-  // 达到最大迭代次数，强制让 LLM 输出最终结论
-  if (iterations >= maxIterations && toolResults.length > 0) {
-    // 构建强制结论请求
-    const forcedConclusionPrompt = `你已达到工具调用次数上限（${maxIterations}次）。
+  // 达到最大迭代次数或工具调用限制，强制输出结论
+  const needsForcedConclusion = (iterations >= maxIterations || hitToolCallLimit) && toolResults.length > 0;
+  if (needsForcedConclusion) {
+    const limitType = hitToolCallLimit ? '工具调用' : '迭代';
+    const limitValue = hitToolCallLimit ? maxToolCalls : maxIterations;
+    const forcedConclusionPrompt = `你已达到${limitType}次数上限（${limitValue}次）。
 
 现在请基于已收集的所有信息，输出你的最终分析结论。
 
@@ -347,30 +406,23 @@ export async function runStateLoop(
       content: forcedConclusionPrompt,
     });
 
-    // 记录强制结论请求
-    if (logger?.isEnabled()) {
-      logger.logMessages([{ role: 'user', content: forcedConclusionPrompt }]);
-    }
+    logger?.logMessages([{ role: 'user', content: forcedConclusionPrompt }]);
 
-    // 最后一次 LLM 调用，强制输出结论
     await new Promise<void>((resolve) => {
       llmClient.streamChat(
         messages,
-        [], // 不提供工具，强制输出文本
+        [],
         {
           onContent: (text) => {
             accumulatedContent += text;
             callbacks.onContent?.(text);
-            if (logger?.isEnabled()) {
-              logger.addLLMChunk(text);
-            }
           },
           onReasoning: (text) => {
             accumulatedReasoning += text;
             callbacks.onReasoning?.(text);
           },
           onToolCall: () => {
-            // 强制结论阶段不应该有工具调用，忽略
+            // 强制结论阶段不应该有工具调用
           },
           onComplete: () => resolve(),
           onError: (error) => {
@@ -382,20 +434,25 @@ export async function runStateLoop(
       );
     });
 
-    // 记录最终响应
-    if (logger?.isEnabled()) {
-      logger.logLLMResponse({
-        metadata: { model, finishReason: 'forced_conclusion' },
-        content: accumulatedContent,
-        toolCalls: [],
-      });
-    }
+    logger?.logLLMResponse({
+      metadata: { model, finishReason: 'forced_conclusion' },
+      content: accumulatedContent,
+      toolCalls: [],
+    });
+  }
+
+  // 确定完成原因
+  let finishReason: StateLoopResult['finishReason'] = 'stop';
+  if (hitToolCallLimit) {
+    finishReason = 'max_tool_calls';
+  } else if (iterations >= maxIterations) {
+    finishReason = 'max_iterations';
   }
 
   return {
     content: accumulatedContent,
     toolResults,
     iterations,
-    finishReason: iterations >= maxIterations ? 'max_iterations' : 'stop',
+    finishReason,
   };
 }

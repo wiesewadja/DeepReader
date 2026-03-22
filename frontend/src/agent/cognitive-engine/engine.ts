@@ -15,6 +15,7 @@ import { AnalyticalState } from './states/analytical';
 import { SyntopicalState } from './states/syntopical';
 import { FormatterState } from './states/formatter';
 import { getDebugLogger } from '../debug/logger';
+import type { StateOutputLog } from '../debug/types';
 
 // State instances (stateless, can be reused)
 const routerState = new RouterState();
@@ -27,19 +28,23 @@ const syntopicalState = new SyntopicalState();
  */
 async function executeStateWithLogging(
   stateName: string,
-  state: { execute: (ctx: SharedContext) => Promise<void> },
+  state: { 
+    name: string;
+    execute: (ctx: SharedContext) => Promise<void>;
+    tools?: string[];
+  },
   ctx: SharedContext,
   callbacks: EngineCallbacks
 ): Promise<void> {
   const logger = getDebugLogger();
   const startTime = Date.now();
 
+  // 开始状态执行日志
   if (logger?.isEnabled()) {
-    logger.startIteration(ctx.stateResults.size + 1);
-    // 记录状态信息（即使没有 LLM 调用）
-    logger.logStateInfo(stateName, {
-      depth: ctx.depth,
-      standaloneQuery: ctx.standaloneQuery,
+    logger.startStateExecution(stateName, {
+      query: ctx.standaloneQuery || ctx.rawUserQuery,
+      historyCount: ctx.chatHistory.length,
+      availableTools: state.tools || [],
       scopeNodeIds: ctx.scopeNodeIds,
     });
   }
@@ -47,31 +52,27 @@ async function executeStateWithLogging(
   try {
     await state.execute(ctx);
 
+    // 构建输出日志
+    const output: Partial<StateOutputLog> = {
+      depth: ctx.depth,
+      standaloneQuery: ctx.standaloneQuery,
+      scopeNodeIds: ctx.scopeNodeIds,
+      tocSummary: ctx.tocSummary,
+      analysisResult: ctx.analysisResult,
+      finishReason: 'stop',
+    };
+
     if (logger?.isEnabled()) {
-      const duration = Date.now() - startTime;
-      // 获取内层迭代次数
       const stateResult = ctx.stateResults.get(stateName);
-      const innerIterations = stateResult?.innerIterations;
-      if (innerIterations && innerIterations > 1) {
-        logger.logInnerIterations(innerIterations);
+      if (stateResult?.innerIterations && stateResult.innerIterations > 1) {
+        logger.logInnerIterations(stateResult.innerIterations);
       }
-      await logger.endIteration({
-        duration,
-        llmDuration: duration, // Approximate
-        toolsDuration: 0,
-        tokenStart: 0,
-        tokenEnd: 0,
-      });
+      logger.endStateExecution(output);
     }
   } catch (error) {
     if (logger?.isEnabled()) {
-      const duration = Date.now() - startTime;
-      await logger.endIteration({
-        duration,
-        llmDuration: duration,
-        toolsDuration: 0,
-        tokenStart: 0,
-        tokenEnd: 0,
+      logger.endStateExecution({
+        finishReason: 'error',
       });
     }
     throw error;
@@ -89,7 +90,7 @@ export async function runCognitiveEngine(
 
   // Start debug session
   if (logger?.isEnabled()) {
-    await logger.startSession(ctx.rawUserQuery);
+    await logger.startSession(ctx.rawUserQuery, ctx.pdfName, ctx.indexId);
   }
 
   try {
@@ -136,6 +137,11 @@ export async function runCognitiveEngine(
 
     // 5. Save session (only clean chat history)
     saveSession(ctx, output);
+
+    // 6. Record final output in debug log
+    if (logger?.isEnabled()) {
+      logger.setFinalOutput(output);
+    }
 
     callbacks.onComplete();
 

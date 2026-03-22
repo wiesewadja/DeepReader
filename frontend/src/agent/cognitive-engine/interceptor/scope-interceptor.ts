@@ -5,6 +5,13 @@
  * chapters outside the locked scope.
  *
  * When scopeNodeIds is empty, no scope filtering is applied (global search).
+ *
+ * Design rationale:
+ * - search_markdown_text: inject scope_node_ids to filter search results
+ * - read_markdown_section: NO scope check needed, because:
+ *   1. LLM decides which section to read based on search results
+ *   2. Search results are already filtered by scope
+ *   3. The tool uses heading/block_id, not node_id directly
  */
 
 import type { ToolInterceptor } from '../types';
@@ -19,28 +26,21 @@ export function createScopeInterceptor(scopeNodeIds: string[]): ToolInterceptor 
   const hasScope = scopeNodeIds.length > 0;
 
   return (toolName: string, toolArgs: Record<string, unknown>): Record<string, unknown> => {
-    // Intercept search_doc: inject scope only when has valid scope
-    if (toolName === 'search_doc') {
+    // Intercept search_markdown_text: inject scope only when has valid scope
+    if (toolName === 'search_markdown_text') {
       if (hasScope) {
         return {
           ...toolArgs,
-          scopeNodeIds: scopeNodeIds,
+          scope_node_ids: scopeNodeIds,  // snake_case to match tool parameter
         };
       }
-      // 空数组时不注入 scopeNodeIds，让后端使用全局搜索
+      // 空数组时不注入 scope_node_ids，让工具使用全局搜索
       return toolArgs;
     }
 
-    // Intercept get_chapter: check if in scope (only when scope is locked)
-    if (toolName === 'get_chapter' && toolArgs.node_id && hasScope) {
-      if (!scopeNodeIds.includes(toolArgs.node_id as string)) {
-        console.warn(`[Interceptor] node_id ${toolArgs.node_id} out of scope`);
-        return {
-          ...toolArgs,
-          _error: `章节 ${toolArgs.node_id} 不在允许范围内`,
-        };
-      }
-    }
+    // read_markdown_section: 不需要 scope 检查
+    // 因为 LLM 基于已过滤的搜索结果决定读取哪个章节
+    // 搜索结果已经只包含范围内的内容
 
     // Pass through other tools unchanged
     return toolArgs;

@@ -373,9 +373,9 @@ ${docContext}
 - 完成后立即返回，不要继续探索
 
 ## 可用工具
-- search_doc: 搜索当前文档内容
-- get_chapter: 获取指定章节的完整内容
-- get_toc: 获取当前文档的目录结构
+- search_markdown_text: 搜索当前文档内容
+- read_markdown_section: 获取指定章节的完整内容
+- get_document_outline: 获取当前文档的目录结构
 
 ## 执行规则
 

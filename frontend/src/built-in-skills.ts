@@ -29,12 +29,12 @@ keywords:
 ### 检视阅读
 - **触发**: "讲什么"、"总结"、"概览"
 - **目标**: 快速抓取重点，了解整体结构
-- **策略**: get_toc + search_doc 并行调用
+- **策略**: get_document_outline + search_markdown_text 并行调用
 
 ### 分析阅读
 - **触发**: "为什么"、"详细解释"、"深入分析"
 - **目标**: 完整理解，咀嚼消化
-- **策略**: get_chapter 逐段分析
+- **策略**: read_markdown_section 逐段分析
 
 ### 主题阅读
 - **触发**: "比较"、"其他书"、"关联"
@@ -45,18 +45,18 @@ keywords:
 
 | 问题类型 | 首选工具 | 阅读层次 |
 |---------|---------|---------|
-| "讲什么/总结" | get_toc + search_doc | 检视阅读 |
-| "结构/纲要" | get_toc(detail="normal") | 分析阅读 |
-| "详细解释" | get_chapter | 分析阅读 |
+| "讲什么/总结" | get_document_outline + search_markdown_text | 检视阅读 |
+| "结构/纲要" | get_document_outline(detail="normal") | 分析阅读 |
+| "详细解释" | read_markdown_section | 分析阅读 |
 | "术语/概念" | analyze_chapter(type="terms") | 分析阅读 |
 | "论点/主旨" | analyze_chapter(type="propositions") | 分析阅读 |
 | "比较/关联" | search_read_books | 主题阅读 |
 
 ## 并行调用规则
 
-- "讲什么/总结"类问题 → 同时调用 get_toc 和 search_doc
+- "讲什么/总结"类问题 → 同时调用 get_document_outline 和 search_markdown_text
 - 需要术语+论点 → 调用 analyze_chapter(type="both")
-- 需要多个章节 → 一次调用多个 get_chapter
+- 需要多个章节 → 一次调用多个 read_markdown_section
 - 每轮尽可能多调用工具，减少迭代次数
 
 ## 效率原则
@@ -149,8 +149,8 @@ keywords:
 ## 执行流程
 
 1. **理解需求**: 确认要生成哪种类型的卡片
-2. **搜索内容**: 使用 search_doc 找到相关段落
-3. **深度阅读**: 使用 get_chapter 获取完整上下文
+2. **搜索内容**: 使用 search_markdown_text 找到相关段落
+3. **深度阅读**: 使用 read_markdown_section 获取完整上下文
 4. **生成卡片**: 按模板格式整理内容
 5. **保存笔记**: 使用 write_note 保存到 Obsidian
 
@@ -262,7 +262,7 @@ keywords:
 ## 执行流程
 
 1. **确定范围**: 单章节、全书还是特定主题
-2. **获取内容**: 使用 get_toc 了解结构，get_chapter 获取内容
+2. **获取内容**: 使用 get_document_outline 了解结构，read_markdown_section 获取内容
 3. **提取要点**: 识别核心观点、关键论据
 4. **整合笔记**: 按模板结构组织内容
 5. **添加思考**: 加入个人理解和感悟
@@ -451,7 +451,7 @@ keywords:
 
 ### 步骤 1：获取目录
 
-调用 \`get_toc\` 获取书籍目录结构。
+调用 \`get_document_outline\` 获取书籍目录结构。
 
 **错误处理**：
 - 如果目录为空或获取失败，告知用户"无法获取目录，请确认书籍已正确索引"
@@ -509,7 +509,7 @@ keywords:
 
 遍历章节，提取核心概念：
 
-1. 对于每个一级章节，调用 \`get_chapter\` 获取内容
+1. 对于每个一级章节，调用 \`read_markdown_section\` 获取内容
 2. 根据书籍类型提取对应元素：
    - 理论性：问题、论点、论据
    - 实用性：目标、步骤、要点

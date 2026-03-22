@@ -3,7 +3,7 @@
  * ChatGPT 风格的对话界面
  */
 
-import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 import { DeepPDFClient, QueryPDFResult, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
@@ -19,7 +19,6 @@ import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
-import { ContextTags } from "../components/context-tags/index.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
@@ -108,7 +107,6 @@ export class SidebarView extends ItemView {
 
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
-    private contextTags: ContextTags | null = null;
 
     // 引用卡片管理
     private quotesContainer: HTMLElement | null = null;
@@ -787,7 +785,7 @@ export class SidebarView extends ItemView {
             this.loadBookCover(displayName, indexId);
         }
 
-        // === 获取 Markdown 文件映射（移到 if 块外部，确保总是更新) ===
+        // === 获取索引元数据（markdown_files）===
         try {
             if (this.apiClient) {
                 const indexStatus = await this.apiClient.getIndexStatus(indexId);
@@ -801,29 +799,35 @@ export class SidebarView extends ItemView {
                 }
             }
         } catch (e) {
-            logError('[DeepPDF] 获取 markdown_files 映射失败:', e);
+            logError('[DeepPDF] 获取索引元数据失败:', e);
             this.currentMarkdownFiles = {};
         }
 
-        // === 获取全书摘要（doc_description）===
+        // === 从本地书籍笔记读取全书摘要 ===
         try {
-            if (this.apiClient && indexId) {
-                // 通过轻量级查询获取索引元数据（包含 doc_description）
-                // 注意：query 不能为空，否则 index_info 会返回 null
-                serviceLog('[DeepPDF] 正在获取 doc_description, indexId:', indexId);
-                const queryResult = await this.apiClient.queryPDF('概要', indexId, 1, false);
-                serviceLog('[DeepPDF] queryPDF 完整返回 keys:', Object.keys(queryResult));
-                serviceLog('[DeepPDF] queryResult.index_info 存在:', !!queryResult.index_info);
-                if (queryResult.index_info?.doc_description) {
-                    this.currentDocDescription = queryResult.index_info.doc_description;
-                    serviceLog('[DeepPDF] 获取到全书摘要，长度:', this.currentDocDescription.length);
+            // 书籍笔记路径：DeepReader/{书名}/{书名}.md
+            // 使用 this.currentPdfName（已去除后缀）
+            const bookName = this.currentPdfName;
+            const bookNotePath = `DeepReader/${bookName}/${bookName}.md`;
+            const bookNoteFile = this.app.vault.getAbstractFileByPath(bookNotePath);
+
+            if (bookNoteFile instanceof TFile) {
+                const content = await this.app.vault.read(bookNoteFile);
+                // 提取全书摘要部分（## 📝 全书摘要）
+                const descMatch = content.match(/## 📝 全书摘要\s*\n\n([\s\S]*?)(?=\n## |$)/);
+                if (descMatch && descMatch[1]) {
+                    this.currentDocDescription = descMatch[1].trim();
+                    log(`[DeepPDF] 从本地笔记读取到全书摘要，长度: ${this.currentDocDescription.length}`);
                 } else {
                     this.currentDocDescription = null;
-                    serviceLog('[DeepPDF] 索引没有 doc_description 字段');
+                    console.debug('[DeepPDF] 本地笔记没有全书摘要部分');
                 }
+            } else {
+                this.currentDocDescription = null;
+                console.debug('[DeepPDF] 本地笔记不存在，可能尚未导出');
             }
         } catch (e) {
-            logError('[DeepPDF] 获取 doc_description 失败:', e);
+            logError('[DeepPDF] 读取本地笔记失败:', e);
             this.currentDocDescription = null;
         }
 
@@ -982,7 +986,6 @@ export class SidebarView extends ItemView {
         this.contextManager = new ContextManager({
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
-                this.contextTags?.updateDocuments(docs);
                 // 更新加载按钮的激活状态
                 this.chatInput?.setLoadBtnActive(docs.size > 0);
                 // 更新消息列表的底部间距，避免被上下文标签遮挡
@@ -1092,8 +1095,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距（延迟执行，等待 DOM 渲染完成）
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
 
         // 截取引用文本显示（前20个字符）
@@ -1153,8 +1155,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
     }
 
@@ -1169,8 +1170,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
     }
 
@@ -1347,10 +1347,6 @@ export class SidebarView extends ItemView {
             onSend: (message: string, quotes) => {
                 this.sendMessage(message, quotes);
             },
-            deepSearchMode: this.useLLMTreeSearch,
-            onDeepSearchToggle: () => {
-                this.toggleDeepSearchMode();
-            },
             app: this.app,
             onStop: () => {
                 this.stopGeneration();
@@ -1368,17 +1364,6 @@ export class SidebarView extends ItemView {
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
             section.appendChild(chatInputEl);
-        }
-
-        // 创建上下文标签组件（显示已加载的文档）
-        this.contextTags = new ContextTags({
-            onRemove: (path: string) => {
-                this.contextManager?.removeDocument(path);
-            }
-        });
-        const contextTagsEl = this.contextTags.getElement();
-        if (contextTagsEl) {
-            section.appendChild(contextTagsEl);
         }
 
         // 创建引用卡片容器（在输入框下方）
@@ -1471,8 +1456,6 @@ export class SidebarView extends ItemView {
         const modeText = this.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
         new Notice(modeText);
         log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
-        // 同步更新按钮状态
-        this.chatInput?.setDeepSearchMode(this.useLLMTreeSearch);
         // 持久化设置
         this.plugin.settings.lastDeepSearchMode = this.useLLMTreeSearch;
         await this.plugin.saveSettings();
@@ -1498,7 +1481,6 @@ export class SidebarView extends ItemView {
         if (wasDeepSearchMode) {
             log('[DeepPDF] 恢复深度思考模式');
             this.useLLMTreeSearch = true;
-            this.chatInput?.setDeepSearchMode(true);
         }
     }
 
@@ -2393,9 +2375,16 @@ export class SidebarView extends ItemView {
             // 1. 获取完整节点数据（仅使用基于规则的快速格式化）
             const data = await this.apiClient.exportIndex(indexId);
 
-            // 2. 前端生成并写入文件（传递作者信息）
-            // 转换 API 数据格式到 NodeData (如果字段不完全匹配)
-            const result = await exportIndexToMarkdown(this.app, pdfName, data.nodes, indexId, "DeepReader", data.author);
+            // 2. 前端生成并写入文件（传递作者信息和全书摘要）
+            const result = await exportIndexToMarkdown(
+                this.app,
+                pdfName,
+                data.nodes,
+                indexId,
+                "DeepReader",
+                data.author,
+                data.doc_description  // 全书摘要
+            );
 
             // 关闭加载提示
             loadingNotice.hide();

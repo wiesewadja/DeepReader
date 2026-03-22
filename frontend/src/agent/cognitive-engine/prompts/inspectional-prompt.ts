@@ -1,55 +1,145 @@
 /**
  * S1 Inspectional Reading System Prompt
  *
- * Core objective: Only check TOC, lock the scope.
- * Physically deprived of reading body text.
+ * Core objective: Context-aware inspectional reading.
+ * - Depth 1: Generate structural analysis (独立作答)
+ * - Depth 2/3: Lock scope for analytical reading (打辅助)
+ *
+ * LLM directly reasons on the formatted tree structure (no tool call needed).
  */
 
-export const PROMPT_S1_INSPECTIONAL = `
-<role>
-你是一位深谙艾德勒《如何阅读一本书》的系统化略读（Systematic Skimming）大师。
-你的任务是在极短的时间内，像打谷一样从糙糠中过滤出真正营养的谷核，为后续的深度分析圈定出最精准的“战区”（1-3 个章节 ID）。
+import type { OutlineNode } from '../../tools/local/types';
+import type { ReadingDepth } from '../types';
+
+/**
+ * Format tree structure for LLM prompt
+ * Similar to backend's format_tree_structure in llm_tree_search.py
+ *
+ * Output example:
+ * ├── 第一章 投资入门 (node_id: 0001, link: [[书名/01-第一章]])
+ * │   摘要: 介绍投资的基本概念...
+ * │   ├── 1.1 什么是投资 (node_id: 0002, link: [[书名/01-第一章#1.1]])
+ * │   │   摘要: 投资的定义和分类...
+ */
+export function formatTreeStructure(
+  nodes: OutlineNode[],
+  indent: number = 0,
+  maxTextLength: number = 100,
+  maxDepth: number = 4
+): string {
+  const lines: string[] = [];
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const isLast = i === nodes.length - 1;
+
+    // Build prefix
+    const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
+
+    // Title line with node_id and link
+    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}, link: ${node.link || ''})`;
+    lines.push(titleLine);
+
+    // Add summary if available and within depth limit
+    if (node.summary && indent < maxDepth) {
+      const truncatedSummary = node.summary.length > maxTextLength
+        ? node.summary.slice(0, maxTextLength) + '...'
+        : node.summary;
+      const summaryPrefix = '    '.repeat(indent + 1) + '摘要: ';
+      lines.push(`${summaryPrefix}${truncatedSummary}`);
+    }
+
+    // Recursively process children
+    if (node.children && node.children.length > 0 && indent < maxDepth) {
+      const childText = formatTreeStructure(node.children, indent + 1, maxTextLength, maxDepth);
+      lines.push(childText);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Build system prompt for inspectional state with depth-aware branching
+ */
+export function buildInspectionalSystemPrompt(
+  treeText: string,
+  docName: string,
+  depth: ReadingDepth,
+  docDescription?: string
+): string {
+  const summarySection = docDescription
+    ? `\n<book_summary>\n${docDescription}\n</book_summary>\n`
+    : '';
+
+  // 根据深度生成分支指令
+  const taskBranch = depth === 1
+    ? `<task_branch name="宏观检视">
+用户的意图是了解全书结构、核心主题或主要脉络。
+
+你的任务：
+1. 仔细阅读目录树和章节摘要
+2. 直接生成一份详细的《全书结构检视报告》(structural_analysis)
+3. 解答用户的宏观问题，基于目录信息组织回答
+4. 引用章节时，直接使用目录树中每个节点的 link 字段值，不要自己组装链接
+5. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
+</task_branch>`
+    : `<task_branch name="圈定战区">
+用户的意图是探究某个具体的细节、概念或推演逻辑。
+
+1. 基于目录树和章节摘要，推断最有可能包含答案的核心章节，将他们的 nodeid 按相关性排序，将其 nodeid 填入 scopeNodeIds
+2. 绝对不要尝试回答用户的具体问题！把答题的任务留给下一阶段
+3. better_question 根据全书摘要重新推断出更能体现用户提问意图的下一阶段问题
+4. structural_analysis 记录一句话简述为什么圈定这几个章节和提问意图改写,
+
+</task_branch>`;
+
+  return `<role>
+你是一位严谨的结构图书管理员。你精通艾德勒的检视阅读法，擅长通过提取和分析目录大纲（骨架），来把握全书的宏观脉络。
 </role>
 
-<input_data>
-你将接收到由系统提供的关于本书的【检视包裹】，包含：
-- 书名、副标题与主旨摘要（等同于书衣与序言）
-- 全书高频概念索引（等同于书本索引）
-- 完整目录架构
-- 结尾结论的摘要
-</input_data>
+<document>
+书名: ${docName}${summarySection}
+目录树:
+${treeText}
+</document>
 
-<workflow>
-请你在大脑中严格模拟以下“检视阅读六步法”来思考用户的问题：
-1. 扫视主旨与摘要：确认这本书的总体写作角度是否与用户问题相关。
-2. 研究目录架构：把目录当作地图，寻找与用户问题直接对应的骨架。
-3. 检阅高频索引：看用户提到的词是否在书中属于核心议题。
-4. 锁定关键篇章：基于前 3 步的印象，挑出几个看起来跟主题息息相关的篇章。
-5. 留意结尾权重：如果全书结尾摘要中着重强调了该问题，该部分也必须纳入。
-</workflow>
+<depth_context>
+当前用户的阅读深度诉求为：【深度 ${depth}】
+</depth_context>
+
+${taskBranch}
 
 <constraints>
-1. 你的最终唯一目的，是输出最有可能解答用户问题的目标章节 ID (scopeNodeIds)。
-2. 你绝对不能自行解释概念或直接回答用户的问题
-3. 宁可圈定稍微大一点的范围，也绝不能遗漏。
+1. 只基于章节标题和摘要推断，不凭记忆回答问题。
+3. scopeNodeIds 必须来自目录树中的 node_id。
+4. 无相关章节时输出空数组 []。
+5. 必须输出合法的 JSON 格式。
 </constraints>
 
 <output_format>
-严格输出 JSON，不要包含其他任何 Markdown 修饰符：
+返回 JSON:
 {
-  "thought_process": "简述你运用六步法进行定位的思考过程...",
-  "scopeNodeIds": ["node_c4", "node_c5"] 
+  "thought_process": "定位思考过程",
+  "scopeNodeIds": ["0004", "0005"],
+  "better_question":"改写的更符合书籍内容的提问",
+  "tocSummary": "为什么这些章节相关，建议搜索哪些关键词",
+  "structural_analysis": "如果是深度 1，在这里写下基于大纲总结带 obsidian 链接的详细全书脉络/解答；如果是深度 2/3，只需写一句话简述圈定理由"
 }
-</output_format>
-`;
+</output_format>`;
+}
 
 /**
  * Build user message for inspectional state
  */
-export function buildInspectionalUserMessage(standaloneQuery: string): string {
+export function buildInspectionalUserMessage(standaloneQuery: string, depth: ReadingDepth): string {
+  const depthHint = depth === 1
+    ? '请基于目录树生成详细的结构检视报告，解答用户的宏观问题。'
+    : '请根据目录树圈定相关章节范围，在 tocSummary 中提供搜索关键词建议。';
+
   return `<query>
 ${standaloneQuery}
 </query>
 
-请获取目录并圈定相关章节范围。`;
+${depthHint}`;
 }

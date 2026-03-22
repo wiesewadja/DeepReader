@@ -37,7 +37,7 @@ const CREATE_SUB_AGENT_DEFINITION: ToolDefinition = {
 
 **并行执行**：多个独立子任务可同时调用本工具（wait_for_result=true）
 
-**可用工具**：search_doc, get_chapter, get_toc`,
+**可用工具**：search_markdown_text, read_markdown_section, get_document_outline`,
 		parameters: {
 			type: 'object',
 			properties: {

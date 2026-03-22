@@ -292,19 +292,26 @@ class EpubTreeConverter:
         # ============================================================
         # 步骤3: 检测一级章节是否为容器
         # ============================================================
-        # 如果一级章节有子节点，检查第一个子节点的 href 是否与一级章节相同
+        # 如果一级章节有子节点，检查子节点的 href 文件名是否与一级章节相同
         # 如果相同，说明一级章节只是容器，不提取自己的内容
+        # 注意：比较文件名部分（忽略锚点），因为：
+        #   - 父节点: text00002.html
+        #   - 子节点: text00002.html#chapter6
+        #   这两个应该被视为同一文件，父节点是容器
         is_container = False
         if children:
             flat_children = self._flatten_children(children)
             if flat_children:
-                first_child = flat_children[0]
-                first_child_href = self._extract_href(first_child)
-                if first_child_href and href:
-                    # 比较 href（包括锚点）
-                    if first_child_href == href:
-                        is_container = True
-                        logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（href 与子节点相同）")
+                # 检查所有子节点，只要有一个子节点的文件名与父节点相同，就标记为容器
+                parent_file = href.split('#')[0] if href else None
+                for child in flat_children:
+                    child_href = self._extract_href(child)
+                    if child_href and parent_file:
+                        child_file = child_href.split('#')[0]
+                        if child_file == parent_file:
+                            is_container = True
+                            logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（文件名 '{parent_file}' 与子节点相同）")
+                            break
 
         # ============================================================
         # 步骤4: 查找章节内容

@@ -223,7 +223,8 @@ class TextFormatter:
 1. **识别标题**：
    - 一级标题（##）：章名、主要部分名称
    - 二级标题（###）：节名、小节名称
-   - 标题通常较短（1-15个字），且独立成段
+   - 标题通常较短（1-30个字），且独立成段
+   - 注意：图片说明（如"图2-1 xxx"）、表格说明、注释等不是标题
 
 2. **标题特征**：
    - 不以句号、逗号结尾
@@ -470,6 +471,15 @@ class TextFormatter:
             r"^\*+$",  # 星号分隔线
             r"^=\s*$",  # 等号分隔线
             r"^\d{4}[-/]\d{1,2}[-/]\d{1,2}",  # 日期
+            r"^[图表照片插图]\s*\d+[\.\s\—\-:：]",  # 中文图片/表格说明：图1、图2-1、表 1.1
+            r"^[图表照片插图]\s*[（(]\d+[)）]",  # 带括号的图片说明：图(1)、表（2）
+            r"^Fig\.?\s*\d+",  # 英文图片说明：Fig.1, Fig 2.3
+            r"^Table\s*\d+",  # 英文表格说明：Table 1
+            r"^Figure\s*\d+",  # 英文图片说明：Figure 1
+            r"^[Pp]hoto\s*\d+",  # 照片说明
+            r"^来源[：:]",  # 来源说明
+            r"^注[：:]",  # 注释说明
+            r"^资料来源[：:]",  # 资料来源
         ]
 
         for i, line in enumerate(lines):
@@ -499,8 +509,9 @@ class TextFormatter:
                 if alpha_chars and all(c.isupper() for c in alpha_chars):
                     heading_level = 2
 
-            # 新规则：短段落（<50字符）且不以句号结尾 -> 三级标题
-            if heading_level is None and len(stripped) < 50:
+            # 新规则：短段落（<30字符）且不以句号结尾 -> 三级标题
+            # 注意：降低阈值以避免图片说明等被误识别
+            if heading_level is None and len(stripped) < 30:
                 # 检查是否以句子结束标点结尾
                 last_char = stripped[-1]
                 if last_char not in sentence_end_punctuation:

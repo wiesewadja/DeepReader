@@ -39,16 +39,6 @@ export interface SearchResult {
 }
 
 /**
- * Raw tool result for formatter
- * Extended to support TOC results (which don't have block_id)
- */
-export interface RawToolResult {
-  block_id?: string;
-  text: string;
-  toolName?: string;
-}
-
-/**
  * Shared context passed between all states
  */
 export interface SharedContext {
@@ -67,13 +57,15 @@ export interface SharedContext {
   // ===== S1 Output =====
   /** Locked chapter scope */
   scopeNodeIds?: string[];
-  /** TOC summary reasoning */
+  /** TOC summary reasoning with search keyword suggestions */
   tocSummary?: string;
+  /** Better rephrased question for S2/S4 */
+  betterQuestion?: string;
+  /** 全书结构分析（深度1时由 S1 生成，用于 S4 直接输出） */
+  structuralAnalysis?: string;
 
   // ===== S2 Output =====
-  /** Raw search results with block_id (from search_doc) or tool results (from get_toc) */
-  rawResults?: RawToolResult[];
-  /** Analysis conclusion */
+  /** Analysis conclusion (may S2 Analytical) */
   analysisResult?: string;
 
   // ===== S3 Output (deferred) =====
@@ -85,6 +77,10 @@ export interface SharedContext {
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
+  /** 全书摘要（LLM 生成的文档描述，帮助 S1 更好地判断意图） */
+  docDescription?: string;
+  /** 长期记忆上下文（来自 MEMORY.md，用于 S4 个性化输出） */
+  memoryContext?: string;
 
   // ===== Engine Dependencies =====
   /** LLM client for API calls */

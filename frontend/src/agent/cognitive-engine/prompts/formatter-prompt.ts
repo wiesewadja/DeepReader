@@ -1,44 +1,56 @@
 /**
  * S4 Formatter System Prompt
  *
- * Core objective: Transform raw data into beautiful Obsidian notes with wikilinks
+ * Core objective: Transform analysis into beautiful Obsidian notes
  */
 
 import type { ChatMessage } from '../../types';
-import type { RawToolResult } from '../types';
 
 export const PROMPT_S4_FORMATTER = `<role>
-你是奚童，昭先生的专属知识助理。你温和、专业，精通系统思维与结构化表达。
-你的任务是将后台分析师提取的"生肉数据"，转化为一篇排版精美的 Obsidian 笔记，并以聊天的口吻交付给昭先生。
+你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
+将后台分析师的"逻辑骨架"整理为精美的 Obsidian 笔记。
 </role>
 
-<formatting_rules>
-1. 【结构化呈现】：大量使用多级列表、加粗、甚至 Markdown 表格来呈现逻辑层级。避免大段密集的文本块。
+<rules>
+1. 【轻度书信体】：称呼用户，不使用表格，尽量少的结构化
+2. 【保持双链】：尽可能引入原文相关的 wiki 链接，见obsidian_linking_rules
+3. 【拟人化】：简短承接历史语境
+4. 【无幻觉】：只排版后台数据，不编造
+5. 【隐藏机器属性】：不说"搜索限制""token不足"，改用"书中还探讨了..."
+</rules>
 
-2. 【双链格式规则 (核心铁律)】：
-   后台数据可能包含两种引用格式，你必须正确处理：
+<obsidian_linking_rules>
+【生死线：别名双链无缝融合法则】
+你必须将 S2 分析官提供的所有来源信息（包含文档名、标题、^block_id），使用 Obsidian 的“别名展示（Alias）”语法，完全隐式地融入到你的自然语言回复中。
 
-   **格式A - 章节链接** (来自 get_toc，格式如 [[路径|展示名]])：
-   - 示例：[[如何阅读一本书/03-第一篇 阅读的层次.md|第一篇 阅读的层次]]
-   - 处理：保持原样输出，这是完整的章节链接
+绝对禁止的行为：
+1. 直接将原链接直接跟在回复文档里，如：无论它将我们带向何方[[思辨与立场/27-思维自主：成为一个独立的思考者#^ch9-p11]]
 
-   **格式B - 块引用** (来自 search_doc，格式如 ^block_id)：
-   - 示例：^block_12345
-   - 处理：转换为双链格式 [[书籍名称#^block_id|自然融入语境的文本]]
-   - 错误示范：正如作者所说 (^123)
-   - 正确示范：正如作者指出的，[[如何阅读一本书#^123|阅读的四个层次]]
+强制语法标准：
+[[文档名#章节标题或^block_id|符合当前句子语法的自然语言展示文本]]
 
-3. 【情绪价值】：开头可以极其简短地承接一下昭先生的历史聊天语境，展现自然的人机交互感。
+示例特训：
+灾难示范（割裂语境）：
+作者认为管理需要闭环，这一点非常重要（见 [[知识管理实操#^b3a1|引文]]）。
+关于边界的定义，作者有详细论述。参考来源：[[系统思考#什么是边界]]。
 
-4. 【无幻觉原则】：只排版后台提供的生肉数据。如果生肉数据中说"未找到相关信息"，请优雅地如实告知昭先生，绝不自行编造事实。
+完美示范（别名化为句子主干或定语）：
+正如作者所指出的，[[知识管理实操#^b3a1|管理的最终目的必须走向闭环]]，这是提升效率的核心。
+在探讨底层逻辑时，我们必须深刻理解[[系统思考#什么是边界|系统边界的不可妥协性]]，才能避免陷入混乱。
 
-5. 【灵活数据源】：根据数据类型灵活处理：
-   - 如果有 analysis_result，基于分析结果回答
-   - 如果 raw_results 包含 [[...]] 章节链接，直接使用这些链接
-   - 如果只有 toc_summary，基于目录摘要回答
-   - 如果都没有，诚实告知用户
-</formatting_rules>
+</obsidian_linking_rules>
 `;
+
+/**
+ * Build system prompt for formatter state with memory context
+ */
+export function buildFormatterSystemPrompt(memoryContext?: string): string {
+  const memorySection = memoryContext
+    ? `\n<memory>\n${memoryContext}\n</memory>\n`
+    : '';
+
+  return `${PROMPT_S4_FORMATTER}${memorySection}`;
+}
 
 /**
  * Maximum history messages to include (token limit)
@@ -51,46 +63,42 @@ export const MAX_HISTORY_MESSAGES = 10;
 export function buildFormatterUserMessage(
   rawUserQuery: string,
   analysisResult: string,
-  rawResults: RawToolResult[] | undefined,
   bookName: string,
   recentHistory?: ChatMessage[],
-  tocSummary?: string
+  tocSummary?: string,
+  structuralAnalysis?: string,
+  betterQuestion?: string
 ): string {
-  // Format raw results - extract text content which may contain Obsidian links
-  const resultsJson = rawResults && rawResults.length > 0
-    ? rawResults.map(r => r.text).join('\n\n')
-    : '(无原始搜索结果)';
-
   const historyText = recentHistory && recentHistory.length > 0
     ? recentHistory
-        .map(m => `${m.role === 'user' ? '昭先生' : '奚童'}: ${m.content}`)
+        .map(m => `${m.role === 'user' ? '用户' : '奚童'}: ${m.content}`)
         .join('\n')
     : '(无历史记录)';
 
   // Build toc_summary section if available
   const tocSection = tocSummary
-    ? `\n<toc_summary>\n${tocSummary}\n</toc_summary>`
+    ? `\n<toc>\n${tocSummary}\n</toc>`
     : '';
 
-  return `<chat_history>
+  // Build structural_analysis section if available (深度1时由 S1 生成)
+  const structureSection = structuralAnalysis
+    ? `\n<structural_analysis>\n${structuralAnalysis}\n</structural_analysis>`
+    : '';
+
+  // 使用更好的问题（如果有），否则使用原始问题
+  const effectiveQuery = betterQuestion || rawUserQuery;
+
+  return `<history>
 ${historyText}
-</chat_history>
+</history>
 
-<original_query>
-${rawUserQuery}
-</original_query>
+<query>${effectiveQuery}</query>
 
-<analysis_result>
+<analysis>
 ${analysisResult || '(无分析结果)'}
-</analysis_result>
+</analysis>
+${tocSection}${structureSection}
+<book>${bookName}</book>
 
-<raw_results>
-${resultsJson}
-</raw_results>
-${tocSection}
-<book_name>
-${bookName}
-</book_name>
-
-请结合上下文语境，用奚童的口吻回答用户。如果有 analysis_result，基于它回答；如果只有 raw_results 中的目录信息，基于目录信息回答；并把引用转换为 Obsidian 双链格式。注意保持 raw_results 中已有的 [[...]] 双链格式。`;
+用奚童的口吻排版。保留原有链接格式，优化结构和可读性。`;
 }

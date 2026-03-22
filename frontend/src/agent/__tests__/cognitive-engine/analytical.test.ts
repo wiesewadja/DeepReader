@@ -20,7 +20,7 @@ describe('AnalyticalState', () => {
   it('should have correct metadata', () => {
     expect(analyticalState.name).toBe('Analytical');
     expect(analyticalState.model).toBe('main');
-    expect(analyticalState.tools).toEqual(['search_doc', 'get_chapter']);
+    expect(analyticalState.tools).toEqual(['search_markdown_text', 'read_markdown_section']);
   });
 
   it('should call S1 if scopeNodeIds not set (cumulative guarantee)', async () => {
@@ -48,10 +48,11 @@ describe('AnalyticalState', () => {
 
     const prompt = analyticalState.buildSystemPrompt(ctx);
 
+    // Prompt should contain scope information
     expect(prompt).toContain('node_c4');
     expect(prompt).toContain('node_c5');
-    expect(prompt).toContain('search_doc');
-    expect(prompt).toContain('get_chapter');
+    // Prompt should contain analytical reading concepts (艾德勒 or 分析阅读)
+    expect(prompt).toMatch(/艾德勒|分析阅读|诠释内容/);
   });
 
   it('should mark state as executed', async () => {

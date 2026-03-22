@@ -56,7 +56,7 @@ export class RouterState extends StateNode {
         {
           model: this.model,
           systemPrompt: PROMPT_S0_ROUTER,
-          userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory),
+          userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory, ctx.pdfName),
           availableTools: [],
           maxIterations: 1,
           abortSignal: ctx.abortSignal,
