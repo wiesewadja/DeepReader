@@ -726,6 +726,14 @@ export default class DeepPDFPlugin extends Plugin {
             const providerName = PROVIDER_LABELS[config.provider] || config.provider;
             const model = this.settings.llmModel || config.defaultModel || 'deepseek-chat';
 
+            // 获取 fast 模型提供商配置
+            const fastProviderConfig = this.settings.fastModelEnabled
+                ? getProviderConfig({
+                      llmProvider: this.settings.fastModelProvider,
+                      apiUrl: this.settings.apiUrl,
+                  })
+                : null;
+
             this.frontendAgent = new FrontendAgent({
                 apiKey: apiKey,
                 baseUrl: config.baseUrl || undefined,
@@ -733,12 +741,27 @@ export default class DeepPDFPlugin extends Plugin {
                 providerName: providerName,
                 skillsDir: this.skillsDir,
                 app: this.app,
+
+                // Fast 模型配置
+                fastModelEnabled: this.settings.fastModelEnabled,
+                fastApiKey: this.settings.fastModelEnabled && fastProviderConfig
+                    ? (this.settings[fastProviderConfig.apiKeyField] as string || undefined)
+                    : undefined,
+                fastBaseUrl: fastProviderConfig?.baseUrl,
+                fastModel: this.settings.fastModelName || undefined,
+                fastProviderName: this.settings.fastModelEnabled
+                    ? (PROVIDER_LABELS[this.settings.fastModelProvider] || this.settings.fastModelProvider)
+                    : undefined,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');
             log('[DeepPDF]   服务商:', providerName);
             log('[DeepPDF]   模型:', model, this.settings.llmModel ? '(用户设置)' : '(默认)');
             log('[DeepPDF]   API:', config.baseUrl);
+            if (this.settings.fastModelEnabled) {
+                log('[DeepPDF]   Fast 模型:', this.settings.fastModelName || '(未设置)');
+                log('[DeepPDF]   Fast 服务商:', PROVIDER_LABELS[this.settings.fastModelProvider] || this.settings.fastModelProvider);
+            }
         }
         return this.frontendAgent;
     }

@@ -44,7 +44,7 @@ export type {
 } from './cognitive-engine/index.js';
 
 // Import for FrontendAgent class
-import { LLMClient } from './llm-client.js';
+import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata, type ReadingProgress } from './context/builder.js';
@@ -69,10 +69,17 @@ export interface FrontendAgentOptions {
   providerName?: string; // 服务商显示名称（用于日志）
   skillsDir: string;
   app: any; // Obsidian App instance
+
+  // 新增：Fast 模型配置（可选）
+  fastModelEnabled?: boolean;
+  fastApiKey?: string;
+  fastBaseUrl?: string;
+  fastModel?: string;
+  fastProviderName?: string;
 }
 
 export class FrontendAgent {
-  private llmClient: LLMClient;
+  private llmClientManager: LLMClientManager;
   private skillLoader: SkillLoader;
   private contextLoader: ContextLoader;
   private contextBuilder: ContextBuilder;
@@ -81,12 +88,26 @@ export class FrontendAgent {
   private initialized = false;
 
   constructor(private options: FrontendAgentOptions) {
-    this.llmClient = new LLMClient({
+    // 构建 main 配置
+    const mainConfig: ModelConfig = {
       apiKey: options.apiKey,
       baseUrl: options.baseUrl,
       model: options.model,
       providerName: options.providerName,
-    });
+    };
+
+    // 构建 fast 配置（如果启用）
+    let fastConfig: ModelConfig | undefined;
+    if (options.fastModelEnabled && options.fastApiKey) {
+      fastConfig = {
+        apiKey: options.fastApiKey,
+        baseUrl: options.fastBaseUrl,
+        model: options.fastModel,
+        providerName: options.fastProviderName,
+      };
+    }
+
+    this.llmClientManager = new LLMClientManager(mainConfig, fastConfig);
     this.skillLoader = new SkillLoader(options.skillsDir);
     this.contextLoader = new ContextLoader(options.app);
     this.memoryStore = new MemoryStore(options.app);
@@ -191,7 +212,7 @@ ${currentMemory}
 
     try {
       // 使用非流式调用获取完整响应
-      const response = await this.llmClient.chat([
+      const response = await this.llmClientManager.getMainClient().chat([
         { role: 'system', content: '你是记忆压缩助手。直接返回压缩后的内容，不要解释。' },
         { role: 'user', content: prompt },
       ], []);
@@ -257,7 +278,7 @@ ${currentMemory}
       docDescription: context.docDescription,  // 全书摘要
       memoryContext,  // 长期记忆
       // 传递引擎依赖
-      llmClient: this.llmClient,
+      llmClientManager: this.llmClientManager,
       toolRegistry: toolRegistry,
       toolContext: context,
     });
@@ -306,7 +327,7 @@ ${currentMemory}
       docDescription: context.docDescription,  // 全书摘要
       memoryContext,  // 长期记忆
       // 传递引擎依赖
-      llmClient: this.llmClient,
+      llmClientManager: this.llmClientManager,
       toolRegistry: toolRegistry,
       toolContext: context,
     });
@@ -349,7 +370,7 @@ ${currentMemory}
    * 获取 LLM 客户端（用于记忆整合等内部功能）
    */
   getLLMClient(): LLMClient {
-    return this.llmClient;
+    return this.llmClientManager.getMainClient();
   }
 
   /**
@@ -368,7 +389,7 @@ ${currentMemory}
   setupSubagentManager(context: ToolContext): void {
     const toolRegistry = createToolRegistry(this.skillLoader, context);
     const manager = new SubagentManager(
-      this.llmClient,
+      this.llmClientManager.getMainClient(),
       toolRegistry,
       context
     );

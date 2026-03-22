@@ -89,11 +89,12 @@ export class LLMClientManager {
 export interface SharedContext {
   // ... 其他字段保持不变 ...
 
-  // 变更：llmClient → llmClientManager
+  // 新增：LLMClientManager
   llmClientManager?: LLMClientManager;
 
-  // 移除：llmClient
-  // llmClient?: LLMClient;
+  // 保留但标记 deprecated（向后兼容）
+  /** @deprecated Use llmClientManager instead */
+  llmClient?: LLMClient;
 }
 ```
 

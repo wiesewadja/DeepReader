@@ -6,7 +6,7 @@
  */
 
 import type { ChatMessage, ToolDefinition } from '../../types';
-import { LLMClient } from '../../llm-client';
+import { LLMClient, LLMClientManager } from '../../llm-client';
 import type { ToolRegistry, ToolContext } from '../../tools/types';
 import { executeTool } from '../../tools/index';
 import type { ToolInterceptor } from '../types';
@@ -89,7 +89,7 @@ function compressToolResult(result: string): string {
  * 运行状态循环
  */
 export async function runStateLoop(
-  llmClient: LLMClient,
+  llmClientManager: LLMClientManager,
   toolRegistry: ToolRegistry,
   toolContext: ToolContext,
   options: StateLoopOptions,
@@ -108,6 +108,9 @@ export async function runStateLoop(
   } = options;
 
   const logger = getDebugLogger();
+
+  // 根据模型类型选择客户端
+  const llmClient = llmClientManager.getClient(model);
 
   // 构建工具定义
   const toolDefinitions: ToolDefinition[] = [];

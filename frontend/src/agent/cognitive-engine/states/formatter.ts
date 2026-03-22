@@ -37,7 +37,7 @@ export class FormatterState extends StateNode {
 
     try {
       // Check if engine dependencies are available
-      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+      if (!ctx.llmClientManager || !ctx.toolRegistry || !ctx.toolContext) {
         // Fallback for testing - output raw analysis
         const output = ctx.analysisResult || 'No analysis result available.';
         this.callbacks?.onContent?.(output);
@@ -50,7 +50,7 @@ export class FormatterState extends StateNode {
 
       // Use runStateLoop for actual LLM calls
       const response = await runStateLoop(
-        ctx.llmClient,
+        ctx.llmClientManager,
         ctx.toolRegistry,
         ctx.toolContext,
         {

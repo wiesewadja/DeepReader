@@ -40,7 +40,7 @@ export class RouterState extends StateNode {
 
     try {
       // 检查引擎依赖是否可用
-      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+      if (!ctx.llmClientManager || !ctx.toolRegistry || !ctx.toolContext) {
         // 回退到默认深度 2
         ctx.depth = 2;
         ctx.standaloneQuery = ctx.rawUserQuery;
@@ -50,7 +50,7 @@ export class RouterState extends StateNode {
 
       // 使用 LLM 进行意图识别和查询重写
       const response = await runStateLoop(
-        ctx.llmClient,
+        ctx.llmClientManager,
         ctx.toolRegistry,
         ctx.toolContext,
         {

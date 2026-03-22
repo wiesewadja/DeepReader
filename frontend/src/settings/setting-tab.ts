@@ -185,6 +185,13 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     }));
         }
+
+        // 分隔线
+        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+
+        // 快速模型设置区域
+        const fastModelSection = container.createDiv({ cls: 'deeppdf-settings-section' });
+        this.renderFastModelSettings(fastModelSection);
     }
 
     /**
@@ -245,6 +252,103 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     btn.setTooltip(isVisible ? '隐藏 API Key' : '显示 API Key');
                 });
         });
+    }
+
+    /**
+     * 渲染快速模型设置区域
+     */
+    private renderFastModelSettings(container: HTMLElement): void {
+        // 标题
+        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
+        header.createEl('h4', { text: '快速模型设置（可选）' });
+        header.createEl('span', {
+            text: '用于路由和检视阶段，可选择更便宜/更快的模型以节省成本',
+            cls: 'setting-item-description'
+        });
+
+        // 启用开关
+        new Setting(container)
+            .setName("启用独立的快速模型")
+            .setDesc("开启后，路由和检视阶段将使用此模型，分析与格式化仍使用主模型")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.fastModelEnabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.fastModelEnabled = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.resetFrontendAgent();
+                    // 重新渲染此区域
+                    this.renderTabContent('llm');
+                }));
+
+        // 如果未启用，不显示详细配置
+        if (!this.plugin.settings.fastModelEnabled) {
+            return;
+        }
+
+        // 快速模型配置区域
+        const fastModelConfigEl = container.createDiv({ cls: 'deeppdf-settings-fast-model-config' });
+
+        // 服务商选择
+        const fastProvider = this.plugin.settings.fastModelProvider as ProviderType;
+        new Setting(fastModelConfigEl)
+            .setName("快速模型服务商")
+            .setDesc("选择快速模型的服务商")
+            .addDropdown(dropdown => {
+                (Object.keys(PROVIDER_LABELS) as ProviderType[]).forEach(key => {
+                    dropdown.addOption(key, PROVIDER_LABELS[key]);
+                });
+                dropdown
+                    .setValue(fastProvider)
+                    .onChange(async (value) => {
+                        this.plugin.settings.fastModelProvider = value as ProviderType;
+                        // 自动填充默认模型
+                        const defaultModel = getProviderDefaultModel(value as ProviderType);
+                        if (defaultModel) {
+                            this.plugin.settings.fastModelName = defaultModel;
+                        }
+                        this.plugin.resetFrontendAgent();
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('llm');
+                    });
+            });
+
+        // 模型名称
+        new Setting(fastModelConfigEl)
+            .setName("快速模型名称")
+            .setDesc("快速模型的具体名称")
+            .addText(text => text
+                .setPlaceholder("gpt-4o-mini")
+                .setValue(this.plugin.settings.fastModelName)
+                .onChange(async (value) => {
+                    this.plugin.settings.fastModelName = value;
+                    this.plugin.resetFrontendAgent();
+                    await this.plugin.saveSettings();
+                }));
+
+        // API Key（根据服务商显示对应的输入框）
+        const fastProviderLabel = PROVIDER_LABELS[fastProvider];
+        const fastApiKeyField = this.getApiKeyField(fastProvider);
+        this.createApiKeySetting(
+            fastModelConfigEl,
+            `${fastProviderLabel} API Key (快速模型)`,
+            `用于访问 ${fastProviderLabel} 快速模型的 API 密钥`,
+            fastApiKeyField
+        );
+
+        // 自定义 Base URL（仅 custom 服务商）
+        if (fastProvider === 'custom') {
+            new Setting(fastModelConfigEl)
+                .setName("快速模型 API Base URL")
+                .setDesc("自定义快速模型的 API 地址")
+                .addText(text => text
+                    .setPlaceholder("https://api.example.com/v1")
+                    .setValue(this.plugin.settings.apiUrl)
+                    .onChange(async (value) => {
+                        this.plugin.settings.apiUrl = value;
+                        this.plugin.resetFrontendAgent();
+                        await this.plugin.saveSettings();
+                    }));
+        }
     }
 
     /**

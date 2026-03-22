@@ -3,7 +3,7 @@
  */
 
 import type { ChatMessage } from '../types';
-import type { LLMClient } from '../llm-client';
+import type { LLMClient, LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 
 /**
@@ -83,7 +83,9 @@ export interface SharedContext {
   memoryContext?: string;
 
   // ===== Engine Dependencies =====
-  /** LLM client for API calls */
+  /** LLM client manager for multi-model support */
+  llmClientManager?: LLMClientManager;
+  /** @deprecated Use llmClientManager instead */
   llmClient?: LLMClient;
   /** Tool registry for tool execution */
   toolRegistry?: ToolRegistry;

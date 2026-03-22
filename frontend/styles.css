@@ -5340,6 +5340,28 @@
     }
 }
 
+/* ==================== 快速模型设置区域 ==================== */
+.deeppdf-settings-divider {
+    border: none;
+    border-top: 1px solid var(--background-modifier-border);
+    margin: 1.5em 0;
+}
+
+.deeppdf-settings-section-header {
+    margin-bottom: 1em;
+}
+
+.deeppdf-settings-section-header h4 {
+    margin: 0 0 0.25em 0;
+    font-size: 1em;
+}
+
+.deeppdf-settings-fast-model-config {
+    padding-left: 1em;
+    border-left: 2px solid var(--background-modifier-border);
+    margin-top: 1em;
+}
+
 /* Agent Humanized Status Styles - 增强版 */
 
 /* 阅读层次徽章 */

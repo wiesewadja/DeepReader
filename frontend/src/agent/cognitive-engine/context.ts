@@ -4,7 +4,7 @@
 
 import type { SharedContext, StateResult, ReadingDepth, SearchResult } from './types';
 import type { ChatMessage } from '../types';
-import type { LLMClient } from '../llm-client';
+import type { LLMClient, LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 
 /**
@@ -23,6 +23,7 @@ export function createSharedContext(params: {
   memoryContext?: string;
   // Engine dependencies
   llmClient?: LLMClient;
+  llmClientManager?: LLMClientManager;
   toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
 }): SharedContextImpl {
@@ -36,6 +37,7 @@ export function createSharedContext(params: {
     params.docDescription,
     params.memoryContext,
     params.llmClient,
+    params.llmClientManager,
     params.toolRegistry,
     params.toolContext
   );
@@ -77,6 +79,7 @@ export class SharedContextImpl implements SharedContext {
 
   // Engine Dependencies
   llmClient?: LLMClient;
+  llmClientManager?: LLMClientManager;
   toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
 
@@ -94,6 +97,7 @@ export class SharedContextImpl implements SharedContext {
     docDescription?: string,
     memoryContext?: string,
     llmClient?: LLMClient,
+    llmClientManager?: LLMClientManager,
     toolRegistry?: ToolRegistry,
     toolContext?: ToolContext
   ) {
@@ -106,6 +110,7 @@ export class SharedContextImpl implements SharedContext {
     this.docDescription = docDescription;
     this.memoryContext = memoryContext;
     this.llmClient = llmClient;
+    this.llmClientManager = llmClientManager;
     this.toolRegistry = toolRegistry;
     this.toolContext = toolContext;
     this.executedStates = new Set();

@@ -65,7 +65,8 @@ export class InspectionalState extends StateNode {
 
     try {
       // Check if engine dependencies are available
-      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+      const { llmClientManager, toolRegistry, toolContext } = ctx;
+      if (!llmClientManager || !toolRegistry || !toolContext) {
         // Fallback to placeholder for testing
         ctx.scopeNodeIds = ['node_c1', 'node_c2'];
         ctx.tocSummary = 'Based on TOC analysis, chapters 1 and 2 are most relevant.';
@@ -75,7 +76,7 @@ export class InspectionalState extends StateNode {
 
       // Step 1: Get document outline directly (code-level call)
       const outlineStartTime = Date.now();
-      const outlineResult = await this.getOutline(ctx);
+      const outlineResult = await this.getOutline(toolRegistry, toolContext);
       const outlineNodes = parseOutlineResult(outlineResult);
 
       // Log tool call for outline
@@ -115,8 +116,9 @@ export class InspectionalState extends StateNode {
 
       // Log LLM interaction
       if (logger?.isEnabled()) {
+        const llmClient = llmClientManager.getClient(this.model);
         logger.startLLMInteraction({
-          model: ctx.llmClient.getModel(),
+          model: llmClient.getModel(),
           modelType: this.model,
           systemPrompt,
           userMessage,
@@ -127,7 +129,8 @@ export class InspectionalState extends StateNode {
 
       // Step 4: Call LLM with JSON Mode for structured output
       const llmStartTime = Date.now();
-      const response = await ctx.llmClient.chat(
+      const llmClient = llmClientManager.getClient(this.model);
+      const response = await llmClient.chat(
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
@@ -182,13 +185,16 @@ export class InspectionalState extends StateNode {
   /**
    * Get document outline by calling get_document_outline tool directly
    */
-  private async getOutline(ctx: SharedContext): Promise<string> {
-    const executor = ctx.toolRegistry!.get('get_document_outline');
+  private async getOutline(
+    toolRegistry: NonNullable<SharedContext['toolRegistry']>,
+    toolContext: NonNullable<SharedContext['toolContext']>
+  ): Promise<string> {
+    const executor = toolRegistry.get('get_document_outline');
     if (!executor) {
       throw new Error('get_document_outline tool not found in registry');
     }
 
-    return await executor.execute({}, ctx.toolContext!);
+    return await executor.execute({}, toolContext);
   }
 
   buildSystemPrompt(ctx: SharedContext): string {

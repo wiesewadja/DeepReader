@@ -45,10 +45,11 @@ export class AnalyticalState extends StateNode {
       }
 
       // 2. Create scope interceptor
-      const interceptor = createScopeInterceptor(ctx.scopeNodeIds!);
+      const scopeNodeIds = ctx.scopeNodeIds ?? [];
+      const interceptor = createScopeInterceptor(scopeNodeIds);
 
       // 3. Check if engine dependencies are available
-      if (!ctx.llmClient || !ctx.toolRegistry || !ctx.toolContext) {
+      if (!ctx.llmClientManager || !ctx.toolRegistry || !ctx.toolContext) {
         // Fallback to placeholder for testing
         ctx.analysisResult = 'MECE stands for Mutually Exclusive, Collectively Exhaustive. [[如何阅读一本书/第七章 透视一本书#^block_123|参考来源]]';
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
@@ -57,7 +58,7 @@ export class AnalyticalState extends StateNode {
 
       // 4. Execute LLM loop with interceptor
       const response = await runStateLoop(
-        ctx.llmClient,
+        ctx.llmClientManager,
         ctx.toolRegistry,
         ctx.toolContext,
         {

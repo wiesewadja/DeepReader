@@ -2,13 +2,20 @@
  * DeepReader 插件设置类型定义
  */
 
+import type { ProviderType } from './providers';
+
 export interface DeepPDFSettings {
     // API Server 设置
     apiPort: number;
     maxResults: number;
 
     // AI 服务商配置
-    llmProvider: 'deepseek' | 'kimi' | 'zhipu' | 'openai' | 'custom';
+    llmProvider: ProviderType;
+
+    // Fast 模型配置（用于快速认知状态）
+    fastModelEnabled: boolean;
+    fastModelProvider: ProviderType;
+    fastModelName: string;
 
     // 各服务商 API Key（独立字段）
     deepseekApiKey: string;
@@ -49,6 +56,11 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
     // AI 服务商配置
     llmProvider: "deepseek",
+
+    // Fast 模型配置
+    fastModelEnabled: false,
+    fastModelProvider: "deepseek",
+    fastModelName: "",
 
     // 各服务商 API Key
     deepseekApiKey: "",
