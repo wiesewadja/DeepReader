@@ -106,7 +106,9 @@ def _is_likely_heading(text: str) -> bool:
     """
     判断文本是否可能是标题
 
-    规则：短句（<=50字符）且末尾没有标点符号
+    规则：
+    1. 短句（<=30字符）且末尾没有标点符号
+    2. 排除图片说明、表格说明等非标题内容
     """
     if not text:
         return False
@@ -117,8 +119,8 @@ def _is_likely_heading(text: str) -> bool:
     # 如果已经有 # 前缀，说明是标题，需要处理
     # 但不在这里判断，在 _build_text_from_paragraphs 中处理
 
-    # 太长的不是标题
-    if len(text) > 50:
+    # 太长的不是标题（降低阈值以避免图片说明被误判）
+    if len(text) > 30:
         return False
 
     # 检查末尾是否有标点符号
@@ -128,6 +130,24 @@ def _is_likely_heading(text: str) -> bool:
     # 如果末尾是标点，不是标题
     if text[-1] in punctuation_chars:
         return False
+
+    # 排除图片说明、表格说明等非标题内容
+    non_heading_patterns = [
+        r"^图表?\s*\d+[\.\s\—\-:：]",  # 图1、图2-1、表 1.1
+        r"^图表?\s*[（(]\d+[)）]",  # 图(1)、表（2）
+        r"^[Ff]ig\.?\s*\d+",  # Fig.1, Fig 2.3
+        r"^[Tt]able\s*\d+",  # Table 1
+        r"^[Ff]igure\s*\d+",  # Figure 1
+        r"^[Pp]hoto\s*\d+",  # 照片说明
+        r"^来源[：:]",  # 来源说明
+        r"^注[：:]",  # 注释说明
+        r"^资料来源[：:]",  # 资料来源
+    ]
+
+    import re
+    for pattern in non_heading_patterns:
+        if re.match(pattern, text):
+            return False
 
     return True
 

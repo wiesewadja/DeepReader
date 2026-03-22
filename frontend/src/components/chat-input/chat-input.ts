@@ -52,14 +52,12 @@ export interface ChatInputOptions {
 	onHeightChange?: (height: number) => void;
 	/** 加载当前文档回调（可选） */
 	onLoadCurrentDoc?: () => void;
+	/** 卸载当前文档回调（可选，再次点击时调用） */
+	onUnloadCurrentDoc?: () => void;
 	/** 引用添加回调（可选，用于在对话界面显示引用卡片） */
 	onQuoteAdded?: (quote: QuoteItem) => void;
 	/** 引用移除回调（可选） */
 	onQuoteRemoved?: (quoteId: string) => void;
-	/** 深度思考模式切换回调（可选） */
-	onDeepSearchToggle?: () => void;
-	/** 当前深度思考模式状态（可选） */
-	deepSearchMode?: boolean;
 }
 
 /**
@@ -83,9 +81,9 @@ export class ChatInput {
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
-	private deepSearchButton: HTMLButtonElement | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
+	private isDocLoaded: boolean = false;  // 文档是否已加载到上下文
 
 	// 文件建议组件
 	private fileSuggest: FileSuggest | null = null;
@@ -101,7 +99,6 @@ export class ChatInput {
 	private clickHandler: (() => void) | null = null;
 	private pasteHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
-	private deepSearchClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
 
 	constructor(options: ChatInputOptions) {
@@ -215,15 +212,6 @@ export class ChatInput {
 			this.loadDocButton.type = 'button';
 		}
 
-		// 深度思考模式按钮（使用大脑图标）
-		if (this.options.onDeepSearchToggle) {
-			this.deepSearchButton = leftToolbar.createEl('button', {
-				cls: 'deeppdf-deep-search-btn'
-			});
-			this.updateDeepSearchButtonDisplay();
-			this.deepSearchButton.type = 'button';
-		}
-
 		// 右侧工具 (发送按钮)
 		const rightToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-right'
@@ -287,19 +275,17 @@ export class ChatInput {
 		// 点击加载文档按钮
 		if (this.loadDocButton && this.options.onLoadCurrentDoc) {
 			this.loadDocClickHandler = () => {
-				this.options.onLoadCurrentDoc?.();
+				if (this.isDocLoaded) {
+					// 已加载，点击卸载
+					this.options.onUnloadCurrentDoc?.();
+				} else {
+					// 未加载，点击加载
+					this.options.onLoadCurrentDoc?.();
+				}
 				// 点击后自动聚焦到输入框
 				this.focus();
 			};
 			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
-		}
-
-		// 点击深度思考模式按钮
-		if (this.deepSearchButton && this.options.onDeepSearchToggle) {
-			this.deepSearchClickHandler = () => {
-				this.options.onDeepSearchToggle?.();
-			};
-			this.deepSearchButton.addEventListener('click', this.deepSearchClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -704,40 +690,15 @@ export class ChatInput {
 		if (!this.loadDocButton) return;
 		if (active) {
 			this.loadDocButton.classList.add('active');
+			// 有横线的文档图标（表示已加载内容）
+			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>`;
+			this.loadDocButton.setAttribute('aria-label', '文档已加载到上下文');
 		} else {
 			this.loadDocButton.classList.remove('active');
+			// 空白文档图标
+			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>`;
+			this.loadDocButton.setAttribute('aria-label', '加载当前文档到上下文');
 		}
-	}
-
-	/**
-	 * 更新深度思考模式按钮显示
-	 */
-	private updateDeepSearchButtonDisplay(): void {
-		if (!this.deepSearchButton) return;
-
-		const isActive = this.options.deepSearchMode || false;
-
-		// 使用大脑图标（Brain - Lucide）
-		// 激活状态：填充大脑图标；非激活状态：轮廓大脑图标
-		if (isActive) {
-			// 填充大脑图标
-			this.deepSearchButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"></path></svg>`;
-			this.deepSearchButton.addClass('active');
-		} else {
-			// 轮廓大脑图标
-			this.deepSearchButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"></path></svg>`;
-			this.deepSearchButton.removeClass('active');
-		}
-
-		this.deepSearchButton.setAttribute('aria-label', isActive ? '深度思考模式已开启（点击关闭）' : '深度思考模式已关闭（点击开启）');
-	}
-
-	/**
-	 * 设置深度思考模式状态
-	 */
-	setDeepSearchMode(enabled: boolean): void {
-		this.options.deepSearchMode = enabled;
-		this.updateDeepSearchButtonDisplay();
 	}
 
 	/**
@@ -783,11 +744,6 @@ export class ChatInput {
 			this.loadDocClickHandler = null;
 		}
 
-		if (this.deepSearchButton && this.deepSearchClickHandler) {
-			this.deepSearchButton.removeEventListener('click', this.deepSearchClickHandler);
-			this.deepSearchClickHandler = null;
-		}
-
 		if (this.inputContainer && this.containerClickHandler) {
 			this.inputContainer.removeEventListener('click', this.containerClickHandler);
 			this.containerClickHandler = null;
@@ -813,6 +769,5 @@ export class ChatInput {
 		this.textarea = null;
 		this.sendButton = null;
 		this.loadDocButton = null;
-		this.deepSearchButton = null;
 	}
 }

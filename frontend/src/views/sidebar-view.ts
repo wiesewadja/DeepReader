@@ -19,7 +19,6 @@ import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
-import { ContextTags } from "../components/context-tags/index.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
@@ -108,7 +107,6 @@ export class SidebarView extends ItemView {
 
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
-    private contextTags: ContextTags | null = null;
 
     // 引用卡片管理
     private quotesContainer: HTMLElement | null = null;
@@ -988,7 +986,6 @@ export class SidebarView extends ItemView {
         this.contextManager = new ContextManager({
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
-                this.contextTags?.updateDocuments(docs);
                 // 更新加载按钮的激活状态
                 this.chatInput?.setLoadBtnActive(docs.size > 0);
                 // 更新消息列表的底部间距，避免被上下文标签遮挡
@@ -1098,8 +1095,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距（延迟执行，等待 DOM 渲染完成）
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
 
         // 截取引用文本显示（前20个字符）
@@ -1159,8 +1155,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
     }
 
@@ -1175,8 +1170,7 @@ export class SidebarView extends ItemView {
 
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
-            const hasContextTags = (this.contextTags?.getElement()?.offsetHeight || 0) > 0;
-            this.updateMessageListPadding(hasContextTags);
+            this.updateMessageListPadding(false);
         });
     }
 
@@ -1353,10 +1347,6 @@ export class SidebarView extends ItemView {
             onSend: (message: string, quotes) => {
                 this.sendMessage(message, quotes);
             },
-            deepSearchMode: this.useLLMTreeSearch,
-            onDeepSearchToggle: () => {
-                this.toggleDeepSearchMode();
-            },
             app: this.app,
             onStop: () => {
                 this.stopGeneration();
@@ -1374,17 +1364,6 @@ export class SidebarView extends ItemView {
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
             section.appendChild(chatInputEl);
-        }
-
-        // 创建上下文标签组件（显示已加载的文档）
-        this.contextTags = new ContextTags({
-            onRemove: (path: string) => {
-                this.contextManager?.removeDocument(path);
-            }
-        });
-        const contextTagsEl = this.contextTags.getElement();
-        if (contextTagsEl) {
-            section.appendChild(contextTagsEl);
         }
 
         // 创建引用卡片容器（在输入框下方）
@@ -1477,8 +1456,6 @@ export class SidebarView extends ItemView {
         const modeText = this.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
         new Notice(modeText);
         log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
-        // 同步更新按钮状态
-        this.chatInput?.setDeepSearchMode(this.useLLMTreeSearch);
         // 持久化设置
         this.plugin.settings.lastDeepSearchMode = this.useLLMTreeSearch;
         await this.plugin.saveSettings();
@@ -1504,7 +1481,6 @@ export class SidebarView extends ItemView {
         if (wasDeepSearchMode) {
             log('[DeepPDF] 恢复深度思考模式');
             this.useLLMTreeSearch = true;
-            this.chatInput?.setDeepSearchMode(true);
         }
     }
 

@@ -190,6 +190,15 @@ function processPageMarkers(text: string): string {
 }
 
 /**
+ * 导航链接信息
+ */
+interface NavLink {
+    path: string;       // 相对路径，如 "书籍名/01-章节名.md"
+    displayPath: string; // 显示路径，如 "书籍名/01-章节名"（无 .md 后缀）
+    title: string;      // 章节标题
+}
+
+/**
  * 生成 Markdown 内容（支持分片）
  */
 function createMarkdownContent(
@@ -197,7 +206,9 @@ function createMarkdownContent(
     pdfName: string,
     partNum: number = 1,
     totalParts: number = 1,
-    partialText?: string
+    partialText?: string,
+    prevLink?: NavLink,
+    nextLink?: NavLink
 ): string {
     // 使用传入的部分文本，或完整文本
     const textContent = partialText || node.text;
@@ -266,14 +277,31 @@ function createMarkdownContent(
     const processedText = processPageMarkers(textContent);
     const content = processedText.trim() + "\n\n";
 
-    // 页脚链接
+    // 构建导航链接
+    const navLinks: string[] = [];
+
+    if (prevLink) {
+        navLinks.push(`[[${prevLink.displayPath}|上一页]]`);
+    }
+    if (nextLink) {
+        navLinks.push(`[[${nextLink.displayPath}|下一页]]`);
+    }
+
+    // 页脚：导航链接 + 来源
     const startPage = typeof node.start_index === 'number' ? node.start_index : parseInt(String(node.start_index));
-    const footerLink = !isNaN(startPage)
+    const isPdf = pdfName.toLowerCase().endsWith('.pdf');
+    const footerLink = (isPdf && !isNaN(startPage))
         ? `[[${pdfName}#page=${startPage}]]`
         : `[[${pdfName}]]`;
-    const footer = `---
-**来源**: ${footerLink} (第 ${node.page_range} 页)
-`;
+
+    // EPUB 只显示来源，PDF 显示来源和页数
+    const sourceText = isPdf
+        ? `**来源**: ${footerLink} (第 ${node.page_range} 页)`
+        : `**来源**: ${footerLink}`;
+
+    let footer = '---\n';
+    footer += `${navLinks.join(' | ')}\n`;
+    footer += `${sourceText}\n`;
 
     return frontMatter + title + summaryBlock + content + footer;
 }
@@ -550,34 +578,46 @@ export async function exportIndexToMarkdown(
         // 创建或更新书籍主 note 文件
         await createBookNote(app, pdfFolderName, folderPath, indexId, author, docDescription);
 
+        // 预计算所有节点的文件信息（用于导航链接）
+        interface FileInfo {
+            nodeIndex: number;
+            partNum: number;
+            totalParts: number;
+            filename: string;
+            displayPath: string;
+            title: string;
+        }
+        const allFiles: FileInfo[] = [];
+
         // 导出每个节点（支持切分）
         const fileMapping: Record<string, string> = {};  // node_id -> 主文件路径
         const blockMapping: Record<string, Record<string, string>> = {};  // node_id -> {block_id -> file_path}
         let filesCreated = 1; // 包含书籍主 note
 
+        // 第一遍：收集所有文件信息
+        const nodeFileInfos: Array<{
+            node: NodeData;
+            paragraphs: ParsedParagraph[];
+            paragraphGroups: ParsedParagraph[][];
+            safeNodeName: string;
+            displayTitle: string;
+            files: FileInfo[];
+        }> = [];
+
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
-
-            // 替换图片链接为 Obsidian 格式
             const processedText = replaceImageLinks(node.text, pdfFolderName, imageMapping);
-
-            // 解析段落并按字符数切分
             const paragraphs = parseParagraphsFromText(processedText);
             const paragraphGroups = splitParagraphsBySize(paragraphs);
             const totalParts = paragraphGroups.length;
-
-            logInfo(`[导出] 节点 ${node.node_id}: ${paragraphs.length} 个段落, 切分为 ${totalParts} 个文件`);
-
-            // 清理章节名称用于文件名
             const safeNodeName = sanitizeFilename(node.node_name, 50);
-            const nodeBlockMapping: Record<string, string> = {};
+            const displayTitle = node.section.includes('>')
+                ? node.section.split('>').pop()?.trim() || node.section
+                : node.section;
 
-            // 为每个段落组创建文件
+            const files: FileInfo[] = [];
             for (let partIdx = 0; partIdx < paragraphGroups.length; partIdx++) {
-                const paraGroup = paragraphGroups[partIdx];
                 const partNum = partIdx + 1;
-
-                // 构建文件名：第一部分不带序号，后续部分从 2 开始
                 let filename: string;
                 if (totalParts === 1) {
                     filename = `${String(i + 1).padStart(2, '0')}-${safeNodeName}.md`;
@@ -587,14 +627,77 @@ export async function exportIndexToMarkdown(
                     filename = `${String(i + 1).padStart(2, '0')}-${safeNodeName}-${partNum}.md`;
                 }
 
+                const displayPath = `${pdfFolderName}/${filename.replace(/\.md$/, '')}`;
+                const title = totalParts > 1 ? `${displayTitle} (${partNum}/${totalParts})` : displayTitle;
+
+                files.push({
+                    nodeIndex: i,
+                    partNum,
+                    totalParts,
+                    filename,
+                    displayPath,
+                    title
+                });
+            }
+
+            nodeFileInfos.push({
+                node,
+                paragraphs,
+                paragraphGroups,
+                safeNodeName,
+                displayTitle,
+                files
+            });
+
+            allFiles.push(...files);
+        }
+
+        logInfo(`[导出] 总共 ${allFiles.length} 个文件待创建`);
+
+        // 第二遍：创建文件（带导航链接）
+        let fileIndex = 0;
+        for (const info of nodeFileInfos) {
+            const { node, paragraphGroups, safeNodeName } = info;
+            const totalParts = paragraphGroups.length;
+            const nodeBlockMapping: Record<string, string> = {};
+
+            for (let partIdx = 0; partIdx < paragraphGroups.length; partIdx++) {
+                const paraGroup = paragraphGroups[partIdx];
+                const partNum = partIdx + 1;
+                const currentFileInfo = allFiles[fileIndex];
+
+                // 构建文件名（使用 currentFileInfo 中的 nodeIndex）
+                let filename: string;
+                if (totalParts === 1) {
+                    filename = `${String(currentFileInfo.nodeIndex + 1).padStart(2, '0')}-${safeNodeName}.md`;
+                } else if (partNum === 1) {
+                    filename = `${String(currentFileInfo.nodeIndex + 1).padStart(2, '0')}-${safeNodeName}.md`;
+                } else {
+                    filename = `${String(currentFileInfo.nodeIndex + 1).padStart(2, '0')}-${safeNodeName}-${partNum}.md`;
+                }
+
                 const filePath = `${folderPath}/${filename}`;
                 const relativePath = `${pdfFolderName}/${filename}`;
+
+                // 计算导航链接
+                const prevLink = fileIndex > 0 ? allFiles[fileIndex - 1] : undefined;
+                const nextLink = fileIndex < allFiles.length - 1 ? allFiles[fileIndex + 1] : undefined;
+
+                logInfo(`[导出] 文件 ${fileIndex + 1}/${allFiles.length}: ${filename}, prevLink=${prevLink?.displayPath}, nextLink=${nextLink?.displayPath}`);
 
                 // 从段落组重建文本
                 const partialText = buildTextFromParagraphGroup(paraGroup);
 
-                // 生成 Markdown 内容
-                const content = createMarkdownContent(node, pdfName, partNum, totalParts, partialText);
+                // 生成 Markdown 内容（带导航链接）
+                const content = createMarkdownContent(
+                    node,
+                    pdfName,
+                    partNum,
+                    totalParts,
+                    partialText,
+                    prevLink ? { path: prevLink.filename, displayPath: prevLink.displayPath, title: prevLink.title } : undefined,
+                    nextLink ? { path: nextLink.filename, displayPath: nextLink.displayPath, title: nextLink.title } : undefined
+                );
 
                 // 检查文件是否存在
                 const existingFile = app.vault.getAbstractFileByPath(filePath);
@@ -617,6 +720,8 @@ export async function exportIndexToMarkdown(
                 if (partNum === 1) {
                     fileMapping[node.node_id] = relativePath;
                 }
+
+                fileIndex++;
             }
 
             // 记录该节点的 block 映射
