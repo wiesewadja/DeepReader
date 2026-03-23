@@ -6,6 +6,8 @@
 /* ==================== 设置页面主容器 ==================== */
 .deeppdf-settings {
     padding: 0;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
 /* Tab 布局容器 */
@@ -63,6 +65,7 @@
 .deeppdf-settings-content {
     flex: 1;
     overflow-y: auto;
+    padding: 0 8px;
 }
 
 .deeppdf-settings-content h3 {
@@ -94,6 +97,10 @@
 
 /* ==================== 响应式适配 ==================== */
 @media (max-width: 600px) {
+    .deeppdf-settings {
+        max-width: 100%;
+    }
+
     .deeppdf-settings-nav {
         flex-wrap: wrap;
         gap: 4px;
@@ -108,6 +115,10 @@
 
     .deeppdf-settings-nav-name {
         font-size: 12px;
+    }
+
+    .deeppdf-settings-content {
+        padding: 0;
     }
 }
 
