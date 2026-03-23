@@ -159,8 +159,23 @@ export class SidebarView extends ItemView {
         log('[DeepPDF] SessionStore 初始化完成');
     }
 
+    /**
+     * 获取标准化的书籍名称（用于 session key）
+     * 统一后端 indexId 和本地书名的差异
+     */
+    private getNormalizedBookName(): string {
+        if (!this.currentPdfName) {
+            return this.currentIndexId || '';
+        }
+        // 移除扩展名
+        return this.currentPdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+    }
+
     /** 开启新会话 */
     private async startNewSession(indexId: string) {
+        // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
+        this.cancelActiveStream();
+
         this.sessionId = this.generateSessionId();
 
         // 清空前端 Agent 对话历史
@@ -171,11 +186,16 @@ export class SidebarView extends ItemView {
         const effectiveIndexId = this.crossBookMode ? '__cross_book__' : indexId;
         await this.sessionStore!.create(this.sessionId, effectiveIndexId, this.crossBookMode);
 
-        // 保存到设置（兼容旧逻辑）
+        // 保存到设置：使用标准化书名作为 key（合并后端 indexId 和本地书名）
         if (!this.plugin.settings.savedSessions) {
             this.plugin.settings.savedSessions = {};
         }
-        this.plugin.settings.savedSessions[indexId] = this.sessionId;
+        const sessionKey = this.crossBookMode ? indexId : this.getNormalizedBookName();
+        this.plugin.settings.savedSessions[sessionKey] = this.sessionId;
+        // 同时保留 indexId 映射（兼容旧逻辑）
+        if (indexId !== sessionKey) {
+            this.plugin.settings.savedSessions[indexId] = this.sessionId;
+        }
         await this.plugin.saveSettings();
 
         this.showWelcomeMessage();
@@ -237,6 +257,8 @@ export class SidebarView extends ItemView {
         this.messageList?.setCurrentPdfName('');
 
         if (options.clearMessages !== false) {
+            // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
+            this.cancelActiveStream();
             this.messageList?.clear();
         }
         if (options.showWelcome) {
@@ -867,12 +889,16 @@ export class SidebarView extends ItemView {
         // 注意：章节下载逻辑已移至 library-modal.ts
         // 这里不再重复触发导出，避免出现两次 notice
 
+        // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
+        this.cancelActiveStream();
+
         // 清空消息
         this.messageList?.clear();
 
-        // 尝试恢复会话
+        // 尝试恢复会话：优先使用标准化书名查找，兼容旧的 indexId
         const savedSessions = this.plugin.settings.savedSessions || {};
-        const savedSessionId = savedSessions[indexId];
+        const normalizedBookName = this.getNormalizedBookName();
+        let savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
 
         if (savedSessionId) {
             try {
@@ -1051,6 +1077,9 @@ export class SidebarView extends ItemView {
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
 
+                    // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
+                    this.cancelActiveStream();
+
                     // 清空跨书籍模式的消息，准备加载单书籍会话
                     this.messageList?.clear();
                 }
@@ -1109,7 +1138,7 @@ export class SidebarView extends ItemView {
         if (!this.quotesContainer) return;
 
         // 添加容器类和更新计数
-        this.quotesContainer.addClass('deeppdf-quotes-container');
+        // this.quotesContainer.addClass('deeppdf-quotes-container');
         this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
 
         // 更新消息列表底部间距（延迟执行，等待 DOM 渲染完成）
@@ -1386,7 +1415,7 @@ export class SidebarView extends ItemView {
         }
 
         // 创建引用卡片容器（在输入框下方）
-        this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
+        // this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
     }
 
     /**
@@ -1654,6 +1683,24 @@ export class SidebarView extends ItemView {
             this.chatInput?.focus();
         }
         // 移除 finally 块，改为在 handleAgentQuery 的回调中处理
+    }
+
+    /**
+     * 静默取消正在进行的流式请求（不更新 UI）
+     * 用于切换会话或清空消息列表前清理状态
+     */
+    private cancelActiveStream(): void {
+        if (this.streamController) {
+            try {
+                this.streamController.abort();
+                log('[DeepPDF] 已静默取消流式请求');
+            } catch (e) {
+                warn('[DeepPDF] 取消流式请求时出错:', e);
+            }
+            this.streamController = null;
+        }
+        this.isAiStreaming = false;
+        this.isProcessing = false;
     }
 
     /**
