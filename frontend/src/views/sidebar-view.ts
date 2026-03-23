@@ -746,17 +746,22 @@ export class SidebarView extends ItemView {
 
         // 更新顶栏显示 - 使用 this.indexes 而不是 indexManager
         const index = this.indexes.find(i => i.id === indexId);
+
+        // 确定显示名称：优先从索引获取，否则从 indexId 推断
+        let displayName: string;
+        let author: string | undefined;
+
         if (index) {
+            // 从后端索引获取信息
             const previousBook = this.currentPdfName;
             this.currentPdfName = index.pdf_name;
-            let displayName = index.pdf_name;
+            displayName = index.pdf_name;
             if (displayName.toLowerCase().endsWith('.pdf')) {
                 displayName = displayName.slice(0, -4);
             }
             if (displayName.toLowerCase().endsWith('.epub')) {
                 displayName = displayName.slice(0, -5);
             }
-            this.messageList?.setCurrentPdfName(displayName);
 
             // 记录书籍切换里程碑
             await this.initializeMilestoneRecorder();
@@ -764,23 +769,48 @@ export class SidebarView extends ItemView {
                 await this.milestoneRecorder.handleBookSwitch(displayName);
             }
 
-            // 获取作者信息：优先使用索引中的 author，其次从元数据获取
-            let author: string | undefined = index.author;
+            // 获取作者信息：优先使用索引中的 author
+            author = index.author;
             log(`[DeepPDF] 索引中的作者信息: index.author="${index.author}"`);
-            if (!author && this.readingPortal) {
-                const metadata = await this.readingPortal.getBookMetadata(displayName);
-                log(`[DeepPDF] 从元数据获取: metadata.author="${metadata?.author}"`);
-                if (metadata) {
-                    author = metadata.author;
-                }
-            }
-            log(`[DeepPDF] 最终使用的作者: author="${author}"`);
-
-            this.readingTopbar?.setCurrentBook(displayName, author);
 
             // 加载书籍封面（传入 indexId 以便从后端获取）
             this.loadBookCover(displayName, indexId);
+        } else {
+            // 后端不可用或索引列表为空时，从 indexId 推断书籍名称
+            // indexId 可能是书籍名称或路径格式
+            displayName = indexId;
+            // 处理可能的路径格式
+            if (displayName.includes('/')) {
+                displayName = displayName.split('/').pop() || displayName;
+            }
+            // 移除扩展名
+            if (displayName.toLowerCase().endsWith('.pdf')) {
+                displayName = displayName.slice(0, -4);
+            }
+            if (displayName.toLowerCase().endsWith('.epub')) {
+                displayName = displayName.slice(0, -5);
+            }
+            this.currentPdfName = displayName;
+            log(`[DeepPDF] 后端不可用，从 indexId 推断书籍名称: "${displayName}"`);
         }
+
+        // 尝试从本地元数据获取作者信息（如果还没有）
+        if (!author && this.readingPortal) {
+            try {
+                const metadata = await this.readingPortal.getBookMetadata(displayName);
+                log(`[DeepPDF] 从元数据获取: metadata.author="${metadata?.author}"`);
+                if (metadata?.author) {
+                    author = metadata.author;
+                }
+            } catch (e) {
+                log(`[DeepPDF] 获取元数据失败（后端可能不可用）`);
+            }
+        }
+        log(`[DeepPDF] 最终使用的作者: author="${author}"`);
+
+        // 更新 UI
+        this.messageList?.setCurrentPdfName(displayName);
+        this.readingTopbar?.setCurrentBook(displayName, author);
 
         // === 获取索引元数据（markdown_files）===
         try {
@@ -2356,6 +2386,11 @@ export class SidebarView extends ItemView {
     private async loadIndexes(): Promise<void> {
         if (!this.apiClient) {
             this.indexes = [];
+            // 后端不可用时，尝试恢复上次选中的书籍
+            if (this.plugin.settings.lastSelectedIndexId) {
+                log('[DeepPDF] [loadIndexes] 后端不可用，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
+                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
+            }
             return;
         }
 
@@ -2366,6 +2401,11 @@ export class SidebarView extends ItemView {
 
             if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
                 this.indexes = [];
+                // 后端返回空列表时，也尝试恢复上次选中的书籍
+                if (this.plugin.settings.lastSelectedIndexId) {
+                    log('[DeepPDF] [loadIndexes] 后端无索引，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
+                    await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
+                }
                 return;
             }
 
@@ -2403,6 +2443,11 @@ export class SidebarView extends ItemView {
             // 后端是可选的，加载索引列表失败时只记录日志
             logError('[DeepPDF] [loadIndexes] 请求失败:', error);
             this.indexes = [];
+            // 后端请求失败时，尝试恢复上次选中的书籍
+            if (this.plugin.settings.lastSelectedIndexId) {
+                log('[DeepPDF] [loadIndexes] 请求失败，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
+                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
+            }
         }
     }
 
