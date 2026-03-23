@@ -3,6 +3,7 @@ import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { DeepPDFClient } from "./api/http-client.js";
 import { serviceLog } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
+import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
@@ -310,10 +311,10 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化阅读模式服务
         const readingModeCallbacks: ReadingModeCallbacks = {
-            onQuote: (text: string) => {
+            onQuote: (metadata: QuoteMetadata) => {
                 this.activateView();
                 setTimeout(() => {
-                    this.app.workspace.trigger('deeppdf:quote-selection', text);
+                    this.app.workspace.trigger('deeppdf:quote-selection', metadata);
                 }, 100);
             },
             onExcerpt: (text: string, range: Range) => {

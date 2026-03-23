@@ -7,6 +7,7 @@ import { App } from 'obsidian';
 import { Component } from '../component';
 import { createMessage, Message, MessageData } from '../message/message';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import type { QuoteMetadata } from '../chat-input/chat-input';
 import { warn } from '../../utils/logger.js';
 import { QuestionMinimap } from '../question-minimap';
 
@@ -63,7 +64,7 @@ export interface MessageCallbacks {
 	/** 保存摘录 */
 	onExcerpt?: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	/** 引用文字到对话 */
-	onQuote?: (text: string) => void;
+	onQuote?: (metadata: QuoteMetadata) => void;
 	/** 删除消息对（删除 AI 回复时同时删除对应的用户问题） */
 	onDelete?: (messageId: string) => void;
 }
@@ -174,8 +175,8 @@ export class MessageList extends Component {
 			onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) => {
 				this.callbacks.onExcerpt?.(messageData.id, content, metadata);
 			},
-			onQuote: (text: string) => {
-				this.callbacks.onQuote?.(text);
+			onQuote: (metadata: QuoteMetadata) => {
+				this.callbacks.onQuote?.(metadata);
 			},
 			onDelete: () => {
 				this.callbacks.onDelete?.(messageData.id);

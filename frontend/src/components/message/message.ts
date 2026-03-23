@@ -5,6 +5,7 @@
 
 import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import type { QuoteMetadata } from '../chat-input/chat-input';
 import { SelectionMenu } from '../excerpt/selection-menu';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
 
@@ -660,7 +661,7 @@ export class AIMessage extends Message {
 	private onCopy?: () => void;
 	private onQuestionClick?: (question: string) => void;
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
-	private onQuote?: (text: string) => void;
+	private onQuote?: (metadata: QuoteMetadata) => void;
 	private onDelete?: () => void;
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
@@ -683,7 +684,7 @@ export class AIMessage extends Message {
 			onCopy?: () => void;
 			onQuestionClick?: (question: string) => void;
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
-			onQuote?: (text: string) => void;
+			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
 			app?: App;
 		}
@@ -1324,9 +1325,9 @@ export class AIMessage extends Message {
 					conversationId: this.data.conversationId,
 					messageId: this.data.id,
 					app: this.app!,
-					onQuote: (text: string) => {
+					onQuote: (metadata: QuoteMetadata) => {
 						if (this.onQuote) {
-							this.onQuote(text);
+							this.onQuote(metadata);
 						}
 					}
 				});
@@ -1340,9 +1341,9 @@ export class AIMessage extends Message {
 					conversationId: this.data.conversationId,
 					messageId: this.data.id,
 					app: this.app!,
-					onQuote: (text: string) => {
+					onQuote: (metadata: QuoteMetadata) => {
 						if (this.onQuote) {
-							this.onQuote(text);
+							this.onQuote(metadata);
 						}
 					}
 				};
@@ -1392,7 +1393,7 @@ export function createMessage(
 		onCopy?: () => void;
 		onQuestionClick?: (question: string) => void;
 		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
-		onQuote?: (text: string) => void;
+		onQuote?: (metadata: QuoteMetadata) => void;
 		onDelete?: () => void;
 		app?: App;
 	}

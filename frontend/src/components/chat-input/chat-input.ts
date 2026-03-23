@@ -13,7 +13,27 @@ import { Icons } from '../../utils/icons.js';
 import { FileSuggest } from '../file-suggest/file-suggest.js';
 
 /**
- * 引用数据结构
+ * 引用元数据（从阅读模式传递）
+ */
+export interface QuoteMetadata {
+	/** 选中的文本内容 */
+	text: string;
+	/** 来源文件路径 */
+	sourcePath?: string;
+	/** 来源文件名（不含路径） */
+	source?: string;
+	/** block_id（如 ^ch1-p3） */
+	blockId?: string;
+	/** 章节 node_id */
+	nodeId?: string;
+	/** 所属标题 */
+	heading?: string;
+	/** 完整标题路径（如 ["第一章", "1.1 什么是投资"]） */
+	headingPath?: string[];
+}
+
+/**
+ * 引用数据结构（存储在 quotes 数组中）
  */
 export interface QuoteItem {
 	/** 唯一标识 */
@@ -22,6 +42,16 @@ export interface QuoteItem {
 	text: string;
 	/** 来源文件名（可选） */
 	source?: string;
+	/** 来源文件路径 */
+	sourcePath?: string;
+	/** block_id（如 ^ch1-p3） */
+	blockId?: string;
+	/** 章节 node_id */
+	nodeId?: string;
+	/** 所属标题 */
+	heading?: string;
+	/** 完整标题路径 */
+	headingPath?: string[];
 }
 
 /**
@@ -687,12 +717,13 @@ export class ChatInput {
 	 * 设置加载按钮的激活状态
 	 */
 	setLoadBtnActive(active: boolean): void {
+		this.isDocLoaded = active;  // 同步更新内部状态
 		if (!this.loadDocButton) return;
 		if (active) {
 			this.loadDocButton.classList.add('active');
 			// 有横线的文档图标（表示已加载内容）
 			this.loadDocButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>`;
-			this.loadDocButton.setAttribute('aria-label', '文档已加载到上下文');
+			this.loadDocButton.setAttribute('aria-label', '从上下文移除文档');
 		} else {
 			this.loadDocButton.classList.remove('active');
 			// 空白文档图标

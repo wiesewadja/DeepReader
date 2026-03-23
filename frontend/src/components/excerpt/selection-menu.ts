@@ -7,6 +7,7 @@
 import { App } from 'obsidian';
 import { ExcerptModal } from './excerpt-modal';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import type { QuoteMetadata } from '../chat-input/chat-input';
 
 // 与 SelectionToolbar 一致的图标
 const Icons = {
@@ -45,7 +46,7 @@ export interface SelectionMenuOptions {
 	/** 应用实例 */
 	app: App;
 	/** 引用回调（添加到对话上下文） */
-	onQuote?: (text: string) => void;
+	onQuote?: (metadata: QuoteMetadata) => void;
 	/** 高亮保存回调（可选，传入则保存高亮） */
 	onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
 }
@@ -127,10 +128,16 @@ export class SelectionMenu {
 
 	/**
 	 * 处理引用点击
+	 * 从 AI 回复中选中的文字，包装为 QuoteMetadata
 	 */
 	private handleQuote(): void {
 		if (this.options.onQuote) {
-			this.options.onQuote(this.options.selectedText);
+			// 从 AI 回复中选中，只有纯文本，包装为简单的 QuoteMetadata
+			const metadata: QuoteMetadata = {
+				text: this.options.selectedText,
+				source: this.options.sourcePdf,
+			};
+			this.options.onQuote(metadata);
 		}
 		this.hide();
 	}

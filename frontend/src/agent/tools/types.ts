@@ -4,6 +4,10 @@
 
 import type { App } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
+import type { QuoteItem } from '../../components/chat-input/chat-input.js';
+
+// 重新导出 QuoteItem 供其他模块使用
+export type { QuoteItem } from '../../components/chat-input/chat-input.js';
 
 /**
  * 阅读进度信息
@@ -57,6 +61,8 @@ export interface ToolContext {
   docDescription?: string;
   /** 本地工具缓存（跨工具复用，避免重复构建索引） */
   localCache?: import('./local/types.js').LocalToolCache;
+  /** 用户引用的结构化数据（选中文本时附加的上下文） */
+  quotes?: QuoteItem[];
 }
 
 /**

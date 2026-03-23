@@ -7,9 +7,10 @@ import { App, TFile, EventRef, MarkdownView } from 'obsidian';
 import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
+import type { QuoteMetadata } from '../components/chat-input/chat-input.js';
 
 export interface ReadingModeCallbacks {
-    onQuote: (text: string) => void;
+    onQuote: (metadata: QuoteMetadata) => void;
     onExcerpt: (text: string, range: Range) => void;  // 添加 range 参数
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;

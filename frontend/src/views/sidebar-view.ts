@@ -902,6 +902,33 @@ export class SidebarView extends ItemView {
         } else {
             this.startNewSession(indexId);
         }
+
+        // 自动加载当前阅读的文档到上下文
+        await this.autoLoadCurrentReadingDoc();
+    }
+
+    /**
+     * 自动加载当前阅读的文档到上下文
+     * 当书籍处于阅读状态时，如果当前活跃文件是该书籍的章节，则自动加载
+     */
+    private async autoLoadCurrentReadingDoc(): Promise<void> {
+        if (!this.contextManager || !this.currentPdfName) return;
+
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== 'md') return;
+
+        // 检查当前文件是否属于正在阅读的书籍
+        const bookPath = `DeepReader/${this.currentPdfName}/`;
+        if (!activeFile.path.startsWith(bookPath)) return;
+
+        // 排除书籍主文件（只加载章节文件）
+        if (activeFile.path === `${bookPath}${this.currentPdfName}.md`) return;
+
+        // 检查是否已加载
+        if (this.contextManager.hasDocument(activeFile.path)) return;
+
+        // 自动加载当前章节到上下文
+        await this.contextManager.loadByPath(activeFile.path, 'current');
     }
 
     /**
@@ -1021,8 +1048,10 @@ export class SidebarView extends ItemView {
         this.contextManager = new ContextManager({
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
-                // 更新加载按钮的激活状态
-                this.chatInput?.setLoadBtnActive(docs.size > 0);
+                // 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
+                const activeFile = this.app.workspace.getActiveFile();
+                const isCurrentDocLoaded = activeFile ? docs.has(activeFile.path) : false;
+                this.chatInput?.setLoadBtnActive(isCurrentDocLoaded);
                 // 更新消息列表的底部间距，避免被上下文标签遮挡
                 this.updateMessageListPadding(docs.size > 0);
             }
@@ -1076,9 +1105,9 @@ export class SidebarView extends ItemView {
 
         // 监听阅读模式引用事件
         this.registerEvent(
-            workspace.on("deeppdf:quote-selection", async (text: string) => {
+            workspace.on("deeppdf:quote-selection", async (metadata: import("../components/chat-input/chat-input.js").QuoteMetadata) => {
                 log("[DeepPDF] Received quote-selection event");
-                this.handleQuoteSelection(text);
+                this.handleQuoteSelection(metadata);
             })
         );
 
@@ -1088,30 +1117,52 @@ export class SidebarView extends ItemView {
                 this.handleExcerptSelection(text, range);
             })
         );
+
+        // 监听文件切换事件，更新文档加载按钮状态
+        this.registerEvent(
+            this.app.workspace.on("active-leaf-change", () => {
+                if (this.contextManager) {
+                    const activeFile = this.app.workspace.getActiveFile();
+                    const isLoaded = activeFile ? this.contextManager.hasDocument(activeFile.path) : false;
+                    this.chatInput?.setLoadBtnActive(isLoaded);
+                }
+            })
+        );
     }
 
     /**
      * 处理引用选中文字
-     * 在消息列表顶部添加引用卡片
+     * 在消息列表顶部添加引用卡片，并将格式化文本插入输入框
      */
-    private handleQuoteSelection(text: string): void {
-        const activeFile = this.app.workspace.getActiveFile();
-        const source = activeFile?.basename || undefined;
+    private handleQuoteSelection(metadata: import("../components/chat-input/chat-input.js").QuoteMetadata): void {
+        // 1. 格式化引用文本并插入输入框
+        const location = metadata.headingPath?.join(' > ') || metadata.heading || metadata.source || '未知来源';
+        const formattedQuote = `> ${metadata.text}\n— ${location}\n\n`;
 
-        // 创建引用数据
+        // 获取当前输入框内容
+        const currentValue = this.chatInput?.getValue() || '';
+        // 将引用插入到输入框开头
+        this.chatInput?.setValue(formattedQuote + currentValue);
+
+        // 2. 创建引用数据（保留结构化元数据）
         const quote: QuoteItem = {
             id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            text: text.trim(),
-            source
+            text: metadata.text.trim(),
+            source: metadata.source,
+            sourcePath: metadata.sourcePath,
+            blockId: metadata.blockId,
+            nodeId: metadata.nodeId,
+            heading: metadata.heading,
+            headingPath: metadata.headingPath
         };
 
-        // 添加到引用列表
+        // 3. 添加到引用列表
         this.quotes.push(quote);
 
-        // 渲染引用卡片
+        // 4. 渲染引用卡片
         this.renderQuoteCard(quote);
 
-        // 聚焦输入框
+        // 5. 聚焦输入框
         this.chatInput?.focus();
     }
 
@@ -1352,8 +1403,8 @@ export class SidebarView extends ItemView {
             onExcerpt: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => {
                 this.handleExcerpt(messageId, content, metadata);
             },
-            onQuote: (text: string) => {
-                this.handleQuoteSelection(text);
+            onQuote: (metadata: import("../components/chat-input/chat-input.js").QuoteMetadata) => {
+                this.handleQuoteSelection(metadata);
             },
             onDelete: (messageId: string) => {
                 this.handleDeleteMessagePair(messageId);
@@ -1390,6 +1441,9 @@ export class SidebarView extends ItemView {
             },
             onLoadCurrentDoc: async () => {
                 await this.loadCurrentDocument();
+            },
+            onUnloadCurrentDoc: async () => {
+                await this.unloadCurrentDocument();
             }
         });
 
@@ -1412,6 +1466,18 @@ export class SidebarView extends ItemView {
         if (doc) {
             // new Notice(`已加载: ${doc.name}`);
         }
+    }
+
+    /**
+     * 从上下文卸载当前文档
+     */
+    private async unloadCurrentDocument(): Promise<void> {
+        if (!this.contextManager) return;
+
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) return;
+
+        this.contextManager.removeDocument(activeFile.path);
     }
 
     /**
@@ -1769,6 +1835,8 @@ export class SidebarView extends ItemView {
                 },
                 // 添加全书摘要（用于系统提示）
                 docDescription: this.currentDocDescription || undefined,
+                // 添加结构化引用数据（用于工具优先搜索）
+                quotes: quotes,
             };
 
             // 加载阅读进度
@@ -1815,8 +1883,13 @@ export class SidebarView extends ItemView {
             let userMessage = query;
 
             // 添加引用内容（用户主动附加的上下文）
+            // 使用结构化元数据格式化引用，包含章节路径信息
             if (quotes && quotes.length > 0) {
-                const quotesText = quotes.map(q => `> ${q.text}\n> — ${q.source || '引用'}`).join('\n\n');
+                const quotesText = quotes.map(q => {
+                    // 优先使用完整的标题路径，其次使用单个标题，最后使用来源
+                    const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
+                    return `> ${q.text}\n> — ${location}`;
+                }).join('\n\n');
                 userMessage = `${userMessage}\n\n---\n**引用内容：**\n${quotesText}`;
             }
 

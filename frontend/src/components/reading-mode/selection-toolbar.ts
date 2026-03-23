@@ -5,6 +5,7 @@
 
 import { App, Notice } from 'obsidian';
 import { uiLog } from '../../utils/logger.js';
+import type { QuoteMetadata } from '../chat-input/chat-input.js';
 
 // 极简图标（与 AI 回复气泡图标一致）
 const Icons = {
@@ -31,7 +32,7 @@ export type HighlightColorId = typeof HIGHLIGHT_COLORS[number]['id'];
 
 export interface SelectionToolbarOptions {
     app: App;
-    onQuote: (text: string) => void;
+    onQuote: (metadata: QuoteMetadata) => void;
     onExcerpt: (text: string, range: Range) => void;  // 添加 range 参数
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;
@@ -420,13 +421,82 @@ export class SelectionToolbar {
 
         switch (action) {
             case 'quote':
-                this.options.onQuote(text);
+                // 获取引用元数据
+                const metadata = this.extractQuoteMetadata(text);
+                this.options.onQuote(metadata);
                 break;
             case 'excerpt':
                 // 传递选中的 range 给回调
                 this.options.onExcerpt(text, this.savedRange!);
                 break;
         }
+    }
+
+    /**
+     * 从选中文本提取引用元数据
+     * 包括 block_id、node_id、章节标题等
+     */
+    private extractQuoteMetadata(text: string): QuoteMetadata {
+        const metadata: QuoteMetadata = { text };
+
+        // 1. 获取当前活动文件
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile) {
+            metadata.sourcePath = activeFile.path;
+            metadata.source = activeFile.basename;
+
+            // 2. 从 frontmatter 获取 node_id 和 section
+            const cache = this.app.metadataCache.getFileCache(activeFile);
+            const frontmatter = cache?.frontmatter;
+            if (frontmatter) {
+                metadata.nodeId = String(frontmatter.node_id || '');
+                const section = String(frontmatter.section || '');
+                if (section) {
+                    metadata.headingPath = section.split('>').map(s => s.trim()).filter(Boolean);
+                    metadata.heading = metadata.headingPath[metadata.headingPath.length - 1] || '';
+                }
+            }
+        }
+
+        // 3. 从 DOM 中获取 block_id
+        if (this.savedRange) {
+            const blockId = this.findBlockIdInRange(this.savedRange);
+            if (blockId) {
+                metadata.blockId = blockId;
+            }
+        }
+
+        return metadata;
+    }
+
+    /**
+     * 从选区中查找 block_id
+     * block_id 通常在段落末尾，格式为 ^xxx
+     */
+    private findBlockIdInRange(range: Range): string | undefined {
+        // 从选区开始位置向上查找包含 block_id 的段落
+        let container: Node | null = range.startContainer;
+
+        while (container && container !== document.body) {
+            if (container instanceof HTMLElement) {
+                // 检查元素内部是否有 ^block_id
+                const textContent = container.textContent || '';
+                const blockIdMatch = textContent.match(/\^([a-zA-Z0-9_-]+)/);
+                if (blockIdMatch) {
+                    return `^${blockIdMatch[1]}`;
+                }
+            }
+            container = container.parentNode;
+        }
+
+        // 备选：检查选区文本本身是否包含 block_id
+        const selectedText = range.toString();
+        const match = selectedText.match(/\^([a-zA-Z0-9_-]+)/);
+        if (match) {
+            return `^${match[1]}`;
+        }
+
+        return undefined;
     }
 
     /**
