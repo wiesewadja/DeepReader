@@ -648,7 +648,7 @@ export default class DeepPDFPlugin extends Plugin {
      */
     private async ensureInitialization(): Promise<void> {
         const DEEPPDF_DIR = "DeepReader";
-        const BOOK_MANAGEMENT_FILE = "📚 我的书架.md";
+        const BOOK_MANAGEMENT_FILE = "我的书架.md";
 
         try {
             // 1. 确保 DeepReader 目录存在
@@ -805,7 +805,7 @@ export default class DeepPDFPlugin extends Plugin {
 deeppdf_book_management: true
 ---
 
-# 📚 我的书架
+# 我的书架
 
 > 管理所有已上传的书籍，支持书单分类和标签过滤。
 
@@ -864,13 +864,6 @@ views:
 
 > 💡 点击「对话」可开始与 AI 讨论，在表格中直接编辑「书单」和「标签」列即可分类书籍
 
-
----
-
-## 📊 快速操作
-
-- [打开 DeepPDF 侧边栏](obsidian://open?vault=${vaultName}&command=deepreader:open-deepreader-sidebar)
-- [跨书籍搜索（全部）](obsidian://deepreader-search)
 `;
     }
 
