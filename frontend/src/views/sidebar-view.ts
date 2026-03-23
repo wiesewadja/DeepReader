@@ -903,9 +903,10 @@ export class SidebarView extends ItemView {
     public async selectBookByName(bookName: string): Promise<void> {
         log('[DeepPDF] Selecting book by name:', bookName);
 
-        // 在已加载的索引列表中查找
+        // 标准化书名（移除扩展名）
         const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
+        // 在已加载的索引列表中查找
         const index = this.indexes.find(idx => {
             const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
             return idxName === normalizedBookName || idx.pdf_name === bookName;
@@ -920,7 +921,10 @@ export class SidebarView extends ItemView {
             log('[DeepPDF] Found index by name:', index.id);
             await this.selectIndex(index.id);
         } else {
-            log('[DeepPDF] Book not found in index list:', bookName);
+            // 后端不可用或索引列表为空时，直接用书名作为 indexId
+            // selectIndex 现在可以处理这种情况
+            log('[DeepPDF] Book not found in index list, using book name as indexId:', normalizedBookName);
+            await this.selectIndex(normalizedBookName);
         }
     }
 
