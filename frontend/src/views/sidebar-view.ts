@@ -840,24 +840,6 @@ export class SidebarView extends ItemView {
         this.messageList?.setCurrentPdfName(displayName);
         this.readingTopbar?.setCurrentBook(displayName, author);
 
-        // === 获取索引元数据（markdown_files）===
-        try {
-            if (this.apiClient) {
-                const indexStatus = await this.apiClient.getIndexStatus(indexId);
-                if (indexStatus.markdown_files) {
-                    this.currentMarkdownFiles = indexStatus.markdown_files;
-                    log(`[DeepPDF] 获取到 ${Object.keys(this.currentMarkdownFiles).length} 个 Markdown 文件映射`);
-                } else {
-                    // 如果没有 markdown_files， 清空映射
-                    this.currentMarkdownFiles = {};
-                    log(`[DeepPDF] 索引 ${indexId} 没有 markdown_files 映射，已清空`);
-                }
-            }
-        } catch (e) {
-            logError('[DeepPDF] 获取索引元数据失败:', e);
-            this.currentMarkdownFiles = {};
-        }
-
         // === 从本地书籍笔记读取全书摘要 ===
         try {
             // 书籍笔记路径：DeepReader/{书名}/{书名}.md
