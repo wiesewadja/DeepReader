@@ -1,6 +1,6 @@
 /**
  * DeepPDF 阅读顶栏组件
- * 极简风格：左侧书籍封面+书名，右侧操作按钮
+ * 极简风格：左侧书籍封面+书名，右侧在线书库和设置按钮
  */
 
 import { Component } from '../component.js';
@@ -9,9 +9,7 @@ import { uiLog as log } from '../../utils/logger.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
-    onNewChat?: () => void;
     onOpenSettings?: () => void;
-    onSystemUpload?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -19,18 +17,11 @@ export class ReadingTopbar extends Component {
     private bookCoverEl: HTMLElement | null = null;
     private bookTitleEl: HTMLElement | null = null;
     private bookAuthorEl: HTMLElement | null = null;
-    private dropdownMenu: HTMLElement | null = null;
-    private isDropdownOpen: boolean = false;
-    private handleGlobalClick: (e: MouseEvent) => void;
-    private hiddenFileInput: HTMLInputElement | null = null;
 
     constructor(options: ReadingTopbarOptions) {
         super();
         this.options = options;
         this.el = this.render();
-
-        this.handleGlobalClick = this.handleGlobalClickImpl.bind(this);
-        document.addEventListener('click', this.handleGlobalClick);
     }
 
     render(): HTMLElement {
@@ -66,100 +57,35 @@ export class ReadingTopbar extends Component {
 
         container.appendChild(leftSection);
 
-        // 右侧：操作按钮
+        // 右侧：操作按钮（在线书库 + 设置）
         const rightSection = document.createElement('div');
         rightSection.className = 'deeppdf-topbar-right';
 
-        // 操作按钮（简约三点图标)
-        const actionBtn = document.createElement('button');
-        actionBtn.className = 'deeppdf-topbar-action-btn';
-        actionBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>`;
-        actionBtn.addEventListener('click', (e) => {
+        // 在线书库按钮
+        const libraryBtn = document.createElement('button');
+        libraryBtn.className = 'deeppdf-topbar-action-btn';
+        libraryBtn.title = '在线书库';
+        libraryBtn.innerHTML = Icons.library;
+        libraryBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.toggleDropdown();
+            this.options.onOpenLibrary?.();
         });
+        rightSection.appendChild(libraryBtn);
 
-        // 下拉菜单
-        this.dropdownMenu = document.createElement('div');
-        this.dropdownMenu.className = 'deeppdf-topbar-dropdown';
-
-        const menuItems = [
-            { icon: Icons.library, label: '在线书库', action: () => this.options.onOpenLibrary?.() },
-            // { icon: Icons.upload, label: '从系统上传', action: () => this.triggerSystemUpload() },
-            { icon: Icons.messageSquare, label: '新对话', action: () => this.options.onNewChat?.() },
-            { divider: true },
-            { icon: Icons.settings, label: '设置', action: () => this.options.onOpenSettings?.() }
-        ];
-
-        menuItems.forEach(item => {
-            if ('divider' in item && item.divider) {
-                const divider = document.createElement('div');
-                divider.className = 'deeppdf-dropdown-divider';
-                this.dropdownMenu?.appendChild(divider);
-            } else {
-                const menuItem = document.createElement('div');
-                menuItem.className = 'deeppdf-dropdown-item';
-                menuItem.innerHTML = `${item.icon} ${item.label}`;
-                menuItem.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.closeDropdown();
-                    item.action?.();
-                });
-                this.dropdownMenu?.appendChild(menuItem);
-            }
+        // 设置按钮
+        const settingsBtn = document.createElement('button');
+        settingsBtn.className = 'deeppdf-topbar-action-btn';
+        settingsBtn.title = '设置';
+        settingsBtn.innerHTML = Icons.settings;
+        settingsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onOpenSettings?.();
         });
+        rightSection.appendChild(settingsBtn);
 
-        rightSection.appendChild(actionBtn);
-        rightSection.appendChild(this.dropdownMenu);
         container.appendChild(rightSection);
 
         return container;
-    }
-
-    private handleGlobalClickImpl(e: MouseEvent): void {
-        if (this.isDropdownOpen && this.el && !this.el.contains(e.target as Node)) {
-            this.closeDropdown();
-        }
-    }
-
-    private toggleDropdown(): void {
-        this.isDropdownOpen = !this.isDropdownOpen;
-        if (this.dropdownMenu) {
-            if (this.isDropdownOpen) {
-                this.dropdownMenu.classList.add('open');
-            } else {
-                this.dropdownMenu.classList.remove('open');
-            }
-        }
-    }
-
-    private closeDropdown(): void {
-        this.isDropdownOpen = false;
-        if (this.dropdownMenu) {
-            this.dropdownMenu.classList.remove('open');
-        }
-    }
-
-    /**
-     * 触发系统文件上传
-     */
-    private triggerSystemUpload(): void {
-        // 创建隐藏的文件输入
-        if (!this.hiddenFileInput) {
-            this.hiddenFileInput = document.createElement('input');
-            this.hiddenFileInput.type = 'file';
-            this.hiddenFileInput.accept = '.pdf,.epub';
-            this.hiddenFileInput.style.display = 'none';
-            this.hiddenFileInput.addEventListener('change', () => {
-                if (this.hiddenFileInput?.files?.length) {
-                    this.options.onSystemUpload?.();
-                }
-            });
-            document.body.appendChild(this.hiddenFileInput);
-        }
-
-        // 触发文件选择
-        this.hiddenFileInput.click();
     }
 
     /**
@@ -173,7 +99,7 @@ export class ReadingTopbar extends Component {
             if (displayName.toLowerCase().endsWith('.pdf')) {
                 displayName = displayName.slice(0, -4);
             }
-            if (displayName.toLowerCase().endsWith('.php')) {
+            if (displayName.toLowerCase().endsWith('.epub')) {
                 displayName = displayName.slice(0, -5);
             }
             this.bookTitleEl.textContent = displayName;
@@ -234,13 +160,9 @@ export class ReadingTopbar extends Component {
     }
 
     destroy(): void {
-        if (this.handleGlobalClick) {
-            document.removeEventListener('click', this.handleGlobalClick);
-        }
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
-        this.dropdownMenu = null;
         super.destroy();
     }
 }

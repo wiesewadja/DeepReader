@@ -940,16 +940,14 @@ export class SidebarView extends ItemView {
     private createReadingTopbar(container: HTMLElement) {
         this.readingTopbar = new ReadingTopbar({
             onOpenLibrary: () => this.openLibraryModal(),
-            onNewChat: () => this.handleNewChat(),
             onOpenSettings: () => {
                 // 打开设置并定位到 DeepPDF 插件
                 const setting = (this.app as any).setting;
                 if (setting) {
                     setting.open();
-                    setting.openTabById('deeppdf');
+                    setting.openTabById('deepreader');
                 }
             },
-            onSystemUpload: () => this.handleSystemUpload(),
         });
 
         const el = this.readingTopbar.getElement();
