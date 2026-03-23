@@ -36,8 +36,8 @@ export interface ExportResult {
 /**
  * Markdown 切分配置
  */
-const MARKDOWN_CHUNK_TARGET = 4000;  // 目标字符数
-const MARKDOWN_CHUNK_MAX = 6000;     // 最大字符数
+const MARKDOWN_CHUNK_TARGET = 3000;  // 目标字符数
+const MARKDOWN_CHUNK_MAX = 3500;     // 最大字符数
 
 /**
  * 段落数据结构（从文本中解析）
@@ -49,20 +49,21 @@ interface ParsedParagraph {
 }
 
 /**
- * 从带 block_id 的文本中解析段落
- * 格式：普通段落 text ^blockId 或 ### 标题 ^blockId
+ * 从文本中解析段落，并自动生成 block_id
+ * 如果文本已有 ^blockId，保留它；否则自动生成
  */
-function parseParagraphsFromText(text: string): ParsedParagraph[] {
+function parseParagraphsFromText(text: string, nodeId: string): ParsedParagraph[] {
     const paragraphs: ParsedParagraph[] = [];
     // 按双换行分割段落
     const blocks = text.split(/\n\n+/);
 
-    for (const block of blocks) {
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
         if (!block.trim()) continue;
 
-        // 匹配 block_id：格式为空格后跟 ^xxx
+        // 匹配已有的 block_id：格式为空格后跟 ^xxx
         const blockIdMatch = block.match(/\s*\^([a-zA-Z0-9_-]+)\s*$/);
-        const blockId = blockIdMatch ? blockIdMatch[1] : '';
+        let blockId = blockIdMatch ? blockIdMatch[1] : '';
 
         // 移除 block_id 标记得到纯文本
         let cleanText = blockIdMatch ? block.replace(blockIdMatch[0], '') : block;
@@ -76,6 +77,11 @@ function parseParagraphsFromText(text: string): ParsedParagraph[] {
         // 移除标题前缀（如果有）
         if (isHeading) {
             cleanText = cleanText.replace(/^###\s*/, '');
+        }
+
+        // 如果没有 block_id，自动生成
+        if (!blockId) {
+            blockId = `block-${nodeId}-p${i.toString().padStart(3, '0')}`;
         }
 
         paragraphs.push({
@@ -607,7 +613,7 @@ export async function exportIndexToMarkdown(
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
             const processedText = replaceImageLinks(node.text, pdfFolderName, imageMapping);
-            const paragraphs = parseParagraphsFromText(processedText);
+            const paragraphs = parseParagraphsFromText(processedText, node.node_id);
             const paragraphGroups = splitParagraphsBySize(paragraphs);
             const totalParts = paragraphGroups.length;
             const safeNodeName = sanitizeFilename(node.node_name, 50);

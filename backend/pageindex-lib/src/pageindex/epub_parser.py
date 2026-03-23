@@ -369,7 +369,16 @@ class EpubParser:
             >>> print(text)  # Markdown 格式，保留链接
         """
         # ============================================================
-        # 步骤1: 如果启用图片提取，先替换图片路径
+        # 步骤1: 预处理 HTML - 合并相邻的相同强调标签
+        # ============================================================
+        # 某些 EPUB（如 calibre 转换的）会将每个字符单独包裹在 <b> 或 <i> 标签中
+        # 例如：<b>掌</b><b>控</b><b>你</b><b>的</b>
+        # 这会导致 html2text 生成 **掌****控****你****的**（每个字符都被加粗）
+        # 需要合并这些相邻的相同标签为：<b>掌控你的</b>
+        html = self._merge_adjacent_emphasis_tags(html)
+
+        # ============================================================
+        # 步骤2: 如果启用图片提取，先替换图片路径
         # ============================================================
         if self.extract_images and self.image_map:
             html = self._replace_image_src(html, file_name)
@@ -439,6 +448,57 @@ class EpubParser:
                 logger.warning(f"[图片路径] 未找到映射: {src} (解析为: {actual_path})")
 
         return str(soup)
+
+    def _merge_adjacent_emphasis_tags(self, html: str) -> str:
+        """
+        合并相邻的相同强调标签
+
+        某些 EPUB（特别是 calibre 转换的）会将每个字符单独包裹在强调标签中：
+            <b>掌</b><b>控</b><b>你</b><b>的</b>
+        这会导致 html2text 生成：
+            **掌****控****你****的**
+        本方法将其合并为：
+            <b>掌控你的</b>
+
+        处理的标签包括：<b>, <strong>, <i>, <em>, <u>
+
+        参数:
+            html: 原始 HTML 内容
+
+        返回:
+            合并后的 HTML 内容
+        """
+        # 需要处理的强调标签列表
+        tags_to_merge = ['b', 'strong', 'i', 'em', 'u']
+
+        # 使用正则表达式合并相邻的相同标签
+        # 模式：匹配 <tag>内容</tag><tag>内容</tag>... 并合并为 <tag>内容内容...</tag>
+        for tag in tags_to_merge:
+            # 匹配模式：<tag>...</tag> 紧跟着 <tag>...</tag>（中间可能有空白）
+            # 捕获组：(开标签1)(内容1)(闭标签1)(开标签2)(内容2)(闭标签2)
+            # 替换为：(开标签1)(内容1+内容2)(闭标签2) - 合并内容，跳过中间的标签边界
+            pattern = rf'(<{tag}(?:\s[^>]*)?>)(.*?)(</{tag}>)\s*(<{tag}(?:\s[^>]*)?>)(.*?)(</{tag}>)'
+
+            # 循环替换，直到没有更多可合并的标签
+            prev_html = None
+            iteration = 0
+            while prev_html != html:
+                prev_html = html
+                iteration += 1
+                # 替换为：开标签1 + 内容1 + 内容2 + 闭标签2
+                # 跳过中间的 </tag><tag>
+                html = re.sub(
+                    pattern,
+                    r'\1\2\5\6',  # <tag>c1</tag><tag>c2</tag> -> <tag>c1c2</tag>
+                    html,
+                    flags=re.DOTALL
+                )
+                # 安全限制：最多迭代 100 次
+                if iteration > 100:
+                    logger.warning(f"[EPUB解析] 标签合并迭代次数超过限制 ({iteration})")
+                    break
+
+        return html
 
     def _post_process_markdown(self, text: str) -> str:
         """
@@ -539,7 +599,8 @@ class EpubParser:
         # 尝试美化文件名（如 "01_04" -> "章节 01_04"）
         if title.replace("_", "").replace("-", "").replace("/", "").isalnum():
             # 这是一个不太有意义的文件名，尝试从内容中提取前几个字作为摘要
-            text_content = self._html_to_text(html, file_name)
+            # 直接从 HTML 中提取纯文本，避免 Markdown 格式符号
+            text_content = self._extract_plain_text(html)
             if text_content:
                 # 取前50个字符作为摘要标题
                 preview = text_content[:50].strip()
@@ -547,6 +608,25 @@ class EpubParser:
                     return f"{preview}..."
 
         return title
+
+    def _extract_plain_text(self, html: str) -> str:
+        """
+        从 HTML 中提取纯文本（不含任何 Markdown 格式）
+
+        用于标题提取等场景，只需要纯文本内容。
+
+        参数:
+            html: HTML 内容字符串
+
+        返回:
+            纯文本内容
+        """
+        soup = BeautifulSoup(html, 'html.parser')
+        # 获取所有文本，使用分隔符连接
+        text = soup.get_text(separator=' ', strip=True)
+        # 清理多余空白
+        text = ' '.join(text.split())
+        return text
 
 
 # ============================================================

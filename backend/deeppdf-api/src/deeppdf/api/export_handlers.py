@@ -18,10 +18,6 @@ from ..services.cover_extractor import (
 )
 from ..services.text_formatter import TextFormatter
 from ..utils.llm_client import get_llm_client
-from ..services.markdown_exporter import (
-    fetch_paragraphs_from_chroma,
-    build_text_from_paragraphs,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +96,8 @@ async def export_index_data(
     """
     导出索引的节点数据,供前端生成 Markdown
 
+    直接从 tree_structure 获取数据（EPUB 格式优先），保持原始标题
+
     Args:
         index_id: 索引 ID
 
@@ -127,48 +125,25 @@ async def export_index_data(
         # 创建基于规则的格式化器（不使用 LLM）
         formatter = TextFormatter()
 
-        # --- 从 ChromaDB 获取带 block_id 的段落数据 ---
-        chroma_path = str(storage_dir / "chroma")
-        paragraphs_by_node = await asyncio.to_thread(
-            fetch_paragraphs_from_chroma, index_id, chroma_path
-        )
-        if paragraphs_by_node:
-            logger.info(f"[导出] 从 ChromaDB 获取到 {sum(len(v) for v in paragraphs_by_node.values())} 个段落")
+        # 优先使用 tree_structure（EPUB 格式）
+        tree_structure = metadata.get("tree_structure", {})
+        tree_nodes = tree_structure.get("structure", [])
 
-        # 提取节点数据
+        # 如果没有 tree_structure，兼容旧的 sections 格式
+        use_tree_structure = bool(tree_nodes)
+        if not tree_nodes:
+            tree_nodes = metadata.get("sections", [])
+
         nodes = []
-        tree_structure = metadata.get("tree_structure", {}).get("structure", [])
 
-        # 在循环外构建一次父子映射（性能优化）
-        parent_mapping = build_parent_mapping(tree_structure)
-
-        # 构建 node_id -> tree_node 的映射，用于获取原文和摘要
-        # tree_structure 中的 text 字段保存的是原始 OCR 文本
-        # summary 字段保存的是 LLM 生成的摘要
-        def build_tree_info_map(tree_nodes: list) -> dict:
-            """递归构建 node_id -> {text, summary} 的映射"""
-            info_map = {}
-            for node in tree_nodes:
-                node_id = node.get("node_id", "")
-                if node_id:
-                    info_map[node_id] = {
-                        "text": node.get("text", ""),
-                        "summary": node.get("summary", ""),
-                    }
-                # 递归处理子节点
-                children = node.get("nodes", [])
-                if children:
-                    # 合并子节点的映射
-                    child_map = build_tree_info_map(children)
-                    info_map.update(child_map)
-            return info_map
-
-        tree_info_map = build_tree_info_map(tree_structure)
-
-        for section in metadata.get("sections", []):
-            node_metadata = section.get("metadata", {})
-            start_index = node_metadata.get("start_index", "?")
-            end_index = node_metadata.get("end_index", "?")
+        def process_tree_node(node: Dict[str, Any]) -> Dict[str, Any]:
+            """处理 tree_structure 格式的节点"""
+            node_id = node.get("node_id", "")
+            title = node.get("title", "")
+            text = node.get("text", "")
+            start_index = node.get("start_index", "?")
+            end_index = node.get("end_index", "?")
+            summary = node.get("summary", "")
 
             # 格式化页码范围
             if str(start_index) == str(end_index):
@@ -176,72 +151,97 @@ async def export_index_data(
             else:
                 page_range = f"{start_index}-{end_index}"
 
-            # 获取原文和摘要：优先从 tree_structure 获取
-            # 这是修复现有索引数据的关键步骤
-            section_id = section.get("id", "")
-            tree_info = tree_info_map.get(section_id, {})
-            original_text = tree_info.get("text", "")
-            node_summary = tree_info.get("summary", "")
+            # 格式化文本
+            formatted_text = text
+            if formatter and text:
+                try:
+                    doc_type = "epub" if metadata.get("pdf_path", "").lower().endswith(".epub") else "pdf"
+                    formatted_text = formatter.format(text, doc_type)
+                except Exception as e:
+                    logger.warning(f"[导出] 节点格式化失败: {e}, 使用原文")
 
-            # 如果 tree_structure 中没有原文，再尝试从 metadata 获取
-            if not original_text:
-                original_text = node_metadata.get("original_text", section.get("text", ""))
+            return {
+                "node_id": node_id,
+                "node_name": title,
+                "section": title,
+                "page_range": page_range,
+                "start_index": start_index,
+                "end_index": end_index,
+                "level": 0,
+                "text": formatted_text,
+                "summary": summary,
+            }
 
-            # 如果 tree_structure 中没有摘要，再尝试从 metadata 获取
-            if not node_summary:
-                node_summary = node_metadata.get("summary", "")
+        def process_section_node(section: Dict[str, Any]) -> Dict[str, Any]:
+            """处理旧的 sections 格式的节点"""
+            node_metadata = section.get("metadata", {})
+            node_id = section.get("id", "")
+            # 优先使用 node_name，否则使用 section（可能包含 ** 符号）
+            title = node_metadata.get("node_name", "") or node_metadata.get("section", "")
+            text = section.get("text", "")
+            start_index = node_metadata.get("start_index", "?")
+            end_index = node_metadata.get("end_index", "?")
+            summary = node_metadata.get("summary", "")
 
-            # --- 核心改进：使用 ChromaDB 中的段落重建文本（带 block_id）---
-            node_paragraphs = paragraphs_by_node.get(section_id, [])
-            if node_paragraphs:
-                # 从 ChromaDB 段落重建文本（每个段落已有 block_id）
-                formatted_text = build_text_from_paragraphs(node_paragraphs)
-                logger.debug(f"[导出] 节点 {section_id}: 从 ChromaDB 重建 {len(node_paragraphs)} 个段落")
+            # 格式化页码范围
+            if str(start_index) == str(end_index):
+                page_range = str(start_index)
             else:
-                # 如果没有 ChromaDB 数据，使用原来的格式化逻辑作为 fallback
-                formatted_text = original_text
-                if formatter and original_text:
-                    try:
-                        doc_type = "epub" if metadata.get("pdf_path", "").lower().endswith(".epub") else "pdf"
-                        formatted_text = formatter.format(original_text, doc_type)
-                    except Exception as e:
-                        logger.warning(f"[导出] 节点格式化失败: {e}, 使用原文")
+                page_range = f"{start_index}-{end_index}"
 
-            nodes.append(
-                {
-                    "node_id": section.get("id", ""),
-                    "node_name": node_metadata.get("node_name", ""),
-                    "section": node_metadata.get("section", ""),
-                    "page_range": page_range,
-                    "start_index": start_index,
-                    "end_index": end_index,
-                    "level": node_metadata.get("level", 0),
-                    "text": formatted_text,
-                    "summary": node_summary,  # 添加摘要字段
-                    "parent_id": parent_mapping.get(section.get("id", "")),
-                }
-            )
+            # 格式化文本
+            formatted_text = text
+            if formatter and text:
+                try:
+                    doc_type = "epub" if metadata.get("pdf_path", "").lower().endswith(".epub") else "pdf"
+                    formatted_text = formatter.format(text, doc_type)
+                except Exception as e:
+                    logger.warning(f"[导出] 节点格式化失败: {e}, 使用原文")
 
-        # 获取总页数
+            return {
+                "node_id": node_id,
+                "node_name": title,
+                "section": title,
+                "page_range": page_range,
+                "start_index": start_index,
+                "end_index": end_index,
+                "level": node_metadata.get("level", 0),
+                "text": formatted_text,
+                "summary": summary,
+            }
+
+        # 处理所有节点
+        if use_tree_structure:
+            for node in tree_nodes:
+                processed = process_tree_node(node)
+                nodes.append(processed)
+        else:
+            for section in tree_nodes:
+                processed = process_section_node(section)
+                nodes.append(processed)
+
+        # 获取文档名称
+        doc_name = tree_structure.get("doc_name", metadata.get("pdf_name", ""))
+
         pdf_path = metadata.get("pdf_path", "")
-        total_pages = get_pdf_page_count(pdf_path) if pdf_path else 0
+        total_pages = get_pdf_page_count(pdf_path) if pdf_path else 1
 
         # 格式化创建时间
         created_at_raw = metadata.get("created_at", "")
         created_at = format_created_at(created_at_raw)
 
         # 获取作者信息（EPUB 特有）
-        author = metadata.get("author")
+        author = metadata.get("author") or tree_structure.get("author", "")
 
         # 获取全书摘要
-        doc_description = metadata.get("doc_description", "")
+        doc_description = metadata.get("doc_description", "") or tree_structure.get("doc_description", "")
 
         return {
             "status": "success",
             "index_id": index_id,
-            "pdf_name": metadata.get("pdf_name", ""),
+            "pdf_name": doc_name,
             "author": author,
-            "doc_description": doc_description,  # 全书摘要
+            "doc_description": doc_description,
             "total_pages": total_pages,
             "created_at": created_at,
             "nodes": nodes,
