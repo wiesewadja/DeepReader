@@ -99,33 +99,39 @@ function extractChapterNameFromPath(path: string): string | null {
  * @param context 可选的上下文信息（包含 markdownFiles 映射）
  */
 export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, context?: { markdownFiles?: Record<string, string> }) => string> = {
-	search_markdown_text: (args) => `搜索「${String(args.query || '相关内容').slice(0, 20)}」`,
+	search_markdown_text: (args) => {
+		const query = String(args.query || '相关内容').slice(0, 20);
+		return `🔍 在书中搜索「${query}」`;
+	},
 	read_markdown_section: (args, context) => {
 		const heading = String(args.heading || '');
 		if (heading) {
-			return `翻阅「${heading}」`;
+			return `📖 深入阅读「${heading.slice(0, 20)}」`;
 		}
-		return `翻阅章节`;
+		return `📖 深入阅读章节`;
 	},
 	get_document_outline: (args) => {
 		const detail = String(args.detail || 'simple');
-		if (detail === 'simple') return '浏览目录结构';
-		return `分析书籍架构（${detail}）`;
+		if (detail === 'simple') return '📋 浏览全书目录';
+		return `📋 分析书籍架构`;
 	},
 	analyze_chapter: (args) => {
 		const type = String(args.type || 'both');
-		if (type === 'terms') return '识别关键术语';
-		if (type === 'propositions') return '提取核心论点';
-		return '分析章节内容';
+		if (type === 'terms') return '🧠 识别作者的关键术语';
+		if (type === 'propositions') return '💡 提取作者的核心论点';
+		return '🧐 分析章节内容';
 	},
-	search_read_books: (args) => `在已读书中查找「${String(args.query || '相关内容').slice(0, 15)}」`,
-	add_memory: () => '记下这个要点',
-	search_memory: () => '回忆之前的内容',
-	write_note: (args) => `整理笔记「${String(args.path || '')}」`,
-	create_sub_agent: () => '分头查找资料',
-	check_sub_agent: () => '等待子任务完成',
-	Skill: (args) => `加载技能「${String(args.skill || '专业知识')}」`,
-	skill: (args) => `加载技能「${String(args.skill || '专业知识')}」`, // 兼容小写
+	search_read_books: (args) => {
+		const query = String(args.query || '相关内容').slice(0, 15);
+		return `📚 跨书查找「${query}」`;
+	},
+	add_memory: () => '📝 记下这个要点',
+	search_memory: () => '💭 回忆之前的内容',
+	write_note: (args) => `✍️ 整理笔记「${String(args.path || '')}」`,
+	create_sub_agent: () => '🤖 分头查找资料',
+	check_sub_agent: () => '⏳ 等待子任务完成',
+	Skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`,
+	skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`, // 兼容小写
 };
 
 /**

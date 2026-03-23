@@ -191,38 +191,42 @@ export class HumanizedProgressAdapter {
 			const tool = runningTools[runningTools.length - 1];
 			const actionFn = TOOL_TO_ACTION[tool.name];
 
-			if (
-				tool.name.includes('search') ||
-				tool.name.includes('read_markdown') ||
-				tool.name.includes('outline')
-			) {
-				return { type: 'reading', detail: actionFn?.(tool.args, context) || '阅读中...' };
-			}
-
-			if (tool.name.includes('memory')) {
-				return { type: 'thinking', detail: actionFn?.(tool.args, context) || '回忆中...' };
-			}
-
-			if (tool.name.includes('note') || tool.name.includes('write')) {
-				return { type: 'writing', detail: actionFn?.(tool.args, context) || '整理中...' };
-			}
-
-			// Skill 工具 - 加载专业技能
-			if (tool.name.toLowerCase() === 'skill') {
-				return { type: 'thinking', detail: actionFn?.(tool.args, context) || '加载专业技能...' };
-			}
-
-			// 默认使用工具名对应的动作
+			// 优先使用 TOOL_TO_ACTION 中的描述（已包含 emoji 和具体信息）
 			if (actionFn) {
-				return { type: 'reading', detail: actionFn(tool.args, context) };
+				const detail = actionFn(tool.args, context);
+				// 根据工具类型确定动作类型
+				if (tool.name.includes('search') || tool.name.includes('read') || tool.name.includes('outline')) {
+					return { type: 'reading', detail };
+				}
+				if (tool.name.includes('memory')) {
+					return { type: 'thinking', detail };
+				}
+				if (tool.name.includes('note') || tool.name.includes('write')) {
+					return { type: 'writing', detail };
+				}
+				return { type: 'reading', detail };
+			}
+
+			// 后备：根据工具名推断
+			if (tool.name.includes('search') || tool.name.includes('read_markdown') || tool.name.includes('outline')) {
+				return { type: 'reading', detail: '📖 阅读中...' };
+			}
+			if (tool.name.includes('memory')) {
+				return { type: 'thinking', detail: '💭 回忆中...' };
+			}
+			if (tool.name.includes('note') || tool.name.includes('write')) {
+				return { type: 'writing', detail: '✍️ 整理中...' };
+			}
+			if (tool.name.toLowerCase() === 'skill') {
+				return { type: 'thinking', detail: '🎓 加载专业技能...' };
 			}
 		}
 
 		if (this.currentContent) {
-			return { type: 'writing', detail: '整理回答中...' };
+			return { type: 'writing', detail: '✨ 整理回答中...' };
 		}
 
-		return { type: 'thinking', detail: '思考中...' };
+		return { type: 'thinking', detail: '🤔 思考中...' };
 	}
 
 	/**

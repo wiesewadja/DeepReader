@@ -13,6 +13,22 @@ import type { ToolInterceptor } from '../types';
 import { getDebugLogger } from '../../debug/logger';
 
 /**
+ * 工具名称到用户友好动作的简化映射
+ */
+const TOOL_ACTION_MAP: Record<string, (args: Record<string, unknown>) => string> = {
+  search_markdown_text: (args) => `搜索「${String(args.query || '').slice(0, 15)}」`,
+  read_markdown_section: (args) => `阅读「${String(args.heading || '章节').slice(0, 15)}」`,
+  get_document_outline: () => '浏览目录',
+  analyze_chapter: (args) => {
+    const type = String(args.type || '');
+    if (type === 'terms') return '识别术语';
+    if (type === 'propositions') return '提取论点';
+    return '分析内容';
+  },
+  search_read_books: (args) => `跨书查找「${String(args.query || '').slice(0, 10)}」`,
+};
+
+/**
  * 状态循环回调
  */
 export interface StateLoopCallbacks {
@@ -287,8 +303,12 @@ export async function runStateLoop(
     }
 
     // 🚀 并行执行所有工具调用
-    callbacks.onProgress?.(`并行执行 ${callsToExecute.length} 个工具...`);
-
+    // 显示更详细的工具调用信息
+    const toolNames = callsToExecute.map(c => {
+      const actionFn = TOOL_ACTION_MAP[c.tc.name];
+      return actionFn ? actionFn(c.args) : c.tc.name;
+    });
+    callbacks.onProgress?.(`🔧 ${toolNames.join(' · ')}`);
     const executionResults = await Promise.all(
       callsToExecute.map(async ({ tc, args, originalArgs, interceptorNote }) => {
         const toolExecStart = Date.now();
