@@ -920,6 +920,13 @@ export class SidebarView extends ItemView {
         // 标准化书名（移除扩展名）
         const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
+        // 检查当前书籍是否已经是目标书籍（基于书名比较）
+        const currentBookName = this.getNormalizedBookName();
+        if (currentBookName === normalizedBookName) {
+            log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
+            return;
+        }
+
         // 在已加载的索引列表中查找
         const index = this.indexes.find(idx => {
             const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
@@ -927,11 +934,6 @@ export class SidebarView extends ItemView {
         });
 
         if (index) {
-            // 检查是否已经是当前书籍
-            if (this.currentIndexId === index.id) {
-                log('[DeepPDF] Already on the same book');
-                return;
-            }
             log('[DeepPDF] Found index by name:', index.id);
             await this.selectIndex(index.id);
         } else {
