@@ -5,7 +5,7 @@
 
 /* ==================== 设置页面主容器 ==================== */
 .deeppdf-settings {
-    padding: 0;
+    padding: 16px 0 0 0;
     max-width: 800px;
     margin: 0 auto;
 }
