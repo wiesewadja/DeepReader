@@ -103,7 +103,7 @@
     width: 24px;
     height: 24px;
     padding: 0;
-    background: transparent;
+    background: var(--background-secondary);
     border: none;
     border-radius: 6px;
     color: var(--text-faint);
