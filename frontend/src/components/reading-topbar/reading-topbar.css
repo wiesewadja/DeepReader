@@ -95,13 +95,13 @@
     flex: 0 0 auto;
 }
 
-/* 操作按钮 - 极简 */
+/* 操作按钮 - 极简无边框 */
 .deeppdf-topbar-action-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border: none;
     border-radius: 6px;
@@ -109,6 +109,13 @@
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.15s ease;
+    outline: none;
+    box-shadow: none;
+}
+
+.deeppdf-topbar-action-btn:focus {
+    outline: none;
+    box-shadow: none;
 }
 
 .deeppdf-topbar-action-btn:hover {
