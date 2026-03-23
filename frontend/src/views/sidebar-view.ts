@@ -792,6 +792,9 @@ export class SidebarView extends ItemView {
             }
             this.currentPdfName = displayName;
             log(`[DeepPDF] 后端不可用，从 indexId 推断书籍名称: "${displayName}"`);
+
+            // 后端不可用时，尝试从本地加载封面
+            this.loadBookCover(displayName);
         }
 
         // 尝试从本地元数据获取作者信息（如果还没有）
