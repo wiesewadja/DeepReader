@@ -1975,6 +1975,8 @@
 
 	transition: border-color 0.15s ease;
 	overflow: hidden;
+
+	margin: 1px 10px 3px 4px;
 }
 
 /* 聚焦状态：仅改变边框颜色 */
@@ -2236,7 +2238,7 @@
 
 /* ==================== 引用卡片容器（并排显示模式） ==================== */
 
-.deeppdf-quotes-container {
+/* .deeppdf-quotes-container {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
@@ -2245,7 +2247,7 @@
 	min-height: 0;
 	animation: deeppdf-fade-in 0.2s ease;
 	z-index: 50;
-}
+} */
 
 /* ==================== 单个引用卡片（带文段显示） ==================== */
 
