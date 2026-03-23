@@ -618,6 +618,9 @@ export class SidebarView extends ItemView {
             return;
         }
 
+        // 刷新索引列表（确保获取最新数据）
+        await this.loadIndexes();
+
         new LibraryModal(this.app, {
             app: this.app,
             indexes: this.indexes,
