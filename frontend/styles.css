@@ -4026,17 +4026,17 @@
 
 /**
  * DeepPDF 阅读顶栏样式
- * 极简风格：左侧书籍封面+书名，右侧操作按钮
+ * 极简风格：左侧书籍封面+书名，右侧在线书库和设置按钮
  */
 
-/* 顶栏容器 - 与左侧边栏对齐 */
+/* 顶栏容器 - 与右侧边栏背景一致 */
 .deeppdf-reading-topbar {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin: -12px -12px 0 -12px;
     padding: 15px 14px 8px 12px;
-    background: transparent;
+    background: var(--background-secondary);
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
     min-height: 48px;
@@ -4119,124 +4119,40 @@
     align-items: center;
     gap: 4px;
     flex: 0 0 auto;
-    position: relative;
 }
 
-/* 操作按钮 - 极简 */
+/* 操作按钮 - 极简风格，背景与右边栏一致 */
 .deeppdf-topbar-action-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     padding: 0;
+    background: var(--background-secondary);
     border: none;
     border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
+    color: var(--icon-color);
     cursor: pointer;
     transition: all 0.15s ease;
+    outline: none;
+    box-shadow: none;
+}
+
+.deeppdf-topbar-action-btn:focus {
+    outline: none;
+    box-shadow: none;
+    background: var(--background-secondary);
 }
 
 .deeppdf-topbar-action-btn:hover {
     background: var(--background-modifier-hover);
-    color: var(--text-normal);
+    color: var(--icon-color);
 }
 
 .deeppdf-topbar-action-btn svg {
-    width: 16px;
-    height: 16px;
-}
-
-/* 下拉菜单 - 浮动卡片 */
-.deeppdf-topbar-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    min-width: 140px;
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-    padding: 4px 0;
-    z-index: 1000;
-    opacity: 0;
-    transform: translateY(-4px);
-    pointer-events: none;
-    transition: all 0.15s ease;
-}
-
-.deeppdf-topbar-dropdown.open {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-
-.deeppdf-dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    color: var(--text-normal);
-    cursor: pointer;
-    transition: background 0.15s ease;
-    white-space: nowrap;
-}
-
-.deeppdf-dropdown-item:hover {
-    background: var(--background-modifier-hover);
-}
-
-.deeppdf-dropdown-item svg {
-    width: 14px;
-    height: 14px;
-    color: var(--text-muted);
-}
-
-.deeppdf-dropdown-item:hover svg {
-    color: var(--text-normal);
-}
-
-.deeppdf-dropdown-divider {
-    height: 1px;
-    background: var(--background-modifier-border);
-    margin: 4px 8px;
-}
-
-/* 聚焦模式按钮 */
-.deeppdf-focus-mode-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: none;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.deeppdf-focus-mode-btn:hover {
-    background: var(--background-modifier-hover);
-    color: var(--text-normal);
-}
-
-.deeppdf-focus-mode-btn.active {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-}
-
-.deeppdf-focus-mode-btn.active:hover {
-    background: var(--interactive-accent-hover);
-}
-
-.deeppdf-focus-mode-btn svg {
-    width: 14px;
-    height: 14px;
+    width: 18px;
+    height: 18px;
 }
 
 /* 响应式 */
@@ -4259,11 +4175,14 @@
         height: 28px;
     }
 
-    .deeppdf-status-dot {
-        left: 22px;
-        top: 22px;
-        width: 7px;
-        height: 7px;
+    .deeppdf-topbar-action-btn {
+        width: 28px;
+        height: 28px;
+    }
+
+    .deeppdf-topbar-action-btn svg {
+        width: 16px;
+        height: 16px;
     }
 }
 
@@ -5233,7 +5152,9 @@
 
 /* ==================== 设置页面主容器 ==================== */
 .deeppdf-settings {
-    padding: 0;
+    padding: 16px 0 0 0;
+    max-width: 800px;
+    margin: 0 auto;
 }
 
 /* Tab 布局容器 */
@@ -5291,6 +5212,7 @@
 .deeppdf-settings-content {
     flex: 1;
     overflow-y: auto;
+    padding: 0 8px;
 }
 
 .deeppdf-settings-content h3 {
@@ -5322,6 +5244,10 @@
 
 /* ==================== 响应式适配 ==================== */
 @media (max-width: 600px) {
+    .deeppdf-settings {
+        max-width: 100%;
+    }
+
     .deeppdf-settings-nav {
         flex-wrap: wrap;
         gap: 4px;
@@ -5336,6 +5262,10 @@
 
     .deeppdf-settings-nav-name {
         font-size: 12px;
+    }
+
+    .deeppdf-settings-content {
+        padding: 0;
     }
 }
 
