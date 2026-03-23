@@ -2425,8 +2425,10 @@ export class SidebarView extends ItemView {
             this.indexes = result.indexes;
 
             // 2. 决定要选中的索引
+            // 优先级：用户手动选择 > 恢复上次选中 > 不自动选择
             let indexToSelect = this.currentIndexId;
 
+            // 优先恢复上次用户手动选择的书籍
             if (!indexToSelect && this.plugin.settings.lastSelectedIndexId) {
                 const exists = result.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
                 if (exists) {
@@ -2434,11 +2436,8 @@ export class SidebarView extends ItemView {
                 }
             }
 
-            if (!indexToSelect && result.indexes.length > 0) {
-                indexToSelect = result.indexes[0].id;
-            }
-
-            // 3. 选中索引
+            // 不再自动选择后端的第一个索引（保持前后端分离）
+            // 只有在有明确要选中的索引时才调用 selectIndex
             if (indexToSelect) {
                 await this.selectIndex(indexToSelect);
                 log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
