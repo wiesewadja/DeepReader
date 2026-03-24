@@ -138,7 +138,7 @@ export class ExcerptService {
   /**
    * 格式化摘录内容（使用 Obsidian callout 美化）
    * 标题行：用户笔记（如果有），否则显示时间戳
-   * 随机使用不同的 callout 类型增加视觉多样性
+   * 根据 excerptType 使用不同的 callout 类型
    */
   private formatExcerpt(
     content: ExcerptContent,
@@ -153,25 +153,45 @@ export class ExcerptService {
       minute: '2-digit'
     });
 
-    // 随机选择 Obsidian 内置 callout 类型，增加视觉多样性
-    const calloutTypes = ['quote', 'note', 'info', 'tip', 'success', 'example'];
-    const randomCalloutType = calloutTypes[Math.floor(Math.random() * calloutTypes.length)];
+    // 根据摘录类型选择 callout 样式
+    // 高亮使用固定样式，摘录随机选择
+    let calloutType: string;
+    if (metadata.excerptType === 'highlight') {
+      // 高亮使用 warning 样式（黄色调，与高亮呼应）
+      calloutType = 'warning';
+    } else {
+      // 摘录随机选择样式
+      const calloutTypes = ['quote', 'note', 'info', 'tip', 'success', 'example'];
+      calloutType = calloutTypes[Math.floor(Math.random() * calloutTypes.length)];
+    }
 
-    // 标题行：优先使用用户笔记，否则显示时间戳
-    const calloutTitle = options?.note?.trim() || timestamp;
+    // 标题行：高亮显示颜色标识，摘录显示用户笔记或时间戳
+    let calloutTitle: string;
+    if (metadata.excerptType === 'highlight') {
+      const colorEmoji = this.getColorEmoji(metadata.highlightColor);
+      calloutTitle = `${colorEmoji} 高亮`;
+    } else {
+      calloutTitle = options?.note?.trim() || timestamp;
+    }
 
     // 构建 callout 内容
     let calloutContent = '';
 
-    // 摘录内容
+    // 摘录/高亮内容
     calloutContent += `${content.text}\n`;
 
     // 来源信息（根据类型显示不同链接）
     calloutContent += '\n---\n';
     if (metadata.sourceType === 'reading' && metadata.chapterPath) {
-      // 阅读摘录：链接到章节文件
+      // 阅读摘录/高亮：链接到章节文件，精确到 block id
       const chapterDisplay = metadata.chapterName || metadata.chapterPath.split('/').pop()?.replace('.md', '') || metadata.chapterPath;
-      calloutContent += `📍 来源: [[${metadata.chapterPath}|${chapterDisplay}]]\n`;
+
+      // 如果有 blockId，使用精确链接 [[file#^blockid|display]]
+      if (metadata.blockId) {
+        calloutContent += `📍 来源: [[${metadata.chapterPath}#^${metadata.blockId}|${chapterDisplay}]]\n`;
+      } else {
+        calloutContent += `📍 来源: [[${metadata.chapterPath}|${chapterDisplay}]]\n`;
+      }
     } else {
       // 对话摘录或默认：只链接到书籍
       calloutContent += `📍 来源: [[${metadata.sourcePdf}]]\n`;
@@ -189,11 +209,26 @@ export class ExcerptService {
 
     // 标题行格式: > [!type]+ 标题内容
     const formatted = `
-> [!${randomCalloutType}]+ ${calloutTitle}
+> [!${calloutType}]+ ${calloutTitle}
 ${calloutBody}
 `;
 
     return formatted;
+  }
+
+  /**
+   * 根据高亮颜色获取对应的 emoji
+   */
+  private getColorEmoji(color?: string): string {
+    const colorEmojiMap: Record<string, string> = {
+      'yellow': '🟡',
+      'green': '🟢',
+      'blue': '🔵',
+      'pink': '🩷',
+      'orange': '🟠',
+      'red': '🔴',
+    };
+    return colorEmojiMap[color || 'yellow'] || '🖍️';
   }
 
   /**

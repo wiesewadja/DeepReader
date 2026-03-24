@@ -40,6 +40,7 @@ import { DEFAULT_CONSOLIDATOR_CONFIG } from "../agent/memory/types.js";
 import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 import { SessionStore } from "../agent/session/index.js";
+import { findBlockIdFromRange } from "../utils/block-utils.js";
 
 /**
  * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
@@ -1267,7 +1268,7 @@ export class SidebarView extends ItemView {
     /**
      * 处理摘录选中文字（阅读模式中的摘录）
      * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
-     * 链接：链接到章节文件
+     * 链接：链接到章节文件，精确到 block id
      */
     private handleExcerptSelection(text: string, range: Range): void {
         const activeFile = this.app.workspace.getActiveFile();
@@ -1296,6 +1297,10 @@ export class SidebarView extends ItemView {
             }
         }
 
+        // 获取选中文字所在的 block id
+        const blockId = findBlockIdFromRange(range, activeFile.path, this.app);
+        log('[DeepPDF] Found block id for excerpt:', blockId);
+
         // 构建元数据
         const metadata: ExcerptMetadata = {
             sourcePdf: bookName,
@@ -1303,6 +1308,8 @@ export class SidebarView extends ItemView {
             sourceType: 'reading',
             chapterPath: activeFile.path,
             chapterName: activeFile.basename,
+            blockId: blockId || undefined,
+            excerptType: 'excerpt',
         };
 
         const modal = new ExcerptModal({

@@ -153,6 +153,14 @@ class EpubTreeConverter:
         logger.debug(f"[EPUB转换] 树结构转换完成，共 {len(structure)} 个顶级节点")
 
         # ============================================================
+        # 步骤 4.5: 处理 Calibre split 文件（关键修复）
+        # ============================================================
+        # Calibre 会将大文件分割成 part0005_split_000, part0005_split_001, part0005_split_002 等
+        # 但 TOC 可能只引用部分文件（如 _000 和 _002），跳过了中间的文件（如 _001）
+        # 这个步骤将未引用的 split 文件内容合并到同组已使用的节点中
+        self._merge_unused_split_files(structure, chapter_map)
+
+        # ============================================================
         # 步骤5: 添加未在 TOC 中但实际存在的章节
         # ============================================================
         unused_chapters = [
@@ -192,6 +200,148 @@ class EpubTreeConverter:
             result["language"] = metadata["language"]
 
         return result
+
+    def _merge_unused_split_files(
+        self,
+        structure: List[Dict[str, Any]],
+        chapter_map: Dict[str, Dict[str, str]]
+    ) -> None:
+        """
+        合并未引用的 Calibre split 文件到同组已使用的节点中
+
+        Calibre 会将大文件分割成 part0005_split_000, part0005_split_001, part0005_split_002 等
+        但 TOC 可能只引用部分文件（如 _000 和 _002），跳过了中间的文件（如 _001）
+        这个方法将未引用的 split 文件内容合并到同组第一个已使用的节点中
+
+        参数:
+            structure: 树结构（会被修改）
+            chapter_map: 章节文件名到内容的映射
+        """
+        # 找出所有未使用的 split 文件
+        unused_split_files = [
+            f for f in chapter_map.keys()
+            if f not in self._used_files and '_split_' in f
+        ]
+
+        if not unused_split_files:
+            return
+
+        # 按 split 组分组
+        split_groups: Dict[str, List[str]] = {}
+        for f in unused_split_files:
+            # 提取基础文件名：text/part0005_split_001 -> text/part0005
+            base_name = f.split('_split_')[0]
+            if base_name not in split_groups:
+                split_groups[base_name] = []
+            split_groups[base_name].append(f)
+
+        if not split_groups:
+            return
+
+        logger.info(f"[EPUB转换] 发现 {len(unused_split_files)} 个未引用的 split 文件，将合并到同组节点")
+
+        # 为每个 split 组找到对应的已使用节点，并合并内容
+        for base_name, unused_files in split_groups.items():
+            # 找到同组中已使用的 split 文件
+            used_split_files = sorted([
+                f for f in self._used_files
+                if f.startswith(base_name + '_split_')
+            ])
+
+            if not used_split_files:
+                # 如果整个 split 组都没有被使用，跳过（会在 _add_unused_chapters 中处理）
+                logger.debug(f"[EPUB转换] split 组 '{base_name}' 没有已使用的文件，跳过合并")
+                continue
+
+            # 找到引用第一个已使用 split 文件的节点
+            first_used_file = used_split_files[0]
+            target_node = self._find_node_by_file(structure, first_used_file)
+
+            if not target_node:
+                logger.warning(f"[EPUB转换] 未找到引用文件 '{first_used_file}' 的节点")
+                continue
+
+            # 将未使用的 split 文件内容按顺序插入到正确位置
+            # 目标节点已包含 first_used_file 的内容，我们需要把未使用的文件内容
+            # 按正确的顺序插入
+
+            # 首先收集同组所有 split 文件（已使用 + 未使用）
+            all_split_files = sorted(set(used_split_files) | set(unused_files))
+
+            # 只合并未使用的文件内容
+            merged_content = []
+            for split_file in unused_files:
+                if split_file in chapter_map:
+                    content = chapter_map[split_file].get("content", "")
+                    if content.strip():
+                        merged_content.append(content)
+                    self._used_files.add(split_file)
+
+            if merged_content:
+                # 更新目标节点的内容
+                # 根据 split 文件的顺序决定插入位置
+                first_used_idx = all_split_files.index(first_used_file)
+
+                # 收集在 first_used_file 之前和之后的未使用文件
+                before_content = []
+                after_content = []
+                for split_file in unused_files:
+                    if split_file in chapter_map:
+                        content = chapter_map[split_file].get("content", "")
+                        if content.strip():
+                            idx = all_split_files.index(split_file)
+                            if idx < first_used_idx:
+                                before_content.append(content)
+                            else:
+                                after_content.append(content)
+
+                original_content = target_node.get("text", "")
+                new_parts = []
+
+                # 按顺序组装：之前的内容 + 原内容 + 之后的内容
+                if before_content:
+                    new_parts.extend(before_content)
+                if original_content.strip():
+                    new_parts.append(original_content)
+                if after_content:
+                    new_parts.extend(after_content)
+
+                if new_parts:
+                    target_node["text"] = "\n\n".join(new_parts)
+
+                logger.info(f"[EPUB转换] 将 {len(unused_files)} 个未引用的 split 文件合并到节点 '{target_node.get('title', '未知')}'")
+
+    def _find_node_by_file(
+        self,
+        nodes: List[Dict[str, Any]],
+        file_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        在树结构中查找引用指定文件的节点
+
+        参数:
+            nodes: 节点列表
+            file_name: 要查找的文件名
+
+        返回:
+            找到的节点，如果没找到返回 None
+        """
+        for node in nodes:
+            # 检查当前节点的 _source_file 字段
+            node_source = node.get("_source_file")
+            if node_source:
+                # 提取文件名部分（去掉片段标识符）
+                node_file = node_source.split('#')[0]
+                if node_file == file_name:
+                    return node
+
+            # 递归检查子节点
+            if node.get("nodes"):
+                result = self._find_node_by_file(node["nodes"], file_name)
+                if result:
+                    return result
+
+        return None
 
     def _toc_to_tree(
         self,
@@ -292,26 +442,37 @@ class EpubTreeConverter:
         # ============================================================
         # 步骤3: 检测一级章节是否为容器
         # ============================================================
-        # 如果一级章节有子节点，检查子节点的 href 文件名是否与一级章节相同
-        # 如果相同，说明一级章节只是容器，不提取自己的内容
+        # 父节点是容器的情况：
+        # 1. 子节点的 href 文件名与父节点相同（如 part0002.html 和 part0002.html#section）
+        # 2. 父节点内容很短（< 100 字符）且有子节点（Calibre split 文件的情况）
         # 注意：比较文件名部分（忽略锚点），因为：
         #   - 父节点: text00002.html
         #   - 子节点: text00002.html#chapter6
         #   这两个应该被视为同一文件，父节点是容器
         is_container = False
+        flat_children = []
         if children:
             flat_children = self._flatten_children(children)
-            if flat_children:
-                # 检查所有子节点，只要有一个子节点的文件名与父节点相同，就标记为容器
-                parent_file = href.split('#')[0] if href else None
-                for child in flat_children:
-                    child_href = self._extract_href(child)
-                    if child_href and parent_file:
-                        child_file = child_href.split('#')[0]
-                        if child_file == parent_file:
-                            is_container = True
-                            logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（文件名 '{parent_file}' 与子节点相同）")
-                            break
+
+        if flat_children:
+            # 检查所有子节点，只要有一个子节点的文件名与父节点相同，就标记为容器
+            parent_file = href.split('#')[0] if href else None
+            for child in flat_children:
+                child_href = self._extract_href(child)
+                if child_href and parent_file:
+                    child_file = child_href.split('#')[0]
+                    if child_file == parent_file:
+                        is_container = True
+                        logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（文件名 '{parent_file}' 与子节点相同）")
+                        break
+
+            # 额外检查：如果父节点内容很短（< 100 字符）且有子节点，也标记为容器
+            # 这处理 Calibre split 文件的情况：父节点是 part0004.html（只有标题），实际内容在 part0005_split_*.html
+            if not is_container and parent_file and parent_file in chapter_map:
+                parent_content = chapter_map[parent_file].get("content", "")
+                if len(parent_content.strip()) < 100:
+                    is_container = True
+                    logger.debug(f"[EPUB转换] 一级章节 '{title}' 是容器（父文件内容很短: {len(parent_content)} 字符）")
 
         # ============================================================
         # 步骤4: 查找章节内容
@@ -354,6 +515,10 @@ class EpubTreeConverter:
             "start_index": start_index,
             "end_index": end_index,
         }
+
+        # 记录源文件（内部使用，用于 split 文件合并）
+        if href and not is_container:
+            node["_source_file"] = href.split('#')[0]
 
         # 标记容器型节点（用于 summary 生成）
         if is_container:

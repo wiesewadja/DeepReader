@@ -38,6 +38,12 @@ export interface ExcerptMetadata {
 	chapterName?: string;
 	/** 摘录来源类型 */
 	sourceType?: 'reading' | 'chat';
+	/** 段落 block ID（精确到段落级别） */
+	blockId?: string;
+	/** 摘录类型：摘录或高亮 */
+	excerptType?: 'excerpt' | 'highlight';
+	/** 高亮颜色（仅高亮时有值） */
+	highlightColor?: string;
 }
 
 /**

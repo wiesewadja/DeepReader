@@ -210,15 +210,29 @@ async def export_index_data(
                 "summary": summary,
             }
 
-        # 处理所有节点
+        # 处理所有节点（递归处理子节点）
+        def collect_all_tree_nodes(node: Dict[str, Any]) -> None:
+            """递归收集所有节点（包括子节点）"""
+            processed = process_tree_node(node)
+            nodes.append(processed)
+            # 递归处理子节点
+            for child in node.get("nodes", []):
+                collect_all_tree_nodes(child)
+
+        def collect_all_section_nodes(section: Dict[str, Any]) -> None:
+            """递归收集所有 sections 格式的节点"""
+            processed = process_section_node(section)
+            nodes.append(processed)
+            # 递归处理子节点
+            for child in section.get("children", []):
+                collect_all_section_nodes(child)
+
         if use_tree_structure:
             for node in tree_nodes:
-                processed = process_tree_node(node)
-                nodes.append(processed)
+                collect_all_tree_nodes(node)
         else:
             for section in tree_nodes:
-                processed = process_section_node(section)
-                nodes.append(processed)
+                collect_all_section_nodes(section)
 
         # 获取文档名称
         doc_name = tree_structure.get("doc_name", metadata.get("pdf_name", ""))

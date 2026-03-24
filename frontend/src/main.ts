@@ -9,6 +9,8 @@ import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
 import { getProviderConfig, PROVIDER_LABELS } from './config/providers.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
+import { ExcerptService } from './services/excerpt-service.js';
+import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
 // 使用 service 模块日志器
 const log = serviceLog;
@@ -363,6 +365,7 @@ export default class DeepPDFPlugin extends Plugin {
     /**
      * 保存高亮到文件
      * 多行文本分行处理，每行独立高亮但使用同一颜色
+     * 同时保存高亮内容到摘录文件
      */
     private async saveHighlightToFile(text: string, color: HighlightColorId): Promise<void> {
         const activeFile = this.app.workspace.getActiveFile();
@@ -383,6 +386,7 @@ export default class DeepPDFPlugin extends Plugin {
 
             let newBody = body;
             let highlightedCount = 0;
+            let foundBlockId: string | null = null;
 
             // 逐行处理高亮
             for (const line of lines) {
@@ -395,6 +399,11 @@ export default class DeepPDFPlugin extends Plugin {
                     const highlightedText = `<mark style="background: ${bgColor}">${matchResult.matched}</mark>`;
                     newBody = newBody.substring(0, matchResult.index) + highlightedText + newBody.substring(matchResult.index + matchResult.matched.length);
                     highlightedCount++;
+
+                    // 尝试从匹配位置附近查找 block id
+                    if (!foundBlockId) {
+                        foundBlockId = this.findBlockIdNearText(newBody, matchResult.index);
+                    }
                 }
             }
 
@@ -407,9 +416,97 @@ export default class DeepPDFPlugin extends Plugin {
             await this.app.vault.modify(activeFile, newContent);
             log('[DeepPDF] Highlight saved:', highlightedCount, 'lines with color:', color);
 
+            // 同时保存高亮到摘录文件
+            await this.saveHighlightToExcerpt(text, color, activeFile, foundBlockId);
+
         } catch (err) {
             log.error('[DeepPDF] Failed to save highlight:', err);
             new Notice("保存高亮失败");
+        }
+    }
+
+    /**
+     * 从文本位置附近查找 block id
+     * block id 格式为 ^xxx，通常在段落末尾
+     */
+    private findBlockIdNearText(content: string, position: number): string | null {
+        // 从当前位置向后查找，最多查找 500 个字符
+        const searchStart = position;
+        const searchEnd = Math.min(position + 500, content.length);
+        const searchText = content.substring(searchStart, searchEnd);
+
+        // 匹配 ^xxx 格式的 block id
+        const match = searchText.match(/\^([a-zA-Z0-9_-]+)/);
+        if (match) {
+            return match[1];
+        }
+
+        // 如果后面没找到，尝试向前查找
+        const searchStartBack = Math.max(0, position - 500);
+        const searchTextBack = content.substring(searchStartBack, position);
+        const matchBack = searchTextBack.match(/\^([a-zA-Z0-9_-]+)/);
+        if (matchBack) {
+            return matchBack[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * 保存高亮内容到摘录文件
+     */
+    private async saveHighlightToExcerpt(
+        text: string,
+        color: HighlightColorId,
+        activeFile: any,
+        blockId: string | null
+    ): Promise<void> {
+        try {
+            // 从文件的 frontmatter 或路径中提取书籍信息
+            const cache = this.app.metadataCache.getFileCache(activeFile);
+            let bookName = cache?.frontmatter?.pdf_name || '';
+
+            // 如果没有从 frontmatter 获取到书名，从路径提取
+            if (!bookName) {
+                const pathParts = activeFile.path.split('/');
+                if (pathParts.length >= 2) {
+                    if (pathParts[0] === 'DeepReader') {
+                        bookName = pathParts[1];
+                    } else {
+                        bookName = pathParts[0];
+                    }
+                } else {
+                    bookName = activeFile.basename;
+                }
+            }
+
+            // 构建摘录内容
+            const excerptContent: ExcerptContent = {
+                text: text.trim()
+            };
+
+            // 构建元数据
+            const metadata: ExcerptMetadata = {
+                sourcePdf: bookName,
+                createdAt: new Date().toISOString(),
+                sourceType: 'reading',
+                chapterPath: activeFile.path,
+                chapterName: activeFile.basename,
+                blockId: blockId || undefined,
+                excerptType: 'highlight',
+                highlightColor: color,
+            };
+
+            // 保存摘录
+            const excerptService = new ExcerptService(this.app);
+            const savedPath = await excerptService.saveExcerpt(excerptContent, metadata);
+
+            if (savedPath) {
+                log('[DeepPDF] Highlight saved to excerpt file:', savedPath);
+            }
+        } catch (err) {
+            log.error('[DeepPDF] Failed to save highlight to excerpt:', err);
+            // 不显示错误提示，因为高亮已经保存到章节文件了
         }
     }
 
