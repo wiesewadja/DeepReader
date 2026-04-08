@@ -32,7 +32,7 @@ const context = await esbuild.context({
         "@lezer/highlight",
         "@lezer/lr",
         ...builtins,
-        // Node.js built-in modules with node: prefix (used by vault features)
+        // Node.js built-in modules with node: prefix
         "node:fs",
         "node:fs/promises",
         "node:path",
@@ -41,12 +41,7 @@ const context = await esbuild.context({
         "node:util",
         "node:stream",
         "node:events",
-        // PageIndex dependencies - large libraries loaded at runtime
-        "pdf-parse",
-        "adm-zip",
-        "xml2js",
-        "turndown",
-        // Bun-specific vault features (loaded dynamically at runtime)
+        // Dynamic imports - loaded at runtime
         "./pageindex/vault/*",
         "./pageindex/parsers/pdf-to-markdown"],
     format: "cjs",
