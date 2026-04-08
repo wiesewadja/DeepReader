@@ -4,7 +4,6 @@
  */
 
 import { apiLog as log, error as logError } from '../utils/logger.js';
-import { getDebugLogger } from '../agent/debug/index.js';
 
 // ==================== 类型定义 ====================
 
@@ -414,17 +413,6 @@ export class DeepPDFClient {
     log(`[HTTP] ${method} ${endpoint}`);
     const startTime = performance.now();
 
-    // 🐛 调试日志：记录请求
-    const debugLogger = getDebugLogger();
-    let requestBody: unknown = undefined;
-    if (options.body) {
-      try {
-        requestBody = JSON.parse(options.body as string);
-      } catch {
-        requestBody = options.body;
-      }
-    }
-
     try {
       const response = await fetch(url, options);
       const duration = performance.now() - startTime;
@@ -432,32 +420,11 @@ export class DeepPDFClient {
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Request failed' }));
         logError(`[HTTP] ${method} ${endpoint} 失败 (${response.status}):`, error.detail || error.message);
-
-        // 🐛 调试日志：记录失败响应
-        debugLogger?.logBackendCall({
-          url,
-          method,
-          requestBody,
-          responseStatus: response.status,
-          responseBody: error,
-          duration,
-        });
-
         throw new Error(error.detail || error.message || 'Request failed');
       }
 
       const result = await response.json();
       log(`[HTTP] ${method} ${endpoint} 成功 (${duration.toFixed(0)}ms)`);
-
-      // 🐛 调试日志：记录成功响应
-      debugLogger?.logBackendCall({
-        url,
-        method,
-        requestBody,
-        responseStatus: response.status,
-        responseBody: result,
-        duration,
-      });
 
       return result;
     } catch (e) {

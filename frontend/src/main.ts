@@ -925,6 +925,14 @@ views:
             this.readingModeService.stop();
             this.readingModeService = null;
         }
+
+        // 关闭追踪器，刷新剩余的 trace 数据
+        try {
+            const { getTracer } = await import('./agent/tracing/index.js');
+            await getTracer().shutdown();
+        } catch {
+            // 静默处理追踪器关闭失败
+        }
     }
 
     /**

@@ -45,6 +45,12 @@ export interface DeepPDFSettings {
     // 阅读模式设置
     autoEnableReadingMode: boolean;
 
+    // Langfuse 追踪配置
+    langfusePublicKey: string;
+    langfuseSecretKey: string;
+    langfuseBaseUrl: string;
+    langfuseEnabled: boolean;
+
     // UI 状态
     lastSettingsTab: string;
 }
@@ -88,6 +94,12 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
     // 阅读模式设置
     autoEnableReadingMode: true,
+
+    // Langfuse 追踪配置
+    langfusePublicKey: "",
+    langfuseSecretKey: "",
+    langfuseBaseUrl: "http://localhost:3000",
+    langfuseEnabled: false,
 
     // UI 状态
     lastSettingsTab: "llm",

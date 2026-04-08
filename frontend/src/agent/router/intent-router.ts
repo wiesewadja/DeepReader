@@ -6,7 +6,7 @@
 
 import type { IntentRule, IntentResult, IntentRulesConfig } from './types.js';
 import { agentLog } from '../../utils/logger.js';
-import { getDebugLogger } from '../debug/logger.js';
+import type { ITraceContext } from '../tracing/types.js';
 import DEFAULT_RULES_JSON from './intent-rules.json';
 
 // 默认最大迭代次数（当规则未指定时使用）
@@ -29,9 +29,11 @@ export class IntentRouter {
   /**
    * 分析用户意图，返回允许的工具、系统指令和最大迭代次数
    */
-  analyze(userInput: string): IntentResult {
+  analyze(userInput: string, traceCtx?: ITraceContext): IntentResult {
     const startTime = Date.now();
-    const logger = getDebugLogger();
+
+    // Create span for intent routing
+    const span = traceCtx?.withSpan('intent-routing', { userInput: userInput.slice(0, 100) });
 
     const detectedIntents: string[] = [];
     const allowedTools = new Set<string>();
@@ -76,16 +78,13 @@ export class IntentRouter {
     agentLog(`[IntentRouter] 允许工具: ${Array.from(allowedTools).join(', ')}`);
     agentLog(`[IntentRouter] 动态迭代上限: ${maxIterations}`);
 
-    // 5. 记录意图路由日志
-    if (logger?.isEnabled()) {
-      logger.logIntentRouting({
-        detectedIntents,
-        allowedTools: Array.from(allowedTools),
-        systemNote,
-        maxIterations,
-        duration: Date.now() - startTime,
-      });
-    }
+    // 5. 记录意图路由到追踪
+    span?.end({
+      detectedIntents,
+      allowedTools: Array.from(allowedTools),
+      maxIterations,
+      duration: Date.now() - startTime,
+    });
 
     return {
       allowedTools: Array.from(allowedTools),

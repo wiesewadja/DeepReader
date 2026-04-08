@@ -5,6 +5,7 @@
 import type { ChatMessage } from '../types';
 import type { LLMClient, LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
+import type { ITraceContext } from '../tracing/types';
 
 /**
  * Reading depth levels based on Adler's methodology
@@ -91,6 +92,10 @@ export interface SharedContext {
   toolRegistry?: ToolRegistry;
   /** Tool context for tool execution */
   toolContext?: ToolContext;
+
+  // ===== Tracing =====
+  /** Langfuse trace context for observability */
+  traceContext?: ITraceContext;
 
   // ===== State Execution Tracking =====
   executedStates: Set<string>;
