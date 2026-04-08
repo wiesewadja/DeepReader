@@ -1,6 +1,8 @@
 /**
- * bun-pageindex: OCR module for scanned PDFs
+ * pageindex-ocr: OCR module for scanned PDFs
  * Uses system poppler tools for PDF→image conversion and GLM-OCR for text extraction
+ * 
+ * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
 
 import { exec } from "child_process";
@@ -8,8 +10,6 @@ import { promisify } from "util";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
-import OpenAI from "openai";
-import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { countTokens } from "../core/utils";
 import type { PdfPage } from "./pdf";
 
@@ -162,11 +162,6 @@ export async function ocrImage(
   const apiKey = options.apiKey || process.env.OPENAI_API_KEY || "lm-studio";
   const baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || "http://localhost:1234/v1";
 
-  const client = new OpenAI({
-    apiKey,
-    baseURL: baseUrl,
-  });
-
   // Read image and convert to base64
   const imageData = await fs.readFile(imagePath);
   const base64Image = imageData.toString("base64");
@@ -174,7 +169,7 @@ export async function ocrImage(
 
   try {
     // Build content parts for vision API
-    const contentParts: ChatCompletionContentPart[] = [
+    const contentParts = [
       {
         type: "image_url",
         image_url: {
@@ -187,18 +182,38 @@ export async function ocrImage(
       },
     ];
 
-    const response = await client.chat.completions.create({
-      model,
-      messages: [
-        {
-          role: "user",
-          content: contentParts,
-        },
-      ],
-      max_tokens: 4096,
+    // Use native fetch API instead of OpenAI SDK
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: contentParts,
+          },
+        ],
+        max_tokens: 4096,
+      }),
     });
 
-    return response.choices[0]?.message?.content || "";
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[OCR Error] API error: ${response.status} ${response.statusText} - ${errorText}`);
+      return "";
+    }
+
+    const data = await response.json() as {
+      choices: Array<{
+        message: { content: string };
+      }>;
+    };
+
+    return data.choices[0]?.message?.content || "";
   } catch (error) {
     console.error(`[OCR Error] Failed to process ${imagePath}:`, error);
     return "";

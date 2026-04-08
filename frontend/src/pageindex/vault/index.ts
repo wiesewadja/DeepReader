@@ -1,9 +1,12 @@
 /**
- * bun-pageindex: Obsidian Vault Indexing - Main Entry
+ * pageindex-vault: Obsidian Vault Indexing - Main Entry
  * Orchestrates file scanning, indexing, aggregation, and vector storage
+ * 
+ * Node.js compatible version
  */
 
 import * as path from "path";
+import * as fs from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import {
   scanVaultFiles,
@@ -227,7 +230,7 @@ function collectChildNodes(
 async function loadMeta(indexPath: string): Promise<VaultIndexMeta | null> {
   try {
     const metaPath = path.join(indexPath, "meta.json");
-    const content = await Bun.file(metaPath).text();
+    const content = await fs.readFile(metaPath, "utf-8");
     return JSON.parse(content);
   } catch {
     return null;
@@ -259,5 +262,5 @@ export async function loadVaultIndex(vaultPath: string): Promise<VaultIndexResul
 
 async function saveMeta(indexPath: string, meta: VaultIndexMeta): Promise<void> {
   await mkdir(indexPath, { recursive: true });
-  await Bun.write(path.join(indexPath, "meta.json"), JSON.stringify(meta, null, 2));
+  await fs.writeFile(path.join(indexPath, "meta.json"), JSON.stringify(meta, null, 2), "utf-8");
 }

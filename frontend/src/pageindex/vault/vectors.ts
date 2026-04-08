@@ -1,9 +1,12 @@
 /**
- * bun-pageindex: Obsidian Vault Vector Storage
+ * pageindex-vault: Obsidian Vault Vector Storage
  * Manages vector embeddings using flat binary file (Float32) + slot mapping
+ * 
+ * Node.js compatible version (replaces Bun.write and Bun.file)
  */
 
 import * as path from "path";
+import * as fs from "node:fs/promises";
 import { open } from "node:fs/promises";
 import type { EmbeddingOptions, VectorIndexMeta } from "./types";
 import { cosineSimilarity } from "../core/utils";
@@ -37,8 +40,8 @@ export async function initVectorStore(
 
   // Write header
   const header = buildHeader(dimensions, 0, 0);
-  await Bun.write(vectorPath, header);
-  await Bun.write(metaPath, JSON.stringify(meta, null, 2));
+  await fs.writeFile(vectorPath, Buffer.from(header));
+  await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
 
   return { vectors: new Float32Array(0), meta, vectorPath, metaPath };
 }
@@ -48,12 +51,12 @@ export async function loadVectorStore(indexPath: string): Promise<VectorStore | 
   const metaPath = path.join(indexPath, "vectors.meta.json");
 
   try {
-    const metaContent = await Bun.file(metaPath).text();
+    const metaContent = await fs.readFile(metaPath, "utf-8");
     const meta = JSON.parse(metaContent) as VectorIndexMeta;
 
-    const buffer = await Bun.file(vectorPath).arrayBuffer();
+    const buffer = await fs.readFile(vectorPath);
     // Skip header bytes so vectors are aligned to slot boundaries
-    const vectors = new Float32Array(buffer, HEADER_SIZE);
+    const vectors = new Float32Array(buffer.buffer, HEADER_SIZE);
 
     return { vectors, meta, vectorPath, metaPath };
   } catch {
@@ -181,7 +184,7 @@ export async function appendVector(
   store.meta.slots[nodeId] = { slotIndex, deleted: false };
   store.meta.count++;
 
-  await Bun.write(store.metaPath, JSON.stringify(store.meta, null, 2));
+  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
 
   return slotIndex;
 }
@@ -214,7 +217,7 @@ export async function markVectorDeleted(
   slot.deleted = true;
   store.meta.deletedCount++;
 
-  await Bun.write(store.metaPath, JSON.stringify(store.meta, null, 2));
+  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
 }
 
 export async function getNodeVector(
@@ -225,33 +228,38 @@ export async function getNodeVector(
   if (!slot || slot.deleted) return null;
 
   const offset = HEADER_SIZE + slot.slotIndex * store.meta.dimensions * 4;
-  const file = Bun.file(store.vectorPath);
-  const buffer = await file.slice(offset, offset + store.meta.dimensions * 4).arrayBuffer();
+  const fileHandle = await open(store.vectorPath, "r");
+  const buffer = Buffer.allocUnsafe(store.meta.dimensions * 4);
+  await fileHandle.read(buffer, 0, store.meta.dimensions * 4, offset);
+  await fileHandle.close();
 
-  return new Float32Array(buffer);
+  return new Float32Array(buffer.buffer);
 }
 
 export async function loadAllVectors(store: VectorStore): Promise<Float32Array> {
-  const file = Bun.file(store.vectorPath);
-  const buffer = await file.arrayBuffer();
-  return new Float32Array(buffer);
+  const buffer = await fs.readFile(store.vectorPath);
+  return new Float32Array(buffer.buffer);
 }
 
 export async function compactVectors(store: VectorStore): Promise<void> {
   const liveSlots: Array<{ nodeId: string; slotIndex: number; vector: Float32Array }> = [];
 
+  const fileHandle = await open(store.vectorPath, "r");
+  
   for (const [nodeId, slot] of Object.entries(store.meta.slots)) {
     if (!slot.deleted) {
       const offset = HEADER_SIZE + slot.slotIndex * store.meta.dimensions * 4;
-      const file = Bun.file(store.vectorPath);
-      const buffer = await file.slice(offset, offset + store.meta.dimensions * 4).arrayBuffer();
+      const buffer = Buffer.allocUnsafe(store.meta.dimensions * 4);
+      await fileHandle.read(buffer, 0, store.meta.dimensions * 4, offset);
       liveSlots.push({
         nodeId,
         slotIndex: slot.slotIndex,
-        vector: new Float32Array(buffer),
+        vector: new Float32Array(buffer.buffer),
       });
     }
   }
+  
+  await fileHandle.close();
 
   // Rewrite file
   const header = buildHeader(store.meta.dimensions, liveSlots.length, 0);
@@ -274,7 +282,7 @@ export async function compactVectors(store: VectorStore): Promise<void> {
 
   store.meta.count = liveSlots.length;
   store.meta.deletedCount = 0;
-  await Bun.write(store.metaPath, JSON.stringify(store.meta, null, 2));
+  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
 }
 
 function buildHeader(
