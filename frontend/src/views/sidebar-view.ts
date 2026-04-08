@@ -7,7 +7,6 @@ import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
 import { DeepPDFClient, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
-import { TaskPollingManager } from "../utils/task-polling-manager.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress, SearchFilters } from "../types/index.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
@@ -16,7 +15,6 @@ import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCal
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
-import { ReadingPortalService } from "../services/reading-portal.js";
 import { ContextManager } from "../services/context-manager.js";
 import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
@@ -71,7 +69,6 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 export class SidebarView extends ItemView {
     private plugin: any; // 插件实例，用于访问设置
     private readingTopbar: ReadingTopbar | null = null;
-    private taskPollingManager: TaskPollingManager | null = null;
     private indexes: IndexListItem[] = [];  // 索引列表缓存
     private taskCards: Map<string, TaskProgressCard> = new Map();
 
@@ -89,7 +86,6 @@ export class SidebarView extends ItemView {
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
     private streamController: AbortController | null = null;  // 流式请求控制器
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
-    private readingPortal: ReadingPortalService | null = null;
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
@@ -642,10 +638,7 @@ export class SidebarView extends ItemView {
                 return this.indexes;
             },
             onDownloadCover: async (indexId: string, pdfName: string) => {
-                if (!this.readingPortal) {
-                    return null;
-                }
-                return await this.readingPortal.downloadBookCover(indexId, pdfName);
+                return null;
             },
             plugin: this.plugin
         }).open();
@@ -780,16 +773,8 @@ export class SidebarView extends ItemView {
         }
 
         // 尝试从本地元数据获取作者信息（如果还没有）
-        if (!author && this.readingPortal) {
-            try {
-                const metadata = await this.readingPortal.getBookMetadata(displayName);
-                log(`[DeepPDF] 从元数据获取: metadata.author="${metadata?.author}"`);
-                if (metadata?.author) {
-                    author = metadata.author;
-                }
-            } catch (e) {
-                log(`[DeepPDF] 获取元数据失败（后端可能不可用）`);
-            }
+        if (!author) {
+            log(`[DeepPDF] 作者信息未找到`);
         }
         log(`[DeepPDF] 最终使用的作者: author="${author}"`);
 
@@ -972,14 +957,6 @@ export class SidebarView extends ItemView {
         if (el) {
             container.appendChild(el);
         }
-    }
-
-    /**
-     * 获取或创建 TaskPollingManager 实例
-     * @deprecated Page Index 不需要轮询管理器
-     */
-    private getTaskPollingManager(): TaskPollingManager | null {
-        return null;
     }
 
     async onOpen() {
@@ -2538,16 +2515,6 @@ export class SidebarView extends ItemView {
                     warn('[DeepPDF] Error destroying chatInput:', e);
                 }
                 this.chatInput = null;
-            }
-
-            // 清理轮询管理器
-            if (this.taskPollingManager) {
-                try {
-                    this.taskPollingManager.destroy();
-                } catch (e) {
-                    warn('[DeepPDF] Error destroying taskPollingManager:', e);
-                }
-                this.taskPollingManager = null;
             }
 
             // 清理任务卡片

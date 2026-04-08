@@ -1,6 +1,5 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
-import { DeepPDFClient } from "./api/http-client.js";
 import { serviceLog } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
@@ -20,7 +19,6 @@ const log = serviceLog;
 
 export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
-    apiClient: DeepPDFClient | null = null;
     readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
     private skillsDir: string = '';
@@ -39,12 +37,6 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化 FrontendAgent（插件启动时初始化）
         await this.getFrontendAgent();
-
-        // 初始化 HTTP 客户端（连接到本地 localhost）
-        this.apiClient = new DeepPDFClient(this.settings.apiPort);
-
-        // 不再启动时检查后端连接（后端是可选的）
-        // 后端连接状态会在需要时按需检查
 
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
