@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Types and interfaces
+ * PageIndex: Types and interfaces
  */
 
 /** Extraction mode for PDF processing */

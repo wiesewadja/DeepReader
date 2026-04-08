@@ -31,7 +31,6 @@ export interface LibraryModalOptions {
     selectedIndexId: string | null;
     onIndexChange?: (indexId: string) => void;
     onCreateIndex?: () => Promise<void>;
-    onExportMarkdown?: (indexId: string) => void;
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
     onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
@@ -282,19 +281,8 @@ export class LibraryModal extends Modal {
     }
 
     /**
-     * 从后端加载封面
-     * @returns 是否成功加载
-     */
-    private async loadCoverFromBackend(indexId: string): Promise<boolean> {
-        return false;
-    }
-
-    /**
      * 异步加载封面并更新显示
-     *
-     * 优先级：
-     * 1. 本地 Obsidian vault (DeepReader/covers/{bookName}.png)
-     * 2. 后端 API (仅当本地不存在时才调用)
+     * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
@@ -311,21 +299,6 @@ export class LibraryModal extends Modal {
                 imgEl.alt = bookName;
                 // 重新添加操作按钮
                 this.addCoverActions(coverEl, indexId);
-                return;
-            }
-
-            // 本地不存在，从后端加载（仅当本地没有时才调用）
-            const loaded = await this.loadCoverFromBackend(indexId);
-            if (loaded) {
-                const coverUrl = this.coverCache.get(indexId);
-                if (coverUrl) {
-                    coverEl.innerHTML = '';
-                    const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
-                    imgEl.src = coverUrl;
-                    imgEl.alt = bookName;
-                    // 重新添加操作按钮
-                    this.addCoverActions(coverEl, indexId);
-                }
             }
         } catch (error) {
             // 加载失败，保持占位符
@@ -343,10 +316,12 @@ export class LibraryModal extends Modal {
         // 下载按钮
         const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
         downloadBtn.innerHTML = Icons.download;
-        downloadBtn.title = '导出 Markdown';
+        downloadBtn.title = 'Markdown 已自动导出';
+        downloadBtn.style.opacity = '0.5';
+        downloadBtn.style.cursor = 'default';
         downloadBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.options.onExportMarkdown?.(indexId);
+            new Notice('Markdown 已在索引时自动导出', 3000);
         });
 
         // 删除按钮
@@ -424,17 +399,14 @@ export class LibraryModal extends Modal {
         const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
 
         if (!chaptersExist) {
-            // 章节不存在，直接下载并选择（无弹窗提示）
-            new Notice('章节下载中...', 3000);
-            this.options.onExportMarkdown?.(index.id);
-            this.selectedIndexId = index.id;
-            this.options.onIndexChange?.(index.id);
+            new Notice('章节文件不存在，请重新索引书籍', 3000);
             this.close();
-        } else {
-            this.selectedIndexId = index.id;
-            this.options.onIndexChange?.(index.id);
-            this.close();
+            return;
         }
+
+        this.selectedIndexId = index.id;
+        this.options.onIndexChange?.(index.id);
+        this.close();
     }
 
     private checkBookChaptersExist(pdfName: string): boolean {

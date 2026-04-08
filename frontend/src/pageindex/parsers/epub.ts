@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: EPUB parsing module
+ * PageIndex: EPUB parsing module
  * Extracts text content from EPUB e-books
  * Based on obsidian-epub-importer implementation
  */

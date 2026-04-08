@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Obsidian Vault Index Types
+ * PageIndex: Obsidian Vault Index Types
  */
 
 import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";

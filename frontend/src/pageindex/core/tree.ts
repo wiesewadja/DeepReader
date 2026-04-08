@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Tree building and processing
+ * PageIndex: Tree building and processing
  * Functions for building, processing, and managing document tree structures
  */
 

@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Obsidian Vault Search Index (Keyword)
+ * PageIndex: Obsidian Vault Search Index (Keyword)
  * Builds inverted index and node map for fast keyword search
  */
 

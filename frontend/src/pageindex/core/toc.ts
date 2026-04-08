@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: TOC Detection and Extraction
+ * PageIndex: TOC Detection and Extraction
  * Functions for detecting, extracting, and processing table of contents
  */
 

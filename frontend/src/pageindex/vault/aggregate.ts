@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Obsidian Vault Directory-level Aggregation
+ * PageIndex: Obsidian Vault Directory-level Aggregation
  * Aggregates file-level PageIndexResult into directory-level DirectoryIndex
  */
 

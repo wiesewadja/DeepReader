@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: LLM Prompts
+ * PageIndex: LLM Prompts
  * All prompts used for document structure extraction
  */
 

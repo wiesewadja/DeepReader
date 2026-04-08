@@ -329,7 +329,7 @@ function generateMOC(
   }
 
   content += `\n---\n\n`;
-  content += `*由 bun-pageindex 自动生成*\n`;
+  content += `*由 PageIndex 自动生成*\n`;
 
   return content;
 }

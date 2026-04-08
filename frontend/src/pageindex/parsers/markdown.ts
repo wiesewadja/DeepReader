@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Markdown to Tree Conversion
+ * PageIndex: Markdown to Tree Conversion
  * Functions for building tree structures from markdown documents
  */
 

@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Obsidian Vault Hybrid Search
+ * PageIndex: Obsidian Vault Hybrid Search
  * Combines vector semantic search, keyword exact match, level weighting, and cross-encoder re-ranking
  */
 

@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Main PageIndex API
+ * PageIndex: Main PageIndex API
  * Primary entry point for PDF document indexing
  */
 

@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: PDF parsing utilities
+ * PageIndex: PDF parsing utilities
  * Uses pdf-parse for text extraction
  */
 

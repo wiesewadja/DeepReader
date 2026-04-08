@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Parsers barrel
+ * PageIndex: Parsers barrel
  * Re-exports all parser modules for convenient importing
  */
 

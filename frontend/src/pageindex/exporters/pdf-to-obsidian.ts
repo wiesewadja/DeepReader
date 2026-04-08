@@ -288,7 +288,7 @@ export async function exportPdfToObsidian(
     const fn = sanitizeFileName(`${options.includeIndex ? String(i + 1).padStart(2, "0") + " - " : ""}${s.title}`);
     moc += `${indent}- [[${fn}|${s.title}]]\n`;
   }
-  moc += `\n---\n\n*由 bun-pageindex 自动生成*\n`;
+  moc += `\n---\n\n*由 PageIndex 自动生成*\n`;
 
   // 6. 写入
   fs.writeFileSync(mocPath, moc);

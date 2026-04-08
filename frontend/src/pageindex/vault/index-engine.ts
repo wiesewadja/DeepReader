@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Obsidian Vault File-level Indexing
+ * PageIndex: Obsidian Vault File-level Indexing
  * Indexes individual markdown files using existing markdownToTree pipeline
  */
 

@@ -14,7 +14,6 @@ import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/messa
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
-import { exportIndexToMarkdown } from "../services/markdown-exporter.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
 import { ReadingPortalService } from "../services/reading-portal.js";
@@ -633,9 +632,6 @@ export class SidebarView extends ItemView {
             },
             onCreateIndex: async () => {
                 await this.loadIndexes();
-            },
-            onExportMarkdown: (indexId: string) => {
-                this.handleExportMarkdown(indexId);
             },
             onDeleteIndex: async (indexId: string) => {
                 await this.handleDeleteIndex(indexId);

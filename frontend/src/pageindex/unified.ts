@@ -1,5 +1,5 @@
 /**
- * bun-pageindex: Unified API Entry
+ * PageIndex: Unified API Entry
  * Auto-detects document type and routes to the correct pipeline.
  *
  * Two product-level functions:
