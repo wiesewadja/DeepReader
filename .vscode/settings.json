@@ -11,5 +11,6 @@
     "python.testing.pytestArgs": [
         "backend/deeppdf-api/tests",
         "-v"
-    ]
+    ],
+    "kiroAgent.configureMCP": "Disabled"
 }

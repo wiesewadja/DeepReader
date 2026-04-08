@@ -885,17 +885,41 @@ export class SidebarView extends ItemView {
 
         if (savedSessionId) {
             try {
-                this.sessionId = savedSessionId;
+                // 先校验会话是否属于当前书籍（在恢复到 UI 之前）
+                await this.initializeSessionStore();
+                const session = await this.sessionStore!.get(savedSessionId);
 
-                // 从 SessionStore（JSONL 文件）恢复
-                const restored = await this.restoreFromSessionStore(savedSessionId);
-                if (restored) {
-                    log('[DeepPDF] 从 SessionStore 恢复会话成功');
-                    return;
+                if (session) {
+                    // 标准化 session.indexId 以便比较（移除扩展名）
+                    const sessionBookName = session.indexId
+                        .replace(/\.pdf$/i, '')
+                        .replace(/\.epub$/i, '');
+
+                    // 判断会话是否属于当前书籍
+                    // 匹配条件：indexId 完全匹配，或标准化后的书名匹配
+                    const isMatch = session.indexId === indexId ||
+                        session.indexId === normalizedBookName ||
+                        sessionBookName === normalizedBookName ||
+                        sessionBookName === indexId;
+
+                    if (!isMatch) {
+                        log(`[DeepPDF] 会话不匹配: session.indexId="${session.indexId}", 当前 indexId="${indexId}", normalizedBookName="${normalizedBookName}"`);
+                        // 会话不匹配，创建新会话
+                        this.startNewSession(indexId);
+                        return;
+                    }
+
+                    // 会话匹配，恢复到 UI
+                    this.sessionId = savedSessionId;
+                    const restored = await this.restoreFromSessionStore(savedSessionId);
+                    if (restored) {
+                        log('[DeepPDF] 从 SessionStore 恢复会话成功，会话匹配');
+                        return;
+                    }
                 }
 
-                // 没有找到会话，显示欢迎消息
-                this.showWelcomeMessage();
+                // 没有找到会话或会话为空，创建新会话
+                this.startNewSession(indexId);
             } catch (e) {
                 logError(`[DeepPDF] 恢复会话失败:`, e);
                 this.startNewSession(indexId);
@@ -2503,69 +2527,13 @@ export class SidebarView extends ItemView {
 
 
     private async loadIndexes(): Promise<void> {
-        if (!this.apiClient) {
-            this.indexes = [];
-            // 后端不可用时，尝试恢复上次选中的书籍
-            if (this.plugin.settings.lastSelectedIndexId) {
-                log('[DeepPDF] [loadIndexes] 后端不可用，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
-                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
-            }
-            return;
-        }
+        // 后端是可选的，不主动调用后端 API
+        // 直接从本地设置恢复上次选中的书籍
+        this.indexes = [];
 
-        try {
-            log('[DeepPDF] [loadIndexes] 开始请求索引列表...');
-            const result: ListIndexesResult = await this.apiClient.listIndexes();
-            log('[DeepPDF] [loadIndexes] API 响应:', JSON.stringify(result, null, 2));
-
-            if (!result || !Array.isArray(result.indexes) || result.indexes.length === 0) {
-                this.indexes = [];
-                // 后端返回空列表时，也尝试恢复上次选中的书籍
-                if (this.plugin.settings.lastSelectedIndexId) {
-                    log('[DeepPDF] [loadIndexes] 后端无索引，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
-                    await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
-                }
-                return;
-            }
-
-            // 打印每个索引的状态
-            result.indexes.forEach((idx, i) => {
-                log(`[DeepPDF] [loadIndexes] 索引 ${i + 1}: id="${idx.id}", status="${idx.status}", pdf="${idx.pdf_name}"`);
-            });
-
-            // 缓存索引列表
-            this.indexes = result.indexes;
-
-            // 2. 决定要选中的索引
-            // 优先级：用户手动选择 > 恢复上次选中 > 不自动选择
-            let indexToSelect = this.currentIndexId;
-
-            // 优先恢复上次用户手动选择的书籍
-            if (!indexToSelect && this.plugin.settings.lastSelectedIndexId) {
-                const exists = result.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
-                if (exists) {
-                    indexToSelect = this.plugin.settings.lastSelectedIndexId;
-                }
-            }
-
-            // 不再自动选择后端的第一个索引（保持前后端分离）
-            // 只有在有明确要选中的索引时才调用 selectIndex
-            if (indexToSelect) {
-                await this.selectIndex(indexToSelect);
-                log(`[DeepPDF] [loadIndexes] selectIndex('${indexToSelect}') called`);
-            }
-
-            // 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
-            await this.updateCurrentIndexIdIfNeeded();
-        } catch (error) {
-            // 后端是可选的，加载索引列表失败时只记录日志
-            logError('[DeepPDF] [loadIndexes] 请求失败:', error);
-            this.indexes = [];
-            // 后端请求失败时，尝试恢复上次选中的书籍
-            if (this.plugin.settings.lastSelectedIndexId) {
-                log('[DeepPDF] [loadIndexes] 请求失败，尝试恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
-                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
-            }
+        if (this.plugin.settings.lastSelectedIndexId) {
+            log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
+            await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
         }
     }
 

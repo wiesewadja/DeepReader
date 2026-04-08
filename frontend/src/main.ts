@@ -40,8 +40,8 @@ export default class DeepPDFPlugin extends Plugin {
         // 初始化 HTTP 客户端（连接到本地 localhost）
         this.apiClient = new DeepPDFClient(this.settings.apiPort);
 
-        // 异步检查服务器连接状态（不阻塞插件加载）
-        this.checkServerConnection();
+        // 不再启动时检查后端连接（后端是可选的）
+        // 后端连接状态会在需要时按需检查
 
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
@@ -1118,28 +1118,4 @@ views:
         }
     }
 
-    /**
-     * 异步检查服务器连接状态（不阻塞插件加载）
-     */
-    private checkServerConnection(): void {
-        // 异步检查，不阻塞插件加载
-        // 后端是可选的，连接状态通过 UI 指示器显示，不需要 Notice 弹窗
-        if (!this.apiClient) {
-            log('API client not initialized');
-            return;
-        }
-
-        this.apiClient.healthCheck()
-            .then(isHealthy => {
-                if (!isHealthy) {
-                    log('Server not running or unhealthy at localhost:' + this.settings.apiPort);
-                } else {
-                    log('Server connected successfully');
-                }
-            })
-            .catch(err => {
-                // 静默处理，后端是可选的
-                log.warn('Failed to connect to server:', err);
-            });
-    }
 }
