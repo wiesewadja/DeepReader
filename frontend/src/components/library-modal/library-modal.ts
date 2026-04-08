@@ -5,10 +5,13 @@
 
 import { App, Modal, Notice, TFile } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../../ui/pdf-file-selector.js';
-import type { TaskProgress } from '../../api/http-client.js';
 import { IndexListItem } from '../../api/http-client.js';
 import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError } from '../../utils/logger.js';
+import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';
+import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
+import * as path from 'path';
+import * as fs from 'fs/promises';
 
 // SVG 图标
 const Icons = {
@@ -32,7 +35,6 @@ export interface LibraryModalOptions {
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
     onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
-    apiClient: any;
     plugin: any;
 }
 
@@ -284,16 +286,6 @@ export class LibraryModal extends Modal {
      * @returns 是否成功加载
      */
     private async loadCoverFromBackend(indexId: string): Promise<boolean> {
-        try {
-            const coverData = await this.options.apiClient.exportCover(indexId);
-            if (coverData && coverData.cover_data) {
-                const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
-                this.coverCache.set(indexId, coverUrl);
-                return true;
-            }
-        } catch (error) {
-            // 后端获取失败
-        }
         return false;
     }
 
@@ -478,108 +470,67 @@ export class LibraryModal extends Modal {
     }
 
     private async handleAddDocument(): Promise<void> {
-        if (!this.options.apiClient) {
-            new ConfirmModal(
-                this.app,
-                "需要后端服务",
-                "此功能需要连接后端服务才能使用。\n\n请启动后端：\n```bash\nuv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio\n```",
-                () => {},
-                { confirmLabel: "知道了", cancelLabel: "取消" }
-            ).open();
-            return;
-        }
-
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
-            // 生成临时 ID 用于追踪
-            const tempId = `temp_${Date.now()}`;
             const displayName = this.getDisplayName(fileInfo.name);
 
-            // 立即添加一个临时的"正在索引"占位卡片
+            const tempId = `temp_${Date.now()}`;
             const tempIndex: IndexListItem = {
                 id: tempId,
                 pdf_name: fileInfo.name,
                 node_count: 0,
                 created_at: new Date().toISOString(),
-                status: 'uploading',
+                status: 'processing',
                 progress_percent: 0
             };
 
-            // 添加到索引列表并重新渲染
             this.indexes.unshift(tempIndex);
             this.renderGrid();
 
             new Notice(`开始索引「${displayName}」...`);
+            
             try {
-                let result;
-
-                // 判断是系统上传文件还是 Vault 文件
+                const vaultPath = (this.app.vault.adapter as any).basePath;
+                let filePath: string;
+                
                 if (isSystemFileInfo(fileInfo)) {
-                    // 系统文件：先上传再索引
-                    result = await this.options.apiClient.uploadAndIndex(
-                        fileInfo.file,
-                        undefined,
-                        (progress: number) => {
-                            // 更新上传进度
-                            if (progress < 100) {
-                                tempIndex.progress_percent = progress;
-                                tempIndex.status = 'uploading';
-                                this.updateCardProgress(tempId, progress, 'uploading');
-                            }
-                        },
-                        (taskProgress: TaskProgress) => {
-                            // 更新索引进度
-                            if (taskProgress.progress_percent !== undefined) {
-                                const progressPercent = Math.round(taskProgress.progress_percent);
-                                tempIndex.progress_percent = progressPercent;
-                                tempIndex.status = 'processing';
-                                tempIndex.message = taskProgress.message;
-                                this.updateCardProgress(tempId, progressPercent, 'processing', taskProgress.message);
-                            }
-                        }
-                    );
+                    filePath = (fileInfo as any).path || fileInfo.name;
                 } else {
-                    // Vault 文件：直接使用路径索引
-                    // 更新状态为"索引中"
-                    tempIndex.status = 'processing';
-                    this.updateCardProgress(tempId, 0, 'processing');
-
-                    result = await this.options.apiClient.indexPDF(fileInfo.path, {
-                        llmProvider: this.options.plugin.settings.llmProvider,
-                        llmModel: this.options.plugin.settings.llmModel,
-                        deepseekApiKey: this.options.plugin.settings.deepseekApiKey,
-                        openaiApiKey: this.options.plugin.settings.openaiApiKey,
-                        apiUrl: this.options.plugin.settings.apiUrl,
-                        maxPagesPerNode: this.options.plugin.settings.maxPagesPerNode,
-                        maxTokensPerNode: this.options.plugin.settings.maxTokensPerNode,
-                        ifAddNodeSummary: this.options.plugin.settings.ifAddNodeSummary
-                    });
+                    filePath = fileInfo.path;
                 }
+                
+                const fileType = fileInfo.name.toLowerCase().endsWith('.epub') 
+                    ? 'epub' 
+                    : 'pdf';
 
-                // 移除临时卡片
+                const result = await indexBook({
+                    filePath,
+                    fileType,
+                    outputDir: vaultPath,
+                    embedding: this.options.plugin.settings.embedding,
+                    model: this.options.plugin.settings.llmModel,
+                    apiKey: this.options.plugin.openaiApiKey || this.options.plugin.settings.openaiApiKey,
+                    baseUrl: this.options.plugin.settings.apiUrl,
+                    onProgress: (progress: BookIndexProgress) => {
+                        tempIndex.progress_percent = progress.percent;
+                        tempIndex.status = 'processing';
+                        tempIndex.message = progress.stepLabel;
+                        this.updateCardProgress(tempId, progress.percent, 'processing', progress.stepLabel);
+                    },
+                });
+
                 this.indexes = this.indexes.filter(idx => idx.id !== tempId);
                 this.cardElements.delete(tempId);
 
-                if (result.status === 'pending' || result.status === 'processing') {
-                    new Notice(`索引任务已创建，正在后台处理...`, 4000);
-                    // 立即刷新以显示真实的索引卡片
-                    await this.refreshIndexes();
-                    this.startProgressPolling();
-                } else if (result.status === 'success') {
-                    new Notice(`索引成功！节点数: ${result.node_count}`, 3000);
-                    await this.refreshIndexes();
-                } else {
-                    new Notice(`索引状态: ${result.status}`, 3000);
-                    await this.refreshIndexes();
-                }
+                new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
+                
+                await this.refreshIndexes();
             } catch (error: any) {
-                // 移除临时卡片
                 this.indexes = this.indexes.filter(idx => idx.id !== tempId);
                 this.cardElements.delete(tempId);
                 this.renderGrid();
 
                 let msg = '索引创建失败';
-                if (error.message?.includes('Too Many Requests')) msg = '创建索引过于频繁，请稀后再试';
-                else if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
+                if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
                 else if (error.message) msg = `索引创建失败: ${error.message}`;
                 new Notice(msg, 5000);
                 logError('[DeepPDF] 索引创建错误:', error);
@@ -659,19 +610,15 @@ export class LibraryModal extends Modal {
             '删除索引',
             `确定要删除「${displayName}」吗？此操作不可撤销。`,
             async (deleteLocalData?: boolean) => {
-                // 1. 乐观更新：立即从本地列表中移除
                 const indexToRemove = index.id;
                 this.indexes = this.indexes.filter(idx => idx.id !== indexToRemove);
 
-                // 清除选中状态
                 if (this.selectedIndexId === indexToRemove) {
                     this.selectedIndexId = null;
                 }
 
-                // 立即重新渲染
                 this.renderGrid();
 
-                // 2. 如果选择了删除本地数据，异步删除本地文件
                 if (deleteLocalData) {
                     this.deleteLocalData(displayName).catch(error => {
                         console.error('[LibraryModal] 删除本地数据失败:', error);
@@ -679,10 +626,19 @@ export class LibraryModal extends Modal {
                     });
                 }
 
-                // 3. 异步调用后端删除（不阻塞 UI）
-                this.options.onDeleteIndex?.(indexToRemove).catch(error => {
-                    console.error('[LibraryModal] 后端删除失败:', error);
-                });
+                try {
+                    const vaultPath = (this.app.vault.adapter as any).basePath;
+                    const bookId = index.id;
+                    const indexDir = path.join(vaultPath, '.pageindex', bookId);
+                    
+                    await fs.rm(indexDir, { recursive: true, force: true });
+                    new Notice(`已删除「${displayName}」的索引`);
+                    
+                    await this.options.onRefresh?.();
+                } catch (error) {
+                    console.error('[LibraryModal] 删除索引失败:', error);
+                    new Notice('删除索引失败');
+                }
             },
             {
                 confirmLabel: '删除',

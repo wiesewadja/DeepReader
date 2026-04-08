@@ -63,6 +63,8 @@ export interface ToolContext {
   localCache?: import('./local/types.js').LocalToolCache;
   /** 用户引用的结构化数据（选中文本时附加的上下文） */
   quotes?: QuoteItem[];
+  /** 插件实例（用于访问设置） */
+  plugin?: any;
 }
 
 /**

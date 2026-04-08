@@ -4,6 +4,14 @@
 
 import type { ProviderType } from './providers';
 
+export interface EmbeddingSettings {
+    provider: "openai" | "ollama" | "lmstudio" | "local";
+    model?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    dimensions?: number;
+}
+
 export interface DeepPDFSettings {
     // API Server 设置
     apiPort: number;
@@ -27,6 +35,9 @@ export interface DeepPDFSettings {
     // 模型和 Base URL
     llmModel: string;
     apiUrl: string;
+
+    // Embedding 模型配置（用于 Page Index 向量化）
+    embedding: EmbeddingSettings;
 
     // PDF 索引设置
     maxPagesPerNode: number;
@@ -72,6 +83,13 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
     // 模型和 Base URL
     llmModel: "deepseek-chat",
     apiUrl: "",
+
+    // Embedding 模型配置（默认使用 OpenAI text-embedding-3-small）
+    embedding: {
+        provider: "openai",
+        model: "text-embedding-3-small",
+        dimensions: 1536,
+    },
 
     // PDF 索引设置
     maxPagesPerNode: 10,

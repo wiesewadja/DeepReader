@@ -46,7 +46,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this.apiClient, this)
+            (leaf) => new SidebarView(leaf, this)
         );
 
         // 自动打开侧边栏（延迟执行，等待 workspace 完全初始化）

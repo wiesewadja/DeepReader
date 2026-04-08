@@ -70,7 +70,6 @@ export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
-    private apiClient: DeepPDFClient | null;
     private plugin: any; // 插件实例，用于访问设置
     private readingTopbar: ReadingTopbar | null = null;
     private taskPollingManager: TaskPollingManager | null = null;
@@ -147,6 +146,58 @@ export class SidebarView extends ItemView {
         this.milestoneRecorder = new MilestoneRecorder(this.app);
         await this.milestoneRecorder.initializeCache();
         log('[DeepPDF] MilestoneRecorder 初始化完成');
+    }
+
+/**
+     * 检查后端连接状态
+     * @deprecated Page Index 不需要后端连接
+     */
+    private async checkBackendConnection(): Promise<boolean> {
+        return true;
+    }
+
+    /**
+     * 导出 Markdown（Page Index 不需要）
+     * @deprecated Markdown 已由 book-indexer 自动导出
+     */
+    async handleExportMarkdown(indexId: string) {
+        new Notice('Markdown 文件已在索引时自动导出', 3000);
+    }
+
+    /**
+     * 执行导出 Markdown 操作
+     * @deprecated Page Index 不需要
+     */
+    private async doExportMarkdown(indexId: string, pdfName: string) {
+        // No-op: Markdown 已由 book-indexer 自动导出
+    }
+
+    /**
+     * 删除索引（本地实现）
+     */
+    async handleDeleteIndex(indexId: string) {
+        try {
+            const vaultPath = (this.app.vault.adapter as any).basePath;
+            const indexDir = `${vaultPath}/.pageindex/${indexId}`;
+            const fs = require('fs/promises');
+            await fs.rm(indexDir, { recursive: true, force: true });
+            
+            new Notice("索引已删除");
+            
+            await this.loadIndexes();
+            
+            if (this.currentIndexId === indexId) {
+                this.currentIndexId = null;
+                this.currentPdfName = null;
+            }
+        } catch (error) {
+            console.error('[DeepPDF] 删除索引失败:', error);
+            new Notice('删除索引失败');
+        }
+    }
+
+    async refreshIndexes(): Promise<void> {
+        await this.loadIndexes();
     }
 
     /**
@@ -278,72 +329,11 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 处理系统文件上传
+     * 处理系统文件上传（已弃用 - Page Index 不需要上传）
      */
     private async handleSystemUpload(): Promise<void> {
-        // 创建隐藏的文件输入
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.pdf,.epub';
-                input.style.display = 'none';
-                document.body.appendChild(input);
-
-                input.onchange = async () => {
-                        if (!input.files || input.files.length === 0) return;
-
-                        const file = input.files[0];
-                        const extension = file.name.split('.').pop()?.toLowerCase() || '';
-
-                        if (!extension || !['pdf', 'epub'].includes(extension)) {
-                            new Notice('仅支持 PDF 和 EPUB 文件');
-                            return;
-                        }
-
-                        if (!this.apiClient) {
-                            new Notice('后端未连接，无法上传文件');
-                            return;
-                        }
-
-                        try {
-                            new Notice(`开始上传「${file.name}」...`);
-
-                            const result = await this.apiClient.uploadAndIndex(
-                                file,
-                                undefined,
-                                (uploadProgress: number) => {
-                                    if (uploadProgress < 100) {
-                                        new Notice(`上传中... ${uploadProgress}%`, 2000);
-                                    }
-                                },
-                                (taskProgress: APITaskProgress) => {
-                                    if (taskProgress.progress_percent !== undefined) {
-                                        const progressPercent = Math.round(taskProgress.progress_percent);
-                                        if (progressPercent % 25 === 0) {
-                                            new Notice(`索引进度: ${progressPercent}%`, 2000);
-                                        }
-                                    }
-                                }
-                            );
-
-                            if (result.status === 'success') {
-                                new Notice(`文件上传并索引成功！`, 3000);
-                                // 刷新索引列表
-                                await this.loadIndexes();
-                            } else {
-                                new Notice(`索引状态: ${result.status}`, 3000);
-                            }
-                        } catch (error: any) {
-                            let msg = '上传失败';
-                            if (error.message) msg = `上传失败: ${error.message}`;
-                            new Notice(msg, 5000);
-                        }
-
-                        // 清理
-                        document.body.removeChild(input);
-                    };
-
-                input.click();
-            }
+        new Notice('请使用在线书库添加书籍', 3000);
+    }
 
 
     /** 从 SessionStore 恢复历史记录到视图 */
@@ -611,11 +601,9 @@ export class SidebarView extends ItemView {
         }
     }
 
-    constructor(leaf: WorkspaceLeaf, apiClient: DeepPDFClient | null, plugin: any) {
+    constructor(leaf: WorkspaceLeaf, plugin: any) {
         super(leaf);
-        this.apiClient = apiClient;
         this.plugin = plugin;
-        // TaskPollingManager 将在首次需要时延迟初始化
     }
 
     getViewType() {
@@ -634,14 +622,6 @@ export class SidebarView extends ItemView {
      * 打在线书库弹窗
      */
     private async openLibraryModal(): Promise<void> {
-        // 检查后端连接
-        const isConnected = await this.checkBackendConnection();
-        if (!isConnected) {
-            new Notice('⚠️ 后端服务未连接，无法打开在线书库', 3000);
-            return;
-        }
-
-        // 刷新索引列表（确保获取最新数据）
         await this.loadIndexes();
 
         new LibraryModal(this.app, {
@@ -652,7 +632,6 @@ export class SidebarView extends ItemView {
                 this.selectIndex(indexId);
             },
             onCreateIndex: async () => {
-                // 刷新索引列表
                 await this.loadIndexes();
             },
             onExportMarkdown: (indexId: string) => {
@@ -667,13 +646,11 @@ export class SidebarView extends ItemView {
                 return this.indexes;
             },
             onDownloadCover: async (indexId: string, pdfName: string) => {
-                if (!this.apiClient) return null;
                 if (!this.readingPortal) {
-                    this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
+                    return null;
                 }
                 return await this.readingPortal.downloadBookCover(indexId, pdfName);
             },
-            apiClient: this.apiClient,
             plugin: this.plugin
         }).open();
     }
@@ -714,12 +691,10 @@ export class SidebarView extends ItemView {
      * 加载书籍封面
      * @param bookName 书籍名称（不含扩展名）
      *
-     * 优先级：
-     * 1. 本地 Obsidian vault (DeepReader/covers/{bookName}.png)
-     * 2. 后端 API (仅当本地不存在时才调用)
+     * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
     private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
-        // 优先从本地 Obsidian vault 加载
+        // 从本地 Obsidian vault 加载
         const coverPath = `DeepReader/covers/${bookName}.png`;
         const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
 
@@ -731,21 +706,6 @@ export class SidebarView extends ItemView {
                 this.readingTopbar?.setBookCover(coverUrl);
                 log(`[DeepPDF] 从本地加载书籍封面: ${coverPath}`);
                 return;
-            }
-        }
-
-        // 本地不存在，尝试从后端 API 获取（仅当本地没有时才调用）
-        if (indexId && this.apiClient) {
-            try {
-                const coverData = await this.apiClient.exportCover(indexId);
-                if (coverData && coverData.cover_data) {
-                    const coverUrl = `data:image/png;base64,${coverData.cover_data}`;
-                    this.readingTopbar?.setBookCover(coverUrl);
-                    log(`[DeepPDF] 本地封面不存在，从后端加载: ${indexId}`);
-                    return;
-                }
-            } catch (error) {
-                log(`[DeepPDF] 后端封面获取失败: ${error}`);
             }
         }
 
@@ -1020,15 +980,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 获取或创建 TaskPollingManager 实例
+     * @deprecated Page Index 不需要轮询管理器
      */
     private getTaskPollingManager(): TaskPollingManager | null {
-        if (!this.apiClient) return null;
-
-        if (!this.taskPollingManager) {
-            this.taskPollingManager = new TaskPollingManager(this.apiClient);
-        }
-
-        return this.taskPollingManager;
+        return null;
     }
 
     async onOpen() {
@@ -1049,13 +1004,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 检查后端连接状态并更新状态指示器
-     * 注意：不再渲染界面，仅初始化服务
+     * 注意：不再渲染界面，Page Index 不需要后端连接
      */
     private async checkConnectionAndRender(): Promise<void> {
-        // 初始化阅读入口服务（需要 apiClient）
-        if (this.apiClient) {
-            this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
-        }
+        // Page Index 不需要后端连接
     }
 
     /**
@@ -1063,11 +1015,6 @@ export class SidebarView extends ItemView {
      */
     private async renderMainUI(container: HTMLElement): Promise<void> {
         container.empty();
-
-        // 初始化阅读入口服务
-        if (this.apiClient) {
-            this.readingPortal = new ReadingPortalService(this.app, this.apiClient);
-        }
 
         // 初始化上下文管理器（章节辅助阅读）
         this.contextManager = new ContextManager({
@@ -1860,6 +1807,7 @@ export class SidebarView extends ItemView {
                 markdownFiles: this.currentMarkdownFiles,
                 useLLMTreeSearch: this.useLLMTreeSearch,
                 app: this.app,
+                plugin: this.plugin,
                 // 添加文档元数据（用于 Agent 上下文）
                 documentMetadata: {
                     title: this.currentPdfName || '未知文档',
@@ -2539,46 +2487,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
+     * @deprecated Page Index 不使用 task_id
      */
     private async updateCurrentIndexIdIfNeeded(): Promise<void> {
-        if (!this.currentIndexId || !this.apiClient) {
-            log('[DeepPDF] [updateCurrentIndexIdIfNeeded] 跳过：无 currentIndexId 或 apiClient');
-            return;
-        }
-
-        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 当前选中: ${this.currentIndexId}`);
-
-        // 如果当前选中的是 task_id，查询任务状态获取实际的 index_id
-        if (this.currentIndexId.startsWith('task_')) {
-            log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 检测到 task_id，查询状态...`);
-            try {
-                const taskStatus = await this.apiClient.getIndexStatus(this.currentIndexId);
-                log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态响应:`, JSON.stringify(taskStatus, null, 2));
-
-                if (taskStatus.status === 'completed' && taskStatus.index_id) {
-                    // 任务已完成，更新为实际的 index_id
-                    log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 更新索引ID: ${this.currentIndexId} -> ${taskStatus.index_id}`);
-                    this.currentIndexId = taskStatus.index_id;
-                    // 更新索引管理器的选中状态
-                    if (this.indexManager) {
-                        (this.indexManager as any).selectedIndexId = taskStatus.index_id;
-                        (this.indexManager as any).renderList();
-                        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新索引管理器选中状态`);
-                    }
-                    // 更新 PDF 名称
-                    if (taskStatus.pdf_name) {
-                        this.currentPdfName = taskStatus.pdf_name;
-                        log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 已更新 PDF 名称: ${taskStatus.pdf_name}`);
-                    }
-                } else {
-                    log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 任务状态: ${taskStatus.status}，未完成或无 index_id`);
-                }
-            } catch (error) {
-                warn(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 无法获取任务 ${this.currentIndexId} 的状态:`, error);
-            }
-        } else {
-            log(`[DeepPDF] [updateCurrentIndexIdIfNeeded] 不是 task_id，跳过查询`);
-        }
+        // Page Index 直接使用 bookId，没有 task_id 概念
     }
 
     private copyToClipboard(text: string): void {
