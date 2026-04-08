@@ -111,7 +111,9 @@ export function searchBM25(
       const docLength = index.nodes[nodeId]?.length || 0;
       
       const numerator = tf * (k1 + 1);
-      const denominator = tf + k1 * (1 - b + b * (docLength / avgDocLength));
+      const denominator = avgDocLength > 0
+        ? tf + k1 * (1 - b + b * (docLength / avgDocLength))
+        : tf + k1 * (1 - b);  // Fallback when avgDocLength is 0
       const bm25Score = idf * (numerator / denominator);
 
       scores[nodeId] = (scores[nodeId] || 0) + bm25Score;

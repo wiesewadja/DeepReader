@@ -92,3 +92,43 @@ describe("searchBM25", () => {
     expect(rareResults[0].score).toBeGreaterThan(commonResults[0].score);
   });
 });
+
+describe("edge cases", () => {
+  it("should handle empty input", () => {
+    expect(tokenize("")).toEqual([]);
+    
+    const index = buildBM25Index([]);
+    expect(index.stats.totalDocs).toBe(0);
+    expect(index.stats.avgDocLength).toBe(0);
+    
+    const results = searchBM25("test", index, 5);
+    expect(results).toEqual([]);
+  });
+
+  it("should use correct BM25 params", () => {
+    const nodes = [{ id: "ch01", text: "test", level: "L1" as const }];
+    const index = buildBM25Index(nodes);
+    
+    expect(index.params.k1).toBe(1.5);
+    expect(index.params.b).toBe(0.75);
+  });
+
+  it("should return empty for no matches", () => {
+    const nodes = [{ id: "ch01", text: "机器学习", level: "L1" as const }];
+    const index = buildBM25Index(nodes);
+    
+    const results = searchBM25("不存在", index, 5);
+    expect(results).toEqual([]);
+  });
+
+  it("should handle document with empty text", () => {
+    const nodes = [{ id: "ch01", text: "", level: "L1" as const }];
+    const index = buildBM25Index(nodes);
+    
+    expect(index.stats.totalDocs).toBe(1);
+    expect(index.nodes["ch01"].length).toBe(0);
+    
+    const results = searchBM25("test", index, 5);
+    expect(results).toEqual([]);
+  });
+});
