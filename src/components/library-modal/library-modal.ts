@@ -465,9 +465,21 @@ export class LibraryModal extends Modal {
                 let filePath: string;
                 
                 if (isSystemFileInfo(fileInfo)) {
-                    filePath = (fileInfo as any).path || fileInfo.name;
+                    // 系统上传的文件：需要先保存到 vault
+                    const systemFile = fileInfo as SystemFileInfo;
+                    const arrayBuffer = await systemFile.file.arrayBuffer();
+                    
+                    // 保存到 vault 根目录
+                    const fileName = systemFile.name;
+                    await this.app.vault.createBinary(fileName, arrayBuffer);
+                    
+                    // 获取完整的文件系统路径
+                    filePath = `${vaultPath}/${fileName}`;
+                    
+                    new Notice(`文件已保存到 vault: ${fileName}`);
                 } else {
-                    filePath = fileInfo.path;
+                    // Vault 中的文件：直接使用完整路径
+                    filePath = `${vaultPath}/${fileInfo.path}`;
                 }
                 
                 const fileType = fileInfo.name.toLowerCase().endsWith('.epub') 
