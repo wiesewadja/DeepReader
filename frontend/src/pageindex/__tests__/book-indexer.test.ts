@@ -422,4 +422,173 @@ describe("book-indexer", () => {
       await fs.rm(vault2, { recursive: true, force: true });
     });
   });
+
+  describe("edge cases - error handling", () => {
+    it("should gracefully degrade to pure BM25 when embedding API fails", async () => {
+      const testFilePath = path.join(testVaultPath, "embedding-fail.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const progressEvents: any[] = [];
+
+      // Mock embedding API failure
+      vi.doMock("../vault/vectors.js", () => ({
+        initVectorStore: vi.fn().mockResolvedValue({
+          vectors: new Float32Array(0),
+          meta: {
+            model: "text-embedding-3-small",
+            dimensions: 1536,
+            count: 0,
+            deletedCount: 0,
+            indexedAt: new Date().toISOString(),
+            slots: {},
+          },
+          vectorPath: "/tmp/vectors.f32",
+          metaPath: "/tmp/vectors.meta.json",
+        }),
+        generateEmbeddings: vi.fn().mockRejectedValue(new Error("Embedding API failed: 500 Internal Server Error")),
+        appendVector: vi.fn().mockResolvedValue(0),
+      }));
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+        embedding: {
+          provider: "openai",
+          apiKey: "test-key",
+          model: "text-embedding-3-small",
+          dimensions: 1536,
+        },
+        onProgress: (progress) => {
+          progressEvents.push(progress);
+        },
+      });
+
+      expect(result.bookId).toBeDefined();
+      expect(result.title).toBe("Test Book");
+
+      const vectorStep = progressEvents.find(e => e.step === "vectorize_skipped");
+      expect(vectorStep).toBeDefined();
+      expect(vectorStep?.message).toContain("Embedding API failed");
+
+      const metaPath = path.join(result.indexDir, "book-meta.json");
+      const metaContent = await fs.readFile(metaPath, "utf-8");
+      const meta = JSON.parse(metaContent);
+      expect(meta.embedding).toBeUndefined();
+
+      const bm25Path = path.join(result.indexDir, "bm25.json");
+      const bm25Content = await fs.readFile(bm25Path, "utf-8");
+      const bm25 = JSON.parse(bm25Content);
+      expect(bm25.nodes).toBeDefined();
+      expect(bm25.invertedIndex).toBeDefined();
+
+      await fs.rm(testFilePath, { force: true });
+      vi.doUnmock("../vault/vectors.js");
+    });
+
+    it("should detect INDEX_INCOMPLETE when bm25.json is missing", async () => {
+      const filePath = path.join(testVaultPath, "incomplete.pdf");
+      const { generateBookId } = await import("../book-indexer.js");
+      const bookId = generateBookId(filePath);
+      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+
+      await fs.mkdir(indexDir, { recursive: true });
+      await fs.writeFile(path.join(indexDir, "book-meta.json"), JSON.stringify({
+        version: 1,
+        bookId,
+        title: "Incomplete Book",
+        indexedAt: new Date().toISOString(),
+        chapters: [],
+      }));
+
+      expect(await isBookIndexed(filePath, testVaultPath)).toBe(true);
+
+      const bm25Path = path.join(indexDir, "bm25.json");
+      await expect(fs.access(bm25Path)).rejects.toThrow();
+
+      await fs.rm(indexDir, { recursive: true, force: true });
+    });
+
+    it("should handle corrupted book-meta.json gracefully", async () => {
+      const filePath = path.join(testVaultPath, "corrupted-meta.pdf");
+      const { generateBookId } = await import("../book-indexer.js");
+      const bookId = generateBookId(filePath);
+      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+
+      await fs.mkdir(indexDir, { recursive: true });
+      await fs.writeFile(path.join(indexDir, "book-meta.json"), "{ invalid json }");
+      await fs.writeFile(path.join(indexDir, "bm25.json"), "{}");
+
+      const { searchBook } = await import("../book-search.js");
+      await expect(
+        searchBook({
+          filePath,
+          query: "test query",
+        })
+      ).rejects.toThrow();
+
+      await fs.rm(indexDir, { recursive: true, force: true });
+    });
+
+    it("should handle BM25 index corruption", async () => {
+      const filePath = path.join(testVaultPath, "corrupted-bm25.pdf");
+      const { generateBookId } = await import("../book-indexer.js");
+      const bookId = generateBookId(filePath);
+      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+
+      await fs.mkdir(indexDir, { recursive: true });
+      await fs.writeFile(path.join(indexDir, "book-meta.json"), JSON.stringify({
+        version: 1,
+        bookId,
+        title: "Corrupted BM25",
+        indexedAt: new Date().toISOString(),
+        chapters: [],
+      }));
+      await fs.writeFile(path.join(indexDir, "bm25.json"), "{ corrupted }");
+
+      const { searchBook } = await import("../book-search.js");
+      await expect(
+        searchBook({
+          filePath,
+          query: "test query",
+        })
+      ).rejects.toThrow();
+
+      await fs.rm(indexDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("edge cases - model dimension changes", () => {
+    it("should record embedding config in book-meta.json", async () => {
+      const testFilePath = path.join(testVaultPath, "dim-change.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const progressEvents: any[] = [];
+
+      const result1 = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+        embedding: {
+          provider: "openai",
+          apiKey: "test-key",
+          model: "text-embedding-3-small",
+          dimensions: 1536,
+        },
+        onProgress: (p) => progressEvents.push(p),
+      });
+
+      const vectorStep = progressEvents.find(e => e.step === "vectorize" || e.step === "vectorize_complete");
+      expect(vectorStep).toBeDefined();
+
+      expect(result1.bookId).toBeDefined();
+      expect(result1.title).toBe("Test Book");
+
+      await fs.rm(testFilePath, { force: true });
+    });
+  });
 });
