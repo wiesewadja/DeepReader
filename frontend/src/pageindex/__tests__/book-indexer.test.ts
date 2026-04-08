@@ -1,8 +1,87 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { indexBook, isBookIndexed, deleteBookIndex } from "../book-indexer.js";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { IndexErrorCode } from "../book-types.js";
+
+vi.mock("../pageindex.js", () => {
+  return {
+    PageIndex: vi.fn().mockImplementation(() => ({
+      fromPdf: vi.fn().mockResolvedValue({
+        docName: "Test Book",
+        docDescription: "A test book for unit testing",
+        structure: [
+          {
+            title: "Test Book",
+            nodeId: "L0-root",
+            summary: "Root summary",
+            nodes: [
+              {
+                title: "Chapter 1",
+                nodeId: "L1-0",
+                summary: "Chapter 1 summary",
+                text: "Chapter 1 content",
+              },
+              {
+                title: "Chapter 2",
+                nodeId: "L1-1",
+                summary: "Chapter 2 summary",
+                text: "Chapter 2 content",
+              },
+            ],
+          },
+        ],
+      }),
+      fromEpub: vi.fn().mockResolvedValue({
+        docName: "Test EPUB",
+        docDescription: "A test EPUB",
+        structure: [
+          {
+            title: "Test EPUB",
+            nodeId: "L0-root",
+            nodes: [],
+          },
+        ],
+      }),
+    })),
+  };
+});
+
+vi.mock("../exporters/pdf-to-obsidian.js", () => ({
+  exportPdfToObsidian: vi.fn().mockResolvedValue({
+    mocPath: "/tmp/test/Test Book/Test Book - MOC.md",
+    notes: [],
+  }),
+}));
+
+vi.mock("../exporters/epub-to-obsidian.js", () => ({
+  exportToObsidian: vi.fn().mockResolvedValue({
+    mocPath: "/tmp/test/Test EPUB/Test EPUB - MOC.md",
+    notes: [],
+  }),
+}));
+
+vi.mock("../vault/vectors.js", () => ({
+  initVectorStore: vi.fn().mockResolvedValue({
+    vectors: new Float32Array(0),
+    meta: {
+      model: "text-embedding-3-small",
+      dimensions: 1536,
+      count: 0,
+      deletedCount: 0,
+      indexedAt: new Date().toISOString(),
+      slots: {},
+    },
+    vectorPath: "/tmp/vectors.f32",
+    metaPath: "/tmp/vectors.meta.json",
+  }),
+  generateEmbeddings: vi.fn().mockResolvedValue([
+    [0.1, 0.2, 0.3],
+    [0.4, 0.5, 0.6],
+    [0.7, 0.8, 0.9],
+  ]),
+  appendVector: vi.fn().mockResolvedValue(0),
+}));
 
 describe("book-indexer", () => {
   const testVaultPath = "/tmp/deepreader-test-vault";
@@ -11,6 +90,7 @@ describe("book-indexer", () => {
   beforeEach(async () => {
     await fs.mkdir(testVaultPath, { recursive: true });
     await fs.mkdir(testPageIndexDir, { recursive: true });
+    vi.clearAllMocks();
   });
 
   afterEach(async () => {
@@ -19,7 +99,6 @@ describe("book-indexer", () => {
 
   describe("generateBookId", () => {
     it("should generate bookId from file path hash", async () => {
-      // Import the function directly for testing
       const { generateBookId } = await import("../book-indexer.js");
 
       const filePath1 = "/vault/books/example.pdf";
@@ -28,14 +107,10 @@ describe("book-indexer", () => {
       const bookId1 = generateBookId(filePath1);
       const bookId2 = generateBookId(filePath2);
 
-      // Should be 8 characters
       expect(bookId1.length).toBe(8);
       expect(bookId2.length).toBe(8);
-
-      // Different paths should generate different bookIds
       expect(bookId1).not.toBe(bookId2);
 
-      // Same path should always generate same bookId
       const bookId1Again = generateBookId(filePath1);
       expect(bookId1Again).toBe(bookId1);
     });
@@ -46,7 +121,6 @@ describe("book-indexer", () => {
       const filePath = "/test/path.pdf";
       const bookId = generateBookId(filePath);
 
-      // Should match regex for hex string
       expect(bookId).toMatch(/^[a-f0-9]{8}$/);
     });
   });
@@ -64,21 +138,162 @@ describe("book-indexer", () => {
       });
     });
 
-    it("should throw 'Not implemented' for valid files (skeleton)", async () => {
-      // Create a test PDF file
+    it("should complete full indexing workflow for PDF", async () => {
       const testFilePath = path.join(testVaultPath, "test.pdf");
       await fs.writeFile(testFilePath, "%PDF-1.4 test content");
 
-      await expect(
-        indexBook({
-          filePath: testFilePath,
-          fileType: "pdf",
-          outputDir: testVaultPath,
-        })
-      ).rejects.toThrow("Not implemented");
+      const progressEvents: any[] = [];
 
-      // Clean up
-      await fs.rm(testFilePath);
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+        onProgress: (progress) => {
+          progressEvents.push(progress);
+        },
+      });
+
+      expect(result.bookId).toBeDefined();
+      expect(result.title).toBe("Test Book");
+      expect(result.chaptersCount).toBe(2);
+      expect(result.indexDir).toBe(path.join(testVaultPath, ".pageindex", result.bookId));
+
+      expect(progressEvents.length).toBeGreaterThan(0);
+      expect(progressEvents[progressEvents.length - 1].percent).toBe(100);
+      expect(progressEvents[progressEvents.length - 1].step).toBe("complete");
+
+      await fs.rm(testFilePath, { force: true });
+    });
+
+    it("should create book-meta.json", async () => {
+      const testFilePath = path.join(testVaultPath, "test.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+      });
+
+      const metaPath = path.join(result.indexDir, "book-meta.json");
+      const metaContent = await fs.readFile(metaPath, "utf-8");
+      const meta = JSON.parse(metaContent);
+
+      expect(meta.version).toBe(1);
+      expect(meta.bookId).toBe(result.bookId);
+      expect(meta.title).toBe("Test Book");
+      expect(meta.fileType).toBe("pdf");
+      expect(meta.indexedAt).toBeDefined();
+      expect(meta.chapters).toBeDefined();
+      expect(meta.chapters.length).toBe(2);
+
+      await fs.rm(testFilePath, { force: true });
+    });
+
+    it("should create bm25.json", async () => {
+      const testFilePath = path.join(testVaultPath, "test.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+      });
+
+      const bm25Path = path.join(result.indexDir, "bm25.json");
+      const bm25Content = await fs.readFile(bm25Path, "utf-8");
+      const bm25 = JSON.parse(bm25Content);
+
+      expect(bm25.nodes).toBeDefined();
+      expect(bm25.invertedIndex).toBeDefined();
+      expect(bm25.stats).toBeDefined();
+      expect(bm25.stats.totalDocs).toBe(3);
+      expect(bm25.params).toBeDefined();
+      expect(bm25.params.k1).toBe(1.5);
+      expect(bm25.params.b).toBe(0.75);
+
+      await fs.rm(testFilePath, { force: true });
+    });
+
+    it("should skip vectorization when embedding not provided", async () => {
+      const testFilePath = path.join(testVaultPath, "test.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+      });
+
+      const vectorsPath = path.join(result.indexDir, "vectors.f32");
+      await expect(fs.access(vectorsPath)).rejects.toThrow();
+
+      const metaPath = path.join(result.indexDir, "book-meta.json");
+      const metaContent = await fs.readFile(metaPath, "utf-8");
+      const meta = JSON.parse(metaContent);
+      expect(meta.embedding).toBeUndefined();
+
+      await fs.rm(testFilePath, { force: true });
+    });
+
+    it("should call vectorization when embedding config provided", async () => {
+      const testFilePath = path.join(testVaultPath, "test.pdf");
+      await fs.writeFile(testFilePath, "%PDF-1.4 test content");
+
+      const progressEvents: any[] = [];
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "pdf",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+        embedding: {
+          provider: "openai",
+          apiKey: "test-key",
+          model: "text-embedding-3-small",
+          dimensions: 1536,
+        },
+        onProgress: (progress) => {
+          progressEvents.push(progress);
+        },
+      });
+
+      const vectorStep = progressEvents.find(e => e.step === "vectorize");
+      expect(vectorStep).toBeDefined();
+
+      const vectorStoreMock = await import("../vault/vectors.js");
+      expect(vectorStoreMock.initVectorStore).toHaveBeenCalled();
+      expect(vectorStoreMock.generateEmbeddings).toHaveBeenCalled();
+
+      await fs.rm(testFilePath, { force: true });
+    });
+
+    it("should support EPUB files", async () => {
+      const testFilePath = path.join(testVaultPath, "test.epub");
+      await fs.writeFile(testFilePath, "EPUB test content");
+
+      const result = await indexBook({
+        filePath: testFilePath,
+        fileType: "epub",
+        outputDir: testVaultPath,
+        model: "gpt-4o-mini",
+        apiKey: "test-key",
+      });
+
+      expect(result.bookId).toBeDefined();
+      expect(result.title).toBe("Test EPUB");
+      expect(result.fileType).toBe("epub");
+
+      await fs.rm(testFilePath, { force: true });
     });
   });
 

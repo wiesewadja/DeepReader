@@ -26,6 +26,7 @@ export interface BookIndexOptions {
 export interface BookIndexResult {
   bookId: string;
   title: string;
+  fileType: "pdf" | "epub";
   chaptersCount: number;
   indexDir: string; // .pageindex/{book_hash}/
 }
