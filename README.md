@@ -174,7 +174,7 @@ git commit -m "fix: 修复查询返回空结果的问题"
 ### 关键文件路径
 
 ```
-frontend/src/
+src/
 ├── main.ts                      # 插件入口，注册命令和视图
 ├── pageindex/                   # PageIndex 核心引擎
 │   ├── node.ts                  # Node.js 入口

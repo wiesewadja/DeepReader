@@ -61,7 +61,7 @@ PageIndex (核心引擎)
 
 ## 架构与文件映射
 
-### PageIndex 核心结构 (`frontend/src/pageindex`)
+### PageIndex 核心结构 (`src/pageindex`)
 - `node.ts`: Node.js 入口，导出核心 API
 - `book-indexer.ts`: 书籍索引编排（主要流程）
 - `book-search.ts`: 混合搜索实现
@@ -212,11 +212,11 @@ git commit -m "fix: 修复搜索结果排序问题"
 
 ### 单元测试
 - **框架**: Vitest
-- **位置**: `frontend/src/**/__tests__/`
+- **位置**: `src/**/__tests__/`
 - **运行**: `npm run test:run`
 
 ### E2E 测试
-- **位置**: `frontend/src/e2e/`
+- **位置**: `src/e2e/`
 - **覆盖**: 完整的索引→搜索→删除流程
 
 ### 测试覆盖率
@@ -248,5 +248,5 @@ git commit -m "fix: 修复搜索结果排序问题"
 当架构或功能有重大变化时，请同步更新：
 - `README.md` - 用户指南
 - `CLAUDE.md` - 开发者指南（本文件）
-- `frontend/src/pageindex/README.md` - PageIndex 集成指南
+- `src/pageindex/README.md` - PageIndex 集成指南
 - `CHANGELOG.md` - 版本更新日志
