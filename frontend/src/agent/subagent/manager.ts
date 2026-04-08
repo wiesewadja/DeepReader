@@ -8,6 +8,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { ChatMessage, ToolDefinition } from '../types';
 import type { LLMClient } from '../llm-client';
+import type { ITraceContext } from '../tracing/types';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 import type { SubagentTask, SubagentConfig, SubagentCallback } from './types';
 import { DEFAULT_SUBAGENT_CONFIG, DEFAULT_SUBAGENT_TOOLS, hashDescription } from './types';
@@ -27,6 +28,7 @@ export class SubagentManager {
 	private context: ToolContext;
 	private config: SubagentConfig;
 	private onResult?: SubagentCallback;
+	private traceCtx?: ITraceContext;
 
 	/** 运行中的任务 */
 	private runningTasks: Map<string, Promise<void>> = new Map();
@@ -42,12 +44,14 @@ export class SubagentManager {
 		toolRegistry: ToolRegistry,
 		context: ToolContext,
 		config: Partial<SubagentConfig> = {},
-		onResult?: SubagentCallback
+		onResult?: SubagentCallback,
+			traceCtx?: ITraceContext
 	) {
 		this.client = client;
 		this.toolRegistry = toolRegistry;
 		this.context = context;
 		this.config = { ...DEFAULT_SUBAGENT_CONFIG, ...config };
+this.traceCtx = traceCtx;
 		this.onResult = onResult;
 	}
 

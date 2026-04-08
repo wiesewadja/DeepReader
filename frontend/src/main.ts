@@ -1075,6 +1075,10 @@ views:
             this.readingModeService.stop();
             this.readingModeService = null;
         }
+
+        // 关闭 Langfuse tracer，上传剩余数据
+        const { getTracer } = await import('./agent/tracing/index.js');
+        await getTracer().shutdown();
     }
 
     /**

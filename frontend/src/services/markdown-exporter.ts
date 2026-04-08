@@ -5,7 +5,8 @@
 
 import { App, TFile, Notice } from 'obsidian';
 import { error as logError, info as logInfo } from '../utils/logger.js';
-import { deeppdfClient } from '../api/http-client.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 /**
  * 节点数据接口
@@ -371,22 +372,29 @@ async function downloadEpubImages(
             const existingFile = app.vault.getAbstractFileByPath(imagePath);
 
             if (existingFile instanceof TFile) {
-                // 图片已存在，跳过下载
+                // 图片已存在，跳过
                 logInfo(`[EPUB图片] 图片已存在，跳过: ${imagePath}`);
                 imageMapping[imageName] = imagePath;
                 continue;
             }
 
-            // 下载图片
-            const imageData = await deeppdfClient.getEpubImage(indexId, imageName);
-
-            // 保存到 vault
-            await app.vault.createBinary(imagePath, imageData);
-            imageMapping[imageName] = imagePath;
-
-            logInfo(`[EPUB图片] 下载成功: ${imageName}`);
+            // 从本地 PageIndex 目录读取图片（不依赖后端）
+            const vaultPath = (app.vault.adapter as any).basePath;
+            const localImagePath = path.join(vaultPath, '.pageindex', indexId, 'assets', imageName);
+            
+            try {
+                const imageData = await fs.readFile(localImagePath);
+                // Buffer 转 ArrayBuffer
+                const arrayBuffer = new Uint8Array(imageData).buffer;
+                await app.vault.createBinary(imagePath, arrayBuffer);
+                imageMapping[imageName] = imagePath;
+                logInfo(`[EPUB图片] 从本地复制成功: ${imageName}`);
+            } catch (localError) {
+                // 本地没有图片，跳过（可能是 PDF 文件，没有图片）
+                logInfo(`[EPUB图片] 本地未找到图片: ${imageName}`);
+            }
         } catch (error) {
-            logError(`[EPUB图片] 下载失败: ${imageName}`, error);
+            logError(`[EPUB图片] 处理失败: ${imageName}`, error);
             // 继续处理其他图片
         }
     }

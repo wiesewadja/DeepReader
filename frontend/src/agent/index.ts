@@ -16,7 +16,8 @@ export { SkillLoader } from './skills/loader.js';
 export { runAgentLoop } from './agent-loop.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
-export { initDebugLogger, getDebugLogger, DEBUG_LOG_ENABLED } from './debug/index.js';
+export { initTracer, getTracer } from './tracing/index.js';
+export type { ITraceContext, ITracer } from './tracing/types.js';
 export type { AgentLoopOptions } from './agent-loop.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
@@ -59,7 +60,7 @@ import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './cognitive-engine/types.js';
 import { agentLog as log } from '../utils/logger.js';
-import { initDebugLogger, getDebugLogger } from './debug/index.js';
+import { initTracer } from './tracing/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -115,10 +116,8 @@ export class FrontendAgent {
     });
     this.intentRouter = new IntentRouter();
 
-    // 🐛 初始化调试日志器
-    initDebugLogger(options.app, {
-      logDir: 'debug-logs',
-    });
+    // 初始化 Langfuse 追踪器
+    initTracer();
   }
 
   async initialize(): Promise<void> {
