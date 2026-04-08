@@ -1,9 +1,13 @@
 /**
- * bun-pageindex: Obsidian Vault File Scanning
+ * pageindex-vault: Obsidian Vault File Scanning
  * Scans vault for markdown files, detects derived files, computes hashes
+ * 
+ * Node.js compatible version (replaces Bun.Glob and Bun.file)
  */
 
 import * as path from "path";
+import * as fs from "fs/promises";
+import * as crypto from "crypto";
 import type { ObsidianVaultIndexOptions, VaultIndexMeta } from "./types";
 
 export interface ScannedFile {
@@ -13,6 +17,65 @@ export interface ScannedFile {
   hash: string;
   mtime: number;
   content: string;
+}
+
+/**
+ * Simple glob implementation for Node.js
+ * Recursively finds files matching a pattern
+ */
+async function glob(pattern: string, cwd: string): Promise<string[]> {
+  const results: string[] = [];
+  
+  // Simple implementation for **/*.md pattern
+  if (pattern === "**/*.md") {
+    await walkDir(cwd, cwd, results);
+  } else {
+    throw new Error(`Glob pattern "${pattern}" not supported. Only "**/*.md" is implemented.`);
+  }
+  
+  return results;
+}
+
+async function walkDir(basePath: string, currentPath: string, results: string[]): Promise<void> {
+  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  
+  for (const entry of entries) {
+    const fullPath = path.join(currentPath, entry.name);
+    
+    if (entry.isDirectory()) {
+      await walkDir(basePath, fullPath, results);
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      const relativePath = path.relative(basePath, fullPath);
+      results.push(relativePath);
+    }
+  }
+}
+
+/**
+ * Check if a path matches a glob pattern
+ */
+function matchPattern(filePath: string, pattern: string): boolean {
+  // Simple implementation for exclude patterns like **/.obsidian/**
+  if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
+    const dirName = pattern.slice(3, -3); // Extract directory name
+    const parts = filePath.split("/");
+    return parts.includes(dirName);
+  }
+  
+  // For patterns like "**/Templates/**"
+  if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
+    const dirName = pattern.slice(3, -3);
+    const parts = filePath.split("/");
+    return parts.includes(dirName);
+  }
+  
+  // Default: use regex
+  const regexPattern = pattern
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]");
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(filePath);
 }
 
 export async function scanVaultFiles(
@@ -26,11 +89,12 @@ export async function scanVaultFiles(
     "**/Templates/**",
   ];
 
-  const glob = new Bun.Glob("**/*.md");
-  const allFiles = [...await Array.fromAsync(glob.scan({ cwd: vaultPath }))];
-  const excludeGlobs = excludePatterns.map((p: string) => new Bun.Glob(p));
+  // Scan all markdown files
+  const allFiles = await glob("**/*.md", vaultPath);
+  
+  // Filter out excluded patterns
   const files = allFiles.filter((f: string) =>
-    !excludeGlobs.some((g: Bun.Glob) => g.match(f))
+    !excludePatterns.some((pattern: string) => matchPattern(f, pattern))
   );
 
   let filtered = files;
@@ -49,25 +113,33 @@ export async function scanVaultFiles(
 
   for (const relativePath of filtered) {
     const absolutePath = path.join(vaultPath, relativePath);
-    const file = Bun.file(absolutePath);
-    const content = await file.text();
+    
+    try {
+      // Read file content
+      const content = await fs.readFile(absolutePath, "utf-8");
+      
+      if (options.excludeDerivedFiles !== false && isDerivedFile(content)) {
+        continue;
+      }
 
-    if (options.excludeDerivedFiles !== false && isDerivedFile(content)) {
-      continue;
+      // Get file stats
+      const stats = await fs.stat(absolutePath);
+      const mtime = stats.mtimeMs;
+      const hash = await hashContent(content);
+      const directory = resolveDirectory(relativePath, options.subdirectories);
+
+      scanned.push({
+        relativePath,
+        absolutePath,
+        directory,
+        hash,
+        mtime,
+        content,
+      });
+    } catch (error) {
+      // Skip files that can't be read
+      console.error(`[scan] Error reading file ${relativePath}:`, error);
     }
-
-    const mtime = await file.lastModified;
-    const hash = await hashContent(content);
-    const directory = resolveDirectory(relativePath, options.subdirectories);
-
-    scanned.push({
-      relativePath,
-      absolutePath,
-      directory,
-      hash,
-      mtime,
-      content,
-    });
   }
 
   return scanned;
@@ -84,11 +156,9 @@ function isDerivedFile(content: string): boolean {
 }
 
 async function hashContent(content: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+  const hash = crypto.createHash("sha256");
+  hash.update(content);
+  return hash.digest("hex").slice(0, 16);
 }
 
 function resolveDirectory(

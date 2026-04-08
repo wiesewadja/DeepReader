@@ -13,7 +13,6 @@ import { PageIndex } from "./pageindex";
 import { mdToTree } from "./parsers/markdown";
 import { exportPdfToObsidian } from "./exporters/pdf-to-obsidian";
 import { exportEpubToObsidian, type EpubObsidianExportOptions } from "./exporters/adapter";
-import { indexObsidianVault as indexVault } from "./vault";
 import type {
   PageIndexResult,
   DocIndexOptions,
@@ -21,6 +20,10 @@ import type {
   ObsidianExportResult,
 } from "./core/types";
 import type { VaultIndexResult } from "./vault/types";
+
+// Runtime detection - in Node.js, vault features are disabled
+// Bun runtime features can be enabled by importing this module in a Bun environment
+const isBunRuntime = false; // Always false in Node.js
 
 // ─── Type detection ──────────────────────────────────────────────────────────
 
@@ -219,7 +222,16 @@ function collectNotePaths(dir: string): string[] {
 
 async function maybeAutoIndex(options: DocObsidianOptions): Promise<VaultIndexResult | undefined> {
   if (!options.autoIndex || !options.vaultPath) return undefined;
-  return indexVault({
+  
+  // Vault features require Bun runtime
+  if (!isBunRuntime) {
+    console.warn("[pageindex] Vault auto-index requires Bun runtime. Skipping auto-index.");
+    return undefined;
+  }
+  
+  // Dynamic import to avoid Node.js import errors
+  const vaultModule = await import("./vault/index.js");
+  return vaultModule.indexObsidianVault({
     vaultPath: options.vaultPath,
     model: options.model,
     apiKey: options.apiKey,
@@ -227,7 +239,38 @@ async function maybeAutoIndex(options: DocObsidianOptions): Promise<VaultIndexRe
   });
 }
 
-// ─── Re-export vault-level functions ─────────────────────────────────────────
+// ─── Vault-level exports (Bun-only) ──────────────────────────────────────────
 
-export { searchVault } from "./vault/search";
-export { indexObsidianVault as indexVault, loadVaultIndex } from "./vault";
+/**
+ * Search vault - requires Bun runtime
+ * In Node.js environments, use './node.ts' entry point instead
+ */
+export async function searchVault(...args: Parameters<typeof import("./vault/search.js").searchVault>) {
+  if (!isBunRuntime) {
+    throw new Error("[pageindex] searchVault requires Bun runtime. Use './node.ts' for Node.js environments.");
+  }
+  const searchModule = await import("./vault/search.js");
+  return searchModule.searchVault(...args);
+}
+
+/**
+ * Index vault - requires Bun runtime
+ */
+export async function indexVault(...args: Parameters<typeof import("./vault/index.js").indexObsidianVault>) {
+  if (!isBunRuntime) {
+    throw new Error("[pageindex] indexVault requires Bun runtime. Use './node.ts' for Node.js environments.");
+  }
+  const vaultModule = await import("./vault/index.js");
+  return vaultModule.indexObsidianVault(...args);
+}
+
+/**
+ * Load vault index - requires Bun runtime
+ */
+export async function loadVaultIndex(...args: Parameters<typeof import("./vault/index.js").loadVaultIndex>) {
+  if (!isBunRuntime) {
+    throw new Error("[pageindex] loadVaultIndex requires Bun runtime. Use './node.ts' for Node.js environments.");
+  }
+  const vaultModule = await import("./vault/index.js");
+  return vaultModule.loadVaultIndex(...args);
+}

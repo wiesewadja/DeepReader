@@ -30,7 +30,7 @@ function indexNode(
   node: { title: string; nodeId?: string; summary?: string; lineNum?: number; nodes?: unknown[] },
   filePath: string,
   invertedIndex: Record<string, string[]>,
-  nodeMap: Record<string, { file: string; lineNum?: number }>,
+  nodeMap: Record<string, { file: string; lineNum?: number; localNodeId?: string }>,
   nextGlobalId: () => string
 ): string {
   const gid = nextGlobalId();

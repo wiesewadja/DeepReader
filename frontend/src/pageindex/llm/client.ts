@@ -1,38 +1,16 @@
 /**
- * bun-pageindex: OpenAI-compatible API utilities
+ * pageindex-llm: OpenAI-compatible API utilities
  * Supports OpenAI, LM Studio, Ollama, and other compatible endpoints
+ * 
+ * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
-
-import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 /** Cross-runtime sleep function */
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-let clientInstance: OpenAI | null = null;
-let currentBaseUrl: string | undefined;
-
 export interface ClientConfig {
   apiKey?: string;
   baseUrl?: string; // For LM Studio: http://localhost:1234/v1
-}
-
-function getClient(config: ClientConfig = {}): OpenAI {
-  const apiKey = config.apiKey || process.env.OPENAI_API_KEY || process.env.API_KEY || "lm-studio";
-  const baseUrl = config.baseUrl || process.env.OPENAI_BASE_URL || process.env.API_BASE_URL;
-
-  // Reuse client if same config
-  if (clientInstance && currentBaseUrl === baseUrl) {
-    return clientInstance;
-  }
-
-  clientInstance = new OpenAI({
-    apiKey,
-    baseURL: baseUrl,
-  });
-  currentBaseUrl = baseUrl;
-
-  return clientInstance;
 }
 
 export interface ChatOptions {
@@ -40,7 +18,7 @@ export interface ChatOptions {
   prompt: string;
   apiKey?: string;
   baseUrl?: string;
-  chatHistory?: ChatCompletionMessageParam[];
+  chatHistory?: Array<{ role: string; content: string }>;
   temperature?: number;
   maxRetries?: number;
 }
@@ -51,9 +29,29 @@ export interface ChatResult {
 }
 
 /**
+ * Check if the base URL is LM Studio
+ */
+function isLMStudio(baseUrl?: string): boolean {
+  if (!baseUrl) return false;
+  return baseUrl.includes("localhost:1234") || baseUrl.includes("127.0.0.1:1234");
+}
+
+/**
+ * Check if the model is a thinking model (supports reasoning parameter)
+ */
+function isThinkingModel(model: string): boolean {
+  const thinkingModels = [
+    "deepseek-reasoner",
+    "deepseek-r1",
+    "qwen-qwq",
+    "qwq",
+  ];
+  return thinkingModels.some((m) => model.toLowerCase().includes(m));
+}
+
+/**
  * Call ChatGPT-compatible API with retry logic
  * Works with OpenAI, LM Studio, Ollama, etc.
- * For LM Studio thinking models, uses native API with reasoning disabled for better performance
  */
 export async function chatGPT(options: ChatOptions): Promise<string> {
   // Use native LM Studio API only for known thinking models that support reasoning parameter
@@ -79,76 +77,139 @@ export async function chatGPTWithFinishReason(
     prompt,
     apiKey,
     baseUrl,
-    chatHistory,
-    temperature = 0,
-    maxRetries = 10,
+    chatHistory = [],
+    temperature = 0.7,
+    maxRetries = 3,
   } = options;
 
-  const client = getClient({ apiKey, baseUrl });
+  const effectiveApiKey = apiKey || process.env.OPENAI_API_KEY || process.env.API_KEY || "lm-studio";
+  const effectiveBaseUrl = baseUrl || process.env.OPENAI_BASE_URL || process.env.API_BASE_URL || "https://api.openai.com/v1";
 
-  const messages: ChatCompletionMessageParam[] = chatHistory
-    ? [...chatHistory, { role: "user" as const, content: prompt }]
-    : [{ role: "user" as const, content: prompt }];
+  const messages: Array<{ role: string; content: string }> = [
+    ...chatHistory,
+    { role: "user", content: prompt },
+  ];
+
+  let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await client.chat.completions.create({
-        model,
-        messages,
-        temperature,
+      const response = await fetch(`${effectiveBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${effectiveApiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature,
+        }),
       });
 
-      const choice = response.choices[0];
-      if (!choice) {
-        throw new Error("No response from model");
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      const finishReason =
-        choice.finish_reason === "length" ? "max_output_reached" : "finished";
+      const data = await response.json() as {
+        choices: Array<{
+          message: { content: string };
+          finish_reason: string;
+        }>;
+      };
+
+      const choice = data.choices[0];
+      if (!choice) {
+        throw new Error("No response from API");
+      }
 
       return {
-        content: choice.message.content || "",
-        finishReason,
+        content: choice.message.content,
+        finishReason: choice.finish_reason === "stop" ? "finished" : 
+                      choice.finish_reason === "length" ? "max_output_reached" : "error",
       };
     } catch (error) {
-      console.error(`[Retry ${attempt + 1}/${maxRetries}]`, error);
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
       if (attempt < maxRetries - 1) {
         await sleep(1000 * (attempt + 1)); // Exponential backoff
-      } else {
-        console.error("Max retries reached for prompt:", prompt.slice(0, 100));
-        return { content: "Error", finishReason: "error" };
       }
     }
   }
 
-  return { content: "Error", finishReason: "error" };
+  throw lastError || new Error("Failed after retries");
 }
 
 /**
- * Batch multiple chat calls concurrently with rate limiting
+ * Call multiple prompts in batch
  */
 export async function chatGPTBatch(
-  prompts: Array<{ prompt: string; model: string }>,
-  options: { apiKey?: string; baseUrl?: string; concurrency?: number } = {}
+  prompts: string[],
+  options: Omit<ChatOptions, "prompt">
 ): Promise<string[]> {
-  const { concurrency = 5 } = options;
   const results: string[] = [];
-
-  for (let i = 0; i < prompts.length; i += concurrency) {
-    const batch = prompts.slice(i, i + concurrency);
-    const batchResults = await Promise.all(
-      batch.map((p) =>
-        chatGPT({ ...p, apiKey: options.apiKey, baseUrl: options.baseUrl })
-      )
-    );
-    results.push(...batchResults);
+  
+  for (const prompt of prompts) {
+    const result = await chatGPT({ ...options, prompt });
+    results.push(result);
   }
-
+  
   return results;
 }
 
 /**
- * Get default LM Studio configuration
+ * Native LM Studio API call (for thinking models)
+ */
+async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
+  const {
+    model,
+    prompt,
+    apiKey = "lm-studio",
+    baseUrl = "http://localhost:1234/v1",
+    temperature = 0.7,
+  } = options;
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      temperature,
+      // Disable reasoning for better performance in non-thinking scenarios
+      reasoning_effort: "none",
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`LM Studio API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json() as {
+    choices: Array<{
+      message: { content: string };
+      finish_reason: string;
+    }>;
+  };
+
+  const choice = data.choices[0];
+  if (!choice) {
+    throw new Error("No response from LM Studio API");
+  }
+
+  return {
+    content: choice.message.content,
+    finishReason: choice.finish_reason === "stop" ? "finished" : "error",
+  };
+}
+
+/**
+ * Get LM Studio configuration
  */
 export function getLMStudioConfig(): ClientConfig {
   return {
@@ -158,174 +219,11 @@ export function getLMStudioConfig(): ClientConfig {
 }
 
 /**
- * Get default Ollama configuration
+ * Get Ollama configuration
  */
 export function getOllamaConfig(): ClientConfig {
   return {
     apiKey: "ollama",
     baseUrl: "http://localhost:11434/v1",
   };
-}
-
-/**
- * Check if we're using LM Studio based on the baseUrl
- */
-function isLMStudio(baseUrl?: string): boolean {
-  return baseUrl?.includes("localhost:1234") ?? false;
-}
-
-/**
- * Check if a model is a known "thinking" model that supports the reasoning parameter
- * These models benefit from reasoning: "off" for faster inference
- */
-function isThinkingModel(model: string): boolean {
-  // First, exclude models that don't support reasoning (like distilled variants or mlx- prefixed models)
-  if (/distilled/i.test(model) || model.startsWith("mlx-")) {
-    return false;
-  }
-  
-  const thinkingModelPatterns = [
-    /qwen3\.5/i,           // qwen3.5 series supports reasoning
-    /qwen3-coder/i,       // qwen3-coder supports reasoning
-    /deepseek(?!.*distilled)/i,    // deepseek models (but not distilled)
-    /o1/i,                // OpenAI o1 models
-    /o3/i,                // OpenAI o3 models
-  ];
-  
-  return thinkingModelPatterns.some(pattern => pattern.test(model));
-}
-
-// Track which models don't support reasoning parameter
-const modelsWithoutReasoning = new Set<string>();
-
-/**
- * Call LM Studio's native REST API with reasoning disabled (if supported)
- * This is much faster for thinking models like Qwen
- */
-async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
-  const {
-    model,
-    prompt,
-    apiKey,
-    temperature = 0,
-    maxRetries = 10,
-  } = options;
-
-  const baseUrl = "http://localhost:1234";
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      // Build request body - only include reasoning: "off" if model supports it
-      const body: Record<string, unknown> = {
-        model,
-        input: prompt,
-        temperature,
-      };
-      
-      if (!modelsWithoutReasoning.has(model)) {
-        body.reasoning = "off";
-      }
-
-      // Build headers
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (apiKey) {
-        headers["Authorization"] = `Bearer ${apiKey}`;
-      }
-
-      const response = await fetch(`${baseUrl}/api/v1/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-
-      const data = await response.json() as {
-        output?: Array<{ type: string; content?: string }>;
-        message?: string;
-        type?: string;
-        param?: string;
-      };
-
-      // Check for errors first
-      if (!response.ok) {
-        // If reasoning not supported, remember this and retry without it
-        if (data.type === "invalid_request" && data.param === "reasoning") {
-          console.log(`[LM Studio] Model ${model} doesn't support reasoning parameter, retrying without it`);
-          modelsWithoutReasoning.add(model);
-          
-          // Build headers for retry
-          const retryHeaders: Record<string, string> = {
-            "Content-Type": "application/json",
-          };
-          if (apiKey) {
-            retryHeaders["Authorization"] = `Bearer ${apiKey}`;
-          }
-          
-          const retryResponse = await fetch(`${baseUrl}/api/v1/chat`, {
-            method: "POST",
-            headers: retryHeaders,
-            body: JSON.stringify({
-              model,
-              input: prompt,
-              temperature,
-            }),
-          });
-          
-          if (!retryResponse.ok) {
-            const retryError = await retryResponse.text();
-            throw new Error(`LM Studio API error on retry: ${retryResponse.status} - ${retryError}`);
-          }
-          
-          const retryData = await retryResponse.json() as {
-            output?: Array<{ type: string; content?: string }>;
-          };
-          
-          const messageOutput = retryData.output?.find(o => o.type === "message");
-          return {
-            content: messageOutput?.content || "",
-            finishReason: "finished",
-          };
-        }
-        
-        throw new Error(`LM Studio API error: ${response.status} - ${data.message || JSON.stringify(data)}`);
-      }
-
-      // Extract the message content from the response
-      const messageOutput = data.output?.find(o => o.type === "message");
-      const content = messageOutput?.content || "";
-
-      return {
-        content,
-        finishReason: "finished",
-      };
-    } catch (error) {
-      console.error(`[LM Studio Retry ${attempt + 1}/${maxRetries}]`, error);
-      if (attempt < maxRetries - 1) {
-        await sleep(1000 * (attempt + 1));
-      } else {
-        console.error("Max retries reached for prompt:", prompt.slice(0, 100));
-        return { content: "Error", finishReason: "error" };
-      }
-    }
-  }
-
-  return { content: "Error", finishReason: "error" };
-}
-
-/**
- * Call ChatGPT-compatible API with retry logic
- * Works with OpenAI, LM Studio, Ollama, etc.
- * For LM Studio thinking models, uses native API with reasoning disabled for better performance
- */
-export async function chatGPTAuto(options: ChatOptions): Promise<string> {
-  // Use native LM Studio API only for known thinking models
-  if (isLMStudio(options.baseUrl) && isThinkingModel(options.model)) {
-    const result = await chatLMStudioNative(options);
-    return result.content;
-  }
-  
-  // Use OpenAI-compatible endpoint for all other cases
-  const result = await chatGPTWithFinishReason(options);
-  return result.content;
 }
