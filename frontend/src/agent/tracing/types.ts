@@ -1,46 +1,46 @@
 /**
- * Langfuse 追踪上下文接口
- * 通过函数参数在模块间传递，不使用全局变量
+ * Langfuse Tracing Types
+ *
+ * Defines the tracing interfaces used across the agent system.
+ * Actual implementations may be Langfuse-backed or no-op.
  */
-export interface ITraceContext {
-  /**
-   * 创建子 span observation，返回新的 context（不可变）
-   * NoopTracer 下返回自身
-   */
-  withSpan(name: string, metadata?: Record<string, unknown>): ITraceContext;
-
-  /**
-   * 在当前 context 下创建 generation observation
-   * 返回 observation 引用，用于后续 update/end
-   */
-  withGeneration(name: string, params: {
-    model?: string;
-    input?: unknown;
-    metadata?: Record<string, unknown>;
-  }): IObservationRef;
-
-  /**
-   * 结束当前 observation
-   */
-  end(output?: Record<string, unknown>): void;
-
-  /**
-   * 获取 trace ID（用于 Langfuse UI 链接）
-   */
-  getTraceId(): string | undefined;
-}
 
 /**
- * Langfuse observation 引用
- * 用于 update + end 操作
+ * Reference to an observation (span or generation) for ending/tracking
  */
 export interface IObservationRef {
+  /** Update the observation with output/usage/metadata */
   update(params: {
     output?: unknown;
     usageDetails?: Record<string, number>;
     metadata?: Record<string, unknown>;
   }): IObservationRef;
-  end(): void;
+  /** End the observation, optionally providing final output/metadata */
+  end(params?: Record<string, unknown>): void;
+}
+
+/**
+ * Trace context - represents an active trace or span
+ */
+export interface ITraceContext {
+  /** Create a child span within this trace */
+  withSpan(name: string, metadata?: Record<string, unknown>): ITraceContext;
+
+  /** Create a generation (LLM call) observation */
+  withGeneration(
+    name: string,
+    params: {
+      model?: string;
+      input?: unknown;
+      metadata?: Record<string, unknown>;
+    }
+  ): IObservationRef;
+
+  /** End this trace/span, optionally providing output */
+  end(output?: Record<string, unknown>): void;
+
+  /** Get the trace ID for correlation */
+  getTraceId(): string | undefined;
 }
 
 /**
@@ -50,38 +50,21 @@ export class NoopObservationRef implements IObservationRef {
   update(_params: { output?: unknown; usageDetails?: Record<string, number>; metadata?: Record<string, unknown> }): IObservationRef {
     return this;
   }
-  end(): void {
+  end(_params?: Record<string, unknown>): void {
     // no-op
   }
 }
 
 /**
- * Langfuse Tracer 单例接口
+ * Tracer - root factory for traces
  */
 export interface ITracer {
-  /**
-   * 创建根 observation（对应一次完整对话）
-   */
-  createTrace(params: {
-    name: string;
-    sessionId?: string;
-    userId?: string;
-    input?: Record<string, unknown>;
-    metadata?: Record<string, unknown>;
-  }): ITraceContext;
+  /** Create a new trace */
+  createTrace(params?: { name?: string; metadata?: Record<string, unknown> }): ITraceContext;
 
-  /**
-   * 刷新缓冲区，上传所有待发送数据
-   */
+  /** Flush pending traces to the backend */
   flush(): Promise<void>;
 
-  /**
-   * 关闭 tracer，带超时保护
-   */
+  /** Shutdown the tracer and flush remaining traces */
   shutdown(): Promise<void>;
-
-  /**
-   * 是否已启用（Langfuse 配置完整）
-   */
-  isEnabled(): boolean;
 }

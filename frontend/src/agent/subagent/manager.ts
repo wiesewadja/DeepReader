@@ -45,13 +45,13 @@ export class SubagentManager {
 		context: ToolContext,
 		config: Partial<SubagentConfig> = {},
 		onResult?: SubagentCallback,
-			traceCtx?: ITraceContext
+		traceCtx?: ITraceContext
 	) {
 		this.client = client;
 		this.toolRegistry = toolRegistry;
 		this.context = context;
 		this.config = { ...DEFAULT_SUBAGENT_CONFIG, ...config };
-this.traceCtx = traceCtx;
+			this.traceCtx = traceCtx;
 		this.onResult = onResult;
 	}
 

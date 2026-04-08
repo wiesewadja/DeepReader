@@ -10,7 +10,7 @@ import { LLMClient, LLMClientManager } from '../../llm-client';
 import type { ToolRegistry, ToolContext } from '../../tools/types';
 import { executeTool } from '../../tools/index';
 import type { ToolInterceptor } from '../types';
-import { getDebugLogger } from '../../debug/logger';
+import type { ITraceContext } from '../../tracing/types';
 
 /**
  * 工具名称到用户友好动作的简化映射
@@ -64,6 +64,8 @@ export interface StateLoopOptions {
   timeout?: number;
   /** 取消信号 */
   abortSignal?: AbortSignal;
+  /** Langfuse trace context for observability */
+  traceContext?: ITraceContext;
 }
 
 /**
@@ -121,9 +123,16 @@ export async function runStateLoop(
     maxIterations = 5,
     maxToolCalls,
     abortSignal,
+    traceContext: traceCtx,
   } = options;
 
-  const logger = getDebugLogger();
+  // Create root span for this state loop execution
+  const loopSpan = traceCtx?.withSpan(`state-loop-${stateName}`, {
+    model,
+    availableTools,
+    maxIterations,
+    maxToolCalls,
+  });
 
   // 根据模型类型选择客户端
   const llmClient = llmClientManager.getClient(model);
@@ -143,9 +152,7 @@ export async function runStateLoop(
     { role: 'user', content: userMessage },
   ];
 
-  // 记录系统提示词和消息
-  logger?.logSystemPrompt(systemPrompt);
-  logger?.logMessages(messages);
+  // Record system prompt and messages via tracing
 
   let iterations = 0;
   let totalToolCalls = 0;
@@ -177,13 +184,9 @@ export async function runStateLoop(
     let finishReason: 'stop' | 'tool_calls' | null = null;
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
 
-    logger?.startLLMInteraction({
+    const llmGen = loopSpan?.withGeneration(`llm-${stateName}-iter${iterations}`, {
       model: llmClient.getModel(),
-      modelType: model,
-      systemPrompt,
-      userMessage,
-      toolCount: toolDefinitions.length,
-      messageCount: messages.length,
+      input: { systemPrompt: systemPrompt.slice(0, 200), userMessage: userMessage.slice(0, 200), toolCount: toolDefinitions.length },
     });
 
     await new Promise<void>((resolve) => {
@@ -220,16 +223,11 @@ export async function runStateLoop(
 
     const llmDuration = Date.now() - llmStartTime;
 
-    // 结束 LLM 交互
-    logger?.endLLMInteraction({
+    // End LLM generation observation
+    llmGen?.end({
       finishReason: finishReason || 'stop',
-      content: accumulatedContent,
-      toolCallRequests: toolCalls.map(tc => ({
-        id: tc.id,
-        name: tc.name,
-        arguments: JSON.parse(tc.arguments || '{}'),
-      })),
-      ttfb: llmDuration,
+      contentLength: accumulatedContent.length,
+      toolCallCount: toolCalls.length,
     });
 
     // 如果没有工具调用，循环结束
@@ -313,21 +311,12 @@ export async function runStateLoop(
       callsToExecute.map(async ({ tc, args, originalArgs, interceptorNote }) => {
         const toolExecStart = Date.now();
 
-        // 记录工具调用开始
-        logger?.logToolStart(tc.id, tc.name, args);
+        // Create tool span
+        const toolSpan = loopSpan?.withSpan(`tool-${tc.name}`, { args, originalArgs });
 
         // 检查拦截器注入的错误
         if (args._error) {
-          logger?.logToolCall({
-            callId: tc.id,
-            toolName: tc.name,
-            originalArgs,
-            interceptedArgs: args,
-            interceptorNote,
-            status: 'error',
-            error: args._error as string,
-            duration: 0,
-          });
+          toolSpan?.end({ error: args._error as string });
           return {
             tc,
             result: null,
@@ -342,15 +331,9 @@ export async function runStateLoop(
 
           const toolExecDuration = Date.now() - toolExecStart;
 
-          logger?.logToolResult(tc.id, result, toolExecDuration);
-          logger?.logToolCall({
-            callId: tc.id,
-            toolName: tc.name,
-            originalArgs,
-            interceptedArgs: args !== originalArgs ? args : undefined,
-            interceptorNote,
+          toolSpan?.end({
             status: 'success',
-            result,
+            resultLength: result.length,
             duration: toolExecDuration,
           });
 
@@ -359,11 +342,7 @@ export async function runStateLoop(
           const errorMsg = error instanceof Error ? error.message : String(error);
           const toolExecDuration = Date.now() - toolExecStart;
 
-          logger?.logToolError(tc.id, errorMsg, toolExecDuration);
-          logger?.logToolCall({
-            callId: tc.id,
-            toolName: tc.name,
-            originalArgs,
+          toolSpan?.end({
             status: 'error',
             error: errorMsg,
             duration: toolExecDuration,
@@ -429,7 +408,8 @@ export async function runStateLoop(
       content: forcedConclusionPrompt,
     });
 
-    logger?.logMessages([{ role: 'user', content: forcedConclusionPrompt }]);
+    // Trace forced conclusion
+    const forcedSpan = loopSpan?.withSpan('forced-conclusion');
 
     await new Promise<void>((resolve) => {
       llmClient.streamChat(
@@ -457,10 +437,9 @@ export async function runStateLoop(
       );
     });
 
-    logger?.logLLMResponse({
-      metadata: { model, finishReason: 'forced_conclusion' },
-      content: accumulatedContent,
-      toolCalls: [],
+    forcedSpan?.end({
+      finishReason: 'forced_conclusion',
+      contentLength: accumulatedContent.length,
     });
   }
 
@@ -471,6 +450,9 @@ export async function runStateLoop(
   } else if (iterations >= maxIterations) {
     finishReason = 'max_iterations';
   }
+
+  // 结束 loop span
+  loopSpan?.end({ iterations, finishReason, totalToolCalls });
 
   return {
     content: accumulatedContent,

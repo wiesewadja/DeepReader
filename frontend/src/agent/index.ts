@@ -60,7 +60,7 @@ import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './cognitive-engine/types.js';
 import { agentLog as log } from '../utils/logger.js';
-import { initTracer } from './tracing/index.js';
+import { initTracer, getTracer } from './tracing/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -116,7 +116,7 @@ export class FrontendAgent {
     });
     this.intentRouter = new IntentRouter();
 
-    // 初始化 Langfuse 追踪器
+    // 初始化追踪器（Langfuse）
     initTracer();
   }
 
@@ -389,7 +389,10 @@ ${currentMemory}
     const manager = new SubagentManager(
       this.llmClientManager.getMainClient(),
       toolRegistry,
-      context
+      context,
+      {},
+      undefined,
+      undefined // traceCtx - will be set per-session
     );
     setSubagentManager(manager);
     log('[FrontendAgent] SubagentManager 已初始化');

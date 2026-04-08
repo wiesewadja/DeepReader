@@ -19,7 +19,6 @@ import {
   buildInspectionalUserMessage,
 } from '../prompts/inspectional-prompt';
 import type { OutlineNode } from '../../tools/local/types';
-import { getDebugLogger } from '../../debug/index.js';
 
 // Schema for inspectional output
 // scopeNodeIds 允许空数组（表示全局搜索）
@@ -61,7 +60,12 @@ export class InspectionalState extends StateNode {
 
   async execute(ctx: SharedContext): Promise<void> {
     const startTime = Date.now();
-    const logger = getDebugLogger();
+
+    // Create span from trace context
+    const span = ctx.traceContext?.withSpan('inspectional-execute', {
+      query: ctx.standaloneQuery || ctx.rawUserQuery,
+      pdfName: ctx.pdfName,
+    });
 
     try {
       // Check if engine dependencies are available
@@ -79,17 +83,7 @@ export class InspectionalState extends StateNode {
       const outlineResult = await this.getOutline(toolRegistry, toolContext);
       const outlineNodes = parseOutlineResult(outlineResult);
 
-      // Log tool call for outline
-      if (logger?.isEnabled()) {
-        logger.logToolCall({
-          callId: 'get_outline_direct',
-          toolName: 'get_document_outline',
-          originalArgs: {},
-          status: 'success',
-          result: outlineResult,
-          duration: Date.now() - outlineStartTime,
-        });
-      }
+      // Trace outline tool call
 
       if (outlineNodes.length === 0) {
         // No outline available, fallback to global search
@@ -114,22 +108,15 @@ export class InspectionalState extends StateNode {
         ctx.depth
       );
 
-      // Log LLM interaction
-      if (logger?.isEnabled()) {
-        const llmClient = llmClientManager.getClient(this.model);
-        logger.startLLMInteraction({
-          model: llmClient.getModel(),
-          modelType: this.model,
-          systemPrompt,
-          userMessage,
-          toolCount: 0,
-          messageCount: 2,
-        });
-      }
+      // Trace LLM interaction
+      const llmClient = llmClientManager.getClient(this.model);
+      const llmGen = span?.withGeneration('inspectional-llm', {
+        model: llmClient.getModel(),
+        input: { systemPrompt: systemPrompt.slice(0, 200), userMessage: userMessage.slice(0, 200) },
+      });
 
       // Step 4: Call LLM with JSON Mode for structured output
       const llmStartTime = Date.now();
-      const llmClient = llmClientManager.getClient(this.model);
       const response = await llmClient.chat(
         [
           { role: 'system', content: systemPrompt },
@@ -140,13 +127,11 @@ export class InspectionalState extends StateNode {
       );
       const llmDuration = Date.now() - llmStartTime;
 
-      // Log LLM response
-      if (logger?.isEnabled()) {
-        logger.endLLMInteraction({
-          finishReason: 'stop',
-          content: response.content,
-        });
-      }
+      // End LLM generation trace
+      llmGen?.end({
+        finishReason: 'stop',
+        contentLength: response.content?.length ?? 0,
+      });
 
       // Step 5: Parse the output with fallback
       // 空数组表示全局搜索，后端会自动跳过 scope 过滤
@@ -171,6 +156,9 @@ export class InspectionalState extends StateNode {
       }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
+
+      // End span after all work is done
+      span?.end({ nodeIds: ctx.scopeNodeIds?.length ?? 0 });
     } catch (error) {
       ctx.markStateExecuted(
         this.name,
