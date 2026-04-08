@@ -2,7 +2,7 @@
   "name": "obsidian-deepreader",
   "version": "0.9.2",
   "description": "DeepReader - 深度阅读插件",
-  "main": "main.js",
+  "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
@@ -10,7 +10,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader\" && cp main.js manifest.json styles.css \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader/\""
+    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader/\""
   },
   "keywords": [
     "obsidian",

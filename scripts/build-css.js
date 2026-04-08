@@ -3,7 +3,8 @@ const path = require('path');
 
 const srcDir = path.resolve(__dirname, '../src/styles');
 const entryFile = path.join(srcDir, 'main.css');
-const outputFile = path.resolve(__dirname, '../styles.css');
+const outputDir = path.resolve(__dirname, '../bin');
+const outputFile = path.join(outputDir, 'styles.css');
 
 function bundleCss(entryPath, importedFiles = new Set()) {
     if (importedFiles.has(entryPath)) {
@@ -30,8 +31,11 @@ function bundleCss(entryPath, importedFiles = new Set()) {
 
 try {
     console.log('Starting CSS bundle...');
-    // Ensure scripts directory exists (redundant if running from scripts dir, but good for safety)
-    // The previous tool ensures directory creation, so we are good.
+    
+    // Ensure bin directory exists
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+    }
 
     if (!fs.existsSync(entryFile)) {
         throw new Error(`Entry file not found: ${entryFile}`);
