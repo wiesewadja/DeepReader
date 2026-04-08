@@ -104,10 +104,16 @@ export enum IndexErrorCode {
 /**
  * Index error with user-friendly message
  */
-export interface IndexError extends Error {
-  code: IndexErrorCode;
-  userMessage: string;
-  repairAction?: string;
+export class IndexError extends Error {
+  constructor(
+    message: string,
+    public code: IndexErrorCode,
+    public userMessage: string,
+    public repairAction?: string
+  ) {
+    super(message);
+    this.name = "IndexError";
+  }
 }
 
 /**
