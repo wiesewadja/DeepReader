@@ -28,6 +28,8 @@ package-lock.json
 
 # Build outputs
 bin/
+main.js
+styles.css
 
 # Vitest test results and coverage
 frontend/node_modules/.vite/
@@ -39,3 +41,4 @@ output/
 backend/data/
 .worktrees/
 .kiro/
+bin/

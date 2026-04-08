@@ -5,8 +5,9 @@
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "build": "npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && npm run copy-manifest",
     "copy-css": "node scripts/build-css.js",
+    "copy-manifest": "cp manifest.json bin/",
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
