@@ -39,3 +39,4 @@ frontend/coverage/
 output/
 backend/data/
 .worktrees/
+.kiro/
