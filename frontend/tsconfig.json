@@ -12,8 +12,11 @@
     "strictNullChecks": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
-    "lib": ["DOM", "ES5", "ES6", "ES7"]
+    "lib": ["DOM", "ES5", "ES6", "ES7", "ESNext"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/__tests__/**"]
+  "exclude": [
+    "src/**/__tests__/**",
+    "src/pageindex/parsers/pdf-to-markdown.ts"
+  ]
 }

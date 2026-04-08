@@ -3,7 +3,7 @@
  * Uses pdf-parse for text extraction
  */
 
-import { PDFParse } from "pdf-parse";
+import PDFParse from "pdf-parse";
 import { countTokens } from "../core/utils";
 import type { PageContent, TocItem } from "../core/types";
 import * as fs from "fs/promises";

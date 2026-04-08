@@ -30,5 +30,6 @@ export { checkPopplerInstalled, pdfToImages, pdfBufferToImages, ocrImage, ocrIma
 export type { OcrOptions } from "./ocr";
 
 // PDF to Markdown converter
-export { convertPdfToMarkdown, formatAsMarkdown, formatPdfPageAsMarkdown } from "./pdf-to-markdown";
-export type { ConversionOptions } from "./pdf-to-markdown";
+// Note: Requires pdfjs-dist dependency. Uncomment when needed.
+// export { convertPdfToMarkdown, formatAsMarkdown, formatPdfPageAsMarkdown } from "./pdf-to-markdown";
+// export type { ConversionOptions } from "./pdf-to-markdown";
