@@ -17,6 +17,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
         vaultPath = obsidianPage.getVaultPath();
         
         // 配置插件使用豆包模型（通过 custom provider）
+        // E2E 环境资源有限，关闭摘要生成避免 Obsidian 崩溃
         await browser.executeObsidian(async ({ app }) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (plugin) {
@@ -24,6 +25,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
                 plugin.settings.customApiKey = '84660ce6-68f8-4426-82f6-9da665680aad';
                 plugin.settings.llmModel = 'doubao-seed-2-0-mini-260215';
                 plugin.settings.apiUrl = 'https://ark.cn-beijing.volces.com/api/v3';
+                plugin.settings.ifAddNodeSummary = false;
                 await plugin.saveSettings();
             }
         });
@@ -198,7 +200,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
         expect(bookMeta.chapters.length).toBeGreaterThan(0);
 
         const chaptersWithSummary = bookMeta.chapters.filter((ch: any) => ch.summary && ch.summary.length > 0);
-        console.log(`[E2E] book-meta.json: ${bookMeta.chapters.length} chapters, ${chaptersWithSummary.length} with summary`);
+        console.log(`[E2E] book-meta.json: ${bookMeta.chapters.length} chapters, ${chaptersWithSummary.length} with summary (summary disabled in E2E)`);
         console.log(`[E2E] Title: "${bookMeta.title}"`);
     });
 

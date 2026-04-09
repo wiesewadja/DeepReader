@@ -128,8 +128,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     addNodeText: DEFAULT_ADD_NODE_TEXT,
-    addNodeSummary: DEFAULT_ADD_NODE_SUMMARY,
-    addDocDescription: DEFAULT_ADD_DOC_DESCRIPTION,
+    addNodeSummary: options.addNodeSummary ?? DEFAULT_ADD_NODE_SUMMARY,
+    addDocDescription: options.addDocDescription ?? DEFAULT_ADD_DOC_DESCRIPTION,
     onProgress: onParseProgress,
   });
 

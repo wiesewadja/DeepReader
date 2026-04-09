@@ -524,6 +524,7 @@ export class LibraryModal extends Modal {
                     model: this.options.plugin.settings.llmModel || providerConfig.defaultModel,
                     apiKey: apiKey,
                     baseUrl: providerConfig.baseUrl,
+                    addNodeSummary: this.options.plugin.settings.ifAddNodeSummary,
                     onProgress: (progress: BookIndexProgress) => {
                         newIndex.progress_percent = progress.percent;
                         newIndex.status = 'processing';

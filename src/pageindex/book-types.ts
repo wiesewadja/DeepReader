@@ -16,6 +16,10 @@ export interface BookIndexOptions {
   model?: string;
   apiKey?: string;
   baseUrl?: string;
+  /** Generate LLM summaries for each node (default: true) */
+  addNodeSummary?: boolean;
+  /** Generate document-level description (default: true) */
+  addDocDescription?: boolean;
   /** Progress callback */
   onProgress?: (progress: BookIndexProgress) => void;
 }
