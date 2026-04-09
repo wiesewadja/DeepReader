@@ -4,7 +4,7 @@
  */
 
 import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
-import type { ITraceContext, IObservationRef } from './tracing/types';
+import type { ITraceContext } from './tracing/types';
 import { agentLog } from '../utils/logger';
 
 /**
@@ -159,15 +159,8 @@ export class LLMClient {
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
 
-    // Langfuse generation 追踪
-    const traceCtx = options?.traceContext;
-    let genRef: IObservationRef | undefined;
-    if (traceCtx) {
-      genRef = traceCtx.withGeneration('llm-call', {
-        model: this.model,
-        metadata: { provider: this.providerName, baseUrl: this.baseUrl },
-      });
-    }
+    // Note: Langfuse generation 追踪由调用方（runStateLoop）负责
+    // llm-client 不创建独立的 generation，避免双重追踪
 
     // 估算输入 token 数（粗略）
     const inputEstimate = Math.round(JSON.stringify(messages).length / 2);
@@ -204,13 +197,11 @@ export class LLMClient {
         } catch {
           errorMessage = errorText || errorMessage;
         }
-        genRef?.end({ statusMessage: errorMessage });
         callbacks.onError(errorMessage);
         return controller;
       }
 
       if (!response.body) {
-        genRef?.end({ statusMessage: 'ReadableStream not supported' });
         callbacks.onError('ReadableStream not supported in this environment');
         return controller;
       }
@@ -338,21 +329,13 @@ export class LLMClient {
         const streamingTime = totalTime - ttfb;
         agentLog(`[LLM] 📊 流式统计: 总计 ${totalTime.toFixed(0)}ms | TTFB ${ttfb.toFixed(0)}ms | 流传输 ${streamingTime.toFixed(0)}ms | ${chunkCount} 个chunk | finish=${finishReason}`);
 
-        // 结束 Langfuse generation
-        genRef?.end({
-          statusMessage: finishReason,
-          metadata: { totalTime: totalTime.toFixed(0), ttfb: ttfb.toFixed(0), chunkCount, finishReason },
-        });
-
         callbacks.onComplete(finishReason);
       } catch (readError) {
         if (readError instanceof Error && readError.name === 'AbortError') {
           // 请求被取消，正常情况，不视为错误
-          genRef?.end({ statusMessage: 'aborted' });
           return controller;
         }
         const errMsg = readError instanceof Error ? readError.message : 'Stream read error';
-        genRef?.end({ statusMessage: errMsg });
         callbacks.onError(errMsg);
       } finally {
         // 确保 reader 被正确释放
@@ -367,7 +350,6 @@ export class LLMClient {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
-      genRef?.end({ statusMessage: errorMessage });
       callbacks.onError(errorMessage);
     }
 

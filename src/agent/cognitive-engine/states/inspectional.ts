@@ -129,8 +129,8 @@ export class InspectionalState extends StateNode {
 
       // End LLM generation trace
       llmGen?.end({
-        finishReason: 'stop',
-        contentLength: response.content?.length ?? 0,
+        output: { finishReason: 'stop' },
+        metadata: { contentLength: response.content?.length ?? 0, duration: llmDuration },
       });
 
       // Step 5: Parse the output with fallback
@@ -158,7 +158,9 @@ export class InspectionalState extends StateNode {
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
 
       // End span after all work is done
-      span?.end({ nodeIds: ctx.scopeNodeIds?.length ?? 0 });
+      span?.end({
+        output: { scopeNodeIds: ctx.scopeNodeIds?.length ?? 0 },
+      });
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

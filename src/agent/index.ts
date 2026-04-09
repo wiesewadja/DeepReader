@@ -76,6 +76,12 @@ export interface FrontendAgentOptions {
   fastBaseUrl?: string;
   fastModel?: string;
   fastProviderName?: string;
+
+  // Langfuse 追踪配置（可选）
+  langfusePublicKey?: string;
+  langfuseSecretKey?: string;
+  langfuseBaseUrl?: string;
+  langfuseEnabled?: boolean;
 }
 
 export class FrontendAgent {
@@ -117,7 +123,15 @@ export class FrontendAgent {
     this.intentRouter = new IntentRouter();
 
     // 初始化追踪器（Langfuse）
-    initTracer();
+    if (options.langfuseEnabled) {
+      initTracer({
+        publicKey: options.langfusePublicKey,
+        secretKey: options.langfuseSecretKey,
+        baseUrl: options.langfuseBaseUrl,
+      });
+    } else {
+      initTracer();
+    }
   }
 
   async initialize(): Promise<void> {

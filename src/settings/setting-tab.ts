@@ -6,6 +6,7 @@ import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type DeepPDFPlugin from '../main';
 import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, getProviderDefaultModel } from '../config/providers';
+import { setLogEnabled, serviceLog } from '../utils/logger';
 
 type SettingsTabId = 'llm' | 'pdf' | 'advanced' | 'reading' | 'skills';
 
@@ -157,7 +158,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     // 重置 FrontendAgent 以使用新模型
                     this.plugin.resetFrontendAgent();
                     await this.plugin.saveSettings();
-                    console.log('[DeepPDF] 模型名称已更新为:', value);
+                    serviceLog('[DeepPDF] 模型名称已更新为:', value);
                 }));
 
         // 只显示当前服务商的 API Key 输入框
@@ -569,8 +570,81 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.enableDebugLog)
                 .onChange(async (value) => {
                     this.plugin.settings.enableDebugLog = value;
+                    setLogEnabled(value);
                     await this.plugin.saveSettings();
                 }));
+
+        // Langfuse 追踪配置
+        this.renderLangfuseSettings(container);
+    }
+
+    /**
+     * Langfuse 追踪设置
+     */
+    private renderLangfuseSettings(container: HTMLElement): void {
+        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
+        header.createEl('h4', { text: 'Langfuse 追踪配置' });
+        header.createEl('span', {
+            text: '用于 Agent 执行链路追踪和 LLM 调用观测',
+            cls: 'setting-item-description'
+        });
+
+        new Setting(container)
+            .setName("启用 Langfuse 追踪")
+            .setDesc("开启后将追踪 Agent 执行链路、LLM 调用和工具执行")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.langfuseEnabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.langfuseEnabled = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // 仅在启用时显示详细配置
+        if (!this.plugin.settings.langfuseEnabled) {
+            container.createEl('p', {
+                text: '提示：启用后需配置 Public Key、Secret Key 和 Base URL。',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
+
+        new Setting(container)
+            .setName("Public Key")
+            .setDesc("Langfuse Public API Key")
+            .addText(text => text
+                .setPlaceholder("pk-...")
+                .setValue(this.plugin.settings.langfusePublicKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.langfusePublicKey = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(container)
+            .setName("Secret Key")
+            .setDesc("Langfuse Secret API Key")
+            .addText(text => text
+                .setPlaceholder("sk-...")
+                .setValue(this.plugin.settings.langfuseSecretKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.langfuseSecretKey = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(container)
+            .setName("Base URL")
+            .setDesc("Langfuse 服务地址（自托管或云服务）")
+            .addText(text => text
+                .setPlaceholder("http://localhost:3000")
+                .setValue(this.plugin.settings.langfuseBaseUrl)
+                .onChange(async (value) => {
+                    this.plugin.settings.langfuseBaseUrl = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        container.createEl('p', {
+            text: '提示：配置完成后需重新启动对话以生效。自托管 Langfuse 可使用 http://localhost:3000，云服务使用 https://cloud.langfuse.com。',
+            cls: 'setting-item-description'
+        });
     }
 
     /**

@@ -189,45 +189,44 @@ export async function runStateLoop(
       input: { systemPrompt: systemPrompt.slice(0, 200), userMessage: userMessage.slice(0, 200), toolCount: toolDefinitions.length },
     });
 
-    await new Promise<void>((resolve) => {
-      llmClient.streamChat(
-        messages,
-        toolDefinitions,
-        {
-          onContent: (text) => {
-            accumulatedContent += text;
-            callbacks.onContent?.(text);
+await new Promise<void>((resolve) => {
+        llmClient.streamChat(
+          messages,
+          toolDefinitions,
+          {
+            onContent: (text) => {
+              accumulatedContent += text;
+              callbacks.onContent?.(text);
+            },
+            onReasoning: (text) => {
+              accumulatedReasoning += text;
+              callbacks.onReasoning?.(text);
+            },
+            onToolCall: (calls) => {
+              toolCalls = calls;
+              finishReason = 'tool_calls';
+            },
+            onComplete: (reason) => {
+              if (finishReason !== 'tool_calls') {
+                finishReason = reason === 'stop' ? 'stop' : null;
+              }
+              resolve();
+            },
+            onError: (error) => {
+              console.error('[StateLoop] LLM Error:', error);
+              resolve();
+            },
           },
-          onReasoning: (text) => {
-            accumulatedReasoning += text;
-            callbacks.onReasoning?.(text);
-          },
-          onToolCall: (calls) => {
-            toolCalls = calls;
-            finishReason = 'tool_calls';
-          },
-          onComplete: (reason) => {
-            if (finishReason !== 'tool_calls') {
-              finishReason = reason === 'stop' ? 'stop' : null;
-            }
-            resolve();
-          },
-          onError: (error) => {
-            console.error('[StateLoop] LLM Error:', error);
-            resolve();
-          },
-        },
-        { signal: abortSignal }
-      );
-    });
+          { signal: abortSignal, traceContext: loopSpan }
+        );
+      });
 
     const llmDuration = Date.now() - llmStartTime;
 
     // End LLM generation observation
     llmGen?.end({
-      finishReason: finishReason || 'stop',
-      contentLength: accumulatedContent.length,
-      toolCallCount: toolCalls.length,
+      output: { finishReason: finishReason || 'stop' },
+      metadata: { contentLength: accumulatedContent.length, toolCallCount: toolCalls.length, duration: llmDuration },
     });
 
     // 如果没有工具调用，循环结束
@@ -316,7 +315,10 @@ export async function runStateLoop(
 
         // 检查拦截器注入的错误
         if (args._error) {
-          toolSpan?.end({ error: args._error as string });
+          toolSpan?.end({
+            level: 'ERROR',
+            output: { error: args._error as string },
+          });
           return {
             tc,
             result: null,
@@ -332,9 +334,8 @@ export async function runStateLoop(
           const toolExecDuration = Date.now() - toolExecStart;
 
           toolSpan?.end({
-            status: 'success',
-            resultLength: result.length,
-            duration: toolExecDuration,
+            output: { status: 'success', resultLength: result.length },
+            metadata: { duration: toolExecDuration },
           });
 
           return { tc, result, error: null, duration: toolExecDuration };
@@ -343,9 +344,9 @@ export async function runStateLoop(
           const toolExecDuration = Date.now() - toolExecStart;
 
           toolSpan?.end({
-            status: 'error',
-            error: errorMsg,
-            duration: toolExecDuration,
+            level: 'ERROR',
+            output: { error: errorMsg },
+            metadata: { duration: toolExecDuration },
           });
 
           return { tc, result: null, error: errorMsg, duration: toolExecDuration };
@@ -433,13 +434,13 @@ export async function runStateLoop(
             resolve();
           },
         },
-        { signal: abortSignal }
+        { signal: abortSignal, traceContext: forcedSpan }
       );
     });
 
     forcedSpan?.end({
-      finishReason: 'forced_conclusion',
-      contentLength: accumulatedContent.length,
+      output: { finishReason: 'forced_conclusion' },
+      metadata: { contentLength: accumulatedContent.length },
     });
   }
 
@@ -452,7 +453,10 @@ export async function runStateLoop(
   }
 
   // 结束 loop span
-  loopSpan?.end({ iterations, finishReason, totalToolCalls });
+  loopSpan?.end({
+    output: { finishReason },
+    metadata: { iterations, totalToolCalls },
+  });
 
   return {
     content: accumulatedContent,

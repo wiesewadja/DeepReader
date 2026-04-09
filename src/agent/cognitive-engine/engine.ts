@@ -53,14 +53,19 @@ async function executeStateWithLogging(
     await state.execute(ctx);
 
     spanCtx?.end({
-      depth: ctx.depth,
-      standaloneQuery: ctx.standaloneQuery,
-      scopeNodeIds: ctx.scopeNodeIds,
-      tocSummary: ctx.tocSummary,
-      finishReason: 'stop',
+      output: {
+        depth: ctx.depth,
+        standaloneQuery: ctx.standaloneQuery,
+        scopeNodeIds: ctx.scopeNodeIds,
+        tocSummary: ctx.tocSummary,
+        finishReason: 'stop',
+      },
     });
   } catch (error) {
-    spanCtx?.end({ finishReason: 'error' });
+    spanCtx?.end({
+      level: 'ERROR',
+      output: { finishReason: 'error' },
+    });
     throw error;
   }
 }
@@ -73,7 +78,13 @@ export async function runCognitiveEngine(
   callbacks: EngineCallbacks
 ): Promise<string> {
   const tracer = getTracer();
-  const trace = tracer?.createTrace();
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const trace = tracer?.createTrace({
+    name: 'cognitive-engine-session',
+    sessionId,
+    input: { query: ctx.rawUserQuery, pdfName: ctx.pdfName },
+    metadata: { chatHistoryLength: ctx.chatHistory.length },
+  });
 
   // Create root trace context
   let rootCtx: ITraceContext | undefined;
@@ -135,7 +146,10 @@ export async function runCognitiveEngine(
     return output;
   } catch (error) {
     // End trace on error
-    rootCtx?.end({ error: error instanceof Error ? error.message : String(error) });
+    rootCtx?.end({
+      level: 'ERROR',
+      output: { error: error instanceof Error ? error.message : String(error) },
+    });
     throw error;
   }
 }

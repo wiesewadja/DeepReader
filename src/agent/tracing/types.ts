@@ -59,8 +59,17 @@ export class NoopObservationRef implements IObservationRef {
  * Tracer - root factory for traces
  */
 export interface ITracer {
+  /** Check if tracer is enabled */
+  isEnabled(): boolean;
+
   /** Create a new trace */
-  createTrace(params?: { name?: string; metadata?: Record<string, unknown> }): ITraceContext;
+  createTrace(params: {
+    name: string;
+    sessionId?: string;
+    userId?: string;
+    input?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+  }): ITraceContext;
 
   /** Flush pending traces to the backend */
   flush(): Promise<void>;

@@ -1,6 +1,6 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
-import { serviceLog } from "./utils/logger.js";
+import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
@@ -273,12 +273,12 @@ export default class DeepPDFPlugin extends Plugin {
                     await this.app.vault.create(`${debugDir}/${filename}`, bookInfo + systemPrompt);
 
                     // 打印到控制台
-                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    console.log(`%c系统提示词 - 《${currentBook.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
-                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    console.log('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
-                    console.log('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    console.log(`%c提示词长度: ${systemPrompt.length} 字符`, 'color: #9E9E9E');
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog(`%c系统提示词 - 《${currentBook.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
+                    serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
+                    serviceLog(`%c提示词长度: ${systemPrompt.length} 字符`, 'color: #9E9E9E');
 
                     new Notice(`系统提示词已保存到 DeepReader/debug/${filename}`);
                 } catch (err) {
@@ -915,6 +915,12 @@ export default class DeepPDFPlugin extends Plugin {
                 fastProviderName: this.settings.fastModelEnabled
                     ? (PROVIDER_LABELS[this.settings.fastModelProvider] || this.settings.fastModelProvider)
                     : undefined,
+
+                // Langfuse 追踪配置
+                langfusePublicKey: this.settings.langfusePublicKey || undefined,
+                langfuseSecretKey: this.settings.langfuseSecretKey || undefined,
+                langfuseBaseUrl: this.settings.langfuseBaseUrl || undefined,
+                langfuseEnabled: this.settings.langfuseEnabled,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');
@@ -1032,6 +1038,7 @@ views:
 
     async loadSettings() {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        setLogEnabled(this.settings.enableDebugLog);
     }
 
     async saveSettings() {

@@ -45,7 +45,7 @@ export class LangfuseTraceContext implements ITraceContext {
       {
         ...(params.input !== undefined ? { input: params.input } : {}),
         ...(params.model ? { model: params.model } : {}),
-        ...params.metadata,
+        ...(params.metadata ? { metadata: params.metadata } : {}),
       },
       { asType: 'generation' }
     );

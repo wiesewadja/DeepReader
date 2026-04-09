@@ -13,12 +13,14 @@ export function initTracer(config?: {
   publicKey?: string;
   secretKey?: string;
   baseUrl?: string;
+  enabled?: boolean;
 }): ITracer {
   // 优先使用传入的配置，其次读 process.env
   const publicKey = config?.publicKey || process?.env?.LANGFUSE_PUBLIC_KEY;
   const secretKey = config?.secretKey || process?.env?.LANGFUSE_SECRET_KEY;
   const baseUrl = config?.baseUrl || process?.env?.LANGFUSE_HOST;
-  const enabled = process?.env?.LANGFUSE_ENABLED !== 'false';
+  // enabled: 显式 false 则禁用，否则检查环境变量
+  const enabled = config?.enabled !== false && process?.env?.LANGFUSE_ENABLED !== 'false';
 
   if (!publicKey || !secretKey || !baseUrl || !enabled) {
     tracerInstance = new NoopTracer();
@@ -81,9 +83,12 @@ class LangfuseTracerImpl implements ITracer {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { startObservation } = require('@langfuse/tracing');
       const observation = startObservation(params.name, {
-        ...(params.input ? { input: params.input } : {}),
-        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-        ...(params.metadata ? { metadata: params.metadata } : {}),
+        input: params.input,
+        metadata: {
+          ...params.metadata,
+          ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+          ...(params.userId ? { userId: params.userId } : {}),
+        },
       }, { asType: 'span' }) as unknown as LangfuseObservation;
 
       return new LangfuseTraceContext(observation);
