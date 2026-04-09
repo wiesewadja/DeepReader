@@ -23,6 +23,7 @@ export function initTracer(config?: {
   const enabled = config?.enabled !== false && process?.env?.LANGFUSE_ENABLED !== 'false';
 
   if (!publicKey || !secretKey || !baseUrl || !enabled) {
+    console.log('[DeepReader] Langfuse disabled: missing config or explicitly disabled');
     tracerInstance = new NoopTracer();
     return tracerInstance;
   }
@@ -44,22 +45,44 @@ export function getTracer(): ITracer {
 /**
  * 真实 Langfuse Tracer 实现
  *
- * 注意：LangfuseClient 构造时会自动注册到 @langfuse/tracing 的全局状态，
- * 因此后续的 startObservation() 调用可以找到正确的 client 实例。
+ * 使用 @langfuse/otel 的 LangfuseSpanProcessor 和 WebTracerProvider
+ * 适用于 Electron 渲染进程（Obsidian 插件环境）
  */
 class LangfuseTracerImpl implements ITracer {
-  private initialized: boolean;
+  private initialized: boolean = false;
+  private spanProcessor: any = null;
 
   constructor(publicKey: string, secretKey: string, baseUrl: string) {
     try {
-      // 动态导入避免在 Langfuse 包结构变化时编译报错
+      // 动态导入避免编译报错
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { LangfuseClient } = require('@langfuse/client');
-      // LangfuseClient 构造即注册到 @langfuse/tracing 全局
-      new LangfuseClient({ publicKey, secretKey, baseUrl });
+      const { LangfuseSpanProcessor } = require('@langfuse/otel');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { WebTracerProvider } = require('@opentelemetry/sdk-trace-web');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { setLangfuseTracerProvider } = require('@langfuse/tracing');
+
+      // 创建 LangfuseSpanProcessor
+      this.spanProcessor = new LangfuseSpanProcessor({
+        publicKey,
+        secretKey,
+        baseUrl,
+        flushAt: 1, // 每个 span 立即发送
+        flushInterval: 1, // 1秒刷新
+      });
+
+      // 创建 WebTracerProvider（适用于 Electron 渲染进程）
+      const provider = new WebTracerProvider({
+        spanProcessors: [this.spanProcessor],
+      });
+
+      // 设置为 Langfuse 使用的 TracerProvider
+      setLangfuseTracerProvider(provider);
+
       this.initialized = true;
-    } catch {
-      console.warn('[DeepReader] Failed to initialize Langfuse client, falling back to NoopTracer');
+      console.log('[DeepReader] Langfuse initialized successfully', { baseUrl });
+    } catch (error) {
+      console.warn('[DeepReader] Failed to initialize Langfuse client:', error);
       this.initialized = false;
     }
   }
@@ -92,34 +115,33 @@ class LangfuseTracerImpl implements ITracer {
       }, { asType: 'span' }) as unknown as LangfuseObservation;
 
       return new LangfuseTraceContext(observation);
-    } catch {
+    } catch (error) {
+      console.warn('[DeepReader] Failed to create trace:', error);
       return new NoopTracer().createTrace(params);
     }
   }
 
   async flush(): Promise<void> {
-    if (!this.initialized) return;
+    if (!this.initialized || !this.spanProcessor) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { langfuseSpanProcessor } = require('@langfuse/tracing');
-      await langfuseSpanProcessor.forceFlush();
-    } catch {
-      // flush 失败静默处理
+      await this.spanProcessor.forceFlush();
+      console.log('[DeepReader] Langfuse flushed successfully');
+    } catch (error) {
+      console.warn('[DeepReader] Failed to flush Langfuse:', error);
     }
   }
 
   async shutdown(): Promise<void> {
-    if (!this.initialized) return;
+    if (!this.initialized || !this.spanProcessor) return;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { langfuseSpanProcessor } = require('@langfuse/tracing');
       // 5 秒超时保护，避免阻塞插件卸载
       await Promise.race([
-        langfuseSpanProcessor.forceFlush(),
+        this.spanProcessor.forceFlush(),
         new Promise<void>((resolve) => setTimeout(resolve, 5000)),
       ]);
-    } catch {
-      // shutdown 失败静默处理
+      console.log('[DeepReader] Langfuse shutdown successfully');
+    } catch (error) {
+      console.warn('[DeepReader] Failed to shutdown Langfuse:', error);
     }
   }
 }

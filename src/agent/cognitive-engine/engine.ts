@@ -140,16 +140,18 @@ export async function runCognitiveEngine(
 
     callbacks.onComplete();
 
-    // End trace
+    // End trace and flush
     rootCtx?.end({ output: output.slice(0, 200) });
+    await tracer.flush();
 
     return output;
   } catch (error) {
-    // End trace on error
+    // End trace on error and flush
     rootCtx?.end({
       level: 'ERROR',
       output: { error: error instanceof Error ? error.message : String(error) },
     });
+    await tracer.flush();
     throw error;
   }
 }
