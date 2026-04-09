@@ -3,6 +3,7 @@
  */
 
 import * as crypto from "crypto";
+import { log as piLog } from "./core/logger";
 import * as path from "path";
 import * as fs from "fs/promises";
 import {
@@ -181,7 +182,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
       const coverPath = path.join(coversDir, `${rootTitle}${ext}`);
       await fs.writeFile(coverPath, parseResult.coverImage.data);
-      console.log(`[book-indexer] Cover saved: ${coverPath}`);
+      piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
       console.warn("[book-indexer] Failed to save cover:", err);
     }

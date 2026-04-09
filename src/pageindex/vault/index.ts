@@ -31,6 +31,7 @@ import type {
   FileMeta,
 } from "./types";
 import { countTokens } from "../core/utils";
+import { log as piLog } from "../core/logger";
 
 const INDEX_DIR = ".pageindex";
 
@@ -41,9 +42,9 @@ export async function indexObsidianVault(
   const indexPath = path.join(vaultPath, INDEX_DIR);
 
   // 1. Scan files
-  console.log("[obsidian-vault] Scanning vault files...");
+  piLog("[obsidian-vault] Scanning vault files...");
   const files = await scanVaultFiles(vaultPath, options);
-  console.log(`[obsidian-vault] Found ${files.length} files`);
+  piLog(`[obsidian-vault] Found ${files.length} files`);
 
   // 2. Load existing meta for incremental
   let meta: VaultIndexMeta | null = null;
@@ -54,7 +55,7 @@ export async function indexObsidianVault(
     if (meta) {
       const { changed, unchanged } = detectChangedFiles(files, meta);
       changedFiles = changed;
-      console.log(
+      piLog(
         `[obsidian-vault] Incremental: ${changed.length} changed, ${unchanged.length} unchanged`
       );
     }
@@ -66,7 +67,7 @@ export async function indexObsidianVault(
     : {};
 
   for (const file of changedFiles) {
-    console.log(`[obsidian-vault] Indexing: ${file.relativePath}`);
+    piLog(`[obsidian-vault] Indexing: ${file.relativePath}`);
     const result = await indexFile(file, options);
     fileIndex[file.relativePath] = {
       hash: file.hash,
@@ -77,17 +78,17 @@ export async function indexObsidianVault(
   }
 
   // 4. Aggregate directories
-  console.log("[obsidian-vault] Aggregating directories...");
+  piLog("[obsidian-vault] Aggregating directories...");
   const directories = aggregateDirectories(fileIndex);
   const dirList = Object.keys(directories);
 
   // 5. Build search index
-  console.log("[obsidian-vault] Building search index...");
+  piLog("[obsidian-vault] Building search index...");
   const searchIndex = buildSearchIndex(fileIndex);
 
   // 6. Build/update vector index
   if (options.embedding) {
-    console.log("[obsidian-vault] Building vector index...");
+    piLog("[obsidian-vault] Building vector index...");
     await buildOrUpdateVectors(indexPath, fileIndex, changedFiles, options);
   }
 
@@ -204,7 +205,7 @@ async function buildOrUpdateVectors(
 
   // Maybe compact
   if (store.meta.deletedCount / Math.max(store.meta.count, 1) > 0.2) {
-    console.log("[obsidian-vault] Compacting vector store...");
+    piLog("[obsidian-vault] Compacting vector store...");
     await compactVectors(store);
   }
 }

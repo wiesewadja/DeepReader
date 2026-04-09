@@ -1,5 +1,6 @@
 import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, renameSync } from "node:fs";
+import { log as piLog } from "../core/logger";
 import { scanDirectories } from "./compiler-scan";
 import { planReorg, buildLinkReverseIndex, updateLinksAfterMove } from "./compiler-reorg";
 import { extractConcepts, mergeTags } from "./compiler-llm";
@@ -30,7 +31,7 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
   };
 
   // Step 1: Scan
-  console.log("[compiler] Scanning directories...");
+  piLog("[compiler] Scanning directories...");
   const dirs = scanDirectories(vaultPath);
 
   // Step 2: Directory reorg (plan only in dry-run)
@@ -38,7 +39,7 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
     if (dir.needsReorg && dir.type === "timeline") {
       const plan = planReorg(dir);
       if (shouldWrite && plan.moves.length > 0) {
-        console.log(`[compiler] Reorganizing ${dir.relativePath}: ${plan.moves.length} files`);
+        piLog(`[compiler] Reorganizing ${dir.relativePath}: ${plan.moves.length} files`);
         // 执行重组
         for (const newDir of plan.newDirs) {
           mkdirSync(newDir, { recursive: true });
@@ -59,13 +60,13 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
           }
         }
       } else {
-        console.log(`[compiler] [dry-run] Would reorganize ${dir.relativePath}: ${plan.moves.length} files`);
+        piLog(`[compiler] [dry-run] Would reorganize ${dir.relativePath}: ${plan.moves.length} files`);
       }
     }
   }
 
   // Step 3: Structure parsing — collect note summaries
-  console.log("[compiler] Parsing note structures...");
+  piLog("[compiler] Parsing note structures...");
   const noteSummaries: Array<{ file: string; summary: string }> = [];
 
   for (const dir of dirs) {
@@ -85,7 +86,7 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
   }
 
   // Step 4: Concept extraction (LLM)
-  console.log("[compiler] Extracting concepts via LLM...");
+  piLog("[compiler] Extracting concepts via LLM...");
   const existingState = loadCompilerState(indexPath);
   const isFirstConceptExtraction = !existingState?.phase1CompletedAt;
   const allExtractions: ConceptExtraction[] = [];
@@ -128,7 +129,7 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
   }
 
   // Step 5: Generate index files
-  console.log("[compiler] Generating index files...");
+  piLog("[compiler] Generating index files...");
   const bookDirs = dirs.filter((d) => d.type === "book").map((d) => d.relativePath);
   const l0Content = generateL0(allExtractions, bookDirs);
 
@@ -163,12 +164,12 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
       result.indexFiles.push(`${dir.relativePath}/_目录.md`);
     }
   } else {
-    console.log("[compiler] [dry-run] Would generate:");
-    console.log(l0Content.split("\n").map((l) => `  ${l}`).join("\n"));
+    piLog("[compiler] [dry-run] Would generate:");
+    piLog(l0Content.split("\n").map((l) => `  ${l}`).join("\n"));
   }
 
   // Step 6: In-place enhancement
-  console.log("[compiler] Enhancing notes...");
+  piLog("[compiler] Enhancing notes...");
   if (shouldWrite) {
     const snapshots = loadLinkSnapshots(indexPath);
     let backupCounter = 0;
@@ -216,7 +217,7 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
 
   // Step 7: 向量化嵌入
   if (options.embedding) {
-    console.log("[compiler] Generating vector embeddings...");
+    piLog("[compiler] Generating vector embeddings...");
     const embedOpts: EmbeddingOptions = {
       provider: options.embedding.provider,
       model: options.embedding.model,
@@ -246,15 +247,15 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
             await appendVector(store, batchFiles[j], vectors[j]);
           }
           embedded += vectors.length;
-          console.log(`[compiler] Embedded ${embedded}/${texts.length} notes`);
+          piLog(`[compiler] Embedded ${embedded}/${texts.length} notes`);
         } catch (err) {
           result.errors.push({ file: `embed-batch-${i}`, error: String(err) });
         }
       }
 
-      console.log(`[compiler] Vector embeddings complete: ${embedded} notes`);
+      piLog(`[compiler] Vector embeddings complete: ${embedded} notes`);
     } else {
-      console.log(`[compiler] [dry-run] Would embed ${noteSummaries.length} notes with ${embedOpts.model || "default"} model`);
+      piLog(`[compiler] [dry-run] Would embed ${noteSummaries.length} notes with ${embedOpts.model || "default"} model`);
     }
   }
 

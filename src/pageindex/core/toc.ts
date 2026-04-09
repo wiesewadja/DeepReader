@@ -4,6 +4,7 @@
  */
 
 import { chatGPT, chatGPTWithFinishReason, type ClientConfig } from "../llm/client";
+import { log as piLog } from "./logger";
 import type { PdfPage } from "../parsers/pdf";
 import type { TocItem, TocCheckResult } from "./types";
 import { extractJson, getJsonContent, countTokens, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
@@ -227,13 +228,13 @@ export async function tocTransformer(
     maxTokens,
   });
 
-  console.log(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
+  piLog(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
 
   // Try to extract items from the first response (even if truncated)
   // This handles the case where LLM returns a complete JSON array but gets cut off
   const firstAttemptItems = tryExtractTocItems(lastComplete);
   if (firstAttemptItems.length > 0) {
-    console.log(`[DIAG-tocTransformer] Extracted ${firstAttemptItems.length} items from first response`);
+    piLog(`[DIAG-tocTransformer] Extracted ${firstAttemptItems.length} items from first response`);
     return firstAttemptItems;
   }
 
@@ -242,7 +243,7 @@ export async function tocTransformer(
   if (isComplete && finishReason === "finished") {
     const json = extractJson<{ table_of_contents: TocItem[] }>(lastComplete);
     if (json?.table_of_contents) {
-      console.log(`[DIAG-tocTransformer] Complete response: ${json.table_of_contents.length} items`);
+      piLog(`[DIAG-tocTransformer] Complete response: ${json.table_of_contents.length} items`);
       return convertPageToInt(json.table_of_contents);
     }
   }
@@ -279,7 +280,7 @@ export async function tocTransformer(
     // Try to extract items after each continuation attempt
     const continuationItems = tryExtractTocItems(lastComplete);
     if (continuationItems.length > 0 && (finishReason === "finished" || isComplete)) {
-      console.log(`[DIAG-tocTransformer] Extracted ${continuationItems.length} items after continuation ${attempts + 1}`);
+      piLog(`[DIAG-tocTransformer] Extracted ${continuationItems.length} items after continuation ${attempts + 1}`);
       return continuationItems;
     }
 
@@ -290,7 +291,7 @@ export async function tocTransformer(
   // Final attempt: try all extraction methods
   const finalItems = tryExtractTocItems(lastComplete);
   if (finalItems.length > 0) {
-    console.log(`[DIAG-tocTransformer] Final extraction: ${finalItems.length} items`);
+    piLog(`[DIAG-tocTransformer] Final extraction: ${finalItems.length} items`);
     return finalItems;
   }
 

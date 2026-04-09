@@ -4,6 +4,7 @@
  */
 
 import * as PDFParse from "pdf-parse";
+import { log as piLog } from "../core/logger";
 import { countTokens } from "../core/utils";
 import type { PageContent, TocItem } from "../core/types";
 import * as fs from "fs/promises";
@@ -70,7 +71,7 @@ export async function parsePdf(
 
   const pdfParse = (PDFParse as any).default || PDFParse;
 
-  console.log(`[parsePdf] Buffer size: ${dataBuffer.length}`);
+  piLog(`[parsePdf] Buffer size: ${dataBuffer.length}`);
 
   // Single-pass: extract text AND capture outline in one pdfParse call
   let outline: PdfOutlineItem[] | undefined = undefined;
@@ -88,34 +89,34 @@ export async function parsePdf(
         const transport = pageData.transport;
         const doc = transport?.pdfDocument;
         if (doc) {
-          console.log(`[parsePdf] Captured PDFDocumentProxy, extracting outline...`);
+          piLog(`[parsePdf] Captured PDFDocumentProxy, extracting outline...`);
           outlinePromise = (async () => {
             try {
               const rawOutline = await doc.getOutline();
               if (rawOutline && rawOutline.length > 0) {
-                console.log(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
+                piLog(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
                 const items = await resolveOutlineToPages(rawOutline, doc);
-                console.log(`[parsePdf] Resolved ${items.length} outline items with page numbers`);
+                piLog(`[parsePdf] Resolved ${items.length} outline items with page numbers`);
                 return items;
               } else {
-                console.log(`[parsePdf] No outline/bookmarks in PDF`);
+                piLog(`[parsePdf] No outline/bookmarks in PDF`);
                 return undefined;
               }
             } catch (err) {
-              console.log(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
+              piLog(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
               return undefined;
             }
           })();
         }
       } catch (e) {
-        console.log(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
+        piLog(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
       }
     }
 
     // Continue with normal text rendering
     return render_page(pageData).then(text => {
       if (pageCount <= 3) {
-        console.log(`[parsePdf] Page ${pageCount}: ${text.length} chars`);
+        piLog(`[parsePdf] Page ${pageCount}: ${text.length} chars`);
       }
       return text;
     }).catch((err: Error) => {
@@ -125,7 +126,7 @@ export async function parsePdf(
   };
 
   const result = await pdfParse(dataBuffer, { pagerender: renderWithOutlineCapture });
-  console.log(`[parsePdf] Text extraction done: numpages=${result.numpages}, text length=${(result.text || "").length}, total rendered pages=${pageCount}`);
+  piLog(`[parsePdf] Text extraction done: numpages=${result.numpages}, text length=${(result.text || "").length}, total rendered pages=${pageCount}`);
 
   // Wait for outline extraction to complete (started during page 1 render)
   if (outlinePromise) {

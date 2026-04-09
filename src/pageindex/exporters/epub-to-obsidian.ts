@@ -4,6 +4,7 @@
  */
 
 import { parseEpub, type EpubInfo, type EpubChapter } from "../parsers/epub";
+import { log as piLog } from "../core/logger";
 import { cleanTitle } from "../core/utils";
 import { DEFAULT_ASSETS_PATH, DEFAULT_INCLUDE_INDEX } from "../defaults.js";
 import * as path from "path";
@@ -128,7 +129,7 @@ export async function exportToObsidian(
     const coverPath = path.join(coverDir, bookInfo.coverImage.name);
     fs.writeFileSync(coverPath, bookInfo.coverImage.data);
     coverRelativePath = `${options.assetsPath || DEFAULT_ASSETS_PATH}/${bookInfo.coverImage.name}`;
-    console.log(`[epub-to-obsidian] Cover saved: ${coverRelativePath}`);
+    piLog(`[epub-to-obsidian] Cover saved: ${coverRelativePath}`);
   }
 
   // 生成 MOC (Map of Content)

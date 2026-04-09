@@ -11,6 +11,7 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
 import { countTokens } from "../core/utils";
+import { log as piLog } from "../core/logger";
 import {
   DEFAULT_OCR_MODEL,
   DEFAULT_IMAGE_FORMAT,
@@ -246,7 +247,7 @@ export async function ocrImages(
 
     // Log progress
     const processed = Math.min(i + concurrency, imagePaths.length);
-    console.log(`[OCR] Processed ${processed}/${imagePaths.length} pages`);
+    piLog(`[OCR] Processed ${processed}/${imagePaths.length} pages`);
   }
 
   return results;
@@ -260,7 +261,7 @@ export async function parsePdfWithOcr(
   input: string | Buffer | ArrayBuffer,
   options: OcrOptions = {}
 ): Promise<{ pages: PdfPage[]; tempDir?: string }> {
-  console.log("[OCR Mode] Converting PDF to images...");
+  piLog("[OCR Mode] Converting PDF to images...");
 
   let imagePaths: string[];
   let tempDir: string | undefined;
@@ -278,8 +279,8 @@ export async function parsePdfWithOcr(
     tempDir = path.dirname(imagePaths[0]!);
   }
 
-  console.log(`[OCR Mode] Extracted ${imagePaths.length} page images`);
-  console.log("[OCR Mode] Running OCR on pages...");
+  piLog(`[OCR Mode] Extracted ${imagePaths.length} page images`);
+  piLog("[OCR Mode] Running OCR on pages...");
 
   // Run OCR on all images
   const texts = await ocrImages(imagePaths, options);

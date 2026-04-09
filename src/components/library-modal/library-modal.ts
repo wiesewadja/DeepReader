@@ -7,7 +7,7 @@ import { App, Modal, Notice, TFile } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../../ui/pdf-file-selector.js';
 import { IndexListItem } from '../../types/index.js';
 import { ConfirmModal } from '../confirm-modal.js';
-import { error as logError } from '../../utils/logger.js';
+import { error as logError, serviceLog } from '../../utils/logger.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
 import { getProviderConfig } from '../../config/providers.js';
@@ -680,7 +680,7 @@ export class LibraryModal extends Modal {
             const bookFolder = vault.getAbstractFileByPath(basePath);
             if (bookFolder) {
                 await vault.trash(bookFolder, true);
-                console.log(`[LibraryModal] 已删除本地数据: ${basePath}`);
+                serviceLog(`[LibraryModal] 已删除本地数据: ${basePath}`);
             }
 
             // 删除 assets 文件夹（书籍目录下的图片资源）
@@ -688,7 +688,7 @@ export class LibraryModal extends Modal {
             const assetsFolder = vault.getAbstractFileByPath(assetsPath);
             if (assetsFolder) {
                 await vault.trash(assetsFolder, true);
-                console.log(`[LibraryModal] 已删除图片: ${assetsPath}`);
+                serviceLog(`[LibraryModal] 已删除图片: ${assetsPath}`);
             }
 
             // 删除封面图片（尝试多种格式）
@@ -697,7 +697,7 @@ export class LibraryModal extends Modal {
                 const coverFile = vault.getAbstractFileByPath(coverPath);
                 if (coverFile) {
                     await vault.trash(coverFile, true);
-                    console.log(`[LibraryModal] 已删除封面: ${coverPath}`);
+                    serviceLog(`[LibraryModal] 已删除封面: ${coverPath}`);
                 }
             }
 

@@ -20,6 +20,7 @@ import {
   type TreeOptions,
 } from "./core/tree";
 import { convertPhysicalIndexToInt, removeFields } from "./core/utils";
+import { log as piLog } from "./core/logger";
 import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMode, ProgressInfo } from "./core/types";
 import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
 import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
@@ -154,7 +155,7 @@ export class PageIndex {
 
     if (this.options.extractionMode === "ocr") {
       // OCR mode: Convert PDF to images and extract text via vision model
-      console.log("[OCR Mode] Processing PDF with OCR...");
+      piLog("[OCR Mode] Processing PDF with OCR...");
       const ocrOptions: OcrOptions = {
         ocrModel: this.options.ocrModel,
         apiKey: this.options.apiKey,
@@ -175,7 +176,7 @@ export class PageIndex {
 
       // Prefer PDF bookmarks/outline (embedded TOC) — no LLM needed
       if (pdfInfo.outline && pdfInfo.outline.length > 0) {
-        console.log(`[PDF Outline] Found ${pdfInfo.outline.length} bookmark entries, using as TOC`);
+        piLog(`[PDF Outline] Found ${pdfInfo.outline.length} bookmark entries, using as TOC`);
         return this.processPdfWithOutline(pages, pdfInfo.outline, pdfName);
       }
     }
@@ -201,7 +202,7 @@ export class PageIndex {
       percent: Math.round((currentStep / totalSteps) * 100),
     });
     const tocResult = await checkToc(pages, this.options);
-    console.log(
+    piLog(
       `TOC found: ${tocResult.tocContent !== null}, Pages: ${tocResult.tocPageList.length}, Has page numbers: ${tocResult.pageIndexGivenInToc}`
     );
 
@@ -218,11 +219,11 @@ export class PageIndex {
 
     if (tocResult.tocContent === null) {
       // No TOC - generate structure from document
-      console.log("Generating structure from document content...");
+      piLog("Generating structure from document content...");
       tocItems = await processNoToc(pages, startIndex, this.options);
     } else if (tocResult.pageIndexGivenInToc === "no") {
       // TOC without page numbers
-      console.log("Processing TOC without page numbers...");
+      piLog("Processing TOC without page numbers...");
       tocItems = await processTocNoPageNumbers(
         tocResult.tocContent,
         pages,
@@ -231,7 +232,7 @@ export class PageIndex {
       );
     } else {
       // TOC with page numbers
-      console.log("Processing TOC with page numbers...");
+      piLog("Processing TOC with page numbers...");
       tocItems = await processTocWithPageNumbers(
         tocResult.tocContent,
         tocResult.tocPageList,
@@ -254,12 +255,12 @@ export class PageIndex {
       totalSteps,
       percent: Math.round((currentStep / totalSteps) * 100),
     });
-    console.log("Verifying TOC...");
+    piLog("Verifying TOC...");
     const { incorrect } = await verifyToc(pages, tocItems, startIndex, this.options);
 
     // Fix incorrect items if any
     if (incorrect.length > 0) {
-      console.log(`Fixing ${incorrect.length} incorrect TOC items...`);
+      piLog(`Fixing ${incorrect.length} incorrect TOC items...`);
       const { fixed } = await fixIncorrectToc(
         tocItems,
         pages,
@@ -294,7 +295,7 @@ export class PageIndex {
 
     // Convert outline to TocItem format
     let tocItems = outlineToTocItems(outline);
-    console.log(`[Outline] Converted ${tocItems.length} TOC items from bookmarks`);
+    piLog(`[Outline] Converted ${tocItems.length} TOC items from bookmarks`);
 
     // Convert physical_index strings to integers (already integers from outline, but ensure consistency)
     tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
@@ -329,7 +330,7 @@ export class PageIndex {
         totalSteps,
         percent: Math.round((currentStep / totalSteps) * 100),
       });
-      console.log("Generating summaries...");
+      piLog("Generating summaries...");
       await generateSummariesForStructure(tree, this.options, (completed, total) => {
         const basePercent = Math.round((currentStep / totalSteps) * 100);
         const nextPercent = Math.round(((currentStep + 1) / totalSteps) * 100);
@@ -356,7 +357,7 @@ export class PageIndex {
         totalSteps,
         percent: Math.round((currentStep / totalSteps) * 100),
       });
-      console.log("Generating document description...");
+      piLog("Generating document description...");
       docDescription = await generateDocDescription(tree, this.options);
     } else {
       currentStep++;
@@ -389,7 +390,7 @@ export class PageIndex {
    * EPUB chapters are inherently structured — no LLM needed for TOC detection
    */
   async fromEpub(input: string | Buffer): Promise<PageIndexResult> {
-    console.log("[EPUB Mode] Processing EPUB...");
+    piLog("[EPUB Mode] Processing EPUB...");
 
     this.reportProgress({
       stage: "parsing_structure",
@@ -405,7 +406,7 @@ export class PageIndex {
     const endPhysicalIndex = pages.length;
     const totalChapters = epubInfo.chapters.length;
 
-    console.log(`[EPUB Mode] Extracted ${pages.length} chapters`);
+    piLog(`[EPUB Mode] Extracted ${pages.length} chapters`);
 
     this.reportProgress({
       stage: "parsing_structure",
@@ -424,7 +425,7 @@ export class PageIndex {
       listIndex: i,
     }));
 
-    console.log(`[EPUB Mode] Built ${tocItems.length} TOC items from chapter structure`);
+    piLog(`[EPUB Mode] Built ${tocItems.length} TOC items from chapter structure`);
 
     const tree = buildTree(tocItems, endPhysicalIndex, this.options);
 
@@ -442,7 +443,7 @@ export class PageIndex {
         totalSteps: 3,
         percent: 10,
       });
-      console.log("Generating summaries...");
+      piLog("Generating summaries...");
       await generateSummariesForStructure(tree, this.options, (completed, total) => {
         // Map progress: 10%-95% range for summary generation
         const summaryPercent = 10 + Math.round((completed / total) * 85);
@@ -459,7 +460,7 @@ export class PageIndex {
     // Step 3: Generate document description
     let docDescription: string | undefined;
     if (this.options.addDocDescription) {
-      console.log("Generating document description...");
+      piLog("Generating document description...");
       docDescription = await generateDocDescription(tree, this.options);
     }
 
@@ -503,7 +504,7 @@ export class PageIndex {
     // For EPUBs, we skip TOC detection since structure comes from spine
     // But we still need to run checkToc to see if content has embedded TOC
     const tocResult = await checkToc(pages, this.options);
-    console.log(
+    piLog(
       `TOC found: ${tocResult.tocContent !== null}, Pages: ${tocResult.tocPageList.length}`
     );
 
@@ -520,11 +521,11 @@ export class PageIndex {
 
     if (tocResult.tocContent === null) {
       // No embedded TOC - generate structure from chapters
-      console.log("Generating structure from chapter content...");
+      piLog("Generating structure from chapter content...");
       tocItems = await processNoToc(pages, startIndex, this.options);
     } else {
       // Use embedded TOC
-      console.log("Processing embedded TOC...");
+      piLog("Processing embedded TOC...");
       tocItems = await processTocWithPageNumbers(
         tocResult.tocContent,
         tocResult.tocPageList,

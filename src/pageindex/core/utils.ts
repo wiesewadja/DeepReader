@@ -4,6 +4,7 @@
  */
 
 import type { TreeNode, TocItem } from "./types";
+import { log as piLog } from "./logger";
 
 /**
  * Approximate token count using character-based estimation
@@ -467,7 +468,7 @@ export function cleanStructurePost(data: TreeNode | TreeNode[]): void {
  */
 export function printToc(tree: TreeNode[], indent: number = 0): void {
   for (const node of tree) {
-    console.log("  ".repeat(indent) + node.title);
+    piLog("  ".repeat(indent) + node.title);
     if (node.nodes) {
       printToc(node.nodes, indent + 1);
     }

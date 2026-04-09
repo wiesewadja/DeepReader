@@ -4,6 +4,7 @@
  */
 
 import { chatGPT } from "../llm/client";
+import { log as piLog } from "../core/logger";
 import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";
 import {
   countTokens,
@@ -413,20 +414,20 @@ export async function mdToTree(
   // Read markdown file
   const markdownContent = await fs.readFile(mdPath, 'utf-8');
 
-  console.log("Extracting nodes from markdown...");
+  piLog("Extracting nodes from markdown...");
   const { nodeList, lines: markdownLines } = extractNodesFromMarkdown(markdownContent);
 
-  console.log("Extracting text content from nodes...");
+  piLog("Extracting text content from nodes...");
   let nodesWithContent = extractNodeTextContent(nodeList, markdownLines);
 
   // Apply thinning if requested
   if (opts.thinning) {
     nodesWithContent = updateNodeListWithTextTokenCount(nodesWithContent);
-    console.log("Thinning nodes...");
+    piLog("Thinning nodes...");
     nodesWithContent = treeThinningForIndex(nodesWithContent, opts.thinningThreshold);
   }
 
-  console.log("Building tree from nodes...");
+  piLog("Building tree from nodes...");
   let treeStructure = buildTreeFromNodes(nodesWithContent);
 
   // Add node IDs if requested
@@ -434,7 +435,7 @@ export async function mdToTree(
     writeNodeId(treeStructure);
   }
 
-  console.log("Formatting tree structure...");
+  piLog("Formatting tree structure...");
 
   // Format structure with preferred key order
   const keyOrder = [
@@ -451,7 +452,7 @@ export async function mdToTree(
     // Always format first
     treeStructure = formatStructure(treeStructure, keyOrder) as MarkdownTreeNode[];
 
-    console.log("Generating summaries for each node...");
+    piLog("Generating summaries for each node...");
     await generateSummariesForStructureMd(
       treeStructure,
       opts.summaryTokenThreshold,
@@ -469,7 +470,7 @@ export async function mdToTree(
     }
 
     if (opts.addDocDescription) {
-      console.log("Generating document description...");
+      piLog("Generating document description...");
       const docDescription = await generateDocDescriptionMd(treeStructure, {
         model: opts.model,
         apiKey: opts.apiKey,
@@ -509,20 +510,20 @@ export async function markdownToTree(
     ...options,
   };
 
-  console.log("Extracting nodes from markdown...");
+  piLog("Extracting nodes from markdown...");
   const { nodeList, lines: markdownLines } = extractNodesFromMarkdown(content);
 
-  console.log("Extracting text content from nodes...");
+  piLog("Extracting text content from nodes...");
   let nodesWithContent = extractNodeTextContent(nodeList, markdownLines);
 
   // Apply thinning if requested
   if (opts.thinning) {
     nodesWithContent = updateNodeListWithTextTokenCount(nodesWithContent);
-    console.log("Thinning nodes...");
+    piLog("Thinning nodes...");
     nodesWithContent = treeThinningForIndex(nodesWithContent, opts.thinningThreshold);
   }
 
-  console.log("Building tree from nodes...");
+  piLog("Building tree from nodes...");
   let treeStructure = buildTreeFromNodes(nodesWithContent);
 
   // Add node IDs if requested
@@ -544,7 +545,7 @@ export async function markdownToTree(
   if (opts.addNodeSummary) {
     treeStructure = formatStructure(treeStructure, keyOrder) as MarkdownTreeNode[];
 
-    console.log("Generating summaries for each node...");
+    piLog("Generating summaries for each node...");
     await generateSummariesForStructureMd(
       treeStructure,
       opts.summaryTokenThreshold,
@@ -561,7 +562,7 @@ export async function markdownToTree(
     }
 
     if (opts.addDocDescription) {
-      console.log("Generating document description...");
+      piLog("Generating document description...");
       const docDescription = await generateDocDescriptionMd(treeStructure, {
         model: opts.model,
         apiKey: opts.apiKey,
@@ -592,7 +593,7 @@ export async function markdownToTree(
  */
 export function printTocMd(tree: TreeNode[], indent: number = 0): void {
   for (const node of tree) {
-    console.log("  ".repeat(indent) + node.title);
+    piLog("  ".repeat(indent) + node.title);
     if (node.nodes) {
       printTocMd(node.nodes, indent + 1);
     }

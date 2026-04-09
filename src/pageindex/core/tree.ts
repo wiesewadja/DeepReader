@@ -4,6 +4,7 @@
  */
 
 import { chatGPT } from "../llm/client";
+import { log as piLog } from "./logger";
 import type { PdfPage } from "../parsers/pdf";
 import type { TreeNode, TocItem } from "./types";
 import {
@@ -489,7 +490,7 @@ export async function fixIncorrectToc(
         const pageText = `<physical_index_${pageIndex}>\n${pages[idx]?.text || ""}\n<physical_index_${pageIndex}>\n\n`;
         const pageTokens = countTokens(pageText);
         if (accumulatedTokens + pageTokens > MAX_CONTENT_TOKENS) {
-          console.log(`[fixIncorrectToc] Truncated content at page ${pageIndex}, ${accumulatedTokens} tokens (range: ${prevCorrect}-${nextCorrect})`);
+          piLog(`[fixIncorrectToc] Truncated content at page ${pageIndex}, ${accumulatedTokens} tokens (range: ${prevCorrect}-${nextCorrect})`);
           break;
         }
         pageContents.push(pageText);

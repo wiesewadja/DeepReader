@@ -795,11 +795,11 @@ export class SidebarView extends ItemView {
                     log(`[DeepPDF] 从本地笔记读取到全书摘要，长度: ${this.currentDocDescription.length}`);
                 } else {
                     this.currentDocDescription = null;
-                    console.debug('[DeepPDF] 本地笔记没有全书摘要部分');
+                    log.debug('[DeepPDF] 本地笔记没有全书摘要部分');
                 }
             } else {
                 this.currentDocDescription = null;
-                console.debug('[DeepPDF] 本地笔记不存在，可能尚未导出');
+                log.debug('[DeepPDF] 本地笔记不存在，可能尚未导出');
             }
         } catch (e) {
             logError('[DeepPDF] 读取本地笔记失败:', e);

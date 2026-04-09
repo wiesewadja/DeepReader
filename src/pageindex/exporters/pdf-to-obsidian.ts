@@ -11,6 +11,7 @@
  */
 
 import { countTokens } from "../core/utils";
+import { log as piLog } from "../core/logger";
 import type { PageIndexResult, TreeNode } from "../core/types";
 import * as path from "path";
 import * as fs from "fs";
@@ -191,7 +192,7 @@ export async function exportPdfToObsidian(
   fs.mkdirSync(bookDir, { recursive: true });
 
   // 4. 生成笔记
-  console.log(`[pdf-to-obsidian] Step 2: 生成 ${sections.length} 个笔记...`);
+  piLog(`[pdf-to-obsidian] Step 2: 生成 ${sections.length} 个笔记...`);
   const notes: ObsidianNote[] = [];
 
   for (let i = 0; i < sections.length; i++) {
@@ -305,6 +306,6 @@ export async function exportPdfToObsidian(
   };
   fs.writeFileSync(path.join(bookDir, "tree.json"), JSON.stringify(treeData, null, 2));
 
-  console.log(`[pdf-to-obsidian] 完成！MOC: ${mocPath}, 笔记: ${notes.length}`);
+  piLog(`[pdf-to-obsidian] 完成！MOC: ${mocPath}, 笔记: ${notes.length}`);
   return { mocPath, notes };
 }
