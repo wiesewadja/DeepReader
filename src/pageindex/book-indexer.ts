@@ -8,6 +8,7 @@ import * as fs from "fs/promises";
 import {
   DEFAULT_ADD_NODE_TEXT,
   DEFAULT_ADD_NODE_SUMMARY,
+  DEFAULT_ADD_DOC_DESCRIPTION,
   DEFAULT_EXPORT_DIR,
   DEFAULT_COVERS_PATH,
   DEFAULT_INCLUDE_INDEX,
@@ -128,6 +129,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     baseUrl: options.baseUrl,
     addNodeText: DEFAULT_ADD_NODE_TEXT,
     addNodeSummary: DEFAULT_ADD_NODE_SUMMARY,
+    addDocDescription: DEFAULT_ADD_DOC_DESCRIPTION,
     onProgress: onParseProgress,
   });
 
@@ -210,6 +212,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         outputDir: deepReaderDir,
         includeIndex: DEFAULT_INCLUDE_INDEX,
         assetsPath: DEFAULT_ASSETS_PATH,
+        docDescription: parseResult.docDescription,
+        nodeSummaries: collectNodeSummaries(parseResult.structure),
       });
     }
   } catch (error) {
@@ -461,4 +465,27 @@ function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
   }
 
   return buildBM25Index(nodes);
+}
+
+/**
+ * Collect node summaries from parse result structure
+ * Returns a plain object of chapter title → summary
+ */
+function collectNodeSummaries(structure: any[]): Record<string, string> {
+  const summaries: Record<string, string> = {};
+
+  for (const root of structure) {
+    // Root level
+    if (root.summary && root.title) {
+      summaries[root.title] = root.summary;
+    }
+    // L1 nodes (chapters)
+    for (const node of root?.nodes || []) {
+      if (node.summary && node.title) {
+        summaries[node.title] = node.summary;
+      }
+    }
+  }
+
+  return summaries;
 }

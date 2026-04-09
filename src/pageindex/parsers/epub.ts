@@ -8,7 +8,7 @@ import * as path from "path";
 import AdmZip from "adm-zip";
 import { parseStringPromise } from "xml2js";
 import TurndownService from "turndown";
-import { countTokens } from "../core/utils";
+import { countTokens, cleanTitle } from "../core/utils";
 import type { PdfPage } from "./pdf";
 
 export interface EpubCoverImage {
@@ -488,18 +488,5 @@ export function getEpubName(epubPath: string): string {
  * Clean chapter title: remove Markdown formatting artifacts
  * e.g. "#**第****2****章**" → "第2章"
  * e.g. "# --第----1----章--" → "第1章"
+ * Uses cleanTitle from core/utils
  */
-function cleanTitle(title: string): string {
-  return title
-    // Remove Markdown heading markers (# ## ### etc.)
-    .replace(/^#+\s*/, "")
-    // Remove bold/italic markers (** or *)
-    .replace(/\*+/g, "")
-    // Collapse multiple dashes into single
-    .replace(/-{2,}/g, "-")
-    // Remove leading/trailing dashes and spaces
-    .replace(/^[\s-]+|[\s-]+$/g, "")
-    // Collapse multiple spaces
-    .replace(/\s+/g, " ")
-    .trim();
-}

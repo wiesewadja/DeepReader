@@ -181,8 +181,8 @@ export async function exportPdfToObsidian(
   const pageIndex = new PageIndex({
     ...options.pageOptions,
     addNodeText: true,
-    addNodeSummary: options.pageOptions?.addNodeSummary ?? false,
-    addDocDescription: false,
+    addNodeSummary: options.pageOptions?.addNodeSummary ?? true,
+    addDocDescription: true,
   });
 
   const result = await pageIndex.fromPdf(input as string | Buffer | ArrayBuffer);
@@ -249,6 +249,7 @@ export async function exportPdfToObsidian(
     };
     if (section.startIndex) frontmatter.page_range = `${section.startIndex}-${section.endIndex}`;
     if (section.nodeId) frontmatter.node_id = section.nodeId;
+    if (section.summary) frontmatter.summary = section.summary;
     if (options.sourcePdf) frontmatter.source_file = options.sourcePdf;
 
     // 模板

@@ -659,3 +659,13 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
 }
+
+export function cleanTitle(title: string): string {
+  return title
+    .replace(/^#+\s*/, "")
+    .replace(/\*+/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[\s-]+|[\s-]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}

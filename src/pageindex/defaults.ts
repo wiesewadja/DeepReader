@@ -15,10 +15,10 @@ export const DEFAULT_BASE_URL = "https://api.deepseek.com";
 export const DEFAULT_ADD_NODE_ID = true;
 
 /** Generate LLM summaries for each chapter/node */
-export const DEFAULT_ADD_NODE_SUMMARY = false;
+export const DEFAULT_ADD_NODE_SUMMARY = true;
 
 /** Generate document-level description */
-export const DEFAULT_ADD_DOC_DESCRIPTION = false;
+export const DEFAULT_ADD_DOC_DESCRIPTION = true;
 
 /** Include full text content in tree nodes */
 export const DEFAULT_ADD_NODE_TEXT = true;

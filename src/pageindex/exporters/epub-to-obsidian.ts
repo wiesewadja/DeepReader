@@ -23,6 +23,10 @@ export interface ObsidianExportOptions {
   assetsPath?: string;
   /** 最大章节层级 (0=全部合并, 1=一级章节, 2=二级...) */
   maxDepth?: number;
+  /** 文档级描述（写入 MOC 文件） */
+  docDescription?: string;
+  /** 章节摘要映射 (title → summary) */
+  nodeSummaries?: Record<string, string>;
 }
 
 interface ObsidianNote {
@@ -267,6 +271,12 @@ async function createChapterNote(
     return `${hashes} ${cleaned}`;
   });
 
+  // Summary callout — 放在正文最前面
+  const nodeSummary = options.nodeSummaries?.[chapter.title];
+  if (nodeSummary) {
+    content = `> [!summary] ${nodeSummary}\n\n${content}`;
+  }
+
   // 添加导航链接
   const prev = index > 0 ? allChapters[index - 1] : null;
   const next = index < allChapters.length - 1 ? allChapters[index + 1] : null;
@@ -297,6 +307,7 @@ async function createChapterNote(
     created: new Date().toISOString(),
     tags: ["epub", "book", sanitizeTag(bookName)],
   };
+  if (nodeSummary) frontmatter.summary = nodeSummary;
 
   // 应用自定义模板
   if (options.noteTemplate) {
@@ -336,6 +347,11 @@ function generateMOC(
 
   if (epubInfo.author) {
     content += `**作者:** ${epubInfo.author}\n\n`;
+  }
+
+  // 文档描述（LLM 生成的概要）
+  if (options.docDescription) {
+    content += `> [!info] 书籍概要\n> ${options.docDescription}\n\n`;
   }
 
   content += `**章节数:** ${tocEntries.length}\n`;
