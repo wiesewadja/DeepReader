@@ -1,6 +1,6 @@
 /**
  * PageIndex: PDF parsing utilities
- * Uses pdf-parse for text extraction
+ * Uses PDF.js directly for text extraction + outline/bookmark extraction
  */
 
 import * as PDFParse from "pdf-parse";
@@ -27,7 +27,7 @@ export interface PdfOutlineItem {
 }
 
 /**
- * Parse PDF and extract text per page with token counts
+ * Parse PDF and extract text per page with token counts + outline/bookmarks
  */
 export async function parsePdf(
   input: string | Buffer | ArrayBuffer
@@ -42,13 +42,9 @@ export async function parsePdf(
     dataBuffer = Buffer.from(input);
   }
 
-  // Workaround for Obsidian / Browser environment worker issues
-  if (typeof globalThis !== 'undefined') {
-    (globalThis as any).PDFJS = (globalThis as any).PDFJS || {};
-    (globalThis as any).PDFJS.disableWorker = true;
-  }
+  // Note: pdf.js Worker is disabled via esbuild banner (window.PDFJS.disableWorker = true)
+  // and require.ensure polyfill enables fake worker loading from bundled code
 
-  // Use Custom pagerender to extract pages safely
   function render_page(pageData: any): Promise<string> {
     const render_options = {
         normalizeWhitespace: false,
@@ -57,16 +53,15 @@ export async function parsePdf(
 
     return pageData.getTextContent(render_options)
         .then(async function(textContent: any) {
-            // 释放主线程，防止 WebDriver / 浏览器由于长时间计算抛出 Script Timeout
             await new Promise(r => setTimeout(r, 0));
-            
+
             let lastY, text = '';
             for (let item of textContent.items) {
                 if (lastY == item.transform[5] || !lastY) {
                     text += item.str;
                 } else {
                     text += '\n' + item.str;
-                }    
+                }
                 lastY = item.transform[5];
             }
             return "===PAGE_DELIMITER===" + text + "===PAGE_DELIMITER_END===\n";
@@ -74,15 +69,75 @@ export async function parsePdf(
   }
 
   const pdfParse = (PDFParse as any).default || PDFParse;
-  const result = await pdfParse(dataBuffer, { pagerender: render_page });
 
+  console.log(`[parsePdf] Buffer size: ${dataBuffer.length}`);
+
+  // Single-pass: extract text AND capture outline in one pdfParse call
+  let outline: PdfOutlineItem[] | undefined = undefined;
+  let outlinePromise: Promise<PdfOutlineItem[] | undefined> | undefined = undefined;
+  let outlineExtracted = false;
+  let pageCount = 0;
+
+  const renderWithOutlineCapture = (pageData: any) => {
+    pageCount++;
+
+    // On the first page, capture PDFDocumentProxy and start outline extraction
+    if (!outlineExtracted && pageData) {
+      outlineExtracted = true;
+      try {
+        const transport = pageData.transport;
+        const doc = transport?.pdfDocument;
+        if (doc) {
+          console.log(`[parsePdf] Captured PDFDocumentProxy, extracting outline...`);
+          outlinePromise = (async () => {
+            try {
+              const rawOutline = await doc.getOutline();
+              if (rawOutline && rawOutline.length > 0) {
+                console.log(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
+                const items = await resolveOutlineToPages(rawOutline, doc);
+                console.log(`[parsePdf] Resolved ${items.length} outline items with page numbers`);
+                return items;
+              } else {
+                console.log(`[parsePdf] No outline/bookmarks in PDF`);
+                return undefined;
+              }
+            } catch (err) {
+              console.log(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
+              return undefined;
+            }
+          })();
+        }
+      } catch (e) {
+        console.log(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
+      }
+    }
+
+    // Continue with normal text rendering
+    return render_page(pageData).then(text => {
+      if (pageCount <= 3) {
+        console.log(`[parsePdf] Page ${pageCount}: ${text.length} chars`);
+      }
+      return text;
+    }).catch((err: Error) => {
+      console.error(`[parsePdf] Page ${pageCount} render error:`, err.message);
+      return "";
+    });
+  };
+
+  const result = await pdfParse(dataBuffer, { pagerender: renderWithOutlineCapture });
+  console.log(`[parsePdf] Text extraction done: numpages=${result.numpages}, text length=${(result.text || "").length}, total rendered pages=${pageCount}`);
+
+  // Wait for outline extraction to complete (started during page 1 render)
+  if (outlinePromise) {
+    outline = await outlinePromise;
+  }
+
+  // Parse pages from delimited text
   const pages: PdfPage[] = [];
   let title = "Untitled";
-
-  // Parse out the pages from the delimited text
   const fullText = result.text || "";
   const pageMatches = [...fullText.matchAll(/===PAGE_DELIMITER===([\s\S]*?)===PAGE_DELIMITER_END===/g)];
-  
+
   if (pageMatches.length > 0) {
     for (const match of pageMatches) {
       const pageText = match[1];
@@ -104,8 +159,6 @@ export async function parsePdf(
       title = firstLine;
     }
   }
-
-  let outline: PdfOutlineItem[] | undefined = undefined;
 
   return {
     title,
