@@ -597,6 +597,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.langfuseEnabled = value;
                     await this.plugin.saveSettings();
+                    // 刷新界面以显示/隐藏详细配置
+                    this.renderTabContent('advanced');
                 }));
 
         // 仅在启用时显示详细配置
@@ -622,20 +624,43 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         new Setting(container)
             .setName("Secret Key")
             .setDesc("Langfuse Secret API Key")
-            .addText(text => text
-                .setPlaceholder("sk-...")
-                .setValue(this.plugin.settings.langfuseSecretKey)
-                .onChange(async (value) => {
+            .addText(text => {
+                text.setPlaceholder("sk-...")
+                    .setValue(this.plugin.settings.langfuseSecretKey)
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
                     this.plugin.settings.langfuseSecretKey = value;
                     await this.plugin.saveSettings();
-                }));
+                });
+            });
 
         new Setting(container)
             .setName("Base URL")
             .setDesc("Langfuse 服务地址（自托管或云服务）")
+            .addDropdown(dropdown => dropdown
+                .addOption("https://cloud.langfuse.com", "Langfuse Cloud")
+                .addOption("http://localhost:3000", "本地自托管 (localhost:3000)")
+                .addOption("custom", "自定义地址")
+                .setValue(
+                    this.plugin.settings.langfuseBaseUrl === "https://cloud.langfuse.com" ? "https://cloud.langfuse.com" :
+                    this.plugin.settings.langfuseBaseUrl === "http://localhost:3000" ? "http://localhost:3000" :
+                    "custom"
+                )
+                .onChange(async (value) => {
+                    if (value !== "custom") {
+                        this.plugin.settings.langfuseBaseUrl = value;
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('advanced');
+                    }
+                }))
             .addText(text => text
-                .setPlaceholder("http://localhost:3000")
-                .setValue(this.plugin.settings.langfuseBaseUrl)
+                .setPlaceholder("https://your-langfuse.example.com")
+                .setValue(
+                    this.plugin.settings.langfuseBaseUrl !== "https://cloud.langfuse.com" &&
+                    this.plugin.settings.langfuseBaseUrl !== "http://localhost:3000"
+                        ? this.plugin.settings.langfuseBaseUrl
+                        : ""
+                )
                 .onChange(async (value) => {
                     this.plugin.settings.langfuseBaseUrl = value;
                     await this.plugin.saveSettings();
