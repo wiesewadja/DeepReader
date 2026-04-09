@@ -4,6 +4,8 @@
  */
 
 import { parseEpub, type EpubInfo, type EpubChapter } from "../parsers/epub";
+import { cleanTitle } from "../core/utils";
+import { DEFAULT_ASSETS_PATH, DEFAULT_INCLUDE_INDEX } from "../defaults.js";
 import * as path from "path";
 import * as fs from "fs";
 import AdmZip from "adm-zip";
@@ -51,7 +53,7 @@ export async function exportToObsidian(
   }
 
   // 提取图片
-  const assetsDir = path.join(bookDir, options.assetsPath || "assets");
+  const assetsDir = path.join(bookDir, options.assetsPath || DEFAULT_ASSETS_PATH);
   fs.mkdirSync(assetsDir, { recursive: true });
   const imageMap = extractImagesFromEpub(epubPath, assetsDir);
 
@@ -115,13 +117,13 @@ export async function exportToObsidian(
   // 保存封面图
   let coverRelativePath: string | undefined;
   if (bookInfo.coverImage) {
-    const coverDir = path.join(bookDir, options.assetsPath || "assets");
+    const coverDir = path.join(bookDir, options.assetsPath || DEFAULT_ASSETS_PATH);
     if (!fs.existsSync(coverDir)) {
       fs.mkdirSync(coverDir, { recursive: true });
     }
     const coverPath = path.join(coverDir, bookInfo.coverImage.name);
     fs.writeFileSync(coverPath, bookInfo.coverImage.data);
-    coverRelativePath = `${options.assetsPath || "assets"}/${bookInfo.coverImage.name}`;
+    coverRelativePath = `${options.assetsPath || DEFAULT_ASSETS_PATH}/${bookInfo.coverImage.name}`;
     console.log(`[epub-to-obsidian] Cover saved: ${coverRelativePath}`);
   }
 
@@ -546,20 +548,8 @@ function buildEpubTree(
  * 清理文件名
  */
 function sanitizeFileName(name: string): string {
-  return name
-    // Remove Markdown heading markers
-    .replace(/^#+\s*/, "")
-    // Remove bold/italic markers
-    .replace(/\*+/g, "")
-    // Collapse multiple dashes
-    .replace(/-{2,}/g, "-")
-    // Remove illegal filename chars
+  return cleanTitle(name)
     .replace(/[<>:"/\\|?*#]/g, "")
-    // Collapse spaces
-    .replace(/\s+/g, " ")
-    // Remove leading/trailing dashes and spaces
-    .replace(/^[\s-]+|[\s-]+$/g, "")
-    .trim()
     .substring(0, 100);
 }
 

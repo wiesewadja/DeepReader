@@ -11,6 +11,13 @@ import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
 import { countTokens } from "../core/utils";
+import {
+  DEFAULT_OCR_MODEL,
+  DEFAULT_IMAGE_FORMAT,
+  DEFAULT_IMAGE_DPI,
+  DEFAULT_OCR_PROMPT_TYPE,
+  DEFAULT_OCR_CONCURRENCY,
+} from "../defaults.js";
 import type { PdfPage } from "./pdf";
 
 const execAsync = promisify(exec);
@@ -33,11 +40,11 @@ export interface OcrOptions {
 }
 
 const DEFAULT_OCR_OPTIONS: Required<Omit<OcrOptions, "apiKey" | "baseUrl">> = {
-  ocrModel: "mlx-community/GLM-OCR-bf16",
-  imageFormat: "png",
-  imageDpi: 150,
-  ocrPromptType: "text",
-  concurrency: 3,
+  ocrModel: DEFAULT_OCR_MODEL,
+  imageFormat: DEFAULT_IMAGE_FORMAT,
+  imageDpi: DEFAULT_IMAGE_DPI,
+  ocrPromptType: DEFAULT_OCR_PROMPT_TYPE,
+  concurrency: DEFAULT_OCR_CONCURRENCY,
 };
 
 /**

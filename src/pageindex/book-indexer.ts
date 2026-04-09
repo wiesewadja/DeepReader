@@ -5,6 +5,14 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as fs from "fs/promises";
+import {
+  DEFAULT_ADD_NODE_TEXT,
+  DEFAULT_ADD_NODE_SUMMARY,
+  DEFAULT_EXPORT_DIR,
+  DEFAULT_COVERS_PATH,
+  DEFAULT_INCLUDE_INDEX,
+  DEFAULT_ASSETS_PATH,
+} from "./defaults.js";
 import { PageIndex } from "./pageindex.js";
 import type {
   BookIndexOptions,
@@ -118,8 +126,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     model: options.model,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
-    addNodeText: true,
-    addNodeSummary: false,
+    addNodeText: DEFAULT_ADD_NODE_TEXT,
+    addNodeSummary: DEFAULT_ADD_NODE_SUMMARY,
     onProgress: onParseProgress,
   });
 
@@ -157,7 +165,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   });
 
   const rootTitle = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
-  const deepReaderDir = path.join(options.outputDir, "DeepReader");
+  const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
   const bookDir = path.join(deepReaderDir, rootTitle);
 
   // Ensure DeepReader directory exists
@@ -166,7 +174,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Save cover image if available (EPUB)
   if (parseResult.coverImage) {
     try {
-      const coversDir = path.join(deepReaderDir, "covers");
+      const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
       await fs.mkdir(coversDir, { recursive: true });
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
       const coverPath = path.join(coversDir, `${rootTitle}${ext}`);
@@ -200,7 +208,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
       await exportToObsidian(options.filePath, {
         outputDir: deepReaderDir,
-        includeIndex: true,
+        includeIndex: DEFAULT_INCLUDE_INDEX,
+        assetsPath: DEFAULT_ASSETS_PATH,
       });
     }
   } catch (error) {

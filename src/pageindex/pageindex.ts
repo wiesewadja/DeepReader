@@ -24,6 +24,22 @@ import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMo
 import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
 import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
 import { searchVault as searchVaultFn } from "./vault/search";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_ADD_NODE_ID,
+  DEFAULT_ADD_NODE_SUMMARY,
+  DEFAULT_ADD_DOC_DESCRIPTION,
+  DEFAULT_ADD_NODE_TEXT,
+  DEFAULT_TOC_CHECK_PAGE_NUM,
+  DEFAULT_MAX_PAGE_NUM_EACH_NODE,
+  DEFAULT_MAX_TOKEN_NUM_EACH_NODE,
+  DEFAULT_EXTRACTION_MODE,
+  DEFAULT_OCR_MODEL,
+  DEFAULT_OCR_PROMPT_TYPE,
+  DEFAULT_IMAGE_DPI,
+  DEFAULT_IMAGE_FORMAT,
+  DEFAULT_OCR_CONCURRENCY,
+} from "./defaults.js";
 
 interface InternalOptions extends TreeOptions {
   extractionMode: ExtractionMode;
@@ -36,21 +52,21 @@ interface InternalOptions extends TreeOptions {
 }
 
 const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "onProgress">> = {
-  model: "gpt-4o-2024-11-20",
-  tocCheckPageNum: 20,
-  maxPageNumEachNode: 10,
-  maxTokenNumEachNode: 20000,
-  addNodeId: true,
-  addNodeSummary: true,
-  addDocDescription: false,
-  addNodeText: false,
+  model: DEFAULT_MODEL,
+  tocCheckPageNum: DEFAULT_TOC_CHECK_PAGE_NUM,
+  maxPageNumEachNode: DEFAULT_MAX_PAGE_NUM_EACH_NODE,
+  maxTokenNumEachNode: DEFAULT_MAX_TOKEN_NUM_EACH_NODE,
+  addNodeId: DEFAULT_ADD_NODE_ID,
+  addNodeSummary: DEFAULT_ADD_NODE_SUMMARY,
+  addDocDescription: DEFAULT_ADD_DOC_DESCRIPTION,
+  addNodeText: DEFAULT_ADD_NODE_TEXT,
   // OCR defaults
-  extractionMode: "text",
-  ocrModel: "mlx-community/GLM-OCR-bf16",
-  ocrPromptType: "text",
-  imageDpi: 150,
-  imageFormat: "png",
-  ocrConcurrency: 3,
+  extractionMode: DEFAULT_EXTRACTION_MODE,
+  ocrModel: DEFAULT_OCR_MODEL,
+  ocrPromptType: DEFAULT_OCR_PROMPT_TYPE,
+  imageDpi: DEFAULT_IMAGE_DPI,
+  imageFormat: DEFAULT_IMAGE_FORMAT,
+  ocrConcurrency: DEFAULT_OCR_CONCURRENCY,
 };
 
 /**
