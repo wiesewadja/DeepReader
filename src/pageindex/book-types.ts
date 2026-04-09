@@ -190,3 +190,66 @@ export interface BM25Data {
     b: number;
   };
 }
+
+// ─── Book Search v2 types ──────────────────────────────────────────────────────
+
+/** Book Search v2 输入 */
+export interface BookSearchOptionsV2 {
+  filePath: string;
+  query: string;
+  topK?: number;                    // 默认 5
+  embedding?: EmbeddingOptions;     // 向量配置（可选）
+  scopeNodeIds?: string[];          // S1 圈定的章节范围（可选）
+  reranker?: any;                   // 重排配置（可选）
+  treeSearch?: boolean;             // 是否启用 LLM 树搜索
+  llmClient?: any;                  // LLM 客户端（树搜索需要）
+  maxContentLength?: number;        // 每个结果最大内容长度，默认 8000
+}
+
+/** 匹配片段（聚焦到 block_id 级别） */
+export interface MatchedBlock {
+  blockId: string;                  // 最近的 block_id
+  content: string;                  // 片段内容（含 ^block_id 标记，~500 字）
+}
+
+/** Book Search v2 输出（聚焦到段落级） */
+export interface BookSearchResultV2 {
+  nodeId: string;
+  title: string;
+  hierarchyPath: string[];          // 层级路径 ["第1章", "概述"]
+  matchedBlocks: MatchedBlock[];    // 该 node 内匹配的段落片段
+  score: number;
+  bm25Score: number;
+  vectorScore: number;
+}
+
+/** Book Section 读取结果（read_book_section 返回，含完整内容） */
+export interface BookSectionResult {
+  nodeId: string;
+  title: string;
+  content: string;                  // 完整内容（^block_id 内联在段落末尾）
+  wordCount: number;
+  truncated: boolean;               // 是否超过 8000 字截断
+  truncatedAt?: number;
+}
+
+/** tree.json 数据结构 */
+export interface TreeData {
+  title: string;
+  docDescription?: string;
+  source?: string;
+  type?: string;
+  nodeFileMap: Record<string, string>;  // nodeId → fileName
+  structure: TreeNode[];
+}
+
+/** TreeNode 结构（复用 core/types.ts 的 TreeNode，增加可选字段） */
+export interface TreeNode {
+  title: string;
+  nodeId?: string;
+  summary?: string;
+  text?: string;
+  startIndex?: number;
+  endIndex?: number;
+  nodes?: TreeNode[];
+}

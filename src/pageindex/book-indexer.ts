@@ -20,8 +20,6 @@ import type {
   BookIndexOptions,
   BookIndexResult,
   BookMeta,
-  ChapterMeta,
-  ParagraphMeta,
   IndexErrorCode,
   BM25Data,
 } from "./book-types.js";
@@ -252,6 +250,18 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     JSON.stringify(bookMeta, null, 2)
   );
 
+  // Step 3.5: Copy tree.json to .pageindex/{bookId}/
+  // Agent tools read tree.json from .pageindex/ (single data source)
+  try {
+    const sourceTreeJson = path.join(bookDir, "tree.json");
+    const destTreeJson = path.join(indexDir, "tree.json");
+    const treeContent = await fs.readFile(sourceTreeJson, "utf-8");
+    await fs.writeFile(destTreeJson, treeContent);
+    piLog(`[book-indexer] tree.json copied to ${destTreeJson}`);
+  } catch (err) {
+    piLog(`[book-indexer] Warning: tree.json copy failed: ${err}`);
+  }
+
   reportProgress({
     percent: 85,
     step: "meta_complete",
@@ -326,69 +336,31 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     bookId,
     title: rootTitle,
     fileType: options.fileType,
-    chaptersCount: bookMeta.chapters.length,
+    chaptersCount: parseResult.structure.length,
     indexDir,
   };
 }
 
 /**
- * Build book metadata from parse result
+ * Build book metadata v2 from parse result
+ * Simplified: no chapters[] (chapters info is in tree.json)
  */
 async function buildBookMeta(
   parseResult: any,
   bookId: string,
-  bookDir: string,
+  _bookDir: string,
   filePath: string,
   fileType: "pdf" | "epub",
   embedding?: any,
   author?: string
 ): Promise<BookMeta> {
-  const root = parseResult.structure[0];
-  const title = parseResult.docName || root?.title || "Unknown";
-
-  const chapters: ChapterMeta[] = [];
-  let sortOrder = 0;
-
-  for (const node of root?.nodes || []) {
-    const mdFileName = `${node.title}.md`;
-    const mdFilePath = path.join(bookDir, mdFileName);
-
-    const paragraphs: ParagraphMeta[] = [];
-    try {
-      const mdContent = await fs.readFile(mdFilePath, "utf-8");
-      const blockIdMatches = mdContent.matchAll(/\^([\w-]+)/g);
-      for (const match of blockIdMatches) {
-        const blockId = match[1];
-        const beforeText = mdContent.substring(0, match.index);
-        const lastParagraphEnd = beforeText.lastIndexOf("\n\n");
-        const paragraphStart = lastParagraphEnd >= 0 ? lastParagraphEnd + 2 : 0;
-        const paragraphText = mdContent.substring(paragraphStart, match.index).trim().slice(0, 50);
-        
-        paragraphs.push({
-          blockId,
-          text: paragraphText,
-        });
-      }
-    } catch (e) {
-      console.warn(`[book-indexer] Failed to read MD file: ${mdFilePath}`);
-    }
-
-    chapters.push({
-      id: node.nodeId || `ch${sortOrder}`,
-      title: node.title,
-      summary: node.summary || "",
-      mdFilePath: path.relative(bookDir, mdFilePath),
-      sortOrder: sortOrder++,
-      mdFileHash: "",
-      paragraphs,
-    });
-  }
+  const title = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
 
   return {
-    version: 1,
+    version: 2,
     bookId,
     title,
-    description: root?.summary || parseResult.docDescription || "",
+    description: parseResult.docDescription || parseResult.structure[0]?.summary || "",
     author,
     filePath,
     fileType,
@@ -398,12 +370,13 @@ async function buildBookMeta(
       model: embedding.model || "text-embedding-3-small",
       dimensions: embedding.dimensions || 1536,
     } : undefined,
-    chapters,
+    chapters: [],  // v2: chapters info is in tree.json
   };
 }
 
 /**
  * Vectorize L0/L1 nodes from parse result
+ * Fix: iterate entire structure array (not just structure[0])
  */
 async function vectorizeL0L1Nodes(
   parseResult: any,
@@ -417,21 +390,13 @@ async function vectorizeL0L1Nodes(
 
   const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
 
-  const root = parseResult.structure[0];
-  if (root) {
+  for (const rootNode of parseResult.structure || []) {
     nodes.push({
-      id: root.nodeId || "L0-root",
-      text: `${root.title}\n${root.summary || ""}\n${root.text || ""}`,
+      id: rootNode.nodeId || `L0-${nodes.length}`,
+      text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
       level: "L0",
     });
-
-    for (const node of root.nodes || []) {
-      nodes.push({
-        id: node.nodeId || `L1-${nodes.length}`,
-        text: `${node.title}\n${node.summary || ""}\n${node.text || ""}`,
-        level: "L1",
-      });
-    }
+    collectIndexLeafNodes(rootNode, nodes);
   }
 
   const texts = nodes.map(n => n.text);
@@ -444,28 +409,43 @@ async function vectorizeL0L1Nodes(
 
 /**
  * Build BM25 index from parse result
+ * Fix: iterate entire structure array (not just structure[0])
  */
 function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
   const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
 
-  const root = parseResult.structure[0];
-  if (root) {
+  for (const rootNode of parseResult.structure || []) {
+    // Each top-level element as L0
     nodes.push({
-      id: root.nodeId || "L0-root",
-      text: `${root.title}\n${root.summary || ""}\n${root.text || ""}`,
+      id: rootNode.nodeId || `L0-${nodes.length}`,
+      text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
       level: "L0",
     });
 
-    for (const node of root.nodes || []) {
-      nodes.push({
-        id: node.nodeId || `L1-${nodes.length}`,
-        text: `${node.title}\n${node.summary || ""}\n${node.text || ""}`,
-        level: "L1",
-      });
-    }
+    // Recursively collect all child nodes as L1
+    collectIndexLeafNodes(rootNode, nodes);
   }
 
   return buildBM25Index(nodes);
+}
+
+/**
+ * Recursively collect all child nodes for BM25/vector indexing
+ */
+function collectIndexLeafNodes(
+  node: any,
+  nodes: Array<{ id: string; text: string; level: "L0" | "L1" }>
+): void {
+  if (!node.nodes || node.nodes.length === 0) return;
+
+  for (const child of node.nodes) {
+    nodes.push({
+      id: child.nodeId || `L1-${nodes.length}`,
+      text: `${child.title}\n${child.summary || ""}\n${child.text || ""}`,
+      level: "L1",
+    });
+    collectIndexLeafNodes(child, nodes);
+  }
 }
 
 /**

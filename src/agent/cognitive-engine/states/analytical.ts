@@ -25,7 +25,7 @@ type ToolResult = StateLoopResult['toolResults'][number];
 export class AnalyticalState extends StateNode {
   readonly name = 'Analytical';
   readonly model = 'main' as const;
-  readonly tools = ['search_markdown_text', 'read_markdown_section'];
+  readonly tools = ['search_book', 'read_book_section'];
 
   private inspectionalState: InspectionalState;
 

@@ -26,8 +26,8 @@ export function createScopeInterceptor(scopeNodeIds: string[]): ToolInterceptor 
   const hasScope = scopeNodeIds.length > 0;
 
   return (toolName: string, toolArgs: Record<string, unknown>): Record<string, unknown> => {
-    // Intercept search_markdown_text: inject scope only when has valid scope
-    if (toolName === 'search_markdown_text') {
+    // Intercept search_book: inject scope only when has valid scope
+    if (toolName === 'search_book') {
       if (hasScope) {
         return {
           ...toolArgs,
@@ -38,7 +38,7 @@ export function createScopeInterceptor(scopeNodeIds: string[]): ToolInterceptor 
       return toolArgs;
     }
 
-    // read_markdown_section: 不需要 scope 检查
+    // read_book_section: 不需要 scope 检查
     // 因为 LLM 基于已过滤的搜索结果决定读取哪个章节
     // 搜索结果已经只包含范围内的内容
 

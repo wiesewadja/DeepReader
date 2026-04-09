@@ -297,20 +297,14 @@ async function createChapterNote(
     }
   }
 
-  // Frontmatter
+  // Frontmatter (v2: only user-visible metadata)
   const frontmatter: Record<string, unknown> = {
     title: chapter.title,
-    book: bookName,
-    author: bookInfo.author,
-    chapter_index: index + 1,
-    level: chapter.level,
+    source: bookName,
     type: "epub",
-    indexed: true,
-    token_count: chapter.tokenCount,
-    created: new Date().toISOString(),
     tags: ["epub", "book", sanitizeTag(bookName)],
   };
-  if (nodeSummary) frontmatter.summary = nodeSummary;
+  if (bookInfo.author) frontmatter.author = bookInfo.author;
 
   // 应用自定义模板
   if (options.noteTemplate) {
@@ -504,17 +498,16 @@ function buildEpubTree(
   notes: ObsidianNote[],
   options: ObsidianExportOptions
 ): EpubTreeNode[] {
-  let nodeIdCounter = 0;
-  const generateNodeId = () => `node-${String(nodeIdCounter++).padStart(3, "0")}`;
 
   // 每个章节创建一个节点，带文件路径
+  // nodeId 使用和 tocEntries 一致的格式（0001, 0002, ...）
   const allNodes: Array<EpubTreeNode & { level: number }> = chaptersWithLevel.map((ch, i) => {
     const indexPrefix = options.includeIndex ? `${String(i + 1).padStart(2, "0")} - ` : "";
     const fileName = sanitizeFileName(`${indexPrefix}${ch.title}`) + ".md";
 
     return {
       title: ch.title,
-      nodeId: generateNodeId(),
+      nodeId: String(i + 1).padStart(4, "0"),
       filePath: notes[i] ? path.basename(notes[i].filePath) : fileName,
       startIndex: i,
       endIndex: i,

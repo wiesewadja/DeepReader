@@ -89,7 +89,7 @@ export interface StateLoopResult {
 /**
  * 工具结果压缩常量
  */
-const MAX_TOOL_RESULT_LENGTH = 4000;
+const MAX_TOOL_RESULT_LENGTH = 8000;
 
 /**
  * 压缩工具结果

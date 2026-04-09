@@ -36,8 +36,8 @@ export function formatTreeStructure(
     // Build prefix
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
-    // Title line with node_id and link
-    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}, link: ${node.link || ''})`;
+    // Title line with node_id
+    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id})`;
     lines.push(titleLine);
 
     // Add summary if available and within depth limit

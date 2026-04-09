@@ -6,9 +6,8 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 // 本地 Markdown 工具（零外部依赖）- 主要工具
 import {
-  getDocumentOutlineTool,
-  searchMarkdownTextTool,
-  readMarkdownSectionTool
+  searchBookTool,
+  readBookSectionTool
 } from './local/index.js';
 import { createSkillTool } from './skill.js';  // TODO: 暂时屏蔽 Skills 功能
 import { writeNoteTool } from './write-note.js';
@@ -29,9 +28,8 @@ export type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 
 // 本地 Markdown 工具
 export {
-  getDocumentOutlineTool,
-  searchMarkdownTextTool,
-  readMarkdownSectionTool
+  searchBookTool,
+  readBookSectionTool
 } from './local/index.js';
 export { createSkillTool } from './skill.js';
 export { writeNoteTool } from './write-note.js';
@@ -52,9 +50,8 @@ export function createToolRegistry(
   const registry: ToolRegistry = new Map();
 
   // 注册本地 Markdown 工具（零外部依赖）- 主要工具
-  registry.set('get_document_outline', getDocumentOutlineTool);
-  registry.set('search_markdown_text', searchMarkdownTextTool);
-  registry.set('read_markdown_section', readMarkdownSectionTool);
+  registry.set('search_book', searchBookTool);
+  registry.set('read_book_section', readBookSectionTool);
 
   // 注册 Skill 工具（需要依赖注入）
   // TODO: 暂时屏蔽 Skills 功能

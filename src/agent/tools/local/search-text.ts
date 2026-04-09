@@ -1,30 +1,27 @@
 /**
- * search_markdown_text Tool - 使用 Page Index 搜索
+ * search_book Tool - 8-stage hybrid search with block_id level precision
  */
 
 import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
-import type { SearchHit } from './types.js';
-import { searchBook } from '../../../pageindex/book-search.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 
-const SEARCH_TEXT_DEFINITION: ToolDefinition = {
+const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',
   function: {
-    name: 'search_markdown_text',
-    description: `在书中搜索关键词，返回匹配的段落位置。
+    name: 'search_book',
+    description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
 
 【搜索逻辑】
-- 使用混合搜索（向量 + BM25）找到最相关的章节
-- 返回 Top 5 最相关的片段
+- 8 阶段管线：BM25 + 向量语义 + scope 过滤 + 层级加权
+- 每个 hit 返回 node 内匹配最密集的段落片段（含 ^block_id）
 
 【返回结果】
-- 返回 Top 5 最相关的片段
-- 包含 distribution_map 热力图，显示各章节命中分布
-- 如 total_hits > 20，建议换更精准的词重新搜索
+- matched_blocks: 匹配的段落片段，可直接引用 ^block_id
+- 大部分情况无需再调 read_book_section
 
 【中文搜索技巧】
 - 提取核心名词，剔除"如何"、"是什么"等修饰语
-- 同义词用正则："(边界|边缘|界限)"
 - 拆分复合词：不要搜"解决问题的前提"，改用 ["解决问题", "前提"]`,
     parameters: {
       type: 'object',
@@ -32,16 +29,12 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
         keywords: {
           type: 'array',
           items: { type: 'string' },
-          description: '关键词数组，会拼接为查询字符串'
+          description: '关键词数组，AND 逻辑'
         },
         scope_node_ids: {
           type: 'array',
           items: { type: 'string' },
           description: '限定搜索范围（章节 ID 列表），留空则全局搜索'
-        },
-        use_regex: {
-          type: 'boolean',
-          description: '启用正则表达式匹配（默认 false）。开启后支持 (A|B) 同义词'
         }
       },
       required: ['keywords']
@@ -49,8 +42,8 @@ const SEARCH_TEXT_DEFINITION: ToolDefinition = {
   }
 };
 
-export const searchMarkdownTextTool: ToolExecutor = {
-  definition: SEARCH_TEXT_DEFINITION,
+export const searchBookTool: ToolExecutor = {
+  definition: SEARCH_BOOK_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const { app, pdfName } = context;
@@ -79,62 +72,49 @@ export const searchMarkdownTextTool: ToolExecutor = {
     }
 
     try {
-      // 构建书籍路径
       const vaultPath = (app.vault.adapter as any).basePath;
       const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-      
-      // 查找书籍文件
+
+      // Find book file
       const files = app.vault.getFiles();
-      const bookFile = files.find(f => 
+      const bookFile = files.find(f =>
         f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
       );
-      
+
       if (!bookFile) {
         return JSON.stringify({
           status: 'ERROR_BOOK_NOT_FOUND',
           message: `未找到书籍文件: ${bookName}`
         });
       }
-      
+
       const filePath = `${vaultPath}/${bookFile.path}`;
       const query = keywords.join(' ');
-      
-      // 调用 searchBook
-      const results = await searchBook({
+
+      // Call searchBookV2
+      const results = await searchBookV2({
         filePath,
         query,
         topK: 5,
         embedding: context.plugin?.settings?.embedding,
+        scopeNodeIds,
       });
 
-      // 转换为工具结果格式
-      const hits: SearchHit[] = results.map(r => ({
+      const hits = results.map(r => ({
         node_id: r.nodeId,
-        location: {
-          heading: r.chapterTitle,
-          path: [r.chapterTitle],
-          file_path: r.mdFilePath,
-        },
-        snippet: r.rawText.slice(0, 150),
-        block_id: extractFirstBlockId(r.rawText),
+        title: r.title,
+        path: r.hierarchyPath,
+        matched_blocks: r.matchedBlocks.map(b => ({
+          block_id: b.blockId,
+          content: b.content,
+        })),
+        score: Math.round(r.score * 100) / 100,
       }));
-
-      // 构建热力图
-      const distributionMap = buildDistributionMap(results);
-
-      // 过滤 scope（如果指定）
-      let filteredHits = hits;
-      if (scopeNodeIds && scopeNodeIds.length > 0) {
-        const scopeSet = new Set(scopeNodeIds);
-        filteredHits = hits.filter(h => scopeSet.has(h.node_id));
-      }
 
       return JSON.stringify({
         status: 'SUCCESS',
         total_hits: results.length,
-        returned_hits: filteredHits.length,
-        distribution_map: distributionMap,
-        hits: filteredHits,
+        hits,
         scope_filter: scopeNodeIds ? `已限定在 ${scopeNodeIds.length} 个章节` : '全局搜索'
       });
     } catch (error) {
@@ -146,33 +126,3 @@ export const searchMarkdownTextTool: ToolExecutor = {
     }
   }
 };
-
-/**
- * 提取第一个 block ID
- */
-function extractFirstBlockId(text: string): string {
-  const match = text.match(/\^([\w-]+)/);
-  return match ? `^${match[1]}` : '';
-}
-
-/**
- * 构建分布热力图
- */
-function buildDistributionMap(results: any[]): Record<string, { count: number; node_id: string; path: string }> {
-  const distribution: Record<string, { count: number; node_id: string; path: string }> = {};
-
-  for (const result of results) {
-    const heading = result.chapterTitle;
-    
-    if (!distribution[heading]) {
-      distribution[heading] = {
-        count: 0,
-        node_id: result.nodeId,
-        path: result.chapterTitle,
-      };
-    }
-    distribution[heading].count += 1;
-  }
-
-  return distribution;
-}

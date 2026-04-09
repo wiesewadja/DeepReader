@@ -226,22 +226,14 @@ export async function exportPdfToObsidian(
       }
     }
 
-    // Frontmatter
+    // Frontmatter (v2: only user-visible metadata)
     const frontmatter: Record<string, unknown> = {
       title: section.title,
       source: sanitizeFileName(docName),
       type: "pdf",
-      indexed: true,
-
-      section_index: i + 1,
-      token_count: countTokens(section.text),
-      created: new Date().toISOString(),
       tags: ["pdf", "document", sanitizeTag(docName)],
     };
     if (section.startIndex) frontmatter.page_range = `${section.startIndex}-${section.endIndex}`;
-    if (section.nodeId) frontmatter.node_id = section.nodeId;
-    if (section.summary) frontmatter.summary = section.summary;
-    if (options.sourcePdf) frontmatter.source_file = options.sourcePdf;
 
     // 模板
     if (options.noteTemplate) {

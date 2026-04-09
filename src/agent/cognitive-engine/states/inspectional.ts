@@ -1,12 +1,7 @@
 /**
  * S1: Inspectional Reading State
  *
- * Responsibilities:
- * - Get document outline directly (code-level call, not LLM tool call)
- * - Format tree structure into system prompt
- * - LLM directly reasons and outputs scopeNodeIds
- *
- * Key improvement: Reduces 2 LLM calls to 1 by embedding tree in prompt
+ * v2: Reads tree.json directly from .pageindex/ (not via tool call)
  */
 
 import { z } from 'zod';
@@ -19,10 +14,10 @@ import {
   buildInspectionalUserMessage,
 } from '../prompts/inspectional-prompt';
 import type { OutlineNode } from '../../tools/local/types';
+import * as crypto from 'crypto';
+import * as path from 'path';
 
 // Schema for inspectional output
-// scopeNodeIds 允许空数组（表示全局搜索）
-// max(100) 允许圈定较大范围，宁可大也不要遗漏
 const InspectionalOutputSchema = z.object({
   scopeNodeIds: z.array(z.string()).max(100),
   tocSummary: z.string(),
@@ -31,18 +26,22 @@ const InspectionalOutputSchema = z.object({
 });
 
 /**
- * Parse outline JSON from get_document_outline result
+ * Convert tree.json structure to OutlineNode[] for formatTreeStructure
  */
-function parseOutlineResult(result: string): OutlineNode[] {
-  try {
-    const parsed = JSON.parse(result);
-    if (parsed.status === 'SUCCESS' && Array.isArray(parsed.outline)) {
-      return parsed.outline as OutlineNode[];
-    }
-  } catch {
-    // Ignore parse errors
+function treeToOutlineNodes(structure: any[]): OutlineNode[] {
+  const result: OutlineNode[] = [];
+
+  for (const node of structure) {
+    result.push({
+      node_id: node.nodeId || '',
+      heading: node.title || '',
+      level: 1,
+      summary: node.summary,
+      children: node.nodes ? treeToOutlineNodes(node.nodes) : [],
+    });
   }
-  return [];
+
+  return result;
 }
 
 /**
@@ -51,7 +50,7 @@ function parseOutlineResult(result: string): OutlineNode[] {
 export class InspectionalState extends StateNode {
   readonly name = 'Inspectional';
   readonly model = 'fast' as const;
-  readonly tools: string[] = []; // No tools needed - tree is embedded in prompt
+  readonly tools: string[] = []; // No tools needed
 
   constructor() {
     super();
@@ -61,7 +60,6 @@ export class InspectionalState extends StateNode {
   async execute(ctx: SharedContext): Promise<void> {
     const startTime = Date.now();
 
-    // Create span from trace context
     const span = ctx.traceContext?.withSpan('inspectional-execute', {
       input: {
         query: ctx.standaloneQuery || ctx.rawUserQuery,
@@ -70,25 +68,18 @@ export class InspectionalState extends StateNode {
     });
 
     try {
-      // Check if engine dependencies are available
       const { llmClientManager, toolRegistry, toolContext } = ctx;
       if (!llmClientManager || !toolRegistry || !toolContext) {
-        // Fallback to placeholder for testing
-        ctx.scopeNodeIds = ['node_c1', 'node_c2'];
-        ctx.tocSummary = 'Based on TOC analysis, chapters 1 and 2 are most relevant.';
+        ctx.scopeNodeIds = [];
+        ctx.tocSummary = 'Testing mode - no outline.';
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
       }
 
-      // Step 1: Get document outline directly (code-level call)
-      const outlineStartTime = Date.now();
-      const outlineResult = await this.getOutline(toolRegistry, toolContext);
-      const outlineNodes = parseOutlineResult(outlineResult);
-
-      // Trace outline tool call
+      // Step 1: Load tree.json directly from .pageindex/
+      const outlineNodes = await this.loadTreeJson(toolContext);
 
       if (outlineNodes.length === 0) {
-        // No outline available, fallback to global search
         ctx.scopeNodeIds = [];
         ctx.tocSummary = '无法获取目录结构，使用全局搜索。';
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
@@ -98,7 +89,7 @@ export class InspectionalState extends StateNode {
       // Step 2: Format tree structure for prompt
       const treeText = formatTreeStructure(outlineNodes);
 
-      // Step 3: Build system prompt with embedded tree and depth-aware branching
+      // Step 3: Build prompt
       const systemPrompt = buildInspectionalSystemPrompt(
         treeText,
         ctx.pdfName,
@@ -110,33 +101,30 @@ export class InspectionalState extends StateNode {
         ctx.depth
       );
 
-      // Trace LLM interaction
       const llmClient = llmClientManager.getClient(this.model);
       const llmGen = span?.withGeneration('inspectional-llm', {
         model: llmClient.getModel(),
         input: { systemPrompt, userMessage },
       });
 
-      // Step 4: Call LLM with JSON Mode for structured output
+      // Step 4: Call LLM with JSON Mode
       const llmStartTime = Date.now();
       const response = await llmClient.chat(
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        [], // No tools
-        { type: 'json_object' } // JSON Mode for structured output
+        [],
+        { type: 'json_object' }
       );
       const llmDuration = Date.now() - llmStartTime;
 
-      // End LLM generation trace
       llmGen?.end({
         output: { content: response.content, finishReason: 'stop' },
         metadata: { contentLength: response.content?.length ?? 0, duration: llmDuration },
       });
 
-      // Step 5: Parse the output with fallback
-      // 空数组表示全局搜索，后端会自动跳过 scope 过滤
+      // Step 5: Parse output
       const defaultOutput = {
         scopeNodeIds: [] as string[],
         tocSummary: '无法解析目录范围，使用全局搜索。',
@@ -150,7 +138,6 @@ export class InspectionalState extends StateNode {
         ctx.betterQuestion = parsed.better_question || ctx.rawUserQuery;
         ctx.structuralAnalysis = parsed.structural_analysis || '';
       } catch {
-        // Use fallback on parse error
         ctx.scopeNodeIds = defaultOutput.scopeNodeIds;
         ctx.tocSummary = defaultOutput.tocSummary;
         ctx.betterQuestion = ctx.rawUserQuery;
@@ -159,7 +146,6 @@ export class InspectionalState extends StateNode {
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
 
-      // End span after all work is done
       span?.end({
         output: { scopeNodeIds: ctx.scopeNodeIds?.length ?? 0 },
       });
@@ -175,23 +161,38 @@ export class InspectionalState extends StateNode {
   }
 
   /**
-   * Get document outline by calling get_document_outline tool directly
+   * Load tree.json directly from .pageindex/{bookId}/tree.json
    */
-  private async getOutline(
-    toolRegistry: NonNullable<SharedContext['toolRegistry']>,
-    toolContext: NonNullable<SharedContext['toolContext']>
-  ): Promise<string> {
-    const executor = toolRegistry.get('get_document_outline');
-    if (!executor) {
-      throw new Error('get_document_outline tool not found in registry');
-    }
+  private async loadTreeJson(toolContext: NonNullable<SharedContext['toolContext']>): Promise<OutlineNode[]> {
+    try {
+      const { app, pdfName } = toolContext;
+      if (!app || !pdfName) return [];
 
-    return await executor.execute({}, toolContext);
+      const vaultPath = (app.vault.adapter as any).basePath;
+      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+
+      // Find book file to compute bookId
+      const files = app.vault.getFiles();
+      const bookFile = files.find(f =>
+        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
+      );
+      if (!bookFile) return [];
+
+      const filePath = `${vaultPath}/${bookFile.path}`;
+      const bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+
+      // Read tree.json
+      const treePath = path.join(vaultPath, ".pageindex", bookId, "tree.json");
+      const treeContent = await (app.vault as any).adapter.read(treePath);
+      const treeData = JSON.parse(treeContent);
+
+      return treeToOutlineNodes(treeData.structure || []);
+    } catch {
+      return [];
+    }
   }
 
   buildSystemPrompt(ctx: SharedContext): string {
-    // This method is kept for backward compatibility
-    // The actual prompt is built in execute() with the tree embedded
     return buildInspectionalSystemPrompt(
       '(目录将在执行时获取)',
       ctx.pdfName,
