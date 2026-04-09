@@ -463,6 +463,12 @@ export class LibraryModal extends Modal {
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
             const displayName = this.getDisplayName(fileInfo.name);
 
+            // 移除同名文件的旧索引项（failed 或其他状态），避免重复
+            this.indexes = this.indexes.filter(idx => {
+                const idxName = idx.pdf_name || '';
+                return idxName !== fileInfo.name;
+            });
+
             const tempId = `temp_${Date.now()}`;
             const tempIndex: IndexListItem = {
                 id: tempId,
@@ -603,6 +609,12 @@ export class LibraryModal extends Modal {
     }
 
     private retryIndex(index: IndexListItem): void {
+        // 移除 failed 索引项，避免重新索引时出现重复卡片
+        this.indexes = this.indexes.filter(idx => idx.id !== index.id);
+        this.cardElements.delete(index.id);
+        this.lastIndexStates.delete(index.id);
+        this.renderGrid();
+
         new Notice(`请重新添加「${this.getDisplayName(index.pdf_name)}」进行索引`, 5000);
         this.handleAddDocument();
     }
@@ -699,32 +711,28 @@ export class LibraryModal extends Modal {
 
     private async refreshIndexes(): Promise<void> {
         const newIndexes = await this.options.onRefresh?.();
-        console.log('[LibraryModal] refreshIndexes called, newIndexes:', newIndexes?.length);
 
         if (newIndexes) {
+            // 去重：移除 this.indexes 中的 tempIndex（其 bookId 已出现在 newIndexes 中）
+            // 这样 tempIndex 会被实际的 bookId 索引项替代，避免同一本书出现两个卡片
+            const realBookIds = new Set(newIndexes.map(idx => idx.id));
+            const tempIndexesToKeep = this.indexes.filter(idx =>
+                idx.id.startsWith('temp_') && !realBookIds.has(idx.id)
+            );
+
+            // 合并：实际索引项 + 仍在处理中的 tempIndex（尚未生成 bookId）
+            this.indexes = [...newIndexes, ...tempIndexesToKeep];
+
             // 检测新增的索引
-            const newAddedIndexes = this.detectNewIndexes(newIndexes);
+            const newAddedIndexes = this.detectNewIndexes(this.indexes);
             // 检测状态变化的索引
-            const changedIndexes = this.detectChangedIndexes(newIndexes);
+            const changedIndexes = this.detectChangedIndexes(this.indexes);
             // 检测刚完成的索引
-            const completedIndexes = this.detectCompletedIndexes(newIndexes);
+            const completedIndexes = this.detectCompletedIndexes(this.indexes);
 
-            // console.log('[LibraryModal] detected:', {
-            //     newAdded: newAddedIndexes.length,
-            //     changed: changedIndexes.length,
-            //     completed: completedIndexes.length,
-            //     lastIndexStates: this.lastIndexStates.size
-            // });
-
-            this.indexes = [...newIndexes];
-
-            // 如果有新增的索引，需要重新渲染整个网格（因为要插入新卡片）
             if (newAddedIndexes.length > 0) {
-                // console.log('[LibraryModal] new indexes detected, re-rendering grid');
                 this.renderGrid();
             } else if (changedIndexes.length > 0 || completedIndexes.length > 0) {
-                // 只有状态变化，增量更新
-                console.log('[LibraryModal] updating cards incrementally');
                 this.updateCardsIncrementally(changedIndexes, completedIndexes);
             }
         } else {
