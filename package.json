@@ -1,0 +1,56 @@
+{
+  "name": "obsidian-deepreader",
+  "version": "0.9.9",
+  "description": "DeepReader - 深度阅读插件",
+  "main": "bin/main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && npm run copy-manifest",
+    "sync-version": "node scripts/sync-version.js",
+    "copy-css": "node scripts/build-css.js",
+    "copy-manifest": "cp manifest.json bin/",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:ui": "vitest --ui",
+    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader/\""
+  },
+  "keywords": [
+    "obsidian",
+    "pdf",
+    "epub",
+    "knowledge",
+    "search"
+  ],
+  "author": "DeepReader Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/jsdom": "^27.0.0",
+    "@types/node": "^20.0.0",
+    "@types/turndown": "^5.0.6",
+    "@types/uuid": "^10.0.0",
+    "@types/xml2js": "^0.4.14",
+    "@vitest/ui": "^1.0.0",
+    "adm-zip": "^0.5.17",
+    "@wdio/cli": "^9.27.0",
+    "@wdio/local-runner": "^9.27.0",
+    "@wdio/mocha-framework": "^9.27.0",
+    "@wdio/spec-reporter": "^9.27.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.19.0",
+    "jsdom": "^27.4.0",
+    "obsidian": "latest",
+    "turndown": "^7.2.4",
+    "xml2js": "^0.6.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "wdio-obsidian-service": "^3.0.2",
+    "webdriverio": "^9.27.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "pdf-parse": "^1.1.1",
+    "uuid": "^13.0.0"
+  }
+}

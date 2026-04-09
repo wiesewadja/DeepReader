@@ -27,8 +27,9 @@ package-lock.json
 **/package-lock.json
 
 # Build outputs
-frontend/main.js
-frontend/manifest.json
+bin/
+main.js
+styles.css
 
 # Vitest test results and coverage
 frontend/node_modules/.vite/
@@ -40,3 +41,5 @@ output/
 backend/data/
 .worktrees/
 .kiro/
+bin/
+.obsidian-cache

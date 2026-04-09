@@ -1,0 +1,555 @@
+/**
+ * PageIndex: TOC Detection and Extraction
+ * Functions for detecting, extracting, and processing table of contents
+ */
+
+import { chatGPT, chatGPTWithFinishReason, type ClientConfig } from "../llm/client";
+import type { PdfPage } from "../parsers/pdf";
+import type { TocItem, TocCheckResult } from "./types";
+import { extractJson, getJsonContent, countTokens, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
+import * as prompts from "./prompts";
+
+export interface TocOptions {
+  model: string;
+  tocCheckPageNum: number;
+  apiKey?: string;
+  baseUrl?: string;
+  maxTokens?: number; // 可选的输出 token 上限，不同模型不同
+}
+
+/**
+ * Detect if a single page contains a TOC
+ */
+export async function tocDetectorSinglePage(
+  content: string,
+  options: TocOptions
+): Promise<"yes" | "no"> {
+  const prompt = prompts.tocDetectorPrompt(content);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ toc_detected: string }>(response);
+  return (json?.toc_detected === "yes" ? "yes" : "no");
+}
+
+/**
+ * Find all pages containing TOC
+ */
+export async function findTocPages(
+  startPageIndex: number,
+  pages: PdfPage[],
+  options: TocOptions
+): Promise<number[]> {
+  let lastPageIsYes = false;
+  const tocPageList: number[] = [];
+  let i = startPageIndex;
+
+  while (i < pages.length) {
+    // Only check beyond max_pages if we're still finding TOC pages
+    if (i >= options.tocCheckPageNum && !lastPageIsYes) {
+      break;
+    }
+
+    const page = pages[i];
+    if (!page || !page.text || page.text.trim().length === 0) {
+      i++;
+      continue;
+    }
+    
+    const detected = await tocDetectorSinglePage(page.text, options);
+    
+    if (detected === "yes") {
+      tocPageList.push(i);
+      lastPageIsYes = true;
+    } else if (detected === "no" && lastPageIsYes) {
+      break;
+    }
+    
+    i++;
+  }
+
+  return tocPageList;
+}
+
+/**
+ * Transform dots/ellipsis to colon in TOC text
+ */
+function transformDotsToColon(text: string): string {
+  // Handle multiple consecutive dots
+  text = text.replace(/\.{5,}/g, ": ");
+  // Handle dots separated by spaces
+  text = text.replace(/(?:\. ){5,}\.?/g, ": ");
+  return text;
+}
+
+/**
+ * Detect if page numbers are given in TOC
+ */
+export async function detectPageIndex(
+  tocContent: string,
+  options: TocOptions
+): Promise<"yes" | "no"> {
+  const prompt = prompts.detectPageIndexPrompt(tocContent);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ page_index_given_in_toc: string }>(response);
+  return json?.page_index_given_in_toc === "yes" ? "yes" : "no";
+}
+
+/**
+ * Extract TOC content from pages
+ */
+export async function tocExtractor(
+  pages: PdfPage[],
+  tocPageList: number[],
+  options: TocOptions
+): Promise<{ tocContent: string; pageIndexGivenInToc: "yes" | "no" }> {
+  let tocContent = "";
+  for (const pageIndex of tocPageList) {
+    const page = pages[pageIndex];
+    if (page) {
+      tocContent += page.text;
+    }
+  }
+  tocContent = transformDotsToColon(tocContent);
+  
+  const hasPageIndex = await detectPageIndex(tocContent, options);
+
+  return {
+    tocContent,
+    pageIndexGivenInToc: hasPageIndex,
+  };
+}
+
+/**
+ * Check if TOC transformation is complete
+ */
+async function checkTocTransformationComplete(
+  rawToc: string,
+  cleanedToc: string,
+  options: TocOptions
+): Promise<boolean> {
+  const prompt = prompts.checkTocTransformationCompletePrompt(rawToc, cleanedToc);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ completed: string }>(response);
+  return json?.completed === "yes";
+}
+
+/**
+ * Try multiple methods to extract TocItem[] from LLM response
+ * Handles truncated JSON, markdown-wrapped JSON, and partial responses
+ */
+function tryExtractTocItems(content: string): TocItem[] {
+  // Method 1: Use extractJson (handles markdown blocks, cleaning, etc.)
+  const json = extractJson<{ table_of_contents: TocItem[] }>(content);
+  if (json?.table_of_contents?.length) {
+    return convertPageToInt(json.table_of_contents);
+  }
+
+  // Method 2: Try parsing as top-level array
+  const arrJson = extractJson<TocItem[]>(content);
+  if (Array.isArray(arrJson) && arrJson.length > 0) {
+    return convertPageToInt(arrJson);
+  }
+
+  // Method 3: Find "table_of_contents" array and extract items individually
+  // This handles truncated JSON where the closing brackets are missing
+  const tocArrayMatch = content.match(/"table_of_contents"\s*:\s*\[/);
+  if (tocArrayMatch) {
+    const arrayStart = content.indexOf("[", tocArrayMatch.index!);
+    if (arrayStart !== -1) {
+      // Extract individual items using regex
+      const itemRegex = /\{\s*"structure"\s*:\s*"([^"]+)"\s*,\s*"title"\s*:\s*"([^"]*)"/g;
+      const items: TocItem[] = [];
+      let match;
+      while ((match = itemRegex.exec(content)) !== null) {
+        const item: TocItem = { structure: match[1], title: match[2] };
+        // Try to extract page number
+        const pageMatch = content.slice(match.index, content.indexOf("}", match.index)).match(/"page"\s*:\s*(\d+)/);
+        if (pageMatch) item.page = parseInt(pageMatch[1]);
+        items.push(item);
+      }
+      if (items.length > 0) {
+        return convertPageToInt(items);
+      }
+    }
+  }
+
+  // Method 4: Extract items from truncated JSON by finding all complete objects
+  const objectRegex = /\{\s*"structure"\s*:\s*"[^"]+"\s*,\s*"title"\s*:\s*"[^"]*"[^}]*\}/g;
+  const items: TocItem[] = [];
+  let objMatch;
+  while ((objMatch = objectRegex.exec(content)) !== null) {
+    try {
+      const obj = JSON.parse(objMatch[0]);
+      if (obj.structure && obj.title !== undefined) {
+        items.push(obj as TocItem);
+      }
+    } catch {}
+  }
+  if (items.length > 0) {
+    return convertPageToInt(items);
+  }
+
+  return [];
+}
+
+/**
+ * Transform raw TOC content to JSON structure
+ */
+export async function tocTransformer(
+  tocContent: string,
+  options: TocOptions
+): Promise<TocItem[]> {
+  const prompt = prompts.tocTransformerPrompt(tocContent);
+  const maxTokens = options.maxTokens || 8192;
+  
+  let { content: lastComplete, finishReason } = await chatGPTWithFinishReason({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    maxTokens,
+  });
+
+  console.log(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
+
+  // Try to extract items from the first response (even if truncated)
+  // This handles the case where LLM returns a complete JSON array but gets cut off
+  const firstAttemptItems = tryExtractTocItems(lastComplete);
+  if (firstAttemptItems.length > 0) {
+    console.log(`[DIAG-tocTransformer] Extracted ${firstAttemptItems.length} items from first response`);
+    return firstAttemptItems;
+  }
+
+  let isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
+
+  if (isComplete && finishReason === "finished") {
+    const json = extractJson<{ table_of_contents: TocItem[] }>(lastComplete);
+    if (json?.table_of_contents) {
+      console.log(`[DIAG-tocTransformer] Complete response: ${json.table_of_contents.length} items`);
+      return convertPageToInt(json.table_of_contents);
+    }
+  }
+
+  // Handle continuation if not complete
+  lastComplete = getJsonContent(lastComplete);
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  while (!(isComplete && finishReason === "finished") && attempts < maxAttempts) {
+    // Trim to last complete object
+    const position = lastComplete.lastIndexOf("}");
+    if (position !== -1) {
+      lastComplete = lastComplete.slice(0, position + 1);
+    }
+
+    const continuePrompt = prompts.tocTransformerContinuePrompt(tocContent, lastComplete);
+    const result = await chatGPTWithFinishReason({
+      model: options.model,
+      prompt: continuePrompt,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      maxTokens,
+    });
+
+    let newContent = result.content;
+    finishReason = result.finishReason;
+
+    if (newContent.startsWith("```json")) {
+      newContent = getJsonContent(newContent);
+    }
+    lastComplete = lastComplete + newContent;
+
+    // Try to extract items after each continuation attempt
+    const continuationItems = tryExtractTocItems(lastComplete);
+    if (continuationItems.length > 0 && (finishReason === "finished" || isComplete)) {
+      console.log(`[DIAG-tocTransformer] Extracted ${continuationItems.length} items after continuation ${attempts + 1}`);
+      return continuationItems;
+    }
+
+    isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
+    attempts++;
+  }
+
+  // Final attempt: try all extraction methods
+  const finalItems = tryExtractTocItems(lastComplete);
+  if (finalItems.length > 0) {
+    console.log(`[DIAG-tocTransformer] Final extraction: ${finalItems.length} items`);
+    return finalItems;
+  }
+
+  console.error("[DIAG-tocTransformer] All JSON extraction methods failed, returning empty");
+  return [];
+}
+
+/**
+ * Extract physical index from pages for TOC items
+ */
+export async function tocIndexExtractor(
+  toc: TocItem[],
+  content: string,
+  options: TocOptions
+): Promise<TocItem[]> {
+  const prompt = prompts.tocIndexExtractorPrompt(JSON.stringify(toc), content);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<TocItem[]>(response);
+  return json || [];
+}
+
+/**
+ * Generate TOC from document pages (no existing TOC)
+ */
+export async function generateTocInit(
+  part: string,
+  options: TocOptions
+): Promise<TocItem[]> {
+  const prompt = prompts.generateTocInitPrompt(part);
+  const maxTokens = options.maxTokens || 8192;
+  const { content, finishReason } = await chatGPTWithFinishReason({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    maxTokens,
+  });
+
+  if (finishReason === "finished") {
+    const json = extractJson<TocItem[]>(content);
+    return json || [];
+  }
+  
+  throw new Error(`Generation incomplete: ${finishReason}`);
+}
+
+/**
+ * Continue TOC generation with previous structure
+ */
+export async function generateTocContinue(
+  tocContent: TocItem[],
+  part: string,
+  options: TocOptions
+): Promise<TocItem[]> {
+  const prompt = prompts.generateTocContinuePrompt(part, JSON.stringify(tocContent, null, 2));
+  const maxTokens = options.maxTokens || 8192;
+  const { content, finishReason } = await chatGPTWithFinishReason({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    maxTokens,
+  });
+
+  if (finishReason === "finished") {
+    const json = extractJson<TocItem[]>(content);
+    return json || [];
+  }
+  
+  throw new Error(`Generation incomplete: ${finishReason}`);
+}
+
+/**
+ * Add page numbers to TOC structure from document parts
+ */
+export async function addPageNumberToToc(
+  part: string,
+  structure: TocItem[],
+  options: TocOptions
+): Promise<TocItem[]> {
+  const prompt = prompts.addPageNumberToTocPrompt(part, JSON.stringify(structure, null, 2));
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<TocItem[]>(response);
+  if (!json) return structure;
+
+  // Remove 'start' field from items
+  for (const item of json) {
+    delete (item as unknown as Record<string, unknown>).start;
+  }
+
+  return json;
+}
+
+/**
+ * Check title appearance in page
+ */
+export async function checkTitleAppearance(
+  item: TocItem,
+  pages: PdfPage[],
+  startIndex: number,
+  options: TocOptions
+): Promise<{ listIndex: number | undefined; answer: "yes" | "no"; title: string; pageNumber: number | undefined }> {
+  const title = item.title;
+  
+  if (!item.physicalIndex) {
+    return { listIndex: item.listIndex, answer: "no", title, pageNumber: undefined };
+  }
+
+  const pageNumber = item.physicalIndex;
+  const pageText = pages[pageNumber - startIndex]?.text || "";
+
+  const prompt = prompts.checkTitleAppearancePrompt(title, pageText);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ answer: string }>(response);
+  const answer = json?.answer === "yes" ? "yes" : "no";
+
+  return { listIndex: item.listIndex, answer, title, pageNumber };
+}
+
+/**
+ * Check title appearance at start of page
+ */
+export async function checkTitleAppearanceInStart(
+  title: string,
+  pageText: string,
+  options: TocOptions
+): Promise<"yes" | "no"> {
+  const prompt = prompts.checkTitleStartAtBeginningPrompt(title, pageText);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ start_begin: string }>(response);
+  return json?.start_begin === "yes" ? "yes" : "no";
+}
+
+/**
+ * Check title appearance in start for multiple items concurrently
+ */
+export async function checkTitleAppearanceInStartConcurrent(
+  structure: TocItem[],
+  pages: PdfPage[],
+  options: TocOptions
+): Promise<TocItem[]> {
+  const results: TocItem[] = [];
+
+  for (const item of structure) {
+    if (!item.physicalIndex) {
+      results.push({ ...item, appearStart: "no" });
+      continue;
+    }
+
+    const pageText = pages[item.physicalIndex - 1]?.text || "";
+    const appearStart = await checkTitleAppearanceInStart(item.title, pageText, options);
+    results.push({ ...item, appearStart });
+  }
+
+  return results;
+}
+
+/**
+ * Check for TOC in PDF and return result
+ */
+export async function checkToc(
+  pages: PdfPage[],
+  options: TocOptions
+): Promise<TocCheckResult> {
+  const tocPageList = await findTocPages(0, pages, options);
+
+  if (tocPageList.length === 0) {
+    return {
+      tocContent: null,
+      tocPageList: [],
+      pageIndexGivenInToc: "no",
+    };
+  }
+
+  const tocResult = await tocExtractor(pages, tocPageList, options);
+
+  if (tocResult.pageIndexGivenInToc === "yes") {
+    return {
+      tocContent: tocResult.tocContent,
+      tocPageList,
+      pageIndexGivenInToc: "yes",
+    };
+  }
+
+  // Try to find additional TOC pages with page indices
+  const lastTocPage = tocPageList[tocPageList.length - 1];
+  let currentStartIndex = lastTocPage !== undefined ? lastTocPage + 1 : 0;
+  
+  while (currentStartIndex < pages.length && currentStartIndex < options.tocCheckPageNum) {
+    const additionalTocPages = await findTocPages(currentStartIndex, pages, options);
+    
+    if (additionalTocPages.length === 0) {
+      break;
+    }
+
+    const additionalTocResult = await tocExtractor(pages, additionalTocPages, options);
+    
+    if (additionalTocResult.pageIndexGivenInToc === "yes") {
+      return {
+        tocContent: additionalTocResult.tocContent,
+        tocPageList: additionalTocPages,
+        pageIndexGivenInToc: "yes",
+      };
+    }
+
+    const lastAdditionalPage = additionalTocPages[additionalTocPages.length - 1];
+    currentStartIndex = lastAdditionalPage !== undefined ? lastAdditionalPage + 1 : pages.length;
+  }
+
+  return {
+    tocContent: tocResult.tocContent,
+    tocPageList,
+    pageIndexGivenInToc: "no",
+  };
+}
+
+/**
+ * Fix single TOC item index
+ */
+export async function singleTocItemIndexFixer(
+  sectionTitle: string,
+  content: string,
+  options: TocOptions
+): Promise<number | null> {
+  const prompt = prompts.singleTocItemIndexFixerPrompt(sectionTitle, content);
+  const response = await chatGPT({
+    model: options.model,
+    prompt,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+  });
+
+  const json = extractJson<{ physical_index: string }>(response);
+  if (!json?.physical_index) return null;
+
+  const result = convertPhysicalIndexToInt(json.physical_index);
+  return typeof result === "number" ? result : null;
+}

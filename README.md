@@ -1,402 +1,388 @@
+# DeepReader
 
+**DeepReader** - 为 Obsidian 提供的 PDF 智能索引插件，完全本地化的语义搜索解决方案。
 
-  **DeepReader** - 为 Obsidian 提供的 PDF 智能索引插件，基于 FastAPI 后端实现语义搜索。
+**技术栈**: TypeScript (Obsidian Plugin API) + PageIndex 本地索引引擎
+**架构**: 纯前端，无需后端服务
 
-  **前端**: Obsidian 插件（TypeScript）
-  **后端**: FastAPI 服务（Python）
-  **通信**: HTTP REST API（默认端口 6088）
-  **API 文档**: http://localhost:6088/docs
+---
 
-  ---
+## 核心特性
 
-  ## 使用方式
+### 🚀 完全本地化
+- **PageIndex 引擎**: 所有索引和搜索功能在本地完成
+- **无需后端**: 不依赖外部服务器，保护隐私
+- **离线可用**: 仅需 LLM API 即可使用所有功能
 
-  ### 基础模式（无需后端）
+### 📚 智能索引
+- **PDF/EPUB 解析**: 自动提取文档结构
+- **TOC 生成**: 智能目录检测和层级构建
+- **LLM 增强**: 使用 GPT-4/Claude 等模型生成摘要
 
-  DeepReader 插件可以独立运行，无需后端服务。在基础模式下，你可以：
+### 🔍 混合搜索
+- **向量搜索**: 语义相似度匹配
+- **BM25 搜索**: 关键词精确检索
+- **Hybrid 融合**: 结合两种搜索方式的最优结果
 
-  - 与 AI 助手对话
-  - 手动提供上下文进行问答
-  - 使用基本的笔记功能
+### 💬 AI 助手
+- **FrontendAgent**: 内置 AI 对话功能
+- **上下文感知**: 自动关联已索引书籍内容
+- **多模型支持**: OpenAI、DeepSeek、LM Studio 等
 
-  ### 完整模式（需要后端）
+---
 
-  启动后端服务后，你将获得以下增强功能：
+## 使用方式
 
-  - PDF/EPUB 自动索引
-  - 智能文档搜索
-  - 章节内容获取
-  - 跨书籍搜索
-
-  启动后端：
-  ```bash
-  cd backend/deeppdf-api
-  uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio
-  ```
-
-  ### 连接状态指示
-
-  插件顶部会显示连接状态：
-  - **已连接**：所有功能可用
-  - **未连接**：仅基础功能可用
-  - **连接中**：正在检查后端状态
-
-  ---
-
-  ## 开发工作流
-
-  ### 启动开发环境
-
-  **后端（带热重载）**
-  ```bash
-  cd backend
-  uv run uvicorn deeppdf.main:app --port 6088 --reload --loop asyncio
-  # 或使用脚本
-  ./scripts/start_server.sh
+### 快速开始
 
-  前端插件（带自动构建）
-  cd frontend
-  npm run dev                         # 监听文件变化，自动重新构建
-  插件修改后，在 Obsidian 中使用命令面板重新加载插件（Ctrl/Cmd+R）
-
-  代码质量检查
-
-  后端
-  cd backend
-  uv run black deeppdf-api/src/          # 格式化
-  uv run ruff check deeppdf-api/src/     # 代码检查
-  uv run mypy deeppdf-api/src/           # 类型检查
-
-  前端
-  cd frontend
-  npm run build                          # 构建时进行类型检查（tsc -noEmit）
-
-  运行测试
-
-  后端（pytest）
-  cd backend
-  uv run pytest deeppdf-api/tests/ -v              # 全部测试
-  uv run pytest deeppdf-api/tests/test_api.py -v  # 单个文件
-
-  前端插件（vitest 单元测试）
-  cd frontend
-  npm run test:run                      # 命令行运行
-  npm run test:ui                       # UI 界面
-
-  部署到 Obsidian 测试
-
-  cd frontend
-  npm run deploy                        # 构建并复制到 vault 插件目录
-  然后在 Obsidian 设置中重新启用插件。
-
-  Obsidian 插件调试
-
-  1. 在 Obsidian 中按 Ctrl+Shift+I（Mac: Cmd+Option+I）打开开发者工具
-  2. Console 中查看日志
-  3. 使用 app.plugins.plugins['deeppdf'] 访问插件实例
-
-  ---
-  开发规范
-
-  Python 代码规范
-  ┌──────────┬──────────────┬───────────────────┐
-  │   项目   │     规范     │       工具        │
-  ├──────────┼──────────────┼───────────────────┤
-  │ 行长度   │ 100 字符     │ black             │
-  ├──────────┼──────────────┼───────────────────┤
-  │ 目标版本 │ Python 3.10+ │ -                 │
-  ├──────────┼──────────────┼───────────────────┤
-  │ 格式化   │ black 风格   │ uv run black      │
-  ├──────────┼──────────────┼───────────────────┤
-  │ 代码检查 │ ruff 规则    │ uv run ruff check │
-  ├──────────┼──────────────┼───────────────────┤
-  │ 类型检查 │ mypy         │ uv run mypy       │
-  └──────────┴──────────────┴───────────────────┘
-  TypeScript 代码规范
-  ┌──────────┬────────────┬─────────────┐
-  │   项目   │    规范    │    工具     │
-  ├──────────┼────────────┼─────────────┤
-  │ 编译目标 │ ES2020     │ tsc         │
-  ├──────────┼────────────┼─────────────┤
-  │ 模块系统 │ ESNext     │ tsc         │
-  ├──────────┼────────────┼─────────────┤
-  │ 类型检查 │ 构建时检查 │ tsc -noEmit │
-  ├──────────┼────────────┼─────────────┤
-  │ 构建工具 │ esbuild    │ esbuild     │
-  └──────────┴────────────┴─────────────┘
-  Git 提交规范
-
-  # 格式
-  <type>: <subject>
-
-  # 类型
-  feat:     新功能
-  fix:      修复 bug
-  refactor: 重构（不改变功能）
-  docs:     文档更新
-  test:     测试相关
-  chore:    构建/工具链相关
-
-  # 示例
-  git commit -m "feat: 添加批量索引功能"
-  git commit -m "fix: 修复查询返回空结果的问题"
-
-  代码审查原则
-
-  1. 测试先行: 修改功能前先运行相关测试
-  2. 类型安全: 确保类型检查通过（mypy/tsc）
-  3. 格式统一: 提交前运行格式化工具
-  4. 简洁原则: 避免过度工程化，按需实现
-
-  ---
-  项目内部结构
-
-  关键文件路径
-
-  backend/deeppdf-api/src/deeppdf/
-  ├── main.py              # FastAPI 入口，添加路由需要修改
-  ├── config.py            # 全局配置，添加新配置项
-  ├── api/
-  │   ├── routes.py        # API 端点定义，添加接口
-  │   └── models.py        # Pydantic 模型，定义请求/响应
-  ├── services/
-  │   ├── indexer.py       # PDF 索引逻辑
-  │   ├── querier.py       # 查询逻辑
-  │   ├── manager.py       # 索引管理（列表/删除）
-  │   └── smart_search.py  # 智能搜索
-  └── storage/
-      ├── chroma_store.py  # 向量数据库封装
-      └── embeddings.py    # 嵌入模型配置
-
-  frontend/src/
-  ├── main.ts              # 插件入口，注册命令和视图
-  ├── api/
-  │   ├── http-client.ts   # API 调用封装
-  │   └── server-manager.ts # 后端服务管理
-  ├── views/
-  │   └── sidebar-view.ts  # 侧边栏视图（查询界面）
-  └── ui/
-      └── index-manager-modal.ts  # 索引管理弹窗
-
-  分层架构
-
-  请求流：API → Services → Storage
-
-  API 层 (api/)
-    - 定义 HTTP 端点
-    - 请求参数验证（Pydantic）
-    - 响应格式化
-
-  Services 层 (services/)
-    - 业务逻辑处理
-    - CPU 密集型任务（ThreadPoolExecutor）
-    - I/O 密集型任务（asyncio）
-
-  Storage 层 (storage/)
-    - ChromaDB 向量存储
-    - 元数据持久化
-
-  数据流
-
-  索引流程
-  用户上传 PDF → indexer.py 调用 PageIndex
-  → 解析章节结构 → LLM 生成摘要
-  → embeddings.py 向量化 → chroma_store.py 存储
-
-  查询流程
-  用户输入查询 → querier.py 向量化查询
-  → chroma_store.py 检索相似片段
-  → 返回结果给前端
-
-  ---
-  开发注意事项
-
-  异步编程策略
-
-  CPU 密集型任务（如 PDF 索引）
-  # 使用 ThreadPoolExecutor
-  cpu_executor = ThreadPoolExecutor(max_workers=settings.cpu_workers)
-  result = await loop.run_in_executor(cpu_executor, cpu_intensive_function)
-
-  I/O 密集型任务（如数据库查询）
-  # 使用 asyncio.to_thread
-  result = await asyncio.to_thread(io_intensive_function)
-
-  配置参数（config.py）
-  - cpu_workers: 2 - CPU 并发工作线程数
-  - max_concurrent_requests: 10 - 最大并发 HTTP 请求数
-  - llm_concurrent_limit: 3 - LLM 调用并发限制
-
-  nest_asyncio 兼容性
-
-  PageIndex 使用同步代码，需要 nest_asyncio 支持：
-
-  import nest_asyncio
-  nest_asyncio.apply()  # 允许在事件循环中嵌套事件循环
-
-  服务器启动必须使用：
-  uvicorn deeppdf.main:app --port 6088 --loop asyncio
-  否则会报错：ValueError: Can't patch loop of type <class 'uvloop.Loop'>
-
-  CORS 配置
-
-  开发环境允许所有来源（main.py）：
-  app.add_middleware(
-      CORSMiddleware,
-      allow_origins=["*"],
-      allow_credentials=True,
-      allow_methods=["*"],
-      allow_headers=["*"],
-  )
-  生产环境应限制为具体域名。
-
-  端口冲突
-
-  默认端口 6088，如被占用需修改：
-  1. 后端：启动命令 --port 6089
-  2. 前端：插件设置中修改 apiPort
-  3. 确保前后端端口一致
-
-  向量数据库
-
-  ChromaDB 数据存储在 backend/data/chroma/：
-  - 清理索引时需删除此目录
-  - 首次运行自动下载中文嵌入模型（bge-small-zh-v1.5）
-
-  LLM API
-
-  PageIndex 需要配置 LLM API（默认 DeepSeek）：
-  # backend/.env
-  DEEPSEEK_API_KEY=your_key
-  # 或
-  OPENAI_API_KEY=your_key
-
-  ---
-  故障排除（开发向）
-
-  服务器无法启动
-
-  错误: ValueError: Can't patch loop of type <class 'uvloop.Loop'>
-
-  原因: 使用了 uvloop 而非 asyncio
-
-  解决:
-  uv run uvicorn deeppdf.main:app --port 6088 --loop asyncio
-
-  ---
-  测试失败：ModuleNotFoundError
-
-  错误: ModuleNotFoundError: No module named 'deeppdf'
-
-  原因: 未在 backend 目录运行或未安装依赖
-
-  解决:
-  cd backend
-  uv sync
-  uv run pytest deeppdf-api/tests/ -v
-
-  ---
-  Pydantic 验证错误
-
-  错误: Extra inputs are not permitted
-
-  原因: .env 文件包含未在 Settings 中定义的环境变量
-
-  解决:
-  1. 检查 backend/.env，移除未使用的变量
-  2. 或在 Settings.Config 中设置 extra = "ignore"
-
-  ---
-  前端类型错误
-
-  错误: TypeScript 类型检查失败
-
-  解决:
-  cd frontend
-  npm run build  # 查看具体类型错误
-  常见问题：
-  - Obsidian API 类型：确保安装了 obsidian 最新包
-  - 缺少类型定义：使用 // @ts-ignore 临时跳过（需注释原因）
-
-  ---
-  插件无法连接后端
-
-  检查步骤:
-  1. 确认后端运行：curl http://localhost:6088/health
-  2. 确认端口配置：插件设置中 apiPort 与后端一致
-  3. 查看后端日志：检查是否有 CORS 或请求错误
-
-  ---
-  PageIndex 测试超时
-
-  错误: LLM 调用超时
-
-  解决:
-  1. 检查 API Key 配置
-  2. 检查网络连接
-  3. 调整超时配置（如适用）
-
-  ---
-  调试技巧
-
-  后端: 在服务启动时查看日志，使用 print() 或 logging
-
-  前端: 在 Obsidian 中按 Ctrl+Shift+I 打开开发者工具
-  // 访问插件实例
-  app.plugins.plugins['deeppdf']
-
-  ---
-
-  Agent 工具对比
-
-  DeepReader Agent 提供多种检索工具，针对不同场景优化：
-
-  | 工具 | 适用场景 | 特点 |
-  |------|----------|------|
-  | `hybrid_search` | 特定内容定位、关键词查找、向量相似度匹配 | 快速、低成本，适合简单事实查询 |
-  | `llm_tree_search` | 跨章节推理、模糊问题、需要理解文档逻辑 | 深度理解、两阶段检索，适合复杂分析 |
-
-  启用 LLM 树搜索
-
-  默认情况下，Agent 使用快速路由（仅 `hybrid_search`）。要启用 LLM 树搜索：
-
-  **后端 API 调用**
-  ```python
-  # 在请求体中设置 enable_llm_tree_search=True
-  POST /api/agent/query
-  {
-      "index_id": "your_index_id",
-      "query": "你的问题",
-      "enable_llm_tree_search": true
+1. **安装插件**
+   - 将 `main.js`, `styles.css`, `manifest.json` 复制到 Obsidian vault 的 `.obsidian/plugins/deepreader/` 目录
+
+2. **配置 API Key**
+   - 在插件设置中配置 OpenAI/DeepSeek API Key
+   - 或使用本地模型（LM Studio, Ollama）
+
+3. **开始使用**
+   - 打开侧边栏（DeepReader 图标）
+   - 点击"书库"添加 PDF/EPUB 文件
+   - 等待索引完成后即可搜索和对话
+
+### 索引书籍
+
+**方式 1: 通过书库界面**
+1. 点击侧边栏的"书库"按钮
+2. 点击"+"添加书籍文件
+3. 等待索引完成（会显示进度）
+
+**方式 2: 直接打开 PDF**
+1. 在 Obsidian 中打开 PDF 文件
+2. 点击顶部工具栏的"索引"按钮
+3. 自动开始索引流程
+
+### 搜索和对话
+
+- **搜索**: 在搜索框输入关键词，查找书籍内容
+- **对话**: 与 AI 助手交流，自动引用已索引书籍的相关内容
+- **引用**: 点击引用标记，直接跳转到原文位置
+
+---
+
+## 开发工作流
+
+### 环境要求
+
+- Node.js 18+
+- npm 或 pnpm
+- Obsidian（测试用）
+
+### 启动开发环境
+
+```bash
+# 克隆项目
+git clone https://github.com/your-repo/deepreader.git
+cd deepreader/frontend
+
+# 安装依赖
+npm install
+
+# 开发模式（监听文件变化）
+npm run dev
+
+# 在 Obsidian 中重新加载插件（Cmd+R）
+```
+
+### 构建和部署
+
+```bash
+# 构建（包含类型检查）
+npm run build
+
+# 部署到测试 vault
+npm run deploy
+
+# 重新加载插件
+obsidian plugin:reload id=deepreader
+```
+
+### 测试
+
+```bash
+# 运行单元测试
+npm run test:run
+
+# 运行测试 UI
+npm run test:ui
+
+# 运行 E2E 测试
+npm run test:e2e
+```
+
+### 代码质量检查
+
+```bash
+# 类型检查
+npm run build  # 构建时自动检查
+
+# 代码格式化（如果配置了）
+npm run format
+```
+
+---
+
+## 开发规范
+
+### TypeScript 代码规范
+
+| 项目 | 规范 | 工具 |
+|------|------|------|
+| 编译目标 | ES2020 | tsc |
+| 模块系统 | ESNext | tsc |
+| 类型检查 | 构建时检查 | tsc -noEmit |
+| 构建工具 | esbuild | esbuild |
+| 注释风格 | JSDoc | - |
+
+### Git 提交规范
+
+```bash
+# 格式
+<type>: <subject>
+
+# 类型
+feat:     新功能
+fix:      修复 bug
+refactor: 重构（不改变功能）
+docs:     文档更新
+test:     测试相关
+chore:    构建/工具链相关
+
+# 示例
+git commit -m "feat: 添加批量索引功能"
+git commit -m "fix: 修复查询返回空结果的问题"
+```
+
+### 代码审查原则
+
+1. **测试先行**: 修改功能前先运行相关测试
+2. **类型安全**: 确保类型检查通过（tsc -noEmit）
+3. **格式统一**: 遵循项目代码风格
+4. **简洁原则**: 避免过度工程化，按需实现
+
+---
+
+## 项目结构
+
+### 关键文件路径
+
+```
+src/
+├── main.ts                      # 插件入口，注册命令和视图
+├── pageindex/                   # PageIndex 核心引擎
+│   ├── node.ts                  # Node.js 入口
+│   ├── book-indexer.ts          # 书籍索引编排
+│   ├── book-search.ts           # 混合搜索
+│   ├── bm25.ts                  # BM25 算法
+│   ├── parsers/                 # 文档解析器
+│   │   ├── pdf.ts               # PDF 解析
+│   │   └── epub.ts              # EPUB 解析
+│   ├── exporters/               # Obsidian 导出
+│   │   ├── pdf-to-obsidian.ts   # PDF 导出
+│   │   └── epub-to-obsidian.ts  # EPUB 导出
+│   └── vault/                   # 向量存储
+│       ├── vectors.ts           # 向量管理
+│       └── types.ts             # 类型定义
+├── agent/                       # AI 助手
+│   ├── index.ts                 # FrontendAgent 入口
+│   └── tools/                   # 工具集
+├── views/                       # UI 视图
+│   └── sidebar-view.ts          # 侧边栏视图
+├── components/                  # UI 组件
+│   ├── library-modal/           # 书库弹窗
+│   └── chat-input/              # 聊天输入框
+└── api/                         # API 客户端（LLM）
+    └── http-client.ts           # HTTP 封装
+```
+
+### 分层架构
+
+```
+┌─────────────────────────────────────────────┐
+│  Obsidian Plugin (UI Layer)                 │
+│  ├── Views (sidebar, modals)                │
+│  └── Components (interactive elements)      │
+├─────────────────────────────────────────────┤
+│  PageIndex Engine (Business Layer)          │
+│  ├── Parsers (PDF/EPUB/Markdown)            │
+│  ├── Indexers (book-indexer)                │
+│  └── Search (book-search, BM25)             │
+├─────────────────────────────────────────────┤
+│  Storage Layer                              │
+│  ├── Vault Storage (vectors, metadata)      │
+│  └── File System (.pageindex/)              │
+└─────────────────────────────────────────────┘
+```
+
+### 数据流
+
+**索引流程**:
+```
+PDF/EPUB → Parser → Tree Structure → LLM Summary → Markdown Export
+                                      ↓
+                              Vector Embedding (可选)
+                                      ↓
+                              Local Storage (.pageindex/)
+```
+
+**搜索流程**:
+```
+Query → Tokenize → BM25 Search → Vector Search (可选)
+                              ↓
+                        Score Fusion → Top-K Results
+                              ↓
+                        Context Reading → Response
+```
+
+---
+
+## 存储结构
+
+### .pageindex/ 目录
+
+```
+.pageindex/{bookId}/
+├── book-meta.json         # 书籍元数据（章节、摘要）
+├── bm25.json              # BM25 倒排索引
+├── vectors.f32            # Float32 向量数据（可选）
+└── vectors.meta.json      # 向量元数据（可选）
+```
+
+### Book ID 生成
+
+- 使用 SHA-256(filePath) 前 8 字符
+- 例如: `/vault/books/example.pdf` → `a1b2c3d4`
+
+---
+
+## 配置选项
+
+### LLM 配置
+
+```json
+{
+  "llmModel": "gpt-4o-mini",
+  "openaiApiKey": "sk-...",
+  "apiUrl": "https://api.openai.com/v1",
+  "embeddingModel": "text-embedding-3-small",
+  "embeddingApiKey": "sk-...",
+  "embeddingBaseUrl": "https://api.openai.com/v1"
+}
+```
+
+### Embedding 配置
+
+```json
+{
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "apiKey": "sk-...",
+    "baseUrl": "https://api.openai.com/v1"
   }
-  ```
+}
+```
 
-  **工作原理**
-  - 阶段 1：粗筛（HybridSearchTool，Top-20）
-  - 阶段 2：精排（LLM 推理）
-  - 缓存机制：相同查询直接返回缓存结果
-  - 降级策略：LLM 失败时自动回退到 hybrid_search
+---
 
-  **日志标识**
-  - `[LLM_TREE_SEARCH][CACHE]` - 缓存命中/未命中
-  - `[LLM_TREE_SEARCH][STAGE1]` - 粗筛阶段
-  - `[LLM_TREE_SEARCH][STAGE2]` - 精排阶段
-  - `[LLM_TREE_SEARCH][FALLBACK]` - 降级/回退
-  - `[LLM_TREE_SEARCH][RESULT]` - 最终结果
+## 性能优化
 
-  详细文档请参考：[LLM 树搜索指南](docs/llm-tree-search-guide.md)
+### 索引性能
 
-  ---
-  相关文档
+- **PDF 解析**: ~1-2 秒/页（取决于 PDF 复杂度）
+- **LLM 摘要**: ~0.5-1 秒/章节
+- **向量化**: ~100ms/章节（可选）
 
-  详细的架构和开发文档请查看 docs/ 目录。核心参考：
+### 存储优化
 
-  - API 文档：http://localhost:6088/docs（服务器启动后访问）
-  - 架构设计：docs/设计/架构设计.md
-  - 后端开发：docs/开发/后端开发.md
-  - 前端开发：docs/开发/前端开发.md
-  - LLM 树搜索：docs/llm-tree-search-guide.md
+- **BM25 索引**: ~1KB/章节
+- **向量存储**: ~6KB/章节（Float32, 1536 维）
+- **压缩**: 可通过调整维度减少存储
 
-  ---
-  版本: v1.0.0
-  最后更新: 2026-01-28
+---
+
+## 故障排查
+
+### 常见问题
+
+**1. 索引失败**
+- 检查 API Key 是否正确
+- 查看 Console 日志（Cmd+Option+I）
+- 确认文件路径可访问
+
+**2. 搜索无结果**
+- 确认书籍已索引完成
+- 检查 `.pageindex/` 目录是否存在
+- 尝试重新索引
+
+**3. 插件无法加载**
+- 检查 `manifest.json` 是否正确
+- 确认 Node.js 版本 >= 18
+- 查看 Obsidian Console 错误信息
+
+### 调试技巧
+
+```javascript
+// 在 Obsidian Console 中访问插件实例
+app.plugins.plugins['deepreader']
+
+// 查看索引状态
+app.plugins.plugins['deepreader'].pageIndex
+
+// 手动触发索引
+app.plugins.plugins['deepreader'].processPdf('/path/to/file.pdf')
+```
+
+---
+
+## 贡献指南
+
+### 如何贡献
+
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+### 代码风格
+
+- 遵循 TypeScript 最佳实践
+- 添加必要的 JSDoc 注释
+- 保持函数简洁（单一职责）
+- 编写单元测试
+
+---
+
+## 许可证
+
+MIT License - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+## 致谢
+
+- [Obsidian](https://obsidian.md/) - 强大的知识管理工具
+- [pdf-parse](https://www.npmjs.com/package/pdf-parse) - PDF 解析库
+- [OpenAI](https://openai.com/) - GPT 和 Embedding API
+
+---
+
+## 更新日志
+
+### v0.9.2 (2026-04-08)
+- ✨ 完全本地化的 PageIndex 引擎
+- 🚀 移除后端依赖，纯前端架构
+- 📚 支持向量 + BM25 混合搜索
+- 💬 FrontendAgent AI 助手集成
+- 🐛 修复多项已知问题
+
+详见 [CHANGELOG.md](CHANGELOG.md)
