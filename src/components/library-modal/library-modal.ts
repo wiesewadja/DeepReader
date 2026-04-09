@@ -463,52 +463,55 @@ export class LibraryModal extends Modal {
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
             const displayName = this.getDisplayName(fileInfo.name);
 
-            // 移除同名文件的旧索引项（failed 或其他状态），避免重复
-            this.indexes = this.indexes.filter(idx => {
-                const idxName = idx.pdf_name || '';
-                return idxName !== fileInfo.name;
-            });
-
-            const tempId = `temp_${Date.now()}`;
-            const tempIndex: IndexListItem = {
-                id: tempId,
-                pdf_name: fileInfo.name,
-                node_count: 0,
-                created_at: new Date().toISOString(),
-                status: 'processing',
-                progress_percent: 0
-            };
-
-            this.indexes.unshift(tempIndex);
-            this.renderGrid();
-
-            new Notice(`开始索引「${displayName}」...`);
-            
             try {
-                const vaultPath = (this.app.vault.adapter as any).basePath;
+                const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
                 let filePath: string;
                 
                 if (isSystemFileInfo(fileInfo)) {
                     // 系统上传的文件：需要先保存到 vault
                     const systemFile = fileInfo as SystemFileInfo;
                     const arrayBuffer = await systemFile.file.arrayBuffer();
-                    
-                    // 保存到 vault 根目录
                     const fileName = systemFile.file.name;
-                    await this.app.vault.createBinary(fileName, arrayBuffer);
                     
-                    // 获取完整的文件系统路径
+                    // 检查文件是否已存在
+                    const existingFile = this.app.vault.getAbstractFileByPath(fileName);
+                    if (!existingFile) {
+                        await this.app.vault.createBinary(fileName, arrayBuffer);
+                        new Notice(`文件已保存到 vault: ${fileName}`);
+                    }
+                    
                     filePath = `${vaultPath}/${fileName}`;
-                    
-                    new Notice(`文件已保存到 vault: ${fileName}`);
                 } else {
-                    // Vault 中的文件：直接使用完整路径
-                    filePath = fileInfo.path;
+                    // Vault 中的文件：TFile.path 是相对路径，需转换为绝对路径
+                    filePath = `${vaultPath}/${fileInfo.path}`;
                 }
                 
-                const fileType = (fileInfo as any).docType === 'epub'
-                    ? 'epub'
-                    : 'pdf';
+                // 计算真实的 bookId，避免临时 ID 导致卡片重复
+                const bookId = generateBookId(filePath);
+
+                // 移除同名文件的旧索引项或旧状态卡片，避免重复
+                this.indexes = this.indexes.filter(idx => {
+                    const idxName = idx.pdf_name || '';
+                    return idxName !== fileInfo.name && idx.id !== bookId;
+                });
+                this.cardElements.delete(bookId);
+
+                const newIndex: IndexListItem = {
+                    id: bookId,
+                    pdf_name: fileInfo.name,
+                    node_count: 0,
+                    created_at: new Date().toISOString(),
+                    status: 'processing',
+                    progress_percent: 0,
+                    message: '准备索引...'
+                };
+
+                this.indexes.unshift(newIndex);
+                this.renderGrid();
+
+                new Notice(`开始索引「${displayName}」...`);
+                
+                const fileType = (fileInfo as any).docType === 'epub' ? 'epub' : 'pdf';
 
                 const providerConfig = getProviderConfig(this.options.plugin.settings);
                 const apiKey = this.options.plugin.settings[providerConfig.apiKeyField] as string || '';
@@ -522,23 +525,18 @@ export class LibraryModal extends Modal {
                     apiKey: apiKey,
                     baseUrl: providerConfig.baseUrl,
                     onProgress: (progress: BookIndexProgress) => {
-                        tempIndex.progress_percent = progress.percent;
-                        tempIndex.status = 'processing';
-                        tempIndex.message = progress.stepLabel;
-                        this.updateCardProgress(tempId, progress.percent, 'processing', progress.stepLabel);
+                        newIndex.progress_percent = progress.percent;
+                        newIndex.status = 'processing';
+                        newIndex.message = progress.stepLabel;
+                        this.updateCardProgress(bookId, progress.percent, 'processing', progress.stepLabel);
                     },
                 });
 
-                this.indexes = this.indexes.filter(idx => idx.id !== tempId);
-                this.cardElements.delete(tempId);
-
                 new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
-                
                 await this.refreshIndexes();
             } catch (error: any) {
-                this.indexes = this.indexes.filter(idx => idx.id !== tempId);
-                this.cardElements.delete(tempId);
-                this.renderGrid();
+                // 如果出错，刷新列表以显示正确的 failed 状态
+                await this.refreshIndexes();
 
                 let msg = '索引创建失败';
                 if (error.message?.includes('API key')) msg = 'API key 未配置或无效';

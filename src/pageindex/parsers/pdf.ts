@@ -32,64 +32,84 @@ export interface PdfOutlineItem {
 export async function parsePdf(
   input: string | Buffer | ArrayBuffer
 ): Promise<PdfInfo> {
-  // Convert input to Uint8Array if needed
-  let data: Uint8Array;
+  // Convert input to Buffer
+  let dataBuffer: Buffer;
   if (typeof input === "string") {
-    // File path
-    const buffer = await fs.readFile(input);
-    data = new Uint8Array(buffer);
+    dataBuffer = await fs.readFile(input);
   } else if (input instanceof ArrayBuffer) {
-    data = new Uint8Array(input);
+    dataBuffer = Buffer.from(input);
   } else {
-    data = new Uint8Array(input);
+    dataBuffer = Buffer.from(input);
   }
 
-  // Parse PDF with data
-  // @ts-ignore - pdf-parse has unusual module structure
-  const parser = new (PDFParse as any).default({ data });
-  
-  // Get text for all pages
-  const textResult = await parser.getText();
-  
-  // Get metadata
-  const infoResult = await parser.getInfo();
+  // Workaround for Obsidian / Browser environment worker issues
+  if (typeof globalThis !== 'undefined') {
+    (globalThis as any).PDFJS = (globalThis as any).PDFJS || {};
+    (globalThis as any).PDFJS.disableWorker = true;
+  }
+
+  // Use Custom pagerender to extract pages safely
+  function render_page(pageData: any): Promise<string> {
+    const render_options = {
+        normalizeWhitespace: false,
+        disableCombineTextItems: false
+    };
+
+    return pageData.getTextContent(render_options)
+        .then(async function(textContent: any) {
+            // 释放主线程，防止 WebDriver / 浏览器由于长时间计算抛出 Script Timeout
+            await new Promise(r => setTimeout(r, 0));
+            
+            let lastY, text = '';
+            for (let item of textContent.items) {
+                if (lastY == item.transform[5] || !lastY) {
+                    text += item.str;
+                } else {
+                    text += '\n' + item.str;
+                }    
+                lastY = item.transform[5];
+            }
+            return "===PAGE_DELIMITER===" + text + "===PAGE_DELIMITER_END===\n";
+        });
+  }
+
+  const pdfParse = (PDFParse as any).default || PDFParse;
+  const result = await pdfParse(dataBuffer, { pagerender: render_page });
 
   const pages: PdfPage[] = [];
   let title = "Untitled";
 
-  // Extract text from each page first
-  for (const pageText of textResult.pages) {
-    const text = pageText.text;
-    const tokenCount = countTokens(text);
-    pages.push({ text, tokenCount });
+  // Parse out the pages from the delimited text
+  const fullText = result.text || "";
+  const pageMatches = [...fullText.matchAll(/===PAGE_DELIMITER===([\s\S]*?)===PAGE_DELIMITER_END===/g)];
+  
+  if (pageMatches.length > 0) {
+    for (const match of pageMatches) {
+      const pageText = match[1];
+      pages.push({ text: pageText, tokenCount: countTokens(pageText) });
+    }
+  } else {
+    pages.push({ text: fullText, tokenCount: countTokens(fullText) });
   }
 
-  // Get title from metadata, or fallback to filename/first page
-  if (infoResult?.info?.Title) {
-    title = infoResult.info.Title;
+  const totalPages = result.numpages || pages.length || 1;
+
+  if (result.info?.Title) {
+    title = result.info.Title;
   } else if (typeof input === "string") {
-    // Fallback to filename without extension
     title = getPdfName(input);
   } else if (pages.length > 0 && pages[0]?.text) {
-    // Fallback to first non-empty line of first page
     const firstLine = pages[0].text.trim().split("\n")[0];
     if (firstLine && firstLine.length < 100) {
       title = firstLine;
     }
   }
 
-  // Extract PDF bookmarks/outline (embedded TOC)
-  let outline: PdfOutlineItem[] | undefined;
-  if (infoResult?.outline && infoResult.outline.length > 0) {
-    outline = await resolveOutlineToPages(infoResult.outline, parser.doc);
-  }
-
-  // Clean up
-  await parser.destroy();
+  let outline: PdfOutlineItem[] | undefined = undefined;
 
   return {
     title,
-    numPages: textResult.pages.length,
+    numPages: totalPages,
     pages,
     outline,
   };
