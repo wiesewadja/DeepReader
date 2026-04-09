@@ -343,9 +343,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .setDesc("自定义快速模型的 API 地址")
                 .addText(text => text
                     .setPlaceholder("https://api.example.com/v1")
-                    .setValue(this.plugin.settings.apiUrl)
+                    .setValue(this.plugin.settings.fastModelApiUrl)
                     .onChange(async (value) => {
-                        this.plugin.settings.apiUrl = value;
+                        this.plugin.settings.fastModelApiUrl = value;
                         this.plugin.resetFrontendAgent();
                         await this.plugin.saveSettings();
                     }));

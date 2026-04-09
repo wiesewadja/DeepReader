@@ -24,6 +24,7 @@ export interface DeepPDFSettings {
     fastModelEnabled: boolean;
     fastModelProvider: ProviderType;
     fastModelName: string;
+    fastModelApiUrl: string;
 
     // 各服务商 API Key（独立字段）
     deepseekApiKey: string;
@@ -78,6 +79,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
     fastModelEnabled: false,
     fastModelProvider: "deepseek",
     fastModelName: "",
+    fastModelApiUrl: "",
 
     // 各服务商 API Key
     deepseekApiKey: "",

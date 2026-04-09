@@ -893,7 +893,7 @@ export default class DeepPDFPlugin extends Plugin {
             const fastProviderConfig = this.settings.fastModelEnabled
                 ? getProviderConfig({
                       llmProvider: this.settings.fastModelProvider,
-                      apiUrl: this.settings.apiUrl,
+                      apiUrl: this.settings.fastModelApiUrl || this.settings.apiUrl,
                   })
                 : null;
 
