@@ -5,10 +5,9 @@
 
 import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.js";
-import { DeepPDFClient, ListIndexesResult, IndexListItem, TaskProgress as APITaskProgress, SessionInfo, ContextDoc } from "../api/http-client.js";
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
-import { TaskProgress, SearchFilters } from "../types/index.js";
+import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc } from "../types/index.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
@@ -38,28 +37,6 @@ import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 import { SessionStore } from "../agent/session/index.js";
 import { findBlockIdFromRange } from "../utils/block-utils.js";
-
-/**
- * 将 API 的 TaskProgress 转换为组件需要的 TaskProgress 格式
- * @internal
- */
-export function toTaskProgress(apiProgress: APITaskProgress): TaskProgress {
-    return {
-        id: apiProgress.id,
-        status: (apiProgress.status === 'pending' || apiProgress.status === 'processing' ||
-            apiProgress.status === 'completed' || apiProgress.status === 'failed' ||
-            apiProgress.status === 'cancelled')
-            ? apiProgress.status
-            : 'pending',
-        message: apiProgress.message || '任务进行中',
-        pdf_name: apiProgress.pdf_name,
-        current_step: apiProgress.current_step,
-        progress_percent: apiProgress.progress_percent,
-        total_steps: apiProgress.total_steps,
-        completed_steps: apiProgress.completed_steps,
-        error: apiProgress.error
-    };
-}
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -683,24 +660,31 @@ export class SidebarView extends ItemView {
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
     private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
-        // 从本地 Obsidian vault 加载
-        const coverPath = `DeepReader/covers/${bookName}.png`;
-        const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+        // 从本地 Obsidian vault 加载，尝试多种图片格式
+        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+        let coverFile: any = null;
+        let foundPath: string = '';
+
+        for (const ext of extensions) {
+            const coverPath = `DeepReader/covers/${bookName}.${ext}`;
+            const file = this.app.vault.getAbstractFileByPath(coverPath);
+            if (file && file instanceof TFile) {
+                coverFile = file;
+                foundPath = coverPath;
+                break;
+            }
+        }
 
         if (coverFile) {
-            // 使用 Obsidian 的 getResourcePath 获取可用的 URL
-            const { TFile } = require('obsidian');
-            if (coverFile instanceof TFile) {
-                const coverUrl = this.app.vault.getResourcePath(coverFile as any);
-                this.readingTopbar?.setBookCover(coverUrl);
-                log(`[DeepPDF] 从本地加载书籍封面: ${coverPath}`);
-                return;
-            }
+            const coverUrl = this.app.vault.getResourcePath(coverFile as any);
+            this.readingTopbar?.setBookCover(coverUrl);
+            log(`[DeepPDF] 从本地加载书籍封面: ${foundPath}`);
+            return;
         }
 
         // 封面不存在，使用默认图标
         this.readingTopbar?.setBookCover(null);
-        log(`[DeepPDF] 书籍封面不存在: ${coverPath}`);
+        log(`[DeepPDF] 书籍封面不存在: DeepReader/covers/${bookName}.{png,jpg,...}`);
     }
 
     /**
@@ -774,7 +758,19 @@ export class SidebarView extends ItemView {
 
         // 尝试从本地元数据获取作者信息（如果还没有）
         if (!author) {
-            log(`[DeepPDF] 作者信息未找到`);
+            // 从当前打开的章节文件 frontmatter 读取 author 字段
+            const activeFile = this.app.workspace.getActiveFile();
+            if (activeFile) {
+                const cache = this.app.metadataCache.getFileCache(activeFile);
+                const fmAuthor = cache?.frontmatter?.author;
+                if (fmAuthor && typeof fmAuthor === 'string') {
+                    author = fmAuthor;
+                    log(`[DeepPDF] 从章节文件 frontmatter 获取作者: "${author}"`);
+                }
+            }
+            if (!author) {
+                log(`[DeepPDF] 作者信息未找到`);
+            }
         }
         log(`[DeepPDF] 最终使用的作者: author="${author}"`);
 
@@ -923,7 +919,11 @@ export class SidebarView extends ItemView {
         // 在已加载的索引列表中查找
         const index = this.indexes.find(idx => {
             const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-            return idxName === normalizedBookName || idx.pdf_name === bookName;
+            // 精确匹配或双向前缀匹配（处理 sanitize 截断的情况）
+            return idxName === normalizedBookName ||
+                   idx.pdf_name === bookName ||
+                   idxName.startsWith(normalizedBookName) ||
+                   normalizedBookName.startsWith(idxName);
         });
 
         if (index) {
@@ -1476,7 +1476,7 @@ export class SidebarView extends ItemView {
     /**
      * 获取上下文文档列表（用于 API 调用）
      */
-    private getContextDocs(): import("../api/http-client.js").ContextDoc[] | undefined {
+    private getContextDocs(): ContextDoc[] | undefined {
         if (!this.contextManager) return undefined;
 
         const docs = this.contextManager.getLoadedDocuments();

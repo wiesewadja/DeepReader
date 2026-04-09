@@ -91,7 +91,7 @@ export class ReadingModeService {
      * 条件：
      * 1. 必须是 Markdown 文件
      * 2. 路径以 DeepReader/ 开头
-     * 3. frontmatter 中必须包含 pdf_name 和 node_id
+     * 3. frontmatter 中必须包含标识字段（pdf_name/book/source + node_id/indexed）
      */
     isChapterFile(file: TFile): boolean {
         // 必须是 Markdown 文件
@@ -104,11 +104,21 @@ export class ReadingModeService {
             return false;
         }
 
-        // 检查 frontmatter 中是否有 pdf_name 和 node_id
+        // 检查 frontmatter 标识字段
         const cache = this.app.metadataCache.getFileCache(file);
         const frontmatter = cache?.frontmatter;
-        if (!frontmatter?.pdf_name || !frontmatter?.node_id) {
-            serviceLog('[ReadingMode] File missing pdf_name or node_id:', file.path);
+        if (!frontmatter) {
+            serviceLog('[ReadingMode] No frontmatter:', file.path);
+            return false;
+        }
+
+        // 兼容 PDF 导出器 (source) 和 EPUB 导出器 (book) 以及旧格式 (pdf_name)
+        const hasBookIdentifier = !!(frontmatter.pdf_name || frontmatter.book || frontmatter.source);
+        // 兼容有 node_id 或 indexed 字段的文件
+        const hasNodeIdentifier = !!(frontmatter.node_id || frontmatter.indexed);
+
+        if (!hasBookIdentifier || !hasNodeIdentifier) {
+            serviceLog('[ReadingMode] File missing identifiers:', file.path, frontmatter);
             return false;
         }
 
@@ -154,12 +164,15 @@ export class ReadingModeService {
     private notifyBookDetected(file: TFile): void {
         if (!this.callbacks?.onBookDetected) return;
 
-        // 从文件的 frontmatter 获取 index_id 或 pdf_name
+        // 从文件的 frontmatter 获取 index_id 或 pdf_index_id
         const cache = this.app.metadataCache.getFileCache(file);
-        let indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id;
-        let bookName = cache?.frontmatter?.pdf_name || '';
+        const frontmatter = cache?.frontmatter;
+        let indexId = frontmatter?.index_id || frontmatter?.pdf_index_id || '';
 
-        // 如果没有 index_id，从文件路径提取书籍名称
+        // 兼容多种 frontmatter 字段获取书名：pdf_name (旧), book (EPUB), source (PDF)
+        let bookName = frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || '';
+
+        // 如果没有书名，从文件路径提取书籍名称
         if (!bookName) {
             const pathParts = file.path.split('/');
             if (pathParts.length >= 2 && pathParts[0] === 'DeepReader') {
@@ -170,7 +183,7 @@ export class ReadingModeService {
         // 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
         if (bookName) {
             serviceLog('[ReadingMode] Book detected:', bookName, 'indexId:', indexId || 'will search by name');
-            this.callbacks.onBookDetected(indexId || '', bookName);
+            this.callbacks.onBookDetected(indexId, bookName);
         }
     }
 

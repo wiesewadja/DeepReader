@@ -5,7 +5,7 @@
 
 import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
-import { IndexListItem } from '../../api/http-client.js';
+import { IndexListItem } from '../../types/index.js';
 import { App } from 'obsidian';
 import { ConfirmModal } from '../confirm-modal.js';
 

@@ -274,7 +274,9 @@ async function createChapterNote(
   // Summary callout — 放在正文最前面
   const nodeSummary = options.nodeSummaries?.[chapter.title];
   if (nodeSummary) {
-    content = `> [!summary] ${nodeSummary}\n\n${content}`;
+    // 将多行 summary 转为 Obsidian callout 格式（每行都需要 > 前缀）
+    const summaryLines = nodeSummary.split('\n').map((line: string) => `> ${line}`).join('\n');
+    content = `> [!summary]\n${summaryLines}\n\n${content}`;
   }
 
   // 添加导航链接

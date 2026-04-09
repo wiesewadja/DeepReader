@@ -244,7 +244,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     bookDir,
     options.filePath,
     options.fileType,
-    options.embedding
+    options.embedding,
+    parseResult.author
   );
 
   await fs.mkdir(indexDir, { recursive: true });
@@ -341,7 +342,8 @@ async function buildBookMeta(
   bookDir: string,
   filePath: string,
   fileType: "pdf" | "epub",
-  embedding?: any
+  embedding?: any,
+  author?: string
 ): Promise<BookMeta> {
   const root = parseResult.structure[0];
   const title = parseResult.docName || root?.title || "Unknown";
@@ -389,6 +391,7 @@ async function buildBookMeta(
     bookId,
     title,
     description: root?.summary || parseResult.docDescription || "",
+    author,
     filePath,
     fileType,
     indexedAt: new Date().toISOString(),
@@ -472,6 +475,8 @@ function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
  * Returns a plain object of chapter title → summary
  */
 function collectNodeSummaries(structure: any[]): Record<string, string> {
+  if (!structure) return {};
+
   const summaries: Record<string, string> = {};
 
   for (const root of structure) {

@@ -480,6 +480,7 @@ export class PageIndex {
     return {
       docName,
       docDescription,
+      author: epubInfo.author,
       structure: finalStructure,
       coverImage: epubInfo.coverImage,
     };

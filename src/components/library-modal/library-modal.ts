@@ -5,7 +5,7 @@
 
 import { App, Modal, Notice, TFile } from 'obsidian';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../../ui/pdf-file-selector.js';
-import { IndexListItem } from '../../api/http-client.js';
+import { IndexListItem } from '../../types/index.js';
 import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError } from '../../utils/logger.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';

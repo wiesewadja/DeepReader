@@ -87,6 +87,8 @@ export interface TreeNode {
 export interface PageIndexResult {
   docName: string;
   docDescription?: string;
+  /** Author (EPUB only) */
+  author?: string;
   structure: TreeNode[];
   /** Cover image (EPUB only) */
   coverImage?: { name: string; data: Buffer; mediaType: string };

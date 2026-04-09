@@ -331,11 +331,17 @@ ${content}`;
  * Prompt to generate node summary
  */
 export function generateNodeSummaryPrompt(nodeText: string): string {
-  return `You are given a part of a document, your task is to generate a description of the partial document about what are main points covered in the partial document.
+  return `You are given a section of a document. Generate a concise summary in 1-3 sentences about the main points covered in this section.
 
-Partial Document Text: ${nodeText}
+Rules:
+- Keep it to 1-3 sentences maximum
+- Focus on the key ideas, not details
+- Write in the same language as the document
+- Do not use line breaks or newlines
 
-Directly return the description, do not include any other text.`;
+Section Text: ${nodeText}
+
+Directly return the summary, do not include any other text.`;
 }
 
 /**

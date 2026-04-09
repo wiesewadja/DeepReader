@@ -216,7 +216,8 @@ export async function exportPdfToObsidian(
 
     // 摘要 callout
     if (section.summary) {
-      content = `> [!summary] ${section.summary}\n\n${content}`;
+      const summaryLines = section.summary.split('\n').map((line: string) => `> ${line}`).join('\n');
+      content = `> [!summary]\n${summaryLines}\n\n${content}`;
     }
 
     // 导航

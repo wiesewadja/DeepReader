@@ -2,6 +2,24 @@
  * DeepPDF - 类型定义
  */
 
+/**
+ * 索引列表项
+ */
+export interface IndexListItem {
+    id: string;
+    pdf_name: string;
+    author?: string;
+    node_count: number;
+    created_at: string;
+    status?: string;
+    message?: string;
+    progress_percent?: number;
+    current_step?: string;
+}
+
+/**
+ * 任务进度
+ */
 export interface TaskProgress {
     id: string;
     status: "pending" | "processing" | "completed" | "failed" | "cancelled";
@@ -12,6 +30,27 @@ export interface TaskProgress {
     total_steps?: number;
     completed_steps?: number;
     error?: string;
+}
+
+/**
+ * 会话信息
+ */
+export interface SessionInfo {
+    sessionId: string;
+    indexId: string;
+    pdfName: string;
+    messageCount: number;
+    lastMessageTime: string;
+    createdTime: string;
+}
+
+/**
+ * 上下文文档
+ */
+export interface ContextDoc {
+    path: string;
+    name: string;
+    content: string;
 }
 
 /**

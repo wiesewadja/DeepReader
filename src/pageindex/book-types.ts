@@ -125,6 +125,7 @@ export interface BookMeta {
   bookId: string;
   title: string;
   description: string;
+  author?: string;
   filePath: string;
   fileType: "pdf" | "epub";
   indexedAt: string;
