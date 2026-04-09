@@ -1,14 +1,13 @@
 {
   "name": "obsidian-deepreader",
-  "version": "0.9.9",
+  "version": "0.10.0",
   "description": "DeepReader - 深度阅读插件",
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && npm run copy-manifest",
+    "build": "npm run sync-version && npm run copy-css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "sync-version": "node scripts/sync-version.js",
     "copy-css": "node scripts/build-css.js",
-    "copy-manifest": "cp manifest.json bin/",
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
