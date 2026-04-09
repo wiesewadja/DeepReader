@@ -197,13 +197,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   try {
     if (options.fileType === "pdf") {
       const { exportPdfToObsidian } = await import("./exporters/pdf-to-obsidian.js");
-      await exportPdfToObsidian(options.filePath, {
+      await exportPdfToObsidian({
         outputDir: deepReaderDir,
-        pageOptions: {
-          model: options.model,
-          apiKey: options.apiKey,
-          baseUrl: options.baseUrl,
-        },
+        parseResult,
+        includeIndex: DEFAULT_INCLUDE_INDEX,
         sourcePdf: options.filePath,
       });
     } else {

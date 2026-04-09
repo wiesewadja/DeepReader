@@ -129,13 +129,20 @@ async function exportPdfToVault(
   input: string,
   options: DocObsidianOptions
 ): Promise<ObsidianExportResult> {
-  const result = await exportPdfToObsidian(input, {
+  // First parse the PDF via PageIndex
+  const pageIndex = new PageIndex({
+    model: options.model,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    addNodeText: true,
+    addNodeSummary: true,
+    addDocDescription: true,
+  });
+  const parseResult = await pageIndex.fromPdf(input);
+
+  const result = await exportPdfToObsidian({
     outputDir: options.outputDir,
-    pageOptions: {
-      model: options.model,
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-    },
+    parseResult,
     noteTemplate: options.noteTemplate,
     mocName: options.mocName,
     includeIndex: options.includeIndex,

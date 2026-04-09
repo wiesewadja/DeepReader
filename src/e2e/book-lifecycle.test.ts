@@ -61,7 +61,7 @@ vi.mock("../pageindex/pageindex.js", () => ({
 }));
 
 vi.mock("../pageindex/exporters/pdf-to-obsidian.js", () => ({
-  exportPdfToObsidian: vi.fn().mockImplementation(async (filePath: string, options: any) => {
+  exportPdfToObsidian: vi.fn().mockImplementation(async (options: any) => {
     const bookDir = path.join(options.outputDir, "E2E Test Book");
     await fs.mkdir(bookDir, { recursive: true });
     await fs.writeFile(path.join(bookDir, "Introduction.md"), "---\ntitle: Introduction\n---\n\nThis is the introduction chapter.\n\n^block-intro");

@@ -355,8 +355,9 @@ export async function generateSummariesForStructure(
   const nodes = structureToList(structure);
   const total = nodes.length;
 
-  // Process in batches for better performance
-  const batchSize = 5;
+  // Process sequentially to avoid overwhelming Obsidian's renderer process
+  // Batch of 2 with a yield between batches to keep the UI responsive
+  const batchSize = 2;
   for (let i = 0; i < nodes.length; i += batchSize) {
     const batch = nodes.slice(i, i + batchSize);
     const summaries = await Promise.all(
@@ -366,6 +367,9 @@ export async function generateSummariesForStructure(
     for (let j = 0; j < batch.length; j++) {
       (batch[j] as TreeNode).summary = summaries[j];
     }
+
+    // Yield to the event loop to prevent Obsidian renderer from becoming unresponsive
+    await new Promise(r => setTimeout(r, 100));
 
     // 报告进度
     const completed = Math.min(i + batchSize, total);

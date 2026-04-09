@@ -10,9 +10,8 @@
  *     → 按 leaf 节点拆分为 Obsidian 笔记
  */
 
-import { PageIndex } from "../pageindex";
 import { countTokens } from "../core/utils";
-import type { PageIndexOptions, TreeNode } from "../core/types";
+import type { PageIndexResult, TreeNode } from "../core/types";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -21,8 +20,8 @@ import * as fs from "fs";
 export interface PdfObsidianExportOptions {
   /** 输出目录 */
   outputDir: string;
-  /** PageIndex 选项（模型、API 等） */
-  pageOptions?: PageIndexOptions;
+  /** 已有的 PageIndex 解析结果，避免重复调用 */
+  parseResult: PageIndexResult;
   /** 笔记模板：支持 {{content}}, {{title}}, {{source}}, {{index}} */
   noteTemplate?: string;
   /** MOC 文件名（默认: 文档名 - MOC） */
@@ -168,24 +167,14 @@ function sanitizeTag(tag: string): string {
 /**
  * 导出 PDF 为 Obsidian 笔记结构
  *
- * 1. PageIndex (LLM) 提取 TOC 树，每个节点带 Markdown 正文
- * 2. 收集叶节点 → 每个 → 一篇 Obsidian 笔记
- * 3. 生成 MOC、frontmatter、block ID、导航链接
+ * 直接使用已有的 PageIndex 解析结果，避免重复调用 LLM。
+ * 1. 从 parseResult 中收集叶节点 → 每个叶节点 → 一篇 Obsidian 笔记
+ * 2. 生成 MOC、frontmatter、block ID、导航链接
  */
 export async function exportPdfToObsidian(
-  input: string | Buffer | ArrayBuffer | Uint8Array,
   options: PdfObsidianExportOptions
 ): Promise<{ mocPath: string; notes: ObsidianNote[] }> {
-  // 1. PageIndex → TOC + Markdown
-  console.log("[pdf-to-obsidian] Step 1: PageIndex 提取 TOC...");
-  const pageIndex = new PageIndex({
-    ...options.pageOptions,
-    addNodeText: true,
-    addNodeSummary: options.pageOptions?.addNodeSummary ?? true,
-    addDocDescription: true,
-  });
-
-  const result = await pageIndex.fromPdf(input as string | Buffer | ArrayBuffer);
+  const result = options.parseResult;
   const docName = result.docName;
 
   // 2. 收集叶节点

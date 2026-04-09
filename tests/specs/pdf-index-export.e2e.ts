@@ -3,6 +3,9 @@
  * 完全模拟用户手动操作：打开书库 → 选择文件 → 等待索引 → 验证结果
  */
 import { obsidianPage } from 'wdio-obsidian-service';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as crypto from 'crypto';
 
 // 测试用的 PDF 文件
 const PDF_FILENAME = 'agentic-design-patterns-chinese.pdf';
@@ -12,6 +15,18 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
 
     before(async function () {
         vaultPath = obsidianPage.getVaultPath();
+        
+        // 配置插件使用豆包模型（通过 custom provider）
+        await browser.executeObsidian(async ({ app }) => {
+            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            if (plugin) {
+                plugin.settings.llmProvider = 'custom';
+                plugin.settings.customApiKey = '84660ce6-68f8-4426-82f6-9da665680aad';
+                plugin.settings.llmModel = 'doubao-seed-2-0-mini-260215';
+                plugin.settings.apiUrl = 'https://ark.cn-beijing.volces.com/api/v3';
+                await plugin.saveSettings();
+            }
+        });
     });
 
     // ── Step 1: 基础环境验证 ──
@@ -109,52 +124,45 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
         expect(selectedFile.selected).toBe(true);
         console.log(`[E2E] 已选择文件: ${(selectedFile as any).name}`);
 
-        // ── 2f: 等待索引完成（轮询进度） ──
+        // ── 2f: 等待索引完成（通过 Node.js 文件系统轮询，避免阻塞 Obsidian 渲染进程） ──
+        const fullPath = path.join(vaultPath, PDF_FILENAME);
+        const bookId = crypto.createHash('sha256').update(fullPath).digest('hex').slice(0, 8);
+        const metaFile = path.join(vaultPath, '.pageindex', bookId, 'book-meta.json');
+        const statusFile = path.join(vaultPath, '.pageindex', bookId, '.indexing.json');
+
         let lastPercent = -1;
+        const maxWait = 1200000; // 20 分钟
+        const pollInterval = 5000; // 5 秒
+        const startTime = Date.now();
 
-        await browser.waitUntil(async () => {
-            const progress = await browser.executeObsidian(async ({ app }, pdfPath: string, baseDir: string) => {
-                const crypto = require('crypto');
-                const fs = require('fs/promises');
-                const adapter = app.vault.adapter as any;
-                const basePath = adapter.getBasePath?.() || baseDir;
-                const fullPath = `${basePath}/${pdfPath}`;
-
-                const bookId = crypto.createHash("sha256").update(fullPath).digest("hex").slice(0, 8);
-                const metaFile = `${basePath}/.pageindex/${bookId}/book-meta.json`;
-                const statusFile = `${basePath}/.pageindex/${bookId}/.indexing.json`;
-
-                // 检查 book-meta.json 是否存在（索引完成的标志）
+        while (Date.now() - startTime < maxWait) {
+            // 检查 book-meta.json 是否存在（索引完成的标志）
+            try {
+                await fs.access(metaFile);
+                console.log('[E2E] 索引完成！');
+                break;
+            } catch {
+                // 还在索引中，读取进度
                 try {
-                    await fs.access(metaFile);
-                    return { percent: 100, complete: true, stepLabel: 'Completed' };
-                } catch {
-                    // 还在索引中，读取进度
-                    try {
-                        const content = await fs.readFile(statusFile, 'utf-8');
-                        const data = JSON.parse(content);
-                        return { percent: data.percent || 0, complete: false, stepLabel: data.stepLabel, error: data.error };
-                    } catch {
-                        return { percent: 0, complete: false, stepLabel: 'Starting' };
+                    const content = await fs.readFile(statusFile, 'utf-8');
+                    const data = JSON.parse(content);
+                    if (data.percent !== lastPercent) {
+                        console.log(`[E2E] 进度: ${data.percent}% - ${data.stepLabel}`);
+                        lastPercent = data.percent;
                     }
+                    if (data.error) {
+                        throw new Error(`索引失败: ${data.error}`);
+                    }
+                } catch (e) {
+                    if ((e as Error).message?.startsWith('索引失败')) throw e;
+                    // statusFile 还不存在，正常（刚开始索引）
                 }
-            }, PDF_FILENAME, vaultPath);
-
-            if (progress.error) {
-                throw new Error(`索引失败: ${progress.error}`);
+                await new Promise(r => setTimeout(r, pollInterval));
             }
+        }
 
-            if (progress.percent !== lastPercent) {
-                console.log(`[E2E] 进度: ${progress.percent}% - ${progress.stepLabel}`);
-                lastPercent = progress.percent;
-            }
-
-            return progress.complete;
-        }, {
-            timeout: 1200000,
-            interval: 5000,
-            timeoutMsg: '索引未在超时时间内完成'
-        });
+        // 最终验证 book-meta.json 确实存在
+        await fs.access(metaFile);
 
         console.log('[E2E] 索引完成！');
     });
