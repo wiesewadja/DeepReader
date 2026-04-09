@@ -63,8 +63,10 @@ export class InspectionalState extends StateNode {
 
     // Create span from trace context
     const span = ctx.traceContext?.withSpan('inspectional-execute', {
-      query: ctx.standaloneQuery || ctx.rawUserQuery,
-      pdfName: ctx.pdfName,
+      input: {
+        query: ctx.standaloneQuery || ctx.rawUserQuery,
+        pdfName: ctx.pdfName,
+      },
     });
 
     try {
@@ -112,7 +114,7 @@ export class InspectionalState extends StateNode {
       const llmClient = llmClientManager.getClient(this.model);
       const llmGen = span?.withGeneration('inspectional-llm', {
         model: llmClient.getModel(),
-        input: { systemPrompt: systemPrompt.slice(0, 200), userMessage: userMessage.slice(0, 200) },
+        input: { systemPrompt, userMessage },
       });
 
       // Step 4: Call LLM with JSON Mode for structured output
@@ -129,7 +131,7 @@ export class InspectionalState extends StateNode {
 
       // End LLM generation trace
       llmGen?.end({
-        output: { finishReason: 'stop' },
+        output: { content: response.content, finishReason: 'stop' },
         metadata: { contentLength: response.content?.length ?? 0, duration: llmDuration },
       });
 

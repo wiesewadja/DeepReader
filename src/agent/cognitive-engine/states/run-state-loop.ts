@@ -128,10 +128,16 @@ export async function runStateLoop(
 
   // Create root span for this state loop execution
   const loopSpan = traceCtx?.withSpan(`state-loop-${stateName}`, {
-    model,
-    availableTools,
-    maxIterations,
-    maxToolCalls,
+    input: {
+      systemPrompt,
+      userMessage,
+      availableTools,
+    },
+    metadata: {
+      model,
+      maxIterations,
+      maxToolCalls,
+    },
   });
 
   // 根据模型类型选择客户端
@@ -186,7 +192,12 @@ export async function runStateLoop(
 
     const llmGen = loopSpan?.withGeneration(`llm-${stateName}-iter${iterations}`, {
       model: llmClient.getModel(),
-      input: { systemPrompt: systemPrompt.slice(0, 200), userMessage: userMessage.slice(0, 200), toolCount: toolDefinitions.length },
+      input: {
+        systemPrompt,
+        userMessage,
+        toolCount: toolDefinitions.length,
+        toolNames: toolDefinitions.map(t => t.function.name),
+      },
     });
 
 await new Promise<void>((resolve) => {
@@ -225,8 +236,17 @@ await new Promise<void>((resolve) => {
 
     // End LLM generation observation
     llmGen?.end({
-      output: { finishReason: finishReason || 'stop' },
-      metadata: { contentLength: accumulatedContent.length, toolCallCount: toolCalls.length, duration: llmDuration },
+      output: {
+        content: accumulatedContent,
+        finishReason: finishReason || 'stop',
+        ...(finishReason === 'tool_calls' ? { toolCallNames: toolCalls.map(tc => tc.name) } : {}),
+        ...(accumulatedReasoning ? { reasoning: accumulatedReasoning } : {}),
+      },
+      metadata: {
+        duration: llmDuration,
+        contentLength: accumulatedContent.length,
+        toolCallCount: toolCalls.length,
+      },
     });
 
     // 如果没有工具调用，循环结束
@@ -311,7 +331,15 @@ await new Promise<void>((resolve) => {
         const toolExecStart = Date.now();
 
         // Create tool span
-        const toolSpan = loopSpan?.withSpan(`tool-${tc.name}`, { args, originalArgs });
+        const interceptorApplied = interceptorNote !== undefined;
+        const toolSpan = loopSpan?.withSpan(`tool-${tc.name}`, {
+          input: {
+            toolName: tc.name,
+            args,
+            ...(interceptorApplied ? { originalArgs } : {}),
+          },
+          ...(interceptorApplied ? { metadata: { interceptorApplied: true } } : {}),
+        });
 
         // 检查拦截器注入的错误
         if (args._error) {
@@ -328,24 +356,32 @@ await new Promise<void>((resolve) => {
         }
 
         try {
-          let result = await executeTool(toolRegistry, tc.name, args, toolContext);
-          result = compressToolResult(result);
+          const rawResult = await executeTool(toolRegistry, tc.name, args, toolContext);
+          const compressedResult = compressToolResult(rawResult);
 
           const toolExecDuration = Date.now() - toolExecStart;
 
           toolSpan?.end({
-            output: { status: 'success', resultLength: result.length },
-            metadata: { duration: toolExecDuration },
+            output: {
+              status: 'success',
+              result: rawResult,
+              resultLength: rawResult.length,
+            },
+            metadata: {
+              duration: toolExecDuration,
+              originalResultLength: rawResult.length,
+              compressedResultLength: compressedResult.length,
+            },
           });
 
-          return { tc, result, error: null, duration: toolExecDuration };
+          return { tc, result: compressedResult, error: null, duration: toolExecDuration };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           const toolExecDuration = Date.now() - toolExecStart;
 
           toolSpan?.end({
             level: 'ERROR',
-            output: { error: errorMsg },
+            output: { status: 'error', error: errorMsg },
             metadata: { duration: toolExecDuration },
           });
 
@@ -409,7 +445,6 @@ await new Promise<void>((resolve) => {
       content: forcedConclusionPrompt,
     });
 
-    // Trace forced conclusion
     const forcedSpan = loopSpan?.withSpan('forced-conclusion');
 
     await new Promise<void>((resolve) => {

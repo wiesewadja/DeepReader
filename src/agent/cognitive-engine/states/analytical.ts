@@ -62,14 +62,16 @@ export class AnalyticalState extends StateNode {
         ctx.toolRegistry,
         ctx.toolContext,
         {
+          stateName: this.name,
           model: this.model,
           systemPrompt: this.buildSystemPrompt(ctx),
           userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
           availableTools: this.tools,
           toolInterceptor: interceptor,
           maxIterations: 8,
-          maxToolCalls: 5, // 硬约束：最多 5 次工具调用（与提示词一致）
+          maxToolCalls: 5,
           abortSignal: ctx.abortSignal,
+          traceContext: ctx.traceContext,
         }
       );
 

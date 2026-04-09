@@ -43,3 +43,4 @@ backend/data/
 .kiro/
 bin/
 .obsidian-cache
+test-vault/

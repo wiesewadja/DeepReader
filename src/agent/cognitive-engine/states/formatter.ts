@@ -54,6 +54,7 @@ export class FormatterState extends StateNode {
         ctx.toolRegistry,
         ctx.toolContext,
         {
+          stateName: this.name,
           model: this.model,
           systemPrompt: this.buildSystemPrompt(ctx),
           userMessage: buildFormatterUserMessage(
@@ -68,6 +69,7 @@ export class FormatterState extends StateNode {
           availableTools: [],
           maxIterations: 1,
           abortSignal: ctx.abortSignal,
+          traceContext: ctx.traceContext,
         },
         {
           onContent: (text) => {

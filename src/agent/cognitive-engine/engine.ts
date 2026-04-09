@@ -39,9 +39,13 @@ async function executeStateWithLogging(
 ): Promise<void> {
   const startTime = Date.now();
   const spanCtx = traceCtx?.withSpan(stateName, {
-    query: ctx.standaloneQuery || ctx.rawUserQuery,
-    historyCount: ctx.chatHistory.length,
-    availableTools: state.tools || [],
+    input: {
+      rawUserQuery: ctx.rawUserQuery,
+      ...(ctx.standaloneQuery ? { standaloneQuery: ctx.standaloneQuery } : {}),
+      historyCount: ctx.chatHistory.length,
+      availableTools: state.tools || [],
+      depth: ctx.depth,
+    },
   });
 
   // Inject span context into SharedContext for child states

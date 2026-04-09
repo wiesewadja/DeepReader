@@ -54,12 +54,14 @@ export class RouterState extends StateNode {
         ctx.toolRegistry,
         ctx.toolContext,
         {
+          stateName: this.name,
           model: this.model,
           systemPrompt: PROMPT_S0_ROUTER,
           userMessage: buildRouterUserMessage(ctx.rawUserQuery, ctx.chatHistory, ctx.pdfName),
           availableTools: [],
           maxIterations: 1,
           abortSignal: ctx.abortSignal,
+          traceContext: ctx.traceContext,
         }
       );
 

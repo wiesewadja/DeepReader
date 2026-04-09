@@ -5,7 +5,7 @@ import { NoopObservationRef } from './types';
  * No-op trace context — 所有方法为空操作
  */
 export class NoopTraceContext implements ITraceContext {
-  withSpan(_name: string, _metadata?: Record<string, unknown>): ITraceContext {
+  withSpan(_name: string, _options?: { input?: unknown; metadata?: Record<string, unknown> }): ITraceContext {
     return this;
   }
 

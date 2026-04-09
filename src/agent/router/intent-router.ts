@@ -33,7 +33,7 @@ export class IntentRouter {
     const startTime = Date.now();
 
     // Create span for intent routing
-    const span = traceCtx?.withSpan('intent-routing', { userInput: userInput.slice(0, 100) });
+    const span = traceCtx?.withSpan('intent-routing', { metadata: { userInput: userInput.slice(0, 100) } });
 
     const detectedIntents: string[] = [];
     const allowedTools = new Set<string>();

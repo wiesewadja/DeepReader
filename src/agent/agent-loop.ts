@@ -353,6 +353,14 @@ export async function runAgentLoop(
     let finishReason: 'stop' | 'tool_calls' | 'length' | null = null;
     let toolCalls: { id: string; name: string; arguments: string }[] = [];
 
+    // 创建 LLM generation 追踪
+    const llmGen = iterationSpan?.withGeneration(`llm-agent-iter${iterations}`, {
+      model: client.getModel(),
+      input: {
+        messages: workingMessages.map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) })),
+      },
+    });
+
     // 🕐 调用 LLM（流式）- 记录耗时
     const llmStartTime = Date.now();
     agentLog(`[AgentLoop] 🤖 开始调用 LLM...`);
@@ -417,6 +425,19 @@ export async function runAgentLoop(
     const llmDuration = Date.now() - llmStartTime;
     llmTotalTime += llmDuration;
     agentLog(`[AgentLoop] 🤖 LLM 响应完成: ${formatDuration(llmDuration)}, finishReason=${finishReason}`);
+
+    // 结束 LLM generation 追踪
+    llmGen?.end({
+      output: {
+        content: accumulatedContent,
+        finishReason: finishReason || 'stop',
+      },
+      metadata: {
+        duration: llmDuration,
+        model: client.getModel(),
+        finishReason: finishReason || 'stop',
+      },
+    });
 
     // 如果没有 tool_calls，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
@@ -527,7 +548,12 @@ export async function runAgentLoop(
         }
 
         // 追踪：工具开始
-        const toolSpan = iterationSpan?.withSpan(`tool-${tc.name}`, { args });
+        const toolSpan = iterationSpan?.withSpan(`tool-${tc.name}`, {
+          input: {
+            toolName: tc.name,
+            args,
+          },
+        });
 
         try {
           // 工具执行（带重试机制）
@@ -556,7 +582,14 @@ export async function runAgentLoop(
           const resultLength = result.length;
 
           // 追踪：工具结果
-          toolSpan?.end({ resultLength });
+          toolSpan?.end({
+            output: {
+              status: 'success',
+              result,
+              resultLength,
+            },
+            metadata: { duration },
+          });
 
           return {
             success: true,
@@ -572,7 +605,13 @@ export async function runAgentLoop(
           const errorMsg = error instanceof Error ? error.message : String(error);
 
           // 追踪：工具错误
-          toolSpan?.end({ error: errorMsg });
+          toolSpan?.end({
+            output: {
+              status: 'error',
+              error: errorMsg,
+            },
+            metadata: { duration },
+          });
 
           return {
             success: false,
@@ -661,9 +700,11 @@ export async function runAgentLoop(
 
     // 追踪：结束迭代
     iterationSpan?.end({
-      duration: iterationDuration,
-      llmDuration: llmDuration,
-      toolsDuration: toolsDuration,
+      output: {
+        iterationDuration,
+        llmDuration,
+        toolsDuration,
+      },
     });
 
     // 🔄 循环内压缩： 当 token 超过阈值时，提前压缩以保持上下文大小可控

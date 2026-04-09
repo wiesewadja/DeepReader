@@ -16,7 +16,12 @@ export interface IObservationRef {
     metadata?: Record<string, unknown>;
   }): IObservationRef;
   /** End the observation, optionally providing final output/metadata */
-  end(params?: Record<string, unknown>): void;
+  end(params?: {
+    output?: unknown;
+    level?: string;
+    metadata?: Record<string, unknown>;
+    [key: string]: unknown;
+  }): void;
 }
 
 /**
@@ -24,7 +29,7 @@ export interface IObservationRef {
  */
 export interface ITraceContext {
   /** Create a child span within this trace */
-  withSpan(name: string, metadata?: Record<string, unknown>): ITraceContext;
+  withSpan(name: string, options?: { input?: unknown; metadata?: Record<string, unknown> }): ITraceContext;
 
   /** Create a generation (LLM call) observation */
   withGeneration(
@@ -50,7 +55,12 @@ export class NoopObservationRef implements IObservationRef {
   update(_params: { output?: unknown; usageDetails?: Record<string, number>; metadata?: Record<string, unknown> }): IObservationRef {
     return this;
   }
-  end(_params?: Record<string, unknown>): void {
+  end(_params?: {
+    output?: unknown;
+    level?: string;
+    metadata?: Record<string, unknown>;
+    [key: string]: unknown;
+  }): void {
     // no-op
   }
 }

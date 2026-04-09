@@ -26,10 +26,13 @@ export class LangfuseTraceContext implements ITraceContext {
     this.observation = observation;
   }
 
-  withSpan(name: string, metadata?: Record<string, unknown>): ITraceContext {
+  withSpan(name: string, options?: { input?: unknown; metadata?: Record<string, unknown> }): ITraceContext {
     const child = this.observation.startObservation(
       name,
-      { ...metadata },
+      {
+        ...(options?.input !== undefined ? { input: options.input } : {}),
+        ...(options?.metadata ? { metadata: options.metadata } : {}),
+      },
       { asType: 'span' }
     );
     return new LangfuseTraceContext(child);
@@ -54,7 +57,10 @@ export class LangfuseTraceContext implements ITraceContext {
         generation.update(p as Record<string, unknown>);
         return this;
       },
-      end() {
+      end(p?: { output?: unknown; level?: string; metadata?: Record<string, unknown>; [key: string]: unknown }) {
+        if (p && Object.keys(p).length > 0) {
+          generation.update(p as Record<string, unknown>);
+        }
         generation.end();
       },
     };
