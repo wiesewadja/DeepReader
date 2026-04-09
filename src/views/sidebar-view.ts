@@ -2354,17 +2354,25 @@ export class SidebarView extends ItemView {
                 try {
                     const statusContent = await fs.readFile(`${dirPath}/.indexing.json`, 'utf-8');
                     const status = JSON.parse(statusContent);
+                    const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
                     const isFailed = status.step === 'failed';
-                    indexes.push({
-                        id: status.bookId || entry.name,
-                        pdf_name: status.title || entry.name,
-                        node_count: 0,
-                        created_at: new Date().toISOString(),
-                        status: isFailed ? 'failed' : 'processing',
-                        progress_percent: status.percent || 0,
-                        message: isFailed ? `索引失败: ${status.error || ''}` : status.stepLabel,
-                    });
-                    continue; // Skip book-meta.json check while indexing
+
+                    if (isComplete) {
+                        // 已完成的索引：清理状态文件，继续读 book-meta.json
+                        fs.unlink(`${dirPath}/.indexing.json`).catch(() => {});
+                        // Fall through to book-meta.json check below
+                    } else {
+                        indexes.push({
+                            id: status.bookId || entry.name,
+                            pdf_name: status.title || entry.name,
+                            node_count: 0,
+                            created_at: new Date().toISOString(),
+                            status: isFailed ? 'failed' : 'processing',
+                            progress_percent: status.percent || 0,
+                            message: isFailed ? `索引失败: ${status.error || ''}` : status.stepLabel,
+                        });
+                        continue; // Skip book-meta.json check while indexing
+                    }
                 } catch {
                     // No .indexing.json, fall through to check book-meta.json
                 }

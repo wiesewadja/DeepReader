@@ -21,6 +21,7 @@ export interface ChatOptions {
   chatHistory?: Array<{ role: string; content: string }>;
   temperature?: number;
   maxRetries?: number;
+  maxTokens?: number;
 }
 
 export interface ChatResult {
@@ -80,6 +81,7 @@ export async function chatGPTWithFinishReason(
     chatHistory = [],
     temperature = 0.7,
     maxRetries = 3,
+    maxTokens,
   } = options;
 
   const effectiveApiKey = apiKey || process.env.OPENAI_API_KEY || process.env.API_KEY || "lm-studio";
@@ -104,6 +106,7 @@ export async function chatGPTWithFinishReason(
           model,
           messages,
           temperature,
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
         }),
       });
 

@@ -74,10 +74,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     await fs.access(options.filePath);
   } catch {
     throw new IndexError(
-      "File not found",
+      `File not found: ${options.filePath}`,
       ErrorCode.FILE_NOT_FOUND,
-      "文件不存在，请检查文件路径",
-      "请确认文件路径是否正确"
+      `文件不存在: ${options.filePath}`,
+      "请确认文件路径是否正确，或重新选择文件"
     );
   }
 

@@ -482,8 +482,8 @@ export class LibraryModal extends Modal {
                     
                     filePath = `${vaultPath}/${fileName}`;
                 } else {
-                    // Vault 中的文件：TFile.path 是相对路径，需转换为绝对路径
-                    filePath = `${vaultPath}/${fileInfo.path}`;
+                    // Vault 中的文件：path 已经是绝对路径（由 PDFFileSelectorModal 构建）
+                    filePath = fileInfo.path;
                 }
                 
                 // 计算真实的 bookId，避免临时 ID 导致卡片重复
