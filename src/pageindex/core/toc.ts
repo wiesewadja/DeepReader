@@ -14,6 +14,7 @@ export interface TocOptions {
   tocCheckPageNum: number;
   apiKey?: string;
   baseUrl?: string;
+  maxTokens?: number; // 可选的输出 token 上限，不同模型不同
 }
 
 /**
@@ -150,6 +151,65 @@ async function checkTocTransformationComplete(
 }
 
 /**
+ * Try multiple methods to extract TocItem[] from LLM response
+ * Handles truncated JSON, markdown-wrapped JSON, and partial responses
+ */
+function tryExtractTocItems(content: string): TocItem[] {
+  // Method 1: Use extractJson (handles markdown blocks, cleaning, etc.)
+  const json = extractJson<{ table_of_contents: TocItem[] }>(content);
+  if (json?.table_of_contents?.length) {
+    return convertPageToInt(json.table_of_contents);
+  }
+
+  // Method 2: Try parsing as top-level array
+  const arrJson = extractJson<TocItem[]>(content);
+  if (Array.isArray(arrJson) && arrJson.length > 0) {
+    return convertPageToInt(arrJson);
+  }
+
+  // Method 3: Find "table_of_contents" array and extract items individually
+  // This handles truncated JSON where the closing brackets are missing
+  const tocArrayMatch = content.match(/"table_of_contents"\s*:\s*\[/);
+  if (tocArrayMatch) {
+    const arrayStart = content.indexOf("[", tocArrayMatch.index!);
+    if (arrayStart !== -1) {
+      // Extract individual items using regex
+      const itemRegex = /\{\s*"structure"\s*:\s*"([^"]+)"\s*,\s*"title"\s*:\s*"([^"]*)"/g;
+      const items: TocItem[] = [];
+      let match;
+      while ((match = itemRegex.exec(content)) !== null) {
+        const item: TocItem = { structure: match[1], title: match[2] };
+        // Try to extract page number
+        const pageMatch = content.slice(match.index, content.indexOf("}", match.index)).match(/"page"\s*:\s*(\d+)/);
+        if (pageMatch) item.page = parseInt(pageMatch[1]);
+        items.push(item);
+      }
+      if (items.length > 0) {
+        return convertPageToInt(items);
+      }
+    }
+  }
+
+  // Method 4: Extract items from truncated JSON by finding all complete objects
+  const objectRegex = /\{\s*"structure"\s*:\s*"[^"]+"\s*,\s*"title"\s*:\s*"[^"]*"[^}]*\}/g;
+  const items: TocItem[] = [];
+  let objMatch;
+  while ((objMatch = objectRegex.exec(content)) !== null) {
+    try {
+      const obj = JSON.parse(objMatch[0]);
+      if (obj.structure && obj.title !== undefined) {
+        items.push(obj as TocItem);
+      }
+    } catch {}
+  }
+  if (items.length > 0) {
+    return convertPageToInt(items);
+  }
+
+  return [];
+}
+
+/**
  * Transform raw TOC content to JSON structure
  */
 export async function tocTransformer(
@@ -157,19 +217,32 @@ export async function tocTransformer(
   options: TocOptions
 ): Promise<TocItem[]> {
   const prompt = prompts.tocTransformerPrompt(tocContent);
+  const maxTokens = options.maxTokens || 8192;
   
   let { content: lastComplete, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
+    maxTokens,
   });
 
+  console.log(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
+
+  // Try to extract items from the first response (even if truncated)
+  // This handles the case where LLM returns a complete JSON array but gets cut off
+  const firstAttemptItems = tryExtractTocItems(lastComplete);
+  if (firstAttemptItems.length > 0) {
+    console.log(`[DIAG-tocTransformer] Extracted ${firstAttemptItems.length} items from first response`);
+    return firstAttemptItems;
+  }
+
   let isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
-  
+
   if (isComplete && finishReason === "finished") {
     const json = extractJson<{ table_of_contents: TocItem[] }>(lastComplete);
     if (json?.table_of_contents) {
+      console.log(`[DIAG-tocTransformer] Complete response: ${json.table_of_contents.length} items`);
       return convertPageToInt(json.table_of_contents);
     }
   }
@@ -183,7 +256,7 @@ export async function tocTransformer(
     // Trim to last complete object
     const position = lastComplete.lastIndexOf("}");
     if (position !== -1) {
-      lastComplete = lastComplete.slice(0, position + 2);
+      lastComplete = lastComplete.slice(0, position + 1);
     }
 
     const continuePrompt = prompts.tocTransformerContinuePrompt(tocContent, lastComplete);
@@ -192,6 +265,7 @@ export async function tocTransformer(
       prompt: continuePrompt,
       apiKey: options.apiKey,
       baseUrl: options.baseUrl,
+      maxTokens,
     });
 
     let newContent = result.content;
@@ -202,17 +276,26 @@ export async function tocTransformer(
     }
     lastComplete = lastComplete + newContent;
 
+    // Try to extract items after each continuation attempt
+    const continuationItems = tryExtractTocItems(lastComplete);
+    if (continuationItems.length > 0 && (finishReason === "finished" || isComplete)) {
+      console.log(`[DIAG-tocTransformer] Extracted ${continuationItems.length} items after continuation ${attempts + 1}`);
+      return continuationItems;
+    }
+
     isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
     attempts++;
   }
 
-  try {
-    const parsed = JSON.parse(lastComplete);
-    return convertPageToInt(parsed.table_of_contents || parsed);
-  } catch {
-    console.error("Failed to parse TOC JSON");
-    return [];
+  // Final attempt: try all extraction methods
+  const finalItems = tryExtractTocItems(lastComplete);
+  if (finalItems.length > 0) {
+    console.log(`[DIAG-tocTransformer] Final extraction: ${finalItems.length} items`);
+    return finalItems;
   }
+
+  console.error("[DIAG-tocTransformer] All JSON extraction methods failed, returning empty");
+  return [];
 }
 
 /**
@@ -243,11 +326,13 @@ export async function generateTocInit(
   options: TocOptions
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocInitPrompt(part);
+  const maxTokens = options.maxTokens || 8192;
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
+    maxTokens,
   });
 
   if (finishReason === "finished") {
@@ -267,11 +352,13 @@ export async function generateTocContinue(
   options: TocOptions
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocContinuePrompt(part, JSON.stringify(tocContent, null, 2));
+  const maxTokens = options.maxTokens || 8192;
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
+    maxTokens,
   });
 
   if (finishReason === "finished") {
