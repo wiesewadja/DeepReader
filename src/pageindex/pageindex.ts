@@ -314,7 +314,18 @@ export class PageIndex {
         percent: Math.round((currentStep / totalSteps) * 100),
       });
       console.log("Generating summaries...");
-      await generateSummariesForStructure(tree, this.options);
+      await generateSummariesForStructure(tree, this.options, (completed, total) => {
+        const basePercent = Math.round((currentStep / totalSteps) * 100);
+        const nextPercent = Math.round(((currentStep + 1) / totalSteps) * 100);
+        const summaryPercent = basePercent + Math.round((completed / total) * (nextPercent - basePercent));
+        this.reportProgress({
+          stage: "generating_summaries",
+          message: `正在生成摘要 (${completed}/${total})`,
+          step: currentStep,
+          totalSteps,
+          percent: summaryPercent,
+        });
+      });
     } else {
       currentStep++;
     }
@@ -364,12 +375,29 @@ export class PageIndex {
   async fromEpub(input: string | Buffer): Promise<PageIndexResult> {
     console.log("[EPUB Mode] Processing EPUB...");
 
+    this.reportProgress({
+      stage: "parsing_structure",
+      message: "解析 EPUB 文档...",
+      step: 1,
+      totalSteps: 3,
+      percent: 5,
+    });
+
     const epubInfo = await parseEpub(input);
     const pages = epubChaptersToPages(epubInfo.chapters);
     const docName = epubInfo.title;
     const endPhysicalIndex = pages.length;
+    const totalChapters = epubInfo.chapters.length;
 
     console.log(`[EPUB Mode] Extracted ${pages.length} chapters`);
+
+    this.reportProgress({
+      stage: "parsing_structure",
+      message: `解析完成，共 ${totalChapters} 章节`,
+      step: 1,
+      totalSteps: 3,
+      percent: 10,
+    });
 
     // EPUB chapters are already structured — build tree directly
     // Each chapter maps 1:1 to a physical index
@@ -389,12 +417,57 @@ export class PageIndex {
       addNodeText(tree, pages);
     }
 
-    return this.finalizeProcessing(tree, docName);
-  }
+    // Step 2: Generate summaries — progress mapped by chapter count (10%-95%)
+    if (this.options.addNodeSummary) {
+      this.reportProgress({
+        stage: "generating_summaries",
+        message: `正在生成摘要 (0/${totalChapters})`,
+        step: 2,
+        totalSteps: 3,
+        percent: 10,
+      });
+      console.log("Generating summaries...");
+      await generateSummariesForStructure(tree, this.options, (completed, total) => {
+        // Map progress: 10%-95% range for summary generation
+        const summaryPercent = 10 + Math.round((completed / total) * 85);
+        this.reportProgress({
+          stage: "generating_summaries",
+          message: `正在生成摘要 (${completed}/${total})`,
+          step: 2,
+          totalSteps: 3,
+          percent: summaryPercent,
+        });
+      });
+    }
 
-  /**
-   * Process EPUB pages (chapters) directly
-   */
+    // Step 3: Generate document description
+    let docDescription: string | undefined;
+    if (this.options.addDocDescription) {
+      console.log("Generating document description...");
+      docDescription = await generateDocDescription(tree, this.options);
+    }
+
+    this.reportProgress({
+      stage: "complete",
+      message: "处理完成!",
+      step: 3,
+      totalSteps: 3,
+      percent: 100,
+    });
+
+    // Remove text if not requested in output
+    let finalStructure = tree;
+    if (!this.options.addNodeText) {
+      finalStructure = removeFields(tree, ["text"]) as TreeNode[];
+    }
+
+    return {
+      docName,
+      docDescription,
+      structure: finalStructure,
+      coverImage: epubInfo.coverImage,
+    };
+  }
   async processEpubPages(pages: PdfPage[], docName: string): Promise<PageIndexResult> {
     const startIndex = 1;
     const endPhysicalIndex = pages.length;

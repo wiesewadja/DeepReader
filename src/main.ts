@@ -13,6 +13,9 @@ import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
+import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from './pageindex/book-indexer.js';
+import { parseEpub, type EpubInfo } from './pageindex/parsers/epub.js';
+import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 
 // 使用 service 模块日志器
 const log = serviceLog;
@@ -22,6 +25,17 @@ export default class DeepPDFPlugin extends Plugin {
     readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
     private skillsDir: string = '';
+
+    // E2E 测试暴露的 API
+    readonly api = {
+        indexBook,
+        isBookIndexed,
+        deleteBookIndex,
+        generateBookId,
+        parseEpub,
+        exportToObsidian,
+        PageIndex,
+    };
 
     async onload() {
         await this.loadSettings();

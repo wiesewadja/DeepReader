@@ -88,6 +88,8 @@ export interface PageIndexResult {
   docName: string;
   docDescription?: string;
   structure: TreeNode[];
+  /** Cover image (EPUB only) */
+  coverImage?: { name: string; data: Buffer; mediaType: string };
 }
 
 export interface TocItem {

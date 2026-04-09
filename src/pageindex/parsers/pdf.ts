@@ -3,7 +3,7 @@
  * Uses pdf-parse for text extraction
  */
 
-import PDFParse from "pdf-parse";
+import * as PDFParse from "pdf-parse";
 import { countTokens } from "../core/utils";
 import type { PageContent, TocItem } from "../core/types";
 import * as fs from "fs/promises";
@@ -45,7 +45,8 @@ export async function parsePdf(
   }
 
   // Parse PDF with data
-  const parser = new PDFParse({ data });
+  // @ts-ignore - pdf-parse has unusual module structure
+  const parser = new (PDFParse as any).default({ data });
   
   // Get text for all pages
   const textResult = await parser.getText();

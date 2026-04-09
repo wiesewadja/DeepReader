@@ -75,19 +75,52 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const bookId = generateBookId(options.filePath);
   const indexDir = path.join(options.outputDir, ".pageindex", bookId);
 
-  // Step 1: Document parsing
-  options.onProgress?.({
+  // Create indexing status file so progress survives modal close/reopen
+  await fs.mkdir(indexDir, { recursive: true });
+  const indexingStatusPath = path.join(indexDir, ".indexing.json");
+
+  const reportProgress = (progress: { percent: number; step: string; stepLabel: string; message?: string }) => {
+    options.onProgress?.(progress);
+    // Persist to file (fire-and-forget)
+    fs.writeFile(indexingStatusPath, JSON.stringify({
+      bookId,
+      filePath: options.filePath,
+      fileType: options.fileType,
+      title: path.basename(options.filePath, path.extname(options.filePath)),
+      ...progress,
+    })).catch(() => {});
+  };
+
+  // Clean up indexing status file on completion or failure
+  const cleanupStatus = () => {
+    fs.unlink(indexingStatusPath).catch(() => {});
+  };
+
+  // Step 1: Document parsing + LLM indexing (most time-consuming, 5%-70%)
+  reportProgress({
     percent: 5,
     step: "parse_document",
     stepLabel: "解析文档",
   });
+
+  // Map PageIndex internal progress to book-indexer range (5%-70%)
+  // PageIndex goes through: parsing → tree building → summary generation
+  const onParseProgress = (progress: { percent: number; message: string; stage: string }) => {
+    const mappedPercent = 5 + Math.round(progress.percent * 0.65);
+    reportProgress({
+      percent: Math.min(mappedPercent, 70),
+      step: progress.stage || "parse_document",
+      stepLabel: progress.message || "处理文档",
+    });
+  };
 
   const pageIndex = new PageIndex({
     model: options.model,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     addNodeText: true,
-    addNodeSummary: true,
+    addNodeSummary: false,
+    onProgress: onParseProgress,
   });
 
   let parseResult;
@@ -98,6 +131,17 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       parseResult = await pageIndex.fromEpub(options.filePath);
     }
   } catch (error) {
+    // Write failed status so modal can show retry button on reopen
+    fs.writeFile(indexingStatusPath, JSON.stringify({
+      bookId,
+      filePath: options.filePath,
+      fileType: options.fileType,
+      title: path.basename(options.filePath, path.extname(options.filePath)),
+      percent: 0,
+      step: "failed",
+      stepLabel: "索引失败",
+      error: error instanceof Error ? error.message : "Unknown error",
+    })).catch(() => {});
     throw new IndexError(
       `Document parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       ErrorCode.FILE_NOT_FOUND,
@@ -106,18 +150,36 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     );
   }
 
-  options.onProgress?.({
-    percent: 15,
+  reportProgress({
+    percent: 70,
     step: "parse_complete",
-    stepLabel: "文档解析完成",
+    stepLabel: "文档索引完成",
   });
 
-  const rootTitle = parseResult.structure[0]?.title || parseResult.docName || "Unknown";
-  const bookDir = path.join(options.outputDir, rootTitle);
+  const rootTitle = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
+  const deepReaderDir = path.join(options.outputDir, "DeepReader");
+  const bookDir = path.join(deepReaderDir, rootTitle);
 
-  // Step 2: Markdown export
-  options.onProgress?.({
-    percent: 40,
+  // Ensure DeepReader directory exists
+  await fs.mkdir(deepReaderDir, { recursive: true });
+
+  // Save cover image if available (EPUB)
+  if (parseResult.coverImage) {
+    try {
+      const coversDir = path.join(deepReaderDir, "covers");
+      await fs.mkdir(coversDir, { recursive: true });
+      const ext = path.extname(parseResult.coverImage.name) || ".jpg";
+      const coverPath = path.join(coversDir, `${rootTitle}${ext}`);
+      await fs.writeFile(coverPath, parseResult.coverImage.data);
+      console.log(`[book-indexer] Cover saved: ${coverPath}`);
+    } catch (err) {
+      console.warn("[book-indexer] Failed to save cover:", err);
+    }
+  }
+
+  // Step 2: Markdown export (70%-80%)
+  reportProgress({
+    percent: 70,
     step: "export_markdown",
     stepLabel: "导出 Markdown",
   });
@@ -126,7 +188,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     if (options.fileType === "pdf") {
       const { exportPdfToObsidian } = await import("./exporters/pdf-to-obsidian.js");
       await exportPdfToObsidian(options.filePath, {
-        outputDir: options.outputDir,
+        outputDir: deepReaderDir,
         pageOptions: {
           model: options.model,
           apiKey: options.apiKey,
@@ -137,7 +199,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     } else {
       const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
       await exportToObsidian(options.filePath, {
-        outputDir: options.outputDir,
+        outputDir: deepReaderDir,
+        includeIndex: true,
       });
     }
   } catch (error) {
@@ -149,15 +212,15 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     );
   }
 
-  options.onProgress?.({
-    percent: 75,
+  reportProgress({
+    percent: 80,
     step: "export_complete",
     stepLabel: "Markdown 导出完成",
   });
 
   // Step 3: Build book-meta.json
-  options.onProgress?.({
-    percent: 80,
+  reportProgress({
+    percent: 82,
     step: "build_meta",
     stepLabel: "构建元数据",
   });
@@ -177,7 +240,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     JSON.stringify(bookMeta, null, 2)
   );
 
-  options.onProgress?.({
+  reportProgress({
     percent: 85,
     step: "meta_complete",
     stepLabel: "元数据构建完成",
@@ -186,8 +249,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Step 4: L0/L1 Vectorization (optional)
   let vectorizationSuccess = false;
   if (options.embedding) {
-    options.onProgress?.({
-      percent: 87,
+    reportProgress({
+    percent: 87,
       step: "vectorize",
       stepLabel: "向量索引",
     });
@@ -196,21 +259,21 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
       vectorizationSuccess = true;
       
-      options.onProgress?.({
+      reportProgress({
         percent: 92,
         step: "vectorize_complete",
         stepLabel: "向量索引完成",
       });
     } catch (error) {
       console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
-      
+
       bookMeta.embedding = undefined;
       await fs.writeFile(
         path.join(indexDir, "book-meta.json"),
         JSON.stringify(bookMeta, null, 2)
       );
 
-      options.onProgress?.({
+      reportProgress({
         percent: 92,
         step: "vectorize_skipped",
         stepLabel: "向量索引跳过（使用纯 BM25）",
@@ -220,7 +283,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   }
 
   // Step 5: BM25 index building
-  options.onProgress?.({
+  reportProgress({
     percent: 94,
     step: "build_bm25",
     stepLabel: "构建 BM25 索引",
@@ -232,14 +295,16 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     JSON.stringify(bm25Data, null, 2)
   );
 
-  options.onProgress?.({
+  reportProgress({
     percent: 97,
     step: "bm25_complete",
     stepLabel: "BM25 索引构建完成",
   });
 
-  // Step 6: Finalize
-  options.onProgress?.({
+  // Step 6: Finalize — clean up indexing status
+  cleanupStatus();
+
+  reportProgress({
     percent: 100,
     step: "complete",
     stepLabel: "索引完成",
@@ -266,7 +331,7 @@ async function buildBookMeta(
   embedding?: any
 ): Promise<BookMeta> {
   const root = parseResult.structure[0];
-  const title = root?.title || parseResult.docName || "Unknown";
+  const title = parseResult.docName || root?.title || "Unknown";
 
   const chapters: ChapterMeta[] = [];
   let sortOrder = 0;

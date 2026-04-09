@@ -2337,9 +2337,61 @@ export class SidebarView extends ItemView {
     }
 
     private async loadIndexes(): Promise<void> {
-        // 后端是可选的，不主动调用后端 API
-        // 直接从本地设置恢复上次选中的书籍
-        this.indexes = [];
+        // Scan local .pageindex/ directory for book-meta.json and .indexing.json files
+        const vaultPath = (this.app.vault.adapter as any).basePath;
+        const pageindexDir = `${vaultPath}/.pageindex`;
+
+        try {
+            const fs = require('fs/promises');
+            const entries = await fs.readdir(pageindexDir, { withFileTypes: true });
+            const indexes: any[] = [];
+
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                const dirPath = `${pageindexDir}/${entry.name}`;
+
+                // Check for in-progress indexing first
+                try {
+                    const statusContent = await fs.readFile(`${dirPath}/.indexing.json`, 'utf-8');
+                    const status = JSON.parse(statusContent);
+                    const isFailed = status.step === 'failed';
+                    indexes.push({
+                        id: status.bookId || entry.name,
+                        pdf_name: status.title || entry.name,
+                        node_count: 0,
+                        created_at: new Date().toISOString(),
+                        status: isFailed ? 'failed' : 'processing',
+                        progress_percent: status.percent || 0,
+                        message: isFailed ? `索引失败: ${status.error || ''}` : status.stepLabel,
+                    });
+                    continue; // Skip book-meta.json check while indexing
+                } catch {
+                    // No .indexing.json, fall through to check book-meta.json
+                }
+
+                // Check for completed index
+                try {
+                    const content = await fs.readFile(`${dirPath}/book-meta.json`, 'utf-8');
+                    const meta = JSON.parse(content);
+                    indexes.push({
+                        id: meta.bookId || entry.name,
+                        pdf_name: meta.title || entry.name,
+                        author: meta.author,
+                        node_count: meta.chapters?.length || 0,
+                        created_at: meta.indexedAt || new Date().toISOString(),
+                        status: 'ready',
+                    });
+                } catch {
+                    // Skip directories without book-meta.json
+                }
+            }
+
+            this.indexes = indexes;
+            log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/');
+        } catch {
+            // .pageindex/ doesn't exist yet
+            this.indexes = [];
+        }
 
         if (this.plugin.settings.lastSelectedIndexId) {
             log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);

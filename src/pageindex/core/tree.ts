@@ -349,9 +349,11 @@ async function generateNodeSummary(
  */
 export async function generateSummariesForStructure(
   structure: TreeNode[],
-  options: TreeOptions
+  options: TreeOptions,
+  onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
   const nodes = structureToList(structure);
+  const total = nodes.length;
 
   // Process in batches for better performance
   const batchSize = 5;
@@ -364,6 +366,10 @@ export async function generateSummariesForStructure(
     for (let j = 0; j < batch.length; j++) {
       (batch[j] as TreeNode).summary = summaries[j];
     }
+
+    // 报告进度
+    const completed = Math.min(i + batchSize, total);
+    onProgress?.(completed, total);
   }
 }
 

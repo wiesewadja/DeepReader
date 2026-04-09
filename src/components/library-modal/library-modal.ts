@@ -10,6 +10,7 @@ import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError } from '../../utils/logger.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
+import { getProviderConfig } from '../../config/providers.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -151,6 +152,15 @@ export class LibraryModal extends Modal {
                 message: index.message || ''
             });
         });
+
+        // Start polling if any indexes are in progress
+        const hasProcessing = filtered.some(idx => {
+            const rawStatus = (idx.status || '').toLowerCase();
+            return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(rawStatus);
+        });
+        if (hasProcessing) {
+            this.startProgressPolling();
+        }
     }
 
     private sortIndexes(indexes: IndexListItem[]): IndexListItem[] {
@@ -286,9 +296,17 @@ export class LibraryModal extends Modal {
      */
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
-            // 优先从本地 Obsidian vault 加载
-            const coverPath = `DeepReader/covers/${bookName}.png`;
-            const coverFile = this.app.vault.getAbstractFileByPath(coverPath);
+            // Try multiple image extensions for the cover
+            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+            let coverFile: TFile | null = null;
+            for (const ext of extensions) {
+                const coverPath = `DeepReader/covers/${bookName}.${ext}`;
+                const file = this.app.vault.getAbstractFileByPath(coverPath);
+                if (file && file instanceof TFile) {
+                    coverFile = file;
+                    break;
+                }
+            }
 
             if (coverFile && coverFile instanceof TFile) {
                 const localCoverUrl = this.app.vault.getResourcePath(coverFile);
@@ -470,7 +488,7 @@ export class LibraryModal extends Modal {
                     const arrayBuffer = await systemFile.file.arrayBuffer();
                     
                     // 保存到 vault 根目录
-                    const fileName = systemFile.name;
+                    const fileName = systemFile.file.name;
                     await this.app.vault.createBinary(fileName, arrayBuffer);
                     
                     // 获取完整的文件系统路径
@@ -479,21 +497,24 @@ export class LibraryModal extends Modal {
                     new Notice(`文件已保存到 vault: ${fileName}`);
                 } else {
                     // Vault 中的文件：直接使用完整路径
-                    filePath = `${vaultPath}/${fileInfo.path}`;
+                    filePath = fileInfo.path;
                 }
                 
-                const fileType = fileInfo.name.toLowerCase().endsWith('.epub') 
-                    ? 'epub' 
+                const fileType = (fileInfo as any).docType === 'epub'
+                    ? 'epub'
                     : 'pdf';
+
+                const providerConfig = getProviderConfig(this.options.plugin.settings);
+                const apiKey = this.options.plugin.settings[providerConfig.apiKeyField] as string || '';
 
                 const result = await indexBook({
                     filePath,
                     fileType,
                     outputDir: vaultPath,
                     embedding: this.options.plugin.settings.embedding,
-                    model: this.options.plugin.settings.llmModel,
-                    apiKey: this.options.plugin.openaiApiKey || this.options.plugin.settings.openaiApiKey,
-                    baseUrl: this.options.plugin.settings.apiUrl,
+                    model: this.options.plugin.settings.llmModel || providerConfig.defaultModel,
+                    apiKey: apiKey,
+                    baseUrl: providerConfig.baseUrl,
                     onProgress: (progress: BookIndexProgress) => {
                         tempIndex.progress_percent = progress.percent;
                         tempIndex.status = 'processing';
@@ -642,7 +663,6 @@ export class LibraryModal extends Modal {
     private async deleteLocalData(bookName: string): Promise<void> {
         const { vault } = this.app;
         const basePath = `DeepReader/${bookName}`;
-        const imagesPath = `DeepReader/images/${bookName}`;
 
         try {
             // 删除书籍文件夹
@@ -652,19 +672,22 @@ export class LibraryModal extends Modal {
                 console.log(`[LibraryModal] 已删除本地数据: ${basePath}`);
             }
 
-            // 删除图片文件夹
-            const imagesFolder = vault.getAbstractFileByPath(imagesPath);
-            if (imagesFolder) {
-                await vault.trash(imagesFolder, true);
-                console.log(`[LibraryModal] 已删除图片: ${imagesPath}`);
+            // 删除 assets 文件夹（书籍目录下的图片资源）
+            const assetsPath = `DeepReader/${bookName}/assets`;
+            const assetsFolder = vault.getAbstractFileByPath(assetsPath);
+            if (assetsFolder) {
+                await vault.trash(assetsFolder, true);
+                console.log(`[LibraryModal] 已删除图片: ${assetsPath}`);
             }
 
-            // 删除封面图片
-            const coverPath = `DeepReader/covers/${bookName}.png`;
-            const coverFile = vault.getAbstractFileByPath(coverPath);
-            if (coverFile) {
-                await vault.trash(coverFile, true);
-                console.log(`[LibraryModal] 已删除封面: ${coverPath}`);
+            // 删除封面图片（尝试多种格式）
+            for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {
+                const coverPath = `DeepReader/covers/${bookName}.${ext}`;
+                const coverFile = vault.getAbstractFileByPath(coverPath);
+                if (coverFile) {
+                    await vault.trash(coverFile, true);
+                    console.log(`[LibraryModal] 已删除封面: ${coverPath}`);
+                }
             }
 
             new Notice(`已删除「${bookName}」的本地数据`);

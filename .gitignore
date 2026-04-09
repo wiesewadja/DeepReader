@@ -42,3 +42,4 @@ backend/data/
 .worktrees/
 .kiro/
 bin/
+.obsidian-cache

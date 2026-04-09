@@ -340,22 +340,35 @@ function generateMOC(
 function generateFrontmatter(data: Record<string, unknown>): string {
   const lines = ["---"];
   for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
       lines.push(`${key}:`);
       for (const item of value) {
-        lines.push(`  - ${item}`);
+        lines.push(`  - ${yamlString(item)}`);
       }
     } else if (typeof value === "string" && value.includes("\n")) {
       lines.push(`${key}: |`);
       for (const line of value.split("\n")) {
         lines.push(`  ${line}`);
       }
+    } else if (typeof value === "string") {
+      lines.push(`${key}: ${yamlString(value)}`);
     } else {
       lines.push(`${key}: ${value}`);
     }
   }
   lines.push("---");
   return lines.join("\n");
+}
+
+/** Quote a YAML string value if it contains special characters */
+function yamlString(value: unknown): string {
+  if (typeof value !== "string") return String(value);
+  const s = value as string;
+  if (/[:{}\[\],&*#?|<>=!%@`\n\r"'"]/.test(s) || s === "" || s === "true" || s === "false" || s === "null") {
+    return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return s;
 }
 
 /**

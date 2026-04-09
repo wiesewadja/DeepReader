@@ -341,9 +341,18 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
 
   // Extract metadata
   const metadata = packageData.metadata?.[0] || {};
-  const rawTitle = metadata["dc:title"]?.[0] || "Untitled";
+
+  // xml2js may return { _: "text", $: { attrs } } for elements with attributes
+  const extractText = (val: any): string => {
+    if (!val) return "";
+    if (typeof val === "string") return val;
+    if (typeof val === "object" && val._ !== undefined) return val._;
+    return String(val);
+  };
+
+  const rawTitle = extractText(metadata["dc:title"]?.[0]) || "Untitled";
   const title = cleanEpubTitle(rawTitle);
-  const creator = metadata["dc:creator"]?.[0] || "Unknown";
+  const creator = extractText(metadata["dc:creator"]?.[0]) || "Unknown";
 
   // Build manifest map
   const manifest = packageData.manifest?.[0]?.item || [];
@@ -412,13 +421,28 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     const html = entry.getData().toString("utf-8");
     const result = extractTextFromHTMLWithBlocks(html, order);
 
-    // Extract chapter title from HTML
+    // Extract chapter title
+    // Strategy: 1) Try <h1>-<h6> tags, 2) Fall back to first non-empty line of markdown
     const titleMatch = html.match(/<h[1-6][^>]*>([^<]*)<\/h[1-6]>/i);
-    const chapterTitle = titleMatch
-      ? result.content.substring(0, 100).includes(titleMatch[1].replace(/<[^>]+>/g, "").substring(0, 50))
-        ? result.content.split("\n")[0].replace(/^#+ /, "")
-        : `Chapter ${order + 1}`
-      : `Chapter ${order + 1}`;
+    let chapterTitle: string;
+
+    if (titleMatch) {
+      const headingText = titleMatch[1].replace(/<[^>]+>/g, "").trim();
+      if (headingText && result.content.substring(0, 200).includes(headingText.substring(0, 50))) {
+        chapterTitle = headingText;
+      } else if (headingText) {
+        chapterTitle = headingText;
+      } else {
+        chapterTitle = `Chapter ${order + 1}`;
+      }
+    } else {
+      // No heading tag: use first non-empty line of markdown as title
+      const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
+      // Strip block ID marker from the end (e.g., " ^p001")
+      chapterTitle = firstLine
+        ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
+        : `Chapter ${order + 1}`;
+    }
 
     chapters.push({
       id,
