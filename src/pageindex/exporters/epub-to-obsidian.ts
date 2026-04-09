@@ -238,12 +238,32 @@ async function createChapterNote(
       );
     }
 
+    // 替换任何包含该文件名的 ../xxx/yyy 形式路径
+    // Turndown 可能将 EPUB 相对路径转为 ../images/xxx.jpg
+    content = content.replace(
+      new RegExp(`!\\[([^\\]]*)\\]\\([^)]*${escapeRegExp(fileName)}\\)`, "g"),
+      `![$1](${relativePath})`
+    );
+
     // 同时替换 Obsidian 格式的图片链接
     content = content.replace(
       new RegExp(`!\\[\\[${escapeRegExp(fileName)}\\]\\]`, "g"),
       `![[${relativePath}]]`
     );
   }
+
+  // Clean Markdown heading lines: remove stray * and excessive -
+  // e.g. "#**第****2****章**" → "# 第2章"
+  // e.g. "## --第----1----章--" → "## 第1章"
+  content = content.replace(/^(#{1,6})\s*(.+)$/gm, (_match, hashes: string, text: string) => {
+    const cleaned = text
+      .replace(/\*+/g, "")
+      .replace(/-{2,}/g, "-")
+      .replace(/^[\s-]+|[\s-]+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return `${hashes} ${cleaned}`;
+  });
 
   // 添加导航链接
   const prev = index > 0 ? allChapters[index - 1] : null;
@@ -527,8 +547,18 @@ function buildEpubTree(
  */
 function sanitizeFileName(name: string): string {
   return name
-    .replace(/[<>:"/\\|?*]/g, "-")
+    // Remove Markdown heading markers
+    .replace(/^#+\s*/, "")
+    // Remove bold/italic markers
+    .replace(/\*+/g, "")
+    // Collapse multiple dashes
+    .replace(/-{2,}/g, "-")
+    // Remove illegal filename chars
+    .replace(/[<>:"/\\|?*#]/g, "")
+    // Collapse spaces
     .replace(/\s+/g, " ")
+    // Remove leading/trailing dashes and spaces
+    .replace(/^[\s-]+|[\s-]+$/g, "")
     .trim()
     .substring(0, 100);
 }

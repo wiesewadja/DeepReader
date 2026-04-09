@@ -427,7 +427,7 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     let chapterTitle: string;
 
     if (titleMatch) {
-      const headingText = titleMatch[1].replace(/<[^>]+>/g, "").trim();
+      const headingText = cleanTitle(titleMatch[1].replace(/<[^>]+>/g, "").trim());
       if (headingText && result.content.substring(0, 200).includes(headingText.substring(0, 50))) {
         chapterTitle = headingText;
       } else if (headingText) {
@@ -440,7 +440,7 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
       const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
       // Strip block ID marker from the end (e.g., " ^p001")
       chapterTitle = firstLine
-        ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
+        ? cleanTitle(firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim())
         : `Chapter ${order + 1}`;
     }
 
@@ -482,4 +482,24 @@ export function getEpubName(epubPath: string): string {
   const parts = epubPath.split("/");
   const basename = parts[parts.length - 1] || "Untitled";
   return basename.replace(/\.epub$/i, "");
+}
+
+/**
+ * Clean chapter title: remove Markdown formatting artifacts
+ * e.g. "#**第****2****章**" → "第2章"
+ * e.g. "# --第----1----章--" → "第1章"
+ */
+function cleanTitle(title: string): string {
+  return title
+    // Remove Markdown heading markers (# ## ### etc.)
+    .replace(/^#+\s*/, "")
+    // Remove bold/italic markers (** or *)
+    .replace(/\*+/g, "")
+    // Collapse multiple dashes into single
+    .replace(/-{2,}/g, "-")
+    // Remove leading/trailing dashes and spaces
+    .replace(/^[\s-]+|[\s-]+$/g, "")
+    // Collapse multiple spaces
+    .replace(/\s+/g, " ")
+    .trim();
 }
