@@ -5,25 +5,32 @@
 
 /* ==================== 设置页面主容器 ==================== */
 .deeppdf-settings {
-    padding: 16px 0 0 0;
+    padding: 0;
+    height: calc(100vh - 100px);
     max-width: 800px;
     margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* Tab 布局容器 */
 .deeppdf-settings-tabs {
     display: flex;
     flex-direction: column;
-    min-height: 400px;
+    height: 100%;
+    overflow: hidden;
 }
 
-/* ==================== 顶部导航 ==================== */
+/* ==================== 顶部导航（固定） ==================== */
 .deeppdf-settings-nav {
     display: flex;
     gap: 4px;
-    padding: 0 0 16px 0;
+    padding: 16px 0 16px 0;
     border-bottom: 1px solid var(--background-modifier-border);
-    margin-bottom: 20px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    background: var(--background-primary);
 }
 
 /* 导航项 */
@@ -61,18 +68,42 @@
     font-size: 13px;
 }
 
-/* ==================== 内容区 ==================== */
+/* ==================== 内容区（可滚动） ==================== */
 .deeppdf-settings-content {
     flex: 1;
     overflow-y: auto;
-    padding: 0 8px;
+    padding: 20px 8px 20px 0;
+    padding-right: 8px;
+}
+
+/* 自定义滚动条 */
+.deeppdf-settings-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.deeppdf-settings-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.deeppdf-settings-content::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+}
+
+.deeppdf-settings-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
 }
 
 .deeppdf-settings-content h3 {
-    margin: 0 0 20px 0;
+    margin: 0 0 16px 0;
     font-size: 18px;
     font-weight: 600;
     color: var(--text-normal);
+    position: sticky;
+    top: 0;
+    background: var(--background-primary);
+    padding: 4px 0;
+    z-index: 1;
 }
 
 /* ==================== 设置项优化 ==================== */
@@ -99,11 +130,13 @@
 @media (max-width: 600px) {
     .deeppdf-settings {
         max-width: 100%;
+        height: calc(100vh - 80px);
     }
 
     .deeppdf-settings-nav {
         flex-wrap: wrap;
         gap: 4px;
+        padding: 12px 0;
     }
 
     .deeppdf-settings-nav-item {
@@ -118,7 +151,7 @@
     }
 
     .deeppdf-settings-content {
-        padding: 0;
+        padding: 16px 0;
     }
 }
 
