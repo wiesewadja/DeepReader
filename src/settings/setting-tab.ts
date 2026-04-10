@@ -422,7 +422,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
         header.createEl('h4', { text: 'Embedding 模型设置' });
         header.createEl('span', {
-            text: '用于 Page Index 向量化，支持 OpenAI 或本地模型',
+            text: '用于书籍索引向量化，支持 OpenAI 兼容 API 或本地模型',
             cls: 'setting-item-description'
         });
 
@@ -434,7 +434,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             .setDesc("选择向量嵌入模型提供商")
             .addDropdown(dropdown => {
                 dropdown
-                    .addOption("openai", "OpenAI (推荐)")
+                    .addOption("openai", "OpenAI 兼容 (推荐)")
                     .addOption("ollama", "Ollama (本地)")
                     .addOption("lmstudio", "LM Studio (本地)")
                     .addOption("local", "Local (无向量)")
@@ -451,14 +451,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         // 自动填充默认配置
                         if (value === 'openai') {
                             this.plugin.settings.embedding.model = 'text-embedding-3-small';
-                            this.plugin.settings.embedding.dimensions = 1536;
+                            this.plugin.settings.embedding.baseUrl = 'https://api.openai.com/v1';
                         } else if (value === 'ollama') {
                             this.plugin.settings.embedding.model = 'nomic-embed-text';
-                            this.plugin.settings.embedding.dimensions = 768;
+                            this.plugin.settings.embedding.baseUrl = 'http://localhost:11434';
                         } else if (value === 'lmstudio') {
                             this.plugin.settings.embedding.model = '';
-                            this.plugin.settings.embedding.dimensions = 768;
+                            this.plugin.settings.embedding.baseUrl = 'http://localhost:1234/v1';
                         }
+                        
+                        // 清除 dimensions，让系统自动检测
+                        this.plugin.settings.embedding.dimensions = undefined;
                         
                         await this.plugin.saveSettings();
                         this.renderTabContent('pdf');
@@ -489,58 +492,49 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // OpenAI API Key（仅 OpenAI 需要）
-        if (currentProvider === 'openai') {
-            new Setting(container)
-                .setName("OpenAI API Key (Embedding)")
-                .setDesc("用于 Embedding API 调用（如果与主模型 API Key 不同）")
-                .addText(text => text
-                    .setPlaceholder("留空则使用主 API Key")
-                    .setValue(this.plugin.settings.embedding?.apiKey || '')
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = { provider: currentProvider };
-                        }
-                        this.plugin.settings.embedding.apiKey = value;
-                        await this.plugin.saveSettings();
-                    }));
-        }
-
-        // Base URL（仅 Ollama/LM Studio 需要）
-        if (currentProvider === 'ollama' || currentProvider === 'lmstudio') {
-            const defaultUrl = currentProvider === 'ollama' 
-                ? 'http://localhost:11434' 
-                : 'http://localhost:1234';
-            
-            new Setting(container)
-                .setName("API Base URL")
-                .setDesc(`本地模型服务地址，默认: ${defaultUrl}`)
-                .addText(text => text
-                    .setPlaceholder(defaultUrl)
-                    .setValue(this.plugin.settings.embedding?.baseUrl || '')
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = { provider: currentProvider };
-                        }
-                        this.plugin.settings.embedding.baseUrl = value;
-                        await this.plugin.saveSettings();
-                    }));
-        }
-
-        // Dimensions
+        // API Base URL（所有 provider 都需要）
+        const defaultUrl = currentProvider === 'openai' 
+            ? 'https://api.openai.com/v1' 
+            : currentProvider === 'ollama'
+            ? 'http://localhost:11434'
+            : 'http://localhost:1234/v1';
+        
         new Setting(container)
-            .setName("向量维度")
-            .setDesc("嵌入向量的维度（根据模型自动设置）")
+            .setName("API Base URL")
+            .setDesc(`Embedding API 服务地址`)
             .addText(text => text
-                .setPlaceholder("1536")
-                .setValue(String(this.plugin.settings.embedding?.dimensions || ''))
+                .setPlaceholder(defaultUrl)
+                .setValue(this.plugin.settings.embedding?.baseUrl || '')
                 .onChange(async (value) => {
                     if (!this.plugin.settings.embedding) {
                         this.plugin.settings.embedding = { provider: currentProvider };
                     }
-                    this.plugin.settings.embedding.dimensions = parseInt(value) || undefined;
+                    this.plugin.settings.embedding.baseUrl = value;
                     await this.plugin.saveSettings();
                 }));
+
+        // API Key
+        new Setting(container)
+            .setName("API Key")
+            .setDesc("Embedding API 密钥（本地模型可留空）")
+            .addText(text => {
+                text.setPlaceholder("sk-...")
+                    .setValue(this.plugin.settings.embedding?.apiKey || '')
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    if (!this.plugin.settings.embedding) {
+                        this.plugin.settings.embedding = { provider: currentProvider };
+                    }
+                    this.plugin.settings.embedding.apiKey = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        // 提示信息
+        container.createEl('p', {
+            text: '提示：向量维度将根据模型自动检测，无需手动设置。',
+            cls: 'setting-item-description'
+        });
     }
 
     /**

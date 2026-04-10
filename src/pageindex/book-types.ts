@@ -136,7 +136,7 @@ export interface BookMeta {
   embedding?: {
     provider: string;
     model: string;
-    dimensions: number;
+    dimensions?: number;  // Auto-detected after vectorization
   };
   chapters: ChapterMeta[];
 }

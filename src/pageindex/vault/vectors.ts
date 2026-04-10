@@ -87,17 +87,23 @@ export async function generateEmbeddings(
     const batch = texts.slice(i, i + batchSize);
 
     if (options.provider === "openai" || options.provider === "lmstudio" || options.provider === "local") {
+      const body: Record<string, unknown> = {
+        model: options.model || "text-embedding-3-small",
+        input: batch,
+      };
+      
+      // Only include dimensions if explicitly set (for models that support it)
+      if (options.dimensions) {
+        body.dimensions = options.dimensions;
+      }
+
       const response = await fetch(`${options.baseUrl || "https://api.openai.com/v1"}/embeddings`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY)}`,
         },
-        body: JSON.stringify({
-          model: options.model || "text-embedding-3-small",
-          input: batch,
-          dimensions: options.dimensions || 1536,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -125,17 +131,23 @@ async function generateOpenAIEmbedding(
   text: string,
   options: EmbeddingOptions
 ): Promise<number[]> {
+  const body: Record<string, unknown> = {
+    model: options.model || "text-embedding-3-small",
+    input: text,
+  };
+  
+  // Only include dimensions if explicitly set
+  if (options.dimensions) {
+    body.dimensions = options.dimensions;
+  }
+
   const response = await fetch(`${options.baseUrl || "https://api.openai.com/v1"}/embeddings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${options.apiKey || process.env.OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({
-      model: options.model || "text-embedding-3-small",
-      input: text,
-      dimensions: options.dimensions || 1536,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {

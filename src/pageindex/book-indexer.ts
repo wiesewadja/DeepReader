@@ -278,8 +278,21 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     try {
-      await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
+      const detectedDimensions = await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
       vectorizationSuccess = true;
+      
+      // Update book-meta with detected dimensions
+      if (detectedDimensions) {
+        bookMeta.embedding = {
+          provider: options.embedding.provider,
+          model: options.embedding.model || "text-embedding-3-small",
+          dimensions: detectedDimensions,
+        };
+        await fs.writeFile(
+          path.join(indexDir, "book-meta.json"),
+          JSON.stringify(bookMeta, null, 2)
+        );
+      }
       
       reportProgress({
         percent: 92,
@@ -368,7 +381,7 @@ async function buildBookMeta(
     embedding: embedding ? {
       provider: embedding.provider,
       model: embedding.model || "text-embedding-3-small",
-      dimensions: embedding.dimensions || 1536,
+      // dimensions will be updated after vectorization
     } : undefined,
     chapters: [],  // v2: chapters info is in tree.json
   };
@@ -377,15 +390,24 @@ async function buildBookMeta(
 /**
  * Vectorize L0/L1 nodes from parse result
  * Fix: iterate entire structure array (not just structure[0])
+ * Returns detected dimensions
  */
 async function vectorizeL0L1Nodes(
   parseResult: any,
   indexDir: string,
   embedding: any
-): Promise<void> {
-  const { initVectorStore, generateEmbeddings, appendVector } = await import("./vault/vectors.js");
+): Promise<number | undefined> {
+  const { initVectorStore, generateEmbedding, generateEmbeddings, appendVector } = await import("./vault/vectors.js");
 
-  const store = await initVectorStore(indexDir, embedding.dimensions || 1536);
+  // Auto-detect dimensions from first embedding
+  let dimensions = embedding.dimensions;
+  if (!dimensions) {
+    const testEmbedding = await generateEmbedding("test", embedding);
+    dimensions = testEmbedding.length;
+    piLog(`[vectorize] Auto-detected embedding dimensions: ${dimensions}`);
+  }
+
+  const store = await initVectorStore(indexDir, dimensions);
   store.meta.model = embedding.model || "text-embedding-3-small";
 
   const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
@@ -405,6 +427,8 @@ async function vectorizeL0L1Nodes(
   for (let i = 0; i < nodes.length; i++) {
     await appendVector(store, nodes[i].id, vectors[i]);
   }
+  
+  return dimensions;
 }
 
 /**
