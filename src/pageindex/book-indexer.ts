@@ -270,7 +270,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
   // Step 4: L0/L1 Vectorization (optional)
   let vectorizationSuccess = false;
-  if (options.embedding) {
+  // Skip vectorization if provider is 'local' (means no vector index)
+  const shouldVectorize = options.embedding && options.embedding.provider !== 'local';
+  
+  if (shouldVectorize) {
     reportProgress({
     percent: 87,
       step: "vectorize",
@@ -282,7 +285,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       vectorizationSuccess = true;
       
       // Update book-meta with detected dimensions
-      if (detectedDimensions) {
+      if (detectedDimensions && options.embedding) {
         bookMeta.embedding = {
           provider: options.embedding.provider,
           model: options.embedding.model || "text-embedding-3-small",

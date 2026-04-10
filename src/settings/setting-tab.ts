@@ -596,10 +596,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             .setDesc("选择向量嵌入模型提供商")
             .addDropdown(dropdown => {
                 dropdown
-                    .addOption("openai", "OpenAI 兼容 (推荐)")
+                    .addOption("openai", "OpenAI 兼容 API")
                     .addOption("ollama", "Ollama (本地)")
                     .addOption("lmstudio", "LM Studio (本地)")
-                    .addOption("local", "Local (无向量)")
+                    .addOption("local", "不使用向量索引")
                     .setValue(currentProvider)
                     .onChange(async (value) => {
                         if (!this.plugin.settings.embedding) {
@@ -633,7 +633,11 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         // 如果选择 local，显示提示
         if (currentProvider === 'local') {
             container.createEl('p', {
-                text: '提示：选择 "Local" 将跳过向量索引，仅使用 BM25 关键词搜索。',
+                text: '提示：选择"不使用向量索引"将跳过向量索引，仅使用 BM25 关键词搜索。搜索精度会降低，但无需额外的 Embedding 服务。',
+                cls: 'setting-item-description'
+            });
+            container.createEl('p', {
+                text: '如需使用本地向量模型，请选择 Ollama 或 LM Studio，并在本地运行对应的向量服务。',
                 cls: 'setting-item-description'
             });
             return;

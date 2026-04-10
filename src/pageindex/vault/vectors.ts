@@ -68,10 +68,15 @@ export async function generateEmbedding(
   text: string,
   options: EmbeddingOptions
 ): Promise<number[]> {
+  if (options.provider === "local") {
+    throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
+  }
   if (options.provider === "openai") {
     return generateOpenAIEmbedding(text, options);
   } else if (options.provider === "ollama") {
     return generateOllamaEmbedding(text, options);
+  } else if (options.provider === "lmstudio") {
+    return generateOpenAIEmbedding(text, options);
   }
   throw new Error(`Unsupported embedding provider: ${options.provider}`);
 }
@@ -80,13 +85,17 @@ export async function generateEmbeddings(
   texts: string[],
   options: EmbeddingOptions
 ): Promise<number[][]> {
+  if (options.provider === "local") {
+    throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
+  }
+  
   const batchSize = 100;
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
 
-    if (options.provider === "openai" || options.provider === "lmstudio" || options.provider === "local") {
+    if (options.provider === "openai" || options.provider === "lmstudio") {
       const body: Record<string, unknown> = {
         model: options.model || "text-embedding-3-small",
         input: batch,
@@ -97,11 +106,17 @@ export async function generateEmbeddings(
         body.dimensions = options.dimensions;
       }
 
-      const response = await fetch(`${options.baseUrl || "https://api.openai.com/v1"}/embeddings`, {
+      // API Key: lmstudio uses placeholder, openai requires real key
+      const apiKey = options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY);
+      if (!apiKey) {
+        throw new Error(`API Key is required for ${options.provider} provider`);
+      }
+
+      const response = await fetch(`${options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1")}/embeddings`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY)}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(body),
       });
@@ -141,17 +156,26 @@ async function generateOpenAIEmbedding(
     body.dimensions = options.dimensions;
   }
 
-  const response = await fetch(`${options.baseUrl || "https://api.openai.com/v1"}/embeddings`, {
+  // API Key: lmstudio uses placeholder, openai requires real key
+  const apiKey = options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY);
+  if (!apiKey) {
+    throw new Error(`API Key is required for ${options.provider} provider`);
+  }
+
+  // Base URL: lmstudio defaults to localhost, openai to api.openai.com
+  const baseUrl = options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1");
+
+  const response = await fetch(`${baseUrl}/embeddings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${options.apiKey || process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI embedding API error: ${response.status} ${response.statusText}`);
+    throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
   }
 
   const data = await response.json() as { data: Array<{ embedding: number[] }> };
