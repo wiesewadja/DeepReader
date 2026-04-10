@@ -86,10 +86,10 @@ export interface VaultIndexResult {
 
 export interface RerankerOptions {
   /** Reranker provider */
-  provider: "lmstudio" | "openai" | "local";
+  provider: "lmstudio" | "ollama" | "openai";
   /** Model name (default: BAAI/bge-reranker-v2-m3) */
   model?: string;
-  /** Base URL for API (default: http://localhost:1234/v1 for lmstudio) */
+  /** Base URL for API (default: http://localhost:1234/v1 for lmstudio, http://localhost:11434 for ollama) */
   baseUrl?: string;
   /** API key */
   apiKey?: string;

@@ -14,7 +14,7 @@ export interface EmbeddingSettings {
 
 export interface RerankerSettings {
     enabled: boolean;
-    provider?: "lmstudio" | "openai" | "local";
+    provider?: "lmstudio" | "ollama" | "openai";
     model?: string;
     apiKey?: string;
     baseUrl?: string;

@@ -476,8 +476,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             .addDropdown(dropdown => {
                 dropdown
                     .addOption("lmstudio", "LM Studio (本地)")
-                    .addOption("openai", "OpenAI 兼容")
-                    .addOption("local", "Local (本地)")
+                    .addOption("ollama", "Ollama (本地)")
+                    .addOption("openai", "OpenAI 兼容 API")
                     .setValue(currentProvider)
                     .onChange(async (value) => {
                         if (!this.plugin.settings.reranker) {
@@ -490,12 +490,12 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         if (value === 'lmstudio') {
                             this.plugin.settings.reranker.model = 'BAAI/bge-reranker-v2-m3';
                             this.plugin.settings.reranker.baseUrl = 'http://localhost:1234/v1';
+                        } else if (value === 'ollama') {
+                            this.plugin.settings.reranker.model = 'bge-reranker-v2-m3';
+                            this.plugin.settings.reranker.baseUrl = 'http://localhost:11434';
                         } else if (value === 'openai') {
                             this.plugin.settings.reranker.model = '';
                             this.plugin.settings.reranker.baseUrl = 'https://api.openai.com/v1';
-                        } else if (value === 'local') {
-                            this.plugin.settings.reranker.model = 'BAAI/bge-reranker-v2-m3';
-                            this.plugin.settings.reranker.baseUrl = 'http://localhost:1234/v1';
                         }
                         
                         await this.plugin.saveSettings();
@@ -521,6 +521,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         // API Base URL
         const defaultUrl = currentProvider === 'openai' 
             ? 'https://api.openai.com/v1' 
+            : currentProvider === 'ollama'
+            ? 'http://localhost:11434'
             : 'http://localhost:1234/v1';
         
         new Setting(container)
@@ -572,7 +574,15 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
         // 提示信息
         container.createEl('p', {
-            text: '推荐：LM Studio 运行 BAAI/bge-reranker-v2-m3 模型，或使用支持 /rerank 端点的服务。',
+            text: '本地服务：LM Studio 或 Ollama 需要自行下载 reranker 模型（如 BAAI/bge-reranker-v2-m3）。',
+            cls: 'setting-item-description'
+        });
+        container.createEl('p', {
+            text: 'LM Studio: 在模型列表中搜索并加载 reranker 模型，然后启动服务器。',
+            cls: 'setting-item-description'
+        });
+        container.createEl('p', {
+            text: 'Ollama: 运行 ollama pull bge-reranker-v2-m3 然后启动服务。',
             cls: 'setting-item-description'
         });
     }

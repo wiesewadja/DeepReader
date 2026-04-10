@@ -278,7 +278,7 @@ async function generateRerankScores(
   documents: string[],
   options: RerankerOptions
 ): Promise<number[]> {
-  if (options.provider === "lmstudio" || options.provider === "local") {
+  if (options.provider === "lmstudio") {
     const baseUrl = options.baseUrl || "http://localhost:1234/v1";
     const model = options.model || "BAAI/bge-reranker-v2-m3";
     const apiKey = options.apiKey || "lm-studio";
@@ -296,6 +296,18 @@ async function generateRerankScores(
       return rerankViaEmbeddings(query, documents, { baseUrl, model, apiKey });
     } catch {
       // Final fallback
+      return documents.map(() => 0.5);
+    }
+  }
+
+  if (options.provider === "ollama") {
+    const baseUrl = options.baseUrl || "http://localhost:11434";
+    const model = options.model || "bge-reranker-v2-m3";
+    
+    // Ollama uses /api/embeddings for reranking
+    try {
+      return rerankViaOllama(query, documents, { baseUrl, model });
+    } catch {
       return documents.map(() => 0.5);
     }
   }
@@ -376,6 +388,44 @@ async function rerankViaEmbeddings(
     if (docResp.ok) {
       const docData = await docResp.json() as { data: Array<{ embedding: number[] }> };
       const docVec = new Float32Array(docData.data[0].embedding);
+      scores.push(cosineSimilarity(queryVec, docVec));
+    } else {
+      scores.push(0.5);
+    }
+  }
+
+  return scores;
+}
+
+async function rerankViaOllama(
+  query: string,
+  documents: string[],
+  config: { baseUrl: string; model: string }
+): Promise<number[]> {
+  // Ollama reranker: encode query and documents, compute similarity
+  const queryResp = await fetch(`${config.baseUrl}/api/embeddings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: config.model, prompt: query }),
+  });
+
+  if (!queryResp.ok) throw new Error(`Ollama embeddings error: ${queryResp.status}`);
+
+  const queryData = await queryResp.json() as { embedding: number[] };
+  const queryVec = new Float32Array(queryData.embedding);
+
+  // Encode each document
+  const scores: number[] = [];
+  for (const doc of documents) {
+    const docResp = await fetch(`${config.baseUrl}/api/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: config.model, prompt: doc }),
+    });
+
+    if (docResp.ok) {
+      const docData = await docResp.json() as { embedding: number[] };
+      const docVec = new Float32Array(docData.embedding);
       scores.push(cosineSimilarity(queryVec, docVec));
     } else {
       scores.push(0.5);
