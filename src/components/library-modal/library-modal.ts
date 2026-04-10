@@ -639,18 +639,26 @@ export class LibraryModal extends Modal {
                     const vaultPath = (this.app.vault.adapter as any).basePath;
                     const bookId = index.id;
 
-                    // 1. 删除索引数据 (.pageindex/{bookId}/)
+                    // 1. 读取 book-meta.json 获取导出目录名
                     const indexDir = path.join(vaultPath, '.pageindex', bookId);
+                    let exportName: string | null = null;
+                    try {
+                        const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');
+                        const meta = JSON.parse(metaRaw);
+                        exportName = meta.exportName || null;
+                    } catch { /* meta file may not exist */ }
+
+                    // 2. 删除索引数据 (.pageindex/{bookId}/)
                     await fs.rm(indexDir, { recursive: true, force: true });
 
-                    // 2. 删除本地导出文件夹 (DeepReader/{bookName}/)
-                    const exportDir = path.join(vaultPath, 'DeepReader', displayName);
+                    // 3. 删除本地导出文件夹和封面图片
+                    const deleteName = exportName || displayName;
+                    const exportDir = path.join(vaultPath, 'DeepReader', deleteName);
                     await fs.rm(exportDir, { recursive: true, force: true });
 
-                    // 3. 删除封面图片
                     const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
                     for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-                        const coverPath = path.join(coversDir, `${displayName}.${ext}`);
+                        const coverPath = path.join(coversDir, `${deleteName}.${ext}`);
                         try { await fs.unlink(coverPath); } catch { /* not found */ }
                     }
 

@@ -153,15 +153,32 @@ export class SidebarView extends ItemView {
             const fs = require('fs/promises');
             const path = require('path');
 
-            // 1. 删除索引数据
+            // 1. 读取 book-meta.json 获取导出目录名
             const indexDir = path.join(vaultPath, '.pageindex', indexId);
+            let exportName: string | null = null;
+            try {
+                const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');
+                const meta = JSON.parse(metaRaw);
+                exportName = meta.exportName || null;
+            } catch { /* meta file may not exist */ }
+
+            // 2. 删除索引数据
             await fs.rm(indexDir, { recursive: true, force: true });
 
-            // 2. 删除本地导出文件夹和封面图片
+            // 3. 删除本地导出文件夹和封面图片
             const index = this.indexes.find(idx => idx.id === indexId);
-            if (index) {
-                const displayName = this.getDisplayName(index.pdf_name);
+            if (index && exportName) {
+                const exportDir = path.join(vaultPath, 'DeepReader', exportName);
+                await fs.rm(exportDir, { recursive: true, force: true });
 
+                const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
+                for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
+                    const coverPath = path.join(coversDir, `${exportName}.${ext}`);
+                    try { await fs.unlink(coverPath); } catch { /* not found */ }
+                }
+            } else if (index) {
+                // Fallback: no exportName in meta, try displayName
+                const displayName = this.getDisplayName(index.pdf_name);
                 const exportDir = path.join(vaultPath, 'DeepReader', displayName);
                 await fs.rm(exportDir, { recursive: true, force: true });
 
