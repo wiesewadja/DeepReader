@@ -91,7 +91,7 @@ export class ReadingModeService {
      * 条件：
      * 1. 必须是 Markdown 文件
      * 2. 路径以 DeepReader/ 开头
-     * 3. frontmatter 中必须包含标识字段（pdf_name/book/source + node_id/indexed）
+     * 3. frontmatter 中必须包含 source 字段（书籍标识）
      */
     isChapterFile(file: TFile): boolean {
         // 必须是 Markdown 文件
@@ -112,13 +112,10 @@ export class ReadingModeService {
             return false;
         }
 
-        // 兼容 PDF 导出器 (source) 和 EPUB 导出器 (book) 以及旧格式 (pdf_name)
-        const hasBookIdentifier = !!(frontmatter.pdf_name || frontmatter.book || frontmatter.source);
-        // 兼容有 node_id 或 indexed 字段的文件
-        const hasNodeIdentifier = !!(frontmatter.node_id || frontmatter.indexed);
-
-        if (!hasBookIdentifier || !hasNodeIdentifier) {
-            serviceLog('[ReadingMode] File missing identifiers:', file.path, frontmatter);
+        // 必须有 source 字段（书籍来源）
+        const hasSource = !!(frontmatter.source || frontmatter.pdf_name || frontmatter.book);
+        if (!hasSource) {
+            serviceLog('[ReadingMode] File missing source:', file.path, frontmatter);
             return false;
         }
 
