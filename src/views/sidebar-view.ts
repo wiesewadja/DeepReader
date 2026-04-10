@@ -930,10 +930,25 @@ export class SidebarView extends ItemView {
             log('[DeepPDF] Found index by name:', index.id);
             await this.selectIndex(index.id);
         } else {
-            // 后端不可用或索引列表为空时，直接用书名作为 indexId
-            // selectIndex 现在可以处理这种情况
-            log('[DeepPDF] Book not found in index list, using book name as indexId:', normalizedBookName);
-            await this.selectIndex(normalizedBookName);
+            // 索引列表可能未加载，先尝试重新加载
+            log('[DeepPDF] Book not found in index list, reloading indexes...');
+            await this.loadIndexes();
+
+            const retryIndex = this.indexes.find(idx => {
+                const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+                return idxName === normalizedBookName ||
+                       idx.pdf_name === bookName ||
+                       idxName.startsWith(normalizedBookName) ||
+                       normalizedBookName.startsWith(idxName);
+            });
+
+            if (retryIndex) {
+                log('[DeepPDF] Found index after reload:', retryIndex.id);
+                await this.selectIndex(retryIndex.id);
+            } else {
+                // 绝不能用书名作为 indexId（bookId 是 SHA-256 哈希，不是书名）
+                log('[DeepPDF] Book not found in index list after reload, skipping:', normalizedBookName);
+            }
         }
     }
 
