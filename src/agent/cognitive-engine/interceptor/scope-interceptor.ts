@@ -7,8 +7,8 @@
  * When scopeNodeIds is empty, no scope filtering is applied (global search).
  *
  * Design rationale:
- * - search_markdown_text: inject scope_node_ids to filter search results
- * - read_markdown_section: NO scope check needed, because:
+ * - search_book: inject scope_node_ids to filter search results
+ * - read_book_section: NO scope check needed, because:
  *   1. LLM decides which section to read based on search results
  *   2. Search results are already filtered by scope
  *   3. The tool uses heading/block_id, not node_id directly

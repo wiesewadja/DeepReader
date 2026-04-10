@@ -46,7 +46,7 @@ export async function exportToObsidian(
   epubPath: string,
   options: ObsidianExportOptions,
   epubInfo?: EpubInfo
-): Promise<{ mocPath: string; notes: ObsidianNote[] }> {
+): Promise<{ mocPath: string; notes: ObsidianNote[]; nodeFileMap: Record<string, string> }> {
   // 使用传入的 epubInfo 或重新解析
   const bookInfo = epubInfo || await parseEpub(epubPath);
   const bookName = sanitizeFileName(bookInfo.title);
@@ -192,18 +192,8 @@ export async function exportToObsidian(
     if (entry.nodeId) nodeFileMap[entry.nodeId] = `${entry.fileName}.md`;
   }
   const treeNodes = buildEpubTree(chaptersWithLevel, notes, options);
-  const treeData = {
-    title: bookInfo.title,
-    author: bookInfo.author,
-    source: epubPath,
-    type: "epub" as const,
-    cover: coverRelativePath,
-    nodeFileMap,
-    structure: treeNodes,
-  };
-  fs.writeFileSync(path.join(bookDir, "tree.json"), JSON.stringify(treeData, null, 2));
-
-  return { mocPath, notes };
+  // 不再写入 tree.json，由 book-indexer 统一写到 .pageindex/
+  return { mocPath, notes, nodeFileMap };
 }
 
 /**

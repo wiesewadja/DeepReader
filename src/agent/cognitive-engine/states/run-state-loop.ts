@@ -16,15 +16,8 @@ import type { ITraceContext } from '../../tracing/types';
  * 工具名称到用户友好动作的简化映射
  */
 const TOOL_ACTION_MAP: Record<string, (args: Record<string, unknown>) => string> = {
-  search_markdown_text: (args) => `搜索「${String(args.query || '').slice(0, 15)}」`,
-  read_markdown_section: (args) => `阅读「${String(args.heading || '章节').slice(0, 15)}」`,
-  get_document_outline: () => '浏览目录',
-  analyze_chapter: (args) => {
-    const type = String(args.type || '');
-    if (type === 'terms') return '识别术语';
-    if (type === 'propositions') return '提取论点';
-    return '分析内容';
-  },
+  search_book: (args) => `搜索「${String(args.query || '').slice(0, 15)}」`,
+  read_book_section: (args) => `精读「${String(args.node_ids || args.heading || '章节').toString().slice(0, 15)}」`,
   search_read_books: (args) => `跨书查找「${String(args.query || '').slice(0, 10)}」`,
 };
 
@@ -166,6 +159,7 @@ export async function runStateLoop(
   let accumulatedReasoning = '';
   const toolResults: StateLoopResult['toolResults'] = [];
   let hitToolCallLimit = false; // 标记是否达到工具调用限制
+  let llmError: string | null = null; // 记录 LLM 错误
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
@@ -225,6 +219,7 @@ await new Promise<void>((resolve) => {
             },
             onError: (error) => {
               console.error('[StateLoop] LLM Error:', error);
+              llmError = error;
               resolve();
             },
           },
@@ -251,6 +246,15 @@ await new Promise<void>((resolve) => {
 
     // 如果没有工具调用，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
+      // 如果 LLM 出错且无内容，返回错误信息
+      if (llmError && !accumulatedContent) {
+        return {
+          content: `[LLM 调用失败: ${llmError}]`,
+          toolResults,
+          iterations,
+          finishReason: 'error',
+        };
+      }
       return {
         content: accumulatedContent,
         toolResults,
@@ -340,20 +344,6 @@ await new Promise<void>((resolve) => {
           },
           ...(interceptorApplied ? { metadata: { interceptorApplied: true } } : {}),
         });
-
-        // 检查拦截器注入的错误
-        if (args._error) {
-          toolSpan?.end({
-            level: 'ERROR',
-            output: { error: args._error as string },
-          });
-          return {
-            tc,
-            result: null,
-            error: args._error as string,
-            duration: 0,
-          };
-        }
 
         try {
           const rawResult = await executeTool(toolRegistry, tc.name, args, toolContext);

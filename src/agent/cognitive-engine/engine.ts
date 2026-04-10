@@ -12,16 +12,15 @@ import type { SharedContext, EngineCallbacks } from './types';
 import { RouterState } from './states/router';
 import { InspectionalState } from './states/inspectional';
 import { AnalyticalState } from './states/analytical';
-import { SyntopicalState } from './states/syntopical';
 import { FormatterState } from './states/formatter';
 import { getTracer } from '../tracing/index';
 import type { ITraceContext } from '../tracing/types';
+import { withTimeout } from './states/base';
 
 // State instances (stateless, can be reused)
 const routerState = new RouterState();
 const inspectionalState = new InspectionalState();
 const analyticalState = new AnalyticalState();
-const syntopicalState = new SyntopicalState();
 
 /**
  * Execute a state with debug logging
@@ -53,8 +52,11 @@ async function executeStateWithLogging(
     ctx.traceContext = spanCtx;
   }
 
+  // 超时保护：S0/S1 快速模型 30s，S2/S4 主模型 60s
+  const timeout = stateName === 'Analytical' ? 60000 : 30000;
+
   try {
-    await state.execute(ctx);
+    await withTimeout(state.execute(ctx), timeout, stateName);
 
     spanCtx?.end({
       output: {
@@ -166,10 +168,6 @@ export async function runCognitiveEngine(
  * or provides the content for history when streaming is used
  */
 function generateOutput(ctx: SharedContext): string {
-  if (ctx.depth === 0) {
-    return `你好！我是奚童，昭先生的专属知识助理。有什么我可以帮助你的吗？`;
-  }
-
   if (ctx.analysisResult) {
     return ctx.analysisResult;
   }

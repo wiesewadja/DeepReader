@@ -20,7 +20,7 @@ describe('AnalyticalState', () => {
   it('should have correct metadata', () => {
     expect(analyticalState.name).toBe('Analytical');
     expect(analyticalState.model).toBe('main');
-    expect(analyticalState.tools).toEqual(['search_markdown_text', 'read_markdown_section']);
+    expect(analyticalState.tools).toEqual(['search_book', 'read_book_section']);
   });
 
   it('should call S1 if scopeNodeIds not set (cumulative guarantee)', async () => {

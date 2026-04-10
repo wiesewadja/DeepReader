@@ -174,7 +174,7 @@ function sanitizeTag(tag: string): string {
  */
 export async function exportPdfToObsidian(
   options: PdfObsidianExportOptions
-): Promise<{ mocPath: string; notes: ObsidianNote[] }> {
+): Promise<{ mocPath: string; notes: ObsidianNote[]; nodeFileMap: Record<string, string> }> {
   const result = options.parseResult;
   const docName = result.docName;
 
@@ -280,7 +280,7 @@ export async function exportPdfToObsidian(
     fs.writeFileSync(note.filePath, `${generateFrontmatter(note.frontmatter)}\n${note.content}`);
   }
 
-  // 7. 写入 tree.json（直接使用 PageIndex 的 TreeNode 结构，附加文件路径映射）
+  // 7. 构建 nodeFileMap（不再写入 tree.json，由 book-indexer 统一写到 .pageindex/）
   const nodeFileMap: Record<string, string> = {};
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];
@@ -289,15 +289,7 @@ export async function exportPdfToObsidian(
       nodeFileMap[s.nodeId] = `${fn}.md`;
     }
   }
-  const treeData = {
-    title: docName,
-    docDescription: result.docDescription,
-    source: options.sourcePdf,
-    nodeFileMap,
-    structure: result.structure,
-  };
-  fs.writeFileSync(path.join(bookDir, "tree.json"), JSON.stringify(treeData, null, 2));
 
   piLog(`[pdf-to-obsidian] 完成！MOC: ${mocPath}, 笔记: ${notes.length}`);
-  return { mocPath, notes };
+  return { mocPath, notes, nodeFileMap };
 }

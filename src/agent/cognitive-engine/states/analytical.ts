@@ -3,7 +3,7 @@
  *
  * Responsibilities:
  * - Deep analysis within locked scope
- * - Tools: search_markdown_text, read_markdown_section
+ * - Tools: search_book, read_book_section
  *
  * Key mechanism: ToolInterceptor physically locks search scope
  * Cumulative: Calls S1 if scopeNodeIds not set

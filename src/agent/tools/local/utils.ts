@@ -39,7 +39,7 @@ export async function getOrBuildLocalCache(
  * 构建 local cache from tree.json
  */
 async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
-  const { app, pdfName } = context;
+  const { app, pdfName, indexId } = context;
   if (!app || !pdfName) {
     console.log('[buildLocalCache] Missing app or pdfName');
     return {};
@@ -47,26 +47,31 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
 
   try {
     const vaultPath = (app.vault.adapter as any).basePath;
-    const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
-    // Find book file to compute bookId
-    const files = app.vault.getFiles();
-    const bookFile = files.find(f =>
-      f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-    );
+    // 优先使用 indexId（即 bookId），避免重新计算路径导致的 bookId 不匹配
+    let bookId = indexId;
 
-    if (!bookFile) {
-      console.log('[buildLocalCache] Book file not found for:', bookName);
-      return {};
+    if (!bookId) {
+      // Fallback: 从 vault 文件路径计算 bookId
+      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+      const files = app.vault.getFiles();
+      const bookFile = files.find(f =>
+        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
+      );
+
+      if (!bookFile) {
+        console.log('[buildLocalCache] Book file not found for:', bookName);
+        return {};
+      }
+
+      const filePath = `${vaultPath}/${bookFile.path}`;
+      bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
     }
 
-    const filePath = `${vaultPath}/${bookFile.path}`;
-    const bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+    console.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);
 
-    console.log('[buildLocalCache] Found book:', bookFile.path, 'bookId:', bookId);
-
-    // Load tree.json from .pageindex
-    const treePath = path.join(vaultPath, ".pageindex", bookId, "tree.json");
+    // Load tree.json from .pageindex（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
+    const treePath = `.pageindex/${bookId}/tree.json`;
     const treeContent = await (app.vault as any).adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 

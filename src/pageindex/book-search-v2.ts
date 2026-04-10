@@ -58,8 +58,8 @@ function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]
 export async function searchBookV2(
   options: BookSearchOptionsV2
 ): Promise<BookSearchResultV2[]> {
-  const bookId = generateBookId(options.filePath);
-  const vaultPath = path.dirname(options.filePath);
+  const bookId = options.bookId || generateBookId(options.filePath);
+  const vaultPath = options.vaultPath || path.dirname(options.filePath);
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
   const topK = options.topK || 5;
 
@@ -207,6 +207,7 @@ export async function searchBookV2(
     results.push({
       nodeId: r.nodeId,
       title,
+      fileName: (treeData.nodeFileMap?.[r.nodeId] || '').replace(/\.md$/i, ''),
       hierarchyPath,
       matchedBlocks,
       score: r.fusedScore,

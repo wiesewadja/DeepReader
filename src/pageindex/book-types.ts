@@ -204,6 +204,10 @@ export interface BookSearchOptionsV2 {
   treeSearch?: boolean;             // 是否启用 LLM 树搜索
   llmClient?: any;                  // LLM 客户端（树搜索需要）
   maxContentLength?: number;        // 每个结果最大内容长度，默认 8000
+  /** 直接提供 bookId，避免从 filePath 重新计算（推荐） */
+  bookId?: string;
+  /** 直接提供 vaultPath，避免从 filePath 推导（推荐） */
+  vaultPath?: string;
 }
 
 /** 匹配片段（聚焦到 block_id 级别） */
@@ -216,6 +220,7 @@ export interface MatchedBlock {
 export interface BookSearchResultV2 {
   nodeId: string;
   title: string;
+  fileName: string;                 // Markdown 文件名（不含 .md），用于 wiki 链接
   hierarchyPath: string[];          // 层级路径 ["第1章", "概述"]
   matchedBlocks: MatchedBlock[];    // 该 node 内匹配的段落片段
   score: number;

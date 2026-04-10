@@ -217,21 +217,24 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   try {
     if (options.fileType === "pdf") {
       const { exportPdfToObsidian } = await import("./exporters/pdf-to-obsidian.js");
-      await exportPdfToObsidian({
+      const exportResult = await exportPdfToObsidian({
         outputDir: deepReaderDir,
         parseResult,
         includeIndex: DEFAULT_INCLUDE_INDEX,
         sourcePdf: options.filePath,
       });
+      // Store nodeFileMap for tree.json
+      (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
     } else {
       const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
-      await exportToObsidian(options.filePath, {
+      const exportResult = await exportToObsidian(options.filePath, {
         outputDir: deepReaderDir,
         includeIndex: DEFAULT_INCLUDE_INDEX,
         assetsPath: DEFAULT_ASSETS_PATH,
         docDescription: parseResult.docDescription,
         nodeSummaries: collectNodeSummaries(parseResult.structure),
       });
+      (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
     }
   } catch (error) {
     throw new IndexError(
@@ -271,16 +274,23 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     JSON.stringify(bookMeta, null, 2)
   );
 
-  // Step 3.5: Copy tree.json to .pageindex/{bookId}/
-  // Agent tools read tree.json from .pageindex/ (single data source)
+  // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
   try {
-    const sourceTreeJson = path.join(bookDir, "tree.json");
-    const destTreeJson = path.join(indexDir, "tree.json");
-    const treeContent = await fs.readFile(sourceTreeJson, "utf-8");
-    await fs.writeFile(destTreeJson, treeContent);
-    piLog(`[book-indexer] tree.json copied to ${destTreeJson}`);
+    const nodeFileMap = (parseResult as any)._nodeFileMap || {};
+    const treeData = {
+      title: rootTitle,
+      docDescription: parseResult.docDescription,
+      source: options.filePath,
+      nodeFileMap,
+      structure: parseResult.structure,
+    };
+    await fs.writeFile(
+      path.join(indexDir, "tree.json"),
+      JSON.stringify(treeData, null, 2)
+    );
+    piLog(`[book-indexer] tree.json written to ${indexDir}`);
   } catch (err) {
-    piLog(`[book-indexer] Warning: tree.json copy failed: ${err}`);
+    piLog(`[book-indexer] Warning: tree.json write failed: ${err}`);
   }
 
   reportProgress({

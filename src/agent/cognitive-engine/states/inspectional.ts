@@ -165,24 +165,30 @@ export class InspectionalState extends StateNode {
    */
   private async loadTreeJson(toolContext: NonNullable<SharedContext['toolContext']>): Promise<OutlineNode[]> {
     try {
-      const { app, pdfName } = toolContext;
-      if (!app || !pdfName) return [];
+      const { app, indexId } = toolContext;
+      if (!app) return [];
 
       const vaultPath = (app.vault.adapter as any).basePath;
-      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
-      // Find book file to compute bookId
-      const files = app.vault.getFiles();
-      const bookFile = files.find(f =>
-        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-      );
-      if (!bookFile) return [];
+      // 优先使用 indexId（即 bookId），避免路径不匹配
+      let bookId = indexId;
+      console.log('[S1 loadTreeJson] indexId:', indexId, 'vaultPath:', vaultPath);
+      if (!bookId) {
+        // Fallback: 从文件路径计算
+        const pdfName = toolContext.pdfName;
+        if (!pdfName) return [];
+        const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+        const files = app.vault.getFiles();
+        const bookFile = files.find(f =>
+          f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
+        );
+        if (!bookFile) return [];
+        const filePath = `${vaultPath}/${bookFile.path}`;
+        bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+      }
 
-      const filePath = `${vaultPath}/${bookFile.path}`;
-      const bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-
-      // Read tree.json
-      const treePath = path.join(vaultPath, ".pageindex", bookId, "tree.json");
+      // Read tree.json（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
+      const treePath = `.pageindex/${bookId}/tree.json`;
       const treeContent = await (app.vault as any).adapter.read(treePath);
       const treeData = JSON.parse(treeContent);
 

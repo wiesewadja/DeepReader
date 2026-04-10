@@ -55,7 +55,10 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
 <output_rules>
 1. 输出纯粹的"逻辑骨架"，不掺杂个人知识。
 2. 搜索结果的 matched_blocks 包含精确的段落内容和 block_id，直接引用最相关的 block_id。
-3. 块引用格式：[[{{书名}}/{{文件名}}#^{{block_id}}|自然语言别名]]，别名必须融入句子语法，不要裸链接。
+3. 块引用格式：[[{{书名}}/{{file_name}}#^{{block_id}}|自然语言别名]]，其中 file_name 来自工具返回的 file_name 字段。
+   绝对禁止省略 file_name，不能写成 [[书名#^block_id]]。
+   示例：[[遥远的救世主/第二部 天国之门#^ch3-p12|丁元英对天国的诠释]]
+4. 别名必须融入句子语法，不要裸链接。
 </output_rules>
 `;
 }

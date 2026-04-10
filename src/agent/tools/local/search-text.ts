@@ -46,7 +46,7 @@ export const searchBookTool: ToolExecutor = {
   definition: SEARCH_BOOK_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const { app, pdfName } = context;
+    const { app, pdfName, indexId } = context;
     const keywords = args.keywords as string[];
     const scopeNodeIds = args.scope_node_ids as string[] | undefined;
 
@@ -73,36 +73,44 @@ export const searchBookTool: ToolExecutor = {
 
     try {
       const vaultPath = (app.vault.adapter as any).basePath;
-      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-
-      // Find book file
-      const files = app.vault.getFiles();
-      const bookFile = files.find(f =>
-        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-      );
-
-      if (!bookFile) {
-        return JSON.stringify({
-          status: 'ERROR_BOOK_NOT_FOUND',
-          message: `未找到书籍文件: ${bookName}`
-        });
-      }
-
-      const filePath = `${vaultPath}/${bookFile.path}`;
       const query = keywords.join(' ');
 
-      // Call searchBookV2
-      const results = await searchBookV2({
-        filePath,
+      // 优先使用 indexId（bookId）和 vaultPath，避免路径不匹配
+      console.log('[search_book] indexId:', indexId, 'pdfName:', pdfName, 'vaultPath:', vaultPath);
+      const searchOptions: any = {
+        filePath: '',  // 当 bookId + vaultPath 直接传入时，filePath 仅作为 fallback
         query,
         topK: 5,
         embedding: context.plugin?.settings?.embedding,
         scopeNodeIds,
-      });
+      };
+
+      if (indexId && vaultPath) {
+        searchOptions.bookId = indexId;
+        searchOptions.vaultPath = vaultPath;
+      } else {
+        // Fallback: 从 vault 文件计算路径
+        const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+        const files = app.vault.getFiles();
+        const bookFile = files.find(f =>
+          f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
+        );
+        if (!bookFile) {
+          return JSON.stringify({
+            status: 'ERROR_BOOK_NOT_FOUND',
+            message: `未找到书籍文件: ${bookName}`
+          });
+        }
+        searchOptions.filePath = `${vaultPath}/${bookFile.path}`;
+      }
+
+      // Call searchBookV2
+      const results = await searchBookV2(searchOptions);
 
       const hits = results.map(r => ({
         node_id: r.nodeId,
         title: r.title,
+        file_name: r.fileName,
         path: r.hierarchyPath,
         matched_blocks: r.matchedBlocks.map(b => ({
           block_id: b.blockId,

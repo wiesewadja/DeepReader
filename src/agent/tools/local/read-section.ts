@@ -138,9 +138,11 @@ async function readMultipleSections(
     );
 
     const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
+    const mdFileName = fileName.replace(/\.md$/i, '');
     results.push({
       node_id: nodeId,
       title,
+      file_name: mdFileName,
       content,
       word_count: content.length,
       truncated,
@@ -181,6 +183,7 @@ async function readSingleNode(
 
   const { content } = await readMdFile(app, vaultPath, treeData.title, fileName);
   const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
+  const mdFileName = fileName.replace(/\.md$/i, '');
 
   // If block_id specified, locate the paragraph
   if (blockId) {
@@ -190,6 +193,7 @@ async function readSingleNode(
         status: 'SUCCESS',
         node_id: nodeId,
         title,
+        file_name: mdFileName,
         block_id: blockId,
         content: blockContent,
         word_count: blockContent.length,
@@ -202,6 +206,7 @@ async function readSingleNode(
     status: 'SUCCESS',
     node_id: nodeId,
     title,
+    file_name: mdFileName,
     content,
     word_count: content.length,
   });
@@ -282,9 +287,10 @@ async function readMdFile(
   bookTitle: string,
   fileName: string
 ): Promise<{ content: string; truncated: boolean }> {
-  const fullPath = `${vaultPath}/DeepReader/${bookTitle}/${fileName}`;
+  // 使用 vault 相对路径（adapter.read 会自动拼接 vault root）
+  const relativePath = `DeepReader/${bookTitle}/${fileName}`;
   try {
-    let content = await (app.vault as any).adapter.read(fullPath);
+    let content = await (app.vault as any).adapter.read(relativePath);
     // Remove frontmatter
     content = content.replace(/^---[\s\S]*?---\n/, "");
     // Remove navigation markers
