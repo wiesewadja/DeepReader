@@ -11,9 +11,10 @@
 
 import { StateNode } from './base';
 import type { SharedContext } from '../types';
-import { buildAnalyticalSystemPrompt, buildAnalyticalUserMessage } from '../prompts/analytical-prompt';
+import { buildAnalyticalSystemPrompt, buildAnalyticalUserMessage, buildScopedChaptersBlock } from '../prompts/analytical-prompt';
 import { InspectionalState } from './inspectional';
 import { createScopeInterceptor } from '../interceptor/scope-interceptor';
+import { composeInterceptors } from '../interceptor/compose';
 import { runStateLoop } from './run-state-loop';
 import type { StateLoopResult } from './run-state-loop';
 
@@ -46,7 +47,10 @@ export class AnalyticalState extends StateNode {
 
       // 2. Create scope interceptor
       const scopeNodeIds = ctx.scopeNodeIds ?? [];
-      const interceptor = createScopeInterceptor(scopeNodeIds);
+      const interceptor = composeInterceptors([
+        createScopeInterceptor(scopeNodeIds),
+        // 未来可在此添加更多 interceptor
+      ]);
 
       // 3. Check if engine dependencies are available
       if (!ctx.llmClientManager || !ctx.toolRegistry || !ctx.toolContext) {
@@ -55,6 +59,12 @@ export class AnalyticalState extends StateNode {
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
       }
+
+      // 3.5 Record context-injection span
+      const injectedChaptersCount = (ctx.scopeNodeIds ?? []).length;
+      ctx.traceContext?.withSpan('context-injection', {
+        metadata: { injectedChaptersCount },
+      });
 
       // 4. Execute LLM loop with interceptor
       const response = await runStateLoop(
@@ -65,19 +75,25 @@ export class AnalyticalState extends StateNode {
           stateName: this.name,
           model: this.model,
           systemPrompt: this.buildSystemPrompt(ctx),
-          userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery),
+          userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery, ctx.betterQuestion),
           availableTools: this.tools,
           toolInterceptor: interceptor,
           maxIterations: 8,
           maxToolCalls: 5,
           abortSignal: ctx.abortSignal,
           traceContext: ctx.traceContext,
+          forcedConclusionContext: {
+            pdfName: ctx.pdfName,
+            scopeNodeIds: ctx.scopeNodeIds,
+          },
         }
       );
 
       // 5. Store results
       // 分析结果：如果没有最终输出，使用工具调用摘要
       ctx.analysisResult = response.content || this.summarizeToolResults(response.toolResults);
+      // 存储 S2 工具调用结果，供 S4 FormatterState 进行 block_id 验证
+      ctx.s2ToolResults = response.toolResults;
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);
     } catch (error) {
@@ -92,10 +108,15 @@ export class AnalyticalState extends StateNode {
   }
 
   buildSystemPrompt(ctx: SharedContext): string {
-    return buildAnalyticalSystemPrompt({
+    const base = buildAnalyticalSystemPrompt({
       scopeNodeIds: ctx.scopeNodeIds || [],
       tocSummary: ctx.tocSummary,
     });
+    const scopedChapters = buildScopedChaptersBlock(
+      ctx.scopeNodeIds || [],
+      ctx.markdownFiles || {}
+    );
+    return scopedChapters ? `${base}\n${scopedChapters}` : base;
   }
 
   /**

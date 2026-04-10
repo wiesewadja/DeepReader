@@ -88,9 +88,69 @@ ${scopeList}
 }
 
 /**
+ * 构建 <scoped_chapters> 块，注入 scope 内章节的结构化信息
+ * 从 markdownFiles 键名中提取文件名，与 scopeNodeIds 匹配
+ */
+export function buildScopedChaptersBlock(
+  scopeNodeIds: string[],
+  markdownFiles: Record<string, string>
+): string {
+  if (scopeNodeIds.length === 0) return '';
+
+  const lines: string[] = [];
+
+  for (const nodeId of scopeNodeIds) {
+    // 从 nodeId 中提取数字部分（如 "0003" → "03" 或 "3"）
+    const numericPart = nodeId.replace(/^0+/, ''); // 去掉前导零
+
+    // 在 markdownFiles 键名中查找匹配的文件
+    const matchedKey = Object.keys(markdownFiles).find(key => {
+      const fileName = key.split('/').pop() ?? '';
+      // 匹配文件名中的数字前缀（如 "03 - " 或 "3 - "）
+      const fileNumMatch = fileName.match(/^(\d+)\s*-\s*/);
+      if (fileNumMatch) {
+        const fileNum = fileNumMatch[1].replace(/^0+/, '');
+        return fileNum === numericPart;
+      }
+      return false;
+    });
+
+    if (matchedKey) {
+      const fileName = matchedKey.split('/').pop() ?? '';
+      // 去掉 .md 后缀和 "NN - " 数字前缀，提取标题
+      const title = fileName
+        .replace(/\.md$/, '')
+        .replace(/^\d+\s*-\s*/, '');
+      lines.push(`- node_id: ${nodeId} | ${title} | ${fileName}`);
+    } else {
+      lines.push(`- node_id: ${nodeId}`);
+    }
+  }
+
+  const inner = lines.join('\n');
+  const full = `<scoped_chapters>\n${inner}\n</scoped_chapters>`;
+
+  if (full.length > 1500) {
+    const truncated = full.slice(0, 1500 - '...[已截断]'.length);
+    return `${truncated}...[已截断]`;
+  }
+
+  return full;
+}
+
+/**
  * Build user message for analytical state
  */
-export function buildAnalyticalUserMessage(standaloneQuery: string): string {
+export function buildAnalyticalUserMessage(
+  standaloneQuery: string,
+  betterQuestion?: string
+): string {
+  if (betterQuestion && betterQuestion !== standaloneQuery) {
+    return `<original_query>${standaloneQuery}</original_query>
+<refined_query>${betterQuestion}</refined_query>
+
+在限定范围内分析，提取关键内容并附带 block_id。`;
+  }
   return `<query>
 ${standaloneQuery}
 </query>

@@ -13,6 +13,7 @@ import { StateNode } from './base';
 import type { SharedContext, EngineCallbacks } from '../types';
 import { PROMPT_S4_FORMATTER, buildFormatterUserMessage, buildFormatterSystemPrompt, MAX_HISTORY_MESSAGES } from '../prompts/formatter-prompt';
 import { runStateLoop } from './run-state-loop';
+import { verifyAndCleanContent } from '../utils/self-verification';
 
 export { MAX_HISTORY_MESSAGES };
 
@@ -85,6 +86,18 @@ export class FormatterState extends StateNode {
       // Store final content to ctx.analysisResult for saveSession
       if (response.content) {
         ctx.analysisResult = response.content;
+      }
+
+      // Self-Verification：使用 S2 工具调用结果验证 S4 输出中的 block_id 引用
+      if (ctx.s2ToolResults && ctx.s2ToolResults.length > 0 && response.content) {
+        const verifyResult = await verifyAndCleanContent(
+          response.content,
+          ctx.s2ToolResults,
+          { traceContext: ctx.traceContext }
+        );
+        if (response.content !== verifyResult.content) {
+          ctx.analysisResult = verifyResult.content;
+        }
       }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, response.iterations);

@@ -68,6 +68,11 @@ export interface SharedContext {
   // ===== S2 Output =====
   /** Analysis conclusion (may S2 Analytical) */
   analysisResult?: string;
+  /**
+   * S2 阶段收集的工具调用结果（Requirement 1.9）
+   * 供 S4 FormatterState 进行 block_id 验证
+   */
+  s2ToolResults?: Array<{ toolName: string; args: Record<string, unknown>; result: string; originalResultLength: number }>;
 
   // ===== S3 Output (deferred) =====
   globalPassages?: SearchResult[];
