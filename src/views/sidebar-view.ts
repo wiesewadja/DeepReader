@@ -150,10 +150,28 @@ export class SidebarView extends ItemView {
     async handleDeleteIndex(indexId: string) {
         try {
             const vaultPath = (this.app.vault.adapter as any).basePath;
-            const indexDir = `${vaultPath}/.pageindex/${indexId}`;
             const fs = require('fs/promises');
+            const path = require('path');
+
+            // 1. 删除索引数据
+            const indexDir = path.join(vaultPath, '.pageindex', indexId);
             await fs.rm(indexDir, { recursive: true, force: true });
-            
+
+            // 2. 删除本地导出文件夹和封面图片
+            const index = this.indexes.find(idx => idx.id === indexId);
+            if (index) {
+                const displayName = this.getDisplayName(index.pdf_name);
+
+                const exportDir = path.join(vaultPath, 'DeepReader', displayName);
+                await fs.rm(exportDir, { recursive: true, force: true });
+
+                const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
+                for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
+                    const coverPath = path.join(coversDir, `${displayName}.${ext}`);
+                    try { await fs.unlink(coverPath); } catch { /* not found */ }
+                }
+            }
+
             new Notice("索引已删除");
             
             await this.loadIndexes();
@@ -166,6 +184,24 @@ export class SidebarView extends ItemView {
             console.error('[DeepPDF] 删除索引失败:', error);
             new Notice('删除索引失败');
         }
+    }
+
+    /**
+     * 获取书籍显示名称（去除扩展名和副标题）
+     */
+    private getDisplayName(pdfName: string): string {
+        let name = pdfName;
+        if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
+        if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
+
+        const separators = ['：', ':', '—', '-', '｜', '|'];
+        for (const sep of separators) {
+            if (name.includes(sep)) {
+                name = name.split(sep)[0].trim();
+                break;
+            }
+        }
+        return name;
     }
 
     async refreshIndexes(): Promise<void> {
