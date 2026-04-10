@@ -184,15 +184,15 @@ export async function parsePdf(
 
   // Single-pass: extract text AND capture outline in one pdfParse call
   let outline: PdfOutlineItem[] | undefined = undefined;
-  let outlinePromise: Promise<PdfOutlineItem[] | undefined> | undefined = undefined;
-  let coverPngPromise: Promise<Buffer | undefined> | undefined = undefined;
+  let coverPng: Buffer | undefined = undefined;
   let outlineExtracted = false;
   let pageCount = 0;
 
-  const renderWithOutlineCapture = (pageData: any) => {
+  const renderWithOutlineCapture = async (pageData: any): Promise<string> => {
     pageCount++;
 
-    // On the first page, capture PDFDocumentProxy and start outline + cover extraction
+    // On the first page, capture PDFDocumentProxy and extract outline + cover SYNCHRONOUSLY
+    // (pdf-parse calls doc.destroy() after the loop, so we must finish before returning)
     if (!outlineExtracted && pageData) {
       outlineExtracted = true;
       try {
@@ -201,27 +201,22 @@ export async function parsePdf(
         if (doc) {
           piLog(`[parsePdf] Captured PDFDocumentProxy, extracting outline + cover...`);
 
-          // Outline extraction
-          outlinePromise = (async () => {
-            try {
-              const rawOutline = await doc.getOutline();
-              if (rawOutline && rawOutline.length > 0) {
-                piLog(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
-                const items = await resolveOutlineToPages(rawOutline, doc);
-                piLog(`[parsePdf] Resolved ${items.length} outline items with page numbers`);
-                return items;
-              } else {
-                piLog(`[parsePdf] No outline/bookmarks in PDF`);
-                return undefined;
-              }
-            } catch (err) {
-              piLog(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
-              return undefined;
+          // Outline extraction (await inline)
+          try {
+            const rawOutline = await doc.getOutline();
+            if (rawOutline && rawOutline.length > 0) {
+              piLog(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
+              outline = await resolveOutlineToPages(rawOutline, doc);
+              piLog(`[parsePdf] Resolved ${outline.length} outline items with page numbers`);
+            } else {
+              piLog(`[parsePdf] No outline/bookmarks in PDF`);
             }
-          })();
+          } catch (err) {
+            piLog(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
+          }
 
-          // Cover image: render first page to canvas → PNG
-          coverPngPromise = renderPageToPng(doc, 1);
+          // Cover image: await inline to finish before doc.destroy()
+          coverPng = await renderPageToPng(doc, 1);
         }
       } catch (e) {
         piLog(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
@@ -229,30 +224,23 @@ export async function parsePdf(
     }
 
     // Continue with normal text rendering
-    return render_page(pageData).then(text => {
+    try {
+      const text = await render_page(pageData);
       if (pageCount <= 3) {
         piLog(`[parsePdf] Page ${pageCount}: ${text.length} chars`);
       }
       return text;
-    }).catch((err: Error) => {
+    } catch (err: any) {
       console.error(`[parsePdf] Page ${pageCount} render error:`, err.message);
       return "";
-    });
+    }
   };
 
   const result = await pdfParse(dataBuffer, { pagerender: renderWithOutlineCapture });
   piLog(`[parsePdf] Text extraction done: numpages=${result.numpages}, text length=${(result.text || "").length}, total rendered pages=${pageCount}`);
 
-  // Wait for outline extraction to complete (started during page 1 render)
-  if (outlinePromise) {
-    outline = await outlinePromise;
-  }
-
-  // Wait for cover PNG extraction
-  let coverPng: Buffer | undefined;
-  if (coverPngPromise) {
-    coverPng = await coverPngPromise;
-  }
+  // outline and coverPng are already extracted inline during page 1 render
+  // (no async promises to await — pdf-parse calls doc.destroy() after the loop)
 
   // Parse pages from delimited text
   const pages: PdfPage[] = [];
