@@ -661,7 +661,7 @@ export class SidebarView extends ItemView {
      */
     private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
         // 从本地 Obsidian vault 加载，尝试多种图片格式
-        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
         let coverFile: any = null;
         let foundPath: string = '';
 

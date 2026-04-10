@@ -90,8 +90,10 @@ export interface PageIndexResult {
   /** Author (EPUB only) */
   author?: string;
   structure: TreeNode[];
-  /** Cover image (EPUB only) */
+  /** Cover image extracted from source (EPUB) */
   coverImage?: { name: string; data: Buffer; mediaType: string };
+  /** First page rendered as PNG (PDF) */
+  coverPng?: Buffer;
 }
 
 export interface TocItem {

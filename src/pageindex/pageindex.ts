@@ -76,6 +76,8 @@ const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "o
  */
 export class PageIndex {
   private options: InternalOptions;
+  /** Cover PNG from PDF first page, passed through to result */
+  private _pendingCoverPng?: Buffer;
 
   constructor(options: PageIndexOptions = {}) {
     this.options = {
@@ -174,14 +176,23 @@ export class PageIndex {
       pages = pdfInfo.pages;
       pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
 
+      // Pass cover image through
+      this._pendingCoverPng = pdfInfo.coverPng;
+
       // Prefer PDF bookmarks/outline (embedded TOC) — no LLM needed
       if (pdfInfo.outline && pdfInfo.outline.length > 0) {
         piLog(`[PDF Outline] Found ${pdfInfo.outline.length} bookmark entries, using as TOC`);
-        return this.processPdfWithOutline(pages, pdfInfo.outline, pdfName);
+        const result = await this.processPdfWithOutline(pages, pdfInfo.outline, pdfName);
+        result.coverPng = this._pendingCoverPng;
+        this._pendingCoverPng = undefined;
+        return result;
       }
     }
 
-    return this.processPdfPages(pages, pdfName);
+    const result = await this.processPdfPages(pages, pdfName);
+    result.coverPng = this._pendingCoverPng;
+    this._pendingCoverPng = undefined;
+    return result;
   }
 
   /**

@@ -297,7 +297,7 @@ export class LibraryModal extends Modal {
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
             // Try multiple image extensions for the cover
-            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
             let coverFile: TFile | null = null;
             for (const ext of extensions) {
                 const coverPath = `DeepReader/covers/${bookName}.${ext}`;
@@ -624,8 +624,8 @@ export class LibraryModal extends Modal {
         new ConfirmModal(
             this.app,
             '删除索引',
-            `确定要删除「${displayName}」吗？此操作不可撤销。`,
-            async (deleteLocalData?: boolean) => {
+            `确定要删除「${displayName}」吗？此操作将同时删除索引数据和本地导出文件。`,
+            async () => {
                 const indexToRemove = index.id;
                 this.indexes = this.indexes.filter(idx => idx.id !== indexToRemove);
 
@@ -635,78 +635,42 @@ export class LibraryModal extends Modal {
 
                 this.renderGrid();
 
-                if (deleteLocalData) {
-                    this.deleteLocalData(displayName).catch(error => {
-                        console.error('[LibraryModal] 删除本地数据失败:', error);
-                        new Notice('删除本地数据失败，请手动删除');
-                    });
-                }
-
                 try {
                     const vaultPath = (this.app.vault.adapter as any).basePath;
                     const bookId = index.id;
+
+                    // 1. 删除索引数据 (.pageindex/{bookId}/)
                     const indexDir = path.join(vaultPath, '.pageindex', bookId);
-                    
                     await fs.rm(indexDir, { recursive: true, force: true });
-                    new Notice(`已删除「${displayName}」的索引`);
-                    
+
+                    // 2. 删除本地导出文件夹 (DeepReader/{bookName}/)
+                    const exportDir = path.join(vaultPath, 'DeepReader', displayName);
+                    await fs.rm(exportDir, { recursive: true, force: true });
+
+                    // 3. 删除封面图片
+                    const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
+                    for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
+                        const coverPath = path.join(coversDir, `${displayName}.${ext}`);
+                        try { await fs.unlink(coverPath); } catch { /* not found */ }
+                    }
+
+                    new Notice(`已删除「${displayName}」的索引和导出数据`);
+                    serviceLog(`[LibraryModal] Deleted: index=${indexDir}, export=${exportDir}`);
+
                     await this.options.onRefresh?.();
                 } catch (error) {
-                    console.error('[LibraryModal] 删除索引失败:', error);
-                    new Notice('删除索引失败');
+                    console.error('[LibraryModal] 删除失败:', error);
+                    new Notice('删除失败');
                 }
             },
             {
                 confirmLabel: '删除',
                 isDestructive: true,
-                checkbox: {
-                    label: '同时删除本地导出数据',
-                    checked: true,
-                    description: '删除 Obsidian vault 中的 Markdown 文件和图片'
-                }
             }
         ).open();
     }
 
-    /**
-     * 删除本地导出的数据（Markdown 文件和图片）
-     */
-    private async deleteLocalData(bookName: string): Promise<void> {
-        const { vault } = this.app;
-        const basePath = `DeepReader/${bookName}`;
 
-        try {
-            // 删除书籍文件夹
-            const bookFolder = vault.getAbstractFileByPath(basePath);
-            if (bookFolder) {
-                await vault.trash(bookFolder, true);
-                serviceLog(`[LibraryModal] 已删除本地数据: ${basePath}`);
-            }
-
-            // 删除 assets 文件夹（书籍目录下的图片资源）
-            const assetsPath = `DeepReader/${bookName}/assets`;
-            const assetsFolder = vault.getAbstractFileByPath(assetsPath);
-            if (assetsFolder) {
-                await vault.trash(assetsFolder, true);
-                serviceLog(`[LibraryModal] 已删除图片: ${assetsPath}`);
-            }
-
-            // 删除封面图片（尝试多种格式）
-            for (const ext of ['png', 'jpg', 'jpeg', 'webp']) {
-                const coverPath = `DeepReader/covers/${bookName}.${ext}`;
-                const coverFile = vault.getAbstractFileByPath(coverPath);
-                if (coverFile) {
-                    await vault.trash(coverFile, true);
-                    serviceLog(`[LibraryModal] 已删除封面: ${coverPath}`);
-                }
-            }
-
-            new Notice(`已删除「${bookName}」的本地数据`);
-        } catch (error) {
-            console.error('[LibraryModal] 删除本地数据错误:', error);
-            throw error;
-        }
-    }
 
     private async refreshIndexes(): Promise<void> {
         const newIndexes = await this.options.onRefresh?.();

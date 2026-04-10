@@ -172,17 +172,38 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Ensure DeepReader directory exists
   await fs.mkdir(deepReaderDir, { recursive: true });
 
-  // Save cover image if available (EPUB)
+  // Save cover image
+  const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
+  await fs.mkdir(coversDir, { recursive: true });
+
   if (parseResult.coverImage) {
+    // EPUB: save extracted cover image
     try {
-      const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
-      await fs.mkdir(coversDir, { recursive: true });
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
       const coverPath = path.join(coversDir, `${rootTitle}${ext}`);
       await fs.writeFile(coverPath, parseResult.coverImage.data);
       piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
       console.warn("[book-indexer] Failed to save cover:", err);
+    }
+  } else if (parseResult.coverPng) {
+    // PDF: save rendered first page as PNG
+    try {
+      const coverPath = path.join(coversDir, `${rootTitle}.png`);
+      await fs.writeFile(coverPath, parseResult.coverPng);
+      piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
+    } catch (err) {
+      console.warn("[book-indexer] Failed to save PDF cover:", err);
+    }
+  } else {
+    // No cover available: generate text-based SVG cover
+    try {
+      const svgCover = generateTextCover(rootTitle, options.fileType);
+      const coverPath = path.join(coversDir, `${rootTitle}.svg`);
+      await fs.writeFile(coverPath, svgCover, "utf-8");
+      piLog(`[book-indexer] Text cover generated: ${coverPath}`);
+    } catch (err) {
+      console.warn("[book-indexer] Failed to generate text cover:", err);
     }
   }
 
@@ -498,4 +519,52 @@ function collectNodeSummaries(structure: any[]): Record<string, string> {
   }
 
   return summaries;
+}
+
+/**
+ * Generate a text-based SVG cover image
+ * Used when no cover image is available (e.g., PDF without embedded cover)
+ */
+function generateTextCover(title: string, fileType: string): string {
+  // Truncate title for display
+  const maxLineChars = 14;
+  const lines: string[] = [];
+  for (let i = 0; i < title.length; i += maxLineChars) {
+    lines.push(title.slice(i, i + maxLineChars));
+  }
+  // Keep max 4 lines
+  const displayLines = lines.slice(0, 4);
+
+  const typeLabel = fileType.toUpperCase();
+
+  // Color palette based on title hash for variety
+  let hash = 0;
+  for (let i = 0; i < title.length; i++) {
+    hash = ((hash << 5) - hash + title.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash % 360);
+
+  // Escape XML special characters
+  const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const textLines = displayLines.map((line, i) => {
+    const y = 130 + i * 36;
+    const isLast = i === displayLines.length - 1 && displayLines.length > 1;
+    const fontSize = isLast && line.length > maxLineChars - 2 ? 22 : 26;
+    return `<text x="140" y="${y}" font-family="system-ui, -apple-system, sans-serif" font-size="${fontSize}" font-weight="600" fill="#fff">${escapeXml(line)}</text>`;
+  }).join("\n    ");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="380" viewBox="0 0 280 380">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="hsl(${hue}, 45%, 35%)" />
+      <stop offset="100%" stop-color="hsl(${(hue + 40) % 360}, 50%, 25%)" />
+    </linearGradient>
+  </defs>
+  <rect width="280" height="380" rx="8" fill="url(#bg)" />
+  <rect x="20" y="20" width="240" height="340" rx="4" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+  ${textLines}
+  <text x="140" y="310" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)" text-anchor="middle">${escapeXml(typeLabel)}</text>
+</svg>`;
 }

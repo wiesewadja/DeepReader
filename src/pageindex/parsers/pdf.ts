@@ -19,6 +19,8 @@ export interface PdfInfo {
   numPages: number;
   pages: PdfPage[];
   outline?: PdfOutlineItem[];
+  /** First page rendered as PNG buffer (for cover image) */
+  coverPng?: Buffer;
 }
 
 export interface PdfOutlineItem {
@@ -56,16 +58,123 @@ export async function parsePdf(
         .then(async function(textContent: any) {
             await new Promise(r => setTimeout(r, 0));
 
-            let lastY, text = '';
-            for (let item of textContent.items) {
-                if (lastY == item.transform[5] || !lastY) {
-                    text += item.str;
-                } else {
-                    text += '\n' + item.str;
-                }
-                lastY = item.transform[5];
+            const items = textContent.items;
+            if (!items || items.length === 0) {
+              return "===PAGE_DELIMITER=====PAGE_DELIMITER_END===\n";
             }
-            return "===PAGE_DELIMITER===" + text + "===PAGE_DELIMITER_END===\n";
+
+            // Collect valid items with position data
+            type TextItem = { str: string; x: number; y: number; w: number; fontSize: number };
+            const textItems: TextItem[] = [];
+            for (const item of items) {
+              const s = item.str;
+              if (s === undefined || s === null) continue;
+              const fs = Math.abs(item.transform[3]);
+              if (fs <= 0) continue;
+              textItems.push({
+                str: s,
+                x: item.transform[4],
+                y: item.transform[5],
+                w: item.width || 0,
+                fontSize: fs,
+              });
+            }
+            if (textItems.length === 0) {
+              return "===PAGE_DELIMITER=====PAGE_DELIMITER_END===\n";
+            }
+
+            // Sort by Y (top to bottom) then X (left to right)
+            // PDF coordinate: Y increases upward, so we sort descending by Y
+            textItems.sort((a: TextItem, b: TextItem) => {
+              const dy = b.y - a.y; // higher Y = higher on page, sort first
+              if (Math.abs(dy) > 3) return dy;
+              return a.x - b.x; // same line: left to right
+            });
+
+            // Pass 1: Determine body font size (most frequent by char count)
+            const fontSizeCounts = new Map<number, number>();
+            for (const item of textItems) {
+              if (!item.str.trim()) continue;
+              const fs = Math.round(item.fontSize * 10) / 10;
+              fontSizeCounts.set(fs, (fontSizeCounts.get(fs) || 0) + item.str.length);
+            }
+            let bodyFontSize = 12;
+            let maxLen = 0;
+            for (const [fs, len] of fontSizeCounts) {
+              if (len > maxLen) { maxLen = len; bodyFontSize = fs; }
+            }
+            const avgLineHeight = bodyFontSize * 1.2;
+
+            // Pass 2: Group items into lines, detect structure
+            const lines: string[] = [];
+            let lineBuf = '';
+            let lineMaxFont = bodyFontSize;
+            let lineEndX = 0;
+            let prevY: number | null = null;
+
+            const flushLine = () => {
+              const trimmed = lineBuf.trim();
+              if (!trimmed) { lineBuf = ''; return; }
+
+              if (lineMaxFont > bodyFontSize * 1.4) {
+                if (lineMaxFont > bodyFontSize * 2.0) {
+                  lines.push(`# ${trimmed}`);
+                } else if (lineMaxFont > bodyFontSize * 1.7) {
+                  lines.push(`## ${trimmed}`);
+                } else {
+                  lines.push(`### ${trimmed}`);
+                }
+              } else {
+                lines.push(trimmed);
+              }
+              lineBuf = '';
+              lineMaxFont = bodyFontSize;
+            };
+
+            for (let i = 0; i < textItems.length; i++) {
+              const item = textItems[i];
+              const str = item.str;
+
+              if (prevY === null) {
+                // First item
+                lineBuf = str;
+                lineMaxFont = item.fontSize;
+                lineEndX = item.x + item.w;
+                prevY = item.y;
+                continue;
+              }
+
+              const yDiff = Math.abs(item.y - prevY);
+
+              if (yDiff < avgLineHeight * 0.4) {
+                // Same line — insert space if horizontal gap exists
+                const gap = item.x - lineEndX;
+                // Use proportional threshold: gap > 15% of body font size
+                if (gap > bodyFontSize * 0.15) {
+                  lineBuf += ' ';
+                }
+                lineBuf += str;
+                lineEndX = item.x + item.w;
+                if (item.fontSize > lineMaxFont) lineMaxFont = item.fontSize;
+              } else {
+                // New line
+                flushLine();
+
+                // Paragraph break: gap > 1.5 line heights
+                if (yDiff > avgLineHeight * 1.5) {
+                  lines.push('');
+                }
+
+                lineBuf = str;
+                lineMaxFont = item.fontSize;
+                lineEndX = item.x + item.w;
+                prevY = item.y;
+              }
+            }
+            flushLine();
+
+            const pageText = lines.join('\n');
+            return "===PAGE_DELIMITER===" + pageText + "===PAGE_DELIMITER_END===\n";
         });
   }
 
@@ -76,20 +185,23 @@ export async function parsePdf(
   // Single-pass: extract text AND capture outline in one pdfParse call
   let outline: PdfOutlineItem[] | undefined = undefined;
   let outlinePromise: Promise<PdfOutlineItem[] | undefined> | undefined = undefined;
+  let coverPngPromise: Promise<Buffer | undefined> | undefined = undefined;
   let outlineExtracted = false;
   let pageCount = 0;
 
   const renderWithOutlineCapture = (pageData: any) => {
     pageCount++;
 
-    // On the first page, capture PDFDocumentProxy and start outline extraction
+    // On the first page, capture PDFDocumentProxy and start outline + cover extraction
     if (!outlineExtracted && pageData) {
       outlineExtracted = true;
       try {
         const transport = pageData.transport;
         const doc = transport?.pdfDocument;
         if (doc) {
-          piLog(`[parsePdf] Captured PDFDocumentProxy, extracting outline...`);
+          piLog(`[parsePdf] Captured PDFDocumentProxy, extracting outline + cover...`);
+
+          // Outline extraction
           outlinePromise = (async () => {
             try {
               const rawOutline = await doc.getOutline();
@@ -107,6 +219,9 @@ export async function parsePdf(
               return undefined;
             }
           })();
+
+          // Cover image: render first page to canvas → PNG
+          coverPngPromise = renderPageToPng(doc, 1);
         }
       } catch (e) {
         piLog(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
@@ -131,6 +246,12 @@ export async function parsePdf(
   // Wait for outline extraction to complete (started during page 1 render)
   if (outlinePromise) {
     outline = await outlinePromise;
+  }
+
+  // Wait for cover PNG extraction
+  let coverPng: Buffer | undefined;
+  if (coverPngPromise) {
+    coverPng = await coverPngPromise;
   }
 
   // Parse pages from delimited text
@@ -166,7 +287,51 @@ export async function parsePdf(
     numPages: totalPages,
     pages,
     outline,
+    coverPng,
   };
+}
+
+/**
+ * Render a PDF page to PNG buffer using PDF.js + canvas
+ * Returns undefined if canvas is not available (e.g., Node.js without DOM)
+ */
+async function renderPageToPng(doc: any, pageNum: number): Promise<Buffer | undefined> {
+  try {
+    // Check if canvas is available (Electron/Obsidian environment)
+    if (typeof document === "undefined" || typeof document.createElement !== "function") {
+      piLog(`[renderPageToPng] No DOM environment, skipping cover image`);
+      return undefined;
+    }
+
+    const page = await doc.getPage(pageNum);
+    const viewport = page.getViewport({ scale: 1.0 });
+
+    // Scale to reasonable cover size (max 280px width)
+    const maxWidth = 280;
+    const scale = maxWidth / viewport.width;
+    const scaledViewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(scaledViewport.width);
+    canvas.height = Math.floor(scaledViewport.height);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      piLog(`[renderPageToPng] Canvas 2D context not available`);
+      return undefined;
+    }
+
+    await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+    // Convert canvas to PNG buffer
+    const dataUrl = canvas.toDataURL("image/png");
+    const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+    piLog(`[renderPageToPng] Page ${pageNum} rendered: ${canvas.width}x${canvas.height}`);
+    return Buffer.from(base64, "base64");
+  } catch (err) {
+    piLog(`[renderPageToPng] Failed: ${(err as Error).message}`);
+    return undefined;
+  }
 }
 
 /**
