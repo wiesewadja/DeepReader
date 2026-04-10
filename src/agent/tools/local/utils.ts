@@ -41,6 +41,7 @@ export async function getOrBuildLocalCache(
 async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
   const { app, pdfName } = context;
   if (!app || !pdfName) {
+    console.log('[buildLocalCache] Missing app or pdfName');
     return {};
   }
 
@@ -54,22 +55,30 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
       f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
     );
 
-    if (!bookFile) return {};
+    if (!bookFile) {
+      console.log('[buildLocalCache] Book file not found for:', bookName);
+      return {};
+    }
 
     const filePath = `${vaultPath}/${bookFile.path}`;
     const bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+
+    console.log('[buildLocalCache] Found book:', bookFile.path, 'bookId:', bookId);
 
     // Load tree.json from .pageindex
     const treePath = path.join(vaultPath, ".pageindex", bookId, "tree.json");
     const treeContent = await (app.vault as any).adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
+    console.log('[buildLocalCache] Loaded tree.json, structure length:', treeData.structure?.length);
+
     // Build nodeTitleMap
     const nodeTitleMap = new Map<string, string>();
     buildNodeTitleMap(treeData.structure || [], nodeTitleMap);
 
     return { treeData, nodeTitleMap };
-  } catch {
+  } catch (err) {
+    console.error('[buildLocalCache] Error:', err);
     return {};
   }
 }
