@@ -12,6 +12,15 @@ export interface EmbeddingSettings {
     dimensions?: number;
 }
 
+export interface RerankerSettings {
+    enabled: boolean;
+    provider?: "lmstudio" | "openai" | "local";
+    model?: string;
+    apiKey?: string;
+    baseUrl?: string;
+    weight?: number;  // 0.0-1.0, default 0.7
+}
+
 export interface DeepPDFSettings {
     // API Server 设置
     apiPort: number;
@@ -39,6 +48,9 @@ export interface DeepPDFSettings {
 
     // Embedding 模型配置（用于 Page Index 向量化）
     embedding: EmbeddingSettings;
+    
+    // Reranker 配置（用于搜索结果重排序）
+    reranker?: RerankerSettings;
 
     // PDF 索引设置
     maxPagesPerNode: number;

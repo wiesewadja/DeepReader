@@ -8,7 +8,7 @@ import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, getProviderDefaultModel } from '../config/providers';
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
-type SettingsTabId = 'llm' | 'pdf' | 'advanced' | 'reading' | 'skills';
+type SettingsTabId = 'llm' | 'embedding' | 'pdf' | 'advanced' | 'reading' | 'skills';
 
 interface SettingsTab {
     id: SettingsTabId;
@@ -24,6 +24,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     // Tab 定义
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务', icon: '🤖' },
+        { id: 'embedding', name: '向量化服务', icon: '🔮' },
         { id: 'pdf', name: 'PDF 索引', icon: '📄' },
         { id: 'advanced', name: '高级', icon: '⚙️' },
         { id: 'reading', name: '阅读模式', icon: '📖' },
@@ -96,6 +97,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         switch (tabId) {
             case 'llm':
                 this.renderLLMSettings(container);
+                break;
+            case 'embedding':
+                this.renderVectorizationSettings(container);
                 break;
             case 'pdf':
                 this.renderPdfIndexSettings(container);
@@ -358,13 +362,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     private renderPdfIndexSettings(container: HTMLElement): void {
         container.createEl('h3', { text: 'PDF 索引设置' });
 
-        // Embedding 配置区域
-        const embeddingSection = container.createDiv({ cls: 'deeppdf-settings-section' });
-        this.renderEmbeddingSettings(embeddingSection);
-
-        // 分隔线
-        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
         // PDF 解析参数
         container.createEl('h4', { text: '解析参数' });
 
@@ -416,6 +413,171 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
+     * 向量化服务设置 (Embedding + Reranker)
+     */
+    private renderVectorizationSettings(container: HTMLElement): void {
+        container.createEl('h3', { text: '向量化服务' });
+
+        // Embedding 设置
+        const embeddingSection = container.createDiv({ cls: 'deeppdf-settings-section' });
+        this.renderEmbeddingSettings(embeddingSection);
+
+        // 分隔线
+        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+
+        // Reranker 设置
+        const rerankerSection = container.createDiv({ cls: 'deeppdf-settings-section' });
+        this.renderRerankerSettings(rerankerSection);
+    }
+
+    /**
+     * 渲染 Reranker 设置
+     */
+    private renderRerankerSettings(container: HTMLElement): void {
+        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
+        header.createEl('h4', { text: 'Reranker 重排序模型' });
+        header.createEl('span', {
+            text: '用于搜索结果精排，提升相关性（可选）',
+            cls: 'setting-item-description'
+        });
+
+        const rerankerEnabled = this.plugin.settings.reranker?.enabled || false;
+
+        // 启用开关
+        new Setting(container)
+            .setName("启用 Reranker")
+            .setDesc("开启后将对搜索结果进行重排序")
+            .addToggle(toggle => toggle
+                .setValue(rerankerEnabled)
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.reranker) {
+                        this.plugin.settings.reranker = { enabled: value };
+                    } else {
+                        this.plugin.settings.reranker.enabled = value;
+                    }
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('embedding');
+                }));
+
+        if (!rerankerEnabled) {
+            container.createEl('p', {
+                text: '提示：启用 Reranker 可提升搜索精度，但需要额外的 API 调用。',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
+
+        const currentProvider = this.plugin.settings.reranker?.provider || 'lmstudio';
+
+        // Provider 选择
+        new Setting(container)
+            .setName("Reranker 服务商")
+            .setDesc("选择重排序模型提供商")
+            .addDropdown(dropdown => {
+                dropdown
+                    .addOption("lmstudio", "LM Studio (本地)")
+                    .addOption("openai", "OpenAI 兼容")
+                    .addOption("local", "Local (本地)")
+                    .setValue(currentProvider)
+                    .onChange(async (value) => {
+                        if (!this.plugin.settings.reranker) {
+                            this.plugin.settings.reranker = { enabled: true, provider: value as any };
+                        } else {
+                            this.plugin.settings.reranker.provider = value as any;
+                        }
+                        
+                        // 自动填充默认配置
+                        if (value === 'lmstudio') {
+                            this.plugin.settings.reranker.model = 'BAAI/bge-reranker-v2-m3';
+                            this.plugin.settings.reranker.baseUrl = 'http://localhost:1234/v1';
+                        } else if (value === 'openai') {
+                            this.plugin.settings.reranker.model = '';
+                            this.plugin.settings.reranker.baseUrl = 'https://api.openai.com/v1';
+                        } else if (value === 'local') {
+                            this.plugin.settings.reranker.model = 'BAAI/bge-reranker-v2-m3';
+                            this.plugin.settings.reranker.baseUrl = 'http://localhost:1234/v1';
+                        }
+                        
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('embedding');
+                    });
+            });
+
+        // 模型名称
+        new Setting(container)
+            .setName("Reranker 模型名称")
+            .setDesc("重排序模型名称")
+            .addText(text => text
+                .setPlaceholder("BAAI/bge-reranker-v2-m3")
+                .setValue(this.plugin.settings.reranker?.model || '')
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.reranker) {
+                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
+                    }
+                    this.plugin.settings.reranker.model = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // API Base URL
+        const defaultUrl = currentProvider === 'openai' 
+            ? 'https://api.openai.com/v1' 
+            : 'http://localhost:1234/v1';
+        
+        new Setting(container)
+            .setName("API Base URL")
+            .setDesc(`Reranker API 服务地址`)
+            .addText(text => text
+                .setPlaceholder(defaultUrl)
+                .setValue(this.plugin.settings.reranker?.baseUrl || '')
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.reranker) {
+                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
+                    }
+                    this.plugin.settings.reranker.baseUrl = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // API Key
+        new Setting(container)
+            .setName("API Key")
+            .setDesc("Reranker API 密钥（本地模型可留空）")
+            .addText(text => {
+                text.setPlaceholder("sk-...")
+                    .setValue(this.plugin.settings.reranker?.apiKey || '')
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    if (!this.plugin.settings.reranker) {
+                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
+                    }
+                    this.plugin.settings.reranker.apiKey = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        // Reranker Weight
+        new Setting(container)
+            .setName("重排序权重")
+            .setDesc("Reranker 分数在最终得分中的权重 (0.0-1.0)")
+            .addSlider(slider => slider
+                .setLimits(0, 100, 5)
+                .setValue((this.plugin.settings.reranker?.weight || 0.7) * 100)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.reranker) {
+                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
+                    }
+                    this.plugin.settings.reranker.weight = value / 100;
+                    await this.plugin.saveSettings();
+                }));
+
+        // 提示信息
+        container.createEl('p', {
+            text: '推荐：LM Studio 运行 BAAI/bge-reranker-v2-m3 模型，或使用支持 /rerank 端点的服务。',
+            cls: 'setting-item-description'
+        });
+    }
+
+    /**
      * 渲染 Embedding 设置
      */
     private renderEmbeddingSettings(container: HTMLElement): void {
@@ -464,7 +626,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         this.plugin.settings.embedding.dimensions = undefined;
                         
                         await this.plugin.saveSettings();
-                        this.renderTabContent('pdf');
+                        this.renderTabContent('embedding');
                     });
             });
 
