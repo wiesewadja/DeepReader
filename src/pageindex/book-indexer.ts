@@ -395,18 +395,21 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 async function buildBookMeta(
   parseResult: any,
   bookId: string,
-  _bookDir: string,
+  bookDir: string,
   filePath: string,
   fileType: "pdf" | "epub",
   embedding?: any,
   author?: string
 ): Promise<BookMeta> {
   const title = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
+  // Extract the export directory name from bookDir (last path segment)
+  const exportName = path.basename(bookDir);
 
   return {
     version: 2,
     bookId,
     title,
+    exportName,
     description: parseResult.docDescription || parseResult.structure[0]?.summary || "",
     author,
     filePath,

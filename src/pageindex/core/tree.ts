@@ -356,9 +356,8 @@ export async function generateSummariesForStructure(
   const nodes = structureToList(structure);
   const total = nodes.length;
 
-  // Process sequentially to avoid overwhelming Obsidian's renderer process
-  // Batch of 2 with a yield between batches to keep the UI responsive
-  const batchSize = 2;
+  // Process in batches to balance speed with API rate limits
+  const batchSize = 8;
   for (let i = 0; i < nodes.length; i += batchSize) {
     const batch = nodes.slice(i, i + batchSize);
     const summaries = await Promise.all(
@@ -368,9 +367,6 @@ export async function generateSummariesForStructure(
     for (let j = 0; j < batch.length; j++) {
       (batch[j] as TreeNode).summary = summaries[j];
     }
-
-    // Yield to the event loop to prevent Obsidian renderer from becoming unresponsive
-    await new Promise(r => setTimeout(r, 100));
 
     // 报告进度
     const completed = Math.min(i + batchSize, total);
@@ -411,20 +407,26 @@ export async function verifyToc(
   const correct: TocItem[] = [];
   const incorrect: Array<{ listIndex: number; title: string; physicalIndex?: number }> = [];
 
-  for (let i = 0; i < listResult.length; i++) {
-    const item = listResult[i];
-    if (!item) continue;
-    
-    const itemWithIndex = { ...item, listIndex: i };
-    const result = await checkTitleAppearance(itemWithIndex, pages, startIndex, options);
+  // Parallel verification — all checks are independent
+  const results = await Promise.all(
+    listResult.map((item, i) => {
+      if (!item) return Promise.resolve(null);
+      const itemWithIndex = { ...item, listIndex: i };
+      return checkTitleAppearance(itemWithIndex, pages, startIndex, options).then(
+        (result) => ({ item, index: i, result })
+      );
+    })
+  );
 
-    if (result.answer === "yes") {
-      correct.push(item);
+  for (const entry of results) {
+    if (!entry) continue;
+    if (entry.result.answer === "yes") {
+      correct.push(entry.item);
     } else {
       incorrect.push({
-        listIndex: i,
-        title: item.title,
-        physicalIndex: item.physicalIndex,
+        listIndex: entry.index,
+        title: entry.item.title,
+        physicalIndex: entry.item.physicalIndex,
       });
     }
   }
@@ -450,77 +452,84 @@ export async function fixIncorrectToc(
   const incorrectIndices = new Set(incorrectResults.map((r) => r.listIndex));
   const endIndex = pages.length + startIndex - 1;
 
-  for (const incorrectItem of incorrectResults) {
-    const { listIndex } = incorrectItem;
+  // All fix operations are independent — run in parallel
+  const fixResults = await Promise.all(
+    incorrectResults.map(async (incorrectItem) => {
+      const { listIndex } = incorrectItem;
 
-    // Find previous correct physical index
-    let prevCorrect = startIndex - 1;
-    for (let i = listIndex - 1; i >= 0; i--) {
-      if (!incorrectIndices.has(i)) {
-        const item = tocWithPageNumber[i];
-        if (item?.physicalIndex !== undefined) {
-          prevCorrect = item.physicalIndex;
-          break;
+      // Find previous correct physical index
+      let prevCorrect = startIndex - 1;
+      for (let i = listIndex - 1; i >= 0; i--) {
+        if (!incorrectIndices.has(i)) {
+          const item = tocWithPageNumber[i];
+          if (item?.physicalIndex !== undefined) {
+            prevCorrect = item.physicalIndex;
+            break;
+          }
         }
       }
-    }
 
-    // Find next correct physical index
-    let nextCorrect = endIndex;
-    for (let i = listIndex + 1; i < tocWithPageNumber.length; i++) {
-      if (!incorrectIndices.has(i)) {
-        const item = tocWithPageNumber[i];
-        if (item?.physicalIndex !== undefined) {
-          nextCorrect = item.physicalIndex;
-          break;
+      // Find next correct physical index
+      let nextCorrect = endIndex;
+      for (let i = listIndex + 1; i < tocWithPageNumber.length; i++) {
+        if (!incorrectIndices.has(i)) {
+          const item = tocWithPageNumber[i];
+          if (item?.physicalIndex !== undefined) {
+            nextCorrect = item.physicalIndex;
+            break;
+          }
         }
       }
-    }
 
-    // Build content for the range (truncate to fit model context window)
-    // countTokens underestimates CJK tokens (~1x local vs ~2x actual),
-    // so use conservative limit. DeepSeek has 128K limit.
-    // With prompt template (~500 tokens) + system message, keep content well under limit.
-    const MAX_CONTENT_TOKENS = 40_000;
-    const pageContents: string[] = [];
-    let accumulatedTokens = 0;
-    for (let pageIndex = prevCorrect; pageIndex <= nextCorrect; pageIndex++) {
-      const idx = pageIndex - startIndex;
-      if (idx >= 0 && idx < pages.length) {
-        const pageText = `<physical_index_${pageIndex}>\n${pages[idx]?.text || ""}\n<physical_index_${pageIndex}>\n\n`;
-        const pageTokens = countTokens(pageText);
-        if (accumulatedTokens + pageTokens > MAX_CONTENT_TOKENS) {
-          piLog(`[fixIncorrectToc] Truncated content at page ${pageIndex}, ${accumulatedTokens} tokens (range: ${prevCorrect}-${nextCorrect})`);
-          break;
+      // Build content for the range (truncate to fit model context window)
+      const MAX_CONTENT_TOKENS = 40_000;
+      const pageContents: string[] = [];
+      let accumulatedTokens = 0;
+      for (let pageIndex = prevCorrect; pageIndex <= nextCorrect; pageIndex++) {
+        const idx = pageIndex - startIndex;
+        if (idx >= 0 && idx < pages.length) {
+          const pageText = `<physical_index_${pageIndex}>\n${pages[idx]?.text || ""}\n<physical_index_${pageIndex}>\n\n`;
+          const pageTokens = countTokens(pageText);
+          if (accumulatedTokens + pageTokens > MAX_CONTENT_TOKENS) {
+            piLog(`[fixIncorrectToc] Truncated content at page ${pageIndex}, ${accumulatedTokens} tokens (range: ${prevCorrect}-${nextCorrect})`);
+            break;
+          }
+          pageContents.push(pageText);
+          accumulatedTokens += pageTokens;
         }
-        pageContents.push(pageText);
-        accumulatedTokens += pageTokens;
       }
-    }
 
-    const contentRange = pageContents.join("");
-    const physicalIndexInt = await singleTocItemIndexFixer(
-      incorrectItem.title,
-      contentRange,
-      options
-    );
+      const contentRange = pageContents.join("");
+      const physicalIndexInt = await singleTocItemIndexFixer(
+        incorrectItem.title,
+        contentRange,
+        options
+      );
 
-    if (physicalIndexInt !== null && fixed[listIndex]) {
-      fixed[listIndex].physicalIndex = physicalIndexInt;
+      if (physicalIndexInt !== null && fixed[listIndex]) {
+        fixed[listIndex]!.physicalIndex = physicalIndexInt;
 
-      // Verify the fix
-      const checkItem = { ...fixed[listIndex]!, listIndex };
-      const checkResult = await checkTitleAppearance(checkItem, pages, startIndex, options);
+        // Verify the fix
+        const checkItem = { ...fixed[listIndex]!, listIndex };
+        const checkResult = await checkTitleAppearance(checkItem, pages, startIndex, options);
 
-      if (checkResult.answer !== "yes") {
-        stillIncorrect.push({
-          listIndex,
-          title: incorrectItem.title,
-          physicalIndex: physicalIndexInt,
-        });
+        if (checkResult.answer !== "yes") {
+          return {
+            listIndex,
+            title: incorrectItem.title,
+            physicalIndex: physicalIndexInt,
+          };
+        }
+        return null; // Successfully fixed
+      } else {
+        return incorrectItem;
       }
-    } else {
-      stillIncorrect.push(incorrectItem);
+    })
+  );
+
+  for (const result of fixResults) {
+    if (result !== null) {
+      stillIncorrect.push(result);
     }
   }
 

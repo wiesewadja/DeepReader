@@ -128,6 +128,8 @@ export interface BookMeta {
   version: number;
   bookId: string;
   title: string;
+  /** Directory name used for DeepReader/{exportName}/ export folder */
+  exportName: string;
   description: string;
   author?: string;
   filePath: string;

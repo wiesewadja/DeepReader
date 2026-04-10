@@ -19,9 +19,22 @@ import {
   fixIncorrectToc,
   type TreeOptions,
 } from "./core/tree";
-import { convertPhysicalIndexToInt, removeFields } from "./core/utils";
+import { convertPhysicalIndexToInt, removeFields, countTokens } from "./core/utils";
 import { log as piLog } from "./core/logger";
 import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMode, ProgressInfo } from "./core/types";
+
+/**
+ * Validate and truncate physical indices that exceed document length
+ * Filters out items with undefined or out-of-range indices early,
+ * preventing wasted verify+fix LLM calls on invalid entries
+ */
+function validateAndTruncatePhysicalIndices(items: TocItem[], totalPages: number): TocItem[] {
+  return items.filter(item => {
+    if (item.physicalIndex === undefined || item.physicalIndex === null) return false;
+    if (item.physicalIndex < 1 || item.physicalIndex > totalPages) return false;
+    return true;
+  });
+}
 import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
 import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
 import { searchVault as searchVaultFn } from "./vault/search";
@@ -269,6 +282,14 @@ export class PageIndex {
     // Convert physical_index strings to integers
     tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
 
+    // Validate: filter out items with invalid/out-of-range physical indices early
+    tocItems = validateAndTruncatePhysicalIndices(tocItems, pages.length);
+    piLog(`After validation: ${tocItems.length} valid TOC items`);
+
+    if (tocItems.length === 0) {
+      throw new Error("No valid TOC items after validation");
+    }
+
     // Add appear_start field
     tocItems = await checkTitleAppearanceInStartConcurrent(tocItems, pages, this.options);
 
@@ -282,17 +303,57 @@ export class PageIndex {
     });
     piLog("Verifying TOC...");
     const { incorrect } = await verifyToc(pages, tocItems, startIndex, this.options);
+    const accuracy = tocItems.length > 0 ? (tocItems.length - incorrect.length) / tocItems.length : 0;
+    piLog(`TOC accuracy: ${(accuracy * 100).toFixed(1)}% (${incorrect.length} incorrect)`);
 
-    // Fix incorrect items if any
-    if (incorrect.length > 0) {
+    // Accuracy-based fallback cascade (matching Python PageIndex behavior)
+    if (accuracy < 0.6 && tocResult.tocContent !== null) {
+      // Downgrade strategy and retry
+      piLog(`Accuracy too low (${(accuracy * 100).toFixed(1)}%), retrying with fallback strategy...`);
+      if (tocResult.pageIndexGivenInToc === "yes") {
+        // TOC with page numbers → try without page numbers
+        piLog("Falling back: processTocWithPageNumbers → processTocNoPageNumbers");
+        tocItems = await processTocNoPageNumbers(tocResult.tocContent, pages, startIndex, this.options);
+      } else {
+        // TOC without page numbers → generate from scratch
+        piLog("Falling back: processTocNoPageNumbers → processNoToc");
+        tocItems = await processNoToc(pages, startIndex, this.options);
+      }
+      tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
+      tocItems = validateAndTruncatePhysicalIndices(tocItems, pages.length);
+      if (tocItems.length === 0) {
+        throw new Error("No valid TOC items after fallback");
+      }
+      tocItems = await checkTitleAppearanceInStartConcurrent(tocItems, pages, this.options);
+
+      // Re-verify after fallback to check quality
+      const reverifyResult = await verifyToc(pages, tocItems, startIndex, this.options);
+      const reverifyAccuracy = tocItems.length > 0 ? (tocItems.length - reverifyResult.incorrect.length) / tocItems.length : 0;
+      piLog(`Fallback accuracy: ${(reverifyAccuracy * 100).toFixed(1)}% (${reverifyResult.incorrect.length} incorrect)`);
+
+      if (reverifyAccuracy < 0.6) {
+        // All strategies exhausted — throw to trigger outline fallback in fromPdf
+        throw new Error(`TOC accuracy still too low after fallback: ${(reverifyAccuracy * 100).toFixed(1)}%`);
+      }
+
+      if (reverifyResult.incorrect.length > 0) {
+        piLog(`Fixing ${reverifyResult.incorrect.length} incorrect items after fallback...`);
+        const fixResult = await fixIncorrectToc(tocItems, pages, reverifyResult.incorrect, startIndex, this.options);
+        tocItems = fixResult.fixed;
+      }
+    } else if (incorrect.length > 0) {
+      // Fix incorrect items (up to 2 retries for transient errors)
       piLog(`Fixing ${incorrect.length} incorrect TOC items...`);
-      const { fixed } = await fixIncorrectToc(
-        tocItems,
-        pages,
-        incorrect,
-        startIndex,
-        this.options
-      );
+      let fixed = tocItems;
+      let remainingIncorrect = incorrect;
+      for (let retry = 0; retry < 2 && remainingIncorrect.length > 0; retry++) {
+        const result = await fixIncorrectToc(fixed, pages, remainingIncorrect, startIndex, this.options);
+        fixed = result.fixed;
+        remainingIncorrect = result.stillIncorrect;
+        if (remainingIncorrect.length > 0) {
+          piLog(`Retry ${retry + 1}: ${remainingIncorrect.length} items still incorrect`);
+        }
+      }
       tocItems = fixed;
     }
 
@@ -304,7 +365,101 @@ export class PageIndex {
       addNodeText(tree, pages);
     }
 
+    // Recursively split large leaf nodes into sub-chapters
+    await this.processLargeNodesRecursively(tree, pages);
+
     return this.finalizeProcessing(tree, docName);
+  }
+
+  /**
+   * Recursively split large leaf nodes into sub-chapters
+   * Matches Python PageIndex's process_large_node_recursively behavior
+   */
+  private async processLargeNodesRecursively(
+    nodes: TreeNode[],
+    pages: PdfPage[]
+  ): Promise<void> {
+    const maxPageNum = this.options.maxPageNumEachNode;
+    const maxTokenNum = this.options.maxTokenNumEachNode;
+    const leafNodes: { node: TreeNode; parent?: TreeNode; index?: number }[] = [];
+
+    // Collect all leaf nodes (nodes without children)
+    const collectLeaves = (items: TreeNode[], parent?: TreeNode) => {
+      for (let i = 0; i < items.length; i++) {
+        const node = items[i];
+        if (!node.nodes || node.nodes.length === 0) {
+          leafNodes.push({ node, parent, index: i });
+        } else {
+          collectLeaves(node.nodes, node);
+        }
+      }
+    };
+    collectLeaves(nodes);
+
+    // Filter to only large nodes that need splitting
+    const largeNodes = leafNodes.filter(({ node }) => {
+      const pageCount = (node.endIndex ?? 0) - (node.startIndex ?? 0);
+      const tokenCount = node.text ? countTokens(node.text) : 0;
+      return pageCount > maxPageNum && tokenCount > maxTokenNum;
+    });
+
+    if (largeNodes.length === 0) return;
+
+    piLog(`[processLargeNodes] Splitting ${largeNodes.length} large leaf nodes...`);
+
+    // Process all large nodes in parallel (siblings are independent)
+    const results = await Promise.all(
+      largeNodes.map(async ({ node, parent, index }) => {
+        const startPage = (node.startIndex ?? 1) - 1; // 0-based
+        const endPage = node.endIndex ?? pages.length;
+        const subPages = pages.slice(startPage, endPage);
+
+        if (subPages.length === 0) return null;
+
+        try {
+          const subTocItems = await processNoToc(subPages, 1, this.options);
+          const validated = validateAndTruncatePhysicalIndices(subTocItems, subPages.length);
+          if (validated.length === 0) return null;
+
+          const subTree = buildTree(validated, subPages.length, this.options);
+
+          // Offset page indices back to document-level
+          const offsetTree = (items: TreeNode[], offset: number) => {
+            for (const item of items) {
+              if (item.startIndex !== undefined) item.startIndex += offset;
+              if (item.endIndex !== undefined) item.endIndex += offset;
+              if (item.nodes) offsetTree(item.nodes, offset);
+            }
+          };
+          offsetTree(subTree, startPage);
+
+          // Add text to sub-nodes
+          addNodeText(subTree, pages);
+
+          return { subTree, parent, index: index! };
+        } catch (e) {
+          piLog(`[processLargeNodes] Failed to split node "${node.title}": ${(e as Error).message}`);
+          return null;
+        }
+      })
+    );
+
+    // Apply results: replace large leaf nodes with their sub-chapters
+    for (const result of results) {
+      if (!result) continue;
+      const { subTree, parent, index } = result;
+      if (parent) {
+        // Replace the leaf node with sub-chapter in parent's nodes array
+        parent.nodes = parent.nodes || [];
+        parent.nodes.splice(index, 1, ...subTree);
+      } else {
+        // Top-level replacement
+        nodes.splice(index, 1, ...subTree);
+      }
+    }
+
+    // Recurse on newly created leaf nodes
+    await this.processLargeNodesRecursively(nodes, pages);
   }
 
   /**

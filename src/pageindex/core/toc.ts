@@ -3,11 +3,11 @@
  * Functions for detecting, extracting, and processing table of contents
  */
 
-import { chatGPT, chatGPTWithFinishReason, type ClientConfig } from "../llm/client";
+import { chatGPT, chatGPTWithFinishReason } from "../llm/client";
 import { log as piLog } from "./logger";
 import type { PdfPage } from "../parsers/pdf";
 import type { TocItem, TocCheckResult } from "./types";
-import { extractJson, getJsonContent, countTokens, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
+import { extractJson, getJsonContent, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
 import * as prompts from "./prompts";
 
 export interface TocOptions {
@@ -39,38 +39,49 @@ export async function tocDetectorSinglePage(
 
 /**
  * Find all pages containing TOC
+ * Scans pages in parallel batches for faster detection
  */
 export async function findTocPages(
   startPageIndex: number,
   pages: PdfPage[],
   options: TocOptions
 ): Promise<number[]> {
-  let lastPageIsYes = false;
+  const BATCH_SIZE = 5;
   const tocPageList: number[] = [];
-  let i = startPageIndex;
+  let foundAny = false;
+  let foundEnd = false;
 
-  while (i < pages.length) {
-    // Only check beyond max_pages if we're still finding TOC pages
-    if (i >= options.tocCheckPageNum && !lastPageIsYes) {
-      break;
+  // Scan pages in parallel batches
+  for (let batchStart = startPageIndex; batchStart < Math.min(pages.length, options.tocCheckPageNum); batchStart += BATCH_SIZE) {
+    if (foundEnd) break;
+
+    const batchIndices: number[] = [];
+    const batchPromises: Promise<"yes" | "no">[] = [];
+
+    for (let i = batchStart; i < Math.min(batchStart + BATCH_SIZE, pages.length, options.tocCheckPageNum); i++) {
+      const page = pages[i];
+      if (!page || !page.text || page.text.trim().length === 0) continue;
+      batchIndices.push(i);
+      batchPromises.push(tocDetectorSinglePage(page.text, options));
     }
 
-    const page = pages[i];
-    if (!page || !page.text || page.text.trim().length === 0) {
-      i++;
-      continue;
+    if (batchPromises.length === 0) continue;
+
+    const batchResults = await Promise.all(batchPromises);
+
+    for (let j = 0; j < batchResults.length; j++) {
+      const pageIndex = batchIndices[j];
+      const detected = batchResults[j];
+
+      if (detected === "yes") {
+        tocPageList.push(pageIndex);
+        foundAny = true;
+      } else if (detected === "no" && foundAny) {
+        // Found the end of the TOC section
+        foundEnd = true;
+        break;
+      }
     }
-    
-    const detected = await tocDetectorSinglePage(page.text, options);
-    
-    if (detected === "yes") {
-      tocPageList.push(i);
-      lastPageIsYes = true;
-    } else if (detected === "no" && lastPageIsYes) {
-      break;
-    }
-    
-    i++;
   }
 
   return tocPageList;
@@ -129,26 +140,6 @@ export async function tocExtractor(
     tocContent,
     pageIndexGivenInToc: hasPageIndex,
   };
-}
-
-/**
- * Check if TOC transformation is complete
- */
-async function checkTocTransformationComplete(
-  rawToc: string,
-  cleanedToc: string,
-  options: TocOptions
-): Promise<boolean> {
-  const prompt = prompts.checkTocTransformationCompletePrompt(rawToc, cleanedToc);
-  const response = await chatGPT({
-    model: options.model,
-    prompt,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-  });
-
-  const json = extractJson<{ completed: string }>(response);
-  return json?.completed === "yes";
 }
 
 /**
@@ -231,16 +222,14 @@ export async function tocTransformer(
   piLog(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
 
   // Try to extract items from the first response (even if truncated)
-  // This handles the case where LLM returns a complete JSON array but gets cut off
   const firstAttemptItems = tryExtractTocItems(lastComplete);
   if (firstAttemptItems.length > 0) {
     piLog(`[DIAG-tocTransformer] Extracted ${firstAttemptItems.length} items from first response`);
     return firstAttemptItems;
   }
 
-  let isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
-
-  if (isComplete && finishReason === "finished") {
+  // If LLM finished, try standard JSON parsing
+  if (finishReason === "finished") {
     const json = extractJson<{ table_of_contents: TocItem[] }>(lastComplete);
     if (json?.table_of_contents) {
       piLog(`[DIAG-tocTransformer] Complete response: ${json.table_of_contents.length} items`);
@@ -248,12 +237,12 @@ export async function tocTransformer(
     }
   }
 
-  // Handle continuation if not complete
+  // Handle continuation — skip checkTocTransformationComplete when tryExtractTocItems suffices
   lastComplete = getJsonContent(lastComplete);
   let attempts = 0;
   const maxAttempts = 5;
 
-  while (!(isComplete && finishReason === "finished") && attempts < maxAttempts) {
+  while (finishReason !== "finished" && attempts < maxAttempts) {
     // Trim to last complete object
     const position = lastComplete.lastIndexOf("}");
     if (position !== -1) {
@@ -279,12 +268,11 @@ export async function tocTransformer(
 
     // Try to extract items after each continuation attempt
     const continuationItems = tryExtractTocItems(lastComplete);
-    if (continuationItems.length > 0 && (finishReason === "finished" || isComplete)) {
+    if (continuationItems.length > 0) {
       piLog(`[DIAG-tocTransformer] Extracted ${continuationItems.length} items after continuation ${attempts + 1}`);
       return continuationItems;
     }
 
-    isComplete = await checkTocTransformationComplete(tocContent, lastComplete, options);
     attempts++;
   }
 
@@ -457,18 +445,18 @@ export async function checkTitleAppearanceInStartConcurrent(
   pages: PdfPage[],
   options: TocOptions
 ): Promise<TocItem[]> {
-  const results: TocItem[] = [];
-
-  for (const item of structure) {
-    if (!item.physicalIndex) {
-      results.push({ ...item, appearStart: "no" });
-      continue;
-    }
-
-    const pageText = pages[item.physicalIndex - 1]?.text || "";
-    const appearStart = await checkTitleAppearanceInStart(item.title, pageText, options);
-    results.push({ ...item, appearStart });
-  }
+  // All checks are independent — run in parallel
+  const results = await Promise.all(
+    structure.map((item) => {
+      if (!item.physicalIndex) {
+        return Promise.resolve({ ...item, appearStart: "no" as const });
+      }
+      const pageText = pages[item.physicalIndex - 1]?.text || "";
+      return checkTitleAppearanceInStart(item.title, pageText, options).then(
+        (appearStart) => ({ ...item, appearStart } as TocItem)
+      );
+    })
+  );
 
   return results;
 }

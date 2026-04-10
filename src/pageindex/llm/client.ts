@@ -79,7 +79,7 @@ export async function chatGPTWithFinishReason(
     apiKey,
     baseUrl,
     chatHistory = [],
-    temperature = 0.7,
+    temperature = 0,
     maxRetries = 3,
     maxTokens,
   } = options;
@@ -151,14 +151,7 @@ export async function chatGPTBatch(
   prompts: string[],
   options: Omit<ChatOptions, "prompt">
 ): Promise<string[]> {
-  const results: string[] = [];
-  
-  for (const prompt of prompts) {
-    const result = await chatGPT({ ...options, prompt });
-    results.push(result);
-  }
-  
-  return results;
+  return Promise.all(prompts.map((prompt) => chatGPT({ ...options, prompt })));
 }
 
 /**
@@ -170,7 +163,7 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
     prompt,
     apiKey = "lm-studio",
     baseUrl = "http://localhost:1234/v1",
-    temperature = 0.7,
+    temperature = 0,
   } = options;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
