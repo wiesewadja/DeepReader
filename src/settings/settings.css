@@ -108,8 +108,14 @@
 
 /* ==================== 设置项优化 ==================== */
 .deeppdf-settings-content .setting-item {
-    padding: 12px 0;
-    border-bottom: 1px solid var(--background-modifier-border);
+    padding: 14px 16px;
+    border-bottom: none;
+    border-radius: 8px;
+    margin-bottom: 2px;
+}
+
+.deeppdf-settings-content .setting-item:hover {
+    background: var(--background-modifier-hover);
 }
 
 .deeppdf-settings-content .setting-item:last-child {
