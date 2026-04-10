@@ -179,16 +179,30 @@ export class PageIndex {
       // Pass cover image through
       this._pendingCoverPng = pdfInfo.coverPng;
 
-      // Prefer PDF bookmarks/outline (embedded TOC) — no LLM needed
-      if (pdfInfo.outline && pdfInfo.outline.length > 0) {
-        piLog(`[PDF Outline] Found ${pdfInfo.outline.length} bookmark entries, using as TOC`);
-        const result = await this.processPdfWithOutline(pages, pdfInfo.outline, pdfName);
+      // Save outline for fallback
+      const savedOutline = pdfInfo.outline;
+
+      // LLM-first: always try LLM path for better TOC accuracy
+      // (outline path skips verification, causing text misalignment)
+      try {
+        const result = await this.processPdfPages(pages, pdfName);
         result.coverPng = this._pendingCoverPng;
         this._pendingCoverPng = undefined;
         return result;
+      } catch (error) {
+        // LLM failed — fall back to outline if available
+        if (savedOutline && savedOutline.length > 0) {
+          piLog(`[fromPdf] LLM path failed, falling back to outline (${savedOutline.length} entries): ${(error as Error).message}`);
+          const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
+          result.coverPng = this._pendingCoverPng;
+          this._pendingCoverPng = undefined;
+          return result;
+        }
+        throw error;
       }
     }
 
+    // OCR mode path (no outline available)
     const result = await this.processPdfPages(pages, pdfName);
     result.coverPng = this._pendingCoverPng;
     this._pendingCoverPng = undefined;

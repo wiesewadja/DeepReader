@@ -211,6 +211,7 @@ export async function runStateLoop(
     const llmStartTime = Date.now();
     let finishReason: 'stop' | 'tool_calls' | null = null;
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+    let llmError: string | undefined;
 
     const llmGen = loopSpan?.withGeneration(`llm-${stateName}-iter${iterations}`, {
       model: llmClient.getModel(),
@@ -256,6 +257,16 @@ await new Promise<void>((resolve) => {
       });
 
     const llmDuration = Date.now() - llmStartTime;
+
+    // Check for LLM error (set in onError callback)
+    if (llmError) {
+      return {
+        content: `LLM 调用失败: ${llmError}`,
+        toolResults,
+        iterations,
+        finishReason: 'stop',
+      };
+    }
 
     // End LLM generation observation
     llmGen?.end({
