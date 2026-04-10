@@ -11,6 +11,7 @@ import type { ToolRegistry, ToolContext } from '../../tools/types';
 import { executeTool } from '../../tools/index';
 import type { ToolInterceptor } from '../types';
 import type { ITraceContext } from '../../tracing/types';
+import { verifyAndCleanContent } from '../utils/self-verification';
 
 /**
  * 工具名称到用户友好动作的简化映射
@@ -59,6 +60,14 @@ export interface StateLoopOptions {
   abortSignal?: AbortSignal;
   /** Langfuse trace context for observability */
   traceContext?: ITraceContext;
+  /**
+   * Forced conclusion 上下文（Requirement 5）
+   * 当达到工具调用上限时，注入书名和 scope 到 forced conclusion prompt
+   */
+  forcedConclusionContext?: {
+    pdfName?: string;
+    scopeNodeIds?: string[];
+  };
 }
 
 /**
@@ -72,6 +81,8 @@ export interface StateLoopResult {
     toolName: string;
     args: Record<string, unknown>;
     result: string;
+    /** 原始结果长度（压缩前），用于 Self-Verification 区分截断不可见 */
+    originalResultLength: number;
   }>;
   /** 总迭代次数 */
   iterations: number;
@@ -94,6 +105,21 @@ function compressToolResult(result: string): string {
   const truncated = result.slice(0, MAX_TOOL_RESULT_LENGTH);
   const omitted = result.length - MAX_TOOL_RESULT_LENGTH;
   return `${truncated}\n\n... [已省略 ${omitted} 字符]`;
+}
+
+/**
+ * 从工具调用参数中提取用于重复检测的 query key
+ * - 若 args 有 `query` 字段 → 返回 String(args.query)
+ * - 若 args 有 `keywords` 字段且为数组 → 返回排序后的 join(',')
+ * - 否则 → 返回 null（不检测）
+ */
+function getQueryKey(toolName: string, args: Record<string, unknown>): string | null {
+  void toolName; // toolName 保留供未来扩展
+  if ('query' in args) return String(args.query);
+  if ('keywords' in args && Array.isArray(args.keywords)) {
+    return [...(args.keywords as unknown[])].map(String).sort().join(',');
+  }
+  return null;
 }
 
 /**
@@ -159,7 +185,9 @@ export async function runStateLoop(
   let accumulatedReasoning = '';
   const toolResults: StateLoopResult['toolResults'] = [];
   let hitToolCallLimit = false; // 标记是否达到工具调用限制
-  let llmError: string | null = null; // 记录 LLM 错误
+
+  // Loop Detection 历史记录（仅当前 runStateLoop 调用生命周期内有效）
+  const loopHistory: Map<string, Set<string>> = new Map();
 
   while (iterations < maxIterations) {
     if (abortSignal?.aborted) {
@@ -246,17 +274,34 @@ await new Promise<void>((resolve) => {
 
     // 如果没有工具调用，循环结束
     if (finishReason !== 'tool_calls' || toolCalls.length === 0) {
-      // 如果 LLM 出错且无内容，返回错误信息
-      if (llmError && !accumulatedContent) {
-        return {
-          content: `[LLM 调用失败: ${llmError}]`,
+      // Self-Verification 后处理（仅在有工具调用结果时执行）
+      let finalContent = accumulatedContent;
+      if (toolResults.length > 0) {
+        const verifyResult = await verifyAndCleanContent(
+          accumulatedContent,
           toolResults,
-          iterations,
-          finishReason: 'error',
-        };
+          {
+            llmClient: {
+              chat: async (msg: string) => {
+                let corrected = '';
+                await new Promise<void>((resolve) => {
+                  llmClient.streamChat(
+                    [...messages, { role: 'user', content: msg }],
+                    [],
+                    { onContent: (t) => { corrected += t; }, onToolCall: () => {}, onComplete: () => resolve(), onError: () => resolve() },
+                    {}
+                  );
+                });
+                return corrected;
+              }
+            },
+            traceContext: loopSpan,
+          }
+        );
+        finalContent = verifyResult.content;
       }
       return {
-        content: accumulatedContent,
+        content: finalContent,
         toolResults,
         iterations,
         finishReason: 'stop',
@@ -334,6 +379,44 @@ await new Promise<void>((resolve) => {
       callsToExecute.map(async ({ tc, args, originalArgs, interceptorNote }) => {
         const toolExecStart = Date.now();
 
+        // Loop Detection：检查是否重复调用
+        const queryKey = getQueryKey(tc.name, args);
+        if (queryKey !== null) {
+          const history = loopHistory.get(tc.name) ?? new Set<string>();
+          if (history.has(queryKey)) {
+            // 被拦截：注入提示消息替代执行
+            const usedQueries = [...history].map(q => `"${q}"`).join(', ');
+            const loopDetectionMessage = `[Loop Detection] 检测到重复工具调用：
+- 工具：${tc.name}
+- 重复查询："${queryKey}"
+- 本次循环已使用的查询：${usedQueries}
+
+建议：直接使用 read_book_section 的 node_ids 参数批量读取相关章节内容，避免重复搜索。`;
+
+            // 记录 loop-detection-intercept span
+            loopSpan?.withSpan('loop-detection-intercept', {
+              input: {
+                toolName: tc.name,
+                duplicateQuery: queryKey,
+                repeatCount: history.size + 1,
+              },
+            })?.end({
+              output: { intercepted: true },
+            });
+
+            return {
+              tc,
+              result: loopDetectionMessage,
+              rawResultLength: 0,
+              error: null,
+              duration: 0,
+            };
+          }
+          // 第一次出现：记录到历史
+          history.add(queryKey);
+          loopHistory.set(tc.name, history);
+        }
+
         // Create tool span
         const interceptorApplied = interceptorNote !== undefined;
         const toolSpan = loopSpan?.withSpan(`tool-${tc.name}`, {
@@ -344,6 +427,20 @@ await new Promise<void>((resolve) => {
           },
           ...(interceptorApplied ? { metadata: { interceptorApplied: true } } : {}),
         });
+
+        // 检查拦截器注入的错误
+        if (args._error) {
+          toolSpan?.end({
+            level: 'ERROR',
+            output: { error: args._error as string },
+          });
+          return {
+            tc,
+            result: null,
+            error: args._error as string,
+            duration: 0,
+          };
+        }
 
         try {
           const rawResult = await executeTool(toolRegistry, tc.name, args, toolContext);
@@ -364,7 +461,7 @@ await new Promise<void>((resolve) => {
             },
           });
 
-          return { tc, result: compressedResult, error: null, duration: toolExecDuration };
+          return { tc, result: compressedResult, rawResultLength: rawResult.length, error: null, duration: toolExecDuration };
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
           const toolExecDuration = Date.now() - toolExecStart;
@@ -375,7 +472,7 @@ await new Promise<void>((resolve) => {
             metadata: { duration: toolExecDuration },
           });
 
-          return { tc, result: null, error: errorMsg, duration: toolExecDuration };
+          return { tc, result: null, rawResultLength: 0, error: errorMsg, duration: toolExecDuration };
         }
       })
     );
@@ -399,6 +496,7 @@ await new Promise<void>((resolve) => {
           toolName: tc.name,
           args: preparedCalls.find(p => p.tc.id === tc.id)!.args,
           result,
+          originalResultLength: execResult.rawResultLength,
         });
       }
     }
@@ -421,7 +519,7 @@ await new Promise<void>((resolve) => {
   if (needsForcedConclusion) {
     const limitType = hitToolCallLimit ? '工具调用' : '迭代';
     const limitValue = hitToolCallLimit ? maxToolCalls : maxIterations;
-    const forcedConclusionPrompt = `你已达到${limitType}次数上限（${limitValue}次）。
+    let forcedConclusionPrompt = `你已达到${limitType}次数上限（${limitValue}次）。
 
 现在请基于已收集的所有信息，输出你的最终分析结论。
 
@@ -429,6 +527,15 @@ await new Promise<void>((resolve) => {
 1. 综合所有工具调用结果
 2. 输出完整的分析内容，不要再次调用工具
 3. 如果信息不足，基于已有信息给出尽可能完整的回答`;
+
+    if (options.forcedConclusionContext) {
+      const { pdfName, scopeNodeIds } = options.forcedConclusionContext;
+      if (pdfName || (scopeNodeIds && scopeNodeIds.length > 0)) {
+        forcedConclusionPrompt += `\n\n书名：${pdfName || '未知'}
+可引用的章节范围：${scopeNodeIds?.join(', ') || '全书'}
+请确保所有 wiki 链接格式为 [[${pdfName || '书名'}/章节文件名#^block_id|别名]]`;
+      }
+    }
 
     messages.push({
       role: 'user',
@@ -483,8 +590,35 @@ await new Promise<void>((resolve) => {
     metadata: { iterations, totalToolCalls },
   });
 
+  // Self-Verification 后处理（仅在有工具调用结果时执行）
+  let finalContent = accumulatedContent;
+  if (toolResults.length > 0) {
+    const verifyResult = await verifyAndCleanContent(
+      accumulatedContent,
+      toolResults,
+      {
+        llmClient: {
+          chat: async (msg: string) => {
+            let corrected = '';
+            await new Promise<void>((resolve) => {
+              llmClient.streamChat(
+                [...messages, { role: 'user', content: msg }],
+                [],
+                { onContent: (t) => { corrected += t; }, onToolCall: () => {}, onComplete: () => resolve(), onError: () => resolve() },
+                {}
+              );
+            });
+            return corrected;
+          }
+        },
+        traceContext: loopSpan,
+      }
+    );
+    finalContent = verifyResult.content;
+  }
+
   return {
-    content: accumulatedContent,
+    content: finalContent,
     toolResults,
     iterations,
     finishReason,
