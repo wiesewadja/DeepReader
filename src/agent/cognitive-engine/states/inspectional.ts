@@ -54,7 +54,7 @@ export class InspectionalState extends StateNode {
 
   constructor() {
     super();
-    this.options = { timeout: 15000, retries: 1 };
+    this.options = { timeout: 60000, retries: 1 };
   }
 
   async execute(ctx: SharedContext): Promise<void> {
