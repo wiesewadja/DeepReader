@@ -270,16 +270,34 @@ export class LibraryModal extends Modal {
             checkMark.innerHTML = Icons.checkCircle;
         }
 
-        // 信息区域：书名 + 作者
+        // 信息区域：书名 + 作者 + 元信息
         const infoEl = card.createDiv({ cls: 'deeppdf-lib-book-info' });
 
-        // 书名
-        const titleEl = infoEl.createDiv({ cls: 'deeppdf-lib-book-title', text: bookName });
+        // 书名行（标题 + 类型标签）
+        const titleRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-title-row' });
+        const titleEl = titleRow.createDiv({ cls: 'deeppdf-lib-book-title', text: bookName });
         titleEl.title = index.pdf_name;
+
+        // 文件类型标签
+        const typeTag = index.fileType?.toUpperCase() || 'PDF';
+        titleRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
         // 作者
         if (index.author) {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
+        }
+
+        // 元信息行：章节数 + 索引日期
+        const metaParts: string[] = [];
+        if (index.node_count > 0) {
+            metaParts.push(`${index.node_count} 章节`);
+        }
+        if (index.created_at) {
+            const date = new Date(index.created_at);
+            metaParts.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`);
+        }
+        if (metaParts.length > 0) {
+            infoEl.createDiv({ cls: 'deeppdf-lib-book-meta', text: metaParts.join(' · ') });
         }
 
         // 点击选择

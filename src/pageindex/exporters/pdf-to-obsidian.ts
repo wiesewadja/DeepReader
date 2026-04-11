@@ -32,6 +32,10 @@ export interface PdfObsidianExportOptions {
   sourcePdf?: string;
   /** 导出目录名（如不提供则使用 docName） */
   exportName?: string;
+  /** 作者 */
+  author?: string;
+  /** 封面图片相对路径（如 "DeepReader/covers/xxx.png"） */
+  coverPath?: string;
 }
 
 interface ObsidianNote {
@@ -273,6 +277,11 @@ export async function exportPdfToObsidian(
       tags: ["pdf", "document", sanitizeTag(dirName)],
     };
     if (section.startIndex) frontmatter.page_range = `${section.startIndex}-${section.endIndex}`;
+
+    // Base 查询字段：让「我的书架」能统计到这些文件
+    frontmatter.book_name = docName;
+    if (options.author) frontmatter.author = options.author;
+    if (options.coverPath) frontmatter.cover = options.coverPath;
 
     // Template
     if (options.noteTemplate) {

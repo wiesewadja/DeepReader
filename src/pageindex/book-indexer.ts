@@ -178,12 +178,15 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
   await fs.mkdir(coversDir, { recursive: true });
 
+  // Track cover relative path for frontmatter
+  let coverRelPath = "";
   if (parseResult.coverImage) {
     // EPUB: save extracted cover image
     try {
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
       const coverPath = path.join(coversDir, `${exportName}${ext}`);
       await fs.writeFile(coverPath, parseResult.coverImage.data);
+      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
       piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
       console.warn("[book-indexer] Failed to save cover:", err);
@@ -193,6 +196,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     try {
       const coverPath = path.join(coversDir, `${exportName}.png`);
       await fs.writeFile(coverPath, parseResult.coverPng);
+      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.png`;
       piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
     } catch (err) {
       console.warn("[book-indexer] Failed to save PDF cover:", err);
@@ -203,6 +207,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       const svgCover = generateTextCover(exportName, options.fileType);
       const coverPath = path.join(coversDir, `${exportName}.svg`);
       await fs.writeFile(coverPath, svgCover, "utf-8");
+      coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.svg`;
       piLog(`[book-indexer] Text cover generated: ${coverPath}`);
     } catch (err) {
       console.warn("[book-indexer] Failed to generate text cover:", err);
@@ -225,6 +230,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         includeIndex: DEFAULT_INCLUDE_INDEX,
         sourcePdf: options.filePath,
         exportName,
+        author: parseResult.author,
+        coverPath: coverRelPath || undefined,
       });
       // Store nodeFileMap for tree.json
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
@@ -237,6 +244,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         docDescription: parseResult.docDescription,
         nodeSummaries: collectNodeSummaries(parseResult.structure),
         exportName,
+        coverPath: coverRelPath || undefined,
       });
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
     }

@@ -30,6 +30,8 @@ export interface ObsidianExportOptions {
   nodeSummaries?: Record<string, string>;
   /** 导出目录名（如不提供则使用 bookInfo.title） */
   exportName?: string;
+  /** 封面图片相对路径（用于 Base 查询） */
+  coverPath?: string;
 }
 
 interface ObsidianNote {
@@ -297,6 +299,9 @@ async function createChapterNote(
     tags: ["epub", "book", sanitizeTag(bookName)],
   };
   if (bookInfo.author) frontmatter.author = bookInfo.author;
+  // Base 查询字段
+  frontmatter.book_name = bookInfo.title || bookName;
+  if (options.coverPath) frontmatter.cover = options.coverPath;
 
   // 应用自定义模板
   if (options.noteTemplate) {

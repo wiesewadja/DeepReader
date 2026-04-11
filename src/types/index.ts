@@ -9,6 +9,8 @@ export interface IndexListItem {
     id: string;
     pdf_name: string;
     author?: string;
+    description?: string;
+    fileType?: 'pdf' | 'epub';
     node_count: number;
     created_at: string;
     status?: string;
