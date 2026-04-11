@@ -37,7 +37,12 @@ async function executeStateWithLogging(
   traceCtx?: ITraceContext
 ): Promise<void> {
   const startTime = Date.now();
-  const spanCtx = traceCtx?.withSpan(stateName, {
+  const stateDisplayName = stateName === 'Router' ? 'S0-Router' :
+                           stateName === 'Inspectional' ? 'S1-Inspectional' :
+                           stateName === 'Analytical' ? 'S2-Analytical' :
+                           stateName === 'Formatter' ? 'S4-Formatter' : stateName;
+
+  const spanCtx = traceCtx?.withSpan(stateDisplayName, {
     input: {
       rawUserQuery: ctx.rawUserQuery,
       ...(ctx.standaloneQuery ? { standaloneQuery: ctx.standaloneQuery } : {}),
@@ -53,7 +58,7 @@ async function executeStateWithLogging(
   }
 
   // 超时保护：S0/S1 快速模型 30s，S2/S4 主模型 60s
-  const timeout = stateName === 'Analytical' ? 120000 : 30000;
+  const timeout = stateDisplayName === 'S2-Analytical' ? 120000 : 30000;
 
   try {
     await withTimeout(state.execute(ctx), timeout, stateName);

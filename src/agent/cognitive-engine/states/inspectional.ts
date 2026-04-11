@@ -60,13 +60,6 @@ export class InspectionalState extends StateNode {
   async execute(ctx: SharedContext): Promise<void> {
     const startTime = Date.now();
 
-    const span = ctx.traceContext?.withSpan('inspectional-execute', {
-      input: {
-        query: ctx.standaloneQuery || ctx.rawUserQuery,
-        pdfName: ctx.pdfName,
-      },
-    });
-
     try {
       const { llmClientManager, toolRegistry, toolContext } = ctx;
       if (!llmClientManager || !toolRegistry || !toolContext) {
@@ -102,7 +95,7 @@ export class InspectionalState extends StateNode {
       );
 
       const llmClient = llmClientManager.getClient(this.model);
-      const llmGen = span?.withGeneration('inspectional-llm', {
+      const llmGen = ctx.traceContext?.withGeneration('llm-iter1', {
         model: llmClient.getModel(),
         input: { systemPrompt, userMessage },
       });
@@ -145,10 +138,6 @@ export class InspectionalState extends StateNode {
       }
 
       ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime, 1);
-
-      span?.end({
-        output: { scopeNodeIds: ctx.scopeNodeIds?.length ?? 0 },
-      });
     } catch (error) {
       ctx.markStateExecuted(
         this.name,

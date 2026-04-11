@@ -154,11 +154,20 @@ export async function verifyAndCleanContent(
   // 通过 traceContext 记录 self-verification span（若存在）
   if (options?.traceContext?.withSpan) {
     options.traceContext.withSpan('self-verification', {
+      input: {
+        contentLength: content.length,
+        blockIdsCount: blockIds.length,
+      },
       metadata: {
         totalRefs,
         ghostRefs: ghostCount,
         truncatedRefs,
         llmCorrectionTriggered,
+      },
+    })?.end({
+      output: {
+        cleanedLength: cleanedContent.length,
+        removedGhostLinks: ghostCount,
       },
     });
   }

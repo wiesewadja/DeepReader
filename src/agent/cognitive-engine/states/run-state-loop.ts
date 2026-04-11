@@ -145,19 +145,7 @@ export async function runStateLoop(
     traceContext: traceCtx,
   } = options;
 
-  // Create root span for this state loop execution
-  const loopSpan = traceCtx?.withSpan(`state-loop-${stateName}`, {
-    input: {
-      systemPrompt,
-      userMessage,
-      availableTools,
-    },
-    metadata: {
-      model,
-      maxIterations,
-      maxToolCalls,
-    },
-  });
+  const loopSpan = traceCtx;
 
   // 根据模型类型选择客户端
   const llmClient = llmClientManager.getClient(model);
@@ -213,7 +201,7 @@ export async function runStateLoop(
     let toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
     let llmError: string | undefined;
 
-    const llmGen = loopSpan?.withGeneration(`llm-${stateName}-iter${iterations}`, {
+    const llmGen = loopSpan?.withGeneration(`llm-iter${iterations}`, {
       model: llmClient.getModel(),
       input: {
         systemPrompt,

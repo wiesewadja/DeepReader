@@ -42,7 +42,13 @@ export class AnalyticalState extends StateNode {
     try {
       // 1. Cumulative guarantee: call S1 if scope not set
       if (!ctx.scopeNodeIds || ctx.scopeNodeIds.length === 0) {
+        const cumulativeSpan = ctx.traceContext?.withSpan('S1-Inspectional (cumulative)', {
+          metadata: { cumulative: true, triggeredBy: 'S2' },
+        });
         await this.inspectionalState.execute(ctx);
+        cumulativeSpan?.end({
+          output: { scopeNodeIds: ctx.scopeNodeIds?.length ?? 0 },
+        });
       }
 
       // 2. Create scope interceptor
@@ -59,12 +65,6 @@ export class AnalyticalState extends StateNode {
         ctx.markStateExecuted(this.name, true, undefined, Date.now() - startTime);
         return;
       }
-
-      // 3.5 Record context-injection span
-      const injectedChaptersCount = (ctx.scopeNodeIds ?? []).length;
-      ctx.traceContext?.withSpan('context-injection', {
-        metadata: { injectedChaptersCount },
-      });
 
       // 4. Execute LLM loop with interceptor
       const response = await runStateLoop(
