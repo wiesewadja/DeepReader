@@ -32,7 +32,7 @@ export class AnalyticalState extends StateNode {
 
   constructor() {
     super();
-    this.options = { timeout: 60000, retries: 1 };
+    this.options = { timeout: 120000, retries: 1 };
     this.inspectionalState = new InspectionalState();
   }
 

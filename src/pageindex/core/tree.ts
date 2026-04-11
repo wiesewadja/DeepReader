@@ -338,17 +338,28 @@ async function generateNodeSummary(
 ): Promise<string> {
   if (!node.text) return "";
 
-  const prompt = prompts.generateNodeSummaryPrompt(node.text);
-  return chatGPT({
+  // Combined: format text + generate summary in one LLM call
+  const prompt = prompts.formatAndSummarizePrompt(node.text, node.title || "");
+  const response = await chatGPT({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
   });
+
+  // Parse response: <<<MARKDOWN>>>...\n<<<SUMMARY>>>...
+  const mdMatch = response.match(/<<<MARKDOWN>>>([\s\S]*?)<<<SUMMARY>>>/);
+  const summaryMatch = response.match(/<<<SUMMARY>>>([\s\S]*?)$/);
+
+  if (mdMatch) {
+    node.text = mdMatch[1].trim();
+  }
+  return summaryMatch ? summaryMatch[1].trim() : response.trim();
 }
 
 /**
  * Generate summaries for all nodes in structure
+ * Also formats node text as proper Markdown (combined in one LLM call)
  */
 export async function generateSummariesForStructure(
   structure: TreeNode[],
@@ -357,6 +368,8 @@ export async function generateSummariesForStructure(
 ): Promise<void> {
   const nodes = structureToList(structure);
   const total = nodes.length;
+
+  piLog(`[generateSummaries] Processing ${total} nodes (format + summary)...`);
 
   // Process in batches to balance speed with API rate limits
   const batchSize = 8;

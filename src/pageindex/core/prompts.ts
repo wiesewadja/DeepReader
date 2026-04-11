@@ -382,3 +382,31 @@ Document Structure: ${structure}
 
 Directly return the description, do not include any other text.`;
 }
+
+/**
+ * Prompt to reformat raw PDF text AND generate summary in one call
+ */
+export function formatAndSummarizePrompt(rawText: string, sectionTitle: string): string {
+  return `You are processing a section of a document. Perform TWO tasks in one response:
+
+## Task 1: Reformat as Markdown
+- Preserve ALL original content — do NOT add, remove, or rewrite any text
+- Add Markdown formatting: use ##/### for sub-sections, **bold** for key terms, - for lists, > for quotes
+- Remove page numbers and footnote markers like [1], [78], [11] etc.
+- Remove any residual page delimiter markers (===PAGE_DELIMITER=== etc.)
+
+## Task 2: Generate Summary
+- Write a concise 1-3 sentence summary of the main points
+- Same language as the document, no line breaks
+
+## Output Format (strict — follow exactly):
+<<<MARKDOWN>>>
+(formatted markdown here)
+<<<SUMMARY>>>
+(summary here)
+
+Section title: ${sectionTitle}
+
+Raw text:
+${rawText}`;
+}

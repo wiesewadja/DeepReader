@@ -53,7 +53,7 @@ async function executeStateWithLogging(
   }
 
   // 超时保护：S0/S1 快速模型 30s，S2/S4 主模型 60s
-  const timeout = stateName === 'Analytical' ? 60000 : 30000;
+  const timeout = stateName === 'Analytical' ? 120000 : 30000;
 
   try {
     await withTimeout(state.execute(ctx), timeout, stateName);
