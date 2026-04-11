@@ -95,16 +95,10 @@ export class ReadingTopbar extends Component {
         if (!this.bookTitleEl || !this.bookAuthorEl) return;
 
         if (name) {
-            let displayName = name;
-            if (displayName.toLowerCase().endsWith('.pdf')) {
-                displayName = displayName.slice(0, -4);
-            }
-            if (displayName.toLowerCase().endsWith('.epub')) {
-                displayName = displayName.slice(0, -5);
-            }
-            this.bookTitleEl.textContent = displayName;
+            // Name is already simplified by caller
+            this.bookTitleEl.textContent = name;
             this.bookTitleEl.classList.add('has-book');
-            this.bookAuthorEl.textContent = author || '已加载';
+            this.bookAuthorEl.textContent = author || '';
         } else {
             this.bookTitleEl.textContent = '未选择文档';
             this.bookTitleEl.classList.remove('has-book');

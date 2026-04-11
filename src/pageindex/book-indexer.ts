@@ -166,8 +166,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   });
 
   const rootTitle = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
+  // Simplify export name: strip subtitles after separators for cleaner directory names
+  const exportName = simplifyTitle(rootTitle);
   const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
-  const bookDir = path.join(deepReaderDir, rootTitle);
+  const bookDir = path.join(deepReaderDir, exportName);
 
   // Ensure DeepReader directory exists
   await fs.mkdir(deepReaderDir, { recursive: true });
@@ -180,7 +182,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     // EPUB: save extracted cover image
     try {
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
-      const coverPath = path.join(coversDir, `${rootTitle}${ext}`);
+      const coverPath = path.join(coversDir, `${exportName}${ext}`);
       await fs.writeFile(coverPath, parseResult.coverImage.data);
       piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
@@ -189,7 +191,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   } else if (parseResult.coverPng) {
     // PDF: save rendered first page as PNG
     try {
-      const coverPath = path.join(coversDir, `${rootTitle}.png`);
+      const coverPath = path.join(coversDir, `${exportName}.png`);
       await fs.writeFile(coverPath, parseResult.coverPng);
       piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
     } catch (err) {
@@ -198,8 +200,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   } else {
     // No cover available: generate text-based SVG cover
     try {
-      const svgCover = generateTextCover(rootTitle, options.fileType);
-      const coverPath = path.join(coversDir, `${rootTitle}.svg`);
+      const svgCover = generateTextCover(exportName, options.fileType);
+      const coverPath = path.join(coversDir, `${exportName}.svg`);
       await fs.writeFile(coverPath, svgCover, "utf-8");
       piLog(`[book-indexer] Text cover generated: ${coverPath}`);
     } catch (err) {
@@ -580,4 +582,18 @@ function generateTextCover(title: string, fileType: string): string {
   ${textLines}
   <text x="140" y="310" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="rgba(255,255,255,0.6)" text-anchor="middle">${escapeXml(typeLabel)}</text>
 </svg>`;
+}
+
+/**
+ * Simplify title by stripping subtitles after common separators
+ * e.g. "遥远的救世主：根据本书改编..." → "遥远的救世主"
+ */
+function simplifyTitle(title: string): string {
+  const separators = ['：', ':', '—', '-', '｜', '|'];
+  for (const sep of separators) {
+    if (title.includes(sep)) {
+      return title.split(sep)[0].trim();
+    }
+  }
+  return title;
 }

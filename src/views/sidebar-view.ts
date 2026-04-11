@@ -762,6 +762,7 @@ export class SidebarView extends ItemView {
         // 确定显示名称：优先从索引获取，否则从 indexId 推断
         let displayName: string;
         let author: string | undefined;
+        let coverName: string | undefined;
 
         if (index) {
             // 从后端索引获取信息
@@ -775,6 +776,18 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
 
+            // 读取 exportName 用于封面查找（精简后的标题）
+            try {
+                const vaultPath = (this.app.vault.adapter as any).basePath;
+                const fs = require('fs/promises');
+                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+                const meta = JSON.parse(metaRaw);
+                coverName = meta.exportName || undefined;
+            } catch { /* ignore */ }
+
+            // 精简显示名称用于顶栏
+            displayName = this.getDisplayName(displayName);
+
             // 记录书籍切换里程碑
             await this.initializeMilestoneRecorder();
             if (this.milestoneRecorder && previousBook !== displayName) {
@@ -785,8 +798,8 @@ export class SidebarView extends ItemView {
             author = index.author;
             log(`[DeepPDF] 索引中的作者信息: index.author="${index.author}"`);
 
-            // 加载书籍封面（传入 indexId 以便从后端获取）
-            this.loadBookCover(displayName, indexId);
+            // 加载书籍封面（优先使用 exportName 匹配封面文件）
+            this.loadBookCover(coverName || displayName, indexId);
         } else {
             // 后端不可用或索引列表为空时，从 indexId 推断书籍名称
             // indexId 可能是书籍名称或路径格式
@@ -833,9 +846,8 @@ export class SidebarView extends ItemView {
 
         // === 从本地书籍笔记读取全书摘要 ===
         try {
-            // 书籍笔记路径：DeepReader/{书名}/{书名}.md
-            // 使用 this.currentPdfName（已去除后缀）
-            const bookName = this.currentPdfName;
+            // 书籍笔记路径：DeepReader/{exportName}/{exportName}.md
+            const bookName = coverName || this.getDisplayName(this.currentPdfName || '');
             const bookNotePath = `DeepReader/${bookName}/${bookName}.md`;
             const bookNoteFile = this.app.vault.getAbstractFileByPath(bookNotePath);
 
