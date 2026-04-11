@@ -299,9 +299,6 @@ async function createChapterNote(
     tags: ["epub", "book", sanitizeTag(bookName)],
   };
   if (bookInfo.author) frontmatter.author = bookInfo.author;
-  // Base 查询字段
-  frontmatter.book_name = bookInfo.title || bookName;
-  if (options.coverPath) frontmatter.cover = options.coverPath;
 
   // 应用自定义模板
   if (options.noteTemplate) {
@@ -330,6 +327,7 @@ function generateMOC(
   // Build frontmatter
   const frontmatter: Record<string, unknown> = {
     title: bookName,
+    book_name: epubInfo.title || bookName,
     author: epubInfo.author,
     type: "epub-moc",
     created: new Date().toISOString(),

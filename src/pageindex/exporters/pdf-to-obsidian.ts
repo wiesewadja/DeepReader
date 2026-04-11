@@ -278,11 +278,6 @@ export async function exportPdfToObsidian(
     };
     if (section.startIndex) frontmatter.page_range = `${section.startIndex}-${section.endIndex}`;
 
-    // Base 查询字段：让「我的书架」能统计到这些文件
-    frontmatter.book_name = docName;
-    if (options.author) frontmatter.author = options.author;
-    if (options.coverPath) frontmatter.cover = options.coverPath;
-
     // Template
     if (options.noteTemplate) {
       content = options.noteTemplate
@@ -302,9 +297,12 @@ export async function exportPdfToObsidian(
   // MOC frontmatter
   const mocFrontmatter: Record<string, unknown> = {
     title: docName,
+    book_name: docName,
     type: "pdf-moc",
     created: new Date().toISOString(),
   };
+  if (options.author) mocFrontmatter.author = options.author;
+  if (options.coverPath) mocFrontmatter.cover = options.coverPath;
   if (options.sourcePdf) mocFrontmatter.source = options.sourcePdf;
 
   let moc = generateFrontmatter(mocFrontmatter) + "\n\n";
