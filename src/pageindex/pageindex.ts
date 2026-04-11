@@ -691,6 +691,9 @@ export class PageIndex {
     const endPhysicalIndex = pages.length;
     const totalChapters = epubInfo.chapters.length;
 
+    // EPUB text is already structured HTML→Markdown, skip LLM formatting
+    const epubOptions = { ...this.options, formatMarkdown: false as const };
+
     piLog(`[EPUB Mode] Extracted ${pages.length} chapters`);
 
     this.reportProgress({
@@ -712,15 +715,15 @@ export class PageIndex {
 
     piLog(`[EPUB Mode] Built ${tocItems.length} TOC items from chapter structure`);
 
-    const tree = buildTree(tocItems, endPhysicalIndex, this.options);
+    const tree = buildTree(tocItems, endPhysicalIndex, epubOptions);
 
     // Add node text if requested
-    if (this.options.addNodeText || this.options.addNodeSummary) {
+    if (epubOptions.addNodeText || epubOptions.addNodeSummary) {
       addNodeText(tree, pages);
     }
 
     // Step 2: Generate summaries — progress mapped by chapter count (10%-95%)
-    if (this.options.addNodeSummary) {
+    if (epubOptions.addNodeSummary) {
       this.reportProgress({
         stage: "generating_summaries",
         message: `正在生成摘要 (0/${totalChapters})`,
@@ -729,7 +732,7 @@ export class PageIndex {
         percent: 10,
       });
       piLog("Generating summaries...");
-      await generateSummariesForStructure(tree, this.options, (completed, total) => {
+      await generateSummariesForStructure(tree, epubOptions, (completed, total) => {
         // Map progress: 10%-95% range for summary generation
         const summaryPercent = 10 + Math.round((completed / total) * 85);
         this.reportProgress({
@@ -744,9 +747,9 @@ export class PageIndex {
 
     // Step 3: Generate document description
     let docDescription: string | undefined;
-    if (this.options.addDocDescription) {
+    if (epubOptions.addDocDescription) {
       piLog("Generating document description...");
-      docDescription = await generateDocDescription(tree, this.options);
+      docDescription = await generateDocDescription(tree, epubOptions);
     }
 
     this.reportProgress({
@@ -759,7 +762,7 @@ export class PageIndex {
 
     // Remove text if not requested in output
     let finalStructure = tree;
-    if (!this.options.addNodeText) {
+    if (!epubOptions.addNodeText) {
       finalStructure = removeFields(tree, ["text"]) as TreeNode[];
     }
 

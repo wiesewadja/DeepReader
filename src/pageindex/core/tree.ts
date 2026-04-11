@@ -36,6 +36,8 @@ export interface TreeOptions extends TocOptions {
   addNodeSummary: boolean;
   addDocDescription: boolean;
   addNodeText: boolean;
+  /** Whether to LLM-format node text as Markdown (PDF needs it, EPUB already has structure) */
+  formatMarkdown?: boolean;
 }
 
 /**
@@ -338,23 +340,34 @@ async function generateNodeSummary(
 ): Promise<string> {
   if (!node.text) return "";
 
-  // Combined: format text + generate summary in one LLM call
-  const prompt = prompts.formatAndSummarizePrompt(node.text, node.title || "");
-  const response = await chatGPT({
-    model: options.model,
-    prompt,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-  });
+  if (options.formatMarkdown !== false) {
+    // Combined: format text + generate summary in one LLM call (PDF path)
+    const prompt = prompts.formatAndSummarizePrompt(node.text, node.title || "");
+    const response = await chatGPT({
+      model: options.model,
+      prompt,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+    });
 
-  // Parse response: <<<MARKDOWN>>>...\n<<<SUMMARY>>>...
-  const mdMatch = response.match(/<<<MARKDOWN>>>([\s\S]*?)<<<SUMMARY>>>/);
-  const summaryMatch = response.match(/<<<SUMMARY>>>([\s\S]*?)$/);
+    // Parse response: <<<MARKDOWN>>>...\n<<<SUMMARY>>>...
+    const mdMatch = response.match(/<<<MARKDOWN>>>([\s\S]*?)<<<SUMMARY>>>/);
+    const summaryMatch = response.match(/<<<SUMMARY>>>([\s\S]*?)$/);
 
-  if (mdMatch) {
-    node.text = mdMatch[1].trim();
+    if (mdMatch) {
+      node.text = mdMatch[1].trim();
+    }
+    return summaryMatch ? summaryMatch[1].trim() : response.trim();
+  } else {
+    // EPUB path: text is already formatted, only generate summary
+    const prompt = prompts.generateNodeSummaryPrompt(node.text);
+    return chatGPT({
+      model: options.model,
+      prompt,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+    });
   }
-  return summaryMatch ? summaryMatch[1].trim() : response.trim();
 }
 
 /**
