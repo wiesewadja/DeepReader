@@ -61,10 +61,8 @@ export async function exportToObsidian(
     fs.mkdirSync(bookDir, { recursive: true });
   }
 
-  // 提取图片
-  const assetsDir = path.join(bookDir, options.assetsPath || DEFAULT_ASSETS_PATH);
-  fs.mkdirSync(assetsDir, { recursive: true });
-  const imageMap = extractImagesFromEpub(epubPath, assetsDir);
+  // 提取图片（使用 EPUB 原始目录名）
+  const { imageMap, assetsDirName } = extractImagesFromEpub(epubPath, bookDir);
 
   // 生成章节笔记
   const notes: ObsidianNote[] = [];
@@ -123,16 +121,16 @@ export async function exportToObsidian(
     });
   }
 
-  // 保存封面图
+  // 保存封面图（与图片同一目录）
   let coverRelativePath: string | undefined;
   if (bookInfo.coverImage) {
-    const coverDir = path.join(bookDir, options.assetsPath || DEFAULT_ASSETS_PATH);
+    const coverDir = path.join(bookDir, assetsDirName);
     if (!fs.existsSync(coverDir)) {
       fs.mkdirSync(coverDir, { recursive: true });
     }
     const coverPath = path.join(coverDir, bookInfo.coverImage.name);
     fs.writeFileSync(coverPath, bookInfo.coverImage.data);
-    coverRelativePath = `${options.assetsPath || DEFAULT_ASSETS_PATH}/${bookInfo.coverImage.name}`;
+    coverRelativePath = `${assetsDirName}/${bookInfo.coverImage.name}`;
     piLog(`[epub-to-obsidian] Cover saved: ${coverRelativePath}`);
   }
 
@@ -613,7 +611,10 @@ function buildTreeFromTocEntries(
 /**
  * 从 EPUB 提取图片
  */
-function extractImagesFromEpub(epubPath: string, outputDir: string): Map<string, string> {
+/**
+ * 从 EPUB 提取图片，保持原始目录名
+ */
+function extractImagesFromEpub(epubPath: string, bookDir: string): { imageMap: Map<string, string>; assetsDirName: string } {
   const imageMap = new Map<string, string>();
   const zip = new AdmZip(epubPath);
 
@@ -621,6 +622,27 @@ function extractImagesFromEpub(epubPath: string, outputDir: string): Map<string,
     const ext = path.extname(entry.entryName).toLowerCase();
     return [".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp"].includes(ext);
   });
+
+  // Detect the image directory name from EPUB (e.g., "images", "media", "assets")
+  let assetsDirName = "assets";
+  if (imageEntries.length > 0) {
+    // Extract directory from path like "OEBPS/images/cover.jpg" → "images"
+    const firstPath = imageEntries[0].entryName;
+    const parts = firstPath.replace(/\\/g, "/").split("/");
+    // Find the directory just above the filename (before OEBPS/OPS prefix)
+    for (let i = parts.length - 2; i >= 0; i--) {
+      const part = parts[i];
+      if (part && !["OEBPS", "OPS", "META-INF", "content"].includes(part) && !part.endsWith(".html") && !part.endsWith(".xhtml")) {
+        assetsDirName = part;
+        break;
+      }
+    }
+  }
+
+  const outputDir = path.join(bookDir, assetsDirName);
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
 
   for (const entry of imageEntries) {
     const fileName = path.basename(entry.entryName);
@@ -643,5 +665,5 @@ function extractImagesFromEpub(epubPath: string, outputDir: string): Map<string,
     }
   }
 
-  return imageMap;
+  return { imageMap, assetsDirName };
 }

@@ -422,18 +422,30 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     const result = extractTextFromHTMLWithBlocks(html, order);
 
     // Extract chapter title
-    // Strategy: 1) Try <h1>-<h6> tags, 2) Fall back to first non-empty line of markdown
-    const titleMatch = html.match(/<h[1-6][^>]*>([^<]*)<\/h[1-6]>/i);
+    // Strategy: 1) Try <h1>-<h6> tags (strip inner HTML tags), 2) Fall back to first non-empty line of markdown
+    // Use [\s\S]*? to match content with nested tags, then strip HTML to get plain text
+    const headingMatches = html.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi);
     let chapterTitle: string;
 
-    if (titleMatch) {
-      const headingText = cleanTitle(titleMatch[1].replace(/<[^>]+>/g, "").trim());
-      if (headingText && result.content.substring(0, 200).includes(headingText.substring(0, 50))) {
-        chapterTitle = headingText;
-      } else if (headingText) {
-        chapterTitle = headingText;
+    if (headingMatches && headingMatches.length > 0) {
+      // Collect all heading texts, pick the most descriptive one
+      const headingTexts = headingMatches
+        .map(m => cleanTitle(m.replace(/<[^>]+>/g, "").trim()))
+        .filter(t => t.length > 0);
+
+      // Prefer the longest heading (usually the descriptive subtitle, not just "第N章")
+      if (headingTexts.length > 1) {
+        // If one heading is short (like "第N章") and another is longer, prefer the longer
+        const longest = headingTexts.reduce((a, b) => a.length >= b.length ? a : b);
+        const shortest = headingTexts.reduce((a, b) => a.length <= b.length ? a : b);
+        // Combine if they're different: "第1章 没有人真的对钱失去理智"
+        if (shortest !== longest && shortest.length <= 5) {
+          chapterTitle = `${shortest} ${longest}`;
+        } else {
+          chapterTitle = longest;
+        }
       } else {
-        chapterTitle = `Chapter ${order + 1}`;
+        chapterTitle = headingTexts[0] || `Chapter ${order + 1}`;
       }
     } else {
       // No heading tag: use first non-empty line of markdown as title
@@ -442,6 +454,12 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
       chapterTitle = firstLine
         ? cleanTitle(firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim())
         : `Chapter ${order + 1}`;
+    }
+
+    // Skip cover/image-only pages (title is a markdown image syntax)
+    if (chapterTitle.startsWith("![") || chapterTitle.startsWith("![Cover")) {
+      order++;
+      continue;
     }
 
     chapters.push({
