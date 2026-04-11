@@ -21,6 +21,8 @@ export interface PdfInfo {
   outline?: PdfOutlineItem[];
   /** First page rendered as PNG buffer (for cover image) */
   coverPng?: Buffer;
+  /** Author from PDF metadata */
+  author?: string;
 }
 
 export interface PdfOutlineItem {
@@ -60,7 +62,7 @@ export async function parsePdf(
 
             const items = textContent.items;
             if (!items || items.length === 0) {
-              return "===PAGE_DELIMITER=====PAGE_DELIMITER_END===\n";
+              return "===PAGE_DELIMITER=== ===PAGE_DELIMITER_END===\n";
             }
 
             // Collect valid items with position data
@@ -80,7 +82,7 @@ export async function parsePdf(
               });
             }
             if (textItems.length === 0) {
-              return "===PAGE_DELIMITER=====PAGE_DELIMITER_END===\n";
+              return "===PAGE_DELIMITER=== ===PAGE_DELIMITER_END===\n";
             }
 
             // Sort by Y (top to bottom) then X (left to right)
@@ -112,14 +114,23 @@ export async function parsePdf(
             let lineEndX = 0;
             let prevY: number | null = null;
 
+            // Track item count per line for heading detection
+            let lineItemCount = 0;
+
             const flushLine = () => {
               const trimmed = lineBuf.trim();
-              if (!trimmed) { lineBuf = ''; return; }
+              if (!trimmed) { lineBuf = ''; lineItemCount = 0; return; }
 
-              if (lineMaxFont > bodyFontSize * 1.4) {
-                if (lineMaxFont > bodyFontSize * 2.0) {
+              const fontRatio = lineMaxFont / bodyFontSize;
+              // Heading detection: font size OR short-line-with-slightly-larger-font
+              // Many PDFs use single-character items per heading glyph (ratio ~1.29)
+              const isHeading = fontRatio > 1.4 ||
+                (fontRatio > 1.2 && lineItemCount >= 2 && lineItemCount <= 20 && trimmed.length <= 30);
+
+              if (isHeading || fontRatio > 1.4) {
+                if (fontRatio > 2.0) {
                   lines.push(`# ${trimmed}`);
-                } else if (lineMaxFont > bodyFontSize * 1.7) {
+                } else if (fontRatio > 1.7) {
                   lines.push(`## ${trimmed}`);
                 } else {
                   lines.push(`### ${trimmed}`);
@@ -129,6 +140,7 @@ export async function parsePdf(
               }
               lineBuf = '';
               lineMaxFont = bodyFontSize;
+              lineItemCount = 0;
             };
 
             for (let i = 0; i < textItems.length; i++) {
@@ -140,6 +152,7 @@ export async function parsePdf(
                 lineBuf = str;
                 lineMaxFont = item.fontSize;
                 lineEndX = item.x + item.w;
+                lineItemCount = 1;
                 prevY = item.y;
                 continue;
               }
@@ -156,6 +169,7 @@ export async function parsePdf(
                 lineBuf += str;
                 lineEndX = item.x + item.w;
                 if (item.fontSize > lineMaxFont) lineMaxFont = item.fontSize;
+                lineItemCount++;
               } else {
                 // New line
                 flushLine();
@@ -168,6 +182,7 @@ export async function parsePdf(
                 lineBuf = str;
                 lineMaxFont = item.fontSize;
                 lineEndX = item.x + item.w;
+                lineItemCount = 1;
                 prevY = item.y;
               }
             }
@@ -272,12 +287,19 @@ export async function parsePdf(
     }
   }
 
+  // Extract author from PDF metadata
+  let author: string | undefined;
+  if (result.info?.Author) {
+    author = result.info.Author;
+  }
+
   return {
     title,
     numPages: totalPages,
     pages,
     outline,
     coverPng,
+    author,
   };
 }
 

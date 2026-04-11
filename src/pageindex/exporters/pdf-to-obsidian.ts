@@ -31,6 +31,8 @@ export interface PdfObsidianExportOptions {
   includeIndex?: boolean;
   /** 原始 PDF 路径（写入 frontmatter） */
   sourcePdf?: string;
+  /** 导出目录名（如不提供则使用 docName） */
+  exportName?: string;
 }
 
 interface ObsidianNote {
@@ -49,31 +51,34 @@ interface FlatSection {
   endIndex?: number;
   nodeId?: string;
   summary?: string;
+  isParent?: boolean;
+  childTitles?: string[];
 }
 
-/** 收集所有叶节点（有 text 的节点） */
-function collectLeafNodes(
+/** 收集所有节点（包括父级和叶节点），保持树结构顺序 */
+function collectAllNodes(
   nodes: TreeNode[],
   depth: number,
-  _parentTitle?: string,
 ): FlatSection[] {
   const result: FlatSection[] = [];
 
   for (const node of nodes) {
-    if (node.nodes && node.nodes.length > 0) {
-      // 有子节点 → 递归
-      result.push(...collectLeafNodes(node.nodes, depth + 1, node.title));
-    } else if (node.text) {
-      // 叶节点 → 有内容
-      result.push({
-        title: node.title,
-        text: node.text,
-        depth,
-        startIndex: node.startIndex,
-        endIndex: node.endIndex,
-        nodeId: node.nodeId,
-        summary: node.summary,
-      });
+    const hasChildren = node.nodes && node.nodes.length > 0;
+
+    result.push({
+      title: node.title,
+      text: node.text || "",
+      depth,
+      startIndex: node.startIndex,
+      endIndex: node.endIndex,
+      nodeId: node.nodeId,
+      summary: node.summary,
+      isParent: hasChildren,
+      childTitles: hasChildren ? node.nodes!.map(n => n.title) : undefined,
+    });
+
+    if (hasChildren) {
+      result.push(...collectAllNodes(node.nodes!, depth + 1));
     }
   }
 
@@ -178,8 +183,8 @@ export async function exportPdfToObsidian(
   const result = options.parseResult;
   const docName = result.docName;
 
-  // 2. 收集叶节点
-  const sections = collectLeafNodes(result.structure, 0);
+  // 2. 收集所有节点（包括父级章节和叶子节点）
+  const sections = collectAllNodes(result.structure, 0);
 
   if (sections.length === 0) {
     // 无结构 → 整个文档一个笔记
@@ -187,8 +192,15 @@ export async function exportPdfToObsidian(
     sections.push({ title: docName, text: fullText, depth: 0 });
   }
 
-  // 3. 输出目录
-  const bookDir = path.join(options.outputDir, sanitizeFileName(docName));
+  // Build fileName lookup for navigation and cross-references
+  const sectionFileNames = sections.map((s, i) => {
+    const idx = options.includeIndex ? `${String(i + 1).padStart(2, "0")} - ` : "";
+    return sanitizeFileName(`${idx}${s.title}`);
+  });
+
+  // 3. 输出目录（使用 exportName 统一命名）
+  const dirName = options.exportName || sanitizeFileName(docName);
+  const bookDir = path.join(options.outputDir, dirName);
   fs.mkdirSync(bookDir, { recursive: true });
 
   // 4. 生成笔记
@@ -197,45 +209,73 @@ export async function exportPdfToObsidian(
 
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
-    const idx = options.includeIndex ? `${String(i + 1).padStart(2, "0")} - ` : "";
-    const fileName = sanitizeFileName(`${idx}${section.title}`);
+    const fileName = sectionFileNames[i];
     const filePath = path.join(bookDir, `${fileName}.md`);
 
-    // 正文 + block IDs
-    let content = addBlockIds(section.text, i);
+    let content: string;
 
-    // 摘要 callout
-    if (section.summary) {
-      const summaryLines = section.summary.split('\n').map((line: string) => `> ${line}`).join('\n');
-      content = `> [!summary]\n${summaryLines}\n\n${content}`;
+    if (section.isParent) {
+      // Parent node: summary + child links (no full text to avoid duplication)
+      const parts: string[] = [];
+
+      if (section.summary) {
+        const summaryLines = section.summary.split('\n').map((line: string) => `> ${line}`).join('\n');
+        parts.push(`> [!summary]\n${summaryLines}\n`);
+      }
+
+      // List child sections as links
+      const childLinks: string[] = [];
+      for (let j = i + 1; j < sections.length; j++) {
+        if (sections[j].depth <= section.depth) break;
+        if (sections[j].depth === section.depth + 1) {
+          childLinks.push(`- [[${sectionFileNames[j]}|${sections[j].title}]]`);
+        }
+      }
+      if (childLinks.length > 0) {
+        parts.push(childLinks.join('\n'));
+      }
+
+      content = parts.join('\n\n');
+    } else {
+      // Leaf node: full text with block IDs
+      content = addBlockIds(section.text, i);
+
+      if (section.summary) {
+        const summaryLines = section.summary.split('\n').map((line: string) => `> ${line}`).join('\n');
+        content = `> [!summary]\n${summaryLines}\n\n${content}`;
+      }
     }
 
-    // 导航
-    const prev = i > 0 ? sections[i - 1] : null;
-    const next = i < sections.length - 1 ? sections[i + 1] : null;
-    if (prev || next) {
+    // Navigation: find previous and next nodes at the same depth level
+    let prevIdx = -1;
+    let nextIdx = -1;
+    for (let j = i - 1; j >= 0; j--) {
+      if (sections[j].depth === section.depth) { prevIdx = j; break; }
+    }
+    for (let j = i + 1; j < sections.length; j++) {
+      if (sections[j].depth === section.depth) { nextIdx = j; break; }
+    }
+    if (prevIdx >= 0 || nextIdx >= 0) {
       content += "\n\n---\n\n";
-      if (prev) {
-        const pn = sanitizeFileName(`${options.includeIndex ? String(i).padStart(2, "0") + " - " : ""}${prev.title}`);
-        content += `← 上一节: [[${pn}|${prev.title}]]`;
+      if (prevIdx >= 0) {
+        content += `← 上一节: [[${sectionFileNames[prevIdx]}|${sections[prevIdx].title}]]`;
       }
-      if (prev && next) content += " | ";
-      if (next) {
-        const nn = sanitizeFileName(`${options.includeIndex ? String(i + 2).padStart(2, "0") + " - " : ""}${next.title}`);
-        content += `下一节: [[${nn}|${next.title}]] →`;
+      if (prevIdx >= 0 && nextIdx >= 0) content += " | ";
+      if (nextIdx >= 0) {
+        content += `下一节: [[${sectionFileNames[nextIdx]}|${sections[nextIdx].title}]] →`;
       }
     }
 
-    // Frontmatter (v2: only user-visible metadata)
+    // Frontmatter
     const frontmatter: Record<string, unknown> = {
       title: section.title,
-      source: sanitizeFileName(docName),
+      source: dirName,
       type: "pdf",
-      tags: ["pdf", "document", sanitizeTag(docName)],
+      tags: ["pdf", "document", sanitizeTag(dirName)],
     };
     if (section.startIndex) frontmatter.page_range = `${section.startIndex}-${section.endIndex}`;
 
-    // 模板
+    // Template
     if (options.noteTemplate) {
       content = options.noteTemplate
         .replace(/\{\{content\}\}/g, content)
@@ -248,7 +288,7 @@ export async function exportPdfToObsidian(
   }
 
   // 5. MOC
-  const mocName = options.mocName || `${sanitizeFileName(docName)} - MOC`;
+  const mocName = options.mocName || `${dirName} - MOC`;
   const mocPath = path.join(bookDir, `${mocName}.md`);
 
   // MOC frontmatter
@@ -269,8 +309,7 @@ export async function exportPdfToObsidian(
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];
     const indent = "  ".repeat(Math.max(0, s.depth));
-    const fn = sanitizeFileName(`${options.includeIndex ? String(i + 1).padStart(2, "0") + " - " : ""}${s.title}`);
-    moc += `${indent}- [[${fn}|${s.title}]]\n`;
+    moc += `${indent}- [[${sectionFileNames[i]}|${s.title}]]\n`;
   }
   moc += `\n---\n\n*由 PageIndex 自动生成*\n`;
 
@@ -285,8 +324,7 @@ export async function exportPdfToObsidian(
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i];
     if (s.nodeId) {
-      const fn = sanitizeFileName(`${options.includeIndex ? String(i + 1).padStart(2, "0") + " - " : ""}${s.title}`);
-      nodeFileMap[s.nodeId] = `${fn}.md`;
+      nodeFileMap[s.nodeId] = `${sectionFileNames[i]}.md`;
     }
   }
 

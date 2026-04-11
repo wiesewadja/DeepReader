@@ -774,7 +774,6 @@ export class SidebarView extends ItemView {
         if (index) {
             // 从后端索引获取信息
             const previousBook = this.currentPdfName;
-            this.currentPdfName = index.pdf_name;
             displayName = index.pdf_name;
             if (displayName.toLowerCase().endsWith('.pdf')) {
                 displayName = displayName.slice(0, -4);
@@ -783,14 +782,20 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
 
-            // 读取 exportName 用于封面查找（精简后的标题）
+            // 读取 exportName（精简后的标题，用于封面和 wiki link）
+            let exportName: string | undefined;
             try {
                 const vaultPath = (this.app.vault.adapter as any).basePath;
                 const fs = require('fs/promises');
                 const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
                 const meta = JSON.parse(metaRaw);
-                coverName = meta.exportName || undefined;
+                exportName = meta.exportName || undefined;
+                coverName = exportName;
             } catch { /* ignore */ }
+
+            // 使用 exportName 作为 currentPdfName（与导出目录名一致，确保 wiki link 正确）
+            const simplifiedName = exportName || this.getDisplayName(displayName);
+            this.currentPdfName = simplifiedName;
 
             // 精简显示名称用于顶栏
             displayName = this.getDisplayName(displayName);
@@ -2489,8 +2494,16 @@ export class SidebarView extends ItemView {
         }
 
         if (this.plugin.settings.lastSelectedIndexId) {
-            log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
-            await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
+            // Verify the book still exists before restoring
+            const exists = this.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
+            if (exists) {
+                log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
+                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
+            } else {
+                log('[DeepPDF] [loadIndexes] 上次选中的书籍已不存在，清空状态');
+                this.plugin.settings.lastSelectedIndexId = undefined;
+                await this.plugin.saveSettings();
+            }
         }
     }
 

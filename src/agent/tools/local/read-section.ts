@@ -134,7 +134,7 @@ async function readMultipleSections(
     if (!fileName) continue;
 
     const { content, truncated } = await readMdFile(
-      app, vaultPath, treeData.title, fileName
+      app, vaultPath, treeData.title, fileName, treeData
     );
 
     const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
@@ -181,7 +181,7 @@ async function readSingleNode(
     });
   }
 
-  const { content } = await readMdFile(app, vaultPath, treeData.title, fileName);
+  const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
   const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
   const mdFileName = fileName.replace(/\.md$/i, '');
 
@@ -225,7 +225,7 @@ async function readByBlockId(
   const nodeFileMap = treeData.nodeFileMap as Record<string, string>;
 
   for (const [nodeId, fileName] of Object.entries(nodeFileMap)) {
-    const { content } = await readMdFile(app, vaultPath, treeData.title, fileName);
+    const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
     if (content.includes(blockId)) {
       const blockContent = extractBlockContext(content, blockId);
       const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
@@ -262,7 +262,7 @@ async function readByHeading(
   for (const [nodeId, fileName] of Object.entries(nodeFileMap)) {
     const title = findNodeTitle(nodeId, treeData.structure) || '';
     if (title.toLowerCase().includes(normalizedQuery) || normalizedQuery.includes(title.toLowerCase())) {
-      const { content } = await readMdFile(app, vaultPath, treeData.title, fileName);
+      const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
       return JSON.stringify({
         status: 'SUCCESS',
         node_id: nodeId,
@@ -285,10 +285,12 @@ async function readMdFile(
   app: App,
   vaultPath: string,
   bookTitle: string,
-  fileName: string
+  fileName: string,
+  treeData?: any
 ): Promise<{ content: string; truncated: boolean }> {
-  // 使用 vault 相对路径（adapter.read 会自动拼接 vault root）
-  const relativePath = `DeepReader/${bookTitle}/${fileName}`;
+  // Use exportName (simplified title) if available, matching actual directory name
+  const dirName = treeData?.exportName || bookTitle;
+  const relativePath = `DeepReader/${dirName}/${fileName}`;
   try {
     let content = await (app.vault as any).adapter.read(relativePath);
     // Remove frontmatter

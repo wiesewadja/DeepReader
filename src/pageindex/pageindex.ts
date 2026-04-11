@@ -65,6 +65,38 @@ function findBookmarkMatch(title: string, bookmarkMap: Map<string, number>): num
 }
 
 /**
+ * Evaluate if PDF outline/bookmarks are high-quality enough to skip LLM
+ * Criteria: enough entries with valid page numbers and good page coverage
+ */
+function isOutlineHighQuality(outline: PdfOutlineItem[], totalPages: number): boolean {
+  const MIN_ENTRIES = 5;
+
+  // Count leaf entries with valid page numbers
+  let validEntries = 0;
+  let minPage = Infinity;
+  let maxPage = 0;
+
+  const walk = (items: PdfOutlineItem[]) => {
+    for (const item of items) {
+      if (item.pageNumber > 0) {
+        validEntries++;
+        minPage = Math.min(minPage, item.pageNumber);
+        maxPage = Math.max(maxPage, item.pageNumber);
+      }
+      if (item.children?.length) walk(item.children);
+    }
+  };
+  walk(outline);
+
+  if (validEntries < MIN_ENTRIES) return false;
+
+  // Coverage: entries should span at least 60% of the document
+  const span = maxPage - minPage + 1;
+  const coverage = span / totalPages;
+  return coverage >= 0.6;
+}
+
+/**
  * Validate and truncate physical indices that exceed document length
  * Filters out items with undefined or out-of-range indices early,
  * preventing wasted verify+fix LLM calls on invalid entries
@@ -233,14 +265,25 @@ export class PageIndex {
       // Pass cover image through
       this._pendingCoverPng = pdfInfo.coverPng;
 
-      // Save outline for fallback
+      // Save outline and author
       const savedOutline = pdfInfo.outline;
+      const pdfAuthor = pdfInfo.author;
 
-      // LLM-first: always try LLM path for better TOC accuracy
-      // Pass outline as hint for accurate page mapping (especially for no-page-number TOCs)
+      // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
+      if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.numPages)) {
+        piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
+        const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
+        result.coverPng = this._pendingCoverPng;
+        result.author = pdfAuthor;
+        this._pendingCoverPng = undefined;
+        return result;
+      }
+
+      // LLM path: use outline as hint for page mapping accuracy
       try {
         const result = await this.processPdfPages(pages, pdfName, savedOutline);
         result.coverPng = this._pendingCoverPng;
+        result.author = pdfAuthor;
         this._pendingCoverPng = undefined;
         return result;
       } catch (error) {
@@ -249,6 +292,7 @@ export class PageIndex {
           piLog(`[fromPdf] LLM path failed, falling back to outline (${savedOutline.length} entries): ${(error as Error).message}`);
           const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
           result.coverPng = this._pendingCoverPng;
+          result.author = pdfAuthor;
           this._pendingCoverPng = undefined;
           return result;
         }
@@ -537,6 +581,9 @@ export class PageIndex {
 
     // Convert physical_index strings to integers (already integers from outline, but ensure consistency)
     tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
+
+    // Add appear_start field for correct endIndex calculation
+    tocItems = await checkTitleAppearanceInStartConcurrent(tocItems, pages, this.options);
 
     // Build tree structure directly — no verification needed, bookmarks are authoritative
     const tree = buildTree(tocItems, endPhysicalIndex, this.options);

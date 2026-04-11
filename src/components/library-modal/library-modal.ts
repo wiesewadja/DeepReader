@@ -201,6 +201,8 @@ export class LibraryModal extends Modal {
         let bookName = index.pdf_name;
         if (bookName.toLowerCase().endsWith('.pdf')) bookName = bookName.slice(0, -4);
         if (bookName.toLowerCase().endsWith('.epub')) bookName = bookName.slice(0, -5);
+        // Simplified name for cover lookup (matches exportName used during indexing)
+        const coverName = this.getDisplayName(bookName);
 
         // 封面区域
         const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover' });
@@ -225,7 +227,7 @@ export class LibraryModal extends Modal {
             }
         } else if (statusClass === 'failed') {
             // 失败状态显示错误图标
-            coverEl.innerHTML = this.createCoverPlaceholder(bookName, true);
+            coverEl.innerHTML = this.createCoverPlaceholder(coverName, true);
 
             // 重试按钮
             const retryBtn = coverEl.createDiv({ cls: 'deeppdf-lib-cover-btn retry' });
@@ -247,14 +249,14 @@ export class LibraryModal extends Modal {
                 imgEl.alt = bookName;
             } else {
                 // 没有缓存，先显示占位符
-                coverEl.innerHTML = this.createCoverPlaceholder(bookName);
+                coverEl.innerHTML = this.createCoverPlaceholder(coverName);
 
                 // 只在缓存中没有且不在加载中时才请求封面
                 if (!this.loadingCovers.has(index.id)) {
                     this.loadingCovers.add(index.id);
 
                     // 异步加载封面（不阻塞渲染）
-                    this.loadCoverAndDisplay(index.id, bookName, coverEl);
+                    this.loadCoverAndDisplay(index.id, coverName, coverEl);
                 }
             }
 
@@ -636,36 +638,19 @@ export class LibraryModal extends Modal {
                 this.renderGrid();
 
                 try {
-                    const vaultPath = (this.app.vault.adapter as any).basePath;
-                    const bookId = index.id;
-
-                    // 1. 读取 book-meta.json 获取导出目录名
-                    const indexDir = path.join(vaultPath, '.pageindex', bookId);
-                    let exportName: string | null = null;
-                    try {
-                        const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');
-                        const meta = JSON.parse(metaRaw);
-                        exportName = meta.exportName || null;
-                    } catch { /* meta file may not exist */ }
-
-                    // 2. 删除索引数据 (.pageindex/{bookId}/)
-                    await fs.rm(indexDir, { recursive: true, force: true });
-
-                    // 3. 删除本地导出文件夹和封面图片
-                    const deleteName = exportName || displayName;
-                    const exportDir = path.join(vaultPath, 'DeepReader', deleteName);
-                    await fs.rm(exportDir, { recursive: true, force: true });
-
-                    const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
-                    for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-                        const coverPath = path.join(coversDir, `${deleteName}.${ext}`);
-                        try { await fs.unlink(coverPath); } catch { /* not found */ }
+                    // Delegate actual deletion to parent (sidebar-view.handleDeleteIndex)
+                    // which handles file cleanup AND UI reset for the reading panel
+                    if (this.options.onDeleteIndex) {
+                        const updatedIndexes = await this.options.onDeleteIndex(indexToRemove);
+                        if (updatedIndexes) {
+                            this.indexes = updatedIndexes;
+                            this.renderGrid();
+                        }
+                    } else {
+                        await this.options.onRefresh?.();
                     }
 
                     new Notice(`已删除「${displayName}」的索引和导出数据`);
-                    serviceLog(`[LibraryModal] Deleted: index=${indexDir}, export=${exportDir}`);
-
-                    await this.options.onRefresh?.();
                 } catch (error) {
                     console.error('[LibraryModal] 删除失败:', error);
                     new Notice('删除失败');

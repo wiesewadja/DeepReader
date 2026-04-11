@@ -28,6 +28,8 @@ export interface ObsidianExportOptions {
   docDescription?: string;
   /** 章节摘要映射 (title → summary) */
   nodeSummaries?: Record<string, string>;
+  /** 导出目录名（如不提供则使用 bookInfo.title） */
+  exportName?: string;
 }
 
 interface ObsidianNote {
@@ -49,7 +51,7 @@ export async function exportToObsidian(
 ): Promise<{ mocPath: string; notes: ObsidianNote[]; nodeFileMap: Record<string, string> }> {
   // 使用传入的 epubInfo 或重新解析
   const bookInfo = epubInfo || await parseEpub(epubPath);
-  const bookName = sanitizeFileName(bookInfo.title);
+  const bookName = options.exportName || sanitizeFileName(bookInfo.title);
 
   // 创建书籍目录
   const bookDir = path.join(options.outputDir, bookName);

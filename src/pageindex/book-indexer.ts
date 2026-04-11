@@ -188,8 +188,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     } catch (err) {
       console.warn("[book-indexer] Failed to save cover:", err);
     }
-  } else if (parseResult.coverPng) {
-    // PDF: save rendered first page as PNG
+  } else if (parseResult.coverPng && parseResult.coverPng.length > 100) {
+    // PDF: save rendered first page as PNG (only if valid, >100 bytes)
     try {
       const coverPath = path.join(coversDir, `${exportName}.png`);
       await fs.writeFile(coverPath, parseResult.coverPng);
@@ -224,6 +224,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         parseResult,
         includeIndex: DEFAULT_INCLUDE_INDEX,
         sourcePdf: options.filePath,
+        exportName,
       });
       // Store nodeFileMap for tree.json
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
@@ -235,6 +236,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         assetsPath: DEFAULT_ASSETS_PATH,
         docDescription: parseResult.docDescription,
         nodeSummaries: collectNodeSummaries(parseResult.structure),
+        exportName,
       });
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
     }
@@ -281,6 +283,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     const nodeFileMap = (parseResult as any)._nodeFileMap || {};
     const treeData = {
       title: rootTitle,
+      exportName,
       docDescription: parseResult.docDescription,
       source: options.filePath,
       nodeFileMap,
