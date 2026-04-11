@@ -24,6 +24,47 @@ import { log as piLog } from "./core/logger";
 import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMode, ProgressInfo } from "./core/types";
 
 /**
+ * Flatten PDF outline (bookmarks) to a Map<title, pageNumber> for easy lookup
+ */
+function flattenOutlineToMap(outline: PdfOutlineItem[]): Map<string, number> {
+  const map = new Map<string, number>();
+  const walk = (items: PdfOutlineItem[]) => {
+    for (const item of items) {
+      if (item.title && item.pageNumber > 0) {
+        map.set(item.title.trim(), item.pageNumber);
+      }
+      if (item.children?.length) walk(item.children);
+    }
+  };
+  walk(outline);
+  return map;
+}
+
+/**
+ * Find a bookmark page number that matches the given title (fuzzy matching)
+ * Strips common punctuation/whitespace for comparison
+ */
+function findBookmarkMatch(title: string, bookmarkMap: Map<string, number>): number | null {
+  const normalize = (s: string) => s.replace(/[\s\-—:：.·]/g, "").toLowerCase();
+  const normalizedTitle = normalize(title);
+
+  // Exact match first
+  for (const [bmTitle, page] of bookmarkMap) {
+    if (normalize(bmTitle) === normalizedTitle) return page;
+  }
+
+  // Substring match: TOC title contains bookmark title or vice versa
+  for (const [bmTitle, page] of bookmarkMap) {
+    const normBm = normalize(bmTitle);
+    if (normBm.length > 2 && (normalizedTitle.includes(normBm) || normBm.includes(normalizedTitle))) {
+      return page;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Validate and truncate physical indices that exceed document length
  * Filters out items with undefined or out-of-range indices early,
  * preventing wasted verify+fix LLM calls on invalid entries
@@ -196,9 +237,9 @@ export class PageIndex {
       const savedOutline = pdfInfo.outline;
 
       // LLM-first: always try LLM path for better TOC accuracy
-      // (outline path skips verification, causing text misalignment)
+      // Pass outline as hint for accurate page mapping (especially for no-page-number TOCs)
       try {
-        const result = await this.processPdfPages(pages, pdfName);
+        const result = await this.processPdfPages(pages, pdfName, savedOutline);
         result.coverPng = this._pendingCoverPng;
         this._pendingCoverPng = undefined;
         return result;
@@ -225,7 +266,7 @@ export class PageIndex {
   /**
    * Process PDF pages directly
    */
-  async processPdfPages(pages: PdfPage[], docName: string): Promise<PageIndexResult> {
+  async processPdfPages(pages: PdfPage[], docName: string, outline?: PdfOutlineItem[]): Promise<PageIndexResult> {
     const startIndex = 1;
     const endPhysicalIndex = pages.length;
     const totalSteps = 6;
@@ -281,6 +322,23 @@ export class PageIndex {
 
     // Convert physical_index strings to integers
     tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
+
+    // Use PDF bookmarks (outline) to correct LLM page mapping inaccuracies
+    if (outline && outline.length > 0) {
+      const bookmarkMap = flattenOutlineToMap(outline);
+      let corrected = 0;
+      for (const item of tocItems) {
+        const bookmarkPage = findBookmarkMatch(item.title, bookmarkMap);
+        if (bookmarkPage !== null && item.physicalIndex !== bookmarkPage) {
+          piLog(`[Outline hint] "${item.title}": LLM=${item.physicalIndex} → bookmark=${bookmarkPage}`);
+          item.physicalIndex = bookmarkPage;
+          corrected++;
+        }
+      }
+      if (corrected > 0) {
+        piLog(`[Outline hint] Corrected ${corrected}/${tocItems.length} items using PDF bookmarks`);
+      }
+    }
 
     // Validate: filter out items with invalid/out-of-range physical indices early
     tocItems = validateAndTruncatePhysicalIndices(tocItems, pages.length);

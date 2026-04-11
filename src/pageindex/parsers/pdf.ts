@@ -250,7 +250,9 @@ export async function parsePdf(
 
   if (pageMatches.length > 0) {
     for (const match of pageMatches) {
-      const pageText = match[1];
+      let pageText = match[1];
+      // Safety: strip any residual delimiter markers from the extracted text
+      pageText = pageText.replace(/===?PAGE_DELIMITER(?:_END?)?===?/g, "");
       pages.push({ text: pageText, tokenCount: countTokens(pageText) });
     }
   } else {

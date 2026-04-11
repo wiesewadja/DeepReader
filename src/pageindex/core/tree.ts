@@ -289,6 +289,8 @@ export function addNodeText(
     for (let i = startPage - 1; i < endPage && i < pages.length; i++) {
       text += pages[i]?.text || "";
     }
+    // Strip any residual page delimiter markers
+    text = text.replace(/===?PAGE_DELIMITER(?:_END?)?===?/g, "");
     node.text = text;
   }
 
