@@ -243,6 +243,7 @@ export interface BookSectionResult {
 /** tree.json 数据结构 */
 export interface TreeData {
   title: string;
+  exportName?: string;
   docDescription?: string;
   source?: string;
   type?: string;

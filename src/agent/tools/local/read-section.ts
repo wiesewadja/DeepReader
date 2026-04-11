@@ -229,10 +229,12 @@ async function readByBlockId(
     if (content.includes(blockId)) {
       const blockContent = extractBlockContext(content, blockId);
       const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
+      const mdFileName = fileName.replace(/\.md$/i, '');
       return JSON.stringify({
         status: 'SUCCESS',
         node_id: nodeId,
         title,
+        file_name: mdFileName,
         block_id: blockId,
         content: blockContent || content,
         word_count: (blockContent || content).length,
@@ -263,10 +265,12 @@ async function readByHeading(
     const title = findNodeTitle(nodeId, treeData.structure) || '';
     if (title.toLowerCase().includes(normalizedQuery) || normalizedQuery.includes(title.toLowerCase())) {
       const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
+      const mdFileName = fileName.replace(/\.md$/i, '');
       return JSON.stringify({
         status: 'SUCCESS',
         node_id: nodeId,
         title,
+        file_name: mdFileName,
         content,
         word_count: content.length,
       });

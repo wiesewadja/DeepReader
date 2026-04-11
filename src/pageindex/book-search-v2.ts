@@ -322,7 +322,8 @@ async function locateMatchedBlocks(
   const fileName = tree.nodeFileMap[nodeId];
   if (!fileName) return [];
 
-  const fullPath = path.join(vaultPath, "DeepReader", tree.title, fileName);
+  const dirName = tree.exportName || tree.title;
+  const fullPath = path.join(vaultPath, "DeepReader", dirName, fileName);
 
   let content: string;
   try {

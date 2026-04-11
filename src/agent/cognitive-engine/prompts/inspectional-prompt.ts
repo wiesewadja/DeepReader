@@ -36,8 +36,9 @@ export function formatTreeStructure(
     // Build prefix
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
-    // Title line with node_id
-    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id})`;
+    // Title line with node_id and file_name (for wikilink)
+    const linkPart = node.file_name ? `, link: [[${node.file_name}]]` : '';
+    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}${linkPart})`;
     lines.push(titleLine);
 
     // Add summary if available and within depth limit

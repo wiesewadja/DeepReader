@@ -30,6 +30,7 @@ export interface OutlineNode {
   node_id: string;
   heading: string;
   level: number;
+  file_name?: string;       // Markdown 文件名（不含 .md），含数字前缀，用于 wikilink
   summary?: string;
   children?: OutlineNode[];
 }

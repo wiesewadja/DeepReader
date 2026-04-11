@@ -28,16 +28,20 @@ const InspectionalOutputSchema = z.object({
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure
  */
-function treeToOutlineNodes(structure: any[]): OutlineNode[] {
+function treeToOutlineNodes(structure: any[], nodeFileMap: Record<string, string> = {}): OutlineNode[] {
   const result: OutlineNode[] = [];
 
   for (const node of structure) {
+    const nodeId = node.nodeId || '';
+    const rawFileName = nodeFileMap[nodeId] || '';
+    const fileName = rawFileName.replace(/\.md$/i, '');
     result.push({
-      node_id: node.nodeId || '',
+      node_id: nodeId,
       heading: node.title || '',
       level: 1,
+      file_name: fileName || undefined,
       summary: node.summary,
-      children: node.nodes ? treeToOutlineNodes(node.nodes) : [],
+      children: node.nodes ? treeToOutlineNodes(node.nodes, nodeFileMap) : [],
     });
   }
 
@@ -181,7 +185,7 @@ export class InspectionalState extends StateNode {
       const treeContent = await (app.vault as any).adapter.read(treePath);
       const treeData = JSON.parse(treeContent);
 
-      return treeToOutlineNodes(treeData.structure || []);
+      return treeToOutlineNodes(treeData.structure || [], treeData.nodeFileMap || {});
     } catch {
       return [];
     }
