@@ -196,6 +196,13 @@ export class SidebarView extends ItemView {
             if (this.currentIndexId === indexId) {
                 this.currentIndexId = null;
                 this.currentPdfName = null;
+
+                // 重置右栏 UI 到欢迎页状态
+                this.messageList?.clearMessages();
+                this.messageList?.setCurrentPdfName('');
+                this.readingTopbar?.setCurrentBook(null);
+                this.readingTopbar?.setBookCover(null);
+                this.currentDocDescription = null;
             }
         } catch (error) {
             console.error('[DeepPDF] 删除索引失败:', error);
