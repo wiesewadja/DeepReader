@@ -667,3 +667,11 @@
     margin-top: 6px;
     opacity: 0.7;
 }
+
+/* ==================== BlockId 高亮样式 ==================== */
+
+.deeppdf-block-highlight {
+    background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.3);
+    border-radius: 3px;
+    transition: background 0.3s ease;
+}

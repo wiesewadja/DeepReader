@@ -36,6 +36,7 @@ export class ReadingModeService {
     private paginator: PagePaginator | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;  // 自动启用阅读模式（默认开启）
+    private linkClickHandler: ((e: MouseEvent) => void) | null = null;  // blockId 链接点击处理器
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -153,6 +154,9 @@ export class ReadingModeService {
             serviceLog('[DeepPDF] ReadingMode: initializing paginator');
 
             this.waitForRenderAndInitPaginator();
+            
+            // 初始化 blockId 链接跳转处理器
+            this.setupBlockIdLinkHandler();
         }, 200);
 
         // 通知书籍检测回调
@@ -209,6 +213,9 @@ export class ReadingModeService {
 
         this.paginator?.destroy();
         this.paginator = null;
+
+        // 清理 blockId 链接点击处理器
+        this.teardownBlockIdLinkHandler();
 
         // 清理旧的章节导航 UI 元素（如果有）
         const oldNavElements = document.querySelectorAll('.deeppdf-chapter-nav');
@@ -427,7 +434,7 @@ export class ReadingModeService {
      * 标记摘录文本（添加虚线下划线）
      * @param range 选中的文本范围
      */
-    markExcerpt(range: Range): void {
+markExcerpt(range: Range): void {
         try {
             const excerptMark = document.createElement('mark');
             excerptMark.setAttribute('data-excerpt', 'true');
@@ -437,9 +444,96 @@ export class ReadingModeService {
             excerptMark.appendChild(fragment);
             range.insertNode(excerptMark);
 
-            serviceLog('[ReadingMode] Marked excerpt text');
+            serviceLog('[DeepPDF] Marked excerpt text with dotted underline');
         } catch (err) {
-            serviceLog.error('[ReadingMode] Failed to mark excerpt:', err);
+            serviceLog('[DeepPDF] Failed to mark excerpt text:', err);
         }
+    }
+
+    /**
+     * 设置 blockId 链接点击处理器
+     * 解决 CSS multi-column 布局下的跳转问题
+     */
+    private setupBlockIdLinkHandler(): void {
+        const previewView = document.querySelector('.markdown-preview-view');
+        if (!previewView) return;
+
+        this.linkClickHandler = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            
+            // 检查是否点击了 internal-link
+            const link = target.closest('a.internal-link, a[data-href]');
+            if (!link) return;
+
+            const href = link.getAttribute('data-href') || link.getAttribute('href');
+            if (!href) return;
+
+            // 解析 blockId（格式：#^blockid）
+            const blockIdMatch = href.match(/#\^([a-zA-Z0-9_-]+)/);
+            if (!blockIdMatch) return;
+
+            // 阻止默认跳转
+            e.preventDefault();
+            e.stopPropagation();
+
+            // 手动处理跳转
+            this.handleBlockIdLinkClick(blockIdMatch[1]);
+        };
+
+        previewView.addEventListener('click', this.linkClickHandler, true);
+        serviceLog('[ReadingMode] BlockId link handler setup');
+    }
+
+    /**
+     * 清理 blockId 链接点击处理器
+     */
+    private teardownBlockIdLinkHandler(): void {
+        if (this.linkClickHandler) {
+            const previewView = document.querySelector('.markdown-preview-view');
+            if (previewView) {
+                previewView.removeEventListener('click', this.linkClickHandler, true);
+            }
+            this.linkClickHandler = null;
+            serviceLog('[ReadingMode] BlockId link handler teardown');
+        }
+    }
+
+    /**
+     * 处理 blockId 链接点击
+     * 在 CSS multi-column 布局下手动计算并跳转到正确的列
+     */
+    private handleBlockIdLinkClick(blockId: string): void {
+        const scrollView = document.querySelector('.markdown-preview-view') as HTMLElement;
+        if (!scrollView) return;
+
+        // 查找目标元素（Obsidian 会将 ^blockid 转为 id="blockid"）
+        const targetElement = scrollView.querySelector(`[id="${blockId}"]`) as HTMLElement;
+        
+        if (!targetElement) {
+            serviceLog('[ReadingMode] BlockId target not found:', blockId);
+            return;
+        }
+
+        // 计算目标元素的位置
+        const targetOffsetLeft = targetElement.offsetLeft;
+        const viewWidth = scrollView.clientWidth;
+        
+        // 计算目标所在的页（列）
+        const targetPage = Math.floor(targetOffsetLeft / viewWidth);
+        const targetScrollLeft = targetPage * viewWidth;
+
+        // 平滑滚动到目标列
+        scrollView.scrollTo({
+            left: targetScrollLeft,
+            behavior: 'smooth'
+        });
+
+        // 高亮目标元素（短暂闪烁）
+        targetElement.classList.add('deeppdf-block-highlight');
+        setTimeout(() => {
+            targetElement.classList.remove('deeppdf-block-highlight');
+        }, 2000);
+
+        serviceLog('[ReadingMode] Jumped to blockId:', blockId, 'at page:', targetPage + 1);
     }
 }
