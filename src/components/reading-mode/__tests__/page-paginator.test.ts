@@ -334,3 +334,103 @@ describe('PagePaginator', () => {
 		});
 	});
 });
+
+describe('PagePaginator integration', () => {
+	let container: HTMLElement;
+	let onNavigatePrev: ReturnType<typeof vi.fn>;
+	let onNavigateNext: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		(global as any).ResizeObserver = MockResizeObserver;
+		container = document.createElement('div');
+		container.className = 'markdown-preview-sizer';
+		document.body.appendChild(container);
+		onNavigatePrev = vi.fn().mockResolvedValue(true);
+		onNavigateNext = vi.fn().mockResolvedValue(true);
+	});
+
+	afterEach(() => {
+		document.querySelectorAll('.deeppdf-page-btn, .deeppdf-page-controls').forEach(el => el.remove());
+		container.remove();
+		delete (global as any).ResizeObserver;
+	});
+
+	it('should handle window resize gracefully', () => {
+		const paragraphs: HTMLElement[] = [];
+		for (let i = 0; i < 20; i++) {
+			const p = document.createElement('p');
+			p.textContent = 'A'.repeat(500);
+			container.appendChild(p);
+			paragraphs.push(p);
+			Object.defineProperty(p, 'offsetHeight', { value: 150, configurable: true });
+		}
+
+		const paginator = new PagePaginator({
+			container,
+			onNavigatePrev,
+			onNavigateNext,
+		});
+		vi.spyOn(paginator as any, 'getAvailableHeight').mockReturnValue(500);
+		paginator.paginateAndShow();
+
+		const originalTotalPages = paginator.getTotalPages();
+		expect(originalTotalPages).toBeGreaterThan(1);
+
+		paginator.nextPage();
+		paginator.nextPage();
+
+		vi.spyOn(paginator as any, 'getAvailableHeight').mockReturnValue(900);
+		(paginator as any).handleResize();
+
+		expect(paginator.isActive()).toBe(true);
+		expect(paginator.getTotalPages()).toBeLessThan(originalTotalPages);
+	});
+
+	it('should deactivate if resize makes content fit one page', () => {
+		for (let i = 0; i < 4; i++) {
+			const p = document.createElement('p');
+			p.textContent = 'A'.repeat(200);
+			container.appendChild(p);
+			Object.defineProperty(p, 'offsetHeight', { value: 200, configurable: true });
+		}
+
+		const paginator = new PagePaginator({
+			container,
+			onNavigatePrev,
+			onNavigateNext,
+		});
+
+		vi.spyOn(paginator as any, 'getAvailableHeight').mockReturnValue(300);
+		paginator.paginateAndShow();
+		expect(paginator.isActive()).toBe(true);
+
+		vi.spyOn(paginator as any, 'getAvailableHeight').mockReturnValue(5000);
+		(paginator as any).handleResize();
+		expect(paginator.isActive()).toBe(false);
+	});
+
+	it('should not include chapter nav or page controls in blocks', () => {
+		const nav = document.createElement('div');
+		nav.className = 'deeppdf-chapter-nav';
+		container.appendChild(nav);
+
+		for (let i = 0; i < 10; i++) {
+			const p = document.createElement('p');
+			p.textContent = 'A'.repeat(500);
+			container.appendChild(p);
+			Object.defineProperty(p, 'offsetHeight', { value: 200, configurable: true });
+		}
+
+		const paginator = new PagePaginator({
+			container,
+			onNavigatePrev,
+			onNavigateNext,
+		});
+		vi.spyOn(paginator as any, 'getAvailableHeight').mockReturnValue(400);
+		paginator.paginateAndShow();
+
+		for (const page of (paginator as any).pages) {
+			expect(page).not.toContain(nav);
+		}
+	});
+});

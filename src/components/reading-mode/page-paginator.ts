@@ -120,6 +120,7 @@ export class PagePaginator {
 
 		this.createControls();
 		this.showPage(0);
+		this.setupImageLoadListeners();
 		this.updateControls();
 		this.setupResizeObserver();
 
@@ -383,6 +384,30 @@ export class PagePaginator {
 		this.controlsBar = null;
 		this.progressFill = null;
 		this.pageIndicator = null;
+	}
+
+	/**
+	 * 监听图片加载完成后重新分页
+	 */
+	private setupImageLoadListeners(): void {
+		const images = this.container.querySelectorAll('img');
+		if (images.length === 0) return;
+
+		let pendingImages = 0;
+		const onImageReady = () => {
+			pendingImages--;
+			if (pendingImages <= 0) {
+				this.handleResize();
+			}
+		};
+
+		images.forEach(img => {
+			if (!(img as HTMLImageElement).complete) {
+				pendingImages++;
+				img.addEventListener('load', onImageReady, { once: true });
+				img.addEventListener('error', onImageReady, { once: true });
+			}
+		});
 	}
 
 	/**

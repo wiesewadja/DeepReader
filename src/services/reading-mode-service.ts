@@ -150,8 +150,7 @@ export class ReadingModeService {
             serviceLog('[DeepPDF] ReadingMode: calling chapterNav.update()');
             this.chapterNav?.update();
 
-            // 初始化分页器
-            this.initPaginator();
+            this.waitForRenderAndInitPaginator();
         }, 200);
 
         // 通知书籍检测回调
@@ -288,6 +287,31 @@ export class ReadingModeService {
 
         this.paginator.paginateAndShow();
         serviceLog('[ReadingMode] Paginator initialized');
+    }
+
+    /**
+     * 等待 Obsidian 渲染完成后初始化分页
+     */
+    private waitForRenderAndInitPaginator(): void {
+        const maxAttempts = 10;
+        const interval = 100;
+        let attempts = 0;
+
+        const tryInit = () => {
+            attempts++;
+            const sizer = document.querySelector('.markdown-preview-sizer') as HTMLElement;
+            if (sizer && sizer.children.length > 0) {
+                this.initPaginator();
+                return;
+            }
+            if (attempts < maxAttempts) {
+                setTimeout(tryInit, interval);
+            } else {
+                serviceLog.warn('[ReadingMode] Paginator: rendering not detected after timeout');
+            }
+        };
+
+        tryInit();
     }
 
     /**
