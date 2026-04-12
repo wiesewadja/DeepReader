@@ -169,7 +169,10 @@ export class PagePaginator {
 			sidePadding = (viewWidth - MAX_TEXT_WIDTH) / 2;
 		}
 
-		const columnGap = sidePadding * 2;
+		// The mathematical constraint to perfectly center every page is:
+		// stride = columnWidth + columnGap = viewWidth
+		// Therefore: columnGap = viewWidth - contentWidth
+		const columnGap = viewWidth - contentWidth;
 
 		// 通过 CSS 变量动态设定列宽、列间距和容器的左右 Padding
 		this.scrollView.style.setProperty('--deeppdf-col-width', `${contentWidth}px`);
