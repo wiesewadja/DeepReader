@@ -314,23 +314,36 @@ export class PagePaginator {
 		// 清空旧预览
 		this.previewContent.innerHTML = '';
 
-		// 暂时滚动到目标页获取内容（静默方式）
-		const currentScroll = this.scrollView.scrollLeft;
 		const viewWidth = this.scrollView.clientWidth;
+		const viewHeight = this.scrollView.clientHeight;
 		
 		// 克隆整个 sizer 内容
 		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
 		if (!sizer) return;
 
 		const clone = sizer.cloneNode(true) as HTMLElement;
+		
+		// 预览窗口尺寸 140x100
+		// 原始页面尺寸 viewWidth x viewHeight
+		// 缩放比例
+		const scaleX = 140 / viewWidth;
+		const scaleY = 100 / viewHeight;
+		const scale = Math.min(scaleX, scaleY);
+		
+		// 计算要显示的页面偏移（pageNum 从1开始）
+		const pageOffset = (pageNum - 1) * viewWidth;
+		
+		// 设置克隆元素的样式
 		clone.style.cssText = `
-			transform: scale(0.15);
-			transform-origin: top left;
-			width: ${viewWidth}px;
-			height: ${this.scrollView.clientHeight}px;
 			position: absolute;
-			left: ${-(pageNum - 1) * viewWidth}px;
+			width: ${viewWidth}px;
+			height: ${viewHeight}px;
+			transform: scale(${scale}) translateX(${-pageOffset}px);
+			transform-origin: 0 0;
+			top: 0;
+			left: 0;
 			overflow: hidden;
+			background: var(--background-primary);
 		`;
 
 		this.previewContent.appendChild(clone);

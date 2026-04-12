@@ -581,30 +581,32 @@
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
     justify-content: center;
-    padding: 2px 0;
+    padding: 4px 0;
+    height: 20px;
 }
 
-/* 单个条纹 */
+/* 单个条纹 - 横条纹 */
 .deeppdf-page-stripe {
-    width: 4px;
-    height: 12px;
+    height: 6px;
+    min-width: 20px;  /* 最小宽度，确保可点击 */
+    flex: 1 1 auto;   /* 自动扩展填充空间 */
+    max-width: 40px;  /* 最大宽度限制 */
     background: var(--background-modifier-border);
-    border-radius: 1px;
+    border-radius: 2px;
     cursor: pointer;
     transition: all 0.15s ease;
-    flex-shrink: 0;
 }
 
 .deeppdf-page-stripe:hover {
     background: var(--text-muted);
-    transform: scaleY(1.3);
+    height: 8px;
 }
 
 .deeppdf-page-stripe.active {
     background: var(--interactive-accent);
-    transform: scaleY(1.5);
+    height: 10px;
 }
 
 .deeppdf-page-stripe.read {
