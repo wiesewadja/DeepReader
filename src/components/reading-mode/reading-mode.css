@@ -550,45 +550,96 @@
     pointer-events: none;
 }
 
-/* 底部进度条 — sticky，贴在当前 tab 视图底部 */
+/* 底部控制栏 — absolute，贴底 */
 .deeppdf-page-controls {
-    position: absolute; /* 改为绝对定位，沉底整个阅读容器 */
+    position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 24px 12px;
+    padding: 8px 16px 10px;
     background: var(--background-primary);
     border-top: 1px solid var(--background-modifier-border);
     z-index: 10;
     box-sizing: border-box;
 }
 
-/* 进度条 */
-.deeppdf-page-progress-bar {
-    flex: 1;
-    height: 3px;
-    background: var(--background-modifier-border);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.deeppdf-page-progress-fill {
-    height: 100%;
-    width: 0%;
-    background: var(--interactive-accent);
-    border-radius: 2px;
-    transition: width 0.25s ease;
-}
-
 /* 页码指示器 */
 .deeppdf-page-indicator {
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    min-width: 48px;
-    text-align: right;
+    min-width: 42px;
+    text-align: center;
+}
+
+/* 条纹容器 */
+.deeppdf-page-stripes {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    justify-content: center;
+    padding: 2px 0;
+}
+
+/* 单个条纹 */
+.deeppdf-page-stripe {
+    width: 4px;
+    height: 12px;
+    background: var(--background-modifier-border);
+    border-radius: 1px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.deeppdf-page-stripe:hover {
+    background: var(--text-muted);
+    transform: scaleY(1.3);
+}
+
+.deeppdf-page-stripe.active {
+    background: var(--interactive-accent);
+    transform: scaleY(1.5);
+}
+
+.deeppdf-page-stripe.read {
+    background: var(--text-faint);
+}
+
+/* 预览弹出框 */
+.deeppdf-page-preview-popup {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    transform: translateX(-50%);
+    margin-bottom: 8px;
+    width: 140px;
+    height: 100px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 100;
+    overflow: hidden;
+}
+
+.deeppdf-page-preview-popup.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.deeppdf-page-preview-content {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+    background: var(--background-primary-alt);
 }

@@ -106,20 +106,17 @@ export class PagePaginator {
 	private calculatePages(): void {
 		if (!this.scrollView) return;
 		
-		// 利用 CSS 分列后的 scrollWidth 和 clientWidth 计算总页数
-		// 如果 scrollWidth 尚未完全计算出，可能需要延迟一帧
 		requestAnimationFrame(() => {
 			if (!this.scrollView) return;
 			const totalWidth = this.scrollView.scrollWidth;
 			const viewWidth = this.scrollView.clientWidth;
 			
-			// 防御性检查
 			if (viewWidth === 0) return;
 			
-			this._totalPages = Math.ceil(totalWidth / viewWidth);
+			this._totalPages = Math.max(1, Math.ceil(totalWidth / viewWidth));
 			
-			// 如果只有1页，但内容并没有超过容器，也至少算1页
-			if (this._totalPages < 1) this._totalPages = 1;
+			// 创建条纹
+			this.createStripes();
 			
 			this.updateCurrentPageFromScroll();
 			this.updateControls();
@@ -198,6 +195,10 @@ export class PagePaginator {
 
 	// ── 控制栏 ───────────────────────────────────────────────
 
+	private pageStripes: HTMLElement[] = [];
+	private previewPopup: HTMLElement | null = null;
+	private previewContent: HTMLElement | null = null;
+
 	private createControls(): void {
 		this.removeControls();
 
@@ -215,26 +216,30 @@ export class PagePaginator {
 		this.rightBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 		this.rightBtn.addEventListener('click', () => this.nextPage());
 
-		// 进度条（absolute，贴底）
+		// 控制栏（absolute，贴底）
 		this.controlsBar = document.createElement('div');
 		this.controlsBar.className = 'deeppdf-page-controls';
 
-		const progressBar = document.createElement('div');
-		progressBar.className = 'deeppdf-page-progress-bar';
-
-		this.progressFill = document.createElement('div');
-		this.progressFill.className = 'deeppdf-page-progress-fill';
-		progressBar.appendChild(this.progressFill);
-
+		// 页码指示器（左侧）
 		this.pageIndicator = document.createElement('span');
 		this.pageIndicator.className = 'deeppdf-page-indicator';
-
-		this.controlsBar.appendChild(progressBar);
 		this.controlsBar.appendChild(this.pageIndicator);
 
-		// 将按钮和进度条挂载到 .view-content 容器上（取代 document.body，避免被侧边栏遮挡或影响其他页面）
+		// 条纹容器（中间）
+		const stripeContainer = document.createElement('div');
+		stripeContainer.className = 'deeppdf-page-stripes';
+		this.controlsBar.appendChild(stripeContainer);
+
+		// 预览弹出框（用于悬停显示）
+		this.previewPopup = document.createElement('div');
+		this.previewPopup.className = 'deeppdf-page-preview-popup';
+		this.previewContent = document.createElement('div');
+		this.previewContent.className = 'deeppdf-page-preview-content';
+		this.previewPopup.appendChild(this.previewContent);
+		this.controlsBar.appendChild(this.previewPopup);
+
+		// 将按钮和控制栏挂载到 .view-content
 		if (this.viewContent) {
-			// 确保 view-content 有相对定位
 			if (getComputedStyle(this.viewContent).position === 'static') {
 				this.viewContent.style.position = 'relative';
 			}
@@ -244,20 +249,114 @@ export class PagePaginator {
 		}
 	}
 
+	private createStripes(): void {
+		const container = this.controlsBar?.querySelector('.deeppdf-page-stripes');
+		if (!container) return;
+
+		// 清空旧条纹
+		container.innerHTML = '';
+		this.pageStripes = [];
+
+		// 为每一页创建一个小条纹
+		for (let i = 1; i <= this._totalPages; i++) {
+			const stripe = document.createElement('div');
+			stripe.className = 'deeppdf-page-stripe';
+			stripe.dataset.page = String(i);
+
+			// 点击跳转
+			stripe.addEventListener('click', () => this.goToPage(i));
+
+			// 悬停预览
+			stripe.addEventListener('mouseenter', (e) => this.showPreview(i, e));
+			stripe.addEventListener('mouseleave', () => this.hidePreview());
+
+			container.appendChild(stripe);
+			this.pageStripes.push(stripe);
+		}
+	}
+
+	private goToPage(pageNum: number): void {
+		if (!this.scrollView || pageNum < 1 || pageNum > this._totalPages) return;
+		
+		const viewWidth = this.scrollView.clientWidth;
+		this.scrollView.scrollTo({ left: (pageNum - 1) * viewWidth, behavior: 'smooth' });
+		this.hidePreview();
+	}
+
+	private showPreview(pageNum: number, event: MouseEvent): void {
+		if (!this.previewPopup || !this.previewContent || !this.scrollView) return;
+
+		// 定位预览框在条纹上方
+		const stripe = this.pageStripes[pageNum - 1];
+		if (!stripe) return;
+		
+		const stripeRect = stripe.getBoundingClientRect();
+		const controlsRect = this.controlsBar!.getBoundingClientRect();
+		
+		// 预览框定位在条纹上方
+		this.previewPopup.style.left = `${stripeRect.left - controlsRect.left + stripeRect.width / 2}px`;
+		this.previewPopup.style.transform = 'translateX(-50%)';
+		this.previewPopup.classList.add('visible');
+
+		// 生成预览内容（克隆当前页的可见内容）
+		this.generatePreviewContent(pageNum);
+	}
+
+	private hidePreview(): void {
+		if (this.previewPopup) {
+			this.previewPopup.classList.remove('visible');
+		}
+	}
+
+	private generatePreviewContent(pageNum: number): void {
+		if (!this.previewContent || !this.scrollView) return;
+
+		// 清空旧预览
+		this.previewContent.innerHTML = '';
+
+		// 暂时滚动到目标页获取内容（静默方式）
+		const currentScroll = this.scrollView.scrollLeft;
+		const viewWidth = this.scrollView.clientWidth;
+		
+		// 克隆整个 sizer 内容
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return;
+
+		const clone = sizer.cloneNode(true) as HTMLElement;
+		clone.style.cssText = `
+			transform: scale(0.15);
+			transform-origin: top left;
+			width: ${viewWidth}px;
+			height: ${this.scrollView.clientHeight}px;
+			position: absolute;
+			left: ${-(pageNum - 1) * viewWidth}px;
+			overflow: hidden;
+		`;
+
+		this.previewContent.appendChild(clone);
+	}
+
 	private updateControls(): void {
 		if (!this._isActive) return;
 
-		if (this.progressFill) {
-			const pct = this._totalPages > 1
-				? ((this._currentPage - 1) / (this._totalPages - 1)) * 100
-				: 0;
-			this.progressFill.style.width = `${pct}%`;
-		}
-
+		// 更新页码指示器
 		if (this.pageIndicator) {
 			this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
 		}
 
+		// 更新条纹状态
+		for (let i = 0; i < this.pageStripes.length; i++) {
+			const stripe = this.pageStripes[i];
+			const pageNum = i + 1;
+			
+			// 当前页高亮
+			stripe.classList.toggle('active', pageNum === this._currentPage);
+			
+			// 已读页面标记
+			stripe.classList.toggle('read', pageNum < this._currentPage);
+		}
+
+		// 更新翻页按钮状态
 		this.leftBtn?.classList.toggle(DISABLED_CLASS, this._currentPage <= 1);
 		this.rightBtn?.classList.toggle(DISABLED_CLASS, this._currentPage >= this._totalPages);
 	}
@@ -271,6 +370,9 @@ export class PagePaginator {
 		this.controlsBar = null;
 		this.progressFill = null;
 		this.pageIndicator = null;
+		this.previewPopup = null;
+		this.previewContent = null;
+		this.pageStripes = [];
 	}
 
 	// ── ResizeObserver ────────────────────────────────────────
@@ -313,6 +415,9 @@ export class PagePaginator {
 
 			// 计算新的总页数
 			this._totalPages = Math.max(1, Math.ceil(totalWidth / viewWidth));
+
+			// 重新创建条纹
+			this.createStripes();
 
 			if (this._totalPages <= 1) { 
 				// 只有一页，滚动到最左侧
