@@ -51,7 +51,11 @@ export function buildFormatterSystemPrompt(memoryContext?: string): string {
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
     : '';
 
-  return `${PROMPT_S4_FORMATTER}${memorySection}`;
+  const now = new Date();
+  const timeStr = now.toLocaleString('zh-CN', { hour12: false });
+  const timeSection = `\n<current_time>${timeStr}</current_time>\n`;
+
+  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}`;
 }
 
 /**
