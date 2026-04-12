@@ -151,17 +151,30 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return;
 
-		// 获取当前容器计算出的 padding (Obsidian 阅读视图可能因主题而异，我们通过 CSS 获取，或 fallback 到 40)
-		const computedStyle = window.getComputedStyle(this.scrollView);
-		const pl = parseFloat(computedStyle.paddingLeft) || 40;
-		const pr = parseFloat(computedStyle.paddingRight) || 40;
+		// 纸质书最佳阅读行宽 (约 640px 左右)
+		const MAX_TEXT_WIDTH = 640;
+		// 最小安全边距（针对窄屏幕或手机）
+		const MIN_PADDING = 40;
 
-		// 计算精确的内容区宽度 (content box)
-		const columnWidth = Math.max(200, viewWidth - pl - pr);
-		
-		// 通过 CSS 变量动态设定
-		this.scrollView.style.setProperty('--deeppdf-col-width', `${columnWidth}px`);
-		this.scrollView.style.setProperty('--deeppdf-col-gap', `${pl + pr}px`);
+		let contentWidth: number;
+		let sidePadding: number;
+
+		if (viewWidth <= MAX_TEXT_WIDTH + MIN_PADDING * 2) {
+			// 窄屏模式：扣除双边最小边距
+			contentWidth = viewWidth - MIN_PADDING * 2;
+			sidePadding = MIN_PADDING;
+		} else {
+			// 宽屏模式：锁定行宽，两边均分留白，实现绝对居中
+			contentWidth = MAX_TEXT_WIDTH;
+			sidePadding = (viewWidth - MAX_TEXT_WIDTH) / 2;
+		}
+
+		const columnGap = sidePadding * 2;
+
+		// 通过 CSS 变量动态设定列宽、列间距和容器的左右 Padding
+		this.scrollView.style.setProperty('--deeppdf-col-width', `${contentWidth}px`);
+		this.scrollView.style.setProperty('--deeppdf-col-gap', `${columnGap}px`);
+		this.scrollView.style.setProperty('--deeppdf-side-padding', `${sidePadding}px`);
 	}
 
 	private updateCurrentPageFromScroll(): void {
