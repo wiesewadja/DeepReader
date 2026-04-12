@@ -6,11 +6,7 @@
 /* ==================== 阅读模式容器 ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view {
-    /* 限制行宽，减少眼球疲劳 (约 60-65 字符) */
-    max-width: 640px;
-    margin: 0 auto;
-    /* 增加上下留白 */
-    padding: 80px 40px 120px;
+    /* 将原有 640px max-width 移除，让 CSS multi-column 接管 */
     font-family: var(--font-text);
     /* 沉浸式背景 */
     background: var(--background-primary);
@@ -460,14 +456,14 @@
 /* 核心布局: 将 markdown 容器变为多列横向滑动 */
 .deeppdf-reading-mode .markdown-preview-view {
     /* 重置宽度限制，允许内容横向撑开 */
-    max-width: none;
+    max-width: none !important;
     margin: 0;
-    /* 上留白，下部留给固定进度条，左右留白用于翻页边距 */
-    padding: 60px 40px 60px 40px;
+    /* 上部留白给顶部工具栏，下部留白给进度条，左右留白为内容边距 */
+    padding: 60px 40px 60px 40px !important;
     height: 100%;
-    /* 核心多列属性 */
-    column-width: calc(100vw - 80px); /* 视口宽度减去左右 padding */
-    column-gap: 80px; /* 列间距等于左右 padding 之和 */
+    /* 核心多列属性：使用 CSS 变量，由 page-paginator.ts 动态计算赋值 */
+    column-width: var(--deeppdf-col-width, 600px);
+    column-gap: var(--deeppdf-col-gap, 80px);
     column-fill: auto;
     /* 允许横向滚动，隐藏原生滚动条 */
     overflow-x: auto;
@@ -475,6 +471,7 @@
     /* 捕捉滚动效果 */
     scroll-snap-type: x mandatory;
     scroll-behavior: smooth;
+    box-sizing: border-box;
 }
 
 /* 隐藏原生滚动条 */

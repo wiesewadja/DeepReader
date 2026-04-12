@@ -58,6 +58,7 @@ export class PagePaginator {
 
 		this._isActive = true;
 		
+		this.updateColumnSizing();
 		this.createControls();
 		this.calculatePages();
 		this.setupResizeObserver();
@@ -142,6 +143,25 @@ export class PagePaginator {
 			this.scrollView.removeEventListener('scroll', this.scrollHandler);
 			this.scrollHandler = null;
 		}
+	}
+
+	private updateColumnSizing(): void {
+		if (!this.scrollView) return;
+		
+		const viewWidth = this.scrollView.clientWidth;
+		if (viewWidth === 0) return;
+
+		// 获取当前容器计算出的 padding (Obsidian 阅读视图可能因主题而异，我们通过 CSS 获取，或 fallback 到 40)
+		const computedStyle = window.getComputedStyle(this.scrollView);
+		const pl = parseFloat(computedStyle.paddingLeft) || 40;
+		const pr = parseFloat(computedStyle.paddingRight) || 40;
+
+		// 计算精确的内容区宽度 (content box)
+		const columnWidth = Math.max(200, viewWidth - pl - pr);
+		
+		// 通过 CSS 变量动态设定
+		this.scrollView.style.setProperty('--deeppdf-col-width', `${columnWidth}px`);
+		this.scrollView.style.setProperty('--deeppdf-col-gap', `${pl + pr}px`);
 	}
 
 	private updateCurrentPageFromScroll(): void {
@@ -263,6 +283,9 @@ export class PagePaginator {
 		// 记录当前进度百分比
 		const prevProgress = this._totalPages > 1
 			? (this._currentPage - 1) / (this._totalPages - 1) : 0;
+
+		// 更新精确的列宽和间距
+		this.updateColumnSizing();
 
 		// 重新计算总页数
 		this.calculatePages();
