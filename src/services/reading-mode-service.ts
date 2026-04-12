@@ -7,6 +7,7 @@ import { App, TFile, EventRef, MarkdownView } from 'obsidian';
 import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
+import { PagePaginator } from '../components/reading-mode/page-paginator.js';
 import type { QuoteMetadata } from '../components/chat-input/chat-input.js';
 
 export interface ReadingModeCallbacks {
@@ -32,6 +33,7 @@ export class ReadingModeService {
     private fileOpenHandler: EventRef | null = null;
     private selectionToolbar: SelectionToolbar | null = null;
     private chapterNav: ChapterNav | null = null;
+    private paginator: PagePaginator | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;  // 自动启用阅读模式（默认开启）
 
@@ -147,7 +149,10 @@ export class ReadingModeService {
         setTimeout(() => {
             serviceLog('[DeepPDF] ReadingMode: calling chapterNav.update()');
             this.chapterNav?.update();
-        }, 100);
+
+            // 初始化分页器
+            this.initPaginator();
+        }, 200);
 
         // 通知书籍检测回调
         this.notifyBookDetected(file);
@@ -201,6 +206,9 @@ export class ReadingModeService {
     deactivate(): void {
         if (!this.isActive) return;
 
+        this.paginator?.destroy();
+        this.paginator = null;
+
         document.body.classList.remove('deeppdf-reading-mode');
         this.chapterNav?.hide();
         this.isActive = false;
@@ -250,9 +258,36 @@ export class ReadingModeService {
             onNavigatePrev: () => this.navigateToPrev(),
             onNavigateNext: () => this.navigateToNext(),
             getNavigation: () => this.getChapterNavigation(),
+            getPaginator: () => this.paginator,
         });
         this.chapterNav.init();
         serviceLog('[ReadingMode] Chapter navigation initialized');
+    }
+
+    /**
+     * 初始化分页器
+     */
+    private initPaginator(): void {
+        // 销毁旧的分页器
+        this.paginator?.destroy();
+        this.paginator = null;
+
+        // 找到渲染容器（仅使用 .markdown-preview-sizer）
+        const container = document.querySelector('.markdown-preview-sizer') as HTMLElement;
+
+        if (!container) {
+            serviceLog.warn('[ReadingMode] Paginator: container not found');
+            return;
+        }
+
+        this.paginator = new PagePaginator({
+            container,
+            onNavigatePrev: () => this.navigateToPrev(),
+            onNavigateNext: () => this.navigateToNext(),
+        });
+
+        this.paginator.paginateAndShow();
+        serviceLog('[ReadingMode] Paginator initialized');
     }
 
     /**
@@ -272,6 +307,10 @@ export class ReadingModeService {
             this.chapterNav.destroy();
             this.chapterNav = null;
         }
+        if (this.paginator) {
+            this.paginator.destroy();
+            this.paginator = null;
+        }
     }
 
     /**
@@ -279,6 +318,13 @@ export class ReadingModeService {
      */
     getCurrentFile(): TFile | null {
         return this.currentFile;
+    }
+
+    /**
+     * 获取分页器实例（供 ChapterNav 路由键盘事件）
+     */
+    getPaginator(): PagePaginator | null {
+        return this.paginator;
     }
 
     /**

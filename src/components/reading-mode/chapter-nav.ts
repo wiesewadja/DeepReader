@@ -16,6 +16,7 @@ export interface ChapterNavOptions {
     onNavigatePrev: () => Promise<boolean>;
     onNavigateNext: () => Promise<boolean>;
     getNavigation: () => { prev: TFile | null; next: TFile | null; currentIndex: number; total: number } | null;
+    getPaginator?: () => { nextPage: () => boolean; prevPage: () => boolean; isActive: () => boolean } | null;
 }
 
 export class ChapterNav {
@@ -107,15 +108,25 @@ export class ChapterNav {
         );
         if (isEditable) return;
 
-        // 左箭头：上一章
+        // 左箭头：上一页 or 上一章
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
             e.preventDefault();
-            this.options.onNavigatePrev();
+            const paginator = this.options.getPaginator?.();
+            if (paginator?.isActive()) {
+                paginator.prevPage();
+            } else {
+                this.options.onNavigatePrev();
+            }
         }
-        // 右箭头：下一章
+        // 右箭头：下一页 or 下一章
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
             e.preventDefault();
-            this.options.onNavigateNext();
+            const paginator = this.options.getPaginator?.();
+            if (paginator?.isActive()) {
+                paginator.nextPage();
+            } else {
+                this.options.onNavigateNext();
+            }
         }
     }
 
