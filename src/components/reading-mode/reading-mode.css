@@ -454,3 +454,87 @@
 .deeppdf-reading-mode mark[data-excerpt="true"]:hover {
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
+
+/* ==================== 分页样式 ==================== */
+
+/* 隐藏非当前页的元素 */
+.deeppdf-page-hidden {
+    display: none !important;
+}
+
+/* 两侧翻页按钮 */
+.deeppdf-page-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    opacity: 0.15;
+    cursor: pointer;
+    transition: opacity 0.2s ease, background 0.2s ease;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.deeppdf-page-btn.left {
+    left: 20px;
+}
+
+.deeppdf-page-btn.right {
+    right: 20px;
+}
+
+.deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
+    opacity: 0.7;
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.deeppdf-page-btn-disabled {
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+/* 底部分页控制栏 */
+.deeppdf-page-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 0 8px;
+    margin-top: 1em;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* 进度条 */
+.deeppdf-page-progress-bar {
+    flex: 1;
+    height: 3px;
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.deeppdf-page-progress-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+/* 页码指示器 */
+.deeppdf-page-indicator {
+    color: var(--text-muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: 4px 10px;
+    background: var(--background-secondary-alt);
+    border-radius: 4px;
+}
