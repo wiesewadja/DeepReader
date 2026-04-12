@@ -458,8 +458,8 @@
     /* 重置宽度限制，允许内容横向撑开 */
     max-width: none !important;
     margin: 0;
-    /* 上下留白。取消这里的左右留白，交给子容器 sizer，否则在某些 Obsidian 主题下 padding-left 会失效 */
-    padding: 60px 0 60px 0 !important;
+    /* 上部留白给顶部工具栏，下部留白给进度条，左右留白为内容边距 */
+    padding: 60px var(--deeppdf-side-padding, 40px) 60px var(--deeppdf-side-padding, 40px) !important;
     height: 100%;
     /* 核心多列属性：使用 CSS 变量，由 page-paginator.ts 动态计算赋值，保证 640px 最佳行宽不被破坏 */
     column-width: var(--deeppdf-col-width, 640px);
@@ -468,8 +468,7 @@
     /* 允许横向滚动，隐藏原生滚动条 */
     overflow-x: auto;
     overflow-y: hidden;
-    /* 捕捉滚动效果 */
-    scroll-snap-type: x mandatory;
+    /* 移除 scroll-snap */
     scroll-behavior: smooth;
     box-sizing: border-box;
 }
@@ -482,21 +481,22 @@
     scrollbar-width: none; /* Firefox */
 }
 
-/* 强制各列的元素对齐捕捉点 */
-.deeppdf-reading-mode .markdown-preview-view > div {
-    scroll-snap-align: start;
-}
-
 /* 确保内部容器撑满高度，并且强制第一页左侧有 padding */
 .deeppdf-reading-mode .markdown-preview-sizer {
     height: 100%;
     max-width: none !important;
     min-height: 100%;
-    /* 关键修复：直接在 sizer 上应用动态左右 padding，这样第一页才会有真实的左侧留白 */
-    padding: 0 var(--deeppdf-side-padding, 40px) 0 var(--deeppdf-side-padding, 40px) !important;
-    margin: 0;
+    /* 必须清零水平 padding，否则只有第一列会被缩进，后续列贴边！ */
+    padding: 0 !important;
+    margin: 0 !important;
     /* 防止图片、长段落等被从中间横向切断 */
     column-break-inside: avoid;
+    break-inside: avoid;
+    /* BFC 触发器，强制外层的 padding-left 生效 */
+    display: block;
+    width: 100%;
+    border-left: 1px solid transparent; 
+}
     break-inside: avoid;
 }
 
