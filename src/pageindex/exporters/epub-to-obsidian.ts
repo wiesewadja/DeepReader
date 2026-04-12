@@ -198,6 +198,8 @@ export async function exportToObsidian(
   return { mocPath, notes, nodeFileMap };
 }
 
+export { fixAbnormalAsterisks };
+
 /**
  * 创建单个章节笔记
  */
@@ -263,6 +265,11 @@ async function createChapterNote(
       .trim();
     return `${hashes} ${cleaned}`;
   });
+
+  // Fix abnormal asterisk patterns in paragraph content
+  // e.g. "观**念**检**核**与**实**践" → "**观念检核与实践**"
+  // e.g. "1**.**思**维**的**三**个**层**次" → "**1.思维的三个层次**"
+  content = fixAbnormalAsterisks(content);
 
   // Summary callout — 放在正文最前面
   const nodeSummary = options.nodeSummaries?.[chapter.title];
@@ -573,6 +580,79 @@ function sanitizeTag(tag: string): string {
  */
 function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 修正异常的星号加粗格式
+ * 检测并修正 EPUB 中常见的异常格式：
+ * - 分散单字符加粗：观**念**检**核**与**实**践 → **观念检核与实践**
+ * - 连续单字符加粗：1**.**思**维**的**三**个**层**次 → **1.思维的三个层次**
+ */
+function fixAbnormalAsterisks(content: string): string {
+  return content.split('\n').map(line => {
+    // 跳过标题、代码块、引用块、列表项等特殊行
+    if (line.match(/^#{1,6}\s/) || line.match(/^```/) || line.match(/^>\s/) || line.match(/^\s*[-*+]\s/)) {
+      return line;
+    }
+    
+    // 分析行中的星号格式
+    const asteriskPattern = /\*\*([^*]+?)\*\*/g;
+    const matches: Array<{ full: string; content: string; index: number }> = [];
+    let match;
+    
+    while ((match = asteriskPattern.exec(line)) !== null) {
+      matches.push({
+        full: match[0],
+        content: match[1],
+        index: match.index
+      });
+    }
+    
+    if (matches.length === 0) {
+      return line;
+    }
+    
+    // 计算统计指标
+    const singleCharCount = matches.filter(m => m.content.length <= 2).length;
+    const multiCharCount = matches.filter(m => m.content.length > 2).length;
+    
+    // 计算加粗内容占比（去掉星号符号）
+    const plainText = line.replace(/\*\*/g, '');
+    const boldContentLength = matches.reduce((sum, m) => sum + m.content.length, 0);
+    const ratio = boldContentLength / plainText.length;
+    
+    // 判断是否为异常格式
+    const isAbnormal = 
+      singleCharCount >= 3 && // 至少3个单字符加粗
+      multiCharCount === 0 && // 没有正常的多字符加粗
+      ratio > 0.15; // 加粗内容占比 > 15%（去掉星号后）
+    
+    if (!isAbnormal) {
+      return line;
+    }
+    
+    // 修正异常格式：将所有 **X** 合并为整体加粗
+    let fixedLine = '';
+    let lastIndex = 0;
+    
+    for (const m of matches) {
+      // 添加普通文本部分（不加星号）
+      if (m.index > lastIndex) {
+        fixedLine += line.substring(lastIndex, m.index);
+      }
+      // 添加加粗内容（去掉星号）
+      fixedLine += m.content;
+      lastIndex = m.index + m.full.length;
+    }
+    
+    // 添加最后的普通文本
+    if (lastIndex < line.length) {
+      fixedLine += line.substring(lastIndex);
+    }
+    
+    // 整体加粗
+    return `**${fixedLine}**`;
+  }).join('\n');
 }
 
 /**
