@@ -114,6 +114,7 @@ export const searchBookTool: ToolExecutor = {
         path: r.hierarchyPath,
         matched_blocks: r.matchedBlocks.map(b => ({
           block_id: b.blockId,
+          file_name: r.fileName,  // 添加 file_name 供 wikilink 使用
           content: b.content,
         })),
         score: Math.round(r.score * 100) / 100,

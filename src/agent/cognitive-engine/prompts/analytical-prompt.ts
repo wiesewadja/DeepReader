@@ -54,11 +54,12 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
 
 <output_rules>
 1. 输出纯粹的"逻辑骨架"，不掺杂个人知识。
-2. 搜索结果的 matched_blocks 包含精确的段落内容和 block_id，直接引用最相关的 block_id。
-3. 块引用格式：[[{{书名}}/{{file_name}}#^{{block_id}}|自然语言别名]]，其中 file_name 来自工具返回的 file_name 字段。
-   绝对禁止省略 file_name，不能写成 [[书名#^block_id]]。
-   示例：[[遥远的救世主/第二部 天国之门#^ch3-p12|丁元英对天国的诠释]]
-4. 别名必须融入句子语法，不要裸链接。
+2. 块引用格式：[[{{书名}}/{{file_name}}#^{{block_id}}|自然语言别名]]
+   - **file_name 必须来自 matched_blocks.file_name 或 read 结果中的 file_name 字段**
+   - file_name 包含数字前缀，如 "14 - 存钱 第10章"、"15 - 第11章 合乎情理胜过绝对理性"
+   - ❌ 禁止使用 title（不含数字前缀），如 "存钱 第10章"
+   - 示例：[[金钱心理学/14 - 存钱 第10章#^p003|储蓄率的关键作用]]
+3. 别名必须融入句子语法，不要裸链接。
 </output_rules>
 `;
 }
@@ -120,11 +121,9 @@ export function buildScopedChaptersBlock(
 
     if (matchedKey) {
       const fileName = matchedKey.split('/').pop() ?? '';
-      // 去掉 .md 后缀和 "NN - " 数字前缀，提取标题
-      const title = fileName
-        .replace(/\.md$/, '')
-        .replace(/^\d+\s*-\s*/, '');
-      lines.push(`- node_id: ${nodeId} | ${title} | ${fileName}`);
+      // 去掉 .md 后缀，保留完整的文件名（含数字前缀）供 wikilink 使用
+      const fileNameForLink = fileName.replace(/\.md$/, '');
+      lines.push(`- node_id: ${nodeId}, file_name: "${fileNameForLink}"`);
     } else {
       lines.push(`- node_id: ${nodeId}`);
     }
