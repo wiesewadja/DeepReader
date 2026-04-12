@@ -265,6 +265,12 @@ export class SidebarView extends ItemView {
         // 清空前端 Agent 对话历史
         this.agentChatHistory = [];
 
+        // 清空上下文管理器（清除旧书籍的文档）
+        if (this.contextManager) {
+            this.contextManager.clearAll();
+            log('[DeepPDF] ContextManager cleared for new session');
+        }
+
         // 在 SessionStore 中创建会话
         await this.initializeSessionStore();
         const effectiveIndexId = this.crossBookMode ? '__cross_book__' : indexId;
