@@ -285,9 +285,11 @@ export class SelectionToolbar {
         const selection = window.getSelection();
         const hasSelection = selection && !selection.isCollapsed && selection.toString().trim();
 
-        // 检查是否在阅读模式区域内
-        const readingMode = document.body.classList.contains('deeppdf-reading-mode');
-        if (!readingMode) {
+        // 检查是否在阅读模式区域内 (因为我们修改了类不再放在 body 上，现在放在 view container 上)
+        const activeView = this.app.workspace.getActiveViewOfType(require('obsidian').MarkdownView);
+        const isReadingMode = activeView && activeView.containerEl.classList.contains('deeppdf-reading-mode');
+        
+        if (!isReadingMode) {
             this.hide();
             this.hideColorPicker();
             return;
