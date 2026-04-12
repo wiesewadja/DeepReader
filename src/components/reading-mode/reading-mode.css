@@ -497,8 +497,6 @@
     width: 100%;
     border-left: 1px solid transparent; 
 }
-    break-inside: avoid;
-}
 
 /* 避免大块元素跨列断裂 */
 .deeppdf-reading-mode .markdown-preview-view p,
@@ -644,4 +642,28 @@
     overflow: hidden;
     position: relative;
     background: var(--background-primary-alt);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 8px;
+}
+
+/* 预览文本 */
+.deeppdf-page-preview-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.4;
+    max-height: 60px;
+    overflow: hidden;
+    word-break: break-all;
+}
+
+/* 页码标签 */
+.deeppdf-page-preview-label {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    opacity: 0.7;
 }

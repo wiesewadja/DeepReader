@@ -315,38 +315,53 @@ export class PagePaginator {
 		this.previewContent.innerHTML = '';
 
 		const viewWidth = this.scrollView.clientWidth;
-		const viewHeight = this.scrollView.clientHeight;
 		
-		// 克隆整个 sizer 内容
+		// 获取 sizer 内容
 		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
 		if (!sizer) return;
 
-		const clone = sizer.cloneNode(true) as HTMLElement;
+		// 获取页面文本片段（第一段或标题）
+		const textContent = this.getPagePreviewText(pageNum, viewWidth);
 		
-		// 预览窗口尺寸 140x100
-		// 原始页面尺寸 viewWidth x viewHeight
-		// 缩放比例
-		const scaleX = 140 / viewWidth;
-		const scaleY = 100 / viewHeight;
-		const scale = Math.min(scaleX, scaleY);
+		// 创建预览文本显示
+		const previewText = document.createElement('div');
+		previewText.className = 'deeppdf-page-preview-text';
+		previewText.textContent = textContent;
 		
-		// 计算要显示的页面偏移（pageNum 从1开始）
-		const pageOffset = (pageNum - 1) * viewWidth;
+		this.previewContent.appendChild(previewText);
 		
-		// 设置克隆元素的样式
-		clone.style.cssText = `
-			position: absolute;
-			width: ${viewWidth}px;
-			height: ${viewHeight}px;
-			transform: scale(${scale}) translateX(${-pageOffset}px);
-			transform-origin: 0 0;
-			top: 0;
-			left: 0;
-			overflow: hidden;
-			background: var(--background-primary);
-		`;
+		// 添加页码标签
+		const pageLabel = document.createElement('div');
+		pageLabel.className = 'deeppdf-page-preview-label';
+		pageLabel.textContent = `第 ${pageNum} 页`;
+		this.previewContent.appendChild(pageLabel);
+	}
 
-		this.previewContent.appendChild(clone);
+	private getPagePreviewText(pageNum: number, viewWidth: number): string {
+		// 从 scrollLeft 计算当前页面的起始位置
+		const pageStart = (pageNum - 1) * viewWidth;
+		
+		// 获取所有文本段落
+		const paragraphs = this.scrollView?.querySelectorAll('.markdown-preview-sizer > p, .markdown-preview-sizer > h1, .markdown-preview-sizer > h2, .markdown-preview-sizer > h3');
+		if (!paragraphs || paragraphs.length === 0) {
+			return '页面内容';
+		}
+
+		// 找到该页面范围内的第一个段落
+		for (const p of paragraphs) {
+			const rect = p.getBoundingClientRect();
+			const scrollRect = this.scrollView!.getBoundingClientRect();
+			// 检查元素是否在目标页面范围内
+			const elementLeft = rect.left - scrollRect.left + this.scrollView!.scrollLeft;
+			if (elementLeft >= pageStart && elementLeft < pageStart + viewWidth) {
+				const text = (p as HTMLElement).textContent?.trim() || '';
+				return text.length > 50 ? text.substring(0, 50) + '...' : text;
+			}
+		}
+
+		// 如果没找到，返回第一个段落
+		const firstText = (paragraphs[0] as HTMLElement).textContent?.trim() || '';
+		return firstText.length > 50 ? firstText.substring(0, 50) + '...' : firstText;
 	}
 
 	private updateControls(): void {
