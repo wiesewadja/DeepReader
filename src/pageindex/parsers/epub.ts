@@ -153,7 +153,7 @@ function createTurndownServiceWithBlocks(
     paragraph: {
       filter: ["p", "div", "section", "blockquote"],
       replacement: (content, node: any) => {
-        if (!content.trim()) return content;
+        if (!content.trim()) return "";
 
         // Get original ID if exists
         const originalId = node.getAttribute?.("id");
@@ -179,8 +179,9 @@ function createTurndownServiceWithBlocks(
           blockMap.set(childId, blockId);
         }
 
-        // Add block reference marker at the end
-        return `\n\n${content} ^${blockId}\n\n`;
+        // Add block reference marker at the end of content (same line)
+        // Obsidian requires blockId to be on the same line as the paragraph content
+        return `\n\n${content.trim()} ^${blockId}\n\n`;
       },
     },
 
