@@ -703,11 +703,41 @@ export class AIMessage extends Message {
 		this.el = this.render();
 	}
 
+	/**
+	 * 随机选择背景图案类
+	 * 每个 AI 消息都是一封独特的信，给用户带来惊喜和新奇感
+	 */
+	private getRandomPatternClass(): string {
+		const patterns = [
+			'deeppdf-pattern-stars',       // 星空点阵 - 创意对话
+			'deeppdf-pattern-grid',        // 网格蓝图 - 技术分析
+			'deeppdf-pattern-wave',        // 波浪线条 - 故事讲述
+			'deeppdf-pattern-honeycomb',   // 六边形蜂窝 - 科学讨论
+			'deeppdf-pattern-glow',        // 渐变光晕 - 重要回复
+			'deeppdf-pattern-dots-density',// 点阵密度 - 长消息
+			'deeppdf-pattern-triangle',    // 三角形镶嵌 - 设计讨论
+			'deeppdf-pattern-mixed',       // 混合图案 - 通用型
+			'deeppdf-pattern-snow',        // 雪花点阵 - 冬日氛围
+			'deeppdf-pattern-music',       // 音乐波浪 - 艺术内容
+			'deeppdf-pattern-ink',         // 水墨晕染 - 东方美学
+			'deeppdf-pattern-matrix',      // 科技矩阵 - 未来感
+		];
+		
+		const randomIndex = Math.floor(Math.random() * patterns.length);
+		const pattern = patterns[randomIndex];
+		
+		log('[DeepPDF] 🎨 AI 信件图案:', pattern);
+		
+		return pattern;
+	}
+
 	render(): HTMLElement {
 		const container = this.renderContainer();
 		const wrapper = container.createEl('div', { cls: 'deeppdf-message-wrapper' });
 
-		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai'] });
+		// 随机选择背景图案（每次 AI 回复都是一封独特的信）
+		const patternClass = this.getRandomPatternClass();
+		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai', patternClass] });
 
 		// Agent 消息标识 + 状态显示
 		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
