@@ -35,8 +35,8 @@ export class ReadingModeService {
     private chapterNav: ChapterNav | null = null;
     private paginator: PagePaginator | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
-    private autoEnable: boolean = true;  // 自动启用阅读模式（默认开启）
-    private linkClickHandler: ((e: MouseEvent) => void) | null = null;  // blockId 链接点击处理器
+    private autoEnable: boolean = true;
+    private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -154,10 +154,10 @@ export class ReadingModeService {
             serviceLog('[DeepPDF] ReadingMode: initializing paginator');
 
             this.waitForRenderAndInitPaginator();
-            
-            // 初始化 blockId 链接跳转处理器
-            this.setupBlockIdLinkHandler();
         }, 200);
+
+        // 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
+        this.patchScrollIntoView();
 
         // 通知书籍检测回调
         this.notifyBookDetected(file);
@@ -214,12 +214,12 @@ export class ReadingModeService {
         this.paginator?.destroy();
         this.paginator = null;
 
-        // 清理 blockId 链接点击处理器
-        this.teardownBlockIdLinkHandler();
-
         // 清理旧的章节导航 UI 元素（如果有）
         const oldNavElements = document.querySelectorAll('.deeppdf-chapter-nav');
         oldNavElements.forEach(el => el.remove());
+
+        // 恢复原始 scrollIntoView
+        this.unpatchScrollIntoView();
 
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
@@ -451,89 +451,82 @@ markExcerpt(range: Range): void {
     }
 
     /**
-     * 设置 blockId 链接点击处理器
-     * 解决 CSS multi-column 布局下的跳转问题
+     * 拦截 scrollIntoView，修复 CSS multi-column 布局下的 blockId 跳转
+     * 
+     * 问题：Obsidian 内部用 scrollIntoView() 跳转到 blockId 目标，
+     * 但 CSS multi-column 布局下 scrollIntoView() 无法正确横向滚动。
+     * 
+     * 方案：全局拦截 scrollIntoView，当目标元素在 reading mode 的
+     * multi-column 容器内时，手动计算横向滚动位置。
      */
-    private setupBlockIdLinkHandler(): void {
-        const previewView = document.querySelector('.markdown-preview-view');
-        if (!previewView) return;
+    private patchScrollIntoView(): void {
+        if (this.originalScrollIntoView) return;
 
-        this.linkClickHandler = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
+        this.originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+        const self = this;
+
+        HTMLElement.prototype.scrollIntoView = function (options?: ScrollIntoViewOptions | boolean) {
+            // 检查目标元素是否在 reading mode 的 multi-column 容器内
+            const scrollView = this.closest?.('.deeppdf-reading-mode .markdown-preview-view') as HTMLElement | null;
             
-            // 检查是否点击了 internal-link
-            const link = target.closest('a.internal-link, a[data-href]');
-            if (!link) return;
+            if (scrollView && self.isActive) {
+                self.scrollToElementInColumn(this as HTMLElement, scrollView);
+                return;
+            }
 
-            const href = link.getAttribute('data-href') || link.getAttribute('href');
-            if (!href) return;
-
-            // 解析 blockId（格式：#^blockid）
-            const blockIdMatch = href.match(/#\^([a-zA-Z0-9_-]+)/);
-            if (!blockIdMatch) return;
-
-            // 阻止默认跳转
-            e.preventDefault();
-            e.stopPropagation();
-
-            // 手动处理跳转
-            this.handleBlockIdLinkClick(blockIdMatch[1]);
+            // 非 reading mode 元素，使用原始行为
+            return self.originalScrollIntoView!.call(this, options);
         };
 
-        previewView.addEventListener('click', this.linkClickHandler, true);
-        serviceLog('[ReadingMode] BlockId link handler setup');
+        serviceLog('[ReadingMode] scrollIntoView patched for multi-column fix');
     }
 
     /**
-     * 清理 blockId 链接点击处理器
+     * 恢复原始 scrollIntoView
      */
-    private teardownBlockIdLinkHandler(): void {
-        if (this.linkClickHandler) {
-            const previewView = document.querySelector('.markdown-preview-view');
-            if (previewView) {
-                previewView.removeEventListener('click', this.linkClickHandler, true);
-            }
-            this.linkClickHandler = null;
-            serviceLog('[ReadingMode] BlockId link handler teardown');
+    private unpatchScrollIntoView(): void {
+        if (this.originalScrollIntoView) {
+            HTMLElement.prototype.scrollIntoView = this.originalScrollIntoView;
+            this.originalScrollIntoView = null;
+            serviceLog('[ReadingMode] scrollIntoView unpatched');
         }
     }
 
     /**
-     * 处理 blockId 链接点击
-     * 在 CSS multi-column 布局下手动计算并跳转到正确的列
+     * 在 CSS multi-column 布局中滚动到目标元素
+     * 
+     * 使用 getBoundingClientRect 计算元素在滚动内容中的绝对位置，
+     * 然后计算目标所在的"页"（列），设置 scrollLeft 跳转。
      */
-    private handleBlockIdLinkClick(blockId: string): void {
-        const scrollView = document.querySelector('.markdown-preview-view') as HTMLElement;
-        if (!scrollView) return;
+    private scrollToElementInColumn(element: HTMLElement, scrollView: HTMLElement): void {
+        // 使用 requestAnimationFrame 确保 DOM 布局已计算完成
+        requestAnimationFrame(() => {
+            const elemRect = element.getBoundingClientRect();
+            const containerRect = scrollView.getBoundingClientRect();
 
-        // 查找目标元素（Obsidian 会将 ^blockid 转为 id="blockid"）
-        const targetElement = scrollView.querySelector(`[id="${blockId}"]`) as HTMLElement;
-        
-        if (!targetElement) {
-            serviceLog('[ReadingMode] BlockId target not found:', blockId);
-            return;
-        }
+            // 计算元素在可滚动内容中的绝对位置
+            const absoluteLeft = elemRect.left - containerRect.left + scrollView.scrollLeft;
+            const viewWidth = scrollView.clientWidth;
 
-        // 计算目标元素的位置
-        const targetOffsetLeft = targetElement.offsetLeft;
-        const viewWidth = scrollView.clientWidth;
-        
-        // 计算目标所在的页（列）
-        const targetPage = Math.floor(targetOffsetLeft / viewWidth);
-        const targetScrollLeft = targetPage * viewWidth;
+            if (viewWidth === 0) return;
 
-        // 平滑滚动到目标列
-        scrollView.scrollTo({
-            left: targetScrollLeft,
-            behavior: 'smooth'
+            // 计算目标页（列）
+            const targetPage = Math.floor(absoluteLeft / viewWidth);
+            const targetScrollLeft = targetPage * viewWidth;
+
+            // 平滑滚动到目标列
+            scrollView.scrollTo({
+                left: targetScrollLeft,
+                behavior: 'smooth'
+            });
+
+            // 高亮目标元素
+            element.classList.add('deeppdf-block-highlight');
+            setTimeout(() => {
+                element.classList.remove('deeppdf-block-highlight');
+            }, 2000);
+
+            serviceLog('[ReadingMode] Scrolled to block in column layout, page:', targetPage + 1);
         });
-
-        // 高亮目标元素（短暂闪烁）
-        targetElement.classList.add('deeppdf-block-highlight');
-        setTimeout(() => {
-            targetElement.classList.remove('deeppdf-block-highlight');
-        }, 2000);
-
-        serviceLog('[ReadingMode] Jumped to blockId:', blockId, 'at page:', targetPage + 1);
     }
 }
