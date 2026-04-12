@@ -264,50 +264,35 @@ export class ReadingModeService {
     }
 
     /**
-     * 初始化分页器
+     * 等待渲染完成后初始化分页器
+     * 轮询检测 .markdown-preview-sizer 是否已有内容
      */
-    private initPaginator(): void {
-        // 销毁旧的分页器
+    private waitForRenderAndInitPaginator(): void {
         this.paginator?.destroy();
         this.paginator = null;
 
-        // 找到渲染容器（仅使用 .markdown-preview-sizer）
-        const container = document.querySelector('.markdown-preview-sizer') as HTMLElement;
-
-        if (!container) {
-            serviceLog.warn('[ReadingMode] Paginator: container not found');
-            return;
-        }
-
-        this.paginator = new PagePaginator({
-            container,
-            onNavigatePrev: () => this.navigateToPrev(),
-            onNavigateNext: () => this.navigateToNext(),
-        });
-
-        this.paginator.paginateAndShow();
-        serviceLog('[ReadingMode] Paginator initialized');
-    }
-
-    /**
-     * 等待 Obsidian 渲染完成后初始化分页
-     */
-    private waitForRenderAndInitPaginator(): void {
-        const maxAttempts = 10;
-        const interval = 100;
+        const maxAttempts = 15;
         let attempts = 0;
 
         const tryInit = () => {
             attempts++;
-            const sizer = document.querySelector('.markdown-preview-sizer') as HTMLElement;
-            if (sizer && sizer.children.length > 0) {
-                this.initPaginator();
+            const container = document.querySelector('.markdown-preview-sizer') as HTMLElement;
+
+            if (container && container.children.length > 1) {
+                this.paginator = new PagePaginator({
+                    container,
+                    onNavigatePrev: () => this.navigateToPrev(),
+                    onNavigateNext: () => this.navigateToNext(),
+                });
+                this.paginator.paginateAndShow();
+                serviceLog('[ReadingMode] Paginator initialized');
                 return;
             }
+
             if (attempts < maxAttempts) {
-                setTimeout(tryInit, interval);
+                setTimeout(tryInit, 150);
             } else {
-                serviceLog.warn('[ReadingMode] Paginator: rendering not detected after timeout');
+                serviceLog.warn('[ReadingMode] Paginator: render not ready after timeout');
             }
         };
 
@@ -374,8 +359,8 @@ export class ReadingModeService {
             .filter((child): child is TFile => {
                 if (!(child instanceof TFile)) return false;
                 if (child.extension !== 'md') return false;
-                // 只包含有序号前缀的章节文件
-                return /^\d+-/.test(child.basename);
+                // 匹配 "01 - 标题" 或 "01-标题" 格式
+                return /^\d+/.test(child.basename);
             })
             .sort((a, b) => a.basename.localeCompare(b.basename, undefined, { numeric: true }));
 
