@@ -455,16 +455,72 @@
     background: rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
-/* ==================== 分页样式 ==================== */
+/* ==================== 分页样式 (CSS Multi-column 布局) ==================== */
 
-/* 隐藏非当前页的元素 */
+/* 核心布局: 将 markdown 容器变为多列横向滑动 */
+.deeppdf-reading-mode .markdown-preview-view {
+    /* 重置宽度限制，允许内容横向撑开 */
+    max-width: none;
+    margin: 0;
+    /* 上留白，下部留给固定进度条，左右留白用于翻页边距 */
+    padding: 60px 40px 60px 40px;
+    height: 100%;
+    /* 核心多列属性 */
+    column-width: calc(100vw - 80px); /* 视口宽度减去左右 padding */
+    column-gap: 80px; /* 列间距等于左右 padding 之和 */
+    column-fill: auto;
+    /* 允许横向滚动，隐藏原生滚动条 */
+    overflow-x: auto;
+    overflow-y: hidden;
+    /* 捕捉滚动效果 */
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+}
+
+/* 隐藏原生滚动条 */
+.deeppdf-reading-mode .markdown-preview-view::-webkit-scrollbar {
+    display: none;
+}
+.deeppdf-reading-mode .markdown-preview-view {
+    scrollbar-width: none; /* Firefox */
+}
+
+/* 强制各列的元素对齐捕捉点 */
+.deeppdf-reading-mode .markdown-preview-view > div {
+    scroll-snap-align: start;
+}
+
+/* 确保内部容器撑满高度 */
+.deeppdf-reading-mode .markdown-preview-sizer {
+    height: 100%;
+    max-width: none;
+    min-height: 100%;
+    padding: 0;
+    margin: 0;
+    /* 防止图片、长段落等被从中间横向切断 */
+    column-break-inside: avoid;
+    break-inside: avoid;
+}
+
+/* 避免大块元素跨列断裂 */
+.deeppdf-reading-mode .markdown-preview-view p,
+.deeppdf-reading-mode .markdown-preview-view h1,
+.deeppdf-reading-mode .markdown-preview-view h2,
+.deeppdf-reading-mode .markdown-preview-view h3,
+.deeppdf-reading-mode .markdown-preview-view img,
+.deeppdf-reading-mode .markdown-preview-view .callout {
+    break-inside: avoid-column;
+    page-break-inside: avoid;
+}
+
+/* 隐藏非当前页的元素（已废弃，兼容旧代码平滑过渡） */
 .deeppdf-page-hidden {
     display: none !important;
 }
 
-/* 两侧翻页按钮 */
+/* 两侧翻页按钮 — 相对当前阅读容器，绝对定位 */
 .deeppdf-page-btn {
-    position: fixed;
+    position: absolute;
     top: 50%;
     transform: translateY(-50%);
     width: 44px;
@@ -472,28 +528,23 @@
     border-radius: 50%;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    color: var(--text-muted);
-    opacity: 0.15;
+    color: var(--text-normal);
+    opacity: 0.35;
     cursor: pointer;
     transition: opacity 0.2s ease, background 0.2s ease;
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
 }
 
-.deeppdf-page-btn.left {
-    left: 20px;
-}
-
-.deeppdf-page-btn.right {
-    right: 20px;
-}
+.deeppdf-page-btn.left  { left: 12px; }
+.deeppdf-page-btn.right { right: 12px; }
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
-    opacity: 0.7;
+    opacity: 0.9;
     background: var(--background-modifier-hover);
-    color: var(--text-normal);
 }
 
 .deeppdf-page-btn-disabled {
@@ -501,14 +552,19 @@
     pointer-events: none;
 }
 
-/* 底部分页控制栏 */
+/* 底部进度条 — sticky，贴在当前 tab 视图底部 */
 .deeppdf-page-controls {
+    position: absolute; /* 改为绝对定位，沉底整个阅读容器 */
+    bottom: 0;
+    left: 0;
+    right: 0;
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 16px 0 8px;
-    margin-top: 1em;
-    width: 100%;
+    padding: 10px 24px 12px;
+    background: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+    z-index: 10;
     box-sizing: border-box;
 }
 
@@ -523,9 +579,10 @@
 
 .deeppdf-page-progress-fill {
     height: 100%;
+    width: 0%;
     background: var(--interactive-accent);
     border-radius: 2px;
-    transition: width 0.2s ease;
+    transition: width 0.25s ease;
 }
 
 /* 页码指示器 */
@@ -534,7 +591,6 @@
     font-size: 13px;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
-    padding: 4px 10px;
-    background: var(--background-secondary-alt);
-    border-radius: 4px;
+    min-width: 48px;
+    text-align: right;
 }

@@ -142,8 +142,11 @@ export class ReadingModeService {
         // 切换到阅读视图
         this.switchToReadingView();
 
-        // 添加阅读模式 CSS 类
-        document.body.classList.add('deeppdf-reading-mode');
+        // 添加阅读模式 CSS 类到当前 leaf 的 containerEl，避免全局污染
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) {
+            view.containerEl.classList.add('deeppdf-reading-mode');
+        }
 
         // 延迟更新章节导航，等待视图渲染完成
         setTimeout(() => {
@@ -208,6 +211,12 @@ export class ReadingModeService {
         this.paginator?.destroy();
         this.paginator = null;
 
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view) {
+            view.containerEl.classList.remove('deeppdf-reading-mode');
+        }
+        
+        // 兼容处理：移除之前可能遗留在 body 上的类
         document.body.classList.remove('deeppdf-reading-mode');
         this.chapterNav?.hide();
         this.isActive = false;
