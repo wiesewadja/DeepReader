@@ -280,29 +280,40 @@ export class PagePaginator {
 	private handleResize(): void {
 		if (!this._isActive || !this.scrollView) return;
 
-		// 记录当前进度百分比
+		// 记录调整前的进度百分比
 		const prevProgress = this._totalPages > 1
 			? (this._currentPage - 1) / (this._totalPages - 1) : 0;
 
-		// 更新精确的列宽和间距
+		// 1. 同步更新 CSS 变量（列宽和间距），这会立即触发浏览器的重排
 		this.updateColumnSizing();
 
-		// 重新计算总页数
-		this.calculatePages();
+		// 2. 为了获取重排后正确的 scrollWidth，必须延迟到下一帧
+		requestAnimationFrame(() => {
+			if (!this._isActive || !this.scrollView) return;
 
-		if (this._totalPages <= 1) { 
-			// 如果视口变大到一页就能装下，保持控制栏但不提供翻页
-			return; 
-		}
+			const totalWidth = this.scrollView.scrollWidth;
+			const viewWidth = this.scrollView.clientWidth;
+			if (viewWidth === 0) return;
 
-		// 根据之前的进度计算新的页码
-		const newPage = Math.round(prevProgress * (this._totalPages - 1)) + 1;
-		this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
+			// 计算新的总页数
+			this._totalPages = Math.max(1, Math.ceil(totalWidth / viewWidth));
 
-		// 滚动到新的计算位置
-		const viewWidth = this.scrollView.clientWidth;
-		this.scrollView.scrollLeft = (this._currentPage - 1) * viewWidth;
-		
-		this.updateControls();
+			if (this._totalPages <= 1) { 
+				// 只有一页，滚动到最左侧
+				this.scrollView.scrollLeft = 0;
+				this.updateControls();
+				return; 
+			}
+
+			// 根据之前的进度计算调整后的新页码
+			const newPage = Math.round(prevProgress * (this._totalPages - 1)) + 1;
+			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
+
+			// 立刻强制同步滚动，对齐内容盒子
+			this.scrollView.scrollLeft = (this._currentPage - 1) * viewWidth;
+			
+			// 更新底部控件
+			this.updateControls();
+		});
 	}
 }
