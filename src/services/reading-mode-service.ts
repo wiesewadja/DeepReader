@@ -148,10 +148,9 @@ export class ReadingModeService {
             view.containerEl.classList.add('deeppdf-reading-mode');
         }
 
-        // 延迟更新章节导航，等待视图渲染完成
+        // 延迟初始化分页器，等待视图渲染完成
         setTimeout(() => {
-            serviceLog('[DeepPDF] ReadingMode: calling chapterNav.update()');
-            this.chapterNav?.update();
+            serviceLog('[DeepPDF] ReadingMode: initializing paginator');
 
             this.waitForRenderAndInitPaginator();
         }, 200);
@@ -210,6 +209,10 @@ export class ReadingModeService {
 
         this.paginator?.destroy();
         this.paginator = null;
+
+        // 清理旧的章节导航 UI 元素（如果有）
+        const oldNavElements = document.querySelectorAll('.deeppdf-chapter-nav');
+        oldNavElements.forEach(el => el.remove());
 
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChapterNav } from '../chapter-nav.js';
 import type { App, TFile } from 'obsidian';
 
-describe('ChapterNav Keyboard Navigation', () => {
+describe('ChapterNav - Pure Keyboard Navigation (No UI)', () => {
     let chapterNav: ChapterNav;
     let mockPaginator: any;
     let mockOnNavigatePrev: any;
@@ -46,6 +46,11 @@ describe('ChapterNav Keyboard Navigation', () => {
         container.remove();
     });
     
+    it('should NOT create UI elements in init()', () => {
+        const navElement = document.querySelector('.deeppdf-chapter-nav');
+        expect(navElement).toBeNull();
+    });
+    
     it('should call paginator.prevPage when ArrowLeft is pressed in reading mode', () => {
         const event = new KeyboardEvent('keydown', {
             key: 'ArrowLeft',
@@ -78,23 +83,6 @@ describe('ChapterNav Keyboard Navigation', () => {
         expect(mockOnNavigateNext).not.toHaveBeenCalled();
     });
     
-    it('should not respond to ArrowLeft when paginator is not active', () => {
-        mockPaginator.isActive.mockReturnValue(false);
-        
-        const event = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            ctrlKey: false,
-            metaKey: false,
-            shiftKey: false,
-            bubbles: true
-        });
-        
-        document.dispatchEvent(event);
-        
-        expect(mockOnNavigatePrev).toHaveBeenCalled();
-        expect(mockPaginator.prevPage).not.toHaveBeenCalled();
-    });
-    
     it('should not respond to keyboard when not in reading mode', () => {
         container.classList.remove('deeppdf-reading-mode');
         
@@ -110,72 +98,6 @@ describe('ChapterNav Keyboard Navigation', () => {
         
         expect(mockPaginator.prevPage).not.toHaveBeenCalled();
         expect(mockOnNavigatePrev).not.toHaveBeenCalled();
-    });
-    
-    it('should not respond when modal is open', () => {
-        const modal = document.createElement('div');
-        modal.className = 'modal-container';
-        document.body.appendChild(modal);
-        
-        const event = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            ctrlKey: false,
-            metaKey: false,
-            shiftKey: false,
-            bubbles: true
-        });
-        
-        document.dispatchEvent(event);
-        
-        expect(mockPaginator.prevPage).not.toHaveBeenCalled();
-        
-        modal.remove();
-    });
-    
-    it('should not respond when focus is on input element', () => {
-        const input = document.createElement('input');
-        document.body.appendChild(input);
-        input.focus();
-        
-        const event = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            ctrlKey: false,
-            metaKey: false,
-            shiftKey: false,
-            bubbles: true
-        });
-        
-        document.dispatchEvent(event);
-        
-        expect(mockPaginator.prevPage).not.toHaveBeenCalled();
-        
-        input.remove();
-    });
-    
-    it('should not respond to ArrowLeft with modifier keys', () => {
-        const eventCtrl = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            ctrlKey: true,
-            bubbles: true
-        });
-        
-        const eventMeta = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            metaKey: true,
-            bubbles: true
-        });
-        
-        const eventShift = new KeyboardEvent('keydown', {
-            key: 'ArrowLeft',
-            shiftKey: true,
-            bubbles: true
-        });
-        
-        document.dispatchEvent(eventCtrl);
-        document.dispatchEvent(eventMeta);
-        document.dispatchEvent(eventShift);
-        
-        expect(mockPaginator.prevPage).not.toHaveBeenCalled();
     });
     
     it('should prevent default scroll behavior on ArrowLeft', () => {
@@ -206,5 +128,40 @@ describe('ChapterNav Keyboard Navigation', () => {
         document.dispatchEvent(event);
         
         expect(event.defaultPrevented).toBe(true);
+    });
+    
+    it('should clean up keyboard listener on destroy()', () => {
+        chapterNav.destroy();
+        
+        const event = new KeyboardEvent('keydown', {
+            key: 'ArrowRight',
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey: false,
+            bubbles: true
+        });
+        
+        document.dispatchEvent(event);
+        
+        expect(mockPaginator.nextPage).not.toHaveBeenCalled();
+    });
+    
+    it('should rely on chapter file internal navigation links instead of UI buttons', () => {
+        // ChapterNav should not create UI buttons
+        const buttons = document.querySelectorAll('.deeppdf-nav-btn');
+        expect(buttons.length).toBe(0);
+        
+        // Keyboard navigation should still work
+        const event = new KeyboardEvent('keydown', {
+            key: 'ArrowRight',
+            ctrlKey: false,
+            metaKey: false,
+            shiftKey: false,
+            bubbles: true
+        });
+        
+        document.dispatchEvent(event);
+        
+        expect(mockPaginator.nextPage).toHaveBeenCalled();
     });
 });

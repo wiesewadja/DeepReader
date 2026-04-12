@@ -32,12 +32,11 @@ export class ChapterNav {
     }
 
     /**
-     * 初始化导航栏
+     * 初始化导航栏（仅键盘导航，不显示 UI）
      */
     init(): void {
-        // 创建导航栏元素
-        this.createNavElement();
-
+        // 不创建导航栏元素（依赖章节文件末尾的内置链接）
+        
         // 键盘快捷键
         document.addEventListener('keydown', this.boundHandleKeyDown);
     }
