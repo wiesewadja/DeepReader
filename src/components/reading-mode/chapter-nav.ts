@@ -89,8 +89,12 @@ export class ChapterNav {
      * 处理键盘事件
      */
     private handleKeyDown(e: KeyboardEvent): void {
-        // 只在阅读模式下响应
-        if (!document.body.classList.contains('deeppdf-reading-mode')) return;
+        // 只在阅读模式下响应（检查 containerEl 或 body）
+        const hasReadingMode = 
+            document.body.classList.contains('deeppdf-reading-mode') ||
+            document.querySelector('.deeppdf-reading-mode');
+        
+        if (!hasReadingMode) return;
 
         // 检查是否有打开的弹窗
         const hasOpenModal = document.querySelector('.modal-container, .modal-bg, .deeppdf-library-modal');
@@ -102,8 +106,8 @@ export class ChapterNav {
             activeElement.tagName === 'INPUT' ||
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.getAttribute('contenteditable') === 'true' ||
-            activeElement.classList.contains('cm-content') ||  // CodeMirror 编辑器
-            activeElement.closest('.chat-input-container') ||  // 聊天输入框
+            activeElement.classList.contains('cm-content') ||
+            activeElement.closest('.chat-input-container') ||
             activeElement.closest('[contenteditable="true"]')
         );
         if (isEditable) return;
