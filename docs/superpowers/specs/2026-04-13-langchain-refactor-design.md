@@ -110,6 +110,31 @@ interface RuntimeContext {
   vaultPath: string;
   settings: AgentSettings;
 }
+
+// RuntimeContext 传入机制示例
+const result = await graph.invoke(initialState, {
+  configurable: {
+    thread_id: sessionId,
+    // 通过 configurable 传入非序列化上下文
+    runtimeContext: {
+      app: plugin.app,
+      vaultPath: vault.adapter.getBasePath(),
+      settings: plugin.settings,
+    },
+  },
+});
+
+// 工具获取 RuntimeContext
+const searchBookTool = new DynamicStructuredTool({
+  name: 'search_book',
+  schema: z.object({ query: z.string() }),
+  func: async (input, runManager) => {
+    // 从 configurable 获取 runtime context
+    const config = runManager?.getChild()?.config;
+    const { app, vaultPath, settings } = config?.configurable?.runtimeContext || {};
+    // 执行搜索逻辑...
+  },
+});
 ```
 
 ### 状态图结构
@@ -229,15 +254,73 @@ async function analyticalNode(state: AgentState): Promise<Partial<AgentState>> {
       ...state,
       scopeNodeIds: state.scopeNodeIds, // 范围拦截
     }),
+    // Loop Detection：限制最大工具调用次数
+    maxIterations: 5,
+    maxToolCalls: 10,
   });
   
   const result = await reactAgent.invoke(state);
   
+  // Self-Verification 后处理
+  const verifiedResult = await verifyContent(result, state.toolResults);
+  
   return {
-    analysisResult: result.messages[result.messages.length - 1].content,
+    analysisResult: verifiedResult.content,
     toolResults: extractToolResults(result),
     messages: result.messages,
   };
+}
+
+// Self-Verification 实现
+async function verifyContent(
+  result: AgentState,
+  toolResults: ToolResult[]
+): Promise<{ content: string; verified: boolean }> {
+  if (toolResults.length === 0) {
+    return { content: result.analysisResult || '', verified: true };
+  }
+  
+  // 提取所有 block_ids
+  const allBlockIds = toolResults.flatMap(r => r.blockIds);
+  const content = result.analysisResult || '';
+  
+  // 检查 wiki 链接格式
+  const wikiLinks = extractWikiLinks(content);
+  const invalidLinks = wikiLinks.filter(link => !allBlockIds.includes(link.blockId));
+  
+  if (invalidLinks.length > 0) {
+    // 使用 LLM 纠正无效链接
+    const correctedContent = await correctWikiLinks(content, invalidLinks, allBlockIds);
+    return { content: correctedContent, verified: false };
+  }
+  
+  return { content, verified: true };
+}
+
+// Loop Detection 配置
+const loopDetectionConfig = {
+  maxIterations: 5,      // 最大 LLM 调用轮数
+  maxToolCalls: 10,      // 最大工具调用次数（硬约束）
+  duplicateQueryThreshold: 2, // 同一查询重复阈值
+};
+
+// 检测重复工具调用
+function detectLoop(state: AgentState): boolean {
+  const recentToolCalls = state.toolResults.slice(-5);
+  const queryCounts = new Map<string, number>();
+  
+  for (const tc of recentToolCalls) {
+    if (tc.args.query) {
+      const count = queryCounts.get(tc.args.query) || 0;
+      queryCounts.set(tc.args.query, count + 1);
+      
+      if (count >= loopDetectionConfig.duplicateQueryThreshold) {
+        return true; // 触发 loop detection
+      }
+    }
+  }
+  
+  return false;
 }
 ```
 
@@ -502,6 +585,36 @@ function getReasoningModel(): ChatOpenAI {
     apiKey: settings.deepseekApiKey,
     baseUrl: 'https://api.deepseek.com/v1',
   });
+}
+
+// DeepSeek reasoning 输出处理
+async function invokeWithReasoning(
+  model: ChatOpenAI,
+  messages: BaseMessage[],
+  callbacks: { onReasoning?: (text: string) => void }
+): Promise<{ content: string; reasoning?: string }> {
+  const response = await model.invoke(messages);
+  
+  // DeepSeek 返回 reasoning_content 在 additional_kwargs
+  const reasoning = response.additional_kwargs?.reasoning_content;
+  
+  if (reasoning && callbacks.onReasoning) {
+    // 分块流式输出 reasoning
+    for (const chunk of splitReasoning(reasoning)) {
+      callbacks.onReasoning(chunk);
+    }
+  }
+  
+  return {
+    content: response.content as string,
+    reasoning: reasoning as string | undefined,
+  };
+}
+
+// 添加 reasoning 到状态
+interface AgentState {
+  // ... 其他字段
+  reasoningContent?: string;  // DeepSeek 思考过程
 }
 ```
 
