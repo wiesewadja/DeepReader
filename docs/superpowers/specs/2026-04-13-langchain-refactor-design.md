@@ -96,21 +96,63 @@ interface AgentState {
   // 最终输出
   finalOutput?: string;
   
-  // 运行时上下文
+  // 运行时上下文（必须可序列化）
   indexId: string;
   pdfName: string;
   docDescription?: string;
   markdownFiles?: Record<string, string>;
-  
-  // Obsidian 特定
-  app?: App;
-  vaultPath?: string;
+}
+
+// 注意：Obsidian App 实例和 Vault 不能放入状态
+// 它们通过 configurable 在运行时传入
+interface RuntimeContext {
+  app: App;
+  vaultPath: string;
+  settings: AgentSettings;
 }
 ```
 
 ### 状态图结构
 
-```typescript
+#### 可视化流程图（Mermaid）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Router
+    
+    Router --> [*] : depth=0 (日常闲聊)
+    Router --> Inspectional : depth=1 (检视阅读)
+    Router --> Analytical : depth=2 (分析阅读)
+    Router --> Analytical : depth=3 (主题阅读→降级)
+    
+    Inspectional --> Formatter
+    Analytical --> Formatter
+    
+    Formatter --> [*]
+    
+    note right of Router
+        S0: 深度判定 + Query重写
+        使用 fast model (gpt-4o-mini)
+    end note
+    
+    note right of Inspectional
+        S1: TOC扫描 + 范围锁定
+        可调用 search_book
+    end note
+    
+    note right of Analytical
+        S2: React循环 + 工具调用
+        使用 main model (gpt-4o)
+        包含 Self-Verification
+    end note
+    
+    note right of Formatter
+        S4: 输出格式化 + Wiki链接
+        流式输出到 UI
+    end note
+```
+
+#### 代码实现
 import { StateGraph, END } from '@langchain/langgraph';
 
 // 创建状态图
@@ -198,6 +240,130 @@ async function analyticalNode(state: AgentState): Promise<Partial<AgentState>> {
   };
 }
 ```
+
+---
+
+## 错误处理设计
+
+### 错误分类
+
+参考现有 `IndexError` 设计，定义 LangChain 适配的错误类：
+
+```typescript
+// 基础错误类
+class AgentError extends Error {
+  code: string;
+  recoverable: boolean;
+  userMessage: string;
+  
+  constructor(code: string, message: string, userMessage: string, recoverable: boolean = true) {
+    super(message);
+    this.code = code;
+    this.userMessage = userMessage;
+    this.recoverable = recoverable;
+  }
+}
+
+// 具体错误类型
+class NodeTimeoutError extends AgentError {
+  constructor(nodeName: string, timeout: number) {
+    super(
+      'NODE_TIMEOUT',
+      `Node ${nodeName} timed out after ${timeout}ms`,
+      `操作超时，请稍后重试或简化问题`,
+      true
+    );
+  }
+}
+
+class ToolExecutionError extends AgentError {
+  constructor(toolName: string, error: Error) {
+    super(
+      'TOOL_ERROR',
+      `Tool ${toolName} failed: ${error.message}`,
+      `工具执行失败，尝试其他方式`,
+      true
+    );
+  }
+}
+
+class LLMError extends AgentError {
+  constructor(provider: string, error: Error) {
+    super(
+      'LLM_ERROR',
+      `LLM ${provider} error: ${error.message}`,
+      `AI 服务暂时不可用，请检查网络或稍后重试`,
+      true
+    );
+  }
+}
+
+class StateSerializationError extends AgentError {
+  constructor(field: string) {
+    super(
+      'SERIALIZATION_ERROR',
+      `State field ${field} is not serializable`,
+      `内部状态错误，请联系开发者`,
+      false
+    );
+  }
+}
+```
+
+### 节点错误处理策略
+
+```typescript
+// 节点包装器（统一错误处理）
+async function safeNodeExecute(
+  nodeName: string,
+  fn: () => Promise<Partial<AgentState>>,
+  options: { timeout: number; retries: number }
+): Promise<Partial<AgentState>> {
+  try {
+    return await withRetry(
+      () => withTimeout(fn(), options.timeout, nodeName),
+      options.retries,
+      1000
+    );
+  } catch (error) {
+    if (error instanceof NodeTimeoutError) {
+      // 超时：记录并返回降级结果
+      console.error(`[${nodeName}] Timeout after ${options.timeout}ms`);
+      return { finalOutput: '操作超时，请稍后重试' };
+    }
+    
+    if (error instanceof LLMError) {
+      // LLM 错误：尝试 fallback 模型
+      console.error(`[${nodeName}] LLM error, trying fallback`);
+      // 可切换到备用模型重试
+    }
+    
+    // 其他错误：抛出给上层
+    throw new AgentError(
+      'NODE_ERROR',
+      error instanceof Error ? error.message : String(error),
+      '处理过程中发生错误'
+    );
+  }
+}
+
+// 节点配置
+const nodeConfigs = {
+  router: { timeout: 30000, retries: 1 },
+  inspectional: { timeout: 60000, retries: 2 },
+  analytical: { timeout: 120000, retries: 2 },
+  formatter: { timeout: 200000, retries: 1 },
+};
+```
+
+### 用户友好错误消息
+
+| 错误代码 | 用户消息 | 恢复建议 |
+|----------|----------|----------|
+| NODE_TIMEOUT | 操作超时，请稍后重试 | 简化问题或减少查询范围 |
+| TOOL_ERROR | 工具执行失败 | 检查文档是否已索引 |
+| LLM_ERROR | AI 服务暂时不可用 | 检查 API Key 和网络 |
+| SERIALIZATION_ERROR | 内部状态错误 | 刷新插件或重启 Obsidian |
 
 ---
 
@@ -532,6 +698,20 @@ src/agent/
 
 **目标**：将现有工具转换为 LangChain StructuredTool
 
+**现有工具对照表**：
+
+| 现有工具 | 新工具名称 | 功能保持 | 变化点 |
+|----------|------------|----------|--------|
+| `search_book` | `SearchBookTool` | ✅ | Zod schema，DynamicStructuredTool |
+| `read_book_section` | `ReadSectionTool` | ✅ | Zod schema，runManager 回调 |
+| `write_note` | `WriteNoteTool` | ✅ | Zod schema，app 通过 configurable |
+| `add_memory` | `AddMemoryTool` | ✅ | Zod schema |
+| `search_memory` | `SearchMemoryTool` | ✅ | Zod schema |
+| `update_profile` | `UpdateProfileTool` | ✅ | Zod schema |
+| `search_read_books` | `SearchReadBooksTool` | ✅ | Zod schema |
+| `canvas` | `CanvasTool` | ✅ | Zod schema，app 通过 configurable |
+| `excalidraw` | `ExcalidrawTool` | ✅ | Zod schema |
+
 **任务**：
 1. 重写核心工具
    - `search_book` → `SearchBookTool`
@@ -606,10 +786,65 @@ src/agent/
    - `README.md`
    - `CHANGELOG.md`
 
+**性能基准指标**：
+
+| 指标 | 现有版本基准 | 新版本目标 | 测试方法 |
+|------|-------------|------------|----------|
+| S0 Router 响应时间 | ~1.5s | ≤1.6s (+10%) | 单元测试计时 |
+| S2 Analytical 工具循环 | ~15s (5轮) | ≤16.5s (+10%) | E2E 测试计时 |
+| 工具执行延迟 | ~500ms/次 | ≤550ms (+10%) | 工具测试计时 |
+| 内存占用峰值 | ~50MB | ≤55MB (+10%) | Node 内存监控 |
+| 流式输出首字节时间 | ~1s | ≤1.1s (+10%) | UI 测试计时 |
+
 **验收标准**：
 - 所有 E2E 测试通过
-- 性能不低于现有版本
+- 性能指标达到基准目标
 - 文档更新完成
+
+---
+
+## 回滚计划
+
+### 分支策略
+
+```
+main
+  └── feature/langchain-refactor
+        ├── phase-1-complete (tag)
+        ├── phase-2-complete (tag)
+        ├── phase-3-complete (tag)
+        ├── phase-4-complete (tag)
+        └── phase-5-complete (tag)
+```
+
+### 回滚触发条件
+
+| Phase | 回滚条件 | 回滚目标 |
+|-------|----------|----------|
+| Phase 1 | 基础设施测试失败 > 30% | 回到 main |
+| Phase 2 | 工具功能测试失败 > 20% | 回到 phase-1-complete |
+| Phase 3 | 状态图 E2E 测试失败 > 15% | 回到 phase-2-complete |
+| Phase 4 | Memory 恢复测试失败 | 回到 phase-3-complete |
+| Phase 5 | 性能指标未达标 > 2项 | 回到 phase-4-complete |
+
+### 回滚操作
+
+```bash
+# 回滚到指定 Phase
+git checkout phase-X-complete
+git checkout -b feature/langchain-refactor-rollback
+
+# 或直接合并回 main（放弃重构）
+git checkout main
+git merge --abort  # 如果正在合并
+```
+
+### 保留旧代码策略
+
+- 在 `feature/langchain-refactor` 分支开发
+- 不删除 `cognitive-engine/` 目录，直到 Phase 5 验收通过
+- 每个完成 Phase 创建 git tag
+- Phase 5 验收通过后才删除旧代码
 
 ---
 
