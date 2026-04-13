@@ -58,6 +58,13 @@ export default class DeepPDFPlugin extends Plugin {
             (leaf) => new SidebarView(leaf, this)
         );
 
+        // 注册 hover-link 事件源，让 Obsidian 的 Page Preview 核心插件
+        // 能处理来自侧边栏 AI 聊天中 wiki 链接的悬停预览
+        this.registerHoverLinkSource('deeppdf', {
+            display: 'DeepReader',
+            defaultMod: false,
+        });
+
         // 自动打开侧边栏（延迟执行，等待 workspace 完全初始化）
         // 使用 onLayoutReady 确保 workspace DOM 结构已就绪
         this.app.workspace.onLayoutReady(() => {
@@ -402,6 +409,7 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 应用自动阅读模式设置
         this.readingModeService.setAutoEnable(this.settings.autoEnableReadingMode);
+        this.readingModeService.setStyle(this.settings.readingModeStyle || 'paginated');
 
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');

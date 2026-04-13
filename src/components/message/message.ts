@@ -3,7 +3,7 @@
  * 实现 ChatGPT 风格的聊天消息界面，支持 Markdown 渲染和流式更新
  */
 
-import { App, MarkdownRenderer, Component, HoverParent, HoverPopover } from 'obsidian';
+import { App, MarkdownRenderer, Component, HoverParent, HoverPopover, MarkdownView } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { SelectionMenu } from '../excerpt/selection-menu';
@@ -381,6 +381,11 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 	let showTimer: number | null = null;
 	let hideTimer: number | null = null;
 
+	// 持久的 HoverParent，让 Obsidian Page Preview 能正确管理 popover 生命周期
+	const hoverParent: HoverParent = {
+		hoverPopover: null
+	};
+
 	// 清理 popover 的函数
 	const cleanupPopover = () => {
 		if (customPopover) {
@@ -439,18 +444,84 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 		// 处理点击事件
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
-			app.workspace.openLinkText(href, '', false);
 
-			// 延迟切换到预览模式
-			setTimeout(() => {
-				const activeLeaf = app.workspace.activeLeaf;
-				if (activeLeaf) {
-					activeLeaf.setViewState({
-						type: 'markdown',
-						state: { mode: 'preview' }
+			// 检测阅读模式状态
+			const readingModeEl = document.querySelector('.deeppdf-reading-mode');
+			const isReadingMode = !!readingModeEl;
+			// 分页模式检测：有 paginator 设置的 CSS 变量
+			const isPaginatedMode = isReadingMode && !!readingModeEl!.querySelector('.markdown-preview-view[style*="--deeppdf-col-width"]');
+
+			if (isPaginatedMode) {
+				// 分页模式：新开 tab 以滚动模式打开，跳转 blockId
+				const linkPath = href.split('#')[0].split('|')[0];
+				const targetFile = app.metadataCache.getFirstLinkpathDest(linkPath, '');
+				const blockId = href.includes('#') ? href.split('#').pop() : null;
+
+				if (targetFile) {
+					// 优先复用已打开同一文件的其他 leaf
+					const currentLeaf = app.workspace.activeLeaf;
+					const existingLeaf = app.workspace.getLeavesOfType('markdown').find(leaf => {
+						const view = leaf.view as any;
+						return view?.file?.path === targetFile.path && leaf !== currentLeaf;
 					});
+
+					const targetLeaf = existingLeaf || app.workspace.getLeaf('tab');
+					if (targetLeaf) {
+						await targetLeaf.openFile(targetFile);
+						// 切换到预览模式（滚动模式）确保能滚动跳转
+						await targetLeaf.setViewState({ type: 'markdown', state: { mode: 'preview' } });
+						app.workspace.setActiveLeaf(targetLeaf, { focus: true });
+
+						if (blockId) {
+							setTimeout(() => {
+								const view = targetLeaf.view as any;
+								if (view?.previewMode?.renderer) {
+									const container = view.previewMode.renderer.containerEl;
+									const blockSel = '[data-block-id="' + blockId + '"], [id="' + blockId + '"], [id="^' + blockId + '"], sup#' + CSS.escape(blockId || '');
+									const target = container.querySelector(blockSel);
+									if (target) {
+										(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+									}
+								}
+							}, existingLeaf ? 100 : 300);
+						}
+					}
 				}
-			}, 50);
+			} else if (isReadingMode) {
+				// 滚动阅读模式：跳转链接，如有 blockId 则滚动到对应位置
+				const blockId = href.includes('#') ? href.split('#').pop() : null;
+				if (blockId) {
+					setTimeout(() => {
+						const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+						const container = activeView?.previewMode?.renderer?.containerEl || activeView?.containerEl || document;
+						const blockSel = '[data-block-id="' + blockId + '"], [id="' + blockId + '"], [id="^' + blockId + '"], sup#' + CSS.escape(blockId);
+						const target = container.querySelector(blockSel);
+						if (target) {
+							(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+							log('[DeepPDF] Scrolled to block in scroll mode:', blockId);
+						} else {
+							log('[DeepPDF] Block not found in scroll mode:', blockId);
+						}
+					}, 50);
+				} else {
+					// 普通 wiki 链接，正常打开
+					app.workspace.openLinkText(href, '', false);
+				}
+			} else {
+				// 非阅读模式：在当前 tab 打开
+				app.workspace.openLinkText(href, '', false);
+
+				// 延迟切换到预览模式
+				setTimeout(() => {
+					const activeLeaf = app.workspace.activeLeaf;
+					if (activeLeaf) {
+						activeLeaf.setViewState({
+							type: 'markdown',
+							state: { mode: 'preview' }
+						});
+					}
+				}, 50);
+			}
 		});
 
 		// 如果禁用 hover preview（AI 流式传输期间），则跳过 hover 事件设置
@@ -474,12 +545,6 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 
 			// 清理自定义 popover
 			cleanupPopover();
-
-			// 创建一个有效的 HoverParent 对象
-			// Obsidian 的 hover-link 事件需要一个实现了 HoverParent 接口的对象
-			const hoverParent: HoverParent = {
-				hoverPopover: null
-			};
 
 			// 触发 Obsidian 原生 hover preview（支持所有文件类型，包括 Canvas）
 			app.workspace.trigger('hover-link', {
@@ -583,8 +648,9 @@ export abstract class Message {
 
 				contentEl.empty();
 				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component());
-				this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app, false, this.observers);
+				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component()).then(() => {
+					this.mouseoverHandler = setupInternalLinks(contentEl as HTMLElement, this.app!, false, this.observers);
+				});
 			}
 			this.el.removeClass('deeppdf-message-streaming');
 		} else {
@@ -817,10 +883,11 @@ export class AIMessage extends Message {
 				const { cleanedContent } = parseAgentContent(this.data.content);
 				// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
 				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component());
-				// 设置内部链接的点击事件和 hover preview
-				// 如果正在流式传输，禁用 hover preview
-				this.mouseoverHandler = setupInternalLinks(content, this.app, this.data.isStreaming, this.observers);
+				MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
+					// 设置内部链接的点击事件和 hover preview
+					// 如果正在流式传输，禁用 hover preview
+					this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
+				});
 			} else {
 				const { cleanedContent } = parseAgentContent(this.data.content);
 				content.innerHTML = this.escapeHtml(cleanedContent);

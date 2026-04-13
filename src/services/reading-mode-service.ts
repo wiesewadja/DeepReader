@@ -36,6 +36,7 @@ export class ReadingModeService {
     private paginator: PagePaginator | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;
+    private style: 'paginated' | 'scrolling' = 'paginated';
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
@@ -67,6 +68,27 @@ export class ReadingModeService {
      */
     getAutoEnable(): boolean {
         return this.autoEnable;
+    }
+
+    /**
+     * 设置阅读模式样式（分页/滚动）
+     * 如果当前已激活，立即切换
+     */
+    setStyle(style: 'paginated' | 'scrolling'): void {
+        this.style = style;
+        // 如果当前已激活，重新激活以应用新样式
+        if (this.isActive && this.currentFile) {
+            const file = this.currentFile;
+            this.deactivate();
+            this.activate(file);
+        }
+    }
+
+    /**
+     * 获取当前阅读模式样式
+     */
+    getStyle(): 'paginated' | 'scrolling' {
+        return this.style;
     }
 
     /**
@@ -147,17 +169,22 @@ export class ReadingModeService {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
             view.containerEl.classList.add('deeppdf-reading-mode');
+            if (this.style === 'paginated') {
+                view.containerEl.classList.add('deeppdf-paginated');
+            }
         }
 
-        // 延迟初始化分页器，等待视图渲染完成
-        setTimeout(() => {
-            serviceLog('[DeepPDF] ReadingMode: initializing paginator');
+        // 延迟初始化分页器，等待视图渲染完成（仅分页模式）
+        if (this.style === 'paginated') {
+            setTimeout(() => {
+                serviceLog('[DeepPDF] ReadingMode: initializing paginator');
 
-            this.waitForRenderAndInitPaginator();
-        }, 200);
+                this.waitForRenderAndInitPaginator();
+            }, 200);
 
-        // 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
-        this.patchScrollIntoView();
+            // 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
+            this.patchScrollIntoView();
+        }
 
         // 通知书籍检测回调
         this.notifyBookDetected(file);
@@ -224,10 +251,12 @@ export class ReadingModeService {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
             view.containerEl.classList.remove('deeppdf-reading-mode');
+            view.containerEl.classList.remove('deeppdf-paginated');
         }
-        
+
         // 兼容处理：移除之前可能遗留在 body 上的类
         document.body.classList.remove('deeppdf-reading-mode');
+        document.body.classList.remove('deeppdf-paginated');
         this.chapterNav?.hide();
         this.isActive = false;
         this.currentFile = null;
@@ -494,39 +523,53 @@ markExcerpt(range: Range): void {
 
     /**
      * 在 CSS multi-column 布局中滚动到目标元素
-     * 
+     *
      * 使用 getBoundingClientRect 计算元素在滚动内容中的绝对位置，
      * 然后计算目标所在的"页"（列），设置 scrollLeft 跳转。
+     *
+     * 注意：需要使用双层 rAF 等待 CSS column 布局稳定后再计算位置。
      */
     private scrollToElementInColumn(element: HTMLElement, scrollView: HTMLElement): void {
-        // 使用 requestAnimationFrame 确保 DOM 布局已计算完成
+        // 双层 rAF：第一层等待当前帧渲染完成，第二层等待布局重新计算
         requestAnimationFrame(() => {
-            const elemRect = element.getBoundingClientRect();
-            const containerRect = scrollView.getBoundingClientRect();
+            requestAnimationFrame(() => {
+                const elemRect = element.getBoundingClientRect();
+                const containerRect = scrollView.getBoundingClientRect();
+                const computedStyle = window.getComputedStyle(scrollView);
+                const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
 
-            // 计算元素在可滚动内容中的绝对位置
-            const absoluteLeft = elemRect.left - containerRect.left + scrollView.scrollLeft;
-            const viewWidth = scrollView.clientWidth;
+                // 元素在可滚动内容中的绝对水平位置
+                // elemRect.left 是相对视口的，containerRect.left 也是相对视口的
+                // scrollLeft 是当前已滚动的距离
+                // paddingLeft 补偿 CSS padding 带来的偏移
+                const absoluteLeft = elemRect.left - containerRect.left + scrollView.scrollLeft;
+                const viewWidth = scrollView.clientWidth;
 
-            if (viewWidth === 0) return;
+                if (viewWidth === 0) return;
 
-            // 计算目标页（列）
-            const targetPage = Math.floor(absoluteLeft / viewWidth);
-            const targetScrollLeft = targetPage * viewWidth;
+                // 计算目标页（列）：0-based
+                const targetPage = Math.floor(absoluteLeft / viewWidth);
+                const targetScrollLeft = targetPage * viewWidth;
 
-            // 平滑滚动到目标列
-            scrollView.scrollTo({
-                left: targetScrollLeft,
-                behavior: 'smooth'
+                serviceLog(`[ReadingMode] BlockId jump: absoluteLeft=${absoluteLeft.toFixed(0)}, viewWidth=${viewWidth}, targetPage=${targetPage + 1}, scrollLeft=${targetScrollLeft}`);
+
+                // 平滑滚动到目标列
+                scrollView.scrollTo({
+                    left: targetScrollLeft,
+                    behavior: 'smooth'
+                });
+
+                // 更新分页器的当前页码
+                if (this.paginator) {
+                    this.paginator.setCurrentPage(targetPage + 1);
+                }
+
+                // 高亮目标元素
+                element.classList.add('deeppdf-block-highlight');
+                setTimeout(() => {
+                    element.classList.remove('deeppdf-block-highlight');
+                }, 2000);
             });
-
-            // 高亮目标元素
-            element.classList.add('deeppdf-block-highlight');
-            setTimeout(() => {
-                element.classList.remove('deeppdf-block-highlight');
-            }, 2000);
-
-            serviceLog('[ReadingMode] Scrolled to block in column layout, page:', targetPage + 1);
         });
     }
 }

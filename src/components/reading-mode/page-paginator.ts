@@ -50,6 +50,12 @@ export class PagePaginator {
 	getTotalPages(): number { return this._totalPages; }
 	getCurrentPage(): number { return this._currentPage; }
 
+	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */
+	setCurrentPage(page: number): void {
+		this._currentPage = Math.max(1, Math.min(page, this._totalPages));
+		this.updateControls();
+	}
+
 	paginateAndShow(): void {
 		if (!this.scrollView || !this.viewContent) {
 			serviceLog.warn('[PagePaginator] Required containers not found');

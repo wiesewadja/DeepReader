@@ -58,7 +58,10 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
    - **file_name 必须来自 matched_blocks.file_name 或 read 结果中的 file_name 字段**
    - file_name 包含数字前缀，如 "14 - 存钱 第10章"、"15 - 第11章 合乎情理胜过绝对理性"
    - ❌ 禁止使用 title（不含数字前缀），如 "存钱 第10章"
+   - block_id 来自 matched_blocks.block_id 字段（已去掉 ^ 前缀），拼接时加 #^ 即可
+   - read_book_section 返回的原文中，段落末尾标记格式为「段落文字 ^s1-001」，引用时取 ^ 后面的部分（如 s1-001），拼成 #^s1-001
    - 示例：[[金钱心理学/14 - 存钱 第10章#^p003|储蓄率的关键作用]]
+   - ❌ 禁止双 ^：[[金钱心理学/14 - 存钱 第10章#^^p003|...]] 是错误的
 3. 别名必须融入句子语法，不要裸链接。
 </output_rules>
 `;

@@ -113,7 +113,7 @@ export const searchBookTool: ToolExecutor = {
         file_name: r.fileName,
         path: r.hierarchyPath,
         matched_blocks: r.matchedBlocks.map(b => ({
-          block_id: b.blockId,
+          block_id: b.blockId.replace(/^\^/, ''),  // 去掉 ^ 前缀，LLM 拼接时会加 #^
           file_name: r.fileName,  // 添加 file_name 供 wikilink 使用
           content: b.content,
         })),

@@ -30,8 +30,9 @@ export interface VerificationResult {
  * 返回去重后的 block_id 数组
  */
 export function extractBlockIds(content: string): string[] {
-  // 匹配 [[任意内容#^block_id|任意别名]] 格式，提取 ^ 后到 | 前的 block_id
-  const regex = /\[\[[^\]]*#\^([^|\]]+)\|[^\]]*\]\]/g;
+  // 匹配 [[任意内容#^block_id|任意别名]] 或 [[任意内容#^^block_id|任意别名]] 格式
+  // 提取规范化后的 block_id（去掉多余的 ^ 前缀，统一为不含 ^）
+  const regex = /\[\[[^\]]*#\^+([^|\]]+)\|[^\]]*\]\]/g;
   const ids = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = regex.exec(content)) !== null) {
@@ -52,8 +53,12 @@ export function checkBlockIdExists(
 ): 'found' | 'ghost' | 'truncated-invisible' {
   let hasTruncated = false;
 
+  // 同时检查带 ^ 和不带 ^ 的版本，兼容两种来源格式
+  const blockIdWithCaret = blockId.startsWith('^') ? blockId : `^${blockId}`;
+  const blockIdWithoutCaret = blockId.startsWith('^') ? blockId.slice(1) : blockId;
+
   for (const entry of toolResults) {
-    if (entry.result.includes(blockId)) {
+    if (entry.result.includes(blockIdWithCaret) || entry.result.includes(blockIdWithoutCaret)) {
       return 'found';
     }
     if (entry.originalResultLength > MAX_TOOL_RESULT_LENGTH) {

@@ -859,6 +859,19 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     this.plugin.readingModeService?.setAutoEnable(value);
                 }));
 
+        new Setting(container)
+            .setName("阅读模式样式")
+            .setDesc("分页模式：横向翻页阅读（不支持 blockId 跳转）；滚动模式：纵向滚动阅读（支持跳转到引用段落）")
+            .addDropdown(dropdown => dropdown
+                .addOption('paginated', '分页模式')
+                .addOption('scrolling', '滚动模式')
+                .setValue(this.plugin.settings.readingModeStyle)
+                .onChange(async (value: string) => {
+                    this.plugin.settings.readingModeStyle = value as 'paginated' | 'scrolling';
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.setStyle(value as 'paginated' | 'scrolling');
+                }));
+
         container.createEl('p', {
             text: '提示：关闭后，打开章节文件将使用普通编辑模式，启用后则进入沉浸式阅读模式。',
             cls: 'setting-item-description'

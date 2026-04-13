@@ -453,8 +453,8 @@
 
 /* ==================== 分页样式 (CSS Multi-column 布局) ==================== */
 
-/* 核心布局: 将 markdown 容器变为多列横向滑动 */
-.deeppdf-reading-mode .markdown-preview-view {
+/* 核心布局: 将 markdown 容器变为多列横向滑动（仅分页模式） */
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view {
     /* 重置宽度限制，允许内容横向撑开 */
     max-width: none !important;
     margin: 0;
@@ -474,15 +474,15 @@
 }
 
 /* 隐藏原生滚动条 */
-.deeppdf-reading-mode .markdown-preview-view::-webkit-scrollbar {
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view::-webkit-scrollbar {
     display: none;
 }
-.deeppdf-reading-mode .markdown-preview-view {
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view {
     scrollbar-width: none; /* Firefox */
 }
 
-/* 确保内部容器撑满高度，并且强制第一页左侧有 padding */
-.deeppdf-reading-mode .markdown-preview-sizer {
+/* 确保内部容器撑满高度（仅分页模式） */
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-sizer {
     height: 100%;
     max-width: none !important;
     min-height: 100%;
@@ -498,13 +498,13 @@
     border-left: 1px solid transparent; 
 }
 
-/* 避免大块元素跨列断裂 */
-.deeppdf-reading-mode .markdown-preview-view p,
-.deeppdf-reading-mode .markdown-preview-view h1,
-.deeppdf-reading-mode .markdown-preview-view h2,
-.deeppdf-reading-mode .markdown-preview-view h3,
-.deeppdf-reading-mode .markdown-preview-view img,
-.deeppdf-reading-mode .markdown-preview-view .callout {
+/* 避免大块元素跨列断裂（仅分页模式） */
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view p,
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h1,
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h2,
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view h3,
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view img,
+.deeppdf-reading-mode.deeppdf-paginated .markdown-preview-view .callout {
     break-inside: avoid-column;
     page-break-inside: avoid;
 }

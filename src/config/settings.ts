@@ -68,6 +68,7 @@ export interface DeepPDFSettings {
 
     // 阅读模式设置
     autoEnableReadingMode: boolean;
+    readingModeStyle: 'paginated' | 'scrolling';
 
     // Langfuse 追踪配置
     langfusePublicKey: string;
@@ -126,6 +127,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
     // 阅读模式设置
     autoEnableReadingMode: true,
+    readingModeStyle: 'paginated' as const,
 
     // Langfuse 追踪配置
     langfusePublicKey: "",
