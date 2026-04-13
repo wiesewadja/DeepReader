@@ -6,6 +6,7 @@ import type { ChatMessage } from '../types';
 import type { LLMClient, LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 import type { ITraceContext } from '../tracing/types';
+import type { HistorySummary } from './utils/history-summarizer';
 
 /**
  * Reading depth levels based on Adler's methodology
@@ -101,6 +102,12 @@ export interface SharedContext {
   // ===== Tracing =====
   /** Langfuse trace context for observability */
   traceContext?: ITraceContext;
+
+  // ===== S2 History Support =====
+  /** 最近历史摘要（供 S2 使用） */
+  recentHistorySummaries?: HistorySummary[];
+  /** 上一轮搜索的 block_ids（供 S2 避免重复） */
+  prevSearchedBlockIds?: string[];
 
   // ===== State Execution Tracking =====
   executedStates: Set<string>;

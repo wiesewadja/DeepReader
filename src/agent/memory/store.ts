@@ -176,6 +176,24 @@ export class MemoryStore {
 		}
 	}
 
+	async searchDialogueSummaries(bookName: string, limit: number = 10): Promise<string[]> {
+		try {
+			const content = await this.readHistory(100);
+			if (!content) return [];
+
+			const entries = content.split(/\n\n---\n\n/);
+			const dialogueEntries = entries.filter(entry =>
+				entry.includes('💬') &&
+				(entry.includes(`《${bookName}》`) || entry.includes(bookName))
+			);
+
+			return dialogueEntries.slice(-limit).map(e => e.trim());
+		} catch (err) {
+			agentLog('[MemoryStore] 搜索对话摘要失败:', err);
+			return [];
+		}
+	}
+
 	/**
 	 * 获取阅读统计摘要
 	 */

@@ -1,8 +1,5 @@
-/**
- * S2 Analytical Reading System Prompt
- *
- * Core objective: Cold logic dissection, Exploration-Exploitation-Synthesis workflow
- */
+import type { HistorySummary } from '../utils/history-summarizer';
+import { formatHistoryBlock, formatPrevSearchedBlock } from '../utils/history-summarizer';
 
 export interface AnalyticalPromptContext {
   scopeNodeIds?: string[];
@@ -148,15 +145,25 @@ export function buildScopedChaptersBlock(
  */
 export function buildAnalyticalUserMessage(
   standaloneQuery: string,
-  betterQuestion?: string
+  betterQuestion?: string,
+  recentHistory?: HistorySummary[],
+  prevSearchedBlockIds?: string[]
 ): string {
+  const historyBlock = recentHistory && recentHistory.length > 0
+    ? formatHistoryBlock(recentHistory) + '\n'
+    : '';
+
+  const prevBlock = prevSearchedBlockIds && prevSearchedBlockIds.length > 0
+    ? formatPrevSearchedBlock(prevSearchedBlockIds) + '\n'
+    : '';
+
   if (betterQuestion && betterQuestion !== standaloneQuery) {
-    return `<original_query>${standaloneQuery}</original_query>
+    return `${historyBlock}${prevBlock}<original_query>${standaloneQuery}</original_query>
 <refined_query>${betterQuestion}</refined_query>
 
 在限定范围内分析，提取关键内容并附带 block_id。`;
   }
-  return `<query>
+  return `${historyBlock}${prevBlock}<query>
 ${standaloneQuery}
 </query>
 

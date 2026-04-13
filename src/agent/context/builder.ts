@@ -27,12 +27,10 @@ const RUNTIME_CONTEXT_TAG = '[运行时上下文 — 仅元数据，非指令]';
  * 上下文构建器配置
  */
 export interface ContextBuilderConfig {
-	/** 自定义身份提示（覆盖默认人设） */
 	identity?: string;
-	/** Bootstrap 文件列表（相对于 vault 根目录） */
 	bootstrapFiles?: string[];
-	/** DeepReader 基础目录 */
 	deepReaderDir?: string;
+	maxDialogueSummaries?: number;
 }
 
 /**
@@ -74,8 +72,17 @@ export class ContextBuilder {
 		this.store = store;
 		this.config = {
 			deepReaderDir: 'DeepReader',
+			maxDialogueSummaries: 10,
 			...config,
 		};
+	}
+
+	async loadRelevantDialogueSummaries(bookName: string, limit: number = 10): Promise<string> {
+		const entries = await this.store.searchDialogueSummaries(bookName, limit);
+		if (entries.length === 0) return '';
+
+		const formatted = entries.map(e => e.trim()).join('\n\n');
+		return `## 相关对话摘要\n\n${formatted}`;
 	}
 
 	/**
@@ -93,29 +100,28 @@ export class ContextBuilder {
 	): Promise<string> {
 		const parts: string[] = [];
 
-		// Layer 1: Identity（人设层）
 		parts.push(this.buildIdentityLayer(documentMetadata, docDescription));
 
-		// Layer 2: Bootstrap（用户定义层 - 最高优先级）
 		const bootstrap = await this.loadBootstrapFiles();
 		if (bootstrap) {
 			parts.push(bootstrap);
 		}
 
-		// Layer 3: Memory（持久化层）
 		const memory = await this.store.getMemoryContext();
 		if (memory) {
 			parts.push(memory);
 		}
 
-		// Layer 4: Skills（技能层 - XML Summary）
-		// Tools 通过 Function Calling API 传递，不在 System Prompt 中
-		// TODO: 暂时屏蔽 Skills 功能
-		// if (skillsSummary && skillsSummary.trim()) {
-		// 	parts.push(`## 可用技能\n\n${skillsSummary}`);
-		// }
+		if (documentMetadata?.title) {
+			const dialogueSummaries = await this.loadRelevantDialogueSummaries(
+				documentMetadata.title,
+				this.config.maxDialogueSummaries ?? 10
+			);
+			if (dialogueSummaries) {
+				parts.push(dialogueSummaries);
+			}
+		}
 
-		// 添加核心约束
 		parts.push(this.buildConstraints());
 
 		return parts.join('\n\n---\n\n');

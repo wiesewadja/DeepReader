@@ -30,13 +30,16 @@ const SAVE_MEMORY_TOOL = [
 				properties: {
 					history_entry: {
 						type: 'string',
-						description:
-							'一段总结关键事件/决策/主题的文字。以 [YYYY-MM-DD HH:MM] 开头。包含对 grep 搜索有用的细节。',
+						description: '对话摘要条目。格式：💬 关于《书名》讨论了主题，得出结论Y。引用：[[书名#^blockId]]。如果是闲聊或无实质内容（条目长度<20字符），返回空字符串。',
+					},
+					references: {
+						type: 'array',
+						items: { type: 'string' },
+						description: '关键引用链接，格式：[[书名#^blockId]]。最多保留3个重要引用。',
 					},
 					memory_update: {
 						type: 'string',
-						description:
-							'完整的更新后长期记忆（markdown 格式）。包含所有现有事实和新事实。如果没有新信息则返回不变。',
+						description: '完整的更新后长期记忆（markdown格式）。包含所有现有事实和新事实。如果没有新信息则返回不变。',
 					},
 				},
 				required: ['history_entry', 'memory_update'],
@@ -148,8 +151,7 @@ export class MemoryConsolidator {
 		const currentMemory = (await this.store.readLongTermMemory()) || '(空)';
 		const formattedMessages = this.formatMessages(toConsolidate);
 
-		// 聚焦于用户特征的 prompt
-		const prompt = `分析这段对话，提取用户的阅读倾向、情绪变化、个人特征，并调用 save_memory 工具更新长期记忆。
+		const prompt = `分析这段对话，提取核心信息并调用 save_memory 工具。
 
 ## 当前长期记忆
 ${currentMemory}
@@ -158,26 +160,30 @@ ${currentMemory}
 ${formattedMessages}
 
 ## 分析要点
-1. **阅读倾向**：用户偏好深度讨论还是泛泛了解？对概念定义感兴趣吗？
-2. **情绪变化**：用户在讨论中表现出什么情绪？（兴奋、困惑、低落等）
-3. **个人成长**：用户的思维方式是否有变化？
-4. **偏好发现**：用户对什么类型的书籍/话题感兴趣？
+1. **讨论主题**：这段对话讨论了什么？（简短概括）
+2. **关键结论**：得出的结论或给出的建议是什么？
+3. **引用链接**：返回了哪些 [[书名#^blockId]] 链接？（最多保留3个重要引用）
+4. **用户特征**：是否有新的用户偏好/兴趣发现？如有则更新 memory_update
 
-注意：
-- history_entry 可以留空（阅读日志由系统自动记录）
-- 只在有新的用户特征发现时才更新 memory_update`;
+## 输出要求
+- history_entry 格式：💬 关于《书名》讨论了主题，得出结论Y。引用：[[书名#^blockId]]
+- 每轮对话生成一条摘要（精简，<100字）
+- **跳过规则**：如果对话无实质内容（条目长度<20字符），history_entry 返回空字符串
+- 必须调用 save_memory 工具`;
 
 		try {
-			// 调用 LLM
 			const response = await this.callLLM(prompt);
 
 			if (response) {
-				// 只更新 MEMORY.md，不再写入 HISTORY.md（由 MilestoneRecorder 负责）
+				if (response.historyEntry && response.historyEntry.length >= this.config.skipThreshold) {
+					await this.store.appendHistory(response.historyEntry);
+					agentLog('[Consolidator] 对话摘要已写入 HISTORY.md:', response.historyEntry.slice(0, 50));
+				}
+
 				if (response.memoryUpdate && response.memoryUpdate.trim()) {
 					await this.store.writeLongTermMemory(response.memoryUpdate);
 					agentLog('[Consolidator] MEMORY.md 已更新');
 
-					// 检查是否需要压缩
 					await this.maybeCompressMemory();
 				}
 				return response;
@@ -193,7 +199,6 @@ ${formattedMessages}
 	 * 调用 LLM 获取整合结果
 	 */
 	private async callLLM(prompt: string): Promise<ConsolidationResult | null> {
-		// 使用 LLMClient 的流式 API，但我们需要完整的工具调用结果
 		let result: ConsolidationResult | null = null;
 
 		await new Promise<void>((resolve) => {
@@ -214,10 +219,10 @@ ${formattedMessages}
 								const args = JSON.parse(calls[0].arguments);
 								result = {
 									historyEntry: args.history_entry || '',
+									references: args.references || [],
 									memoryUpdate: args.memory_update || '',
 								};
 							} catch {
-								// 解析失败
 							}
 						}
 					},

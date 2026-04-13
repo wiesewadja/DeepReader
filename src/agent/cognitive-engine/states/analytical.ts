@@ -75,7 +75,12 @@ export class AnalyticalState extends StateNode {
           stateName: this.name,
           model: this.model,
           systemPrompt: this.buildSystemPrompt(ctx),
-          userMessage: buildAnalyticalUserMessage(ctx.standaloneQuery || ctx.rawUserQuery, ctx.betterQuestion),
+          userMessage: buildAnalyticalUserMessage(
+            ctx.standaloneQuery || ctx.rawUserQuery,
+            ctx.betterQuestion,
+            ctx.recentHistorySummaries,
+            ctx.prevSearchedBlockIds
+          ),
           availableTools: this.tools,
           toolInterceptor: interceptor,
           maxIterations: 8,

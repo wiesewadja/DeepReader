@@ -57,9 +57,10 @@ async function executeStateWithLogging(
     ctx.traceContext = spanCtx;
   }
 
-  // 超时保护：S0 快速 30s，S1/S2/S4 主模型 60-120s
+  // 超时保护：S0 快速 30s，S1/S2 60-120s，S4 输出较长 200s
   const timeout = stateDisplayName === 'S0-Router' ? 30000 :
-                   stateDisplayName === 'S2-Analytical' ? 120000 : 60000;
+                   stateDisplayName === 'S2-Analytical' ? 120000 :
+                   stateDisplayName === 'S4-Formatter' ? 200000 : 60000;
 
   try {
     await withTimeout(state.execute(ctx), timeout, stateName);

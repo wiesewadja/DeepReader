@@ -55,6 +55,7 @@ import { SubagentManager } from './subagent/manager.js';
 import { setSubagentManager } from './tools/create-sub-agent.js';
 import { IntentRouter } from './router/index.js';
 import { runCognitiveEngine, createSharedContext } from './cognitive-engine/index.js';
+import { summarizeRecentHistory, extractPrevBlockIds } from './cognitive-engine/utils/history-summarizer.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
@@ -310,10 +311,8 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 创建工具注册表
     const toolRegistry = createToolRegistry(this.skillLoader, context);
 
-    // 创建认知引擎所需的回调
     const engineCallbacks: EngineCallbacks = {
       onProgress: callbacks.onProgress || (() => {}),
       onContent: callbacks.onContent || (() => {}),
@@ -322,13 +321,14 @@ ${currentMemory}
       onError: callbacks.onError || (() => {}),
     };
 
-    // 提取纯净历史（只有 user 和 assistant 消息）
     const cleanHistory = history.filter(m => m.role === 'user' || m.role === 'assistant');
 
-    // 读取长期记忆上下文（用于 S4 个性化输出）
+    const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
+
+    const prevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
+
     const memoryContext = await this.memoryStore.getMemoryContext();
 
-    // 创建 SharedContext
     const ctx = createSharedContext({
       indexId: context.indexId || '',
       pdfName: context.pdfName || '',
@@ -336,18 +336,17 @@ ${currentMemory}
       chatHistory: cleanHistory,
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,  // 全书摘要
-      memoryContext,  // 长期记忆
-      // 传递引擎依赖
+      docDescription: context.docDescription,
+      memoryContext,
       llmClientManager: this.llmClientManager,
       toolRegistry: toolRegistry,
       toolContext: context,
+      recentHistorySummaries,
+      prevSearchedBlockIds,
     });
 
-    // 运行认知引擎
     await runCognitiveEngine(ctx, engineCallbacks);
 
-    // 返回更新后的消息历史
     return ctx.chatHistory;
   }
 

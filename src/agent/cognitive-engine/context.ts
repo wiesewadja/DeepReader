@@ -6,6 +6,7 @@ import type { SharedContext, StateResult, ReadingDepth, SearchResult } from './t
 import type { ChatMessage } from '../types';
 import type { LLMClient, LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
+import type { HistorySummary } from './utils/history-summarizer';
 
 /**
  * Factory function to create a new SharedContext
@@ -17,15 +18,14 @@ export function createSharedContext(params: {
   chatHistory?: ChatMessage[];
   markdownFiles?: Record<string, string>;
   abortSignal?: AbortSignal;
-  /** 全书摘要（帮助 S1 更好地判断意图） */
   docDescription?: string;
-  /** 长期记忆上下文（用于 S4 个性化输出） */
   memoryContext?: string;
-  // Engine dependencies
   llmClient?: LLMClient;
   llmClientManager?: LLMClientManager;
   toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
+  recentHistorySummaries?: HistorySummary[];
+  prevSearchedBlockIds?: string[];
 }): SharedContextImpl {
   return new SharedContextImpl(
     params.indexId,
@@ -39,7 +39,9 @@ export function createSharedContext(params: {
     params.llmClient,
     params.llmClientManager,
     params.toolRegistry,
-    params.toolContext
+    params.toolContext,
+    params.recentHistorySummaries,
+    params.prevSearchedBlockIds
   );
 }
 
@@ -83,6 +85,10 @@ export class SharedContextImpl implements SharedContext {
   toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
 
+  // S2 History Support
+  recentHistorySummaries?: HistorySummary[];
+  prevSearchedBlockIds?: string[];
+
   // State tracking
   executedStates: Set<string>;
   stateResults: Map<string, StateResult>;
@@ -99,7 +105,9 @@ export class SharedContextImpl implements SharedContext {
     llmClient?: LLMClient,
     llmClientManager?: LLMClientManager,
     toolRegistry?: ToolRegistry,
-    toolContext?: ToolContext
+    toolContext?: ToolContext,
+    recentHistorySummaries?: HistorySummary[],
+    prevSearchedBlockIds?: string[]
   ) {
     this.indexId = indexId;
     this.pdfName = pdfName;
@@ -113,6 +121,8 @@ export class SharedContextImpl implements SharedContext {
     this.llmClientManager = llmClientManager;
     this.toolRegistry = toolRegistry;
     this.toolContext = toolContext;
+    this.recentHistorySummaries = recentHistorySummaries;
+    this.prevSearchedBlockIds = prevSearchedBlockIds;
     this.executedStates = new Set();
     this.stateResults = new Map();
   }

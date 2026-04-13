@@ -45,6 +45,8 @@ export interface SessionMetadata {
 export interface ConsolidationResult {
 	/** HISTORY.md 条目 */
 	historyEntry: string;
+	/** 关键引用链接（新增） */
+	references: string[];
 	/** MEMORY.md 更新内容 */
 	memoryUpdate: string;
 }
@@ -59,6 +61,10 @@ export interface ConsolidatorConfig {
 	targetRatio: number;
 	/** 最大整合轮数 */
 	maxRounds: number;
+	/** 跳过阈值：条目长度小于此值视为闲聊（新增） */
+	skipThreshold: number;
+	/** 加载到 LLM 的最大对话摘要数（新增） */
+	maxDialogueSummaries: number;
 }
 
 /**
@@ -69,7 +75,9 @@ export interface ConsolidatorConfig {
  *   - 降低到 8000（约 16000 中文字符），约 10-15 轮对话后触发
  */
 export const DEFAULT_CONSOLIDATOR_CONFIG: ConsolidatorConfig = {
-	tokenThreshold: 8000,  // 降低阈值，更容易触发整合
+	tokenThreshold: 8000,
 	targetRatio: 0.5,
 	maxRounds: 5,
+	skipThreshold: 20,
+	maxDialogueSummaries: 10,
 };

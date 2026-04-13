@@ -30,7 +30,7 @@ export class FormatterState extends StateNode {
   constructor(callbacks?: EngineCallbacks) {
     super();
     this.callbacks = callbacks;
-    this.options = { timeout: 60000, retries: 1 };
+    this.options = { timeout: 200000, retries: 1 };
   }
 
   async execute(ctx: SharedContext): Promise<void> {
