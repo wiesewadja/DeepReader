@@ -197,19 +197,16 @@ export class SelectionToolbar {
         this.hideColorPicker();
         this.hide();
 
-        // 直接在 DOM 上应用高亮
         try {
             const range = this.savedRange;
             const highlightSpan = document.createElement('mark');
             highlightSpan.setAttribute('data-highlight', color);
             highlightSpan.style.backgroundColor = this.getHighlightColor(color);
 
-            // 使用 extractContents 和 insertNode 来包装选中内容
             const fragment = range.extractContents();
             highlightSpan.appendChild(fragment);
             range.insertNode(highlightSpan);
 
-            // 调用保存回调（持久化到文件）
             if (this.options.onSaveHighlight) {
                 this.options.onSaveHighlight(text, color);
             }
@@ -476,26 +473,64 @@ export class SelectionToolbar {
      * block_id 通常在段落末尾，格式为 ^xxx
      */
     private findBlockIdInRange(range: Range): string | undefined {
-        // 从选区开始位置向上查找包含 block_id 的段落
-        let container: Node | null = range.startContainer;
+        // 从选区起始节点向上找到段落级块元素
+        let node: Node | null = range.startContainer;
 
-        while (container && container !== document.body) {
-            if (container instanceof HTMLElement) {
-                // 检查元素内部是否有 ^block_id
-                const textContent = container.textContent || '';
-                const blockIdMatch = textContent.match(/\^([a-zA-Z0-9_-]+)/);
-                if (blockIdMatch) {
-                    return `^${blockIdMatch[1]}`;
+        while (node && node !== document.body) {
+            if (node instanceof HTMLElement) {
+                const tag = node.tagName.toLowerCase();
+                // 找到段落级元素后，在其内部搜索 block ID
+                if (['p', 'li', 'div', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+                    const blockId = this.extractBlockIdFromElement(node);
+                    if (blockId) return blockId;
                 }
             }
-            container = container.parentNode;
+            node = node.parentNode;
         }
 
-        // 备选：检查选区文本本身是否包含 block_id
-        const selectedText = range.toString();
-        const match = selectedText.match(/\^([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return `^${match[1]}`;
+        // 降级：在选区起始节点的父链上逐级找
+        node = range.startContainer;
+        while (node && node !== document.body) {
+            if (node instanceof HTMLElement) {
+                const blockId = this.extractBlockIdFromElement(node);
+                if (blockId) return blockId;
+            }
+            node = node.parentNode;
+        }
+
+        return undefined;
+    }
+
+    /**
+     * 从元素中提取 block ID
+     * Obsidian 渲染 block ID 的几种方式：
+     * 1. 子元素带 data-block-id 属性
+     * 2. 子元素带 id="^xxx" 属性
+     * 3. 文本节点末尾有 ^xxx（未渲染时）
+     */
+    private extractBlockIdFromElement(el: HTMLElement): string | undefined {
+        // 方式1：data-block-id 属性（自身或子元素）
+        const withAttr = el.querySelector('[data-block-id]') || (el.hasAttribute('data-block-id') ? el : null);
+        if (withAttr) {
+            const id = withAttr.getAttribute('data-block-id') || '';
+            return id.replace(/^\^/, '') || undefined;
+        }
+
+        // 方式2：id="^xxx" 的子元素（Obsidian 标准渲染）
+        const allChildren = el.querySelectorAll('[id]');
+        for (const child of Array.from(allChildren)) {
+            const id = child.getAttribute('id') || '';
+            if (id.startsWith('^')) return id.slice(1);
+        }
+        // 自身 id
+        if (el.id?.startsWith('^')) return el.id.slice(1);
+
+        // 方式3：文本节点末尾的 ^xxx（原始 markdown 未完全渲染时）
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let textNode: Text | null;
+        while ((textNode = walker.nextNode() as Text | null)) {
+            const m = (textNode.textContent || '').match(/\^([a-zA-Z0-9_-]+)\s*$/);
+            if (m) return m[1];
         }
 
         return undefined;

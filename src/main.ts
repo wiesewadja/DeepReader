@@ -449,34 +449,24 @@ export default class DeepPDFPlugin extends Plugin {
 
         try {
             const content = await this.app.vault.read(activeFile);
-
-            // 分离 frontmatter 和 body，只在 body 中替换
             const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
             const bgColor = this.getHighlightBgColor(color);
 
-            // 将文本按行分割
             const lines = text.split('\n').filter(line => line.trim().length > 0);
-
             let newBody = body;
             let highlightedCount = 0;
-            let foundBlockId: string | null = null;
 
-            // 逐行处理高亮
             for (const line of lines) {
-                const trimmedLine = line.trim();
-                if (!trimmedLine) continue;
+                const trimmed = line.trim();
+                if (!trimmed) continue;
 
-                // 使用新的查找方法
-                const matchResult = this.findTextInMarkdown(newBody, trimmedLine);
+                const matchResult = this.findTextInMarkdown(newBody, trimmed);
                 if (matchResult) {
-                    const highlightedText = `<mark style="background: ${bgColor}">${matchResult.matched}</mark>`;
-                    newBody = newBody.substring(0, matchResult.index) + highlightedText + newBody.substring(matchResult.index + matchResult.matched.length);
+                    // matched 是原始 markdown 片段（含标记），trimmed 是用户选中的纯文本
+                    // 写入时用 trimmed，保证高亮内容和用户选中的一致
+                    const highlighted = `<mark style="background: ${bgColor}">${trimmed}</mark>`;
+                    newBody = newBody.substring(0, matchResult.index) + highlighted + newBody.substring(matchResult.index + matchResult.matched.length);
                     highlightedCount++;
-
-                    // 尝试从匹配位置附近查找 block id
-                    if (!foundBlockId) {
-                        foundBlockId = this.findBlockIdNearText(newBody, matchResult.index);
-                    }
                 }
             }
 
@@ -487,10 +477,9 @@ export default class DeepPDFPlugin extends Plugin {
 
             const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
             await this.app.vault.modify(activeFile, newContent);
-            log('[DeepPDF] Highlight saved:', highlightedCount, 'lines with color:', color);
+            log('[DeepPDF] Highlight saved:', highlightedCount, 'lines');
 
-            // 同时保存高亮到摘录文件
-            await this.saveHighlightToExcerpt(text, color, activeFile, foundBlockId);
+            await this.saveHighlightToExcerpt(text, color, activeFile, null);
 
         } catch (err) {
             log.error('[DeepPDF] Failed to save highlight:', err);
@@ -584,119 +573,60 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     /**
-     * 在 markdown 内容中查找纯文本
-     * 支持处理 **、__、*、_、[[]] 等标记
+     * 在 markdown 内容中查找纯文本，返回原始 markdown 中对应的片段和位置
+     * 核心策略：将 markdown 剥离标记后变成纯文本，在纯文本上定位，再映射回原始位置
      */
     private findTextInMarkdown(content: string, plainText: string): { matched: string, index: number } | null {
-        // 1. 先尝试精确匹配
+        // 1. 先尝试精确匹配（最快路径）
         const exactIndex = content.indexOf(plainText);
         if (exactIndex !== -1) {
             return { matched: plainText, index: exactIndex };
         }
 
-        // 2. 尝试在整体前后加可选的 markdown 标记
-        // 例如："国家和教会分离" -> "**国家和教会分离**"
-        const escaped = this.escapeRegex(plainText);
-        const wrappedPatterns = [
-            '(\\*\\*)' + escaped + '(\\*\\*)',      // **text**
-            '(__)' + escaped + '(__)',              // __text__
-            '(\\*)' + escaped + '(\\*)',            // *text*
-            '(_)' + escaped + '(_)',                // _text_
-            '(\\[\\[)' + escaped + '(\\]\\])',      // [[text]]
-            '(`)' + escaped + '(`)',                // `text`
-        ];
+        // 2. 构建字符映射：纯文本位置 → 原始 markdown 位置
+        // 剥离 inline markdown 标记，同时记录每个纯文本字符对应的原始位置
+        const { plain, map } = this.stripMarkdownWithMap(content);
 
-        for (const pattern of wrappedPatterns) {
-            const regex = new RegExp(pattern, 's');
-            const match = content.match(regex);
-            if (match) {
-                return {
-                    matched: match[0],
-                    index: match.index!
-                };
-            }
-        }
+        const plainIndex = plain.indexOf(plainText);
+        if (plainIndex === -1) return null;
 
-        // 3. 尝试部分匹配：文本的一部分可能被标记包裹
-        // 例如："国家和教会分离：利用..." 可能是 "**国家和教会分离**：利用..."
-        const punctIndex = plainText.search(/[：:，,。！？、；;\s]/);
-        if (punctIndex > 0) {
-            const beforePunct = plainText.substring(0, punctIndex);
-            const afterPunct = plainText.substring(punctIndex);
+        // 找到纯文本中匹配的起止位置，映射回原始 markdown 位置
+        const origStart = map[plainIndex];
+        const origEnd = map[plainIndex + plainText.length - 1];
+        if (origStart === undefined || origEnd === undefined) return null;
 
-            const beforeEscaped = this.escapeRegex(beforePunct);
-            const afterEscaped = this.escapeRegex(afterPunct);
-
-            const partialPatterns = [
-                '(\\*\\*)' + beforeEscaped + '(\\*\\*)' + afterEscaped,
-                '(__)' + beforeEscaped + '(__)' + afterEscaped,
-                '(\\*)' + beforeEscaped + '(\\*)' + afterEscaped,
-                '(_)' + beforeEscaped + '(_)' + afterEscaped,
-            ];
-
-            for (const pattern of partialPatterns) {
-                const regex = new RegExp(pattern, 's');
-                const match = content.match(regex);
-                if (match) {
-                    return {
-                        matched: match[0],
-                        index: match.index!
-                    };
-                }
-            }
-        }
-
-        // 4. 尝试中间被标记包裹的情况
-        // 例如："揭示了文化可以转化为硬实力和政治优势" -> "揭示了**文化可以转化为硬实力和政治优势**"
-        // 在文本开头和结尾寻找可能的分割点
-        const middleMatch = this.findMiddleMarkdownMatch(content, plainText);
-        if (middleMatch) {
-            return middleMatch;
-        }
-
-        return null;
+        const matched = content.substring(origStart, origEnd + 1);
+        return { matched, index: origStart };
     }
 
     /**
-     * 查找中间被 markdown 标记包裹的文本
-     * 例如："prefix + text + suffix" -> "prefix + **text** + suffix"
+     * 剥离 inline markdown 标记，同时建立纯文本位置到原始位置的映射
      */
-    private findMiddleMarkdownMatch(content: string, plainText: string): { matched: string, index: number } | null {
-        // 尝试从开头逐步增加前缀长度，寻找被标记包裹的部分
-        for (let i = 1; i < plainText.length - 1; i++) {
-            const prefix = plainText.substring(0, i);
-            const rest = plainText.substring(i);
+    private stripMarkdownWithMap(content: string): { plain: string; map: number[] } {
+        // 匹配需要剥离的 inline 标记（只剥离标记符号，保留内容）
+        // 顺序很重要：先匹配长的（**）再匹配短的（*）
+        const INLINE_MARKS = /(\*\*|__|~~|\*|_|`|\[\[|\]\]|\[|\])/g;
 
-            // 如果 rest 以标点或空格开头，跳过（这种情况已经在前面处理过了）
-            if (/^[：:，,。！？、；;\s]/.test(rest)) {
-                continue;
-            }
+        const plain: string[] = [];
+        const map: number[] = [];  // map[i] = 纯文本第 i 个字符在原始 content 中的位置
 
-            const prefixEscaped = this.escapeRegex(prefix);
-            const restEscaped = this.escapeRegex(rest);
+        let i = 0;
+        while (i < content.length) {
+            INLINE_MARKS.lastIndex = i;
+            const match = INLINE_MARKS.exec(content);
 
-            // 尝试 rest 部分被标记包裹
-            const patterns = [
-                prefixEscaped + '(\\*\\*)' + restEscaped + '(\\*\\*)',
-                prefixEscaped + '(__)' + restEscaped + '(__)',
-                prefixEscaped + '(\\*)' + restEscaped + '(\\*)',
-                prefixEscaped + '(_)' + restEscaped + '(_)',
-                prefixEscaped + '(\\[\\[)' + restEscaped + '(\\]\\])',
-            ];
-
-            for (const pattern of patterns) {
-                const regex = new RegExp(pattern, 's');
-                const match = content.match(regex);
-                if (match) {
-                    return {
-                        matched: match[0],
-                        index: match.index!
-                    };
-                }
+            if (match && match.index === i) {
+                // 当前位置是标记符号，跳过
+                i += match[0].length;
+            } else {
+                // 普通字符，保留并记录映射
+                plain.push(content[i]);
+                map.push(i);
+                i++;
             }
         }
 
-        return null;
+        return { plain: plain.join(''), map };
     }
 
     /**
