@@ -69,8 +69,8 @@ DeepReader 的对话历史导入机制存在断层，导致多轮对话上下文
 ```typescript
 type HistoryEntryType =
   | 'milestone'  // 📖 阅读里程碑（原有）
-  | 'dialogue'   // 💬 对话摘要（新增）
-  | 'insight';   // 💡 关键洞察（可选）
+  | 'dialogue';  // 💬 对话摘要（新增）
+// 注：`insight` 类型留待后续迭代
 
 // 对话摘要条目结构
 interface DialogueSummaryEntry {
@@ -100,41 +100,45 @@ interface DialogueSummaryEntry {
 
 ### 3. MemoryConsolidator 修改
 
-新增 `save_dialogue_summary` 工具：
+**设计决策**：扩展现有 `SAVE_MEMORY_TOOL`，而非新建独立工具。理由：
+- 与现有 `history_entry` 字段语义一致
+- 避免两个工具调用的复杂性
+- 统一整合流程
 
 ```typescript
-const SAVE_DIALOGUE_TOOL = [
+// 扩展现有 SAVE_MEMORY_TOOL，添加 references 参数
+const SAVE_MEMORY_TOOL = [
   {
     type: 'function',
     function: {
-      name: 'save_dialogue_summary',
-      description: '保存对话摘要到阅读历程记录。',
+      name: 'save_memory',
+      description: '保存记忆整合结果到持久化存储。',
       parameters: {
         type: 'object',
         properties: {
-          dialogue_entry: {
+          history_entry: {
             type: 'string',
-            description: '对话摘要条目。格式：关于《书名》讨论了主题，得出结论/建议。',
+            description: '对话摘要条目。格式：关于《书名》讨论了主题，得出结论/建议。以 💬 emoji 开头区分对话摘要。如果是闲聊或无实质内容，返回空字符串。',
           },
           references: {
             type: 'array',
             items: { type: 'string' },
-            description: '关键引用链接，格式：[[书名#^blockId]]',
+            description: '关键引用链接，格式：[[书名#^blockId]]。最多保留3个重要引用。',
           },
           memory_update: {
             type: 'string',
-            description: '用户画像更新（如有新的用户特征发现）',
+            description: '完整的更新后长期记忆（markdown格式）。包含所有现有事实和新事实。如果没有新信息则返回不变。',
           },
         },
-        required: ['dialogue_entry'],
+        required: ['history_entry', 'memory_update'],
       },
     },
   },
 ];
 
-// 整合 Prompt
+// 整合 Prompt（修改版）
 const CONSOLIDATION_PROMPT = `
-分析这段对话，提取核心信息并调用 save_dialogue_summary 工具。
+分析这段对话，提取核心信息并调用 save_memory 工具。
 
 ## 待分析对话
 ${formattedMessages}
@@ -146,10 +150,19 @@ ${formattedMessages}
 4. **用户特征**：是否有新的用户偏好/兴趣发现？如有则更新 memory_update
 
 ## 输出要求
+- history_entry 格式：💬 关于《书名》讨论了主题，得出结论Y。引用：[[书名#^blockId]]
 - 每轮对话生成一条摘要（精简，<100字）
-- 如果对话无实质内容（闲聊），则跳过（不生成）
-- 必须调用 save_dialogue_summary 工具
+- **跳过规则**：如果对话无实质内容（如纯闲聊、条目长度<20字符），history_entry 返回空字符串
+- 必须调用 save_memory 工具
 `;
+
+// ConsolidationResult 类型扩展（types.ts）
+interface ConsolidationResult {
+  historyEntry: string;     // 对话摘要条目（以 💬 开头）
+  references: string[];     // 关键引用链接（新增）
+  memoryUpdate: string;     // MEMORY.md 更新内容
+}
+```
 ```
 
 ### 4. 智能加载策略
@@ -224,13 +237,13 @@ FrontendAgent.chat()
     │
     └─► maybeConsolidateMemory()
             │
-            ├─► 检查 token 是否超过阈值（15000）
+            ├─► 检查 token 是否超过阈值（8000）
             │
             ├─► [超过] MemoryConsolidator.maybeConsolidate()
             │       │
             │       ├─► LLM 分析对话
             │       │
-            │       ├─► save_dialogue_summary → HISTORY.md  ← 新增！
+            │       ├─► save_memory → HISTORY.md（对话摘要）
             │       │
             │       ├─► memory_update → MEMORY.md
             │       │
@@ -266,17 +279,21 @@ DeepReader/
 ### 修改文件清单
 
 1. **src/agent/memory/types.ts**
-   - 新增 `DialogueSummaryEntry` 类型
-   - 新增 `HistoryEntryType` 类型
+   - 扩展 `ConsolidationResult` 类型，添加 `references` 字段
+   - 扩展 `ConsolidatorConfig` 类型，添加 `skipThreshold` 字段
+   - 扩展 `DEFAULT_CONSOLIDATOR_CONFIG`，添加新参数默认值
 
 2. **src/agent/memory/store.ts**
-   - 新增 `appendDialogueSummary()` 方法
-   - 新增 `searchDialogueSummaries()` 方法
+   - **不新增方法**，复用现有 `appendHistory()` 方法
+   - `appendHistory()` 内部根据条目开头 emoji 自动识别类型：
+     - `💬` 开头 → 对话摘要
+     - `📖` 开头 → 阅读里程碑
+   - 新增 `searchDialogueSummaries(bookName, limit)` 方法用于检索相关对话
 
 3. **src/agent/memory/consolidator.ts**
-   - 新增 `SAVE_DIALOGUE_TOOL` 工具定义
-   - 修改 `consolidate()` 方法，调用新工具
-   - 修改整合 Prompt
+   - 扩展 `SAVE_MEMORY_TOOL`，添加 `references` 参数
+   - 修改 `consolidate()` 方法，处理新增字段
+   - 修改整合 Prompt，添加对话摘要生成规则
 
 4. **src/agent/context/builder.ts**
    - 新增 `loadRelevantDialogueSummaries()` 方法
@@ -289,10 +306,162 @@ DeepReader/
 
 | 参数 | 默认值 | 说明 |
 |-----|-------|-----|
-| `tokenThreshold` | 15000 | 整合触发阈值 |
+| `tokenThreshold` | 8000 | 整合触发阈值（沿用现有配置） |
 | `maxDialogueSummaries` | 10 | 加载到 LLM 的最大摘要数 |
 | `maxHistoryEntries` | 200 | HISTORY.md 最大条目数 |
+| `archiveThreshold` | 150 | 归档触发阈值：超过 150 条时自动归档到 history/ 目录 |
 | `summaryMaxLength` | 100 | 每条摘要最大字数 |
+| `skipThreshold` | 20 | 跳过阈值：条目长度 <20 字符视为闲聊 |
+
+> 注：`tokenThreshold` 使用现有 `DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold = 8000`，不修改默认值。
+> 归档机制：当 HISTORY.md 条目超过 `archiveThreshold` 时，调用现有 `MemoryStore.maybeArchiveHistory()` 方法自动归档。
+
+---
+
+## Part 2: 当前会话内历史管理 - S2 历史传入
+
+### 问题背景
+
+当前认知引擎中，S2 Analytical State 是真正执行检索和深度分析的状态，但它**完全不知道对话历史**：
+
+```
+状态     │ 使用历史 │ 实现                          │ 问题
+───────────────────────────────────────────────────────────────
+S0 Router│ ✅       │ chatHistory.slice(-10)        │ 重写有损
+S1 Insp. │ ❌       │ 只用 standaloneQuery          │ 无历史
+S2 Anal. │ ❌       │ 只用 standaloneQuery          │ 无历史（最严重）
+S4 Form. │ ✅       │ chatHistory.slice(-10)        │ 内容太重+硬截断
+```
+
+**后果**：
+- 用户问"再深入讲讲"，S2 可能重复搜索相同内容
+- 用户问"那个概念和 X 有什么关系"，S2 不知道"那个概念"是哪个
+- S2 无法根据历史调整搜索策略
+
+### 设计方案
+
+#### 1. SharedContext 数据模型扩展
+
+```typescript
+// cognitive-engine/types.ts
+interface SharedContext {
+  // ... 现有字段 ...
+  
+  // 新增：上一轮 S2 搜索的 block_ids（用于避免重复）
+  prevSearchedBlockIds?: string[];
+}
+```
+
+#### 2. 历史摘要化
+
+传入 S2 的历史采用**摘要化格式**，而非原始全文：
+
+```typescript
+// 新增：cognitive-engine/utils/history-summarizer.ts
+interface HistorySummary {
+  topic: string;        // 讨论 topic
+  conclusion: string;   // 核心结论（<100字）
+  blockIds: string[];   // 引用的 block_ids
+}
+
+// 最终输出格式：
+// <history>
+// [第1轮] 用户问"MECE是什么"，分析发现MECE=互斥完备，引用 [[书名#^b1]]
+// [第2轮] 用户问"MECE的应用"，分析发现用于商业分析框架，引用 [[书名#^b2]]
+// </history>
+```
+
+#### 3. S2 Prompt 修改
+
+```typescript
+// analytical-prompt.ts
+function buildAnalyticalUserMessage(
+  standaloneQuery: string,
+  betterQuestion?: string,
+  recentHistory?: HistorySummary[],   // 新增：最近3轮摘要
+  prevSearchedBlockIds?: string[]     // 新增：已搜索范围
+): string {
+  const historyBlock = recentHistory && recentHistory.length > 0
+    ? `<history>
+${recentHistory.map((h, i) => 
+  `[第${i+1}轮] 用户问"${h.topic}"，分析发现${h.conclusion}`
+).join('\n')}
+</history>\n`
+    : '';
+
+  const prevBlock = prevSearchedBlockIds && prevSearchedBlockIds.length > 0
+    ? `<prev_searched>
+已搜索的段落（避免重复）：${prevSearchedBlockIds.slice(0, 10).join(', ')}
+</prev_searched>\n`
+    : '';
+
+  return `${historyBlock}${prevBlock}<query>
+${betterQuestion || standaloneQuery}
+</query>
+
+在限定范围内分析，提取关键内容并附带 block_id。`;
+}
+```
+
+#### 4. 历史提取流程
+
+```
+continueChat(history, ...)
+    │
+    ├─► cleanHistory = history.filter(user | assistant)
+    │
+    ├─► extractRecentHistorySummaries(cleanHistory, 3)  ← 新增
+    │       │
+    │       └─► 从最近 3 轮 assistant 消息中提取：
+    │           • topic（从对应 user 消息推断）
+    │           • conclusion（assistant 前 100 字）
+    │           • blockIds（正则匹配 [[书名#^blockId]]）
+    │
+    ├─► extractPrevBlockIds(cleanHistory)  ← 新增
+    │       │
+    │       └─► 从上一轮 assistant 消息提取所有 block_ids
+    │
+    └─► createSharedContext({
+          chatHistory: cleanHistory,
+          recentHistorySummaries,  ← 传给 S2
+          prevSearchedBlockIds,    ← 传给 S2
+        })
+
+S2 Analytical.execute()
+    │
+    └─► buildAnalyticalUserMessage(
+          query,
+          betterQuestion,
+          ctx.recentHistorySummaries,  ← 使用
+          ctx.prevSearchedBlockIds     ← 使用
+        )
+```
+
+### 修改文件清单
+
+| 文件 | 修改内容 |
+|-----|---------|
+| `cognitive-engine/types.ts` | SharedContext 新增 `prevSearchedBlockIds`, `recentHistorySummaries` |
+| `cognitive-engine/context.ts` | SharedContextImpl 新增字段初始化 |
+| `cognitive-engine/prompts/analytical-prompt.ts` | `buildAnalyticalUserMessage` 新增参数和 `<history>` `<prev_searched>` 块 |
+| `cognitive-engine/states/analytical.ts` | 调用时传入新参数 |
+| `cognitive-engine/utils/history-summarizer.ts` | **新增**：历史摘要化函数 |
+| `agent/index.ts` | `continueChat()` 增加历史摘要提取 |
+
+### 配置参数
+
+| 参数 | 默认值 | 说明 |
+|-----|-------|-----|
+| `maxHistoryForS2` | 3 | S2 传入的历史轮数 |
+| `maxSummaryLength` | 100 | 每条摘要最大字数 |
+| `maxPrevBlockIds` | 10 | `<prev_searched>` 显示的最大 block_id 数 |
+
+### 验收标准（新增）
+
+7. 用户追问时，S2 不重复搜索已检索的段落
+8. 用户说"那个概念"时，S2 能从历史推断具体概念
+9. `<history>` 块内容准确反映最近 3 轮讨论主题
+10. 历史传入不影响 S2 的工具调用效率（不超过 800 token）
 
 ---
 
@@ -303,6 +472,7 @@ DeepReader/
 3. 整合后的 token 数量显著降低（目标：<8000）
 4. 用户切换书籍时，自动加载相关书籍的对话摘要
 5. 无性能明显下降（摘要加载 <50ms）
+6. **失败恢复**：consolidate() 失败时，JSONL 原始数据不丢失，下次对话可继续整合
 
 ---
 
