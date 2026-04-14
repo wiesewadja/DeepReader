@@ -2,7 +2,7 @@
  * Cognitive Engine — LangGraph StateGraph
  *
  * Main graph compiling S0→S1→S2→S4 nodes with conditional edges.
- * Uses MemorySaver for in-memory checkpointing (Chunk 5 will add FileCheckpointer).
+ * Supports both MemorySaver (in-memory) and FileCheckpointer (persistent).
  */
 
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
@@ -12,6 +12,7 @@ import { inspectionalNode } from './nodes/inspectional';
 import { analyticalNode } from './nodes/analytical';
 import { formatterNode } from './nodes/formatter';
 import { routeByDepth, routeAfterInspectional } from './edges';
+import type { FileCheckpointer } from './checkpointer';
 
 // Build the graph
 const workflow = new StateGraph(CognitiveEngineAnnotation)
@@ -33,39 +34,19 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addEdge('formatter', END);
 
 /**
- * Compiled cognitive engine graph.
- *
- * Usage:
- * ```typescript
- * import { HumanMessage } from '@langchain/core/messages';
- *
- * const stream = await cognitiveEngine.stream(
- *   {
- *     messages: [new HumanMessage('这本书讲了什么？')],
- *     bookId: 'abc12345',
- *     pdfName: '如何阅读一本书',
- *   },
- *   {
- *     configurable: {
- *       thread_id: 'session-1',
- *       fastModel: fastChatModel,
- *       sharedContext: sharedCtx,
- *     },
- *   },
- * );
- * ```
- *
- * configurable fields:
- * - thread_id: unique session identifier for checkpointing
- * - fastModel: ChatOpenAI instance for S0/S1 (fast/cheap)
- * - mainModel: ChatOpenAI instance for S2/S4 (strong)
- * - sharedContext: existing SharedContext for delegating to legacy state classes
- * - chatHistory: recent chat messages for router context
- * - callbacks: EngineCallbacks for streaming output
- * - enableHumanReview: boolean (used in Chunk 4)
+ * Default in-memory cognitive engine (no persistence across restarts).
  */
 export const cognitiveEngine = workflow.compile({
   checkpointer: new MemorySaver(),
 });
+
+/**
+ * Create a cognitive engine with a persistent FileCheckpointer.
+ *
+ * Use this when you need interrupt recovery across Obsidian restarts.
+ */
+export function createCognitiveEngine(checkpointer: FileCheckpointer | MemorySaver) {
+  return workflow.compile({ checkpointer });
+}
 
 export type { CognitiveEngineAnnotation, CognitiveEngineState } from './state';
