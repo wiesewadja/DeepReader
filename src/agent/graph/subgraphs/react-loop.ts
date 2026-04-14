@@ -1,0 +1,424 @@
+/**
+ * ReAct Loop Subgraph
+ *
+ * Replaces runStateLoop() with a LangGraph StateGraph.
+ * Supports: tool calling, loop detection, forced conclusion,
+ * and iteration/tool-call limits.
+ */
+
+import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
+import { ToolNode } from '@langchain/langgraph/dist/prebuilt/tool_node.js';
+import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
+import type { StructuredToolInterface } from '@langchain/core/tools';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import { messagesStateReducer } from '@langchain/langgraph';
+import type { BaseMessage } from '@langchain/core/messages';
+import { verifyAndCleanContent } from '../../cognitive-engine/utils/self-verification.js';
+
+// === State Definition ===
+
+export interface ToolResultRecord {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: string;
+  originalResultLength: number;
+}
+
+export interface ReactLoopConfig {
+  tools: StructuredToolInterface[];
+  model: any; // ChatOpenAI instance
+  maxIterations: number;
+  maxToolCalls: number;
+  /** Forced conclusion context (book name + scope) */
+  forcedConclusionContext?: {
+    pdfName?: string;
+    scopeNodeIds?: string[];
+  };
+  /** Tool argument interceptor (e.g. scope_node_ids injection) */
+  toolInterceptor?: (toolName: string, args: Record<string, unknown>) => Record<string, unknown>;
+  /** Abort signal for cancellation / timeout */
+  signal?: AbortSignal;
+}
+
+const ReactAnnotation = Annotation.Root({
+  messages: Annotation<BaseMessage[]>({
+    reducer: messagesStateReducer,
+    default: () => [],
+  }),
+  iterationCount: Annotation<number>({
+    reducer: (_, update) => update,
+    default: () => 0,
+  }),
+  toolCallCount: Annotation<number>({
+    reducer: (_, update) => update,
+    default: () => 0,
+  }),
+  /** Queries asked per tool (for loop detection) */
+  queriesAsked: Annotation<Record<string, string[]>>({
+    reducer: (_, update) => update,
+    default: () => ({}),
+  }),
+  /** Accumulated tool results for self-verification */
+  toolResults: Annotation<ToolResultRecord[]>({
+    reducer: (_, update) => update,
+    default: () => [],
+  }),
+  /** Limits passed through state for shouldContinue access */
+  _maxIterations: Annotation<number>({
+    reducer: (_, update) => update,
+    default: () => 8,
+  }),
+  _maxToolCalls: Annotation<number>({
+    reducer: (_, update) => update,
+    default: () => 5,
+  }),
+});
+
+type ReactState = typeof ReactAnnotation.State;
+
+// === Max tool result length ===
+const MAX_TOOL_RESULT_LENGTH = 8000;
+
+function compressToolResult(result: string): string {
+  if (result.length <= MAX_TOOL_RESULT_LENGTH) return result;
+  const truncated = result.slice(0, MAX_TOOL_RESULT_LENGTH);
+  const omitted = result.length - MAX_TOOL_RESULT_LENGTH;
+  return `${truncated}\n\n... [已省略 ${omitted} 字符]`;
+}
+
+// === Loop Detection ===
+
+function extractQueryKey(toolName: string, args: Record<string, unknown>): string | null {
+  if ('query' in args) return String(args.query);
+  if ('keywords' in args && Array.isArray(args.keywords)) {
+    return [...(args.keywords as unknown[])].map(String).sort().join(',');
+  }
+  return null;
+}
+
+function hasLoopDetected(
+  toolName: string,
+  args: Record<string, unknown>,
+  queriesAsked: Record<string, string[]>,
+): boolean {
+  const key = extractQueryKey(toolName, args);
+  if (key === null) return false;
+  const history = queriesAsked[toolName] ?? [];
+  return history.includes(key);
+}
+
+function updateQueriesAsked(
+  queriesAsked: Record<string, string[]>,
+  toolName: string,
+  args: Record<string, unknown>,
+): Record<string, string[]> {
+  const key = extractQueryKey(toolName, args);
+  if (key === null) return queriesAsked;
+  const history = queriesAsked[toolName] ?? [];
+  if (history.includes(key)) return queriesAsked;
+  return { ...queriesAsked, [toolName]: [...history, key] };
+}
+
+// === Agent Node ===
+
+/** Parse tool call args, handling string-encoded JSON */
+function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> {
+  try {
+    return typeof tc.args === 'string' ? JSON.parse(tc.args) : tc.args;
+  } catch {
+    return {};
+  }
+}
+
+async function agentNode(
+  state: ReactState,
+  config: RunnableConfig,
+): Promise<Partial<ReactState>> {
+  const reactConfig = config.configurable?.reactLoopConfig as ReactLoopConfig;
+  const modelWithTools = reactConfig.model.bindTools(reactConfig.tools);
+  const response = await modelWithTools.invoke(state.messages, config);
+
+  return {
+    messages: [response],
+    iterationCount: state.iterationCount + 1,
+  };
+}
+
+// === Enhanced Tool Node (with loop detection + result tracking) ===
+
+function createEnhancedToolNode(tools: StructuredToolInterface[], toolInterceptor?: ReactLoopConfig['toolInterceptor']) {
+  return async function enhancedToolNode(
+    state: ReactState,
+    config: RunnableConfig,
+  ): Promise<Partial<ReactState>> {
+    const messages = state.messages as BaseMessage[];
+    const lastMessage = messages[messages.length - 1] as AIMessage;
+    if (!lastMessage?.tool_calls?.length) {
+      return { messages: [] };
+    }
+
+    const reactConfig = config.configurable?.reactLoopConfig as ReactLoopConfig;
+    const interceptor = toolInterceptor ?? reactConfig?.toolInterceptor;
+
+    const toolResults: ToolResultRecord[] = [...state.toolResults];
+    const newMessages: ToolMessage[] = [];
+    let newQueries = { ...state.queriesAsked };
+    let executedCount = 0;
+
+    for (const tc of lastMessage.tool_calls) {
+      let args = parseToolCallArgs(tc);
+
+      // Apply interceptor (e.g. scope_node_ids injection for search_book)
+      if (interceptor) {
+        args = interceptor(tc.name, args);
+      }
+
+      // Loop detection: replace duplicate queries with a warning
+      if (hasLoopDetected(tc.name, args, state.queriesAsked)) {
+        const usedQueries = (state.queriesAsked[tc.name] ?? []).map(q => `"${q}"`).join(', ');
+        const loopMsg = `[Loop Detection] 检测到重复工具调用：
+- 工具：${tc.name}
+- 重复查询："${extractQueryKey(tc.name, args)}"
+- 本次循环已使用的查询：${usedQueries}
+
+建议：直接使用 read_book_section 的 node_ids 参数批量读取相关章节内容，避免重复搜索。`;
+
+        newMessages.push(
+          new ToolMessage({
+            content: loopMsg,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        continue;
+      }
+
+      // Record query AFTER passing loop detection (before execution)
+      newQueries = updateQueriesAsked(newQueries, tc.name, args);
+
+      const tool = tools.find(t => t.name === tc.name);
+      if (!tool) {
+        newMessages.push(
+          new ToolMessage({
+            content: `Error: Unknown tool "${tc.name}"`,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        continue;
+      }
+
+      try {
+        const rawResult = await tool.invoke(args, config);
+        const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
+        const compressed = compressToolResult(resultStr);
+
+        toolResults.push({
+          toolName: tc.name,
+          args,
+          result: compressed,
+          originalResultLength: resultStr.length,
+        });
+
+        newMessages.push(
+          new ToolMessage({
+            content: compressed,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        executedCount++;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        newMessages.push(
+          new ToolMessage({
+            content: `Error: ${errorMsg}`,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        executedCount++;
+      }
+    }
+
+    return {
+      messages: newMessages,
+      toolResults,
+      queriesAsked: newQueries,
+      toolCallCount: state.toolCallCount + executedCount,
+    };
+  };
+}
+
+// === Should Continue ===
+
+function shouldContinue(state: ReactState): string {
+  const messages = state.messages as BaseMessage[];
+  const lastMessage = messages[messages.length - 1] as AIMessage;
+
+  // No tool calls → normal end
+  if (!lastMessage?.tool_calls?.length) return '__end__';
+  // Max iterations reached
+  if (state.iterationCount >= state._maxIterations) return '__end__';
+  // Max tool calls reached
+  if (state.toolCallCount >= state._maxToolCalls) return '__end__';
+  // Loop detection: if ALL tool calls are duplicates, stop
+  const allDuplicates = lastMessage.tool_calls.every(tc => {
+    const args = parseToolCallArgs(tc);
+    return hasLoopDetected(tc.name, args, state.queriesAsked);
+  });
+  if (allDuplicates && lastMessage.tool_calls.length > 0) return '__end__';
+
+  return 'tools';
+}
+
+// === Forced Conclusion ===
+
+function buildForcedConclusionPrompt(config: ReactLoopConfig, hitToolCallLimit: boolean): string {
+  const limitType = hitToolCallLimit ? '工具调用' : '迭代';
+  const limitValue = hitToolCallLimit ? config.maxToolCalls : config.maxIterations;
+
+  let prompt = `你已达到${limitType}次数上限（${limitValue}次）。
+
+现在请基于已收集的所有信息，输出你的最终分析结论。
+
+要求：
+1. 综合所有工具调用结果
+2. 输出完整的分析内容，不要再次调用工具
+3. 如果信息不足，基于已有信息给出尽可能完整的回答`;
+
+  if (config.forcedConclusionContext) {
+    const { pdfName, scopeNodeIds } = config.forcedConclusionContext;
+    if (pdfName || (scopeNodeIds && scopeNodeIds.length > 0)) {
+      prompt += `\n\n书名：${pdfName || '未知'}
+可引用的章节范围：${scopeNodeIds?.join(', ') || '全书'}
+请确保所有 wiki 链接格式为 [[${pdfName || '书名'}/章节文件名#^block_id|别名]]`;
+    }
+  }
+
+  return prompt;
+}
+
+// === Build the subgraph ===
+
+export function createReactLoopGraph(config: ReactLoopConfig) {
+  return new StateGraph(ReactAnnotation)
+    .addNode('agent', agentNode)
+    .addNode('tools', createEnhancedToolNode(config.tools, config.toolInterceptor))
+    .addEdge(START, 'agent')
+    .addConditionalEdges('agent', shouldContinue, {
+      tools: 'tools',
+      __end__: '__end__',
+    })
+    .addEdge('tools', 'agent');
+}
+
+/**
+ * Run the ReAct loop to completion, handling forced conclusion.
+ *
+ * This is the main entry point for the ReAct subgraph.
+ * It compiles and runs the graph, then applies forced conclusion
+ * if the loop terminated due to iteration/tool-call limits.
+ */
+export async function runReactLoop(
+  messages: BaseMessage[],
+  config: ReactLoopConfig,
+  runnableConfig?: RunnableConfig,
+): Promise<{
+  content: string;
+  toolResults: ToolResultRecord[];
+  iterations: number;
+  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls';
+}> {
+  const graph = createReactLoopGraph(config);
+  const compiled = graph.compile();
+
+  const initialState = {
+    messages,
+    iterationCount: 0,
+    toolCallCount: 0,
+    queriesAsked: {} as Record<string, string[]>,
+    toolResults: [] as ToolResultRecord[],
+    _maxIterations: config.maxIterations,
+    _maxToolCalls: config.maxToolCalls,
+  };
+
+  const result = await compiled.invoke(initialState, {
+    ...runnableConfig,
+    signal: config.signal ?? runnableConfig?.signal,
+    configurable: {
+      ...runnableConfig?.configurable,
+      reactLoopConfig: config,
+    },
+  });
+
+  const resultMessages = result.messages as BaseMessage[];
+  const lastMessage = resultMessages[resultMessages.length - 1] as AIMessage;
+  const hasPendingToolCalls = (lastMessage?.tool_calls?.length ?? 0) > 0;
+  const hitIterationLimit = result.iterationCount >= config.maxIterations;
+  const hitToolCallLimit = result.toolCallCount >= config.maxToolCalls;
+
+  // Forced conclusion: if loop ended with pending tool calls due to limits
+  if (hasPendingToolCalls && (hitIterationLimit || hitToolCallLimit) && result.toolResults.length > 0) {
+    // Fill in placeholder ToolMessages for pending tool calls to maintain valid message sequence
+    // (OpenAI API requires ToolMessage after AIMessage with tool_calls)
+    const filledMessages = [...resultMessages];
+    const pendingTcIds = new Set(
+      (lastMessage.tool_calls ?? []).map(tc => tc.id).filter(Boolean) as string[],
+    );
+    const answeredIds = new Set(
+      resultMessages
+        .filter((m): m is ToolMessage => m instanceof ToolMessage)
+        .map(m => m.tool_call_id),
+    );
+    for (const tc of lastMessage.tool_calls ?? []) {
+      const tcId = tc.id ?? '';
+      if (!answeredIds.has(tcId)) {
+        filledMessages.push(
+          new ToolMessage({
+            content: `[跳过] 已达调用上限，不再执行此工具。`,
+            tool_call_id: tcId,
+          }),
+        );
+      }
+    }
+
+    const forcedPrompt = buildForcedConclusionPrompt(config, hitToolCallLimit);
+    const forcedResponse = await config.model.invoke([
+      ...filledMessages,
+      new HumanMessage(forcedPrompt),
+    ]);
+
+    let forcedContent = typeof forcedResponse.content === 'string'
+      ? forcedResponse.content
+      : JSON.stringify(forcedResponse.content);
+
+    // Self-verification: remove ghost block_id references
+    if (result.toolResults.length > 0) {
+      const verifyResult = await verifyAndCleanContent(forcedContent, result.toolResults);
+      forcedContent = verifyResult.content;
+    }
+
+    return {
+      content: forcedContent,
+      toolResults: result.toolResults,
+      iterations: result.iterationCount,
+      finishReason: hitToolCallLimit ? 'max_tool_calls' : 'max_iterations',
+    };
+  }
+
+  // Normal completion
+  let content = lastMessage
+    ? (typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content))
+    : '';
+
+  // Self-verification: remove ghost block_id references
+  if (result.toolResults.length > 0) {
+    const verifyResult = await verifyAndCleanContent(content, result.toolResults);
+    content = verifyResult.content;
+  }
+
+  // Limits handled above via forced conclusion; anything reaching here is normal stop
+  return {
+    content,
+    toolResults: result.toolResults,
+    iterations: result.iterationCount,
+    finishReason: 'stop' as const,
+  };
+}

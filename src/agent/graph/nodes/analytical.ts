@@ -1,56 +1,134 @@
 /**
- * S2: Analytical Reading Node — LangGraph wrapper
+ * S2: Analytical Reading Node — LangGraph node using ReAct subgraph
  *
- * Wraps the existing AnalyticalState.execute() into a LangGraph node.
- * Deep analysis within locked scope using ReAct loop.
- *
- * Full ReAct subgraph integration will be in Chunk 3.
- * This skeleton delegates to the existing state for now.
+ * Replaces the old AnalyticalState.execute() with runReactLoop().
+ * Uses the ReAct subgraph for tool-augmented deep analysis.
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { AnalyticalState } from '../../cognitive-engine/states/analytical';
 import type { SharedContext } from '../../cognitive-engine/types';
+import { runReactLoop } from '../subgraphs/react-loop.js';
+import {
+  buildAnalyticalSystemPrompt,
+  buildScopedChaptersBlock,
+  buildAnalyticalUserMessage,
+} from '../../cognitive-engine/prompts/analytical-prompt.js';
+import { InspectionalState } from '../../cognitive-engine/states/inspectional.js';
+import { createLangChainTools } from '../../tools/index.js';
+
+/**
+ * Build the scope interceptor that injects scope_node_ids into search_book calls.
+ */
+function createScopeInterceptor(scopeNodeIds: string[]) {
+  return (toolName: string, args: Record<string, unknown>): Record<string, unknown> => {
+    if (toolName === 'search_book' && scopeNodeIds.length > 0) {
+      return { ...args, scope_node_ids: scopeNodeIds };
+    }
+    return args;
+  };
+}
 
 /**
  * S2 Analytical node: deep analysis with tool-augmented ReAct loop.
  *
- * Delegates to the existing AnalyticalState which handles:
- * 1. Cumulative guarantee (calls S1 if scope not set)
- * 2. Scope interceptor creation
- * 3. ReAct loop with search_book + read_book_section
- * 4. Forced conclusion on iteration limit
- *
- * The full ReAct subgraph will replace this in Chunk 3.
+ * Flow:
+ * 1. Cumulative guarantee: run S1 if scope not set
+ * 2. Build system prompt + user message
+ * 3. Run ReAct subgraph with scoped tools
+ * 4. Store results in graph state
  */
 export async function analyticalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const analytical = new AnalyticalState();
   const ctx = config.configurable?.sharedContext as SharedContext | undefined;
+  const mainModel = config.configurable?.mainModel;
+  const toolContext = config.configurable?.toolContext;
 
-  if (!ctx) {
+  if (!ctx || !mainModel || !toolContext) {
+    console.warn('[S2 Analytical] Missing required config, returning empty result.');
     return {
       analysisResult: '',
       toolResultsSnapshot: [],
     };
   }
 
-  // Sync graph state into SharedContext
-  ctx.depth = state.depth as 0 | 1 | 2 | 3;
-  ctx.standaloneQuery = state.rewrittenQuery || ctx.rawUserQuery;
-  ctx.scopeNodeIds = state.scopeNodeIds.length > 0 ? state.scopeNodeIds : undefined;
-  ctx.tocSummary = state.tocSummary || undefined;
-  ctx.betterQuestion = state.betterQuestion || undefined;
-  ctx.structuralAnalysis = state.structuralAnalysis || undefined;
+  // Step 1: Cumulative guarantee — run S1 if scope not yet determined
+  let scopeNodeIds = state.scopeNodeIds;
+  let s1Ran = false;
+  if (!scopeNodeIds || scopeNodeIds.length === 0) {
+    const inspectional = new InspectionalState();
+    await inspectional.execute(ctx);
+    scopeNodeIds = ctx.scopeNodeIds ?? [];
+    s1Ran = true;
+  }
 
-  // Execute the existing state logic (includes ReAct loop + scope interceptor)
-  await analytical.execute(ctx);
+  // Step 2: Build system prompt and user message
+  const systemPrompt = buildAnalyticalSystemPrompt({
+    scopeNodeIds,
+    tocSummary: state.tocSummary || ctx.tocSummary,
+  });
 
-  return {
-    analysisResult: ctx.analysisResult ?? '',
-    toolResultsSnapshot: ctx.s2ToolResults ?? [],
+  const scopedChapters = buildScopedChaptersBlock(
+    scopeNodeIds,
+    ctx.markdownFiles ?? {},
+  );
+  const fullSystemPrompt = scopedChapters
+    ? `${systemPrompt}\n${scopedChapters}`
+    : systemPrompt;
+
+  const userMessage = buildAnalyticalUserMessage(
+    state.rewrittenQuery || ctx.rawUserQuery,
+    state.betterQuestion || ctx.betterQuestion,
+    ctx.recentHistorySummaries,
+    ctx.prevSearchedBlockIds,
+  );
+
+  // Step 3: Create LangChain tools (only search_book + read_book_section for S2)
+  const allTools = createLangChainTools(toolContext);
+  const s2ToolNames = ['search_book', 'read_book_section'];
+  const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
+
+  // Step 4: Run ReAct subgraph
+  const result = await runReactLoop(
+    [
+      new SystemMessage(fullSystemPrompt),
+      new HumanMessage(userMessage),
+    ],
+    {
+      tools: s2Tools,
+      model: mainModel,
+      maxIterations: 8,
+      maxToolCalls: 5,
+      forcedConclusionContext: {
+        pdfName: state.pdfName || ctx.pdfName,
+        scopeNodeIds,
+      },
+      toolInterceptor: createScopeInterceptor(scopeNodeIds),
+    },
+    config,
+  );
+
+  // Step 5: Store results
+  const stateUpdate: Partial<CognitiveEngineState> = {
+    analysisResult: result.content,
+    toolResultsSnapshot: result.toolResults.map(r => ({
+      toolName: r.toolName,
+      args: r.args,
+      result: r.result,
+      originalResultLength: r.originalResultLength,
+    })),
+    scopeNodeIds,
   };
+
+  // Propagate S1 results to graph state if S1 was triggered
+  if (s1Ran) {
+    stateUpdate.tocSummary = ctx.tocSummary ?? '';
+    stateUpdate.betterQuestion = ctx.betterQuestion ?? '';
+    stateUpdate.structuralAnalysis = ctx.structuralAnalysis ?? '';
+  }
+
+  return stateUpdate;
 }
