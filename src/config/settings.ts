@@ -82,6 +82,11 @@ export interface DeepPDFSettings {
     // LangGraph 引擎开关
     useLangGraphEngine: boolean;
     enableHumanReview: boolean;
+
+    // LangSmith 追踪配置（LangGraph 引擎专用）
+    langsmithApiKey: string;
+    langsmithProject: string;
+    langsmithEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -145,4 +150,9 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
     // LangGraph 引擎开关
     useLangGraphEngine: false,
     enableHumanReview: false,
+
+    // LangSmith 追踪配置
+    langsmithApiKey: "",
+    langsmithProject: "DeepReader",
+    langsmithEnabled: false,
 };

@@ -840,6 +840,50 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             text: '提示：配置完成后需重新启动对话以生效。自托管 Langfuse 可使用 http://localhost:3000，云服务使用 https://cloud.langfuse.com。',
             cls: 'setting-item-description'
         });
+
+        // === LangSmith 追踪（LangGraph 引擎专用）===
+        container.createEl('h3', { text: 'LangSmith 追踪（LangGraph 引擎）' });
+
+        new Setting(container)
+            .setName("启用 LangSmith 追踪")
+            .setDesc("启用后，LangGraph 引擎的所有节点执行、LLM 调用和工具调用将自动发送到 LangSmith 进行可视化分析")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.langsmithEnabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.langsmithEnabled = value;
+                    await this.plugin.saveSettings();
+                    // 显示/隐藏后续设置
+                    this.display();
+                }));
+
+        if (this.plugin.settings.langsmithEnabled) {
+            new Setting(container)
+                .setName("LangSmith API Key")
+                .setDesc("在 smith.langchain.com 获取")
+                .addText(text => text
+                    .setPlaceholder("ls__...")
+                    .setValue(this.plugin.settings.langsmithApiKey)
+                    .onChange(async (value) => {
+                        this.plugin.settings.langsmithApiKey = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            new Setting(container)
+                .setName("项目名称")
+                .setDesc("LangSmith 中的项目名称，用于分组追踪数据")
+                .addText(text => text
+                    .setPlaceholder("DeepReader")
+                    .setValue(this.plugin.settings.langsmithProject)
+                    .onChange(async (value) => {
+                        this.plugin.settings.langsmithProject = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            container.createEl('p', {
+                text: '提示：LangSmith 是 LangGraph 的原生可观测性平台，自动追踪图执行的每个节点、LLM 调用和工具调用，无需手动埋点。需先启用 LangGraph 引擎。',
+                cls: 'setting-item-description'
+            });
+        }
     }
 
     /**

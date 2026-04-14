@@ -67,6 +67,7 @@ import { Command } from '@langchain/langgraph';
 import { cognitiveEngine, createCognitiveEngine } from './graph/index.js';
 import { FileCheckpointer } from './graph/checkpointer.js';
 import { createChatModels } from './models/index.js';
+import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -92,6 +93,11 @@ export interface FrontendAgentOptions {
   // LangGraph 引擎设置（可选）
   useLangGraphEngine?: boolean;
   enableHumanReview?: boolean;
+
+  // LangSmith 追踪配置（可选，LangGraph 引擎专用）
+  langsmithApiKey?: string;
+  langsmithProject?: string;
+  langsmithEnabled?: boolean;
 }
 
 export class FrontendAgent {
@@ -304,7 +310,7 @@ ${currentMemory}
     const threadId = `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
-    const configurable = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage);
+    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage);
 
     try {
       const stream = await this.getCompiledEngine().stream(
@@ -313,7 +319,11 @@ ${currentMemory}
           bookId: context.indexId || '',
           pdfName: context.pdfName || '',
         },
-        { configurable, signal: callbacks.abortSignal },
+        {
+          configurable,
+          signal: callbacks.abortSignal,
+          ...(tracer ? { callbacks: [tracer] } : {}),
+        },
       );
 
       const result = await this.processGraphStream(stream, callbacks);
@@ -346,12 +356,16 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
     }
 
-    const configurable = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId);
+    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId);
 
     try {
       const stream = await this.getCompiledEngine().stream(
         new Command({ resume: { approved, feedback } }),
-        { configurable, signal: callbacks.abortSignal },
+        {
+          configurable,
+          signal: callbacks.abortSignal,
+          ...(tracer ? { callbacks: [tracer] } : {}),
+        },
       );
 
       const result = await this.processGraphStream(stream, callbacks);
@@ -411,6 +425,18 @@ ${currentMemory}
       onError: callbacks.onError || (() => {}),
     };
 
+    // LangSmith tracer (automatic LangGraph observability)
+    const langsmithTracer = this.options.langsmithEnabled && this.options.langsmithApiKey
+      ? getLangSmithTracer({
+          apiKey: this.options.langsmithApiKey,
+          projectName: this.options.langsmithProject,
+        })
+      : null;
+
+    if (langsmithTracer) {
+      log('[FrontendAgent] LangSmith tracing 已启用');
+    }
+
     return {
       thread_id: threadId,
       fastModel: models.fast,
@@ -420,6 +446,8 @@ ${currentMemory}
       toolContext: context,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
+      // Store tracer for RunnableConfig-level callbacks
+      _langsmithTracer: langsmithTracer,
     };
   }
 
