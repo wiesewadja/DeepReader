@@ -127,9 +127,9 @@ describe('HITL Interrupt in Graph Nodes', () => {
 // === Test: Edge routing ===
 
 describe('Graph Edge Routing', () => {
-  it('should route depth=0 to END (casual)', async () => {
+  it('should route depth=0 to formatter (casual → S4)', async () => {
     const { routeByDepth } = await import('../../graph/edges.js');
-    expect(routeByDepth({ depth: 0 } as any)).toBe('casual');
+    expect(routeByDepth({ depth: 0 } as any)).toBe('formatter');
   });
 
   it('should route depth=2 to analytical', async () => {

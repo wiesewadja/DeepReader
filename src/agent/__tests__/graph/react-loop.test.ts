@@ -260,14 +260,9 @@ describe('ReAct Loop Subgraph', () => {
       );
 
       // Second call has same keywords → all duplicates → shouldContinue returns __end__
-      // Since it ends with pending tool calls but no forced conclusion needed (loop detection, not limit)
-      // Actually: the graph stops because all tool calls are duplicates in shouldContinue
-      // The last AI message has tool_calls but no ToolMessages follow
-      // In runReactLoop: hasPendingToolCalls=true, but hitIterationLimit=false, hitToolCallLimit=false
-      // So it goes to the "Normal completion" branch with finishReason based on hasPendingToolCalls
-      // But there are no toolResults because the duplicate tool calls were never executed
-      // So the forced conclusion won't fire (requires toolResults.length > 0)
-      expect(result.finishReason).toBe('stop');
+      // With the fix: loop detection triggers forced conclusion when toolResults exist
+      // finishReason is now 'loop_detected' instead of the old buggy 'stop'
+      expect(result.finishReason).toBe('loop_detected');
     });
   });
 });

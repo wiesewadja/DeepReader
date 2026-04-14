@@ -3,8 +3,8 @@ import { routeByDepth, routeAfterInspectional } from '../../graph/edges.js';
 
 describe('Cognitive Engine Graph — Edges', () => {
   describe('routeByDepth', () => {
-    it('should route depth=0 to casual (END)', () => {
-      expect(routeByDepth({ depth: 0 } as any)).toBe('casual');
+    it('should route depth=0 to formatter (casual → S4)', () => {
+      expect(routeByDepth({ depth: 0 } as any)).toBe('formatter');
     });
 
     it('should route depth=1 to inspectional', () => {

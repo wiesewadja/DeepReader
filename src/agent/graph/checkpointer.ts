@@ -22,7 +22,7 @@ import {
   copyCheckpoint,
 } from '@langchain/langgraph-checkpoint';
 import type { App } from 'obsidian';
-import { normalizePath, TFile } from 'obsidian';
+import { normalizePath } from 'obsidian';
 import { agentLog as log } from '../../utils/logger.js';
 
 /** Checkpoints 目录路径（相对于 vault root） */
@@ -123,25 +123,7 @@ export class FileCheckpointer extends BaseCheckpointSaver {
         try {
           const record = JSON.parse(lines[i]);
           if (record.checkpoint?.id === checkpointId) {
-            return {
-              config: {
-                configurable: {
-                  thread_id: threadId,
-                  checkpoint_id: record.checkpoint.id,
-                },
-              },
-              checkpoint: record.checkpoint as Checkpoint,
-              metadata: record.metadata as CheckpointMetadata | undefined,
-              parentConfig: record.parentCheckpointId
-                ? {
-                    configurable: {
-                      thread_id: threadId,
-                      checkpoint_id: record.parentCheckpointId,
-                    },
-                  }
-                : undefined,
-              pendingWrites: await this.loadPendingWrites(threadId, record.checkpoint.id),
-            };
+            return await this.buildTuple(threadId, record);
           }
         } catch {
           // 跳过损坏行
@@ -153,25 +135,7 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     // 返回最新 checkpoint（最后一行）
     try {
       const record = JSON.parse(lines[lines.length - 1]);
-      return {
-        config: {
-          configurable: {
-            thread_id: threadId,
-            checkpoint_id: record.checkpoint.id,
-          },
-        },
-        checkpoint: record.checkpoint as Checkpoint,
-        metadata: record.metadata as CheckpointMetadata | undefined,
-        parentConfig: record.parentCheckpointId
-          ? {
-              configurable: {
-                thread_id: threadId,
-                checkpoint_id: record.parentCheckpointId,
-              },
-            }
-          : undefined,
-        pendingWrites: await this.loadPendingWrites(threadId, record.checkpoint.id),
-      };
+      return await this.buildTuple(threadId, record);
     } catch {
       return undefined;
     }
@@ -203,24 +167,7 @@ export class FileCheckpointer extends BaseCheckpointSaver {
           if (checkpoint.id === beforeId) continue;
         }
 
-        yield {
-          config: {
-            configurable: {
-              thread_id: threadId,
-              checkpoint_id: checkpoint.id,
-            },
-          },
-          checkpoint,
-          metadata: record.metadata as CheckpointMetadata | undefined,
-          parentConfig: record.parentCheckpointId
-            ? {
-                configurable: {
-                  thread_id: threadId,
-                  checkpoint_id: record.parentCheckpointId,
-                },
-              }
-            : undefined,
-        };
+        yield this.buildTupleSync(threadId, record);
         count++;
       } catch {
         // 跳过损坏行
@@ -292,6 +239,55 @@ export class FileCheckpointer extends BaseCheckpointSaver {
     if (await this.app.vault.adapter.exists(wrPath)) {
       await this.app.vault.adapter.remove(wrPath);
     }
+  }
+
+  /**
+   * 从 JSONL record 构建 CheckpointTuple（异步，含 pending writes）。
+   */
+  private async buildTuple(threadId: string, record: { checkpoint: { id: string }; metadata?: unknown; parentCheckpointId?: string | null }): Promise<CheckpointTuple> {
+    return {
+      config: {
+        configurable: {
+          thread_id: threadId,
+          checkpoint_id: record.checkpoint.id,
+        },
+      },
+      checkpoint: record.checkpoint as Checkpoint,
+      metadata: record.metadata as CheckpointMetadata | undefined,
+      parentConfig: record.parentCheckpointId
+        ? {
+            configurable: {
+              thread_id: threadId,
+              checkpoint_id: record.parentCheckpointId,
+            },
+          }
+        : undefined,
+      pendingWrites: await this.loadPendingWrites(threadId, record.checkpoint.id),
+    };
+  }
+
+  /**
+   * 从 JSONL record 构建 CheckpointTuple（同步，不含 pending writes，用于 list）。
+   */
+  private buildTupleSync(threadId: string, record: { checkpoint: { id: string }; metadata?: unknown; parentCheckpointId?: string | null }): CheckpointTuple {
+    return {
+      config: {
+        configurable: {
+          thread_id: threadId,
+          checkpoint_id: record.checkpoint.id,
+        },
+      },
+      checkpoint: record.checkpoint as Checkpoint,
+      metadata: record.metadata as CheckpointMetadata | undefined,
+      parentConfig: record.parentCheckpointId
+        ? {
+            configurable: {
+              thread_id: threadId,
+              checkpoint_id: record.parentCheckpointId,
+            },
+          }
+        : undefined,
+    };
   }
 
   /**

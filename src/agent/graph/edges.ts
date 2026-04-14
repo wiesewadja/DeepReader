@@ -12,7 +12,7 @@ import type { CognitiveEngineState } from './state';
  * - depth=2 (analytical) and depth=3 (syntopical, downgraded in router) → S2
  */
 export function routeByDepth(state: CognitiveEngineState): string {
-  if (state.depth === 0) return 'casual';
+  if (state.depth === 0) return 'formatter';  // casual → skip S1/S2, go directly to S4
   if (state.depth === 1) return 'inspectional';
   // depth=2 (analytical) and depth=3 (syntopical, already downgraded to 2)
   return 'analytical';

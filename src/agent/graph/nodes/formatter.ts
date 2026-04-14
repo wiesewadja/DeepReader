@@ -28,6 +28,18 @@ export async function formatterNode(
   const formatter = new FormatterState(callbacks);
   const ctx = config.configurable?.sharedContext as SharedContext | undefined;
 
+  // Casual (depth=0): no analysis to format, generate a direct response
+  if (state.depth === 0) {
+    if (!ctx) {
+      return { formattedOutput: state.rewrittenQuery || '' };
+    }
+    ctx.depth = 0;
+    ctx.standaloneQuery = state.rewrittenQuery || ctx.rawUserQuery;
+    ctx.analysisResult = '';  // No S2 analysis for casual queries
+    await formatter.execute(ctx);
+    return { formattedOutput: ctx.analysisResult ?? '' };
+  }
+
   if (!ctx) {
     return {
       formattedOutput: state.analysisResult || '',

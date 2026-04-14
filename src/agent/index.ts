@@ -67,7 +67,6 @@ import { Command } from '@langchain/langgraph';
 import { cognitiveEngine, createCognitiveEngine } from './graph/index.js';
 import { FileCheckpointer } from './graph/checkpointer.js';
 import { createChatModels } from './models/index.js';
-import { createLangChainTools } from './tools/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -106,6 +105,7 @@ export class FrontendAgent {
   private activeThreadId: string | null = null;
   private fileCheckpointer: FileCheckpointer | null = null;
   private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
+  private cachedModels: ReturnType<typeof createChatModels> | null = null;
 
   constructor(private options: FrontendAgentOptions) {
     // 构建 main 配置
@@ -301,41 +301,10 @@ ${currentMemory}
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     await this.initialize();
 
-    const models = createChatModels(
-      { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
-      this.options.fastModelEnabled && this.options.fastApiKey
-        ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
-        : undefined,
-    );
-
-    const tools = createLangChainTools(context);
     const threadId = `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
-    const toolRegistry = createToolRegistry(this.skillLoader, context);
-    const memoryContext = await this.memoryStore.getMemoryContext();
-
-    const ctx = createSharedContext({
-      indexId: context.indexId || '',
-      pdfName: context.pdfName || '',
-      rawUserQuery: userMessage,
-      chatHistory: [],
-      markdownFiles: context.markdownFiles,
-      abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,
-      memoryContext,
-      llmClientManager: this.llmClientManager,
-      toolRegistry: toolRegistry,
-      toolContext: context,
-    });
-
-    const engineCallbacks: EngineCallbacks = {
-      onProgress: callbacks.onProgress || (() => {}),
-      onContent: callbacks.onContent || (() => {}),
-      onReasoning: callbacks.onReasoning,
-      onComplete: callbacks.onComplete || (() => {}),
-      onError: callbacks.onError || (() => {}),
-    };
+    const configurable = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage);
 
     try {
       const stream = await this.getCompiledEngine().stream(
@@ -344,75 +313,19 @@ ${currentMemory}
           bookId: context.indexId || '',
           pdfName: context.pdfName || '',
         },
-        {
-          configurable: {
-            thread_id: threadId,
-            fastModel: models.fast,
-            mainModel: models.main,
-            sharedContext: ctx,
-            chatHistory: [],
-            toolContext: context,
-            callbacks: engineCallbacks,
-            enableHumanReview: this.options.enableHumanReview ?? false,
-          },
-          signal: callbacks.abortSignal,
-        },
+        { configurable, signal: callbacks.abortSignal },
       );
 
-      let formattedOutput = '';
-      let interruptedNode: { nodeId: string; content: string } | undefined;
-
-      for await (const chunk of stream) {
-        // chunk 是 [nodeName, stateUpdate] 对
-        if (Array.isArray(chunk) && chunk.length === 2) {
-          const [nodeName, stateUpdate] = chunk;
-
-          // 进度回调
-          if (callbacks.onProgress) {
-            callbacks.onProgress(`正在执行: ${nodeName}`);
-          }
-
-          // 检测 interrupt（HITL）
-          if (nodeName === '__interrupt__') {
-            const interruptValue = (stateUpdate as any)?.value;
-            if (interruptValue) {
-              interruptedNode = {
-                nodeId: interruptValue.nodeId || nodeName,
-                content: interruptValue.content || interruptValue.question || '',
-              };
-            }
-            break;
-          }
-
-          // 收集格式化输出
-          if (stateUpdate?.formattedOutput) {
-            formattedOutput = stateUpdate.formattedOutput;
-            if (callbacks.onContent) {
-              callbacks.onContent(formattedOutput);
-            }
-          }
-        }
+      const result = await this.processGraphStream(stream, callbacks);
+      // 正常完成或错误时清理 threadId，interrupted 时保留供 resume 使用
+      if (!result.interrupted) {
+        this.activeThreadId = null;
       }
-
-      if (interruptedNode) {
-        return { messages: [], interrupted: interruptedNode };
-      }
-
-      if (callbacks.onComplete) {
-        callbacks.onComplete();
-      }
-
-      const resultMessages: ChatMessage[] = [];
-      if (formattedOutput) {
-        resultMessages.push({ role: 'assistant', content: formattedOutput });
-      }
-
-      return { messages: resultMessages };
+      return result;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      if (callbacks.onError) {
-        callbacks.onError(errorMsg);
-      }
+      callbacks.onError?.(errorMsg);
+      this.activeThreadId = null;
       return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };
     }
   }
@@ -433,12 +346,45 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
     }
 
-    const models = createChatModels(
-      { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
-      this.options.fastModelEnabled && this.options.fastApiKey
-        ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
-        : undefined,
-    );
+    const configurable = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId);
+
+    try {
+      const stream = await this.getCompiledEngine().stream(
+        new Command({ resume: { approved, feedback } }),
+        { configurable, signal: callbacks.abortSignal },
+      );
+
+      const result = await this.processGraphStream(stream, callbacks);
+      if (!result.interrupted) {
+        this.activeThreadId = null;
+      }
+      return result;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      callbacks.onError?.(errorMsg);
+      this.activeThreadId = null;
+      return { messages: [{ role: 'assistant', content: `恢复图执行错误: ${errorMsg}` }] };
+    }
+  }
+
+  /**
+   * 构建 LangGraph configurable 对象（公共逻辑）。
+   */
+  private async buildGraphConfigurable(
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+    threadId: string,
+    rawUserQuery?: string,
+  ) {
+    if (!this.cachedModels) {
+      this.cachedModels = createChatModels(
+        { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
+        this.options.fastModelEnabled && this.options.fastApiKey
+          ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
+          : undefined,
+      );
+    }
+    const models = this.cachedModels;
 
     const toolRegistry = createToolRegistry(this.skillLoader, context);
     const memoryContext = await this.memoryStore.getMemoryContext();
@@ -446,7 +392,7 @@ ${currentMemory}
     const ctx = createSharedContext({
       indexId: context.indexId || '',
       pdfName: context.pdfName || '',
-      rawUserQuery: '',
+      rawUserQuery: rawUserQuery || '',
       chatHistory: [],
       markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
@@ -465,73 +411,70 @@ ${currentMemory}
       onError: callbacks.onError || (() => {}),
     };
 
-    try {
-      const stream = await this.getCompiledEngine().stream(
-        new Command({ resume: { approved, feedback } }),
-        {
-          configurable: {
-            thread_id: this.activeThreadId,
-            fastModel: models.fast,
-            mainModel: models.main,
-            sharedContext: ctx,
-            chatHistory: [],
-            toolContext: context,
-            callbacks: engineCallbacks,
-            enableHumanReview: this.options.enableHumanReview ?? false,
-          },
-          signal: callbacks.abortSignal,
-        },
-      );
+    return {
+      thread_id: threadId,
+      fastModel: models.fast,
+      mainModel: models.main,
+      sharedContext: ctx,
+      chatHistory: [],
+      toolContext: context,
+      callbacks: engineCallbacks,
+      enableHumanReview: this.options.enableHumanReview ?? false,
+    };
+  }
 
-      let formattedOutput = '';
-      let interruptedNode: { nodeId: string; content: string } | undefined;
+  /**
+   * 处理 LangGraph 流式输出（公共逻辑）。
+   * 检测 interrupt，映射到 callbacks，返回统一结果。
+   */
+  private async processGraphStream(
+    stream: AsyncIterable<unknown>,
+    callbacks: AgentLoopOptions,
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    const onProgress = callbacks.onProgress || (() => {});
+    const onContent = callbacks.onContent || (() => {});
 
-      for await (const chunk of stream) {
-        if (Array.isArray(chunk) && chunk.length === 2) {
-          const [nodeName, stateUpdate] = chunk;
+    let formattedOutput = '';
+    let interruptedNode: { nodeId: string; content: string } | undefined;
 
-          if (callbacks.onProgress) {
-            callbacks.onProgress(`正在执行: ${nodeName}`);
+    for await (const chunk of stream) {
+      if (Array.isArray(chunk) && chunk.length === 2) {
+        const [nodeName, stateUpdate] = chunk as [string, any];
+
+        onProgress(`正在执行: ${nodeName}`);
+
+        // 检测 interrupt（HITL）
+        if (nodeName === '__interrupt__') {
+          const interruptValue = stateUpdate?.value;
+          if (interruptValue) {
+            interruptedNode = {
+              nodeId: interruptValue.nodeId || nodeName,
+              content: interruptValue.content || interruptValue.question || '',
+            };
           }
+          break;
+        }
 
-          if (nodeName === '__interrupt__') {
-            const interruptValue = (stateUpdate as any)?.value;
-            if (interruptValue) {
-              interruptedNode = {
-                nodeId: interruptValue.nodeId || nodeName,
-                content: interruptValue.content || interruptValue.question || '',
-              };
-            }
-            break;
-          }
-
-          if (stateUpdate?.formattedOutput) {
-            formattedOutput = stateUpdate.formattedOutput;
-          }
+        // 收集格式化输出
+        if (stateUpdate?.formattedOutput) {
+          formattedOutput = stateUpdate.formattedOutput;
+          onContent(formattedOutput);
         }
       }
-
-      if (interruptedNode) {
-        return { messages: [], interrupted: interruptedNode };
-      }
-
-      if (callbacks.onComplete) {
-        callbacks.onComplete();
-      }
-
-      const resultMessages: ChatMessage[] = [];
-      if (formattedOutput) {
-        resultMessages.push({ role: 'assistant', content: formattedOutput });
-      }
-
-      return { messages: resultMessages };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      if (callbacks.onError) {
-        callbacks.onError(errorMsg);
-      }
-      return { messages: [{ role: 'assistant', content: `恢复图执行错误: ${errorMsg}` }] };
     }
+
+    if (interruptedNode) {
+      return { messages: [], interrupted: interruptedNode };
+    }
+
+    callbacks.onComplete?.();
+
+    const resultMessages: ChatMessage[] = [];
+    if (formattedOutput) {
+      resultMessages.push({ role: 'assistant', content: formattedOutput });
+    }
+
+    return { messages: resultMessages };
   }
 
   async chat(

@@ -7,7 +7,6 @@
  */
 
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
-import { ToolNode } from '@langchain/langgraph/dist/prebuilt/tool_node.js';
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { RunnableConfig } from '@langchain/core/runnables';
@@ -324,7 +323,7 @@ export async function runReactLoop(
   content: string;
   toolResults: ToolResultRecord[];
   iterations: number;
-  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls';
+  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls' | 'loop_detected';
 }> {
   const graph = createReactLoopGraph(config);
   const compiled = graph.compile();
@@ -353,9 +352,15 @@ export async function runReactLoop(
   const hasPendingToolCalls = (lastMessage?.tool_calls?.length ?? 0) > 0;
   const hitIterationLimit = result.iterationCount >= config.maxIterations;
   const hitToolCallLimit = result.toolCallCount >= config.maxToolCalls;
+  // Loop detection: all tool calls are duplicates (shouldContinue returned __end__)
+  const allDuplicates = hasPendingToolCalls && (lastMessage.tool_calls ?? []).every(tc => {
+    const args = parseToolCallArgs(tc);
+    return hasLoopDetected(tc.name, args, result.queriesAsked);
+  });
 
-  // Forced conclusion: if loop ended with pending tool calls due to limits
-  if (hasPendingToolCalls && (hitIterationLimit || hitToolCallLimit) && result.toolResults.length > 0) {
+  // Forced conclusion: if loop ended with pending tool calls due to limits or loop detection
+  const needsForcedConclusion = hasPendingToolCalls && (hitIterationLimit || hitToolCallLimit || allDuplicates);
+  if (needsForcedConclusion && result.toolResults.length > 0) {
     // Fill in placeholder ToolMessages for pending tool calls to maintain valid message sequence
     // (OpenAI API requires ToolMessage after AIMessage with tool_calls)
     const filledMessages = [...resultMessages];
@@ -399,7 +404,9 @@ export async function runReactLoop(
       content: forcedContent,
       toolResults: result.toolResults,
       iterations: result.iterationCount,
-      finishReason: hitToolCallLimit ? 'max_tool_calls' : 'max_iterations',
+      finishReason: allDuplicates ? 'loop_detected' as const
+        : hitToolCallLimit ? 'max_tool_calls' as const
+        : 'max_iterations' as const,
     };
   }
 
