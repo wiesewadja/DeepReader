@@ -62,6 +62,12 @@ import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './cognitive-engine/types.js';
 import { agentLog as log } from '../utils/logger.js';
 import { initTracer, getTracer } from './tracing/index.js';
+import { HumanMessage } from '@langchain/core/messages';
+import { Command } from '@langchain/langgraph';
+import { cognitiveEngine, createCognitiveEngine } from './graph/index.js';
+import { FileCheckpointer } from './graph/checkpointer.js';
+import { createChatModels } from './models/index.js';
+import { createLangChainTools } from './tools/index.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -83,6 +89,10 @@ export interface FrontendAgentOptions {
   langfuseSecretKey?: string;
   langfuseBaseUrl?: string;
   langfuseEnabled?: boolean;
+
+  // LangGraph 引擎设置（可选）
+  useLangGraphEngine?: boolean;
+  enableHumanReview?: boolean;
 }
 
 export class FrontendAgent {
@@ -93,6 +103,9 @@ export class FrontendAgent {
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
   private initialized = false;
+  private activeThreadId: string | null = null;
+  private fileCheckpointer: FileCheckpointer | null = null;
+  private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
 
   constructor(private options: FrontendAgentOptions) {
     // 构建 main 配置
@@ -178,6 +191,23 @@ export class FrontendAgent {
   }
 
   /**
+   * 获取编译后的认知引擎（带持久化 checkpointer）。
+   */
+  private getCompiledEngine() {
+    if (this.compiledEngine) return this.compiledEngine;
+
+    if (this.options.app?.vault?.adapter) {
+      this.fileCheckpointer = new FileCheckpointer(this.options.app);
+      this.compiledEngine = createCognitiveEngine(this.fileCheckpointer);
+      log('[FrontendAgent] 使用 FileCheckpointer 持久化');
+    } else {
+      this.compiledEngine = cognitiveEngine;
+      log('[FrontendAgent] 使用 MemorySaver（无持久化）');
+    }
+    return this.compiledEngine;
+  }
+
+  /**
    * 检查并压缩过大的 MEMORY.md
    * 在每次构建 System Prompt 时检查，主动触发压缩
    */
@@ -258,12 +288,264 @@ ${currentMemory}
     );
   }
 
+  /**
+   * 使用 LangGraph 认知引擎处理查询。
+   *
+   * 桥接 LangGraph StateGraph 到现有 UI 回调系统。
+   * 支持 Human-in-the-Loop（HITL）中断。
+   */
+  async runGraphEngine(
+    userMessage: string,
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    await this.initialize();
+
+    const models = createChatModels(
+      { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
+      this.options.fastModelEnabled && this.options.fastApiKey
+        ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
+        : undefined,
+    );
+
+    const tools = createLangChainTools(context);
+    const threadId = `thread-${Date.now()}`;
+    this.activeThreadId = threadId;
+
+    const toolRegistry = createToolRegistry(this.skillLoader, context);
+    const memoryContext = await this.memoryStore.getMemoryContext();
+
+    const ctx = createSharedContext({
+      indexId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      rawUserQuery: userMessage,
+      chatHistory: [],
+      markdownFiles: context.markdownFiles,
+      abortSignal: callbacks.abortSignal,
+      docDescription: context.docDescription,
+      memoryContext,
+      llmClientManager: this.llmClientManager,
+      toolRegistry: toolRegistry,
+      toolContext: context,
+    });
+
+    const engineCallbacks: EngineCallbacks = {
+      onProgress: callbacks.onProgress || (() => {}),
+      onContent: callbacks.onContent || (() => {}),
+      onReasoning: callbacks.onReasoning,
+      onComplete: callbacks.onComplete || (() => {}),
+      onError: callbacks.onError || (() => {}),
+    };
+
+    try {
+      const stream = await this.getCompiledEngine().stream(
+        {
+          messages: [new HumanMessage(userMessage)],
+          bookId: context.indexId || '',
+          pdfName: context.pdfName || '',
+        },
+        {
+          configurable: {
+            thread_id: threadId,
+            fastModel: models.fast,
+            mainModel: models.main,
+            sharedContext: ctx,
+            chatHistory: [],
+            toolContext: context,
+            callbacks: engineCallbacks,
+            enableHumanReview: this.options.enableHumanReview ?? false,
+          },
+          signal: callbacks.abortSignal,
+        },
+      );
+
+      let formattedOutput = '';
+      let interruptedNode: { nodeId: string; content: string } | undefined;
+
+      for await (const chunk of stream) {
+        // chunk 是 [nodeName, stateUpdate] 对
+        if (Array.isArray(chunk) && chunk.length === 2) {
+          const [nodeName, stateUpdate] = chunk;
+
+          // 进度回调
+          if (callbacks.onProgress) {
+            callbacks.onProgress(`正在执行: ${nodeName}`);
+          }
+
+          // 检测 interrupt（HITL）
+          if (nodeName === '__interrupt__') {
+            const interruptValue = (stateUpdate as any)?.value;
+            if (interruptValue) {
+              interruptedNode = {
+                nodeId: interruptValue.nodeId || nodeName,
+                content: interruptValue.content || interruptValue.question || '',
+              };
+            }
+            break;
+          }
+
+          // 收集格式化输出
+          if (stateUpdate?.formattedOutput) {
+            formattedOutput = stateUpdate.formattedOutput;
+            if (callbacks.onContent) {
+              callbacks.onContent(formattedOutput);
+            }
+          }
+        }
+      }
+
+      if (interruptedNode) {
+        return { messages: [], interrupted: interruptedNode };
+      }
+
+      if (callbacks.onComplete) {
+        callbacks.onComplete();
+      }
+
+      const resultMessages: ChatMessage[] = [];
+      if (formattedOutput) {
+        resultMessages.push({ role: 'assistant', content: formattedOutput });
+      }
+
+      return { messages: resultMessages };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (callbacks.onError) {
+        callbacks.onError(errorMsg);
+      }
+      return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };
+    }
+  }
+
+  /**
+   * 恢复被 HITL 中断的图执行。
+   *
+   * 使用 Command({ resume }) 发送用户审查结果，
+   * 图从中断点继续执行。
+   */
+  async resumeGraphExecution(
+    approved: boolean,
+    feedback: string,
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    if (!this.activeThreadId) {
+      return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
+    }
+
+    const models = createChatModels(
+      { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
+      this.options.fastModelEnabled && this.options.fastApiKey
+        ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
+        : undefined,
+    );
+
+    const toolRegistry = createToolRegistry(this.skillLoader, context);
+    const memoryContext = await this.memoryStore.getMemoryContext();
+
+    const ctx = createSharedContext({
+      indexId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      rawUserQuery: '',
+      chatHistory: [],
+      markdownFiles: context.markdownFiles,
+      abortSignal: callbacks.abortSignal,
+      docDescription: context.docDescription,
+      memoryContext,
+      llmClientManager: this.llmClientManager,
+      toolRegistry: toolRegistry,
+      toolContext: context,
+    });
+
+    const engineCallbacks: EngineCallbacks = {
+      onProgress: callbacks.onProgress || (() => {}),
+      onContent: callbacks.onContent || (() => {}),
+      onReasoning: callbacks.onReasoning,
+      onComplete: callbacks.onComplete || (() => {}),
+      onError: callbacks.onError || (() => {}),
+    };
+
+    try {
+      const stream = await this.getCompiledEngine().stream(
+        new Command({ resume: { approved, feedback } }),
+        {
+          configurable: {
+            thread_id: this.activeThreadId,
+            fastModel: models.fast,
+            mainModel: models.main,
+            sharedContext: ctx,
+            chatHistory: [],
+            toolContext: context,
+            callbacks: engineCallbacks,
+            enableHumanReview: this.options.enableHumanReview ?? false,
+          },
+          signal: callbacks.abortSignal,
+        },
+      );
+
+      let formattedOutput = '';
+      let interruptedNode: { nodeId: string; content: string } | undefined;
+
+      for await (const chunk of stream) {
+        if (Array.isArray(chunk) && chunk.length === 2) {
+          const [nodeName, stateUpdate] = chunk;
+
+          if (callbacks.onProgress) {
+            callbacks.onProgress(`正在执行: ${nodeName}`);
+          }
+
+          if (nodeName === '__interrupt__') {
+            const interruptValue = (stateUpdate as any)?.value;
+            if (interruptValue) {
+              interruptedNode = {
+                nodeId: interruptValue.nodeId || nodeName,
+                content: interruptValue.content || interruptValue.question || '',
+              };
+            }
+            break;
+          }
+
+          if (stateUpdate?.formattedOutput) {
+            formattedOutput = stateUpdate.formattedOutput;
+          }
+        }
+      }
+
+      if (interruptedNode) {
+        return { messages: [], interrupted: interruptedNode };
+      }
+
+      if (callbacks.onComplete) {
+        callbacks.onComplete();
+      }
+
+      const resultMessages: ChatMessage[] = [];
+      if (formattedOutput) {
+        resultMessages.push({ role: 'assistant', content: formattedOutput });
+      }
+
+      return { messages: resultMessages };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      if (callbacks.onError) {
+        callbacks.onError(errorMsg);
+      }
+      return { messages: [{ role: 'assistant', content: `恢复图执行错误: ${errorMsg}` }] };
+    }
+  }
+
   async chat(
     userMessage: string,
     context: ToolContext,
     callbacks: AgentLoopOptions
   ): Promise<ChatMessage[]> {
     await this.initialize();
+
+    // LangGraph 引擎切换
+    if (this.options.useLangGraphEngine) {
+      const result = await this.runGraphEngine(userMessage, context, callbacks);
+      return result.messages;
+    }
 
     // 创建工具注册表
     const toolRegistry = createToolRegistry(this.skillLoader, context);
@@ -310,6 +592,12 @@ ${currentMemory}
     callbacks: AgentLoopOptions
   ): Promise<ChatMessage[]> {
     await this.initialize();
+
+    // LangGraph 引擎切换
+    if (this.options.useLangGraphEngine) {
+      const result = await this.runGraphEngine(userMessage, context, callbacks);
+      return result.messages;
+    }
 
     const toolRegistry = createToolRegistry(this.skillLoader, context);
 

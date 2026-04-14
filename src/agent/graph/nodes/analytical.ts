@@ -17,6 +17,7 @@ import {
 } from '../../cognitive-engine/prompts/analytical-prompt.js';
 import { InspectionalState } from '../../cognitive-engine/states/inspectional.js';
 import { createLangChainTools } from '../../tools/index.js';
+import { interrupt } from '@langchain/langgraph';
 
 /**
  * Build the scope interceptor that injects scope_node_ids into search_book calls.
@@ -128,6 +129,47 @@ export async function analyticalNode(
     stateUpdate.tocSummary = ctx.tocSummary ?? '';
     stateUpdate.betterQuestion = ctx.betterQuestion ?? '';
     stateUpdate.structuralAnalysis = ctx.structuralAnalysis ?? '';
+  }
+
+  // Step 6: HITL interrupt (if enabled)
+  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  if (enableHumanReview) {
+    const resumeValue = interrupt({
+      nodeId: 'analytical',
+      question: 'S2 分析完成，是否满意当前分析结果？',
+      content: result.content,
+    }) as { approved: boolean; feedback: string } | undefined;
+
+    if (resumeValue?.approved === false && resumeValue.feedback) {
+      // 用户不满意，用 feedback 重新运行一次 ReAct 循环
+      const refinedResult = await runReactLoop(
+        [
+          new SystemMessage(fullSystemPrompt),
+          new HumanMessage(userMessage),
+          new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈补充或修正分析。`),
+        ],
+        {
+          tools: s2Tools,
+          model: mainModel,
+          maxIterations: 4,
+          maxToolCalls: 3,
+          forcedConclusionContext: {
+            pdfName: state.pdfName || ctx.pdfName,
+            scopeNodeIds,
+          },
+          toolInterceptor: createScopeInterceptor(scopeNodeIds),
+        },
+        config,
+      );
+
+      stateUpdate.analysisResult = refinedResult.content;
+      stateUpdate.toolResultsSnapshot = refinedResult.toolResults.map(r => ({
+        toolName: r.toolName,
+        args: r.args,
+        result: r.result,
+        originalResultLength: r.originalResultLength,
+      }));
+    }
   }
 
   return stateUpdate;

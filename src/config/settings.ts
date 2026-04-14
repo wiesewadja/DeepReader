@@ -78,6 +78,10 @@ export interface DeepPDFSettings {
 
     // UI 状态
     lastSettingsTab: string;
+
+    // LangGraph 引擎开关
+    useLangGraphEngine: boolean;
+    enableHumanReview: boolean;
 }
 
 export const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -137,4 +141,8 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
     // UI 状态
     lastSettingsTab: "llm",
+
+    // LangGraph 引擎开关
+    useLangGraphEngine: false,
+    enableHumanReview: false,
 };

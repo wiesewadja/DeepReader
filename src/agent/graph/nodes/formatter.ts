@@ -9,6 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { CognitiveEngineState } from '../state';
 import { FormatterState } from '../../cognitive-engine/states/formatter';
 import type { SharedContext, EngineCallbacks } from '../../cognitive-engine/types';
+import { interrupt } from '@langchain/langgraph';
 
 /**
  * S4 Formatter node: transforms analysis into Obsidian-formatted output.
@@ -45,6 +46,22 @@ export async function formatterNode(
 
   // Execute the existing state logic (includes streaming + self-verification)
   await formatter.execute(ctx);
+
+  // HITL interrupt (if enabled)
+  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  if (enableHumanReview) {
+    const resumeValue = interrupt({
+      nodeId: 'formatter',
+      question: 'S4 格式化完成，确认输出内容？',
+      content: ctx.analysisResult ?? '',
+    }) as { approved: boolean; feedback: string } | undefined;
+
+    if (resumeValue?.approved === false && resumeValue.feedback) {
+      // 用户不满意格式化结果，用 feedback 重新格式化
+      ctx.analysisResult = ctx.analysisResult + `\n\n---\n用户反馈: ${resumeValue.feedback}`;
+      await formatter.execute(ctx);
+    }
+  }
 
   return {
     formattedOutput: ctx.analysisResult ?? '',
