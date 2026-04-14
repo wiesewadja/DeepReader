@@ -4,6 +4,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
+import type { StructuredToolInterface } from '@langchain/core/tools';
 // 本地 Markdown 工具（零外部依赖）- 主要工具
 import {
   searchBookTool,
@@ -19,6 +20,17 @@ import { createCanvasTool } from './canvas.js';
 import { createExcalidrawTool } from './excalidraw.js';
 import { SkillLoader } from '../skills/loader.js';
 import { toolsLog } from '../../utils/logger.js';
+
+// LangChain tool() 格式的工具定义
+import { createSearchBookTool } from './definitions/search-book.js';
+import { createReadBookSectionTool } from './definitions/read-section.js';
+import { createWriteNoteTool } from './definitions/write-note.js';
+import { createSaveMemoryTool, createSearchMemoryTool } from './definitions/memory.js';
+import { createUpdateProfileTool } from './definitions/profile.js';
+import { createSearchReadBooksTool } from './definitions/search-read-books.js';
+import { createCanvasToolDefinition } from './definitions/canvas.js';
+import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
+import { createCheckSubAgentTool } from './definitions/sub-agent.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -153,4 +165,32 @@ export async function executeTool(
     toolsLog.error(`[Tool] ✗ 失败: ${name} [${durationStr}] - ${errorMsg}`);
     return `Error executing tool ${name}: ${errorMsg}`;
   }
+}
+
+/**
+ * 创建 LangChain StructuredToolInterface[] 数组。
+ * 每个工具通过闭包捕获 ToolContext。
+ *
+ * 注意：canvas 依赖 ctx.app（Obsidian vault 操作），
+ * excalidraw 使用 window.ExcalidrawAutomate 全局 API（不依赖 ctx.app）。
+ */
+export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[] {
+  const tools: StructuredToolInterface[] = [
+    createSearchBookTool(ctx),
+    createReadBookSectionTool(ctx),
+    createWriteNoteTool(ctx),
+    createSaveMemoryTool(ctx),
+    createSearchMemoryTool(ctx),
+    createUpdateProfileTool(ctx),
+    createSearchReadBooksTool(ctx),
+    createCheckSubAgentTool(ctx),
+    createExcalidrawToolDefinition(ctx),
+  ];
+
+  // canvas 依赖 Obsidian app
+  if (ctx.app) {
+    tools.push(createCanvasToolDefinition(ctx));
+  }
+
+  return tools;
 }
