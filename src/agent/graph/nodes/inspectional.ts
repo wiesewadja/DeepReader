@@ -2,7 +2,8 @@
  * S1: Inspectional Reading Node — Native LangChain implementation
  *
  * Loads tree.json, selects scope chapters, generates TOC summary.
- * Uses ChatOpenAI with structured output instead of old LLMClient.
+ * Uses ChatOpenAI and parses JSON from text output
+ * (avoids withStructuredOutput which requires json_schema support).
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
@@ -13,9 +14,23 @@ import {
   formatTreeStructure,
   buildInspectionalSystemPrompt,
   buildInspectionalUserMessage,
-  InspectionalOutputSchema,
 } from '../prompts/inspectional-prompt';
 import { agentLog as log } from '../../../utils/logger.js';
+
+/**
+ * 从 LLM 文本输出中提取 JSON。
+ */
+function extractJSON(text: string): Record<string, any> | null {
+  const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try { return JSON.parse(codeBlockMatch[1]); } catch { /* fall through */ }
+  }
+  const braceMatch = text.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
+  }
+  return null;
+}
 
 /**
  * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.
@@ -23,7 +38,7 @@ import { agentLog as log } from '../../../utils/logger.js';
  * Flow:
  * 1. Load tree.json from .pageindex/{bookId}/
  * 2. Format tree structure for prompt
- * 3. Call fast model with structured output for reliable JSON parsing
+ * 3. Call fast model and parse JSON from text output
  * 4. Return scope/toc/betterQuestion/structuralAnalysis
  */
 export async function inspectionalNode(
@@ -75,19 +90,31 @@ export async function inspectionalNode(
     state.depth,
   );
 
-  // Step 4: Call fast model with structured output
+  // Step 4: Call fast model and parse JSON from text
   try {
-    const router = fastModel.withStructuredOutput(InspectionalOutputSchema);
-    const result = await router.invoke([
+    const response = await fastModel.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(userMessage),
     ], config);
 
+    const text = typeof response.content === 'string' ? response.content : '';
+    const parsed = extractJSON(text);
+
+    if (!parsed) {
+      log('[S1 Inspectional] 无法解析 JSON，降级到全局搜索。原始输出:', text.slice(0, 200));
+      return {
+        scopeNodeIds: [],
+        tocSummary: '无法解析目录范围，使用全局搜索。',
+        betterQuestion: state.rewrittenQuery,
+        structuralAnalysis: '',
+      };
+    }
+
     return {
-      scopeNodeIds: result.scopeNodeIds ?? [],
-      tocSummary: result.tocSummary ?? '',
-      betterQuestion: result.better_question ?? state.rewrittenQuery,
-      structuralAnalysis: result.structural_analysis ?? '',
+      scopeNodeIds: parsed.scopeNodeIds ?? [],
+      tocSummary: parsed.tocSummary ?? '',
+      betterQuestion: parsed.better_question ?? state.rewrittenQuery,
+      structuralAnalysis: parsed.structural_analysis ?? '',
     };
   } catch (err) {
     // Graceful degradation on LLM error

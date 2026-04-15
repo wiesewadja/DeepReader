@@ -7,16 +7,15 @@
 
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
-import { z } from 'zod';
 import type { CognitiveEngineState } from '../state';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { agentLog as log } from '../../../utils/logger.js';
 
-const RouterOutputSchema = z.object({
-  depth: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
-  standalone_query: z.string().optional(),
-  reason: z.string().optional(),
-});
+interface RouterOutput {
+  depth: number;
+  standalone_query?: string;
+  reason?: string;
+}
 
 function extractLastHumanMessage(messages: BaseMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -29,10 +28,28 @@ function extractLastHumanMessage(messages: BaseMessage[]): string {
 }
 
 /**
+ * 从 LLM 文本输出中提取 JSON。
+ * 支持 ```json ... ``` 包裹和裸 JSON 两种格式。
+ */
+function extractJSON(text: string): Record<string, any> | null {
+  // 尝试提取 ```json ... ``` 代码块
+  const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try { return JSON.parse(codeBlockMatch[1]); } catch { /* fall through */ }
+  }
+  // 尝试提取 { ... } JSON 对象
+  const braceMatch = text.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
+  }
+  return null;
+}
+
+/**
  * S0 Router node: classifies reading depth and rewrites query.
  *
- * Uses the fast model via config.configurable.fastModel with
- * withStructuredOutput() for reliable JSON parsing.
+ * Uses the fast model and parses JSON from text output
+ * (avoids withStructuredOutput which requires json_schema support).
  * Falls back to depth=2 (analytical) on any error.
  */
 export async function routerNode(
@@ -52,20 +69,27 @@ export async function routerNode(
   }
 
   try {
-    const router = fastModel.withStructuredOutput(RouterOutputSchema);
     const userMessage = buildRouterUserMessage(rawQuery, chatHistory, state.pdfName || undefined);
 
-    const result = await router.invoke([
+    const response = await fastModel.invoke([
       { role: 'system', content: PROMPT_S0_ROUTER },
       { role: 'user', content: userMessage },
     ], config);
 
+    const text = typeof response.content === 'string' ? response.content : '';
+    const parsed = extractJSON(text);
+
+    const depth = parsed?.depth ?? 2;
+    const standaloneQuery = parsed?.standalone_query || rawQuery;
+
     // Syntopical reading (depth=3) downgrades to analytical (depth=2)
-    const effectiveDepth = (result.depth ?? 2) >= 3 ? 2 : (result.depth ?? 2);
+    const effectiveDepth = depth >= 3 ? 2 : depth;
+
+    log(`[S0 Router] depth=${effectiveDepth}, query="${standaloneQuery.slice(0, 50)}"`, parsed?.reason || '');
 
     return {
       depth: effectiveDepth,
-      rewrittenQuery: result.standalone_query || rawQuery,
+      rewrittenQuery: standaloneQuery,
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
