@@ -81,7 +81,7 @@ export async function inspectionalNode(
     const result = await router.invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(userMessage),
-    ]);
+    ], config);
 
     return {
       scopeNodeIds: result.scopeNodeIds ?? [],

@@ -50,7 +50,7 @@ export async function formatterNode(
     const stream = await mainModel.stream([
       new SystemMessage(casualPrompt),
       new HumanMessage(state.rewrittenQuery || ''),
-    ]);
+    ], config);
 
     let content = '';
     for await (const chunk of stream) {
@@ -89,7 +89,7 @@ export async function formatterNode(
   ];
 
   // Stream output
-  const stream = await mainModel.stream(messages);
+  const stream = await mainModel.stream(messages, config);
   let content = '';
   for await (const chunk of stream) {
     if (typeof chunk.content === 'string') {
@@ -129,7 +129,7 @@ export async function formatterNode(
         new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈修正格式化输出。`),
       ];
 
-      const feedbackStream = await mainModel.stream(feedbackMessages);
+      const feedbackStream = await mainModel.stream(feedbackMessages, config);
       let refinedContent = '';
       for await (const chunk of feedbackStream) {
         if (typeof chunk.content === 'string') {

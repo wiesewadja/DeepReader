@@ -772,14 +772,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 }));
 
         // 仅在启用时显示详细配置
-        if (!this.plugin.settings.langfuseEnabled) {
-            container.createEl('p', {
-                text: '提示：启用后需配置 Public Key、Secret Key 和 Base URL。',
-                cls: 'setting-item-description'
-            });
-            return;
-        }
-
+        if (this.plugin.settings.langfuseEnabled) {
         new Setting(container)
             .setName("Public Key")
             .setDesc("Langfuse Public API Key")
@@ -840,6 +833,12 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             text: '提示：配置完成后需重新启动对话以生效。自托管 Langfuse 可使用 http://localhost:3000，云服务使用 https://cloud.langfuse.com。',
             cls: 'setting-item-description'
         });
+        } else {
+            container.createEl('p', {
+                text: '提示：启用后需配置 Public Key、Secret Key 和 Base URL。',
+                cls: 'setting-item-description'
+            });
+        }
 
         // === LangSmith 追踪（LangGraph 引擎专用）===
         container.createEl('h3', { text: 'LangSmith 追踪（LangGraph 引擎）' });

@@ -388,7 +388,7 @@ export async function runReactLoop(
     const forcedResponse = await config.model.invoke([
       ...filledMessages,
       new HumanMessage(forcedPrompt),
-    ]);
+    ], runnableConfig);
 
     let forcedContent = typeof forcedResponse.content === 'string'
       ? forcedResponse.content

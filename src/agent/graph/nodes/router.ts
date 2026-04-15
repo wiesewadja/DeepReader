@@ -58,7 +58,7 @@ export async function routerNode(
     const result = await router.invoke([
       { role: 'system', content: PROMPT_S0_ROUTER },
       { role: 'user', content: userMessage },
-    ]);
+    ], config);
 
     // Syntopical reading (depth=3) downgrades to analytical (depth=2)
     const effectiveDepth = (result.depth ?? 2) >= 3 ? 2 : (result.depth ?? 2);

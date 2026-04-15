@@ -23,18 +23,18 @@ export interface ChatModels {
  */
 export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatModels {
   const mainModel = new ChatOpenAI({
-    openAIApiKey: main.apiKey,
-    configuration: { baseURL: main.baseUrl },
-    model: main.model,
+    apiKey: main.apiKey || undefined,
+    configuration: main.baseUrl ? { baseURL: main.baseUrl } : undefined,
+    model: main.model || 'deepseek-chat',
     streaming: true,
     temperature: 0.3,
   });
 
   const fastModel = fast
     ? new ChatOpenAI({
-        openAIApiKey: fast.apiKey,
-        configuration: { baseURL: fast.baseUrl },
-        model: fast.model,
+        apiKey: fast.apiKey || undefined,
+        configuration: fast.baseUrl ? { baseURL: fast.baseUrl } : undefined,
+        model: fast.model || 'deepseek-chat',
         streaming: true,
         temperature: 0.1,
       })

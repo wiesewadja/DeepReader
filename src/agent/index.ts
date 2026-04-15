@@ -283,10 +283,30 @@ ${currentMemory}
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     await this.initialize();
 
+    // 前置检查：API Key 必须配置
+    if (!this.options.apiKey) {
+      const errorMsg = 'API Key 未配置，请在插件设置中填写对应服务商的 API Key。';
+      callbacks.onError?.(errorMsg);
+      return { messages: [{ role: 'assistant', content: errorMsg }] };
+    }
+
     const threadId = `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
-    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage, chatHistory);
+    let configurable: any;
+    let tracer: any;
+    try {
+      const result = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage, chatHistory);
+      tracer = result._langsmithTracer;
+      const { _langsmithTracer: _, ...rest } = result;
+      configurable = rest;
+    } catch (cfgErr) {
+      const cfgMsg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+      log('[FrontendAgent] buildGraphConfigurable failed:', cfgMsg);
+      callbacks.onError?.(cfgMsg);
+      this.activeThreadId = null;
+      return { messages: [{ role: 'assistant', content: `构建引擎配置失败: ${cfgMsg}` }] };
+    }
 
     try {
       const stream = await this.getCompiledEngine().stream(
@@ -310,6 +330,7 @@ ${currentMemory}
       return result;
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+      log('[FrontendAgent] LangGraph 引擎错误:', errorMsg);
       callbacks.onError?.(errorMsg);
       this.activeThreadId = null;
       return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };

@@ -1959,9 +1959,9 @@ export class SidebarView extends ItemView {
 
             // 回调函数
             const callbacks = {
-                // onContent: 接收流式内容
+                // onContent: 接收流式内容（text 是完整累积内容，不是 delta）
                 onContent: (text: string) => {
-                    fullContent += text;
+                    fullContent = text;
 
                     // 🕐 记录首字节响应时间（仅首次）
                     if (!firstContentLogged && fullContent.trim().length > 0) {
