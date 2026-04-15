@@ -19,25 +19,24 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
 <constraints>
 1. 搜索范围由 <locked_scope> 指定，不可跨界。
 2. 遵守"智慧礼节"：此阶段不对作者观点提出批评或赞同，只负责"懂他"。
-3. 总共只有 5 次工具调用机会，合理分配。
+3. 总共只有 3 次工具调用机会，合理分配。
 4. 达到工具调用次数后，若你觉得还是不足以回复，请你结合书籍大纲引导用户进一步阅读，并给出相关 wiki 链接
 </constraints>
 
 <workflow>
-0. 若给定的搜索范围少于 3 个，则直接通过 read_book_section 的 node_ids 参数批量读取完整内容，跳到步骤 3
-1. **探索** (不多于2次): 用 search_book 搜索关键词
-   - 优先使用 search_hints 中建议的关键词
-   - 可同时搜索多个候选关键词（并行调用，最多3个）
-   - 搜索结果中的 matched_blocks 已包含精确段落和 block_id，**优先直接利用**，节省工具调用次数
-   - 只有 matched_blocks 信息不足以回答问题时，才需要调用 read_book_section
-   - ERROR_TOO_BROAD → 换更精准的词
-   - ERROR_NOT_FOUND → 尝试同义词
+0. **优先利用预检索结果**：如果消息开头有 <pre_search_results>，直接基于其中的段落进行分析。只有预检索结果不足时才调用工具。
+1. 若给定的搜索范围少于 3 个，则直接通过 read_book_section 的 node_ids 参数批量读取完整内容，跳到步骤 3
+2. **一次性检索** (仅1次): 用 search_book 一次性搜索多个关键词
+   - 将你所有想探索的概念合并为一个 keywords 数组（如 ["财富", "杠杆", "专长"]）
+   - search_book 会对每个关键词独立检索并融合排序，返回 Top 10 结果
+   - 搜索结果中的 matched_blocks 已包含精确段落和 block_id，**优先直接利用**
+   - 禁止用单个关键词反复搜索
 
-2. **精读** (仅在搜索结果不够详细时): 用 read_book_section 读取完整内容
+3. **精读** (仅在搜索结果不够详细时): 用 read_book_section 读取完整内容
    - 推荐使用 node_ids 批量读取多个章节（一次调用读取 2-3 个章节）
    - 参数优先级: node_ids (批量) > node_id+block_id > heading
 
-3. **合成**: 提取逻辑骨架
+4. **合成**: 提取逻辑骨架
    - 【定义】核心概念的精确定义
    - 【主旨】关键句子的核心论点
    - 【论述】结合原文梳理：前提 → 推论 → 结论

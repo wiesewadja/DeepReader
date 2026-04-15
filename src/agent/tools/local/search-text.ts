@@ -1,10 +1,15 @@
 /**
- * search_book Tool - 8-stage hybrid search with block_id level precision
+ * search_book Tool - Multi-query parallel + RRF fusion search
+ *
+ * Retrieval strategy: each keyword is searched independently via searchBookV2,
+ * then results are merged using Reciprocal Rank Fusion (RRF).
+ * This avoids vector embedding dilution when multiple keywords are combined.
  */
 
 import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
+import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -13,6 +18,7 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
     description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
 
 【搜索逻辑】
+- 多关键词并行检索 + RRF 融合：每个关键词独立搜索，合并排序
 - 8 阶段管线：BM25 + 向量语义 + scope 过滤 + 层级加权
 - 每个 hit 返回 node 内匹配最密集的段落片段（含 ^block_id）
 
@@ -29,7 +35,7 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
         keywords: {
           type: 'array',
           items: { type: 'string' },
-          description: '关键词数组，AND 逻辑'
+          description: '关键词数组，每个关键词独立检索后融合排序（OR 语义）'
         },
         scope_node_ids: {
           type: 'array',
@@ -42,6 +48,128 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   }
 };
 
+// === RRF (Reciprocal Rank Fusion) ===
+
+interface FusionEntry {
+  nodeId: string;
+  fileName: string;
+  title: string;
+  hierarchyPath: string[];
+  blockId: string;
+  content: string;
+  rrfScore: number;
+  sourceCount: number; // 出现在几个子查询中
+}
+
+/**
+ * Reciprocal Rank Fusion: 合并多个检索结果列表。
+ * 每个结果按其在各列表中的倒数排名累加得分。
+ */
+function reciprocalRankFusion(
+  subResults: BookSearchResultV2[][],
+  k: number = 60,
+): FusionEntry[] {
+  const scoreMap = new Map<string, FusionEntry>();
+
+  for (const results of subResults) {
+    for (let rank = 0; rank < results.length; rank++) {
+      const r = results[rank];
+      const rrfScore = 1 / (k + rank + 1);
+
+      for (const block of r.matchedBlocks) {
+        const cleanBlockId = block.blockId.replace(/^\^/, '');
+        const key = `${r.nodeId}:${cleanBlockId}`;
+
+        if (scoreMap.has(key)) {
+          const entry = scoreMap.get(key)!;
+          entry.rrfScore += rrfScore;
+          entry.sourceCount += 1;
+        } else {
+          scoreMap.set(key, {
+            nodeId: r.nodeId,
+            fileName: r.fileName,
+            title: r.title,
+            hierarchyPath: r.hierarchyPath,
+            blockId: cleanBlockId,
+            content: block.content,
+            rrfScore,
+            sourceCount: 1,
+          });
+        }
+      }
+    }
+  }
+
+  return Array.from(scoreMap.values())
+    .sort((a, b) => b.rrfScore - a.rrfScore);
+}
+
+/**
+ * 将 RRF 融合后的结果按 nodeId 分组为 hit 格式
+ */
+function fusionToHits(
+  entries: FusionEntry[],
+  topK: number,
+): Array<{
+  node_id: string;
+  title: string;
+  file_name: string;
+  path: string[];
+  matched_blocks: Array<{ block_id: string; file_name: string; content: string }>;
+  score: number;
+  source_count: number;
+}> {
+  const nodeMap = new Map<string, {
+    node_id: string;
+    title: string;
+    file_name: string;
+    path: string[];
+    blocks: FusionEntry[];
+    maxScore: number;
+    maxSourceCount: number;
+  }>();
+
+  for (const entry of entries) {
+    if (!nodeMap.has(entry.nodeId)) {
+      nodeMap.set(entry.nodeId, {
+        node_id: entry.nodeId,
+        title: entry.title,
+        file_name: entry.fileName,
+        path: entry.hierarchyPath,
+        blocks: [],
+        maxScore: 0,
+        maxSourceCount: 0,
+      });
+    }
+    const node = nodeMap.get(entry.nodeId)!;
+    node.blocks.push(entry);
+    if (entry.rrfScore > node.maxScore) {
+      node.maxScore = entry.rrfScore;
+    }
+    if (entry.sourceCount > node.maxSourceCount) {
+      node.maxSourceCount = entry.sourceCount;
+    }
+  }
+
+  const sortedNodes = Array.from(nodeMap.values())
+    .sort((a, b) => b.maxScore - a.maxScore)
+    .slice(0, topK);
+
+  return sortedNodes.map(node => ({
+    node_id: node.node_id,
+    title: node.title,
+    file_name: node.file_name,
+    path: node.path,
+    matched_blocks: node.blocks.slice(0, 3).map(b => ({
+      block_id: b.blockId,
+      file_name: node.file_name,
+      content: b.content,
+    })),
+    score: Math.round(node.maxScore * 10000) / 100,
+    source_count: node.maxSourceCount,
+  }));
+}
+
 export const searchBookTool: ToolExecutor = {
   definition: SEARCH_BOOK_DEFINITION,
 
@@ -49,6 +177,7 @@ export const searchBookTool: ToolExecutor = {
     const { app, pdfName, indexId } = context;
     const keywords = args.keywords as string[];
     const scopeNodeIds = args.scope_node_ids as string[] | undefined;
+    const topK = (args.top_k as number) || 10;
 
     if (!app) {
       return JSON.stringify({
@@ -73,23 +202,19 @@ export const searchBookTool: ToolExecutor = {
 
     try {
       const vaultPath = (app.vault.adapter as any).basePath;
-      const query = keywords.join(' ');
+      console.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
-      // 优先使用 indexId（bookId）和 vaultPath，避免路径不匹配
-      console.log('[search_book] indexId:', indexId, 'pdfName:', pdfName, 'vaultPath:', vaultPath);
-      const searchOptions: any = {
-        filePath: '',  // 当 bookId + vaultPath 直接传入时，filePath 仅作为 fallback
-        query,
-        topK: 5,
+      const baseOptions: any = {
+        filePath: '',
+        topK: 20, // 每个子查询多取，供 RRF 挑选
         embedding: context.plugin?.settings?.embedding,
         scopeNodeIds,
       };
 
       if (indexId && vaultPath) {
-        searchOptions.bookId = indexId;
-        searchOptions.vaultPath = vaultPath;
+        baseOptions.bookId = indexId;
+        baseOptions.vaultPath = vaultPath;
       } else {
-        // Fallback: 从 vault 文件计算路径
         const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
         const files = app.vault.getFiles();
         const bookFile = files.find(f =>
@@ -101,29 +226,31 @@ export const searchBookTool: ToolExecutor = {
             message: `未找到书籍文件: ${bookName}`
           });
         }
-        searchOptions.filePath = `${vaultPath}/${bookFile.path}`;
+        baseOptions.filePath = `${vaultPath}/${bookFile.path}`;
       }
 
-      // Call searchBookV2
-      const results = await searchBookV2(searchOptions);
+      // 多查询并行检索：每个关键词独立搜索
+      const subResults: BookSearchResultV2[][] = await Promise.all(
+        keywords.map(async (kw) => {
+          try {
+            return await searchBookV2({ ...baseOptions, query: kw });
+          } catch {
+            return [];
+          }
+        })
+      );
 
-      const hits = results.map(r => ({
-        node_id: r.nodeId,
-        title: r.title,
-        file_name: r.fileName,
-        path: r.hierarchyPath,
-        matched_blocks: r.matchedBlocks.map(b => ({
-          block_id: b.blockId.replace(/^\^/, ''),  // 去掉 ^ 前缀，LLM 拼接时会加 #^
-          file_name: r.fileName,  // 添加 file_name 供 wikilink 使用
-          content: b.content,
-        })),
-        score: Math.round(r.score * 100) / 100,
-      }));
+      // RRF 融合
+      const fusedEntries = reciprocalRankFusion(subResults);
+      const hits = fusionToHits(fusedEntries, topK);
 
       return JSON.stringify({
         status: 'SUCCESS',
-        total_hits: results.length,
+        total_hits: hits.length,
         hits,
+        query_strategy: keywords.length > 1
+          ? `多查询并行 RRF 融合 (${keywords.length} 个关键词)`
+          : '单关键词检索',
         scope_filter: scopeNodeIds ? `已限定在 ${scopeNodeIds.length} 个章节` : '全局搜索'
       });
     } catch (error) {

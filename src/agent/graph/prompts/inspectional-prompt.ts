@@ -81,7 +81,7 @@ export function buildInspectionalSystemPrompt(
 3. better_question 根据全书摘要重新推断出更能体现用户提问意图的下一阶段问题
 4. structural_analysis 记录一句话简述为什么圈定这几个章节和提问意图改写
 5. scopeNodeIds 不超过 5 个，宁缺毋滥：只选最相关的章节，宁可漏掉也不要圈太多
-6. tocSummary 中给出 2-3 组搜索关键词建议（每组用数组表示 AND 逻辑），包括书中特有的术语或表述方式
+6. **suggested_keywords 至少提供 3-5 个搜索关键词**：包括书中特有的术语、核心概念名、可能的同义词。这些关键词将被直接用于下一阶段的自动检索，请务必选择目录树摘要中出现过的精确术语
 
 </task_branch>`;
 
@@ -114,6 +114,7 @@ ${taskBranch}
   "thought_process": "定位思考过程",
   "scopeNodeIds": ["0004", "0005"],
   "better_question":"改写的更符合书籍内容的提问",
+  "suggested_keywords": ["关键词1", "关键词2", "关键词3"],
   "tocSummary": "为什么这些章节相关，建议搜索哪些关键词",
   "structural_analysis": "如果是深度 1，在这里写下基于大纲总结带 obsidian 链接的详细全书脉络/解答；如果是深度 2/3，只需写一句话简述圈定理由"
 }

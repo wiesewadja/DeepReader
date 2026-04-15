@@ -1,8 +1,10 @@
 /**
  * S2: Analytical Reading Node — LangGraph node using ReAct subgraph
  *
- * Replaces the old AnalyticalState.execute() with runReactLoop().
- * Uses the ReAct subgraph for tool-augmented deep analysis.
+ * Optimized retrieval flow:
+ * 1. Pre-search using S1's suggested_keywords (Path B)
+ * 2. Inject pre-search results into ReAct initial context
+ * 3. Run ReAct loop with reduced maxToolCalls (3 instead of 5)
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
@@ -15,7 +17,9 @@ import {
   buildAnalyticalUserMessage,
 } from '../prompts/analytical-prompt.js';
 import { createLangChainTools } from '../../tools/index.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import { interrupt } from '@langchain/langgraph';
+import { agentLog as log } from '../../../utils/logger.js';
 
 /**
  * Build the scope interceptor that injects scope_node_ids into search_book calls.
@@ -77,22 +81,81 @@ export async function analyticalNode(
     ctx?.prevSearchedBlockIds,
   );
 
+  // === Path B: Pre-search with S1's suggested_keywords ===
+  let preSearchBlock = '';
+  const suggestedKeywords = state.suggestedKeywords;
+  if (suggestedKeywords && suggestedKeywords.length > 0 && toolContext.app) {
+    try {
+      const vaultPath = (toolContext.app.vault.adapter as any).basePath;
+      const searchOpts: any = {
+        filePath: '',
+        query: suggestedKeywords.join(' '),
+        topK: 10,
+        embedding: toolContext.plugin?.settings?.embedding,
+        scopeNodeIds: scopeNodeIds.length > 0 ? scopeNodeIds : undefined,
+      };
+      if (toolContext.indexId && vaultPath) {
+        searchOpts.bookId = toolContext.indexId;
+        searchOpts.vaultPath = vaultPath;
+      }
+
+      const preResults = await searchBookV2(searchOpts);
+
+      // Quality threshold: only inject if we got meaningful results
+      if (preResults.length >= 2) {
+        const hits = preResults.slice(0, 5).map(r => ({
+          node_id: r.nodeId,
+          title: r.title,
+          file_name: r.fileName,
+          matched_blocks: r.matchedBlocks.map(b => ({
+            block_id: b.blockId.replace(/^\^/, ''),
+            content: b.content,
+          })),
+          score: Math.round(r.score * 100) / 100,
+        }));
+
+        const blockLines = hits.flatMap(h =>
+          h.matched_blocks.map(b =>
+            `【${h.title}】${b.content.slice(0, 300)}`
+          )
+        );
+
+        preSearchBlock = `<pre_search_results>
+以下是基于目录分析自动检索到的相关段落（共 ${preResults.length} 条），请优先利用这些内容。如果不够详细，可使用 search_book 自行补充搜索，或用 read_book_section 读取完整章节。
+
+${blockLines.join('\n\n')}
+</pre_search_results>`;
+
+        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, ${suggestedKeywords.length} 个关键词`);
+      } else {
+        log(`[S2 Analytical] 预检索结果不足 (${preResults.length} 条), 跳过注入`);
+      }
+    } catch (err) {
+      log('[S2 Analytical] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // 构建最终 userMessage（合并预检索结果）
+  const finalUserMessage = preSearchBlock
+    ? `${preSearchBlock}\n\n${userMessage}`
+    : userMessage;
+
   // Create LangChain tools (only search_book + read_book_section for S2)
   const allTools = createLangChainTools(toolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 
-  // Run ReAct subgraph
+  // Run ReAct subgraph (with pre-search context if available)
   const result = await runReactLoop(
     [
       new SystemMessage(fullSystemPrompt),
-      new HumanMessage(userMessage),
+      new HumanMessage(finalUserMessage),
     ],
     {
       tools: s2Tools,
       model: mainModel,
-      maxIterations: 8,
-      maxToolCalls: 5,
+      maxIterations: 6,
+      maxToolCalls: 3,
       forcedConclusionContext: {
         pdfName: state.pdfName || ctx?.pdfName,
         scopeNodeIds,

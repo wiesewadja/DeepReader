@@ -11,7 +11,7 @@ import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
 
 const searchBookSchema = z.object({
-  keywords: z.array(z.string()).describe('关键词数组，AND 逻辑'),
+  keywords: z.array(z.string()).describe('关键词数组，每个关键词独立检索后融合排序（OR 语义）'),
   scope_node_ids: z.array(z.string()).optional().describe('限定搜索范围（章节 ID 列表），留空则全局搜索'),
 });
 
@@ -25,6 +25,7 @@ export const createSearchBookTool: ToolFactory = (ctx: ToolContext) =>
       description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
 
 【搜索逻辑】
+- 多关键词并行检索 + RRF 融合：每个关键词独立搜索，合并排序
 - 8 阶段管线：BM25 + 向量语义 + scope 过滤 + 层级加权
 - 每个 hit 返回 node 内匹配最密集的段落片段（含 ^block_id）
 

@@ -33,6 +33,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   scopeNodeIds: Annotation<string[]>(),
   betterQuestion: Annotation<string>(),
   structuralAnalysis: Annotation<string>(),
+  suggestedKeywords: Annotation<string[]>(),
 
   // === S2: Analytical output ===
   analysisResult: Annotation<string>(),

@@ -115,6 +115,7 @@ export async function inspectionalNode(
       tocSummary: parsed.tocSummary ?? '',
       betterQuestion: parsed.better_question ?? state.rewrittenQuery,
       structuralAnalysis: parsed.structural_analysis ?? '',
+      suggestedKeywords: parsed.suggested_keywords ?? [],
     };
   } catch (err) {
     // Graceful degradation on LLM error
