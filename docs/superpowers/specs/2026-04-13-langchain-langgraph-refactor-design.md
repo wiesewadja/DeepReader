@@ -188,7 +188,7 @@ export function createToolRegistry(ctx: ToolContext): Tool[] {
 | search_book | definitions/search-book.ts | 中 |
 | read_book_section | definitions/read-section.ts | 低 |
 | write_note | definitions/write-note.ts | 低 |
-| save_memory | definitions/memory.ts | 中（涉及 vault 文件读写） |
+| save_memory（原 add_memory） | definitions/memory.ts | 中（涉及 vault 文件读写） |
 | search_memory | definitions/memory.ts | 低 |
 | update_profile | definitions/profile.ts | 低 |
 | search_read_books | definitions/search-read-books.ts | 中 |
@@ -199,6 +199,8 @@ export function createToolRegistry(ctx: ToolContext): Tool[] {
 | skill | 暂保留，后续迁移 | 中 |
 
 迁移开关（过渡期）：
+
+> **设计原则**：工具层通过闭包捕获 `ToolContext`（运行时依赖），节点层通过 `config.configurable` 获取模型实例和配置参数。二者互补：闭包用于不可序列化的 Obsidian 依赖（app、vault），configurable 用于 LangGraph 原生管理的模型和配置。
 
 ```typescript
 // src/agent/tools/index.ts
@@ -251,6 +253,9 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // 运行时依赖
   bookId: Annotation<string>({ default: () => "" }),
   filePath: Annotation<string>({ default: () => "" }),
+
+  // DeepSeek reasoning 思考过程
+  reasoningContent: Annotation<string>({ default: () => "" }),
 });
 ```
 
@@ -916,8 +921,8 @@ main
 每个 Chunk 都有开关，失败时可快速切换回旧实现：
 
 ```typescript
-const USE_LANGCHAIN_TOOLS = process.env.USE_LANGCHAIN_TOOLS !== 'false';
-const USE_LANGGRAPH_ENGINE = process.env.USE_LANGGRAPH_ENGINE !== 'false';
+const USE_LANGCHAIN_TOOLS = true;  // 过渡期硬编码，稳定后移除
+const USE_LANGGRAPH_ENGINE = true; // 过渡期硬编码，稳定后移除
 ```
 
 ---
@@ -955,11 +960,8 @@ async function invokeWithReasoning(model, messages, callbacks) {
   };
 }
 
-// 状态字段
-const CognitiveEngineAnnotation = Annotation.Root({
-  // ...
-  reasoningContent: Annotation<string>({ default: () => "" }),
-});
+// 状态字段（已合并到 CognitiveEngineAnnotation 主定义中）
+  // ...（reasoningContent 已在 CognitiveEngineAnnotation 中定义）
 ```
 
 ---
