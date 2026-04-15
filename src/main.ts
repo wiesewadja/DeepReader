@@ -864,6 +864,9 @@ export default class DeepPDFPlugin extends Plugin {
                 langsmithApiKey: this.settings.langsmithApiKey || undefined,
                 langsmithProject: this.settings.langsmithProject || undefined,
                 langsmithEnabled: this.settings.langsmithEnabled,
+
+                // Human-in-the-Loop 设置
+                enableHumanReview: this.settings.enableHumanReview,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');

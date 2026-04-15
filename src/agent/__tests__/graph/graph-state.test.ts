@@ -11,12 +11,12 @@ describe('Cognitive Engine Graph — Edges', () => {
       expect(routeByDepth({ depth: 1 } as any)).toBe('inspectional');
     });
 
-    it('should route depth=2 to analytical', () => {
-      expect(routeByDepth({ depth: 2 } as any)).toBe('analytical');
+    it('should route depth=2 to inspectional (scope narrowing before analytical)', () => {
+      expect(routeByDepth({ depth: 2 } as any)).toBe('inspectional');
     });
 
-    it('should route depth=3 to analytical (syntopical downgrade)', () => {
-      expect(routeByDepth({ depth: 3 } as any)).toBe('analytical');
+    it('should route depth=3 to inspectional (syntopical downgrade)', () => {
+      expect(routeByDepth({ depth: 3 } as any)).toBe('inspectional');
     });
   });
 

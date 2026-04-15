@@ -9,22 +9,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { Annotation, StateGraph, START, END, MemorySaver, interrupt, Command } from '@langchain/langgraph';
 
-// === Test: Settings toggle ===
+// === Test: Settings ===
 
-describe('Settings toggle', () => {
-  it('should have useLangGraphEngine and enableHumanReview in settings interface', async () => {
+describe('Settings', () => {
+  it('should have enableHumanReview in settings interface', async () => {
     const { DEFAULT_SETTINGS } = await import('../../../config/settings.js');
-    expect(DEFAULT_SETTINGS).toHaveProperty('useLangGraphEngine');
     expect(DEFAULT_SETTINGS).toHaveProperty('enableHumanReview');
-    expect(DEFAULT_SETTINGS.useLangGraphEngine).toBe(false);
     expect(DEFAULT_SETTINGS.enableHumanReview).toBe(false);
+  });
+
+  it('should NOT have useLangGraphEngine (removed)', async () => {
+    const { DEFAULT_SETTINGS } = await import('../../../config/settings.js');
+    expect(DEFAULT_SETTINGS).not.toHaveProperty('useLangGraphEngine');
   });
 });
 
 // === Test: HITL interrupt in graph nodes ===
 
 describe('HITL Interrupt in Graph Nodes', () => {
-  // Create a simple test graph with interrupt
   const TestAnnotation = Annotation.Root({
     value: Annotation<string>({ reducer: (_, update) => update, default: () => '' }),
     reviewed: Annotation<boolean>({ reducer: (_, update) => update, default: () => false }),
@@ -70,7 +72,6 @@ describe('HITL Interrupt in Graph Nodes', () => {
       chunks.push(chunk);
     }
 
-    // Should have an __interrupt__ event
     const hasInterrupt = chunks.some(c =>
       c.__interrupt__ !== undefined ||
       Object.keys(c).some(k => k === '__interrupt__')
@@ -99,7 +100,6 @@ describe('HITL Interrupt in Graph Nodes', () => {
     const compiled = graph.compile({ checkpointer: new MemorySaver() });
     const threadId = 'test-resume-1';
 
-    // First invocation: hits interrupt
     const stream1 = await compiled.stream(
       { value: '原始内容' },
       { configurable: { thread_id: threadId } },
@@ -110,7 +110,6 @@ describe('HITL Interrupt in Graph Nodes', () => {
     }
     expect(reviewCalled).toBe(1);
 
-    // Resume with approval
     const stream2 = await compiled.stream(
       new Command({ resume: { approved: true, feedback: '' } }),
       { configurable: { thread_id: threadId } },
@@ -132,8 +131,8 @@ describe('Graph Edge Routing', () => {
     expect(routeByDepth({ depth: 0 } as any)).toBe('formatter');
   });
 
-  it('should route depth=2 to analytical', async () => {
+  it('should route depth=2 to inspectional (scope narrowing before analytical)', async () => {
     const { routeByDepth } = await import('../../graph/edges.js');
-    expect(routeByDepth({ depth: 2 } as any)).toBe('analytical');
+    expect(routeByDepth({ depth: 2 } as any)).toBe('inspectional');
   });
 });

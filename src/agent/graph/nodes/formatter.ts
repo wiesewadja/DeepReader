@@ -1,63 +1,115 @@
 /**
- * S4: Formatter Node — LangGraph wrapper
+ * S4: Formatter Node — Native LangChain streaming implementation
  *
- * Wraps the existing FormatterState.execute() into a LangGraph node.
- * Transforms raw analysis into formatted Obsidian notes with streaming.
+ * Transforms raw analysis into formatted Obsidian notes.
+ * Uses ChatOpenAI streaming + self-verification instead of old runStateLoop.
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { FormatterState } from '../../cognitive-engine/states/formatter';
-import type { SharedContext, EngineCallbacks } from '../../cognitive-engine/types';
 import { interrupt } from '@langchain/langgraph';
+import {
+  buildFormatterSystemPrompt,
+  buildFormatterUserMessage,
+  MAX_HISTORY_MESSAGES,
+} from '../prompts/formatter-prompt';
+import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 
 /**
  * S4 Formatter node: transforms analysis into Obsidian-formatted output.
  *
- * Delegates to the existing FormatterState which handles:
- * 1. System prompt with character persona ("奚童")
- * 2. Injecting history, analysis, TOC, structural analysis
- * 3. Streaming output via callbacks
- * 4. Self-verification of block_id citations
+ * Flow:
+ * 1. Casual mode (depth=0): generate direct response
+ * 2. Build formatter system/user messages with memory context
+ * 3. Stream main model output, pushing to UI via callbacks
+ * 4. Self-verify block_id references (remove ghost links)
+ * 5. Optional HITL interrupt
  */
 export async function formatterNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const callbacks = config.configurable?.callbacks as EngineCallbacks | undefined;
-  const formatter = new FormatterState(callbacks);
-  const ctx = config.configurable?.sharedContext as SharedContext | undefined;
+  const mainModel = config.configurable?.mainModel;
+  const callbacks = config.configurable?.callbacks as {
+    onContent?: (content: string) => void;
+    onProgress?: (msg: string) => void;
+  } | undefined;
+  const ctx = config.configurable?.sharedContext;
 
-  // Casual (depth=0): no analysis to format, generate a direct response
+  // No main model available — return raw analysis
+  if (!mainModel) {
+    return { formattedOutput: state.analysisResult || state.rewrittenQuery || '' };
+  }
+
+  // === Casual mode (depth=0): simple direct response ===
   if (state.depth === 0) {
-    if (!ctx) {
-      return { formattedOutput: state.rewrittenQuery || '' };
+    callbacks?.onProgress?.('正在生成回复...');
+
+    const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
+    const stream = await mainModel.stream([
+      new SystemMessage(casualPrompt),
+      new HumanMessage(state.rewrittenQuery || ''),
+    ]);
+
+    let content = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.content === 'string') {
+        content += chunk.content;
+        callbacks?.onContent?.(content);
+      }
     }
-    ctx.depth = 0;
-    ctx.standaloneQuery = state.rewrittenQuery || ctx.rawUserQuery;
-    ctx.analysisResult = '';  // No S2 analysis for casual queries
-    await formatter.execute(ctx);
-    return { formattedOutput: ctx.analysisResult ?? '' };
+
+    return { formattedOutput: content };
   }
 
-  if (!ctx) {
-    return {
-      formattedOutput: state.analysisResult || '',
-    };
+  // === Normal mode (depth >= 1): format with full context ===
+  callbacks?.onProgress?.('正在格式化输出...');
+
+  // Build system prompt with memory context
+  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
+
+  // Build user message with all context
+  const chatHistory = ctx?.chatHistory ?? [];
+  const recentHistory = chatHistory.slice(-MAX_HISTORY_MESSAGES);
+  const userMessage = buildFormatterUserMessage(
+    state.rewrittenQuery,
+    state.analysisResult || '',
+    state.pdfName || '',
+    recentHistory,
+    state.tocSummary || undefined,
+    state.structuralAnalysis || undefined,
+    state.betterQuestion || undefined,
+  );
+
+  // Construct messages array
+  const messages = [
+    new SystemMessage(systemPrompt),
+    new HumanMessage(userMessage),
+  ];
+
+  // Stream output
+  const stream = await mainModel.stream(messages);
+  let content = '';
+  for await (const chunk of stream) {
+    if (typeof chunk.content === 'string') {
+      content += chunk.content;
+      callbacks?.onContent?.(content);
+    }
   }
 
-  // Sync graph state into SharedContext
-  ctx.depth = state.depth as 0 | 1 | 2 | 3;
-  ctx.standaloneQuery = state.rewrittenQuery || ctx.rawUserQuery;
-  ctx.scopeNodeIds = state.scopeNodeIds.length > 0 ? state.scopeNodeIds : undefined;
-  ctx.tocSummary = state.tocSummary || undefined;
-  ctx.betterQuestion = state.betterQuestion || undefined;
-  ctx.structuralAnalysis = state.structuralAnalysis || undefined;
-  ctx.analysisResult = state.analysisResult || undefined;
-  ctx.s2ToolResults = state.toolResultsSnapshot.length > 0 ? state.toolResultsSnapshot : undefined;
+  // Self-verification: remove ghost block_id references
+  const toolResults: ToolResultEntry[] = (state.toolResultsSnapshot || []).map(r => ({
+    toolName: r.toolName,
+    args: r.args as Record<string, unknown>,
+    result: r.result,
+    originalResultLength: r.originalResultLength,
+  }));
 
-  // Execute the existing state logic (includes streaming + self-verification)
-  await formatter.execute(ctx);
+  if (toolResults.length > 0) {
+    const verificationResult = await verifyAndCleanContent(content, toolResults);
+    content = verificationResult.content;
+  }
 
   // HITL interrupt (if enabled)
   const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
@@ -65,17 +117,35 @@ export async function formatterNode(
     const resumeValue = interrupt({
       nodeId: 'formatter',
       question: 'S4 格式化完成，确认输出内容？',
-      content: ctx.analysisResult ?? '',
+      content,
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // 用户不满意格式化结果，用 feedback 重新格式化
-      ctx.analysisResult = ctx.analysisResult + `\n\n---\n用户反馈: ${resumeValue.feedback}`;
-      await formatter.execute(ctx);
+      // User rejected: regenerate with feedback
+      const feedbackMessages = [
+        new SystemMessage(systemPrompt),
+        new HumanMessage(userMessage),
+        new AIMessage(content),
+        new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈修正格式化输出。`),
+      ];
+
+      const feedbackStream = await mainModel.stream(feedbackMessages);
+      let refinedContent = '';
+      for await (const chunk of feedbackStream) {
+        if (typeof chunk.content === 'string') {
+          refinedContent += chunk.content;
+          callbacks?.onContent?.(refinedContent);
+        }
+      }
+
+      if (toolResults.length > 0) {
+        const vResult = await verifyAndCleanContent(refinedContent, toolResults);
+        refinedContent = vResult.content;
+      }
+
+      content = refinedContent;
     }
   }
 
-  return {
-    formattedOutput: ctx.analysisResult ?? '',
-  };
+  return { formattedOutput: content };
 }

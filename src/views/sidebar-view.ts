@@ -2158,54 +2158,23 @@ export class SidebarView extends ItemView {
             // 初始化 SubagentManager（用于 create_sub_agent 工具）
             this.frontendAgent.setupSubagentManager(context);
 
-            // LangGraph 引擎路径
-            if (this.plugin.settings?.useLangGraphEngine) {
-                const result = await this.frontendAgent.runGraphEngine(
-                    userMessage,
-                    context,
-                    callbacks
-                );
+            // LangGraph 引擎（唯一路径）
+            const result = await this.frontendAgent.runGraphEngine(
+                userMessage,
+                context,
+                callbacks
+            );
 
-                if (result.interrupted) {
-                    // HITL: 显示审查 UI，等待用户确认
-                    this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
-                    return;
-                }
-
-                // 正常完成：更新消息
-                if (result.messages.length > 0) {
-                    this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
-                }
-                await this.saveToCache();
+            if (result.interrupted) {
+                // HITL: 显示审查 UI，等待用户确认
+                this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
                 return;
             }
 
-            // 旧引擎路径
-            // 根据是否有历史选择不同的方法
-            let updatedHistory: import("../agent/types.js").ChatMessage[];
-            if (isNewConversation) {
-                // 新对话，使用 chat()
-                updatedHistory = await this.frontendAgent.chat(
-                    userMessage,
-                    context,
-                    callbacks
-                );
-            } else {
-                // 继续对话，使用 continueChat()
-                log('[DeepPDF] 继续对话，历史消息数:', this.agentChatHistory.length);
-                updatedHistory = await this.frontendAgent.continueChat(
-                    this.agentChatHistory,
-                    userMessage,
-                    context,
-                    callbacks
-                );
+            // 正常完成：更新消息
+            if (result.messages.length > 0) {
+                this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
             }
-
-            // 更新对话历史
-            this.agentChatHistory = updatedHistory;
-            log('[DeepPDF] 对话历史已更新，消息数:', this.agentChatHistory.length);
-
-            // 保存到缓存（在 agentChatHistory 更新后调用）
             await this.saveToCache();
 
         } catch (error) {

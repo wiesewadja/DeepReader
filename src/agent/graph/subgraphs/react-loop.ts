@@ -12,7 +12,7 @@ import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { messagesStateReducer } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
-import { verifyAndCleanContent } from '../../cognitive-engine/utils/self-verification.js';
+import { verifyAndCleanContent } from '../utils/self-verification.js';
 
 // === State Definition ===
 

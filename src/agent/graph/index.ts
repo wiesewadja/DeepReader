@@ -24,7 +24,6 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addConditionalEdges('router', routeByDepth, {
     formatter: 'formatter',
     inspectional: 'inspectional',
-    analytical: 'analytical',
   })
   .addConditionalEdges('inspectional', routeAfterInspectional, {
     continue: 'analytical',

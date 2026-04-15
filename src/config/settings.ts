@@ -79,8 +79,7 @@ export interface DeepPDFSettings {
     // UI 状态
     lastSettingsTab: string;
 
-    // LangGraph 引擎开关
-    useLangGraphEngine: boolean;
+    // LangGraph 引擎设置
     enableHumanReview: boolean;
 
     // LangSmith 追踪配置（LangGraph 引擎专用）
@@ -147,8 +146,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
     // UI 状态
     lastSettingsTab: "llm",
 
-    // LangGraph 引擎开关
-    useLangGraphEngine: false,
+    // LangGraph 引擎设置
     enableHumanReview: false,
 
     // LangSmith 追踪配置

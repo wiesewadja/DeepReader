@@ -7,15 +7,15 @@ import type { CognitiveEngineState } from './state';
 /**
  * Route after S0 Router based on classified depth.
  *
- * - depth=0: casual chat → END (no further processing)
- * - depth=1: inspectional reading → S1
- * - depth=2 (analytical) and depth=3 (syntopical, downgraded in router) → S2
+ * - depth=0: casual chat → S4 (formatter, skip S1/S2)
+ * - depth>=1: S1 (inspectional) first, then S2 or S4 based on depth
+ *
+ * All reading queries (depth>=1) go through S1 for scope narrowing.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
   if (state.depth === 0) return 'formatter';  // casual → skip S1/S2, go directly to S4
-  if (state.depth === 1) return 'inspectional';
-  // depth=2 (analytical) and depth=3 (syntopical, already downgraded to 2)
-  return 'analytical';
+  // depth>=1: run inspectional first to get scope
+  return 'inspectional';
 }
 
 /**

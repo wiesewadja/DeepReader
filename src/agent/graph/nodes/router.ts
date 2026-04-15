@@ -9,7 +9,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import type { CognitiveEngineState } from '../state';
-import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../../cognitive-engine/prompts/router-prompt';
+import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
+import { agentLog as log } from '../../../utils/logger.js';
 
 const RouterOutputSchema = z.object({
   depth: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
@@ -66,8 +67,9 @@ export async function routerNode(
       depth: effectiveDepth,
       rewrittenQuery: result.standalone_query || rawQuery,
     };
-  } catch {
+  } catch (err) {
     // Graceful degradation: default to analytical reading
+    log('[S0 Router] LLM 调用失败，降级到 depth=2:', err instanceof Error ? err.message : String(err));
     return {
       depth: 2,
       rewrittenQuery: rawQuery,
