@@ -491,7 +491,7 @@ export class SidebarView extends ItemView {
                 m.role !== 'system' &&
                 m.content && // 确保有内容
                 !m.content.includes("已切换到书籍") &&
-                m.content !== "📖 正在翻阅..." &&
+                m.content !== "📖 开始翻阅..." &&
                 m.content !== "🔍 正在跨书籍查阅..."
             )
             .map(m => {
@@ -1745,7 +1745,7 @@ export class SidebarView extends ItemView {
                 const aiMessageData: MessageData = {
                     id: aiMessageId,
                     role: "assistant" as MessageRole,
-                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
+                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 开始翻阅...",
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
@@ -2162,7 +2162,8 @@ export class SidebarView extends ItemView {
             const result = await this.frontendAgent.runGraphEngine(
                 userMessage,
                 context,
-                callbacks
+                callbacks,
+                this.agentChatHistory,
             );
 
             if (result.interrupted) {

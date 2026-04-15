@@ -44,8 +44,7 @@ export async function formatterNode(
 
   // === Casual mode (depth=0): simple direct response ===
   if (state.depth === 0) {
-    callbacks?.onProgress?.('正在生成回复...');
-
+    callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
     const stream = await mainModel.stream([
       new SystemMessage(casualPrompt),
@@ -64,7 +63,7 @@ export async function formatterNode(
   }
 
   // === Normal mode (depth >= 1): format with full context ===
-  callbacks?.onProgress?.('正在格式化输出...');
+  callbacks?.onProgress?.('正在整理笔记...');
 
   // Build system prompt with memory context
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);

@@ -122,10 +122,25 @@ function writePluginSettings(settings: Record<string, unknown>): void {
 
 /**
  * 辅助函数：发送聊天消息
+ * 等待 textarea 变为可用（非 disabled）再输入
  */
 async function sendChatMessage(message: string): Promise<void> {
   const chatInput = await $(SELECTORS.chatInput);
   await chatInput.waitForExist({ timeout: 10_000 });
+
+  // 等待 textarea 可交互（非 disabled），最多等 90 秒
+  const waitStart = Date.now();
+  while (Date.now() - waitStart < 90_000) {
+    const isDisabled = await browser.executeObsidian(({ app }) => {
+      const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
+      if (leaves.length === 0) return true;
+      const view = leaves[0].view;
+      return view?.chatInput?.textarea?.disabled ?? true;
+    });
+    if (!isDisabled) break;
+    await wait(1000);
+  }
+
   await chatInput.setValue(message);
   await wait(300);
 
@@ -137,6 +152,7 @@ async function sendChatMessage(message: string): Promise<void> {
 /**
  * 辅助函数：等待 Agent 响应完成
  * 通过检查 sidebar view 的 isAiStreaming 状态来判断
+ * 即使超时也会等待 streaming 结束，防止 textarea disabled 级联失败
  */
 async function waitForResponse(timeoutMs: number = TIMEOUT_LONG): Promise<void> {
   const startTime = Date.now();
@@ -160,8 +176,9 @@ async function waitForResponse(timeoutMs: number = TIMEOUT_LONG): Promise<void> 
     console.log('[E2E] Streaming did not start within 5s, waiting for completion anyway');
   }
 
-  // 等待 streaming 结束
-  while (Date.now() - startTime < timeoutMs) {
+  // 等待 streaming 结束（即使在 timeoutMs 之后也继续等，确保 textarea 恢复）
+  const hardLimit = timeoutMs + 60_000; // 最多额外等 60s
+  while (Date.now() - startTime < hardLimit) {
     const isStreaming = await browser.executeObsidian(({ app }) => {
       const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
       if (leaves.length === 0) return false;
@@ -172,10 +189,14 @@ async function waitForResponse(timeoutMs: number = TIMEOUT_LONG): Promise<void> 
       await wait(500); // 额外等待确保 DOM 更新
       return;
     }
+    if (!streamingStarted && Date.now() - startTime > timeoutMs) {
+      console.log('[E2E] No streaming detected, assuming complete');
+      return;
+    }
     await wait(1000);
   }
 
-  console.log('[E2E] Response timeout');
+  console.log('[E2E] Response timeout (including grace period)');
 }
 
 /**

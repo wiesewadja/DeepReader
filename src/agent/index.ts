@@ -461,6 +461,21 @@ ${currentMemory}
    * - 正常节点: { nodeName: { field1: value1, ... } }
    * - interrupt: { __interrupt__: [{ value: { nodeId, content, question } }] }
    */
+
+  /**
+   * 节点名到用户友好文案的映射
+   */
+  private static readonly NODE_STATUS_MAP: Record<string, string> = {
+    router: '正在理解你的问题...',
+    inspectional: '正在翻阅目录，锁定相关章节...',
+    analytical: '正在深度分析原文...',
+    formatter: '正在整理笔记...',
+  };
+
+  private static getNodeStatus(nodeName: string): string {
+    return FrontendAgent.NODE_STATUS_MAP[nodeName] || `正在处理...`;
+  }
+
   private async processGraphStream(
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
@@ -497,7 +512,7 @@ ${currentMemory}
         const stateUpdate = record[nodeName];
         if (stateUpdate == null) continue;
 
-        onProgress(`正在执行: ${nodeName}`);
+        onProgress(FrontendAgent.getNodeStatus(nodeName));
 
         // 收集格式化输出
         if (stateUpdate.formattedOutput) {
