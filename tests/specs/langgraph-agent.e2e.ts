@@ -40,17 +40,48 @@ function getApiKey(): string {
   }
 }
 
+// 从环境变量或真实 vault 获取 LangSmith API Key
+function getLangSmithConfig(): { apiKey: string; project: string } {
+  const envKey = process.env.LANGSMITH_API_KEY || '';
+  if (envKey) {
+    return { apiKey: envKey, project: process.env.LANGSMITH_PROJECT || 'DeepReader-E2E' };
+  }
+
+  try {
+    const realData = JSON.parse(fs.readFileSync(
+      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+    ));
+    return {
+      apiKey: realData.langsmithApiKey || '',
+      project: realData.langsmithProject || 'DeepReader',
+    };
+  } catch {
+    return { apiKey: '', project: 'DeepReader-E2E' };
+  }
+}
+
 // 在 WDIO 加载测试文件时就写入 data.json（Obsidian 启动前）
 const apiKey = getApiKey();
+const langsmithConfig = getLangSmithConfig();
 if (apiKey) {
-  writePluginSettings({
+  const settings: Record<string, unknown> = {
     llmProvider: 'deepseek',
     llmModel: 'deepseek-chat',
     deepseekApiKey: apiKey,
     apiUrl: 'https://api.deepseek.com',
     forceMode: 'auto',
     enableDebugLog: true,
-  });
+  };
+
+  // 注入 LangSmith 配置（如果可用）
+  if (langsmithConfig.apiKey) {
+    settings.langsmithApiKey = langsmithConfig.apiKey;
+    settings.langsmithProject = langsmithConfig.project;
+    settings.langsmithEnabled = true;
+    console.log('[E2E] LangSmith config injected, project:', langsmithConfig.project);
+  }
+
+  writePluginSettings(settings);
   console.log('[E2E] API Key injected into test-vault data.json');
 } else {
   console.warn('[E2E] No API Key found. Set LLM_API_KEY env var or ensure real vault has key.');
@@ -167,6 +198,162 @@ async function getLastAIMessage(): Promise<string> {
   });
 }
 
+// ========== LangSmith Trace 分析 ==========
+
+interface LangSmithRun {
+  id: string;
+  name: string;
+  run_type: string;  // chain, llm, tool
+  parent_run_id: string | null;
+  start_time: string;
+  end_time: string | null;
+  inputs: Record<string, any>;
+  outputs: Record<string, any> | null;
+  status: string;
+  extra?: Record<string, any>;
+}
+
+interface TraceAnalysis {
+  totalRuns: number;
+  runTypes: Record<string, number>;
+  nodeNames: string[];
+  toolCalls: string[];
+  executionTimeMs: number;
+  hasRouter: boolean;
+  hasInspectional: boolean;
+  hasAnalytical: boolean;
+  hasFormatter: boolean;
+  rootRun: LangSmithRun | null;
+  childRuns: LangSmithRun[];
+  errors: string[];
+}
+
+/**
+ * 从 LangSmith REST API 获取最近的 trace 数据
+ * @param sinceMs 只获取最近 N 毫秒内的 runs（默认 5 分钟）
+ */
+async function fetchLangSmithTraces(sinceMs: number = 300_000): Promise<LangSmithRun[]> {
+  if (!langsmithConfig.apiKey) {
+    console.warn('[E2E] LangSmith API Key 不可用，跳过 trace 获取');
+    return [];
+  }
+
+  const since = new Date(Date.now() - sinceMs).toISOString();
+  const url = `https://api.smith.langchain.com/api/v1/runs?session_name=${encodeURIComponent(langsmithConfig.project)}&start_time_gte=${encodeURIComponent(since)}&order_by=-start_time&limit=50`;
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'x-api-key': langsmithConfig.apiKey,
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      console.warn(`[E2E] LangSmith API 返回 ${response.status}: ${response.statusText}`);
+      return [];
+    }
+
+    const runs: LangSmithRun[] = await response.json();
+    console.log(`[E2E] LangSmith: 获取到 ${runs.length} 条 runs`);
+    return runs;
+  } catch (err) {
+    console.warn('[E2E] LangSmith API 请求失败:', (err as Error).message);
+    return [];
+  }
+}
+
+/**
+ * 分析 LangSmith trace 数据，构建执行流程概览
+ */
+function analyzeTraces(runs: LangSmithRun[]): TraceAnalysis {
+  const analysis: TraceAnalysis = {
+    totalRuns: runs.length,
+    runTypes: {},
+    nodeNames: [],
+    toolCalls: [],
+    executionTimeMs: 0,
+    hasRouter: false,
+    hasInspectional: false,
+    hasAnalytical: false,
+    hasFormatter: false,
+    rootRun: null,
+    childRuns: [],
+    errors: [],
+  };
+
+  for (const run of runs) {
+    // 统计 run type
+    analysis.runTypes[run.run_type] = (analysis.runTypes[run.run_type] || 0) + 1;
+
+    // 收集 node name
+    if (run.name && !analysis.nodeNames.includes(run.name)) {
+      analysis.nodeNames.push(run.name);
+    }
+
+    // 识别 LangGraph 节点
+    const nameLower = run.name.toLowerCase();
+    if (nameLower.includes('router') || nameLower.includes('s0')) analysis.hasRouter = true;
+    if (nameLower.includes('inspectional') || nameLower.includes('s1')) analysis.hasInspectional = true;
+    if (nameLower.includes('analytical') || nameLower.includes('s2')) analysis.hasAnalytical = true;
+    if (nameLower.includes('formatter') || nameLower.includes('s4')) analysis.hasFormatter = true;
+
+    // 收集工具调用
+    if (run.run_type === 'tool') {
+      analysis.toolCalls.push(run.name);
+    }
+
+    // 错误检测
+    if (run.status === 'error') {
+      analysis.errors.push(`${run.name}: ${run.outputs?.error || 'unknown error'}`);
+    }
+
+    // 找 root run（parent_run_id 为 null 的 chain）
+    if (!run.parent_run_id && run.run_type === 'chain') {
+      analysis.rootRun = run;
+    } else {
+      analysis.childRuns.push(run);
+    }
+  }
+
+  // 计算总执行时间
+  if (analysis.rootRun?.start_time && analysis.rootRun?.end_time) {
+    analysis.executionTimeMs =
+      new Date(analysis.rootRun.end_time).getTime() -
+      new Date(analysis.rootRun.start_time).getTime();
+  }
+
+  return analysis;
+}
+
+/**
+ * 打印 trace 分析报告
+ */
+function printTraceReport(analysis: TraceAnalysis): void {
+  console.log('\n========== LangSmith Trace 报告 ==========');
+  console.log(`总 Runs: ${analysis.totalRuns}`);
+  console.log(`Run 类型: ${JSON.stringify(analysis.runTypes)}`);
+  console.log(`节点: ${analysis.nodeNames.join(', ')}`);
+  console.log(`工具调用: ${analysis.toolCalls.join(', ') || '无'}`);
+  console.log(`执行路径: Router=${analysis.hasRouter} S1=${analysis.hasInspectional} S2=${analysis.hasAnalytical} S4=${analysis.hasFormatter}`);
+  console.log(`执行时间: ${analysis.executionTimeMs}ms (${(analysis.executionTimeMs / 1000).toFixed(1)}s)`);
+  if (analysis.errors.length > 0) {
+    console.log(`错误: ${analysis.errors.join('; ')}`);
+  }
+  console.log('==========================================\n');
+}
+
+/**
+ * 获取最近一次 Agent 查询的 LangSmith trace 并分析
+ * @param sinceMs 只搜索最近 N 毫秒内的 runs
+ */
+async function getTraceAnalysis(sinceMs: number = 180_000): Promise<TraceAnalysis> {
+  const runs = await fetchLangSmithTraces(sinceMs);
+  const analysis = analyzeTraces(runs);
+  printTraceReport(analysis);
+  return analysis;
+}
+
 /**
  * 辅助函数：获取控制台中 DeepReader 相关的日志
  */
@@ -240,6 +427,7 @@ describe('LangGraph Agent E2E', function () {
 
   // ===== Test 1: depth=0 日常闲聊 =====
   it('depth=0: 应该能回复日常闲聊', async function () {
+    const testStartTime = Date.now();
     await openSidebarWithBook(BOOKS.naval.bookId);
 
     await sendChatMessage('你好');
@@ -253,10 +441,21 @@ describe('LangGraph Agent E2E', function () {
     expect(response.length).toBeGreaterThan(2);
     expect(response).not.toContain('LangGraph 引擎错误');
     expect(response).not.toContain('API Key 未配置');
+
+    // LangSmith Trace 分析
+    const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
+    if (trace.totalRuns > 0) {
+      // depth=0 应该走 Router + Formatter，无工具调用
+      expect(trace.hasRouter).toBe(true);
+      expect(trace.hasFormatter).toBe(true);
+      expect(trace.toolCalls.length).toBe(0);
+      console.log('[E2E] LangSmith: depth=0 trace 验证通过');
+    }
   });
 
   // ===== Test 2: depth=1 检视阅读 =====
   it('depth=1: 应该能回答书籍概览问题', async function () {
+    const testStartTime = Date.now();
 
     await openSidebarWithBook(BOOKS.naval.bookId);
     await clearChatHistory();
@@ -278,10 +477,20 @@ describe('LangGraph Agent E2E', function () {
     const logs = await getPluginLogs();
     const hasRouter = logs.some(l => l.includes('S0') || l.includes('Router') || l.includes('depth'));
     console.log('[E2E] Router logs found:', hasRouter);
+
+    // LangSmith Trace 分析
+    const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
+    if (trace.totalRuns > 0) {
+      // depth=1 应该走 Router + Inspectional + Formatter，无工具调用
+      expect(trace.hasRouter).toBe(true);
+      expect(trace.hasFormatter).toBe(true);
+      console.log(`[E2E] LangSmith: depth=1 验证 - S1=${trace.hasInspectional}, tools=${trace.toolCalls.length}`);
+    }
   });
 
   // ===== Test 3: depth=2 分析阅读（完整 ReAct 循环）=====
   it('depth=2: 应该能执行分析阅读（搜索+读取+格式化）', async function () {
+    const testStartTime = Date.now();
 
     await openSidebarWithBook(BOOKS.naval.bookId);
     await clearChatHistory();
@@ -312,10 +521,23 @@ describe('LangGraph Agent E2E', function () {
       l.includes('ToolResult')
     );
     console.log('[E2E] Tool calls detected:', hasToolCall);
+
+    // LangSmith Trace 分析
+    const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
+    if (trace.totalRuns > 0) {
+      // depth=2 应该走完整路径：Router + Inspectional + Analytical + Formatter
+      expect(trace.hasRouter).toBe(true);
+      expect(trace.hasAnalytical).toBe(true);
+      expect(trace.hasFormatter).toBe(true);
+      // 应该有工具调用（search_book / read_book_section）
+      expect(trace.toolCalls.length).toBeGreaterThan(0);
+      console.log(`[E2E] LangSmith: depth=2 完整 ReAct 验证 - S2=${trace.hasAnalytical}, tools=${trace.toolCalls.join(',')}`);
+    }
   });
 
   // ===== Test 4: 多轮对话（上下文传递）=====
   it('多轮对话: 第二轮应该能理解第一轮的上下文', async function () {
+    const testStartTime = Date.now();
 
     await openSidebarWithBook(BOOKS.naval.bookId);
     await clearChatHistory();
@@ -343,10 +565,19 @@ describe('LangGraph Agent E2E', function () {
     expect(round2Response).toBeTruthy();
     expect(round2Response.length).toBeGreaterThan(30);
     expect(round2Response).not.toContain('LangGraph 引擎错误');
+
+    // LangSmith Trace 分析（两轮应该产生多组 trace）
+    const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
+    if (trace.totalRuns > 0) {
+      // 多轮对话应该至少有 2 次 chain 执行
+      const chainCount = trace.runTypes['chain'] || 0;
+      console.log(`[E2E] LangSmith: 多轮对话 - chain runs: ${chainCount}, 总 runs: ${trace.totalRuns}`);
+    }
   });
 
   // ===== Test 5: 第二本书测试 =====
   it('金钱心理学: 应该能搜索和回答问题', async function () {
+    const testStartTime = Date.now();
 
     await openSidebarWithBook(BOOKS.money.bookId);
     await clearChatHistory();
@@ -360,5 +591,11 @@ describe('LangGraph Agent E2E', function () {
     expect(response).toBeTruthy();
     expect(response.length).toBeGreaterThan(50);
     expect(response).not.toContain('LangGraph 引擎错误');
+
+    // LangSmith Trace 分析
+    const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
+    if (trace.totalRuns > 0) {
+      console.log(`[E2E] LangSmith: 金钱心理学 - runs: ${trace.totalRuns}, nodes: ${trace.nodeNames.join(',')}, time: ${trace.executionTimeMs}ms`);
+    }
   });
 });
