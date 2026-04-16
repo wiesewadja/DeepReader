@@ -116,7 +116,9 @@ export async function inspectionalNode(
       tocSummary: parsed.tocSummary ?? '',
       betterQuestion: parsed.better_question ?? state.rewrittenQuery,
       structuralAnalysis: parsed.structural_analysis ?? '',
-      suggestedKeywords: parsed.suggested_keywords ?? [],
+      suggestedKeywords: Array.isArray(parsed.suggested_keywords)
+        ? parsed.suggested_keywords.filter((k): k is string => typeof k === 'string')
+        : [],
     };
   } catch (err) {
     // Graceful degradation on LLM error

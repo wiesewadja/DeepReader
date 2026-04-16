@@ -19,7 +19,7 @@ import {
 } from '../prompts/analytical-prompt.js';
 import { createLangChainTools } from '../../tools/index.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
-import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
+import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { loadTreeJson } from '../utils/tree-loader.js';
@@ -144,7 +144,7 @@ export async function analyticalNode(
   if (suggestedKeywords && suggestedKeywords.length > 0 && toolContext.app) {
     try {
       const vaultPath = (toolContext.app.vault.adapter as any).basePath;
-      const baseSearchOpts: any = {
+      const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {
         filePath: '',
         topK: 10,
         embedding: toolContext.plugin?.settings?.embedding,
@@ -156,34 +156,42 @@ export async function analyticalNode(
       }
 
       // RRF multi-query: 每个关键词独立检索后融合
+      const limitedKeywords = suggestedKeywords.slice(0, 8);
       const preSearchRunnable = RunnableLambda.from(
         async () => {
           const subResults = await Promise.all(
-            suggestedKeywords.map(async (kw) => {
+            limitedKeywords.map(async (kw) => {
               try {
                 return await searchBookV2({ ...baseSearchOpts, query: kw });
-              } catch {
+              } catch (err) {
+                log(`[S2 Analytical] Keyword search failed for "${kw}":`, err instanceof Error ? err.message : String(err));
                 return [];
               }
             })
           );
-          
-          // Simple merge: flatten and dedupe by nodeId
-          const mergedMap = new Map<string, BookSearchResultV2>();
+
+          // Merge: dedupe by nodeId, track hit count for multi-keyword boost
+          const mergedMap = new Map<string, { result: BookSearchResultV2; hitCount: number }>();
           for (const results of subResults) {
             for (const r of results) {
-              if (!mergedMap.has(r.nodeId)) {
-                mergedMap.set(r.nodeId, r);
+              const existing = mergedMap.get(r.nodeId);
+              if (existing) {
+                existing.hitCount++;
+                if (r.score > existing.result.score) existing.result = r;
+              } else {
+                mergedMap.set(r.nodeId, { result: r, hitCount: 1 });
               }
             }
           }
-          return Array.from(mergedMap.values()).sort((a, b) => b.score - a.score);
+          return Array.from(mergedMap.values())
+            .sort((a, b) => (b.result.score + b.hitCount * 0.1) - (a.result.score + a.hitCount * 0.1))
+            .map(e => e.result);
         }
       ).withConfig({ runName: 'pre_search_rrf' });
       const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
       // Quality threshold: only inject if we got meaningful results
-      if (preResults.length >= 2) {
+      if (Array.isArray(preResults) && preResults.length >= 2) {
         const hits = preResults.slice(0, 5).map(r => ({
           node_id: r.nodeId,
           title: r.title,
