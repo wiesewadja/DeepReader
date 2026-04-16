@@ -633,6 +633,8 @@ export abstract class Message {
 			this.updateContent(data.content);
 		} else if (streamingEnded && this.el) {
 			// 流式结束，完整渲染
+			// 补充渲染操作按钮（流式期间被跳过）
+			this.onStreamingEnd();
 			const contentEl = this.el.querySelector('.deeppdf-message-content');
 			if (contentEl && this.app) {
 				// 清理资源
@@ -668,6 +670,11 @@ export abstract class Message {
 	 * 局部更新内容
 	 */
 	protected abstract updateContent(content: string): void;
+
+	/**
+	 * 流式结束后的钩子，子类可 override 补充渲染
+	 */
+	protected onStreamingEnd(): void {}
 
 	getElement(): HTMLElement {
 		if (!this.el) {
@@ -729,6 +736,15 @@ export class AIMessage extends Message {
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	private onQuote?: (metadata: QuoteMetadata) => void;
 	private onDelete?: () => void;
+
+		protected onStreamingEnd(): void {
+			if (!this.el) return;
+			const bubble = this.el.querySelector(".deeppdf-message-bubble");
+			if (bubble) {
+				this.renderActions(bubble as HTMLElement);
+			}
+		}
+
 	// 节流渲染跟踪变量
 	private lastRenderedContent: string = '';
 	private lastRenderTime: number = 0;
