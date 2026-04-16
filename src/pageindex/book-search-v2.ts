@@ -4,6 +4,7 @@
  * Stage 1: Dynamic recall K
  * Stage 2: BM25 search
  * Stage 3: Vector semantic search (optional)
+ * Stage 3.5: Proposition cards search (optional)
  * Stage 4: Scope filter
  * Stage 5: Score fusion + level weighting
  * Stage 6: LLM tree search (optional)
@@ -22,6 +23,7 @@ import type {
   BM25Data,
   TreeData,
   TreeNode,
+  PropositionCard,
 } from "./book-types.js";
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25, tokenize } from "./bm25.js";
@@ -33,6 +35,10 @@ import {
 } from "./vault/vectors.js";
 import type { EmbeddingOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger";
+import {
+  loadPropositions,
+  loadPropVectorStore,
+} from "./proposition-search.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -124,6 +130,52 @@ export async function searchBookV2(
     }
   }
 
+  // ── Stage 3.5: Proposition cards search (optional) ────────────────────
+  const propositionMatches = new Map<string, PropositionCard[]>();
+
+  if (options.embedding) {
+    try {
+      const propositionsData = await loadPropositions(indexDir);
+      const propVectorStore = await loadPropVectorStore(indexDir);
+
+      if (propositionsData && propVectorStore && propositionsData.totalCards > 0) {
+        const queryVec = await generateEmbedding(options.query, options.embedding);
+        const queryFloat32 = new Float32Array(queryVec);
+
+        const scores: Array<{ cardId: string; score: number }> = [];
+        for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
+          if (slot.deleted) continue;
+
+          const offset = slot.slotIndex * propVectorStore.meta.dimensions;
+          const cardVector = propVectorStore.vectors.subarray(
+            offset,
+            offset + propVectorStore.meta.dimensions
+          );
+
+          const score = cosineSimilarity(queryFloat32, cardVector);
+          scores.push({ cardId, score });
+        }
+
+        const topScores = scores.sort((a, b) => b.score - a.score).slice(0, topK * 3);
+
+        for (const s of topScores) {
+          const card = propositionsData.cards.find(c => c.id === s.cardId);
+          if (card && s.score > 0.5) {
+            const nodeId = card.sourceNodeId;
+            if (!propositionMatches.has(nodeId)) {
+              propositionMatches.set(nodeId, []);
+            }
+            propositionMatches.get(nodeId)!.push(card);
+          }
+        }
+
+        piLog(`[book-search-v2] Proposition search: ${propositionMatches.size} nodes with matches`);
+      }
+    } catch (error) {
+      piLog(`[book-search-v2] Proposition search failed: ${error}`);
+    }
+  }
+
   // ── Stage 4: Scope filter ──────────────────────────────────────────────
   const hasVectors = vectorScores.size > 0;
   const allNodeIds = new Set([...vectorScores.keys(), ...bm25Scores.keys()]);
@@ -189,20 +241,32 @@ export async function searchBookV2(
     const hierarchyPath = findHierarchyPath(r.nodeId, treeData.structure);
     const title = findNodeTitle(r.nodeId, treeData.structure) || r.nodeId;
 
-    const matchedBlocks = await locateMatchedBlocks(
-      r.nodeId,
-      options.query,
-      queryTokens,
-      treeData,
-      vaultPath,
-      {
-        embedding: options.embedding,
-        queryVector: queryVector ? new Float32Array(queryVector) : undefined,
-        cacheDir,
-        maxBlocksPerNode: 3,
-        blockSize: 500,
-      }
-    );
+    // 优先使用命题卡片作为 matchedBlocks
+    const matchedCards = propositionMatches.get(r.nodeId) || [];
+    let matchedBlocks: MatchedBlock[];
+
+    if (matchedCards.length > 0) {
+      matchedBlocks = matchedCards.slice(0, 3).map(card => ({
+        blockId: card.id,
+        content: `${card.context} ^${card.id}\n\n【${card.type}】${card.answer}`,
+      }));
+      piLog(`[book-search-v2] Using ${matchedCards.length} proposition cards for ${r.nodeId}`);
+    } else {
+      matchedBlocks = await locateMatchedBlocks(
+        r.nodeId,
+        options.query,
+        queryTokens,
+        treeData,
+        vaultPath,
+        {
+          embedding: options.embedding,
+          queryVector: queryVector ? new Float32Array(queryVector) : undefined,
+          cacheDir,
+          maxBlocksPerNode: 3,
+          blockSize: 500,
+        }
+      );
+    }
 
     results.push({
       nodeId: r.nodeId,

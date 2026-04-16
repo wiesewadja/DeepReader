@@ -19,11 +19,13 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
 
 【搜索逻辑】
 - 多关键词并行检索 + RRF 融合：每个关键词独立搜索，合并排序
-- 8 阶段管线：BM25 + 向量语义 + scope 过滤 + 层级加权
+- 9 阶段管线：BM25 + 向量语义 + 命题卡片 + scope 过滤 + 层级加权
+- 命题卡片优先：如果有原子事实卡片匹配，直接返回卡片内容（更精准）
 - 每个 hit 返回 node 内匹配最密集的段落片段（含 ^block_id）
 
 【返回结果】
-- matched_blocks: 匹配的段落片段，可直接引用 ^block_id
+- matched_blocks: 匹配的段落片段或命题卡片
+- 命题卡片格式：【类型】答案 + 原文 ^卡片ID
 - 大部分情况无需再调 read_book_section
 
 【中文搜索技巧】
