@@ -105,124 +105,124 @@
 
 /* ==================== AI 消息随机背景图案 ==================== */
 
-/* 图案 1: 星空点阵 - 适合创意对话（稀疏版）*/
+/* 图案 1: 星空点阵 - 适合创意对话 */
 .deeppdf-pattern-stars {
 	background:
-		radial-gradient(circle at 15% 25%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.06)) 1.5px, transparent 1.5px),
-		radial-gradient(circle at 85% 75%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
-		radial-gradient(circle at 50% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
-		var(--background-primary);
+		radial-gradient(circle at 15% 25%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.12)) 1.5px, transparent 1.5px),
+		radial-gradient(circle at 85% 75%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.10)) 1px, transparent 1px),
+		radial-gradient(circle at 50% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.08)) 1px, transparent 1px),
+		var(--background-primary) !important;
 	background-size: 100% 100%;
 }
 
-/* 图案 2: 网格蓝图 - 适合技术分析（稀疏版）*/
+/* 图案 2: 网格蓝图 - 适合技术分析 */
 .deeppdf-pattern-grid {
 	background:
-		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)) 1px, transparent 1px),
-		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)) 1px, transparent 1px),
-		var(--background-primary);
+		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
+		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
+		var(--background-primary) !important;
 	background-size: 40px 40px;
 }
 
-/* 图案 3: 波浪线条 - 适合故事讲述（微妙版）*/
+/* 图案 3: 波浪线条 - 适合故事讲述 */
 .deeppdf-pattern-wave {
 	background:
 		repeating-linear-gradient(
 			45deg,
 			transparent,
 			transparent 20px,
-			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 20px,
-			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 21px
+			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 20px,
+			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 21px
 		),
-		var(--background-primary);
+		var(--background-primary) !important;
 }
 
-/* 图案 4: 六边形蜂窝 - 适合科学讨论（轻盈版）*/
+/* 图案 4: 六边形蜂窝 - 适合科学讨论 */
 .deeppdf-pattern-honeycomb {
-	background-color: var(--background-primary);
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='hexagons' fill='%236495ed' fill-opacity='0.02' fill-rule='nonzero'%3E%3Cpath d='M28 25l28 16.25v32.5l-28 16.25L0 73.75v-32.5l28-16.25zM3 40.5v27l26 15 28-15v-27l-28-15-26 15z'%3E%3C/path%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+	background-color: var(--background-primary) !important;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cg fill-rule='evenodd'%3E%3Cg id='hexagons' fill='%236495ed' fill-opacity='0.05' fill-rule='nonzero'%3E%3Cpath d='M28 25l28 16.25v32.5l-28 16.25L0 73.75v-32.5l28-16.25zM3 40.5v27l26 15 28-15v-27l-28-15-26 15z'%3E%3C/path%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
-/* 图案 5: 渐变光晕 - 适合重要回复（柔和版）*/
+/* 图案 5: 渐变光晕 - 适合重要回复 */
 .deeppdf-pattern-glow {
 	background:
-		radial-gradient(ellipse at top left, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.03)), transparent 60%),
-		radial-gradient(ellipse at bottom right, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)), transparent 60%),
-		var(--background-primary);
+		radial-gradient(ellipse at top left, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.08)), transparent 60%),
+		radial-gradient(ellipse at bottom right, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)), transparent 60%),
+		var(--background-primary) !important;
 }
 
-/* 图案 6: 点阵密度变化 - 适合长消息（稀疏版）*/
+/* 图案 6: 点阵密度变化 - 适合长消息 */
 .deeppdf-pattern-dots-density {
 	background:
-		radial-gradient(circle at 10% 15%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
-		radial-gradient(circle at 40% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.03)) 1px, transparent 1px),
-		radial-gradient(circle at 70% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)) 1px, transparent 1px),
-		var(--background-primary);
+		radial-gradient(circle at 10% 15%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.10)) 1px, transparent 1px),
+		radial-gradient(circle at 40% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.07)) 1px, transparent 1px),
+		radial-gradient(circle at 70% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
+		var(--background-primary) !important;
 	background-size: 80px 80px;
 }
 
-/* 图案 7: 三角形镶嵌 - 适合设计讨论（轻盈版）*/
+/* 图案 7: 三角形镶嵌 - 适合设计讨论 */
 .deeppdf-pattern-triangle {
-	background-color: var(--background-primary);
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cpolygon fill='%236495ed' fill-opacity='0.015' points='0,0 60,60 0,60'/%3E%3Cpolygon fill='%236495ed' fill-opacity='0.015' points='60,0 120,60 60,60'/%3E%3C/svg%3E");
+	background-color: var(--background-primary) !important;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cpolygon fill='%236495ed' fill-opacity='0.04' points='0,0 60,60 0,60'/%3E%3Cpolygon fill='%236495ed' fill-opacity='0.04' points='60,0 120,60 60,60'/%3E%3C/svg%3E");
 }
 
-/* 图案 8: 混合图案 - 通用型（平衡版）*/
+/* 图案 8: 混合图案 - 通用型 */
 .deeppdf-pattern-mixed {
 	background:
-		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 1px, transparent 1px),
-		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 1px, transparent 1px),
-		radial-gradient(circle at 20% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1px, transparent 1px),
-		radial-gradient(circle at 80% 70%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
-		var(--background-primary);
+		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
+		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
+		radial-gradient(circle at 20% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.10)) 1px, transparent 1px),
+		radial-gradient(circle at 80% 70%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.08)) 1px, transparent 1px),
+		var(--background-primary) !important;
 	background-size: 60px 60px, 60px 60px, 100% 100%, 100% 100%;
 }
 
-/* 图案 9: 雪花点阵 - 冬日氛围（轻盈版）*/
+/* 图案 9: 雪花点阵 - 冬日氛围 */
 .deeppdf-pattern-snow {
 	background:
-		radial-gradient(circle at 20% 40%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.03)) 2px, transparent 2px),
-		radial-gradient(circle at 60% 80%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)) 1.5px, transparent 1.5px),
-		radial-gradient(circle at 80% 20%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 2px, transparent 2px),
-		var(--background-primary);
+		radial-gradient(circle at 20% 40%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.08)) 2px, transparent 2px),
+		radial-gradient(circle at 60% 80%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.05)) 1.5px, transparent 1.5px),
+		radial-gradient(circle at 80% 20%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.10)) 2px, transparent 2px),
+		var(--background-primary) !important;
 	background-size: 100px 100px;
 }
 
-/* 图案 10: 音乐波浪 - 适合艺术内容（微妙版）*/
+/* 图案 10: 音乐波浪 - 适合艺术内容 */
 .deeppdf-pattern-music {
 	background:
 		repeating-linear-gradient(
 			0deg,
 			transparent,
 			transparent 15px,
-			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.01)) 15px,
-			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 16px,
-			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.01)) 17px,
+			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.03)) 15px,
+			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 16px,
+			var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.03)) 17px,
 			transparent 17px
 		),
-		var(--background-primary);
+		var(--background-primary) !important;
 	background-size: 100% 30px;
 }
 
-/* 图案 11: 水墨晕染 - 东方美学（淡雅版）*/
+/* 图案 11: 水墨晕染 - 东方美学 */
 .deeppdf-pattern-ink {
 	background:
-		radial-gradient(ellipse at 25% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)), transparent 50%),
-		radial-gradient(ellipse at 75% 70%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)), transparent 40%),
-		var(--background-primary);
+		radial-gradient(ellipse at 25% 30%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.06)), transparent 50%),
+		radial-gradient(ellipse at 75% 70%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)), transparent 40%),
+		var(--background-primary) !important;
 }
 
-/* 图案 12: 科技矩阵 - 未来感（轻盈版）*/
+/* 图案 12: 科技矩阵 - 未来感 */
 .deeppdf-pattern-matrix {
 	background:
-		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 1px, transparent 1px),
-		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.015)) 1px, transparent 1px),
-		radial-gradient(circle at 50% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.02)) 2px, transparent 2px),
-		var(--background-primary);
+		linear-gradient(var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
+		linear-gradient(90deg, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.04)) 1px, transparent 1px),
+		radial-gradient(circle at 50% 50%, var(--deeppdf-pattern-color, rgba(100, 149, 237, 0.06)) 2px, transparent 2px),
+		var(--background-primary) !important;
 	background-size: 50px 50px, 50px 50px, 100px 100px;
 }
 
-/* 深色主题适配 - 图案颜色自动调亮（透明度降低）*/
+/* 深色主题适配 - 图案颜色调亮 */
 .theme-dark .deeppdf-pattern-stars,
 .theme-dark .deeppdf-pattern-grid,
 .theme-dark .deeppdf-pattern-wave,
@@ -235,10 +235,10 @@
 .theme-dark .deeppdf-pattern-music,
 .theme-dark .deeppdf-pattern-ink,
 .theme-dark .deeppdf-pattern-matrix {
-	--deeppdf-pattern-color: rgba(180, 220, 255, 0.06);
+	--deeppdf-pattern-color: rgba(180, 220, 255, 0.12);
 }
 
-/* 浅色主题适配 - 图案颜色使用默认的深色（透明度降低）*/
+/* 浅色主题适配 */
 .theme-light .deeppdf-pattern-stars,
 .theme-light .deeppdf-pattern-grid,
 .theme-light .deeppdf-pattern-wave,
@@ -251,7 +251,7 @@
 .theme-light .deeppdf-pattern-music,
 .theme-light .deeppdf-pattern-ink,
 .theme-light .deeppdf-pattern-matrix {
-	--deeppdf-pattern-color: rgba(100, 149, 237, 0.06);
+	--deeppdf-pattern-color: rgba(100, 149, 237, 0.12);
 }
 
 .deeppdf-message-bubble-ai:hover {
@@ -329,7 +329,6 @@
 
 /* 流式更新时的额外优化 */
 .deeppdf-message-streaming .deeppdf-message-content {
-	contain: layout style;
 	user-select: text;
 	-webkit-user-select: text;
 }
@@ -992,31 +991,6 @@
 	pointer-events: none;
 }
 
-/* ==================== 全屏展示按钮 ==================== */
-
-.deeppdf-message-fullscreen-btn {
-	background: none;
-	border: none;
-	cursor: pointer;
-	color: var(--text-muted);
-	padding: 4px;
-	border-radius: 4px;
-	opacity: 0;
-	transition: opacity 0.2s, color 0.2s;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.deeppdf-message-bubble:hover .deeppdf-message-fullscreen-btn {
-	opacity: 1;
-}
-
-.deeppdf-message-fullscreen-btn:hover {
-	color: var(--text-normal);
-	background: var(--background-modifier-hover);
-}
-
 /* ==================== 全屏覆盖层 ==================== */
 
 .deeppdf-fullscreen-overlay {
@@ -1043,7 +1017,7 @@
 	width: 96vw;
 	max-width: 1600px;
 	height: 92vh;
-	background: var(--background-primary);
+	/* background 由图案类提供 */
 	border-radius: 16px;
 	display: flex;
 	flex-direction: column;
@@ -1065,6 +1039,8 @@
 	padding: 16px 24px;
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
+	background: var(--background-primary);
+	border-radius: 16px 16px 0 0;
 }
 
 .deeppdf-fullscreen-title {
@@ -1176,6 +1152,64 @@
 .deeppdf-fullscreen-content-area a.internal-link:hover {
 	text-decoration: underline;
 }
+
+/* ==================== 侧边浮动翻信箭头 ==================== */
+
+.deeppdf-fullscreen-letter-nav {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 5;
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0.15;
+	transition: opacity 0.3s, color 0.3s, background 0.3s;
+	padding: 20px 8px;
+	border-radius: 8px;
+}
+
+.deeppdf-fullscreen-letter-prev { left: 8px; }
+.deeppdf-fullscreen-letter-next { right: 8px; }
+
+.deeppdf-fullscreen-letter-nav:hover {
+	opacity: 0.8;
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* ==================== 翻页 fade 动画 ==================== */
+
+.deeppdf-fullscreen-content-area {
+	transition: opacity 0.15s ease;
+}
+
+.deeppdf-page-fading {
+	opacity: 0;
+}
+
+/* ==================== 翻信滑动动画 ==================== */
+
+@keyframes deeppdf-flip-left-out {
+	to { transform: translateX(-40px); opacity: 0; }
+}
+@keyframes deeppdf-flip-left-in {
+	from { transform: translateX(40px); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+@keyframes deeppdf-flip-right-out {
+	to { transform: translateX(40px); opacity: 0; }
+}
+@keyframes deeppdf-flip-right-in {
+	from { transform: translateX(-40px); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+
+.deeppdf-flip-left-out { animation: deeppdf-flip-left-out 0.2s ease forwards; }
+.deeppdf-flip-left-in { animation: deeppdf-flip-left-in 0.25s ease forwards; }
+.deeppdf-flip-right-out { animation: deeppdf-flip-right-out 0.2s ease forwards; }
+.deeppdf-flip-right-in { animation: deeppdf-flip-right-in 0.25s ease forwards; }
 
 /* 墨迹拖尾画布：在内容之上、工具栏之下 */
 .deeppdf-ink-trail-canvas {

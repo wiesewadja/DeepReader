@@ -185,15 +185,15 @@ export class PagePaginator {
 
 	private updateCurrentPageFromScroll(): void {
 		if (!this.scrollView) return;
-		
+
 		const scrollLeft = this.scrollView.scrollLeft;
 		const viewWidth = this.scrollView.clientWidth;
-		
+
 		if (viewWidth === 0) return;
-		
+
 		// 计算当前处于第几页 (1-based)
 		const newPage = Math.round(scrollLeft / viewWidth) + 1;
-		
+
 		if (newPage !== this._currentPage) {
 			this._currentPage = newPage;
 		}
