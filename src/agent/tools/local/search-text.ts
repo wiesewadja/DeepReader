@@ -18,12 +18,22 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
     description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
 
 【搜索逻辑】
-- 多关键词并行检索 + RRF 融合：每个关键词独立搜索，合并排序
-- 8 阶段管线：BM25 + 向量语义 + scope 过滤 + 层级加权
-- 每个 hit 返回 node 内匹配最密集的段落片段（含 ^block_id）
+- 多路并行召回：BM25 + Vector + Proposition 三路同时执行（Promise.all）
+- 9 阶段管线：
+  1. Dynamic recall K
+  2. BM25 keyword search
+  3. Vector semantic search
+  3.5. Proposition cards search（原子事实）
+  4. Scope filter
+  5. Score fusion + level weighting
+  6. LLM tree search (optional)
+  7. Cross-encoder rerank（可选，需配置 Reranker）
+  8. Matched block location
+- 命题卡片优先：如果有原子事实卡片匹配，直接返回卡片内容（更精准）
 
 【返回结果】
-- matched_blocks: 匹配的段落片段，可直接引用 ^block_id
+- matched_blocks: 匹配的段落片段或命题卡片
+- 命题卡片格式：【类型】答案 + 原文 ^卡片ID
 - 大部分情况无需再调 read_book_section
 
 【中文搜索技巧】

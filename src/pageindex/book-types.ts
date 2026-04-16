@@ -1,4 +1,4 @@
-import type { EmbeddingOptions } from "./vault/types.js";
+import type { EmbeddingOptions, RerankerOptions } from "./vault/types.js";
 
 /**
  * Single book index options
@@ -22,6 +22,14 @@ export interface BookIndexOptions {
   addDocDescription?: boolean;
   /** Progress callback */
   onProgress?: (progress: BookIndexProgress) => void;
+  /** Proposition cards config (optional) */
+  propositions?: {
+    enabled: boolean;
+    model: string;
+    apiKey: string;
+    baseUrl: string;
+    cardsPer500Words?: number;
+  };
 }
 
 /**
@@ -141,6 +149,14 @@ export interface BookMeta {
     dimensions?: number;  // Auto-detected after vectorization
   };
   chapters: ChapterMeta[];
+  /** Proposition cards info (optional) */
+  propositions?: {
+    enabled: boolean;
+    totalCards?: number;
+    model: string;
+    generatedAt?: string;
+    error?: string;
+  };
 }
 
 /**
@@ -199,16 +215,14 @@ export interface BM25Data {
 export interface BookSearchOptionsV2 {
   filePath: string;
   query: string;
-  topK?: number;                    // 默认 5
-  embedding?: EmbeddingOptions;     // 向量配置（可选）
-  scopeNodeIds?: string[];          // S1 圈定的章节范围（可选）
-  reranker?: any;                   // 重排配置（可选）
-  treeSearch?: boolean;             // 是否启用 LLM 树搜索
-  llmClient?: any;                  // LLM 客户端（树搜索需要）
-  maxContentLength?: number;        // 每个结果最大内容长度，默认 8000
-  /** 直接提供 bookId，避免从 filePath 重新计算（推荐） */
+  topK?: number;
+  embedding?: EmbeddingOptions;
+  scopeNodeIds?: string[];
+  reranker?: RerankerOptions;
+  treeSearch?: boolean;
+  llmClient?: any;
+  maxContentLength?: number;
   bookId?: string;
-  /** 直接提供 vaultPath，避免从 filePath 推导（推荐） */
   vaultPath?: string;
 }
 
@@ -260,4 +274,68 @@ export interface TreeNode {
   startIndex?: number;
   endIndex?: number;
   nodes?: TreeNode[];
+}
+
+// ─── Proposition Cards Types ───────────────────────────────────────────────────
+
+/** 卡片类型（基于《如何阅读一本书》分析阅读方法） */
+export type CardType = 
+  | '问题' 
+  | '概念' 
+  | '主旨' 
+  | '论述' 
+  | '结论' 
+  | '人物' 
+  | '情节' 
+  | '象征';
+
+/** 原子事实卡片 */
+export interface PropositionCard {
+  id: string;
+  type: CardType;
+  answer: string;
+  context: string;
+  tags: string[];
+  sourceNodeId: string;
+  matchScore?: number;
+}
+
+/** 命题卡片数据 */
+export interface PropositionsData {
+  version: number;
+  bookId: string;
+  totalCards: number;
+  cards: PropositionCard[];
+  generatedAt: string;
+  model: string;
+}
+
+/** 命题卡片索引选项 */
+export interface PropositionIndexOptions {
+  bookId: string;
+  vaultPath: string;
+  treeData: TreeData;
+  embedding?: EmbeddingOptions;
+  llm: {
+    model: string;
+    apiKey: string;
+    baseUrl: string;
+  };
+  cardsPer500Words?: number;
+  minCards?: number;
+  maxCards?: number;
+  onProgress?: (progress: { percent: number; message: string }) => void;
+}
+
+/** 命题卡片索引结果 */
+export interface PropositionIndexResult {
+  bookId: string;
+  totalCards: number;
+  indexDir: string;
+}
+
+/** 命题卡片匹配结果 */
+export interface PropositionMatch {
+  card: PropositionCard;
+  score: number;
 }

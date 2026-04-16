@@ -229,3 +229,49 @@ function getAllNodes(structure: TreeNode[]): TreeNode[] {
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
+
+// ── Book Indexer & Search ───────────────────────────────────────────────────────
+
+export {
+  indexBook,
+  isBookIndexed,
+  deleteBookIndex,
+  generateBookId,
+} from "./book-indexer.js";
+
+export { searchBook } from "./book-search.js";
+
+// ── Proposition Cards ───────────────────────────────────────────────────────────
+
+export {
+  indexPropositions,
+  calculateTargetCards,
+  buildExtractionPrompt,
+  parseCards,
+  extractCardsFromChapter,
+} from "./proposition-indexer.js";
+
+export {
+  searchPropositions,
+  searchWithPropositions,
+  loadPropositions,
+  formatPropositionResults,
+} from "./proposition-search.js";
+
+export type {
+  PropositionCard,
+  PropositionsData,
+  PropositionIndexOptions,
+  PropositionIndexResult,
+  PropositionMatch,
+  CardType,
+  BookIndexOptions,
+  BookIndexResult,
+  BookIndexProgress,
+  BookMeta,
+  BookSearchOptions,
+  BookSearchResult,
+  TreeData,
+} from "./book-types.js";
+
+export type { FusionResult } from "./proposition-search.js";

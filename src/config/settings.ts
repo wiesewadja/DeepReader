@@ -21,6 +21,14 @@ export interface RerankerSettings {
     weight?: number;  // 0.0-1.0, default 0.7
 }
 
+export interface PropositionSettings {
+    enabled: boolean;
+    model: string;
+    apiKey?: string;
+    baseUrl: string;
+    cardsPer500Words?: number;
+}
+
 export interface DeepPDFSettings {
     // API Server 设置
     apiPort: number;
@@ -48,6 +56,9 @@ export interface DeepPDFSettings {
 
     // Embedding 模型配置（用于 Page Index 向量化）
     embedding: EmbeddingSettings;
+    
+    // 命题卡片配置（用于原子事实索引）
+    propositions: PropositionSettings;
     
     // Reranker 配置（用于搜索结果重排序）
     reranker?: RerankerSettings;
@@ -118,6 +129,14 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
         provider: "openai",
         model: "text-embedding-3-small",
         dimensions: 1536,
+    },
+
+    // 命题卡片配置（默认使用硅基流动 Qwen3-8B）
+    propositions: {
+        enabled: true,
+        model: "Qwen/Qwen3-8B",
+        baseUrl: "https://api.siliconflow.cn/v1",
+        cardsPer500Words: 1,
     },
 
     // PDF 索引设置

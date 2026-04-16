@@ -4,6 +4,8 @@
  * 验证 LLM 输出中的 block_id 引用是否真实存在于工具调用结果中，
  * 移除幽灵引用（Ghost References），并在必要时触发 LLM 修正调用。
  *
+ * Extended to also validate file_name in wiki links.
+ *
  * Migrated from cognitive-engine/utils/self-verification.ts
  * Removed Langfuse tracing (LangSmith handles tracing via LangGraph automatically)
  */
@@ -22,20 +24,96 @@ export interface VerificationResult {
   totalRefs: number;
   ghostRefs: number;
   truncatedRefs: number;
+  invalidFileRefs: number;
   llmCorrectionTriggered: boolean;
 }
 
+export interface WikiLinkValidation {
+  blockId: string;
+  fileName?: string;
+  bookName?: string;
+  status: 'valid' | 'invalid-block' | 'invalid-file' | 'truncated-invisible' | 'ghost';
+}
+
 /**
- * 从内容中提取所有 Obsidian block_id 引用
+ * 从内容中提取所有 Obsidian block_id 引用（简单版本，只返回 ID 列表）
  */
 export function extractBlockIds(content: string): string[] {
+  const links = extractWikiLinks(content);
+  return links.map(l => l.blockId);
+}
+
+/**
+ * 从内容中提取所有 Obsidian block_id 引用（包含 file_name）
+ */
+export function extractWikiLinks(content: string): WikiLinkValidation[] {
   const regex = /\[\[[^\]]*#\^+([^|\]]+)\|[^\]]*\]\]/g;
-  const ids = new Set<string>();
+  const links: WikiLinkValidation[] = [];
   let match: RegExpExecArray | null;
+
   while ((match = regex.exec(content)) !== null) {
-    ids.add(match[1]);
+    const fullMatch = match[0];
+    const blockId = match[1];
+
+    // Extract file_name from wiki link
+    const pathMatch = fullMatch.match(/\[\[([^#]+)#/);
+    const fileName = pathMatch ? pathMatch[1].split('/').pop()?.replace(/\.md$/, '') : undefined;
+
+    // Extract book_name from wiki link
+    const bookMatch = fullMatch.match(/\[\[([^/]+)\/[^#]+#/);
+    const bookName = bookMatch ? bookMatch[1] : undefined;
+
+    links.push({
+      blockId,
+      fileName,
+      bookName,
+      status: 'valid',
+    });
   }
-  return Array.from(ids);
+
+  return links;
+}
+
+/**
+ * 检查 wiki link 的完整有效性（block_id + file_name）
+ *
+ * @returns 'valid' | 'invalid-block' | 'invalid-file' | 'truncated-invisible' | 'ghost'
+ */
+export function checkWikiLinkValid(
+  blockId: string,
+  fileName: string | undefined,
+  toolResults: ToolResultEntry[]
+): WikiLinkValidation['status'] {
+  let hasTruncated = false;
+  let hasInvalidFile = false;
+  let fileFound = false;
+
+  const blockIdWithoutCaret = blockId.startsWith('^') ? blockId.slice(1) : blockId;
+  const blockPattern = new RegExp(`\\^${escapeRegExp(blockIdWithoutCaret)}(?=\\W|$)`);
+  const fileNamePattern = fileName ? new RegExp(escapeRegExp(fileName), 'i') : null;
+
+  for (const entry of toolResults) {
+    if (entry.toolName === 'search_book' || entry.toolName === 'read_book_section') {
+      if (fileNamePattern && fileNamePattern.test(entry.result)) {
+        fileFound = true;
+      }
+
+      if (blockPattern.test(entry.result)) {
+        if (fileName && !fileFound) {
+          hasInvalidFile = true;
+        }
+        return fileFound || !fileName ? 'valid' : 'invalid-file';
+      }
+    }
+
+    if (entry.originalResultLength > MAX_TOOL_RESULT_LENGTH) {
+      hasTruncated = true;
+    }
+  }
+
+  if (hasInvalidFile) return 'invalid-file';
+  if (hasTruncated) return 'truncated-invisible';
+  return 'ghost';
 }
 
 /**
@@ -89,49 +167,67 @@ export function removeGhostLinks(content: string, ghostIds: Set<string>): string
 }
 
 /**
- * 验证并清理内容中的 block_id 引用
+ * 验证并清理内容中的 block_id 引用（包含 file_name 验证）
  */
 export async function verifyAndCleanContent(
   content: string,
   toolResults: ToolResultEntry[],
   options?: {
     llmClient?: { chat: Function };
+    validateFileName?: boolean;
   }
 ): Promise<VerificationResult> {
-  const blockIds = extractBlockIds(content);
+  const wikiLinks = extractWikiLinks(content);
 
-  if (blockIds.length === 0) {
+  if (wikiLinks.length === 0) {
     return {
       content,
       totalRefs: 0,
       ghostRefs: 0,
       truncatedRefs: 0,
+      invalidFileRefs: 0,
       llmCorrectionTriggered: false,
     };
   }
 
   const ghostIds = new Set<string>();
+  const invalidFileIds = new Set<string>();
   let truncatedRefs = 0;
+  let invalidFileRefs = 0;
 
-  for (const id of blockIds) {
-    const status = checkBlockIdExists(id, toolResults);
-    if (status === 'ghost') {
-      ghostIds.add(id);
-    } else if (status === 'truncated-invisible') {
-      truncatedRefs++;
+  const validateFileName = options?.validateFileName ?? false;
+
+  for (const link of wikiLinks) {
+    if (validateFileName) {
+      const status = checkWikiLinkValid(link.blockId, link.fileName, toolResults);
+      if (status === 'ghost') {
+        ghostIds.add(link.blockId);
+      } else if (status === 'invalid-file') {
+        invalidFileIds.add(link.blockId);
+        invalidFileRefs++;
+      } else if (status === 'truncated-invisible') {
+        truncatedRefs++;
+      }
+    } else {
+      const status = checkBlockIdExists(link.blockId, toolResults);
+      if (status === 'ghost') {
+        ghostIds.add(link.blockId);
+      } else if (status === 'truncated-invisible') {
+        truncatedRefs++;
+      }
     }
   }
 
-  const totalRefs = blockIds.length;
+  const totalRefs = wikiLinks.length;
   const ghostCount = ghostIds.size;
 
   let cleanedContent = removeGhostLinks(content, ghostIds);
   let llmCorrectionTriggered = false;
 
-  if (ghostCount > totalRefs * 0.5 && options?.llmClient) {
+  if ((ghostCount + invalidFileRefs) > totalRefs * 0.5 && options?.llmClient) {
     try {
-      const correctionMessage = `你的回答中有 ${ghostCount}/${totalRefs} 个 block_id 引用无法在工具调用结果中找到（幽灵引用）。` +
-        `请重新生成回答，只引用实际存在于工具返回内容中的 block_id，` +
+      const correctionMessage = `你的回答中有 ${ghostCount}/${totalRefs} 个 block_id 引用无法在工具调用结果中找到（幽灵引用），${invalidFileRefs} 个引用的文件名不匹配。` +
+        `请重新生成回答，只引用实际存在于工具返回内容中的 block_id 和正确的文件名，` +
         `或者直接使用文字描述而不使用 wiki 链接格式。\n\n当前内容：\n${cleanedContent}`;
 
       const corrected = await options.llmClient.chat(correctionMessage);
@@ -149,6 +245,7 @@ export async function verifyAndCleanContent(
     totalRefs,
     ghostRefs: ghostCount,
     truncatedRefs,
+    invalidFileRefs,
     llmCorrectionTriggered,
   };
 }

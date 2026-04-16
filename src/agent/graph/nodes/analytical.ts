@@ -8,6 +8,7 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { runReactLoop } from '../subgraphs/react-loop.js';
@@ -20,6 +21,53 @@ import { createLangChainTools } from '../../tools/index.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
+import { loadTreeJson } from '../utils/tree-loader.js';
+
+/**
+ * Validate scopeNodeIds against tree.json nodeFileMap.
+ * Returns only IDs that exist in the tree structure.
+ */
+async function validateScopeNodeIds(
+  app: any,
+  bookId: string,
+  pdfName: string,
+  scopeNodeIds: string[]
+): Promise<string[]> {
+  if (scopeNodeIds.length === 0) return [];
+
+  try {
+    const vaultPath = app.vault.adapter.getBasePath?.() ?? '';
+    const treePath = `.pageindex/${bookId}/tree.json`;
+    const treeContent = await app.vault.adapter.read(treePath);
+    const treeData = JSON.parse(treeContent);
+
+    const validIds: string[] = [];
+    const allNodeIds = new Set<string>();
+    collectAllNodeIds(treeData.structure || [], allNodeIds);
+
+    for (const id of scopeNodeIds) {
+      if (allNodeIds.has(id)) {
+        validIds.push(id);
+      }
+    }
+
+    if (validIds.length < scopeNodeIds.length) {
+      log(`[S2 Analytical] Scope validation: ${validIds.length}/${scopeNodeIds.length} IDs valid`);
+    }
+
+    return validIds;
+  } catch (err) {
+    log('[S2 Analytical] Scope validation failed, using all IDs:', err);
+    return scopeNodeIds;
+  }
+}
+
+function collectAllNodeIds(nodes: any[], idSet: Set<string>): void {
+  for (const node of nodes) {
+    if (node.nodeId) idSet.add(node.nodeId);
+    if (node.nodes) collectAllNodeIds(node.nodes, idSet);
+  }
+}
 
 /**
  * Build the scope interceptor that injects scope_node_ids into search_book calls.
@@ -59,17 +107,25 @@ export async function analyticalNode(
   }
 
   // Use scope from graph state (set by S1 or empty for global search)
-  const scopeNodeIds = state.scopeNodeIds ?? [];
+  const rawScopeNodeIds = state.scopeNodeIds ?? [];
+
+  // Validate scopeNodeIds against tree structure
+  const validatedScopeNodeIds = await validateScopeNodeIds(
+    toolContext.app,
+    toolContext.indexId || '',
+    state.pdfName || ctx?.pdfName || '',
+    rawScopeNodeIds
+  );
 
   // Build system prompt and user message
   const tocSummary = state.tocSummary || ctx?.tocSummary;
   const systemPrompt = buildAnalyticalSystemPrompt({
-    scopeNodeIds,
+    scopeNodeIds: validatedScopeNodeIds,
     tocSummary,
   });
 
   const markdownFiles = ctx?.markdownFiles ?? {};
-  const scopedChapters = buildScopedChaptersBlock(scopeNodeIds, markdownFiles);
+  const scopedChapters = buildScopedChaptersBlock(validatedScopeNodeIds, markdownFiles);
   const fullSystemPrompt = scopedChapters
     ? `${systemPrompt}\n${scopedChapters}`
     : systemPrompt;
@@ -92,14 +148,17 @@ export async function analyticalNode(
         query: suggestedKeywords.join(' '),
         topK: 10,
         embedding: toolContext.plugin?.settings?.embedding,
-        scopeNodeIds: scopeNodeIds.length > 0 ? scopeNodeIds : undefined,
+        scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
       };
       if (toolContext.indexId && vaultPath) {
         searchOpts.bookId = toolContext.indexId;
         searchOpts.vaultPath = vaultPath;
       }
 
-      const preResults = await searchBookV2(searchOpts);
+      const preSearchRunnable = RunnableLambda.from(
+        async () => searchBookV2(searchOpts)
+      ).withConfig({ runName: 'pre_search_book_v2' });
+      const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
       // Quality threshold: only inject if we got meaningful results
       if (preResults.length >= 2) {
@@ -158,9 +217,9 @@ ${blockLines.join('\n\n')}
       maxToolCalls: 3,
       forcedConclusionContext: {
         pdfName: state.pdfName || ctx?.pdfName,
-        scopeNodeIds,
+        scopeNodeIds: validatedScopeNodeIds,
       },
-      toolInterceptor: createScopeInterceptor(scopeNodeIds),
+      toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
     },
     config,
   );
@@ -200,9 +259,9 @@ ${blockLines.join('\n\n')}
           maxToolCalls: 3,
           forcedConclusionContext: {
             pdfName: state.pdfName || ctx?.pdfName,
-            scopeNodeIds,
+            scopeNodeIds: validatedScopeNodeIds,
           },
-          toolInterceptor: createScopeInterceptor(scopeNodeIds),
+          toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
         },
         config,
       );
