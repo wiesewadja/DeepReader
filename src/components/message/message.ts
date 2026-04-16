@@ -1489,6 +1489,9 @@ export class AIMessage extends Message {
 		const close = () => this.closeFullscreen();
 		closeBtn.addEventListener('click', close);
 		overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+		// 阻止面板点击穿透到 PDF 阅读器
+		panel.addEventListener('mousedown', (e) => e.stopPropagation());
+		panel.addEventListener('click', (e) => e.stopPropagation());
 		const keyHandler = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') { close(); document.removeEventListener('keydown', keyHandler); }
 			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { nextBtn.click(); }
@@ -1516,19 +1519,20 @@ export class AIMessage extends Message {
 	private inkPoints: { x: number; y: number; t: number; speed: number }[] = [];
 
 	private setupInkTrail(overlay: HTMLElement): void {
+		const panel = overlay.querySelector('.deeppdf-fullscreen-panel') as HTMLElement;
 		const canvas = document.createElement('canvas');
 		canvas.className = 'deeppdf-ink-trail-canvas';
-		overlay.appendChild(canvas);
+		panel.appendChild(canvas);
 		this.inkTrailCanvas = canvas;
 		this.inkTrailCtx = canvas.getContext('2d');
 
 		const resize = () => {
-			canvas.width = overlay.offsetWidth;
-			canvas.height = overlay.offsetHeight;
+			canvas.width = panel.offsetWidth;
+			canvas.height = panel.offsetHeight;
 		};
 		resize();
 		const resizeObs = new ResizeObserver(resize);
-		resizeObs.observe(overlay);
+		resizeObs.observe(panel);
 
 		let lastX = 0, lastY = 0, lastTime = 0;
 
@@ -1542,7 +1546,7 @@ export class AIMessage extends Message {
 			const speed = dt > 0 ? dist / dt : 0;
 
 			if (dist > 2) {
-				const rect = overlay.getBoundingClientRect();
+				const rect = panel.getBoundingClientRect();
 				this.inkPoints.push({
 					x: e.clientX - rect.left,
 					y: e.clientY - rect.top,
@@ -1604,13 +1608,13 @@ export class AIMessage extends Message {
 			this.inkTrailRAF = requestAnimationFrame(draw);
 		};
 
-		overlay.addEventListener('mousemove', onMove);
+		panel.addEventListener('mousemove', onMove);
 		this.inkTrailRAF = requestAnimationFrame(draw);
 
 		// 关闭时清理：包装原 closeFullscreen
 		const origClose = this.closeFullscreen.bind(this);
 		this.closeFullscreen = () => {
-			overlay.removeEventListener('mousemove', onMove);
+			panel.removeEventListener('mousemove', onMove);
 			resizeObs.disconnect();
 			cancelAnimationFrame(this.inkTrailRAF);
 			this.inkPoints = [];
