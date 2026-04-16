@@ -1498,6 +1498,9 @@ export class AIMessage extends Message {
 
 		this.fullscreenOverlay = overlay;
 		requestAnimationFrame(() => overlay.addClass('deeppdf-fullscreen-open'));
+
+		// 墨迹拖尾效果
+		this.setupInkTrail(overlay);
 	}
 	private closeFullscreen(): void {
 		if (!this.fullscreenOverlay) return;
@@ -1505,6 +1508,116 @@ export class AIMessage extends Message {
 		const overlay = this.fullscreenOverlay;
 		this.fullscreenOverlay = null;
 		setTimeout(() => overlay.remove(), 300);
+	}
+
+	private inkTrailCanvas: HTMLCanvasElement | null = null;
+	private inkTrailCtx: CanvasRenderingContext2D | null = null;
+	private inkTrailRAF: number = 0;
+	private inkPoints: { x: number; y: number; t: number; speed: number }[] = [];
+
+	private setupInkTrail(overlay: HTMLElement): void {
+		const canvas = document.createElement('canvas');
+		canvas.className = 'deeppdf-ink-trail-canvas';
+		overlay.appendChild(canvas);
+		this.inkTrailCanvas = canvas;
+		this.inkTrailCtx = canvas.getContext('2d');
+
+		const resize = () => {
+			canvas.width = overlay.offsetWidth;
+			canvas.height = overlay.offsetHeight;
+		};
+		resize();
+		const resizeObs = new ResizeObserver(resize);
+		resizeObs.observe(overlay);
+
+		let lastX = 0, lastY = 0, lastTime = 0;
+
+		const onMove = (e: MouseEvent) => {
+			const now = performance.now();
+			const dt = now - lastTime;
+			if (dt < 8) return;
+			const dx = e.clientX - lastX;
+			const dy = e.clientY - lastY;
+			const dist = Math.sqrt(dx * dx + dy * dy);
+			const speed = dt > 0 ? dist / dt : 0;
+
+			if (dist > 2) {
+				const rect = overlay.getBoundingClientRect();
+				this.inkPoints.push({
+					x: e.clientX - rect.left,
+					y: e.clientY - rect.top,
+					t: now,
+					speed,
+				});
+			}
+			lastX = e.clientX;
+			lastY = e.clientY;
+			lastTime = now;
+		};
+
+		const draw = () => {
+			const ctx = this.inkTrailCtx;
+			if (!ctx || !this.inkTrailCanvas) return;
+			const now = performance.now();
+			const FADE_MS = 1200;
+
+			ctx.clearRect(0, 0, this.inkTrailCanvas.width, this.inkTrailCanvas.height);
+
+			// 过滤已消失的点
+			this.inkPoints = this.inkPoints.filter(p => now - p.t < FADE_MS);
+
+			if (this.inkPoints.length < 2) {
+				this.inkTrailRAF = requestAnimationFrame(draw);
+				return;
+			}
+
+			// 绘制墨迹
+			for (let i = 1; i < this.inkPoints.length; i++) {
+				const prev = this.inkPoints[i - 1];
+				const curr = this.inkPoints[i];
+				const age = now - curr.t;
+				const alpha = Math.max(0, 1 - age / FADE_MS);
+
+				// 速度越快越细，越慢越粗（模拟毛笔按压）
+				const baseWidth = 4.5;
+				const speedFactor = Math.max(0.15, 1 - curr.speed * 0.8);
+				const width = baseWidth * speedFactor * (0.3 + alpha * 0.7);
+
+				ctx.beginPath();
+				ctx.moveTo(prev.x, prev.y);
+				ctx.lineTo(curr.x, curr.y);
+				ctx.strokeStyle = `rgba(178, 34, 34, ${alpha * 0.6})`;
+				ctx.lineWidth = width;
+				ctx.lineCap = 'round';
+				ctx.lineJoin = 'round';
+				ctx.stroke();
+
+				// 墨迹晕染
+				if (alpha > 0.3) {
+					ctx.beginPath();
+					ctx.arc(curr.x, curr.y, width * 0.8, 0, Math.PI * 2);
+					ctx.fillStyle = `rgba(178, 34, 34, ${alpha * 0.12})`;
+					ctx.fill();
+				}
+			}
+
+			this.inkTrailRAF = requestAnimationFrame(draw);
+		};
+
+		overlay.addEventListener('mousemove', onMove);
+		this.inkTrailRAF = requestAnimationFrame(draw);
+
+		// 关闭时清理：包装原 closeFullscreen
+		const origClose = this.closeFullscreen.bind(this);
+		this.closeFullscreen = () => {
+			overlay.removeEventListener('mousemove', onMove);
+			resizeObs.disconnect();
+			cancelAnimationFrame(this.inkTrailRAF);
+			this.inkPoints = [];
+			this.inkTrailCanvas = null;
+			this.inkTrailCtx = null;
+			origClose();
+		};
 	}
 
 	/**
