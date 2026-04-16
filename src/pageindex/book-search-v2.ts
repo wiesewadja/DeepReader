@@ -371,22 +371,21 @@ function splitByBlockIds(content: string): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   const regex = /\^([\w-]+)/g;
   let lastEnd = 0;
-  let lastBlockId = "";
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(content)) !== null) {
+    // ^block_id 标记在段落末尾，它引用的是前面的文本
     const blockId = `^${match[1]}`;
     const text = content.slice(lastEnd, match.index).trim();
     if (text) {
-      paragraphs.push({ blockId: lastBlockId, text, start: lastEnd, end: match.index });
+      paragraphs.push({ blockId, text, start: lastEnd, end: match.index });
     }
-    lastBlockId = blockId;
     lastEnd = match.index + match[0].length;
   }
-  // Last paragraph
+  // Last paragraph (no block_id marker)
   const remaining = content.slice(lastEnd).trim();
   if (remaining) {
-    paragraphs.push({ blockId: lastBlockId, text: remaining, start: lastEnd, end: content.length });
+    paragraphs.push({ blockId: "", text: remaining, start: lastEnd, end: content.length });
   }
 
   return paragraphs;

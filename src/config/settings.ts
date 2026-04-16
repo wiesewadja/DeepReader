@@ -78,6 +78,14 @@ export interface DeepPDFSettings {
 
     // UI 状态
     lastSettingsTab: string;
+
+    // LangGraph 引擎设置
+    enableHumanReview: boolean;
+
+    // LangSmith 追踪配置（LangGraph 引擎专用）
+    langsmithApiKey: string;
+    langsmithProject: string;
+    langsmithEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: DeepPDFSettings = {
@@ -137,4 +145,12 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
     // UI 状态
     lastSettingsTab: "llm",
+
+    // LangGraph 引擎设置
+    enableHumanReview: false,
+
+    // LangSmith 追踪配置
+    langsmithApiKey: "",
+    langsmithProject: "DeepReader",
+    langsmithEnabled: false,
 };

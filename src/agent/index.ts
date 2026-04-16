@@ -7,41 +7,32 @@
  * - 用户上下文（通过 ContextBuilder）
  * - 工具注册
  * - 对话管理
- * - 认知状态机（替代原 ReAct 循环）
+ * - LangGraph 认知引擎（唯一执行路径）
  */
 
 // Re-export everything
 export { LLMClient } from './llm-client.js';
 export { SkillLoader } from './skills/loader.js';
-export { runAgentLoop } from './agent-loop.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
 export { initTracer, getTracer } from './tracing/index.js';
 export type { ITraceContext, ITracer } from './tracing/types.js';
-export type { AgentLoopOptions } from './agent-loop.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
 export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata, ReadingProgress } from './context/builder.js';
+export type { AgentLoopOptions } from './agent-loop.js';
 
-// 认知状态机导出
+// LangGraph 认知引擎导出
 export {
-  runCognitiveEngine,
   createSharedContext,
-  CognitiveEngineAdapter,
-  createCognitiveEngineAdapter,
-} from './cognitive-engine/index.js';
+} from './graph/shared-context.js';
 export type {
   SharedContext,
-  StateResult,
-  SearchResult,
   ReadingDepth,
-  ModelType,
-  StateNodeOptions,
   EngineCallbacks,
-  ToolInterceptor,
-} from './cognitive-engine/index.js';
+} from './graph/shared-context.js';
 
 // Import for FrontendAgent class
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
@@ -49,19 +40,24 @@ import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata, type ReadingProgress } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
-import { createToolRegistry, getToolDefinitions } from './tools/index.js';
-import { runAgentLoop } from './agent-loop.js';
+import { getToolDefinitions } from './tools/index.js';
 import { SubagentManager } from './subagent/manager.js';
 import { setSubagentManager } from './tools/create-sub-agent.js';
 import { IntentRouter } from './router/index.js';
-import { runCognitiveEngine, createSharedContext } from './cognitive-engine/index.js';
-import { summarizeRecentHistory, extractPrevBlockIds } from './cognitive-engine/utils/history-summarizer.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
-import type { EngineCallbacks } from './cognitive-engine/types.js';
+import type { EngineCallbacks } from './graph/shared-context.js';
+import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { agentLog as log } from '../utils/logger.js';
 import { initTracer, getTracer } from './tracing/index.js';
+import { HumanMessage } from '@langchain/core/messages';
+import { Command, MemorySaver } from '@langchain/langgraph';
+import { createCognitiveEngine } from './graph/index.js';
+import { FileCheckpointer } from './graph/checkpointer.js';
+import { createChatModels } from './models/index.js';
+import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
+import { createSharedContext } from './graph/shared-context.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -83,6 +79,14 @@ export interface FrontendAgentOptions {
   langfuseSecretKey?: string;
   langfuseBaseUrl?: string;
   langfuseEnabled?: boolean;
+
+  // Human-in-the-Loop 设置（可选）
+  enableHumanReview?: boolean;
+
+  // LangSmith 追踪配置（可选）
+  langsmithApiKey?: string;
+  langsmithProject?: string;
+  langsmithEnabled?: boolean;
 }
 
 export class FrontendAgent {
@@ -93,6 +97,10 @@ export class FrontendAgent {
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
   private initialized = false;
+  private activeThreadId: string | null = null;
+  private fileCheckpointer: FileCheckpointer | null = null;
+  private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
+  private cachedModels: ReturnType<typeof createChatModels> | null = null;
 
   constructor(private options: FrontendAgentOptions) {
     // 构建 main 配置
@@ -154,8 +162,6 @@ export class FrontendAgent {
 
   /**
    * 获取系统提示（异步，使用 ContextBuilder）
-   *
-   * 注意：Tools 通过 Function Calling API 传递，不在 System Prompt 中
    */
   async getSystemPromptAsync(
     documentMetadata?: DocumentMetadata,
@@ -169,7 +175,6 @@ export class FrontendAgent {
     // 获取 Skills XML Summary（用于 System Prompt）
     const skillsSummary = this.skillLoader.buildSkillsSummary();
 
-    // Tools 不再放在 System Prompt 中，仅通过 Function Calling API 传递
     return this.contextBuilder.buildSystemPrompt(
       skillsSummary,
       documentMetadata,
@@ -178,8 +183,24 @@ export class FrontendAgent {
   }
 
   /**
+   * 获取编译后的认知引擎（带持久化 checkpointer）。
+   */
+  private getCompiledEngine() {
+    if (this.compiledEngine) return this.compiledEngine;
+
+    if (this.options.app?.vault?.adapter) {
+      this.fileCheckpointer = new FileCheckpointer(this.options.app);
+      this.compiledEngine = createCognitiveEngine(this.fileCheckpointer);
+      log('[FrontendAgent] 使用 FileCheckpointer 持久化');
+    } else {
+      this.compiledEngine = createCognitiveEngine(new MemorySaver());
+      log('[FrontendAgent] 使用 MemorySaver（无持久化）');
+    }
+    return this.compiledEngine;
+  }
+
+  /**
    * 检查并压缩过大的 MEMORY.md
-   * 在每次构建 System Prompt 时检查，主动触发压缩
    */
   private async maybeCompressMemory(): Promise<void> {
     const needsCompression = await this.memoryStore.needsCompression();
@@ -187,11 +208,9 @@ export class FrontendAgent {
 
     log('[FrontendAgent] 🔄 MEMORY.md 超限，触发主动压缩...');
 
-    // 读取当前记忆内容
     const currentMemory = await this.memoryStore.readLongTermMemory();
     if (!currentMemory) return;
 
-    // 使用 LLM 压缩
     const compressed = await this.compressMemoryWithLLM(currentMemory);
     if (compressed && compressed.length < currentMemory.length) {
       await this.memoryStore.writeLongTermMemory(compressed);
@@ -212,19 +231,14 @@ export class FrontendAgent {
 ${currentMemory}
 
 ## 压缩规则（必须严格执行）
-1. **合并重复**：同一概念只保留一次（如"社会中心主义"出现多次 → 只保留一次）
-2. **删除临时状态**：
-   - 删除"正在阅读"、"当前关注"等会过时的状态
-   - 删除过于详细的描述
-3. **极简表达**：
-   - 用关键词替代完整句子
-   - 用"-"列表替代段落
+1. **合并重复**：同一概念只保留一次
+2. **删除临时状态**：删除"正在阅读"、"当前关注"等
+3. **极简表达**：用关键词替代完整句子
 4. **保持结构**：用户画像/阅读偏好/兴趣主题/阅读习惯
 
 直接返回压缩后的 Markdown 内容，不要任何解释。`;
 
     try {
-      // 使用非流式调用获取完整响应
       const response = await this.llmClientManager.getMainClient().chat([
         { role: 'system', content: '你是记忆压缩助手。直接返回压缩后的内容，不要解释。' },
         { role: 'user', content: prompt },
@@ -258,17 +272,155 @@ ${currentMemory}
     );
   }
 
-  async chat(
+  /**
+   * 使用 LangGraph 认知引擎处理查询。
+   */
+  async runGraphEngine(
     userMessage: string,
     context: ToolContext,
-    callbacks: AgentLoopOptions
-  ): Promise<ChatMessage[]> {
+    callbacks: AgentLoopOptions,
+    chatHistory?: ChatMessage[],
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     await this.initialize();
 
-    // 创建工具注册表
-    const toolRegistry = createToolRegistry(this.skillLoader, context);
+    // 前置检查：API Key 必须配置
+    if (!this.options.apiKey) {
+      const errorMsg = 'API Key 未配置，请在插件设置中填写对应服务商的 API Key。';
+      callbacks.onError?.(errorMsg);
+      return { messages: [{ role: 'assistant', content: errorMsg }] };
+    }
 
-    // 创建认知引擎所需的回调
+    const threadId = `thread-${Date.now()}`;
+    this.activeThreadId = threadId;
+
+    let configurable: any;
+    let tracer: any;
+    try {
+      const result = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage, chatHistory);
+      tracer = result._langsmithTracer;
+      const { _langsmithTracer: _, ...rest } = result;
+      configurable = rest;
+    } catch (cfgErr) {
+      const cfgMsg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+      log('[FrontendAgent] buildGraphConfigurable failed:', cfgMsg);
+      callbacks.onError?.(cfgMsg);
+      this.activeThreadId = null;
+      return { messages: [{ role: 'assistant', content: `构建引擎配置失败: ${cfgMsg}` }] };
+    }
+
+    try {
+      const stream = await this.getCompiledEngine().stream(
+        {
+          messages: [new HumanMessage(userMessage)],
+          bookId: context.indexId || '',
+          pdfName: context.pdfName || '',
+        },
+        {
+          streamMode: 'updates',
+          configurable,
+          signal: callbacks.abortSignal,
+          ...(tracer ? { callbacks: [tracer] } : {}),
+        },
+      );
+
+      const result = await this.processGraphStream(stream, callbacks);
+      if (!result.interrupted) {
+        this.activeThreadId = null;
+      }
+      return result;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      log('[FrontendAgent] LangGraph 引擎错误:', errorMsg);
+      callbacks.onError?.(errorMsg);
+      this.activeThreadId = null;
+      return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };
+    }
+  }
+
+  /**
+   * 恢复被 HITL 中断的图执行。
+   */
+  async resumeGraphExecution(
+    approved: boolean,
+    feedback: string,
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+    chatHistory?: ChatMessage[],
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    if (!this.activeThreadId) {
+      return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
+    }
+
+    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId, undefined, chatHistory);
+
+    try {
+      const stream = await this.getCompiledEngine().stream(
+        new Command({ resume: { approved, feedback } }),
+        {
+          streamMode: 'updates',
+          configurable,
+          signal: callbacks.abortSignal,
+          ...(tracer ? { callbacks: [tracer] } : {}),
+        },
+      );
+
+      const result = await this.processGraphStream(stream, callbacks);
+      if (!result.interrupted) {
+        this.activeThreadId = null;
+      }
+      return result;
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      callbacks.onError?.(errorMsg);
+      this.activeThreadId = null;
+      return { messages: [{ role: 'assistant', content: `恢复图执行错误: ${errorMsg}` }] };
+    }
+  }
+
+  /**
+   * 构建 LangGraph configurable 对象。
+   */
+  private async buildGraphConfigurable(
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+    threadId: string,
+    rawUserQuery?: string,
+    chatHistory?: ChatMessage[],
+  ) {
+    if (!this.cachedModels) {
+      this.cachedModels = createChatModels(
+        { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
+        this.options.fastModelEnabled && this.options.fastApiKey
+          ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
+          : undefined,
+      );
+    }
+    const models = this.cachedModels;
+
+    const memoryContext = await this.memoryStore.getMemoryContext();
+
+    // 过滤有效对话历史
+    const cleanHistory = (chatHistory ?? []).filter(m => m.role === 'user' || m.role === 'assistant');
+    const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
+    const prevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
+
+    // SharedContext for S2 compatibility
+    const ctx = createSharedContext({
+      indexId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      rawUserQuery: rawUserQuery || '',
+      chatHistory: cleanHistory,
+      markdownFiles: context.markdownFiles,
+      abortSignal: callbacks.abortSignal,
+      docDescription: context.docDescription,
+      memoryContext,
+      llmClientManager: this.llmClientManager,
+      toolRegistry: null as any, // S2 uses createLangChainTools directly
+      toolContext: context,
+      recentHistorySummaries,
+      prevSearchedBlockIds,
+    });
+
     const engineCallbacks: EngineCallbacks = {
       onProgress: callbacks.onProgress || (() => {}),
       onContent: callbacks.onContent || (() => {}),
@@ -277,30 +429,122 @@ ${currentMemory}
       onError: callbacks.onError || (() => {}),
     };
 
-    // 读取长期记忆上下文（用于 S4 个性化输出）
-    const memoryContext = await this.memoryStore.getMemoryContext();
+    // LangSmith tracer
+    const langsmithTracer = this.options.langsmithEnabled && this.options.langsmithApiKey
+      ? getLangSmithTracer({
+          apiKey: this.options.langsmithApiKey,
+          projectName: this.options.langsmithProject,
+        })
+      : null;
 
-    // 创建 SharedContext
-    const ctx = createSharedContext({
-      indexId: context.indexId || '',
-      pdfName: context.pdfName || '',
-      rawUserQuery: userMessage,
-      chatHistory: [],
-      markdownFiles: context.markdownFiles,
-      abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,  // 全书摘要
-      memoryContext,  // 长期记忆
-      // 传递引擎依赖
-      llmClientManager: this.llmClientManager,
-      toolRegistry: toolRegistry,
+    if (langsmithTracer) {
+      log('[FrontendAgent] LangSmith tracing 已启用');
+    }
+
+    return {
+      thread_id: threadId,
+      fastModel: models.fast,
+      mainModel: models.main,
+      sharedContext: ctx,
+      chatHistory: cleanHistory,
       toolContext: context,
-    });
+      callbacks: engineCallbacks,
+      enableHumanReview: this.options.enableHumanReview ?? false,
+      _langsmithTracer: langsmithTracer,
+    };
+  }
 
-    // 运行认知引擎
-    await runCognitiveEngine(ctx, engineCallbacks);
+  /**
+   * 处理 LangGraph 流式输出（updates 模式）。
+   *
+   * streamMode: "updates" 产生的 chunk 格式：
+   * - 正常节点: { nodeName: { field1: value1, ... } }
+   * - interrupt: { __interrupt__: [{ value: { nodeId, content, question } }] }
+   */
 
-    // 返回更新后的消息历史
-    return ctx.chatHistory;
+  /**
+   * 节点名到用户友好文案的映射
+   */
+  private static readonly NODE_STATUS_MAP: Record<string, string> = {
+    router: '正在理解你的问题...',
+    inspectional: '正在翻阅目录，锁定相关章节...',
+    analytical: '正在深度分析原文...',
+    formatter: '正在整理笔记...',
+  };
+
+  private static getNodeStatus(nodeName: string): string {
+    return FrontendAgent.NODE_STATUS_MAP[nodeName] || `正在处理...`;
+  }
+
+  private async processGraphStream(
+    stream: AsyncIterable<unknown>,
+    callbacks: AgentLoopOptions,
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    const onProgress = callbacks.onProgress || (() => {});
+    const onContent = callbacks.onContent || (() => {});
+
+    let formattedOutput = '';
+    let interruptedNode: { nodeId: string; content: string } | undefined;
+
+    for await (const chunk of stream) {
+      if (chunk == null || typeof chunk !== 'object') continue;
+
+      const record = chunk as Record<string, any>;
+
+      // 检测 interrupt（HITL）
+      if ('__interrupt__' in record) {
+        const interrupts = record.__interrupt__;
+        if (Array.isArray(interrupts) && interrupts.length > 0) {
+          const interruptValue = interrupts[0]?.value;
+          if (interruptValue) {
+            interruptedNode = {
+              nodeId: interruptValue.nodeId || 'unknown',
+              content: interruptValue.content || interruptValue.question || '',
+            };
+          }
+        }
+        break;
+      }
+
+      // 正常节点更新: { nodeName: stateUpdate }
+      const nodeNames = Object.keys(record);
+      for (const nodeName of nodeNames) {
+        const stateUpdate = record[nodeName];
+        if (stateUpdate == null) continue;
+
+        onProgress(FrontendAgent.getNodeStatus(nodeName));
+
+        // 收集格式化输出
+        if (stateUpdate.formattedOutput) {
+          formattedOutput = stateUpdate.formattedOutput;
+          onContent(formattedOutput);
+        }
+      }
+    }
+
+    if (interruptedNode) {
+      return { messages: [], interrupted: interruptedNode };
+    }
+
+    callbacks.onComplete?.();
+
+    const resultMessages: ChatMessage[] = [];
+    if (formattedOutput) {
+      resultMessages.push({ role: 'assistant', content: formattedOutput });
+    }
+
+    return { messages: resultMessages };
+  }
+
+  async chat(
+    userMessage: string,
+    context: ToolContext,
+    callbacks: AgentLoopOptions
+  ): Promise<ChatMessage[]> {
+    await this.initialize();
+
+    const result = await this.runGraphEngine(userMessage, context, callbacks);
+    return result.messages;
   }
 
   async continueChat(
@@ -311,43 +555,8 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    const toolRegistry = createToolRegistry(this.skillLoader, context);
-
-    const engineCallbacks: EngineCallbacks = {
-      onProgress: callbacks.onProgress || (() => {}),
-      onContent: callbacks.onContent || (() => {}),
-      onReasoning: callbacks.onReasoning,
-      onComplete: callbacks.onComplete || (() => {}),
-      onError: callbacks.onError || (() => {}),
-    };
-
-    const cleanHistory = history.filter(m => m.role === 'user' || m.role === 'assistant');
-
-    const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
-
-    const prevSearchedBlockIds = extractPrevBlockIds(cleanHistory);
-
-    const memoryContext = await this.memoryStore.getMemoryContext();
-
-    const ctx = createSharedContext({
-      indexId: context.indexId || '',
-      pdfName: context.pdfName || '',
-      rawUserQuery: userMessage,
-      chatHistory: cleanHistory,
-      markdownFiles: context.markdownFiles,
-      abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,
-      memoryContext,
-      llmClientManager: this.llmClientManager,
-      toolRegistry: toolRegistry,
-      toolContext: context,
-      recentHistorySummaries,
-      prevSearchedBlockIds,
-    });
-
-    await runCognitiveEngine(ctx, engineCallbacks);
-
-    return ctx.chatHistory;
+    const result = await this.runGraphEngine(userMessage, context, callbacks, history);
+    return result.messages;
   }
 
   /**
@@ -372,8 +581,6 @@ ${currentMemory}
    * 重载用户上下文（重新加载 MEMORY.md）
    */
   async reloadContext(): Promise<void> {
-    // ContextBuilder 每次调用都会重新读取 MEMORY.md
-    // 这里只需要刷新 memoryStore 的缓存（如果有的话）
     log('[FrontendAgent] User context will be refreshed on next prompt');
   }
 
@@ -393,19 +600,15 @@ ${currentMemory}
 
   /**
    * 初始化并设置 SubagentManager
-   *
-   * 必须在 chat/continueChat 之前调用，传入 ToolContext
-   * SubagentManager 需要 ToolContext 来访问文档信息
    */
   setupSubagentManager(context: ToolContext): void {
-    const toolRegistry = createToolRegistry(this.skillLoader, context);
     const manager = new SubagentManager(
       this.llmClientManager.getMainClient(),
-      toolRegistry,
+      null as any, // toolRegistry - SubagentManager uses its own system
       context,
       {},
       undefined,
-      undefined // traceCtx - will be set per-session
+      undefined
     );
     setSubagentManager(manager);
     log('[FrontendAgent] SubagentManager 已初始化');

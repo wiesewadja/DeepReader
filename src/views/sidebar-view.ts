@@ -419,9 +419,10 @@ export class SidebarView extends ItemView {
         }
 
         // 将过滤后的消息添加到 UI
+        let lastUserContent = '';
         displayMessages.forEach((msg, index) => {
             try {
-                const msgData = {
+                const msgData: any = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
                     content: msg.content || '',
@@ -429,6 +430,11 @@ export class SidebarView extends ItemView {
                     timestamp: msg.timestamp || new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
+                if (msg.role === 'user') {
+                    lastUserContent = msg.content || '';
+                } else if (msg.role === 'assistant' && lastUserContent) {
+                    msgData.question = lastUserContent;
+                }
                 this.messageList!.addMessage(msgData);
             } catch (e) {
                 warn(`[DeepPDF] Failed to restore message:`, e);
@@ -491,7 +497,7 @@ export class SidebarView extends ItemView {
                 m.role !== 'system' &&
                 m.content && // 确保有内容
                 !m.content.includes("已切换到书籍") &&
-                m.content !== "📖 正在翻阅..." &&
+                m.content !== "📖 开始翻阅..." &&
                 m.content !== "🔍 正在跨书籍查阅..."
             )
             .map(m => {
@@ -1745,7 +1751,7 @@ export class SidebarView extends ItemView {
                 const aiMessageData: MessageData = {
                     id: aiMessageId,
                     role: "assistant" as MessageRole,
-                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
+                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 开始翻阅...",
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
@@ -1959,9 +1965,9 @@ export class SidebarView extends ItemView {
 
             // 回调函数
             const callbacks = {
-                // onContent: 接收流式内容
+                // onContent: 接收流式内容（text 是完整累积内容，不是 delta）
                 onContent: (text: string) => {
-                    fullContent += text;
+                    fullContent = text;
 
                     // 🕐 记录首字节响应时间（仅首次）
                     if (!firstContentLogged && fullContent.trim().length > 0) {
@@ -2158,31 +2164,24 @@ export class SidebarView extends ItemView {
             // 初始化 SubagentManager（用于 create_sub_agent 工具）
             this.frontendAgent.setupSubagentManager(context);
 
-            // 根据是否有历史选择不同的方法
-            let updatedHistory: import("../agent/types.js").ChatMessage[];
-            if (isNewConversation) {
-                // 新对话，使用 chat()
-                updatedHistory = await this.frontendAgent.chat(
-                    userMessage,
-                    context,
-                    callbacks
-                );
-            } else {
-                // 继续对话，使用 continueChat()
-                log('[DeepPDF] 继续对话，历史消息数:', this.agentChatHistory.length);
-                updatedHistory = await this.frontendAgent.continueChat(
-                    this.agentChatHistory,
-                    userMessage,
-                    context,
-                    callbacks
-                );
+            // LangGraph 引擎（唯一路径）
+            const result = await this.frontendAgent.runGraphEngine(
+                userMessage,
+                context,
+                callbacks,
+                this.agentChatHistory,
+            );
+
+            if (result.interrupted) {
+                // HITL: 显示审查 UI，等待用户确认
+                this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
+                return;
             }
 
-            // 更新对话历史
-            this.agentChatHistory = updatedHistory;
-            log('[DeepPDF] 对话历史已更新，消息数:', this.agentChatHistory.length);
-
-            // 保存到缓存（在 agentChatHistory 更新后调用）
+            // 正常完成：更新消息
+            if (result.messages.length > 0) {
+                this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
+            }
             await this.saveToCache();
 
         } catch (error) {
@@ -2193,6 +2192,81 @@ export class SidebarView extends ItemView {
                 isStreaming: false
             });
             // 恢复输入状态
+            this.isProcessing = false;
+            this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
+            this.chatInput?.setDisabled(false);
+        }
+    }
+
+    /**
+     * 显示 Human-in-the-Loop 审查提示。
+     *
+     * 使用 Obsidian Notice 提示用户，自动确认继续。
+     * 未来可扩展为带确认/拒绝按钮的卡片 UI。
+     */
+    private showHumanReviewPrompt(
+        nodeId: string,
+        content: string,
+        context: import("../agent/tools/types.js").ToolContext,
+        callbacks: import("../agent/agent-loop.js").AgentLoopOptions
+    ): void {
+        const nodeLabel = nodeId === 'analytical' ? 'S2 分析' : nodeId === 'formatter' ? 'S4 格式化' : nodeId;
+
+        // 显示审查内容
+        const messages = this.messageList?.getMessagesData() || [];
+        const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : '';
+        if (lastMsgId) {
+            const reviewContent = `${content}\n\n---\n**[${nodeLabel} 审查中]** 请确认结果是否满意。`;
+            this.messageList?.updateMessage(lastMsgId, {
+                content: reviewContent,
+                isStreaming: false,
+                isAgentMessage: true,
+            });
+        }
+
+        new Notice(`[${nodeLabel}] 审查中 — 自动确认继续`);
+        log(`[DeepPDF] HITL 审查: ${nodeLabel}, 自动确认`);
+
+        // 自动确认（未来可改为交互式确认）
+        this.handleHumanReviewResponse(true, '', context, callbacks);
+    }
+
+    /**
+     * 处理用户对 HITL 审查的响应。
+     */
+    private async handleHumanReviewResponse(
+        approved: boolean,
+        feedback: string,
+        context: import("../agent/tools/types.js").ToolContext,
+        callbacks: import("../agent/agent-loop.js").AgentLoopOptions
+    ): Promise<void> {
+        try {
+            const result = await this.frontendAgent!.resumeGraphExecution(
+                approved,
+                feedback,
+                context,
+                callbacks
+            );
+
+            if (result.interrupted) {
+                // 再次中断（例如 formatter 节点的 interrupt）
+                this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
+                return;
+            }
+            if (result.messages.length > 0) {
+                const lastAiMsg = result.messages[result.messages.length - 1];
+                this.agentChatHistory.push(lastAiMsg);
+            }
+            await this.saveToCache();
+
+            // 恢复输入状态
+            this.isProcessing = false;
+            this.isAiStreaming = false;
+            this.chatInput?.setStreaming(false);
+            this.chatInput?.setDisabled(false);
+        } catch (error) {
+            logError('[DeepPDF] HITL 恢复错误:', error);
             this.isProcessing = false;
             this.isAiStreaming = false;
             this.chatInput?.setStreaming(false);

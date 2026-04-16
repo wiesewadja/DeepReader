@@ -991,3 +991,221 @@
 	background: linear-gradient(to bottom, transparent, var(--deeppdf-bg-card));
 	pointer-events: none;
 }
+
+/* ==================== 全屏展示按钮 ==================== */
+
+.deeppdf-message-fullscreen-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	padding: 4px;
+	border-radius: 4px;
+	opacity: 0;
+	transition: opacity 0.2s, color 0.2s;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.deeppdf-message-bubble:hover .deeppdf-message-fullscreen-btn {
+	opacity: 1;
+}
+
+.deeppdf-message-fullscreen-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* ==================== 全屏覆盖层 ==================== */
+
+.deeppdf-fullscreen-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: var(--background-modifier-overlay);
+	z-index: 1000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0;
+	transition: opacity 0.3s ease;
+	pointer-events: auto;
+}
+
+.deeppdf-fullscreen-open {
+	opacity: 1;
+}
+
+.deeppdf-fullscreen-panel {
+	width: 96vw;
+	max-width: 1600px;
+	height: 92vh;
+	background: var(--background-primary);
+	border-radius: 16px;
+	display: flex;
+	flex-direction: column;
+	position: relative;
+	z-index: 2;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+	transform: scale(0.95);
+	transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.deeppdf-fullscreen-open .deeppdf-fullscreen-panel {
+	transform: scale(1);
+}
+
+.deeppdf-fullscreen-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 24px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.deeppdf-fullscreen-title {
+	font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+	font-size: 14px;
+	color: var(--text-muted);
+	letter-spacing: 0.5px;
+}
+
+.deeppdf-fullscreen-close-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	padding: 6px;
+	border-radius: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: color 0.2s, background 0.2s;
+}
+
+.deeppdf-fullscreen-close-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* 双栏容器 */
+.deeppdf-fullscreen-content-area {
+	flex: 1;
+	overflow: hidden;
+	padding: 28px 36px;
+	font-size: 18px;
+	line-height: 1.9;
+	font-family: "Charter", "Georgia", "Noto Serif SC", serif;
+	column-count: 2;
+	column-fill: auto;
+	column-gap: 48px;
+	column-rule: 1px solid var(--background-modifier-border);
+}
+
+/* 工具栏右侧 */
+.deeppdf-fullscreen-toolbar-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+}
+
+/* 工具栏左侧：标题 + 提问 */
+.deeppdf-fullscreen-toolbar-left {
+	display: flex;
+	align-items: baseline;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.deeppdf-fullscreen-title {
+	flex-shrink: 0;
+}
+
+.deeppdf-fullscreen-question {
+	color: var(--text-faint);
+	font-size: 13px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 1;
+	min-width: 0;
+}
+
+.deeppdf-fullscreen-question::before {
+	content: '· ';
+	color: var(--text-faint);
+}
+
+.deeppdf-fullscreen-page-info {
+	font-size: 13px;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	min-width: 40px;
+	text-align: center;
+}
+
+.deeppdf-fullscreen-nav-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	padding: 6px;
+	border-radius: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: color 0.2s, background 0.2s;
+}
+
+.deeppdf-fullscreen-nav-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.deeppdf-fullscreen-content-area a.internal-link {
+	text-decoration: none;
+	color: var(--text-accent);
+}
+
+.deeppdf-fullscreen-content-area a.internal-link:hover {
+	text-decoration: underline;
+}
+
+/* 墨迹拖尾画布：在内容之上、工具栏之下 */
+.deeppdf-ink-trail-canvas {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 2;
+}
+
+.deeppdf-fullscreen-toolbar {
+	z-index: 3;
+	position: relative;
+}
+
+.deeppdf-fullscreen-content-area {
+	z-index: 1;
+	position: relative;
+}
+
+/* 全屏模式下让 Obsidian hover popover 显示在最上层 */
+.deeppdf-fullscreen-overlay ~ .popover {
+	z-index: 1001 !important;
+}
+
+/* 打印优化 */
+@media print {
+	.deeppdf-fullscreen-overlay {
+		display: none;
+	}
+}

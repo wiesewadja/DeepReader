@@ -859,6 +859,14 @@ export default class DeepPDFPlugin extends Plugin {
                 langfuseSecretKey: this.settings.langfuseSecretKey || undefined,
                 langfuseBaseUrl: this.settings.langfuseBaseUrl || undefined,
                 langfuseEnabled: this.settings.langfuseEnabled,
+
+                // LangSmith 追踪配置（LangGraph 引擎专用）
+                langsmithApiKey: this.settings.langsmithApiKey || undefined,
+                langsmithProject: this.settings.langsmithProject || undefined,
+                langsmithEnabled: this.settings.langsmithEnabled,
+
+                // Human-in-the-Loop 设置
+                enableHumanReview: this.settings.enableHumanReview,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');
