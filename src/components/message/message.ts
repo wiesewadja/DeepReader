@@ -742,6 +742,8 @@ export class AIMessage extends Message {
 	private statusEl: HTMLElement | null = null;
 	// 折叠状态
 	private isCollapsed: boolean = false;
+	// 信笺图案
+	private patternClass: string = '';
 
 	constructor(
 		data: MessageData,
@@ -803,6 +805,7 @@ export class AIMessage extends Message {
 
 		// 随机选择背景图案（每次 AI 回复都是一封独特的信）
 		const patternClass = this.getRandomPatternClass();
+		this.patternClass = patternClass;
 		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai', patternClass] });
 
 		// Agent 消息标识 + 状态显示
@@ -820,16 +823,22 @@ export class AIMessage extends Message {
 			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
 		}
 
-		// 右侧折叠按钮（非流式时显示）
+		// 右侧按钮组（非流式时显示）
 		if (!this.data.isStreaming) {
 			const rightContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-right' });
+
+			// 全屏展示按钮
+			const fullscreenBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-fullscreen-btn' });
+			fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+			fullscreenBtn.title = "全屏展示";
+			fullscreenBtn.addEventListener('click', () => this.openFullscreen());
+
+			// 折叠按钮
 			const collapseBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-collapse-btn' });
 			if (this.isCollapsed) {
-				// 展开图标（向下箭头）
 				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 				collapseBtn.title = "展开";
 			} else {
-				// 折叠图标（向上箭头）
 				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
 				collapseBtn.title = "折叠";
 			}
@@ -1356,6 +1365,142 @@ export class AIMessage extends Message {
 		}
 
 		log(`[DeepPDF] Message collapsed: ${this.isCollapsed}`);
+	}
+
+	// ─── 全屏展示 ──────────────────────────────────────────────────────
+
+	private fullscreenOverlay: HTMLElement | null = null;
+	private fullscreenPage = 0;
+	private fullscreenPages: HTMLElement[][] = [];
+
+	private openFullscreen(): void {
+		if (this.fullscreenOverlay) return;
+		this.fullscreenPage = 0;
+		this.fullscreenPages = [];
+
+		// 创建覆盖层
+		const overlay = document.body.createEl('div', { cls: 'deeppdf-fullscreen-overlay' });
+
+		// 面板
+		const panel = overlay.createEl('div', { cls: 'deeppdf-fullscreen-panel' });
+
+		// 工具栏
+		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
+		toolbar.createEl('span', { cls: 'deeppdf-fullscreen-title', text: '奚童来信' });
+
+		// 右侧：页码 + 翻页 + 关闭
+		const toolbarRight = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-right' });
+		const pageInfo = toolbarRight.createEl('span', { cls: 'deeppdf-fullscreen-page-info' });
+		const prevBtn = toolbarRight.createEl('button', { cls: 'deeppdf-fullscreen-nav-btn' });
+		prevBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+		prevBtn.title = "上一页";
+		prevBtn.style.opacity = '0.3';
+		const nextBtn = toolbarRight.createEl('button', { cls: 'deeppdf-fullscreen-nav-btn' });
+		nextBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+		nextBtn.title = "下一页";
+		const closeBtn = toolbarRight.createEl('button', { cls: 'deeppdf-fullscreen-close-btn' });
+		closeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+		closeBtn.title = "关闭";
+
+		// 内容区域：CSS column-count:2 自动分列，浏览器填满列不浪费空间
+		const contentArea = panel.createEl('div', { cls: ['deeppdf-fullscreen-content-area', this.patternClass] });
+
+		// 隐藏的测量容器，继承 contentArea 的样式
+		const tempDiv = contentArea.createEl('div', { cls: ['deeppdf-fullscreen-content-area'] });
+		tempDiv.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;';
+
+		const { cleanedContent } = parseAgentContent(this.data.content);
+
+		const paginate = () => {
+			const children = Array.from(tempDiv.children) as HTMLElement[];
+			if (children.length === 0) { tempDiv.remove(); return; }
+
+			requestAnimationFrame(() => {
+				tempDiv.remove();
+
+				// 贪心分页：CSS columns 自动分列，用 scrollWidth 检测是否超出 2 列
+				const pages: HTMLElement[][] = [];
+				let remaining = [...children];
+
+				while (remaining.length > 0) {
+					contentArea.empty();
+					for (const el of remaining) contentArea.appendChild(el);
+
+					// 如果不溢出（scrollWidth <= clientWidth），所有内容一页搞定
+					if (contentArea.scrollWidth <= contentArea.clientWidth) {
+						pages.push([...remaining]);
+						remaining = [];
+						break;
+					}
+
+					// 溢出了，从末尾移除元素直到不溢出
+					while (contentArea.scrollWidth > contentArea.clientWidth && contentArea.children.length > 1) {
+						const last = contentArea.children[contentArea.children.length - 1] as HTMLElement;
+						contentArea.removeChild(last);
+					}
+					const pageElems = Array.from(contentArea.children) as HTMLElement[];
+
+					// 剩余元素为下一页
+					remaining = remaining.slice(pageElems.length);
+					pages.push(pageElems);
+				}
+
+				this.fullscreenPages = pages as any;
+
+				const renderPage = (idx: number) => {
+					contentArea.empty();
+					const pg = pages[idx];
+					if (!pg) return;
+
+					for (const el of pg) contentArea.appendChild(el);
+					setupInternalLinks(contentArea, this.app!, false, this.observers);
+
+					pageInfo.textContent = pages.length > 1 ? `${idx + 1} / ${pages.length}` : '';
+					prevBtn.style.opacity = idx > 0 ? '1' : '0.3';
+					nextBtn.style.opacity = idx < pages.length - 1 ? '1' : '0.3';
+					prevBtn.style.pointerEvents = idx > 0 ? 'auto' : 'none';
+					nextBtn.style.pointerEvents = idx < pages.length - 1 ? 'auto' : 'none';
+				};
+
+				renderPage(0);
+
+				prevBtn.addEventListener('click', () => {
+					if (this.fullscreenPage > 0) { this.fullscreenPage--; renderPage(this.fullscreenPage); }
+				});
+				nextBtn.addEventListener('click', () => {
+					if (this.fullscreenPage < pages.length - 1) { this.fullscreenPage++; renderPage(this.fullscreenPage); }
+				});
+			});
+		};
+
+		if (this.app) {
+			const sourcePath = this.data.pdfName || '';
+			MarkdownRenderer.render(this.app, cleanedContent, tempDiv, sourcePath, new Component()).then(() => paginate());
+		} else {
+			tempDiv.innerHTML = this.escapeHtml(cleanedContent);
+			paginate();
+		}
+
+		// 事件
+		const close = () => this.closeFullscreen();
+		closeBtn.addEventListener('click', close);
+		overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+		const keyHandler = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { close(); document.removeEventListener('keydown', keyHandler); }
+			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { nextBtn.click(); }
+			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { prevBtn.click(); }
+		};
+		document.addEventListener('keydown', keyHandler);
+
+		this.fullscreenOverlay = overlay;
+		requestAnimationFrame(() => overlay.addClass('deeppdf-fullscreen-open'));
+	}
+	private closeFullscreen(): void {
+		if (!this.fullscreenOverlay) return;
+		this.fullscreenOverlay.removeClass('deeppdf-fullscreen-open');
+		const overlay = this.fullscreenOverlay;
+		this.fullscreenOverlay = null;
+		setTimeout(() => overlay.remove(), 300);
 	}
 
 	/**
