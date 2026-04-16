@@ -1,4 +1,4 @@
-import type { EmbeddingOptions } from "./vault/types.js";
+import type { EmbeddingOptions, RerankerOptions } from "./vault/types.js";
 
 /**
  * Single book index options
@@ -214,16 +214,14 @@ export interface BM25Data {
 export interface BookSearchOptionsV2 {
   filePath: string;
   query: string;
-  topK?: number;                    // 默认 5
-  embedding?: EmbeddingOptions;     // 向量配置（可选）
-  scopeNodeIds?: string[];          // S1 圈定的章节范围（可选）
-  reranker?: any;                   // 重排配置（可选）
-  treeSearch?: boolean;             // 是否启用 LLM 树搜索
-  llmClient?: any;                  // LLM 客户端（树搜索需要）
-  maxContentLength?: number;        // 每个结果最大内容长度，默认 8000
-  /** 直接提供 bookId，避免从 filePath 重新计算（推荐） */
+  topK?: number;
+  embedding?: EmbeddingOptions;
+  scopeNodeIds?: string[];
+  reranker?: RerankerOptions;
+  treeSearch?: boolean;
+  llmClient?: any;
+  maxContentLength?: number;
   bookId?: string;
-  /** 直接提供 vaultPath，避免从 filePath 推导（推荐） */
   vaultPath?: string;
 }
 

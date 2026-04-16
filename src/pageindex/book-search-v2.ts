@@ -33,7 +33,7 @@ import {
   generateEmbeddings,
   cosineSearch,
 } from "./vault/vectors.js";
-import type { EmbeddingOptions } from "./vault/types.js";
+import type { EmbeddingOptions, RerankerOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger";
 import {
   loadPropositions,
@@ -100,81 +100,36 @@ export async function searchBookV2(
   // ── Stage 1: Dynamic recall K ──────────────────────────────────────────
   const recallK = computeDynamicRecallK(options.query);
   const expandedK = options.scopeNodeIds && options.scopeNodeIds.length > 0
-    ? recallK * 5   // Expand for scope filtering
+    ? recallK * 5
     : recallK;
 
-  // ── Stage 2: BM25 search ───────────────────────────────────────────────
-  const bm25Results = searchBM25(options.query, bm25Index, expandedK);
+  // ── Stage 2-3.5: Multi-path parallel recall ───────────────────────────
+  // 并行执行 BM25 + Vector + Proposition 三路召回
+  const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
+    // Path 1: BM25 keyword search
+    Promise.resolve(searchBM25(options.query, bm25Index, expandedK)),
+    
+    // Path 2: Vector semantic search
+    options.embedding ? asyncVectorSearch(indexDir, options.query, options.embedding, expandedK) : Promise.resolve({ scores: new Map(), vector: null }),
+    
+    // Path 3: Proposition cards search
+    options.embedding ? asyncPropositionSearch(indexDir, options.query, options.embedding, topK) : Promise.resolve(new Map()),
+  ]);
+
+  // Extract BM25 scores
   const bm25Scores = new Map<string, number>();
   for (const r of bm25Results) {
     bm25Scores.set(r.nodeId, r.score);
   }
 
-  // ── Stage 3: Vector semantic search (optional) ─────────────────────────
-  let vectorScores = new Map<string, number>();
-  let queryVector: number[] | null = null;
+  // Extract Vector scores
+  const vectorScores = vectorSearchResult.scores;
+  const queryVector = vectorSearchResult.vector;
 
-  if (options.embedding) {
-    try {
-      const vectorStore = await loadVectorStore(indexDir);
-      if (vectorStore && vectorStore.meta.count > 0) {
-        queryVector = await generateEmbedding(options.query, options.embedding);
-        const vectorResults = await cosineSearch(queryVector, vectorStore, expandedK);
-        for (const r of vectorResults) {
-          vectorScores.set(r.nodeId, r.score);
-        }
-      }
-    } catch (error) {
-      piLog(`[book-search-v2] Vector search failed: ${error}`);
-      vectorScores = new Map();
-    }
-  }
+  // Proposition matches already in map
+  const propositionMatches = propSearchResult;
 
-  // ── Stage 3.5: Proposition cards search (optional) ────────────────────
-  const propositionMatches = new Map<string, PropositionCard[]>();
-
-  if (options.embedding) {
-    try {
-      const propositionsData = await loadPropositions(indexDir);
-      const propVectorStore = await loadPropVectorStore(indexDir);
-
-      if (propositionsData && propVectorStore && propositionsData.totalCards > 0) {
-        const queryVec = await generateEmbedding(options.query, options.embedding);
-        const queryFloat32 = new Float32Array(queryVec);
-
-        const scores: Array<{ cardId: string; score: number }> = [];
-        for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
-          if (slot.deleted) continue;
-
-          const offset = slot.slotIndex * propVectorStore.meta.dimensions;
-          const cardVector = propVectorStore.vectors.subarray(
-            offset,
-            offset + propVectorStore.meta.dimensions
-          );
-
-          const score = cosineSimilarity(queryFloat32, cardVector);
-          scores.push({ cardId, score });
-        }
-
-        const topScores = scores.sort((a, b) => b.score - a.score).slice(0, topK * 3);
-
-        for (const s of topScores) {
-          const card = propositionsData.cards.find(c => c.id === s.cardId);
-          if (card && s.score > 0.5) {
-            const nodeId = card.sourceNodeId;
-            if (!propositionMatches.has(nodeId)) {
-              propositionMatches.set(nodeId, []);
-            }
-            propositionMatches.get(nodeId)!.push(card);
-          }
-        }
-
-        piLog(`[book-search-v2] Proposition search: ${propositionMatches.size} nodes with matches`);
-      }
-    } catch (error) {
-      piLog(`[book-search-v2] Proposition search failed: ${error}`);
-    }
-  }
+  piLog(`[book-search-v2] Parallel recall: BM25=${bm25Results.length}, Vector=${vectorScores.size}, Proposition=${propositionMatches.size} nodes`);
 
   // ── Stage 4: Scope filter ──────────────────────────────────────────────
   const hasVectors = vectorScores.size > 0;
@@ -223,13 +178,38 @@ export async function searchBookV2(
   }
 
   scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
-  const topResults = scoredResults.slice(0, topK);
-
-  // ── Stage 6: LLM tree search (optional, not yet implemented) ───────────
+  
+  // ── Stage 6: LLM tree search (optional) ────────────────────────────────
   // TODO: implement when llmClient is available
 
-  // ── Stage 7: Cross-encoder rerank (optional, not yet implemented) ──────
-  // TODO: implement when reranker is available
+  // ── Stage 7: Cross-encoder rerank (optional) ───────────────────────────
+  if (options.reranker && scoredResults.length > 0) {
+    try {
+      const rerankScores = await crossEncoderRerank(
+        options.query,
+        scoredResults.slice(0, Math.min(scoredResults.length, options.reranker.maxCandidates || 20)),
+        treeData,
+        vaultPath,
+        options.reranker
+      );
+
+      // Apply rerank scores
+      const rerankWeight = options.reranker.weight || 0.7;
+      for (const r of scoredResults) {
+        const rerankScore = rerankScores.get(r.nodeId) || 0;
+        r.fusedScore = rerankWeight * rerankScore + (1 - rerankWeight) * r.fusedScore;
+      }
+
+      // Re-sort after rerank
+      scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
+      
+      piLog(`[book-search-v2] Reranked ${rerankScores.size} results`);
+    } catch (error) {
+      piLog(`[book-search-v2] Rerank failed: ${error}`);
+    }
+  }
+
+  const topResults = scoredResults.slice(0, topK);
 
   // ── Stage 8: Matched block location ────────────────────────────────────
   const cacheDir = path.join(indexDir, "paragraph-vectors");
@@ -246,7 +226,7 @@ export async function searchBookV2(
     let matchedBlocks: MatchedBlock[];
 
     if (matchedCards.length > 0) {
-      matchedBlocks = matchedCards.slice(0, 3).map(card => ({
+      matchedBlocks = matchedCards.slice(0, 3).map((card: PropositionCard) => ({
         blockId: card.id,
         content: `${card.context} ^${card.id}\n\n【${card.type}】${card.answer}`,
       }));
@@ -632,4 +612,165 @@ async function saveParagraphVectors(
   } catch (err) {
     piLog(`[book-search-v2] Failed to save paragraph vectors: ${err}`);
   }
+}
+
+// ─── Multi-path parallel recall helpers ───────────────────────────────────
+
+async function asyncVectorSearch(
+  indexDir: string,
+  query: string,
+  embedding: EmbeddingOptions,
+  topK: number
+): Promise<{ scores: Map<string, number>; vector: number[] | null }> {
+  try {
+    const vectorStore = await loadVectorStore(indexDir);
+    if (!vectorStore || vectorStore.meta.count === 0) {
+      return { scores: new Map(), vector: null };
+    }
+
+    const queryVector = await generateEmbedding(query, embedding);
+    const vectorResults = await cosineSearch(queryVector, vectorStore, topK);
+    
+    const scores = new Map<string, number>();
+    for (const r of vectorResults) {
+      scores.set(r.nodeId, r.score);
+    }
+    
+    return { scores, vector: queryVector };
+  } catch (error) {
+    piLog(`[book-search-v2] Vector search failed: ${error}`);
+    return { scores: new Map(), vector: null };
+  }
+}
+
+async function asyncPropositionSearch(
+  indexDir: string,
+  query: string,
+  embedding: EmbeddingOptions,
+  topK: number
+): Promise<Map<string, PropositionCard[]>> {
+  const propositionMatches = new Map<string, PropositionCard[]>();
+  
+  try {
+    const propositionsData = await loadPropositions(indexDir);
+    const propVectorStore = await loadPropVectorStore(indexDir);
+
+    if (!propositionsData || !propVectorStore || propositionsData.totalCards === 0) {
+      return propositionMatches;
+    }
+
+    const queryVec = await generateEmbedding(query, embedding);
+    const queryFloat32 = new Float32Array(queryVec);
+
+    const scores: Array<{ cardId: string; score: number }> = [];
+    for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
+      if (slot.deleted) continue;
+
+      const offset = slot.slotIndex * propVectorStore.meta.dimensions;
+      const cardVector = propVectorStore.vectors.subarray(
+        offset,
+        offset + propVectorStore.meta.dimensions
+      );
+
+      const score = cosineSimilarity(queryFloat32, cardVector);
+      scores.push({ cardId, score });
+    }
+
+    const topScores = scores.sort((a, b) => b.score - a.score).slice(0, topK * 3);
+
+    for (const s of topScores) {
+      const card = propositionsData.cards.find(c => c.id === s.cardId);
+      if (card && s.score > 0.5) {
+        const nodeId = card.sourceNodeId;
+        if (!propositionMatches.has(nodeId)) {
+          propositionMatches.set(nodeId, []);
+        }
+        propositionMatches.get(nodeId)!.push(card);
+      }
+    }
+  } catch (error) {
+    piLog(`[book-search-v2] Proposition search failed: ${error}`);
+  }
+  
+  return propositionMatches;
+}
+
+// ─── Stage 7: Cross-encoder rerank ────────────────────────────────────────
+
+async function crossEncoderRerank(
+  query: string,
+  results: Array<{ nodeId: string; fusedScore: number }>,
+  treeData: TreeData,
+  vaultPath: string,
+  reranker: RerankerOptions
+): Promise<Map<string, number>> {
+  const rerankScores = new Map<string, number>();
+  
+  if (results.length === 0) return rerankScores;
+
+  // Collect texts for reranking
+  const texts: string[] = [];
+  const nodeIds: string[] = [];
+  
+  for (const r of results) {
+    const fileName = treeData.nodeFileMap?.[r.nodeId];
+    if (!fileName) continue;
+    
+    const fullPath = path.join(vaultPath, "DeepReader", treeData.exportName || treeData.title, fileName);
+    
+    try {
+      let content = await fs.readFile(fullPath, "utf-8");
+      content = content.replace(/^---[\s\S]*?---\n/, "").slice(0, 500);
+      texts.push(content);
+      nodeIds.push(r.nodeId);
+    } catch {
+      texts.push("");
+      nodeIds.push(r.nodeId);
+    }
+  }
+
+  // Call reranker API
+  const provider = reranker.provider || "lmstudio";
+  const baseUrl = reranker.baseUrl || (provider === "lmstudio" ? "http://localhost:1234/v1" : provider === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1");
+  const model = reranker.model || "BAAI/bge-reranker-v2-m3";
+  const apiKey = reranker.apiKey || (provider === "lmstudio" ? "lm-studio" : "");
+
+  try {
+    // Build rerank request
+    const response = await fetch(`${baseUrl}/rerank`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        query,
+        documents: texts,
+        top_n: texts.length,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Rerank API error: ${response.status}`);
+    }
+
+    const data = await response.json() as { results: Array<{ index: number; relevance_score: number }> };
+    
+    for (const r of data.results) {
+      if (r.index >= 0 && r.index < nodeIds.length) {
+        rerankScores.set(nodeIds[r.index], r.relevance_score);
+      }
+    }
+  } catch (error) {
+    // Fallback: use cosine similarity if reranker unavailable
+    piLog(`[book-search-v2] Reranker unavailable, using fallback: ${error}`);
+    
+    for (let i = 0; i < nodeIds.length; i++) {
+      // Simple fallback: reuse fused score
+      rerankScores.set(nodeIds[i], results[i].fusedScore);
+    }
+  }
+
+  return rerankScores;
 }
