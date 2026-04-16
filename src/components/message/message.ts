@@ -1493,11 +1493,11 @@ export class AIMessage extends Message {
 		panel.addEventListener('mousedown', (e) => e.stopPropagation());
 		panel.addEventListener('click', (e) => e.stopPropagation());
 		const keyHandler = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') { close(); document.removeEventListener('keydown', keyHandler); }
-			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { nextBtn.click(); }
-			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { prevBtn.click(); }
+			if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); document.removeEventListener('keydown', keyHandler, true); }
+			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); nextBtn.click(); }
+			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); prevBtn.click(); }
 		};
-		document.addEventListener('keydown', keyHandler);
+		document.addEventListener('keydown', keyHandler, true);
 
 		this.fullscreenOverlay = overlay;
 		requestAnimationFrame(() => overlay.addClass('deeppdf-fullscreen-open'));
