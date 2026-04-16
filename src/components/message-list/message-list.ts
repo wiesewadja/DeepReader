@@ -229,10 +229,7 @@ export class MessageList extends Component {
 		// 更新消息
 		message.update(updates);
 
-		// 始终滚动到底部：
-		// - 流式更新时：显示最新内容
-		// - 流式完成时（isStreaming: false）：确保 AI 回复气泡不会遮盖输入框
-		this.scrollToBottom();
+		// 不再自动滚动到底部，由用户手动控制滚动位置
 	}
 
 	/**

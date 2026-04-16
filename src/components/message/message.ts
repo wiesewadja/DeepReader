@@ -843,12 +843,6 @@ export class AIMessage extends Message {
 		if (!this.data.isStreaming) {
 			const rightContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-right' });
 
-			// 全屏展示按钮
-			const fullscreenBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-fullscreen-btn' });
-			fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
-			fullscreenBtn.title = "全屏展示";
-			fullscreenBtn.addEventListener('click', () => this.openFullscreen());
-
 			// 折叠按钮
 			const collapseBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-collapse-btn' });
 			if (this.isCollapsed) {
@@ -1285,6 +1279,14 @@ export class AIMessage extends Message {
 		if (hasActions || isAssistant) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
 
+			// AI 消息：左下角全屏按钮
+			if (isAssistant) {
+				const fullscreenBtn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+				fullscreenBtn.title = "全屏展示";
+				fullscreenBtn.addEventListener('click', () => this.openFullscreen());
+			}
+
 			// AI 消息：添加"跳转到顶部"按钮
 			if (isAssistant) {
 				const scrollToTopBtn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
@@ -1397,8 +1399,8 @@ export class AIMessage extends Message {
 		// 创建覆盖层
 		const overlay = document.body.createEl('div', { cls: 'deeppdf-fullscreen-overlay' });
 
-		// 面板
-		const panel = overlay.createEl('div', { cls: 'deeppdf-fullscreen-panel' });
+		// 面板（继承 AI 气泡的背景图案）
+		const panel = overlay.createEl('div', { cls: ['deeppdf-fullscreen-panel', this.patternClass] });
 
 		// 工具栏
 		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
@@ -1508,12 +1510,12 @@ export class AIMessage extends Message {
 		// 阻止面板点击穿透到 PDF 阅读器
 		panel.addEventListener('mousedown', (e) => e.stopPropagation());
 		panel.addEventListener('click', (e) => e.stopPropagation());
-		const keyHandler = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); document.removeEventListener('keydown', keyHandler, true); }
+		this.fullscreenKeyHandler = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); }
 			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); nextBtn.click(); }
 			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); prevBtn.click(); }
 		};
-		document.addEventListener('keydown', keyHandler, true);
+		document.addEventListener('keydown', this.fullscreenKeyHandler, true);
 
 		this.fullscreenOverlay = overlay;
 		requestAnimationFrame(() => overlay.addClass('deeppdf-fullscreen-open'));
@@ -1523,12 +1525,18 @@ export class AIMessage extends Message {
 	}
 	private closeFullscreen(): void {
 		if (!this.fullscreenOverlay) return;
+		// 移除全屏键盘处理器（修复箭头键被永久拦截的 bug）
+		if (this.fullscreenKeyHandler) {
+			document.removeEventListener('keydown', this.fullscreenKeyHandler, true);
+			this.fullscreenKeyHandler = null;
+		}
 		this.fullscreenOverlay.removeClass('deeppdf-fullscreen-open');
 		const overlay = this.fullscreenOverlay;
 		this.fullscreenOverlay = null;
 		setTimeout(() => overlay.remove(), 300);
 	}
 
+	private fullscreenKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private inkTrailCanvas: HTMLCanvasElement | null = null;
 	private inkTrailCtx: CanvasRenderingContext2D | null = null;
 	private inkTrailRAF: number = 0;

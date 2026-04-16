@@ -1751,7 +1751,7 @@ export class SidebarView extends ItemView {
                 const aiMessageData: MessageData = {
                     id: aiMessageId,
                     role: "assistant" as MessageRole,
-                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 开始翻阅...",
+                    content: "",
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
