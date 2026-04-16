@@ -103,17 +103,25 @@ export async function searchBookV2(
     ? recallK * 5
     : recallK;
 
+  // ── Pre-compute query embedding (避免重复调用) ──────────────────────
+  let precomputedEmbedding: number[] | null = null;
+  if (options.embedding && options.embedding.provider !== 'local') {
+    try {
+      precomputedEmbedding = await generateEmbedding(options.query, options.embedding);
+    } catch (error) {
+      piLog(`[book-search-v2] Query embedding failed: ${error}`);
+    }
+  }
+
   // ── Stage 2-3.5: Multi-path parallel recall ───────────────────────────
-  // 并行执行 BM25 + Vector + Proposition 三路召回
   const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
-    // Path 1: BM25 keyword search
-    Promise.resolve(searchBM25(options.query, bm25Index, expandedK)),
-    
-    // Path 2: Vector semantic search
-    options.embedding ? asyncVectorSearch(indexDir, options.query, options.embedding, expandedK) : Promise.resolve({ scores: new Map(), vector: null }),
-    
-    // Path 3: Proposition cards search
-    options.embedding ? asyncPropositionSearch(indexDir, options.query, options.embedding, topK) : Promise.resolve(new Map()),
+    searchBM25(options.query, bm25Index, expandedK),
+    precomputedEmbedding 
+      ? asyncVectorSearch(indexDir, precomputedEmbedding, expandedK) 
+      : Promise.resolve({ scores: new Map(), vector: null }),
+    precomputedEmbedding 
+      ? asyncPropositionSearch(indexDir, precomputedEmbedding, expandedK) 
+      : Promise.resolve(new Map()),
   ]);
 
   // Extract BM25 scores
@@ -185,22 +193,25 @@ export async function searchBookV2(
   // ── Stage 7: Cross-encoder rerank (optional) ───────────────────────────
   if (options.reranker && scoredResults.length > 0) {
     try {
+      const rerankCandidates = scoredResults.slice(0, Math.min(scoredResults.length, options.reranker.maxCandidates || 20));
       const rerankScores = await crossEncoderRerank(
         options.query,
-        scoredResults.slice(0, Math.min(scoredResults.length, options.reranker.maxCandidates || 20)),
+        rerankCandidates,
         treeData,
         vaultPath,
         options.reranker
       );
 
-      // Apply rerank scores
       const rerankWeight = options.reranker.weight || 0.7;
+      const rerankedNodeIds = new Set(rerankScores.keys());
+      
       for (const r of scoredResults) {
-        const rerankScore = rerankScores.get(r.nodeId) || 0;
-        r.fusedScore = rerankWeight * rerankScore + (1 - rerankWeight) * r.fusedScore;
+        if (rerankedNodeIds.has(r.nodeId)) {
+          const rerankScore = rerankScores.get(r.nodeId) || 0;
+          r.fusedScore = rerankWeight * rerankScore + (1 - rerankWeight) * r.fusedScore;
+        }
       }
 
-      // Re-sort after rerank
       scoredResults.sort((a, b) => b.fusedScore - a.fusedScore);
       
       piLog(`[book-search-v2] Reranked ${rerankScores.size} results`);
@@ -618,8 +629,7 @@ async function saveParagraphVectors(
 
 async function asyncVectorSearch(
   indexDir: string,
-  query: string,
-  embedding: EmbeddingOptions,
+  queryVector: number[],
   topK: number
 ): Promise<{ scores: Map<string, number>; vector: number[] | null }> {
   try {
@@ -628,7 +638,6 @@ async function asyncVectorSearch(
       return { scores: new Map(), vector: null };
     }
 
-    const queryVector = await generateEmbedding(query, embedding);
     const vectorResults = await cosineSearch(queryVector, vectorStore, topK);
     
     const scores = new Map<string, number>();
@@ -645,9 +654,8 @@ async function asyncVectorSearch(
 
 async function asyncPropositionSearch(
   indexDir: string,
-  query: string,
-  embedding: EmbeddingOptions,
-  topK: number
+  queryVector: number[],
+  recallK: number
 ): Promise<Map<string, PropositionCard[]>> {
   const propositionMatches = new Map<string, PropositionCard[]>();
   
@@ -659,33 +667,29 @@ async function asyncPropositionSearch(
       return propositionMatches;
     }
 
-    const queryVec = await generateEmbedding(query, embedding);
-    const queryFloat32 = new Float32Array(queryVec);
+    const queryFloat32 = new Float32Array(queryVector);
+    const dimensions = propVectorStore.meta.dimensions;
 
     const scores: Array<{ cardId: string; score: number }> = [];
     for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
       if (slot.deleted) continue;
 
-      const offset = slot.slotIndex * propVectorStore.meta.dimensions;
-      const cardVector = propVectorStore.vectors.subarray(
-        offset,
-        offset + propVectorStore.meta.dimensions
-      );
-
+      const offset = slot.slotIndex * dimensions;
+      const cardVector = propVectorStore.vectors.subarray(offset, offset + dimensions);
       const score = cosineSimilarity(queryFloat32, cardVector);
       scores.push({ cardId, score });
     }
 
-    const topScores = scores.sort((a, b) => b.score - a.score).slice(0, topK * 3);
+    const topScores = scores.sort((a, b) => b.score - a.score).slice(0, recallK);
 
     for (const s of topScores) {
       const card = propositionsData.cards.find(c => c.id === s.cardId);
-      if (card && s.score > 0.5) {
+      if (card && s.score > 0.3) {
         const nodeId = card.sourceNodeId;
         if (!propositionMatches.has(nodeId)) {
           propositionMatches.set(nodeId, []);
         }
-        propositionMatches.get(nodeId)!.push(card);
+        propositionMatches.get(nodeId)!.push({ ...card, matchScore: s.score });
       }
     }
   } catch (error) {
@@ -708,7 +712,6 @@ async function crossEncoderRerank(
   
   if (results.length === 0) return rerankScores;
 
-  // Collect texts for reranking
   const texts: string[] = [];
   const nodeIds: string[] = [];
   
@@ -720,23 +723,24 @@ async function crossEncoderRerank(
     
     try {
       let content = await fs.readFile(fullPath, "utf-8");
-      content = content.replace(/^---[\s\S]*?---\n/, "").slice(0, 500);
-      texts.push(content);
-      nodeIds.push(r.nodeId);
+      content = content.replace(/^---[\s\S]*?---\n/, "").slice(0, 1500);
+      if (content.trim()) {
+        texts.push(content);
+        nodeIds.push(r.nodeId);
+      }
     } catch {
-      texts.push("");
-      nodeIds.push(r.nodeId);
+      piLog(`[book-search-v2] Failed to read ${fullPath}`);
     }
   }
 
-  // Call reranker API
+  if (texts.length === 0) return rerankScores;
+
   const provider = reranker.provider || "lmstudio";
   const baseUrl = reranker.baseUrl || (provider === "lmstudio" ? "http://localhost:1234/v1" : provider === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1");
   const model = reranker.model || "BAAI/bge-reranker-v2-m3";
   const apiKey = reranker.apiKey || (provider === "lmstudio" ? "lm-studio" : "");
 
   try {
-    // Build rerank request
     const response = await fetch(`${baseUrl}/rerank`, {
       method: "POST",
       headers: {
@@ -763,12 +767,10 @@ async function crossEncoderRerank(
       }
     }
   } catch (error) {
-    // Fallback: use cosine similarity if reranker unavailable
-    piLog(`[book-search-v2] Reranker unavailable, using fallback: ${error}`);
+    piLog(`[book-search-v2] Reranker unavailable: ${error}`);
     
     for (let i = 0; i < nodeIds.length; i++) {
-      // Simple fallback: reuse fused score
-      rerankScores.set(nodeIds[i], results[i].fusedScore);
+      rerankScores.set(nodeIds[i], results.find(r => r.nodeId === nodeIds[i])?.fusedScore || 0);
     }
   }
 

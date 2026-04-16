@@ -18,6 +18,7 @@ import type {
   PropositionIndexResult,
   CardType,
   TreeData,
+  TreeNode,
 } from "./book-types.js";
 import type { EmbeddingOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger.js";
@@ -221,35 +222,70 @@ export function parseCards(
   sourceNodeId: string
 ): PropositionCard[] {
   let jsonStr = response.trim();
-  if (jsonStr.startsWith("```json")) {
-    jsonStr = jsonStr.slice(7);
+  
+  const codeBlockMatch = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+  if (codeBlockMatch) {
+    jsonStr = codeBlockMatch[1].trim();
   }
-  if (jsonStr.startsWith("```")) {
-    jsonStr = jsonStr.slice(3);
+  
+  const jsonMatch = jsonStr.match(/\{[\s\S]*"cards"[\s\S]*\}/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[0];
   }
-  if (jsonStr.endsWith("```")) {
-    jsonStr = jsonStr.slice(0, -3);
-  }
-  jsonStr = jsonStr.trim();
 
   try {
-    const parsed = JSON.parse(jsonStr) as { cards: Array<{
-      type: string;
-      answer: string;
-      context: string;
-      tags: string[];
-    }> };
-
-    return parsed.cards.map((card, index) => ({
-      id: `card_${sourceNodeId}_${index + 1}`,
-      type: card.type as CardType,
-      answer: card.answer,
-      context: card.context,
-      tags: card.tags,
-      sourceNodeId,
-    }));
+    const parsed = JSON.parse(jsonStr);
+    
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.cards)) {
+      piLog(`[proposition-indexer] Invalid response structure`);
+      return [];
+    }
+    
+    const validCardTypes: CardType[] = ['问题', '概念', '主旨', '论述', '结论', '人物', '情节', '象征'];
+    const cards: PropositionCard[] = [];
+    
+    for (let i = 0; i < parsed.cards.length; i++) {
+      const card = parsed.cards[i];
+      
+      if (!card || typeof card !== 'object') {
+        piLog(`[proposition-indexer] Skipping invalid card at index ${i}`);
+        continue;
+      }
+      
+      if (!card.answer || typeof card.answer !== 'string') {
+        piLog(`[proposition-indexer] Skipping card at index ${i}: missing answer`);
+        continue;
+      }
+      
+      if (!card.context || typeof card.context !== 'string') {
+        piLog(`[proposition-indexer] Skipping card at index ${i}: missing context`);
+        continue;
+      }
+      
+      if (!Array.isArray(card.tags)) {
+        piLog(`[proposition-indexer] Skipping card at index ${i}: missing tags`);
+        continue;
+      }
+      
+      let cardType: CardType = card.type as CardType;
+      if (!validCardTypes.includes(cardType)) {
+        cardType = '概念';
+      }
+      
+      cards.push({
+        id: `card_${sourceNodeId}_${cards.length + 1}`,
+        type: cardType,
+        answer: card.answer.trim().slice(0, 100),
+        context: card.context.trim().slice(0, 300),
+        tags: card.tags.map((t: string) => t.trim()).filter((t: string) => t),
+        sourceNodeId,
+      });
+    }
+    
+    return cards;
   } catch (error) {
     piLog(`[proposition-indexer] Failed to parse cards: ${error}`);
+    piLog(`[proposition-indexer] Response preview: ${response.slice(0, 300)}`);
     return [];
   }
 }
@@ -393,26 +429,23 @@ function collectChapters(
   const chapters: Array<{ nodeId: string; title: string; fileName: string }> = [];
   const nodeFileMap = treeData.nodeFileMap || {};
 
-  for (const root of treeData.structure || []) {
-    if (root.nodeId && nodeFileMap[root.nodeId]) {
+  function traverseNode(node: TreeNode): void {
+    if (node.nodeId && nodeFileMap[node.nodeId]) {
       chapters.push({
-        nodeId: root.nodeId,
-        title: root.title,
-        fileName: nodeFileMap[root.nodeId],
+        nodeId: node.nodeId,
+        title: node.title,
+        fileName: nodeFileMap[node.nodeId],
       });
     }
-
-    if (root.nodes) {
-      for (const child of root.nodes) {
-        if (child.nodeId && nodeFileMap[child.nodeId]) {
-          chapters.push({
-            nodeId: child.nodeId,
-            title: child.title,
-            fileName: nodeFileMap[child.nodeId],
-          });
-        }
+    if (node.nodes) {
+      for (const child of node.nodes) {
+        traverseNode(child);
       }
     }
+  }
+
+  for (const root of treeData.structure || []) {
+    traverseNode(root);
   }
 
   return chapters;

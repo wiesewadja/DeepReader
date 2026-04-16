@@ -152,9 +152,10 @@ export interface BookMeta {
   /** Proposition cards info (optional) */
   propositions?: {
     enabled: boolean;
-    totalCards: number;
+    totalCards?: number;
     model: string;
-    generatedAt: string;
+    generatedAt?: string;
+    error?: string;
   };
 }
 
@@ -296,6 +297,7 @@ export interface PropositionCard {
   context: string;
   tags: string[];
   sourceNodeId: string;
+  matchScore?: number;
 }
 
 /** 命题卡片数据 */

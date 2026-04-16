@@ -401,11 +401,11 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         bookId,
         vaultPath: options.outputDir,
         treeData,
-        embedding: options.embedding,
+        embedding: options.embedding?.provider !== 'local' ? options.embedding : undefined,
         llm: {
-          model: options.propositions.model,
+          model: options.propositions.model || 'Qwen/Qwen3-8B',
           apiKey: options.propositions.apiKey,
-          baseUrl: options.propositions.baseUrl,
+          baseUrl: options.propositions.baseUrl || 'https://api.siliconflow.cn/v1',
         },
         cardsPer500Words: options.propositions.cardsPer500Words,
         onProgress: (p) => {
@@ -420,7 +420,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       bookMeta.propositions = {
         enabled: true,
         totalCards: propResult.totalCards,
-        model: options.propositions.model,
+        model: options.propositions.model || 'Qwen/Qwen3-8B',
         generatedAt: new Date().toISOString(),
       };
 
@@ -431,7 +431,26 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
       piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
     } catch (error) {
-      console.warn("[book-indexer] Proposition extraction failed:", error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.warn("[book-indexer] Proposition extraction failed:", errorMsg);
+      
+      bookMeta.propositions = {
+        enabled: false,
+        totalCards: 0,
+        model: options.propositions.model || 'Qwen/Qwen3-8B',
+        error: errorMsg.slice(0, 200),
+      };
+
+      await fs.writeFile(
+        path.join(indexDir, "book-meta.json"),
+        JSON.stringify(bookMeta, null, 2)
+      );
+      
+      reportProgress({
+        percent: 97,
+        step: "propositions_failed",
+        stepLabel: `命题卡片提取失败: ${errorMsg.slice(0, 50)}`,
+      });
     }
   }
 
