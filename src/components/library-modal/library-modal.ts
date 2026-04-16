@@ -536,6 +536,10 @@ export class LibraryModal extends Modal {
                 const providerConfig = getProviderConfig(this.options.plugin.settings);
                 const apiKey = this.options.plugin.settings[providerConfig.apiKeyField] as string || '';
 
+                // 命题卡片配置
+                const propositionsEnabled = this.options.plugin.settings.propositions?.enabled ?? true;
+                const propositionsApiKey = this.options.plugin.settings.propositions?.apiKey || apiKey;
+
                 const result = await indexBook({
                     filePath,
                     fileType,
@@ -545,6 +549,13 @@ export class LibraryModal extends Modal {
                     apiKey: apiKey,
                     baseUrl: providerConfig.baseUrl,
                     addNodeSummary: this.options.plugin.settings.ifAddNodeSummary,
+                    propositions: propositionsEnabled && propositionsApiKey ? {
+                        enabled: true,
+                        model: this.options.plugin.settings.propositions?.model || 'Qwen/Qwen3-8B',
+                        apiKey: propositionsApiKey,
+                        baseUrl: this.options.plugin.settings.propositions?.baseUrl || 'https://api.siliconflow.cn/v1',
+                        cardsPer500Words: this.options.plugin.settings.propositions?.cardsPer500Words,
+                    } : undefined,
                     onProgress: (progress: BookIndexProgress) => {
                         newIndex.progress_percent = progress.percent;
                         newIndex.status = 'processing';

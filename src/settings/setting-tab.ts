@@ -24,7 +24,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     // Tab 定义
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务', icon: '🤖' },
-        { id: 'embedding', name: '向量化服务', icon: '🔮' },
+        { id: 'embedding', name: '索引服务', icon: '📚' },
         { id: 'pdf', name: 'PDF 索引', icon: '📄' },
         { id: 'advanced', name: '高级', icon: '⚙️' },
         { id: 'reading', name: '阅读模式', icon: '📖' },
@@ -591,10 +591,11 @@ export class DeepPDFSettingTab extends PluginSettingTab {
      * 渲染 Embedding 设置
      */
     private renderEmbeddingSettings(container: HTMLElement): void {
-        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        header.createEl('h4', { text: 'Embedding 模型设置' });
-        header.createEl('span', {
-            text: '用于书籍索引向量化，支持 OpenAI 兼容 API 或本地模型',
+        // ─── 向量化设置 ────────────────────────────────────────────────────────
+        const vecHeader = container.createDiv({ cls: 'deeppdf-settings-section-header' });
+        vecHeader.createEl('h4', { text: '向量索引设置' });
+        vecHeader.createEl('span', {
+            text: '用于书籍语义检索，支持 OpenAI 兼容 API 或本地模型',
             cls: 'setting-item-description'
         });
 
@@ -650,65 +651,194 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 text: '如需使用本地向量模型，请选择 Ollama 或 LM Studio，并在本地运行对应的向量服务。',
                 cls: 'setting-item-description'
             });
+        } else {
+            // 模型名称
+            new Setting(container)
+                .setName("Embedding 模型名称")
+                .setDesc("嵌入模型的具体名称")
+                .addText(text => text
+                    .setPlaceholder(currentProvider === 'openai' ? "text-embedding-3-small" : "nomic-embed-text")
+                    .setValue(this.plugin.settings.embedding?.model || '')
+                    .onChange(async (value) => {
+                        if (!this.plugin.settings.embedding) {
+                            this.plugin.settings.embedding = { provider: currentProvider };
+                        }
+                        this.plugin.settings.embedding.model = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            // API Base URL
+            const defaultUrl = currentProvider === 'openai' 
+                ? 'https://api.openai.com/v1' 
+                : currentProvider === 'ollama'
+                ? 'http://localhost:11434'
+                : 'http://localhost:1234/v1';
+            
+            new Setting(container)
+                .setName("API Base URL")
+                .setDesc(`Embedding API 服务地址`)
+                .addText(text => text
+                    .setPlaceholder(defaultUrl)
+                    .setValue(this.plugin.settings.embedding?.baseUrl || '')
+                    .onChange(async (value) => {
+                        if (!this.plugin.settings.embedding) {
+                            this.plugin.settings.embedding = { provider: currentProvider };
+                        }
+                        this.plugin.settings.embedding.baseUrl = value;
+                        await this.plugin.saveSettings();
+                    }));
+
+            // API Key
+            new Setting(container)
+                .setName("API Key")
+                .setDesc("Embedding API 密钥（本地模型可留空）")
+                .addText(text => {
+                    text.setPlaceholder("sk-...")
+                        .setValue(this.plugin.settings.embedding?.apiKey || '')
+                        .inputEl.type = 'password';
+                    text.onChange(async (value) => {
+                        if (!this.plugin.settings.embedding) {
+                            this.plugin.settings.embedding = { provider: currentProvider };
+                        }
+                        this.plugin.settings.embedding.apiKey = value;
+                        await this.plugin.saveSettings();
+                    });
+                });
+
+            // 提示信息
+            container.createEl('p', {
+                text: '提示：向量维度将根据模型自动检测，无需手动设置。',
+                cls: 'setting-item-description'
+            });
+        }
+
+        // ─── 命题卡片设置 ────────────────────────────────────────────────────────
+        container.createDiv({ cls: 'deeppdf-settings-section-separator' });
+
+        const propHeader = container.createDiv({ cls: 'deeppdf-settings-section-header' });
+        propHeader.createEl('h4', { text: '命题卡片设置' });
+        propHeader.createEl('span', {
+            text: '提取原子事实卡片，实现更精准的段落级检索',
+            cls: 'setting-item-description'
+        });
+
+        // 启用开关
+        new Setting(container)
+            .setName("启用命题卡片")
+            .setDesc("索引时提取原子事实卡片，提升细节问答的检索精度")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.propositions?.enabled ?? true)
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.propositions) {
+                        this.plugin.settings.propositions = {
+                            enabled: value,
+                            model: "Qwen/Qwen3-8B",
+                            baseUrl: "https://api.siliconflow.cn/v1",
+                        };
+                    } else {
+                        this.plugin.settings.propositions.enabled = value;
+                    }
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('embedding');
+                }));
+
+        // 如果未启用，跳过其他设置
+        if (!this.plugin.settings.propositions?.enabled) {
+            container.createEl('p', {
+                text: '提示：命题卡片使用小模型提取原子事实，可大幅提升细节问答精度。建议启用。',
+                cls: 'setting-item-description'
+            });
             return;
         }
 
-        // 模型名称
+        // 小模型选择
         new Setting(container)
-            .setName("Embedding 模型名称")
-            .setDesc("嵌入模型的具体名称")
+            .setName("提取模型")
+            .setDesc("用于提取原子事实卡片的小模型（推荐 Qwen3-8B）")
             .addText(text => text
-                .setPlaceholder(currentProvider === 'openai' ? "text-embedding-3-small" : "nomic-embed-text")
-                .setValue(this.plugin.settings.embedding?.model || '')
+                .setPlaceholder("Qwen/Qwen3-8B")
+                .setValue(this.plugin.settings.propositions?.model || 'Qwen/Qwen3-8B')
                 .onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
+                    if (!this.plugin.settings.propositions) {
+                        this.plugin.settings.propositions = {
+                            enabled: true,
+                            model: value,
+                            baseUrl: "https://api.siliconflow.cn/v1",
+                        };
+                    } else {
+                        this.plugin.settings.propositions.model = value;
                     }
-                    this.plugin.settings.embedding.model = value;
                     await this.plugin.saveSettings();
                 }));
 
-        // API Base URL（所有 provider 都需要）
-        const defaultUrl = currentProvider === 'openai' 
-            ? 'https://api.openai.com/v1' 
-            : currentProvider === 'ollama'
-            ? 'http://localhost:11434'
-            : 'http://localhost:1234/v1';
-        
+        // API Base URL
         new Setting(container)
-            .setName("API Base URL")
-            .setDesc(`Embedding API 服务地址`)
+            .setName("小模型 API 地址")
+            .setDesc("硅基流动: https://api.siliconflow.cn/v1")
             .addText(text => text
-                .setPlaceholder(defaultUrl)
-                .setValue(this.plugin.settings.embedding?.baseUrl || '')
+                .setPlaceholder("https://api.siliconflow.cn/v1")
+                .setValue(this.plugin.settings.propositions?.baseUrl || 'https://api.siliconflow.cn/v1')
                 .onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
+                    if (!this.plugin.settings.propositions) {
+                        this.plugin.settings.propositions = {
+                            enabled: true,
+                            model: "Qwen/Qwen3-8B",
+                            baseUrl: value,
+                        };
+                    } else {
+                        this.plugin.settings.propositions.baseUrl = value;
                     }
-                    this.plugin.settings.embedding.baseUrl = value;
                     await this.plugin.saveSettings();
                 }));
 
         // API Key
         new Setting(container)
-            .setName("API Key")
-            .setDesc("Embedding API 密钥（本地模型可留空）")
+            .setName("小模型 API Key")
+            .setDesc("可复用 Embedding API Key，或单独配置")
             .addText(text => {
                 text.setPlaceholder("sk-...")
-                    .setValue(this.plugin.settings.embedding?.apiKey || '')
+                    .setValue(this.plugin.settings.propositions?.apiKey || this.plugin.settings.embedding?.apiKey || '')
                     .inputEl.type = 'password';
                 text.onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
+                    if (!this.plugin.settings.propositions) {
+                        this.plugin.settings.propositions = {
+                            enabled: true,
+                            model: "Qwen/Qwen3-8B",
+                            baseUrl: "https://api.siliconflow.cn/v1",
+                            apiKey: value,
+                        };
+                    } else {
+                        this.plugin.settings.propositions.apiKey = value;
                     }
-                    this.plugin.settings.embedding.apiKey = value;
                     await this.plugin.saveSettings();
                 });
             });
 
+        // 卡片密度
+        new Setting(container)
+            .setName("卡片密度")
+            .setDesc("每 500 字提取的卡片数量（默认 1，范围 1-3）")
+            .addSlider(slider => slider
+                .setLimits(1, 3, 1)
+                .setValue(this.plugin.settings.propositions?.cardsPer500Words || 1)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.propositions) {
+                        this.plugin.settings.propositions = {
+                            enabled: true,
+                            model: "Qwen/Qwen3-8B",
+                            baseUrl: "https://api.siliconflow.cn/v1",
+                            cardsPer500Words: value,
+                        };
+                    } else {
+                        this.plugin.settings.propositions.cardsPer500Words = value;
+                    }
+                    await this.plugin.saveSettings();
+                }));
+
         // 提示信息
         container.createEl('p', {
-            text: '提示：向量维度将根据模型自动检测，无需手动设置。',
+            text: '提示：命题卡片基于《如何阅读一本书》的分析阅读方法提取，包括问题、概念、主旨、论述、结论、人物、情节、象征 8 种类型。',
             cls: 'setting-item-description'
         });
     }
