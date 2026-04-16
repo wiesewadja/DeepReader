@@ -39,6 +39,7 @@ import {
   loadPropositions,
   loadPropVectorStore,
 } from "./proposition-search.js";
+import { getOrGenerateEmbedding } from "../agent/utils/embedding-cache.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ export async function searchBookV2(
   let precomputedEmbedding: number[] | null = null;
   if (options.embedding && options.embedding.provider !== 'local') {
     try {
-      precomputedEmbedding = await generateEmbedding(options.query, options.embedding);
+      precomputedEmbedding = await getOrGenerateEmbedding(options.query, options.embedding);
     } catch (error) {
       piLog(`[book-search-v2] Query embedding failed: ${error}`);
     }
@@ -149,9 +150,15 @@ export async function searchBookV2(
     candidateNodeIds = new Set([...allNodeIds].filter(id => scopeSet.has(id)));
   }
 
-  // ── Stage 5: Score fusion + level weighting ────────────────────────────
-  const w_v = hasVectors ? 0.7 : 0;
-  const w_b = hasVectors ? 0.3 : 1.0;
+  // ── Stage 5: Score fusion + level weighting + proposition ─────────────
+  const hasPropositions = propositionMatches.size > 0;
+
+  // Adjust weights based on available signals
+  const w_v = hasVectors ? (hasPropositions ? 0.5 : 0.7) : 0;
+  const w_b = hasVectors ? (hasPropositions ? 0.25 : 0.3) : 1.0;
+  const w_p = hasPropositions ? (hasVectors ? 0.25 : 0) : 0;
+
+  piLog(`[book-search-v2] Fusion weights: v=${w_v}, b=${w_b}, p=${w_p}`);
 
   // Normalize BM25 scores
   const bm25Values = Array.from(bm25Scores.values());
@@ -159,11 +166,27 @@ export async function searchBookV2(
   const bm25Min = Math.min(...bm25Values, 0);
   const bm25Range = bm25Max - bm25Min;
 
+  // Compute proposition scores per nodeId
+  const propositionScores = new Map<string, number>();
+  for (const [nodeId, cards] of propositionMatches) {
+    if (cards.length > 0) {
+      const maxScore = Math.max(...cards.map((c: PropositionCard) => c.matchScore || 0));
+      propositionScores.set(nodeId, maxScore);
+    }
+  }
+
+  // Normalize proposition scores
+  const propValues = Array.from(propositionScores.values());
+  const propMax = Math.max(...propValues, 0);
+  const propMin = Math.min(...propValues, 0);
+  const propRange = propMax - propMin;
+
   type ScoredResult = {
     nodeId: string;
     fusedScore: number;
     vectorScore: number;
     bm25Score: number;
+    propositionScore: number;
     levelWeight: number;
   };
 
@@ -172,8 +195,12 @@ export async function searchBookV2(
   for (const nodeId of candidateNodeIds) {
     const vs = vectorScores.get(nodeId) || 0;
     const bs = bm25Scores.get(nodeId) || 0;
+    const ps = propositionScores.get(nodeId) || 0;
+
     const normalizedBM25 = bm25Range > 0 ? (bs - bm25Min) / bm25Range : 0;
-    const fusedScore = w_v * vs + w_b * normalizedBM25;
+    const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
+
+    const fusedScore = w_v * vs + w_b * normalizedBM25 + w_p * normalizedProp;
     const levelWeight = computeLevelWeight(nodeId, treeData.structure);
 
     scoredResults.push({
@@ -181,6 +208,7 @@ export async function searchBookV2(
       fusedScore: fusedScore * levelWeight,
       vectorScore: vs,
       bm25Score: bs,
+      propositionScore: ps,
       levelWeight,
     });
   }
