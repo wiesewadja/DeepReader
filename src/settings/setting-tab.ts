@@ -8,7 +8,7 @@ import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, getProviderDefaultModel } from '../config/providers';
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
-type SettingsTabId = 'llm' | 'embedding' | 'pdf' | 'advanced' | 'reading' | 'skills';
+type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading' | 'skills';
 
 interface SettingsTab {
     id: SettingsTabId;
@@ -20,12 +20,12 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     plugin: DeepPDFPlugin;
     private currentTab: SettingsTabId = 'llm';
     private contentContainer: HTMLElement | null = null;
+    private collapsedSections: Set<string> = new Set();
 
     // Tab 定义
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务', icon: '🤖' },
-        { id: 'embedding', name: '索引服务', icon: '📚' },
-        { id: 'pdf', name: 'PDF 索引', icon: '📄' },
+        { id: 'index', name: '索引服务', icon: '📚' },
         { id: 'advanced', name: '高级', icon: '⚙️' },
         { id: 'reading', name: '阅读模式', icon: '📖' },
         { id: 'skills', name: 'Skills', icon: '🧩' },
@@ -98,11 +98,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             case 'llm':
                 this.renderLLMSettings(container);
                 break;
-            case 'embedding':
-                this.renderVectorizationSettings(container);
-                break;
-            case 'pdf':
-                this.renderPdfIndexSettings(container);
+            case 'index':
+                this.renderIndexServicesSettings(container);
                 break;
             case 'advanced':
                 this.renderAdvancedSettings(container);
@@ -412,8 +409,79 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 }));
     }
 
+/**
+     * 索引服务设置 (4 个可折叠服务)
+     */
+    private renderIndexServicesSettings(container: HTMLElement): void {
+        container.createEl('h3', { text: '索引服务配置' });
+        container.createEl('p', {
+            text: '配置书籍索引所需的 4 项服务，点击展开/折叠每个服务的详细设置。',
+            cls: 'setting-item-description'
+        });
+
+        // 1. 向量化服务
+        this.renderCollapsibleSection(container, 'vector', '🔮 向量化服务', '用于书籍语义检索，支持 OpenAI 兼容 API 或本地模型', 
+            (section) => this.renderEmbeddingSettings(section));
+
+        // 2. 重排序服务
+        this.renderCollapsibleSection(container, 'reranker', '🔄 重排序服务', '对搜索结果进行精细重排，提升检索精度',
+            (section) => this.renderRerankerSettings(section));
+
+        // 3. 原子事实服务
+        this.renderCollapsibleSection(container, 'proposition', '📝 子事实服务', '提取原子事实卡片，实现更精准的段落级检索',
+            (section) => this.renderPropositionSettings(section));
+
+        // 4. PDF 索引服务
+        this.renderCollapsibleSection(container, 'pdf', '📄 PDF 索引服务', '配置 PDF 解析和索引参数',
+            (section) => this.renderPdfSettings(section));
+    }
+
     /**
-     * 向量化服务设置 (Embedding + Reranker)
+     * 渲染可折叠的服务区块
+     */
+    private renderCollapsibleSection(
+        container: HTMLElement,
+        sectionId: string,
+        title: string,
+        description: string,
+        renderContent: (section: HTMLElement) => void
+    ): void {
+        const isCollapsed = this.collapsedSections.has(sectionId);
+
+        // 创建区块容器
+        const sectionWrapper = container.createDiv({ cls: 'deeppdf-settings-collapsible-section' });
+
+        // 创建 header（点击可折叠）
+        const header = sectionWrapper.createDiv({ cls: 'deeppdf-settings-collapsible-header' });
+        header.createEl('h4', { text: title });
+        header.createEl('span', {
+            text: description,
+            cls: 'deeppdf-settings-collapsible-desc'
+        });
+        
+        // 折叠指示器
+        const indicator = header.createSpan({ cls: 'deeppdf-settings-collapsible-indicator' });
+        indicator.setText(isCollapsed ? '▶' : '▼');
+
+        // 点击事件
+        header.addEventListener('click', () => {
+            if (this.collapsedSections.has(sectionId)) {
+                this.collapsedSections.delete(sectionId);
+            } else {
+                this.collapsedSections.add(sectionId);
+            }
+            this.renderTabContent('index');
+        });
+
+        // 如果未折叠，渲染内容
+        if (!isCollapsed) {
+            const content = sectionWrapper.createDiv({ cls: 'deeppdf-settings-collapsible-content' });
+            renderContent(content);
+        }
+    }
+
+    /**
+     * 渲染向量化设置
      */
     private renderVectorizationSettings(container: HTMLElement): void {
         container.createEl('h3', { text: '向量化服务' });
@@ -456,7 +524,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         this.plugin.settings.reranker.enabled = value;
                     }
                     await this.plugin.saveSettings();
-                    this.renderTabContent('embedding');
+                    this.renderTabContent('index');
                 }));
 
         if (!rerankerEnabled) {
@@ -499,7 +567,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         }
                         
                         await this.plugin.saveSettings();
-                        this.renderTabContent('embedding');
+                        this.renderTabContent('index');
                     });
             });
 
@@ -588,17 +656,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 渲染 Embedding 设置
+     * 渲染向量化设置
      */
     private renderEmbeddingSettings(container: HTMLElement): void {
-        // ─── 向量化设置 ────────────────────────────────────────────────────────
-        const vecHeader = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        vecHeader.createEl('h4', { text: '向量索引设置' });
-        vecHeader.createEl('span', {
-            text: '用于书籍语义检索，支持 OpenAI 兼容 API 或本地模型',
-            cls: 'setting-item-description'
-        });
-
         const currentProvider = this.plugin.settings.embedding?.provider || 'openai';
 
         // Provider 选择
@@ -621,7 +681,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                             this.plugin.settings.embedding.provider = value as any;
                         }
                         
-                        // 自动填充默认配置
                         if (value === 'openai') {
                             this.plugin.settings.embedding.model = 'text-embedding-3-small';
                             this.plugin.settings.embedding.baseUrl = 'https://api.openai.com/v1';
@@ -633,99 +692,79 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                             this.plugin.settings.embedding.baseUrl = 'http://localhost:1234/v1';
                         }
                         
-                        // 清除 dimensions，让系统自动检测
                         this.plugin.settings.embedding.dimensions = undefined;
                         
                         await this.plugin.saveSettings();
-                        this.renderTabContent('embedding');
+                        this.renderTabContent('index');
                     });
             });
 
-        // 如果选择 local，显示提示
         if (currentProvider === 'local') {
             container.createEl('p', {
-                text: '提示：选择"不使用向量索引"将跳过向量索引，仅使用 BM25 关键词搜索。搜索精度会降低，但无需额外的 Embedding 服务。',
+                text: '选择"不使用向量索引"将仅使用 BM25 关键词搜索，精度降低但无需额外服务。',
                 cls: 'setting-item-description'
             });
-            container.createEl('p', {
-                text: '如需使用本地向量模型，请选择 Ollama 或 LM Studio，并在本地运行对应的向量服务。',
-                cls: 'setting-item-description'
-            });
-        } else {
-            // 模型名称
-            new Setting(container)
-                .setName("Embedding 模型名称")
-                .setDesc("嵌入模型的具体名称")
-                .addText(text => text
-                    .setPlaceholder(currentProvider === 'openai' ? "text-embedding-3-small" : "nomic-embed-text")
-                    .setValue(this.plugin.settings.embedding?.model || '')
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = { provider: currentProvider };
-                        }
-                        this.plugin.settings.embedding.model = value;
-                        await this.plugin.saveSettings();
-                    }));
-
-            // API Base URL
-            const defaultUrl = currentProvider === 'openai' 
-                ? 'https://api.openai.com/v1' 
-                : currentProvider === 'ollama'
-                ? 'http://localhost:11434'
-                : 'http://localhost:1234/v1';
-            
-            new Setting(container)
-                .setName("API Base URL")
-                .setDesc(`Embedding API 服务地址`)
-                .addText(text => text
-                    .setPlaceholder(defaultUrl)
-                    .setValue(this.plugin.settings.embedding?.baseUrl || '')
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = { provider: currentProvider };
-                        }
-                        this.plugin.settings.embedding.baseUrl = value;
-                        await this.plugin.saveSettings();
-                    }));
-
-            // API Key
-            new Setting(container)
-                .setName("API Key")
-                .setDesc("Embedding API 密钥（本地模型可留空）")
-                .addText(text => {
-                    text.setPlaceholder("sk-...")
-                        .setValue(this.plugin.settings.embedding?.apiKey || '')
-                        .inputEl.type = 'password';
-                    text.onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = { provider: currentProvider };
-                        }
-                        this.plugin.settings.embedding.apiKey = value;
-                        await this.plugin.saveSettings();
-                    });
-                });
-
-            // 提示信息
-            container.createEl('p', {
-                text: '提示：向量维度将根据模型自动检测，无需手动设置。',
-                cls: 'setting-item-description'
-            });
+            return;
         }
 
-        // ─── 命题卡片设置 ────────────────────────────────────────────────────────
-        container.createDiv({ cls: 'deeppdf-settings-section-separator' });
+        new Setting(container)
+            .setName("模型名称")
+            .setDesc("嵌入模型名称")
+            .addText(text => text
+                .setPlaceholder(currentProvider === 'openai' ? "text-embedding-3-small" : "nomic-embed-text")
+                .setValue(this.plugin.settings.embedding?.model || '')
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.embedding) {
+                        this.plugin.settings.embedding = { provider: currentProvider };
+                    }
+                    this.plugin.settings.embedding.model = value;
+                    await this.plugin.saveSettings();
+                }));
 
-        const propHeader = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        propHeader.createEl('h4', { text: '命题卡片设置' });
-        propHeader.createEl('span', {
-            text: '提取原子事实卡片，实现更精准的段落级检索',
-            cls: 'setting-item-description'
-        });
+        const defaultUrl = currentProvider === 'openai' 
+            ? 'https://api.openai.com/v1' 
+            : currentProvider === 'ollama'
+            ? 'http://localhost:11434'
+            : 'http://localhost:1234/v1';
+        
+        new Setting(container)
+            .setName("API Base URL")
+            .setDesc("Embedding API 服务地址")
+            .addText(text => text
+                .setPlaceholder(defaultUrl)
+                .setValue(this.plugin.settings.embedding?.baseUrl || '')
+                .onChange(async (value) => {
+                    if (!this.plugin.settings.embedding) {
+                        this.plugin.settings.embedding = { provider: currentProvider };
+                    }
+                    this.plugin.settings.embedding.baseUrl = value;
+                    await this.plugin.saveSettings();
+                }));
 
-        // 启用开关
+        new Setting(container)
+            .setName("API Key")
+            .setDesc("Embedding API 密钥（本地模型可留空）")
+            .addText(text => {
+                text.setPlaceholder("sk-...")
+                    .setValue(this.plugin.settings.embedding?.apiKey || '')
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    if (!this.plugin.settings.embedding) {
+                        this.plugin.settings.embedding = { provider: currentProvider };
+                    }
+                    this.plugin.settings.embedding.apiKey = value;
+                    await this.plugin.saveSettings();
+                });
+            });
+    }
+
+    /**
+     * 渲染原子事实设置
+     */
+    private renderPropositionSettings(container: HTMLElement): void {
         new Setting(container)
             .setName("启用命题卡片")
-            .setDesc("索引时提取原子事实卡片，提升细节问答的检索精度")
+            .setDesc("索引时提取原子事实卡片")
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.propositions?.enabled ?? true)
                 .onChange(async (value) => {
@@ -739,22 +778,20 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         this.plugin.settings.propositions.enabled = value;
                     }
                     await this.plugin.saveSettings();
-                    this.renderTabContent('embedding');
+                    this.renderTabContent('index');
                 }));
 
-        // 如果未启用，跳过其他设置
         if (!this.plugin.settings.propositions?.enabled) {
             container.createEl('p', {
-                text: '提示：命题卡片使用小模型提取原子事实，可大幅提升细节问答精度。建议启用。',
+                text: '命题卡片使用小模型提取原子事实，提升细节问答精度。',
                 cls: 'setting-item-description'
             });
             return;
         }
 
-        // 小模型选择
         new Setting(container)
             .setName("提取模型")
-            .setDesc("用于提取原子事实卡片的小模型（推荐 Qwen3-8B）")
+            .setDesc("用于提取卡片的小模型")
             .addText(text => text
                 .setPlaceholder("Qwen/Qwen3-8B")
                 .setValue(this.plugin.settings.propositions?.model || 'Qwen/Qwen3-8B')
@@ -771,9 +808,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // API Base URL
         new Setting(container)
-            .setName("小模型 API 地址")
+            .setName("API 地址")
             .setDesc("硅基流动: https://api.siliconflow.cn/v1")
             .addText(text => text
                 .setPlaceholder("https://api.siliconflow.cn/v1")
@@ -791,10 +827,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // API Key
         new Setting(container)
-            .setName("小模型 API Key")
-            .setDesc("可复用 Embedding API Key，或单独配置")
+            .setName("API Key")
+            .setDesc("可复用 Embedding API Key")
             .addText(text => {
                 text.setPlaceholder("sk-...")
                     .setValue(this.plugin.settings.propositions?.apiKey || this.plugin.settings.embedding?.apiKey || '')
@@ -814,10 +849,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 });
             });
 
-        // 卡片密度
         new Setting(container)
             .setName("卡片密度")
-            .setDesc("每 500 字提取的卡片数量（默认 1，范围 1-3）")
+            .setDesc("每 500 字提取的卡片数量")
             .addSlider(slider => slider
                 .setLimits(1, 3, 1)
                 .setValue(this.plugin.settings.propositions?.cardsPer500Words || 1)
@@ -835,12 +869,45 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     }
                     await this.plugin.saveSettings();
                 }));
+    }
 
-        // 提示信息
-        container.createEl('p', {
-            text: '提示：命题卡片基于《如何阅读一本书》的分析阅读方法提取，包括问题、概念、主旨、论述、结论、人物、情节、象征 8 种类型。',
-            cls: 'setting-item-description'
-        });
+    /**
+     * 渲染 PDF 索引设置
+     */
+    private renderPdfSettings(container: HTMLElement): void {
+        new Setting(container)
+            .setName("每节点最大页数")
+            .setDesc("PDF 解析时每个章节的最大页数")
+            .addSlider(slider => slider
+                .setLimits(1, 50, 1)
+                .setValue(this.plugin.settings.maxPagesPerNode)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.maxPagesPerNode = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(container)
+            .setName("每节点最大 Token")
+            .setDesc("每个章节的最大 Token 数")
+            .addSlider(slider => slider
+                .setLimits(1000, 50000, 1000)
+                .setValue(this.plugin.settings.maxTokensPerNode)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.maxTokensPerNode = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(container)
+            .setName("生成章节摘要")
+            .setDesc("使用 LLM 为每个章节生成摘要")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.ifAddNodeSummary)
+                .onChange(async (value) => {
+                    this.plugin.settings.ifAddNodeSummary = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 
     /**
