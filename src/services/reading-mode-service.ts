@@ -8,6 +8,7 @@ import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
 import { PagePaginator } from '../components/reading-mode/page-paginator.js';
+import { InkLayer } from '../components/reading-mode/ink-layer.js';
 import type { QuoteMetadata } from '../components/chat-input/chat-input.js';
 
 export interface ReadingModeCallbacks {
@@ -34,6 +35,7 @@ export class ReadingModeService {
     private selectionToolbar: SelectionToolbar | null = null;
     private chapterNav: ChapterNav | null = null;
     private paginator: PagePaginator | null = null;
+    private inkLayer: InkLayer | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;
     private style: 'paginated' | 'scrolling' = 'paginated';
@@ -189,6 +191,9 @@ export class ReadingModeService {
         // 通知书籍检测回调
         this.notifyBookDetected(file);
 
+        // 初始化墨迹层
+        this.initInkLayer(file);
+
         serviceLog('[ReadingMode] Activated for:', file.path);
     }
 
@@ -222,6 +227,37 @@ export class ReadingModeService {
     }
 
     /**
+     * 初始化墨迹层
+     */
+    private initInkLayer(_file: TFile): void {
+        this.inkLayer?.cleanup();
+        this.inkLayer = null;
+
+        const container = this.getViewContent();
+        if (!container) return;
+
+        this.inkLayer = new InkLayer({ container });
+
+        // 滚动模式直接激活；分页模式等分页器就绪后激活
+        if (this.style !== 'paginated') {
+            setTimeout(() => {
+                if (this.inkLayer) {
+                    this.inkLayer.activate();
+                    serviceLog('[InkLayer] Activated in scrolling mode');
+                }
+            }, 300);
+        }
+    }
+
+    /**
+     * 获取当前视图的 .markdown-preview-view 元素（实际阅读区域）
+     */
+    private getViewContent(): HTMLElement | null {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        return view?.containerEl.querySelector('.markdown-preview-view') as HTMLElement | null;
+    }
+
+    /**
      * 切换当前 leaf 到阅读视图
      */
     private switchToReadingView(): void {
@@ -237,6 +273,10 @@ export class ReadingModeService {
      */
     deactivate(): void {
         if (!this.isActive) return;
+
+        // 清理墨迹层
+        this.inkLayer?.cleanup();
+        this.inkLayer = null;
 
         this.paginator?.destroy();
         this.paginator = null;
@@ -333,6 +373,12 @@ export class ReadingModeService {
                     onNavigateNext: () => this.navigateToNext(),
                 });
                 this.paginator.paginateAndShow();
+
+                // 分页器就绪后激活墨迹层
+                if (this.inkLayer) {
+                    this.inkLayer.activate();
+                }
+
                 serviceLog('[ReadingMode] Paginator initialized');
                 return;
             }
