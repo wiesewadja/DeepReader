@@ -1153,6 +1153,64 @@
 	text-decoration: underline;
 }
 
+/* ==================== 侧边浮动翻信箭头 ==================== */
+
+.deeppdf-fullscreen-letter-nav {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	z-index: 5;
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	opacity: 0.15;
+	transition: opacity 0.3s, color 0.3s, background 0.3s;
+	padding: 20px 8px;
+	border-radius: 8px;
+}
+
+.deeppdf-fullscreen-letter-prev { left: 8px; }
+.deeppdf-fullscreen-letter-next { right: 8px; }
+
+.deeppdf-fullscreen-letter-nav:hover {
+	opacity: 0.8;
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+/* ==================== 翻页 fade 动画 ==================== */
+
+.deeppdf-fullscreen-content-area {
+	transition: opacity 0.15s ease;
+}
+
+.deeppdf-page-fading {
+	opacity: 0;
+}
+
+/* ==================== 翻信滑动动画 ==================== */
+
+@keyframes deeppdf-flip-left-out {
+	to { transform: translateX(-40px); opacity: 0; }
+}
+@keyframes deeppdf-flip-left-in {
+	from { transform: translateX(40px); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+@keyframes deeppdf-flip-right-out {
+	to { transform: translateX(40px); opacity: 0; }
+}
+@keyframes deeppdf-flip-right-in {
+	from { transform: translateX(-40px); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+
+.deeppdf-flip-left-out { animation: deeppdf-flip-left-out 0.2s ease forwards; }
+.deeppdf-flip-left-in { animation: deeppdf-flip-left-in 0.25s ease forwards; }
+.deeppdf-flip-right-out { animation: deeppdf-flip-right-out 0.2s ease forwards; }
+.deeppdf-flip-right-in { animation: deeppdf-flip-right-in 0.25s ease forwards; }
+
 /* 墨迹拖尾画布：在内容之上、工具栏之下 */
 .deeppdf-ink-trail-canvas {
 	position: absolute;

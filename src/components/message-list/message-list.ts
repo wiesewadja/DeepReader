@@ -155,7 +155,8 @@ export class MessageList extends Component {
 				onQuestionClick: (question: string) => this.callbacks.onQuestionClick?.(question),
 				onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) =>
 					this.callbacks.onExcerpt?.(messageData.id, content, metadata),
-				app: this.app
+				app: this.app,
+				getAllMessages: () => this.getMessagesData(),
 			});
 			this.messages.set(messageData.id, message);
 			return message;
@@ -181,6 +182,7 @@ export class MessageList extends Component {
 			onDelete: () => {
 				this.callbacks.onDelete?.(messageData.id);
 			},
+			getAllMessages: () => this.getMessagesData(),
 			app: this.app
 		});
 

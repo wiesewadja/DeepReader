@@ -770,6 +770,7 @@ export class AIMessage extends Message {
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
+			getAllMessages?: () => MessageData[];
 			app?: App;
 		}
 	) {
@@ -780,6 +781,7 @@ export class AIMessage extends Message {
 		this.onExcerpt = options?.onExcerpt;
 		this.onQuote = options?.onQuote;
 		this.onDelete = options?.onDelete;
+		this.getAllMessages = options?.getAllMessages || null;
 		// 初始化渲染跟踪变量
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
@@ -1391,26 +1393,36 @@ export class AIMessage extends Message {
 	private fullscreenPage = 0;
 	private fullscreenPages: HTMLElement[][] = [];
 
-	private openFullscreen(): void {
+		private openFullscreen(): void {
 		if (this.fullscreenOverlay) return;
 		this.fullscreenPage = 0;
 		this.fullscreenPages = [];
 
-		// 创建覆盖层
+		// ── 翻信数据准备 ──
+		const allMsgs = this.getAllMessages?.() || [];
+		const aiMessages = allMsgs.filter(m => m.role === 'assistant' && !m.isStreaming);
+		let currentLetterIdx = aiMessages.findIndex(m => m.id === this.data.id);
+		if (currentLetterIdx === -1) currentLetterIdx = 0;
+
+		// 从 DOM 读取每个 AI 消息的图案类
+		const getPatternForMessage = (msgId: string): string => {
+			const bubble = document.querySelector(`[data-message-id="${msgId}"] .deeppdf-message-bubble`);
+			if (!bubble) return '';
+			const p = Array.from(bubble.classList).find(c => c.startsWith('deeppdf-pattern-'));
+			return p || '';
+		};
+
+		// ── 创建覆盖层 ──
 		const overlay = document.body.createEl('div', { cls: 'deeppdf-fullscreen-overlay' });
+		let currentPattern = getPatternForMessage(aiMessages[currentLetterIdx]?.id || this.data.id) || this.patternClass;
+		const panel = overlay.createEl('div', { cls: ['deeppdf-fullscreen-panel', currentPattern] });
 
-		// 面板（继承 AI 气泡的背景图案）
-		const panel = overlay.createEl('div', { cls: ['deeppdf-fullscreen-panel', this.patternClass] });
-
-		// 工具栏
+		// ── 工具栏 ──
 		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
 		const toolbarLeft = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-left' });
 		toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-title', text: '奚童来信' });
-		if (this.data.question) {
-			toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-question', text: this.data.question });
-		}
+		const questionEl = toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-question', text: aiMessages[currentLetterIdx]?.question || this.data.question || '' });
 
-		// 右侧：页码 + 翻页 + 关闭
 		const toolbarRight = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-right' });
 		const pageInfo = toolbarRight.createEl('span', { cls: 'deeppdf-fullscreen-page-info' });
 		const prevBtn = toolbarRight.createEl('button', { cls: 'deeppdf-fullscreen-nav-btn' });
@@ -1424,96 +1436,170 @@ export class AIMessage extends Message {
 		closeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
 		closeBtn.title = "关闭";
 
-		// 内容区域：CSS column-count:2 自动分列，浏览器填满列不浪费空间
-		const contentArea = panel.createEl('div', { cls: ['deeppdf-fullscreen-content-area', this.patternClass] });
+		// ── 侧边浮动翻信箭头 ──
+		const letterArrowSvg = (direction: 'left' | 'right') =>
+			`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${
+				direction === 'left'
+					? '<path d="m15 18-6-6 6-6"/><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/>'
+					: '<path d="m9 18 6-6-6-6"/><circle cx="12" cy="12" r="10" stroke-opacity="0.3"/>'
+			}</svg>`;
 
-		// 隐藏的测量容器，继承 contentArea 的样式
-		const tempDiv = contentArea.createEl('div', { cls: ['deeppdf-fullscreen-content-area'] });
-		tempDiv.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;';
+		const prevLetterBtn = panel.createEl('button', { cls: 'deeppdf-fullscreen-letter-nav deeppdf-fullscreen-letter-prev' });
+		prevLetterBtn.innerHTML = letterArrowSvg('left');
+		prevLetterBtn.title = "上一封";
+		if (currentLetterIdx <= 0) prevLetterBtn.style.display = 'none';
 
-		const { cleanedContent } = parseAgentContent(this.data.content);
+		const nextLetterBtn = panel.createEl('button', { cls: 'deeppdf-fullscreen-letter-nav deeppdf-fullscreen-letter-next' });
+		nextLetterBtn.innerHTML = letterArrowSvg('right');
+		nextLetterBtn.title = "下一封";
+		if (currentLetterIdx >= aiMessages.length - 1) nextLetterBtn.style.display = 'none';
 
-		const paginate = () => {
-			const children = Array.from(tempDiv.children) as HTMLElement[];
-			if (children.length === 0) { tempDiv.remove(); return; }
+		// ── 内容区域 ──
+		const contentArea = panel.createEl('div', { cls: ['deeppdf-fullscreen-content-area', currentPattern] });
 
-			requestAnimationFrame(() => {
-				tempDiv.remove();
+		// ── 分页 + 渲染闭包（支持翻信时重新调用） ──
+		let currentPages: HTMLElement[][] = [];
 
-				// 贪心分页：CSS columns 自动分列，用 scrollWidth 检测是否超出 2 列
-				const pages: HTMLElement[][] = [];
-				let remaining = [...children];
+		const paginateContent = (rawContent: string, sourcePath: string, onDone?: () => void) => {
+			const tempDiv = contentArea.createEl('div', { cls: ['deeppdf-fullscreen-content-area'] });
+			tempDiv.style.cssText = 'position:absolute;visibility:hidden;left:-9999px;top:0;';
 
-				while (remaining.length > 0) {
-					contentArea.empty();
-					for (const el of remaining) contentArea.appendChild(el);
+			const doPaginate = () => {
+				const children = Array.from(tempDiv.children) as HTMLElement[];
+				if (children.length === 0) { tempDiv.remove(); currentPages = []; onDone?.(); return; }
 
-					// 如果不溢出（scrollWidth <= clientWidth），所有内容一页搞定
-					if (contentArea.scrollWidth <= contentArea.clientWidth) {
-						pages.push([...remaining]);
-						remaining = [];
-						break;
+				requestAnimationFrame(() => {
+					tempDiv.remove();
+					const pages: HTMLElement[][] = [];
+					let remaining = [...children];
+
+					while (remaining.length > 0) {
+						contentArea.empty();
+						for (const el of remaining) contentArea.appendChild(el);
+
+						if (contentArea.scrollWidth <= contentArea.clientWidth) {
+							pages.push([...remaining]);
+							remaining = [];
+							break;
+						}
+						while (contentArea.scrollWidth > contentArea.clientWidth && contentArea.children.length > 1) {
+							const last = contentArea.children[contentArea.children.length - 1] as HTMLElement;
+							contentArea.removeChild(last);
+						}
+						const pageElems = Array.from(contentArea.children) as HTMLElement[];
+						remaining = remaining.slice(pageElems.length);
+						pages.push(pageElems);
 					}
 
-					// 溢出了，从末尾移除元素直到不溢出
-					while (contentArea.scrollWidth > contentArea.clientWidth && contentArea.children.length > 1) {
-						const last = contentArea.children[contentArea.children.length - 1] as HTMLElement;
-						contentArea.removeChild(last);
-					}
-					const pageElems = Array.from(contentArea.children) as HTMLElement[];
-
-					// 剩余元素为下一页
-					remaining = remaining.slice(pageElems.length);
-					pages.push(pageElems);
-				}
-
-				this.fullscreenPages = pages as any;
-
-				const renderPage = (idx: number) => {
-					contentArea.empty();
-					const pg = pages[idx];
-					if (!pg) return;
-
-					for (const el of pg) contentArea.appendChild(el);
-					setupInternalLinks(contentArea, this.app!, false, this.observers);
-
-					pageInfo.textContent = pages.length > 1 ? `${idx + 1} / ${pages.length}` : '';
-					prevBtn.style.opacity = idx > 0 ? '1' : '0.3';
-					nextBtn.style.opacity = idx < pages.length - 1 ? '1' : '0.3';
-					prevBtn.style.pointerEvents = idx > 0 ? 'auto' : 'none';
-					nextBtn.style.pointerEvents = idx < pages.length - 1 ? 'auto' : 'none';
-				};
-
-				renderPage(0);
-
-				prevBtn.addEventListener('click', () => {
-					if (this.fullscreenPage > 0) { this.fullscreenPage--; renderPage(this.fullscreenPage); }
+					currentPages = pages;
+					this.fullscreenPages = pages as any;
+					this.fullscreenPage = 0;
+					renderPage(0);
+					onDone?.();
 				});
-				nextBtn.addEventListener('click', () => {
-					if (this.fullscreenPage < pages.length - 1) { this.fullscreenPage++; renderPage(this.fullscreenPage); }
-				});
-			});
+			};
+
+			if (this.app) {
+				MarkdownRenderer.render(this.app, rawContent, tempDiv, sourcePath, new Component()).then(() => doPaginate());
+			} else {
+				tempDiv.innerHTML = this.escapeHtml(rawContent);
+				doPaginate();
+			}
 		};
 
-		if (this.app) {
-			const sourcePath = this.data.pdfName || '';
-			MarkdownRenderer.render(this.app, cleanedContent, tempDiv, sourcePath, new Component()).then(() => paginate());
-		} else {
-			tempDiv.innerHTML = this.escapeHtml(cleanedContent);
-			paginate();
-		}
+		const renderPage = (idx: number) => {
+			// 翻页 fade 动画
+			contentArea.addClass('deeppdf-page-fading');
+			setTimeout(() => {
+				contentArea.empty();
+				const pg = currentPages[idx];
+				if (pg) {
+					for (const el of pg) contentArea.appendChild(el);
+					setupInternalLinks(contentArea, this.app!, false, this.observers);
+				}
+				pageInfo.textContent = currentPages.length > 1 ? `${idx + 1} / ${currentPages.length}` : '';
+				prevBtn.style.opacity = idx > 0 ? '1' : '0.3';
+				nextBtn.style.opacity = idx < currentPages.length - 1 ? '1' : '0.3';
+				prevBtn.style.pointerEvents = idx > 0 ? 'auto' : 'none';
+				nextBtn.style.pointerEvents = idx < currentPages.length - 1 ? 'auto' : 'none';
+				contentArea.removeClass('deeppdf-page-fading');
+			}, 150);
+		};
 
-		// 事件
+		// ── 初始渲染 ──
+		const initialMsg = aiMessages[currentLetterIdx];
+		const { cleanedContent: initialContent } = parseAgentContent(initialMsg?.content || this.data.content);
+		paginateContent(initialContent, initialMsg?.pdfName || this.data.pdfName || '');
+
+		// ── 翻页按钮 ──
+		prevBtn.addEventListener('click', () => {
+			if (this.fullscreenPage > 0) { this.fullscreenPage--; renderPage(this.fullscreenPage); }
+		});
+		nextBtn.addEventListener('click', () => {
+			if (this.fullscreenPage < currentPages.length - 1) { this.fullscreenPage++; renderPage(this.fullscreenPage); }
+		});
+
+		// ── 翻信按钮 ──
+		const navigateToLetter = (targetIdx: number) => {
+			if (targetIdx < 0 || targetIdx >= aiMessages.length || targetIdx === currentLetterIdx) return;
+			if (!this.app) return;
+
+			const direction = targetIdx > currentLetterIdx ? 'left' : 'right';
+			contentArea.addClass(`deeppdf-flip-${direction}-out`);
+
+			setTimeout(() => {
+				currentLetterIdx = targetIdx;
+				const target = aiMessages[currentLetterIdx];
+				currentPattern = getPatternForMessage(target.id);
+
+				// 更新工具栏
+				questionEl.textContent = target.question || '';
+
+				// 更新面板和内容区图案
+				const panelClasses = ['deeppdf-fullscreen-panel'];
+				if (currentPattern) panelClasses.push(currentPattern);
+				panel.className = panelClasses.join(' ');
+				const contentClasses = ['deeppdf-fullscreen-content-area'];
+				if (currentPattern) contentClasses.push(currentPattern);
+				contentArea.className = contentClasses.join(' ');
+
+				// 更新箭头可见性
+				prevLetterBtn.style.display = currentLetterIdx > 0 ? '' : 'none';
+				nextLetterBtn.style.display = currentLetterIdx < aiMessages.length - 1 ? '' : 'none';
+
+				// 重新渲染内容
+				const { cleanedContent } = parseAgentContent(target.content);
+				contentArea.removeClass(`deeppdf-flip-${direction}-out`);
+				paginateContent(cleanedContent, target.pdfName || '', () => {
+					contentArea.addClass(`deeppdf-flip-${direction}-in`);
+					setTimeout(() => contentArea.removeClass(`deeppdf-flip-${direction}-in`), 300);
+				});
+			}, 200);
+		};
+		prevLetterBtn.addEventListener('click', () => navigateToLetter(currentLetterIdx - 1));
+		nextLetterBtn.addEventListener('click', () => navigateToLetter(currentLetterIdx + 1));
+
+		// ── 事件 ──
 		const close = () => this.closeFullscreen();
 		closeBtn.addEventListener('click', close);
 		overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-		// 阻止面板点击穿透到 PDF 阅读器
 		panel.addEventListener('mousedown', (e) => e.stopPropagation());
 		panel.addEventListener('click', (e) => e.stopPropagation());
+
 		this.fullscreenKeyHandler = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') { e.stopImmediatePropagation(); close(); }
-			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); nextBtn.click(); }
-			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); prevBtn.click(); }
+			else if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && (e.ctrlKey || e.metaKey)) {
+				e.preventDefault(); e.stopImmediatePropagation(); nextLetterBtn.click();
+			}
+			else if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && (e.ctrlKey || e.metaKey)) {
+				e.preventDefault(); e.stopImmediatePropagation(); prevLetterBtn.click();
+			}
+			else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+				e.preventDefault(); e.stopImmediatePropagation(); nextBtn.click();
+			}
+			else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+				e.preventDefault(); e.stopImmediatePropagation(); prevBtn.click();
+			}
 		};
 		document.addEventListener('keydown', this.fullscreenKeyHandler, true);
 
@@ -1523,6 +1609,7 @@ export class AIMessage extends Message {
 		// 墨迹拖尾效果
 		this.setupInkTrail(overlay);
 	}
+
 	private closeFullscreen(): void {
 		if (!this.fullscreenOverlay) return;
 		// 移除全屏键盘处理器（修复箭头键被永久拦截的 bug）
@@ -1536,6 +1623,7 @@ export class AIMessage extends Message {
 		setTimeout(() => overlay.remove(), 300);
 	}
 
+	private getAllMessages: (() => MessageData[]) | null = null;
 	private fullscreenKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private inkTrailCanvas: HTMLCanvasElement | null = null;
 	private inkTrailCtx: CanvasRenderingContext2D | null = null;
@@ -1782,6 +1870,7 @@ export function createMessage(
 		onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 		onQuote?: (metadata: QuoteMetadata) => void;
 		onDelete?: () => void;
+		getAllMessages?: () => MessageData[];
 		app?: App;
 	}
 ): Message {
