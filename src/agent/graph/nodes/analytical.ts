@@ -19,6 +19,7 @@ import {
 } from '../prompts/analytical-prompt.js';
 import { createLangChainTools } from '../../tools/index.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
+import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { loadTreeJson } from '../utils/tree-loader.js';
@@ -137,27 +138,48 @@ export async function analyticalNode(
     ctx?.prevSearchedBlockIds,
   );
 
-  // === Path B: Pre-search with S1's suggested_keywords ===
+  // === Path B: Pre-search with S1's suggested_keywords (RRF multi-query) ===
   let preSearchBlock = '';
   const suggestedKeywords = state.suggestedKeywords;
   if (suggestedKeywords && suggestedKeywords.length > 0 && toolContext.app) {
     try {
       const vaultPath = (toolContext.app.vault.adapter as any).basePath;
-      const searchOpts: any = {
+      const baseSearchOpts: any = {
         filePath: '',
-        query: suggestedKeywords.join(' '),
         topK: 10,
         embedding: toolContext.plugin?.settings?.embedding,
         scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
       };
       if (toolContext.indexId && vaultPath) {
-        searchOpts.bookId = toolContext.indexId;
-        searchOpts.vaultPath = vaultPath;
+        baseSearchOpts.bookId = toolContext.indexId;
+        baseSearchOpts.vaultPath = vaultPath;
       }
 
+      // RRF multi-query: 每个关键词独立检索后融合
       const preSearchRunnable = RunnableLambda.from(
-        async () => searchBookV2(searchOpts)
-      ).withConfig({ runName: 'pre_search_book_v2' });
+        async () => {
+          const subResults = await Promise.all(
+            suggestedKeywords.map(async (kw) => {
+              try {
+                return await searchBookV2({ ...baseSearchOpts, query: kw });
+              } catch {
+                return [];
+              }
+            })
+          );
+          
+          // Simple merge: flatten and dedupe by nodeId
+          const mergedMap = new Map<string, BookSearchResultV2>();
+          for (const results of subResults) {
+            for (const r of results) {
+              if (!mergedMap.has(r.nodeId)) {
+                mergedMap.set(r.nodeId, r);
+              }
+            }
+          }
+          return Array.from(mergedMap.values()).sort((a, b) => b.score - a.score);
+        }
+      ).withConfig({ runName: 'pre_search_rrf' });
       const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
       // Quality threshold: only inject if we got meaningful results

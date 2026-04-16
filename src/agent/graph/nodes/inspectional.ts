@@ -107,6 +107,7 @@ export async function inspectionalNode(
         tocSummary: '无法解析目录范围，使用全局搜索。',
         betterQuestion: state.rewrittenQuery,
         structuralAnalysis: '',
+        suggestedKeywords: [],
       };
     }
 
@@ -125,6 +126,7 @@ export async function inspectionalNode(
       tocSummary: '无法解析目录范围，使用全局搜索。',
       betterQuestion: state.rewrittenQuery,
       structuralAnalysis: '',
+      suggestedKeywords: [],
     };
   }
 }

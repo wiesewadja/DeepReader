@@ -45,8 +45,8 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
 <keyword_tips>
 【中文关键字提取法则】：
 1. **核心名词优先**：只提取最罕见、最硬核的专有名词（如"MECE"、"熵增"）。剔除动词和修饰语（如"如何"、"的作用"、"是什么"）。
-2. **拆分复合词**：作者可能在词语中间加了字。不要搜"解决问题的前提"，应该拆成 keywords: ["解决问题", "前提"] 进行 AND 匹配。
-3. **数组是 AND 逻辑**：keywords 数组元素之间是严格的 AND（必须同时出现）。
+2. **拆分复合词**：作者可能在词语中间加了字。不要搜"解决问题的前提"，应该拆成 keywords: ["解决问题", "前提"]。
+3. **数组是 OR 逻辑**：keywords 数组元素独立检索后融合排序（RRF），出现任一关键词的结果都会返回，多关键词匹配的结果排名更高。
 </keyword_tips>
 
 <output_rules>
