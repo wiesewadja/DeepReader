@@ -25,6 +25,7 @@ import type {
 } from "./book-types.js";
 import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
 import { buildBM25Index } from "./bm25.js";
+import { indexPropositions } from "./proposition-indexer.js";
 
 /**
  * Generate bookId from file path (SHA-256 first 8 chars)
@@ -383,7 +384,58 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     stepLabel: "BM25 索引构建完成",
   });
 
-  // Step 6: Finalize — clean up indexing status
+  // Step 7: Proposition cards extraction (optional)
+  if (options.propositions?.enabled && options.propositions.apiKey) {
+    reportProgress({
+      percent: 97,
+      step: "extract_propositions",
+      stepLabel: "提取命题卡片",
+    });
+
+    try {
+      const treePath = path.join(indexDir, "tree.json");
+      const treeContent = await fs.readFile(treePath, "utf-8");
+      const treeData = JSON.parse(treeContent);
+
+      const propResult = await indexPropositions({
+        bookId,
+        vaultPath: options.outputDir,
+        treeData,
+        embedding: options.embedding,
+        llm: {
+          model: options.propositions.model,
+          apiKey: options.propositions.apiKey,
+          baseUrl: options.propositions.baseUrl,
+        },
+        cardsPer500Words: options.propositions.cardsPer500Words,
+        onProgress: (p) => {
+          reportProgress({
+            percent: 97 + Math.round(p.percent * 0.02),
+            step: "extract_propositions",
+            stepLabel: p.message,
+          });
+        },
+      });
+
+      bookMeta.propositions = {
+        enabled: true,
+        totalCards: propResult.totalCards,
+        model: options.propositions.model,
+        generatedAt: new Date().toISOString(),
+      };
+
+      await fs.writeFile(
+        path.join(indexDir, "book-meta.json"),
+        JSON.stringify(bookMeta, null, 2)
+      );
+
+      piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
+    } catch (error) {
+      console.warn("[book-indexer] Proposition extraction failed:", error);
+    }
+  }
+
+  // Step 8: Finalize — clean up indexing status
   cleanupStatus();
 
   reportProgress({
