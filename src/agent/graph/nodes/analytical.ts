@@ -8,6 +8,7 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { runReactLoop } from '../subgraphs/react-loop.js';
@@ -99,7 +100,10 @@ export async function analyticalNode(
         searchOpts.vaultPath = vaultPath;
       }
 
-      const preResults = await searchBookV2(searchOpts);
+      const preSearchRunnable = RunnableLambda.from(
+        async () => searchBookV2(searchOpts)
+      ).withConfig({ runName: 'pre_search_book_v2' });
+      const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
       // Quality threshold: only inject if we got meaningful results
       if (preResults.length >= 2) {
