@@ -419,9 +419,10 @@ export class SidebarView extends ItemView {
         }
 
         // 将过滤后的消息添加到 UI
+        let lastUserContent = '';
         displayMessages.forEach((msg, index) => {
             try {
-                const msgData = {
+                const msgData: any = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
                     content: msg.content || '',
@@ -429,6 +430,11 @@ export class SidebarView extends ItemView {
                     timestamp: msg.timestamp || new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
+                if (msg.role === 'user') {
+                    lastUserContent = msg.content || '';
+                } else if (msg.role === 'assistant' && lastUserContent) {
+                    msgData.question = lastUserContent;
+                }
                 this.messageList!.addMessage(msgData);
             } catch (e) {
                 warn(`[DeepPDF] Failed to restore message:`, e);

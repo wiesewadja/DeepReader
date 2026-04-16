@@ -1386,7 +1386,11 @@ export class AIMessage extends Message {
 
 		// 工具栏
 		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
-		toolbar.createEl('span', { cls: 'deeppdf-fullscreen-title', text: '奚童来信' });
+		const toolbarLeft = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-left' });
+		toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-title', text: '奚童来信' });
+		if (this.data.question) {
+			toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-question', text: this.data.question });
+		}
 
 		// 右侧：页码 + 翻页 + 关闭
 		const toolbarRight = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-right' });
