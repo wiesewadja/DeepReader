@@ -36,8 +36,9 @@ export interface SyntopicalSearchResult {
 }
 
 const SYNTOPICAL_KEYWORDS = [
-  '对比', '比较', '异同', '其他书', '联系起来', '不同', '另一本',
-  '跨书', '主题阅读', '共识', '分歧', '相同', '差异'
+  '对比', '比较', '异同', '其他书', '联系起来', '另一本',
+  '跨书', '主题阅读', '共识', '分歧', '相同', '差异',
+  '看法不同', '观点不同', '有什么不同', '有何不同'
 ];
 
 export function hasSyntopicalKeywords(query: string): boolean {
@@ -91,14 +92,9 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   }
 
   // 2. Pre-compute query embedding (shared across all books)
-  let queryEmbedding: number[] | null = null;
-  if (embedding && embedding.provider !== 'local') {
-    try {
-      queryEmbedding = await getOrGenerateEmbedding(query, embedding);
-    } catch (err) {
-      log('[syntopical-search] Query embedding failed:', err);
-    }
-  }
+  const queryEmbedding = embedding && embedding.provider !== 'local'
+    ? await getOrGenerateEmbedding(query, embedding).catch(() => null)
+    : null;
 
   // 3. Parallel search across all books
   const searchPromises = indexedBooks.map(async (book) => {
@@ -114,7 +110,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
 
       const results = await searchBookV2(searchOpts);
 
-      // Optional: proposition search
+      // Proposition search (optional, uses precomputed embedding if available)
       let propositionMatches: PropositionMatch[] = [];
       if (embedding && embedding.provider !== 'local') {
         try {

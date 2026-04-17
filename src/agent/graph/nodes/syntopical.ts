@@ -82,8 +82,12 @@ export async function syntopicalNode(
   }
 
   if (searchResult.books.length === 1) {
-    log('[S3 Syntopical] Only 1 book found, would fall back to S2 in ideal case');
-    // For now, continue with single book analysis but note the limitation
+    log('[S3 Syntopical] Only 1 book found, returning fallback message');
+    const singleBook = searchResult.books[0];
+    return {
+      analysisResult: `只找到 1 本已索引书籍《${singleBook.bookName}》，无法进行多书籍主题阅读。\n\n建议：\n1. 在 Library 中添加更多相关书籍并完成索引\n2. 或使用普通检索模式查询这本书\n\n找到的相关章节：\n${singleBook.results.slice(0, 3).map(r => `- ${r.title}`).join('\n')}`,
+      toolResultsSnapshot: [],
+    };
   }
 
   // 3. Build context and call LLM
@@ -119,9 +123,11 @@ export async function syntopicalNode(
   log(`[S3 Syntopical] Analysis complete, ${verificationResult.totalRefs} refs, ${verificationResult.ghostRefs} ghost`);
 
   // 5. HITL interrupt (optional)
+  // Keep toolResultsSnapshot limited but include all referenced results
+  const snapshotLimit = 20; // Increased from 10 to reduce ghost link risk
   const stateUpdate: Partial<CognitiveEngineState> = {
     analysisResult: content,
-    toolResultsSnapshot: toolResults.slice(0, 10), // Limit snapshot size
+    toolResultsSnapshot: toolResults.slice(0, Math.min(snapshotLimit, toolResults.length)),
   };
 
   const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
