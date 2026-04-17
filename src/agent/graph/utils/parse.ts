@@ -1,4 +1,20 @@
 /**
+ * Quick JSON extraction from LLM text output.
+ * Handles ```json ... ``` blocks and bare { ... } objects.
+ */
+export function extractJSON(text: string): Record<string, any> | null {
+  const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try { return JSON.parse(codeBlockMatch[1]); } catch { /* fall through */ }
+  }
+  const braceMatch = text.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
+  }
+  return null;
+}
+
+/**
  * JSON Parsing Utilities for LLM output
  *
  * Migrated from cognitive-engine/parse.ts

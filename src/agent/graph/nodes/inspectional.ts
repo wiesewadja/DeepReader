@@ -15,22 +15,8 @@ import {
   buildInspectionalSystemPrompt,
   buildInspectionalUserMessage,
 } from '../prompts/inspectional-prompt';
+import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
-
-/**
- * 从 LLM 文本输出中提取 JSON。
- */
-function extractJSON(text: string): Record<string, any> | null {
-  const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (codeBlockMatch) {
-    try { return JSON.parse(codeBlockMatch[1]); } catch { /* fall through */ }
-  }
-  const braceMatch = text.match(/\{[\s\S]*\}/);
-  if (braceMatch) {
-    try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
-  }
-  return null;
-}
 
 /**
  * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.

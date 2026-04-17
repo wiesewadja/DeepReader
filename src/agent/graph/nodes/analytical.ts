@@ -275,11 +275,11 @@ ${blockLines.join('\n\n')}
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: re-run with feedback
+      // User rejected: re-run with feedback, preserving pre-search context
       const refinedResult = await runReactLoop(
         [
           new SystemMessage(fullSystemPrompt),
-          new HumanMessage(userMessage),
+          new HumanMessage(finalUserMessage),
           new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈补充或修正分析。`),
         ],
         {

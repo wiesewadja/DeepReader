@@ -9,6 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
+import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
 
 interface RouterOutput {
@@ -25,24 +26,6 @@ function extractLastHumanMessage(messages: BaseMessage[]): string {
     }
   }
   return '';
-}
-
-/**
- * 从 LLM 文本输出中提取 JSON。
- * 支持 ```json ... ``` 包裹和裸 JSON 两种格式。
- */
-function extractJSON(text: string): Record<string, any> | null {
-  // 尝试提取 ```json ... ``` 代码块
-  const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-  if (codeBlockMatch) {
-    try { return JSON.parse(codeBlockMatch[1]); } catch { /* fall through */ }
-  }
-  // 尝试提取 { ... } JSON 对象
-  const braceMatch = text.match(/\{[\s\S]*\}/);
-  if (braceMatch) {
-    try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
-  }
-  return null;
 }
 
 /**

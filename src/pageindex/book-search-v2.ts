@@ -29,7 +29,6 @@ import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import {
   loadVectorStore,
-  generateEmbedding,
   generateEmbeddings,
   cosineSearch,
 } from "./vault/vectors.js";
@@ -41,13 +40,29 @@ import {
 } from "./proposition-search.js";
 import { getOrGenerateEmbedding } from "../agent/utils/embedding-cache.js";
 
+// ─── Index file cache (avoids redundant disk reads in multi-keyword RRF) ─────
+
+const indexCache = new Map<string, { data: any; ts: number }>();
+const INDEX_CACHE_TTL = 60_000; // 1 minute
+
+function getCached<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const cached = indexCache.get(key);
+  if (cached && Date.now() - cached.ts < INDEX_CACHE_TTL) {
+    return cached.data as Promise<T>;
+  }
+  const promise = loader();
+  promise.catch(() => indexCache.delete(key)); // Remove on failure
+  indexCache.set(key, { data: promise, ts: Date.now() });
+  return promise;
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function generateBookId(filePath: string): string {
   return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
 }
 
-function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
+export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
@@ -82,8 +97,8 @@ export async function searchBookV2(
     );
   }
 
-  // Load tree.json
-  const treeData = await loadTreeJson(indexDir);
+  // Load tree.json (cached to avoid redundant reads in multi-keyword searches)
+  const treeData = await getCached(`tree:${indexDir}`, () => loadTreeJson(indexDir));
   if (!treeData) {
     throw new IndexError(
       "tree.json not found",
@@ -93,10 +108,12 @@ export async function searchBookV2(
     );
   }
 
-  // Load BM25 index
-  const bm25Path = path.join(indexDir, "bm25.json");
-  const bm25Content = await fs.readFile(bm25Path, "utf-8");
-  const bm25Index = JSON.parse(bm25Content) as BM25Data;
+  // Load BM25 index (cached)
+  const bm25Index = await getCached(`bm25:${indexDir}`, async () => {
+    const bm25Path = path.join(indexDir, "bm25.json");
+    const bm25Content = await fs.readFile(bm25Path, "utf-8");
+    return JSON.parse(bm25Content) as BM25Data;
+  });
 
   // ── Stage 1: Dynamic recall K ──────────────────────────────────────────
   const recallK = computeDynamicRecallK(options.query);
@@ -147,7 +164,14 @@ export async function searchBookV2(
   let candidateNodeIds = allNodeIds;
   if (options.scopeNodeIds && options.scopeNodeIds.length > 0) {
     const scopeSet = new Set(options.scopeNodeIds);
-    candidateNodeIds = new Set([...allNodeIds].filter(id => scopeSet.has(id)));
+    const scopedCandidates = new Set([...allNodeIds].filter(id => scopeSet.has(id)));
+    // Only apply scope filter if it produces results; otherwise fall back to all candidates
+    // to avoid zero-recall when scope IDs don't match any recalled nodes
+    if (scopedCandidates.size > 0) {
+      candidateNodeIds = scopedCandidates;
+    } else {
+      piLog(`[book-search-v2] Scope filter produced 0 results from ${allNodeIds.size} candidates, using unscoped fallback`);
+    }
   }
 
   // ── Stage 5: Score fusion + level weighting + proposition ─────────────
@@ -165,6 +189,12 @@ export async function searchBookV2(
   const bm25Max = Math.max(...bm25Values, 0);
   const bm25Min = Math.min(...bm25Values, 0);
   const bm25Range = bm25Max - bm25Min;
+
+  // Normalize vector scores (cosine similarity can be negative and has different scale)
+  const vecValues = Array.from(vectorScores.values());
+  const vecMax = Math.max(...vecValues, 0);
+  const vecMin = Math.min(...vecValues, 0);
+  const vecRange = vecMax - vecMin;
 
   // Compute proposition scores per nodeId
   const propositionScores = new Map<string, number>();
@@ -198,9 +228,10 @@ export async function searchBookV2(
     const ps = propositionScores.get(nodeId) || 0;
 
     const normalizedBM25 = bm25Range > 0 ? (bs - bm25Min) / bm25Range : 0;
+    const normalizedVec = vecRange > 0 ? (vs - vecMin) / vecRange : (vs > 0 ? 1 : 0);
     const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
 
-    const fusedScore = w_v * vs + w_b * normalizedBM25 + w_p * normalizedProp;
+    const fusedScore = w_v * normalizedVec + w_b * normalizedBM25 + w_p * normalizedProp;
     const levelWeight = computeLevelWeight(nodeId, treeData.structure);
 
     scoredResults.push({
@@ -316,7 +347,7 @@ export async function loadTreeJson(indexDir: string): Promise<TreeData | null> {
 
 // ─── Stage 1: Dynamic recall K ──────────────────────────────────────────────
 
-function computeDynamicRecallK(query: string): number {
+export function computeDynamicRecallK(query: string): number {
   const len = query.length;
   if (len < 5) return 50;
   if (len <= 15) return 30;
@@ -325,7 +356,7 @@ function computeDynamicRecallK(query: string): number {
 
 // ─── Stage 5: Level weighting ───────────────────────────────────────────────
 
-function computeLevelWeight(nodeId: string, structure: TreeNode[]): number {
+export function computeLevelWeight(nodeId: string, structure: TreeNode[]): number {
   const node = findNodeInTree(nodeId, structure);
   if (!node) return 0.5;
 
@@ -334,8 +365,8 @@ function computeLevelWeight(nodeId: string, structure: TreeNode[]): number {
   const depth = findDepth(nodeId, structure);
 
   if (depth === 0) return 1.0;     // L0 book-level
-  if (hasChildren) return 0.7;     // L1 chapter-level (has subsections)
-  return 0.5;                       // L1 section-level (leaf)
+  if (hasChildren) return 0.9;     // L1 chapter-level (has subsections)
+  return 0.7;                       // L1 section-level (leaf)
 }
 
 function findNodeInTree(nodeId: string, nodes: TreeNode[]): TreeNode | null {
@@ -381,7 +412,7 @@ function findNodeTitle(nodeId: string, nodes: TreeNode[]): string | null {
 
 // ─── Stage 8: Matched block location ────────────────────────────────────────
 
-interface Paragraph {
+export interface Paragraph {
   blockId: string;
   text: string;
   start: number;
@@ -450,7 +481,7 @@ async function locateMatchedBlocks(
 
 // ─── Paragraph splitting ────────────────────────────────────────────────────
 
-function splitByBlockIds(content: string): Paragraph[] {
+export function splitByBlockIds(content: string): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   const regex = /\^([\w-]+)/g;
   let lastEnd = 0;
@@ -509,7 +540,7 @@ async function scoreByVectorSimilarity(
 
 // ─── Stage 8 scoring: token density (path B, fallback) ──────────────────────
 
-function scoreByTokenDensity(
+export function scoreByTokenDensity(
   paragraphs: Paragraph[],
   queryTokens: string[]
 ): Array<Paragraph & { score: number }> {
@@ -519,7 +550,7 @@ function scoreByTokenDensity(
   }));
 }
 
-function countTokenHits(text: string, tokens: string[]): number {
+export function countTokenHits(text: string, tokens: string[]): number {
   const lower = text.toLowerCase();
   return tokens.reduce((count, token) => {
     let pos = 0;
@@ -533,7 +564,7 @@ function countTokenHits(text: string, tokens: string[]): number {
 
 // ─── Context expansion ──────────────────────────────────────────────────────
 
-function expandToContext(
+export function expandToContext(
   match: Paragraph & { score: number },
   paragraphs: Paragraph[],
   blockSize: number

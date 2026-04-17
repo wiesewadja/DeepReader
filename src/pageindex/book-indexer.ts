@@ -44,7 +44,10 @@ export async function isBookIndexed(filePath: string, vaultPath: string): Promis
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   try {
+    // Check directory exists AND critical index files are present
     await fs.access(indexDir);
+    await fs.access(path.join(indexDir, "tree.json"));
+    await fs.access(path.join(indexDir, "bm25.json"));
     return true;
   } catch {
     return false;
