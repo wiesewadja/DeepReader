@@ -22,13 +22,18 @@ export function routeByDepth(state: CognitiveEngineState): string {
  * Route after S1 Inspectional based on depth and results.
  *
  * - depth=1 with structural analysis complete → S4 (formatter)
- * - depth>=2 → S2 (analytical, which will use scopeNodeIds from S1)
+ * - depth=2 → S2 (analytical, which will use scopeNodeIds from S1)
+ * - depth=3 → S3 (syntopical, multi-book fusion analysis)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
+  // depth=3 → go to syntopical (S3)
+  if (state.depth === 3) {
+    return 'syntopical';
+  }
   // depth=1 and structural analysis done → go straight to formatter
   if (state.depth <= 1 && state.structuralAnalysis) {
     return 'done';
   }
-  // depth>=2 → continue to analytical reading
+  // depth=2 → continue to analytical reading
   return 'continue';
 }

@@ -1,0 +1,151 @@
+/**
+ * S3: Syntopical Reading Node — LangGraph node for multi-book analysis
+ *
+ * Flow:
+ * 1. Scan Vault for all indexed books
+ * 2. Parallel search across books (vector + proposition)
+ * 3. Inject results into LLM context
+ * 4. LLM fusion analysis (consensus vocabulary + issues + positions)
+ * 5. Output coherent text with cross-book wiki links
+ */
+
+import type { RunnableConfig } from '@langchain/core/runnables';
+import { RunnableLambda } from '@langchain/core/runnables';
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
+import type { CognitiveEngineState } from '../state';
+import { interrupt } from '@langchain/langgraph';
+import { agentLog as log } from '../../../utils/logger.js';
+import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopical-search.js';
+import {
+  buildSyntopicalSystemPrompt,
+  buildSyntopicalUserMessage,
+} from '../prompts/syntopical-prompt.js';
+import { verifyAndCleanContent } from '../utils/self-verification.js';
+
+export interface SyntopicalToolResult {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: string;
+  originalResultLength: number;
+}
+
+/**
+ * S3 Syntopical node: multi-book fusion analysis.
+ */
+export async function syntopicalNode(
+  state: CognitiveEngineState,
+  config: RunnableConfig,
+): Promise<Partial<CognitiveEngineState>> {
+  const ctx = config.configurable?.sharedContext;
+  const mainModel = config.configurable?.mainModel;
+  const toolContext = config.configurable?.toolContext;
+
+  if (!mainModel || !toolContext?.app) {
+    console.warn('[S3 Syntopical] Missing required config, returning empty result.');
+    return {
+      analysisResult: '',
+      toolResultsSnapshot: [],
+    };
+  }
+
+  const vaultPath = (toolContext.app.vault.adapter as any).basePath || '';
+  const query = state.rewrittenQuery || ctx?.rawUserQuery || '';
+  const embedding = toolContext.plugin?.settings?.embedding;
+
+  log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
+
+  // 1. Multi-book search
+  const searchRunnable = RunnableLambda.from(
+    async () => syntopicalSearch({
+      query,
+      vaultPath,
+      embedding,
+      maxBooks: 5,
+      topKPerBook: 5,
+    })
+  ).withConfig({ runName: 'syntopical_search' });
+
+  const searchResult = await searchRunnable.invoke({}, { callbacks: config.callbacks });
+
+  // 2. Handle edge cases
+  if (searchResult.books.length === 0) {
+    log('[S3 Syntopical] No indexed books found');
+    return {
+      analysisResult: 'Vault 中没有已索引的书籍。请先在 Library 中添加书籍并完成索引。',
+      toolResultsSnapshot: [{
+        toolName: 'syntopical_search',
+        args: { query },
+        result: 'No indexed books found',
+        originalResultLength: 0,
+      }],
+    };
+  }
+
+  if (searchResult.books.length === 1) {
+    log('[S3 Syntopical] Only 1 book found, would fall back to S2 in ideal case');
+    // For now, continue with single book analysis but note the limitation
+  }
+
+  // 3. Build context and call LLM
+  const systemPrompt = buildSyntopicalSystemPrompt();
+  const userMessage = buildSyntopicalUserMessage(query, searchResult.books);
+
+  log(`[S3 Syntopical] Calling LLM with ${searchResult.books.length} books context`);
+
+  const response = await mainModel.invoke([
+    new SystemMessage(systemPrompt),
+    new HumanMessage(userMessage),
+  ], config);
+
+  let content = typeof response.content === 'string'
+    ? response.content
+    : JSON.stringify(response.content);
+
+  // 4. Self-verification (wiki link validation)
+  const toolResults: SyntopicalToolResult[] = searchResult.books.flatMap(book =>
+    book.results.flatMap(r =>
+      r.matchedBlocks.map(block => ({
+        toolName: 'syntopical_search',
+        args: { bookId: book.bookId, nodeId: r.nodeId },
+        result: block.content,
+        originalResultLength: block.content.length,
+      }))
+    )
+  );
+
+  const verificationResult = await verifyAndCleanContent(content, toolResults);
+  content = verificationResult.content;
+
+  log(`[S3 Syntopical] Analysis complete, ${verificationResult.totalRefs} refs, ${verificationResult.ghostRefs} ghost`);
+
+  // 5. HITL interrupt (optional)
+  const stateUpdate: Partial<CognitiveEngineState> = {
+    analysisResult: content,
+    toolResultsSnapshot: toolResults.slice(0, 10), // Limit snapshot size
+  };
+
+  const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
+  if (enableHumanReview) {
+    const resumeValue = interrupt({
+      nodeId: 'syntopical',
+      question: 'S3 主题阅读完成，是否满意当前分析？',
+      content,
+    }) as { approved: boolean; feedback: string } | undefined;
+
+    if (resumeValue?.approved === false && resumeValue.feedback) {
+      const refinedResponse = await mainModel.invoke([
+        new SystemMessage(systemPrompt),
+        new HumanMessage(userMessage),
+        new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈补充或修正分析。`),
+      ], config);
+
+      const refinedContent = typeof refinedResponse.content === 'string'
+        ? refinedResponse.content
+        : JSON.stringify(refinedResponse.content);
+
+      stateUpdate.analysisResult = refinedContent;
+    }
+  }
+
+  return stateUpdate;
+}
