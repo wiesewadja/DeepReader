@@ -11,6 +11,7 @@ import type { CognitiveEngineState } from '../state';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
+import { hasSyntopicalKeywords } from '../../utils/syntopical-search.js';
 
 interface RouterOutput {
   depth: number;
@@ -65,10 +66,11 @@ export async function routerNode(
     const depth = parsed?.depth ?? 2;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
-    // Syntopical reading (depth=3) downgrades to analytical (depth=2)
-    const effectiveDepth = depth >= 3 ? 2 : depth;
+    // Hybrid trigger: keywords pre-check + LLM classification
+    const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
+    const effectiveDepth = candidateSyntopical ? 3 : depth;
 
-    log(`[S0 Router] depth=${effectiveDepth}, query="${standaloneQuery.slice(0, 50)}"`, parsed?.reason || '');
+    log(`[S0 Router] depth=${effectiveDepth}, candidateSyntopical=${candidateSyntopical}, query="${standaloneQuery.slice(0, 50)}"`, parsed?.reason || '');
 
     return {
       depth: effectiveDepth,

@@ -15,12 +15,17 @@ describe('Cognitive Engine Graph — Edges', () => {
       expect(routeByDepth({ depth: 2 } as any)).toBe('inspectional');
     });
 
-    it('should route depth=3 to inspectional (syntopical downgrade)', () => {
+    it('should route depth=3 to inspectional (scope narrowing before syntopical)', () => {
       expect(routeByDepth({ depth: 3 } as any)).toBe('inspectional');
     });
   });
 
   describe('routeAfterInspectional', () => {
+    it('should route to syntopical when depth=3', () => {
+      const state = { depth: 3 } as any;
+      expect(routeAfterInspectional(state)).toBe('syntopical');
+    });
+
     it('should route to formatter when depth=1 and structural analysis exists', () => {
       const state = { depth: 1, structuralAnalysis: '全书分为三部分...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
@@ -34,6 +39,11 @@ describe('Cognitive Engine Graph — Edges', () => {
     it('should route to analytical when no structural analysis', () => {
       const state = { depth: 1, structuralAnalysis: '' } as any;
       expect(routeAfterInspectional(state)).toBe('continue');
+    });
+
+    it('should route to syntopical even with structural analysis', () => {
+      const state = { depth: 3, structuralAnalysis: '...' } as any;
+      expect(routeAfterInspectional(state)).toBe('syntopical');
     });
   });
 });
