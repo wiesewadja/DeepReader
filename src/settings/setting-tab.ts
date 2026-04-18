@@ -5,10 +5,13 @@
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type DeepPDFPlugin from '../main';
 import type { ProviderType } from '../config/providers';
-import { PROVIDER_LABELS, getProviderDefaultModel } from '../config/providers';
+import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl } from '../config/providers';
+import type { RoleType } from '../config/ai-roles';
+import { ROLE_CAPABILITY } from '../config/ai-roles';
+
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
-type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading' | 'skills';
+type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading';
 
 interface SettingsTab {
     id: SettingsTabId;
@@ -20,15 +23,14 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     plugin: DeepPDFPlugin;
     private currentTab: SettingsTabId = 'llm';
     private contentContainer: HTMLElement | null = null;
-    private collapsedSections: Set<string> = new Set();
+    private expandedSections: Set<string> = new Set();
 
     // Tab 定义
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务', icon: '🤖' },
-        { id: 'index', name: '索引服务', icon: '📚' },
+        { id: 'index', name: '服务配置', icon: '📚' },
         { id: 'advanced', name: '高级', icon: '⚙️' },
         { id: 'reading', name: '阅读模式', icon: '📖' },
-        { id: 'skills', name: 'Skills', icon: '🧩' },
     ];
 
     constructor(app: App, plugin: DeepPDFPlugin) {
@@ -107,251 +109,374 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             case 'reading':
                 this.renderReadingModeSettings(container);
                 break;
-            case 'skills':
-                this.renderSkillsSettings(container);
-                break;
         }
     }
 
     /**
-     * AI 服务设置
+     * AI 服务设置 — 仅配置服务商账号（API Key）
      */
     private renderLLMSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: 'AI 服务设置' });
-
-        const currentProvider = this.plugin.settings.llmProvider as ProviderType;
-
-        // 服务商选择
-        new Setting(container)
-            .setName("AI 服务商")
-            .setDesc("选择与您对话的 AI 服务商")
-            .addDropdown(dropdown => {
-                // 添加所有服务商选项
-                (Object.keys(PROVIDER_LABELS) as ProviderType[]).forEach(key => {
-                    dropdown.addOption(key, PROVIDER_LABELS[key]);
-                });
-                dropdown
-                    .setValue(currentProvider)
-                    .onChange(async (value) => {
-                        this.plugin.settings.llmProvider = value as ProviderType;
-                        // 自动填充默认模型
-                        const defaultModel = getProviderDefaultModel(value as ProviderType);
-                        if (defaultModel) {
-                            this.plugin.settings.llmModel = defaultModel;
-                        }
-                        // 重置 FrontendAgent 以使用新配置
-                        this.plugin.resetFrontendAgent();
-                        await this.plugin.saveSettings();
-                        // 刷新界面以显示对应的 API Key 输入框
-                        this.renderTabContent('llm');
-                    });
-            });
-
-        // 模型名称
-        new Setting(container)
-            .setName("模型名称")
-            .setDesc("当前服务商使用的模型，可手动修改")
-            .addText(text => text
-                .setPlaceholder("deepseek-chat")
-                .setValue(this.plugin.settings.llmModel)
-                .onChange(async (value) => {
-                    this.plugin.settings.llmModel = value;
-                    // 重置 FrontendAgent 以使用新模型
-                    this.plugin.resetFrontendAgent();
-                    await this.plugin.saveSettings();
-                    serviceLog('[DeepPDF] 模型名称已更新为:', value);
-                }));
-
-        // 只显示当前服务商的 API Key 输入框
-        const providerLabel = PROVIDER_LABELS[currentProvider];
-        const apiKeyField = this.getApiKeyField(currentProvider);
-        this.createApiKeySetting(
-            container,
-            `${providerLabel} API Key`,
-            `用于访问 ${providerLabel} 服务的 API 密钥`,
-            apiKeyField
-        );
-
-        // 仅自定义服务商显示 Base URL
-        if (currentProvider === 'custom') {
-            new Setting(container)
-                .setName("API Base URL")
-                .setDesc("自定义服务商的 API 地址")
-                .addText(text => text
-                    .setPlaceholder("https://api.example.com/v1")
-                    .setValue(this.plugin.settings.apiUrl)
-                    .onChange(async (value) => {
-                        this.plugin.settings.apiUrl = value;
-                        // 重置 FrontendAgent 以使用新的 Base URL
-                        this.plugin.resetFrontendAgent();
-                        await this.plugin.saveSettings();
-                    }));
-        }
-
-        // 分隔线
-        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
-        // 快速模型设置区域
-        const fastModelSection = container.createDiv({ cls: 'deeppdf-settings-section' });
-        this.renderFastModelSettings(fastModelSection);
-    }
-
-    /**
-     * 获取服务商对应的 API Key 字段名
-     */
-    private getApiKeyField(provider: ProviderType): 'deepseekApiKey' | 'kimiApiKey' | 'zhipuApiKey' | 'openaiApiKey' | 'customApiKey' {
-        const fieldMap: Record<ProviderType, 'deepseekApiKey' | 'kimiApiKey' | 'zhipuApiKey' | 'openaiApiKey' | 'customApiKey'> = {
-            deepseek: 'deepseekApiKey',
-            kimi: 'kimiApiKey',
-            zhipu: 'zhipuApiKey',
-            openai: 'openaiApiKey',
-            custom: 'customApiKey',
-        };
-        return fieldMap[provider];
-    }
-
-    /**
-     * 创建 API Key 设置项（带密码隐藏和显示/隐藏切换）
-     */
-    private createApiKeySetting(
-        container: HTMLElement,
-        name: string,
-        desc: string,
-        field: 'deepseekApiKey' | 'kimiApiKey' | 'zhipuApiKey' | 'openaiApiKey' | 'customApiKey'
-    ): void {
-        const setting = new Setting(container)
-            .setName(name)
-            .setDesc(desc)
-            .addText(text => text
-                .setPlaceholder("sk-...")
-                .setValue(this.plugin.settings[field] as string)
-                .onChange(async (value) => {
-                    (this.plugin.settings as unknown as Record<string, string>)[field] = value;
-                    // 重置 FrontendAgent 以使用新的 API Key
-                    this.plugin.resetFrontendAgent();
-                    await this.plugin.saveSettings();
-                }));
-
-        // 获取输入框元素
-        const inputEl = setting.controlEl.querySelector('input');
-        if (inputEl) {
-            inputEl.type = 'password';
-            inputEl.style.paddingRight = '30px';
-        }
-
-        // 添加眼睛图标按钮
-        setting.addExtraButton(btn => {
-            let isVisible = false;
-            btn
-                .setIcon('eye')
-                .setTooltip('显示 API Key')
-                .onClick(() => {
-                    isVisible = !isVisible;
-                    if (inputEl) {
-                        inputEl.type = isVisible ? 'text' : 'password';
-                    }
-                    btn.setIcon(isVisible ? 'eye-off' : 'eye');
-                    btn.setTooltip(isVisible ? '隐藏 API Key' : '显示 API Key');
-                });
-        });
-    }
-
-    /**
-     * 渲染快速模型设置区域
-     */
-    private renderFastModelSettings(container: HTMLElement): void {
-        // 标题
-        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        header.createEl('h4', { text: '快速模型设置（可选）' });
-        header.createEl('span', {
-            text: '用于路由和检视阶段，可选择更便宜/更快的模型以节省成本',
+        container.createEl('h3', { text: 'AI 服务' });
+        container.createEl('p', {
+            text: '配置各服务商的 API Key。填写 Key 后，在「服务配置」Tab 中为各用途分配服务商和模型。',
             cls: 'setting-item-description'
         });
 
-        // 启用开关
-        new Setting(container)
-            .setName("启用独立的快速模型")
-            .setDesc("开启后，路由和检视阶段将使用此模型，分析与格式化仍使用主模型")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.fastModelEnabled)
-                .onChange(async (value) => {
-                    this.plugin.settings.fastModelEnabled = value;
-                    await this.plugin.saveSettings();
-                    this.plugin.resetFrontendAgent();
-                    // 重新渲染此区域
-                    this.renderTabContent('llm');
-                }));
+        this.renderProviderAccounts(container);
+    }
 
-        // 如果未启用，不显示详细配置
-        if (!this.plugin.settings.fastModelEnabled) {
-            return;
-        }
+    /**
+     * 区域一：服务商账号管理（固定 + 自定义）
+     */
+    private renderProviderAccounts(container: HTMLElement): void {
+        const providers = this.plugin.settings.providers;
+        if (!providers) return;
 
-        // 快速模型配置区域
-        const fastModelConfigEl = container.createDiv({ cls: 'deeppdf-settings-fast-model-config' });
+        // 渲染所有服务商（固定 + 自定义）
+        for (const providerId of Object.keys(providers)) {
+            const account = providers[providerId];
+            if (!account) continue;
 
-        // 服务商选择
-        const fastProvider = this.plugin.settings.fastModelProvider as ProviderType;
-        new Setting(fastModelConfigEl)
-            .setName("快速模型服务商")
-            .setDesc("选择快速模型的服务商")
-            .addDropdown(dropdown => {
-                (Object.keys(PROVIDER_LABELS) as ProviderType[]).forEach(key => {
-                    dropdown.addOption(key, PROVIDER_LABELS[key]);
-                });
-                dropdown
-                    .setValue(fastProvider)
-                    .onChange(async (value) => {
-                        this.plugin.settings.fastModelProvider = value as ProviderType;
-                        // 自动填充默认模型
-                        const defaultModel = getProviderDefaultModel(value as ProviderType);
-                        if (defaultModel) {
-                            this.plugin.settings.fastModelName = defaultModel;
-                        }
-                        this.plugin.resetFrontendAgent();
-                        await this.plugin.saveSettings();
-                        this.renderTabContent('llm');
-                    });
+            const isBuiltIn = !!PROVIDER_CONFIGS[providerId as ProviderType];
+            const displayName = isBuiltIn
+                ? PROVIDER_LABELS[providerId as ProviderType]
+                : (account as { name?: string }).name || providerId;
+
+            const sectionId = `provider-${providerId}`;
+            const isCollapsed = !this.expandedSections.has(sectionId);
+            const card = container.createDiv({ cls: 'deeppdf-settings-collapsible-section' });
+            const header = card.createDiv({ cls: 'deeppdf-settings-collapsible-header' });
+
+            const titleRow = header.createDiv({ cls: 'deeppdf-settings-provider-title' });
+            titleRow.createEl('h5', { text: displayName });
+
+            if (isBuiltIn) {
+                const caps = PROVIDER_CONFIGS[providerId as ProviderType].capabilities;
+                const capTags: string[] = [];
+                if (caps.chat) capTags.push('对话');
+                if (caps.embedding) capTags.push('向量化');
+                if (caps.reranker) capTags.push('重排序');
+                titleRow.createSpan({ text: capTags.join(' · '), cls: 'deeppdf-settings-capability-tags' });
+            } else {
+                titleRow.createSpan({ text: '自定义', cls: 'deeppdf-settings-capability-tags' });
+            }
+
+            const hasKey = !!(account as { apiKey?: string }).apiKey;
+            titleRow.createSpan({
+                text: hasKey ? '✓ 已配置' : '未配置',
+                cls: `deeppdf-settings-status ${hasKey ? 'is-configured' : 'is-not-configured'}`
             });
 
-        // 模型名称
-        new Setting(fastModelConfigEl)
-            .setName("快速模型名称")
-            .setDesc("快速模型的具体名称")
-            .addText(text => text
-                .setPlaceholder("gpt-4o-mini")
-                .setValue(this.plugin.settings.fastModelName)
-                .onChange(async (value) => {
-                    this.plugin.settings.fastModelName = value;
-                    this.plugin.resetFrontendAgent();
-                    await this.plugin.saveSettings();
-                }));
+            const indicator = header.createSpan({ cls: 'deeppdf-settings-collapsible-indicator' });
+            indicator.setText(isCollapsed ? '▶' : '▼');
 
-        // API Key（根据服务商显示对应的输入框）
-        const fastProviderLabel = PROVIDER_LABELS[fastProvider];
-        const fastApiKeyField = this.getApiKeyField(fastProvider);
-        this.createApiKeySetting(
-            fastModelConfigEl,
-            `${fastProviderLabel} API Key (快速模型)`,
-            `用于访问 ${fastProviderLabel} 快速模型的 API 密钥`,
-            fastApiKeyField
-        );
+            header.addEventListener('click', () => {
+                if (this.expandedSections.has(sectionId)) {
+                    this.expandedSections.delete(sectionId);
+                } else {
+                    this.expandedSections.add(sectionId);
+                }
+                this.renderTabContent('llm');
+            });
 
-        // 自定义 Base URL（仅 custom 服务商）
-        if (fastProvider === 'custom') {
-            new Setting(fastModelConfigEl)
-                .setName("快速模型 API Base URL")
-                .setDesc("自定义快速模型的 API 地址")
+            if (!isCollapsed) {
+                const content = card.createDiv({ cls: 'deeppdf-settings-collapsible-content' });
+                this.renderProviderDetail(content, providerId, account, isBuiltIn, displayName);
+            }
+        }
+
+        // "添加自定义服务商" 按钮
+        container.createDiv({ cls: 'deeppdf-settings-add-provider' }, (wrapper) => {
+            new Setting(wrapper)
+                .setName("添加自定义服务商")
+                .setDesc("支持 OpenAI 兼容 API 的第三方服务商（如 OpenRouter、Together AI、中转站等）")
+                .addButton(btn => btn
+                    .setButtonText("+ 添加")
+                    .setCta()
+                    .onClick(() => {
+                        const id = `custom-${Date.now()}`;
+                        (this.plugin.settings.providers as Record<string, unknown>)[id] = {
+                            apiKey: '',
+                            baseUrl: '',
+                            name: '',
+                        };
+                        this.renderTabContent('llm');
+                    }));
+        });
+    }
+
+    /**
+     * 渲染单个服务商的详细配置
+     */
+    private renderProviderDetail(
+        container: HTMLElement,
+        providerId: string,
+        account: { apiKey?: string; baseUrl?: string; name?: string },
+        isBuiltIn: boolean,
+        displayName: string,
+    ): void {
+        // 自定义服务商：显示名称输入和删除按钮
+        if (!isBuiltIn) {
+            new Setting(container)
+                .setName("服务商名称")
+                .setDesc("自定义显示名称")
+                .addText(text => text
+                    .setPlaceholder("我的 API 服务")
+                    .setValue(account.name || '')
+                    .onChange(async (value) => {
+                        (this.plugin.settings.providers as Record<string, unknown>)[providerId] = {
+                            ...account,
+                            name: value,
+                        };
+                        await this.plugin.saveSettings();
+                    }));
+
+            new Setting(container)
+                .setName("Base URL")
+                .setDesc("服务商的 API 地址（必填）")
                 .addText(text => text
                     .setPlaceholder("https://api.example.com/v1")
-                    .setValue(this.plugin.settings.fastModelApiUrl)
+                    .setValue(account.baseUrl || '')
                     .onChange(async (value) => {
-                        this.plugin.settings.fastModelApiUrl = value;
+                        (this.plugin.settings.providers as Record<string, unknown>)[providerId] = {
+                            ...account,
+                            baseUrl: value,
+                        };
                         this.plugin.resetFrontendAgent();
                         await this.plugin.saveSettings();
                     }));
+
+            new Setting(container)
+                .setName("删除此服务商")
+                .setDesc("删除后，使用该服务商的角色将失效")
+                .addButton(btn => btn
+                    .setButtonText("删除")
+                    .setWarning()
+                    .onClick(async () => {
+                        delete (this.plugin.settings.providers as Record<string, unknown>)[providerId];
+                        this.plugin.resetFrontendAgent();
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('llm');
+                    }));
+        }
+
+        // API Key（所有服务商都有）
+        const keySetting = new Setting(container)
+            .setName("API Key")
+            .setDesc(`用于访问 ${displayName} 服务的密钥`)
+            .addText(text => {
+                text.setPlaceholder("sk-...")
+                    .setValue(account.apiKey || '')
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    (this.plugin.settings.providers as Record<string, unknown>)[providerId] = {
+                        ...(this.plugin.settings.providers as Record<string, unknown>)[providerId] as object,
+                        apiKey: value,
+                    };
+                    this.plugin.resetFrontendAgent();
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('llm');
+                });
+            });
+
+        const inputEl = keySetting.controlEl.querySelector('input');
+        keySetting.addExtraButton(btn => {
+            let visible = false;
+            btn.setIcon('eye')
+                .setTooltip('显示 API Key')
+                .onClick(() => {
+                    visible = !visible;
+                    if (inputEl) inputEl.type = visible ? 'text' : 'password';
+                    btn.setIcon(visible ? 'eye-off' : 'eye');
+                    btn.setTooltip(visible ? '隐藏 API Key' : '显示 API Key');
+                });
+        });
+
+    }
+
+    /**
+     * 区域二：用途角色分配
+     */
+    private renderRoleAssignments(container: HTMLElement): void {
+        const roles = this.plugin.settings.roles;
+        if (!roles) return;
+
+        // 必填角色
+        const requiredRoles: { role: RoleType; label: string; desc: string }[] = [
+            { role: 'chat', label: '主对话', desc: '用于主要对话和分析' },
+            { role: 'router', label: '路由', desc: '用于查询路由和快速检索' },
+            { role: 'pageindex', label: '页面索引', desc: '用于书籍索引时的 LLM 调用' },
+        ];
+
+        // 可选角色
+        const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
+            { role: 'proposition', label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' },
+            { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
+            { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
+        ];
+
+        // 必填角色区域
+        for (const { role, label, desc } of requiredRoles) {
+            this.renderRoleRow(container, role, label, desc, false);
+        }
+
+        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+
+        // 可选角色区域
+        for (const { role, label, desc } of optionalRoles) {
+            this.renderRoleRow(container, role, label, desc, true);
         }
     }
+
+    /**
+     * 渲染单个角色行
+     */
+    private renderRoleRow(
+        container: HTMLElement,
+        role: RoleType,
+        label: string,
+        desc: string,
+        optional: boolean
+    ): void {
+        const settings = this.plugin.settings;
+        const roleConfig = (settings.roles as unknown as Record<string, unknown>)?.[role] as {
+            provider: ProviderType;
+            model: string;
+            baseUrlOverride?: string;
+        } | null;
+
+        const row = container.createDiv({ cls: 'deeppdf-settings-role-row' });
+
+        // 可选角色有启用/禁用开关
+        if (optional) {
+            const isEnabled = roleConfig !== null;
+            const toggleSetting = new Setting(row)
+                .setName(label)
+                .setDesc(desc)
+                .addToggle(toggle => toggle
+                    .setValue(isEnabled)
+                    .onChange(async (value) => {
+                        if (value) {
+                            // 启用：默认分配第一个可用服务商
+                            const available = getAvailableProvidersForRole(role, settings);
+                            const defaultProvider = available[0] || 'deepseek';
+                            (settings.roles as unknown as Record<string, unknown>)[role] = {
+                                provider: defaultProvider,
+                                model: PROVIDER_CONFIGS[defaultProvider as ProviderType]?.defaultModel || '',
+                            };
+                        } else {
+                            (settings.roles as unknown as Record<string, unknown>)[role] = null;
+                        }
+                        this.plugin.resetFrontendAgent();
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('index');
+                    }));
+
+            if (!isEnabled) {
+                row.createEl('p', {
+                    text: `启用后将为此角色分配服务商和模型。`,
+                    cls: 'setting-item-description'
+                });
+                return;
+            }
+        } else {
+            row.createEl('h5', { text: label });
+            row.createEl('span', { text: desc, cls: 'setting-item-description' });
+        }
+
+        // 服务商下拉
+        const availableProviders = getAvailableProvidersForRole(role, settings);
+        const currentProvider = roleConfig?.provider || 'deepseek';
+
+        new Setting(row)
+            .setName("服务商")
+            .setDesc(availableProviders.length === 0 ? '没有已配置的服务商，请先在上方填写 API Key' : '')
+            .addDropdown(dropdown => {
+                const allProviders = new Set<string>([...availableProviders, currentProvider]);
+                for (const p of allProviders) {
+                    const hasKey = !!(settings.providers as Record<string, unknown>)[p] &&
+                        !!((settings.providers as Record<string, unknown>)[p] as { apiKey?: string })?.apiKey;
+                    const label = getProviderName(p, settings);
+                    dropdown.addOption(p, `${label}${hasKey ? '' : ' (未配置)'}`);
+                }
+                dropdown.setValue(currentProvider);
+                dropdown.onChange(async (value) => {
+                    const defaultModel = PROVIDER_CONFIGS[value as ProviderType]?.defaultModel || '';
+                    (settings.roles as unknown as Record<string, unknown>)[role] = {
+                        ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
+                        provider: value,
+                        model: defaultModel,
+                    };
+                    this.plugin.resetFrontendAgent();
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('index');
+                });
+            });
+
+        // 模型输入
+        const providerConfig = PROVIDER_CONFIGS[currentProvider as ProviderType];
+        const isBuiltIn = !!providerConfig;
+        const supportsModelList = isBuiltIn ? providerConfig.supportsModelList : true;
+        const defaultModel = isBuiltIn ? providerConfig.defaultModel : '';
+
+        const modelSetting = new Setting(row)
+            .setName("模型")
+            .addText(text => text
+                .setPlaceholder(defaultModel || 'model-name')
+                .setValue(roleConfig?.model || '')
+                .onChange(async (value) => {
+                    (settings.roles as unknown as Record<string, unknown>)[role] = {
+                        ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
+                        model: value,
+                    };
+                    this.plugin.resetFrontendAgent();
+                    await this.plugin.saveSettings();
+                }));
+
+        // 支持模型列表的服务商：按需获取下拉选择
+        if (supportsModelList) {
+            const account = (settings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
+            if (account?.apiKey) {
+                modelSetting.addExtraButton(btn => btn
+                    .setIcon('refresh-cw')
+                    .setTooltip('获取模型列表')
+                    .onClick(async () => {
+                        btn.setDisabled(true);
+                        const { fetchModels } = await import('../config/model-fetcher');
+                        const result = await fetchModels(currentProvider, account as any);
+                        btn.setDisabled(false);
+                        if (result.success && result.models.length > 0) {
+                            // 替换文本输入为下拉选择
+                            const controlEl = modelSetting.controlEl;
+                            controlEl.empty();
+                            const select = controlEl.createEl('select', { cls: 'dropdown' });
+                            for (const m of result.models) {
+                                const opt = select.createEl('option', { text: m });
+                                opt.value = m;
+                            }
+                            const currentModel = roleConfig?.model || '';
+                            if (currentModel && !result.models.includes(currentModel)) {
+                                const opt = select.createEl('option', { text: `${currentModel} (自定义)` });
+                                opt.value = currentModel;
+                            }
+                            select.value = currentModel || defaultModel || result.models[0];
+                            select.addEventListener('change', async () => {
+                                (settings.roles as unknown as Record<string, unknown>)[role] = {
+                                    ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
+                                    model: select.value,
+                                };
+                                this.plugin.resetFrontendAgent();
+                                await this.plugin.saveSettings();
+                            });
+                            new Notice(`获取到 ${result.models.length} 个模型`);
+                        } else {
+                            new Notice(`获取失败: ${result.error || '无可用模型'}`);
+                        }
+                    }));
+            }
+        }
+    }
+
 
     /**
      * PDF 索引设置
@@ -410,29 +535,29 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
 /**
-     * 索引服务设置 (4 个可折叠服务)
+     * 服务配置 — 角色分配（选模型）+ 参数调优
      */
     private renderIndexServicesSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: '索引服务配置' });
+        container.createEl('h3', { text: '服务配置' });
         container.createEl('p', {
-            text: '配置书籍索引所需的 4 项服务，点击展开/折叠每个服务的详细设置。',
+            text: '为每种用途选择服务商和模型。需要先在「AI 服务」Tab 中配置好 API Key。',
             cls: 'setting-item-description'
         });
 
-        // 1. 向量化服务
-        this.renderCollapsibleSection(container, 'vector', '🔮 向量化服务', '用于书籍语义检索，支持 OpenAI 兼容 API 或本地模型', 
-            (section) => this.renderEmbeddingSettings(section));
+        // ═══ 角色分配 ═══
+        this.renderRoleAssignments(container);
 
-        // 2. 重排序服务
-        this.renderCollapsibleSection(container, 'reranker', '🔄 重排序服务', '对搜索结果进行精细重排，提升检索精度',
-            (section) => this.renderRerankerSettings(section));
+        // 分隔线
+        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
-        // 3. 原子事实服务
-        this.renderCollapsibleSection(container, 'proposition', '📝 子事实服务', '提取原子事实卡片，实现更精准的段落级检索',
-            (section) => this.renderPropositionSettings(section));
+        // ═══ 参数调优（可折叠区块）═══
+        this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
+            (section) => this.renderPropositionParams(section));
 
-        // 4. PDF 索引服务
-        this.renderCollapsibleSection(container, 'pdf', '📄 PDF 索引服务', '配置 PDF 解析和索引参数',
+        this.renderCollapsibleSection(container, 'reranker-params', '🔄 重排序参数', '重排序权重等参数',
+            (section) => this.renderRerankerParams(section));
+
+        this.renderCollapsibleSection(container, 'pdf-params', '📄 索引参数', 'PDF 解析和索引参数',
             (section) => this.renderPdfSettings(section));
     }
 
@@ -446,7 +571,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         description: string,
         renderContent: (section: HTMLElement) => void
     ): void {
-        const isCollapsed = this.collapsedSections.has(sectionId);
+        const isCollapsed = !this.expandedSections.has(sectionId);
 
         // 创建区块容器
         const sectionWrapper = container.createDiv({ cls: 'deeppdf-settings-collapsible-section' });
@@ -458,17 +583,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             text: description,
             cls: 'deeppdf-settings-collapsible-desc'
         });
-        
+
         // 折叠指示器
         const indicator = header.createSpan({ cls: 'deeppdf-settings-collapsible-indicator' });
         indicator.setText(isCollapsed ? '▶' : '▼');
 
         // 点击事件
         header.addEventListener('click', () => {
-            if (this.collapsedSections.has(sectionId)) {
-                this.collapsedSections.delete(sectionId);
+            if (this.expandedSections.has(sectionId)) {
+                this.expandedSections.delete(sectionId);
             } else {
-                this.collapsedSections.add(sectionId);
+                this.expandedSections.add(sectionId);
             }
             this.renderTabContent('index');
         });
@@ -481,392 +606,60 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 渲染向量化设置
-     */
-    private renderVectorizationSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: '向量化服务' });
-
-        // Embedding 设置
-        const embeddingSection = container.createDiv({ cls: 'deeppdf-settings-section' });
-        this.renderEmbeddingSettings(embeddingSection);
-
-        // 分隔线
-        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
-        // Reranker 设置
-        const rerankerSection = container.createDiv({ cls: 'deeppdf-settings-section' });
-        this.renderRerankerSettings(rerankerSection);
-    }
-
-    /**
      * 渲染 Reranker 设置
      */
-    private renderRerankerSettings(container: HTMLElement): void {
-        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        header.createEl('h4', { text: 'Reranker 重排序模型' });
-        header.createEl('span', {
-            text: '用于搜索结果精排，提升相关性（可选）',
-            cls: 'setting-item-description'
-        });
+    /**
+     * 重排序参数（权重）
+     */
+    private renderRerankerParams(container: HTMLElement): void {
+        const roles = this.plugin.settings.roles;
+        const isEnabled = roles?.reranker !== null;
 
-        const rerankerEnabled = this.plugin.settings.reranker?.enabled || false;
-
-        // 启用开关
-        new Setting(container)
-            .setName("启用 Reranker")
-            .setDesc("开启后将对搜索结果进行重排序")
-            .addToggle(toggle => toggle
-                .setValue(rerankerEnabled)
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.reranker) {
-                        this.plugin.settings.reranker = { enabled: value };
-                    } else {
-                        this.plugin.settings.reranker.enabled = value;
-                    }
-                    await this.plugin.saveSettings();
-                    this.renderTabContent('index');
-                }));
-
-        if (!rerankerEnabled) {
+        if (!isEnabled) {
             container.createEl('p', {
-                text: '提示：启用 Reranker 可提升搜索精度，但需要额外的 API 调用。',
+                text: '重排序已禁用。在上方启用重排序角色后可调整参数。',
                 cls: 'setting-item-description'
             });
             return;
         }
 
-        const currentProvider = this.plugin.settings.reranker?.provider || 'lmstudio';
-
-        // Provider 选择
-        new Setting(container)
-            .setName("Reranker 服务商")
-            .setDesc("选择重排序模型提供商")
-            .addDropdown(dropdown => {
-                dropdown
-                    .addOption("lmstudio", "LM Studio (本地)")
-                    .addOption("ollama", "Ollama (本地)")
-                    .addOption("openai", "OpenAI 兼容 API")
-                    .setValue(currentProvider)
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.reranker) {
-                            this.plugin.settings.reranker = { enabled: true, provider: value as any };
-                        } else {
-                            this.plugin.settings.reranker.provider = value as any;
-                        }
-                        
-                        // 自动填充默认配置
-                        if (value === 'lmstudio') {
-                            this.plugin.settings.reranker.model = 'BAAI/bge-reranker-v2-m3';
-                            this.plugin.settings.reranker.baseUrl = 'http://localhost:1234/v1';
-                        } else if (value === 'ollama') {
-                            this.plugin.settings.reranker.model = 'bge-reranker-v2-m3';
-                            this.plugin.settings.reranker.baseUrl = 'http://localhost:11434';
-                        } else if (value === 'openai') {
-                            this.plugin.settings.reranker.model = '';
-                            this.plugin.settings.reranker.baseUrl = 'https://api.openai.com/v1';
-                        }
-                        
-                        await this.plugin.saveSettings();
-                        this.renderTabContent('index');
-                    });
-            });
-
-        // 模型名称
-        new Setting(container)
-            .setName("Reranker 模型名称")
-            .setDesc("重排序模型名称")
-            .addText(text => text
-                .setPlaceholder("BAAI/bge-reranker-v2-m3")
-                .setValue(this.plugin.settings.reranker?.model || '')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.reranker) {
-                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
-                    }
-                    this.plugin.settings.reranker.model = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // API Base URL
-        const defaultUrl = currentProvider === 'openai' 
-            ? 'https://api.openai.com/v1' 
-            : currentProvider === 'ollama'
-            ? 'http://localhost:11434'
-            : 'http://localhost:1234/v1';
-        
-        new Setting(container)
-            .setName("API Base URL")
-            .setDesc(`Reranker API 服务地址`)
-            .addText(text => text
-                .setPlaceholder(defaultUrl)
-                .setValue(this.plugin.settings.reranker?.baseUrl || '')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.reranker) {
-                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
-                    }
-                    this.plugin.settings.reranker.baseUrl = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        // API Key
-        new Setting(container)
-            .setName("API Key")
-            .setDesc("Reranker API 密钥（本地模型可留空）")
-            .addText(text => {
-                text.setPlaceholder("sk-...")
-                    .setValue(this.plugin.settings.reranker?.apiKey || '')
-                    .inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    if (!this.plugin.settings.reranker) {
-                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
-                    }
-                    this.plugin.settings.reranker.apiKey = value;
-                    await this.plugin.saveSettings();
-                });
-            });
-
-        // Reranker Weight
         new Setting(container)
             .setName("重排序权重")
             .setDesc("Reranker 分数在最终得分中的权重 (0.0-1.0)")
             .addSlider(slider => slider
                 .setLimits(0, 100, 5)
-                .setValue((this.plugin.settings.reranker?.weight || 0.7) * 100)
+                .setValue((this.plugin.settings.rerankerWeight ?? 0.7) * 100)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
-                    if (!this.plugin.settings.reranker) {
-                        this.plugin.settings.reranker = { enabled: true, provider: currentProvider };
-                    }
-                    this.plugin.settings.reranker.weight = value / 100;
+                    this.plugin.settings.rerankerWeight = value / 100;
                     await this.plugin.saveSettings();
                 }));
-
-        // 提示信息
-        container.createEl('p', {
-            text: '本地服务：LM Studio 或 Ollama 需要自行下载 reranker 模型（如 BAAI/bge-reranker-v2-m3）。',
-            cls: 'setting-item-description'
-        });
-        container.createEl('p', {
-            text: 'LM Studio: 在模型列表中搜索并加载 reranker 模型，然后启动服务器。',
-            cls: 'setting-item-description'
-        });
-        container.createEl('p', {
-            text: 'Ollama: 运行 ollama pull bge-reranker-v2-m3 然后启动服务。',
-            cls: 'setting-item-description'
-        });
     }
 
     /**
-     * 渲染向量化设置
+     * 原子事实参数（卡片密度）
      */
-    private renderEmbeddingSettings(container: HTMLElement): void {
-        const currentProvider = this.plugin.settings.embedding?.provider || 'openai';
+    private renderPropositionParams(container: HTMLElement): void {
+        const roles = this.plugin.settings.roles;
+        const isEnabled = roles?.proposition !== null;
 
-        // Provider 选择
-        new Setting(container)
-            .setName("Embedding 服务商")
-            .setDesc("选择向量嵌入模型提供商")
-            .addDropdown(dropdown => {
-                dropdown
-                    .addOption("openai", "OpenAI 兼容 API")
-                    .addOption("ollama", "Ollama (本地)")
-                    .addOption("lmstudio", "LM Studio (本地)")
-                    .addOption("local", "不使用向量索引")
-                    .setValue(currentProvider)
-                    .onChange(async (value) => {
-                        if (!this.plugin.settings.embedding) {
-                            this.plugin.settings.embedding = {
-                                provider: value as any,
-                            };
-                        } else {
-                            this.plugin.settings.embedding.provider = value as any;
-                        }
-                        
-                        if (value === 'openai') {
-                            this.plugin.settings.embedding.model = 'text-embedding-3-small';
-                            this.plugin.settings.embedding.baseUrl = 'https://api.openai.com/v1';
-                        } else if (value === 'ollama') {
-                            this.plugin.settings.embedding.model = 'nomic-embed-text';
-                            this.plugin.settings.embedding.baseUrl = 'http://localhost:11434';
-                        } else if (value === 'lmstudio') {
-                            this.plugin.settings.embedding.model = '';
-                            this.plugin.settings.embedding.baseUrl = 'http://localhost:1234/v1';
-                        }
-                        
-                        this.plugin.settings.embedding.dimensions = undefined;
-                        
-                        await this.plugin.saveSettings();
-                        this.renderTabContent('index');
-                    });
-            });
-
-        if (currentProvider === 'local') {
+        if (!isEnabled) {
             container.createEl('p', {
-                text: '选择"不使用向量索引"将仅使用 BM25 关键词搜索，精度降低但无需额外服务。',
+                text: '原子事实卡片已禁用。在上方启用该角色后可调整参数。',
                 cls: 'setting-item-description'
             });
             return;
         }
-
-        new Setting(container)
-            .setName("模型名称")
-            .setDesc("嵌入模型名称")
-            .addText(text => text
-                .setPlaceholder(currentProvider === 'openai' ? "text-embedding-3-small" : "nomic-embed-text")
-                .setValue(this.plugin.settings.embedding?.model || '')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
-                    }
-                    this.plugin.settings.embedding.model = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        const defaultUrl = currentProvider === 'openai' 
-            ? 'https://api.openai.com/v1' 
-            : currentProvider === 'ollama'
-            ? 'http://localhost:11434'
-            : 'http://localhost:1234/v1';
-        
-        new Setting(container)
-            .setName("API Base URL")
-            .setDesc("Embedding API 服务地址")
-            .addText(text => text
-                .setPlaceholder(defaultUrl)
-                .setValue(this.plugin.settings.embedding?.baseUrl || '')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
-                    }
-                    this.plugin.settings.embedding.baseUrl = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("API Key")
-            .setDesc("Embedding API 密钥（本地模型可留空）")
-            .addText(text => {
-                text.setPlaceholder("sk-...")
-                    .setValue(this.plugin.settings.embedding?.apiKey || '')
-                    .inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    if (!this.plugin.settings.embedding) {
-                        this.plugin.settings.embedding = { provider: currentProvider };
-                    }
-                    this.plugin.settings.embedding.apiKey = value;
-                    await this.plugin.saveSettings();
-                });
-            });
-    }
-
-    /**
-     * 渲染原子事实设置
-     */
-    private renderPropositionSettings(container: HTMLElement): void {
-        new Setting(container)
-            .setName("启用命题卡片")
-            .setDesc("索引时提取原子事实卡片")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.propositions?.enabled ?? true)
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.propositions) {
-                        this.plugin.settings.propositions = {
-                            enabled: value,
-                            model: "Qwen/Qwen3-8B",
-                            baseUrl: "https://api.siliconflow.cn/v1",
-                        };
-                    } else {
-                        this.plugin.settings.propositions.enabled = value;
-                    }
-                    await this.plugin.saveSettings();
-                    this.renderTabContent('index');
-                }));
-
-        if (!this.plugin.settings.propositions?.enabled) {
-            container.createEl('p', {
-                text: '命题卡片使用小模型提取原子事实，提升细节问答精度。',
-                cls: 'setting-item-description'
-            });
-            return;
-        }
-
-        new Setting(container)
-            .setName("提取模型")
-            .setDesc("用于提取卡片的小模型")
-            .addText(text => text
-                .setPlaceholder("Qwen/Qwen3-8B")
-                .setValue(this.plugin.settings.propositions?.model || 'Qwen/Qwen3-8B')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.propositions) {
-                        this.plugin.settings.propositions = {
-                            enabled: true,
-                            model: value,
-                            baseUrl: "https://api.siliconflow.cn/v1",
-                        };
-                    } else {
-                        this.plugin.settings.propositions.model = value;
-                    }
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("API 地址")
-            .setDesc("硅基流动: https://api.siliconflow.cn/v1")
-            .addText(text => text
-                .setPlaceholder("https://api.siliconflow.cn/v1")
-                .setValue(this.plugin.settings.propositions?.baseUrl || 'https://api.siliconflow.cn/v1')
-                .onChange(async (value) => {
-                    if (!this.plugin.settings.propositions) {
-                        this.plugin.settings.propositions = {
-                            enabled: true,
-                            model: "Qwen/Qwen3-8B",
-                            baseUrl: value,
-                        };
-                    } else {
-                        this.plugin.settings.propositions.baseUrl = value;
-                    }
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("API Key")
-            .setDesc("可复用 Embedding API Key")
-            .addText(text => {
-                text.setPlaceholder("sk-...")
-                    .setValue(this.plugin.settings.propositions?.apiKey || this.plugin.settings.embedding?.apiKey || '')
-                    .inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    if (!this.plugin.settings.propositions) {
-                        this.plugin.settings.propositions = {
-                            enabled: true,
-                            model: "Qwen/Qwen3-8B",
-                            baseUrl: "https://api.siliconflow.cn/v1",
-                            apiKey: value,
-                        };
-                    } else {
-                        this.plugin.settings.propositions.apiKey = value;
-                    }
-                    await this.plugin.saveSettings();
-                });
-            });
 
         new Setting(container)
             .setName("卡片密度")
             .setDesc("每 500 字提取的卡片数量")
             .addSlider(slider => slider
                 .setLimits(1, 3, 1)
-                .setValue(this.plugin.settings.propositions?.cardsPer500Words || 1)
+                .setValue(this.plugin.settings.propositionCardsPer500Words || 1)
                 .setDynamicTooltip()
                 .onChange(async (value) => {
-                    if (!this.plugin.settings.propositions) {
-                        this.plugin.settings.propositions = {
-                            enabled: true,
-                            model: "Qwen/Qwen3-8B",
-                            baseUrl: "https://api.siliconflow.cn/v1",
-                            cardsPer500Words: value,
-                        };
-                    } else {
-                        this.plugin.settings.propositions.cardsPer500Words = value;
-                    }
+                    this.plugin.settings.propositionCardsPer500Words = value;
                     await this.plugin.saveSettings();
                 }));
     }
@@ -917,20 +710,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         container.createEl('h3', { text: '高级设置' });
 
         new Setting(container)
-            .setName("强制路由模式")
-            .setDesc("强制指定 Agent 路由模式。auto=根据查询自动选择，fast=仅快速检索，section=优先页面读取，slow=完全分析")
-            .addDropdown(dropdown => dropdown
-                .addOption("auto", "自动路由（推荐）")
-                .addOption("fast", "快速检索（仅搜索）")
-                .addOption("section", "章节优先（搜索+页面读取）")
-                .addOption("slow", "完全分析（所有工具）")
-                .setValue(this.plugin.settings.forceMode)
-                .onChange(async (value) => {
-                    this.plugin.settings.forceMode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
             .setName("启用调试日志")
             .setDesc("开启后会在控制台输出详细运行日志，用于问题排查。默认关闭以减少日志噪音。")
             .addToggle(toggle => toggle
@@ -941,145 +720,42 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
-        // Langfuse 追踪配置
-        this.renderLangfuseSettings(container);
-    }
+        // 分隔线
+        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
-    /**
-     * Langfuse 追踪设置
-     */
-    private renderLangfuseSettings(container: HTMLElement): void {
-        const header = container.createDiv({ cls: 'deeppdf-settings-section-header' });
-        header.createEl('h4', { text: 'Langfuse 追踪配置' });
-        header.createEl('span', {
-            text: '用于 Agent 执行链路追踪和 LLM 调用观测',
-            cls: 'setting-item-description'
-        });
+        // Skills 管理
+        container.createEl('h4', { text: 'Skills 管理' });
 
         new Setting(container)
-            .setName("启用 Langfuse 追踪")
-            .setDesc("开启后将追踪 Agent 执行链路、LLM 调用和工具执行")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.langfuseEnabled)
-                .onChange(async (value) => {
-                    this.plugin.settings.langfuseEnabled = value;
-                    await this.plugin.saveSettings();
-                    // 刷新界面以显示/隐藏详细配置
-                    this.renderTabContent('advanced');
-                }));
-
-        // 仅在启用时显示详细配置
-        if (this.plugin.settings.langfuseEnabled) {
-        new Setting(container)
-            .setName("Public Key")
-            .setDesc("Langfuse Public API Key")
-            .addText(text => text
-                .setPlaceholder("pk-...")
-                .setValue(this.plugin.settings.langfusePublicKey)
-                .onChange(async (value) => {
-                    this.plugin.settings.langfusePublicKey = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("Secret Key")
-            .setDesc("Langfuse Secret API Key")
-            .addText(text => {
-                text.setPlaceholder("sk-...")
-                    .setValue(this.plugin.settings.langfuseSecretKey)
-                    .inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    this.plugin.settings.langfuseSecretKey = value;
-                    await this.plugin.saveSettings();
-                });
-            });
-
-        new Setting(container)
-            .setName("Base URL")
-            .setDesc("Langfuse 服务地址（自托管或云服务）")
-            .addDropdown(dropdown => dropdown
-                .addOption("https://cloud.langfuse.com", "Langfuse Cloud")
-                .addOption("http://localhost:3000", "本地自托管 (localhost:3000)")
-                .addOption("custom", "自定义地址")
-                .setValue(
-                    this.plugin.settings.langfuseBaseUrl === "https://cloud.langfuse.com" ? "https://cloud.langfuse.com" :
-                    this.plugin.settings.langfuseBaseUrl === "http://localhost:3000" ? "http://localhost:3000" :
-                    "custom"
-                )
-                .onChange(async (value) => {
-                    if (value !== "custom") {
-                        this.plugin.settings.langfuseBaseUrl = value;
-                        await this.plugin.saveSettings();
-                        this.renderTabContent('advanced');
+            .setName("重载 Skills")
+            .setDesc("重新加载所有 Skills（包括内置和用户自定义）。当你添加了新的 Skill 文件后，点击此按钮使其生效。")
+            .addButton(button => button
+                .setButtonText("重载 Skills")
+                .setCta()
+                .onClick(async () => {
+                    try {
+                        button.setDisabled(true);
+                        button.setButtonText("重载中...");
+                        const result = await this.plugin.reloadSkills();
+                        button.setDisabled(false);
+                        button.setButtonText("重载 Skills");
+                        if (result.success) {
+                            new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
+                        } else {
+                            new Notice(`Skills 重载失败: ${result.message}`);
+                        }
+                    } catch (err) {
+                        button.setDisabled(false);
+                        button.setButtonText("重载 Skills");
+                        const errMsg = err instanceof Error ? err.message : String(err);
+                        new Notice(`Skills 重载失败: ${errMsg}`);
                     }
-                }))
-            .addText(text => text
-                .setPlaceholder("https://your-langfuse.example.com")
-                .setValue(
-                    this.plugin.settings.langfuseBaseUrl !== "https://cloud.langfuse.com" &&
-                    this.plugin.settings.langfuseBaseUrl !== "http://localhost:3000"
-                        ? this.plugin.settings.langfuseBaseUrl
-                        : ""
-                )
-                .onChange(async (value) => {
-                    this.plugin.settings.langfuseBaseUrl = value;
-                    await this.plugin.saveSettings();
                 }));
 
         container.createEl('p', {
-            text: '提示：配置完成后需重新启动对话以生效。自托管 Langfuse 可使用 http://localhost:3000，云服务使用 https://cloud.langfuse.com。',
+            text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',
             cls: 'setting-item-description'
         });
-        } else {
-            container.createEl('p', {
-                text: '提示：启用后需配置 Public Key、Secret Key 和 Base URL。',
-                cls: 'setting-item-description'
-            });
-        }
-
-        // === LangSmith 追踪（LangGraph 引擎专用）===
-        container.createEl('h3', { text: 'LangSmith 追踪（LangGraph 引擎）' });
-
-        new Setting(container)
-            .setName("启用 LangSmith 追踪")
-            .setDesc("启用后，LangGraph 引擎的所有节点执行、LLM 调用和工具调用将自动发送到 LangSmith 进行可视化分析")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.langsmithEnabled)
-                .onChange(async (value) => {
-                    this.plugin.settings.langsmithEnabled = value;
-                    await this.plugin.saveSettings();
-                    // 显示/隐藏后续设置
-                    this.display();
-                }));
-
-        if (this.plugin.settings.langsmithEnabled) {
-            new Setting(container)
-                .setName("LangSmith API Key")
-                .setDesc("在 smith.langchain.com 获取")
-                .addText(text => text
-                    .setPlaceholder("ls__...")
-                    .setValue(this.plugin.settings.langsmithApiKey)
-                    .onChange(async (value) => {
-                        this.plugin.settings.langsmithApiKey = value;
-                        await this.plugin.saveSettings();
-                    }));
-
-            new Setting(container)
-                .setName("项目名称")
-                .setDesc("LangSmith 中的项目名称，用于分组追踪数据")
-                .addText(text => text
-                    .setPlaceholder("DeepReader")
-                    .setValue(this.plugin.settings.langsmithProject)
-                    .onChange(async (value) => {
-                        this.plugin.settings.langsmithProject = value;
-                        await this.plugin.saveSettings();
-                    }));
-
-            container.createEl('p', {
-                text: '提示：LangSmith 是 LangGraph 的原生可观测性平台，自动追踪图执行的每个节点、LLM 调用和工具调用，无需手动埋点。需先启用 LangGraph 引擎。',
-                cls: 'setting-item-description'
-            });
-        }
     }
 
     /**
@@ -1118,41 +794,4 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         });
     }
 
-    /**
-     * Skills 设置
-     */
-    private renderSkillsSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: 'Skills 管理' });
-
-        new Setting(container)
-            .setName("重载 Skills")
-            .setDesc("重新加载所有 Skills（包括内置和用户自定义）。当你添加了新的 Skill 文件后，点击此按钮使其生效。")
-            .addButton(button => button
-                .setButtonText("重载 Skills")
-                .setCta()
-                .onClick(async () => {
-                    try {
-                        button.setDisabled(true);
-                        button.setButtonText("重载中...");
-                        const result = await this.plugin.reloadSkills();
-                        button.setDisabled(false);
-                        button.setButtonText("重载 Skills");
-                        if (result.success) {
-                            new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
-                        } else {
-                            new Notice(`Skills 重载失败: ${result.message}`);
-                        }
-                    } catch (err) {
-                        button.setDisabled(false);
-                        button.setButtonText("重载 Skills");
-                        const errMsg = err instanceof Error ? err.message : String(err);
-                        new Notice(`Skills 重载失败: ${errMsg}`);
-                    }
-                }));
-
-        container.createEl('p', {
-            text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',
-            cls: 'setting-item-description'
-        });
-    }
 }

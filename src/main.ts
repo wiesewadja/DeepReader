@@ -6,7 +6,8 @@ import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
-import { getProviderConfig, PROVIDER_LABELS } from './config/providers.js';
+import { needsMigration, migrateSettings } from './config/settings-migrator.js';
+import { getProviderConfig, PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
@@ -822,36 +823,34 @@ export default class DeepPDFPlugin extends Plugin {
      */
     async getFrontendAgent(): Promise<FrontendAgent> {
         if (!this.frontendAgent) {
-            const config = getProviderConfig(this.settings);
-            const apiKey = this.settings[config.apiKeyField] as string || '';
-            const providerName = PROVIDER_LABELS[config.provider] || config.provider;
-            const model = this.settings.llmModel || config.defaultModel || 'deepseek-chat';
+            // 使用新的 resolveRoleConfig 解析 chat 角色
+            const chatConfig = resolveRoleConfig('chat', this.settings);
+            const chatProvider = this.settings.roles?.chat?.provider || 'deepseek';
+            const providerName = getProviderName(chatProvider, this.settings);
+            const apiKey = chatConfig?.apiKey || '';
+            const baseUrl = chatConfig?.baseUrl || undefined;
+            const model = chatConfig?.model || 'deepseek-chat';
 
-            // 获取 fast 模型提供商配置
-            const fastProviderConfig = this.settings.fastModelEnabled
-                ? getProviderConfig({
-                      llmProvider: this.settings.fastModelProvider,
-                      apiUrl: this.settings.fastModelApiUrl || this.settings.apiUrl,
-                  })
-                : null;
+            // 解析 router 角色（原 fast 模型）
+            const routerConfig = resolveRoleConfig('router', this.settings);
+            const hasRouter = !!routerConfig;
+            const routerProvider = this.settings.roles?.router?.provider || 'deepseek';
 
             this.frontendAgent = new FrontendAgent({
                 apiKey: apiKey,
-                baseUrl: config.baseUrl || undefined,
+                baseUrl: baseUrl,
                 model: model,
                 providerName: providerName,
                 skillsDir: this.skillsDir,
                 app: this.app,
 
-                // Fast 模型配置
-                fastModelEnabled: this.settings.fastModelEnabled,
-                fastApiKey: this.settings.fastModelEnabled && fastProviderConfig
-                    ? (this.settings[fastProviderConfig.apiKeyField] as string || undefined)
-                    : undefined,
-                fastBaseUrl: fastProviderConfig?.baseUrl,
-                fastModel: this.settings.fastModelName || undefined,
-                fastProviderName: this.settings.fastModelEnabled
-                    ? (PROVIDER_LABELS[this.settings.fastModelProvider] || this.settings.fastModelProvider)
+                // Router（原 Fast 模型）配置
+                fastModelEnabled: hasRouter,
+                fastApiKey: routerConfig?.apiKey || undefined,
+                fastBaseUrl: routerConfig?.baseUrl || undefined,
+                fastModel: routerConfig?.model || undefined,
+                fastProviderName: hasRouter
+                    ? getProviderName(routerProvider, this.settings)
                     : undefined,
 
                 // Langfuse 追踪配置
@@ -871,11 +870,11 @@ export default class DeepPDFPlugin extends Plugin {
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');
             log('[DeepPDF]   服务商:', providerName);
-            log('[DeepPDF]   模型:', model, this.settings.llmModel ? '(用户设置)' : '(默认)');
-            log('[DeepPDF]   API:', config.baseUrl);
-            if (this.settings.fastModelEnabled) {
-                log('[DeepPDF]   Fast 模型:', this.settings.fastModelName || '(未设置)');
-                log('[DeepPDF]   Fast 服务商:', PROVIDER_LABELS[this.settings.fastModelProvider] || this.settings.fastModelProvider);
+            log('[DeepPDF]   模型:', model);
+            log('[DeepPDF]   API:', baseUrl || '(默认)');
+            if (hasRouter) {
+                log('[DeepPDF]   Router 模型:', routerConfig?.model || '(未设置)');
+                log('[DeepPDF]   Router 服务商:', getProviderName(routerProvider, this.settings));
             }
         }
         return this.frontendAgent;
@@ -983,7 +982,13 @@ views:
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const rawData = (await this.loadData()) ?? {};
+        if (needsMigration(rawData)) {
+            this.settings = migrateSettings(rawData, DEFAULT_SETTINGS);
+            await this.saveData(this.settings);
+        } else {
+            this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
+        }
         setLogEnabled(this.settings.enableDebugLog);
     }
 
@@ -1153,12 +1158,11 @@ views:
             new Notice(`正在处理 PDF: ${pdfPath}`);
             log('[PageIndex] Processing PDF:', pdfPath);
 
-            // 获取服务商配置
-            const providerConfig = getProviderConfig(this.settings);
-            const apiKeyField = providerConfig.apiKeyField;
-            const apiKey = this.settings[apiKeyField] as string || '';
-            const baseUrl = providerConfig.baseUrl || undefined;
-            const model = this.settings.llmModel || providerConfig.defaultModel || 'gpt-4o';
+            // 使用 resolveRoleConfig 解析 pageindex 角色
+            const pageindexConfig = resolveRoleConfig('pageindex', this.settings);
+            const apiKey = pageindexConfig?.apiKey || '';
+            const baseUrl = pageindexConfig?.baseUrl || undefined;
+            const model = pageindexConfig?.model || 'deepseek-chat';
 
             // 创建 PageIndex 实例
             const pageIndex = new PageIndex({

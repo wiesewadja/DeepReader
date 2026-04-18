@@ -10,7 +10,8 @@ import { ConfirmModal } from '../confirm-modal.js';
 import { error as logError, serviceLog } from '../../utils/logger.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
-import { getProviderConfig } from '../../config/providers.js';
+import { resolveRoleConfig } from '../../config/providers.js';
+import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -533,29 +534,32 @@ export class LibraryModal extends Modal {
                 
                 const fileType = (fileInfo as any).docType === 'epub' ? 'epub' : 'pdf';
 
-                const providerConfig = getProviderConfig(this.options.plugin.settings);
-                const apiKey = this.options.plugin.settings[providerConfig.apiKeyField] as string || '';
+                const settings = this.options.plugin.settings;
+                const pageindexRole = resolveRoleConfig('pageindex', settings);
+                const apiKey = pageindexRole?.apiKey || '';
+                const baseUrl = pageindexRole?.baseUrl || '';
+                const model = pageindexRole?.model || 'deepseek-chat';
 
-                // 命题卡片配置
-                const propositionsEnabled = this.options.plugin.settings.propositions?.enabled ?? true;
-                const propositionsApiKey = this.options.plugin.settings.propositions?.apiKey || apiKey;
+                // Embedding 配置
+                const embeddingRole = resolveRoleConfig('embedding', settings);
+                const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+
+                // Proposition 配置
+                const propositionRole = resolveRoleConfig('proposition', settings);
+                const propositionOpts = propositionRole
+                    ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
+                    : undefined;
 
                 const result = await indexBook({
                     filePath,
                     fileType,
                     outputDir: vaultPath,
-                    embedding: this.options.plugin.settings.embedding,
-                    model: this.options.plugin.settings.llmModel || providerConfig.defaultModel,
+                    embedding: embeddingOpts,
+                    model: model,
                     apiKey: apiKey,
-                    baseUrl: providerConfig.baseUrl,
-                    addNodeSummary: this.options.plugin.settings.ifAddNodeSummary,
-                    propositions: propositionsEnabled && propositionsApiKey ? {
-                        enabled: true,
-                        model: this.options.plugin.settings.propositions?.model || 'Qwen/Qwen3-8B',
-                        apiKey: propositionsApiKey,
-                        baseUrl: this.options.plugin.settings.propositions?.baseUrl || 'https://api.siliconflow.cn/v1',
-                        cardsPer500Words: this.options.plugin.settings.propositions?.cardsPer500Words,
-                    } : undefined,
+                    baseUrl: baseUrl,
+                    addNodeSummary: settings.ifAddNodeSummary,
+                    propositions: propositionOpts,
                     onProgress: (progress: BookIndexProgress) => {
                         newIndex.progress_percent = progress.percent;
                         newIndex.status = 'processing';

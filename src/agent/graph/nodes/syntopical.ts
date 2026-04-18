@@ -16,6 +16,8 @@ import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopical-search.js';
+import { resolveRoleConfig } from '../../../config/providers.js';
+import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 import {
   buildSyntopicalSystemPrompt,
   buildSyntopicalUserMessage,
@@ -50,7 +52,9 @@ export async function syntopicalNode(
 
   const vaultPath = (toolContext.app.vault.adapter as any).basePath || '';
   const query = state.rewrittenQuery || ctx?.rawUserQuery || '';
-  const embedding = toolContext.plugin?.settings?.embedding;
+  const settings = toolContext.plugin?.settings;
+  const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
+  const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
 
   log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
 

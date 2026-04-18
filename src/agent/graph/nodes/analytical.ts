@@ -23,6 +23,8 @@ import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { loadTreeJson } from '../utils/tree-loader.js';
+import { resolveRoleConfig } from '../../../config/providers.js';
+import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 
 /**
  * Validate scopeNodeIds against tree.json nodeFileMap.
@@ -144,10 +146,12 @@ export async function analyticalNode(
   if (suggestedKeywords && suggestedKeywords.length > 0 && toolContext.app) {
     try {
       const vaultPath = (toolContext.app.vault.adapter as any).basePath;
+      const settings = toolContext.plugin?.settings;
+      const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
       const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {
         filePath: '',
         topK: 10,
-        embedding: toolContext.plugin?.settings?.embedding,
+        embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
         scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
       };
       if (toolContext.indexId && vaultPath) {

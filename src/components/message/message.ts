@@ -645,6 +645,11 @@ export abstract class Message {
 					this.mouseoverHandler = null;
 				}
 
+				// 移除 loading 状态
+				if ((contentEl as HTMLElement).hasClass('deeppdf-message-loading')) {
+					(contentEl as HTMLElement).removeClass('deeppdf-message-loading');
+				}
+
 				// 使用解析后的内容（处理 HTML 标签）
 				const { cleanedContent } = parseAgentContent(this.data.content);
 
@@ -1013,6 +1018,11 @@ export class AIMessage extends Message {
 					this.mouseoverHandler = null;
 				}
 
+				// 移除 loading 状态
+				if ((contentEl as HTMLElement).hasClass('deeppdf-message-loading')) {
+					(contentEl as HTMLElement).removeClass('deeppdf-message-loading');
+				}
+
 				// 处理 HTML 标签
 				const { cleanedContent } = parseAgentContent(this.data.content);
 
@@ -1182,6 +1192,11 @@ export class AIMessage extends Message {
 			}
 
 			if (shouldRender && this.app) {
+				// 移除 loading 状态（首次渲染实际内容时）
+				if (contentEl.hasClass('deeppdf-message-loading')) {
+					contentEl.removeClass('deeppdf-message-loading');
+				}
+
 				// 【拟人化 UI 支持】检测是否是拟人化 UI 的 HTML 内容
 				// 拟人化 UI 包含特定的 class 标识，可以直接渲染 HTML
 				const isHumanizedUI = newContent.includes('deepreader-agent-humanized');

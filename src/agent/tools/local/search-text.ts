@@ -10,6 +10,8 @@ import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
+import { resolveRoleConfig } from '../../../config/providers.js';
+import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -214,10 +216,13 @@ export const searchBookTool: ToolExecutor = {
       const vaultPath = (app.vault.adapter as any).basePath;
       console.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
+      const settings = context.plugin?.settings;
+      const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
+
       const baseOptions: any = {
         filePath: '',
         topK: 20, // 每个子查询多取，供 RRF 挑选
-        embedding: context.plugin?.settings?.embedding,
+        embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
         scopeNodeIds,
       };
 
