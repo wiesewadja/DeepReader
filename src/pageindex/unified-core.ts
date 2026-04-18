@@ -67,7 +67,6 @@ export async function docToIndex(
         ...options,
         extractionMode: options.extractionMode,
         ocrModel: options.ocrModel,
-        ocrPromptType: options.ocrPromptType,
       });
       return pageIndex.fromPdf(input as string | Buffer | ArrayBuffer);
     }

@@ -16,7 +16,6 @@ import {
   DEFAULT_OCR_MODEL,
   DEFAULT_IMAGE_FORMAT,
   DEFAULT_IMAGE_DPI,
-  DEFAULT_OCR_PROMPT_TYPE,
   DEFAULT_OCR_CONCURRENCY,
 } from "../defaults.js";
 import type { PdfPage } from "./pdf";
@@ -24,18 +23,16 @@ import type { PdfPage } from "./pdf";
 const execAsync = promisify(exec);
 
 export interface OcrOptions {
-  /** OCR model to use (default: mlx-community/GLM-OCR-bf16) */
+  /** OCR model to use (default: glm-ocr) */
   ocrModel?: string;
-  /** API key for OCR model */
+  /** API key for OCR model (required) */
   apiKey?: string;
-  /** Base URL for OCR model API (e.g., LM Studio) */
+  /** Base URL for OCR model API (default: https://open.bigmodel.cn/api/paas/v4) */
   baseUrl?: string;
   /** Image format for conversion (default: png) */
   imageFormat?: "png" | "jpeg";
   /** Image DPI for conversion (default: 150) */
   imageDpi?: number;
-  /** OCR prompt type (default: text) */
-  ocrPromptType?: "text" | "formula" | "table";
   /** Concurrent OCR requests (default: 3) */
   concurrency?: number;
 }
@@ -44,18 +41,21 @@ const DEFAULT_OCR_OPTIONS: Required<Omit<OcrOptions, "apiKey" | "baseUrl">> = {
   ocrModel: DEFAULT_OCR_MODEL,
   imageFormat: DEFAULT_IMAGE_FORMAT,
   imageDpi: DEFAULT_IMAGE_DPI,
-  ocrPromptType: DEFAULT_OCR_PROMPT_TYPE,
   concurrency: DEFAULT_OCR_CONCURRENCY,
 };
 
 /**
- * GLM-OCR specific prompts based on extraction type
+ * GLM-OCR layout_parsing API response structure
  */
-const OCR_PROMPTS: Record<string, string> = {
-  text: "Text Recognition:",
-  formula: "Formula Recognition:",
-  table: "Table Recognition:",
-};
+interface LayoutParsingResponse {
+  layout_analysis: {
+    content_list: Array<{
+      type: string;
+      text: string;
+      bbox?: number[];
+    }>;
+  };
+}
 
 /**
  * Check if poppler tools are installed on the system
@@ -157,55 +157,39 @@ export async function pdfBufferToImages(
 }
 
 /**
- * Run OCR on a single image using GLM-OCR vision model
+ * Run OCR on a single image using GLM-OCR layout_parsing API
  */
 export async function ocrImage(
   imagePath: string,
   options: OcrOptions = {}
 ): Promise<string> {
   const model = options.ocrModel || DEFAULT_OCR_OPTIONS.ocrModel;
-  const promptType = options.ocrPromptType || DEFAULT_OCR_OPTIONS.ocrPromptType;
-  const prompt = OCR_PROMPTS[promptType] ?? OCR_PROMPTS.text ?? "Text Recognition:";
 
-  const apiKey = options.apiKey || process.env.OPENAI_API_KEY || "lm-studio";
-  const baseUrl = options.baseUrl || process.env.OPENAI_BASE_URL || "http://localhost:1234/v1";
+  if (!options.apiKey) {
+    console.error("[OCR Error] API Key is required for cloud OCR");
+    return "";
+  }
+  const apiKey = options.apiKey;
+  // OCR 固定使用智谱云端，忽略传入的 baseUrl
+  const baseUrl = "https://open.bigmodel.cn/api/paas/v4";
 
-  // Read image and convert to base64
+  // Read image and convert to base64 data URL
   const imageData = await fs.readFile(imagePath);
   const base64Image = imageData.toString("base64");
   const mimeType = imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
+  const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
   try {
-    // Build content parts for vision API
-    const contentParts = [
-      {
-        type: "image_url",
-        image_url: {
-          url: `data:${mimeType};base64,${base64Image}`,
-        },
-      },
-      {
-        type: "text",
-        text: prompt,
-      },
-    ];
-
-    // Use native fetch API instead of OpenAI SDK
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    // Use GLM-OCR layout_parsing API
+    const response = await fetch(`${baseUrl}/layout_parsing`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: apiKey,
       },
       body: JSON.stringify({
         model,
-        messages: [
-          {
-            role: "user",
-            content: contentParts,
-          },
-        ],
-        max_tokens: 4096,
+        file: dataUrl,
       }),
     });
 
@@ -215,13 +199,17 @@ export async function ocrImage(
       return "";
     }
 
-    const data = await response.json() as {
-      choices: Array<{
-        message: { content: string };
-      }>;
-    };
+    const data = await response.json() as LayoutParsingResponse;
 
-    return data.choices[0]?.message?.content || "";
+    // Extract text from content_list
+    if (data.layout_analysis?.content_list) {
+      return data.layout_analysis.content_list
+        .map((item) => item.text)
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    return "";
   } catch (error) {
     console.error(`[OCR Error] Failed to process ${imagePath}:`, error);
     return "";

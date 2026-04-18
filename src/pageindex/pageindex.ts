@@ -122,7 +122,6 @@ import {
   DEFAULT_MAX_TOKEN_NUM_EACH_NODE,
   DEFAULT_EXTRACTION_MODE,
   DEFAULT_OCR_MODEL,
-  DEFAULT_OCR_PROMPT_TYPE,
   DEFAULT_IMAGE_DPI,
   DEFAULT_IMAGE_FORMAT,
   DEFAULT_OCR_CONCURRENCY,
@@ -131,14 +130,13 @@ import {
 interface InternalOptions extends TreeOptions {
   extractionMode: ExtractionMode;
   ocrModel: string;
-  ocrPromptType: "text" | "formula" | "table";
   imageDpi: number;
   imageFormat: "png" | "jpeg";
   ocrConcurrency: number;
   onProgress?: (progress: ProgressInfo) => void;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "onProgress">> = {
+const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "onProgress" | "ocrPromptType">> = {
   model: DEFAULT_MODEL,
   tocCheckPageNum: DEFAULT_TOC_CHECK_PAGE_NUM,
   maxPageNumEachNode: DEFAULT_MAX_PAGE_NUM_EACH_NODE,
@@ -150,7 +148,6 @@ const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "o
   // OCR defaults
   extractionMode: DEFAULT_EXTRACTION_MODE,
   ocrModel: DEFAULT_OCR_MODEL,
-  ocrPromptType: DEFAULT_OCR_PROMPT_TYPE,
   imageDpi: DEFAULT_IMAGE_DPI,
   imageFormat: DEFAULT_IMAGE_FORMAT,
   ocrConcurrency: DEFAULT_OCR_CONCURRENCY,
@@ -181,7 +178,6 @@ export class PageIndex {
       // OCR options
       extractionMode: options.extractionMode || DEFAULT_OPTIONS.extractionMode,
       ocrModel: options.ocrModel || DEFAULT_OPTIONS.ocrModel,
-      ocrPromptType: options.ocrPromptType || DEFAULT_OPTIONS.ocrPromptType,
       imageDpi: options.imageDpi || DEFAULT_OPTIONS.imageDpi,
       imageFormat: options.imageFormat || DEFAULT_OPTIONS.imageFormat,
       ocrConcurrency: options.ocrConcurrency || DEFAULT_OPTIONS.ocrConcurrency,
@@ -240,25 +236,49 @@ export class PageIndex {
   async fromPdf(input: string | Buffer | ArrayBuffer): Promise<PageIndexResult> {
     let pages: PdfPage[];
     let pdfName: string;
+    let cachedPdfInfo: Awaited<ReturnType<typeof parsePdf>> | null = null;
 
-    if (this.options.extractionMode === "ocr") {
-      // OCR mode: Convert PDF to images and extract text via vision model
-      piLog("[OCR Mode] Processing PDF with OCR...");
+    // 判断是否需要 OCR
+    let useOcr = this.options.extractionMode === "ocr";
+
+    // 自动检测模式：先快速解析前 5 页，检查文本密度
+    if (!useOcr && this.options.extractionMode !== "text") {
+      piLog("[fromPdf] Auto-detecting scanned PDF...");
+      try {
+        cachedPdfInfo = await parsePdf(input);
+        const samplePages = cachedPdfInfo.pages.slice(0, 5);
+        if (samplePages.length > 0) {
+          const avgCharsPerPage = samplePages
+            .reduce((sum, p) => sum + p.text.trim().length, 0) / samplePages.length;
+          if (avgCharsPerPage < 50) {
+            piLog(`[fromPdf] Detected scanned PDF (avg ${avgCharsPerPage.toFixed(1)} chars/page), switching to OCR`);
+            useOcr = true;
+            cachedPdfInfo = null;
+          }
+        }
+      } catch {
+        piLog("[fromPdf] PDF text extraction failed, falling back to OCR");
+        useOcr = true;
+      }
+    }
+
+    if (useOcr) {
+      // OCR mode: Convert PDF to images and extract text via cloud GLM-OCR
+      piLog("[OCR Mode] Processing PDF with cloud GLM-OCR...");
       const ocrOptions: OcrOptions = {
-        ocrModel: this.options.ocrModel,
+        ocrModel: this.options.ocrModel || DEFAULT_OCR_MODEL,
         apiKey: this.options.apiKey,
-        baseUrl: this.options.baseUrl,
+        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
         imageFormat: this.options.imageFormat,
         imageDpi: this.options.imageDpi,
-        ocrPromptType: this.options.ocrPromptType,
         concurrency: this.options.ocrConcurrency,
       };
       const result = await parsePdfWithOcr(input, ocrOptions);
       pages = result.pages;
       pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
     } else {
-      // Text mode: Direct text extraction
-      const pdfInfo = await parsePdf(input);
+      // Text mode: use cached parse result if available
+      const pdfInfo = cachedPdfInfo || await parsePdf(input);
       pages = pdfInfo.pages;
       pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
 
@@ -936,7 +956,7 @@ export async function indexPdfWithOcr(
     ...options,
     extractionMode: "ocr",
     model: options?.reasoningModel || options?.model || "gpt-4o-2024-11-20",
-    ocrModel: options?.ocrModel || "mlx-community/GLM-OCR-bf16",
+    ocrModel: options?.ocrModel || DEFAULT_OCR_MODEL,
   });
   return pageIndex.fromPdf(input);
 }

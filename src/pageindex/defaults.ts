@@ -47,8 +47,8 @@ export const DEFAULT_INCLUDE_INDEX = true;
 /** Default extraction mode */
 export const DEFAULT_EXTRACTION_MODE = "text" as const;
 
-/** OCR model for scanned PDFs */
-export const DEFAULT_OCR_MODEL = "mlx-community/GLM-OCR-bf16";
+/** OCR model for scanned PDFs (智谱云端 GLM-OCR) */
+export const DEFAULT_OCR_MODEL = "glm-ocr";
 
 /** OCR prompt type */
 export const DEFAULT_OCR_PROMPT_TYPE = "text" as const;

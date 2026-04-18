@@ -35,7 +35,7 @@ export interface PageIndexOptions {
   // OCR-specific options
   /** Extraction mode: 'text' for native PDFs, 'ocr' for scanned PDFs (default: 'text') */
   extractionMode?: ExtractionMode;
-  /** OCR model to use (default: mlx-community/GLM-OCR-bf16) */
+  /** OCR model to use (default: glm-ocr) */
   ocrModel?: string;
   /** OCR prompt type (default: 'text') */
   ocrPromptType?: OcrPromptType;
