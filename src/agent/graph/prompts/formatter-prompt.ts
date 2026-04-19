@@ -5,6 +5,7 @@
  */
 
 import type { ChatMessage } from '../../types';
+import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
 
 export const PROMPT_S4_FORMATTER = `<role>
 你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
@@ -84,12 +85,12 @@ export function buildFormatterSystemPrompt(memoryContext?: string): string {
 }
 
 /**
- * Maximum history messages to include (token limit)
+ * Maximum history rounds to summarize (token limit)
  */
-export const MAX_HISTORY_MESSAGES = 10;
+export const MAX_HISTORY_ROUNDS = 3;
 
 /**
- * Build user message for formatter state with history context
+ * Build user message for formatter state with summarized history
  */
 export function buildFormatterUserMessage(
   rawUserQuery: string,
@@ -100,10 +101,9 @@ export function buildFormatterUserMessage(
   structuralAnalysis?: string,
   betterQuestion?: string
 ): string {
+  // Use compact summaries instead of full message text to reduce token cost
   const historyText = recentHistory && recentHistory.length > 0
-    ? recentHistory
-        .map(m => `${m.role === 'user' ? '用户' : '奚童'}: ${m.content}`)
-        .join('\n')
+    ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
     : '(无历史记录)';
 
   const tocSection = tocSummary

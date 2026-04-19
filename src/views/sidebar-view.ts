@@ -370,7 +370,7 @@ export class SidebarView extends ItemView {
      * 处理系统文件上传（已弃用 - Page Index 不需要上传）
      */
     private async handleSystemUpload(): Promise<void> {
-        new Notice('请使用在线书库添加书籍', 3000);
+        new Notice('请使用我的书库添加书籍', 3000);
     }
 
 
@@ -663,7 +663,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打在线书库弹窗
+     * 打我的书库弹窗
      */
     private async openLibraryModal(): Promise<void> {
         await this.loadIndexes();
@@ -794,14 +794,16 @@ export class SidebarView extends ItemView {
                 displayName = displayName.slice(0, -5);
             }
 
-            // 读取 exportName（精简后的标题，用于封面和 wiki link）
+            // 读取 exportName（精简后的标题，用于封面和 wiki link）和 author
             let exportName: string | undefined;
+            let metaAuthor: string | undefined;
             try {
                 const vaultPath = (this.app.vault.adapter as any).basePath;
                 const fs = require('fs/promises');
                 const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
                 const meta = JSON.parse(metaRaw);
                 exportName = meta.exportName || undefined;
+                metaAuthor = meta.author || undefined;
                 coverName = exportName;
             } catch { /* ignore */ }
 
@@ -809,8 +811,8 @@ export class SidebarView extends ItemView {
             const simplifiedName = exportName || this.getDisplayName(displayName);
             this.currentPdfName = simplifiedName;
 
-            // 精简显示名称用于顶栏
-            displayName = this.getDisplayName(displayName);
+            // 顶栏显示也使用 exportName（精简的书名）
+            displayName = simplifiedName;
 
             // 记录书籍切换里程碑
             await this.initializeMilestoneRecorder();
@@ -818,9 +820,9 @@ export class SidebarView extends ItemView {
                 await this.milestoneRecorder.handleBookSwitch(displayName);
             }
 
-            // 获取作者信息：优先使用索引中的 author
-            author = index.author;
-            log(`[DeepPDF] 索引中的作者信息: index.author="${index.author}"`);
+            // 获取作者信息：优先使用 book-meta.json 的 author
+            author = metaAuthor || index.author;
+            log(`[DeepPDF] 作者信息: book-meta.author="${metaAuthor}", index.author="${index.author}"`);
 
             // 加载书籍封面（优先使用 exportName 匹配封面文件）
             this.loadBookCover(coverName || displayName, indexId);
@@ -1755,6 +1757,7 @@ export class SidebarView extends ItemView {
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
+                    currentStatus: '开始阅读...',
                     pdfName: this.currentPdfName || undefined,
                     question: message,  // 保存用户的问题
                     conversationId: this.sessionId || undefined  // 保存会话ID用于双向链接

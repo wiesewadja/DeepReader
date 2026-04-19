@@ -19,10 +19,6 @@ import {
   loadTreeJson,
   computeDynamicRecallK,
   computeLevelWeight,
-  splitByBlockIds,
-  scoreByTokenDensity,
-  countTokenHits,
-  expandToContext,
   cosineSimilarity,
 } from "../book-search-v2.js";
 import { tokenize } from "../bm25.js";
@@ -108,114 +104,7 @@ describe("Stage 5: computeLevelWeight", () => {
 
 // ── A3: splitByBlockIds ────────────────────────────────────────
 
-describe("Stage 8: splitByBlockIds", () => {
-  it("should split content by block ID markers", () => {
-    const content = "First paragraph text.\n^block-001\n\nSecond paragraph.\n^block-002";
-    const paragraphs = splitByBlockIds(content);
-    expect(paragraphs.length).toBeGreaterThanOrEqual(2);
-    expect(paragraphs[0].blockId).toBe("^block-001");
-    expect(paragraphs[0].text).toContain("First paragraph");
-    expect(paragraphs[1].blockId).toBe("^block-002");
-    expect(paragraphs[1].text).toContain("Second paragraph");
-  });
-
-  it("should handle content with no block IDs", () => {
-    const content = "Just a simple paragraph with no markers.";
-    const paragraphs = splitByBlockIds(content);
-    // Without block IDs, the text goes to the "remaining" paragraph
-    expect(paragraphs.length).toBe(1);
-    expect(paragraphs[0].blockId).toBe("");
-    expect(paragraphs[0].text).toContain("Just a simple paragraph");
-  });
-
-  it("should handle empty content", () => {
-    const paragraphs = splitByBlockIds("");
-    expect(paragraphs).toEqual([]);
-  });
-
-  it("should handle trailing content after last block ID", () => {
-    const content = "Paragraph one.\n^p001\n\nTrailing text without ID";
-    const paragraphs = splitByBlockIds(content);
-    const lastParagraph = paragraphs[paragraphs.length - 1];
-    // Trailing text should be captured as a block with empty blockId
-    expect(lastParagraph.text).toContain("Trailing text");
-    expect(lastParagraph.blockId).toBe("");
-  });
-});
-
-// ── A4: scoreByTokenDensity + countTokenHits ───────────────────
-
-describe("Stage 8: scoreByTokenDensity + countTokenHits", () => {
-  it("should count token hits correctly", () => {
-    expect(countTokenHits("储蓄是财富积累的基础", ["储蓄"])).toBe(1);
-    expect(countTokenHits("储蓄储蓄储蓄", ["储蓄"])).toBe(3);
-    expect(countTokenHits("方法一方法二方法三", ["方法"])).toBe(3);
-  });
-
-  it("should return 0 when no tokens match", () => {
-    expect(countTokenHits("完全没有关系的文本", ["机器学习"])).toBe(0);
-  });
-
-  it("should be case-insensitive", () => {
-    expect(countTokenHits("Deep Learning deep learning", ["deep"])).toBe(2);
-  });
-
-  it("should handle multiple query tokens", () => {
-    const hits = countTokenHits("机器学习和深度学习都是AI", ["机器", "学习"]);
-    // "机器" × 1 + "学习" × 2 (机器学习中的学和深度学习中的学) = depends on tokenizer
-    expect(hits).toBeGreaterThan(0);
-  });
-
-  it("scoreByTokenDensity should score paragraphs by token density", () => {
-    const paragraphs = [
-      { blockId: "^p1", text: "储蓄是财富的基础。储蓄率决定一切。", start: 0, end: 20 },
-      { blockId: "^p2", text: "投资有风险，需要谨慎。", start: 20, end: 30 },
-    ];
-    const scored = scoreByTokenDensity(paragraphs, ["储蓄"]);
-    expect(scored[0].score).toBeGreaterThan(scored[1].score);
-  });
-});
-
-// ── A5: expandToContext ────────────────────────────────────────
-
-describe("Stage 8: expandToContext", () => {
-  it("should expand match to reach blockSize", () => {
-    const paragraphs = [
-      { blockId: "^p1", text: "First paragraph.", start: 0, end: 16 },
-      { blockId: "^p2", text: "Second paragraph with more content.", start: 16, end: 50 },
-      { blockId: "^p3", text: "Third paragraph.", start: 50, end: 67 },
-    ];
-    const match = { ...paragraphs[1], score: 1 };
-    // expandToContext uses paragraphs.indexOf(match) — must pass the same object reference
-    const result = expandToContext(paragraphs[1] as any, paragraphs, 200);
-    // Should include surrounding paragraphs
-    expect(result.length).toBeGreaterThan(paragraphs[1].text.length);
-    expect(result).toContain("First paragraph");
-    expect(result).toContain("Third paragraph");
-  });
-
-  it("should not exceed blockSize", () => {
-    const paragraphs = [
-      { blockId: "^p1", text: "A".repeat(100), start: 0, end: 100 },
-      { blockId: "^p2", text: "B".repeat(100), start: 100, end: 200 },
-      { blockId: "^p3", text: "C".repeat(100), start: 200, end: 300 },
-    ];
-    // Use direct object reference for indexOf to work
-    const result = expandToContext(paragraphs[1] as any, paragraphs, 150);
-    expect(result.length).toBeLessThanOrEqual(150);
-  });
-
-  it("should return match text when match not found in array", () => {
-    const paragraphs = [
-      { blockId: "^p1", text: "Hello", start: 0, end: 5 },
-    ];
-    const orphan = { blockId: "^orphan", text: "Orphan text", start: 0, end: 11, score: 1 };
-    const result = expandToContext(orphan, paragraphs, 500);
-    expect(result).toBe("Orphan text");
-  });
-});
-
-// ── A6: cosineSimilarity ──────────────────────────────────────
+// ── A4: cosineSimilarity ──────────────────────────────────────
 
 describe("cosineSimilarity", () => {
   it("should return 1.0 for identical vectors", () => {

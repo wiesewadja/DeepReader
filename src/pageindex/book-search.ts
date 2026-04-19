@@ -14,11 +14,10 @@ import type {
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25 } from "./bm25.js";
 import {
-  loadVectorStore,
   generateEmbedding,
-  cosineSearch,
+  cosineSearchJsonl,
 } from "./vault/vectors.js";
-import type { VectorStore } from "./vault/vectors.js";
+import { existsSync } from "node:fs";
 
 /**
  * Generate bookId from file path (SHA-256 first 8 chars)
@@ -71,19 +70,19 @@ export async function searchBook(
 
   // Step 2: Vector search (optional)
   let vectorScores: Map<string, number> = new Map();
-  let vectorStore: VectorStore | null = null;
 
   if (options.embedding) {
     try {
-      vectorStore = await loadVectorStore(indexDir);
-      if (vectorStore && vectorStore.meta.count > 0) {
+      const jsonlPath = path.join(indexDir, "vectors.jsonl");
+      if (existsSync(jsonlPath)) {
         const queryVector = await generateEmbedding(
           options.query,
           options.embedding
         );
-        const vectorResults = await cosineSearch(queryVector, vectorStore, topK * 3);
+        const vectorResults = await cosineSearchJsonl(jsonlPath, queryVector, topK * 3);
         for (const result of vectorResults) {
-          vectorScores.set(result.nodeId, result.score);
+          const prev = vectorScores.get(result.nodeId) || 0;
+          vectorScores.set(result.nodeId, Math.max(prev, result.score));
         }
       }
     } catch (error) {
@@ -121,7 +120,7 @@ export async function searchBook(
     const chapter = bookMeta.chapters.find((ch) => ch.id === nodeId);
     if (!chapter) {
       // L0 node (book root) - use description as context
-      if (nodeId.startsWith("L0-") || nodeId === "book_" + bookId) {
+      if (nodeId === "BOOK" || nodeId.startsWith("L0-") || nodeId === "book_" + bookId) {
         const mdFilePath = path.join(vaultPath, bookMeta.title + ".md");
         try {
           const { rawText, truncated } = await readChapterContent(

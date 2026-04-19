@@ -11,7 +11,7 @@ import type {
   RerankerOptions,
   TreeSearchOptions,
 } from "./types";
-import { generateEmbeddings, cosineSearch, loadVectorStore } from "./vectors";
+import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
 import { findNodeById, cosineSimilarity } from "../core/utils";
 import { chatGPT } from "../llm/client";
 import { extractJson } from "../core/utils";
@@ -35,10 +35,19 @@ export async function searchVault(
   // 2. Vector search
   let vectorResults: Array<{ nodeId: string; score: number }> = [];
   if (options.embedding && vectorWeight > 0) {
-    const queryVectors = await generateEmbeddings([query], options.embedding);
-    const vectorStore = await loadVectorStore(index.meta.vaultPath + "/.pageindex");
-    if (vectorStore) {
-      vectorResults = await cosineSearch(queryVectors[0], vectorStore, recallK);
+    try {
+      const queryVector = await generateEmbedding(query, options.embedding);
+      const jsonlPath = index.meta.vaultPath + "/.pageindex/vectors.jsonl";
+      const results = await cosineSearchJsonl(jsonlPath, queryVector, recallK);
+      // Merge by nodeId, keeping highest score (multiple chunks may share same nodeId)
+      const scoreMap = new Map<string, number>();
+      for (const r of results) {
+        const prev = scoreMap.get(r.nodeId) || 0;
+        scoreMap.set(r.nodeId, Math.max(prev, r.score));
+      }
+      vectorResults = Array.from(scoreMap.entries()).map(([nodeId, score]) => ({ nodeId, score }));
+    } catch {
+      // Vector search failed, skip
     }
   }
 

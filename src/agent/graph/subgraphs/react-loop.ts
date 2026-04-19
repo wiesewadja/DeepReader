@@ -21,6 +21,8 @@ export interface ToolResultRecord {
   args: Record<string, unknown>;
   result: string;
   originalResultLength: number;
+  /** Extracted block_ids from result (for verification after compression) */
+  extractedBlockIds?: string[];
 }
 
 export interface ReactLoopConfig {
@@ -37,6 +39,8 @@ export interface ReactLoopConfig {
   toolInterceptor?: (toolName: string, args: Record<string, unknown>) => Record<string, unknown>;
   /** Abort signal for cancellation / timeout */
   signal?: AbortSignal;
+  /** Progress callback for UI notifications (e.g. plan complexity) */
+  onProgress?: (message: string) => void;
 }
 
 const ReactAnnotation = Annotation.Root({
@@ -76,13 +80,54 @@ const ReactAnnotation = Annotation.Root({
 type ReactState = typeof ReactAnnotation.State;
 
 // === Max tool result length ===
-const MAX_TOOL_RESULT_LENGTH = 8000;
+const MAX_TOOL_RESULT_LENGTH = 4000;
+/** Keep at most this many full ToolMessages; older ones are compressed */
+const MAX_FULL_TOOL_MESSAGES = 2;
 
 function compressToolResult(result: string): string {
   if (result.length <= MAX_TOOL_RESULT_LENGTH) return result;
   const truncated = result.slice(0, MAX_TOOL_RESULT_LENGTH);
   const omitted = result.length - MAX_TOOL_RESULT_LENGTH;
   return `${truncated}\n\n... [已省略 ${omitted} 字符]`;
+}
+
+function extractBlockIdsFromResult(result: string): string[] {
+  // Match Obsidian block_ids: ^blockId at end of line or before whitespace.
+  // Requires ^ preceded by start-of-line or whitespace to avoid matching
+  // math expressions (x^2), code escapes, etc.
+  const blockIdPattern = /(?:^|\s)\^([a-zA-Z0-9_-]+)(?=\s|$)/gm;
+  const ids: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = blockIdPattern.exec(result)) !== null) {
+    ids.push(match[1]);
+  }
+  return [...new Set(ids)];
+}
+
+/**
+ * Compress old ToolMessages to one-line summaries, keeping only the latest N full.
+ * SystemMessage and HumanMessage are always preserved.
+ */
+function compressMessagesForLLM(messages: BaseMessage[]): BaseMessage[] {
+  if (messages.length <= 4) return messages; // too few to bother
+
+  const toolMsgIndices: number[] = [];
+  messages.forEach((m, i) => { if (m instanceof ToolMessage) toolMsgIndices.push(i); });
+
+  if (toolMsgIndices.length <= MAX_FULL_TOOL_MESSAGES) return messages;
+
+  // Indices to compress (all except the last MAX_FULL_TOOL_MESSAGES)
+  const compressIndices = new Set(toolMsgIndices.slice(0, -MAX_FULL_TOOL_MESSAGES));
+
+  return messages.map((m, i) => {
+    if (!compressIndices.has(i) || !(m instanceof ToolMessage)) return m;
+    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    const summary = content.length > 150 ? content.slice(0, 150) + '...' : content;
+    return new ToolMessage({
+      content: `[已压缩] ${summary}`,
+      tool_call_id: m.tool_call_id,
+    });
+  });
 }
 
 // === Loop Detection ===
@@ -121,11 +166,11 @@ function updateQueriesAsked(
 // === Agent Node ===
 
 /** Parse tool call args, handling string-encoded JSON */
-function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> {
+function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> | { _parseError: true; _raw: string } {
   try {
     return typeof tc.args === 'string' ? JSON.parse(tc.args) : tc.args;
   } catch {
-    return {};
+    return { _parseError: true, _raw: String(tc.args) };
   }
 }
 
@@ -135,7 +180,9 @@ async function agentNode(
 ): Promise<Partial<ReactState>> {
   const reactConfig = config.configurable?.reactLoopConfig as ReactLoopConfig;
   const modelWithTools = reactConfig.model.bindTools(reactConfig.tools);
-  const response = await modelWithTools.invoke(state.messages, config);
+  // Compress old tool results to prevent quadratic token growth
+  const compressedMessages = compressMessagesForLLM(state.messages);
+  const response = await modelWithTools.invoke(compressedMessages, config);
 
   return {
     messages: [response],
@@ -165,7 +212,19 @@ function createEnhancedToolNode(tools: StructuredToolInterface[], toolIntercepto
     let executedCount = 0;
 
     for (const tc of lastMessage.tool_calls) {
-      let args = parseToolCallArgs(tc);
+      const parsedArgs = parseToolCallArgs(tc);
+      
+      if ('_parseError' in parsedArgs) {
+        newMessages.push(
+          new ToolMessage({
+            content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        continue;
+      }
+      
+      let args = parsedArgs;
 
       // Apply interceptor (e.g. scope_node_ids injection for search_book)
       if (interceptor) {
@@ -194,46 +253,11 @@ function createEnhancedToolNode(tools: StructuredToolInterface[], toolIntercepto
       // Record query AFTER passing loop detection (before execution)
       newQueries = updateQueriesAsked(newQueries, tc.name, args);
 
-      const tool = tools.find(t => t.name === tc.name);
-      if (!tool) {
-        newMessages.push(
-          new ToolMessage({
-            content: `Error: Unknown tool "${tc.name}"`,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        continue;
-      }
-
-      try {
-        const rawResult = await tool.invoke(args, config);
-        const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
-        const compressed = compressToolResult(resultStr);
-
-        toolResults.push({
-          toolName: tc.name,
-          args,
-          result: compressed,
-          originalResultLength: resultStr.length,
-        });
-
-        newMessages.push(
-          new ToolMessage({
-            content: compressed,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        executedCount++;
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        newMessages.push(
-          new ToolMessage({
-            content: `Error: ${errorMsg}`,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        executedCount++;
-      }
+      // Execute via shared helper
+      const result = await executeSingleToolCall(tc, tools, interceptor, config);
+      newMessages.push(result.msg);
+      if (result.record) toolResults.push(result.record);
+      executedCount++;
     }
 
     return {
@@ -311,7 +335,9 @@ export function createReactLoopGraph(config: ReactLoopConfig) {
 /**
  * Run the ReAct loop to completion, handling forced conclusion.
  *
- * This is the main entry point for the ReAct subgraph.
+ * @deprecated Use runPlanExecute instead — fewer LLM calls, same quality.
+ * This is retained for HITL (human-in-the-loop) flows that need iterative tool use.
+ *
  * It compiles and runs the graph, then applies forced conclusion
  * if the loop terminated due to iteration/tool-call limits.
  */
@@ -385,8 +411,9 @@ export async function runReactLoop(
     }
 
     const forcedPrompt = buildForcedConclusionPrompt(config, hitToolCallLimit);
+    const compressedForForcedConclusion = compressMessagesForLLM(filledMessages);
     const forcedResponse = await config.model.invoke([
-      ...filledMessages,
+      ...compressedForForcedConclusion,
       new HumanMessage(forcedPrompt),
     ], runnableConfig);
 
@@ -427,5 +454,264 @@ export async function runReactLoop(
     toolResults: result.toolResults,
     iterations: result.iterationCount,
     finishReason: 'stop' as const,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+// Plan-then-Execute: O(1) replacement for ReAct's O(N²)
+//
+// 1. Plan:  1 LLM call → model decides which tools to call
+// 2. Execute: all tools run in parallel (0 LLM calls)
+// 3. Synthesize: 1 LLM call → final answer from all results
+//
+// Total: 2 LLM calls instead of 2N (where N = ReAct iterations)
+// ═══════════════════════════════════════════════════════════
+
+function buildSynthesisPrompt(config: ReactLoopConfig): string {
+  let prompt = `现在请基于你请求的所有工具执行结果，输出完整的分析结论。
+
+要求：
+1. 综合所有工具返回的信息
+2. 不要再次调用任何工具
+3. 如果某些结果不完整，基于已有信息给出尽可能完整的回答
+4. 严格遵守 <output_rules> 中的 wiki 链接格式
+5. 提取逻辑骨架：定义 → 主旨 → 论述 → 结论`;
+
+  if (config.forcedConclusionContext) {
+    const { pdfName, scopeNodeIds } = config.forcedConclusionContext;
+    if (pdfName) {
+      prompt += `\n\n书名：${pdfName}
+请确保所有 wiki 链接格式为 [[${pdfName}/章节文件名#^block_id|自然语言别名]]`;
+    }
+  }
+
+  return prompt;
+}
+
+export interface ReactLoopResult {
+  content: string;
+  toolResults: ToolResultRecord[];
+  iterations: number;
+  finishReason: 'stop' | 'max_iterations' | 'max_tool_calls' | 'loop_detected';
+}
+
+/**
+ * Plan-Execute-Replan: iterative planning with bounded rounds.
+ *
+ * Round 1: Plan → Execute in parallel
+ * Round 2 (optional): Replan based on results → Execute again
+ * Final: Synthesize all gathered information
+ *
+ * This is a middle ground between pure Plan-then-Execute (1 round, may miss info)
+ * and full ReAct (N rounds, token-expensive). Default 2 rounds covers most cases:
+ * - Round 1: broad search + read known chapters
+ * - Round 2: follow-up reads based on Round 1 discoveries
+ *
+ * LLM calls per round: 1 (plan) + 0 (parallel execute) = 1
+ * Total for 2 rounds: 2 plan + 1 synthesize = 3 LLM calls (vs ReAct's 4-6)
+ */
+/**
+ * Execute a batch of tool calls in parallel, returning messages and records.
+ */
+// ═══════════════════════════════════════════════════════════
+// Shared tool execution helper (used by both ReAct and PlanExecute)
+// ═══════════════════════════════════════════════════════════
+
+interface SingleToolResult {
+  msg: ToolMessage;
+  record: ToolResultRecord | null;
+}
+
+/**
+ * Execute a single tool call: parse args → intercept → invoke → compress → extract blockIds.
+ * Shared by createEnhancedToolNode (sequential ReAct) and executeToolBatch (parallel PlanExecute).
+ */
+async function executeSingleToolCall(
+  tc: any,
+  tools: StructuredToolInterface[],
+  interceptor: ((toolName: string, args: Record<string, unknown>) => Record<string, unknown>) | undefined,
+  runnableConfig?: RunnableConfig,
+): Promise<SingleToolResult> {
+  const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const parsedArgs = parseToolCallArgs(tc);
+
+  if ('_parseError' in parsedArgs) {
+    return {
+      msg: new ToolMessage({ content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+
+  let args = parsedArgs;
+  if (interceptor) {
+    args = interceptor(tc.name, args);
+  }
+
+  const tool = tools.find(t => t.name === tc.name);
+  if (!tool) {
+    return {
+      msg: new ToolMessage({ content: `Error: Unknown tool "${tc.name}"`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+
+  try {
+    const rawResult = await tool.invoke(args, runnableConfig);
+    const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
+    const compressed = compressToolResult(resultStr);
+    const extractedBlockIds = extractBlockIdsFromResult(resultStr);
+    return {
+      msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
+      record: { toolName: tc.name, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
+    };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+}
+
+
+async function executeToolBatch(
+  toolCalls: any[],
+  tools: StructuredToolInterface[],
+  config: ReactLoopConfig,
+  runnableConfig?: RunnableConfig,
+): Promise<{ messages: ToolMessage[]; records: ToolResultRecord[] }> {
+  const execResults = await Promise.all(
+    toolCalls.map(tc => executeSingleToolCall(tc, tools, config.toolInterceptor, runnableConfig))
+  );
+  const msgs: ToolMessage[] = [];
+  const records: ToolResultRecord[] = [];
+  for (const r of execResults) {
+    if (r.msg) msgs.push(r.msg);
+    if (r.record) records.push(r.record);
+  }
+  return { messages: msgs, records };
+}
+
+/**
+ * Report planned tool calls to the user via onProgress callback.
+ * Shows what the agent plans to do, giving the user a mental model of complexity.
+ */
+function reportPlan(
+  config: ReactLoopConfig,
+  toolCalls: any[],
+  round: number,
+  maxPlanRounds: number,
+): void {
+  if (!config.onProgress) return;
+
+  const searches = toolCalls.filter(tc => tc.name === 'search_book').length;
+  const reads = toolCalls.filter(tc => tc.name === 'read_book_section').length;
+  const total = toolCalls.length;
+
+  if (total === 0) return;
+
+  const roundLabel = maxPlanRounds > 1 ? `（第 ${round + 1}/${maxPlanRounds} 轮）` : '';
+
+  if (searches > 0 && reads > 0) {
+    config.onProgress(`正在检索${roundLabel}：搜索 ${searches} 个关键词，精读 ${reads} 个章节...`);
+  } else if (reads > 0) {
+    config.onProgress(`正在精读${roundLabel}：${reads} 个章节...`);
+  } else if (searches > 0) {
+    config.onProgress(`正在搜索${roundLabel}：${searches} 个关键词...`);
+  } else {
+    config.onProgress(`正在检索${roundLabel}：${total} 个工具调用...`);
+  }
+}
+
+/**
+ * Plan-Execute-Replan: iterative planning with bounded rounds.
+ *
+ * Default maxPlanRounds=2 allows one follow-up round:
+ *   Round 1: Plan(1 LLM) → Execute(parallel tools)
+ *   Round 2: Replan(1 LLM, sees Round 1 results) → Execute(parallel tools)
+ *   Final:   Synthesize(1 LLM) → output
+ *
+ * Total: 3 LLM calls for 2 rounds (vs ReAct's 4-6 calls).
+ * If a round produces no tool calls, synthesize immediately.
+ */
+export async function runPlanExecute(
+  messages: BaseMessage[],
+  config: ReactLoopConfig,
+  runnableConfig?: RunnableConfig,
+): Promise<ReactLoopResult> {
+  const { tools, model } = config;
+  const modelWithTools = model.bindTools(tools);
+  const maxPlanRounds = Math.max(1, Math.min(config.maxToolCalls, 2)); // at least 1 round, cap at 2
+
+  const allToolResults: ToolResultRecord[] = [];
+  const conversationHistory: BaseMessage[] = [...messages];
+  let totalIterations = 0;
+
+  // === Iterative Plan-Execute rounds ===
+  for (let round = 0; round < maxPlanRounds; round++) {
+    // Compress history to prevent token growth across rounds
+    const compressedHistory = round > 0 ? compressMessagesForLLM(conversationHistory) : conversationHistory;
+    
+    // Round 2+ 补充检索提示
+    const historyWithHint = round > 0
+      ? [...compressedHistory, new HumanMessage(`基于上一轮检索结果，如有必要请补充检索更多信息。如果已足够，直接回答问题。`)]
+      : compressedHistory;
+
+    const planResponse = await modelWithTools.invoke(historyWithHint, runnableConfig);
+    totalIterations++;
+
+    // No tool calls → model answered directly or wants to synthesize
+    if (!planResponse?.tool_calls?.length) {
+      const content = typeof planResponse?.content === 'string'
+        ? planResponse.content : JSON.stringify(planResponse?.content ?? '');
+      // If first round answered directly, return it
+      if (round === 0) {
+        return { content, toolResults: [], iterations: totalIterations, finishReason: 'stop' };
+      }
+      // Later round: treat as synthesis
+      if (allToolResults.length > 0) {
+        const verifyResult = await verifyAndCleanContent(content, allToolResults);
+        return { content: verifyResult.content, toolResults: allToolResults, iterations: totalIterations, finishReason: 'stop' };
+      }
+      return { content, toolResults: allToolResults, iterations: totalIterations, finishReason: 'stop' };
+    }
+
+    // === Report plan to user for transparency ===
+    reportPlan(config, planResponse.tool_calls, round, maxPlanRounds);
+
+    // Execute all planned tools in parallel
+    const { messages: toolMsgs, records } = await executeToolBatch(
+      planResponse.tool_calls, tools, config, runnableConfig,
+    );
+    allToolResults.push(...records);
+
+    // Append to conversation history for next round
+    conversationHistory.push(planResponse);
+    conversationHistory.push(...toolMsgs);
+  }
+
+  // === Final: Synthesize ===
+  const synthesisMessages = compressMessagesForLLM(conversationHistory);
+  const synthesisPrompt = buildSynthesisPrompt(config);
+
+  const synthesisResponse = await model.invoke([
+    ...synthesisMessages,
+    new HumanMessage(synthesisPrompt),
+  ], runnableConfig);
+
+  let content = typeof synthesisResponse.content === 'string'
+    ? synthesisResponse.content
+    : JSON.stringify(synthesisResponse.content);
+
+  if (allToolResults.length > 0) {
+    const verifyResult = await verifyAndCleanContent(content, allToolResults);
+    content = verifyResult.content;
+  }
+
+  return {
+    content,
+    toolResults: allToolResults,
+    iterations: totalIterations + 1, // +1 for synthesis
+    finishReason: 'stop',
   };
 }

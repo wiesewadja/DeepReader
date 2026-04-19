@@ -32,6 +32,8 @@ export interface ObsidianExportOptions {
   exportName?: string;
   /** 封面图片相对路径（用于 Base 查询） */
   coverPath?: string;
+  /** 书籍索引 ID（bookId，写入 MOC frontmatter） */
+  bookId?: string;
 }
 
 interface ObsidianNote {
@@ -50,7 +52,7 @@ export async function exportToObsidian(
   epubPath: string,
   options: ObsidianExportOptions,
   epubInfo?: EpubInfo
-): Promise<{ mocPath: string; notes: ObsidianNote[]; nodeFileMap: Record<string, string> }> {
+): Promise<{ mocPath: string; notes: ObsidianNote[]; nodeFileMap: Record<string, string>; treeNodes: EpubTreeNode[] }> {
   // 使用传入的 epubInfo 或重新解析
   const bookInfo = epubInfo || await parseEpub(epubPath);
   const bookName = options.exportName || sanitizeFileName(bookInfo.title);
@@ -195,7 +197,7 @@ export async function exportToObsidian(
   }
   const treeNodes = buildEpubTree(chaptersWithLevel, notes, options);
   // 不再写入 tree.json，由 book-indexer 统一写到 .pageindex/
-  return { mocPath, notes, nodeFileMap };
+  return { mocPath, notes, nodeFileMap, treeNodes };
 }
 
 export { fixAbnormalAsterisks };
@@ -338,6 +340,7 @@ function generateMOC(
     created: new Date().toISOString(),
   };
   if (coverPath) frontmatter.cover = coverPath;
+  if (options.bookId) frontmatter.index_id = options.bookId;
 
   let content = generateFrontmatter(frontmatter) + "\n\n";
   content += `# ${bookName}\n\n`;

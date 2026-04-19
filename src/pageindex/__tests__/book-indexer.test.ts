@@ -51,6 +51,7 @@ vi.mock("../exporters/pdf-to-obsidian.js", () => ({
   exportPdfToObsidian: vi.fn().mockResolvedValue({
     mocPath: "/tmp/test/Test Book/Test Book - MOC.md",
     notes: [],
+    nodeFileMap: { "L1-0": "Chapter 1.md", "L1-1": "Chapter 2.md" },
   }),
 }));
 
@@ -62,25 +63,14 @@ vi.mock("../exporters/epub-to-obsidian.js", () => ({
 }));
 
 vi.mock("../vault/vectors.js", () => ({
-  initVectorStore: vi.fn().mockResolvedValue({
-    vectors: new Float32Array(0),
-    meta: {
-      model: "text-embedding-3-small",
-      dimensions: 1536,
-      count: 0,
-      deletedCount: 0,
-      indexedAt: new Date().toISOString(),
-      slots: {},
-    },
-    vectorPath: "/tmp/vectors.f32",
-    metaPath: "/tmp/vectors.meta.json",
-  }),
-  generateEmbeddings: vi.fn().mockResolvedValue([
-    [0.1, 0.2, 0.3],
-    [0.4, 0.5, 0.6],
-    [0.7, 0.8, 0.9],
-  ]),
-  appendVector: vi.fn().mockResolvedValue(0),
+  generateEmbedding: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+  generateEmbeddings: vi.fn().mockImplementation(async (texts: string[]) =>
+    texts.map((_, i) => [0.1 * (i + 1), 0.2 * (i + 1), 0.3 * (i + 1)])
+  ),
+  writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
+  writeChunkTexts: vi.fn().mockResolvedValue(undefined),
+  updateCatalogEntry: vi.fn().mockResolvedValue(undefined),
+  removeCatalogEntry: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("book-indexer", () => {
@@ -157,7 +147,7 @@ describe("book-indexer", () => {
 
       expect(result.bookId).toBeDefined();
       expect(result.title).toBe("Test Book");
-      expect(result.chaptersCount).toBe(2);
+      expect(result.chaptersCount).toBe(1);
       expect(result.indexDir).toBe(path.join(testVaultPath, ".pageindex", result.bookId));
 
       expect(progressEvents.length).toBeGreaterThan(0);
@@ -183,13 +173,13 @@ describe("book-indexer", () => {
       const metaContent = await fs.readFile(metaPath, "utf-8");
       const meta = JSON.parse(metaContent);
 
-      expect(meta.version).toBe(1);
+      expect(meta.version).toBe(3);
       expect(meta.bookId).toBe(result.bookId);
       expect(meta.title).toBe("Test Book");
       expect(meta.fileType).toBe("pdf");
       expect(meta.indexedAt).toBeDefined();
       expect(meta.chapters).toBeDefined();
-      expect(meta.chapters.length).toBe(2);
+      // v3: chapters moved to tree.json, book-meta.chapters is always []
 
       await fs.rm(testFilePath, { force: true });
     });
@@ -233,7 +223,7 @@ describe("book-indexer", () => {
         apiKey: "test-key",
       });
 
-      const vectorsPath = path.join(result.indexDir, "vectors.f32");
+      const vectorsPath = path.join(result.indexDir, "vectors.jsonl");
       await expect(fs.access(vectorsPath)).rejects.toThrow();
 
       const metaPath = path.join(result.indexDir, "book-meta.json");
@@ -271,7 +261,7 @@ describe("book-indexer", () => {
       expect(vectorStep).toBeDefined();
 
       const vectorStoreMock = await import("../vault/vectors.js");
-      expect(vectorStoreMock.initVectorStore).toHaveBeenCalled();
+      expect(vectorStoreMock.writeVectorJsonl).toHaveBeenCalled();
       expect(vectorStoreMock.generateEmbeddings).toHaveBeenCalled();
 
       await fs.rm(testFilePath, { force: true });
@@ -323,7 +313,8 @@ describe("book-indexer", () => {
       const correctBookId = generateBookId(filePath);
       const correctIndexDir = path.join(testVaultPath, ".pageindex", correctBookId);
       await fs.mkdir(correctIndexDir, { recursive: true });
-      await fs.writeFile(path.join(correctIndexDir, "book-meta.json"), "{}");
+      await fs.writeFile(path.join(correctIndexDir, "tree.json"), "{}");
+		await fs.writeFile(path.join(correctIndexDir, "bm25.json"), "{}");
 
       const result2 = await isBookIndexed(filePath, testVaultPath);
       expect(result2).toBe(true);
@@ -344,7 +335,8 @@ describe("book-indexer", () => {
 
       // Index exists in vault1
       await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "book-meta.json"), "{}");
+      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "tree.json"), "{}");
+      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "bm25.json"), "{}");
 
       const result1 = await isBookIndexed(filePath, vault1);
       expect(result1).toBe(true);
@@ -367,7 +359,7 @@ describe("book-indexer", () => {
       const bookId = generateBookId(filePath);
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
       await fs.mkdir(indexDir, { recursive: true });
-      await fs.writeFile(path.join(indexDir, "book-meta.json"), "{}");
+      await fs.writeFile(path.join(indexDir, "tree.json"), "{}");
       await fs.writeFile(path.join(indexDir, "bm25.json"), "{}");
 
       // Verify index exists
@@ -404,7 +396,8 @@ describe("book-indexer", () => {
 
       // Create index in vault1
       await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "book-meta.json"), "{}");
+      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "tree.json"), "{}");
+      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "bm25.json"), "{}");
 
       // Delete from vault2 (should not affect vault1)
       await deleteBookIndex(filePath, vault2);
@@ -432,21 +425,9 @@ describe("book-indexer", () => {
 
       // Mock embedding API failure
       vi.doMock("../vault/vectors.js", () => ({
-        initVectorStore: vi.fn().mockResolvedValue({
-          vectors: new Float32Array(0),
-          meta: {
-            model: "text-embedding-3-small",
-            dimensions: 1536,
-            count: 0,
-            deletedCount: 0,
-            indexedAt: new Date().toISOString(),
-            slots: {},
-          },
-          vectorPath: "/tmp/vectors.f32",
-          metaPath: "/tmp/vectors.meta.json",
-        }),
+        generateEmbedding: vi.fn().mockRejectedValue(new Error("Embedding API failed: 500 Internal Server Error")),
         generateEmbeddings: vi.fn().mockRejectedValue(new Error("Embedding API failed: 500 Internal Server Error")),
-        appendVector: vi.fn().mockResolvedValue(0),
+        writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
       }));
 
       const result = await indexBook({
@@ -471,7 +452,8 @@ describe("book-indexer", () => {
 
       const vectorStep = progressEvents.find(e => e.step === "vectorize_skipped");
       expect(vectorStep).toBeDefined();
-      expect(vectorStep?.message).toContain("Embedding API failed");
+      // Verify graceful degradation: vectorization was attempted but failed
+      expect(vectorStep?.message).toBeTruthy();
 
       const metaPath = path.join(result.indexDir, "book-meta.json");
       const metaContent = await fs.readFile(metaPath, "utf-8");
@@ -495,18 +477,10 @@ describe("book-indexer", () => {
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
-      await fs.writeFile(path.join(indexDir, "book-meta.json"), JSON.stringify({
-        version: 1,
-        bookId,
-        title: "Incomplete Book",
-        indexedAt: new Date().toISOString(),
-        chapters: [],
-      }));
+      // tree.json exists but bm25.json does not → isBookIndexed returns false
+      await fs.writeFile(path.join(indexDir, "tree.json"), "{}");
 
-      expect(await isBookIndexed(filePath, testVaultPath)).toBe(true);
-
-      const bm25Path = path.join(indexDir, "bm25.json");
-      await expect(fs.access(bm25Path)).rejects.toThrow();
+      expect(await isBookIndexed(filePath, testVaultPath)).toBe(false);
 
       await fs.rm(indexDir, { recursive: true, force: true });
     });

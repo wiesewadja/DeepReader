@@ -15,8 +15,6 @@ import type { EmbeddingOptions } from "./vault/types.js";
 import { cosineSimilarity } from "./core/utils.js";
 import { searchBM25 } from "./bm25.js";
 
-const PROP_VECTOR_HEADER_SIZE = 24;
-
 export async function loadPropositions(
   indexDir: string
 ): Promise<PropositionsData | null> {
@@ -32,24 +30,21 @@ export async function loadPropositions(
 
 export async function loadPropVectorStore(
   indexDir: string
-): Promise<{ 
-  vectors: Float32Array; 
-  meta: { 
-    dimensions: number; 
-    slots: Record<string, { slotIndex: number; deleted: boolean }> 
-  } 
-} | null> {
-  const vectorPath = path.join(indexDir, "prop_vectors.f32");
-  const metaPath = path.join(indexDir, "prop_vectors.meta.json");
+): Promise<Map<string, number[]> | null> {
+  const jsonlPath = path.join(indexDir, "prop-vectors.jsonl");
 
   try {
-    const metaContent = await fs.readFile(metaPath, "utf-8");
-    const meta = JSON.parse(metaContent);
+    const content = await fs.readFile(jsonlPath, "utf-8");
+    const map = new Map<string, number[]>();
 
-    const buffer = await fs.readFile(vectorPath);
-    const vectors = new Float32Array(buffer.buffer, PROP_VECTOR_HEADER_SIZE);
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const record = JSON.parse(trimmed) as { cardId: string; vector: number[] };
+      map.set(record.cardId, record.vector);
+    }
 
-    return { vectors, meta };
+    return map.size > 0 ? map : null;
   } catch {
     return null;
   }
@@ -65,9 +60,9 @@ export async function searchPropositions(
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   const propositions = await loadPropositions(indexDir);
-  const vectorStore = await loadPropVectorStore(indexDir);
+  const vectorMap = await loadPropVectorStore(indexDir);
 
-  if (!propositions || !vectorStore || propositions.totalCards === 0) {
+  if (!propositions || !vectorMap || propositions.totalCards === 0) {
     return [];
   }
 
@@ -76,15 +71,8 @@ export async function searchPropositions(
 
   const scores: Array<{ cardId: string; score: number }> = [];
 
-  for (const [cardId, slot] of Object.entries(vectorStore.meta.slots)) {
-    if (slot.deleted) continue;
-
-    const offset = slot.slotIndex * vectorStore.meta.dimensions;
-    const cardVector = vectorStore.vectors.subarray(
-      offset,
-      offset + vectorStore.meta.dimensions
-    );
-
+  for (const [cardId, vector] of vectorMap) {
+    const cardVector = new Float32Array(vector);
     const score = cosineSimilarity(queryFloat32, cardVector);
     scores.push({ cardId, score });
   }

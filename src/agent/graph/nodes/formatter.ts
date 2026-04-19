@@ -12,7 +12,6 @@ import { interrupt } from '@langchain/langgraph';
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
-  MAX_HISTORY_MESSAGES,
 } from '../prompts/formatter-prompt';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 
@@ -70,12 +69,11 @@ export async function formatterNode(
 
   // Build user message with all context
   const chatHistory = ctx?.chatHistory ?? [];
-  const recentHistory = chatHistory.slice(-MAX_HISTORY_MESSAGES);
   const userMessage = buildFormatterUserMessage(
     state.rewrittenQuery,
     state.analysisResult || '',
     state.pdfName || '',
-    recentHistory,
+    chatHistory,
     state.tocSummary || undefined,
     state.structuralAnalysis || undefined,
     state.betterQuestion || undefined,
@@ -103,6 +101,7 @@ export async function formatterNode(
     args: r.args as Record<string, unknown>,
     result: r.result,
     originalResultLength: r.originalResultLength,
+    extractedBlockIds: r.extractedBlockIds,
   }));
 
   if (toolResults.length > 0) {
@@ -120,7 +119,6 @@ export async function formatterNode(
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: regenerate with feedback
       const feedbackMessages = [
         new SystemMessage(systemPrompt),
         new HumanMessage(userMessage),

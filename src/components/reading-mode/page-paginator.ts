@@ -15,6 +15,7 @@ export interface PagePaginatorOptions {
 }
 
 const DISABLED_CLASS = 'deeppdf-page-btn-disabled';
+const MAX_VISIBLE_STRIPES = 5;
 
 export class PagePaginator {
 	private container: HTMLElement;
@@ -202,6 +203,7 @@ export class PagePaginator {
 	// ── 控制栏 ───────────────────────────────────────────────
 
 	private pageStripes: HTMLElement[] = [];
+	private stripeThumb: HTMLElement | null = null;
 	private previewPopup: HTMLElement | null = null;
 	private previewContent: HTMLElement | null = null;
 
@@ -226,15 +228,15 @@ export class PagePaginator {
 		this.controlsBar = document.createElement('div');
 		this.controlsBar.className = 'deeppdf-page-controls';
 
-		// 页码指示器（左侧）
-		this.pageIndicator = document.createElement('span');
-		this.pageIndicator.className = 'deeppdf-page-indicator';
-		this.controlsBar.appendChild(this.pageIndicator);
-
 		// 条纹容器（中间）
 		const stripeContainer = document.createElement('div');
 		stripeContainer.className = 'deeppdf-page-stripes';
 		this.controlsBar.appendChild(stripeContainer);
+
+		// 页码指示器（右侧）
+		this.pageIndicator = document.createElement('span');
+		this.pageIndicator.className = 'deeppdf-page-indicator';
+		this.controlsBar.appendChild(this.pageIndicator);
 
 		// 预览弹出框（用于悬停显示）
 		this.previewPopup = document.createElement('div');
@@ -259,26 +261,84 @@ export class PagePaginator {
 		const container = this.controlsBar?.querySelector('.deeppdf-page-stripes');
 		if (!container) return;
 
-		// 清空旧条纹
 		container.innerHTML = '';
 		this.pageStripes = [];
 
-		// 为每一页创建一个小条纹
-		for (let i = 1; i <= this._totalPages; i++) {
+		// 滑块容器（在轨道上滑动）
+		this.stripeThumb = document.createElement('div');
+		this.stripeThumb.className = 'deeppdf-stripe-thumb';
+
+		for (let i = 0; i < MAX_VISIBLE_STRIPES; i++) {
 			const stripe = document.createElement('div');
 			stripe.className = 'deeppdf-page-stripe';
-			stripe.dataset.page = String(i);
 
-			// 点击跳转
-			stripe.addEventListener('click', () => this.goToPage(i));
-
-			// 悬停预览
-			stripe.addEventListener('mouseenter', (e) => this.showPreview(i, e));
+			stripe.addEventListener('click', () => {
+				const page = parseInt(stripe.dataset.page || '0');
+				if (page > 0) this.goToPage(page);
+			});
+			stripe.addEventListener('mouseenter', (e) => {
+				const page = parseInt(stripe.dataset.page || '0');
+				if (page > 0) this.showPreview(page, e);
+			});
 			stripe.addEventListener('mouseleave', () => this.hidePreview());
 
-			container.appendChild(stripe);
+			this.stripeThumb.appendChild(stripe);
 			this.pageStripes.push(stripe);
 		}
+
+		container.appendChild(this.stripeThumb);
+		this.updateStripeWindow();
+	}
+
+	/** 计算滑动窗口页码范围（当前页尽量居中） */
+	private getVisiblePageRange(): [number, number] {
+		if (this._totalPages <= MAX_VISIBLE_STRIPES) {
+			return [1, this._totalPages];
+		}
+		const half = Math.floor(MAX_VISIBLE_STRIPES / 2);
+		let start = this._currentPage - half;
+		let end = start + MAX_VISIBLE_STRIPES - 1;
+		if (start < 1) { start = 1; end = MAX_VISIBLE_STRIPES; }
+		if (end > this._totalPages) { end = this._totalPages; start = end - MAX_VISIBLE_STRIPES + 1; }
+		return [start, end];
+	}
+
+	/** 更新条纹页码映射 + 滑块位置 */
+	private updateStripeWindow(): void {
+		const [startPage, endPage] = this.getVisiblePageRange();
+		const count = endPage - startPage + 1;
+		for (let i = 0; i < this.pageStripes.length; i++) {
+			const stripe = this.pageStripes[i];
+			if (i < count) {
+				stripe.dataset.page = String(startPage + i);
+				stripe.style.display = '';
+			} else {
+				stripe.style.display = 'none';
+			}
+		}
+		this.updateThumbPosition();
+	}
+
+	/** 根据当前页进度滑动 thumb */
+	private updateThumbPosition(): void {
+		if (!this.stripeThumb) return;
+		const track = this.stripeThumb.parentElement as HTMLElement | null;
+		if (!track) return;
+
+		requestAnimationFrame(() => {
+			if (!this.stripeThumb) return;
+			const trackW = track.clientWidth;
+			const thumbW = this.stripeThumb.offsetWidth;
+			if (trackW === 0 || thumbW === 0) return;
+
+			if (this._totalPages <= 1) {
+				this.stripeThumb.style.transform = `translateX(${(trackW - thumbW) / 2}px)`;
+				return;
+			}
+			const progress = (this._currentPage - 1) / (this._totalPages - 1);
+			const maxOffset = trackW - thumbW;
+			this.stripeThumb.style.transform = `translateX(${progress * maxOffset}px)`;
+		});
 	}
 
 	private goToPage(pageNum: number): void {
@@ -292,19 +352,17 @@ export class PagePaginator {
 	private showPreview(pageNum: number, event: MouseEvent): void {
 		if (!this.previewPopup || !this.previewContent || !this.scrollView) return;
 
-		// 定位预览框在条纹上方
-		const stripe = this.pageStripes[pageNum - 1];
+		// 通过 data-page 找到对应条纹（支持窗口滑动）
+		const stripe = this.pageStripes.find(s => s.dataset.page === String(pageNum));
 		if (!stripe) return;
-		
+
 		const stripeRect = stripe.getBoundingClientRect();
 		const controlsRect = this.controlsBar!.getBoundingClientRect();
-		
-		// 预览框定位在条纹上方
+
 		this.previewPopup.style.left = `${stripeRect.left - controlsRect.left + stripeRect.width / 2}px`;
 		this.previewPopup.style.transform = 'translateX(-50%)';
 		this.previewPopup.classList.add('visible');
 
-		// 生成预览内容（克隆当前页的可见内容）
 		this.generatePreviewContent(pageNum);
 	}
 
@@ -373,24 +431,19 @@ export class PagePaginator {
 	private updateControls(): void {
 		if (!this._isActive) return;
 
-		// 更新页码指示器
 		if (this.pageIndicator) {
 			this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
 		}
 
-		// 更新条纹状态
-		for (let i = 0; i < this.pageStripes.length; i++) {
-			const stripe = this.pageStripes[i];
-			const pageNum = i + 1;
-			
-			// 当前页高亮
+		this.updateStripeWindow();
+
+		for (const stripe of this.pageStripes) {
+			const pageNum = parseInt(stripe.dataset.page || '0');
+			if (pageNum === 0) continue;
 			stripe.classList.toggle('active', pageNum === this._currentPage);
-			
-			// 已读页面标记
 			stripe.classList.toggle('read', pageNum < this._currentPage);
 		}
 
-		// 更新翻页按钮状态
 		this.leftBtn?.classList.toggle(DISABLED_CLASS, this._currentPage <= 1);
 		this.rightBtn?.classList.toggle(DISABLED_CLASS, this._currentPage >= this._totalPages);
 	}
@@ -406,6 +459,7 @@ export class PagePaginator {
 		this.pageIndicator = null;
 		this.previewPopup = null;
 		this.previewContent = null;
+		this.stripeThumb = null;
 		this.pageStripes = [];
 	}
 

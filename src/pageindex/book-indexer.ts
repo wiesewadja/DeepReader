@@ -64,6 +64,10 @@ export async function deleteBookIndex(filePath: string, vaultPath: string): Prom
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   await fs.rm(indexDir, { recursive: true, force: true });
+
+  // Remove from global catalog
+  const { removeCatalogEntry } = await import("./vault/vectors.js");
+  await removeCatalogEntry(path.join(vaultPath, ".pageindex"), bookId);
 }
 
 /**
@@ -91,6 +95,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   await fs.mkdir(indexDir, { recursive: true });
   const indexingStatusPath = path.join(indexDir, ".indexing.json");
 
+  // Clean stale status from previous interrupted indexing
+  try { await fs.unlink(indexingStatusPath); } catch { /* not exists */ }
+
   const reportProgress = (progress: { percent: number; step: string; stepLabel: string; message?: string }) => {
     options.onProgress?.(progress);
     // Persist to file (fire-and-forget)
@@ -107,6 +114,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const cleanupStatus = () => {
     fs.unlink(indexingStatusPath).catch(() => {});
   };
+
+  // Wrap entire pipeline in try-finally to ensure status cleanup on any error
+  try {
 
   // Step 1: Document parsing + LLM indexing (most time-consuming, 5%-70%)
   reportProgress({
@@ -236,6 +246,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         exportName,
         author: parseResult.author,
         coverPath: coverRelPath || undefined,
+        bookId,
       });
       // Store nodeFileMap for tree.json
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
@@ -249,8 +260,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         nodeSummaries: collectNodeSummaries(parseResult.structure),
         exportName,
         coverPath: coverRelPath || undefined,
+        bookId,
       });
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
+      (parseResult as any)._hierarchicalTree = exportResult.treeNodes;
     }
   } catch (error) {
     throw new IndexError(
@@ -291,15 +304,44 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   );
 
   // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
+  let treeData: any = { title: rootTitle, exportName, structure: parseResult.structure };
   try {
     const nodeFileMap = (parseResult as any)._nodeFileMap || {};
-    const treeData = {
+    const hierarchicalTree = (parseResult as any)._hierarchicalTree;
+    let finalStructure = parseResult.structure;
+
+    if (hierarchicalTree && hierarchicalTree.length > 0) {
+      // Build nodeId → {summary, text} map from flat parseResult
+      const summaryMap = new Map<string, { summary?: string; text?: string }>();
+      for (const node of parseResult.structure || []) {
+        if (node.nodeId) {
+          summaryMap.set(node.nodeId, { summary: node.summary, text: node.text });
+        }
+      }
+      // Merge summaries into hierarchical tree, only keep TreeNode fields
+      const enrichNode = (n: any): any => {
+        const data = summaryMap.get(n.nodeId);
+        const result: any = {
+          title: n.title,
+          nodeId: n.nodeId,
+          startIndex: n.startIndex,
+          endIndex: n.endIndex,
+        };
+        if (data?.summary || n.summary) result.summary = data?.summary || n.summary;
+        if (data?.text || n.text) result.text = data?.text || n.text;
+        if (n.nodes?.length) result.nodes = n.nodes.map(enrichNode);
+        return result;
+      };
+      finalStructure = hierarchicalTree.map(enrichNode);
+    }
+
+    treeData = {
       title: rootTitle,
       exportName,
       docDescription: parseResult.docDescription,
       source: options.filePath,
       nodeFileMap,
-      structure: parseResult.structure,
+      structure: finalStructure,
     };
     await fs.writeFile(
       path.join(indexDir, "tree.json"),
@@ -329,20 +371,35 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     try {
-      const detectedDimensions = await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
+      const nodeFileMap = (parseResult as any)._nodeFileMap || {};
+      const vectorResult = await vectorizeAllLevels(
+        parseResult, indexDir, options.embedding, nodeFileMap, treeData,
+        (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg })
+      );
       vectorizationSuccess = true;
-      
+
       // Update book-meta with detected dimensions
-      if (detectedDimensions && options.embedding) {
+      if (vectorResult && options.embedding) {
         bookMeta.embedding = {
           provider: options.embedding.provider,
           model: options.embedding.model || "text-embedding-3-small",
-          dimensions: detectedDimensions,
+          dimensions: vectorResult.dimensions,
         };
         await fs.writeFile(
           path.join(indexDir, "book-meta.json"),
           JSON.stringify(bookMeta, null, 2)
         );
+
+        // Update global catalog
+        const { updateCatalogEntry } = await import("./vault/vectors.js");
+        await updateCatalogEntry(path.join(options.outputDir, ".pageindex"), bookId, {
+          title: bookMeta.title || path.basename(options.filePath),
+          vectorModel: options.embedding.model || "text-embedding-3-small",
+          dimensions: vectorResult.dimensions,
+          nodeCount: vectorResult.nodeCount,
+          hasPropositions: false,
+          indexedAt: new Date().toISOString(),
+        });
       }
       
       reportProgress({
@@ -457,8 +514,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     }
   }
 
-  // Step 8: Finalize — clean up indexing status
-  cleanupStatus();
+  // Step 8: Finalize — cleanup handled by try-finally
 
   reportProgress({
     percent: 100,
@@ -473,6 +529,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     chaptersCount: parseResult.structure.length,
     indexDir,
   };
+
+  } finally {
+    cleanupStatus();
+  }
 }
 
 /**
@@ -493,7 +553,7 @@ async function buildBookMeta(
   const exportName = path.basename(bookDir);
 
   return {
-    version: 2,
+    version: 3,
     bookId,
     title,
     exportName,
@@ -512,18 +572,32 @@ async function buildBookMeta(
 }
 
 /**
- * Vectorize L0/L1 nodes from parse result
- * Fix: iterate entire structure array (not just structure[0])
- * Returns detected dimensions
+ * Vectorize L0 (book) + L1 (chapter summaries) + L2 (paragraph chunks).
+ * Returns { dimensions, nodeCount }
  */
-async function vectorizeL0L1Nodes(
+async function vectorizeAllLevels(
   parseResult: any,
   indexDir: string,
-  embedding: any
-): Promise<number | undefined> {
-  const { initVectorStore, generateEmbedding, generateEmbeddings, appendVector } = await import("./vault/vectors.js");
+  embedding: any,
+  nodeFileMap: Record<string, string>,
+  treeData: any,
+  onProgress?: (msg: string) => void
+): Promise<{ dimensions: number; nodeCount: number } | undefined> {
+  const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
+    await import("./vault/vectors.js");
+  const { splitByBlockIds, mergeToChunks } = await import("./chunker.js");
+  const vectorPath = path.join(indexDir, "vectors.jsonl");
+  const chunksPath = path.join(indexDir, "chunks.jsonl");
 
-  // Auto-detect dimensions from first embedding
+  // 截断保护：BGE 系列模型有 512 token 限制（~400 中文字符），
+  // Qwen3-Embedding 等长上下文模型不需要截断（设为 8000 兜底即可）。
+  const modelName = (embedding.model || "").toLowerCase();
+  const isBGE = modelName.includes("bge");
+  const MAX_EMBED_CHARS = isBGE ? 400 : 8000;
+  const truncate = (text: string) =>
+    text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text;
+
+  // Auto-detect dimensions
   let dimensions = embedding.dimensions;
   if (!dimensions) {
     const testEmbedding = await generateEmbedding("test", embedding);
@@ -531,47 +605,145 @@ async function vectorizeL0L1Nodes(
     piLog(`[vectorize] Auto-detected embedding dimensions: ${dimensions}`);
   }
 
-  const store = await initVectorStore(indexDir, dimensions);
-  store.meta.model = embedding.model || "text-embedding-3-small";
-
-  const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
-
-  for (const rootNode of parseResult.structure || []) {
-    nodes.push({
-      id: rootNode.nodeId || `L0-${nodes.length}`,
-      text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
-      level: "L0",
-    });
-    collectIndexLeafNodes(rootNode, nodes);
+  // Intermediate type: text + metadata before embedding
+  interface PendingChunk {
+    chunkId: string;
+    nodeId: string;
+    blockIds: string[];
+    type: "summary" | "heading" | "body" | "list" | "quote";
+    level: "L0" | "L1" | "L2";
+    text: string;
+    vector?: number[];
   }
 
-  const texts = nodes.map(n => n.text);
-  const vectors = await generateEmbeddings(texts, embedding);
+  const allPending: PendingChunk[] = [];
 
-  for (let i = 0; i < nodes.length; i++) {
-    await appendVector(store, nodes[i].id, vectors[i]);
+  // L0: book summary
+  const bookTitle = parseResult.title || "";
+  const bookSummary = parseResult.docDescription || "";
+  allPending.push({
+    chunkId: "BOOK", nodeId: "", blockIds: [], type: "summary", level: "L0",
+    text: `${bookTitle}\n${bookSummary}`,
+  });
+
+  // L1: chapter summaries
+  for (const node of parseResult.structure || []) {
+    collectAllChapterNodesForPending(node, allPending);
   }
-  
-  return dimensions;
+
+  // Generate embeddings for L0+L1 (truncate to model token limit)
+  const l0l1Texts = allPending.map(p => truncate(p.text));
+  const l0l1Vectors = await generateEmbeddings(l0l1Texts, embedding);
+  for (let i = 0; i < l0l1Vectors.length; i++) {
+    allPending[i].vector = l0l1Vectors[i];
+  }
+
+  // L2: chunk paragraphs from .md files
+  const vaultPath = path.dirname(path.dirname(indexDir));
+  const exportName = treeData.exportName || treeData.title;
+  let totalChunks = 0;
+
+  for (const node of parseResult.structure || []) {
+    const chapters = collectChaptersFlat(node);
+    for (const ch of chapters) {
+      const fileName = nodeFileMap[ch.nodeId];
+      if (!fileName) continue;
+      const mdPath = path.join(vaultPath, "DeepReader", exportName, fileName);
+      try {
+        const content = await fs.readFile(mdPath, "utf-8");
+        const cleaned = cleanMdContent(content);
+        const paragraphs = splitByBlockIds(cleaned);
+        const chunks = mergeToChunks(paragraphs, ch.nodeId);
+
+        for (const chunk of chunks) {
+          allPending.push({
+            chunkId: chunk.chunkId,
+            nodeId: ch.nodeId,
+            blockIds: chunk.blockIds,
+            type: chunk.type,
+            level: "L2",
+            text: chunk.text,
+          });
+          totalChunks++;
+        }
+      } catch {
+        piLog(`[vectorize] L2: failed to read ${mdPath}`);
+      }
+    }
+  }
+
+  onProgress?.(`向量化段落 0/${totalChunks}`);
+
+  // Batch embed L2 texts
+  const l2Pending = allPending.filter(p => p.level === "L2");
+  if (l2Pending.length > 0) {
+    const batchSize = 32;
+    for (let i = 0; i < l2Pending.length; i += batchSize) {
+      const batch = l2Pending.slice(i, i + batchSize);
+      const texts = batch.map(c => truncate(c.text));
+      const vectors = await generateEmbeddings(texts, embedding);
+      for (let j = 0; j < vectors.length; j++) {
+        batch[j].vector = vectors[j];
+      }
+      onProgress?.(`向量化段落 ${Math.min(i + batchSize, totalChunks)}/${totalChunks}`);
+    }
+  }
+
+  // Filter out records without vectors (embedding failure)
+  const valid = allPending.filter(p => p.vector !== undefined);
+  if (valid.length < allPending.length) {
+    piLog(`[vectorize] Warning: ${allPending.length - valid.length} chunks had no embedding, skipping`);
+  }
+
+  const allVectorRecords: Array<import("./vault/types.js").VectorRecord> = valid.map(p => ({
+    chunkId: p.chunkId,
+    nodeId: p.nodeId,
+    blockIds: p.blockIds,
+    type: p.type,
+    level: p.level,
+    vector: p.vector!,
+  }));
+  const allChunkTexts: Array<import("./vault/types.js").ChunkTextRecord> = valid.map(p => ({
+    chunkId: p.chunkId,
+    nodeId: p.nodeId,
+    blockIds: p.blockIds,
+    text: p.text,
+    type: p.type,
+  }));
+
+  await writeVectorJsonl(vectorPath, allVectorRecords);
+  await writeChunkTexts(chunksPath, allChunkTexts);
+
+  // Clean up legacy storage formats (AFTER new format written successfully)
+  try {
+    await fs.rm(path.join(indexDir, "paragraph-vectors"), { recursive: true, force: true });
+    await fs.rm(path.join(indexDir, "vectors.f32"), { force: true });
+    await fs.rm(path.join(indexDir, "vectors.meta.json"), { force: true });
+  } catch { /* ignore if not exists */ }
+
+  piLog(`[vectorize] Wrote ${allVectorRecords.length} vectors and ${allChunkTexts.length} chunk texts`);
+  return { dimensions, nodeCount: allVectorRecords.length };
 }
 
 /**
  * Build BM25 index from parse result
  * Fix: iterate entire structure array (not just structure[0])
+ * BM25 uses full text (title + summary + text) for keyword matching
  */
 function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
-  const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
+  const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
 
   for (const rootNode of parseResult.structure || []) {
     // Each top-level element as L0
     nodes.push({
       id: rootNode.nodeId || `L0-${nodes.length}`,
+      title: rootNode.title || "",
       text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
       level: "L0",
     });
 
-    // Recursively collect all child nodes as L1
-    collectIndexLeafNodes(rootNode, nodes);
+    // Recursively collect all child nodes as L1 (with full text for BM25)
+    collectIndexLeafNodes(rootNode, nodes, true);
   }
 
   return buildBM25Index(nodes);
@@ -579,21 +751,72 @@ function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
 
 /**
  * Recursively collect all child nodes for BM25/vector indexing
+ * @param includeFullText - If true, include node.text for BM25; if false, use title+summary only for vectorization
  */
 function collectIndexLeafNodes(
   node: any,
-  nodes: Array<{ id: string; text: string; level: "L0" | "L1" }>
+  nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>,
+  includeFullText: boolean = false
 ): void {
   if (!node.nodes || node.nodes.length === 0) return;
 
   for (const child of node.nodes) {
+    const text = includeFullText
+      ? `${child.title}\n${child.summary || ""}\n${child.text || ""}`
+      : `${child.title}\n${child.summary || ""}`;
     nodes.push({
       id: child.nodeId || `L1-${nodes.length}`,
-      text: `${child.title}\n${child.summary || ""}\n${child.text || ""}`,
+      title: child.title || "",
+      text,
       level: "L1",
     });
-    collectIndexLeafNodes(child, nodes);
+    collectIndexLeafNodes(child, nodes, includeFullText);
   }
+}
+
+/**
+ * Collect chapter nodes into PendingChunk[] for L1 vectorization.
+ */
+function collectAllChapterNodesForPending(
+  node: any,
+  pending: Array<{
+    chunkId: string; nodeId: string; blockIds: string[];
+    type: "summary" | "heading" | "body" | "list" | "quote";
+    level: "L0" | "L1" | "L2"; text: string; vector?: number[];
+  }>
+): void {
+  if (node.nodeId && node.title) {
+    pending.push({
+      chunkId: `${node.nodeId}_summary`,
+      nodeId: node.nodeId,
+      blockIds: [],
+      type: "summary",
+      level: "L1",
+      text: `${node.title}\n${node.summary || ""}`,
+    });
+  }
+  for (const child of node.nodes || []) {
+    collectAllChapterNodesForPending(child, pending);
+  }
+}
+
+/**
+ * Flat collection of all chapters with nodeId and title.
+ */
+function collectChaptersFlat(node: any): Array<{ nodeId: string; title: string }> {
+  const result: Array<{ nodeId: string; title: string }> = [];
+  if (node.nodeId && node.title) result.push({ nodeId: node.nodeId, title: node.title });
+  for (const child of node.nodes || []) result.push(...collectChaptersFlat(child));
+  return result;
+}
+
+/**
+ * Clean markdown content for chunking: remove frontmatter and callouts.
+ */
+function cleanMdContent(content: string): string {
+  let cleaned = content.replace(/^---[\s\S]*?---\n/, "");
+  cleaned = cleaned.replace(/> \[!.*?\][^\n]*\n(> .*\n)*/g, "");
+  return cleaned.trim();
 }
 
 /**

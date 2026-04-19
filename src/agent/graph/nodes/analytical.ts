@@ -11,7 +11,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { runReactLoop } from '../subgraphs/react-loop.js';
+import { runReactLoop, runPlanExecute } from '../subgraphs/react-loop.js';
 import {
   buildAnalyticalSystemPrompt,
   buildScopedChaptersBlock,
@@ -25,6 +25,7 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { loadTreeJson } from '../utils/tree-loader.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
+import { verifyAndCleanContent } from '../utils/self-verification.js';
 
 /**
  * Validate scopeNodeIds against tree.json nodeFileMap.
@@ -100,6 +101,10 @@ export async function analyticalNode(
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
+  const callbacks = config.configurable?.callbacks as {
+    onContent?: (content: string) => void;
+    onProgress?: (msg: string) => void;
+  } | undefined;
 
   if (!mainModel || !toolContext) {
     console.warn('[S2 Analytical] Missing required config, returning empty result.');
@@ -194,32 +199,87 @@ export async function analyticalNode(
       ).withConfig({ runName: 'pre_search_rrf' });
       const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
-      // Quality threshold: only inject if we got meaningful results
+      // Quality threshold: only inject top-3 compact results
       if (Array.isArray(preResults) && preResults.length >= 2) {
-        const hits = preResults.slice(0, 5).map(r => ({
+        const hits = preResults.slice(0, 3).map(r => ({
           node_id: r.nodeId,
           title: r.title,
           file_name: r.fileName,
-          matched_blocks: r.matchedBlocks.map(b => ({
+          score: r.score,
+          matched_blocks: r.matchedBlocks.slice(0, 2).map(b => ({
             block_id: b.blockId.replace(/^\^/, ''),
-            content: b.content,
+            content: b.content.slice(0, 200),
           })),
-          score: Math.round(r.score * 100) / 100,
         }));
 
+        // === Early stop: if pre-search quality is high, skip ReAct entirely ===
+        const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
+        const EARLY_STOP_THRESHOLD = 0.6;
+
+        if (avgScore >= EARLY_STOP_THRESHOLD && hits.length >= 2) {
+          log(`[S2 Analytical] 早停: pre-search 平均分=${avgScore.toFixed(2)} >= ${EARLY_STOP_THRESHOLD}，跳过 ReAct`);
+
+          const blockLines = hits.flatMap(h =>
+            h.matched_blocks.map(b =>
+              `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
+            )
+          );
+
+          const pdfName = state.pdfName || ctx?.pdfName || '';
+          const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果直接回答用户问题，无需调用任何工具。如果信息不足，说明还需要查看哪些章节。
+
+<pre_search_results>
+${blockLines.join('\n\n')}
+</pre_search_results>
+
+用户问题：${state.betterQuestion || state.rewrittenQuery || ctx?.rawUserQuery || ''}
+
+输出格式要求：
+- 引用来源用 [[${pdfName}/file_name#^block_id|自然语言]] 格式
+- file_name 和 block_id 必须来自上方检索结果中标注的值，禁止编造
+- 如果检索结果足够，给出完整分析
+- 如果不够，简要说明并指出需要补充搜索的方向`;
+
+          const directResponse = await mainModel.invoke([
+            new SystemMessage(directPrompt),
+            new HumanMessage(state.betterQuestion || state.rewrittenQuery || ''),
+          ], config);
+
+          const directContent = typeof directResponse.content === 'string'
+            ? directResponse.content : JSON.stringify(directResponse.content);
+
+          const preSearchRecords = hits.flatMap(h =>
+            h.matched_blocks.map(b => ({
+              toolName: 'pre_search',
+              args: { query: 'auto', node_id: h.node_id },
+              result: b.content,
+              originalResultLength: b.content.length,
+              extractedBlockIds: [b.block_id],
+            }))
+          );
+
+          const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
+
+          return {
+            analysisResult: verifyResult.content,
+            toolResultsSnapshot: preSearchRecords,
+          };
+        }
+
+        // Normal path: inject compact pre-search results with citation metadata
         const blockLines = hits.flatMap(h =>
           h.matched_blocks.map(b =>
-            `【${h.title}】${b.content.slice(0, 300)}`
+            `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
           )
         );
 
         preSearchBlock = `<pre_search_results>
-以下是基于目录分析自动检索到的相关段落（共 ${preResults.length} 条），请优先利用这些内容。如果不够详细，可使用 search_book 自行补充搜索，或用 read_book_section 读取完整章节。
+基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
 
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, ${suggestedKeywords.length} 个关键词`);
+        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${suggestedKeywords.length} 个关键词`);
       } else {
         log(`[S2 Analytical] 预检索结果不足 (${preResults.length} 条), 跳过注入`);
       }
@@ -238,25 +298,25 @@ ${blockLines.join('\n\n')}
   const s2ToolNames = ['search_book', 'read_book_section'];
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 
-  // Run ReAct subgraph (with pre-search context if available)
-  const result = await runReactLoop(
-    [
-      new SystemMessage(fullSystemPrompt),
-      new HumanMessage(finalUserMessage),
-    ],
-    {
-      tools: s2Tools,
-      model: mainModel,
-      maxIterations: 6,
-      maxToolCalls: 3,
-      forcedConclusionContext: {
-        pdfName: state.pdfName || ctx?.pdfName,
-        scopeNodeIds: validatedScopeNodeIds,
-      },
-      toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+  const loopMessages = [
+    new SystemMessage(fullSystemPrompt),
+    new HumanMessage(finalUserMessage),
+  ];
+  const loopConfig = {
+    tools: s2Tools,
+    model: mainModel,
+    maxIterations: 6,
+    maxToolCalls: 3,
+    forcedConclusionContext: {
+      pdfName: state.pdfName || ctx?.pdfName,
+      scopeNodeIds: validatedScopeNodeIds,
     },
-    config,
-  );
+    toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+    onProgress: callbacks?.onProgress,
+  };
+
+  // Plan-then-Execute (default): 2 LLM calls instead of iterative ReAct
+  const result = await runPlanExecute(loopMessages, loopConfig, config);
 
   // Store results
   const stateUpdate: Partial<CognitiveEngineState> = {
@@ -266,6 +326,7 @@ ${blockLines.join('\n\n')}
       args: r.args,
       result: r.result,
       originalResultLength: r.originalResultLength,
+      extractedBlockIds: r.extractedBlockIds,
     })),
   };
 
@@ -279,8 +340,8 @@ ${blockLines.join('\n\n')}
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: re-run with feedback, preserving pre-search context
-      const refinedResult = await runReactLoop(
+      // User rejected: re-run with feedback using Plan-then-Execute
+      const refinedResult = await runPlanExecute(
         [
           new SystemMessage(fullSystemPrompt),
           new HumanMessage(finalUserMessage),
@@ -296,6 +357,7 @@ ${blockLines.join('\n\n')}
             scopeNodeIds: validatedScopeNodeIds,
           },
           toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+          onProgress: callbacks?.onProgress,
         },
         config,
       );
@@ -306,6 +368,7 @@ ${blockLines.join('\n\n')}
         args: r.args,
         result: r.result,
         originalResultLength: r.originalResultLength,
+        extractedBlockIds: r.extractedBlockIds,
       }));
     }
   }

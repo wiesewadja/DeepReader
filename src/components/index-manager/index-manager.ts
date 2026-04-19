@@ -86,7 +86,7 @@ export class IndexManager extends Component {
 
         const title = document.createElement('span');
         title.className = 'deeppdf-index-manager-title';
-        title.textContent = '在线书库';
+        title.textContent = '我的书库';
 
         titleRow.appendChild(title);
 

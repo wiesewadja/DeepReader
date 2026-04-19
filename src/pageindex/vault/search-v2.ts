@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "path";
-import { loadVectorStore, generateEmbedding, cosineSearch } from "./vectors";
+import { generateEmbedding, cosineSearchJsonl } from "./vectors";
 import type { EmbeddingOptions } from "./types";
 import type { SearchResultV2 } from "./compiler-types";
 
@@ -108,10 +108,10 @@ export async function searchV2(
   // Step 2: 向量语义搜索
   if (options?.embedding) {
     try {
-      const store = await loadVectorStore(indexPath);
-      if (store && store.meta.count > 0) {
+      const jsonlPath = join(indexPath, "vectors.jsonl");
+      if (existsSync(jsonlPath)) {
         const queryVector = await generateEmbedding(query, options.embedding);
-        const vectorResults = await cosineSearch(queryVector, store, topK);
+        const vectorResults = await cosineSearchJsonl(jsonlPath, queryVector, topK);
 
         for (const vr of vectorResults) {
           const meta = readNoteMeta(vaultPath, vr.nodeId);

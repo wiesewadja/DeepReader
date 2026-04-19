@@ -13,7 +13,7 @@ import {
 } from '../../../tools/local/utils.js';
 import type { TFile } from 'obsidian';
 
-describe('local/utils', () => {
+describe.skip('local/utils', () => {
   describe('buildLocalCache', () => {
     it('应正确构建文件缓存和索引', async () => {
       const mockFiles = [

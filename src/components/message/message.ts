@@ -48,7 +48,6 @@ export function parseAgentContent(content: string): {
 	thoughts: AgentThought[]; // 保持接口兼容，但返回空数组
 	toolCalls: AgentToolCall[];
 	cleanedContent: string;
-	currentStatus?: string;
 } {
 	// 0. 提取并移除状态行
 	// 后端发送的状态行格式示例：
@@ -213,7 +212,6 @@ export function parseAgentContent(content: string): {
 		thoughts: [],
 		toolCalls,
 		cleanedContent: processedContent,
-		currentStatus
 	};
 }
 
@@ -451,58 +449,89 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 			// 分页模式检测：有 paginator 设置的 CSS 变量
 			const isPaginatedMode = isReadingMode && !!readingModeEl!.querySelector('.markdown-preview-view[style*="--deeppdf-col-width"]');
 
+			// 从 href 中提取文件路径和 block ID
+			// href 格式：filename#^blockid 或 filename#heading 或 #^blockid（同文件）
+			// 先去掉显示文本（| 后面的部分）
+			const hrefClean = href.includes('|') ? href.split('|')[0] : href;
+			const hashIdx = hrefClean.indexOf('#');
+			const linkFilePath = hashIdx >= 0 ? hrefClean.slice(0, hashIdx) : hrefClean;
+			// block ID：# 后面的部分，去掉开头的 ^ 前缀（Obsidian DOM 中 id 属性带 ^）
+			const rawFragment = hashIdx >= 0 ? hrefClean.slice(hashIdx + 1) : null;
+			// rawFragment 可能是 ^blockid 或 heading-text
+			const blockId = rawFragment?.startsWith('^') ? rawFragment.slice(1) : null;
+			const headingFragment = rawFragment && !rawFragment.startsWith('^') ? rawFragment : null;
+
+			/**
+			 * 在当前活跃的 markdown preview 容器中查找 block 元素并滚动到它。
+			 * Obsidian 渲染 block ID 的方式：段落末尾插入 <span id="^xxx"> 或 <a id="^xxx">
+			 * 所以选择器需要匹配 id="^xxx"（带 ^）以及 data-block-id="xxx"（不带 ^）。
+			 */
+			const scrollToBlockInCurrentView = (delayMs = 50): void => {
+				if (!blockId) return;
+				setTimeout(() => {
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+					const container: Element = activeView?.previewMode?.renderer?.containerEl
+						|| activeView?.containerEl
+						|| document.body;
+					// Obsidian 在段落末尾渲染 block ID 为 <span id="^xxx"> 或 <a id="^xxx">
+					// 同时也可能有 data-block-id="xxx"（不带 ^）
+					const blockSel = [
+						`[id="^${CSS.escape(blockId)}"]`,
+						`[data-block-id="${CSS.escape(blockId)}"]`,
+						`[id="${CSS.escape(blockId)}"]`,
+					].join(', ');
+					const target = container.querySelector(blockSel);
+					if (target) {
+						// scrollIntoView 在分页模式下已被 ReadingModeService.patchScrollIntoView 拦截，
+						// 会自动计算正确的横向滚动位置
+						(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+						log('[DeepPDF] Scrolled to block:', blockId);
+					} else {
+						log('[DeepPDF] Block not found in view:', blockId);
+					}
+				}, delayMs);
+			};
+
 			if (isPaginatedMode) {
-				// 分页模式：新开 tab 以滚动模式打开，跳转 blockId
-				const linkPath = href.split('#')[0].split('|')[0];
-				const targetFile = app.metadataCache.getFirstLinkpathDest(linkPath, '');
-				const blockId = href.includes('#') ? href.split('#').pop() : null;
+				// 分页模式：在当前 leaf 内跳转，不新开 tab
+				// ReadingModeService.patchScrollIntoView 已拦截 scrollIntoView，
+				// 会自动将横向滚动定位到正确的列（页）
 
-				if (targetFile) {
-					// 优先复用已打开同一文件的其他 leaf
-					const currentLeaf = app.workspace.activeLeaf;
-					const existingLeaf = app.workspace.getLeavesOfType('markdown').find(leaf => {
-						const view = leaf.view as any;
-						return view?.file?.path === targetFile.path && leaf !== currentLeaf;
-					});
+				if (!linkFilePath) {
+					// 同文件内的 block/heading 跳转（href 形如 #^blockid 或 #heading）
+					scrollToBlockInCurrentView(50);
+				} else {
+					// 跨文件跳转：检查目标文件是否就是当前打开的文件
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+					const currentFilePath = activeView?.file?.path || '';
+					const targetFile = app.metadataCache.getFirstLinkpathDest(linkFilePath, currentFilePath);
 
-					const targetLeaf = existingLeaf || app.workspace.getLeaf('tab');
-					if (targetLeaf) {
-						await targetLeaf.openFile(targetFile);
-						// 切换到预览模式（滚动模式）确保能滚动跳转
-						await targetLeaf.setViewState({ type: 'markdown', state: { mode: 'preview' } });
-						app.workspace.setActiveLeaf(targetLeaf, { focus: true });
-
+					if (targetFile && targetFile.path === currentFilePath) {
+						// 目标就是当前文件，直接跳转 block
+						scrollToBlockInCurrentView(50);
+					} else if (targetFile) {
+						// 跨文件：用 openLinkText 在当前 leaf 打开目标文件
+						// openLinkText 支持 #^blockid 语法，Obsidian 会在文件加载后自动跳转
+						// 但分页模式下 scrollIntoView 已被 patch，所以跳转会正确横向定位
+						await app.workspace.openLinkText(hrefClean, currentFilePath, false);
+						// 额外保险：等文件加载后再尝试一次 block 跳转
 						if (blockId) {
-							setTimeout(() => {
-								const view = targetLeaf.view as any;
-								if (view?.previewMode?.renderer) {
-									const container = view.previewMode.renderer.containerEl;
-									const blockSel = '[data-block-id="' + blockId + '"], [id="' + blockId + '"], [id="^' + blockId + '"], sup#' + CSS.escape(blockId || '');
-									const target = container.querySelector(blockSel);
-									if (target) {
-										(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-									}
-								}
-							}, existingLeaf ? 100 : 300);
+							scrollToBlockInCurrentView(400);
 						}
+					} else {
+						// 文件不存在，降级处理
+						log('[DeepPDF] Target file not found for link:', href);
 					}
 				}
 			} else if (isReadingMode) {
 				// 滚动阅读模式：跳转链接，如有 blockId 则滚动到对应位置
-				const blockId = href.includes('#') ? href.split('#').pop() : null;
 				if (blockId) {
-					setTimeout(() => {
-						const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
-						const container = activeView?.previewMode?.renderer?.containerEl || activeView?.containerEl || document;
-						const blockSel = '[data-block-id="' + blockId + '"], [id="' + blockId + '"], [id="^' + blockId + '"], sup#' + CSS.escape(blockId);
-						const target = container.querySelector(blockSel);
-						if (target) {
-							(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-							log('[DeepPDF] Scrolled to block in scroll mode:', blockId);
-						} else {
-							log('[DeepPDF] Block not found in scroll mode:', blockId);
-						}
-					}, 50);
+					scrollToBlockInCurrentView(50);
+				} else if (headingFragment) {
+					// heading 跳转：用 openLinkText 处理
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+					const currentFilePath = activeView?.file?.path || '';
+					app.workspace.openLinkText(hrefClean, currentFilePath, false);
 				} else {
 					// 普通 wiki 链接，正常打开
 					app.workspace.openLinkText(href, '', false);
@@ -1126,70 +1155,22 @@ export class AIMessage extends Message {
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
 			const now = Date.now();
 
-			// 1. 解析内容
-			const { cleanedContent, currentStatus } = parseAgentContent(newContent);
+				// 解析内容（状态由 LangGraph onProgress 驱动，不从此处提取）
+				const { cleanedContent } = parseAgentContent(newContent);
 
-			// 检查内容是否真正变化
-			const contentLen = cleanedContent.length;
-			const contentGrowth = contentLen - this.lastRenderedLength;
-			const timePassed = now - this.lastRenderTime;
+				const contentLen = cleanedContent.length;
+				const contentGrowth = contentLen - this.lastRenderedLength;
+				const timePassed = now - this.lastRenderTime;
 
-			// 【调试日志】输出解析结果（前 5 次调用）
-			if (this.lastRenderTime === 0 || contentLen < 100) {
-				log('[DeepPDF] streamingUpdateContent - 解析结果:', {
-					currentStatus,
-					contentLen,
-					cleanedContentPreview: cleanedContent.substring(0, 50)
-				});
-			}
+				const normalizedNew = cleanedContent.trim();
+				const normalizedOld = this.lastRenderedContent.trim();
+				const contentChanged = normalizedNew !== normalizedOld;
 
-			// 检查内容是否实质性变化（忽略尾部空格差异）
-			const normalizedNew = cleanedContent.trim();
-			const normalizedOld = this.lastRenderedContent.trim();
-			const contentChanged = normalizedNew !== normalizedOld;
+				let throttleThreshold = 100;
+				if (contentLen > 1500) throttleThreshold = 400;
+				else if (contentLen > 500) throttleThreshold = 200;
 
-			// 动态节流策略
-			let throttleThreshold = 100;
-			if (contentLen > 1500) throttleThreshold = 400;
-			else if (contentLen > 500) throttleThreshold = 200;
-
-			// 决定是否需要渲染
-			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
-
-			// 【关键修复】状态显示更新不受节流限制，确保实时反馈
-			// 用户需要立即看到"正在搜索..."等状态，不能因为内容变化小而被跳过
-			if (this.el) {
-				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-				log('[DeepPDF] streamingUpdateContent - DOM 查找:', {
-					hasEl: !!this.el,
-					hasHeaderRow: !!headerRow,
-					currentStatus
-				});
-				if (headerRow) {
-					let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
-					if (!statusEl) {
-						statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-						log('[DeepPDF] streamingUpdateContent - 创建状态元素');
-					}
-					if (statusEl) {
-						log('[DeepPDF] streamingUpdateContent - 更新状态:', {
-							currentStatus,
-							oldTextContent: statusEl.textContent,
-							willUpdate: currentStatus && statusEl.textContent !== currentStatus
-						});
-						if (currentStatus && statusEl.textContent !== currentStatus) {
-							statusEl.textContent = currentStatus;
-							statusEl.addClass('visible');
-							log('[DeepPDF] streamingUpdateContent - 状态已更新并显示:', currentStatus);
-						} else if (!currentStatus && statusEl.textContent !== '') {
-							statusEl.textContent = '';
-							statusEl.removeClass('visible');
-						}
-					}
-				}
-			} else {
-				log('[DeepPDF] streamingUpdateContent - this.el 不存在!');
-			}
+				const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
 
 			if (shouldRender && this.app) {
 				// 移除 loading 状态（首次渲染实际内容时）

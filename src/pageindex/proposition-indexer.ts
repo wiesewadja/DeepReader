@@ -4,10 +4,8 @@
 
 import * as path from "path";
 import * as fs from "fs/promises";
-import { open } from "node:fs/promises";
 import { chatGPT } from "./llm/client.js";
 import {
-  initVectorStore,
   generateEmbedding,
   generateEmbeddings,
 } from "./vault/vectors.js";
@@ -26,7 +24,6 @@ import { log as piLog } from "./core/logger.js";
 const DEFAULT_CARDS_PER_500 = 1;
 const DEFAULT_MIN_CARDS = 3;
 const DEFAULT_MAX_CARDS = 15;
-const PROP_VECTOR_HEADER_SIZE = 24;
 
 export function buildExtractionPrompt(
   chapterText: string,
@@ -360,7 +357,7 @@ export async function indexPropositions(
       vaultPath, 
       "DeepReader", 
       treeData.exportName || treeData.title, 
-      chapter.fileName + ".md"
+      chapter.fileName.endsWith(".md") ? chapter.fileName : chapter.fileName + ".md"
     );
     let chapterText = "";
     
@@ -468,61 +465,33 @@ async function vectorizeCards(
   indexDir: string,
   embedding: EmbeddingOptions
 ): Promise<void> {
-  const texts = cards.map(c => `${c.answer}\n${c.context}\n${c.tags.join(" ")}`);
+  // 截断保护：BGE 系列有 512 token 限制，其他模型不需要
+  const modelName = (embedding.model || "").toLowerCase();
+  const isBGE = modelName.includes("bge");
+  const MAX_EMBED_CHARS = isBGE ? 400 : 8000;
+  const texts = cards.map(c => {
+    const raw = `${c.answer}\n${c.context}\n${c.tags.join(" ")}`;
+    return raw.length > MAX_EMBED_CHARS ? raw.slice(0, MAX_EMBED_CHARS) : raw;
+  });
 
-  let dimensions = embedding.dimensions;
-  if (!dimensions) {
-    const testEmbedding = await generateEmbedding("test", embedding);
-    dimensions = testEmbedding.length;
-    piLog(`[proposition-indexer] Auto-detected dimensions: ${dimensions}`);
+  // 分批向量化
+  const batchSize = 32;
+  const allVectors: number[][] = [];
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const vectors = await generateEmbeddings(batch, embedding);
+    allVectors.push(...vectors);
   }
 
-  const propVectorPath = path.join(indexDir, "prop_vectors.f32");
-  const propMetaPath = path.join(indexDir, "prop_vectors.meta.json");
-  
-  const meta = {
-    model: embedding.model || "text-embedding-3-small",
-    dimensions,
-    count: cards.length,
-    deletedCount: 0,
-    indexedAt: new Date().toISOString(),
-    slots: {} as Record<string, { slotIndex: number; deleted: boolean }>,
-  };
-
+  // Build JSONL records: each line = { cardId, vector }
+  const records: string[] = [];
   for (let i = 0; i < cards.length; i++) {
-    meta.slots[cards[i].id] = { slotIndex: i, deleted: false };
+    const record = { cardId: cards[i].id, vector: allVectors[i] };
+    records.push(JSON.stringify(record));
   }
 
-  const allVectors = await generateEmbeddings(texts, embedding);
-  const vectorData = new Float32Array(cards.length * dimensions);
-  
-  for (let i = 0; i < allVectors.length; i++) {
-    vectorData.set(allVectors[i], i * dimensions);
-  }
+  const jsonlPath = path.join(indexDir, "prop-vectors.jsonl");
+  await fs.writeFile(jsonlPath, records.join("\n") + "\n", "utf-8");
 
-  const header = buildPropVectorHeader(dimensions, cards.length);
-  const fileHandle = await fs.open(propVectorPath, "w");
-  await fileHandle.write(Buffer.from(header));
-  await fileHandle.write(Buffer.from(vectorData.buffer));
-  await fileHandle.close();
-
-  await fs.writeFile(propMetaPath, JSON.stringify(meta, null, 2), "utf-8");
-  
-  piLog(`[proposition-indexer] Vectorized ${cards.length} cards to ${propVectorPath}`);
-}
-
-function buildPropVectorHeader(dimensions: number, count: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(PROP_VECTOR_HEADER_SIZE);
-  const view = new DataView(buffer);
-
-  const encoder = new TextEncoder();
-  const magicBytes = encoder.encode("BPI_VEC");
-  new Uint8Array(buffer, 0, 8).set(magicBytes);
-
-  view.setUint32(8, 1, true);
-  view.setUint32(12, dimensions, true);
-  view.setUint32(16, count, true);
-  view.setUint32(20, 0, true);
-
-  return buffer;
+  piLog(`[proposition-indexer] Vectorized ${cards.length} cards to ${jsonlPath}`);
 }

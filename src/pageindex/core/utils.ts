@@ -663,6 +663,12 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
 
 export function cleanTitle(title: string): string {
   return title
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
     .replace(/^#+\s*/, "")
     .replace(/\*+/g, "")
     .replace(/-{2,}/g, "-")

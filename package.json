@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "DeepReader - 深度阅读插件",
   "main": "bin/main.js",
   "scripts": {
@@ -11,7 +11,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"/Users/lizhao/workspace/deepreadertest/.obsidian/plugins/deepreader/\""
+    "deploy": "npm run build && mkdir -p \"test-vault/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"test-vault/.obsidian/plugins/deepreader/\""
   },
   "keywords": [
     "obsidian",

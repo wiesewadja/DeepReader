@@ -283,21 +283,39 @@ function extractTextFromHTMLWithBlocks(
 /**
  * Clean EPUB title by removing marketing suffixes commonly added by ebook sites.
  * Strips long 【...】 blocks (marketing copy, recommendations), removes trailing
- * parenthetical site info like "(z-library.sk, ...)", and trims whitespace.
- * Short 【...】 like 【第2版】 are preserved.
+ * parenthetical blocks like author info "(作者名)" and site info "(z-library.sk, ...)",
+ * and trims whitespace. Short 【...】 like 【第2版】 are preserved.
+ *
+ * Examples:
+ *   "如何阅读一本书 ([美]莫提默·J·艾德勒,查尔斯·范多伦) (z-library.sk, 1lib.sk)"
+ *     → "如何阅读一本书"
+ *   "遥远的救世主 (豆豆) (z-lib.sk)" → "遥远的救世主"
+ *   "Python编程【第2版】" → "Python编程【第2版】"  (short 【】 preserved)
  */
 function cleanEpubTitle(title: string): string {
-  return title
+  let result = title
     // Remove 【...】 blocks longer than 10 chars (marketing copy, not version tags)
-    .replace(/【[^】]{10,}】/g, "")
-    // Remove trailing (...) blocks that contain ebook site markers
-    .replace(/\s*\([^)]*(?:z-lib|z-library|1lib|epub|mobi|pdf)[^)]*\)/gi, "")
-    // Remove trailing standalone CJK author parenthetical at end of string
-    // e.g. " (兰小欢)" but NOT "(John Doe)" — only pure CJK names
-    .replace(/\s*\(\s*[\u4e00-\u9fff·•\s]{1,10}\)\s*$/, "")
-    // Collapse multiple spaces
-    .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(/【[^】]{10,}】/g, "");
+
+  // Repeatedly strip trailing (...) blocks — handles multiple stacked parentheticals
+  // e.g. "书名 (作者) (z-lib.sk)" needs two passes
+  let prev: string;
+  do {
+    prev = result;
+    result = result
+      // Remove trailing (...) blocks that contain ebook site markers
+      .replace(/\s*\([^)]*(?:z-lib|z-library|1lib|epub|mobi|pdf)[^)]*\)\s*$/gi, "")
+      // Remove trailing author/publisher parentheticals:
+      // matches (...) at end of string that look like author credits added by ebook sites,
+      // i.e. contains CJK chars, brackets like [美], dots, or commas (author lists)
+      // but NOT short version tags like "(2nd ed)" which are typically all-ASCII and short
+      .replace(/\s*\([^)]*[\u4e00-\u9fff][^)]*\)\s*$/, "")
+      .trim();
+  } while (result !== prev);
+
+  // Collapse multiple spaces, protect against over-stripping
+  const cleaned = result.replace(/\s{2,}/g, " ").trim();
+  return cleaned || title.trim();
 }
 
 /**

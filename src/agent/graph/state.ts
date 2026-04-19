@@ -15,6 +15,8 @@ export interface ToolResultSnapshot {
   args: Record<string, unknown>;
   result: string;
   originalResultLength: number;
+  /** Block_ids extracted before compression (for accurate verification) */
+  extractedBlockIds?: string[];
 }
 
 export const CognitiveEngineAnnotation = Annotation.Root({

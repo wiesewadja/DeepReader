@@ -36,6 +36,8 @@ export interface PdfObsidianExportOptions {
   author?: string;
   /** 封面图片相对路径（如 "DeepReader/covers/xxx.png"） */
   coverPath?: string;
+  /** 书籍索引 ID（bookId，写入 MOC frontmatter） */
+  bookId?: string;
 }
 
 interface ObsidianNote {
@@ -304,6 +306,7 @@ export async function exportPdfToObsidian(
   if (options.author) mocFrontmatter.author = options.author;
   if (options.coverPath) mocFrontmatter.cover = options.coverPath;
   if (options.sourcePdf) mocFrontmatter.source = options.sourcePdf;
+  if (options.bookId) mocFrontmatter.index_id = options.bookId;
 
   let moc = generateFrontmatter(mocFrontmatter) + "\n\n";
   moc += `# ${docName}\n\n`;

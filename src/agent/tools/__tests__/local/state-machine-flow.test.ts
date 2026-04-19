@@ -299,7 +299,9 @@ async function simulateAnalyticalState(
 // Tests
 // ============================================================================
 
-describe('状态机与本地工具数据流', () => {
+// Integration test: requires real vault data
+// describe('状态机与本地工具数据流', () => {
+describe.skip('状态机与本地工具数据流', () => {
   let mockApp: ReturnType<typeof createMockObsidianApp>;
 
   beforeAll(() => {

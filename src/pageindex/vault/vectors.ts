@@ -1,68 +1,170 @@
 /**
- * pageindex-vault: Obsidian Vault Vector Storage
- * Manages vector embeddings using flat binary file (Float32) + slot mapping
- * 
- * Node.js compatible version (replaces Bun.write and Bun.file)
+ * pageindex-vault: Vector Storage (JSONL format)
+ * Manages vector embeddings using JSONL files + global catalog
+ *
+ * Node.js compatible version
  */
 
 import * as path from "path";
 import * as fs from "node:fs/promises";
-import { open } from "node:fs/promises";
-import type { EmbeddingOptions, VectorIndexMeta } from "./types";
+import type {
+  EmbeddingOptions,
+  VectorRecord,
+  ChunkTextRecord,
+  CatalogMeta,
+  CatalogBookEntry,
+} from "./types";
 import { cosineSimilarity } from "../core/utils";
 
-const VECTOR_HEADER = "BPI_VEC";
-const VECTOR_VERSION = 1;
-const HEADER_SIZE = 24; // 8 + 4 + 4 + 4 + 4
+// ─── JSONL Vector Storage ─────────────────────────────────────
 
-export interface VectorStore {
-  vectors: Float32Array;
-  meta: VectorIndexMeta;
-  vectorPath: string;
-  metaPath: string;
+/**
+ * Atomic write: write to tmp file then rename (prevents data loss on crash)
+ */
+async function atomicWriteText(filePath: string, content: string): Promise<void> {
+  const tmpPath = filePath + ".tmp";
+  await fs.writeFile(tmpPath, content, "utf-8");
+  await fs.rename(tmpPath, filePath);
 }
 
-export async function initVectorStore(
-  indexPath: string,
-  dimensions: number = 1536
-): Promise<VectorStore> {
-  const vectorPath = path.join(indexPath, "vectors.f32");
-  const metaPath = path.join(indexPath, "vectors.meta.json");
-
-  const meta: VectorIndexMeta = {
-    model: "text-embedding-3-small",
-    dimensions,
-    count: 0,
-    deletedCount: 0,
-    indexedAt: new Date().toISOString(),
-    slots: {},
-  };
-
-  // Write header
-  const header = buildHeader(dimensions, 0, 0);
-  await fs.writeFile(vectorPath, Buffer.from(header));
-  await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
-
-  return { vectors: new Float32Array(0), meta, vectorPath, metaPath };
+/**
+ * Write vector records to a JSONL file (atomic replace)
+ */
+export async function writeVectorJsonl(
+  filePath: string,
+  records: VectorRecord[]
+): Promise<void> {
+  const lines = records.map((r) => JSON.stringify(r));
+  await atomicWriteText(filePath, lines.join("\n") + "\n");
 }
 
-export async function loadVectorStore(indexPath: string): Promise<VectorStore | null> {
-  const vectorPath = path.join(indexPath, "vectors.f32");
-  const metaPath = path.join(indexPath, "vectors.meta.json");
-
+/**
+ * Read all vector records from a JSONL file (tolerates corrupt lines)
+ */
+export async function readVectorJsonl(
+  filePath: string
+): Promise<VectorRecord[]> {
   try {
-    const metaContent = await fs.readFile(metaPath, "utf-8");
-    const meta = JSON.parse(metaContent) as VectorIndexMeta;
-
-    const buffer = await fs.readFile(vectorPath);
-    // Skip header bytes so vectors are aligned to slot boundaries
-    const vectors = new Float32Array(buffer.buffer, HEADER_SIZE);
-
-    return { vectors, meta, vectorPath, metaPath };
+    const content = await fs.readFile(filePath, "utf-8");
+    const records: VectorRecord[] = [];
+    for (const line of content.trim().split("\n")) {
+      if (!line.trim()) continue;
+      try { records.push(JSON.parse(line) as VectorRecord); }
+      catch { /* skip corrupt line */ }
+    }
+    return records;
   } catch {
-    return null;
+    return [];
   }
 }
+
+/**
+ * Cosine search over a JSONL vector file
+ */
+export async function cosineSearchJsonl(
+  filePath: string,
+  queryVector: number[],
+  topK: number,
+  filter?: { level?: string }
+): Promise<Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }>> {
+  const records = await readVectorJsonl(filePath);
+  const query = new Float32Array(queryVector);
+  const scores: Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }> = [];
+
+  for (const record of records) {
+    if (filter?.level && record.level !== filter.level) continue;
+    const vector = new Float32Array(record.vector);
+    const score = cosineSimilarity(query, vector);
+    scores.push({
+      chunkId: record.chunkId,
+      nodeId: record.nodeId,
+      blockIds: record.blockIds,
+      score,
+    });
+  }
+
+  return scores.sort((a, b) => b.score - a.score).slice(0, topK);
+}
+
+/**
+ * Write chunk text records to a JSONL file (atomic replace)
+ */
+export async function writeChunkTexts(
+  filePath: string,
+  records: ChunkTextRecord[]
+): Promise<void> {
+  const lines = records.map((r) => JSON.stringify(r));
+  await atomicWriteText(filePath, lines.join("\n") + "\n");
+}
+
+/**
+ * Read chunk text records from a JSONL file (tolerates corrupt lines)
+ */
+export async function readChunkTexts(
+  filePath: string
+): Promise<ChunkTextRecord[]> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const records: ChunkTextRecord[] = [];
+    for (const line of content.trim().split("\n")) {
+      if (!line.trim()) continue;
+      try { records.push(JSON.parse(line) as ChunkTextRecord); }
+      catch { /* skip corrupt line */ }
+    }
+    return records;
+  } catch {
+    return [];
+  }
+}
+
+// ─── Global Catalog ───────────────────────────────────────────
+
+const CATALOG_FILE = "catalog.json";
+
+/**
+ * Load global catalog from .pageindex/catalog.json
+ */
+export async function loadCatalog(
+  pageindexPath: string
+): Promise<CatalogMeta> {
+  const catalogPath = path.join(pageindexPath, CATALOG_FILE);
+  try {
+    const content = await fs.readFile(catalogPath, "utf-8");
+    return JSON.parse(content) as CatalogMeta;
+  } catch {
+    return { version: 1, books: {} };
+  }
+}
+
+/**
+ * Update or insert a book entry in the global catalog
+ */
+export async function updateCatalogEntry(
+  pageindexPath: string,
+  bookId: string,
+  entry: CatalogBookEntry
+): Promise<void> {
+  const catalog = await loadCatalog(pageindexPath);
+  catalog.books[bookId] = entry;
+  const catalogPath = path.join(pageindexPath, CATALOG_FILE);
+  await fs.mkdir(pageindexPath, { recursive: true });
+  await atomicWriteText(catalogPath, JSON.stringify(catalog, null, 2));
+}
+
+/**
+ * Remove a book entry from the global catalog
+ */
+export async function removeCatalogEntry(
+  pageindexPath: string,
+  bookId: string
+): Promise<void> {
+  const catalog = await loadCatalog(pageindexPath);
+  delete catalog.books[bookId];
+  const catalogPath = path.join(pageindexPath, CATALOG_FILE);
+  await atomicWriteText(catalogPath, JSON.stringify(catalog, null, 2));
+}
+
+// ─── Embedding Generation ─────────────────────────────────────
 
 export async function generateEmbedding(
   text: string,
@@ -88,8 +190,8 @@ export async function generateEmbeddings(
   if (options.provider === "local") {
     throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
   }
-  
-  const batchSize = 100;
+
+  const batchSize = options.batchSize ?? 32;
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += batchSize) {
@@ -100,13 +202,11 @@ export async function generateEmbeddings(
         model: options.model || "text-embedding-3-small",
         input: batch,
       };
-      
-      // Only include dimensions if explicitly set (for models that support it)
+
       if (options.dimensions) {
         body.dimensions = options.dimensions;
       }
 
-      // API Key: lmstudio uses placeholder, openai requires real key
       const apiKey = options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY);
       if (!apiKey) {
         throw new Error(`API Key is required for ${options.provider} provider`);
@@ -150,19 +250,16 @@ async function generateOpenAIEmbedding(
     model: options.model || "text-embedding-3-small",
     input: text,
   };
-  
-  // Only include dimensions if explicitly set
+
   if (options.dimensions) {
     body.dimensions = options.dimensions;
   }
 
-  // API Key: lmstudio uses placeholder, openai requires real key
   const apiKey = options.apiKey || (options.provider === "lmstudio" ? "lm-studio" : process.env.OPENAI_API_KEY);
   if (!apiKey) {
     throw new Error(`API Key is required for ${options.provider} provider`);
   }
 
-  // Base URL: lmstudio defaults to localhost, openai to api.openai.com
   const baseUrl = options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1");
 
   const response = await fetch(`${baseUrl}/embeddings`, {
@@ -202,167 +299,4 @@ async function generateOllamaEmbedding(
 
   const data = await response.json() as { embedding: number[] };
   return data.embedding;
-}
-
-export async function appendVector(
-  store: VectorStore,
-  nodeId: string,
-  vector: number[]
-): Promise<number> {
-  const slotIndex = store.meta.count;
-  const vectorData = new Float32Array(vector);
-
-  // Append to file
-  const file = await open(store.vectorPath, "a");
-  await file.write(Buffer.from(vectorData.buffer));
-  await file.close();
-
-  store.meta.slots[nodeId] = { slotIndex, deleted: false };
-  store.meta.count++;
-
-  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
-
-  return slotIndex;
-}
-
-export async function updateVector(
-  store: VectorStore,
-  nodeId: string,
-  vector: number[]
-): Promise<void> {
-  const slot = store.meta.slots[nodeId];
-  if (!slot) {
-    throw new Error(`Node ${nodeId} not found in vector store`);
-  }
-
-  const vectorData = new Float32Array(vector);
-  const offset = HEADER_SIZE + slot.slotIndex * store.meta.dimensions * 4;
-
-  const file = await open(store.vectorPath, "r+");
-  await file.write(Buffer.from(vectorData.buffer), 0, vectorData.buffer.byteLength, offset);
-  await file.close();
-}
-
-export async function markVectorDeleted(
-  store: VectorStore,
-  nodeId: string
-): Promise<void> {
-  const slot = store.meta.slots[nodeId];
-  if (!slot || slot.deleted) return;
-
-  slot.deleted = true;
-  store.meta.deletedCount++;
-
-  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
-}
-
-export async function getNodeVector(
-  store: VectorStore,
-  nodeId: string
-): Promise<Float32Array | null> {
-  const slot = store.meta.slots[nodeId];
-  if (!slot || slot.deleted) return null;
-
-  const offset = HEADER_SIZE + slot.slotIndex * store.meta.dimensions * 4;
-  const fileHandle = await open(store.vectorPath, "r");
-  const buffer = Buffer.allocUnsafe(store.meta.dimensions * 4);
-  await fileHandle.read(buffer, 0, store.meta.dimensions * 4, offset);
-  await fileHandle.close();
-
-  return new Float32Array(buffer.buffer);
-}
-
-export async function loadAllVectors(store: VectorStore): Promise<Float32Array> {
-  const buffer = await fs.readFile(store.vectorPath);
-  return new Float32Array(buffer.buffer);
-}
-
-export async function compactVectors(store: VectorStore): Promise<void> {
-  const liveSlots: Array<{ nodeId: string; slotIndex: number; vector: Float32Array }> = [];
-
-  const fileHandle = await open(store.vectorPath, "r");
-  
-  for (const [nodeId, slot] of Object.entries(store.meta.slots)) {
-    if (!slot.deleted) {
-      const offset = HEADER_SIZE + slot.slotIndex * store.meta.dimensions * 4;
-      const buffer = Buffer.allocUnsafe(store.meta.dimensions * 4);
-      await fileHandle.read(buffer, 0, store.meta.dimensions * 4, offset);
-      liveSlots.push({
-        nodeId,
-        slotIndex: slot.slotIndex,
-        vector: new Float32Array(buffer.buffer),
-      });
-    }
-  }
-  
-  await fileHandle.close();
-
-  // Rewrite file
-  const header = buildHeader(store.meta.dimensions, liveSlots.length, 0);
-  const file = await open(store.vectorPath, "w");
-  await file.write(Buffer.from(header));
-
-  for (let i = 0; i < liveSlots.length; i++) {
-    await file.write(Buffer.from(liveSlots[i].vector.buffer));
-    store.meta.slots[liveSlots[i].nodeId].slotIndex = i;
-  }
-
-  await file.close();
-
-  // Remove deleted slots from meta
-  for (const [nodeId, slot] of Object.entries(store.meta.slots)) {
-    if (slot.deleted) {
-      delete store.meta.slots[nodeId];
-    }
-  }
-
-  store.meta.count = liveSlots.length;
-  store.meta.deletedCount = 0;
-  await fs.writeFile(store.metaPath, JSON.stringify(store.meta, null, 2), "utf-8");
-}
-
-function buildHeader(
-  dimensions: number,
-  count: number,
-  deletedCount: number
-): ArrayBuffer {
-  const buffer = new ArrayBuffer(HEADER_SIZE);
-  const view = new DataView(buffer);
-
-  // Magic: "BPI_VEC"
-  const encoder = new TextEncoder();
-  const magicBytes = encoder.encode(VECTOR_HEADER);
-  new Uint8Array(buffer, 0, 8).set(magicBytes);
-
-  view.setUint32(8, VECTOR_VERSION, true);
-  view.setUint32(12, dimensions, true);
-  view.setUint32(16, count, true);
-  view.setUint32(20, deletedCount, true);
-
-  return buffer;
-}
-
-export async function cosineSearch(
-  queryVector: number[],
-  store: VectorStore,
-  topK: number
-): Promise<Array<{ nodeId: string; score: number }>> {
-  const query = new Float32Array(queryVector);
-  const scores: Array<{ nodeId: string; score: number }> = [];
-
-  for (const [nodeId, slot] of Object.entries(store.meta.slots)) {
-    if (slot.deleted) continue;
-
-    // vectors already starts after HEADER_SIZE (see loadVectorStore)
-    const offset = slot.slotIndex * store.meta.dimensions * 4;
-    const vector = store.vectors.subarray(
-      offset / 4,
-      offset / 4 + store.meta.dimensions
-    );
-    const score = cosineSimilarity(query, vector);
-
-    scores.push({ nodeId, score });
-  }
-
-  return scores.sort((a, b) => b.score - a.score).slice(0, topK);
 }

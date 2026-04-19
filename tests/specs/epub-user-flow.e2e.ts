@@ -50,7 +50,7 @@ describe('EPUB 完整用户流程 E2E 测试', function () {
     // ══════════════════════════════════════
 
     it('should open library modal by clicking the library button', async function () {
-        const libraryBtn = await browser.$('.deeppdf-topbar-action-btn[title="在线书库"]');
+        const libraryBtn = await browser.$('.deeppdf-topbar-action-btn[title="我的书库"]');
         await libraryBtn.click();
 
         const grid = await browser.$('.deeppdf-lib-grid');

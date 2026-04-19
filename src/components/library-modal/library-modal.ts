@@ -13,6 +13,9 @@ import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js'
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
 import * as path from 'path';
+
+/** Proposition 功能开关 — token 成本过高，优化后重新启用 */
+const PROPOSITION_ENABLED = false;
 import * as fs from 'fs/promises';
 
 // SVG 图标
@@ -86,7 +89,7 @@ export class LibraryModal extends Modal {
 
         // 标题行
         const header = contentEl.createDiv({ cls: 'deeppdf-lib-header' });
-        header.createEl('h2', { text: '在线书库', cls: 'deeppdf-lib-title' });
+        header.createEl('h2', { text: '我的书库', cls: 'deeppdf-lib-title' });
 
         // 工具栏：搜索 + 添加
         const toolbar = contentEl.createDiv({ cls: 'deeppdf-lib-toolbar' });
@@ -544,8 +547,8 @@ export class LibraryModal extends Modal {
                 const embeddingRole = resolveRoleConfig('embedding', settings);
                 const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
 
-                // Proposition 配置
-                const propositionRole = resolveRoleConfig('proposition', settings);
+                // Proposition: disabled — see file-level PROPOSITION_ENABLED
+                const propositionRole = PROPOSITION_ENABLED ? resolveRoleConfig('proposition', settings) : null;
                 const propositionOpts = propositionRole
                     ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
                     : undefined;

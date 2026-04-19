@@ -15,6 +15,7 @@ interface ResolvedConfig {
 	baseUrl: string;
 	model: string;
 	provider: string;
+	embeddingBatchSize?: number;
 }
 
 /**
@@ -29,6 +30,7 @@ export function toEmbeddingOptions(resolved: ResolvedConfig): EmbeddingOptions {
 		model: resolved.model,
 		apiKey: resolved.apiKey,
 		baseUrl: resolved.baseUrl,
+		batchSize: resolved.embeddingBatchSize,
 	};
 }
 

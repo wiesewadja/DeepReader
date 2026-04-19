@@ -15,7 +15,6 @@
 import * as crypto from "crypto";
 import * as path from "path";
 import * as fs from "fs/promises";
-import * as fsSync from "fs";
 import type {
   BookSearchOptionsV2,
   BookSearchResultV2,
@@ -28,17 +27,23 @@ import type {
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import {
-  loadVectorStore,
-  generateEmbeddings,
-  cosineSearch,
+  cosineSearchJsonl,
 } from "./vault/vectors.js";
-import type { EmbeddingOptions, RerankerOptions } from "./vault/types.js";
+import type { RerankerOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger";
 import {
   loadPropositions,
   loadPropVectorStore,
 } from "./proposition-search.js";
 import { getOrGenerateEmbedding } from "../agent/utils/embedding-cache.js";
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+interface ChunkHit {
+  chunkId: string;
+  blockIds: string[];
+  score: number;
+}
 
 // ─── Index file cache (avoids redundant disk reads in multi-keyword RRF) ─────
 
@@ -134,9 +139,9 @@ export async function searchBookV2(
   // ── Stage 2-3.5: Multi-path parallel recall ───────────────────────────
   const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
     searchBM25(options.query, bm25Index, expandedK),
-    precomputedEmbedding 
-      ? asyncVectorSearch(indexDir, precomputedEmbedding, expandedK) 
-      : Promise.resolve({ scores: new Map(), vector: null }),
+    precomputedEmbedding
+      ? asyncVectorSearch(indexDir, precomputedEmbedding, expandedK)
+      : Promise.resolve({ scores: new Map<string, number>(), chunkHits: new Map<string, ChunkHit[]>(), vector: null as number[] | null }),
     precomputedEmbedding 
       ? asyncPropositionSearch(indexDir, precomputedEmbedding, expandedK) 
       : Promise.resolve(new Map()),
@@ -150,6 +155,7 @@ export async function searchBookV2(
 
   // Extract Vector scores
   const vectorScores = vectorSearchResult.scores;
+  const chunkHits = vectorSearchResult.chunkHits;
   const queryVector = vectorSearchResult.vector;
 
   // Proposition matches already in map
@@ -222,6 +228,9 @@ export async function searchBookV2(
 
   const scoredResults: ScoredResult[] = [];
 
+  // Pre-build tree index for O(1) level weight lookups
+  const treeIndex = buildTreeIndex(treeData.structure);
+
   for (const nodeId of candidateNodeIds) {
     const vs = vectorScores.get(nodeId) || 0;
     const bs = bm25Scores.get(nodeId) || 0;
@@ -232,7 +241,7 @@ export async function searchBookV2(
     const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
 
     const fusedScore = w_v * normalizedVec + w_b * normalizedBM25 + w_p * normalizedProp;
-    const levelWeight = computeLevelWeight(nodeId, treeData.structure);
+    const levelWeight = computeLevelWeightFast(nodeId, treeIndex);
 
     scoredResults.push({
       nodeId,
@@ -282,16 +291,25 @@ export async function searchBookV2(
   const topResults = scoredResults.slice(0, topK);
 
   // ── Stage 8: Matched block location ────────────────────────────────────
-  const cacheDir = path.join(indexDir, "paragraph-vectors");
-  const queryTokens = tokenize(options.query);
-
   const results: BookSearchResultV2[] = [];
+
+  // Load chunk texts for matchedBlocks content
+  let chunkTextMap = new Map<string, string>();
+  if (chunkHits.size > 0) {
+    try {
+      const { readChunkTexts } = await import("./vault/vectors.js");
+      const chunkTexts = await readChunkTexts(path.join(indexDir, "chunks.jsonl"));
+      chunkTextMap = new Map(chunkTexts.map(c => [c.chunkId, c.text]));
+    } catch {
+      piLog("[book-search-v2] Failed to load chunks.jsonl");
+    }
+  }
 
   for (const r of topResults) {
     const hierarchyPath = findHierarchyPath(r.nodeId, treeData.structure);
     const title = findNodeTitle(r.nodeId, treeData.structure) || r.nodeId;
 
-    // 优先使用命题卡片作为 matchedBlocks
+    // Priority: proposition cards > vector chunk hits
     const matchedCards = propositionMatches.get(r.nodeId) || [];
     let matchedBlocks: MatchedBlock[];
 
@@ -300,22 +318,15 @@ export async function searchBookV2(
         blockId: card.id,
         content: `${card.context} ^${card.id}\n\n【${card.type}】${card.answer}`,
       }));
-      piLog(`[book-search-v2] Using ${matchedCards.length} proposition cards for ${r.nodeId}`);
+    } else if (chunkHits.has(r.nodeId)) {
+      const chunks = chunkHits.get(r.nodeId)!.slice(0, 3);
+      matchedBlocks = chunks.map(c => ({
+        blockId: c.blockIds[0] ? `^${c.blockIds[0]}` : "",
+        content: chunkTextMap.get(c.chunkId) || "",
+      }));
     } else {
-      matchedBlocks = await locateMatchedBlocks(
-        r.nodeId,
-        options.query,
-        queryTokens,
-        treeData,
-        vaultPath,
-        {
-          embedding: options.embedding,
-          queryVector: queryVector ? new Float32Array(queryVector) : undefined,
-          cacheDir,
-          maxBlocksPerNode: 3,
-          blockSize: 500,
-        }
-      );
+      // No proposition or chunk hits — provide minimal block with nodeId reference
+      matchedBlocks = [{ blockId: "", content: `[${title}]` }];
     }
 
     results.push({
@@ -369,6 +380,25 @@ export function computeLevelWeight(nodeId: string, structure: TreeNode[]): numbe
   return 0.7;                       // L1 section-level (leaf)
 }
 
+/** Pre-build nodeId → {node, depth} map for O(1) lookups */
+function buildTreeIndex(nodes: TreeNode[], depth = 0, map = new Map<string, {node: TreeNode, depth: number}>()): Map<string, {node: TreeNode, depth: number}> {
+  for (const node of nodes) {
+    if (node.nodeId) map.set(node.nodeId, { node, depth });
+    if (node.nodes) buildTreeIndex(node.nodes, depth + 1, map);
+  }
+  return map;
+}
+
+/** Fast level weight using pre-built index */
+export function computeLevelWeightFast(nodeId: string, treeIndex: Map<string, {node: TreeNode, depth: number}>): number {
+  const entry = treeIndex.get(nodeId);
+  if (!entry) return 0.5;
+  const { node, depth } = entry;
+  if (depth === 0) return 1.0;
+  if (node.nodes && node.nodes.length > 0) return 0.9;
+  return 0.7;
+}
+
 function findNodeInTree(nodeId: string, nodes: TreeNode[]): TreeNode | null {
   for (const node of nodes) {
     if (node.nodeId === nodeId) return node;
@@ -410,304 +440,58 @@ function findNodeTitle(nodeId: string, nodes: TreeNode[]): string | null {
   return node?.title || null;
 }
 
-// ─── Stage 8: Matched block location ────────────────────────────────────────
-
-export interface Paragraph {
-  blockId: string;
-  text: string;
-  start: number;
-  end: number;
-}
-
-async function locateMatchedBlocks(
-  nodeId: string,
-  _query: string,
-  queryTokens: string[],
-  tree: TreeData,
-  vaultPath: string,
-  options: {
-    embedding?: EmbeddingOptions;
-    queryVector?: Float32Array;
-    cacheDir?: string;
-    maxBlocksPerNode?: number;
-    blockSize?: number;
-  }
-): Promise<MatchedBlock[]> {
-  const fileName = tree.nodeFileMap[nodeId];
-  if (!fileName) return [];
-
-  const dirName = tree.exportName || tree.title;
-  const fullPath = path.join(vaultPath, "DeepReader", dirName, fileName);
-
-  let content: string;
-  try {
-    content = await fs.readFile(fullPath, "utf-8");
-  } catch {
-    return [];
-  }
-
-  // Remove frontmatter
-  content = content.replace(/^---[\s\S]*?---\n/, "");
-
-  // Split by ^block_id markers
-  const paragraphs = splitByBlockIds(content);
-  if (paragraphs.length === 0) return [];
-
-  // Score paragraphs: vector similarity or token density
-  let scored: Array<Paragraph & { score: number }>;
-
-  if (options.queryVector && options.embedding && options.cacheDir) {
-    scored = await scoreByVectorSimilarity(
-      nodeId, paragraphs, options.queryVector, options.embedding, options.cacheDir
-    );
-  } else {
-    scored = scoreByTokenDensity(paragraphs, queryTokens);
-  }
-
-  // Take top N
-  const maxBlocks = options.maxBlocksPerNode ?? 3;
-  const blockSize = options.blockSize ?? 500;
-  const topMatches = scored
-    .filter(p => p.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, maxBlocks);
-
-  // Build matched blocks with context
-  return topMatches.map(m => ({
-    blockId: m.blockId,
-    content: expandToContext(m, paragraphs, blockSize),
-  }));
-}
-
-// ─── Paragraph splitting ────────────────────────────────────────────────────
-
-export function splitByBlockIds(content: string): Paragraph[] {
-  const paragraphs: Paragraph[] = [];
-  const regex = /\^([\w-]+)/g;
-  let lastEnd = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(content)) !== null) {
-    // ^block_id 标记在段落末尾，它引用的是前面的文本
-    const blockId = `^${match[1]}`;
-    const text = content.slice(lastEnd, match.index).trim();
-    if (text) {
-      paragraphs.push({ blockId, text, start: lastEnd, end: match.index });
-    }
-    lastEnd = match.index + match[0].length;
-  }
-  // Last paragraph (no block_id marker)
-  const remaining = content.slice(lastEnd).trim();
-  if (remaining) {
-    paragraphs.push({ blockId: "", text: remaining, start: lastEnd, end: content.length });
-  }
-
-  return paragraphs;
-}
-
-// ─── Stage 8 scoring: vector similarity (path A) ────────────────────────────
-
-async function scoreByVectorSimilarity(
-  nodeId: string,
-  paragraphs: Paragraph[],
-  queryVector: Float32Array,
-  embedding: EmbeddingOptions,
-  cacheDir: string
-): Promise<Array<Paragraph & { score: number }>> {
-  // Try loading from cache
-  let paragraphVectors = await loadParagraphVectors(nodeId, cacheDir, embedding);
-
-  if (!paragraphVectors) {
-    // Cache miss: compute embeddings
-    try {
-      const texts = paragraphs.map(p => p.text);
-      const rawVectors = await generateEmbeddings(texts, embedding);
-      paragraphVectors = rawVectors.map(v => new Float32Array(v));
-
-      // Async save to cache
-      saveParagraphVectors(nodeId, paragraphVectors, cacheDir, embedding).catch(() => {});
-    } catch (err) {
-      piLog(`[book-search-v2] Paragraph embedding failed, falling back to token density: ${err}`);
-      return paragraphs.map(p => ({ ...p, score: 0 }));
-    }
-  }
-
-  return paragraphs.map((p, i) => ({
-    ...p,
-    score: cosineSimilarity(queryVector, paragraphVectors[i]),
-  }));
-}
-
-// ─── Stage 8 scoring: token density (path B, fallback) ──────────────────────
-
-export function scoreByTokenDensity(
-  paragraphs: Paragraph[],
-  queryTokens: string[]
-): Array<Paragraph & { score: number }> {
-  return paragraphs.map(p => ({
-    ...p,
-    score: countTokenHits(p.text, queryTokens),
-  }));
-}
-
-export function countTokenHits(text: string, tokens: string[]): number {
-  const lower = text.toLowerCase();
-  return tokens.reduce((count, token) => {
-    let pos = 0;
-    while ((pos = lower.indexOf(token.toLowerCase(), pos)) !== -1) {
-      count++;
-      pos += token.length;
-    }
-    return count;
-  }, 0);
-}
-
-// ─── Context expansion ──────────────────────────────────────────────────────
-
-export function expandToContext(
-  match: Paragraph & { score: number },
-  paragraphs: Paragraph[],
-  blockSize: number
-): string {
-  // Find the paragraph index
-  const idx = paragraphs.indexOf(match);
-  if (idx === -1) return match.text;
-
-  // Accumulate text around the match until we reach blockSize
-  let result = match.text;
-  let before = idx - 1;
-  let after = idx + 1;
-
-  while (result.length < blockSize && (before >= 0 || after < paragraphs.length)) {
-    if (after < paragraphs.length) {
-      result += "\n\n" + paragraphs[after].text;
-      if (paragraphs[after].blockId) result += " " + paragraphs[after].blockId;
-      after++;
-    }
-    if (result.length >= blockSize) break;
-    if (before >= 0) {
-      const beforeText = paragraphs[before].text + (paragraphs[before].blockId ? " " + paragraphs[before].blockId : "");
-      result = beforeText + "\n\n" + result;
-      before--;
-    }
-  }
-
-  return result.slice(0, blockSize);
-}
-
-// ─── Paragraph vector cache ─────────────────────────────────────────────────
-
-async function loadParagraphVectors(
-  nodeId: string,
-  cacheDir: string,
-  embedding: EmbeddingOptions
-): Promise<Float32Array[] | null> {
-  const vecsPath = path.join(cacheDir, `${nodeId}.vecs`);
-  const metaPath = path.join(cacheDir, "meta.json");
-
-  try {
-    // Check meta for embedding config match
-    if (fsSync.existsSync(metaPath)) {
-      const cacheMeta = JSON.parse(fsSync.readFileSync(metaPath, "utf-8"));
-      if (cacheMeta.embeddingModel !== (embedding.model || "text-embedding-3-small") ||
-          cacheMeta.embeddingProvider !== embedding.provider) {
-        return null; // Config changed, cache invalid
-      }
-    }
-
-    if (!fsSync.existsSync(vecsPath)) return null;
-
-    const buf = fsSync.readFileSync(vecsPath);
-    const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    const count = view.getUint32(0, true);
-    const dim = view.getUint32(4, true);
-
-    const vectors: Float32Array[] = [];
-    let offset = 8;
-    for (let i = 0; i < count; i++) {
-      const vec = new Float32Array(dim);
-      for (let j = 0; j < dim; j++) {
-        vec[j] = view.getFloat32(offset, true);
-        offset += 4;
-      }
-      vectors.push(vec);
-    }
-
-    return vectors;
-  } catch {
-    return null;
-  }
-}
-
-async function saveParagraphVectors(
-  nodeId: string,
-  vectors: Float32Array[],
-  cacheDir: string,
-  embedding: EmbeddingOptions
-): Promise<void> {
-  try {
-    fsSync.mkdirSync(cacheDir, { recursive: true });
-
-    // Write meta.json (once)
-    const metaPath = path.join(cacheDir, "meta.json");
-    if (!fsSync.existsSync(metaPath)) {
-      fsSync.writeFileSync(metaPath, JSON.stringify({
-        version: 1,
-        embeddingProvider: embedding.provider,
-        embeddingModel: embedding.model || "text-embedding-3-small",
-        totalParagraphs: vectors.length,
-      }));
-    }
-
-    // Write binary vectors
-    const dim = vectors[0]?.length || 0;
-    if (dim === 0) return;
-
-    const headerSize = 8;
-    const vecsSize = vectors.length * dim * 4;
-    const buf = Buffer.alloc(headerSize + vecsSize);
-
-    buf.writeUInt32LE(vectors.length, 0);
-    buf.writeUInt32LE(dim, 4);
-
-    let offset = headerSize;
-    for (const vec of vectors) {
-      for (let i = 0; i < dim; i++) {
-        buf.writeFloatLE(vec[i], offset);
-        offset += 4;
-      }
-    }
-
-    fsSync.writeFileSync(path.join(cacheDir, `${nodeId}.vecs`), buf);
-  } catch (err) {
-    piLog(`[book-search-v2] Failed to save paragraph vectors: ${err}`);
-  }
-}
-
 // ─── Multi-path parallel recall helpers ───────────────────────────────────
 
 async function asyncVectorSearch(
   indexDir: string,
   queryVector: number[],
   topK: number
-): Promise<{ scores: Map<string, number>; vector: number[] | null }> {
+): Promise<{
+  scores: Map<string, number>;
+  chunkHits: Map<string, ChunkHit[]>;
+  vector: number[] | null;
+}> {
   try {
-    const vectorStore = await loadVectorStore(indexDir);
-    if (!vectorStore || vectorStore.meta.count === 0) {
-      return { scores: new Map(), vector: null };
+    const vectorResults = await cosineSearchJsonl(
+      path.join(indexDir, "vectors.jsonl"),
+      queryVector,
+      topK * 3,  // over-recall since multiple chunks map to same nodeId
+      { level: "L2" }
+    );
+
+    // Fallback to L1 if no L2 results (old index format)
+    let results = vectorResults;
+    if (results.length === 0) {
+      const l1Results = await cosineSearchJsonl(
+        path.join(indexDir, "vectors.jsonl"),
+        queryVector,
+        topK,
+        { level: "L1" }
+      );
+      results = l1Results.map(r => ({ ...r, blockIds: [] }));
     }
 
-    const vectorResults = await cosineSearch(queryVector, vectorStore, topK);
-    
     const scores = new Map<string, number>();
-    for (const r of vectorResults) {
-      scores.set(r.nodeId, r.score);
+    const chunkHits = new Map<string, ChunkHit[]>();
+
+    for (const r of results) {
+      const prev = scores.get(r.nodeId) || 0;
+      scores.set(r.nodeId, Math.max(prev, r.score));
+
+      if (r.blockIds.length > 0) {
+        if (!chunkHits.has(r.nodeId)) chunkHits.set(r.nodeId, []);
+        chunkHits.get(r.nodeId)!.push({
+          chunkId: r.chunkId,
+          blockIds: r.blockIds,
+          score: r.score,
+        });
+      }
     }
-    
-    return { scores, vector: queryVector };
+
+    return { scores, chunkHits, vector: queryVector };
   } catch (error) {
     piLog(`[book-search-v2] Vector search failed: ${error}`);
-    return { scores: new Map(), vector: null };
+    return { scores: new Map<string, number>(), chunkHits: new Map<string, ChunkHit[]>(), vector: null };
   }
 }
 
@@ -717,32 +501,31 @@ async function asyncPropositionSearch(
   recallK: number
 ): Promise<Map<string, PropositionCard[]>> {
   const propositionMatches = new Map<string, PropositionCard[]>();
-  
+
   try {
     const propositionsData = await loadPropositions(indexDir);
-    const propVectorStore = await loadPropVectorStore(indexDir);
+    const propVectorMap = await loadPropVectorStore(indexDir);
 
-    if (!propositionsData || !propVectorStore || propositionsData.totalCards === 0) {
+    if (!propositionsData || !propVectorMap || propositionsData.totalCards === 0) {
       return propositionMatches;
     }
 
     const queryFloat32 = new Float32Array(queryVector);
-    const dimensions = propVectorStore.meta.dimensions;
 
     const scores: Array<{ cardId: string; score: number }> = [];
-    for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
-      if (slot.deleted) continue;
-
-      const offset = slot.slotIndex * dimensions;
-      const cardVector = propVectorStore.vectors.subarray(offset, offset + dimensions);
+    for (const [cardId, vector] of propVectorMap) {
+      const cardVector = new Float32Array(vector);
       const score = cosineSimilarity(queryFloat32, cardVector);
       scores.push({ cardId, score });
     }
 
     const topScores = scores.sort((a, b) => b.score - a.score).slice(0, recallK);
 
+    // Pre-build card map for O(1) lookup
+    const cardMap = new Map(propositionsData.cards.map(c => [c.id, c] as const));
+
     for (const s of topScores) {
-      const card = propositionsData.cards.find(c => c.id === s.cardId);
+      const card = cardMap.get(s.cardId);
       if (card && s.score > 0.3) {
         const nodeId = card.sourceNodeId;
         if (!propositionMatches.has(nodeId)) {
@@ -754,7 +537,7 @@ async function asyncPropositionSearch(
   } catch (error) {
     piLog(`[book-search-v2] Proposition search failed: ${error}`);
   }
-  
+
   return propositionMatches;
 }
 

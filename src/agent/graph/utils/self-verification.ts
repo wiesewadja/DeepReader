@@ -10,13 +10,15 @@
  * Removed Langfuse tracing (LangSmith handles tracing via LangGraph automatically)
  */
 
-const MAX_TOOL_RESULT_LENGTH = 8000;
+const MAX_TOOL_RESULT_LENGTH = 4000;
 
 export interface ToolResultEntry {
   toolName: string;
   args: Record<string, unknown>;
   result: string;
   originalResultLength: number;
+  /** Block_ids extracted before compression (for accurate verification) */
+  extractedBlockIds?: string[];
 }
 
 export interface VerificationResult {
@@ -98,7 +100,8 @@ export function checkWikiLinkValid(
         fileFound = true;
       }
 
-      if (blockPattern.test(entry.result)) {
+      if (blockPattern.test(entry.result) || 
+          (entry.extractedBlockIds && entry.extractedBlockIds.includes(blockIdWithoutCaret))) {
         if (fileName && !fileFound) {
           hasInvalidFile = true;
         }
@@ -128,13 +131,14 @@ export function checkBlockIdExists(
 ): 'found' | 'ghost' | 'truncated-invisible' {
   let hasTruncated = false;
 
-  // block_id 在 Markdown 中出现时，前面是 `^`，后面是非单词字符或行尾
   const blockIdWithoutCaret = blockId.startsWith('^') ? blockId.slice(1) : blockId;
-  // 匹配 ^blockId 后跟非单词字符或字符串末尾（避免 p1 匹配 p10）
   const pattern = new RegExp(`\\^${escapeRegExp(blockIdWithoutCaret)}(?=\\W|$)`);
 
   for (const entry of toolResults) {
     if (pattern.test(entry.result)) {
+      return 'found';
+    }
+    if (entry.extractedBlockIds && entry.extractedBlockIds.includes(blockIdWithoutCaret)) {
       return 'found';
     }
     if (entry.originalResultLength > MAX_TOOL_RESULT_LENGTH) {
