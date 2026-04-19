@@ -544,11 +544,11 @@ export class LibraryModal extends Modal {
                 const embeddingRole = resolveRoleConfig('embedding', settings);
                 const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
 
-                // Proposition 配置
-                const propositionRole = resolveRoleConfig('proposition', settings);
-                const propositionOpts = propositionRole
-                    ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
-                    : undefined;
+                // Proposition 暂时禁用（token 用量过高，后续优化后恢复）
+                // const propositionRole = resolveRoleConfig('proposition', settings);
+                // const propositionOpts = propositionRole
+                //     ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
+                //     : undefined;
 
                 const result = await indexBook({
                     filePath,
@@ -559,7 +559,7 @@ export class LibraryModal extends Modal {
                     apiKey: apiKey,
                     baseUrl: baseUrl,
                     addNodeSummary: settings.ifAddNodeSummary,
-                    propositions: propositionOpts,
+                    propositions: undefined,
                     onProgress: (progress: BookIndexProgress) => {
                         newIndex.progress_percent = progress.percent;
                         newIndex.status = 'processing';

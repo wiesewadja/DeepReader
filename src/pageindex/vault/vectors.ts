@@ -178,7 +178,7 @@ export async function generateEmbeddings(
     throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
   }
 
-  const batchSize = 100;
+  const batchSize = options.batchSize ?? 32;
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += batchSize) {

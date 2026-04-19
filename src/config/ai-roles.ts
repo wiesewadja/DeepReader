@@ -35,6 +35,7 @@ export interface AIRoleConfig {
 	provider: string;             // ProviderType 或自定义服务商 ID
 	model: string;                // 空字符串 = 使用服务商默认模型
 	baseUrlOverride?: string;     // 覆盖该角色的 baseUrl
+	embeddingBatchSize?: number;  // embedding 角色专用：每批最大文本数（默认 32）
 }
 
 /** 六种用途角色的完整配置 */

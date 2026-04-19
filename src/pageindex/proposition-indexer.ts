@@ -465,9 +465,23 @@ async function vectorizeCards(
   indexDir: string,
   embedding: EmbeddingOptions
 ): Promise<void> {
-  const texts = cards.map(c => `${c.answer}\n${c.context}\n${c.tags.join(" ")}`);
+  // 截断保护：BGE 系列有 512 token 限制，其他模型不需要
+  const modelName = (embedding.model || "").toLowerCase();
+  const isBGE = modelName.includes("bge");
+  const MAX_EMBED_CHARS = isBGE ? 400 : 8000;
+  const texts = cards.map(c => {
+    const raw = `${c.answer}\n${c.context}\n${c.tags.join(" ")}`;
+    return raw.length > MAX_EMBED_CHARS ? raw.slice(0, MAX_EMBED_CHARS) : raw;
+  });
 
-  const allVectors = await generateEmbeddings(texts, embedding);
+  // 分批向量化
+  const batchSize = 32;
+  const allVectors: number[][] = [];
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const vectors = await generateEmbeddings(batch, embedding);
+    allVectors.push(...vectors);
+  }
 
   // Build JSONL records: each line = { cardId, vector }
   const records: string[] = [];

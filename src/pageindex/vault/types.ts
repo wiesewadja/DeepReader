@@ -16,6 +16,8 @@ export interface EmbeddingOptions {
   baseUrl?: string;
   /** Vector dimensions (default: 1536 for OpenAI, 768 for nomic, 1024 for qwen3-embedding-0.6b) */
   dimensions?: number;
+  /** Max texts per API request (default: 32, some providers limit to 32 or less) */
+  batchSize?: number;
 }
 
 export interface ObsidianVaultIndexOptions extends MarkdownOptions {

@@ -308,9 +308,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             { role: 'pageindex', label: '页面索引', desc: '用于书籍索引时的 LLM 调用' },
         ];
 
-        // 可选角色
+        // 可选角色（proposition 暂时隐藏，后续优化 token 用量后恢复）
         const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
-            { role: 'proposition', label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' },
+            // { role: 'proposition', label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' },
             { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
             { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
         ];
@@ -475,6 +475,25 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     }));
             }
         }
+
+        // embedding 角色专用：batch size 配置
+        if (role === 'embedding') {
+            const currentBatchSize = (roleConfig as any)?.embeddingBatchSize;
+            new Setting(row)
+                .setName("Batch Size")
+                .setDesc("每次 API 请求最多发送的文本数（默认 32，GLM/部分服务商限制为 32）")
+                .addText(text => text
+                    .setPlaceholder('32')
+                    .setValue(currentBatchSize != null ? String(currentBatchSize) : '')
+                    .onChange(async (value) => {
+                        const parsed = parseInt(value, 10);
+                        (settings.roles as unknown as Record<string, unknown>)[role] = {
+                            ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
+                            embeddingBatchSize: (!value || isNaN(parsed)) ? undefined : parsed,
+                        };
+                        await this.plugin.saveSettings();
+                    }));
+        }
     }
 
 
@@ -551,8 +570,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
         // ═══ 参数调优（可折叠区块）═══
-        this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
-            (section) => this.renderPropositionParams(section));
+        // proposition-params 暂时隐藏
+        // this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
+        //     (section) => this.renderPropositionParams(section));
 
         this.renderCollapsibleSection(container, 'reranker-params', '🔄 重排序参数', '重排序权重等参数',
             (section) => this.renderRerankerParams(section));

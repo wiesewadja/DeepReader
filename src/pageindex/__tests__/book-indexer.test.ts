@@ -51,6 +51,7 @@ vi.mock("../exporters/pdf-to-obsidian.js", () => ({
   exportPdfToObsidian: vi.fn().mockResolvedValue({
     mocPath: "/tmp/test/Test Book/Test Book - MOC.md",
     notes: [],
+    nodeFileMap: { "L1-0": "Chapter 1.md", "L1-1": "Chapter 2.md" },
   }),
 }));
 
@@ -63,12 +64,11 @@ vi.mock("../exporters/epub-to-obsidian.js", () => ({
 
 vi.mock("../vault/vectors.js", () => ({
   generateEmbedding: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-  generateEmbeddings: vi.fn().mockResolvedValue([
-    [0.1, 0.2, 0.3],
-    [0.4, 0.5, 0.6],
-    [0.7, 0.8, 0.9],
-  ]),
+  generateEmbeddings: vi.fn().mockImplementation(async (texts: string[]) =>
+    texts.map((_, i) => [0.1 * (i + 1), 0.2 * (i + 1), 0.3 * (i + 1)])
+  ),
   writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
+  writeChunkTexts: vi.fn().mockResolvedValue(undefined),
   updateCatalogEntry: vi.fn().mockResolvedValue(undefined),
   removeCatalogEntry: vi.fn().mockResolvedValue(undefined),
 }));

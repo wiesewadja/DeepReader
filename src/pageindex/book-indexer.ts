@@ -95,6 +95,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   await fs.mkdir(indexDir, { recursive: true });
   const indexingStatusPath = path.join(indexDir, ".indexing.json");
 
+  // Clean stale status from previous interrupted indexing
+  try { await fs.unlink(indexingStatusPath); } catch { /* not exists */ }
+
   const reportProgress = (progress: { percent: number; step: string; stepLabel: string; message?: string }) => {
     options.onProgress?.(progress);
     // Persist to file (fire-and-forget)
@@ -111,6 +114,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const cleanupStatus = () => {
     fs.unlink(indexingStatusPath).catch(() => {});
   };
+
+  // Wrap entire pipeline in try-finally to ensure status cleanup on any error
+  try {
 
   // Step 1: Document parsing + LLM indexing (most time-consuming, 5%-70%)
   reportProgress({
@@ -506,8 +512,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     }
   }
 
-  // Step 8: Finalize — clean up indexing status
-  cleanupStatus();
+  // Step 8: Finalize — cleanup handled by try-finally
 
   reportProgress({
     percent: 100,
@@ -522,6 +527,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     chaptersCount: parseResult.structure.length,
     indexDir,
   };
+
+  } finally {
+    cleanupStatus();
+  }
 }
 
 /**
@@ -578,6 +587,14 @@ async function vectorizeAllLevels(
   const vectorPath = path.join(indexDir, "vectors.jsonl");
   const chunksPath = path.join(indexDir, "chunks.jsonl");
 
+  // 截断保护：BGE 系列模型有 512 token 限制（~400 中文字符），
+  // Qwen3-Embedding 等长上下文模型不需要截断（设为 8000 兜底即可）。
+  const modelName = (embedding.model || "").toLowerCase();
+  const isBGE = modelName.includes("bge");
+  const MAX_EMBED_CHARS = isBGE ? 400 : 8000;
+  const truncate = (text: string) =>
+    text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text;
+
   // Auto-detect dimensions
   let dimensions = embedding.dimensions;
   if (!dimensions) {
@@ -619,8 +636,8 @@ async function vectorizeAllLevels(
     collectAllChapterNodesForPending(node, allPending);
   }
 
-  // Generate embeddings for L0+L1
-  const l0l1Texts = allPending.map(p => p.text);
+  // Generate embeddings for L0+L1 (truncate to model token limit)
+  const l0l1Texts = allPending.map(p => truncate(p.text));
   const l0l1Vectors = await generateEmbeddings(l0l1Texts, embedding);
   for (let i = 0; i < l0l1Vectors.length; i++) {
     allPending[i].vector = l0l1Vectors[i];
@@ -665,10 +682,10 @@ async function vectorizeAllLevels(
   // Batch embed L2 texts
   const l2Pending = allPending.filter(p => p.level === "L2");
   if (l2Pending.length > 0) {
-    const batchSize = 100;
+    const batchSize = 32;
     for (let i = 0; i < l2Pending.length; i += batchSize) {
       const batch = l2Pending.slice(i, i + batchSize);
-      const texts = batch.map(c => c.text);
+      const texts = batch.map(c => truncate(c.text));
       const vectors = await generateEmbeddings(texts, embedding);
       for (let j = 0; j < vectors.length; j++) {
         batch[j].vector = vectors[j];
