@@ -12,7 +12,6 @@ import { interrupt } from '@langchain/langgraph';
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
-  MAX_HISTORY_MESSAGES,
 } from '../prompts/formatter-prompt';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 
@@ -70,12 +69,11 @@ export async function formatterNode(
 
   // Build user message with all context
   const chatHistory = ctx?.chatHistory ?? [];
-  const recentHistory = chatHistory.slice(-MAX_HISTORY_MESSAGES);
   const userMessage = buildFormatterUserMessage(
     state.rewrittenQuery,
     state.analysisResult || '',
     state.pdfName || '',
-    recentHistory,
+    chatHistory,
     state.tocSummary || undefined,
     state.structuralAnalysis || undefined,
     state.betterQuestion || undefined,

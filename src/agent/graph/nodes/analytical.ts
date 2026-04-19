@@ -194,27 +194,25 @@ export async function analyticalNode(
       ).withConfig({ runName: 'pre_search_rrf' });
       const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
-      // Quality threshold: only inject if we got meaningful results
+      // Quality threshold: only inject top-3 compact results
       if (Array.isArray(preResults) && preResults.length >= 2) {
-        const hits = preResults.slice(0, 5).map(r => ({
+        const hits = preResults.slice(0, 3).map(r => ({
           node_id: r.nodeId,
           title: r.title,
-          file_name: r.fileName,
-          matched_blocks: r.matchedBlocks.map(b => ({
+          matched_blocks: r.matchedBlocks.slice(0, 2).map(b => ({
             block_id: b.blockId.replace(/^\^/, ''),
-            content: b.content,
+            content: b.content.slice(0, 200),
           })),
-          score: Math.round(r.score * 100) / 100,
         }));
 
         const blockLines = hits.flatMap(h =>
           h.matched_blocks.map(b =>
-            `【${h.title}】${b.content.slice(0, 300)}`
+            `【${h.title}】${b.content}`
           )
         );
 
         preSearchBlock = `<pre_search_results>
-以下是基于目录分析自动检索到的相关段落（共 ${preResults.length} 条），请优先利用这些内容。如果不够详细，可使用 search_book 自行补充搜索，或用 read_book_section 读取完整章节。
+基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
 
 ${blockLines.join('\n\n')}
 </pre_search_results>`;

@@ -76,7 +76,7 @@ const ReactAnnotation = Annotation.Root({
 type ReactState = typeof ReactAnnotation.State;
 
 // === Max tool result length ===
-const MAX_TOOL_RESULT_LENGTH = 8000;
+const MAX_TOOL_RESULT_LENGTH = 4000;
 
 function compressToolResult(result: string): string {
   if (result.length <= MAX_TOOL_RESULT_LENGTH) return result;
