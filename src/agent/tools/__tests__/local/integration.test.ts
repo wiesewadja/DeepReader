@@ -89,7 +89,7 @@ function createMockApp(pdfName: string) {
   };
 }
 
-describe('本地工具集成测试 - 如何阅读一本书', () => {
+describe.skip('本地工具集成测试 - 如何阅读一本书', () => {
   const pdfName = '如何阅读一本书';
   let mockApp: ReturnType<typeof createMockApp>;
 

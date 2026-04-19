@@ -9,6 +9,9 @@ import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getPro
 import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
 
+/** Proposition feature toggle: disabled due to high token cost. Re-enable after optimization. */
+const PROPOSITION_ENABLED = false;
+
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
 type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading';
@@ -310,7 +313,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
         // 可选角色（proposition 暂时隐藏，后续优化 token 用量后恢复）
         const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
-            // { role: 'proposition', label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' },
+            ...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' }] : []),
             { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
             { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
         ];
@@ -570,9 +573,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
         // ═══ 参数调优（可折叠区块）═══
-        // proposition-params 暂时隐藏
-        // this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
-        //     (section) => this.renderPropositionParams(section));
+        if (PROPOSITION_ENABLED) {
+            this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
+                (section) => this.renderPropositionParams(section));
+        }
 
         this.renderCollapsibleSection(container, 'reranker-params', '🔄 重排序参数', '重排序权重等参数',
             (section) => this.renderRerankerParams(section));

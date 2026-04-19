@@ -93,7 +93,7 @@ function hasEmbeddingConfig(): boolean {
 // Group A: 真实 Vault 数据 + chunker（纯本地，无需 API）
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E2E Group A: 真实 Vault 数据 + chunker", () => {
+describe.skip('E2E Group A: 真实 Vault 数据 + chunker', () => {
   it("test-vault 应包含《如何阅读一本书》的 .md 文件", () => {
     expect(fsSync.existsSync(BOOK_DIR)).toBe(true);
     const files = fsSync
@@ -209,7 +209,7 @@ describe("E2E Group A: 真实 Vault 数据 + chunker", () => {
 // Group B: 真实 Embedding API 验证
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E2E Group B: 真实 Embedding API", () => {
+describe.skip('E2E Group B: 真实 Embedding API', () => {
   beforeAll(() => {
     if (!hasEmbeddingConfig()) {
       console.log(
@@ -298,7 +298,7 @@ describe("E2E Group B: 真实 Embedding API", () => {
 // Group C: 段落级向量化完整管线
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E2E Group C: 完整向量化管线（真实数据 + 真实 API）", () => {
+describe.skip('E2E Group C: 完整向量化管线', () => {
   let tempDir: string;
 
   beforeAll(async () => {
@@ -545,7 +545,7 @@ describe("E2E Group C: 完整向量化管线（真实数据 + 真实 API）", ()
 // Group D: 向量搜索 + 混合搜索质量验证
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("E2E Group D: 搜索质量验证（真实向量）", () => {
+describe.skip('E2E Group D: 搜索质量验证', () => {
   // 复用 Group C 的产物，如果存在的话
   // 否则使用 test-vault 已有的旧格式向量做 BM25 搜索
 

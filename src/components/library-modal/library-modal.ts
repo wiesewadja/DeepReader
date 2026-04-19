@@ -13,6 +13,9 @@ import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js'
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
 import * as path from 'path';
+
+/** Proposition 功能开关 — token 成本过高，优化后重新启用 */
+const PROPOSITION_ENABLED = false;
 import * as fs from 'fs/promises';
 
 // SVG 图标
@@ -544,11 +547,11 @@ export class LibraryModal extends Modal {
                 const embeddingRole = resolveRoleConfig('embedding', settings);
                 const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
 
-                // Proposition 暂时禁用（token 用量过高，后续优化后恢复）
-                // const propositionRole = resolveRoleConfig('proposition', settings);
-                // const propositionOpts = propositionRole
-                //     ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
-                //     : undefined;
+                // Proposition: disabled — see file-level PROPOSITION_ENABLED
+                const propositionRole = PROPOSITION_ENABLED ? resolveRoleConfig('proposition', settings) : null;
+                const propositionOpts = propositionRole
+                    ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
+                    : undefined;
 
                 const result = await indexBook({
                     filePath,
@@ -559,7 +562,7 @@ export class LibraryModal extends Modal {
                     apiKey: apiKey,
                     baseUrl: baseUrl,
                     addNodeSummary: settings.ifAddNodeSummary,
-                    propositions: undefined,
+                    propositions: propositionOpts,
                     onProgress: (progress: BookIndexProgress) => {
                         newIndex.progress_percent = progress.percent;
                         newIndex.status = 'processing';

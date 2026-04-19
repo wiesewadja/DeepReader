@@ -40,6 +40,7 @@ function createMockMemoryStore(): MemoryStore {
 		readLongTermMemory: vi.fn().mockResolvedValue('# 长期记忆\n\n用户喜欢技术书籍'),
 		writeLongTermMemory: vi.fn().mockResolvedValue(undefined),
 		needsCompression: vi.fn().mockResolvedValue(false),
+		searchDialogueSummaries: vi.fn().mockResolvedValue([]),
 	} as unknown as MemoryStore;
 }
 

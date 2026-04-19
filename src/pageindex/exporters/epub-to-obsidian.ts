@@ -32,6 +32,8 @@ export interface ObsidianExportOptions {
   exportName?: string;
   /** 封面图片相对路径（用于 Base 查询） */
   coverPath?: string;
+  /** 书籍索引 ID（bookId，写入 MOC frontmatter） */
+  bookId?: string;
 }
 
 interface ObsidianNote {
@@ -338,6 +340,7 @@ function generateMOC(
     created: new Date().toISOString(),
   };
   if (coverPath) frontmatter.cover = coverPath;
+  if (options.bookId) frontmatter.index_id = options.bookId;
 
   let content = generateFrontmatter(frontmatter) + "\n\n";
   content += `# ${bookName}\n\n`;

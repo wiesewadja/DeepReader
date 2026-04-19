@@ -26,6 +26,7 @@ const createMockApp = () => ({
     create: vi.fn(),
     read: vi.fn(),
     modify: vi.fn(),
+    createFolder: vi.fn().mockResolvedValue(undefined),
     getAbstractFileByPath: vi.fn(),
     getFiles: vi.fn(() => []),
   },
@@ -56,7 +57,7 @@ describe('Canvas Tool', () => {
 
     it('should support create, add_node, add_edge, get, list, mindmap actions', () => {
       const actionEnum = canvasTool.definition.function.parameters.properties.action.enum;
-      expect(actionEnum).toEqual(['create', 'add_node', 'add_edge', 'get', 'list', 'mindmap']);
+      expect(actionEnum).toEqual(['create', 'add_node', 'add_edge', 'get', 'list', 'mindmap', 'export_to_excalidraw']);
     });
   });
 

@@ -92,7 +92,10 @@ function compressToolResult(result: string): string {
 }
 
 function extractBlockIdsFromResult(result: string): string[] {
-  const blockIdPattern = /\^([a-zA-Z0-9_-]+)(?=\W|$)/g;
+  // Match Obsidian block_ids: ^blockId at end of line or before whitespace.
+  // Requires ^ preceded by start-of-line or whitespace to avoid matching
+  // math expressions (x^2), code escapes, etc.
+  const blockIdPattern = /(?:^|\s)\^([a-zA-Z0-9_-]+)(?=\s|$)/gm;
   const ids: string[] = [];
   let match: RegExpExecArray | null;
   while ((match = blockIdPattern.exec(result)) !== null) {
@@ -250,48 +253,11 @@ function createEnhancedToolNode(tools: StructuredToolInterface[], toolIntercepto
       // Record query AFTER passing loop detection (before execution)
       newQueries = updateQueriesAsked(newQueries, tc.name, args);
 
-      const tool = tools.find(t => t.name === tc.name);
-      if (!tool) {
-        newMessages.push(
-          new ToolMessage({
-            content: `Error: Unknown tool "${tc.name}"`,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        continue;
-      }
-
-      try {
-        const rawResult = await tool.invoke(args, config);
-        const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
-        const compressed = compressToolResult(resultStr);
-        const extractedBlockIds = extractBlockIdsFromResult(resultStr);
-
-        toolResults.push({
-          toolName: tc.name,
-          args,
-          result: compressed,
-          originalResultLength: resultStr.length,
-          extractedBlockIds,
-        });
-
-        newMessages.push(
-          new ToolMessage({
-            content: compressed,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        executedCount++;
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        newMessages.push(
-          new ToolMessage({
-            content: `Error: ${errorMsg}`,
-            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          }),
-        );
-        executedCount++;
-      }
+      // Execute via shared helper
+      const result = await executeSingleToolCall(tc, tools, interceptor, config);
+      newMessages.push(result.msg);
+      if (result.record) toolResults.push(result.record);
+      executedCount++;
     }
 
     return {
@@ -369,7 +335,9 @@ export function createReactLoopGraph(config: ReactLoopConfig) {
 /**
  * Run the ReAct loop to completion, handling forced conclusion.
  *
- * This is the main entry point for the ReAct subgraph.
+ * @deprecated Use runPlanExecute instead — fewer LLM calls, same quality.
+ * This is retained for HITL (human-in-the-loop) flows that need iterative tool use.
+ *
  * It compiles and runs the graph, then applies forced conclusion
  * if the loop terminated due to iteration/tool-call limits.
  */
@@ -545,66 +513,76 @@ export interface ReactLoopResult {
 /**
  * Execute a batch of tool calls in parallel, returning messages and records.
  */
+// ═══════════════════════════════════════════════════════════
+// Shared tool execution helper (used by both ReAct and PlanExecute)
+// ═══════════════════════════════════════════════════════════
+
+interface SingleToolResult {
+  msg: ToolMessage;
+  record: ToolResultRecord | null;
+}
+
+/**
+ * Execute a single tool call: parse args → intercept → invoke → compress → extract blockIds.
+ * Shared by createEnhancedToolNode (sequential ReAct) and executeToolBatch (parallel PlanExecute).
+ */
+async function executeSingleToolCall(
+  tc: any,
+  tools: StructuredToolInterface[],
+  interceptor: ((toolName: string, args: Record<string, unknown>) => Record<string, unknown>) | undefined,
+  runnableConfig?: RunnableConfig,
+): Promise<SingleToolResult> {
+  const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const parsedArgs = parseToolCallArgs(tc);
+
+  if ('_parseError' in parsedArgs) {
+    return {
+      msg: new ToolMessage({ content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+
+  let args = parsedArgs;
+  if (interceptor) {
+    args = interceptor(tc.name, args);
+  }
+
+  const tool = tools.find(t => t.name === tc.name);
+  if (!tool) {
+    return {
+      msg: new ToolMessage({ content: `Error: Unknown tool "${tc.name}"`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+
+  try {
+    const rawResult = await tool.invoke(args, runnableConfig);
+    const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
+    const compressed = compressToolResult(resultStr);
+    const extractedBlockIds = extractBlockIdsFromResult(resultStr);
+    return {
+      msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
+      record: { toolName: tc.name, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
+    };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return {
+      msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
+      record: null,
+    };
+  }
+}
+
+
 async function executeToolBatch(
   toolCalls: any[],
   tools: StructuredToolInterface[],
   config: ReactLoopConfig,
   runnableConfig?: RunnableConfig,
 ): Promise<{ messages: ToolMessage[]; records: ToolResultRecord[] }> {
-  const executions = toolCalls.map(async (tc: any) => {
-    const parsedArgs = parseToolCallArgs(tc);
-    
-    if ('_parseError' in parsedArgs) {
-      const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      return {
-        msg: new ToolMessage({ 
-          content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`, 
-          tool_call_id: tcId 
-        }),
-        record: null as ToolResultRecord | null,
-      };
-    }
-    
-    let args = parsedArgs;
-    if (config.toolInterceptor) {
-      args = config.toolInterceptor(tc.name, args);
-    }
-
-    const tool = tools.find(t => t.name === tc.name);
-    const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-    if (!tool) {
-      return {
-        msg: new ToolMessage({ content: `Error: Unknown tool "${tc.name}"`, tool_call_id: tcId }),
-        record: null as ToolResultRecord | null,
-      };
-    }
-
-    try {
-      const rawResult = await tool.invoke(args, runnableConfig);
-      const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
-      const compressed = compressToolResult(resultStr);
-      const extractedBlockIds = extractBlockIdsFromResult(resultStr);
-      return {
-        msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
-        record: { 
-          toolName: tc.name, 
-          args, 
-          result: compressed, 
-          originalResultLength: resultStr.length,
-          extractedBlockIds,
-        } as ToolResultRecord,
-      };
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      return {
-        msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
-        record: null as ToolResultRecord | null,
-      };
-    }
-  });
-
-  const execResults = await Promise.all(executions);
+  const execResults = await Promise.all(
+    toolCalls.map(tc => executeSingleToolCall(tc, tools, config.toolInterceptor, runnableConfig))
+  );
   const msgs: ToolMessage[] = [];
   const records: ToolResultRecord[] = [];
   for (const r of execResults) {

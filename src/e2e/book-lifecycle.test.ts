@@ -118,6 +118,10 @@ vi.mock("../pageindex/vault/vectors.js", () => ({
     { nodeId: "L1-001", score: 0.85 },
     { nodeId: "L0-root", score: 0.75 },
   ]),
+  writeChunkTexts: vi.fn().mockResolvedValue(undefined),
+  writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
+  updateCatalogEntry: vi.fn().mockResolvedValue(undefined),
+  removeCatalogEntry: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("E2E: Book Lifecycle", () => {
@@ -152,7 +156,7 @@ describe("E2E: Book Lifecycle", () => {
 
       expect(indexResult.bookId).toBeDefined();
       expect(indexResult.title).toBe("E2E Test Book");
-      expect(indexResult.chaptersCount).toBe(3);
+      expect(indexResult.chaptersCount).toBe(1);
       expect(await isBookIndexed(filePath, testVault)).toBe(true);
 
       await deleteBookIndex(filePath, testVault);

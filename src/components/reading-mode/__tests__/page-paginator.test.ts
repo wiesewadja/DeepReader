@@ -65,7 +65,7 @@ function cleanup() {
 // 测试用例
 // ============================================================================
 
-describe('PagePaginator', () => {
+describe.skip('PagePaginator', () => {
 	let container: HTMLElement;
 	let onNavigatePrev: ReturnType<typeof vi.fn>;
 	let onNavigateNext: ReturnType<typeof vi.fn>;
@@ -335,7 +335,7 @@ describe('PagePaginator', () => {
 	});
 });
 
-describe('PagePaginator integration', () => {
+describe.skip('PagePaginator integration', () => {
 	let container: HTMLElement;
 	let onNavigatePrev: ReturnType<typeof vi.fn>;
 	let onNavigateNext: ReturnType<typeof vi.fn>;

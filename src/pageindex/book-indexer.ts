@@ -246,6 +246,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         exportName,
         author: parseResult.author,
         coverPath: coverRelPath || undefined,
+        bookId,
       });
       // Store nodeFileMap for tree.json
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
@@ -259,6 +260,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         nodeSummaries: collectNodeSummaries(parseResult.structure),
         exportName,
         coverPath: coverRelPath || undefined,
+        bookId,
       });
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
       (parseResult as any)._hierarchicalTree = exportResult.treeNodes;

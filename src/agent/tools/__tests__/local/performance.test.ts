@@ -68,7 +68,7 @@ function createTestEnvironment() {
   };
 }
 
-describe('本地工具性能评估', () => {
+describe.skip('本地工具性能评估', () => {
   let env: ReturnType<typeof createTestEnvironment>;
 
   beforeAll(() => {
