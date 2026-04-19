@@ -472,13 +472,14 @@ export async function runReactLoop(
 // ═══════════════════════════════════════════════════════════
 
 function buildSynthesisPrompt(config: ReactLoopConfig): string {
-  let prompt = `以上是你请求的所有工具执行结果。现在请基于这些结果，输出完整的分析结论。
+  let prompt = `现在请基于你请求的所有工具执行结果，输出完整的分析结论。
 
 要求：
 1. 综合所有工具返回的信息
 2. 不要再次调用任何工具
 3. 如果某些结果不完整，基于已有信息给出尽可能完整的回答
-4. 使用 wiki 链接引用来源`;
+4. 严格遵守 <output_rules> 中的 wiki 链接格式
+5. 提取逻辑骨架：定义 → 主旨 → 论述 → 结论`;
 
   if (config.forcedConclusionContext) {
     const { pdfName, scopeNodeIds } = config.forcedConclusionContext;
@@ -584,13 +585,17 @@ export async function runPlanExecute(
   }
 
   // === Step 3: Synthesize ===
+  // Re-use the original SystemMessage (contains full role/constraints/output_rules)
+  // to ensure correct wiki link formatting and output structure.
+  // Only append the synthesis prompt as a follow-up HumanMessage.
   const synthesisMessages = compressMessagesForLLM([
-    ...messages,
-    planResponse,
-    ...toolMessages,
+    ...messages,       // includes SystemMessage with full analytical prompt
+    planResponse,      // AIMessage with tool_calls
+    ...toolMessages,   // ToolMessage results
   ]);
   const synthesisPrompt = buildSynthesisPrompt(config);
 
+  // Use model without tools bound — prevents further tool calls
   const synthesisResponse = await model.invoke([
     ...synthesisMessages,
     new HumanMessage(synthesisPrompt),
