@@ -37,6 +37,8 @@ export interface ReactLoopConfig {
   toolInterceptor?: (toolName: string, args: Record<string, unknown>) => Record<string, unknown>;
   /** Abort signal for cancellation / timeout */
   signal?: AbortSignal;
+  /** Progress callback for UI notifications (e.g. plan complexity) */
+  onProgress?: (message: string) => void;
 }
 
 const ReactAnnotation = Annotation.Root({
@@ -567,6 +569,37 @@ async function executeToolBatch(
 }
 
 /**
+ * Report planned tool calls to the user via onProgress callback.
+ * Shows what the agent plans to do, giving the user a mental model of complexity.
+ */
+function reportPlan(
+  config: ReactLoopConfig,
+  toolCalls: any[],
+  round: number,
+  maxPlanRounds: number,
+): void {
+  if (!config.onProgress) return;
+
+  const searches = toolCalls.filter(tc => tc.name === 'search_book').length;
+  const reads = toolCalls.filter(tc => tc.name === 'read_book_section').length;
+  const total = toolCalls.length;
+
+  if (total === 0) return;
+
+  const roundLabel = maxPlanRounds > 1 ? `（第 ${round + 1}/${maxPlanRounds} 轮）` : '';
+
+  if (searches > 0 && reads > 0) {
+    config.onProgress(`正在检索${roundLabel}：搜索 ${searches} 个关键词，精读 ${reads} 个章节...`);
+  } else if (reads > 0) {
+    config.onProgress(`正在精读${roundLabel}：${reads} 个章节...`);
+  } else if (searches > 0) {
+    config.onProgress(`正在搜索${roundLabel}：${searches} 个关键词...`);
+  } else {
+    config.onProgress(`正在检索${roundLabel}：${total} 个工具调用...`);
+  }
+}
+
+/**
  * Plan-Execute-Replan: iterative planning with bounded rounds.
  *
  * Default maxPlanRounds=2 allows one follow-up round:
@@ -613,6 +646,9 @@ export async function runPlanExecute(
       }
       return { content, toolResults: allToolResults, iterations: totalIterations, finishReason: 'stop' };
     }
+
+    // === Report plan to user for transparency ===
+    reportPlan(config, planResponse.tool_calls, round, maxPlanRounds);
 
     // Execute all planned tools in parallel
     const { messages: toolMsgs, records } = await executeToolBatch(

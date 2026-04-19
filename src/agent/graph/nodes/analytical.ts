@@ -100,6 +100,10 @@ export async function analyticalNode(
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
+  const callbacks = config.configurable?.callbacks as {
+    onContent?: (content: string) => void;
+    onProgress?: (msg: string) => void;
+  } | undefined;
 
   if (!mainModel || !toolContext) {
     console.warn('[S2 Analytical] Missing required config, returning empty result.');
@@ -199,6 +203,7 @@ export async function analyticalNode(
         const hits = preResults.slice(0, 3).map(r => ({
           node_id: r.nodeId,
           title: r.title,
+          file_name: r.fileName,
           score: r.score,
           matched_blocks: r.matchedBlocks.slice(0, 2).map(b => ({
             block_id: b.blockId.replace(/^\^/, ''),
@@ -215,10 +220,11 @@ export async function analyticalNode(
 
           const blockLines = hits.flatMap(h =>
             h.matched_blocks.map(b =>
-              `【${h.title}】${b.content}`
+              `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
             )
           );
 
+          const pdfName = state.pdfName || ctx?.pdfName || '';
           const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果直接回答用户问题，无需调用任何工具。如果信息不足，说明还需要查看哪些章节。
 
 <pre_search_results>
@@ -228,7 +234,8 @@ ${blockLines.join('\n\n')}
 用户问题：${state.betterQuestion || state.rewrittenQuery || ctx?.rawUserQuery || ''}
 
 输出格式要求：
-- 引用来源用 [[${state.pdfName || ctx?.pdfName || ''}/章节#^block_id|自然语言]] 格式
+- 引用来源用 [[${pdfName}/file_name#^block_id|自然语言]] 格式
+- file_name 和 block_id 必须来自上方检索结果中标注的值，禁止编造
 - 如果检索结果足够，给出完整分析
 - 如果不够，简要说明并指出需要补充搜索的方向`;
 
@@ -253,10 +260,10 @@ ${blockLines.join('\n\n')}
           };
         }
 
-        // Normal path: inject compact pre-search results
+        // Normal path: inject compact pre-search results with citation metadata
         const blockLines = hits.flatMap(h =>
           h.matched_blocks.map(b =>
-            `【${h.title}】${b.content}`
+            `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
           )
         );
 
@@ -299,6 +306,7 @@ ${blockLines.join('\n\n')}
       scopeNodeIds: validatedScopeNodeIds,
     },
     toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+    onProgress: callbacks?.onProgress,
   };
 
   // Plan-then-Execute (default): 2 LLM calls instead of iterative ReAct
@@ -342,6 +350,7 @@ ${blockLines.join('\n\n')}
             scopeNodeIds: validatedScopeNodeIds,
           },
           toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+          onProgress: callbacks?.onProgress,
         },
         config,
       );
