@@ -101,7 +101,7 @@ function extractBlockIdsFromResult(result: string): string[] {
   while ((match = blockIdPattern.exec(result)) !== null) {
     ids.push(match[1]);
   }
-  return ids;
+  return [...new Set(ids)];
 }
 
 /**
@@ -641,7 +641,7 @@ export async function runPlanExecute(
 ): Promise<ReactLoopResult> {
   const { tools, model } = config;
   const modelWithTools = model.bindTools(tools);
-  const maxPlanRounds = Math.min(config.maxToolCalls, 2); // cap at 2 planning rounds
+  const maxPlanRounds = Math.max(1, Math.min(config.maxToolCalls, 2)); // at least 1 round, cap at 2
 
   const allToolResults: ToolResultRecord[] = [];
   const conversationHistory: BaseMessage[] = [...messages];

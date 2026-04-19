@@ -228,6 +228,9 @@ export async function searchBookV2(
 
   const scoredResults: ScoredResult[] = [];
 
+  // Pre-build tree index for O(1) level weight lookups
+  const treeIndex = buildTreeIndex(treeData.structure);
+
   for (const nodeId of candidateNodeIds) {
     const vs = vectorScores.get(nodeId) || 0;
     const bs = bm25Scores.get(nodeId) || 0;
@@ -238,7 +241,7 @@ export async function searchBookV2(
     const normalizedProp = propRange > 0 ? (ps - propMin) / propRange : ps;
 
     const fusedScore = w_v * normalizedVec + w_b * normalizedBM25 + w_p * normalizedProp;
-    const levelWeight = computeLevelWeight(nodeId, treeData.structure);
+    const levelWeight = computeLevelWeightFast(nodeId, treeIndex);
 
     scoredResults.push({
       nodeId,
@@ -322,7 +325,8 @@ export async function searchBookV2(
         content: chunkTextMap.get(c.chunkId) || "",
       }));
     } else {
-      matchedBlocks = [];
+      // No proposition or chunk hits — provide minimal block with nodeId reference
+      matchedBlocks = [{ blockId: "", content: `[${title}]` }];
     }
 
     results.push({
@@ -374,6 +378,25 @@ export function computeLevelWeight(nodeId: string, structure: TreeNode[]): numbe
   if (depth === 0) return 1.0;     // L0 book-level
   if (hasChildren) return 0.9;     // L1 chapter-level (has subsections)
   return 0.7;                       // L1 section-level (leaf)
+}
+
+/** Pre-build nodeId → {node, depth} map for O(1) lookups */
+function buildTreeIndex(nodes: TreeNode[], depth = 0, map = new Map<string, {node: TreeNode, depth: number}>()): Map<string, {node: TreeNode, depth: number}> {
+  for (const node of nodes) {
+    if (node.nodeId) map.set(node.nodeId, { node, depth });
+    if (node.nodes) buildTreeIndex(node.nodes, depth + 1, map);
+  }
+  return map;
+}
+
+/** Fast level weight using pre-built index */
+export function computeLevelWeightFast(nodeId: string, treeIndex: Map<string, {node: TreeNode, depth: number}>): number {
+  const entry = treeIndex.get(nodeId);
+  if (!entry) return 0.5;
+  const { node, depth } = entry;
+  if (depth === 0) return 1.0;
+  if (node.nodes && node.nodes.length > 0) return 0.9;
+  return 0.7;
 }
 
 function findNodeInTree(nodeId: string, nodes: TreeNode[]): TreeNode | null {
@@ -498,8 +521,11 @@ async function asyncPropositionSearch(
 
     const topScores = scores.sort((a, b) => b.score - a.score).slice(0, recallK);
 
+    // Pre-build card map for O(1) lookup
+    const cardMap = new Map(propositionsData.cards.map(c => [c.id, c] as const));
+
     for (const s of topScores) {
-      const card = propositionsData.cards.find(c => c.id === s.cardId);
+      const card = cardMap.get(s.cardId);
       if (card && s.score > 0.3) {
         const nodeId = card.sourceNodeId;
         if (!propositionMatches.has(nodeId)) {

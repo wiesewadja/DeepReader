@@ -313,8 +313,9 @@ function cleanEpubTitle(title: string): string {
       .trim();
   } while (result !== prev);
 
-  // Collapse multiple spaces
-  return result.replace(/\s{2,}/g, " ").trim();
+  // Collapse multiple spaces, protect against over-stripping
+  const cleaned = result.replace(/\s{2,}/g, " ").trim();
+  return cleaned || title.trim();
 }
 
 /**

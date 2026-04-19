@@ -492,7 +492,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         const parsed = parseInt(value, 10);
                         (settings.roles as unknown as Record<string, unknown>)[role] = {
                             ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
-                            embeddingBatchSize: (!value || isNaN(parsed)) ? undefined : parsed,
+                            embeddingBatchSize: (!value || isNaN(parsed)) ? undefined : Math.max(1, Math.min(parsed, 2048)),
                         };
                         await this.plugin.saveSettings();
                     }));

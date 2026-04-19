@@ -19,29 +19,40 @@ import { cosineSimilarity } from "../core/utils";
 // ─── JSONL Vector Storage ─────────────────────────────────────
 
 /**
- * Write vector records to a JSONL file (replaces entire file)
+ * Atomic write: write to tmp file then rename (prevents data loss on crash)
+ */
+async function atomicWriteText(filePath: string, content: string): Promise<void> {
+  const tmpPath = filePath + ".tmp";
+  await fs.writeFile(tmpPath, content, "utf-8");
+  await fs.rename(tmpPath, filePath);
+}
+
+/**
+ * Write vector records to a JSONL file (atomic replace)
  */
 export async function writeVectorJsonl(
   filePath: string,
   records: VectorRecord[]
 ): Promise<void> {
   const lines = records.map((r) => JSON.stringify(r));
-  await fs.writeFile(filePath, lines.join("\n") + "\n", "utf-8");
+  await atomicWriteText(filePath, lines.join("\n") + "\n");
 }
 
 /**
- * Read all vector records from a JSONL file
+ * Read all vector records from a JSONL file (tolerates corrupt lines)
  */
 export async function readVectorJsonl(
   filePath: string
 ): Promise<VectorRecord[]> {
   try {
     const content = await fs.readFile(filePath, "utf-8");
-    return content
-      .trim()
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line) as VectorRecord);
+    const records: VectorRecord[] = [];
+    for (const line of content.trim().split("\n")) {
+      if (!line.trim()) continue;
+      try { records.push(JSON.parse(line) as VectorRecord); }
+      catch { /* skip corrupt line */ }
+    }
+    return records;
   } catch {
     return [];
   }
@@ -76,29 +87,31 @@ export async function cosineSearchJsonl(
 }
 
 /**
- * Write chunk text records to a JSONL file
+ * Write chunk text records to a JSONL file (atomic replace)
  */
 export async function writeChunkTexts(
   filePath: string,
   records: ChunkTextRecord[]
 ): Promise<void> {
   const lines = records.map((r) => JSON.stringify(r));
-  await fs.writeFile(filePath, lines.join("\n") + "\n", "utf-8");
+  await atomicWriteText(filePath, lines.join("\n") + "\n");
 }
 
 /**
- * Read chunk text records from a JSONL file
+ * Read chunk text records from a JSONL file (tolerates corrupt lines)
  */
 export async function readChunkTexts(
   filePath: string
 ): Promise<ChunkTextRecord[]> {
   try {
     const content = await fs.readFile(filePath, "utf-8");
-    return content
-      .trim()
-      .split("\n")
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line) as ChunkTextRecord);
+    const records: ChunkTextRecord[] = [];
+    for (const line of content.trim().split("\n")) {
+      if (!line.trim()) continue;
+      try { records.push(JSON.parse(line) as ChunkTextRecord); }
+      catch { /* skip corrupt line */ }
+    }
+    return records;
   } catch {
     return [];
   }
@@ -135,7 +148,7 @@ export async function updateCatalogEntry(
   catalog.books[bookId] = entry;
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
   await fs.mkdir(pageindexPath, { recursive: true });
-  await fs.writeFile(catalogPath, JSON.stringify(catalog, null, 2), "utf-8");
+  await atomicWriteText(catalogPath, JSON.stringify(catalog, null, 2));
 }
 
 /**
@@ -148,7 +161,7 @@ export async function removeCatalogEntry(
   const catalog = await loadCatalog(pageindexPath);
   delete catalog.books[bookId];
   const catalogPath = path.join(pageindexPath, CATALOG_FILE);
-  await fs.writeFile(catalogPath, JSON.stringify(catalog, null, 2), "utf-8");
+  await atomicWriteText(catalogPath, JSON.stringify(catalog, null, 2));
 }
 
 // ─── Embedding Generation ─────────────────────────────────────

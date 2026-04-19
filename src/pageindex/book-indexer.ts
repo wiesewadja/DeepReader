@@ -605,13 +605,6 @@ async function vectorizeAllLevels(
     piLog(`[vectorize] Auto-detected embedding dimensions: ${dimensions}`);
   }
 
-  // Clean up legacy storage formats
-  try {
-    await fs.rm(path.join(indexDir, "paragraph-vectors"), { recursive: true, force: true });
-    await fs.rm(path.join(indexDir, "vectors.f32"), { force: true });
-    await fs.rm(path.join(indexDir, "vectors.meta.json"), { force: true });
-  } catch { /* ignore if not exists */ }
-
   // Intermediate type: text + metadata before embedding
   interface PendingChunk {
     chunkId: string;
@@ -720,6 +713,13 @@ async function vectorizeAllLevels(
 
   await writeVectorJsonl(vectorPath, allVectorRecords);
   await writeChunkTexts(chunksPath, allChunkTexts);
+
+  // Clean up legacy storage formats (AFTER new format written successfully)
+  try {
+    await fs.rm(path.join(indexDir, "paragraph-vectors"), { recursive: true, force: true });
+    await fs.rm(path.join(indexDir, "vectors.f32"), { force: true });
+    await fs.rm(path.join(indexDir, "vectors.meta.json"), { force: true });
+  } catch { /* ignore if not exists */ }
 
   piLog(`[vectorize] Wrote ${allVectorRecords.length} vectors and ${allChunkTexts.length} chunk texts`);
   return { dimensions, nodeCount: allVectorRecords.length };
