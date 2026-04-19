@@ -296,6 +296,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   );
 
   // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
+  let treeData: any = { title: rootTitle, exportName, structure: parseResult.structure };
   try {
     const nodeFileMap = (parseResult as any)._nodeFileMap || {};
     const hierarchicalTree = (parseResult as any)._hierarchicalTree;
@@ -326,7 +327,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       finalStructure = hierarchicalTree.map(enrichNode);
     }
 
-    const treeData = {
+    treeData = {
       title: rootTitle,
       exportName,
       docDescription: parseResult.docDescription,
@@ -362,7 +363,11 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     try {
-      const vectorResult = await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
+      const nodeFileMap = (parseResult as any)._nodeFileMap || {};
+      const vectorResult = await vectorizeAllLevels(
+        parseResult, indexDir, options.embedding, nodeFileMap, treeData,
+        (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg })
+      );
       vectorizationSuccess = true;
 
       // Update book-meta with detected dimensions
@@ -537,7 +542,7 @@ async function buildBookMeta(
   const exportName = path.basename(bookDir);
 
   return {
-    version: 2,
+    version: 3,
     bookId,
     title,
     exportName,
@@ -556,19 +561,24 @@ async function buildBookMeta(
 }
 
 /**
- * Vectorize L0/L1 nodes from parse result using JSONL vector storage
- * Fix: iterate entire structure array (not just structure[0])
+ * Vectorize L0 (book) + L1 (chapter summaries) + L2 (paragraph chunks).
  * Returns { dimensions, nodeCount }
  */
-async function vectorizeL0L1Nodes(
+async function vectorizeAllLevels(
   parseResult: any,
   indexDir: string,
-  embedding: any
+  embedding: any,
+  nodeFileMap: Record<string, string>,
+  treeData: any,
+  onProgress?: (msg: string) => void
 ): Promise<{ dimensions: number; nodeCount: number } | undefined> {
-  const { generateEmbedding, generateEmbeddings, writeVectorJsonl } = await import("./vault/vectors.js");
+  const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
+    await import("./vault/vectors.js");
+  const { splitByBlockIds, mergeToChunks } = await import("./chunker.js");
   const vectorPath = path.join(indexDir, "vectors.jsonl");
+  const chunksPath = path.join(indexDir, "chunks.jsonl");
 
-  // Auto-detect dimensions from first embedding
+  // Auto-detect dimensions
   let dimensions = embedding.dimensions;
   if (!dimensions) {
     const testEmbedding = await generateEmbedding("test", embedding);
@@ -576,40 +586,124 @@ async function vectorizeL0L1Nodes(
     piLog(`[vectorize] Auto-detected embedding dimensions: ${dimensions}`);
   }
 
-  const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
+  // Clean up legacy storage formats
+  try {
+    await fs.rm(path.join(indexDir, "paragraph-vectors"), { recursive: true, force: true });
+    await fs.rm(path.join(indexDir, "vectors.f32"), { force: true });
+    await fs.rm(path.join(indexDir, "vectors.meta.json"), { force: true });
+  } catch { /* ignore if not exists */ }
 
-  // L0: one vector for the entire book (title + docDescription)
-  const bookSummary = parseResult.docDescription || "";
+  // Intermediate type: text + metadata before embedding
+  interface PendingChunk {
+    chunkId: string;
+    nodeId: string;
+    blockIds: string[];
+    type: "summary" | "heading" | "body" | "list" | "quote";
+    level: "L0" | "L1" | "L2";
+    text: string;
+    vector?: number[];
+  }
+
+  const allPending: PendingChunk[] = [];
+
+  // L0: book summary
   const bookTitle = parseResult.title || "";
-  nodes.push({
-    id: "BOOK",
-    title: bookTitle,
+  const bookSummary = parseResult.docDescription || "";
+  allPending.push({
+    chunkId: "BOOK", nodeId: "", blockIds: [], type: "summary", level: "L0",
     text: `${bookTitle}\n${bookSummary}`,
-    level: "L0",
   });
 
-  // L1: one vector per chapter (title + summary), flatten all nodes in structure
-  for (const rootNode of parseResult.structure || []) {
-    collectAllChapterNodes(rootNode, nodes);
+  // L1: chapter summaries
+  for (const node of parseResult.structure || []) {
+    collectAllChapterNodesForPending(node, allPending);
   }
 
-  const texts = nodes.map(n => n.text);
-  const vectors = await generateEmbeddings(texts, embedding);
-
-  // Build VectorRecord[] and write to JSONL
-  const records: Array<{ nodeId: string; title: string; level: "L0" | "L1"; vector: number[] }> = [];
-  for (let i = 0; i < nodes.length; i++) {
-    records.push({
-      nodeId: nodes[i].id,
-      title: nodes[i].title,
-      level: nodes[i].level,
-      vector: vectors[i],
-    });
+  // Generate embeddings for L0+L1
+  const l0l1Texts = allPending.map(p => p.text);
+  const l0l1Vectors = await generateEmbeddings(l0l1Texts, embedding);
+  for (let i = 0; i < l0l1Vectors.length; i++) {
+    allPending[i].vector = l0l1Vectors[i];
   }
-  await writeVectorJsonl(vectorPath, records);
 
-  piLog(`[vectorize] Wrote ${records.length} vector records to ${vectorPath}`);
-  return { dimensions, nodeCount: records.length };
+  // L2: chunk paragraphs from .md files
+  const vaultPath = path.dirname(path.dirname(indexDir));
+  const exportName = treeData.exportName || treeData.title;
+  let totalChunks = 0;
+
+  for (const node of parseResult.structure || []) {
+    const chapters = collectChaptersFlat(node);
+    for (const ch of chapters) {
+      const fileName = nodeFileMap[ch.nodeId];
+      if (!fileName) continue;
+      const mdPath = path.join(vaultPath, "DeepReader", exportName, fileName);
+      try {
+        const content = await fs.readFile(mdPath, "utf-8");
+        const cleaned = cleanMdContent(content);
+        const paragraphs = splitByBlockIds(cleaned);
+        const chunks = mergeToChunks(paragraphs, ch.nodeId);
+
+        for (const chunk of chunks) {
+          allPending.push({
+            chunkId: chunk.chunkId,
+            nodeId: ch.nodeId,
+            blockIds: chunk.blockIds,
+            type: chunk.type,
+            level: "L2",
+            text: chunk.text,
+          });
+          totalChunks++;
+        }
+      } catch {
+        piLog(`[vectorize] L2: failed to read ${mdPath}`);
+      }
+    }
+  }
+
+  onProgress?.(`向量化段落 0/${totalChunks}`);
+
+  // Batch embed L2 texts
+  const l2Pending = allPending.filter(p => p.level === "L2");
+  if (l2Pending.length > 0) {
+    const batchSize = 100;
+    for (let i = 0; i < l2Pending.length; i += batchSize) {
+      const batch = l2Pending.slice(i, i + batchSize);
+      const texts = batch.map(c => c.text);
+      const vectors = await generateEmbeddings(texts, embedding);
+      for (let j = 0; j < vectors.length; j++) {
+        batch[j].vector = vectors[j];
+      }
+      onProgress?.(`向量化段落 ${Math.min(i + batchSize, totalChunks)}/${totalChunks}`);
+    }
+  }
+
+  // Filter out records without vectors (embedding failure)
+  const valid = allPending.filter(p => p.vector !== undefined);
+  if (valid.length < allPending.length) {
+    piLog(`[vectorize] Warning: ${allPending.length - valid.length} chunks had no embedding, skipping`);
+  }
+
+  const allVectorRecords: Array<import("./vault/types.js").VectorRecord> = valid.map(p => ({
+    chunkId: p.chunkId,
+    nodeId: p.nodeId,
+    blockIds: p.blockIds,
+    type: p.type,
+    level: p.level,
+    vector: p.vector!,
+  }));
+  const allChunkTexts: Array<import("./vault/types.js").ChunkTextRecord> = valid.map(p => ({
+    chunkId: p.chunkId,
+    nodeId: p.nodeId,
+    blockIds: p.blockIds,
+    text: p.text,
+    type: p.type,
+  }));
+
+  await writeVectorJsonl(vectorPath, allVectorRecords);
+  await writeChunkTexts(chunksPath, allChunkTexts);
+
+  piLog(`[vectorize] Wrote ${allVectorRecords.length} vectors and ${allChunkTexts.length} chunk texts`);
+  return { dimensions, nodeCount: allVectorRecords.length };
 }
 
 /**
@@ -662,28 +756,48 @@ function collectIndexLeafNodes(
 }
 
 /**
- * Recursively collect ALL nodes as L1 for vectorization (title + summary).
- * Unlike collectIndexLeafNodes which only collects children,
- * this also includes the node itself — every chapter/section gets a vector.
+ * Collect chapter nodes into PendingChunk[] for L1 vectorization.
  */
-function collectAllChapterNodes(
+function collectAllChapterNodesForPending(
   node: any,
-  nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>
+  pending: Array<{
+    chunkId: string; nodeId: string; blockIds: string[];
+    type: "summary" | "heading" | "body" | "list" | "quote";
+    level: "L0" | "L1" | "L2"; text: string; vector?: number[];
+  }>
 ): void {
-  // Add this node as L1 (if it has a nodeId and meaningful content)
   if (node.nodeId && node.title) {
-    nodes.push({
-      id: node.nodeId,
-      title: node.title,
-      text: `${node.title}\n${node.summary || ""}`,
+    pending.push({
+      chunkId: `${node.nodeId}_summary`,
+      nodeId: node.nodeId,
+      blockIds: [],
+      type: "summary",
       level: "L1",
+      text: `${node.title}\n${node.summary || ""}`,
     });
   }
-
-  // Recurse into children
   for (const child of node.nodes || []) {
-    collectAllChapterNodes(child, nodes);
+    collectAllChapterNodesForPending(child, pending);
   }
+}
+
+/**
+ * Flat collection of all chapters with nodeId and title.
+ */
+function collectChaptersFlat(node: any): Array<{ nodeId: string; title: string }> {
+  const result: Array<{ nodeId: string; title: string }> = [];
+  if (node.nodeId && node.title) result.push({ nodeId: node.nodeId, title: node.title });
+  for (const child of node.nodes || []) result.push(...collectChaptersFlat(child));
+  return result;
+}
+
+/**
+ * Clean markdown content for chunking: remove frontmatter and callouts.
+ */
+function cleanMdContent(content: string): string {
+  let cleaned = content.replace(/^---[\s\S]*?---\n/, "");
+  cleaned = cleaned.replace(/> \[!.*?\][^\n]*\n(> .*\n)*/g, "");
+  return cleaned.trim();
 }
 
 /**

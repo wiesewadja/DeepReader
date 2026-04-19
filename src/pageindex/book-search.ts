@@ -81,7 +81,8 @@ export async function searchBook(
         );
         const vectorResults = await cosineSearchJsonl(jsonlPath, queryVector, topK * 3);
         for (const result of vectorResults) {
-          vectorScores.set(result.nodeId, result.score);
+          const prev = vectorScores.get(result.nodeId) || 0;
+          vectorScores.set(result.nodeId, Math.max(prev, result.score));
         }
       }
     } catch (error) {

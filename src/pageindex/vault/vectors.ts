@@ -10,6 +10,7 @@ import * as fs from "node:fs/promises";
 import type {
   EmbeddingOptions,
   VectorRecord,
+  ChunkTextRecord,
   CatalogMeta,
   CatalogBookEntry,
 } from "./types";
@@ -52,19 +53,55 @@ export async function readVectorJsonl(
 export async function cosineSearchJsonl(
   filePath: string,
   queryVector: number[],
-  topK: number
-): Promise<Array<{ nodeId: string; title: string; score: number }>> {
+  topK: number,
+  filter?: { level?: string }
+): Promise<Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }>> {
   const records = await readVectorJsonl(filePath);
   const query = new Float32Array(queryVector);
-  const scores: Array<{ nodeId: string; title: string; score: number }> = [];
+  const scores: Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }> = [];
 
   for (const record of records) {
+    if (filter?.level && record.level !== filter.level) continue;
     const vector = new Float32Array(record.vector);
     const score = cosineSimilarity(query, vector);
-    scores.push({ nodeId: record.nodeId, title: record.title, score });
+    scores.push({
+      chunkId: record.chunkId,
+      nodeId: record.nodeId,
+      blockIds: record.blockIds,
+      score,
+    });
   }
 
   return scores.sort((a, b) => b.score - a.score).slice(0, topK);
+}
+
+/**
+ * Write chunk text records to a JSONL file
+ */
+export async function writeChunkTexts(
+  filePath: string,
+  records: ChunkTextRecord[]
+): Promise<void> {
+  const lines = records.map((r) => JSON.stringify(r));
+  await fs.writeFile(filePath, lines.join("\n") + "\n", "utf-8");
+}
+
+/**
+ * Read chunk text records from a JSONL file
+ */
+export async function readChunkTexts(
+  filePath: string
+): Promise<ChunkTextRecord[]> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    return content
+      .trim()
+      .split("\n")
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line) as ChunkTextRecord);
+  } catch {
+    return [];
+  }
 }
 
 // ─── Global Catalog ───────────────────────────────────────────

@@ -39,7 +39,13 @@ export async function searchVault(
       const queryVector = await generateEmbedding(query, options.embedding);
       const jsonlPath = index.meta.vaultPath + "/.pageindex/vectors.jsonl";
       const results = await cosineSearchJsonl(jsonlPath, queryVector, recallK);
-      vectorResults = results.map((r) => ({ nodeId: r.nodeId, score: r.score }));
+      // Merge by nodeId, keeping highest score (multiple chunks may share same nodeId)
+      const scoreMap = new Map<string, number>();
+      for (const r of results) {
+        const prev = scoreMap.get(r.nodeId) || 0;
+        scoreMap.set(r.nodeId, Math.max(prev, r.score));
+      }
+      vectorResults = Array.from(scoreMap.entries()).map(([nodeId, score]) => ({ nodeId, score }));
     } catch {
       // Vector search failed, skip
     }

@@ -24,14 +24,18 @@ describe("JSONL Vector Storage", () => {
   });
 
   const record1: VectorRecord = {
+    chunkId: "0001_summary",
     nodeId: "0001",
-    title: "第一章 概述",
+    blockIds: [],
+    type: "summary",
     level: "L1",
     vector: [0.1, 0.2, 0.3],
   };
   const record2: VectorRecord = {
+    chunkId: "0002_summary",
     nodeId: "0002",
-    title: "1.1 背景",
+    blockIds: [],
+    type: "summary",
     level: "L1",
     vector: [0.4, 0.5, 0.6],
   };
@@ -59,6 +63,7 @@ describe("JSONL Vector Storage", () => {
     const results = await cosineSearchJsonl(filePath, [0.4, 0.5, 0.6], 1);
     expect(results).toHaveLength(1);
     expect(results[0].nodeId).toBe("0002");
+    expect(results[0].chunkId).toBe("0002_summary");
     expect(results[0].score).toBeCloseTo(1.0, 4);
   });
 

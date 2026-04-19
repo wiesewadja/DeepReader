@@ -69,6 +69,8 @@ vi.mock("../vault/vectors.js", () => ({
     [0.7, 0.8, 0.9],
   ]),
   writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
+  updateCatalogEntry: vi.fn().mockResolvedValue(undefined),
+  removeCatalogEntry: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("book-indexer", () => {

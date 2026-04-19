@@ -198,8 +198,10 @@ async function buildOrUpdateVectors(
   for (let i = 0; i < textsToEmbed.length; i++) {
     const { nodeId } = textsToEmbed[i];
     existingMap.set(nodeId, {
+      chunkId: nodeId,
       nodeId,
-      title: nodeId,
+      blockIds: [],
+      type: "summary",
       level: "L1",
       vector: vectors[i],
     });

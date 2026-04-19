@@ -79,10 +79,21 @@ export interface VaultIndexResult {
 
 /** 单条向量记录（JSONL 每行的结构） */
 export interface VectorRecord {
+  chunkId: string;
   nodeId: string;
-  title: string;
-  level: "L0" | "L1";
+  blockIds: string[];
+  type: "summary" | "heading" | "body" | "list" | "quote";
+  level: "L0" | "L1" | "L2";
   vector: number[];
+}
+
+/** 段落原文记录（chunks.jsonl 每行的结构） */
+export interface ChunkTextRecord {
+  chunkId: string;
+  nodeId: string;
+  blockIds: string[];
+  text: string;
+  type: "summary" | "heading" | "body" | "list" | "quote";
 }
 
 /** 单条 proposition 向量记录 */

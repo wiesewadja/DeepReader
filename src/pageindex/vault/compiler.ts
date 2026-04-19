@@ -247,8 +247,10 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
           const vectors = await generateEmbeddings(batch, embedOpts);
           for (let j = 0; j < vectors.length; j++) {
             existingMap.set(batchFiles[j], {
+              chunkId: batchFiles[j],
               nodeId: batchFiles[j],
-              title: batchFiles[j],
+              blockIds: [],
+              type: "summary",
               level: "L1",
               vector: vectors[j],
             });
