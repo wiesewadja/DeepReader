@@ -31,6 +31,7 @@ export class ReadingModeService {
     private app: App;
     private isActive: boolean = false;
     private currentFile: TFile | null = null;
+    private activeContainerEl: HTMLElement | null = null;  // 记录当前阅读模式所在 leaf 的 containerEl
     private fileOpenHandler: EventRef | null = null;
     private selectionToolbar: SelectionToolbar | null = null;
     private chapterNav: ChapterNav | null = null;
@@ -170,6 +171,7 @@ export class ReadingModeService {
         // 添加阅读模式 CSS 类到当前 leaf 的 containerEl，避免全局污染
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (view) {
+            this.activeContainerEl = view.containerEl;
             view.containerEl.classList.add('deeppdf-reading-mode');
             if (this.style === 'paginated') {
                 view.containerEl.classList.add('deeppdf-paginated');
@@ -253,6 +255,9 @@ export class ReadingModeService {
      * 获取当前视图的 .markdown-preview-view 元素（实际阅读区域）
      */
     private getViewContent(): HTMLElement | null {
+        if (this.activeContainerEl) {
+            return this.activeContainerEl.querySelector('.markdown-preview-view') as HTMLElement | null;
+        }
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         return view?.containerEl.querySelector('.markdown-preview-view') as HTMLElement | null;
     }
@@ -288,10 +293,11 @@ export class ReadingModeService {
         // 恢复原始 scrollIntoView
         this.unpatchScrollIntoView();
 
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (view) {
-            view.containerEl.classList.remove('deeppdf-reading-mode');
-            view.containerEl.classList.remove('deeppdf-paginated');
+        // 从记录的 containerEl 上移除 CSS 类（而非从当前 active view 移除，避免错误清理其他 tab）
+        if (this.activeContainerEl) {
+            this.activeContainerEl.classList.remove('deeppdf-reading-mode');
+            this.activeContainerEl.classList.remove('deeppdf-paginated');
+            this.activeContainerEl = null;
         }
 
         // 兼容处理：移除之前可能遗留在 body 上的类
