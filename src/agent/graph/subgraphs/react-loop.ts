@@ -500,49 +500,41 @@ export interface ReactLoopResult {
 }
 
 /**
- * Plan-then-Execute: 2 LLM calls instead of iterative ReAct.
+ * Plan-Execute-Replan: iterative planning with bounded rounds.
  *
- * Step 1 (Plan): Model decides what tools to call (returns tool_calls)
- * Step 2 (Execute): All tools run in parallel
- * Step 3 (Synthesize): Model produces final answer from all results
+ * Round 1: Plan → Execute in parallel
+ * Round 2 (optional): Replan based on results → Execute again
+ * Final: Synthesize all gathered information
+ *
+ * This is a middle ground between pure Plan-then-Execute (1 round, may miss info)
+ * and full ReAct (N rounds, token-expensive). Default 2 rounds covers most cases:
+ * - Round 1: broad search + read known chapters
+ * - Round 2: follow-up reads based on Round 1 discoveries
+ *
+ * LLM calls per round: 1 (plan) + 0 (parallel execute) = 1
+ * Total for 2 rounds: 2 plan + 1 synthesize = 3 LLM calls (vs ReAct's 4-6)
  */
-export async function runPlanExecute(
-  messages: BaseMessage[],
+/**
+ * Execute a batch of tool calls in parallel, returning messages and records.
+ */
+async function executeToolBatch(
+  toolCalls: any[],
+  tools: StructuredToolInterface[],
   config: ReactLoopConfig,
   runnableConfig?: RunnableConfig,
-): Promise<ReactLoopResult> {
-  const { tools, model } = config;
-  const modelWithTools = model.bindTools(tools);
-
-  // === Step 1: Plan ===
-  const planResponse = await modelWithTools.invoke(messages, runnableConfig);
-
-  // No tool calls → model answered directly
-  if (!planResponse?.tool_calls?.length) {
-    const content = typeof planResponse?.content === 'string'
-      ? planResponse.content
-      : JSON.stringify(planResponse?.content ?? '');
-    return { content, toolResults: [], iterations: 1, finishReason: 'stop' };
-  }
-
-  // === Step 2: Execute all tools in parallel ===
-  const toolResults: ToolResultRecord[] = [];
-  const toolMessages: ToolMessage[] = [];
-
-  const executions = planResponse.tool_calls.map(async (tc: any) => {
+): Promise<{ messages: ToolMessage[]; records: ToolResultRecord[] }> {
+  const executions = toolCalls.map(async (tc: any) => {
     let args = parseToolCallArgs(tc);
     if (config.toolInterceptor) {
       args = config.toolInterceptor(tc.name, args);
     }
 
     const tool = tools.find(t => t.name === tc.name);
+    const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
     if (!tool) {
       return {
-        toolCallId: tc.id ?? `fallback_${Date.now()}`,
-        msg: new ToolMessage({
-          content: `Error: Unknown tool "${tc.name}"`,
-          tool_call_id: tc.id ?? `fallback_${Date.now()}`,
-        }),
+        msg: new ToolMessage({ content: `Error: Unknown tool "${tc.name}"`, tool_call_id: tcId }),
         record: null as ToolResultRecord | null,
       };
     }
@@ -551,51 +543,92 @@ export async function runPlanExecute(
       const rawResult = await tool.invoke(args, runnableConfig);
       const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
       const compressed = compressToolResult(resultStr);
-
       return {
-        toolCallId: tc.id ?? `fallback_${Date.now()}`,
-        msg: new ToolMessage({
-          content: compressed,
-          tool_call_id: tc.id ?? `fallback_${Date.now()}`,
-        }),
-        record: {
-          toolName: tc.name,
-          args,
-          result: compressed,
-          originalResultLength: resultStr.length,
-        } as ToolResultRecord,
+        msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
+        record: { toolName: tc.name, args, result: compressed, originalResultLength: resultStr.length } as ToolResultRecord,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       return {
-        toolCallId: tc.id ?? `fallback_${Date.now()}`,
-        msg: new ToolMessage({
-          content: `Error: ${errorMsg}`,
-          tool_call_id: tc.id ?? `fallback_${Date.now()}`,
-        }),
+        msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
         record: null as ToolResultRecord | null,
       };
     }
   });
 
   const execResults = await Promise.all(executions);
+  const msgs: ToolMessage[] = [];
+  const records: ToolResultRecord[] = [];
   for (const r of execResults) {
-    if (r.msg) toolMessages.push(r.msg);
-    if (r.record) toolResults.push(r.record);
+    if (r.msg) msgs.push(r.msg);
+    if (r.record) records.push(r.record);
+  }
+  return { messages: msgs, records };
+}
+
+/**
+ * Plan-Execute-Replan: iterative planning with bounded rounds.
+ *
+ * Default maxPlanRounds=2 allows one follow-up round:
+ *   Round 1: Plan(1 LLM) → Execute(parallel tools)
+ *   Round 2: Replan(1 LLM, sees Round 1 results) → Execute(parallel tools)
+ *   Final:   Synthesize(1 LLM) → output
+ *
+ * Total: 3 LLM calls for 2 rounds (vs ReAct's 4-6 calls).
+ * If a round produces no tool calls, synthesize immediately.
+ */
+export async function runPlanExecute(
+  messages: BaseMessage[],
+  config: ReactLoopConfig,
+  runnableConfig?: RunnableConfig,
+): Promise<ReactLoopResult> {
+  const { tools, model } = config;
+  const modelWithTools = model.bindTools(tools);
+  const maxPlanRounds = Math.min(config.maxToolCalls, 2); // cap at 2 planning rounds
+
+  const allToolResults: ToolResultRecord[] = [];
+  const conversationHistory: BaseMessage[] = [...messages];
+  let totalIterations = 0;
+
+  // === Iterative Plan-Execute rounds ===
+  for (let round = 0; round < maxPlanRounds; round++) {
+    // Compress history to prevent token growth across rounds
+    const compressedHistory = round > 0 ? compressMessagesForLLM(conversationHistory) : conversationHistory;
+
+    const planResponse = await modelWithTools.invoke(compressedHistory, runnableConfig);
+    totalIterations++;
+
+    // No tool calls → model answered directly or wants to synthesize
+    if (!planResponse?.tool_calls?.length) {
+      const content = typeof planResponse?.content === 'string'
+        ? planResponse.content : JSON.stringify(planResponse?.content ?? '');
+      // If first round answered directly, return it
+      if (round === 0) {
+        return { content, toolResults: [], iterations: totalIterations, finishReason: 'stop' };
+      }
+      // Later round: treat as synthesis
+      if (allToolResults.length > 0) {
+        const verifyResult = await verifyAndCleanContent(content, allToolResults);
+        return { content: verifyResult.content, toolResults: allToolResults, iterations: totalIterations, finishReason: 'stop' };
+      }
+      return { content, toolResults: allToolResults, iterations: totalIterations, finishReason: 'stop' };
+    }
+
+    // Execute all planned tools in parallel
+    const { messages: toolMsgs, records } = await executeToolBatch(
+      planResponse.tool_calls, tools, config, runnableConfig,
+    );
+    allToolResults.push(...records);
+
+    // Append to conversation history for next round
+    conversationHistory.push(planResponse);
+    conversationHistory.push(...toolMsgs);
   }
 
-  // === Step 3: Synthesize ===
-  // Re-use the original SystemMessage (contains full role/constraints/output_rules)
-  // to ensure correct wiki link formatting and output structure.
-  // Only append the synthesis prompt as a follow-up HumanMessage.
-  const synthesisMessages = compressMessagesForLLM([
-    ...messages,       // includes SystemMessage with full analytical prompt
-    planResponse,      // AIMessage with tool_calls
-    ...toolMessages,   // ToolMessage results
-  ]);
+  // === Final: Synthesize ===
+  const synthesisMessages = compressMessagesForLLM(conversationHistory);
   const synthesisPrompt = buildSynthesisPrompt(config);
 
-  // Use model without tools bound — prevents further tool calls
   const synthesisResponse = await model.invoke([
     ...synthesisMessages,
     new HumanMessage(synthesisPrompt),
@@ -605,16 +638,15 @@ export async function runPlanExecute(
     ? synthesisResponse.content
     : JSON.stringify(synthesisResponse.content);
 
-  // Self-verification
-  if (toolResults.length > 0) {
-    const verifyResult = await verifyAndCleanContent(content, toolResults);
+  if (allToolResults.length > 0) {
+    const verifyResult = await verifyAndCleanContent(content, allToolResults);
     content = verifyResult.content;
   }
 
   return {
     content,
-    toolResults,
-    iterations: 2, // plan + synthesize
+    toolResults: allToolResults,
+    iterations: totalIterations + 1, // +1 for synthesis
     finishReason: 'stop',
   };
 }
