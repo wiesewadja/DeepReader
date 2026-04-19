@@ -48,7 +48,6 @@ export function parseAgentContent(content: string): {
 	thoughts: AgentThought[]; // 保持接口兼容，但返回空数组
 	toolCalls: AgentToolCall[];
 	cleanedContent: string;
-	currentStatus?: string;
 } {
 	// 0. 提取并移除状态行
 	// 后端发送的状态行格式示例：
@@ -213,7 +212,6 @@ export function parseAgentContent(content: string): {
 		thoughts: [],
 		toolCalls,
 		cleanedContent: processedContent,
-		currentStatus
 	};
 }
 
@@ -1157,70 +1155,22 @@ export class AIMessage extends Message {
 		this.streamingAnimationFrame = requestAnimationFrame(() => {
 			const now = Date.now();
 
-			// 1. 解析内容
-			const { cleanedContent, currentStatus } = parseAgentContent(newContent);
+				// 解析内容（状态由 LangGraph onProgress 驱动，不从此处提取）
+				const { cleanedContent } = parseAgentContent(newContent);
 
-			// 检查内容是否真正变化
-			const contentLen = cleanedContent.length;
-			const contentGrowth = contentLen - this.lastRenderedLength;
-			const timePassed = now - this.lastRenderTime;
+				const contentLen = cleanedContent.length;
+				const contentGrowth = contentLen - this.lastRenderedLength;
+				const timePassed = now - this.lastRenderTime;
 
-			// 【调试日志】输出解析结果（前 5 次调用）
-			if (this.lastRenderTime === 0 || contentLen < 100) {
-				log('[DeepPDF] streamingUpdateContent - 解析结果:', {
-					currentStatus,
-					contentLen,
-					cleanedContentPreview: cleanedContent.substring(0, 50)
-				});
-			}
+				const normalizedNew = cleanedContent.trim();
+				const normalizedOld = this.lastRenderedContent.trim();
+				const contentChanged = normalizedNew !== normalizedOld;
 
-			// 检查内容是否实质性变化（忽略尾部空格差异）
-			const normalizedNew = cleanedContent.trim();
-			const normalizedOld = this.lastRenderedContent.trim();
-			const contentChanged = normalizedNew !== normalizedOld;
+				let throttleThreshold = 100;
+				if (contentLen > 1500) throttleThreshold = 400;
+				else if (contentLen > 500) throttleThreshold = 200;
 
-			// 动态节流策略
-			let throttleThreshold = 100;
-			if (contentLen > 1500) throttleThreshold = 400;
-			else if (contentLen > 500) throttleThreshold = 200;
-
-			// 决定是否需要渲染
-			const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
-
-			// 【关键修复】状态显示更新不受节流限制，确保实时反馈
-			// 用户需要立即看到"正在搜索..."等状态，不能因为内容变化小而被跳过
-			if (this.el) {
-				const headerRow = this.el.querySelector('.deeppdf-message-header-row');
-				log('[DeepPDF] streamingUpdateContent - DOM 查找:', {
-					hasEl: !!this.el,
-					hasHeaderRow: !!headerRow,
-					currentStatus
-				});
-				if (headerRow) {
-					let statusEl = headerRow.querySelector('.deeppdf-message-status-text');
-					if (!statusEl) {
-						statusEl = headerRow.createEl('div', { cls: 'deeppdf-message-status-text' });
-						log('[DeepPDF] streamingUpdateContent - 创建状态元素');
-					}
-					if (statusEl) {
-						log('[DeepPDF] streamingUpdateContent - 更新状态:', {
-							currentStatus,
-							oldTextContent: statusEl.textContent,
-							willUpdate: currentStatus && statusEl.textContent !== currentStatus
-						});
-						if (currentStatus && statusEl.textContent !== currentStatus) {
-							statusEl.textContent = currentStatus;
-							statusEl.addClass('visible');
-							log('[DeepPDF] streamingUpdateContent - 状态已更新并显示:', currentStatus);
-						} else if (!currentStatus && statusEl.textContent !== '') {
-							statusEl.textContent = '';
-							statusEl.removeClass('visible');
-						}
-					}
-				}
-			} else {
-				log('[DeepPDF] streamingUpdateContent - this.el 不存在!');
-			}
+				const shouldRender = contentChanged && (contentGrowth > 50 || timePassed > throttleThreshold);
 
 			if (shouldRender && this.app) {
 				// 移除 loading 状态（首次渲染实际内容时）

@@ -25,6 +25,7 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { loadTreeJson } from '../utils/tree-loader.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
+import { verifyAndCleanContent } from '../utils/self-verification.js';
 
 /**
  * Validate scopeNodeIds against tree.json nodeFileMap.
@@ -247,16 +248,21 @@ ${blockLines.join('\n\n')}
           const directContent = typeof directResponse.content === 'string'
             ? directResponse.content : JSON.stringify(directResponse.content);
 
+          const preSearchRecords = hits.flatMap(h =>
+            h.matched_blocks.map(b => ({
+              toolName: 'pre_search',
+              args: { query: 'auto', node_id: h.node_id },
+              result: b.content,
+              originalResultLength: b.content.length,
+              extractedBlockIds: [b.block_id],
+            }))
+          );
+
+          const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
+
           return {
-            analysisResult: directContent,
-            toolResultsSnapshot: hits.flatMap(h =>
-              h.matched_blocks.map(b => ({
-                toolName: 'pre_search',
-                args: { query: 'auto', node_id: h.node_id },
-                result: b.content,
-                originalResultLength: b.content.length,
-              }))
-            ),
+            analysisResult: verifyResult.content,
+            toolResultsSnapshot: preSearchRecords,
           };
         }
 
@@ -320,6 +326,7 @@ ${blockLines.join('\n\n')}
       args: r.args,
       result: r.result,
       originalResultLength: r.originalResultLength,
+      extractedBlockIds: r.extractedBlockIds,
     })),
   };
 
@@ -361,6 +368,7 @@ ${blockLines.join('\n\n')}
         args: r.args,
         result: r.result,
         originalResultLength: r.originalResultLength,
+        extractedBlockIds: r.extractedBlockIds,
       }));
     }
   }

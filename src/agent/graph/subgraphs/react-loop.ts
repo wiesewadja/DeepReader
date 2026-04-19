@@ -21,6 +21,8 @@ export interface ToolResultRecord {
   args: Record<string, unknown>;
   result: string;
   originalResultLength: number;
+  /** Extracted block_ids from result (for verification after compression) */
+  extractedBlockIds?: string[];
 }
 
 export interface ReactLoopConfig {
@@ -89,6 +91,16 @@ function compressToolResult(result: string): string {
   return `${truncated}\n\n... [已省略 ${omitted} 字符]`;
 }
 
+function extractBlockIdsFromResult(result: string): string[] {
+  const blockIdPattern = /\^([a-zA-Z0-9_-]+)(?=\W|$)/g;
+  const ids: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = blockIdPattern.exec(result)) !== null) {
+    ids.push(match[1]);
+  }
+  return ids;
+}
+
 /**
  * Compress old ToolMessages to one-line summaries, keeping only the latest N full.
  * SystemMessage and HumanMessage are always preserved.
@@ -151,11 +163,11 @@ function updateQueriesAsked(
 // === Agent Node ===
 
 /** Parse tool call args, handling string-encoded JSON */
-function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> {
+function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> | { _parseError: true; _raw: string } {
   try {
     return typeof tc.args === 'string' ? JSON.parse(tc.args) : tc.args;
   } catch {
-    return {};
+    return { _parseError: true, _raw: String(tc.args) };
   }
 }
 
@@ -197,7 +209,19 @@ function createEnhancedToolNode(tools: StructuredToolInterface[], toolIntercepto
     let executedCount = 0;
 
     for (const tc of lastMessage.tool_calls) {
-      let args = parseToolCallArgs(tc);
+      const parsedArgs = parseToolCallArgs(tc);
+      
+      if ('_parseError' in parsedArgs) {
+        newMessages.push(
+          new ToolMessage({
+            content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`,
+            tool_call_id: tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          }),
+        );
+        continue;
+      }
+      
+      let args = parsedArgs;
 
       // Apply interceptor (e.g. scope_node_ids injection for search_book)
       if (interceptor) {
@@ -241,12 +265,14 @@ function createEnhancedToolNode(tools: StructuredToolInterface[], toolIntercepto
         const rawResult = await tool.invoke(args, config);
         const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
         const compressed = compressToolResult(resultStr);
+        const extractedBlockIds = extractBlockIdsFromResult(resultStr);
 
         toolResults.push({
           toolName: tc.name,
           args,
           result: compressed,
           originalResultLength: resultStr.length,
+          extractedBlockIds,
         });
 
         newMessages.push(
@@ -526,7 +552,20 @@ async function executeToolBatch(
   runnableConfig?: RunnableConfig,
 ): Promise<{ messages: ToolMessage[]; records: ToolResultRecord[] }> {
   const executions = toolCalls.map(async (tc: any) => {
-    let args = parseToolCallArgs(tc);
+    const parsedArgs = parseToolCallArgs(tc);
+    
+    if ('_parseError' in parsedArgs) {
+      const tcId = tc.id ?? `fallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      return {
+        msg: new ToolMessage({ 
+          content: `Error: Failed to parse tool arguments: ${parsedArgs._raw}`, 
+          tool_call_id: tcId 
+        }),
+        record: null as ToolResultRecord | null,
+      };
+    }
+    
+    let args = parsedArgs;
     if (config.toolInterceptor) {
       args = config.toolInterceptor(tc.name, args);
     }
@@ -545,9 +584,16 @@ async function executeToolBatch(
       const rawResult = await tool.invoke(args, runnableConfig);
       const resultStr = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult);
       const compressed = compressToolResult(resultStr);
+      const extractedBlockIds = extractBlockIdsFromResult(resultStr);
       return {
         msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
-        record: { toolName: tc.name, args, result: compressed, originalResultLength: resultStr.length } as ToolResultRecord,
+        record: { 
+          toolName: tc.name, 
+          args, 
+          result: compressed, 
+          originalResultLength: resultStr.length,
+          extractedBlockIds,
+        } as ToolResultRecord,
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -627,8 +673,13 @@ export async function runPlanExecute(
   for (let round = 0; round < maxPlanRounds; round++) {
     // Compress history to prevent token growth across rounds
     const compressedHistory = round > 0 ? compressMessagesForLLM(conversationHistory) : conversationHistory;
+    
+    // Round 2+ 补充检索提示
+    const historyWithHint = round > 0
+      ? [...compressedHistory, new HumanMessage(`基于上一轮检索结果，如有必要请补充检索更多信息。如果已足够，直接回答问题。`)]
+      : compressedHistory;
 
-    const planResponse = await modelWithTools.invoke(compressedHistory, runnableConfig);
+    const planResponse = await modelWithTools.invoke(historyWithHint, runnableConfig);
     totalIterations++;
 
     // No tool calls → model answered directly or wants to synthesize

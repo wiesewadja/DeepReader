@@ -1755,6 +1755,7 @@ export class SidebarView extends ItemView {
                     timestamp: new Date().toISOString(),
                     isStreaming: true,
                     isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
+                    currentStatus: '开始阅读...',
                     pdfName: this.currentPdfName || undefined,
                     question: message,  // 保存用户的问题
                     conversationId: this.sessionId || undefined  // 保存会话ID用于双向链接

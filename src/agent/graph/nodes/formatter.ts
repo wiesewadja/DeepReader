@@ -101,6 +101,7 @@ export async function formatterNode(
     args: r.args as Record<string, unknown>,
     result: r.result,
     originalResultLength: r.originalResultLength,
+    extractedBlockIds: r.extractedBlockIds,
   }));
 
   if (toolResults.length > 0) {
@@ -118,7 +119,6 @@ export async function formatterNode(
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: regenerate with feedback
       const feedbackMessages = [
         new SystemMessage(systemPrompt),
         new HumanMessage(userMessage),
