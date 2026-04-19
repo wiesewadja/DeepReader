@@ -28,9 +28,8 @@ import type {
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import {
-  loadVectorStore,
   generateEmbeddings,
-  cosineSearch,
+  cosineSearchJsonl,
 } from "./vault/vectors.js";
 import type { EmbeddingOptions, RerankerOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger";
@@ -692,18 +691,17 @@ async function asyncVectorSearch(
   topK: number
 ): Promise<{ scores: Map<string, number>; vector: number[] | null }> {
   try {
-    const vectorStore = await loadVectorStore(indexDir);
-    if (!vectorStore || vectorStore.meta.count === 0) {
-      return { scores: new Map(), vector: null };
-    }
+    const vectorResults = await cosineSearchJsonl(
+      path.join(indexDir, "vectors.jsonl"),
+      queryVector,
+      topK
+    );
 
-    const vectorResults = await cosineSearch(queryVector, vectorStore, topK);
-    
     const scores = new Map<string, number>();
     for (const r of vectorResults) {
       scores.set(r.nodeId, r.score);
     }
-    
+
     return { scores, vector: queryVector };
   } catch (error) {
     piLog(`[book-search-v2] Vector search failed: ${error}`);
@@ -717,24 +715,20 @@ async function asyncPropositionSearch(
   recallK: number
 ): Promise<Map<string, PropositionCard[]>> {
   const propositionMatches = new Map<string, PropositionCard[]>();
-  
+
   try {
     const propositionsData = await loadPropositions(indexDir);
-    const propVectorStore = await loadPropVectorStore(indexDir);
+    const propVectorMap = await loadPropVectorStore(indexDir);
 
-    if (!propositionsData || !propVectorStore || propositionsData.totalCards === 0) {
+    if (!propositionsData || !propVectorMap || propositionsData.totalCards === 0) {
       return propositionMatches;
     }
 
     const queryFloat32 = new Float32Array(queryVector);
-    const dimensions = propVectorStore.meta.dimensions;
 
     const scores: Array<{ cardId: string; score: number }> = [];
-    for (const [cardId, slot] of Object.entries(propVectorStore.meta.slots)) {
-      if (slot.deleted) continue;
-
-      const offset = slot.slotIndex * dimensions;
-      const cardVector = propVectorStore.vectors.subarray(offset, offset + dimensions);
+    for (const [cardId, vector] of propVectorMap) {
+      const cardVector = new Float32Array(vector);
       const score = cosineSimilarity(queryFloat32, cardVector);
       scores.push({ cardId, score });
     }
@@ -754,7 +748,7 @@ async function asyncPropositionSearch(
   } catch (error) {
     piLog(`[book-search-v2] Proposition search failed: ${error}`);
   }
-  
+
   return propositionMatches;
 }
 

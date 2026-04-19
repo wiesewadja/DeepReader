@@ -62,25 +62,13 @@ vi.mock("../exporters/epub-to-obsidian.js", () => ({
 }));
 
 vi.mock("../vault/vectors.js", () => ({
-  initVectorStore: vi.fn().mockResolvedValue({
-    vectors: new Float32Array(0),
-    meta: {
-      model: "text-embedding-3-small",
-      dimensions: 1536,
-      count: 0,
-      deletedCount: 0,
-      indexedAt: new Date().toISOString(),
-      slots: {},
-    },
-    vectorPath: "/tmp/vectors.f32",
-    metaPath: "/tmp/vectors.meta.json",
-  }),
+  generateEmbedding: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
   generateEmbeddings: vi.fn().mockResolvedValue([
     [0.1, 0.2, 0.3],
     [0.4, 0.5, 0.6],
     [0.7, 0.8, 0.9],
   ]),
-  appendVector: vi.fn().mockResolvedValue(0),
+  writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("book-indexer", () => {
@@ -233,7 +221,7 @@ describe("book-indexer", () => {
         apiKey: "test-key",
       });
 
-      const vectorsPath = path.join(result.indexDir, "vectors.f32");
+      const vectorsPath = path.join(result.indexDir, "vectors.jsonl");
       await expect(fs.access(vectorsPath)).rejects.toThrow();
 
       const metaPath = path.join(result.indexDir, "book-meta.json");
@@ -271,7 +259,7 @@ describe("book-indexer", () => {
       expect(vectorStep).toBeDefined();
 
       const vectorStoreMock = await import("../vault/vectors.js");
-      expect(vectorStoreMock.initVectorStore).toHaveBeenCalled();
+      expect(vectorStoreMock.writeVectorJsonl).toHaveBeenCalled();
       expect(vectorStoreMock.generateEmbeddings).toHaveBeenCalled();
 
       await fs.rm(testFilePath, { force: true });
@@ -432,21 +420,9 @@ describe("book-indexer", () => {
 
       // Mock embedding API failure
       vi.doMock("../vault/vectors.js", () => ({
-        initVectorStore: vi.fn().mockResolvedValue({
-          vectors: new Float32Array(0),
-          meta: {
-            model: "text-embedding-3-small",
-            dimensions: 1536,
-            count: 0,
-            deletedCount: 0,
-            indexedAt: new Date().toISOString(),
-            slots: {},
-          },
-          vectorPath: "/tmp/vectors.f32",
-          metaPath: "/tmp/vectors.meta.json",
-        }),
+        generateEmbedding: vi.fn().mockRejectedValue(new Error("Embedding API failed: 500 Internal Server Error")),
         generateEmbeddings: vi.fn().mockRejectedValue(new Error("Embedding API failed: 500 Internal Server Error")),
-        appendVector: vi.fn().mockResolvedValue(0),
+        writeVectorJsonl: vi.fn().mockResolvedValue(undefined),
       }));
 
       const result = await indexBook({

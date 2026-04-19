@@ -64,6 +64,10 @@ export async function deleteBookIndex(filePath: string, vaultPath: string): Prom
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   await fs.rm(indexDir, { recursive: true, force: true });
+
+  // Remove from global catalog
+  const { removeCatalogEntry } = await import("./vault/vectors.js");
+  await removeCatalogEntry(path.join(vaultPath, ".pageindex"), bookId);
 }
 
 /**
@@ -329,20 +333,31 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     try {
-      const detectedDimensions = await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
+      const vectorResult = await vectorizeL0L1Nodes(parseResult, indexDir, options.embedding);
       vectorizationSuccess = true;
-      
+
       // Update book-meta with detected dimensions
-      if (detectedDimensions && options.embedding) {
+      if (vectorResult && options.embedding) {
         bookMeta.embedding = {
           provider: options.embedding.provider,
           model: options.embedding.model || "text-embedding-3-small",
-          dimensions: detectedDimensions,
+          dimensions: vectorResult.dimensions,
         };
         await fs.writeFile(
           path.join(indexDir, "book-meta.json"),
           JSON.stringify(bookMeta, null, 2)
         );
+
+        // Update global catalog
+        const { updateCatalogEntry } = await import("./vault/vectors.js");
+        await updateCatalogEntry(path.join(options.outputDir, ".pageindex"), bookId, {
+          title: bookMeta.title || path.basename(options.filePath),
+          vectorModel: options.embedding.model || "text-embedding-3-small",
+          dimensions: vectorResult.dimensions,
+          nodeCount: vectorResult.nodeCount,
+          hasPropositions: false,
+          indexedAt: new Date().toISOString(),
+        });
       }
       
       reportProgress({
@@ -512,16 +527,17 @@ async function buildBookMeta(
 }
 
 /**
- * Vectorize L0/L1 nodes from parse result
+ * Vectorize L0/L1 nodes from parse result using JSONL vector storage
  * Fix: iterate entire structure array (not just structure[0])
- * Returns detected dimensions
+ * Returns { dimensions, nodeCount }
  */
 async function vectorizeL0L1Nodes(
   parseResult: any,
   indexDir: string,
   embedding: any
-): Promise<number | undefined> {
-  const { initVectorStore, generateEmbedding, generateEmbeddings, appendVector } = await import("./vault/vectors.js");
+): Promise<{ dimensions: number; nodeCount: number } | undefined> {
+  const { generateEmbedding, generateEmbeddings, writeVectorJsonl } = await import("./vault/vectors.js");
+  const vectorPath = path.join(indexDir, "vectors.jsonl");
 
   // Auto-detect dimensions from first embedding
   let dimensions = embedding.dimensions;
@@ -531,15 +547,13 @@ async function vectorizeL0L1Nodes(
     piLog(`[vectorize] Auto-detected embedding dimensions: ${dimensions}`);
   }
 
-  const store = await initVectorStore(indexDir, dimensions);
-  store.meta.model = embedding.model || "text-embedding-3-small";
-
-  const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
+  const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
 
   for (const rootNode of parseResult.structure || []) {
     nodes.push({
       id: rootNode.nodeId || `L0-${nodes.length}`,
-      text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
+      title: rootNode.title || "",
+      text: `${rootNode.title}\n${rootNode.summary || ""}`,
       level: "L0",
     });
     collectIndexLeafNodes(rootNode, nodes);
@@ -548,30 +562,41 @@ async function vectorizeL0L1Nodes(
   const texts = nodes.map(n => n.text);
   const vectors = await generateEmbeddings(texts, embedding);
 
+  // Build VectorRecord[] and write to JSONL
+  const records: Array<{ nodeId: string; title: string; level: "L0" | "L1"; vector: number[] }> = [];
   for (let i = 0; i < nodes.length; i++) {
-    await appendVector(store, nodes[i].id, vectors[i]);
+    records.push({
+      nodeId: nodes[i].id,
+      title: nodes[i].title,
+      level: nodes[i].level,
+      vector: vectors[i],
+    });
   }
-  
-  return dimensions;
+  await writeVectorJsonl(vectorPath, records);
+
+  piLog(`[vectorize] Wrote ${records.length} vector records to ${vectorPath}`);
+  return { dimensions, nodeCount: records.length };
 }
 
 /**
  * Build BM25 index from parse result
  * Fix: iterate entire structure array (not just structure[0])
+ * BM25 uses full text (title + summary + text) for keyword matching
  */
 function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
-  const nodes: Array<{ id: string; text: string; level: "L0" | "L1" }> = [];
+  const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
 
   for (const rootNode of parseResult.structure || []) {
     // Each top-level element as L0
     nodes.push({
       id: rootNode.nodeId || `L0-${nodes.length}`,
+      title: rootNode.title || "",
       text: `${rootNode.title}\n${rootNode.summary || ""}\n${rootNode.text || ""}`,
       level: "L0",
     });
 
-    // Recursively collect all child nodes as L1
-    collectIndexLeafNodes(rootNode, nodes);
+    // Recursively collect all child nodes as L1 (with full text for BM25)
+    collectIndexLeafNodes(rootNode, nodes, true);
   }
 
   return buildBM25Index(nodes);
@@ -579,20 +604,26 @@ function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
 
 /**
  * Recursively collect all child nodes for BM25/vector indexing
+ * @param includeFullText - If true, include node.text for BM25; if false, use title+summary only for vectorization
  */
 function collectIndexLeafNodes(
   node: any,
-  nodes: Array<{ id: string; text: string; level: "L0" | "L1" }>
+  nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>,
+  includeFullText: boolean = false
 ): void {
   if (!node.nodes || node.nodes.length === 0) return;
 
   for (const child of node.nodes) {
+    const text = includeFullText
+      ? `${child.title}\n${child.summary || ""}\n${child.text || ""}`
+      : `${child.title}\n${child.summary || ""}`;
     nodes.push({
       id: child.nodeId || `L1-${nodes.length}`,
-      text: `${child.title}\n${child.summary || ""}\n${child.text || ""}`,
+      title: child.title || "",
+      text,
       level: "L1",
     });
-    collectIndexLeafNodes(child, nodes);
+    collectIndexLeafNodes(child, nodes, includeFullText);
   }
 }
 

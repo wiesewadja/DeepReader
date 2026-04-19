@@ -71,7 +71,10 @@ export type {
   FileMeta,
   DirectoryIndex,
   SearchIndex,
-  VectorIndexMeta,
+  VectorRecord,
+  PropVectorRecord,
+  CatalogMeta,
+  CatalogBookEntry,
   RerankerOptions,
 } from "./vault/types";
 

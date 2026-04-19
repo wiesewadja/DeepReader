@@ -14,11 +14,10 @@ import type {
 import { IndexErrorCode, IndexError } from "./book-types.js";
 import { searchBM25 } from "./bm25.js";
 import {
-  loadVectorStore,
   generateEmbedding,
-  cosineSearch,
+  cosineSearchJsonl,
 } from "./vault/vectors.js";
-import type { VectorStore } from "./vault/vectors.js";
+import { existsSync } from "node:fs";
 
 /**
  * Generate bookId from file path (SHA-256 first 8 chars)
@@ -71,17 +70,16 @@ export async function searchBook(
 
   // Step 2: Vector search (optional)
   let vectorScores: Map<string, number> = new Map();
-  let vectorStore: VectorStore | null = null;
 
   if (options.embedding) {
     try {
-      vectorStore = await loadVectorStore(indexDir);
-      if (vectorStore && vectorStore.meta.count > 0) {
+      const jsonlPath = path.join(indexDir, "vectors.jsonl");
+      if (existsSync(jsonlPath)) {
         const queryVector = await generateEmbedding(
           options.query,
           options.embedding
         );
-        const vectorResults = await cosineSearch(queryVector, vectorStore, topK * 3);
+        const vectorResults = await cosineSearchJsonl(jsonlPath, queryVector, topK * 3);
         for (const result of vectorResults) {
           vectorScores.set(result.nodeId, result.score);
         }

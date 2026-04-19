@@ -11,7 +11,7 @@ import type {
   RerankerOptions,
   TreeSearchOptions,
 } from "./types";
-import { generateEmbeddings, cosineSearch, loadVectorStore } from "./vectors";
+import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
 import { findNodeById, cosineSimilarity } from "../core/utils";
 import { chatGPT } from "../llm/client";
 import { extractJson } from "../core/utils";
@@ -35,10 +35,13 @@ export async function searchVault(
   // 2. Vector search
   let vectorResults: Array<{ nodeId: string; score: number }> = [];
   if (options.embedding && vectorWeight > 0) {
-    const queryVectors = await generateEmbeddings([query], options.embedding);
-    const vectorStore = await loadVectorStore(index.meta.vaultPath + "/.pageindex");
-    if (vectorStore) {
-      vectorResults = await cosineSearch(queryVectors[0], vectorStore, recallK);
+    try {
+      const queryVector = await generateEmbedding(query, options.embedding);
+      const jsonlPath = index.meta.vaultPath + "/.pageindex/vectors.jsonl";
+      const results = await cosineSearchJsonl(jsonlPath, queryVector, recallK);
+      vectorResults = results.map((r) => ({ nodeId: r.nodeId, score: r.score }));
+    } catch {
+      // Vector search failed, skip
     }
   }
 

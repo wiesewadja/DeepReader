@@ -17,12 +17,14 @@ import { indexFile } from "./index-engine";
 import { aggregateDirectories } from "./aggregate";
 import { buildSearchIndex } from "./search-index";
 import {
-  initVectorStore,
-  loadVectorStore,
+  generateEmbedding,
   generateEmbeddings,
-  appendVector,
-  updateVector,
-  compactVectors,
+  writeVectorJsonl,
+  readVectorJsonl,
+  cosineSearchJsonl,
+  loadCatalog,
+  updateCatalogEntry,
+  removeCatalogEntry,
 } from "./vectors";
 import type {
   ObsidianVaultIndexOptions,
@@ -161,11 +163,6 @@ async function buildOrUpdateVectors(
 ): Promise<void> {
   await mkdir(indexPath, { recursive: true });
 
-  const vectorStore = await loadVectorStore(indexPath);
-  const dimensions = options.embedding?.dimensions || 1536;
-
-  const store = vectorStore || await initVectorStore(indexPath, dimensions);
-
   const changedPaths = new Set(changedFiles.map((f) => f.relativePath));
 
   // Collect texts to embed
@@ -185,29 +182,30 @@ async function buildOrUpdateVectors(
     }
   }
 
+  if (textsToEmbed.length === 0) return;
+
   // Generate embeddings
   const vectors = await generateEmbeddings(
     textsToEmbed.map((t) => t.text),
     options.embedding!
   );
 
-  // Update vector store
+  // Load existing records, merge, and write back
+  const jsonlPath = path.join(indexPath, "vectors.jsonl");
+  const existing = await readVectorJsonl(jsonlPath);
+  const existingMap = new Map(existing.map((r) => [r.nodeId, r]));
+
   for (let i = 0; i < textsToEmbed.length; i++) {
-    const { nodeId, file } = textsToEmbed[i];
-    const existingSlot = store.meta.slots[nodeId];
-
-    if (existingSlot && !existingSlot.deleted) {
-      await updateVector(store, nodeId, vectors[i]);
-    } else {
-      await appendVector(store, nodeId, vectors[i]);
-    }
+    const { nodeId } = textsToEmbed[i];
+    existingMap.set(nodeId, {
+      nodeId,
+      title: nodeId,
+      level: "L1",
+      vector: vectors[i],
+    });
   }
 
-  // Maybe compact
-  if (store.meta.deletedCount / Math.max(store.meta.count, 1) > 0.2) {
-    piLog("[obsidian-vault] Compacting vector store...");
-    await compactVectors(store);
-  }
+  await writeVectorJsonl(jsonlPath, Array.from(existingMap.values()));
 }
 
 function collectChildNodes(

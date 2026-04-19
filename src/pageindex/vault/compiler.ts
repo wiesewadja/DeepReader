@@ -7,7 +7,7 @@ import { extractConcepts, mergeTags } from "./compiler-llm";
 import { generateL0, generateMOC, generateDirectoryIndex, groupExtractionsByTopic } from "./compiler-index";
 import { planMerge, insertWikiLinks, detectRemovedLinks } from "./compiler-enhance";
 import { loadCompilerState, saveCompilerState, loadLinkSnapshots, saveLinkSnapshots } from "./compiler-state";
-import { initVectorStore, generateEmbeddings, appendVector, type VectorStore } from "./vectors";
+import { generateEmbeddings, readVectorJsonl, writeVectorJsonl } from "./vectors";
 import type { EmbeddingOptions } from "./types";
 import type { CompileOptions, CompileResult, ConceptExtraction, NoteMetadata } from "./compiler-types";
 
@@ -229,8 +229,10 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
     if (shouldWrite) {
       if (!existsSync(indexPath)) mkdirSync(indexPath, { recursive: true });
 
-      const dimensions = embedOpts.dimensions || 1024;
-      const store = await initVectorStore(indexPath, dimensions);
+      // Load existing vectors
+      const jsonlPath = join(indexPath, "vectors.jsonl");
+      const existing = await readVectorJsonl(jsonlPath);
+      const existingMap = new Map(existing.map((r) => [r.nodeId, r]));
 
       // 批量生成嵌入
       const texts = noteSummaries.map((n) => n.summary);
@@ -244,7 +246,12 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
         try {
           const vectors = await generateEmbeddings(batch, embedOpts);
           for (let j = 0; j < vectors.length; j++) {
-            await appendVector(store, batchFiles[j], vectors[j]);
+            existingMap.set(batchFiles[j], {
+              nodeId: batchFiles[j],
+              title: batchFiles[j],
+              level: "L1",
+              vector: vectors[j],
+            });
           }
           embedded += vectors.length;
           piLog(`[compiler] Embedded ${embedded}/${texts.length} notes`);
@@ -252,6 +259,9 @@ export async function compileVault(options: CompileOptions): Promise<CompileResu
           result.errors.push({ file: `embed-batch-${i}`, error: String(err) });
         }
       }
+
+      // Write merged vectors back
+      await writeVectorJsonl(jsonlPath, Array.from(existingMap.values()));
 
       piLog(`[compiler] Vector embeddings complete: ${embedded} notes`);
     } else {

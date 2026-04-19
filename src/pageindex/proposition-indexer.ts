@@ -4,10 +4,8 @@
 
 import * as path from "path";
 import * as fs from "fs/promises";
-import { open } from "node:fs/promises";
 import { chatGPT } from "./llm/client.js";
 import {
-  initVectorStore,
   generateEmbedding,
   generateEmbeddings,
 } from "./vault/vectors.js";
@@ -26,7 +24,6 @@ import { log as piLog } from "./core/logger.js";
 const DEFAULT_CARDS_PER_500 = 1;
 const DEFAULT_MIN_CARDS = 3;
 const DEFAULT_MAX_CARDS = 15;
-const PROP_VECTOR_HEADER_SIZE = 24;
 
 export function buildExtractionPrompt(
   chapterText: string,
@@ -470,59 +467,17 @@ async function vectorizeCards(
 ): Promise<void> {
   const texts = cards.map(c => `${c.answer}\n${c.context}\n${c.tags.join(" ")}`);
 
-  let dimensions = embedding.dimensions;
-  if (!dimensions) {
-    const testEmbedding = await generateEmbedding("test", embedding);
-    dimensions = testEmbedding.length;
-    piLog(`[proposition-indexer] Auto-detected dimensions: ${dimensions}`);
-  }
-
-  const propVectorPath = path.join(indexDir, "prop_vectors.f32");
-  const propMetaPath = path.join(indexDir, "prop_vectors.meta.json");
-  
-  const meta = {
-    model: embedding.model || "text-embedding-3-small",
-    dimensions,
-    count: cards.length,
-    deletedCount: 0,
-    indexedAt: new Date().toISOString(),
-    slots: {} as Record<string, { slotIndex: number; deleted: boolean }>,
-  };
-
-  for (let i = 0; i < cards.length; i++) {
-    meta.slots[cards[i].id] = { slotIndex: i, deleted: false };
-  }
-
   const allVectors = await generateEmbeddings(texts, embedding);
-  const vectorData = new Float32Array(cards.length * dimensions);
-  
-  for (let i = 0; i < allVectors.length; i++) {
-    vectorData.set(allVectors[i], i * dimensions);
+
+  // Build JSONL records: each line = { cardId, vector }
+  const records: string[] = [];
+  for (let i = 0; i < cards.length; i++) {
+    const record = { cardId: cards[i].id, vector: allVectors[i] };
+    records.push(JSON.stringify(record));
   }
 
-  const header = buildPropVectorHeader(dimensions, cards.length);
-  const fileHandle = await fs.open(propVectorPath, "w");
-  await fileHandle.write(Buffer.from(header));
-  await fileHandle.write(Buffer.from(vectorData.buffer));
-  await fileHandle.close();
+  const jsonlPath = path.join(indexDir, "prop-vectors.jsonl");
+  await fs.writeFile(jsonlPath, records.join("\n") + "\n", "utf-8");
 
-  await fs.writeFile(propMetaPath, JSON.stringify(meta, null, 2), "utf-8");
-  
-  piLog(`[proposition-indexer] Vectorized ${cards.length} cards to ${propVectorPath}`);
-}
-
-function buildPropVectorHeader(dimensions: number, count: number): ArrayBuffer {
-  const buffer = new ArrayBuffer(PROP_VECTOR_HEADER_SIZE);
-  const view = new DataView(buffer);
-
-  const encoder = new TextEncoder();
-  const magicBytes = encoder.encode("BPI_VEC");
-  new Uint8Array(buffer, 0, 8).set(magicBytes);
-
-  view.setUint32(8, 1, true);
-  view.setUint32(12, dimensions, true);
-  view.setUint32(16, count, true);
-  view.setUint32(20, 0, true);
-
-  return buffer;
+  piLog(`[proposition-indexer] Vectorized ${cards.length} cards to ${jsonlPath}`);
 }

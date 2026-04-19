@@ -55,15 +55,6 @@ export interface SearchIndex {
   nodeMap: Record<string, { file: string; lineNum?: number; localNodeId?: string }>;
 }
 
-export interface VectorIndexMeta {
-  model: string;
-  dimensions: number;
-  count: number;
-  deletedCount: number;
-  indexedAt: string;
-  slots: Record<string, { slotIndex: number; deleted: boolean }>;
-}
-
 export interface VaultIndexMeta {
   version: number;
   indexedAt: string;
@@ -82,6 +73,38 @@ export interface VaultIndexResult {
   directoriesIndex: Record<string, DirectoryIndex>;
   searchIndex: SearchIndex;
   meta: VaultIndexMeta;
+}
+
+// ─── JSONL Vector Storage Types ───────────────────────────────
+
+/** 单条向量记录（JSONL 每行的结构） */
+export interface VectorRecord {
+  nodeId: string;
+  title: string;
+  level: "L0" | "L1";
+  vector: number[];
+}
+
+/** 单条 proposition 向量记录 */
+export interface PropVectorRecord {
+  cardId: string;
+  vector: number[];
+}
+
+/** 全局目录 */
+export interface CatalogMeta {
+  version: number;
+  books: Record<string, CatalogBookEntry>;
+}
+
+/** 全局目录中每本书的条目 */
+export interface CatalogBookEntry {
+  title: string;
+  vectorModel: string;
+  dimensions: number;
+  nodeCount: number;
+  hasPropositions: boolean;
+  indexedAt: string;
 }
 
 export interface RerankerOptions {
