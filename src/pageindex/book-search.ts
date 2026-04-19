@@ -119,7 +119,7 @@ export async function searchBook(
     const chapter = bookMeta.chapters.find((ch) => ch.id === nodeId);
     if (!chapter) {
       // L0 node (book root) - use description as context
-      if (nodeId.startsWith("L0-") || nodeId === "book_" + bookId) {
+      if (nodeId === "BOOK" || nodeId.startsWith("L0-") || nodeId === "book_" + bookId) {
         const mdFilePath = path.join(vaultPath, bookMeta.title + ".md");
         try {
           const { rawText, truncated } = await readChapterContent(

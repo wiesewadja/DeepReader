@@ -255,6 +255,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         coverPath: coverRelPath || undefined,
       });
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
+      (parseResult as any)._hierarchicalTree = exportResult.treeNodes;
     }
   } catch (error) {
     throw new IndexError(
@@ -297,13 +298,41 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
   try {
     const nodeFileMap = (parseResult as any)._nodeFileMap || {};
+    const hierarchicalTree = (parseResult as any)._hierarchicalTree;
+    let finalStructure = parseResult.structure;
+
+    if (hierarchicalTree && hierarchicalTree.length > 0) {
+      // Build nodeId → {summary, text} map from flat parseResult
+      const summaryMap = new Map<string, { summary?: string; text?: string }>();
+      for (const node of parseResult.structure || []) {
+        if (node.nodeId) {
+          summaryMap.set(node.nodeId, { summary: node.summary, text: node.text });
+        }
+      }
+      // Merge summaries into hierarchical tree, only keep TreeNode fields
+      const enrichNode = (n: any): any => {
+        const data = summaryMap.get(n.nodeId);
+        const result: any = {
+          title: n.title,
+          nodeId: n.nodeId,
+          startIndex: n.startIndex,
+          endIndex: n.endIndex,
+        };
+        if (data?.summary || n.summary) result.summary = data?.summary || n.summary;
+        if (data?.text || n.text) result.text = data?.text || n.text;
+        if (n.nodes?.length) result.nodes = n.nodes.map(enrichNode);
+        return result;
+      };
+      finalStructure = hierarchicalTree.map(enrichNode);
+    }
+
     const treeData = {
       title: rootTitle,
       exportName,
       docDescription: parseResult.docDescription,
       source: options.filePath,
       nodeFileMap,
-      structure: parseResult.structure,
+      structure: finalStructure,
     };
     await fs.writeFile(
       path.join(indexDir, "tree.json"),
@@ -549,14 +578,19 @@ async function vectorizeL0L1Nodes(
 
   const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
 
+  // L0: one vector for the entire book (title + docDescription)
+  const bookSummary = parseResult.docDescription || "";
+  const bookTitle = parseResult.title || "";
+  nodes.push({
+    id: "BOOK",
+    title: bookTitle,
+    text: `${bookTitle}\n${bookSummary}`,
+    level: "L0",
+  });
+
+  // L1: one vector per chapter (title + summary), flatten all nodes in structure
   for (const rootNode of parseResult.structure || []) {
-    nodes.push({
-      id: rootNode.nodeId || `L0-${nodes.length}`,
-      title: rootNode.title || "",
-      text: `${rootNode.title}\n${rootNode.summary || ""}`,
-      level: "L0",
-    });
-    collectIndexLeafNodes(rootNode, nodes);
+    collectAllChapterNodes(rootNode, nodes);
   }
 
   const texts = nodes.map(n => n.text);
@@ -624,6 +658,31 @@ function collectIndexLeafNodes(
       level: "L1",
     });
     collectIndexLeafNodes(child, nodes, includeFullText);
+  }
+}
+
+/**
+ * Recursively collect ALL nodes as L1 for vectorization (title + summary).
+ * Unlike collectIndexLeafNodes which only collects children,
+ * this also includes the node itself — every chapter/section gets a vector.
+ */
+function collectAllChapterNodes(
+  node: any,
+  nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>
+): void {
+  // Add this node as L1 (if it has a nodeId and meaningful content)
+  if (node.nodeId && node.title) {
+    nodes.push({
+      id: node.nodeId,
+      title: node.title,
+      text: `${node.title}\n${node.summary || ""}`,
+      level: "L1",
+    });
+  }
+
+  // Recurse into children
+  for (const child of node.nodes || []) {
+    collectAllChapterNodes(child, nodes);
   }
 }
 

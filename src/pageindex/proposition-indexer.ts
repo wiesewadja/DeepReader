@@ -357,7 +357,7 @@ export async function indexPropositions(
       vaultPath, 
       "DeepReader", 
       treeData.exportName || treeData.title, 
-      chapter.fileName + ".md"
+      chapter.fileName.endsWith(".md") ? chapter.fileName : chapter.fileName + ".md"
     );
     let chapterText = "";
     
