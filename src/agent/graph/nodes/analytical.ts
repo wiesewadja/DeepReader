@@ -11,7 +11,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { runReactLoop } from '../subgraphs/react-loop.js';
+import { runReactLoop, runPlanExecute } from '../subgraphs/react-loop.js';
 import {
   buildAnalyticalSystemPrompt,
   buildScopedChaptersBlock,
@@ -199,12 +199,61 @@ export async function analyticalNode(
         const hits = preResults.slice(0, 3).map(r => ({
           node_id: r.nodeId,
           title: r.title,
+          score: r.score,
           matched_blocks: r.matchedBlocks.slice(0, 2).map(b => ({
             block_id: b.blockId.replace(/^\^/, ''),
             content: b.content.slice(0, 200),
           })),
         }));
 
+        // === Early stop: if pre-search quality is high, skip ReAct entirely ===
+        const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
+        const EARLY_STOP_THRESHOLD = 0.6;
+
+        if (avgScore >= EARLY_STOP_THRESHOLD && hits.length >= 2) {
+          log(`[S2 Analytical] 早停: pre-search 平均分=${avgScore.toFixed(2)} >= ${EARLY_STOP_THRESHOLD}，跳过 ReAct`);
+
+          const blockLines = hits.flatMap(h =>
+            h.matched_blocks.map(b =>
+              `【${h.title}】${b.content}`
+            )
+          );
+
+          const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果直接回答用户问题，无需调用任何工具。如果信息不足，说明还需要查看哪些章节。
+
+<pre_search_results>
+${blockLines.join('\n\n')}
+</pre_search_results>
+
+用户问题：${state.betterQuestion || state.rewrittenQuery || ctx?.rawUserQuery || ''}
+
+输出格式要求：
+- 引用来源用 [[${state.pdfName || ctx?.pdfName || ''}/章节#^block_id|自然语言]] 格式
+- 如果检索结果足够，给出完整分析
+- 如果不够，简要说明并指出需要补充搜索的方向`;
+
+          const directResponse = await mainModel.invoke([
+            new SystemMessage(directPrompt),
+            new HumanMessage(state.betterQuestion || state.rewrittenQuery || ''),
+          ], config);
+
+          const directContent = typeof directResponse.content === 'string'
+            ? directResponse.content : JSON.stringify(directResponse.content);
+
+          return {
+            analysisResult: directContent,
+            toolResultsSnapshot: hits.flatMap(h =>
+              h.matched_blocks.map(b => ({
+                toolName: 'pre_search',
+                args: { query: 'auto', node_id: h.node_id },
+                result: b.content,
+                originalResultLength: b.content.length,
+              }))
+            ),
+          };
+        }
+
+        // Normal path: inject compact pre-search results
         const blockLines = hits.flatMap(h =>
           h.matched_blocks.map(b =>
             `【${h.title}】${b.content}`
@@ -217,7 +266,7 @@ export async function analyticalNode(
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, ${suggestedKeywords.length} 个关键词`);
+        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${suggestedKeywords.length} 个关键词`);
       } else {
         log(`[S2 Analytical] 预检索结果不足 (${preResults.length} 条), 跳过注入`);
       }
@@ -236,25 +285,24 @@ ${blockLines.join('\n\n')}
   const s2ToolNames = ['search_book', 'read_book_section'];
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 
-  // Run ReAct subgraph (with pre-search context if available)
-  const result = await runReactLoop(
-    [
-      new SystemMessage(fullSystemPrompt),
-      new HumanMessage(finalUserMessage),
-    ],
-    {
-      tools: s2Tools,
-      model: mainModel,
-      maxIterations: 6,
-      maxToolCalls: 3,
-      forcedConclusionContext: {
-        pdfName: state.pdfName || ctx?.pdfName,
-        scopeNodeIds: validatedScopeNodeIds,
-      },
-      toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+  const loopMessages = [
+    new SystemMessage(fullSystemPrompt),
+    new HumanMessage(finalUserMessage),
+  ];
+  const loopConfig = {
+    tools: s2Tools,
+    model: mainModel,
+    maxIterations: 6,
+    maxToolCalls: 3,
+    forcedConclusionContext: {
+      pdfName: state.pdfName || ctx?.pdfName,
+      scopeNodeIds: validatedScopeNodeIds,
     },
-    config,
-  );
+    toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+  };
+
+  // Plan-then-Execute (default): 2 LLM calls instead of iterative ReAct
+  const result = await runPlanExecute(loopMessages, loopConfig, config);
 
   // Store results
   const stateUpdate: Partial<CognitiveEngineState> = {
@@ -277,8 +325,8 @@ ${blockLines.join('\n\n')}
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: re-run with feedback, preserving pre-search context
-      const refinedResult = await runReactLoop(
+      // User rejected: re-run with feedback using Plan-then-Execute
+      const refinedResult = await runPlanExecute(
         [
           new SystemMessage(fullSystemPrompt),
           new HumanMessage(finalUserMessage),
