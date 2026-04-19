@@ -370,7 +370,7 @@ export class SidebarView extends ItemView {
      * 处理系统文件上传（已弃用 - Page Index 不需要上传）
      */
     private async handleSystemUpload(): Promise<void> {
-        new Notice('请使用在线书库添加书籍', 3000);
+        new Notice('请使用我的书库添加书籍', 3000);
     }
 
 
@@ -663,7 +663,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打在线书库弹窗
+     * 打我的书库弹窗
      */
     private async openLibraryModal(): Promise<void> {
         await this.loadIndexes();

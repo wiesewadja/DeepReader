@@ -41,12 +41,12 @@ PageIndex (核心引擎)
 - **开发**: `npm run dev`（监听模式）-> 在 Obsidian 中重新加载（Cmd+R）
 - **构建**: `npm run build`（包含类型检查）
 - **测试**: `npm run test:run`（Vitest）
-- **部署**: `npm run deploy && obsidian plugin:reload id=deepreader`
+- **部署**: `npm run deploy`（构建并复制到 test-vault）
 
 ### 调试
 - **Obsidian Console**: Cmd+Option+I 打开开发者工具
 - **插件实例**: `app.plugins.plugins['deepreader']`
-- **测试 Vault**: `/Users/lizhao/workspace/deepreadertest`
+- **测试 Vault**: 项目内 `test-vault/` 目录
 
 ---
 
@@ -74,7 +74,7 @@ PageIndex (核心引擎)
   - `pdf-to-obsidian.ts`: PDF → Markdown
   - `epub-to-obsidian.ts`: EPUB → Markdown
 - `vault/`: 向量存储
-  - `vectors.ts`: Float32 向量存储
+  - `vectors.ts`: JSONL 向量存储 + 全局目录
   - `types.ts`: 类型定义
 
 ### 前端结构 (`frontend/src`)
@@ -122,7 +122,7 @@ const results = await searchBook({
 
 - **索引位置**: `.pageindex/{bookId}/`
 - **BookId 生成**: SHA-256(filePath).slice(0, 8)
-- **存储内容**: book-meta.json, bm25.json, vectors.f32
+- **存储内容**: book-meta.json, bm25.json, vectors.jsonl, catalog.json
 
 ### 3. LLM 配置
 
@@ -155,7 +155,7 @@ settings.embedding = {
 ### 类型检查
 - **问题**: TypeScript 类型错误
 - **修复**: 确保 `obsidian` 类型定义存在，或使用 `// @ts-ignore` 并注明原因
-- **测试 Vault**: `/Users/lizhao/workspace/deepreadertest`
+- **测试 Vault**: 项目内 `test-vault/` 目录
 
 ### PageIndex 导入
 - **问题**: 导入路径错误

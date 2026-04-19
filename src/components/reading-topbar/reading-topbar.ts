@@ -1,6 +1,6 @@
 /**
  * DeepPDF 阅读顶栏组件
- * 极简风格：左侧书籍封面+书名，右侧在线书库和设置按钮
+ * 极简风格：左侧书籍封面+书名，右侧我的书库和设置按钮
  */
 
 import { Component } from '../component.js';
@@ -57,14 +57,14 @@ export class ReadingTopbar extends Component {
 
         container.appendChild(leftSection);
 
-        // 右侧：操作按钮（在线书库 + 设置）
+        // 右侧：操作按钮（我的书库 + 设置）
         const rightSection = document.createElement('div');
         rightSection.className = 'deeppdf-topbar-right';
 
-        // 在线书库按钮
+        // 我的书库按钮
         const libraryBtn = document.createElement('button');
         libraryBtn.className = 'deeppdf-topbar-action-btn';
-        libraryBtn.title = '在线书库';
+        libraryBtn.title = '我的书库';
         libraryBtn.innerHTML = Icons.library;
         libraryBtn.addEventListener('click', (e) => {
             e.stopPropagation();
