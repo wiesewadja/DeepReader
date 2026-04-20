@@ -253,6 +253,10 @@ export interface MessageData {
 	hidden?: boolean;
 	/** 可选：是否折叠（用于长消息的折叠显示） */
 	collapsed?: boolean;
+	/** 可选：书籍封面 URL（用于最大化展示） */
+	bookCoverUrl?: string;
+	/** 可选：书籍作者（用于最大化展示） */
+	bookAuthor?: string;
 }
 
 
@@ -805,6 +809,7 @@ export class AIMessage extends Message {
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
 			getAllMessages?: () => MessageData[];
+			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 			app?: App;
 		}
 	) {
@@ -816,6 +821,7 @@ export class AIMessage extends Message {
 		this.onQuote = options?.onQuote;
 		this.onDelete = options?.onDelete;
 		this.getAllMessages = options?.getAllMessages || null;
+		this.getCurrentBookInfo = options?.getCurrentBookInfo || null;
 		// 初始化渲染跟踪变量
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
@@ -1416,8 +1422,34 @@ export class AIMessage extends Message {
 		// ── 工具栏 ──
 		const toolbar = panel.createEl('div', { cls: 'deeppdf-fullscreen-toolbar' });
 		const toolbarLeft = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-left' });
+
+		// 从全局状态获取当前书籍信息（优先），或从消息中获取
+		const currentMsg = aiMessages[currentLetterIdx] || this.data;
+		const globalBookInfo = this.getCurrentBookInfo?.() || { coverUrl: null, author: null, bookName: null };
+		const coverUrl = currentMsg.bookCoverUrl || globalBookInfo.coverUrl;
+		const bookName = currentMsg.pdfName || globalBookInfo.bookName;
+		const bookAuthor = currentMsg.bookAuthor || globalBookInfo.author;
+
+		// 书籍封面和作者信息
+		const bookInfoContainer = toolbarLeft.createEl('div', { cls: 'deeppdf-fullscreen-book-info' });
+
+		// 书籍封面
+		const bookCoverEl = bookInfoContainer.createEl('div', { cls: 'deeppdf-fullscreen-book-cover' });
+		if (coverUrl) {
+			bookCoverEl.innerHTML = `<img src="${coverUrl}" alt="书籍封面" />`;
+			bookCoverEl.addClass('has-cover');
+		} else {
+			bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+		}
+
+		// 书名和作者
+		const bookTextInfo = bookInfoContainer.createEl('div', { cls: 'deeppdf-fullscreen-book-text' });
+		bookTextInfo.createEl('span', { cls: 'deeppdf-fullscreen-book-title', text: bookName || '未知书籍' });
+		bookTextInfo.createEl('span', { cls: 'deeppdf-fullscreen-book-author', text: bookAuthor || '' });
+
+		// 标题和问题
 		toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-title', text: '奚童来信' });
-		const questionEl = toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-question', text: aiMessages[currentLetterIdx]?.question || this.data.question || '' });
+		const questionEl = toolbarLeft.createEl('span', { cls: 'deeppdf-fullscreen-question', text: currentMsg.question || '' });
 
 		const toolbarRight = toolbar.createEl('div', { cls: 'deeppdf-fullscreen-toolbar-right' });
 		const pageInfo = toolbarRight.createEl('span', { cls: 'deeppdf-fullscreen-page-info' });
@@ -1536,6 +1568,33 @@ export class AIMessage extends Message {
 		});
 
 		// ── 翻信按钮 ──
+		const bookCoverRef = toolbarLeft.querySelector('.deeppdf-fullscreen-book-cover') as HTMLElement;
+		const bookTitleRef = toolbarLeft.querySelector('.deeppdf-fullscreen-book-title') as HTMLElement;
+		const bookAuthorRef = toolbarLeft.querySelector('.deeppdf-fullscreen-book-author') as HTMLElement;
+
+		const updateBookInfo = (msg: MessageData) => {
+			const globalInfo = this.getCurrentBookInfo?.() || { coverUrl: null, author: null, bookName: null };
+			const msgCoverUrl = msg.bookCoverUrl || globalInfo.coverUrl;
+			const msgBookName = msg.pdfName || globalInfo.bookName;
+			const msgAuthor = msg.bookAuthor || globalInfo.author;
+
+			if (bookCoverRef) {
+				if (msgCoverUrl) {
+					bookCoverRef.innerHTML = `<img src="${msgCoverUrl}" alt="书籍封面" />`;
+					bookCoverRef.addClass('has-cover');
+				} else {
+					bookCoverRef.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+					bookCoverRef.removeClass('has-cover');
+				}
+			}
+			if (bookTitleRef) {
+				bookTitleRef.textContent = msgBookName || '未知书籍';
+			}
+			if (bookAuthorRef) {
+				bookAuthorRef.textContent = msgAuthor || '';
+			}
+		};
+
 		const navigateToLetter = (targetIdx: number) => {
 			if (targetIdx < 0 || targetIdx >= aiMessages.length || targetIdx === currentLetterIdx) return;
 			if (!this.app) return;
@@ -1550,6 +1609,7 @@ export class AIMessage extends Message {
 
 				// 更新工具栏
 				questionEl.textContent = target.question || '';
+				updateBookInfo(target);
 
 				// 更新面板和内容区图案
 				const panelClasses = ['deeppdf-fullscreen-panel'];
@@ -1620,6 +1680,7 @@ export class AIMessage extends Message {
 	}
 
 	private getAllMessages: (() => MessageData[]) | null = null;
+	private getCurrentBookInfo: (() => { coverUrl: string | null; author: string | null; bookName: string | null }) | null = null;
 	private fullscreenKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 	private inkTrailCanvas: HTMLCanvasElement | null = null;
 	private inkTrailCtx: CanvasRenderingContext2D | null = null;
@@ -1867,6 +1928,7 @@ export function createMessage(
 		onQuote?: (metadata: QuoteMetadata) => void;
 		onDelete?: () => void;
 		getAllMessages?: () => MessageData[];
+		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		app?: App;
 	}
 ): Message {

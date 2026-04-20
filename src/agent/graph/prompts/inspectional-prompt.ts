@@ -28,6 +28,7 @@ export function formatTreeStructure(
 
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
+    // 简化格式：只传 file_name，不含书名（S4 会补全）
     const linkPart = node.file_name ? `, link: [[${node.file_name}]]` : '';
     const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}${linkPart})`;
     lines.push(titleLine);
@@ -70,7 +71,7 @@ export function buildInspectionalSystemPrompt(
 1. 仔细阅读目录树和章节摘要
 2. 直接生成一份详细的《全书结构检视报告》(structural_analysis)
 3. 解答用户的宏观问题，基于目录信息组织回答
-4. 引用章节时，直接使用目录树中每个节点的 link 字段值，不要自己组装链接
+4. 引用章节时，直接复制目录树中 link 字段的值（如 [[13 - 第一章]]）
 5. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
 </task_branch>`
     : `<task_branch name="圈定战区">

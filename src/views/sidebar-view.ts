@@ -56,6 +56,8 @@ export class SidebarView extends ItemView {
     private chatInput: ChatInput | null = null;
     private currentIndexId: string | null = null;
     private currentPdfName: string | null = null;
+    private currentBookCoverUrl: string | null = null;  // 当前书籍封面 URL
+    private currentBookAuthor: string | null = null;  // 当前书籍作者
     private isProcessing: boolean = false;
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
     private streamController: AbortController | null = null;  // 流式请求控制器
@@ -746,12 +748,14 @@ export class SidebarView extends ItemView {
 
         if (coverFile) {
             const coverUrl = this.app.vault.getResourcePath(coverFile as any);
+            this.currentBookCoverUrl = coverUrl;  // 存储封面 URL
             this.readingTopbar?.setBookCover(coverUrl);
             log(`[DeepPDF] 从本地加载书籍封面: ${foundPath}`);
             return;
         }
 
         // 封面不存在，使用默认图标
+        this.currentBookCoverUrl = null;  // 清空封面 URL
         this.readingTopbar?.setBookCover(null);
         log(`[DeepPDF] 书籍封面不存在: DeepReader/covers/${bookName}.{png,jpg,...}`);
     }
@@ -862,6 +866,9 @@ export class SidebarView extends ItemView {
             }
         }
         log(`[DeepPDF] 最终使用的作者: author="${author}"`);
+
+        // 存储当前书籍作者（用于消息传递）
+        this.currentBookAuthor = author || null;
 
         // 更新 UI
         this.messageList?.setCurrentPdfName(displayName);
@@ -1462,7 +1469,12 @@ export class SidebarView extends ItemView {
             },
             onDelete: (messageId: string) => {
                 this.handleDeleteMessagePair(messageId);
-            }
+            },
+            getCurrentBookInfo: () => ({
+                coverUrl: this.currentBookCoverUrl,
+                author: this.currentBookAuthor,
+                bookName: this.currentPdfName
+            })
         }, this.app);
 
         const messageListEl = this.messageList.getElement();
@@ -1757,7 +1769,9 @@ export class SidebarView extends ItemView {
                     currentStatus: '开始阅读...',
                     pdfName: this.currentPdfName || undefined,
                     question: message,  // 保存用户的问题
-                    conversationId: this.sessionId || undefined  // 保存会话ID用于双向链接
+                    conversationId: this.sessionId || undefined,  // 保存会话ID用于双向链接
+                    bookCoverUrl: this.currentBookCoverUrl || undefined,  // 书籍封面 URL
+                    bookAuthor: this.currentBookAuthor || undefined  // 书籍作者
                 };
                 this.messageList?.addMessage(aiMessageData);
             }
