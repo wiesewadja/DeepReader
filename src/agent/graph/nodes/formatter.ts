@@ -105,9 +105,39 @@ export async function formatterNode(
     extractedBlockIds: r.extractedBlockIds,
   }));
 
+  // 记录验证结果到 LangSmith trace metadata
+  const verificationMetadata = {
+    tool_results_count: toolResults.length,
+    wiki_links_before: 0,
+    wiki_links_after: 0,
+    ghost_refs_removed: 0,
+  };
+
   if (toolResults.length > 0) {
     const verificationResult = await verifyAndCleanContent(content, toolResults);
     content = verificationResult.content;
+    
+    // 更新 metadata
+    verificationMetadata.wiki_links_before = verificationResult.totalRefs;
+    verificationMetadata.wiki_links_after = verificationResult.totalRefs - verificationResult.ghostRefs;
+    verificationMetadata.ghost_refs_removed = verificationResult.ghostRefs;
+    
+    // 发送验证结果到 LangSmith（如果有 tracer）
+    if (config.configurable?.langsmithTracer) {
+      try {
+        const client = config.configurable.langsmithTracer.client;
+        await client.createRun({
+          name: 'wiki_link_verification',
+          run_type: 'tool',
+          inputs: { content_length: content.length },
+          outputs: verificationResult,
+          parent_run_id: config.configurable?.parentRunId,
+          extra: { metadata: verificationMetadata },
+        });
+      } catch {
+        // 静默失败，不影响主流程
+      }
+    }
   }
 
   // HITL interrupt (if enabled)
