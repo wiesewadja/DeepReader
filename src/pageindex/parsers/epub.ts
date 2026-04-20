@@ -149,9 +149,22 @@ function createTurndownServiceWithBlocks(
       },
     },
 
-    // Paragraphs - add block ID to every paragraph
+    // Paragraphs - add block ID to every paragraph, detect potential h3 headings
+    // Only process leaf paragraph elements (not containers with nested p/div)
     paragraph: {
-      filter: ["p", "div", "section", "blockquote"],
+      filter: (node: any) => {
+        const tagName = node.tagName?.toLowerCase();
+        if (!["p", "div", "section", "blockquote"].includes(tagName)) {
+          return false;
+        }
+        // Skip container elements that have nested paragraph-like elements
+        // This prevents double-processing when <div><p>text</p></div>
+        const hasNestedParagraph = node.querySelector?.("p, div:not(:empty), section, blockquote");
+        if (hasNestedParagraph) {
+          return false;
+        }
+        return true;
+      },
       replacement: (content, node: any) => {
         if (!content.trim()) return "";
 
@@ -179,9 +192,81 @@ function createTurndownServiceWithBlocks(
           blockMap.set(childId, blockId);
         }
 
+        const trimmedContent = content.trim();
+
+        // Detect potential h3 heading: short text without ending punctuation
+        // but exclude image captions/alt text
+        const isPotentialHeading = (text: string, node: any): boolean => {
+          // Skip image-related patterns:
+          // - Markdown image syntax: ![...]
+          // - Chinese image captions: "图1", "图 1-1", "插图说明", etc.
+          const imageCaptionPatterns = [
+            /^图\s*\d/i,           // "图1", "图 1-1", "图2.3"
+            /^插图/i,              // "插图说明"
+            /^配图/i,              // "配图..."
+            /^示意图/i,            // "示意图"
+            /^图示/i,              // "图示"
+            /^\*\s*图/i,           // "* 图1" (italic caption)
+            /^Figure\s*\d/i,       // "Figure 1", "Figure 2.1" (English)
+          ];
+          
+          for (const pattern of imageCaptionPatterns) {
+            if (pattern.test(text)) return false;
+          }
+          
+          // Skip if contains image markdown syntax
+          if (text.includes("![") || text.includes("](")) {
+            return false;
+          }
+
+          // Skip if parent or previous sibling is figure/image related
+          const parentTag = node.parentNode?.tagName?.toLowerCase();
+          if (parentTag === "figure" || parentTag === "figcaption") {
+            return false;
+          }
+
+          // Check previous sibling for image
+          const prevSibling = node.previousElementSibling;
+          if (prevSibling && (prevSibling.tagName?.toLowerCase() === "img" || 
+              prevSibling.tagName?.toLowerCase() === "figure")) {
+            return false;
+          }
+
+          // Check for any child img elements
+          if (node.querySelector?.("img")) {
+            return false;
+          }
+
+          // Text length check: headings are typically short (≤ 60 chars)
+          if (text.length > 60) return false;
+
+          // Check for ending punctuation (Chinese and English)
+          // Chinese: 。！？；：…"」』
+          // English: .!?;:
+          // Note: question mark (?) is allowed for question-style headings
+          const endingPunctuation = /[。！；：…"」』。;:]$/;
+          if (endingPunctuation.test(text)) {
+            return false;
+          }
+
+          // Additional check: should have some content (not just whitespace/symbols)
+          const meaningfulChars = text.replace(/[^\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7afa-zA-Z0-9]/g, "");
+          if (meaningfulChars.length < 3) {
+            return false;
+          }
+
+          // Likely a heading if passed all checks
+          return true;
+        };
+
+        // Check if this paragraph could be a heading
+        const couldBeHeading = isPotentialHeading(trimmedContent, node);
+
         // Add block reference marker at the end of content (same line)
-        // Obsidian requires blockId to be on the same line as the paragraph content
-        return `\n\n${content.trim()} ^${blockId}\n\n`;
+        if (couldBeHeading) {
+          return `\n\n### ${trimmedContent} ^${blockId}\n\n`;
+        }
+        return `\n\n${trimmedContent} ^${blockId}\n\n`;
       },
     },
 
