@@ -14,6 +14,7 @@ import {
   buildFormatterUserMessage,
 } from '../prompts/formatter-prompt';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
+import { stripThinkTags } from '../../../config/thinking-models.js';
 
 /**
  * S4 Formatter node: transforms analysis into Obsidian-formatted output.
@@ -58,7 +59,7 @@ export async function formatterNode(
       }
     }
 
-    return { formattedOutput: content };
+    return { formattedOutput: stripThinkTags(content) };
   }
 
   // === Normal mode (depth >= 1): format with full context ===
@@ -144,5 +145,5 @@ export async function formatterNode(
     }
   }
 
-  return { formattedOutput: content };
+  return { formattedOutput: stripThinkTags(content) };
 }

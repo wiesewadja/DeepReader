@@ -866,6 +866,10 @@ export default class DeepPDFPlugin extends Plugin {
 
                 // Human-in-the-Loop 设置
                 enableHumanReview: this.settings.enableHumanReview,
+
+                // 思考模型控制
+                disableThinking: chatConfig?.disableThinking,
+                fastDisableThinking: routerConfig?.disableThinking,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');

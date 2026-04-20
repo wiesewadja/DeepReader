@@ -6,6 +6,8 @@
 import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
 import type { ITraceContext } from './tracing/types';
 import { agentLog } from '../utils/logger';
+import { getDisableThinkingParams } from '../config/thinking-models.js';
+import { fetchWithCorsFallback, safeRequest } from '../utils/safe-request.js';
 
 /**
  * LLM 客户端配置选项
@@ -19,6 +21,8 @@ export interface LLMClientOptions {
   model?: string;
   /** 服务商显示名称（用于日志） */
   providerName?: string;
+  /** 禁用思考过程：undefined=自动检测, true=强制禁用, false=不禁用 */
+  disableThinking?: boolean;
 }
 
 /**
@@ -62,12 +66,14 @@ export class LLMClient {
   private baseUrl: string;
   private model: string;
   private providerName: string;
+  private disableThinking?: boolean;
 
   constructor(options: LLMClientOptions) {
     this.#apiKey = options.apiKey;
     this.baseUrl = options.baseUrl || 'https://api.deepseek.com';
     this.model = options.model || 'deepseek-chat';
     this.providerName = options.providerName || 'Unknown';
+    this.disableThinking = options.disableThinking;
   }
 
   /**
@@ -167,9 +173,14 @@ export class LLMClient {
     agentLog(`[LLM] 🤖 使用服务商: ${this.providerName} | 模型: ${this.model} | API: ${this.baseUrl}`);
     agentLog(`[LLM] 📤 发送请求: ${messages.length} 条消息, ~${inputEstimate} tokens, ${tools.length} 个工具`);
 
+    // 计算禁用思考参数：undefined=自动检测, true=强制禁用, false=不禁用
+    const disableThinkingParams = this.disableThinking !== false
+      ? (getDisableThinkingParams(this.model) ?? {})
+      : {};
+
     try {
       const fetchStart = performance.now();
-      const response = await fetch(apiUrl, {
+      const response = await fetchWithCorsFallback(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,6 +191,7 @@ export class LLMClient {
           messages: cleanedMessages,
           tools: tools.length > 0 ? tools : undefined,
           stream: true,
+          ...disableThinkingParams,
         }),
         signal: controller.signal,
       });
@@ -370,12 +382,11 @@ export class LLMClient {
   }> {
     const apiUrl = `${this.baseUrl}/chat/completions`;
 
-    const response = await fetch(apiUrl, {
+    const response = await safeRequest({
+      url: apiUrl,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.#apiKey}`,
-      },
+      contentType: 'application/json',
+      headers: { Authorization: `Bearer ${this.#apiKey}` },
       body: JSON.stringify({
         model: this.model,
         messages: messages,
@@ -385,12 +396,11 @@ export class LLMClient {
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API returned ${response.status}: ${errorText}`);
+    if (response.status >= 400) {
+      throw new Error(`API returned ${response.status}: ${response.text}`);
     }
 
-    const data = await response.json();
+    const data = response.json;
     const choice = data.choices?.[0];
 
     if (!choice) {

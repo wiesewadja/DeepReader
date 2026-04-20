@@ -16,6 +16,7 @@ interface ResolvedConfig {
 	model: string;
 	provider: string;
 	embeddingBatchSize?: number;
+	disableThinking?: boolean;
 }
 
 /**

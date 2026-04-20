@@ -1,9 +1,12 @@
 /**
  * pageindex-llm: OpenAI-compatible API utilities
  * Supports OpenAI, LM Studio, Ollama, and other compatible endpoints
- * 
+ *
  * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
+
+import { isThinkingModel as sharedIsThinkingModel, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
+import { safeRequest } from '../../utils/safe-request.js';
 
 /** Cross-runtime sleep function */
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -39,15 +42,10 @@ function isLMStudio(baseUrl?: string): boolean {
 
 /**
  * Check if the model is a thinking model (supports reasoning parameter)
+ * Delegates to shared utility for consistent detection across all paths.
  */
 function isThinkingModel(model: string): boolean {
-  const thinkingModels = [
-    "deepseek-reasoner",
-    "deepseek-r1",
-    "qwen-qwq",
-    "qwq",
-  ];
-  return thinkingModels.some((m) => model.toLowerCase().includes(m));
+  return sharedIsThinkingModel(model);
 }
 
 /**
@@ -96,12 +94,11 @@ export async function chatGPTWithFinishReason(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const response = await fetch(`${effectiveBaseUrl}/chat/completions`, {
+      const response = await safeRequest({
+        url: `${effectiveBaseUrl}/chat/completions`,
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${effectiveApiKey}`,
-        },
+        contentType: "application/json",
+        headers: { Authorization: `Bearer ${effectiveApiKey}` },
         body: JSON.stringify({
           model,
           messages,
@@ -110,12 +107,11 @@ export async function chatGPTWithFinishReason(
         }),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API error: ${response.status} ${response.statusText} - ${errorText}`);
+      if (response.status >= 400) {
+        throw new Error(`API error: ${response.status} - ${response.text}`);
       }
 
-      const data = await response.json() as {
+      const data = response.json as {
         choices: Array<{
           message: { content: string };
           finish_reason: string;
@@ -166,12 +162,11 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
     temperature = 0,
   } = options;
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await safeRequest({
+    url: `${baseUrl}/chat/completions`,
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model,
       messages: [{ role: "user", content: prompt }],
@@ -181,12 +176,11 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
     }),
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`LM Studio API error: ${response.status} ${response.statusText} - ${errorText}`);
+  if (response.status >= 400) {
+    throw new Error(`LM Studio API error: ${response.status} - ${response.text}`);
   }
 
-  const data = await response.json() as {
+  const data = response.json as {
     choices: Array<{
       message: { content: string };
       finish_reason: string;

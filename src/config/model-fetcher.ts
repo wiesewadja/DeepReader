@@ -1,7 +1,7 @@
 /**
  * Model Fetcher — 从服务商 API 拉取可用模型列表
  *
- * 使用浏览器原生 fetch + AbortController（10s 超时）。
+ * 使用 Obsidian requestUrl（CORS 安全）+ Promise.race（10s 超时）。
  * 按需获取，不使用缓存。
  * 仅对 supportsModelList: true 的服务商调用。
  */
@@ -9,6 +9,7 @@
 import type { ProviderType } from './providers';
 import type { AIProviderAccount } from './ai-roles';
 import { PROVIDER_CONFIGS } from './providers';
+import { safeRequest } from '../utils/safe-request.js';
 
 export interface FetchModelsResult {
 	success: boolean;
@@ -44,30 +45,28 @@ export async function fetchModels(
 	const url = `${baseUrl}/models`;
 
 	try {
-		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+		// requestUrl 不支持 AbortController，使用 Promise.race 实现超时
+		const response = await Promise.race([
+			safeRequest({
+				url,
+				method: 'GET',
+				contentType: 'application/json',
+				headers: { Authorization: `Bearer ${account.apiKey}` },
+			}),
+			new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error('请求超时')), TIMEOUT_MS),
+			),
+		]);
 
-		const response = await fetch(url, {
-			method: 'GET',
-			headers: {
-				'Authorization': `Bearer ${account.apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			signal: controller.signal,
-		});
-
-		clearTimeout(timeoutId);
-
-		if (!response.ok) {
-			const text = await response.text().catch(() => '');
+		if (response.status >= 400) {
 			return {
 				success: false,
 				models: [],
-				error: `HTTP ${response.status}: ${text.slice(0, 200)}`,
+				error: `HTTP ${response.status}: ${response.text.slice(0, 200)}`,
 			};
 		}
 
-		const data = await response.json();
+		const data = response.json;
 
 		// OpenAI 兼容格式: { data: [{ id: "model-name", ... }] }
 		const models: string[] = (data?.data || [])

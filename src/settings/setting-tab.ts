@@ -479,6 +479,28 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             }
         }
 
+        // 思考模型控制（chat 能力角色）
+        if (ROLE_CAPABILITY[role] === 'chat') {
+            const currentDisableThinking = (roleConfig as any)?.disableThinking;
+            new Setting(row)
+                .setName("禁用深度思考")
+                .setDesc("禁用模型的思考过程，减少首次响应延迟和 Token 消耗。默认自动检测。")
+                .addDropdown(dropdown => dropdown
+                    .addOption('', '自动检测')
+                    .addOption('true', '强制禁用')
+                    .addOption('false', '不禁用')
+                    .setValue(currentDisableThinking === true ? 'true' : currentDisableThinking === false ? 'false' : '')
+                    .onChange(async (value) => {
+                        const disableThinking = value === 'true' ? true : value === 'false' ? false : undefined;
+                        (settings.roles as unknown as Record<string, unknown>)[role] = {
+                            ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
+                            disableThinking,
+                        };
+                        this.plugin.resetFrontendAgent();
+                        await this.plugin.saveSettings();
+                    }));
+        }
+
         // embedding 角色专用：batch size 配置
         if (role === 'embedding') {
             const currentBatchSize = (roleConfig as any)?.embeddingBatchSize;

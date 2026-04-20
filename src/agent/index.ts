@@ -87,6 +87,10 @@ export interface FrontendAgentOptions {
   langsmithApiKey?: string;
   langsmithProject?: string;
   langsmithEnabled?: boolean;
+
+  // 思考模型控制（可选）
+  disableThinking?: boolean;       // chat/main 模型
+  fastDisableThinking?: boolean;   // router/fast 模型
 }
 
 export class FrontendAgent {
@@ -109,6 +113,7 @@ export class FrontendAgent {
       baseUrl: options.baseUrl,
       model: options.model,
       providerName: options.providerName,
+      disableThinking: options.disableThinking,
     };
 
     // 构建 fast 配置（如果启用）
@@ -119,6 +124,7 @@ export class FrontendAgent {
         baseUrl: options.fastBaseUrl,
         model: options.fastModel,
         providerName: options.fastProviderName,
+        disableThinking: options.fastDisableThinking,
       };
     }
 
@@ -389,9 +395,9 @@ ${currentMemory}
   ) {
     if (!this.cachedModels) {
       this.cachedModels = createChatModels(
-        { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '' },
+        { apiKey: this.options.apiKey, baseUrl: this.options.baseUrl || '', model: this.options.model || '', disableThinking: this.options.disableThinking },
         this.options.fastModelEnabled && this.options.fastApiKey
-          ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '' }
+          ? { apiKey: this.options.fastApiKey, baseUrl: this.options.fastBaseUrl || '', model: this.options.fastModel || '', disableThinking: this.options.fastDisableThinking }
           : undefined,
       );
     }

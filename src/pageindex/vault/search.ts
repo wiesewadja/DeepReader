@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
 import { findNodeById, cosineSimilarity } from "../core/utils";
+import { safeRequest } from "../../utils/safe-request.js";
 import { chatGPT } from "../llm/client";
 import { extractJson } from "../core/utils";
 import { treeSearchPrompt } from "../core/prompts";
@@ -337,18 +338,17 @@ async function rerankViaApi(
   documents: string[],
   config: { baseUrl: string; model: string; apiKey?: string }
 ): Promise<number[]> {
-  const response = await fetch(`${config.baseUrl}/rerank`, {
+  const response = await safeRequest({
+    url: `${config.baseUrl}/rerank`,
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({ model: config.model, query, documents }),
   });
 
-  if (!response.ok) throw new Error(`Rerank API error: ${response.status}`);
+  if (response.status >= 400) throw new Error(`Rerank API error: ${response.status} - ${response.text}`);
 
-  const data = await response.json() as { results: Array<{ index: number; relevance_score: number }> };
+  const data = response.json as { results: Array<{ index: number; relevance_score: number }> };
 
   if (data.results && data.results.length > 0) {
     const scores = new Array(documents.length).fill(0.5);
@@ -367,35 +367,33 @@ async function rerankViaEmbeddings(
   config: { baseUrl: string; model: string; apiKey?: string }
 ): Promise<number[]> {
   // Encode query
-  const queryResp = await fetch(`${config.baseUrl}/embeddings`, {
+  const queryResp = await safeRequest({
+    url: `${config.baseUrl}/embeddings`,
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({ model: config.model, input: query }),
   });
 
-  if (!queryResp.ok) throw new Error(`Embeddings API error: ${queryResp.status}`);
+  if (queryResp.status >= 400) throw new Error(`Embeddings API error: ${queryResp.status} - ${queryResp.text}`);
 
-  const queryData = await queryResp.json() as { data: Array<{ embedding: number[] }> };
+  const queryData = queryResp.json as { data: Array<{ embedding: number[] }> };
   const queryVec = new Float32Array(queryData.data[0].embedding);
 
   // Encode each document and compute cosine similarity
   const scores: number[] = [];
 
   for (const doc of documents) {
-    const docResp = await fetch(`${config.baseUrl}/embeddings`, {
+    const docResp = await safeRequest({
+      url: `${config.baseUrl}/embeddings`,
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
+      contentType: "application/json",
+      headers: { Authorization: `Bearer ${config.apiKey}` },
       body: JSON.stringify({ model: config.model, input: doc }),
     });
 
-    if (docResp.ok) {
-      const docData = await docResp.json() as { data: Array<{ embedding: number[] }> };
+    if (docResp.status < 400) {
+      const docData = docResp.json as { data: Array<{ embedding: number[] }> };
       const docVec = new Float32Array(docData.data[0].embedding);
       scores.push(cosineSimilarity(queryVec, docVec));
     } else {
@@ -412,28 +410,30 @@ async function rerankViaOllama(
   config: { baseUrl: string; model: string }
 ): Promise<number[]> {
   // Ollama reranker: encode query and documents, compute similarity
-  const queryResp = await fetch(`${config.baseUrl}/api/embeddings`, {
+  const queryResp = await safeRequest({
+    url: `${config.baseUrl}/api/embeddings`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    contentType: "application/json",
     body: JSON.stringify({ model: config.model, prompt: query }),
   });
 
-  if (!queryResp.ok) throw new Error(`Ollama embeddings error: ${queryResp.status}`);
+  if (queryResp.status >= 400) throw new Error(`Ollama embeddings error: ${queryResp.status} - ${queryResp.text}`);
 
-  const queryData = await queryResp.json() as { embedding: number[] };
+  const queryData = queryResp.json as { embedding: number[] };
   const queryVec = new Float32Array(queryData.embedding);
 
   // Encode each document
   const scores: number[] = [];
   for (const doc of documents) {
-    const docResp = await fetch(`${config.baseUrl}/api/embeddings`, {
+    const docResp = await safeRequest({
+      url: `${config.baseUrl}/api/embeddings`,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      contentType: "application/json",
       body: JSON.stringify({ model: config.model, prompt: doc }),
     });
 
-    if (docResp.ok) {
-      const docData = await docResp.json() as { embedding: number[] };
+    if (docResp.status < 400) {
+      const docData = docResp.json as { embedding: number[] };
       const docVec = new Float32Array(docData.embedding);
       scores.push(cosineSimilarity(queryVec, docVec));
     } else {

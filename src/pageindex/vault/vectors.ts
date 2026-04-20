@@ -15,6 +15,7 @@ import type {
   CatalogBookEntry,
 } from "./types";
 import { cosineSimilarity } from "../core/utils";
+import { safeRequest } from "../../utils/safe-request.js";
 
 // ─── JSONL Vector Storage ─────────────────────────────────────
 
@@ -212,21 +213,19 @@ export async function generateEmbeddings(
         throw new Error(`API Key is required for ${options.provider} provider`);
       }
 
-      const response = await fetch(`${options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1")}/embeddings`, {
+      const response = await safeRequest({
+        url: `${options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1")}/embeddings`,
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        contentType: "application/json",
+        headers: { Authorization: `Bearer ${apiKey}` },
         body: JSON.stringify(body),
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Embedding API error: ${response.status} ${response.statusText} - ${errorText}`);
+      if (response.status >= 400) {
+        throw new Error(`Embedding API error: ${response.status} - ${response.text}`);
       }
 
-      const data = await response.json() as { data: Array<{ embedding: number[] }> };
+      const data = response.json as { data: Array<{ embedding: number[] }> };
       if (data.data.length !== batch.length) {
         throw new Error(`Embedding API returned ${data.data.length} results for ${batch.length} inputs`);
       }
@@ -262,20 +261,19 @@ async function generateOpenAIEmbedding(
 
   const baseUrl = options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1");
 
-  const response = await fetch(`${baseUrl}/embeddings`, {
+  const response = await safeRequest({
+    url: `${baseUrl}/embeddings`,
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    contentType: "application/json",
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify(body),
   });
 
-  if (!response.ok) {
-    throw new Error(`Embedding API error: ${response.status} ${response.statusText}`);
+  if (response.status >= 400) {
+    throw new Error(`Embedding API error: ${response.status} - ${response.text}`);
   }
 
-  const data = await response.json() as { data: Array<{ embedding: number[] }> };
+  const data = response.json as { data: Array<{ embedding: number[] }> };
   return data.data[0].embedding;
 }
 
@@ -284,19 +282,20 @@ async function generateOllamaEmbedding(
   options: EmbeddingOptions
 ): Promise<number[]> {
   const baseUrl = options.baseUrl || "http://localhost:11434";
-  const response = await fetch(`${baseUrl}/api/embeddings`, {
+  const response = await safeRequest({
+    url: `${baseUrl}/api/embeddings`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    contentType: "application/json",
     body: JSON.stringify({
       model: options.model || "nomic-embed-text",
       prompt: text,
     }),
   });
 
-  if (!response.ok) {
-    throw new Error(`Ollama embedding API error: ${response.status} ${response.statusText}`);
+  if (response.status >= 400) {
+    throw new Error(`Ollama embedding API error: ${response.status} - ${response.text}`);
   }
 
-  const data = await response.json() as { embedding: number[] };
+  const data = response.json as { embedding: number[] };
   return data.embedding;
 }

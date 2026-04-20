@@ -12,6 +12,7 @@ import * as os from "os";
 import * as fs from "fs/promises";
 import { countTokens } from "../core/utils";
 import { log as piLog } from "../core/logger";
+import { safeRequest } from "../../utils/safe-request.js";
 import {
   DEFAULT_OCR_MODEL,
   DEFAULT_IMAGE_FORMAT,
@@ -181,25 +182,23 @@ export async function ocrImage(
 
   try {
     // Use GLM-OCR layout_parsing API
-    const response = await fetch(`${baseUrl}/layout_parsing`, {
+    const response = await safeRequest({
+      url: `${baseUrl}/layout_parsing`,
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: apiKey,
-      },
+      contentType: "application/json",
+      headers: { Authorization: apiKey },
       body: JSON.stringify({
         model,
         file: dataUrl,
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[OCR Error] API error: ${response.status} ${response.statusText} - ${errorText}`);
+    if (response.status >= 400) {
+      console.error(`[OCR Error] API error: ${response.status} - ${response.text}`);
       return "";
     }
 
-    const data = await response.json() as LayoutParsingResponse;
+    const data = response.json as LayoutParsingResponse;
 
     // Extract text from content_list
     if (data.layout_analysis?.content_list) {

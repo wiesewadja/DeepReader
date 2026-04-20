@@ -36,6 +36,7 @@ import {
   loadPropVectorStore,
 } from "./proposition-search.js";
 import { getOrGenerateEmbedding } from "../agent/utils/embedding-cache.js";
+import { safeRequest } from "../utils/safe-request.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -583,12 +584,11 @@ async function crossEncoderRerank(
   const apiKey = reranker.apiKey || (provider === "lmstudio" ? "lm-studio" : "");
 
   try {
-    const response = await fetch(`${baseUrl}/rerank`, {
+    const response = await safeRequest({
+      url: `${baseUrl}/rerank`,
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
+      contentType: "application/json",
+      headers: { Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model,
         query,
@@ -597,11 +597,11 @@ async function crossEncoderRerank(
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Rerank API error: ${response.status}`);
+    if (response.status >= 400) {
+      throw new Error(`Rerank API error: ${response.status} - ${response.text}`);
     }
 
-    const data = await response.json() as { results: Array<{ index: number; relevance_score: number }> };
+    const data = response.json as { results: Array<{ index: number; relevance_score: number }> };
     
     for (const r of data.results) {
       if (r.index >= 0 && r.index < nodeIds.length) {

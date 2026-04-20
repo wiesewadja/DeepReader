@@ -3,6 +3,8 @@
  * Token counting, JSON extraction, tree manipulation
  */
 
+import { stripThinkTags } from '../../config/thinking-models.js';
+
 import type { TreeNode, TocItem } from "./types";
 import { log as piLog } from "./logger";
 
@@ -44,7 +46,7 @@ export function getJsonContent(response: string): string {
   let content = response;
 
   // Remove <think>...</think> blocks (common with Qwen and other reasoning models)
-  content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  content = stripThinkTags(content);
   
   // Remove any other XML-like tags that might wrap the response
   content = content.replace(/<\/?output>/gi, "").trim();
@@ -175,7 +177,7 @@ export function extractJson<T = unknown>(content: string): T | null {
     // Try a more aggressive extraction - find first { or [ and match to last } or ]
     try {
       // First strip think tags from the original content
-      let cleanContent = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+      let cleanContent = stripThinkTags(content);
       
       const startBrace = cleanContent.indexOf("{");
       const startBracket = cleanContent.indexOf("[");

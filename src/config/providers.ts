@@ -91,15 +91,16 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 export function resolveRoleConfig(
 	role: RoleType,
 	settings: DeepPDFSettings,
-): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number } | null {
+): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number; disableThinking?: boolean } | null {
 	const roleConfig = (settings.roles as unknown as Record<string, unknown>)?.[role];
 	if (!roleConfig || typeof roleConfig !== 'object') return null;
 
-	const { provider, model, baseUrlOverride, embeddingBatchSize } = roleConfig as {
+	const { provider, model, baseUrlOverride, embeddingBatchSize, disableThinking } = roleConfig as {
 		provider: string;
 		model: string;
 		baseUrlOverride?: string;
 		embeddingBatchSize?: number;
+		disableThinking?: boolean;
 	};
 
 	const account = (settings.providers as Record<string, unknown>)?.[provider];
@@ -117,7 +118,7 @@ export function resolveRoleConfig(
 
 	const resolvedModel = model || builtInConfig?.defaultModel || '';
 
-	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize };
+	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking };
 }
 
 /**

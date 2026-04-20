@@ -36,6 +36,7 @@ export interface AIRoleConfig {
 	model: string;                // 空字符串 = 使用服务商默认模型
 	baseUrlOverride?: string;     // 覆盖该角色的 baseUrl
 	embeddingBatchSize?: number;  // embedding 角色专用：每批最大文本数（默认 32）
+	disableThinking?: boolean;    // undefined=自动检测, true=强制禁用, false=不禁用
 }
 
 /** 六种用途角色的完整配置 */
