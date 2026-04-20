@@ -368,6 +368,9 @@ export class ReadingModeService {
         const maxAttempts = 15;
         let attempts = 0;
 
+        // 提取章节名称（去除编号前缀）
+        const chapterName = this.extractChapterName();
+
         const tryInit = () => {
             attempts++;
             const container = document.querySelector('.markdown-preview-sizer') as HTMLElement;
@@ -377,6 +380,7 @@ export class ReadingModeService {
                     container,
                     onNavigatePrev: () => this.navigateToPrev(),
                     onNavigateNext: () => this.navigateToNext(),
+                    chapterName,
                 });
                 this.paginator.paginateAndShow();
 
@@ -397,6 +401,19 @@ export class ReadingModeService {
         };
 
         tryInit();
+    }
+
+    /**
+     * 提取章节名称（去除编号前缀）
+     * 例如: "23 - 第十九章 如何阅读社会科学" -> "第十九章 如何阅读社会科学"
+     */
+    private extractChapterName(): string {
+        if (!this.currentFile) return '';
+
+        const basename = this.currentFile.basename;
+        // 匹配 "数字 - " 或 "数字- " 格式并去除
+        const match = basename.match(/^\d+\s*[-–]\s*(.+)$/);
+        return match ? match[1] : basename;
     }
 
     /**

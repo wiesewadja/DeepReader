@@ -564,7 +564,7 @@
     box-sizing: border-box;
 }
 
-/* 页码指示器（右侧） */
+/* 页码指示器 */
 .deeppdf-page-indicator {
     color: var(--text-muted);
     font-size: 12px;
@@ -581,6 +581,14 @@
     height: 20px;
     display: flex;
     align-items: center;
+}
+
+/* 章节名称指示器（小字体浅色） */
+.deeppdf-chapter-indicator {
+    color: var(--text-faint);
+    font-size: 10px;
+    white-space: nowrap;
+    opacity: 0.7;
 }
 
 /* 轨道背景线 */

@@ -12,6 +12,7 @@ export interface PagePaginatorOptions {
 	container: HTMLElement;                    // .markdown-preview-sizer
 	onNavigatePrev: () => Promise<boolean>;
 	onNavigateNext: () => Promise<boolean>;
+	chapterName?: string;                      // 当前章节名称
 }
 
 const DISABLED_CLASS = 'deeppdf-page-btn-disabled';
@@ -33,15 +34,18 @@ export class PagePaginator {
 	private controlsBar: HTMLElement | null = null;
 	private progressFill: HTMLElement | null = null;
 	private pageIndicator: HTMLElement | null = null;
+	private chapterIndicator: HTMLElement | null = null;
 
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private scrollHandler: ((e: Event) => void) | null = null;
+	private chapterName: string;
 
 	constructor(options: PagePaginatorOptions) {
 		this.container = options.container;
 		this.onNavigatePrev = options.onNavigatePrev;
 		this.onNavigateNext = options.onNavigateNext;
+		this.chapterName = options.chapterName || '';
 
 		this.scrollView = this.container.closest('.markdown-preview-view') as HTMLElement;
 		this.viewContent = this.container.closest('.view-content') as HTMLElement;
@@ -237,6 +241,14 @@ export class PagePaginator {
 		this.pageIndicator = document.createElement('span');
 		this.pageIndicator.className = 'deeppdf-page-indicator';
 		this.controlsBar.appendChild(this.pageIndicator);
+
+		// 章节名称指示器（最右侧，小字体浅色）
+		if (this.chapterName) {
+			this.chapterIndicator = document.createElement('span');
+			this.chapterIndicator.className = 'deeppdf-chapter-indicator';
+			this.chapterIndicator.textContent = this.chapterName;
+			this.controlsBar.appendChild(this.chapterIndicator);
+		}
 
 		// 预览弹出框（用于悬停显示）
 		this.previewPopup = document.createElement('div');
@@ -457,6 +469,7 @@ export class PagePaginator {
 		this.controlsBar = null;
 		this.progressFill = null;
 		this.pageIndicator = null;
+		this.chapterIndicator = null;
 		this.previewPopup = null;
 		this.previewContent = null;
 		this.stripeThumb = null;
