@@ -1090,13 +1090,73 @@
 	flex-shrink: 0;
 }
 
-/* 工具栏左侧：标题 + 提问 */
+/* 工具栏左侧：书籍信息 + 标题 + 提问 */
 .deeppdf-fullscreen-toolbar-left {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	flex: 1;
 	min-width: 0;
 	overflow: hidden;
+	gap: 12px;
+}
+
+/* 书籍信息容器（封面 + 书名作者） */
+.deeppdf-fullscreen-book-info {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-shrink: 0;
+}
+
+/* 书籍封面 - 圆角矩形（与右边栏一致） */
+.deeppdf-fullscreen-book-cover {
+	width: 36px;
+	height: 36px;
+	border-radius: 6px;
+	background: var(--background-modifier-hover);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.deeppdf-fullscreen-book-cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.deeppdf-fullscreen-book-cover svg {
+	width: 16px;
+	height: 16px;
+	color: var(--text-muted);
+}
+
+/* 书籍文字信息容器 */
+.deeppdf-fullscreen-book-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* 书名 */
+.deeppdf-fullscreen-book-title {
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 120px;
+}
+
+/* 作者 */
+.deeppdf-fullscreen-book-author {
+	font-size: 11px;
+	color: var(--text-faint);
+	white-space: nowrap;
 }
 
 .deeppdf-fullscreen-title {

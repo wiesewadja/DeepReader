@@ -67,6 +67,8 @@ export interface MessageCallbacks {
 	onQuote?: (metadata: QuoteMetadata) => void;
 	/** 删除消息对（删除 AI 回复时同时删除对应的用户问题） */
 	onDelete?: (messageId: string) => void;
+	/** 获取当前书籍信息（封面、作者、书名） */
+	getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 }
 
 /**
@@ -157,6 +159,7 @@ export class MessageList extends Component {
 					this.callbacks.onExcerpt?.(messageData.id, content, metadata),
 				app: this.app,
 				getAllMessages: () => this.getMessagesData(),
+				getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
 			});
 			this.messages.set(messageData.id, message);
 			return message;
@@ -183,6 +186,7 @@ export class MessageList extends Component {
 				this.callbacks.onDelete?.(messageData.id);
 			},
 			getAllMessages: () => this.getMessagesData(),
+			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
 			app: this.app
 		});
 
