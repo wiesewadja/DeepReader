@@ -43,14 +43,6 @@ export interface DocumentMetadata {
 }
 
 /**
- * 阅读进度
- */
-export interface ReadingProgress {
-	coverage: number;
-	absorption: number;
-}
-
-/**
  * 上下文构建器
  *
  * 使用方式：
@@ -320,7 +312,6 @@ ${docInfo}`;
 	 * @param history 历史消息
 	 * @param currentMessage 当前用户消息
 	 * @param _metadata 文档元数据（保留参数兼容调用方，但不再使用）
-	 * @param _progress 阅读进度（保留参数兼容调用方，但不再使用）
 	 * @param systemNote 路由器动态指令（可选）
 	 */
 	static buildMessagesWithMetadata(
@@ -328,7 +319,6 @@ ${docInfo}`;
 		history: ChatMessage[],
 		currentMessage: string,
 		_metadata?: DocumentMetadata,
-		_progress?: ReadingProgress,
 		systemNote?: string
 	): ChatMessage[] {
 		const runtimeContext = ContextBuilder.buildRuntimeContext();

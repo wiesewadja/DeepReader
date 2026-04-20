@@ -9,7 +9,6 @@ export { ContextBuilder } from './builder.js';
 export type {
 	ContextBuilderConfig,
 	DocumentMetadata,
-	ReadingProgress,
 } from './builder.js';
 
 // ContextLoader（保持兼容）

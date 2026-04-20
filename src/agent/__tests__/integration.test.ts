@@ -122,7 +122,6 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 				[],
 				userInput,
 				metadata,
-				undefined,
 				intentResult.systemNote
 			);
 
@@ -190,7 +189,6 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 				[],
 				userInput,
 				metadata,
-				progress,
 				intentResult.systemNote
 			);
 

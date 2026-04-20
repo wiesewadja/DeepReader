@@ -21,7 +21,7 @@ export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
 export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
-export type { DocumentMetadata, ReadingProgress } from './context/builder.js';
+export type { DocumentMetadata } from './context/builder.js';
 export type { AgentLoopOptions } from './agent-loop.js';
 
 // LangGraph 认知引擎导出
@@ -38,7 +38,7 @@ export type {
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
-import { ContextBuilder, type DocumentMetadata, type ReadingProgress } from './context/builder.js';
+import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
 import { getToolDefinitions } from './tools/index.js';
 import { SubagentManager } from './subagent/manager.js';
@@ -265,7 +265,6 @@ ${currentMemory}
     history: ChatMessage[],
     userMessage: string,
     metadata?: DocumentMetadata,
-    progress?: ReadingProgress,
     systemNote?: string
   ): ChatMessage[] {
     return ContextBuilder.buildMessagesWithMetadata(
@@ -273,7 +272,6 @@ ${currentMemory}
       history,
       userMessage,
       metadata,
-      progress,
       systemNote
     );
   }

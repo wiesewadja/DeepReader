@@ -41,6 +41,7 @@ export class ReadingModeService {
     private autoEnable: boolean = true;
     private style: 'paginated' | 'scrolling' = 'paginated';
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
+    private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -186,8 +187,11 @@ export class ReadingModeService {
                 this.waitForRenderAndInitPaginator();
             }, 200);
 
-            // 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
-            this.patchScrollIntoView();
+// 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
+        this.patchScrollIntoView();
+
+        // 监听 hashchange，处理 blockId 跳转（双重保险）
+        this.setupHashChangeHandler();
         }
 
         // 通知书籍检测回调
@@ -292,6 +296,9 @@ export class ReadingModeService {
 
         // 恢复原始 scrollIntoView
         this.unpatchScrollIntoView();
+
+        // 清理 hashchange 监听
+        this.teardownHashChangeHandler();
 
         // 从记录的 containerEl 上移除 CSS 类（而非从当前 active view 移除，避免错误清理其他 tab）
         if (this.activeContainerEl) {

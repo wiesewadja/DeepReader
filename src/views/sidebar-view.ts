@@ -24,9 +24,6 @@ import { LibraryModal } from "../components/library-modal/index.js";
 import { uiLog as log, serviceLog, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
-import type { ReadingProgress } from "../agent/tools/types.js";
-import { readReadingProgress } from "../agent/utils/plugin-data.js";
-import { calculateProgressMetrics } from "../agent/utils/plugin-data.js";
 import {
     validateAndCorrectLinks,
 } from "../agent/utils/link-validator.js";
@@ -116,7 +113,7 @@ export class SidebarView extends ItemView {
             return; // 已初始化
         }
         this.milestoneRecorder = new MilestoneRecorder(this.app);
-        await this.milestoneRecorder.initializeCache();
+
         log('[DeepPDF] MilestoneRecorder 初始化完成');
     }
 
@@ -1839,7 +1836,8 @@ export class SidebarView extends ItemView {
             const data = lastAiMessage.getData();
             this.messageList?.updateMessage(data.id, {
                 content: data.content + '\n\n*用户已中断*',
-                isStreaming: false
+                isStreaming: false,
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -1897,44 +1895,6 @@ export class SidebarView extends ItemView {
                 // 添加结构化引用数据（用于工具优先搜索）
                 quotes: quotes,
             };
-
-            // 加载阅读进度
-            if (this.currentPdfName) {
-                try {
-                    const progressData = await readReadingProgress(this.app, this.currentPdfName);
-                    if (progressData) {
-                        // 找到最熟悉的章节
-                        const familiarity = progressData.chapterFamiliarity;
-                        const entries = Object.entries(familiarity);
-                        const mostFamiliar = entries.reduce(
-                            (a, b) => (b[1] > a[1] ? b : a),
-                            ['0', 0]
-                        );
-                        const leastFamiliar = entries
-                            .filter(([, v]) => v === 0)
-                            .map(([k]) => k);
-
-                        context.readingProgress = {
-                            bookName: progressData.bookName,
-                            totalChapters: progressData.totalChapters,
-                            chapterFamiliarity: familiarity,
-                            totalInteractions: progressData.totalInteractions,
-                            coverage: progressData.coverage,
-                            absorption: progressData.absorption,
-                            mostFamiliarChapter: mostFamiliar[0],
-                            leastFamiliarChapters: leastFamiliar,
-                            lastActiveTime: progressData.lastUpdated,
-                            daysSinceLastRead: Math.floor(
-                                (Date.now() - new Date(progressData.lastUpdated).getTime()) /
-                                (1000 * 60 * 60 * 24)
-                            ),
-                        };
-                    }
-                } catch (err) {
-                    // 阅读进度加载失败不影响主流程
-                    log('[DeepPDF] 加载阅读进度失败:', err);
-                }
-            }
 
             // 构建用户消息
             // 注意：运行时上下文（阅读进度等）由 FrontendAgent.buildMessages() 注入
@@ -2087,7 +2047,8 @@ export class SidebarView extends ItemView {
                 // onComplete: 流式完成
                 onComplete: () => {
                     this.messageList?.updateMessage(aiMessageId, {
-                        isStreaming: false
+                        isStreaming: false,
+                        timestamp: new Date().toISOString()
                     });
                     // 注意：不在这里调用 saveToCache()，因为 agentChatHistory 还未更新
                     // saveToCache() 将在 agentChatHistory 更新后调用
@@ -2109,7 +2070,8 @@ export class SidebarView extends ItemView {
                     logError('[DeepPDF] Agent 错误:', error);
                     this.messageList?.updateMessage(aiMessageId, {
                         content: `查询失败: ${error}`,
-                        isStreaming: false
+                        isStreaming: false,
+                        timestamp: new Date().toISOString()
                     });
 
                     // 恢复输入状态（出错时）
@@ -2192,7 +2154,8 @@ export class SidebarView extends ItemView {
             logError('[DeepPDF] handleAgentQuery 错误:', error);
             this.messageList?.updateMessage(aiMessageId, {
                 content: `Agent 查询失败: ${errorMessage}`,
-                isStreaming: false
+                isStreaming: false,
+                timestamp: new Date().toISOString()
             });
             // 恢复输入状态
             this.isProcessing = false;
