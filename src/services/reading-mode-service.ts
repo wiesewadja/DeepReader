@@ -648,4 +648,63 @@ markExcerpt(range: Range): void {
             });
         });
     }
+
+    /**
+     * 设置 hashchange 监听器，处理 blockId 舜转
+     * 这是双重保险机制：当 URL 中有 #^blockId 时，手动处理跳转
+     */
+    private setupHashChangeHandler(): void {
+        if (this.hashChangeHandler) return;
+
+        this.hashChangeHandler = (e: HashChangeEvent) => {
+            if (!this.isActive) return;
+
+            const hash = window.location.hash;
+            if (!hash.startsWith('#^')) return;
+
+            const blockId = hash.substring(2); // 移除 #^
+            serviceLog('[ReadingMode] Hashchange detected for blockId:', blockId);
+
+            // 等待 DOM 更新
+            requestAnimationFrame(() => {
+                this.jumpToBlockId(blockId);
+            });
+        };
+
+        window.addEventListener('hashchange', this.hashChangeHandler);
+        serviceLog('[ReadingMode] Hashchange handler setup');
+    }
+
+    /**
+     * 清理 hashchange 监听器
+     */
+    private teardownHashChangeHandler(): void {
+        if (this.hashChangeHandler) {
+            window.removeEventListener('hashchange', this.hashChangeHandler);
+            this.hashChangeHandler = null;
+            serviceLog('[ReadingMode] Hashchange handler teardown');
+        }
+    }
+
+    /**
+     * 跳转到指定的 blockId
+     * 在 CSS multi-column 布局中手动计算横向位置
+     */
+    private jumpToBlockId(blockId: string): void {
+        const scrollView = document.querySelector('.deeppdf-reading-mode .markdown-preview-view') as HTMLElement;
+        if (!scrollView) {
+            serviceLog('[ReadingMode] No scrollView found for blockId jump');
+            return;
+        }
+
+        // Obsidian 会将 ^blockId 转为 id="blockId" 的属性
+        const targetElement = scrollView.querySelector(`[id="${blockId}"]`) as HTMLElement;
+        if (!targetElement) {
+            serviceLog('[ReadingMode] Target element not found for blockId:', blockId);
+            return;
+        }
+
+        this.scrollToElementInColumn(targetElement, scrollView);
+        serviceLog('[ReadingMode] Jumped to blockId:', blockId);
+    }
 }
