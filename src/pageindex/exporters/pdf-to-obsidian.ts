@@ -310,7 +310,13 @@ export async function exportPdfToObsidian(
 
   let moc = generateFrontmatter(mocFrontmatter) + "\n\n";
   moc += `# ${docName}\n\n`;
-  if (result.docDescription) moc += `> ${result.docDescription}\n\n`;
+  if (options.author) {
+    moc += `**作者:** ${options.author}\n\n`;
+  }
+  if (result.docDescription) {
+    const summaryLines = result.docDescription.split('\n').map((line: string) => `> ${line}`).join('\n');
+    moc += `> [!info] 书籍概要\n${summaryLines}\n\n`;
+  }
   moc += `**来源:** PDF 文档\n`;
   moc += `**章节数:** ${sections.length}\n`;
   moc += `**总 Tokens:** ${notes.reduce((s, n) => s + (n.frontmatter.token_count as number), 0).toLocaleString()}\n\n`;

@@ -142,6 +142,12 @@ export class ReadingModeService {
             return false;
         }
 
+        // 排除 MOC 文件（MOC 不需要沉浸式阅读模式）
+        const isMoc = frontmatter.type === 'pdf-moc' || frontmatter.type === 'epub-moc';
+        if (isMoc) {
+            return false;
+        }
+
         // 必须有 source 字段（书籍来源）
         const hasSource = !!(frontmatter.source || frontmatter.pdf_name || frontmatter.book);
         if (!hasSource) {
