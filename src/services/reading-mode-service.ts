@@ -355,6 +355,17 @@ export class ReadingModeService {
         if (activeFile && this.isChapterFile(activeFile) && this.autoEnable) {
             this.activate(activeFile);
         }
+
+        // 插件启动时 metadataCache 可能未就绪，监听 resolved 事件重试
+        this.app.metadataCache.on('resolved', () => {
+            if (!this.isActive && this.autoEnable) {
+                const file = this.app.workspace.getActiveFile();
+                if (file && this.isChapterFile(file)) {
+                    serviceLog('[ReadingMode] metadataCache resolved, activating for:', file.path);
+                    this.activate(file);
+                }
+            }
+        });
     }
 
     /**
@@ -441,6 +452,8 @@ export class ReadingModeService {
             this.app.workspace.offref(this.fileOpenHandler);
             this.fileOpenHandler = null;
         }
+        // @ts-ignore — metadataCache.on 返回的 eventRef 用 offref 清理
+        this.app.metadataCache.offref?.('resolved');
         if (this.selectionToolbar) {
             this.selectionToolbar.destroy();
             this.selectionToolbar = null;

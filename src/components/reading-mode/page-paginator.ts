@@ -41,6 +41,8 @@ export class PagePaginator {
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private scrollHandler: ((e: Event) => void) | null = null;
+	private mutationObserver: MutationObserver | null = null;
+	private verifyTimer: ReturnType<typeof setTimeout> | null = null;
 	private chapterName: string;
 	private bookName: string;
 	private lastKnownViewWidth: number = 0;
@@ -81,7 +83,19 @@ export class PagePaginator {
 		this.calculatePages();
 		this.setupResizeObserver();
 		this.setupScrollListener();
-		
+		this.setupMutationObserver();
+
+		// 延迟验证：multi-column 布局可能在初始化时尚未完全计算
+		this.verifyTimer = setTimeout(() => {
+			if (!this._isActive) return;
+			const newTotal = this.countActualPages();
+			if (newTotal !== this._totalPages) {
+				serviceLog(`[PagePaginator] 延迟校正: ${this._totalPages} → ${newTotal} 页`);
+				this._totalPages = newTotal;
+				this.updateControls();
+			}
+		}, 600);
+
 		serviceLog(`[PagePaginator] CSS Column Pagination activated`);
 	}
 
@@ -113,9 +127,11 @@ export class PagePaginator {
 
 	destroy(): void {
 		this._isActive = false;
+		if (this.verifyTimer) { clearTimeout(this.verifyTimer); this.verifyTimer = null; }
 		this.removeControls();
 		this.teardownResizeObserver();
 		this.teardownScrollListener();
+		this.teardownMutationObserver();
 		this._totalPages = 0;
 		this._currentPage = 1;
 		serviceLog('[PagePaginator] destroyed');
@@ -124,14 +140,18 @@ export class PagePaginator {
 	private calculatePages(): void {
 		if (!this.scrollView) return;
 
+		// 双重 rAF：第一帧等当前渲染完成，第二帧确保 CSS 变量变化触发的重排已计算
 		requestAnimationFrame(() => {
 			if (!this.scrollView) return;
+			requestAnimationFrame(() => {
+				if (!this.scrollView) return;
 
-			this._totalPages = this.countActualPages();
+				this._totalPages = this.countActualPages();
 
-			this.options.onPageChange?.(this._currentPage, this._totalPages);
-			this.updateCurrentPageFromScroll();
-			this.updateControls();
+				this.options.onPageChange?.(this._currentPage, this._totalPages);
+				this.updateCurrentPageFromScroll();
+				this.updateControls();
+			});
 		});
 	}
 
@@ -373,5 +393,32 @@ export class PagePaginator {
 			// 更新底部控件
 			this.updateControls();
 		});
+	}
+
+	// ── MutationObserver ──────────────────────────────────────
+
+	private setupMutationObserver(): void {
+		this.teardownMutationObserver();
+		if (!this.container) return;
+
+		this.mutationObserver = new MutationObserver(() => {
+			if (!this._isActive) return;
+			if (this.resizeTimer) clearTimeout(this.resizeTimer);
+			this.resizeTimer = setTimeout(() => {
+				if (!this._isActive) return;
+				const newTotal = this.countActualPages();
+				if (newTotal !== this._totalPages) {
+					serviceLog(`[PagePaginator] DOM 变化校正: ${this._totalPages} → ${newTotal} 页`);
+					this._totalPages = newTotal;
+					this.updateControls();
+				}
+			}, 200);
+		});
+		this.mutationObserver.observe(this.container, { childList: true, subtree: true });
+	}
+
+	private teardownMutationObserver(): void {
+		this.mutationObserver?.disconnect();
+		this.mutationObserver = null;
 	}
 }
