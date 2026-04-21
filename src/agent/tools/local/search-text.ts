@@ -256,7 +256,19 @@ export const searchBookTool: ToolExecutor = {
       );
 
       // RRF 融合
-      const fusedEntries = reciprocalRankFusion(subResults);
+      let fusedEntries = reciprocalRankFusion(subResults);
+
+      // 当前章节提权：用户正在阅读的章节搜索结果加权 1.5x
+      const currentNodeId = context.currentNodeId;
+      if (currentNodeId) {
+        for (const entry of fusedEntries) {
+          if (entry.nodeId === currentNodeId) {
+            entry.rrfScore *= 1.5;
+          }
+        }
+        fusedEntries = fusedEntries.sort((a, b) => b.rrfScore - a.rrfScore);
+      }
+
       const hits = fusionToHits(fusedEntries, topK);
 
       return JSON.stringify({

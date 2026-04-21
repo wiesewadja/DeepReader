@@ -37,6 +37,8 @@ export interface ToolContext {
   localCache?: import('./local/types.js').LocalToolCache;
   /** 用户引用的结构化数据（选中文本时附加的上下文） */
   quotes?: QuoteItem[];
+  /** 当前阅读章节的 node_id（用于搜索提权） */
+  currentNodeId?: string;
   /** 插件实例（用于访问设置） */
   plugin?: any;
 }

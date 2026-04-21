@@ -1269,6 +1269,13 @@ export class SidebarView extends ItemView {
         this.contextManager = new ContextManager({
             app: this.app,
             onContextChange: (docs: Map<string, import("../services/context-manager.js").LoadedDocument>) => {
+                // 同步文档内容到 currentMarkdownFiles 供 Agent 搜索使用
+                const files: Record<string, string> = {};
+                for (const [path, doc] of docs) {
+                    files[path] = doc.content;
+                }
+                this.currentMarkdownFiles = files;
+
                 // 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
                 const activeFile = this.app.workspace.getActiveFile();
                 const isCurrentDocLoaded = activeFile ? docs.has(activeFile.path) : false;
@@ -1355,19 +1362,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 处理引用选中文字
-     * 在消息列表顶部添加引用卡片，并将格式化文本插入输入框
+     * 在输入框上方显示引用卡片，更新 placeholder 提示
      */
     private handleQuoteSelection(metadata: import("../components/chat-input/chat-input.js").QuoteMetadata): void {
-        // 1. 格式化引用文本并插入输入框
-        const location = metadata.headingPath?.join(' > ') || metadata.heading || metadata.source || '未知来源';
-        const formattedQuote = `> ${metadata.text}\n— ${location}\n\n`;
-
-        // 获取当前输入框内容
-        const currentValue = this.chatInput?.getValue() || '';
-        // 将引用插入到输入框开头
-        this.chatInput?.setValue(formattedQuote + currentValue);
-
-        // 2. 创建引用数据（保留结构化元数据）
+        // 1. 创建引用数据（保留结构化元数据）
         const quote: QuoteItem = {
             id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             text: metadata.text.trim(),
@@ -1379,11 +1377,14 @@ export class SidebarView extends ItemView {
             headingPath: metadata.headingPath
         };
 
-        // 3. 添加到引用列表
+        // 2. 添加到引用列表
         this.quotes.push(quote);
 
-        // 4. 渲染引用卡片
+        // 3. 渲染引用卡片
         this.renderQuoteCard(quote);
+
+        // 4. 更新 placeholder 提示引用数量
+        this.updateQuotePlaceholder();
 
         // 5. 聚焦输入框
         this.chatInput?.focus();
@@ -1459,6 +1460,8 @@ export class SidebarView extends ItemView {
             this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
         }
 
+        this.updateQuotePlaceholder();
+
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
             this.updateMessageListPadding(false);
@@ -1474,10 +1477,26 @@ export class SidebarView extends ItemView {
             this.quotesContainer.empty();
         }
 
+        this.updateQuotePlaceholder();
+
         // 更新消息列表底部间距
         requestAnimationFrame(() => {
             this.updateMessageListPadding(false);
         });
+    }
+
+    /**
+     * 更新输入框 placeholder 反映引用数量
+     */
+    private updateQuotePlaceholder(): void {
+        const textarea = (this.chatInput as any)?.textarea as HTMLTextAreaElement | undefined;
+        if (!textarea) return;
+
+        if (this.quotes.length > 0) {
+            textarea.placeholder = `已引用 ${this.quotes.length} 段文字，请输入你的问题...`;
+        } else {
+            textarea.placeholder = '输入消息，或使用 @ 引用文件...';
+        }
     }
 
     /**
@@ -1661,8 +1680,9 @@ export class SidebarView extends ItemView {
         // 创建聊天输入组件（在最上方）
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
-            onSend: (message: string, quotes) => {
-                this.sendMessage(message, quotes);
+            onSend: (message: string, _chatInputQuotes) => {
+                // 使用 sidebar 自己管理的引用列表（而非 ChatInput 内部的空数组）
+                this.sendMessage(message, this.getQuotes());
             },
             app: this.app,
             onStop: () => {
@@ -1681,13 +1701,13 @@ export class SidebarView extends ItemView {
             }
         });
 
+        // 创建引用卡片容器（在输入框上方）
+        this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
+
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
             section.appendChild(chatInputEl);
         }
-
-        // 创建引用卡片容器（在输入框下方）
-        // this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
     }
 
     /**
@@ -1922,7 +1942,8 @@ export class SidebarView extends ItemView {
                     role: "user" as MessageRole,
                     content: message,
                     timestamp: new Date().toISOString(),
-                    pdfName: this.currentPdfName || undefined
+                    pdfName: this.currentPdfName || undefined,
+                    quotes: quotes && quotes.length > 0 ? quotes : undefined
                 };
                 this.messageList?.addMessage(userMessageData);
 
@@ -2060,6 +2081,15 @@ export class SidebarView extends ItemView {
             let fullContent = '';
             let currentStatus = '';
 
+            // 获取当前阅读章节的 node_id（用于搜索提权）
+            const activeFile = this.app.workspace.getActiveFile();
+            let currentNodeId: string | undefined;
+            if (activeFile) {
+                const cache = this.app.metadataCache.getFileCache(activeFile);
+                const rawNodeId = cache?.frontmatter?.node_id;
+                if (rawNodeId) currentNodeId = String(rawNodeId);
+            }
+
             // 构建 ToolContext
             const context: ToolContext = {
                 indexId: indexId,
@@ -2068,6 +2098,7 @@ export class SidebarView extends ItemView {
                 useLLMTreeSearch: this.useLLMTreeSearch,
                 app: this.app,
                 plugin: this.plugin,
+                currentNodeId,
                 // 添加文档元数据（用于 Agent 上下文）
                 documentMetadata: {
                     title: this.currentPdfName || '未知文档',
@@ -2091,7 +2122,7 @@ export class SidebarView extends ItemView {
                     const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
                     return `> ${q.text}\n> — ${location}`;
                 }).join('\n\n');
-                userMessage = `${userMessage}\n\n---\n**引用内容：**\n${quotesText}`;
+                userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
             }
 
             // 判断是否是新对话（历史为空或只有 system 消息）
@@ -2244,6 +2275,9 @@ export class SidebarView extends ItemView {
                     this.chatInput?.setStreaming(false);
                     this.chatInput?.setDisabled(false);
 
+                    // 清空引用卡片和 placeholder
+                    this.clearQuotes();
+
                     this.chatInput?.focus();
                     this.streamController = null;
                 },
@@ -2261,6 +2295,9 @@ export class SidebarView extends ItemView {
                     this.isAiStreaming = false;
                     this.chatInput?.setStreaming(false);
                     this.chatInput?.setDisabled(false);
+
+                    // 清空引用卡片和 placeholder
+                    this.clearQuotes();
 
                     this.chatInput?.focus();
                     this.streamController = null;

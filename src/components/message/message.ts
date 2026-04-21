@@ -243,6 +243,8 @@ export interface MessageData {
 	completedSteps?: string[];
 	/** 可选：关联的 PDF 文件名 */
 	pdfName?: string;
+	/** 可选：用户引用内容 */
+	quotes?: Array<{ text: string; source?: string; heading?: string; headingPath?: string[] }>;
 	/** 可选：关联的页码 */
 	page?: number;
 	/** 可选：关联的用户问题 */
@@ -857,12 +859,27 @@ export class UserMessage extends Message {
 
 		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
+		// 渲染引用内容（浅色 blockquote 样式）
+		if (this.data.quotes && this.data.quotes.length > 0) {
+			const quotesEl = content.createEl('div', { cls: 'deeppdf-user-quotes' });
+			for (const q of this.data.quotes) {
+				const quoteBlock = quotesEl.createEl('div', { cls: 'deeppdf-user-quote-item' });
+				const location = q.headingPath?.join(' > ') || q.heading || q.source || '';
+				quoteBlock.createEl('div', { cls: 'deeppdf-user-quote-text', text: q.text });
+				if (location) {
+					quoteBlock.createEl('div', { cls: 'deeppdf-user-quote-source', text: location });
+				}
+			}
+			content.createEl('div', { cls: 'deeppdf-user-quote-divider' });
+		}
+
 		// 用户消息支持 Markdown 渲染（如果 app 存在）
 		if (this.app) {
 			const sourcePath = this.data.pdfName || '';
-			MarkdownRenderer.render(this.app, this.data.content, content, sourcePath, new Component());
+			const textEl = content.createDiv();
+			MarkdownRenderer.render(this.app, this.data.content, textEl, sourcePath, new Component());
 		} else {
-			content.innerHTML = this.escapeHtml(this.data.content);
+			content.createDiv({ text: this.data.content });
 		}
 
 		bubble.appendChild(this.renderTimestamp());

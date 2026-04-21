@@ -93,6 +93,43 @@
 	opacity: 0.8;
 }
 
+/* 用户消息中的引用块 */
+.deeppdf-user-quotes {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 2px;
+}
+
+.deeppdf-user-quote-item {
+	background: rgba(255, 255, 255, 0.15);
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+	border-radius: 0 4px 4px 0;
+	padding: 6px 10px;
+}
+
+.deeppdf-user-quote-text {
+	font-size: 13px;
+	line-height: 1.5;
+	opacity: 0.85;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.deeppdf-user-quote-source {
+	font-size: 11px;
+	opacity: 0.6;
+	margin-top: 4px;
+}
+
+.deeppdf-user-quote-divider {
+	height: 1px;
+	background: rgba(255, 255, 255, 0.25);
+	margin: 6px 0;
+}
+
 /* AI 消息气泡 - 使用主题背景色，无边框，阅读模式字体 */
 .deeppdf-message-bubble-ai {
 	background: var(--background-primary);

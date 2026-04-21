@@ -166,6 +166,7 @@ export async function analyticalNode(
 
       // RRF multi-query: 每个关键词独立检索后融合
       const limitedKeywords = suggestedKeywords.slice(0, 8);
+      const currentNodeId = toolContext.currentNodeId;
       const preSearchRunnable = RunnableLambda.from(
         async () => {
           const subResults = await Promise.all(
@@ -193,7 +194,13 @@ export async function analyticalNode(
             }
           }
           return Array.from(mergedMap.values())
-            .sort((a, b) => (b.result.score + b.hitCount * 0.1) - (a.result.score + a.hitCount * 0.1))
+            .sort((a, b) => {
+              let scoreA = a.result.score + a.hitCount * 0.1;
+              let scoreB = b.result.score + b.hitCount * 0.1;
+              if (currentNodeId && a.result.nodeId === currentNodeId) scoreA += 0.2;
+              if (currentNodeId && b.result.nodeId === currentNodeId) scoreB += 0.2;
+              return scoreB - scoreA;
+            })
             .map(e => e.result);
         }
       ).withConfig({ runName: 'pre_search_rrf' });
