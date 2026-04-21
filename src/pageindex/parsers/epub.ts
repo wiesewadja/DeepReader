@@ -237,6 +237,9 @@ function createTurndownServiceWithBlocks(
             return false;
           }
 
+          // Skip if already a markdown heading (converted from HTML h1-h6)
+          if (/^#{1,6}\s/.test(text)) return false;
+
           // Text length check: headings are typically short (≤ 60 chars)
           if (text.length > 60) return false;
 
@@ -264,7 +267,9 @@ function createTurndownServiceWithBlocks(
 
         // Add block reference marker at the end of content (same line)
         if (couldBeHeading) {
-          return `\n\n### ${trimmedContent} ^${blockId}\n\n`;
+          // Strip existing heading markers to avoid duplication like "### ## title"
+          const headingText = trimmedContent.replace(/^#{1,6}\s+/, '');
+          return `\n\n### ${headingText} ^${blockId}\n\n`;
         }
         return `\n\n${trimmedContent} ^${blockId}\n\n`;
       },

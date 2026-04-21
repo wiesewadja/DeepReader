@@ -15,6 +15,32 @@ export interface ChatModels {
 }
 
 /**
+ * 混合 token 估算：CJK 字符 ~1 token，其他 ~4 字符/token。
+ * 避免 ChatOpenAI.getNumTokens() 远程加载 tiktoken BPE 词表（会被墙）。
+ */
+async function estimateTokens(content: string | Array<{ type: string; text?: string }>): Promise<number> {
+  const text = typeof content === 'string'
+    ? content
+    : content.map(c => (c.type === 'text' && c.text) || '').join('');
+  if (!text) return 0;
+  let tokens = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x3000 && code <= 0x303f) ||
+      (code >= 0xff00 && code <= 0xffef)
+    ) {
+      tokens += 1;
+    } else {
+      tokens += 0.25;
+    }
+  }
+  return Math.ceil(tokens);
+}
+
+/**
  * 创建 main/fast 双模型实例。
  * 替换现有 LLMClientManager，保留相同的双模型架构。
  *
@@ -40,6 +66,8 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
     temperature: 0.3,
     modelKwargs: mainKwargs,
   });
+  // 覆盖 getNumTokens，跳过远程 tiktoken 加载（避免 gfw 导致的 ERR_CONNECTION_CLOSED）
+  mainModel.getNumTokens = estimateTokens;
 
   let fastModel = mainModel;
   if (fast) {
@@ -55,6 +83,7 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
       temperature: 0.1,
       modelKwargs: fastKwargs,
     });
+    fastModel.getNumTokens = estimateTokens;
   }
 
   return { main: mainModel, fast: fastModel };

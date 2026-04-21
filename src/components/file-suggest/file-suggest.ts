@@ -238,32 +238,35 @@ export class FileSuggest {
 	/**
 	 * 定位下拉菜单
 	 */
-	setPosition(x: number, y: number): void {
-		if (this.el) {
-			// 确保下拉菜单不会超出屏幕
-			const rect = this.el.getBoundingClientRect();
-			const viewportWidth = window.innerWidth;
-			const viewportHeight = window.innerHeight;
+	setPosition(x: number, y: number, anchorTop?: number): void {
+		if (!this.el) return;
 
-			let posX = x;
-			let posY = y;
+		const dropdownHeight = this.el.offsetHeight || 300;
+		const viewportWidth = window.innerWidth;
+		const viewportHeight = window.innerHeight;
 
-			// 如果右边超出，向左调整
-			if (x + 300 > viewportWidth) {
-				posX = viewportWidth - 310;
-			}
+		let posX = x;
+		let posY = y;
 
-			// 如果下边超出，向上显示
-			if (y + 300 > viewportHeight) {
-				posY = y - 10;
-				this.el.style.transformOrigin = 'bottom left';
-			} else {
-				this.el.style.transformOrigin = 'top left';
-			}
-
-			this.el.style.left = `${Math.max(10, posX)}px`;
-			this.el.style.top = `${Math.max(10, posY)}px`;
+		// 如果右边超出，向左调整
+		if (x + 300 > viewportWidth) {
+			posX = viewportWidth - 310;
 		}
+
+		// 如果下边空间不足，在输入框上方显示
+		if (posY + dropdownHeight > viewportHeight) {
+			// anchorTop 是输入框顶部位置，下拉框底部对齐到输入框上方（留 4px 间距）
+			posY = (anchorTop ?? posY) - dropdownHeight - 4;
+			this.el.style.transformOrigin = 'bottom left';
+		} else {
+			this.el.style.transformOrigin = 'top left';
+		}
+
+		// 确保不超出屏幕顶部
+		posY = Math.max(10, posY);
+
+		this.el.style.left = `${Math.max(10, posX)}px`;
+		this.el.style.top = `${posY}px`;
 	}
 
 	/**

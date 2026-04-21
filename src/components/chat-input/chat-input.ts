@@ -461,7 +461,7 @@ export class ChatInput {
 			// 精确定位需要更复杂的文本测量
 		}
 
-		this.fileSuggest.setPosition(x, y);
+		this.fileSuggest.setPosition(x, y, rect.top);
 	}
 
 	/**

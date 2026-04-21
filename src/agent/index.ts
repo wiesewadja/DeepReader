@@ -333,6 +333,23 @@ ${currentMemory}
       }
       return result;
     } catch (err) {
+      // 用户主动取消（新查询 abort 旧请求）不应显示为错误
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        log('[FrontendAgent] 请求被用户取消');
+        this.activeThreadId = null;
+        return { messages: [] };
+      }
+      const isAbort = err instanceof Error && (
+        err.message.startsWith('Cancel') ||
+        err.message.startsWith('AbortError') ||
+        err.message === 'Abort' ||
+        err.name === 'AbortError'
+      );
+      if (isAbort || callbacks.abortSignal?.aborted) {
+        log('[FrontendAgent] 请求被取消');
+        this.activeThreadId = null;
+        return { messages: [] };
+      }
       const errorMsg = err instanceof Error ? err.message : String(err);
       log('[FrontendAgent] LangGraph 引擎错误:', errorMsg);
       callbacks.onError?.(errorMsg);
@@ -374,6 +391,23 @@ ${currentMemory}
       }
       return result;
     } catch (err) {
+      // 用户主动取消不应显示为错误
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        log('[FrontendAgent] 恢复执行被用户取消');
+        this.activeThreadId = null;
+        return { messages: [] };
+      }
+      const isAbort = err instanceof Error && (
+        err.message.startsWith('Cancel') ||
+        err.message.startsWith('AbortError') ||
+        err.message === 'Abort' ||
+        err.name === 'AbortError'
+      );
+      if (isAbort || callbacks.abortSignal?.aborted) {
+        log('[FrontendAgent] 恢复执行被取消');
+        this.activeThreadId = null;
+        return { messages: [] };
+      }
       const errorMsg = err instanceof Error ? err.message : String(err);
       callbacks.onError?.(errorMsg);
       this.activeThreadId = null;
