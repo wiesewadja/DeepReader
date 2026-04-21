@@ -42,6 +42,7 @@ export class ReadingModeService {
     private style: 'paginated' | 'scrolling' = 'paginated';
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
+    private currentBookName: string = '';
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -227,6 +228,7 @@ export class ReadingModeService {
 
         // 只要有书名就可以尝试切换（即使没有 index_id，也可以通过书名查找）
         if (bookName) {
+            this.currentBookName = bookName;
             serviceLog('[ReadingMode] Book detected:', bookName, 'indexId:', indexId || 'will search by name');
             this.callbacks.onBookDetected(indexId, bookName);
         }
@@ -388,6 +390,7 @@ export class ReadingModeService {
                     onNavigatePrev: () => this.navigateToPrev(),
                     onNavigateNext: () => this.navigateToNext(),
                     chapterName,
+                    bookName: this.currentBookName,
                 });
                 this.paginator.paginateAndShow();
 

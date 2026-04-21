@@ -483,19 +483,15 @@
 
 /* 确保内部容器撑满高度（仅分页模式） */
 .deeppdf-reading-mode.deeppdf-paginated .markdown-preview-sizer {
-    height: 100%;
     max-width: none !important;
     min-height: 100%;
     /* 必须清零水平 padding，否则只有第一列会被缩进，后续列贴边！ */
     padding: 0 !important;
     margin: 0 !important;
-    /* 防止图片、长段落等被从中间横向切断 */
-    column-break-inside: avoid;
-    break-inside: avoid;
     /* BFC 触发器，强制外层的 padding-left 生效 */
     display: block;
     width: 100%;
-    border-left: 1px solid transparent; 
+    border-left: 1px solid transparent;
 }
 
 /* 避免大块元素跨列断裂（仅分页模式） */
@@ -548,154 +544,39 @@
     pointer-events: none;
 }
 
-/* 底部控制栏 — absolute，贴底 */
+/* 底部浮层 — 居中：章节名 · 页码 · 书名 */
 .deeppdf-page-controls {
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 16px 10px;
-    background: var(--background-primary);
-    border-top: 1px solid var(--background-modifier-border);
-    z-index: 10;
-    box-sizing: border-box;
-}
-
-/* 页码指示器 */
-.deeppdf-page-indicator {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    min-width: 42px;
-    text-align: right;
-}
-
-/* 条纹轨道容器 */
-.deeppdf-page-stripes {
-    flex: 1;
-    position: relative;
-    height: 20px;
-    display: flex;
-    align-items: center;
-}
-
-/* 章节名称指示器（小字体浅色） */
-.deeppdf-chapter-indicator {
-    color: var(--text-faint);
-    font-size: 10px;
-    white-space: nowrap;
-    opacity: 0.7;
-}
-
-/* 轨道背景线 */
-.deeppdf-page-stripes::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 2px;
-    background: var(--background-modifier-border);
-    border-radius: 1px;
-    transform: translateY(-50%);
-}
-
-/* 滑块容器（在轨道上滑动） */
-.deeppdf-stripe-thumb {
-    position: absolute;
-    top: 0;
-    left: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    height: 100%;
-    transition: transform 0.25s ease;
-    z-index: 1;
-}
-
-/* 单个条纹 - 横条纹 */
-.deeppdf-page-stripe {
-    height: 6px;
-    width: 20px;
-    background: var(--background-modifier-border);
-    border-radius: 2px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.deeppdf-page-stripe:hover {
-    background: var(--text-muted);
-    height: 8px;
-}
-
-.deeppdf-page-stripe.active {
-    background: var(--interactive-accent);
-    height: 10px;
-}
-
-.deeppdf-page-stripe.read {
-    background: var(--text-faint);
-}
-
-/* 预览弹出框 */
-.deeppdf-page-preview-popup {
-    position: absolute;
-    bottom: 100%;
-    left: 0;
+    bottom: 10px;
+    left: 50%;
     transform: translateX(-50%);
-    margin-bottom: 8px;
-    width: 140px;
-    height: 100px;
-    background: var(--background-primary);
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    z-index: 100;
-    overflow: hidden;
-}
-
-.deeppdf-page-preview-popup.visible {
-    opacity: 1;
-    visibility: visible;
-}
-
-.deeppdf-page-preview-content {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    position: relative;
-    background: var(--background-primary-alt);
+    z-index: 10;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
     align-items: center;
-    padding: 8px;
+    gap: 8px;
+    pointer-events: none;
+    opacity: 0.4;
+    transition: opacity 0.2s ease;
 }
 
-/* 预览文本 */
-.deeppdf-page-preview-text {
-    font-size: 11px;
-    color: var(--text-muted);
-    text-align: center;
-    line-height: 1.4;
-    max-height: 60px;
-    overflow: hidden;
-    word-break: break-all;
-}
-
-/* 页码标签 */
-.deeppdf-page-preview-label {
-    font-size: 10px;
+.deeppdf-page-chapter,
+.deeppdf-page-num,
+.deeppdf-page-book {
     color: var(--text-faint);
-    margin-top: 6px;
-    opacity: 0.7;
+    font-size: 11px;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.deeppdf-page-num {
+    font-variant-numeric: tabular-nums;
+}
+
+.deeppdf-page-controls span + span::before {
+    content: '·';
+    margin-right: 8px;
+    color: var(--text-faint);
+    opacity: 0.5;
 }
 
 /* ==================== BlockId 高亮样式 ==================== */
