@@ -42,6 +42,7 @@ export class PagePaginator {
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 	private scrollHandler: ((e: Event) => void) | null = null;
 	private chapterName: string;
+	private lastKnownViewWidth: number = 0;
 
 	constructor(options: PagePaginatorOptions) {
 		this.options = options;
@@ -52,6 +53,7 @@ export class PagePaginator {
 
 		this.scrollView = this.container.closest('.markdown-preview-view') as HTMLElement;
 		this.viewContent = this.container.closest('.view-content') as HTMLElement;
+		this.lastKnownViewWidth = this.scrollView?.clientWidth || 0;
 	}
 
 	isActive(): boolean { return this._isActive; }
@@ -119,16 +121,12 @@ export class PagePaginator {
 
 	private calculatePages(): void {
 		if (!this.scrollView) return;
-		
+
 		requestAnimationFrame(() => {
 			if (!this.scrollView) return;
-			const totalWidth = this.scrollView.scrollWidth;
-			const viewWidth = this.scrollView.clientWidth;
-			
-			if (viewWidth === 0) return;
-			
-			this._totalPages = Math.max(1, Math.ceil(totalWidth / viewWidth));
-			
+
+			this._totalPages = this.countActualPages();
+
 			// 创建条纹
 			this.createStripes();
 
@@ -136,6 +134,34 @@ export class PagePaginator {
 			this.updateCurrentPageFromScroll();
 			this.updateControls();
 		});
+	}
+
+	/**
+	 * 通过检测 sizer 子元素的实际位置计算真实页数。
+	 * CSS multi-column 的 scrollWidth 可能虚高，不能直接用于页数计算。
+	 */
+	private countActualPages(): number {
+		if (!this.scrollView) return 1;
+
+		const viewWidth = this.scrollView.clientWidth;
+		if (viewWidth === 0) return 1;
+
+		const viewRect = this.scrollView.getBoundingClientRect();
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (!sizer) return 1;
+
+		// 收集所有块元素所在列的桶编号
+		const columnBuckets = new Set<number>();
+		for (const child of sizer.children) {
+			const r = (child as HTMLElement).getBoundingClientRect();
+			if (r.height < 5 || r.width < 10) continue;
+			const absX = r.left - viewRect.left + this.scrollView.scrollLeft;
+			const bucket = Math.floor(absX / viewWidth);
+			columnBuckets.add(bucket);
+		}
+
+		if (columnBuckets.size === 0) return 1;
+		return Math.max(...columnBuckets) + 1;
 	}
 
 	private setupScrollListener(): void {
@@ -204,7 +230,7 @@ export class PagePaginator {
 		const newPage = Math.round(scrollLeft / viewWidth) + 1;
 
 		if (newPage !== this._currentPage) {
-			this._currentPage = newPage;
+			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
 			this.options.onPageChange?.(this._currentPage, this._totalPages);
 		}
 	}
@@ -504,6 +530,14 @@ export class PagePaginator {
 	private handleResize(): void {
 		if (!this._isActive || !this.scrollView) return;
 
+		const currentViewWidth = this.scrollView.clientWidth;
+		if (currentViewWidth === 0) return;
+
+		// 宽度没变，跳过（纯滚动不应触发重排）
+		if (currentViewWidth === this.lastKnownViewWidth) return;
+
+		this.lastKnownViewWidth = currentViewWidth;
+
 		// 记录调整前的进度百分比
 		const prevProgress = this._totalPages > 1
 			? (this._currentPage - 1) / (this._totalPages - 1) : 0;
@@ -515,12 +549,8 @@ export class PagePaginator {
 		requestAnimationFrame(() => {
 			if (!this._isActive || !this.scrollView) return;
 
-			const totalWidth = this.scrollView.scrollWidth;
-			const viewWidth = this.scrollView.clientWidth;
-			if (viewWidth === 0) return;
-
-			// 计算新的总页数
-			this._totalPages = Math.max(1, Math.ceil(totalWidth / viewWidth));
+			// 计算新的总页数（用实际列位置，不用 scrollWidth）
+			this._totalPages = this.countActualPages();
 
 			// 重新创建条纹
 			this.createStripes();
@@ -537,7 +567,7 @@ export class PagePaginator {
 			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
 
 			// 立刻强制同步滚动，对齐内容盒子
-			this.scrollView.scrollLeft = (this._currentPage - 1) * viewWidth;
+			this.scrollView.scrollLeft = (this._currentPage - 1) * this.scrollView.clientWidth;
 			
 			// 更新底部控件
 			this.updateControls();
