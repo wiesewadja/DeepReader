@@ -8,6 +8,15 @@ import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc } from "../types/index.js";
+import {
+    createEmptyProgress,
+    markChapterVisited,
+    updateLastRead,
+    getProgressPercent,
+    loadProgress,
+    saveProgress,
+} from "../pageindex/reading-progress.js";
+import type { ReadingProgress } from "../pageindex/reading-progress.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
@@ -84,6 +93,11 @@ export class SidebarView extends ItemView {
 
     /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
     private currentMarkdownFiles: Record<string, string> = {};
+
+    // 阅读进度追踪
+    private readingProgress: ReadingProgress | null = null;
+    private progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly PROGRESS_DEBOUNCE_MS = 3000;
 
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
     private currentDocDescription: string | null = null;
@@ -768,10 +782,17 @@ export class SidebarView extends ItemView {
         // 如果已经选中了同一个索引，跳过以避免闪烁
         if (this.currentIndexId === indexId) {
             log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
+            // 即使跳过切换，也要确保阅读进度已初始化
+            if (!this.readingProgress) {
+                await this.initReadingProgress(indexId);
+            }
             return;
         }
 
         log(`[DeepPDF] selectIndex triggered: ${indexId}`);
+
+        // 切换书籍前，flush 旧书籍的阅读进度
+        await this.flushProgressSave();
         this.currentIndexId = indexId;
         this.plugin.settings.lastSelectedIndexId = indexId;
         await this.plugin.saveSettings();
@@ -828,25 +849,30 @@ export class SidebarView extends ItemView {
             // 加载书籍封面（优先使用 exportName 匹配封面文件）
             this.loadBookCover(coverName || displayName, indexId);
         } else {
-            // 后端不可用或索引列表为空时，从 indexId 推断书籍名称
-            // indexId 可能是书籍名称或路径格式
-            displayName = indexId;
-            // 处理可能的路径格式
-            if (displayName.includes('/')) {
-                displayName = displayName.split('/').pop() || displayName;
-            }
-            // 移除扩展名
-            if (displayName.toLowerCase().endsWith('.pdf')) {
-                displayName = displayName.slice(0, -4);
-            }
-            if (displayName.toLowerCase().endsWith('.epub')) {
-                displayName = displayName.slice(0, -5);
-            }
-            this.currentPdfName = displayName;
-            log(`[DeepPDF] 后端不可用，从 indexId 推断书籍名称: "${displayName}"`);
+            // index 不在 indexes 列表中（可能 loadIndexes 还没完成）
+            // 尝试从 book-meta.json 读取 exportName 和 author
+            let exportName: string | undefined;
+            let metaAuthor: string | undefined;
+            try {
+                const vaultPath = (this.app.vault.adapter as any).basePath;
+                const fs = require('fs/promises');
+                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+                const meta = JSON.parse(metaRaw);
+                exportName = meta.exportName || undefined;
+                metaAuthor = meta.author || undefined;
+            } catch { /* ignore */ }
 
-            // 后端不可用时，尝试从本地加载封面
-            this.loadBookCover(displayName);
+            if (exportName) {
+                displayName = exportName;
+                this.currentPdfName = exportName;
+                author = metaAuthor;
+                log(`[DeepPDF] 从 book-meta.json 恢复书名: "${exportName}"`);
+                this.loadBookCover(exportName, indexId);
+            } else {
+                // book-meta.json 也不存在，无法恢复，放弃设置
+                log(`[DeepPDF] index ${indexId} 不在列表中且无 book-meta.json，跳过`);
+                return;
+            }
         }
 
         // 尝试从本地元数据获取作者信息（如果还没有）
@@ -873,6 +899,9 @@ export class SidebarView extends ItemView {
         // 更新 UI
         this.messageList?.setCurrentPdfName(displayName);
         this.readingTopbar?.setCurrentBook(displayName, author);
+
+        // 初始化阅读进度
+        await this.initReadingProgress(indexId);
 
         // === 从本地书籍笔记读取全书摘要 ===
         try {
@@ -988,6 +1017,139 @@ export class SidebarView extends ItemView {
         await this.contextManager.loadByPath(activeFile.path, 'current');
     }
 
+    // ============ 阅读进度追踪 ============
+
+    /**
+     * 初始化阅读进度（加载或创建）
+     * 可安全多次调用（幂等）
+     */
+    private async initReadingProgress(indexId: string): Promise<void> {
+        if (this.readingProgress?.bookId === indexId) return;
+
+        try {
+            const vaultPath = (this.app.vault.adapter as any).basePath;
+            const loaded = await loadProgress(vaultPath, indexId);
+            this.readingProgress = loaded || createEmptyProgress(indexId);
+            log(`[DeepPDF] 阅读进度已初始化: ${indexId}, 已访问 ${Object.keys(this.readingProgress.chapters).filter(k => this.readingProgress!.chapters[k].visited).length} 章`);
+
+            // 更新 topbar 进度显示
+            this.updateProgressUI();
+        } catch (e) {
+            logError('[DeepPDF] 初始化阅读进度失败:', e);
+            this.readingProgress = createEmptyProgress(indexId);
+        }
+    }
+
+    /**
+     * 追踪当前阅读的章节
+     * 在 file-open 和 active-leaf-change 时调用
+     */
+    private async trackReadingProgress(): Promise<void> {
+        if (!this.readingProgress || !this.currentPdfName) return;
+
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || activeFile.extension !== 'md') return;
+
+        // 检查当前文件是否属于正在阅读的书籍
+        const bookPath = `DeepReader/${this.currentPdfName}/`;
+        if (!activeFile.path.startsWith(bookPath)) return;
+
+        // 排除书籍主文件
+        if (activeFile.path === `${bookPath}${this.currentPdfName}.md`) return;
+
+        // 获取章节标识：优先 node_id，回退到文件 basename
+        const cache = this.app.metadataCache.getFileCache(activeFile);
+        const rawNodeId = cache?.frontmatter?.node_id;
+        const chapterId = rawNodeId ? String(rawNodeId) : activeFile.basename;
+        if (!chapterId) return;
+
+        // 标记章节已访问
+        const wasVisited = this.readingProgress.chapters[chapterId]?.visited;
+        this.readingProgress = markChapterVisited(this.readingProgress, chapterId);
+        this.readingProgress = updateLastRead(this.readingProgress, chapterId);
+
+        if (!wasVisited) {
+            log(`[DeepPDF] 章节已标记为已读: ${chapterId} (${activeFile.basename})`);
+        }
+
+        // 更新 topbar 进度显示
+        this.updateProgressUI();
+
+        // 防抖保存
+        this.debouncedSaveProgress();
+    }
+
+    /**
+     * 更新顶栏进度 UI
+     */
+    private updateProgressUI(): void {
+        if (!this.readingProgress || !this.currentPdfName) return;
+
+        const totalChapters = this.getTotalChapters();
+        const percent = getProgressPercent(this.readingProgress, totalChapters);
+        this.readingTopbar?.setProgress(percent);
+        log(`[DeepPDF] 进度更新: ${percent}% (${Object.values(this.readingProgress.chapters).filter(c => c.visited).length}/${totalChapters})`);
+    }
+
+    /**
+     * 获取当前书籍的总章节数
+     */
+    private getTotalChapters(): number {
+        if (!this.currentPdfName) return 0;
+
+        // 从索引列表中获取
+        const index = this.indexes.find(i => i.id === this.currentIndexId);
+        if (index && index.node_count > 0) {
+            return index.node_count;
+        }
+
+        // 回退：统计 DeepReader/{bookName}/ 下的 md 文件数量
+        try {
+            const bookFolder = this.app.vault.getAbstractFileByPath(`DeepReader/${this.currentPdfName}`);
+            if (bookFolder && 'children' in bookFolder) {
+                const children = (bookFolder as any).children as any[];
+                return children.filter((f: any) =>
+                    f instanceof TFile && f.extension === 'md' &&
+                    f.path !== `DeepReader/${this.currentPdfName}/${this.currentPdfName}.md`
+                ).length;
+            }
+        } catch {
+            // ignore
+        }
+        return 0;
+    }
+
+    /**
+     * 防抖保存阅读进度
+     */
+    private debouncedSaveProgress(): void {
+        if (this.progressDebounceTimer) {
+            clearTimeout(this.progressDebounceTimer);
+        }
+        this.progressDebounceTimer = setTimeout(() => {
+            this.flushProgressSave();
+        }, this.PROGRESS_DEBOUNCE_MS);
+    }
+
+    /**
+     * 立即保存阅读进度到磁盘
+     */
+    private async flushProgressSave(): Promise<void> {
+        if (this.progressDebounceTimer) {
+            clearTimeout(this.progressDebounceTimer);
+            this.progressDebounceTimer = null;
+        }
+
+        if (!this.readingProgress) return;
+
+        try {
+            const vaultPath = (this.app.vault.adapter as any).basePath;
+            await saveProgress(vaultPath, this.readingProgress);
+        } catch (e) {
+            logError('[DeepPDF] 保存阅读进度失败:', e);
+        }
+    }
+
     /**
      * 获取当前选中的索引 ID
      */
@@ -1008,6 +1170,10 @@ export class SidebarView extends ItemView {
         const currentBookName = this.getNormalizedBookName();
         if (currentBookName === normalizedBookName) {
             log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
+            // 即使同一本书，也要确保进度已初始化
+            if (!this.readingProgress && this.currentIndexId) {
+                await this.initReadingProgress(this.currentIndexId);
+            }
             return;
         }
 
@@ -1173,7 +1339,7 @@ export class SidebarView extends ItemView {
             })
         );
 
-        // 监听文件切换事件，更新文档加载按钮状态
+        // 监听文件切换事件，更新文档加载按钮状态 + 阅读进度追踪
         this.registerEvent(
             this.app.workspace.on("active-leaf-change", () => {
                 if (this.contextManager) {
@@ -1181,6 +1347,8 @@ export class SidebarView extends ItemView {
                     const isLoaded = activeFile ? this.contextManager.hasDocument(activeFile.path) : false;
                     this.chatInput?.setLoadBtnActive(isLoaded);
                 }
+                // 追踪阅读进度
+                this.trackReadingProgress();
             })
         );
     }
@@ -2708,8 +2876,8 @@ export class SidebarView extends ItemView {
 
     async onClose() {
         try {
-
-            // 清理流式请求
+            // 保存阅读进度
+            await this.flushProgressSave();
             if (this.streamController) {
                 try {
                     this.streamController.abort();

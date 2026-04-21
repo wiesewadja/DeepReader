@@ -12,6 +12,7 @@ import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../..
 import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
+import { loadProgress, getProgressPercent, createEmptyProgress } from '../../pageindex/reading-progress.js';
 import * as path from 'path';
 
 /** Proposition 功能开关 — token 成本过高，优化后重新启用 */
@@ -58,6 +59,8 @@ export class LibraryModal extends Modal {
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     // 卡片 DOM 引用（用于增量更新）
     private cardElements: Map<string, HTMLElement> = new Map();
+    // 阅读进度缓存：bookId -> percent
+    private readingProgressCache: Map<string, number> = new Map();
 
     constructor(app: App, options: LibraryModalOptions) {
         super(app);
@@ -70,7 +73,7 @@ export class LibraryModal extends Modal {
         const { contentEl, modalEl } = this;
         contentEl.empty();
         modalEl.addClass('deeppdf-library-modal');
-        this.render();
+        this.loadReadingProgresses().then(() => this.render());
     }
 
     onClose() {
@@ -304,6 +307,17 @@ export class LibraryModal extends Modal {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-meta', text: metaParts.join(' · ') });
         }
 
+        // 阅读进度条（仅 ready 状态显示）
+        if (statusClass === 'ready') {
+            const progressPercent = this.readingProgressCache.get(index.id) || 0;
+            if (progressPercent > 0) {
+                const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
+                const barBg = progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-bg' });
+                barBg.createDiv({ cls: 'deeppdf-lib-reading-bar-fill', attr: { style: `width: ${progressPercent}%` } });
+                progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-text', text: `${progressPercent}%` });
+            }
+        }
+
         // 点击选择
         card.addEventListener('click', () => {
             if (statusClass === 'ready') {
@@ -481,6 +495,54 @@ export class LibraryModal extends Modal {
         }
 
         return name;
+    }
+
+    /**
+     * 加载所有已索引书籍的阅读进度
+     */
+    private async loadReadingProgresses(): Promise<void> {
+        this.readingProgressCache.clear();
+        const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+
+        for (const index of this.indexes) {
+            const status = (index.status || '').toLowerCase();
+            if (!['ready', 'completed', 'success'].includes(status)) continue;
+
+            try {
+                const progress = await loadProgress(vaultPath, index.id);
+                if (progress) {
+                    const totalChapters = this.getChapterCount(index);
+                    if (totalChapters > 0) {
+                        const percent = getProgressPercent(progress, totalChapters);
+                        if (percent > 0) {
+                            this.readingProgressCache.set(index.id, percent);
+                        }
+                    }
+                }
+            } catch {
+                // 忽略加载失败
+            }
+        }
+    }
+
+    /**
+     * 获取书籍的总章节数（索引 node_count 回退到 vault 文件计数）
+     */
+    private getChapterCount(index: IndexListItem): number {
+        if (index.node_count > 0) return index.node_count;
+
+        // 回退：统计 DeepReader/{displayName}/ 下的 md 文件数量
+        const folderName = this.getDisplayName(index.pdf_name);
+        const folderPath = `DeepReader/${folderName}`;
+        const folder = this.app.vault.getAbstractFileByPath(folderPath);
+
+        if (folder && 'children' in folder) {
+            const children = (folder as any).children as any[];
+            return children.filter((f: any) =>
+                f instanceof TFile && f.extension === 'md'
+            ).length;
+        }
+        return 0;
     }
 
     private async handleAddDocument(): Promise<void> {

@@ -17,6 +17,9 @@ export class ReadingTopbar extends Component {
     private bookCoverEl: HTMLElement | null = null;
     private bookTitleEl: HTMLElement | null = null;
     private bookAuthorEl: HTMLElement | null = null;
+    private progressCircleEl: SVGCircleElement | null = null;
+    private progressTextEl: HTMLElement | null = null;
+    private progressContainerEl: HTMLElement | null = null;
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -56,6 +59,63 @@ export class ReadingTopbar extends Component {
         leftSection.appendChild(bookInfo);
 
         container.appendChild(leftSection);
+
+        // 中间：阅读进度圆形指示器
+        this.progressContainerEl = document.createElement('div');
+        this.progressContainerEl.className = 'deeppdf-topbar-progress';
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('width', '28');
+        svg.setAttribute('height', '28');
+        svg.setAttribute('viewBox', '0 0 28 28');
+
+        // 背景圆
+        const bgCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        bgCircle.setAttribute('cx', '14');
+        bgCircle.setAttribute('cy', '14');
+        bgCircle.setAttribute('r', '11');
+        bgCircle.setAttribute('fill', 'none');
+        bgCircle.setAttribute('stroke', 'var(--background-modifier-border)');
+        bgCircle.setAttribute('stroke-width', '2.5');
+        svg.appendChild(bgCircle);
+
+        // 进度圆（stroke-dasharray = 2πr ≈ 69.12）
+        this.progressCircleEl = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        this.progressCircleEl.setAttribute('cx', '14');
+        this.progressCircleEl.setAttribute('cy', '14');
+        this.progressCircleEl.setAttribute('r', '11');
+        this.progressCircleEl.setAttribute('fill', 'none');
+        this.progressCircleEl.setAttribute('stroke', 'var(--interactive-accent)');
+        this.progressCircleEl.setAttribute('stroke-width', '2.5');
+        this.progressCircleEl.setAttribute('stroke-linecap', 'round');
+        this.progressCircleEl.setAttribute('stroke-dasharray', '69.12');
+        this.progressCircleEl.setAttribute('stroke-dashoffset', '69.12');
+        this.progressCircleEl.style.transform = 'rotate(-90deg)';
+        this.progressCircleEl.style.transformOrigin = '14px 14px';
+        this.progressCircleEl.style.transition = 'stroke-dashoffset 0.4s ease';
+        svg.appendChild(this.progressCircleEl);
+
+        // 进度百分比 tooltip（跟随鼠标）
+        this.progressTextEl = document.createElement('span');
+        this.progressTextEl.className = 'deeppdf-progress-text';
+        this.progressTextEl.textContent = '0%';
+        container.appendChild(this.progressTextEl);
+
+        // 鼠标事件：进入圆圈显示 tooltip，移动时跟随，离开时隐藏
+        this.progressContainerEl.addEventListener('mouseenter', () => {
+            this.progressTextEl!.style.opacity = '1';
+        });
+        this.progressContainerEl.addEventListener('mousemove', (e) => {
+            const rect = container.getBoundingClientRect();
+            this.progressTextEl!.style.left = (e.clientX - rect.left + 8) + 'px';
+            this.progressTextEl!.style.top = (e.clientY - rect.top - 24) + 'px';
+        });
+        this.progressContainerEl.addEventListener('mouseleave', () => {
+            this.progressTextEl!.style.opacity = '0';
+        });
+
+        this.progressContainerEl.appendChild(svg);
+        container.appendChild(this.progressContainerEl);
 
         // 右侧：操作按钮（我的书库 + 设置）
         const rightSection = document.createElement('div');
@@ -140,6 +200,23 @@ export class ReadingTopbar extends Component {
     }
 
     /**
+     * 设置阅读进度百分比 (0-100)
+     */
+    public setProgress(percent: number): void {
+        if (!this.progressCircleEl || !this.progressTextEl) return;
+
+        const circumference = 69.12; // 2 * π * 11
+        const offset = circumference - (circumference * percent / 100);
+        this.progressCircleEl.setAttribute('stroke-dashoffset', String(offset));
+        this.progressTextEl.textContent = `${percent}%`;
+
+        // 0% 时隐藏进度圆
+        if (this.progressContainerEl) {
+            this.progressContainerEl.style.opacity = percent > 0 ? '1' : '0.4';
+        }
+    }
+
+    /**
      * 选择索引（兼容接口)
      */
     public selectIndex(indexId: string): void {
@@ -157,6 +234,9 @@ export class ReadingTopbar extends Component {
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
+        this.progressCircleEl = null;
+        this.progressTextEl = null;
+        this.progressContainerEl = null;
         super.destroy();
     }
 }
