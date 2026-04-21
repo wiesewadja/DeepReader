@@ -129,6 +129,7 @@ export class SidebarView extends ItemView {
             return; // 已初始化
         }
         this.milestoneRecorder = new MilestoneRecorder(this.app);
+        await this.milestoneRecorder.restoreFromHistory();
 
         log('[DeepPDF] MilestoneRecorder 初始化完成');
     }
