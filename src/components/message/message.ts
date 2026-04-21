@@ -357,6 +357,76 @@ function extractSectionByBlockRef(content: string, blockRef: string): string {
 	return '';
 }
 
+	/**
+	 * 解析 wiki 链接并获取预览内容
+	 *
+	 * 从 vault 中读取 DeepReader 导出的 markdown 文件，
+	 * 提取 block ID 附近的上下文（前后各 ~100 字）
+	 */
+	async function resolveWikiLinkPreview(app: App, href: string): Promise<{ text: string; chapterName: string } | null> {
+		const hrefClean = href.includes('|') ? href.split('|')[0] : href;
+		const hashIdx = hrefClean.indexOf('#');
+		const linkFilePath = hashIdx >= 0 ? hrefClean.slice(0, hashIdx) : hrefClean;
+		const rawFragment = hashIdx >= 0 ? hrefClean.slice(hashIdx + 1) : null;
+		const blockId = rawFragment?.startsWith('^') ? rawFragment.slice(1) : null;
+
+		const pathParts = linkFilePath.split('/');
+		if (pathParts.length < 2) return null;
+
+		const bookName = pathParts[0];
+		const fileName = pathParts.slice(1).join('/');
+
+		const vaultRelPath = `DeepReader/${bookName}/${fileName.endsWith('.md') ? fileName : fileName + '.md'}`;
+		let content: string;
+		try {
+			content = await (app.vault as any).adapter.read(vaultRelPath);
+		} catch {
+			return null;
+		}
+
+		// 移除 frontmatter
+		content = content.replace(/^---[\s\S]*?---\n/, '');
+
+		// 章节名：去掉前导序号 "14 - 认识财富创造的原理" → "认识财富创造的原理"
+		const chapterName = fileName.replace(/\.md$/, '').replace(/^\d+\s*-\s*/, '').trim();
+
+		// 清理文本中的 block ID 标记（^xxx）
+		const cleanBlockIds = (text: string) => text.replace(/\^[a-zA-Z0-9_-]+/g, '').trim();
+
+		if (blockId) {
+			const lines = content.split('\n');
+			let blockLineIndex = -1;
+			for (let i = 0; i < lines.length; i++) {
+				if (lines[i].includes(blockId)) {
+					blockLineIndex = i;
+					break;
+				}
+			}
+			if (blockLineIndex === -1) return null;
+
+			// 前后各 ~100 字
+			let start = blockLineIndex;
+			let end = blockLineIndex + 1;
+			let charCount = 0;
+			while (end < lines.length && charCount < 100) {
+				charCount += lines[end].length + 1;
+				end++;
+			}
+			charCount = 0;
+			while (start > 0 && charCount < 100) {
+				start--;
+				charCount += lines[start].length + 1;
+			}
+
+			const text = cleanBlockIds(lines.slice(start, end).join('\n'));
+			return text ? { text, chapterName } : null;
+		}
+
+		// 无 block ID，显示章节开头
+		const text = cleanBlockIds(content.slice(0, 200));
+		return text ? { text, chapterName } : null;
+	}
+
 /**
  * 处理内部链接的点击和悬停事件
  *
@@ -562,36 +632,85 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 			return;
 		}
 
-		// 处理悬停事件 - 默认使用 Obsidian 原生 hover preview
-		link.addEventListener('mouseenter', (event: MouseEvent) => {
-			log('[DeepPDF] mouseenter on link:', href);
+				// 处理悬停事件 - 复用 Obsidian popover 样式，增强 DeepReader block 预览
+				link.addEventListener('mouseenter', (event: MouseEvent) => {
+					if (showTimer) { window.clearTimeout(showTimer); showTimer = null; }
+					if (hideTimer) { window.clearTimeout(hideTimer); hideTimer = null; }
+					cleanupPopover();
 
-			// 清理之前的定时器
-			if (showTimer) {
-				window.clearTimeout(showTimer);
-				showTimer = null;
-			}
-			if (hideTimer) {
-				window.clearTimeout(hideTimer);
-				hideTimer = null;
-			}
+					showTimer = window.setTimeout(async () => {
+						const result = await resolveWikiLinkPreview(app, href);
+						if (result) {
+							// 复用 Obsidian 的 .popover 样式体系
+							customPopover = document.createElement('div');
+							customPopover.className = 'popover deeppdf-link-preview';
 
-			// 清理自定义 popover
-			cleanupPopover();
+							// 内容区：使用 markdown-preview-view 确保 Markdown 渲染复用主题
+							const contentEl = document.createElement('div');
+							contentEl.className = 'deeppdf-link-preview-content markdown-preview-view';
+							try {
+								await MarkdownRenderer.render(app, result.text, contentEl, '', new Component());
+							} catch {
+								contentEl.textContent = result.text;
+							}
+							customPopover.appendChild(contentEl);
 
-			// 触发 Obsidian 原生 hover preview（支持所有文件类型，包括 Canvas）
-			app.workspace.trigger('hover-link', {
-				event: event,
-				source: 'deeppdf',
-				hoverParent: hoverParent,
-				targetEl: link,
-				linktext: href
-			});
+							// 右下角章节标签
+							const chapterEl = document.createElement('div');
+							chapterEl.className = 'deeppdf-link-preview-chapter';
+							chapterEl.textContent = result.chapterName;
+							customPopover.appendChild(chapterEl);
+
+							// 定位
+							const linkRect = link.getBoundingClientRect();
+							customPopover.style.position = 'fixed';
+							customPopover.style.left = linkRect.left + 'px';
+							customPopover.style.top = (linkRect.bottom + 6) + 'px';
+							document.body.appendChild(customPopover);
+
+							// 视口溢出修正
+							requestAnimationFrame(() => {
+								if (!customPopover) return;
+								const r = customPopover.getBoundingClientRect();
+								if (r.bottom > window.innerHeight) {
+									customPopover.style.top = (linkRect.top - r.height - 6) + 'px';
+								}
+								if (r.right > window.innerWidth) {
+									customPopover.style.left = (window.innerWidth - r.width - 8) + 'px';
+								}
+							});
+
+							// 鼠标移入弹出框：保持显示
+							customPopover.addEventListener('mouseenter', () => {
+								if (hideTimer) { window.clearTimeout(hideTimer); hideTimer = null; }
+							});
+							// 鼠标移出弹出框：延迟关闭
+							customPopover.addEventListener('mouseleave', () => {
+								hideTimer = window.setTimeout(() => cleanupPopover(), 300);
+							});
+						} else {
+							// 非 DeepReader 链接 → Obsidian 原生预览
+							app.workspace.trigger('hover-link', {
+								event: event,
+								source: 'deeppdf',
+								hoverParent: hoverParent,
+								targetEl: link,
+								linktext: href
+							});
+						}
+					}, 200);
+				});
+
+				// 鼠标离开链接：延迟关闭（给用户时间移入弹出框）
+				link.addEventListener('mouseleave', () => {
+					if (showTimer) { window.clearTimeout(showTimer); showTimer = null; }
+					hideTimer = window.setTimeout(() => cleanupPopover(), 300);
+				});
 		});
-	});
 
 	return null;
 }
+
 
 /**
  * 消息基类

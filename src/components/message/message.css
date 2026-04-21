@@ -1303,3 +1303,49 @@
 		display: none;
 	}
 }
+/* ==================== Wiki 链接悬浮预览 ==================== */
+/* 复用 Obsidian .popover 主题样式，仅追加自定义增强 */
+
+.deeppdf-link-preview {
+	min-width: 280px;
+	max-width: 480px;
+	max-height: 360px;
+	position: fixed;
+	z-index: 1000;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	padding: 8px 12px;
+}
+
+.deeppdf-link-preview-content {
+	overflow-y: auto;
+	flex: 1;
+}
+
+.deeppdf-link-preview-content .markdown-preview-sizer {
+	padding: 0 !important;
+}
+
+.deeppdf-link-preview-content p {
+	margin: 0.5em 0;
+	line-height: 1.7;
+}
+
+.deeppdf-link-preview-content h1,
+.deeppdf-link-preview-content h2,
+.deeppdf-link-preview-content h3 {
+	margin: 0.6em 0 0.3em;
+}
+
+/* 右下角章节标签 */
+.deeppdf-link-preview-chapter {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+	text-align: right;
+	padding: 6px 0 0;
+	margin-top: 6px;
+	border-top: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
