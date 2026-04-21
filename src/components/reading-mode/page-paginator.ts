@@ -13,12 +13,14 @@ export interface PagePaginatorOptions {
 	onNavigatePrev: () => Promise<boolean>;
 	onNavigateNext: () => Promise<boolean>;
 	chapterName?: string;                      // 当前章节名称
+	onPageChange?: (page: number, totalPages: number) => void;
 }
 
 const DISABLED_CLASS = 'deeppdf-page-btn-disabled';
 const MAX_VISIBLE_STRIPES = 5;
 
 export class PagePaginator {
+	private options: PagePaginatorOptions;
 	private container: HTMLElement;
 	private scrollView: HTMLElement | null = null;   // .markdown-preview-view
 	private viewContent: HTMLElement | null = null;  // .view-content (用来挂载按钮)
@@ -42,6 +44,7 @@ export class PagePaginator {
 	private chapterName: string;
 
 	constructor(options: PagePaginatorOptions) {
+		this.options = options;
 		this.container = options.container;
 		this.onNavigatePrev = options.onNavigatePrev;
 		this.onNavigateNext = options.onNavigateNext;
@@ -128,7 +131,8 @@ export class PagePaginator {
 			
 			// 创建条纹
 			this.createStripes();
-			
+
+			this.options.onPageChange?.(this._currentPage, this._totalPages);
 			this.updateCurrentPageFromScroll();
 			this.updateControls();
 		});
@@ -201,6 +205,7 @@ export class PagePaginator {
 
 		if (newPage !== this._currentPage) {
 			this._currentPage = newPage;
+			this.options.onPageChange?.(this._currentPage, this._totalPages);
 		}
 	}
 
