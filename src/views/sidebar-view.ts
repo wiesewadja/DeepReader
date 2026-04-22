@@ -43,6 +43,8 @@ import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 import { SessionStore } from "../agent/session/index.js";
 import { findBlockIdFromRange } from "../utils/block-utils.js";
+import { TTSService, type TTSPlayState } from '../services/tts/tts-service.js';
+import { resolveRoleConfig } from '../config/providers.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -87,6 +89,9 @@ export class SidebarView extends ItemView {
 
     // 阅读里程碑记录器
     private milestoneRecorder: MilestoneRecorder | null = null;
+
+    // TTS 语音播报服务
+    private ttsService: TTSService | null = null;
 
     // 会话存储（JSONL 文件）
     private sessionStore: SessionStore | null = null;
@@ -1332,6 +1337,12 @@ export class SidebarView extends ItemView {
                     setting.openTabById('deepreader');
                 }
             },
+            onToggleAutoBroadcast: () => {
+                this.plugin.settings.autoTTS = !this.plugin.settings.autoTTS;
+                this.plugin.saveSettings();
+                this.readingTopbar?.setAutoTTS(this.plugin.settings.autoTTS);
+            },
+            initialAutoTTS: this.plugin.settings.autoTTS,
         });
 
         const el = this.readingTopbar.getElement();
@@ -1761,6 +1772,9 @@ export class SidebarView extends ItemView {
             },
             onDelete: (messageId: string) => {
                 this.handleDeleteMessagePair(messageId);
+            },
+            onTTS: (messageId: string, content: string) => {
+                this.handleTTS(messageId, content);
             },
             getCurrentBookInfo: () => ({
                 coverUrl: this.currentBookCoverUrl,
@@ -2385,6 +2399,16 @@ export class SidebarView extends ItemView {
 
                     this.chatInput?.focus();
                     this.streamController = null;
+
+                    // 自动播报
+                    if (this.plugin.settings.autoTTS) {
+                        if (!this.ttsService) {
+                            this.ttsService = this.initTTSService();
+                        }
+                        if (this.ttsService && this.ttsService.getCurrentMessageId() !== aiMessageId) {
+                            this.ttsService.play(aiMessageId, fullContent);
+                        }
+                    }
                 },
                 // onError: 错误处理
                 onError: (error: string) => {
@@ -3006,6 +3030,49 @@ export class SidebarView extends ItemView {
 
         // 中文: ~2 字符/token, 英文: ~4 字符/token
         return Math.ceil(chineseChars / 2 + englishChars / 4);
+    }
+
+    /**
+     * 初始化 TTS 服务
+     */
+    private initTTSService(): TTSService | null {
+        const settings = this.plugin.settings;
+        const ttsConfig = resolveRoleConfig('tts', settings);
+        if (!ttsConfig) return null;
+
+        const fastConfig = resolveRoleConfig('router', settings);
+        if (!fastConfig) return null;
+
+        return new TTSService({
+            ttsApiKey: ttsConfig.apiKey,
+            ttsBaseUrl: ttsConfig.baseUrl,
+            llmApiKey: fastConfig.apiKey,
+            llmBaseUrl: fastConfig.baseUrl,
+            llmModel: fastConfig.model,
+            onStateChange: (state: TTSPlayState) => {
+                const messageId = this.ttsService?.getCurrentMessageId();
+                if (messageId) {
+                    this.messageList?.updateTTSState(messageId, state);
+                }
+            },
+        });
+    }
+
+    /**
+     * 处理 TTS 播放/暂停请求
+     */
+    private async handleTTS(messageId: string, content: string): Promise<void> {
+        if (!this.ttsService) {
+            this.ttsService = this.initTTSService();
+        }
+        if (!this.ttsService) return;
+
+        if (this.ttsService.getCurrentMessageId() === messageId) {
+            this.ttsService.togglePauseResume();
+            return;
+        }
+
+        await this.ttsService.play(messageId, content);
     }
 
     /**
