@@ -191,3 +191,9 @@
         height: 16px;
     }
 }
+
+/* TTS 自动播报 toggle 激活态 */
+.deeppdf-topbar-action-btn.active {
+    color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+}
