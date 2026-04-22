@@ -8,6 +8,7 @@ import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { SelectionMenu } from '../excerpt/selection-menu';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
+import { Icons } from '../../utils/icons.js';
 
 /**
  * 消息角色类型
@@ -910,6 +911,7 @@ export class AIMessage extends Message {
 	private onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 	private onQuote?: (metadata: QuoteMetadata) => void;
 	private onDelete?: () => void;
+	private onTTS?: (messageId: string, content: string) => void;
 
 		protected onStreamingEnd(): void {
 			if (!this.el) return;
@@ -930,6 +932,9 @@ export class AIMessage extends Message {
 	private selectionMenu: SelectionMenu | null = null;
 	// 状态文本元素引用
 	private statusEl: HTMLElement | null = null;
+	// TTS 播放相关
+	private ttsWaveEl: HTMLElement | null = null;
+	private ttsBtn: HTMLButtonElement | null = null;
 	// 折叠状态
 	private isCollapsed: boolean = false;
 	// 信笺图案
@@ -944,6 +949,7 @@ export class AIMessage extends Message {
 			onExcerpt?: (content: ExcerptContent, metadata: ExcerptMetadata) => void;
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
+			onTTS?: (messageId: string, content: string) => void;
 			getAllMessages?: () => MessageData[];
 			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 			app?: App;
@@ -956,6 +962,7 @@ export class AIMessage extends Message {
 		this.onExcerpt = options?.onExcerpt;
 		this.onQuote = options?.onQuote;
 		this.onDelete = options?.onDelete;
+		this.onTTS = options?.onTTS;
 		this.getAllMessages = options?.getAllMessages || null;
 		this.getCurrentBookInfo = options?.getCurrentBookInfo || null;
 		// 初始化渲染跟踪变量
@@ -1015,6 +1022,13 @@ export class AIMessage extends Message {
 
 			// 状态文本（Badge 正下方）
 			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
+
+			// 声波动画（TTS 播放时显示）
+			const ttsWave = leftContainer.createEl('div', { cls: 'deeppdf-tts-wave' });
+			for (let i = 0; i < 4; i++) {
+				ttsWave.createEl('span');
+			}
+			this.ttsWaveEl = ttsWave;
 		}
 
 		// 右侧按钮组（非流式时显示）
@@ -1425,6 +1439,19 @@ export class AIMessage extends Message {
 		const isAssistant = this.data.role === 'assistant';
 		if (hasActions || isAssistant) {
 			const actions = container.createEl('div', { cls: 'deeppdf-message-actions' });
+
+			// TTS 朗读按钮
+			if (isAssistant) {
+				const ttsBtn = actions.createEl('button', { cls: 'deeppdf-message-action-btn' });
+				ttsBtn.innerHTML = Icons.volume2;
+				ttsBtn.title = '朗读';
+				ttsBtn.addEventListener('click', () => {
+					if (this.onTTS) {
+						this.onTTS(this.data.id, this.data.content);
+					}
+				});
+				this.ttsBtn = ttsBtn;
+			}
 
 			// AI 消息：左下角全屏按钮
 			if (isAssistant) {
@@ -2056,6 +2083,38 @@ export class AIMessage extends Message {
 			this.selectionMenu = null;
 		}
 	}
+
+	setTTSState(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void {
+		if (this.ttsWaveEl) {
+			this.ttsWaveEl.classList.toggle('active', state === 'playing');
+		}
+
+		if (this.ttsBtn) {
+			switch (state) {
+				case 'idle':
+					this.ttsBtn.innerHTML = Icons.volume2;
+					this.ttsBtn.title = '朗读';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+				case 'summarizing':
+				case 'tts_loading':
+					this.ttsBtn.innerHTML = Icons.spinner;
+					this.ttsBtn.title = state === 'summarizing' ? '生成摘要...' : '加载语音...';
+					this.ttsBtn.classList.add('tts-loading');
+					break;
+				case 'playing':
+					this.ttsBtn.innerHTML = Icons.pause;
+					this.ttsBtn.title = '暂停';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+				case 'paused':
+					this.ttsBtn.innerHTML = Icons.volume2;
+					this.ttsBtn.title = '继续';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+			}
+		}
+	}
 }
 
 /**
@@ -2071,6 +2130,7 @@ export function createMessage(
 		onQuote?: (metadata: QuoteMetadata) => void;
 		onDelete?: () => void;
 		getAllMessages?: () => MessageData[];
+		onTTS?: (messageId: string, content: string) => void;
 		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		app?: App;
 	}
