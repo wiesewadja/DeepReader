@@ -7,11 +7,11 @@
 
 import type { ProviderType } from './providers';
 
-/** 六种用途角色 */
-export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker';
+/** 七种用途角色 */
+export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker' | 'tts';
 
 /** 各角色所需的能力类型 */
-export type RequiredCapability = 'chat' | 'embedding' | 'reranker';
+export type RequiredCapability = 'chat' | 'embedding' | 'reranker' | 'tts';
 
 /** 角色到所需能力的映射 */
 export const ROLE_CAPABILITY: Record<RoleType, RequiredCapability> = {
@@ -21,6 +21,7 @@ export const ROLE_CAPABILITY: Record<RoleType, RequiredCapability> = {
 	proposition: 'chat',
 	embedding: 'embedding',
 	reranker: 'reranker',
+	tts: 'tts',
 };
 
 /** 第一层：服务商账号信息 */
@@ -39,7 +40,7 @@ export interface AIRoleConfig {
 	disableThinking?: boolean;    // undefined=自动检测, true=强制禁用, false=不禁用
 }
 
-/** 六种用途角色的完整配置 */
+/** 七种用途角色的完整配置 */
 export interface AIRoles {
 	chat: AIRoleConfig;                    // 必填
 	router: AIRoleConfig;                  // 必填
@@ -47,11 +48,12 @@ export interface AIRoles {
 	proposition: AIRoleConfig | null;      // null = 禁用命题卡片
 	embedding: AIRoleConfig | null;        // null = 禁用，降级 BM25
 	reranker: AIRoleConfig | null;         // null = 禁用重排序
+	tts: AIRoleConfig | null;              // null = 禁用语音合成
 }
 
 /** 判断是否为固定服务商（非自定义） */
 export function isBuiltInProvider(id: string): id is ProviderType {
 	return id in ({} as Record<ProviderType, unknown>) && [
-		'deepseek', 'kimi', 'zhipu', 'minimax', 'siliconflow', 'openai',
+		'deepseek', 'kimi', 'zhipu', 'minimax', 'siliconflow', 'openai', 'xiaomi',
 	].includes(id);
 }
