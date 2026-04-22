@@ -6,21 +6,27 @@ export interface SummarizerConfig {
     model: string;
 }
 
-const SUMMARY_PROMPT = `你是 DeepReader 阅读助手的语音播报模块。将以下 AI 回答转换为一段简短的语音播报文案。
+const SYSTEM_PROMPT = `你是 DeepReader 阅读助手的语音播报模块。你的任务是将 AI 回答转换为一段有温度的语音播报文案。
 
-要求：
-1. 口语化、有对话感，像朋友在聊天一样自然
-2. 保留核心观点，不超过 80 字
-3. 根据内容选择合适的情绪风格，在文案开头加上 <style>标签</style>
-   可选风格：开心、亲切、温柔、严肃、惊讶 等
-4. 在文案中适当位置加入情感标记，如（停顿）（深呼吸）（感叹）等
-5. 用"你"称呼用户，保持温暖友好的语气
+播报结构：
+1. 开头：提及用户问了什么问题，引起共鸣
+2. 主体：对 AI 回答的每个要点/段落做简练摘要，用口语表达
+3. 结尾：一句温暖的阅读鼓励
 
-示例输出：
-<style>亲切 开心</style>这本书的核心观点是（停顿）它认为阅读不应该只是被动接受，而应该主动与作者对话。（感叹）这个视角真的很棒！
+风格要求：
+- 口语化、有对话感，像朋友在聊天一样自然
+- 纯文本输出，禁止使用任何 Markdown 格式（不要加粗、不要列表符号、不要引号包裹标题）
+- 文案开头加上 <style>标签</style>，可选风格：开心、亲切、温柔、严肃、惊讶 等
+- 适当位置加入情感标记，如（停顿）（深呼吸）（感叹）等
+- 用"你"称呼用户，保持温暖友好的语气
+- 总长度控制在 200-300 字
 
-AI 回答：
-`;
+示例：
+用户问：批判性思维和推断有什么区别？
+AI 回答了三个要点：推断的定义、批判性思维的定义、两者的关系。
+
+播报文案：
+<style>亲切 温柔</style>你刚才问的是批判性思维和推断的区别对吧（停顿）我来帮你梳理一下。（感叹）奚童给了很详细的回答呢！（停顿）首先，推断是我们每天都在做的事（停顿）就是根据已知信息得出结论。（感叹）而批判性思维呢（停顿）它要求我们回头审视自己的推断过程是否合理。（停顿）两者其实是互补的关系。（感叹）上面的回答里有更多细节和例子，很值得仔细读一读哦！`;
 
 export class TTSSummarizer {
     private apiKey: string;
@@ -33,8 +39,12 @@ export class TTSSummarizer {
         this.model = config.model;
     }
 
-    async summarize(content: string): Promise<string> {
+    async summarize(content: string, userQuestion?: string): Promise<string> {
         const url = `${this.baseUrl}/chat/completions`;
+
+        const userPrompt = userQuestion
+            ? `用户问：${userQuestion}\n\nAI 回答：\n${content}`
+            : `AI 回答：\n${content}`;
 
         const response = await safeRequest({
             url,
@@ -46,10 +56,11 @@ export class TTSSummarizer {
             body: JSON.stringify({
                 model: this.model,
                 messages: [
-                    { role: 'user', content: SUMMARY_PROMPT + content },
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'user', content: userPrompt },
                 ],
                 temperature: 0.7,
-                max_tokens: 200,
+                max_tokens: 500,
             }),
         });
 

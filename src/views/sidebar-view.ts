@@ -2406,7 +2406,8 @@ export class SidebarView extends ItemView {
                             this.ttsService = this.initTTSService();
                         }
                         if (this.ttsService && this.ttsService.getCurrentMessageId() !== aiMessageId) {
-                            this.ttsService.play(aiMessageId, fullContent);
+                            const question = this.findUserQuestion(aiMessageId);
+                            this.ttsService.play(aiMessageId, fullContent, question);
                         }
                     }
                 },
@@ -3064,14 +3065,33 @@ export class SidebarView extends ItemView {
         if (!this.ttsService) {
             this.ttsService = this.initTTSService();
         }
-        if (!this.ttsService) return;
+        if (!this.ttsService) {
+            new Notice('请先在设置中配置语音播报（TTS）服务：添加小米 API Key 并启用 tts 角色');
+            return;
+        }
 
         if (this.ttsService.getCurrentMessageId() === messageId) {
             this.ttsService.togglePauseResume();
             return;
         }
 
-        await this.ttsService.play(messageId, content);
+        // 查找对应的用户提问
+        const userQuestion = this.findUserQuestion(messageId);
+
+        await this.ttsService.play(messageId, content, userQuestion);
+    }
+
+    /**
+     * 根据 AI 消息 ID 找到对应的用户提问
+     */
+    private findUserQuestion(aiMessageId: string): string | undefined {
+        const messages = this.messageList?.getMessagesData();
+        if (!messages) return undefined;
+        const idx = messages.findIndex(m => m.id === aiMessageId);
+        if (idx <= 0) return undefined;
+        // AI 消息前面应该是用户消息
+        const prev = messages[idx - 1];
+        return prev?.role === 'user' ? prev.content : undefined;
     }
 
     /**
@@ -3099,7 +3119,7 @@ export class SidebarView extends ItemView {
             // 清理 TTS 服务
             if (this.ttsService) {
                 try {
-                    this.ttsService.stop();
+                    this.ttsService.destroy();
                 } catch (e) {
                     warn('[DeepPDF] Error stopping TTS service:', e);
                 }

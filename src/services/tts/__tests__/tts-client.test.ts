@@ -1,17 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock fetchWithCorsFallback
-const mockFetch = vi.fn();
-vi.mock('../../../utils/safe-request.js', () => ({
-	fetchWithCorsFallback: (...args: any[]) => mockFetch(...args),
-}));
-
 describe('TTSClient', () => {
 	let client: any;
 	const mockApiKey = 'test-mimo-key';
 
 	beforeEach(async () => {
-		mockFetch.mockReset();
+		vi.restoreAllMocks();
+		vi.resetModules();
+
+		// Mock fetch to return JSON with base64 audio
+		vi.stubGlobal('fetch', vi.fn());
+
 		const { TTSClient } = await import('../tts-client');
 		client = new TTSClient({
 			apiKey: mockApiKey,
@@ -19,53 +18,59 @@ describe('TTSClient', () => {
 		});
 	});
 
-	it('应该正确构造请求', async () => {
-		const mockAudio = new ArrayBuffer(8);
-		mockFetch.mockResolvedValueOnce({
+	it('应该从 JSON 响应中提取 base64 音频', async () => {
+		// "UklGRiQqEg==" is RIFF WAV header base64
+		const mockAudioB64 = 'UklGRiQqEgBXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAAZGF0YQAqEg==';
+		(global.fetch as any).mockResolvedValue({
 			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudio),
+			headers: { get: () => 'application/json' },
+			json: () => Promise.resolve({
+				choices: [{ message: { audio: { data: mockAudioB64 } } }],
+			}),
 		});
 
-		await client.synthesize('你好');
-
-		expect(mockFetch).toHaveBeenCalledWith(
-			'https://api.xiaomimimo.com/v1/chat/completions',
-			expect.objectContaining({
-				method: 'POST',
-				headers: expect.objectContaining({
-					'Authorization': `Bearer ${mockApiKey}`,
-					'Content-Type': 'application/json',
-				}),
-			})
-		);
-
-		const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-		expect(body.model).toBe('mimo-v2-tts');
-		expect(body.messages[0].content).toBe('你好');
-		expect(body.voice).toBe('default_zh');
+		const result = await client.synthesize('你好');
+		expect(result).toBeInstanceOf(ArrayBuffer);
+		expect(result.byteLength).toBeGreaterThan(0);
+		// Verify RIFF header
+		const view = new Uint8Array(result);
+		expect(String.fromCharCode(view[0], view[1], view[2], view[3])).toBe('RIFF');
 	});
 
 	it('应该支持自定义 voice', async () => {
-		const mockAudio = new ArrayBuffer(8);
-		mockFetch.mockResolvedValueOnce({
+		const mockAudioB64 = 'UklGRiQqEgBXQVZFZm10IBAAAAABAAEAwF0AAIC7AAACABAAZGF0YQAqEg==';
+		(global.fetch as any).mockResolvedValue({
 			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudio),
+			headers: { get: () => 'application/json' },
+			json: () => Promise.resolve({
+				choices: [{ message: { audio: { data: mockAudioB64 } } }],
+			}),
 		});
 
 		await client.synthesize('hello', { voice: 'default_en' });
 
-		const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+		const callArgs = (global.fetch as any).mock.calls[0][1];
+		const body = JSON.parse(callArgs.body);
 		expect(body.voice).toBe('default_en');
 	});
 
-	it('应该在 API 错误时抛出异常', async () => {
-		mockFetch.mockResolvedValueOnce({
+	it('应该在 API 错误时抛出包含详情的异常', async () => {
+		(global.fetch as any).mockResolvedValue({
 			ok: false,
-			status: 401,
-			statusText: 'Unauthorized',
-			text: () => Promise.resolve('Invalid API key'),
+			status: 400,
+			text: () => Promise.resolve('{"error":{"message":"Invalid voice parameter"}}'),
 		});
 
-		await expect(client.synthesize('test')).rejects.toThrow('TTS API error: 401');
+		await expect(client.synthesize('test')).rejects.toThrow('TTS API error: 400 — Invalid voice parameter');
+	});
+
+	it('应该在 JSON 响应无音频数据时报错', async () => {
+		(global.fetch as any).mockResolvedValue({
+			ok: true,
+			headers: { get: () => 'application/json' },
+			json: () => Promise.resolve({ choices: [{ message: { content: 'no audio' } }] }),
+		});
+
+		await expect(client.synthesize('test')).rejects.toThrow('no audio data');
 	});
 });

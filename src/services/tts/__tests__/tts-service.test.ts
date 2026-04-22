@@ -2,18 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockPlay = vi.fn().mockResolvedValue(undefined);
 const mockPause = vi.fn();
-const mockAddEventListener = vi.fn();
-const mockRemoveEventListener = vi.fn();
 
 beforeEach(() => {
     mockPlay.mockClear();
     mockPause.mockClear();
-    mockAddEventListener.mockClear();
     global.Audio = vi.fn().mockImplementation(() => ({
         play: mockPlay,
         pause: mockPause,
-        addEventListener: mockAddEventListener,
-        removeEventListener: mockRemoveEventListener,
+        currentTime: 0,
+        src: '',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
     })) as any;
 });
 
@@ -68,5 +67,19 @@ describe('TTSService', () => {
         });
         service.stop();
         expect(onStateChange).toHaveBeenCalledWith(null, 'idle');
+    });
+
+    it('destroy 应该清理缓存', async () => {
+        const { TTSService } = await import('../tts-service');
+        const service = new TTSService({
+            ttsApiKey: 'key',
+            ttsBaseUrl: 'https://api.xiaomimimo.com/v1',
+            llmApiKey: 'key',
+            llmBaseUrl: 'https://api.deepseek.com',
+            llmModel: 'deepseek-chat',
+        });
+        service.destroy();
+        expect(service.getState()).toBe('idle');
+        expect(service.getCurrentMessageId()).toBeNull();
     });
 });
