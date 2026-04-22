@@ -92,15 +92,21 @@ function compressToolResult(result: string): string {
 }
 
 function extractBlockIdsFromResult(result: string): string[] {
-  // Match Obsidian block_ids: ^blockId at end of line or before whitespace.
-  // Requires ^ preceded by start-of-line or whitespace to avoid matching
-  // math expressions (x^2), code escapes, etc.
-  const blockIdPattern = /(?:^|\s)\^([a-zA-Z0-9_-]+)(?=\s|$)/gm;
   const ids: string[] = [];
   let match: RegExpExecArray | null;
-  while ((match = blockIdPattern.exec(result)) !== null) {
+
+  // 1. JSON 格式："block_id": "xxx" 或 "blockId": "xxx"
+  const jsonPattern = /"block_?[Ii]d"\s*:\s*"([a-zA-Z0-9_-]+)"/g;
+  while ((match = jsonPattern.exec(result)) !== null) {
     ids.push(match[1]);
   }
+
+  // 2. Obsidian 文本格式：^blockId（裸露的脱字号）
+  const textPattern = /(?:^|\s)\^([a-zA-Z0-9_-]+)(?=\s|$)/gm;
+  while ((match = textPattern.exec(result)) !== null) {
+    ids.push(match[1]);
+  }
+
   return [...new Set(ids)];
 }
 
