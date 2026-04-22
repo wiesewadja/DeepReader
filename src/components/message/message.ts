@@ -1091,7 +1091,10 @@ export class AIMessage extends Message {
 			}
 		}
 
-		bubble.appendChild(this.renderTimestamp());
+		// 流式输出期间不显示时间戳，等到结束后再显示完成时间
+		if (!this.data.isStreaming) {
+			bubble.appendChild(this.renderTimestamp());
+		}
 
 		// 渲染操作按钮
 		this.renderActions(bubble);
@@ -1215,8 +1218,12 @@ export class AIMessage extends Message {
 			// 【关键修复】流式结束后设置选中监听器
 			this.setupSelectionListener(contentEl as HTMLElement);
 
-			// 【关键修复】流式结束后渲染操作按钮
+			// 【关键修复】流式结束后渲染时间戳（显示完成时间）和操作按钮
 			if (bubble) {
+				// 避免重复添加时间戳
+				if (!bubble.querySelector('.deeppdf-message-time')) {
+					bubble.appendChild(this.renderTimestamp());
+				}
 				this.renderActions(bubble as HTMLElement);
 			}
 		} else {
