@@ -1035,7 +1035,7 @@ export class AIMessage extends Message {
 
 		// Agent 工具调用
 		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
-			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tools' });
+			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tool-calls' });
 
 			this.data.agentToolCalls.forEach(toolCall => {
 				const toolItem = toolsContainer.createEl('div', { cls: 'deeppdf-agent-tool-call' });

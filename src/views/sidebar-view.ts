@@ -1127,62 +1127,79 @@ export class SidebarView extends ItemView {
      * 自动跳转到上次阅读的章节
      */
     private navigateToLastReadChapter(): void {
-        if (!this.readingProgress?.lastReadChapterId || !this.currentPdfName) return;
+        if (!this.currentPdfName) return;
 
-        const chapterId = this.readingProgress.lastReadChapterId;
         const bookPath = `DeepReader/${this.currentPdfName}/`;
 
-        // 检查当前文件是否已经是目标章节
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile && activeFile.path.startsWith(bookPath)) {
-            const cache = this.app.metadataCache.getFileCache(activeFile);
-            const currentNodeId = cache?.frontmatter?.node_id;
-            if (String(currentNodeId) === chapterId || activeFile.basename === chapterId) {
-                // 已经在目标章节，显式激活阅读模式（处理重启后 frontmatter 未就绪导致未自动激活的情况）
-                if (this.plugin.readingModeService?.getAutoEnable()) {
-                    this.plugin.readingModeService.activate(activeFile);
+        // 有阅读记录：跳转到上次阅读的章节
+        if (this.readingProgress?.lastReadChapterId) {
+            const chapterId = this.readingProgress.lastReadChapterId;
+
+            // 检查当前文件是否已经是目标章节
+            const activeFile = this.app.workspace.getActiveFile();
+            if (activeFile && activeFile.path.startsWith(bookPath)) {
+                const cache = this.app.metadataCache.getFileCache(activeFile);
+                const currentNodeId = cache?.frontmatter?.node_id;
+                if (String(currentNodeId) === chapterId || activeFile.basename === chapterId) {
+                    if (this.plugin.readingModeService?.getAutoEnable()) {
+                        this.plugin.readingModeService.activate(activeFile);
+                    }
+                    return;
                 }
+            }
+
+            // 通过 node_id 或 basename 查找章节文件
+            const files = this.app.vault.getMarkdownFiles();
+            let targetFile: TFile | null = null;
+
+            for (const f of files) {
+                if (!f.path.startsWith(bookPath)) continue;
+                if (f.path === `${bookPath}${this.currentPdfName}.md`) continue;
+                const cache = this.app.metadataCache.getFileCache(f);
+                if (cache?.frontmatter?.node_id !== undefined && String(cache.frontmatter.node_id) === chapterId) {
+                    targetFile = f;
+                    break;
+                }
+            }
+
+            if (!targetFile) {
+                const matchPath = `${bookPath}${chapterId}.md`;
+                const file = this.app.vault.getAbstractFileByPath(matchPath);
+                if (file instanceof TFile) {
+                    targetFile = file;
+                }
+            }
+
+            if (targetFile) {
+                log(`[DeepPDF] 自动跳转到上次阅读章节: ${targetFile.path}`);
+                this.app.workspace.getLeaf(false).openFile(targetFile);
+
+                setTimeout(() => {
+                    const rms = this.plugin.readingModeService;
+                    if (rms?.getAutoEnable() && !rms.getCurrentFile()) {
+                        const file = this.app.workspace.getActiveFile();
+                        if (file && rms.isChapterFile(file)) {
+                            rms.activate(file);
+                        }
+                    }
+                }, 300);
                 return;
             }
         }
 
-        // 方式1：通过 node_id frontmatter 查找文件
+        // 无阅读记录或找不到章节：打开这本书的 MOC 文档
         const files = this.app.vault.getMarkdownFiles();
-        let targetFile: TFile | null = null;
-
-        for (const f of files) {
-            if (!f.path.startsWith(bookPath)) continue;
-            if (f.path === `${bookPath}${this.currentPdfName}.md`) continue; // 排除主文件
+        const mocFile = files.find(f => {
+            if (!f.path.startsWith(bookPath)) return false;
+            if (!f.path.includes('MOC')) return false;
             const cache = this.app.metadataCache.getFileCache(f);
-            if (cache?.frontmatter?.node_id !== undefined && String(cache.frontmatter.node_id) === chapterId) {
-                targetFile = f;
-                break;
-            }
-        }
+            return cache?.frontmatter?.index_id === this.readingProgress?.bookId
+                || cache?.frontmatter?.pdf_index_id === this.currentIndexId;
+        });
 
-        // 方式2：通过文件 basename 查找
-        if (!targetFile) {
-            const matchPath = `${bookPath}${chapterId}.md`;
-            const file = this.app.vault.getAbstractFileByPath(matchPath);
-            if (file instanceof TFile) {
-                targetFile = file;
-            }
-        }
-
-        if (targetFile) {
-            log(`[DeepPDF] 自动跳转到上次阅读章节: ${targetFile.path}`);
-            this.app.workspace.getLeaf(false).openFile(targetFile);
-
-            // 兜底：如果 file-open 事件因 frontmatter 未就绪未触发激活，延迟后再次尝试
-            setTimeout(() => {
-                const rms = this.plugin.readingModeService;
-                if (rms?.getAutoEnable() && !rms.getCurrentFile()) {
-                    const file = this.app.workspace.getActiveFile();
-                    if (file && rms.isChapterFile(file)) {
-                        rms.activate(file);
-                    }
-                }
-            }, 300);
+        if (mocFile) {
+            log(`[DeepPDF] 无阅读记录，打开 MOC: ${mocFile.path}`);
+            this.app.workspace.getLeaf(false).openFile(mocFile);
         }
     }
 
@@ -2017,11 +2034,13 @@ export class SidebarView extends ItemView {
             let aiMessageId: string;
 
             if (regenerateMessageId) {
-                // 重试模式：复用原来的消息 ID，更新消息内容为加载状态
+                // 重试模式：复用原来的消息 ID，清空旧内容重新开始
                 aiMessageId = regenerateMessageId;
                 this.messageList?.updateMessage(aiMessageId, {
                     content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
-                    isStreaming: true
+                    isStreaming: true,
+                    agentToolCalls: [],
+                    currentStatus: undefined,
                 });
 
                 // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）

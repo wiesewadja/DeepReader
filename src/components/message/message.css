@@ -823,7 +823,7 @@
 }
 
 /* Agent 工具调用 */
-.deeppdf-agent-tools {
+.deeppdf-agent-tool-calls {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
