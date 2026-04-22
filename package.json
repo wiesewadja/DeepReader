@@ -11,7 +11,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "deploy": "npm run build && mkdir -p \"test-vault/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"test-vault/.obsidian/plugins/deepreader/\""
+    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/DeepReader/test-vault/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"/Users/lizhao/workspace/DeepReader/test-vault/.obsidian/plugins/deepreader/\""
   },
   "keywords": [
     "obsidian",

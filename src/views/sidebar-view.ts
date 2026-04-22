@@ -2377,7 +2377,7 @@ export class SidebarView extends ItemView {
                     });
                 },
                 // onComplete: 流式完成
-                onComplete: () => {
+                onComplete: async () => {
                     this.messageList?.updateMessage(aiMessageId, {
                         isStreaming: false,
                         timestamp: new Date().toISOString()
@@ -2407,7 +2407,12 @@ export class SidebarView extends ItemView {
                         }
                         if (this.ttsService && this.ttsService.getCurrentMessageId() !== aiMessageId) {
                             const question = this.findUserQuestion(aiMessageId);
-                            this.ttsService.play(aiMessageId, fullContent, question);
+                            const memoryContent = await new MemoryStore(this.app).readLongTermMemory() || undefined;
+                            this.ttsService.play(aiMessageId, fullContent, question, {
+                                bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
+                                bookAuthor: this.currentBookAuthor || undefined,
+                                memoryContent,
+                            });
                         }
                     }
                 },
@@ -3078,7 +3083,11 @@ export class SidebarView extends ItemView {
         // 查找对应的用户提问
         const userQuestion = this.findUserQuestion(messageId);
 
-        await this.ttsService.play(messageId, content, userQuestion);
+        await this.ttsService.play(messageId, content, userQuestion, {
+            bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
+            bookAuthor: this.currentBookAuthor || undefined,
+            memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
+        });
     }
 
     /**

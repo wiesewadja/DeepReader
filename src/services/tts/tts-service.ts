@@ -1,6 +1,7 @@
 import { Notice } from 'obsidian';
 import { TTSClient } from './tts-client.js';
-import { TTSSummarizer } from './tts-summarizer.js';
+import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
+import { PCMStreamPlayer } from './pcm-stream-player.js';
 
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 
@@ -18,12 +19,22 @@ interface CachedAudio {
     audio: HTMLAudioElement;
 }
 
+const SENTENCE_END_RE = /[。！？!?]/;
+
+function splitFirstSentence(buffer: string): [string | null, string] {
+    const match = buffer.search(SENTENCE_END_RE);
+    if (match === -1) return [null, buffer];
+    const end = match + 1;
+    return [buffer.slice(0, end), buffer.slice(end)];
+}
+
 export class TTSService {
     private state: TTSPlayState = 'idle';
     private client: TTSClient;
     private summarizer: TTSSummarizer;
     private currentMessageId: string | null = null;
     private cache: Map<string, CachedAudio> = new Map();
+    private streamPlayer: PCMStreamPlayer | null = null;
     private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
 
     constructor(config: TTSServiceConfig) {
@@ -47,15 +58,18 @@ export class TTSService {
         return this.currentMessageId;
     }
 
-    async play(messageId: string, content: string, userQuestion?: string): Promise<void> {
-        // 如果正在播放另一条消息，先停止
-        if (this.state !== 'idle' && this.currentMessageId !== messageId) {
+    async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext): Promise<void> {
+        if (this.state !== 'idle' && this.currentMessageId === messageId) {
+            this.togglePauseResume();
+            return;
+        }
+
+        if (this.state !== 'idle') {
             this.stopInternal();
         }
 
         this.currentMessageId = messageId;
 
-        // 有缓存：直接播放
         const cached = this.cache.get(messageId);
         if (cached) {
             this.listenAudio(cached.audio, messageId);
@@ -64,69 +78,69 @@ export class TTSService {
             return;
         }
 
-        // 无缓存：生成摘要 → 合成 → 播放
         try {
-            this.setState('summarizing');
-            const summary = await this.summarizer.summarize(content, userQuestion);
+            await this.streamSummaryToAudio(messageId, content, userQuestion, context);
+        } catch {
+            console.warn('[TTS] Streaming pipeline failed, falling back');
+            try {
+                this.setState('summarizing');
+                const summary = await this.summarizer.summarize(content, userQuestion, context);
 
-            if (this.currentMessageId !== messageId) {
+                if (this.currentMessageId !== messageId) {
+                    this.setState('idle');
+                    return;
+                }
+
+                try {
+                    await this.playStream(messageId, summary);
+                } catch {
+                    await this.playNonStream(messageId, summary);
+                }
+            } catch (err) {
+                console.error('[TTS] play failed:', err);
+                new Notice(`语音播报失败: ${err instanceof Error ? err.message : String(err)}`);
                 this.setState('idle');
-                return;
             }
-
-            this.setState('tts_loading');
-            const audioBuffer = await this.client.synthesize(summary);
-
-            if (this.currentMessageId !== messageId) {
-                this.setState('idle');
-                return;
-            }
-
-            const blob = new Blob([audioBuffer], { type: 'audio/wav' });
-            const blobUrl = URL.createObjectURL(blob);
-            const audio = new Audio(blobUrl);
-
-            this.cache.set(messageId, { blobUrl, audio });
-            this.listenAudio(audio, messageId);
-
-            this.setState('playing');
-            await audio.play();
-
-        } catch (err) {
-            console.error('[TTS] play failed:', err);
-            new Notice(`语音播报失败: ${err instanceof Error ? err.message : String(err)}`);
-            this.setState('idle');
         }
     }
 
     pause(): void {
         if (this.state === 'playing') {
-            const cached = this.currentMessageId ? this.cache.get(this.currentMessageId) : null;
-            cached?.audio.pause();
+            if (this.streamPlayer) {
+                this.streamPlayer.pause();
+            } else if (this.currentMessageId) {
+                const cached = this.cache.get(this.currentMessageId);
+                cached?.audio.pause();
+            }
             this.setState('paused');
         }
     }
 
-    resume(): void {
+    async resume(): Promise<void> {
         if (this.state === 'paused') {
-            const cached = this.currentMessageId ? this.cache.get(this.currentMessageId) : null;
-            if (cached) {
-                cached.audio.play();
-                this.setState('playing');
+            if (this.streamPlayer) {
+                this.streamPlayer.resume();
+            } else if (this.currentMessageId) {
+                const cached = this.cache.get(this.currentMessageId);
+                if (cached) await cached.audio.play();
             }
+            this.setState('playing');
         }
     }
 
     stop(): void {
+        this.stopStreamPlayer();
         if (this.currentMessageId) {
             const cached = this.cache.get(this.currentMessageId);
             if (cached) {
                 cached.audio.pause();
                 cached.audio.currentTime = 0;
             }
+            this.setState('idle');
+            this.currentMessageId = null;
+        } else {
+            this.setState('idle');
         }
-        this.currentMessageId = null;
-        this.setState('idle');
     }
 
     togglePauseResume(): void {
@@ -137,8 +151,8 @@ export class TTSService {
         }
     }
 
-    /** 释放所有缓存的音频资源 */
     destroy(): void {
+        this.stopStreamPlayer();
         for (const [, cached] of this.cache) {
             cached.audio.pause();
             cached.audio.src = '';
@@ -149,31 +163,176 @@ export class TTSService {
         this.state = 'idle';
     }
 
+    private async streamSummaryToAudio(
+        messageId: string,
+        content: string,
+        userQuestion?: string,
+        context?: TTSContext,
+    ): Promise<void> {
+        const player = new PCMStreamPlayer(24000);
+        this.streamPlayer = player;
+        this.setState('summarizing');
+
+        let buffer = '';
+        let fullSummary = '';
+        let ttsStarted = false;
+
+        try {
+            for await (const delta of this.summarizer.summarizeStream(content, userQuestion, context)) {
+                if (this.currentMessageId !== messageId) return;
+
+                buffer += delta;
+
+                while (true) {
+                    const [sentence, remaining] = splitFirstSentence(buffer);
+                    if (!sentence) break;
+                    buffer = remaining;
+                    fullSummary += sentence;
+
+                    if (!ttsStarted) {
+                        this.setState('playing');
+                        ttsStarted = true;
+                    }
+
+                    for await (const chunk of this.client.synthesizeStream(sentence)) {
+                        if (this.currentMessageId !== messageId) return;
+                        player.enqueue(chunk);
+                    }
+                }
+            }
+
+            const tail = buffer.trim();
+            if (tail) {
+                fullSummary += tail;
+                if (!ttsStarted) {
+                    this.setState('playing');
+                    ttsStarted = true;
+                }
+                for await (const chunk of this.client.synthesizeStream(tail)) {
+                    if (this.currentMessageId !== messageId) return;
+                    player.enqueue(chunk);
+                }
+            }
+
+            if (this.currentMessageId !== messageId) return;
+
+            // 标记不会再有新 chunk，等最后一个 source 播完
+            player.seal();
+            await player.waitForEnd();
+
+            // 缓存 WAV 供重播
+            if (fullSummary) {
+                const wavBlob = player.assembleWav();
+                const blobUrl = URL.createObjectURL(wavBlob);
+                const audio = new Audio(blobUrl);
+                this.cache.set(messageId, { blobUrl, audio });
+                this.listenAudio(audio, messageId);
+            }
+
+            if (this.currentMessageId === messageId) {
+                this.setState('idle');
+                this.currentMessageId = null;
+            }
+        } finally {
+            player.stop();
+            if (this.streamPlayer === player) {
+                this.streamPlayer = null;
+            }
+        }
+    }
+
+    private async playStream(messageId: string, text: string): Promise<void> {
+        const player = new PCMStreamPlayer(24000);
+        this.streamPlayer = player;
+        this.setState('playing');
+
+        try {
+            for await (const chunk of this.client.synthesizeStream(text)) {
+                if (this.currentMessageId !== messageId) return;
+                player.enqueue(chunk);
+            }
+
+            if (this.currentMessageId !== messageId) return;
+
+            player.seal();
+            await player.waitForEnd();
+
+            const wavBlob = player.assembleWav();
+            const blobUrl = URL.createObjectURL(wavBlob);
+            const audio = new Audio(blobUrl);
+            this.cache.set(messageId, { blobUrl, audio });
+            this.listenAudio(audio, messageId);
+
+            if (this.currentMessageId === messageId) {
+                this.setState('idle');
+                this.currentMessageId = null;
+            }
+        } finally {
+            player.stop();
+            if (this.streamPlayer === player) {
+                this.streamPlayer = null;
+            }
+        }
+    }
+
+    private async playNonStream(messageId: string, text: string): Promise<void> {
+        if (this.currentMessageId !== messageId) {
+            this.setState('idle');
+            return;
+        }
+
+        this.setState('tts_loading');
+        const audioBuffer = await this.client.synthesize(text);
+
+        if (this.currentMessageId !== messageId) {
+            this.setState('idle');
+            return;
+        }
+
+        const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+        const blobUrl = URL.createObjectURL(blob);
+        const audio = new Audio(blobUrl);
+
+        this.cache.set(messageId, { blobUrl, audio });
+        this.listenAudio(audio, messageId);
+
+        this.setState('playing');
+        await audio.play();
+    }
+
     private stopInternal(): void {
+        this.stopStreamPlayer();
         if (this.currentMessageId) {
             const cached = this.cache.get(this.currentMessageId);
             if (cached) {
                 cached.audio.pause();
                 cached.audio.currentTime = 0;
             }
+            this.setState('idle');
+            this.currentMessageId = null;
         }
-        this.currentMessageId = null;
-        this.setState('idle');
+    }
+
+    private stopStreamPlayer(): void {
+        if (this.streamPlayer) {
+            this.streamPlayer.stop();
+            this.streamPlayer = null;
+        }
     }
 
     private listenAudio(audio: HTMLAudioElement, messageId: string): void {
         audio.onended = () => {
             audio.currentTime = 0;
             if (this.currentMessageId === messageId) {
-                this.currentMessageId = null;
                 this.setState('idle');
+                this.currentMessageId = null;
             }
         };
         audio.onerror = () => {
             console.error('[TTS] Audio playback error');
             if (this.currentMessageId === messageId) {
-                this.currentMessageId = null;
                 this.setState('idle');
+                this.currentMessageId = null;
             }
         };
     }

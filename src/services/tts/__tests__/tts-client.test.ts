@@ -51,7 +51,8 @@ describe('TTSClient', () => {
 
 		const callArgs = (global.fetch as any).mock.calls[0][1];
 		const body = JSON.parse(callArgs.body);
-		expect(body.voice).toBe('default_en');
+		expect(body.audio.voice).toBe('default_en');
+		expect(body.audio.format).toBe('wav');
 	});
 
 	it('应该在 API 错误时抛出包含详情的异常', async () => {

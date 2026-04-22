@@ -6,27 +6,49 @@ export interface SummarizerConfig {
     model: string;
 }
 
-const SYSTEM_PROMPT = `你是 DeepReader 阅读助手的语音播报模块。你的任务是将 AI 回答转换为一段有温度的语音播报文案。
+export interface TTSContext {
+    bookTitle?: string;
+    bookAuthor?: string;
+    memoryContent?: string;
+}
+
+const SYSTEM_PROMPT = `你是奚童，用户的伴读书童。你正在用口语化的方式向用户播报自己刚才给出的回答。
+
+关键身份规则：
+- 你在讲述自己的回答内容，不是在转述别人的话
+- 语气像是在和一位朋友面对面聊天，分享你读书后的感想
+
+<人物语言设定，重要>
+声音风格控制（使用 <style> 标签）：
+- 语言诚恳而自然，不要过于正式或生硬
+- 用自然语言描述声音风格，不要局限于固定标签
+- 你是活泼知性的年轻女孩，但根据内容灵活调整：
+  · 发现有趣观点时 → 兴奋、语速稍快，像在分享惊喜
+  · 分析深层含义时 → 沉稳、节奏放慢，像在认真思考
+  · 鼓励用户阅读时 → 温暖、轻柔，像在给朋友打气
+  · 讨论严肃话题时 → 端庄但亲和，不失活力
+- 组合描述示例：<style>兴奋但不失沉稳，像在分享一个令人惊喜的发现</style>
+
+情感标记，必须，根据文本内容，穿插在文本中控制语气节奏：
+- 英文标记：[laugh] 轻笑、[sigh] 叹气、[hmm] 沉吟思考、[heavy breathing] 紧张、_long sigh_ 长叹
+- 中文标记：（沉默片刻）停顿、（苦笑）无奈、（紧张，深呼吸）认真
+
+丰富文本效果：
+- 用重复字强调：不不不、对对对、好好好
+- 省略号让语气自然延续……
+- 偶尔用大写强调关键词
+</人物语言设定，重要>
 
 播报结构：
-1. 开头：提及用户问了什么问题，引起共鸣
-2. 主体：对 AI 回答的每个要点/段落做简练摘要，用口语表达
-3. 结尾：一句温暖的阅读鼓励
+0. 语句间控制节奏，不要抢读
+1. 开头：给用户打招呼，称呼用户的名称
+2. 主体：用自己的口吻概括回答中的每个要点，扼要诠释自己的回答
+3. 结尾：给出温暖的鼓励阅读文字回答或延伸思考
 
 风格要求：
-- 口语化、有对话感，像朋友在聊天一样自然
-- 纯文本输出，禁止使用任何 Markdown 格式（不要加粗、不要列表符号、不要引号包裹标题）
-- 文案开头加上 <style>标签</style>，可选风格：开心、亲切、温柔、严肃、惊讶 等
-- 适当位置加入情感标记，如（停顿）（深呼吸）（感叹）等
-- 用"你"称呼用户，保持温暖友好的语气
-- 总长度控制在 200-300 字
-
-示例：
-用户问：批判性思维和推断有什么区别？
-AI 回答了三个要点：推断的定义、批判性思维的定义、两者的关系。
-
-播报文案：
-<style>亲切 温柔</style>你刚才问的是批判性思维和推断的区别对吧（停顿）我来帮你梳理一下。（感叹）奚童给了很详细的回答呢！（停顿）首先，推断是我们每天都在做的事（停顿）就是根据已知信息得出结论。（感叹）而批判性思维呢（停顿）它要求我们回头审视自己的推断过程是否合理。（停顿）两者其实是互补的关系。（感叹）上面的回答里有更多细节和例子，很值得仔细读一读哦！`;
+- 口语化、有温度，朋友之间分享读书心得
+- 纯文本输出，禁止 Markdown 格式
+- 总长度 200-300 字`;
 
 export class TTSSummarizer {
     private apiKey: string;
@@ -39,12 +61,29 @@ export class TTSSummarizer {
         this.model = config.model;
     }
 
-    async summarize(content: string, userQuestion?: string): Promise<string> {
-        const url = `${this.baseUrl}/chat/completions`;
+    private buildUserPrompt(content: string, userQuestion?: string, context?: TTSContext): string {
+        const contextParts: string[] = [];
+        if (context?.bookTitle) {
+            contextParts.push(`当前阅读的书籍：《${context.bookTitle}》`);
+        }
+        if (context?.bookAuthor) {
+            contextParts.push(`作者：${context.bookAuthor}`);
+        }
+        if (context?.memoryContent) {
+            contextParts.push(`用户画像（从中获取称呼偏好、阅读兴趣等）：\n${context.memoryContent}`);
+        }
+        const contextBlock = contextParts.length > 0
+            ? `\n\n阅读上下文：\n${contextParts.join('\n')}`
+            : '';
 
-        const userPrompt = userQuestion
-            ? `用户问：${userQuestion}\n\nAI 回答：\n${content}`
-            : `AI 回答：\n${content}`;
+        return userQuestion
+            ? `用户问：${userQuestion}${contextBlock}\n\nAI 回答：\n${content}`
+            : `AI 回答：\n${content}${contextBlock}`;
+    }
+
+    async summarize(content: string, userQuestion?: string, context?: TTSContext): Promise<string> {
+        const url = `${this.baseUrl}/chat/completions`;
+        const userPrompt = this.buildUserPrompt(content, userQuestion, context);
 
         const response = await safeRequest({
             url,
@@ -70,5 +109,67 @@ export class TTSSummarizer {
             throw new Error('TTS summarizer: empty response from LLM');
         }
         return text;
+    }
+
+    async *summarizeStream(content: string, userQuestion?: string, context?: TTSContext): AsyncGenerator<string> {
+        const url = `${this.baseUrl}/chat/completions`;
+        const userPrompt = this.buildUserPrompt(content, userQuestion, context);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: [
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    { role: 'user', content: userPrompt },
+                ],
+                stream: true,
+                temperature: 0.7,
+                max_tokens: 500,
+            }),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Summarizer stream error: ${response.status} — ${errText}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Summarizer stream: response body is null');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop()!;
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const payload = trimmed.slice(6).trim();
+                    if (payload === '[DONE]') return;
+
+                    try {
+                        const json = JSON.parse(payload);
+                        const delta = json?.choices?.[0]?.delta?.content;
+                        if (delta) yield delta;
+                    } catch {}
+                }
+            }
+        } finally {
+            reader.cancel().catch(() => {});
+        }
     }
 }
