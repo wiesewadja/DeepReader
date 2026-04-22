@@ -1386,3 +1386,42 @@
 	border-top: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   TTS 语音播报
+   ═══════════════════════════════════════════════════════════════ */
+
+.deeppdf-tts-wave {
+	display: none;
+	align-items: center;
+	gap: 2px;
+	margin-left: 6px;
+	height: 14px;
+}
+
+.deeppdf-tts-wave.active {
+	display: flex;
+}
+
+.deeppdf-tts-wave span {
+	width: 2px;
+	height: 12px;
+	background: var(--interactive-accent);
+	border-radius: 1px;
+	animation: tts-wave-bar 0.8s ease-in-out infinite;
+}
+
+.deeppdf-tts-wave span:nth-child(1) { animation-delay: 0s; }
+.deeppdf-tts-wave span:nth-child(2) { animation-delay: 0.15s; }
+.deeppdf-tts-wave span:nth-child(3) { animation-delay: 0.3s; }
+.deeppdf-tts-wave span:nth-child(4) { animation-delay: 0.45s; }
+
+@keyframes tts-wave-bar {
+	0%, 100% { transform: scaleY(0.4); }
+	50% { transform: scaleY(1); }
+}
+
+.deeppdf-message-action-btn.tts-loading {
+	opacity: 0.6;
+	pointer-events: none;
+}
