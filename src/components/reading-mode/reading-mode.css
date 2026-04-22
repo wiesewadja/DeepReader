@@ -510,7 +510,7 @@
     display: none !important;
 }
 
-/* 两侧翻页按钮 — 长条椭圆，贴边不遮挡文字 */
+/* 两侧翻页按钮 — 长条椭圆，默认只显示箭头 */
 .deeppdf-page-btn {
     position: absolute;
     top: 50%;
@@ -518,17 +518,18 @@
     width: 28px;
     height: 64px;
     border-radius: 14px;
-    background: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    color: var(--text-muted);
-    opacity: 0.3;
+    background: transparent;
+    border: 0px solid transparent;
+    color: var(--text-faint);
+    opacity: 0.25;
     cursor: pointer;
-    transition: opacity 0.2s ease, background 0.2s ease;
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    /* 离开时延迟 500ms 再隐藏边框 */
+    transition: opacity 0.15s ease 0.5s, background 0.2s ease 0.5s, border-color 0.2s ease 0.5s;
 }
 
 .deeppdf-page-btn.left  { left: 4px; }
@@ -536,7 +537,11 @@
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
     opacity: 0.9;
-    background: var(--background-modifier-hover);
+    background: var(--background-secondary);
+    border-color: var(--background-modifier-border);
+    color: var(--text-normal);
+    /* hover 时立即显示，无延迟 */
+    transition: opacity 0.15s ease 0s, background 0.15s ease 0s, border-color 0.15s ease 0s;
 }
 
 .deeppdf-page-btn-disabled {

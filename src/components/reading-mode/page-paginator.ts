@@ -157,8 +157,9 @@ export class PagePaginator {
 	}
 
 	/**
-	 * 通过检测 sizer 子元素的实际位置计算真实页数。
-	 * CSS multi-column 的 scrollWidth 可能虚高，不能直接用于页数计算。
+	 * 计算真实页数。
+	 * 方法1（优先）：用 sizer 的 offsetWidth 作为内容总宽度，比 scrollWidth 更准确
+	 * 方法2（备选）：遍历子元素位置做 bucket 分桶
 	 */
 	private countActualPages(): number {
 		if (!this.scrollView) return 1;
@@ -166,22 +167,19 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return 1;
 
-		const viewRect = this.scrollView.getBoundingClientRect();
-		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
-		if (!sizer) return 1;
-
-		// 收集所有块元素所在列的桶编号
-		const columnBuckets = new Set<number>();
-		for (const child of sizer.children) {
-			const r = (child as HTMLElement).getBoundingClientRect();
-			if (r.height < 5 || r.width < 10) continue;
-			const absX = r.left - viewRect.left + this.scrollView.scrollLeft;
-			const bucket = Math.floor(absX / viewWidth);
-			columnBuckets.add(bucket);
+		// 优先用 scrollWidth（CSS multi-column 撑开后的真实内容宽度）
+		const scrollW = this.scrollView.scrollWidth;
+		if (scrollW > viewWidth) {
+			return Math.ceil(scrollW / viewWidth);
 		}
 
-		if (columnBuckets.size === 0) return 1;
-		return Math.max(...columnBuckets) + 1;
+		// 兜底：通过 sizer offsetWidth
+		const sizer = this.scrollView.querySelector('.markdown-preview-sizer') as HTMLElement;
+		if (sizer && sizer.offsetWidth > viewWidth) {
+			return Math.ceil(sizer.offsetWidth / viewWidth);
+		}
+
+		return 1;
 	}
 
 	private setupScrollListener(): void {
