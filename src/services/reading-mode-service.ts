@@ -170,6 +170,10 @@ export class ReadingModeService {
 
         serviceLog('[DeepPDF] ReadingMode activating for:', file.path);
 
+        // 立即销毁旧分页器（含底栏 DOM），防止新旧书籍信息叠加
+        this.paginator?.destroy();
+        this.paginator = null;
+
         this.currentFile = file;
         this.isActive = true;
 
