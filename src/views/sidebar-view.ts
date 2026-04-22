@@ -3049,8 +3049,7 @@ export class SidebarView extends ItemView {
             llmApiKey: fastConfig.apiKey,
             llmBaseUrl: fastConfig.baseUrl,
             llmModel: fastConfig.model,
-            onStateChange: (state: TTSPlayState) => {
-                const messageId = this.ttsService?.getCurrentMessageId();
+            onStateChange: (messageId: string | null, state: TTSPlayState) => {
                 if (messageId) {
                     this.messageList?.updateTTSState(messageId, state);
                 }
@@ -3095,6 +3094,16 @@ export class SidebarView extends ItemView {
                     warn('[DeepPDF] Error aborting streamController:', e);
                 }
                 this.streamController = null;
+            }
+
+            // 清理 TTS 服务
+            if (this.ttsService) {
+                try {
+                    this.ttsService.stop();
+                } catch (e) {
+                    warn('[DeepPDF] Error stopping TTS service:', e);
+                }
+                this.ttsService = null;
             }
 
             // 清理消息列表

@@ -9,7 +9,7 @@ export interface TTSServiceConfig {
     llmApiKey: string;
     llmBaseUrl: string;
     llmModel: string;
-    onStateChange?: (state: TTSPlayState) => void;
+    onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
 }
 
 export class TTSService {
@@ -18,7 +18,8 @@ export class TTSService {
     private summarizer: TTSSummarizer;
     private audio: HTMLAudioElement | null = null;
     private currentMessageId: string | null = null;
-    private onStateChange?: (state: TTSPlayState) => void;
+    private blobUrl: string | null = null;
+    private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -52,15 +53,23 @@ export class TTSService {
             this.setState('summarizing');
             const summary = await this.summarizer.summarize(content);
 
-            if (this.currentMessageId !== messageId) return;
+            if (this.currentMessageId !== messageId) {
+                this.setState('idle');
+                return;
+            }
 
             this.setState('tts_loading');
             const audioBuffer = await this.client.synthesize(summary);
 
-            if (this.currentMessageId !== messageId) return;
+            if (this.currentMessageId !== messageId) {
+                this.setState('idle');
+                return;
+            }
 
+            this.revokeBlobUrl();
             const blob = new Blob([audioBuffer], { type: 'audio/mpeg' });
             const url = URL.createObjectURL(blob);
+            this.blobUrl = url;
             this.audio = new Audio(url);
             this.audio.addEventListener('ended', () => {
                 this.setState('idle');
@@ -101,6 +110,7 @@ export class TTSService {
             this.audio.src = '';
             this.audio = null;
         }
+        this.revokeBlobUrl();
         this.currentMessageId = null;
         this.setState('idle');
     }
@@ -115,6 +125,13 @@ export class TTSService {
 
     private setState(newState: TTSPlayState): void {
         this.state = newState;
-        this.onStateChange?.(newState);
+        this.onStateChange?.(this.currentMessageId, newState);
+    }
+
+    private revokeBlobUrl(): void {
+        if (this.blobUrl) {
+            URL.revokeObjectURL(this.blobUrl);
+            this.blobUrl = null;
+        }
     }
 }

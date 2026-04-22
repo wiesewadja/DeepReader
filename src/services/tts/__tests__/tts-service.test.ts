@@ -67,6 +67,6 @@ describe('TTSService', () => {
             onStateChange,
         });
         service.stop();
-        expect(onStateChange).toHaveBeenCalledWith('idle');
+        expect(onStateChange).toHaveBeenCalledWith(null, 'idle');
     });
 });

@@ -726,6 +726,8 @@ export abstract class Message {
 	protected observers: MutationObserver[] = [];
 	protected mouseoverHandler: ((e: Event) => void) | null = null;
 
+		setTTSState?(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void;
+
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
 		this.app = app;

@@ -96,8 +96,8 @@ export interface DeepPDFSettings {
 	autoEnableReadingMode: boolean;
 	readingModeStyle: 'paginated' | 'scrolling';
 
-		// TTS 语音播报
-		autoTTS: boolean;
+	// TTS 语音播报
+	autoTTS: boolean;
 
 	// Langfuse 追踪配置
 	langfusePublicKey: string;
@@ -180,8 +180,8 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	autoEnableReadingMode: true,
 	readingModeStyle: 'paginated' as const,
 
-		// TTS 语音播报
-		autoTTS: false,
+	// TTS 语音播报
+	autoTTS: false,
 
 	// Langfuse 追踪配置
 	langfusePublicKey: "",

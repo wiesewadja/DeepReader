@@ -343,8 +343,8 @@ export class MessageList extends Component {
 	 */
 	updateTTSState(messageId: string, state: TTSPlayState): void {
 		const msg = this.messages.get(messageId);
-		if (msg && 'setTTSState' in msg) {
-			(msg as any).setTTSState(state);
+		if (msg?.setTTSState) {
+			msg.setTTSState(state);
 		}
 	}
 
