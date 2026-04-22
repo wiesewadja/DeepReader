@@ -316,6 +316,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             ...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' }] : []),
             { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
             { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
+            { role: 'tts', label: '语音播报', desc: 'AI 语音合成播报（禁用则无语音功能）' },
         ];
 
         // 必填角色区域
