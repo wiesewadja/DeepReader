@@ -129,7 +129,12 @@ export async function formatterNode(
   for await (const chunk of stream) {
     if (typeof chunk.content === 'string') {
       content += chunk.content;
-      callbacks?.onContent?.(content);
+      // 流式推送给 UI 时也还原占位符，避免用户看到 §REF_n§
+      if (placeholderMap.size > 0) {
+        callbacks?.onContent?.(restorePlaceholders(content, placeholderMap));
+      } else {
+        callbacks?.onContent?.(content);
+      }
     }
   }
 
