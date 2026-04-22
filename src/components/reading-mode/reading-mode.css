@@ -510,18 +510,18 @@
     display: none !important;
 }
 
-/* 两侧翻页按钮 — 相对当前阅读容器，绝对定位 */
+/* 两侧翻页按钮 — 长条椭圆，贴边不遮挡文字 */
 .deeppdf-page-btn {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
+    width: 28px;
+    height: 64px;
+    border-radius: 14px;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
-    color: var(--text-normal);
-    opacity: 0.35;
+    color: var(--text-muted);
+    opacity: 0.3;
     cursor: pointer;
     transition: opacity 0.2s ease, background 0.2s ease;
     z-index: 100;
@@ -531,8 +531,8 @@
     padding: 0;
 }
 
-.deeppdf-page-btn.left  { left: 12px; }
-.deeppdf-page-btn.right { right: 12px; }
+.deeppdf-page-btn.left  { left: 4px; }
+.deeppdf-page-btn.right { right: 4px; }
 
 .deeppdf-page-btn:hover:not(.deeppdf-page-btn-disabled) {
     opacity: 0.9;
@@ -544,7 +544,7 @@
     pointer-events: none;
 }
 
-/* 底部浮层 — 居中：章节名 · 页码 · 书名 */
+/* 底部浮层 — 居中：章节名 · 页码 */
 .deeppdf-page-controls {
     position: absolute;
     bottom: 10px;
@@ -559,9 +559,24 @@
     transition: opacity 0.2s ease;
 }
 
+/* 左上角书名浮层 */
+.deeppdf-page-book-label {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    color: var(--text-faint);
+    font-size: 12px;
+    opacity: 0.5;
+    white-space: nowrap;
+    user-select: none;
+    pointer-events: none;
+    letter-spacing: 0.5px;
+}
+
 .deeppdf-page-chapter,
-.deeppdf-page-num,
-.deeppdf-page-book {
+.deeppdf-page-num {
     color: var(--text-faint);
     font-size: 11px;
     white-space: nowrap;

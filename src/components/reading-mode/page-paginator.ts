@@ -37,6 +37,7 @@ export class PagePaginator {
 	private progressFill: HTMLElement | null = null;
 	private pageIndicator: HTMLElement | null = null;
 	private chapterIndicator: HTMLElement | null = null;
+	private bookLabelEl: HTMLElement | null = null;
 
 	private resizeObserver: ResizeObserver | null = null;
 	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -208,23 +209,18 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return;
 
-		// 纸质书最佳阅读行宽 (约 640px 左右)
+		// 纸质书最佳阅读行宽
 		const MAX_TEXT_WIDTH = 640;
-		// 最小安全边距（针对窄屏幕或手机）
-		const MIN_PADDING = 40;
+		// 两边留白比例
+		const PERCENT_PADDING = 0.03;
 
 		let contentWidth: number;
 		let sidePadding: number;
 
-		if (viewWidth <= MAX_TEXT_WIDTH + MIN_PADDING * 2) {
-			// 窄屏模式：扣除双边最小边距
-			contentWidth = viewWidth - MIN_PADDING * 2;
-			sidePadding = MIN_PADDING;
-		} else {
-			// 宽屏模式：锁定行宽，两边均分留白，实现绝对居中
-			contentWidth = MAX_TEXT_WIDTH;
-			sidePadding = (viewWidth - MAX_TEXT_WIDTH) / 2;
-		}
+		// 按比例留白，但内容不超过最佳行宽
+		sidePadding = viewWidth * PERCENT_PADDING;
+		contentWidth = Math.min(viewWidth - sidePadding * 2, MAX_TEXT_WIDTH);
+		sidePadding = (viewWidth - contentWidth) / 2;
 
 		// The mathematical constraint to perfectly center every page is:
 		// stride = columnWidth + columnGap = viewWidth
@@ -259,6 +255,13 @@ export class PagePaginator {
 	private createControls(): void {
 		this.removeControls();
 
+		// 兜底：清理 viewContent 上可能残留的旧浮层 DOM
+		if (this.viewContent) {
+			this.viewContent.querySelectorAll(
+				'.deeppdf-page-controls, .deeppdf-page-book-label, .deeppdf-page-btn'
+			).forEach(el => el.remove());
+		}
+
 		// 左侧翻页按钮
 		this.leftBtn = document.createElement('button');
 		this.leftBtn.className = 'deeppdf-page-btn left';
@@ -273,7 +276,7 @@ export class PagePaginator {
 		this.rightBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 		this.rightBtn.addEventListener('click', () => this.nextPage());
 
-		// 底部浮层：章节名（左） · 页码（中） · 书名（右）
+		// 底部浮层：章节名（左） · 页码（中）
 		this.controlsBar = document.createElement('div');
 		this.controlsBar.className = 'deeppdf-page-controls';
 
@@ -290,12 +293,11 @@ export class PagePaginator {
 		this.pageIndicator.className = 'deeppdf-page-num';
 		this.controlsBar.appendChild(this.pageIndicator);
 
-		// 右侧：书名
+		// 左上角：书名浮层
 		if (this.bookName) {
-			const bookEl = document.createElement('span');
-			bookEl.className = 'deeppdf-page-book';
-			bookEl.textContent = this.bookName;
-			this.controlsBar.appendChild(bookEl);
+			this.bookLabelEl = document.createElement('div');
+			this.bookLabelEl.className = 'deeppdf-page-book-label';
+			this.bookLabelEl.textContent = this.bookName;
 		}
 
 		if (this.viewContent) {
@@ -305,6 +307,7 @@ export class PagePaginator {
 			this.viewContent.appendChild(this.leftBtn);
 			this.viewContent.appendChild(this.rightBtn);
 			this.viewContent.appendChild(this.controlsBar);
+			if (this.bookLabelEl) this.viewContent.appendChild(this.bookLabelEl);
 		}
 	}
 
@@ -323,9 +326,11 @@ export class PagePaginator {
 		this.leftBtn?.remove();
 		this.rightBtn?.remove();
 		this.controlsBar?.remove();
+		this.bookLabelEl?.remove();
 		this.leftBtn = null;
 		this.rightBtn = null;
 		this.controlsBar = null;
+		this.bookLabelEl = null;
 		this.progressFill = null;
 		this.pageIndicator = null;
 		this.chapterIndicator = null;
@@ -369,29 +374,31 @@ export class PagePaginator {
 		// 1. 同步更新 CSS 变量（列宽和间距），这会立即触发浏览器的重排
 		this.updateColumnSizing();
 
-		// 2. 为了获取重排后正确的 scrollWidth，必须延迟到下一帧
+		// 2. CSS column 重排需要多帧才能稳定，用双 rAF 确保布局完成
 		requestAnimationFrame(() => {
-			if (!this._isActive || !this.scrollView) return;
+			requestAnimationFrame(() => {
+				if (!this._isActive || !this.scrollView) return;
 
-			// 计算新的总页数（用实际列位置，不用 scrollWidth）
-			this._totalPages = this.countActualPages();
+				// 计算新的总页数（用实际列位置，不用 scrollWidth）
+				this._totalPages = this.countActualPages();
 
-			if (this._totalPages <= 1) { 
-				// 只有一页，滚动到最左侧
-				this.scrollView.scrollLeft = 0;
+				if (this._totalPages <= 1) {
+					// 只有一页，滚动到最左侧
+					this.scrollView.scrollLeft = 0;
+					this.updateControls();
+					return;
+				}
+
+				// 根据之前的进度计算调整后的新页码
+				const newPage = Math.round(prevProgress * (this._totalPages - 1)) + 1;
+				this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
+
+				// 立刻强制同步滚动，对齐内容盒子
+				this.scrollView.scrollLeft = (this._currentPage - 1) * this.scrollView.clientWidth;
+
+				// 更新底部控件
 				this.updateControls();
-				return; 
-			}
-
-			// 根据之前的进度计算调整后的新页码
-			const newPage = Math.round(prevProgress * (this._totalPages - 1)) + 1;
-			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
-
-			// 立刻强制同步滚动，对齐内容盒子
-			this.scrollView.scrollLeft = (this._currentPage - 1) * this.scrollView.clientWidth;
-			
-			// 更新底部控件
-			this.updateControls();
+			});
 		});
 	}
 
