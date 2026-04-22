@@ -10,6 +10,7 @@ import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { warn } from '../../utils/logger.js';
 import { QuestionMinimap } from '../question-minimap';
+import type { TTSPlayState } from '../../services/tts/tts-service.js';
 
 /**
  * 引导按钮类型
@@ -335,6 +336,16 @@ export class MessageList extends Component {
 		}
 		this.updateEmptyState();
 		this.updateMinimap();
+	}
+
+	/**
+	 * 更新指定消息的 TTS 播放状态
+	 */
+	updateTTSState(messageId: string, state: TTSPlayState): void {
+		const msg = this.messages.get(messageId);
+		if (msg && 'setTTSState' in msg) {
+			(msg as any).setTTSState(state);
+		}
 	}
 
 	/**
