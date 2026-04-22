@@ -1,8 +1,12 @@
 /**
- * S4: Formatter Node — Native LangChain streaming implementation
+ * S4: Formatter Node — Placeholder-based link protection
  *
- * Transforms raw analysis into formatted Obsidian notes.
- * Uses ChatOpenAI streaming + self-verification instead of old runStateLoop.
+ * 链接保护策略：
+ * Formatter LLM 无法可靠地保留 wiki 链接的路径和 block_id。
+ * 无论 prompt 如何强调，LLM 都会把链接当作语义内容来"理解"和"重构"。
+ *
+ * 因此在传给 LLM 之前，用不透明占位符 §REF_n§ 替换所有 wiki 链接。
+ * LLM 只需原样搬运占位符，输出后再还原为真实链接。
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
@@ -13,18 +17,43 @@ import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
 } from '../prompts/formatter-prompt';
+import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
 
 /**
- * S4 Formatter node: transforms analysis into Obsidian-formatted output.
- *
- * Flow:
- * 1. Casual mode (depth=0): generate direct response
- * 2. Build formatter system/user messages with memory context
- * 3. Stream main model output, pushing to UI via callbacks
- * 4. Self-verify block_id references (remove ghost links)
- * 5. Optional HITL interrupt
+ * 将文本中的 wiki 链接替换为不透明占位符。
+ * 返回替换后的文本和占位符→原始链接的映射。
+ */
+function replaceLinksByPlaceholders(text: string): {
+  text: string;
+  placeholderMap: Map<string, string>;
+} {
+  const placeholderMap = new Map<string, string>();
+  let counter = 0;
+
+  const replaced = text.replace(/\[\[[^\]]+?\|[^\]]+\]\]/g, (match) => {
+    const placeholder = `\u00A7REF_${counter}\u00A7`;
+    placeholderMap.set(placeholder, match);
+    counter++;
+    return placeholder;
+  });
+
+  return { text: replaced, placeholderMap };
+}
+
+/**
+ * 将占位符还原为真实 wiki 链接。
+ */
+function restorePlaceholders(text: string, placeholderMap: Map<string, string>): string {
+  for (const [placeholder, originalLink] of placeholderMap) {
+    text = text.replaceAll(placeholder, originalLink);
+  }
+  return text;
+}
+
+/**
+ * S4 Formatter node
  */
 export async function formatterNode(
   state: CognitiveEngineState,
@@ -37,7 +66,6 @@ export async function formatterNode(
   } | undefined;
   const ctx = config.configurable?.sharedContext;
 
-  // No main model available — return raw analysis
   if (!mainModel) {
     return { formattedOutput: state.analysisResult || state.rewrittenQuery || '' };
   }
@@ -65,22 +93,31 @@ export async function formatterNode(
   // === Normal mode (depth >= 1): format with full context ===
   callbacks?.onProgress?.('正在整理笔记...');
 
-  // Build system prompt with memory context
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
 
-  // Build user message with all context
+  // 核心步骤：用占位符替换 analysisResult 中的 wiki 链接
+  // Formatter LLM 只看到不透明的 §REF_n§ token，无法篡改路径和 block_id
+  const rawAnalysis = state.analysisResult || '';
+  const { text: safeAnalysis, placeholderMap } = replaceLinksByPlaceholders(rawAnalysis);
+
+  // Build user message with placeholder-protected analysis
   const chatHistory = ctx?.chatHistory ?? [];
+  const markdownFiles = ctx?.markdownFiles ?? {};
+  const scopeNodeIds = state.scopeNodeIds ?? [];
+  const coveredScope = scopeNodeIds.length > 0
+    ? buildScopedChaptersBlock(scopeNodeIds, markdownFiles)
+    : '';
   const userMessage = buildFormatterUserMessage(
     state.rewrittenQuery,
-    state.analysisResult || '',
+    safeAnalysis,
     state.pdfName || '',
     chatHistory,
     state.tocSummary || undefined,
     state.structuralAnalysis || undefined,
     state.betterQuestion || undefined,
+    coveredScope || undefined,
   );
 
-  // Construct messages array
   const messages = [
     new SystemMessage(systemPrompt),
     new HumanMessage(userMessage),
@@ -96,7 +133,12 @@ export async function formatterNode(
     }
   }
 
-  // Self-verification: remove ghost block_id references
+  // 还原：用真实 wiki 链接替换占位符
+  if (placeholderMap.size > 0) {
+    content = restorePlaceholders(content, placeholderMap);
+  }
+
+  // Self-verification: remove ghost block_id references (safety net)
   const toolResults: ToolResultEntry[] = (state.toolResultsSnapshot || []).map(r => ({
     toolName: r.toolName,
     args: r.args as Record<string, unknown>,
@@ -105,24 +147,10 @@ export async function formatterNode(
     extractedBlockIds: r.extractedBlockIds,
   }));
 
-  // 记录验证结果到 LangSmith trace metadata
-  const verificationMetadata = {
-    tool_results_count: toolResults.length,
-    wiki_links_before: 0,
-    wiki_links_after: 0,
-    ghost_refs_removed: 0,
-  };
-
   if (toolResults.length > 0) {
     const verificationResult = await verifyAndCleanContent(content, toolResults);
     content = verificationResult.content;
-    
-    // 更新 metadata
-    verificationMetadata.wiki_links_before = verificationResult.totalRefs;
-    verificationMetadata.wiki_links_after = verificationResult.totalRefs - verificationResult.ghostRefs;
-    verificationMetadata.ghost_refs_removed = verificationResult.ghostRefs;
-    
-    // 发送验证结果到 LangSmith（如果有 tracer）
+
     if (config.configurable?.langsmithTracer) {
       try {
         const client = config.configurable.langsmithTracer.client;
@@ -132,10 +160,15 @@ export async function formatterNode(
           inputs: { content_length: content.length },
           outputs: verificationResult,
           parent_run_id: config.configurable?.parentRunId,
-          extra: { metadata: verificationMetadata },
+          extra: { metadata: {
+            tool_results_count: toolResults.length,
+            wiki_links_before: verificationResult.totalRefs,
+            wiki_links_after: verificationResult.totalRefs - verificationResult.ghostRefs,
+            ghost_refs_removed: verificationResult.ghostRefs,
+          } },
         });
       } catch {
-        // 静默失败，不影响主流程
+        // 静默失败
       }
     }
   }
@@ -164,6 +197,10 @@ export async function formatterNode(
           refinedContent += chunk.content;
           callbacks?.onContent?.(refinedContent);
         }
+      }
+
+      if (placeholderMap.size > 0) {
+        refinedContent = restorePlaceholders(refinedContent, placeholderMap);
       }
 
       if (toolResults.length > 0) {

@@ -242,8 +242,9 @@ ${blockLines.join('\n\n')}
 用户问题：${state.betterQuestion || state.rewrittenQuery || ctx?.rawUserQuery || ''}
 
 输出格式要求：
-- 引用来源用 [[${pdfName}/file_name#^block_id|自然语言]] 格式
+- 引用来源用 [[${pdfName}/file_name#^block_id|短别名]] 格式，别名 2-6 字核心词
 - file_name 和 block_id 必须来自上方检索结果中标注的值，禁止编造
+- 链接必须嵌入句子内部替代关键词，不要孤立在句尾
 - 如果检索结果足够，给出完整分析
 - 如果不够，简要说明并指出需要补充搜索的方向`;
 

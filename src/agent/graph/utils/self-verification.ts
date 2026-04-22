@@ -121,7 +121,7 @@ export function checkWikiLinkValid(
   // 如果没有 block_id，只验证 file_name 是否存在
   if (!blockId) {
     for (const entry of toolResults) {
-      if (entry.toolName === 'search_book' || entry.toolName === 'read_book_section' || entry.toolName === 'inspect_toc') {
+      if (entry.toolName === 'search_book' || entry.toolName === 'read_book_section' || entry.toolName === 'inspect_toc' || entry.toolName === 'pre_search') {
         if (fileNamePattern && fileNamePattern.test(entry.result)) {
           return 'valid';
         }
@@ -138,7 +138,7 @@ export function checkWikiLinkValid(
   const blockPattern = new RegExp(`\\^${escapeRegExp(blockIdWithoutCaret)}(?=\\W|$)`);
 
   for (const entry of toolResults) {
-    if (entry.toolName === 'search_book' || entry.toolName === 'read_book_section') {
+    if (entry.toolName === 'search_book' || entry.toolName === 'read_book_section' || entry.toolName === 'pre_search') {
       if (fileNamePattern && fileNamePattern.test(entry.result)) {
         fileFound = true;
       }
