@@ -110,6 +110,8 @@ export class PagePaginator {
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
+		// 翻页后触发强制重绘，避免空白页问题
+		this.forceRerender();
 		return true;
 	}
 
@@ -123,7 +125,30 @@ export class PagePaginator {
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
+		// 翻页后触发强制重绘，避免空白页问题
+		this.forceRerender();
 		return true;
+	}
+
+	/**
+	 * 强制重绘，解决 CSS multi-column 滚动时列渲染空白的问题
+	 * 通过临时修改 transform 触发浏览器重排
+	 */
+	private forceRerender(): void {
+		if (!this.scrollView) return;
+		
+		// 使用 requestAnimationFrame 确保在滚动完成后执行
+		requestAnimationFrame(() => {
+			if (!this.scrollView) return;
+			
+			// 临时触发强制重排
+			this.scrollView.style.transform = 'translateZ(0)';
+			requestAnimationFrame(() => {
+				if (this.scrollView) {
+					this.scrollView.style.transform = '';
+				}
+			});
+		});
 	}
 
 	destroy(): void {
