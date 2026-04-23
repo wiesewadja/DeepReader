@@ -1,22 +1,47 @@
 export interface TTSClientOptions {
     apiKey: string;
     baseUrl: string;
+    model?: string;
 }
 
 export interface TTSOptions {
-    voice?: 'mimo_default' | 'default_zh' | 'default_en';
+    voice?: string;
 }
 
-const DEFAULT_VOICE = 'default_zh';
-const TTS_MODEL = 'mimo-v2-tts';
+/**
+ * 奚童角色导演模式描述（MiMo V2.5 Director Mode）
+ *
+ * 三个维度：Character（角色）、Scene（场景）、Guidance（指导）
+ * 放在 user message 中，控制语音的音色、情感和节奏
+ */
+const XITONG_DIRECTOR_PROMPT = `[Character]
+你是奚童，一位活泼知性的年轻女孩，用户的伴读书童。你的声音清澈明亮，带着自然的亲和力和书卷气。
+你的语速偏快但不急促，吐字清晰，有一种"刚读完好书迫不及待想分享"的活力感。
+偶尔会轻笑，偶尔会感叹，但整体给人的感觉是温暖、真诚、值得信赖的读书伙伴。
+
+[Scene]
+你正在和一位朋友面对面聊天，分享你读书后的感想和心得。
+氛围轻松愉快，像在一个安静的午后，两个人坐在书架旁喝茶聊书。
+
+[Guidance]
+- 发现有趣观点时，语速稍快，语气兴奋，像在分享一个惊喜
+- 分析深层含义时，节奏放慢，声音沉稳，像在认真思考
+- 鼓励用户阅读时，声音温暖轻柔，像在给朋友打气
+- 讨论严肃话题时，端庄但亲和，不失活力
+- 句间自然停顿，不要抢读，给人消化信息的时间`;
+
+const DEFAULT_VOICE = '茉莉';
+const TTS_MODEL = 'mimo-v2.5-tts';
 
 export class TTSClient {
     #apiKey: string;
     private baseUrl: string;
+    private model: string;
 
     constructor(options: TTSClientOptions) {
         this.#apiKey = options.apiKey;
         this.baseUrl = options.baseUrl;
+        this.model = options.model || TTS_MODEL;
     }
 
     async synthesize(text: string, options?: TTSOptions): Promise<ArrayBuffer> {
@@ -24,9 +49,9 @@ export class TTSClient {
         const voice = options?.voice || DEFAULT_VOICE;
 
         const reqBody = JSON.stringify({
-            model: TTS_MODEL,
+            model: this.model,
             messages: [
-                { role: 'user', content: '请朗读以下内容' },
+                { role: 'user', content: XITONG_DIRECTOR_PROMPT },
                 { role: 'assistant', content: text },
             ],
             audio: {
@@ -78,10 +103,10 @@ export class TTSClient {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: TTS_MODEL,
+                model: this.model,
                 stream: true,
                 messages: [
-                    { role: 'user', content: '请朗读以下内容' },
+                    { role: 'user', content: XITONG_DIRECTOR_PROMPT },
                     { role: 'assistant', content: text },
                 ],
                 audio: {

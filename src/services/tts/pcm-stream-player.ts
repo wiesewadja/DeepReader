@@ -6,6 +6,7 @@ export class PCMStreamPlayer {
     private nextStartTime = 0;
     private chunks: Float32Array[] = [];
     private sealed = false;
+    private paused = false;
     private lastSource: AudioBufferSourceNode | null = null;
     private completeResolve: (() => void) | null = null;
     private completePromise: Promise<void> | null = null;
@@ -28,8 +29,8 @@ export class PCMStreamPlayer {
         if (this.stopped) return;
         if (this.sealed) return;
 
-        // 确保不在 suspended 状态（自动播放策略）
-        if (this.ctx.state === 'suspended') {
+        // 确保不在 suspended 状态（自动播放策略），但暂停期间不恢复
+        if (this.ctx.state === 'suspended' && !this.paused) {
             this.ctx.resume();
         }
 
@@ -103,12 +104,14 @@ export class PCMStreamPlayer {
 
     pause(): void {
         if (!this.stopped) {
+            this.paused = true;
             this.ctx.suspend();
         }
     }
 
     resume(): void {
         if (!this.stopped) {
+            this.paused = false;
             this.ctx.resume();
         }
     }

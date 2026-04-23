@@ -3052,6 +3052,7 @@ export class SidebarView extends ItemView {
         return new TTSService({
             ttsApiKey: ttsConfig.apiKey,
             ttsBaseUrl: ttsConfig.baseUrl,
+            ttsModel: ttsConfig.model,
             llmApiKey: fastConfig.apiKey,
             llmBaseUrl: fastConfig.baseUrl,
             llmModel: fastConfig.model,
@@ -3075,7 +3076,7 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        if (this.ttsService.getCurrentMessageId() === messageId) {
+        if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
             this.ttsService.togglePauseResume();
             return;
         }

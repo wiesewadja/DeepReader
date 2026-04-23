@@ -8,6 +8,7 @@ export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 
 export interface TTSServiceConfig {
     ttsApiKey: string;
     ttsBaseUrl: string;
+    ttsModel?: string;
     llmApiKey: string;
     llmBaseUrl: string;
     llmModel: string;
@@ -41,6 +42,7 @@ export class TTSService {
         this.client = new TTSClient({
             apiKey: config.ttsApiKey,
             baseUrl: config.ttsBaseUrl,
+            model: config.ttsModel,
         });
         this.summarizer = new TTSSummarizer({
             apiKey: config.llmApiKey,
@@ -99,6 +101,7 @@ export class TTSService {
             } catch (err) {
                 console.error('[TTS] play failed:', err);
                 new Notice(`语音播报失败: ${err instanceof Error ? err.message : String(err)}`);
+                this.currentMessageId = null;
                 this.setState('idle');
             }
         }
