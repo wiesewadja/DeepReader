@@ -41,6 +41,8 @@ export interface ToolContext {
   currentNodeId?: string;
   /** 插件实例（用于访问设置） */
   plugin?: any;
+  /** 用户笔记目录（配置后启用 search_journal 工具） */
+  journalDir?: string;
 }
 
 /**

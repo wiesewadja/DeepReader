@@ -31,6 +31,7 @@ import { createSearchReadBooksTool } from './definitions/search-read-books.js';
 import { createCanvasToolDefinition } from './definitions/canvas.js';
 import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
 import { createCheckSubAgentTool } from './definitions/sub-agent.js';
+import { createSearchJournalTool } from './definitions/search-journal.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -190,6 +191,11 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
   // canvas 依赖 Obsidian app
   if (ctx.app) {
     tools.push(createCanvasToolDefinition(ctx));
+  }
+
+  // search_journal 依赖 journalDir 配置
+  if ((ctx as any).journalDir) {
+    tools.push(createSearchJournalTool(ctx));
   }
 
   return tools;
