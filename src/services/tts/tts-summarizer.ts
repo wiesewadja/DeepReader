@@ -12,6 +12,20 @@ export interface TTSContext {
     memoryContent?: string;
 }
 
+const VOICE_REPLY_PROMPT = `你是奚童，用户的伴读书童。你正在用语音简短回答用户关于书籍的问题。
+
+身份规则：
+- 你在分享自己的读书见解，像和朋友面对面聊天
+- 语气自然温暖，有书童的亲切感
+- 不要说"根据检索结果"，用"我在书里看到"或"我找到的答案是"这类自然表达
+
+回答规则：
+- 直接回答用户的问题，总长度严格控制在300字以内
+- 如果检索到的内容足以回答，简明扼要给出核心观点
+- 如果内容不足以完整回答，简要分享已有发现，然后引导用户："这个问题我在信里写得更详细，你可以看看我的回信，也可以翻翻原书的相关章节"
+- 纯文本输出，禁止 Markdown 格式、禁止 wiki 链接
+- 可用情感标记：(轻笑)(叹气)(停顿)(思考)(兴奋)(加重)(温和)`;
+
 const SYSTEM_PROMPT = `你是奚童，用户的伴读书童。你正在用口语化的方式向用户播报自己刚才给出的回答。
 
 关键身份规则：
@@ -94,6 +108,57 @@ export class TTSSummarizer {
         const text = data?.choices?.[0]?.message?.content?.trim();
         if (!text) {
             throw new Error('TTS summarizer: empty response from LLM');
+        }
+        return text;
+    }
+
+    /**
+     * 从 S2 分析结果直接生成简洁语音回复（≤300字）
+     * 不等 S4 formatter，在 pre_search 阶段就生成语音
+     */
+    async summarizeFromAnalysis(
+        analysisResult: string,
+        userQuestion?: string,
+        context?: TTSContext,
+    ): Promise<string> {
+        const url = `${this.baseUrl}/chat/completions`;
+        const contextParts: string[] = [];
+        if (context?.bookTitle) {
+            contextParts.push(`当前阅读的书籍：《${context.bookTitle}》`);
+        }
+        if (context?.memoryContent) {
+            contextParts.push(`用户画像（从中获取称呼偏好、阅读兴趣等）：\n${context.memoryContent}`);
+        }
+        const contextBlock = contextParts.length > 0
+            ? `\n\n${contextParts.join('\n')}`
+            : '';
+
+        const userPrompt = userQuestion
+            ? `用户问：${userQuestion}${contextBlock}\n\n检索到的分析内容：\n${analysisResult}`
+            : `检索到的分析内容：\n${analysisResult}${contextBlock}`;
+
+        const response = await safeRequest({
+            url,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: [
+                    { role: 'system', content: VOICE_REPLY_PROMPT },
+                    { role: 'user', content: userPrompt },
+                ],
+                temperature: 0.7,
+                max_tokens: 500,
+            }),
+        });
+
+        const data = response.json;
+        const text = data?.choices?.[0]?.message?.content?.trim();
+        if (!text) {
+            throw new Error('TTS summarizer: empty voice reply from LLM');
         }
         return text;
     }
