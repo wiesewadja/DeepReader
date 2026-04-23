@@ -132,21 +132,30 @@ export class PagePaginator {
 
 	/**
 	 * 强制重绘，解决 CSS multi-column 滚动时列渲染空白的问题
-	 * 通过临时修改 transform 触发浏览器重排
+	 * 通过多种方式触发浏览器重排
 	 */
 	private forceRerender(): void {
 		if (!this.scrollView) return;
 		
-		// 使用 requestAnimationFrame 确保在滚动完成后执行
+		// 使用多次 requestAnimationFrame 确保在滚动完成后执行
 		requestAnimationFrame(() => {
 			if (!this.scrollView) return;
 			
-			// 临时触发强制重排
-			this.scrollView.style.transform = 'translateZ(0)';
+			// 方法1：修改 column-width 触发重排
+			const currentWidth = this.scrollView.style.getPropertyValue('--deeppdf-col-width');
+			this.scrollView.style.setProperty('--deeppdf-col-width', `${parseInt(currentWidth) + 0.1}px`);
+			
 			requestAnimationFrame(() => {
-				if (this.scrollView) {
-					this.scrollView.style.transform = '';
-				}
+				if (!this.scrollView) return;
+				this.scrollView.style.setProperty('--deeppdf-col-width', currentWidth);
+				
+				// 方法2：修改 overflow 触发重排
+				this.scrollView.style.overflow = 'hidden';
+				requestAnimationFrame(() => {
+					if (this.scrollView) {
+						this.scrollView.style.overflow = '';
+					}
+				});
 			});
 		});
 	}

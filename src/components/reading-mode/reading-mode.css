@@ -463,16 +463,14 @@
     height: 100%;
     /* 核心多列属性：使用 CSS 变量，由 page-paginator.ts 动态计算赋值，保证 640px 最佳行宽不被破坏 */
     column-width: var(--deeppdf-col-width, 640px);
-    column-gap: var(--deeppdf-col-gap, 80px);
-    column-fill: balance;
+    column-gap: var(--deeppdf-col-gap, 0px);
+    column-fill: auto;
     /* 允许横向滚动，隐藏原生滚动条 */
     overflow-x: auto;
     overflow-y: hidden;
     /* 移除 scroll-snap */
     scroll-behavior: smooth;
     box-sizing: border-box;
-    /* 强制 GPU 合成，避免滚动时列渲染空白 */
-    will-change: transform;
 }
 
 /* 隐藏原生滚动条 */
