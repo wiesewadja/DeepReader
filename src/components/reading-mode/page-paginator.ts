@@ -243,22 +243,27 @@ export class PagePaginator {
 
 		// 纸质书最佳阅读行宽
 		const MAX_TEXT_WIDTH = 640;
-		// 最小侧边留白
-		const MIN_SIDE_PADDING = 20;
+		// 窄视口阈值（视口宽度小于此值时，使用自适应留白）
+		const NARROW_THRESHOLD = 700;
 
 		let contentWidth: number;
 		let sidePadding: number;
 
-		// 计算可用内容宽度（视口减去两侧最小留白）
-		const availableWidth = viewWidth - MIN_SIDE_PADDING * 2;
-		contentWidth = Math.min(MAX_TEXT_WIDTH, availableWidth);
-		if (contentWidth < 0) contentWidth = viewWidth;
+		if (viewWidth < NARROW_THRESHOLD) {
+			// 窄视口：内容占满可用宽度，留白按比例缩小
+			const paddingRatio = 0.03; // 3% 留白
+			sidePadding = Math.max(viewWidth * paddingRatio, 8); // 最小 8px
+			contentWidth = viewWidth - sidePadding * 2;
+		} else {
+			// 宽视口：使用最佳行宽
+			contentWidth = Math.min(MAX_TEXT_WIDTH, viewWidth * 0.85);
+			sidePadding = (viewWidth - contentWidth) / 2;
+		}
 
-		// 居中留白：(视口宽度 - 内容宽度) / 2
-		sidePadding = (viewWidth - contentWidth) / 2;
+		// 确保内容宽度为正数
+		if (contentWidth < 100) contentWidth = 100;
 
 		// column-gap = viewWidth - contentWidth，确保每页宽度正好等于视口宽度
-		// 这样翻页时内容才会正确对齐
 		const columnGap = viewWidth - contentWidth;
 
 		// 通过 CSS 变量动态设定列宽、列间距和容器的左右 Padding
