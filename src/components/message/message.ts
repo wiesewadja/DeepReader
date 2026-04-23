@@ -2055,15 +2055,6 @@ export class AIMessage extends Message {
 			this.selectionMenu.hide();
 			this.selectionMenu = null;
 		}
-
-		// 清理语音播放资源
-		if (this.voiceAudioEl) {
-			this.voiceAudioEl.pause();
-			URL.revokeObjectURL(this.voiceAudioEl.src);
-			this.voiceAudioEl.src = '';
-			this.voiceAudioEl = null;
-		}
-		this.voiceAudio = null;
 	}
 }
 
