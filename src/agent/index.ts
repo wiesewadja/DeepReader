@@ -327,7 +327,7 @@ ${currentMemory}
         },
       );
 
-      const result = await this.processGraphStream(stream, callbacks);
+      const result = await this.processGraphStream(stream, callbacks, { configurable });
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
@@ -385,7 +385,7 @@ ${currentMemory}
         },
       );
 
-      const result = await this.processGraphStream(stream, callbacks);
+      const result = await this.processGraphStream(stream, callbacks, { configurable });
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
@@ -488,6 +488,8 @@ ${currentMemory}
       toolContext: context,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
+      ttsConfig: context.ttsConfig,
+      llmConfig: context.llmConfig,
       _langsmithTracer: langsmithTracer,
     };
   }
@@ -517,12 +519,21 @@ ${currentMemory}
   private async processGraphStream(
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
+    config?: { configurable?: Record<string, any> },
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     const onProgress = callbacks.onProgress || (() => {});
     const onContent = callbacks.onContent || (() => {});
 
     let formattedOutput = '';
     let interruptedNode: { nodeId: string; content: string } | undefined;
+    
+    // 流式分段语音合成状态
+    const ttsCfg = config?.configurable?.ttsConfig;
+    const llmCfg = config?.configurable?.llmConfig;
+    const enableVoiceReply = !!(ttsCfg && llmCfg && callbacks.onVoiceReady);
+    
+    // 句号分隔正则
+    const SENTENCE_END_RE = /[。！？!?]/;
 
     for await (const chunk of stream) {
       if (chunk == null || typeof chunk !== 'object') continue;
@@ -552,12 +563,34 @@ ${currentMemory}
 
         onProgress(FrontendAgent.getNodeStatus(nodeName));
 
-        // 收集格式化输出
+        // 收集格式化输出（流式）
         if (stateUpdate.formattedOutput) {
           formattedOutput = stateUpdate.formattedOutput;
           onContent(formattedOutput);
         }
       }
+    }
+
+    // 流式输出结束后，统一处理语音生成（fire-and-forget，不阻塞主流程）
+    if (enableVoiceReply && formattedOutput && callbacks.onVoiceReady) {
+      this.generateVoiceFromFormattedOutput(
+        formattedOutput,
+        ttsCfg,
+        llmCfg,
+        {
+          userQuestion: (config?.configurable?.sharedContext as any)?.userQuestion as string | undefined,
+          bookTitle: (config?.configurable?.sharedContext as any)?.bookTitle as string | undefined,
+          memoryContext: (config?.configurable?.sharedContext as any)?.memoryContext as string | undefined,
+          abortSignal: callbacks.abortSignal,
+        }
+      ).then(audioBuffer => {
+        if (audioBuffer) {
+          const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+          callbacks.onVoiceReady!({ audioBuffer, duration });
+        }
+      }).catch(err => {
+        console.warn('[VoicePipeline] voice generation failed:', err);
+      });
     }
 
     if (interruptedNode) {
@@ -572,6 +605,86 @@ ${currentMemory}
     }
 
     return { messages: resultMessages };
+  }
+
+  /**
+   * 从格式化输出生成语音
+   * 等流式输出结束后，将内容摘要后分段生成语音并合并成完整段落
+   */
+  private async generateVoiceFromFormattedOutput(
+    formattedOutput: string,
+    ttsConfig: { apiKey: string; baseUrl: string; model?: string },
+    llmConfig: { apiKey: string; baseUrl: string; model?: string },
+    options: {
+      userQuestion?: string;
+      bookTitle?: string;
+      memoryContext?: string;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<ArrayBuffer | null> {
+    const signal = options.abortSignal;
+    if (signal?.aborted) return null;
+
+    const { TTSSummarizer } = await import('../services/tts/tts-summarizer.js');
+    const { TTSClient } = await import('../services/tts/tts-client.js');
+    const { TTSService } = await import('../services/tts/tts-service.js');
+
+    const summarizer = new TTSSummarizer({
+      apiKey: llmConfig.apiKey,
+      baseUrl: llmConfig.baseUrl,
+      model: llmConfig.model || 'deepseek-chat',
+    });
+
+    const client = new TTSClient({
+      apiKey: ttsConfig.apiKey,
+      baseUrl: ttsConfig.baseUrl,
+      model: ttsConfig.model,
+    });
+
+    // 先对整个内容进行摘要
+    const summary = await summarizer.summarize(formattedOutput, options.userQuestion, {
+      bookTitle: options.bookTitle,
+      memoryContent: options.memoryContext,
+    });
+
+    if (!summary.trim() || signal?.aborted) return null;
+
+    // 按句子切分摘要内容
+    const sentences: string[] = [];
+    let buffer = summary;
+    while (true) {
+      const match = buffer.search(/[。！？!?]/);
+      if (match === -1) break;
+      const end = match + 1;
+      const sentence = buffer.slice(0, end);
+      buffer = buffer.slice(end);
+      if (sentence.trim()) {
+        sentences.push(sentence);
+      }
+    }
+    // 处理剩余的文本
+    if (buffer.trim()) {
+      sentences.push(buffer.trim());
+    }
+
+    if (sentences.length === 0) return null;
+
+    // 顺序生成所有句子的音频（保持顺序）
+    const audioChunks: ArrayBuffer[] = [];
+    for (const sentence of sentences) {
+      if (signal?.aborted) break;
+      try {
+        const audioBuffer = await client.synthesize(sentence);
+        audioChunks.push(audioBuffer);
+      } catch (err) {
+        console.warn('[VoicePipeline] sentence synthesis failed:', err);
+      }
+    }
+
+    if (signal?.aborted || audioChunks.length === 0) return null;
+
+    // 合并所有音频片段
+    return TTSService.mergeAudioChunks(audioChunks);
   }
 
   async chat(

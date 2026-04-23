@@ -50,6 +50,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 		minimax:     { apiKey: '' },
 		siliconflow: { apiKey: '' },
 		openai:      { apiKey: '' },
+		xiaomi:      { apiKey: '' },
 	};
 }
 
@@ -62,6 +63,7 @@ function defaultRoles(): AIRoles {
 		proposition: { provider: 'siliconflow', model: 'Qwen/Qwen3-8B' },
 		embedding:   null,
 		reranker:    null,
+		tts:         null,
 	};
 }
 
@@ -93,6 +95,10 @@ export interface DeepPDFSettings {
 	// 阅读模式设置
 	autoEnableReadingMode: boolean;
 	readingModeStyle: 'paginated' | 'scrolling';
+
+	// TTS 语音播报
+	autoTTS: boolean;
+	enableVoiceReply: boolean; // 语音对话+书信回复模式
 
 	// Langfuse 追踪配置
 	langfusePublicKey: string;
@@ -174,6 +180,10 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	// 阅读模式设置
 	autoEnableReadingMode: true,
 	readingModeStyle: 'paginated' as const,
+
+	// TTS 语音播报
+	autoTTS: false,
+	enableVoiceReply: false,
 
 	// Langfuse 追踪配置
 	langfusePublicKey: "",

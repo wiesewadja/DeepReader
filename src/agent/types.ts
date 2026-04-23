@@ -89,6 +89,7 @@ export interface AgentCallbacks {
   onProgress: (status: string) => void;
   onComplete: () => void;
   onError: (error: string) => void;
+  onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
 }
 
 // ==================== LLM 响应 ====================

@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { resolveRoleConfig, getAvailableProvidersForRole, PROVIDER_CONFIGS } from '../providers';
+import { ROLE_CAPABILITY } from '../ai-roles';
 import type { DeepPDFSettings } from '../settings';
 import { DEFAULT_SETTINGS } from '../settings';
 
@@ -103,7 +104,43 @@ describe('PROVIDER_CONFIGS', () => {
 		}
 	});
 
-	it('has exactly 7 providers', () => {
-		expect(Object.keys(PROVIDER_CONFIGS)).toHaveLength(7);
+	it('has exactly 8 providers', () => {
+		expect(Object.keys(PROVIDER_CONFIGS)).toHaveLength(8);
+	});
+});
+
+describe('xiaomi provider + tts role', () => {
+	it('xiaomi 应该在 PROVIDER_CONFIGS 中有 tts capability', () => {
+		expect(PROVIDER_CONFIGS.xiaomi.capabilities.tts).toBe(true);
+		expect(PROVIDER_CONFIGS.xiaomi.capabilities.chat).toBe(false);
+	});
+
+	it('tts 角色应该映射到 tts capability', () => {
+		expect(ROLE_CAPABILITY.tts).toBe('tts');
+	});
+
+	it('resolveRoleConfig 对 tts 角色返回 null 当未配置时', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		settings.roles = { ...DEFAULT_SETTINGS.roles, tts: null };
+		expect(resolveRoleConfig('tts', settings)).toBeNull();
+	});
+
+	it('resolveRoleConfig 对 tts 角色返回配置当已配置时', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		settings.providers = { ...DEFAULT_SETTINGS.providers, xiaomi: { apiKey: 'test-key' } };
+		settings.roles = { ...DEFAULT_SETTINGS.roles, tts: { provider: 'xiaomi', model: 'mimo-v2-tts' } };
+		const result = resolveRoleConfig('tts', settings);
+		expect(result).not.toBeNull();
+		expect(result!.apiKey).toBe('test-key');
+		expect(result!.model).toBe('mimo-v2-tts');
+		expect(result!.baseUrl).toBe('https://api.xiaomimimo.com/v1');
+	});
+
+	it('getAvailableProvidersForRole 过滤 tts 角色', () => {
+		const settings = { ...DEFAULT_SETTINGS };
+		settings.providers = { ...DEFAULT_SETTINGS.providers, xiaomi: { apiKey: 'test-key' } };
+		const providers = getAvailableProvidersForRole('tts', settings);
+		expect(providers).toContain('xiaomi');
+		expect(providers).not.toContain('deepseek');
 	});
 });

@@ -49,6 +49,11 @@ export interface AgentLoopOptions {
    * 用于 Langfuse 追踪
    */
   traceContext?: ITraceContext;
+  /**
+   * 语音音频就绪回调（可选）
+   * VoicePipeline 完成后调用，返回音频数据和时长
+   */
+  onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
 }
 
 // ============================================================================

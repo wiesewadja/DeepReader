@@ -10,6 +10,7 @@ import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { warn } from '../../utils/logger.js';
 import { QuestionMinimap } from '../question-minimap';
+import type { TTSPlayState } from '../../services/tts/tts-service.js';
 
 /**
  * 引导按钮类型
@@ -67,6 +68,8 @@ export interface MessageCallbacks {
 	onQuote?: (metadata: QuoteMetadata) => void;
 	/** 删除消息对（删除 AI 回复时同时删除对应的用户问题） */
 	onDelete?: (messageId: string) => void;
+	/** TTS 朗读 */
+	onTTS?: (messageId: string, content: string) => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
 	getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 }
@@ -157,6 +160,8 @@ export class MessageList extends Component {
 				onQuestionClick: (question: string) => this.callbacks.onQuestionClick?.(question),
 				onExcerpt: (content: ExcerptContent, metadata: ExcerptMetadata) =>
 					this.callbacks.onExcerpt?.(messageData.id, content, metadata),
+				onTTS: (messageId: string, content: string) =>
+					this.callbacks.onTTS?.(messageId, content),
 				app: this.app,
 				getAllMessages: () => this.getMessagesData(),
 				getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
@@ -184,6 +189,9 @@ export class MessageList extends Component {
 			},
 			onDelete: () => {
 				this.callbacks.onDelete?.(messageData.id);
+			},
+			onTTS: (messageId: string, content: string) => {
+				this.callbacks.onTTS?.(messageId, content);
 			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
@@ -328,6 +336,16 @@ export class MessageList extends Component {
 		}
 		this.updateEmptyState();
 		this.updateMinimap();
+	}
+
+	/**
+	 * 更新指定消息的 TTS 播放状态
+	 */
+	updateTTSState(messageId: string, state: TTSPlayState): void {
+		const msg = this.messages.get(messageId);
+		if (msg?.setTTSState) {
+			msg.setTTSState(state);
+		}
 	}
 
 	/**

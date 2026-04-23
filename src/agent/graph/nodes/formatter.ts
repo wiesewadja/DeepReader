@@ -69,6 +69,7 @@ export async function formatterNode(
   const userMessage = buildFormatterUserMessage(
     state.rewrittenQuery,
     state.analysisResult || '',
+    state.analysisResult || '',
     state.pdfName || '',
     chatHistory,
     state.tocSummary || undefined,

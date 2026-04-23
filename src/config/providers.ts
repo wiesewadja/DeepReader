@@ -7,13 +7,14 @@ import type { DeepPDFSettings } from './settings';
 import type { RoleType } from './ai-roles';
 import { ROLE_CAPABILITY } from './ai-roles';
 
-export type ProviderType = 'deepseek' | 'kimi' | 'zhipu' | 'minimax' | 'siliconflow' | 'openai' | 'custom';
+export type ProviderType = 'deepseek' | 'kimi' | 'zhipu' | 'minimax' | 'siliconflow' | 'openai' | 'xiaomi' | 'custom';
 
 /** 服务商能力矩阵 */
 export interface ProviderCapabilities {
 	chat: boolean;
 	embedding: boolean;
 	reranker: boolean;
+	tts?: boolean;
 }
 
 export interface ProviderConfig {
@@ -69,6 +70,12 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		legacyApiKeyField: 'openaiApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: true, reranker: true },
+	},
+	xiaomi: {
+		baseUrl: 'https://api.xiaomimimo.com/v1',
+		defaultModel: 'mimo-v2-tts',
+		supportsModelList: false,
+		capabilities: { chat: false, embedding: false, reranker: false, tts: true },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl
@@ -228,5 +235,6 @@ export const PROVIDER_LABELS: Record<ProviderType, string> = {
 	minimax: 'MiniMax',
 	siliconflow: '硅基流动 (SiliconFlow)',
 	openai: 'OpenAI',
+	xiaomi: '小米 (Mimo)',
 	custom: '自定义',
 };

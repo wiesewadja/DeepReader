@@ -316,6 +316,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             ...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' }] : []),
             { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
             { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
+            { role: 'tts', label: '语音播报', desc: 'AI 语音合成播报（禁用则无语音功能）' },
         ];
 
         // 必填角色区域
@@ -763,6 +764,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.enableDebugLog = value;
                     setLogEnabled(value);
+                    await this.plugin.saveSettings();
+                }));
+
+        // 语音书信回复
+        new Setting(container)
+            .setName("语音书信回复")
+            .setDesc("AI 回复变为语音对话气泡+书信模式。语音从分析结果并行生成，文字以信封形式呈现。需要配置 TTS 角色。")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableVoiceReply)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableVoiceReply = value;
                     await this.plugin.saveSettings();
                 }));
 

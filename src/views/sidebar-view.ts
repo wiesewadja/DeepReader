@@ -19,7 +19,7 @@ import {
 import type { ReadingProgress } from "../pageindex/reading-progress.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
+import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall, AIMessage } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
@@ -43,6 +43,8 @@ import { MilestoneRecorder } from "../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 import { SessionStore } from "../agent/session/index.js";
 import { findBlockIdFromRange } from "../utils/block-utils.js";
+import { TTSService, type TTSPlayState } from '../services/tts/tts-service.js';
+import { resolveRoleConfig } from '../config/providers.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -87,6 +89,9 @@ export class SidebarView extends ItemView {
 
     // 阅读里程碑记录器
     private milestoneRecorder: MilestoneRecorder | null = null;
+
+    // TTS 语音播报服务
+    private ttsService: TTSService | null = null;
 
     // 会话存储（JSONL 文件）
     private sessionStore: SessionStore | null = null;
@@ -434,13 +439,13 @@ export class SidebarView extends ItemView {
 
         // 将过滤后的消息添加到 UI
         let lastUserContent = '';
+        
         displayMessages.forEach((msg, index) => {
             try {
                 const msgData: any = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
                     content: msg.content || '',
-                    // 使用消息本身的时间戳，如果没有则使用当前时间
                     timestamp: msg.timestamp || new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
@@ -448,6 +453,15 @@ export class SidebarView extends ItemView {
                     lastUserContent = msg.content || '';
                 } else if (msg.role === 'assistant' && lastUserContent) {
                     msgData.question = lastUserContent;
+                }
+                // 只在有语音数据时才设置语音相关字段
+                if ((msg as any).voiceAudio) {
+                    msgData.voiceAudio = (msg as any).voiceAudio;
+                    msgData.voiceDuration = (msg as any).voiceDuration;
+                    msgData.letterState = (msg as any).letterState || 'sealed';
+                    msgData.voiceState = 'ready';
+                    msgData.enableVoiceReply = true;
+                    log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
                 }
                 this.messageList!.addMessage(msgData);
             } catch (e) {
@@ -501,31 +515,55 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 1. 从 agentChatHistory 获取完整消息（包括 tool 消息）
-        // 排除 system 消息（每次动态生成）和占位消息
-        // 同时剥离用户消息中的运行时上下文和 system_note（不持久化，每次动态生成）
+        // 1. 从 MessageList 获取完整消息数据（包括语音数据）
+        // 这样可以确保语音数据被持久化
         const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
         const SYSTEM_NOTE_PATTERN = /<system_note>[\s\S]*?<\/system_note>\n\n/g;
-        const messagesToSave = this.agentChatHistory
-            .filter(m =>
-                m.role !== 'system' &&
-                m.content && // 确保有内容
-                !m.content.includes("已切换到书籍") &&
-                m.content !== "📖 开始翻阅..." &&
-                m.content !== "🔍 正在跨书籍查阅..."
-            )
-            .map(m => {
-                // 剥离用户消息中的运行时上下文和 system_note
-                if (m.role === 'user' && m.content) {
-                    let content = m.content;
-                    // 先剥离 system_note（可能有多个）
-                    content = content.replace(SYSTEM_NOTE_PATTERN, '');
-                    // 再剥离运行时上下文
-                    content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
-                    return { ...m, content };
-                }
-                return m;
-            });
+        
+        // 优先从 MessageList 获取消息（包含语音数据）
+        // MessageList 中的消息只有 user 和 assistant 角色，不会有 system
+        let messagesToSave: any[] = [];
+        if (this.messageList) {
+            const uiMessages = this.messageList.getMessagesData();
+            messagesToSave = uiMessages
+                .filter(m =>
+                    m.content &&
+                    !m.content.includes("已切换到书籍") &&
+                    m.content !== "📖 开始翻阅..." &&
+                    m.content !== "🔍 正在跨书籍查阅..."
+                )
+                .map(m => {
+                    // 剥离用户消息中的运行时上下文和 system_note
+                    if (m.role === 'user' && m.content) {
+                        let content = m.content;
+                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
+                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+                        return { ...m, content };
+                    }
+                    return m;
+                });
+        }
+
+        // 如果 MessageList 没有消息，回退到 agentChatHistory
+        if (messagesToSave.length === 0) {
+            messagesToSave = this.agentChatHistory
+                .filter(m =>
+                    m.role !== 'system' &&
+                    m.content &&
+                    !m.content.includes("已切换到书籍") &&
+                    m.content !== "📖 开始翻阅..." &&
+                    m.content !== "🔍 正在跨书籍查阅..."
+                )
+                .map(m => {
+                    if (m.role === 'user' && m.content) {
+                        let content = m.content;
+                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
+                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+                        return { ...m, content };
+                    }
+                    return m;
+                });
+        }
 
         log('[DeepPDF] saveToCache messagesToSave count:', messagesToSave.length);
         if (messagesToSave.length === 0) {
@@ -1370,6 +1408,12 @@ export class SidebarView extends ItemView {
                     setting.openTabById('deepreader');
                 }
             },
+            onToggleAutoBroadcast: () => {
+                this.plugin.settings.autoTTS = !this.plugin.settings.autoTTS;
+                this.plugin.saveSettings();
+                this.readingTopbar?.setAutoTTS(this.plugin.settings.autoTTS);
+            },
+            initialAutoTTS: this.plugin.settings.autoTTS,
         });
 
         const el = this.readingTopbar.getElement();
@@ -1802,6 +1846,14 @@ export class SidebarView extends ItemView {
             onDelete: (messageId: string) => {
                 this.handleDeleteMessagePair(messageId);
             },
+            onTTS: async (messageId: string, content: string) => {
+                if (this.plugin.settings.enableVoiceReply) {
+                    // 语音书信模式：直接朗读原文，不走摘要
+                    this.handleTTS(messageId, content, { rawText: true });
+                } else {
+                    this.handleTTS(messageId, content);
+                }
+            },
             getCurrentBookInfo: () => ({
                 coverUrl: this.currentBookCoverUrl,
                 author: this.currentBookAuthor,
@@ -2062,6 +2114,7 @@ export class SidebarView extends ItemView {
                 this.messageList?.updateMessage(aiMessageId, {
                     content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
                     isStreaming: true,
+                    currentStatus: '开始阅读...',
                     agentToolCalls: [],
                     currentStatus: undefined,
                 });
@@ -2107,7 +2160,10 @@ export class SidebarView extends ItemView {
                     question: message,  // 保存用户的问题
                     conversationId: this.sessionId || undefined,  // 保存会话ID用于双向链接
                     bookCoverUrl: this.currentBookCoverUrl || undefined,  // 书籍封面 URL
-                    bookAuthor: this.currentBookAuthor || undefined  // 书籍作者
+                    bookAuthor: this.currentBookAuthor || undefined,  // 书籍作者
+                    enableVoiceReply: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)),
+                    // 如果启用了语音回复，初始设置 voiceState 为 loading，显示占位符
+                    voiceState: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)) ? 'loading' as const : undefined,
                 };
                 this.messageList?.addMessage(aiMessageData);
             }
@@ -2254,6 +2310,16 @@ export class SidebarView extends ItemView {
                 docDescription: this.currentDocDescription || undefined,
                 // 添加结构化引用数据（用于工具优先搜索）
                 quotes: quotes,
+                // TTS 配置（用于 VoicePipeline 语音合成）
+                ttsConfig: this.plugin.settings.enableVoiceReply ? (() => {
+                    const cfg = resolveRoleConfig('tts', this.plugin.settings);
+                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+                })() : undefined,
+                // LLM 配置（用于 VoicePipeline 语音摘要生成）
+                llmConfig: this.plugin.settings.enableVoiceReply ? (() => {
+                    const cfg = resolveRoleConfig('router', this.plugin.settings);
+                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+                })() : undefined,
             };
 
             // 构建用户消息
@@ -2405,11 +2471,19 @@ export class SidebarView extends ItemView {
                     });
                 },
                 // onComplete: 流式完成
-                onComplete: () => {
+                onComplete: async () => {
                     this.messageList?.updateMessage(aiMessageId, {
                         isStreaming: false,
                         timestamp: new Date().toISOString()
                     });
+
+                    // 信封书写完成 → 封口
+                    if (this.plugin.settings.enableVoiceReply) {
+                        const msg = this.messageList?.getMessage(aiMessageId);
+                        if (msg && msg instanceof AIMessage) {
+                            msg.updateLetterState('sealed');
+                        }
+                    }
                     // 注意：不在这里调用 saveToCache()，因为 agentChatHistory 还未更新
                     // saveToCache() 将在 agentChatHistory 更新后调用
 
@@ -2427,6 +2501,22 @@ export class SidebarView extends ItemView {
 
                     this.chatInput?.focus();
                     this.streamController = null;
+
+                    // 自动播报（语音回复模式由 VoicePipeline 处理，不重复播报）
+                    if (this.plugin.settings.autoTTS && !this.plugin.settings.enableVoiceReply) {
+                        if (!this.ttsService) {
+                            this.ttsService = this.initTTSService();
+                        }
+                        if (this.ttsService && this.ttsService.getCurrentMessageId() !== aiMessageId) {
+                            const question = this.findUserQuestion(aiMessageId);
+                            const memoryContent = await new MemoryStore(this.app).readLongTermMemory() || undefined;
+                            this.ttsService.play(aiMessageId, fullContent, question, {
+                                bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
+                                bookAuthor: this.currentBookAuthor || undefined,
+                                memoryContent,
+                            });
+                        }
+                    }
                 },
                 // onError: 错误处理
                 onError: (error: string) => {
@@ -2490,6 +2580,27 @@ export class SidebarView extends ItemView {
                     };
                 })()),
                 abortSignal: this.streamController.signal,
+                onVoiceReady: (data: { audioBuffer: ArrayBuffer; duration: number }) => {
+                    const msg = this.messageList?.getMessage(aiMessageId);
+                    if (msg && msg instanceof AIMessage) {
+                        msg.updateVoiceData(data);
+                    }
+                    // 同步语音数据到 agentChatHistory，确保持久化
+                    const lastAiMsg = this.agentChatHistory[this.agentChatHistory.length - 1];
+                    if (lastAiMsg && lastAiMsg.role === 'assistant') {
+                        (lastAiMsg as any).voiceAudio = data.audioBuffer;
+                        (lastAiMsg as any).voiceDuration = data.duration;
+                        (lastAiMsg as any).voiceState = 'ready';
+                    }
+                    // 按预定路径落盘语音文件（JSONL 中已有占位路径）
+                    if (this.sessionStore && this.sessionId) {
+                        this.sessionStore.saveVoiceToPlaceholder(
+                            this.sessionId,
+                            aiMessageId,
+                            data.audioBuffer,
+                        );
+                    }
+                },
             };
 
             // 初始化 SubagentManager（用于 create_sub_agent 工具）
@@ -3051,6 +3162,72 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 初始化 TTS 服务
+     */
+    private initTTSService(): TTSService | null {
+        const settings = this.plugin.settings;
+        const ttsConfig = resolveRoleConfig('tts', settings);
+        if (!ttsConfig) return null;
+
+        const fastConfig = resolveRoleConfig('router', settings);
+        if (!fastConfig) return null;
+
+        return new TTSService({
+            ttsApiKey: ttsConfig.apiKey,
+            ttsBaseUrl: ttsConfig.baseUrl,
+            ttsModel: ttsConfig.model,
+            llmApiKey: fastConfig.apiKey,
+            llmBaseUrl: fastConfig.baseUrl,
+            llmModel: fastConfig.model,
+            onStateChange: (messageId: string | null, state: TTSPlayState) => {
+                if (messageId) {
+                    this.messageList?.updateTTSState(messageId, state);
+                }
+            },
+        });
+    }
+
+    /**
+     * 处理 TTS 播放/暂停请求
+     */
+    private async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
+        if (!this.ttsService) {
+            this.ttsService = this.initTTSService();
+        }
+        if (!this.ttsService) {
+            new Notice('请先在设置中配置语音播报（TTS）服务：添加小米 API Key 并启用 tts 角色');
+            return;
+        }
+
+        if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
+            this.ttsService.togglePauseResume();
+            return;
+        }
+
+        // 查找对应的用户提问
+        const userQuestion = this.findUserQuestion(messageId);
+
+        await this.ttsService.play(messageId, content, userQuestion, {
+            bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
+            bookAuthor: this.currentBookAuthor || undefined,
+            memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
+        }, options);
+    }
+
+    /**
+     * 根据 AI 消息 ID 找到对应的用户提问
+     */
+    private findUserQuestion(aiMessageId: string): string | undefined {
+        const messages = this.messageList?.getMessagesData();
+        if (!messages) return undefined;
+        const idx = messages.findIndex(m => m.id === aiMessageId);
+        if (idx <= 0) return undefined;
+        // AI 消息前面应该是用户消息
+        const prev = messages[idx - 1];
+        return prev?.role === 'user' ? prev.content : undefined;
+    }
+
+    /**
      * 显示错误消息
      */
     private showError(message: string): void {
@@ -3070,6 +3247,16 @@ export class SidebarView extends ItemView {
                     warn('[DeepPDF] Error aborting streamController:', e);
                 }
                 this.streamController = null;
+            }
+
+            // 清理 TTS 服务
+            if (this.ttsService) {
+                try {
+                    this.ttsService.destroy();
+                } catch (e) {
+                    warn('[DeepPDF] Error stopping TTS service:', e);
+                }
+                this.ttsService = null;
             }
 
             // 清理消息列表
