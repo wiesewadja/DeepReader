@@ -171,6 +171,14 @@ export class ReadingModeService {
 
         serviceLog('[DeepPDF] ReadingMode activating for:', file.path);
 
+        // 检查视图是否可用，不可用则延迟重试（插件重载时视图可能还在重建）
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) {
+            serviceLog('[ReadingMode] MarkdownView not ready, retrying in 300ms...');
+            setTimeout(() => this.activate(file), 300);
+            return;
+        }
+
         // 立即销毁旧分页器（含底栏 DOM），防止新旧书籍信息叠加
         this.paginator?.destroy();
         this.paginator = null;
@@ -182,13 +190,10 @@ export class ReadingModeService {
         this.switchToReadingView();
 
         // 添加阅读模式 CSS 类到当前 leaf 的 containerEl，避免全局污染
-        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (view) {
-            this.activeContainerEl = view.containerEl;
-            view.containerEl.classList.add('deeppdf-reading-mode');
-            if (this.style === 'paginated') {
-                view.containerEl.classList.add('deeppdf-paginated');
-            }
+        this.activeContainerEl = view.containerEl;
+        view.containerEl.classList.add('deeppdf-reading-mode');
+        if (this.style === 'paginated') {
+            view.containerEl.classList.add('deeppdf-paginated');
         }
 
         // 延迟初始化分页器，等待视图渲染完成（仅分页模式）
