@@ -245,18 +245,20 @@ export class PagePaginator {
 		const MAX_TEXT_WIDTH = 640;
 		// 窄视口阈值（视口宽度小于此值时，使用自适应留白）
 		const NARROW_THRESHOLD = 700;
+		// 窄视口最小留白
+		const MIN_PADDING_NARROW = 40;
 
 		let contentWidth: number;
 		let sidePadding: number;
 
 		if (viewWidth < NARROW_THRESHOLD) {
-			// 窄视口：内容占满可用宽度，留白按比例缩小
-			const paddingRatio = 0.03; // 3% 留白
-			sidePadding = Math.max(viewWidth * paddingRatio, 8); // 最小 8px
+			// 窄视口：留白 = 最小留白和 (视口-640)/2 中的较大值
+			// 这样在视口>=720px 时 contentWidth=640，在更窄时留白至少 40px
+			sidePadding = Math.max((viewWidth - MAX_TEXT_WIDTH) / 2, MIN_PADDING_NARROW);
 			contentWidth = viewWidth - sidePadding * 2;
 		} else {
 			// 宽视口：使用最佳行宽
-			contentWidth = Math.min(MAX_TEXT_WIDTH, viewWidth * 0.85);
+			contentWidth = MAX_TEXT_WIDTH;
 			sidePadding = (viewWidth - contentWidth) / 2;
 		}
 
