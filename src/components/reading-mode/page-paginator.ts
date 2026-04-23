@@ -234,22 +234,27 @@ export class PagePaginator {
 
 		// 纸质书最佳阅读行宽
 		const MAX_TEXT_WIDTH = 640;
-		// 列间距（固定值，保证翻页时内容对齐）
-		const COLUMN_GAP = 80;
+		// 最小侧边留白
+		const MIN_SIDE_PADDING = 20;
 
 		let contentWidth: number;
 		let sidePadding: number;
 
-		// 内容宽度不超过最佳行宽，且不超过视口减去间距
-		contentWidth = Math.min(MAX_TEXT_WIDTH, viewWidth - COLUMN_GAP);
+		// 计算可用内容宽度（视口减去两侧最小留白）
+		const availableWidth = viewWidth - MIN_SIDE_PADDING * 2;
+		contentWidth = Math.min(MAX_TEXT_WIDTH, availableWidth);
 		if (contentWidth < 0) contentWidth = viewWidth;
 
 		// 居中留白：(视口宽度 - 内容宽度) / 2
 		sidePadding = (viewWidth - contentWidth) / 2;
 
+		// column-gap = viewWidth - contentWidth，确保每页宽度正好等于视口宽度
+		// 这样翻页时内容才会正确对齐
+		const columnGap = viewWidth - contentWidth;
+
 		// 通过 CSS 变量动态设定列宽、列间距和容器的左右 Padding
 		this.scrollView.style.setProperty('--deeppdf-col-width', `${contentWidth}px`);
-		this.scrollView.style.setProperty('--deeppdf-col-gap', `${COLUMN_GAP}px`);
+		this.scrollView.style.setProperty('--deeppdf-col-gap', `${columnGap}px`);
 		this.scrollView.style.setProperty('--deeppdf-side-padding', `${sidePadding}px`);
 	}
 
