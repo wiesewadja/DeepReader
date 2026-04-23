@@ -87,6 +87,8 @@ export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 export function buildAnalyticalSystemPrompt(ctx: {
   scopeNodeIds: string[];
   tocSummary?: string;
+  currentNodeId?: string;
+  currentChapterName?: string;
 }): string {
   const scopeList = ctx.scopeNodeIds.length > 0
     ? ctx.scopeNodeIds.map(id => `- ${id}`).join('\n')
@@ -96,8 +98,16 @@ export function buildAnalyticalSystemPrompt(ctx: {
     ? `\n<search_hints>\n${ctx.tocSummary}\n</search_hints>`
     : '';
 
+  // 当前章节提示：让用户正在阅读的章节优先
+  const currentChapterHint = ctx.currentNodeId
+    ? `\n<current_chapter_priority>
+用户当前正在阅读的章节是 node_id=${ctx.currentNodeId}${ctx.currentChapterName ? `（${ctx.currentChapterName}）` : ''}。
+**重要**：在分析时，请优先使用该章节的内容来回答问题。如果该章节包含相关内容，应该首先引用该章节，然后再引用其他章节。
+</current_chapter_priority>`
+    : '';
+
   return `${PROMPT_S2_ANALYTICAL_TEMPLATE}
-${searchHints}
+${searchHints}${currentChapterHint}
 <locked_scope>
 搜索范围限定：
 ${scopeList}

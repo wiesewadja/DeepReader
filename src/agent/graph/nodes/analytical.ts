@@ -127,9 +127,25 @@ export async function analyticalNode(
 
   // Build system prompt and user message
   const tocSummary = state.tocSummary || ctx?.tocSummary;
+  const currentNodeId = toolContext.currentNodeId;
+  
+  // 获取当前章节名称（用于提示词）
+  let currentChapterName: string | undefined;
+  if (currentNodeId && toolContext.markdownFiles) {
+    for (const [path, _] of Object.entries(toolContext.markdownFiles)) {
+      const fileName = path.split('/').pop() ?? '';
+      if (fileName.startsWith(currentNodeId.replace(/^0+/, ''))) {
+        currentChapterName = fileName.replace(/\.md$/, '');
+        break;
+      }
+    }
+  }
+
   const systemPrompt = buildAnalyticalSystemPrompt({
     scopeNodeIds: validatedScopeNodeIds,
     tocSummary,
+    currentNodeId,
+    currentChapterName,
   });
 
   const markdownFiles = ctx?.markdownFiles ?? {};
