@@ -8,6 +8,7 @@
 import { TFile, TFolder, type App } from 'obsidian';
 import type { DeepPDFSettings } from '../config/settings';
 import { buildBM25Index } from '../pageindex/bm25';
+import type { BM25Data } from '../pageindex/book-types';
 import { generateBookId } from '../pageindex/book-indexer';
 import {
 	generateEmbeddings,
