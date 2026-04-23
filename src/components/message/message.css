@@ -1002,52 +1002,7 @@
 	padding-top: 2px;
 }
 
-/* 折叠按钮 */
-.deeppdf-message-collapse-btn {
-	background: transparent;
-	border: none;
-	padding: 4px;
-	cursor: pointer;
-	color: var(--text-muted);
-	opacity: 0.5;
-	transition: opacity 0.15s ease, color 0.15s ease;
-	border-radius: 4px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
 
-.deeppdf-message-collapse-btn:hover {
-	opacity: 1;
-	color: var(--text-normal);
-	background: var(--background-modifier-hover);
-}
-
-.deeppdf-message-collapse-btn svg {
-	width: 14px;
-	height: 14px;
-}
-
-/* ==================== 消息折叠 ==================== */
-
-/* 折叠状态的内容 */
-.deeppdf-message-collapsed {
-	max-height: 80px !important;
-	overflow: hidden !important;
-	position: relative;
-}
-
-/* 折叠时的渐变遮罩 */
-.deeppdf-message-collapsed::after {
-	content: '';
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	height: 40px;
-	background: linear-gradient(to bottom, transparent, var(--deeppdf-bg-card));
-	pointer-events: none;
-}
 
 /* ==================== 全屏覆盖层 ==================== */
 
@@ -1461,10 +1416,11 @@
     margin-top: 6px;
     overflow: hidden;
     /* 固定信封尺寸 */
-    min-height: 180px;
-    max-height: 180px;
+    min-height: 220px;
+    max-height: 220px;
     display: flex;
     flex-direction: column;
+    width: 100%;
 }
 
 .deeppdf-letter-envelope::before {
@@ -1495,7 +1451,7 @@
     line-height: 2.0;
     color: var(--text-normal);
     /* 固定高度，文字进入时有滚动效果 */
-    height: 100px;
+    height: 120px;
     overflow-y: auto;
     overflow-x: hidden;
     /* 平滑滚动 */
@@ -1539,10 +1495,12 @@
 }
 
 .deeppdf-letter-open-btn {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin: 8px auto 0;
-    padding: 4px 16px;
-    font-size: 12px;
+    padding: 6px 12px;
+    font-size: 16px;
     color: var(--text-muted);
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
@@ -1550,6 +1508,7 @@
     cursor: pointer;
     transition: all 0.2s;
     flex-shrink: 0;
+    width: fit-content;
 }
 
 .deeppdf-letter-open-btn:hover {

@@ -254,8 +254,6 @@ export interface MessageData {
 	conversationId?: string;
 	/** 可选：是否隐藏（用于画像更新消息，不显示但发送给 LLM） */
 	hidden?: boolean;
-	/** 可选：是否折叠（用于长消息的折叠显示） */
-	collapsed?: boolean;
 	/** 可选：书籍封面 URL（用于最大化展示） */
 	bookCoverUrl?: string;
 	/** 可选：书籍作者（用于最大化展示） */
@@ -951,8 +949,6 @@ export class AIMessage extends Message {
 	// TTS 播放相关
 	private ttsWaveEl: HTMLElement | null = null;
 	private ttsBtn: HTMLButtonElement | null = null;
-	// 折叠状态
-	private isCollapsed: boolean = false;
 	// 信笺图案
 	private patternClass: string = '';
 	// 语音书信模式状态
@@ -1081,17 +1077,6 @@ export class AIMessage extends Message {
 		// 右侧按钮组（非流式时显示）
 		if (!this.data.isStreaming) {
 			const rightContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-right' });
-
-			// 折叠按钮
-			const collapseBtn = rightContainer.createEl('button', { cls: 'deeppdf-message-collapse-btn' });
-			if (this.isCollapsed) {
-				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-				collapseBtn.title = "展开";
-			} else {
-				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
-				collapseBtn.title = "折叠";
-			}
-			collapseBtn.addEventListener('click', () => this.toggleCollapse());
 		}
 
 		// Agent 工具调用
@@ -1134,9 +1119,6 @@ export class AIMessage extends Message {
 					this.renderLetterEnvelope(bubble, this.data.content);
 				} else {
 					const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
-					if (this.isCollapsed) {
-						content.addClass('deeppdf-message-collapsed');
-					}
 					if (this.app) {
 						const { cleanedContent } = parseAgentContent(this.data.content);
 						const sourcePath = this.data.pdfName || '';
@@ -1159,11 +1141,6 @@ export class AIMessage extends Message {
 		} else {
 			// 普通模式：正常消息内容
 			const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
-
-			// 应用折叠状态
-			if (this.isCollapsed) {
-				content.addClass('deeppdf-message-collapsed');
-			}
 
 			// 如果正在流式传输且内容为空，显示加载动画
 			if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
@@ -1394,7 +1371,7 @@ export class AIMessage extends Message {
 	private updateLetterContent(inkEl: HTMLElement, content: string): void {
 		const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
 		const lines = plainText.split('\n').filter(l => l.trim());
-		const maxLines = 4;
+		const maxLines = 5;
 		const displayLines = lines.slice(0, maxLines);
 
 		// 清空并重新渲染预览行
@@ -1402,7 +1379,7 @@ export class AIMessage extends Message {
 		for (let i = 0; i < Math.min(displayLines.length, maxLines); i++) {
 			const lineEl = inkEl.createDiv({ cls: 'deeppdf-letter-ink-line' });
 			lineEl.style.animationDelay = `${i * 0.1}s`;
-			lineEl.textContent = displayLines[i].slice(0, 30) + (displayLines[i].length > 30 ? '...' : '');
+			lineEl.textContent = displayLines[i].slice(0, 40) + (displayLines[i].length > 40 ? '...' : '');
 		}
 
 		// 流式输出时自动滚动到底部
@@ -1660,40 +1637,7 @@ export class AIMessage extends Message {
 		}
 	}
 
-	/**
-	 * 切换折叠状态
-	 */
-	private toggleCollapse(): void {
-		this.isCollapsed = !this.isCollapsed;
 
-		if (!this.el) return;
-
-		// 获取内容元素
-		const contentEl = this.el.querySelector('.deeppdf-message-content');
-		if (contentEl) {
-			if (this.isCollapsed) {
-				contentEl.addClass('deeppdf-message-collapsed');
-			} else {
-				contentEl.removeClass('deeppdf-message-collapsed');
-			}
-		}
-
-		// 更新头部折叠按钮图标和提示
-		const collapseBtn = this.el.querySelector('.deeppdf-message-collapse-btn');
-		if (collapseBtn) {
-			if (this.isCollapsed) {
-				// 展开图标（向下箭头）
-				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
-				collapseBtn.setAttribute('title', "展开");
-			} else {
-				// 折叠图标（向上箭头）
-				collapseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>`;
-				collapseBtn.setAttribute('title', "折叠");
-			}
-		}
-
-		log(`[DeepPDF] Message collapsed: ${this.isCollapsed}`);
-	}
 
 
 		// ─── 语音书信模式 ──────────────────────────────────────────────────
@@ -1794,20 +1738,20 @@ export class AIMessage extends Message {
 				// 非流式：显示内容预览
 				const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
 				const textLines = plainText.split('\n').filter((l: string) => l.trim());
-				const maxLines = 4;
+				const maxLines = 5;
 				for (let i = 0; i < Math.min(textLines.length, maxLines); i++) {
 					const lineEl = ink.createDiv({ cls: 'deeppdf-letter-ink-line' });
 					lineEl.style.animationDelay = `${i * 0.1}s`;
-					lineEl.textContent = textLines[i].slice(0, 30) + (textLines[i].length > 30 ? '...' : '');
+					lineEl.textContent = textLines[i].slice(0, 40) + (textLines[i].length > 40 ? '...' : '');
 				}
 			}
 
 			// 拆信按钮始终在信封底部
 			const openBtn = envelope.createDiv({ cls: 'deeppdf-letter-open-btn' });
 			if (this.data.isStreaming) {
-				openBtn.innerHTML = `✉ 展开信封 <span style="font-size:10px;opacity:0.6">（写信中...）</span>`;
+				openBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`;
 			} else {
-				openBtn.textContent = '✉ 拆开信封';
+				openBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`;
 			}
 			openBtn.addEventListener('click', (e: Event) => {
 				e.stopPropagation();
@@ -1852,11 +1796,11 @@ export class AIMessage extends Message {
 				ink.empty();
 				const plainText = this.data.content.replace(/[#*_\[\]()>`~|]/g, '').trim();
 				const textLines = plainText.split('\n').filter((l: string) => l.trim());
-				const maxLines = 4;
+				const maxLines = 5;
 				for (let i = 0; i < Math.min(textLines.length, maxLines); i++) {
 					const lineEl = ink.createDiv({ cls: 'deeppdf-letter-ink-line' });
 					lineEl.style.animationDelay = `${i * 0.1}s`;
-					lineEl.textContent = textLines[i].slice(0, 30) + (textLines[i].length > 30 ? '...' : '');
+					lineEl.textContent = textLines[i].slice(0, 40) + (textLines[i].length > 40 ? '...' : '');
 				}
 			}
 
