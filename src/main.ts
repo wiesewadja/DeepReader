@@ -405,6 +405,16 @@ export default class DeepPDFPlugin extends Plugin {
                 // 检测到书籍章节，自动切换到对应书籍的聊天记录
                 this.switchToBook(indexId, bookName);
             },
+            onDeactivate: () => {
+                // 阅读模式停用时，清除顶栏书名
+                const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (leaves.length > 0) {
+                    const view = leaves[0].view;
+                    if (view instanceof SidebarView) {
+                        view.clearBookInfo();
+                    }
+                }
+            },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
 

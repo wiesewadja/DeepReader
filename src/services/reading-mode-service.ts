@@ -17,6 +17,7 @@ export interface ReadingModeCallbacks {
     onSaveHighlight?: (text: string, color: HighlightColorId) => Promise<void>;
     onRemoveHighlight?: (text: string) => Promise<void>;
     onBookDetected?: (indexId: string, bookName: string) => void;  // 检测到书籍章节时回调
+    onDeactivate?: () => void;  // 阅读模式停用时回调
 }
 
 export interface ChapterNavigation {
@@ -325,6 +326,10 @@ export class ReadingModeService {
         this.chapterNav?.hide();
         this.isActive = false;
         this.currentFile = null;
+
+        // 通知外部清除 UI（如顶栏书名）
+        this.callbacks?.onDeactivate?.();
+
         serviceLog('[ReadingMode] Deactivated');
     }
 
@@ -366,6 +371,17 @@ export class ReadingModeService {
                 const file = this.app.workspace.getActiveFile();
                 if (file && this.isChapterFile(file)) {
                     serviceLog('[ReadingMode] metadataCache resolved, activating for:', file.path);
+                    this.activate(file);
+                }
+            }
+        });
+
+        // onLayoutReady 后再次检查，确保 workspace 已就绪且有足够延迟让 metadataCache 加载
+        this.app.workspace.onLayoutReady(() => {
+            if (!this.isActive && this.autoEnable) {
+                const file = this.app.workspace.getActiveFile();
+                if (file && this.isChapterFile(file)) {
+                    serviceLog('[ReadingMode] onLayoutReady, activating for:', file.path);
                     this.activate(file);
                 }
             }

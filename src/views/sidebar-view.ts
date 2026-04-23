@@ -992,16 +992,17 @@ export class SidebarView extends ItemView {
         } else {
             this.startNewSession(indexId);
         }
-
-        // 自动加载当前阅读的文档到上下文
-        await this.autoLoadCurrentReadingDoc();
     }
 
     /**
-     * 自动加载当前阅读的文档到上下文
-     * 当书籍处于阅读状态时，如果当前活跃文件是该书籍的章节，则自动加载
+     * 自动同步当前章节到上下文
+     * 
+     * 默认行为：
+     * - 首次打开章节时，自动加载到上下文
+     * - 切换章节时，自动更新为新章节
+     * - 只有用户手动点击按钮才能卸载文档
      */
-    private async autoLoadCurrentReadingDoc(): Promise<void> {
+    private async autoSyncCurrentChapter(): Promise<void> {
         if (!this.contextManager || !this.currentPdfName) return;
 
         const activeFile = this.app.workspace.getActiveFile();
@@ -1014,11 +1015,24 @@ export class SidebarView extends ItemView {
         // 排除书籍主文件（只加载章节文件）
         if (activeFile.path === `${bookPath}${this.currentPdfName}.md`) return;
 
-        // 检查是否已加载
+        // 检查当前章节是否已在上下文中
         if (this.contextManager.hasDocument(activeFile.path)) return;
 
-        // 自动加载当前章节到上下文
+        // 找到当前书籍的章节文档（source === 'current' 的文档）
+        const docs = this.contextManager.getLoadedDocuments();
+        const currentChapterDoc = Array.from(docs.values()).find(
+            doc => doc.source === 'current' && doc.path.startsWith(bookPath)
+        );
+
+        if (currentChapterDoc) {
+            // 卸载旧的章节
+            this.contextManager.removeDocument(currentChapterDoc.path);
+            log(`[DeepPDF] 自动卸载旧章节: ${currentChapterDoc.name}`);
+        }
+
+        // 加载新的章节到上下文
         await this.contextManager.loadByPath(activeFile.path, 'current');
+        log(`[DeepPDF] 自动加载章节: ${activeFile.basename}`);
     }
 
     // ============ 阅读进度追踪 ============
@@ -1280,6 +1294,13 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 清除顶栏书名信息（阅读模式停用时调用）
+     */
+    public clearBookInfo(): void {
+        this.readingTopbar?.setCurrentBook(null);
+    }
+
+    /**
      * 通过书名选择索引（自动切换时使用）
      */
     public async selectBookByName(bookName: string): Promise<void> {
@@ -1468,7 +1489,7 @@ export class SidebarView extends ItemView {
             })
         );
 
-        // 监听文件切换事件，更新文档加载按钮状态 + 阅读进度追踪
+        // 监听文件切换事件，更新文档加载按钮状态 + 阅读进度追踪 + 自动同步章节上下文
         this.registerEvent(
             this.app.workspace.on("active-leaf-change", () => {
                 if (this.contextManager) {
@@ -1478,6 +1499,8 @@ export class SidebarView extends ItemView {
                 }
                 // 追踪阅读进度
                 this.trackReadingProgress();
+                // 自动同步当前章节到上下文
+                this.autoSyncCurrentChapter();
             })
         );
     }
