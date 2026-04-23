@@ -15,6 +15,10 @@ export class PCMStreamPlayer {
     constructor(sampleRate = DEFAULT_SAMPLE_RATE) {
         this.sampleRate = sampleRate;
         this.ctx = new AudioContext({ sampleRate });
+        // 预先恢复 AudioContext，避免第一个 chunk 播放时的延迟
+        if (this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+        }
     }
 
     get currentTime(): number {
@@ -50,7 +54,8 @@ export class PCMStreamPlayer {
 
         const now = this.ctx.currentTime;
         if (this.nextStartTime < now) {
-            this.nextStartTime = now + 0.02;
+            // 首个 chunk 或间隔过大时，增加缓冲时间确保 AudioContext 完全就绪
+            this.nextStartTime = now + 0.05;
         }
         source.start(this.nextStartTime);
         this.nextStartTime += buffer.duration;

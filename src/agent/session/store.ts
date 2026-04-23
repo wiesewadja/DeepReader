@@ -140,6 +140,21 @@ export class SessionStore {
 		}
 	}
 
+
+	/**
+	 * 按预定路径保存语音文件（占位路径已写入 JSONL，音频异步到达后调用）
+	 */
+	async saveVoiceToPlaceholder(sessionId: string, messageId: string, audioBuffer: ArrayBuffer): Promise<void> {
+		const voiceDir = this.getVoiceDir(sessionId);
+		const dirExists = await this.app.vault.adapter.exists(voiceDir);
+		if (!dirExists) {
+			await this.app.vault.adapter.mkdir(voiceDir);
+		}
+		const uint8Array = new Uint8Array(audioBuffer);
+		const voicePath = this.getVoicePath(sessionId, messageId);
+		await this.app.vault.adapter.writeBinary(voicePath, uint8Array.buffer);
+		log(`[SessionStore] 语音文件异步落盘: voice/${sessionId}/${messageId}.wav`);
+	}
 	// ==================== 创建和保存 ====================
 
 	/**
@@ -328,13 +343,18 @@ export class SessionStore {
 		session.messageCount++;
 		session.updatedAt = Date.now();
 
-		// 处理语音数据持久化
+		// 处理语音数据持久化：占位路径 + 异步落盘
 		let voiceAudioPath: string | undefined;
 		const voiceData = message as any;
+		const messageId = voiceData.id || `msg_${Date.now()}`;
+		const predictablePath = `voice/${sessionId}/${messageId}.wav`;
+
 		if (voiceData.voiceAudio && voiceData.voiceAudio instanceof ArrayBuffer) {
-			// 使用消息 ID 作为文件名（如果存在），否则生成一个
-			const messageId = voiceData.id || `msg_${Date.now()}`;
+			// 音频已就绪：直接写入文件
 			voiceAudioPath = await this.saveVoiceAudio(sessionId, messageId, voiceData.voiceAudio);
+		} else if (voiceData.enableVoiceReply && message.role === 'assistant') {
+			// 音频尚未就绪：先写入占位路径，文件后续异步写入
+			voiceAudioPath = predictablePath;
 		}
 
 		// 追加到文件（只追加一行）
@@ -371,6 +391,7 @@ export class SessionStore {
 		// 更新缓存
 		this.cache.set(sessionId, { session, lastAccess: Date.now() });
 	}
+
 
 	/**
 	 * 批量追加消息

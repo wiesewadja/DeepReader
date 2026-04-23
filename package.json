@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.04.22",
+  "version": "2026.04.23",
   "description": "DeepReader - 深度阅读插件",
   "main": "bin/main.js",
   "scripts": {

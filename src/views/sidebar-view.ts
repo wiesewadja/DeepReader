@@ -439,13 +439,13 @@ export class SidebarView extends ItemView {
 
         // 将过滤后的消息添加到 UI
         let lastUserContent = '';
+        
         displayMessages.forEach((msg, index) => {
             try {
                 const msgData: any = {
                     id: `restored-${Date.now()}-${index}`,
                     role: msg.role as MessageRole,
                     content: msg.content || '',
-                    // 使用消息本身的时间戳，如果没有则使用当前时间
                     timestamp: msg.timestamp || new Date().toISOString(),
                     isAgentMessage: msg.role === 'assistant'
                 };
@@ -453,6 +453,15 @@ export class SidebarView extends ItemView {
                     lastUserContent = msg.content || '';
                 } else if (msg.role === 'assistant' && lastUserContent) {
                     msgData.question = lastUserContent;
+                }
+                // 只在有语音数据时才设置语音相关字段
+                if ((msg as any).voiceAudio) {
+                    msgData.voiceAudio = (msg as any).voiceAudio;
+                    msgData.voiceDuration = (msg as any).voiceDuration;
+                    msgData.letterState = (msg as any).letterState || 'sealed';
+                    msgData.voiceState = 'ready';
+                    msgData.enableVoiceReply = true;
+                    log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
                 }
                 this.messageList!.addMessage(msgData);
             } catch (e) {
@@ -2064,7 +2073,8 @@ export class SidebarView extends ItemView {
                 aiMessageId = regenerateMessageId;
                 this.messageList?.updateMessage(aiMessageId, {
                     content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
-                    isStreaming: true
+                    isStreaming: true,
+                    currentStatus: '开始阅读...',
                 });
 
                 // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）
@@ -2110,6 +2120,8 @@ export class SidebarView extends ItemView {
                     bookCoverUrl: this.currentBookCoverUrl || undefined,  // 书籍封面 URL
                     bookAuthor: this.currentBookAuthor || undefined,  // 书籍作者
                     enableVoiceReply: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)),
+                    // 如果启用了语音回复，初始设置 voiceState 为 loading，显示占位符
+                    voiceState: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)) ? 'loading' as const : undefined,
                 };
                 this.messageList?.addMessage(aiMessageData);
             }
@@ -2538,8 +2550,14 @@ export class SidebarView extends ItemView {
                         (lastAiMsg as any).voiceDuration = data.duration;
                         (lastAiMsg as any).voiceState = 'ready';
                     }
-                    // 语音数据更新后触发保存
-                    this.saveToCache();
+                    // 按预定路径落盘语音文件（JSONL 中已有占位路径）
+                    if (this.sessionStore && this.sessionId) {
+                        this.sessionStore.saveVoiceToPlaceholder(
+                            this.sessionId,
+                            aiMessageId,
+                            data.audioBuffer,
+                        );
+                    }
                 },
             };
 

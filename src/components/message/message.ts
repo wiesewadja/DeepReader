@@ -988,15 +988,21 @@ export class AIMessage extends Message {
 		this.lastRenderedLength = data.content.length;
 		// 语音书信模式初始化
 		this.enableVoiceReply = data.enableVoiceReply ?? false;
+		console.log('[AIMessage] enableVoiceReply:', this.enableVoiceReply, 'voiceState:', data.voiceState, 'voiceAudio:', !!data.voiceAudio);
 		if (data.voiceAudio) {
 			this.voiceAudio = data.voiceAudio;
-			this.voiceState = 'ready';
 		}
 		if (data.voiceDuration) {
 			this.voiceDuration = data.voiceDuration;
 		}
 		if (data.letterState) {
 			this.letterState = data.letterState;
+		}
+		// voiceState: 优先使用传入值，否则根据 voiceAudio 判断
+		if (data.voiceState) {
+			this.voiceState = data.voiceState;
+		} else if (data.voiceAudio) {
+			this.voiceState = 'ready';
 		}
 		this.el = this.render();
 	}
@@ -1051,6 +1057,12 @@ export class AIMessage extends Message {
 
 			// 状态文本（Badge 正下方）
 			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
+			// 立即显示初始状态
+			if (this.data.currentStatus && this.data.isStreaming) {
+				this.statusEl.textContent = this.data.currentStatus;
+				this.statusEl.addClass('visible');
+				this.lastDisplayedStatus = this.data.currentStatus;
+			}
 
 			// 声波动画（TTS 播放时显示）
 			const ttsWave = leftContainer.createEl('div', { cls: 'deeppdf-tts-wave' });
@@ -1110,33 +1122,33 @@ export class AIMessage extends Message {
 			// 渲染语音气泡
 			this.renderVoiceBubble(bubble);
 
+
 			if (this.letterState !== 'opened') {
-				// 信封模式：显示预览信封
-				this.renderLetterEnvelope(bubble, this.data.content);
-			} else {
-				// 已拆信：渲染完整内容 + 收起按钮
-				const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
-				if (this.isCollapsed) {
-					content.addClass('deeppdf-message-collapsed');
-				}
-				if (this.app) {
-					const { cleanedContent } = parseAgentContent(this.data.content);
-					const sourcePath = this.data.pdfName || '';
-					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
-						this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
-					});
+					// 信封模式：流式开始就显示，内部有写信动画
+					this.renderLetterEnvelope(bubble, this.data.content);
 				} else {
-					const { cleanedContent } = parseAgentContent(this.data.content);
-					content.innerHTML = this.escapeHtml(cleanedContent);
-				}
-				// 收起回信封按钮
-				const collapseBtn = bubble.createDiv({ cls: 'deeppdf-letter-collapse-btn' });
-				collapseBtn.textContent = '收起 ↩';
-				collapseBtn.addEventListener('click', (e) => {
-					e.stopPropagation();
-					this.letterState = 'sealed';
-					this.requestRerender();
-				});
+					const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
+					if (this.isCollapsed) {
+						content.addClass('deeppdf-message-collapsed');
+					}
+					if (this.app) {
+						const { cleanedContent } = parseAgentContent(this.data.content);
+						const sourcePath = this.data.pdfName || '';
+						MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
+							this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
+						});
+					} else {
+						const { cleanedContent } = parseAgentContent(this.data.content);
+						content.innerHTML = this.escapeHtml(cleanedContent);
+					}
+					// 收起回信封按钮
+					const collapseBtn = bubble.createDiv({ cls: 'deeppdf-letter-collapse-btn' });
+					collapseBtn.textContent = '收起 ↩';
+					collapseBtn.addEventListener('click', (e) => {
+						e.stopPropagation();
+						this.letterState = 'sealed';
+						this.requestRerender();
+					});
 			}
 		} else {
 			// 普通模式：正常消息内容
@@ -1225,6 +1237,27 @@ export class AIMessage extends Message {
 				this.lastDisplayedStatus = undefined;
 			}
 		}
+
+			// 语音书信模式：增量更新信封内容（避免全量重绘闪烁）
+			if (this.enableVoiceReply && this.el) {
+				if (data.content !== undefined && data.content !== oldContent) {
+					this.updateContent(data.content);
+				}
+				// 流式结束时：更新语音气泡状态（从 loading 变为 ready）
+				if (data.voiceState) {
+					this.voiceState = data.voiceState;
+				}
+				// 流式结束或语音到达：局部更新语音气泡和信封
+				if (data.voiceState) {
+					this.updateVoiceBubbleUI();
+				}
+				if (streamingEnded) {
+					this.updateLetterEnvelopeUI();
+					this.hideStreamingState();
+					this.appendTimestampAndActions();
+				}
+				return;
+			}
 
 		// 【优化】流式更新期间，只做增量更新，避免全量重绘导致闪烁
 		// 只有在流式结束时（streamingEnded）才做完整重绘
@@ -1316,6 +1349,15 @@ export class AIMessage extends Message {
 	}
 
 	protected updateContent(content: string): void {
+		// 语音书信模式：更新信封内容
+		if (this.enableVoiceReply) {
+			const inkEl = this.el?.querySelector('.deeppdf-letter-ink');
+			if (inkEl) {
+				this.updateLetterContent(inkEl as HTMLElement, content);
+			}
+			return;
+		}
+
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
 		if (!contentEl) return;
 
@@ -1337,6 +1379,29 @@ export class AIMessage extends Message {
 		} else {
 			// 非流式更新，完全重绘（异步执行，确保链接事件正确绑定）
 			this.fullUpdateContent(contentEl as HTMLElement, content);
+		}
+	}
+
+	/**
+	 * 更新信封内容（语音书信模式流式更新）
+	 */
+	private updateLetterContent(inkEl: HTMLElement, content: string): void {
+		const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
+		const lines = plainText.split('\n').filter(l => l.trim());
+		const maxLines = 4;
+		const displayLines = lines.slice(0, maxLines);
+
+		// 清空并重新渲染预览行
+		inkEl.empty();
+		for (let i = 0; i < Math.min(displayLines.length, maxLines); i++) {
+			const lineEl = inkEl.createDiv({ cls: 'deeppdf-letter-ink-line' });
+			lineEl.style.animationDelay = `${i * 0.1}s`;
+			lineEl.textContent = displayLines[i].slice(0, 30) + (displayLines[i].length > 30 ? '...' : '');
+		}
+
+		// 流式输出时自动滚动到底部
+		if (this.data.isStreaming) {
+			inkEl.scrollTop = inkEl.scrollHeight;
 		}
 	}
 
@@ -1643,6 +1708,8 @@ export class AIMessage extends Message {
 		/** 更新信封状态 */
 		updateLetterState(state: 'sealing' | 'sealed' | 'opened'): void {
 			this.letterState = state;
+			// 触发重渲染
+			this.requestRerender();
 		}
 
 		/** 更新语音播放状态 */
@@ -1650,13 +1717,33 @@ export class AIMessage extends Message {
 			this.voiceState = state;
 		}
 
+		/** 增量更新语音气泡 UI（避免全量重绘） */
+		private updateVoiceBubbleUI(): void {
+			if (!this.el || !this.enableVoiceReply) return;
+			const bubbleEl = this.el.querySelector('.deeppdf-voice-loading, .deeppdf-voice-bubble');
+			if (!bubbleEl) return;
+			// Replace just the voice bubble with a fresh render
+			const parent = bubbleEl.parentElement;
+			if (!parent) return;
+			const wrapper = document.createElement('div');
+			this.renderVoiceBubble(wrapper);
+			bubbleEl.replaceWith(wrapper.firstChild!);
+		}
+
 		/** 渲染语音气泡 */
 		private renderVoiceBubble(container: HTMLElement): void {
 			if (!this.enableVoiceReply) return;
 
 			if (this.voiceState === 'loading') {
-				const loading = container.createDiv({ cls: 'deeppdf-voice-loading' });
-				loading.textContent = '正在生成语音...';
+				const loadingBubble = container.createDiv({ cls: 'deeppdf-voice-loading' });
+				loadingBubble.innerHTML = `
+					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+						<path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+						<line x1="12" x2="12" y1="19" y2="22"></line>
+					</svg>
+					<span>正在组织语言...</span>
+				`;
 				return;
 			}
 
@@ -1689,39 +1776,38 @@ export class AIMessage extends Message {
 
 			const ink = envelope.createDiv({ cls: 'deeppdf-letter-ink' });
 
-			// 提取文字做预览
-			const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
-			const lines = plainText.split('\n').filter(l => l.trim());
-			const maxLines = 4;
-			for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
-				const lineEl = ink.createDiv();
-				lineEl.textContent = lines[i].slice(0, 30) + (lines[i].length > 30 ? '...' : '');
+			if (this.data.isStreaming) {
+				// 流式输出中：显示写信动画（笔图标 + 打字点）
+				const writing = ink.createDiv({ cls: 'deeppdf-letter-writing' });
+				writing.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>`;
+				const dots = ink.createDiv({ cls: 'deeppdf-letter-writing-dots' });
+				for (let j = 0; j < 3; j++) {
+					dots.createSpan({ cls: 'deeppdf-letter-writing-dot' });
+				}
+			} else {
+				// 非流式：显示内容预览
+				const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
+				const textLines = plainText.split('\n').filter((l: string) => l.trim());
+				const maxLines = 4;
+				for (let i = 0; i < Math.min(textLines.length, maxLines); i++) {
+					const lineEl = ink.createDiv({ cls: 'deeppdf-letter-ink-line' });
+					lineEl.style.animationDelay = `${i * 0.1}s`;
+					lineEl.textContent = textLines[i].slice(0, 30) + (textLines[i].length > 30 ? '...' : '');
+				}
 			}
 
-			// 书写光标（sealing 状态）
-			if (this.letterState === 'sealing') {
-				ink.createSpan({ cls: 'deeppdf-letter-cursor' });
-			}
-
-			// 拆信按钮（sealed 状态）
-			if (this.letterState === 'sealed') {
-				const openBtn = envelope.createDiv({ cls: 'deeppdf-letter-open-btn' });
+			// 拆信按钮始终在信封底部
+			const openBtn = envelope.createDiv({ cls: 'deeppdf-letter-open-btn' });
+			if (this.data.isStreaming) {
+				openBtn.innerHTML = `✉ 展开信封 <span style="font-size:10px;opacity:0.6">（写信中...）</span>`;
+			} else {
 				openBtn.textContent = '✉ 拆开信封';
-				openBtn.addEventListener('click', (e) => {
-					e.stopPropagation();
-					this.letterState = 'opened';
-					this.requestRerender();
-				});
 			}
-
-			// sealing 状态也可以点击拆信
-			if (this.letterState === 'sealing') {
-				envelope.addEventListener('click', () => {
-					this.letterState = 'opened';
-					this.requestRerender();
-				});
-				envelope.style.cursor = 'pointer';
-			}
+			openBtn.addEventListener('click', (e: Event) => {
+				e.stopPropagation();
+				this.letterState = 'opened';
+				this.requestRerender();
+			});
 		}
 
 		private voiceBlobUrl: string | null = null;
@@ -1740,13 +1826,59 @@ export class AIMessage extends Message {
 					this.voiceAudioEl = new Audio(this.voiceBlobUrl);
 					this.voiceAudioEl.onended = () => {
 						this.voiceState = 'ended';
-						this.requestRerender();
+						this.updateVoiceBubbleUI();
 					};
 				}
 				this.voiceAudioEl.play();
 				this.voiceState = 'playing';
 			}
-			this.requestRerender();
+			this.updateVoiceBubbleUI();
+		}
+
+		/** 增量更新信封 UI：将写信动画替换为内容预览 + 拆信按钮 */
+		private updateLetterEnvelopeUI(): void {
+			if (!this.el) return;
+			const envelope = this.el.querySelector('.deeppdf-letter-envelope');
+			if (!envelope) return;
+
+			const ink = envelope.querySelector('.deeppdf-letter-ink') as HTMLElement;
+			if (ink) {
+				ink.empty();
+				const plainText = this.data.content.replace(/[#*_\[\]()>`~|]/g, '').trim();
+				const textLines = plainText.split('\n').filter((l: string) => l.trim());
+				const maxLines = 4;
+				for (let i = 0; i < Math.min(textLines.length, maxLines); i++) {
+					const lineEl = ink.createDiv({ cls: 'deeppdf-letter-ink-line' });
+					lineEl.style.animationDelay = `${i * 0.1}s`;
+					lineEl.textContent = textLines[i].slice(0, 30) + (textLines[i].length > 30 ? '...' : '');
+				}
+			}
+
+			// 更新拆信按钮文案
+			const openBtn = envelope.querySelector('.deeppdf-letter-open-btn');
+			if (openBtn) openBtn.textContent = '✉ 拆开信封';
+		}
+
+		/** 隐藏流式状态（状态文本 + streaming class） */
+		private hideStreamingState(): void {
+			if (!this.el) return;
+			this.el.removeClass('deeppdf-message-streaming');
+			if (this.statusEl) {
+				this.statusEl.innerHTML = '';
+				this.statusEl.removeClass('visible');
+			}
+			this.lastDisplayedStatus = undefined;
+		}
+
+		/** 追加时间戳和操作按钮（流式结束时） */
+		private appendTimestampAndActions(): void {
+			if (!this.el) return;
+			const bubble = this.el.querySelector('.deeppdf-message-bubble');
+			if (!bubble) return;
+			if (!bubble.querySelector('.deeppdf-message-time')) {
+				bubble.appendChild(this.renderTimestamp());
+			}
+			this.renderActions(bubble as HTMLElement);
 		}
 
 		/** 请求重新渲染 */
