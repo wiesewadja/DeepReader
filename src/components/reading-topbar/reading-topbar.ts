@@ -10,8 +10,6 @@ import { uiLog as log } from '../../utils/logger.js';
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onOpenSettings?: () => void;
-    onToggleAutoBroadcast?: () => void;
-    initialAutoTTS?: boolean;
 }
 
 export class ReadingTopbar extends Component {
@@ -22,7 +20,6 @@ export class ReadingTopbar extends Component {
     private progressCircleEl: SVGCircleElement | null = null;
     private progressTextEl: HTMLElement | null = null;
     private progressContainerEl: HTMLElement | null = null;
-    private autoTTSBtn: HTMLButtonElement | null = null;
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -135,24 +132,7 @@ export class ReadingTopbar extends Component {
         });
         rightSection.appendChild(libraryBtn);
 
-        // 自动播报 toggle 按钮
-        if (this.options.onToggleAutoBroadcast) {
-            const autoTTSBtn = document.createElement('button');
-            autoTTSBtn.className = 'deeppdf-topbar-action-btn';
-            if (this.options.initialAutoTTS) {
-                autoTTSBtn.classList.add('active');
-            }
-            autoTTSBtn.title = this.options.initialAutoTTS ? '关闭自动播报' : '开启自动播报';
-            autoTTSBtn.innerHTML = Icons.volume2;
-            autoTTSBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.options.onToggleAutoBroadcast?.();
-                autoTTSBtn.classList.toggle('active');
-                autoTTSBtn.title = autoTTSBtn.classList.contains('active') ? '关闭自动播报' : '开启自动播报';
-            });
-            rightSection.appendChild(autoTTSBtn);
-            this.autoTTSBtn = autoTTSBtn;
-        }
+
 
         // 设置按钮
         const settingsBtn = document.createElement('button');
@@ -252,11 +232,7 @@ export class ReadingTopbar extends Component {
         log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
     }
 
-    public setAutoTTS(enabled: boolean): void {
-        if (!this.autoTTSBtn) return;
-        this.autoTTSBtn.classList.toggle('active', enabled);
-        this.autoTTSBtn.title = enabled ? '关闭自动播报' : '开启自动播报';
-    }
+
 
     destroy(): void {
         this.bookCoverEl = null;
@@ -265,7 +241,6 @@ export class ReadingTopbar extends Component {
         this.progressCircleEl = null;
         this.progressTextEl = null;
         this.progressContainerEl = null;
-        this.autoTTSBtn = null;
         super.destroy();
     }
 }

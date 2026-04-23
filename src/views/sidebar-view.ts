@@ -1408,12 +1408,6 @@ export class SidebarView extends ItemView {
                     setting.openTabById('deepreader');
                 }
             },
-            onToggleAutoBroadcast: () => {
-                this.plugin.settings.autoTTS = !this.plugin.settings.autoTTS;
-                this.plugin.saveSettings();
-                this.readingTopbar?.setAutoTTS(this.plugin.settings.autoTTS);
-            },
-            initialAutoTTS: this.plugin.settings.autoTTS,
         });
 
         const el = this.readingTopbar.getElement();
