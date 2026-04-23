@@ -209,25 +209,22 @@ export class PagePaginator {
 
 		// 纸质书最佳阅读行宽
 		const MAX_TEXT_WIDTH = 640;
-		// 两边留白比例
-		const PERCENT_PADDING = 0.03;
+		// 列间距（固定值，保证翻页时内容对齐）
+		const COLUMN_GAP = 80;
 
 		let contentWidth: number;
 		let sidePadding: number;
 
-		// 按比例留白，但内容不超过最佳行宽
-		sidePadding = viewWidth * PERCENT_PADDING;
-		contentWidth = Math.min(viewWidth - sidePadding * 2, MAX_TEXT_WIDTH);
-		sidePadding = (viewWidth - contentWidth) / 2;
+		// 内容宽度不超过最佳行宽，且不超过视口减去间距
+		contentWidth = Math.min(MAX_TEXT_WIDTH, viewWidth - COLUMN_GAP);
+		if (contentWidth < 0) contentWidth = viewWidth;
 
-		// The mathematical constraint to perfectly center every page is:
-		// stride = columnWidth + columnGap = viewWidth
-		// Therefore: columnGap = viewWidth - contentWidth
-		const columnGap = viewWidth - contentWidth;
+		// 居中留白：(视口宽度 - 内容宽度) / 2
+		sidePadding = (viewWidth - contentWidth) / 2;
 
 		// 通过 CSS 变量动态设定列宽、列间距和容器的左右 Padding
 		this.scrollView.style.setProperty('--deeppdf-col-width', `${contentWidth}px`);
-		this.scrollView.style.setProperty('--deeppdf-col-gap', `${columnGap}px`);
+		this.scrollView.style.setProperty('--deeppdf-col-gap', `${COLUMN_GAP}px`);
 		this.scrollView.style.setProperty('--deeppdf-side-padding', `${sidePadding}px`);
 	}
 
