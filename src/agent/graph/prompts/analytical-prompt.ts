@@ -89,6 +89,7 @@ export function buildAnalyticalSystemPrompt(ctx: {
   tocSummary?: string;
   currentNodeId?: string;
   currentChapterName?: string;
+  userProfile?: string;
 }): string {
   const scopeList = ctx.scopeNodeIds.length > 0
     ? ctx.scopeNodeIds.map(id => `- ${id}`).join('\n')
@@ -106,8 +107,12 @@ export function buildAnalyticalSystemPrompt(ctx: {
 </current_chapter_priority>`
     : '';
 
+  const userProfileBlock = ctx.userProfile
+    ? `\n<user_profile>\n${ctx.userProfile}\n</user_profile>`
+    : '';
+
   return `${PROMPT_S2_ANALYTICAL_TEMPLATE}
-${searchHints}${currentChapterHint}
+${searchHints}${currentChapterHint}${userProfileBlock}
 <locked_scope>
 搜索范围限定：
 ${scopeList}

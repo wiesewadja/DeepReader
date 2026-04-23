@@ -45,16 +45,20 @@ wiki 链接的标准格式：[[书名/文件名#^block_id|别名]]
 /**
  * Build system prompt for formatter state with memory context
  */
-export function buildFormatterSystemPrompt(memoryContext?: string): string {
+export function buildFormatterSystemPrompt(memoryContext?: string, userProfile?: string): string {
   const memorySection = memoryContext
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
+    : '';
+
+  const profileSection = userProfile
+    ? `\n<user_profile>\n${userProfile}\n</user_profile>\n`
     : '';
 
   const now = new Date();
   const timeStr = now.toLocaleString('zh-CN', { hour12: false });
   const timeSection = `\n<current_time>${timeStr}</current_time>\n`;
 
-  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}`;
+  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}${profileSection}`;
 }
 
 /**

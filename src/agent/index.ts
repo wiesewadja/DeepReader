@@ -91,6 +91,9 @@ export interface FrontendAgentOptions {
   // 思考模型控制（可选）
   disableThinking?: boolean;       // chat/main 模型
   fastDisableThinking?: boolean;   // router/fast 模型
+
+  // 用户画像（可选）
+  journalDir?: string;
 }
 
 export class FrontendAgent {
@@ -437,6 +440,20 @@ ${currentMemory}
 
     const memoryContext = await this.memoryStore.getMemoryContext();
 
+    // 注入 journalDir 到 ToolContext（启用 search_journal 工具）
+    if (this.options.journalDir && !context.journalDir) {
+      (context as any).journalDir = this.options.journalDir;
+    }
+
+    // 读取用户画像
+    let userProfile: string | undefined;
+    try {
+      const profileContent = await this.options.app.vault.adapter.read('DeepReader/USER_PROFILE.md');
+      userProfile = profileContent.replace(/^---[\s\S]*?---\n*/, '').trim();
+    } catch {
+      // 画像文件不存在，跳过
+    }
+
     // 过滤有效对话历史
     const cleanHistory = (chatHistory ?? []).filter(m => m.role === 'user' || m.role === 'assistant');
     const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
@@ -457,6 +474,7 @@ ${currentMemory}
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
+      userProfile,
     });
 
     const engineCallbacks: EngineCallbacks = {
