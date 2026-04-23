@@ -14,7 +14,7 @@ const PROPOSITION_ENABLED = false;
 
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
-type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading';
+type SettingsTabId = 'llm' | 'index' | 'profile' | 'advanced' | 'reading';
 
 interface SettingsTab {
     id: SettingsTabId;
@@ -32,6 +32,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务', icon: '🤖' },
         { id: 'index', name: '服务配置', icon: '📚' },
+        { id: 'profile', name: '用户画像', icon: '👤' },
         { id: 'advanced', name: '高级', icon: '⚙️' },
         { id: 'reading', name: '阅读模式', icon: '📖' },
     ];
@@ -105,6 +106,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 break;
             case 'index':
                 this.renderIndexServicesSettings(container);
+                break;
+            case 'profile':
+                this.renderProfileSettings(container);
                 break;
             case 'advanced':
                 this.renderAdvancedSettings(container);
@@ -802,6 +806,127 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',
             cls: 'setting-item-description'
         });
+    }
+
+    /**
+     * 用户画像设置
+     */
+    private renderProfileSettings(container: HTMLElement): void {
+        container.createEl('h3', { text: '用户画像设置' });
+        container.createEl('p', {
+            text: '指定包含你日记、随笔、感悟的目录，奚童会从中了解你，提供更贴心的阅读陪伴。',
+            cls: 'setting-item-description',
+        });
+
+        new Setting(container)
+            .setName('笔记目录')
+            .setDesc('存放日记、随笔、感悟的 Obsidian 文件夹路径（相对于 Vault 根目录）')
+            .addText(text => text
+                .setPlaceholder('例如：Journals/随手记')
+                .setValue(this.plugin.settings.journalDir)
+                .onChange(async (value) => {
+                    const oldDir = this.plugin.settings.journalDir;
+                    this.plugin.settings.journalDir = value;
+                    await this.plugin.saveSettings();
+
+                    if (oldDir && oldDir !== value) {
+                        const builder = (this.plugin as any).profileBuilder;
+                        if (builder) await builder.deleteProfile();
+                        new Notice('笔记目录已变更，请重新构建画像');
+                    }
+                    (this.plugin as any).profileBuilder = value
+                        ? new (require('../services/profile-builder').ProfileBuilder)(this.app, this.plugin.settings)
+                        : undefined;
+                }));
+
+        const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
+        this.refreshProfileStatus(statusEl);
+
+        new Setting(container)
+            .setName('构建用户画像')
+            .setDesc('扫描指定目录中的笔记，生成你的专属画像')
+            .addButton(btn => btn
+                .setButtonText('构建画像')
+                .setCta()
+                .onClick(async () => {
+                    await this.handleBuildProfile(btn, statusEl, false);
+                }));
+
+        new Setting(container)
+            .setName('重建画像')
+            .setDesc('忽略已有数据，完全重新构建')
+            .addButton(btn => btn
+                .setButtonText('重建')
+                .onClick(async () => {
+                    await this.handleBuildProfile(btn, statusEl, true);
+                }));
+
+        new Setting(container)
+            .setName('删除画像')
+            .setDesc('删除已生成的画像和索引数据')
+            .addButton(btn => btn
+                .setButtonText('删除')
+                .setWarning()
+                .onClick(async () => {
+                    const builder = (this.plugin as any).profileBuilder;
+                    if (builder) {
+                        await builder.deleteProfile();
+                        new Notice('画像已删除');
+                        this.refreshProfileStatus(statusEl);
+                    }
+                }));
+    }
+
+    private async refreshProfileStatus(el: HTMLElement): Promise<void> {
+        el.empty();
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) {
+            el.createSpan({ text: '未配置笔记目录', cls: 'setting-item-description' });
+            return;
+        }
+
+        const meta = await builder.readMeta();
+        if (meta) {
+            const date = new Date(meta.lastBuildTime).toLocaleDateString('zh-CN');
+            el.createSpan({ text: `上次构建：${date} · 涵盖 ${meta.fileCount} 篇笔记` });
+        } else {
+            el.createSpan({ text: '尚未构建画像', cls: 'setting-item-description' });
+        }
+    }
+
+    private async handleBuildProfile(
+        btn: any,
+        statusEl: HTMLElement,
+        force: boolean,
+    ): Promise<void> {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) {
+            new Notice('请先配置笔记目录');
+            return;
+        }
+
+        if (builder.getIsBuilding()) {
+            builder.cancel();
+            btn.setButtonText(force ? '重建' : '构建画像');
+            return;
+        }
+
+        btn.setButtonText('取消构建');
+        try {
+            await builder.build(
+                (progress: any) => {
+                    statusEl.empty();
+                    statusEl.createSpan({ text: progress.message });
+                },
+                force,
+            );
+        } catch (e: any) {
+            if (e.name !== 'AbortError') {
+                new Notice(`构建失败：${e.message}`);
+            }
+        }
+        btn.setButtonText(force ? '重建' : '构建画像');
+        this.refreshProfileStatus(statusEl);
     }
 
     /**
