@@ -385,6 +385,17 @@ export class ReadingModeService {
                     this.activate(file);
                 }
             }
+
+            // 最终保底：延迟 1 秒后再次检查，确保 metadataCache 已完全加载
+            setTimeout(() => {
+                if (!this.isActive && this.autoEnable) {
+                    const file = this.app.workspace.getActiveFile();
+                    if (file && this.isChapterFile(file)) {
+                        serviceLog('[ReadingMode] delayed retry, activating for:', file.path);
+                        this.activate(file);
+                    }
+                }
+            }, 1000);
         });
     }
 
