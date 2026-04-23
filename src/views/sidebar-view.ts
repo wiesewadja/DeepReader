@@ -2116,7 +2116,6 @@ export class SidebarView extends ItemView {
                     isStreaming: true,
                     currentStatus: '开始阅读...',
                     agentToolCalls: [],
-                    currentStatus: undefined,
                 });
 
                 // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）

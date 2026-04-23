@@ -1641,8 +1641,8 @@
     padding: 10px 16px;
     background: var(--interactive-accent);
     color: var(--text-on-accent, #fff);
-    border-radius: 4px 16px 16px 16px;
-    max-width: 65%;
+    border-radius: 16px 16px 16px 16px;
+    max-width: 85%;
     margin-bottom: 4px;
     cursor: pointer;
     transition: opacity 0.2s;
