@@ -81,6 +81,65 @@ export class SessionStore {
 		return normalizePath(`${SESSIONS_DIR}/${sessionId}.jsonl`);
 	}
 
+	/**
+	 * 获取语音文件目录路径（与会话文件同级）
+	 */
+	private getVoiceDir(sessionId: string): string {
+		return normalizePath(`${SESSIONS_DIR}/voice/${sessionId}`);
+	}
+
+	/**
+	 * 获取语音文件路径
+	 */
+	private getVoicePath(sessionId: string, messageId: string): string {
+		return normalizePath(`${this.getVoiceDir(sessionId)}/${messageId}.wav`);
+	}
+
+	/**
+	 * 保存语音音频文件
+	 * @returns 相对于 SESSIONS_DIR 的路径
+	 */
+	async saveVoiceAudio(sessionId: string, messageId: string, audioBuffer: ArrayBuffer): Promise<string> {
+		const voiceDir = this.getVoiceDir(sessionId);
+		
+		// 确保语音目录存在
+		const dirExists = await this.app.vault.adapter.exists(voiceDir);
+		if (!dirExists) {
+			await this.app.vault.adapter.mkdir(voiceDir);
+		}
+
+		// 将 ArrayBuffer 转换为 Uint8Array 后写入文件
+		const uint8Array = new Uint8Array(audioBuffer);
+		const voicePath = this.getVoicePath(sessionId, messageId);
+		await this.app.vault.adapter.writeBinary(voicePath, uint8Array.buffer);
+
+		// 返回相对路径（相对于 SESSIONS_DIR）
+		const relativePath = `voice/${sessionId}/${messageId}.wav`;
+		log(`[SessionStore] 保存语音文件: ${relativePath}`);
+		return relativePath;
+	}
+
+	/**
+	 * 加载语音音频文件
+	 */
+	async loadVoiceAudio(sessionId: string, relativePath: string): Promise<ArrayBuffer | null> {
+		try {
+			const fullPath = normalizePath(`${SESSIONS_DIR}/${relativePath}`);
+			const exists = await this.app.vault.adapter.exists(fullPath);
+			if (!exists) {
+				log(`[SessionStore] 语音文件不存在: ${relativePath}`);
+				return null;
+			}
+
+			const buffer = await this.app.vault.adapter.readBinary(fullPath);
+			log(`[SessionStore] 加载语音文件: ${relativePath}`);
+			return buffer;
+		} catch (err) {
+			log(`[SessionStore] 加载语音文件失败: ${relativePath}`, err);
+			return null;
+		}
+	}
+
 	// ==================== 创建和保存 ====================
 
 	/**
@@ -269,6 +328,15 @@ export class SessionStore {
 		session.messageCount++;
 		session.updatedAt = Date.now();
 
+		// 处理语音数据持久化
+		let voiceAudioPath: string | undefined;
+		const voiceData = message as any;
+		if (voiceData.voiceAudio && voiceData.voiceAudio instanceof ArrayBuffer) {
+			// 使用消息 ID 作为文件名（如果存在），否则生成一个
+			const messageId = voiceData.id || `msg_${Date.now()}`;
+			voiceAudioPath = await this.saveVoiceAudio(sessionId, messageId, voiceData.voiceAudio);
+		}
+
 		// 追加到文件（只追加一行）
 		const path = this.getSessionPath(sessionId);
 		const msgLine: SessionMessageLine = {
@@ -279,6 +347,10 @@ export class SessionStore {
 			tool_call_id: message.tool_call_id,
 			name: message.name,
 			hidden: message.hidden,
+			// 语音字段
+			voiceAudioPath,
+			voiceDuration: voiceData.voiceDuration,
+			letterState: voiceData.letterState,
 		};
 
 		// 检查文件是否存在
@@ -346,7 +418,7 @@ export class SessionStore {
 				if (!lines[i].trim()) continue;
 				try {
 					const msgLine = JSON.parse(lines[i]) as SessionMessageLine;
-					messages.push({
+					const msg: ChatMessage = {
 						role: msgLine.role,
 						content: msgLine.content,
 						tool_calls: msgLine.tool_calls,
@@ -354,7 +426,20 @@ export class SessionStore {
 						name: msgLine.name,
 						hidden: msgLine.hidden,
 						timestamp: msgLine.timestamp,
-					});
+					};
+
+					// 恢复语音数据
+					if (msgLine.voiceAudioPath) {
+						const audioBuffer = await this.loadVoiceAudio(sessionId, msgLine.voiceAudioPath);
+						if (audioBuffer) {
+							(msg as any).voiceAudio = audioBuffer;
+							(msg as any).voiceDuration = msgLine.voiceDuration;
+							(msg as any).letterState = msgLine.letterState;
+							(msg as any).voiceState = 'ready';  // 从文件加载后状态为 ready
+						}
+					}
+
+					messages.push(msg);
 				} catch (e) {
 					log(`[SessionStore] 解析消息行失败: ${i}`, e);
 				}

@@ -506,31 +506,55 @@ export class SidebarView extends ItemView {
             return;
         }
 
-        // 1. 从 agentChatHistory 获取完整消息（包括 tool 消息）
-        // 排除 system 消息（每次动态生成）和占位消息
-        // 同时剥离用户消息中的运行时上下文和 system_note（不持久化，每次动态生成）
+        // 1. 从 MessageList 获取完整消息数据（包括语音数据）
+        // 这样可以确保语音数据被持久化
         const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
         const SYSTEM_NOTE_PATTERN = /<system_note>[\s\S]*?<\/system_note>\n\n/g;
-        const messagesToSave = this.agentChatHistory
-            .filter(m =>
-                m.role !== 'system' &&
-                m.content && // 确保有内容
-                !m.content.includes("已切换到书籍") &&
-                m.content !== "📖 开始翻阅..." &&
-                m.content !== "🔍 正在跨书籍查阅..."
-            )
-            .map(m => {
-                // 剥离用户消息中的运行时上下文和 system_note
-                if (m.role === 'user' && m.content) {
-                    let content = m.content;
-                    // 先剥离 system_note（可能有多个）
-                    content = content.replace(SYSTEM_NOTE_PATTERN, '');
-                    // 再剥离运行时上下文
-                    content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
-                    return { ...m, content };
-                }
-                return m;
-            });
+        
+        // 优先从 MessageList 获取消息（包含语音数据）
+        // MessageList 中的消息只有 user 和 assistant 角色，不会有 system
+        let messagesToSave: any[] = [];
+        if (this.messageList) {
+            const uiMessages = this.messageList.getMessagesData();
+            messagesToSave = uiMessages
+                .filter(m =>
+                    m.content &&
+                    !m.content.includes("已切换到书籍") &&
+                    m.content !== "📖 开始翻阅..." &&
+                    m.content !== "🔍 正在跨书籍查阅..."
+                )
+                .map(m => {
+                    // 剥离用户消息中的运行时上下文和 system_note
+                    if (m.role === 'user' && m.content) {
+                        let content = m.content;
+                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
+                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+                        return { ...m, content };
+                    }
+                    return m;
+                });
+        }
+
+        // 如果 MessageList 没有消息，回退到 agentChatHistory
+        if (messagesToSave.length === 0) {
+            messagesToSave = this.agentChatHistory
+                .filter(m =>
+                    m.role !== 'system' &&
+                    m.content &&
+                    !m.content.includes("已切换到书籍") &&
+                    m.content !== "📖 开始翻阅..." &&
+                    m.content !== "🔍 正在跨书籍查阅..."
+                )
+                .map(m => {
+                    if (m.role === 'user' && m.content) {
+                        let content = m.content;
+                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
+                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
+                        return { ...m, content };
+                    }
+                    return m;
+                });
+        }
 
         log('[DeepPDF] saveToCache messagesToSave count:', messagesToSave.length);
         if (messagesToSave.length === 0) {
@@ -2507,6 +2531,15 @@ export class SidebarView extends ItemView {
                     if (msg && msg instanceof AIMessage) {
                         msg.updateVoiceData(data);
                     }
+                    // 同步语音数据到 agentChatHistory，确保持久化
+                    const lastAiMsg = this.agentChatHistory[this.agentChatHistory.length - 1];
+                    if (lastAiMsg && lastAiMsg.role === 'assistant') {
+                        (lastAiMsg as any).voiceAudio = data.audioBuffer;
+                        (lastAiMsg as any).voiceDuration = data.duration;
+                        (lastAiMsg as any).voiceState = 'ready';
+                    }
+                    // 语音数据更新后触发保存
+                    this.saveToCache();
                 },
             };
 

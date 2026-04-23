@@ -51,6 +51,10 @@ export interface SessionMessageLine {
 	tool_call_id?: string;
 	name?: string;
 	hidden?: boolean;
+	// 语音书信回复持久化字段
+	voiceAudioPath?: string;  // 音频文件相对路径（相对于 sessions 目录）
+	voiceDuration?: number;   // 语音时长（秒）
+	letterState?: 'sealing' | 'sealed' | 'opened';  // 信封状态
 }
 
 /**
