@@ -260,6 +260,14 @@ export interface MessageData {
 	bookCoverUrl?: string;
 	/** 可选：书籍作者（用于最大化展示） */
 	bookAuthor?: string;
+	// 语音对话气泡
+	voiceAudio?: ArrayBuffer;
+	voiceDuration?: number;  // 秒
+	voiceState?: 'loading' | 'ready' | 'playing' | 'paused' | 'ended';
+	// 信封状态
+	letterState?: 'sealing' | 'sealed' | 'opened';
+	// 语音对话模式开关（由 sidebar-view 根据设置传入）
+	enableVoiceReply?: boolean;
 }
 
 
@@ -941,6 +949,13 @@ export class AIMessage extends Message {
 	private isCollapsed: boolean = false;
 	// 信笺图案
 	private patternClass: string = '';
+	// 语音书信模式状态
+	private letterState: 'sealing' | 'sealed' | 'opened' = 'sealing';
+	private voiceState: 'loading' | 'ready' | 'playing' | 'paused' | 'ended' = 'loading';
+	private voiceAudio: ArrayBuffer | null = null;
+	private voiceDuration: number = 0;
+	private voiceAudioEl: HTMLAudioElement | null = null;
+	private enableVoiceReply: boolean = false;
 
 	constructor(
 		data: MessageData,
@@ -971,6 +986,18 @@ export class AIMessage extends Message {
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
 		this.lastRenderedLength = data.content.length;
+		// 语音书信模式初始化
+		this.enableVoiceReply = data.enableVoiceReply ?? false;
+		if (data.voiceAudio) {
+			this.voiceAudio = data.voiceAudio;
+			this.voiceState = 'ready';
+		}
+		if (data.voiceDuration) {
+			this.voiceDuration = data.voiceDuration;
+		}
+		if (data.letterState) {
+			this.letterState = data.letterState;
+		}
 		this.el = this.render();
 	}
 
@@ -1078,32 +1105,67 @@ export class AIMessage extends Message {
 			});
 		}
 
-		// 消息内容
-		const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
+		// 语音书信模式：语音气泡 + 信封/完整内容
+		if (this.enableVoiceReply) {
+			// 渲染语音气泡
+			this.renderVoiceBubble(bubble);
 
-		// 应用折叠状态
-		if (this.isCollapsed) {
-			content.addClass('deeppdf-message-collapsed');
-		}
-
-		// 如果正在流式传输且内容为空，显示加载动画
-		if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
-			content.addClass('deeppdf-message-loading');
-			content.innerHTML = `<div class="deeppdf-loading-dots"><span></span><span></span><span></span></div>`;
-		} else {
-			// 使用 Markdown 渲染（先清理 <thought> 标签）
-			if (this.app) {
-				const { cleanedContent } = parseAgentContent(this.data.content);
-				// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
-				const sourcePath = this.data.pdfName || '';
-				MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
-					// 设置内部链接的点击事件和 hover preview
-					// 如果正在流式传输，禁用 hover preview
-					this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
-				});
+			if (this.letterState !== 'opened') {
+				// 信封模式：显示预览信封
+				this.renderLetterEnvelope(bubble, this.data.content);
 			} else {
-				const { cleanedContent } = parseAgentContent(this.data.content);
-				content.innerHTML = this.escapeHtml(cleanedContent);
+				// 已拆信：渲染完整内容 + 收起按钮
+				const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
+				if (this.isCollapsed) {
+					content.addClass('deeppdf-message-collapsed');
+				}
+				if (this.app) {
+					const { cleanedContent } = parseAgentContent(this.data.content);
+					const sourcePath = this.data.pdfName || '';
+					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
+						this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
+					});
+				} else {
+					const { cleanedContent } = parseAgentContent(this.data.content);
+					content.innerHTML = this.escapeHtml(cleanedContent);
+				}
+				// 收起回信封按钮
+				const collapseBtn = bubble.createDiv({ cls: 'deeppdf-letter-collapse-btn' });
+				collapseBtn.textContent = '收起 ↩';
+				collapseBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					this.letterState = 'sealed';
+					this.requestRerender();
+				});
+			}
+		} else {
+			// 普通模式：正常消息内容
+			const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
+
+			// 应用折叠状态
+			if (this.isCollapsed) {
+				content.addClass('deeppdf-message-collapsed');
+			}
+
+			// 如果正在流式传输且内容为空，显示加载动画
+			if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
+				content.addClass('deeppdf-message-loading');
+				content.innerHTML = `<div class="deeppdf-loading-dots"><span></span><span></span><span></span></div>`;
+			} else {
+				// 使用 Markdown 渲染（先清理 <thought> 标签）
+				if (this.app) {
+					const { cleanedContent } = parseAgentContent(this.data.content);
+					// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
+					const sourcePath = this.data.pdfName || '';
+					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
+						// 设置内部链接的点击事件和 hover preview
+						// 如果正在流式传输，禁用 hover preview
+						this.mouseoverHandler = setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
+					});
+				} else {
+					const { cleanedContent } = parseAgentContent(this.data.content);
+					content.innerHTML = this.escapeHtml(cleanedContent);
+				}
 			}
 		}
 
@@ -1124,7 +1186,8 @@ export class AIMessage extends Message {
 
 		// 设置文字选中监听（仅对非流式消息）
 		if (!this.data.isStreaming) {
-			this.setupSelectionListener(content);
+			const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+				if (contentEl) this.setupSelectionListener(contentEl);
 		}
 
 		return container;
@@ -1560,6 +1623,141 @@ export class AIMessage extends Message {
 
 		log(`[DeepPDF] Message collapsed: ${this.isCollapsed}`);
 	}
+
+
+		// ─── 语音书信模式 ──────────────────────────────────────────────────
+
+		/** 更新语音数据（VoicePipeline 完成后调用） */
+		updateVoiceData(data: { audioBuffer: ArrayBuffer; duration: number }): void {
+			this.voiceAudio = data.audioBuffer;
+			this.voiceDuration = data.duration;
+			this.voiceState = 'ready';
+			// 触发局部重渲染
+			this.update({
+				voiceAudio: data.audioBuffer,
+				voiceDuration: data.duration,
+				voiceState: 'ready',
+			});
+		}
+
+		/** 更新信封状态 */
+		updateLetterState(state: 'sealing' | 'sealed' | 'opened'): void {
+			this.letterState = state;
+		}
+
+		/** 更新语音播放状态 */
+		updateVoiceState(state: 'loading' | 'ready' | 'playing' | 'paused' | 'ended'): void {
+			this.voiceState = state;
+		}
+
+		/** 渲染语音气泡 */
+		private renderVoiceBubble(container: HTMLElement): void {
+			if (!this.enableVoiceReply) return;
+
+			if (this.voiceState === 'loading') {
+				const loading = container.createDiv({ cls: 'deeppdf-voice-loading' });
+				loading.textContent = '正在生成语音...';
+				return;
+			}
+
+			const bubble = container.createDiv({ cls: 'deeppdf-voice-bubble' });
+			if (this.voiceState === 'playing') bubble.addClass('playing');
+
+			const playBtn = bubble.createDiv({ cls: 'deeppdf-voice-play-btn' });
+			playBtn.textContent = (this.voiceState === 'playing') ? '⏸' : '▶';
+
+			const bars = bubble.createDiv({ cls: 'deeppdf-voice-bars' });
+			for (let i = 0; i < 8; i++) {
+				const bar = bars.createDiv({ cls: 'deeppdf-voice-bar' });
+				bar.style.height = `${6 + Math.random() * 10}px`;
+			}
+
+			const duration = bubble.createDiv({ cls: 'deeppdf-voice-duration' });
+			const min = Math.floor(this.voiceDuration / 60);
+			const sec = Math.floor(this.voiceDuration % 60);
+			duration.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+
+			bubble.addEventListener('click', () => {
+				this.toggleVoicePlayback();
+			});
+		}
+
+		/** 渲染信封（仅在 sealing/sealed 状态调用） */
+		private renderLetterEnvelope(container: HTMLElement, content: string): void {
+			const envelope = container.createDiv({ cls: 'deeppdf-letter-envelope' });
+			envelope.createDiv({ cls: 'deeppdf-letter-label' }).textContent = '奚童 来信';
+
+			const ink = envelope.createDiv({ cls: 'deeppdf-letter-ink' });
+
+			// 提取文字做预览
+			const plainText = content.replace(/[#*_\[\]()>`~|]/g, '').trim();
+			const lines = plainText.split('\n').filter(l => l.trim());
+			const maxLines = 4;
+			for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
+				const lineEl = ink.createDiv();
+				lineEl.textContent = lines[i].slice(0, 30) + (lines[i].length > 30 ? '...' : '');
+			}
+
+			// 书写光标（sealing 状态）
+			if (this.letterState === 'sealing') {
+				ink.createSpan({ cls: 'deeppdf-letter-cursor' });
+			}
+
+			// 拆信按钮（sealed 状态）
+			if (this.letterState === 'sealed') {
+				const openBtn = envelope.createDiv({ cls: 'deeppdf-letter-open-btn' });
+				openBtn.textContent = '✉ 拆开信封';
+				openBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					this.letterState = 'opened';
+					this.requestRerender();
+				});
+			}
+
+			// sealing 状态也可以点击拆信
+			if (this.letterState === 'sealing') {
+				envelope.addEventListener('click', () => {
+					this.letterState = 'opened';
+					this.requestRerender();
+				});
+				envelope.style.cursor = 'pointer';
+			}
+		}
+
+		private voiceBlobUrl: string | null = null;
+		/** 切换语音播放 */
+		private toggleVoicePlayback(): void {
+			if (!this.voiceAudio) return;
+
+			if (this.voiceState === 'playing') {
+				this.voiceAudioEl?.pause();
+				this.voiceState = 'paused';
+			} else {
+				if (!this.voiceAudioEl) {
+					if (this.voiceBlobUrl) URL.revokeObjectURL(this.voiceBlobUrl);
+					const blob = new Blob([this.voiceAudio], { type: 'audio/wav' });
+					this.voiceBlobUrl = URL.createObjectURL(blob);
+					this.voiceAudioEl = new Audio(this.voiceBlobUrl);
+					this.voiceAudioEl.onended = () => {
+						this.voiceState = 'ended';
+						this.requestRerender();
+					};
+				}
+				this.voiceAudioEl.play();
+				this.voiceState = 'playing';
+			}
+			this.requestRerender();
+		}
+
+		/** 请求重新渲染 */
+		private requestRerender(): void {
+			// 触发全量重绘
+			if (this.el) {
+				const newRender = this.render();
+				this.el.replaceWith(newRender);
+				this.el = newRender;
+			}
+		}
 
 	// ─── 全屏展示 ──────────────────────────────────────────────────────
 
@@ -2084,6 +2282,18 @@ export class AIMessage extends Message {
 			this.selectionMenu.hide();
 			this.selectionMenu = null;
 		}
+
+		// 清理语音播放资源
+		if (this.voiceAudioEl) {
+			this.voiceAudioEl.pause();
+			this.voiceAudioEl.src = '';
+			this.voiceAudioEl = null;
+		}
+		if (this.voiceBlobUrl) {
+			URL.revokeObjectURL(this.voiceBlobUrl);
+			this.voiceBlobUrl = null;
+		}
+		this.voiceAudio = null;
 	}
 
 	setTTSState(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void {
@@ -2105,7 +2315,7 @@ export class AIMessage extends Message {
 					this.ttsBtn.classList.add('tts-loading');
 					break;
 				case 'playing':
-					this.ttsBtn.innerHTML = Icons.pause;
+					this.ttsBtn.innerHTML = Icons.audioWave;
 					this.ttsBtn.title = '暂停';
 					this.ttsBtn.classList.remove('tts-loading');
 					break;

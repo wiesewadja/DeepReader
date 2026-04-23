@@ -16,7 +16,7 @@ export interface TTSOptions {
  */
 const XITONG_DIRECTOR_PROMPT = `[Character]
 你是奚童，一位活泼知性的年轻女孩，用户的伴读书童。你的声音清澈明亮，带着自然的亲和力和书卷气。
-你的语速偏快但不急促，吐字清晰，有一种"刚读完好书迫不及待想分享"的活力感。
+你的语速平缓不急促，吐字清晰，有一种"刚读完好书迫不及待想分享"的活力感。
 偶尔会轻笑，偶尔会感叹，但整体给人的感觉是温暖、真诚、值得信赖的读书伙伴。
 
 [Scene]
@@ -159,6 +159,87 @@ export class TTSClient {
             reader.cancel().catch(() => {});
         }
     }
+
+    /**
+     * 分段并行合成：将长文本按句切分，并发调用 synthesize，拼接 WAV PCM
+     */
+    async synthesizeParallel(text: string, options?: TTSOptions, concurrency = 3): Promise<ArrayBuffer> {
+        const segments = splitTextToSegments(text);
+        if (segments.length <= 1) {
+            return this.synthesize(text, options);
+        }
+
+        const results: ArrayBuffer[] = [];
+        let index = 0;
+
+        const worker = async (): Promise<void> => {
+            while (index < segments.length) {
+                const i = index++;
+                results[i] = await this.synthesize(segments[i], options);
+            }
+        };
+
+        const workers = Array.from({ length: Math.min(concurrency, segments.length) }, () => worker());
+        await Promise.all(workers);
+
+        return concatWavBuffers(results);
+    }
+}
+
+const SEGMENT_RE = /[^。！？!?.]+[。！？!?.]?/g;
+const MAX_SEGMENT_CHARS = 300;
+
+function splitTextToSegments(text: string): string[] {
+    const raw = text.match(SEGMENT_RE);
+    if (!raw) return [text];
+
+    const segments: string[] = [];
+    let buffer = '';
+    for (const s of raw) {
+        buffer += s;
+        if (buffer.length >= MAX_SEGMENT_CHARS) {
+            segments.push(buffer);
+            buffer = '';
+        }
+    }
+    if (buffer.trim()) segments.push(buffer);
+    return segments.length > 0 ? segments : [text];
+}
+
+function concatWavBuffers(wavs: ArrayBuffer[]): ArrayBuffer {
+    if (wavs.length === 0) return new ArrayBuffer(0);
+    if (wavs.length === 1) return wavs[0];
+
+    // 所有 WAV 共享相同参数（24000Hz, 16bit, mono），拼接 PCM 数据
+    let totalPcmLen = 0;
+    const pcmSlices: Uint8Array[] = [];
+    for (const wav of wavs) {
+        const pcm = new Uint8Array(wav, 44); // skip WAV header
+        pcmSlices.push(pcm);
+        totalPcmLen += pcm.length;
+    }
+
+    // 复用第一个 WAV 的 header，更新长度字段
+    const header = new Uint8Array(wavs[0], 0, 44);
+    const combined = new ArrayBuffer(44 + totalPcmLen);
+    const view = new DataView(combined);
+
+    // 复制 header
+    new Uint8Array(combined).set(header);
+
+    // 更新 RIFF chunk size (offset 4): 36 + pcmDataLength
+    view.setUint32(4, 36 + totalPcmLen, true);
+    // 更新 data chunk size (offset 40): pcmDataLength
+    view.setUint32(40, totalPcmLen, true);
+
+    // 拼接 PCM 数据
+    let offset = 44;
+    for (const pcm of pcmSlices) {
+        new Uint8Array(combined, offset).set(pcm);
+        offset += pcm.length;
+    }
+
+    return combined;
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {

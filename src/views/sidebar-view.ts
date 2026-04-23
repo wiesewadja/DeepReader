@@ -19,7 +19,7 @@ import {
 import type { ReadingProgress } from "../pageindex/reading-progress.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../components/message-list/message-list.js";
 import { ChatInput } from "../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall } from "../components/message/message.js";
+import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall, AIMessage } from "../components/message/message.js";
 import { IndexManager } from "../components/index-manager/index-manager.js";
 import { Icons, getIcon } from "../utils/icons.js";
 import { handleError, handleNetworkError, handleAPIError } from "../utils/error-handler.js";
@@ -1773,8 +1773,13 @@ export class SidebarView extends ItemView {
             onDelete: (messageId: string) => {
                 this.handleDeleteMessagePair(messageId);
             },
-            onTTS: (messageId: string, content: string) => {
-                this.handleTTS(messageId, content);
+            onTTS: async (messageId: string, content: string) => {
+                if (this.plugin.settings.enableVoiceReply) {
+                    // 语音书信模式：直接朗读原文，不走摘要
+                    this.handleTTS(messageId, content, { rawText: true });
+                } else {
+                    this.handleTTS(messageId, content);
+                }
             },
             getCurrentBookInfo: () => ({
                 coverUrl: this.currentBookCoverUrl,
@@ -2079,7 +2084,8 @@ export class SidebarView extends ItemView {
                     question: message,  // 保存用户的问题
                     conversationId: this.sessionId || undefined,  // 保存会话ID用于双向链接
                     bookCoverUrl: this.currentBookCoverUrl || undefined,  // 书籍封面 URL
-                    bookAuthor: this.currentBookAuthor || undefined  // 书籍作者
+                    bookAuthor: this.currentBookAuthor || undefined,  // 书籍作者
+                    enableVoiceReply: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)),
                 };
                 this.messageList?.addMessage(aiMessageData);
             }
@@ -2226,6 +2232,16 @@ export class SidebarView extends ItemView {
                 docDescription: this.currentDocDescription || undefined,
                 // 添加结构化引用数据（用于工具优先搜索）
                 quotes: quotes,
+                // TTS 配置（用于 VoicePipeline 语音合成）
+                ttsConfig: this.plugin.settings.enableVoiceReply ? (() => {
+                    const cfg = resolveRoleConfig('tts', this.plugin.settings);
+                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+                })() : undefined,
+                // LLM 配置（用于 VoicePipeline 语音摘要生成）
+                llmConfig: this.plugin.settings.enableVoiceReply ? (() => {
+                    const cfg = resolveRoleConfig('router', this.plugin.settings);
+                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+                })() : undefined,
             };
 
             // 构建用户消息
@@ -2382,6 +2398,14 @@ export class SidebarView extends ItemView {
                         isStreaming: false,
                         timestamp: new Date().toISOString()
                     });
+
+                    // 信封书写完成 → 封口
+                    if (this.plugin.settings.enableVoiceReply) {
+                        const msg = this.messageList?.getMessage(aiMessageId);
+                        if (msg && msg instanceof AIMessage) {
+                            msg.updateLetterState('sealed');
+                        }
+                    }
                     // 注意：不在这里调用 saveToCache()，因为 agentChatHistory 还未更新
                     // saveToCache() 将在 agentChatHistory 更新后调用
 
@@ -2400,8 +2424,8 @@ export class SidebarView extends ItemView {
                     this.chatInput?.focus();
                     this.streamController = null;
 
-                    // 自动播报
-                    if (this.plugin.settings.autoTTS) {
+                    // 自动播报（语音回复模式由 VoicePipeline 处理，不重复播报）
+                    if (this.plugin.settings.autoTTS && !this.plugin.settings.enableVoiceReply) {
                         if (!this.ttsService) {
                             this.ttsService = this.initTTSService();
                         }
@@ -2478,6 +2502,12 @@ export class SidebarView extends ItemView {
                     };
                 })()),
                 abortSignal: this.streamController.signal,
+                onVoiceReady: (data: { audioBuffer: ArrayBuffer; duration: number }) => {
+                    const msg = this.messageList?.getMessage(aiMessageId);
+                    if (msg && msg instanceof AIMessage) {
+                        msg.updateVoiceData(data);
+                    }
+                },
             };
 
             // 初始化 SubagentManager（用于 create_sub_agent 工具）
@@ -3067,7 +3097,7 @@ export class SidebarView extends ItemView {
     /**
      * 处理 TTS 播放/暂停请求
      */
-    private async handleTTS(messageId: string, content: string): Promise<void> {
+    private async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
         if (!this.ttsService) {
             this.ttsService = this.initTTSService();
         }
@@ -3088,7 +3118,7 @@ export class SidebarView extends ItemView {
             bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
             bookAuthor: this.currentBookAuthor || undefined,
             memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
-        });
+        }, options);
     }
 
     /**

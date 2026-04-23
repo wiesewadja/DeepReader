@@ -98,6 +98,7 @@ export interface DeepPDFSettings {
 
 	// TTS 语音播报
 	autoTTS: boolean;
+	enableVoiceReply: boolean; // 语音对话+书信回复模式
 
 	// Langfuse 追踪配置
 	langfusePublicKey: string;
@@ -182,6 +183,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 	// TTS 语音播报
 	autoTTS: false,
+	enableVoiceReply: false,
 
 	// Langfuse 追踪配置
 	langfusePublicKey: "",

@@ -327,7 +327,7 @@ ${currentMemory}
         },
       );
 
-      const result = await this.processGraphStream(stream, callbacks);
+      const result = await this.processGraphStream(stream, callbacks, { configurable });
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
@@ -385,7 +385,7 @@ ${currentMemory}
         },
       );
 
-      const result = await this.processGraphStream(stream, callbacks);
+      const result = await this.processGraphStream(stream, callbacks, { configurable });
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
@@ -488,6 +488,8 @@ ${currentMemory}
       toolContext: context,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
+      ttsConfig: context.ttsConfig,
+      llmConfig: context.llmConfig,
       _langsmithTracer: langsmithTracer,
     };
   }
@@ -517,12 +519,14 @@ ${currentMemory}
   private async processGraphStream(
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
+    config?: { configurable?: Record<string, any> },
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     const onProgress = callbacks.onProgress || (() => {});
     const onContent = callbacks.onContent || (() => {});
 
     let formattedOutput = '';
     let interruptedNode: { nodeId: string; content: string } | undefined;
+    let voicePipelineStarted = false;
 
     for await (const chunk of stream) {
       if (chunk == null || typeof chunk !== 'object') continue;
@@ -552,6 +556,23 @@ ${currentMemory}
 
         onProgress(FrontendAgent.getNodeStatus(nodeName));
 
+        // 启动 VoicePipeline（语音对话并行生成）
+        if (stateUpdate.analysisResult && !voicePipelineStarted && callbacks.onVoiceReady) {
+          voicePipelineStarted = true;
+          const ttsCfg = config?.configurable?.ttsConfig;
+          const llmCfg = config?.configurable?.llmConfig;
+          if (ttsCfg && llmCfg) {
+            this.startVoicePipeline(stateUpdate.analysisResult, callbacks, ttsCfg, llmCfg, {
+              userQuestion: stateUpdate.rewrittenQuery as string | undefined,
+              bookTitle: stateUpdate.pdfName as string | undefined,
+              memoryContext: (config?.configurable?.sharedContext as any)?.memoryContext as string | undefined,
+              abortSignal: callbacks.abortSignal,
+            }).catch(err => {
+              console.warn('[VoicePipeline] failed, silencing:', err);
+            });
+          }
+        }
+
         // 收集格式化输出
         if (stateUpdate.formattedOutput) {
           formattedOutput = stateUpdate.formattedOutput;
@@ -572,6 +593,63 @@ ${currentMemory}
     }
 
     return { messages: resultMessages };
+  }
+
+  /**
+   * 启动 VoicePipeline：S2 产出 analysisResult 后并行生成语音摘要
+   */
+  private async startVoicePipeline(
+    analysisResult: string,
+    callbacks: { onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void; abortSignal?: AbortSignal },
+    ttsConfig: { apiKey: string; baseUrl: string; model?: string },
+    llmConfig: { apiKey: string; baseUrl: string; model?: string },
+    options: {
+      userQuestion?: string;
+      bookTitle?: string;
+      memoryContext?: string;
+      abortSignal?: AbortSignal;
+    },
+  ): Promise<void> {
+    const signal = options.abortSignal;
+
+    const { TTSClient } = await import('../services/tts/tts-client.js');
+    const { TTSSummarizer } = await import('../services/tts/tts-summarizer.js');
+
+    const summarizer = new TTSSummarizer({
+      apiKey: llmConfig.apiKey,
+      baseUrl: llmConfig.baseUrl,
+      model: llmConfig.model || 'deepseek-chat',
+    });
+
+    const client = new TTSClient({
+      apiKey: ttsConfig.apiKey,
+      baseUrl: ttsConfig.baseUrl,
+      model: ttsConfig.model,
+    });
+
+    // 收集完整摘要文本
+    let summary = '';
+    for await (const delta of summarizer.summarizeStream(
+      analysisResult,
+      options.userQuestion,
+      {
+        bookTitle: options.bookTitle,
+        memoryContent: options.memoryContext,
+      },
+    )) {
+      if (signal?.aborted) return;
+      summary += delta;
+    }
+
+    if (!summary.trim() || signal?.aborted) return;
+
+    // 非流式合成完整音频
+    const audioBuffer = await client.synthesize(summary);
+    const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+
+    if (signal?.aborted) return;
+
+    callbacks.onVoiceReady?.({ audioBuffer, duration });
   }
 
   async chat(

@@ -767,6 +767,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // 语音书信回复
+        new Setting(container)
+            .setName("语音书信回复")
+            .setDesc("AI 回复变为语音对话气泡+书信模式。语音从分析结果并行生成，文字以信封形式呈现。需要配置 TTS 角色。")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableVoiceReply)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableVoiceReply = value;
+                    await this.plugin.saveSettings();
+                }));
+
         // 分隔线
         container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 

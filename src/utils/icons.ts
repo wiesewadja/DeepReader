@@ -123,6 +123,9 @@ export const Icons = {
 	// 暂停（TTS 播放中）
 	pause: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
 
+	// 音波（TTS 播放中）
+	audioWave: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="8" x2="4" y2="16"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="14" y1="8" x2="14" y2="16"/><line x1="19" y1="4" x2="19" y2="20"/></svg>`,
+
 } as const;
 
 // ==================== 图标类型定义 ====================

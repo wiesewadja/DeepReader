@@ -60,7 +60,7 @@ export class TTSService {
         return this.currentMessageId;
     }
 
-    async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext): Promise<void> {
+    async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext, options?: { rawText?: boolean }): Promise<void> {
         if (this.state !== 'idle' && this.currentMessageId === messageId) {
             this.togglePauseResume();
             return;
@@ -77,6 +77,19 @@ export class TTSService {
             this.listenAudio(cached.audio, messageId);
             this.setState('playing');
             await cached.audio.play();
+            return;
+        }
+
+        // 直接朗读原文模式（跳过 Summarizer）
+        if (options?.rawText) {
+            try {
+                await this.playNonStream(messageId, content);
+            } catch (err) {
+                console.error('[TTS] raw text play failed:', err);
+                new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
+                this.currentMessageId = null;
+                this.setState('idle');
+            }
             return;
         }
 
@@ -152,6 +165,30 @@ export class TTSService {
         } else if (this.state === 'paused') {
             this.resume();
         }
+    }
+
+    /**
+     * 非流式合成语音音频（用于语音对话气泡）
+     * 返回完整的 WAV ArrayBuffer 和时长（秒）
+     */
+    async generateVoiceBlob(
+        content: string,
+        userQuestion?: string,
+        context?: TTSContext,
+    ): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
+        const summary = await this.summarizer.summarize(content, userQuestion, context);
+        const audioBuffer = await this.client.synthesize(summary);
+        const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+        return { audioBuffer, duration };
+    }
+
+    /**
+     * 直接合成原文朗读（用于信封展开后的喇叭按钮，不经过 Summarizer）
+     */
+    async synthesizeRawText(text: string): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
+        const audioBuffer = await this.client.synthesizeParallel(text);
+        const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+        return { audioBuffer, duration };
     }
 
     destroy(): void {
@@ -285,7 +322,7 @@ export class TTSService {
         }
 
         this.setState('tts_loading');
-        const audioBuffer = await this.client.synthesize(text);
+        const audioBuffer = await this.client.synthesizeParallel(text);
 
         if (this.currentMessageId !== messageId) {
             this.setState('idle');

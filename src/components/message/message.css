@@ -1421,7 +1421,177 @@
 	50% { transform: scaleY(1); }
 }
 
-.deeppdf-message-action-btn.tts-loading {
-	opacity: 0.6;
-	pointer-events: none;
+.deeppdf-message-action-btn.tts-loading svg {
+	animation: deeppdf-tts-spin 1s linear infinite;
+}
+
+@keyframes deeppdf-tts-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* ====== 信封样式（语音书信回复模式） ====== */
+
+.deeppdf-letter-envelope {
+    position: relative;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 24px 16px 12px;
+    margin-top: 6px;
+    overflow: hidden;
+}
+
+.deeppdf-letter-envelope::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 24px;
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    clip-path: polygon(0 0, 50% 100%, 100% 0);
+    opacity: 0.6;
+}
+
+.deeppdf-letter-label {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    margin: 8px 0;
+}
+
+.deeppdf-letter-ink {
+    font-family: 'Noto Serif SC', 'Source Han Serif SC', Georgia, serif;
+    font-size: 13px;
+    line-height: 2.0;
+    color: var(--text-normal);
+    min-height: 80px;
+    max-height: 160px;
+    overflow: hidden;
+}
+
+.deeppdf-letter-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: var(--text-normal);
+    vertical-align: middle;
+    margin-left: 1px;
+    animation: deeppdf-cursor-blink 0.8s infinite;
+}
+
+@keyframes deeppdf-cursor-blink {
+    0%, 45% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
+.deeppdf-letter-open-btn {
+    display: block;
+    margin: 8px auto 0;
+    padding: 4px 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.deeppdf-letter-open-btn:hover {
+    color: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-letter-collapse-btn {
+    text-align: right;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-letter-collapse-btn:hover {
+    color: var(--interactive-accent);
+}
+
+/* ====== 语音气泡样式 ====== */
+
+.deeppdf-voice-bubble {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, #fff);
+    border-radius: 4px 16px 16px 16px;
+    max-width: 65%;
+    margin-bottom: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.deeppdf-voice-bubble:hover {
+    opacity: 0.9;
+}
+
+.deeppdf-voice-play-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.deeppdf-voice-bars {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+}
+
+.deeppdf-voice-bar {
+    width: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.5);
+    transition: height 0.15s;
+}
+
+.deeppdf-voice-bubble.playing .deeppdf-voice-bar {
+    animation: deeppdf-bar-pulse 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes deeppdf-bar-pulse {
+    0% { height: 6px; background: rgba(255, 255, 255, 0.4); }
+    100% { height: 16px; background: rgba(255, 255, 255, 0.8); }
+}
+
+.deeppdf-voice-duration {
+    font-size: 12px;
+    opacity: 0.8;
+    flex-shrink: 0;
+}
+
+.deeppdf-voice-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px 16px 16px 16px;
+    max-width: 65%;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
 }

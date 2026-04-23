@@ -41,6 +41,10 @@ export interface ToolContext {
   currentNodeId?: string;
   /** 插件实例（用于访问设置） */
   plugin?: any;
+  /** TTS 配置（用于 VoicePipeline 语音合成） */
+  ttsConfig?: { apiKey: string; baseUrl: string; model?: string };
+  /** LLM 配置（用于 VoicePipeline 语音摘要生成） */
+  llmConfig?: { apiKey: string; baseUrl: string; model?: string };
 }
 
 /**
