@@ -106,6 +106,9 @@ export interface DeepPDFSettings {
 	// LangGraph 引擎设置
 	enableHumanReview: boolean;
 
+	// 用户画像
+	journalDir: string;
+
 	// LangSmith 追踪配置（LangGraph 引擎专用）
 	langsmithApiKey: string;
 	langsmithProject: string;
@@ -191,4 +194,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	langsmithApiKey: "",
 	langsmithProject: "DeepReader",
 	langsmithEnabled: false,
+
+		// 用户画像
+		journalDir: "",
 };
