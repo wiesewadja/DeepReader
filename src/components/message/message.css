@@ -1344,8 +1344,7 @@
 /* 复用 Obsidian .popover 主题样式，仅追加自定义增强 */
 
 .deeppdf-link-preview {
-	min-width: 280px;
-	max-width: 480px;
+	width: 400px;
 	max-height: 360px;
 	position: fixed;
 	z-index: 1000;

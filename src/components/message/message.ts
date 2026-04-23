@@ -666,7 +666,16 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 							// 定位
 							const linkRect = link.getBoundingClientRect();
 							customPopover.style.position = 'fixed';
-							customPopover.style.left = linkRect.left + 'px';
+							
+							// 计算水平位置，避免超出右侧视口
+							const popoverWidth = 400; // 固定宽度
+							let leftPos = linkRect.left;
+							if (leftPos + popoverWidth > window.innerWidth) {
+								leftPos = window.innerWidth - popoverWidth - 8;
+							}
+							if (leftPos < 8) leftPos = 8;
+							
+							customPopover.style.left = leftPos + 'px';
 							customPopover.style.top = (linkRect.bottom + 6) + 'px';
 							document.body.appendChild(customPopover);
 
@@ -676,9 +685,6 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 								const r = customPopover.getBoundingClientRect();
 								if (r.bottom > window.innerHeight) {
 									customPopover.style.top = (linkRect.top - r.height - 6) + 'px';
-								}
-								if (r.right > window.innerWidth) {
-									customPopover.style.left = (window.innerWidth - r.width - 8) + 'px';
 								}
 							});
 
