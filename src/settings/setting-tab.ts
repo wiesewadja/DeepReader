@@ -19,7 +19,6 @@ type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading';
 interface SettingsTab {
     id: SettingsTabId;
     name: string;
-    icon: string;
 }
 
 export class DeepPDFSettingTab extends PluginSettingTab {
@@ -30,10 +29,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
     // Tab 定义
     private tabs: SettingsTab[] = [
-        { id: 'llm', name: 'AI 服务', icon: '🤖' },
-        { id: 'index', name: '服务配置', icon: '📚' },
-        { id: 'advanced', name: '高级', icon: '⚙️' },
-        { id: 'reading', name: '阅读模式', icon: '📖' },
+        { id: 'llm', name: 'AI 服务' },
+        { id: 'index', name: '服务配置' },
+        { id: 'advanced', name: '高级' },
+        { id: 'reading', name: '阅读模式' },
     ];
 
     constructor(app: App, plugin: DeepPDFPlugin) {
@@ -68,9 +67,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             const navItem = container.createDiv({
                 cls: `deeppdf-settings-nav-item ${this.currentTab === tab.id ? 'is-active' : ''}`
             });
-
-            // 图标
-            navItem.createSpan({ cls: 'deeppdf-settings-nav-icon', text: tab.icon });
 
             // 名称
             navItem.createSpan({ cls: 'deeppdf-settings-nav-name', text: tab.name });
