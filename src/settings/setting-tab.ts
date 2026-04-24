@@ -2,7 +2,7 @@
  * DeepReader 插件设置界面
  */
 
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, TFolder, FuzzySuggestModal } from 'obsidian';
 import type DeepPDFPlugin from '../main';
 import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl } from '../config/providers';
@@ -820,26 +820,25 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             .setDesc('存放日记、随笔、感悟的 Obsidian 文件夹路径（相对于 Vault 根目录）')
             .addText(text => {
                 text
-                    .setPlaceholder('例如：Journals/随手记')
+                    .setPlaceholder('点击下方按钮选择目录')
                     .setValue(this.plugin.settings.journalDir || '')
-                    .onChange(async (value) => {
-                        // 跳过与当前值相同的变更（setValue 可能触发 onChange）
-                        if (value === this.plugin.settings.journalDir) return;
-
-                        const oldDir = this.plugin.settings.journalDir;
-                        this.plugin.settings.journalDir = value;
+                    .inputEl.readOnly = true;
+            })
+            .addButton(btn => btn
+                .setButtonText('选择目录')
+                .setCta()
+                .onClick(() => {
+                    new FolderSuggestModal(this.app, async (path) => {
+                        if (path === this.plugin.settings.journalDir) return;
+                        this.plugin.settings.journalDir = path;
                         await this.plugin.saveSettings();
-
-                        if (oldDir && oldDir !== value) {
-                            const builder = (this.plugin as any).profileBuilder;
-                            if (builder) await builder.deleteProfile();
-                            new Notice('笔记目录已变更，请重新构建画像');
-                        }
-                        (this.plugin as any).profileBuilder = value
+                        (this.plugin as any).profileBuilder = path
                             ? new (await import('../services/profile-builder')).ProfileBuilder(this.app, this.plugin.settings)
                             : undefined;
-                    });
-            });
+                        new Notice('笔记目录已保存');
+                        this.renderTabContent('profile');
+                    }).open();
+                }));
 
         const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
         const builder = (this.plugin as any).profileBuilder;
@@ -992,4 +991,39 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         });
     }
 
+}
+
+/**
+ * 文件夹选择弹窗 — 基于 FuzzySuggestModal
+ */
+class FolderSuggestModal extends FuzzySuggestModal<string> {
+    private onSelect: (path: string) => void;
+
+    constructor(app: App, onSelect: (path: string) => void) {
+        super(app);
+        this.onSelect = onSelect;
+        this.setPlaceholder('输入关键词筛选文件夹…');
+        this.setInstructions([{ command: '↑↓', purpose: '导航' }, { command: '↵', purpose: '选择' }, { command: 'esc', purpose: '取消' }]);
+    }
+
+    getItems(): string[] {
+        const folders: string[] = [];
+        const recurse = (folder: TFolder) => {
+            folders.push(folder.path);
+            for (const child of folder.children) {
+                if (child instanceof TFolder) recurse(child);
+            }
+        };
+        recurse(this.app.vault.getRoot());
+        folders.sort((a, b) => a.localeCompare(b));
+        return folders;
+    }
+
+    getItemText(item: string): string {
+        return item;
+    }
+
+    onChooseItem(item: string): void {
+        this.onSelect(item);
+    }
 }
