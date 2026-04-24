@@ -1,8 +1,8 @@
 /**
  * InkLayer - 阅读模式墨迹层（装饰性，渐隐消失）
  *
- * Canvas fixed 覆盖整个视口，鼠标轨迹留下毛笔墨痕，1.2s 后自动消失。
- * 坐标直接用 clientX/clientY，无偏移计算，像素级精准。
+ * Canvas 覆盖容器区域，鼠标轨迹留下毛笔墨痕，1.2s 后自动消失。
+ * 只在指定容器内生效，不影响其他区域。
  */
 
 import { serviceLog } from '../../utils/logger.js';
@@ -17,21 +17,22 @@ export class InkLayer {
 	private raf = 0;
 	private points: { x: number; y: number; t: number; speed: number }[] = [];
 	private active = false;
+	private container: HTMLElement | null = null;
 
 	private lastX = 0;
 	private lastY = 0;
 	private lastTime = 0;
 
-	constructor(_options: InkLayerOptions) {
-		// container 不再使用，保留接口兼容
+	constructor(options: InkLayerOptions) {
+		this.container = options.container;
 	}
 
 	activate(): void {
-		if (this.active) return;
+		if (this.active || !this.container) return;
 
 		this.canvas = document.createElement('canvas');
 		this.canvas.className = 'deeppdf-ink-layer-canvas';
-		document.body.appendChild(this.canvas);
+		this.container.appendChild(this.canvas);
 		this.ctx = this.canvas.getContext('2d');
 		this.resizeCanvas();
 
@@ -39,7 +40,8 @@ export class InkLayer {
 		this.lastY = 0;
 		this.lastTime = 0;
 
-		window.addEventListener('mousemove', this.onMove);
+		this.container.addEventListener('mousemove', this.onMove);
+		this.container.addEventListener('mouseleave', this.onMouseLeave);
 		window.addEventListener('resize', this.onResize);
 		this.raf = requestAnimationFrame(this.draw);
 		this.active = true;
@@ -54,7 +56,10 @@ export class InkLayer {
 
 	cleanup(): void {
 		cancelAnimationFrame(this.raf);
-		window.removeEventListener('mousemove', this.onMove);
+		if (this.container) {
+			this.container.removeEventListener('mousemove', this.onMove);
+			this.container.removeEventListener('mouseleave', this.onMouseLeave);
+		}
 		window.removeEventListener('resize', this.onResize);
 		this.canvas?.remove();
 		this.canvas = null;
@@ -69,22 +74,34 @@ export class InkLayer {
 		const now = performance.now();
 		const dt = now - this.lastTime;
 		if (dt < 8) return;
-		const dx = e.clientX - this.lastX;
-		const dy = e.clientY - this.lastY;
+
+		// 计算相对于容器的坐标
+		const rect = this.container?.getBoundingClientRect();
+		if (!rect) return;
+		const x = e.clientX - rect.left;
+		const y = e.clientY - rect.top;
+
+		const dx = x - this.lastX;
+		const dy = y - this.lastY;
 		const dist = Math.sqrt(dx * dx + dy * dy);
 		const speed = dt > 0 ? dist / dt : 0;
 
 		if (dist > 2) {
 			this.points.push({
-				x: e.clientX,
-				y: e.clientY,
+				x,
+				y,
 				t: now,
 				speed,
 			});
 		}
-		this.lastX = e.clientX;
-		this.lastY = e.clientY;
+		this.lastX = x;
+		this.lastY = y;
 		this.lastTime = now;
+	};
+
+	private onMouseLeave = (): void => {
+		// 鼠标离开容器时清空点，避免残留
+		this.points = [];
 	};
 
 	// ── 绘制循环（和 AI 回复最大化一致） ────────────────────
@@ -144,9 +161,9 @@ export class InkLayer {
 	// ── Canvas 尺寸 ─────────────────────────────────────────
 
 	private resizeCanvas(): void {
-		if (!this.canvas) return;
-		this.canvas.width = window.innerWidth;
-		this.canvas.height = window.innerHeight;
+		if (!this.canvas || !this.container) return;
+		this.canvas.width = this.container.clientWidth;
+		this.canvas.height = this.container.clientHeight;
 	}
 
 	private onResize = (): void => {
