@@ -329,7 +329,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 渲染单个角色行
+     * 渲染单个角色行（可折叠）
      */
     private renderRoleRow(
         container: HTMLElement,
@@ -345,6 +345,58 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             baseUrlOverride?: string;
         } | null;
 
+        const sectionId = `role-${role}`;
+        const isCollapsed = !this.expandedSections.has(sectionId);
+
+        // 创建可折叠区块容器
+        const sectionWrapper = container.createDiv({ cls: 'deeppdf-settings-collapsible-section' });
+
+        // 创建 header（点击可折叠）
+        const header = sectionWrapper.createDiv({ cls: 'deeppdf-settings-collapsible-header' });
+
+        // 标题区域
+        const titleRow = header.createDiv({ cls: 'deeppdf-settings-provider-title' });
+        titleRow.createEl('h5', { text: label });
+
+        // 描述
+        header.createEl('span', {
+            text: desc,
+            cls: 'deeppdf-settings-collapsible-desc'
+        });
+
+        // 折叠指示器
+        const indicator = header.createSpan({ cls: 'deeppdf-settings-collapsible-indicator' });
+        indicator.setText(isCollapsed ? '▶' : '▼');
+
+        // 点击事件
+        header.addEventListener('click', () => {
+            if (this.expandedSections.has(sectionId)) {
+                this.expandedSections.delete(sectionId);
+            } else {
+                this.expandedSections.add(sectionId);
+            }
+            this.renderTabContent('index');
+        });
+
+        // 如果未折叠，渲染内容
+        if (!isCollapsed) {
+            const content = sectionWrapper.createDiv({ cls: 'deeppdf-settings-collapsible-content' });
+            this.renderRoleContent(content, role, label, desc, optional, roleConfig, settings);
+        }
+    }
+
+    /**
+     * 渲染角色内容
+     */
+    private renderRoleContent(
+        container: HTMLElement,
+        role: RoleType,
+        label: string,
+        desc: string,
+        optional: boolean,
+        roleConfig: { provider: ProviderType; model: string; baseUrlOverride?: string } | null,
+        settings: any
+    ): void {
         const row = container.createDiv({ cls: 'deeppdf-settings-role-row' });
 
         // 可选角色有启用/禁用开关
