@@ -8,6 +8,7 @@ import { PDFFileSelectorModal, DocumentFileInfo } from "../ui/pdf-file-selector.
 import { Drawer } from "../components/drawer/drawer.js";
 import { TaskProgressCard } from "../components/task-progress-card.js";
 import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc } from "../types/index.js";
+import { LIBRARY_VIEW_TYPE } from "./library-view.js";
 import {
     createEmptyProgress,
     markChapterVisited,
@@ -55,7 +56,7 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 export class SidebarView extends ItemView {
     private plugin: any; // 插件实例，用于访问设置
     private readingTopbar: ReadingTopbar | null = null;
-    private indexes: IndexListItem[] = [];  // 索引列表缓存
+    indexes: IndexListItem[] = [];  // 索引列表缓存
     private taskCards: Map<string, TaskProgressCard> = new Map();
 
     /** @deprecated 使用 readingTopbar 代替 */
@@ -719,34 +720,25 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打我的书库弹窗
+     * 打开书库（改为 Tab 视图）
      */
-    private async openLibraryModal(): Promise<void> {
+    private async openLibrary(): Promise<void> {
         await this.loadIndexes();
 
-        new LibraryModal(this.app, {
-            app: this.app,
-            indexes: this.indexes,
-            selectedIndexId: this.currentIndexId,
-            onIndexChange: (indexId: string) => {
-                this.selectIndex(indexId);
-            },
-            onCreateIndex: async () => {
-                await this.loadIndexes();
-            },
-            onDeleteIndex: async (indexId: string) => {
-                await this.handleDeleteIndex(indexId);
-                return this.indexes;
-            },
-            onRefresh: async () => {
-                await this.loadIndexes();
-                return this.indexes;
-            },
-            onDownloadCover: async (indexId: string, pdfName: string) => {
-                return null;
-            },
-            plugin: this.plugin
-        }).open();
+        // 检查是否已有书库视图
+        const existingLeaves = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
+        if (existingLeaves.length > 0) {
+            // 聚焦现有视图
+            this.app.workspace.revealLeaf(existingLeaves[0]);
+            return;
+        }
+
+        // 在主面板打开书库视图
+        const leaf = this.app.workspace.getLeaf('tab');
+        await leaf.setViewState({
+            type: LIBRARY_VIEW_TYPE,
+            state: { indexes: this.indexes, selectedIndexId: this.currentIndexId }
+        });
     }
 
     /**
@@ -1408,7 +1400,7 @@ export class SidebarView extends ItemView {
      */
     private createReadingTopbar(container: HTMLElement) {
         this.readingTopbar = new ReadingTopbar({
-            onOpenLibrary: () => this.openLibraryModal(),
+            onOpenLibrary: () => this.openLibrary(),
             onOpenSettings: () => {
                 // 打开设置并定位到 DeepPDF 插件
                 const setting = (this.app as any).setting;
@@ -3004,7 +2996,7 @@ export class SidebarView extends ItemView {
         messagesContainer.style.paddingBottom = `${basePadding + contextTagsHeight + quotesHeight}px`;
     }
 
-    private async loadIndexes(): Promise<void> {
+    async loadIndexes(): Promise<void> {
         // Scan local .pageindex/ directory for book-meta.json and .indexing.json files
         const vaultPath = (this.app.vault.adapter as any).basePath;
         const pageindexDir = `${vaultPath}/.pageindex`;
