@@ -48,10 +48,10 @@ export function tokenize(text: string): string[] {
 export function buildBM25Index(
   nodes: Array<{ id: string; text: string; level: "L0" | "L1" }>
 ): BM25Data {
-  const nodesMap: BM25Data["nodes"] = {};
-  const invertedIndex: BM25Data["invertedIndex"] = {};
+  const nodesMap: BM25Data["nodes"] = Object.create(null);
+  const invertedIndex: BM25Data["invertedIndex"] = Object.create(null);
   let totalLength = 0;
-  const df: Record<string, number> = {};
+  const df: Record<string, number> = Object.create(null);
 
   for (const node of nodes) {
     const tokens = tokenize(node.text);
@@ -129,7 +129,7 @@ export function searchBM25(
   topK: number
 ): Array<{ nodeId: string; score: number }> {
   const queryTokens = filterQueryTokens(tokenize(query));
-  const scores: Record<string, number> = {};
+  const scores: Record<string, number> = Object.create(null);
 
   const { totalDocs, avgDocLength, df } = index.stats;
   const { k1, b } = index.params;

@@ -22,7 +22,10 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) =>
 				return JSON.stringify({ status: 'SKIP', message: '未配置笔记目录' });
 			}
 
-			const settings = (ctx.app as any).plugin?.settings;
+			const settings = ctx.plugin?.settings;
+			if (!settings) {
+				return JSON.stringify({ status: 'SKIP', message: '插件设置不可用' });
+			}
 			const indexDir = getJournalIndexDir(journalDir);
 			const searchService = new JournalSearchService(ctx.app!, settings, indexDir);
 

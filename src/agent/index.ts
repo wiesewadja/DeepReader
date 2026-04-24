@@ -108,6 +108,9 @@ export class FrontendAgent {
   private fileCheckpointer: FileCheckpointer | null = null;
   private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
+  private cachedUserProfile: string | undefined;
+  private cachedUserProfileTime = 0;
+  private static readonly PROFILE_CACHE_TTL = 60_000; // 1 minute
 
   constructor(private options: FrontendAgentOptions) {
     // 构建 main 配置
@@ -445,13 +448,20 @@ ${currentMemory}
       (context as any).journalDir = this.options.journalDir;
     }
 
-    // 读取用户画像
+    // 读取用户画像（带缓存，1 分钟 TTL）
     let userProfile: string | undefined;
-    try {
-      const profileContent = await this.options.app.vault.adapter.read('DeepReader/USER_PROFILE.md');
-      userProfile = profileContent.replace(/^---[\s\S]*?---\n*/, '').trim();
-    } catch {
-      // 画像文件不存在，跳过
+    const now = Date.now();
+    if (this.cachedUserProfile && now - this.cachedUserProfileTime < FrontendAgent.PROFILE_CACHE_TTL) {
+      userProfile = this.cachedUserProfile;
+    } else {
+      try {
+        const profileContent = await this.options.app.vault.adapter.read('DeepReader/USER_PROFILE.md');
+        userProfile = profileContent.replace(/^---[\s\S]*?---\n*/, '').trim();
+        this.cachedUserProfile = userProfile;
+        this.cachedUserProfileTime = now;
+      } catch {
+        this.cachedUserProfile = undefined;
+      }
     }
 
     // 过滤有效对话历史
@@ -638,6 +648,14 @@ ${currentMemory}
    */
   async reloadContext(): Promise<void> {
     log('[FrontendAgent] User context will be refreshed on next prompt');
+  }
+
+  /**
+   * 清除缓存的用户画像（画像重建后调用）
+   */
+  invalidateProfileCache(): void {
+    this.cachedUserProfile = undefined;
+    this.cachedUserProfileTime = 0;
   }
 
   /**

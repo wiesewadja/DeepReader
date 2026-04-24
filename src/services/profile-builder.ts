@@ -7,6 +7,8 @@
 
 import { TFile, TFolder, type App } from 'obsidian';
 import type { DeepPDFSettings } from '../config/settings';
+import { resolveRoleConfig } from '../config/providers';
+import { toEmbeddingOptions } from '../config/role-adapters';
 import { buildBM25Index } from '../pageindex/bm25';
 import type { BM25Data } from '../pageindex/book-types';
 import { generateBookId } from '../pageindex/book-indexer';
@@ -15,7 +17,7 @@ import {
 	writeVectorJsonl,
 	writeChunkTexts,
 } from '../pageindex/vault/vectors';
-import type { VectorRecord, ChunkTextRecord, EmbeddingOptions } from '../pageindex/vault/types';
+import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
 import { fetchWithCorsFallback } from '../utils/safe-request';
 
 export interface ProfileMeta {
@@ -33,32 +35,55 @@ export interface BuildProgress {
 	message: string;
 }
 
-const PROFILE_SYSTEM_PROMPT = `你是一个用户画像分析专家。阅读用户的个人笔记、日记和随手记，提炼出一份自然语言的用户画像。
+const PROFILE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。现在你读到了他的一些私人笔记、随手记和语音转述。
 
-画像要求：
-1. 用第二人称（"你"）描述，像朋友之间的了解
-2. 涵盖：人生阶段、核心关注点、情感状态、兴趣领域、价值观线索
-3. 500-1000 字
-4. 不编造笔记中没有的内容
-5. 如果有多个阶段的笔记，注意时间线变化`;
+请用你的理解，写一段关于他的描绘。不是冷冰冰的分析报告，而是像在跟另一个朋友提起他时的那种语气——带着理解、带着温度。
 
-const INCREMENTAL_SYSTEM_PROMPT = `你是一个用户画像分析专家。用户有了新的笔记，请结合现有画像和新笔记，更新用户画像。
+留意时间线：人的状态是流动的。他在 2021 年的焦虑，到 2024 年可能变成了从容。如果你在不同时期的笔记里看到了变化，把它写出来，那才是真实的他。
 
-要求：
-1. 保持自然语言叙述风格
-2. 保留现有画像中仍然准确的内容
-3. 根据新笔记补充或修正画像
-4. 500-1000 字
-5. 不编造笔记中没有的内容`;
+写的时候注意：
+- 用「你」来称呼他，就像当面聊天
+- 关注他这个人本身：他正处在人生的什么阶段、在意什么、为什么事开心或困扰、在往哪个方向走
+- 如果笔记里有他对家人、工作、自我的思考，把这些线索串起来
+- 不要过度解读，他写什么你就理解什么
+- 500-1000 字`;
+
+const MERGE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你从不同时期、不同片段的笔记中分别写了一些关于他的描绘，现在需要把它们合在一起。
+
+合的时候注意：
+- 这不是拼贴，是融合。同一个主题在不同片段里被提到，保留最丰富、最打动人的那一版
+- 时间线很重要。他年轻时执着的事，后来可能放下了；曾经困扰他的，现在可能想通了。把这种变化写出来
+- 保留那些特别具体的细节——某一天他说的一句话、一个比喻、一次顿悟。这些比概括性的标签有价值得多
+- 用「你」称呼他，语气像老朋友在描绘一个很了解的人
+- 500-1000 字
+- 不编造他没有说过的话`;
+
+const INCREMENTAL_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你对他已经有所了解，现在他又写了一些新的笔记。
+
+请结合你对他的已有了解和新笔记，更新你对他的描绘。
+
+注意：
+- 他可能没变，那就不需要改。但如果有新的想法或状态出现，把它补充进去
+- 保持老朋友的语气，用「你」称呼他
+- 500-1000 字
+- 不编造他没有说过的话`;
 
 export class ProfileBuilder {
 	private app: App;
 	private settings: DeepPDFSettings;
 	private isBuilding = false;
 	private abortController: AbortController | null = null;
+	/** 当前构建进度（设置页可读取） */
+	latestProgress: BuildProgress | null = null;
+	private buildPromise: Promise<void> | null = null;
 
 	constructor(app: App, settings: DeepPDFSettings) {
 		this.app = app;
+		this.settings = settings;
+	}
+
+	/** Refresh settings reference (call when settings change) */
+	updateSettings(settings: DeepPDFSettings): void {
 		this.settings = settings;
 	}
 
@@ -192,24 +217,9 @@ export class ProfileBuilder {
 		}
 	}
 
-	private getEmbeddingOptions(): EmbeddingOptions | null {
-		const role = this.settings.roles?.embedding;
-		if (!role) return null;
-		const account = this.settings.providers?.[role.provider];
-		if (!account?.apiKey) return null;
-
-		// 将 ProviderType 映射到 EmbeddingOptions.provider
-		const providerMap: Record<string, EmbeddingOptions['provider']> = {
-			openai: 'openai', ollama: 'ollama', lmstudio: 'lmstudio', local: 'local',
-		};
-		const provider = providerMap[role.provider] || 'openai';
-
-		return {
-			provider,
-			apiKey: account.apiKey,
-			baseUrl: role.baseUrlOverride || account.baseUrl,
-			model: role.model,
-		};
+	private getEmbeddingOptions() {
+		const resolved = resolveRoleConfig('embedding', this.settings);
+		return resolved ? toEmbeddingOptions(resolved) : null;
 	}
 
 	// ── 画像生成 ──
@@ -221,35 +231,73 @@ export class ProfileBuilder {
 	): Promise<string> {
 		const { baseUrl, apiKey, model } = this.getChatConfig();
 
-		// 分批：每批约 3000 字
-		const BATCH_SIZE = 3000;
-		const batches = this.splitIntoBatches(files, BATCH_SIZE);
-
-		let accumulated = '';
-
-		for (let i = 0; i < batches.length; i++) {
+		// 读取所有文件内容
+		const contents: string[] = [];
+		for (const file of files) {
 			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-
-			onProgress?.({
-				stage: 'generating',
-				current: i + 1,
-				total: batches.length,
-				message: `提炼画像中... (${i + 1}/${batches.length})`,
-			});
-
-			const batchText = batches[i].join('\n\n');
-			const contextBlock = accumulated
-				? `\n\n<之前的分析>\n${accumulated}\n</之前的分析>`
-				: '';
-
-			accumulated = await this.callLLM(
-				PROFILE_SYSTEM_PROMPT,
-				`${batchText}${contextBlock}\n\n请分析这批笔记，${accumulated ? '结合之前的分析，' : ''}输出当前累积的用户画像。`,
-				baseUrl, apiKey, model, signal,
-			);
+			let content = await this.vault.cachedRead(file);
+			content = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+			if (content) contents.push(`--- ${file.name} ---\n${content}`);
 		}
 
-		return accumulated;
+		if (contents.length === 0) return '';
+
+		// 按大小分批
+		const BATCH_SIZE = 6000;
+		const batches = this.batchBySize(contents, BATCH_SIZE);
+
+		// 每批独立提炼（不依赖前序结果），可并行
+		const CONCURRENCY = 8;
+		const partialProfiles: string[] = [];
+		let done = 0;
+
+		for (let i = 0; i < batches.length; i += CONCURRENCY) {
+			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+			const chunk = batches.slice(i, i + CONCURRENCY);
+			const results = await Promise.all(
+				chunk.map(async (batch, idx) => {
+					const batchText = batch.join('\n\n');
+					return this.callLLM(
+						PROFILE_SYSTEM_PROMPT,
+						`以下是他的部分笔记：\n\n${batchText}\n\n请写一段关于他的描绘。`,
+						baseUrl, apiKey, model, signal,
+					);
+				}),
+			);
+
+			for (const r of results) {
+				if (r) partialProfiles.push(r);
+			}
+
+			done += chunk.length;
+			onProgress?.({
+				stage: 'generating',
+				current: done,
+				total: batches.length,
+				message: `提炼画像中... (${done}/${batches.length})`,
+			});
+		}
+
+		// 如果只有一份局部画像，直接返回
+		if (partialProfiles.length <= 1) return partialProfiles[0] || '';
+
+		// 合并所有局部画像
+		onProgress?.({
+			stage: 'generating',
+			current: batches.length,
+			total: batches.length,
+			message: `合并画像中...（${partialProfiles.length} 份局部分析）`,
+		});
+
+		const merged = await this.callLLM(
+			MERGE_SYSTEM_PROMPT,
+			partialProfiles.map((p, i) => `<画像片段${i + 1}>\n${p}\n</画像片段${i + 1}>`).join('\n\n')
+			+ '\n\n请把它们融合成一段完整的描绘。',
+			baseUrl, apiKey, model, signal,
+		);
+
+		return merged;
 	}
 
 	private async updateProfileIncremental(
@@ -262,10 +310,17 @@ export class ProfileBuilder {
 		const profileBody = existingProfile?.replace(/^---[\s\S]*?---\n*/, '') || '';
 
 		const newContent: string[] = [];
+		let totalChars = 0;
+		const MAX_INCREMENTAL_CHARS = 12000;
 		for (const f of newFiles) {
 			let content = await this.vault.cachedRead(f);
 			content = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-			if (content) newContent.push(`--- ${f.name} ---\n${content}`);
+			if (content) {
+				const entry = `--- ${f.name} ---\n${content}`;
+				newContent.push(entry);
+				totalChars += entry.length;
+				if (totalChars > MAX_INCREMENTAL_CHARS) break;
+			}
 		}
 
 		onProgress?.({
@@ -275,27 +330,26 @@ export class ProfileBuilder {
 
 		return this.callLLM(
 			INCREMENTAL_SYSTEM_PROMPT,
-			`<当前画像>\n${profileBody}\n</当前画像>\n\n<新笔记>\n${newContent.join('\n\n')}\n</新笔记>\n\n请更新画像。`,
+			`<你对他的了解>\n${profileBody}\n</你对他的了解>\n\n<他新写的笔记>\n${newContent.join('\n\n')}\n</他新写的笔记>\n\n请更新你对他的描绘。`,
 			baseUrl, apiKey, model, signal,
 		);
 	}
 
-	private splitIntoBatches(files: TFile[], batchSize: number): string[][] {
+	private batchBySize(items: string[], batchSize: number): string[][] {
 		const batches: string[][] = [];
 		let currentBatch: string[] = [];
 		let currentLength = 0;
 
-		for (const file of files) {
-			const content = ''; // placeholder, will be read lazily
-			void content; // suppress unused
-			currentBatch.push(file.name);
-			currentLength += file.stat.size;
+		for (const item of items) {
+			currentBatch.push(item);
+			currentLength += item.length;
 			if (currentLength > batchSize && currentBatch.length > 1) {
 				batches.push(currentBatch.slice(0, -1));
 				currentBatch = [currentBatch[currentBatch.length - 1]];
-				currentLength = file.stat.size;
+				currentLength = currentBatch[0].length;
 			}
 		}
+		if (currentBatch.length > 0) batches.push(currentBatch);
 		return batches;
 	}
 
@@ -364,6 +418,12 @@ export class ProfileBuilder {
 		this.abortController = new AbortController();
 		const signal = this.abortController.signal;
 
+		// 包装 onProgress：同时更新 latestProgress，设置页可随时读取
+		const emit = (p: BuildProgress) => {
+			this.latestProgress = p;
+			onProgress?.(p);
+		};
+
 		try {
 			const meta = force ? null : await this.readMeta();
 			const allFiles = await this.scanFiles();
@@ -372,7 +432,7 @@ export class ProfileBuilder {
 				throw new Error('目录中没有笔记文件');
 			}
 
-			onProgress?.({
+			emit({
 				stage: 'scanning', current: 0, total: allFiles.length,
 				message: `读取笔记中... (${allFiles.length} 篇)`,
 			});
@@ -385,7 +445,7 @@ export class ProfileBuilder {
 					return f.stat.mtime > new Date(prev.mtime).getTime();
 				});
 				if (filesToProcess.length === 0) {
-					onProgress?.({ stage: 'done', current: 0, total: 0, message: '画像已是最新' });
+					emit({ stage: 'done', current: 0, total: 0, message: '画像已是最新' });
 					return;
 				}
 			} else {
@@ -393,13 +453,13 @@ export class ProfileBuilder {
 			}
 
 			// 建索引（所有文件）
-			await this.buildIndex(allFiles, onProgress, signal);
+			await this.buildIndex(allFiles, emit, signal);
 
 			// 提炼画像
 			const existingMeta = await this.readMeta();
 			const profile = (existingMeta && !force && filesToProcess.length < allFiles.length)
-				? await this.updateProfileIncremental(filesToProcess, onProgress, signal)
-				: await this.generateProfile(filesToProcess, onProgress, signal);
+				? await this.updateProfileIncremental(filesToProcess, emit, signal)
+				: await this.generateProfile(filesToProcess, emit, signal);
 
 			// 写入画像文件
 			const now = new Date().toISOString();
@@ -432,13 +492,14 @@ ${profile}
 				fileCount: allFiles.length,
 			});
 
-			onProgress?.({
+			emit({
 				stage: 'done', current: allFiles.length, total: allFiles.length,
 				message: '画像已生成',
 			});
 		} finally {
 			this.isBuilding = false;
 			this.abortController = null;
+			this.latestProgress = null;
 		}
 	}
 

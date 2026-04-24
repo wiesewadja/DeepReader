@@ -8,6 +8,8 @@ import type { BM25Data } from '../pageindex/book-types';
 import { cosineSearchJsonl, generateEmbeddings } from '../pageindex/vault/vectors';
 import type { EmbeddingOptions } from '../pageindex/vault/types';
 import type { DeepPDFSettings } from '../config/settings';
+import { resolveRoleConfig } from '../config/providers';
+import { toEmbeddingOptions } from '../config/role-adapters';
 import { generateBookId } from '../pageindex/book-indexer';
 
 export interface JournalSearchResult {
@@ -43,7 +45,7 @@ export class JournalSearchService {
 			try {
 				const embeddings = await generateEmbeddings([query], embOpts);
 				if (embeddings.length > 0) {
-					const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault as any).basePath || '';
+					const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app as any).basePath || '';
 					const raw = await cosineSearchJsonl(
 						`${vaultPath}/${indexDir}vectors.jsonl`,
 						embeddings[0],
@@ -58,7 +60,13 @@ export class JournalSearchService {
 		const fused = this.fuseScores(vectorResults, bm25Results, topK);
 
 		// 4. Load text
-		if (!bm25Data) return [];
+		if (!bm25Data) {
+			return fused.map(item => ({
+				fileName: item.nodeId,
+				text: '',
+				score: item.score,
+			}));
+		}
 		return fused.map(item => {
 			const nodeText = bm25Data!.nodes[item.nodeId]?.text || '';
 			return {
@@ -70,20 +78,8 @@ export class JournalSearchService {
 	}
 
 	private getEmbeddingOptions(): EmbeddingOptions | null {
-		const role = this.settings.roles?.embedding;
-		if (!role) return null;
-		const account = this.settings.providers?.[role.provider];
-		if (!account?.apiKey) return null;
-
-		const providerMap: Record<string, EmbeddingOptions['provider']> = {
-			openai: 'openai', ollama: 'ollama', lmstudio: 'lmstudio', local: 'local',
-		};
-		return {
-			provider: providerMap[role.provider] || 'openai',
-			apiKey: account.apiKey,
-			baseUrl: role.baseUrlOverride || account.baseUrl,
-			model: role.model,
-		};
+		const resolved = resolveRoleConfig('embedding', this.settings);
+		return resolved ? toEmbeddingOptions(resolved) : null;
 	}
 
 	private fuseScores(

@@ -9,6 +9,7 @@ import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getPro
 import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
 
+
 /** Proposition feature toggle: disabled due to high token cost. Re-enable after optimization. */
 const PROPOSITION_ENABLED = false;
 
@@ -821,36 +822,50 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         new Setting(container)
             .setName('笔记目录')
             .setDesc('存放日记、随笔、感悟的 Obsidian 文件夹路径（相对于 Vault 根目录）')
-            .addText(text => text
-                .setPlaceholder('例如：Journals/随手记')
-                .setValue(this.plugin.settings.journalDir)
-                .onChange(async (value) => {
-                    const oldDir = this.plugin.settings.journalDir;
-                    this.plugin.settings.journalDir = value;
-                    await this.plugin.saveSettings();
+            .addText(text => {
+                text
+                    .setPlaceholder('例如：Journals/随手记')
+                    .setValue(this.plugin.settings.journalDir || '')
+                    .onChange(async (value) => {
+                        // 跳过与当前值相同的变更（setValue 可能触发 onChange）
+                        if (value === this.plugin.settings.journalDir) return;
 
-                    if (oldDir && oldDir !== value) {
-                        const builder = (this.plugin as any).profileBuilder;
-                        if (builder) await builder.deleteProfile();
-                        new Notice('笔记目录已变更，请重新构建画像');
-                    }
-                    (this.plugin as any).profileBuilder = value
-                        ? new (require('../services/profile-builder').ProfileBuilder)(this.app, this.plugin.settings)
-                        : undefined;
-                }));
+                        const oldDir = this.plugin.settings.journalDir;
+                        this.plugin.settings.journalDir = value;
+                        await this.plugin.saveSettings();
+
+                        if (oldDir && oldDir !== value) {
+                            const builder = (this.plugin as any).profileBuilder;
+                            if (builder) await builder.deleteProfile();
+                            new Notice('笔记目录已变更，请重新构建画像');
+                        }
+                        (this.plugin as any).profileBuilder = value
+                            ? new (require('../services/profile-builder').ProfileBuilder)(this.app, this.plugin.settings)
+                            : undefined;
+                    });
+            });
 
         const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
-        this.refreshProfileStatus(statusEl);
+        const builder = (this.plugin as any).profileBuilder;
 
         new Setting(container)
             .setName('构建用户画像')
             .setDesc('扫描指定目录中的笔记，生成你的专属画像')
-            .addButton(btn => btn
-                .setButtonText('构建画像')
-                .setCta()
-                .onClick(async () => {
-                    await this.handleBuildProfile(btn, statusEl, false);
-                }));
+            .addButton(btn => {
+                btn
+                    .setButtonText(builder?.getIsBuilding() ? '取消构建' : '构建画像')
+                    .setCta()
+                    .onClick(async () => {
+                        await this.handleBuildProfile(btn, statusEl, false);
+                    });
+
+                // 如果正在构建，只启动轮询恢复进度（不重新调用 build）
+                if (builder?.getIsBuilding()) {
+                    this.pollBuildProgress(btn, statusEl, false);
+                } else {
+                    this.refreshProfileStatus(statusEl);
+                }
+            });
 
         new Setting(container)
             .setName('重建画像')
@@ -894,6 +909,27 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         }
     }
 
+    private pollBuildProgress(
+        btn: any,
+        statusEl: HTMLElement,
+        force: boolean,
+    ): void {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) return;
+
+        const p = builder.latestProgress;
+        if (p) {
+            statusEl.empty();
+            statusEl.createSpan({ text: p.message });
+        }
+        if (builder.getIsBuilding()) {
+            setTimeout(() => this.pollBuildProgress(btn, statusEl, force), 500);
+        } else {
+            btn.setButtonText(force ? '重建' : '构建画像');
+            this.refreshProfileStatus(statusEl);
+        }
+    }
+
     private async handleBuildProfile(
         btn: any,
         statusEl: HTMLElement,
@@ -912,21 +948,15 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         }
 
         btn.setButtonText('取消构建');
-        try {
-            await builder.build(
-                (progress: any) => {
-                    statusEl.empty();
-                    statusEl.createSpan({ text: progress.message });
-                },
-                force,
-            );
-        } catch (e: any) {
+
+        // 构建在插件级别运行，不依赖 settings tab DOM
+        builder.build(undefined, force).catch((e: any) => {
             if (e.name !== 'AbortError') {
                 new Notice(`构建失败：${e.message}`);
             }
-        }
-        btn.setButtonText(force ? '重建' : '构建画像');
-        this.refreshProfileStatus(statusEl);
+        });
+
+        this.pollBuildProgress(btn, statusEl, force);
     }
 
     /**

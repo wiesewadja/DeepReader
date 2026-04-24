@@ -37,6 +37,11 @@ export default class DeepPDFPlugin extends Plugin {
         parseEpub,
         exportToObsidian,
         PageIndex,
+        createProfileBuilder: () => {
+            const { ProfileBuilder } = require('./services/profile-builder');
+            this.profileBuilder = new ProfileBuilder(this.app, this.settings);
+            return this.profileBuilder;
+        },
     };
 
     async onload() {
