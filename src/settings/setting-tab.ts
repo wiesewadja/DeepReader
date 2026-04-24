@@ -808,7 +808,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     /**
      * 用户画像设置
      */
-    private renderProfileSettings(container: HTMLElement): void {
+    private async renderProfileSettings(container: HTMLElement): Promise<void> {
         container.createEl('h3', { text: '用户画像设置' });
         container.createEl('p', {
             text: '指定包含你日记、随笔、感悟的目录，奚童会从中了解你，提供更贴心的阅读陪伴。',
@@ -840,51 +840,45 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     }).open();
                 }));
 
-        const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
         const builder = (this.plugin as any).profileBuilder;
+        const hasProfile = !!(await builder?.readMeta?.());
 
         new Setting(container)
-            .setName('构建用户画像')
-            .setDesc('扫描指定目录中的笔记，生成你的专属画像')
+            .setName(hasProfile ? '重建画像' : '构建画像')
+            .setDesc(hasProfile ? '忽略已有数据，完全重新构建画像' : '扫描指定目录中的笔记，生成你的专属画像')
             .addButton(btn => {
                 btn
-                    .setButtonText(builder?.getIsBuilding() ? '取消构建' : '构建画像')
+                    .setButtonText(builder?.getIsBuilding() ? '取消构建' : (hasProfile ? '重建' : '构建画像'))
                     .setCta()
                     .onClick(async () => {
-                        await this.handleBuildProfile(btn, statusEl, false);
+                        await this.handleBuildProfile(btn, statusEl, progressEl, hasProfile);
                     });
-
-                // 如果正在构建，只启动轮询恢复进度（不重新调用 build）
-                if (builder?.getIsBuilding()) {
-                    this.pollBuildProgress(btn, statusEl, false);
-                } else {
-                    this.refreshProfileStatus(statusEl);
+            })
+            .addButton(btn => {
+                btn
+                    .setButtonText('删除')
+                    .setWarning()
+                    .setDisabled(!hasProfile);
+                if (hasProfile) {
+                    btn.onClick(async () => {
+                        if (builder) {
+                            await builder.deleteProfile();
+                            new Notice('画像已删除');
+                            this.renderTabContent('profile');
+                        }
+                    });
                 }
             });
 
-        new Setting(container)
-            .setName('重建画像')
-            .setDesc('忽略已有数据，完全重新构建')
-            .addButton(btn => btn
-                .setButtonText('重建')
-                .onClick(async () => {
-                    await this.handleBuildProfile(btn, statusEl, true);
-                }));
+        // 状态 + 进度放在按钮下方，空间充裕
+        const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
+        const progressEl = container.createDiv({ cls: 'deeppdf-profile-progress' });
 
-        new Setting(container)
-            .setName('删除画像')
-            .setDesc('删除已生成的画像和索引数据')
-            .addButton(btn => btn
-                .setButtonText('删除')
-                .setWarning()
-                .onClick(async () => {
-                    const builder = (this.plugin as any).profileBuilder;
-                    if (builder) {
-                        await builder.deleteProfile();
-                        new Notice('画像已删除');
-                        this.refreshProfileStatus(statusEl);
-                    }
-                }));
+        if (builder?.getIsBuilding()) {
+            this.pollBuildProgress(null, statusEl, progressEl, hasProfile);
+        } else {
+            this.refreshProfileStatus(statusEl);
+        }
     }
 
     private async refreshProfileStatus(el: HTMLElement): Promise<void> {
@@ -904,31 +898,61 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         }
     }
 
+    private showBuildProgress(el: HTMLElement): void {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) return;
+        const p = builder.latestProgress;
+        if (!p) return;
+
+        el.empty();
+
+        const stageLabels: Record<string, string> = {
+            scanning: '扫描笔记文件',
+            indexing: '建立索引',
+            generating: '生成画像摘要',
+            done: '构建完成',
+        };
+
+        const stageLabel = stageLabels[p.stage] || p.stage;
+        const bar = el.createDiv({ cls: 'deeppdf-profile-progress-bar' });
+        const label = el.createDiv({ cls: 'deeppdf-profile-progress-label' });
+
+        if (p.total > 0) {
+            const pct = Math.round((p.current / p.total) * 100);
+            const fill = bar.createDiv({ cls: 'deeppdf-profile-progress-fill' });
+            fill.style.width = `${pct}%`;
+            label.setText(`${stageLabel}：${p.current} / ${p.total}（${pct}%）`);
+        } else {
+            label.setText(stageLabel);
+        }
+    }
+
     private pollBuildProgress(
-        btn: any,
+        btn: any | null,
         statusEl: HTMLElement,
+        progressEl: HTMLElement,
         force: boolean,
     ): void {
         const builder = (this.plugin as any).profileBuilder;
         if (!builder) return;
 
-        const p = builder.latestProgress;
-        if (p) {
-            statusEl.empty();
-            statusEl.createSpan({ text: p.message });
-        }
+        this.showBuildProgress(progressEl);
+
         if (builder.getIsBuilding()) {
-            setTimeout(() => this.pollBuildProgress(btn, statusEl, force), 500);
+            setTimeout(() => this.pollBuildProgress(btn, statusEl, progressEl, force), 500);
         } else {
-            btn.setButtonText(force ? '重建' : '构建画像');
+            if (btn) btn.setButtonText(force ? '重建' : '构建画像');
+            progressEl.empty();
             this.refreshProfileStatus(statusEl);
             (this.plugin as any).frontendAgent?.invalidateProfileCache?.();
+            this.renderTabContent('profile');
         }
     }
 
     private async handleBuildProfile(
         btn: any,
         statusEl: HTMLElement,
+        progressEl: HTMLElement,
         force: boolean,
     ): Promise<void> {
         const builder = (this.plugin as any).profileBuilder;
@@ -945,14 +969,13 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
         btn.setButtonText('取消构建');
 
-        // 构建在插件级别运行，不依赖 settings tab DOM
         builder.build(undefined, force).catch((e: any) => {
             if (e.name !== 'AbortError') {
                 new Notice(`构建失败：${e.message}`);
             }
         });
 
-        this.pollBuildProgress(btn, statusEl, force);
+        this.pollBuildProgress(btn, statusEl, progressEl, force);
     }
 
     /**

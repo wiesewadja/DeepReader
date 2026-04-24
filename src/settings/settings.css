@@ -257,3 +257,28 @@
         padding: 24px 0;
     }
 }
+
+/* ==================== 画像构建进度 ==================== */
+.deeppdf-profile-progress {
+    margin: 0 0 12px 0;
+}
+
+.deeppdf-profile-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--background-modifier-border);
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.deeppdf-profile-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--interactive-accent);
+    transition: width 0.3s ease;
+}
+
+.deeppdf-profile-progress-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
