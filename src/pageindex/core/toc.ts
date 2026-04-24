@@ -316,6 +316,9 @@ export async function generateTocInit(
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocInitPrompt(part);
   const maxTokens = options.maxTokens || 8192;
+  const inputTokens = Math.round(part.length / 4);
+  piLog(`[generateTocInit] Sending to ${options.model} (input ~${inputTokens} chars, maxOutput ${maxTokens} tokens, baseUrl: ${options.baseUrl})...`);
+
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
@@ -324,11 +327,15 @@ export async function generateTocInit(
     maxTokens,
   });
 
+  piLog(`[generateTocInit] Response received: finishReason=${finishReason}, output ${content.length} chars`);
+
   if (finishReason === "finished") {
     const json = extractJson<TocItem[]>(content);
+    piLog(`[generateTocInit] Parsed ${json?.length || 0} TOC items`);
     return json || [];
   }
-  
+
+  piLog(`[generateTocInit] ERROR: finishReason=${finishReason}, output preview: ${content.slice(0, 200)}`);
   throw new Error(`Generation incomplete: ${finishReason}`);
 }
 
@@ -342,6 +349,9 @@ export async function generateTocContinue(
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocContinuePrompt(part, JSON.stringify(tocContent, null, 2));
   const maxTokens = options.maxTokens || 8192;
+  const inputTokens = Math.round(part.length / 4);
+  piLog(`[generateTocContinue] Sending to ${options.model} (input ~${inputTokens} chars, context ${tocContent.length} items, maxOutput ${maxTokens} tokens)...`);
+
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
@@ -350,11 +360,15 @@ export async function generateTocContinue(
     maxTokens,
   });
 
+  piLog(`[generateTocContinue] Response received: finishReason=${finishReason}, output ${content.length} chars`);
+
   if (finishReason === "finished") {
     const json = extractJson<TocItem[]>(content);
+    piLog(`[generateTocContinue] Parsed ${json?.length || 0} new TOC items`);
     return json || [];
   }
-  
+
+  piLog(`[generateTocContinue] ERROR: finishReason=${finishReason}, output preview: ${content.slice(0, 200)}`);
   throw new Error(`Generation incomplete: ${finishReason}`);
 }
 

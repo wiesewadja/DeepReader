@@ -7,6 +7,7 @@
 
 import { isThinkingModel as sharedIsThinkingModel, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
 import { safeRequest } from '../../utils/safe-request.js';
+import { log as piLog } from '../core/logger';
 
 /** Cross-runtime sleep function */
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -94,6 +95,11 @@ export async function chatGPTWithFinishReason(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
+      const t0 = Date.now();
+      if (attempt > 0) {
+        piLog(`[chatGPT] Retry ${attempt + 1}/${maxRetries} for model ${model}...`);
+      }
+
       const response = await safeRequest({
         url: `${effectiveBaseUrl}/chat/completions`,
         method: "POST",
@@ -107,7 +113,11 @@ export async function chatGPTWithFinishReason(
         }),
       });
 
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+      piLog(`[chatGPT] ${model} responded in ${elapsed}s (status ${response.status}, attempt ${attempt + 1})`);
+
       if (response.status >= 400) {
+        piLog(`[chatGPT] API error ${response.status}: ${response.text?.slice(0, 300)}`);
         throw new Error(`API error: ${response.status} - ${response.text}`);
       }
 
@@ -123,20 +133,26 @@ export async function chatGPTWithFinishReason(
         throw new Error("No response from API");
       }
 
+      piLog(`[chatGPT] finish_reason=${choice.finish_reason}, output ${choice.message.content.length} chars`);
+
       return {
         content: choice.message.content,
-        finishReason: choice.finish_reason === "stop" ? "finished" : 
+        finishReason: choice.finish_reason === "stop" ? "finished" :
                       choice.finish_reason === "length" ? "max_output_reached" : "error",
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+      piLog(`[chatGPT] Attempt ${attempt + 1} failed: ${lastError.message}`);
+
       if (attempt < maxRetries - 1) {
-        await sleep(1000 * (attempt + 1)); // Exponential backoff
+        const backoff = 1000 * (attempt + 1);
+        piLog(`[chatGPT] Retrying in ${backoff}ms...`);
+        await sleep(backoff);
       }
     }
   }
 
+  piLog(`[chatGPT] All ${maxRetries} retries exhausted for ${model}`);
   throw lastError || new Error("Failed after retries");
 }
 

@@ -181,15 +181,26 @@ export async function processNoToc(
     tokenLengths.push(countTokens(pageText));
   }
 
-  const groupTexts = pageListToGroupText(pageContents, tokenLengths, options.maxTokenNumEachNode);
+  const totalTokens = tokenLengths.reduce((a, b) => a + b, 0);
+  piLog(`[processNoToc] Total pages: ${pages.length}, total tokens: ${totalTokens}, startIndex: ${startIndex}`);
 
+  const groupTexts = pageListToGroupText(pageContents, tokenLengths, options.maxTokenNumEachNode);
+  piLog(`[processNoToc] Split into ${groupTexts.length} groups (maxTokensPerGroup: ${options.maxTokenNumEachNode})`);
+
+  const t0 = Date.now();
+  piLog(`[processNoToc] Group 1/${groupTexts.length}: calling generateTocInit (input ~${countTokens(groupTexts[0] || "")} tokens)...`);
   let tocWithPageNumber = await generateTocInit(groupTexts[0] || "", options);
+  piLog(`[processNoToc] Group 1 done: ${tocWithPageNumber.length} items, elapsed ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
   for (let i = 1; i < groupTexts.length; i++) {
+    const tGroup = Date.now();
+    piLog(`[processNoToc] Group ${i + 1}/${groupTexts.length}: calling generateTocContinue (input ~${countTokens(groupTexts[i] || "")} tokens)...`);
     const additional = await generateTocContinue(tocWithPageNumber, groupTexts[i] || "", options);
     tocWithPageNumber.push(...additional);
+    piLog(`[processNoToc] Group ${i + 1} done: +${additional.length} items (total ${tocWithPageNumber.length}), elapsed ${((Date.now() - tGroup) / 1000).toFixed(1)}s`);
   }
 
+  piLog(`[processNoToc] Complete: ${tocWithPageNumber.length} TOC items in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   return tocWithPageNumber;
 }
 
