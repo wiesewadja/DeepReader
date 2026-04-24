@@ -7,6 +7,7 @@ import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
 import type { ITraceContext } from './tracing/types';
 import { agentLog } from '../utils/logger';
 import { getDisableThinkingParams } from '../config/thinking-models.js';
+import { normalizeBaseUrl } from '../config/providers.js';
 import { fetchWithCorsFallback, safeRequest } from '../utils/safe-request.js';
 
 /**
@@ -70,7 +71,7 @@ export class LLMClient {
 
   constructor(options: LLMClientOptions) {
     this.#apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl || 'https://api.deepseek.com';
+    this.baseUrl = normalizeBaseUrl(options.baseUrl || 'https://api.deepseek.com');
     this.model = options.model || 'deepseek-chat';
     this.providerName = options.providerName || 'Unknown';
     this.disableThinking = options.disableThinking;

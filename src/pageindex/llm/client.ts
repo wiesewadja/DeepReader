@@ -6,6 +6,7 @@
  */
 
 import { isThinkingModel as sharedIsThinkingModel, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
+import { normalizeBaseUrl } from '../../config/providers.js';
 import { safeRequest } from '../../utils/safe-request.js';
 import { log as piLog } from '../core/logger';
 
@@ -84,7 +85,7 @@ export async function chatGPTWithFinishReason(
   } = options;
 
   const effectiveApiKey = apiKey || process.env.OPENAI_API_KEY || process.env.API_KEY || "lm-studio";
-  const effectiveBaseUrl = baseUrl || process.env.OPENAI_BASE_URL || process.env.API_BASE_URL || "https://api.openai.com/v1";
+  const effectiveBaseUrl = normalizeBaseUrl(baseUrl || process.env.OPENAI_BASE_URL || process.env.API_BASE_URL || "https://api.openai.com/v1");
 
   const messages: Array<{ role: string; content: string }> = [
     ...chatHistory,

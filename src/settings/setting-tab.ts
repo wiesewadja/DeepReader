@@ -490,6 +490,40 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        // 测试连接按钮：验证 API Key + Base URL + 模型名是否可用
+        const currentAccount = (settings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
+        if (currentAccount?.apiKey) {
+            modelSetting.addExtraButton(btn => btn
+                .setIcon('plug')
+                .setTooltip('测试连接')
+                .onClick(async () => {
+                    // 从 plugin.settings 读取最新值，避免闭包捕获旧数据
+                    const freshSettings = this.plugin.settings;
+                    const freshAccount = (freshSettings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
+                    const freshRole = (freshSettings.roles as unknown as Record<string, unknown>)[role] as any;
+                    const currentModel = freshRole?.model;
+                    if (!currentModel) {
+                        new Notice('请先填写模型名称');
+                        return;
+                    }
+                    btn.setDisabled(true);
+                    btn.setIcon('loader');
+                    const { testConnection } = await import('../config/model-fetcher');
+                    const result = await testConnection(
+                        freshAccount?.baseUrl || '',
+                        freshAccount?.apiKey || '',
+                        currentModel,
+                    );
+                    btn.setDisabled(false);
+                    btn.setIcon('plug');
+                    if (result.success) {
+                        new Notice(`✓ 连接成功 (${result.latencyMs}ms) — ${result.model || currentModel}`);
+                    } else {
+                        new Notice(`✗ 连接失败: ${result.error}`);
+                    }
+                }));
+        }
+
         // 支持模型列表的服务商：按需获取下拉选择
         if (supportsModelList) {
             const account = (settings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;

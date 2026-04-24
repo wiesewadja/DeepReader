@@ -87,6 +87,24 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 };
 
 /**
+ * 规范化 base URL：确保 OpenAI 兼容路径
+ *
+ * 用户可能输入：
+ *   https://example.com/proxy        → 需要 /v1
+ *   https://example.com/proxy/       → 需要 /v1
+ *   https://example.com/proxy/v1     → 已完整
+ *   https://example.com/proxy/v1/    → 已完整
+ *   https://example.com/proxy/v2     → 其他版本，保留
+ *
+ * 规则：去掉尾部斜杠，如果末尾没有 /vN 则追加 /v1
+ */
+export function normalizeBaseUrl(url: string): string {
+	const trimmed = url.replace(/\/+$/, '');
+	if (/\/v\d+$/.test(trimmed)) return trimmed;
+	return trimmed + '/v1';
+}
+
+/**
  * 解析某角色的运行时配置，供各功能模块调用
  *
  * 支持固定服务商（ProviderType）和自定义服务商（string ID）。
@@ -118,10 +136,13 @@ export function resolveRoleConfig(
 
 	// 固定服务商有预设 baseUrl 和 defaultModel，自定义服务商从 account 取
 	const builtInConfig = PROVIDER_CONFIGS[provider as ProviderType];
-	const baseUrl =
+	const rawBaseUrl =
 		baseUrlOverride ||
 		(account as { baseUrl?: string }).baseUrl ||
 		(builtInConfig?.baseUrl || '');
+
+	// 对自定义服务商自动规范化 base URL（补 /v1）
+	const baseUrl = (!builtInConfig && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
 
 	const resolvedModel = model || builtInConfig?.defaultModel || '';
 
@@ -179,9 +200,10 @@ export function getProviderName(id: string, settings: DeepPDFSettings): string {
 export function getProviderBaseUrl(id: string, settings: DeepPDFSettings): string {
 	const builtInConfig = PROVIDER_CONFIGS[id as ProviderType];
 	if (builtInConfig) return builtInConfig.baseUrl;
-	const account = (settings.providers as Record<string, unknown>)?.[id];
+	const account = (settings.providers as Record<string, unknown>)[id];
 	if (account && typeof account === 'object') {
-		return (account as { baseUrl?: string }).baseUrl || '';
+		const raw = (account as { baseUrl?: string }).baseUrl || '';
+			return raw ? normalizeBaseUrl(raw) : '';
 	}
 	return '';
 }
