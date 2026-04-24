@@ -108,7 +108,10 @@ export function buildAnalyticalSystemPrompt(ctx: {
     : '';
 
   const userProfileBlock = ctx.userProfileSummary
-    ? `\n<user_profile>\n${ctx.userProfileSummary}\n</user_profile>`
+    ? `\n<user_profile>\n${ctx.userProfileSummary}\n</user_profile>
+<profile_instruction>
+你已经了解这个用户。在分析时留意书中内容与用户关注点的交集，在 analysis 中适当点出这些共鸣，帮助用户将阅读与自身经历联系起来。点到为止，不展开个人分析。
+</profile_instruction>`
     : '';
 
   return `${PROMPT_S2_ANALYTICAL_TEMPLATE}

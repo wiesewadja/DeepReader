@@ -54,7 +54,14 @@ export function buildFormatterSystemPrompt(
     : '';
 
   const profileSection = userProfileSummary
-    ? `\n<user_profile>\n${userProfileSummary}\n</user_profile>\n`
+    ? `\n<user_profile>\n${userProfileSummary}\n</user_profile>
+<profile_instruction>
+你已经了解这个用户。在回复中自然地体现这种了解：
+- 找到书中内容与用户经历、关注点或人生阶段的共鸣点，用一两句话点一点
+- 不需要每次都提及，只在确实相关时自然带出
+- 语气像老朋友在分享读书心得，不是咨询师在做分析
+- 不要强行关联，生硬比沉默更糟糕
+</profile_instruction>\n`
     : '';
 
   const now = new Date();
