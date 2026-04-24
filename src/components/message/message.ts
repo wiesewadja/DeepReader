@@ -957,6 +957,8 @@ export class AIMessage extends Message {
 	private voiceAudio: ArrayBuffer | null = null;
 	private voiceDuration: number = 0;
 	private voiceAudioEl: HTMLAudioElement | null = null;
+	private onVoicePlay?: (messageId: string) => void;
+	private onVoicePause?: (messageId: string) => void;
 	private enableVoiceReply: boolean = false;
 
 	constructor(
@@ -969,6 +971,8 @@ export class AIMessage extends Message {
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
 			onTTS?: (messageId: string, content: string) => void;
+			onVoicePlay?: (messageId: string) => void;
+			onVoicePause?: (messageId: string) => void;
 			getAllMessages?: () => MessageData[];
 			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 			app?: App;
@@ -982,6 +986,8 @@ export class AIMessage extends Message {
 		this.onQuote = options?.onQuote;
 		this.onDelete = options?.onDelete;
 		this.onTTS = options?.onTTS;
+		this.onVoicePlay = options?.onVoicePlay;
+		this.onVoicePause = options?.onVoicePause;
 		this.getAllMessages = options?.getAllMessages || null;
 		this.getCurrentBookInfo = options?.getCurrentBookInfo || null;
 		// 初始化渲染跟踪变量
@@ -1652,7 +1658,8 @@ export class AIMessage extends Message {
 				voiceAudio: data.audioBuffer,
 				voiceDuration: data.duration,
 				voiceState: 'ready',
-			});
+		});
+
 		}
 
 		/** 更新信封状态 */
@@ -1665,8 +1672,9 @@ export class AIMessage extends Message {
 		/** 更新语音播放状态 */
 		updateVoiceState(state: 'loading' | 'ready' | 'playing' | 'paused' | 'ended'): void {
 			this.voiceState = state;
+			// 触发局部重渲染
+			this.update({ voiceState: state });
 		}
-
 		/** 增量更新语音气泡 UI（避免全量重绘） */
 		private updateVoiceBubbleUI(): void {
 			if (!this.el || !this.enableVoiceReply) return;
@@ -1763,6 +1771,13 @@ export class AIMessage extends Message {
 		private voiceBlobUrl: string | null = null;
 		/** 切换语音播放 */
 		private toggleVoicePlayback(): void {
+			// 通知外部控制播放（StreamingVoicePlayer）
+			if (this.onVoicePlay) {
+				this.onVoicePlay(this.data.id);
+				return;
+			}
+			
+			// 降级：使用传统方式播放
 			if (!this.voiceAudio) return;
 
 			if (this.voiceState === 'playing') {
@@ -2425,6 +2440,7 @@ export function createMessage(
 		onDelete?: () => void;
 		getAllMessages?: () => MessageData[];
 		onTTS?: (messageId: string, content: string) => void;
+		onVoicePlay?: (messageId: string) => void;
 		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		app?: App;
 	}

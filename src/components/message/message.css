@@ -1591,6 +1591,38 @@
     50% { opacity: 1; transform: scale(1.1); }
 }
 
+/* ====== 语音气泡 generating 状态 ====== */
+
+.deeppdf-voice-generating {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, #fff);
+    border-radius: 16px 16px 16px 16px;
+    width: fit-content;
+    max-width: 200px;
+    white-space: nowrap;
+    margin-bottom: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.deeppdf-voice-generating:hover {
+    opacity: 0.9;
+}
+
+.deeppdf-voice-generating svg {
+    animation: deeppdf-voice-generating-spin 1s linear infinite;
+}
+
+@keyframes deeppdf-voice-generating-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 /* ====== 语音气泡样式 ====== */
 
 .deeppdf-voice-bubble {

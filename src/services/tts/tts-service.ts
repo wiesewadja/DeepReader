@@ -105,7 +105,7 @@ export class TTSService {
         // 直接朗读原文模式（跳过 Summarizer）
         if (options?.rawText) {
             try {
-                await this.playNonStream(messageId, cleanContent);
+                await this.playStream(messageId, cleanContent);
             } catch (err) {
                 console.error('[TTS] raw text play failed:', err);
                 new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -210,7 +210,7 @@ export class TTSService {
      */
     async synthesizeRawText(text: string): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
         const cleanText = stripWikiLinksForTTS(text);
-        const audioBuffer = await this.client.synthesizeParallel(cleanText);
+        const audioBuffer = await this.client.synthesize(cleanText);
         const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
         return { audioBuffer, duration };
     }
@@ -314,6 +314,9 @@ export class TTSService {
         return buffer;
     }
 
+    /**
+     * 流式播放：边生成边播放（用于实时语音播报）
+     */
     private async streamSummaryToAudio(
         messageId: string,
         content: string,
@@ -392,6 +395,9 @@ export class TTSService {
         }
     }
 
+    /**
+     * 流式播放：直接播放 TTS 合成的音频（用于原文朗读）
+     */
     private async playStream(messageId: string, text: string): Promise<void> {
         const player = new PCMStreamPlayer(24000);
         this.streamPlayer = player;
@@ -426,6 +432,9 @@ export class TTSService {
         }
     }
 
+    /**
+     * 非流式播放：等待完整音频生成后播放（降级方案）
+     */
     private async playNonStream(messageId: string, text: string): Promise<void> {
         if (this.currentMessageId !== messageId) {
             this.setState('idle');
@@ -433,7 +442,7 @@ export class TTSService {
         }
 
         this.setState('tts_loading');
-        const audioBuffer = await this.client.synthesizeParallel(text);
+        const audioBuffer = await this.client.synthesize(text);
 
         if (this.currentMessageId !== messageId) {
             this.setState('idle');

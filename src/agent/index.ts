@@ -531,7 +531,6 @@ ${currentMemory}
     const ttsCfg = config?.configurable?.ttsConfig;
     const llmCfg = config?.configurable?.llmConfig;
     const enableVoiceReply = !!(ttsCfg && llmCfg && callbacks.onVoiceReady);
-    let voiceGenerationStarted = false;
 
     for await (const chunk of stream) {
       if (chunk == null || typeof chunk !== 'object') continue;
@@ -567,33 +566,13 @@ ${currentMemory}
           onContent(formattedOutput);
         }
 
-        // S2 analytical 节点完成时，立即从 analysisResult 启动语音生成
-        if (nodeName === 'analytical' && stateUpdate.analysisResult && enableVoiceReply && !voiceGenerationStarted) {
-          voiceGenerationStarted = true;
-          this.generateVoiceFromAnalysis(
-            stateUpdate.analysisResult,
-            ttsCfg,
-            llmCfg,
-            {
-              userQuestion: (config?.configurable?.sharedContext as any)?.userQuestion as string | undefined,
-              bookTitle: (config?.configurable?.sharedContext as any)?.bookTitle as string | undefined,
-              memoryContext: (config?.configurable?.sharedContext as any)?.memoryContext as string | undefined,
-              abortSignal: callbacks.abortSignal,
-            }
-          ).then(audioBuffer => {
-            if (audioBuffer) {
-              const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
-              callbacks.onVoiceReady!({ audioBuffer, duration });
-            }
-          }).catch(err => {
-            console.warn('[VoicePipeline] voice generation from analysis failed:', err);
-          });
-        }
       }
     }
 
-    // 如果 S2 阶段未触发语音生成，回退到 S4 formattedOutput（兜底）
-    if (enableVoiceReply && !voiceGenerationStarted && formattedOutput && callbacks.onVoiceReady) {
+    // S4 阶段完成后，使用 formattedOutput 生成语音
+    if (enableVoiceReply && formattedOutput && callbacks.onVoiceReady) {
+      // 优先使用流式回调，否则使用完整音频回调
+      const onChunk = callbacks.onVoiceChunk;
       this.generateVoiceFromFormattedOutput(
         formattedOutput,
         ttsCfg,
@@ -603,10 +582,15 @@ ${currentMemory}
           bookTitle: (config?.configurable?.sharedContext as any)?.bookTitle as string | undefined,
           memoryContext: (config?.configurable?.sharedContext as any)?.memoryContext as string | undefined,
           abortSignal: callbacks.abortSignal,
-        }
+        },
+        onChunk ? (chunk) => onChunk({ audioChunk: chunk, isComplete: false }) : undefined,
       ).then(audioBuffer => {
         if (audioBuffer) {
           const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+          // 发送完成信号
+          if (onChunk) {
+            onChunk({ audioChunk: new ArrayBuffer(0), isComplete: true });
+          }
           callbacks.onVoiceReady!({ audioBuffer, duration });
         }
       }).catch(err => {
@@ -631,6 +615,7 @@ ${currentMemory}
   /**
    * 从格式化输出生成语音
    * 等流式输出结束后，将内容摘要后分段生成语音并合并成完整段落
+   * 支持流式回调：边生成边返回音频块
    */
   private async generateVoiceFromFormattedOutput(
     formattedOutput: string,
@@ -642,6 +627,7 @@ ${currentMemory}
       memoryContext?: string;
       abortSignal?: AbortSignal;
     },
+    onChunk?: (audioChunk: ArrayBuffer) => void,
   ): Promise<ArrayBuffer | null> {
     const signal = options.abortSignal;
     if (signal?.aborted) return null;
@@ -697,6 +683,10 @@ ${currentMemory}
       try {
         const audioBuffer = await client.synthesize(sentence);
         audioChunks.push(audioBuffer);
+        // 流式回调：每生成一个句子就返回音频块
+        if (onChunk) {
+          onChunk(audioBuffer);
+        }
       } catch (err) {
         console.warn('[VoicePipeline] sentence synthesis failed:', err);
       }
@@ -705,84 +695,6 @@ ${currentMemory}
     if (signal?.aborted || audioChunks.length === 0) return null;
 
     // 合并所有音频片段
-    return TTSService.mergeAudioChunks(audioChunks);
-  }
-
-  /**
-   * 从 S2 analysisResult 直接生成语音（不等 S4 formatter）
-   * 使用 pre_search 内容，生成 ≤300 字的简洁口语回复
-   */
-  private async generateVoiceFromAnalysis(
-    analysisResult: string,
-    ttsConfig: { apiKey: string; baseUrl: string; model?: string },
-    llmConfig: { apiKey: string; baseUrl: string; model?: string },
-    options: {
-      userQuestion?: string;
-      bookTitle?: string;
-      memoryContext?: string;
-      abortSignal?: AbortSignal;
-    },
-  ): Promise<ArrayBuffer | null> {
-    const signal = options.abortSignal;
-    if (signal?.aborted) return null;
-
-    const { TTSSummarizer } = await import('../services/tts/tts-summarizer.js');
-    const { TTSClient } = await import('../services/tts/tts-client.js');
-    const { TTSService } = await import('../services/tts/tts-service.js');
-
-    const summarizer = new TTSSummarizer({
-      apiKey: llmConfig.apiKey,
-      baseUrl: llmConfig.baseUrl,
-      model: llmConfig.model || 'deepseek-chat',
-    });
-
-    const client = new TTSClient({
-      apiKey: ttsConfig.apiKey,
-      baseUrl: ttsConfig.baseUrl,
-      model: ttsConfig.model,
-    });
-
-    // 直接从分析结果生成简洁语音文本
-    const voiceText = await summarizer.summarizeFromAnalysis(analysisResult, options.userQuestion, {
-      bookTitle: options.bookTitle,
-      memoryContent: options.memoryContext,
-    });
-
-    if (!voiceText.trim() || signal?.aborted) return null;
-
-    // 按句子切分
-    const sentences: string[] = [];
-    let buffer = voiceText;
-    while (true) {
-      const match = buffer.search(/[。！？!?]/);
-      if (match === -1) break;
-      const end = match + 1;
-      const sentence = buffer.slice(0, end);
-      buffer = buffer.slice(end);
-      if (sentence.trim()) {
-        sentences.push(sentence);
-      }
-    }
-    if (buffer.trim()) {
-      sentences.push(buffer.trim());
-    }
-
-    if (sentences.length === 0) return null;
-
-    // 顺序合成音频
-    const audioChunks: ArrayBuffer[] = [];
-    for (const sentence of sentences) {
-      if (signal?.aborted) break;
-      try {
-        const audioBuffer = await client.synthesize(sentence);
-        audioChunks.push(audioBuffer);
-      } catch (err) {
-        console.warn('[VoicePipeline] sentence synthesis failed:', err);
-      }
-    }
-
-    if (signal?.aborted || audioChunks.length === 0) return null;
-
     return TTSService.mergeAudioChunks(audioChunks);
   }
 

@@ -44,6 +44,7 @@ import type { HumanizedProgress } from "../agent/ui/humanized-types.js";
 import { SessionStore } from "../agent/session/index.js";
 import { findBlockIdFromRange } from "../utils/block-utils.js";
 import { TTSService, type TTSPlayState } from '../services/tts/tts-service.js';
+import { StreamingVoicePlayer, type StreamingVoiceState } from '../services/tts/streaming-voice-player.js';
 import { resolveRoleConfig } from '../config/providers.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
@@ -92,6 +93,9 @@ export class SidebarView extends ItemView {
 
     // TTS 语音播报服务
     private ttsService: TTSService | null = null;
+
+    // 流式语音播放器（用于语音消息）
+    private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
 
     // 会话存储（JSONL 文件）
     private sessionStore: SessionStore | null = null;
@@ -1853,6 +1857,20 @@ export class SidebarView extends ItemView {
                     this.handleTTS(messageId, content);
                 }
             },
+            onVoicePlay: (messageId: string) => {
+                // 控制流式语音播放
+                const player = this.streamingVoicePlayers.get(messageId);
+                if (player) {
+                    const state = player.getState();
+                    if (state === 'playing') {
+                        player.pause();
+                    } else if (state === 'paused' || state === 'buffering') {
+                        player.play();
+                    } else if (state === 'idle') {
+                        player.play();
+                    }
+                }
+            },
             getCurrentBookInfo: () => ({
                 coverUrl: this.currentBookCoverUrl,
                 author: this.currentBookAuthor,
@@ -2597,6 +2615,43 @@ export class SidebarView extends ItemView {
                             aiMessageId,
                             data.audioBuffer,
                         );
+                    }
+                },
+                // 流式语音生成：边生成边返回音频块
+                onVoiceChunk: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => {
+                    const msg = this.messageList?.getMessage(aiMessageId);
+                    if (msg && msg instanceof AIMessage) {
+                        if (data.isComplete) {
+                            // 完成信号：标记播放器 seal
+                            const player = this.streamingVoicePlayers.get(aiMessageId);
+                            if (player) {
+                                player.seal();
+                            }
+                        } else {
+                            // 音频块：发送给流式播放器
+                            let player = this.streamingVoicePlayers.get(aiMessageId);
+                            if (!player) {
+                                // 创建新的流式播放器
+                                player = new StreamingVoicePlayer({
+                                    sampleRate: 24000,
+                                    onStateChange: (state: StreamingVoiceState) => {
+                                        // 更新 UI 状态
+                                        if (state === 'playing') {
+                                            msg.updateVoiceState('playing');
+                                        } else if (state === 'paused') {
+                                            msg.updateVoiceState('paused');
+                                        } else if (state === 'ended') {
+                                            msg.updateVoiceState('ended');
+                                        }
+                                    },
+                                });
+                                this.streamingVoicePlayers.set(aiMessageId, player);
+                                
+                                // 首次创建播放器时，设置状态为 ready（显示播放按钮）
+                                msg.updateVoiceState('ready');
+                            }
+                            player.enqueueChunk(data.audioChunk);
+                        }
                     }
                 },
             };

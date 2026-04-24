@@ -54,6 +54,11 @@ export interface AgentLoopOptions {
    * VoicePipeline 完成后调用，返回音频数据和时长
    */
   onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
+  /**
+   * 流式语音生成回调（可选）
+   * 边生成边返回音频块，支持实时播放
+   */
+  onVoiceChunk?: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => void;
 }
 
 // ============================================================================

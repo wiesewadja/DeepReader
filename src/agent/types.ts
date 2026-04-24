@@ -90,6 +90,8 @@ export interface AgentCallbacks {
   onComplete: () => void;
   onError: (error: string) => void;
   onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
+  /** 流式语音生成：边生成边返回音频块 */
+  onVoiceChunk?: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => void;
 }
 
 // ==================== LLM 响应 ====================
