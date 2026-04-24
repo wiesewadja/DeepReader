@@ -30,7 +30,7 @@ function inferTopic(userMessage: string): string {
     .replace(/[？?。.!！，,]/g, '')
     .trim();
 
-  return truncate(cleanQuery, 50);
+  return truncate(cleanQuery, 150);
 }
 
 export function summarizeRound(
@@ -46,7 +46,7 @@ export function summarizeRound(
 
   return {
     topic: inferTopic(userContent),
-    conclusion: truncate(assistantContent.replace(/\n/g, ' '), 100),
+    conclusion: truncate(assistantContent.replace(/\n/g, ' '), 300),
     blockIds: extractBlockIds(assistantContent),
   };
 }
@@ -83,7 +83,7 @@ export function formatHistoryBlock(summaries: HistorySummary[]): string {
   if (summaries.length === 0) return '';
 
   const lines = summaries.map((s, i) =>
-    `[第${i + 1}轮] 用户问"${s.topic}"，分析发现${truncate(s.conclusion, 80)}`
+    `[第${i + 1}轮] 用户问"${s.topic}"，分析发现${truncate(s.conclusion, 250)}`
   );
 
   return `<history>

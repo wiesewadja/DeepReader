@@ -25,6 +25,7 @@ export default class DeepPDFPlugin extends Plugin {
     settings: DeepPDFSettings;
     readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
+    profileBuilder?: import('./services/profile-builder').ProfileBuilder;
     private skillsDir: string = '';
 
     // E2E 测试暴露的 API
@@ -36,6 +37,11 @@ export default class DeepPDFPlugin extends Plugin {
         parseEpub,
         exportToObsidian,
         PageIndex,
+        createProfileBuilder: () => {
+            const { ProfileBuilder } = require('./services/profile-builder');
+            this.profileBuilder = new ProfileBuilder(this.app, this.settings);
+            return this.profileBuilder;
+        },
     };
 
     async onload() {
@@ -52,6 +58,13 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化 FrontendAgent（插件启动时初始化）
         await this.getFrontendAgent();
+
+        // 初始化 ProfileBuilder 并自动增量构建（距上次 > 24h）
+        if (this.settings.journalDir) {
+            const { ProfileBuilder } = await import('./services/profile-builder');
+            this.profileBuilder = new ProfileBuilder(this.app, this.settings);
+            this.scheduleAutoBuild();
+        }
 
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
@@ -880,6 +893,9 @@ export default class DeepPDFPlugin extends Plugin {
                 // 思考模型控制
                 disableThinking: chatConfig?.disableThinking,
                 fastDisableThinking: routerConfig?.disableThinking,
+
+                // 用户画像
+                journalDir: this.settings.journalDir || undefined,
             });
             await this.frontendAgent.initialize();
             log('[DeepPDF] FrontendAgent 初始化完成');
@@ -892,6 +908,19 @@ export default class DeepPDFPlugin extends Plugin {
             }
         }
         return this.frontendAgent;
+    }
+
+    private async scheduleAutoBuild(): Promise<void> {
+        if (!this.profileBuilder) return;
+        const meta = await this.profileBuilder.readMeta();
+        if (!meta) return; // 从未构建过，不自动触发
+
+        const hoursSinceBuild = (Date.now() - new Date(meta.lastBuildTime).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceBuild >= 24) {
+            this.profileBuilder.build().catch(e => {
+                console.warn('[DeepReader] Auto-build profile failed:', e.message);
+            });
+        }
     }
 
     /**

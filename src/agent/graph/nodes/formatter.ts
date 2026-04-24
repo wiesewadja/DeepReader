@@ -112,7 +112,7 @@ export async function formatterNode(
   // === Casual mode (depth=0): simple direct response ===
   if (state.depth === 0) {
     callbacks?.onProgress?.('正在思考...');
-    const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
+    const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
     const stream = await mainModel.stream([
       new SystemMessage(casualPrompt),
       new HumanMessage(state.rewrittenQuery || ''),
@@ -137,7 +137,7 @@ export async function formatterNode(
   ];
   callbacks?.onProgress?.('正在整理笔记...');
 
-  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext);
+  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
 
   const chatHistory = ctx?.chatHistory ?? [];
   const markdownFiles = ctx?.markdownFiles ?? {};

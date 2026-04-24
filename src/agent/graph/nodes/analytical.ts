@@ -146,6 +146,7 @@ export async function analyticalNode(
     tocSummary,
     currentNodeId,
     currentChapterName,
+    userProfileSummary: ctx?.userProfileSummary,
   });
 
   const markdownFiles = ctx?.markdownFiles ?? {};

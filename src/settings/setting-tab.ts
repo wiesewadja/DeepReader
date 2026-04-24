@@ -2,19 +2,20 @@
  * DeepReader 插件设置界面
  */
 
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, TFolder, FuzzySuggestModal } from 'obsidian';
 import type DeepPDFPlugin from '../main';
 import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl } from '../config/providers';
 import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
 
+
 /** Proposition feature toggle: disabled due to high token cost. Re-enable after optimization. */
 const PROPOSITION_ENABLED = false;
 
 import { setLogEnabled, serviceLog } from '../utils/logger';
 
-type SettingsTabId = 'llm' | 'index' | 'advanced' | 'reading';
+type SettingsTabId = 'llm' | 'index' | 'profile' | 'advanced' | 'reading';
 
 interface SettingsTab {
     id: SettingsTabId;
@@ -31,6 +32,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     private tabs: SettingsTab[] = [
         { id: 'llm', name: 'AI 服务' },
         { id: 'index', name: '服务配置' },
+        { id: 'profile', name: '用户画像' },
         { id: 'advanced', name: '高级' },
         { id: 'reading', name: '阅读模式' },
     ];
@@ -101,6 +103,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 break;
             case 'index':
                 this.renderIndexServicesSettings(container);
+                break;
+            case 'profile':
+                this.renderProfileSettings(container);
                 break;
             case 'advanced':
                 this.renderAdvancedSettings(container);
@@ -865,6 +870,179 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
+     * 用户画像设置
+     */
+    private async renderProfileSettings(container: HTMLElement): Promise<void> {
+        container.createEl('h3', { text: '用户画像设置' });
+        container.createEl('p', {
+            text: '指定包含你日记、随笔、感悟的目录，奚童会从中了解你，提供更贴心的阅读陪伴。',
+            cls: 'setting-item-description',
+        });
+
+        new Setting(container)
+            .setName('笔记目录')
+            .setDesc('存放日记、随笔、感悟的 Obsidian 文件夹路径（相对于 Vault 根目录）')
+            .addText(text => {
+                text
+                    .setPlaceholder('点击下方按钮选择目录')
+                    .setValue(this.plugin.settings.journalDir || '')
+                    .inputEl.readOnly = true;
+            })
+            .addButton(btn => btn
+                .setButtonText('选择目录')
+                .setCta()
+                .onClick(() => {
+                    new FolderSuggestModal(this.app, async (path) => {
+                        if (path === this.plugin.settings.journalDir) return;
+                        this.plugin.settings.journalDir = path;
+                        await this.plugin.saveSettings();
+                        (this.plugin as any).profileBuilder = path
+                            ? new (await import('../services/profile-builder')).ProfileBuilder(this.app, this.plugin.settings)
+                            : undefined;
+                        new Notice('笔记目录已保存');
+                        this.renderTabContent('profile');
+                    }).open();
+                }));
+
+        const builder = (this.plugin as any).profileBuilder;
+        const hasProfile = !!(await builder?.readMeta?.());
+
+        new Setting(container)
+            .setName(hasProfile ? '重建画像' : '构建画像')
+            .setDesc(hasProfile ? '忽略已有数据，完全重新构建画像' : '扫描指定目录中的笔记，生成你的专属画像')
+            .addButton(btn => {
+                btn
+                    .setButtonText(builder?.getIsBuilding() ? '取消构建' : (hasProfile ? '重建' : '构建画像'))
+                    .setCta()
+                    .onClick(async () => {
+                        await this.handleBuildProfile(btn, statusEl, progressEl, hasProfile);
+                    });
+            })
+            .addButton(btn => {
+                btn
+                    .setButtonText('删除')
+                    .setWarning()
+                    .setDisabled(!hasProfile);
+                if (hasProfile) {
+                    btn.onClick(async () => {
+                        if (builder) {
+                            await builder.deleteProfile();
+                            new Notice('画像已删除');
+                            this.renderTabContent('profile');
+                        }
+                    });
+                }
+            });
+
+        // 状态 + 进度放在按钮下方，空间充裕
+        const statusEl = container.createDiv({ cls: 'deeppdf-profile-status' });
+        const progressEl = container.createDiv({ cls: 'deeppdf-profile-progress' });
+
+        if (builder?.getIsBuilding()) {
+            this.pollBuildProgress(null, statusEl, progressEl, hasProfile);
+        } else {
+            this.refreshProfileStatus(statusEl);
+        }
+    }
+
+    private async refreshProfileStatus(el: HTMLElement): Promise<void> {
+        el.empty();
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) {
+            el.createSpan({ text: '未配置笔记目录', cls: 'setting-item-description' });
+            return;
+        }
+
+        const meta = await builder.readMeta();
+        if (meta) {
+            const date = new Date(meta.lastBuildTime).toLocaleDateString('zh-CN');
+            el.createSpan({ text: `上次构建：${date} · 涵盖 ${meta.fileCount} 篇笔记` });
+        } else {
+            el.createSpan({ text: '尚未构建画像', cls: 'setting-item-description' });
+        }
+    }
+
+    private showBuildProgress(el: HTMLElement): void {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) return;
+        const p = builder.latestProgress;
+        if (!p) return;
+
+        el.empty();
+
+        const stageLabels: Record<string, string> = {
+            scanning: '扫描笔记文件',
+            indexing: '建立索引',
+            generating: '生成画像摘要',
+            done: '构建完成',
+        };
+
+        const stageLabel = stageLabels[p.stage] || p.stage;
+        const bar = el.createDiv({ cls: 'deeppdf-profile-progress-bar' });
+        const label = el.createDiv({ cls: 'deeppdf-profile-progress-label' });
+
+        if (p.total > 0) {
+            const pct = Math.round((p.current / p.total) * 100);
+            const fill = bar.createDiv({ cls: 'deeppdf-profile-progress-fill' });
+            fill.style.width = `${pct}%`;
+            label.setText(`${stageLabel}：${p.current} / ${p.total}（${pct}%）`);
+        } else {
+            label.setText(stageLabel);
+        }
+    }
+
+    private pollBuildProgress(
+        btn: any | null,
+        statusEl: HTMLElement,
+        progressEl: HTMLElement,
+        force: boolean,
+    ): void {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) return;
+
+        this.showBuildProgress(progressEl);
+
+        if (builder.getIsBuilding()) {
+            setTimeout(() => this.pollBuildProgress(btn, statusEl, progressEl, force), 500);
+        } else {
+            if (btn) btn.setButtonText(force ? '重建' : '构建画像');
+            progressEl.empty();
+            this.refreshProfileStatus(statusEl);
+            (this.plugin as any).frontendAgent?.invalidateProfileCache?.();
+            this.renderTabContent('profile');
+        }
+    }
+
+    private async handleBuildProfile(
+        btn: any,
+        statusEl: HTMLElement,
+        progressEl: HTMLElement,
+        force: boolean,
+    ): Promise<void> {
+        const builder = (this.plugin as any).profileBuilder;
+        if (!builder) {
+            new Notice('请先配置笔记目录');
+            return;
+        }
+
+        if (builder.getIsBuilding()) {
+            builder.cancel();
+            btn.setButtonText(force ? '重建' : '构建画像');
+            return;
+        }
+
+        btn.setButtonText('取消构建');
+
+        builder.build(undefined, force).catch((e: any) => {
+            if (e.name !== 'AbortError') {
+                new Notice(`构建失败：${e.message}`);
+            }
+        });
+
+        this.pollBuildProgress(btn, statusEl, progressEl, force);
+    }
+
+    /**
      * 阅读模式设置
      */
     private renderReadingModeSettings(container: HTMLElement): void {
@@ -900,4 +1078,39 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         });
     }
 
+}
+
+/**
+ * 文件夹选择弹窗 — 基于 FuzzySuggestModal
+ */
+class FolderSuggestModal extends FuzzySuggestModal<string> {
+    private onSelect: (path: string) => void;
+
+    constructor(app: App, onSelect: (path: string) => void) {
+        super(app);
+        this.onSelect = onSelect;
+        this.setPlaceholder('输入关键词筛选文件夹…');
+        this.setInstructions([{ command: '↑↓', purpose: '导航' }, { command: '↵', purpose: '选择' }, { command: 'esc', purpose: '取消' }]);
+    }
+
+    getItems(): string[] {
+        const folders: string[] = [];
+        const recurse = (folder: TFolder) => {
+            folders.push(folder.path);
+            for (const child of folder.children) {
+                if (child instanceof TFolder) recurse(child);
+            }
+        };
+        recurse(this.app.vault.getRoot());
+        folders.sort((a, b) => a.localeCompare(b));
+        return folders;
+    }
+
+    getItemText(item: string): string {
+        return item;
+    }
+
+    onChooseItem(item: string): void {
+        this.onSelect(item);
+    }
 }

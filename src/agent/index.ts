@@ -53,8 +53,7 @@ import { agentLog as log } from '../utils/logger.js';
 import { initTracer, getTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
 import { Command, MemorySaver } from '@langchain/langgraph';
-import { createCognitiveEngine } from './graph/index.js';
-import { FileCheckpointer } from './graph/checkpointer.js';
+import { cognitiveEngine } from './graph/index.js';
 import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
 import { createSharedContext } from './graph/shared-context.js';
@@ -91,6 +90,9 @@ export interface FrontendAgentOptions {
   // 思考模型控制（可选）
   disableThinking?: boolean;       // chat/main 模型
   fastDisableThinking?: boolean;   // router/fast 模型
+
+  // 用户画像（可选）
+  journalDir?: string;
 }
 
 export class FrontendAgent {
@@ -102,8 +104,6 @@ export class FrontendAgent {
   private intentRouter: IntentRouter;
   private initialized = false;
   private activeThreadId: string | null = null;
-  private fileCheckpointer: FileCheckpointer | null = null;
-  private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
 
   constructor(private options: FrontendAgentOptions) {
@@ -189,20 +189,10 @@ export class FrontendAgent {
   }
 
   /**
-   * 获取编译后的认知引擎（带持久化 checkpointer）。
+   * 获取编译后的认知引擎。
    */
   private getCompiledEngine() {
-    if (this.compiledEngine) return this.compiledEngine;
-
-    if (this.options.app?.vault?.adapter) {
-      this.fileCheckpointer = new FileCheckpointer(this.options.app);
-      this.compiledEngine = createCognitiveEngine(this.fileCheckpointer);
-      log('[FrontendAgent] 使用 FileCheckpointer 持久化');
-    } else {
-      this.compiledEngine = createCognitiveEngine(new MemorySaver());
-      log('[FrontendAgent] 使用 MemorySaver（无持久化）');
-    }
-    return this.compiledEngine;
+    return cognitiveEngine;
   }
 
   /**
@@ -331,6 +321,17 @@ ${currentMemory}
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
+
+      // 后台累计对话轮数（满 10 轮自动更新画像摘要）
+      const _pb = (context as any).plugin?.profileBuilder;
+      if (_pb) {
+        const _userMsg = userMessage || '';
+        const _assistantMsg = result.messages?.[0]?.content || '';
+        if (_userMsg && _assistantMsg) {
+          _pb.accumulateConversationRound(_userMsg, _assistantMsg);
+        }
+      }
+
       return result;
     } catch (err) {
       // 用户主动取消（新查询 abort 旧请求）不应显示为错误
@@ -437,6 +438,23 @@ ${currentMemory}
 
     const memoryContext = await this.memoryStore.getMemoryContext();
 
+    // 注入 journalDir 到 ToolContext（启用 search_journal 工具）
+    if (this.options.journalDir && !context.journalDir) {
+      (context as any).journalDir = this.options.journalDir;
+    }
+
+    // 读取画像摘要 + 检索相关片段（RAG）
+    // 读取用户画像摘要（常驻注入）
+    let userProfileSummary: string | undefined;
+    const profileBuilder = (context as any).plugin?.profileBuilder;
+    if (profileBuilder) {
+      try {
+        userProfileSummary = await profileBuilder.readSummary() || undefined;
+      } catch {
+        // 摘要不存在，静默跳过
+      }
+    }
+
     // 过滤有效对话历史
     const cleanHistory = (chatHistory ?? []).filter(m => m.role === 'user' || m.role === 'assistant');
     const recentHistorySummaries = summarizeRecentHistory(cleanHistory, 3);
@@ -457,6 +475,7 @@ ${currentMemory}
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
+      userProfileSummary,
     });
 
     const engineCallbacks: EngineCallbacks = {
@@ -744,6 +763,12 @@ ${currentMemory}
    */
   async reloadContext(): Promise<void> {
     log('[FrontendAgent] User context will be refreshed on next prompt');
+  }
+
+  /**
+   * 清除缓存的用户画像（画像重建后调用）
+   */
+  invalidateProfileCache(): void {
   }
 
   /**

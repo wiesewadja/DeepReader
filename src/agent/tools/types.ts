@@ -45,6 +45,8 @@ export interface ToolContext {
   ttsConfig?: { apiKey: string; baseUrl: string; model?: string };
   /** LLM 配置（用于 VoicePipeline 语音摘要生成） */
   llmConfig?: { apiKey: string; baseUrl: string; model?: string };
+  /** 用户笔记目录（配置后启用 search_journal 工具） */
+  journalDir?: string;
 }
 
 /**

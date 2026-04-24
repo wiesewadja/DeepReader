@@ -52,6 +52,7 @@ export interface SharedContext {
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
+  userProfileSummary?: string;
 }
 
 /**
@@ -71,6 +72,7 @@ export function createSharedContext(params: {
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
+  userProfileSummary?: string;
 }): SharedContext {
   return {
     chatHistory: params.chatHistory || [],
@@ -87,5 +89,6 @@ export function createSharedContext(params: {
     toolContext: params.toolContext,
     recentHistorySummaries: params.recentHistorySummaries,
     prevSearchedBlockIds: params.prevSearchedBlockIds,
+    userProfileSummary: params.userProfileSummary,
   };
 }

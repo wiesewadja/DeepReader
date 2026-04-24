@@ -47,16 +47,30 @@ wiki 链接的标准格式：[[书名/文件名#^block_id|别名]]
 /**
  * Build system prompt for formatter state with memory context
  */
-export function buildFormatterSystemPrompt(memoryContext?: string): string {
+export function buildFormatterSystemPrompt(
+  memoryContext?: string,
+  userProfileSummary?: string,
+): string {
   const memorySection = memoryContext
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
+    : '';
+
+  const profileSection = userProfileSummary
+    ? `\n<user_profile>\n${userProfileSummary}\n</user_profile>
+<profile_instruction>
+你已经了解这个用户。在回复中自然地体现这种了解：
+- 找到书中内容与用户经历、关注点或人生阶段的共鸣点，用一两句话点一点
+- 不需要每次都提及，只在确实相关时自然带出
+- 语气像老朋友在分享读书心得，不是咨询师在做分析
+- 不要强行关联，生硬比沉默更糟糕
+</profile_instruction>\n`
     : '';
 
   const now = new Date();
   const timeStr = now.toLocaleString('zh-CN', { hour12: false });
   const timeSection = `\n<current_time>${timeStr}</current_time>\n`;
 
-  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}`;
+  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}${profileSection}`;
 }
 
 /**
