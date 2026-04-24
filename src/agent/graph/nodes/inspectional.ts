@@ -60,8 +60,9 @@ export async function inspectionalNode(
     };
   }
 
-  // Step 2: Format tree structure
-  const treeText = formatTreeStructure(outlineNodes);
+  // Step 2: Format tree structure (include book name in links)
+  const pdfName = state.pdfName || '';
+  const treeText = formatTreeStructure(outlineNodes, 0, 100, 4, pdfName);
 
   // Step 3: Build prompt
   const docDescription = config.configurable?.sharedContext?.docDescription;

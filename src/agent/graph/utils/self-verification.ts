@@ -199,33 +199,28 @@ function escapeRegExp(str: string): string {
 }
 
 /**
- * 移除幽灵引用，保留别名文本
+ * 降级幽灵 block_id 引用：去掉 #^block_id，保留文件级链接
+ * [[书名/文件名#^ghost_block|别名]] → [[书名/文件名|别名]]
  */
 export function removeGhostLinks(content: string, ghostIds: Set<string>): string {
   if (ghostIds.size === 0) return content;
 
-  return content.replace(/\[\[[^\]]*#\^([^|\]]+)\|([^\]]*)\]\]/g, (match, blockId, alias) => {
+  return content.replace(/\[\[([^\]]*)#\^([^|\]]+)\|([^\]]*)\]\]/g, (match, path, blockId, alias) => {
     if (ghostIds.has(blockId)) {
-      return alias;
+      // 降级为文件级链接，不删除
+      return `[[${path}|${alias}]]`;
     }
     return match;
   });
 }
 
 /**
- * 移除幽灵文件引用（无 block_id），保留别名文本
+ * 保留幽灵文件引用的完整链接（不删除）
+ * 即使文件名无法验证，链接仍然指向可能存在的文件
  */
 export function removeGhostFileLinks(content: string, ghostFiles: Set<string>): string {
-  if (ghostFiles.size === 0) return content;
-
-  return content.replace(/\[\[([^#|]+)\|([^\]]+)\]\]/g, (match, pathPart, alias) => {
-    // 提取 file_name（去掉书名前缀）
-    const fileName = pathPart.split('/').pop()?.replace(/\.md$/, '') || pathPart.replace(/\.md$/, '');
-    if (ghostFiles.has(fileName)) {
-      return alias;
-    }
-    return match;
-  });
+  // 不再删除，直接返回原内容
+  return content;
 }
 
 /**

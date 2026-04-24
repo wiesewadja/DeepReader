@@ -1335,7 +1335,12 @@ export class SidebarView extends ItemView {
      * 清除顶栏书名信息（阅读模式停用时调用）
      */
     public clearBookInfo(): void {
+        this.currentIndexId = null;
+        this.currentPdfName = null;
+        this.currentBookCoverUrl = null;
+        this.currentBookAuthor = null;
         this.readingTopbar?.setCurrentBook(null);
+        this.readingTopbar?.setBookCover(null);
     }
 
     /**

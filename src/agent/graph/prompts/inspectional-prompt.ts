@@ -18,7 +18,8 @@ export function formatTreeStructure(
   nodes: OutlineNode[],
   indent: number = 0,
   maxTextLength: number = 100,
-  maxDepth: number = 4
+  maxDepth: number = 4,
+  bookName: string = ''
 ): string {
   const lines: string[] = [];
 
@@ -28,8 +29,10 @@ export function formatTreeStructure(
 
     const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
 
-    // 简化格式：只传 file_name，不含书名（S4 会补全）
-    const linkPart = node.file_name ? `, link: [[${node.file_name}]]` : '';
+    const fullLink = bookName && node.file_name
+      ? `[[${bookName}/${node.file_name}]]`
+      : node.file_name ? `[[${node.file_name}]]` : '';
+    const linkPart = fullLink ? `, link: ${fullLink}` : '';
     const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}${linkPart})`;
     lines.push(titleLine);
 
@@ -42,7 +45,7 @@ export function formatTreeStructure(
     }
 
     if (node.children && node.children.length > 0 && indent < maxDepth) {
-      const childText = formatTreeStructure(node.children, indent + 1, maxTextLength, maxDepth);
+      const childText = formatTreeStructure(node.children, indent + 1, maxTextLength, maxDepth, bookName);
       lines.push(childText);
     }
   }
@@ -71,7 +74,7 @@ export function buildInspectionalSystemPrompt(
 1. 仔细阅读目录树和章节摘要
 2. 直接生成一份详细的《全书结构检视报告》(structural_analysis)
 3. 解答用户的宏观问题，基于目录信息组织回答
-4. 引用章节时，直接复制目录树中 link 字段的值（如 [[13 - 第一章]]）
+4. 引用章节时，使用 wiki 链接格式 [[${docName}/文件名|别名]]，别名 2-6 字核心词嵌入句中，直接从目录树的 link 字段获取文件名
 5. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
 </task_branch>`
     : `<task_branch name="圈定战区">
