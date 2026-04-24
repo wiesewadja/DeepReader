@@ -1,6 +1,6 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.04.23",
+  "version": "2026.04.24",
   "description": "DeepReader - 深度阅读插件",
   "main": "bin/main.js",
   "scripts": {
@@ -11,7 +11,10 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
-    "deploy": "npm run build && mkdir -p \"/Users/lizhao/workspace/DeepReader/test-vault/.obsidian/plugins/deepreader\" && cp bin/main.js bin/manifest.json bin/styles.css \"/Users/lizhao/workspace/DeepReader/test-vault/.obsidian/plugins/deepreader/\""
+    "deploy": "node scripts/deploy.js dev",
+    "deploy:dev": "node scripts/deploy.js dev",
+    "deploy:daily": "node scripts/deploy.js daily",
+    "deploy:all": "node scripts/deploy.js dev daily"
   },
   "keywords": [
     "obsidian",

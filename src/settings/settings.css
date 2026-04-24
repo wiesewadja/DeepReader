@@ -73,7 +73,7 @@
 .deeppdf-settings-content {
     flex: 1;
     overflow-y: auto;
-    padding: 32px 0;
+    padding: 32px 12px 32px 0;
 }
 
 .deeppdf-settings-content h3 {
@@ -223,18 +223,26 @@
     border-bottom: none;
 }
 
-/* ==================== 自定义滚动条（更细） ==================== */
+/* ==================== 自定义滚动条（默认隐藏，悬停时显示） ==================== */
 .deeppdf-settings-content::-webkit-scrollbar {
-    width: 4px;
+    width: 4px !important;
 }
 
 .deeppdf-settings-content::-webkit-scrollbar-track {
-    background: transparent;
+    background: transparent !important;
 }
 
 .deeppdf-settings-content::-webkit-scrollbar-thumb {
-    background: var(--background-modifier-border);
-    border-radius: 2px;
+    background: transparent !important;
+    border-radius: 2px !important;
+}
+
+.deeppdf-settings-content:hover::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border) !important;
+}
+
+.deeppdf-settings-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted) !important;
 }
 
 /* ==================== 响应式适配 ==================== */
