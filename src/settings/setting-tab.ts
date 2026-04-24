@@ -840,7 +840,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                             new Notice('笔记目录已变更，请重新构建画像');
                         }
                         (this.plugin as any).profileBuilder = value
-                            ? new (require('../services/profile-builder').ProfileBuilder)(this.app, this.plugin.settings)
+                            ? new (await import('../services/profile-builder')).ProfileBuilder(this.app, this.plugin.settings)
                             : undefined;
                     });
             });
@@ -927,6 +927,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         } else {
             btn.setButtonText(force ? '重建' : '构建画像');
             this.refreshProfileStatus(statusEl);
+            (this.plugin as any).frontendAgent?.invalidateProfileCache?.();
         }
     }
 

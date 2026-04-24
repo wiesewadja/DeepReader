@@ -13,21 +13,19 @@ const searchJournalSchema = z.object({
 	topK: z.number().optional().describe('返回结果数量，默认 3'),
 });
 
-export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) =>
-	tool(
+export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
+	const journalDir = (ctx as any).journalDir as string | undefined;
+	const settings = ctx.plugin?.settings;
+	const searchService = (journalDir && settings)
+		? new JournalSearchService(ctx.app!, settings, getJournalIndexDir(journalDir))
+		: null;
+
+	return tool(
 		async (args) => {
 			const { query, topK = 3 } = args;
-			const journalDir = (ctx as any).journalDir as string | undefined;
-			if (!journalDir) {
+			if (!searchService) {
 				return JSON.stringify({ status: 'SKIP', message: '未配置笔记目录' });
 			}
-
-			const settings = ctx.plugin?.settings;
-			if (!settings) {
-				return JSON.stringify({ status: 'SKIP', message: '插件设置不可用' });
-			}
-			const indexDir = getJournalIndexDir(journalDir);
-			const searchService = new JournalSearchService(ctx.app!, settings, indexDir);
 
 			try {
 				const results = await searchService.search(query, topK);
@@ -47,3 +45,4 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) =>
 			schema: searchJournalSchema,
 		},
 	);
+};

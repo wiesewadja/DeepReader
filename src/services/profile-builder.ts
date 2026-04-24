@@ -10,7 +10,6 @@ import type { DeepPDFSettings } from '../config/settings';
 import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
 import { buildBM25Index } from '../pageindex/bm25';
-import type { BM25Data } from '../pageindex/book-types';
 import { generateBookId } from '../pageindex/book-indexer';
 import {
 	generateEmbeddings,
@@ -58,6 +57,18 @@ const MERGE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。
 - 500-1000 字
 - 不编造他没有说过的话`;
 
+const SUMMARY_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友，现在要给另一个朋友简要介绍他。
+
+不是列标签，是让人听完后能"感受到"他是谁。注意以下要点：
+
+1. 他正处在人生的什么阶段，往哪个方向走
+2. 他真正在意的事，不是表面说的，是你观察到他反复挂在心上的
+3. 他的性格底色——是焦虑驱动还是好奇驱动，是独处充电还是人群充电
+4. 他和身边人的关系，有没有特别的牵挂或负担
+5. 如果他在不同时期有明显变化，用一两句话勾勒这种转变
+
+写 500-800 字。用"他"来称呼。不用面面俱到，抓住最能定义他的那几条线。像一个了解他的人，在灯下跟朋友谈起他时会说的话。`;
+
 const INCREMENTAL_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你对他已经有所了解，现在他又写了一些新的笔记。
 
 请结合你对他的已有了解和新笔记，更新你对他的描绘。
@@ -76,6 +87,7 @@ export class ProfileBuilder {
 	/** 当前构建进度（设置页可读取） */
 	latestProgress: BuildProgress | null = null;
 	private buildPromise: Promise<void> | null = null;
+	private bufferMutex: Promise<void> = Promise.resolve();
 
 	constructor(app: App, settings: DeepPDFSettings) {
 		this.app = app;
@@ -90,6 +102,7 @@ export class ProfileBuilder {
 	private get vault() { return this.app.vault; }
 	private get metaPath() { return 'DeepReader/.profile-meta.json'; }
 	private get profilePath() { return 'DeepReader/USER_PROFILE.md'; }
+	private get summaryPath() { return 'DeepReader/.profile-summary.txt'; }
 
 	getIndexDir(): string {
 		const hash = generateBookId(this.settings.journalDir);
@@ -220,6 +233,101 @@ export class ProfileBuilder {
 	private getEmbeddingOptions() {
 		const resolved = resolveRoleConfig('embedding', this.settings);
 		return resolved ? toEmbeddingOptions(resolved) : null;
+	}
+
+
+	// ── 画像摘要 ──
+
+	async generateSummary(profileText: string, signal?: AbortSignal): Promise<string> {
+		const { baseUrl, apiKey, model } = this.getChatConfig();
+		const summary = await this.callLLM(
+			SUMMARY_SYSTEM_PROMPT,
+			`以下是关于他的详细描绘：\n\n${profileText}\n\n请压缩成一段简短摘要。`,
+			baseUrl, apiKey, model, signal,
+		);
+		return summary.trim();
+	}
+
+	async readSummary(): Promise<string | null> {
+		try {
+			return await this.vault.adapter.read(this.summaryPath);
+		} catch { return null; }
+	}
+
+	// ── 对话后增量更新 ──
+
+	private static readonly UPDATE_INTERVAL = 10;
+	private static readonly CONVERSATION_UPDATE_PROMPT = `你是一个认识了用户很多年的老朋友。你对他有一个已有的了解，现在你旁观了他和 AI 助手的最近几轮对话。
+
+请判断这些对话是否暴露了你之前不知道的关于他的新信息。比如：
+- 他对某个话题的反应暴露了新的态度或情感
+- 他提到了你之前不了解的经历、关系或计划
+- 他的提问方式或关注点揭示了他当下的状态变化
+
+如果有新发现，把它们自然融入已有描绘中，不破坏原有结构和时间线。
+如果没有新信息，返回原文不要做任何修改。
+
+重要：只补充确定的新发现，不要推测。保持「他」的称呼。500-800 字。`;
+
+	private get bufferPath() { return 'DeepReader/.profile-buffer.json'; }
+
+	/**
+	 * 累计对话轮数，每 10 轮提炼一次更新摘要
+	 * 通过 bufferMutex 保证并发安全
+	 */
+	accumulateConversationRound(
+		userMessage: string,
+		assistantMessage: string,
+	): void {
+		this.bufferMutex = this.bufferMutex.then(() =>
+			this.doAccumulateRound(userMessage, assistantMessage)
+		);
+	}
+
+	private async doAccumulateRound(
+		userMessage: string,
+		assistantMessage: string,
+	): Promise<void> {
+		try {
+			let rounds: Array<{ user: string; assistant: string }> = [];
+			try {
+				const raw = await this.vault.adapter.read(this.bufferPath);
+				rounds = JSON.parse(raw).rounds || [];
+			} catch { /* 首次 */ }
+
+			rounds.push({ user: userMessage.slice(0, 800), assistant: assistantMessage.slice(0, 800) });
+
+			if (rounds.length < ProfileBuilder.UPDATE_INTERVAL) {
+				await this.vault.adapter.write(this.bufferPath, JSON.stringify({ rounds }));
+				return;
+			}
+
+			const summary = await this.readSummary();
+			if (!summary) {
+				await this.vault.adapter.write(this.bufferPath, JSON.stringify({ rounds: [] }));
+				return;
+			}
+
+			const conversationText = rounds
+				.map((r, i) => `第${i + 1}轮\n用户：${r.user}\n助手：${r.assistant}`)
+				.join('\n\n');
+
+			const { baseUrl, apiKey, model } = this.getChatConfig();
+			const updated = await this.callLLM(
+				ProfileBuilder.CONVERSATION_UPDATE_PROMPT,
+				`<你对他的了解>\n${summary}\n</你对他的了解>\n\n<最近${rounds.length}轮对话>\n${conversationText}\n</最近${rounds.length}轮对话>\n\n请更新你对他的描绘。如果没有新发现，返回原文。`,
+				baseUrl, apiKey, model,
+			);
+
+			const trimmed = updated.trim();
+			if (trimmed && trimmed !== summary) {
+				await this.vault.adapter.write(this.summaryPath, trimmed);
+			}
+
+			await this.vault.adapter.write(this.bufferPath, JSON.stringify({ rounds: [] }));
+		} catch (e) {
+			console.warn('[ProfileBuilder] accumulateConversationRound failed:', (e as Error).message);
+		}
 	}
 
 	// ── 画像生成 ──
@@ -476,6 +584,13 @@ ${profile}
 `;
 			await this.vault.adapter.write(this.profilePath, profileContent);
 
+			// 生成摘要
+			emit({ stage: 'generating', current: 0, total: 1, message: '生成摘要中...' });
+			const summary = await this.generateSummary(profile, signal);
+			if (summary) {
+				await this.vault.adapter.write(this.summaryPath, summary);
+			}
+
 			// 更新 meta
 			const processedFiles: Record<string, { mtime: string; size: number }> = {};
 			for (const f of allFiles) {
@@ -508,5 +623,7 @@ ${profile}
 		try { await this.vault.adapter.rmdir(indexDir, true); } catch {}
 		try { await this.vault.adapter.remove(this.metaPath); } catch {}
 		try { await this.vault.adapter.remove(this.profilePath); } catch {}
+		try { await this.vault.adapter.remove(this.summaryPath); } catch {}
+			try { await this.vault.adapter.remove(this.bufferPath); } catch {}
 	}
 }

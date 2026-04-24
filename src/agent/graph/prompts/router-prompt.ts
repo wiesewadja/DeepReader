@@ -10,7 +10,7 @@ export const PROMPT_S0_ROUTER = `<role>
 </role>
 
 <task>
-1. 结合【近期提问记录】，阅读【用户的当前提问】。
+1. 结合【近期对话记录】，阅读【用户的当前提问】。
 2. 将用户的当前提问重写为一个完整的、不带代词的独立句子 (standalone_query)。如果原句已完整，保持原样。注意：如果用户提到"这本书"，请替换为【当前书籍】的实际名称。
 3. 判断该提问所需的阅读深度 (depth)。
 </task>
@@ -40,18 +40,17 @@ export function buildRouterUserMessage(
   chatHistory: Array<{ role: string; content: string }>,
   bookName?: string
 ): string {
-  // 只取近 3 次用户提问（不含 AI 回复），用于意图识别和 query 重写
-  const recentUserQueries = chatHistory
-    .filter(m => m.role === 'user')
-    .slice(-3)
-    .map(m => m.content);
+  // 近 3 轮对话（含 AI 回复摘要），用于意图识别和 query 重写
+  const recent = chatHistory.slice(-6); // 最多 3 轮 = 6 条消息
+  const historyLines: string[] = [];
+  for (const m of recent) {
+    const label = m.role === 'user' ? '用户' : 'AI';
+    const text = m.content.replace(/\n/g, ' ').slice(0, 200);
+    historyLines.push(`${label}: ${text}`);
+  }
 
-  const historyText = recentUserQueries.length > 0
-    ? recentUserQueries.map((q, i) => `${i + 1}. ${q}`).join('\n')
-    : '';
-
-  const historyBlock = historyText
-    ? `\n<recent_queries>\n${historyText}\n</recent_queries>\n`
+  const historyBlock = historyLines.length > 0
+    ? `\n<recent_conversation>\n${historyLines.join('\n')}\n</recent_conversation>\n`
     : '';
 
   const bookContext = bookName

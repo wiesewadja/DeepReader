@@ -53,8 +53,7 @@ import { agentLog as log } from '../utils/logger.js';
 import { initTracer, getTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
 import { Command, MemorySaver } from '@langchain/langgraph';
-import { createCognitiveEngine } from './graph/index.js';
-import { FileCheckpointer } from './graph/checkpointer.js';
+import { cognitiveEngine } from './graph/index.js';
 import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
 import { createSharedContext } from './graph/shared-context.js';
@@ -105,12 +104,7 @@ export class FrontendAgent {
   private intentRouter: IntentRouter;
   private initialized = false;
   private activeThreadId: string | null = null;
-  private fileCheckpointer: FileCheckpointer | null = null;
-  private compiledEngine: ReturnType<typeof createCognitiveEngine> | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
-  private cachedUserProfile: string | undefined;
-  private cachedUserProfileTime = 0;
-  private static readonly PROFILE_CACHE_TTL = 60_000; // 1 minute
 
   constructor(private options: FrontendAgentOptions) {
     // 构建 main 配置
@@ -195,20 +189,10 @@ export class FrontendAgent {
   }
 
   /**
-   * 获取编译后的认知引擎（带持久化 checkpointer）。
+   * 获取编译后的认知引擎。
    */
   private getCompiledEngine() {
-    if (this.compiledEngine) return this.compiledEngine;
-
-    if (this.options.app?.vault?.adapter) {
-      this.fileCheckpointer = new FileCheckpointer(this.options.app);
-      this.compiledEngine = createCognitiveEngine(this.fileCheckpointer);
-      log('[FrontendAgent] 使用 FileCheckpointer 持久化');
-    } else {
-      this.compiledEngine = createCognitiveEngine(new MemorySaver());
-      log('[FrontendAgent] 使用 MemorySaver（无持久化）');
-    }
-    return this.compiledEngine;
+    return cognitiveEngine;
   }
 
   /**
@@ -337,6 +321,17 @@ ${currentMemory}
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
+
+      // 后台累计对话轮数（满 10 轮自动更新画像摘要）
+      const _pb = (context as any).plugin?.profileBuilder;
+      if (_pb) {
+        const _userMsg = userMessage || '';
+        const _assistantMsg = result.messages?.[0]?.content || '';
+        if (_userMsg && _assistantMsg) {
+          _pb.accumulateConversationRound(_userMsg, _assistantMsg);
+        }
+      }
+
       return result;
     } catch (err) {
       // 用户主动取消（新查询 abort 旧请求）不应显示为错误
@@ -448,19 +443,15 @@ ${currentMemory}
       (context as any).journalDir = this.options.journalDir;
     }
 
-    // 读取用户画像（带缓存，1 分钟 TTL）
-    let userProfile: string | undefined;
-    const now = Date.now();
-    if (this.cachedUserProfile && now - this.cachedUserProfileTime < FrontendAgent.PROFILE_CACHE_TTL) {
-      userProfile = this.cachedUserProfile;
-    } else {
+    // 读取画像摘要 + 检索相关片段（RAG）
+    // 读取用户画像摘要（常驻注入）
+    let userProfileSummary: string | undefined;
+    const profileBuilder = (context as any).plugin?.profileBuilder;
+    if (profileBuilder) {
       try {
-        const profileContent = await this.options.app.vault.adapter.read('DeepReader/USER_PROFILE.md');
-        userProfile = profileContent.replace(/^---[\s\S]*?---\n*/, '').trim();
-        this.cachedUserProfile = userProfile;
-        this.cachedUserProfileTime = now;
+        userProfileSummary = await profileBuilder.readSummary() || undefined;
       } catch {
-        this.cachedUserProfile = undefined;
+        // 摘要不存在，静默跳过
       }
     }
 
@@ -484,7 +475,7 @@ ${currentMemory}
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
-      userProfile,
+      userProfileSummary,
     });
 
     const engineCallbacks: EngineCallbacks = {
@@ -654,8 +645,6 @@ ${currentMemory}
    * 清除缓存的用户画像（画像重建后调用）
    */
   invalidateProfileCache(): void {
-    this.cachedUserProfile = undefined;
-    this.cachedUserProfileTime = 0;
   }
 
   /**

@@ -89,7 +89,7 @@ export function buildAnalyticalSystemPrompt(ctx: {
   tocSummary?: string;
   currentNodeId?: string;
   currentChapterName?: string;
-  userProfile?: string;
+  userProfileSummary?: string;
 }): string {
   const scopeList = ctx.scopeNodeIds.length > 0
     ? ctx.scopeNodeIds.map(id => `- ${id}`).join('\n')
@@ -107,8 +107,8 @@ export function buildAnalyticalSystemPrompt(ctx: {
 </current_chapter_priority>`
     : '';
 
-  const userProfileBlock = ctx.userProfile
-    ? `\n<user_profile>\n${ctx.userProfile}\n</user_profile>`
+  const userProfileBlock = ctx.userProfileSummary
+    ? `\n<user_profile>\n${ctx.userProfileSummary}\n</user_profile>`
     : '';
 
   return `${PROMPT_S2_ANALYTICAL_TEMPLATE}
