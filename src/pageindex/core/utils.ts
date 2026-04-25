@@ -496,6 +496,21 @@ export function convertPhysicalIndexToInt(
 
   if (Array.isArray(data)) {
     for (const item of data) {
+      // Normalize snake_case key from LLM JSON responses
+      const raw = item as unknown as Record<string, unknown>;
+      if (raw.physical_index !== undefined && item.physicalIndex === undefined) {
+        // Parse string formats like "<physical_index_5>" or plain integers
+        const val = raw.physical_index;
+        if (typeof val === "number") {
+          item.physicalIndex = val;
+        } else if (typeof val === "string") {
+          const parsed = convertPhysicalIndexToInt(val);
+          if (typeof parsed === "number") {
+            item.physicalIndex = parsed;
+          }
+        }
+        delete raw.physical_index;
+      }
       if (typeof item.physicalIndex === "string") {
         const parsed = convertPhysicalIndexToInt(item.physicalIndex);
         if (typeof parsed === "number") {

@@ -171,8 +171,12 @@ function tryExtractTocItems(content: string): TocItem[] {
       let match;
       while ((match = itemRegex.exec(content)) !== null) {
         const item: TocItem = { structure: match[1], title: match[2] };
+        const fragment = content.slice(match.index, content.indexOf("}", match.index));
+        // Try to extract physical_index
+        const physMatch = fragment.match(/"physical_index"\s*:\s*"<physical_index_(\d+)>"/);
+        if (physMatch) item.physicalIndex = parseInt(physMatch[1]);
         // Try to extract page number
-        const pageMatch = content.slice(match.index, content.indexOf("}", match.index)).match(/"page"\s*:\s*(\d+)/);
+        const pageMatch = fragment.match(/"page"\s*:\s*(\d+)/);
         if (pageMatch) item.page = parseInt(pageMatch[1]);
         items.push(item);
       }
@@ -188,9 +192,18 @@ function tryExtractTocItems(content: string): TocItem[] {
   let objMatch;
   while ((objMatch = objectRegex.exec(content)) !== null) {
     try {
-      const obj = JSON.parse(objMatch[0]);
+      const obj = JSON.parse(objMatch[0]) as Record<string, unknown>;
       if (obj.structure && obj.title !== undefined) {
-        items.push(obj as TocItem);
+        const item: TocItem = { structure: obj.structure as string, title: obj.title as string };
+        // Normalize snake_case key
+        if (obj.physical_index !== undefined) {
+          const val = obj.physical_index;
+          item.physicalIndex = typeof val === "number" ? val : parseInt(String(val).replace(/<physical_index_|>/g, ""), 10);
+        }
+        if (obj.page !== undefined) {
+          item.page = obj.page as number;
+        }
+        items.push(item);
       }
     } catch {}
   }
@@ -315,24 +328,31 @@ export async function generateTocInit(
   options: TocOptions
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocInitPrompt(part);
-  const maxTokens = options.maxTokens || 8192;
   const inputTokens = Math.round(part.length / 4);
-  piLog(`[generateTocInit] Sending to ${options.model} (input ~${inputTokens} chars, maxOutput ${maxTokens} tokens, baseUrl: ${options.baseUrl})...`);
+  piLog(`[generateTocInit] Sending to ${options.model} (input ~${inputTokens} chars, baseUrl: ${options.baseUrl})...`);
 
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
-    maxTokens,
+    maxTokens: 16384,
   });
 
   piLog(`[generateTocInit] Response received: finishReason=${finishReason}, output ${content.length} chars`);
 
   if (finishReason === "finished") {
     const json = extractJson<TocItem[]>(content);
-    piLog(`[generateTocInit] Parsed ${json?.length || 0} TOC items`);
-    return json || [];
+    const items = Array.isArray(json) ? json : [];
+    piLog(`[generateTocInit] Parsed ${items.length} TOC items`);
+    return items;
+  }
+
+  // Truncated output — extract partial items instead of throwing
+  const partialItems = tryExtractTocItems(content);
+  if (partialItems.length > 0) {
+    piLog(`[generateTocInit] Extracted ${partialItems.length} items from truncated response (${finishReason})`);
+    return partialItems;
   }
 
   piLog(`[generateTocInit] ERROR: finishReason=${finishReason}, output preview: ${content.slice(0, 200)}`);
@@ -348,24 +368,31 @@ export async function generateTocContinue(
   options: TocOptions
 ): Promise<TocItem[]> {
   const prompt = prompts.generateTocContinuePrompt(part, JSON.stringify(tocContent, null, 2));
-  const maxTokens = options.maxTokens || 8192;
   const inputTokens = Math.round(part.length / 4);
-  piLog(`[generateTocContinue] Sending to ${options.model} (input ~${inputTokens} chars, context ${tocContent.length} items, maxOutput ${maxTokens} tokens)...`);
+  piLog(`[generateTocContinue] Sending to ${options.model} (input ~${inputTokens} chars, context ${tocContent.length} items)...`);
 
   const { content, finishReason } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
-    maxTokens,
+    maxTokens: 16384,
   });
 
   piLog(`[generateTocContinue] Response received: finishReason=${finishReason}, output ${content.length} chars`);
 
   if (finishReason === "finished") {
     const json = extractJson<TocItem[]>(content);
-    piLog(`[generateTocContinue] Parsed ${json?.length || 0} new TOC items`);
-    return json || [];
+    const items = Array.isArray(json) ? json : [];
+    piLog(`[generateTocContinue] Parsed ${items.length} new TOC items`);
+    return items;
+  }
+
+  // Truncated output — extract partial items instead of throwing
+  const partialItems = tryExtractTocItems(content);
+  if (partialItems.length > 0) {
+    piLog(`[generateTocContinue] Extracted ${partialItems.length} items from truncated response (${finishReason})`);
+    return partialItems;
   }
 
   piLog(`[generateTocContinue] ERROR: finishReason=${finishReason}, output preview: ${content.slice(0, 200)}`);

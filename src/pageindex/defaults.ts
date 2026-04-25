@@ -31,7 +31,7 @@ export const DEFAULT_TOC_CHECK_PAGE_NUM = 20;
 export const DEFAULT_MAX_PAGE_NUM_EACH_NODE = 10;
 
 /** Max tokens per content group before splitting */
-export const DEFAULT_MAX_TOKEN_NUM_EACH_NODE = 20000;
+export const DEFAULT_MAX_TOKEN_NUM_EACH_NODE = 100000;
 
 // ─── Export ────────────────────────────────────────────────────
 /** Export output subdirectory (relative to vault root) */

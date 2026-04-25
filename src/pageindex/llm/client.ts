@@ -5,7 +5,7 @@
  * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
 
-import { isThinkingModel as sharedIsThinkingModel, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
+import { isThinkingModel as sharedIsThinkingModel, getDisableThinkingParams, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
 import { normalizeBaseUrl } from '../../config/providers.js';
 import { safeRequest } from '../../utils/safe-request.js';
 import { log as piLog } from '../core/logger';
@@ -101,6 +101,8 @@ export async function chatGPTWithFinishReason(
         piLog(`[chatGPT] Retry ${attempt + 1}/${maxRetries} for model ${model}...`);
       }
 
+      const disableThinking = getDisableThinkingParams(model);
+
       const response = await safeRequest({
         url: `${effectiveBaseUrl}/chat/completions`,
         method: "POST",
@@ -111,6 +113,7 @@ export async function chatGPTWithFinishReason(
           messages,
           temperature,
           ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          ...(disableThinking || {}),
         }),
       });
 
