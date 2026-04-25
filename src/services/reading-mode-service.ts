@@ -44,6 +44,7 @@ export class ReadingModeService {
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
     private currentBookName: string = '';
+    private pendingRetry: ReturnType<typeof setTimeout> | null = null;
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -163,10 +164,10 @@ export class ReadingModeService {
     /**
      * 激活阅读模式
      */
-    activate(file: TFile): void {
+    activate(file: TFile, retryCount = 0): void {
         const wasSameFile = this.isActive && this.currentFile?.path === file.path;
         if (wasSameFile) {
-            return; // 同一个文件，无需重新激活
+            return;
         }
 
         serviceLog('[DeepPDF] ReadingMode activating for:', file.path);
@@ -174,8 +175,16 @@ export class ReadingModeService {
         // 检查视图是否可用，不可用则延迟重试（插件重载时视图可能还在重建）
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) {
-            serviceLog('[ReadingMode] MarkdownView not ready, retrying in 300ms...');
-            setTimeout(() => this.activate(file), 300);
+            if (retryCount >= 10) {
+                serviceLog('[ReadingMode] MarkdownView still not ready after 10 retries, giving up');
+                return;
+            }
+            // 去重：取消上一个未执行的重试，只保留最新的
+            if (this.pendingRetry) clearTimeout(this.pendingRetry);
+            this.pendingRetry = setTimeout(() => {
+                this.pendingRetry = null;
+                this.activate(file, retryCount + 1);
+            }, 300);
             return;
         }
 
