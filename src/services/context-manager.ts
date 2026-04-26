@@ -29,24 +29,8 @@ export interface LoadedDocument {
  */
 export interface ContextManagerOptions {
     app: App;
-    /** 最大上下文字符数（默认 50000） */
-    maxContextChars?: number;
     /** 内容变更回调 */
     onContextChange?: (docs: Map<string, LoadedDocument>) => void;
-}
-
-/**
- * 上下文统计信息
- */
-export interface ContextStats {
-    /** 已加载文档数量 */
-    docCount: number;
-    /** 总字符数 */
-    totalChars: number;
-    /** 最大字符数 */
-    maxChars: number;
-    /** 使用百分比 */
-    usagePercent: number;
 }
 
 /**
@@ -56,12 +40,10 @@ export interface ContextStats {
 export class ContextManager {
     private app: App;
     private loadedDocs: Map<string, LoadedDocument> = new Map();
-    private maxContextChars: number;
     private onContextChange?: (docs: Map<string, LoadedDocument>) => void;
 
     constructor(options: ContextManagerOptions) {
         this.app = options.app;
-        this.maxContextChars = options.maxContextChars || 50000;
         this.onContextChange = options.onContextChange;
     }
 
@@ -98,8 +80,6 @@ export class ContextManager {
             return this.loadedDocs.get(path)!;
         }
 
-        // 检查上下文大小限制
-        const currentSize = this.getTotalCharCount();
         const file = this.app.vault.getAbstractFileByPath(path);
 
         if (!(file instanceof TFile)) {
@@ -114,12 +94,6 @@ export class ContextManager {
         } catch (error) {
             new Notice('读取文件失败');
             logError('[ContextManager] 读取文件失败:', error);
-            return null;
-        }
-
-        // 检查是否会超过限制
-        if (currentSize + content.length > this.maxContextChars) {
-            new Notice(`上下文超出限制（最大 ${this.maxContextChars} 字符）`);
             return null;
         }
 
@@ -206,18 +180,6 @@ export class ContextManager {
         }
 
         return parts.join('\n\n');
-    }
-    /**
-     * 获取上下文统计信息
-     */
-    getStats(): ContextStats {
-        const totalChars = this.getTotalCharCount();
-        return {
-            docCount: this.loadedDocs.size,
-            totalChars,
-            maxChars: this.maxContextChars,
-            usagePercent: Math.round((totalChars / this.maxContextChars) * 100)
-        };
     }
     /**
      * 通知上下文变更
