@@ -59,6 +59,49 @@
     color: var(--text-muted);
 }
 
+/* ==================== 通用元素重置（清除主题边框分隔线） ==================== */
+
+.deeppdf-reading-mode .markdown-preview-view p,
+.deeppdf-reading-mode .markdown-preview-view h1,
+.deeppdf-reading-mode .markdown-preview-view h2,
+.deeppdf-reading-mode .markdown-preview-view h3,
+.deeppdf-reading-mode .markdown-preview-view h4,
+.deeppdf-reading-mode .markdown-preview-view h5,
+.deeppdf-reading-mode .markdown-preview-view h6,
+.deeppdf-reading-mode .markdown-preview-view ul,
+.deeppdf-reading-mode .markdown-preview-view ol,
+.deeppdf-reading-mode .markdown-preview-view li,
+.deeppdf-reading-mode .markdown-preview-view blockquote,
+.deeppdf-reading-mode .markdown-preview-view pre,
+.deeppdf-reading-mode .markdown-preview-view hr,
+.deeppdf-reading-mode .markdown-preview-view table,
+.deeppdf-reading-mode .markdown-preview-view th,
+.deeppdf-reading-mode .markdown-preview-view td {
+    border: none !important;
+    border-top: none !important;
+    border-bottom: none !important;
+}
+
+/* 恢复需要保留的边框 */
+.deeppdf-reading-mode .markdown-preview-view hr {
+    border: none !important;
+    border-top: 1px solid var(--background-modifier-border) !important;
+    opacity: 0.5;
+}
+
+.deeppdf-reading-mode .markdown-preview-view table {
+    border-collapse: collapse;
+}
+
+.deeppdf-reading-mode .markdown-preview-view th,
+.deeppdf-reading-mode .markdown-preview-view td {
+    border: 1px solid var(--background-modifier-border) !important;
+}
+
+.deeppdf-reading-mode .markdown-preview-view blockquote {
+    border-left: 3px solid var(--interactive-accent) !important;
+}
+
 /* ==================== 段落样式（沉浸式核心） ==================== */
 
 .deeppdf-reading-mode .markdown-preview-view p {
@@ -117,7 +160,6 @@
     font-style: italic;
     margin: 1.2em 0;
     padding: 1em 1.5em;
-    border-left: 3px solid var(--interactive-accent);
     background: var(--background-secondary);
     border-radius: 0 6px 6px 0;
 }
@@ -177,9 +219,6 @@
 
 .deeppdf-reading-mode .markdown-preview-view hr {
     margin: 3em 0;
-    border: none;
-    border-top: 1px solid var(--background-modifier-border);
-    opacity: 0.5;
 }
 
 /* ==================== 表格样式 ==================== */
@@ -187,14 +226,12 @@
 .deeppdf-reading-mode .markdown-preview-view table {
     width: 100%;
     margin: 1.5em 0;
-    border-collapse: collapse;
     font-size: 15px;
 }
 
 .deeppdf-reading-mode .markdown-preview-view th,
 .deeppdf-reading-mode .markdown-preview-view td {
     padding: 0.6em 0.8em;
-    border: 1px solid var(--background-modifier-border);
     text-align: left;
 }
 
@@ -612,8 +649,6 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
     pointer-events: none;
     z-index: 100;
 }

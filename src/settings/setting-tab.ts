@@ -1106,6 +1106,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     this.plugin.readingModeService?.setStyle(value as 'paginated' | 'scrolling');
                 }));
 
+        new Setting(container)
+            .setName("墨迹效果")
+            .setDesc("开启后，鼠标在阅读模式下移动时会留下渐隐的墨迹轨迹")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.enableInkLayer)
+                .onChange(async (value) => {
+                    this.plugin.settings.enableInkLayer = value;
+                    await this.plugin.saveSettings();
+                    this.plugin.readingModeService?.setEnableInkLayer(value);
+                }));
+
         container.createEl('p', {
             text: '提示：关闭后，打开章节文件将使用普通编辑模式，启用后则进入沉浸式阅读模式。',
             cls: 'setting-item-description'

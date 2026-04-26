@@ -30,6 +30,11 @@ export class InkLayer {
 	activate(): void {
 		if (this.active || !this.container) return;
 
+		// 确保容器有定位上下文，使 absolute 的 canvas 正确覆盖
+		if (getComputedStyle(this.container).position === 'static') {
+			this.container.style.position = 'relative';
+		}
+
 		this.canvas = document.createElement('canvas');
 		this.canvas.className = 'deeppdf-ink-layer-canvas';
 		this.container.appendChild(this.canvas);
@@ -73,20 +78,21 @@ export class InkLayer {
 	private onMove = (e: MouseEvent): void => {
 		const now = performance.now();
 		const dt = now - this.lastTime;
-		if (dt < 8) return;
+		if (dt < 12) return;
 
-		// 计算相对于容器的坐标
+		// 计算相对于容器内容的坐标（考虑滚动偏移）
 		const rect = this.container?.getBoundingClientRect();
 		if (!rect) return;
-		const x = e.clientX - rect.left;
-		const y = e.clientY - rect.top;
+		const x = e.clientX - rect.left + (this.container?.scrollLeft ?? 0);
+		const y = e.clientY - rect.top + (this.container?.scrollTop ?? 0);
 
 		const dx = x - this.lastX;
 		const dy = y - this.lastY;
 		const dist = Math.sqrt(dx * dx + dy * dy);
 		const speed = dt > 0 ? dist / dt : 0;
 
-		if (dist > 2) {
+		// 增大最小距离阈值，避免点过于密集导致线段重叠产生"多重绘制"
+		if (dist > 5) {
 			this.points.push({
 				x,
 				y,
@@ -162,8 +168,13 @@ export class InkLayer {
 
 	private resizeCanvas(): void {
 		if (!this.canvas || !this.container) return;
-		this.canvas.width = this.container.clientWidth;
-		this.canvas.height = this.container.clientHeight;
+		// 使用 scrollWidth/scrollHeight 覆盖整个内容区域（分页模式下多列布局宽度远大于可视区域）
+		const w = this.container.scrollWidth;
+		const h = this.container.scrollHeight;
+		this.canvas.width = w;
+		this.canvas.height = h;
+		this.canvas.style.width = w + 'px';
+		this.canvas.style.height = h + 'px';
 	}
 
 	private onResize = (): void => {

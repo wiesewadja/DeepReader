@@ -41,6 +41,7 @@ export class ReadingModeService {
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;
     private style: 'paginated' | 'scrolling' = 'paginated';
+    private enableInkLayer: boolean = true;
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
     private currentBookName: string = '';
@@ -96,6 +97,31 @@ export class ReadingModeService {
      */
     getStyle(): 'paginated' | 'scrolling' {
         return this.style;
+    }
+
+    /**
+     * 设置是否启用墨迹效果
+     */
+    setEnableInkLayer(value: boolean): void {
+        this.enableInkLayer = value;
+        if (!value) {
+            // 关闭时立即清理墨迹层
+            this.inkLayer?.cleanup();
+            this.inkLayer = null;
+        } else if (this.isActive) {
+            // 开启时如果已激活，重新初始化墨迹层
+            this.initInkLayer(this.currentFile!);
+            // 分页模式下等分页器就绪后激活，滚动模式下延迟激活
+            if (this.style !== 'paginated') {
+                setTimeout(() => {
+                    if (this.inkLayer) {
+                        this.inkLayer.activate();
+                    }
+                }, 300);
+            } else if (this.paginator) {
+                this.inkLayer?.activate();
+            }
+        }
     }
 
     /**
@@ -265,6 +291,9 @@ export class ReadingModeService {
     private initInkLayer(_file: TFile): void {
         this.inkLayer?.cleanup();
         this.inkLayer = null;
+
+        // 墨迹功能已关闭，跳过初始化
+        if (!this.enableInkLayer) return;
 
         const container = this.getViewContent();
         if (!container) return;

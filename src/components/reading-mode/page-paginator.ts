@@ -241,12 +241,16 @@ export class PagePaginator {
 		const viewWidth = this.scrollView.clientWidth;
 		if (viewWidth === 0) return;
 
-		// 纸质书最佳阅读行宽
+		// 纸质书最佳阅读行宽（基础值）
 		const MAX_TEXT_WIDTH = 640;
+		// 宽屏下允许扩展到的最大内容宽度，避免超宽屏上边距过大
+		const WIDE_MAX_TEXT_WIDTH = 860;
 		// 窄视口阈值（视口宽度小于此值时，使用自适应留白）
 		const NARROW_THRESHOLD = 700;
 		// 窄视口最小留白
 		const MIN_PADDING_NARROW = 40;
+		// 宽屏下最大边距，超过此值时扩展内容宽度
+		const MAX_SIDE_PADDING = 160;
 
 		let contentWidth: number;
 		let sidePadding: number;
@@ -257,9 +261,20 @@ export class PagePaginator {
 			sidePadding = Math.max((viewWidth - MAX_TEXT_WIDTH) / 2, MIN_PADDING_NARROW);
 			contentWidth = viewWidth - sidePadding * 2;
 		} else {
-			// 宽视口：使用最佳行宽
-			contentWidth = MAX_TEXT_WIDTH;
-			sidePadding = (viewWidth - contentWidth) / 2;
+			// 宽视口：先按最佳行宽计算边距
+			sidePadding = (viewWidth - MAX_TEXT_WIDTH) / 2;
+
+			// 如果边距超过上限，适当扩展内容宽度，改善宽屏阅读体验
+			if (sidePadding > MAX_SIDE_PADDING) {
+				contentWidth = viewWidth - 2 * MAX_SIDE_PADDING;
+				// 内容宽度不超过宽屏最大值
+				if (contentWidth > WIDE_MAX_TEXT_WIDTH) {
+					contentWidth = WIDE_MAX_TEXT_WIDTH;
+				}
+				sidePadding = (viewWidth - contentWidth) / 2;
+			} else {
+				contentWidth = MAX_TEXT_WIDTH;
+			}
 		}
 
 		// 确保内容宽度为正数

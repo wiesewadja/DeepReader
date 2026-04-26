@@ -2175,13 +2175,14 @@ export class AIMessage extends Message {
 		const onMove = (e: MouseEvent) => {
 			const now = performance.now();
 			const dt = now - lastTime;
-			if (dt < 8) return;
+			if (dt < 12) return;
 			const dx = e.clientX - lastX;
 			const dy = e.clientY - lastY;
 			const dist = Math.sqrt(dx * dx + dy * dy);
 			const speed = dt > 0 ? dist / dt : 0;
 
-			if (dist > 2) {
+			// 增大最小距离阈值，避免点过于密集导致线段重叠产生"多重绘制"
+			if (dist > 5) {
 				const rect = panel.getBoundingClientRect();
 				this.inkPoints.push({
 					x: e.clientX - rect.left,

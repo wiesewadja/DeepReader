@@ -95,6 +95,7 @@ export interface DeepPDFSettings {
 	// 阅读模式设置
 	autoEnableReadingMode: boolean;
 	readingModeStyle: 'paginated' | 'scrolling';
+	enableInkLayer: boolean;
 
 	// TTS 语音播报
 	autoTTS: boolean;
@@ -183,6 +184,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	// 阅读模式设置
 	autoEnableReadingMode: true,
 	readingModeStyle: 'paginated' as const,
+	enableInkLayer: true,
 
 	// TTS 语音播报
 	autoTTS: false,
