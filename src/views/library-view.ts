@@ -1,23 +1,25 @@
 /**
- * DeepPDF 文档库弹窗
- * 卡片网格布局设计
+ * DeepReader 书库视图
+ * 在主面板全屏展示书库，支持自适应宽度布局
  */
 
-import { App, Modal, Notice, TFile } from 'obsidian';
-import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../../ui/pdf-file-selector.js';
-import { IndexListItem } from '../../types/index.js';
-import { ConfirmModal } from '../confirm-modal.js';
-import { error as logError, serviceLog } from '../../utils/logger.js';
-import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../../pageindex/book-indexer.js';
-import type { BookIndexProgress, BookMeta } from '../../pageindex/book-types.js';
-import { resolveRoleConfig } from '../../config/providers.js';
-import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
-import { loadProgress, getProgressPercent, createEmptyProgress } from '../../pageindex/reading-progress.js';
+import { ItemView, WorkspaceLeaf, Notice, TFile } from 'obsidian';
+import { IndexListItem } from '../types/index.js';
+import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
+import { ConfirmModal } from '../components/confirm-modal.js';
+import { error as logError, serviceLog } from '../utils/logger.js';
+import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../pageindex/book-indexer.js';
+import type { BookIndexProgress, BookMeta } from '../pageindex/book-types.js';
+import { resolveRoleConfig } from '../config/providers.js';
+import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
+import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
 import * as path from 'path';
+import * as fs from 'fs/promises';
+
+export const LIBRARY_VIEW_TYPE = 'deeppdf-library-view';
 
 /** Proposition 功能开关 — token 成本过高，优化后重新启用 */
 const PROPOSITION_ENABLED = false;
-import * as fs from 'fs/promises';
 
 // SVG 图标
 const Icons = {
@@ -30,8 +32,7 @@ const Icons = {
     empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
 };
 
-export interface LibraryModalOptions {
-    app: App;
+export interface LibraryViewOptions {
     indexes: IndexListItem[];
     selectedIndexId: string | null;
     onIndexChange?: (indexId: string) => void;
@@ -42,59 +43,91 @@ export interface LibraryModalOptions {
     plugin: any;
 }
 
-export class LibraryModal extends Modal {
-    private options: LibraryModalOptions;
-    private indexes: IndexListItem[];
-    private selectedIndexId: string | null;
+export class LibraryView extends ItemView {
+    private options: LibraryViewOptions;
+    private indexes: IndexListItem[] = [];
+    private selectedIndexId: string | null = null;
     private searchQuery: string = '';
     private gridEl: HTMLElement | null = null;
     private searchInputEl: HTMLInputElement | null = null;
     private pollingInterval: number | null = null;
-    // 封面缓存：避免重复请求
     private coverCache: Map<string, string> = new Map();
-    // 正在加载封面的索引 ID 集合
     private loadingCovers: Set<string> = new Set();
-    // 上一次的索引状态快照（用于增量更新）
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
-    // 卡片 DOM 引用（用于增量更新）
     private cardElements: Map<string, HTMLElement> = new Map();
-    // 阅读进度缓存：bookId -> percent
     private readingProgressCache: Map<string, number> = new Map();
 
-    constructor(app: App, options: LibraryModalOptions) {
-        super(app);
+    constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
+        super(leaf);
         this.options = options;
-        this.indexes = [...options.indexes];
-        this.selectedIndexId = options.selectedIndexId;
+        // 不在 constructor 中初始化 indexes，因为 setViewState 的 state 还未应用
+        // 改在 onOpen 中从 state 初始化
     }
 
-    onOpen() {
-        const { contentEl, modalEl } = this;
-        contentEl.empty();
-        modalEl.addClass('deeppdf-library-modal');
-        this.loadReadingProgresses().then(() => this.render());
+    getViewType(): string {
+        return LIBRARY_VIEW_TYPE;
     }
 
-    onClose() {
+    getDisplayText(): string {
+        return '书库';
+    }
+
+    getIcon(): string {
+        return 'lucide-library';
+    }
+
+    async onOpen(): Promise<void> {
+        const container = this.containerEl.children[1]; // 跳过 nav-header
+        container.empty();
+        container.addClass('deeppdf-library-view');
+        
+        // 从 state 初始化数据（如果有的话）
+        const state = this.getState() as { indexes?: IndexListItem[]; selectedIndexId?: string | null } | null;
+        if (state?.indexes) {
+            this.indexes = state.indexes;
+            this.selectedIndexId = state.selectedIndexId ?? null;
+        }
+        
+        await this.loadReadingProgresses();
+        this.render();
+    }
+
+    async onClose(): Promise<void> {
+        this.cleanup();
+    }
+
+    async setState(state: any): Promise<void> {
+        // 当 setViewState 被调用时，会触发 setState
+        // 更新数据并重新渲染
+        if (state?.indexes) {
+            this.indexes = state.indexes as IndexListItem[];
+            this.selectedIndexId = (state.selectedIndexId as string) ?? null;
+            
+            // 如果视图已打开，重新加载进度并渲染
+            if (this.gridEl) {
+                await this.loadReadingProgresses();
+                this.render();
+            }
+        }
+    }
+
+    private cleanup(): void {
         if (this.pollingInterval) {
             window.clearInterval(this.pollingInterval);
             this.pollingInterval = null;
         }
-        const { contentEl, modalEl } = this;
-        contentEl.empty();
-        modalEl.removeClass('deeppdf-library-modal');
     }
 
     private render(): void {
-        const { contentEl } = this;
-        contentEl.empty();
+        const container = this.containerEl.children[1];
+        container.empty();
 
         // 标题行
-        const header = contentEl.createDiv({ cls: 'deeppdf-lib-header' });
+        const header = container.createDiv({ cls: 'deeppdf-lib-header' });
         header.createEl('h2', { text: '我的书库', cls: 'deeppdf-lib-title' });
 
         // 工具栏：搜索 + 添加
-        const toolbar = contentEl.createDiv({ cls: 'deeppdf-lib-toolbar' });
+        const toolbar = container.createDiv({ cls: 'deeppdf-lib-toolbar' });
 
         const searchWrap = toolbar.createDiv({ cls: 'deeppdf-lib-search' });
         this.searchInputEl = searchWrap.createEl('input', {
@@ -112,7 +145,7 @@ export class LibraryModal extends Modal {
         addBtn.addEventListener('click', () => this.handleAddDocument());
 
         // 卡片网格
-        this.gridEl = contentEl.createDiv({ cls: 'deeppdf-lib-grid' });
+        this.gridEl = container.createDiv({ cls: 'deeppdf-lib-grid' });
         this.renderGrid();
     }
 
@@ -342,6 +375,7 @@ export class LibraryModal extends Modal {
             // 1. 优先从 book-meta.json 读取 exportName（与 indexer 保存封面时一致）
             try {
                 const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+                const fs = await import('fs/promises');
                 const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
                 const meta = JSON.parse(metaRaw);
                 if (meta.exportName) {
@@ -435,34 +469,6 @@ export class LibraryModal extends Modal {
         });
     }
 
-    /**
-     * 更新单个卡片的封面显示
-     */
-    private updateCardCover(indexId: string, coverUrl: string, bookName: string): void {
-        if (!this.gridEl) return;
-
-        // 查找对应的卡片
-        const cards = this.gridEl.querySelectorAll('.deeppdf-lib-book-card');
-        cards.forEach(card => {
-            // 通过卡片中的书名或其他标识找到对应的卡片
-            const titleEl = card.querySelector('.deeppdf-lib-book-title');
-            if (titleEl && titleEl.textContent === bookName) {
-                const coverEl = card.querySelector('.deeppdf-lib-book-cover');
-                if (coverEl) {
-                    coverEl.innerHTML = '';
-                    const imgEl = document.createElement('img');
-                    imgEl.className = 'deeppdf-lib-cover-img';
-                    imgEl.src = coverUrl;
-                    imgEl.alt = bookName;
-                    imgEl.onerror = () => {
-                        coverEl.innerHTML = this.createCoverPlaceholder(bookName);
-                    };
-                    coverEl.prepend(imgEl);
-                }
-            }
-        });
-    }
-
     private createCoverPlaceholder(bookName: string, isFailed: boolean = false): string {
         // 生成基于书名的占位符
         const displayName = bookName.length > 6 ? bookName.substring(0, 6) : bookName;
@@ -498,13 +504,11 @@ export class LibraryModal extends Modal {
 
         if (!chaptersExist) {
             new Notice('章节文件不存在，请重新索引书籍', 3000);
-            this.close();
             return;
         }
 
         this.selectedIndexId = index.id;
         this.options.onIndexChange?.(index.id);
-        this.close();
     }
 
     private checkBookChaptersExist(pdfName: string): boolean {
@@ -792,7 +796,7 @@ export class LibraryModal extends Modal {
 
                     new Notice(`已删除「${displayName}」的索引和导出数据`);
                 } catch (error) {
-                    console.error('[LibraryModal] 删除失败:', error);
+                    console.error('[LibraryView] 删除失败:', error);
                     new Notice('删除失败');
                 }
             },
@@ -802,8 +806,6 @@ export class LibraryModal extends Modal {
             }
         ).open();
     }
-
-
 
     private async refreshIndexes(): Promise<void> {
         const newIndexes = await this.options.onRefresh?.();

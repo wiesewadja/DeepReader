@@ -1,53 +1,49 @@
 /**
- * DeepPDF 文档库弹窗样式
- * 卡片网格布局设计
+ * DeepReader 书库视图样式
+ * 全宽自适应布局，卡片网格根据面板宽度自适应列数
  * 注意：所有类名使用 deeppdf-lib- 前缀，避免与 reading-topbar 冲突
  */
 
-/* 弹窗容器 - 更大以完整显示封面 */
-.deeppdf-library-modal {
-    width: auto !important;
-    max-width: 820px !important;
-    min-width: 560px !important;
-}
-
-.deeppdf-library-modal .modal-content {
-    padding: 0 !important;
-    max-height: 80vh;
+/* 视图容器 */
+.deeppdf-library-view {
     display: flex;
     flex-direction: column;
+    height: 100%;
+    overflow: hidden;
 }
 
 /* 头部 */
-.deeppdf-lib-header {
-    padding: 12px 20px 0;
+.deeppdf-library-view .deeppdf-lib-header {
+    padding: 16px 24px 0;
+    flex-shrink: 0;
 }
 
-.deeppdf-lib-title {
-    font-size: 16px;
+.deeppdf-library-view .deeppdf-lib-title {
+    font-size: 20px;
     font-weight: 600;
     margin: 0;
     color: var(--text-normal);
 }
 
 /* 工具栏 */
-.deeppdf-lib-toolbar {
+.deeppdf-library-view .deeppdf-lib-toolbar {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 20px;
+    gap: 12px;
+    padding: 12px 24px;
     border-bottom: 1px solid var(--background-modifier-border);
     flex-shrink: 0;
 }
 
-.deeppdf-lib-search {
+.deeppdf-library-view .deeppdf-lib-search {
     flex: 1;
+    max-width: 400px;
 }
 
-.deeppdf-lib-search-input {
+.deeppdf-library-view .deeppdf-lib-search-input {
     width: 100%;
-    padding: 8px 14px;
-    font-size: 13px;
+    padding: 10px 16px;
+    font-size: 14px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
     background: var(--background-primary);
@@ -56,16 +52,16 @@
     transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.deeppdf-lib-search-input::placeholder {
+.deeppdf-library-view .deeppdf-lib-search-input::placeholder {
     color: var(--text-faint);
 }
 
-.deeppdf-lib-search-input:focus {
+.deeppdf-library-view .deeppdf-lib-search-input:focus {
     border-color: var(--interactive-accent);
     box-shadow: 0 0 0 3px rgba(var(--interactive-accent-rgb, 84, 109, 229), 0.1);
 }
 
-.deeppdf-lib-add-btn {
+.deeppdf-library-view .deeppdf-lib-add-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -81,79 +77,86 @@
     flex-shrink: 0;
 }
 
-.deeppdf-lib-add-btn:hover {
+.deeppdf-library-view .deeppdf-lib-add-btn svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.deeppdf-library-view .deeppdf-lib-add-btn:hover {
     background: var(--interactive-accent);
     border-color: var(--interactive-accent);
     color: #fff;
 }
 
-/* 卡片网格 */
-.deeppdf-lib-grid {
+/* 卡片网格 - 自适应列数 */
+.deeppdf-library-view .deeppdf-lib-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
-    padding: 16px 20px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 200px));
+    gap: 20px;
+    padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
+    justify-content: center;
 }
 
-.deeppdf-lib-grid::-webkit-scrollbar {
-    width: 6px;
+.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar {
+    width: 8px;
 }
 
-.deeppdf-lib-grid::-webkit-scrollbar-thumb {
+.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-thumb {
     background: var(--background-modifier-border);
-    border-radius: 3px;
+    border-radius: 4px;
 }
 
-.deeppdf-lib-grid::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
+.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-thumb:hover {
+    background: var(--text-faint);
 }
 
 /* 书籍卡片 */
-.deeppdf-lib-book-card {
+.deeppdf-library-view .deeppdf-lib-book-card {
     display: flex;
     flex-direction: column;
+    border-radius: 12px;
     background: var(--background-primary);
-    border: 2px solid var(--background-modifier-border);
-    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
     overflow: hidden;
-    cursor: pointer;
     transition: all 0.2s ease;
-    position: relative;
+    cursor: pointer;
 }
 
-.deeppdf-lib-book-card:hover {
+.deeppdf-library-view .deeppdf-lib-book-card:hover {
     border-color: var(--interactive-accent);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     transform: translateY(-2px);
 }
 
-.deeppdf-lib-book-card.selected {
+.deeppdf-library-view .deeppdf-lib-book-card.selected {
     border-color: var(--interactive-accent);
     box-shadow: 0 0 0 1.5px var(--interactive-accent);
 }
 
 /* 封面区域 */
-.deeppdf-lib-book-cover {
-    width: 100%;
-    aspect-ratio: 4 / 5;
-    background: var(--background-modifier-hover);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
+.deeppdf-library-view .deeppdf-lib-book-cover {
     position: relative;
+    width: 100%;
+    aspect-ratio: 4/5;
+    background: var(--background-secondary);
+    overflow: hidden;
 }
 
-.deeppdf-lib-cover-img {
+.deeppdf-library-view .deeppdf-lib-cover-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     object-position: top center;
 }
 
-.deeppdf-lib-cover-placeholder {
+.deeppdf-library-view .deeppdf-lib-cover-placeholder {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -162,11 +165,11 @@
     color: var(--text-muted);
 }
 
-.deeppdf-lib-cover-icon {
+.deeppdf-library-view .deeppdf-lib-cover-icon {
     opacity: 0.5;
 }
 
-.deeppdf-lib-cover-text {
+.deeppdf-library-view .deeppdf-lib-cover-text {
     font-size: 12px;
     font-weight: 500;
     text-align: center;
@@ -176,11 +179,11 @@
     white-space: nowrap;
 }
 
-.deeppdf-lib-cover-loading {
+.deeppdf-library-view .deeppdf-lib-cover-loading {
     color: var(--interactive-accent);
 }
 
-.deeppdf-lib-cover-loading svg {
+.deeppdf-library-view .deeppdf-lib-cover-loading svg {
     animation: deeppdf-lib-spin 1s linear infinite;
 }
 
@@ -190,38 +193,39 @@
 }
 
 /* 进度条覆盖层 */
-.deeppdf-lib-progress-overlay {
+.deeppdf-library-view .deeppdf-lib-progress-overlay {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 8px;
+    padding: 12px;
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
 }
 
-.deeppdf-lib-progress-bar {
+.deeppdf-library-view .deeppdf-lib-progress-bar {
     height: 4px;
     background: var(--interactive-accent);
     border-radius: 2px;
     transition: width 0.3s ease;
 }
 
-.deeppdf-lib-progress-info {
+.deeppdf-library-view .deeppdf-lib-progress-info {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
+    margin-top: 6px;
 }
 
-.deeppdf-lib-progress-text {
-    font-size: 12px;
+.deeppdf-library-view .deeppdf-lib-progress-text {
+    font-size: 14px;
     color: #fff;
     text-align: center;
     font-weight: 600;
 }
 
-.deeppdf-lib-progress-message {
-    font-size: 10px;
+.deeppdf-library-view .deeppdf-lib-progress-message {
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.85);
     text-align: center;
     max-width: 100%;
@@ -231,7 +235,7 @@
 }
 
 /* 封面操作按钮容器 - 固定在右下角，默认隐藏 */
-.deeppdf-lib-cover-actions {
+.deeppdf-library-view .deeppdf-lib-cover-actions {
     position: absolute;
     bottom: 8px;
     right: 8px;
@@ -244,18 +248,18 @@
 }
 
 /* 悬停封面时显示按钮 */
-.deeppdf-lib-book-cover:hover .deeppdf-lib-cover-actions {
+.deeppdf-library-view .deeppdf-lib-book-cover:hover .deeppdf-lib-cover-actions {
     opacity: 1;
 }
 
 /* 封面按钮 */
-.deeppdf-lib-cover-btn {
+.deeppdf-library-view .deeppdf-lib-cover-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, 0.9);
     color: var(--text-normal);
     cursor: pointer;
@@ -263,17 +267,17 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-.deeppdf-lib-cover-btn:hover {
+.deeppdf-library-view .deeppdf-lib-cover-btn:hover {
     transform: scale(1.1);
     background: #fff;
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
-.deeppdf-lib-cover-btn.delete:hover {
+.deeppdf-library-view .deeppdf-lib-cover-btn.delete:hover {
     color: #ef4444;
 }
 
-.deeppdf-lib-cover-btn.retry {
+.deeppdf-library-view .deeppdf-lib-cover-btn.retry {
     position: absolute;
     top: 8px;
     right: 8px;
@@ -281,86 +285,54 @@
     color: #fff;
 }
 
-.deeppdf-lib-cover-btn.retry:hover {
+.deeppdf-library-view .deeppdf-lib-cover-btn.retry:hover {
     background: #ef4444;
 }
 
 /* 失败状态占位符 */
-.deeppdf-lib-cover-placeholder.failed {
+.deeppdf-library-view .deeppdf-lib-cover-placeholder.failed {
     color: #ef4444;
 }
 
-.deeppdf-lib-cover-placeholder.failed .deeppdf-lib-cover-icon {
+.deeppdf-library-view .deeppdf-lib-cover-placeholder.failed .deeppdf-lib-cover-icon {
     opacity: 0.8;
 }
 
 /* 选中对勾标记 */
-.deeppdf-lib-cover-check {
+.deeppdf-library-view .deeppdf-lib-cover-check {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: none;
 }
 
-.deeppdf-lib-cover-check svg {
-    width: 24px;
-    height: 24px;
+.deeppdf-library-view .deeppdf-lib-cover-check svg {
+    width: 28px;
+    height: 28px;
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
 
 /* 书籍信息 */
-.deeppdf-lib-book-info {
-    padding: 6px 8px;
+.deeppdf-library-view .deeppdf-lib-book-info {
+    padding: 6px 10px 8px;
     display: flex;
     flex-direction: column;
-    gap: 0px;
+    gap: 1px;
 }
 
-/* 阅读进度条 */
-.deeppdf-lib-reading-progress {
+.deeppdf-library-view .deeppdf-lib-book-title-row {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin-top: 2px;
 }
 
-.deeppdf-lib-reading-bar-bg {
-    flex: 1;
-    height: 3px;
-    background: var(--background-modifier-border);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.deeppdf-lib-reading-bar-fill {
-    height: 100%;
-    background: var(--interactive-accent);
-    border-radius: 2px;
-    transition: width 0.3s ease;
-}
-
-.deeppdf-lib-reading-bar-text {
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    min-width: 28px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-}
-
-.deeppdf-lib-book-title-row {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.deeppdf-lib-book-title {
-    font-size: 12px;
+.deeppdf-library-view .deeppdf-lib-book-title {
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-normal);
     line-height: 1.25;
@@ -371,28 +343,28 @@
     min-width: 0;
 }
 
-.deeppdf-lib-type-tag {
+.deeppdf-library-view .deeppdf-lib-type-tag {
     flex-shrink: 0;
     font-size: 8px;
     font-weight: 700;
     letter-spacing: 0.3px;
-    padding: 0px 3px;
+    padding: 1px 3px;
     border-radius: 3px;
     line-height: 1.2;
 }
 
-.deeppdf-lib-type-pdf {
+.deeppdf-library-view .deeppdf-lib-type-pdf {
     background: var(--interactive-accent);
     color: var(--text-on-accent);
 }
 
-.deeppdf-lib-type-epub {
+.deeppdf-library-view .deeppdf-lib-type-epub {
     background: #10b981;
     color: #fff;
 }
 
-.deeppdf-lib-book-author {
-    font-size: 10px;
+.deeppdf-library-view .deeppdf-lib-book-author {
+    font-size: 11px;
     color: var(--text-muted);
     line-height: 1.25;
     white-space: nowrap;
@@ -400,8 +372,8 @@
     text-overflow: ellipsis;
 }
 
-.deeppdf-lib-book-meta {
-    font-size: 9px;
+.deeppdf-library-view .deeppdf-lib-book-meta {
+    font-size: 10px;
     color: var(--text-faint);
     line-height: 1.25;
     white-space: nowrap;
@@ -409,51 +381,86 @@
     text-overflow: ellipsis;
 }
 
+/* 阅读进度条 */
+.deeppdf-library-view .deeppdf-lib-reading-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.deeppdf-library-view .deeppdf-lib-reading-bar-bg {
+    flex: 1;
+    height: 4px;
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.deeppdf-library-view .deeppdf-lib-reading-bar-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.deeppdf-library-view .deeppdf-lib-reading-bar-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 32px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 /* 空状态 */
-.deeppdf-lib-empty {
+.deeppdf-library-view .deeppdf-lib-empty {
     grid-column: 1 / -1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 60px 20px;
+    padding: 80px 20px;
     text-align: center;
 }
 
-.deeppdf-lib-empty-icon {
+.deeppdf-library-view .deeppdf-lib-empty-icon {
     color: var(--text-faint);
     opacity: 0.4;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
 }
 
-.deeppdf-lib-empty-text {
-    font-size: 14px;
+.deeppdf-library-view .deeppdf-lib-empty-text {
+    font-size: 16px;
     font-weight: 500;
     color: var(--text-muted);
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
 
-.deeppdf-lib-empty-hint {
-    font-size: 12px;
+.deeppdf-library-view .deeppdf-lib-empty-hint {
+    font-size: 13px;
     color: var(--text-faint);
 }
 
-/* 响应式 */
+/* 响应式 - 小屏幕 */
 @media (max-width: 600px) {
-    .deeppdf-library-modal {
-        max-width: 100% !important;
-        min-width: 0 !important;
+    .deeppdf-library-view .deeppdf-lib-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 16px;
+        padding: 16px 20px;
     }
 
-    .deeppdf-lib-grid {
-        grid-template-columns: repeat(2, 1fr);
+    .deeppdf-library-view .deeppdf-lib-header,
+    .deeppdf-library-view .deeppdf-lib-toolbar {
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+}
+
+@media (max-width: 400px) {
+    .deeppdf-library-view .deeppdf-lib-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
         gap: 12px;
         padding: 12px 16px;
-    }
-
-    .deeppdf-lib-header,
-    .deeppdf-lib-toolbar {
-        padding-left: 16px;
-        padding-right: 16px;
     }
 }

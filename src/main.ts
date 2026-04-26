@@ -1,5 +1,6 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
+import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
@@ -72,6 +73,47 @@ export default class DeepPDFPlugin extends Plugin {
             (leaf) => new SidebarView(leaf, this)
         );
 
+        // 注册书库视图
+        this.registerView(
+            LIBRARY_VIEW_TYPE,
+            (leaf) => new LibraryView(leaf, {
+                indexes: [],
+                selectedIndexId: null,
+                onIndexChange: (indexId) => {
+                    // 找到 SidebarView 并调用 selectIndex
+                    const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (sidebarLeaves.length > 0) {
+                        const sidebarView = sidebarLeaves[0].view as SidebarView;
+                        sidebarView.selectIndex(indexId);
+                    }
+                },
+                onDeleteIndex: async (indexId) => {
+                    const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (sidebarLeaves.length > 0) {
+                        const sidebarView = sidebarLeaves[0].view as SidebarView;
+                        await sidebarView.handleDeleteIndex(indexId);
+                        return sidebarView.indexes;
+                    }
+                    return [];
+                },
+                onRefresh: async () => {
+                    const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (sidebarLeaves.length > 0) {
+                        const sidebarView = sidebarLeaves[0].view as SidebarView;
+                        await sidebarView.loadIndexes();
+                        return sidebarView.indexes;
+                    }
+                    return [];
+                },
+                onDownloadCover: async (indexId: string, pdfName: string) => {
+                    // 封面已由 book-indexer.ts 在索引过程中自动保存，
+                    // 此处无需额外下载，LibraryView 会从本地加载
+                    return null;
+                },
+                plugin: this
+            })
+        );
+
         // 注册 hover-link 事件源，让 Obsidian 的 Page Preview 核心插件
         // 能处理来自侧边栏 AI 聊天中 wiki 链接的悬停预览
         this.registerHoverLinkSource('deeppdf', {
@@ -98,6 +140,13 @@ export default class DeepPDFPlugin extends Plugin {
             id: "open-deepreader-sidebar",
             name: "Open DeepReader sidebar",
             callback: () => this.activateView()
+        });
+
+        // 添加打开书库的命令
+        this.addCommand({
+            id: "open-library",
+            name: "Open Library",
+            callback: () => this.openLibraryView()
         });
 
         // Skills 重载命令
@@ -1190,6 +1239,37 @@ views:
         if (leaf) {
             workspace.revealLeaf(leaf);
         }
+    }
+
+    /**
+     * 打开书库视图
+     */
+    async openLibraryView(): Promise<void> {
+        // 检查是否已有书库视图
+        const existingLeaves = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
+        if (existingLeaves.length > 0) {
+            // 聚焦现有视图
+            this.app.workspace.revealLeaf(existingLeaves[0]);
+            return;
+        }
+
+        // 获取 SidebarView 的 indexes 数据和当前选中索引
+        const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+        let indexes: any[] = [];
+        let selectedIndexId: string | null = null;
+        if (sidebarLeaves.length > 0) {
+            const sidebarView = sidebarLeaves[0].view as SidebarView;
+            await sidebarView.loadIndexes();
+            indexes = sidebarView.indexes;
+            selectedIndexId = sidebarView.getCurrentIndexId();
+        }
+
+        // 在主面板打开书库视图
+        const leaf = this.app.workspace.getLeaf('tab');
+        await leaf.setViewState({
+            type: LIBRARY_VIEW_TYPE,
+            state: { indexes, selectedIndexId }
+        });
     }
 
     /**

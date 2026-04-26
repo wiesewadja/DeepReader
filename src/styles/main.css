@@ -25,6 +25,7 @@
 @import url('../components/excerpt/selection-menu.css');
 @import url('../components/reading-topbar/reading-topbar.css');
 @import url('../components/library-modal/library-modal.css');
+@import url('../views/library-view.css');
 @import url('../components/reading-mode/reading-mode.css');
 @import url('../components/question-minimap/question-minimap.css');
 @import url('../settings/settings.css');
