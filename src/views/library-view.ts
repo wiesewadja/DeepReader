@@ -140,7 +140,7 @@ export class LibraryView extends ItemView {
         });
 
         const addBtn = toolbar.createEl('button', { cls: 'deeppdf-lib-add-btn' });
-        addBtn.innerHTML = `${Icons.add} <span>添加书籍</span>`;
+        addBtn.innerHTML = Icons.add;
         addBtn.title = '添加书籍';
         addBtn.addEventListener('click', () => this.handleAddDocument());
 
