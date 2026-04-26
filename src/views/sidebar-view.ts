@@ -30,7 +30,6 @@ import { ConfirmModal } from "../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
 import type { QuoteItem } from "../components/chat-input/chat-input.js";
-import { LibraryModal } from "../components/library-modal/index.js";
 import { uiLog as log, serviceLog, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";

@@ -2,7 +2,6 @@ import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
-import './views/library-view.css';
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
@@ -105,6 +104,11 @@ export default class DeepPDFPlugin extends Plugin {
                         return sidebarView.indexes;
                     }
                     return [];
+                },
+                onDownloadCover: async (indexId: string, pdfName: string) => {
+                    // 封面已由 book-indexer.ts 在索引过程中自动保存，
+                    // 此处无需额外下载，LibraryView 会从本地加载
+                    return null;
                 },
                 plugin: this
             })
@@ -1249,20 +1253,22 @@ views:
             return;
         }
 
-        // 获取 SidebarView 的 indexes 数据
+        // 获取 SidebarView 的 indexes 数据和当前选中索引
         const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
         let indexes: any[] = [];
+        let selectedIndexId: string | null = null;
         if (sidebarLeaves.length > 0) {
             const sidebarView = sidebarLeaves[0].view as SidebarView;
             await sidebarView.loadIndexes();
             indexes = sidebarView.indexes;
+            selectedIndexId = sidebarView.getCurrentIndexId();
         }
 
         // 在主面板打开书库视图
         const leaf = this.app.workspace.getLeaf('tab');
         await leaf.setViewState({
             type: LIBRARY_VIEW_TYPE,
-            state: { indexes, selectedIndexId: null }
+            state: { indexes, selectedIndexId }
         });
     }
 

@@ -331,28 +331,82 @@ export class LibraryModal extends Modal {
     /**
      * 异步加载封面并更新显示
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
+     *
+     * 优先从 book-meta.json 读取 exportName（与 book-indexer.ts 保存封面时使用的名称一致），
+     * 回退到 getDisplayName(bookName) 和原始 bookName。
      */
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
-            // Try multiple image extensions for the cover
-            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
-            let coverFile: TFile | null = null;
-            for (const ext of extensions) {
-                const coverPath = `DeepReader/covers/${bookName}.${ext}`;
-                const file = this.app.vault.getAbstractFileByPath(coverPath);
-                if (file && file instanceof TFile) {
-                    coverFile = file;
-                    break;
+            // 收集所有可能的书名（按优先级排序）
+            const possibleNames: string[] = [];
+
+            // 1. 优先从 book-meta.json 读取 exportName（与 indexer 保存封面时一致）
+            try {
+                const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+                const meta = JSON.parse(metaRaw);
+                if (meta.exportName) {
+                    possibleNames.push(meta.exportName);
+                }
+            } catch { /* ignore */ }
+
+            // 2. getDisplayName 结果（截取副标题后的主标题）
+            const displayName = this.getDisplayName(bookName);
+            if (displayName && !possibleNames.includes(displayName)) {
+                possibleNames.push(displayName);
+            }
+
+            // 3. 原始 bookName（不截断）
+            if (bookName && !possibleNames.includes(bookName)) {
+                possibleNames.push(bookName);
+            }
+
+            // 4. 去掉扩展名的原始文件名（来自 index.pdf_name）
+            const index = this.indexes.find(idx => idx.id === indexId);
+            if (index) {
+                let rawName = index.pdf_name;
+                if (rawName.toLowerCase().endsWith('.pdf')) rawName = rawName.slice(0, -4);
+                if (rawName.toLowerCase().endsWith('.epub')) rawName = rawName.slice(0, -5);
+                if (rawName && !possibleNames.includes(rawName)) {
+                    possibleNames.push(rawName);
                 }
             }
 
-            if (coverFile && coverFile instanceof TFile) {
+            // 尝试所有可能的书名 + 所有图片扩展名
+            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+            let coverFile: TFile | null = null;
+            let foundName: string = '';
+
+            for (const name of possibleNames) {
+                for (const ext of extensions) {
+                    const coverPath = `DeepReader/covers/${name}.${ext}`;
+                    const file = this.app.vault.getAbstractFileByPath(coverPath);
+                    if (file && file instanceof TFile) {
+                        coverFile = file;
+                        foundName = name;
+                        break;
+                    }
+                }
+                if (coverFile) break;
+            }
+
+            if (coverFile) {
                 const localCoverUrl = this.app.vault.getResourcePath(coverFile);
                 this.coverCache.set(indexId, localCoverUrl);
+
+                // 保留选中对勾（如果存在）
+                const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
+
                 coverEl.innerHTML = '';
                 const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
                 imgEl.src = localCoverUrl;
-                imgEl.alt = bookName;
+                imgEl.alt = foundName || bookName;
+
+                // 恢复选中对勾
+                if (checkMark) {
+                    coverEl.appendChild(checkMark);
+                }
+
                 // 重新添加操作按钮
                 this.addCoverActions(coverEl, indexId);
             }
