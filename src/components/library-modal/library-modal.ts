@@ -22,7 +22,6 @@ import * as fs from 'fs/promises';
 // SVG 图标
 const Icons = {
     add: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
-    download: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
     trash: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
     check: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`,
     checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" fill="#10b981" stroke="#10b981"/><polyline points="16 9 10.5 14.5 8 12" stroke="white" stroke-width="2.5"/></svg>`,
@@ -418,21 +417,10 @@ export class LibraryModal extends Modal {
     }
 
     /**
-     * 添加封面操作按钮（下载、删除）
+     * 添加封面操作按钮（删除）
      */
     private addCoverActions(coverEl: HTMLElement, indexId: string): void {
         const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
-
-        // 下载按钮
-        const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
-        downloadBtn.innerHTML = Icons.download;
-        downloadBtn.title = 'Markdown 已自动导出';
-        downloadBtn.style.opacity = '0.5';
-        downloadBtn.style.cursor = 'default';
-        downloadBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            new Notice('Markdown 已在索引时自动导出', 3000);
-        });
 
         // 删除按钮
         const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });

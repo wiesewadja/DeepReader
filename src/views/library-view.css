@@ -267,10 +267,6 @@
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
-.deeppdf-library-view .deeppdf-lib-cover-btn.download:hover {
-    color: var(--interactive-accent);
-}
-
 .deeppdf-library-view .deeppdf-lib-cover-btn.delete:hover {
     color: #ef4444;
 }
