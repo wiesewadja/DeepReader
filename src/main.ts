@@ -468,15 +468,8 @@ export default class DeepPDFPlugin extends Plugin {
                 this.switchToBook(indexId, bookName);
             },
             onDeactivate: () => {
-                // 阅读模式停用时，只清除顶栏书名显示
-                // 不重置 currentPdfName，用户通过书库选中的书籍应保持
-                const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
-                if (leaves.length > 0) {
-                    const view = leaves[0].view;
-                    if (view instanceof SidebarView) {
-                        view.clearTopbarDisplay();
-                    }
-                }
+                // 阅读模式停用时不改变任何右边栏状态
+                // 顶栏书名始终跟随用户通过书库选中的书籍
             },
         };
         this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
