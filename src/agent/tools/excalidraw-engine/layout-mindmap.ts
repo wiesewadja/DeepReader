@@ -43,21 +43,22 @@ function buildBranchNode(branch: MindmapBranch, index: number): LayoutNode {
     level: 'branch',
     branchIndex: index,
     ...size,
-    children: branch.children.map((c, ci) => buildChildNode(c, index, ci, 'child')),
+    children: branch.children.map((c, ci) => buildChildNode(c, index, ci, 'child', `branch-${index}`)),
   };
 }
 
-function buildChildNode(node: MindmapNode, branchIndex: number, childIndex: number, level: 'child' | 'leaf'): LayoutNode {
+function buildChildNode(node: MindmapNode, branchIndex: number, childIndex: number, level: 'child' | 'leaf', parentId: string): LayoutNode {
+  const nodeId = `${parentId}-${childIndex}`;
   const size = computeNodeSize(node.label, level);
   return {
-    id: `b${branchIndex}-${level}-${childIndex}`,
+    id: nodeId,
     text: node.label,
     annotation: node.annotation,
     level,
     branchIndex,
     ...size,
     link: node.link,
-    children: (node.children ?? []).map((c, ci) => buildChildNode(c, branchIndex, ci, 'leaf')),
+    children: (node.children ?? []).map((c, ci) => buildChildNode(c, branchIndex, ci, 'leaf', nodeId)),
   };
 }
 
@@ -130,6 +131,7 @@ function layoutChildren(
   branchAngle: number,
   nodes: RenderNode[],
   edges: RenderEdge[],
+  depth: number = 0,
 ): void {
   if (children.length === 0) return;
 
@@ -167,8 +169,8 @@ function layoutChildren(
 
       currentY += effectiveHeights[i] + gap;
 
-      if (child.children.length > 0 && !isLeaf) {
-        layoutChildren(child.id, childX, childY, child.children, 'leaf', branchIndex, branchAngle, nodes, edges);
+      if (child.children.length > 0 && depth < 2) {
+        layoutChildren(child.id, childX, childY, child.children, 'leaf', branchIndex, branchAngle, nodes, edges, depth + 1);
       }
     }
   } else {
@@ -200,8 +202,8 @@ function layoutChildren(
 
       currentX += effectiveWidths[i] + gap;
 
-      if (child.children.length > 0 && !isLeaf) {
-        layoutChildren(child.id, childX, childY, child.children, 'leaf', branchIndex, branchAngle, nodes, edges);
+      if (child.children.length > 0 && depth < 2) {
+        layoutChildren(child.id, childX, childY, child.children, 'leaf', branchIndex, branchAngle, nodes, edges, depth + 1);
       }
     }
   }

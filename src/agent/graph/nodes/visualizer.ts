@@ -59,7 +59,13 @@ export async function visualizerNode(
     if (toolCalls.length > 0) {
       for (const tc of toolCalls) {
         if (tc.name === 'excalidraw' || tc.function?.name === 'excalidraw') {
-          const args = typeof tc.args === 'string' ? JSON.parse(tc.args) : (tc.args || tc.function?.arguments);
+          let args: any;
+          try {
+            args = typeof tc.args === 'string' ? JSON.parse(tc.args) : (tc.args || tc.function?.arguments);
+          } catch (parseErr) {
+            log(`[Visualizer] tool call 参数解析失败: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+            continue;
+          }
           log(`[Visualizer] 执行 excalidraw 工具: action=${args?.action}`);
 
           if (args?.action === 'draw' && args?.data) {

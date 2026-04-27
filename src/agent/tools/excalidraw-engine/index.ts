@@ -57,6 +57,9 @@ export function adaptLegacyGraph(args: {
 
 function validateInput(input: EngineInput): void {
   const { diagramType, data } = input;
+  if (diagramType !== 'mindmap' && diagramType !== 'knowledge_graph') {
+    throw new Error(`不支持的图表类型: ${diagramType}`);
+  }
   if (diagramType === 'mindmap') {
     const d = data as MindmapSemantic;
     if (!d.topic || typeof d.topic !== 'string') throw new Error('mindmap 需要 topic 字符串');
