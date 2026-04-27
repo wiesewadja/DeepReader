@@ -812,6 +812,29 @@ export class SidebarView extends ItemView {
      * 通过 indexId 扫描 Vault 找到对应书籍的实际目录名和元数据
      * 用户可能重命名了目录，因此不能仅依赖静态的 book-meta.json
      */
+    /**
+     * 同步顶栏书名到最新状态（用户可能在书库中修改了书名/目录名）
+     */
+    private async syncTopbarBookName(): Promise<void> {
+        if (!this.currentIndexId) return;
+        const vaultDir = await this.findBookDirectoryByIndexId(this.currentIndexId);
+        if (!vaultDir) return;
+
+        const index = this.indexes.find(i => i.id === this.currentIndexId);
+        const displayName = vaultDir.bookName || vaultDir.dirName || index?.pdf_name || this.currentPdfName || '';
+
+        // 更新内部标识（使用目录名作为标识）
+        if (this.currentPdfName !== vaultDir.dirName) {
+            this.currentPdfName = vaultDir.dirName;
+            this.messageList?.setCurrentPdfName(displayName);
+        }
+
+        // 更新顶栏显示
+        const author = vaultDir.author || index?.author;
+        this.readingTopbar?.setCurrentBook(displayName, author);
+        log('[DeepPDF] syncTopbarBookName:', displayName);
+    }
+
     private async findBookDirectoryByIndexId(indexId: string): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
         const allFiles = this.app.vault.getMarkdownFiles();
 
@@ -843,12 +866,15 @@ export class SidebarView extends ItemView {
      */
     public async selectIndex(indexId: string): Promise<void> {
         // 如果已经选中了同一个索引，跳过以避免闪烁
+        // 但需要刷新顶栏显示名（用户可能在书库中修改了书名/目录名）
         if (this.currentIndexId === indexId) {
             log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
             // 即使跳过切换，也要确保阅读进度已初始化
             if (!this.readingProgress) {
                 await this.initReadingProgress(indexId);
             }
+            // 同步最新的书名到 topbar（用户可能重命名了书籍）
+            await this.syncTopbarBookName();
             return;
         }
 
