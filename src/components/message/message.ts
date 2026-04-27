@@ -2439,16 +2439,19 @@ export class AIMessage extends Message {
 		const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
 		if (!contentEl) return;
 
-		// 清除之前的高亮
-		contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
-			el.removeClass('deeppdf-tts-reading-paragraph');
-		});
+		// 重置：清除所有高亮和状态
+		if (progress < 0) {
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
+			delete (contentEl.dataset as any).ttsLastParagraphIndex;
+			return;
+		}
 
 		// 收集所有段落并计算字符范围
 		const paragraphs = contentEl.querySelectorAll('p');
 		if (paragraphs.length === 0) return;
 
-		// 统计每个段落的字符数和累积字符位置
 		const paragraphInfo: { el: Element; start: number; end: number }[] = [];
 		let totalChars = 0;
 
@@ -2468,23 +2471,33 @@ export class AIMessage extends Message {
 		// 根据进度找到当前段落
 		const currentChar = Math.floor((progress / 100) * totalChars);
 		let currentParagraph: Element | null = null;
+		let currentIndex = -1;
 
-		for (const info of paragraphInfo) {
-			if (currentChar >= info.start && currentChar < info.end) {
-				currentParagraph = info.el;
+		for (let i = 0; i < paragraphInfo.length; i++) {
+			if (currentChar >= paragraphInfo[i].start && currentChar < paragraphInfo[i].end) {
+				currentParagraph = paragraphInfo[i].el;
+				currentIndex = i;
 				break;
 			}
 		}
 
-		// 如果进度到最后，高亮最后一个段落
 		if (!currentParagraph && progress >= 100) {
 			currentParagraph = paragraphInfo[paragraphInfo.length - 1].el;
+			currentIndex = paragraphInfo.length - 1;
 		}
 
-		if (currentParagraph) {
+		if (!currentParagraph) return;
+
+		// 只在段落切换时才操作 DOM 和滚动
+		if (currentIndex !== (contentEl.dataset as any).ttsLastParagraphIndex) {
+			// 清除之前的高亮
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
 			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
-			// 跟随滚动
+			// 只在新段落出现时滚动
 			(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+			(contentEl.dataset as any).ttsLastParagraphIndex = currentIndex;
 		}
 	}
 }

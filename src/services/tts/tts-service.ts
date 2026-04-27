@@ -408,8 +408,7 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
-        // 进度追踪：使用第一个 chunk 实际播放开始时间作为起点
-        const playbackStartTime = player.startTime;
+        // 进度追踪：立即启动，不等 chunk 入队
         let maxEndTime = 0;
         let maxProgress = 0;
 
@@ -424,24 +423,27 @@ export class TTSService {
                 const end = player.endTime;
                 // endTime 只增不减
                 maxEndTime = Math.max(maxEndTime, end);
-                if (maxEndTime <= playbackStartTime) return;
-                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (maxEndTime - playbackStartTime)) * 100)));
+                // 尚未收到 chunk，进度为 0
+                if (maxEndTime <= player.startTime) {
+                    if (maxProgress === 0) {
+                        this.onProgressChange?.(messageId, 0);
+                    }
+                    return;
+                }
+                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (maxEndTime - player.startTime)) * 100)));
                 // 进度只前进不倒退
                 maxProgress = Math.max(maxProgress, rawProgress);
                 this.onProgressChange?.(messageId, maxProgress);
             }, 200);
         };
 
+        // 立即启动定时器（不等 chunk 入队）
+        startProgressTracking();
+
         try {
-            // 第一个 chunk 入队后立即开始追踪进度
-            let trackingStarted = false;
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
-                if (!trackingStarted) {
-                    startProgressTracking();
-                    trackingStarted = true;
-                }
             }
 
             if (this.currentMessageId !== messageId) return;
