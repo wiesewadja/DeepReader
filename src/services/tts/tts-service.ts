@@ -408,10 +408,11 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
-        // PCMStreamPlayer 进度追踪
+        // 记录播放起点
         const playbackStartTime = player.currentTime;
+        let maxProgress = 0;
 
-        const startProgressTracking = (fixedEndTime: number) => {
+        const startProgressTracking = () => {
             if (this.progressTimer) clearInterval(this.progressTimer);
             this.progressTimer = setInterval(() => {
                 if (this.currentMessageId !== messageId) {
@@ -419,25 +420,31 @@ export class TTSService {
                     return;
                 }
                 const current = player.currentTime;
-                if (fixedEndTime <= playbackStartTime) return;
-                const progress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (fixedEndTime - playbackStartTime)) * 100)));
-                this.onProgressChange?.(messageId, progress);
+                const end = player.endTime;
+                if (end <= playbackStartTime) return;
+                // 用已入队的音频总时长来估算进度
+                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (end - playbackStartTime)) * 100)));
+                // 只允许进度前进，不允许倒退
+                maxProgress = Math.max(maxProgress, rawProgress);
+                this.onProgressChange?.(messageId, maxProgress);
             }, 200);
         };
 
         try {
+            // 第一个 chunk 入队后立即开始追踪进度
+            let trackingStarted = false;
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
+                if (!trackingStarted) {
+                    startProgressTracking();
+                    trackingStarted = true;
+                }
             }
 
             if (this.currentMessageId !== messageId) return;
 
-            // seal 后 endTime 固定，此时开始追踪进度
             player.seal();
-            const fixedEndTime = player.endTime;
-            startProgressTracking(fixedEndTime);
-
             await player.waitForEnd();
             this.clearProgressTimer();
 
