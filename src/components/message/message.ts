@@ -283,6 +283,124 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * 将消息内容的 DOM 中的文本按句子切分并添加标记
+ * 用于 TTS 朗读时的句子级墨水高亮
+ */
+function markSentencesInContent(contentEl: HTMLElement): void {
+	if (!contentEl || contentEl.dataset.sentencesMarked === 'true') return;
+
+	const walker = document.createTreeWalker(
+		contentEl,
+		NodeFilter.SHOW_TEXT,
+		null
+	);
+
+	const textNodes: Text[] = [];
+	let node: Node | null;
+	while ((node = walker.nextNode())) {
+		// 跳过空白文本节点
+		if (node.textContent && node.textContent.trim().length > 0) {
+			textNodes.push(node as Text);
+		}
+	}
+
+	let sentenceIndex = 0;
+	for (const textNode of textNodes) {
+		const text = textNode.textContent || '';
+		// 匹配句子结束符：中文。！？… 或英文 .!? 后面跟空格或结束
+		const parts = text.split(/([。！？…\.\!\?]+(?:\s+|$))/);
+
+		if (parts.length <= 1) continue;
+
+		const fragment = document.createDocumentFragment();
+		let buffer = '';
+
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i];
+			if (!part) continue;
+
+			// 判断是否是结束符
+			const isEnding = /^[。！？…\.\!\?]+/.test(part);
+
+			if (isEnding) {
+				buffer += part;
+				if (buffer.trim()) {
+					const span = document.createElement('span');
+					span.className = 'deeppdf-sentence';
+					span.dataset.sentenceIndex = String(sentenceIndex);
+					span.textContent = buffer;
+					fragment.appendChild(span);
+					sentenceIndex++;
+				}
+				buffer = '';
+			} else {
+				buffer += part;
+			}
+		}
+
+		// 处理残留文本
+		if (buffer.trim()) {
+			const span = document.createElement('span');
+			span.className = 'deeppdf-sentence';
+			span.dataset.sentenceIndex = String(sentenceIndex);
+			span.textContent = buffer;
+			fragment.appendChild(span);
+			sentenceIndex++;
+		}
+
+		if (fragment.childNodes.length > 0) {
+			textNode.parentNode?.replaceChild(fragment, textNode);
+		}
+	}
+
+	contentEl.dataset.sentencesMarked = 'true';
+	contentEl.dataset.totalSentences = String(sentenceIndex);
+}
+
+/**
+ * 高亮指定索引的句子（TTS 朗读进度跟随）
+ */
+function highlightSentence(contentEl: HTMLElement, index: number): void {
+	if (!contentEl) return;
+
+	// 确保已标记句子
+	if (contentEl.dataset.sentencesMarked !== 'true') {
+		markSentencesInContent(contentEl);
+	}
+
+	// 清除之前的高亮
+	contentEl.querySelectorAll('.deeppdf-sentence-reading, .deeppdf-sentence-read').forEach(el => {
+		el.removeClass('deeppdf-sentence-reading');
+		el.removeClass('deeppdf-sentence-read');
+	});
+
+	// 标记已读过的句子
+	for (let i = 0; i < index; i++) {
+		const el = contentEl.querySelector(`[data-sentence-index="${i}"]`) as HTMLElement;
+		if (el) el.addClass('deeppdf-sentence-read');
+	}
+
+	// 标记当前正在读的句子
+	const current = contentEl.querySelector(`[data-sentence-index="${index}"]`) as HTMLElement;
+	if (current) {
+		current.addClass('deeppdf-sentence-reading');
+		// 平滑滚动到可视区域
+		current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+	}
+}
+
+/**
+ * 清除所有句子高亮
+ */
+function clearSentenceHighlight(contentEl: HTMLElement): void {
+	if (!contentEl) return;
+	contentEl.querySelectorAll('.deeppdf-sentence-reading, .deeppdf-sentence-read').forEach(el => {
+		el.removeClass('deeppdf-sentence-reading');
+		el.removeClass('deeppdf-sentence-read');
+	});
+}
+
+/**
  * 格式化时间戳
  */
 function formatTimestamp(isoString: string): string {
@@ -739,6 +857,11 @@ export abstract class Message {
 	protected mouseoverHandler: ((e: Event) => void) | null = null;
 
 		setTTSState?(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void;
+		/**
+		 * 高亮指定索引的句子（TTS 朗读进度跟随）
+		 * @param sentenceIndex 当前朗读到的句子索引（0-based），-1 表示清除高亮
+		 */
+		highlightTTSSentence?(sentenceIndex: number): void;
 
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
@@ -2423,6 +2546,20 @@ export class AIMessage extends Message {
 					this.ttsBtn.classList.remove('tts-loading');
 					break;
 			}
+		}
+	}
+
+	/**
+	 * 高亮指定索引的句子（TTS 朗读进度跟随）
+	 */
+	highlightTTSSentence(sentenceIndex: number): void {
+		const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+		if (!contentEl) return;
+
+		if (sentenceIndex < 0) {
+			clearSentenceHighlight(contentEl);
+		} else {
+			highlightSentence(contentEl, sentenceIndex);
 		}
 	}
 }

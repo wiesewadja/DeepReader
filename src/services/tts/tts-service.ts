@@ -13,6 +13,8 @@ export interface TTSServiceConfig {
     llmBaseUrl: string;
     llmModel: string;
     onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
+    /** 句子级朗读进度回调：当前读到第几个句子（0-based），总共多少句 */
+    onSentenceChange?: (messageId: string, sentenceIndex: number, totalSentences: number) => void;
 }
 
 interface CachedAudio {
@@ -48,6 +50,31 @@ function stripWikiLinksForTTS(text: string): string {
     });
 }
 
+/**
+ * 将文本按中文/英文句子切分，返回句子数组
+ * 保留原始文本中的空格和换行，以便后续映射回 DOM
+ */
+export function splitIntoSentences(text: string): string[] {
+    const sentences: string[] = [];
+    // 匹配句子结束符：中文句号/问号/感叹号/省略号，或英文句号/问号/感叹号
+    const regex = /[^。！？…\.\!\?]+[。！？…\.\!\?]+/g;
+    let match: RegExpExecArray | null;
+    let lastIndex = 0;
+
+    while ((match = regex.exec(text)) !== null) {
+        sentences.push(match[0]);
+        lastIndex = regex.lastIndex;
+    }
+
+    // 处理最后没有结束符的残留文本
+    const tail = text.slice(lastIndex).trim();
+    if (tail) {
+        sentences.push(tail);
+    }
+
+    return sentences.length > 0 ? sentences : [text];
+}
+
 export class TTSService {
     private state: TTSPlayState = 'idle';
     private client: TTSClient;
@@ -56,6 +83,12 @@ export class TTSService {
     private cache: Map<string, CachedAudio> = new Map();
     private streamPlayer: PCMStreamPlayer | null = null;
     private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
+    private onSentenceChange?: (messageId: string, sentenceIndex: number, totalSentences: number) => void;
+
+    /** 当前播放的句子数组和进度 */
+    private currentSentences: string[] = [];
+    private currentSentenceIndex: number = -1;
+    private sentenceTimer: ReturnType<typeof setInterval> | null = null;
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -69,6 +102,7 @@ export class TTSService {
             model: config.llmModel,
         });
         this.onStateChange = config.onStateChange;
+        this.onSentenceChange = config.onSentenceChange;
     }
 
     getState(): TTSPlayState {
@@ -449,12 +483,16 @@ export class TTSService {
             return;
         }
 
+        // 切分句子，用于进度追踪
+        this.currentSentences = splitIntoSentences(text);
+        this.currentSentenceIndex = -1;
+
         const blob = new Blob([audioBuffer], { type: 'audio/wav' });
         const blobUrl = URL.createObjectURL(blob);
         const audio = new Audio(blobUrl);
 
         this.cache.set(messageId, { blobUrl, audio });
-        this.listenAudio(audio, messageId);
+        this.listenAudioWithSentenceTracking(audio, messageId, text);
 
         this.setState('playing');
         await audio.play();
@@ -462,6 +500,10 @@ export class TTSService {
 
     private stopInternal(): void {
         this.stopStreamPlayer();
+        if (this.sentenceTimer) {
+            clearInterval(this.sentenceTimer);
+            this.sentenceTimer = null;
+        }
         if (this.currentMessageId) {
             const cached = this.cache.get(this.currentMessageId);
             if (cached) {
@@ -470,6 +512,7 @@ export class TTSService {
             }
             this.setState('idle');
             this.currentMessageId = null;
+            this.currentSentenceIndex = -1;
         }
     }
 
@@ -493,6 +536,80 @@ export class TTSService {
             if (this.currentMessageId === messageId) {
                 this.setState('idle');
                 this.currentMessageId = null;
+            }
+        };
+    }
+
+    /**
+     * 监听音频播放并追踪句子进度
+     */
+    private listenAudioWithSentenceTracking(audio: HTMLAudioElement, messageId: string, originalText: string): void {
+        const sentences = this.currentSentences;
+        const totalChars = originalText.length;
+
+        // 计算每个句子的字符累积位置（用于比例映射）
+        const sentenceEndPositions: number[] = [];
+        let charCount = 0;
+        for (const sentence of sentences) {
+            charCount += sentence.length;
+            sentenceEndPositions.push(charCount);
+        }
+
+        // 清理旧定时器
+        if (this.sentenceTimer) {
+            clearInterval(this.sentenceTimer);
+            this.sentenceTimer = null;
+        }
+
+        // 定时检查播放进度
+        this.sentenceTimer = setInterval(() => {
+            if (this.currentMessageId !== messageId || audio.paused) return;
+
+            const duration = audio.duration || 1;
+            const currentTime = audio.currentTime;
+            const progressRatio = currentTime / duration;
+            const currentCharPos = Math.floor(progressRatio * totalChars);
+
+            // 查找当前字符位置属于哪个句子
+            let newIndex = 0;
+            for (let i = 0; i < sentenceEndPositions.length; i++) {
+                if (currentCharPos <= sentenceEndPositions[i]) {
+                    newIndex = i;
+                    break;
+                }
+                newIndex = i + 1;
+            }
+            if (newIndex >= sentences.length) newIndex = sentences.length - 1;
+
+            if (newIndex !== this.currentSentenceIndex) {
+                this.currentSentenceIndex = newIndex;
+                this.onSentenceChange?.(messageId, newIndex, sentences.length);
+            }
+        }, 200); // 每 200ms 检查一次
+
+        audio.onended = () => {
+            if (this.sentenceTimer) {
+                clearInterval(this.sentenceTimer);
+                this.sentenceTimer = null;
+            }
+            audio.currentTime = 0;
+            if (this.currentMessageId === messageId) {
+                this.setState('idle');
+                this.currentMessageId = null;
+                this.currentSentenceIndex = -1;
+            }
+        };
+
+        audio.onerror = () => {
+            if (this.sentenceTimer) {
+                clearInterval(this.sentenceTimer);
+                this.sentenceTimer = null;
+            }
+            console.error('[TTS] Audio playback error');
+            if (this.currentMessageId === messageId) {
+                this.setState('idle');
+                this.currentMessageId = null;
+                this.currentSentenceIndex = -1;
             }
         };
     }
