@@ -1178,12 +1178,26 @@ export class SidebarView extends ItemView {
 
         const bookPath = `DeepReader/${this.currentPdfName}/`;
 
+        // 检查当前是否已经打开了该书籍的某个章节文件（非 MOC）
+        // 如果用户已手动从 MOC 页选择了章节，不应再自动导航
+        const activeFile = this.app.workspace.getActiveFile();
+        if (activeFile && activeFile.path.startsWith(bookPath)) {
+            const cache = this.app.metadataCache.getFileCache(activeFile);
+            const isMoc = cache?.frontmatter?.type === 'pdf-moc' || cache?.frontmatter?.type === 'epub-moc';
+            if (!isMoc) {
+                // 当前已打开章节文件，直接激活阅读模式即可
+                if (this.plugin.readingModeService?.getAutoEnable()) {
+                    this.plugin.readingModeService.activate(activeFile);
+                }
+                return;
+            }
+        }
+
         // 有阅读记录：跳转到上次阅读的章节
         if (this.readingProgress?.lastReadChapterId) {
             const chapterId = this.readingProgress.lastReadChapterId;
 
             // 检查当前文件是否已经是目标章节
-            const activeFile = this.app.workspace.getActiveFile();
             if (activeFile && activeFile.path.startsWith(bookPath)) {
                 const cache = this.app.metadataCache.getFileCache(activeFile);
                 const currentNodeId = cache?.frontmatter?.node_id;
