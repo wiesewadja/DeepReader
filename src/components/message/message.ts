@@ -593,10 +593,8 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 						// 目标就是当前文件，直接跳转 block
 						scrollToBlockInCurrentView(50);
 					} else if (targetFile) {
-						// 跨文件：用 openLinkText 在当前 leaf 打开目标文件
-						// openLinkText 支持 #^blockid 语法，Obsidian 会在文件加载后自动跳转
-						// 但分页模式下 scrollIntoView 已被 patch，所以跳转会正确横向定位
-						await app.workspace.openLinkText(hrefClean, currentFilePath, false);
+						// 跨文件：新开 tab 打开目标文件
+						await app.workspace.openLinkText(hrefClean, currentFilePath, true);
 						// 额外保险：等文件加载后再尝试一次 block 跳转
 						if (blockId) {
 							scrollToBlockInCurrentView(400);
@@ -611,17 +609,17 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 				if (blockId) {
 					scrollToBlockInCurrentView(50);
 				} else if (headingFragment) {
-					// heading 跳转：用 openLinkText 处理
+					// heading 跳转：新开 tab
 					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
 					const currentFilePath = activeView?.file?.path || '';
-					app.workspace.openLinkText(hrefClean, currentFilePath, false);
+					app.workspace.openLinkText(hrefClean, currentFilePath, true);
 				} else {
-					// 普通 wiki 链接，正常打开
-					app.workspace.openLinkText(href, '', false);
+					// 普通 wiki 链接，新开 tab
+					app.workspace.openLinkText(href, '', true);
 				}
 			} else {
-				// 非阅读模式：在当前 tab 打开
-				app.workspace.openLinkText(href, '', false);
+				// 非阅读模式：新开 tab
+				app.workspace.openLinkText(href, '', true);
 
 				// 延迟切换到预览模式
 				setTimeout(() => {
