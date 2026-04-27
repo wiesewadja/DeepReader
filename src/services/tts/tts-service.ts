@@ -410,9 +410,8 @@ export class TTSService {
 
         // PCMStreamPlayer 进度追踪
         const playbackStartTime = player.currentTime;
-        const totalChars = text.length;
 
-        const startProgressTracking = () => {
+        const startProgressTracking = (fixedEndTime: number) => {
             if (this.progressTimer) clearInterval(this.progressTimer);
             this.progressTimer = setInterval(() => {
                 if (this.currentMessageId !== messageId) {
@@ -420,27 +419,25 @@ export class TTSService {
                     return;
                 }
                 const current = player.currentTime;
-                const end = player.endTime;
-                if (end <= playbackStartTime) return;
-                const progress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (end - playbackStartTime)) * 100)));
+                if (fixedEndTime <= playbackStartTime) return;
+                const progress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (fixedEndTime - playbackStartTime)) * 100)));
                 this.onProgressChange?.(messageId, progress);
             }, 200);
         };
 
         try {
-            let trackingStarted = false;
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
-                if (!trackingStarted) {
-                    startProgressTracking();
-                    trackingStarted = true;
-                }
             }
 
             if (this.currentMessageId !== messageId) return;
 
+            // seal 后 endTime 固定，此时开始追踪进度
             player.seal();
+            const fixedEndTime = player.endTime;
+            startProgressTracking(fixedEndTime);
+
             await player.waitForEnd();
             this.clearProgressTimer();
 
