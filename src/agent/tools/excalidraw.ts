@@ -1,8 +1,8 @@
 /**
- * Excalidraw Tool - 直接创建和操作 Excalidraw 图形
+ * Excalidraw Tool - 轻量调度器
  *
- * 功能与 Canvas Tool 一致，但使用 ExcalidrawAutomate API
- * 生成可编辑的 Excalidraw 图形文件
+ * 将 mindmap / knowledge_graph / draw 操作委托给 excalidraw-engine 引擎，
+ * 本文件仅负责 action 路由和简单的 check / create 操作。
  *
  * 依赖: 用户需要安装 Obsidian Excalidraw 插件
  */
@@ -10,66 +10,8 @@
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { toolsLog as log } from '../../utils/logger.js';
-import type {
-  ExcalidrawAutomate,
-  ConnectionPoint,
-  BoxType,
-  ExcalidrawStyleObject,
-} from '../../types/excalidraw.d.ts';
-
-// Mindmap 类型定义
-interface MindmapBranch {
-  label: string;
-  children?: MindmapChildNode[];
-}
-
-type MindmapChildNode = string | { label: string; children?: MindmapChildNode[] };
-
-// 知识图谱类型
-interface KnowledgeNode {
-  id: string;
-  label: string;
-  type?: 'concept' | 'entity' | 'topic';
-}
-
-interface KnowledgeEdge {
-  from: string;
-  to: string;
-  label?: string;
-}
-
-// ============ 美观的配色方案 ============
-// 参考 Excalidraw 默认调色板，选择协调的颜色
-const BRANCH_COLORS = [
-  { stroke: '#1971c2', fill: '#a5d8ff' },   // 蓝色系
-  { stroke: '#2f9e44', fill: '#b2f2bb' },   // 绿色系
-  { stroke: '#e8590c', fill: '#ffc078' },   // 橙色系
-  { stroke: '#9c36b5', fill: '#eebefa' },   // 紫色系
-  { stroke: '#c92a2a', fill: '#ffc9c9' },   // 红色系
-  { stroke: '#087f5b', fill: '#96f2d7' },   // 青色系
-  { stroke: '#5c940d', fill: '#d8f5a2' },   // 黄绿色系
-];
-
-// 中心主题样式
-const TOPIC_STYLE = {
-  stroke: '#1a1a2e',
-  fill: '#ffe066',
-};
-
-// 节点尺寸配置（统一大小，更美观）
-const NODE_SIZES = {
-  topic: { width: 280, height: 80 },
-  branch: { width: 180, height: 50 },
-  child: { width: 140, height: 40 },
-  leaf: { width: 120, height: 35 },
-};
-
-// 布局半径配置
-const LAYOUT_RADII = {
-  branch: 350,   // 一级分支到中心距离
-  child: 180,    // 二级子节点到分支距离
-  leaf: 150,     // 三级叶节点到子节点距离
-};
+import type { ExcalidrawAutomate } from '../../types/excalidraw.d.ts';
+import { runEngine, adaptLegacyMindmap, adaptLegacyGraph } from './excalidraw-engine/index.js';
 
 const EXCALIDRAW_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -81,8 +23,8 @@ const EXCALIDRAW_DEFINITION: ToolDefinition = {
       properties: {
         action: {
           type: 'string',
-          enum: ['create', 'mindmap', 'knowledge_graph', 'add_node', 'add_edge', 'check'],
-          description: 'Action to perform. create=创建空白文件, mindmap=生成思维导图, knowledge_graph=生成知识图谱, add_node=添加节点, add_edge=添加连接, check=检查插件状态'
+          enum: ['create', 'mindmap', 'knowledge_graph', 'draw', 'check'],
+          description: 'Action to perform. create=创建空白文件, mindmap=生成思维导图, knowledge_graph=生成知识图谱, draw=自定义图形, check=检查插件状态'
         },
         filename: {
           type: 'string',
@@ -150,16 +92,12 @@ const EXCALIDRAW_DEFINITION: ToolDefinition = {
   }
 };
 
-/**
- * 获取 ExcalidrawAutomate API
- */
+/** 获取 ExcalidrawAutomate API */
 function getAPI(): ExcalidrawAutomate | null {
   return window.ExcalidrawAutomate || null;
 }
 
-/**
- * 检查 API 是否可用
- */
+/** 检查 API 是否可用 */
 function checkAPI(): { available: boolean; message: string } {
   const ea = getAPI();
   if (!ea) {
@@ -174,409 +112,22 @@ function checkAPI(): { available: boolean; message: string } {
   };
 }
 
-/**
- * 根据角度获取连接边
- */
-function getSideFromAngle(angle: number): ConnectionPoint {
-  const normalized = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  if (normalized >= Math.PI * 7 / 4 || normalized < Math.PI / 4) return 'right';
-  if (normalized >= Math.PI / 4 && normalized < Math.PI * 3 / 4) return 'bottom';
-  if (normalized >= Math.PI * 3 / 4 && normalized < Math.PI * 5 / 4) return 'left';
-  return 'top';
+/** 根据当前书籍名称生成输出文件夹 */
+function getOutputFolder(context: ToolContext): string {
+  const bookName = context.pdfName?.replace(/[<>:"/\\|?*]/g, '').trim();
+  return bookName
+    ? `DeepReader/Excalidraw/${bookName}`
+    : 'DeepReader/Excalidraw';
 }
 
-/**
- * 获取对边
- */
-function getOppositeSide(side: ConnectionPoint): ConnectionPoint {
-  const map: Record<ConnectionPoint, ConnectionPoint> = {
-    top: 'bottom',
-    bottom: 'top',
-    left: 'right',
-    right: 'left',
-  };
-  return map[side];
-}
-
-/**
- * 根据节点类型获取形状
- */
-function getBoxTypeForNodeType(type?: string): BoxType {
-  switch (type) {
-    case 'topic':
-      return 'ellipse';
-    case 'entity':
-      return 'diamond';
-    case 'concept':
-    default:
-      return 'box';
+/** 格式化引擎输出为用户可读字符串 */
+function formatResult(result: import('./excalidraw-engine/types.js').EngineOutput, label: string): string {
+  if (!result.success) {
+    return `Error: ${result.error}`;
   }
-}
-
-/**
- * 创建思维导图（放射状布局，美观样式）
- *
- * 重要：ExcalidrawAutomate API 的工作流程是：
- * 1. 先清空工作区 (clear)
- * 2. 添加所有元素到工作区
- * 3. 最后调用 create() 创建文件 - 这会自动保存工作区内容
- *
- * 注意：create() 后 targetView 为 null，无法使用 addElementsToView()
- */
-async function createMindmap(
-  ea: ExcalidrawAutomate,
-  topic: string,
-  branches: MindmapBranch[],
-  filename: string,
-  folder: string
-): Promise<string> {
-  // 调试日志：记录接收到的 branches 和 children 信息
-  log('[Excalidraw] createMindmap 接收参数:');
-  log('  - topic:', topic);
-  log('  - branches 数量:', branches.length);
-  branches.forEach((b, i) => {
-    log(`  - branch[${i}]: "${b.label}", children: ${b.children?.length || 0}`);
-    if (b.children && b.children.length > 0) {
-      b.children.forEach((c, j) => {
-        const childText = typeof c === 'string' ? c : c?.label;
-        log(`    - child[${j}]: "${childText}"`);
-      });
-    }
-  });
-
-  // 清空工作区（在 create 之前）
-  ea.clear();
-
-  // 设置全局样式（手绘风格，适度的粗糙感）
-  const style = (ea as any).style;
-  if (style) {
-    style.roughness = 1;  // 0=精确, 1=架构图风格, 2=手绘
-    style.strokeStyle = 'solid';
-    style.strokeWidth = 2;
-  }
-
-  // 中心节点 - 使用醒目的颜色
-  const centerX = 500;
-  const centerY = 400;
-
-  // 设置中心主题样式
-  if (style) {
-    style.strokeColor = TOPIC_STYLE.stroke;
-    style.backgroundColor = TOPIC_STYLE.fill;
-  }
-
-  const centerId = ea.addText(
-    centerX - NODE_SIZES.topic.width / 2,
-    centerY - NODE_SIZES.topic.height / 2,
-    topic,
-    {
-      width: NODE_SIZES.topic.width,
-      height: NODE_SIZES.topic.height,
-      textAlign: 'center',
-      verticalAlign: 'middle',
-      box: 'ellipse',
-      boxPadding: 15,
-    }
-  );
-
-  // 布局分支（放射状）
-  const branchCount = branches.length;
-  const radius = 350;  // 分支到中心的距离
-  let nodeCount = 1;
-  let edgeCount = 0;
-
-  branches.forEach((branch, index) => {
-    const angle = (2 * Math.PI * index) / branchCount - Math.PI / 2;
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
-
-    // 为每个分支选择协调的颜色
-    const colorScheme = BRANCH_COLORS[index % BRANCH_COLORS.length];
-
-    // 设置分支样式
-    if (style) {
-      style.strokeColor = colorScheme.stroke;
-      style.backgroundColor = colorScheme.fill;
-    }
-
-    // 创建分支节点
-    const branchId = ea.addText(
-      x - NODE_SIZES.branch.width / 2,
-      y - NODE_SIZES.branch.height / 2,
-      branch.label,
-      {
-        width: NODE_SIZES.branch.width,
-        height: NODE_SIZES.branch.height,
-        textAlign: 'center',
-        verticalAlign: 'middle',
-        box: 'box',
-        boxPadding: 10,
-      }
-    );
-    nodeCount++;
-
-    // 连接到中心（使用匹配的颜色）
-    const fromSide = getSideFromAngle(angle);
-    const toSide = getOppositeSide(fromSide);
-    ea.connectObjects(centerId, fromSide, branchId, toSide, {
-      numberOfPoints: 0,
-      startArrowHead: 'none',
-      endArrowHead: 'arrow',
-      padding: 5,
-    });
-    edgeCount++;
-
-    // 处理子节点 - 基于方向的树状布局
-    // 子节点沿垂直于分支方向的直线排列，避免拥挤
-    if (branch.children && branch.children.length > 0) {
-      const childCount = branch.children.length;
-
-      // 确定布局方向：基于分支相对于中心的位置
-      // 上方/下方分支 -> 子节点水平排列
-      // 左侧/右侧分支 -> 子节点垂直排列
-      const isVerticalLayout = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle)); // 左右分支用垂直布局
-
-      // 子节点之间的间距（中心点距离 = 节点尺寸 + 间隙）
-      // 确保间距足够大，避免节点重叠
-      const gap = 50;  // 节点之间的空隙（增大以避免堆叠）
-      const childSpacing = isVerticalLayout
-        ? NODE_SIZES.child.height + gap   // 垂直布局：基于高度
-        : NODE_SIZES.child.width + gap;   // 水平布局：基于宽度
-
-      // 子节点到分支的距离（增大以容纳更多连接线）
-      const childDistance = 220;
-
-      branch.children.forEach((child, childIndex) => {
-        // 处理子节点文本 - 支持 string 或 { label: string } 格式
-        const childText = typeof child === 'string' ? child : (child?.label || JSON.stringify(child));
-        if (!childText) {
-          log('[Excalidraw] 警告: 子节点缺少文本内容', child);
-          return; // 跳过无效子节点
-        }
-
-        let childX: number, childY: number;
-        let connectFromSide: ConnectionPoint, connectToSide: ConnectionPoint;
-
-        if (isVerticalLayout) {
-          // 垂直布局：子节点在分支的右侧或左侧，沿Y轴排列
-          const offsetY = (childIndex - (childCount - 1) / 2) * childSpacing;
-          if (Math.cos(angle) > 0) {
-            // 分支在右侧，子节点在更右边
-            childX = x + NODE_SIZES.branch.width / 2 + childDistance;
-            childY = y + NODE_SIZES.branch.height / 2 + offsetY;
-            connectFromSide = 'right';
-            connectToSide = 'left';
-          } else {
-            // 分支在左侧，子节点在更左边
-            childX = x - childDistance - NODE_SIZES.child.width;
-            childY = y + NODE_SIZES.branch.height / 2 + offsetY;
-            connectFromSide = 'left';
-            connectToSide = 'right';
-          }
-        } else {
-          // 水平布局：子节点在分支的上方或下方，沿X轴排列
-          const offsetX = (childIndex - (childCount - 1) / 2) * childSpacing;
-          if (Math.sin(angle) < 0) {
-            // 分支在上方，子节点在更上面
-            childX = x + NODE_SIZES.branch.width / 2 + offsetX - NODE_SIZES.child.width / 2;
-            childY = y - childDistance - NODE_SIZES.child.height;
-            connectFromSide = 'top';
-            connectToSide = 'bottom';
-          } else {
-            // 分支在下方，子节点在更下面
-            childX = x + NODE_SIZES.branch.width / 2 + offsetX - NODE_SIZES.child.width / 2;
-            childY = y + NODE_SIZES.branch.height + childDistance;
-            connectFromSide = 'bottom';
-            connectToSide = 'top';
-          }
-        }
-
-        // 子节点使用更浅的颜色
-        if (style) {
-          style.strokeColor = colorScheme.stroke;
-          style.backgroundColor = colorScheme.fill + 'cc';  // 添加透明度
-        }
-
-        const childId = ea.addText(
-          childX,
-          childY,
-          childText,
-          {
-            width: NODE_SIZES.child.width,
-            height: NODE_SIZES.child.height,
-            textAlign: 'center',
-            verticalAlign: 'middle',
-            box: 'box',
-            boxPadding: 8,
-          }
-        );
-        nodeCount++;
-
-        // 连接子节点到分支
-        ea.connectObjects(branchId, connectFromSide, childId, connectToSide, {
-          numberOfPoints: 0,
-          startArrowHead: 'none',
-          endArrowHead: 'arrow',
-        });
-        edgeCount++;
-
-        // 递归处理嵌套的 children（叶节点）
-        if (typeof child !== 'string' && child?.children && child.children.length > 0) {
-          const leafCount = child.children.length;
-          const leafGap = 40;  // 叶节点之间的空隙（增大以避免堆叠）
-          const leafSpacing = isVerticalLayout
-            ? NODE_SIZES.leaf.height + leafGap
-            : NODE_SIZES.leaf.width + leafGap;
-          const leafDistance = 160; // 叶节点到子节点的距离（增大以容纳更多连接线）
-
-          child.children.forEach((leaf, leafIndex) => {
-            const leafText = typeof leaf === 'string' ? leaf : (leaf?.label || JSON.stringify(leaf));
-            if (!leafText) return;
-
-            let leafX: number, leafY: number;
-            let leafFromSide: ConnectionPoint, leafToSide: ConnectionPoint;
-
-            if (isVerticalLayout) {
-              const offsetLeafY = (leafIndex - (leafCount - 1) / 2) * leafSpacing;
-              if (Math.cos(angle) > 0) {
-                leafX = childX + NODE_SIZES.child.width + leafDistance;
-                leafY = childY + NODE_SIZES.child.height / 2 + offsetLeafY - NODE_SIZES.leaf.height / 2;
-                leafFromSide = 'right';
-                leafToSide = 'left';
-              } else {
-                leafX = childX - leafDistance - NODE_SIZES.leaf.width;
-                leafY = childY + NODE_SIZES.child.height / 2 + offsetLeafY - NODE_SIZES.leaf.height / 2;
-                leafFromSide = 'left';
-                leafToSide = 'right';
-              }
-            } else {
-              const offsetLeafX = (leafIndex - (leafCount - 1) / 2) * leafSpacing;
-              if (Math.sin(angle) < 0) {
-                leafX = childX + NODE_SIZES.child.width / 2 + offsetLeafX - NODE_SIZES.leaf.width / 2;
-                leafY = childY - leafDistance - NODE_SIZES.leaf.height;
-                leafFromSide = 'top';
-                leafToSide = 'bottom';
-              } else {
-                leafX = childX + NODE_SIZES.child.width / 2 + offsetLeafX - NODE_SIZES.leaf.width / 2;
-                leafY = childY + NODE_SIZES.child.height + leafDistance;
-                leafFromSide = 'bottom';
-                leafToSide = 'top';
-              }
-            }
-
-            // 叶节点使用更浅的颜色
-            if (style) {
-              style.backgroundColor = colorScheme.fill + '88';  // 更透明
-            }
-
-            const leafId = ea.addText(
-              leafX,
-              leafY,
-              leafText,
-              {
-                width: NODE_SIZES.leaf.width,
-                height: NODE_SIZES.leaf.height,
-                textAlign: 'center',
-                verticalAlign: 'middle',
-                box: 'box',
-                boxPadding: 6,
-              }
-            );
-            nodeCount++;
-
-            ea.connectObjects(childId, leafFromSide, leafId, leafToSide, {
-              numberOfPoints: 0,
-              startArrowHead: 'none',
-              endArrowHead: 'arrow',
-            });
-            edgeCount++;
-          });
-        }
-      });
-    }
-  });
-
-  // 最后一步：创建文件 - 这会自动保存工作区中的所有元素
-  log('[Excalidraw] 创建文件，节点:', nodeCount, '边:', edgeCount);
-  await ea.create({
-    filename,
-    foldername: folder,
-  });
-  log('[Excalidraw] 文件创建完成');
-
-  const filePath = `${folder}/${filename}.excalidraw.md`;
-  return `Created Excalidraw mindmap: ${filePath}
-- Topic: ${topic}
-- Branches: ${branchCount}
-- Total nodes: ${nodeCount}
-- Total edges: ${edgeCount}`;
-}
-
-/**
- * 创建知识图谱（网格布局）
- */
-async function createKnowledgeGraph(
-  ea: ExcalidrawAutomate,
-  nodes: KnowledgeNode[],
-  edges: KnowledgeEdge[],
-  filename: string,
-  folder: string
-): Promise<string> {
-  // 清空工作区（在 create 之前）
-  ea.clear();
-
-  // 计算网格布局
-  const cols = Math.ceil(Math.sqrt(nodes.length));
-  const spacing = 250;
-  const startX = 100;
-  const startY = 100;
-
-  const idMap = new Map<string, string>();
-
-  // 创建节点
-  nodes.forEach((node, index) => {
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    const x = startX + col * spacing;
-    const y = startY + row * spacing;
-
-    const boxType = getBoxTypeForNodeType(node.type);
-    const excalId = ea.addText(x, y, node.label, {
-      width: 150,
-      height: 50,
-      textAlign: 'center',
-      box: boxType,
-    });
-    idMap.set(node.id, excalId);
-  });
-
-  // 创建边
-  let edgeCount = 0;
-  edges.forEach((edge) => {
-    const fromId = idMap.get(edge.from);
-    const toId = idMap.get(edge.to);
-
-    if (fromId && toId) {
-      ea.connectObjects(fromId, 'right', toId, 'left', {
-        numberOfPoints: 0,
-        endArrowHead: 'arrow',
-      });
-      edgeCount++;
-    }
-  });
-
-  // 最后一步：创建文件 - 这会自动保存工作区中的所有元素
-  log('[Excalidraw] 创建知识图谱文件，节点:', nodes.length, '边:', edgeCount);
-  await ea.create({
-    filename,
-    foldername: folder,
-  });
-  log('[Excalidraw] 知识图谱文件创建完成');
-
-  const filePath = `${folder}/${filename}.excalidraw.md`;
-  return `Created Excalidraw knowledge graph: ${filePath}
-- Nodes: ${nodes.length}
-- Edges: ${edgeCount}`;
+  return `Created Excalidraw ${label}: ${result.filePath}\n` +
+    `- Nodes: ${result.nodeCount}\n` +
+    `- Edges: ${result.edgeCount}`;
 }
 
 /**
@@ -586,15 +137,14 @@ export function createExcalidrawTool(): ToolExecutor {
   return {
     definition: EXCALIDRAW_DEFINITION,
 
-    async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
+    async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
       const { action } = args;
 
       log('[Excalidraw] 执行:', action);
 
       switch (action) {
         case 'check': {
-          const status = checkAPI();
-          return status.message;
+          return checkAPI().message;
         }
 
         case 'create': {
@@ -605,14 +155,10 @@ export function createExcalidrawTool(): ToolExecutor {
 
           const ea = getAPI()!;
           const filename = (args.filename as string) || 'untitled';
-          const folder = (args.folder as string) || 'DeepReader/Excalidraw';
+          const folder = (args.folder as string) || getOutputFolder(context);
 
           try {
-            await ea.create({
-              filename,
-              foldername: folder,
-            });
-
+            await ea.create({ filename, foldername: folder });
             return `Created empty Excalidraw file: ${folder}/${filename}.excalidraw.md`;
           } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e);
@@ -621,65 +167,50 @@ export function createExcalidrawTool(): ToolExecutor {
         }
 
         case 'mindmap': {
-          const status = checkAPI();
-          if (!status.available) {
-            return `Error: ${status.message}`;
-          }
-
           const topic = args.topic as string;
-          const branches = (args.branches as MindmapBranch[]) || [];
-          const filename = (args.filename as string) || 'mindmap';
-          const folder = (args.folder as string) || 'DeepReader/Excalidraw';
+          const branches = args.branches as Array<{ label: string; children?: any[] }>;
 
-          // 调试日志：显示实际收到的参数
-          log('[Excalidraw] mindmap 参数:', JSON.stringify({ topic, branches, filename, folder }, null, 2));
+          if (!topic) return 'Error: topic is required for mindmap action';
+          if (!branches?.length) return 'Error: branches is required for mindmap action';
 
-          if (!topic) {
-            return 'Error: topic is required for mindmap action';
-          }
-
-          if (branches.length === 0) {
-            return 'Error: branches is required for mindmap action';
-          }
-
-          try {
-            const ea = getAPI()!;
-            return await createMindmap(ea, topic, branches, filename, folder);
-          } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
-            log('[Excalidraw] Mindmap 创建失败:', errorMsg);
-            return `Error: ${errorMsg}`;
-          }
+          const data = adaptLegacyMindmap({ topic, branches });
+          const result = await runEngine({
+            diagramType: 'mindmap',
+            data,
+            filename: (args.filename as string) || 'mindmap',
+            folder: (args.folder as string) || getOutputFolder(context),
+          });
+          return formatResult(result, 'mindmap');
         }
 
         case 'knowledge_graph': {
-          const status = checkAPI();
-          if (!status.available) {
-            return `Error: ${status.message}`;
-          }
+          const nodes = args.nodes as Array<{ id: string; label: string; type?: string }>;
+          const edges = args.edges as Array<{ from: string; to: string; label?: string }>;
 
-          const nodes = (args.nodes as KnowledgeNode[]) || [];
-          const edges = (args.edges as KnowledgeEdge[]) || [];
-          const filename = (args.filename as string) || 'knowledge-graph';
-          const folder = (args.folder as string) || 'DeepReader/Excalidraw';
+          if (!nodes?.length) return 'Error: nodes is required for knowledge_graph action';
 
-          if (nodes.length === 0) {
-            return 'Error: nodes is required for knowledge_graph action';
-          }
-
-          try {
-            const ea = getAPI()!;
-            return await createKnowledgeGraph(ea, nodes, edges, filename, folder);
-          } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
-            log('[Excalidraw] Knowledge graph 创建失败:', errorMsg);
-            return `Error: ${errorMsg}`;
-          }
+          const data = adaptLegacyGraph({ nodes, edges: edges || [] });
+          const result = await runEngine({
+            diagramType: 'knowledge_graph',
+            data,
+            filename: (args.filename as string) || 'knowledge-graph',
+            folder: (args.folder as string) || getOutputFolder(context),
+          });
+          return formatResult(result, 'knowledge graph');
         }
 
-        case 'add_node':
-        case 'add_edge': {
-          return 'Error: add_node and add_edge actions require an active Excalidraw file. Please use mindmap or knowledge_graph action to create a new file first.';
+        case 'draw': {
+          if (!args.diagramType || !args.data) {
+            return 'Error: diagramType and data are required for draw action';
+          }
+          const result = await runEngine({
+            diagramType: args.diagramType as any,
+            data: args.data as any,
+            filename: args.filename as string | undefined,
+            folder: (args.folder as string) || getOutputFolder(context),
+            style: args.style as any,
+          });
+          return formatResult(result, args.diagramType as string);
         }
 
         default:

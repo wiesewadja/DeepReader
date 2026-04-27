@@ -29,6 +29,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // === S0: Router output ===
   depth: Annotation<number>(),
   rewrittenQuery: Annotation<string>(),
+  allowedTools: Annotation<string[]>(),
 
   // === S1: Inspectional output ===
   tocSummary: Annotation<string>(),
