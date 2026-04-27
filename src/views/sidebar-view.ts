@@ -809,6 +809,35 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 通过 indexId 扫描 Vault 找到对应书籍的实际目录名和元数据
+     * 用户可能重命名了目录，因此不能仅依赖静态的 book-meta.json
+     */
+    private async findBookDirectoryByIndexId(indexId: string): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
+        const allFiles = this.app.vault.getMarkdownFiles();
+
+        for (const f of allFiles) {
+            if (!f.path.startsWith('DeepReader/')) continue;
+            if (!f.path.includes('MOC')) continue;
+
+            const cache = this.app.metadataCache.getFileCache(f);
+            if (cache?.frontmatter?.index_id === indexId || cache?.frontmatter?.pdf_index_id === indexId) {
+                // 找到 MOC 文件，提取目录名：DeepReader/{dirName}/MOC.md
+                const parts = f.path.split('/');
+                if (parts.length >= 3) {
+                    const dirName = parts[1];
+                    log(`[DeepPDF] findBookDirectoryByIndexId: 找到目录 "${dirName}" (indexId=${indexId})`);
+                    return {
+                        dirName,
+                        author: cache.frontmatter?.author,
+                        bookName: cache.frontmatter?.book_name || cache.frontmatter?.title,
+                    };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * 选择索引（从弹窗中调用或自动切换）
      * @param indexId 索引 ID
      */
@@ -839,6 +868,9 @@ export class SidebarView extends ItemView {
         let author: string | undefined;
         let coverName: string | undefined;
 
+        // 扫描 Vault 获取实际目录名（用户可能重命名了目录）
+        const vaultDir = await this.findBookDirectoryByIndexId(indexId);
+
         if (index) {
             // 从后端索引获取信息
             const previousBook = this.currentPdfName;
@@ -863,12 +895,12 @@ export class SidebarView extends ItemView {
                 coverName = exportName;
             } catch { /* ignore */ }
 
-            // 使用 exportName 作为 currentPdfName（与导出目录名一致，确保 wiki link 正确）
-            const simplifiedName = exportName || this.getDisplayName(displayName);
+            // 优先使用 Vault 中的实际目录名，回退到 book-meta.json 的 exportName
+            const simplifiedName = vaultDir?.dirName || exportName || this.getDisplayName(displayName);
             this.currentPdfName = simplifiedName;
 
-            // 顶栏显示也使用 exportName（精简的书名）
-            displayName = simplifiedName;
+            // 顶栏显示也使用实际目录名（精简的书名）
+            displayName = vaultDir?.bookName || simplifiedName;
 
             // 记录书籍切换里程碑
             await this.initializeMilestoneRecorder();
@@ -876,15 +908,15 @@ export class SidebarView extends ItemView {
                 await this.milestoneRecorder.handleBookSwitch(displayName);
             }
 
-            // 获取作者信息：优先使用 book-meta.json 的 author
-            author = metaAuthor || index.author;
-            log(`[DeepPDF] 作者信息: book-meta.author="${metaAuthor}", index.author="${index.author}"`);
+            // 获取作者信息：优先使用 Vault MOC 的 author，回退到 book-meta.json 和 index
+            author = vaultDir?.author || metaAuthor || index.author;
+            log(`[DeepPDF] 作者信息: vaultDir.author="${vaultDir?.author}", book-meta.author="${metaAuthor}", index.author="${index.author}"`);
 
             // 加载书籍封面（优先使用 exportName 匹配封面文件）
             this.loadBookCover(coverName || displayName, indexId);
         } else {
             // index 不在 indexes 列表中（可能 loadIndexes 还没完成）
-            // 尝试从 book-meta.json 读取 exportName 和 author
+            // 优先使用 Vault 扫描结果，回退到 book-meta.json
             let exportName: string | undefined;
             let metaAuthor: string | undefined;
             try {
@@ -896,15 +928,16 @@ export class SidebarView extends ItemView {
                 metaAuthor = meta.author || undefined;
             } catch { /* ignore */ }
 
-            if (exportName) {
-                displayName = exportName;
-                this.currentPdfName = exportName;
-                author = metaAuthor;
-                log(`[DeepPDF] 从 book-meta.json 恢复书名: "${exportName}"`);
-                this.loadBookCover(exportName, indexId);
+            const resolvedName = vaultDir?.dirName || exportName;
+            if (resolvedName) {
+                displayName = vaultDir?.bookName || resolvedName;
+                this.currentPdfName = resolvedName;
+                author = vaultDir?.author || metaAuthor;
+                log(`[DeepPDF] 从 book-meta.json/vault 恢复书名: "${resolvedName}"`);
+                this.loadBookCover(resolvedName, indexId);
             } else {
-                // book-meta.json 也不存在，无法恢复，放弃设置
-                log(`[DeepPDF] index ${indexId} 不在列表中且无 book-meta.json，跳过`);
+                // book-meta.json 也不存在且 Vault 中也找不到，无法恢复，放弃设置
+                log(`[DeepPDF] index ${indexId} 不在列表中且无 book-meta.json/vault 目录，跳过`);
                 return;
             }
         }
