@@ -11,6 +11,7 @@ export class PCMStreamPlayer {
     private completeResolve: (() => void) | null = null;
     private completePromise: Promise<void> | null = null;
     private stopped = false;
+    private firstStartTime: number | null = null;
 
     constructor(sampleRate = DEFAULT_SAMPLE_RATE) {
         this.sampleRate = sampleRate;
@@ -27,6 +28,11 @@ export class PCMStreamPlayer {
 
     get endTime(): number {
         return this.nextStartTime;
+    }
+
+    /** 第一个 chunk 开始播放的时间（进度追踪起点） */
+    get startTime(): number {
+        return this.firstStartTime ?? this.currentTime;
     }
 
     enqueue(pcm16: ArrayBuffer): void {
@@ -56,6 +62,10 @@ export class PCMStreamPlayer {
         if (this.nextStartTime < now) {
             // 首个 chunk 或间隔过大时，增加缓冲时间确保 AudioContext 完全就绪
             this.nextStartTime = now + 0.05;
+        }
+        // 记录第一个 chunk 的实际播放开始时间
+        if (this.firstStartTime === null) {
+            this.firstStartTime = this.nextStartTime;
         }
         source.start(this.nextStartTime);
         this.nextStartTime += buffer.duration;

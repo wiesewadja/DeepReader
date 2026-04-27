@@ -408,8 +408,9 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
-        // 记录播放起点
-        const playbackStartTime = player.currentTime;
+        // 进度追踪：使用第一个 chunk 实际播放开始时间作为起点
+        const playbackStartTime = player.startTime;
+        let maxEndTime = 0;
         let maxProgress = 0;
 
         const startProgressTracking = () => {
@@ -421,10 +422,11 @@ export class TTSService {
                 }
                 const current = player.currentTime;
                 const end = player.endTime;
-                if (end <= playbackStartTime) return;
-                // 用已入队的音频总时长来估算进度
-                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (end - playbackStartTime)) * 100)));
-                // 只允许进度前进，不允许倒退
+                // endTime 只增不减
+                maxEndTime = Math.max(maxEndTime, end);
+                if (maxEndTime <= playbackStartTime) return;
+                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (maxEndTime - playbackStartTime)) * 100)));
+                // 进度只前进不倒退
                 maxProgress = Math.max(maxProgress, rawProgress);
                 this.onProgressChange?.(messageId, maxProgress);
             }, 200);
