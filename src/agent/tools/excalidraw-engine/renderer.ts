@@ -116,7 +116,7 @@ function addEdge(ea: ExcalidrawAutomate, edge: RenderEdge): void {
   }
 }
 
-function addGroup(ea: ExcalidrawAutomate, group: RenderGroup): void {
+function addGroup(ea: ExcalidrawAutomate, group: RenderGroup, nodeElementIds: string[]): void {
   const s = getStyle(ea);
   s.strokeColor = group.strokeColor;
   s.backgroundColor = group.fillColor;
@@ -129,10 +129,10 @@ function addGroup(ea: ExcalidrawAutomate, group: RenderGroup): void {
   s.strokeColor = group.strokeColor;
   s.backgroundColor = 'transparent';
   s.fontSize = 14;
-  s.fontFamily = 1;
+  s.fontFamily = 3;
   const titleId = ea.addText(group.x + 10, group.y + 8, group.label);
 
-  ea.addToGroup([rectId, titleId]);
+  ea.addToGroup([rectId, titleId, ...nodeElementIds]);
 }
 
 export async function render(layout: LayoutResult, filename: string, folder?: string): Promise<{ filePath: string; nodeCount: number; edgeCount: number }> {
@@ -141,14 +141,19 @@ export async function render(layout: LayoutResult, filename: string, folder?: st
 
   log('renderer', `开始渲染: ${layout.nodes.length} 节点, ${layout.edges.length} 边, ${layout.groups.length} 分组`);
 
-  for (const group of layout.groups) {
-    addGroup(ea, group);
-  }
-
+  // Render nodes first so we have element IDs for grouping
   const nodeIdMap = new Map<string, string>();
   for (const node of layout.nodes) {
     const elementId = addNode(ea, node);
     nodeIdMap.set(node.id, elementId);
+  }
+
+  // Render groups after nodes so contained node IDs are available
+  for (const group of layout.groups) {
+    const nodeElementIds = (group.nodeIds ?? [])
+      .map(nId => nodeIdMap.get(nId))
+      .filter((id): id is string => !!id);
+    addGroup(ea, group, nodeElementIds);
   }
 
   for (const edge of layout.edges) {

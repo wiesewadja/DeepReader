@@ -121,6 +121,7 @@ export interface LayoutNode {
   branchIndex: number;
   width: number;
   height: number;
+  textHeight: number;
   link?: string;
   children: LayoutNode[];
 }

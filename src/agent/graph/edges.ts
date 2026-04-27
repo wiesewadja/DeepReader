@@ -29,7 +29,7 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
     return 'syntopical';
   }
   // depth=1: check if diagram intent
-  if (state.depth <= 1 && state.structuralAnalysis) {
+  if (state.depth === 1 && state.structuralAnalysis) {
     return hasDiagramIntent(state) ? 'visualizer' : 'done';
   }
   // depth=2 → analytical

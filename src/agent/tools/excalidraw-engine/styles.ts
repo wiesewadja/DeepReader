@@ -65,20 +65,21 @@ const MINDMAP_FONTS: Record<string, { fontSize: number; fontWeight: 'normal' | '
 
 const DEFAULT_FONT_FAMILY = 3;
 
-/** 根据实际文本计算节点尺寸 */
+/** 根据实际文本计算节点尺寸，textHeight 返回未截断的实际文本高度 */
 export function computeNodeSize(
   text: string,
   level: 'topic' | 'branch' | 'child' | 'leaf',
   fontFamily: number = DEFAULT_FONT_FAMILY,
-): { width: number; height: number } {
+): { width: number; height: number; textHeight: number } {
   const c = MINDMAP_SIZE_CONSTRAINTS[level];
   const fontSize = MINDMAP_FONTS[level].fontSize;
   const textW = measureTextWidth(text, fontSize, fontFamily);
   const width = Math.max(c.minWidth, Math.min(c.maxWidth, textW + c.paddingH * 2));
   const lines = Math.ceil(textW / Math.max(1, width - c.paddingH * 2)) || 1;
   const lineHeight = fontSize * 1.4;
-  const height = Math.max(c.minHeight, Math.min(c.maxHeight, lines * lineHeight + c.paddingV * 2));
-  return { width, height };
+  const rawHeight = lines * lineHeight + c.paddingV * 2;
+  const height = Math.max(c.minHeight, Math.min(c.maxHeight, rawHeight));
+  return { width, height, textHeight: rawHeight };
 }
 
 // --- 色彩常量（层次化填充色） ---

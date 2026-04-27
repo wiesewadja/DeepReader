@@ -29,7 +29,9 @@ function buildLayoutTree(data: MindmapSemantic): LayoutNode {
     annotation: data.summary,
     level: 'topic',
     branchIndex: 0,
-    ...topicSize,
+    width: topicSize.width,
+    height: topicSize.height,
+    textHeight: topicSize.textHeight,
     children: data.branches.map((b, i) => buildBranchNode(b, i)),
   };
 }
@@ -42,7 +44,9 @@ function buildBranchNode(branch: MindmapBranch, index: number): LayoutNode {
     annotation: branch.annotation,
     level: 'branch',
     branchIndex: index,
-    ...size,
+    width: size.width,
+    height: size.height,
+    textHeight: size.textHeight,
     children: branch.children.map((c, ci) => buildChildNode(c, index, ci, 'child', `branch-${index}`)),
   };
 }
@@ -56,7 +60,9 @@ function buildChildNode(node: MindmapNode, branchIndex: number, childIndex: numb
     annotation: node.annotation,
     level,
     branchIndex,
-    ...size,
+    width: size.width,
+    height: size.height,
+    textHeight: size.textHeight,
     link: node.link,
     children: (node.children ?? []).map((c, ci) => buildChildNode(c, branchIndex, ci, 'leaf', nodeId)),
   };
@@ -211,6 +217,13 @@ function layoutChildren(
 
 // --- Phase 3: 增强碰撞检测 ---
 
+function collectTextHeights(node: LayoutNode, map: Map<string, number>): void {
+  map.set(node.id, node.textHeight);
+  for (const child of node.children) {
+    collectTextHeights(child, map);
+  }
+}
+
 interface CollisionEntry {
   x: number;
   y: number;
@@ -219,7 +232,7 @@ interface CollisionEntry {
   id: string;
 }
 
-function resolveCollisions(nodes: RenderNode[], edges: RenderEdge[]): void {
+function resolveCollisions(nodes: RenderNode[], edges: RenderEdge[], textHeightMap: Map<string, number>): void {
   const parentMap = new Map<string, string>();
   for (const edge of edges) {
     parentMap.set(edge.toId, edge.fromId);
@@ -229,7 +242,7 @@ function resolveCollisions(nodes: RenderNode[], edges: RenderEdge[]): void {
     x: n.x,
     y: n.y,
     width: n.width,
-    effectiveHeight: n.height + (n.annotation ? ANNOTATION_HEIGHT : 0),
+    effectiveHeight: Math.max(n.height, textHeightMap.get(n.id) ?? n.height) + (n.annotation ? ANNOTATION_HEIGHT : 0),
     id: n.id,
   }));
 
@@ -249,9 +262,17 @@ function resolveCollisions(nodes: RenderNode[], edges: RenderEdge[]): void {
           const parentB = parentMap.get(b.id);
 
           if (parentA && parentA === parentB) {
-            const push = overlapY / 2 + 1;
-            if (a.y < b.y) { a.y -= push; b.y += push; }
-            else { a.y += push; b.y -= push; }
+            // Push siblings along the smaller overlap axis
+            if (overlapX < overlapY) {
+              const push = overlapX / 2 + 1;
+              if (a.x <= b.x) { a.x -= push; b.x += push; }
+              else { a.x += push; b.x -= push; }
+            } else {
+              const push = overlapY / 2 + 1;
+              if (a.y < b.y) { a.y -= push; b.y += push; }
+              else if (a.y > b.y) { a.y += push; b.y -= push; }
+              else { a.y -= push; b.y += push; }
+            }
           } else {
             const distA = Math.hypot(a.x - CENTER_X, a.y - CENTER_Y) || 1;
             const distB = Math.hypot(b.x - CENTER_X, b.y - CENTER_Y) || 1;
@@ -260,10 +281,15 @@ function resolveCollisions(nodes: RenderNode[], edges: RenderEdge[]): void {
             const dy = target.y - CENTER_Y;
             const len = Math.hypot(dx, dy) || 1;
 
-            if (overlapX < overlapY) {
+            // Fallback when radial direction component is too small
+            if (overlapX < overlapY && Math.abs(dx / len) > 0.1) {
               target.x += (dx / len) * overlapX;
             } else {
-              target.y += (dy / len) * overlapY;
+              if (Math.abs(dy / len) > 0.1) {
+                target.y += (dy / len) * overlapY;
+              } else {
+                target.y += (target.y >= CENTER_Y ? 1 : -1) * overlapY;
+              }
             }
           }
           totalMoved += overlapX + overlapY;
@@ -324,8 +350,10 @@ export function layoutMindmap(data: MindmapSemantic): LayoutResult {
     currentAngle += angle;
   }
 
-  // Phase 3: 碰撞检测
-  resolveCollisions(nodes, edges);
+  // Phase 3: 碰撞检测 (use textHeight for accurate collision bounds)
+  const textHeightMap = new Map<string, number>();
+  collectTextHeights(layoutTree, textHeightMap);
+  resolveCollisions(nodes, edges, textHeightMap);
 
   return { nodes, edges, groups: [] };
 }

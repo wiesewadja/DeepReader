@@ -22,14 +22,20 @@ export async function visualizerNode(
 
   if (!mainModel || !toolContext) {
     log('[Visualizer] 模型或上下文不可用');
-    return { analysisResult: '[Visualizer] 生成图表失败：模型不可用' };
+    return { analysisResult: '图表生成失败: 模型不可用' };
+  }
+
+  // ISSUE-003: early check for Excalidraw plugin
+  if (typeof window === 'undefined' || !window.ExcalidrawAutomate) {
+    log('[Visualizer] Excalidraw 插件未安装或未启用');
+    return { analysisResult: '图表生成失败: Excalidraw 插件未安装。请在社区插件市场安装后重试。' };
   }
 
   // Collect source content: prefer S2/S3 analysisResult, fall back to S1 structuralAnalysis
   const sourceContent = state.analysisResult || state.structuralAnalysis || '';
   if (!sourceContent) {
     log('[Visualizer] 无可用内容');
-    return { analysisResult: '[Visualizer] 生成图表失败：缺少分析内容' };
+    return { analysisResult: '图表生成失败: 缺少分析内容' };
   }
 
   const userQuery = state.rewrittenQuery || '';
@@ -41,6 +47,13 @@ export async function visualizerNode(
     // Build tools: only excalidraw
     const allTools = createLangChainTools(toolContext);
     const vizTools = allTools.filter(t => t.name === 'excalidraw');
+
+    // ISSUE-004: guard empty tool set
+    if (vizTools.length === 0) {
+      log('[Visualizer] excalidraw 工具未注册');
+      return { analysisResult: '图表生成失败: excalidraw 工具不可用' };
+    }
+
     const modelWithTools = mainModel.bindTools(vizTools);
 
     const messages = [
@@ -100,6 +113,6 @@ export async function visualizerNode(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[Visualizer] 错误: ${msg}`);
-    return { analysisResult: `[Visualizer] 生成图表失败: ${msg}` };
+    return { analysisResult: `图表生成失败: ${msg}` };
   }
 }
