@@ -13,6 +13,8 @@ export interface TTSServiceConfig {
     llmBaseUrl: string;
     llmModel: string;
     onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
+    /** TTS 播放进度回调：0-100 的进度值，每 200ms 更新一次 */
+    onProgressChange?: (messageId: string, progress: number) => void;
 }
 
 interface CachedAudio {
@@ -56,6 +58,8 @@ export class TTSService {
     private cache: Map<string, CachedAudio> = new Map();
     private streamPlayer: PCMStreamPlayer | null = null;
     private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
+    private onProgressChange?: (messageId: string, progress: number) => void;
+    private progressTimer: ReturnType<typeof setInterval> | null = null;
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -69,6 +73,7 @@ export class TTSService {
             model: config.llmModel,
         });
         this.onStateChange = config.onStateChange;
+        this.onProgressChange = config.onProgressChange;
     }
 
     getState(): TTSPlayState {
@@ -93,7 +98,7 @@ export class TTSService {
 
         const cached = this.cache.get(messageId);
         if (cached) {
-            this.listenAudio(cached.audio, messageId);
+            this.listenAudioWithProgress(cached.audio, messageId);
             this.setState('playing');
             await cached.audio.play();
             return;
@@ -403,16 +408,41 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
+        // PCMStreamPlayer 进度追踪
+        const playbackStartTime = player.currentTime;
+        const totalChars = text.length;
+
+        const startProgressTracking = () => {
+            if (this.progressTimer) clearInterval(this.progressTimer);
+            this.progressTimer = setInterval(() => {
+                if (this.currentMessageId !== messageId) {
+                    this.clearProgressTimer();
+                    return;
+                }
+                const current = player.currentTime;
+                const end = player.endTime;
+                if (end <= playbackStartTime) return;
+                const progress = Math.min(100, Math.max(0, Math.round(((current - playbackStartTime) / (end - playbackStartTime)) * 100)));
+                this.onProgressChange?.(messageId, progress);
+            }, 200);
+        };
+
         try {
+            let trackingStarted = false;
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
+                if (!trackingStarted) {
+                    startProgressTracking();
+                    trackingStarted = true;
+                }
             }
 
             if (this.currentMessageId !== messageId) return;
 
             player.seal();
             await player.waitForEnd();
+            this.clearProgressTimer();
 
             const wavBlob = player.assembleWav();
             const blobUrl = URL.createObjectURL(wavBlob);
@@ -425,6 +455,7 @@ export class TTSService {
                 this.currentMessageId = null;
             }
         } finally {
+            this.clearProgressTimer();
             player.stop();
             if (this.streamPlayer === player) {
                 this.streamPlayer = null;
@@ -454,7 +485,7 @@ export class TTSService {
         const audio = new Audio(blobUrl);
 
         this.cache.set(messageId, { blobUrl, audio });
-        this.listenAudio(audio, messageId);
+        this.listenAudioWithProgress(audio, messageId);
 
         this.setState('playing');
         await audio.play();
@@ -462,6 +493,7 @@ export class TTSService {
 
     private stopInternal(): void {
         this.stopStreamPlayer();
+        this.clearProgressTimer();
         if (this.currentMessageId) {
             const cached = this.cache.get(this.currentMessageId);
             if (cached) {
@@ -471,6 +503,49 @@ export class TTSService {
             this.setState('idle');
             this.currentMessageId = null;
         }
+    }
+
+    private clearProgressTimer(): void {
+        if (this.progressTimer) {
+            clearInterval(this.progressTimer);
+            this.progressTimer = null;
+        }
+    }
+
+    /**
+     * 监听音频播放并发送进度
+     */
+    private listenAudioWithProgress(audio: HTMLAudioElement, messageId: string): void {
+        // 清理旧定时器
+        this.clearProgressTimer();
+
+        // 定时检查播放进度
+        this.progressTimer = setInterval(() => {
+            if (this.currentMessageId !== messageId || audio.paused) return;
+            const duration = audio.duration || 1;
+            const currentTime = audio.currentTime;
+            const progress = Math.min(100, Math.max(0, Math.round((currentTime / duration) * 100)));
+            this.onProgressChange?.(messageId, progress);
+        }, 200);
+
+        audio.onended = () => {
+            this.clearProgressTimer();
+            audio.currentTime = 0;
+            if (this.currentMessageId === messageId) {
+                this.onProgressChange?.(messageId, 100);
+                this.setState('idle');
+                this.currentMessageId = null;
+            }
+        };
+
+        audio.onerror = () => {
+            this.clearProgressTimer();
+            console.error('[TTS] Audio playback error');
+            if (this.currentMessageId === messageId) {
+                this.setState('idle');
+                this.currentMessageId = null;
+            }
+        };
     }
 
     private stopStreamPlayer(): void {

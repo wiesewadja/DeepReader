@@ -739,6 +739,11 @@ export abstract class Message {
 	protected mouseoverHandler: ((e: Event) => void) | null = null;
 
 		setTTSState?(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void;
+		/**
+		 * 高亮 TTS 播放进度（段落级）
+		 * @param progress 0-100 的进度值
+		 */
+		highlightTTSProgress?(progress: number): void;
 
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
@@ -2423,6 +2428,63 @@ export class AIMessage extends Message {
 					this.ttsBtn.classList.remove('tts-loading');
 					break;
 			}
+		}
+	}
+
+	/**
+	 * 高亮 TTS 播放进度（段落级）
+	 * 根据进度值找到当前播放的段落，添加墨水渐变背景并跟随滚动
+	 */
+	highlightTTSProgress(progress: number): void {
+		const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+		if (!contentEl) return;
+
+		// 清除之前的高亮
+		contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+			el.removeClass('deeppdf-tts-reading-paragraph');
+		});
+
+		// 收集所有段落并计算字符范围
+		const paragraphs = contentEl.querySelectorAll('p');
+		if (paragraphs.length === 0) return;
+
+		// 统计每个段落的字符数和累积字符位置
+		const paragraphInfo: { el: Element; start: number; end: number }[] = [];
+		let totalChars = 0;
+
+		for (const p of paragraphs) {
+			const text = p.textContent || '';
+			const charCount = text.length;
+			paragraphInfo.push({
+				el: p,
+				start: totalChars,
+				end: totalChars + charCount
+			});
+			totalChars += charCount;
+		}
+
+		if (totalChars === 0) return;
+
+		// 根据进度找到当前段落
+		const currentChar = Math.floor((progress / 100) * totalChars);
+		let currentParagraph: Element | null = null;
+
+		for (const info of paragraphInfo) {
+			if (currentChar >= info.start && currentChar < info.end) {
+				currentParagraph = info.el;
+				break;
+			}
+		}
+
+		// 如果进度到最后，高亮最后一个段落
+		if (!currentParagraph && progress >= 100) {
+			currentParagraph = paragraphInfo[paragraphInfo.length - 1].el;
+		}
+
+		if (currentParagraph) {
+			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
+			// 跟随滚动
+			(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
 		}
 	}
 }

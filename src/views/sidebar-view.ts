@@ -3274,6 +3274,19 @@ export class SidebarView extends ItemView {
                 if (messageId) {
                     this.messageList?.updateTTSState(messageId, state);
                 }
+                // TTS 停止时清除高亮
+                if (state === 'idle' && messageId) {
+                    const msg = this.messageList?.getMessage(messageId);
+                    if (msg?.highlightTTSProgress) {
+                        msg.highlightTTSProgress(-1);
+                    }
+                }
+            },
+            onProgressChange: (messageId: string, progress: number) => {
+                const msg = this.messageList?.getMessage(messageId);
+                if (msg?.highlightTTSProgress) {
+                    msg.highlightTTSProgress(progress);
+                }
             },
         });
     }
