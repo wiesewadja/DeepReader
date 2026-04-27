@@ -402,20 +402,19 @@ export class TTSService {
 
     /**
      * 流式播放：直接播放 TTS 合成的音频（用于原文朗读）
+     *
+     * 进度追踪策略：
+     * - 所有 chunk 入队前（seal 前）：分母不确定，等待，进度保持 0
+     * - seal 后：使用精确的总时长计算进度，每步最多涨 5% 平滑过渡
      */
     private async playStream(messageId: string, text: string): Promise<void> {
         const player = new PCMStreamPlayer(24000);
         this.streamPlayer = player;
         this.setState('playing');
 
-        // 进度追踪
-        // 问题：第一个 chunk 时长很短（~0.2s），定时器 200ms 检查时已播完
-        // 导致进度直接跳到接近 100%，墨水效果闪现到末尾
-        // 解决：缓冲 1.5s，让足够多的 chunk 入队后再开始精确计算进度
-        const WARMUP_DURATION = 1500;
-        let firstChunkTime = 0;
-        let maxEndTime = 0;
-        let maxProgress = 0;
+        let sealedEndTime = 0;
+        let sealDone = false;
+        let lastSentProgress = -1;
 
         const startProgressTracking = () => {
             if (this.progressTimer) clearInterval(this.progressTimer);
@@ -424,24 +423,26 @@ export class TTSService {
                     this.clearProgressTimer();
                     return;
                 }
-                const end = player.endTime;
-                maxEndTime = Math.max(maxEndTime, end);
+                if (sealedEndTime <= player.startTime) return;
 
-                // 尚未收到 chunk 或缓冲期内：进度从 0 缓慢增长到 5%
-                const elapsed = firstChunkTime > 0 ? performance.now() - firstChunkTime : 0;
-                if (firstChunkTime === 0 || elapsed < WARMUP_DURATION) {
-                    if (maxProgress === 0) {
+                const current = player.currentTime;
+                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (sealedEndTime - player.startTime)) * 100)));
+
+                if (!sealDone) {
+                    // seal 之前：进度保持 0
+                    if (lastSentProgress !== 0) {
+                        lastSentProgress = 0;
                         this.onProgressChange?.(messageId, 0);
                     }
                     return;
                 }
 
-                // 缓冲期结束，精确计算进度
-                if (maxEndTime <= player.startTime) return;
-                const current = player.currentTime;
-                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (maxEndTime - player.startTime)) * 100)));
-                maxProgress = Math.max(maxProgress, rawProgress);
-                this.onProgressChange?.(messageId, maxProgress);
+                // seal 之后：平滑追赶实际进度，每 200ms 最多涨 5%
+                const cappedProgress = Math.min(rawProgress, lastSentProgress < 0 ? 0 : lastSentProgress + 5);
+                if (cappedProgress !== lastSentProgress) {
+                    lastSentProgress = cappedProgress;
+                    this.onProgressChange?.(messageId, cappedProgress);
+                }
             }, 200);
         };
 
@@ -451,14 +452,16 @@ export class TTSService {
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
-                if (firstChunkTime === 0) {
-                    firstChunkTime = performance.now();
-                }
             }
 
             if (this.currentMessageId !== messageId) return;
 
+            // seal：记录固定总时长，立即开始精确追踪
             player.seal();
+            sealedEndTime = player.endTime;
+            lastSentProgress = -1; // 重置，让 seal 后的第一个进度值从 0 开始追赶
+            sealDone = true;
+
             await player.waitForEnd();
             this.clearProgressTimer();
 
