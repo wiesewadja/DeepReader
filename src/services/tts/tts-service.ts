@@ -85,16 +85,19 @@ export class TTSService {
     }
 
     async play(messageId: string, content: string, userQuestion?: string, context?: TTSContext, options?: { rawText?: boolean }): Promise<void> {
+        // 同一消息：切换暂停/播放
         if (this.state !== 'idle' && this.currentMessageId === messageId) {
             this.togglePauseResume();
             return;
         }
 
+        // 不同消息或正在准备：停止当前并切换到新消息
         if (this.state !== 'idle') {
             this.stopInternal();
         }
 
         this.currentMessageId = messageId;
+        this.setState('tts_loading'); // 立即锁定，防止并发
 
         const cached = this.cache.get(messageId);
         if (cached) {
