@@ -37,7 +37,7 @@ function splitFirstSentence(buffer: string): [string | null, string] {
  * [[note|alias]] → alias
  * [[path/to/note|alias]] → alias
  */
-function stripWikiLinksForTTS(text: string): string {
+export function stripWikiLinksForTTS(text: string): string {
     return text.replace(/\[\[([^\]]+)\]\]/g, (_match, content: string) => {
         const parts = content.split('|');
         if (parts.length > 1) {
@@ -48,6 +48,48 @@ function stripWikiLinksForTTS(text: string): string {
         const pathParts = parts[0].trim().split('/');
         return pathParts[pathParts.length - 1];
     });
+}
+
+/**
+ * 清理文本中的 TTS 不应朗读的内容（thought 标签、invoke、tool_call 等）
+ * 与 Message 组件的 parseAgentContent 清理逻辑保持一致
+ */
+export function cleanTextForTTS(text: string): string {
+    // 移除 thought 标签及其内容
+    text = text.replace(/<thought\b[^>]*>([\s\S]*?)<\/thought>/gi, '');
+    text = text.replace(/<thought\b[^>]*>[\s\S]*$/i, '');
+    // 移除 invoke 标签
+    text = text.replace(/<\/?invoke>/gi, '\n');
+    // 移除 tool_call 标签及其内容
+    text = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
+    text = text.replace(/<tool_call>[\s\S]*$/i, '');
+    // 移除中间说明文字（与 parseAgentContent 保持一致）
+    const intermediatePatterns = [
+        /^.*让我[先再]*搜索.*[:：]?\s*$/gm,
+        /^.*让我[先再]*查看.*[:：]?\s*$/gm,
+        /^.*让我[先再]*阅读.*[:：]?\s*$/gm,
+        /^.*让我[先再]*查找.*[:：]?\s*$/gm,
+        /^.*现在让我.*[:：]?\s*$/gm,
+        /^.*我来[帮]*您搜索.*[:：]?\s*$/gm,
+        /^.*我来[帮]*您查看.*[:：]?\s*$/gm,
+        /^.*我先查看.*[:：]?\s*$/gm,
+        /^根据目录.*让我.*$/gm,
+        /^我将.*搜索.*[:：]?\s*$/gm,
+        /^让我[获取查找搜索查看阅读].*[,，].*$/gm,
+        /^现在让我[开始]*.*[,，].*$/gm,
+        /^基于.*让我.*$/gm,
+        /^.*让我继续.*$/gm,
+        /^.*让我使用.*技能.*$/gm,
+        /^首先让我.*$/gm,
+        /^.*我先[创建生成写].*$/gm,
+        /^现在[创建生成写].*$/gm,
+    ];
+    for (const pattern of intermediatePatterns) {
+        text = text.replace(pattern, '');
+    }
+    // 清理连续空行
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+    return text;
 }
 
 /**
@@ -125,24 +167,24 @@ export class TTSService {
 
         this.currentMessageId = messageId;
 
+        // 统一文本清理：与 Message 组件的 DOM 渲染文本保持一致
+        const ttsReadyText = stripWikiLinksForTTS(cleanTextForTTS(content));
+
         const cached = this.cache.get(messageId);
         if (cached) {
             // 初始化句子追踪并播放缓存音频
-            this.currentSentences = splitIntoSentences(content);
+            this.currentSentences = splitIntoSentences(ttsReadyText);
             this.currentSentenceIndex = -1;
-            this.listenAudioWithSentenceTracking(cached.audio, messageId, content);
+            this.listenAudioWithSentenceTracking(cached.audio, messageId, ttsReadyText);
             this.setState('playing');
             await cached.audio.play();
             return;
         }
 
-        // 清理 wiki link，仅保留别名用于 TTS 朗读
-        const cleanContent = stripWikiLinksForTTS(content);
-
         // 直接朗读原文模式（跳过 Summarizer）
         if (options?.rawText) {
             try {
-                await this.playStream(messageId, cleanContent);
+                await this.playStream(messageId, ttsReadyText);
             } catch (err) {
                 console.error('[TTS] raw text play failed:', err);
                 new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -153,12 +195,12 @@ export class TTSService {
         }
 
         try {
-            await this.streamSummaryToAudio(messageId, cleanContent, userQuestion, context);
+            await this.streamSummaryToAudio(messageId, ttsReadyText, userQuestion, context);
         } catch {
             console.warn('[TTS] Streaming pipeline failed, falling back');
             try {
                 this.setState('summarizing');
-                const summary = await this.summarizer.summarize(cleanContent, userQuestion, context);
+                const summary = await this.summarizer.summarize(ttsReadyText, userQuestion, context);
 
                 if (this.currentMessageId !== messageId) {
                     this.setState('idle');
