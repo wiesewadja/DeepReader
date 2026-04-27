@@ -110,7 +110,14 @@ export class TTSService {
         // 直接朗读原文模式（跳过 Summarizer）
         if (options?.rawText) {
             try {
-                await this.playStream(messageId, cleanContent);
+                // LLM 预处理：根据书籍背景智能整理朗读文本
+                let textToRead = cleanContent;
+                try {
+                    textToRead = await this.summarizer.preprocessForReading(cleanContent, context);
+                } catch {
+                    // LLM 不可用或失败，使用原始文本
+                }
+                await this.playStream(messageId, textToRead);
             } catch (err) {
                 console.error('[TTS] raw text play failed:', err);
                 new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);

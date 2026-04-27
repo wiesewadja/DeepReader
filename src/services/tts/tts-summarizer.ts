@@ -163,6 +163,60 @@ export class TTSSummarizer {
         return text;
     }
 
+    /**
+     * 用 LLM 预处理文本，使其更适合 TTS 朗读
+     * 根据书籍背景智能处理缩写、专业术语、特殊符号
+     */
+    async preprocessForReading(text: string, context?: TTSContext): Promise<string> {
+        const contextParts: string[] = [];
+        if (context?.bookTitle) {
+            contextParts.push(`书籍名称：《${context.bookTitle}》`);
+        }
+        if (context?.bookAuthor) {
+            contextParts.push(`作者：${context.bookAuthor}`);
+        }
+        const contextBlock = contextParts.length > 0
+            ? `\n\n当前阅读的书籍背景：\n${contextParts.join('\n')}`
+            : '';
+
+        const url = `${this.baseUrl}/chat/completions`;
+
+        const response = await safeRequest({
+            url,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: [
+                    { role: 'system', content: `你是朗读文本预处理助手。根据书籍背景，将文本改写为适合 TTS 朗读的形式。
+
+规则：
+1. 只处理影响朗读的部分，不改变原意和语气
+2. 英文缩写替换为中文全称或将大写字母用空格隔开以帮助 TTS 逐字母读出（如"AI"→"人工智能"或"A I"，根据书籍领域选择合适形式）
+3. 特殊分隔符（---、***、===）替换为"停顿"
+4. 列表项标记（-、•、1.）替换为"第一点""第二点"或不用替换
+5. Markdown 格式符号移除（**、__、*、_等）
+6. 中英文数字混合时添加空格（如"30个"→"30 个"）
+7. 保留所有中文内容，不添加任何解释或额外文字
+8. 直接返回处理后的文本` },
+                    { role: 'user', content: `请预处理以下文本：${contextBlock}\n\n${text}` },
+                ],
+                temperature: 0.3,
+                max_tokens: 4096,
+            }),
+        });
+
+        const data = response.json;
+        const result = data?.choices?.[0]?.message?.content?.trim();
+        if (!result) {
+            throw new Error('TTS preprocessor: empty response from LLM');
+        }
+        return result;
+    }
+
     async *summarizeStream(content: string, userQuestion?: string, context?: TTSContext): AsyncGenerator<string> {
         const url = `${this.baseUrl}/chat/completions`;
         const userPrompt = this.buildUserPrompt(content, userQuestion, context);
