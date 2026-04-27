@@ -20,6 +20,8 @@ export const TOOL_TO_READING_LEVEL: Record<string, ReadingLevel> = {
 	search_read_books: 'syntopical',
 	// 分析阅读工具（合并：术语+论点分析）
 	analyze_chapter: 'analytical',
+	// 可视化工具
+	excalidraw: 'analytical',
 	// 辅助工具
 	Skill: 'skill',
 	skill: 'skill',
@@ -128,6 +130,11 @@ export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, cont
 	add_memory: () => '📝 记下这个要点',
 	search_memory: () => '💭 回忆之前的内容',
 	write_note: (args) => `✍️ 整理笔记「${String(args.path || '')}」`,
+	excalidraw: (args) => {
+		const dtype = String(args.diagramType || 'mindmap');
+		if (dtype === 'knowledge_graph') return '🔗 生成知识图谱';
+		return '🗺️ 生成思维导图';
+	},
 	create_sub_agent: () => '🤖 分头查找资料',
 	check_sub_agent: () => '⏳ 等待子任务完成',
 	Skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`,

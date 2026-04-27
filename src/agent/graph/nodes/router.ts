@@ -12,6 +12,7 @@ import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prom
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { hasSyntopicalKeywords } from '../../utils/syntopical-search.js';
+import { IntentRouter } from '../../router/intent-router.js';
 
 interface RouterOutput {
   depth: number;
@@ -30,12 +31,15 @@ function extractLastHumanMessage(messages: BaseMessage[]): string {
 }
 
 /**
- * S0 Router node: classifies reading depth and rewrites query.
- *
- * Uses the fast model and parses JSON from text output
- * (avoids withStructuredOutput which requires json_schema support).
- * Falls back to depth=2 (analytical) on any error.
+ * Merge two allowedTools arrays into a union.
  */
+function mergeTools(a: string[], b: string[]): string[] {
+  const set = new Set([...a, ...b]);
+  return Array.from(set);
+}
+
+const intentRouter = new IntentRouter();
+
 export async function routerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
@@ -44,11 +48,22 @@ export async function routerNode(
   const chatHistory = config.configurable?.chatHistory ?? [];
   const rawQuery = extractLastHumanMessage(state.messages);
 
+  // Step 1: IntentRouter on raw query (fast, regex-based)
+  const rawIntent = intentRouter.analyze(rawQuery);
+  log(`[S0 Router] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
+
+  // Step 2: Inherit previous intent if this is a follow-up
+  const prevTools = state.allowedTools ?? [];
+  const hasNewIntent = rawIntent.detectedIntents.length > 0
+    && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
+  const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
+
   // Fallback when model is not available (e.g. testing)
   if (!fastModel) {
     return {
       depth: 2,
       rewrittenQuery: rawQuery,
+      allowedTools: mergeTools(mergeTools(rawIntent.allowedTools, inheritedTools), []),
     };
   }
 
@@ -68,15 +83,25 @@ export async function routerNode(
     const depth = parsed?.depth ?? 2;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
+    // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
+    const rewrittenIntent = intentRouter.analyze(standaloneQuery);
+
     // Hybrid trigger: keywords pre-check + LLM classification
     const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
     const effectiveDepth = candidateSyntopical ? 3 : depth;
 
-    log(`[S0 Router] depth=${effectiveDepth}, candidateSyntopical=${candidateSyntopical}, query="${standaloneQuery.slice(0, 50)}"`, parsed?.reason || '');
+    // Step 4: Merge all tool sources: raw + rewritten + inherited
+    const finalTools = mergeTools(
+      mergeTools(rawIntent.allowedTools, rewrittenIntent.allowedTools),
+      inheritedTools,
+    );
+
+    log(`[S0 Router] depth=${effectiveDepth}, tools(raw)=${rawIntent.allowedTools.join(',')}, tools(rewritten)=${rewrittenIntent.allowedTools.join(',')}, tools(inherited)=${inheritedTools.join(',')}, tools(final)=${finalTools.join(',')}`);
 
     return {
       depth: effectiveDepth,
       rewrittenQuery: standaloneQuery,
+      allowedTools: finalTools,
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
@@ -84,6 +109,7 @@ export async function routerNode(
     return {
       depth: 2,
       rewrittenQuery: rawQuery,
+      allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
     };
   }
 }

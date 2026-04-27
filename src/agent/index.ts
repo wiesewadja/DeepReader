@@ -284,7 +284,9 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: errorMsg }] };
     }
 
-    const threadId = `thread-${Date.now()}`;
+    const threadId = context.indexId
+      ? `thread-${context.indexId}`
+      : `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
     let configurable: any;

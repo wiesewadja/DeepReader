@@ -129,6 +129,32 @@ export async function formatterNode(
     return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
 
+  // === Diagram shortcut: brief in-character response, skip full formatting ===
+  const ar = state.analysisResult || '';
+  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：');
+  const diagramFailed = ar.startsWith('图表生成失败:');
+  if (diagramSuccess || diagramFailed) {
+    callbacks?.onProgress?.(diagramSuccess ? '图表已生成' : '图表生成遇到问题');
+    const diagramPrompt = `你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
+你刚帮用户${diagramSuccess ? '生成了一张可视化图表' : '尝试生成图表但遇到了问题'}。用 1-2 句话简短告诉用户结果，自然亲切，像朋友之间说话。
+${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件。'}
+不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。
+如果图表结果中包含 [[...]] 格式的链接，必须原样保留，这是用户可以直接点击打开的链接。`
+
+    const stream = await mainModel.stream([
+      new SystemMessage(diagramPrompt),
+      new HumanMessage(`用户请求：${state.rewrittenQuery || ''}\n\n图表结果：${ar}`),
+    ], config);
+    let content = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.content === 'string') {
+        content += chunk.content;
+        callbacks?.onContent?.(content);
+      }
+    }
+    return { formattedOutput: stripThinkTags(content) };
+  }
+
   // === Normal mode (depth >= 1): format with full context ===
   // 收集输入文本用于校验编造链接
   const inputTextsForValidation = [

@@ -28,33 +28,40 @@ export class IntentRouter {
 
   /**
    * 分析用户意图，返回允许的工具、系统指令和最大迭代次数
+   *
+   * 支持传入多段文本（如 rawQuery + rewrittenQuery），取并集。
    */
-  analyze(userInput: string, traceCtx?: ITraceContext): IntentResult {
+  analyze(userInput: string | string[], traceCtx?: ITraceContext): IntentResult {
     const startTime = Date.now();
+    const inputs = Array.isArray(userInput) ? userInput : [userInput];
 
     // Create span for intent routing
-    const span = traceCtx?.withSpan('intent-routing', { metadata: { userInput: userInput.slice(0, 100) } });
+    const span = traceCtx?.withSpan('intent-routing', { metadata: { userInput: inputs.map(s => s.slice(0, 100)).join(' | ') } });
 
     const detectedIntents: string[] = [];
     const allowedTools = new Set<string>();
     let maxIterations: number | null = null; // 初始为 null，表示未设置
 
-    // 1. 遍历规则，匹配意图
-    for (const rule of this.rules) {
-      try {
-        const regex = new RegExp(rule.pattern, 'i');
-        if (regex.test(userInput)) {
-          detectedIntents.push(rule.intent);
-          rule.tools.forEach(t => allowedTools.add(t));
-          // 取所有匹配规则中最大的 maxIterations
-          const ruleMax = rule.maxIterations || DEFAULT_MAX_ITERATIONS;
-          if (maxIterations === null || ruleMax > maxIterations) {
-            maxIterations = ruleMax;
+    // 1. 对每段输入遍历规则，匹配意图（取并集）
+    for (const text of inputs) {
+      for (const rule of this.rules) {
+        try {
+          const regex = new RegExp(rule.pattern, 'i');
+          if (regex.test(text)) {
+            if (!detectedIntents.includes(rule.intent)) {
+              detectedIntents.push(rule.intent);
+            }
+            rule.tools.forEach(t => allowedTools.add(t));
+            // 取所有匹配规则中最大的 maxIterations
+            const ruleMax = rule.maxIterations || DEFAULT_MAX_ITERATIONS;
+            if (maxIterations === null || ruleMax > maxIterations) {
+              maxIterations = ruleMax;
+            }
+            agentLog(`[IntentRouter] 命中规则: ${rule.id} -> ${rule.intent} (input: "${text.slice(0, 40)}")`);
           }
-          agentLog(`[IntentRouter] 命中规则: ${rule.id} -> ${rule.intent}, maxIterations: ${rule.maxIterations || 'default'}`);
+        } catch (err) {
+          agentLog(`[IntentRouter] 规则正则错误: ${rule.id}`, err);
         }
-      } catch (err) {
-        agentLog(`[IntentRouter] 规则正则错误: ${rule.id}`, err);
       }
     }
 
