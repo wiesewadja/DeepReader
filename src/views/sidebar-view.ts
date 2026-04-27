@@ -1374,7 +1374,16 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 清除顶栏书名信息（阅读模式停用时调用）
+     * 清除顶栏书名显示（阅读模式停用时调用）
+     * 不重置 currentPdfName/currentIndexId，保持用户通过书库选中的书籍
+     */
+    public clearTopbarDisplay(): void {
+        this.readingTopbar?.setCurrentBook(null);
+        this.readingTopbar?.setBookCover(null);
+    }
+
+    /**
+     * 清除所有书籍信息（删除索引时调用）
      */
     public clearBookInfo(): void {
         this.currentIndexId = null;
