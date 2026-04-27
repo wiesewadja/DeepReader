@@ -46,6 +46,8 @@ export class ReadingModeService {
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
     private currentBookName: string = '';
     private pendingRetry: ReturnType<typeof setTimeout> | null = null;
+    /** 已激活分页阅读模式的书籍名（同书新章节不重复激活） */
+    private activatedBookForReading: string = '';
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -188,6 +190,22 @@ export class ReadingModeService {
     }
 
     /**
+     * 从文件中提取书籍名称（用于同书判断）
+     */
+    private getBookNameFromFile(file: TFile): string {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const frontmatter = cache?.frontmatter;
+        const bookName = frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || '';
+        if (bookName) return bookName;
+        // 从路径提取
+        const pathParts = file.path.split('/');
+        if (pathParts.length >= 2 && pathParts[0] === 'DeepReader') {
+            return pathParts[1];
+        }
+        return '';
+    }
+
+    /**
      * 激活阅读模式
      */
     activate(file: TFile, retryCount = 0): void {
@@ -220,6 +238,7 @@ export class ReadingModeService {
 
         this.currentFile = file;
         this.isActive = true;
+        this.activatedBookForReading = this.getBookNameFromFile(file);
 
         // 切换到阅读视图
         this.switchToReadingView();
@@ -392,10 +411,13 @@ export class ReadingModeService {
 
         this.fileOpenHandler = this.app.workspace.on('file-open', (file) => {
             serviceLog('[DeepPDF] file-open event:', file?.path);
-            // 只有在自动启用开启时才自动激活阅读模式
             if (file && this.isChapterFile(file)) {
                 if (this.autoEnable) {
-                    this.activate(file);
+                    // 同一本书不重复激活分页模式，新章节用原始滚动模式打开
+                    const bookName = this.getBookNameFromFile(file);
+                    if (!this.isActive || this.activatedBookForReading !== bookName) {
+                        this.activate(file);
+                    }
                 }
             } else {
                 this.deactivate();
