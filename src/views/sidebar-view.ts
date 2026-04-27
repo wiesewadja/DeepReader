@@ -1888,12 +1888,8 @@ export class SidebarView extends ItemView {
                 this.handleDeleteMessagePair(messageId);
             },
             onTTS: async (messageId: string, content: string) => {
-                if (this.plugin.settings.enableVoiceReply) {
-                    // 语音书信模式：直接朗读原文，不走摘要
-                    this.handleTTS(messageId, content, { rawText: true });
-                } else {
-                    this.handleTTS(messageId, content);
-                }
+                // 喇叭按钮始终直接朗读原文，不走摘要模式
+                this.handleTTS(messageId, content, { rawText: true });
             },
             onVoicePlay: (messageId: string) => {
                 // 控制流式语音播放
