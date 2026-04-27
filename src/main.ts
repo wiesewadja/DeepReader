@@ -1246,15 +1246,7 @@ views:
      * 打开书库视图
      */
     async openLibraryView(): Promise<void> {
-        // 检查是否已有书库视图
-        const existingLeaves = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
-        if (existingLeaves.length > 0) {
-            // 聚焦现有视图
-            this.app.workspace.revealLeaf(existingLeaves[0]);
-            return;
-        }
-
-        // 获取 SidebarView 的 indexes 数据和当前选中索引
+        // 获取最新数据（无论视图是否已存在）
         const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
         let indexes: any[] = [];
         let selectedIndexId: string | null = null;
@@ -1265,7 +1257,20 @@ views:
             selectedIndexId = sidebarView.getCurrentIndexId();
         }
 
-        // 在主面板打开书库视图
+        // 检查是否已有书库视图
+        const existingLeaves = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
+        if (existingLeaves.length > 0) {
+            // 更新现有视图的数据后聚焦
+            const leaf = existingLeaves[0];
+            await leaf.setViewState({
+                type: LIBRARY_VIEW_TYPE,
+                state: { indexes, selectedIndexId }
+            });
+            this.app.workspace.revealLeaf(leaf);
+            return;
+        }
+
+        // 在主面板打开新书库视图
         const leaf = this.app.workspace.getLeaf('tab');
         await leaf.setViewState({
             type: LIBRARY_VIEW_TYPE,
