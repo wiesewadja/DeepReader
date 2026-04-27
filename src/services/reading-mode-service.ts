@@ -74,7 +74,14 @@ export class ReadingModeService {
     }
 
     /**
-     * 获取是否自动启用阅读模式
+     * 获取已激活阅读模式的 containerEl（用于判断当前 tab 是否为关联 tab）
+     */
+    getActiveContainerEl(): HTMLElement | null {
+        return this.activeContainerEl;
+    }
+
+    /**
+     * 获取自动启用状态
      */
     getAutoEnable(): boolean {
         return this.autoEnable;

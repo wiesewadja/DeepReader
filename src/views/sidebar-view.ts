@@ -1134,6 +1134,16 @@ export class SidebarView extends ItemView {
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') return;
 
+        // 只有关联 tab（第一个被激活阅读模式的分页 tab）才更新进度
+        const rms = this.plugin.readingModeService;
+        if (rms) {
+            const activeLeaf = this.app.workspace.activeLeaf;
+            const activatedContainer = rms.getActiveContainerEl();
+            if (activatedContainer && activeLeaf?.view?.containerEl !== activatedContainer) {
+                return; // 非关联 tab，不更新进度
+            }
+        }
+
         // 检查当前文件是否属于正在阅读的书籍
         const bookPath = `DeepReader/${this.currentPdfName}/`;
         if (!activeFile.path.startsWith(bookPath)) return;
