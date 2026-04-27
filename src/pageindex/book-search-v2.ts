@@ -544,6 +544,48 @@ async function asyncPropositionSearch(
 
 // ─── Stage 7: Cross-encoder rerank ────────────────────────────────────────
 
+/**
+ * 通过扫描 Vault 目录找到 tree.json 对应的实际导出目录名
+ * 用户可能重命名了目录，因此不能仅依赖 treeData.exportName
+ */
+async function resolveExportDirName(
+  treeData: TreeData,
+  vaultPath: string
+): Promise<string | null> {
+  const staticName = treeData.exportName || treeData.title;
+  const deepReaderPath = path.join(vaultPath, "DeepReader");
+
+  // 先用静态名称尝试
+  if (staticName) {
+    const staticPath = path.join(deepReaderPath, staticName);
+    try {
+      await fs.access(staticPath);
+      return staticName;
+    } catch { /* 目录不存在或被重命名，继续扫描 */ }
+  }
+
+  // 扫描 DeepReader/ 下的所有目录，用 nodeFileMap 中的文件名匹配
+  const sampleFileName = Object.values(treeData.nodeFileMap || {})[0];
+  if (!sampleFileName) return null;
+
+  try {
+    const entries = await fs.readdir(deepReaderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const candidatePath = path.join(deepReaderPath, entry.name, sampleFileName);
+      try {
+        await fs.access(candidatePath);
+        piLog(`[book-search-v2] 目录重命名检测: "${staticName}" → "${entry.name}"`);
+        return entry.name;
+      } catch { /* 该目录不包含目标文件 */ }
+    }
+  } catch {
+    piLog(`[book-search-v2] Failed to scan ${deepReaderPath}`);
+  }
+
+  return null;
+}
+
 async function crossEncoderRerank(
   query: string,
   results: Array<{ nodeId: string; fusedScore: number }>,
@@ -552,21 +594,25 @@ async function crossEncoderRerank(
   reranker: RerankerOptions
 ): Promise<Map<string, number>> {
   const rerankScores = new Map<string, number>();
-  
+
   if (results.length === 0) return rerankScores;
+
+  // 解析实际目录名（处理用户重命名的情况）
+  const actualDirName = await resolveExportDirName(treeData, vaultPath);
+  const exportDir = actualDirName || treeData.exportName || treeData.title;
 
   const texts: string[] = [];
   const nodeIds: string[] = [];
-  
+
   for (const r of results) {
     const fileName = treeData.nodeFileMap?.[r.nodeId];
     if (!fileName) continue;
-    
-    const fullPath = path.join(vaultPath, "DeepReader", treeData.exportName || treeData.title, fileName);
-    
+
+    const fullPath = path.join(vaultPath, "DeepReader", exportDir, fileName);
+
     try {
       let content = await fs.readFile(fullPath, "utf-8");
-      content = content.replace(/^---[\s\S]*?---\n/, "").slice(0, 1500);
+      content = content.replace(/---[\s\S]*?---\n/, "").slice(0, 1500);
       if (content.trim()) {
         texts.push(content);
         nodeIds.push(r.nodeId);
