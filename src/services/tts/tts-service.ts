@@ -423,10 +423,6 @@ export class TTSService {
                     this.clearProgressTimer();
                     return;
                 }
-                if (sealedEndTime <= player.startTime) return;
-
-                const current = player.currentTime;
-                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (sealedEndTime - player.startTime)) * 100)));
 
                 if (!sealDone) {
                     // seal 之前：进度保持 0
@@ -437,7 +433,13 @@ export class TTSService {
                     return;
                 }
 
-                // seal 之后：平滑追赶实际进度，每 200ms 最多涨 5%
+                // seal 之后：计算精确进度
+                if (sealedEndTime <= player.startTime) return;
+
+                const current = player.currentTime;
+                const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (sealedEndTime - player.startTime)) * 100)));
+
+                // 平滑追赶实际进度，每 200ms 最多涨 5%
                 const cappedProgress = Math.min(rawProgress, lastSentProgress < 0 ? 0 : lastSentProgress + 5);
                 if (cappedProgress !== lastSentProgress) {
                     lastSentProgress = cappedProgress;
