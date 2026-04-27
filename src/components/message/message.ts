@@ -9,7 +9,6 @@ import type { QuoteMetadata } from '../chat-input/chat-input';
 import { SelectionMenu } from '../excerpt/selection-menu';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
 import { Icons } from '../../utils/icons.js';
-import { splitIntoSentences, stripWikiLinksForTTS, cleanTextForTTS } from '../../services/tts/tts-service.js';
 
 /**
  * 消息角色类型
@@ -281,135 +280,6 @@ function escapeHtml(text: string): string {
 		.replace(/>/g, "&gt;")
 		.replace(/"/g, "&quot;")
 		.replace(/'/g, "&#039;");
-}
-
-/**
- * 收集 DOM 元素中的所有文本节点及其全局偏移量
- */
-function collectTextNodes(el: HTMLElement): { node: Text; start: number; text: string }[] {
-	const nodes: { node: Text; start: number; text: string }[] = [];
-	const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-	let offset = 0;
-	let node: Node | null;
-	while ((node = walker.nextNode())) {
-		const text = node.textContent || '';
-		nodes.push({ node: node as Text, start: offset, text });
-		offset += text.length;
-	}
-	return nodes;
-}
-
-/**
- * 将消息内容的 DOM 按 TTS 朗读文本的句子切分并添加标记
- * 使用与 TTSService 完全相同的文本和切分函数，确保两边索引一致
- */
-function markSentencesInContent(contentEl: HTMLElement, ttsText: string): void {
-	if (!contentEl || contentEl.dataset.sentencesMarked === 'true') return;
-
-	const sentences = splitIntoSentences(ttsText);
-	let textNodes = collectTextNodes(contentEl);
-	let fullText = textNodes.map(t => t.text).join('');
-	let searchStart = 0;
-
-	for (let i = 0; i < sentences.length; i++) {
-		const sentence = sentences[i];
-		const index = fullText.indexOf(sentence, searchStart);
-		if (index === -1) {
-			log('[TTS] Sentence not found in DOM:', sentence.slice(0, 30));
-			continue;
-		}
-
-		const sentenceEnd = index + sentence.length;
-
-		// 找到包含起始和结束的文本节点
-		let startNode: Text | null = null, endNode: Text | null = null;
-		let startOffset = 0, endOffset = 0;
-
-		for (const { node, start, text } of textNodes) {
-			const nodeEnd = start + text.length;
-			if (!startNode && index >= start && index < nodeEnd) {
-				startNode = node;
-				startOffset = index - start;
-			}
-			if (!endNode && sentenceEnd > start && sentenceEnd <= nodeEnd) {
-				endNode = node;
-				endOffset = sentenceEnd - start;
-			}
-			if (startNode && endNode) break;
-		}
-
-		if (!startNode || !endNode) continue;
-
-		const range = document.createRange();
-		range.setStart(startNode, startOffset);
-		range.setEnd(endNode, endOffset);
-
-		const span = document.createElement('span');
-		span.className = 'deeppdf-sentence';
-		span.dataset.sentenceIndex = String(i);
-
-		try {
-			range.surroundContents(span);
-		} catch {
-			// 跨越不连续边界时，使用 extractContents + insertNode
-			const fragment = range.extractContents();
-			span.appendChild(fragment);
-			range.insertNode(span);
-		}
-
-		// DOM 结构已改变，重新收集文本节点和 fullText
-		// 为性能考虑，只从当前 span 之后重新计算
-		searchStart = sentenceEnd;
-		textNodes = collectTextNodes(contentEl);
-		fullText = textNodes.map(t => t.text).join('');
-		// 调整 searchStart 为新的 fullText 中的对应位置
-		// 由于前面已处理的文本被包裹在 span 中，需要找到未处理部分的起始位置
-		const processedPrefix = fullText.substring(0, searchStart);
-		const spanCloseIndex = processedPrefix.lastIndexOf('</span>');
-		if (spanCloseIndex !== -1) {
-			searchStart = spanCloseIndex + '</span>'.length;
-		}
-	}
-
-	contentEl.dataset.sentencesMarked = 'true';
-	contentEl.dataset.totalSentences = String(sentences.length);
-}
-
-/**
- * 高亮指定索引的句子（TTS 朗读进度跟随）
- */
-function highlightSentence(contentEl: HTMLElement, index: number): void {
-	if (!contentEl) return;
-
-	// 清除之前的高亮
-	contentEl.querySelectorAll('.deeppdf-sentence-reading, .deeppdf-sentence-read').forEach(el => {
-		el.removeClass('deeppdf-sentence-reading');
-		el.removeClass('deeppdf-sentence-read');
-	});
-
-	// 标记已读过的句子
-	for (let i = 0; i < index; i++) {
-		const el = contentEl.querySelector(`[data-sentence-index="${i}"]`) as HTMLElement;
-		if (el) el.addClass('deeppdf-sentence-read');
-	}
-
-	// 标记当前正在读的句子
-	const current = contentEl.querySelector(`[data-sentence-index="${index}"]`) as HTMLElement;
-	if (current) {
-		current.addClass('deeppdf-sentence-reading');
-		current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-	}
-}
-
-/**
- * 清除所有句子高亮
- */
-function clearSentenceHighlight(contentEl: HTMLElement): void {
-	if (!contentEl) return;
-	contentEl.querySelectorAll('.deeppdf-sentence-reading, .deeppdf-sentence-read').forEach(el => {
-		el.removeClass('deeppdf-sentence-reading');
-		el.removeClass('deeppdf-sentence-read');
-	});
 }
 
 /**
@@ -869,11 +739,6 @@ export abstract class Message {
 	protected mouseoverHandler: ((e: Event) => void) | null = null;
 
 		setTTSState?(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void;
-		/**
-		 * 高亮指定索引的句子（TTS 朗读进度跟随）
-		 * @param sentenceIndex 当前朗读到的句子索引（0-based），-1 表示清除高亮
-		 */
-		highlightTTSSentence?(sentenceIndex: number): void;
 
 	constructor(data: MessageData, app?: App) {
 		this.data = data;
@@ -2559,27 +2424,6 @@ export class AIMessage extends Message {
 					break;
 			}
 		}
-	}
-
-	/**
-	 * 高亮指定索引的句子（TTS 朗读进度跟随）
-	 */
-	highlightTTSSentence(sentenceIndex: number): void {
-		const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
-		if (!contentEl) return;
-
-		if (sentenceIndex < 0) {
-			clearSentenceHighlight(contentEl);
-			return;
-		}
-
-		// 确保已标记句子（使用与 TTSService 完全相同的文本和切分逻辑）
-		if (contentEl.dataset.sentencesMarked !== 'true') {
-			const ttsText = stripWikiLinksForTTS(cleanTextForTTS(this.data.content));
-			markSentencesInContent(contentEl, ttsText);
-		}
-
-		highlightSentence(contentEl, sentenceIndex);
 	}
 }
 

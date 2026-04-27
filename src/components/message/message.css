@@ -1363,80 +1363,8 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   TTS 语音播报 — 句子级墨水跟随高亮
+   TTS 语音播报
    ═══════════════════════════════════════════════════════════════ */
-
-/* 句子标记：为 TTS 进度跟随切分后的文本 */
-.deeppdf-sentence {
-	transition: background-color 0.4s ease, opacity 0.4s ease;
-	border-radius: 2px;
-}
-
-/* 当前正在朗读的句子 — 墨水晕染效果 */
-.deeppdf-sentence-reading {
-	position: relative;
-	background: linear-gradient(90deg,
-		rgba(139, 69, 19, 0.10) 0%,
-		rgba(139, 69, 19, 0.03) 100%
-	);
-	background-size: 0% 100%;
-	background-position: left bottom;
-	background-repeat: no-repeat;
-	animation: deeppdf-ink-flow 1.2s ease-out forwards;
-	border-radius: 3px;
-	padding: 0 2px;
-	margin: 0 -2px;
-}
-
-/* 墨水从左到右晕染的动画 */
-@keyframes deeppdf-ink-flow {
-	from { background-size: 0% 100%; }
-	to   { background-size: 100% 100%; }
-}
-
-/* 当前句子底部细线 — 模拟毛笔划过 */
-.deeppdf-sentence-reading::after {
-	content: '';
-	position: absolute;
-	left: 0;
-	bottom: 0;
-	width: 100%;
-	height: 1.5px;
-	background: linear-gradient(90deg,
-		rgba(139, 69, 19, 0.35) 0%,
-		rgba(139, 69, 19, 0.08) 100%
-	);
-	border-radius: 0 1px 1px 0;
-	animation: deeppdf-ink-line 1.0s ease-out forwards;
-	transform-origin: left;
-	transform: scaleX(0);
-}
-
-@keyframes deeppdf-ink-line {
-	from { transform: scaleX(0); }
-	to   { transform: scaleX(1); }
-}
-
-/* 已读过的句子 — 渐隐，提示用户"这里已读过" */
-.deeppdf-sentence-read {
-	opacity: 0.55;
-	transition: opacity 0.6s ease;
-}
-
-/* 深色主题墨水颜色调亮 */
-.theme-dark .deeppdf-sentence-reading {
-	background: linear-gradient(90deg,
-		rgba(205, 133, 63, 0.12) 0%,
-		rgba(205, 133, 63, 0.03) 100%
-	);
-}
-
-.theme-dark .deeppdf-sentence-reading::after {
-	background: linear-gradient(90deg,
-		rgba(205, 133, 63, 0.40) 0%,
-		rgba(205, 133, 63, 0.08) 100%
-	);
-}
 
 .deeppdf-tts-wave {
 	display: none;

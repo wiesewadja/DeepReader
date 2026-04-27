@@ -1888,8 +1888,12 @@ export class SidebarView extends ItemView {
                 this.handleDeleteMessagePair(messageId);
             },
             onTTS: async (messageId: string, content: string) => {
-                // 朗读按钮：直接朗读完整原文，不走摘要
-                this.handleTTS(messageId, content, { rawText: true });
+                if (this.plugin.settings.enableVoiceReply) {
+                    // 语音书信模式：直接朗读原文，不走摘要
+                    this.handleTTS(messageId, content, { rawText: true });
+                } else {
+                    this.handleTTS(messageId, content);
+                }
             },
             onVoicePlay: (messageId: string) => {
                 // 控制流式语音播放
@@ -3269,19 +3273,6 @@ export class SidebarView extends ItemView {
             onStateChange: (messageId: string | null, state: TTSPlayState) => {
                 if (messageId) {
                     this.messageList?.updateTTSState(messageId, state);
-                }
-                // TTS 停止时清除句子高亮
-                if (state === 'idle' && messageId) {
-                    const msg = this.messageList?.getMessage(messageId);
-                    if (msg?.highlightTTSSentence) {
-                        msg.highlightTTSSentence(-1);
-                    }
-                }
-            },
-            onSentenceChange: (messageId: string, sentenceIndex: number, _totalSentences: number) => {
-                const msg = this.messageList?.getMessage(messageId);
-                if (msg?.highlightTTSSentence) {
-                    msg.highlightTTSSentence(sentenceIndex);
                 }
             },
         });
