@@ -127,7 +127,10 @@ export class TTSService {
 
         const cached = this.cache.get(messageId);
         if (cached) {
-            this.listenAudio(cached.audio, messageId);
+            // 初始化句子追踪并播放缓存音频
+            this.currentSentences = splitIntoSentences(content);
+            this.currentSentenceIndex = -1;
+            this.listenAudioWithSentenceTracking(cached.audio, messageId, content);
             this.setState('playing');
             await cached.audio.play();
             return;
@@ -437,16 +440,74 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
+        // 初始化句子追踪
+        this.currentSentences = splitIntoSentences(text);
+        this.currentSentenceIndex = -1;
+        const totalChars = text.length;
+
+        // 计算每个句子的字符累积位置
+        const sentenceEndPositions: number[] = [];
+        let charCount = 0;
+        for (const sentence of this.currentSentences) {
+            charCount += sentence.length;
+            sentenceEndPositions.push(charCount);
+        }
+
+        // PCMStreamPlayer 进度追踪定时器
+        const playbackStartTime = player.currentTime;
+        let streamProgressTimer: ReturnType<typeof setInterval> | null = null;
+
+        const startProgressTracking = () => {
+            if (streamProgressTimer) clearInterval(streamProgressTimer);
+            streamProgressTimer = setInterval(() => {
+                if (this.currentMessageId !== messageId) {
+                    if (streamProgressTimer) { clearInterval(streamProgressTimer); streamProgressTimer = null; }
+                    return;
+                }
+
+                const current = player.currentTime;
+                const end = player.endTime;
+                if (end <= playbackStartTime) return;
+
+                const progress = Math.min(1, Math.max(0, (current - playbackStartTime) / (end - playbackStartTime)));
+                const currentCharPos = Math.floor(progress * totalChars);
+
+                let newIndex = 0;
+                for (let i = 0; i < sentenceEndPositions.length; i++) {
+                    if (currentCharPos <= sentenceEndPositions[i]) {
+                        newIndex = i;
+                        break;
+                    }
+                    newIndex = i + 1;
+                }
+                if (newIndex >= this.currentSentences.length) newIndex = this.currentSentences.length - 1;
+
+                if (newIndex !== this.currentSentenceIndex) {
+                    this.currentSentenceIndex = newIndex;
+                    this.onSentenceChange?.(messageId, newIndex, this.currentSentences.length);
+                }
+            }, 200);
+        };
+
         try {
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
+                // 首次收到 chunk 时启动进度追踪
+                if (!streamProgressTimer) {
+                    startProgressTracking();
+                }
             }
 
             if (this.currentMessageId !== messageId) return;
 
             player.seal();
             await player.waitForEnd();
+
+            if (streamProgressTimer) {
+                clearInterval(streamProgressTimer);
+                streamProgressTimer = null;
+            }
 
             const wavBlob = player.assembleWav();
             const blobUrl = URL.createObjectURL(wavBlob);
@@ -457,8 +518,13 @@ export class TTSService {
             if (this.currentMessageId === messageId) {
                 this.setState('idle');
                 this.currentMessageId = null;
+                this.currentSentenceIndex = -1;
             }
         } finally {
+            if (streamProgressTimer) {
+                clearInterval(streamProgressTimer);
+                streamProgressTimer = null;
+            }
             player.stop();
             if (this.streamPlayer === player) {
                 this.streamPlayer = null;
