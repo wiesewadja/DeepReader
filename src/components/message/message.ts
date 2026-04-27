@@ -595,6 +595,13 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					} else if (targetFile) {
 						// 跨文件：新开 tab 打开目标文件
 						await app.workspace.openLinkText(hrefClean, currentFilePath, true);
+						// 切换到预览模式
+						setTimeout(() => {
+							const activeLeaf = app.workspace.activeLeaf;
+							if (activeLeaf) {
+								activeLeaf.setViewState({ type: 'markdown', state: { mode: 'preview' } });
+							}
+						}, 50);
 						// 额外保险：等文件加载后再尝试一次 block 跳转
 						if (blockId) {
 							scrollToBlockInCurrentView(400);
@@ -617,6 +624,16 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					// 普通 wiki 链接，新开 tab
 					app.workspace.openLinkText(href, '', true);
 				}
+				// 延迟切换到预览模式（阅读模式 + 非阅读模式共用）
+				setTimeout(() => {
+					const activeLeaf = app.workspace.activeLeaf;
+					if (activeLeaf) {
+						activeLeaf.setViewState({
+							type: 'markdown',
+							state: { mode: 'preview' }
+						});
+					}
+				}, 50);
 			} else {
 				// 非阅读模式：新开 tab
 				app.workspace.openLinkText(href, '', true);
