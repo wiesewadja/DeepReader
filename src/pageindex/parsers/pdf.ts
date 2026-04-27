@@ -276,10 +276,25 @@ export async function parsePdf(
 
   const totalPages = result.numpages || pages.length || 1;
 
-  if (result.info?.Title) {
-    title = result.info.Title;
-  } else if (typeof input === "string") {
-    title = getPdfName(input);
+  // 优先使用文件名（通常更完整），当元数据标题明显不完整时回退
+  const fileNameTitle = typeof input === "string" ? getPdfName(input) : "";
+  const metaTitle = result.info?.Title;
+
+  if (metaTitle && metaTitle.length > 0) {
+    // 判断元数据标题是否被截断：
+    // 1. 文件名包含完整元数据标题（如 "Happy LLM" 包含 "Happy"）
+    // 2. 文件名长度显著长于元数据标题（>50%）
+    const metaLen = metaTitle.length;
+    const fileLen = fileNameTitle.length;
+    const isTruncated = fileLen > metaLen * 1.5 && fileNameTitle.toLowerCase().includes(metaTitle.toLowerCase());
+
+    if (isTruncated) {
+      title = fileNameTitle;
+    } else {
+      title = metaTitle;
+    }
+  } else if (fileNameTitle) {
+    title = fileNameTitle;
   } else if (pages.length > 0 && pages[0]?.text) {
     const firstLine = pages[0].text.trim().split("\n")[0];
     if (firstLine && firstLine.length < 100) {

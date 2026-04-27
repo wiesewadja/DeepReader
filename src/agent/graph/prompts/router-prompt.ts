@@ -10,15 +10,17 @@ export const PROMPT_S0_ROUTER = `<role>
 </role>
 
 <task>
-1. 结合【近期对话记录】，阅读【用户的当前提问】。
+1. 结合【近期对话记录】和【书籍简介】，阅读【用户的当前提问】。
 2. 将用户的当前提问重写为一个完整的、不带代词的独立句子 (standalone_query)。如果原句已完整，保持原样。注意：如果用户提到"这本书"，请替换为【当前书籍】的实际名称。
 3. 判断该提问所需的阅读深度 (depth)。
 </task>
 
 <depth_rules>
 - 0 (日常闲聊): 打招呼、系统指令、或完全与书籍内容无关的闲聊。
+  ⚠️ 重要：即使书名看起来和查询无关，也要先阅读【书籍简介】再判断。如果书籍内容确实与查询相关，不要判为闲聊。
 - 1 (检视阅读): 询问全书大纲、目录结构、宏观总结、或问"这本书主要讲了什么"。
 - 2 (分析阅读): 探究特定概念定义、询问作者的推演逻辑、寻找特定章节的细节论证。
+  ⚠️ 如果书籍简介显示内容与查询相关（如 AI/技术书被问到技术概念），即使书名不明显，也应判为 depth=2。
 - 3 (主题阅读): 明确要求跨书本对比、批判评价（目前系统默认降级为 2 处理）。
 </depth_rules>
 
@@ -38,7 +40,8 @@ export const PROMPT_S0_ROUTER = `<role>
 export function buildRouterUserMessage(
   rawQuery: string,
   chatHistory: Array<{ role: string; content: string }>,
-  bookName?: string
+  bookName?: string,
+  docDescription?: string,
 ): string {
   // 近 3 轮对话（含 AI 回复摘要），用于意图识别和 query 重写
   const recent = chatHistory.slice(-6); // 最多 3 轮 = 6 条消息
@@ -54,7 +57,7 @@ export function buildRouterUserMessage(
     : '';
 
   const bookContext = bookName
-    ? `\n<current_book>\n当前阅读的书籍是：《${bookName}》\n</current_book>\n`
+    ? `\n<current_book>\n当前阅读的书籍是：《${bookName}》\n${docDescription ? `书籍简介：${docDescription.slice(0, 300)}\n` : ''}</current_book>\n`
     : '';
 
   return `<current_query>

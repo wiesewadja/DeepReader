@@ -53,7 +53,9 @@ export async function routerNode(
   }
 
   try {
-    const userMessage = buildRouterUserMessage(rawQuery, chatHistory, state.pdfName || undefined);
+    const sharedContext = config.configurable?.sharedContext as any;
+    const docDescription = sharedContext?.docDescription as string | undefined;
+    const userMessage = buildRouterUserMessage(rawQuery, chatHistory, state.pdfName || undefined, docDescription);
 
     const response = await fastModel.invoke([
       { role: 'system', content: PROMPT_S0_ROUTER },
