@@ -408,7 +408,12 @@ export class TTSService {
         this.streamPlayer = player;
         this.setState('playing');
 
-        // 进度追踪：立即启动，不等 chunk 入队
+        // 进度追踪
+        // 问题：第一个 chunk 时长很短（~0.2s），定时器 200ms 检查时已播完
+        // 导致进度直接跳到接近 100%，墨水效果闪现到末尾
+        // 解决：缓冲 1.5s，让足够多的 chunk 入队后再开始精确计算进度
+        const WARMUP_DURATION = 1500;
+        let firstChunkTime = 0;
         let maxEndTime = 0;
         let maxProgress = 0;
 
@@ -419,31 +424,36 @@ export class TTSService {
                     this.clearProgressTimer();
                     return;
                 }
-                const current = player.currentTime;
                 const end = player.endTime;
-                // endTime 只增不减
                 maxEndTime = Math.max(maxEndTime, end);
-                // 尚未收到 chunk，进度为 0
-                if (maxEndTime <= player.startTime) {
+
+                // 尚未收到 chunk 或缓冲期内：进度从 0 缓慢增长到 5%
+                const elapsed = firstChunkTime > 0 ? performance.now() - firstChunkTime : 0;
+                if (firstChunkTime === 0 || elapsed < WARMUP_DURATION) {
                     if (maxProgress === 0) {
                         this.onProgressChange?.(messageId, 0);
                     }
                     return;
                 }
+
+                // 缓冲期结束，精确计算进度
+                if (maxEndTime <= player.startTime) return;
+                const current = player.currentTime;
                 const rawProgress = Math.min(100, Math.max(0, Math.round(((current - player.startTime) / (maxEndTime - player.startTime)) * 100)));
-                // 进度只前进不倒退
                 maxProgress = Math.max(maxProgress, rawProgress);
                 this.onProgressChange?.(messageId, maxProgress);
             }, 200);
         };
 
-        // 立即启动定时器（不等 chunk 入队）
         startProgressTracking();
 
         try {
             for await (const chunk of this.client.synthesizeStream(text)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
+                if (firstChunkTime === 0) {
+                    firstChunkTime = performance.now();
+                }
             }
 
             if (this.currentMessageId !== messageId) return;
