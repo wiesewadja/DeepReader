@@ -19,7 +19,8 @@ import { analyticalNode } from './nodes/analytical';
 import { syntopicalNode } from './nodes/syntopical';
 import { visualizerNode } from './nodes/visualizer';
 import { formatterNode } from './nodes/formatter';
-import { routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
+import { socraticFilterNode } from './nodes/socratic-filter';
+import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
 
 // Build the graph
 const workflow = new StateGraph(CognitiveEngineAnnotation)
@@ -29,7 +30,11 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addNode('syntopical', syntopicalNode)
   .addNode('visualizer', visualizerNode)
   .addNode('formatter', formatterNode)
-  .addEdge(START, 'router')
+  .addNode('socratic', socraticFilterNode)
+  .addConditionalEdges(START, routeFromStart, {
+    router: 'router',
+    inspectional: 'inspectional',
+  })
   .addConditionalEdges('router', routeByDepth, {
     formatter: 'formatter',
     inspectional: 'inspectional',
@@ -42,12 +47,15 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   })
   .addConditionalEdges('analytical', routeAfterAnalysis, {
     visualizer: 'visualizer',
+    socratic: 'socratic',
     formatter: 'formatter',
   })
   .addConditionalEdges('syntopical', routeAfterAnalysis, {
     visualizer: 'visualizer',
+    socratic: 'socratic',
     formatter: 'formatter',
   })
+  .addEdge('socratic', 'formatter')
   .addEdge('visualizer', 'formatter')
   .addEdge('formatter', END);
 

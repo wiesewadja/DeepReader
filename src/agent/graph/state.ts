@@ -48,6 +48,15 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // === Runtime ===
   bookId: Annotation<string>(),
   pdfName: Annotation<string>(),
+
+  // === Proactive guidance ===
+  isProactive: Annotation<boolean>(),
+  proactiveTrigger: Annotation<string>(),
+  proactiveStep: Annotation<number>(),
+  highlightContext: Annotation<string[]>(),
+
+  // === Socratic mode ===
+  isSocratic: Annotation<boolean>(),
 });
 
 export type CognitiveEngineState = typeof CognitiveEngineAnnotation.State;

@@ -16,6 +16,10 @@ import {
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
+import {
+  buildProactiveSystemPrompt,
+  buildProactiveUserMessage,
+} from '../prompts/proactive-formatter-prompt';
 
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
@@ -107,6 +111,41 @@ export async function formatterNode(
 
   if (!mainModel) {
     return { formattedOutput: state.analysisResult || state.rewrittenQuery || '' };
+  }
+
+  // === Proactive mode: ask a question, don't answer ===
+  if (state.isProactive) {
+    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'inspectional_followup' | 'highlight' | 'chapter';
+    const step = state.proactiveStep || 1;
+    const ar = state.analysisResult || '';
+    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
+    const progressLabel = hasDiagram ? '图表已生成，准备引导...' : step > 1 ? '准备追问...' : '思考中...';
+    callbacks?.onProgress?.(progressLabel);
+    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram, step);
+    let proactiveUserMsg = buildProactiveUserMessage({
+      structuralAnalysis: state.structuralAnalysis || undefined,
+      tocSummary: state.tocSummary || undefined,
+      highlightContext: state.highlightContext || undefined,
+      bookName: state.pdfName || '',
+      userReply: state.rewrittenQuery || undefined,
+    });
+    if (hasDiagram) {
+      proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
+    }
+    const stream = await mainModel.stream([
+      new SystemMessage(proactivePrompt),
+      new HumanMessage(proactiveUserMsg),
+    ], config);
+
+    let content = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.content === 'string') {
+        content += chunk.content;
+        callbacks?.onContent?.(content);
+      }
+    }
+
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
 
   // === Casual mode (depth=0): simple direct response ===

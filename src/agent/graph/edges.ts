@@ -9,6 +9,16 @@ function hasDiagramIntent(state: CognitiveEngineState): boolean {
 }
 
 /**
+ * Route from START node.
+ * - isProactive: skip router, go directly to inspectional
+ * - otherwise: go to router (normal flow)
+ */
+export function routeFromStart(state: CognitiveEngineState): string {
+  if (state.isProactive) return 'inspectional';
+  return 'router';
+}
+
+/**
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
@@ -25,6 +35,16 @@ export function routeByDepth(state: CognitiveEngineState): string {
  * - depth=2 → S2 (analytical)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
+  // Proactive: inspectional + Excalidraw → visualizer; otherwise → formatter
+  if (state.isProactive) {
+    if (state.proactiveTrigger === 'inspectional'
+        && typeof window !== 'undefined'
+        && (window as any).ExcalidrawAutomate) {
+      return 'visualizer';
+    }
+    return 'done';
+  }
+
   if (state.depth === 3) {
     return 'syntopical';
   }
@@ -39,9 +59,14 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
 /**
  * Route after S2 Analytical or S3 Syntopical.
  *
+ * - socratic mode + diagram → visualizer (diagram already embeds conclusion, skip socratic)
+ * - socratic mode + no diagram → socratic filter (split facts/question, hide conclusion)
  * - diagram intent → visualizer
- * - no diagram → formatter
+ * - otherwise → formatter
  */
 export function routeAfterAnalysis(state: CognitiveEngineState): string {
+  if (state.isSocratic) {
+    return hasDiagramIntent(state) ? 'visualizer' : 'socratic';
+  }
   return hasDiagramIntent(state) ? 'visualizer' : 'formatter';
 }
