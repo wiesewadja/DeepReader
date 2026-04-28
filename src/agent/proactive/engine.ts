@@ -146,6 +146,15 @@ export class ProactiveEngine {
     this.processing = value;
   }
 
+  shouldEnableSocratic(bookId: string): boolean {
+    if (!this.settings.proactiveGuidanceEnabled) return false;
+    const state = this.states.get(bookId);
+    if (!state) return false;
+    if (state.inspectionalStep < 2) return false;
+    if ((state.socraticSkipCount || 0) >= 2) return false;
+    return true;
+  }
+
   destroy(): void {
     this.states.clear();
   }

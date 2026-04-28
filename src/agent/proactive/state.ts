@@ -12,6 +12,7 @@ export function createEmptyState(bookId: string): ProactiveState {
     inspectionalStep: 0,
     chapterTriggers: {},
     lastProactiveAt: null,
+    socraticSkipCount: 0,
   };
 }
 
@@ -84,12 +85,17 @@ function getStateFilePath(baseDir: string, bookId: string): string {
   return path.join(baseDir, '.pageindex', bookId, 'proactive-state.json');
 }
 
-/** 兼容旧版 state（inspectionalDone → inspectionalStep） */
-function migrateState(raw: any): ProactiveState {
+/** 兼容旧版 state（inspectionalDone → inspectionalStep）+ 字段验证 */
+function migrateState(raw: any): ProactiveState | null {
   if ('inspectionalDone' in raw && !('inspectionalStep' in raw)) {
     raw.inspectionalStep = raw.inspectionalDone ? 3 : 0;
     delete raw.inspectionalDone;
   }
+  if (typeof raw.inspectionalStep !== 'number') raw.inspectionalStep = 0;
+  if (typeof raw.bookId !== 'string') return null;
+  raw.chapterTriggers = raw.chapterTriggers || {};
+  raw.lastProactiveAt = raw.lastProactiveAt ?? null;
+  raw.socraticSkipCount = raw.socraticSkipCount ?? 0;
   return raw as ProactiveState;
 }
 

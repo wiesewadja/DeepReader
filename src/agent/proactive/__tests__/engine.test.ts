@@ -158,4 +158,42 @@ describe('ProactiveEngine', () => {
       expect(disabledEngine.checkFollowUp('book-1')).toBeNull();
     });
   });
+
+  describe('shouldEnableSocratic', () => {
+    it('returns false when feature disabled', () => {
+      const disabledEngine = new ProactiveEngine(
+        { vault: { adapter: { basePath: testBaseDir } } } as any,
+        { settings: { proactiveGuidanceEnabled: false, proactiveCooldownMinutes: 5 } } as any,
+        () => {},
+      );
+      expect(disabledEngine.shouldEnableSocratic('book-1')).toBe(false);
+    });
+
+    it('returns false when no state for book', () => {
+      expect(engine.shouldEnableSocratic('unknown-book')).toBe(false);
+    });
+
+    it('returns false when inspectionalStep < 2', async () => {
+      await engine.onBookOpen('book-1', false, 0); // sets step=1
+      expect(engine.shouldEnableSocratic('book-1')).toBe(false);
+    });
+
+    it('returns true when inspectionalStep >= 2', async () => {
+      await engine.onBookOpen('book-1', false, 0); // step=1
+      const f1 = engine.checkFollowUp('book-1')!;
+      await engine.executeFollowUp(f1); // step=2
+      expect(engine.shouldEnableSocratic('book-1')).toBe(true);
+    });
+
+    it('returns false when socraticSkipCount >= 2', async () => {
+      await engine.onBookOpen('book-1', false, 0);
+      const f1 = engine.checkFollowUp('book-1')!;
+      await engine.executeFollowUp(f1); // step=2
+
+      // Manually set skip count via internal states map
+      const state = (engine as any).states.get('book-1');
+      state.socraticSkipCount = 2;
+      expect(engine.shouldEnableSocratic('book-1')).toBe(false);
+    });
+  });
 });

@@ -47,6 +47,8 @@ export interface ToolContext {
   llmConfig?: { apiKey: string; baseUrl: string; model?: string };
   /** 用户笔记目录（配置后启用 search_journal 工具） */
   journalDir?: string;
+  /** 是否启用苏格拉底模式（S2→S4 之间插入 filter 节点） */
+  isSocratic?: boolean;
 }
 
 /**

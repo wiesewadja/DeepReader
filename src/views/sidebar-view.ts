@@ -2537,6 +2537,8 @@ export class SidebarView extends ItemView {
                 docDescription: this.currentDocDescription || undefined,
                 // 添加结构化引用数据（用于工具优先搜索）
                 quotes: quotes,
+                // 苏格拉底模式：检视引导完成后自动启用
+                isSocratic: this.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
                 // TTS 配置（用于 VoicePipeline 语音合成）
                 ttsConfig: this.plugin.settings.enableVoiceReply ? (() => {
                     const cfg = resolveRoleConfig('tts', this.plugin.settings);

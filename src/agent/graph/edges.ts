@@ -59,9 +59,14 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
 /**
  * Route after S2 Analytical or S3 Syntopical.
  *
+ * - socratic mode + diagram → visualizer (diagram already embeds conclusion, skip socratic)
+ * - socratic mode + no diagram → socratic filter (split facts/question, hide conclusion)
  * - diagram intent → visualizer
- * - no diagram → formatter
+ * - otherwise → formatter
  */
 export function routeAfterAnalysis(state: CognitiveEngineState): string {
+  if (state.isSocratic) {
+    return hasDiagramIntent(state) ? 'visualizer' : 'socratic';
+  }
   return hasDiagramIntent(state) ? 'visualizer' : 'formatter';
 }

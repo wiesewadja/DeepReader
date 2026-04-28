@@ -15,6 +15,8 @@ export interface ProactiveState {
   chapterTriggers: Record<string, ChapterTrigger>;
   /** 上次主动提问的 ISO 时间戳 */
   lastProactiveAt: string | null;
+  /** 用户跳过苏格拉底问题的次数 */
+  socraticSkipCount: number;
 }
 
 /** 主动引导触发参数 */

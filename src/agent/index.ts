@@ -311,6 +311,7 @@ ${currentMemory}
           messages: [new HumanMessage(userMessage)],
           bookId: context.indexId || '',
           pdfName: context.pdfName || '',
+          isSocratic: context.isSocratic ?? false,
         },
         {
           streamMode: 'updates',

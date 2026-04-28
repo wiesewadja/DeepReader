@@ -54,6 +54,9 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   proactiveTrigger: Annotation<string>(),
   proactiveStep: Annotation<number>(),
   highlightContext: Annotation<string[]>(),
+
+  // === Socratic mode ===
+  isSocratic: Annotation<boolean>(),
 });
 
 export type CognitiveEngineState = typeof CognitiveEngineAnnotation.State;
