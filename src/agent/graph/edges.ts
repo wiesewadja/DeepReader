@@ -9,6 +9,16 @@ function hasDiagramIntent(state: CognitiveEngineState): boolean {
 }
 
 /**
+ * Route from START node.
+ * - isProactive: skip router, go directly to inspectional
+ * - otherwise: go to router (normal flow)
+ */
+export function routeFromStart(state: CognitiveEngineState): string {
+  if (state.isProactive) return 'inspectional';
+  return 'router';
+}
+
+/**
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
@@ -25,6 +35,9 @@ export function routeByDepth(state: CognitiveEngineState): string {
  * - depth=2 → S2 (analytical)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
+  // Proactive: skip S2/S3/visualizer, go straight to formatter
+  if (state.isProactive) return 'done';
+
   if (state.depth === 3) {
     return 'syntopical';
   }

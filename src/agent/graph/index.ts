@@ -19,7 +19,7 @@ import { analyticalNode } from './nodes/analytical';
 import { syntopicalNode } from './nodes/syntopical';
 import { visualizerNode } from './nodes/visualizer';
 import { formatterNode } from './nodes/formatter';
-import { routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
+import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
 
 // Build the graph
 const workflow = new StateGraph(CognitiveEngineAnnotation)
@@ -29,7 +29,10 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addNode('syntopical', syntopicalNode)
   .addNode('visualizer', visualizerNode)
   .addNode('formatter', formatterNode)
-  .addEdge(START, 'router')
+  .addConditionalEdges(START, routeFromStart, {
+    router: 'router',
+    inspectional: 'inspectional',
+  })
   .addConditionalEdges('router', routeByDepth, {
     formatter: 'formatter',
     inspectional: 'inspectional',

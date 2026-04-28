@@ -16,6 +16,10 @@ import {
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
+import {
+  buildProactiveSystemPrompt,
+  buildProactiveUserMessage,
+} from '../prompts/proactive-formatter-prompt';
 
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
@@ -107,6 +111,33 @@ export async function formatterNode(
 
   if (!mainModel) {
     return { formattedOutput: state.analysisResult || state.rewrittenQuery || '' };
+  }
+
+  // === Proactive mode: ask a question, don't answer ===
+  if (state.isProactive) {
+    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
+    callbacks?.onProgress?.('思考中...');
+    const proactivePrompt = buildProactiveSystemPrompt(trigger);
+    const proactiveUserMsg = buildProactiveUserMessage({
+      structuralAnalysis: state.structuralAnalysis || undefined,
+      tocSummary: state.tocSummary || undefined,
+      highlightContext: state.highlightContext || undefined,
+      bookName: state.pdfName || '',
+    });
+    const stream = await mainModel.stream([
+      new SystemMessage(proactivePrompt),
+      new HumanMessage(proactiveUserMsg),
+    ], config);
+
+    let content = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.content === 'string') {
+        content += chunk.content;
+        callbacks?.onContent?.(content);
+      }
+    }
+
+    return { formattedOutput: stripThinkTags(content) };
   }
 
   // === Casual mode (depth=0): simple direct response ===

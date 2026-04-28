@@ -121,6 +121,10 @@ export interface DeepPDFSettings {
 	langsmithProject: string;
 	langsmithEnabled: boolean;
 
+	// Proactive guidance settings
+	proactiveGuidanceEnabled: boolean;
+	proactiveCooldownMinutes: number;
+
 	// ═══════════════════════════════════════════════════════════
 	// 旧版字段（迁移期间保留，Chunk 3 后删除）
 	// ═══════════════════════════════════════════════════════════
@@ -206,6 +210,10 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	langsmithApiKey: "",
 	langsmithProject: "DeepReader",
 	langsmithEnabled: false,
+
+		// Proactive guidance
+		proactiveGuidanceEnabled: true,
+		proactiveCooldownMinutes: 5,
 
 		// 用户画像
 		journalDir: "",

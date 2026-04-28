@@ -459,6 +459,11 @@ export default class DeepPDFPlugin extends Plugin {
             },
             onSaveHighlight: async (text: string, color: HighlightColorId) => {
                 await this.saveHighlightToFile(text, color);
+                const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                if (leaves.length > 0) {
+                    const sidebarView = leaves[0].view as SidebarView;
+                    await sidebarView.notifyHighlight(text);
+                }
             },
             onRemoveHighlight: async (text: string) => {
                 await this.removeHighlightFromFile(text);

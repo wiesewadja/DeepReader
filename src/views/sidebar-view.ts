@@ -46,6 +46,7 @@ import { findBlockIdFromRange } from "../utils/block-utils.js";
 import { TTSService, type TTSPlayState } from '../services/tts/tts-service.js';
 import { StreamingVoicePlayer, type StreamingVoiceState } from '../services/tts/streaming-voice-player.js';
 import { resolveRoleConfig } from '../config/providers.js';
+import { ProactiveEngine } from '../agent/proactive/engine.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -108,6 +109,10 @@ export class SidebarView extends ItemView {
     private progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly PROGRESS_DEBOUNCE_MS = 3000;
 
+    // 主动阅读引导
+    private currentChapterId: string | null = null;
+    private proactiveEngine: import("../agent/proactive/engine.js").ProactiveEngine | null = null;
+
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
     private currentDocDescription: string | null = null;
 
@@ -128,6 +133,87 @@ export class SidebarView extends ItemView {
         const agent = await this.plugin.getFrontendAgent();
         this.frontendAgent = agent;
         log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', agent.listSkills());
+
+        // 初始化主动阅读引导引擎
+        this.proactiveEngine = new ProactiveEngine(
+            this.app,
+            this.plugin,
+            async (params) => {
+                if (!this.frontendAgent || !this.messageList) return;
+                this.proactiveEngine?.setProcessing(true);
+                let aiMessageId = `proactive-${Date.now()}`;
+                try {
+                    const aiMessageData: MessageData = {
+                        id: aiMessageId,
+                        role: "assistant" as MessageRole,
+                        content: "",
+                        timestamp: new Date().toISOString(),
+                        isStreaming: true,
+                        isAgentMessage: true,
+                        currentStatus: '思考中...',
+                        pdfName: this.currentPdfName || undefined,
+                        conversationId: this.sessionId || undefined,
+                        bookCoverUrl: this.currentBookCoverUrl || undefined,
+                        bookAuthor: this.currentBookAuthor || undefined,
+                    };
+                    this.messageList.addMessage(aiMessageData);
+
+                    const activeFile = this.app.workspace.getActiveFile();
+                    let currentNodeId: string | undefined;
+                    if (activeFile) {
+                        const cache = this.app.metadataCache.getFileCache(activeFile);
+                        const rawNodeId = cache?.frontmatter?.node_id;
+                        if (rawNodeId) currentNodeId = String(rawNodeId);
+                    }
+
+                    const context: ToolContext = {
+                        indexId: this.currentIndexId || '',
+                        pdfName: this.currentPdfName || '未知文档',
+                        markdownFiles: this.currentMarkdownFiles,
+                        app: this.app,
+                        plugin: this.plugin,
+                        currentNodeId,
+                        documentMetadata: { title: this.currentPdfName || '未知文档' },
+                    };
+
+                    const callbacks = {
+                        onContent: (content: string) => {
+                            this.messageList?.updateMessage(aiMessageId, { content });
+                        },
+                        onProgress: (msg: string) => {
+                            this.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
+                        },
+                        onComplete: () => {},
+                        onError: (msg: string) => {
+                            this.messageList?.updateMessage(aiMessageId, {
+                                isStreaming: false,
+                                content: `引导生成失败: ${msg}`,
+                            });
+                        },
+                    };
+                    const result = await this.frontendAgent.runProactiveGuidance(
+                        context, callbacks, this.agentChatHistory, params,
+                    );
+                    const assistantContent = result.messages[0]?.content || '';
+                    this.agentChatHistory = [
+                        ...this.agentChatHistory,
+                        { role: 'assistant', content: assistantContent },
+                    ];
+                    this.messageList?.updateMessage(aiMessageId, {
+                        isStreaming: false,
+                        content: assistantContent,
+                    });
+                } catch (err) {
+                    logError('[DeepPDF] 主动引导生成失败:', err);
+                    this.messageList?.updateMessage(aiMessageId!, {
+                        isStreaming: false,
+                        content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
+                    });
+                } finally {
+                    this.proactiveEngine?.setProcessing(false);
+                }
+            },
+        );
     }
 
     /**
@@ -1144,6 +1230,12 @@ export class SidebarView extends ItemView {
 
             // 更新 topbar 进度显示
             this.updateProgressUI();
+
+            // Proactive: 首次打开书籍时触发检视引导
+            const hasHistory = this.agentChatHistory.filter(m => m.role === 'user').length > 0;
+            const totalChapters = this.getTotalChapters();
+            const progressPercent = getProgressPercent(this.readingProgress, totalChapters);
+            await this.proactiveEngine?.onBookOpen(indexId, hasHistory, progressPercent);
         } catch (e) {
             logError('[DeepPDF] 初始化阅读进度失败:', e);
             this.readingProgress = createEmptyProgress(indexId);
@@ -1156,6 +1248,18 @@ export class SidebarView extends ItemView {
      */
     private async trackReadingProgress(): Promise<void> {
         if (!this.readingProgress || !this.currentPdfName) return;
+
+        // === Proactive: 检测离开整本书 ===
+        const bookPath = `DeepReader/${this.currentPdfName}/`;
+        if (this.currentChapterId && this.readingProgress) {
+            const activeFile = this.app.workspace.getActiveFile();
+            if (!activeFile || !activeFile.path.startsWith(bookPath)) {
+                this.proactiveEngine?.onChapterLeave(
+                    this.readingProgress.bookId, this.currentChapterId,
+                );
+                this.currentChapterId = null;
+            }
+        }
 
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') return;
@@ -1170,8 +1274,7 @@ export class SidebarView extends ItemView {
             }
         }
 
-        // 检查当前文件是否属于正在阅读的书籍
-        const bookPath = `DeepReader/${this.currentPdfName}/`;
+        // 检查当前文件是否属于正在阅读的书籍（bookPath 已在函数顶部声明）
         if (!activeFile.path.startsWith(bookPath)) return;
 
         // 排除书籍主文件
@@ -1182,6 +1285,18 @@ export class SidebarView extends ItemView {
         const rawNodeId = cache?.frontmatter?.node_id;
         const chapterId = rawNodeId ? String(rawNodeId) : activeFile.basename;
         if (!chapterId) return;
+
+        // === Proactive: 检测章节内切换 ===
+        const prevChapterId = this.currentChapterId;
+        this.currentChapterId = chapterId;
+        if (prevChapterId && prevChapterId !== chapterId) {
+            this.proactiveEngine?.onChapterLeave(
+                this.readingProgress!.bookId, prevChapterId,
+            );
+        }
+        this.proactiveEngine?.onChapterEnter(
+            this.readingProgress!.bookId, chapterId,
+        );
 
         // 标记章节已访问
         const wasVisited = this.readingProgress.chapters[chapterId]?.visited;
@@ -1407,6 +1522,11 @@ export class SidebarView extends ItemView {
      */
     public getCurrentIndexId(): string | null {
         return this.currentIndexId;
+    }
+
+    public async notifyHighlight(text: string): Promise<void> {
+        if (!this.currentIndexId || !this.currentChapterId) return;
+        await this.proactiveEngine?.onHighlight(this.currentIndexId, this.currentChapterId, text);
     }
 
     /**
@@ -2178,6 +2298,8 @@ export class SidebarView extends ItemView {
      * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
      */
     private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
+        this.proactiveEngine?.onUserMessage();
+
         // 允许只有引用没有文本的情况
         if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
             return;
@@ -3422,6 +3544,16 @@ export class SidebarView extends ItemView {
                     warn('[DeepPDF] Error destroying chatInput:', e);
                 }
                 this.chatInput = null;
+            }
+
+            // 清理主动引导引擎
+            if (this.proactiveEngine) {
+                try {
+                    this.proactiveEngine.destroy();
+                } catch (e) {
+                    warn('[DeepPDF] Error destroying proactiveEngine:', e);
+                }
+                this.proactiveEngine = null;
             }
 
             // 清理任务卡片

@@ -53,6 +53,7 @@ import { agentLog as log } from '../utils/logger.js';
 import { initTracer, getTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
 import { Command, MemorySaver } from '@langchain/langgraph';
+import type { ProactiveParams } from './proactive/types';
 import { cognitiveEngine } from './graph/index.js';
 import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
@@ -359,6 +360,46 @@ ${currentMemory}
       this.activeThreadId = null;
       return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };
     }
+  }
+
+  /**
+   * 主动引导：跳过 Router，直接走 S1→S4 生成引导提问。
+   */
+  async runProactiveGuidance(
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+    chatHistory: ChatMessage[],
+    params: ProactiveParams,
+  ): Promise<{ messages: ChatMessage[] }> {
+    await this.initialize();
+
+    const rawQuery = params.trigger === 'inspectional'
+      ? '请对这本书做检视阅读引导'
+      : `用户在阅读中划了以下内容，请追问：\n${(params.highlightContext || []).join('\n')}`;
+
+    const threadId = `proactive-${context.indexId || Date.now()}`;
+    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(
+      context, callbacks, threadId, rawQuery, chatHistory,
+    );
+
+    const initialMessages = [new HumanMessage(rawQuery)];
+
+    const stream = await this.getCompiledEngine().stream({
+      messages: initialMessages,
+      bookId: context.indexId || '',
+      pdfName: context.pdfName || '',
+      isProactive: true,
+      proactiveTrigger: params.trigger,
+      highlightContext: params.highlightContext || [],
+      depth: 1,
+    }, {
+      streamMode: 'updates',
+      configurable,
+      signal: callbacks.abortSignal,
+      ...(tracer ? { callbacks: [tracer] } : {}),
+    });
+
+    return this.processGraphStream(stream, callbacks, { configurable });
   }
 
   /**
