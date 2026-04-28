@@ -76,6 +76,12 @@ export function buildInspectionalSystemPrompt(
 3. 解答用户的宏观问题，基于目录信息组织回答
 4. 引用章节时，使用 wiki 链接格式 [[${docName}/文件名|别名]]，别名 2-6 字核心词嵌入句中，直接从目录树的 link 字段获取文件名
 5. scopeNodeIds 可以留空 []，因为不需要锁定局部范围
+
+⚠️ 重要：如果用户问题中提及了具体的案例名、人名、技术术语或事件（如"马拉松"、"RFID"、"某个人物"），但目录摘要中找不到对应的直接匹配：
+- 不要自行泛化或改写用户的问题！
+- better_question 保持用户原始提问的核心意图
+- 在 tocSummary 中明确指出"用户提及的具体内容在目录中未找到，建议升级到分析阅读以搜索全文"
+- scopeNodeIds 可以根据章节摘要的相关性填入最可能的章节 node_id
 </task_branch>`
     : `<task_branch name="圈定战区">
 用户的意图是探究某个具体的细节、概念或推演逻辑。
