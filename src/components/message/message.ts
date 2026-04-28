@@ -575,6 +575,19 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 				}, delayMs);
 			};
 
+			// 判断目标文件是否为 Excalidraw 文件（.excalidraw.md），这类文件需要由 Excalidraw 插件自己的 view type 渲染，不能强制切到 markdown
+			const targetPath = hrefClean || href;
+			const isExcalidrawFile = targetPath.endsWith('.excalidraw.md') || targetPath.endsWith('.excalidraw');
+			const switchToPreview = () => {
+				if (isExcalidrawFile) return;
+				setTimeout(() => {
+					const activeLeaf = app.workspace.activeLeaf;
+					if (activeLeaf) {
+						activeLeaf.setViewState({ type: 'markdown', state: { mode: 'preview' } });
+					}
+				}, 50);
+			};
+
 			if (isPaginatedMode) {
 				// 分页模式：在当前 leaf 内跳转，不新开 tab
 				// ReadingModeService.patchScrollIntoView 已拦截 scrollIntoView，
@@ -595,13 +608,8 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					} else if (targetFile) {
 						// 跨文件：新开 tab 打开目标文件
 						await app.workspace.openLinkText(hrefClean, currentFilePath, true);
-						// 切换到预览模式
-						setTimeout(() => {
-							const activeLeaf = app.workspace.activeLeaf;
-							if (activeLeaf) {
-								activeLeaf.setViewState({ type: 'markdown', state: { mode: 'preview' } });
-							}
-						}, 50);
+						// 切换到预览模式（Excalidraw 文件除外）
+						switchToPreview();
 						// 额外保险：等文件加载后再尝试一次 block 跳转
 						if (blockId) {
 							scrollToBlockInCurrentView(400);
@@ -624,30 +632,14 @@ function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPrevie
 					// 普通 wiki 链接，新开 tab
 					app.workspace.openLinkText(href, '', true);
 				}
-				// 延迟切换到预览模式（阅读模式 + 非阅读模式共用）
-				setTimeout(() => {
-					const activeLeaf = app.workspace.activeLeaf;
-					if (activeLeaf) {
-						activeLeaf.setViewState({
-							type: 'markdown',
-							state: { mode: 'preview' }
-						});
-					}
-				}, 50);
+				// 延迟切换到预览模式（阅读模式 + 非阅读模式共用，Excalidraw 文件除外）
+				switchToPreview();
 			} else {
 				// 非阅读模式：新开 tab
 				app.workspace.openLinkText(href, '', true);
 
-				// 延迟切换到预览模式
-				setTimeout(() => {
-					const activeLeaf = app.workspace.activeLeaf;
-					if (activeLeaf) {
-						activeLeaf.setViewState({
-							type: 'markdown',
-							state: { mode: 'preview' }
-						});
-					}
-				}, 50);
+				// 延迟切换到预览模式（Excalidraw 文件除外）
+				switchToPreview();
 			}
 		});
 

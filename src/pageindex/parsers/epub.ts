@@ -349,8 +349,11 @@ function extractTextFromHTMLWithBlocks(
   html: string,
   chapterIndex: number
 ): { content: string; blockMap: Map<string, string>; blocks: string[] } {
-  // Remove script and style tags completely
+  // Remove <head> entirely — some Kobo EPUBs use self-closing <title/>
+  // which DOMParser in text/html mode treats as an opening <title> tag,
+  // causing the entire document body to be swallowed into the title element.
   let cleanHtml = html
+    .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
 
