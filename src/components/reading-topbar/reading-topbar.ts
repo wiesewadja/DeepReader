@@ -10,6 +10,7 @@ import { uiLog as log } from '../../utils/logger.js';
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onOpenSettings?: () => void;
+    onCoverClick?: () => void;  // 点击封面时的回调
 }
 
 export class ReadingTopbar extends Component {
@@ -40,6 +41,10 @@ export class ReadingTopbar extends Component {
         this.bookCoverEl.className = 'deeppdf-book-cover';
         // 默认显示书籍图标
         this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+        // 点击封面打开当前阅读章节
+        this.bookCoverEl.addEventListener('click', () => {
+            this.options.onCoverClick?.();
+        });
         leftSection.appendChild(this.bookCoverEl);
 
         // 书名和作者信息

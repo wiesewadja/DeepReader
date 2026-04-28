@@ -1500,6 +1500,10 @@ export class SidebarView extends ItemView {
                     setting.openTabById('deepreader');
                 }
             },
+            onCoverClick: () => {
+                // 点击封面时，打开当前书籍正在阅读的章节
+                this.navigateToLastReadChapter();
+            },
         });
 
         const el = this.readingTopbar.getElement();
