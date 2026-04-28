@@ -18,10 +18,10 @@ import type { TTSPlayState } from '../../services/tts/tts-service.js';
 export type GuidanceType =
 	| 'overview'        // 这本书讲了什么
 	| 'core-views'      // 核心观点
-	| 'chapter-nav'     // 章节导航
+	| 'mindmap'         // 全书导图
 	| 'key-concepts'    // 关键概念
-	| 'author-info'     // 作者背景
-	| 'explore';        // 探索这本书
+	| 'reading-guide'   // 从哪开始读
+	| 'relevance';      // 跟我有什么关系
 
 /**
  * 引导按钮配置
@@ -38,14 +38,10 @@ export interface GuidanceButton {
 export const GUIDANCE_BUTTONS: GuidanceButton[] = [
 	{ type: 'overview', label: '这本书讲了什么', prompt: '这本书主要讲了什么内容？请给我一个概览' },
 	{ type: 'core-views', label: '核心观点', prompt: '这本书的核心观点和主要论点是什么？' },
-	{ type: 'chapter-nav', label: '章节导航', prompt: '请介绍一下这本书的章节结构，帮助我了解全书的框架' },
+	{ type: 'mindmap', label: '全书导图', prompt: '请根据目录和章节摘要，为这本书生成一张全书思维导图，展现核心主题和各章节之间的逻辑关系' },
 	{ type: 'key-concepts', label: '关键概念', prompt: '这本书有哪些关键概念和重要术语？' },
-	{ type: 'author-info', label: '作者背景', prompt: '请介绍一下这本书的作者及其背景' },
-	{
-		type: 'explore',
-		label: '探索这本书',
-		prompt: '我刚刚开始阅读这本书，请先浏览目录和关键章节，了解这本书的主题和结构，然后用自然友好的方式向我介绍这本书，并建议我可以从哪里开始阅读。'
-	},
+	{ type: 'reading-guide', label: '从哪开始读', prompt: '我刚拿到这本书，请根据目录和章节难度，给我一个阅读路线建议：哪些章节必读、哪些可以跳过、推荐什么顺序？' },
+	{ type: 'relevance', label: '跟我有什么关系', prompt: '请结合这本书的核心内容，谈谈它对普通读者的实际价值，以及哪些章节最值得我花时间精读？' },
 ];
 
 /**
