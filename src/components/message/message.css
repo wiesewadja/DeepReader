@@ -961,6 +961,19 @@
 	width: 14px;
 	height: 14px;
 }
+/* 主动阅读引导标签 */
+.deeppdf-message-proactive-tag {
+	margin-left: 6px;
+	padding: 2px 8px;
+	background: rgba(var(--interactive-accent-rgb), 0.1);
+	border: 1px solid rgba(var(--interactive-accent-rgb), 0.2);
+	border-radius: 10px;
+	font-size: 10px;
+	font-weight: 500;
+	color: var(--interactive-accent);
+	vertical-align: middle;
+}
+
 
 /* Agent 消息状态文本（Badge 正下方） */
 .deeppdf-message-status-text {

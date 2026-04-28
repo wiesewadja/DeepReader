@@ -373,9 +373,11 @@ ${currentMemory}
   ): Promise<{ messages: ChatMessage[] }> {
     await this.initialize();
 
-    const rawQuery = params.trigger === 'inspectional'
-      ? '请对这本书做检视阅读引导'
-      : `用户在阅读中划了以下内容，请追问：\n${(params.highlightContext || []).join('\n')}`;
+    const rawQuery = params.trigger === 'inspectional_followup'
+      ? `用户回答了引导问题：${params.userReply || ''}`
+      : params.trigger === 'inspectional'
+        ? '请对这本书做检视阅读引导'
+        : `用户在阅读中划了以下内容，请追问：\n${(params.highlightContext || []).join('\n')}`;
 
     const threadId = `proactive-${context.indexId || Date.now()}`;
     const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(
@@ -390,7 +392,9 @@ ${currentMemory}
       pdfName: context.pdfName || '',
       isProactive: true,
       proactiveTrigger: params.trigger,
+      proactiveStep: params.step ?? 1,
       highlightContext: params.highlightContext || [],
+      rewrittenQuery: params.userReply || undefined,
       depth: 1,
     }, {
       streamMode: 'updates',

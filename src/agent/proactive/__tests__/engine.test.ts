@@ -10,7 +10,6 @@ describe('ProactiveEngine', () => {
   const testBaseDir = '/tmp/test-vault-proactive';
 
   beforeEach(async () => {
-    // 每个测试前清理持久化目录，避免测试间状态泄漏
     await fs.rm(testBaseDir, { recursive: true, force: true });
     triggered = [];
     engine = new ProactiveEngine(
@@ -30,6 +29,7 @@ describe('ProactiveEngine', () => {
       expect(triggered).toHaveLength(1);
       expect(triggered[0].trigger).toBe('inspectional');
       expect(triggered[0].bookId).toBe('book-1');
+      expect(triggered[0].step).toBe(1);
     });
 
     it('does not trigger when has history', async () => {
@@ -101,6 +101,61 @@ describe('ProactiveEngine', () => {
       );
       await disabledEngine.onBookOpen('book-1', false, 0);
       expect(triggered).toHaveLength(0);
+    });
+  });
+
+  describe('多步引导 follow-up', () => {
+    it('checkFollowUp returns null when no inspectional triggered', () => {
+      expect(engine.checkFollowUp('book-1')).toBeNull();
+    });
+
+    it('checkFollowUp returns step 2 after first inspectional', async () => {
+      await engine.onBookOpen('book-1', false, 0);
+      const followUp = engine.checkFollowUp('book-1');
+      expect(followUp).not.toBeNull();
+      expect(followUp!.trigger).toBe('inspectional_followup');
+      expect(followUp!.step).toBe(2);
+    });
+
+    it('checkFollowUp returns step 3 after second step executed', async () => {
+      await engine.onBookOpen('book-1', false, 0);
+      const followUp1 = engine.checkFollowUp('book-1');
+      expect(followUp1!.step).toBe(2);
+
+      await engine.executeFollowUp(followUp1!);
+      const followUp2 = engine.checkFollowUp('book-1');
+      expect(followUp2).not.toBeNull();
+      expect(followUp2!.step).toBe(3);
+    });
+
+    it('checkFollowUp returns null after step 3 completed', async () => {
+      await engine.onBookOpen('book-1', false, 0);
+      const f1 = engine.checkFollowUp('book-1')!;
+      await engine.executeFollowUp(f1);
+      const f2 = engine.checkFollowUp('book-1')!;
+      await engine.executeFollowUp(f2);
+      expect(engine.checkFollowUp('book-1')).toBeNull();
+    });
+
+    it('executeFollowUp calls onTrigger with correct params', async () => {
+      await engine.onBookOpen('book-1', false, 0);
+      triggered.length = 0; // reset
+
+      const followUp = engine.checkFollowUp('book-1')!;
+      await engine.executeFollowUp(followUp);
+      expect(triggered).toHaveLength(1);
+      expect(triggered[0].trigger).toBe('inspectional_followup');
+      expect(triggered[0].step).toBe(2);
+    });
+
+    it('checkFollowUp returns null when disabled', async () => {
+      const disabledEngine = new ProactiveEngine(
+        { vault: { adapter: { basePath: testBaseDir } } } as any,
+        { settings: { proactiveGuidanceEnabled: false, proactiveCooldownMinutes: 5 } } as any,
+        (params) => { triggered.push(params); },
+      );
+      await disabledEngine.onBookOpen('book-1', false, 0);
+      expect(disabledEngine.checkFollowUp('book-1')).toBeNull();
     });
   });
 });

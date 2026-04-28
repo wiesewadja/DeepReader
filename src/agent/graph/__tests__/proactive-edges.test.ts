@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { routeFromStart, routeByDepth, routeAfterInspectional } from '../edges';
+import { buildProactiveSystemPrompt } from '../prompts/proactive-formatter-prompt';
 
 describe('proactive edge routing', () => {
   describe('routeFromStart', () => {
@@ -52,6 +53,17 @@ describe('proactive edge routing', () => {
       const state = { isProactive: true, depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
     });
+
+    it('routes to done for inspectional_followup even with Excalidraw', () => {
+      (globalThis as any).ExcalidrawAutomate = {};
+      const state = { isProactive: true, proactiveTrigger: 'inspectional_followup', depth: 1 } as any;
+      expect(routeAfterInspectional(state)).toBe('done');
+    });
+
+    it('routes to done for inspectional_followup step 3', () => {
+      const state = { isProactive: true, proactiveTrigger: 'inspectional_followup', proactiveStep: 3, depth: 1 } as any;
+      expect(routeAfterInspectional(state)).toBe('done');
+    });
   });
 
   describe('routeByDepth — unchanged', () => {
@@ -64,5 +76,27 @@ describe('proactive edge routing', () => {
       const state = { depth: 2 } as any;
       expect(routeByDepth(state)).toBe('inspectional');
     });
+  });
+});
+
+describe('buildProactiveSystemPrompt — multi-step', () => {
+  it('returns step 3 prompt when step=3', () => {
+    const prompt = buildProactiveSystemPrompt('inspectional_followup', false, 3);
+    expect(prompt).toContain('阅读判断');
+  });
+
+  it('returns step 2 prompt when step=2', () => {
+    const prompt = buildProactiveSystemPrompt('inspectional_followup', false, 2);
+    expect(prompt).toContain('核心论点');
+  });
+
+  it('returns base proactive prompt for inspectional_followup without step', () => {
+    const prompt = buildProactiveSystemPrompt('inspectional_followup', false);
+    expect(prompt).toContain('助产士');
+  });
+
+  it('returns diagram prompt for inspectional + hasDiagram', () => {
+    const prompt = buildProactiveSystemPrompt('inspectional', true);
+    expect(prompt).toContain('结构图');
   });
 });

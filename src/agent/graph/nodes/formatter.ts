@@ -115,16 +115,19 @@ export async function formatterNode(
 
   // === Proactive mode: ask a question, don't answer ===
   if (state.isProactive) {
-    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
+    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'inspectional_followup' | 'highlight' | 'chapter';
+    const step = state.proactiveStep || 1;
     const ar = state.analysisResult || '';
     const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
-    callbacks?.onProgress?.(hasDiagram ? '图表已生成，准备引导...' : '思考中...');
-    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
+    const progressLabel = hasDiagram ? '图表已生成，准备引导...' : step > 1 ? '准备追问...' : '思考中...';
+    callbacks?.onProgress?.(progressLabel);
+    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram, step);
     let proactiveUserMsg = buildProactiveUserMessage({
       structuralAnalysis: state.structuralAnalysis || undefined,
       tocSummary: state.tocSummary || undefined,
       highlightContext: state.highlightContext || undefined,
       bookName: state.pdfName || '',
+      userReply: state.rewrittenQuery || undefined,
     });
     if (hasDiagram) {
       proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;

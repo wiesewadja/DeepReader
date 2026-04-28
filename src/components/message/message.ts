@@ -266,6 +266,8 @@ export interface MessageData {
 	letterState?: 'sealing' | 'sealed' | 'opened';
 	// 语音对话模式开关（由 sidebar-view 根据设置传入）
 	enableVoiceReply?: boolean;
+		/** 可选：是否为主动阅读引导消息 */
+		isProactiveGuidance?: boolean;
 }
 
 
@@ -1075,6 +1077,12 @@ export class AIMessage extends Message {
 			const badge = leftContainer.createEl('div', { cls: 'deeppdf-message-agent-badge' });
 			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>奚童`;
 
+
+				// 主动引导标签
+				if (this.data.isProactiveGuidance) {
+					const tag = leftContainer.createEl("span", { cls: "deeppdf-message-proactive-tag" });
+					tag.textContent = "阅读引导";
+				}
 			// 状态文本（Badge 正下方）
 			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
 			// 立即显示初始状态

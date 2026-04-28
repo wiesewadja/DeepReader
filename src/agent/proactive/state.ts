@@ -9,7 +9,7 @@ export function createEmptyState(bookId: string): ProactiveState {
   return {
     version: 1,
     bookId,
-    inspectionalDone: false,
+    inspectionalStep: 0,
     chapterTriggers: {},
     lastProactiveAt: null,
   };
@@ -45,8 +45,8 @@ export function markChapterTriggered(state: ProactiveState, chapterId: string): 
   };
 }
 
-export function markInspectionalDone(state: ProactiveState): ProactiveState {
-  return { ...state, inspectionalDone: true };
+export function setInspectionalStep(state: ProactiveState, step: number): ProactiveState {
+  return { ...state, inspectionalStep: step };
 }
 
 export function updateLastProactiveAt(state: ProactiveState): ProactiveState {
@@ -58,10 +58,14 @@ export function shouldTriggerInspectional(
   hasHistory: boolean,
   progressPercent: number,
 ): boolean {
-  if (state.inspectionalDone) return false;
+  if (state.inspectionalStep !== 0) return false;
   if (hasHistory) return false;
   if (progressPercent >= 10) return false;
   return true;
+}
+
+export function shouldFollowUp(state: ProactiveState): boolean {
+  return state.inspectionalStep > 0 && state.inspectionalStep < 3;
 }
 
 export function shouldTriggerChapter(
@@ -80,13 +84,22 @@ function getStateFilePath(baseDir: string, bookId: string): string {
   return path.join(baseDir, '.pageindex', bookId, 'proactive-state.json');
 }
 
+/** 兼容旧版 state（inspectionalDone → inspectionalStep） */
+function migrateState(raw: any): ProactiveState {
+  if ('inspectionalDone' in raw && !('inspectionalStep' in raw)) {
+    raw.inspectionalStep = raw.inspectionalDone ? 3 : 0;
+    delete raw.inspectionalDone;
+  }
+  return raw as ProactiveState;
+}
+
 export async function loadProactiveState(baseDir: string, bookId: string): Promise<ProactiveState | null> {
   const filePath = getStateFilePath(baseDir, bookId);
   try {
     const data = await fs.readFile(filePath, 'utf-8');
     const parsed = JSON.parse(data);
     if (parsed.version !== 1) return null;
-    return parsed as ProactiveState;
+    return migrateState(parsed);
   } catch {
     return null;
   }

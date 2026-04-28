@@ -4,9 +4,10 @@ import {
   createEmptyState,
   recordHighlight,
   markChapterTriggered,
-  markInspectionalDone,
+  setInspectionalStep,
   updateLastProactiveAt,
   shouldTriggerInspectional,
+  shouldFollowUp,
   shouldTriggerChapter,
   loadProactiveState,
   saveProactiveState,
@@ -52,12 +53,13 @@ export class ProactiveEngine {
     return elapsed < (this.settings.proactiveCooldownMinutes ?? 5) * 60 * 1000;
   }
 
-  /** 计算 trigger 后的新 state（不调用 onTrigger） */
   private prepareTriggerState(params: ProactiveParams, state: ProactiveState): ProactiveState {
     this.lastGlobalTriggerAt = Date.now();
     let next = updateLastProactiveAt(state);
     if (params.trigger === 'inspectional') {
-      next = markInspectionalDone(next);
+      next = setInspectionalStep(next, 1);
+    } else if (params.trigger === 'inspectional_followup' && params.step) {
+      next = setInspectionalStep(next, params.step);
     } else if (params.chapterId) {
       next = markChapterTriggered(next, params.chapterId);
     }
@@ -72,7 +74,7 @@ export class ProactiveEngine {
     if (!shouldTriggerInspectional(state, hasHistory, progressPercent)) return;
     if (this.isInCooldown()) return;
 
-    const params: ProactiveParams = { trigger: 'inspectional', bookId };
+    const params: ProactiveParams = { trigger: 'inspectional', bookId, step: 1 };
     const next = this.prepareTriggerState(params, state);
     await this.persistState(next);
     this.onTrigger(params);
@@ -86,7 +88,6 @@ export class ProactiveEngine {
     state = recordHighlight(state, chapterId, content);
     await this.persistState(state);
 
-    // 条件 B：章节内累积 >= 3 条划线
     const trigger = state.chapterTriggers[chapterId];
     if (trigger && !trigger.triggered && trigger.highlightCount >= 3 && !this.isInCooldown()) {
       const params: ProactiveParams = {
@@ -121,11 +122,24 @@ export class ProactiveEngine {
   }
 
   onChapterEnter(_bookId: string, _chapterId: string): void {
-    // 预留：当前不需要在进入章节时做任何事
+    // 预留
   }
 
-  onUserMessage(): void {
-    // 预留：冷却计时豁免（第二期实现）
+  /** 用户发消息时检查是否需要 follow-up。冷却豁免 */
+  checkFollowUp(bookId: string): ProactiveParams | null {
+    if (!this.settings.proactiveGuidanceEnabled) return null;
+    const state = this.states.get(bookId);
+    if (!state || !shouldFollowUp(state)) return null;
+    const nextStep = state.inspectionalStep + 1;
+    return { trigger: 'inspectional_followup', bookId, step: nextStep };
+  }
+
+  /** 执行 follow-up：更新 state + 调用 onTrigger，跳过冷却 */
+  async executeFollowUp(params: ProactiveParams): Promise<void> {
+    const state = await this.getState(params.bookId);
+    const next = this.prepareTriggerState(params, state);
+    await this.persistState(next);
+    this.onTrigger(params);
   }
 
   setProcessing(value: boolean): void {

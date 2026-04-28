@@ -1121,6 +1121,31 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             text: '提示：关闭后，打开章节文件将使用普通编辑模式，启用后则进入沉浸式阅读模式。',
             cls: 'setting-item-description'
         });
+
+        // === 主动阅读引导 ===
+        container.createEl('h3', { text: '主动阅读引导' });
+
+        new Setting(container)
+            .setName("启用主动引导")
+            .setDesc("打开新书时，奚童会主动提出结构化问题，帮助你快速建立对书籍的整体理解")
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.proactiveGuidanceEnabled)
+                .onChange(async (value) => {
+                    this.plugin.settings.proactiveGuidanceEnabled = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(container)
+            .setName("引导冷却时间")
+            .setDesc("两次主动引导之间的最小间隔（分钟）")
+            .addSlider(slider => slider
+                .setLimits(1, 30, 1)
+                .setValue(this.plugin.settings.proactiveCooldownMinutes)
+                .setDynamicTooltip()
+                .onChange(async (value) => {
+                    this.plugin.settings.proactiveCooldownMinutes = value;
+                    await this.plugin.saveSettings();
+                }));
     }
 
 }

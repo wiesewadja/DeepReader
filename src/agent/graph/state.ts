@@ -52,6 +52,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // === Proactive guidance ===
   isProactive: Annotation<boolean>(),
   proactiveTrigger: Annotation<string>(),
+  proactiveStep: Annotation<number>(),
   highlightContext: Annotation<string[]>(),
 });
 

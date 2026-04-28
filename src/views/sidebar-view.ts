@@ -112,6 +112,7 @@ export class SidebarView extends ItemView {
     // 主动阅读引导
     private currentChapterId: string | null = null;
     private proactiveEngine: import("../agent/proactive/engine.js").ProactiveEngine | null = null;
+    private pendingFollowUp: import("../agent/proactive/types.js").ProactiveParams | null = null;
 
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
     private currentDocDescription: string | null = null;
@@ -139,79 +140,7 @@ export class SidebarView extends ItemView {
             this.app,
             this.plugin,
             async (params) => {
-                if (!this.frontendAgent || !this.messageList) return;
-                this.proactiveEngine?.setProcessing(true);
-                let aiMessageId = `proactive-${Date.now()}`;
-                try {
-                    const aiMessageData: MessageData = {
-                        id: aiMessageId,
-                        role: "assistant" as MessageRole,
-                        content: "",
-                        timestamp: new Date().toISOString(),
-                        isStreaming: true,
-                        isAgentMessage: true,
-                        currentStatus: '思考中...',
-                        pdfName: this.currentPdfName || undefined,
-                        conversationId: this.sessionId || undefined,
-                        bookCoverUrl: this.currentBookCoverUrl || undefined,
-                        bookAuthor: this.currentBookAuthor || undefined,
-                    };
-                    this.messageList.addMessage(aiMessageData);
-
-                    const activeFile = this.app.workspace.getActiveFile();
-                    let currentNodeId: string | undefined;
-                    if (activeFile) {
-                        const cache = this.app.metadataCache.getFileCache(activeFile);
-                        const rawNodeId = cache?.frontmatter?.node_id;
-                        if (rawNodeId) currentNodeId = String(rawNodeId);
-                    }
-
-                    const context: ToolContext = {
-                        indexId: this.currentIndexId || '',
-                        pdfName: this.currentPdfName || '未知文档',
-                        markdownFiles: this.currentMarkdownFiles,
-                        app: this.app,
-                        plugin: this.plugin,
-                        currentNodeId,
-                        documentMetadata: { title: this.currentPdfName || '未知文档' },
-                    };
-
-                    const callbacks = {
-                        onContent: (content: string) => {
-                            this.messageList?.updateMessage(aiMessageId, { content });
-                        },
-                        onProgress: (msg: string) => {
-                            this.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
-                        },
-                        onComplete: () => {},
-                        onError: (msg: string) => {
-                            this.messageList?.updateMessage(aiMessageId, {
-                                isStreaming: false,
-                                content: `引导生成失败: ${msg}`,
-                            });
-                        },
-                    };
-                    const result = await this.frontendAgent.runProactiveGuidance(
-                        context, callbacks, this.agentChatHistory, params,
-                    );
-                    const assistantContent = result.messages[0]?.content || '';
-                    this.agentChatHistory = [
-                        ...this.agentChatHistory,
-                        { role: 'assistant', content: assistantContent },
-                    ];
-                    this.messageList?.updateMessage(aiMessageId, {
-                        isStreaming: false,
-                        content: assistantContent,
-                    });
-                } catch (err) {
-                    logError('[DeepPDF] 主动引导生成失败:', err);
-                    this.messageList?.updateMessage(aiMessageId!, {
-                        isStreaming: false,
-                        content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
-                    });
-                } finally {
-                    this.proactiveEngine?.setProcessing(false);
-                }
+                await this.executeProactiveGuidance(params);
             },
         );
     }
@@ -2283,6 +2212,86 @@ export class SidebarView extends ItemView {
     // ==================== 消息处理 ====================
 
     /**
+     * 执行主动引导（提取自 onTrigger 回调，供初始触发和 follow-up 复用）
+     */
+    private async executeProactiveGuidance(params: import("../agent/proactive/types.js").ProactiveParams): Promise<void> {
+        if (!this.frontendAgent || !this.messageList) return;
+        this.proactiveEngine?.setProcessing(true);
+        const aiMessageId = `proactive-${Date.now()}`;
+        try {
+            const aiMessageData: MessageData = {
+                id: aiMessageId,
+                role: "assistant" as MessageRole,
+                content: "",
+                timestamp: new Date().toISOString(),
+                isStreaming: true,
+                isAgentMessage: true,
+                currentStatus: '思考中...',
+                pdfName: this.currentPdfName || undefined,
+                conversationId: this.sessionId || undefined,
+                bookCoverUrl: this.currentBookCoverUrl || undefined,
+                bookAuthor: this.currentBookAuthor || undefined,
+                isProactiveGuidance: true,
+            };
+            this.messageList.addMessage(aiMessageData);
+
+            const activeFile = this.app.workspace.getActiveFile();
+            let currentNodeId: string | undefined;
+            if (activeFile) {
+                const cache = this.app.metadataCache.getFileCache(activeFile);
+                const rawNodeId = cache?.frontmatter?.node_id;
+                if (rawNodeId) currentNodeId = String(rawNodeId);
+            }
+
+            const context: ToolContext = {
+                indexId: this.currentIndexId || '',
+                pdfName: this.currentPdfName || '未知文档',
+                markdownFiles: this.currentMarkdownFiles,
+                app: this.app,
+                plugin: this.plugin,
+                currentNodeId,
+                documentMetadata: { title: this.currentPdfName || '未知文档' },
+            };
+
+            const callbacks = {
+                onContent: (content: string) => {
+                    this.messageList?.updateMessage(aiMessageId, { content });
+                },
+                onProgress: (msg: string) => {
+                    this.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
+                },
+                onComplete: () => {},
+                onError: (msg: string) => {
+                    this.messageList?.updateMessage(aiMessageId, {
+                        isStreaming: false,
+                        content: `引导生成失败: ${msg}`,
+                    });
+                },
+            };
+            const result = await this.frontendAgent.runProactiveGuidance(
+                context, callbacks, this.agentChatHistory, params,
+            );
+            const assistantContent = result.messages[0]?.content || '';
+            this.agentChatHistory = [
+                ...this.agentChatHistory,
+                { role: 'assistant', content: assistantContent },
+            ];
+            this.messageList?.updateMessage(aiMessageId, {
+                isStreaming: false,
+                content: assistantContent,
+            });
+        } catch (err) {
+            logError('[DeepPDF] 主动引导生成失败:', err);
+            this.messageList?.updateMessage(aiMessageId, {
+                isStreaming: false,
+                content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
+            });
+        } finally {
+            this.proactiveEngine?.setProcessing(false);
+        }
+    }
+
+    /**
      * 公开方法：从外部发送消息（用于调试）
      * @param message 用户消息内容
      */
@@ -2298,7 +2307,8 @@ export class SidebarView extends ItemView {
      * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
      */
     private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
-        this.proactiveEngine?.onUserMessage();
+        // 检查是否需要检视引导 follow-up
+        this.pendingFollowUp = this.proactiveEngine?.checkFollowUp(this.currentIndexId || "") ?? null;
 
         // 允许只有引用没有文本的情况
         if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
@@ -2879,6 +2889,18 @@ export class SidebarView extends ItemView {
                 this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
             }
             await this.saveToCache();
+
+            // 双消息模式：正常响应完成后，检查是否需要检视引导 follow-up
+            if (this.pendingFollowUp) {
+                const followUp = this.pendingFollowUp;
+                this.pendingFollowUp = null;
+                followUp.userReply = userMessage;
+                try {
+                    await this.executeProactiveGuidance(followUp);
+                } catch (e) {
+                    logError('[DeepPDF] 主动引导 follow-up 失败:', e);
+                }
+            }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
