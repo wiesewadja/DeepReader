@@ -19,7 +19,7 @@ import {
   fixIncorrectToc,
   type TreeOptions,
 } from "./core/tree";
-import { convertPhysicalIndexToInt, removeFields, countTokens } from "./core/utils";
+import { convertPhysicalIndexToInt, removeFields, countTokens, structureToList } from "./core/utils";
 import { log as piLog } from "./core/logger";
 import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMode, ProgressInfo } from "./core/types";
 
@@ -736,6 +736,19 @@ export class PageIndex {
     piLog(`[EPUB Mode] Built ${tocItems.length} TOC items from chapter structure`);
 
     const tree = buildTree(tocItems, endPhysicalIndex, epubOptions);
+
+    // EPUB: re-index nodeId from 1-based to match exportToObsidian's buildEpubTree
+    // which uses String(i + 1).padStart(4, "0"). Without this, enrichNode in
+    // book-indexer.ts matches wrong nodes (parseResult 0000 ↔ hierarchicalTree 0001).
+    {
+      const flatNodes = structureToList(tree);
+      for (const node of flatNodes) {
+        if (node.nodeId) {
+          const oldNum = parseInt(node.nodeId, 10);
+          node.nodeId = String(oldNum + 1).padStart(4, "0");
+        }
+      }
+    }
 
     // Add node text if requested
     if (epubOptions.addNodeText || epubOptions.addNodeSummary) {
