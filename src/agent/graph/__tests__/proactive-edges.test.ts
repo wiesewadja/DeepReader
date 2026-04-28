@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { routeFromStart, routeByDepth, routeAfterInspectional } from '../edges';
 
 describe('proactive edge routing', () => {
@@ -19,14 +19,37 @@ describe('proactive edge routing', () => {
     });
   });
 
-  describe('routeAfterInspectional — proactive', () => {
-    it('routes to done when isProactive=true', () => {
-      const state = { isProactive: true, depth: 1, structuralAnalysis: '...' } as any;
+  describe('routeAfterInspectional — proactive + visualizer', () => {
+    afterEach(() => {
+      delete (globalThis as any).ExcalidrawAutomate;
+    });
+
+    it('routes to visualizer for inspectional when Excalidraw available', () => {
+      (globalThis as any).ExcalidrawAutomate = {};
+      const state = { isProactive: true, proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
+      expect(routeAfterInspectional(state)).toBe('visualizer');
+    });
+
+    it('routes to done for inspectional when Excalidraw not available', () => {
+      const state = { isProactive: true, proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
     });
 
-    it('routes to done even at depth=2 when isProactive=true', () => {
-      const state = { isProactive: true, depth: 2 } as any;
+    it('routes to done for highlight trigger even with Excalidraw', () => {
+      (globalThis as any).ExcalidrawAutomate = {};
+      const state = { isProactive: true, proactiveTrigger: 'highlight', depth: 1 } as any;
+      expect(routeAfterInspectional(state)).toBe('done');
+    });
+
+    it('routes to done for chapter trigger even with Excalidraw', () => {
+      (globalThis as any).ExcalidrawAutomate = {};
+      const state = { isProactive: true, proactiveTrigger: 'chapter', depth: 1 } as any;
+      expect(routeAfterInspectional(state)).toBe('done');
+    });
+
+    it('routes to done when proactiveTrigger is undefined', () => {
+      (globalThis as any).ExcalidrawAutomate = {};
+      const state = { isProactive: true, depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
     });
   });

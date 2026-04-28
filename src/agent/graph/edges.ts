@@ -35,8 +35,15 @@ export function routeByDepth(state: CognitiveEngineState): string {
  * - depth=2 → S2 (analytical)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
-  // Proactive: skip S2/S3/visualizer, go straight to formatter
-  if (state.isProactive) return 'done';
+  // Proactive: inspectional + Excalidraw → visualizer; otherwise → formatter
+  if (state.isProactive) {
+    if (state.proactiveTrigger === 'inspectional'
+        && typeof window !== 'undefined'
+        && (window as any).ExcalidrawAutomate) {
+      return 'visualizer';
+    }
+    return 'done';
+  }
 
   if (state.depth === 3) {
     return 'syntopical';

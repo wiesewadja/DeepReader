@@ -116,14 +116,19 @@ export async function formatterNode(
   // === Proactive mode: ask a question, don't answer ===
   if (state.isProactive) {
     const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
-    callbacks?.onProgress?.('思考中...');
-    const proactivePrompt = buildProactiveSystemPrompt(trigger);
-    const proactiveUserMsg = buildProactiveUserMessage({
+    const ar = state.analysisResult || '';
+    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
+    callbacks?.onProgress?.(hasDiagram ? '图表已生成，准备引导...' : '思考中...');
+    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
+    let proactiveUserMsg = buildProactiveUserMessage({
       structuralAnalysis: state.structuralAnalysis || undefined,
       tocSummary: state.tocSummary || undefined,
       highlightContext: state.highlightContext || undefined,
       bookName: state.pdfName || '',
     });
+    if (hasDiagram) {
+      proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
+    }
     const stream = await mainModel.stream([
       new SystemMessage(proactivePrompt),
       new HumanMessage(proactiveUserMsg),
@@ -137,7 +142,7 @@ export async function formatterNode(
       }
     }
 
-    return { formattedOutput: stripThinkTags(content) };
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
 
   // === Casual mode (depth=0): simple direct response ===
