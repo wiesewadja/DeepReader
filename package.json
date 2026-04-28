@@ -1,7 +1,7 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.04.27",
-  "description": "DeepReader - 深度阅读插件",
+  "version": "2026.04.28",
+  "description": "奚童 - 深度阅读AI助理",
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -23,7 +23,7 @@
     "knowledge",
     "search"
   ],
-  "author": "DeepReader Team",
+  "author": "昭见森",
   "license": "MIT",
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
