@@ -212,6 +212,14 @@ export class SidebarView extends ItemView {
                 }
             }
 
+            // 4. 删除该书的对话记录
+            if (this.sessionStore) {
+                const session = await this.sessionStore.findSessionByIndexId(indexId);
+                if (session) {
+                    await this.sessionStore.delete(session.sessionId);
+                }
+            }
+
             new Notice("索引已删除");
             
             await this.loadIndexes();
