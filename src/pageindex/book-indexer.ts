@@ -252,16 +252,20 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
     } else {
       const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
-      const exportResult = await exportToObsidian(options.filePath, {
-        outputDir: deepReaderDir,
-        includeIndex: DEFAULT_INCLUDE_INDEX,
-        assetsPath: DEFAULT_ASSETS_PATH,
-        docDescription: parseResult.docDescription,
-        nodeSummaries: collectNodeSummaries(parseResult.structure),
-        exportName,
-        coverPath: coverRelPath || undefined,
-        bookId,
-      });
+      const exportResult = await exportToObsidian(
+        options.filePath,
+        {
+          outputDir: deepReaderDir,
+          includeIndex: DEFAULT_INCLUDE_INDEX,
+          assetsPath: DEFAULT_ASSETS_PATH,
+          docDescription: parseResult.docDescription,
+          nodeSummaries: collectNodeSummaries(parseResult.structure),
+          exportName,
+          coverPath: coverRelPath || undefined,
+          bookId,
+        },
+        parseResult.epubInfo,  // reuse parsed epubInfo instead of re-parsing
+      );
       (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
       (parseResult as any)._hierarchicalTree = exportResult.treeNodes;
     }
@@ -311,21 +315,29 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     let finalStructure = parseResult.structure;
 
     if (hierarchicalTree && hierarchicalTree.length > 0) {
-      // Build nodeId → {summary, text} map from flat parseResult
-      const summaryMap = new Map<string, { summary?: string; text?: string }>();
+      // Build nodeId → full node data map from flat parseResult
+      // parseResult has correct startIndex/endIndex/text from addNodeText()
+      const summaryMap = new Map<string, { summary?: string; text?: string; startIndex?: number; endIndex?: number }>();
       for (const node of parseResult.structure || []) {
         if (node.nodeId) {
-          summaryMap.set(node.nodeId, { summary: node.summary, text: node.text });
+          summaryMap.set(node.nodeId, {
+            summary: node.summary,
+            text: node.text,
+            startIndex: node.startIndex,
+            endIndex: node.endIndex,
+          });
         }
       }
-      // Merge summaries into hierarchical tree, only keep TreeNode fields
+      // Merge parseResult data into hierarchical tree, only keep TreeNode fields
       const enrichNode = (n: any): any => {
         const data = summaryMap.get(n.nodeId);
         const result: any = {
           title: n.title,
           nodeId: n.nodeId,
-          startIndex: n.startIndex,
-          endIndex: n.endIndex,
+          // Prefer parseResult's startIndex/endIndex (1-based, correct page range)
+          // over hierarchicalTree's (0-based, single-page)
+          startIndex: data?.startIndex ?? n.startIndex,
+          endIndex: data?.endIndex ?? n.endIndex,
         };
         if (data?.summary || n.summary) result.summary = data?.summary || n.summary;
         if (data?.text || n.text) result.text = data?.text || n.text;

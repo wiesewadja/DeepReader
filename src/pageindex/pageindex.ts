@@ -792,6 +792,7 @@ export class PageIndex {
       author: epubInfo.author,
       structure: finalStructure,
       coverImage: epubInfo.coverImage,
+      epubInfo,
     };
   }
   async processEpubPages(pages: PdfPage[], docName: string): Promise<PageIndexResult> {

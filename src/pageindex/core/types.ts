@@ -94,6 +94,8 @@ export interface PageIndexResult {
   coverImage?: { name: string; data: Buffer; mediaType: string };
   /** First page rendered as PNG (PDF) */
   coverPng?: Buffer;
+  /** Raw EPUB info for reuse by exporters (avoids re-parsing) */
+  epubInfo?: import("../parsers/epub").EpubInfo;
 }
 
 export interface TocItem {
