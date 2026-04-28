@@ -534,31 +534,49 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     const result = extractTextFromHTMLWithBlocks(html, order);
 
     // Extract chapter title
-    // Strategy: 1) Try <h1>-<h6> tags (strip inner HTML tags), 2) Fall back to first non-empty line of markdown
+    // Strategy: 1) Try <h1> first, then <h2>, etc. (strip inner HTML tags),
+    //           2) Fall back to first non-empty line of markdown
     // Use [\s\S]*? to match content with nested tags, then strip HTML to get plain text
-    const headingMatches = html.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi);
+    // Kobo EPUBs often have h1 as chapter title and h5/h6 as sub-sections within the same
+    // XHTML file. We must NOT pick sub-section headings as the chapter title.
     let chapterTitle: string;
+    const headingLevelMatches = html.match(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi);
 
-    if (headingMatches && headingMatches.length > 0) {
-      // Collect all heading texts, pick the most descriptive one
-      const headingTexts = headingMatches
-        .map(m => cleanTitle(m.replace(/<[^>]+>/g, "").trim()))
-        .filter(t => t.length > 0);
-
-      // Prefer the longest heading (usually the descriptive subtitle, not just "第N章")
-      if (headingTexts.length > 1) {
-        // If one heading is short (like "第N章") and another is longer, prefer the longer
-        const longest = headingTexts.reduce((a, b) => a.length >= b.length ? a : b);
-        const shortest = headingTexts.reduce((a, b) => a.length <= b.length ? a : b);
-        // Combine if they're different: "第1章 没有人真的对钱失去理智"
-        if (shortest !== longest && shortest.length <= 5) {
-          chapterTitle = `${shortest} ${longest}`;
-        } else {
-          chapterTitle = longest;
+    if (headingLevelMatches && headingLevelMatches.length > 0) {
+      // Group by heading level to prefer higher-level headings (h1 > h2 > ...)
+      const byLevel: Record<string, string[]> = {};
+      for (const m of headingLevelMatches) {
+        const levelMatch = m.match(/^<h([1-6])/i);
+        const level = levelMatch ? levelMatch[1] : "6";
+        const text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+        if (text.length > 0) {
+          if (!byLevel[level]) byLevel[level] = [];
+          byLevel[level].push(text);
         }
-      } else {
-        chapterTitle = headingTexts[0] || `Chapter ${order + 1}`;
       }
+
+      // Pick the first available level (h1 -> h2 -> ...)
+      let pickedTitle = "";
+      for (let lvl = 1; lvl <= 6; lvl++) {
+        const texts = byLevel[String(lvl)];
+        if (texts && texts.length > 0) {
+          // If multiple headings at same level, use the first one (usually the chapter title)
+          // or combine short + long if first is very short (e.g. "第1章" + "标题")
+          if (texts.length > 1) {
+            const first = texts[0];
+            const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
+            if (first !== longest && first.length <= 5 && longest.length > first.length) {
+              pickedTitle = `${first} ${longest}`;
+            } else {
+              pickedTitle = first;
+            }
+          } else {
+            pickedTitle = texts[0];
+          }
+          break;
+        }
+      }
+      chapterTitle = pickedTitle || `Chapter ${order + 1}`;
     } else {
       // No heading tag: use first non-empty line of markdown as title
       const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
