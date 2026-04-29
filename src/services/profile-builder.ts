@@ -517,9 +517,15 @@ export class ProfileBuilder {
 		const dir = this.settings.journalDir;
 		if (!dir) throw new Error('未配置笔记目录');
 
-		const folder = this.vault.getAbstractFileByPath(dir);
+		let folder = this.vault.getAbstractFileByPath(dir);
 		if (!folder || !(folder instanceof TFolder)) {
-			throw new Error(`目录 "${dir}" 不存在`);
+			// vault 索引可能未就绪，用 adapter 二次确认
+			if (await this.vault.adapter.exists(dir)) {
+				folder = this.vault.getAbstractFileByPath(dir);
+			}
+			if (!folder || !(folder instanceof TFolder)) {
+				throw new Error(`目录 "${dir}" 不存在`);
+			}
 		}
 
 		this.isBuilding = true;

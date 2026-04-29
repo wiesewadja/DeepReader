@@ -474,7 +474,11 @@ export class SidebarView extends ItemView {
                     role: msg.role as MessageRole,
                     content: msg.content || '',
                     timestamp: msg.timestamp || new Date().toISOString(),
-                    isAgentMessage: msg.role === 'assistant'
+                    isAgentMessage: msg.role === 'assistant',
+                    pdfName: this.currentPdfName || undefined,
+                    conversationId: this.sessionId || undefined,
+                    bookCoverUrl: this.currentBookCoverUrl || undefined,
+                    bookAuthor: this.currentBookAuthor || undefined,
                 };
                 if (msg.role === 'user') {
                     lastUserContent = msg.content || '';
@@ -894,6 +898,9 @@ export class SidebarView extends ItemView {
             log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
             // 即使跳过切换，也要确保阅读进度已初始化
             if (!this.readingProgress) {
+                if (!this.proactiveEngine) {
+                    await this.initializeFrontendAgent();
+                }
                 await this.initReadingProgress(indexId);
             }
             // 同步最新的书名到 topbar（用户可能重命名了书籍）
@@ -1015,6 +1022,11 @@ export class SidebarView extends ItemView {
         // 更新 UI
         this.messageList?.setCurrentPdfName(displayName);
         this.readingTopbar?.setCurrentBook(displayName, author);
+
+        // 确保 proactiveEngine 在 initReadingProgress 之前初始化
+        if (!this.proactiveEngine) {
+            await this.initializeFrontendAgent();
+        }
 
         // 初始化阅读进度
         await this.initReadingProgress(indexId);

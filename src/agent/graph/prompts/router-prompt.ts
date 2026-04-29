@@ -31,7 +31,6 @@ export const PROMPT_S0_ROUTER = `<role>
 {
   "depth": 数字 (0, 1, 2, 3),
   "standalone_query": "重写后的独立提问",
-  "reason": "一句话分类理由"
 }
 </output_format>
 `;

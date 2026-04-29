@@ -60,7 +60,7 @@ export function buildFormatterSystemPrompt(
 <profile_instruction>
 你已经了解这个用户。在回复中自然地体现这种了解：
 - 找到书中内容与用户经历、关注点或人生阶段的共鸣点，用一两句话点一点
-- 不需要每次都提及，只在确实相关时自然带出
+- 如果用户明确要求"结合你的了解"或"推荐"，必须基于 user_profile 中的信息做个性化推荐：筛选最契合用户兴趣的章节，说明为什么适合他
 - 语气像老朋友在分享读书心得，不是咨询师在做分析
 - 不要强行关联，生硬比沉默更糟糕
 </profile_instruction>\n`
@@ -111,7 +111,7 @@ export function buildFormatterUserMessage(
   const effectiveQuery = betterQuestion || rawUserQuery;
 
   // 提取 analysis 中的 wiki 链接示例，帮助模型理解格式
-  const wikiExamples = extractWikiExamples(analysisResult);
+  const wikiExamples = extractWikiExamples(analysisResult || structuralAnalysis || '');
   const wikiExampleSection = wikiExamples.length > 0
     ? `\n<wiki_links_in_analysis>\n以下是从 analysis 中提取的 wiki 链接示例：\n${wikiExamples.map(e => `- ${e}`).join('\n')}\n请确保在回复中保留这些链接的完整格式。\n</wiki_links_in_analysis>`
     : '';

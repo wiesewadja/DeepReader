@@ -1207,7 +1207,7 @@ export class AIMessage extends Message {
 
 		// 设置文字选中监听（仅对非流式消息）
 		if (!this.data.isStreaming) {
-			const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+			const contentEl = container.querySelector('.deeppdf-message-content') as HTMLElement;
 				if (contentEl) this.setupSelectionListener(contentEl);
 		}
 

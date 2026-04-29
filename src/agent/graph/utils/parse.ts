@@ -11,6 +11,11 @@ export function extractJSON(text: string): Record<string, any> | null {
   if (braceMatch) {
     try { return JSON.parse(braceMatch[0]); } catch { /* fall through */ }
   }
+  // Fallback: truncated JSON — try closing with } and parse
+  if (text.includes('{')) {
+    const repaired = text.replace(/[\s,]*$/, '') + '\n}';
+    try { return JSON.parse(repaired); } catch { /* fall through */ }
+  }
   return null;
 }
 
