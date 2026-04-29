@@ -79,7 +79,7 @@ export function createChatModels(main: ModelConfig, fast?: ModelConfig): ChatMod
       apiKey: fast.apiKey || undefined,
       configuration: fast.baseUrl ? { baseURL: fast.baseUrl, fetch: corsSafeFetch } : { fetch: corsSafeFetch },
       model: fast.model || 'deepseek-chat',
-      streaming: true,
+      streaming: false,
       temperature: 0.1,
       modelKwargs: fastKwargs,
     });

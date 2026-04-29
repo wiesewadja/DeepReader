@@ -19,18 +19,40 @@ import { analyticalNode } from './nodes/analytical';
 import { syntopicalNode } from './nodes/syntopical';
 import { visualizerNode } from './nodes/visualizer';
 import { formatterNode } from './nodes/formatter';
-import { socraticFilterNode } from './nodes/socratic-filter';
 import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
+import { safeNode } from './utils/safe-node.js';
+
+// S1 fallback: empty data with error flag — downstream checks nodeErrors to detect failure
+const safeInspectional = safeNode('inspectional', inspectionalNode, (state) => ({
+  scopeNodeIds: [],
+  tocSummary: '',
+  betterQuestion: state.rewrittenQuery,
+  structuralAnalysis: '',
+  suggestedKeywords: [],
+}));
+
+// S2 fallback: empty analysis — formatter will handle gracefully
+const safeAnalytical = safeNode('analytical', analyticalNode, () => ({
+  analysisResult: '',
+  toolResultsSnapshot: [],
+}));
+
+// S4 fallback: last resort — show raw query result or error message
+const safeFormatter = safeNode('formatter', formatterNode, (state) => ({
+  formattedOutput: state.analysisResult || state.rewrittenQuery || '抱歉，处理您的请求时遇到了问题，请重试。',
+}));
 
 // Build the graph
 const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addNode('router', routerNode)
-  .addNode('inspectional', inspectionalNode)
-  .addNode('analytical', analyticalNode)
-  .addNode('syntopical', syntopicalNode)
+  .addNode('inspectional', safeInspectional)
+  .addNode('analytical', safeAnalytical)
+  .addNode('syntopical', safeNode('syntopical', syntopicalNode, () => ({
+    analysisResult: '',
+    toolResultsSnapshot: [],
+  })))
   .addNode('visualizer', visualizerNode)
-  .addNode('formatter', formatterNode)
-  .addNode('socratic', socraticFilterNode)
+  .addNode('formatter', safeFormatter)
   .addConditionalEdges(START, routeFromStart, {
     router: 'router',
     inspectional: 'inspectional',
@@ -47,15 +69,12 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   })
   .addConditionalEdges('analytical', routeAfterAnalysis, {
     visualizer: 'visualizer',
-    socratic: 'socratic',
     formatter: 'formatter',
   })
   .addConditionalEdges('syntopical', routeAfterAnalysis, {
     visualizer: 'visualizer',
-    socratic: 'socratic',
     formatter: 'formatter',
   })
-  .addEdge('socratic', 'formatter')
   .addEdge('visualizer', 'formatter')
   .addEdge('formatter', END);
 

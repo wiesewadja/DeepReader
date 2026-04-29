@@ -19,6 +19,8 @@ import { stripThinkTags } from '../../../config/thinking-models.js';
 import {
   buildProactiveSystemPrompt,
   buildProactiveUserMessage,
+  buildSocraticDialoguePrompt,
+  buildSocraticDialogueUserMessage,
 } from '../prompts/proactive-formatter-prompt';
 
 /**
@@ -115,19 +117,17 @@ export async function formatterNode(
 
   // === Proactive mode: ask a question, don't answer ===
   if (state.isProactive) {
-    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'inspectional_followup' | 'highlight' | 'chapter';
-    const step = state.proactiveStep || 1;
+    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = state.analysisResult || '';
     const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
-    const progressLabel = hasDiagram ? '图表已生成，准备引导...' : step > 1 ? '准备追问...' : '思考中...';
+    const progressLabel = hasDiagram ? '图表已生成，准备引导...' : '思考引导问题...';
     callbacks?.onProgress?.(progressLabel);
-    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram, step);
+    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
     let proactiveUserMsg = buildProactiveUserMessage({
       structuralAnalysis: state.structuralAnalysis || undefined,
       tocSummary: state.tocSummary || undefined,
       highlightContext: state.highlightContext || undefined,
       bookName: state.pdfName || '',
-      userReply: state.rewrittenQuery || undefined,
     });
     if (hasDiagram) {
       proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
@@ -135,6 +135,31 @@ export async function formatterNode(
     const stream = await mainModel.stream([
       new SystemMessage(proactivePrompt),
       new HumanMessage(proactiveUserMsg),
+    ], config);
+
+    let content = '';
+    for await (const chunk of stream) {
+      if (typeof chunk.content === 'string') {
+        content += chunk.content;
+        callbacks?.onContent?.(content);
+      }
+    }
+
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
+  }
+
+  // === Socratic dialogue: respond + follow-up using chatHistory ===
+  if (state.isSocratic) {
+    callbacks?.onProgress?.('正在思考...');
+    const chatHistory = ctx?.chatHistory ?? [];
+    const socraticPrompt = buildSocraticDialoguePrompt();
+    const socraticUserMsg = buildSocraticDialogueUserMessage(
+      state.rewrittenQuery || '',
+      chatHistory,
+    );
+    const stream = await mainModel.stream([
+      new SystemMessage(socraticPrompt),
+      new HumanMessage(socraticUserMsg),
     ], config);
 
     let content = '';
@@ -177,8 +202,7 @@ export async function formatterNode(
     const diagramPrompt = `你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
 你刚帮用户${diagramSuccess ? '生成了一张可视化图表' : '尝试生成图表但遇到了问题'}。用 1-2 句话简短告诉用户结果，自然亲切，像朋友之间说话。
 ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件。'}
-不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。
-如果图表结果中包含 [[...]] 格式的链接，必须原样保留，这是用户可以直接点击打开的链接。`
+不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。`
 
     const stream = await mainModel.stream([
       new SystemMessage(diagramPrompt),
@@ -191,7 +215,17 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
         callbacks?.onContent?.(content);
       }
     }
-    return { formattedOutput: stripThinkTags(content) };
+    content = stripThinkTags(content);
+
+    // Ensure the chart link is in the output (LLM may omit it)
+    if (diagramSuccess && !content.includes('[[')) {
+      const linkMatch = ar.match(/\[\[[^\]]+\]\]/);
+      if (linkMatch) {
+        content = `${content}\n\n${linkMatch[0]}`;
+      }
+    }
+
+    return { formattedOutput: content };
   }
 
   // === Normal mode (depth >= 1): format with full context ===

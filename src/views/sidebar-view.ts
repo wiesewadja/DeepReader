@@ -75,6 +75,7 @@ export class SidebarView extends ItemView {
     private sessionId: string | null = null;  // 会话ID，用于多轮对话
     private streamController: AbortController | null = null;  // 流式请求控制器
     private isAiStreaming: boolean = false;  // AI 是否正在流式输出
+    private proactiveAbortController: AbortController | null = null;  // proactive 引导的取消控制器
     private crossBookMode: boolean = false;  // 跨书籍模式开关
     private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
@@ -112,7 +113,6 @@ export class SidebarView extends ItemView {
     // 主动阅读引导
     private currentChapterId: string | null = null;
     private proactiveEngine: import("../agent/proactive/engine.js").ProactiveEngine | null = null;
-    private pendingFollowUp: import("../agent/proactive/types.js").ProactiveParams | null = null;
 
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
     private currentDocDescription: string | null = null;
@@ -2240,8 +2240,13 @@ export class SidebarView extends ItemView {
      */
     private async executeProactiveGuidance(params: import("../agent/proactive/types.js").ProactiveParams): Promise<void> {
         if (!this.frontendAgent || !this.messageList) return;
+        // Guard: don't fire while a normal query is running (race condition)
+        if (this.isProcessing || this.isAiStreaming) return;
         this.proactiveEngine?.setProcessing(true);
+        this.isProcessing = true;
         const aiMessageId = `proactive-${Date.now()}`;
+        // AbortController for cancellable proactive execution (class field so sendMessage can cancel it)
+        this.proactiveAbortController = new AbortController();
         try {
             const aiMessageData: MessageData = {
                 id: aiMessageId,
@@ -2275,6 +2280,8 @@ export class SidebarView extends ItemView {
                 plugin: this.plugin,
                 currentNodeId,
                 documentMetadata: { title: this.currentPdfName || '未知文档' },
+                docDescription: this.currentDocDescription || undefined,
+                isProactive: true,
             };
 
             const callbacks = {
@@ -2291,19 +2298,55 @@ export class SidebarView extends ItemView {
                         content: `引导生成失败: ${msg}`,
                     });
                 },
+                abortSignal: this.proactiveAbortController!.signal,
             };
-            const result = await this.frontendAgent.runProactiveGuidance(
-                context, callbacks, this.agentChatHistory, params,
+
+            // Build a synthetic user message that triggers normal conversation flow
+            let syntheticMessage: string;
+            if (params.trigger === 'inspectional') {
+                syntheticMessage = '[系统触发：用户刚打开这本书，请做检视阅读引导]';
+            } else if (params.trigger === 'highlight' && params.highlightContext?.length) {
+                syntheticMessage = `我在阅读时划了这些内容：\n${params.highlightContext.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
+            } else if (params.trigger === 'chapter' && params.highlightContext?.length) {
+                syntheticMessage = `我读完了这一章，划了这些内容：\n${params.highlightContext.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
+            } else {
+                syntheticMessage = '[系统触发：请继续引导用户阅读]';
+            }
+
+            // Pass proactive trigger type and highlight context via context
+            context.proactiveTrigger = params.trigger;
+            context.highlightContext = params.highlightContext || [];
+
+            // Use normal graph engine — same thread, same history, natural conversation
+            const result = await this.frontendAgent.runGraphEngine(
+                syntheticMessage,
+                context,
+                callbacks,
+                this.agentChatHistory,
             );
+
+            // Handle HITL interrupt — don't add empty messages to history
+            if (result.interrupted) {
+                this.messageList?.updateMessage(aiMessageId, {
+                    isStreaming: false,
+                    content: '引导生成被中断',
+                });
+                return;
+            }
+
+            // Add both the synthetic user message and AI response to history
             const assistantContent = result.messages[0]?.content || '';
             this.agentChatHistory = [
                 ...this.agentChatHistory,
+                { role: 'user', content: syntheticMessage },
                 { role: 'assistant', content: assistantContent },
             ];
             this.messageList?.updateMessage(aiMessageId, {
                 isStreaming: false,
                 content: assistantContent,
             });
+            // Persist conversation history so proactive Q&A survives reloads
+            await this.saveToCache();
         } catch (err) {
             logError('[DeepPDF] 主动引导生成失败:', err);
             this.messageList?.updateMessage(aiMessageId, {
@@ -2312,6 +2355,8 @@ export class SidebarView extends ItemView {
             });
         } finally {
             this.proactiveEngine?.setProcessing(false);
+            this.isProcessing = false;
+            this.proactiveAbortController = null;
         }
     }
 
@@ -2331,9 +2376,11 @@ export class SidebarView extends ItemView {
      * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
      */
     private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
-        // 检查是否需要检视引导 follow-up
-        this.pendingFollowUp = this.proactiveEngine?.checkFollowUp(this.currentIndexId || "") ?? null;
-
+        // Cancel any in-progress proactive guidance — user's explicit query takes priority
+        if (this.proactiveAbortController) {
+            this.proactiveAbortController.abort();
+            this.proactiveAbortController = null;
+        }
         // 允许只有引用没有文本的情况
         if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
             return;
@@ -2915,18 +2962,6 @@ export class SidebarView extends ItemView {
                 this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
             }
             await this.saveToCache();
-
-            // 双消息模式：正常响应完成后，检查是否需要检视引导 follow-up
-            if (this.pendingFollowUp) {
-                const followUp = this.pendingFollowUp;
-                this.pendingFollowUp = null;
-                followUp.userReply = userMessage;
-                try {
-                    await this.executeProactiveGuidance(followUp);
-                } catch (e) {
-                    logError('[DeepPDF] 主动引导 follow-up 失败:', e);
-                }
-            }
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

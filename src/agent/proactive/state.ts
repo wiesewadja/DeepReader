@@ -9,10 +9,9 @@ export function createEmptyState(bookId: string): ProactiveState {
   return {
     version: 1,
     bookId,
-    inspectionalStep: 0,
+    guidanceInitiated: false,
     chapterTriggers: {},
     lastProactiveAt: null,
-    socraticSkipCount: 0,
   };
 }
 
@@ -46,8 +45,8 @@ export function markChapterTriggered(state: ProactiveState, chapterId: string): 
   };
 }
 
-export function setInspectionalStep(state: ProactiveState, step: number): ProactiveState {
-  return { ...state, inspectionalStep: step };
+export function markGuidanceInitiated(state: ProactiveState): ProactiveState {
+  return { ...state, guidanceInitiated: true };
 }
 
 export function updateLastProactiveAt(state: ProactiveState): ProactiveState {
@@ -59,14 +58,10 @@ export function shouldTriggerInspectional(
   hasHistory: boolean,
   progressPercent: number,
 ): boolean {
-  if (state.inspectionalStep !== 0) return false;
+  if (state.guidanceInitiated) return false;
   if (hasHistory) return false;
   if (progressPercent >= 10) return false;
   return true;
-}
-
-export function shouldFollowUp(state: ProactiveState): boolean {
-  return state.inspectionalStep > 0 && state.inspectionalStep < 3;
 }
 
 export function shouldTriggerChapter(
@@ -85,17 +80,20 @@ function getStateFilePath(baseDir: string, bookId: string): string {
   return path.join(baseDir, '.pageindex', bookId, 'proactive-state.json');
 }
 
-/** 兼容旧版 state（inspectionalDone → inspectionalStep）+ 字段验证 */
+/** 兼容旧版 state 字段 */
 function migrateState(raw: any): ProactiveState | null {
-  if ('inspectionalDone' in raw && !('inspectionalStep' in raw)) {
-    raw.inspectionalStep = raw.inspectionalDone ? 3 : 0;
-    delete raw.inspectionalDone;
+  // Migrate inspectionalStep → guidanceInitiated
+  if ('inspectionalStep' in raw && !('guidanceInitiated' in raw)) {
+    raw.guidanceInitiated = raw.inspectionalStep > 0;
+    delete raw.inspectionalStep;
   }
-  if (typeof raw.inspectionalStep !== 'number') raw.inspectionalStep = 0;
+  if (typeof raw.guidanceInitiated !== 'boolean') raw.guidanceInitiated = false;
   if (typeof raw.bookId !== 'string') return null;
   raw.chapterTriggers = raw.chapterTriggers || {};
   raw.lastProactiveAt = raw.lastProactiveAt ?? null;
-  raw.socraticSkipCount = raw.socraticSkipCount ?? 0;
+  // Drop deprecated fields
+  delete raw.socraticSkipCount;
+  delete raw.proactiveStep;
   return raw as ProactiveState;
 }
 

@@ -49,6 +49,12 @@ export interface ToolContext {
   journalDir?: string;
   /** 是否启用苏格拉底模式（S2→S4 之间插入 filter 节点） */
   isSocratic?: boolean;
+  /** 是否为主动引导模式（只问问题，不回答） */
+  isProactive?: boolean;
+  /** 主动引导触发类型（inspectional / highlight / chapter） */
+  proactiveTrigger?: string;
+  /** 用户划线内容（用于 highlight / chapter 触发） */
+  highlightContext?: string[];
 }
 
 /**

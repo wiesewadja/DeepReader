@@ -29,6 +29,8 @@ export function routeByDepth(state: CognitiveEngineState): string {
 /**
  * Route after S1 Inspectional.
  *
+ * - isProactive → visualizer or formatter (ask Socratic question)
+ * - isSocratic → formatter (dialogue mode, skip S2, reuse chatHistory)
  * - depth=3 → S3 (syntopical)
  * - depth=1 + diagram intent → visualizer (use S1's structural analysis)
  * - depth=1 + no diagram → formatter
@@ -45,11 +47,17 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
     return 'done';
   }
 
+  // Socratic: skip S2, go to formatter with dialogue mode (reuses chatHistory)
+  if (state.isSocratic) {
+    return 'done';
+  }
+
   if (state.depth === 3) {
     return 'syntopical';
   }
-  // depth=1: check if diagram intent
-  if (state.depth === 1 && state.structuralAnalysis) {
+  // depth=1: check if diagram intent (skip visualizer if S1 failed — no valid structural analysis)
+  if (state.depth === 1) {
+    if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return 'done';
     return hasDiagramIntent(state) ? 'visualizer' : 'done';
   }
   // depth=2 → analytical
@@ -59,14 +67,9 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
 /**
  * Route after S2 Analytical or S3 Syntopical.
  *
- * - socratic mode + diagram → visualizer (diagram already embeds conclusion, skip socratic)
- * - socratic mode + no diagram → socratic filter (split facts/question, hide conclusion)
  * - diagram intent → visualizer
  * - otherwise → formatter
  */
 export function routeAfterAnalysis(state: CognitiveEngineState): string {
-  if (state.isSocratic) {
-    return hasDiagramIntent(state) ? 'visualizer' : 'socratic';
-  }
   return hasDiagramIntent(state) ? 'visualizer' : 'formatter';
 }

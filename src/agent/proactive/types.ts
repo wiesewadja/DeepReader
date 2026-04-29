@@ -9,24 +9,20 @@ export interface ChapterTrigger {
 export interface ProactiveState {
   version: 1;
   bookId: string;
-  /** 检视引导进度：0=未开始, 1=第一步已发, 2=第二步已发, 3=完成 */
-  inspectionalStep: number;
+  /** 是否已发送过初始检视引导 */
+  guidanceInitiated: boolean;
   /** 各章节的触发状态 */
   chapterTriggers: Record<string, ChapterTrigger>;
   /** 上次主动提问的 ISO 时间戳 */
   lastProactiveAt: string | null;
-  /** 用户跳过苏格拉底问题的次数 */
-  socraticSkipCount: number;
 }
 
 /** 主动引导触发参数 */
-export type ProactiveTrigger = 'inspectional' | 'inspectional_followup' | 'highlight' | 'chapter';
+export type ProactiveTrigger = 'inspectional' | 'highlight' | 'chapter';
 
 export interface ProactiveParams {
   trigger: ProactiveTrigger;
   bookId: string;
   chapterId?: string;
   highlightContext?: string[];
-  step?: number;
-  userReply?: string;
 }

@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { routeFromStart, routeByDepth, routeAfterInspectional } from '../edges';
-import { buildProactiveSystemPrompt } from '../prompts/proactive-formatter-prompt';
+import { buildProactiveSystemPrompt, buildSocraticDialoguePrompt, buildSocraticDialogueUserMessage } from '../prompts/proactive-formatter-prompt';
 
 describe('proactive edge routing', () => {
   describe('routeFromStart', () => {
@@ -20,7 +20,10 @@ describe('proactive edge routing', () => {
     });
   });
 
-  describe('routeAfterInspectional — proactive + visualizer', () => {
+  describe('routeAfterInspectional — proactive', () => {
+    beforeEach(() => {
+      delete (globalThis as any).ExcalidrawAutomate;
+    });
     afterEach(() => {
       delete (globalThis as any).ExcalidrawAutomate;
     });
@@ -53,16 +56,17 @@ describe('proactive edge routing', () => {
       const state = { isProactive: true, depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
     });
+  });
 
-    it('routes to done for inspectional_followup even with Excalidraw', () => {
-      (globalThis as any).ExcalidrawAutomate = {};
-      const state = { isProactive: true, proactiveTrigger: 'inspectional_followup', depth: 1 } as any;
+  describe('routeAfterInspectional — socratic', () => {
+    it('routes to done (formatter) when isSocratic=true', () => {
+      const state = { isSocratic: true, depth: 2, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe('done');
     });
 
-    it('routes to done for inspectional_followup step 3', () => {
-      const state = { isProactive: true, proactiveTrigger: 'inspectional_followup', proactiveStep: 3, depth: 1 } as any;
-      expect(routeAfterInspectional(state)).toBe('done');
+    it('isSocratic does not interfere when false', () => {
+      const state = { isSocratic: false, depth: 2, structuralAnalysis: '...' } as any;
+      expect(routeAfterInspectional(state)).toBe('continue');
     });
   });
 
@@ -79,24 +83,38 @@ describe('proactive edge routing', () => {
   });
 });
 
-describe('buildProactiveSystemPrompt — multi-step', () => {
-  it('returns step 3 prompt when step=3', () => {
-    const prompt = buildProactiveSystemPrompt('inspectional_followup', false, 3);
-    expect(prompt).toContain('阅读判断');
-  });
-
-  it('returns step 2 prompt when step=2', () => {
-    const prompt = buildProactiveSystemPrompt('inspectional_followup', false, 2);
-    expect(prompt).toContain('核心论点');
-  });
-
-  it('returns base proactive prompt for inspectional_followup without step', () => {
-    const prompt = buildProactiveSystemPrompt('inspectional_followup', false);
+describe('buildProactiveSystemPrompt', () => {
+  it('returns base proactive prompt for inspectional', () => {
+    const prompt = buildProactiveSystemPrompt('inspectional', false);
     expect(prompt).toContain('助产士');
   });
 
   it('returns diagram prompt for inspectional + hasDiagram', () => {
     const prompt = buildProactiveSystemPrompt('inspectional', true);
     expect(prompt).toContain('结构图');
+  });
+
+  it('returns highlight prompt for highlight trigger', () => {
+    const prompt = buildProactiveSystemPrompt('highlight', false);
+    expect(prompt).toContain('划线');
+  });
+});
+
+describe('Socratic dialogue prompt', () => {
+  it('contains dialogue rules', () => {
+    const prompt = buildSocraticDialoguePrompt();
+    expect(prompt).toContain('助产士');
+    expect(prompt).toContain('追问');
+  });
+
+  it('builds user message with chat history', () => {
+    const history = [
+      { role: 'user', content: '测试问题' },
+      { role: 'assistant', content: '这是AI的回答' },
+    ];
+    const msg = buildSocraticDialogueUserMessage('用户回复内容', history);
+    expect(msg).toContain('conversation_history');
+    expect(msg).toContain('测试问题');
+    expect(msg).toContain('用户回复内容');
   });
 });

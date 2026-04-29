@@ -29,7 +29,6 @@ describe('ProactiveEngine', () => {
       expect(triggered).toHaveLength(1);
       expect(triggered[0].trigger).toBe('inspectional');
       expect(triggered[0].bookId).toBe('book-1');
-      expect(triggered[0].step).toBe(1);
     });
 
     it('does not trigger when has history', async () => {
@@ -104,61 +103,6 @@ describe('ProactiveEngine', () => {
     });
   });
 
-  describe('多步引导 follow-up', () => {
-    it('checkFollowUp returns null when no inspectional triggered', () => {
-      expect(engine.checkFollowUp('book-1')).toBeNull();
-    });
-
-    it('checkFollowUp returns step 2 after first inspectional', async () => {
-      await engine.onBookOpen('book-1', false, 0);
-      const followUp = engine.checkFollowUp('book-1');
-      expect(followUp).not.toBeNull();
-      expect(followUp!.trigger).toBe('inspectional_followup');
-      expect(followUp!.step).toBe(2);
-    });
-
-    it('checkFollowUp returns step 3 after second step executed', async () => {
-      await engine.onBookOpen('book-1', false, 0);
-      const followUp1 = engine.checkFollowUp('book-1');
-      expect(followUp1!.step).toBe(2);
-
-      await engine.executeFollowUp(followUp1!);
-      const followUp2 = engine.checkFollowUp('book-1');
-      expect(followUp2).not.toBeNull();
-      expect(followUp2!.step).toBe(3);
-    });
-
-    it('checkFollowUp returns null after step 3 completed', async () => {
-      await engine.onBookOpen('book-1', false, 0);
-      const f1 = engine.checkFollowUp('book-1')!;
-      await engine.executeFollowUp(f1);
-      const f2 = engine.checkFollowUp('book-1')!;
-      await engine.executeFollowUp(f2);
-      expect(engine.checkFollowUp('book-1')).toBeNull();
-    });
-
-    it('executeFollowUp calls onTrigger with correct params', async () => {
-      await engine.onBookOpen('book-1', false, 0);
-      triggered.length = 0; // reset
-
-      const followUp = engine.checkFollowUp('book-1')!;
-      await engine.executeFollowUp(followUp);
-      expect(triggered).toHaveLength(1);
-      expect(triggered[0].trigger).toBe('inspectional_followup');
-      expect(triggered[0].step).toBe(2);
-    });
-
-    it('checkFollowUp returns null when disabled', async () => {
-      const disabledEngine = new ProactiveEngine(
-        { vault: { adapter: { basePath: testBaseDir } } } as any,
-        { settings: { proactiveGuidanceEnabled: false, proactiveCooldownMinutes: 5 } } as any,
-        (params) => { triggered.push(params); },
-      );
-      await disabledEngine.onBookOpen('book-1', false, 0);
-      expect(disabledEngine.checkFollowUp('book-1')).toBeNull();
-    });
-  });
-
   describe('shouldEnableSocratic', () => {
     it('returns false when feature disabled', () => {
       const disabledEngine = new ProactiveEngine(
@@ -173,27 +117,9 @@ describe('ProactiveEngine', () => {
       expect(engine.shouldEnableSocratic('unknown-book')).toBe(false);
     });
 
-    it('returns false when inspectionalStep < 2', async () => {
-      await engine.onBookOpen('book-1', false, 0); // sets step=1
-      expect(engine.shouldEnableSocratic('book-1')).toBe(false);
-    });
-
-    it('returns true when inspectionalStep >= 2', async () => {
-      await engine.onBookOpen('book-1', false, 0); // step=1
-      const f1 = engine.checkFollowUp('book-1')!;
-      await engine.executeFollowUp(f1); // step=2
-      expect(engine.shouldEnableSocratic('book-1')).toBe(true);
-    });
-
-    it('returns false when socraticSkipCount >= 2', async () => {
+    it('returns true when guidance has been initiated', async () => {
       await engine.onBookOpen('book-1', false, 0);
-      const f1 = engine.checkFollowUp('book-1')!;
-      await engine.executeFollowUp(f1); // step=2
-
-      // Manually set skip count via internal states map
-      const state = (engine as any).states.get('book-1');
-      state.socraticSkipCount = 2;
-      expect(engine.shouldEnableSocratic('book-1')).toBe(false);
+      expect(engine.shouldEnableSocratic('book-1')).toBe(true);
     });
   });
 });

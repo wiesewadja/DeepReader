@@ -4,10 +4,9 @@ import {
   createEmptyState,
   recordHighlight,
   markChapterTriggered,
-  setInspectionalStep,
+  markGuidanceInitiated,
   updateLastProactiveAt,
   shouldTriggerInspectional,
-  shouldFollowUp,
   shouldTriggerChapter,
   loadProactiveState,
   saveProactiveState,
@@ -57,9 +56,7 @@ export class ProactiveEngine {
     this.lastGlobalTriggerAt = Date.now();
     let next = updateLastProactiveAt(state);
     if (params.trigger === 'inspectional') {
-      next = setInspectionalStep(next, 1);
-    } else if (params.trigger === 'inspectional_followup' && params.step) {
-      next = setInspectionalStep(next, params.step);
+      next = markGuidanceInitiated(next);
     } else if (params.chapterId) {
       next = markChapterTriggered(next, params.chapterId);
     }
@@ -74,7 +71,7 @@ export class ProactiveEngine {
     if (!shouldTriggerInspectional(state, hasHistory, progressPercent)) return;
     if (this.isInCooldown()) return;
 
-    const params: ProactiveParams = { trigger: 'inspectional', bookId, step: 1 };
+    const params: ProactiveParams = { trigger: 'inspectional', bookId };
     const next = this.prepareTriggerState(params, state);
     await this.persistState(next);
     this.onTrigger(params);
@@ -125,34 +122,16 @@ export class ProactiveEngine {
     // 预留
   }
 
-  /** 用户发消息时检查是否需要 follow-up。冷却豁免 */
-  checkFollowUp(bookId: string): ProactiveParams | null {
-    if (!this.settings.proactiveGuidanceEnabled) return null;
-    const state = this.states.get(bookId);
-    if (!state || !shouldFollowUp(state)) return null;
-    const nextStep = state.inspectionalStep + 1;
-    return { trigger: 'inspectional_followup', bookId, step: nextStep };
-  }
-
-  /** 执行 follow-up：更新 state + 调用 onTrigger，跳过冷却 */
-  async executeFollowUp(params: ProactiveParams): Promise<void> {
-    const state = await this.getState(params.bookId);
-    const next = this.prepareTriggerState(params, state);
-    await this.persistState(next);
-    this.onTrigger(params);
-  }
-
   setProcessing(value: boolean): void {
     this.processing = value;
   }
 
+  /** 苏格拉底模式：只要发送过初始引导就启用（后续由对话历史驱动） */
   shouldEnableSocratic(bookId: string): boolean {
     if (!this.settings.proactiveGuidanceEnabled) return false;
     const state = this.states.get(bookId);
     if (!state) return false;
-    if (state.inspectionalStep < 2) return false;
-    if ((state.socraticSkipCount || 0) >= 2) return false;
-    return true;
+    return state.guidanceInitiated;
   }
 
   destroy(): void {

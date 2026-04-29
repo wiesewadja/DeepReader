@@ -38,41 +38,12 @@ const PROACTIVE_FORMATTER_SYSTEM_DIAGRAM = `<role>
 7. [[...]] 格式的链接必须原样保留，不要修改或删除
 </rules>`;
 
-const PROACTIVE_FORMATTER_SYSTEM_STEP2 = `<role>
-你是奚童，用户的阅读伙伴。用户刚回答了你关于书籍结构的问题。你要继续引导用户主动思考。
-</role>
-
-<rules>
-1. 先用 1 句话简短肯定用户的回答（不展开、不总结）
-2. 基于用户的回答，追问这本书的**核心论点**是什么——作者最想说服读者接受什么
-3. 问题必须锚定在用户提到的具体内容上，不能泛泛而谈
-4. 语气自然、温暖，像朋友在聊天中随口问了一句
-5. 回复不超过 3 句话。简短有力
-6. 不要用"你觉得"开头
-</rules>`;
-
-const PROACTIVE_FORMATTER_SYSTEM_STEP3 = `<role>
-你是奚童，用户的阅读伙伴。用户刚回答了你关于核心论点的问题。你要引导用户做阅读判断。
-</role>
-
-<rules>
-1. 先用 1 句话简短肯定用户的回答
-2. 基于用户对结构和核心论点的理解，引导判断：建议怎么读这本书？精读还是选读？哪些章节最相关？
-3. 给出具体的建议（比如"建议重点看第 X 章和第 Y 章"）
-4. 语气自然、温暖，像朋友在聊天中随口问了一句
-5. 回复不超过 3 句话。简短有力
-6. 不要用"你觉得"开头
-</rules>`;
-
 export function buildProactiveSystemPrompt(
-  trigger: 'inspectional' | 'inspectional_followup' | 'highlight' | 'chapter',
+  trigger: 'inspectional' | 'highlight' | 'chapter',
   hasDiagram?: boolean,
-  step?: number,
 ): string {
-  if (step === 3) return PROACTIVE_FORMATTER_SYSTEM_STEP3;
-  if (step === 2) return PROACTIVE_FORMATTER_SYSTEM_STEP2;
   if (trigger === 'inspectional' && hasDiagram) return PROACTIVE_FORMATTER_SYSTEM_DIAGRAM;
-  if (trigger === 'inspectional' || trigger === 'inspectional_followup') return PROACTIVE_FORMATTER_SYSTEM;
+  if (trigger === 'inspectional') return PROACTIVE_FORMATTER_SYSTEM;
   return PROACTIVE_FORMATTER_SYSTEM_HIGHLIGHT;
 }
 
@@ -81,13 +52,9 @@ export function buildProactiveUserMessage(params: {
   tocSummary?: string;
   highlightContext?: string[];
   bookName: string;
-  userReply?: string;
 }): string {
   const parts: string[] = [];
 
-  if (params.userReply) {
-    parts.push(`<user_reply>\n${params.userReply}\n</user_reply>`);
-  }
   if (params.structuralAnalysis) {
     parts.push(`<structural_analysis>\n${params.structuralAnalysis}\n</structural_analysis>`);
   }
@@ -100,4 +67,43 @@ export function buildProactiveUserMessage(params: {
   parts.push(`<book>${params.bookName}</book>`);
 
   return parts.join('\n\n');
+}
+
+// === Socratic Dialogue (follow-up after proactive question) ===
+
+const SOCRATIC_DIALOGUE_SYSTEM = `<role>
+你是奚童，用户的阅读伙伴。你正在通过苏格拉底式对话引导用户深度理解一本书。你是"助产士"——通过提问帮助用户自己生出理解。
+</role>
+
+<rules>
+1. 基于对话历史中的书籍分析内容，简短回应用户的回答（1句话肯定或补充，可引用 [[...]] 链接）
+2. 然后提出一个追问，引导用户思考更深层的问题
+3. 追问必须锚定在书的具体内容上，不能泛泛而谈
+4. 语气自然、温暖，像朋友在聊天中随口问了一句
+5. 回复不超过 3 句话。简短有力
+6. 不要用"你觉得"开头
+</rules>`;
+
+export function buildSocraticDialoguePrompt(): string {
+  return SOCRATIC_DIALOGUE_SYSTEM;
+}
+
+export function buildSocraticDialogueUserMessage(
+  userReply: string,
+  chatHistory: Array<{ role: string; content: string }>,
+): string {
+  const recent = chatHistory.slice(-6);
+  const historyLines = recent.map(m => {
+    const label = m.role === 'user' ? '用户' : 'AI';
+    const text = m.content.replace(/\n/g, ' ').slice(0, 300);
+    return `${label}: ${text}`;
+  }).join('\n');
+
+  return `<conversation_history>
+${historyLines}
+</conversation_history>
+
+<user_reply>
+${userReply}
+</user_reply>`;
 }
