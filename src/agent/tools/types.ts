@@ -55,6 +55,8 @@ export interface ToolContext {
   proactiveTrigger?: string;
   /** 用户划线内容（用于 highlight / chapter 触发） */
   highlightContext?: string[];
+  /** 子 Agent 管理器（通过 ToolContext 注入，替代全局单例） */
+  subagentManager?: import('../subagent/types.js').ISubagentManager;
 }
 
 /**

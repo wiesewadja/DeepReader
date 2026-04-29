@@ -11,6 +11,7 @@
 
 import { App, normalizePath } from 'obsidian';
 import { agentLog } from '../../utils/logger';
+import type { IMemoryStore } from './types.js';
 
 /** DeepReader 目录名 */
 const DEEPREADER_DIR = 'DeepReader';
@@ -27,7 +28,7 @@ const MAX_HISTORY_ENTRIES = 200;
 /** MEMORY.md 最大行数 */
 const MAX_MEMORY_LINES = 200;
 
-export class MemoryStore {
+export class MemoryStore implements IMemoryStore {
 	private app: App;
 
 	constructor(app: App) {

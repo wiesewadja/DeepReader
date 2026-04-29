@@ -19,7 +19,7 @@ vi.mock('../../../utils/logger.js', () => ({
   agentLog: vi.fn(),
 }));
 
-vi.mock('./embedding-cache.js', () => ({
+vi.mock('../../../pageindex/vault/embedding-cache.js', () => ({
   getOrGenerateEmbedding: vi.fn(),
 }));
 

@@ -7,8 +7,8 @@
  * 3. Retry/re-run scenarios
  */
 
-import { generateEmbedding } from '../../pageindex/vault/vectors.js';
-import type { EmbeddingOptions } from '../../pageindex/vault/types.js';
+import { generateEmbedding } from './vectors.js';
+import type { EmbeddingOptions } from './types.js';
 import { agentLog as log } from '../../utils/logger.js';
 
 interface CacheEntry {

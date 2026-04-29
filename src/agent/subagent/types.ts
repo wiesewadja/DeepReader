@@ -4,6 +4,22 @@
  * 用于后台并行执行检索任务
  */
 
+import type { ChatMessage, ToolDefinition } from '../types';
+import type { LLMClient } from '../llm-client';
+import type { ToolRegistry, ToolContext } from '../tools/types';
+
+/**
+ * AgentLoopRunner — runAgentLoop 的函数签名，用于依赖注入断循环
+ */
+export type AgentLoopRunner = (
+  client: LLMClient,
+  messages: ChatMessage[],
+  tools: ToolDefinition[],
+  toolRegistry: ToolRegistry,
+  context: ToolContext,
+  options: import('../agent-loop').AgentLoopOptions,
+) => Promise<ChatMessage[]>;
+
 /**
  * 子 Agent 任务状态
  */
@@ -102,5 +118,21 @@ export function hashDescription(description: string): string {
 		hash = hash & hash; // Convert to 32bit integer
 	}
 	return `cache_${Math.abs(hash).toString(36)}`;
+}
+
+/**
+ * SubagentManager 接口 — 子任务生命周期管理
+ *
+ * 消费者通过此接口管理子 Agent 任务，不依赖 SubagentManager 具体实现
+ */
+export interface ISubagentManager {
+	spawn(description: string, label?: string, sessionId?: string): string;
+	getTask(taskId: string): SubagentTask | undefined;
+	listTasks(sessionId?: string): SubagentTask[];
+	cancel(taskId: string): Promise<boolean>;
+	cancelBySession(sessionId: string): Promise<number>;
+	cleanup(): number;
+	waitForAll(): Promise<void>;
+	waitFor(taskId: string, timeout?: number): Promise<SubagentTask | undefined>;
 }
 

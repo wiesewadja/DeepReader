@@ -11,8 +11,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import type { SubagentManager } from '../subagent/manager.js';
-import { toolsLog as log, error as logError } from '../../utils/logger.js';
+import { agentLog as log } from '../../utils/logger.js';
 
 /**
  * create_sub_agent 工具定义
@@ -86,29 +85,6 @@ const CHECK_SUB_AGENT_DEFINITION: ToolDefinition = {
 };
 
 /**
- * 创建 SubagentManager 工厂
- *
- * 由于 SubagentManager 需要在会话级别管理，
- * 这个工厂函数允许延迟注入 manager
- */
-let globalSubagentManager: SubagentManager | null = null;
-
-/**
- * 设置全局 SubagentManager
- */
-export function setSubagentManager(manager: SubagentManager): void {
-	globalSubagentManager = manager;
-	log('[SubAgent] SubagentManager 已设置');
-}
-
-/**
- * 获取全局 SubagentManager
- */
-export function getSubagentManager(): SubagentManager | null {
-	return globalSubagentManager;
-}
-
-/**
  * 创建 create_sub_agent 工具执行器
  */
 export function makeCreateSubAgentTool(_app: any): ToolExecutor {
@@ -118,31 +94,22 @@ export function makeCreateSubAgentTool(_app: any): ToolExecutor {
 		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 			const task = args.task as string;
 			const label = args.label as string | undefined;
-			const waitForResult = args.wait_for_result === true;  // 默认 false
+			const waitForResult = args.wait_for_result === true;
 
 			if (!task || typeof task !== 'string') {
 				return 'Error: task 参数是必需的，且必须是字符串';
 			}
 
-			const manager = getSubagentManager();
+			const manager = context.subagentManager;
 			if (!manager) {
 				return 'Error: SubagentManager 未初始化。请确保在会话开始时设置 SubagentManager。';
 			}
 
 			try {
-				log('[SubAgent] 创建子任务:', task.slice(0, 50));
-
-				// 获取当前会话 ID
 				const sessionId = context.sessionId;
-
-				// 创建子任务
 				const taskId = manager.spawn(task, label, sessionId);
 
-				// 如果需要等待结果
 				if (waitForResult) {
-					log('[SubAgent] 等待任务完成:', taskId);
-
-					// 使用 manager.waitFor 替代轮询
 					const taskInfo = await manager.waitFor(taskId, 60000);
 
 					if (taskInfo) {
@@ -160,7 +127,6 @@ export function makeCreateSubAgentTool(_app: any): ToolExecutor {
 					return `任务不存在: ${taskId}`;
 				}
 
-				// 异步执行，立即返回任务 ID
 				return JSON.stringify({
 					success: true,
 					taskId,
@@ -169,7 +135,7 @@ export function makeCreateSubAgentTool(_app: any): ToolExecutor {
 				});
 			} catch (e) {
 				const errorMsg = e instanceof Error ? e.message : String(e);
-				logError('[SubAgent] 执行失败:', errorMsg);
+				log(`[SubAgent] 执行失败: ${errorMsg}`);
 				return `Error in sub-agent execution: ${errorMsg}`;
 			}
 		},
@@ -183,14 +149,14 @@ export function makeCheckSubAgentTool(_app: any): ToolExecutor {
 	return {
 		definition: CHECK_SUB_AGENT_DEFINITION,
 
-		async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
+		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 			const taskId = args.task_id as string;
 
 			if (!taskId || typeof taskId !== 'string') {
 				return 'Error: task_id 参数是必需的，且必须是字符串';
 			}
 
-			const manager = getSubagentManager();
+			const manager = context.subagentManager;
 			if (!manager) {
 				return 'Error: SubagentManager 未初始化。';
 			}
@@ -218,7 +184,7 @@ export function makeCheckSubAgentTool(_app: any): ToolExecutor {
 				});
 			} catch (e) {
 				const errorMsg = e instanceof Error ? e.message : String(e);
-				logError('[SubAgent] 检查任务失败:', errorMsg);
+				log(`[SubAgent] 检查任务失败: ${errorMsg}`);
 				return `Error checking sub-agent: ${errorMsg}`;
 			}
 		},
