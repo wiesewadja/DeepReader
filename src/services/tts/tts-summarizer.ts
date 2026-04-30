@@ -7,10 +7,23 @@ export interface SummarizerConfig {
 }
 
 export interface TTSContext {
+    bookId?: string;
     bookTitle?: string;
     bookAuthor?: string;
     memoryContent?: string;
 }
+
+const ORAL_REWRITE_PROMPT = `你是奚童，一位年轻活泼的伴读书童，像聪明伶俐的小师妹。
+你正在给旁边的用户朗读一段文字，用你自己的口吻说出来。
+
+规则：
+- 保留原文全部内容和信息，禁止删减、缩写或遗漏任何要点
+- 用聊天的口吻说，像给同学讲书里的内容，不要像念稿子
+- 适当加口语词："你看"、"怎么说呢"、"就是说"、"然后呢"、"你想想"、"你猜怎么着"
+- 长句拆短句，加自然过渡词
+- 可以加小反应："这段写得真好"、"我觉得特别有道理"、"你注意听这里哦"
+- 遇到疑问句可以加"是不是"、"对吧"
+- 纯文字输出，禁止 Markdown 格式、禁止括号标注、禁止任何格式符号`;
 
 const VOICE_REPLY_PROMPT = `你是奚童，用户的伴读书童。你正在用语音简短回答用户关于书籍的问题。
 
@@ -246,6 +259,103 @@ export class TTSSummarizer {
 
         if (!response.body) {
             throw new Error('Summarizer stream: response body is null');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop()!;
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const payload = trimmed.slice(6).trim();
+                    if (payload === '[DONE]') return;
+
+                    try {
+                        const json = JSON.parse(payload);
+                        const delta = json?.choices?.[0]?.delta?.content;
+                        if (delta) yield delta;
+                    } catch {}
+                }
+            }
+        } finally {
+            reader.cancel().catch(() => {});
+        }
+    }
+
+    /**
+     * 口语化改写（非流式，用于 preloadPreview 预缓存）
+     * 保留原文内容，转换为奚童口吻
+     */
+    async oralRewrite(text: string): Promise<string> {
+        const url = `${this.baseUrl}/chat/completions`;
+
+        const response = await safeRequest({
+            url,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: [
+                    { role: 'system', content: ORAL_REWRITE_PROMPT },
+                    { role: 'user', content: text },
+                ],
+                temperature: 0.7,
+                max_tokens: Math.max(text.length * 2, 500),
+            }),
+        });
+
+        const data = response.json;
+        const result = data?.choices?.[0]?.message?.content?.trim();
+        if (!result) {
+            throw new Error('Oral rewrite: empty response from LLM');
+        }
+        return result;
+    }
+
+    /**
+     * 口语化改写（流式，用于播放时边改写边合成）
+     */
+    async *oralRewriteStream(text: string): AsyncGenerator<string> {
+        const url = `${this.baseUrl}/chat/completions`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: [
+                    { role: 'system', content: ORAL_REWRITE_PROMPT },
+                    { role: 'user', content: text },
+                ],
+                stream: true,
+                temperature: 0.7,
+                max_tokens: Math.max(text.length * 2, 500),
+            }),
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Oral rewrite stream error: ${response.status} — ${errText}`);
+        }
+
+        if (!response.body) {
+            throw new Error('Oral rewrite stream: response body is null');
         }
 
         const reader = response.body.getReader();

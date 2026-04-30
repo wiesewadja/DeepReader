@@ -2510,8 +2510,6 @@ export class AIMessage extends Message {
 				el.removeClass('deeppdf-tts-reading-paragraph');
 			});
 			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
-			// 只在新段落出现时滚动
-			(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
 			(contentEl.dataset as any).ttsLastParagraphIndex = currentIndex;
 		}
 	}

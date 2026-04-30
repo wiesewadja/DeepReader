@@ -2652,6 +2652,10 @@ export class SidebarView extends ItemView {
             const queryStartTime = Date.now();
             let firstContentLogged = false;
 
+            // TTS 预生成触发标记：内容累积到 300 字符时触发
+            let ttsPreloadTriggered = false;
+            const TTS_PRELOAD_THRESHOLD = 100;
+
             // 回调函数
             const callbacks = {
                 // onContent: 接收流式内容（text 是完整累积内容，不是 delta）
@@ -2663,6 +2667,12 @@ export class SidebarView extends ItemView {
                         firstContentLogged = true;
                         const ttfc = Date.now() - queryStartTime;
                         log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
+                    }
+
+                    // 内容累积到 300 字符时，立即触发 TTS 预生成（仅触发一次）
+                    if (!ttsPreloadTriggered && fullContent.length >= TTS_PRELOAD_THRESHOLD) {
+                        ttsPreloadTriggered = true;
+                        this.triggerTTSPreload(aiMessageId, fullContent);
                     }
 
                     // 优化：立即切换到回答阶段
@@ -2816,6 +2826,13 @@ export class SidebarView extends ItemView {
                                 memoryContent,
                             });
                         }
+                    }
+
+                    // 流式期间已通过 triggerTTSPreload 预生成
+                    // 如果内容较短（<100 字符）未触发预生成，在 onComplete 补充
+                    if (!ttsPreloadTriggered && fullContent.length > 0) {
+                        ttsPreloadTriggered = true;
+                        this.triggerTTSPreload(aiMessageId, fullContent);
                     }
                 },
                 // onError: 错误处理
@@ -3516,6 +3533,7 @@ export class SidebarView extends ItemView {
             llmApiKey: fastConfig.apiKey,
             llmBaseUrl: fastConfig.baseUrl,
             llmModel: fastConfig.model,
+            vaultPath: (this.app.vault.adapter as any).getBasePath(),
             onStateChange: (messageId: string | null, state: TTSPlayState) => {
                 if (messageId) {
                     this.messageList?.updateTTSState(messageId, state);
@@ -3538,6 +3556,26 @@ export class SidebarView extends ItemView {
     }
 
     /**
+     * 异步触发 TTS 预生成（不阻塞 UI）
+     */
+    private triggerTTSPreload(messageId: string, content: string): void {
+        if (!this.ttsService) {
+            this.ttsService = this.initTTSService();
+        }
+        if (this.ttsService) {
+            const memoryContent = /* 缓存内存 */ undefined;
+            this.ttsService.preloadPreview(messageId, content, {
+                bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
+                bookAuthor: this.currentBookAuthor || undefined,
+                bookId: this.readingProgress?.bookId,
+                memoryContent,
+            }).catch(err => {
+                console.warn('[TTS] Preload preview failed:', err);
+            });
+        }
+    }
+
+    /**
      * 处理 TTS 播放/暂停请求
      */
     private async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
@@ -3550,7 +3588,12 @@ export class SidebarView extends ItemView {
         }
 
         if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
-            this.ttsService.togglePauseResume();
+            const state = this.ttsService.getState();
+            if (state === 'tts_loading' || state === 'summarizing') {
+                this.ttsService.stop();
+            } else {
+                this.ttsService.togglePauseResume();
+            }
             return;
         }
 
@@ -3558,6 +3601,7 @@ export class SidebarView extends ItemView {
         const userQuestion = this.findUserQuestion(messageId);
 
         await this.ttsService.play(messageId, content, userQuestion, {
+            bookId: this.readingProgress?.bookId,
             bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
             bookAuthor: this.currentBookAuthor || undefined,
             memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
