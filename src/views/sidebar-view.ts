@@ -54,6 +54,7 @@ import { TTSController } from './sidebar/tts-controller.js';
 import { ReadingProgressTracker } from './sidebar/reading-progress-tracker.js';
 import { SessionManager } from './sidebar/session-manager.js';
 import { AgentChatController } from './sidebar/agent-chat-controller.js';
+import { BookManager } from './sidebar/book-manager.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -63,7 +64,6 @@ const TASK_COMPLETE_DISPLAY_MS = 2000;
 export class SidebarView extends ItemView {
     private plugin: any; // 插件实例，用于访问设置
     private readingTopbar: ReadingTopbar | null = null;
-    indexes: IndexListItem[] = [];  // 索引列表缓存
     private taskCards: Map<string, TaskProgressCard> = new Map();
 
     /** @deprecated 使用 readingTopbar 代替 */
@@ -74,10 +74,6 @@ export class SidebarView extends ItemView {
     // 对话界面组件
     private messageList: MessageList | null = null;
     private chatInput: ChatInput | null = null;
-    private currentIndexId: string | null = null;
-    private currentPdfName: string | null = null;
-    private currentBookCoverUrl: string | null = null;  // 当前书籍封面 URL
-    private currentBookAuthor: string | null = null;  // 当前书籍作者
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
@@ -90,8 +86,6 @@ export class SidebarView extends ItemView {
     // 前端 Agent
     private frontendAgent: FrontendAgent | null = null;
 
-    // 阅读里程碑记录器
-    private milestoneRecorder: MilestoneRecorder | null = null;
 
     // TTS 语音播报服务
     private ttsService: TTSService | null = null;
@@ -100,8 +94,6 @@ export class SidebarView extends ItemView {
 
     // 会话存储（JSONL 文件）
 
-    /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
-    private currentMarkdownFiles: Record<string, string> = {};
 
     // 阅读进度追踪
     private readingProgress: ReadingProgress | null = null;
@@ -112,8 +104,10 @@ export class SidebarView extends ItemView {
     private currentChapterId: string | null = null;
     private proactiveEngine: import("../agent/proactive/engine.js").ProactiveEngine | null = null;
 
+    // ContextManager 同步的文档内容（供 Agent 搜索）
+    private currentMarkdownFiles: Record<string, string> = {};
+
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
-    private currentDocDescription: string | null = null;
 
     /** 前端 Agent 对话历史 */
     private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
@@ -124,6 +118,7 @@ export class SidebarView extends ItemView {
     private progressTracker: ReadingProgressTracker;
     private sessionMgr: SessionManager;
     private agentChatCtrl: AgentChatController;
+    private bookMgr: BookManager;
 
 
 
@@ -152,11 +147,11 @@ export class SidebarView extends ItemView {
      * 初始化里程碑记录器
      */
     private async initializeMilestoneRecorder(): Promise<void> {
-        if (this.milestoneRecorder) {
+        if (this.bookMgr.milestoneRecorder) {
             return; // 已初始化
         }
-        this.milestoneRecorder = new MilestoneRecorder(this.app);
-        await this.milestoneRecorder.restoreFromHistory();
+        this.bookMgr.milestoneRecorder = new MilestoneRecorder(this.app);
+        await this.bookMgr.milestoneRecorder.restoreFromHistory();
 
         log('[DeepPDF] MilestoneRecorder 初始化完成');
     }
@@ -189,74 +184,7 @@ export class SidebarView extends ItemView {
      * 删除索引（本地实现）
      */
     async handleDeleteIndex(indexId: string) {
-        try {
-            const vaultPath = (this.app.vault.adapter as any).basePath;
-            const fs = require('fs/promises');
-            const path = require('path');
-
-            // 1. 读取 book-meta.json 获取导出目录名
-            const indexDir = path.join(vaultPath, '.pageindex', indexId);
-            let exportName: string | null = null;
-            try {
-                const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');
-                const meta = JSON.parse(metaRaw);
-                exportName = meta.exportName || null;
-            } catch { /* meta file may not exist */ }
-
-            // 2. 删除索引数据
-            await fs.rm(indexDir, { recursive: true, force: true });
-
-            // 3. 删除本地导出文件夹和封面图片
-            const index = this.indexes.find(idx => idx.id === indexId);
-            if (index && exportName) {
-                const exportDir = path.join(vaultPath, 'DeepReader', exportName);
-                await fs.rm(exportDir, { recursive: true, force: true });
-
-                const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
-                for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-                    const coverPath = path.join(coversDir, `${exportName}.${ext}`);
-                    try { await fs.unlink(coverPath); } catch { /* not found */ }
-                }
-            } else if (index) {
-                // Fallback: no exportName in meta, try displayName
-                const displayName = this.getDisplayName(index.pdf_name);
-                const exportDir = path.join(vaultPath, 'DeepReader', displayName);
-                await fs.rm(exportDir, { recursive: true, force: true });
-
-                const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
-                for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-                    const coverPath = path.join(coversDir, `${displayName}.${ext}`);
-                    try { await fs.unlink(coverPath); } catch { /* not found */ }
-                }
-            }
-
-            // 4. 删除该书的对话记录
-            if (this.sessionMgr.sessionStore) {
-                const session = await this.sessionMgr.sessionStore.findSessionByIndexId(indexId);
-                if (session) {
-                    await this.sessionMgr.sessionStore.delete(session.sessionId);
-                }
-            }
-
-            new Notice("索引已删除");
-            
-            await this.loadIndexes();
-            
-            if (this.currentIndexId === indexId) {
-                this.currentIndexId = null;
-                this.currentPdfName = null;
-
-                // 重置右栏 UI 到欢迎页状态
-                this.messageList?.clearMessages();
-                this.messageList?.setCurrentPdfName('');
-                this.readingTopbar?.setCurrentBook(null);
-                this.readingTopbar?.setBookCover(null);
-                this.currentDocDescription = null;
-            }
-        } catch (error) {
-            console.error('[DeepPDF] 删除索引失败:', error);
-            new Notice('删除索引失败');
-        }
+        await this.bookMgr.handleDeleteIndex(indexId);
     }
 
     /**
@@ -278,7 +206,7 @@ export class SidebarView extends ItemView {
     }
 
     async refreshIndexes(): Promise<void> {
-        await this.loadIndexes();
+        await this.bookMgr.refreshIndexes();
     }
 
 
@@ -345,8 +273,8 @@ export class SidebarView extends ItemView {
             get plugin() { return self.plugin; },
             get messageList() { return self.messageList; },
             getDisplayName(name: string) { return self.getDisplayName(name); },
-            getCurrentPdfName() { return self.currentPdfName; },
-            getCurrentBookAuthor() { return self.currentBookAuthor; },
+            getCurrentPdfName() { return self.bookMgr.currentPdfName; },
+            getCurrentBookAuthor() { return self.bookMgr.currentBookAuthor; },
         });
         this.progressTracker = new ReadingProgressTracker({
             get app() { return self.app; },
@@ -354,9 +282,9 @@ export class SidebarView extends ItemView {
             get readingTopbar() { return self.readingTopbar; },
             get proactiveEngine() { return self.proactiveEngine; },
             get agentChatHistory() { return self.agentChatHistory; },
-            get indexes() { return self.indexes; },
-            getCurrentIndexId() { return self.currentIndexId; },
-            getCurrentPdfName() { return self.currentPdfName; },
+            get indexes() { return self.bookMgr.indexes; },
+            getCurrentIndexId() { return self.bookMgr.currentIndexId; },
+            getCurrentPdfName() { return self.bookMgr.currentPdfName; },
             getCurrentChapterId() { return self.currentChapterId; },
             setCurrentChapterId(id) { self.currentChapterId = id; },
             setReadingProgress(progress) { self.readingProgress = progress; },
@@ -369,10 +297,10 @@ export class SidebarView extends ItemView {
             get readingTopbar() { return self.readingTopbar; },
             get contextManager() { return self.contextManager; },
             get frontendAgent() { return self.frontendAgent; },
-            get currentIndexId() { return self.currentIndexId; },
-            get currentPdfName() { return self.currentPdfName; },
-            get currentBookCoverUrl() { return self.currentBookCoverUrl; },
-            get currentBookAuthor() { return self.currentBookAuthor; },
+            get currentIndexId() { return self.bookMgr.currentIndexId; },
+            get currentPdfName() { return self.bookMgr.currentPdfName; },
+            get currentBookCoverUrl() { return self.bookMgr.currentBookCoverUrl; },
+            get currentBookAuthor() { return self.bookMgr.currentBookAuthor; },
             get agentChatHistory() { return self.agentChatHistory; },
             setAgentChatHistory(history: import("../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
             get isProcessing() { return self.agentChatCtrl?.processing ?? false; },
@@ -388,11 +316,11 @@ export class SidebarView extends ItemView {
             get chatInput() { return self.chatInput; },
             get frontendAgent() { return self.frontendAgent; },
             get proactiveEngine() { return self.proactiveEngine; },
-            get currentIndexId() { return self.currentIndexId; },
-            get currentPdfName() { return self.currentPdfName; },
-            get currentDocDescription() { return self.currentDocDescription; },
-            get currentBookCoverUrl() { return self.currentBookCoverUrl; },
-            get currentBookAuthor() { return self.currentBookAuthor; },
+            get currentIndexId() { return self.bookMgr.currentIndexId; },
+            get currentPdfName() { return self.bookMgr.currentPdfName; },
+            get currentDocDescription() { return self.bookMgr.currentDocDescription; },
+            get currentBookCoverUrl() { return self.bookMgr.currentBookCoverUrl; },
+            get currentBookAuthor() { return self.bookMgr.currentBookAuthor; },
             get currentMarkdownFiles() { return self.currentMarkdownFiles; },
             get useLLMTreeSearch() { return self.useLLMTreeSearch; },
             get sessionId() { return self.sessionMgr.sessionId; },
@@ -413,6 +341,27 @@ export class SidebarView extends ItemView {
             parseAndLoadReferences(message: string) { return self.parseAndLoadReferences(message); },
             copyToClipboard(text: string) { _copyToClipboard(text); },
         });
+        this.bookMgr = new BookManager({
+            get app() { return self.app; },
+            get plugin() { return self.plugin; },
+            get messageList() { return self.messageList; },
+            get readingTopbar() { return self.readingTopbar; },
+            get readingProgress() { return self.readingProgress; },
+            get proactiveEngine() { return self.proactiveEngine; },
+            get frontendAgent() { return self.frontendAgent; },
+            startNewSession(indexId: string) { return self.sessionMgr.startNewSession(indexId); },
+            restoreFromSessionStore(sessionId: string) { return self.sessionMgr.restoreFromSessionStore(sessionId); },
+            get sessionId() { return self.sessionMgr.sessionId; },
+            set sessionId(id: string | null) { self.sessionMgr.sessionId = id; },
+            get sessionStore() { return self.sessionMgr.sessionStore; },
+            ensureSessionStore() { return self.sessionMgr.ensureSessionStore(); },
+            flushProgressSave() { return self.progressTracker.flushProgressSave(); },
+            initReadingProgress(indexId: string) { return self.progressTracker.initReadingProgress(indexId); },
+            navigateToLastReadChapter() { self.progressTracker.navigateToLastReadChapter(); },
+            cancelActiveStream() { self.agentChatCtrl.cancelActiveStream(); },
+            initializeFrontendAgent() { return self.initializeFrontendAgent(); },
+            initializeMilestoneRecorder() { return self.initializeMilestoneRecorder(); },
+        });
     }
 
     getViewType() {
@@ -431,22 +380,7 @@ export class SidebarView extends ItemView {
      * 打开书库（改为 Tab 视图）
      */
     private async openLibrary(): Promise<void> {
-        await this.loadIndexes();
-
-        // 检查是否已有书库视图
-        const existingLeaves = this.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
-        if (existingLeaves.length > 0) {
-            // 聚焦现有视图
-            this.app.workspace.revealLeaf(existingLeaves[0]);
-            return;
-        }
-
-        // 在主面板打开书库视图
-        const leaf = this.app.workspace.getLeaf('tab');
-        await leaf.setViewState({
-            type: LIBRARY_VIEW_TYPE,
-            state: { indexes: this.indexes, selectedIndexId: this.currentIndexId }
-        });
+        await this.bookMgr.openLibrary();
     }
 
     /**
@@ -455,30 +389,7 @@ export class SidebarView extends ItemView {
      * @returns 是否存在章节文件
      */
     private async checkBookChaptersExist(pdfName: string): Promise<boolean> {
-        // 获取书籍文件夹名称（去掉扩展名）
-        let folderName = pdfName;
-        if (folderName.toLowerCase().endsWith('.pdf')) {
-            folderName = folderName.slice(0, -4);
-        }
-        if (folderName.toLowerCase().endsWith('.epub')) {
-            folderName = folderName.slice(0, -5);
-        }
-
-        // 检查 DeepReader/{folderName} 文件夹是否存在
-        const folderPath = `DeepReader/${folderName}`;
-        const folder = this.app.vault.getAbstractFileByPath(folderPath);
-
-        if (!folder) {
-            return false;
-        }
-
-        // 检查文件夹中是否有 .md 文件（章节文件）
-        const files = this.app.vault.getMarkdownFiles();
-        const chapterFiles = files.filter(f =>
-            f.path.startsWith(folderPath + '/')
-        );
-
-        return chapterFiles.length > 0;
+        return this.bookMgr.checkBookChaptersExist(pdfName);
     }
 
     /**
@@ -488,33 +399,7 @@ export class SidebarView extends ItemView {
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
     private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
-        // 从本地 Obsidian vault 加载，尝试多种图片格式
-        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
-        let coverFile: any = null;
-        let foundPath: string = '';
-
-        for (const ext of extensions) {
-            const coverPath = `DeepReader/covers/${bookName}.${ext}`;
-            const file = this.app.vault.getAbstractFileByPath(coverPath);
-            if (file && file instanceof TFile) {
-                coverFile = file;
-                foundPath = coverPath;
-                break;
-            }
-        }
-
-        if (coverFile) {
-            const coverUrl = this.app.vault.getResourcePath(coverFile as any);
-            this.currentBookCoverUrl = coverUrl;  // 存储封面 URL
-            this.readingTopbar?.setBookCover(coverUrl);
-            log(`[DeepPDF] 从本地加载书籍封面: ${foundPath}`);
-            return;
-        }
-
-        // 封面不存在，使用默认图标
-        this.currentBookCoverUrl = null;  // 清空封面 URL
-        this.readingTopbar?.setBookCover(null);
-        log(`[DeepPDF] 书籍封面不存在: DeepReader/covers/${bookName}.{png,jpg,...}`);
+        await this.bookMgr.loadBookCover(bookName, indexId);
     }
 
     /**
@@ -525,48 +410,11 @@ export class SidebarView extends ItemView {
      * 同步顶栏书名到最新状态（用户可能在书库中修改了书名/目录名）
      */
     private async syncTopbarBookName(): Promise<void> {
-        if (!this.currentIndexId) return;
-        const vaultDir = await this.findBookDirectoryByIndexId(this.currentIndexId);
-        if (!vaultDir) return;
-
-        const index = this.indexes.find(i => i.id === this.currentIndexId);
-        const displayName = vaultDir.bookName || vaultDir.dirName || index?.pdf_name || this.currentPdfName || '';
-
-        // 更新内部标识（使用目录名作为标识）
-        if (this.currentPdfName !== vaultDir.dirName) {
-            this.currentPdfName = vaultDir.dirName;
-            this.messageList?.setCurrentPdfName(displayName);
-        }
-
-        // 更新顶栏显示
-        const author = vaultDir.author || index?.author;
-        this.readingTopbar?.setCurrentBook(displayName, author);
-        log('[DeepPDF] syncTopbarBookName:', displayName);
+        await this.bookMgr.syncTopbarBookName();
     }
 
     private async findBookDirectoryByIndexId(indexId: string): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
-        const allFiles = this.app.vault.getMarkdownFiles();
-
-        for (const f of allFiles) {
-            if (!f.path.startsWith('DeepReader/')) continue;
-            if (!f.path.includes('MOC')) continue;
-
-            const cache = this.app.metadataCache.getFileCache(f);
-            if (cache?.frontmatter?.index_id === indexId || cache?.frontmatter?.pdf_index_id === indexId) {
-                // 找到 MOC 文件，提取目录名：DeepReader/{dirName}/MOC.md
-                const parts = f.path.split('/');
-                if (parts.length >= 3) {
-                    const dirName = parts[1];
-                    log(`[DeepPDF] findBookDirectoryByIndexId: 找到目录 "${dirName}" (indexId=${indexId})`);
-                    return {
-                        dirName,
-                        author: cache.frontmatter?.author,
-                        bookName: cache.frontmatter?.book_name || cache.frontmatter?.title,
-                    };
-                }
-            }
-        }
-        return null;
+        return this.bookMgr.findBookDirectoryByIndexId(indexId);
     }
 
     /**
@@ -574,233 +422,7 @@ export class SidebarView extends ItemView {
      * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
-        // 如果已经选中了同一个索引，跳过以避免闪烁
-        // 但需要刷新顶栏显示名（用户可能在书库中修改了书名/目录名）
-        if (this.currentIndexId === indexId) {
-            log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
-            // 即使跳过切换，也要确保阅读进度已初始化
-            if (!this.readingProgress) {
-                if (!this.proactiveEngine) {
-                    await this.initializeFrontendAgent();
-                }
-                await this.initReadingProgress(indexId);
-            }
-            // 同步最新的书名到 topbar（用户可能重命名了书籍）
-            await this.syncTopbarBookName();
-            return;
-        }
-
-        log(`[DeepPDF] selectIndex triggered: ${indexId}`);
-
-        // 切换书籍前，flush 旧书籍的阅读进度
-        await this.flushProgressSave();
-        this.currentIndexId = indexId;
-        this.plugin.settings.lastSelectedIndexId = indexId;
-        await this.plugin.saveSettings();
-
-        // 更新顶栏显示 - 使用 this.indexes 而不是 indexManager
-        const index = this.indexes.find(i => i.id === indexId);
-
-        // 确定显示名称：优先从索引获取，否则从 indexId 推断
-        let displayName: string;
-        let author: string | undefined;
-        let coverName: string | undefined;
-
-        // 扫描 Vault 获取实际目录名（用户可能重命名了目录）
-        const vaultDir = await this.findBookDirectoryByIndexId(indexId);
-
-        if (index) {
-            // 从后端索引获取信息
-            const previousBook = this.currentPdfName;
-            displayName = index.pdf_name;
-            if (displayName.toLowerCase().endsWith('.pdf')) {
-                displayName = displayName.slice(0, -4);
-            }
-            if (displayName.toLowerCase().endsWith('.epub')) {
-                displayName = displayName.slice(0, -5);
-            }
-
-            // 读取 exportName（精简后的标题，用于封面和 wiki link）和 author
-            let exportName: string | undefined;
-            let metaAuthor: string | undefined;
-            try {
-                const vaultPath = (this.app.vault.adapter as any).basePath;
-                const fs = require('fs/promises');
-                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
-                const meta = JSON.parse(metaRaw);
-                exportName = meta.exportName || undefined;
-                metaAuthor = meta.author || undefined;
-                coverName = exportName;
-            } catch { /* ignore */ }
-
-            // 优先使用 Vault 中的实际目录名，回退到 book-meta.json 的 exportName
-            const simplifiedName = vaultDir?.dirName || exportName || this.getDisplayName(displayName);
-            this.currentPdfName = simplifiedName;
-
-            // 顶栏显示也使用实际目录名（精简的书名）
-            displayName = vaultDir?.bookName || simplifiedName;
-
-            // 记录书籍切换里程碑
-            await this.initializeMilestoneRecorder();
-            if (this.milestoneRecorder && previousBook !== displayName) {
-                await this.milestoneRecorder.handleBookSwitch(displayName);
-            }
-
-            // 获取作者信息：优先使用 Vault MOC 的 author，回退到 book-meta.json 和 index
-            author = vaultDir?.author || metaAuthor || index.author;
-            log(`[DeepPDF] 作者信息: vaultDir.author="${vaultDir?.author}", book-meta.author="${metaAuthor}", index.author="${index.author}"`);
-
-            // 加载书籍封面（优先使用 exportName 匹配封面文件）
-            this.loadBookCover(coverName || displayName, indexId);
-        } else {
-            // index 不在 indexes 列表中（可能 loadIndexes 还没完成）
-            // 优先使用 Vault 扫描结果，回退到 book-meta.json
-            let exportName: string | undefined;
-            let metaAuthor: string | undefined;
-            try {
-                const vaultPath = (this.app.vault.adapter as any).basePath;
-                const fs = require('fs/promises');
-                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
-                const meta = JSON.parse(metaRaw);
-                exportName = meta.exportName || undefined;
-                metaAuthor = meta.author || undefined;
-            } catch { /* ignore */ }
-
-            const resolvedName = vaultDir?.dirName || exportName;
-            if (resolvedName) {
-                displayName = vaultDir?.bookName || resolvedName;
-                this.currentPdfName = resolvedName;
-                author = vaultDir?.author || metaAuthor;
-                log(`[DeepPDF] 从 book-meta.json/vault 恢复书名: "${resolvedName}"`);
-                this.loadBookCover(resolvedName, indexId);
-            } else {
-                // book-meta.json 也不存在且 Vault 中也找不到，无法恢复，放弃设置
-                log(`[DeepPDF] index ${indexId} 不在列表中且无 book-meta.json/vault 目录，跳过`);
-                return;
-            }
-        }
-
-        // 尝试从本地元数据获取作者信息（如果还没有）
-        if (!author) {
-            // 从当前打开的章节文件 frontmatter 读取 author 字段
-            const activeFile = this.app.workspace.getActiveFile();
-            if (activeFile) {
-                const cache = this.app.metadataCache.getFileCache(activeFile);
-                const fmAuthor = cache?.frontmatter?.author;
-                if (fmAuthor && typeof fmAuthor === 'string') {
-                    author = fmAuthor;
-                    log(`[DeepPDF] 从章节文件 frontmatter 获取作者: "${author}"`);
-                }
-            }
-            if (!author) {
-                log(`[DeepPDF] 作者信息未找到`);
-            }
-        }
-        log(`[DeepPDF] 最终使用的作者: author="${author}"`);
-
-        // 存储当前书籍作者（用于消息传递）
-        this.currentBookAuthor = author || null;
-
-        // 更新 UI
-        this.messageList?.setCurrentPdfName(displayName);
-        this.readingTopbar?.setCurrentBook(displayName, author);
-
-        // 确保 proactiveEngine 在 initReadingProgress 之前初始化
-        if (!this.proactiveEngine) {
-            await this.initializeFrontendAgent();
-        }
-
-        // 初始化阅读进度
-        await this.initReadingProgress(indexId);
-
-        // 自动跳转到上次阅读的章节
-        this.navigateToLastReadChapter();
-
-        // === 从本地书籍笔记读取全书摘要 ===
-        try {
-            // 书籍笔记路径：DeepReader/{exportName}/{exportName}.md
-            const bookName = coverName || this.getDisplayName(this.currentPdfName || '');
-            const bookNotePath = `DeepReader/${bookName}/${bookName}.md`;
-            const bookNoteFile = this.app.vault.getAbstractFileByPath(bookNotePath);
-
-            if (bookNoteFile instanceof TFile) {
-                const content = await this.app.vault.read(bookNoteFile);
-                // 提取全书摘要部分（## 📝 全书摘要）
-                const descMatch = content.match(/## 📝 全书摘要\s*\n\n([\s\S]*?)(?=\n## |$)/);
-                if (descMatch && descMatch[1]) {
-                    this.currentDocDescription = descMatch[1].trim();
-                    log(`[DeepPDF] 从本地笔记读取到全书摘要，长度: ${this.currentDocDescription.length}`);
-                } else {
-                    this.currentDocDescription = null;
-                    log.debug('[DeepPDF] 本地笔记没有全书摘要部分');
-                }
-            } else {
-                this.currentDocDescription = null;
-                log.debug('[DeepPDF] 本地笔记不存在，可能尚未导出');
-            }
-        } catch (e) {
-            logError('[DeepPDF] 读取本地笔记失败:', e);
-            this.currentDocDescription = null;
-        }
-
-        // 注意：章节下载逻辑已移至 library-modal.ts
-        // 这里不再重复触发导出，避免出现两次 notice
-
-        // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
-        this.cancelActiveStream();
-
-        // 清空消息
-        this.messageList?.clear();
-
-        // 尝试恢复会话：优先使用标准化书名查找，兼容旧的 indexId
-        const savedSessions = this.plugin.settings.savedSessions || {};
-        const normalizedBookName = (this.currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this.currentIndexId || '';
-        let savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
-
-        if (savedSessionId) {
-            try {
-                // 先校验会话是否属于当前书籍（在恢复到 UI 之前）
-                if (!this.sessionMgr.sessionStore) { await this.sessionMgr["initializeSessionStore"](); }
-                const session = await this.sessionMgr.sessionStore!.get(savedSessionId);
-
-                if (session) {
-                    // 标准化 session.indexId 以便比较（移除扩展名）
-                    const sessionBookName = session.indexId
-                        .replace(/\.pdf$/i, '')
-                        .replace(/\.epub$/i, '');
-
-                    // 判断会话是否属于当前书籍
-                    // 匹配条件：indexId 完全匹配，或标准化后的书名匹配
-                    const isMatch = session.indexId === indexId ||
-                        session.indexId === normalizedBookName ||
-                        sessionBookName === normalizedBookName ||
-                        sessionBookName === indexId;
-
-                    if (!isMatch) {
-                        log(`[DeepPDF] 会话不匹配: session.indexId="${session.indexId}", 当前 indexId="${indexId}", normalizedBookName="${normalizedBookName}"`);
-                        // 会话不匹配，创建新会话
-                        this.startNewSession(indexId);
-                        return;
-                    }
-
-                    // 会话匹配，恢复到 UI
-                    this.sessionMgr.sessionId = savedSessionId;
-                    const restored = await this.restoreFromSessionStore(savedSessionId);
-                    if (restored) {
-                        log('[DeepPDF] 从 SessionStore 恢复会话成功，会话匹配');
-                        return;
-                    }
-                }
-
-                // 没有找到会话或会话为空，创建新会话
-                this.startNewSession(indexId);
-            } catch (e) {
-                logError(`[DeepPDF] 恢复会话失败:`, e);
-                this.startNewSession(indexId);
-            }
-        } else {
-            this.startNewSession(indexId);
-        }
+        await this.bookMgr.selectIndex(indexId);
     }
 
     /**
@@ -812,17 +434,17 @@ export class SidebarView extends ItemView {
      * - 只有用户手动点击按钮才能卸载文档
      */
     private async autoSyncCurrentChapter(): Promise<void> {
-        if (!this.contextManager || !this.currentPdfName) return;
+        if (!this.contextManager || !this.bookMgr.currentPdfName) return;
 
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') return;
 
         // 检查当前文件是否属于正在阅读的书籍
-        const bookPath = `DeepReader/${this.currentPdfName}/`;
+        const bookPath = `DeepReader/${this.bookMgr.currentPdfName}/`;
         if (!activeFile.path.startsWith(bookPath)) return;
 
         // 排除书籍主文件（只加载章节文件）
-        if (activeFile.path === `${bookPath}${this.currentPdfName}.md`) return;
+        if (activeFile.path === `${bookPath}${this.bookMgr.currentPdfName}.md`) return;
 
         // 检查当前章节是否已在上下文中
         if (this.contextManager.hasDocument(activeFile.path)) return;
@@ -901,12 +523,17 @@ export class SidebarView extends ItemView {
      * 获取当前选中的索引 ID
      */
     public getCurrentIndexId(): string | null {
-        return this.currentIndexId;
+        return this.bookMgr.currentIndexId;
+    }
+
+    /** 索引列表（供 main.ts 等外部调用者使用） */
+    get indexes(): import("../types/index.js").IndexListItem[] {
+        return this.bookMgr.indexes;
     }
 
     public async notifyHighlight(text: string): Promise<void> {
-        if (!this.currentIndexId || !this.currentChapterId) return;
-        await this.proactiveEngine?.onHighlight(this.currentIndexId, this.currentChapterId, text);
+        if (!this.bookMgr.currentIndexId || !this.currentChapterId) return;
+        await this.proactiveEngine?.onHighlight(this.bookMgr.currentIndexId, this.currentChapterId, text);
     }
 
     /**
@@ -914,76 +541,21 @@ export class SidebarView extends ItemView {
      * 不重置 currentPdfName/currentIndexId，保持用户通过书库选中的书籍
      */
     public clearTopbarDisplay(): void {
-        this.readingTopbar?.setCurrentBook(null);
-        this.readingTopbar?.setBookCover(null);
+        this.bookMgr.clearTopbarDisplay();
     }
 
     /**
      * 清除所有书籍信息（删除索引时调用）
      */
     public clearBookInfo(): void {
-        this.currentIndexId = null;
-        this.currentPdfName = null;
-        this.currentBookCoverUrl = null;
-        this.currentBookAuthor = null;
-        this.readingTopbar?.setCurrentBook(null);
-        this.readingTopbar?.setBookCover(null);
+        this.bookMgr.clearBookInfo();
     }
 
     /**
      * 通过书名选择索引（自动切换时使用）
      */
     public async selectBookByName(bookName: string): Promise<void> {
-        log('[DeepPDF] Selecting book by name:', bookName);
-
-        // 标准化书名（移除扩展名）
-        const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-
-        // 检查当前书籍是否已经是目标书籍（基于书名比较）
-        const currentBookName = (this.currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this.currentIndexId || '';
-        if (currentBookName === normalizedBookName) {
-            log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
-            // 即使同一本书，也要确保进度已初始化
-            if (!this.readingProgress && this.currentIndexId) {
-                await this.initReadingProgress(this.currentIndexId);
-            }
-            return;
-        }
-
-        // 在已加载的索引列表中查找
-        const index = this.indexes.find(idx => {
-            const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-            // 精确匹配或双向前缀匹配（处理 sanitize 截断的情况）
-            return idxName === normalizedBookName ||
-                   idx.pdf_name === bookName ||
-                   idxName.startsWith(normalizedBookName) ||
-                   normalizedBookName.startsWith(idxName);
-        });
-
-        if (index) {
-            log('[DeepPDF] Found index by name:', index.id);
-            await this.selectIndex(index.id);
-        } else {
-            // 索引列表可能未加载，先尝试重新加载
-            log('[DeepPDF] Book not found in index list, reloading indexes...');
-            await this.loadIndexes();
-
-            const retryIndex = this.indexes.find(idx => {
-                const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-                return idxName === normalizedBookName ||
-                       idx.pdf_name === bookName ||
-                       idxName.startsWith(normalizedBookName) ||
-                       normalizedBookName.startsWith(idxName);
-            });
-
-            if (retryIndex) {
-                log('[DeepPDF] Found index after reload:', retryIndex.id);
-                await this.selectIndex(retryIndex.id);
-            } else {
-                // 绝不能用书名作为 indexId（bookId 是 SHA-256 哈希，不是书名）
-                log('[DeepPDF] Book not found in index list after reload, skipping:', normalizedBookName);
-            }
-        }
+        await this.bookMgr.selectBookByName(bookName);
     }
 
     /**
@@ -1338,9 +910,9 @@ export class SidebarView extends ItemView {
                 }
             },
             getCurrentBookInfo: () => ({
-                coverUrl: this.currentBookCoverUrl,
-                author: this.currentBookAuthor,
-                bookName: this.currentPdfName
+                coverUrl: this.bookMgr.currentBookCoverUrl,
+                author: this.bookMgr.currentBookAuthor,
+                bookName: this.bookMgr.currentPdfName
             })
         }, this.app);
 
@@ -1599,85 +1171,7 @@ export class SidebarView extends ItemView {
     }
 
     async loadIndexes(): Promise<void> {
-        // Scan local .pageindex/ directory for book-meta.json and .indexing.json files
-        const vaultPath = (this.app.vault.adapter as any).basePath;
-        const pageindexDir = `${vaultPath}/.pageindex`;
-
-        try {
-            const fs = require('fs/promises');
-            const entries = await fs.readdir(pageindexDir, { withFileTypes: true });
-            const indexes: any[] = [];
-
-            for (const entry of entries) {
-                if (!entry.isDirectory()) continue;
-                const dirPath = `${pageindexDir}/${entry.name}`;
-
-                // Check for in-progress indexing first
-                try {
-                    const statusContent = await fs.readFile(`${dirPath}/.indexing.json`, 'utf-8');
-                    const status = JSON.parse(statusContent);
-                    const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
-                    const isFailed = status.step === 'failed';
-
-                    if (isComplete) {
-                        // 已完成的索引：清理状态文件，继续读 book-meta.json
-                        fs.unlink(`${dirPath}/.indexing.json`).catch(() => {});
-                        // Fall through to book-meta.json check below
-                    } else {
-                        indexes.push({
-                            id: status.bookId || entry.name,
-                            pdf_name: status.title || entry.name,
-                            node_count: 0,
-                            created_at: new Date().toISOString(),
-                            fileType: status.fileType,
-                            status: isFailed ? 'failed' : 'processing',
-                            progress_percent: status.percent || 0,
-                            message: isFailed ? `索引失败: ${status.error || ''}` : status.stepLabel,
-                        });
-                        continue; // Skip book-meta.json check while indexing
-                    }
-                } catch {
-                    // No .indexing.json, fall through to check book-meta.json
-                }
-
-                // Check for completed index
-                try {
-                    const content = await fs.readFile(`${dirPath}/book-meta.json`, 'utf-8');
-                    const meta = JSON.parse(content);
-                    indexes.push({
-                        id: meta.bookId || entry.name,
-                        pdf_name: meta.title || entry.name,
-                        author: meta.author,
-                        description: meta.description,
-                        fileType: meta.fileType,
-                        node_count: meta.chapters?.length || 0,
-                        created_at: meta.indexedAt || new Date().toISOString(),
-                        status: 'ready',
-                    });
-                } catch {
-                    // Skip directories without book-meta.json
-                }
-            }
-
-            this.indexes = indexes;
-            log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/');
-        } catch {
-            // .pageindex/ doesn't exist yet
-            this.indexes = [];
-        }
-
-        if (this.plugin.settings.lastSelectedIndexId) {
-            // Verify the book still exists before restoring
-            const exists = this.indexes.some(idx => idx.id === this.plugin.settings.lastSelectedIndexId);
-            if (exists) {
-                log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.plugin.settings.lastSelectedIndexId);
-                await this.selectIndex(this.plugin.settings.lastSelectedIndexId);
-            } else {
-                log('[DeepPDF] [loadIndexes] 上次选中的书籍已不存在，清空状态');
-                this.plugin.settings.lastSelectedIndexId = undefined;
-                await this.plugin.saveSettings();
-            }
-        }
+        await this.bookMgr.loadIndexes();
     }
 
     /**
@@ -1788,10 +1282,6 @@ export class SidebarView extends ItemView {
      * 获取当前书籍信息（供调试命令使用）
      */
     getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
-        return {
-            title: this.currentPdfName,
-            page_count: 100, // 暂时硬编码，后续可从索引元数据获取
-            docDescription: this.currentDocDescription,
-        };
+        return this.bookMgr.getCurrentBookInfo();
     }
 }
