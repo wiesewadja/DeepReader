@@ -79,6 +79,8 @@ export class TTSService {
     private progressTimer: ReturnType<typeof setInterval> | null = null;
     /** 当前正在播放的音频元素引用（pause/stop 直接操作，无需查 cache） */
     private currentAudio: HTMLAudioElement | null = null;
+    /** 用于在 stop 时 reject 挂起的 playAudioAndWait promise，避免异步链泄漏 */
+    private playbackReject: ((err: Error) => void) | null = null;
 
     constructor(config: TTSServiceConfig) {
         this.client = new TTSClient({
@@ -175,6 +177,8 @@ export class TTSService {
             try {
                 await this.playWithOralRewrite(messageId, cleanContent, voiceProfile, cached);
             } catch (err) {
+                // 用户主动停止 → 静默处理（state 已由 stopInternal 清理）
+                if (err instanceof Error && err.message === 'STOPPED') return;
                 console.error('[TTS] oral rewrite play failed:', err);
                 new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
                 this.currentMessageId = null;
@@ -360,13 +364,11 @@ export class TTSService {
         if (this.rewrittenCache.has(messageId)) {
             rewrittenText = this.rewrittenCache.get(messageId);
         } else if (this.pendingRewrites.has(messageId)) {
-            // 后台改写还在进行，等它完成
-            this.setState('tts_loading');
+            // 后台改写还在进行，等它完成（保持当前状态不闪断）
             rewrittenText = await this.pendingRewrites.get(messageId)!;
             if (this.currentMessageId !== messageId) return;
         } else if (totalChars > playedChars) {
             // 没有缓存也没有进行中的改写，现场改写剩余内容
-            this.setState('tts_loading');
             const remaining = fullContent.slice(playedChars);
             try {
                 rewrittenText = await this.summarizer.oralRewrite(remaining);
@@ -434,7 +436,7 @@ export class TTSService {
         let currentCharOffset = 0;
         const audioBuffers: ArrayBuffer[] = [];
 
-        // 预取流水线：提前合成下一段，消除段间停顿
+        // 预取：提前合成下一段，与当前段播放并行（消除段间空白）
         let nextResult: Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }> | null =
             this.synthesizeSegment(segments[0], voiceProfile);
 
@@ -445,22 +447,43 @@ export class TTSService {
             const segmentStart = currentCharOffset / totalChars;
             const segmentEnd = (currentCharOffset + segmentText.length) / totalChars;
 
-            const { audio, buffer } = await nextResult!;
-            audioBuffers.push(buffer);
+            // 等待当前段合成完成（首段或预取结果）
+            let segResult: { audio: HTMLAudioElement; buffer: ArrayBuffer };
+            try {
+                segResult = await nextResult!;
+            } catch (err) {
+                console.warn(`[TTS] Segment ${i} synthesis failed, skipping:`, err);
+                currentCharOffset += segmentText.length;
+                nextResult = i + 1 < totalSegments
+                    ? this.synthesizeSegment(segments[i + 1], voiceProfile)
+                    : null;
+                continue;
+            }
 
             if (this.currentMessageId !== messageId) return;
 
-            // 立即发起下一段的合成（与当前段播放并行）
+            audioBuffers.push(segResult.buffer);
+            this.setState('playing');
+
+            // 立即发起下一段合成（与当前段播放并行）
             nextResult = i + 1 < totalSegments
                 ? this.synthesizeSegment(segments[i + 1], voiceProfile)
                 : null;
 
-            this.startMappedProgressTracking(messageId, audio, {
+            // 暂停检查：用户可能在段间间隙点了暂停
+            if (!await this.waitIfPaused(messageId)) return;
+
+            this.startMappedProgressTracking(messageId, segResult.audio, {
                 segmentStart,
                 segmentEnd,
             });
 
-            await this.playAudioAndWait(messageId, audio);
+            try {
+                await this.playAudioAndWait(messageId, segResult.audio);
+            } catch (err) {
+                if (err instanceof Error && err.message === 'STOPPED') throw err;
+                console.warn(`[TTS] Segment ${i} playback failed:`, err);
+            }
 
             currentCharOffset += segmentText.length;
         }
@@ -475,7 +498,6 @@ export class TTSService {
                 const blob = new Blob([merged], { type: 'audio/wav' });
                 const blobUrl = URL.createObjectURL(blob);
                 const fullAudio = new Audio(blobUrl);
-                // 释放旧缓存（预览音频）
                 const old = this.cache.get(cacheKey);
                 if (old) {
                     old.audio.pause();
@@ -681,23 +703,31 @@ export class TTSService {
 
     /**
      * 播放单个音频并等待结束，支持中断检查
+     * stop 时通过 playbackReject 释放挂起的 promise
      */
     private playAudioAndWait(messageId: string, audio: HTMLAudioElement): Promise<void> {
         this.currentAudio = audio;
         return new Promise<void>((resolve, reject) => {
-            audio.onended = () => {
+            this.playbackReject = reject;
+            const cleanup = () => {
                 this.currentAudio = null;
-                resolve();
+                this.playbackReject = null;
             };
-            audio.onerror = () => {
-                this.currentAudio = null;
-                reject(new Error('Audio play error'));
-            };
-            audio.play().catch((err) => {
-                this.currentAudio = null;
-                reject(err);
-            });
+            audio.onended = () => { cleanup(); resolve(); };
+            audio.onerror = () => { cleanup(); reject(new Error('Audio play error')); };
+            audio.play().catch((err) => { cleanup(); reject(err); });
         });
+    }
+
+    /**
+     * 暂停期间阻塞，等用户恢复或停止
+     * 返回 false 表示已被停止，调用方应退出
+     */
+    private async waitIfPaused(messageId: string): Promise<boolean> {
+        while (this.state === 'paused' && this.currentMessageId === messageId) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+        return this.currentMessageId === messageId;
     }
 
     /**
@@ -759,6 +789,11 @@ export class TTSService {
             this.currentAudio.currentTime = 0;
             this.currentAudio = null;
         }
+        // 释放挂起的 playAudioAndWait promise
+        if (this.playbackReject) {
+            this.playbackReject(new Error('STOPPED'));
+            this.playbackReject = null;
+        }
         this.setState('idle');
         this.currentMessageId = null;
     }
@@ -805,6 +840,10 @@ export class TTSService {
         if (this.currentAudio) {
             this.currentAudio.pause();
             this.currentAudio = null;
+        }
+        if (this.playbackReject) {
+            this.playbackReject(new Error('STOPPED'));
+            this.playbackReject = null;
         }
         for (const [, cached] of this.cache) {
             cached.audio.pause();
@@ -1124,6 +1163,11 @@ export class TTSService {
             this.currentAudio.pause();
             this.currentAudio.currentTime = 0;
             this.currentAudio = null;
+        }
+        // 释放挂起的 playAudioAndWait promise
+        if (this.playbackReject) {
+            this.playbackReject(new Error('STOPPED'));
+            this.playbackReject = null;
         }
         this.setState('idle');
         this.currentMessageId = null;
