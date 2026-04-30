@@ -29,7 +29,7 @@ import { ExcerptModal } from "../components/excerpt/excerpt-modal.js";
 import { ConfirmModal } from "../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../types/excerpt.js";
 import { ReadingTopbar } from "../components/reading-topbar/index.js";
-import type { QuoteItem } from "../components/chat-input/chat-input.js";
+
 import { uiLog as log, serviceLog, warn, error as logError } from "../utils/logger.js";
 import { FrontendAgent } from "../agent/index.js";
 import type { ToolContext } from "../agent/tools/types.js";
@@ -47,6 +47,13 @@ import { TTSService, type TTSPlayState } from '../services/tts/tts-service.js';
 import { StreamingVoicePlayer, type StreamingVoiceState } from '../services/tts/streaming-voice-player.js';
 import { resolveRoleConfig } from '../config/providers.js';
 import { ProactiveEngine } from '../agent/proactive/engine.js';
+import { rerankResults as _rerankResults, buildContextWithTokenLimit as _buildContextWithTokenLimit, estimateTokens as _estimateTokens, copyToClipboard as _copyToClipboard } from './sidebar/search-utils.js';
+import { QuoteManager } from './sidebar/quote-manager.js';
+import type { QuoteItem, QuoteMetadata } from '../components/chat-input/chat-input.js';
+import { TTSController } from './sidebar/tts-controller.js';
+import { ReadingProgressTracker } from './sidebar/reading-progress-tracker.js';
+import { SessionManager } from './sidebar/session-manager.js';
+import { AgentChatController } from './sidebar/agent-chat-controller.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -71,13 +78,6 @@ export class SidebarView extends ItemView {
     private currentPdfName: string | null = null;
     private currentBookCoverUrl: string | null = null;  // 当前书籍封面 URL
     private currentBookAuthor: string | null = null;  // 当前书籍作者
-    private isProcessing: boolean = false;
-    private sessionId: string | null = null;  // 会话ID，用于多轮对话
-    private streamController: AbortController | null = null;  // 流式请求控制器
-    private isAiStreaming: boolean = false;  // AI 是否正在流式输出
-    private proactiveAbortController: AbortController | null = null;  // proactive 引导的取消控制器
-    private crossBookMode: boolean = false;  // 跨书籍模式开关
-    private searchFilters: SearchFilters = { booklists: [], tags: [] };  // 搜索过滤条件
     private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
@@ -97,10 +97,8 @@ export class SidebarView extends ItemView {
     private ttsService: TTSService | null = null;
 
     // 流式语音播放器（用于语音消息）
-    private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
 
     // 会话存储（JSONL 文件）
-    private sessionStore: SessionStore | null = null;
 
     /** 当前索引的 Markdown 文件映射 (node_id -> file_path) */
     private currentMarkdownFiles: Record<string, string> = {};
@@ -120,10 +118,15 @@ export class SidebarView extends ItemView {
     /** 前端 Agent 对话历史 */
     private agentChatHistory: import("../agent/types.js").ChatMessage[] = [];
 
-    /** 生成新的会话ID */
-    private generateSessionId(): string {
-        return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    }
+    // ── 子系统 controller ──
+    private quoteManager: QuoteManager;
+    private ttsCtrl: TTSController;
+    private progressTracker: ReadingProgressTracker;
+    private sessionMgr: SessionManager;
+    private agentChatCtrl: AgentChatController;
+
+
+
 
     /**
      * 初始化前端 Agent
@@ -228,10 +231,10 @@ export class SidebarView extends ItemView {
             }
 
             // 4. 删除该书的对话记录
-            if (this.sessionStore) {
-                const session = await this.sessionStore.findSessionByIndexId(indexId);
+            if (this.sessionMgr.sessionStore) {
+                const session = await this.sessionMgr.sessionStore.findSessionByIndexId(indexId);
                 if (session) {
-                    await this.sessionStore.delete(session.sessionId);
+                    await this.sessionMgr.sessionStore.delete(session.sessionId);
                 }
             }
 
@@ -278,138 +281,32 @@ export class SidebarView extends ItemView {
         await this.loadIndexes();
     }
 
-    /**
-     * 初始化会话存储
-     */
-    private async initializeSessionStore(): Promise<void> {
-        if (this.sessionStore) {
-            return; // 已初始化
-        }
-        this.sessionStore = new SessionStore(this.app);
-        log('[DeepPDF] SessionStore 初始化完成');
-    }
 
-    /**
-     * 获取标准化的书籍名称（用于 session key）
-     * 统一后端 indexId 和本地书名的差异
-     */
-    private getNormalizedBookName(): string {
-        if (!this.currentPdfName) {
-            return this.currentIndexId || '';
-        }
-        // 移除扩展名
-        return this.currentPdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-    }
+
+
 
     /** 开启新会话 */
     private async startNewSession(indexId: string) {
-        // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
-        this.cancelActiveStream();
-
-        this.sessionId = this.generateSessionId();
-
-        // 清空前端 Agent 对话历史
-        this.agentChatHistory = [];
-
-        // 清空上下文管理器（清除旧书籍的文档）
-        if (this.contextManager) {
-            this.contextManager.clearAll();
-            log('[DeepPDF] ContextManager cleared for new session');
-        }
-
-        // 在 SessionStore 中创建会话
-        await this.initializeSessionStore();
-        const effectiveIndexId = this.crossBookMode ? '__cross_book__' : indexId;
-        await this.sessionStore!.create(this.sessionId, effectiveIndexId, this.crossBookMode);
-
-        // 保存到设置：使用标准化书名作为 key（合并后端 indexId 和本地书名）
-        if (!this.plugin.settings.savedSessions) {
-            this.plugin.settings.savedSessions = {};
-        }
-        const sessionKey = this.crossBookMode ? indexId : this.getNormalizedBookName();
-        this.plugin.settings.savedSessions[sessionKey] = this.sessionId;
-        // 同时保留 indexId 映射（兼容旧逻辑）
-        if (indexId !== sessionKey) {
-            this.plugin.settings.savedSessions[indexId] = this.sessionId;
-        }
-        await this.plugin.saveSettings();
-
-        this.showWelcomeMessage();
+        await this.sessionMgr.startNewSession(indexId);
     }
 
     /** 显示欢迎语 */
     private showWelcomeMessage() {
-        if (!this.messageList) return;
-
-        const welcomeId = `msg-${Date.now()}`;
-        let welcomeContent: string;
-
-        if (this.crossBookMode) {
-            welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
-
-            // 显示过滤条件
-            if (this.hasSearchFilters()) {
-                welcomeContent += `\n\n🔍 当前过滤条件: ${this.buildFilterDescription()}`;
-                welcomeContent += `\n\n[清除过滤](obsidian://deepreader-search) | [搜索全部](obsidian://deepreader-search)`;
-            }
-
-            this.messageList.addMessage({
-                id: welcomeId,
-                role: "assistant",
-                content: welcomeContent,
-                timestamp: new Date().toISOString()
-            });
-        }
-        // 单书籍模式：不添加欢迎消息，让空状态的"生成阅读大纲"按钮显示
+        this.sessionMgr.showWelcomeMessage();
     }
 
-    /** 构建过滤条件描述 */
-    private buildFilterDescription(): string {
-        const parts: string[] = [];
-        if (this.searchFilters.booklists.length > 0) {
-            parts.push(`书单: ${this.searchFilters.booklists.join(", ")}`);
-        }
-        if (this.searchFilters.tags.length > 0) {
-            parts.push(`标签: ${this.searchFilters.tags.join(", ")}`);
-        }
-        return parts.join("; ");
-    }
 
-    /** 检查是否有搜索过滤条件 */
-    private hasSearchFilters(): boolean {
-        return this.searchFilters.booklists.length > 0 || this.searchFilters.tags.length > 0;
-    }
+
+
 
     /** 切换到跨书籍模式 */
     private async switchToCrossBookMode(options: { clearMessages?: boolean; showWelcome?: boolean } = {}): Promise<void> {
-        if (this.crossBookMode) return;
-
-        this.crossBookMode = true;
-        this.indexManager?.setCrossBookMode(true);
-        this.plugin.settings.lastCrossBookMode = true;
-        await this.plugin.saveSettings();
-
-        // 清空当前 PDF 名称（跨书籍模式不显示快捷操作按钮）
-        this.messageList?.setCurrentPdfName('');
-
-        if (options.clearMessages !== false) {
-            // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
-            this.cancelActiveStream();
-            this.messageList?.clear();
-        }
-        if (options.showWelcome) {
-            this.showWelcomeMessage();
-        }
+        await this.sessionMgr.switchToCrossBookMode(options);
     }
 
     /** 处理新建会话 */
     private handleNewChat() {
-        // 不再检查连接状态，允许用户在未连接时创建新会话
-        if (!this.currentIndexId) {
-            new Notice("请先选择一个索引");
-            return;
-        }
-        this.startNewSession(this.currentIndexId);
+        this.sessionMgr.handleNewChat();
     }
 
     /**
@@ -422,315 +319,100 @@ export class SidebarView extends ItemView {
 
     /** 从 SessionStore 恢复历史记录到视图 */
     private async restoreFromSessionStore(sessionId: string): Promise<boolean> {
-        if (!this.messageList) return false;
-
-        await this.initializeSessionStore();
-        const session = await this.sessionStore!.get(sessionId);
-
-        if (!session || session.messages.length === 0) {
-            log('[DeepPDF] SessionStore 中没有找到会话或会话为空:', sessionId);
-            return false;
-        }
-
-        log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length, 'lastConsolidated:', session.lastConsolidated);
-
-        // 1. 恢复消息到 UI
-        // 过滤规则：
-        // - user 消息：全部显示
-        // - assistant 消息：只显示最终回复（没有 tool_calls 的），过滤掉中间过程消息
-        // - 对于重试产生的多个 AI 回复，只保留最新的一个
-        const allDisplayMessages = session.messages.filter(msg => {
-            if (msg.role === 'user') return true;
-            if (msg.role === 'assistant') {
-                // 过滤掉带有 tool_calls 的中间消息（这些是工具调用前的思考/动作消息）
-                // 只显示最终的 assistant 回复（没有 tool_calls 的）
-                return !msg.tool_calls || msg.tool_calls.length === 0;
-            }
-            return false; // 过滤掉 tool 和其他角色消息
-        });
-
-        // 去重：对于连续的多个 assistant 消息，只保留最新的一个
-        // 这是为了处理重试（regenerate）产生的重复 AI 回复
-        const displayMessages: typeof allDisplayMessages = [];
-        for (let i = 0; i < allDisplayMessages.length; i++) {
-            const msg = allDisplayMessages[i];
-            const nextMsg = allDisplayMessages[i + 1];
-
-            // 如果当前是 assistant 消息，且下一个也是 assistant 消息，跳过当前的（保留最新的）
-            if (msg.role === 'assistant' && nextMsg?.role === 'assistant') {
-                log(`[DeepPDF] 跳过旧的 AI 回复（有更新的版本）`);
-                continue;
-            }
-            displayMessages.push(msg);
-        }
-
-        // 将过滤后的消息添加到 UI
-        let lastUserContent = '';
-        
-        displayMessages.forEach((msg, index) => {
-            try {
-                const msgData: any = {
-                    id: `restored-${Date.now()}-${index}`,
-                    role: msg.role as MessageRole,
-                    content: msg.content || '',
-                    timestamp: msg.timestamp || new Date().toISOString(),
-                    isAgentMessage: msg.role === 'assistant',
-                    pdfName: this.currentPdfName || undefined,
-                    conversationId: this.sessionId || undefined,
-                    bookCoverUrl: this.currentBookCoverUrl || undefined,
-                    bookAuthor: this.currentBookAuthor || undefined,
-                };
-                if (msg.role === 'user') {
-                    lastUserContent = msg.content || '';
-                } else if (msg.role === 'assistant' && lastUserContent) {
-                    msgData.question = lastUserContent;
-                }
-                // 只在有语音数据时才设置语音相关字段
-                if ((msg as any).voiceAudio) {
-                    msgData.voiceAudio = (msg as any).voiceAudio;
-                    msgData.voiceDuration = (msg as any).voiceDuration;
-                    msgData.letterState = (msg as any).letterState || 'sealed';
-                    msgData.voiceState = 'ready';
-                    msgData.enableVoiceReply = true;
-                    log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
-                }
-                this.messageList!.addMessage(msgData);
-            } catch (e) {
-                warn(`[DeepPDF] Failed to restore message:`, e);
-            }
-        });
-
-        // 如果最后一条消息是 user 消息（没有对应的 assistant 回复），添加空的 AI 占位气泡
-        if (displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === 'user') {
-            this.messageList!.addMessage({
-                id: `restored-placeholder-${Date.now()}`,
-                role: 'assistant' as MessageRole,
-                content: '',
-                timestamp: new Date().toISOString(),
-                isAgentMessage: true
-            });
-            log('[DeepPDF] 添加空的 AI 占位气泡，方便用户重试');
-        }
-
-        // 2. 使用 getLLMHistory() 加载 LLM 上下文（只加载未整合消息）
-        if (this.frontendAgent) {
-            const llmHistory = await this.sessionStore!.getLLMHistory(sessionId);
-            const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
-            this.agentChatHistory = [
-                { role: 'system', content: systemPrompt },
-                ...llmHistory
-            ];
-            log('[DeepPDF] 恢复 agentChatHistory (LLM), 未整合消息数:', llmHistory.length, '总历史数:', session.messages.length);
-        }
-
-        return true;
+        return this.sessionMgr.restoreFromSessionStore(sessionId);
     }
 
     /** 保存当前对话到 SessionStore（JSONL 文件） */
     private async saveToCache() {
-        log('[DeepPDF] saveToCache called, sessionId:', this.sessionId);
-        if (!this.sessionId) {
-            log('[DeepPDF] saveToCache early return: no sessionId');
-            return;
-        }
-
-        // 确保 SessionStore 已初始化
-        await this.initializeSessionStore();
-
-        const effectiveIndexId = this.crossBookMode
-            ? '__cross_book__'
-            : this.currentIndexId;
-
-        if (!effectiveIndexId) {
-            log('[DeepPDF] saveToCache early return: no effectiveIndexId');
-            return;
-        }
-
-        // 1. 从 MessageList 获取完整消息数据（包括语音数据）
-        // 这样可以确保语音数据被持久化
-        const RUNTIME_CONTEXT_PATTERN = /^\[运行时上下文[^\]]*\]\n[^\n]*(?:\n[^\n]*)*\n\n/;
-        const SYSTEM_NOTE_PATTERN = /<system_note>[\s\S]*?<\/system_note>\n\n/g;
-        
-        // 优先从 MessageList 获取消息（包含语音数据）
-        // MessageList 中的消息只有 user 和 assistant 角色，不会有 system
-        let messagesToSave: any[] = [];
-        if (this.messageList) {
-            const uiMessages = this.messageList.getMessagesData();
-            messagesToSave = uiMessages
-                .filter(m =>
-                    m.content &&
-                    !m.content.includes("已切换到书籍") &&
-                    m.content !== "📖 开始翻阅..." &&
-                    m.content !== "🔍 正在跨书籍查阅..."
-                )
-                .map(m => {
-                    // 剥离用户消息中的运行时上下文和 system_note
-                    if (m.role === 'user' && m.content) {
-                        let content = m.content;
-                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
-                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
-                        return { ...m, content };
-                    }
-                    return m;
-                });
-        }
-
-        // 如果 MessageList 没有消息，回退到 agentChatHistory
-        if (messagesToSave.length === 0) {
-            messagesToSave = this.agentChatHistory
-                .filter(m =>
-                    m.role !== 'system' &&
-                    m.content &&
-                    !m.content.includes("已切换到书籍") &&
-                    m.content !== "📖 开始翻阅..." &&
-                    m.content !== "🔍 正在跨书籍查阅..."
-                )
-                .map(m => {
-                    if (m.role === 'user' && m.content) {
-                        let content = m.content;
-                        content = content.replace(SYSTEM_NOTE_PATTERN, '');
-                        content = content.replace(RUNTIME_CONTEXT_PATTERN, '');
-                        return { ...m, content };
-                    }
-                    return m;
-                });
-        }
-
-        log('[DeepPDF] saveToCache messagesToSave count:', messagesToSave.length);
-        if (messagesToSave.length === 0) {
-            log('[DeepPDF] saveToCache early return: no messages to save');
-            return;
-        }
-
-        // 2. 获取会话
-        let session = await this.sessionStore!.get(this.sessionId);
-        if (!session) {
-            // 会话不存在，创建新的
-            session = await this.sessionStore!.create(
-                this.sessionId,
-                effectiveIndexId,
-                this.crossBookMode
-            );
-        }
-
-        // 3. 只追加新消息（增量保存，使用内容哈希去重）
-        const existingHashes = new Set(
-            session.messages.map(m => `${m.role}:${m.content?.slice(0, 100)}`)
-        );
-
-        let savedCount = 0;
-        for (const msg of messagesToSave) {
-            const msgHash = `${msg.role}:${msg.content?.slice(0, 100)}`;
-            if (!existingHashes.has(msgHash)) {
-                await this.sessionStore!.appendMessage(this.sessionId, msg);
-                existingHashes.add(msgHash); // 防止同一批次重复
-                savedCount++;
-            }
-        }
-
-        if (savedCount > 0) {
-            log(`[DeepPDF] 保存 ${savedCount} 条新消息到 SessionStore`);
-        }
-
-        // 4. 如果是跨书籍模式，保存会话ID
-        if (this.crossBookMode) {
-            this.plugin.settings.lastCrossBookSessionId = this.sessionId;
-            await this.plugin.saveSettings();
-            log('[DeepPDF] 保存跨书籍会话ID:', this.sessionId);
-        }
+        await this.sessionMgr.saveToCache();
     }
 
-    /**
-     * 检查并执行记忆整合（如果需要）
-     *
-     * 当对话 token 数超过阈值时，自动将旧消息整合到 MEMORY.md 和 HISTORY.md
-     */
+    /** 检查并执行记忆整合 */
     private async maybeConsolidateMemory(): Promise<void> {
-        try {
-            // 确保 sessionId 和 SessionStore 存在
-            if (!this.sessionId || !this.sessionStore) {
-                return;
-            }
-
-            const session = await this.sessionStore.get(this.sessionId);
-            if (!session || session.messages.length === 0) {
-                return;
-            }
-
-            const unconsolidated = session.messages.slice(session.lastConsolidated);
-
-            // 简单的 token 估算
-            const estimateTokens = (msgs: any[]): number => {
-                let totalChars = 0;
-                for (const msg of msgs) {
-                    if (typeof msg.content === 'string') {
-                        totalChars += msg.content.length;
-                    }
-                }
-                return Math.round(totalChars / 2);
-            };
-
-            const currentTokens = estimateTokens(unconsolidated);
-
-            // 🔍 调试日志：每次都输出 token 状态
-            log(`[DeepPDF] Memory 状态检查: ${currentTokens} tokens (阈值: ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}), 未整合消息数: ${unconsolidated.length}, lastConsolidated: ${session.lastConsolidated}`);
-
-            // 检查是否需要整合
-            if (currentTokens < DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold) {
-                log(`[DeepPDF] Memory 未触发整合: ${currentTokens} < ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
-                return;
-            }
-
-            log(`[DeepPDF] ✅ Memory 整合触发: ${currentTokens} tokens >= ${DEFAULT_CONSOLIDATOR_CONFIG.tokenThreshold}`);
-
-            // 获取会话锁（防止并发整合）
-            await this.sessionStore.acquireLock(this.sessionId);
-
-            try {
-                // 创建整合器
-                const store = new MemoryStore(this.app);
-                const consolidator = new MemoryConsolidator(
-                    store,
-                    this.frontendAgent?.getLLMClient() as any,
-                    DEFAULT_CONSOLIDATOR_CONFIG
-                );
-
-                // 执行整合
-                const newLastConsolidated = await consolidator.maybeConsolidate(
-                    session.messages,
-                    session.lastConsolidated,
-                    async (newIndex) => {
-                        // 更新 SessionStore 中的 lastConsolidated
-                        await this.sessionStore!.updateLastConsolidated(this.sessionId!, newIndex);
-                        log(`[DeepPDF] lastConsolidated 更新为 ${newIndex}`);
-                    }
-                );
-
-                if (newLastConsolidated > session.lastConsolidated) {
-                    log(`[DeepPDF] 记忆整合完成: ${session.lastConsolidated} -> ${newLastConsolidated}`);
-
-                    // 关键：整合后刷新 agentChatHistory（只保留未整合消息）
-                    const newLLMHistory = await this.sessionStore!.getLLMHistory(this.sessionId!);
-                    if (this.frontendAgent && newLLMHistory.length >= 0) {
-                        const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
-                        this.agentChatHistory = [
-                            { role: 'system', content: systemPrompt },
-                            ...newLLMHistory
-                        ];
-                        log(`[DeepPDF] agentChatHistory 已刷新，当前消息数: ${this.agentChatHistory.length}`);
-                    }
-                }
-            } finally {
-                this.sessionStore.releaseLock(this.sessionId);
-            }
-        } catch (err) {
-            logError('[DeepPDF] 记忆整合失败:', err);
-        }
+        await this.sessionMgr.maybeConsolidateMemory();
     }
 
     constructor(leaf: WorkspaceLeaf, plugin: any) {
         super(leaf);
         this.plugin = plugin;
+        const self = this;
+        this.quoteManager = new QuoteManager({
+            get chatInput() { return self.chatInput; },
+            updateMessageListPadding(hasContextTags: boolean) { self.updateMessageListPadding(hasContextTags); },
+        });
+        this.ttsCtrl = new TTSController({
+            get app() { return self.app; },
+            get plugin() { return self.plugin; },
+            get messageList() { return self.messageList; },
+            getDisplayName(name: string) { return self.getDisplayName(name); },
+            getCurrentPdfName() { return self.currentPdfName; },
+            getCurrentBookAuthor() { return self.currentBookAuthor; },
+        });
+        this.progressTracker = new ReadingProgressTracker({
+            get app() { return self.app; },
+            get plugin() { return self.plugin; },
+            get readingTopbar() { return self.readingTopbar; },
+            get proactiveEngine() { return self.proactiveEngine; },
+            get agentChatHistory() { return self.agentChatHistory; },
+            get indexes() { return self.indexes; },
+            getCurrentIndexId() { return self.currentIndexId; },
+            getCurrentPdfName() { return self.currentPdfName; },
+            getCurrentChapterId() { return self.currentChapterId; },
+            setCurrentChapterId(id) { self.currentChapterId = id; },
+            setReadingProgress(progress) { self.readingProgress = progress; },
+            getReadingProgress() { return self.readingProgress; },
+        });
+        this.sessionMgr = new SessionManager({
+            get app() { return self.app; },
+            get plugin() { return self.plugin; },
+            get messageList() { return self.messageList; },
+            get readingTopbar() { return self.readingTopbar; },
+            get contextManager() { return self.contextManager; },
+            get frontendAgent() { return self.frontendAgent; },
+            get currentIndexId() { return self.currentIndexId; },
+            get currentPdfName() { return self.currentPdfName; },
+            get currentBookCoverUrl() { return self.currentBookCoverUrl; },
+            get currentBookAuthor() { return self.currentBookAuthor; },
+            get agentChatHistory() { return self.agentChatHistory; },
+            setAgentChatHistory(history: import("../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
+            get isProcessing() { return self.agentChatCtrl?.processing ?? false; },
+            get isAiStreaming() { return self.agentChatCtrl?.aiStreaming ?? false; },
+            cancelActiveStream() { self.agentChatCtrl?.cancelActiveStream(); },
+            initializeFrontendAgent() { return self.initializeFrontendAgent(); },
+            setUseLLMTreeSearch(v: boolean) { self.useLLMTreeSearch = v; },
+        });
+        this.agentChatCtrl = new AgentChatController({
+            get app() { return self.app; },
+            get plugin() { return self.plugin; },
+            get messageList() { return self.messageList; },
+            get chatInput() { return self.chatInput; },
+            get frontendAgent() { return self.frontendAgent; },
+            get proactiveEngine() { return self.proactiveEngine; },
+            get currentIndexId() { return self.currentIndexId; },
+            get currentPdfName() { return self.currentPdfName; },
+            get currentDocDescription() { return self.currentDocDescription; },
+            get currentBookCoverUrl() { return self.currentBookCoverUrl; },
+            get currentBookAuthor() { return self.currentBookAuthor; },
+            get currentMarkdownFiles() { return self.currentMarkdownFiles; },
+            get useLLMTreeSearch() { return self.useLLMTreeSearch; },
+            get sessionId() { return self.sessionMgr.sessionId; },
+            get sessionStore() { return self.sessionMgr.sessionStore; },
+            get agentChatHistory() { return self.agentChatHistory; },
+            setAgentChatHistory(history: import("../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
+            get crossBookMode() { return self.sessionMgr.crossBookMode; },
+            get ttsService() { return self.ttsService; },
+            get contextManager() { return self.contextManager; },
+            get isProcessing() { return self.agentChatCtrl.processing; },
+            get isAiStreaming() { return self.agentChatCtrl.aiStreaming; },
+            setIsProcessing(v: boolean) { /* state owned by AgentChatController */ },
+            setIsAiStreaming(v: boolean) { /* state owned by AgentChatController */ },
+            saveToCache() { return self.sessionMgr.saveToCache(); },
+            clearQuotes() { self.quoteManager.clearQuotes(); },
+            getDisplayName(name: string) { return self.getDisplayName(name); },
+            initializeFrontendAgent() { return self.initializeFrontendAgent(); },
+            parseAndLoadReferences(message: string) { return self.parseAndLoadReferences(message); },
+            copyToClipboard(text: string) { _copyToClipboard(text); },
+        });
     }
 
     getViewType() {
@@ -1072,14 +754,14 @@ export class SidebarView extends ItemView {
 
         // 尝试恢复会话：优先使用标准化书名查找，兼容旧的 indexId
         const savedSessions = this.plugin.settings.savedSessions || {};
-        const normalizedBookName = this.getNormalizedBookName();
+        const normalizedBookName = (this.currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this.currentIndexId || '';
         let savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
 
         if (savedSessionId) {
             try {
                 // 先校验会话是否属于当前书籍（在恢复到 UI 之前）
-                await this.initializeSessionStore();
-                const session = await this.sessionStore!.get(savedSessionId);
+                if (!this.sessionMgr.sessionStore) { await this.sessionMgr["initializeSessionStore"](); }
+                const session = await this.sessionMgr.sessionStore!.get(savedSessionId);
 
                 if (session) {
                     // 标准化 session.indexId 以便比较（移除扩展名）
@@ -1102,7 +784,7 @@ export class SidebarView extends ItemView {
                     }
 
                     // 会话匹配，恢复到 UI
-                    this.sessionId = savedSessionId;
+                    this.sessionMgr.sessionId = savedSessionId;
                     const restored = await this.restoreFromSessionStore(savedSessionId);
                     if (restored) {
                         log('[DeepPDF] 从 SessionStore 恢复会话成功，会话匹配');
@@ -1169,26 +851,7 @@ export class SidebarView extends ItemView {
      * 可安全多次调用（幂等）
      */
     private async initReadingProgress(indexId: string): Promise<void> {
-        if (this.readingProgress?.bookId === indexId) return;
-
-        try {
-            const vaultPath = (this.app.vault.adapter as any).basePath;
-            const loaded = await loadProgress(vaultPath, indexId);
-            this.readingProgress = loaded || createEmptyProgress(indexId);
-            log(`[DeepPDF] 阅读进度已初始化: ${indexId}, 已访问 ${Object.keys(this.readingProgress.chapters).filter(k => this.readingProgress!.chapters[k].visited).length} 章`);
-
-            // 更新 topbar 进度显示
-            this.updateProgressUI();
-
-            // Proactive: 首次打开书籍时触发检视引导
-            const hasHistory = this.agentChatHistory.filter(m => m.role === 'user').length > 0;
-            const totalChapters = this.getTotalChapters();
-            const progressPercent = getProgressPercent(this.readingProgress, totalChapters);
-            await this.proactiveEngine?.onBookOpen(indexId, hasHistory, progressPercent);
-        } catch (e) {
-            logError('[DeepPDF] 初始化阅读进度失败:', e);
-            this.readingProgress = createEmptyProgress(indexId);
-        }
+        await this.progressTracker.initReadingProgress(indexId);
     }
 
     /**
@@ -1196,274 +859,42 @@ export class SidebarView extends ItemView {
      * 在 file-open 和 active-leaf-change 时调用
      */
     private async trackReadingProgress(): Promise<void> {
-        if (!this.readingProgress || !this.currentPdfName) return;
-
-        // === Proactive: 检测离开整本书 ===
-        const bookPath = `DeepReader/${this.currentPdfName}/`;
-        if (this.currentChapterId && this.readingProgress) {
-            const activeFile = this.app.workspace.getActiveFile();
-            if (!activeFile || !activeFile.path.startsWith(bookPath)) {
-                this.proactiveEngine?.onChapterLeave(
-                    this.readingProgress.bookId, this.currentChapterId,
-                );
-                this.currentChapterId = null;
-            }
-        }
-
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile || activeFile.extension !== 'md') return;
-
-        // 只有关联 tab（第一个被激活阅读模式的分页 tab）才更新进度
-        const rms = this.plugin.readingModeService;
-        if (rms) {
-            const activeLeaf = this.app.workspace.activeLeaf;
-            const activatedContainer = rms.getActiveContainerEl();
-            if (activatedContainer && activeLeaf?.view?.containerEl !== activatedContainer) {
-                return; // 非关联 tab，不更新进度
-            }
-        }
-
-        // 检查当前文件是否属于正在阅读的书籍（bookPath 已在函数顶部声明）
-        if (!activeFile.path.startsWith(bookPath)) return;
-
-        // 排除书籍主文件
-        if (activeFile.path === `${bookPath}${this.currentPdfName}.md`) return;
-
-        // 获取章节标识：优先 node_id，回退到文件 basename
-        const cache = this.app.metadataCache.getFileCache(activeFile);
-        const rawNodeId = cache?.frontmatter?.node_id;
-        const chapterId = rawNodeId ? String(rawNodeId) : activeFile.basename;
-        if (!chapterId) return;
-
-        // === Proactive: 检测章节内切换 ===
-        const prevChapterId = this.currentChapterId;
-        this.currentChapterId = chapterId;
-        if (prevChapterId && prevChapterId !== chapterId) {
-            this.proactiveEngine?.onChapterLeave(
-                this.readingProgress!.bookId, prevChapterId,
-            );
-        }
-        this.proactiveEngine?.onChapterEnter(
-            this.readingProgress!.bookId, chapterId,
-        );
-
-        // 标记章节已访问
-        const wasVisited = this.readingProgress.chapters[chapterId]?.visited;
-        this.readingProgress = markChapterVisited(this.readingProgress, chapterId);
-        this.readingProgress = updateLastRead(this.readingProgress, chapterId);
-
-        if (!wasVisited) {
-            log(`[DeepPDF] 章节已标记为已读: ${chapterId} (${activeFile.basename})`);
-        }
-
-        // 更新 topbar 进度显示
-        this.updateProgressUI();
-
-        // 防抖保存
-        this.debouncedSaveProgress();
+        await this.progressTracker.trackReadingProgress();
     }
 
     /**
      * 更新顶栏进度 UI
      */
     private updateProgressUI(): void {
-        if (!this.readingProgress || !this.currentPdfName) return;
-
-        const totalChapters = this.getTotalChapters();
-        const percent = getProgressPercent(this.readingProgress, totalChapters);
-        this.readingTopbar?.setProgress(percent);
-        log(`[DeepPDF] 进度更新: ${percent}% (${Object.values(this.readingProgress.chapters).filter(c => c.visited).length}/${totalChapters})`);
+        this.progressTracker.updateProgressUI();
     }
 
     /**
      * 获取当前书籍的总章节数
      */
     private getTotalChapters(): number {
-        if (!this.currentPdfName) return 0;
-
-        // 从索引列表中获取
-        const index = this.indexes.find(i => i.id === this.currentIndexId);
-        if (index && index.node_count > 0) {
-            return index.node_count;
-        }
-
-        // 回退：统计 DeepReader/{bookName}/ 下的 md 文件数量
-        try {
-            const bookFolder = this.app.vault.getAbstractFileByPath(`DeepReader/${this.currentPdfName}`);
-            if (bookFolder && 'children' in bookFolder) {
-                const children = (bookFolder as any).children as any[];
-                return children.filter((f: any) =>
-                    f instanceof TFile && f.extension === 'md' &&
-                    f.path !== `DeepReader/${this.currentPdfName}/${this.currentPdfName}.md`
-                ).length;
-            }
-        } catch {
-            // ignore
-        }
-        return 0;
+        return this.progressTracker.getTotalChapters();
     }
 
     /**
      * 自动跳转到上次阅读的章节
      */
     private navigateToLastReadChapter(): void {
-        if (!this.currentPdfName) return;
-
-        const bookPath = `DeepReader/${this.currentPdfName}/`;
-
-        // 检查当前是否已经打开了该书籍的某个章节文件（非 MOC）
-        // 如果用户已手动从 MOC 页选择了章节，不应再自动导航
-        const activeFile = this.app.workspace.getActiveFile();
-        if (activeFile && activeFile.path.startsWith(bookPath)) {
-            const cache = this.app.metadataCache.getFileCache(activeFile);
-            const isMoc = cache?.frontmatter?.type === 'pdf-moc' || cache?.frontmatter?.type === 'epub-moc';
-            if (!isMoc) {
-                // 当前已打开章节文件，直接激活阅读模式即可
-                if (this.plugin.readingModeService?.getAutoEnable()) {
-                    this.plugin.readingModeService.activate(activeFile);
-                }
-                return;
-            }
-        }
-
-        // 有阅读记录：跳转到上次阅读的章节
-        if (this.readingProgress?.lastReadChapterId) {
-            const chapterId = this.readingProgress.lastReadChapterId;
-
-            // 检查当前文件是否已经是目标章节
-            if (activeFile && activeFile.path.startsWith(bookPath)) {
-                const cache = this.app.metadataCache.getFileCache(activeFile);
-                const currentNodeId = cache?.frontmatter?.node_id;
-                if (String(currentNodeId) === chapterId || activeFile.basename === chapterId) {
-                    if (this.plugin.readingModeService?.getAutoEnable()) {
-                        this.plugin.readingModeService.activate(activeFile);
-                    }
-                    return;
-                }
-            }
-
-            // 通过 node_id 或 basename 查找章节文件
-            const files = this.app.vault.getMarkdownFiles();
-            let targetFile: TFile | null = null;
-
-            for (const f of files) {
-                if (!f.path.startsWith(bookPath)) continue;
-                if (f.path === `${bookPath}${this.currentPdfName}.md`) continue;
-                const cache = this.app.metadataCache.getFileCache(f);
-                if (cache?.frontmatter?.node_id !== undefined && String(cache.frontmatter.node_id) === chapterId) {
-                    targetFile = f;
-                    break;
-                }
-            }
-
-            if (!targetFile) {
-                const matchPath = `${bookPath}${chapterId}.md`;
-                const file = this.app.vault.getAbstractFileByPath(matchPath);
-                if (file instanceof TFile) {
-                    targetFile = file;
-                }
-            }
-
-            if (targetFile) {
-                log(`[DeepPDF] 自动跳转到上次阅读章节: ${targetFile.path}`);
-                this.app.workspace.getLeaf(false).openFile(targetFile);
-
-                setTimeout(() => {
-                    const rms = this.plugin.readingModeService;
-                    if (rms?.getAutoEnable() && !rms.getCurrentFile()) {
-                        const file = this.app.workspace.getActiveFile();
-                        if (file && rms.isChapterFile(file)) {
-                            rms.activate(file);
-                        }
-                    }
-                }, 300);
-                return;
-            }
-        }
-
-        // 无阅读记录或找不到章节：打开这本书的 MOC 文档
-        const files = this.app.vault.getMarkdownFiles();
-        const mocFile = files.find(f => {
-            if (!f.path.startsWith(bookPath)) return false;
-            if (!f.path.includes('MOC')) return false;
-            const cache = this.app.metadataCache.getFileCache(f);
-            return cache?.frontmatter?.index_id === this.readingProgress?.bookId
-                || cache?.frontmatter?.pdf_index_id === this.currentIndexId;
-        });
-
-        if (mocFile) {
-            log(`[DeepPDF] 无阅读记录，打开 MOC: ${mocFile.path}`);
-            this.app.workspace.getLeaf(false).openFile(mocFile);
-        }
+        this.progressTracker.navigateToLastReadChapter();
     }
 
     /**
      * 防抖保存阅读进度
      */
     private debouncedSaveProgress(): void {
-        if (this.progressDebounceTimer) {
-            clearTimeout(this.progressDebounceTimer);
-        }
-        this.progressDebounceTimer = setTimeout(() => {
-            this.flushProgressSave();
-        }, this.PROGRESS_DEBOUNCE_MS);
+        this.progressTracker.debouncedSaveProgress();
     }
 
     /**
      * 立即保存阅读进度到磁盘
      */
     private async flushProgressSave(): Promise<void> {
-        if (this.progressDebounceTimer) {
-            clearTimeout(this.progressDebounceTimer);
-            this.progressDebounceTimer = null;
-        }
-
-        if (!this.readingProgress) return;
-
-        try {
-            const vaultPath = (this.app.vault.adapter as any).basePath;
-            await saveProgress(vaultPath, this.readingProgress);
-
-            // 同步进度到 MOC frontmatter（供 Obsidian Base 读取）
-            await this.syncProgressToMoc();
-        } catch (e) {
-            logError('[DeepPDF] 保存阅读进度失败:', e);
-        }
-    }
-
-    /**
-     * 同步阅读进度到 MOC 文件的 frontmatter（status + progress 字段）
-     * 供 Obsidian Base/Database 视图读取
-     */
-    private async syncProgressToMoc(): Promise<void> {
-        if (!this.readingProgress || !this.currentIndexId) return;
-
-        try {
-            const bookId = this.readingProgress.bookId;
-            // 使用和顶栏一样的算法：visited / index.node_count
-            const totalChapters = this.getTotalChapters();
-            const percent = getProgressPercent(this.readingProgress, totalChapters);
-
-            // 找到对应 MOC 文件
-            const files = this.app.vault.getMarkdownFiles();
-            const mocFile = files.find(f => {
-                if (!f.path.includes('DeepReader/')) return false;
-                if (!f.path.includes('MOC')) return false;
-                const cache = this.app.metadataCache.getFileCache(f);
-                return cache?.frontmatter?.index_id === bookId;
-            });
-
-            if (!mocFile) return;
-
-            // 更新 frontmatter（仅 progress 字段）
-            await this.app.fileManager.processFrontMatter(mocFile, (fm) => {
-                fm.progress = percent;
-            });
-
-            log(`[DeepPDF] MOC 进度已同步: ${percent}%`);
-        } catch (e) {
-            logError('[DeepPDF] MOC 进度同步失败:', e);
-        }
+        await this.progressTracker.flushProgressSave();
     }
 
     /**
@@ -1509,7 +940,7 @@ export class SidebarView extends ItemView {
         const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
         // 检查当前书籍是否已经是目标书籍（基于书名比较）
-        const currentBookName = this.getNormalizedBookName();
+        const currentBookName = (this.currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this.currentIndexId || '';
         if (currentBookName === normalizedBookName) {
             log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
             // 即使同一本书，也要确保进度已初始化
@@ -1657,9 +1088,9 @@ export class SidebarView extends ItemView {
                 log("[DeepPDF] Received select-index event:", indexId);
 
                 // 如果当前处于跨书籍模式，先切换回单书籍模式
-                if (this.crossBookMode) {
+                if (this.sessionMgr.crossBookMode) {
                     log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
-                    this.crossBookMode = false;
+                    this.sessionMgr.crossBookMode = false;
                     this.indexManager?.setCrossBookMode(false);
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
@@ -1712,146 +1143,29 @@ export class SidebarView extends ItemView {
      * 处理引用选中文字
      * 在输入框上方显示引用卡片，更新 placeholder 提示
      */
-    private handleQuoteSelection(metadata: import("../components/chat-input/chat-input.js").QuoteMetadata): void {
-        // 1. 创建引用数据（保留结构化元数据）
-        const quote: QuoteItem = {
-            id: `quote-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            text: metadata.text.trim(),
-            source: metadata.source,
-            sourcePath: metadata.sourcePath,
-            blockId: metadata.blockId,
-            nodeId: metadata.nodeId,
-            heading: metadata.heading,
-            headingPath: metadata.headingPath
-        };
-
-        // 2. 添加到引用列表
-        this.quotes.push(quote);
-
-        // 3. 渲染引用卡片
-        this.renderQuoteCard(quote);
-
-        // 4. 更新 placeholder 提示引用数量
-        this.updateQuotePlaceholder();
-
-        // 5. 聚焦输入框
-        this.chatInput?.focus();
-    }
-
-    /**
-     * 渲染引用卡片（带文段显示）
-     */
-    private renderQuoteCard(quote: QuoteItem): void {
-        if (!this.quotesContainer) return;
-
-        // 添加容器类和更新计数
-        // this.quotesContainer.addClass('deeppdf-quotes-container');
-        this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
-
-        // 更新消息列表底部间距（延迟执行，等待 DOM 渲染完成）
-        requestAnimationFrame(() => {
-            this.updateMessageListPadding(false);
-        });
-
-        // 截取引用文本显示（前20个字符）
-        const displayText = quote.text.length > 20
-            ? quote.text.substring(0, 20) + '...'
-            : quote.text;
-
-        const card = this.quotesContainer.createDiv({
-            cls: 'deeppdf-quote-card',
-            attr: {
-                'data-quote-id': quote.id,
-                'title': `${quote.source ? quote.source + ': ' : ''}"${quote.text}"`,
-                'aria-label': `引用: ${displayText}`
-            }
-        });
-
-        // 引用图标（居左显示）
-        const iconEl = card.createEl('span', {
-            cls: 'deeppdf-quote-icon'
-        });
-        iconEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`;
-
-        // 引用文本
-        const textEl = card.createEl('span', {
-            cls: 'deeppdf-quote-text',
-            text: displayText
-        });
-
-        // 移除按钮（悬浮时显示在右上角）
-        const removeBtn = card.createEl('button', {
-            cls: 'deeppdf-quote-remove-btn',
-            attr: { 'aria-label': '移除引用', type: 'button' }
-        });
-        removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6"></line><line x1="6" y1="18"></line></svg>`;
-
-        removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.removeQuote(quote.id);
-        });
+    private handleQuoteSelection(metadata: QuoteMetadata): void {
+        this.quoteManager.handleQuoteSelection(metadata);
     }
 
     /**
      * 移除引用
      */
     private removeQuote(quoteId: string): void {
-        this.quotes = this.quotes.filter(q => q.id !== quoteId);
-
-        // 移除卡片 DOM
-        if (this.quotesContainer) {
-            const card = this.quotesContainer.querySelector(`[data-quote-id="${quoteId}"]`);
-            if (card) {
-                card.remove();
-            }
-            // 更新计数
-            this.quotesContainer.setAttribute('data-count', String(this.quotes.length));
-        }
-
-        this.updateQuotePlaceholder();
-
-        // 更新消息列表底部间距
-        requestAnimationFrame(() => {
-            this.updateMessageListPadding(false);
-        });
+        this.quoteManager.removeQuote(quoteId);
     }
 
     /**
      * 清空所有引用
      */
     private clearQuotes(): void {
-        this.quotes = [];
-        if (this.quotesContainer) {
-            this.quotesContainer.empty();
-        }
-
-        this.updateQuotePlaceholder();
-
-        // 更新消息列表底部间距
-        requestAnimationFrame(() => {
-            this.updateMessageListPadding(false);
-        });
+        this.quoteManager.clearQuotes();
     }
 
     /**
      * 更新输入框 placeholder 反映引用数量
      */
-    private updateQuotePlaceholder(): void {
-        const textarea = (this.chatInput as any)?.textarea as HTMLTextAreaElement | undefined;
-        if (!textarea) return;
-
-        if (this.quotes.length > 0) {
-            textarea.placeholder = `已引用 ${this.quotes.length} 段文字，请输入你的问题...`;
-        } else {
-            textarea.placeholder = '输入消息，或使用 @ 引用文件...';
-        }
-    }
-
-    /**
-     * 获取所有引用
-     */
     private getQuotes(): QuoteItem[] {
-        return [...this.quotes];
+        return this.quoteManager.getQuotes();
     }
 
     /**
@@ -1954,7 +1268,7 @@ export class SidebarView extends ItemView {
 
             messagesContainer.addEventListener('scroll', () => {
                 // AI 流式输出时，不处理滚动事件（由 isAiStreaming 标志控制）
-                if (this.isAiStreaming) {
+                if (this.agentChatCtrl.aiStreaming) {
                     return;
                 }
 
@@ -2011,7 +1325,7 @@ export class SidebarView extends ItemView {
             },
             onVoicePlay: (messageId: string) => {
                 // 控制流式语音播放
-                const player = this.streamingVoicePlayers.get(messageId);
+                const player = this.agentChatCtrl.getStreamingVoicePlayers().get(messageId);
                 if (player) {
                     const state = player.getState();
                     if (state === 'playing') {
@@ -2179,1097 +1493,93 @@ export class SidebarView extends ItemView {
         await this.plugin.saveSettings();
     }
 
-    /**
-     * 恢复跨书籍模式状态
-     */
+    /** 恢复跨书籍模式状态 */
     private async restoreCrossBookMode() {
-        // 检查上次是否处于跨书籍模式
-        const wasCrossBookMode = this.plugin.settings.lastCrossBookMode;
-        log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
-        log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.plugin.settings.lastCrossBookSessionId);
-        if (wasCrossBookMode) {
-            log('[DeepPDF] 恢复跨书籍模式');
-            this.crossBookMode = true;
-            this.indexManager?.setCrossBookMode(true);
-            await this.loadCrossBookSession();
-        }
-
-        // 恢复深度思考模式状态
-        const wasDeepSearchMode = this.plugin.settings.lastDeepSearchMode;
-        if (wasDeepSearchMode) {
-            log('[DeepPDF] 恢复深度思考模式');
-            this.useLLMTreeSearch = true;
-        }
+        await this.sessionMgr.restoreCrossBookMode();
     }
 
-    /**
-     * 加载跨书籍模式的会话
-     */
+    /** 加载跨书籍模式的会话 */
     private async loadCrossBookSession() {
-        const sessionId = this.plugin.settings.lastCrossBookSessionId;
-        log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
-
-        if (sessionId) {
-            this.sessionId = sessionId;
-
-            // 从 SessionStore 恢复
-            const restored = await this.restoreFromSessionStore(sessionId);
-            if (restored) {
-                log('[DeepPDF] loadCrossBookSession: 从 SessionStore 恢复成功');
-                return;
-            }
-        }
-
-        // 没有缓存的跨书籍会话，开始新会话
-        log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
-        this.sessionId = `cross-book-${Date.now()}`;
-        this.plugin.settings.lastCrossBookSessionId = this.sessionId;
-        await this.plugin.saveSettings();
-
-        // 在 SessionStore 中创建跨书籍会话
-        await this.initializeSessionStore();
-        await this.sessionStore!.create(this.sessionId, '__cross_book__', true);
-
-        this.showWelcomeMessage();
+        await this.sessionMgr.loadCrossBookSession();
     }
 
     // ==================== 消息处理 ====================
 
-    /**
-     * 执行主动引导（提取自 onTrigger 回调，供初始触发和 follow-up 复用）
-     */
+    /** 执行主动引导 */
     private async executeProactiveGuidance(params: import("../agent/proactive/types.js").ProactiveParams): Promise<void> {
-        if (!this.frontendAgent || !this.messageList) return;
-        // Guard: don't fire while a normal query is running (race condition)
-        if (this.isProcessing || this.isAiStreaming) return;
-        this.proactiveEngine?.setProcessing(true);
-        this.isProcessing = true;
-        const aiMessageId = `proactive-${Date.now()}`;
-        // AbortController for cancellable proactive execution (class field so sendMessage can cancel it)
-        this.proactiveAbortController = new AbortController();
-        try {
-            const aiMessageData: MessageData = {
-                id: aiMessageId,
-                role: "assistant" as MessageRole,
-                content: "",
-                timestamp: new Date().toISOString(),
-                isStreaming: true,
-                isAgentMessage: true,
-                currentStatus: '思考中...',
-                pdfName: this.currentPdfName || undefined,
-                conversationId: this.sessionId || undefined,
-                bookCoverUrl: this.currentBookCoverUrl || undefined,
-                bookAuthor: this.currentBookAuthor || undefined,
-                isProactiveGuidance: true,
-            };
-            this.messageList.addMessage(aiMessageData);
-
-            const activeFile = this.app.workspace.getActiveFile();
-            let currentNodeId: string | undefined;
-            if (activeFile) {
-                const cache = this.app.metadataCache.getFileCache(activeFile);
-                const rawNodeId = cache?.frontmatter?.node_id;
-                if (rawNodeId) currentNodeId = String(rawNodeId);
-            }
-
-            const context: ToolContext = {
-                indexId: this.currentIndexId || '',
-                pdfName: this.currentPdfName || '未知文档',
-                markdownFiles: this.currentMarkdownFiles,
-                app: this.app,
-                plugin: this.plugin,
-                currentNodeId,
-                documentMetadata: { title: this.currentPdfName || '未知文档' },
-                docDescription: this.currentDocDescription || undefined,
-                isProactive: true,
-            };
-
-            const callbacks = {
-                onContent: (content: string) => {
-                    this.messageList?.updateMessage(aiMessageId, { content });
-                },
-                onProgress: (msg: string) => {
-                    this.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
-                },
-                onComplete: () => {},
-                onError: (msg: string) => {
-                    this.messageList?.updateMessage(aiMessageId, {
-                        isStreaming: false,
-                        content: `引导生成失败: ${msg}`,
-                    });
-                },
-                abortSignal: this.proactiveAbortController!.signal,
-            };
-
-            // Build a synthetic user message that triggers normal conversation flow
-            let syntheticMessage: string;
-            if (params.trigger === 'inspectional') {
-                syntheticMessage = '[系统触发：用户刚打开这本书，请做检视阅读引导]';
-            } else if (params.trigger === 'highlight' && params.highlightContext?.length) {
-                syntheticMessage = `我在阅读时划了这些内容：\n${params.highlightContext.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
-            } else if (params.trigger === 'chapter' && params.highlightContext?.length) {
-                syntheticMessage = `我读完了这一章，划了这些内容：\n${params.highlightContext.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
-            } else {
-                syntheticMessage = '[系统触发：请继续引导用户阅读]';
-            }
-
-            // Pass proactive trigger type and highlight context via context
-            context.proactiveTrigger = params.trigger;
-            context.highlightContext = params.highlightContext || [];
-
-            // Use normal graph engine — same thread, same history, natural conversation
-            const result = await this.frontendAgent.runGraphEngine(
-                syntheticMessage,
-                context,
-                callbacks,
-                this.agentChatHistory,
-            );
-
-            // Handle HITL interrupt — don't add empty messages to history
-            if (result.interrupted) {
-                this.messageList?.updateMessage(aiMessageId, {
-                    isStreaming: false,
-                    content: '引导生成被中断',
-                });
-                return;
-            }
-
-            // Add both the synthetic user message and AI response to history
-            const assistantContent = result.messages[0]?.content || '';
-            this.agentChatHistory = [
-                ...this.agentChatHistory,
-                { role: 'user', content: syntheticMessage },
-                { role: 'assistant', content: assistantContent },
-            ];
-            this.messageList?.updateMessage(aiMessageId, {
-                isStreaming: false,
-                content: assistantContent,
-            });
-            // Persist conversation history so proactive Q&A survives reloads
-            await this.saveToCache();
-        } catch (err) {
-            logError('[DeepPDF] 主动引导生成失败:', err);
-            this.messageList?.updateMessage(aiMessageId, {
-                isStreaming: false,
-                content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
-            });
-        } finally {
-            this.proactiveEngine?.setProcessing(false);
-            this.isProcessing = false;
-            this.proactiveAbortController = null;
-        }
+        await this.agentChatCtrl.executeProactiveGuidance(params);
     }
 
-    /**
-     * 公开方法：从外部发送消息（用于调试）
-     * @param message 用户消息内容
-     */
+    /** 从外部发送消息 */
     public async sendMessageWithInput(message: string): Promise<void> {
-        log('[DeepPDF] sendMessageWithInput called:', message);
-        await this.sendMessage(message);
+        await this.agentChatCtrl.sendMessageWithInput(message);
     }
 
-    /**
-     * 发送消息
-     * @param message 用户消息内容
-     * @param quotes 引用内容（可选）
-     * @param regenerateMessageId 可选，如果是重试模式，传入要替换的 AI 消息 ID
-     */
+    /** 发送消息 */
     private async sendMessage(message: string, quotes?: import("../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
-        // Cancel any in-progress proactive guidance — user's explicit query takes priority
-        if (this.proactiveAbortController) {
-            this.proactiveAbortController.abort();
-            this.proactiveAbortController = null;
-        }
-        // 允许只有引用没有文本的情况
-        if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
-            return;
-        }
-
-        // 不再在发送消息前检查连接状态
-        // 前端 Agent 可以在无后端的情况下工作
-
-        // 跨书籍模式不需要选择索引
-        if (!this.crossBookMode && !this.currentIndexId) {
-            new Notice("请先选择一个索引");
-            return;
-        }
-
-        // 解析并加载消息中的 [[文件名]] 引用
-        await this.parseAndLoadReferences(message);
-
-        // 禁用输入
-        this.isProcessing = true;
-        this.isAiStreaming = true;
-        this.chatInput?.setDisabled(true);
-        this.chatInput?.setStreaming(true);
-
-        try {
-            let aiMessageId: string;
-
-            if (regenerateMessageId) {
-                // 重试模式：复用原来的消息 ID，清空旧内容重新开始
-                aiMessageId = regenerateMessageId;
-                this.messageList?.updateMessage(aiMessageId, {
-                    content: this.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
-                    isStreaming: true,
-                    currentStatus: '开始阅读...',
-                    agentToolCalls: [],
-                });
-
-                // 关键：从 agentChatHistory 中删除旧的 AI 回复（从最后一条 user 消息之后的所有 assistant 消息）
-                // 这样重新生成时，新的回复不会导致重复
-                const lastUserIndex = this.agentChatHistory.findLastIndex(m => m.role === 'user');
-                if (lastUserIndex >= 0) {
-                    const beforeRegenerate = this.agentChatHistory.length;
-                    // 只保留到最后一条 user 消息（包含）
-                    this.agentChatHistory = this.agentChatHistory.slice(0, lastUserIndex + 1);
-                    log(`[DeepPDF] 重试模式：清理了 ${beforeRegenerate - this.agentChatHistory.length} 条旧消息`);
-                }
-            } else {
-                // 正常模式：生成新的消息 ID
-                const timestamp = Date.now();
-                const userMessageId = `msg-${timestamp}-user`;
-                aiMessageId = `msg-${timestamp}-ai`;
-
-                log(`[DeepPDF] sendMessage - currentPdfName: ${this.currentPdfName}`);
-
-                // 添加用户消息
-                const userMessageData: MessageData = {
-                    id: userMessageId,
-                    role: "user" as MessageRole,
-                    content: message,
-                    timestamp: new Date().toISOString(),
-                    pdfName: this.currentPdfName || undefined,
-                    quotes: quotes && quotes.length > 0 ? quotes : undefined
-                };
-                this.messageList?.addMessage(userMessageData);
-
-                // 添加 AI 消息（初始为加载状态）
-                const aiMessageData: MessageData = {
-                    id: aiMessageId,
-                    role: "assistant" as MessageRole,
-                    content: "",
-                    timestamp: new Date().toISOString(),
-                    isStreaming: true,
-                    isAgentMessage: true,  // 默认使用 Agent 模式（自动路由）
-                    currentStatus: '开始阅读...',
-                    pdfName: this.currentPdfName || undefined,
-                    question: message,  // 保存用户的问题
-                    conversationId: this.sessionId || undefined,  // 保存会话ID用于双向链接
-                    bookCoverUrl: this.currentBookCoverUrl || undefined,  // 书籍封面 URL
-                    bookAuthor: this.currentBookAuthor || undefined,  // 书籍作者
-                    enableVoiceReply: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)),
-                    // 如果启用了语音回复，初始设置 voiceState 为 loading，显示占位符
-                    voiceState: !!(this.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.plugin.settings)) ? 'loading' as const : undefined,
-                };
-                this.messageList?.addMessage(aiMessageData);
-            }
-
-            // 使用 Agent 智能体模式
-            // 注意：不要使用 await，因为 handleAgentQuery 使用回调模式
-            this.handleAgentQuery(message, this.currentIndexId!, aiMessageId, quotes);
-
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            new Notice(`查询失败: ${errorMessage}`);
-
-            // 添加错误消息
-            const errorId = `msg-${Date.now()}-error`;
-            this.messageList?.addMessage({
-                id: errorId,
-                role: "assistant" as MessageRole,
-                content: `查询失败: ${errorMessage}`,
-                timestamp: new Date().toISOString()
-            });
-
-            // 出错时也要恢复状态
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-            this.chatInput?.focus();
-        }
-        // 移除 finally 块，改为在 handleAgentQuery 的回调中处理
+        await this.agentChatCtrl.sendMessage(message, quotes, regenerateMessageId);
     }
 
-    /**
-     * 静默取消正在进行的流式请求（不更新 UI）
-     * 用于切换会话或清空消息列表前清理状态
-     */
+    /** 静默取消正在进行的流式请求 */
     private cancelActiveStream(): void {
-        if (this.streamController) {
-            try {
-                this.streamController.abort();
-                log('[DeepPDF] 已静默取消流式请求');
-            } catch (e) {
-                warn('[DeepPDF] 取消流式请求时出错:', e);
-            }
-            this.streamController = null;
-        }
-        this.isAiStreaming = false;
-        this.isProcessing = false;
+        this.agentChatCtrl.cancelActiveStream();
     }
 
-    /**
-     * 停止 AI 生成
-     */
+    /** 停止 AI 生成 */
     private stopGeneration(): void {
-        if (!this.isAiStreaming || !this.streamController) {
-            return;
-        }
-
-        log('[DeepPDF] 用户中断 AI 生成');
-        this.streamController.abort();
-        this.streamController = null;
-        this.isAiStreaming = false;
-        this.isProcessing = false;
-
-        // 恢复输入框状态
-        this.chatInput?.setStreaming(false);
-        this.chatInput?.setDisabled(false);
-
-        // 更新最后一条 AI 消息，显示用户已中断
-        const messages = this.messageList?.getMessages() || [];
-        const lastAiMessage = [...messages].reverse().find(m => {
-            const data = m.getData();
-            return data.role === 'assistant' && data.isStreaming;
-        });
-        if (lastAiMessage) {
-            const data = lastAiMessage.getData();
-            this.messageList?.updateMessage(data.id, {
-                content: data.content + '\n\n*用户已中断*',
-                isStreaming: false,
-                timestamp: new Date().toISOString()
-            });
-        }
-
-        // 保存当前状态到缓存
-        this.saveToCache();
+        this.agentChatCtrl.stopGeneration();
     }
 
-    /**
-     * 处理 Agent 查询请求
-     * @param query 用户查询
-     * @param indexId 索引 ID
-     * @param aiMessageId AI 消息 ID
-     * @param quotes 引用内容（可选）
-     */
+    /** 处理 Agent 查询 */
     private async handleAgentQuery(
         query: string,
         indexId: string,
         aiMessageId: string,
         quotes?: import("../components/chat-input/chat-input.js").QuoteItem[]
     ): Promise<void> {
-        try {
-            // 初始化 FrontendAgent（懒加载）
-            await this.initializeFrontendAgent();
-
-            if (!this.frontendAgent) {
-                throw new Error("FrontendAgent 初始化失败");
-            }
-
-            // 取消之前的流式请求（如果有）
-            if (this.streamController) {
-                this.streamController.abort();
-                log('[DeepPDF] 取消旧的流式请求');
-            }
-
-            // 创建新的 AbortController
-            this.streamController = new AbortController();
-
-            let fullContent = '';
-            let currentStatus = '';
-
-            // 获取当前阅读章节的 node_id（用于搜索提权）
-            const activeFile = this.app.workspace.getActiveFile();
-            let currentNodeId: string | undefined;
-            if (activeFile) {
-                const cache = this.app.metadataCache.getFileCache(activeFile);
-                const rawNodeId = cache?.frontmatter?.node_id;
-                if (rawNodeId) currentNodeId = String(rawNodeId);
-            }
-
-            // 构建 ToolContext
-            const context: ToolContext = {
-                indexId: indexId,
-                pdfName: this.currentPdfName || '未知文档',
-                markdownFiles: this.currentMarkdownFiles,
-                useLLMTreeSearch: this.useLLMTreeSearch,
-                app: this.app,
-                plugin: this.plugin,
-                currentNodeId,
-                // 添加文档元数据（用于 Agent 上下文）
-                documentMetadata: {
-                    title: this.currentPdfName || '未知文档',
-                },
-                // 添加全书摘要（用于系统提示）
-                docDescription: this.currentDocDescription || undefined,
-                // 添加结构化引用数据（用于工具优先搜索）
-                quotes: quotes,
-                // 苏格拉底模式：检视引导完成后自动启用
-                isSocratic: this.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
-                // TTS 配置（用于 VoicePipeline 语音合成）
-                ttsConfig: this.plugin.settings.enableVoiceReply ? (() => {
-                    const cfg = resolveRoleConfig('tts', this.plugin.settings);
-                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
-                })() : undefined,
-                // LLM 配置（用于 VoicePipeline 语音摘要生成）
-                llmConfig: this.plugin.settings.enableVoiceReply ? (() => {
-                    const cfg = resolveRoleConfig('router', this.plugin.settings);
-                    return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
-                })() : undefined,
-            };
-
-            // 构建用户消息
-            // 注意：运行时上下文（阅读进度等）由 FrontendAgent.buildMessages() 注入
-            // 这里只处理用户主动附加的引用内容
-            let userMessage = query;
-
-            // 添加引用内容（用户主动附加的上下文）
-            // 使用结构化元数据格式化引用，包含章节路径信息
-            if (quotes && quotes.length > 0) {
-                const quotesText = quotes.map(q => {
-                    // 优先使用完整的标题路径，其次使用单个标题，最后使用来源
-                    const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
-                    return `> ${q.text}\n> — ${location}`;
-                }).join('\n\n');
-                userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
-            }
-
-            // 判断是否是新对话（历史为空或只有 system 消息）
-            const isNewConversation = this.agentChatHistory.length <= 1;
-
-            // 简化状态追踪：thinking（思考中）vs answering（回答中）
-            let agentState: 'thinking' | 'answering' = 'thinking';
-            // 追踪是否收到过工具调用（用于判断是否是最终回复阶段）
-            let hadToolCalls = false;
-            // 累积推理内容（Kimi K2.5 / DeepSeek R1 等思考模型）
-            let reasoningContent = '';
-
-            // 🕐 性能统计：记录从用户提交问题到首字节响应的时间
-            const queryStartTime = Date.now();
-            let firstContentLogged = false;
-
-            // 回调函数
-            const callbacks = {
-                // onContent: 接收流式内容（text 是完整累积内容，不是 delta）
-                onContent: (text: string) => {
-                    fullContent = text;
-
-                    // 🕐 记录首字节响应时间（仅首次）
-                    if (!firstContentLogged && fullContent.trim().length > 0) {
-                        firstContentLogged = true;
-                        const ttfc = Date.now() - queryStartTime;
-                        log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
-                    }
-
-                    // 优化：立即切换到回答阶段
-                    // 条件：收到实际内容（非空白字符）
-                    if (agentState === 'thinking' && fullContent.trim().length > 0) {
-                        agentState = 'answering';
-                    }
-
-                    // 思考阶段：只更新状态，不更新内容
-                    // 例外：如果之前没有工具调用（直接回复），立即显示内容
-                    if (agentState === 'thinking' && !hadToolCalls) {
-                        // 直接回复场景：立即显示流式内容
-                        const updates: any = {
-                            content: fullContent,
-                            isStreaming: true,
-                            isAgentMessage: true,
-                        };
-                        if (currentStatus) {
-                            updates.currentStatus = currentStatus;
-                        }
-                        this.messageList?.updateMessage(aiMessageId, updates);
-                        return;
-                    }
-
-                    if (agentState === 'thinking') {
-                        const updates: any = {
-                            isStreaming: true,
-                            isAgentMessage: true,
-                        };
-                        if (currentStatus) {
-                            updates.currentStatus = currentStatus;
-                        }
-                        this.messageList?.updateMessage(aiMessageId, updates);
-                        return;
-                    }
-
-                    // 回答阶段：显示流式内容
-                    const updates: any = {
-                        content: fullContent,
-                        isStreaming: true,
-                        isAgentMessage: true,
-                    };
-
-                    if (currentStatus) {
-                        updates.currentStatus = currentStatus;
-                    }
-
-                    this.messageList?.updateMessage(aiMessageId, updates);
-                },
-                // onContentComplete: AI 回复完成时校验链接并更新熟悉度
-                onContentComplete: async (content: string): Promise<string> => {
-                    if (!this.currentPdfName || !context.app) {
-                        return content;
-                    }
-
-                    try {
-                        // 1. 校验并纠正 wiki 链接
-                        const { correctedContent, validatedLinks } = await validateAndCorrectLinks(
-                            this.app,
-                            content
-                        );
-
-                        // 2. 如果内容被纠正，更新消息显示
-                        if (correctedContent !== content) {
-                            log('[DeepPDF] 链接已纠正，更新消息');
-                            this.messageList?.updateMessage(aiMessageId, {
-                                content: correctedContent,
-                            });
-                            // 更新 fullContent 以便后续保存
-                            fullContent = correctedContent;
-                        }
-
-                        return correctedContent;
-                    } catch (err) {
-                        logError('[DeepPDF] 链接校验失败:', err);
-                        return content;
-                    }
-                },
-                // onProgress: 接收进度更新
-                onProgress: (status: string) => {
-                    log('[DeepPDF] Agent 进度:', status);
-                    currentStatus = status;
-
-                    // 更新消息显示状态
-                    this.messageList?.updateMessage(aiMessageId, {
-                        currentStatus: status,
-                        isStreaming: true,
-                        isAgentMessage: true,
-                    });
-                },
-                // onReasoning: 接收推理过程（Kimi K2.5 / DeepSeek R1 等思考模型）
-                onReasoning: (text: string) => {
-                    log('[DeepPDF] onReasoning 回调被调用, text:', text.slice(0, 50));
-                    reasoningContent += text;
-                    // 在状态栏显示思考过程（截取第一行，最多 50 字符）
-                    const firstLine = reasoningContent.split('\n')[0].slice(0, 50);
-                    const displayReasoning = firstLine.length < reasoningContent.split('\n')[0].length
-                        ? firstLine + '...'
-                        : firstLine;
-
-                    log('[DeepPDF] onReasoning 更新状态:', displayReasoning);
-                    this.messageList?.updateMessage(aiMessageId, {
-                        currentStatus: displayReasoning ? `💭 ${displayReasoning}` : undefined,
-                        isStreaming: true,
-                        isAgentMessage: true,
-                    });
-                },
-                // onComplete: 流式完成
-                onComplete: async () => {
-                    this.messageList?.updateMessage(aiMessageId, {
-                        isStreaming: false,
-                        timestamp: new Date().toISOString()
-                    });
-
-                    // 信封书写完成 → 封口
-                    if (this.plugin.settings.enableVoiceReply) {
-                        const msg = this.messageList?.getMessage(aiMessageId);
-                        if (msg && msg instanceof AIMessage) {
-                            msg.updateLetterState('sealed');
-                        }
-                    }
-                    // 注意：不在这里调用 saveToCache()，因为 agentChatHistory 还未更新
-                    // saveToCache() 将在 agentChatHistory 更新后调用
-
-                    // 检查是否需要记忆整合（异步执行，不阻塞）
-                    this.maybeConsolidateMemory();
-
-                    // 恢复输入状态（AI 回复完成）
-                    this.isProcessing = false;
-                    this.isAiStreaming = false;
-                    this.chatInput?.setStreaming(false);
-                    this.chatInput?.setDisabled(false);
-
-                    // 清空引用卡片和 placeholder
-                    this.clearQuotes();
-
-                    this.chatInput?.focus();
-                    this.streamController = null;
-
-                    // 自动播报（语音回复模式由 VoicePipeline 处理，不重复播报）
-                    if (this.plugin.settings.autoTTS && !this.plugin.settings.enableVoiceReply) {
-                        if (!this.ttsService) {
-                            this.ttsService = this.initTTSService();
-                        }
-                        if (this.ttsService && this.ttsService.getCurrentMessageId() !== aiMessageId) {
-                            const question = this.findUserQuestion(aiMessageId);
-                            const memoryContent = await new MemoryStore(this.app).readLongTermMemory() || undefined;
-                            this.ttsService.play(aiMessageId, fullContent, question, {
-                                bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
-                                bookAuthor: this.currentBookAuthor || undefined,
-                                memoryContent,
-                            });
-                        }
-                    }
-                },
-                // onError: 错误处理
-                onError: (error: string) => {
-                    logError('[DeepPDF] Agent 错误:', error);
-                    this.messageList?.updateMessage(aiMessageId, {
-                        content: `查询失败: ${error}`,
-                        isStreaming: false,
-                        timestamp: new Date().toISOString()
-                    });
-
-                    // 恢复输入状态（出错时）
-                    this.isProcessing = false;
-                    this.isAiStreaming = false;
-                    this.chatInput?.setStreaming(false);
-                    this.chatInput?.setDisabled(false);
-
-                    // 清空引用卡片和 placeholder
-                    this.clearQuotes();
-
-                    this.chatInput?.focus();
-                    this.streamController = null;
-                },
-                // onHumanizedProgress: 思考阶段的状态更新
-                // 更新状态文字、阅读层次徽章、已完成步骤
-                onHumanizedProgress: ((() => {
-                    let lastUpdateTime = 0;
-                    const THROTTLE_MS = 200;
-
-                    return (progress: HumanizedProgress) => {
-                        const now = Date.now();
-                        if (now - lastUpdateTime < THROTTLE_MS) {
-                            return;
-                        }
-                        lastUpdateTime = now;
-
-                        // 检测是否有工具调用（readingSteps 中有已完成的步骤）
-                        if (progress.readingSteps.some(step => step.status === 'done' || step.status === 'current')) {
-                            hadToolCalls = true;
-                        }
-
-                        // 只要有正在进行的工具调用，就更新状态（不管 agentState）
-                        // 这样可以在多轮工具调用时持续显示状态
-                        const hasRunningTools = progress.readingSteps.some(step => step.status === 'current');
-                        if (agentState !== 'thinking' && !hasRunningTools) {
-                            return;
-                        }
-
-                        // 提取已完成的步骤
-                        const completedSteps = progress.readingSteps
-                            .filter(step => step.status === 'done')
-                            .map(step => step.action);
-
-                        // 更新状态、阅读层次、已完成步骤
-                        this.messageList?.updateMessage(aiMessageId, {
-                            currentStatus: progress.mainAction.detail,
-                            readingLevel: progress.currentReadingLevel,
-                            completedSteps: completedSteps.length > 0 ? completedSteps : undefined,
-                            isStreaming: true,
-                            isAgentMessage: true,
-                        });
-                    };
-                })()),
-                abortSignal: this.streamController.signal,
-                onVoiceReady: (data: { audioBuffer: ArrayBuffer; duration: number }) => {
-                    const msg = this.messageList?.getMessage(aiMessageId);
-                    if (msg && msg instanceof AIMessage) {
-                        msg.updateVoiceData(data);
-                    }
-                    // 同步语音数据到 agentChatHistory，确保持久化
-                    const lastAiMsg = this.agentChatHistory[this.agentChatHistory.length - 1];
-                    if (lastAiMsg && lastAiMsg.role === 'assistant') {
-                        (lastAiMsg as any).voiceAudio = data.audioBuffer;
-                        (lastAiMsg as any).voiceDuration = data.duration;
-                        (lastAiMsg as any).voiceState = 'ready';
-                    }
-                    // 按预定路径落盘语音文件（JSONL 中已有占位路径）
-                    if (this.sessionStore && this.sessionId) {
-                        this.sessionStore.saveVoiceToPlaceholder(
-                            this.sessionId,
-                            aiMessageId,
-                            data.audioBuffer,
-                        );
-                    }
-                },
-                // 流式语音生成：边生成边返回音频块
-                onVoiceChunk: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => {
-                    const msg = this.messageList?.getMessage(aiMessageId);
-                    if (msg && msg instanceof AIMessage) {
-                        if (data.isComplete) {
-                            // 完成信号：标记播放器 seal
-                            const player = this.streamingVoicePlayers.get(aiMessageId);
-                            if (player) {
-                                player.seal();
-                            }
-                        } else {
-                            // 音频块：发送给流式播放器
-                            let player = this.streamingVoicePlayers.get(aiMessageId);
-                            if (!player) {
-                                // 创建新的流式播放器
-                                player = new StreamingVoicePlayer({
-                                    sampleRate: 24000,
-                                    onStateChange: (state: StreamingVoiceState) => {
-                                        // 更新 UI 状态
-                                        if (state === 'playing') {
-                                            msg.updateVoiceState('playing');
-                                        } else if (state === 'paused') {
-                                            msg.updateVoiceState('paused');
-                                        } else if (state === 'ended') {
-                                            msg.updateVoiceState('ended');
-                                        }
-                                    },
-                                });
-                                this.streamingVoicePlayers.set(aiMessageId, player);
-                                
-                                // 首次创建播放器时，设置状态为 ready（显示播放按钮）
-                                msg.updateVoiceState('ready');
-                            }
-                            player.enqueueChunk(data.audioChunk);
-                        }
-                    }
-                },
-            };
-
-            // 初始化 SubagentManager（用于 create_sub_agent 工具）
-            this.frontendAgent.setupSubagentManager(context);
-
-            // LangGraph 引擎（唯一路径）
-            const result = await this.frontendAgent.runGraphEngine(
-                userMessage,
-                context,
-                callbacks,
-                this.agentChatHistory,
-            );
-
-            if (result.interrupted) {
-                // HITL: 显示审查 UI，等待用户确认
-                this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
-                return;
-            }
-
-            // 正常完成：更新消息
-            if (result.messages.length > 0) {
-                this.agentChatHistory = [...this.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
-            }
-            await this.saveToCache();
-
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logError('[DeepPDF] handleAgentQuery 错误:', error);
-            this.messageList?.updateMessage(aiMessageId, {
-                content: `Agent 查询失败: ${errorMessage}`,
-                isStreaming: false,
-                timestamp: new Date().toISOString()
-            });
-            // 恢复输入状态
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-        }
+        // AgentChatController handles this internally
+        // This method should not be called directly - use sendMessage instead
     }
 
-    /**
-     * 显示 Human-in-the-Loop 审查提示。
-     *
-     * 使用 Obsidian Notice 提示用户，自动确认继续。
-     * 未来可扩展为带确认/拒绝按钮的卡片 UI。
-     */
-    private showHumanReviewPrompt(
-        nodeId: string,
-        content: string,
-        context: import("../agent/tools/types.js").ToolContext,
-        callbacks: import("../agent/agent-loop.js").AgentLoopOptions
-    ): void {
-        const nodeLabel = nodeId === 'analytical' ? 'S2 分析' : nodeId === 'formatter' ? 'S4 格式化' : nodeId;
+    // HITL methods moved to AgentChatController
 
-        // 显示审查内容
-        const messages = this.messageList?.getMessagesData() || [];
-        const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : '';
-        if (lastMsgId) {
-            const reviewContent = `${content}\n\n---\n**[${nodeLabel} 审查中]** 请确认结果是否满意。`;
-            this.messageList?.updateMessage(lastMsgId, {
-                content: reviewContent,
-                isStreaming: false,
-                isAgentMessage: true,
-            });
-        }
 
-        new Notice(`[${nodeLabel}] 审查中 — 自动确认继续`);
-        log(`[DeepPDF] HITL 审查: ${nodeLabel}, 自动确认`);
 
-        // 自动确认（未来可改为交互式确认）
-        this.handleHumanReviewResponse(true, '', context, callbacks);
-    }
-
-    /**
-     * 处理用户对 HITL 审查的响应。
-     */
-    private async handleHumanReviewResponse(
-        approved: boolean,
-        feedback: string,
-        context: import("../agent/tools/types.js").ToolContext,
-        callbacks: import("../agent/agent-loop.js").AgentLoopOptions
-    ): Promise<void> {
-        try {
-            const result = await this.frontendAgent!.resumeGraphExecution(
-                approved,
-                feedback,
-                context,
-                callbacks
-            );
-
-            if (result.interrupted) {
-                // 再次中断（例如 formatter 节点的 interrupt）
-                this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
-                return;
-            }
-            if (result.messages.length > 0) {
-                const lastAiMsg = result.messages[result.messages.length - 1];
-                this.agentChatHistory.push(lastAiMsg);
-            }
-            await this.saveToCache();
-
-            // 恢复输入状态
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-        } catch (error) {
-            logError('[DeepPDF] HITL 恢复错误:', error);
-            this.isProcessing = false;
-            this.isAiStreaming = false;
-            this.chatInput?.setStreaming(false);
-            this.chatInput?.setDisabled(false);
-        }
-    }
-
-    /**
-     * 处理重新生成
-     */
+    /** 处理重新生成 */
     private handleRegenerate(messageId: string): void {
-        const message = this.messageList?.getMessage(messageId);
-        if (!message) return;
-
-        const data = message.getData();
-        if (data.role !== "assistant") return;
-
-        // 找到对应的用户消息
-        const messages = this.messageList?.getMessagesData() || [];
-        const userMessageIndex = messages.findIndex(m => m.id === messageId) - 1;
-
-        if (userMessageIndex >= 0 && messages[userMessageIndex].role === "user") {
-            // 重新发送查询，传入要替换的 AI 消息 ID（重试不需要引用）
-            this.sendMessage(messages[userMessageIndex].content, [], messageId);
-        }
+        this.agentChatCtrl.handleRegenerate(messageId);
     }
 
-    /**
-     * 处理复制
-     */
+    /** 处理复制 */
     private handleCopy(messageId: string): void {
-        const message = this.messageList?.getMessage(messageId);
-        if (!message) return;
-
-        const content = message.getData().content;
-        this.copyToClipboard(content);
+        this.agentChatCtrl.handleCopy(messageId);
     }
 
-    /**
-     * 处理删除消息对
-     * 删除 AI 回复时，同时删除对应的用户问题和所有相关 tool 消息
-     */
+    /** 处理删除消息对 */
     private handleDeleteMessagePair(aiMessageId: string): void {
-        // 弹窗确认
-        const modal = new ConfirmModal(
-            this.app,
-            "删除对话",
-            "此操作不可撤销",
-            async () => {
-                await this.doDeleteMessagePair(aiMessageId);
-            },
-            {
-                confirmLabel: "删除",
-                cancelLabel: "取消",
-                isDestructive: true
-            }
-        );
-        modal.open();
+        this.agentChatCtrl.handleDeleteMessagePair(aiMessageId);
     }
 
-    /**
-     * 执行删除消息对
-     */
-    private async doDeleteMessagePair(aiMessageId: string): Promise<void> {
-        if (!this.sessionId || !this.sessionStore) {
-            new Notice("无法删除：会话不存在");
-            return;
-        }
 
-        try {
-            // 1. 从 SessionStore 获取完整消息列表
-            const session = await this.sessionStore.get(this.sessionId);
-            if (!session) {
-                new Notice("无法删除：会话数据不存在");
-                return;
-            }
 
-            // 2. 在 UI 消息列表中找到 AI 消息的索引
-            const uiMessages = this.messageList?.getMessagesData() || [];
-            const uiAiIndex = uiMessages.findIndex(m => m.id === aiMessageId);
-            if (uiAiIndex === -1) {
-                new Notice("无法删除：消息未找到");
-                return;
-            }
-
-            // 3. 找到对应的 user 消息（向前查找）
-            let uiUserIndex = uiAiIndex - 1;
-            while (uiUserIndex >= 0 && uiMessages[uiUserIndex].role !== 'user') {
-                uiUserIndex--;
-            }
-            if (uiUserIndex < 0) {
-                new Notice("无法删除：未找到对应的用户问题");
-                return;
-            }
-
-            // 4. 收集要删除的 UI 消息 ID（从 user 消息到下一个 user 消息之前）
-            const uiIdsToDelete: string[] = [];
-            for (let i = uiUserIndex; i < uiMessages.length; i++) {
-                if (i > uiUserIndex && uiMessages[i].role === 'user') {
-                    break;
-                }
-                uiIdsToDelete.push(uiMessages[i].id);
-            }
-
-            // 5. 在 SessionStore 的消息数组中找到对应的索引
-            const userContent = uiMessages[uiUserIndex].content;
-            const storeIndicesToDelete: number[] = [];
-
-            // 找到 user 消息在 store 中的索引（通过内容匹配）
-            let storeUserIndex = -1;
-            for (let i = 0; i < session.messages.length; i++) {
-                if (session.messages[i].role === 'user' &&
-                    session.messages[i].content === userContent) {
-                    storeUserIndex = i;
-                    break;
-                }
-            }
-
-            if (storeUserIndex === -1) {
-                new Notice("无法删除：存储中未找到对应消息");
-                return;
-            }
-
-            // 6. 收集要删除的 store 消息索引（从 user 到下一个 user 之前）
-            for (let i = storeUserIndex; i < session.messages.length; i++) {
-                if (i > storeUserIndex && session.messages[i].role === 'user') {
-                    break;
-                }
-                storeIndicesToDelete.push(i);
-            }
-
-            // 7. 从 SessionStore 删除
-            await this.sessionStore.deleteMessages(this.sessionId, storeIndicesToDelete);
-
-            // 8. 更新 agentChatHistory（重新加载 LLM 历史）
-            if (this.frontendAgent && this.sessionStore) {
-                const llmHistory = await this.sessionStore.getLLMHistory(this.sessionId);
-                const systemPrompt = await this.frontendAgent.getSystemPromptAsync();
-                this.agentChatHistory = [
-                    { role: 'system', content: systemPrompt },
-                    ...llmHistory
-                ];
-            }
-
-            // 9. 从 UI 删除
-            this.messageList?.removeMessages(uiIdsToDelete);
-
-            new Notice("对话已删除");
-            log('[DeepPDF] 删除了消息对:', uiIdsToDelete);
-
-        } catch (error) {
-            logError('[DeepPDF] 删除消息对失败:', error);
-            new Notice("删除失败，请重试");
-        }
-    }
-
-    /**
-     * 处理摘录保存（对话中的摘录）
-     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
-     * 链接：只链接到书籍，不需要章节
-     */
+    /** 处理摘录保存 */
     private handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
-        const message = this.messageList?.getMessage(messageId);
-        if (!message) return;
-
-        const data = message.getData();
-
-        // 更新元数据中的来源信息
-        if (data.pdfName) {
-            metadata.sourcePdf = data.pdfName;
-        }
-
-        // 设置为对话摘录类型，并清除不需要的字段
-        metadata.sourceType = 'chat';
-        delete metadata.chapterPath;
-        delete metadata.chapterName;
-
-        // 打开摘录模态框
-        const modal = new ExcerptModal({
-            content,
-            metadata,
-            app: this.app,
-            onSave: (path: string) => {
-                new Notice(`摘录已保存到 ${path}`);
-            }
-        });
-        modal.open();
+        this.agentChatCtrl.handleExcerpt(messageId, content, metadata);
     }
 
-    /**
-     * 处理追问问题点击
-     * 自动发送追问问题
-     */
+    /** 处理追问问题点击 */
     private handleQuestionClick(question: string): void {
-        log('[DeepPDF] 追问问题点击:', question);
-        // 自动发送问题
-        this.sendMessage(question);
+        this.agentChatCtrl.handleQuestionClick(question);
     }
 
-    /**
-     * 生成阅读大纲
-     */
+    /** 生成阅读大纲 */
     private handleGenerateOutline(): void {
-        log('[DeepPDF] 生成阅读大纲');
-        const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
-        this.sendMessage(prompt);
+        this.agentChatCtrl.handleGenerateOutline();
     }
 
-    /**
-     * 处理引导按钮点击
-     */
+    /** 处理引导按钮点击 */
     private handleGuidanceClick(type: GuidanceType): void {
-        log('[DeepPDF] 引导按钮点击:', type);
-
-        // 查找对应的提示词
-        const button = GUIDANCE_BUTTONS.find(b => b.type === type);
-        if (!button) {
-            warn('[DeepPDF] 未找到引导按钮配置:', type);
-            return;
-        }
-
-        // 发送问题
-        this.sendMessage(button.prompt);
+        this.agentChatCtrl.handleGuidanceClick(type);
     }
 
     /**
@@ -3378,14 +1688,6 @@ export class SidebarView extends ItemView {
         // Page Index 直接使用 bookId，没有 task_id 概念
     }
 
-    private copyToClipboard(text: string): void {
-        navigator.clipboard.writeText(text).then(() => {
-            new Notice("已复制到剪贴板");
-        }).catch(() => {
-            new Notice("复制失败");
-        });
-    }
-
     private escapeHtml(text: string): string {
         const div = document.createElement("div");
         div.textContent = text;
@@ -3393,189 +1695,16 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * Re-ranking 机制
-     * 结合向量相似度、关键词匹配和文本长度进行重新排序
-     * 目标：优先将最相关的结果放在前面
-     */
-    private rerankResults(results: any[], query: string): any[] {
-        if (results.length === 0) return results;
-
-        log(`[DeepPDF] [rerank] 开始 Re-ranking ${results.length} 个结果`);
-
-        const queryLower = query.toLowerCase();
-        const queryTerms = queryLower.split(/\s+/).filter(t => t.length > 1);
-
-        return results.map((result, index) => {
-            const text = result.text || "";
-            const textLower = text.toLowerCase();
-            let score = 0;
-
-            // 1. 向量相似度分数（如果有）
-            // ChromaDB 返回的距离分数，越小越好，转换为相似度
-            const distance = result.metadata?.distance || result.metadata?.similarity || 0;
-            // 距离转换为相似度：distance 0 -> score 1.0, distance 0.5 -> 0.7, distance 1 -> 0.5, distance 2+ -> 0.3
-            const similarityScore = distance === 0 ? 1.0 : (distance < 0.5 ? 0.7 : (distance < 1 ? 0.5 : 0.3));
-            score += similarityScore * 30; // 最高 30 分（完全匹配）
-
-            // 2. 精确查询词匹配（在文本中）
-            const exactMatchCount = (textLower.match(new RegExp(queryLower, 'g')) || []).length;
-            score += exactMatchCount * 15; // 每个 15 分
-
-            // 3. 查询词部分匹配
-            let partialMatchScore = 0;
-            queryTerms.forEach(term => {
-                const termCount = (textLower.match(new RegExp(term, 'g')) || []).length;
-                partialMatchScore += termCount * 3; // 每个 3 分
-            });
-            score += partialMatchScore;
-
-            // 4. 文本位置加权（开头更重要）
-            const firstMatchPos = textLower.indexOf(queryLower);
-            if (firstMatchPos !== -1) {
-                // 前 20% 匹配加 10 分
-                if (firstMatchPos < text.length * 0.2) {
-                    score += 10;
-                }
-            }
-
-            // 5. 文本长度适中性（避免太短或太长）
-            const textLength = text.length;
-            if (textLength > 100 && textLength < 800) {
-                score += 5; // 理想长度
-            } else if (textLength >= 800 && textLength < 1500) {
-                score += 2; // 可接受长度
-            }
-
-            // 6. 章节标题匹配
-            const section = result.metadata?.section || result.metadata?.node_name || "";
-            const sectionLower = section.toLowerCase();
-            if (sectionLower && queryTerms.some(term => sectionLower.includes(term))) {
-                score += 12; // 章节匹配加分
-            }
-
-            // 7. 原始顺序保持（微小的优先级给前面的结果）
-            score += (results.length - index) * 0.1;
-
-            return { ...result, _rerankScore: score };
-        })
-            .sort((a, b) => (b._rerankScore || 0) - (a._rerankScore || 0))
-            .map(({ _rerankScore, ...result }) => result);
-    }
-
-    /**
-     * 构建 context 时考虑 token 限制
-     * 优先保留最相关的结果（在 Re-ranking 之后）
-     */
-    private buildContextWithTokenLimit(results: any[], maxTokens: number): any[] {
-        const limitedResults = [];
-        let currentTokens = 0;
-
-        for (const result of results) {
-            const tokens = this.estimateTokens(result.text || "");
-            if (currentTokens + tokens > maxTokens) {
-                log(`[DeepPDF] [buildContext] 达到 token 限制 (${currentTokens}/${maxTokens})，剩余 ${results.length - limitedResults.length} 个结果被截断`);
-                break;
-            }
-            limitedResults.push(result);
-            currentTokens += tokens;
-        }
-
-        return limitedResults;
-    }
-
-    /**
-     * 简单的 token 估算（英文约 4 字符/token，中文约 2 字符/token）
-     */
-    private estimateTokens(text: string): number {
-        if (!text) return 0;
-
-        // 统计中文字符
-        const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
-        // 统计英文字符（非中文）
-        const englishChars = text.length - chineseChars;
-
-        // 中文: ~2 字符/token, 英文: ~4 字符/token
-        return Math.ceil(chineseChars / 2 + englishChars / 4);
-    }
-
-    /**
-     * 初始化 TTS 服务
-     */
-    private initTTSService(): TTSService | null {
-        const settings = this.plugin.settings;
-        const ttsConfig = resolveRoleConfig('tts', settings);
-        if (!ttsConfig) return null;
-
-        const fastConfig = resolveRoleConfig('router', settings);
-        if (!fastConfig) return null;
-
-        return new TTSService({
-            ttsApiKey: ttsConfig.apiKey,
-            ttsBaseUrl: ttsConfig.baseUrl,
-            ttsModel: ttsConfig.model,
-            llmApiKey: fastConfig.apiKey,
-            llmBaseUrl: fastConfig.baseUrl,
-            llmModel: fastConfig.model,
-            onStateChange: (messageId: string | null, state: TTSPlayState) => {
-                if (messageId) {
-                    this.messageList?.updateTTSState(messageId, state);
-                }
-                // TTS 停止时清除高亮
-                if (state === 'idle' && messageId) {
-                    const msg = this.messageList?.getMessage(messageId);
-                    if (msg?.highlightTTSProgress) {
-                        msg.highlightTTSProgress(-1);
-                    }
-                }
-            },
-            onProgressChange: (messageId: string, progress: number) => {
-                const msg = this.messageList?.getMessage(messageId);
-                if (msg?.highlightTTSProgress) {
-                    msg.highlightTTSProgress(progress);
-                }
-            },
-        });
-    }
-
-    /**
      * 处理 TTS 播放/暂停请求
      */
     private async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
-        if (!this.ttsService) {
-            this.ttsService = this.initTTSService();
-        }
-        if (!this.ttsService) {
-            new Notice('请先在设置中配置语音播报（TTS）服务：添加小米 API Key 并启用 tts 角色');
-            return;
-        }
-
-        if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
-            this.ttsService.togglePauseResume();
-            return;
-        }
-
-        // 查找对应的用户提问
-        const userQuestion = this.findUserQuestion(messageId);
-
-        await this.ttsService.play(messageId, content, userQuestion, {
-            bookTitle: this.getDisplayName(this.currentPdfName || '') || undefined,
-            bookAuthor: this.currentBookAuthor || undefined,
-            memoryContent: await new MemoryStore(this.app).readLongTermMemory() || undefined,
-        }, options);
+        await this.ttsCtrl.handleTTS(messageId, content, options);
     }
 
     /**
      * 根据 AI 消息 ID 找到对应的用户提问
      */
-    private findUserQuestion(aiMessageId: string): string | undefined {
-        const messages = this.messageList?.getMessagesData();
-        if (!messages) return undefined;
-        const idx = messages.findIndex(m => m.id === aiMessageId);
-        if (idx <= 0) return undefined;
-        // AI 消息前面应该是用户消息
-        const prev = messages[idx - 1];
-        return prev?.role === 'user' ? prev.content : undefined;
-    }
+
 
     /**
      * 显示错误消息
@@ -3589,24 +1718,18 @@ export class SidebarView extends ItemView {
         try {
             // 保存阅读进度
             await this.flushProgressSave();
-            if (this.streamController) {
-                try {
-                    this.streamController.abort();
-                    log('[DeepPDF] 已取消流式请求');
-                } catch (e) {
-                    warn('[DeepPDF] Error aborting streamController:', e);
-                }
-                this.streamController = null;
+            if (this.agentChatCtrl.currentStreamController) {
+                this.agentChatCtrl.cancelActiveStream();
             }
 
             // 清理 TTS 服务
-            if (this.ttsService) {
+            if (this.ttsCtrl) {
                 try {
-                    this.ttsService.destroy();
+                    this.ttsCtrl.destroy();
                 } catch (e) {
                     warn('[DeepPDF] Error stopping TTS service:', e);
                 }
-                this.ttsService = null;
+                // ttsService managed by ttsCtrl;
             }
 
             // 清理消息列表
