@@ -2,7 +2,7 @@
  * DeepReader 插件设置类型定义
  */
 
-import type { ProviderType } from './providers';
+import type { ProviderType } from './types.js';
 import type { AIProviderAccount, AIRoles } from './ai-roles';
 
 // ═══════════════════════════════════════════════════════════════

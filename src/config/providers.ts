@@ -4,10 +4,10 @@
  */
 
 import type { DeepPDFSettings } from './settings';
-import type { RoleType } from './ai-roles';
+import type { RoleType } from './types.js';
+import type { ProviderType } from './types.js';
+export type { ProviderType } from './types.js';
 import { ROLE_CAPABILITY } from './ai-roles';
-
-export type ProviderType = 'deepseek' | 'kimi' | 'zhipu' | 'minimax' | 'siliconflow' | 'openai' | 'xiaomi' | 'custom';
 
 /** 服务商能力矩阵 */
 export interface ProviderCapabilities {
