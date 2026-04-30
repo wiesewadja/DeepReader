@@ -1,0 +1,981 @@
+/**
+ * AI 对话 + Agent 查询控制器
+ *
+ * 管理消息发送、Agent 查询、流式控制、HITL 审查、消息操作。
+ */
+
+import { Notice } from 'obsidian';
+import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
+import { MessageData, MessageRole, AIMessage } from '../../components/message/message.js';
+import type { ToolContext } from '../../agent/tools/types.js';
+import type { HumanizedProgress } from '../../agent/ui/humanized-types.js';
+import {
+	validateAndCorrectLinks,
+} from '../../agent/utils/link-validator.js';
+import { MemoryStore } from '../../agent/memory/store.js';
+import { resolveRoleConfig } from '../../config/providers.js';
+import { ExcerptModal } from '../../components/excerpt/excerpt-modal.js';
+import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt.js';
+import { ConfirmModal } from '../../components/confirm-modal.js';
+import { GUIDANCE_BUTTONS, GuidanceType } from '../../components/message-list/message-list.js';
+import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.js';
+import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
+import type { ChatMessage } from '../../agent/types.js';
+
+export interface AgentChatControllerHost {
+	get app(): import('obsidian').App;
+	get plugin(): any;
+	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
+	get chatInput(): import('../../components/chat-input/chat-input.js').ChatInput | null;
+	get frontendAgent(): import('../../agent/index.js').FrontendAgent | null;
+	get proactiveEngine(): import('../../agent/proactive/engine.js').ProactiveEngine | null;
+	get currentIndexId(): string | null;
+	get currentPdfName(): string | null;
+	get currentDocDescription(): string | null;
+	get currentBookCoverUrl(): string | null;
+	get currentBookAuthor(): string | null;
+	get currentMarkdownFiles(): Record<string, string>;
+	get useLLMTreeSearch(): boolean;
+	get sessionId(): string | null;
+	get sessionStore(): import('../../agent/session/index.js').SessionStore | null;
+	get agentChatHistory(): ChatMessage[];
+	setAgentChatHistory(history: ChatMessage[]): void;
+	get crossBookMode(): boolean;
+	get ttsService(): import('../../services/tts/tts-service.js').TTSService | null;
+	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
+	get isProcessing(): boolean;
+	get isAiStreaming(): boolean;
+	setIsProcessing(v: boolean): void;
+	setIsAiStreaming(v: boolean): void;
+
+	saveToCache(): Promise<void>;
+	clearQuotes(): void;
+	getDisplayName(name: string): string;
+	initializeFrontendAgent(): Promise<void>;
+	parseAndLoadReferences(message: string): Promise<void>;
+	copyToClipboard(text: string): void;
+}
+
+export class AgentChatController {
+	private host: AgentChatControllerHost;
+	private streamController: AbortController | null = null;
+	private isProcessing: boolean = false;
+	private isAiStreaming: boolean = false;
+	private proactiveAbortController: AbortController | null = null;
+	private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
+
+	constructor(host: AgentChatControllerHost) {
+		this.host = host;
+	}
+
+	// ── State accessors ──
+
+	get processing(): boolean { return this.isProcessing; }
+	get aiStreaming(): boolean { return this.isAiStreaming; }
+	get currentStreamController(): AbortController | null { return this.streamController; }
+
+	getStreamingVoicePlayers(): Map<string, StreamingVoicePlayer> {
+		return this.streamingVoicePlayers;
+	}
+
+	// ── Stream control ──
+
+	cancelActiveStream(): void {
+		if (this.streamController) {
+			try {
+				this.streamController.abort();
+				log('[DeepPDF] 已静默取消流式请求');
+			} catch (e) {
+				warn('[DeepPDF] 取消流式请求时出错:', e);
+			}
+			this.streamController = null;
+		}
+		this.isAiStreaming = false;
+		this.isProcessing = false;
+		this.host.setIsAiStreaming(false);
+		this.host.setIsProcessing(false);
+	}
+
+	stopGeneration(): void {
+		if (!this.isAiStreaming || !this.streamController) {
+			return;
+		}
+
+		log('[DeepPDF] 用户中断 AI 生成');
+		this.streamController.abort();
+		this.streamController = null;
+		this.isAiStreaming = false;
+		this.isProcessing = false;
+		this.host.setIsAiStreaming(false);
+		this.host.setIsProcessing(false);
+
+		this.host.chatInput?.setStreaming(false);
+		this.host.chatInput?.setDisabled(false);
+
+		const messages = this.host.messageList?.getMessages() || [];
+		const lastAiMessage = [...messages].reverse().find(m => {
+			const data = m.getData();
+			return data.role === 'assistant' && data.isStreaming;
+		});
+		if (lastAiMessage) {
+			const data = lastAiMessage.getData();
+			this.host.messageList?.updateMessage(data.id, {
+				content: data.content + '\n\n*用户已中断*',
+				isStreaming: false,
+				timestamp: new Date().toISOString()
+			});
+		}
+
+		this.host.saveToCache();
+	}
+
+	// ── Message sending ──
+
+	async sendMessageWithInput(message: string): Promise<void> {
+		log('[DeepPDF] sendMessageWithInput called:', message);
+		await this.sendMessage(message);
+	}
+
+	async sendMessage(message: string, quotes?: import('../../components/chat-input/chat-input.js').QuoteItem[], regenerateMessageId?: string): Promise<void> {
+		if (this.proactiveAbortController) {
+			this.proactiveAbortController.abort();
+			this.proactiveAbortController = null;
+		}
+		if ((!message.trim() && (!quotes || quotes.length === 0)) || this.isProcessing) {
+			return;
+		}
+
+		if (!this.host.crossBookMode && !this.host.currentIndexId) {
+			new Notice("请先选择一个索引");
+			return;
+		}
+
+		await this.host.parseAndLoadReferences(message);
+
+		this.isProcessing = true;
+		this.isAiStreaming = true;
+		this.host.setIsProcessing(true);
+		this.host.setIsAiStreaming(true);
+		this.host.chatInput?.setDisabled(true);
+		this.host.chatInput?.setStreaming(true);
+
+		try {
+			let aiMessageId: string;
+
+			if (regenerateMessageId) {
+				aiMessageId = regenerateMessageId;
+				this.host.messageList?.updateMessage(aiMessageId, {
+					content: this.host.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
+					isStreaming: true,
+					currentStatus: '开始阅读...',
+					agentToolCalls: [],
+				});
+
+				const history = this.host.agentChatHistory;
+				const lastUserIndex = history.findLastIndex(m => m.role === 'user');
+				if (lastUserIndex >= 0) {
+					const beforeRegenerate = history.length;
+					this.host.setAgentChatHistory(history.slice(0, lastUserIndex + 1));
+					log(`[DeepPDF] 重试模式：清理了 ${beforeRegenerate - this.host.agentChatHistory.length} 条旧消息`);
+				}
+			} else {
+				const timestamp = Date.now();
+				const userMessageId = `msg-${timestamp}-user`;
+				aiMessageId = `msg-${timestamp}-ai`;
+
+				log(`[DeepPDF] sendMessage - currentPdfName: ${this.host.currentPdfName}`);
+
+				const userMessageData: MessageData = {
+					id: userMessageId,
+					role: "user" as MessageRole,
+					content: message,
+					timestamp: new Date().toISOString(),
+					pdfName: this.host.currentPdfName || undefined,
+					quotes: quotes && quotes.length > 0 ? quotes : undefined
+				};
+				this.host.messageList?.addMessage(userMessageData);
+
+				const aiMessageData: MessageData = {
+					id: aiMessageId,
+					role: "assistant" as MessageRole,
+					content: "",
+					timestamp: new Date().toISOString(),
+					isStreaming: true,
+					isAgentMessage: true,
+					currentStatus: '开始阅读...',
+					pdfName: this.host.currentPdfName || undefined,
+					question: message,
+					conversationId: this.host.sessionId || undefined,
+					bookCoverUrl: this.host.currentBookCoverUrl || undefined,
+					bookAuthor: this.host.currentBookAuthor || undefined,
+					enableVoiceReply: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)),
+					voiceState: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)) ? 'loading' as const : undefined,
+				};
+				this.host.messageList?.addMessage(aiMessageData);
+			}
+
+			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes);
+
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			new Notice(`查询失败: ${errorMessage}`);
+
+			const errorId = `msg-${Date.now()}-error`;
+			this.host.messageList?.addMessage({
+				id: errorId,
+				role: "assistant" as MessageRole,
+				content: `查询失败: ${errorMessage}`,
+				timestamp: new Date().toISOString()
+			});
+
+			this.isProcessing = false;
+			this.isAiStreaming = false;
+			this.host.setIsProcessing(false);
+			this.host.setIsAiStreaming(false);
+			this.host.chatInput?.setStreaming(false);
+			this.host.chatInput?.setDisabled(false);
+			this.host.chatInput?.focus();
+		}
+	}
+
+	// ── Agent query ──
+
+	private async handleAgentQuery(
+		query: string,
+		indexId: string,
+		aiMessageId: string,
+		quotes?: import('../../components/chat-input/chat-input.js').QuoteItem[]
+	): Promise<void> {
+		try {
+			await this.host.initializeFrontendAgent();
+
+			if (!this.host.frontendAgent) {
+				throw new Error("FrontendAgent 初始化失败");
+			}
+
+			if (this.streamController) {
+				this.streamController.abort();
+				log('[DeepPDF] 取消旧的流式请求');
+			}
+
+			this.streamController = new AbortController();
+
+			let fullContent = '';
+			let currentStatus = '';
+
+			const activeFile = this.host.app.workspace.getActiveFile();
+			let currentNodeId: string | undefined;
+			if (activeFile) {
+				const cache = this.host.app.metadataCache.getFileCache(activeFile);
+				const rawNodeId = cache?.frontmatter?.node_id;
+				if (rawNodeId) currentNodeId = String(rawNodeId);
+			}
+
+			const context: ToolContext = {
+				indexId: indexId,
+				pdfName: this.host.currentPdfName || '未知文档',
+				markdownFiles: this.host.currentMarkdownFiles,
+				useLLMTreeSearch: this.host.useLLMTreeSearch,
+				app: this.host.app,
+				plugin: this.host.plugin,
+				currentNodeId,
+				documentMetadata: {
+					title: this.host.currentPdfName || '未知文档',
+				},
+				docDescription: this.host.currentDocDescription || undefined,
+				quotes: quotes,
+				isSocratic: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
+				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
+					const cfg = resolveRoleConfig('tts', this.host.plugin.settings);
+					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+				})() : undefined,
+				llmConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
+					const cfg = resolveRoleConfig('router', this.host.plugin.settings);
+					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+				})() : undefined,
+			};
+
+			let userMessage = query;
+
+			if (quotes && quotes.length > 0) {
+				const quotesText = quotes.map(q => {
+					const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
+					return `> ${q.text}\n> — ${location}`;
+				}).join('\n\n');
+				userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
+			}
+
+			const isNewConversation = this.host.agentChatHistory.length <= 1;
+
+			let agentState: 'thinking' | 'answering' = 'thinking';
+			let hadToolCalls = false;
+			let reasoningContent = '';
+
+			const queryStartTime = Date.now();
+			let firstContentLogged = false;
+
+			const self = this;
+
+			const callbacks = {
+				onContent: (text: string) => {
+					fullContent = text;
+
+					if (!firstContentLogged && fullContent.trim().length > 0) {
+						firstContentLogged = true;
+						const ttfc = Date.now() - queryStartTime;
+						log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
+					}
+
+					if (agentState === 'thinking' && fullContent.trim().length > 0) {
+						agentState = 'answering';
+					}
+
+					if (agentState === 'thinking' && !hadToolCalls) {
+						const updates: any = {
+							content: fullContent,
+							isStreaming: true,
+							isAgentMessage: true,
+						};
+						if (currentStatus) {
+							updates.currentStatus = currentStatus;
+						}
+						self.host.messageList?.updateMessage(aiMessageId, updates);
+						return;
+					}
+
+					if (agentState === 'thinking') {
+						const updates: any = {
+							isStreaming: true,
+							isAgentMessage: true,
+						};
+						if (currentStatus) {
+							updates.currentStatus = currentStatus;
+						}
+						self.host.messageList?.updateMessage(aiMessageId, updates);
+						return;
+					}
+
+					const updates: any = {
+						content: fullContent,
+						isStreaming: true,
+						isAgentMessage: true,
+					};
+
+					if (currentStatus) {
+						updates.currentStatus = currentStatus;
+					}
+
+					self.host.messageList?.updateMessage(aiMessageId, updates);
+				},
+				onContentComplete: async (content: string): Promise<string> => {
+					if (!self.host.currentPdfName || !context.app) {
+						return content;
+					}
+
+					try {
+						const { correctedContent, validatedLinks } = await validateAndCorrectLinks(
+							self.host.app,
+							content
+						);
+
+						if (correctedContent !== content) {
+							log('[DeepPDF] 链接已纠正，更新消息');
+							self.host.messageList?.updateMessage(aiMessageId, {
+								content: correctedContent,
+							});
+							fullContent = correctedContent;
+						}
+
+						return correctedContent;
+					} catch (err) {
+						logError('[DeepPDF] 链接校验失败:', err);
+						return content;
+					}
+				},
+				onProgress: (status: string) => {
+					log('[DeepPDF] Agent 进度:', status);
+					currentStatus = status;
+
+					self.host.messageList?.updateMessage(aiMessageId, {
+						currentStatus: status,
+						isStreaming: true,
+						isAgentMessage: true,
+					});
+				},
+				onReasoning: (text: string) => {
+					log('[DeepPDF] onReasoning 回调被调用, text:', text.slice(0, 50));
+					reasoningContent += text;
+
+					const firstLine = reasoningContent.split('\n')[0].slice(0, 50);
+					const displayReasoning = firstLine.length < reasoningContent.split('\n')[0].length
+						? firstLine + '...'
+						: firstLine;
+
+					log('[DeepPDF] onReasoning 更新状态:', displayReasoning);
+					self.host.messageList?.updateMessage(aiMessageId, {
+						currentStatus: displayReasoning ? `💭 ${displayReasoning}` : undefined,
+						isStreaming: true,
+						isAgentMessage: true,
+					});
+				},
+				onComplete: async () => {
+					self.host.messageList?.updateMessage(aiMessageId, {
+						isStreaming: false,
+						timestamp: new Date().toISOString()
+					});
+
+					if (self.host.plugin.settings.enableVoiceReply) {
+						const msg = self.host.messageList?.getMessage(aiMessageId);
+						if (msg && msg instanceof AIMessage) {
+							msg.updateLetterState('sealed');
+						}
+					}
+
+					self.host.saveToCache();
+					self.host.saveToCache().then(() => {
+						self.maybeConsolidateMemory();
+					});
+
+					self.isProcessing = false;
+					self.isAiStreaming = false;
+					self.host.setIsProcessing(false);
+					self.host.setIsAiStreaming(false);
+					self.host.chatInput?.setStreaming(false);
+					self.host.chatInput?.setDisabled(false);
+
+					self.host.clearQuotes();
+
+					self.host.chatInput?.focus();
+					self.streamController = null;
+
+					if (self.host.plugin.settings.autoTTS && !self.host.plugin.settings.enableVoiceReply) {
+						if (self.host.ttsService && self.host.ttsService.getCurrentMessageId() !== aiMessageId) {
+							const question = self.findUserQuestion(aiMessageId);
+							const memoryContent = await new MemoryStore(self.host.app).readLongTermMemory() || undefined;
+							self.host.ttsService.play(aiMessageId, fullContent, question, {
+								bookTitle: self.host.getDisplayName(self.host.currentPdfName || '') || undefined,
+								bookAuthor: self.host.currentBookAuthor || undefined,
+								memoryContent,
+							});
+						}
+					}
+				},
+				onError: (error: string) => {
+					logError('[DeepPDF] Agent 错误:', error);
+					self.host.messageList?.updateMessage(aiMessageId, {
+						content: `查询失败: ${error}`,
+						isStreaming: false,
+						timestamp: new Date().toISOString()
+					});
+
+					self.isProcessing = false;
+					self.isAiStreaming = false;
+					self.host.setIsProcessing(false);
+					self.host.setIsAiStreaming(false);
+					self.host.chatInput?.setStreaming(false);
+					self.host.chatInput?.setDisabled(false);
+
+					self.host.clearQuotes();
+
+					self.host.chatInput?.focus();
+					self.streamController = null;
+				},
+				onHumanizedProgress: ((() => {
+					let lastUpdateTime = 0;
+					const THROTTLE_MS = 200;
+
+					return (progress: HumanizedProgress) => {
+						const now = Date.now();
+						if (now - lastUpdateTime < THROTTLE_MS) {
+							return;
+						}
+						lastUpdateTime = now;
+
+						if (progress.readingSteps.some(step => step.status === 'done' || step.status === 'current')) {
+							hadToolCalls = true;
+						}
+
+						const hasRunningTools = progress.readingSteps.some(step => step.status === 'current');
+						if (agentState !== 'thinking' && !hasRunningTools) {
+							return;
+						}
+
+						const completedSteps = progress.readingSteps
+							.filter(step => step.status === 'done')
+							.map(step => step.action);
+
+						self.host.messageList?.updateMessage(aiMessageId, {
+							currentStatus: progress.mainAction.detail,
+							readingLevel: progress.currentReadingLevel,
+							completedSteps: completedSteps.length > 0 ? completedSteps : undefined,
+							isStreaming: true,
+							isAgentMessage: true,
+						});
+					};
+				})()),
+				abortSignal: this.streamController.signal,
+				onVoiceReady: (data: { audioBuffer: ArrayBuffer; duration: number }) => {
+					const msg = self.host.messageList?.getMessage(aiMessageId);
+					if (msg && msg instanceof AIMessage) {
+						msg.updateVoiceData(data);
+					}
+					const lastAiMsg = self.host.agentChatHistory[self.host.agentChatHistory.length - 1];
+					if (lastAiMsg && lastAiMsg.role === 'assistant') {
+						(lastAiMsg as any).voiceAudio = data.audioBuffer;
+						(lastAiMsg as any).voiceDuration = data.duration;
+						(lastAiMsg as any).voiceState = 'ready';
+					}
+					if (self.host.sessionStore && self.host.sessionId) {
+						self.host.sessionStore.saveVoiceToPlaceholder(
+							self.host.sessionId,
+							aiMessageId,
+							data.audioBuffer,
+						);
+					}
+				},
+				onVoiceChunk: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => {
+					const msg = self.host.messageList?.getMessage(aiMessageId);
+					if (msg && msg instanceof AIMessage) {
+						if (data.isComplete) {
+							const player = self.streamingVoicePlayers.get(aiMessageId);
+							if (player) {
+								player.seal();
+							}
+						} else {
+							let player = self.streamingVoicePlayers.get(aiMessageId);
+							if (!player) {
+								player = new StreamingVoicePlayer({
+									sampleRate: 24000,
+									onStateChange: (state: StreamingVoiceState) => {
+										if (state === 'playing') {
+											msg.updateVoiceState('playing');
+										} else if (state === 'paused') {
+											msg.updateVoiceState('paused');
+										} else if (state === 'ended') {
+											msg.updateVoiceState('ended');
+										}
+									},
+								});
+								self.streamingVoicePlayers.set(aiMessageId, player);
+
+								msg.updateVoiceState('ready');
+							}
+							player.enqueueChunk(data.audioChunk);
+						}
+					}
+				},
+			};
+
+			this.host.frontendAgent.setupSubagentManager(context);
+
+			const result = await this.host.frontendAgent.runGraphEngine(
+				userMessage,
+				context,
+				callbacks,
+				this.host.agentChatHistory,
+			);
+
+			if (result.interrupted) {
+				this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
+				return;
+			}
+
+			if (result.messages.length > 0) {
+				this.host.setAgentChatHistory([...this.host.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages]);
+			}
+			await this.host.saveToCache();
+
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			logError('[DeepPDF] handleAgentQuery 错误:', error);
+			this.host.messageList?.updateMessage(aiMessageId, {
+				content: `Agent 查询失败: ${errorMessage}`,
+				isStreaming: false,
+				timestamp: new Date().toISOString()
+			});
+			this.isProcessing = false;
+			this.isAiStreaming = false;
+			this.host.setIsProcessing(false);
+			this.host.setIsAiStreaming(false);
+			this.host.chatInput?.setStreaming(false);
+			this.host.chatInput?.setDisabled(false);
+		}
+	}
+
+	// ── Proactive guidance ──
+
+	async executeProactiveGuidance(params: import('../../agent/proactive/types.js').ProactiveParams): Promise<void> {
+		if (!this.host.frontendAgent || !this.host.messageList) return;
+		if (this.isProcessing || this.isAiStreaming) return;
+		this.host.proactiveEngine?.setProcessing(true);
+		this.isProcessing = true;
+		this.host.setIsProcessing(true);
+		const aiMessageId = `proactive-${Date.now()}`;
+		this.proactiveAbortController = new AbortController();
+		try {
+			const aiMessageData: MessageData = {
+				id: aiMessageId,
+				role: "assistant" as MessageRole,
+				content: "",
+				timestamp: new Date().toISOString(),
+				isStreaming: true,
+				isAgentMessage: true,
+				currentStatus: '思考中...',
+				pdfName: this.host.currentPdfName || undefined,
+				conversationId: this.host.sessionId || undefined,
+				bookCoverUrl: this.host.currentBookCoverUrl || undefined,
+				bookAuthor: this.host.currentBookAuthor || undefined,
+				isProactiveGuidance: true,
+			};
+			this.host.messageList.addMessage(aiMessageData);
+
+			const activeFile = this.host.app.workspace.getActiveFile();
+			let currentNodeId: string | undefined;
+			if (activeFile) {
+				const cache = this.host.app.metadataCache.getFileCache(activeFile);
+				const rawNodeId = cache?.frontmatter?.node_id;
+				if (rawNodeId) currentNodeId = String(rawNodeId);
+			}
+
+			const context: ToolContext = {
+				indexId: this.host.currentIndexId || '',
+				pdfName: this.host.currentPdfName || '未知文档',
+				markdownFiles: this.host.currentMarkdownFiles,
+				app: this.host.app,
+				plugin: this.host.plugin,
+				currentNodeId,
+				documentMetadata: { title: this.host.currentPdfName || '未知文档' },
+				docDescription: this.host.currentDocDescription || undefined,
+				isProactive: true,
+			};
+
+			const self = this;
+			const callbacks = {
+				onContent: (content: string) => {
+					self.host.messageList?.updateMessage(aiMessageId, { content });
+				},
+				onProgress: (msg: string) => {
+					self.host.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
+				},
+				onComplete: () => {},
+				onError: (msg: string) => {
+					self.host.messageList?.updateMessage(aiMessageId, {
+						isStreaming: false,
+						content: `引导生成失败: ${msg}`,
+					});
+				},
+				onContentComplete: async (content: string) => content,
+				onReasoning: () => {},
+				onHumanizedProgress: () => {},
+				abortSignal: self.proactiveAbortController?.signal,
+				onVoiceReady: () => {},
+				onVoiceChunk: () => {},
+			};
+
+			const syntheticMessage = (params as any).syntheticMessage || (params as any).question || '';
+			const result = await this.host.frontendAgent.runGraphEngine(
+				syntheticMessage,
+				context,
+				callbacks,
+				this.host.agentChatHistory,
+			);
+
+			if (this.proactiveAbortController?.signal.aborted) {
+				this.host.messageList?.updateMessage(aiMessageId, {
+					isStreaming: false,
+					content: '引导生成被中断',
+				});
+				return;
+			}
+
+			const assistantContent = result.messages[0]?.content || '';
+			this.host.setAgentChatHistory([
+				...this.host.agentChatHistory,
+				{ role: 'user', content: syntheticMessage },
+				{ role: 'assistant', content: assistantContent },
+			]);
+			this.host.messageList?.updateMessage(aiMessageId, {
+				isStreaming: false,
+				content: assistantContent,
+			});
+			await this.host.saveToCache();
+		} catch (err) {
+			logError('[DeepPDF] 主动引导生成失败:', err);
+			this.host.messageList?.updateMessage(aiMessageId, {
+				isStreaming: false,
+				content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
+			});
+		} finally {
+			this.host.proactiveEngine?.setProcessing(false);
+			this.isProcessing = false;
+			this.host.setIsProcessing(false);
+			this.proactiveAbortController = null;
+		}
+	}
+
+	// ── HITL ──
+
+	private showHumanReviewPrompt(
+		nodeId: string,
+		content: string,
+		context: import('../../agent/tools/types.js').ToolContext,
+		callbacks: import('../../agent/agent-loop.js').AgentLoopOptions
+	): void {
+		const nodeLabel = nodeId === 'analytical' ? 'S2 分析' : nodeId === 'formatter' ? 'S4 格式化' : nodeId;
+
+		const messages = this.host.messageList?.getMessagesData() || [];
+		const lastMsgId = messages.length > 0 ? messages[messages.length - 1].id : '';
+		if (lastMsgId) {
+			const reviewContent = `${content}\n\n---\n**[${nodeLabel} 审查中]** 请确认结果是否满意。`;
+			this.host.messageList?.updateMessage(lastMsgId, {
+				content: reviewContent,
+				isStreaming: false,
+				isAgentMessage: true,
+			});
+		}
+
+		new Notice(`[${nodeLabel}] 审查中 — 自动确认继续`);
+		log(`[DeepPDF] HITL 审查: ${nodeLabel}, 自动确认`);
+
+		this.handleHumanReviewResponse(true, '', context, callbacks);
+	}
+
+	private async handleHumanReviewResponse(
+		approved: boolean,
+		feedback: string,
+		context: import('../../agent/tools/types.js').ToolContext,
+		callbacks: import('../../agent/agent-loop.js').AgentLoopOptions
+	): Promise<void> {
+		try {
+			const result = await this.host.frontendAgent!.resumeGraphExecution(
+				approved,
+				feedback,
+				context,
+				callbacks
+			);
+
+			if (result.interrupted) {
+				this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
+				return;
+			}
+			if (result.messages.length > 0) {
+				const lastAiMsg = result.messages[result.messages.length - 1];
+				const history = [...this.host.agentChatHistory, lastAiMsg];
+				this.host.setAgentChatHistory(history);
+			}
+			await this.host.saveToCache();
+
+			this.isProcessing = false;
+			this.isAiStreaming = false;
+			this.host.setIsProcessing(false);
+			this.host.setIsAiStreaming(false);
+			this.host.chatInput?.setStreaming(false);
+			this.host.chatInput?.setDisabled(false);
+		} catch (error) {
+			logError('[DeepPDF] HITL 恢复错误:', error);
+			this.isProcessing = false;
+			this.isAiStreaming = false;
+			this.host.setIsProcessing(false);
+			this.host.setIsAiStreaming(false);
+			this.host.chatInput?.setStreaming(false);
+			this.host.chatInput?.setDisabled(false);
+		}
+	}
+
+	// ── Message actions ──
+
+	handleRegenerate(messageId: string): void {
+		const message = this.host.messageList?.getMessage(messageId);
+		if (!message) return;
+
+		const data = message.getData();
+		if (data.role !== "assistant") return;
+
+		const messages = this.host.messageList?.getMessagesData() || [];
+		const userMessageIndex = messages.findIndex(m => m.id === messageId) - 1;
+
+		if (userMessageIndex >= 0 && messages[userMessageIndex].role === "user") {
+			this.sendMessage(messages[userMessageIndex].content, [], messageId);
+		}
+	}
+
+	handleCopy(messageId: string): void {
+		const message = this.host.messageList?.getMessage(messageId);
+		if (!message) return;
+
+		const content = message.getData().content;
+		this.host.copyToClipboard(content);
+	}
+
+	handleDeleteMessagePair(aiMessageId: string): void {
+		const modal = new ConfirmModal(
+			this.host.app,
+			"删除对话",
+			"此操作不可撤销",
+			async () => {
+				await this.doDeleteMessagePair(aiMessageId);
+			},
+			{
+				confirmLabel: "删除",
+				cancelLabel: "取消",
+				isDestructive: true
+			}
+		);
+		modal.open();
+	}
+
+	private async doDeleteMessagePair(aiMessageId: string): Promise<void> {
+		const sessionId = this.host.sessionId;
+		const sessionStore = this.host.sessionStore;
+		if (!sessionId || !sessionStore) {
+			new Notice("无法删除：会话不存在");
+			return;
+		}
+
+		try {
+			const session = await sessionStore.get(sessionId);
+			if (!session) {
+				new Notice("无法删除：会话数据不存在");
+				return;
+			}
+
+			const uiMessages = this.host.messageList?.getMessagesData() || [];
+			const uiAiIndex = uiMessages.findIndex(m => m.id === aiMessageId);
+			if (uiAiIndex === -1) {
+				new Notice("无法删除：消息未找到");
+				return;
+			}
+
+			let uiUserIndex = uiAiIndex - 1;
+			while (uiUserIndex >= 0 && uiMessages[uiUserIndex].role !== 'user') {
+				uiUserIndex--;
+			}
+			if (uiUserIndex < 0) {
+				new Notice("无法删除：未找到对应的用户问题");
+				return;
+			}
+
+			const uiIdsToDelete: string[] = [];
+			for (let i = uiUserIndex; i < uiMessages.length; i++) {
+				if (i > uiUserIndex && uiMessages[i].role === 'user') {
+					break;
+				}
+				uiIdsToDelete.push(uiMessages[i].id);
+			}
+
+			const userContent = uiMessages[uiUserIndex].content;
+			const storeIndicesToDelete: number[] = [];
+
+			let storeUserIndex = -1;
+			for (let i = 0; i < session.messages.length; i++) {
+				if (session.messages[i].role === 'user' &&
+					session.messages[i].content === userContent) {
+					storeUserIndex = i;
+					break;
+				}
+			}
+
+			if (storeUserIndex === -1) {
+				new Notice("无法删除：存储中未找到对应消息");
+				return;
+			}
+
+			for (let i = storeUserIndex; i < session.messages.length; i++) {
+				if (i > storeUserIndex && session.messages[i].role === 'user') {
+					break;
+				}
+				storeIndicesToDelete.push(i);
+			}
+
+			await sessionStore.deleteMessages(sessionId, storeIndicesToDelete);
+
+			if (this.host.frontendAgent && sessionStore) {
+				const llmHistory = await sessionStore.getLLMHistory(sessionId);
+				const systemPrompt = await this.host.frontendAgent.getSystemPromptAsync();
+				this.host.setAgentChatHistory([
+					{ role: 'system', content: systemPrompt },
+					...llmHistory
+				]);
+			}
+
+			this.host.messageList?.removeMessages(uiIdsToDelete);
+
+			new Notice("对话已删除");
+			log('[DeepPDF] 删除了消息对:', uiIdsToDelete);
+
+		} catch (error) {
+			logError('[DeepPDF] 删除消息对失败:', error);
+			new Notice("删除失败，请重试");
+		}
+	}
+
+	handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
+		const message = this.host.messageList?.getMessage(messageId);
+		if (!message) return;
+
+		const data = message.getData();
+
+		if (data.pdfName) {
+			metadata.sourcePdf = data.pdfName;
+		}
+
+		metadata.sourceType = 'chat';
+		delete metadata.chapterPath;
+		delete metadata.chapterName;
+
+		const modal = new ExcerptModal({
+			content,
+			metadata,
+			app: this.host.app,
+			onSave: (path: string) => {
+				new Notice(`摘录已保存到 ${path}`);
+			}
+		});
+		modal.open();
+	}
+
+	handleQuestionClick(question: string): void {
+		log('[DeepPDF] 追问问题点击:', question);
+		this.sendMessage(question);
+	}
+
+	handleGenerateOutline(): void {
+		log('[DeepPDF] 生成阅读大纲');
+		const prompt = "针对本书的目录，帮我整理一个完整的阅读大纲，指出重点和阅读方案";
+		this.sendMessage(prompt);
+	}
+
+	handleGuidanceClick(type: GuidanceType): void {
+		log('[DeepPDF] 引导按钮点击:', type);
+
+		const button = GUIDANCE_BUTTONS.find(b => b.type === type);
+		if (!button) {
+			warn('[DeepPDF] 未找到引导按钮配置:', type);
+			return;
+		}
+
+		this.sendMessage(button.prompt);
+	}
+
+	private findUserQuestion(aiMessageId: string): string | undefined {
+		const messages = this.host.messageList?.getMessagesData();
+		if (!messages) return undefined;
+		const idx = messages.findIndex(m => m.id === aiMessageId);
+		if (idx <= 0) return undefined;
+		const prev = messages[idx - 1];
+		return prev?.role === 'user' ? prev.content : undefined;
+	}
+
+	private async maybeConsolidateMemory(): Promise<void> {
+		// Delegate to SessionManager via host's saveToCache trigger
+		// This is called after saveToCache completes
+	}
+
+	destroy(): void {
+		this.cancelActiveStream();
+		for (const player of this.streamingVoicePlayers.values()) {
+			try { player.destroy(); } catch { /* ignore */ }
+		}
+		this.streamingVoicePlayers.clear();
+	}
+}
