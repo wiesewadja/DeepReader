@@ -397,7 +397,10 @@ export class TTSService {
                 } catch {}
 
                 if (textToRead && this.currentMessageId === messageId) {
-                    await this.playSegmented(messageId, textToRead, voiceProfile);
+                    await this.playSegmented(messageId, textToRead, voiceProfile, {
+                        originalOffset: playedChars,
+                        originalTotal: totalChars,
+                    });
                 }
                 return;
             }
@@ -406,7 +409,10 @@ export class TTSService {
         // 4. 降级：原文分段朗读
         const remaining = fullContent.slice(playedChars);
         if (remaining.trim()) {
-            await this.playSegmented(messageId, remaining, voiceProfile);
+            await this.playSegmented(messageId, remaining, voiceProfile, {
+                originalOffset: playedChars,
+                originalTotal: totalChars,
+            });
         } else if (this.currentMessageId === messageId) {
             this.onProgressChange?.(messageId, 100);
             this.setState('idle');
@@ -427,12 +433,21 @@ export class TTSService {
         messageId: string,
         fullContent: string,
         voiceProfile: VoiceProfile,
+        /** 进度映射到原文的坐标（缺省则用改写文本自身坐标） */
+        progressMap?: { originalOffset: number; originalTotal: number },
     ): Promise<void> {
         const segments = this.splitTextIntoSegments(fullContent, 300);
         const totalSegments = segments.length;
         if (totalSegments === 0) return;
 
         const totalChars = fullContent.length;
+        // 进度映射：将改写文本的字符位置映射到原文的全局范围
+        const pOffset = progressMap?.originalOffset ?? 0;
+        const pTotal = progressMap?.originalTotal ?? totalChars;
+        // 改写文本覆盖原文的 [pOffset, pTotal] 区间
+        const rangeStart = pOffset / pTotal;
+        const rangeEnd = 1.0;
+
         let currentCharOffset = 0;
         const audioBuffers: ArrayBuffer[] = [];
 
@@ -444,8 +459,11 @@ export class TTSService {
             if (this.currentMessageId !== messageId) return;
 
             const segmentText = segments[i];
-            const segmentStart = currentCharOffset / totalChars;
-            const segmentEnd = (currentCharOffset + segmentText.length) / totalChars;
+            // 将改写文本内的偏移映射到原文全局进度 [0, 1]
+            const segLocalStart = currentCharOffset / totalChars;
+            const segLocalEnd = (currentCharOffset + segmentText.length) / totalChars;
+            const segmentStart = rangeStart + segLocalStart * (rangeEnd - rangeStart);
+            const segmentEnd = rangeStart + segLocalEnd * (rangeEnd - rangeStart);
 
             // 等待当前段合成完成（首段或预取结果）
             let segResult: { audio: HTMLAudioElement; buffer: ArrayBuffer };
