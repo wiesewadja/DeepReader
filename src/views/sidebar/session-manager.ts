@@ -69,6 +69,10 @@ export class SessionManager {
 		log('[DeepPDF] SessionStore 初始化完成');
 	}
 
+	async ensureSessionStore(): Promise<void> {
+		await this.initializeSessionStore();
+	}
+
 	private getNormalizedBookName(): string {
 		if (!this.host.currentPdfName) {
 			return this.host.currentIndexId || '';
