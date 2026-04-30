@@ -95,7 +95,8 @@ export function buildSocraticDialogueUserMessage(
   const recent = chatHistory.slice(-6);
   const historyLines = recent.map(m => {
     const label = m.role === 'user' ? '用户' : 'AI';
-    const text = m.content.replace(/\n/g, ' ').slice(0, 300);
+    const flat = m.content.replace(/\n/g, ' ');
+    const text = flat.length <= 500 ? flat : flat.slice(0, 300) + ' ... ' + flat.slice(-200);
     return `${label}: ${text}`;
   }).join('\n');
 
