@@ -10,9 +10,9 @@ import type { ChatMessage, ToolDefinition } from '../types';
 import type { LLMClient } from '../llm-client';
 import type { ITraceContext } from '../tracing/types';
 import type { ToolRegistry, ToolContext } from '../tools/types';
-import type { SubagentTask, SubagentConfig, SubagentCallback } from './types';
+import type { SubagentTask, SubagentConfig, SubagentCallback, AgentLoopRunner } from './types';
 import { DEFAULT_SUBAGENT_CONFIG, DEFAULT_SUBAGENT_TOOLS, hashDescription } from './types';
-import { runAgentLoop } from '../agent-loop';
+import type { ISubagentManager } from './types';
 import { agentLog } from '../../utils/logger';
 
 /** 缓存条目类型 */
@@ -22,7 +22,8 @@ interface CacheEntry {
 	taskId: string;
 }
 
-export class SubagentManager {
+export class SubagentManager implements ISubagentManager {
+	private runLoopFn: AgentLoopRunner;
 	private client: LLMClient;
 	private toolRegistry: ToolRegistry;
 	private context: ToolContext;
@@ -40,6 +41,7 @@ export class SubagentManager {
 	private cache: Map<string, CacheEntry> = new Map();
 
 	constructor(
+		runLoop: AgentLoopRunner,
 		client: LLMClient,
 		toolRegistry: ToolRegistry,
 		context: ToolContext,
@@ -47,6 +49,7 @@ export class SubagentManager {
 		onResult?: SubagentCallback,
 		traceCtx?: ITraceContext
 	) {
+		this.runLoopFn = runLoop;
 		this.client = client;
 		this.toolRegistry = toolRegistry;
 		this.context = context;
@@ -313,7 +316,7 @@ export class SubagentManager {
 				abortSignal.addEventListener('abort', abortHandler);
 
 				// 正确处理 async 函数返回的 Promise
-				runAgentLoop(this.client, messages, tools, this.toolRegistry, this.context, {
+				this.runLoopFn(this.client, messages, tools, this.toolRegistry, this.context, {
 					maxIterations: this.config.maxIterations,
 					abortSignal,  // 传递取消信号
 					onContent: (text) => {

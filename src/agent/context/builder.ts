@@ -54,7 +54,7 @@ export interface DocumentMetadata {
  * const messages = ContextBuilder.buildMessages(systemPrompt, history, userMsg, runtimeContext);
  * ```
  */
-export class ContextBuilder {
+export class ContextBuilder implements IContextBuilder {
 	private app: App;
 	private store: MemoryStore;
 	private config: ContextBuilderConfig;
@@ -324,4 +324,16 @@ ${docInfo}`;
 		const runtimeContext = ContextBuilder.buildRuntimeContext();
 		return ContextBuilder.buildMessages(systemPrompt, history, currentMessage, runtimeContext, systemNote);
 	}
+}
+
+
+/**
+ * ContextBuilder 实例方法接口
+ *
+ * 静态工具方法（buildRuntimeContext, buildMessages）不纳入接口，
+ * 它们是无状态的纯函数，消费者可直接调用
+ */
+export interface IContextBuilder {
+	loadRelevantDialogueSummaries(bookName: string, limit?: number): Promise<string>;
+	buildSystemPrompt(skillsSummary: string, documentMetadata?: DocumentMetadata, docDescription?: string): Promise<string>;
 }

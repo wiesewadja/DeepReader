@@ -18,6 +18,7 @@ import {
 	type SessionMessageLine,
 	type SessionsIndex,
 	type SessionStoreConfig,
+	type ISessionStore,
 	DEFAULT_SESSION_STORE_CONFIG,
 } from './types.js';
 
@@ -41,7 +42,7 @@ function getLocalTimestamp(): string {
 	return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export class SessionStore {
+export class SessionStore implements ISessionStore {
 	private app: App;
 	private config: Required<SessionStoreConfig>;
 	private sessionsDir: string;

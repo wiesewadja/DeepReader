@@ -5,13 +5,8 @@
  * 第二层：AIRoleConfig（用途角色分配）
  */
 
-import type { ProviderType } from './providers';
-
-/** 七种用途角色 */
-export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker' | 'tts';
-
-/** 各角色所需的能力类型 */
-export type RequiredCapability = 'chat' | 'embedding' | 'reranker' | 'tts';
+import type { ProviderType, RoleType, RequiredCapability } from './types.js';
+export type { RoleType, RequiredCapability } from './types.js';
 
 /** 角色到所需能力的映射 */
 export const ROLE_CAPABILITY: Record<RoleType, RequiredCapability> = {

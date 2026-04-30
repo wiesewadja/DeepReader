@@ -42,7 +42,7 @@ import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
 import { getToolDefinitions } from './tools/index.js';
 import { SubagentManager } from './subagent/manager.js';
-import { setSubagentManager } from './tools/create-sub-agent.js';
+import { runAgentLoop } from './agent-loop.js';
 import { IntentRouter } from './router/index.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './agent-loop.js';
@@ -102,6 +102,7 @@ export class FrontendAgent {
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
+  private subagentManager?: SubagentManager;
   private initialized = false;
   private activeThreadId: string | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
@@ -800,6 +801,7 @@ ${currentMemory}
    */
   setupSubagentManager(context: ToolContext): void {
     const manager = new SubagentManager(
+      runAgentLoop,
       this.llmClientManager.getMainClient(),
       null as any, // toolRegistry - SubagentManager uses its own system
       context,
@@ -807,7 +809,8 @@ ${currentMemory}
       undefined,
       undefined
     );
-    setSubagentManager(manager);
+    this.subagentManager = manager;
+    context.subagentManager = manager;
     log('[FrontendAgent] SubagentManager 已初始化');
   }
 }

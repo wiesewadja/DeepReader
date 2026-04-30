@@ -82,3 +82,24 @@ export const DEFAULT_SESSION_STORE_CONFIG: Required<SessionStoreConfig> = {
 	maxCacheSize: 10,
 	maxLLMMessages: 500,
 };
+
+/**
+ * SessionStore 接口 — 会话持久化
+ *
+ * 消费者通过此接口访问会话数据，不依赖 JSONL 实现细节
+ */
+export interface ISessionStore {
+	create(sessionId: string, indexId: string, isCrossBook?: boolean): Promise<Session>;
+	save(session: Session): Promise<void>;
+	appendMessage(sessionId: string, message: ChatMessage): Promise<void>;
+	appendMessages(sessionId: string, messages: ChatMessage[]): Promise<void>;
+	get(sessionId: string): Promise<Session | null>;
+	getMessages(sessionId: string): Promise<ChatMessage[]>;
+	getLLMHistory(sessionId: string): Promise<ChatMessage[]>;
+	findSessionByIndexId(indexId: string): Promise<SessionMeta | null>;
+	getCrossBookSession(): Promise<SessionMeta | null>;
+	listSessions(): Promise<SessionMeta[]>;
+	delete(sessionId: string): Promise<void>;
+	deleteMessages(sessionId: string, messageIndices: number[]): Promise<void>;
+	updateLastConsolidated(sessionId: string, index: number): Promise<void>;
+}

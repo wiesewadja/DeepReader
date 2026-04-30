@@ -12,7 +12,7 @@ import { searchBookV2 } from '../../pageindex/book-search-v2.js';
 import { searchPropositions } from '../../pageindex/proposition-search.js';
 import type { BookSearchResultV2, PropositionMatch } from '../../pageindex/book-types.js';
 import type { EmbeddingOptions } from '../../pageindex/vault/types.js';
-import { getOrGenerateEmbedding } from './embedding-cache.js';
+import { getOrGenerateEmbedding } from '../../pageindex/vault/embedding-cache.js';
 
 export interface SyntopicalSearchOptions {
   query: string;

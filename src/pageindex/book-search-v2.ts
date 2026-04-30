@@ -35,7 +35,7 @@ import {
   loadPropositions,
   loadPropVectorStore,
 } from "./proposition-search.js";
-import { getOrGenerateEmbedding } from "../agent/utils/embedding-cache.js";
+import { getOrGenerateEmbedding } from "./vault/embedding-cache.js";
 import { safeRequest } from "../utils/safe-request.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────

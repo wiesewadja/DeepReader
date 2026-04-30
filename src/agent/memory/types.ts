@@ -81,3 +81,22 @@ export const DEFAULT_CONSOLIDATOR_CONFIG: ConsolidatorConfig = {
 	skipThreshold: 20,
 	maxDialogueSummaries: 10,
 };
+
+/**
+ * MemoryStore 接口 — 长期记忆 + 历史日志的读写
+ *
+ * 消费者通过此接口访问记忆，不依赖具体实现
+ */
+export interface IMemoryStore {
+	readLongTermMemory(): Promise<string | null>;
+	writeLongTermMemory(content: string): Promise<void>;
+	getMemoryLineCount(): Promise<number>;
+	appendHistory(entry: string): Promise<void>;
+	readHistory(limit?: number): Promise<string>;
+	searchHistory(query: string, limit?: number): Promise<string[]>;
+	searchDialogueSummaries(bookName: string, limit?: number): Promise<string[]>;
+	getReadingSummary(): Promise<string>;
+	getMemoryContext(): Promise<string>;
+	needsCompression(): Promise<boolean>;
+	initializeMemory(): Promise<void>;
+}
