@@ -1,4 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { base64Encode } from './test-utils.js';
+
+// V2.5 API 返回 JSON，包含 base64 音频数据
+function mockV25Response() {
+	const audioBase64 = btoa('fake-audio-data');
+	return {
+		ok: true,
+		json: () => Promise.resolve({
+			choices: [{ message: { audio: { data: audioBase64 } } }],
+		}),
+	};
+}
 
 describe('TTSClient', () => {
 	let client: any;
@@ -8,7 +20,6 @@ describe('TTSClient', () => {
 		vi.restoreAllMocks();
 		vi.resetModules();
 
-		// Mock fetchWithCorsFallback to return ArrayBuffer
 		vi.stubGlobal('fetch', vi.fn());
 
 		const { TTSClient } = await import('../tts-client');
@@ -18,39 +29,72 @@ describe('TTSClient', () => {
 		});
 	});
 
-	it('应该直接返回 ArrayBuffer 音频数据', async () => {
-		// 创建一个简单的 WAV ArrayBuffer
-		const mockAudioBuffer = new ArrayBuffer(100);
-		const view = new Uint8Array(mockAudioBuffer);
-		// 写入 RIFF 头
-		view[0] = 0x52; // R
-		view[1] = 0x49; // I
-		view[2] = 0x46; // F
-		view[3] = 0x46; // F
+	it('应该使用 MiMo-V2.5-TTS 模型', async () => {
+		(global.fetch as any).mockResolvedValue(mockV25Response());
 
-		(global.fetch as any).mockResolvedValue({
-			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudioBuffer),
+		await client.synthesize('你好', {
+			voiceProfile: { voice: '冰糖' },
 		});
-
-		const result = await client.synthesize('你好');
-		expect(result).toBeInstanceOf(ArrayBuffer);
-		expect(result.byteLength).toBe(100);
-	});
-
-	it('应该支持自定义 voice', async () => {
-		const mockAudioBuffer = new ArrayBuffer(100);
-		(global.fetch as any).mockResolvedValue({
-			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudioBuffer),
-		});
-
-		await client.synthesize('hello', { voice: 'default_en' });
 
 		const callArgs = (global.fetch as any).mock.calls[0][1];
 		const body = JSON.parse(callArgs.body);
-		expect(body.audio.voice).toBe('default_en');
-		expect(body.model).toBe('mimo-v2-tts');
+		expect(body.model).toBe('MiMo-V2.5-TTS');
+	});
+
+	it('应该将 voiceProfile 中的音色传给 API', async () => {
+		(global.fetch as any).mockResolvedValue(mockV25Response());
+
+		await client.synthesize('hello', {
+			voiceProfile: { voice: '茉莉' },
+		});
+
+		const callArgs = (global.fetch as any).mock.calls[0][1];
+		const body = JSON.parse(callArgs.body);
+		expect(body.audio.voice).toBe('茉莉');
+	});
+
+	it('应该将 styleText 作为 user message 传递', async () => {
+		(global.fetch as any).mockResolvedValue(mockV25Response());
+
+		await client.synthesize('测试内容', {
+			voiceProfile: { voice: '冰糖' },
+			styleText: '你是奚童，温暖知性的伴读书童。',
+		});
+
+		const callArgs = (global.fetch as any).mock.calls[0][1];
+		const body = JSON.parse(callArgs.body);
+		expect(body.messages[0]).toEqual({ role: 'user', content: '你是奚童，温暖知性的伴读书童。' });
+		expect(body.messages[1]).toEqual({ role: 'assistant', content: '测试内容' });
+	});
+
+	it('没有 styleText 时只发 assistant message', async () => {
+		(global.fetch as any).mockResolvedValue(mockV25Response());
+
+		await client.synthesize('测试内容', {
+			voiceProfile: { voice: '冰糖' },
+		});
+
+		const callArgs = (global.fetch as any).mock.calls[0][1];
+		const body = JSON.parse(callArgs.body);
+		expect(body.messages).toHaveLength(1);
+		expect(body.messages[0].role).toBe('assistant');
+		expect(body.messages[0].content).toBe('测试内容');
+	});
+
+	it('应该从 JSON 响应中解析 base64 音频数据', async () => {
+		const fakeBytes = new Uint8Array([0x52, 0x49, 0x46, 0x46]); // RIFF
+		const audioBase64 = btoa(String.fromCharCode(...fakeBytes));
+		(global.fetch as any).mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({
+				choices: [{ message: { audio: { data: audioBase64 } } }],
+			}),
+		});
+
+		const result = await client.synthesize('你好', {
+			voiceProfile: { voice: '冰糖' },
+		});
+		expect(result).toBeInstanceOf(ArrayBuffer);
 	});
 
 	it('应该在 API 错误时抛出包含详情的异常', async () => {
@@ -60,38 +104,8 @@ describe('TTSClient', () => {
 			text: () => Promise.resolve('{"error":{"message":"Invalid voice parameter"}}'),
 		});
 
-		await expect(client.synthesize('test')).rejects.toThrow('TTS API error: 400 — Invalid voice parameter');
-	});
-
-	it('应该使用默认 voice (default_zh)', async () => {
-		const mockAudioBuffer = new ArrayBuffer(100);
-		(global.fetch as any).mockResolvedValue({
-			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudioBuffer),
-		});
-
-		await client.synthesize('测试');
-
-		const callArgs = (global.fetch as any).mock.calls[0][1];
-		const body = JSON.parse(callArgs.body);
-		expect(body.audio.voice).toBe('default_zh');
-	});
-
-	it('应该使用 user message 传递风格指令', async () => {
-		const mockAudioBuffer = new ArrayBuffer(100);
-		(global.fetch as any).mockResolvedValue({
-			ok: true,
-			arrayBuffer: () => Promise.resolve(mockAudioBuffer),
-		});
-
-		await client.synthesize('测试内容');
-
-		const callArgs = (global.fetch as any).mock.calls[0][1];
-		const body = JSON.parse(callArgs.body);
-		expect(body.messages).toHaveLength(2);
-		expect(body.messages[0].role).toBe('user');
-		expect(body.messages[0].content).toContain('奚童');
-		expect(body.messages[1].role).toBe('assistant');
-		expect(body.messages[1].content).toBe('测试内容');
+		await expect(client.synthesize('test', {
+			voiceProfile: { voice: '冰糖' },
+		})).rejects.toThrow('TTS API error: 400 — Invalid voice parameter');
 	});
 });

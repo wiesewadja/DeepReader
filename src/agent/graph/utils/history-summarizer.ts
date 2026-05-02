@@ -21,7 +21,9 @@ export function extractBlockIds(content: string): string[] {
 
 function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars) + '...';
+  const headLen = Math.ceil(maxChars * 0.6);
+  const tailLen = maxChars - headLen - 5;
+  return text.slice(0, headLen) + ' ... ' + text.slice(-tailLen);
 }
 
 function inferTopic(userMessage: string): string {
@@ -46,7 +48,7 @@ export function summarizeRound(
 
   return {
     topic: inferTopic(userContent),
-    conclusion: truncate(assistantContent.replace(/\n/g, ' '), 300),
+    conclusion: truncate(assistantContent.replace(/\n/g, ' '), 800),
     blockIds: extractBlockIds(assistantContent),
   };
 }
@@ -83,7 +85,7 @@ export function formatHistoryBlock(summaries: HistorySummary[]): string {
   if (summaries.length === 0) return '';
 
   const lines = summaries.map((s, i) =>
-    `[第${i + 1}轮] 用户问"${s.topic}"，分析发现${truncate(s.conclusion, 250)}`
+    `[第${i + 1}轮] 用户问"${s.topic}"，分析发现${truncate(s.conclusion, 600)}`
   );
 
   return `<history>

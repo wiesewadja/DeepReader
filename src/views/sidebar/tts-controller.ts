@@ -46,6 +46,7 @@ export class TTSController {
 			llmApiKey: fastConfig.apiKey,
 			llmBaseUrl: fastConfig.baseUrl,
 			llmModel: fastConfig.model,
+			vaultPath: (this.host.app.vault.adapter as any).basePath as string | undefined,
 			onStateChange: (messageId: string | null, state: TTSPlayState) => {
 				if (messageId) {
 					this.host.messageList?.updateTTSState(messageId, state);
@@ -76,7 +77,12 @@ export class TTSController {
 		}
 
 		if (this.ttsService.getCurrentMessageId() === messageId && this.ttsService.getState() !== 'idle') {
-			this.ttsService.togglePauseResume();
+			const state = this.ttsService.getState();
+			if (state === 'tts_loading' || state === 'summarizing') {
+				this.ttsService.stop();
+			} else {
+				this.ttsService.togglePauseResume();
+			}
 			return;
 		}
 

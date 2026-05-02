@@ -446,8 +446,7 @@ export class AIMessage extends Message {
 					// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
 					const sourcePath = this.data.pdfName || '';
 					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
-						// 设置内部链接的点击事件和 hover preview
-						// 如果正在流式传输，禁用 hover preview
+						_setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
 					});
 				} else {
 					const { cleanedContent } = parseAgentContent(this.data.content);
@@ -589,8 +588,8 @@ export class AIMessage extends Message {
 				const appRef = this.app;
 				// 等待 Markdown 渲染完成后再设置链接事件（关键修复）
 				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component()).then(() => {
-					// 设置内部链接的点击事件和 hover preview
 					if (appRef) {
+						_setupInternalLinks(contentEl as HTMLElement, appRef, false, this.observers);
 					}
 				});
 			}
@@ -788,7 +787,7 @@ export class AIMessage extends Message {
 			const sourcePath = this.data.pdfName || '';
 			// 等待 Markdown 渲染完成后再设置链接事件
 			await MarkdownRenderer.render(this.app, cleanedContent, contentEl, sourcePath, new Component());
-			// 设置内部链接的点击事件和 hover preview
+			_setupInternalLinks(contentEl, this.app, false, this.observers);
 		} else {
 			contentEl.innerHTML = this.escapeHtml(cleanedContent);
 		}

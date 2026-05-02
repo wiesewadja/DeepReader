@@ -73,7 +73,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	},
 	xiaomi: {
 		baseUrl: 'https://api.xiaomimimo.com/v1',
-		defaultModel: 'mimo-v2-tts',
+		defaultModel: 'MiMo-V2.5-TTS',
 		supportsModelList: false,
 		capabilities: { chat: false, embedding: false, reranker: false, tts: true },
 	},

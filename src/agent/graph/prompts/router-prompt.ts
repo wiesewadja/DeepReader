@@ -49,7 +49,8 @@ export function buildRouterUserMessage(
   const historyLines: string[] = [];
   for (const m of recent) {
     const label = m.role === 'user' ? '用户' : 'AI';
-    const text = m.content.replace(/\n/g, ' ').slice(0, 200);
+    const flat = m.content.replace(/\n/g, ' ');
+    const text = flat.length <= 500 ? flat : flat.slice(0, 300) + ' ... ' + flat.slice(-200);
     historyLines.push(`${label}: ${text}`);
   }
 

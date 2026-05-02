@@ -661,6 +661,7 @@ ${currentMemory}
 
     const { TTSSummarizer } = await import('../services/tts/tts-summarizer.js');
     const { TTSClient } = await import('../services/tts/tts-client.js');
+    const { getDefaultVoiceProfile } = await import('../services/tts/voice-profile.js');
     const { TTSService } = await import('../services/tts/tts-service.js');
 
     const summarizer = new TTSSummarizer({
@@ -708,7 +709,9 @@ ${currentMemory}
     for (const sentence of sentences) {
       if (signal?.aborted) break;
       try {
-        const audioBuffer = await client.synthesize(sentence);
+        const audioBuffer = await client.synthesize(sentence, {
+          voiceProfile: { voice: getDefaultVoiceProfile().voice },
+        });
         audioChunks.push(audioBuffer);
         // 流式回调：每生成一个句子就返回音频块
         if (onChunk) {
