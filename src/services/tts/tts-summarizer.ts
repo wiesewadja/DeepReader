@@ -1,4 +1,4 @@
-import { safeRequest } from '../../utils/safe-request.js';
+import { safeRequest, fetchWithCorsFallback } from '../../utils/safe-request.js';
 
 export interface SummarizerConfig {
     apiKey: string;
@@ -234,7 +234,7 @@ export class TTSSummarizer {
         const url = `${this.baseUrl}/chat/completions`;
         const userPrompt = this.buildUserPrompt(content, userQuestion, context);
 
-        const response = await fetch(url, {
+        const response = await fetchWithCorsFallback(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,
@@ -331,7 +331,7 @@ export class TTSSummarizer {
     async *oralRewriteStream(text: string): AsyncGenerator<string> {
         const url = `${this.baseUrl}/chat/completions`;
 
-        const response = await fetch(url, {
+        const response = await fetchWithCorsFallback(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${this.apiKey}`,

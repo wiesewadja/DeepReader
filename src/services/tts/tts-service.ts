@@ -8,6 +8,7 @@ import { BookGenreDetector } from './book-genre-detector.js';
 import { ExpressivePreprocessor } from './expressive-preprocessor.js';
 import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
 import type { BookGenre } from './book-genre-detector.js';
+import { safeRequest } from '../../utils/safe-request.js';
 
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 
@@ -80,6 +81,7 @@ export class TTSService {
     private currentMessageId: string | null = null;
     private currentGenre: BookGenre | null = null;
     private cache: Map<string, CachedAudio> = new Map();
+    private static readonly MAX_CACHE_ENTRIES = 20;
     /** 全量口语化改写缓存：messageId → 改写后的文本 */
     private rewrittenCache: Map<string, string> = new Map();
     /** 正在进行的全量改写：messageId → Promise */
@@ -95,6 +97,8 @@ export class TTSService {
     private onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
     private onProgressChange?: (messageId: string, progress: number) => void;
     private progressTimer: ReturnType<typeof setInterval> | null = null;
+    /** resolve 函数，resume() 调用时唤醒 waitIfPaused */
+    private resumeResolver: (() => void) | null = null;
     /** 当前正在播放的音频元素引用（pause/stop 直接操作，无需查 cache） */
     private currentAudio: HTMLAudioElement | null = null;
     /** 用于在 stop 时 reject 挂起的 playAudioAndWait promise，避免异步链泄漏 */
@@ -117,8 +121,8 @@ export class TTSService {
                 vaultPath: config.vaultPath,
                 llmClient: {
                     complete: async (prompt: string) => {
-                        // 复用 summarizer 的 LLM 客户端进行轻量调用
-                        const response = await fetch(`${config.llmBaseUrl}/chat/completions`, {
+                        const response = await safeRequest({
+                            url: `${config.llmBaseUrl}/chat/completions`,
                             method: 'POST',
                             headers: {
                                 'Authorization': `Bearer ${config.llmApiKey}`,
@@ -131,8 +135,7 @@ export class TTSService {
                                 max_tokens: 500,
                             }),
                         });
-                        const data = await response.json();
-                        return data?.choices?.[0]?.message?.content || '';
+                        return response.json?.choices?.[0]?.message?.content || '';
                     },
                 },
             });
@@ -198,7 +201,7 @@ export class TTSService {
         if (!cached) {
             const diskCached = await this.loadFromDiskCache(textHash, voiceProfile.voice);
             if (diskCached) {
-                this.cache.set(cacheKey, diskCached);
+                this.setCache(cacheKey, diskCached);
                 cached = diskCached;
                 console.log(`[TTS] Disk cache hit: ${textHash}_${voiceProfile.voice}`);
             }
@@ -259,12 +262,11 @@ export class TTSService {
      */
     async preloadPreview(messageId: string, content: string, context?: TTSContext): Promise<void> {
         try {
-            // 1. 推测书籍类型
+            // 1. 推测书籍类型（不写 this.currentGenre，避免与 play() 竞争）
             let genre: BookGenre | undefined;
             if (context?.bookId && this.genreDetector) {
                 try {
                     genre = await this.genreDetector.detect(context.bookId);
-                    this.currentGenre = genre;
                 } catch (err) {
                     console.warn('[TTS] Preload genre detection failed:', err);
                 }
@@ -306,7 +308,7 @@ export class TTSService {
             const blob = new Blob([audioBuffer], { type: 'audio/wav' });
             const blobUrl = URL.createObjectURL(blob);
             const audio = new Audio(blobUrl);
-            this.cache.set(cacheKey, { blobUrl, audio });
+            this.setCache(cacheKey, { blobUrl, audio });
             this.previewBuffers.set(cacheKey, audioBuffer);
 
             console.log(`[TTS] Preloaded oral preview for message ${messageId} (${previewText.length} chars)`);
@@ -557,7 +559,7 @@ export class TTSService {
                     old.audio.src = '';
                     URL.revokeObjectURL(old.blobUrl);
                 }
-                this.cache.set(cacheKey, { blobUrl, audio: fullAudio, isFull: true });
+                this.setCache(cacheKey, { blobUrl, audio: fullAudio, isFull: true });
                 this.previewBuffers.delete(cacheKey);
 
                 // 异步写入磁盘缓存（不阻塞播放结束）
@@ -752,6 +754,8 @@ export class TTSService {
                 });
             } catch {}
         }
+        // V2.5: audioTag 前置到 assistant content，控制整体朗读风格
+        textToRead = this.withAudioTag(textToRead, voiceProfile);
         const ttsOptions = this.buildTTSOptions(voiceProfile);
         const audioBuffer = await this.client.synthesize(textToRead, ttsOptions);
         const blob = new Blob([audioBuffer], { type: 'audio/wav' });
@@ -782,9 +786,12 @@ export class TTSService {
      * 返回 false 表示已被停止，调用方应退出
      */
     private async waitIfPaused(messageId: string): Promise<boolean> {
-        while (this.state === 'paused' && this.currentMessageId === messageId) {
-            await new Promise(r => setTimeout(r, 100));
+        if (this.state !== 'paused' || this.currentMessageId !== messageId) {
+            return this.currentMessageId === messageId;
         }
+        await new Promise<void>(resolve => {
+            this.resumeResolver = resolve;
+        });
         return this.currentMessageId === messageId;
     }
 
@@ -858,6 +865,19 @@ export class TTSService {
         await this.manifestLock;
     }
 
+    /** 写入内存缓存，超出上限时淘汰最旧条目并释放 Blob URL */
+    private setCache(key: string, entry: CachedAudio): void {
+        if (this.cache.size >= TTSService.MAX_CACHE_ENTRIES && !this.cache.has(key)) {
+            const oldest = this.cache.keys().next().value;
+            if (oldest !== undefined) {
+                const old = this.cache.get(oldest)!;
+                URL.revokeObjectURL(old.blobUrl);
+                this.cache.delete(oldest);
+            }
+        }
+        this.cache.set(key, entry);
+    }
+
     /** 从磁盘缓存加载音频，未命中返回 null */
     private async loadFromDiskCache(textHash: string, voice: string): Promise<CachedAudio | null> {
         if (!this.diskCacheDir) return null;
@@ -916,12 +936,18 @@ export class TTSService {
                 await this.currentAudio.play();
             }
             this.setState('playing');
+            // 唤醒 waitIfPaused 中的阻塞
+            this.resumeResolver?.();
+            this.resumeResolver = null;
         }
     }
 
     stop(): void {
         this.stopStreamPlayer();
         this.clearProgressTimer();
+        // 唤醒 waitIfPaused 中的阻塞
+        this.resumeResolver?.();
+        this.resumeResolver = null;
         if (this.currentAudio) {
             this.currentAudio.pause();
             this.currentAudio.currentTime = 0;
@@ -1102,6 +1128,7 @@ export class TTSService {
         let ttsStarted = false;
 
         const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
+        let firstSentence = true;
 
         try {
             for await (const delta of this.summarizer.summarizeStream(content, userQuestion, context)) {
@@ -1120,7 +1147,9 @@ export class TTSService {
                         ttsStarted = true;
                     }
 
-                    for await (const chunk of this.client.synthesizeStream(sentence, ttsOptions)) {
+                    const tagged = firstSentence ? this.withAudioTag(sentence, voiceProfile) : sentence;
+                    firstSentence = false;
+                    for await (const chunk of this.client.synthesizeStream(tagged, ttsOptions)) {
                         if (this.currentMessageId !== messageId) return;
                         player.enqueue(chunk);
                     }
@@ -1154,7 +1183,7 @@ export class TTSService {
                 const cacheKey = voiceProfile
                     ? this.buildCacheKey(messageId, voiceProfile)
                     : messageId;
-                this.cache.set(cacheKey, { blobUrl, audio });
+                this.setCache(cacheKey, { blobUrl, audio });
                 this.listenAudio(audio, messageId);
             }
 
@@ -1187,6 +1216,7 @@ export class TTSService {
         let lastSentProgress = -1;
 
         const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
+        const taggedText = this.withAudioTag(text, voiceProfile);
 
         const startProgressTracking = () => {
             if (this.progressTimer) clearInterval(this.progressTimer);
@@ -1223,7 +1253,7 @@ export class TTSService {
         startProgressTracking();
 
         try {
-            for await (const chunk of this.client.synthesizeStream(text, ttsOptions)) {
+            for await (const chunk of this.client.synthesizeStream(taggedText, ttsOptions)) {
                 if (this.currentMessageId !== messageId) return;
                 player.enqueue(chunk);
             }
@@ -1245,7 +1275,7 @@ export class TTSService {
             const cacheKey = voiceProfile
                 ? this.buildCacheKey(messageId, voiceProfile)
                 : messageId;
-            this.cache.set(cacheKey, { blobUrl, audio });
+            this.setCache(cacheKey, { blobUrl, audio });
             this.listenAudio(audio, messageId);
 
             if (this.currentMessageId === messageId) {
@@ -1273,7 +1303,7 @@ export class TTSService {
         this.setState('tts_loading');
 
         const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
-        const audioBuffer = await this.client.synthesize(text, ttsOptions);
+        const audioBuffer = await this.client.synthesize(this.withAudioTag(text, voiceProfile), ttsOptions);
 
         if (this.currentMessageId !== messageId) {
             this.setState('idle');
@@ -1287,7 +1317,7 @@ export class TTSService {
         const cacheKey = voiceProfile
             ? this.buildCacheKey(messageId, voiceProfile)
             : messageId;
-        this.cache.set(cacheKey, { blobUrl, audio });
+        this.setCache(cacheKey, { blobUrl, audio });
         this.listenAudioWithProgress(audio, messageId);
 
         this.setState('playing');
@@ -1328,6 +1358,12 @@ export class TTSService {
             voiceProfile: this.toTTSVoiceOptions(voiceProfile),
             styleText: this.buildStyleText(this.currentGenre, voiceProfile),
         };
+    }
+
+    /** 将 V2.5 audioTag 前置到文本 */
+    private withAudioTag(text: string, voiceProfile: VoiceProfile | undefined): string {
+        const tag = voiceProfile?.audioTag;
+        return tag ? `${tag}${text}` : text;
     }
 
     private clearProgressTimer(): void {

@@ -54,11 +54,11 @@ export class ExpressivePreprocessor {
     let listCounter = 0;
     text = text.replace(
       /^[-•*]\s+\*\*([^*]+)\*\*\s*[:：]\s*(.+)$/gm,
-      () => {
+      (_m, label: string, desc: string) => {
         listCounter++;
         const ordinals = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
         const idx = Math.min(listCounter - 1, ordinals.length - 1);
-        return `第${ordinals[idx]}，$1。$2`;
+        return `第${ordinals[idx]}，${label}。${desc}`;
       }
     );
     text = text.replace(/^[-•*]\s+(.+)$/gm, '接下来，$1');
