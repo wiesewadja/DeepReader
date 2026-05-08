@@ -94,6 +94,8 @@ export class AgentChatController {
 		this.isProcessing = false;
 		this.host.setIsAiStreaming(false);
 		this.host.setIsProcessing(false);
+		this.host.chatInput?.setStreaming(false);
+		this.host.chatInput?.setDisabled(false);
 	}
 
 	stopGeneration(): void {
