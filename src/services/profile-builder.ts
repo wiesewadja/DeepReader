@@ -462,15 +462,11 @@ export class ProfileBuilder {
 	}
 
 	private getChatConfig(): { baseUrl: string; apiKey: string; model: string } {
-		const chatRole = this.settings.roles?.chat;
-		const account = chatRole ? this.settings.providers?.[chatRole.provider] : null;
-
-		if (!account?.apiKey || !chatRole?.model) {
+		const resolved = resolveRoleConfig('chat', this.settings);
+		if (!resolved) {
 			throw new Error('未配置 Chat 模型，无法生成画像');
 		}
-
-		const baseUrl = chatRole.baseUrlOverride || account.baseUrl || 'https://api.openai.com/v1';
-		return { baseUrl, apiKey: account.apiKey, model: chatRole.model };
+		return { baseUrl: resolved.baseUrl, apiKey: resolved.apiKey, model: resolved.model };
 	}
 
 	private async callLLM(
@@ -499,7 +495,7 @@ export class ProfileBuilder {
 		});
 
 		if (!response.ok) {
-			throw new Error(`LLM 请求失败: ${response.status}`);
+			throw new Error(`LLM 请求失败: ${response.status} (${model} @ ${baseUrl})`);
 		}
 
 		const data = await response.json();
