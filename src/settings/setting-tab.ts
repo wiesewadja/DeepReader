@@ -509,8 +509,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     btn.setDisabled(true);
                     btn.setIcon('loader');
                     const { testConnection } = await import('../config/model-fetcher');
+                    const builtInConfig = PROVIDER_CONFIGS[currentProvider as ProviderType];
+                    const effectiveBaseUrl = freshAccount?.baseUrl || builtInConfig?.baseUrl || '';
                     const result = await testConnection(
-                        freshAccount?.baseUrl || '',
+                        effectiveBaseUrl,
                         freshAccount?.apiKey || '',
                         currentModel,
                     );

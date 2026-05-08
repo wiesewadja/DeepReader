@@ -99,6 +99,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
  * 规则：去掉尾部斜杠，如果末尾没有 /vN 则追加 /v1
  */
 export function normalizeBaseUrl(url: string): string {
+	if (!url) return '';
 	const trimmed = url.replace(/\/+$/, '');
 	if (/\/v\d+$/.test(trimmed)) return trimmed;
 	return trimmed + '/v1';
@@ -141,8 +142,9 @@ export function resolveRoleConfig(
 		(account as { baseUrl?: string }).baseUrl ||
 		(builtInConfig?.baseUrl || '');
 
-	// 对自定义服务商自动规范化 base URL（补 /v1）
-	const baseUrl = (!builtInConfig && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
+	// 对自定义服务商自动规范化 base URL（补 /v1）；内置服务商的自定义覆盖也做规范化
+	const needsNormalize = !builtInConfig || (!!baseUrlOverride || !!(account as { baseUrl?: string }).baseUrl);
+	const baseUrl = (needsNormalize && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
 
 	const resolvedModel = model || builtInConfig?.defaultModel || '';
 
