@@ -104,18 +104,21 @@ export async function fetchModels(
 /**
  * 测试 API 连接和模型可用性
  *
- * 发送一个最小的 chat completion 请求，验证 base URL、API Key、模型名是否正确。
+ * 发送一个最小的 API 请求，验证 base URL、API Key、模型名是否正确。
+ * chat 角色测试 /chat/completions，embedding 角色测试 /embeddings。
  */
 export async function testConnection(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
+	endpoint: 'chat' | 'embedding' = 'chat',
 ): Promise<TestConnectionResult> {
 	if (!apiKey) return { success: false, latencyMs: 0, error: 'API Key 未配置' };
 	if (!model) return { success: false, latencyMs: 0, error: '模型名未填写' };
 
 	const normalizedUrl = normalizeBaseUrl(baseUrl || '');
-	const url = `${normalizedUrl}/chat/completions`;
+	const isEmbedding = endpoint === 'embedding';
+	const url = `${normalizedUrl}/${isEmbedding ? 'embeddings' : 'chat/completions'}`;
 
 	const t0 = Date.now();
 	try {
@@ -125,11 +128,9 @@ export async function testConnection(
 				method: 'POST',
 				contentType: 'application/json',
 				headers: { Authorization: `Bearer ${apiKey}` },
-				body: JSON.stringify({
-					model,
-					messages: [{ role: 'user', content: 'hi' }],
-					max_tokens: 1,
-				}),
+				body: isEmbedding
+					? JSON.stringify({ model, input: 'hello' })
+					: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
 			}),
 			new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('请求超时（15秒）')), 15_000),

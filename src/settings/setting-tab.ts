@@ -515,6 +515,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                         effectiveBaseUrl,
                         freshAccount?.apiKey || '',
                         currentModel,
+                        role === 'embedding' ? 'embedding' : 'chat',
                     );
                     btn.setDisabled(false);
                     btn.setIcon('plug');
