@@ -35,6 +35,9 @@ styles.css
 frontend/node_modules/.vite/
 frontend/coverage/
 
+# Agent skills (local)
+.agents/
+
 # Git worktrees
 .worktrees/
 output/
