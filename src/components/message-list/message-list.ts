@@ -70,6 +70,7 @@ export interface MessageCallbacks {
 	onVoicePlay?: (messageId: string) => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
 	getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
+		getBubbleTheme?: () => string;
 }
 
 /**
@@ -196,6 +197,7 @@ export class MessageList extends Component {
 			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,
+			getBubbleTheme: this.callbacks.getBubbleTheme,
 			app: this.app
 		});
 
@@ -461,13 +463,9 @@ export class MessageList extends Component {
 	updateBottomPadding(inputHeight: number, quotesHeight: number = 0): void {
 		if (!this.messagesContainer) return;
 
-		// 基础间距 + 输入框高度 + 引用卡片高度 + 额外间距
-		// 基础间距 16px（顶部）+ 额外间距 8px（消息与输入框之间的视觉间距）
+		// 输入框已是 flex 子元素，只需保留基础间距
 		const basePadding = 16;
-		const extraGap = 8;
-		const bottomPadding = basePadding + inputHeight + quotesHeight + extraGap;
-
-		this.messagesContainer.style.paddingBottom = `${bottomPadding}px`;
+		this.messagesContainer.style.paddingBottom = `${basePadding}px`;
 	}
 
 	/**

@@ -1110,6 +1110,24 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(container)
+            .setName("消息气泡主题")
+            .setDesc("选择 AI 回复消息的视觉风格")
+            .addDropdown(dropdown => dropdown
+                .addOption('notebook', '笔记本')
+                .addOption('parchment', '羊皮纸')
+                .addOption('clean', '纯净白纸')
+                .addOption('chat', '聊天卡片')
+                .setValue(this.plugin.settings.messageBubbleTheme || 'notebook')
+                .onChange(async (value: string) => {
+                    this.plugin.settings.messageBubbleTheme = value as 'notebook' | 'parchment' | 'clean' | 'chat';
+                    await this.plugin.saveSettings();
+                    document.querySelectorAll('[class*="deeppdf-pattern-"]').forEach(el => {
+                        const cls = Array.from(el.classList).find((c: string) => c.startsWith('deeppdf-pattern-'));
+                        if (cls) el.classList.replace(cls, `deeppdf-pattern-${value}`);
+                    });
+                }));
+
+        new Setting(container)
             .setName("墨迹效果")
             .setDesc("开启后，鼠标在阅读模式下移动时会留下渐隐的墨迹轨迹")
             .addToggle(toggle => toggle

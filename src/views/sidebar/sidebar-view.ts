@@ -913,7 +913,8 @@ export class SidebarView extends ItemView {
                 coverUrl: this.bookMgr.currentBookCoverUrl,
                 author: this.bookMgr.currentBookAuthor,
                 bookName: this.bookMgr.currentPdfName
-            })
+            }),
+            getBubbleTheme: () => this.plugin?.settings?.messageBubbleTheme || 'notebook'
         }, this.app);
 
         const messageListEl = this.messageList.getElement();
