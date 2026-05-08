@@ -216,10 +216,13 @@ export class ReadingModeService {
      * 激活阅读模式
      */
     activate(file: TFile, retryCount = 0): void {
-        const wasSameFile = this.isActive && this.currentFile?.path === file.path;
-        if (wasSameFile) {
+        // 如果是同一文件，不重复激活
+        if (this.isActive && this.currentFile?.path === file.path) {
             return;
         }
+
+        // 先清理旧状态（移除旧 containerEl 上的 CSS 类、销毁旧分页器等）
+        this.deactivate();
 
         serviceLog('[DeepPDF] ReadingMode activating for:', file.path);
 
@@ -502,7 +505,7 @@ export class ReadingModeService {
 
         const tryInit = () => {
             attempts++;
-            const container = document.querySelector('.markdown-preview-sizer') as HTMLElement;
+            const container = this.activeContainerEl?.querySelector('.markdown-preview-sizer') as HTMLElement;
 
             if (container && container.children.length > 1) {
                 this.paginator = new PagePaginator({
