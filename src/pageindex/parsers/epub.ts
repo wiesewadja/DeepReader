@@ -447,8 +447,25 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
   const opfXml = opfEntry.getData().toString("utf-8");
   const basePath = path.dirname(opfPath);
 
+  // 清理 XML 注释：sax 严格解析器要求注释内部不能出现 "--" 且必须正确闭合。
+  // 很多中文 EPUB 的 OPF 文件含有格式不规范的注释（未闭合、或内部含 "--"），
+  // 会导致 "Malformed comment" 错误。
+  // 安全策略：正确闭合的注释完整移除；未闭合的只移除 "<!--" 标记本身，
+  // 保留后续内容，避免破坏 XML 结构。
+  let sanitizedOpfXml = opfXml;
+
+  // Step 1: 循环移除所有正确闭合的注释（包括跨多行）
+  while (true) {
+    const match = sanitizedOpfXml.match(/<!--[\s\S]*?-->/);
+    if (!match) break;
+    sanitizedOpfXml = sanitizedOpfXml.substring(0, match.index) + sanitizedOpfXml.substring(match.index! + match[0].length);
+  }
+
+  // Step 2: 移除残留的未闭合注释起始标记（此时不应再有正确闭合的注释）
+  sanitizedOpfXml = sanitizedOpfXml.replace(/<!--/g, "");
+
   // Parse OPF XML
-  const opfData = await parseStringPromise(opfXml);
+  const opfData = await parseStringPromise(sanitizedOpfXml);
   const packageData = opfData.package;
 
   // Extract metadata
