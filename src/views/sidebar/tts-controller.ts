@@ -17,6 +17,8 @@ export interface TTSControllerHost {
 	getDisplayName(name: string): string;
 	getCurrentPdfName(): string | null;
 	getCurrentBookAuthor(): string | null;
+	getCurrentIndexId(): string | null;
+	setTtsService(service: TTSService | null): void;
 }
 
 export class TTSController {
@@ -70,6 +72,7 @@ export class TTSController {
 	async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
 		if (!this.ttsService) {
 			this.ttsService = this.initTTSService();
+			this.host.setTtsService(this.ttsService);
 		}
 		if (!this.ttsService) {
 			new Notice('请先在设置中配置语音播报（TTS）服务：添加小米 API Key 并启用 tts 角色');
@@ -89,6 +92,7 @@ export class TTSController {
 		const userQuestion = this.findUserQuestion(messageId);
 
 		await this.ttsService.play(messageId, content, userQuestion, {
+			bookId: this.host.getCurrentIndexId() || undefined,
 			bookTitle: this.host.getDisplayName(this.host.getCurrentPdfName() || '') || undefined,
 			bookAuthor: this.host.getCurrentBookAuthor() || undefined,
 			memoryContent: await new MemoryStore(this.host.app).readLongTermMemory() || undefined,
@@ -112,6 +116,7 @@ export class TTSController {
 				// ignore
 			}
 			this.ttsService = null;
+			this.host.setTtsService(null);
 		}
 	}
 }

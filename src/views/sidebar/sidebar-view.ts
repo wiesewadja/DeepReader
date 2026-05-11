@@ -275,6 +275,8 @@ export class SidebarView extends ItemView {
             getDisplayName(name: string) { return self.getDisplayName(name); },
             getCurrentPdfName() { return self.bookMgr.currentPdfName; },
             getCurrentBookAuthor() { return self.bookMgr.currentBookAuthor; },
+            getCurrentIndexId() { return self.bookMgr.currentIndexId; },
+            setTtsService(service) { self.ttsService = service; },
         });
         this.progressTracker = new ReadingProgressTracker({
             get app() { return self.app; },

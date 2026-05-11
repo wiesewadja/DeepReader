@@ -315,6 +315,7 @@ export class AgentChatController {
 
 			const queryStartTime = Date.now();
 			let firstContentLogged = false;
+			let ttsPreloadTriggered = false;
 
 			const self = this;
 
@@ -327,6 +328,16 @@ export class AgentChatController {
 						const ttfc = Date.now() - queryStartTime;
 						log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
 					}
+
+				// TTS 预加载：内容到 250 字符时异步生成前段音频，用户点击即可播
+				if (!ttsPreloadTriggered && fullContent.length >= 250) {
+					ttsPreloadTriggered = true;
+					self.host.ttsService?.preloadPreview(aiMessageId, fullContent, {
+						bookId: self.host.currentIndexId || undefined,
+						bookTitle: self.host.getDisplayName(self.host.currentPdfName || '') || undefined,
+						bookAuthor: self.host.currentBookAuthor || undefined,
+					});
+				}
 
 					if (agentState === 'thinking' && fullContent.trim().length > 0) {
 						agentState = 'answering';

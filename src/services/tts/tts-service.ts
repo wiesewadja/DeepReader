@@ -393,24 +393,16 @@ export class TTSService {
 
         if (this.currentMessageId !== messageId) return;
 
-        // 2. 获取改写后的文本：缓存 > 等待中的 Promise > 现场改写
+        // 2. 获取改写后的文本：仅查缓存，不等 LLM 现场改写（延迟优化）
         let rewrittenText: string | undefined;
 
         if (this.rewrittenCache.has(messageId)) {
             rewrittenText = this.rewrittenCache.get(messageId);
         } else if (this.pendingRewrites.has(messageId)) {
-            // 后台改写还在进行，等它完成（保持当前状态不闪断）
             rewrittenText = await this.pendingRewrites.get(messageId)!;
             if (this.currentMessageId !== messageId) return;
-        } else if (totalChars > playedChars) {
-            // 没有缓存也没有进行中的改写，现场改写剩余内容
-            const remaining = fullContent.slice(playedChars);
-            try {
-                rewrittenText = await this.summarizer.oralRewrite(remaining);
-            } catch (err) {
-                console.warn('[TTS] On-demand oral rewrite failed, falling back:', err);
-            }
         }
+        // 无缓存时直接用原文，不等 oralRewrite
 
         if (this.currentMessageId !== messageId) return;
 
@@ -464,6 +456,9 @@ export class TTSService {
      * 3. 进度追踪更精确（按分段映射）
      * 4. 首段预生成，用户点击即播
      */
+    /** 并发合成池的最大同时请求数 */
+    private static readonly SYNTHESIS_CONCURRENCY = 3;
+
     private async playSegmented(
         messageId: string,
         fullContent: string,
@@ -478,40 +473,52 @@ export class TTSService {
         if (totalSegments === 0) return;
 
         const totalChars = fullContent.length;
-        // 进度映射：将改写文本的字符位置映射到原文的全局范围
         const pOffset = progressMap?.originalOffset ?? 0;
         const pTotal = progressMap?.originalTotal ?? totalChars;
-        // 改写文本覆盖原文的 [pOffset, pTotal] 区间
         const rangeStart = pOffset / pTotal;
         const rangeEnd = 1.0;
 
         let currentCharOffset = 0;
         const audioBuffers: ArrayBuffer[] = [];
 
-        // 预取：提前合成下一段，与当前段播放并行（消除段间空白）
-        let nextResult: Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }> | null =
-            this.synthesizeSegment(segments[0], voiceProfile);
+        // 并发合成池：维护 SYNTHESIS_CONCURRENCY 个并行合成任务
+        const pendingSynthesis = new Map<number, Promise<{ audio: HTMLAudioElement; buffer: ArrayBuffer }>>();
+        let nextSynthIndex = 0;
+
+        const launchSynthesis = (index: number) => {
+            if (index >= totalSegments || pendingSynthesis.has(index)) return;
+            pendingSynthesis.set(index, this.synthesizeSegment(segments[index], voiceProfile));
+        };
+
+        // 预启动合成池（首段 + 后续段并行）
+        const initialBatch = Math.min(totalSegments, TTSService.SYNTHESIS_CONCURRENCY);
+        for (let i = 0; i < initialBatch; i++) {
+            launchSynthesis(i);
+        }
+        nextSynthIndex = initialBatch;
 
         for (let i = 0; i < totalSegments; i++) {
             if (this.currentMessageId !== messageId) return;
 
             const segmentText = segments[i];
-            // 将改写文本内的偏移映射到原文全局进度 [0, 1]
             const segLocalStart = currentCharOffset / totalChars;
             const segLocalEnd = (currentCharOffset + segmentText.length) / totalChars;
             const segmentStart = rangeStart + segLocalStart * (rangeEnd - rangeStart);
             const segmentEnd = rangeStart + segLocalEnd * (rangeEnd - rangeStart);
 
-            // 等待当前段合成完成（首段或预取结果）
+            // 等待当前段合成完成
+            const synthPromise = pendingSynthesis.get(i);
+            pendingSynthesis.delete(i);
             let segResult: { audio: HTMLAudioElement; buffer: ArrayBuffer };
             try {
-                segResult = await nextResult!;
+                segResult = await synthPromise!;
             } catch (err) {
                 console.warn(`[TTS] Segment ${i} synthesis failed, skipping:`, err);
                 currentCharOffset += segmentText.length;
-                nextResult = i + 1 < totalSegments
-                    ? this.synthesizeSegment(segments[i + 1], voiceProfile)
-                    : null;
+                // 补充并发池
+                if (nextSynthIndex < totalSegments) {
+                    launchSynthesis(nextSynthIndex++);
+                }
                 continue;
             }
 
@@ -520,12 +527,11 @@ export class TTSService {
             audioBuffers.push(segResult.buffer);
             this.setState('playing');
 
-            // 立即发起下一段合成（与当前段播放并行）
-            nextResult = i + 1 < totalSegments
-                ? this.synthesizeSegment(segments[i + 1], voiceProfile)
-                : null;
+            // 补充并发池：保持 SYNTHESIS_CONCURRENCY 个任务并行
+            while (pendingSynthesis.size < TTSService.SYNTHESIS_CONCURRENCY && nextSynthIndex < totalSegments) {
+                launchSynthesis(nextSynthIndex++);
+            }
 
-            // 暂停检查：用户可能在段间间隙点了暂停
             if (!await this.waitIfPaused(messageId)) return;
 
             this.startMappedProgressTracking(messageId, segResult.audio, {

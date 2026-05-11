@@ -33,6 +33,10 @@ export class VoiceLetterController {
 	voiceAudioEl: HTMLAudioElement | null = null;
 	voiceBlobUrl: string | null = null;
 
+	// TTS 自动滚动：用户手动滚动后停止自动跟随
+	private userScrolled = false;
+	private scrollListener: ((e: Event) => void) | null = null;
+
 	enableVoiceReply: boolean = false;
 	onVoicePlay?: (messageId: string) => void;
 	onVoicePause?: (messageId: string) => void;
@@ -283,7 +287,18 @@ export class VoiceLetterController {
 				el.removeClass('deeppdf-tts-reading-paragraph');
 			});
 			delete (contentEl.dataset as any).ttsLastParagraphIndex;
+			this.detachScrollListener();
+			this.userScrolled = false;
 			return;
+		}
+
+		// 首次播放时注册滚动监听，用户手动滚动后停止自动跟随
+		if (!this.scrollListener) {
+			const container = this.findScrollContainer(contentEl);
+			if (container) {
+				this.scrollListener = () => { this.userScrolled = true; };
+				container.addEventListener('scroll', this.scrollListener, { passive: true });
+			}
 		}
 
 		const paragraphs = contentEl.querySelectorAll('p');
@@ -329,13 +344,38 @@ export class VoiceLetterController {
 				el.removeClass('deeppdf-tts-reading-paragraph');
 			});
 			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
-			(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+			if (!this.userScrolled) {
+				(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
 			(contentEl.dataset as any).ttsLastParagraphIndex = currentIndex;
+		}
+	}
+
+	/** 查找最近的滚动容器 */
+	private findScrollContainer(el: HTMLElement): HTMLElement | null {
+		let node: HTMLElement | null = el;
+		while (node) {
+			const { overflowY } = getComputedStyle(node);
+			if (overflowY === 'auto' || overflowY === 'scroll') return node;
+			node = node.parentElement;
+		}
+		return null;
+	}
+
+	private detachScrollListener(): void {
+		if (this.scrollListener) {
+			const contentEl = this.host.getEl()?.querySelector('.deeppdf-message-content') as HTMLElement;
+			if (contentEl) {
+				const container = this.findScrollContainer(contentEl);
+				container?.removeEventListener('scroll', this.scrollListener);
+			}
+			this.scrollListener = null;
 		}
 	}
 
 	/** 清理资源 */
 	destroy(): void {
+		this.detachScrollListener();
 		if (this.voiceAudioEl) {
 			this.voiceAudioEl.pause();
 			this.voiceAudioEl.src = '';

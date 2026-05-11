@@ -64,7 +64,9 @@ export default class DeepPDFPlugin extends Plugin {
         if (this.settings.journalDir) {
             const { ProfileBuilder } = await import('./services/profile-builder');
             this.profileBuilder = new ProfileBuilder(this.app, this.settings);
-            this.scheduleAutoBuild();
+            this.app.workspace.onLayoutReady(() => {
+                this.scheduleAutoBuild();
+            });
         }
 
         // 注册侧边栏视图（必须在 activateView 之前）
