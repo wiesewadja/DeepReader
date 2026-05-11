@@ -293,6 +293,159 @@
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
+/* ---------- 主题 5：和紙 (Kami) ----------
+ * 暖白 parchment + 黛蓝 accent + 衬线字体 + 手漉和纸肌理
+ * 基于 Kami 排版系统：ink-blue #1B365D, 暖白 parchment #f5f4ed
+ * 设计意图：日式书信的留白与含蓄， hairline 顶饰替代 blunt border-top */
+.deeppdf-pattern-kami {
+	--kami-paper: #f5f4ed;
+	--kami-accent: #1B365D;
+	--kami-text: #3d3d3a;
+	--kami-warm: #e8e6dc;
+
+	/* 多层纸叠：顶饰线 + 横纤维 + 中心暖调 + 边缘晕影 + 底色 */
+	background:
+		/* 左上角 hairline（信头感，非全宽进度条） */
+		linear-gradient(to right, var(--kami-accent), var(--kami-accent))
+			no-repeat 24px 16px / 60px 1px,
+		/* 手漉和纸横向纤维（laid paper 水印线） */
+		repeating-linear-gradient(
+			to bottom,
+			transparent, transparent 20px,
+			rgba(0, 0, 0, 0.005) 20px,
+			rgba(0, 0, 0, 0.005) 21px
+		),
+		/* 中心暖晕（纸张受光面的温润） */
+		radial-gradient(ellipse at 50% 40%,
+			rgba(255, 250, 240, 0.5) 0%,
+			transparent 70%
+		),
+		/* 边缘微晕（纸张厚度与投影） */
+		radial-gradient(ellipse at 50% 50%,
+			transparent 60%,
+			rgba(0, 0, 0, 0.012) 100%
+		),
+		var(--kami-paper) !important;
+
+	/* 摒弃硬边框，以环影界定边缘 */
+	border: none !important;
+
+	/* 不对称圆角：手裁纸张的不完美 */
+	border-radius: 3px 4px 5px 3px;
+
+	/* 上留足呼吸空间，左留装订感 */
+	padding: 36px 28px 24px 32px !important;
+
+	/* 环影 + 轻羽影（无硬 drop shadow） */
+	box-shadow:
+		inset 0 0 0 1px rgba(0, 0, 0, 0.03),
+		0 1px 3px rgba(0, 0, 0, 0.04),
+		0 4px 16px rgba(0, 0, 0, 0.02);
+}
+
+.deeppdf-message-bubble-ai.deeppdf-pattern-kami {
+	border-radius: 3px 4px 5px 3px;
+	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+}
+
+/* 内容排版：温润而非锐利 */
+.deeppdf-pattern-kami .deeppdf-message-content {
+	color: var(--kami-text);
+	line-height: 1.65;
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content a {
+	color: var(--kami-accent);
+	text-decoration: none;
+	border-bottom: 1px solid rgba(27, 54, 93, 0.18);
+	transition: border-color 0.2s;
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content a:hover {
+	border-bottom-color: var(--kami-accent);
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content strong {
+	font-weight: 500;
+	color: #2a4a6e; /* 降低饱和度的 accent，不刺眼 */
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content code {
+	background: #ebe8dd;
+	color: var(--kami-text);
+	border-radius: 2px;
+	padding: 1px 4px;
+	font-size: 0.9em;
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content pre {
+	background: #ebe8dd;
+	border: 1px solid #ddd9cc;
+	border-radius: 4px;
+}
+
+.deeppdf-pattern-kami .deeppdf-message-content blockquote {
+	border-left: 2px solid var(--kami-accent);
+	background: rgba(27, 54, 93, 0.03);
+	padding: 8px 16px;
+	margin: 8px 0;
+}
+
+/* 暗色模式：暖炭灰底色，保持温润 */
+.theme-dark .deeppdf-pattern-kami {
+	--kami-paper: #2c2b27;
+	--kami-accent: #3d6a9a;
+	--kami-text: #c8c4b8;
+	--kami-warm: #3d3d3a;
+
+	background:
+		linear-gradient(to right, var(--kami-accent), var(--kami-accent))
+			no-repeat 24px 16px / 60px 1px,
+		repeating-linear-gradient(
+			to bottom,
+			transparent, transparent 20px,
+			rgba(255, 255, 255, 0.004) 20px,
+			rgba(255, 255, 255, 0.004) 21px
+		),
+		radial-gradient(ellipse at 50% 40%,
+			rgba(255, 255, 255, 0.03) 0%,
+			transparent 60%
+		),
+		radial-gradient(ellipse at 50% 50%,
+			transparent 50%,
+			rgba(0, 0, 0, 0.2) 100%
+		),
+		var(--kami-paper) !important;
+
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+		0 1px 3px rgba(0, 0, 0, 0.15),
+		0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.theme-dark .deeppdf-pattern-kami .deeppdf-message-content a {
+	border-bottom-color: rgba(61, 106, 154, 0.3);
+}
+
+.theme-dark .deeppdf-pattern-kami .deeppdf-message-content strong {
+	color: #5a8ab8;
+}
+
+.theme-dark .deeppdf-pattern-kami .deeppdf-message-content code {
+	background: #3d3d3a;
+	color: #d8d4c8;
+}
+
+.theme-dark .deeppdf-pattern-kami .deeppdf-message-content pre {
+	background: #3d3d3a;
+	border-color: #4d4d45;
+}
+
+.theme-dark .deeppdf-pattern-kami .deeppdf-message-content blockquote {
+	border-left-color: var(--kami-accent);
+	background: rgba(61, 106, 154, 0.06);
+}
+
 /* ==================== 加载动画 ==================== */
 
 .deeppdf-message-loading {

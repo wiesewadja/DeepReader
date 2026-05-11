@@ -1117,9 +1117,10 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                 .addOption('parchment', '羊皮纸')
                 .addOption('clean', '纯净白纸')
                 .addOption('chat', '聊天卡片')
+                .addOption('kami', '和紙')
                 .setValue(this.plugin.settings.messageBubbleTheme || 'notebook')
                 .onChange(async (value: string) => {
-                    this.plugin.settings.messageBubbleTheme = value as 'notebook' | 'parchment' | 'clean' | 'chat';
+                    this.plugin.settings.messageBubbleTheme = value as 'notebook' | 'parchment' | 'clean' | 'chat' | 'kami';
                     await this.plugin.saveSettings();
                     document.querySelectorAll('[class*="deeppdf-pattern-"]').forEach(el => {
                         const cls = Array.from(el.classList).find((c: string) => c.startsWith('deeppdf-pattern-'));

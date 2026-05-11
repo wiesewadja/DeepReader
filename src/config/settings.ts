@@ -96,7 +96,7 @@ export interface DeepPDFSettings {
 	autoEnableReadingMode: boolean;
 	readingModeStyle: 'paginated' | 'scrolling';
 	enableInkLayer: boolean;
-		messageBubbleTheme: 'notebook' | 'parchment' | 'clean' | 'chat';
+		messageBubbleTheme: 'notebook' | 'parchment' | 'clean' | 'chat' | 'kami';
 
 	// TTS 语音播报
 	autoTTS: boolean;
