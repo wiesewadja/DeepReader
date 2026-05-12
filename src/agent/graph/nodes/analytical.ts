@@ -318,9 +318,13 @@ ${blockLines.join('\n\n')}
     ? `${preSearchBlock}\n\n${userMessage}`
     : userMessage;
 
-  // Create LangChain tools (only search_book + read_book_section for S2)
+  // Create LangChain tools (search_book + read_book_section for S2)
+  // Conditionally add generate_infographic if configured
   const allTools = createLangChainTools(toolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
+  if (toolContext.infographicConfig) {
+    s2ToolNames.push('generate_infographic');
+  }
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 
   const loopMessages = [

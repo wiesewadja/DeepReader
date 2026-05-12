@@ -92,8 +92,8 @@
 /* 卡片网格 - 自适应列数 */
 .deeppdf-library-view .deeppdf-lib-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 200px));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 160px));
+    gap: 16px;
     padding: 20px 24px;
     overflow-y: auto;
     flex: 1;
@@ -124,7 +124,6 @@
     border-radius: 12px;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
-    overflow: hidden;
     transition: all 0.2s ease;
     cursor: pointer;
 }
@@ -144,9 +143,10 @@
 .deeppdf-library-view .deeppdf-lib-book-cover {
     position: relative;
     width: 100%;
-    aspect-ratio: 4/5;
+    aspect-ratio: 3 / 4;
     background: var(--background-secondary);
     overflow: hidden;
+    flex-shrink: 0;
 }
 
 .deeppdf-library-view .deeppdf-lib-cover-img {
@@ -161,6 +161,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    width: 100%;
+    height: 100%;
     gap: 8px;
     color: var(--text-muted);
 }
@@ -180,6 +182,11 @@
 }
 
 .deeppdf-library-view .deeppdf-lib-cover-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
     color: var(--interactive-accent);
 }
 

@@ -295,6 +295,13 @@ export class AgentChatController {
 					const cfg = resolveRoleConfig('router', this.host.plugin.settings);
 					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
 				})() : undefined,
+				infographicConfig: (() => {
+					const apiKey = this.host.plugin.settings.sensenovaApiKey;
+					if (!apiKey) return undefined;
+					const vaultPath = (this.host.app.vault.adapter as any).basePath as string;
+					if (!vaultPath) return undefined;
+					return { apiKey, outputDir: `${vaultPath}/DeepReader/infographics` };
+				})(),
 			};
 
 			let userMessage = query;

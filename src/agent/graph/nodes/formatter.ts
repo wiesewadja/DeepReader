@@ -119,7 +119,7 @@ export async function formatterNode(
   if (state.isProactive) {
     const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = state.analysisResult || '';
-    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
+    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
     const progressLabel = hasDiagram ? '图表已生成，准备引导...' : '思考引导问题...';
     callbacks?.onProgress?.(progressLabel);
     const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
@@ -195,13 +195,13 @@ export async function formatterNode(
 
   // === Diagram shortcut: brief in-character response, skip full formatting ===
   const ar = state.analysisResult || '';
-  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：');
+  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
   const diagramFailed = ar.startsWith('图表生成失败:');
   if (diagramSuccess || diagramFailed) {
     callbacks?.onProgress?.(diagramSuccess ? '图表已生成' : '图表生成遇到问题');
     const diagramPrompt = `你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
 你刚帮用户${diagramSuccess ? '生成了一张可视化图表' : '尝试生成图表但遇到了问题'}。用 1-2 句话简短告诉用户结果，自然亲切，像朋友之间说话。
-${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件。'}
+${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件或在设置中配置信息图 API。'}
 不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。`
 
     const stream = await mainModel.stream([
@@ -217,11 +217,16 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     }
     content = stripThinkTags(content);
 
-    // Ensure the chart link is in the output (LLM may omit it)
-    if (diagramSuccess && !content.includes('[[')) {
-      const linkMatch = ar.match(/\[\[[^\]]+\]\]/);
-      if (linkMatch) {
-        content = `${content}\n\n${linkMatch[0]}`;
+    // Ensure the chart/infographic link is in the output (LLM may omit it)
+    if (diagramSuccess) {
+      const hasLink = content.includes('[[') || content.includes('![');
+      if (!hasLink) {
+        const wikiMatch = ar.match(/\[\[[^\]]+\]\]/);
+        const imgMatch = ar.match(/!\[[^\]]*\]\([^)]+\)/);
+        const link = wikiMatch?.[0] || imgMatch?.[0];
+        if (link) {
+          content = `${content}\n\n${link}`;
+        }
       }
     }
 

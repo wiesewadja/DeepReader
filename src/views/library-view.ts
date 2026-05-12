@@ -56,6 +56,7 @@ export class LibraryView extends ItemView {
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
+    private resizeObserver: ResizeObserver | null = null;
 
     constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
         super(leaf);
@@ -115,6 +116,10 @@ export class LibraryView extends ItemView {
         if (this.pollingInterval) {
             window.clearInterval(this.pollingInterval);
             this.pollingInterval = null;
+        }
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
         }
     }
 
@@ -200,6 +205,38 @@ export class LibraryView extends ItemView {
         if (hasProcessing) {
             this.startProgressPolling();
         }
+
+        // 设置封面高度（JS 动态计算，避免 CSS aspect-ratio 在 Obsidian 中不生效）
+        // 使用 setTimeout 确保 DOM 布局完成后再计算宽度
+        setTimeout(() => this.updateCoverHeights(), 50);
+        // 兜底：延迟更久再计算一次，处理首次渲染布局延迟
+        setTimeout(() => this.updateCoverHeights(), 300);
+
+        // 监听容器尺寸变化，实时重新计算封面高度
+        if (!this.resizeObserver) {
+            this.resizeObserver = new ResizeObserver(() => {
+                this.updateCoverHeights();
+            });
+        }
+        this.resizeObserver.observe(this.gridEl);
+    }
+
+/**
+     * 动态计算封面高度：遍历所有卡片，根据宽度 × 4/3 设置封面高度
+     * 用于替代 CSS aspect-ratio（在 Obsidian 的 flex 布局中不生效）
+     */
+    private updateCoverHeights(): void {
+        if (!this.gridEl) return;
+        const cards = this.gridEl.querySelectorAll('.deeppdf-lib-book-card');
+        cards.forEach(card => {
+            const coverEl = card.querySelector('.deeppdf-lib-book-cover') as HTMLElement;
+            if (!coverEl) return;
+            const cardWidth = (card as HTMLElement).offsetWidth;
+            if (cardWidth > 0) {
+                const height = Math.round(cardWidth * 4 / 3);
+                coverEl.style.height = `${height}px`;
+            }
+        });
     }
 
     private sortIndexes(indexes: IndexListItem[]): IndexListItem[] {

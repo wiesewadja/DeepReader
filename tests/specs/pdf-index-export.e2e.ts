@@ -50,37 +50,35 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
     // ── Step 2: 通过 UI 操作打开书库并选择文件 ──
     // 完全模拟用户点击：侧边栏 → 书库按钮 → + 按钮 → 选择 PDF → 等待完成
 
-    it('should open library modal, select vault PDF, and complete indexing', async function () {
+    it('should open library view, select vault PDF, and complete indexing', async function () {
         this.timeout(1200000); // 20 分钟（LLM 摘要需要时间）
 
-        // ── 2a: 通过侧边栏打开书库弹窗（和用户点击按钮一样） ──
-        const opened = await browser.executeObsidian(({ app }) => {
+        // ── 2a: 通过侧边栏打开书库 Tab 页（和用户点击按钮一样） ──
+        const opened = await browser.executeObsidian(async ({ app }) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            // 获取侧边栏视图实例（和用户点击书库按钮走同一代码路径）
             const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
             if (!leaves || leaves.length === 0) return { error: 'Sidebar view not found' };
 
             const sidebarView = leaves[0].view as any;
-            if (!sidebarView?.openLibraryModal) return { error: 'openLibraryModal not found' };
+            if (!sidebarView?.bookMgr) return { error: 'bookMgr not found' };
 
-            // 调用侧边栏的 openLibraryModal —— 和用户点击按钮完全一样
-            sidebarView.openLibraryModal();
+            await sidebarView.bookMgr.openLibrary();
             return { opened: true };
         });
 
         expect(opened.error).toBeUndefined();
         expect(opened.opened).toBe(true);
 
-        // ── 2b: 等待书库弹窗出现 ──
+        // ── 2b: 等待书库 Tab 页出现 ──
         await browser.waitUntil(async () => {
             return await browser.executeObsidian(() => {
-                return !!document.querySelector('.deeppdf-library-modal');
+                return !!document.querySelector('.deeppdf-library-view');
             });
-        }, { timeout: 5000, timeoutMsg: '书库弹窗未出现' });
+        }, { timeout: 5000, timeoutMsg: '书库视图未出现' });
 
-        console.log('[E2E] 书库弹窗已打开');
+        console.log('[E2E] 书库视图已打开');
 
         // ── 2c: 点击 "+" 按钮打开文件选择器 ──
         const clickedAdd = await browser.executeObsidian(() => {
@@ -101,7 +99,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
         console.log('[E2E] 文件选择器已打开');
 
         // ── 2e: 在文件列表中找到并点击目标 PDF 文件 ──
-        // 这会触发 PDFFileSelectorModal → onSelect → LibraryModal.handleAddDocument 的完整链路
+        // 这会触发 PDFFileSelectorModal → onSelect → LibraryView.handleAddDocument 的完整链路
         const selectedFile = await browser.executeObsidian((_args: any, pdfName: string) => {
             const items = document.querySelectorAll('.deeppdf-file-item');
             for (const item of items) {

@@ -96,7 +96,7 @@ export class ChapterNav {
         if (!hasReadingMode) return;
 
         // 检查是否有打开的弹窗
-        const hasOpenModal = document.querySelector('.modal-container, .modal-bg, .deeppdf-library-modal');
+        const hasOpenModal = document.querySelector('.modal-container, .modal-bg');
         if (hasOpenModal) return;
 
         // 检查焦点是否在可编辑元素上
