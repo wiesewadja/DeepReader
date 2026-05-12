@@ -2,17 +2,23 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
-import { generateInfographic } from '../../../services/infographic-generator.js';
+import {
+  generateInfographic,
+  INFOGRAPHIC_SIZES,
+  DEFAULT_INFOGRAPHIC_SIZE,
+} from '../../../services/infographic-generator.js';
+
+const SIZE_VALUES = Object.values(INFOGRAPHIC_SIZES) as [string, ...string[]];
 
 const generateInfographicSchema = z.object({
   detailed_description: z.string().describe(
     '信息图的详细视觉描述，包括：主色调、风格、排版布局（从左到右/从上到下）、' +
     '各区块的详细文字内容、图标描述、装饰元素等。越详细效果越好。'
   ),
-  size: z.enum(['1664x2496', '2496x1664', '1760x2368', '2368x1760', '1824x2272', '2272x1824', '2048x2048', '2752x1536', '1536x2752', '3072x1376', '1344x3136'])
+  size: z.enum(SIZE_VALUES)
     .optional()
-    .default('2752x1536')
-    .describe('图像尺寸，默认 2752x1536 (16:9)'),
+    .default(DEFAULT_INFOGRAPHIC_SIZE)
+    .describe(`图像尺寸，默认 ${DEFAULT_INFOGRAPHIC_SIZE} (16:9)`),
 });
 
 export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
@@ -26,7 +32,7 @@ export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
       try {
         const result = await generateInfographic(infographicConfig.apiKey, {
           prompt: args.detailed_description,
-          size: args.size || '2752x1536',
+          size: args.size || DEFAULT_INFOGRAPHIC_SIZE,
           outputDir: infographicConfig.outputDir,
         });
         return `已生成信息图：\n\n![信息图](${result.relativePath})`;

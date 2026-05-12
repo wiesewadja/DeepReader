@@ -119,7 +119,7 @@ export async function formatterNode(
   if (state.isProactive) {
     const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = state.analysisResult || '';
-    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：');
+    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
     const progressLabel = hasDiagram ? '图表已生成，准备引导...' : '思考引导问题...';
     callbacks?.onProgress?.(progressLabel);
     const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);

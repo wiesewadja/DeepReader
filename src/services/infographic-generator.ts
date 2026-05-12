@@ -20,6 +20,8 @@ export const INFOGRAPHIC_SIZES: Record<string, string> = {
   '9:21':  '1344x3136',
 };
 
+export const DEFAULT_INFOGRAPHIC_SIZE = INFOGRAPHIC_SIZES['16:9'];
+
 export interface InfographicOptions {
   prompt: string;
   size?: string;
@@ -37,7 +39,7 @@ export async function generateInfographic(
   apiKey: string,
   options: InfographicOptions,
 ): Promise<InfographicResult> {
-  const size = options.size || '2752x1536';
+  const size = options.size || DEFAULT_INFOGRAPHIC_SIZE;
   const apiUrl = `${BASE_URL}/images/generations`;
 
   serviceLog(`[Infographic] 请求 U1 Fast API, size: ${size}`);

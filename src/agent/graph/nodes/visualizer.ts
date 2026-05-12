@@ -13,6 +13,13 @@ import { createLangChainTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
 import { agentLog as log } from '../../../utils/logger.js';
 
+/** 解析 LLM tool call 的参数（兼容多种 provider 格式） */
+function parseToolCallArgs(tc: any): any {
+  return typeof tc.args === 'string'
+    ? JSON.parse(tc.args)
+    : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
+}
+
 /**
  * 执行 excalidraw draw 动作并返回格式化结果
  */
@@ -147,9 +154,7 @@ export async function visualizerNode(
           if (tool) {
             let infArgs: any;
             try {
-              infArgs = typeof tc.args === 'string'
-                ? JSON.parse(tc.args)
-                : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
+              infArgs = parseToolCallArgs(tc);
             } catch {
               log('[Visualizer] generate_infographic 参数解析失败，跳过');
               diagramDescription = `图表生成失败: 信息图工具参数格式错误`;
@@ -173,9 +178,7 @@ export async function visualizerNode(
 
         let args: any;
         try {
-          args = typeof tc.args === 'string'
-            ? JSON.parse(tc.args)
-            : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
+          args = parseToolCallArgs(tc);
         } catch (parseErr) {
           log(`[Visualizer] tool call 参数解析失败: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
           continue;

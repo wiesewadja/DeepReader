@@ -222,13 +222,12 @@ export class LibraryView extends ItemView {
     }
 
 /**
-     * 动态计算封面高度：遍历所有卡片，根据宽度 × 5/3 设置封面高度
+     * 动态计算封面高度：遍历所有卡片，根据宽度 × 4/3 设置封面高度
      * 用于替代 CSS aspect-ratio（在 Obsidian 的 flex 布局中不生效）
      */
     private updateCoverHeights(): void {
         if (!this.gridEl) return;
         const cards = this.gridEl.querySelectorAll('.deeppdf-lib-book-card');
-        let updated = 0;
         cards.forEach(card => {
             const coverEl = card.querySelector('.deeppdf-lib-book-cover') as HTMLElement;
             if (!coverEl) return;
@@ -236,7 +235,6 @@ export class LibraryView extends ItemView {
             if (cardWidth > 0) {
                 const height = Math.round(cardWidth * 4 / 3);
                 coverEl.style.height = `${height}px`;
-                updated++;
             }
         });
     }
