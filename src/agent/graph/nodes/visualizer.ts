@@ -8,7 +8,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { PROMPT_VISUALIZER } from '../prompts/visualizer-prompt';
+import { buildVisualizerPrompt } from '../prompts/visualizer-prompt';
 import { createLangChainTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -128,10 +128,12 @@ export async function visualizerNode(
       return { analysisResult: '图表生成失败: 所有图表工具均不可用' };
     }
 
+    const hasInfographic = vizToolNames.includes('generate_infographic');
+    const visualizerPrompt = buildVisualizerPrompt(hasInfographic);
     const modelWithTools = mainModel.bindTools(vizTools);
 
     const messages = [
-      new SystemMessage(PROMPT_VISUALIZER),
+      new SystemMessage(visualizerPrompt),
       new HumanMessage(`用户请求：${userQuery}\n\n当前书籍：《${pdfName}》\n\n分析内容：\n${sourceContent.slice(0, 4000)}`),
     ];
 
