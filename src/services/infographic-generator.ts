@@ -71,7 +71,9 @@ export async function generateInfographic(
     fileName = `infographic-${Date.now()}.${ext}`;
   }
   const localPath = `${options.outputDir}/${fileName}`;
-  const relativePath = `DeepReader/infographics/${fileName}`;
+  // outputDir = <vaultPath>/DeepReader/infographics → relativePath = DeepReader/infographics/<fileName>
+  const dirSuffix = options.outputDir.split('/').slice(-2).join('/');
+  const relativePath = `${dirSuffix}/${fileName}`;
 
   serviceLog(`[Infographic] 下载图片: ${imageUrl}`);
   const imgResponse = await requestUrl({

@@ -91,7 +91,7 @@ export async function visualizerNode(
   }
 
   const hasExcalidraw = typeof window !== 'undefined' && window.ExcalidrawAutomate;
-  const hasInfographic = !!(toolContext as any).infographicConfig;
+  const hasInfographic = !!toolContext.infographicConfig;
   if (!hasExcalidraw && !hasInfographic) {
     log('[Visualizer] 无可用图表工具（Excalidraw 未安装且信息图未配置）');
     return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
@@ -150,7 +150,11 @@ export async function visualizerNode(
               infArgs = typeof tc.args === 'string'
                 ? JSON.parse(tc.args)
                 : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
-            } catch { infArgs = {}; }
+            } catch {
+              log('[Visualizer] generate_infographic 参数解析失败，跳过');
+              diagramDescription = `图表生成失败: 信息图工具参数格式错误`;
+              continue;
+            }
             try {
               log('[Visualizer] 执行 generate_infographic 工具');
               const result = await tool.invoke(infArgs);
@@ -159,7 +163,6 @@ export async function visualizerNode(
             } catch (infErr) {
               const errMsg = infErr instanceof Error ? infErr.message : String(infErr);
               diagramDescription = `图表生成失败: 信息图工具执行失败 — ${errMsg}`;
-              drawExecuted = true;
               log(`[Visualizer] generate_infographic 执行失败: ${errMsg}`);
             }
           }

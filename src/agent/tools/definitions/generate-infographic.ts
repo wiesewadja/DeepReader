@@ -1,4 +1,3 @@
-import { TFile } from 'obsidian';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import type { ToolFactory } from './types.js';
@@ -30,15 +29,7 @@ export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
           size: args.size || '2752x1536',
           outputDir: infographicConfig.outputDir,
         });
-        const app = ctx.app;
-        let imageUrl = result.relativePath;
-        if (app) {
-          const file = app.vault.getAbstractFileByPath(result.relativePath);
-          if (file instanceof TFile) {
-            imageUrl = app.vault.getResourcePath(file);
-          }
-        }
-        return `信息图已生成！\n\n![信息图](${imageUrl})`;
+        return `已生成信息图：\n\n![信息图](${result.relativePath})`;
       } catch (err) {
         return `信息图生成失败: ${err instanceof Error ? err.message : String(err)}`;
       }
