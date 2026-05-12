@@ -5,7 +5,8 @@
 import type { CognitiveEngineState } from './state';
 
 function hasDiagramIntent(state: CognitiveEngineState): boolean {
-  return (state.allowedTools ?? []).includes('excalidraw');
+  const tools = state.allowedTools ?? [];
+  return tools.includes('excalidraw') || tools.includes('generate_infographic');
 }
 
 /**

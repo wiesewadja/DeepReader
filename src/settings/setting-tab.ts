@@ -337,13 +337,15 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         const subDesc = container.createEl('div', { cls: 'setting-item-description' });
         subDesc.setText('填写 SenseNova API Key 后，AI 可在适当时生成专业信息图。');
         new Setting(container)
-            .addText(text => text
-                .setPlaceholder("sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                .setValue(this.plugin.settings.sensenovaApiKey)
-                .onChange(async (value) => {
+            .addText(text => {
+                text.setPlaceholder("sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+                    .setValue(this.plugin.settings.sensenovaApiKey)
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
                     this.plugin.settings.sensenovaApiKey = value.trim();
                     await this.plugin.saveSettings();
-                }));
+                });
+            });
     }
 
     /**

@@ -455,10 +455,11 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
   let sanitizedOpfXml = opfXml;
 
   // Step 1: 循环移除所有正确闭合的注释（包括跨多行）
-  while (true) {
+  let maxIterations = 1000;
+  while (maxIterations-- > 0) {
     const match = sanitizedOpfXml.match(/<!--[\s\S]*?-->/);
-    if (!match) break;
-    sanitizedOpfXml = sanitizedOpfXml.substring(0, match.index) + sanitizedOpfXml.substring(match.index! + match[0].length);
+    if (!match || match.index === undefined) break;
+    sanitizedOpfXml = sanitizedOpfXml.substring(0, match.index) + sanitizedOpfXml.substring(match.index + match[0].length);
   }
 
   // Step 2: 移除残留的未闭合注释起始标记（此时不应再有正确闭合的注释）

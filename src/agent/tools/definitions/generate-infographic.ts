@@ -11,7 +11,7 @@ import {
 const SIZE_VALUES = Object.values(INFOGRAPHIC_SIZES) as [string, ...string[]];
 
 const generateInfographicSchema = z.object({
-  detailed_description: z.string().describe(
+  detailed_description: z.string().max(4000, '描述过长，请精简到 4000 字以内').describe(
     '信息图的详细视觉描述，包括：主色调、风格、排版布局（从左到右/从上到下）、' +
     '各区块的详细文字内容、图标描述、装饰元素等。越详细效果越好。'
   ),
@@ -24,16 +24,16 @@ const generateInfographicSchema = z.object({
 export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
   tool(
     async (args) => {
-      const infographicConfig = ctx.infographicConfig as
-        { apiKey: string; outputDir: string } | undefined;
-      if (!infographicConfig || !infographicConfig.apiKey) {
+      const config = ctx.infographicConfig;
+      if (!config?.apiKey) {
         return '错误：信息图生成未配置。请在设置中填写 SenseNova API Key。';
       }
       try {
-        const result = await generateInfographic(infographicConfig.apiKey, {
+        const result = await generateInfographic(config.apiKey, {
           prompt: args.detailed_description,
           size: args.size || DEFAULT_INFOGRAPHIC_SIZE,
-          outputDir: infographicConfig.outputDir,
+          relativeDir: config.relativeDir,
+          vaultAdapter: config.vaultAdapter,
         });
         return `已生成信息图：\n\n![信息图](${result.relativePath})`;
       } catch (err) {

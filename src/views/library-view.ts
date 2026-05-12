@@ -21,6 +21,13 @@ export const LIBRARY_VIEW_TYPE = 'deeppdf-library-view';
 /** Proposition 功能开关 — token 成本过高，优化后重新启用 */
 const PROPOSITION_ENABLED = false;
 
+const PROCESSING_STATUSES = new Set([
+    'processing', 'indexing', 'started', 'created',
+    'running', 'active', 'pending', 'queued', 'uploading',
+]);
+const READY_STATUSES = new Set(['ready', 'completed', 'success']);
+const FAILED_STATUSES = new Set(['failed', 'error']);
+
 // SVG 图标
 const Icons = {
     add: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
@@ -57,6 +64,7 @@ export class LibraryView extends ItemView {
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
     private resizeObserver: ResizeObserver | null = null;
+    private _searchDebounce: number | null = null;
 
     constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
         super(leaf);
@@ -140,8 +148,11 @@ export class LibraryView extends ItemView {
             attr: { type: 'text', placeholder: '搜索书籍...' }
         });
         this.searchInputEl.addEventListener('input', () => {
-            this.searchQuery = this.searchInputEl?.value || '';
-            this.renderGrid();
+            if (this._searchDebounce != null) clearTimeout(this._searchDebounce);
+            this._searchDebounce = window.setTimeout(() => {
+                this.searchQuery = this.searchInputEl?.value || '';
+                this.renderGrid();
+            }, 300);
         });
 
         const addBtn = toolbar.createEl('button', { cls: 'deeppdf-lib-add-btn' });
@@ -200,22 +211,19 @@ export class LibraryView extends ItemView {
         // Start polling if any indexes are in progress
         const hasProcessing = filtered.some(idx => {
             const rawStatus = (idx.status || '').toLowerCase();
-            return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(rawStatus);
+            return PROCESSING_STATUSES.has(rawStatus);
         });
         if (hasProcessing) {
             this.startProgressPolling();
         }
 
         // 设置封面高度（JS 动态计算，避免 CSS aspect-ratio 在 Obsidian 中不生效）
-        // 使用 setTimeout 确保 DOM 布局完成后再计算宽度
-        setTimeout(() => this.updateCoverHeights(), 50);
-        // 兜底：延迟更久再计算一次，处理首次渲染布局延迟
-        setTimeout(() => this.updateCoverHeights(), 300);
+        requestAnimationFrame(() => this.updateCoverHeights());
 
         // 监听容器尺寸变化，实时重新计算封面高度
         if (!this.resizeObserver) {
             this.resizeObserver = new ResizeObserver(() => {
-                this.updateCoverHeights();
+                requestAnimationFrame(() => this.updateCoverHeights());
             });
         }
         this.resizeObserver.observe(this.gridEl);
@@ -265,11 +273,11 @@ export class LibraryView extends ItemView {
         const rawStatus = (index.status || 'unknown').toLowerCase();
         let statusClass = 'ready';
 
-        if (['processing', 'indexing', 'started', 'created', 'running', 'active', 'uploading'].includes(rawStatus)) {
+        if (PROCESSING_STATUSES.has(rawStatus)) {
             statusClass = 'processing';
         } else if (['pending', 'queued', 'waiting'].includes(rawStatus)) {
             statusClass = 'queued';
-        } else if (['failed', 'error'].includes(rawStatus)) {
+        } else if (FAILED_STATUSES.has(rawStatus)) {
             statusClass = 'failed';
         }
 
@@ -530,7 +538,7 @@ export class LibraryView extends ItemView {
     private handleSelect(index: IndexListItem): void {
         // 检查索引状态
         const rawStatus = (index.status || 'unknown').toLowerCase();
-        const isProcessing = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'].includes(rawStatus);
+        const isProcessing = PROCESSING_STATUSES.has(rawStatus);
 
         if (isProcessing) {
             // 索引还在处理中，不响应点击
@@ -587,23 +595,25 @@ export class LibraryView extends ItemView {
         this.readingProgressCache.clear();
         const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
 
-        for (const index of this.indexes) {
-            const status = (index.status || '').toLowerCase();
-            if (!['ready', 'completed', 'success'].includes(status)) continue;
+        const readyIndexes = this.indexes.filter(idx => {
+            const status = (idx.status || '').toLowerCase();
+            return READY_STATUSES.has(status);
+        });
 
-            try {
-                const progress = await loadProgress(vaultPath, index.id);
-                if (progress) {
-                    const totalChapters = this.getChapterCount(index);
-                    if (totalChapters > 0) {
-                        const percent = getProgressPercent(progress, totalChapters);
-                        if (percent > 0) {
-                            this.readingProgressCache.set(index.id, percent);
-                        }
-                    }
-                }
-            } catch {
-                // 忽略加载失败
+        const results = await Promise.allSettled(
+            readyIndexes.map(async (idx) => {
+                const progress = await loadProgress(vaultPath, idx.id);
+                const totalChapters = this.getChapterCount(idx);
+                const percent = progress && totalChapters > 0
+                    ? getProgressPercent(progress, totalChapters)
+                    : 0;
+                return { id: idx.id, percent };
+            })
+        );
+
+        for (const r of results) {
+            if (r.status === 'fulfilled' && r.value.percent > 0) {
+                this.readingProgressCache.set(r.value.id, r.value.percent);
             }
         }
     }
@@ -764,7 +774,7 @@ export class LibraryView extends ItemView {
 
             const hasProcessing = this.indexes.some(idx => {
                 const status = (idx.status || '').toLowerCase();
-                return ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued', 'uploading'].includes(status);
+                return PROCESSING_STATUSES.has(status);
             });
 
             if (!hasProcessing) {
@@ -775,7 +785,7 @@ export class LibraryView extends ItemView {
 
                 const failedIndexes = this.indexes.filter(idx => {
                     const status = (idx.status || '').toLowerCase();
-                    return ['failed', 'error'].includes(status);
+                    return FAILED_STATUSES.has(status);
                 });
 
                 if (failedIndexes.length > 0) {
@@ -909,12 +919,10 @@ export class LibraryView extends ItemView {
 
         newIndexes.forEach(idx => {
             const lastState = this.lastIndexStates.get(idx.id);
-            const processingStatuses = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'];
-            const readyStatuses = ['ready', 'completed', 'success'];
 
             if (lastState) {
-                const wasProcessing = processingStatuses.includes(lastState.status.toLowerCase());
-                const isNowReady = readyStatuses.includes((idx.status || '').toLowerCase());
+                const wasProcessing = PROCESSING_STATUSES.has(lastState.status.toLowerCase());
+                const isNowReady = READY_STATUSES.has((idx.status || '').toLowerCase());
 
                 if (wasProcessing && isNowReady) {
                     completedIds.push(idx.id);
@@ -973,8 +981,7 @@ export class LibraryView extends ItemView {
         for (const idx of changedIndexes) {
             // 检查是否是正在处理中且进度 >= 50
             const progress = idx.progress_percent || 0;
-            const processingStatuses = ['processing', 'indexing', 'started', 'created', 'running', 'active', 'pending', 'queued'];
-            const isProcessing = processingStatuses.includes((idx.status || '').toLowerCase());
+            const isProcessing = PROCESSING_STATUSES.has((idx.status || '').toLowerCase());
 
             if (isProcessing && progress >= 50 && !this.coverCache.has(idx.id) && !this.loadingCovers.has(idx.id)) {
                 this.loadingCovers.add(idx.id);

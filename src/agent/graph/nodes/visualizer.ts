@@ -9,7 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { buildVisualizerPrompt } from '../prompts/visualizer-prompt';
-import { createLangChainTools } from '../../tools/index.js';
+import { createVizTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
 import { agentLog as log } from '../../../utils/logger.js';
 
@@ -116,19 +116,13 @@ export async function visualizerNode(
   log(`[Visualizer] 开始生成图表，内容长度=${sourceContent.length}，query="${userQuery.slice(0, 50)}"`);
 
   try {
-    const allTools = createLangChainTools(toolContext);
-    const vizToolNames = ['excalidraw'];
-    if (toolContext.infographicConfig) {
-      vizToolNames.push('generate_infographic');
-    }
-    const vizTools = allTools.filter(t => vizToolNames.includes(t.name));
+    const vizTools = createVizTools(toolContext);
 
     if (vizTools.length === 0) {
       log('[Visualizer] 图表工具未注册');
       return { analysisResult: '图表生成失败: 所有图表工具均不可用' };
     }
 
-    const hasInfographic = vizToolNames.includes('generate_infographic');
     const visualizerPrompt = buildVisualizerPrompt(hasInfographic);
     const modelWithTools = mainModel.bindTools(vizTools);
 

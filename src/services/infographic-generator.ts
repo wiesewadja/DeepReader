@@ -1,10 +1,11 @@
-import { writeFile, mkdir } from 'fs/promises';
-import { requestUrl } from 'obsidian';
+import { requestUrl, type FileSystemAdapter } from 'obsidian';
 import { safeRequest } from '../utils/safe-request.js';
 import { serviceLog } from '../utils/logger.js';
 
 const BASE_URL = 'https://token.sensenova.cn/v1';
 const MODEL = 'sensenova-u1-fast';
+const API_TIMEOUT = 60_000;
+const DOWNLOAD_TIMEOUT = 30_000;
 
 export const INFOGRAPHIC_SIZES: Record<string, string> = {
   '2:3':   '1664x2496',
@@ -25,7 +26,10 @@ export const DEFAULT_INFOGRAPHIC_SIZE = INFOGRAPHIC_SIZES['16:9'];
 export interface InfographicOptions {
   prompt: string;
   size?: string;
-  outputDir: string;
+  /** Vault 内的相对目录，如 "DeepReader/infographics" */
+  relativeDir: string;
+  /** Vault adapter 用于文件操作（替代 fs/promises） */
+  vaultAdapter: FileSystemAdapter;
   filename?: string;
 }
 
@@ -33,6 +37,20 @@ export interface InfographicResult {
   url: string;
   localPath: string;
   relativePath: string;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} 超时 (${ms / 1000}s)`)), ms);
+    }),
+  ]);
+}
+
+function sanitizeFileName(name: string): string {
+  return name.replace(/[\/\\]/g, '').replace(/\.\./g, '') || `infographic-${Date.now()}.png`;
 }
 
 export async function generateInfographic(
@@ -44,50 +62,60 @@ export async function generateInfographic(
 
   serviceLog(`[Infographic] 请求 U1 Fast API, size: ${size}`);
 
-  const response = await safeRequest({
-    url: apiUrl,
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      prompt: options.prompt,
-      size,
-      n: 1,
+  const response = await withTimeout(
+    safeRequest({
+      url: apiUrl,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        prompt: options.prompt,
+        size,
+        n: 1,
+      }),
+      throw: true,
     }),
-    throw: true,
-  });
+    API_TIMEOUT,
+    'API 请求',
+  );
 
   const data = response.json;
   const imageUrl: string = data?.data?.[0]?.url;
   if (!imageUrl) {
     throw new Error('SenseNova API 未返回图片 URL');
   }
-
-  let fileName = options.filename;
-  if (!fileName) {
-    const extMatch = imageUrl.match(/\.(png|jpg|jpeg|webp)/i);
-    const ext = extMatch ? extMatch[1] : 'png';
-    fileName = `infographic-${Date.now()}.${ext}`;
+  if (!imageUrl.startsWith('https://')) {
+    throw new Error('SenseNova API 返回的图片 URL 无效（仅支持 HTTPS）');
   }
-  const localPath = `${options.outputDir}/${fileName}`;
-  // outputDir = <vaultPath>/DeepReader/infographics → relativePath = DeepReader/infographics/<fileName>
-  const dirSuffix = options.outputDir.split('/').slice(-2).join('/');
-  const relativePath = `${dirSuffix}/${fileName}`;
 
-  serviceLog(`[Infographic] 下载图片: ${imageUrl}`);
-  const imgResponse = await requestUrl({
-    url: imageUrl,
-    method: 'GET',
-    contentType: 'application/octet-stream',
-  });
-  const imgData = imgResponse.arrayBuffer;
+  let fileName = options.filename
+    ? sanitizeFileName(options.filename)
+    : `infographic-${Date.now()}.png`;
+  const extMatch = imageUrl.match(/\.(png|jpg|jpeg|webp)/i);
+  if (extMatch && !fileName.match(/\.(png|jpg|jpeg|webp)$/i)) {
+    fileName += `.${extMatch[1]}`;
+  }
 
-  await mkdir(options.outputDir, { recursive: true });
-  await writeFile(localPath, Buffer.from(imgData));
+  const relativePath = `${options.relativeDir}/${fileName}`;
+  const localPath = `${options.vaultAdapter.getBasePath()}/${relativePath}`;
 
-  serviceLog(`[Infographic] 已保存: ${localPath}`);
+  serviceLog(`[Infographic] 下载图片: ${new URL(imageUrl).hostname}/...`);
+  const imgResponse = await withTimeout(
+    requestUrl({
+      url: imageUrl,
+      method: 'GET',
+      contentType: 'application/octet-stream',
+    }),
+    DOWNLOAD_TIMEOUT,
+    '图片下载',
+  );
+
+  await options.vaultAdapter.mkdir(options.relativeDir);
+  await options.vaultAdapter.writeBinary(relativePath, imgResponse.arrayBuffer as ArrayBuffer);
+
+  serviceLog(`[Infographic] 已保存: ${relativePath}`);
   return { url: imageUrl, localPath, relativePath };
 }

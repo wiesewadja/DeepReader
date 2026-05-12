@@ -155,8 +155,6 @@ export async function executeTool(
     const duration = performance.now() - startTime;
     const durationStr = duration < 1000 ? `${duration.toFixed(0)}ms` : `${(duration / 1000).toFixed(1)}s`;
 
-    // 结果摘要（显示前100字符和长度）
-    const resultPreview = result.length > 100 ? `${result.slice(0, 100)}...` : result;
     toolsLog(`[Tool] ✓ 完成: ${name} [${durationStr}, ${result.length}字符]`);
 
     return result;
@@ -195,7 +193,7 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
   }
 
   // search_journal 依赖 journalDir 配置
-  if ((ctx as any).journalDir) {
+  if (ctx.journalDir) {
     tools.push(createSearchJournalTool(ctx));
   }
 
@@ -203,5 +201,19 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
     tools.push(createGenerateInfographicTool(ctx));
   }
 
+  return tools;
+}
+
+/**
+ * 只创建 visualizer 节点所需的工具（excalidraw + generate_infographic）。
+ * 避免 createLangChainTools 中为所有 ~12 个工具构建 schema 的开销。
+ */
+export function createVizTools(ctx: ToolContext): StructuredToolInterface[] {
+  const tools: StructuredToolInterface[] = [
+    createExcalidrawToolDefinition(ctx),
+  ];
+  if (ctx.infographicConfig) {
+    tools.push(createGenerateInfographicTool(ctx));
+  }
   return tools;
 }

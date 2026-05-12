@@ -2,7 +2,7 @@
  * Tool Executor 类型定义
  */
 
-import type { App } from 'obsidian';
+import type { App, FileSystemAdapter } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
 
@@ -48,7 +48,7 @@ export interface ToolContext {
   /** 用户笔记目录（配置后启用 search_journal 工具） */
   journalDir?: string;
   /** 信息图生成配置（配置后启用 generate_infographic 工具） */
-  infographicConfig?: { apiKey: string; outputDir: string };
+  infographicConfig?: { apiKey: string; relativeDir: string; vaultAdapter: FileSystemAdapter };
   /** 是否启用苏格拉底模式（S2→S4 之间插入 filter 节点） */
   isSocratic?: boolean;
   /** 是否为主动引导模式（只问问题，不回答） */

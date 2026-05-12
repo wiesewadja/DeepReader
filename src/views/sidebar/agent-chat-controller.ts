@@ -298,9 +298,11 @@ export class AgentChatController {
 				infographicConfig: (() => {
 					const apiKey = this.host.plugin.settings.sensenovaApiKey;
 					if (!apiKey) return undefined;
-					const vaultPath = (this.host.app.vault.adapter as any).basePath as string;
-					if (!vaultPath) return undefined;
-					return { apiKey, outputDir: `${vaultPath}/DeepReader/infographics` };
+					return {
+						apiKey,
+						relativeDir: 'DeepReader/infographics',
+						vaultAdapter: this.host.app.vault.adapter as any,
+					};
 				})(),
 			};
 
