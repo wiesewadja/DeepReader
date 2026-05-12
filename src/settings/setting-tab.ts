@@ -331,6 +331,19 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         for (const { role, label, desc } of optionalRoles) {
             this.renderRoleRow(container, role, label, desc, true);
         }
+
+        // 信息图生成（固定使用 SenseNova U1 Fast，非角色模型，单独配置）
+        container.createEl('div', { cls: 'setting-item-info', text: '信息图生成' });
+        const subDesc = container.createEl('div', { cls: 'setting-item-description' });
+        subDesc.setText('填写 SenseNova API Key 后，AI 可在适当时生成专业信息图。');
+        new Setting(container)
+            .addText(text => text
+                .setPlaceholder("sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+                .setValue(this.plugin.settings.sensenovaApiKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.sensenovaApiKey = value.trim();
+                    await this.plugin.saveSettings();
+                }));
     }
 
     /**

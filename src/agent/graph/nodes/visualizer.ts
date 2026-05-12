@@ -90,9 +90,11 @@ export async function visualizerNode(
     return { analysisResult: '图表生成失败: 模型不可用' };
   }
 
-  if (typeof window === 'undefined' || !window.ExcalidrawAutomate) {
-    log('[Visualizer] Excalidraw 插件未安装或未启用');
-    return { analysisResult: '图表生成失败: Excalidraw 插件未安装。请在社区插件市场安装后重试。' };
+  const hasExcalidraw = typeof window !== 'undefined' && window.ExcalidrawAutomate;
+  const hasInfographic = !!(toolContext as any).infographicConfig;
+  if (!hasExcalidraw && !hasInfographic) {
+    log('[Visualizer] 无可用图表工具（Excalidraw 未安装且信息图未配置）');
+    return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
   }
 
   const sourceContent = state.analysisResult || state.structuralAnalysis || '';
@@ -108,11 +110,15 @@ export async function visualizerNode(
 
   try {
     const allTools = createLangChainTools(toolContext);
-    const vizTools = allTools.filter(t => t.name === 'excalidraw');
+    const vizToolNames = ['excalidraw'];
+    if (toolContext.infographicConfig) {
+      vizToolNames.push('generate_infographic');
+    }
+    const vizTools = allTools.filter(t => vizToolNames.includes(t.name));
 
     if (vizTools.length === 0) {
-      log('[Visualizer] excalidraw 工具未注册');
-      return { analysisResult: '图表生成失败: excalidraw 工具不可用' };
+      log('[Visualizer] 图表工具未注册');
+      return { analysisResult: '图表生成失败: 所有图表工具均不可用' };
     }
 
     const modelWithTools = mainModel.bindTools(vizTools);
@@ -135,6 +141,31 @@ export async function visualizerNode(
     if (toolCalls.length > 0) {
       for (const tc of toolCalls) {
         const toolName = tc.name || tc.function?.name;
+
+        if (toolName === 'generate_infographic') {
+          const tool = vizTools.find(t => t.name === 'generate_infographic');
+          if (tool) {
+            let infArgs: any;
+            try {
+              infArgs = typeof tc.args === 'string'
+                ? JSON.parse(tc.args)
+                : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
+            } catch { infArgs = {}; }
+            try {
+              log('[Visualizer] 执行 generate_infographic 工具');
+              const result = await tool.invoke(infArgs);
+              diagramDescription = `已生成信息图：\n${result}`;
+              drawExecuted = true;
+            } catch (infErr) {
+              const errMsg = infErr instanceof Error ? infErr.message : String(infErr);
+              diagramDescription = `图表生成失败: 信息图工具执行失败 — ${errMsg}`;
+              drawExecuted = true;
+              log(`[Visualizer] generate_infographic 执行失败: ${errMsg}`);
+            }
+          }
+          continue;
+        }
+
         if (toolName !== 'excalidraw') continue;
 
         let args: any;

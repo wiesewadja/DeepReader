@@ -32,6 +32,7 @@ import { createCanvasToolDefinition } from './definitions/canvas.js';
 import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
 import { createCheckSubAgentTool } from './definitions/sub-agent.js';
 import { createSearchJournalTool } from './definitions/search-journal.js';
+import { createGenerateInfographicTool } from './definitions/generate-infographic.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -196,6 +197,10 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
   // search_journal 依赖 journalDir 配置
   if ((ctx as any).journalDir) {
     tools.push(createSearchJournalTool(ctx));
+  }
+
+  if (ctx.infographicConfig) {
+    tools.push(createGenerateInfographicTool(ctx));
   }
 
   return tools;
