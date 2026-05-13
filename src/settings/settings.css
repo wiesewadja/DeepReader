@@ -1,84 +1,68 @@
 /**
- * DeepReader 设置页面样式 - 极简风格
- * 扁平化设计，去除视觉噪音，专注内容
+ * DeepReader 设置页面样式 — 卡片式设计
+ * 参照 easy-typing-obsidian 风格：圆角卡片、大留白、清晰视觉层级
  */
 
-/* ==================== 设置页面主容器 ==================== */
+/* ==================== 主容器 ==================== */
 .deeppdf-settings {
     padding: 0;
-    max-width: 720px;
+    max-width: 780px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
     min-height: 100%;
 }
 
-/* Tab 布局容器 */
 .deeppdf-settings-tabs {
     display: flex;
     flex-direction: column;
     min-height: 100%;
 }
 
-/* ==================== 顶部导航（极简风格） ==================== */
+/* ==================== Tab 导航（胶囊式） ==================== */
 .deeppdf-settings-nav {
     display: flex;
-    gap: 32px;
-    padding: 20px 0 0 0;
-    margin-bottom: 0;
+    gap: 6px;
+    padding: 16px 0;
     flex-shrink: 0;
-    border-bottom: 1px solid var(--background-modifier-border);
+    border-bottom: none;
+    flex-wrap: wrap;
 }
 
-/* 导航项 - 无背景、无边框 */
 .deeppdf-settings-nav-item {
     display: flex;
     align-items: center;
-    padding: 8px 0 12px 0;
+    padding: 6px 14px;
     cursor: pointer;
     color: var(--text-muted);
-    transition: color 0.15s ease;
-    position: relative;
-    margin-bottom: -1px;
+    border-radius: 6px;
+    transition: background 0.15s ease, color 0.15s ease;
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    user-select: none;
 }
 
 .deeppdf-settings-nav-item:hover {
     color: var(--text-normal);
+    background: var(--background-modifier-hover);
 }
 
-/* 激活状态 - 只有底部 indicator */
 .deeppdf-settings-nav-item.is-active {
-    color: var(--text-normal);
-    font-weight: 500;
-}
-
-.deeppdf-settings-nav-item.is-active::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
     background: var(--interactive-accent);
-    border-radius: 1px;
-}
-
-/* 导航名称 */
-.deeppdf-settings-nav-name {
-    font-size: 13px;
-    letter-spacing: 0.01em;
+    color: var(--text-on-accent);
+    font-weight: 500;
 }
 
 /* ==================== 内容区 ==================== */
 .deeppdf-settings-content {
     flex: 1;
     overflow-y: auto;
-    padding: 32px 12px 32px 0;
+    padding: 24px 8px 32px 0;
 }
 
 .deeppdf-settings-content h3 {
-    margin: 0 0 24px 0;
-    font-size: 18px;
+    margin: 0 0 16px 0;
+    font-size: 16px;
     font-weight: 600;
     color: var(--text-normal);
     letter-spacing: -0.01em;
@@ -98,9 +82,30 @@
     color: var(--text-normal);
 }
 
-/* ==================== 设置项（极简） ==================== */
+/* ==================== 卡片容器 ==================== */
+.deeppdf-settings-card {
+    background: var(--background-secondary);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.deeppdf-settings-card h3 {
+    margin-bottom: 12px;
+}
+
+.deeppdf-settings-card .setting-item {
+    padding: 14px 0;
+    border-bottom: none;
+}
+
+.deeppdf-settings-card .setting-item + .setting-item {
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* ==================== 设置项 ==================== */
 .deeppdf-settings-content .setting-item {
-    padding: 16px 0;
+    padding: 14px 0;
     border-bottom: 1px solid var(--background-modifier-border);
     align-items: center;
 }
@@ -119,35 +124,40 @@
     color: var(--text-muted);
     font-size: 12px;
     margin-top: 2px;
-    line-height: 1.4;
+    line-height: 1.5;
 }
 
 /* ==================== 分隔线 ==================== */
 .deeppdf-settings-divider {
     border: none;
     border-top: 1px solid var(--background-modifier-border);
-    margin: 32px 0;
+    margin: 24px 0;
 }
 
-/* ==================== 可折叠区块（极简） ==================== */
+/* ==================== 可折叠区块（卡片式） ==================== */
 .deeppdf-settings-collapsible-section {
-    margin-bottom: 16px;
+    background: var(--background-secondary);
+    border-radius: 10px;
+    padding: 12px 20px;
+    margin-bottom: 12px;
 }
 
 .deeppdf-settings-collapsible-header {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 0;
+    padding: 8px 0;
     cursor: pointer;
-    border-bottom: 1px solid var(--background-modifier-border);
+    border-bottom: none;
+    transition: opacity 0.15s ease;
 }
 
 .deeppdf-settings-collapsible-header:hover {
     opacity: 0.7;
 }
 
-.deeppdf-settings-collapsible-header h4 {
+.deeppdf-settings-collapsible-header h4,
+.deeppdf-settings-collapsible-header h5 {
     flex: 1;
     margin: 0;
 }
@@ -165,7 +175,7 @@
 }
 
 .deeppdf-settings-collapsible-content {
-    padding: 16px 0;
+    padding: 12px 0 4px 0;
 }
 
 .deeppdf-settings-collapsible-content .setting-item {
@@ -173,11 +183,7 @@
     border-bottom: none;
 }
 
-/* ==================== 服务商卡片（极简） ==================== */
-.deeppdf-settings-collapsible-section:has(.deeppdf-settings-provider-title) {
-    margin-bottom: 12px;
-}
-
+/* ==================== 服务商标题 ==================== */
 .deeppdf-settings-provider-title {
     display: flex;
     align-items: center;
@@ -204,9 +210,9 @@
     color: var(--text-success);
 }
 
-/* ==================== 角色分配行（极简） ==================== */
+/* ==================== 角色分配行 ==================== */
 .deeppdf-settings-role-row {
-    margin-bottom: 20px;
+    margin-bottom: 8px;
 }
 
 .deeppdf-settings-role-row h5 {
@@ -223,7 +229,215 @@
     border-bottom: none;
 }
 
-/* ==================== 自定义滚动条（默认隐藏，悬停时显示） ==================== */
+/* ==================== 预设卡片 ==================== */
+.deeppdf-quick-setup {
+    margin-bottom: 16px;
+}
+
+.deeppdf-quick-setup-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin-bottom: 4px;
+}
+
+.deeppdf-quick-setup-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.deeppdf-preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.deeppdf-preset-card {
+    border: 2px solid var(--background-modifier-border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    position: relative;
+}
+
+.deeppdf-preset-card:hover {
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-preset-card.is-selected {
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent-hover);
+}
+
+.deeppdf-preset-card-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+    margin-bottom: 4px;
+}
+
+.deeppdf-preset-card-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.deeppdf-preset-card-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 6px;
+    vertical-align: middle;
+}
+
+.deeppdf-preset-card-badge.is-free {
+    background: var(--text-success);
+    color: var(--text-on-accent);
+}
+
+.deeppdf-preset-card-badge.is-recommended {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    margin-right: 4px;
+}
+
+/* Key 输入行 */
+.deeppdf-key-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.deeppdf-key-input {
+    flex: 1;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 13px;
+}
+
+.deeppdf-btn-eye {
+    padding: 6px 10px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.deeppdf-key-row .deeppdf-key-status {
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.deeppdf-key-row .deeppdf-key-status.is-success {
+    color: var(--text-success);
+}
+
+.deeppdf-key-row .deeppdf-key-status.is-error {
+    color: var(--text-error);
+}
+
+/* 通用按钮 */
+.deeppdf-btn-secondary {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.deeppdf-btn-secondary:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-btn-primary {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.deeppdf-btn-primary:hover {
+    opacity: 0.9;
+}
+
+/* 注册提示 */
+.deeppdf-hint-register {
+    margin-top: 12px;
+}
+
+/* 操作按钮行 */
+.deeppdf-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* 配置摘要 */
+.deeppdf-config-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.deeppdf-config-summary-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.deeppdf-config-summary-details {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.deeppdf-config-summary-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* 展开/收起高级设置 */
+.deeppdf-toggle-advanced {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.deeppdf-toggle-advanced:hover {
+    color: var(--text-normal);
+}
+
+/* 添加服务商按钮 */
+.deeppdf-settings-add-provider {
+    margin-top: 8px;
+}
+
+/* ==================== 自定义滚动条 ==================== */
 .deeppdf-settings-content::-webkit-scrollbar {
     width: 4px !important;
 }
@@ -245,16 +459,17 @@
     background: var(--text-muted) !important;
 }
 
-/* ==================== 响应式适配 ==================== */
+/* ==================== 响应式 ==================== */
 @media (max-width: 600px) {
     .deeppdf-settings {
         max-width: 100%;
     }
 
     .deeppdf-settings-nav {
-        gap: 16px;
-        padding: 16px 0 0 0;
+        gap: 4px;
+        padding: 12px 0;
         overflow-x: auto;
+        flex-wrap: nowrap;
     }
 
     .deeppdf-settings-nav-item {
@@ -262,7 +477,11 @@
     }
 
     .deeppdf-settings-content {
-        padding: 24px 0;
+        padding: 16px 0;
+    }
+
+    .deeppdf-preset-grid {
+        grid-template-columns: 1fr;
     }
 }
 

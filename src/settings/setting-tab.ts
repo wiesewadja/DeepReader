@@ -5,9 +5,11 @@
 import { App, Notice, PluginSettingTab, Setting, TFolder, FuzzySuggestModal } from 'obsidian';
 import type DeepPDFPlugin from '../main';
 import type { ProviderType } from '../config/providers';
-import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl } from '../config/providers';
+import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl, applyPreset } from '../config/providers';
 import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
+import { PRESETS, getPresetById } from '../config/presets';
+import type { ProviderPreset } from '../config/presets';
 
 
 /** Proposition feature toggle: disabled due to high token cost. Re-enable after optimization. */
@@ -27,6 +29,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     private currentTab: SettingsTabId = 'llm';
     private contentContainer: HTMLElement | null = null;
     private expandedSections: Set<string> = new Set();
+    private selectedPresetId: string | null = null;
+    private testStatus: { success: boolean; message: string } | null = null;
+    private forceShowQuickSetup: boolean = false;
 
     // Tab 定义
     private tabs: SettingsTab[] = [
@@ -88,6 +93,16 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         this.display();
     }
 
+    /** 切换折叠区块并刷新指定 Tab */
+    private toggleSection(sectionId: string, tabId: SettingsTabId): void {
+        if (this.expandedSections.has(sectionId)) {
+            this.expandedSections.delete(sectionId);
+        } else {
+            this.expandedSections.add(sectionId);
+        }
+        this.renderTabContent(tabId);
+    }
+
     /**
      * 渲染 Tab 内容
      */
@@ -117,16 +132,218 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
-     * AI 服务设置 — 仅配置服务商账号（API Key）
+     * AI 服务设置 — 快速配置 / 摘要 / 高级模式
      */
     private renderLLMSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: 'AI 服务' });
-        container.createEl('p', {
-            text: '配置各服务商的 API Key。填写 Key 后，在「服务配置」Tab 中为各用途分配服务商和模型。',
-            cls: 'setting-item-description'
+        if (!this.plugin.settings.setupComplete || this.forceShowQuickSetup) {
+            this.renderQuickSetup(container);
+        } else {
+            this.renderConfigSummary(container);
+        }
+
+        // 高级模式切换
+        const advancedKey = 'advanced-llm';
+        const isAdvanced = this.expandedSections.has(advancedKey);
+
+        const toggleAdvanced = container.createDiv({ cls: 'deeppdf-toggle-advanced' });
+        toggleAdvanced.setText(isAdvanced ? '收起高级设置 ▲' : '展开高级设置 ▼');
+        toggleAdvanced.addEventListener('click', () => this.toggleSection(advancedKey, 'llm'));
+
+        if (isAdvanced) {
+            container.createEl('h3', { text: '服务商账号' });
+            container.createEl('p', {
+                text: '配置各服务商的 API Key。填写 Key 后，在「服务配置」Tab 中为各用途分配服务商和模型。',
+                cls: 'setting-item-description'
+            });
+            this.renderProviderAccounts(container);
+        }
+    }
+
+    /**
+     * 快速配置界面 — 预设卡片 + Key 输入
+     */
+    private renderQuickSetup(container: HTMLElement): void {
+        const card = container.createDiv({ cls: 'deeppdf-settings-card deeppdf-quick-setup' });
+        card.createEl('div', { text: '开始使用 DeepReader', cls: 'deeppdf-quick-setup-title' });
+        card.createEl('div', {
+            text: '选择一个 AI 服务方案，填入 API Key 即可开始',
+            cls: 'deeppdf-quick-setup-desc',
         });
 
-        this.renderProviderAccounts(container);
+        // 预设卡片网格
+        const grid = card.createDiv({ cls: 'deeppdf-preset-grid' });
+        for (const preset of PRESETS) {
+            const presetCard = grid.createDiv({ cls: 'deeppdf-preset-card' });
+            if (this.selectedPresetId === preset.id) {
+                presetCard.addClass('is-selected');
+            }
+
+            presetCard.createEl('div', { text: preset.label, cls: 'deeppdf-preset-card-name' });
+            presetCard.createEl('div', { text: preset.description, cls: 'deeppdf-preset-card-desc' });
+
+            // 标签
+            if (preset.recommended || preset.free) {
+                const badgeRow = presetCard.createDiv();
+                if (preset.recommended) {
+                    badgeRow.createEl('span', { text: '推荐', cls: 'deeppdf-preset-card-badge is-recommended' });
+                }
+                if (preset.free) {
+                    badgeRow.createEl('span', { text: '免费额度', cls: 'deeppdf-preset-card-badge is-free' });
+                }
+            }
+
+            presetCard.addEventListener('click', () => {
+                this.selectedPresetId = preset.id;
+                this.testStatus = null;
+                this.renderTabContent('llm');
+            });
+        }
+
+        // 默认选中推荐
+        if (!this.selectedPresetId) {
+            this.selectedPresetId = PRESETS.find(p => p.recommended)?.id || PRESETS[0]?.id || null;
+        }
+
+        // API Key 输入
+        const selectedPreset = this.selectedPresetId ? getPresetById(this.selectedPresetId) : null;
+        const providerId = selectedPreset?.provider || 'siliconflow';
+        const currentKey = this.plugin.settings.providers[providerId]?.apiKey || '';
+
+        const keyRow = card.createDiv({ cls: 'deeppdf-key-row' });
+        const keyInput = keyRow.createEl('input', {
+            cls: 'deeppdf-key-input',
+            attr: {
+                type: 'password',
+                placeholder: `输入 ${PROVIDER_LABELS[providerId as ProviderType] || providerId} API Key`,
+                value: currentKey,
+            },
+        });
+
+        // 显示/隐藏
+        const eyeBtn = keyRow.createEl('button', { text: '👁', cls: 'deeppdf-btn-eye' });
+        let keyVisible = false;
+        eyeBtn.addEventListener('click', () => {
+            keyVisible = !keyVisible;
+            keyInput.type = keyVisible ? 'text' : 'password';
+        });
+
+        // 测试状态
+        if (this.testStatus) {
+            keyRow.createEl('span', {
+                text: this.testStatus.message,
+                cls: `deeppdf-key-status ${this.testStatus.success ? 'is-success' : 'is-error'}`,
+            });
+        }
+
+        // 操作按钮
+        const actionsRow = card.createDiv({ cls: 'deeppdf-actions-row' });
+
+        const testBtn = actionsRow.createEl('button', { text: '测试连接', cls: 'deeppdf-btn-secondary' });
+
+        const confirmBtn = actionsRow.createEl('button', { text: '确认配置 →', cls: 'deeppdf-btn-primary' });
+
+        // 注册链接
+        if (selectedPreset?.website) {
+            const hint = card.createEl('div', { cls: 'setting-item-description deeppdf-hint-register' });
+            hint.createSpan({ text: '还没有 Key？' });
+            hint.createEl('a', {
+                text: `前往注册${selectedPreset.free ? '（免费）' : ''}`,
+                attr: { href: selectedPreset.website, target: '_blank' },
+            });
+        }
+
+        // 事件处理
+        testBtn.addEventListener('click', async () => {
+            const apiKey = keyInput.value.trim();
+            if (!apiKey || !selectedPreset) return;
+
+            testBtn.textContent = '测试中...';
+            testBtn.setAttribute('disabled', 'true');
+
+            try {
+                const { testConnection } = await import('../config/model-fetcher');
+                const config = PROVIDER_CONFIGS[providerId as ProviderType];
+                const result = await testConnection(
+                    config?.baseUrl || '',
+                    apiKey,
+                    selectedPreset.roleAssignments.chat || config?.defaultModel || '',
+                    'chat',
+                );
+                this.testStatus = result.success
+                    ? { success: true, message: `✓ ${result.latencyMs}ms` }
+                    : { success: false, message: `✗ ${result.error}` };
+            } catch (e: any) {
+                this.testStatus = { success: false, message: `✗ ${e.message}` };
+            }
+
+            testBtn.textContent = '测试连接';
+            testBtn.removeAttribute('disabled');
+            this.renderTabContent('llm');
+        });
+
+        confirmBtn.addEventListener('click', async () => {
+            const apiKey = keyInput.value.trim();
+            if (!apiKey || !this.selectedPresetId) {
+                new Notice('请输入 API Key');
+                return;
+            }
+
+            applyPreset(this.selectedPresetId, apiKey, this.plugin.settings);
+            this.plugin.settings.setupComplete = true;
+            this.plugin.resetFrontendAgent();
+            await this.plugin.saveSettings();
+            this.testStatus = null;
+            new Notice('配置完成！可以开始使用了');
+            this.forceShowQuickSetup = false;
+            this.renderTabContent('llm');
+        });
+    }
+
+    /**
+     * 配置摘要 — 已配置时显示
+     */
+    private renderConfigSummary(container: HTMLElement): void {
+        const card = container.createDiv({ cls: 'deeppdf-settings-card' });
+        const summary = card.createDiv({ cls: 'deeppdf-config-summary' });
+
+        // 推断当前使用的预设
+        const currentPreset = this.detectCurrentPreset();
+        const titleText = currentPreset
+            ? `当前方案：${currentPreset.label}`
+            : '当前配置';
+        summary.createEl('div', { text: titleText, cls: 'deeppdf-config-summary-title' });
+
+        // 显示角色摘要
+        const roles = this.plugin.settings.roles;
+        const parts: string[] = [];
+        if (roles.chat) parts.push(`对话: ${roles.chat.model}`);
+        if (roles.embedding) parts.push(`语义搜索: ${roles.embedding.model}`);
+        if (roles.reranker) parts.push(`排序: ${roles.reranker.model}`);
+        if (parts.length === 0) parts.push('仅基础对话');
+        summary.createEl('div', { text: parts.join(' · '), cls: 'deeppdf-config-summary-details' });
+
+        // 操作按钮
+        const actions = summary.createDiv({ cls: 'deeppdf-config-summary-actions' });
+        const switchBtn = actions.createEl('button', { text: '切换方案', cls: 'deeppdf-btn-secondary' });
+
+        switchBtn.addEventListener('click', () => {
+            this.forceShowQuickSetup = true;
+            this.testStatus = null;
+            this.renderTabContent('llm');
+        });
+    }
+
+    /**
+     * 检测当前配置匹配哪个预设
+     */
+    private detectCurrentPreset(): ProviderPreset | null {
+        const { roles } = this.plugin.settings;
+        return PRESETS.find(p =>
+            Object.entries(p.roleAssignments).every(([role, model]) => {
+                const r = (roles as unknown as Record<string, { provider: string; model: string } | null>)[role];
+                return r?.provider === p.provider && r?.model === model;
+            })
+        ) ?? null;
     }
 
     /**
@@ -299,56 +516,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     }
 
     /**
-     * 区域二：用途角色分配
-     */
-    private renderRoleAssignments(container: HTMLElement): void {
-        const roles = this.plugin.settings.roles;
-        if (!roles) return;
-
-        // 必填角色
-        const requiredRoles: { role: RoleType; label: string; desc: string }[] = [
-            { role: 'chat', label: '主对话', desc: '用于主要对话和分析' },
-            { role: 'router', label: '路由', desc: '用于查询路由和快速检索' },
-            { role: 'pageindex', label: '页面索引', desc: '用于书籍索引时的 LLM 调用' },
-        ];
-
-        // 可选角色（proposition 暂时隐藏，后续优化 token 用量后恢复）
-        const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
-            ...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' }] : []),
-            { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
-            { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
-            { role: 'tts', label: '语音播报', desc: 'AI 语音合成播报（禁用则无语音功能）' },
-        ];
-
-        // 必填角色区域
-        for (const { role, label, desc } of requiredRoles) {
-            this.renderRoleRow(container, role, label, desc, false);
-        }
-
-        container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
-        // 可选角色区域
-        for (const { role, label, desc } of optionalRoles) {
-            this.renderRoleRow(container, role, label, desc, true);
-        }
-
-        // 信息图生成（固定使用 SenseNova U1 Fast，非角色模型，单独配置）
-        container.createEl('div', { cls: 'setting-item-info', text: '信息图生成' });
-        const subDesc = container.createEl('div', { cls: 'setting-item-description' });
-        subDesc.setText('填写 SenseNova API Key 后，AI 可在适当时生成专业信息图。');
-        new Setting(container)
-            .addText(text => {
-                text.setPlaceholder("sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-                    .setValue(this.plugin.settings.sensenovaApiKey)
-                    .inputEl.type = 'password';
-                text.onChange(async (value) => {
-                    this.plugin.settings.sensenovaApiKey = value.trim();
-                    await this.plugin.saveSettings();
-                });
-            });
-    }
-
-    /**
      * 渲染单个角色行（可折叠）
      */
     private renderRoleRow(
@@ -445,10 +612,17 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     }));
 
             if (!isEnabled) {
-                row.createEl('p', {
-                    text: `启用后将为此角色分配服务商和模型。`,
-                    cls: 'setting-item-description'
-                });
+                if (role === 'embedding') {
+                    row.createEl('p', {
+                        text: '语义搜索让 AI 不仅匹配关键词，还能理解含义。开启后首次索引稍慢，但搜索质量显著提升。',
+                        cls: 'setting-item-description'
+                    });
+                } else {
+                    row.createEl('p', {
+                        text: `启用后将为此角色分配服务商和模型。`,
+                        cls: 'setting-item-description'
+                    });
+                }
                 return;
             }
         } else {
@@ -491,11 +665,12 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         const supportsModelList = isBuiltIn ? providerConfig.supportsModelList : true;
         const defaultModel = isBuiltIn ? providerConfig.defaultModel : '';
 
+        const oldModel = roleConfig?.model || '';
         const modelSetting = new Setting(row)
             .setName("模型")
             .addText(text => text
                 .setPlaceholder(defaultModel || 'model-name')
-                .setValue(roleConfig?.model || '')
+                .setValue(oldModel)
                 .onChange(async (value) => {
                     (settings.roles as unknown as Record<string, unknown>)[role] = {
                         ...(settings.roles as unknown as Record<string, unknown>)[role] as object,
@@ -503,6 +678,11 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     };
                     this.plugin.resetFrontendAgent();
                     await this.plugin.saveSettings();
+
+                    // Embedding 模型变更警告
+                    if (role === 'embedding' && oldModel && value && oldModel !== value) {
+                        new Notice('已切换向量化模型，已有索引可能需要重建以保持搜索一致性');
+                    }
                 }));
 
         // 测试连接按钮：验证 API Key + Base URL + 模型名是否可用
@@ -629,62 +809,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
 
     /**
-     * PDF 索引设置
-     */
-    private renderPdfIndexSettings(container: HTMLElement): void {
-        container.createEl('h3', { text: 'PDF 索引设置' });
-
-        // PDF 解析参数
-        container.createEl('h4', { text: '解析参数' });
-
-        new Setting(container)
-            .setName("Max Results")
-            .setDesc("Maximum number of results to return")
-            .addSlider(slider => slider
-                .setLimits(1, 20, 1)
-                .setValue(this.plugin.settings.maxResults)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxResults = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("Max Pages Per Node")
-            .setDesc("Maximum pages per section node")
-            .addSlider(slider => slider
-                .setLimits(1, 50, 1)
-                .setValue(this.plugin.settings.maxPagesPerNode)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxPagesPerNode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("Max Tokens Per Node")
-            .setDesc("Maximum tokens per section node")
-            .addSlider(slider => slider
-                .setLimits(1000, 50000, 1000)
-                .setValue(this.plugin.settings.maxTokensPerNode)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.maxTokensPerNode = value;
-                    await this.plugin.saveSettings();
-                }));
-
-        new Setting(container)
-            .setName("Add Node Summary")
-            .setDesc("Use LLM to generate section summaries")
-            .addToggle(toggle => toggle
-                .setValue(this.plugin.settings.ifAddNodeSummary)
-                .onChange(async (value) => {
-                    this.plugin.settings.ifAddNodeSummary = value;
-                    await this.plugin.saveSettings();
-                }));
-    }
-
-/**
      * 服务配置 — 角色分配（选模型）+ 参数调优
      */
     private renderIndexServicesSettings(container: HTMLElement): void {
@@ -694,13 +818,52 @@ export class DeepPDFSettingTab extends PluginSettingTab {
             cls: 'setting-item-description'
         });
 
-        // ═══ 角色分配 ═══
-        this.renderRoleAssignments(container);
+        // ═══ 核心服务卡片 ═══
+        const coreCard = container.createDiv({ cls: 'deeppdf-settings-card' });
+        coreCard.createEl('h4', { text: '核心服务' });
+        const requiredRoles: { role: RoleType; label: string; desc: string }[] = [
+            { role: 'chat', label: '主对话', desc: '用于主要对话和分析' },
+            { role: 'router', label: '路由', desc: '用于查询路由和快速检索' },
+            { role: 'pageindex', label: '页面索引', desc: '用于书籍索引时的 LLM 调用' },
+        ];
+        for (const { role, label, desc } of requiredRoles) {
+            this.renderRoleRow(coreCard, role, label, desc, false);
+        }
 
-        // 分隔线
+        // ═══ 增强服务卡片 ═══
+        const enhanceCard = container.createDiv({ cls: 'deeppdf-settings-card' });
+        enhanceCard.createEl('h4', { text: '增强服务（可选）' });
+        const optionalRoles: { role: RoleType; label: string; desc: string }[] = [
+            ...(PROPOSITION_ENABLED ? [{ role: 'proposition' as RoleType, label: '原子事实', desc: '提取原子事实卡片（禁用则不提取）' }] : []),
+            { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
+            { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
+            { role: 'tts', label: '语音播报', desc: 'AI 语音合成播报（禁用则无语音功能）' },
+        ];
+        for (const { role, label, desc } of optionalRoles) {
+            this.renderRoleRow(enhanceCard, role, label, desc, true);
+        }
+
+        // 信息图 Key（独立卡片）
+        const infoCard = container.createDiv({ cls: 'deeppdf-settings-card' });
+        infoCard.createEl('h4', { text: '信息图生成' });
+        infoCard.createEl('div', {
+            text: '填写 SenseNova API Key 后，AI 可在适当时生成专业信息图。',
+            cls: 'setting-item-description'
+        });
+        new Setting(infoCard)
+            .addText(text => {
+                text.setPlaceholder("sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+                    .setValue(this.plugin.settings.sensenovaApiKey)
+                    .inputEl.type = 'password';
+                text.onChange(async (value) => {
+                    this.plugin.settings.sensenovaApiKey = value.trim();
+                    await this.plugin.saveSettings();
+                });
+            });
+
+        // ═══ 参数调优 ═══
         container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
-        // ═══ 参数调优（可折叠区块）═══
         if (PROPOSITION_ENABLED) {
             this.renderCollapsibleSection(container, 'proposition-params', '📝 原子事实参数', '卡片密度等参数',
                 (section) => this.renderPropositionParams(section));

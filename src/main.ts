@@ -48,6 +48,17 @@ export default class DeepPDFPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
+        // 首次安装：自动打开设置页面引导配置
+        if (!this.settings.setupComplete) {
+            this.app.workspace.onLayoutReady(() => {
+                const setting = (this.app as any).setting;
+                if (setting) {
+                    setting.open();
+                    setting.openTabById('deepreader');
+                }
+            });
+        }
+
         // 日志系统默认开启，通过模块开关控制输出
         log('Loading plugin');
 
@@ -179,6 +190,19 @@ export default class DeepPDFPlugin extends Plugin {
             callback: () => {
                 this.sendTestMessage("这本书主要讲了什么");
             }
+        });
+
+        // 快速配置命令
+        this.addCommand({
+            id: "open-quick-setup",
+            name: "打开快速配置",
+            callback: () => {
+                const setting = (this.app as any).setting;
+                if (setting) {
+                    setting.open();
+                    setting.openTabById('deepreader');
+                }
+            },
         });
 
         // 调试命令：测试分析阅读工具
@@ -1084,6 +1108,14 @@ views:
             this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
         }
         setLogEnabled(this.settings.enableDebugLog);
+
+        // 老用户升级兼容：如果 setupComplete 未定义但已有有效 provider key，自动标记
+        if ((this.settings as any).setupComplete === undefined) {
+            const hasKey = Object.values(this.settings.providers || {})
+                .some((p: any) => p?.apiKey);
+            this.settings.setupComplete = !!hasKey;
+            if (hasKey) await this.saveSettings();
+        }
     }
 
     async saveSettings() {
