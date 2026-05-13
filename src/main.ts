@@ -6,7 +6,7 @@ import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } 
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
-import { DeepPDFSettings, DEFAULT_SETTINGS } from './config/settings.js';
+import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
 import { getProviderConfig, PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
@@ -1110,11 +1110,8 @@ views:
         setLogEnabled(this.settings.enableDebugLog);
 
         // 老用户升级兼容：如果 setupComplete 未定义但已有有效 provider key，自动标记
-        if ((this.settings as any).setupComplete === undefined) {
-            const hasKey = Object.values(this.settings.providers || {})
-                .some((p: any) => p?.apiKey);
-            this.settings.setupComplete = !!hasKey;
-            if (hasKey) await this.saveSettings();
+        if (detectSetupComplete(this.settings)) {
+            await this.saveSettings();
         }
     }
 

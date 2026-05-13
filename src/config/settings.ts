@@ -167,6 +167,19 @@ export interface DeepPDFSettings {
 	reranker?: RerankerSettings;
 }
 
+/**
+ * 老用户升级兼容：如果 setupComplete 未定义但已有有效 provider key，自动标记。
+ *
+ * @returns true 如果需要持久化（检测到老用户已有 key）
+ */
+export function detectSetupComplete(settings: DeepPDFSettings): boolean {
+	if (settings.setupComplete !== undefined) return false;
+	const hasKey = Object.values(settings.providers || {})
+		.some((p: any) => p?.apiKey);
+	settings.setupComplete = !!hasKey;
+	return !!hasKey;
+}
+
 export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	// === 新增：两层架构 ===
 	providers: defaultProviders(),

@@ -8,7 +8,7 @@ import type { ProviderType } from '../config/providers';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName, getProviderBaseUrl, applyPreset } from '../config/providers';
 import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
-import { PRESETS, getPresetById } from '../config/presets';
+import { PRESETS, getPresetById, detectCurrentPreset } from '../config/presets';
 import type { ProviderPreset } from '../config/presets';
 
 
@@ -337,13 +337,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
      * 检测当前配置匹配哪个预设
      */
     private detectCurrentPreset(): ProviderPreset | null {
-        const { roles } = this.plugin.settings;
-        return PRESETS.find(p =>
-            Object.entries(p.roleAssignments).every(([role, model]) => {
-                const r = (roles as unknown as Record<string, { provider: string; model: string } | null>)[role];
-                return r?.provider === p.provider && r?.model === model;
-            })
-        ) ?? null;
+        return detectCurrentPreset(this.plugin.settings.roles as Record<string, { provider: string; model: string } | null>);
     }
 
     /**

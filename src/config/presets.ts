@@ -100,3 +100,19 @@ export function buildRolesFromPreset(preset: ProviderPreset): Record<string, AIR
 	}
 	return roles;
 }
+
+/**
+ * 检测当前 settings 是否匹配某个预设
+ *
+ * 当所有预设分配的角色 provider + model 完全一致时返回该预设，否则返回 null。
+ */
+export function detectCurrentPreset(
+	roles: Record<string, { provider: string; model: string } | null>,
+): ProviderPreset | null {
+	return PRESETS.find(p =>
+		Object.entries(p.roleAssignments).every(([role, model]) => {
+			const r = roles[role];
+			return r?.provider === p.provider && r?.model === model;
+		})
+	) ?? null;
+}

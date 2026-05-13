@@ -2,7 +2,7 @@
  * providers.ts 单元测试
  */
 import { describe, it, expect } from 'vitest';
-import { resolveRoleConfig, getAvailableProvidersForRole, PROVIDER_CONFIGS } from '../providers';
+import { resolveRoleConfig, getAvailableProvidersForRole, PROVIDER_CONFIGS, normalizeBaseUrl, getProviderName, getProviderBaseUrl } from '../providers';
 import { ROLE_CAPABILITY } from '../ai-roles';
 import type { DeepPDFSettings } from '../settings';
 import { DEFAULT_SETTINGS } from '../settings';
