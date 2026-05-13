@@ -47,3 +47,14 @@ backend/data/
 bin/
 .obsidian-cache
 test-vault/
+
+# AI agent tools (internal)
+.gstack/
+.superpowers/
+.deploy-config.json
+
+# macOS
+.DS_Store
+
+# Working files
+tasks/

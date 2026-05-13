@@ -22,7 +22,7 @@ async function main() {
   // LLM config (siliconflow)
   const llmConfig = {
     model: "Qwen/Qwen3-8B",
-    apiKey: "sk-xoulukidezsjyvdhyxcoatdtmsbhgrmsikhxtrlfrzqwoney",
+    apiKey: process.env.SILICONFLOW_API_KEY || "",
     baseUrl: "https://api.siliconflow.cn/v1",
   };
 
