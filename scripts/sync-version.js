@@ -9,18 +9,8 @@ const path = require('path');
 const rootDir = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(rootDir, 'package.json');
 const binDir = path.join(rootDir, 'bin');
-const manifestJsonPath = path.join(binDir, 'manifest.json');
-
-// manifest 模板内容
-const MANIFEST_TEMPLATE = {
-    "id": "deepreader",
-    "name": "DeepReader",
-    "minAppVersion": "1.0.0",
-    "description": "智能深度阅读插件，支持 PDF/EPUB 等格式的索引、搜索与 AI 对话",
-    "author": "DeepReader Team",
-    "authorUrl": "https://github.com/deepreader",
-    "isDesktopOnly": true
-};
+const rootManifestPath = path.join(rootDir, 'manifest.json');
+const binManifestPath = path.join(binDir, 'manifest.json');
 
 try {
     // 确保 bin 目录存在
@@ -30,12 +20,17 @@ try {
 
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     const version = packageJson.version;
-    const manifest = { ...MANIFEST_TEMPLATE, version };
 
-    fs.writeFileSync(manifestJsonPath, JSON.stringify(manifest, null, 2));
-    console.log(`✅ Generated bin/manifest.json with version: ${version}`);
+    // 从根目录 manifest.json 读取模板（保留 description 等字段）
+    const rootManifest = JSON.parse(fs.readFileSync(rootManifestPath, 'utf8'));
+    const manifest = { ...rootManifest, version };
+
+    // 同时写入根目录和 bin/
+    fs.writeFileSync(rootManifestPath, JSON.stringify(manifest, null, '\t') + '\n');
+    fs.writeFileSync(binManifestPath, JSON.stringify(manifest, null, '\t') + '\n');
+    console.log(`Synced manifest.json with version: ${version}`);
 
 } catch (error) {
-    console.error('❌ Failed to generate manifest:', error.message);
+    console.error('Failed to sync manifest:', error.message);
     process.exit(1);
 }
