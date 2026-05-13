@@ -337,7 +337,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
      * 检测当前配置匹配哪个预设
      */
     private detectCurrentPreset(): ProviderPreset | null {
-        return detectCurrentPreset(this.plugin.settings.roles as Record<string, { provider: string; model: string } | null>);
+        return detectCurrentPreset(this.plugin.settings.roles as unknown as Record<string, { provider: string; model: string } | null>);
     }
 
     /**
