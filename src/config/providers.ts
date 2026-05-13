@@ -8,6 +8,7 @@ import type { RoleType } from './types.js';
 import type { ProviderType } from './types.js';
 export type { ProviderType } from './types.js';
 import { ROLE_CAPABILITY } from './ai-roles';
+import { getPresetById, buildRolesFromPreset } from './presets';
 
 /** 服务商能力矩阵 */
 export interface ProviderCapabilities {
@@ -208,6 +209,40 @@ export function getProviderBaseUrl(id: string, settings: DeepPDFSettings): strin
 			return raw ? normalizeBaseUrl(raw) : '';
 	}
 	return '';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 预设配置
+// ═══════════════════════════════════════════════════════════════
+
+	// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 应用预设配置：填写 API Key + 自动分配角色
+ *
+ * 修改 settings 对象（原地修改）。
+ */
+export function applyPreset(
+	presetId: string,
+	apiKey: string,
+	settings: DeepPDFSettings,
+): void {
+	const preset = getPresetById(presetId);
+	if (!preset) throw new Error(`Unknown preset: ${presetId}`);
+
+	// 填写 API Key
+	const providers = settings.providers as Record<string, { apiKey?: string; baseUrl?: string; name?: string }>;
+	if (!providers[preset.provider]) {
+		providers[preset.provider] = { apiKey };
+	} else {
+		providers[preset.provider].apiKey = apiKey;
+	}
+
+	// 分配角色
+	const roles = buildRolesFromPreset(preset);
+	for (const [role, config] of Object.entries(roles)) {
+		(settings.roles as unknown as Record<string, unknown>)[role] = config;
+	}
 }
 
 // ═══════════════════════════════════════════════════════════════

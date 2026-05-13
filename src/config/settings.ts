@@ -78,6 +78,9 @@ export interface DeepPDFSettings {
 	apiPort: number;
 	maxResults: number;
 
+	// === 首次配置 ===
+	setupComplete: boolean;
+
 	// PDF 索引设置
 	maxPagesPerNode: number;
 	maxTokensPerNode: number;
@@ -174,6 +177,9 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	// === 保留字段 ===
 	apiPort: 6088,
 	maxResults: 5,
+
+	// === 首次配置 ===
+	setupComplete: false,
 
 	// PDF 索引设置
 	maxPagesPerNode: 10,
