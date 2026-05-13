@@ -15,7 +15,7 @@ export { LLMClient } from './llm-client.js';
 export { SkillLoader } from './skills/loader.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
-export { initTracer, getTracer } from './tracing/index.js';
+export { NoopTracer, NoopTraceContext } from './tracing/index.js';
 export type { ITraceContext, ITracer } from './tracing/types.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
@@ -50,7 +50,7 @@ import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { agentLog as log } from '../utils/logger.js';
-import { initTracer, getTracer } from './tracing/index.js';
+import { NoopTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
 import { cognitiveEngine } from './graph/index.js';
@@ -72,12 +72,6 @@ export interface FrontendAgentOptions {
   fastBaseUrl?: string;
   fastModel?: string;
   fastProviderName?: string;
-
-  // Langfuse 追踪配置（可选）
-  langfusePublicKey?: string;
-  langfuseSecretKey?: string;
-  langfuseBaseUrl?: string;
-  langfuseEnabled?: boolean;
 
   // Human-in-the-Loop 设置（可选）
   enableHumanReview?: boolean;
@@ -137,17 +131,6 @@ export class FrontendAgent {
       deepReaderDir: 'DeepReader',
     });
     this.intentRouter = new IntentRouter();
-
-    // 初始化追踪器（Langfuse）
-    if (options.langfuseEnabled) {
-      initTracer({
-        publicKey: options.langfusePublicKey,
-        secretKey: options.langfuseSecretKey,
-        baseUrl: options.langfuseBaseUrl,
-      });
-    } else {
-      initTracer();
-    }
   }
 
   async initialize(): Promise<void> {

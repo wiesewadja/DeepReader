@@ -107,15 +107,6 @@ export interface DeepPDFSettings {
 	// SenseNova 信息图生成 API Key
 	sensenovaApiKey: string;
 
-	// Langfuse 追踪配置
-	langfusePublicKey: string;
-	langfuseSecretKey: string;
-	langfuseBaseUrl: string;
-	langfuseEnabled: boolean;
-
-	// UI 状态
-	lastSettingsTab: string;
-
 	// LangGraph 引擎设置
 	enableHumanReview: boolean;
 
@@ -217,15 +208,6 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	autoTTS: false,
 	enableVoiceReply: false,
 	sensenovaApiKey: "",
-
-	// Langfuse 追踪配置
-	langfusePublicKey: "",
-	langfuseSecretKey: "",
-	langfuseBaseUrl: "http://localhost:3000",
-	langfuseEnabled: false,
-
-	// UI 状态
-	lastSettingsTab: "llm",
 
 	// LangGraph 引擎设置
 	enableHumanReview: false,

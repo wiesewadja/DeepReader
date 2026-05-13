@@ -951,12 +951,6 @@ export default class DeepPDFPlugin extends Plugin {
                     ? getProviderName(routerProvider, this.settings)
                     : undefined,
 
-                // Langfuse 追踪配置
-                langfusePublicKey: this.settings.langfusePublicKey || undefined,
-                langfuseSecretKey: this.settings.langfuseSecretKey || undefined,
-                langfuseBaseUrl: this.settings.langfuseBaseUrl || undefined,
-                langfuseEnabled: this.settings.langfuseEnabled,
-
                 // LangSmith 追踪配置（LangGraph 引擎专用）
                 langsmithApiKey: this.settings.langsmithApiKey || undefined,
                 langsmithProject: this.settings.langsmithProject || undefined,
@@ -1163,13 +1157,6 @@ views:
             this.readingModeService = null;
         }
 
-        // 关闭追踪器，刷新剩余的 trace 数据
-        try {
-            const { getTracer } = await import('./agent/tracing/index.js');
-            await getTracer().shutdown();
-        } catch {
-            // 静默处理追踪器关闭失败
-        }
     }
 
     /**
