@@ -52,15 +52,12 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         containerEl.empty();
         containerEl.addClass('deeppdf-settings');
 
-        // 创建 Tab 布局容器
-        const tabContainer = containerEl.createDiv({ cls: 'deeppdf-settings-tabs' });
-
         // 左侧 Tab 导航
-        const navContainer = tabContainer.createDiv({ cls: 'deeppdf-settings-nav' });
+        const navContainer = containerEl.createDiv({ cls: 'deeppdf-settings-nav' });
         this.createTabNav(navContainer);
 
         // 右侧内容区
-        this.contentContainer = tabContainer.createDiv({ cls: 'deeppdf-settings-content' });
+        this.contentContainer = containerEl.createDiv({ cls: 'deeppdf-settings-content' });
 
         // 渲染当前选中的 Tab
         this.renderTabContent(this.currentTab);
