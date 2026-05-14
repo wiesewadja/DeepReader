@@ -48,6 +48,8 @@ export class ReadingModeService {
     private pendingRetry: ReturnType<typeof setTimeout> | null = null;
     /** 已激活分页阅读模式的书籍名（同书新章节不重复激活） */
     private activatedBookForReading: string = '';
+    /** 页码记忆：filePath → 上次阅读的页码 */
+    private pageMemory: Map<string, number> = new Map();
 
     constructor(app: App, callbacks?: ReadingModeCallbacks) {
         this.app = app;
@@ -368,6 +370,15 @@ export class ReadingModeService {
     deactivate(): void {
         if (!this.isActive) return;
 
+        // 保存当前页码到记忆
+        if (this.currentFile && this.paginator) {
+            this.pageMemory.set(this.currentFile.path, this.paginator.getCurrentPage());
+            if (this.pageMemory.size > 200) {
+                const firstKey = this.pageMemory.keys().next().value;
+                if (firstKey) this.pageMemory.delete(firstKey);
+            }
+        }
+
         // 清理墨迹层
         this.inkLayer?.cleanup();
         this.inkLayer = null;
@@ -517,6 +528,24 @@ export class ReadingModeService {
                 });
                 this.paginator.paginateAndShow();
 
+
+                // 恢复上次阅读的页码（双 rAF 确保 paginator 布局完成）
+                if (this.currentFile) {
+                    const savedPage = this.pageMemory.get(this.currentFile.path);
+                    if (savedPage && savedPage > 1) {
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                if (this.paginator) {
+                                    this.paginator.setCurrentPage(savedPage);
+                                    const scrollView = this.activeContainerEl?.querySelector('.markdown-preview-view') as HTMLElement;
+                                    if (scrollView) {
+                                        scrollView.scrollLeft = (savedPage - 1) * scrollView.clientWidth;
+                                    }
+                                }
+                            });
+                        });
+                    }
+                }
                 // 分页器就绪后激活墨迹层
                 if (this.inkLayer) {
                     this.inkLayer.activate();

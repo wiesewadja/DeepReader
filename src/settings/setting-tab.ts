@@ -10,6 +10,7 @@ import type { RoleType } from '../config/ai-roles';
 import { ROLE_CAPABILITY } from '../config/ai-roles';
 import { PRESETS, getPresetById, detectCurrentPreset } from '../config/presets';
 import type { ProviderPreset } from '../config/presets';
+import { DEFAULT_DIMENSIONS } from '../services/profile-facts';
 
 
 /** Proposition feature toggle: disabled due to high token cost. Re-enable after optimization. */
@@ -1110,6 +1111,91 @@ export class DeepPDFSettingTab extends PluginSettingTab {
                     }).open();
                 }));
 
+        
+        // ── 自定义维度管理 ──
+        container.createEl('h4', { text: '画像维度' });
+        container.createEl('p', {
+            text: '内置 7 个维度覆盖核心方面。你也可以添加自定义维度，画像会从更多角度理解你。',
+            cls: 'setting-item-description',
+        });
+
+        // 显示内置维度（只读）
+        const builtInEl = container.createDiv({ cls: 'deeppdf-dimension-list' });
+        builtInEl.createEl('div', { text: '内置维度', cls: 'deeppdf-dimension-group-label' });
+        for (const d of DEFAULT_DIMENSIONS) {
+            builtInEl.createDiv({ cls: 'deeppdf-dimension-tag' }, el => {
+                el.createSpan({ text: d.label });
+            });
+        }
+
+        // 显示自定义维度（可删除）
+        const customDimensions = this.plugin.settings.profileDimensions || [];
+        if (customDimensions.length > 0) {
+            const customEl = container.createDiv({ cls: 'deeppdf-dimension-list' });
+            customEl.createEl('div', { text: '自定义维度', cls: 'deeppdf-dimension-group-label' });
+            for (let i = 0; i < customDimensions.length; i++) {
+                const dim = customDimensions[i];
+                const row = customEl.createDiv({ cls: 'deeppdf-dimension-row' });
+                row.createDiv({ cls: 'deeppdf-dimension-tag' }, el => {
+                    el.createSpan({ text: dim.label });
+                });
+                const removeBtn = row.createEl('button', { text: '✕', cls: 'deeppdf-dimension-remove' });
+                const dimKey = dim.key;
+                removeBtn.addEventListener('click', async () => {
+                    this.plugin.settings.profileDimensions =
+                        this.plugin.settings.profileDimensions.filter(d => d.key !== dimKey);
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('profile');
+                });
+            }
+        }
+
+        // 添加自定义维度
+        new Setting(container)
+            .setName('添加自定义维度')
+            .addText(text => {
+                text.setPlaceholder('维度名称，如「学习」「健康」');
+                text.inputEl.addEventListener('keydown', async (e: KeyboardEvent) => {
+                    if (e.key === 'Enter') {
+                        const label = text.inputEl.value.trim();
+                        if (!label) return;
+                        const rawKey = label.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g, '_').replace(/^_+|_+$/g, '');
+                        const key = rawKey || `custom_${Date.now()}`;
+                        if (!this.plugin.settings.profileDimensions) {
+                            this.plugin.settings.profileDimensions = [];
+                        }
+                        const allLabels = [...DEFAULT_DIMENSIONS, ...this.plugin.settings.profileDimensions].map(d => d.label);
+                        if (allLabels.includes(label)) {
+                            new Notice('该维度已存在');
+                            return;
+                        }
+                        this.plugin.settings.profileDimensions.push({ key, label });
+                        await this.plugin.saveSettings();
+                        this.renderTabContent('profile');
+                    }
+                });
+            })
+            .addButton(btn => btn
+                .setButtonText('添加')
+                .onClick(async () => {
+                    const input = btn.buttonEl.closest('.setting-item')?.querySelector('input');
+                    const label = input?.value?.trim();
+                    if (!label) return;
+                    const rawKey = label.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]/g, '_').replace(/^_+|_+$/g, '');
+                    const key = rawKey || `custom_${Date.now()}`;
+                    if (!this.plugin.settings.profileDimensions) {
+                        this.plugin.settings.profileDimensions = [];
+                    }
+                    const allLabels = [...DEFAULT_DIMENSIONS, ...this.plugin.settings.profileDimensions].map(d => d.label);
+                    if (allLabels.includes(label)) {
+                        new Notice('该维度已存在');
+                        return;
+                    }
+                    this.plugin.settings.profileDimensions.push({ key, label });
+                    await this.plugin.saveSettings();
+                    this.renderTabContent('profile');
+                }));
+
         const builder = (this.plugin as any).profileBuilder;
         const hasProfile = !!(await builder?.readMeta?.());
 
@@ -1179,7 +1265,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         const stageLabels: Record<string, string> = {
             scanning: '扫描笔记文件',
             indexing: '建立索引',
-            generating: '生成画像摘要',
+            extracting: '抽取维度事实',
+            synthesizing: '生成画像',
+            summarizing: '生成摘要',
             done: '构建完成',
         };
 
@@ -1211,11 +1299,13 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         if (builder.getIsBuilding()) {
             setTimeout(() => this.pollBuildProgress(btn, statusEl, progressEl, force), 500);
         } else {
+            // 构建完成：更新按钮文字，显示完成状态，然后延迟刷新页面
             if (btn) btn.setButtonText(force ? '重建' : '构建画像');
             progressEl.empty();
             this.refreshProfileStatus(statusEl);
             (this.plugin as any).frontendAgent?.invalidateProfileCache?.();
-            this.renderTabContent('profile');
+            // 延迟刷新，让用户看到完成状态
+            setTimeout(() => this.renderTabContent('profile'), 800);
         }
     }
 
@@ -1239,13 +1329,20 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
         btn.setButtonText('取消构建');
 
+        // 立即显示启动状态
+        progressEl.empty();
+        const startLabel = progressEl.createDiv({ cls: 'deeppdf-profile-progress-label' });
+        startLabel.setText('正在启动构建...');
+        statusEl.empty();
+
         builder.build(undefined, force).catch((e: any) => {
             if (e.name !== 'AbortError') {
                 new Notice(`构建失败：${e.message}`);
             }
         });
 
-        this.pollBuildProgress(btn, statusEl, progressEl, force);
+        // 延迟 100ms 再开始轮询，确保 build() 已将 isBuilding 设为 true
+        setTimeout(() => this.pollBuildProgress(btn, statusEl, progressEl, force), 100);
     }
 
     /**

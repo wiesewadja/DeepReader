@@ -1,8 +1,9 @@
 /**
  * ProfileBuilder — 从用户笔记目录构建用户画像
  *
- * 扫描指定目录下的 Markdown 文件，建立 BM25 + 向量索引，
- * 并通过 LLM 分批提炼自然语言用户画像。
+ * 两阶段提炼：
+ *   Stage 1: 分批按维度抽取事实（extractFacts）
+ *   Stage 2: 基于全部事实生成自然语言画像（synthesizeProfile）
  */
 
 import { TFile, TFolder, type App } from 'obsidian';
@@ -18,6 +19,15 @@ import {
 } from '../pageindex/vault/vectors';
 import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
 import { fetchWithCorsFallback } from '../utils/safe-request';
+import {
+	DEFAULT_DIMENSIONS,
+	type ProfileFactDimension,
+	type ProfileFacts,
+	parseFactsText,
+	mergeFacts,
+	createEmptyFacts,
+	buildDimensionList,
+} from './profile-facts';
 
 export interface ProfileMeta {
 	sourceDir: string;
@@ -25,35 +35,45 @@ export interface ProfileMeta {
 	processedFiles: Record<string, { mtime: string; size: number }>;
 	indexId: string;
 	fileCount: number;
+	factCount: number;
+	dimensionKeys: string[];
 }
 
 export interface BuildProgress {
-	stage: 'scanning' | 'indexing' | 'generating' | 'done';
+	stage: 'scanning' | 'indexing' | 'extracting' | 'synthesizing' | 'summarizing' | 'done';
 	current: number;
 	total: number;
 	message: string;
 }
 
-const PROFILE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。现在你读到了他的一些私人笔记、随手记和语音转述。
+// ═══ Stage 1 Prompt ═══
 
-请用你的理解，写一段关于他的描绘。不是冷冰冰的分析报告，而是像在跟另一个朋友提起他时的那种语气——带着理解、带着温度。
+const EXTRACT_SYSTEM_PROMPT_TEMPLATE = `你是一个善于观察的人。现在你读到了用户的一些私人笔记、随手记和语音转述。
 
-留意时间线：人的状态是流动的。他在 2021 年的焦虑，到 2024 年可能变成了从容。如果你在不同时期的笔记里看到了变化，把它写出来，那才是真实的他。
+请从中提取关于用户的**具体事实**。只提取笔记中明确提到的，不要推测和发挥。
 
-写的时候注意：
-- 用「你」来称呼他，就像当面聊天
-- 关注他这个人本身：他正处在人生的什么阶段、在意什么、为什么事开心或困扰、在往哪个方向走
-- 如果笔记里有他对家人、工作、自我的思考，把这些线索串起来
-- 不要过度解读，他写什么你就理解什么
-- 500-1000 字`;
+按以下维度分类输出。每个维度下列出观察到的具体事实，用分号（；）分隔。如果没有涉及某个维度，留空。
 
-const MERGE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你从不同时期、不同片段的笔记中分别写了一些关于他的描绘，现在需要把它们合在一起。
+输出格式（严格遵循）：
+{{DIMENSION_LINES}}
 
-合的时候注意：
-- 这不是拼贴，是融合。同一个主题在不同片段里被提到，保留最丰富、最打动人的那一版
-- 时间线很重要。他年轻时执着的事，后来可能放下了；曾经困扰他的，现在可能想通了。把这种变化写出来
-- 保留那些特别具体的细节——某一天他说的一句话、一个比喻、一次顿悟。这些比概括性的标签有价值得多
-- 用「你」称呼他，语气像老朋友在描绘一个很了解的人
+注意：
+- 只提取客观事实和明确表达的态度，不写概括性评价
+- 保留用户说过的原话（用引号标注）
+- 标注时间线索（如"2025年初"）
+- 每个事实尽量简洁，一句话一个事实`;
+
+// ═══ Stage 2 Prompt ═══
+
+const SYNTHESIZE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你从他的大量笔记中提取了关于他的方方面面的事实。
+
+请基于这些事实，写一段关于他的完整描绘。像在跟另一个朋友提起他时的那种语气——带着理解、带着温度。
+
+注意：
+- 用「你」称呼他
+- 每个维度至少覆盖到（如果有事实的话）
+- 保留具体细节——他说过的原话、比喻、顿悟
+- 时间线上有明显变化的要写出来
 - 500-1000 字
 - 不编造他没有说过的话`;
 
@@ -69,24 +89,12 @@ const SUMMARY_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友�
 
 写 500-800 字。用"他"来称呼。不用面面俱到，抓住最能定义他的那几条线。像一个了解他的人，在灯下跟朋友谈起他时会说的话。`;
 
-const INCREMENTAL_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你对他已经有所了解，现在他又写了一些新的笔记。
-
-请结合你对他的已有了解和新笔记，更新你对他的描绘。
-
-注意：
-- 他可能没变，那就不需要改。但如果有新的想法或状态出现，把它补充进去
-- 保持老朋友的语气，用「你」称呼他
-- 500-1000 字
-- 不编造他没有说过的话`;
-
 export class ProfileBuilder {
 	private app: App;
 	private settings: DeepPDFSettings;
 	private isBuilding = false;
 	private abortController: AbortController | null = null;
-	/** 当前构建进度（设置页可读取） */
 	latestProgress: BuildProgress | null = null;
-	private buildPromise: Promise<void> | null = null;
 	private bufferMutex: Promise<void> = Promise.resolve();
 
 	constructor(app: App, settings: DeepPDFSettings) {
@@ -94,7 +102,6 @@ export class ProfileBuilder {
 		this.settings = settings;
 	}
 
-	/** Refresh settings reference (call when settings change) */
 	updateSettings(settings: DeepPDFSettings): void {
 		this.settings = settings;
 	}
@@ -103,6 +110,7 @@ export class ProfileBuilder {
 	private get metaPath() { return 'DeepReader/.profile-meta.json'; }
 	private get profilePath() { return 'DeepReader/USER_PROFILE.md'; }
 	private get summaryPath() { return 'DeepReader/.profile-summary.txt'; }
+	private get factsPath() { return 'DeepReader/.profile-facts.json'; }
 
 	getIndexDir(): string {
 		const hash = generateBookId(this.settings.journalDir);
@@ -114,6 +122,12 @@ export class ProfileBuilder {
 	cancel(): void {
 		this.abortController?.abort();
 		this.abortController = null;
+	}
+
+	// ── 维度列表 ──
+
+	private getDimensions(): ProfileFactDimension[] {
+		return buildDimensionList(this.settings.profileDimensions || []);
 	}
 
 	// ── 文件扫描 ──
@@ -145,7 +159,7 @@ export class ProfileBuilder {
 	async readMeta(): Promise<ProfileMeta | null> {
 		try {
 			const content = await this.vault.adapter.read(this.metaPath);
-			return JSON.parse(content);
+			const data = JSON.parse(content); return validateMeta(data) ? data : null;
 		} catch { return null; }
 	}
 
@@ -157,6 +171,19 @@ export class ProfileBuilder {
 		try {
 			return await this.vault.adapter.read(this.profilePath);
 		} catch { return null; }
+	}
+
+	// ── Facts 读写 ──
+
+	async readFacts(): Promise<ProfileFacts | null> {
+		try {
+			const content = await this.vault.adapter.read(this.factsPath);
+			const data = JSON.parse(content); return validateFacts(data);
+		} catch { return null; }
+	}
+
+	async writeFacts(facts: ProfileFacts): Promise<void> {
+		await this.vault.adapter.write(this.factsPath, JSON.stringify(facts, null, 2));
 	}
 
 	// ── 索引构建 ──
@@ -194,31 +221,39 @@ export class ProfileBuilder {
 		const bm25 = buildBM25Index(nodes);
 		await this.vault.adapter.write(`${indexDir}bm25.json`, JSON.stringify(bm25));
 
-		// Embedding（如果已配置）
+		// Embedding（如果已配置）— 分批处理，每批 16 个
 		const embOpts = this.getEmbeddingOptions();
 		if (embOpts) {
 			const vectors: VectorRecord[] = [];
 			const chunks: ChunkTextRecord[] = [];
+			const BATCH = 16;
 
-			for (let i = 0; i < nodes.length; i++) {
+			for (let i = 0; i < nodes.length; i += BATCH) {
 				if (signal?.aborted) return;
-				const node = nodes[i];
-				const text = node.text.slice(0, 8000);
+				const batch = nodes.slice(i, i + BATCH);
+				const texts = batch.map(n => n.text.slice(0, 2000));
+
+				onProgress?.({
+					stage: 'indexing',
+					current: Math.min(i + BATCH, nodes.length),
+					total: nodes.length,
+					message: `生成向量... (${Math.min(i + BATCH, nodes.length)}/${nodes.length})`,
+				});
 
 				try {
-					const embeddings = await generateEmbeddings([text], embOpts);
-					if (embeddings.length > 0) {
+					const embeddings = await generateEmbeddings(texts, embOpts);
+					for (let j = 0; j < batch.length && j < embeddings.length; j++) {
 						vectors.push({
-							chunkId: node.id, nodeId: node.id, blockIds: [],
-							type: 'summary', level: 'L1', vector: embeddings[0],
+							chunkId: batch[j].id, nodeId: batch[j].id, blockIds: [],
+							type: 'summary', level: 'L1', vector: embeddings[j],
 						});
 						chunks.push({
-							chunkId: node.id, nodeId: node.id, blockIds: [],
-							text, type: 'summary',
+							chunkId: batch[j].id, nodeId: batch[j].id, blockIds: [],
+							text: texts[j], type: 'summary',
 						});
 					}
 				} catch (e) {
-					console.warn('[ProfileBuilder] embedding failed for', node.id, e);
+					console.warn(`[ProfileBuilder] embedding batch ${i}-${i + batch.length} failed:`, e);
 				}
 			}
 
@@ -235,6 +270,113 @@ export class ProfileBuilder {
 		return resolved ? toEmbeddingOptions(resolved) : null;
 	}
 
+	// ── Stage 1: 维度事实抽取 ──
+
+	async extractFacts(
+		files: TFile[],
+		onProgress?: (p: BuildProgress) => void,
+		signal?: AbortSignal,
+	): Promise<Record<string, string[]>> {
+		const { baseUrl, apiKey, model } = this.getChatConfig();
+		const dimensions = this.getDimensions();
+
+		// 并发读取文件内容（每批 50 个）
+		const contents: string[] = [];
+		const READ_BATCH = 50;
+		for (let i = 0; i < files.length; i += READ_BATCH) {
+			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+			const slice = files.slice(i, i + READ_BATCH);
+			const results = await Promise.all(
+				slice.map(async f => {
+					let c = await this.vault.cachedRead(f);
+					c = c.replace(/^---[\s\S]*?---\n*/, '').trim();
+					return c ? `--- ${f.name} ---\n${c}` : '';
+				}),
+			);
+			contents.push(...results.filter(Boolean));
+			onProgress?.({
+				stage: 'extracting',
+				current: Math.min(i + READ_BATCH, files.length),
+				total: files.length,
+				message: `读取笔记中... (${Math.min(i + READ_BATCH, files.length)}/${files.length})`,
+			});
+		}
+
+		if (contents.length === 0) return {};
+
+		// 按大小分批（12000 字符/批，减少 LLM 调用次数）
+		const batches = this.batchBySize(contents, 12000);
+		const CONCURRENCY = 5;
+		const allFacts: Record<string, string[]> = {};
+		for (const d of dimensions) { allFacts[d.key] = []; }
+
+		const systemPrompt = EXTRACT_SYSTEM_PROMPT_TEMPLATE
+			.replace('{{DIMENSION_LINES}}', dimensions.map(d => `[${d.label.replace(/[\[\]\n\r]/g, '')}] `).join('\n').trimEnd());
+
+		for (let i = 0; i < batches.length; i += CONCURRENCY) {
+			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+
+			const chunk = batches.slice(i, i + CONCURRENCY);
+			const results = await Promise.all(
+				chunk.map(batch => {
+					const batchText = batch.join('\n\n');
+					return this.callLLM(
+						systemPrompt,
+						`以下是他的部分笔记：\n\n${batchText}\n\n请按维度提取事实。`,
+						baseUrl, apiKey, model, signal,
+					).catch(() => '');
+				}),
+			);
+
+			for (const text of results) {
+				if (!text) continue;
+				const batchFacts = parseFactsText(text, dimensions);
+				for (const d of dimensions) {
+					if (batchFacts[d.key]) {
+						allFacts[d.key].push(...batchFacts[d.key]);
+					}
+				}
+			}
+
+			const done = Math.min(i + CONCURRENCY, batches.length);
+			onProgress?.({
+				stage: 'extracting',
+				current: done,
+				total: batches.length,
+				message: `抽取事实中... (${done}/${batches.length})`,
+			});
+		}
+
+		return allFacts;
+	}
+
+	// ── Stage 2: 画像生成 ──
+
+	async synthesizeProfile(
+		facts: Record<string, string[]>,
+		signal?: AbortSignal,
+	): Promise<string> {
+		const { baseUrl, apiKey, model } = this.getChatConfig();
+		const dimensions = this.getDimensions();
+
+		// 将维度事实格式化为文本
+		const factsText = dimensions
+			.map(d => {
+				const items = facts[d.key] || [];
+				if (items.length === 0) return '';
+				return `【${d.label}】\n${items.map(f => `- ${f}`).join('\n')}`;
+			})
+			.filter(Boolean)
+			.join('\n\n');
+
+		if (!factsText) return '';
+
+		return this.callLLM(
+			SYNTHESIZE_SYSTEM_PROMPT,
+			`以下是从他的笔记中提取的关于他的各方面事实：\n\n${factsText}\n\n请写一段关于他的完整描绘。`,
+			baseUrl, apiKey, model, signal,
+		);
+	}
 
 	// ── 画像摘要 ──
 
@@ -271,10 +413,6 @@ export class ProfileBuilder {
 
 	private get bufferPath() { return 'DeepReader/.profile-buffer.json'; }
 
-	/**
-	 * 累计对话轮数，每 10 轮提炼一次更新摘要
-	 * 通过 bufferMutex 保证并发安全
-	 */
 	accumulateConversationRound(
 		userMessage: string,
 		assistantMessage: string,
@@ -330,118 +468,7 @@ export class ProfileBuilder {
 		}
 	}
 
-	// ── 画像生成 ──
-
-	async generateProfile(
-		files: TFile[],
-		onProgress?: (p: BuildProgress) => void,
-		signal?: AbortSignal,
-	): Promise<string> {
-		const { baseUrl, apiKey, model } = this.getChatConfig();
-
-		// 读取所有文件内容
-		const contents: string[] = [];
-		for (const file of files) {
-			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-			let content = await this.vault.cachedRead(file);
-			content = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-			if (content) contents.push(`--- ${file.name} ---\n${content}`);
-		}
-
-		if (contents.length === 0) return '';
-
-		// 按大小分批
-		const BATCH_SIZE = 6000;
-		const batches = this.batchBySize(contents, BATCH_SIZE);
-
-		// 每批独立提炼（不依赖前序结果），可并行
-		const CONCURRENCY = 8;
-		const partialProfiles: string[] = [];
-		let done = 0;
-
-		for (let i = 0; i < batches.length; i += CONCURRENCY) {
-			if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-
-			const chunk = batches.slice(i, i + CONCURRENCY);
-			const results = await Promise.all(
-				chunk.map(async (batch, idx) => {
-					const batchText = batch.join('\n\n');
-					return this.callLLM(
-						PROFILE_SYSTEM_PROMPT,
-						`以下是他的部分笔记：\n\n${batchText}\n\n请写一段关于他的描绘。`,
-						baseUrl, apiKey, model, signal,
-					);
-				}),
-			);
-
-			for (const r of results) {
-				if (r) partialProfiles.push(r);
-			}
-
-			done += chunk.length;
-			onProgress?.({
-				stage: 'generating',
-				current: done,
-				total: batches.length,
-				message: `提炼画像中... (${done}/${batches.length})`,
-			});
-		}
-
-		// 如果只有一份局部画像，直接返回
-		if (partialProfiles.length <= 1) return partialProfiles[0] || '';
-
-		// 合并所有局部画像
-		onProgress?.({
-			stage: 'generating',
-			current: batches.length,
-			total: batches.length,
-			message: `合并画像中...（${partialProfiles.length} 份局部分析）`,
-		});
-
-		const merged = await this.callLLM(
-			MERGE_SYSTEM_PROMPT,
-			partialProfiles.map((p, i) => `<画像片段${i + 1}>\n${p}\n</画像片段${i + 1}>`).join('\n\n')
-			+ '\n\n请把它们融合成一段完整的描绘。',
-			baseUrl, apiKey, model, signal,
-		);
-
-		return merged;
-	}
-
-	private async updateProfileIncremental(
-		newFiles: TFile[],
-		onProgress?: (p: BuildProgress) => void,
-		signal?: AbortSignal,
-	): Promise<string> {
-		const { baseUrl, apiKey, model } = this.getChatConfig();
-		const existingProfile = await this.readProfile();
-		const profileBody = existingProfile?.replace(/^---[\s\S]*?---\n*/, '') || '';
-
-		const newContent: string[] = [];
-		let totalChars = 0;
-		const MAX_INCREMENTAL_CHARS = 12000;
-		for (const f of newFiles) {
-			let content = await this.vault.cachedRead(f);
-			content = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-			if (content) {
-				const entry = `--- ${f.name} ---\n${content}`;
-				newContent.push(entry);
-				totalChars += entry.length;
-				if (totalChars > MAX_INCREMENTAL_CHARS) break;
-			}
-		}
-
-		onProgress?.({
-			stage: 'generating', current: 1, total: 1,
-			message: '提炼画像中...',
-		});
-
-		return this.callLLM(
-			INCREMENTAL_SYSTEM_PROMPT,
-			`<你对他的了解>\n${profileBody}\n</你对他的了解>\n\n<他新写的笔记>\n${newContent.join('\n\n')}\n</他新写的笔记>\n\n请更新你对他的描绘。`,
-			baseUrl, apiKey, model, signal,
-		);
-	}
+	// ── 工具方法 ──
 
 	private batchBySize(items: string[], batchSize: number): string[][] {
 		const batches: string[][] = [];
@@ -508,14 +535,15 @@ export class ProfileBuilder {
 		onProgress?: (p: BuildProgress) => void,
 		force = false,
 	): Promise<void> {
-		if (this.isBuilding) return;
+		if (this.isBuilding) {
+			throw new Error("构建正在进行中，请稍后再试");
+		}
 
 		const dir = this.settings.journalDir;
 		if (!dir) throw new Error('未配置笔记目录');
 
 		let folder = this.vault.getAbstractFileByPath(dir);
 		if (!folder || !(folder instanceof TFolder)) {
-			// vault 索引可能未就绪，用 adapter 二次确认
 			if (await this.vault.adapter.exists(dir)) {
 				folder = this.vault.getAbstractFileByPath(dir);
 			}
@@ -528,7 +556,6 @@ export class ProfileBuilder {
 		this.abortController = new AbortController();
 		const signal = this.abortController.signal;
 
-		// 包装 onProgress：同时更新 latestProgress，设置页可随时读取
 		const emit = (p: BuildProgress) => {
 			this.latestProgress = p;
 			onProgress?.(p);
@@ -547,34 +574,59 @@ export class ProfileBuilder {
 				message: `读取笔记中... (${allFiles.length} 篇)`,
 			});
 
-			let filesToProcess: TFile[];
-			if (meta && !force) {
-				filesToProcess = allFiles.filter(f => {
+			// 建索引（所有文件）
+			await this.buildIndex(allFiles, emit, signal);
+
+			// 确定需要处理的文件
+			let filesToExtract: TFile[];
+			let existingFacts: ProfileFacts | null;
+
+			if (force) {
+				filesToExtract = allFiles;
+				existingFacts = null;
+			} else if (meta) {
+				filesToExtract = allFiles.filter(f => {
 					const prev = meta.processedFiles[f.path];
 					if (!prev) return true;
 					return f.stat.mtime > new Date(prev.mtime).getTime();
 				});
-				if (filesToProcess.length === 0) {
+				existingFacts = await this.readFacts();
+				if (filesToExtract.length === 0 && existingFacts) {
 					emit({ stage: 'done', current: 0, total: 0, message: '画像已是最新' });
 					return;
 				}
 			} else {
-				filesToProcess = allFiles;
+				filesToExtract = allFiles;
+				existingFacts = null;
 			}
 
-			// 建索引（所有文件）
-			await this.buildIndex(allFiles, emit, signal);
+			// Stage 1: 抽取事实
+			emit({ stage: 'extracting', current: 0, total: 0, message: '准备抽取事实...' });
+			const newFacts = await this.extractFacts(filesToExtract, emit, signal);
 
-			// 提炼画像
-			const existingMeta = await this.readMeta();
-			const profile = (existingMeta && !force && filesToProcess.length < allFiles.length)
-				? await this.updateProfileIncremental(filesToProcess, emit, signal)
-				: await this.generateProfile(filesToProcess, emit, signal);
+			// 合并事实
+			const dimensions = this.getDimensions();
+			const mergedFacts = existingFacts
+				? mergeFacts(existingFacts.dimensions, newFacts)
+				: newFacts;
+
+			// 保存 facts
+			const factsData: ProfileFacts = {
+				version: 1,
+				sourceDir: dir,
+				lastExtractTime: new Date().toISOString(),
+				dimensions: mergedFacts,
+			};
+			await this.writeFacts(factsData);
+
+			// Stage 2: 生成画像
+			emit({ stage: 'synthesizing', current: 0, total: 1, message: '生成画像中...' });
+			const profile = await this.synthesizeProfile(mergedFacts, signal);
 
 			// 写入画像文件
 			const now = new Date().toISOString();
 			const profileContent = `---
-created: ${existingMeta?.lastBuildTime || now}
+created: ${meta?.lastBuildTime || now}
 updated: ${now}
 sourceDir: "${dir}"
 fileCount: ${allFiles.length}
@@ -587,7 +639,7 @@ ${profile}
 			await this.vault.adapter.write(this.profilePath, profileContent);
 
 			// 生成摘要
-			emit({ stage: 'generating', current: 0, total: 1, message: '生成摘要中...' });
+			emit({ stage: 'summarizing', current: 0, total: 1, message: '生成摘要中...' });
 			const summary = await this.generateSummary(profile, signal);
 			if (summary) {
 				await this.vault.adapter.write(this.summaryPath, summary);
@@ -601,12 +653,16 @@ ${profile}
 					size: f.stat.size,
 				};
 			}
+
+			const totalFacts = Object.values(mergedFacts).reduce((sum, arr) => sum + arr.length, 0);
 			await this.writeMeta({
 				sourceDir: dir,
 				lastBuildTime: now,
 				processedFiles,
 				indexId: this.getIndexDir().split('/').pop() || '',
 				fileCount: allFiles.length,
+				factCount: totalFacts,
+				dimensionKeys: dimensions.map(d => d.key),
 			});
 
 			emit({
@@ -626,6 +682,26 @@ ${profile}
 		try { await this.vault.adapter.remove(this.metaPath); } catch {}
 		try { await this.vault.adapter.remove(this.profilePath); } catch {}
 		try { await this.vault.adapter.remove(this.summaryPath); } catch {}
-			try { await this.vault.adapter.remove(this.bufferPath); } catch {}
+		try { await this.vault.adapter.remove(this.factsPath); } catch {}
+		try { await this.vault.adapter.remove(this.bufferPath); } catch {}
 	}
+}
+
+// ── 校验工具 ──
+
+function validateMeta(data: any): data is ProfileMeta {
+	return data
+		&& typeof data.sourceDir === 'string'
+		&& typeof data.lastBuildTime === 'string'
+		&& data.processedFiles && typeof data.processedFiles === 'object';
+}
+
+function validateFacts(data: any): ProfileFacts | null {
+	if (!data || data.version !== 1 || typeof data.sourceDir !== 'string') return null;
+	if (!data.dimensions || typeof data.dimensions !== 'object') return null;
+	for (const [k, v] of Object.entries(data.dimensions)) {
+		if (!Array.isArray(v)) { data.dimensions[k] = []; }
+		else { data.dimensions[k] = v.filter((x: any) => typeof x === 'string'); }
+	}
+	return data as ProfileFacts;
 }

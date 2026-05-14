@@ -112,6 +112,7 @@ export interface DeepPDFSettings {
 
 	// 用户画像
 	journalDir: string;
+		profileDimensions: { key: string; label: string }[];
 
 	// LangSmith 追踪配置（LangGraph 引擎专用）
 	langsmithApiKey: string;
@@ -223,4 +224,5 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 		// 用户画像
 		journalDir: "",
+		profileDimensions: [],
 };
