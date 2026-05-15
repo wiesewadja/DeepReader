@@ -84,13 +84,24 @@ export async function routerNode(
     const parsed = extractJSON(text);
 
     const rawDepth = parsed?.depth;
-    const depth: ReadingDepth = (
+    let depth: ReadingDepth = (
       rawDepth === ReadingDepth.CASUAL
       || rawDepth === ReadingDepth.INSPECTIONAL
       || rawDepth === ReadingDepth.ANALYTICAL
       || rawDepth === ReadingDepth.SYNTOPICAL
     ) ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
+
+    // Continuity guard: short replies ("ok", "继续", "嗯") during an ongoing
+    // deep discussion should inherit the previous depth, not be treated as casual.
+    const CONTINUITY_THRESHOLD = 5;
+    if (depth === ReadingDepth.CASUAL && rawQuery.trim().length <= CONTINUITY_THRESHOLD && chatHistory.length >= 2) {
+      const lastAi = [...chatHistory].reverse().find(m => m.role === 'assistant');
+      if (lastAi && lastAi.content.length > 200) {
+        log(`[S0 Router] 延续性对话检测: "${rawQuery}" 在深度讨论中，升级 depth 0→2`);
+        depth = ReadingDepth.ANALYTICAL;
+      }
+    }
 
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
