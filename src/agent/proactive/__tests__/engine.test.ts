@@ -1,26 +1,34 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ProactiveEngine } from '../engine';
 import type { ProactiveParams } from '../types';
+
+function createMockApp() {
+  const store = new Map<string, string>();
+  return {
+    vault: {
+      adapter: {
+        exists: vi.fn(async (path: string) => store.has(path)),
+        read: vi.fn(async (path: string) => store.get(path) ?? ''),
+        write: vi.fn(async (path: string, content: string) => { store.set(path, content); }),
+        mkdir: vi.fn(async (path: string) => { store.set(path, ''); }),
+      },
+    },
+  } as any;
+}
 
 describe('ProactiveEngine', () => {
   let triggered: ProactiveParams[];
   let engine: ProactiveEngine;
-  const testBaseDir = '/tmp/test-vault-proactive';
+  let mockApp: ReturnType<typeof createMockApp>;
 
-  beforeEach(async () => {
-    await fs.rm(testBaseDir, { recursive: true, force: true });
+  beforeEach(() => {
+    mockApp = createMockApp();
     triggered = [];
     engine = new ProactiveEngine(
-      { vault: { adapter: { basePath: testBaseDir } } } as any,
+      mockApp,
       { settings: { proactiveGuidanceEnabled: true, proactiveCooldownMinutes: 5 } } as any,
       (params) => { triggered.push(params); },
     );
-  });
-
-  afterEach(async () => {
-    await fs.rm(testBaseDir, { recursive: true, force: true });
   });
 
   describe('场景一：检视引导', () => {
@@ -94,7 +102,7 @@ describe('ProactiveEngine', () => {
   describe('设置开关', () => {
     it('does not trigger when disabled', async () => {
       const disabledEngine = new ProactiveEngine(
-        {} as any,
+        createMockApp(),
         { settings: { proactiveGuidanceEnabled: false, proactiveCooldownMinutes: 5 } } as any,
         (params) => { triggered.push(params); },
       );
@@ -106,7 +114,7 @@ describe('ProactiveEngine', () => {
   describe('shouldEnableSocratic', () => {
     it('returns false when feature disabled', () => {
       const disabledEngine = new ProactiveEngine(
-        { vault: { adapter: { basePath: testBaseDir } } } as any,
+        createMockApp(),
         { settings: { proactiveGuidanceEnabled: false, proactiveCooldownMinutes: 5 } } as any,
         () => {},
       );

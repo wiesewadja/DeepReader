@@ -33,8 +33,7 @@ export class ProactiveEngine {
   private async getState(bookId: string): Promise<ProactiveState> {
     let state = this.states.get(bookId);
     if (!state) {
-      const baseDir = (this.app.vault.adapter as any).basePath as string;
-      state = (await loadProactiveState(baseDir, bookId)) ?? createEmptyState(bookId);
+      state = (await loadProactiveState(this.app, bookId)) ?? createEmptyState(bookId);
       this.states.set(bookId, state);
     }
     return state;
@@ -42,8 +41,7 @@ export class ProactiveEngine {
 
   private async persistState(state: ProactiveState): Promise<void> {
     this.states.set(state.bookId, state);
-    const baseDir = (this.app.vault.adapter as any).basePath as string;
-    await saveProactiveState(baseDir, state);
+    await saveProactiveState(this.app, state);
   }
 
   private isInCooldown(): boolean {

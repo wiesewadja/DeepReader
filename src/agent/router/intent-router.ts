@@ -13,17 +13,25 @@ import DEFAULT_RULES_JSON from './intent-rules.json';
 const DEFAULT_MAX_ITERATIONS = 4;
 
 export class IntentRouter {
-  private rules: IntentRule[];
+  private compiledRules: { rule: IntentRule; pattern: RegExp }[];
   private fallbackTools: string[];
   private fallbackIntent: string;
   private fallbackMaxIterations: number;
 
   constructor(config?: IntentRulesConfig) {
     const cfg = config || (DEFAULT_RULES_JSON as IntentRulesConfig);
-    this.rules = cfg.rules;
     this.fallbackTools = cfg.fallback.tools;
     this.fallbackIntent = cfg.fallback.intent;
     this.fallbackMaxIterations = cfg.fallback.maxIterations || DEFAULT_MAX_ITERATIONS;
+    this.compiledRules = cfg.rules.map(rule => {
+      let pattern: RegExp;
+      try {
+        pattern = new RegExp(rule.pattern, 'i');
+      } catch {
+        pattern = /$^/; // never-match pattern for invalid regex
+      }
+      return { rule, pattern };
+    });
   }
 
   /**
@@ -44,23 +52,18 @@ export class IntentRouter {
 
     // 1. 对每段输入遍历规则，匹配意图（取并集）
     for (const text of inputs) {
-      for (const rule of this.rules) {
-        try {
-          const regex = new RegExp(rule.pattern, 'i');
-          if (regex.test(text)) {
-            if (!detectedIntents.includes(rule.intent)) {
-              detectedIntents.push(rule.intent);
-            }
-            rule.tools.forEach(t => allowedTools.add(t));
-            // 取所有匹配规则中最大的 maxIterations
-            const ruleMax = rule.maxIterations || DEFAULT_MAX_ITERATIONS;
-            if (maxIterations === null || ruleMax > maxIterations) {
-              maxIterations = ruleMax;
-            }
-            agentLog(`[IntentRouter] 命中规则: ${rule.id} -> ${rule.intent} (input: "${text.slice(0, 40)}")`);
+      for (const { rule, pattern } of this.compiledRules) {
+        if (pattern.test(text)) {
+          if (!detectedIntents.includes(rule.intent)) {
+            detectedIntents.push(rule.intent);
           }
-        } catch (err) {
-          agentLog(`[IntentRouter] 规则正则错误: ${rule.id}`, err);
+          rule.tools.forEach(t => allowedTools.add(t));
+          // 取所有匹配规则中最大的 maxIterations
+          const ruleMax = rule.maxIterations || DEFAULT_MAX_ITERATIONS;
+          if (maxIterations === null || ruleMax > maxIterations) {
+            maxIterations = ruleMax;
+          }
+          agentLog(`[IntentRouter] 命中规则: ${rule.id} -> ${rule.intent} (input: "${text.slice(0, 40)}")`);
         }
       }
     }

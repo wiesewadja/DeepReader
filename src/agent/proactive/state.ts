@@ -1,5 +1,4 @@
-import * as path from 'path';
-import * as fs from 'fs/promises';
+import type { App } from 'obsidian';
 import type { ProactiveState, ChapterTrigger } from './types';
 import { serviceLog as log } from '../../utils/logger.js';
 
@@ -74,10 +73,10 @@ export function shouldTriggerChapter(
   return { canTrigger: true, highlights: trigger.highlights };
 }
 
-// ============ File I/O ============
+// ============ File I/O via Vault API ============
 
-function getStateFilePath(baseDir: string, bookId: string): string {
-  return path.join(baseDir, '.pageindex', bookId, 'proactive-state.json');
+function getStateFilePath(bookId: string): string {
+  return `.pageindex/${bookId}/proactive-state.json`;
 }
 
 /** 兼容旧版 state 字段 */
@@ -97,10 +96,12 @@ function migrateState(raw: any): ProactiveState | null {
   return raw as ProactiveState;
 }
 
-export async function loadProactiveState(baseDir: string, bookId: string): Promise<ProactiveState | null> {
-  const filePath = getStateFilePath(baseDir, bookId);
+export async function loadProactiveState(app: App, bookId: string): Promise<ProactiveState | null> {
+  const filePath = getStateFilePath(bookId);
   try {
-    const data = await fs.readFile(filePath, 'utf-8');
+    const exists = await app.vault.adapter.exists(filePath);
+    if (!exists) return null;
+    const data = await app.vault.adapter.read(filePath);
     const parsed = JSON.parse(data);
     if (parsed.version !== 1) return null;
     return migrateState(parsed);
@@ -109,8 +110,11 @@ export async function loadProactiveState(baseDir: string, bookId: string): Promi
   }
 }
 
-export async function saveProactiveState(baseDir: string, state: ProactiveState): Promise<void> {
-  const filePath = getStateFilePath(baseDir, state.bookId);
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf-8');
+export async function saveProactiveState(app: App, state: ProactiveState): Promise<void> {
+  const filePath = getStateFilePath(state.bookId);
+  const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+  if (!(await app.vault.adapter.exists(dir))) {
+    await app.vault.adapter.mkdir(dir);
+  }
+  await app.vault.adapter.write(filePath, JSON.stringify(state, null, 2));
 }

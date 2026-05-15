@@ -3,6 +3,7 @@
  */
 
 import type { CognitiveEngineState } from './state';
+import { NODE_NAMES, EDGE_KEYS } from './node-names';
 
 function hasDiagramIntent(state: CognitiveEngineState): boolean {
   const tools = state.allowedTools ?? [];
@@ -15,16 +16,16 @@ function hasDiagramIntent(state: CognitiveEngineState): boolean {
  * - otherwise: go to router (normal flow)
  */
 export function routeFromStart(state: CognitiveEngineState): string {
-  if (state.isProactive) return 'inspectional';
-  return 'router';
+  if (state.isProactive) return NODE_NAMES.INSPECTIONAL;
+  return NODE_NAMES.ROUTER;
 }
 
 /**
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
-  if (state.depth === 0) return 'formatter';
-  return 'inspectional';
+  if (state.depth === 0) return NODE_NAMES.FORMATTER;
+  return NODE_NAMES.INSPECTIONAL;
 }
 
 /**
@@ -43,26 +44,26 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
     if (state.proactiveTrigger === 'inspectional'
         && typeof window !== 'undefined'
         && (window as any).ExcalidrawAutomate) {
-      return 'visualizer';
+      return NODE_NAMES.VISUALIZER;
     }
-    return 'done';
+    return EDGE_KEYS.DONE;
   }
 
   // Socratic: skip S2, go to formatter with dialogue mode (reuses chatHistory)
   if (state.isSocratic) {
-    return 'done';
+    return EDGE_KEYS.DONE;
   }
 
   if (state.depth === 3) {
-    return 'syntopical';
+    return NODE_NAMES.SYNTOPICAL;
   }
   // depth=1: check if diagram intent (skip visualizer if S1 failed — no valid structural analysis)
   if (state.depth === 1) {
-    if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return 'done';
-    return hasDiagramIntent(state) ? 'visualizer' : 'done';
+    if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return EDGE_KEYS.DONE;
+    return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : EDGE_KEYS.DONE;
   }
   // depth=2 → analytical
-  return 'continue';
+  return EDGE_KEYS.CONTINUE;
 }
 
 /**
@@ -72,5 +73,5 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
  * - otherwise → formatter
  */
 export function routeAfterAnalysis(state: CognitiveEngineState): string {
-  return hasDiagramIntent(state) ? 'visualizer' : 'formatter';
+  return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
 }

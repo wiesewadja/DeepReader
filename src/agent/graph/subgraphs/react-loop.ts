@@ -8,6 +8,7 @@
 
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
+import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { messagesStateReducer } from '@langchain/langgraph';
@@ -170,15 +171,6 @@ function updateQueriesAsked(
 }
 
 // === Agent Node ===
-
-/** Parse tool call args, handling string-encoded JSON */
-function parseToolCallArgs(tc: { args: string | Record<string, unknown> }): Record<string, unknown> | { _parseError: true; _raw: string } {
-  try {
-    return typeof tc.args === 'string' ? JSON.parse(tc.args) : tc.args;
-  } catch {
-    return { _parseError: true, _raw: String(tc.args) };
-  }
-}
 
 async function agentNode(
   state: ReactState,

@@ -12,13 +12,7 @@ import { buildVisualizerPrompt } from '../prompts/visualizer-prompt';
 import { createVizTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
 import { agentLog as log } from '../../../utils/logger.js';
-
-/** 解析 LLM tool call 的参数（兼容多种 provider 格式） */
-function parseToolCallArgs(tc: any): any {
-  return typeof tc.args === 'string'
-    ? JSON.parse(tc.args)
-    : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
-}
+import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 
 /**
  * 执行 excalidraw draw 动作并返回格式化结果
@@ -149,9 +143,8 @@ export async function visualizerNode(
           const tool = vizTools.find(t => t.name === 'generate_infographic');
           if (tool) {
             let infArgs: any;
-            try {
-              infArgs = parseToolCallArgs(tc);
-            } catch {
+            infArgs = parseToolCallArgs(tc);
+            if ('_parseError' in infArgs) {
               log('[Visualizer] generate_infographic 参数解析失败，跳过');
               diagramDescription = `图表生成失败: 信息图工具参数格式错误`;
               continue;
@@ -173,10 +166,9 @@ export async function visualizerNode(
         if (toolName !== 'excalidraw') continue;
 
         let args: any;
-        try {
-          args = parseToolCallArgs(tc);
-        } catch (parseErr) {
-          log(`[Visualizer] tool call 参数解析失败: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+        args = parseToolCallArgs(tc);
+        if ('_parseError' in args) {
+          log(`[Visualizer] tool call 参数解析失败`);
           continue;
         }
         log(`[Visualizer] 执行 excalidraw 工具: action=${args?.action}`);

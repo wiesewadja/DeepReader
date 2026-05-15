@@ -6,9 +6,47 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
+import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
+import type { ChatOpenAI } from '@langchain/openai';
 import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
+
+/**
+ * Stream LLM response and call back with accumulated content.
+ * Source: @langchain/openai ChatOpenAI.stream() — returns AsyncIterable of AIMessageChunk.
+ *
+ * @throws Error with context if streaming fails, allowing callers to provide meaningful feedback.
+ */
+async function streamToContent(
+  model: ChatOpenAI,
+  messages: BaseMessage[],
+  config: RunnableConfig,
+  onContent?: (content: string) => void,
+): Promise<string> {
+  let stream: AsyncIterable<Awaited<ReturnType<ChatOpenAI['stream']>> extends AsyncIterable<infer T> ? T : never>;
+  try {
+    stream = await model.stream(messages, config);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`LLM 流式请求失败: ${msg}`);
+  }
+  let content = '';
+  for await (const chunk of stream) {
+    const text = typeof chunk.content === 'string'
+      ? chunk.content
+      : Array.isArray(chunk.content)
+        ? (chunk.content as { type: string; text: string }[])
+            .filter(c => c.type === 'text')
+            .map(c => c.text)
+            .join('')
+        : '';
+    if (text) {
+      content += text;
+      onContent?.(content);
+    }
+  }
+  return content;
+}
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
@@ -132,18 +170,12 @@ export async function formatterNode(
     if (hasDiagram) {
       proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
     }
-    const stream = await mainModel.stream([
-      new SystemMessage(proactivePrompt),
-      new HumanMessage(proactiveUserMsg),
-    ], config);
-
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(proactivePrompt), new HumanMessage(proactiveUserMsg)],
+      config,
+      callbacks?.onContent,
+    );
 
     return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
@@ -157,18 +189,12 @@ export async function formatterNode(
       state.rewrittenQuery || '',
       chatHistory,
     );
-    const stream = await mainModel.stream([
-      new SystemMessage(socraticPrompt),
-      new HumanMessage(socraticUserMsg),
-    ], config);
-
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(socraticPrompt), new HumanMessage(socraticUserMsg)],
+      config,
+      callbacks?.onContent,
+    );
 
     return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
@@ -177,18 +203,12 @@ export async function formatterNode(
   if (state.depth === 0) {
     callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
-    const stream = await mainModel.stream([
-      new SystemMessage(casualPrompt),
-      new HumanMessage(state.rewrittenQuery || ''),
-    ], config);
-
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(casualPrompt), new HumanMessage(state.rewrittenQuery || '')],
+      config,
+      callbacks?.onContent,
+    );
 
     return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
   }
@@ -204,18 +224,12 @@ export async function formatterNode(
 ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件或在设置中配置信息图 API。'}
 不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。`
 
-    const stream = await mainModel.stream([
-      new SystemMessage(diagramPrompt),
-      new HumanMessage(`用户请求：${state.rewrittenQuery || ''}\n\n图表结果：${ar}`),
-    ], config);
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
-    content = stripThinkTags(content);
+    let content = stripThinkTags(await streamToContent(
+      mainModel,
+      [new SystemMessage(diagramPrompt), new HumanMessage(`用户请求：${state.rewrittenQuery || ''}\n\n图表结果：${ar}`)],
+      config,
+      callbacks?.onContent,
+    ));
 
     // Ensure the chart/infographic link is in the output (LLM may omit it)
     if (diagramSuccess) {
@@ -266,14 +280,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   ];
 
   // Stream output
-  const stream = await mainModel.stream(messages, config);
-  let content = '';
-  for await (const chunk of stream) {
-    if (typeof chunk.content === 'string') {
-      content += chunk.content;
-      callbacks?.onContent?.(content);
-    }
-  }
+  let content = await streamToContent(mainModel, messages, config, callbacks?.onContent);
 
   // Self-verification: remove ghost block_id references (safety net)
   const toolResults: ToolResultEntry[] = (state.toolResultsSnapshot || []).map(r => ({
@@ -327,14 +334,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
         new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈修正格式化输出。`),
       ];
 
-      const feedbackStream = await mainModel.stream(feedbackMessages, config);
-      let refinedContent = '';
-      for await (const chunk of feedbackStream) {
-        if (typeof chunk.content === 'string') {
-          refinedContent += chunk.content;
-          callbacks?.onContent?.(refinedContent);
-        }
-      }
+      let refinedContent = await streamToContent(mainModel, feedbackMessages, config, callbacks?.onContent);
 
       if (toolResults.length > 0) {
         const vResult = await verifyAndCleanContent(refinedContent, toolResults);
