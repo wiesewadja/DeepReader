@@ -7,7 +7,7 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import type { CognitiveEngineState } from '../state';
+import type { CognitiveEngineState, NodeError } from '../state';
 import { agentLog as log } from '../../../utils/logger.js';
 
 export type NodeFn = (
@@ -28,8 +28,17 @@ export function safeNode(
       const msg = err instanceof Error ? err.message : String(err);
       log(`[${name}] 节点执行失败:`, msg);
 
+      const nodeError: NodeError = {
+        message: msg,
+        recoverable: name !== 'formatter',
+        fallbackAction: name === 'inspectional' ? 'global_search'
+          : name === 'pre_search' ? 'global_search'
+          : name === 'formatter' ? 'abort'
+          : 'skip_to_formatter',
+      };
+
       const base: Partial<CognitiveEngineState> = {
-        nodeErrors: { [name]: msg },
+        nodeErrors: { [name]: nodeError },
       };
 
       if (fallback) {

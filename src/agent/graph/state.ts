@@ -42,6 +42,22 @@ export interface ToolResultSnapshot {
   extractedBlockIds?: string[];
 }
 
+/** Structured node error for unified degradation */
+export interface NodeError {
+  message: string;
+  recoverable: boolean;
+  fallbackAction: 'global_search' | 'skip_to_formatter' | 'abort';
+}
+
+/** Friendly user hints keyed by node name */
+export const NODE_ERROR_HINTS: Record<string, string> = {
+  inspectional: '⚠️ 结构分析暂时不可用，已使用全书范围搜索。',
+  analytical: '⚠️ 深度分析暂时不可用，已提供基础回答。',
+  pre_search: '⚠️ 预检索暂时不可用，已直接进行深度分析。',
+  visualizer: '⚠️ 图表生成遇到问题。',
+  syntopical: '⚠️ 主题阅读暂时不可用。',
+};
+
 /** Overwrite reducer with default — keeps last-value semantics but ensures non-undefined initial state. */
 function overwriteWithDefault<T>(defaultValue: T) {
 	return {
@@ -99,7 +115,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   mode: Annotation<EngineMode>(overwriteWithDefault('normal' as EngineMode)),
 
   // === Error tracking ===
-  nodeErrors: Annotation<Record<string, string>>({
+  nodeErrors: Annotation<Record<string, NodeError | string>>({
     reducer: (a, b) => ({ ...a, ...b }),
     default: () => ({}),
   }),

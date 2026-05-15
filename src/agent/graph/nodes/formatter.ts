@@ -8,8 +8,8 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
-import type { CognitiveEngineState } from '../state';
-import { ReadingDepth } from '../state';
+import type { CognitiveEngineState, NodeError } from '../state';
+import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
@@ -137,6 +137,21 @@ function stripFabricatedLinks(content: string, inputTexts: string[]): string {
     }
     return fullMatch;
   });
+}
+
+/**
+ * Generate user-facing error hints from nodeErrors.
+ */
+function appendErrorHints(nodeErrors?: Record<string, NodeError | string>): string {
+  if (!nodeErrors) return '';
+  const hints: string[] = [];
+  for (const [node, err] of Object.entries(nodeErrors)) {
+    const isRecoverable = typeof err === 'object' ? err.recoverable : true;
+    if (isRecoverable && NODE_ERROR_HINTS[node]) {
+      hints.push(NODE_ERROR_HINTS[node]);
+    }
+  }
+  return hints.join('\n');
 }
 
 /**
@@ -370,8 +385,12 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     }
   }
 
-  return { formattedOutput: stripFabricatedLinks(
+  // Append degradation hints for recoverable node errors
+  const formatted = stripFabricatedLinks(
     fixupWikiLinks(stripThinkTags(content), pdfName || ''),
     inputTextsForValidation,
-  ) };
+  );
+  const errorHints = appendErrorHints(state.nodeErrors);
+
+  return { formattedOutput: errorHints ? `${formatted}\n\n---\n${errorHints}` : formatted };
 }
