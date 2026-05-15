@@ -10,6 +10,8 @@
  * - LangGraph 认知引擎（唯一执行路径）
  */
 
+import type { App } from 'obsidian';
+
 // Re-export everything
 export { LLMClient } from './llm-client.js';
 export { SkillLoader } from './skills/loader.js';
@@ -64,7 +66,7 @@ export interface FrontendAgentOptions {
   model?: string;
   providerName?: string; // 服务商显示名称（用于日志）
   skillsDir: string;
-  app: any; // Obsidian App instance
+  app: App;
 
   // 新增：Fast 模型配置（可选）
   fastModelEnabled?: boolean;
@@ -273,8 +275,8 @@ ${currentMemory}
       : `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
-    let configurable: any;
-    let tracer: any;
+    let configurable: Record<string, unknown>;
+    let tracer: unknown;
     try {
       const result = await this.buildGraphConfigurable(context, callbacks, threadId, userMessage, chatHistory);
       tracer = result._langsmithTracer;
@@ -314,7 +316,7 @@ ${currentMemory}
       }
 
       // 后台累计对话轮数（满 10 轮自动更新画像摘要）
-      const _pb = (context as any).plugin?.profileBuilder;
+      const _pb = context.plugin?.profileBuilder;
       if (_pb) {
         const _userMsg = userMessage || '';
         const _assistantMsg = result.messages?.[0]?.content || '';
@@ -431,13 +433,13 @@ ${currentMemory}
 
     // 注入 journalDir 到 ToolContext（启用 search_journal 工具）
     if (this.options.journalDir && !context.journalDir) {
-      (context as any).journalDir = this.options.journalDir;
+      context.journalDir = this.options.journalDir;
     }
 
     // 读取画像摘要 + 检索相关片段（RAG）
     // 读取用户画像摘要（常驻注入）
     let userProfileSummary: string | undefined;
-    const profileBuilder = (context as any).plugin?.profileBuilder;
+    const profileBuilder = context.plugin?.profileBuilder;
     if (profileBuilder) {
       try {
         userProfileSummary = await profileBuilder.readSummary() || undefined;
@@ -462,7 +464,7 @@ ${currentMemory}
       docDescription: context.docDescription,
       memoryContext,
       llmClientManager: this.llmClientManager,
-      toolRegistry: null as any, // S2 uses createLangChainTools directly
+      toolRegistry: undefined, // S2 uses createLangChainTools directly
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
@@ -529,7 +531,7 @@ ${currentMemory}
   private async processGraphStream(
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
-    config?: { configurable?: Record<string, any> },
+    config?: { configurable?: Record<string, unknown> },
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     const onProgress = callbacks.onProgress || (() => {});
     const onContent = callbacks.onContent || (() => {});
@@ -538,14 +540,14 @@ ${currentMemory}
     let interruptedNode: { nodeId: string; content: string } | undefined;
 
     // 语音生成配置
-    const ttsCfg = config?.configurable?.ttsConfig;
-    const llmCfg = config?.configurable?.llmConfig;
+    const ttsCfg = config?.configurable?.ttsConfig as { apiKey: string; baseUrl: string; model?: string } | undefined;
+    const llmCfg = config?.configurable?.llmConfig as { apiKey: string; baseUrl: string; model?: string } | undefined;
     const enableVoiceReply = !!(ttsCfg && llmCfg && callbacks.onVoiceReady);
 
     for await (const chunk of stream) {
       if (chunk == null || typeof chunk !== 'object') continue;
 
-      const record = chunk as Record<string, any>;
+      const record = chunk as Record<string, unknown>;
 
       // 检测 interrupt（HITL）
       if ('__interrupt__' in record) {
@@ -565,13 +567,13 @@ ${currentMemory}
       // 正常节点更新: { nodeName: stateUpdate }
       const nodeNames = Object.keys(record);
       for (const nodeName of nodeNames) {
-        const stateUpdate = record[nodeName];
+        const stateUpdate = record[nodeName] as Record<string, unknown> | null;
         if (stateUpdate == null) continue;
 
         onProgress(FrontendAgent.getNodeStatus(nodeName));
 
         // 收集格式化输出（流式）
-        if (stateUpdate.formattedOutput) {
+        if (stateUpdate.formattedOutput && typeof stateUpdate.formattedOutput === 'string') {
           formattedOutput = stateUpdate.formattedOutput;
           onContent(formattedOutput);
         }
@@ -588,9 +590,9 @@ ${currentMemory}
         ttsCfg,
         llmCfg,
         {
-          userQuestion: (config?.configurable?.sharedContext as any)?.userQuestion as string | undefined,
-          bookTitle: (config?.configurable?.sharedContext as any)?.bookTitle as string | undefined,
-          memoryContext: (config?.configurable?.sharedContext as any)?.memoryContext as string | undefined,
+          userQuestion: (config?.configurable?.sharedContext as Record<string, unknown>)?.userQuestion as string | undefined,
+          bookTitle: (config?.configurable?.sharedContext as Record<string, unknown>)?.bookTitle as string | undefined,
+          memoryContext: (config?.configurable?.sharedContext as Record<string, unknown>)?.memoryContext as string | undefined,
           abortSignal: callbacks.abortSignal,
         },
         onChunk ? (chunk) => onChunk({ audioChunk: chunk, isComplete: false }) : undefined,
@@ -786,7 +788,7 @@ ${currentMemory}
     const manager = new SubagentManager(
       runAgentLoop,
       this.llmClientManager.getMainClient(),
-      null as any, // toolRegistry - SubagentManager uses its own system
+      undefined, // toolRegistry - SubagentManager uses its own system
       context,
       {},
       undefined,

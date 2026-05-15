@@ -9,6 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import type { RouterInput } from '../node-io.js';
+import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -69,8 +70,8 @@ export async function routerNode(
   }
 
   try {
-    const sharedContext = config.configurable?.sharedContext as any;
-    const docDescription = sharedContext?.docDescription as string | undefined;
+    const sharedContext = config.configurable?.sharedContext as SharedContext | undefined;
+    const docDescription = sharedContext?.docDescription;
     const userMessage = buildRouterUserMessage(rawQuery, chatHistory, pdfName || undefined, docDescription);
 
     const response = await fastModel.invoke([

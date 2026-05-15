@@ -9,9 +9,11 @@
  * Source: @langchain/openai — tool call response format varies by provider.
  */
 
-interface ToolCallLike {
+export interface ToolCallLike {
   args: string | Record<string, unknown>;
-  function?: { arguments?: string | Record<string, unknown> };
+  function?: { arguments?: string | Record<string, unknown>; name?: string };
+  name?: string;
+  id?: string;
 }
 
 interface ParseError {

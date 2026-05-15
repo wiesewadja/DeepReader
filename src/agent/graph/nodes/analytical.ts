@@ -34,7 +34,7 @@ import { verifyAndCleanContent } from '../utils/self-verification.js';
  * Returns only IDs that exist in the tree structure.
  */
 async function validateScopeNodeIds(
-  app: any,
+  app: import('obsidian').App,
   bookId: string,
   pdfName: string,
   scopeNodeIds: string[]
@@ -42,14 +42,14 @@ async function validateScopeNodeIds(
   if (scopeNodeIds.length === 0) return [];
 
   try {
-    const vaultPath = app.vault.adapter.getBasePath?.() ?? '';
+    const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
     const treePath = `.pageindex/${bookId}/tree.json`;
     const treeContent = await app.vault.adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
     const validIds: string[] = [];
     const allNodeIds = new Set<string>();
-    collectAllNodeIds(treeData.structure || [], allNodeIds);
+    collectAllNodeIds((treeData.structure || []) as TreeNode[], allNodeIds);
 
     for (const id of scopeNodeIds) {
       if (allNodeIds.has(id)) {
@@ -68,7 +68,8 @@ async function validateScopeNodeIds(
   }
 }
 
-function collectAllNodeIds(nodes: any[], idSet: Set<string>): void {
+type TreeNode = { nodeId?: string; nodes?: TreeNode[] };
+function collectAllNodeIds(nodes: TreeNode[], idSet: Set<string>): void {
   for (const node of nodes) {
     if (node.nodeId) idSet.add(node.nodeId);
     if (node.nodes) collectAllNodeIds(node.nodes, idSet);
@@ -175,7 +176,7 @@ export async function analyticalNode(
   let preSearchBlock = '';
   if (stateKeywords && stateKeywords.length > 0 && toolContext.app) {
     try {
-      const vaultPath = (toolContext.app.vault.adapter as any).basePath;
+      const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath;
       const settings = toolContext.plugin?.settings;
       const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
       const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {

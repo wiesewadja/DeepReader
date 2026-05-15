@@ -43,7 +43,7 @@ export class SubagentManager implements ISubagentManager {
 	constructor(
 		runLoop: AgentLoopRunner,
 		client: LLMClient,
-		toolRegistry: ToolRegistry,
+		toolRegistry: ToolRegistry | undefined,
 		context: ToolContext,
 		config: Partial<SubagentConfig> = {},
 		onResult?: SubagentCallback,
@@ -51,7 +51,7 @@ export class SubagentManager implements ISubagentManager {
 	) {
 		this.runLoopFn = runLoop;
 		this.client = client;
-		this.toolRegistry = toolRegistry;
+		this.toolRegistry = toolRegistry ?? new Map();
 		this.context = context;
 		this.config = { ...DEFAULT_SUBAGENT_CONFIG, ...config };
 			this.traceCtx = traceCtx;

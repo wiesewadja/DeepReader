@@ -53,7 +53,7 @@ export async function syntopicalNode(
     };
   }
 
-  const vaultPath = (toolContext.app.vault.adapter as any).basePath || '';
+  const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath || '';
   const query = rewrittenQuery || ctx?.rawUserQuery || '';
   const settings = toolContext.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;

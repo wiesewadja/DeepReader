@@ -7,10 +7,12 @@
 
 import { ToolMessage } from '@langchain/core/messages';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
+import type { ToolCallLike } from '../utils/tool-call-parser.js';
 import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES } from '../../config/agent-constants.js';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { ChatOpenAI } from '@langchain/openai';
 
 // ============ Types ============
 
@@ -25,7 +27,7 @@ export interface ToolResultRecord {
 
 export interface ReactLoopConfig {
   tools: StructuredToolInterface[];
-  model: any; // ChatOpenAI instance
+  model: ChatOpenAI;
   maxIterations: number;
   maxToolCalls: number;
   /** Forced conclusion context (book name + scope) */
@@ -103,7 +105,7 @@ interface SingleToolResult {
 }
 
 export async function executeSingleToolCall(
-  tc: any,
+  tc: ToolCallLike,
   tools: StructuredToolInterface[],
   interceptor: ((toolName: string, args: Record<string, unknown>) => Record<string, unknown>) | undefined,
   runnableConfig?: RunnableConfig,
@@ -119,14 +121,15 @@ export async function executeSingleToolCall(
   }
 
   let args = parsedArgs;
+  const toolName = tc.name ?? tc.function?.name ?? '';
   if (interceptor) {
-    args = interceptor(tc.name, args);
+    args = interceptor(toolName, args);
   }
 
-  const tool = tools.find(t => t.name === tc.name);
+  const tool = tools.find(t => t.name === toolName);
   if (!tool) {
     return {
-      msg: new ToolMessage({ content: `Error: Unknown tool "${tc.name}"`, tool_call_id: tcId }),
+      msg: new ToolMessage({ content: `Error: Unknown tool "${toolName}"`, tool_call_id: tcId }),
       record: null,
     };
   }
@@ -138,7 +141,7 @@ export async function executeSingleToolCall(
     const extractedBlockIds = extractBlockIdsFromResult(resultStr);
     return {
       msg: new ToolMessage({ content: compressed, tool_call_id: tcId }),
-      record: { toolName: tc.name, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
+      record: { toolName, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -150,7 +153,7 @@ export async function executeSingleToolCall(
 }
 
 export async function executeToolBatch(
-  toolCalls: any[],
+  toolCalls: ToolCallLike[],
   tools: StructuredToolInterface[],
   config: ReactLoopConfig,
   runnableConfig?: RunnableConfig,
@@ -171,7 +174,7 @@ export async function executeToolBatch(
 
 export function reportPlan(
   config: ReactLoopConfig,
-  toolCalls: any[],
+  toolCalls: ToolCallLike[],
   round: number,
   maxPlanRounds: number,
 ): void {
