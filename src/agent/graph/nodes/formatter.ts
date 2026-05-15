@@ -13,6 +13,35 @@ import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
+import {
+  buildFormatterSystemPrompt,
+  buildFormatterUserMessage,
+} from '../prompts/formatter-prompt';
+import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
+import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
+import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
+import { stripThinkTags } from '../../../config/thinking-models.js';
+import {
+  buildProactiveSystemPrompt,
+  buildProactiveUserMessage,
+  buildSocraticDialoguePrompt,
+  buildSocraticDialogueUserMessage,
+} from '../prompts/proactive-formatter-prompt';
+
+/**
+ * Extract text from a streaming chunk (handles string, array, and null content).
+ */
+function extractChunkText(chunk: { content: unknown }): string {
+  const { content } = chunk;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return (content as { type: string; text: string }[])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('');
+  }
+  return '';
+}
 
 /**
  * Stream LLM response and call back with accumulated content.
@@ -35,14 +64,7 @@ async function streamToContent(
   }
   let content = '';
   for await (const chunk of stream) {
-    const text = typeof chunk.content === 'string'
-      ? chunk.content
-      : Array.isArray(chunk.content)
-        ? (chunk.content as { type: string; text: string }[])
-            .filter(c => c.type === 'text')
-            .map(c => c.text)
-            .join('')
-        : '';
+    const text = extractChunkText(chunk);
     if (text) {
       content += text;
       onContent?.(content);
@@ -50,20 +72,6 @@ async function streamToContent(
   }
   return content;
 }
-import {
-  buildFormatterSystemPrompt,
-  buildFormatterUserMessage,
-} from '../prompts/formatter-prompt';
-import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
-import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
-import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
-import { stripThinkTags } from '../../../config/thinking-models.js';
-import {
-  buildProactiveSystemPrompt,
-  buildProactiveUserMessage,
-  buildSocraticDialoguePrompt,
-  buildSocraticDialogueUserMessage,
-} from '../prompts/proactive-formatter-prompt';
 
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
@@ -75,6 +83,11 @@ function fixupWikiLinks(content: string, bookName: string): string {
   return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
     return `[[${bookName}/${inner}]]`;
   });
+}
+
+/** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
+function cleanOutput(content: string, pdfName: string): string {
+  return fixupWikiLinks(stripThinkTags(content), pdfName);
 }
 
 /**
@@ -210,7 +223,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
@@ -229,7 +242,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
   // === Casual mode (depth=CASUAL): simple direct response ===
@@ -250,7 +263,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
   // === Diagram shortcut: brief in-character response, skip full formatting ===
@@ -387,10 +400,10 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
 
   // Append degradation hints for recoverable node errors
   const formatted = stripFabricatedLinks(
-    fixupWikiLinks(stripThinkTags(content), pdfName || ''),
+    cleanOutput(content, pdfName || ''),
     inputTextsForValidation,
   );
   const errorHints = appendErrorHints(state.nodeErrors);
 
-  return { formattedOutput: errorHints ? `${formatted}\n\n---\n${errorHints}` : formatted };
+  return { formattedOutput: errorHints ? `${formatted}\n\n> [!hint] ${errorHints}` : formatted };
 }

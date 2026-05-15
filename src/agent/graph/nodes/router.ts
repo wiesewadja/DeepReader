@@ -84,12 +84,9 @@ export async function routerNode(
     const parsed = extractJSON(text);
 
     const rawDepth = parsed?.depth;
-    let depth: ReadingDepth = (
-      rawDepth === ReadingDepth.CASUAL
-      || rawDepth === ReadingDepth.INSPECTIONAL
-      || rawDepth === ReadingDepth.ANALYTICAL
-      || rawDepth === ReadingDepth.SYNTOPICAL
-    ) ? rawDepth : ReadingDepth.ANALYTICAL;
+    const validDepths = Object.values(ReadingDepth) as number[];
+    let depth: ReadingDepth = validDepths.includes(rawDepth)
+      ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
     // Continuity guard: short replies ("ok", "继续", "嗯") during an ongoing

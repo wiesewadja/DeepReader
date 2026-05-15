@@ -60,10 +60,10 @@ export const NODE_ERROR_HINTS: Record<string, string> = {
 
 /** Overwrite reducer with default — keeps last-value semantics but ensures non-undefined initial state. */
 function overwriteWithDefault<T>(defaultValue: T) {
-	return {
-		reducer: (_old: T, newVal: T) => newVal,
-		default: () => defaultValue,
-	};
+  return {
+    reducer: (_old: T, newVal: T) => newVal,
+    default: () => defaultValue,
+  };
 }
 
 export const CognitiveEngineAnnotation = Annotation.Root({

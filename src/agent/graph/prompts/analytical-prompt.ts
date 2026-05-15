@@ -211,7 +211,8 @@ export function buildFullAnalyticalContext(params: {
   betterQuestion?: string;
   recentHistorySummaries?: import('../utils/history-summarizer').HistorySummary[];
   prevSearchedBlockIds?: string[];
-}): { fullSystemPrompt: string; userMessage: string } {
+  skipUserMessage?: boolean;
+}): { fullSystemPrompt: string; userMessage?: string } {
   const systemPrompt = buildAnalyticalSystemPrompt({
     scopeNodeIds: params.scopeNodeIds,
     tocSummary: params.tocSummary,
@@ -224,6 +225,10 @@ export function buildFullAnalyticalContext(params: {
   const fullSystemPrompt = scopedChapters
     ? `${systemPrompt}\n${scopedChapters}`
     : systemPrompt;
+
+  if (params.skipUserMessage) {
+    return { fullSystemPrompt };
+  }
 
   const userMessage = buildAnalyticalUserMessage(
     params.standaloneQuery,

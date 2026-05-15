@@ -14,6 +14,7 @@ import type { ToolResultSnapshot } from '../state';
 import { getEarlyStopThreshold } from '../../config/agent-constants.js';
 import type { PreSearchInput } from '../node-io.js';
 import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
+import { buildEarlyStopPrompt } from '../prompts/pre-search-prompt.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { agentLog as log } from '../../../utils/logger.js';
@@ -21,6 +22,16 @@ import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
+
+/** 空的 pre-search 返回结构，多处复用 */
+function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<CognitiveEngineState> {
+  return {
+    validatedScopeNodeIds,
+    preSearchBlock: '',
+    earlyStopContent: '',
+    toolResultsSnapshot: [],
+  };
+}
 
 /**
  * Validate scopeNodeIds against tree.json nodeFileMap.
@@ -67,6 +78,16 @@ function collectAllNodeIds(nodes: TreeNode[], idSet: Set<string>): void {
   }
 }
 
+/** 格式化命中结果为带元数据的文本行 */
+type HitEntry = { title: string; file_name: string; matched_blocks: { block_id: string; content: string }[] };
+function formatBlockLines(hits: HitEntry[]): string[] {
+  return hits.flatMap(h =>
+    h.matched_blocks.map(b =>
+      `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
+    )
+  );
+}
+
 /**
  * S2-Pre node: scope validation + pre-search RRF + early stop decision.
  */
@@ -87,12 +108,7 @@ export async function preSearchNode(
   const toolContext = config.configurable?.toolContext;
 
   if (!mainModel || !toolContext) {
-    return {
-      validatedScopeNodeIds: rawScopeNodeIds,
-      preSearchBlock: '',
-      earlyStopContent: '',
-      toolResultsSnapshot: [],
-    };
+    return emptyPreSearchResult(rawScopeNodeIds);
   }
 
   // 1. Validate scope
@@ -109,7 +125,7 @@ export async function preSearchNode(
   const markdownFiles = ctx?.markdownFiles ?? {};
 
   // 2. Build prompt context (shared with analytical node)
-  const { fullSystemPrompt, userMessage } = buildFullAnalyticalContext({
+  const { fullSystemPrompt } = buildFullAnalyticalContext({
     scopeNodeIds: validatedScopeNodeIds,
     tocSummary,
     currentNodeId,
@@ -120,16 +136,12 @@ export async function preSearchNode(
     betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
     prevSearchedBlockIds: ctx?.prevSearchedBlockIds,
+    skipUserMessage: true,
   });
 
   // 3. Pre-search RRF with S1's suggested_keywords
   if (!stateKeywords || stateKeywords.length === 0 || !toolContext.app) {
-    return {
-      validatedScopeNodeIds,
-      preSearchBlock: '',
-      earlyStopContent: '',
-      toolResultsSnapshot: [],
-    };
+    return emptyPreSearchResult(validatedScopeNodeIds);
   }
 
   const pluginSettings = toolContext.plugin?.settings;
@@ -190,12 +202,7 @@ export async function preSearchNode(
 
     if (!Array.isArray(preResults) || preResults.length < 2) {
       log(`[S2-Pre] 预检索结果不足 (${Array.isArray(preResults) ? preResults.length : 0} 条), 跳过注入`);
-      return {
-        validatedScopeNodeIds,
-        preSearchBlock: '',
-        earlyStopContent: '',
-        toolResultsSnapshot: [],
-      };
+      return emptyPreSearchResult(validatedScopeNodeIds);
     }
 
     const hits = preResults.slice(0, 3).map(r => ({
@@ -215,35 +222,25 @@ export async function preSearchNode(
     if (avgScore >= earlyStopThreshold && hits.length >= 2) {
       log(`[S2-Pre] 早停: avg=${avgScore.toFixed(2)} >= ${earlyStopThreshold}, 跳过 ReAct`);
 
-      const blockLines = hits.flatMap(h =>
-        h.matched_blocks.map(b =>
-          `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
-        )
-      );
+      const blockLines = formatBlockLines(hits);
 
       const pdfName = statePdfName || ctx?.pdfName || '';
-      const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果回答用户问题。你必须从检索结果中引用原文，并使用 wiki 链接标注来源。即使信息不完整，也要基于已有内容给出尽可能充分的回答。
-
-<pre_search_results>
-${blockLines.join('\n\n')}
-</pre_search_results>
-
-用户问题：${stateBetterQuestion || stateQuery || ctx?.rawUserQuery || ''}
-
-输出格式要求：
-- 引用来源用 [[${pdfName}/file_name#^block_id|短别名]] 格式，别名 2-6 字核心词
-- file_name 和 block_id 必须来自上方检索结果中标注的值，禁止编造
-- 链接必须嵌入句子内部替代关键词，不要孤立在句尾
-- 必须在回答中包含至少一个 wiki 链接
-- 如果检索结果部分覆盖了问题，先基于已有内容回答，再简要说明哪些方面需要更多探索`;
+      const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
+      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery, pdfName);
 
       const directResponse = await mainModel.invoke([
         new SystemMessage(directPrompt),
-        new HumanMessage(stateBetterQuestion || stateQuery || ''),
+        new HumanMessage(userQuery),
       ], config);
 
       const directContent = typeof directResponse.content === 'string'
-        ? directResponse.content : JSON.stringify(directResponse.content);
+        ? directResponse.content
+        : Array.isArray(directResponse.content)
+          ? (directResponse.content as { type: string; text: string }[])
+              .filter(c => c.type === 'text')
+              .map(c => c.text)
+              .join('')
+          : '';
 
       const preSearchRecords = hits.flatMap(h =>
         h.matched_blocks.map(b => ({
@@ -266,11 +263,7 @@ ${blockLines.join('\n\n')}
     }
 
     // 5. Normal path: inject compact pre-search results
-    const blockLines = hits.flatMap(h =>
-      h.matched_blocks.map(b =>
-        `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
-      )
-    );
+    const blockLines = formatBlockLines(hits);
 
     const preSearchBlock = `<pre_search_results>
 基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
@@ -288,11 +281,6 @@ ${blockLines.join('\n\n')}
     };
   } catch (err) {
     log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
-    return {
-      validatedScopeNodeIds,
-      preSearchBlock: '',
-      earlyStopContent: '',
-      toolResultsSnapshot: [],
-    };
+    return emptyPreSearchResult(validatedScopeNodeIds);
   }
 }
