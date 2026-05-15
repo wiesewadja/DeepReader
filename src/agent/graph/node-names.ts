@@ -11,6 +11,7 @@
 export const NODE_NAMES = {
   ROUTER: 'router',
   INSPECTIONAL: 'inspectional',
+  PRE_SEARCH: 'pre_search',
   ANALYTICAL: 'analytical',
   SYNTOPICAL: 'syntopical',
   VISUALIZER: 'visualizer',

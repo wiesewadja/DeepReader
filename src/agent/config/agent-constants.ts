@@ -8,7 +8,18 @@
 // ============ 分析节点 ============
 
 /** 分析节点：低于此置信度时提前终止工具循环 */
-export const EARLY_STOP_THRESHOLD = 0.6;
+export const DEFAULT_EARLY_STOP_THRESHOLD = 0.6;
+
+/** @deprecated Use getEarlyStopThreshold() for runtime configuration */
+export const EARLY_STOP_THRESHOLD = DEFAULT_EARLY_STOP_THRESHOLD;
+
+/** 从 settings 中获取早停阈值，未配置时回退到默认值 */
+export function getEarlyStopThreshold(settings?: unknown): number {
+  const obj = settings as Record<string, unknown> | undefined;
+  const raw = obj?.earlyStopThreshold;
+  if (typeof raw === 'number' && raw > 0 && raw <= 1) return raw;
+  return DEFAULT_EARLY_STOP_THRESHOLD;
+}
 
 // ============ React Loop ============
 

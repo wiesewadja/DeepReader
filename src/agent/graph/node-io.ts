@@ -9,7 +9,7 @@
  */
 
 import type { BaseMessage } from '@langchain/core/messages';
-import type { ToolResultSnapshot } from './state';
+import type { ToolResultSnapshot, ReadingDepth, EngineMode } from './state';
 
 // ============ S0: Router ============
 
@@ -20,7 +20,7 @@ export interface RouterInput {
 }
 
 export interface RouterOutput {
-  depth: number;
+  depth: ReadingDepth;
   rewrittenQuery: string;
   allowedTools: string[];
 }
@@ -31,7 +31,7 @@ export interface InspectionalInput {
   bookId: string;
   pdfName: string;
   rewrittenQuery: string;
-  depth: number;
+  depth: ReadingDepth;
 }
 
 export interface InspectionalOutput {
@@ -44,13 +44,31 @@ export interface InspectionalOutput {
 
 // ============ S2: Analytical ============
 
-export interface AnalyticalInput {
+export interface PreSearchInput {
   scopeNodeIds: string[];
   pdfName: string;
   tocSummary: string;
   rewrittenQuery: string;
   betterQuestion: string;
   suggestedKeywords: string[];
+}
+
+export interface PreSearchOutput {
+  validatedScopeNodeIds: string[];
+  preSearchBlock: string;
+  earlyStopContent: string;
+  analysisResult?: string;
+  toolResultsSnapshot: ToolResultSnapshot[];
+}
+
+export interface AnalyticalInput {
+  validatedScopeNodeIds: string[];
+  preSearchBlock: string;
+  pdfName: string;
+  tocSummary: string;
+  rewrittenQuery: string;
+  betterQuestion: string;
+  scopeNodeIds: string[];
 }
 
 export interface AnalyticalOutput {
@@ -89,10 +107,13 @@ export interface FormatterInput {
   structuralAnalysis: string;
   rewrittenQuery: string;
   pdfName: string;
+  /** @deprecated Use mode */
   isProactive: boolean;
   proactiveTrigger: string;
+  /** @deprecated Use mode */
   isSocratic: boolean;
-  depth: number;
+  mode: EngineMode;
+  depth: ReadingDepth;
   tocSummary: string;
   betterQuestion: string;
   scopeNodeIds: string[];

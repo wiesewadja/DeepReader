@@ -9,11 +9,13 @@ import type { ChatMessage } from '../types';
 import type { LLMClientManager } from '../llm-client';
 import type { ToolRegistry, ToolContext } from '../tools/types';
 import type { HistorySummary } from './utils/history-summarizer';
+import { ReadingDepth } from './state.js';
 
 /**
  * Reading depth levels based on Adler's methodology
+ * @deprecated Import from './state.js' instead
  */
-export type ReadingDepth = 0 | 1 | 2 | 3;
+export { ReadingDepth } from './state.js';
 
 /**
  * Callbacks for engine progress reporting
@@ -86,7 +88,7 @@ export function createSharedContext(params: {
   return {
     chatHistory: params.chatHistory || [],
     rawUserQuery: params.rawUserQuery,
-    depth: 2,
+    depth: ReadingDepth.ANALYTICAL,
     indexId: params.indexId,
     pdfName: params.pdfName,
     abortSignal: params.abortSignal,

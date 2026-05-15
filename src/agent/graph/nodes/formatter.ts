@@ -8,9 +8,40 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
-import type { CognitiveEngineState } from '../state';
+import type { CognitiveEngineState, NodeError } from '../state';
+import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
+import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
+import {
+  buildFormatterSystemPrompt,
+  buildFormatterUserMessage,
+} from '../prompts/formatter-prompt';
+import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
+import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
+import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
+import { stripThinkTags } from '../../../config/thinking-models.js';
+import {
+  buildProactiveSystemPrompt,
+  buildProactiveUserMessage,
+  buildSocraticDialoguePrompt,
+  buildSocraticDialogueUserMessage,
+} from '../prompts/proactive-formatter-prompt';
+
+/**
+ * Extract text from a streaming chunk (handles string, array, and null content).
+ */
+function extractChunkText(chunk: { content: unknown }): string {
+  const { content } = chunk;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return (content as { type: string; text: string }[])
+      .filter(c => c.type === 'text')
+      .map(c => c.text)
+      .join('');
+  }
+  return '';
+}
 
 /**
  * Stream LLM response and call back with accumulated content.
@@ -33,14 +64,7 @@ async function streamToContent(
   }
   let content = '';
   for await (const chunk of stream) {
-    const text = typeof chunk.content === 'string'
-      ? chunk.content
-      : Array.isArray(chunk.content)
-        ? (chunk.content as { type: string; text: string }[])
-            .filter(c => c.type === 'text')
-            .map(c => c.text)
-            .join('')
-        : '';
+    const text = extractChunkText(chunk);
     if (text) {
       content += text;
       onContent?.(content);
@@ -48,19 +72,6 @@ async function streamToContent(
   }
   return content;
 }
-import {
-  buildFormatterSystemPrompt,
-  buildFormatterUserMessage,
-} from '../prompts/formatter-prompt';
-import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
-import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
-import { stripThinkTags } from '../../../config/thinking-models.js';
-import {
-  buildProactiveSystemPrompt,
-  buildProactiveUserMessage,
-  buildSocraticDialoguePrompt,
-  buildSocraticDialogueUserMessage,
-} from '../prompts/proactive-formatter-prompt';
 
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
@@ -72,6 +83,11 @@ function fixupWikiLinks(content: string, bookName: string): string {
   return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
     return `[[${bookName}/${inner}]]`;
   });
+}
+
+/** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
+function cleanOutput(content: string, pdfName: string): string {
+  return fixupWikiLinks(stripThinkTags(content), pdfName);
 }
 
 /**
@@ -137,6 +153,21 @@ function stripFabricatedLinks(content: string, inputTexts: string[]): string {
 }
 
 /**
+ * Generate user-facing error hints from nodeErrors.
+ */
+function appendErrorHints(nodeErrors?: Record<string, NodeError | string>): string {
+  if (!nodeErrors) return '';
+  const hints: string[] = [];
+  for (const [node, err] of Object.entries(nodeErrors)) {
+    const isRecoverable = typeof err === 'object' ? err.recoverable : true;
+    if (isRecoverable && NODE_ERROR_HINTS[node]) {
+      hints.push(NODE_ERROR_HINTS[node]);
+    }
+  }
+  return hints.join('\n');
+}
+
+/**
  * S4 Formatter node
  */
 export async function formatterNode(
@@ -148,9 +179,7 @@ export async function formatterNode(
     structuralAnalysis,
     rewrittenQuery,
     pdfName,
-    isProactive,
     proactiveTrigger,
-    isSocratic,
     depth,
     tocSummary,
     betterQuestion,
@@ -158,6 +187,7 @@ export async function formatterNode(
     toolResultsSnapshot,
     highlightContext,
   }: FormatterInput = state;
+  const mode = resolveMode(state);
   const mainModel = config.configurable?.mainModel;
   const callbacks = config.configurable?.callbacks as {
     onContent?: (content: string) => void;
@@ -170,7 +200,7 @@ export async function formatterNode(
   }
 
   // === Proactive mode: ask a question, don't answer ===
-  if (isProactive) {
+  if (mode === 'proactive') {
     const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = analysisResult || '';
     const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
@@ -193,11 +223,11 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
-  if (isSocratic) {
+  if (mode === 'socratic') {
     callbacks?.onProgress?.('正在思考...');
     const chatHistory = ctx?.chatHistory ?? [];
     const socraticPrompt = buildSocraticDialoguePrompt();
@@ -212,21 +242,28 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
-  // === Casual mode (depth=0): simple direct response ===
-  if (depth === 0) {
+  // === Casual mode (depth=CASUAL): simple direct response ===
+  if (depth === ReadingDepth.CASUAL) {
     callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
+    const chatHistory = ctx?.chatHistory ?? [];
+    const historyText = chatHistory.length > 0
+      ? formatHistoryBlock(summarizeRecentHistory(chatHistory, 3))
+      : '';
+    const userMsg = historyText
+      ? `<history>\n${historyText}\n</history>\n\n<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>`
+      : rewrittenQuery || '';
     const content = await streamToContent(
       mainModel,
-      [new SystemMessage(casualPrompt), new HumanMessage(rewrittenQuery || '')],
+      [new SystemMessage(casualPrompt), new HumanMessage(userMsg)],
       config,
       callbacks?.onContent,
     );
 
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
   // === Diagram shortcut: brief in-character response, skip full formatting ===
@@ -361,8 +398,12 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     }
   }
 
-  return { formattedOutput: stripFabricatedLinks(
-    fixupWikiLinks(stripThinkTags(content), pdfName || ''),
+  // Append degradation hints for recoverable node errors
+  const formatted = stripFabricatedLinks(
+    cleanOutput(content, pdfName || ''),
     inputTextsForValidation,
-  ) };
+  );
+  const errorHints = appendErrorHints(state.nodeErrors);
+
+  return { formattedOutput: errorHints ? `${formatted}\n\n> [!hint] ${errorHints}` : formatted };
 }

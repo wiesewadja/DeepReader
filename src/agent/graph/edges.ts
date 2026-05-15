@@ -3,7 +3,9 @@
  */
 
 import type { CognitiveEngineState } from './state';
+import { ReadingDepth } from './state';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
+import { resolveMode } from './utils/engine-helpers';
 
 function hasDiagramIntent(state: CognitiveEngineState): boolean {
   const tools = state.allowedTools ?? [];
@@ -12,11 +14,12 @@ function hasDiagramIntent(state: CognitiveEngineState): boolean {
 
 /**
  * Route from START node.
- * - isProactive: skip router, go directly to inspectional
+ * - proactive: skip router, go directly to inspectional
  * - otherwise: go to router (normal flow)
  */
 export function routeFromStart(state: CognitiveEngineState): string {
-  if (state.isProactive) return NODE_NAMES.INSPECTIONAL;
+  const mode = resolveMode(state);
+  if (mode === 'proactive') return NODE_NAMES.INSPECTIONAL;
   return NODE_NAMES.ROUTER;
 }
 
@@ -24,7 +27,7 @@ export function routeFromStart(state: CognitiveEngineState): string {
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
-  if (state.depth === 0) return NODE_NAMES.FORMATTER;
+  if (state.depth === ReadingDepth.CASUAL) return NODE_NAMES.FORMATTER;
   return NODE_NAMES.INSPECTIONAL;
 }
 
@@ -39,8 +42,10 @@ export function routeByDepth(state: CognitiveEngineState): string {
  * - depth=2 → S2 (analytical)
  */
 export function routeAfterInspectional(state: CognitiveEngineState): string {
+  const mode = resolveMode(state);
+
   // Proactive: inspectional + Excalidraw → visualizer; otherwise → formatter
-  if (state.isProactive) {
+  if (mode === 'proactive') {
     if (state.proactiveTrigger === 'inspectional'
         && typeof window !== 'undefined'
         && (window as any).ExcalidrawAutomate) {
@@ -50,20 +55,33 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
   }
 
   // Socratic: skip S2, go to formatter with dialogue mode (reuses chatHistory)
-  if (state.isSocratic) {
+  if (mode === 'socratic') {
     return EDGE_KEYS.DONE;
   }
 
-  if (state.depth === 3) {
+  if (state.depth === ReadingDepth.SYNTOPICAL) {
     return NODE_NAMES.SYNTOPICAL;
   }
   // depth=1: check if diagram intent (skip visualizer if S1 failed — no valid structural analysis)
-  if (state.depth === 1) {
+  if (state.depth === ReadingDepth.INSPECTIONAL) {
     if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return EDGE_KEYS.DONE;
     return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : EDGE_KEYS.DONE;
   }
-  // depth=2 → analytical
-  return EDGE_KEYS.CONTINUE;
+  // depth=2 → pre-search (then analytical or early-stop formatter)
+  return NODE_NAMES.PRE_SEARCH;
+}
+
+/**
+ * Route after S2-Pre (Pre-search).
+ *
+ * - earlyStopContent is a routing signal: 'done' means pre-search quality was
+ *   high enough to generate a direct answer (stored in analysisResult).
+ *   Empty string means normal path → analytical.
+ * - otherwise → analytical (run ReAct/PlanExecute)
+ */
+export function routeAfterPreSearch(state: CognitiveEngineState): string {
+  if (state.earlyStopContent) return NODE_NAMES.FORMATTER;
+  return NODE_NAMES.ANALYTICAL;
 }
 
 /**

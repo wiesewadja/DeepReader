@@ -8,6 +8,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
+import { ReadingDepth } from '../state';
 import type { RouterInput } from '../node-io.js';
 import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
@@ -46,7 +47,7 @@ export async function routerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const { messages, allowedTools: prevTools, pdfName }: RouterInput = state;
+  const { messages, allowedTools: prevTools = [], pdfName }: RouterInput = state;
   const fastModel = config.configurable?.fastModel;
   const chatHistory = config.configurable?.chatHistory ?? [];
   const rawQuery = extractLastHumanMessage(messages);
@@ -63,7 +64,7 @@ export async function routerNode(
   // Fallback when model is not available (e.g. testing)
   if (!fastModel) {
     return {
-      depth: 2,
+      depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(mergeTools(rawIntent.allowedTools, inheritedTools), []),
     };
@@ -82,15 +83,32 @@ export async function routerNode(
     const text = typeof response.content === 'string' ? response.content : '';
     const parsed = extractJSON(text);
 
-    const depth = parsed?.depth ?? 2;
+    const rawDepth = parsed?.depth;
+    const validDepths = Object.values(ReadingDepth) as number[];
+    let depth: ReadingDepth = validDepths.includes(rawDepth)
+      ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
+
+    // Continuity guard: short replies ("ok", "继续", "嗯") during an ongoing
+    // deep discussion should inherit the previous depth, not be treated as casual.
+    const CONTINUITY_THRESHOLD = 5;
+    if (depth === ReadingDepth.CASUAL && rawQuery.trim().length <= CONTINUITY_THRESHOLD && chatHistory.length >= 2) {
+      const lastAi = [...chatHistory].reverse().find(m => m.role === 'assistant');
+      if (lastAi && lastAi.content.length > 200) {
+        log(`[S0 Router] 延续性对话检测: "${rawQuery}" 在深度讨论中，升级 depth 0→2`);
+        depth = ReadingDepth.ANALYTICAL;
+      }
+    }
 
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
 
     // Hybrid trigger: keywords pre-check + LLM classification
+    // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
     const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
-    const effectiveDepth = candidateSyntopical ? 3 : depth;
+    const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
+      ? ReadingDepth.SYNTOPICAL
+      : depth;
 
     // Step 4: Merge all tool sources: raw + rewritten + inherited
     const finalTools = mergeTools(
@@ -109,7 +127,7 @@ export async function routerNode(
     // Graceful degradation: default to analytical reading
     log('[S0 Router] LLM 调用失败，降级到 depth=2:', err instanceof Error ? err.message : String(err));
     return {
-      depth: 2,
+      depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
     };

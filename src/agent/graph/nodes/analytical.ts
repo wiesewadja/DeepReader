@@ -1,80 +1,20 @@
 /**
- * S2: Analytical Reading Node — LangGraph node using ReAct subgraph
+ * S2: Analytical Reading Node — ReAct/PlanExecute loop
  *
- * Optimized retrieval flow:
- * 1. Pre-search using S1's suggested_keywords (Path B)
- * 2. Inject pre-search results into ReAct initial context
- * 3. Run ReAct loop with reduced maxToolCalls (3 instead of 5)
+ * Receives pre-search data from S2-Pre node via graph state.
+ * Runs PlanExecute with scoped tools for deep analysis.
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
-import { runReactLoop, runPlanExecute } from '../subgraphs/react-loop.js';
-import { EARLY_STOP_THRESHOLD } from '../../config/agent-constants.js';
+import { runPlanExecute } from '../subgraphs/react-loop.js';
 import type { AnalyticalInput } from '../node-io.js';
-import {
-  buildAnalyticalSystemPrompt,
-  buildScopedChaptersBlock,
-  buildAnalyticalUserMessage,
-} from '../prompts/analytical-prompt.js';
+import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
 import { createLangChainTools } from '../../tools/index.js';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
-import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
-import { loadTreeJson } from '../utils/tree-loader.js';
-import { resolveRoleConfig } from '../../../config/providers.js';
-import { toEmbeddingOptions } from '../../../config/role-adapters.js';
-import { verifyAndCleanContent } from '../utils/self-verification.js';
-
-/**
- * Validate scopeNodeIds against tree.json nodeFileMap.
- * Returns only IDs that exist in the tree structure.
- */
-async function validateScopeNodeIds(
-  app: import('obsidian').App,
-  bookId: string,
-  pdfName: string,
-  scopeNodeIds: string[]
-): Promise<string[]> {
-  if (scopeNodeIds.length === 0) return [];
-
-  try {
-    const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
-    const treePath = `.pageindex/${bookId}/tree.json`;
-    const treeContent = await app.vault.adapter.read(treePath);
-    const treeData = JSON.parse(treeContent);
-
-    const validIds: string[] = [];
-    const allNodeIds = new Set<string>();
-    collectAllNodeIds((treeData.structure || []) as TreeNode[], allNodeIds);
-
-    for (const id of scopeNodeIds) {
-      if (allNodeIds.has(id)) {
-        validIds.push(id);
-      }
-    }
-
-    if (validIds.length < scopeNodeIds.length) {
-      log(`[S2 Analytical] Scope validation: ${validIds.length}/${scopeNodeIds.length} IDs valid`);
-    }
-
-    return validIds;
-  } catch (err) {
-    log('[S2 Analytical] Scope validation failed, using all IDs:', err);
-    return scopeNodeIds;
-  }
-}
-
-type TreeNode = { nodeId?: string; nodes?: TreeNode[] };
-function collectAllNodeIds(nodes: TreeNode[], idSet: Set<string>): void {
-  for (const node of nodes) {
-    if (node.nodeId) idSet.add(node.nodeId);
-    if (node.nodes) collectAllNodeIds(node.nodes, idSet);
-  }
-}
+import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
 
 /**
  * Build the scope interceptor that injects scope_node_ids into search_book calls.
@@ -89,25 +29,22 @@ function createScopeInterceptor(scopeNodeIds: string[]) {
 }
 
 /**
- * S2 Analytical node: deep analysis with tool-augmented ReAct loop.
+ * S2 Analytical node: ReAct/PlanExecute loop for deep analysis.
  *
- * Flow:
- * 1. Build system prompt + user message (scope from graph state)
- * 2. Run ReAct subgraph with scoped tools
- * 3. Store results in graph state
- * 4. Optional HITL interrupt
+ * Reads validated scope and pre-search data from state (set by S2-Pre).
  */
 export async function analyticalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
   const {
-    scopeNodeIds: rawScopeNodeIds,
+    validatedScopeNodeIds,
+    preSearchBlock,
     pdfName: statePdfName,
     tocSummary: stateTocSummary,
     rewrittenQuery: stateQuery,
     betterQuestion: stateBetterQuestion,
-    suggestedKeywords: stateKeywords,
+    scopeNodeIds: rawScopeNodeIds,
   }: AnalyticalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
@@ -118,216 +55,36 @@ export async function analyticalNode(
   } | undefined;
 
   if (!mainModel || !toolContext) {
-    console.warn('[S2 Analytical] Missing required config, returning empty result.');
-    return {
-      analysisResult: '',
-      toolResultsSnapshot: [],
-    };
+    return { analysisResult: '', toolResultsSnapshot: [] };
   }
 
-  // Use scope from graph state (set by S1 or empty for global search)
-
-  // Validate scopeNodeIds against tree structure
-  const validatedScopeNodeIds = await validateScopeNodeIds(
-    toolContext.app,
-    toolContext.indexId || '',
-    statePdfName || ctx?.pdfName || '',
-    rawScopeNodeIds
-  );
-
-  // Build system prompt and user message
-  const tocSummary = stateTocSummary || ctx?.tocSummary;
+  // Use validated scope from pre-search node (fallback to raw if pre-search was skipped)
+  const scopeNodeIds = validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : rawScopeNodeIds;
   const currentNodeId = toolContext.currentNodeId;
-  
-  // 获取当前章节名称（用于提示词）
-  let currentChapterName: string | undefined;
-  if (currentNodeId && toolContext.markdownFiles) {
-    for (const [path, _] of Object.entries(toolContext.markdownFiles)) {
-      const fileName = path.split('/').pop() ?? '';
-      if (fileName.startsWith(currentNodeId.replace(/^0+/, ''))) {
-        currentChapterName = fileName.replace(/\.md$/, '');
-        break;
-      }
-    }
-  }
+  const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.markdownFiles);
+  const markdownFiles = ctx?.markdownFiles ?? {};
+  const tocSummary = stateTocSummary || ctx?.tocSummary;
 
-  const systemPrompt = buildAnalyticalSystemPrompt({
-    scopeNodeIds: validatedScopeNodeIds,
+  // Build prompt context
+  const { fullSystemPrompt, userMessage } = buildFullAnalyticalContext({
+    scopeNodeIds,
     tocSummary,
     currentNodeId,
     currentChapterName,
     userProfileSummary: ctx?.userProfileSummary,
+    markdownFiles,
+    standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
+    betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
+    recentHistorySummaries: ctx?.recentHistorySummaries,
+    prevSearchedBlockIds: ctx?.prevSearchedBlockIds,
   });
 
-  const markdownFiles = ctx?.markdownFiles ?? {};
-  const scopedChapters = buildScopedChaptersBlock(validatedScopeNodeIds, markdownFiles);
-  const fullSystemPrompt = scopedChapters
-    ? `${systemPrompt}\n${scopedChapters}`
-    : systemPrompt;
-
-  const userMessage = buildAnalyticalUserMessage(
-    stateQuery || ctx?.rawUserQuery || '',
-    stateBetterQuestion || ctx?.betterQuestion,
-    ctx?.recentHistorySummaries,
-    ctx?.prevSearchedBlockIds,
-  );
-
-  // === Path B: Pre-search with S1's suggested_keywords (RRF multi-query) ===
-  let preSearchBlock = '';
-  if (stateKeywords && stateKeywords.length > 0 && toolContext.app) {
-    try {
-      const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath;
-      const settings = toolContext.plugin?.settings;
-      const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
-      const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {
-        filePath: '',
-        topK: 10,
-        embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
-        scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
-      };
-      if (toolContext.indexId && vaultPath) {
-        baseSearchOpts.bookId = toolContext.indexId;
-        baseSearchOpts.vaultPath = vaultPath;
-      }
-
-      // RRF multi-query: 每个关键词独立检索后融合
-      const limitedKeywords = stateKeywords.slice(0, 8);
-      const preSearchRunnable = RunnableLambda.from(
-        async () => {
-          const subResults = await Promise.all(
-            limitedKeywords.map(async (kw) => {
-              try {
-                return await searchBookV2({ ...baseSearchOpts, query: kw });
-              } catch (err) {
-                log(`[S2 Analytical] Keyword search failed for "${kw}":`, err instanceof Error ? err.message : String(err));
-                return [];
-              }
-            })
-          );
-
-          // Merge: dedupe by nodeId, track hit count for multi-keyword boost
-          const mergedMap = new Map<string, { result: BookSearchResultV2; hitCount: number }>();
-          for (const results of subResults) {
-            for (const r of results) {
-              const existing = mergedMap.get(r.nodeId);
-              if (existing) {
-                existing.hitCount++;
-                if (r.score > existing.result.score) existing.result = r;
-              } else {
-                mergedMap.set(r.nodeId, { result: r, hitCount: 1 });
-              }
-            }
-          }
-          return Array.from(mergedMap.values())
-            .sort((a, b) => {
-              let scoreA = a.result.score + a.hitCount * 0.1;
-              let scoreB = b.result.score + b.hitCount * 0.1;
-              if (currentNodeId && a.result.nodeId === currentNodeId) scoreA += 0.2;
-              if (currentNodeId && b.result.nodeId === currentNodeId) scoreB += 0.2;
-              return scoreB - scoreA;
-            })
-            .map(e => e.result);
-        }
-      ).withConfig({ runName: 'pre_search_rrf' });
-      const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
-
-      // Quality threshold: only inject top-3 compact results
-      if (Array.isArray(preResults) && preResults.length >= 2) {
-        const hits = preResults.slice(0, 3).map(r => ({
-          node_id: r.nodeId,
-          title: r.title,
-          file_name: r.fileName,
-          score: r.score,
-          matched_blocks: r.matchedBlocks.slice(0, 2).map(b => ({
-            block_id: b.blockId.replace(/^\^/, ''),
-            content: b.content.slice(0, 200),
-          })),
-        }));
-
-        // === Early stop: if pre-search quality is high, skip ReAct entirely ===
-        const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
-        // EARLY_STOP_THRESHOLD imported from agent-constants.ts
-
-        if (avgScore >= EARLY_STOP_THRESHOLD && hits.length >= 2) {
-          log(`[S2 Analytical] 早停: pre-search 平均分=${avgScore.toFixed(2)} >= ${EARLY_STOP_THRESHOLD}，跳过 ReAct`);
-
-          const blockLines = hits.flatMap(h =>
-            h.matched_blocks.map(b =>
-              `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
-            )
-          );
-
-          const pdfName = statePdfName || ctx?.pdfName || '';
-          const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果回答用户问题。你必须从检索结果中引用原文，并使用 wiki 链接标注来源。即使信息不完整，也要基于已有内容给出尽可能充分的回答。
-
-<pre_search_results>
-${blockLines.join('\n\n')}
-</pre_search_results>
-
-用户问题：${stateBetterQuestion || stateQuery || ctx?.rawUserQuery || ''}
-
-输出格式要求：
-- 引用来源用 [[${pdfName}/file_name#^block_id|短别名]] 格式，别名 2-6 字核心词
-- file_name 和 block_id 必须来自上方检索结果中标注的值，禁止编造
-- 链接必须嵌入句子内部替代关键词，不要孤立在句尾
-- 必须在回答中包含至少一个 wiki 链接
-- 如果检索结果部分覆盖了问题，先基于已有内容回答，再简要说明哪些方面需要更多探索`;
-
-          const directResponse = await mainModel.invoke([
-            new SystemMessage(directPrompt),
-            new HumanMessage(stateBetterQuestion || stateQuery || ''),
-          ], config);
-
-          const directContent = typeof directResponse.content === 'string'
-            ? directResponse.content : JSON.stringify(directResponse.content);
-
-          const preSearchRecords = hits.flatMap(h =>
-            h.matched_blocks.map(b => ({
-              toolName: 'pre_search',
-              args: { query: 'auto', node_id: h.node_id },
-              result: b.content,
-              originalResultLength: b.content.length,
-              extractedBlockIds: [b.block_id],
-            }))
-          );
-
-          const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
-
-          return {
-            analysisResult: verifyResult.content,
-            toolResultsSnapshot: preSearchRecords,
-          };
-        }
-
-        // Normal path: inject compact pre-search results with citation metadata
-        const blockLines = hits.flatMap(h =>
-          h.matched_blocks.map(b =>
-            `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
-          )
-        );
-
-        preSearchBlock = `<pre_search_results>
-基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
-
-${blockLines.join('\n\n')}
-</pre_search_results>`;
-
-        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${stateKeywords.length} 个关键词`);
-      } else {
-        log(`[S2 Analytical] 预检索结果不足 (${preResults.length} 条), 跳过注入`);
-      }
-    } catch (err) {
-      log('[S2 Analytical] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
-    }
-  }
-
-  // 构建最终 userMessage（合并预检索结果）
+  // Inject pre-search results from S2-Pre node
   const finalUserMessage = preSearchBlock
     ? `${preSearchBlock}\n\n${userMessage}`
     : userMessage;
 
-  // Create LangChain tools (search_book + read_book_section for S2)
-  // Conditionally add generate_infographic if configured
+  // Create scoped tools
   const allTools = createLangChainTools(toolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
   if (toolContext.infographicConfig) {
@@ -346,16 +103,15 @@ ${blockLines.join('\n\n')}
     maxToolCalls: 3,
     forcedConclusionContext: {
       pdfName: statePdfName || ctx?.pdfName,
-      scopeNodeIds: validatedScopeNodeIds,
+      scopeNodeIds,
     },
-    toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+    toolInterceptor: createScopeInterceptor(scopeNodeIds),
     onProgress: callbacks?.onProgress,
   };
 
-  // Plan-then-Execute (default): 2 LLM calls instead of iterative ReAct
+  log(`[S2 Analytical] 开始 PlanExecute, scope=${scopeNodeIds.length} nodes, preSearch=${!!preSearchBlock}`);
   const result = await runPlanExecute(loopMessages, loopConfig, config);
 
-  // Store results
   const stateUpdate: Partial<CognitiveEngineState> = {
     analysisResult: result.content,
     toolResultsSnapshot: result.toolResults.map(r => ({
@@ -367,7 +123,7 @@ ${blockLines.join('\n\n')}
     })),
   };
 
-  // HITL interrupt (if enabled)
+  // HITL interrupt
   const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
   if (enableHumanReview) {
     const resumeValue = interrupt({
@@ -377,7 +133,6 @@ ${blockLines.join('\n\n')}
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      // User rejected: re-run with feedback using Plan-then-Execute
       const refinedResult = await runPlanExecute(
         [
           new SystemMessage(fullSystemPrompt),
@@ -391,9 +146,9 @@ ${blockLines.join('\n\n')}
           maxToolCalls: 3,
           forcedConclusionContext: {
             pdfName: statePdfName || ctx?.pdfName,
-            scopeNodeIds: validatedScopeNodeIds,
+            scopeNodeIds,
           },
-          toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
+          toolInterceptor: createScopeInterceptor(scopeNodeIds),
           onProgress: callbacks?.onProgress,
         },
         config,

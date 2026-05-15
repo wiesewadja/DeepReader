@@ -231,7 +231,10 @@ export class ProfileBuilder {
 			for (let i = 0; i < nodes.length; i += BATCH) {
 				if (signal?.aborted) return;
 				const batch = nodes.slice(i, i + BATCH);
-				const texts = batch.map(n => n.text.slice(0, 2000));
+				const texts = batch
+					.map(n => ({ id: n.id, text: n.text.slice(0, 2000).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') }))
+					.filter(n => n.text.trim());
+				if (texts.length === 0) continue;
 
 				onProgress?.({
 					stage: 'indexing',
@@ -241,15 +244,15 @@ export class ProfileBuilder {
 				});
 
 				try {
-					const embeddings = await generateEmbeddings(texts, embOpts);
-					for (let j = 0; j < batch.length && j < embeddings.length; j++) {
+					const embeddings = await generateEmbeddings(texts.map(t => t.text), embOpts);
+					for (let j = 0; j < texts.length && j < embeddings.length; j++) {
 						vectors.push({
-							chunkId: batch[j].id, nodeId: batch[j].id, blockIds: [],
+							chunkId: texts[j].id, nodeId: texts[j].id, blockIds: [],
 							type: 'summary', level: 'L1', vector: embeddings[j],
 						});
 						chunks.push({
-							chunkId: batch[j].id, nodeId: batch[j].id, blockIds: [],
-							text: texts[j], type: 'summary',
+							chunkId: texts[j].id, nodeId: texts[j].id, blockIds: [],
+							text: texts[j].text, type: 'summary',
 						});
 					}
 				} catch (e) {

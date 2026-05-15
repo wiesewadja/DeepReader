@@ -195,3 +195,47 @@ ${standaloneQuery}
 
 在限定范围内分析，提取关键内容并附带 block_id。`;
 }
+
+/**
+ * Build the full analytical prompt context (system prompt + user message).
+ * Shared by pre-search and analytical nodes to avoid duplication.
+ */
+export function buildFullAnalyticalContext(params: {
+  scopeNodeIds: string[];
+  tocSummary?: string;
+  currentNodeId?: string;
+  currentChapterName?: string;
+  userProfileSummary?: string;
+  markdownFiles: Record<string, string>;
+  standaloneQuery: string;
+  betterQuestion?: string;
+  recentHistorySummaries?: import('../utils/history-summarizer').HistorySummary[];
+  prevSearchedBlockIds?: string[];
+  skipUserMessage?: boolean;
+}): { fullSystemPrompt: string; userMessage?: string } {
+  const systemPrompt = buildAnalyticalSystemPrompt({
+    scopeNodeIds: params.scopeNodeIds,
+    tocSummary: params.tocSummary,
+    currentNodeId: params.currentNodeId,
+    currentChapterName: params.currentChapterName,
+    userProfileSummary: params.userProfileSummary,
+  });
+
+  const scopedChapters = buildScopedChaptersBlock(params.scopeNodeIds, params.markdownFiles);
+  const fullSystemPrompt = scopedChapters
+    ? `${systemPrompt}\n${scopedChapters}`
+    : systemPrompt;
+
+  if (params.skipUserMessage) {
+    return { fullSystemPrompt };
+  }
+
+  const userMessage = buildAnalyticalUserMessage(
+    params.standaloneQuery,
+    params.betterQuestion,
+    params.recentHistorySummaries,
+    params.prevSearchedBlockIds,
+  );
+
+  return { fullSystemPrompt, userMessage };
+}

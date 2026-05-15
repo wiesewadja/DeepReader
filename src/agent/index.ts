@@ -32,11 +32,13 @@ export {
 } from './graph/shared-context.js';
 export type {
   SharedContext,
-  ReadingDepth,
   EngineCallbacks,
 } from './graph/shared-context.js';
+export { ReadingDepth } from './graph/state.js';
 
 // Import for FrontendAgent class
+import { ReadingDepth } from './graph/state.js';
+import type { EngineMode } from './graph/state.js';
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
@@ -298,9 +300,10 @@ ${currentMemory}
           messages: [new HumanMessage(userMessage)],
           bookId: context.indexId || '',
           pdfName: context.pdfName || '',
-          depth: context.isProactive ? 1 : undefined,
+          depth: context.isProactive ? ReadingDepth.INSPECTIONAL : undefined,
           isSocratic: context.isSocratic ?? false,
           isProactive: context.isProactive ?? false,
+          mode: (context.isProactive ? 'proactive' : context.isSocratic ? 'socratic' : 'normal') as EngineMode | undefined,
           proactiveTrigger: context.proactiveTrigger ?? undefined,
           highlightContext: context.highlightContext ?? [],
         },
