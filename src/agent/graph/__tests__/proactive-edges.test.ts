@@ -67,7 +67,7 @@ describe('proactive edge routing', () => {
 
     it('isSocratic does not interfere when false', () => {
       const state = { isSocratic: false, depth: 2, structuralAnalysis: '...' } as any;
-      expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.CONTINUE);
+      expect(routeAfterInspectional(state)).toBe(NODE_NAMES.PRE_SEARCH);
     });
   });
 

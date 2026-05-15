@@ -24,6 +24,14 @@ export enum ReadingDepth {
   SYNTOPICAL = 3,
 }
 
+/**
+ * Engine mode — replaces the isProactive/isSocratic boolean pair.
+ * 'normal'    — standard query-answer flow
+ * 'proactive' — ask guiding questions instead of answering
+ * 'socratic'  — dialogue mode with follow-up questions
+ */
+export type EngineMode = 'normal' | 'proactive' | 'socratic';
+
 /** Tool result snapshot for S2 → S4 self-verification */
 export interface ToolResultSnapshot {
   toolName: string;
@@ -65,6 +73,11 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   analysisResult: Annotation<string>(),
   toolResultsSnapshot: Annotation<ToolResultSnapshot[]>(overwriteWithDefault([])),
 
+  // === S2-pre: Pre-search intermediate ===
+  preSearchBlock: Annotation<string>(),
+  earlyStopContent: Annotation<string>(),
+  validatedScopeNodeIds: Annotation<string[]>(overwriteWithDefault([])),
+
   // === S4: Formatter output ===
   formattedOutput: Annotation<string>(),
 
@@ -73,12 +86,17 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   pdfName: Annotation<string>(),
 
   // === Proactive guidance ===
+  /** @deprecated Use mode */
   isProactive: Annotation<boolean>(),
   proactiveTrigger: Annotation<string>(),
   highlightContext: Annotation<string[]>(overwriteWithDefault([])),
 
   // === Socratic mode ===
+  /** @deprecated Use mode */
   isSocratic: Annotation<boolean>(),
+
+  // === Unified mode ===
+  mode: Annotation<EngineMode>(overwriteWithDefault('normal' as EngineMode)),
 
   // === Error tracking ===
   nodeErrors: Annotation<Record<string, string>>({

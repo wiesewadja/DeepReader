@@ -10,6 +10,7 @@ import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langc
 import type { ChatOpenAI } from '@langchain/openai';
 import type { CognitiveEngineState } from '../state';
 import { ReadingDepth } from '../state';
+import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
 
@@ -150,9 +151,7 @@ export async function formatterNode(
     structuralAnalysis,
     rewrittenQuery,
     pdfName,
-    isProactive,
     proactiveTrigger,
-    isSocratic,
     depth,
     tocSummary,
     betterQuestion,
@@ -160,6 +159,7 @@ export async function formatterNode(
     toolResultsSnapshot,
     highlightContext,
   }: FormatterInput = state;
+  const mode = resolveMode(state);
   const mainModel = config.configurable?.mainModel;
   const callbacks = config.configurable?.callbacks as {
     onContent?: (content: string) => void;
@@ -172,7 +172,7 @@ export async function formatterNode(
   }
 
   // === Proactive mode: ask a question, don't answer ===
-  if (isProactive) {
+  if (mode === 'proactive') {
     const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = analysisResult || '';
     const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
@@ -199,7 +199,7 @@ export async function formatterNode(
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
-  if (isSocratic) {
+  if (mode === 'socratic') {
     callbacks?.onProgress?.('正在思考...');
     const chatHistory = ctx?.chatHistory ?? [];
     const socraticPrompt = buildSocraticDialoguePrompt();

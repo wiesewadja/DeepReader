@@ -15,11 +15,12 @@ import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
 import { CognitiveEngineAnnotation } from './state';
 import { routerNode } from './nodes/router';
 import { inspectionalNode } from './nodes/inspectional';
+import { preSearchNode } from './nodes/analytical-pre-search';
 import { analyticalNode } from './nodes/analytical';
 import { syntopicalNode } from './nodes/syntopical';
 import { visualizerNode } from './nodes/visualizer';
 import { formatterNode } from './nodes/formatter';
-import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterAnalysis } from './edges';
+import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterPreSearch, routeAfterAnalysis } from './edges';
 import { safeNode } from './utils/safe-node.js';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 
@@ -30,6 +31,14 @@ const safeInspectional = safeNode(NODE_NAMES.INSPECTIONAL, inspectionalNode, (st
   betterQuestion: state.rewrittenQuery,
   structuralAnalysis: '',
   suggestedKeywords: [],
+}));
+
+// S2-Pre fallback: pass through scope without pre-search
+const safePreSearch = safeNode(NODE_NAMES.PRE_SEARCH, preSearchNode, (state) => ({
+  validatedScopeNodeIds: state.scopeNodeIds ?? [],
+  preSearchBlock: '',
+  earlyStopContent: '',
+  toolResultsSnapshot: [],
 }));
 
 // S2 fallback: empty analysis — formatter will handle gracefully
@@ -47,6 +56,7 @@ const safeFormatter = safeNode(NODE_NAMES.FORMATTER, formatterNode, (state) => (
 const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addNode(NODE_NAMES.ROUTER, routerNode)
   .addNode(NODE_NAMES.INSPECTIONAL, safeInspectional)
+  .addNode(NODE_NAMES.PRE_SEARCH, safePreSearch)
   .addNode(NODE_NAMES.ANALYTICAL, safeAnalytical)
   .addNode(NODE_NAMES.SYNTOPICAL, safeNode(NODE_NAMES.SYNTOPICAL, syntopicalNode, () => ({
     analysisResult: '',
@@ -63,10 +73,14 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
     [NODE_NAMES.INSPECTIONAL]: NODE_NAMES.INSPECTIONAL,
   })
   .addConditionalEdges(NODE_NAMES.INSPECTIONAL, routeAfterInspectional, {
-    [EDGE_KEYS.CONTINUE]: NODE_NAMES.ANALYTICAL,
+    [NODE_NAMES.PRE_SEARCH]: NODE_NAMES.PRE_SEARCH,
     [NODE_NAMES.SYNTOPICAL]: NODE_NAMES.SYNTOPICAL,
     [NODE_NAMES.VISUALIZER]: NODE_NAMES.VISUALIZER,
     [EDGE_KEYS.DONE]: NODE_NAMES.FORMATTER,
+  })
+  .addConditionalEdges(NODE_NAMES.PRE_SEARCH, routeAfterPreSearch, {
+    [NODE_NAMES.FORMATTER]: NODE_NAMES.FORMATTER,
+    [NODE_NAMES.ANALYTICAL]: NODE_NAMES.ANALYTICAL,
   })
   .addConditionalEdges(NODE_NAMES.ANALYTICAL, routeAfterAnalysis, {
     [NODE_NAMES.VISUALIZER]: NODE_NAMES.VISUALIZER,
