@@ -9,6 +9,7 @@
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_FULL_TOOL_MESSAGES } from '../../config/agent-constants.js';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { messagesStateReducer } from '@langchain/langgraph';
@@ -79,11 +80,6 @@ const ReactAnnotation = Annotation.Root({
 });
 
 type ReactState = typeof ReactAnnotation.State;
-
-// === Max tool result length ===
-const MAX_TOOL_RESULT_LENGTH = 4000;
-/** Keep at most this many full ToolMessages; older ones are compressed */
-const MAX_FULL_TOOL_MESSAGES = 2;
 
 function compressToolResult(result: string): string {
   if (result.length <= MAX_TOOL_RESULT_LENGTH) return result;

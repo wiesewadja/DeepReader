@@ -12,6 +12,7 @@ import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { runReactLoop, runPlanExecute } from '../subgraphs/react-loop.js';
+import { EARLY_STOP_THRESHOLD } from '../../config/agent-constants.js';
 import {
   buildAnalyticalSystemPrompt,
   buildScopedChaptersBlock,
@@ -238,7 +239,7 @@ export async function analyticalNode(
 
         // === Early stop: if pre-search quality is high, skip ReAct entirely ===
         const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
-        const EARLY_STOP_THRESHOLD = 0.6;
+        // EARLY_STOP_THRESHOLD imported from agent-constants.ts
 
         if (avgScore >= EARLY_STOP_THRESHOLD && hits.length >= 2) {
           log(`[S2 Analytical] 早停: pre-search 平均分=${avgScore.toFixed(2)} >= ${EARLY_STOP_THRESHOLD}，跳过 ReAct`);

@@ -16,6 +16,7 @@ import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopical-search.js';
+import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 import {
@@ -64,8 +65,8 @@ export async function syntopicalNode(
       query,
       vaultPath,
       embedding,
-      maxBooks: 5,
-      topKPerBook: 5,
+      maxBooks: SYNTOPICAL_MAX_BOOKS,
+      topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
     })
   ).withConfig({ runName: 'syntopical_search' });
 
@@ -128,7 +129,7 @@ export async function syntopicalNode(
 
   // 5. HITL interrupt (optional)
   // Keep toolResultsSnapshot limited but include all referenced results
-  const snapshotLimit = 20; // Increased from 10 to reduce ghost link risk
+  const snapshotLimit = SYNTOPICAL_SNAPSHOT_LIMIT;
   const stateUpdate: Partial<CognitiveEngineState> = {
     analysisResult: content,
     toolResultsSnapshot: toolResults.slice(0, Math.min(snapshotLimit, toolResults.length)),

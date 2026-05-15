@@ -12,7 +12,8 @@ import type { ChatMessage } from '../types';
 import { MemoryStore } from './store';
 import type { ConsolidationResult, ConsolidatorConfig } from './types';
 import { DEFAULT_CONSOLIDATOR_CONFIG } from './types';
-import { estimateTokens } from '../agent-loop';
+import { estimateTokens } from '../utils/token-estimator.js';
+import { MAX_MEMORY_LINES, MAX_MEMORY_CHARS } from '../config/agent-constants.js';
 import { agentLog } from '../../utils/logger';
 import type { LLMClient } from '../llm-client';
 
@@ -48,11 +49,6 @@ const SAVE_MEMORY_TOOL = [
 	},
 ];
 
-/** MEMORY.md 最大行数 */
-const MAX_MEMORY_LINES = 100;
-
-/** MEMORY.md 最大字符数（约 5000 tokens） */
-const MAX_MEMORY_CHARS = 8000;
 
 /**
  * compress_memory 工具定义

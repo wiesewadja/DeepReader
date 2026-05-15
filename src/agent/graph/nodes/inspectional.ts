@@ -17,6 +17,7 @@ import {
 } from '../prompts/inspectional-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
+import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
 
 /**
  * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.
@@ -62,7 +63,7 @@ export async function inspectionalNode(
 
   // Step 2: Format tree structure (include book name in links)
   const pdfName = state.pdfName || '';
-  const treeText = formatTreeStructure(outlineNodes, 0, 100, 4, pdfName);
+  const treeText = formatTreeStructure(outlineNodes, 0, TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH, pdfName);
 
   // Step 3: Build prompt
   const docDescription = config.configurable?.sharedContext?.docDescription;

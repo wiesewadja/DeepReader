@@ -12,11 +12,14 @@ import { LLMClient } from './llm-client';
 import type { ToolRegistry, ToolContext } from './tools/types';
 import { executeTool } from './tools/index';
 import { agentLog } from '../utils/logger';
+import { estimateTokens } from './utils/token-estimator.js';
+export { estimateTokens };
 import {
   validateAndCorrectLinks,
 } from './utils/link-validator.js';
 import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
 import type { HumanizedProgress } from './ui/humanized-types.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_CONTEXT_TOKENS, TOOL_MAX_RETRIES } from './config/agent-constants.js';
 import type { ITraceContext } from './tracing/types';
 
 // 导出日志函数供控制台使用
@@ -129,36 +132,13 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * 估算消息历史的 token 数（粗略估算：1 token ≈ 1.5 中文字符或 4 英文字符）
- */
-export function estimateTokens(messages: ChatMessage[]): number {
-  let totalChars = 0;
-  for (const msg of messages) {
-    if (typeof msg.content === 'string') {
-      totalChars += msg.content.length;
-    }
-    // 工具调用和结果也计入
-    if (msg.tool_calls) {
-      totalChars += JSON.stringify(msg.tool_calls).length;
-    }
-  }
-  // 粗略估算：中文字符/1.5 + 英文字符/4
-  return Math.round(totalChars / 2);
-}
-
-/**
  * 延迟函数（用于重试退避）
  */
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * 性能优化常量
- */
-const MAX_TOOL_RESULT_LENGTH = 4000;  // 工具结果最大长度（字符）- 降低以减少 token 膨胀
-const MAX_CONTEXT_TOKENS = 20000;     // 消息历史最大 token 数 - 降低以更早触发压缩
-const TOOL_MAX_RETRIES = 2;           // 工具失败最大重试次数
+
 
 /**
  * 压缩工具结果（防止 token 膨胀）
