@@ -83,7 +83,7 @@ export async function generateVoice(
   return TTSService.mergeAudioChunks(audioChunks);
 }
 
-function splitSentences(text: string): string[] {
+export function splitSentences(text: string): string[] {
   const sentences: string[] = [];
   let remaining = text;
   while (remaining.length > 0) {
