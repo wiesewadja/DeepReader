@@ -37,6 +37,7 @@ export type {
 export { ReadingDepth } from './graph/state.js';
 
 // Import for FrontendAgent class
+import { ReadingDepth } from './graph/state.js';
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
@@ -298,7 +299,7 @@ ${currentMemory}
           messages: [new HumanMessage(userMessage)],
           bookId: context.indexId || '',
           pdfName: context.pdfName || '',
-          depth: context.isProactive ? 1 : undefined,
+          depth: context.isProactive ? ReadingDepth.INSPECTIONAL : undefined,
           isSocratic: context.isSocratic ?? false,
           isProactive: context.isProactive ?? false,
           proactiveTrigger: context.proactiveTrigger ?? undefined,

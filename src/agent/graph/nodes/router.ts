@@ -83,15 +83,24 @@ export async function routerNode(
     const text = typeof response.content === 'string' ? response.content : '';
     const parsed = extractJSON(text);
 
-    const depth: ReadingDepth = parsed?.depth ?? ReadingDepth.ANALYTICAL;
+    const rawDepth = parsed?.depth;
+    const depth: ReadingDepth = (
+      rawDepth === ReadingDepth.CASUAL
+      || rawDepth === ReadingDepth.INSPECTIONAL
+      || rawDepth === ReadingDepth.ANALYTICAL
+      || rawDepth === ReadingDepth.SYNTOPICAL
+    ) ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
 
     // Hybrid trigger: keywords pre-check + LLM classification
+    // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
     const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
-    const effectiveDepth = candidateSyntopical ? ReadingDepth.SYNTOPICAL : depth;
+    const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
+      ? ReadingDepth.SYNTOPICAL
+      : depth;
 
     // Step 4: Merge all tool sources: raw + rewritten + inherited
     const finalTools = mergeTools(

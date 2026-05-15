@@ -60,7 +60,7 @@ export function formatTreeStructure(
 export function buildInspectionalSystemPrompt(
   treeText: string,
   docName: string,
-  depth: number,
+  depth: ReadingDepth,
   docDescription?: string
 ): string {
   const summarySection = docDescription
@@ -141,7 +141,7 @@ ${taskBranch}
 /**
  * Build user message for inspectional state
  */
-export function buildInspectionalUserMessage(standaloneQuery: string, depth: number): string {
+export function buildInspectionalUserMessage(standaloneQuery: string, depth: ReadingDepth): string {
   const depthHint = depth === ReadingDepth.INSPECTIONAL
     ? '请基于目录树生成详细的结构检视报告，解答用户的宏观问题。'
     : '请根据目录树圈定相关章节范围，在 tocSummary 中提供搜索关键词建议。';
