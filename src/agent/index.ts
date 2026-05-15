@@ -59,6 +59,8 @@ import { cognitiveEngine } from './graph/index.js';
 import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
 import { createSharedContext } from './graph/shared-context.js';
+import { processGraphStream as processStream } from './graph/stream-processor.js';
+import { generateVoice, type VoiceConfig } from './graph/voice-pipeline.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;
@@ -506,211 +508,40 @@ ${currentMemory}
     };
   }
 
-  /**
-   * 处理 LangGraph 流式输出（updates 模式）。
-   *
-   * streamMode: "updates" 产生的 chunk 格式：
-   * - 正常节点: { nodeName: { field1: value1, ... } }
-   * - interrupt: { __interrupt__: [{ value: { nodeId, content, question } }] }
-   */
-
-  /**
-   * 节点名到用户友好文案的映射
-   */
-  private static readonly NODE_STATUS_MAP: Record<string, string> = {
-    router: '正在理解你的问题...',
-    inspectional: '正在翻阅目录，锁定相关章节...',
-    analytical: '正在深度分析原文...',
-    formatter: '正在整理笔记...',
-  };
-
-  private static getNodeStatus(nodeName: string): string {
-    return FrontendAgent.NODE_STATUS_MAP[nodeName] || `正在处理...`;
-  }
-
   private async processGraphStream(
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
     config?: { configurable?: Record<string, unknown> },
   ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
-    const onProgress = callbacks.onProgress || (() => {});
-    const onContent = callbacks.onContent || (() => {});
-
-    let formattedOutput = '';
-    let interruptedNode: { nodeId: string; content: string } | undefined;
-
-    // 语音生成配置
-    const ttsCfg = config?.configurable?.ttsConfig as { apiKey: string; baseUrl: string; model?: string } | undefined;
-    const llmCfg = config?.configurable?.llmConfig as { apiKey: string; baseUrl: string; model?: string } | undefined;
-    const enableVoiceReply = !!(ttsCfg && llmCfg && callbacks.onVoiceReady);
-
-    for await (const chunk of stream) {
-      if (chunk == null || typeof chunk !== 'object') continue;
-
-      const record = chunk as Record<string, unknown>;
-
-      // 检测 interrupt（HITL）
-      if ('__interrupt__' in record) {
-        const interrupts = record.__interrupt__;
-        if (Array.isArray(interrupts) && interrupts.length > 0) {
-          const interruptValue = interrupts[0]?.value;
-          if (interruptValue) {
-            interruptedNode = {
-              nodeId: interruptValue.nodeId || 'unknown',
-              content: interruptValue.content || interruptValue.question || '',
-            };
-          }
-        }
-        break;
-      }
-
-      // 正常节点更新: { nodeName: stateUpdate }
-      const nodeNames = Object.keys(record);
-      for (const nodeName of nodeNames) {
-        const stateUpdate = record[nodeName] as Record<string, unknown> | null;
-        if (stateUpdate == null) continue;
-
-        onProgress(FrontendAgent.getNodeStatus(nodeName));
-
-        // 收集格式化输出（流式）
-        if (stateUpdate.formattedOutput && typeof stateUpdate.formattedOutput === 'string') {
-          formattedOutput = stateUpdate.formattedOutput;
-          onContent(formattedOutput);
-        }
-
-      }
-    }
-
-    // S4 阶段完成后，使用 formattedOutput 生成语音
-    if (enableVoiceReply && formattedOutput && callbacks.onVoiceReady) {
-      // 优先使用流式回调，否则使用完整音频回调
-      const onChunk = callbacks.onVoiceChunk;
-      this.generateVoiceFromFormattedOutput(
-        formattedOutput,
-        ttsCfg,
-        llmCfg,
-        {
-          userQuestion: (config?.configurable?.sharedContext as Record<string, unknown>)?.userQuestion as string | undefined,
-          bookTitle: (config?.configurable?.sharedContext as Record<string, unknown>)?.bookTitle as string | undefined,
-          memoryContext: (config?.configurable?.sharedContext as Record<string, unknown>)?.memoryContext as string | undefined,
-          abortSignal: callbacks.abortSignal,
-        },
-        onChunk ? (chunk) => onChunk({ audioChunk: chunk, isComplete: false }) : undefined,
-      ).then(audioBuffer => {
-        if (audioBuffer) {
-          const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
-          // 发送完成信号
-          if (onChunk) {
-            onChunk({ audioChunk: new ArrayBuffer(0), isComplete: true });
-          }
-          callbacks.onVoiceReady!({ audioBuffer, duration });
-        }
-      }).catch(err => {
-        console.warn('[VoicePipeline] voice generation failed:', err);
-      });
-    }
-
-    if (interruptedNode) {
-      return { messages: [], interrupted: interruptedNode };
-    }
-
-    callbacks.onComplete?.();
-
-    const resultMessages: ChatMessage[] = [];
-    if (formattedOutput) {
-      resultMessages.push({ role: 'assistant', content: formattedOutput });
-    }
-
-    return { messages: resultMessages };
+    return processStream(stream, callbacks, config, this.createVoicePipelineCallback());
   }
 
-  /**
-   * 从格式化输出生成语音
-   * 等流式输出结束后，将内容摘要后分段生成语音并合并成完整段落
-   * 支持流式回调：边生成边返回音频块
-   */
-  private async generateVoiceFromFormattedOutput(
-    formattedOutput: string,
-    ttsConfig: { apiKey: string; baseUrl: string; model?: string },
-    llmConfig: { apiKey: string; baseUrl: string; model?: string },
-    options: {
-      userQuestion?: string;
-      bookTitle?: string;
-      memoryContext?: string;
-      abortSignal?: AbortSignal;
-    },
-    onChunk?: (audioChunk: ArrayBuffer) => void,
-  ): Promise<ArrayBuffer | null> {
-    const signal = options.abortSignal;
-    if (signal?.aborted) return null;
+  private createVoicePipelineCallback() {
+    return (formattedOutput: string, cfg: { configurable?: Record<string, unknown> }, cb: AgentLoopOptions) => {
+      const ttsCfg = cfg.configurable?.ttsConfig as VoiceConfig | undefined;
+      const llmCfg = cfg.configurable?.llmConfig as VoiceConfig | undefined;
+      if (!ttsCfg || !llmCfg || !cb.onVoiceReady) return;
 
-    const { TTSSummarizer } = await import('../services/tts/tts-summarizer.js');
-    const { TTSClient } = await import('../services/tts/tts-client.js');
-    const { getDefaultVoiceProfile } = await import('../services/tts/voice-profile.js');
-    const { TTSService } = await import('../services/tts/tts-service.js');
-
-    const summarizer = new TTSSummarizer({
-      apiKey: llmConfig.apiKey,
-      baseUrl: llmConfig.baseUrl,
-      model: llmConfig.model || 'deepseek-chat',
-    });
-
-    const client = new TTSClient({
-      apiKey: ttsConfig.apiKey,
-      baseUrl: ttsConfig.baseUrl,
-      model: ttsConfig.model,
-    });
-
-    // 先对整个内容进行摘要
-    const summary = await summarizer.summarize(formattedOutput, options.userQuestion, {
-      bookTitle: options.bookTitle,
-      memoryContent: options.memoryContext,
-    });
-
-    if (!summary.trim() || signal?.aborted) return null;
-
-    // 按句子切分摘要内容
-    const sentences: string[] = [];
-    let buffer = summary;
-    while (true) {
-      const match = buffer.search(/[。！？!?]/);
-      if (match === -1) break;
-      const end = match + 1;
-      const sentence = buffer.slice(0, end);
-      buffer = buffer.slice(end);
-      if (sentence.trim()) {
-        sentences.push(sentence);
-      }
-    }
-    // 处理剩余的文本
-    if (buffer.trim()) {
-      sentences.push(buffer.trim());
-    }
-
-    if (sentences.length === 0) return null;
-
-    // 顺序生成所有句子的音频（保持顺序）
-    const audioChunks: ArrayBuffer[] = [];
-    for (const sentence of sentences) {
-      if (signal?.aborted) break;
-      try {
-        const audioBuffer = await client.synthesize(sentence, {
-          voiceProfile: { voice: getDefaultVoiceProfile().voice },
+      const sharedCtx = cfg.configurable?.sharedContext as Record<string, unknown> | undefined;
+      const onChunk = cb.onVoiceChunk;
+      generateVoice(formattedOutput, ttsCfg, llmCfg, {
+        userQuestion: sharedCtx?.rawUserQuery as string | undefined,
+        bookTitle: sharedCtx?.pdfName as string | undefined,
+        memoryContext: sharedCtx?.memoryContext as string | undefined,
+        abortSignal: cb.abortSignal,
+      }, onChunk ? (chunk) => onChunk({ audioChunk: chunk, isComplete: false }) : undefined)
+        .then(audioBuffer => {
+          if (audioBuffer) {
+            const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
+            if (onChunk) {
+              onChunk({ audioChunk: new ArrayBuffer(0), isComplete: true });
+            }
+            cb.onVoiceReady!({ audioBuffer, duration });
+          }
+        }).catch(err => {
+          log('[VoicePipeline] voice generation failed:', err instanceof Error ? err.message : String(err));
         });
-        audioChunks.push(audioBuffer);
-        // 流式回调：每生成一个句子就返回音频块
-        if (onChunk) {
-          onChunk(audioBuffer);
-        }
-      } catch (err) {
-        console.warn('[VoicePipeline] sentence synthesis failed:', err);
-      }
-    }
-
-    if (signal?.aborted || audioChunks.length === 0) return null;
-
-    // 合并所有音频片段
-    return TTSService.mergeAudioChunks(audioChunks);
+    };
   }
 
   async chat(
