@@ -10,6 +10,7 @@
 
 import type { OutlineNode } from '../../tools/local/types';
 import { z } from 'zod';
+import { ReadingDepth } from '../state.js';
 
 /**
  * Format tree structure for LLM prompt
@@ -66,7 +67,7 @@ export function buildInspectionalSystemPrompt(
     ? `\n<book_summary>\n${docDescription}\n</book_summary>\n`
     : '';
 
-  const taskBranch = depth === 1
+  const taskBranch = depth === ReadingDepth.INSPECTIONAL
     ? `<task_branch name="宏观检视">
 用户的意图是了解全书结构、核心主题或主要脉络。
 
@@ -141,7 +142,7 @@ ${taskBranch}
  * Build user message for inspectional state
  */
 export function buildInspectionalUserMessage(standaloneQuery: string, depth: number): string {
-  const depthHint = depth === 1
+  const depthHint = depth === ReadingDepth.INSPECTIONAL
     ? '请基于目录树生成详细的结构检视报告，解答用户的宏观问题。'
     : '请根据目录树圈定相关章节范围，在 tocSummary 中提供搜索关键词建议。';
 

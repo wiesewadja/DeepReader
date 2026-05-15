@@ -32,9 +32,9 @@ export {
 } from './graph/shared-context.js';
 export type {
   SharedContext,
-  ReadingDepth,
   EngineCallbacks,
 } from './graph/shared-context.js';
+export { ReadingDepth } from './graph/state.js';
 
 // Import for FrontendAgent class
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';

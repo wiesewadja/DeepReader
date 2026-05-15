@@ -9,7 +9,7 @@
  */
 
 import type { BaseMessage } from '@langchain/core/messages';
-import type { ToolResultSnapshot } from './state';
+import type { ToolResultSnapshot, ReadingDepth } from './state';
 
 // ============ S0: Router ============
 
@@ -20,7 +20,7 @@ export interface RouterInput {
 }
 
 export interface RouterOutput {
-  depth: number;
+  depth: ReadingDepth;
   rewrittenQuery: string;
   allowedTools: string[];
 }
@@ -31,7 +31,7 @@ export interface InspectionalInput {
   bookId: string;
   pdfName: string;
   rewrittenQuery: string;
-  depth: number;
+  depth: ReadingDepth;
 }
 
 export interface InspectionalOutput {
@@ -92,7 +92,7 @@ export interface FormatterInput {
   isProactive: boolean;
   proactiveTrigger: string;
   isSocratic: boolean;
-  depth: number;
+  depth: ReadingDepth;
   tocSummary: string;
   betterQuestion: string;
   scopeNodeIds: string[];

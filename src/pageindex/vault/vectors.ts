@@ -196,7 +196,9 @@ export async function generateEmbeddings(
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
+    // 清洗：移除控制字符；空文本替换为占位符以保持索引对齐
+    const batch = texts.slice(i, i + batchSize)
+      .map(t => t.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') || ' ');
 
     if (options.provider === "openai" || options.provider === "lmstudio") {
       const body: Record<string, unknown> = {

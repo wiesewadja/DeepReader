@@ -9,6 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
 import type { CognitiveEngineState } from '../state';
+import { ReadingDepth } from '../state';
 import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
 
@@ -215,8 +216,8 @@ export async function formatterNode(
     return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
   }
 
-  // === Casual mode (depth=0): simple direct response ===
-  if (depth === 0) {
+  // === Casual mode (depth=CASUAL): simple direct response ===
+  if (depth === ReadingDepth.CASUAL) {
     callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
     const content = await streamToContent(

@@ -8,6 +8,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
+import { ReadingDepth } from '../state';
 import type { RouterInput } from '../node-io.js';
 import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
@@ -46,7 +47,7 @@ export async function routerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const { messages, allowedTools: prevTools, pdfName }: RouterInput = state;
+  const { messages, allowedTools: prevTools = [], pdfName }: RouterInput = state;
   const fastModel = config.configurable?.fastModel;
   const chatHistory = config.configurable?.chatHistory ?? [];
   const rawQuery = extractLastHumanMessage(messages);
@@ -63,7 +64,7 @@ export async function routerNode(
   // Fallback when model is not available (e.g. testing)
   if (!fastModel) {
     return {
-      depth: 2,
+      depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(mergeTools(rawIntent.allowedTools, inheritedTools), []),
     };
@@ -82,7 +83,7 @@ export async function routerNode(
     const text = typeof response.content === 'string' ? response.content : '';
     const parsed = extractJSON(text);
 
-    const depth = parsed?.depth ?? 2;
+    const depth: ReadingDepth = parsed?.depth ?? ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
@@ -90,7 +91,7 @@ export async function routerNode(
 
     // Hybrid trigger: keywords pre-check + LLM classification
     const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
-    const effectiveDepth = candidateSyntopical ? 3 : depth;
+    const effectiveDepth = candidateSyntopical ? ReadingDepth.SYNTOPICAL : depth;
 
     // Step 4: Merge all tool sources: raw + rewritten + inherited
     const finalTools = mergeTools(
@@ -109,7 +110,7 @@ export async function routerNode(
     // Graceful degradation: default to analytical reading
     log('[S0 Router] LLM 调用失败，降级到 depth=2:', err instanceof Error ? err.message : String(err));
     return {
-      depth: 2,
+      depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
     };

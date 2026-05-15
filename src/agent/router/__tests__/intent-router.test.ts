@@ -104,4 +104,16 @@ describe('IntentRouter', () => {
       expect(result.maxIterations).toBe(2);
     });
   });
+
+  describe('测试 I: "绘制信息图"', () => {
+    it('应命中 action_output（动作输出）', () => {
+      const result = router.analyze('请你针对共轭控制这个主题绘制信息图');
+
+      expect(result.detectedIntents).toContain('动作输出');
+      expect(result.allowedTools).toContain('excalidraw');
+      expect(result.allowedTools).toContain('generate_infographic');
+      // 动作输出：maxIterations = 3
+      expect(result.maxIterations).toBe(3);
+    });
+  });
 });

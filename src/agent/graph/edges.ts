@@ -3,6 +3,7 @@
  */
 
 import type { CognitiveEngineState } from './state';
+import { ReadingDepth } from './state';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 
 function hasDiagramIntent(state: CognitiveEngineState): boolean {
@@ -24,7 +25,7 @@ export function routeFromStart(state: CognitiveEngineState): string {
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
-  if (state.depth === 0) return NODE_NAMES.FORMATTER;
+  if (state.depth === ReadingDepth.CASUAL) return NODE_NAMES.FORMATTER;
   return NODE_NAMES.INSPECTIONAL;
 }
 
@@ -54,11 +55,11 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
     return EDGE_KEYS.DONE;
   }
 
-  if (state.depth === 3) {
+  if (state.depth === ReadingDepth.SYNTOPICAL) {
     return NODE_NAMES.SYNTOPICAL;
   }
   // depth=1: check if diagram intent (skip visualizer if S1 failed — no valid structural analysis)
-  if (state.depth === 1) {
+  if (state.depth === ReadingDepth.INSPECTIONAL) {
     if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return EDGE_KEYS.DONE;
     return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : EDGE_KEYS.DONE;
   }
