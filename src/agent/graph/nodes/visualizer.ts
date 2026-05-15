@@ -13,6 +13,7 @@ import { createVizTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
+import type { VisualizerInput } from '../node-io.js';
 
 /**
  * 执行 excalidraw draw 动作并返回格式化结果
@@ -83,6 +84,7 @@ export async function visualizerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const { analysisResult: stateAnalysis, structuralAnalysis: stateStructural, rewrittenQuery: stateQuery, pdfName: statePdfName }: VisualizerInput = state;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
 
@@ -98,14 +100,14 @@ export async function visualizerNode(
     return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
   }
 
-  const sourceContent = state.analysisResult || state.structuralAnalysis || '';
+  const sourceContent = stateAnalysis || stateStructural || '';
   if (!sourceContent) {
     log('[Visualizer] 无可用内容');
     return { analysisResult: '图表生成失败: 缺少分析内容' };
   }
 
-  const userQuery = state.rewrittenQuery || '';
-  const pdfName = state.pdfName || toolContext.pdfName || '';
+  const userQuery = stateQuery || '';
+  const pdfName = statePdfName || toolContext.pdfName || '';
 
   log(`[Visualizer] 开始生成图表，内容长度=${sourceContent.length}，query="${userQuery.slice(0, 50)}"`);
 

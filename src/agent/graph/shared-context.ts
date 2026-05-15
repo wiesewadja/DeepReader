@@ -33,21 +33,30 @@ export interface EngineCallbacks {
 export interface SharedContext {
   chatHistory: ChatMessage[];
   rawUserQuery: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   depth: ReadingDepth;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   standaloneQuery?: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   scopeNodeIds?: string[];
+  /** @deprecated 已迁移到 CognitiveEngineState */
   tocSummary?: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   betterQuestion?: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   structuralAnalysis?: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   analysisResult?: string;
   s2ToolResults?: Array<{ toolName: string; args: Record<string, unknown>; result: string; originalResultLength: number }>;
   indexId: string;
+  /** @deprecated 已迁移到 CognitiveEngineState */
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
   docDescription?: string;
   memoryContext?: string;
   llmClientManager?: LLMClientManager;
+  /** @deprecated LangGraph 节点使用 createLangChainTools() 直接创建工具 */
   toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];

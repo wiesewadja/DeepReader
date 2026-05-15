@@ -57,6 +57,7 @@ export { createExcalidrawTool } from './excalidraw.js';
 
 /**
  * 创建并填充 Tool 注册表
+ * @deprecated LangGraph 路径使用 createLangChainTools() 代替。仅 SubagentManager 使用，但当前传入 null。
  */
 export function createToolRegistry(
   skillLoader: SkillLoader,

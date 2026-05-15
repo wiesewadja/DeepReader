@@ -13,6 +13,7 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { runReactLoop, runPlanExecute } from '../subgraphs/react-loop.js';
 import { EARLY_STOP_THRESHOLD } from '../../config/agent-constants.js';
+import type { AnalyticalInput } from '../node-io.js';
 import {
   buildAnalyticalSystemPrompt,
   buildScopedChaptersBlock,
@@ -99,6 +100,14 @@ export async function analyticalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const {
+    scopeNodeIds: rawScopeNodeIds,
+    pdfName: statePdfName,
+    tocSummary: stateTocSummary,
+    rewrittenQuery: stateQuery,
+    betterQuestion: stateBetterQuestion,
+    suggestedKeywords: stateKeywords,
+  }: AnalyticalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
@@ -116,18 +125,17 @@ export async function analyticalNode(
   }
 
   // Use scope from graph state (set by S1 or empty for global search)
-  const rawScopeNodeIds = state.scopeNodeIds ?? [];
 
   // Validate scopeNodeIds against tree structure
   const validatedScopeNodeIds = await validateScopeNodeIds(
     toolContext.app,
     toolContext.indexId || '',
-    state.pdfName || ctx?.pdfName || '',
+    statePdfName || ctx?.pdfName || '',
     rawScopeNodeIds
   );
 
   // Build system prompt and user message
-  const tocSummary = state.tocSummary || ctx?.tocSummary;
+  const tocSummary = stateTocSummary || ctx?.tocSummary;
   const currentNodeId = toolContext.currentNodeId;
   
   // 获取当前章节名称（用于提示词）
@@ -157,16 +165,15 @@ export async function analyticalNode(
     : systemPrompt;
 
   const userMessage = buildAnalyticalUserMessage(
-    state.rewrittenQuery || ctx?.rawUserQuery || '',
-    state.betterQuestion || ctx?.betterQuestion,
+    stateQuery || ctx?.rawUserQuery || '',
+    stateBetterQuestion || ctx?.betterQuestion,
     ctx?.recentHistorySummaries,
     ctx?.prevSearchedBlockIds,
   );
 
   // === Path B: Pre-search with S1's suggested_keywords (RRF multi-query) ===
   let preSearchBlock = '';
-  const suggestedKeywords = state.suggestedKeywords;
-  if (suggestedKeywords && suggestedKeywords.length > 0 && toolContext.app) {
+  if (stateKeywords && stateKeywords.length > 0 && toolContext.app) {
     try {
       const vaultPath = (toolContext.app.vault.adapter as any).basePath;
       const settings = toolContext.plugin?.settings;
@@ -183,8 +190,7 @@ export async function analyticalNode(
       }
 
       // RRF multi-query: 每个关键词独立检索后融合
-      const limitedKeywords = suggestedKeywords.slice(0, 8);
-      const currentNodeId = toolContext.currentNodeId;
+      const limitedKeywords = stateKeywords.slice(0, 8);
       const preSearchRunnable = RunnableLambda.from(
         async () => {
           const subResults = await Promise.all(
@@ -250,14 +256,14 @@ export async function analyticalNode(
             )
           );
 
-          const pdfName = state.pdfName || ctx?.pdfName || '';
+          const pdfName = statePdfName || ctx?.pdfName || '';
           const directPrompt = `${fullSystemPrompt}\n\n基于以下检索结果回答用户问题。你必须从检索结果中引用原文，并使用 wiki 链接标注来源。即使信息不完整，也要基于已有内容给出尽可能充分的回答。
 
 <pre_search_results>
 ${blockLines.join('\n\n')}
 </pre_search_results>
 
-用户问题：${state.betterQuestion || state.rewrittenQuery || ctx?.rawUserQuery || ''}
+用户问题：${stateBetterQuestion || stateQuery || ctx?.rawUserQuery || ''}
 
 输出格式要求：
 - 引用来源用 [[${pdfName}/file_name#^block_id|短别名]] 格式，别名 2-6 字核心词
@@ -268,7 +274,7 @@ ${blockLines.join('\n\n')}
 
           const directResponse = await mainModel.invoke([
             new SystemMessage(directPrompt),
-            new HumanMessage(state.betterQuestion || state.rewrittenQuery || ''),
+            new HumanMessage(stateBetterQuestion || stateQuery || ''),
           ], config);
 
           const directContent = typeof directResponse.content === 'string'
@@ -305,7 +311,7 @@ ${blockLines.join('\n\n')}
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${suggestedKeywords.length} 个关键词`);
+        log(`[S2 Analytical] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${stateKeywords.length} 个关键词`);
       } else {
         log(`[S2 Analytical] 预检索结果不足 (${preResults.length} 条), 跳过注入`);
       }
@@ -338,7 +344,7 @@ ${blockLines.join('\n\n')}
     maxIterations: 6,
     maxToolCalls: 3,
     forcedConclusionContext: {
-      pdfName: state.pdfName || ctx?.pdfName,
+      pdfName: statePdfName || ctx?.pdfName,
       scopeNodeIds: validatedScopeNodeIds,
     },
     toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
@@ -383,7 +389,7 @@ ${blockLines.join('\n\n')}
           maxIterations: 4,
           maxToolCalls: 3,
           forcedConclusionContext: {
-            pdfName: state.pdfName || ctx?.pdfName,
+            pdfName: statePdfName || ctx?.pdfName,
             scopeNodeIds: validatedScopeNodeIds,
           },
           toolInterceptor: createScopeInterceptor(validatedScopeNodeIds),
