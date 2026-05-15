@@ -66,7 +66,7 @@ export async function analyticalNode(
   const tocSummary = stateTocSummary || ctx?.tocSummary;
 
   // Build prompt context
-  const { fullSystemPrompt, userMessage } = buildFullAnalyticalContext({
+  const { fullSystemPrompt, userMessage: rawUserMessage } = buildFullAnalyticalContext({
     scopeNodeIds,
     tocSummary,
     currentNodeId,
@@ -81,8 +81,8 @@ export async function analyticalNode(
 
   // Inject pre-search results from S2-Pre node
   const finalUserMessage = preSearchBlock
-    ? `${preSearchBlock}\n\n${userMessage}`
-    : userMessage;
+    ? `${preSearchBlock}\n\n${rawUserMessage || ''}`
+    : rawUserMessage || '';
 
   // Create scoped tools
   const allTools = createLangChainTools(toolContext);
@@ -94,7 +94,7 @@ export async function analyticalNode(
 
   const loopMessages = [
     new SystemMessage(fullSystemPrompt),
-    new HumanMessage(finalUserMessage),
+    new HumanMessage(finalUserMessage ?? ''),
   ];
   const loopConfig = {
     tools: s2Tools,
@@ -136,7 +136,7 @@ export async function analyticalNode(
       const refinedResult = await runPlanExecute(
         [
           new SystemMessage(fullSystemPrompt),
-          new HumanMessage(finalUserMessage),
+          new HumanMessage(finalUserMessage ?? ''),
           new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈补充或修正分析。`),
         ],
         {
