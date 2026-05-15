@@ -17,6 +17,7 @@ export default defineConfig({
         exclude: [
             'node_modules',
             '.worktrees',
+            '.claude/worktrees',
             // 以下测试文件引用了已移除的组件或需要大量重构
             'tests/components/message.test.ts',
             'tests/views/sidebar-view.test.ts',
