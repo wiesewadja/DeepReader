@@ -12,6 +12,7 @@
 import { App, normalizePath } from 'obsidian';
 import { agentLog } from '../../utils/logger';
 import type { IMemoryStore } from './types.js';
+import { MAX_MEMORY_CHARS } from '../config/agent-constants.js';
 
 /** DeepReader 目录名 */
 const DEEPREADER_DIR = 'DeepReader';
@@ -24,9 +25,6 @@ const HISTORY_RETENTION_DAYS = 30;
 
 /** 历史记录最大条目数 */
 const MAX_HISTORY_ENTRIES = 200;
-
-/** MEMORY.md 最大行数 */
-const MAX_MEMORY_LINES = 200;
 
 export class MemoryStore implements IMemoryStore {
 	private app: App;
@@ -318,8 +316,8 @@ export class MemoryStore implements IMemoryStore {
 		}
 	}
 
-	/** MEMORY.md 最大字符数（约 4000 tokens） */
-	static readonly MAX_MEMORY_CHARS = 8000;
+	/** MEMORY.md 最大字符数 */
+	static readonly MAX_MEMORY_CHARS = MAX_MEMORY_CHARS;
 
 	/**
 	 * 获取记忆上下文（用于 System Prompt）

@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure
  */
-function treeToOutlineNodes(structure: any[], nodeFileMap: Record<string, string> = {}): OutlineNode[] {
+function treeToOutlineNodes(structure: Array<{ nodeId?: string; title?: string; summary?: string; nodes?: Array<unknown> }>, nodeFileMap: Record<string, string> = {}): OutlineNode[] {
   const result: OutlineNode[] = [];
 
   for (const node of structure) {
@@ -24,7 +24,7 @@ function treeToOutlineNodes(structure: any[], nodeFileMap: Record<string, string
       level: 1,
       file_name: fileName || undefined,
       summary: node.summary,
-      children: node.nodes ? treeToOutlineNodes(node.nodes, nodeFileMap) : [],
+      children: node.nodes ? treeToOutlineNodes(node.nodes as typeof structure, nodeFileMap) : [],
     });
   }
 
@@ -39,12 +39,12 @@ function treeToOutlineNodes(structure: any[], nodeFileMap: Record<string, string
  * @param pdfName - PDF file name (fallback for computing bookId)
  */
 export async function loadTreeJson(
-  app: any,
+  app: import('obsidian').App,
   indexId: string,
   pdfName?: string
 ): Promise<OutlineNode[]> {
   try {
-    const vaultPath = app.vault.adapter.getBasePath?.() ?? '';
+    const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
 
     // Use indexId directly as bookId
     let bookId = indexId;
@@ -53,7 +53,7 @@ export async function loadTreeJson(
       if (!pdfName) return [];
       const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
       const files = app.vault.getFiles();
-      const bookFile = files.find((f: any) =>
+      const bookFile = files.find((f: { path: string; extension: string }) =>
         f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
       );
       if (!bookFile) return [];

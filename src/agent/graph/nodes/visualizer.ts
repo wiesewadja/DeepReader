@@ -11,20 +11,17 @@ import type { CognitiveEngineState } from '../state';
 import { buildVisualizerPrompt } from '../prompts/visualizer-prompt';
 import { createVizTools } from '../../tools/index.js';
 import { runEngine } from '../../tools/excalidraw-engine/index.js';
+import type { EngineInput } from '../../tools/excalidraw-engine/types.js';
 import { agentLog as log } from '../../../utils/logger.js';
-
-/** 解析 LLM tool call 的参数（兼容多种 provider 格式） */
-function parseToolCallArgs(tc: any): any {
-  return typeof tc.args === 'string'
-    ? JSON.parse(tc.args)
-    : (tc.args || (typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments));
-}
+import { parseToolCallArgs } from '../utils/tool-call-parser.js';
+import type { VisualizerInput } from '../node-io.js';
+import type { ToolCallLike } from '../utils/tool-call-parser.js';
 
 /**
  * 执行 excalidraw draw 动作并返回格式化结果
  */
 async function executeDrawAction(
-  args: any,
+  args: { data?: unknown; diagramType?: string; filename?: string; style?: string; action?: string },
   pdfName: string,
   text: string,
 ): Promise<{ description: string; success: boolean }> {
@@ -36,11 +33,11 @@ async function executeDrawAction(
     ? `DeepReader/Excalidraw/${pdfName.replace(/[<>:"/\\|?*]/g, '')}`
     : undefined;
   const result = await runEngine({
-    diagramType: args.diagramType || 'mindmap',
-    data: args.data,
+    diagramType: (args.diagramType as EngineInput['diagramType']) || 'mindmap',
+    data: args.data as EngineInput['data'],
     filename: args.filename,
     folder,
-    style: args.style,
+    style: args.style as EngineInput['style'],
   });
 
   if (result.success) {
@@ -59,7 +56,7 @@ async function executeDrawAction(
  * 尝试从 LLM 文本响应中提取 JSON 结构化数据（fallback 路径）
  * 某些模型不支持 tool calling 但会在文本中输出 JSON
  */
-function tryExtractDrawArgsFromText(text: string): { action: string; diagramType: string; data: any; filename?: string } | null {
+function tryExtractDrawArgsFromText(text: string): { action: string; diagramType: string; data: unknown; filename?: string } | null {
   // 在文本中查找 JSON 块
   const jsonPatterns = [
     /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
@@ -89,6 +86,7 @@ export async function visualizerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const { analysisResult: stateAnalysis, structuralAnalysis: stateStructural, rewrittenQuery: stateQuery, pdfName: statePdfName }: VisualizerInput = state;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
 
@@ -104,14 +102,14 @@ export async function visualizerNode(
     return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
   }
 
-  const sourceContent = state.analysisResult || state.structuralAnalysis || '';
+  const sourceContent = stateAnalysis || stateStructural || '';
   if (!sourceContent) {
     log('[Visualizer] 无可用内容');
     return { analysisResult: '图表生成失败: 缺少分析内容' };
   }
 
-  const userQuery = state.rewrittenQuery || '';
-  const pdfName = state.pdfName || toolContext.pdfName || '';
+  const userQuery = stateQuery || '';
+  const pdfName = statePdfName || toolContext.pdfName || '';
 
   log(`[Visualizer] 开始生成图表，内容长度=${sourceContent.length}，query="${userQuery.slice(0, 50)}"`);
 
@@ -135,8 +133,8 @@ export async function visualizerNode(
     const text = typeof response.content === 'string' ? response.content : '';
 
     // Check if LLM made tool calls (support multiple provider formats)
-    const toolCalls = (response as any).tool_calls
-      || (response.additional_kwargs?.tool_calls as any[])
+    const toolCalls: ToolCallLike[] = (response as { tool_calls?: ToolCallLike[] }).tool_calls
+      || (response.additional_kwargs?.tool_calls as ToolCallLike[])
       || [];
     let diagramDescription = text;
     let drawExecuted = false;
@@ -148,10 +146,9 @@ export async function visualizerNode(
         if (toolName === 'generate_infographic') {
           const tool = vizTools.find(t => t.name === 'generate_infographic');
           if (tool) {
-            let infArgs: any;
-            try {
-              infArgs = parseToolCallArgs(tc);
-            } catch {
+            let infArgs: Record<string, unknown>;
+            infArgs = parseToolCallArgs(tc);
+            if ('_parseError' in infArgs) {
               log('[Visualizer] generate_infographic 参数解析失败，跳过');
               diagramDescription = `图表生成失败: 信息图工具参数格式错误`;
               continue;
@@ -172,11 +169,9 @@ export async function visualizerNode(
 
         if (toolName !== 'excalidraw') continue;
 
-        let args: any;
-        try {
-          args = parseToolCallArgs(tc);
-        } catch (parseErr) {
-          log(`[Visualizer] tool call 参数解析失败: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`);
+        const args = parseToolCallArgs(tc) as Record<string, unknown> & { action?: string; data?: unknown };
+        if ('_parseError' in args) {
+          log(`[Visualizer] tool call 参数解析失败`);
           continue;
         }
         log(`[Visualizer] 执行 excalidraw 工具: action=${args?.action}`);

@@ -10,7 +10,7 @@
  * Removed Langfuse tracing (LangSmith handles tracing via LangGraph automatically)
  */
 
-const MAX_TOOL_RESULT_LENGTH = 4000;
+import { MAX_TOOL_RESULT_LENGTH } from '../../config/agent-constants.js';
 
 export interface ToolResultEntry {
   toolName: string;

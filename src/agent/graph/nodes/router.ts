@@ -8,13 +8,15 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
+import type { RouterInput } from '../node-io.js';
+import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { hasSyntopicalKeywords } from '../../utils/syntopical-search.js';
 import { IntentRouter } from '../../router/intent-router.js';
 
-interface RouterOutput {
+interface LLMRouterResponse {
   depth: number;
   standalone_query?: string;
   reason?: string;
@@ -44,16 +46,16 @@ export async function routerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const { messages, allowedTools: prevTools, pdfName }: RouterInput = state;
   const fastModel = config.configurable?.fastModel;
   const chatHistory = config.configurable?.chatHistory ?? [];
-  const rawQuery = extractLastHumanMessage(state.messages);
+  const rawQuery = extractLastHumanMessage(messages);
 
   // Step 1: IntentRouter on raw query (fast, regex-based)
   const rawIntent = intentRouter.analyze(rawQuery);
   log(`[S0 Router] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
 
   // Step 2: Inherit previous intent if this is a follow-up
-  const prevTools = state.allowedTools ?? [];
   const hasNewIntent = rawIntent.detectedIntents.length > 0
     && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
   const inheritedTools = (prevTools.length > 0 && !hasNewIntent) ? prevTools : [];
@@ -68,9 +70,9 @@ export async function routerNode(
   }
 
   try {
-    const sharedContext = config.configurable?.sharedContext as any;
-    const docDescription = sharedContext?.docDescription as string | undefined;
-    const userMessage = buildRouterUserMessage(rawQuery, chatHistory, state.pdfName || undefined, docDescription);
+    const sharedContext = config.configurable?.sharedContext as SharedContext | undefined;
+    const docDescription = sharedContext?.docDescription;
+    const userMessage = buildRouterUserMessage(rawQuery, chatHistory, pdfName || undefined, docDescription);
 
     const response = await fastModel.invoke([
       { role: 'system', content: PROMPT_S0_ROUTER },

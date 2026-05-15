@@ -17,6 +17,8 @@ import {
 } from '../prompts/inspectional-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
+import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
+import type { InspectionalInput } from '../node-io.js';
 
 /**
  * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.
@@ -31,6 +33,7 @@ export async function inspectionalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const { bookId, pdfName: statePdfName, rewrittenQuery, depth }: InspectionalInput = state;
   const fastModel = config.configurable?.fastModel;
   const toolContext = config.configurable?.toolContext;
 
@@ -47,34 +50,34 @@ export async function inspectionalNode(
   // Step 1: Load tree.json
   const outlineNodes = await loadTreeJson(
     toolContext.app,
-    toolContext.indexId || state.bookId,
-    state.pdfName || toolContext.pdfName,
+    toolContext.indexId || bookId,
+    statePdfName || toolContext.pdfName,
   );
 
   if (outlineNodes.length === 0) {
     return {
       scopeNodeIds: [],
       tocSummary: '无法获取目录结构，使用全局搜索。',
-      betterQuestion: state.rewrittenQuery,
+      betterQuestion: rewrittenQuery,
       structuralAnalysis: '',
     };
   }
 
   // Step 2: Format tree structure (include book name in links)
-  const pdfName = state.pdfName || '';
-  const treeText = formatTreeStructure(outlineNodes, 0, 100, 4, pdfName);
+  const pdfName = statePdfName;
+  const treeText = formatTreeStructure(outlineNodes, 0, TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH, pdfName);
 
   // Step 3: Build prompt
   const docDescription = config.configurable?.sharedContext?.docDescription;
   const systemPrompt = buildInspectionalSystemPrompt(
     treeText,
-    state.pdfName || '',
-    state.depth,
+    statePdfName || '',
+    depth,
     docDescription,
   );
   const userMessage = buildInspectionalUserMessage(
-    state.rewrittenQuery,
-    state.depth,
+    rewrittenQuery,
+    depth,
   );
 
   // Step 4: Call fast model and parse JSON from text
@@ -92,7 +95,7 @@ export async function inspectionalNode(
       return {
         scopeNodeIds: [],
         tocSummary: '无法解析目录范围，使用全局搜索。',
-        betterQuestion: state.rewrittenQuery,
+        betterQuestion: rewrittenQuery,
         structuralAnalysis: '',
         suggestedKeywords: [],
       };
@@ -101,7 +104,7 @@ export async function inspectionalNode(
     return {
       scopeNodeIds: parsed.scopeNodeIds ?? [],
       tocSummary: parsed.tocSummary ?? '',
-      betterQuestion: parsed.better_question ?? state.rewrittenQuery,
+      betterQuestion: parsed.better_question ?? rewrittenQuery,
       structuralAnalysis: parsed.structural_analysis ?? '',
       suggestedKeywords: Array.isArray(parsed.suggested_keywords)
         ? parsed.suggested_keywords.filter((k): k is string => typeof k === 'string')
@@ -113,7 +116,7 @@ export async function inspectionalNode(
     return {
       scopeNodeIds: [],
       tocSummary: '无法解析目录范围，使用全局搜索。',
-      betterQuestion: state.rewrittenQuery,
+      betterQuestion: rewrittenQuery,
       structuralAnalysis: '',
       suggestedKeywords: [],
     };

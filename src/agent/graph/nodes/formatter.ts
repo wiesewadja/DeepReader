@@ -6,9 +6,48 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
+import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
+import type { ChatOpenAI } from '@langchain/openai';
 import type { CognitiveEngineState } from '../state';
+import type { FormatterInput } from '../node-io.js';
 import { interrupt } from '@langchain/langgraph';
+
+/**
+ * Stream LLM response and call back with accumulated content.
+ * Source: @langchain/openai ChatOpenAI.stream() — returns AsyncIterable of AIMessageChunk.
+ *
+ * @throws Error with context if streaming fails, allowing callers to provide meaningful feedback.
+ */
+async function streamToContent(
+  model: ChatOpenAI,
+  messages: BaseMessage[],
+  config: RunnableConfig,
+  onContent?: (content: string) => void,
+): Promise<string> {
+  let stream: AsyncIterable<Awaited<ReturnType<ChatOpenAI['stream']>> extends AsyncIterable<infer T> ? T : never>;
+  try {
+    stream = await model.stream(messages, config);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`LLM 流式请求失败: ${msg}`);
+  }
+  let content = '';
+  for await (const chunk of stream) {
+    const text = typeof chunk.content === 'string'
+      ? chunk.content
+      : Array.isArray(chunk.content)
+        ? (chunk.content as { type: string; text: string }[])
+            .filter(c => c.type === 'text')
+            .map(c => c.text)
+            .join('')
+        : '';
+    if (text) {
+      content += text;
+      onContent?.(content);
+    }
+  }
+  return content;
+}
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
@@ -104,6 +143,21 @@ export async function formatterNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const {
+    analysisResult,
+    structuralAnalysis,
+    rewrittenQuery,
+    pdfName,
+    isProactive,
+    proactiveTrigger,
+    isSocratic,
+    depth,
+    tocSummary,
+    betterQuestion,
+    scopeNodeIds,
+    toolResultsSnapshot,
+    highlightContext,
+  }: FormatterInput = state;
   const mainModel = config.configurable?.mainModel;
   const callbacks = config.configurable?.callbacks as {
     onContent?: (content: string) => void;
@@ -112,89 +166,71 @@ export async function formatterNode(
   const ctx = config.configurable?.sharedContext;
 
   if (!mainModel) {
-    return { formattedOutput: state.analysisResult || state.rewrittenQuery || '' };
+    return { formattedOutput: analysisResult || rewrittenQuery || '' };
   }
 
   // === Proactive mode: ask a question, don't answer ===
-  if (state.isProactive) {
-    const trigger = (state.proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
-    const ar = state.analysisResult || '';
+  if (isProactive) {
+    const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
+    const ar = analysisResult || '';
     const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
     const progressLabel = hasDiagram ? '图表已生成，准备引导...' : '思考引导问题...';
     callbacks?.onProgress?.(progressLabel);
     const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
     let proactiveUserMsg = buildProactiveUserMessage({
-      structuralAnalysis: state.structuralAnalysis || undefined,
-      tocSummary: state.tocSummary || undefined,
-      highlightContext: state.highlightContext || undefined,
-      bookName: state.pdfName || '',
+      structuralAnalysis: structuralAnalysis || undefined,
+      tocSummary: tocSummary || undefined,
+      highlightContext: highlightContext || undefined,
+      bookName: pdfName || '',
     });
     if (hasDiagram) {
       proactiveUserMsg += `\n\n<diagram_result>\n${ar}\n</diagram_result>`;
     }
-    const stream = await mainModel.stream([
-      new SystemMessage(proactivePrompt),
-      new HumanMessage(proactiveUserMsg),
-    ], config);
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(proactivePrompt), new HumanMessage(proactiveUserMsg)],
+      config,
+      callbacks?.onContent,
+    );
 
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
-
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
-  if (state.isSocratic) {
+  if (isSocratic) {
     callbacks?.onProgress?.('正在思考...');
     const chatHistory = ctx?.chatHistory ?? [];
     const socraticPrompt = buildSocraticDialoguePrompt();
     const socraticUserMsg = buildSocraticDialogueUserMessage(
-      state.rewrittenQuery || '',
+      rewrittenQuery || '',
       chatHistory,
     );
-    const stream = await mainModel.stream([
-      new SystemMessage(socraticPrompt),
-      new HumanMessage(socraticUserMsg),
-    ], config);
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(socraticPrompt), new HumanMessage(socraticUserMsg)],
+      config,
+      callbacks?.onContent,
+    );
 
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
-
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
   }
 
   // === Casual mode (depth=0): simple direct response ===
-  if (state.depth === 0) {
+  if (depth === 0) {
     callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
-    const stream = await mainModel.stream([
-      new SystemMessage(casualPrompt),
-      new HumanMessage(state.rewrittenQuery || ''),
-    ], config);
+    const content = await streamToContent(
+      mainModel,
+      [new SystemMessage(casualPrompt), new HumanMessage(rewrittenQuery || '')],
+      config,
+      callbacks?.onContent,
+    );
 
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
-
-    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), state.pdfName || '') };
+    return { formattedOutput: fixupWikiLinks(stripThinkTags(content), pdfName || '') };
   }
 
   // === Diagram shortcut: brief in-character response, skip full formatting ===
-  const ar = state.analysisResult || '';
+  const ar = analysisResult || '';
   const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
   const diagramFailed = ar.startsWith('图表生成失败:');
   if (diagramSuccess || diagramFailed) {
@@ -204,18 +240,12 @@ export async function formatterNode(
 ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件或在设置中配置信息图 API。'}
 不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。`
 
-    const stream = await mainModel.stream([
-      new SystemMessage(diagramPrompt),
-      new HumanMessage(`用户请求：${state.rewrittenQuery || ''}\n\n图表结果：${ar}`),
-    ], config);
-    let content = '';
-    for await (const chunk of stream) {
-      if (typeof chunk.content === 'string') {
-        content += chunk.content;
-        callbacks?.onContent?.(content);
-      }
-    }
-    content = stripThinkTags(content);
+    let content = stripThinkTags(await streamToContent(
+      mainModel,
+      [new SystemMessage(diagramPrompt), new HumanMessage(`用户请求：${rewrittenQuery || ''}\n\n图表结果：${ar}`)],
+      config,
+      callbacks?.onContent,
+    ));
 
     // Ensure the chart/infographic link is in the output (LLM may omit it)
     if (diagramSuccess) {
@@ -236,8 +266,8 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   // === Normal mode (depth >= 1): format with full context ===
   // 收集输入文本用于校验编造链接
   const inputTextsForValidation = [
-    state.analysisResult || '',
-    state.structuralAnalysis || '',
+    analysisResult || '',
+    structuralAnalysis || '',
   ];
   callbacks?.onProgress?.('正在整理笔记...');
 
@@ -245,18 +275,18 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
 
   const chatHistory = ctx?.chatHistory ?? [];
   const markdownFiles = ctx?.markdownFiles ?? {};
-  const scopeNodeIds = state.scopeNodeIds ?? [];
-  const coveredScope = scopeNodeIds.length > 0
-    ? buildScopedChaptersBlock(scopeNodeIds, markdownFiles)
+  const effectiveScopeNodeIds = scopeNodeIds ?? [];
+  const coveredScope = effectiveScopeNodeIds.length > 0
+    ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles)
     : '';
   const userMessage = buildFormatterUserMessage(
-    state.rewrittenQuery,
-    state.analysisResult || '',
-    state.pdfName || '',
+    rewrittenQuery,
+    analysisResult || '',
+    pdfName || '',
     chatHistory,
-    state.tocSummary || undefined,
-    state.structuralAnalysis || undefined,
-    state.betterQuestion || undefined,
+    tocSummary || undefined,
+    structuralAnalysis || undefined,
+    betterQuestion || undefined,
     coveredScope || undefined,
   );
 
@@ -266,17 +296,10 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   ];
 
   // Stream output
-  const stream = await mainModel.stream(messages, config);
-  let content = '';
-  for await (const chunk of stream) {
-    if (typeof chunk.content === 'string') {
-      content += chunk.content;
-      callbacks?.onContent?.(content);
-    }
-  }
+  let content = await streamToContent(mainModel, messages, config, callbacks?.onContent);
 
   // Self-verification: remove ghost block_id references (safety net)
-  const toolResults: ToolResultEntry[] = (state.toolResultsSnapshot || []).map(r => ({
+  const toolResults: ToolResultEntry[] = (toolResultsSnapshot || []).map(r => ({
     toolName: r.toolName,
     args: r.args as Record<string, unknown>,
     result: r.result,
@@ -327,14 +350,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
         new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈修正格式化输出。`),
       ];
 
-      const feedbackStream = await mainModel.stream(feedbackMessages, config);
-      let refinedContent = '';
-      for await (const chunk of feedbackStream) {
-        if (typeof chunk.content === 'string') {
-          refinedContent += chunk.content;
-          callbacks?.onContent?.(refinedContent);
-        }
-      }
+      let refinedContent = await streamToContent(mainModel, feedbackMessages, config, callbacks?.onContent);
 
       if (toolResults.length > 0) {
         const vResult = await verifyAndCleanContent(refinedContent, toolResults);
@@ -346,7 +362,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   }
 
   return { formattedOutput: stripFabricatedLinks(
-    fixupWikiLinks(stripThinkTags(content), state.pdfName || ''),
+    fixupWikiLinks(stripThinkTags(content), pdfName || ''),
     inputTextsForValidation,
   ) };
 }

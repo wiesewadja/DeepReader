@@ -3,6 +3,7 @@
  */
 
 import type { ToolDefinition } from '../types.js';
+import { TOOL_EXECUTION_TIMEOUT_MS } from '../config/agent-constants.js';
 import type { ToolExecutor, ToolRegistry, ToolContext } from './types.js';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 // 本地 Markdown 工具（零外部依赖）- 主要工具
@@ -56,6 +57,7 @@ export { createExcalidrawTool } from './excalidraw.js';
 
 /**
  * 创建并填充 Tool 注册表
+ * @deprecated LangGraph 路径使用 createLangChainTools() 代替。仅 SubagentManager 使用，但当前传入 null。
  */
 export function createToolRegistry(
   skillLoader: SkillLoader,
@@ -124,7 +126,7 @@ export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   context: ToolContext,
-  timeout: number = 60000  // 从 30s 增加到 60s
+  timeout: number = TOOL_EXECUTION_TIMEOUT_MS
 ): Promise<string> {
   const executor = registry.get(name);
 

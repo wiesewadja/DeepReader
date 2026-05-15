@@ -5,6 +5,19 @@
 import type { App, FileSystemAdapter } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
+import type { DeepPDFSettings } from '../../config/settings.js';
+
+/**
+ * 插件实例的最小类型接口（消除 plugin: any）
+ */
+export interface DeepReaderPlugin {
+  settings: DeepPDFSettings;
+  profileBuilder?: {
+    readSummary(): Promise<string | null>;
+    readMeta(): Promise<import('../../services/profile-builder.js').ProfileMeta | null>;
+    accumulateConversationRound(userMessage: string, assistantMessage: string): void;
+  };
+}
 
 // 重新导出 QuoteItem 供其他模块使用
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';
@@ -39,8 +52,8 @@ export interface ToolContext {
   quotes?: QuoteItem[];
   /** 当前阅读章节的 node_id（用于搜索提权） */
   currentNodeId?: string;
-  /** 插件实例（用于访问设置） */
-  plugin?: any;
+  /** 插件实例（用于访问设置和画像构建器） */
+  plugin?: DeepReaderPlugin;
   /** TTS 配置（用于 VoicePipeline 语音合成） */
   ttsConfig?: { apiKey: string; baseUrl: string; model?: string };
   /** LLM 配置（用于 VoicePipeline 语音摘要生成） */

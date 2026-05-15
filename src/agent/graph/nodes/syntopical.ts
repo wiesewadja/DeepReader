@@ -16,6 +16,8 @@ import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopical-search.js';
+import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
+import type { SyntopicalInput } from '../node-io.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
 import {
@@ -38,6 +40,7 @@ export async function syntopicalNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
+  const { rewrittenQuery }: SyntopicalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
@@ -50,8 +53,8 @@ export async function syntopicalNode(
     };
   }
 
-  const vaultPath = (toolContext.app.vault.adapter as any).basePath || '';
-  const query = state.rewrittenQuery || ctx?.rawUserQuery || '';
+  const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath || '';
+  const query = rewrittenQuery || ctx?.rawUserQuery || '';
   const settings = toolContext.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
   const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
@@ -64,8 +67,8 @@ export async function syntopicalNode(
       query,
       vaultPath,
       embedding,
-      maxBooks: 5,
-      topKPerBook: 5,
+      maxBooks: SYNTOPICAL_MAX_BOOKS,
+      topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
     })
   ).withConfig({ runName: 'syntopical_search' });
 
@@ -128,7 +131,7 @@ export async function syntopicalNode(
 
   // 5. HITL interrupt (optional)
   // Keep toolResultsSnapshot limited but include all referenced results
-  const snapshotLimit = 20; // Increased from 10 to reduce ghost link risk
+  const snapshotLimit = SYNTOPICAL_SNAPSHOT_LIMIT;
   const stateUpdate: Partial<CognitiveEngineState> = {
     analysisResult: content,
     toolResultsSnapshot: toolResults.slice(0, Math.min(snapshotLimit, toolResults.length)),
