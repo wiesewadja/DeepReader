@@ -53,6 +53,7 @@ import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
 } from '../prompts/formatter-prompt';
+import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
@@ -220,9 +221,16 @@ export async function formatterNode(
   if (depth === ReadingDepth.CASUAL) {
     callbacks?.onProgress?.('正在思考...');
     const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
+    const chatHistory = ctx?.chatHistory ?? [];
+    const historyText = chatHistory.length > 0
+      ? formatHistoryBlock(summarizeRecentHistory(chatHistory, 3))
+      : '';
+    const userMsg = historyText
+      ? `<history>\n${historyText}\n</history>\n\n<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>`
+      : rewrittenQuery || '';
     const content = await streamToContent(
       mainModel,
-      [new SystemMessage(casualPrompt), new HumanMessage(rewrittenQuery || '')],
+      [new SystemMessage(casualPrompt), new HumanMessage(userMsg)],
       config,
       callbacks?.onContent,
     );
