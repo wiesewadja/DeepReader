@@ -123,6 +123,23 @@ export interface DeepPDFSettings {
 	proactiveGuidanceEnabled: boolean;
 	proactiveCooldownMinutes: number;
 
+		// 微信读书集成
+		wereadCookie: {
+			wr_vid: string;
+			wr_skey: string;
+			wr_name?: string;
+			wr_avatar?: string;
+			refreshToken?: string;
+			expireAt?: number;
+		} | null;
+		wereadNoteLocation: string;
+		wereadSubFolder: 'none' | 'category' | 'title';
+		wereadFileName: 'title' | 'title-author' | 'title-bookId';
+		wereadSyncInterval: number;
+		wereadExcludeArticles: boolean;
+		wereadNoteCountThreshold: number;
+
+
 	// ═══════════════════════════════════════════════════════════
 	// 旧版字段（迁移期间保留，Chunk 3 后删除）
 	// ═══════════════════════════════════════════════════════════
@@ -225,4 +242,14 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		// 用户画像
 		journalDir: "",
 		profileDimensions: [],
+
+		// 微信读书集成
+		wereadCookie: null,
+		wereadNoteLocation: 'DeepReader/微信读书',
+		wereadSubFolder: 'category',
+		wereadFileName: 'title',
+		wereadSyncInterval: 0,
+		wereadExcludeArticles: true,
+		wereadNoteCountThreshold: 1,
+
 };

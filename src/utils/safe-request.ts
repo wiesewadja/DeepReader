@@ -29,6 +29,7 @@ export interface SafeResponse {
 	headers: Record<string, string>;
 	text: string;
 	json: any;
+	arrayBuffer?: ArrayBuffer;
 }
 
 /**
@@ -52,6 +53,7 @@ export async function safeRequest(options: SafeRequestOptions): Promise<SafeResp
 		headers: response.headers,
 		text: response.text,
 		json: response.json,
+		arrayBuffer: response.arrayBuffer,
 	};
 }
 

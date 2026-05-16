@@ -13,6 +13,9 @@ import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
+// 微信读书集成
+import { WereadService } from './weread/index.js';
+
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
@@ -30,6 +33,8 @@ export default class DeepPDFPlugin extends Plugin {
     private skillsDir: string = '';
 
     // E2E 测试暴露的 API
+    private wereadService: WereadService | null = null;
+
     readonly api = {
         indexBook,
         isBookIndexed,
@@ -523,12 +528,107 @@ export default class DeepPDFPlugin extends Plugin {
 
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');
+
+        // ═══ 微信读书命令 ═══
+        this.addCommand({
+            id: "weread-login",
+            name: "微信读书：扫码登录",
+            callback: async () => {
+                const { loginWithBrowser } = await import('./weread/auth/browser-login.js');
+                const result = await loginWithBrowser();
+                if (result.success && result.cookie) {
+                    const svc = this.getWereadService();
+                    await svc.login(result.cookie);
+                    new Notice("微信读书登录成功");
+                } else {
+                    new Notice(result.error || "微信读书登录失败");
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "weread-sync",
+            name: "微信读书：同步笔记",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先登录微信读书");
+                    return;
+                }
+                new Notice("开始同步微信读书...");
+                try {
+                    const result = await svc.sync();
+                    new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                } catch (e: any) {
+                    new Notice(`同步失败：${e.message}`);
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "weread-sync-force",
+            name: "微信读书：强制全量同步",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先登录微信读书");
+                    return;
+                }
+                new Notice("开始强制全量同步...");
+                try {
+                    const result = await svc.sync(true);
+                    new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                } catch (e: any) {
+                    new Notice(`同步失败：${e.message}`);
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "weread-logout",
+            name: "微信读书：登出",
+            callback: async () => {
+                const svc = this.getWereadService();
+                await svc.logout();
+                new Notice("已登出微信读书");
+            },
+        });
+
+        this.addCommand({
+            id: "weread-rematch",
+            name: "微信读书：重新匹配书籍",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先登录微信读书");
+                    return;
+                }
+                new Notice("开始重新匹配...");
+                try {
+                    const result = await svc.rematch();
+                    new Notice(`匹配完成：${result.matched} 本已关联，${result.unmatched} 本未关联`);
+                } catch (e: any) {
+                    new Notice(`匹配失败：${e.message}`);
+                }
+            },
+        });
     }
 
     /**
      * 分离 Markdown 文件的 frontmatter 和 body
      * @returns { frontmatter, body, hasFrontmatter } 如果没有 frontmatter，frontmatter 为空字符串
      */
+    private getWereadService(): WereadService {
+        if (!this.wereadService) {
+            this.wereadService = new WereadService({
+                settings: this.settings,
+                app: this.app,
+                saveSettings: async () => { await this.saveSettings(); },
+            });
+        }
+        return this.wereadService;
+    }
+
     private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
         const match = content.match(/^(---\n[\s\S]*?\n---)(\n*)/);
         if (match) {
