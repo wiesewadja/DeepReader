@@ -10,7 +10,7 @@ import type { EmbeddingOptions } from '../pageindex/vault/types';
 import type { DeepPDFSettings } from '../config/settings';
 import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
-import { generateBookId } from '../pageindex/book-indexer';
+import { generateBookIdFromPath } from '../pageindex/book-indexer';
 
 export interface JournalSearchResult {
 	fileName: string;
@@ -102,6 +102,6 @@ export class JournalSearchService {
 
 /** Helper: compute index dir from journalDir setting */
 export function getJournalIndexDir(journalDir: string): string {
-	const hash = generateBookId(journalDir);
+	const hash = generateBookIdFromPath(journalDir);
 	return `.pageindex/journal_${hash}/`;
 }

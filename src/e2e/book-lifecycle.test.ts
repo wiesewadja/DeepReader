@@ -6,11 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
-import * as crypto from "crypto";
 
-function generateBookId(filePath: string): string {
-  return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-}
 
 vi.mock("../pageindex/pageindex.js", () => ({
   PageIndex: vi.fn().mockImplementation(() => ({

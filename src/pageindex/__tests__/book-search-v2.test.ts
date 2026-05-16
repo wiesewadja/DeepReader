@@ -12,8 +12,6 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
-import * as crypto from "crypto";
-
 import {
   searchBookV2,
   loadTreeJson,
@@ -21,6 +19,7 @@ import {
   computeLevelWeight,
   cosineSimilarity,
 } from "../book-search-v2.js";
+import { generateBookId } from "../book-indexer.js";
 import { tokenize } from "../bm25.js";
 import type { TreeNode, BM25Data } from "../book-types.js";
 import { IndexError, IndexErrorCode } from "../book-types.js";
@@ -30,12 +29,10 @@ import { IndexError, IndexErrorCode } from "../book-types.js";
 // ═══════════════════════════════════════════════════════════════
 
 const VAULT_PATH = "/Users/lizhao/workspace/deepreadertest";
-const MONEY_PSYCH_BOOK_ID = "89e541bc";
-const CRITICAL_BOOK_ID = "1553db0b";
+const MONEY_PSYCH_BOOK_ID = "f121b2ce";
+const CRITICAL_BOOK_ID = "7d21cc73";
 
-function generateBookId(filePath: string): string {
-  return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-}
+
 
 // ═══════════════════════════════════════════════════════════════
 // A. Pure function unit tests
@@ -197,22 +194,56 @@ describe("Stage 5: Fusion weight and normalization logic", () => {
 // ═══════════════════════════════════════════════════════════════
 
 // Helper: get real book file path from book-meta.json
-async function getBookFilePath(bookId: string): Promise<string> {
-  const metaPath = path.join(VAULT_PATH, ".pageindex", bookId, "book-meta.json");
+// Returns { filePath, bookId } where bookId is the actual directory name
+async function getBookMeta(legacyBookId: string): Promise<{ filePath: string; bookId: string }> {
+  // Try the given bookId first
+  let metaPath = path.join(VAULT_PATH, ".pageindex", legacyBookId, "book-meta.json");
+  let exists = await fs.access(metaPath).then(() => true).catch(() => false);
+  let actualDirName = legacyBookId;
+
+  if (!exists) {
+    // Scan all subdirs for matching book-meta.json with this bookId
+    const pageindexDir = path.join(VAULT_PATH, ".pageindex");
+    try {
+      const dirs = await fs.readdir(pageindexDir);
+      for (const dir of dirs) {
+        const candidate = path.join(pageindexDir, dir, "book-meta.json");
+        try {
+          const raw = await fs.readFile(candidate, "utf8");
+          const meta = JSON.parse(raw);
+          if (meta.bookId === legacyBookId || dir === legacyBookId) {
+            actualDirName = dir;
+            metaPath = candidate;
+            exists = true;
+            break;
+          }
+        } catch { /* skip */ }
+      }
+    } catch { /* pageindex dir doesn't exist */ }
+  }
+
+  if (!exists) throw new Error(`Book ${legacyBookId} not found in test vault`);
   const meta = JSON.parse(await fs.readFile(metaPath, "utf8"));
-  return meta.filePath;
+  return { filePath: meta.filePath, bookId: actualDirName };
 }
 
-describe("E2E: 金钱心理学 — BM25 search quality", () => {
+// Check if local test vault exists for E2E tests
+const vaultAvailable = fsSync.existsSync(VAULT_PATH);
+
+describe.skipIf(!vaultAvailable)("E2E: 金钱心理学 — BM25 search quality", () => {
   let filePath: string;
+  let actualBookId: string;
 
   beforeEach(async () => {
-    filePath = await getBookFilePath(MONEY_PSYCH_BOOK_ID);
+    const bookMeta = await getBookMeta(MONEY_PSYCH_BOOK_ID);
+    filePath = bookMeta.filePath;
+    actualBookId = bookMeta.bookId;
   });
 
   it("should rank 豪车悖论 (node 0011) first for '豪车'", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "豪车",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -225,6 +256,7 @@ describe("E2E: 金钱心理学 — BM25 search quality", () => {
   it("should find 盖茨-related results with positive scores", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "盖茨",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -242,6 +274,7 @@ describe("E2E: 金钱心理学 — BM25 search quality", () => {
   it("should find 知足-related results in top results", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "知足",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -256,6 +289,7 @@ describe("E2E: 金钱心理学 — BM25 search quality", () => {
   it("should never produce negative scores", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "人",
       topK: 26,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -268,6 +302,7 @@ describe("E2E: 金钱心理学 — BM25 search quality", () => {
   it("should sort results by descending score", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "知足",
       topK: 10,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -278,16 +313,20 @@ describe("E2E: 金钱心理学 — BM25 search quality", () => {
   });
 });
 
-describe("E2E: 金钱心理学 — result structure completeness", () => {
+describe.skipIf(!vaultAvailable)("E2E: 金钱心理学 — result structure completeness", () => {
   let filePath: string;
+  let actualBookId: string;
 
   beforeEach(async () => {
-    filePath = await getBookFilePath(MONEY_PSYCH_BOOK_ID);
+    const bookMeta = await getBookMeta(MONEY_PSYCH_BOOK_ID);
+    filePath = bookMeta.filePath;
+    actualBookId = bookMeta.bookId;
   });
 
   it("should return nodeId in every result", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "储蓄",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -300,6 +339,7 @@ describe("E2E: 金钱心理学 — result structure completeness", () => {
   it("should return title in every result", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "储蓄",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -312,6 +352,7 @@ describe("E2E: 金钱心理学 — result structure completeness", () => {
   it("should return fileName in every result", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "储蓄",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -324,6 +365,7 @@ describe("E2E: 金钱心理学 — result structure completeness", () => {
   it("should return hierarchyPath as array in every result", async () => {
     const results = await searchBookV2({
       filePath,
+      bookId: actualBookId,
       query: "储蓄",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -334,7 +376,7 @@ describe("E2E: 金钱心理学 — result structure completeness", () => {
   });
 });
 
-describe("E2E: 思辨与立场 — proposition data", () => {
+describe.skipIf(!vaultAvailable)("E2E: 思辨与立场 — proposition data", () => {
   it("should have propositions.json file", async () => {
     const propPath = path.join(VAULT_PATH, ".pageindex", CRITICAL_BOOK_ID, "propositions.json");
     const exists = await fs.access(propPath).then(() => true).catch(() => false);
@@ -352,9 +394,12 @@ describe("E2E: 思辨与立场 — proposition data", () => {
   });
 
   it("should return search results for 批判性思维", async () => {
-    const filePath = await getBookFilePath(CRITICAL_BOOK_ID);
+    const criticalMeta = await getBookMeta(CRITICAL_BOOK_ID);
+    const filePath = criticalMeta.filePath;
+    const criticalBookId = criticalMeta.bookId;
     const results = await searchBookV2({
       filePath,
+      bookId: criticalBookId,
       query: "批判性思维",
       topK: 5,
       embedding: { provider: "local", model: "text-embedding-3-small" },
@@ -407,7 +452,9 @@ describe("Stage 4: Scope filter integration", () => {
   beforeEach(async () => {
     await fs.rm(testDir, { recursive: true, force: true });
     testFilePath = path.join(testVault, "test.pdf");
-    testBookId = generateBookId(testFilePath);
+    await fs.mkdir(testVault, { recursive: true });
+    await fs.writeFile(testFilePath, "fake pdf content for v2 search test");
+    testBookId = await generateBookId(testFilePath);
     const indexDir = path.join(testVault, ".pageindex", testBookId);
 
     await fs.mkdir(indexDir, { recursive: true });
@@ -499,7 +546,9 @@ describe("Error handling and edge cases", () => {
     const testDir = "/tmp/deepreader-v2-nomatch-test";
     const testVault = path.join(testDir, "vault");
     const testFilePath = path.join(testVault, "book.pdf");
-    const testBookId = generateBookId(testFilePath);
+    await fs.mkdir(testVault, { recursive: true });
+    await fs.writeFile(testFilePath, "fake pdf for no match test");
+    const testBookId = await generateBookId(testFilePath);
     const indexDir = path.join(testVault, ".pageindex", testBookId);
 
     try {
@@ -533,7 +582,9 @@ describe("Error handling and edge cases", () => {
     const testDir = "/tmp/deepreader-v2-emptyquery-test";
     const testVault = path.join(testDir, "vault");
     const testFilePath = path.join(testVault, "book.pdf");
-    const testBookId = generateBookId(testFilePath);
+    await fs.mkdir(testVault, { recursive: true });
+    await fs.writeFile(testFilePath, "fake pdf for empty query test");
+    const testBookId = await generateBookId(testFilePath);
     const indexDir = path.join(testVault, ".pageindex", testBookId);
 
     try {

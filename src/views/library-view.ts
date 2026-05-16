@@ -3,7 +3,7 @@
  * 在主面板全屏展示书库，支持自适应宽度布局
  */
 
-import { ItemView, WorkspaceLeaf, Notice, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
 import { IndexListItem } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
@@ -13,6 +13,7 @@ import type { BookIndexProgress, BookMeta } from '../pageindex/book-types.js';
 import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
 import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
+import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -647,26 +648,35 @@ export class LibraryView extends ItemView {
                 let filePath: string;
                 
                 if (isSystemFileInfo(fileInfo)) {
-                    // 系统上传的文件：需要先保存到 vault
+                    // 系统上传的文件：保存到 DeepReader/assets/ 子目录，避免污染 vault 根目录
                     const systemFile = fileInfo as SystemFileInfo;
                     const arrayBuffer = await systemFile.file.arrayBuffer();
                     const fileName = systemFile.file.name;
-                    
-                    // 检查文件是否已存在
-                    const existingFile = this.app.vault.getAbstractFileByPath(fileName);
-                    if (!existingFile) {
-                        await this.app.vault.createBinary(fileName, arrayBuffer);
-                        new Notice(`文件已保存到 vault: ${fileName}`);
+                    const vaultRelativeDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
+                    const vaultRelativePath = `${vaultRelativeDir}/${fileName}`;
+
+                    // 确保 DeepReader/assets/ 目录存在
+                    if (!(this.app.vault.getAbstractFileByPath(vaultRelativeDir) instanceof TFolder)) {
+                        await this.app.vault.createFolder(vaultRelativeDir);
                     }
-                    
-                    filePath = `${vaultPath}/${fileName}`;
+
+                    // 检查文件是否已存在，同名文件覆盖更新
+                    const existingFile = this.app.vault.getAbstractFileByPath(vaultRelativePath);
+                    if (existingFile instanceof TFile) {
+                        await this.app.vault.modifyBinary(existingFile, arrayBuffer);
+                    } else {
+                        await this.app.vault.createBinary(vaultRelativePath, arrayBuffer);
+                    }
+                    new Notice(`文件已保存到 ${vaultRelativePath}`);
+
+                    filePath = `${vaultPath}/${vaultRelativePath}`;
                 } else {
                     // Vault 中的文件：path 已经是绝对路径（由 PDFFileSelectorModal 构建）
                     filePath = fileInfo.path;
                 }
                 
                 // 计算真实的 bookId，避免临时 ID 导致卡片重复
-                const bookId = generateBookId(filePath);
+                const bookId = await generateBookId(filePath);
 
                 // 移除同名文件的旧索引项或旧状态卡片，避免重复
                 this.indexes = this.indexes.filter(idx => {

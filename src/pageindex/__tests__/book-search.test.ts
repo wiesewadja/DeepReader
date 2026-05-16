@@ -5,13 +5,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
-import * as crypto from "crypto";
 import { searchBook } from "../book-search.js";
+import { generateBookId } from "../book-indexer.js";
 import type { BookMeta, BM25Data } from "../book-types.js";
 
-function generateBookId(filePath: string): string {
-  return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-}
+
 
 describe("book-search", () => {
   const testDir = "/tmp/deepreader-book-search-test";
@@ -41,7 +39,8 @@ describe("book-search", () => {
 
     it("should search using pure BM25 when embedding not provided", async () => {
       const filePath = path.join(testVault, "test.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -139,7 +138,8 @@ describe("book-search", () => {
   describe("fuseScores", () => {
     it("should correctly fuse vector and BM25 scores", async () => {
       const filePath = path.join(testVault, "fuse.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -248,7 +248,8 @@ describe("book-search", () => {
   describe("readChapterContent", () => {
     it("should read chapter content and preserve block IDs", async () => {
       const filePath = path.join(testVault, "read.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -348,7 +349,8 @@ This is paragraph 2.
 
     it("should truncate long content", async () => {
       const filePath = path.join(testVault, "truncate.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -428,7 +430,8 @@ This is paragraph 2.
   describe("edge cases", () => {
     it("should return empty results when no matches", async () => {
       const filePath = path.join(testVault, "empty.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -475,7 +478,8 @@ This is paragraph 2.
 
     it("should skip missing MD files gracefully", async () => {
       const filePath = path.join(testVault, "missing.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -542,7 +546,8 @@ This is paragraph 2.
   describe("score normalization", () => {
     it("should normalize BM25 scores for fusion", async () => {
       const filePath = path.join(testVault, "norm.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -643,7 +648,8 @@ This is paragraph 2.
   describe("edge cases - vector search failures", () => {
     it("should fallback to pure BM25 when vectors not available", async () => {
       const filePath = path.join(testVault, "no-vectors.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -732,7 +738,8 @@ This is paragraph 2.
 
     it("should handle dimension mismatch error", async () => {
       const filePath = path.join(testVault, "dim-mismatch.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -828,7 +835,8 @@ This is paragraph 2.
   describe("edge cases - file errors", () => {
     it("should throw INDEX_INCOMPLETE for missing book-meta.json", async () => {
       const filePath = path.join(testVault, "missing-meta.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -848,7 +856,8 @@ This is paragraph 2.
 
     it("should return empty for query with no matches in populated index", async () => {
       const filePath = path.join(testVault, "specific-query.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -921,7 +930,8 @@ This is paragraph 2.
 
     it("should handle missing chapter MD file gracefully", async () => {
       const filePath = path.join(testVault, "missing-chapter.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -1010,7 +1020,8 @@ This is paragraph 2.
   describe("edge cases - special queries", () => {
     it("should handle single-character query with bigram fallback", async () => {
       const filePath = path.join(testVault, "single-char.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -1097,7 +1108,8 @@ This is paragraph 2.
 
     it("should handle very long query string", async () => {
       const filePath = path.join(testVault, "long-query.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 
@@ -1172,7 +1184,8 @@ This is paragraph 2.
 
     it("should handle empty query gracefully", async () => {
       const filePath = path.join(testVault, "empty-query.pdf");
-      const bookId = generateBookId(filePath);
+      await fs.writeFile(filePath, "fake pdf content for search test");
+      const bookId = await generateBookId(filePath);
       const bookIndexDir = path.join(testIndexDir, bookId);
       await fs.mkdir(bookIndexDir, { recursive: true });
 

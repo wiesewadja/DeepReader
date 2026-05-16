@@ -237,6 +237,8 @@ export {
   isBookIndexed,
   deleteBookIndex,
   generateBookId,
+  generateBookIdFromPath,
+  migrateBookIndexes,
 } from "./book-indexer.js";
 
 export { searchBook } from "./book-search.js";

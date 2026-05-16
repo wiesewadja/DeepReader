@@ -12,7 +12,6 @@
  * Stage 8: Matched block location (block_id level)
  */
 
-import * as crypto from "crypto";
 import * as path from "path";
 import * as fs from "fs/promises";
 import type {
@@ -25,6 +24,7 @@ import type {
   PropositionCard,
 } from "./book-types.js";
 import { IndexErrorCode, IndexError } from "./book-types.js";
+import { generateBookId } from "./book-indexer.js";
 import { searchBM25, tokenize } from "./bm25.js";
 import {
   cosineSearchJsonl,
@@ -64,10 +64,6 @@ function getCached<T>(key: string, loader: () => Promise<T>): Promise<T> {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function generateBookId(filePath: string): string {
-  return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-}
-
 export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | number[]): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
@@ -86,7 +82,19 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
 export async function searchBookV2(
   options: BookSearchOptionsV2
 ): Promise<BookSearchResultV2[]> {
-  const bookId = options.bookId || generateBookId(options.filePath);
+  let bookId = options.bookId;
+  if (!bookId) {
+    try {
+      bookId = await generateBookId(options.filePath);
+    } catch {
+      throw new IndexError(
+        "Index not found",
+        IndexErrorCode.INDEX_INCOMPLETE,
+        "书籍文件不存在，无法搜索",
+        "请确认文件路径是否正确"
+      );
+    }
+  }
   const vaultPath = options.vaultPath || path.dirname(options.filePath);
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
   const topK = options.topK || 5;

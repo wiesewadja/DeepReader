@@ -11,7 +11,7 @@ import type { DeepPDFSettings } from '../config/settings';
 import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
 import { buildBM25Index } from '../pageindex/bm25';
-import { generateBookId } from '../pageindex/book-indexer';
+import { generateBookIdFromPath } from '../pageindex/book-indexer';
 import {
 	generateEmbeddings,
 	writeVectorJsonl,
@@ -113,7 +113,7 @@ export class ProfileBuilder {
 	private get factsPath() { return 'DeepReader/.profile-facts.json'; }
 
 	getIndexDir(): string {
-		const hash = generateBookId(this.settings.journalDir);
+		const hash = generateBookIdFromPath(this.settings.journalDir);
 		return `.pageindex/journal_${hash}/`;
 	}
 
@@ -211,7 +211,7 @@ export class ProfileBuilder {
 			content = content.replace(/^---[\s\S]*?---\n*/, '');
 			if (!content.trim()) continue;
 
-			const nodeId = generateBookId(file.path);
+			const nodeId = generateBookIdFromPath(file.path);
 			nodes.push({ id: nodeId, text: content.trim(), level: 'L1' });
 		}
 

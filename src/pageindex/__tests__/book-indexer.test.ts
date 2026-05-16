@@ -88,28 +88,32 @@ describe("book-indexer", () => {
   });
 
   describe("generateBookId", () => {
-    it("should generate bookId from file path hash", async () => {
+    it("should generate bookId from file content", async () => {
       const { generateBookId } = await import("../book-indexer.js");
 
-      const filePath1 = "/vault/books/example.pdf";
-      const filePath2 = "/vault/books/other.pdf";
+      const filePath1 = path.join(testVaultPath, "example.pdf");
+      const filePath2 = path.join(testVaultPath, "other.pdf");
+      await fs.writeFile(filePath1, "content-A");
+      await fs.writeFile(filePath2, "content-B");
 
-      const bookId1 = generateBookId(filePath1);
-      const bookId2 = generateBookId(filePath2);
+      const bookId1 = await generateBookId(filePath1);
+      const bookId2 = await generateBookId(filePath2);
 
       expect(bookId1.length).toBe(8);
       expect(bookId2.length).toBe(8);
       expect(bookId1).not.toBe(bookId2);
 
-      const bookId1Again = generateBookId(filePath1);
+      const bookId1Again = await generateBookId(filePath1);
       expect(bookId1Again).toBe(bookId1);
     });
 
     it("should be SHA-256 first 8 hex chars", async () => {
       const { generateBookId } = await import("../book-indexer.js");
 
-      const filePath = "/test/path.pdf";
-      const bookId = generateBookId(filePath);
+      const filePath = path.join(testVaultPath, "test.pdf");
+      await fs.writeFile(filePath, "test content");
+
+      const bookId = await generateBookId(filePath);
 
       expect(bookId).toMatch(/^[a-f0-9]{8}$/);
     });
@@ -295,7 +299,8 @@ describe("book-indexer", () => {
     });
 
     it("should return true when .pageindex/{bookId}/ exists", async () => {
-      const filePath = "/vault/books/indexed-book.pdf";
+      const filePath = path.join(testVaultPath, "indexed-book.pdf");
+      await fs.writeFile(filePath, "fake pdf content");
       const bookId = "abcd1234";
 
       // Create fake index directory
@@ -310,7 +315,7 @@ describe("book-indexer", () => {
 
       // Test with matching bookId
       const { generateBookId } = await import("../book-indexer.js");
-      const correctBookId = generateBookId(filePath);
+      const correctBookId = await generateBookId(filePath);
       const correctIndexDir = path.join(testVaultPath, ".pageindex", correctBookId);
       await fs.mkdir(correctIndexDir, { recursive: true });
       await fs.writeFile(path.join(correctIndexDir, "tree.json"), "{}");
@@ -321,7 +326,8 @@ describe("book-indexer", () => {
     });
 
     it("should use vaultPath for .pageindex location", async () => {
-      const filePath = "/vault/books/test.pdf";
+      const filePath = path.join(testVaultPath, "multi-vault-test.pdf");
+      await fs.writeFile(filePath, "fake pdf content for multi-vault");
 
       // Create index in different vault paths
       const vault1 = "/tmp/vault1";
@@ -331,7 +337,7 @@ describe("book-indexer", () => {
       await fs.mkdir(path.join(vault2, ".pageindex"), { recursive: true });
 
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
 
       // Index exists in vault1
       await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
@@ -352,11 +358,12 @@ describe("book-indexer", () => {
 
   describe("deleteBookIndex", () => {
     it("should delete .pageindex/{bookId}/ directory", async () => {
-      const filePath = "/vault/books/book-to-delete.pdf";
+      const filePath = path.join(testVaultPath, "book-to-delete.pdf");
+      await fs.writeFile(filePath, "fake pdf for delete");
 
       // Create fake index
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
       await fs.mkdir(indexDir, { recursive: true });
       await fs.writeFile(path.join(indexDir, "tree.json"), "{}");
@@ -376,14 +383,16 @@ describe("book-indexer", () => {
     });
 
     it("should not throw if index does not exist", async () => {
-      const filePath = "/vault/books/non-existent-index.pdf";
+      const filePath = path.join(testVaultPath, "non-existent-index.pdf");
+      await fs.writeFile(filePath, "fake pdf for no-index");
 
       // Should not throw
       await expect(deleteBookIndex(filePath, testVaultPath)).resolves.toBeUndefined();
     });
 
     it("should use vaultPath for deletion location", async () => {
-      const filePath = "/vault/books/test.pdf";
+      const filePath = path.join(testVaultPath, "deletion-location.pdf");
+      await fs.writeFile(filePath, "fake pdf for deletion vault location");
 
       const vault1 = "/tmp/vault1";
       const vault2 = "/tmp/vault2";
@@ -392,7 +401,7 @@ describe("book-indexer", () => {
       await fs.mkdir(path.join(vault2, ".pageindex"), { recursive: true });
 
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
 
       // Create index in vault1
       await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
@@ -472,8 +481,9 @@ describe("book-indexer", () => {
 
     it("should detect INDEX_INCOMPLETE when bm25.json is missing", async () => {
       const filePath = path.join(testVaultPath, "incomplete.pdf");
+      await fs.writeFile(filePath, "fake pdf for incomplete");
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
@@ -487,8 +497,9 @@ describe("book-indexer", () => {
 
     it("should handle corrupted book-meta.json gracefully", async () => {
       const filePath = path.join(testVaultPath, "corrupted-meta.pdf");
+      await fs.writeFile(filePath, "fake pdf for corrupted meta");
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
@@ -508,8 +519,9 @@ describe("book-indexer", () => {
 
     it("should handle BM25 index corruption", async () => {
       const filePath = path.join(testVaultPath, "corrupted-bm25.pdf");
+      await fs.writeFile(filePath, "fake pdf for corrupted bm25");
       const { generateBookId } = await import("../book-indexer.js");
-      const bookId = generateBookId(filePath);
+      const bookId = await generateBookId(filePath);
       const indexDir = path.join(testVaultPath, ".pageindex", bookId);
 
       await fs.mkdir(indexDir, { recursive: true });

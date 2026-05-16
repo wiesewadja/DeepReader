@@ -2,7 +2,6 @@
  * Book search - hybrid vector + BM25 search with L2 context reading
  */
 
-import * as crypto from "crypto";
 import * as path from "path";
 import * as fs from "fs/promises";
 import type {
@@ -18,13 +17,7 @@ import {
   cosineSearchJsonl,
 } from "./vault/vectors.js";
 import { existsSync } from "node:fs";
-
-/**
- * Generate bookId from file path (SHA-256 first 8 chars)
- */
-function generateBookId(filePath: string): string {
-  return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
-}
+import { generateBookId } from "./book-indexer.js";
 
 /**
  * Search a single book using hybrid vector + BM25 search
@@ -34,7 +27,17 @@ function generateBookId(filePath: string): string {
 export async function searchBook(
   options: BookSearchOptions
 ): Promise<BookSearchResult[]> {
-  const bookId = generateBookId(options.filePath);
+  let bookId: string;
+  try {
+    bookId = await generateBookId(options.filePath);
+  } catch {
+    throw new IndexError(
+      "Index not found",
+      IndexErrorCode.INDEX_INCOMPLETE,
+      "书籍文件不存在，无法搜索",
+      "请确认文件路径是否正确"
+    );
+  }
   const vaultPath = path.dirname(options.filePath);
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
   const topK = options.topK || 5;

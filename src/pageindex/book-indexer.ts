@@ -27,10 +27,37 @@ import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
 import { buildBM25Index } from "./bm25.js";
 import { indexPropositions } from "./proposition-indexer.js";
 
+const BOOK_ID_HEAD_BYTES = 65536; // 64KB sample for content-based ID
+const MIGRATION_MARKER = ".migrated-content-id-v1";
+
 /**
- * Generate bookId from file path (SHA-256 first 8 chars)
+ * Generate bookId from file content (SHA-256 of first 64KB + file size).
+ * Content-based ID is stable regardless of file path changes.
  */
-export function generateBookId(filePath: string): string {
+export async function generateBookId(filePath: string): Promise<string> {
+  const stat = await fs.stat(filePath);
+  if (stat.size === 0) {
+    throw new Error(`Cannot generate bookId: file is empty (${filePath})`);
+  }
+  const handle = await fs.open(filePath, "r");
+  try {
+    const headSize = Math.min(BOOK_ID_HEAD_BYTES, stat.size);
+    const buf = Buffer.alloc(headSize);
+    await handle.read(buf, 0, headSize, 0);
+    const hash = crypto.createHash("sha256");
+    hash.update(buf);
+    hash.update(Buffer.from(String(stat.size)));
+    return hash.digest("hex").slice(0, 8);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Legacy: generate bookId from file path only (SHA-256 first 8 chars).
+ * Used for journal indexes and migration detection.
+ */
+export function generateBookIdFromPath(filePath: string): string {
   return crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
 }
 
@@ -40,7 +67,12 @@ export function generateBookId(filePath: string): string {
  * @param vaultPath - Vault root path (where .pageindex directory is located)
  */
 export async function isBookIndexed(filePath: string, vaultPath: string): Promise<boolean> {
-  const bookId = generateBookId(filePath);
+  let bookId: string;
+  try {
+    bookId = await generateBookId(filePath);
+  } catch {
+    return false;
+  }
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   try {
@@ -60,7 +92,12 @@ export async function isBookIndexed(filePath: string, vaultPath: string): Promis
  * @param vaultPath - Vault root path (where .pageindex directory is located)
  */
 export async function deleteBookIndex(filePath: string, vaultPath: string): Promise<void> {
-  const bookId = generateBookId(filePath);
+  let bookId: string;
+  try {
+    bookId = await generateBookId(filePath);
+  } catch {
+    return; // Source file gone, nothing to delete
+  }
   const indexDir = path.join(vaultPath, ".pageindex", bookId);
 
   await fs.rm(indexDir, { recursive: true, force: true });
@@ -88,7 +125,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     );
   }
 
-  const bookId = generateBookId(options.filePath);
+  const bookId = await generateBookId(options.filePath);
   const indexDir = path.join(options.outputDir, ".pageindex", bookId);
 
   // Create indexing status file so progress survives modal close/reopen
@@ -916,4 +953,117 @@ function simplifyTitle(title: string): string {
     }
   }
   return title;
+}
+
+/**
+ * Migrate legacy path-based bookIds to content-based bookIds.
+ * Called once on plugin load. Safe to re-run (idempotent).
+ * After successful migration, writes a marker file to skip on subsequent loads.
+ *
+ * @returns Number of indexes migrated
+ */
+export async function migrateBookIndexes(vaultPath: string): Promise<number> {
+  const pageindexDir = path.join(vaultPath, ".pageindex");
+  const markerPath = path.join(pageindexDir, MIGRATION_MARKER);
+
+  // Skip if already migrated
+  try {
+    await fs.access(markerPath);
+    return 0;
+  } catch { /* not yet migrated */ }
+
+  let entries: string[];
+  try {
+    entries = await fs.readdir(pageindexDir);
+  } catch {
+    return 0; // .pageindex/ doesn't exist yet
+  }
+
+  let migrated = 0;
+
+  for (const entry of entries) {
+    const entryPath = path.join(pageindexDir, entry);
+
+    // Skip non-directories and special files
+    try {
+      const stat = await fs.stat(entryPath);
+      if (!stat.isDirectory()) continue;
+    } catch { continue; }
+
+    // Skip journal indexes and special dirs
+    if (entry.startsWith("journal_")) continue;
+
+    const metaPath = path.join(entryPath, "book-meta.json");
+    let meta: BookMeta;
+    try {
+      const raw = await fs.readFile(metaPath, "utf-8");
+      meta = JSON.parse(raw) as BookMeta;
+    } catch {
+      continue; // No meta file, skip
+    }
+
+    // Check if source file still exists
+    const sourcePath = meta.filePath;
+    if (!sourcePath) continue;
+
+    let newId: string;
+    try {
+      newId = await generateBookId(sourcePath);
+    } catch {
+      continue; // Source file gone, keep old ID
+    }
+
+    const oldId = entry;
+    if (newId === oldId) continue; // Path hash coincidentally equals content hash
+
+    // Check if target directory already exists (collision)
+    const newPath = path.join(pageindexDir, newId);
+    try {
+      await fs.access(newPath);
+      piLog(`[migration] Collision: ${oldId} -> ${newId} (target exists). Keeping ${oldId}.`);
+      continue;
+    } catch { /* target doesn't exist, safe to rename */ }
+
+    // Rename directory
+    await fs.rename(entryPath, newPath);
+
+    // Update book-meta.json
+    meta.bookId = newId;
+    await fs.writeFile(
+      path.join(newPath, "book-meta.json"),
+      JSON.stringify(meta, null, 2)
+    );
+
+    // Update catalog.json using atomic APIs
+    try {
+      const { loadCatalog, updateCatalogEntry, removeCatalogEntry } = await import("./vault/vectors.js");
+      const catalog = await loadCatalog(pageindexDir);
+      if (catalog.books[oldId]) {
+        await updateCatalogEntry(pageindexDir, newId, catalog.books[oldId]);
+        await removeCatalogEntry(pageindexDir, oldId);
+      }
+    } catch { /* catalog update is best-effort */ }
+
+    // Update MOC frontmatter index_id
+    try {
+      const exportDir = path.join(vaultPath, DEFAULT_EXPORT_DIR, meta.exportName || meta.title);
+      const mocFiles = (await fs.readdir(exportDir)).filter(f => f.includes("MOC"));
+      for (const mocFile of mocFiles) {
+        const mocPath = path.join(exportDir, mocFile);
+        let content = await fs.readFile(mocPath, "utf-8");
+        content = content.replace(`index_id: ${oldId}`, `index_id: ${newId}`);
+        content = content.replace(`pdf_index_id: ${oldId}`, `pdf_index_id: ${newId}`);
+        await fs.writeFile(mocPath, content);
+      }
+    } catch { /* MOC update is best-effort */ }
+
+    migrated++;
+  }
+
+  // Write marker to skip on next load
+  try {
+    await fs.writeFile(markerPath, new Date().toISOString());
+  } catch { /* best-effort */ }
+
+  return migrated;
 }

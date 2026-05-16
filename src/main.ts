@@ -15,7 +15,7 @@ import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
-import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from './pageindex/book-indexer.js';
+import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
 import { parseEpub, type EpubInfo } from './pageindex/parsers/epub.js';
 import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 
@@ -64,6 +64,17 @@ export default class DeepPDFPlugin extends Plugin {
 
         // 初始化 DeepReader 目录和图书管理文档
         await this.ensureInitialization();
+
+        // 迁移旧路径哈希 bookId → 内容哈希 bookId（一次性，幂等）
+        const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+        if (vaultPath) {
+            try {
+                const count = await migrateBookIndexes(vaultPath);
+                if (count > 0) log(`[DeepReader] Migrated ${count} book index(es) to content-based IDs`);
+            } catch (e) {
+                log.error('[DeepReader] Migration failed:', e);
+            }
+        }
 
         // 同步 Skills 到 vault（插件启动时执行）
         await this.syncSkillsToVault();
