@@ -1,11 +1,26 @@
 /**
  * 微信读书笔记 — Markdown 渲染器
  *
- * 将 WereadNotebook 渲染为完整的 Markdown 字符串
- * （frontmatter + 正文）
+ * 对齐 ExcerptService callout 格式：
+ * - 高亮：> [!warning]+ 🟡 高亮
+ * - 想法：> [!note]+ 💬 想法
  */
 import type { WereadNotebook, WereadHighlight, WereadReview } from '../types';
 import { generateFrontmatter } from './frontmatter';
+
+/** 微信读书颜色样式 → emoji 映射（对齐 ExcerptService） */
+const COLOR_STYLE_EMOJI: Record<number, string> = {
+	0: '🟡',   // 默认黄色
+	1: '🔴',   // 红色
+	2: '🟠',   // 橙色
+	3: '🟢',   // 绿色
+	4: '🔵',   // 蓝色
+	5: '🩷',   // 粉色
+};
+
+function getColorEmoji(colorStyle?: number): string {
+	return COLOR_STYLE_EMOJI[colorStyle ?? 0] ?? '🖍️';
+}
 
 /**
  * 将 WereadNotebook 渲染为完整 Markdown 字符串
@@ -52,26 +67,27 @@ export function renderNotebook(notebook: WereadNotebook): string {
 		sections.push('');
 		sections.push(`## ${chTitle}`);
 
-		// 高亮
+		// 高亮 — ExcerptService 风格 callout
 		const chHighlights = highlightsByChapter.get(uid) ?? [];
 		if (chHighlights.length > 0) {
-			sections.push('');
-			sections.push('### 高亮');
 			for (const h of chHighlights) {
-				sections.push(`> [!quote] 📌 ${h.markText} ^${h.bookmarkId}`);
+				const emoji = getColorEmoji(h.colorStyle);
+				sections.push('');
+				sections.push(`> [!warning]+ ${emoji} 高亮`);
+				sections.push(`> ${h.markText}`);
 				if (h.reviewContent) {
 					sections.push(`> 💬 ${h.reviewContent}`);
 				}
 			}
 		}
 
-		// 章节评论（想法）
+		// 章节评论（想法）— callout 格式
 		const chReviews = chapterReviewsByChapter.get(uid) ?? [];
 		if (chReviews.length > 0) {
-			sections.push('');
-			sections.push('### 想法');
 			for (const r of chReviews) {
-				sections.push(r.content);
+				sections.push('');
+				sections.push(`> [!note]+ 💬 想法`);
+				sections.push(`> ${r.mdContent || r.content}`);
 				if (r.abstract) {
 					sections.push(`> 📌 ${r.abstract}`);
 				}
@@ -85,7 +101,9 @@ export function renderNotebook(notebook: WereadNotebook): string {
 		sections.push('');
 		sections.push('## 全书评论');
 		for (const r of bookReviews) {
-			sections.push(r.content);
+			sections.push('');
+			sections.push(`> [!note]+ 💬 书评`);
+			sections.push(`> ${r.mdContent || r.content}`);
 		}
 	}
 
@@ -102,7 +120,6 @@ function groupByChapter(
 		list.push(h);
 		map.set(h.chapterUid, list);
 	}
-	// 按 createTime 排序
 	for (const list of map.values()) {
 		list.sort((a, b) => a.createTime - b.createTime);
 	}

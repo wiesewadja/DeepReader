@@ -6,7 +6,7 @@ import { generateFrontmatter } from '@/weread/render/frontmatter';
 import { renderNotebook } from '@/weread/render/markdown-renderer';
 import type { WereadBook, WereadNotebook, WereadHighlight, WereadReview, WereadChapter } from '@/weread/types';
 
-// ── 固定时间戳，避免 syncTime 不确定 ──
+// ── 固定时间戳 ──
 const FIXED_NOW = new Date('2025-05-16T10:30:00Z');
 
 beforeEach(() => {
@@ -15,7 +15,7 @@ beforeEach(() => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// generateFrontmatter
+// generateFrontmatter — 精简版（5 字段）
 // ═══════════════════════════════════════════════════════════════
 describe('generateFrontmatter', () => {
 	const fullBook: WereadBook = {
@@ -36,100 +36,44 @@ describe('generateFrontmatter', () => {
 		lastReadDate: '2025-05-10',
 		readingStatus: 'reading',
 		progress: 72,
-		readingTime: 66600, // 18小时30分钟
+		readingTime: 66600,
 	};
 
-	it('should generate frontmatter with all fields for a linked book', () => {
-		const result = generateFrontmatter(fullBook, '3300032341', {
-			deepReaderBookId: 'abc123',
-		});
-
-		expect(result).toContain('doc_type: weread-notebook');
-		expect(result).toContain('wereadBookId: "3300032341"');
-		expect(result).toContain('deepReaderBookId: "abc123"');
-		expect(result).toContain('wereadStatus: "linked"');
-		expect(result).toContain('title: "深度学习"');
-		expect(result).toContain('author: "Ian Goodfellow"');
-		expect(result).toContain('isbn: "9787115461708"');
-		expect(result).toContain('publisher: "人民邮电出版社"');
-		expect(result).toContain('category: "计算机/人工智能"');
-		expect(result).toContain('totalWords: 580000');
-		expect(result).toContain('rating: 88.6');
-		expect(result).toContain('progress: "72%"');
-		expect(result).toContain('readingTime: "18小时30分钟"');
-		expect(result).toContain('readingStatus: "在读"');
-		expect(result).toContain('lastReadDate: "2025-05-10"');
-		expect(result).toContain('noteCount: 45');
-		expect(result).toContain('reviewCount: 12');
-		expect(result).toContain('syncTime: "2025-05-16T10:30:00.000Z"');
-	});
-
-	it('should generate frontmatter for an unlinked book (no deepReaderBookId)', () => {
+	it('should generate frontmatter with 5 core fields', () => {
 		const result = generateFrontmatter(fullBook, '3300032341');
 
-		expect(result).toContain('wereadStatus: "unlinked"');
-		expect(result).not.toContain('deepReaderBookId');
+		expect(result).toContain('title: "深度学习"');
+		expect(result).toContain('author: "Ian Goodfellow"');
+		expect(result).toContain('type: weread');
+		expect(result).toContain('source: "微信读书"');
+		expect(result).toContain('cover: "DeepReader/covers/深度学习.jpg"');
 	});
 
-	it('should handle empty/zero fields gracefully', () => {
-		const emptyBook: WereadBook = {
-			bookId: '999',
-			title: '空书',
-			author: '',
-			cover: '',
-			isbn: '',
-			publisher: '',
-			category: '',
-			intro: '',
-			totalWords: 0,
-			rating: 0,
-			publishTime: '',
-			bookType: 0,
-			noteCount: 0,
-			reviewCount: 0,
-			lastReadDate: '',
-			readingStatus: 'unread',
-			progress: 0,
-			readingTime: 0,
-		};
+	it('should NOT contain old fields', () => {
+		const result = generateFrontmatter(fullBook, '3300032341');
 
-		const result = generateFrontmatter(emptyBook, '999');
-
-		expect(result).toContain('title: "空书"');
-		expect(result).toContain('totalWords: 0');
-		expect(result).toContain('rating: 0');
-		expect(result).toContain('progress: "0%"');
-		expect(result).toContain('readingTime: "0分钟"');
-		expect(result).toContain('readingStatus: "未读"');
-		expect(result).toContain('noteCount: 0');
-		expect(result).toContain('reviewCount: 0');
+		expect(result).not.toContain('doc_type:');
+		expect(result).not.toContain('wereadBookId:');
+		expect(result).not.toContain('wereadStatus:');
+		expect(result).not.toContain('isbn:');
+		expect(result).not.toContain('totalWords:');
+		expect(result).not.toContain('rating:');
+		expect(result).not.toContain('progress:');
+		expect(result).not.toContain('readingTime:');
+		expect(result).not.toContain('readingStatus:');
+		expect(result).not.toContain('syncTime:');
 	});
 
-	it('should format cover path correctly', () => {
-		const result = generateFrontmatter(fullBook, '3300032341', {
-			deepReaderBookId: 'abc123',
-		});
-
-		expect(result).toContain('cover: "DeepReader/微信读书/assets/3300032341.jpg"');
+	it('should handle book without cover', () => {
+		const noCover = { ...fullBook, cover: '' };
+		const result = generateFrontmatter(noCover, '3300032341');
+		expect(result).toContain('cover: ""');
 	});
 
-	it('should format readingStatus correctly for finished', () => {
-		const finishedBook = { ...fullBook, readingStatus: 'finished' as const };
-		const result = generateFrontmatter(finishedBook, '3300032341');
-		expect(result).toContain('readingStatus: "已读完"');
-	});
-
-	it('should keep rating as-is when <= 10', () => {
-		const lowRatedBook = { ...fullBook, rating: 8 };
-		const result = generateFrontmatter(lowRatedBook, '3300032341');
-		expect(result).toContain('rating: 8');
-	});
-
-	it('should include finishedDate when book is finished', () => {
-		const finishedBook = { ...fullBook, readingStatus: 'finished' as const };
-		const result = generateFrontmatter(finishedBook, '3300032341');
-		// finishedDate should appear (even if empty)
-		expect(result).toMatch(/finishedDate:/);
+	it('should sanitize title in cover path', () => {
+		const weirdBook = { ...fullBook, title: 'A/B:C?D' };
+		const result = generateFrontmatter(weirdBook, '3300032341');
+		expect(result).toContain('cover: "DeepReader/covers/ABCD.jpg"');
 	});
 });
 
@@ -179,7 +123,7 @@ describe('renderNotebook', () => {
 		const md = renderNotebook(notebook);
 
 		expect(md).toContain('---');
-		expect(md).toContain('doc_type: weread-notebook');
+		expect(md).toContain('type: weread');
 		expect(md).toContain('# 测试书');
 		expect(md).toContain('> [!summary] 书籍简介');
 		expect(md).toContain('> 这是一本测试书。');
@@ -232,9 +176,12 @@ describe('renderNotebook', () => {
 		expect(idx1).toBeLessThan(idx2);
 
 		// Each highlight has block quote with bookmarkId anchor
-		expect(md).toContain('> [!quote] 📌 第一条高亮 ^bm1');
-		expect(md).toContain('> [!quote] 📌 第二条高亮 ^bm2');
-		expect(md).toContain('> [!quote] 📌 第二章的高亮 ^bm3');
+		expect(md).toContain('> [!warning]+ 🟡 高亮');
+			expect(md).toContain('> 第一条高亮');
+		expect(md).toContain('> [!warning]+ 🟡 高亮');
+			expect(md).toContain('> 第二条高亮');
+		expect(md).toContain('> [!warning]+ 🟡 高亮');
+			expect(md).toContain('> 第二章的高亮');
 	});
 
 	it('should show reviewContent below highlight with 💬', () => {
@@ -255,7 +202,8 @@ describe('renderNotebook', () => {
 		const notebook = makeNotebook({ highlights });
 		const md = renderNotebook(notebook);
 
-		expect(md).toContain('> [!quote] 📌 重要段落 ^bm1');
+		expect(md).toContain('> [!warning]+ 🟡 高亮');
+			expect(md).toContain('> 重要段落');
 		expect(md).toContain('> 💬 这段写得好');
 	});
 
@@ -276,7 +224,7 @@ describe('renderNotebook', () => {
 		const notebook = makeNotebook({ reviews });
 		const md = renderNotebook(notebook);
 
-		expect(md).toContain('### 想法');
+		expect(md).toContain('> [!note]+ 💬 想法');
 		expect(md).toContain('这一章很有启发。');
 		expect(md).toContain('> 📌 原文摘要内容');
 	});
@@ -351,27 +299,25 @@ describe('renderNotebook', () => {
 
 		const md = renderNotebook(notebook);
 
-		// Verify structure order
-		const fmEnd = md.indexOf('---', 1); // second ---
-		const titleIdx = md.indexOf('# 测试书');
-		const introIdx = md.indexOf('> [!summary]');
-		const ch1Idx = md.indexOf('## 第一章 基础');
-		const highlightIdx = md.indexOf('> [!quote] 📌 划线内容A');
-		const commentIdx = md.indexOf('> 💬 批注A');
-		const ch2Idx = md.indexOf('## 第二章 进阶');
-		const ch2HighlightIdx = md.indexOf('> [!quote] 📌 划线内容B');
-		const reviewIdx = md.indexOf('### 想法');
-		const bookReviewIdx = md.indexOf('## 全书评论');
+			// Verify structure: fm → title → ch1(highlight+comment+review) → ch2 → 全书评论
+			const fmEnd = md.indexOf('---', 1);
+			const titleIdx = md.indexOf('# 测试书');
+			const ch1Idx = md.indexOf('## 第一章 基础');
+			const ch1Highlight = md.indexOf('划线内容A');
+			const ch1Comment = md.indexOf('> 💬 批注A');
+			const ch1Review = md.indexOf('想法内容');
+			const ch2Idx = md.indexOf('## 第二章 进阶');
+			const ch2Highlight = md.indexOf('划线内容B');
+			const bookReviewIdx = md.indexOf('## 全书评论');
 
-		expect(fmEnd).toBeLessThan(titleIdx);
-		expect(titleIdx).toBeLessThan(introIdx);
-		expect(introIdx).toBeLessThan(ch1Idx);
-		expect(ch1Idx).toBeLessThan(highlightIdx);
-		expect(highlightIdx).toBeLessThan(commentIdx);
-		expect(commentIdx).toBeLessThan(reviewIdx);
-		expect(reviewIdx).toBeLessThan(ch2Idx);
-		expect(ch2Idx).toBeLessThan(ch2HighlightIdx);
-		expect(ch2HighlightIdx).toBeLessThan(bookReviewIdx);
+			expect(fmEnd).toBeLessThan(titleIdx);
+			expect(titleIdx).toBeLessThan(ch1Idx);
+			expect(ch1Idx).toBeLessThan(ch1Highlight);
+			expect(ch1Highlight).toBeLessThan(ch1Comment);
+			expect(ch1Comment).toBeLessThan(ch1Review);
+			expect(ch1Review).toBeLessThan(ch2Idx);
+			expect(ch2Idx).toBeLessThan(ch2Highlight);
+			expect(ch2Highlight).toBeLessThan(bookReviewIdx);
 	});
 
 	it('should skip intro if book has no intro', () => {
