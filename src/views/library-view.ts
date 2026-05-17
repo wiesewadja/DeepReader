@@ -592,9 +592,10 @@ export class LibraryView extends ItemView {
 			return;
 		}
 
-		// 微信读书：直接打开笔记文件
+		// 微信读书：直接打开笔记文件（书名需要 sanitize，和同步保存一致）
 		if (index.fileType === 'weread') {
-			const notePath = `书籍摘录/${index.pdf_name}/${index.pdf_name}.md`;
+			const safeName = sanitizeFileName(index.pdf_name);
+			const notePath = `书籍摘录/${safeName}/${safeName}.md`;
 			const file = this.app.vault.getAbstractFileByPath(notePath);
 			if (file) {
 				this.app.workspace.getLeaf(false).openFile(file as TFile);

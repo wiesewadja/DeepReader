@@ -12,5 +12,5 @@ export function extractCoverExt(cover: string): string {
  */
 export function toHighResCoverUrl(url: string): string {
 	if (!url) return url;
-	return url.replace(/\/t\d+_/, '/t9_');
+	return url.replace(/\/[st]\d*_/, '/t9_');
 }

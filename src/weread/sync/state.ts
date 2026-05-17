@@ -20,6 +20,7 @@ export interface VaultAdapter {
 	writeBinary(path: string, data: ArrayBuffer): Promise<void>;
 	exists(path: string, sensitive?: boolean): Promise<boolean>;
 	mkdir(path: string): Promise<void>;
+	stat(path: string): Promise<{ size: number } | null>;
 }
 
 /**

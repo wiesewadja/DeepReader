@@ -29,7 +29,7 @@ import { htmlToMarkdown } from '../utils/html-to-md';
 import { serviceLog as logger } from '../../utils/logger';
 
 
-const DEFAULT_BATCH_SIZE = 3;
+const DEFAULT_BATCH_SIZE = 8;
 
 export interface SyncEngineHost {
 	settings: {
@@ -301,8 +301,8 @@ export class WereadSyncEngine {
 			reviews,
 		};
 
-		// 下载封面
-		await this.downloadCover(book).catch((err) => {
+		// 下载封面（异步，不阻塞同步流程）
+		this.downloadCover(book).catch((err) => {
 			logger.warn(`下载封面失败 ${bookId}: ${err}`);
 		});
 
@@ -331,35 +331,37 @@ export class WereadSyncEngine {
 
 	/** 下载封面图片 */
 	private async downloadCover(book: WereadBook): Promise<void> {
-		if (!book.cover) {
-			console.log('[WereadSync] no cover URL for:', book.title);
-			return;
-		}
+		if (!book.cover) return;
 
 		const ext = extractCoverExt(book.cover);
-		const hiresUrl = toHighResCoverUrl(book.cover);
 		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
 
-		if (await this.adapter.exists(coverPath)) return;
-
-		console.log('[WereadSync] downloading cover:', book.title, 'hiresUrl:', hiresUrl);
-		try {
-			const resp = await safeRequest({ url: hiresUrl });
-			console.log('[WereadSync] cover response status:', resp.status, 'arrayBuffer:', !!resp.arrayBuffer, 'size:', resp.arrayBuffer?.byteLength);
-			if (resp.arrayBuffer && resp.arrayBuffer.byteLength > 0) {
-				await this.ensureDirForFile(coverPath);
-				await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
-				console.log('[WereadSync] cover saved:', coverPath);
-			} else {
-				console.warn('[WereadSync] cover response has no arrayBuffer, text length:', resp.text?.length);
+			if (await this.adapter.exists(coverPath)) {
+				try {
+					const stat = await this.adapter.stat(coverPath);
+					if (stat && stat.size > 5 * 1024) return;
+				} catch { /* stat 失败则重新下载 */ }
 			}
-		} catch (err) {
-			console.error('[WereadSync] cover download error:', err);
-			throw err;
+
+		// 先尝试高清，失败则用原始 URL
+		const hiresUrl = toHighResCoverUrl(book.cover);
+		const urls = hiresUrl !== book.cover ? [hiresUrl, book.cover] : [book.cover];
+
+		for (const url of urls) {
+			try {
+				const resp = await safeRequest({ url });
+				if (resp.arrayBuffer && resp.arrayBuffer.byteLength > 0) {
+					await this.ensureDirForFile(coverPath);
+					await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
+					return;
+				}
+			} catch {
+				continue;
+			}
 		}
 	}
 
-	/** 根据设置生成笔记文件路径 */
+		/** 根据设置生成笔记文件路径 */
 	private resolveNotePath(book: WereadBook): string {
 		const safeName = sanitizeFileName(book.title);
 		const bookDir = join('书籍摘录', safeName);
