@@ -1,231 +1,324 @@
-# SPEC: DeepReader 配置 UI 重构
+# SPEC: Z-Library 书籍下载集成
 
-> 状态: Draft | 范围: 中等重构 | 目标: 信息架构重组 + 视觉打磨 + 分层设计
-
----
-
-## 1. 目标
-
-重组配置 UI 的 Tab 布局、改善分组逻辑和视觉层次，使新手用户能 3 步完成配置，高级用户能灵活控制所有参数。
-
-### 核心原则
-
-- **分层设计**: 新手看到简化视图（预设 + Key），高级用户展开完整控制
-- **语义分组**: 每个Tab 内容内聚、命名直观，用户能预测设置在哪里
-- **渐进披露**: 高频设置直接可见，低频设置折叠隐藏
-- **不增加新功能**: 仅重组现有设置，不新增设置项（缺失的 Langsmith/HITL 等另开任务）
+> 版本: v1 | 日期: 2026-05-17 | 状态: 待评审
 
 ---
 
-## 2. 信息架构变更
+## 一、目标
 
-### 现状问题
+为微信读书中**本地没有对应 PDF/EPUB** 的书籍，提供从 Z-Library 搜索并下载的能力。下载完成后自动索引并关联，用户在书库卡片上一键操作即可完成全流程。
 
-| Tab | 问题 |
-|-----|------|
-| AI 服务 | 混合了快速配置、配置摘要、高级服务商账号三层内容 |
-| 服务配置 | 混合了 AI 角色分配 + PDF 索引参数 + SenseNova Key + reranker 权重 |
-| 高级 | 只有 3 项，太空洞 |
-| 阅读模式 | 混合了阅读样式 + 主动引导两个概念 |
+### 目标用户
 
-### 新 Tab 布局（横向 Tab 条）
+DeepReader 插件用户，已同步微信读书笔记，希望获得本地书籍文件进行深度阅读和 AI 对话。
+
+### 核心流程
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│  [bot] AI 服务  │  [cpu] 模型配置  │  [book] 阅读  │  [user] 画像  │  [wrench] 通用  │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  Tab 内容区（整页滚动）                                           │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+书库卡片点击下载按钮
+  ↓
+弹出搜索结果 Modal（Z-Library 搜索该书名）
+  ↓
+用户选择版本（EPUB 优先展示）
+  ↓
+下载到 vault + 自动索引
+  ↓
+写入 weread/mapping.json 关联
+  ↓
+书库卡片状态更新（显示"微信读书"标签）
 ```
-
-- Tab 条横向排列在顶部，类似 Obsidian 原生设置页（Settings → Editor/Files 等）
-- 删除左侧纵向导航栏，内容区占满宽度，`max-width` 限制阅读舒适度
-
-#### 变更明细
-
-| 设置项 | 原位置 | 新位置 | 理由 |
-|--------|--------|--------|------|
-| AI 角色分配（核心 + 增强） | 服务配置 | **模型配置** | 与服务商账号解耦 |
-| PDF 索引参数（页数/Token/摘要） | 服务配置（折叠） | **通用** | 低频，与 AI 模型无关 |
-| Reranker 权重 | 服务配置（折叠） | **模型配置**（reranker 角色内） | 属于该角色的参数，就近放置 |
-| SenseNova Key | 服务配置（独立卡片） | **模型配置**（TTS 角色内） | 信息图依赖 TTS 通道，合并 |
-| 主动引导 + 冷却时间 | 阅读模式 | **通用** | 功能开关，非阅读样式 |
-| 语音书信回复 | 高级 | **通用** | 与 TTS 角色配置同层 |
-| 调试日志 | 高级 | **通用** | 开发者设置 |
-| Skills 重载 | 高级 | **通用** | 开发者设置 |
-
-#### 不变
-
-- **AI 服务 Tab**: 快速配置流程保持不变，配置摘要保持不变
-- **用户画像 Tab**: 完全不变
 
 ---
 
-## 3. 视觉改善
+## 二、功能清单与验收标准
 
-### 3.1 Tab 导航改为横向
+### Phase 1: Z-Library SDK 内嵌
 
-**现状**: 左侧纵向导航栏（160px 宽），占空间且与 Obsidian 原生设置风格不一致。
+| # | 功能 | 验收标准 |
+|---|------|---------|
+| 1.1 | `ZLibraryClient` 类 | 支持 login / search / downloadBook / getProfile |
+| 1.2 | Cookie 管理 | 登录后自动管理 Cookie，无需手动传递 |
+| 1.3 | 域名自动发现 | 初始化时自动获取可用域名 |
+| 1.4 | HTTP 代理 | 从 `HTTPS_PROXY` / `HTTP_PROXY` 环境变量读取 |
+| 1.5 | 错误处理 | 网络错误自动重试（2次），登录失败/限额超限明确报错 |
+| 1.6 | 文件下载 | 流式写入，支持进度回调 |
 
-**改善**:
-- 改为顶部横向 Tab 条，与 Obsidian 原生设置页风格一致
-- 每个 Tab 带 Lucide 图标 + 文字，水平排列
-- 图标方案: AI 服务→`lucide:bot` / 模型配置→`lucide:cpu` / 阅读→`lucide:book-open` / 用户画像→`lucide:user` / 通用→`lucide:wrench`
-- 使用 Obsidian 的 `setIcon(el, 'bot')` API 渲染图标（内置 Lucide 支持）
-- 内容区占满宽度，`max-width: 680px` 居中
-- 删除 `deeppdf-settings-nav` 的左侧栏样式，改为 `deeppdf-settings-tabs` 横向样式
-- 删除 CSS 中 `flex-direction: row` 的左右分栏，改为纵向布局（Tab 条在上，内容在下）
+### Phase 2: 设置页集成
 
-### 3.2 模型配置 Tab 的角色卡片
+| # | 功能 | 验收标准 |
+|---|------|---------|
+| 2.1 | Z-Library 设置区 | 在"微信读书"tab 下新增 Z-Library 配置区域 |
+| 2.2 | 账号存储 | 邮箱 + 密码存入 `data.json`（密码不明文，仅存登录后的 Cookie） |
+| 2.3 | 登录验证 | "保存并验证"按钮，成功后显示用户名和剩余下载次数 |
+| 2.4 | 清除凭据 | "清除"按钮清除 Cookie |
 
-**现状**: 所有角色平铺，每个角色是可折叠区块，点击展开后显示服务商下拉 + 模型输入 + 测试按钮 + 模型列表获取 + 思考控制 + batch size，信息量过大。
+### Phase 3: 书库下载交互
 
-**改善**:
-- 角色 header 显示当前配置摘要（如 `主对话 · DeepSeek · deepseek-chat`）
-- 折叠内容保持不变（服务商 + 模型 + 测试 + 高级选项）
-- 核心角色（chat/router/pageindex）默认不折叠，可选角色默认折叠
+| # | 功能 | 验收标准 |
+|---|------|---------|
+| 3.1 | 下载按钮 | 未关联本地的 weread 书籍卡片上显示下载图标 |
+| 3.2 | 搜索 Modal | 弹出搜索结果列表，按 EPUB 优先排序 |
+| 3.3 | 版本选择 | 用户点击某条搜索结果开始下载 |
+| 3.4 | 下载进度 | 卡片上显示下载 + 索引进度 |
+| 3.5 | 自动关联 | 下载完成 → 自动索引 → 写入 mapping.json → 卡片更新 |
 
-### 3.3 配置摘要卡片
+#### 3.2 搜索 Modal 详细设计
 
-**现状**: 纯文字（`当前方案：SiliconFlow 全能` + `对话: model · 语义搜索: model`）。
+**触发**：点击 weread 卡片上的下载按钮。
 
-**改善**:
-- 分角色显示状态标签（`✓ 已配置` / `⚠ 未配置`）
-- 用 badge 展示各角色的 provider + model
+**Modal 布局**（自上而下）：
 
-### 3.4 折叠区块交互优化
+```
+┌─────────────────────────────────────────────┐
+│  搜索: 高效能人士的七个习惯            [×]  │  ← 标题栏，显示搜索关键词
+├─────────────────────────────────────────────┤
+│ ┌──────┐ 高效能人士的七个习惯   EPUB 2.5MB │  ← 结果卡片（EPUB 优先）
+│ │ 封面 │ 史蒂芬·柯维 · 2020 · 中文        │     左侧封面缩略图
+│ │      │ [下载]                            │
+│ └──────┘                                    │
+├─────────────────────────────────────────────┤
+│ ┌──────┐ 高效能人士的七个习惯   PDF 15.2MB │
+│ │ 封面 │ 史蒂芬·柯维 · 2019 · 中文        │
+│ │      │ [下载]                            │
+│ └──────┘                                    │
+├─────────────────────────────────────────────┤
+│ ┌──────┐ The 7 Habits...       EPUB 1.8MB │  ← 英文版也展示
+│ │ 封面 │ Stephen R. Covey · 2020 · English│
+│ │      │ [下载]                            │
+│ └──────┘                                    │
+├─────────────────────────────────────────────┤
+│  显示 1-5 / 共 5 条                         │
+└─────────────────────────────────────────────┘
+```
 
-**现状**: 每次折叠/展开都调用 `renderTabContent()` 销毁重建整个 DOM，导致闪烁。
+**搜索逻辑**：
+1. 用 weread 书籍的 `title` 作为搜索 query
+2. 默认参数：`limit: 10`，`languages: ['chinese']`，先搜 EPUB
+3. 如果中文搜索结果为空，去掉语言限制重试
+4. 结果排序：EPUB > PDF > MOBI，同格式按年份倒序
 
-**改善**:
-- 使用 CSS `display: none` / `display: block` 切换，不重建 DOM
-- 或保持重建但在 `toggleSection()` 中只更新折叠区块本身，不重建整个 Tab
+**结果卡片信息**：
+- 封面缩略图（`book.cover`，Z-Library 返回的 URL，异步加载，无封面时显示占位符）
+- 书名（`book.title`）
+- 作者（`book.author`）
+- 格式标签（`book.extension`，EPUB 绿色 / PDF 蓝色）
+- 文件大小（`book.filesizeString`）
+- 年份（`book.year`）
+- 语言标签（`book.language`）
 
-### 3.5 增大间距和内边距
+**交互**：
+- 点击"下载"按钮 → 关闭 Modal → 开始下载流程
+- 点击卡片行 → 也触发下载
+- 点击 [×] 或 Modal 外 → 取消关闭
+- 未登录时弹 Notice 提示"请先在设置中配置 Z-Library 账号"
 
-**现状**: 设置项行间距紧凑，可折叠区块内部 padding 偏小，整体感觉挤压。
+**空状态**：
+- 搜索中：显示加载动画 + "正在搜索..."
+- 无结果：显示"未找到匹配书籍" + 建议修改关键词
+- 网络错误：显示错误信息 + "重试"按钮
 
-**改善**:
-- `.setting-item` 上下 padding 从 `12px` → `16px`
-- 卡片内边距从 `16px 20px` → `20px 24px`
-- 可折叠区块内边距从 `0 16px` → `0 20px`
-- 折叠内容区 padding 从 `8px 0 12px` → `12px 0 16px`
-- Tab 条高度增大，每个 Tab item 加 `padding: 10px 20px`
-- 卡片间距从 `margin-bottom: 16px` → `margin-bottom: 20px`
+#### 3.4 + 3.5 下载 + 索引流程详细设计
 
-### 3.6 统一 Section Header 样式
+**完整状态机**：
 
-**现状**: 多种 header 样式混用（`h3`、`h4`、`h5`、自定义 div）。
+```
+[空闲] → 点击下载按钮
+  ↓
+[搜索中] → Modal 显示搜索结果
+  ↓ 用户选择
+[下载中] → 卡片显示下载进度条
+  ↓ 下载完成
+[索引中] → 卡片显示索引进度条
+  ↓ 索引完成
+[关联写入] → 写入 mapping.json + 更新 sync-state
+  ↓
+[完成] → 卡片显示"微信读书"标签，可点击打开对话
+```
 
-**改善**:
-- Tab 标题用 `h3`
-- 分组标题用卡片 header
-- 角色名用统一的折叠 header 样式
+**各阶段细节**：
+
+| 阶段 | 卡片显示 | 数据流 | 失败处理 |
+|------|---------|--------|---------|
+| 搜索中 | Modal 加载动画 | `client.search(title)` | Modal 显示错误 + 重试按钮 |
+| 下载中 | 卡片封面区显示蓝色进度条 + "下载中 45%" | `client.downloadBook()` → 写入 vault | 卡片显示红色错误标记 + "重试"按钮 |
+| 索引中 | 卡片封面区显示绿色进度条 + "索引中 60%" | `indexBook()` → 生成 bookId | 卡片显示"索引失败" + "重试"按钮 |
+| 关联写入 | 无特殊显示（瞬时完成） | 写入 mapping.json → 更新 wereadMappingCache | 日志记录，不阻塞 |
+| 完成 | 正常卡片 + "微信读书"标签 | 卡片可点击进入对话 | — |
+
+**下载阶段**：
+1. 从搜索结果获取 `bookId` + `hash`
+2. 调用 `client.getDownloadLink(bookId, hash)` 获取下载 URL
+3. 通过 `requestUrl` 下载到 `{vaultPath}/DeepReader/assets/{safeTitle}.{ext}`
+4. 进度回调更新卡片上的进度条
+
+**索引阶段**：
+1. 调用现有 `indexBook()` 函数，传入下载的文件路径
+2. 复用书库已有的 `onProgress` 回调更新卡片进度
+3. 索引完成后获得 `bookId`
+
+**关联阶段**：
+1. 读取 `.pageindex/weread/mapping.json`
+2. 新增条目：`{ wereadBookId → { deepReaderBookId, title, filePath } }`
+3. 更新 `library-view` 的 `wereadMappingCache`
+4. 触发卡片重新渲染（添加"微信读书"标签）
+
+**重试机制**：
+- 每个阶段失败后，卡片上显示对应的"重试"按钮
+- 重试从失败阶段重新开始，不重新执行已成功的阶段
+- 下载文件已存在时跳过下载，直接进入索引阶段
 
 ---
 
-## 4. 代码结构
-
-### 4.1 文件拆分
-
-**现状**: `setting-tab.ts` 1474 行单体类。
-
-**改善**: 按职责拆分为独立渲染函数，保持主类只做 Tab 路由。
+## 三、项目结构
 
 ```
-src/settings/
-├── setting-tab.ts          # 主类（Tab 路由 + 共享状态）~200行
-├── sections/
-│   ├── llm-section.ts      # AI 服务 Tab 渲染（快速配置 + 摘要 + 高级）
-│   ├── model-section.ts    # 模型配置 Tab 渲染（角色分配）
-│   ├── reading-section.ts  # 阅读模式 Tab 渲染
-│   ├── profile-section.ts  # 用户画像 Tab 渲染
-│   └── general-section.ts  # 通用 Tab 渲染
-├── components/
-│   ├── collapsible.ts      # 可折叠区块组件
-│   ├── role-card.ts        # 角色配置卡片组件
-│   └── provider-card.ts    # 服务商账号卡片组件
-└── settings.css            # 不变
+src/
+├── zlibrary/                        ← 新增：Z-Library SDK
+│   ├── client.ts                    ← ZLibraryClient 主类
+│   ├── cookie-jar.ts                ← Cookie 管理
+│   ├── types.ts                     ← 类型定义（Book, SearchResult 等）
+│   ├── errors.ts                    ← ZLibraryError
+│   └── constants.ts                 ← 默认域名、请求头
+│
+├── views/
+│   ├── library-view.ts              ← 修改：下载按钮 + 进度
+│   └── zlibrary-search-modal.ts     ← 新增：搜索结果选择 Modal
+│
+├── settings/
+│   └── sections/
+│       └── weread-section.ts        ← 修改：新增 Z-Library 配置区
+│
+├── config/
+│   └── settings.ts                  ← 修改：新增 zlibrary 字段
+│
+└── weread/
+    └── sync/
+        └── state.ts                 ← 修改：mapping 写入逻辑
 ```
 
-### 4.2 共享状态传递
+---
 
-主类通过方法参数传递所需依赖，不使用全局状态：
+## 四、接口设计
+
+### 4.1 Z-Library 设置字段
 
 ```typescript
-interface SectionContext {
-  plugin: DeepPDFPlugin;
-  containerEl: HTMLElement;
-  expandedSections: Set<string>;
-  toggleSection(id: string): void;  // 局部刷新，不重建整个Tab
+// settings.ts 新增字段
+interface DeepPDFSettings {
+  // ... 现有字段 ...
+
+  // Z-Library
+  zlibraryUserId: string;        // 登录后的用户 ID
+  zlibraryUserKey: string;       // 登录后的 Cookie key
+  zlibraryDomain: string;        // 当前可用域名
 }
 ```
 
+**不存明文密码**。用户输入 email/password 后登录，只存 `remix_userid` 和 `remix_userkey`。
+
+### 4.2 ZLibraryClient
+
+```typescript
+// src/zlibrary/client.ts
+class ZLibraryClient {
+  constructor(options?: { domain?: string; timeout?: number });
+
+  async login(email: string, password: string): Promise<UserProfile>;
+  async search(query: string, options?: SearchOptions): Promise<SearchResult>;
+  async getDownloadLink(bookId: number, hash: string): Promise<DownloadInfo>;
+  async downloadBook(
+    bookId: number, hash: string, outputPath: string,
+    onProgress?: (downloaded: number, total: number) => void
+  ): Promise<string>;
+  async discoverDomain(): Promise<string>;
+  async getProfile(): Promise<UserProfile>;
+}
+```
+
+代理从 `process.env.HTTPS_PROXY || process.env.HTTP_PROXY` 读取，通过 Obsidian 的 `requestUrl` 发起请求（与项目现有模式一致，避免引入 undici 依赖）。
+
+### 4.3 搜索 Modal
+
+```typescript
+// src/views/zlibrary-search-modal.ts
+class ZLibrarySearchModal extends Modal {
+  constructor(
+    app: App,
+    query: string,
+    onSelect: (book: ZLibraryBook) => void
+  );
+
+  // 显示搜索中 → 展示结果列表 → 用户点击选择
+}
+```
+
+### 4.4 书库卡片下载按钮
+
+在 `createBookCard` 中，对 `fileType === 'weread'` 且**未关联本地**的卡片，显示下载按钮而非删除按钮。
+
+判断"未关联"：`!this.wereadMappingCache.has(index.id)` 且不存在同名的 `.pageindex/` 索引。
+
 ---
 
-## 5. 代码风格
+## 五、代码风格
 
-- 保持 Obsidian Setting API 的使用模式（`new Setting(container).setName().addToggle()`）
-- CSS class 命名保持 `deeppdf-` 前缀
-- 主布局从左右分栏改为上下结构（横向 Tab + 内容区）
-- TypeScript strict mode，不使用 `any`（消除现有 `as any` 转型）
-- 函数式组件：每个 section 是导出函数 `export function renderXxxSection(ctx: SectionContext): void`
-
----
-
-## 6. 测试策略
-
-- 不写 UI 测试（Obsidian 插件 UI 难以在 Node.js 环境测试）
-- 验证方式：手动测试 + `npm run build` 编译通过
-- 重点验证：
-  - Tab 切换不丢失展开状态
-  - 设置值修改后立即保存
-  - 折叠/展开不闪烁
-  - 响应式布局（窄屏水平 Tab 条）
+- 遵循项目现有约定：TypeScript strict，无 `any`（必须时注释原因）
+- Z-Library SDK 不引入新运行时依赖，使用 Obsidian `requestUrl` 代替 undici/fetch
+- 日志使用 `utils/logger.ts` 的 `serviceLog`
+- 错误使用 `ZLibraryError` 自定义类，携带 `code` 字段
+- 设置 UI 遵循 `sections/` 下其他 section 的模式
 
 ---
 
-## 7. 边界
+## 六、测试策略
+
+| 层级 | 范围 | 工具 |
+|------|------|------|
+| 单元测试 | `ZLibraryClient` 核心逻辑（Cookie 管理、域名发现、搜索解析） | Vitest + mock |
+| 单元测试 | 搜索 Modal 渲染逻辑 | Vitest + jsdom |
+| 集成测试 | 下载 → 索引 → 关联全流程 | Vitest + 真实文件系统 |
+| E2E 测试 | 书库卡片点击 → 搜索 → 下载 → 关联 | WDIO + wdio-obsidian-service |
+
+### 关键测试用例
+
+1. `cookie-jar.test.ts` — Cookie 设置和序列化
+2. `client.test.ts` — 搜索返回正确解析，域名发现回退
+3. `search-modal.test.ts` — 空结果、多结果、网络错误处理
+4. `download-flow.test.ts` — 下载文件写入正确，进度回调触发
+
+---
+
+## 七、边界与约束
 
 ### 必须做
-- 重组 Tab 布局（5 → 5 Tab，但内容重新分配）
-- 拆分 setting-tab.ts 为多个文件
-- 优化折叠/展开交互（不重建整个 DOM）
-- 每个 Tab 加图标
+
+- Z-Library 凭据只存 Cookie，不存明文密码
+- 使用 `requestUrl`（Obsidian 内置）发请求，不引入 undici
+- 下载完成后必须自动触发索引
+- EPUB 格式优先展示
 
 ### 先问再做
-- 是否保留「切换方案」按钮（会清空当前配置重新走快速配置）
-- 折叠区块的默认展开策略（核心角色默认展开？）
+
+- 搜索无结果时的 UI 处理方式
+- 下载限额超限时是否提示升级
+- 是否支持批量下载多本书
 
 ### 不做
-- 不新增设置项（Langsmith、HITL、autoTTS 等缺失项另开任务）
-- 不引入新依赖（不用 React/Svelte 等框架）
-- 不改 CSS 预处理器（保持原生 CSS）
-- 不改 DeepPDFSettings 接口
-- 不改设置持久化逻辑
+
+- 不实现 MCP 协议层
+- 不支持 Anna's Archive / LibGen 等其他书源
+- 不做 Z-Library 账号注册
+- 不在设置页暴露代理配置（仅环境变量）
+- 不实现下载历史记录管理
 
 ---
 
-## 8. 实施计划
+## 八、实施顺序
 
-### Phase 1: 代码拆分（无功能变更）
-- 提取 `components/collapsible.ts`
-- 提取 `components/role-card.ts`
-- 提取 `components/provider-card.ts`
-- 提取各 section 文件
-- 主类只保留 Tab 路由
-- 验证: build 通过，功能不变
-
-### Phase 2: 信息架构重组
-- 重新分配 Tab 内容（模型配置 / 通用 / 阅读分离）
-- 更新 Tab 名称和图标
-- 验证: 所有设置项可找到
-
-### Phase 3: 视觉打磨
-- 角色 header 显示配置摘要
-- 配置摘要卡片加状态标签
-- 统一 header 样式
-- 折叠交互优化（CSS 切换代替 DOM 重建）
-- 验证: 手动测试各 Tab
+```
+Step 1: src/zlibrary/ SDK 核心实现 + 单元测试
+Step 2: src/config/settings.ts + weread-section.ts Z-Library 设置
+Step 3: src/views/zlibrary-search-modal.ts 搜索 Modal
+Step 4: src/views/library-view.ts 下载按钮 + 进度 + 关联
+Step 5: 全流程测试 + E2E 验证
+```

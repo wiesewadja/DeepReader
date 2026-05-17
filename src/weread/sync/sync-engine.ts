@@ -336,12 +336,12 @@ export class WereadSyncEngine {
 		const ext = extractCoverExt(book.cover);
 		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
 
-			if (await this.adapter.exists(coverPath)) {
-				try {
-					const stat = await this.adapter.stat(coverPath);
-					if (stat && stat.size > 5 * 1024) return;
-				} catch { /* stat 失败则重新下载 */ }
-			}
+		if (await this.adapter.exists(coverPath)) {
+			try {
+				const stat = await this.adapter.stat(coverPath);
+				if (stat && stat.size > 5 * 1024) return;
+			} catch { /* stat 失败则重新下载 */ }
+		}
 
 		// 先尝试高清，失败则用原始 URL
 		const hiresUrl = toHighResCoverUrl(book.cover);
@@ -361,7 +361,7 @@ export class WereadSyncEngine {
 		}
 	}
 
-		/** 根据设置生成笔记文件路径 */
+	/** 根据设置生成笔记文件路径 */
 	private resolveNotePath(book: WereadBook): string {
 		const safeName = sanitizeFileName(book.title);
 		const bookDir = join('书籍摘录', safeName);

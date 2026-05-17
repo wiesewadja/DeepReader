@@ -52,8 +52,8 @@ describe('WereadApiClient (Gateway)', () => {
 			const call = mockSafeRequest.mock.calls[0][0];
 			expect(call.headers).toMatchObject({
 				'Authorization': `Bearer ${TEST_API_KEY}`,
-				'Content-Type': 'application/json',
 			});
+			expect(call.contentType).toBe('application/json');
 		});
 
 		it('应包含 api_name 和 skill_version', async () => {
