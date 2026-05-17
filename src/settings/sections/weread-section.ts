@@ -5,6 +5,8 @@
 import { Setting, Notice } from 'obsidian';
 import type { SectionContext } from '../types';
 import { WereadService } from '../../weread/index';
+import { ZLibraryClient } from '../../zlibrary/client';
+import { DEFAULT_DOMAINS } from '../../zlibrary/constants';
 
 export function renderWereadSection(
 	container: HTMLElement,
@@ -227,7 +229,107 @@ export function renderWereadSection(
 					await plugin.saveSettings();
 				});
 		});
-}
+
+
+		// ═══ Z-Library 下载 ═══
+		const zlibCard = container.createDiv({ cls: 'deeppdf-settings-card' });
+		zlibCard.createEl('h4', { text: 'Z-Library 书籍下载' });
+
+		const hasZlib = !!settings.zlibraryUserId && !!settings.zlibraryUserKey;
+
+		if (hasZlib) {
+			// 已登录状态：显示用户信息 + 操作按钮
+			const infoDiv = zlibCard.createDiv({ cls: 'setting-item' });
+			infoDiv.createEl('span', { text: `用户 ID：${settings.zlibraryUserId}` });
+
+			// 异步加载下载配额
+			const quotaDiv = zlibCard.createDiv({ cls: 'setting-item' });
+			quotaDiv.createEl('span', { text: '加载配额信息...' });
+			loadZlibProfile(quotaDiv, settings);
+
+			new Setting(zlibCard)
+				.addButton(btn => {
+					btn.setButtonText('刷新配额')
+						.onClick(async () => {
+							btn.setButtonText('刷新中...').setDisabled(true);
+							try {
+								const client = buildZlibClient(settings);
+								const profile = await client.getProfile();
+								quotaDiv.empty();
+								quotaDiv.createEl('span', {
+									text: `今日剩余下载：${profile.downloadsTodayLeft} / ${profile.downloadsTodayLimit}`,
+								});
+							} catch {
+								new Notice('获取配额失败');
+							} finally {
+								btn.setButtonText('刷新配额').setDisabled(false);
+							}
+						});
+				})
+				.addButton(btn => {
+					btn.setButtonText('退出登录')
+						.setWarning()
+						.onClick(async () => {
+							settings.zlibraryUserId = '';
+							settings.zlibraryUserKey = '';
+							settings.zlibraryDomain = '';
+							await plugin.saveSettings();
+							new Notice('已清除 Z-Library 登录信息');
+							refresh();
+						});
+				});
+		} else {
+			// 未登录状态：输入邮箱密码登录
+			new Setting(zlibCard)
+				.setName('邮箱')
+				.addText(text => {
+					text.setPlaceholder('your@email.com');
+					text.inputEl.dataset.field = 'zlib-email';
+				});
+			new Setting(zlibCard)
+				.setName('密码')
+				.addText(text => {
+					text.inputEl.type = 'password';
+					text.setPlaceholder('Z-Library 密码');
+					text.inputEl.dataset.field = 'zlib-password';
+				});
+			new Setting(zlibCard)
+				.addButton(btn => {
+					btn.setButtonText('登录')
+						.setCta()
+						.onClick(async () => {
+							const emailEl = zlibCard.querySelector('input[data-field="zlib-email"]') as HTMLInputElement;
+							const passEl = zlibCard.querySelector('input[data-field="zlib-password"]') as HTMLInputElement;
+							const email = emailEl?.value?.trim();
+							const password = passEl?.value;
+							if (!email || !password) {
+								new Notice('请输入邮箱和密码');
+								return;
+							}
+
+							btn.setButtonText('登录中...').setDisabled(true);
+							try {
+								const client = new ZLibraryClient();
+								const profile = await client.login(email, password);
+								settings.zlibraryUserId = String(profile.userId);
+								settings.zlibraryUserKey = (client as any).cookieJar.cookies.get('remix_userkey') || '';
+								settings.zlibraryDomain = (client as any).domain;
+								await plugin.saveSettings();
+								new Notice(`登录成功！剩余下载 ${profile.downloadsTodayLeft} 次`);
+								refresh();
+							} catch (e: any) {
+								new Notice(e.message || '登录失败');
+							} finally {
+								btn.setButtonText('登录').setDisabled(false);
+							}
+						});
+				});
+			zlibCard.createEl('div', {
+				text: '仅存储登录后的 Cookie，不保存明文密码',
+				cls: 'setting-item-description',
+			});
+		}
+	}
 
 /** 异步加载同步统计并渲染到 statsDiv */
 async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<void> {
@@ -264,5 +366,33 @@ async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<
 	} catch {
 		container.empty();
 		container.createEl('span', { text: '无法读取同步状态' });
+	}
+}
+
+/** 构建 Z-Library 客户端（从 settings 恢复 Cookie） */
+function buildZlibClient(settings: any): ZLibraryClient {
+	const domain = settings.zlibraryDomain || DEFAULT_DOMAINS[0];
+	const client = new ZLibraryClient({ domain });
+	if (settings.zlibraryUserId && settings.zlibraryUserKey) {
+		(client as any).cookieJar.setFromLogin(
+			Number(settings.zlibraryUserId),
+			settings.zlibraryUserKey,
+		);
+	}
+	return client;
+}
+
+/** 异步加载 Z-Library 用户配额 */
+async function loadZlibProfile(container: HTMLElement, settings: any): Promise<void> {
+	try {
+		const client = buildZlibClient(settings);
+		const profile = await client.getProfile();
+		container.empty();
+		container.createEl('span', {
+			text: `今日剩余下载：${profile.downloadsTodayLeft} / ${profile.downloadsTodayLimit}`,
+		});
+	} catch {
+		container.empty();
+		container.createEl('span', { text: '无法获取配额信息' });
 	}
 }

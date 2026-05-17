@@ -129,6 +129,11 @@ export interface DeepPDFSettings {
 		wereadExcludeArticles: boolean;
 		wereadNoteCountThreshold: number;
 
+		// Z-Library 集成（仅存登录后的 Cookie，不存明文密码）
+		zlibraryUserId: string;
+		zlibraryUserKey: string;
+		zlibraryDomain: string;
+
 
 	// ═══════════════════════════════════════════════════════════
 	// 旧版字段（迁移期间保留，Chunk 3 后删除）
@@ -238,5 +243,10 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		wereadSyncInterval: 0,
 		wereadExcludeArticles: true,
 		wereadNoteCountThreshold: 1,
+
+		// Z-Library 集成
+		zlibraryUserId: '',
+		zlibraryUserKey: '',
+		zlibraryDomain: '',
 
 };
