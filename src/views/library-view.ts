@@ -17,6 +17,7 @@ import { loadProgress, getProgressPercent, createEmptyProgress } from '../pagein
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
 import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
 import { ZLibraryClient } from '../zlibrary/client.js';
+import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
@@ -646,10 +647,101 @@ export class LibraryView extends ItemView {
         );
 
         const query = this.getDisplayName(index.pdf_name);
-        new ZLibrarySearchModal(this.app, query, client, (book) => {
-            // Step 4 会实现完整的下载+索引+关联流程
-            new Notice(`已选择：${book.title}（${book.extension?.toUpperCase()}）— 下载功能即将实现`);
+        new ZLibrarySearchModal(this.app, query, client, async (book) => {
+            await this.downloadIndexAndAssociate(index, book, client);
         }).open();
+    }
+
+
+    private async downloadIndexAndAssociate(
+        wereadIndex: IndexListItem,
+        zlibBook: ZLibraryBook,
+        client: ZLibraryClient,
+    ): Promise<void> {
+        const adapter = (this.app as any).vault?.adapter;
+        if (!adapter) {
+            new Notice('Vault 不可用');
+            return;
+        }
+
+        const safeTitle = sanitizeFileName(zlibBook.title);
+        const assetsDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
+
+        // ── Phase 1: 下载 ──────────────────────────────
+        new Notice(`正在下载「${zlibBook.title}」...`);
+        let downloadPath: string;
+        try {
+            const { data, extension } = await client.downloadBook(zlibBook.id, zlibBook.hash);
+            const fileName = `${safeTitle}.${extension}`;
+            const vaultRelativePath = `${assetsDir}/${fileName}`;
+
+            // 确保目录存在
+            if (!(await adapter.exists(assetsDir))) {
+                await adapter.mkdir(assetsDir);
+            }
+            await adapter.writeBinary(vaultRelativePath, data);
+            const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+            downloadPath = `${vaultBase}/${vaultRelativePath}`;
+            new Notice(`下载完成：${fileName}`);
+        } catch (e: any) {
+            new Notice(`下载失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 2: 索引 ──────────────────────────────
+        new Notice(`正在索引「${zlibBook.title}」...`);
+        const settings = this.options.plugin.settings;
+        const pageindexRole = resolveRoleConfig('pageindex', settings);
+        const embeddingRole = resolveRoleConfig('embedding', settings);
+        const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+
+        let bookId: string;
+        try {
+            const result = await indexBook({
+                filePath: downloadPath,
+                fileType: (zlibBook.extension || 'pdf') as 'pdf' | 'epub',
+                outputDir: (adapter as any).getBasePath?.() || (adapter as any).basePath,
+                embedding: embeddingOpts,
+                model: pageindexRole?.model || 'deepseek-chat',
+                apiKey: pageindexRole?.apiKey || '',
+                baseUrl: pageindexRole?.baseUrl || '',
+                addNodeSummary: settings.ifAddNodeSummary,
+            });
+            bookId = result.bookId;
+            new Notice(`索引完成：${result.chaptersCount} 章节`);
+        } catch (e: any) {
+            new Notice(`索引失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 3: 关联 ──────────────────────────────
+        try {
+            const mappingPath = '.pageindex/weread/mapping.json';
+            let mapping = { mappings: {} as Record<string, any> };
+            if (await adapter.exists(mappingPath)) {
+                const raw = await adapter.read(mappingPath);
+                mapping = JSON.parse(raw);
+            }
+            // wereadIndex.id 的原始值是 weread bookId
+            const wereadBookId = wereadIndex.id;
+            mapping.mappings[wereadBookId] = {
+                deepReaderBookId: bookId,
+                title: wereadIndex.pdf_name,
+                filePath: downloadPath,
+                zlibraryBookId: zlibBook.id,
+            };
+            await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
+            this.wereadMappingCache.add(bookId);
+        } catch (e: any) {
+            new Notice(`关联写入失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 4: 刷新 ──────────────────────────────
+        new Notice(`「${zlibBook.title}」下载并索引成功！`);
+        await this.refreshIndexes();
+        await this.loadWereadMapping();
+        this.renderGrid();
     }
 
     private handleSelect(index: IndexListItem): void {
