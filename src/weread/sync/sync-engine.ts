@@ -60,6 +60,10 @@ export class WereadSyncEngine {
 		this.callbacks.onProgress = cb;
 	}
 
+	private emitProgress(p: SyncProgress) {
+		try { this.callbacks.onProgress(p); } catch { /* callback 可能操作已销毁的 DOM */ }
+	}
+
 	async sync(forceFullSync = false): Promise<SyncResult> {
 		const result: SyncResult = {
 			added: 0,
@@ -71,7 +75,7 @@ export class WereadSyncEngine {
 		};
 
 		// ── Phase 1: 拉取书架 ──────────────────────────────
-		this.callbacks.onProgress({
+		this.emitProgress({
 			phase: 'fetching-shelf',
 			current: 0,
 			total: 0,
@@ -127,7 +131,7 @@ export class WereadSyncEngine {
 		logger.info(`需要同步 ${toSync.length} 本（全量=${forceFullSync}）`);
 
 		// ── Phase 3: 逐本同步 ──────────────────────────────
-		this.callbacks.onProgress({
+		this.emitProgress({
 			phase: 'fetching-books',
 			current: 0,
 			total: toSync.length,
@@ -162,7 +166,7 @@ export class WereadSyncEngine {
 				}
 			}
 
-			this.callbacks.onProgress({
+			this.emitProgress({
 				phase: 'fetching-books',
 				current: completed,
 				total: toSync.length,
@@ -171,7 +175,7 @@ export class WereadSyncEngine {
 		}
 
 		// ── Phase 4: 匹配关联 ──────────────────────────────
-		this.callbacks.onProgress({
+		this.emitProgress({
 			phase: 'matching',
 			current: 0,
 			total: 0,
@@ -182,7 +186,7 @@ export class WereadSyncEngine {
 		syncState.lastSyncTime = Date.now();
 		await stateManager.saveSyncState(syncState);
 
-		this.callbacks.onProgress({
+		this.emitProgress({
 			phase: 'completed',
 			current: toSync.length,
 			total: toSync.length,
@@ -327,17 +331,30 @@ export class WereadSyncEngine {
 
 	/** 下载封面图片 */
 	private async downloadCover(book: WereadBook): Promise<void> {
-		if (!book.cover) return;
+		if (!book.cover) {
+			console.log('[WereadSync] no cover URL for:', book.title);
+			return;
+		}
 
 		const ext = extractCoverExt(book.cover);
 		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
 
 		if (await this.adapter.exists(coverPath)) return;
 
-		const resp = await safeRequest({ url: book.cover });
-		if (resp.arrayBuffer) {
-			await this.ensureDirForFile(coverPath);
-			await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
+		console.log('[WereadSync] downloading cover:', book.title, 'url:', book.cover);
+		try {
+			const resp = await safeRequest({ url: book.cover });
+			console.log('[WereadSync] cover response status:', resp.status, 'arrayBuffer:', !!resp.arrayBuffer, 'size:', resp.arrayBuffer?.byteLength);
+			if (resp.arrayBuffer && resp.arrayBuffer.byteLength > 0) {
+				await this.ensureDirForFile(coverPath);
+				await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
+				console.log('[WereadSync] cover saved:', coverPath);
+			} else {
+				console.warn('[WereadSync] cover response has no arrayBuffer, text length:', resp.text?.length);
+			}
+		} catch (err) {
+			console.error('[WereadSync] cover download error:', err);
+			throw err;
 		}
 	}
 

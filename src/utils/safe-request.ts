@@ -48,11 +48,18 @@ export async function safeRequest(options: SafeRequestOptions): Promise<SafeResp
 		throw: options.throw ?? false,
 	});
 
+	let json: any = undefined;
+	try {
+		json = response.json;
+	} catch {
+		// binary responses (images etc.) cannot be parsed as JSON
+	}
+
 	return {
 		status: response.status,
 		headers: response.headers,
 		text: response.text,
-		json: response.json,
+		json,
 		arrayBuffer: response.arrayBuffer,
 	};
 }

@@ -141,19 +141,21 @@ export function renderWereadSection(
 			const svc = new WereadService(host);
 			const result = await svc.sync(force, {
 				onProgress: (p: any) => {
-					if (p.phase === 'fetching-shelf') {
-						progressText.textContent = '正在拉取书架...';
-					} else if (p.phase === 'fetching-books') {
-						const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
-						progressFill.style.width = `${pct}%`;
-						progressText.textContent = `同步中 (${p.current}/${p.total}) ${p.currentBook}`;
-					} else if (p.phase === 'matching') {
-						progressFill.style.width = '100%';
-						progressText.textContent = '正在匹配关联...';
-					} else if (p.phase === 'completed') {
-						progressFill.style.width = '100%';
-						progressText.textContent = '同步完成';
-					}
+					try {
+						if (p.phase === 'fetching-shelf') {
+							progressText.textContent = '正在拉取书架...';
+						} else if (p.phase === 'fetching-books') {
+							const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
+							progressFill.style.width = `${pct}%`;
+							progressText.textContent = `同步中 (${p.current}/${p.total}) ${p.currentBook}`;
+						} else if (p.phase === 'matching') {
+							progressFill.style.width = '100%';
+							progressText.textContent = '正在匹配关联...';
+						} else if (p.phase === 'completed') {
+							progressFill.style.width = '100%';
+							progressText.textContent = '同步完成';
+						}
+					} catch { /* 设置页可能已关闭 */ }
 				},
 			});
 
