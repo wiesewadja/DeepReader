@@ -23,6 +23,17 @@ export function renderWereadSection(
 	if (settings.wereadCookie?.wr_vid) {
 		// 已登录状态
 		const infoDiv = accountCard.createDiv({ cls: 'setting-item' });
+
+		// 头像 + 用户信息
+		if (settings.wereadCookie.wr_avatar) {
+			const img = infoDiv.createEl('img', {
+				cls: 'weread-avatar',
+				attr: { src: settings.wereadCookie.wr_avatar, width: '36', height: '36' },
+			});
+			img.style.borderRadius = '50%';
+			img.style.marginRight = '10px';
+			img.style.verticalAlign = 'middle';
+		}
 		const nameText = settings.wereadCookie.wr_name || '已登录用户';
 		infoDiv.createEl('span', { text: `用户：${nameText}` });
 
@@ -105,6 +116,15 @@ export function renderWereadSection(
 	syncCard.createEl('h4', { text: '同步' });
 
 	const isLoggedIn = !!settings.wereadCookie?.wr_vid;
+
+	// 同步统计（异步加载）
+	const statsDiv = syncCard.createDiv({ cls: 'setting-item' });
+	if (isLoggedIn) {
+		statsDiv.createEl('span', { text: '加载同步状态...' });
+		loadAndRenderStats(statsDiv, plugin);
+	} else {
+		statsDiv.createEl('span', { text: '请先登录' });
+	}
 
 	new Setting(syncCard)
 		.setName('同步笔记')
@@ -223,4 +243,42 @@ export function renderWereadSection(
 					await plugin.saveSettings();
 				});
 		});
+}
+
+/** 异步加载同步统计并渲染到 statsDiv */
+async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<void> {
+	try {
+		const host = {
+			settings: plugin.settings,
+			app: plugin.app,
+			saveSettings: async () => { await plugin.saveSettings(); },
+		};
+		const svc = new WereadService(host);
+		const stats = await svc.getSyncStats();
+
+		container.empty();
+
+		if (stats.lastSyncTime > 0) {
+			const date = new Date(stats.lastSyncTime);
+			container.createEl('div', {
+				text: `上次同步：${date.toLocaleString('zh-CN')}`,
+				cls: 'setting-item-description',
+			});
+		} else {
+			container.createEl('div', {
+				text: '尚未同步',
+				cls: 'setting-item-description',
+			});
+		}
+
+		if (stats.syncedCount > 0) {
+			container.createEl('div', {
+				text: `已同步 ${stats.syncedCount} 本，已关联 ${stats.matchedCount} 本`,
+				cls: 'setting-item-description',
+			});
+		}
+	} catch {
+		container.empty();
+		container.createEl('span', { text: '无法读取同步状态' });
+	}
 }

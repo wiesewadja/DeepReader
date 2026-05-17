@@ -370,6 +370,11 @@
     color: #fff;
 }
 
+.deeppdf-library-view .deeppdf-lib-type-weread {
+    background: #07c160;
+    color: #fff;
+}
+
 .deeppdf-library-view .deeppdf-lib-book-author {
     font-size: 11px;
     color: var(--text-muted);

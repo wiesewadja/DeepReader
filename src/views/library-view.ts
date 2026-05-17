@@ -64,6 +64,7 @@ export class LibraryView extends ItemView {
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
+    private wereadMappingCache: Set<string> = new Set(); // 已关联微信读书的 deepReaderBookId 集合
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
 
@@ -168,6 +169,11 @@ export class LibraryView extends ItemView {
 
     private renderGrid(): void {
         if (!this.gridEl) return;
+
+        // 首次渲染时异步加载微信读书映射，加载完后刷新徽章
+        if (this.wereadMappingCache.size === 0) {
+            this.loadWereadMapping().then(() => this.refreshWereadBadges());
+        }
 
         // 清空所有缓存和引用
         this.cardElements.clear();
@@ -367,6 +373,11 @@ export class LibraryView extends ItemView {
         const typeTag = index.fileType?.toUpperCase() || 'PDF';
         titleRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
+        // 微信读书标签（已关联时显示）
+        if (this.wereadMappingCache.has(index.id)) {
+            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+        }
+
         // 作者
         if (index.author) {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
@@ -413,6 +424,36 @@ export class LibraryView extends ItemView {
      * 优先从 book-meta.json 读取 exportName（与 book-indexer.ts 保存封面时使用的名称一致），
      * 回退到 getDisplayName(bookName) 和原始 bookName。
      */
+    /** 从 .pageindex/weread/mapping.json 加载已关联书籍 ID 集合 */
+    private async loadWereadMapping(): Promise<void> {
+        try {
+            const adapter = (this.app as any).vault?.adapter;
+            if (!adapter) return;
+            const mappingPath = '.pageindex/weread/mapping.json';
+            if (!(await adapter.exists(mappingPath))) return;
+            const raw = await adapter.read(mappingPath);
+            const mapping = JSON.parse(raw);
+            this.wereadMappingCache = new Set(
+                Object.values(mapping.mappings || {}).map((m: any) => m.deepReaderBookId),
+            );
+        } catch {
+            // 静默失败
+        }
+    }
+
+    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章 */
+    private refreshWereadBadges(): void {
+        for (const [bookId, card] of this.cardElements) {
+            const titleRow = card.querySelector('.deeppdf-lib-book-title-row');
+            if (!titleRow) continue;
+            // 已有徽章则跳过
+            if (titleRow.querySelector('.deeppdf-lib-type-weread')) continue;
+            if (this.wereadMappingCache.has(bookId)) {
+                titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            }
+        }
+    }
+
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
             // 收集所有可能的书名（按优先级排序）

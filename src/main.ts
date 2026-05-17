@@ -15,6 +15,7 @@ import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
+import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
 
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
@@ -34,6 +35,7 @@ export default class DeepPDFPlugin extends Plugin {
 
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
+    private wereadRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
     readonly api = {
         indexBook,
@@ -555,10 +557,37 @@ export default class DeepPDFPlugin extends Plugin {
                     new Notice("请先登录微信读书");
                     return;
                 }
-                new Notice("开始同步微信读书...");
                 try {
-                    const result = await svc.sync();
+                    let lastPhase = '';
+                    let lastProgressNotice = 0;
+                    const result = await svc.sync(false, {
+                        onProgress: (p) => {
+                            // phase 切换时通知
+                            if (p.phase !== lastPhase) {
+                                lastPhase = p.phase;
+                                if (p.phase === 'fetching-books') {
+                                    new Notice(`开始同步微信读书，共 ${p.total} 本`, 5000);
+                                }
+                            }
+                            // fetching-books 阶段每 5 本或最后一本通知一次
+                            if (p.phase === 'fetching-books' && p.total > 0) {
+                                const now = Date.now();
+                                if (p.current % 5 === 0 || p.current === p.total || now - lastProgressNotice > 10000) {
+                                    lastProgressNotice = now;
+                                    new Notice(`同步进度 (${p.current}/${p.total}) ${p.currentBook}`, 3000);
+                                }
+                            }
+                        },
+                        onNotice: (msg) => { new Notice(msg); },
+                    });
                     new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                    if (result.unmatched > 0) {
+                        const svc2 = this.getWereadService();
+                        const stats = await svc2.getSyncStats();
+                        if (stats.unmatchedBooks.length > 0) {
+                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                        }
+                    }
                 } catch (e: any) {
                     new Notice(`同步失败：${e.message}`);
                 }
@@ -574,10 +603,35 @@ export default class DeepPDFPlugin extends Plugin {
                     new Notice("请先登录微信读书");
                     return;
                 }
-                new Notice("开始强制全量同步...");
                 try {
-                    const result = await svc.sync(true);
+                    let lastPhase = '';
+                    let lastProgressNotice = 0;
+                    const result = await svc.sync(true, {
+                        onProgress: (p) => {
+                            if (p.phase !== lastPhase) {
+                                lastPhase = p.phase;
+                                if (p.phase === 'fetching-books') {
+                                    new Notice(`[全量同步] 共 ${p.total} 本`, 5000);
+                                }
+                            }
+                            if (p.phase === 'fetching-books' && p.total > 0) {
+                                const now = Date.now();
+                                if (p.current % 5 === 0 || p.current === p.total || now - lastProgressNotice > 10000) {
+                                    lastProgressNotice = now;
+                                    new Notice(`[全量同步] (${p.current}/${p.total}) ${p.currentBook}`, 3000);
+                                }
+                            }
+                        },
+                        onNotice: (msg) => { new Notice(msg); },
+                    });
                     new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                    if (result.unmatched > 0) {
+                        const svc2 = this.getWereadService();
+                        const stats = await svc2.getSyncStats();
+                        if (stats.unmatchedBooks.length > 0) {
+                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                        }
+                    }
                 } catch (e: any) {
                     new Notice(`同步失败：${e.message}`);
                 }
@@ -625,8 +679,30 @@ export default class DeepPDFPlugin extends Plugin {
                 app: this.app,
                 saveSettings: async () => { await this.saveSettings(); },
             });
+            this.startWereadCookieRefresh();
         }
         return this.wereadService;
+    }
+
+    /** 每 12 小时自动刷新微信读书 Cookie */
+    /** 定期检查微信读书 Cookie 有效性，失效时提示用户 */
+    private startWereadCookieRefresh() {
+        if (this.wereadRefreshTimer) return;
+        const interval = (this.settings.wereadSyncInterval ?? 0) * 3600 * 1000;
+        if (interval <= 0) return;
+
+        this.wereadRefreshTimer = setInterval(async () => {
+            const svc = this.getWereadService();
+            if (!svc.isLoggedIn()) return;
+            try {
+                const valid = await svc.validateCookie();
+                if (!valid) {
+                    new Notice('微信读书 Cookie 已失效，请重新登录');
+                }
+            } catch {
+                // 网络错误静默忽略
+            }
+        }, interval);
     }
 
     private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
@@ -1261,6 +1337,12 @@ views:
     async onunload() {
         // 卸载时手动清理视图，虽然 Obsidian 会自动处理，但显式清理更安全
         this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
+
+        // 清理微信读书 Cookie 刷新定时器
+        if (this.wereadRefreshTimer) {
+            clearInterval(this.wereadRefreshTimer);
+            this.wereadRefreshTimer = null;
+        }
 
         // 清理阅读模式服务
         if (this.readingModeService) {
