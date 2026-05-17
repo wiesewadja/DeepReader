@@ -15,6 +15,9 @@ import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
 import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
+import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
+import { ZLibraryClient } from '../zlibrary/client.js';
+import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -379,6 +382,11 @@ export class LibraryView extends ItemView {
             titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
         }
 
+        // 未关联的微信读书书籍：显示下载按钮
+        if (index.fileType === 'weread' && !this.wereadMappingCache.has(index.id)) {
+            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-zlibrary', text: '待下载' });
+        }
+
         // 作者
         if (index.author) {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
@@ -577,6 +585,18 @@ export class LibraryView extends ItemView {
     private addCoverActions(coverEl: HTMLElement, indexId: string): void {
         const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
 
+        // 下载按钮（未关联的微信读书书籍）
+        const index = this.indexes.find(idx => idx.id === indexId);
+        if (index?.fileType === 'weread' && !this.wereadMappingCache.has(indexId)) {
+            const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
+            downloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+            downloadBtn.title = '从 Z-Library 下载';
+            downloadBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleZlibDownload(index);
+            });
+        }
+
         // 删除按钮
         const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
         deleteBtn.innerHTML = Icons.trash;
@@ -609,6 +629,27 @@ export class LibraryView extends ItemView {
                 <div class="deeppdf-lib-cover-text">${displayName}</div>
             </div>
         `;
+    }
+
+    private handleZlibDownload(index: IndexListItem): void {
+        const settings = this.options.plugin?.settings;
+        if (!settings?.zlibraryUserId || !settings?.zlibraryUserKey) {
+            new Notice('请先在设置中登录 Z-Library 账号', 3000);
+            return;
+        }
+
+        const domain = settings.zlibraryDomain || DEFAULT_DOMAINS[0];
+        const client = new ZLibraryClient({ domain });
+        (client as any).cookieJar.setFromLogin(
+            Number(settings.zlibraryUserId),
+            settings.zlibraryUserKey,
+        );
+
+        const query = this.getDisplayName(index.pdf_name);
+        new ZLibrarySearchModal(this.app, query, client, (book) => {
+            // Step 4 会实现完整的下载+索引+关联流程
+            new Notice(`已选择：${book.title}（${book.extension?.toUpperCase()}）— 下载功能即将实现`);
+        }).open();
     }
 
     private handleSelect(index: IndexListItem): void {

@@ -375,6 +375,20 @@
     color: #fff;
 }
 
+.deeppdf-library-view .deeppdf-lib-type-zlibrary {
+    background: #6366f1;
+    color: #fff;
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.download {
+    right: 36px;
+    background: rgba(99, 102, 241, 0.9);
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.download:hover {
+    background: #6366f1;
+}
+
 .deeppdf-library-view .deeppdf-lib-book-author {
     font-size: 11px;
     color: var(--text-muted);
