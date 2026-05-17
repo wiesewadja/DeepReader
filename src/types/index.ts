@@ -10,7 +10,7 @@ export interface IndexListItem {
     pdf_name: string;
     author?: string;
     description?: string;
-    fileType?: 'pdf' | 'epub';
+    fileType?: 'pdf' | 'epub' | 'weread';
     node_count: number;
     created_at: string;
     status?: string;

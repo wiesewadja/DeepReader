@@ -11,7 +11,7 @@ import { filterBooksToSync } from './diff';
 import { SyncStateManager } from './state';
 import type { VaultAdapter } from './state';
 import { renderNotebook } from '../render/markdown-renderer';
-import { extractCoverExt } from '../utils/cover';
+import { extractCoverExt, toHighResCoverUrl } from '../utils/cover';
 import { sanitizeFileName } from '../utils/file';
 import type { WereadChapter, WereadHighlight, WereadReview } from '../types';
 import type {
@@ -337,13 +337,14 @@ export class WereadSyncEngine {
 		}
 
 		const ext = extractCoverExt(book.cover);
+		const hiresUrl = toHighResCoverUrl(book.cover);
 		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
 
 		if (await this.adapter.exists(coverPath)) return;
 
-		console.log('[WereadSync] downloading cover:', book.title, 'url:', book.cover);
+		console.log('[WereadSync] downloading cover:', book.title, 'hiresUrl:', hiresUrl);
 		try {
-			const resp = await safeRequest({ url: book.cover });
+			const resp = await safeRequest({ url: hiresUrl });
 			console.log('[WereadSync] cover response status:', resp.status, 'arrayBuffer:', !!resp.arrayBuffer, 'size:', resp.arrayBuffer?.byteLength);
 			if (resp.arrayBuffer && resp.arrayBuffer.byteLength > 0) {
 				await this.ensureDirForFile(coverPath);

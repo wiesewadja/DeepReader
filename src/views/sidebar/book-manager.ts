@@ -167,7 +167,30 @@ export class BookManager {
 			}
 
 			this._indexes = indexes;
-			log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/');
+
+			// 追加微信读书已同步书籍
+			try {
+				const wereadStatePath = `${pageindexDir}/weread/sync-state.json`;
+				const stateRaw = await fs.readFile(wereadStatePath, 'utf-8');
+				const state = JSON.parse(stateRaw);
+				const syncedBooks = state.syncedBooks || {};
+				const localIds = new Set(indexes.map((i: any) => i.id));
+
+				for (const entry of Object.values(syncedBooks) as any[]) {
+					if (localIds.has(entry.bookId)) continue;
+					indexes.push({
+						id: entry.bookId,
+						pdf_name: entry.title,
+						author: entry.author,
+						fileType: 'weread',
+						node_count: (entry.noteCount || 0) + (entry.reviewCount || 0),
+						created_at: entry.lastSyncTime ? new Date(entry.lastSyncTime).toISOString() : '',
+						status: 'ready',
+					});
+				}
+			} catch { /* 微信读书同步状态不存在，跳过 */ }
+
+			log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/ + weread');
 		} catch {
 			this._indexes = [];
 		}

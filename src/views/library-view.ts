@@ -4,6 +4,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
+import { sanitizeFileName } from '../weread/utils/file';
 import { IndexListItem } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
@@ -481,7 +482,13 @@ export class LibraryView extends ItemView {
                 possibleNames.push(bookName);
             }
 
-            // 4. 去掉扩展名的原始文件名（来自 index.pdf_name）
+            // 4. sanitize 后的书名（微信读书封面保存时用了 sanitize）
+            const sanitizedName = sanitizeFileName(bookName);
+            if (sanitizedName && !possibleNames.includes(sanitizedName)) {
+                possibleNames.push(sanitizedName);
+            }
+
+            // 5. 去掉扩展名的原始文件名（来自 index.pdf_name）
             const index = this.indexes.find(idx => idx.id === indexId);
             if (index) {
                 let rawName = index.pdf_name;
@@ -578,25 +585,35 @@ export class LibraryView extends ItemView {
     }
 
     private handleSelect(index: IndexListItem): void {
-        // 检查索引状态
-        const rawStatus = (index.status || 'unknown').toLowerCase();
-        const isProcessing = PROCESSING_STATUSES.has(rawStatus);
+		const rawStatus = (index.status || 'unknown').toLowerCase();
+		const isProcessing = PROCESSING_STATUSES.has(rawStatus);
 
-        if (isProcessing) {
-            // 索引还在处理中，不响应点击
-            return;
-        }
+		if (isProcessing) {
+			return;
+		}
 
-        const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
+		// 微信读书：直接打开笔记文件
+		if (index.fileType === 'weread') {
+			const notePath = `书籍摘录/${index.pdf_name}/${index.pdf_name}.md`;
+			const file = this.app.vault.getAbstractFileByPath(notePath);
+			if (file) {
+				this.app.workspace.getLeaf(false).openFile(file as TFile);
+			} else {
+				new Notice('笔记文件不存在，请重新同步', 3000);
+			}
+			return;
+		}
 
-        if (!chaptersExist) {
-            new Notice('章节文件不存在，请重新索引书籍', 3000);
-            return;
-        }
+		const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
 
-        this.selectedIndexId = index.id;
-        this.options.onIndexChange?.(index.id);
-    }
+		if (!chaptersExist) {
+			new Notice('章节文件不存在，请重新索引书籍', 3000);
+			return;
+		}
+
+		this.selectedIndexId = index.id;
+		this.options.onIndexChange?.(index.id);
+	}
 
     private checkBookChaptersExist(pdfName: string): boolean {
         const folderName = this.getDisplayName(pdfName);
