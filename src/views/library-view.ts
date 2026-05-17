@@ -497,11 +497,17 @@ export class LibraryView extends ItemView {
                 if (rawName && !possibleNames.includes(rawName)) {
                     possibleNames.push(rawName);
                 }
+                // sanitize 全标题（和封面下载时一致，处理特殊字符和长度）
+                const sanitizedRaw = sanitizeFileName(rawName);
+                if (sanitizedRaw && !possibleNames.includes(sanitizedRaw)) {
+                    possibleNames.push(sanitizedRaw);
+                }
             }
 
             // 尝试所有可能的书名 + 所有图片扩展名
             const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
             let coverFile: TFile | null = null;
+            let foundPath: string = '';
             let foundName: string = '';
 
             for (const name of possibleNames) {
@@ -510,6 +516,7 @@ export class LibraryView extends ItemView {
                     const file = this.app.vault.getAbstractFileByPath(coverPath);
                     if (file && file instanceof TFile) {
                         coverFile = file;
+                        foundPath = coverPath;
                         foundName = name;
                         break;
                     }
@@ -517,8 +524,28 @@ export class LibraryView extends ItemView {
                 if (coverFile) break;
             }
 
-            if (coverFile) {
-                const localCoverUrl = this.app.vault.getResourcePath(coverFile);
+            // Fallback: vault 缓存未更新时，直接用 adapter 检查文件是否存在
+            if (!coverFile) {
+                const adapter = this.app.vault.adapter as any;
+                for (const name of possibleNames) {
+                    for (const ext of extensions) {
+                        const coverPath = `DeepReader/covers/${name}.${ext}`;
+                        try {
+                            if (await adapter.exists(coverPath)) {
+                                foundPath = coverPath;
+                                foundName = name;
+                                break;
+                            }
+                        } catch { continue; }
+                    }
+                    if (foundPath) break;
+                }
+            }
+
+            if (coverFile || foundPath) {
+                const localCoverUrl = coverFile
+                    ? this.app.vault.getResourcePath(coverFile)
+                    : this.app.vault.getResourcePath(foundPath as any);
                 this.coverCache.set(indexId, localCoverUrl);
 
                 // 保留选中对勾（如果存在）
