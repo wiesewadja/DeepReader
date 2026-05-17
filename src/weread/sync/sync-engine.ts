@@ -10,67 +10,57 @@ import { mergeShelfBooks } from '../api/shelf';
 import { filterBooksToSync } from './diff';
 import { SyncStateManager } from './state';
 import type { VaultAdapter } from './state';
-import { matchBooks, type IndexedBook, type WereadBookSummary, type MatchResult } from './matcher';
-import { loadIndexedBooks } from '../utils/indexed-books';
 import { renderNotebook } from '../render/markdown-renderer';
+import { extractCoverExt } from '../utils/cover';
+import { sanitizeFileName } from '../utils/file';
+import type { WereadChapter, WereadHighlight, WereadReview } from '../types';
 import type {
 	WereadBook,
 	WereadNotebook,
-	WereadHighlight,
-	WereadReview,
-	WereadChapter,
-	WereadSyncState,
-	WereadSyncedBookEntry,
-	WereadMapping,
-	WereadMappingEntry,
+	WereadChapterDetail,
 	WereadBookmark,
 	WereadReviewItem,
-	WereadChapterDetail,
-	SyncProgress,
+	WereadSyncState,
 	SyncResult,
+	SyncProgress,
 } from '../types';
+import { safeRequest } from '../../utils/safe-request';
 import { htmlToMarkdown } from '../utils/html-to-md';
-import { extractCoverExt } from '../utils/cover';
 import { serviceLog as logger } from '../../utils/logger';
 
-// ═══════════════════════════════════════════════════════════════
-// 回调接口
-// ═══════════════════════════════════════════════════════════════
 
-export interface SyncEngineCallbacks {
-	onProgress: (progress: SyncProgress) => void;
-	onNotice: (message: string) => void;
+const DEFAULT_BATCH_SIZE = 3;
+
+export interface SyncEngineHost {
+	settings: {
+		wereadApiKey: string;
+		wereadExcludeArticles: boolean;
+		wereadNoteCountThreshold: number;
+	};
+	adapter: VaultAdapter;
 }
 
-/** 同步引擎设置（从 DeepPDFSettings 中提取的子集） */
-export interface SyncEngineSettings {
-	wereadNoteLocation: string;
-	wereadSubFolder: string;
-	wereadFileName: string;
-	wereadExcludeArticles: boolean;
-	wereadNoteCountThreshold: number;
-}
+export class WereadSyncEngine {
+	private readonly client: WereadApiClient;
+	private readonly settings: SyncEngineHost['settings'];
+	private readonly adapter: VaultAdapter;
 
-// ═══════════════════════════════════════════════════════════════
-// 同步引擎
-// ═══════════════════════════════════════════════════════════════
+	private callbacks: {
+		onProgress: (p: SyncProgress) => void;
+	} = { onProgress: () => {} };
 
-export class SyncEngine {
-	constructor(
-		private client: WereadApiClient,
-		private stateManager: SyncStateManager,
-		private adapter: VaultAdapter,
-		private vaultPath: string,
-		private settings: SyncEngineSettings,
-		private callbacks: SyncEngineCallbacks,
-	) {}
+	constructor(private readonly host: SyncEngineHost) {
+		if (!host.settings.wereadApiKey) throw new Error('未配置微信读书 API Key');
+		this.client = new WereadApiClient(host.settings.wereadApiKey);
+		this.settings = host.settings;
+		this.adapter = host.adapter;
+	}
 
-	/**
-	 * 执行同步
-	 *
-	 * @param options.force 强制全量同步（忽略差异检测）
-	 */
-	async sync(options?: { force?: boolean }): Promise<SyncResult> {
+	onProgress(cb: (p: SyncProgress) => void) {
+		this.callbacks.onProgress = cb;
+	}
+
+	async sync(forceFullSync = false): Promise<SyncResult> {
 		const result: SyncResult = {
 			added: 0,
 			updated: 0,
@@ -90,11 +80,17 @@ export class SyncEngine {
 
 		let remoteBooks: WereadBook[];
 		try {
-			const [notebookResp, shelfResp] = await Promise.all([
-				this.client.getNotebook(),
-				this.client.getShelf(),
-			]);
-			remoteBooks = mergeShelfBooks(notebookResp.books, shelfResp.books);
+			const notebookResp = await this.client.getNotebook();
+			const nb = Array.isArray(notebookResp.books) ? notebookResp.books : [];
+
+			// shelf/sync 网关也可能不可用，降级为只用 notebook
+			try {
+				const shelfResp = await this.client.getShelf();
+				remoteBooks = mergeShelfBooks(nb, shelfResp.books ?? []);
+			} catch {
+				logger.info('shelf/sync API 不可用，仅使用 notebook 数据');
+				remoteBooks = mergeShelfBooks(nb, []);
+			}
 		} catch (err) {
 			const msg = `拉取书架失败: ${err instanceof Error ? err.message : String(err)}`;
 			logger.error(msg);
@@ -102,7 +98,10 @@ export class SyncEngine {
 			return result;
 		}
 
-		// 过滤公众号文章（bookType 3 = 公众号文章）
+		// 过滤没有标题的书籍
+		remoteBooks = remoteBooks.filter((b) => b.title);
+
+		// 过滤公众号文章（type=3 或 extra_type 特殊值）
 		if (this.settings.wereadExcludeArticles) {
 			remoteBooks = remoteBooks.filter((b) => b.bookType !== 3);
 		}
@@ -115,145 +114,88 @@ export class SyncEngine {
 			);
 		}
 
+		logger.info(`拉取到 ${remoteBooks.length} 本书籍`);
+
 		// ── Phase 2: 差异检测 ──────────────────────────────
-		await this.stateManager.ensureDir();
-		const syncState = await this.stateManager.loadSyncState();
-		const booksToSync = filterBooksToSync(remoteBooks, syncState, options);
-		const unchangedCount = remoteBooks.length - booksToSync.length;
-		result.unchanged = unchangedCount;
+		const stateManager = new SyncStateManager(this.adapter);
+		await stateManager.ensureDir();
+		const syncState = await stateManager.loadSyncState();
+		const toSync = forceFullSync
+			? remoteBooks
+			: filterBooksToSync(remoteBooks, syncState);
 
-		this.callbacks.onNotice(
-			`共 ${remoteBooks.length} 本书，需要同步 ${booksToSync.length} 本`,
-		);
+		logger.info(`需要同步 ${toSync.length} 本（全量=${forceFullSync}）`);
 
-		if (booksToSync.length === 0) {
-			this.callbacks.onProgress({
-				phase: 'completed',
-				current: 0,
-				total: 0,
-				currentBook: '',
-			});
-			this.callbacks.onNotice('所有书籍已是最新，无需同步');
-			return result;
-		}
-
-		// ── Phase 3: 逐本同步（并发度 3） ──────────────────────
+		// ── Phase 3: 逐本同步 ──────────────────────────────
 		this.callbacks.onProgress({
 			phase: 'fetching-books',
 			current: 0,
-			total: booksToSync.length,
+			total: toSync.length,
 			currentBook: '',
 		});
 
-		const syncResults = await this.runWithConcurrency(
-			booksToSync,
-			3,
-			async (book, index) => {
-				this.callbacks.onProgress({
-					phase: 'fetching-books',
-					current: index,
-					total: booksToSync.length,
-					currentBook: book.title,
-				});
+		let completed = 0;
+		const batchSize = DEFAULT_BATCH_SIZE;
 
-				try {
-					return await this.syncSingleBook(book, syncState);
-				} catch (err) {
-					const msg = `同步《${book.title}》失败: ${err instanceof Error ? err.message : String(err)}`;
-					logger.error(msg);
-					return { success: false as const, error: msg };
-				}
-			},
-		);
+		for (let i = 0; i < toSync.length; i += batchSize) {
+			const batch = toSync.slice(i, i + batchSize);
+			const results = await Promise.allSettled(
+				batch.map((book) => this.syncSingleBook(book, syncState)),
+			);
 
-		// 统计结果
-		for (const r of syncResults) {
-			if (r.success) {
-				if (r.isNew) {
-					result.added++;
+			for (let j = 0; j < results.length; j++) {
+				const r = results[j];
+				completed++;
+
+				if (r.status === 'fulfilled') {
+					if (r.value.success) {
+						if (r.value.isNew) result.added++;
+						else result.updated++;
+					} else {
+						result.errors.push(r.value.error);
+					}
 				} else {
-					result.updated++;
+					const book = batch[j];
+					const msg = `同步《${book.title}》失败: ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`;
+					logger.error(msg);
+					result.errors.push(msg);
 				}
-			} else {
-				result.errors.push(r.error);
 			}
+
+			this.callbacks.onProgress({
+				phase: 'fetching-books',
+				current: completed,
+				total: toSync.length,
+				currentBook: batch[batch.length - 1]?.title ?? '',
+			});
 		}
 
 		// ── Phase 4: 匹配关联 ──────────────────────────────
 		this.callbacks.onProgress({
 			phase: 'matching',
 			current: 0,
-			total: remoteBooks.length,
+			total: 0,
 			currentBook: '',
 		});
 
-		let matchResults: MatchResult[] = [];
-		try {
-			const indexedBooks = await loadIndexedBooks(this.vaultPath);
-			const wereadSummaries: WereadBookSummary[] = remoteBooks.map((b) => ({
-				bookId: b.bookId,
-				title: b.title,
-				author: b.author,
-			}));
-			matchResults = matchBooks(wereadSummaries, indexedBooks);
-		} catch (err) {
-			logger.error(`加载索引书籍失败: ${err instanceof Error ? err.message : String(err)}`);
-		}
-
-		// 统计匹配结果
-		for (const mr of matchResults) {
-			if (mr.matched) {
-				result.matched++;
-			} else {
-				result.unmatched++;
-			}
-		}
-
-		// ── Phase 5: 持久化状态 ──────────────────────────────
-		const now = Date.now();
-		syncState.lastSyncTime = now;
-
-		// 更新 mapping
-		const mapping = await this.stateManager.loadMapping();
-		for (const mr of matchResults) {
-			if (mr.matched) {
-				mapping.mappings[mr.wereadBookId] = {
-					wereadBookId: mr.wereadBookId,
-					wereadTitle: mr.wereadTitle,
-					deepReaderBookId: mr.deepReaderBookId,
-					deepReaderTitle: mr.deepReaderTitle,
-					matchMethod: 'title-author',
-					matchedAt: now,
-					confirmed: false,
-				};
-			}
-		}
-
-		await this.stateManager.saveSyncState(syncState);
-		await this.stateManager.saveMapping(mapping);
+		// 保存同步状态
+		syncState.lastSyncTime = Date.now();
+		await stateManager.saveSyncState(syncState);
 
 		this.callbacks.onProgress({
 			phase: 'completed',
-			current: booksToSync.length,
-			total: booksToSync.length,
+			current: toSync.length,
+			total: toSync.length,
 			currentBook: '',
 		});
-
-		this.callbacks.onNotice(
-			`同步完成：新增 ${result.added}，更新 ${result.updated}，匹配 ${result.matched}，错误 ${result.errors.length}`,
-		);
 
 		return result;
 	}
 
-	// ═══════════════════════════════════════════════════════════════
-	// 内部方法
-	// ═══════════════════════════════════════════════════════════════
-
 	/**
 	 * 同步单本书籍：
-	 * 1. 并行拉取 bookInfo / highlights / reviews / chapters / progress
-	 * 2. 组装 WereadNotebook
+	 * 1. 并行拉取 highlights / reviews / chapters / progress
+	 * 2. 用 highlightResp.book 和 progressResp.book 补充元数据
 	 * 3. 下载封面
 	 * 4. 渲染 Markdown 并写入文件
 	 * 5. 更新 syncState
@@ -265,12 +207,8 @@ export class SyncEngine {
 		const bookId = book.bookId;
 
 		// 并行拉取所有数据
-		const [bookInfo, highlightResp, reviewResp, chapterResp, progressResp] =
+		const [highlightResp, reviewResp, chapterResp, progressResp] =
 			await Promise.all([
-				this.client.getBookInfo(bookId).catch((err) => {
-					logger.warn(`获取书籍详情失败 ${bookId}: ${err}`);
-					return null as Record<string, unknown> | null;
-				}),
 				this.client.getHighlights(bookId).catch((err) => {
 					logger.warn(`获取高亮失败 ${bookId}: ${err}`);
 					return { updated: [], chapters: [], book: { title: '', author: '', cover: '' } };
@@ -281,45 +219,40 @@ export class SyncEngine {
 				}),
 				this.client.getChapters(bookId).catch((err) => {
 					logger.warn(`获取章节失败 ${bookId}: ${err}`);
-					return { data: {} };
+					return { chapters: [] as WereadChapterDetail[] };
 				}),
 				this.client.getProgress(bookId).catch((err) => {
 					logger.warn(`获取进度失败 ${bookId}: ${err}`);
-					return null as { progress: number; readingTime: number; startReadingTime: string; finishTime: string } | null;
+					return null;
 				}),
 			]);
 
-		// 用 bookInfo 补充 meta 字段
-		if (bookInfo) {
-			book.isbn = (bookInfo.isbn as string) || book.isbn;
-			book.publisher = (bookInfo.publisher as string) || book.publisher;
-			book.intro = (bookInfo.intro as string) || book.intro;
-			book.totalWords = (bookInfo.totalWords as number) || book.totalWords;
-			book.rating = (bookInfo.newRating as number) || book.rating;
-			book.publishTime = (bookInfo.publishTime as string) || book.publishTime;
-			if (bookInfo.title) book.title = bookInfo.title as string;
-			if (bookInfo.author) book.author = bookInfo.author as string;
-			if (bookInfo.cover) book.cover = bookInfo.cover as string;
-			if (bookInfo.category) book.category = bookInfo.category as string;
+		// 用 highlightResp.book 补充 meta
+		if (highlightResp.book) {
+			if (highlightResp.book.title) book.title = highlightResp.book.title;
+			if (highlightResp.book.author) book.author = highlightResp.book.author;
+			if (highlightResp.book.cover) book.cover = highlightResp.book.cover;
 		}
 
-		// 用 progress 补充 meta
-		if (progressResp) {
-			book.progress = progressResp.progress ?? book.progress;
-			book.readingTime = progressResp.readingTime ?? book.readingTime;
-			if (progressResp.finishTime) {
-				book.readingStatus = 'finished';
+		// 用 progress 补充 meta — 网关使用 recordReadingTime
+		if (progressResp?.book) {
+			book.progress = progressResp.book.progress ?? book.progress;
+			book.readingTime = progressResp.book.recordReadingTime ?? book.readingTime;
+			if (progressResp.book.isStartReading) {
+				book.readingStatus = 'reading';
 			}
 		}
 
+		// 构建章节 uid → 标题映射 — 网关直接返回 chapters 数组
+		const chapterTitleMap = buildChapterTitleMap(chapterResp.chapters);
+
 		// 解析高亮
-		const chapterTitleMap = buildChapterTitleMap(chapterResp.data);
 		const highlights: WereadHighlight[] = (highlightResp.updated ?? []).map(
 			(bm: WereadBookmark) => ({
 				bookmarkId: bm.bookmarkId,
 				markText: bm.markText,
 				chapterUid: bm.chapterUid,
-				chapterTitle: chapterTitleMap.get(bm.chapterUid) ?? '',
+				chapterTitle: chapterTitleMap.get(bm.chapterUid) ?? bm.chapterName ?? '',
 				style: bm.style,
 				colorStyle: bm.colorStyle,
 				range: bm.range,
@@ -343,14 +276,13 @@ export class SyncEngine {
 			}),
 		);
 
-		// 解析章节
-		const chapterData: WereadChapterDetail[] = (chapterResp.data as Record<string, WereadChapterDetail[]>)?.[bookId] ?? [];
-		const chapters: WereadChapter[] = chapterData.map((ch: WereadChapterDetail) => ({
+		// 解析章节 — 网关返回直接的 chapters 数组
+		const chapters: WereadChapter[] = (chapterResp.chapters ?? []).map((ch: WereadChapterDetail) => ({
 			chapterUid: ch.chapterUid,
 			chapterIdx: ch.chapterIdx,
 			title: ch.title,
-			level: ch.level,
-			isMPChapter: ch.isMPChapter ?? false,
+			level: ch.level ?? 1,
+			isMPChapter: !!ch.isMPChapter,
 		}));
 
 		// 更新 noteCount / reviewCount
@@ -371,12 +303,12 @@ export class SyncEngine {
 		});
 
 		// 渲染 Markdown
-		const markdown = renderNotebook(notebook);
+		const md = renderNotebook(notebook);
 
 		// 写入文件
-		const filePath = this.resolveNotePath(book);
-		await this.ensureDirForFile(filePath);
-		await this.adapter.write(filePath, markdown);
+		const outputPath = this.resolveNotePath(book);
+		await this.ensureDirForFile(outputPath);
+		await this.adapter.write(outputPath, md);
 
 		// 更新 syncState
 		const isNew = !syncState.syncedBooks[bookId];
@@ -387,138 +319,58 @@ export class SyncEngine {
 			noteCount: book.noteCount,
 			reviewCount: book.reviewCount,
 			lastSyncTime: Date.now(),
-			filePath,
+			filePath: outputPath,
 		};
 
 		return { success: true, isNew };
 	}
 
-	/**
-	 * 下载封面图片到 assets 目录
-	 */
+	/** 下载封面图片 */
 	private async downloadCover(book: WereadBook): Promise<void> {
 		if (!book.cover) return;
 
-		const assetsDir = 'DeepReader/微信读书/assets';
 		const ext = extractCoverExt(book.cover);
-		const coverRelPath = join(assetsDir, `${book.bookId}.${ext}`);
+		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
 
-		// 已存在则跳过
-		try {
-			if (await this.adapter.exists(coverRelPath)) return;
-		} catch {
-			// 继续下载
-		}
+		if (await this.adapter.exists(coverPath)) return;
 
-		try {
-			const { safeRequest } = await import('../../utils/safe-request');
-			const resp = await safeRequest({ url: book.cover });
-			if (resp.status === 200 && resp.arrayBuffer) {
-				await this.adapter.mkdir(assetsDir);
-				await this.adapter.writeBinary(coverRelPath, resp.arrayBuffer);
-			}
-		} catch (err) {
-			logger.warn(`封面下载失败 ${book.bookId}: ${err}`);
+		const resp = await safeRequest({ url: book.cover });
+		if (resp.arrayBuffer) {
+			await this.ensureDirForFile(coverPath);
+			await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
 		}
 	}
 
-	/**
-	 * 根据设置解析笔记文件路径
-	 *
-	 * 支持模板变量：
-	 * - {{title}} — 书名
-	 * - {{author}} — 作者
-	 * - {{bookId}} — 微信读书 bookId
-	 */
+	/** 根据设置生成笔记文件路径 */
 	private resolveNotePath(book: WereadBook): string {
-		const sub = this.settings.wereadSubFolder;
-		const folder = (sub && sub !== 'none')
-			? join(this.settings.wereadNoteLocation, sub)
-			: this.settings.wereadNoteLocation;
-
-		const fileName = resolveFileName(this.settings.wereadFileName, book);
-		return join(folder, fileName);
+		const safeName = sanitizeFileName(book.title);
+		const bookDir = join('书籍摘录', safeName);
+		return join(bookDir, safeName + '.md');
 	}
 
-	/**
-	 * 确保文件所在目录存在
-	 */
+	/** 确保文件所在目录存在 */
 	private async ensureDirForFile(filePath: string): Promise<void> {
 		const dir = dirname(filePath);
 		if (dir && !(await this.adapter.exists(dir))) {
 			await this.adapter.mkdir(dir);
 		}
 	}
-
-
-	/**
-	 * 简易并发池：限制同时执行的任务数
-	 */
-	private async runWithConcurrency<T, R>(
-		items: T[],
-		concurrency: number,
-		handler: (item: T, index: number) => Promise<R>,
-	): Promise<R[]> {
-		const results: R[] = new Array(items.length);
-		let nextIndex = 0;
-
-		const worker = async (): Promise<void> => {
-			while (nextIndex < items.length) {
-				const idx = nextIndex++;
-				results[idx] = await handler(items[idx], idx);
-			}
-		};
-
-		const workers = Array.from(
-			{ length: Math.min(concurrency, items.length) },
-			() => worker(),
-		);
-
-		await Promise.all(workers);
-		return results;
-	}
 }
+
 
 // ═══════════════════════════════════════════════════════════════
 // 工具函数
 // ═══════════════════════════════════════════════════════════════
 
-/** 构建章节 uid → 标题映射 */
+/** 构建章节 uid → 标题映射 — 网关直接返回 chapters 数组 */
 function buildChapterTitleMap(
-	data: Record<string, WereadChapterDetail[]> | undefined,
+	chapters: WereadChapterDetail[] | undefined,
 ): Map<number, string> {
 	const map = new Map<number, string>();
-	if (!data) return map;
+	if (!chapters || !Array.isArray(chapters)) return map;
 
-	for (const chapters of Object.values(data)) {
-		for (const ch of chapters) {
-			map.set(ch.chapterUid, ch.title);
-		}
+	for (const ch of chapters) {
+		map.set(ch.chapterUid, ch.title);
 	}
 	return map;
-}
-
-
-/** 文件名清理：移除不合法字符 */
-function sanitizeFileName(name: string): string {
-	return name
-		.replace(/[\\/:*?"<>|]/g, '')
-		.replace(/\s+/g, ' ')
-		.trim()
-		.slice(0, 200);
-}
-
-/** 将设置中的文件名格式映射为实际文件名 */
-const FILE_NAME_PATTERNS: Record<string, string> = {
-	'title': '{{title}}.md',
-	'title-author': '{{title}} - {{author}}.md',
-	'title-bookId': '{{title}} - {{bookId}}.md',
-};
-
-function resolveFileName(format: string, book: WereadBook): string {
-	const pattern = FILE_NAME_PATTERNS[format] || '{{title}}.md';
-	return pattern
-		.replace(/\{\{title\}\}/g, sanitizeFileName(book.title))
-		.replace(/\{\{author\}\}/g, sanitizeFileName(book.author))
-		.replace(/\{\{bookId\}\}/g, book.bookId);
 }

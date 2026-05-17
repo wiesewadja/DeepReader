@@ -1,87 +1,109 @@
 /**
  * 微信读书集成 — 类型定义
+ * 基于网关 API (i.weread.qq.com/api/agent/gateway) 响应结构
  */
 
 // ═══════════════════════════════════════════════════════════════
-// API 原始响应类型
+// API 原始响应类型（网关透传）
 // ═══════════════════════════════════════════════════════════════
 
-/** /api/user/notebook 响应 */
+/** /user/notebooks 响应 */
 export interface WereadNotebookResponse {
+	synckey?: number;
+	totalBookCount?: number;
+	totalNoteCount?: number;
+	hasMore?: number;
 	books: WereadBookItem[];
 }
 
-/** notebook 响应中的书籍条目（字段名不统一） */
+/** notebook 响应中的书籍条目 — 书籍详情在 book 子对象中 */
 export interface WereadBookItem {
-	bookId?: string;
-	bookid?: string;
-	docId?: string;
-	docid?: string;
-	title?: string;
-	author?: string;
-	cover?: string;
-	isbn?: string;
-	publisher?: string;
-	category?: string;
-	intro?: string;
-	totalWords?: number;
-	newRating?: number;
+	bookId: string;
+	book: WereadBookDetail;
+	reviewCount: number;
+	reviewLikeCount: number;
+	reviewCommentCount: number;
+	noteCount: number;
+	bookmarkCount: number;
+	readingProgress?: number;
+	markedStatus?: number;
+	sort: number;
+}
+
+/** notebook.books[].book 子对象 — 包含书籍元数据 */
+export interface WereadBookDetail {
+	bookId: string;
+	title: string;
+	author: string;
+	cover: string;
+	version?: number;
+	format?: string;
+	type?: number;
 	price?: number;
-	publishTime?: string;
-	bookType?: number;
-	noteCount?: number;
-	reviewCount?: number;
-	lastReadDate?: string;
-	finishedDate?: string;
-	readUpdateTime?: number;
+	originalPrice?: number;
+	soldout?: number;
+	payType?: number;
+	categories?: unknown[];
+	finished?: number;
+	extra_type?: number;
+	cpid?: number;
+	publishTime?: number;
+	lastChapterIdx?: number;
 }
 
 /** /shelf/sync 响应 */
 export interface WereadShelfResponse {
 	books: WereadShelfBook[];
-	archives?: unknown[];
+	albums?: unknown[];
+	bookCount?: number;
 }
 
 /** shelf 响应中的书籍条目 */
 export interface WereadShelfBook {
 	bookId?: string;
-	bookid?: string;
-	docId?: string;
-	docid?: string;
 	title?: string;
 	author?: string;
 	cover?: string;
-	isbn?: string;
 	category?: string;
+	readUpdateTime?: number;
+	finishReading?: number;
 	bookType?: number;
 	noteCount?: number;
 	reviewCount?: number;
-	readUpdateTime?: number;
 }
 
-/** /web/book/bookmarklist 响应 */
+/** /book/bookmarklist 响应 */
 export interface WereadHighlightResponse {
+	synckey?: number;
 	updated: WereadBookmark[];
-	chapters: { chapterUid: number; title: string }[];
-	book: { title: string; author: string; cover: string };
-	refMpInfos?: unknown[];
+	removed?: unknown[];
+	chapters: { chapterUid: number; chapterIdx: number; title: string }[];
+	book: { bookId: string; title: string; author: string; cover: string };
 }
 
 /** 高亮原始条目 */
 export interface WereadBookmark {
+	bookId: string;
 	bookmarkId: string;
 	markText: string;
 	chapterUid: number;
+	chapterName?: string;
 	range: string;
 	style: number;
 	colorStyle: number;
 	createTime: number;
+	type?: number;
+	bookVersion?: number;
 	reviewContent?: string;
 }
 
-/** /web/review/list 响应 */
+/** /review/list/mine 响应 */
 export interface WereadReviewResponse {
+	totalCount?: number;
 	reviews: WereadReviewItem[];
+	removed?: unknown[];
+	hasMore?: number;
+	synckey?: number;
 }
 
 /** 评论原始条目 */
@@ -97,26 +119,44 @@ export interface WereadReviewItem {
 	abstract?: string;
 }
 
-/** /web/book/chapterInfos 响应 */
+/** /book/chapterinfo 响应 — 网关返回顶层 chapters 数组 */
 export interface WereadChapterResponse {
-	data: Record<string, WereadChapterDetail[]>;
+	bookId: string;
+	synckey?: number;
+	chapterUpdateTime?: number;
+	chapters: WereadChapterDetail[];
 }
 
 /** 章节详情 */
 export interface WereadChapterDetail {
 	chapterUid: number;
-	title: string;
 	chapterIdx: number;
-	level: number;
-	isMPChapter?: boolean;
+	title: string;
+	wordCount?: number;
+	updateTime?: number;
+	price?: number;
+	paid?: number;
+	isMPChapter?: number;
+	level?: number;
 }
 
-/** /web/book/getProgress 响应 */
+/** /book/getprogress 响应 — 网关字段名 */
 export interface WereadProgressResponse {
+	bookId?: string;
+	book: WereadProgressBook;
+	timestamp?: number;
+}
+
+/** 进度子对象 */
+export interface WereadProgressBook {
 	progress: number;
-	readingTime: number;
-	startReadingTime: string;
-	finishTime: string;
+	recordReadingTime: number;
+	finishTime?: number;
+	updateTime?: number;
+	chapterUid?: number;
+	chapterIdx?: number;
+	chapterOffset?: number;
+	isStartReading?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -231,20 +271,6 @@ export interface WereadMappingEntry {
 	matchMethod: 'title-author';
 	matchedAt: number;
 	confirmed: boolean;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Cookie / 认证
-// ═══════════════════════════════════════════════════════════════
-
-/** 微信读书 Cookie 存储 */
-export interface WereadCookie {
-	wr_vid: string;
-	wr_skey: string;
-	wr_name?: string;
-	wr_avatar?: string;
-	refreshToken?: string;
-	expireAt?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════

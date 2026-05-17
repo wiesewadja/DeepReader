@@ -124,17 +124,7 @@ export interface DeepPDFSettings {
 	proactiveCooldownMinutes: number;
 
 		// 微信读书集成
-		wereadCookie: {
-			wr_vid: string;
-			wr_skey: string;
-			wr_name?: string;
-			wr_avatar?: string;
-			refreshToken?: string;
-			expireAt?: number;
-		} | null;
-		wereadNoteLocation: string;
-		wereadSubFolder: 'none' | 'category' | 'title';
-		wereadFileName: 'title' | 'title-author' | 'title-bookId';
+		wereadApiKey: string;
 		wereadSyncInterval: number;
 		wereadExcludeArticles: boolean;
 		wereadNoteCountThreshold: number;
@@ -244,10 +234,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		profileDimensions: [],
 
 		// 微信读书集成
-		wereadCookie: null,
-		wereadNoteLocation: 'DeepReader/微信读书',
-		wereadSubFolder: 'category',
-		wereadFileName: 'title',
+		wereadApiKey: '',
 		wereadSyncInterval: 0,
 		wereadExcludeArticles: true,
 		wereadNoteCountThreshold: 1,

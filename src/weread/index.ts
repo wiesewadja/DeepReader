@@ -1,26 +1,18 @@
 /**
  * 微信读书服务入口 — WereadService
  *
- * 面向插件主入口（main.ts）的高层 API，封装客户端创建、状态管理、同步引擎。
- * 认证（Cookie 管理 / 登录流程）由 auth 模块处理，此处通过 settings 中的 Cookie 驱动。
+ * 面向插件主入口（main.ts）的高层 API
  */
 
 import type { App } from 'obsidian';
 import type { DeepPDFSettings } from '../config/settings';
 import { WereadApiClient } from './api/client';
 import { SyncStateManager } from './sync/state';
-import { SyncEngine, type SyncEngineCallbacks, type SyncEngineSettings } from './sync/sync-engine';
+import { WereadSyncEngine, type SyncEngineHost } from './sync/sync-engine';
 import { matchBooks, type WereadBookSummary } from './sync/matcher';
 import { loadIndexedBooks } from './utils/indexed-books';
-import type { WereadCookie, SyncResult, WereadMapping } from './types';
+import type { SyncResult, WereadMapping } from './types';
 import { serviceLog as logger } from '../utils/logger';
-
-/** 登录结果 */
-export interface LoginResult {
-	success: boolean;
-	cookie?: WereadCookie;
-	error?: string;
-}
 
 /** 最小接口：Plugin 实例需要 settings + app + saveSettings */
 interface WereadPluginHost {
@@ -30,7 +22,7 @@ interface WereadPluginHost {
 }
 
 export class WereadService {
-	private syncEngine?: SyncEngine;
+	private syncEngine?: WereadSyncEngine;
 
 	constructor(private plugin: WereadPluginHost) {}
 
@@ -38,12 +30,12 @@ export class WereadService {
 		return this.plugin.settings;
 	}
 
-	private getCookie(): WereadCookie | undefined {
-		return this.settings.wereadCookie ?? undefined;
+	private getApiKey(): string | undefined {
+		return this.settings.wereadApiKey || undefined;
 	}
 
-	private async saveCookie(cookie: WereadCookie): Promise<void> {
-		this.settings.wereadCookie = cookie;
+	private async saveApiKey(key: string): Promise<void> {
+		this.settings.wereadApiKey = key;
 		await this.plugin.saveSettings();
 	}
 
@@ -55,61 +47,45 @@ export class WereadService {
 		return this.getVaultAdapter().basePath as string;
 	}
 
-	private getSyncEngineSettings(): SyncEngineSettings {
+	private createSyncEngineHost(): SyncEngineHost {
 		return {
-			wereadNoteLocation: this.settings.wereadNoteLocation || 'DeepReader/微信读书',
-			wereadSubFolder: this.settings.wereadSubFolder || '',
-			wereadFileName: this.settings.wereadFileName || 'title',
-			wereadExcludeArticles: this.settings.wereadExcludeArticles ?? true,
-			wereadNoteCountThreshold: this.settings.wereadNoteCountThreshold ?? 0,
+			settings: {
+				wereadApiKey: this.settings.wereadApiKey,
+				wereadExcludeArticles: this.settings.wereadExcludeArticles ?? true,
+				wereadNoteCountThreshold: this.settings.wereadNoteCountThreshold ?? 0,
+			},
+			adapter: this.getVaultAdapter(),
 		};
-	}
-
-	private createSyncEngine(callbacks: SyncEngineCallbacks): SyncEngine {
-		const cookie = this.getCookie();
-		if (!cookie) {
-			throw new Error('未登录微信读书，请先完成登录');
-		}
-
-		const client = new WereadApiClient(cookie);
-		const adapter = this.getVaultAdapter();
-		const vaultPath = this.getVaultPath();
-		const stateManager = new SyncStateManager(adapter);
-		const settings = this.getSyncEngineSettings();
-
-		return new SyncEngine(client, stateManager, adapter, vaultPath, settings, callbacks);
 	}
 
 	async sync(
 		force?: boolean,
-		callbacks?: SyncEngineCallbacks,
+		callbacks?: { onProgress?: (p: any) => void; onNotice?: (msg: string) => void },
 	): Promise<SyncResult> {
-		const cbs: SyncEngineCallbacks = callbacks ?? {
-			onProgress: () => {},
-			onNotice: (msg: string) => logger.info(msg),
-		};
-
-		this.syncEngine = this.createSyncEngine(cbs);
+		const host = this.createSyncEngineHost();
+		this.syncEngine = new WereadSyncEngine(host);
+		if (callbacks?.onProgress) {
+			this.syncEngine.onProgress(callbacks.onProgress);
+		}
 
 		try {
-			return await this.syncEngine.sync({ force });
+			return await this.syncEngine.sync(!!force);
 		} catch (err) {
 			const msg = `同步失败: ${err instanceof Error ? err.message : String(err)}`;
 			logger.error(msg);
-			cbs.onNotice(msg);
+			callbacks?.onNotice?.(msg);
 			return { added: 0, updated: 0, unchanged: 0, matched: 0, unmatched: 0, errors: [msg] };
 		}
 	}
 
-	/** 重新匹配微信读书书籍与 DeepReader 已索引书籍（不触发全量同步） */
+	/** 重新匹配微信读书书籍与 DeepReader 已索引书籍 */
 	async rematch(): Promise<{ matched: number; unmatched: number }> {
-		const cookie = this.getCookie();
-		if (!cookie) {
-			throw new Error('未登录微信读书，请先完成登录');
+		const apiKey = this.getApiKey();
+		if (!apiKey) {
+			throw new Error('未配置微信读书 API Key');
 		}
 
 		const adapter = this.getVaultAdapter();
-		const vaultPath = this.getVaultPath();
 		const stateManager = new SyncStateManager(adapter);
 		await stateManager.ensureDir();
 
@@ -120,6 +96,7 @@ export class WereadService {
 			author: b.author,
 		}));
 
+		const vaultPath = this.getVaultPath();
 		const indexedBooks = await loadIndexedBooks(vaultPath);
 		const matchResults = matchBooks(wereadSummaries, indexedBooks);
 
@@ -149,44 +126,41 @@ export class WereadService {
 		return { matched, unmatched };
 	}
 
-	async login(cookie: WereadCookie): Promise<LoginResult> {
-		const client = new WereadApiClient(cookie);
-		const valid = await client.validateCookie();
+	async setApiKey(key: string): Promise<{ success: boolean; error?: string }> {
+		const client = new WereadApiClient(key);
+		const valid = await client.validateApiKey();
 		if (!valid) {
-			return { success: false, error: 'Cookie 无效或已过期' };
+			return { success: false, error: 'API Key 无效或已过期' };
 		}
 
-		await this.saveCookie(cookie);
-		logger.info('微信读书登录成功');
-		return { success: true, cookie };
+		await this.saveApiKey(key);
+		logger.info('微信读书 API Key 验证成功');
+		return { success: true };
 	}
 
 	async logout(): Promise<void> {
-		this.settings.wereadCookie = null;
+		this.settings.wereadApiKey = '';
 		await this.plugin.saveSettings();
 		this.syncEngine = undefined;
-		logger.info('微信读书已登出');
+		logger.info('微信读书已清除 API Key');
 	}
 
 	isLoggedIn(): boolean {
-		const cookie = this.getCookie();
-		if (!cookie) return false;
-		if (cookie.expireAt && cookie.expireAt < Date.now()) return false;
-		return !!(cookie.wr_vid && cookie.wr_skey);
+		return !!this.settings.wereadApiKey;
 	}
 
-	async validateCookie(): Promise<boolean> {
-		const cookie = this.getCookie();
-		if (!cookie) return false;
+	async validateApiKey(): Promise<boolean> {
+		const apiKey = this.getApiKey();
+		if (!apiKey) return false;
 		try {
-			const client = new WereadApiClient(cookie);
-			return await client.validateCookie();
+			const client = new WereadApiClient(apiKey);
+			return await client.validateApiKey();
 		} catch {
 			return false;
 		}
 	}
 
-	/** 获取同步统计：上次同步时间、已同步数、已关联数、未匹配书籍列表 */
+	/** 获取同步统计 */
 	async getSyncStats(): Promise<{
 		lastSyncTime: number;
 		syncedCount: number;

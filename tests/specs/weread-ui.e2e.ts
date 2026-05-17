@@ -65,14 +65,14 @@ describe('微信读书 UI E2E 测试', function () {
 				// 检查是否有微信读书相关的设置区域
 				const headings = document.querySelectorAll('.deeppdf-settings-card h4');
 				for (const h of headings) {
-					if (h.textContent?.includes('账号') || h.textContent?.includes('同步')) {
+					if (h.textContent?.includes('API Key') || h.textContent?.includes('同步')) {
 						return true;
 					}
 				}
 				// 也检查是否有扫码登录按钮
 				const buttons = document.querySelectorAll('button');
 				for (const btn of buttons) {
-					if (btn.textContent?.includes('扫码登录') || btn.textContent?.includes('同步笔记')) {
+					if (btn.textContent?.includes('保存并验证') || btn.textContent?.includes('同步笔记')) {
 						return true;
 					}
 				}
@@ -125,15 +125,10 @@ describe('微信读书 UI E2E 测试', function () {
 		});
 	});
 
-	// ═══ 未匹配 Modal 测试 ═══
+	// ═══ 未匹配 Modal 测试（改进版：手动关联 + 滚动 + 引导提示）═══
 	describe('未匹配 Modal', () => {
-		it('should trigger UnmatchedModal programmatically', async function () {
-			// 直接调用 UnmatchedModal 来验证 UI 渲染
+		it('should trigger UnmatchedModal with enhanced UI', async function () {
 			await browser.executeObsidian(({ app }) => {
-				const plugin = app.plugins?.plugins?.['deepreader'] as any;
-				if (!plugin) return;
-
-				// 动态创建 UnmatchedModal 实例
 				const { Modal } = require('obsidian') as any;
 				const modal = new Modal(app) as any;
 				modal.onOpen = function () {
@@ -141,44 +136,60 @@ describe('微信读书 UI E2E 测试', function () {
 					contentEl.empty();
 					contentEl.createEl('h2', { text: '未关联的微信读书书籍' });
 					contentEl.createEl('p', {
-						text: '以下 3 本微信读书书籍未在 DeepReader 中找到匹配。',
+						text: '以下 5 本微信读书书籍未在 DeepReader 中找到匹配。你可以点击"手动关联"选择已有书籍。',
 					});
-					const list = contentEl.createEl('ul');
+
+					// 滚动列表容器
+					const container = contentEl.createDiv({ cls: 'deeppdf-unmatched-list-container' });
+					const list = container.createEl('ul', { cls: 'deeppdf-unmatched-list' });
 					const books = [
 						{ title: '深度学习', author: 'Ian Goodfellow' },
 						{ title: '设计模式', author: 'GoF' },
 						{ title: '代码整洁之道', author: 'Robert C. Martin' },
+						{ title: '重构', author: 'Martin Fowler' },
+						{ title: '人月神话', author: 'Fred Brooks' },
 					];
 					for (const book of books) {
-						const li = list.createEl('li');
-						li.createEl('strong', { text: book.title });
-						li.createEl('span', { text: ` — ${book.author}` });
+						const li = list.createEl('li', { cls: 'deeppdf-unmatched-item' });
+						const info = li.createDiv({ cls: 'deeppdf-unmatched-info' });
+						info.createEl('strong', { text: book.title });
+						info.createEl('span', { cls: 'deeppdf-unmatched-author', text: ` — ${book.author}` });
+						li.createEl('button', { cls: 'deeppdf-unmatched-link-btn', text: '手动关联' });
 					}
+
+					// 引导提示
+					contentEl.createEl('p', {
+						cls: 'deeppdf-unmatched-hint',
+						text: '提示：匹配基于书名相似度。如果书名差异较大（如翻译版本不同），可以使用手动关联功能。',
+					});
 				};
 				modal.open();
 			});
 			await browser.pause(1500);
 		});
 
-		it('should screenshot unmatched modal', async function () {
+		it('should screenshot enhanced unmatched modal', async function () {
 			await browser.saveScreenshot('./test-vault/weread-unmatched-modal.png');
-			console.log('[E2E] Unmatched modal screenshot saved');
+			console.log('[E2E] Enhanced modal screenshot saved');
 		});
 
-		it('should verify modal content', async function () {
-			const modalInfo = await browser.executeObsidian(() => {
+		it('should verify enhanced modal structure', async function () {
+			const info = await browser.executeObsidian(() => {
 				const modal = document.querySelector('.modal');
 				if (!modal) return { exists: false };
-				const h2 = modal.querySelector('h2');
-				const items = modal.querySelectorAll('li');
 				return {
 					exists: true,
-					title: h2?.textContent || '',
-					itemCount: items.length,
-					items: Array.from(items).slice(0, 3).map(li => li.textContent),
+					hasScrollContainer: !!modal.querySelector('.deeppdf-unmatched-list-container'),
+					hasLinkButtons: modal.querySelectorAll('.deeppdf-unmatched-link-btn').length,
+					hasHint: !!modal.querySelector('.deeppdf-unmatched-hint'),
+					itemCount: modal.querySelectorAll('.deeppdf-unmatched-item').length,
+					items: Array.from(modal.querySelectorAll('.deeppdf-unmatched-info')).slice(0, 3).map(el => el.textContent),
 				};
 			});
-			console.log('[E2E] Modal info:', JSON.stringify(modalInfo, null, 2));
+			console.log('[E2E] Enhanced modal info:', JSON.stringify(info, null, 2));
+			expect(info.hasScrollContainer).toBe(true);
+			expect(info.hasLinkButtons).toBe(5);
+			expect(info.hasHint).toBe(true);
 		});
 
 		it('should close modal', async function () {

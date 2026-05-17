@@ -1,11 +1,10 @@
 /**
- * 微信读书 API 客户端
- * 封装 safeRequest，硬编码所有 URL
+ * 微信读书 API 客户端 — 网关代理模式
+ * 统一 POST https://i.weread.qq.com/api/agent/gateway
  */
 
 import { safeRequest } from '../../utils/safe-request';
 import type {
-	WereadCookie,
 	WereadNotebookResponse,
 	WereadShelfResponse,
 	WereadHighlightResponse,
@@ -14,103 +13,110 @@ import type {
 	WereadProgressResponse,
 } from '../types';
 
+const GATEWAY_URL = 'https://i.weread.qq.com/api/agent/gateway';
+const SKILL_VERSION = '1.0.3';
+
+/** 网关响应外层 */
+interface GatewayResponse {
+	errcode: number;
+	errmsg?: string;
+	[key: string]: unknown;
+}
+
 export class WereadApiClient {
-	private cookie: WereadCookie;
+	private apiKey: string;
 
-	constructor(cookie: WereadCookie) {
-		this.cookie = cookie;
+	constructor(apiKey: string) {
+		this.apiKey = apiKey;
 	}
 
-	private get headers(): Record<string, string> {
-		return {
-			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-			'Accept': 'application/json, text/plain, */*',
-			'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-			'Content-Type': 'application/json',
-			'Cookie': `wr_vid=${this.cookie.wr_vid}; wr_skey=${this.cookie.wr_skey}`,
-			'x-vid': this.cookie.wr_vid,
-			'x-skey': this.cookie.wr_skey,
+	private async gatewayCall<T>(apiName: string, params?: Record<string, unknown>): Promise<T> {
+		const body: Record<string, unknown> = {
+			api_name: apiName,
+			skill_version: SKILL_VERSION,
+			...params,
 		};
-	}
 
-	private async get<T>(url: string): Promise<T> {
-		const resp = await safeRequest({ url, headers: this.headers });
-		return resp.json as T;
-	}
+		const reqBody = JSON.stringify(body);
+		console.log('[WereadApiClient] gatewayCall:', apiName, 'body:', reqBody);
 
-	private async post<T>(url: string, body: unknown): Promise<T> {
 		const resp = await safeRequest({
-			url,
+			url: GATEWAY_URL,
 			method: 'POST',
-			headers: this.headers,
-			body: JSON.stringify(body),
+			contentType: 'application/json',
+			headers: {
+				'Authorization': `Bearer ${this.apiKey}`,
+			},
+			body: reqBody,
 		});
-		return resp.json as T;
+
+		console.log('[WereadApiClient] response status:', resp.status, 'json:', JSON.stringify(resp.json).substring(0, 500));
+
+		const data = resp.json as GatewayResponse;
+		if (data.errcode != null && data.errcode !== 0) {
+			throw new Error(data.errmsg || `Gateway error: errcode=${data.errcode}`);
+		}
+
+		return data as unknown as T;
 	}
 
-	/** 获取有笔记的书籍列表 */
 	async getNotebook(): Promise<WereadNotebookResponse> {
-		return this.get<WereadNotebookResponse>('https://weread.qq.com/api/user/notebook');
+		const allBooks = [] as WereadNotebookResponse['books'];
+		let lastSort: number | undefined;
+		let pages = 0;
+		const MAX_PAGES = 50;
+
+		do {
+			const params: Record<string, unknown> = {};
+			if (lastSort !== undefined) {
+				params.lastSort = lastSort;
+			}
+
+			const resp = await this.gatewayCall<WereadNotebookResponse>('/user/notebooks', params);
+
+			if (Array.isArray(resp.books)) {
+				allBooks.push(...resp.books);
+			}
+
+			if (resp.hasMore !== 1 || !resp.books?.length) break;
+
+			const sorts = resp.books.map(b => b.sort).filter((s): s is number => s !== undefined);
+			if (sorts.length === 0) break;
+			const newSort = Math.min(...sorts);
+			if (newSort === lastSort) break; // 游标未变，防止无限循环
+			lastSort = newSort;
+		} while (++pages < MAX_PAGES);
+
+		return { books: allBooks, hasMore: 0 };
 	}
 
-	/** 获取完整书架 */
 	async getShelf(): Promise<WereadShelfResponse> {
-		return this.get<WereadShelfResponse>(
-			'https://i.weread.qq.com/shelf/sync?synckey=0&teenmode=0&album=1'
-		);
+		return this.gatewayCall<WereadShelfResponse>('/shelf/sync');
 	}
 
-	/** 获取书籍详情 */
-	async getBookInfo(bookId: string): Promise<Record<string, unknown>> {
-		return this.get(`https://i.weread.qq.com/book/info?bookId=${bookId}`);
-	}
-
-	/** 获取高亮列表 */
 	async getHighlights(bookId: string): Promise<WereadHighlightResponse> {
-		return this.get<WereadHighlightResponse>(
-			`https://weread.qq.com/web/book/bookmarklist?bookId=${bookId}`
-		);
+		return this.gatewayCall<WereadHighlightResponse>('/book/bookmarklist', { bookId });
 	}
 
-	/** 获取评论列表 */
 	async getReviews(bookId: string): Promise<WereadReviewResponse> {
-		return this.get<WereadReviewResponse>(
-			`https://weread.qq.com/web/review/list?bookId=${bookId}&listType=11&mine=1&synckey=0`
-		);
+		return this.gatewayCall<WereadReviewResponse>('/review/list/mine', { bookid: bookId });
 	}
 
-	/** 获取章节结构 */
 	async getChapters(bookId: string): Promise<WereadChapterResponse> {
-		return this.post<WereadChapterResponse>(
-			'https://weread.qq.com/web/book/chapterInfos',
-			{ bookIds: [bookId] }
-		);
+		return this.gatewayCall<WereadChapterResponse>('/book/chapterinfo', { bookId });
 	}
 
-	/** 获取阅读进度 */
 	async getProgress(bookId: string): Promise<WereadProgressResponse> {
-		return this.get<WereadProgressResponse>(
-			`https://weread.qq.com/web/book/getProgress?bookId=${bookId}`
-		);
+		return this.gatewayCall<WereadProgressResponse>('/book/getprogress', { bookId });
 	}
 
-	/** 验证 Cookie 有效性 */
-	async validateCookie(): Promise<boolean> {
+	async validateApiKey(): Promise<boolean> {
 		try {
-			const resp = await this.getNotebook();
-			return Array.isArray(resp.books) && resp.books.length >= 0;
-		} catch {
+			await this.gatewayCall<WereadNotebookResponse>('/user/notebooks');
+			return true;
+		} catch (err) {
+			console.error('[WereadApiClient] validateApiKey failed:', err);
 			return false;
 		}
-	}
-
-	/** 刷新 Cookie（HEAD 请求） */
-	async refreshCookie(): Promise<Record<string, string>> {
-		const resp = await safeRequest({
-			url: 'https://weread.qq.com/',
-			method: 'HEAD',
-			headers: this.headers,
-		});
-		return resp.headers;
 	}
 }

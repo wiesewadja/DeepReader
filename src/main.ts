@@ -35,7 +35,6 @@ export default class DeepPDFPlugin extends Plugin {
 
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
-    private wereadRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
     readonly api = {
         indexBook,
@@ -534,17 +533,9 @@ export default class DeepPDFPlugin extends Plugin {
         // ═══ 微信读书命令 ═══
         this.addCommand({
             id: "weread-login",
-            name: "微信读书：扫码登录",
+            name: "微信读书：打开设置配置 API Key",
             callback: async () => {
-                const { loginWithBrowser } = await import('./weread/auth/browser-login.js');
-                const result = await loginWithBrowser();
-                if (result.success && result.cookie) {
-                    const svc = this.getWereadService();
-                    await svc.login(result.cookie);
-                    new Notice("微信读书登录成功");
-                } else {
-                    new Notice(result.error || "微信读书登录失败");
-                }
+                new Notice("请在插件设置 → 微信读书 中输入 API Key");
             },
         });
 
@@ -554,7 +545,7 @@ export default class DeepPDFPlugin extends Plugin {
             callback: async () => {
                 const svc = this.getWereadService();
                 if (!svc.isLoggedIn()) {
-                    new Notice("请先登录微信读书");
+                    new Notice("请先配置微信读书 API Key");
                     return;
                 }
                 try {
@@ -600,7 +591,7 @@ export default class DeepPDFPlugin extends Plugin {
             callback: async () => {
                 const svc = this.getWereadService();
                 if (!svc.isLoggedIn()) {
-                    new Notice("请先登录微信读书");
+                    new Notice("请先配置微信读书 API Key");
                     return;
                 }
                 try {
@@ -640,11 +631,11 @@ export default class DeepPDFPlugin extends Plugin {
 
         this.addCommand({
             id: "weread-logout",
-            name: "微信读书：登出",
+            name: "微信读书：清除 API Key",
             callback: async () => {
                 const svc = this.getWereadService();
                 await svc.logout();
-                new Notice("已登出微信读书");
+                new Notice("已清除微信读书 API Key");
             },
         });
 
@@ -654,7 +645,7 @@ export default class DeepPDFPlugin extends Plugin {
             callback: async () => {
                 const svc = this.getWereadService();
                 if (!svc.isLoggedIn()) {
-                    new Notice("请先登录微信读书");
+                    new Notice("请先配置微信读书 API Key");
                     return;
                 }
                 new Notice("开始重新匹配...");
@@ -679,30 +670,8 @@ export default class DeepPDFPlugin extends Plugin {
                 app: this.app,
                 saveSettings: async () => { await this.saveSettings(); },
             });
-            this.startWereadCookieRefresh();
         }
         return this.wereadService;
-    }
-
-    /** 每 12 小时自动刷新微信读书 Cookie */
-    /** 定期检查微信读书 Cookie 有效性，失效时提示用户 */
-    private startWereadCookieRefresh() {
-        if (this.wereadRefreshTimer) return;
-        const interval = (this.settings.wereadSyncInterval ?? 0) * 3600 * 1000;
-        if (interval <= 0) return;
-
-        this.wereadRefreshTimer = setInterval(async () => {
-            const svc = this.getWereadService();
-            if (!svc.isLoggedIn()) return;
-            try {
-                const valid = await svc.validateCookie();
-                if (!valid) {
-                    new Notice('微信读书 Cookie 已失效，请重新登录');
-                }
-            } catch {
-                // 网络错误静默忽略
-            }
-        }, interval);
     }
 
     private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
@@ -1337,12 +1306,6 @@ views:
     async onunload() {
         // 卸载时手动清理视图，虽然 Obsidian 会自动处理，但显式清理更安全
         this.app.workspace.detachLeavesOfType(SIDEBAR_VIEW_TYPE);
-
-        // 清理微信读书 Cookie 刷新定时器
-        if (this.wereadRefreshTimer) {
-            clearInterval(this.wereadRefreshTimer);
-            this.wereadRefreshTimer = null;
-        }
 
         // 清理阅读模式服务
         if (this.readingModeService) {
