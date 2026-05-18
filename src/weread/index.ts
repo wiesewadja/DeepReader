@@ -12,6 +12,8 @@ import { WereadSyncEngine, type SyncEngineHost } from './sync/sync-engine';
 import { matchBooks, type WereadBookSummary } from './sync/matcher';
 import { loadIndexedBooks } from './utils/indexed-books';
 import type { SyncResult, WereadMapping } from './types';
+import { enrichMappingWithStats } from './sync/mapping-stats';
+import { importHighlights } from './sync/highlight-importer';
 import { serviceLog as logger } from '../utils/logger';
 
 /** 最小接口：Plugin 实例需要 settings + app + saveSettings */
@@ -69,7 +71,15 @@ export class WereadService {
 		}
 
 		try {
-			return await this.syncEngine.sync(!!force);
+			const result = await this.syncEngine.sync(!!force);
+
+			// 同步完成后，将统计信息注入 mapping
+			await this.updateMappingStats();
+
+			// 导入微信读书高亮到已关联书籍的章节文件
+			await this.importHighlightsToChapters();
+
+			return result;
 		} catch (err) {
 			const msg = `同步失败: ${err instanceof Error ? err.message : String(err)}`;
 			logger.error(msg);
@@ -185,4 +195,47 @@ export class WereadService {
 			unmatchedBooks,
 		};
 	}
+
+	/** 将 syncState 中的统计信息注入 mapping（Phase 2） */
+	private async updateMappingStats(): Promise<void> {
+		try {
+			const adapter = this.getVaultAdapter();
+			const stateManager = new SyncStateManager(adapter);
+
+			const syncState = await stateManager.loadSyncState();
+			const mapping = await stateManager.loadMapping();
+
+			if (Object.keys(mapping.mappings).length === 0) return;
+
+			const enriched = enrichMappingWithStats(mapping, syncState);
+			await stateManager.saveMapping(enriched);
+
+			logger.info(`Mapping stats updated for ${Object.keys(enriched.mappings).length} entries`);
+		} catch (err) {
+			logger.warn(`更新 mapping stats 失败: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
+	/** 将微信读书高亮导入已关联书籍的章节文件 */
+	private async importHighlightsToChapters(): Promise<void> {
+		try {
+			const adapter = this.getVaultAdapter();
+			const stateManager = new SyncStateManager(adapter);
+			const syncState = await stateManager.loadSyncState();
+			const mapping = await stateManager.loadMapping();
+
+			if (Object.keys(mapping.mappings).length === 0) return;
+
+			const result = await importHighlights(adapter, mapping, syncState);
+			if (result.imported > 0) {
+				logger.info(`高亮导入: ${result.imported} 条`);
+			}
+			if (result.errors.length > 0) {
+				logger.warn(`高亮导入错误: ${result.errors.join('; ')}`);
+			}
+		} catch (err) {
+			logger.warn(`高亮导入失败: ${err instanceof Error ? err.message : String(err)}`);
+		}
+	}
+
 }

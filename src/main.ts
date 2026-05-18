@@ -13,6 +13,7 @@ import { isBuiltInProvider } from './config/ai-roles.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
+import { findTextInMarkdown } from './utils/markdown-utils.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -716,7 +717,7 @@ export default class DeepPDFPlugin extends Plugin {
                 const trimmed = line.trim();
                 if (!trimmed) continue;
 
-                const matchResult = this.findTextInMarkdown(newBody, trimmed);
+                const matchResult = findTextInMarkdown(newBody, trimmed);
                 if (matchResult) {
                     // matched 是原始 markdown 片段（含标记），trimmed 是用户选中的纯文本
                     // 写入时用 trimmed，保证高亮内容和用户选中的一致
@@ -829,63 +830,6 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     /**
-     * 在 markdown 内容中查找纯文本，返回原始 markdown 中对应的片段和位置
-     * 核心策略：将 markdown 剥离标记后变成纯文本，在纯文本上定位，再映射回原始位置
-     */
-    private findTextInMarkdown(content: string, plainText: string): { matched: string, index: number } | null {
-        // 1. 先尝试精确匹配（最快路径）
-        const exactIndex = content.indexOf(plainText);
-        if (exactIndex !== -1) {
-            return { matched: plainText, index: exactIndex };
-        }
-
-        // 2. 构建字符映射：纯文本位置 → 原始 markdown 位置
-        // 剥离 inline markdown 标记，同时记录每个纯文本字符对应的原始位置
-        const { plain, map } = this.stripMarkdownWithMap(content);
-
-        const plainIndex = plain.indexOf(plainText);
-        if (plainIndex === -1) return null;
-
-        // 找到纯文本中匹配的起止位置，映射回原始 markdown 位置
-        const origStart = map[plainIndex];
-        const origEnd = map[plainIndex + plainText.length - 1];
-        if (origStart === undefined || origEnd === undefined) return null;
-
-        const matched = content.substring(origStart, origEnd + 1);
-        return { matched, index: origStart };
-    }
-
-    /**
-     * 剥离 inline markdown 标记，同时建立纯文本位置到原始位置的映射
-     */
-    private stripMarkdownWithMap(content: string): { plain: string; map: number[] } {
-        // 匹配需要剥离的 inline 标记（只剥离标记符号，保留内容）
-        // 顺序很重要：先匹配长的（**）再匹配短的（*）
-        const INLINE_MARKS = /(\*\*|__|~~|\*|_|`|\[\[|\]\]|\[|\])/g;
-
-        const plain: string[] = [];
-        const map: number[] = [];  // map[i] = 纯文本第 i 个字符在原始 content 中的位置
-
-        let i = 0;
-        while (i < content.length) {
-            INLINE_MARKS.lastIndex = i;
-            const match = INLINE_MARKS.exec(content);
-
-            if (match && match.index === i) {
-                // 当前位置是标记符号，跳过
-                i += match[0].length;
-            } else {
-                // 普通字符，保留并记录映射
-                plain.push(content[i]);
-                map.push(i);
-                i++;
-            }
-        }
-
-        return { plain: plain.join(''), map };
-    }
-
-    /**
      * 从文件中移除高亮
      * 检测相邻的段落/列表项是否也有相同颜色的高亮，一并移除
      */
@@ -939,7 +883,7 @@ export default class DeepPDFPlugin extends Plugin {
         }
 
         // 尝试模糊匹配
-        const matchResult = this.findTextInMarkdown(body, text);
+        const matchResult = findTextInMarkdown(body, text);
         if (matchResult) {
             const fuzzyRegex = new RegExp(`<mark style="background: ([^"]*)">${this.escapeRegex(matchResult.matched)}</mark>`, 's');
             const fuzzyMatch = body.match(fuzzyRegex);

@@ -258,6 +258,9 @@ export interface WereadSyncedBookEntry {
 	reviewCount: number;
 	lastSyncTime: number;
 	filePath: string;
+	/** Phase 2 扩展：进度和阅读时长（可选，向后兼容） */
+	progress?: number;
+	readingTime?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -278,6 +281,17 @@ export interface WereadMappingEntry {
 	matchMethod: 'title-author';
 	matchedAt: number;
 	confirmed: boolean;
+	/** Phase 2：统计信息缓存（同步时更新） */
+	stats?: MappingStats;
+}
+
+/** 映射条目的统计信息 */
+export interface MappingStats {
+	noteCount: number;
+	reviewCount: number;
+	progress: number;        // 0-100
+	readingTime: string;     // 格式化后的阅读时长
+	lastReadDate: string;    // YYYY-MM-DD
 }
 
 // ═══════════════════════════════════════════════════════════════

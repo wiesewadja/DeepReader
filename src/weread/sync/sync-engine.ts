@@ -325,6 +325,8 @@ export class WereadSyncEngine {
 			reviewCount: book.reviewCount,
 			lastSyncTime: Date.now(),
 			filePath: outputPath,
+			progress: book.progress,
+			readingTime: book.readingTime,
 		};
 
 		return { success: true, isNew };

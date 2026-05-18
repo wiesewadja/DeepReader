@@ -21,6 +21,7 @@ import { buildZlibClient } from '../zlibrary/build-client.js';
 import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import { SyncStateManager } from '../weread/sync/state.js';
+import type { MappingStats } from '../weread/types.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -73,6 +74,7 @@ export class LibraryView extends ItemView {
     private readingProgressCache: Map<string, number> = new Map();
     private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
     private associatedDeepReaderIds: Set<string> = new Set(); // 已关联的 deepReader bookId（用于去重）
+    private wereadStatsCache: Map<string, MappingStats> = new Map();
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
 
@@ -180,7 +182,7 @@ export class LibraryView extends ItemView {
 
         // 首次渲染时异步加载微信读书映射，加载完后刷新徽章
         if (this.wereadMappingCache.size === 0) {
-            this.loadWereadMapping().then(() => this.refreshWereadBadges());
+            this.loadWereadMapping().then(() => this.refreshWereadCardInfo());
         }
 
         // 清空所有缓存和引用
@@ -397,10 +399,22 @@ export class LibraryView extends ItemView {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
         }
 
-        // 元信息行：章节数 + 索引日期
+        // 元信息行：章节数 + 索引日期 + 微信读书统计
         const metaParts: string[] = [];
         if (index.node_count > 0) {
             metaParts.push(`${index.node_count} 章节`);
+        }
+        const wereadStats = this.wereadStatsCache.get(index.id);
+        if (wereadStats) {
+            if (wereadStats.noteCount > 0) {
+                metaParts.push(`${wereadStats.noteCount} 笔记`);
+            }
+            if (wereadStats.reviewCount > 0) {
+                metaParts.push(`${wereadStats.reviewCount} 评论`);
+            }
+            if (wereadStats.readingTime) {
+                metaParts.push(wereadStats.readingTime);
+            }
         }
         if (index.created_at) {
             const date = new Date(index.created_at);
@@ -412,7 +426,9 @@ export class LibraryView extends ItemView {
 
         // 阅读进度条（仅 ready 状态显示）
         if (statusClass === 'ready') {
-            const progressPercent = this.readingProgressCache.get(index.id) || 0;
+            const deepReaderProgress = this.readingProgressCache.get(index.id) || 0;
+            const wereadProgress = wereadStats?.progress || 0;
+            const progressPercent = Math.max(deepReaderProgress, wereadProgress);
             if (progressPercent > 0) {
                 const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
                 const barBg = progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-bg' });
@@ -438,7 +454,7 @@ export class LibraryView extends ItemView {
      * 优先从 book-meta.json 读取 exportName（与 book-indexer.ts 保存封面时使用的名称一致），
      * 回退到 getDisplayName(bookName) 和原始 bookName。
      */
-    /** 从 .pageindex/weread/mapping.json 加载已关联书籍 ID 集合 */
+    /** 从 .pageindex/weread/mapping.json 加载已关联书籍 ID 集合 + 统计 */
     private async loadWereadMapping(): Promise<void> {
         try {
             const adapter = (this.app as any).vault?.adapter;
@@ -447,21 +463,24 @@ export class LibraryView extends ItemView {
             if (!(await adapter.exists(mappingPath))) return;
             const raw = await adapter.read(mappingPath);
             const mapping = JSON.parse(raw);
-            this.wereadMappingCache = new Set(
-                Object.keys(mapping.mappings || {}),
-            );
+            const entries = Object.entries(mapping.mappings || {}) as [string, any][];
+            this.wereadMappingCache = new Set(entries.map(([key]) => key));
             this.associatedDeepReaderIds = new Set(
-                Object.values(mapping.mappings || {})
-                    .map((m: any) => m.deepReaderBookId)
-                    .filter(Boolean),
+                entries.map(([, m]) => m.deepReaderBookId).filter(Boolean),
             );
+            this.wereadStatsCache.clear();
+            for (const [key, entry] of entries) {
+                if (entry.stats) {
+                    this.wereadStatsCache.set(key, entry.stats);
+                }
+            }
         } catch {
             // 静默失败
         }
     }
 
-    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章 */
-    private refreshWereadBadges(): void {
+    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章和统计 */
+    private refreshWereadCardInfo(): void {
         for (const [bookId, card] of this.cardElements) {
             const titleRow = card.querySelector('.deeppdf-lib-book-title-row');
             if (!titleRow) continue;
@@ -469,6 +488,31 @@ export class LibraryView extends ItemView {
             if (titleRow.querySelector('.deeppdf-lib-type-weread')) continue;
             if (this.wereadMappingCache.has(bookId)) {
                 titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            }
+
+            // 注入统计信息到 meta 区域
+            const stats = this.wereadStatsCache.get(bookId);
+            if (!stats) continue;
+            const metaEl = card.querySelector('.deeppdf-lib-book-meta') as HTMLElement | null;
+            if (!metaEl || metaEl.dataset.wereadStatsInjected) continue;
+            metaEl.dataset.wereadStatsInjected = '1';
+            const parts: string[] = [];
+            if (stats.noteCount > 0) parts.push(`${stats.noteCount} 笔记`);
+            if (stats.reviewCount > 0) parts.push(`${stats.reviewCount} 评论`);
+            if (stats.readingTime) parts.push(stats.readingTime);
+            if (parts.length > 0 && metaEl.textContent) {
+                metaEl.textContent = parts.join(' · ') + ' · ' + metaEl.textContent;
+            }
+
+            // 注入进度条
+            if (stats.progress > 0 && !card.querySelector('.deeppdf-lib-reading-progress')) {
+                const infoEl = card.querySelector('.deeppdf-lib-book-info');
+                if (infoEl) {
+                    const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
+                    const barBg = progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-bg' });
+                    barBg.createDiv({ cls: 'deeppdf-lib-reading-bar-fill', attr: { style: `width: ${stats.progress}%` } });
+                    progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-text', text: `${stats.progress}%` });
+                }
             }
         }
     }

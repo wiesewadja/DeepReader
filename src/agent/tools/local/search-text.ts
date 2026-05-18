@@ -12,6 +12,8 @@ import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions } from '../../../config/role-adapters.js';
+import { parseCallouts } from '../../../utils/callout-parser.js';
+import { sanitizeFileName } from '../../../weread/utils/file.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -20,12 +22,14 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
     description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
 
 【搜索逻辑】
-- 多路并行召回：BM25 + Vector + Proposition 三路同时执行（Promise.all）
+- 多路并行召回：BM25 + Vector + Proposition + 用户标注 四路同时执行
+- 用户标注：检索 DeepReader 高亮/摘录和微信读书笔记，命中标注以 [用户标注] 前缀显示
 - 9 阶段管线：
   1. Dynamic recall K
   2. BM25 keyword search
   3. Vector semantic search
   3.5. Proposition cards search（原子事实）
+  3.6. 用户标注检索（高亮、笔记、想法）
   4. Scope filter
   5. Score fusion + level weighting
   6. LLM tree search (optional)
@@ -34,8 +38,9 @@ const SEARCH_BOOK_DEFINITION: ToolDefinition = {
 - 命题卡片优先：如果有原子事实卡片匹配，直接返回卡片内容（更精准）
 
 【返回结果】
-- matched_blocks: 匹配的段落片段或命题卡片
+- matched_blocks: 匹配的段落片段或命题卡片或用户标注
 - 命题卡片格式：【类型】答案 + 原文 ^卡片ID
+- 用户标注格式：[用户标注] 标注内容
 - 大部分情况无需再调 read_book_section
 
 【中文搜索技巧】
@@ -258,6 +263,17 @@ export const searchBookTool: ToolExecutor = {
       // RRF 融合
       let fusedEntries = reciprocalRankFusion(subResults);
 
+      // ── 标注检索 ──────────────────────────────
+      try {
+        const annotationEntries = await searchAnnotations(keywords, context, fusedEntries);
+        if (annotationEntries.length > 0) {
+          fusedEntries = fusedEntries.concat(annotationEntries);
+          fusedEntries.sort((a, b) => b.rrfScore - a.rrfScore);
+        }
+      } catch {
+        // 标注检索失败不影响主搜索
+      }
+
       // 当前章节提权：用户正在阅读的章节搜索结果加权 1.5x
       const currentNodeId = context.currentNodeId;
       if (currentNodeId) {
@@ -289,3 +305,71 @@ export const searchBookTool: ToolExecutor = {
     }
   }
 };
+
+// === 标注检索 ===
+
+/**
+ * 从书籍摘录目录中检索用户标注（DeepReader 原生 + 微信读书），
+ * 匹配关键词后生成 FusionEntry，应用 1.3x 提权。
+ */
+async function searchAnnotations(
+  keywords: string[],
+  context: ToolContext,
+  existingEntries: FusionEntry[],
+): Promise<FusionEntry[]> {
+  const { app, pdfName } = context;
+  if (!app || !pdfName) return [];
+
+  const bookName = pdfName.replace(/\.(pdf|epub)$/i, '');
+  if (!bookName) return [];
+
+  // 两种 sanitize 方式生成可能的摘录目录
+  const sanitizeA = bookName
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\.(pdf|epub|txt)$/i, '')
+    .trim()
+    .substring(0, 100);
+  const sanitizeB = sanitizeFileName(bookName);
+  const possibleDirs = [...new Set([`书籍摘录/${sanitizeA}`, `书籍摘录/${sanitizeB}`])];
+
+  // 查找摘录目录下的 .md 文件
+  const mdFiles = app.vault.getFiles().filter(f =>
+    f.extension === 'md' && possibleDirs.some(dir => f.path.startsWith(dir + '/'))
+  );
+  if (mdFiles.length === 0) return [];
+
+  // 读取并解析 callout
+  const allCallouts: { text: string; filePath: string }[] = [];
+  for (const file of mdFiles) {
+    try {
+      const content = await app.vault.cachedRead(file);
+      const callouts = parseCallouts(content);
+      for (const text of callouts) {
+        allCallouts.push({ text, filePath: file.path });
+      }
+    } catch { /* skip unreadable files */ }
+  }
+  if (allCallouts.length === 0) return [];
+
+  // 关键词匹配（任一 keyword 命中即保留）
+  const lowerKeywords = keywords.map(k => k.toLowerCase());
+  const matched = allCallouts.filter(c =>
+    lowerKeywords.some(kw => c.text.toLowerCase().includes(kw))
+  );
+  if (matched.length === 0) return [];
+
+  // 计算分数：基于现有最高分的 1.3x
+  const topScore = existingEntries.length > 0 ? existingEntries[0].rrfScore : 0.02;
+  const annotationScore = topScore * 1.3;
+
+  return matched.map((c, i) => ({
+    nodeId: c.filePath,
+    fileName: c.filePath.split('/').pop() || '',
+    title: '[用户标注]',
+    hierarchyPath: ['标注'],
+    blockId: `annotation-${i}`,
+    content: `[用户标注] ${c.text}`,
+    rrfScore: annotationScore,
+    sourceCount: 1,
+  }));
+}
