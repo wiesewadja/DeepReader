@@ -20,13 +20,6 @@ const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
 
 const ALLOWED_EXTENSIONS = new Set(['pdf', 'epub', 'mobi', 'azw3', 'djvu', 'fb2', 'txt']);
 
-const TRUSTED_DOMAINS = [
-	'z-lib.org',
-	'zlibrary.org',
-	'z-library.sk',
-	'singlelogin.re',
-	'zlibrary.global',
-];
 
 export class ZLibraryClient {
 	private domain: string;
@@ -259,15 +252,12 @@ export class ZLibraryClient {
 		};
 	}
 
-	/** C2: 校验下载链接协议和域名 */
+	/** 校验下载链接格式和协议 */
 	private validateDownloadUrl(url: string): void {
 		try {
 			const parsed = new URL(url);
 			if (parsed.protocol !== 'https:') {
 				throw new ZLibraryError('下载链接必须使用 HTTPS', 'DOWNLOAD_FAILED');
-			}
-			if (!TRUSTED_DOMAINS.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d))) {
-				throw new ZLibraryError(`下载链接域名不可信：${parsed.hostname}`, 'DOWNLOAD_FAILED');
 			}
 		} catch (err) {
 			if (err instanceof ZLibraryError) throw err;

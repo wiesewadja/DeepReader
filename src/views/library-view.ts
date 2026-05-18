@@ -70,7 +70,8 @@ export class LibraryView extends ItemView {
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
-    private wereadMappingCache: Set<string> = new Set(); // 已关联微信读书的 deepReaderBookId 集合
+    private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
+    private associatedDeepReaderIds: Set<string> = new Set(); // 已关联的 deepReader bookId（用于去重）
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
 
@@ -187,13 +188,14 @@ export class LibraryView extends ItemView {
 
         this.gridEl.innerHTML = '';
 
-        // 过滤
-        const filtered = this.searchQuery
+        // 过滤 + 去重已关联的 deepReader 索引
+        const filtered = (this.searchQuery
             ? this.indexes.filter(idx =>
                   idx.pdf_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                   (idx.author && idx.author.toLowerCase().includes(this.searchQuery.toLowerCase()))
               )
-            : this.indexes;
+            : this.indexes
+        ).filter(idx => !this.associatedDeepReaderIds.has(idx.id));
 
         if (filtered.length === 0) {
             this.gridEl.innerHTML = `
@@ -379,9 +381,9 @@ export class LibraryView extends ItemView {
         const typeTag = index.fileType?.toUpperCase() || 'PDF';
         titleRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
-        // 微信读书标签（已关联时显示）
+        // 已关联标签
         if (this.wereadMappingCache.has(index.id)) {
-            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '已关联' });
         }
 
         // 未关联的微信读书书籍：显示下载按钮
@@ -446,6 +448,11 @@ export class LibraryView extends ItemView {
             const mapping = JSON.parse(raw);
             this.wereadMappingCache = new Set(
                 Object.keys(mapping.mappings || {}),
+            );
+            this.associatedDeepReaderIds = new Set(
+                Object.values(mapping.mappings || {})
+                    .map((m: any) => m.deepReaderBookId)
+                    .filter(Boolean),
             );
         } catch {
             // 静默失败
@@ -659,6 +666,38 @@ export class LibraryView extends ItemView {
         }).open();
     }
 
+    /** 将微信读书卡片切换为 processing 状态以显示进度条 */
+    private setWereadCardProcessing(index: IndexListItem, percent: number, message: string): void {
+        const idx = this.indexes.find(i => i.id === index.id);
+        if (idx) {
+            idx.status = 'processing';
+            idx.progress_percent = percent;
+            idx.message = message;
+        }
+        const oldCard = this.cardElements.get(index.id);
+        if (oldCard) {
+            const newCard = this.createBookCard(idx || index);
+            oldCard.replaceWith(newCard);
+            this.cardElements.set(index.id, newCard);
+        }
+    }
+
+    /** 失败时恢复卡片为原始状态 */
+    private restoreWereadCard(index: IndexListItem): void {
+        const idx = this.indexes.find(i => i.id === index.id);
+        if (idx) {
+            idx.status = 'ready';
+            idx.progress_percent = undefined;
+            idx.message = undefined;
+        }
+        const oldCard = this.cardElements.get(index.id);
+        if (oldCard) {
+            const newCard = this.createBookCard(idx || index);
+            oldCard.replaceWith(newCard);
+            this.cardElements.set(index.id, newCard);
+        }
+    }
+
     private handleLocalAssociate(index: IndexListItem): void {
         new PDFFileSelectorModal(this.app, async (fileInfo) => {
             await this.associateLocalFile(index, fileInfo);
@@ -685,6 +724,8 @@ export class LibraryView extends ItemView {
         let fileType: 'pdf' | 'epub';
         let localVaultPath: string | undefined;
 
+        this.setWereadCardProcessing(wereadIndex, 5, '准备文件...');
+
         if (isSystemFileInfo(fileInfo)) {
             // 系统文件：先复制到 Vault
             const ext = fileInfo.docType;
@@ -701,7 +742,6 @@ export class LibraryView extends ItemView {
             filePath = `${vaultBase}/${vaultRelativePath}`;
             fileType = ext;
             localVaultPath = vaultRelativePath;
-            new Notice(`已导入「${safeName}.${ext}」到 Vault`);
         } else {
             // Vault 内文件：直接使用
             filePath = `${vaultBase}/${fileInfo.file.path}`;
@@ -717,7 +757,6 @@ export class LibraryView extends ItemView {
             bookId = await generateBookId(filePath);
         } else {
             // 需要索引
-            new Notice(`正在索引「${fileInfo.name}」...`);
             const settings = this.options.plugin.settings;
             const pageindexRole = resolveRoleConfig('pageindex', settings);
             const embeddingRole = resolveRoleConfig('embedding', settings);
@@ -733,16 +772,20 @@ export class LibraryView extends ItemView {
                     apiKey: pageindexRole?.apiKey || '',
                     baseUrl: pageindexRole?.baseUrl || '',
                     addNodeSummary: settings.ifAddNodeSummary,
+                    onProgress: (p) => {
+                        this.updateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
+                    },
                 });
                 bookId = result.bookId;
-                new Notice(`索引完成：${result.chaptersCount} 章节`);
             } catch (e: any) {
+                this.restoreWereadCard(wereadIndex);
                 new Notice(`索引失败：${e.message}`, 5000);
                 return;
             }
         }
 
         // 写 mapping 关联
+        this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
         try {
             const mappingPath = '.pageindex/weread/mapping.json';
             let mapping = { mappings: {} as Record<string, any> };
@@ -759,6 +802,7 @@ export class LibraryView extends ItemView {
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
             this.wereadMappingCache.add(wereadIndex.id);
         } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
             new Notice(`关联写入失败：${e.message}`, 5000);
             return;
         }
@@ -782,29 +826,30 @@ export class LibraryView extends ItemView {
         const safeTitle = sanitizeFileName(zlibBook.title);
         const assetsDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
 
+        // 将卡片切换为 processing 状态以显示进度条
+        this.setWereadCardProcessing(wereadIndex, 5, '正在下载...');
+
         // ── Phase 1: 下载 ──────────────────────────────
-        new Notice(`正在下载「${zlibBook.title}」...`);
         let downloadPath: string;
         try {
             const { data, extension } = await client.downloadBook(zlibBook.id, zlibBook.hash);
             const fileName = `${safeTitle}.${extension}`;
             const vaultRelativePath = `${assetsDir}/${fileName}`;
 
-            // 确保目录存在
             if (!(await adapter.exists(assetsDir))) {
                 await adapter.mkdir(assetsDir);
             }
             await adapter.writeBinary(vaultRelativePath, data);
             const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
             downloadPath = `${vaultBase}/${vaultRelativePath}`;
-            new Notice(`下载完成：${fileName}`);
+            new Notice(`已保存到 ${vaultRelativePath}`);
         } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
             new Notice(`下载失败：${e.message}`, 5000);
             return;
         }
 
         // ── Phase 2: 索引 ──────────────────────────────
-        new Notice(`正在索引「${zlibBook.title}」...`);
         const settings = this.options.plugin.settings;
         const pageindexRole = resolveRoleConfig('pageindex', settings);
         const embeddingRole = resolveRoleConfig('embedding', settings);
@@ -821,15 +866,19 @@ export class LibraryView extends ItemView {
                 apiKey: pageindexRole?.apiKey || '',
                 baseUrl: pageindexRole?.baseUrl || '',
                 addNodeSummary: settings.ifAddNodeSummary,
+                onProgress: (p) => {
+                    this.updateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
+                },
             });
             bookId = result.bookId;
-            new Notice(`索引完成：${result.chaptersCount} 章节`);
         } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
             new Notice(`索引失败：${e.message}`, 5000);
             return;
         }
 
         // ── Phase 3: 关联 ──────────────────────────────
+        this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
         try {
             const mappingPath = '.pageindex/weread/mapping.json';
             let mapping = { mappings: {} as Record<string, any> };
@@ -837,9 +886,7 @@ export class LibraryView extends ItemView {
                 const raw = await adapter.read(mappingPath);
                 mapping = JSON.parse(raw);
             }
-            // wereadIndex.id 的原始值是 weread bookId
-            const wereadBookId = wereadIndex.id;
-            mapping.mappings[wereadBookId] = {
+            mapping.mappings[wereadIndex.id] = {
                 deepReaderBookId: bookId,
                 title: wereadIndex.pdf_name,
                 filePath: downloadPath,
@@ -848,6 +895,7 @@ export class LibraryView extends ItemView {
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
             this.wereadMappingCache.add(wereadIndex.id);
         } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
             new Notice(`关联写入失败：${e.message}`, 5000);
             return;
         }
@@ -859,7 +907,7 @@ export class LibraryView extends ItemView {
         this.renderGrid();
     }
 
-    private handleSelect(index: IndexListItem): void {
+    private async handleSelect(index: IndexListItem): Promise<void> {
 		const rawStatus = (index.status || 'unknown').toLowerCase();
 		const isProcessing = PROCESSING_STATUSES.has(rawStatus);
 
@@ -867,8 +915,28 @@ export class LibraryView extends ItemView {
 			return;
 		}
 
-		// 微信读书：直接打开笔记文件（书名需要 sanitize，和同步保存一致）
+		// 微信读书：已关联则打开阅读，未关联则打开笔记
 		if (index.fileType === 'weread') {
+			if (this.wereadMappingCache.has(index.id)) {
+				// 已关联：用 deepReaderBookId 打开阅读
+				const adapter = (this.app as any).vault?.adapter;
+				if (adapter) {
+					try {
+						const mappingPath = '.pageindex/weread/mapping.json';
+						if (await adapter.exists(mappingPath)) {
+							const raw = await adapter.read(mappingPath);
+							const mapping = JSON.parse(raw);
+							const m = mapping.mappings?.[index.id];
+							if (m?.deepReaderBookId) {
+								this.selectedIndexId = m.deepReaderBookId;
+								this.options.onIndexChange?.(m.deepReaderBookId);
+								return;
+							}
+						}
+					} catch { /* fallthrough */ }
+				}
+			}
+			// 未关联：打开笔记
 			const safeName = sanitizeFileName(index.pdf_name);
 			const notePath = `书籍摘录/${safeName}/${safeName}.md`;
 			const file = this.app.vault.getAbstractFileByPath(notePath);
