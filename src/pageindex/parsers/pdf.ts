@@ -1,43 +1,27 @@
 /**
  * PageIndex: PDF parsing utilities
- * Uses PDF.js directly for text extraction + outline/bookmark extraction
+ * Uses MinerU cloud API for PDF parsing
  */
 
-import * as PDFParse from "pdf-parse";
+import * as fs from "fs/promises";
 import { log as piLog } from "../core/logger";
 import { countTokens } from "../core/utils";
-import type { PageContent, TocItem } from "../core/types";
-import * as fs from "fs/promises";
+import type { PageContent } from "../core/types";
+import { MineruClient } from "../../services/mineru-api";
+import type { MineruPdfResult, PageText } from "./mineru";
 
 export interface PdfPage {
   text: string;
   tokenCount: number;
 }
 
-export interface PdfInfo {
-  title: string;
-  numPages: number;
-  pages: PdfPage[];
-  outline?: PdfOutlineItem[];
-  /** First page rendered as PNG buffer (for cover image) */
-  coverPng?: Buffer;
-  /** Author from PDF metadata */
-  author?: string;
-}
-
-export interface PdfOutlineItem {
-  title: string;
-  pageNumber: number; // 1-based
-  children?: PdfOutlineItem[];
-}
-
 /**
- * Parse PDF and extract text per page with token counts + outline/bookmarks
+ * Parse PDF using MinerU cloud API
  */
 export async function parsePdf(
-  input: string | Buffer | ArrayBuffer
-): Promise<PdfInfo> {
-  // Convert input to Buffer
+  input: string | Buffer | ArrayBuffer,
+  token?: string
+): Promise<MineruPdfResult> {
   let dataBuffer: Buffer;
   if (typeof input === "string") {
     dataBuffer = await fs.readFile(input);
@@ -47,318 +31,16 @@ export async function parsePdf(
     dataBuffer = Buffer.from(input);
   }
 
-  // Note: pdf.js Worker is disabled via esbuild banner (window.PDFJS.disableWorker = true)
-  // and require.ensure polyfill enables fake worker loading from bundled code
+  const fileName = typeof input === "string" ? getPdfName(input) : "document.pdf";
 
-  function render_page(pageData: any): Promise<string> {
-    const render_options = {
-        normalizeWhitespace: false,
-        disableCombineTextItems: false
-    };
+  piLog(`[parsePdf] Parsing PDF with MinerU: ${fileName} (${dataBuffer.length} bytes)`);
 
-    return pageData.getTextContent(render_options)
-        .then(async function(textContent: any) {
-            await new Promise(r => setTimeout(r, 0));
+  const client = new MineruClient(token);
+  const result = await client.parse(dataBuffer, fileName);
 
-            const items = textContent.items;
-            if (!items || items.length === 0) {
-              return "===PAGE_DELIMITER=== ===PAGE_DELIMITER_END===\n";
-            }
+  piLog(`[parsePdf] Done: ${result.totalPages} pages, ${result.outline.length} outline nodes`);
 
-            // Collect valid items with position data
-            type TextItem = { str: string; x: number; y: number; w: number; fontSize: number };
-            const textItems: TextItem[] = [];
-            for (const item of items) {
-              const s = item.str;
-              if (s === undefined || s === null) continue;
-              const fs = Math.abs(item.transform[3]);
-              if (fs <= 0) continue;
-              textItems.push({
-                str: s,
-                x: item.transform[4],
-                y: item.transform[5],
-                w: item.width || 0,
-                fontSize: fs,
-              });
-            }
-            if (textItems.length === 0) {
-              return "===PAGE_DELIMITER=== ===PAGE_DELIMITER_END===\n";
-            }
-
-            // Sort by Y (top to bottom) then X (left to right)
-            // PDF coordinate: Y increases upward, so we sort descending by Y
-            textItems.sort((a: TextItem, b: TextItem) => {
-              const dy = b.y - a.y; // higher Y = higher on page, sort first
-              if (Math.abs(dy) > 3) return dy;
-              return a.x - b.x; // same line: left to right
-            });
-
-            // Pass 1: Determine body font size (most frequent by char count)
-            const fontSizeCounts = new Map<number, number>();
-            for (const item of textItems) {
-              if (!item.str.trim()) continue;
-              const fs = Math.round(item.fontSize * 10) / 10;
-              fontSizeCounts.set(fs, (fontSizeCounts.get(fs) || 0) + item.str.length);
-            }
-            let bodyFontSize = 12;
-            let maxLen = 0;
-            for (const [fs, len] of fontSizeCounts) {
-              if (len > maxLen) { maxLen = len; bodyFontSize = fs; }
-            }
-            const avgLineHeight = bodyFontSize * 1.2;
-
-            // Pass 2: Group items into lines, detect structure
-            const lines: string[] = [];
-            let lineBuf = '';
-            let lineMaxFont = bodyFontSize;
-            let lineEndX = 0;
-            let prevY: number | null = null;
-
-            // Track item count per line for heading detection
-            let lineItemCount = 0;
-
-            const flushLine = () => {
-              const trimmed = lineBuf.trim();
-              if (!trimmed) { lineBuf = ''; lineItemCount = 0; return; }
-
-              const fontRatio = lineMaxFont / bodyFontSize;
-              // Heading detection: font size OR short-line-with-slightly-larger-font
-              // Many PDFs use single-character items per heading glyph (ratio ~1.29)
-              const isHeading = fontRatio > 1.4 ||
-                (fontRatio > 1.2 && lineItemCount >= 2 && lineItemCount <= 20 && trimmed.length <= 30);
-
-              if (isHeading || fontRatio > 1.4) {
-                if (fontRatio > 2.0) {
-                  lines.push(`# ${trimmed}`);
-                } else if (fontRatio > 1.7) {
-                  lines.push(`## ${trimmed}`);
-                } else {
-                  lines.push(`### ${trimmed}`);
-                }
-              } else {
-                lines.push(trimmed);
-              }
-              lineBuf = '';
-              lineMaxFont = bodyFontSize;
-              lineItemCount = 0;
-            };
-
-            for (let i = 0; i < textItems.length; i++) {
-              const item = textItems[i];
-              const str = item.str;
-
-              if (prevY === null) {
-                // First item
-                lineBuf = str;
-                lineMaxFont = item.fontSize;
-                lineEndX = item.x + item.w;
-                lineItemCount = 1;
-                prevY = item.y;
-                continue;
-              }
-
-              const yDiff = Math.abs(item.y - prevY);
-
-              if (yDiff < avgLineHeight * 0.4) {
-                // Same line — insert space if horizontal gap exists
-                const gap = item.x - lineEndX;
-                // Use proportional threshold: gap > 15% of body font size
-                if (gap > bodyFontSize * 0.15) {
-                  lineBuf += ' ';
-                }
-                lineBuf += str;
-                lineEndX = item.x + item.w;
-                if (item.fontSize > lineMaxFont) lineMaxFont = item.fontSize;
-                lineItemCount++;
-              } else {
-                // New line
-                flushLine();
-
-                // Paragraph break: gap > 1.5 line heights
-                if (yDiff > avgLineHeight * 1.5) {
-                  lines.push('');
-                }
-
-                lineBuf = str;
-                lineMaxFont = item.fontSize;
-                lineEndX = item.x + item.w;
-                lineItemCount = 1;
-                prevY = item.y;
-              }
-            }
-            flushLine();
-
-            const pageText = lines.join('\n');
-            return "===PAGE_DELIMITER===" + pageText + "===PAGE_DELIMITER_END===\n";
-        });
-  }
-
-  const pdfParse = (PDFParse as any).default || PDFParse;
-
-  piLog(`[parsePdf] Buffer size: ${dataBuffer.length}`);
-
-  // Single-pass: extract text AND capture outline in one pdfParse call
-  let outline: PdfOutlineItem[] | undefined = undefined;
-  let coverPng: Buffer | undefined = undefined;
-  let outlineExtracted = false;
-  let pageCount = 0;
-
-  const renderWithOutlineCapture = async (pageData: any): Promise<string> => {
-    pageCount++;
-
-    // On the first page, capture PDFDocumentProxy and extract outline + cover SYNCHRONOUSLY
-    // (pdf-parse calls doc.destroy() after the loop, so we must finish before returning)
-    if (!outlineExtracted && pageData) {
-      outlineExtracted = true;
-      try {
-        const transport = pageData.transport;
-        const doc = transport?.pdfDocument;
-        if (doc) {
-          piLog(`[parsePdf] Captured PDFDocumentProxy, extracting outline + cover...`);
-
-          // Outline extraction (await inline)
-          try {
-            const rawOutline = await doc.getOutline();
-            if (rawOutline && rawOutline.length > 0) {
-              piLog(`[parsePdf] Found ${rawOutline.length} outline/bookmark entries`);
-              outline = await resolveOutlineToPages(rawOutline, doc);
-              piLog(`[parsePdf] Resolved ${outline.length} outline items with page numbers`);
-            } else {
-              piLog(`[parsePdf] No outline/bookmarks in PDF`);
-            }
-          } catch (err) {
-            piLog(`[parsePdf] Outline extraction error: ${(err as Error).message}`);
-          }
-
-          // Cover image: await inline to finish before doc.destroy()
-          coverPng = await renderPageToPng(doc, 1);
-        }
-      } catch (e) {
-        piLog(`[parsePdf] Doc capture failed: ${(e as Error).message}`);
-      }
-    }
-
-    // Continue with normal text rendering
-    try {
-      const text = await render_page(pageData);
-      if (pageCount <= 3) {
-        piLog(`[parsePdf] Page ${pageCount}: ${text.length} chars`);
-      }
-      return text;
-    } catch (err: any) {
-      console.error(`[parsePdf] Page ${pageCount} render error:`, err.message);
-      return "";
-    }
-  };
-
-  const result = await pdfParse(dataBuffer, { pagerender: renderWithOutlineCapture });
-  piLog(`[parsePdf] Text extraction done: numpages=${result.numpages}, text length=${(result.text || "").length}, total rendered pages=${pageCount}`);
-
-  // outline and coverPng are already extracted inline during page 1 render
-  // (no async promises to await — pdf-parse calls doc.destroy() after the loop)
-
-  // Parse pages from delimited text
-  const pages: PdfPage[] = [];
-  let title = "Untitled";
-  const fullText = result.text || "";
-  const pageMatches = [...fullText.matchAll(/===PAGE_DELIMITER===([\s\S]*?)===PAGE_DELIMITER_END===/g)];
-
-  if (pageMatches.length > 0) {
-    for (const match of pageMatches) {
-      let pageText = match[1];
-      // Safety: strip any residual delimiter markers from the extracted text
-      pageText = pageText.replace(/===?PAGE_DELIMITER(?:_END?)?===?/g, "");
-      pages.push({ text: pageText, tokenCount: countTokens(pageText) });
-    }
-  } else {
-    pages.push({ text: fullText, tokenCount: countTokens(fullText) });
-  }
-
-  const totalPages = result.numpages || pages.length || 1;
-
-  // 优先使用文件名（通常更完整），当元数据标题明显不完整时回退
-  const fileNameTitle = typeof input === "string" ? getPdfName(input) : "";
-  const metaTitle = result.info?.Title;
-
-  if (metaTitle && metaTitle.length > 0) {
-    // 判断元数据标题是否被截断：
-    // 1. 文件名包含完整元数据标题（如 "Happy LLM" 包含 "Happy"）
-    // 2. 文件名长度显著长于元数据标题（>50%）
-    const metaLen = metaTitle.length;
-    const fileLen = fileNameTitle.length;
-    const isTruncated = fileLen > metaLen * 1.5 && fileNameTitle.toLowerCase().includes(metaTitle.toLowerCase());
-
-    if (isTruncated) {
-      title = fileNameTitle;
-    } else {
-      title = metaTitle;
-    }
-  } else if (fileNameTitle) {
-    title = fileNameTitle;
-  } else if (pages.length > 0 && pages[0]?.text) {
-    const firstLine = pages[0].text.trim().split("\n")[0];
-    if (firstLine && firstLine.length < 100) {
-      title = firstLine;
-    }
-  }
-
-  // Extract author from PDF metadata
-  let author: string | undefined;
-  if (result.info?.Author) {
-    author = result.info.Author;
-  }
-
-  return {
-    title,
-    numPages: totalPages,
-    pages,
-    outline,
-    coverPng,
-    author,
-  };
-}
-
-/**
- * Render a PDF page to PNG buffer using PDF.js + canvas
- * Returns undefined if canvas is not available (e.g., Node.js without DOM)
- */
-async function renderPageToPng(doc: any, pageNum: number): Promise<Buffer | undefined> {
-  try {
-    // Check if canvas is available (Electron/Obsidian environment)
-    if (typeof document === "undefined" || typeof document.createElement !== "function") {
-      piLog(`[renderPageToPng] No DOM environment, skipping cover image`);
-      return undefined;
-    }
-
-    const page = await doc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 1.0 });
-
-    // Scale to reasonable cover size (max 280px width)
-    const maxWidth = 280;
-    const scale = maxWidth / viewport.width;
-    const scaledViewport = page.getViewport({ scale });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.floor(scaledViewport.width);
-    canvas.height = Math.floor(scaledViewport.height);
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      piLog(`[renderPageToPng] Canvas 2D context not available`);
-      return undefined;
-    }
-
-    await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
-
-    // Convert canvas to PNG buffer
-    const dataUrl = canvas.toDataURL("image/png");
-    const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
-    piLog(`[renderPageToPng] Page ${pageNum} rendered: ${canvas.width}x${canvas.height}`);
-    return Buffer.from(base64, "base64");
-  } catch (err) {
-    piLog(`[renderPageToPng] Failed: ${(err as Error).message}`);
-    return undefined;
-  }
+  return result;
 }
 
 /**
@@ -371,7 +53,7 @@ export function getTextOfPages(
   addTags: boolean = true
 ): string {
   let text = "";
-  
+
   for (let pageNum = startPage - 1; pageNum < Math.min(endPage, pages.length); pageNum++) {
     const pageText = pages[pageNum]?.text || "";
     if (addTags) {
@@ -380,7 +62,7 @@ export function getTextOfPages(
       text += pageText;
     }
   }
-  
+
   return text;
 }
 
@@ -393,12 +75,12 @@ export function getTextOfPagesWithStartIndex(
   endPage: number
 ): string {
   let text = "";
-  
+
   for (let pageNum = startPage - 1; pageNum < Math.min(endPage, pages.length); pageNum++) {
     const pageText = pages[pageNum]?.text || "";
     text += `<start_index_${pageNum + 1}>\n${pageText}\n<end_index_${pageNum + 1}>\n`;
   }
-  
+
   return text;
 }
 
@@ -411,11 +93,11 @@ export function getTokenCountForPages(
   endPage: number
 ): number {
   let totalTokens = 0;
-  
+
   for (let pageNum = startPage - 1; pageNum < Math.min(endPage, pages.length); pageNum++) {
     totalTokens += pages[pageNum]?.tokenCount || 0;
   }
-  
+
   return totalTokens;
 }
 
@@ -430,10 +112,8 @@ export function getAllText(pages: PdfPage[]): string {
  * Extract PDF name from path or metadata
  */
 export function getPdfName(pdfPath: string): string {
-  // Get basename from path
   const parts = pdfPath.split("/");
   const basename = parts[parts.length - 1] || "Untitled";
-  // Remove .pdf extension if present
   return basename.replace(/\.pdf$/i, "");
 }
 
@@ -454,75 +134,4 @@ export function pagesToPageContent(pages: PdfPage[]): PageContent[] {
   }));
 }
 
-/**
- * Resolve PDF outline (bookmarks) to page numbers
- * Converts internal PDF object references to 1-based page numbers
- */
-async function resolveOutlineToPages(
-  outline: any[],
-  doc: any
-): Promise<PdfOutlineItem[]> {
-  const result: PdfOutlineItem[] = [];
 
-  for (const item of outline) {
-    let pageNumber = 0;
-
-    try {
-      let dest = item.dest;
-      if (typeof dest === "string") {
-        dest = await doc.getDestination(dest);
-      }
-      if (Array.isArray(dest)) {
-        const pageIdx = await doc.getPageIndex(dest[0]);
-        pageNumber = pageIdx + 1; // 0-based → 1-based
-      }
-    } catch {
-      // Skip items with unresolvable destinations
-    }
-
-    const children = item.items?.length > 0
-      ? await resolveOutlineToPages(item.items, doc)
-      : undefined;
-
-    result.push({
-      title: item.title || "",
-      pageNumber,
-      children: children?.length ? children : undefined,
-    });
-  }
-
-  return result;
-}
-
-/**
- * Convert PDF outline items to TocItem format for use in the indexing pipeline
- */
-export function outlineToTocItems(outline: PdfOutlineItem[]): TocItem[] {
-  const items: TocItem[] = [];
-  let listIndex = 0;
-
-  function flatten(nodes: PdfOutlineItem[], parentStructure?: string) {
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      const structure = parentStructure
-        ? `${parentStructure}.${i + 1}`
-        : `${i + 1}`;
-
-      if (node.pageNumber > 0) {
-        items.push({
-          structure,
-          title: node.title,
-          physicalIndex: node.pageNumber,
-          listIndex: listIndex++,
-        });
-      }
-
-      if (node.children?.length) {
-        flatten(node.children, structure);
-      }
-    }
-  }
-
-  flatten(outline);
-  return items;
-}

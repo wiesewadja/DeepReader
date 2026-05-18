@@ -5,7 +5,7 @@
 
 // PDF parser
 export { parsePdf, getPdfName, getTextOfPages, getTextOfPagesWithStartIndex, getTokenCountForPages, getAllText, getNumberOfPages, pagesToPageContent } from "./pdf";
-export type { PdfPage, PdfInfo } from "./pdf";
+export type { PdfPage } from "./pdf";
 
 // EPUB parser
 export { parseEpub, getEpubName, epubChaptersToPages } from "./epub";

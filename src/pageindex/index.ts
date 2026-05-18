@@ -80,7 +80,7 @@ export type {
 
 // ── Parser-Level API (advanced users) ────────────────────────────────────────
 
-export { parsePdf, getPdfName, type PdfInfo, type PdfPage } from "./parsers/pdf";
+export { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
 
 export {
   parseEpub,

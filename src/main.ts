@@ -23,6 +23,7 @@ import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
 import { parseEpub, type EpubInfo } from './pageindex/parsers/epub.js';
+import { parsePdf } from './pageindex/parsers/pdf.js';
 import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 
 // 使用 service 模块日志器
@@ -43,6 +44,7 @@ export default class DeepPDFPlugin extends Plugin {
         isBookIndexed,
         deleteBookIndex,
         generateBookId,
+        parsePdf,
         parseEpub,
         exportToObsidian,
         PageIndex,
@@ -1427,6 +1429,7 @@ views:
                 model: model,
                 apiKey: apiKey,
                 baseUrl: baseUrl,
+                mineruApiKey: this.settings.providers['mineru']?.apiKey || '',
                 addNodeId: true,
                 addNodeSummary: true,
                 addNodeText: true,
