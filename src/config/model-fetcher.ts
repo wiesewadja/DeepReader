@@ -8,7 +8,7 @@
 
 import type { ProviderType } from './providers';
 import type { AIProviderAccount } from './ai-roles';
-import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS } from './providers';
+import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS, XIAOMI_TTS_MODELS } from './providers';
 import { safeRequest } from '../utils/safe-request.js';
 
 export interface FetchModelsResult {
@@ -40,6 +40,11 @@ export async function fetchModels(
 	// MiniMax TTS 模型列表：/v1/models 不返回非文本模型
 	if (provider === 'minimax' && capability === 'tts') {
 		return { success: true, models: [...MINIMAX_TTS_MODELS] };
+	}
+
+	// Xiaomi TTS 模型列表：预设音色 + VoiceDesign
+	if (provider === 'xiaomi' && capability === 'tts') {
+		return { success: true, models: [...XIAOMI_TTS_MODELS] };
 	}
 
 	const config = PROVIDER_CONFIGS[provider as ProviderType];
@@ -131,13 +136,19 @@ export async function testConnection(
 		let body: string;
 
 		if (endpoint === 'tts') {
-			url = `${normalizedUrl}/t2a_v2`;
+			const isVoiceDesign = model.includes('voicedesign');
+			url = `${normalizedUrl}/chat/completions`;
+			const audioConfig: Record<string, string> = { format: 'wav' };
+			if (!isVoiceDesign) {
+				audioConfig.voice = '冰糖';
+			}
 			body = JSON.stringify({
 				model,
-				text: '测试',
-				stream: false,
-				voice_setting: { voice_id: 'female-tianmei', speed: 1, vol: 1, pitch: 0 },
-				audio_setting: { format: 'mp3', sample_rate: 32000, channel: 1 },
+				messages: [
+					{ role: 'user', content: isVoiceDesign ? '温柔的女声' : '用自然的语气朗读' },
+					{ role: 'assistant', content: '你好' },
+				],
+				audio: audioConfig,
 			});
 		} else {
 			const isEmbedding = endpoint === 'embedding';
@@ -178,11 +189,13 @@ export async function testConnection(
 
 		const data = response.json as Record<string, unknown>;
 		if (endpoint === 'tts') {
-			const baseResp = data?.base_resp as Record<string, unknown> | undefined;
-			if (baseResp && baseResp.status_code !== 0) {
-				return { success: false, latencyMs, error: String(baseResp.status_msg || 'TTS 接口返回错误') };
+			// Xiaomi TTS: 返回 choices[0].message.audio.data
+			const choices = data?.choices as Array<Record<string, unknown>> | undefined;
+			const audioData = choices?.[0]?.message && (choices[0].message as Record<string, unknown>)?.audio;
+			if (audioData) {
+				return { success: true, latencyMs, model };
 			}
-			return { success: true, latencyMs, model };
+			return { success: false, latencyMs, error: 'TTS 接口未返回音频数据' };
 		}
 		return {
 			success: true,

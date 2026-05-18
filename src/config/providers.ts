@@ -37,7 +37,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		baseUrl: 'https://api.minimaxi.com/v1',
 		defaultModel: 'MiniMax-M2.7',
 		supportsModelList: true,
-		capabilities: { chat: true, embedding: true, reranker: false, tts: true, imagegen: true },
+		capabilities: { chat: true, embedding: true, reranker: false, tts: false, imagegen: true },
 	},
 	deepseek: {
 		baseUrl: 'https://api.deepseek.com',
@@ -326,6 +326,11 @@ export function getProviderConfig(
 export const MINIMAX_TTS_MODELS = [
   'speech-2.8-hd',
   'speech-2.8-turbo',
+];
+
+export const XIAOMI_TTS_MODELS = [
+  'mimo-v2.5-tts',
+  'mimo-v2.5-tts-voicedesign',
 ];
 
 export const PROVIDER_LABELS: Record<ProviderType, string> = {
