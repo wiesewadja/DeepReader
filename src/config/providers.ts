@@ -152,6 +152,30 @@ export function resolveRoleConfig(
 		: (builtInConfig?.defaultModel || '');
 	const resolvedModel = model || defaultModel;
 
+	// Xiaomi router: 有 fallbackKey 则 mimo-v2-flash 走 MIMO API，否则 mimo-v2.5 走 Token Plan
+	if (provider === 'xiaomi' && role === 'router') {
+		const fallbackKey = (account as { fallbackApiKey?: string }).fallbackApiKey;
+		if (fallbackKey) {
+			return {
+				apiKey: fallbackKey,
+				baseUrl: 'https://api.xiaomimimo.com/v1',
+				model: 'mimo-v2-flash',
+				provider,
+				embeddingBatchSize,
+				disableThinking,
+			};
+		}
+		// 无 fallbackKey → 走 Token Plan
+		return {
+			apiKey,
+			baseUrl: builtInConfig?.baseUrl || '',
+			model: 'mimo-v2.5',
+			provider,
+			embeddingBatchSize,
+			disableThinking,
+		};
+	}
+
 	// Xiaomi fallback：Token Plan 失败时使用 MIMO API
 	const fallbackApiKey = provider === 'xiaomi' ? (account as { fallbackApiKey?: string }).fallbackApiKey : undefined;
 	const fallbackBaseUrl = provider === 'xiaomi'

@@ -36,7 +36,7 @@ export const PRESETS: ProviderPreset[] = [
 		website: 'https://platform.xiaomimimo.com',
 		roleAssignments: {
 			chat: 'mimo-v2.5',
-			router: 'mimo-v2.5',
+			router: 'mimo-v2-flash',
 			pageindex: 'mimo-v2.5',
 			proposition: 'mimo-v2.5',
 			embedding: 'BAAI/bge-m3',

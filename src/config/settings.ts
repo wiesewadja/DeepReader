@@ -58,7 +58,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 	function defaultRoles(): AIRoles {
 		return {
 			chat:        { provider: 'xiaomi', model: 'mimo-v2.5' },
-			router:      { provider: 'xiaomi', model: 'mimo-v2.5' },
+			router:      { provider: 'xiaomi', model: 'mimo-v2-flash' },
 			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
 			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
 			embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },

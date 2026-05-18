@@ -13,7 +13,7 @@ describe('Presets', () => {
 		expect(mm.free).toBe(false);
 		expect(mm.provider).toBe('xiaomi');
 		expect(mm.roleAssignments.chat).toBe('mimo-v2.5');
-		expect(mm.roleAssignments.router).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.router).toBe('mimo-v2-flash');
 		expect(mm.roleAssignments.pageindex).toBe('mimo-v2.5');
 		expect(mm.roleAssignments.proposition).toBe('mimo-v2.5');
 		expect(mm.roleAssignments.embedding).toBe('BAAI/bge-m3');
