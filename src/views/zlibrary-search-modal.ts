@@ -20,7 +20,8 @@ export class ZLibrarySearchModal extends Modal {
 
 	constructor(
 		app: App,
-		private query: string,
+		private bookTitle: string,
+		private bookAuthor: string,
 		private client: ZLibraryClient,
 		private onSelect?: (book: ZLibraryBook) => void,
 	) {
@@ -32,7 +33,12 @@ export class ZLibrarySearchModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass('deeppdf-zlib-modal');
 
-		contentEl.createEl('h2', { text: `搜索：${this.query}` });
+		const header = contentEl.createDiv({ cls: 'deeppdf-zlib-header' });
+		header.createEl('div', { text: '搜索书籍', cls: 'deeppdf-zlib-header-label' });
+		header.createEl('div', { text: this.bookTitle, cls: 'deeppdf-zlib-header-title' });
+		if (this.bookAuthor) {
+			header.createEl('div', { text: this.bookAuthor, cls: 'deeppdf-zlib-header-author' });
+		}
 
 		const listEl = contentEl.createDiv({ cls: 'deeppdf-zlib-results' });
 		listEl.createEl('div', { text: '搜索中...', cls: 'deeppdf-zlib-loading' });
@@ -48,13 +54,32 @@ export class ZLibrarySearchModal extends Modal {
 	private async doSearch(container: HTMLElement): Promise<void> {
 		let result: SearchResult;
 		try {
-			result = await this.client.search(this.query, {
+			// 构造搜索词：书名+作者组合提高准确性
+			const fullQuery = this.bookAuthor
+				? `${this.bookTitle} ${this.bookAuthor}`
+				: this.bookTitle;
+
+			// 第1轮：书名+作者 + 中文限制
+			result = await this.client.search(fullQuery, {
 				limit: 10,
 				languages: ['chinese'],
 			});
-			// 无结果时去掉语言限制重试
+
+			// 第2轮：无结果则去掉语言限制
 			if (result.books.length === 0) {
-				result = await this.client.search(this.query, { limit: 10 });
+				result = await this.client.search(fullQuery, { limit: 10 });
+			}
+
+			// 第3轮：仍然无结果，退回纯书名
+			if (result.books.length === 0 && this.bookAuthor) {
+				result = await this.client.search(this.bookTitle, {
+					limit: 10,
+					languages: ['chinese'],
+				});
+			}
+
+			if (result.books.length === 0) {
+				result = await this.client.search(this.bookTitle, { limit: 10 });
 			}
 		} catch (e: any) {
 			container.empty();

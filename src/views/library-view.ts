@@ -642,8 +642,9 @@ export class LibraryView extends ItemView {
 
         const client = buildZlibClient(settings);
 
-        const query = this.getDisplayName(index.pdf_name);
-        new ZLibrarySearchModal(this.app, query, client, async (book) => {
+        const bookTitle = this.getDisplayName(index.pdf_name);
+        const bookAuthor = index.author || '';
+        new ZLibrarySearchModal(this.app, bookTitle, bookAuthor, client, async (book) => {
             await this.downloadIndexAndAssociate(index, book, client);
         }).open();
     }
