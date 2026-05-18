@@ -3,7 +3,8 @@
  * Primary entry point for PDF document indexing
  */
 
-import { parsePdf, getPdfName, outlineToTocItems, type PdfInfo, type PdfPage, type PdfOutlineItem } from "./parsers/pdf";
+import { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
+import type { MineruPdfResult } from "./parsers/mineru";
 import { parseEpub, getEpubName, epubChaptersToPages } from "./parsers/epub";
 import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
 import { checkToc, checkTitleAppearanceInStartConcurrent, type TocOptions } from "./core/toc";
@@ -26,14 +27,14 @@ import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMo
 /**
  * Flatten PDF outline (bookmarks) to a Map<title, pageNumber> for easy lookup
  */
-function flattenOutlineToMap(outline: PdfOutlineItem[]): Map<string, number> {
+function flattenOutlineToMap(outline: TreeNode[]): Map<string, number> {
   const map = new Map<string, number>();
-  const walk = (items: PdfOutlineItem[]) => {
-    for (const item of items) {
-      if (item.title && item.pageNumber > 0) {
-        map.set(item.title.trim(), item.pageNumber);
+  const walk = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      if (node.title && node.startIndex && node.startIndex > 0) {
+        map.set(node.title.trim(), node.startIndex);
       }
-      if (item.children?.length) walk(item.children);
+      if (node.nodes?.length) walk(node.nodes);
     }
   };
   walk(outline);
@@ -68,29 +69,28 @@ function findBookmarkMatch(title: string, bookmarkMap: Map<string, number>): num
  * Evaluate if PDF outline/bookmarks are high-quality enough to skip LLM
  * Criteria: enough entries with valid page numbers and good page coverage
  */
-function isOutlineHighQuality(outline: PdfOutlineItem[], totalPages: number): boolean {
+function isOutlineHighQuality(outline: TreeNode[], totalPages: number): boolean {
   const MIN_ENTRIES = 5;
 
-  // Count leaf entries with valid page numbers
   let validEntries = 0;
   let minPage = Infinity;
   let maxPage = 0;
 
-  const walk = (items: PdfOutlineItem[]) => {
-    for (const item of items) {
-      if (item.pageNumber > 0) {
+  const walk = (nodes: TreeNode[]) => {
+    for (const node of nodes) {
+      const page = node.startIndex;
+      if (page !== undefined && page > 0) {
         validEntries++;
-        minPage = Math.min(minPage, item.pageNumber);
-        maxPage = Math.max(maxPage, item.pageNumber);
+        minPage = Math.min(minPage, page);
+        maxPage = Math.max(maxPage, page);
       }
-      if (item.children?.length) walk(item.children);
+      if (node.nodes?.length) walk(node.nodes);
     }
   };
   walk(outline);
 
   if (validEntries < MIN_ENTRIES) return false;
 
-  // Coverage: entries should span at least 60% of the document
   const span = maxPage - minPage + 1;
   const coverage = span / totalPages;
   return coverage >= 0.6;
@@ -133,10 +133,11 @@ interface InternalOptions extends TreeOptions {
   imageDpi: number;
   imageFormat: "png" | "jpeg";
   ocrConcurrency: number;
+  mineruApiKey?: string;
   onProgress?: (progress: ProgressInfo) => void;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "onProgress" | "ocrPromptType">> = {
+const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "mineruApiKey" | "onProgress" | "ocrPromptType">> = {
   model: DEFAULT_MODEL,
   tocCheckPageNum: DEFAULT_TOC_CHECK_PAGE_NUM,
   maxPageNumEachNode: DEFAULT_MAX_PAGE_NUM_EACH_NODE,
@@ -172,9 +173,10 @@ export class PageIndex {
       addNodeSummary: options.addNodeSummary ?? DEFAULT_OPTIONS.addNodeSummary,
       addDocDescription: options.addDocDescription ?? DEFAULT_OPTIONS.addDocDescription,
       addNodeText: options.addNodeText ?? DEFAULT_OPTIONS.addNodeText,
-      apiKey: options.apiKey,
-      baseUrl: options.baseUrl,
-      onProgress: options.onProgress,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    mineruApiKey: options.mineruApiKey,
+    onProgress: options.onProgress,
       // OCR options
       extractionMode: options.extractionMode || DEFAULT_OPTIONS.extractionMode,
       ocrModel: options.ocrModel || DEFAULT_OPTIONS.ocrModel,
@@ -236,7 +238,7 @@ export class PageIndex {
   async fromPdf(input: string | Buffer | ArrayBuffer): Promise<PageIndexResult> {
     let pages: PdfPage[];
     let pdfName: string;
-    let cachedPdfInfo: Awaited<ReturnType<typeof parsePdf>> | null = null;
+    let cachedPdfInfo: MineruPdfResult | null = null;
 
     // 判断是否需要 OCR
     let useOcr = this.options.extractionMode === "ocr";
@@ -245,7 +247,7 @@ export class PageIndex {
     if (!useOcr && this.options.extractionMode !== "text") {
       piLog("[fromPdf] Auto-detecting scanned PDF...");
       try {
-        cachedPdfInfo = await parsePdf(input);
+        cachedPdfInfo = await parsePdf(input, this.options.mineruApiKey);
         const samplePages = cachedPdfInfo.pages.slice(0, 5);
         if (samplePages.length > 0) {
           const avgCharsPerPage = samplePages
@@ -278,23 +280,20 @@ export class PageIndex {
       pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
     } else {
       // Text mode: use cached parse result if available
-      const pdfInfo = cachedPdfInfo || await parsePdf(input);
+      const pdfInfo = cachedPdfInfo || await parsePdf(input, this.options.mineruApiKey);
       pages = pdfInfo.pages;
       pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
 
-      // Pass cover image through
-      this._pendingCoverPng = pdfInfo.coverPng;
+      // MinerU doesn't provide coverPng or author
+      this._pendingCoverPng = undefined;
 
-      // Save outline and author
+      // Save outline (Mineru returns TreeNode[] already)
       const savedOutline = pdfInfo.outline;
-      const pdfAuthor = pdfInfo.author;
 
       // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
-      if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.numPages)) {
+      if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
         piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
         const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-        result.coverPng = this._pendingCoverPng;
-        result.author = pdfAuthor;
         this._pendingCoverPng = undefined;
         return result;
       }
@@ -302,8 +301,6 @@ export class PageIndex {
       // LLM path: use outline as hint for page mapping accuracy
       try {
         const result = await this.processPdfPages(pages, pdfName, savedOutline);
-        result.coverPng = this._pendingCoverPng;
-        result.author = pdfAuthor;
         this._pendingCoverPng = undefined;
         return result;
       } catch (error) {
@@ -311,8 +308,6 @@ export class PageIndex {
         if (savedOutline && savedOutline.length > 0) {
           piLog(`[fromPdf] LLM path failed, falling back to outline (${savedOutline.length} entries): ${(error as Error).message}`);
           const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-          result.coverPng = this._pendingCoverPng;
-          result.author = pdfAuthor;
           this._pendingCoverPng = undefined;
           return result;
         }
@@ -330,7 +325,7 @@ export class PageIndex {
   /**
    * Process PDF pages directly
    */
-  async processPdfPages(pages: PdfPage[], docName: string, outline?: PdfOutlineItem[]): Promise<PageIndexResult> {
+  async processPdfPages(pages: PdfPage[], docName: string, outline?: TreeNode[]): Promise<PageIndexResult> {
     const startIndex = 1;
     const endPhysicalIndex = pages.length;
     const totalSteps = 6;
@@ -590,13 +585,38 @@ export class PageIndex {
    */
   async processPdfWithOutline(
     pages: PdfPage[],
-    outline: PdfOutlineItem[],
+    outline: TreeNode[],
     docName: string
   ): Promise<PageIndexResult> {
     const endPhysicalIndex = pages.length;
 
-    // Convert outline to TocItem format
-    let tocItems = outlineToTocItems(outline);
+    // Convert TreeNode[] (Mineru) to TocItem format
+    let tocItems: TocItem[] = [];
+    let listIndex = 0;
+
+    const flatten = (nodes: TreeNode[], parentStructure?: string) => {
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const structure = parentStructure
+          ? `${parentStructure}.${i + 1}`
+          : `${i + 1}`;
+
+        if (node.startIndex && node.startIndex > 0) {
+          tocItems.push({
+            structure,
+            title: node.title,
+            physicalIndex: node.startIndex,
+            listIndex: listIndex++,
+          });
+        }
+
+        if (node.nodes?.length) {
+          flatten(node.nodes, structure);
+        }
+      }
+    };
+
+    flatten(outline);
     piLog(`[Outline] Converted ${tocItems.length} TOC items from bookmarks`);
 
     // Convert physical_index strings to integers (already integers from outline, but ensure consistency)

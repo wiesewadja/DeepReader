@@ -29,6 +29,8 @@ export interface PageIndexOptions {
   apiKey?: string;
   /** Base URL for API (e.g., LM Studio: http://localhost:1234/v1) */
   baseUrl?: string;
+  /** MinerU API key for precision PDF parsing (optional) */
+  mineruApiKey?: string;
   /** Progress callback for real-time updates */
   onProgress?: (progress: ProgressInfo) => void;
   

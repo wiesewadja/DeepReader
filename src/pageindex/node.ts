@@ -33,7 +33,7 @@ export { docToIndex } from "./unified-core";
 
 // ── Document Parsers ────────────────────────────────────────────────────────
 
-export { parsePdf, getPdfName, type PdfInfo, type PdfPage } from "./parsers/pdf";
+export { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
 
 export {
   parseEpub,

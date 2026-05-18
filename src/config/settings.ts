@@ -51,6 +51,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 		openai:      { apiKey: '' },
 		xiaomi:      { apiKey: '' },
 		sensenova:   { apiKey: '' },
+		mineru:      { apiKey: '' },
 	};
 }
 

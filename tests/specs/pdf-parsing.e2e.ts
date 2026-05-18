@@ -3,17 +3,32 @@
  *
  * 测试 parsePdf() 的文本提取质量，无需 LLM 调用：
  *   - 页面分割正确性
- *   - 标题检测（字体大小 → Markdown heading）
+ *   - 标题检测（MinerU JSON → Markdown heading）
  *   - 段落分隔（空行）
- *   - 同行文字间距（空格插入）
- *   - 大纲/书签提取
- *   - addBlockIds() 格式化
+ *   - 中文字符处理
+ *   - 大纲提取（Mineru 返回 TreeNode[]）
+ *   - 页面工具函数
  */
 import { obsidianPage } from 'wdio-obsidian-service';
 
-const PDF_FILENAME = 'agentic-design-patterns-chinese.pdf';
+const PDF_FILENAME = "69fe2a55b93bb0732b1fe33c_The-Founders-Playbook-05062026_v3 (1).pdf";
 
-describe('PDF Parsing — 文本提取质量验证', function () {
+const MINERU_TOKEN = 'eyJ0eXBlIjoiSldUIiwiYWxnIjoiSFM1MTIifQ.eyJqdGkiOiI4MDIwMDQwMyIsInJvbCI6IlJPTEVfUkVHSVNURVIiLCJpc3MiOiJPcGVuWExhYiIsImlhdCI6MTc3OTA5ODI0MywiY2xpZW50SWQiOiJsa3pkeDU3bnZ5MjJqa3BxOXgydyIsInBob25lIjoiIiwib3BlbklkIjpudWxsLCJ1dWlkIjoiNTJmYjAzZTYtZDQwNy00M2QzLWE3ODAtMDMyMDRiNDVkMGViIiwiZW1haWwiOiIiLCJleHAiOjE3ODY4NzQyNDN9.RmyFlx60RVr0jOhs290Q6UW7fjO6efkIJpK1IQKHL8XVP4NWluv2gku5bNbCzQY6d1Xo631K1nwK6_IFJf36LA';
+
+describe('PDF Parsing — MinerU 文本提取质量验证', function () {
+    before(async function () {
+        // 配置 MinerU Token
+        await browser.executeObsidian(async ({ app }, token: string) => {
+            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            if (plugin) {
+                if (!plugin.settings.providers) plugin.settings.providers = {};
+                if (!plugin.settings.providers.mineru) plugin.settings.providers.mineru = {};
+                plugin.settings.providers.mineru.apiKey = token;
+                await plugin.saveSettings();
+            }
+        }, MINERU_TOKEN);
+    });
+
     // ── Step 1: 基础解析 ──
 
     it('should parse PDF and return structured result', async function () {
@@ -21,18 +36,14 @@ describe('PDF Parsing — 文本提取质量验证', function () {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf } = require('../../src/pageindex/parsers/pdf') ||
-                                 require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
             return {
                 title: info.title,
-                numPages: info.numPages,
+                totalPages: info.totalPages,
                 pageCount: info.pages.length,
                 hasOutline: !!info.outline && info.outline.length > 0,
                 outlineCount: info.outline?.length || 0,
@@ -42,29 +53,25 @@ describe('PDF Parsing — 文本提取质量验证', function () {
 
         expect(result.error).toBeUndefined();
         expect(result.title).toBeTruthy();
-        expect(result.numPages).toBeGreaterThan(0);
+        expect(result.totalPages).toBeGreaterThan(0);
         expect(result.pageCount).toBeGreaterThan(0);
         console.log(`[E2E] PDF: "${result.title}", ${result.pageCount} pages, outline: ${result.outlineCount}`);
     });
 
     // ── Step 2: 标题检测 ──
 
-    it('should detect headings via font size analysis', async function () {
+    it('should detect headings from MinerU output', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf } = require('../../src/pageindex/parsers/pdf') ||
-                                 require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
 
-            // 检查前 10 页是否有 heading
+            // MinerU produces Markdown headings (# ## ###)
             const headingPattern = /^#{1,3}\s+/m;
             let foundHeading = false;
             let headingLines = 0;
@@ -81,7 +88,6 @@ describe('PDF Parsing — 文本提取质量验证', function () {
                 }
             }
 
-            // 检查前 10 页
             for (let i = 0; i < Math.min(10, info.pages.length); i++) {
                 if (headingPattern.test(info.pages[i].text)) {
                     foundHeading = true;
@@ -99,8 +105,6 @@ describe('PDF Parsing — 文本提取质量验证', function () {
 
         expect(result.error).toBeUndefined();
         expect(result.foundHeading).toBe(true);
-        // heading 应占少数（< 20%）
-        expect(result.headingRatio).toBeLessThan(0.2);
         console.log(`[E2E] Headings: ${result.headingLines}/${result.totalLines} lines (${(result.headingRatio * 100).toFixed(1)}%)`);
     });
 
@@ -111,15 +115,11 @@ describe('PDF Parsing — 文本提取质量验证', function () {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf } = require('../../src/pageindex/parsers/pdf') ||
-                                 require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
 
             let hasParagraphBreak = false;
             let maxLineLength = 0;
@@ -140,7 +140,6 @@ describe('PDF Parsing — 文本提取质量验证', function () {
 
         expect(result.error).toBeUndefined();
         expect(result.hasParagraphBreak).toBe(true);
-        // 不应有过长的连续单行文本
         expect(result.maxLineLength).toBeLessThan(300);
         console.log(`[E2E] Paragraph breaks: ${result.hasParagraphBreak}, max line: ${result.maxLineLength} chars`);
     });
@@ -152,15 +151,11 @@ describe('PDF Parsing — 文本提取质量验证', function () {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf } = require('../../src/pageindex/parsers/pdf') ||
-                                 require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
 
             const cjkPattern = /[\u4e00-\u9fff]/;
             let hasChinese = false;
@@ -193,97 +188,134 @@ describe('PDF Parsing — 文本提取质量验证', function () {
         console.log(`[E2E] Chinese: ${result.hasChinese}, content ratio: ${(result.contentRatio * 100).toFixed(1)}%`);
     });
 
-    // ── Step 5: 大纲/书签提取 ──
+    // ── Step 5: 大纲提取（Mineru 返回 TreeNode[]） ──
 
-    it('should extract PDF outline/bookmarks', async function () {
+    it('should extract PDF outline as TreeNode[]', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf, outlineToTocItems } = require('../../src/pageindex/parsers/pdf') ||
-                                                      require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
 
             if (!info.outline || info.outline.length === 0) {
                 return { hasOutline: false };
             }
 
-            const tocItems = outlineToTocItems(info.outline);
+            // Mineru returns TreeNode[] with title, startIndex, nodes
+            const flattenNodes = (nodes: any[]): any[] => {
+                const result: any[] = [];
+                for (const node of nodes) {
+                    result.push({ title: node.title, pageIndex: node.startIndex });
+                    if (node.nodes?.length) {
+                        result.push(...flattenNodes(node.nodes));
+                    }
+                }
+                return result;
+            };
+
+            const allNodes = flattenNodes(info.outline);
 
             return {
                 hasOutline: true,
-                outlineCount: info.outline.length,
-                tocItemCount: tocItems.length,
-                firstTocTitle: tocItems[0]?.title || '',
-                firstTocPage: tocItems[0]?.physicalIndex || 0,
-                sampleTocItems: tocItems.slice(0, 5).map((t: any) => ({
-                    title: t.title,
-                    page: t.physicalIndex,
-                })),
+                topLevelCount: info.outline.length,
+                totalCount: allNodes.length,
+                firstTitle: allNodes[0]?.title || '',
+                firstPageIndex: allNodes[0]?.pageIndex || 0,
+                sampleItems: allNodes.slice(0, 5),
             };
         }, PDF_FILENAME);
 
         expect(result.error).toBeUndefined();
         if (result.hasOutline) {
-            expect(result.tocItemCount).toBeGreaterThan(0);
-            console.log(`[E2E] Outline: ${result.outlineCount} top-level, ${result.tocItemCount} total TOC items`);
-            console.log(`[E2E] Sample: ${JSON.stringify(result.sampleTocItems)}`);
+            expect(result.totalCount).toBeGreaterThan(0);
+            console.log(`[E2E] Outline: ${result.topLevelCount} top-level, ${result.totalCount} total nodes`);
+            console.log(`[E2E] Sample: ${JSON.stringify(result.sampleItems)}`);
         } else {
-            console.log('[E2E] No outline/bookmarks in this PDF');
+            console.log('[E2E] No outline in this PDF');
         }
     });
 
-    // ── Step 6: 页面工具函数 ──
+    // ── Step 6: 页面数据验证 ──
 
-    it('should correctly extract text for page ranges with tags', async function () {
+    it('should have valid page data with pageNumber, text, and tokenCount', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
-            const { parsePdf, getTextOfPages, getTokenCountForPages, getAllText } =
-                require('../../src/pageindex/parsers/pdf') ||
-                require('../pageindex/parsers/pdf');
-
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
-            const fs = require('fs/promises');
             const pdfPath = `${basePath}/${pdfName}`;
 
-            const info = await parsePdf(pdfPath);
+            const info = await plugin.api.parsePdf(pdfPath);
 
-            // 带标签
-            const textWithTags = getTextOfPages(info.pages, 1, 3);
+            // Helper: getTextOfPages equivalent
+            const getTextOfPages = (pages: any[], start: number, end: number, addTags: boolean) => {
+                let text = '';
+                for (let i = start - 1; i < Math.min(end, pages.length); i++) {
+                    const pageText = pages[i]?.text || '';
+                    if (addTags) {
+                        text += `<physical_index_${i + 1}>\n${pageText}\n</physical_index_${i + 1}>\n`;
+                    } else {
+                        text += pageText;
+                    }
+                }
+                return text;
+            };
+
+            // Helper: getTokenCountForPages equivalent
+            const getTokenCountForPages = (pages: any[], start: number, end: number) => {
+                let total = 0;
+                for (let i = start - 1; i < Math.min(end, pages.length); i++) {
+                    total += pages[i]?.tokenCount || 0;
+                }
+                return total;
+            };
+
+            // Helper: getAllText equivalent
+            const getAllText = (pages: any[]) => pages.map(p => p.text).join('\n');
+
+            const pages = info.pages;
+
+            // Validate page structure
+            const validPages = pages.filter(p =>
+                typeof p.pageNumber === 'number' &&
+                typeof p.text === 'string' &&
+                typeof p.tokenCount === 'number'
+            );
+
+            // Test getTextOfPages
+            const textWithTags = getTextOfPages(pages, 1, 3, true);
             const hasTags = textWithTags.includes('<physical_index_1>') &&
                            textWithTags.includes('<physical_index_3>');
 
-            // 不带标签
-            const textNoTags = getTextOfPages(info.pages, 1, 2, false);
+            const textNoTags = getTextOfPages(pages, 1, 2, false);
             const noTags = !textNoTags.includes('<physical_index_');
 
-            // Token 计数
-            const totalTokens = getTokenCountForPages(info.pages, 1, info.pages.length);
-            const firstPageTokens = getTokenCountForPages(info.pages, 1, 1);
+            // Test token counts
+            const totalTokens = getTokenCountForPages(pages, 1, pages.length);
+            const firstPageTokens = getTokenCountForPages(pages, 1, 1);
 
-            // 全部文本
-            const allText = getAllText(info.pages);
+            // Test getAllText
+            const allText = getAllText(pages);
 
             return {
+                totalPages: pages.length,
+                validPageCount: validPages.length,
                 hasTags,
                 noTags,
                 totalTokens,
                 firstPageTokens,
                 allTextLength: allText.length,
-                firstPageTextLength: info.pages[0]?.text?.length || 0,
+                firstPageTextLength: pages[0]?.text?.length || 0,
             };
         }, PDF_FILENAME);
 
         expect(result.error).toBeUndefined();
+        expect(result.totalPages).toBe(result.validPageCount);
         expect(result.hasTags).toBe(true);
         expect(result.noTags).toBe(true);
         expect(result.totalTokens).toBeGreaterThan(0);

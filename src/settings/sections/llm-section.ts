@@ -74,6 +74,8 @@ export function renderLLMSection(
         onRerender();
       },
     });
+
+    renderMineruSection(container, ctx, state, onRerender);
   }
 }
 
@@ -335,5 +337,52 @@ function renderConfigSummary(
     state.forceShowQuickSetup = true;
     state.testStatus = null;
     onRerender();
+  });
+}
+
+function renderMineruSection(
+  container: HTMLElement,
+  ctx: SectionContext,
+  state: LLMState,
+  onRerender: () => void,
+): void {
+  container.createEl('h3', { text: 'MinerU PDF 解析' });
+  container.createEl('p', {
+    text: 'MinerU 云 API 用于 PDF 解析。免费 Agent API 限 10MB/20页；配置 Token 后可使用精准 API（支持 200MB/200页）。',
+    cls: 'setting-item-description',
+  });
+
+  const mineruAccount = ctx.plugin.settings.providers['mineru'];
+  const currentKey = mineruAccount?.apiKey || '';
+
+  const keySetting = new Setting(container)
+    .setName('MinerU Token')
+    .setDesc('精准 API 所需，免费用户留空')
+    .addText(text => {
+      text.setPlaceholder('sk-...')
+        .setValue(currentKey)
+        .inputEl.type = 'password';
+      const debouncedSave = debounceAsync(async () => {
+        await ctx.plugin.saveSettings();
+      }, 300);
+      text.onChange((value) => {
+        const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
+        if (!providers['mineru']) providers['mineru'] = {};
+        providers['mineru'].apiKey = value;
+        debouncedSave();
+      });
+    });
+
+  const inputEl = keySetting.controlEl.querySelector('input');
+  keySetting.addExtraButton(btn => {
+    let visible = false;
+    btn.setIcon('eye')
+      .setTooltip('显示')
+      .onClick(() => {
+        visible = !visible;
+        if (inputEl) inputEl.type = visible ? 'text' : 'password';
+        btn.setIcon(visible ? 'eye-off' : 'eye');
+        btn.setTooltip(visible ? '隐藏' : '显示');
+      });
   });
 }
