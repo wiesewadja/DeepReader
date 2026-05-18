@@ -70,12 +70,18 @@ export class MineruClient {
   }
 
   /**
-   * 判断文件是否适用 Agent 轻量 API（≤10MB 且≤20页）
-   * 注意：页数在解析前未知，这里只能检查文件大小。
-   * Agent API 服务端会在超限时返回错误。
+   * 从 PDF buffer 中快速提取页数（解析 /Count 字段）
    */
-  private canUseAgentApi(fileSize: number): boolean {
-    return fileSize <= MAX_AGENT_FILE_SIZE;
+  private getPdfPageCount(buffer: Buffer): number {
+    const text = buffer.toString('latin1');
+    let maxCount = 0;
+    const regex = /\/Count\s+(\d+)/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const count = parseInt(match[1]);
+      if (count > maxCount) maxCount = count;
+    }
+    return maxCount;
   }
 
   /**
@@ -87,15 +93,22 @@ export class MineruClient {
       return this.parseViaPrecision(input, fileName);
     }
 
-    // 免费用户用 Agent API（限 10MB/20页）
-    if (this.canUseAgentApi(input.length)) {
-      return this.parseViaAgent(input, fileName);
+    // 免费用户检查文件大小和页数限制
+    const pageCount = this.getPdfPageCount(input);
+    if (input.length > MAX_AGENT_FILE_SIZE) {
+      throw new MineruError(
+        `文件过大（${(input.length / 1024 / 1024).toFixed(1)}MB），免费 API 限 10MB。` +
+        '请在设置中配置 MinerU Token 以支持大文件。'
+      );
+    }
+    if (pageCount > MAX_AGENT_PAGES) {
+      throw new MineruError(
+        `文档共 ${pageCount} 页，免费 API 限 ${MAX_AGENT_PAGES} 页。` +
+        '请在设置中配置 MinerU Token 以支持完整解析。'
+      );
     }
 
-    throw new MineruError(
-      `File too large (${(input.length / 1024 / 1024).toFixed(1)}MB) for free API. ` +
-      'Configure MinerU Token in settings for large PDFs.'
-    );
+    return this.parseViaAgent(input, fileName);
   }
 
   /**

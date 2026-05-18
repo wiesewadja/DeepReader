@@ -177,6 +177,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     model: options.model,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
+    mineruApiKey: options.mineruApiKey,
     addNodeText: DEFAULT_ADD_NODE_TEXT,
     addNodeSummary: options.addNodeSummary ?? DEFAULT_ADD_NODE_SUMMARY,
     addDocDescription: options.addDocDescription ?? DEFAULT_ADD_DOC_DESCRIPTION,

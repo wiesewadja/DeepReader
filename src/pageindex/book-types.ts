@@ -16,6 +16,8 @@ export interface BookIndexOptions {
   model?: string;
   apiKey?: string;
   baseUrl?: string;
+  /** MinerU API Token for precision PDF parsing */
+  mineruApiKey?: string;
   /** Generate LLM summaries for each node (default: true) */
   addNodeSummary?: boolean;
   /** Generate document-level description (default: true) */

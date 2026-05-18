@@ -31,7 +31,9 @@ export async function parsePdf(
     dataBuffer = Buffer.from(input);
   }
 
-  const fileName = typeof input === "string" ? getPdfName(input) : "document.pdf";
+  const fileName = typeof input === "string"
+    ? input.split("/").pop() || "document.pdf"
+    : "document.pdf";
 
   piLog(`[parsePdf] Parsing PDF with MinerU: ${fileName} (${dataBuffer.length} bytes)`);
 

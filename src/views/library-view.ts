@@ -75,6 +75,7 @@ export class LibraryView extends ItemView {
     private readingProgressCache: Map<string, number> = new Map();
     private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
     private associatedDeepReaderIds: Set<string> = new Set(); // 已关联的 deepReader bookId（用于去重）
+    private activelyIndexingBookId: string | null = null; // handleAddDocument 正在管理的索引 ID
     private wereadStatsCache: Map<string, MappingStats> = new Map();
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
@@ -400,7 +401,8 @@ export class LibraryView extends ItemView {
         tagRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
         if (this.wereadMappingCache.has(index.id)) {
-            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            const linkedText = index.fileType === 'weread' ? '已关联' : '微信读书';
+            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: linkedText });
         }
 
         if (index.fileType === 'weread' && !this.wereadMappingCache.has(index.id)) {
@@ -1162,6 +1164,7 @@ export class LibraryView extends ItemView {
 
     private async handleAddDocument(): Promise<void> {
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
+            let bookId = '';
             const displayName = this.getDisplayName(fileInfo.name);
 
             try {
@@ -1197,7 +1200,7 @@ export class LibraryView extends ItemView {
                 }
                 
                 // 计算真实的 bookId，避免临时 ID 导致卡片重复
-                const bookId = await generateBookId(filePath);
+                bookId = await generateBookId(filePath);
 
                 // 移除同名文件的旧索引项或旧状态卡片，避免重复
                 this.indexes = this.indexes.filter(idx => {
@@ -1239,6 +1242,9 @@ export class LibraryView extends ItemView {
                     ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
                     : undefined;
 
+                // 标记正在主动管理索引，防止轮询弹出重复通知
+                this.activelyIndexingBookId = bookId;
+
                 const result = await indexBook({
                     filePath,
                     fileType,
@@ -1247,6 +1253,7 @@ export class LibraryView extends ItemView {
                     model: model,
                     apiKey: apiKey,
                     baseUrl: baseUrl,
+                    mineruApiKey: settings.providers?.['mineru']?.apiKey || '',
                     addNodeSummary: settings.ifAddNodeSummary,
                     propositions: propositionOpts,
                     onProgress: (progress: BookIndexProgress) => {
@@ -1257,10 +1264,40 @@ export class LibraryView extends ItemView {
                     },
                 });
 
-                new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
+                // 先刷新索引数据（从磁盘读取最终状态）
                 await this.refreshIndexes();
+
+                // 确保卡片更新为 ready 状态
+                const doneIdx = this.indexes.find(idx => idx.id === bookId);
+                if (doneIdx) {
+                    doneIdx.status = 'ready';
+                    doneIdx.progress_percent = 100;
+                    const card = this.cardElements.get(bookId);
+                    if (card) {
+                        const newCard = this.createBookCard(doneIdx);
+                        card.replaceWith(newCard);
+                        this.cardElements.set(bookId, newCard);
+                    }
+                }
+
+                this.activelyIndexingBookId = null;
+                new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
             } catch (error: any) {
-                // 如果出错，刷新列表以显示正确的 failed 状态
+                this.activelyIndexingBookId = null;
+                // 将 temp 索引标记为失败状态
+                const errIdx = this.indexes.find(idx => idx.id === bookId);
+                if (errIdx) {
+                    errIdx.status = 'failed';
+                    errIdx.message = error.message || '索引失败';
+                    // 重新渲染该卡片为失败状态
+                    const card = this.cardElements.get(bookId);
+                    if (card) {
+                        const newCard = this.createBookCard(errIdx);
+                        card.replaceWith(newCard);
+                        this.cardElements.set(bookId, newCard);
+                    }
+                }
+
                 await this.refreshIndexes();
 
                 let msg = '索引创建失败';
@@ -1303,6 +1340,20 @@ export class LibraryView extends ItemView {
         this.pollingInterval = window.setInterval(async () => {
             await this.refreshIndexes();
 
+            // handleAddDocument 正在管理时，防止轮询将卡片提前变为 ready
+            if (this.activelyIndexingBookId) {
+                const activeIdx = this.indexes.find(idx => idx.id === this.activelyIndexingBookId);
+                if (activeIdx && READY_STATUSES.has((activeIdx.status || '').toLowerCase())) {
+                    activeIdx.status = 'processing';
+                    const card = this.cardElements.get(this.activelyIndexingBookId);
+                    if (card) {
+                        const newCard = this.createBookCard(activeIdx);
+                        card.replaceWith(newCard);
+                        this.cardElements.set(this.activelyIndexingBookId, newCard);
+                    }
+                }
+            }
+
             const hasProcessing = this.indexes.some(idx => {
                 const status = (idx.status || '').toLowerCase();
                 return PROCESSING_STATUSES.has(status);
@@ -1314,16 +1365,19 @@ export class LibraryView extends ItemView {
                     this.pollingInterval = null;
                 }
 
-                const failedIndexes = this.indexes.filter(idx => {
-                    const status = (idx.status || '').toLowerCase();
-                    return FAILED_STATUSES.has(status);
-                });
+                // handleAddDocument 正在管理时，由它自己负责通知
+                if (!this.activelyIndexingBookId) {
+                    const failedIndexes = this.indexes.filter(idx => {
+                        const status = (idx.status || '').toLowerCase();
+                        return FAILED_STATUSES.has(status);
+                    });
 
-                if (failedIndexes.length > 0) {
-                    const failedNames = failedIndexes.map(idx => this.getDisplayName(idx.pdf_name)).join('、');
-                    new Notice(`索引失败: ${failedNames}，请检查 API Key 配置`, 5000);
-                } else {
-                    new Notice('索引处理完成', 3000);
+                    if (failedIndexes.length > 0) {
+                        const failedNames = failedIndexes.map(idx => this.getDisplayName(idx.pdf_name)).join('、');
+                        new Notice(`索引失败: ${failedNames}，请检查 API Key 配置`, 5000);
+                    } else {
+                        new Notice('索引处理完成', 3000);
+                    }
                 }
             }
         }, 2000);
