@@ -4,9 +4,12 @@
  * 封装 MinerU 云 API 的调用逻辑：
  * - Agent 轻量 API（免 Token）
  * - 精准 API（需 Token）
+ *
+ * 使用 safeRequest（Obsidian requestUrl）绕过 CORS 限制
  */
 
 import AdmZip from 'adm-zip';
+import { safeRequest } from '../utils/safe-request';
 import { parseMineruJson } from '../pageindex/parsers/mineru';
 import { buildTocTree, fillNodeText, countTokens } from '../pageindex/parsers/mineru-types';
 import type { MineruJson, MineruPdfResult, PageText } from '../pageindex/parsers/mineru-types';
@@ -97,11 +100,6 @@ export class MineruClient {
 
   /**
    * Agent 轻量 API（≤10MB / ≤20页，免 Token）
-   *
-   * 流程：
-   * 1. POST /api/v1/agent/parse/file → { task_id, file_url }
-   * 2. PUT file_url → 上传文件到 OSS
-   * 3. GET /api/v1/agent/parse/{task_id} → 轮询直到 done
    */
   async parseViaAgent(input: Buffer, fileName: string): Promise<MineruPdfResult> {
     const task = await this.requestUploadUrl(fileName);
@@ -112,9 +110,6 @@ export class MineruClient {
 
   /**
    * 从 Markdown 构建 MineruPdfResult
-   *
-   * Agent API 返回纯 Markdown，没有 JSON 结构，
-   * 需要自己解析分页标记和标题来构建结构
    */
   private parseMarkdown(markdown: string, fileName: string): MineruPdfResult {
     const lines = markdown.split('\n');
@@ -179,12 +174,6 @@ export class MineruClient {
 
   /**
    * 精准 API（需 Token，支持 ≤200MB / ≤200页）
-   *
-   * 流程：
-   * 1. POST /api/v4/file-urls/batch → { batch_id, file_urls[] }
-   * 2. PUT file_url → 上传文件到 OSS
-   * 3. GET /api/v4/extract-results/batch/{batch_id} → 轮询直到 done
-   * 4. 下载 ZIP → 解压 → 读 JSON → 解析
    */
   async parseViaPrecision(input: Buffer, fileName: string): Promise<MineruPdfResult> {
     if (!this.token) {
@@ -202,20 +191,21 @@ export class MineruClient {
   // ════════════════════════════════════════════════════════════
 
   private async requestUploadUrl(fileName: string): Promise<{ taskId: string; fileUrl: string }> {
-    const resp = await fetch(`${AGENT_BASE}/parse/file`, {
+    const resp = await safeRequest({
+      url: `${AGENT_BASE}/parse/file`,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      contentType: 'application/json',
       body: JSON.stringify({
         file_name: fileName,
         language: this.language,
       }),
     });
 
-    if (!resp.ok) {
+    if (resp.status >= 400) {
       throw new MineruError(`Agent API request failed: ${resp.status}`, resp.status);
     }
 
-    const data = await resp.json();
+    const data = resp.json;
     if (data.code !== 0) {
       throw new MineruError(data.msg || 'Agent API error', data.code);
     }
@@ -227,12 +217,13 @@ export class MineruClient {
   }
 
   private async uploadFile(url: string, data: Buffer): Promise<void> {
-    const resp = await fetch(url, {
+    const resp = await safeRequest({
+      url,
       method: 'PUT',
-      body: new Uint8Array(data),
+      body: data.buffer as ArrayBuffer,
     });
 
-    if (!resp.ok) {
+    if (resp.status >= 400) {
       throw new MineruError(`File upload failed: ${resp.status}`, resp.status);
     }
   }
@@ -241,18 +232,18 @@ export class MineruClient {
     const start = Date.now();
 
     while (Date.now() - start < this.agentTimeout) {
-      const resp = await fetch(`${AGENT_BASE}/parse/${taskId}`);
-      if (!resp.ok) {
+      const resp = await safeRequest({ url: `${AGENT_BASE}/parse/${taskId}` });
+
+      if (resp.status >= 400) {
         throw new MineruError(`Poll request failed: ${resp.status}`, resp.status);
       }
 
-      const data = await resp.json();
+      const data = resp.json;
       const state = data.data?.state;
 
       if (state === 'done') {
-        const markdownUrl = data.data.markdown_url;
-        const mdResp = await fetch(markdownUrl);
-        return mdResp.text();
+        const mdResp = await safeRequest({ url: data.data.markdown_url });
+        return mdResp.text;
       }
 
       if (state === 'failed') {
@@ -276,10 +267,11 @@ export class MineruClient {
     fileName: string,
     modelVersion: 'pipeline' | 'vlm' = 'vlm'
   ): Promise<{ batchId: string; fileUrls: string[] }> {
-    const resp = await fetch(`${PRECISION_BASE}/file-urls/batch`, {
+    const resp = await safeRequest({
+      url: `${PRECISION_BASE}/file-urls/batch`,
       method: 'POST',
+      contentType: 'application/json',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.token}`,
       },
       body: JSON.stringify({
@@ -291,11 +283,11 @@ export class MineruClient {
       }),
     });
 
-    if (!resp.ok) {
+    if (resp.status >= 400) {
       throw new MineruError(`Precision API request failed: ${resp.status}`, resp.status);
     }
 
-    const data = await resp.json();
+    const data = resp.json;
     if (data.code !== 0) {
       throw new MineruError(data.msg || 'Precision API error', data.code);
     }
@@ -310,18 +302,16 @@ export class MineruClient {
     const start = Date.now();
 
     while (Date.now() - start < this.precisionTimeout) {
-      const resp = await fetch(
-        `${PRECISION_BASE}/extract-results/batch/${batchId}`,
-        {
-          headers: { 'Authorization': `Bearer ${this.token}` },
-        }
-      );
+      const resp = await safeRequest({
+        url: `${PRECISION_BASE}/extract-results/batch/${batchId}`,
+        headers: { 'Authorization': `Bearer ${this.token}` },
+      });
 
-      if (!resp.ok) {
+      if (resp.status >= 400) {
         throw new MineruError(`Poll request failed: ${resp.status}`, resp.status);
       }
 
-      const data = await resp.json();
+      const data = resp.json;
       const results = data.data?.extract_result;
 
       if (!results || results.length === 0) {
@@ -346,12 +336,17 @@ export class MineruClient {
   }
 
   private async downloadAndParseZip(zipUrl: string): Promise<MineruPdfResult> {
-    const resp = await fetch(zipUrl);
-    if (!resp.ok) {
+    const resp = await safeRequest({ url: zipUrl });
+
+    if (resp.status >= 400) {
       throw new MineruError(`ZIP download failed: ${resp.status}`, resp.status);
     }
 
-    const arrayBuffer = await resp.arrayBuffer();
+    const arrayBuffer = resp.arrayBuffer;
+    if (!arrayBuffer) {
+      throw new MineruError('ZIP download returned empty response');
+    }
+
     const zip = new AdmZip(Buffer.from(arrayBuffer));
 
     const zipEntries = zip.getEntries();
