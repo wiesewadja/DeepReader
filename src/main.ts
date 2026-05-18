@@ -14,6 +14,10 @@ import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 
+// 微信读书集成
+import { WereadService } from './weread/index.js';
+import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
+
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
@@ -31,6 +35,8 @@ export default class DeepPDFPlugin extends Plugin {
     private skillsDir: string = '';
 
     // E2E 测试暴露的 API
+    private wereadService: WereadService | null = null;
+
     readonly api = {
         indexBook,
         isBookIndexed,
@@ -524,12 +530,151 @@ export default class DeepPDFPlugin extends Plugin {
 
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');
+
+        // ═══ 微信读书命令 ═══
+        this.addCommand({
+            id: "weread-login",
+            name: "微信读书：打开设置配置 API Key",
+            callback: async () => {
+                new Notice("请在插件设置 → 微信读书 中输入 API Key");
+            },
+        });
+
+        this.addCommand({
+            id: "weread-sync",
+            name: "微信读书：同步笔记",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先配置微信读书 API Key");
+                    return;
+                }
+                try {
+                    let lastPhase = '';
+                    let lastProgressNotice = 0;
+                    const result = await svc.sync(false, {
+                        onProgress: (p) => {
+                            // phase 切换时通知
+                            if (p.phase !== lastPhase) {
+                                lastPhase = p.phase;
+                                if (p.phase === 'fetching-books') {
+                                    new Notice(`开始同步微信读书，共 ${p.total} 本`, 5000);
+                                }
+                            }
+                            // fetching-books 阶段每 5 本或最后一本通知一次
+                            if (p.phase === 'fetching-books' && p.total > 0) {
+                                const now = Date.now();
+                                if (p.current % 5 === 0 || p.current === p.total || now - lastProgressNotice > 10000) {
+                                    lastProgressNotice = now;
+                                    new Notice(`同步进度 (${p.current}/${p.total}) ${p.currentBook}`, 3000);
+                                }
+                            }
+                        },
+                        onNotice: (msg) => { new Notice(msg); },
+                    });
+                    new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                    if (result.unmatched > 0) {
+                        const svc2 = this.getWereadService();
+                        const stats = await svc2.getSyncStats();
+                        if (stats.unmatchedBooks.length > 0) {
+                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                        }
+                    }
+                } catch (e: any) {
+                    new Notice(`同步失败：${e.message}`);
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "weread-sync-force",
+            name: "微信读书：强制全量同步",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先配置微信读书 API Key");
+                    return;
+                }
+                try {
+                    let lastPhase = '';
+                    let lastProgressNotice = 0;
+                    const result = await svc.sync(true, {
+                        onProgress: (p) => {
+                            if (p.phase !== lastPhase) {
+                                lastPhase = p.phase;
+                                if (p.phase === 'fetching-books') {
+                                    new Notice(`[全量同步] 共 ${p.total} 本`, 5000);
+                                }
+                            }
+                            if (p.phase === 'fetching-books' && p.total > 0) {
+                                const now = Date.now();
+                                if (p.current % 5 === 0 || p.current === p.total || now - lastProgressNotice > 10000) {
+                                    lastProgressNotice = now;
+                                    new Notice(`[全量同步] (${p.current}/${p.total}) ${p.currentBook}`, 3000);
+                                }
+                            }
+                        },
+                        onNotice: (msg) => { new Notice(msg); },
+                    });
+                    new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
+                    if (result.unmatched > 0) {
+                        const svc2 = this.getWereadService();
+                        const stats = await svc2.getSyncStats();
+                        if (stats.unmatchedBooks.length > 0) {
+                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                        }
+                    }
+                } catch (e: any) {
+                    new Notice(`同步失败：${e.message}`);
+                }
+            },
+        });
+
+        this.addCommand({
+            id: "weread-logout",
+            name: "微信读书：清除 API Key",
+            callback: async () => {
+                const svc = this.getWereadService();
+                await svc.logout();
+                new Notice("已清除微信读书 API Key");
+            },
+        });
+
+        this.addCommand({
+            id: "weread-rematch",
+            name: "微信读书：重新匹配书籍",
+            callback: async () => {
+                const svc = this.getWereadService();
+                if (!svc.isLoggedIn()) {
+                    new Notice("请先配置微信读书 API Key");
+                    return;
+                }
+                new Notice("开始重新匹配...");
+                try {
+                    const result = await svc.rematch();
+                    new Notice(`匹配完成：${result.matched} 本已关联，${result.unmatched} 本未关联`);
+                } catch (e: any) {
+                    new Notice(`匹配失败：${e.message}`);
+                }
+            },
+        });
     }
 
     /**
      * 分离 Markdown 文件的 frontmatter 和 body
      * @returns { frontmatter, body, hasFrontmatter } 如果没有 frontmatter，frontmatter 为空字符串
      */
+    private getWereadService(): WereadService {
+        if (!this.wereadService) {
+            this.wereadService = new WereadService({
+                settings: this.settings,
+                app: this.app,
+                saveSettings: async () => { await this.saveSettings(); },
+            });
+        }
+        return this.wereadService;
+    }
+
     private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
         const match = content.match(/^(---\n[\s\S]*?\n---)(\n*)/);
         if (match) {

@@ -4,6 +4,7 @@
  */
 
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
+import { sanitizeFileName } from '../weread/utils/file';
 import { IndexListItem } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
@@ -14,6 +15,11 @@ import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
 import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
+import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
+import { ZLibraryClient } from '../zlibrary/client.js';
+import { buildZlibClient } from '../zlibrary/build-client.js';
+import type { ZLibraryBook } from '../zlibrary/types.js';
+import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -64,6 +70,8 @@ export class LibraryView extends ItemView {
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
+    private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
+    private associatedDeepReaderIds: Set<string> = new Set(); // 已关联的 deepReader bookId（用于去重）
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
 
@@ -169,19 +177,25 @@ export class LibraryView extends ItemView {
     private renderGrid(): void {
         if (!this.gridEl) return;
 
+        // 首次渲染时异步加载微信读书映射，加载完后刷新徽章
+        if (this.wereadMappingCache.size === 0) {
+            this.loadWereadMapping().then(() => this.refreshWereadBadges());
+        }
+
         // 清空所有缓存和引用
         this.cardElements.clear();
         this.lastIndexStates.clear();
 
         this.gridEl.innerHTML = '';
 
-        // 过滤
-        const filtered = this.searchQuery
+        // 过滤 + 去重已关联的 deepReader 索引
+        const filtered = (this.searchQuery
             ? this.indexes.filter(idx =>
                   idx.pdf_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                   (idx.author && idx.author.toLowerCase().includes(this.searchQuery.toLowerCase()))
               )
-            : this.indexes;
+            : this.indexes
+        ).filter(idx => !this.associatedDeepReaderIds.has(idx.id));
 
         if (filtered.length === 0) {
             this.gridEl.innerHTML = `
@@ -367,6 +381,16 @@ export class LibraryView extends ItemView {
         const typeTag = index.fileType?.toUpperCase() || 'PDF';
         titleRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
+        // 已关联标签
+        if (this.wereadMappingCache.has(index.id)) {
+            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '已关联' });
+        }
+
+        // 未关联的微信读书书籍：显示下载按钮
+        if (index.fileType === 'weread' && !this.wereadMappingCache.has(index.id)) {
+            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-zlibrary', text: '待下载' });
+        }
+
         // 作者
         if (index.author) {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
@@ -413,6 +437,41 @@ export class LibraryView extends ItemView {
      * 优先从 book-meta.json 读取 exportName（与 book-indexer.ts 保存封面时使用的名称一致），
      * 回退到 getDisplayName(bookName) 和原始 bookName。
      */
+    /** 从 .pageindex/weread/mapping.json 加载已关联书籍 ID 集合 */
+    private async loadWereadMapping(): Promise<void> {
+        try {
+            const adapter = (this.app as any).vault?.adapter;
+            if (!adapter) return;
+            const mappingPath = '.pageindex/weread/mapping.json';
+            if (!(await adapter.exists(mappingPath))) return;
+            const raw = await adapter.read(mappingPath);
+            const mapping = JSON.parse(raw);
+            this.wereadMappingCache = new Set(
+                Object.keys(mapping.mappings || {}),
+            );
+            this.associatedDeepReaderIds = new Set(
+                Object.values(mapping.mappings || {})
+                    .map((m: any) => m.deepReaderBookId)
+                    .filter(Boolean),
+            );
+        } catch {
+            // 静默失败
+        }
+    }
+
+    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章 */
+    private refreshWereadBadges(): void {
+        for (const [bookId, card] of this.cardElements) {
+            const titleRow = card.querySelector('.deeppdf-lib-book-title-row');
+            if (!titleRow) continue;
+            // 已有徽章则跳过
+            if (titleRow.querySelector('.deeppdf-lib-type-weread')) continue;
+            if (this.wereadMappingCache.has(bookId)) {
+                titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            }
+        }
+    }
+
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
             // 收集所有可能的书名（按优先级排序）
@@ -440,7 +499,13 @@ export class LibraryView extends ItemView {
                 possibleNames.push(bookName);
             }
 
-            // 4. 去掉扩展名的原始文件名（来自 index.pdf_name）
+            // 4. sanitize 后的书名（微信读书封面保存时用了 sanitize）
+            const sanitizedName = sanitizeFileName(bookName);
+            if (sanitizedName && !possibleNames.includes(sanitizedName)) {
+                possibleNames.push(sanitizedName);
+            }
+
+            // 5. 去掉扩展名的原始文件名（来自 index.pdf_name）
             const index = this.indexes.find(idx => idx.id === indexId);
             if (index) {
                 let rawName = index.pdf_name;
@@ -449,11 +514,17 @@ export class LibraryView extends ItemView {
                 if (rawName && !possibleNames.includes(rawName)) {
                     possibleNames.push(rawName);
                 }
+                // sanitize 全标题（和封面下载时一致，处理特殊字符和长度）
+                const sanitizedRaw = sanitizeFileName(rawName);
+                if (sanitizedRaw && !possibleNames.includes(sanitizedRaw)) {
+                    possibleNames.push(sanitizedRaw);
+                }
             }
 
             // 尝试所有可能的书名 + 所有图片扩展名
             const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
             let coverFile: TFile | null = null;
+            let foundPath: string = '';
             let foundName: string = '';
 
             for (const name of possibleNames) {
@@ -462,6 +533,7 @@ export class LibraryView extends ItemView {
                     const file = this.app.vault.getAbstractFileByPath(coverPath);
                     if (file && file instanceof TFile) {
                         coverFile = file;
+                        foundPath = coverPath;
                         foundName = name;
                         break;
                     }
@@ -469,8 +541,28 @@ export class LibraryView extends ItemView {
                 if (coverFile) break;
             }
 
-            if (coverFile) {
-                const localCoverUrl = this.app.vault.getResourcePath(coverFile);
+            // Fallback: vault 缓存未更新时，直接用 adapter 检查文件是否存在
+            if (!coverFile) {
+                const adapter = this.app.vault.adapter as any;
+                for (const name of possibleNames) {
+                    for (const ext of extensions) {
+                        const coverPath = `DeepReader/covers/${name}.${ext}`;
+                        try {
+                            if (await adapter.exists(coverPath)) {
+                                foundPath = coverPath;
+                                foundName = name;
+                                break;
+                            }
+                        } catch { continue; }
+                    }
+                    if (foundPath) break;
+                }
+            }
+
+            if (coverFile || foundPath) {
+                const localCoverUrl = coverFile
+                    ? this.app.vault.getResourcePath(coverFile)
+                    : this.app.vault.getResourcePath(foundPath as any);
                 this.coverCache.set(indexId, localCoverUrl);
 
                 // 保留选中对勾（如果存在）
@@ -501,6 +593,28 @@ export class LibraryView extends ItemView {
      */
     private addCoverActions(coverEl: HTMLElement, indexId: string): void {
         const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
+
+        // 关联按钮组（未关联的微信读书书籍）
+        const index = this.indexes.find(idx => idx.id === indexId);
+        if (index?.fileType === 'weread' && !this.wereadMappingCache.has(indexId)) {
+            // Z-Library 下载按钮
+            const cloudBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn cloud' });
+            cloudBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>`;
+            cloudBtn.title = '从 Z-Library 下载';
+            cloudBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleZlibDownload(index);
+            });
+
+            // 本地文件关联按钮
+            const linkBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn link' });
+            linkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+            linkBtn.title = '从本地文件关联';
+            linkBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleLocalAssociate(index);
+            });
+        }
 
         // 删除按钮
         const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
@@ -536,26 +650,314 @@ export class LibraryView extends ItemView {
         `;
     }
 
-    private handleSelect(index: IndexListItem): void {
-        // 检查索引状态
-        const rawStatus = (index.status || 'unknown').toLowerCase();
-        const isProcessing = PROCESSING_STATUSES.has(rawStatus);
-
-        if (isProcessing) {
-            // 索引还在处理中，不响应点击
+    private handleZlibDownload(index: IndexListItem): void {
+        const settings = this.options.plugin?.settings;
+        if (!settings?.zlibraryUserId || !settings?.zlibraryUserKey) {
+            new Notice('请先在设置中登录 Z-Library 账号', 3000);
             return;
         }
 
-        const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
+        const client = buildZlibClient(settings);
 
-        if (!chaptersExist) {
-            new Notice('章节文件不存在，请重新索引书籍', 3000);
-            return;
-        }
-
-        this.selectedIndexId = index.id;
-        this.options.onIndexChange?.(index.id);
+        const bookTitle = this.getDisplayName(index.pdf_name);
+        const bookAuthor = index.author || '';
+        new ZLibrarySearchModal(this.app, bookTitle, bookAuthor, client, async (book) => {
+            await this.downloadIndexAndAssociate(index, book, client);
+        }).open();
     }
+
+    /** 将微信读书卡片切换为 processing 状态以显示进度条 */
+    private setWereadCardProcessing(index: IndexListItem, percent: number, message: string): void {
+        const idx = this.indexes.find(i => i.id === index.id);
+        if (idx) {
+            idx.status = 'processing';
+            idx.progress_percent = percent;
+            idx.message = message;
+        }
+        const oldCard = this.cardElements.get(index.id);
+        if (oldCard) {
+            const newCard = this.createBookCard(idx || index);
+            oldCard.replaceWith(newCard);
+            this.cardElements.set(index.id, newCard);
+        }
+    }
+
+    /** 失败时恢复卡片为原始状态 */
+    private restoreWereadCard(index: IndexListItem): void {
+        const idx = this.indexes.find(i => i.id === index.id);
+        if (idx) {
+            idx.status = 'ready';
+            idx.progress_percent = undefined;
+            idx.message = undefined;
+        }
+        const oldCard = this.cardElements.get(index.id);
+        if (oldCard) {
+            const newCard = this.createBookCard(idx || index);
+            oldCard.replaceWith(newCard);
+            this.cardElements.set(index.id, newCard);
+        }
+    }
+
+    private handleLocalAssociate(index: IndexListItem): void {
+        new PDFFileSelectorModal(this.app, async (fileInfo) => {
+            await this.associateLocalFile(index, fileInfo);
+        }).open();
+    }
+
+    private async associateLocalFile(
+        wereadIndex: IndexListItem,
+        fileInfo: FileSelectResult,
+    ): Promise<void> {
+        const adapter = (this.app as any).vault?.adapter;
+        if (!adapter) {
+            new Notice('Vault 不可用');
+            return;
+        }
+
+        const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+        if (!vaultBase) {
+            new Notice('无法获取 Vault 路径');
+            return;
+        }
+
+        let filePath: string;
+        let fileType: 'pdf' | 'epub';
+        let localVaultPath: string | undefined;
+
+        this.setWereadCardProcessing(wereadIndex, 5, '准备文件...');
+
+        if (isSystemFileInfo(fileInfo)) {
+            // 系统文件：先复制到 Vault
+            const ext = fileInfo.docType;
+            const safeName = sanitizeFileName(fileInfo.name);
+            const assetsDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
+            const vaultRelativePath = `${assetsDir}/${safeName}.${ext}`;
+
+            if (!(await adapter.exists(assetsDir))) {
+                await adapter.mkdir(assetsDir);
+            }
+
+            const buffer = await fileInfo.file.arrayBuffer();
+            await adapter.writeBinary(vaultRelativePath, buffer);
+            filePath = `${vaultBase}/${vaultRelativePath}`;
+            fileType = ext;
+            localVaultPath = vaultRelativePath;
+        } else {
+            // Vault 内文件：直接使用
+            filePath = `${vaultBase}/${fileInfo.file.path}`;
+            fileType = fileInfo.docType;
+            localVaultPath = fileInfo.file.path;
+        }
+
+        // 检查是否已索引
+        let bookId: string;
+        const alreadyIndexed = await isBookIndexed(filePath, vaultBase);
+
+        if (alreadyIndexed) {
+            bookId = await generateBookId(filePath);
+        } else {
+            // 需要索引
+            const settings = this.options.plugin.settings;
+            const pageindexRole = resolveRoleConfig('pageindex', settings);
+            const embeddingRole = resolveRoleConfig('embedding', settings);
+            const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+
+            try {
+                const result = await indexBook({
+                    filePath,
+                    fileType,
+                    outputDir: vaultBase,
+                    embedding: embeddingOpts,
+                    model: pageindexRole?.model || 'deepseek-chat',
+                    apiKey: pageindexRole?.apiKey || '',
+                    baseUrl: pageindexRole?.baseUrl || '',
+                    addNodeSummary: settings.ifAddNodeSummary,
+                    onProgress: (p) => {
+                        this.updateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
+                    },
+                });
+                bookId = result.bookId;
+            } catch (e: any) {
+                this.restoreWereadCard(wereadIndex);
+                new Notice(`索引失败：${e.message}`, 5000);
+                return;
+            }
+        }
+
+        // 写 mapping 关联
+        this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
+        try {
+            const mappingPath = '.pageindex/weread/mapping.json';
+            let mapping = { mappings: {} as Record<string, any> };
+            if (await adapter.exists(mappingPath)) {
+                const raw = await adapter.read(mappingPath);
+                mapping = JSON.parse(raw);
+            }
+            mapping.mappings[wereadIndex.id] = {
+                deepReaderBookId: bookId,
+                title: wereadIndex.pdf_name,
+                filePath,
+                localFile: localVaultPath,
+            };
+            await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
+            this.wereadMappingCache.add(wereadIndex.id);
+        } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
+            new Notice(`关联写入失败：${e.message}`, 5000);
+            return;
+        }
+
+        new Notice(`「${wereadIndex.pdf_name}」关联成功`);
+        await this.refreshIndexes();
+        await this.loadWereadMapping();
+        this.renderGrid();
+    }
+    private async downloadIndexAndAssociate(
+        wereadIndex: IndexListItem,
+        zlibBook: ZLibraryBook,
+        client: ZLibraryClient,
+    ): Promise<void> {
+        const adapter = (this.app as any).vault?.adapter;
+        if (!adapter) {
+            new Notice('Vault 不可用');
+            return;
+        }
+
+        const safeTitle = sanitizeFileName(zlibBook.title);
+        const assetsDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
+
+        // 将卡片切换为 processing 状态以显示进度条
+        this.setWereadCardProcessing(wereadIndex, 5, '正在下载...');
+
+        // ── Phase 1: 下载 ──────────────────────────────
+        let downloadPath: string;
+        try {
+            const { data, extension } = await client.downloadBook(zlibBook.id, zlibBook.hash);
+            const fileName = `${safeTitle}.${extension}`;
+            const vaultRelativePath = `${assetsDir}/${fileName}`;
+
+            if (!(await adapter.exists(assetsDir))) {
+                await adapter.mkdir(assetsDir);
+            }
+            await adapter.writeBinary(vaultRelativePath, data);
+            const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+            downloadPath = `${vaultBase}/${vaultRelativePath}`;
+            new Notice(`已保存到 ${vaultRelativePath}`);
+        } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
+            new Notice(`下载失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 2: 索引 ──────────────────────────────
+        const settings = this.options.plugin.settings;
+        const pageindexRole = resolveRoleConfig('pageindex', settings);
+        const embeddingRole = resolveRoleConfig('embedding', settings);
+        const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+
+        let bookId: string;
+        try {
+            const result = await indexBook({
+                filePath: downloadPath,
+                fileType: (zlibBook.extension || 'pdf') as 'pdf' | 'epub',
+                outputDir: (adapter as any).getBasePath?.() || (adapter as any).basePath,
+                embedding: embeddingOpts,
+                model: pageindexRole?.model || 'deepseek-chat',
+                apiKey: pageindexRole?.apiKey || '',
+                baseUrl: pageindexRole?.baseUrl || '',
+                addNodeSummary: settings.ifAddNodeSummary,
+                onProgress: (p) => {
+                    this.updateCardProgress(wereadIndex.id, p.percent, 'processing', p.stepLabel);
+                },
+            });
+            bookId = result.bookId;
+        } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
+            new Notice(`索引失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 3: 关联 ──────────────────────────────
+        this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
+        try {
+            const mappingPath = '.pageindex/weread/mapping.json';
+            let mapping = { mappings: {} as Record<string, any> };
+            if (await adapter.exists(mappingPath)) {
+                const raw = await adapter.read(mappingPath);
+                mapping = JSON.parse(raw);
+            }
+            mapping.mappings[wereadIndex.id] = {
+                deepReaderBookId: bookId,
+                title: wereadIndex.pdf_name,
+                filePath: downloadPath,
+                zlibraryBookId: zlibBook.id,
+            };
+            await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
+            this.wereadMappingCache.add(wereadIndex.id);
+        } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
+            new Notice(`关联写入失败：${e.message}`, 5000);
+            return;
+        }
+
+        // ── Phase 4: 刷新 ──────────────────────────────
+        new Notice(`「${zlibBook.title}」下载并索引成功！`);
+        await this.refreshIndexes();
+        await this.loadWereadMapping();
+        this.renderGrid();
+    }
+
+    private async handleSelect(index: IndexListItem): Promise<void> {
+		const rawStatus = (index.status || 'unknown').toLowerCase();
+		const isProcessing = PROCESSING_STATUSES.has(rawStatus);
+
+		if (isProcessing) {
+			return;
+		}
+
+		// 微信读书：已关联则打开阅读，未关联则打开笔记
+		if (index.fileType === 'weread') {
+			if (this.wereadMappingCache.has(index.id)) {
+				// 已关联：用 deepReaderBookId 打开阅读
+				const adapter = (this.app as any).vault?.adapter;
+				if (adapter) {
+					try {
+						const mappingPath = '.pageindex/weread/mapping.json';
+						if (await adapter.exists(mappingPath)) {
+							const raw = await adapter.read(mappingPath);
+							const mapping = JSON.parse(raw);
+							const m = mapping.mappings?.[index.id];
+							if (m?.deepReaderBookId) {
+								this.selectedIndexId = m.deepReaderBookId;
+								this.options.onIndexChange?.(m.deepReaderBookId);
+								return;
+							}
+						}
+					} catch { /* fallthrough */ }
+				}
+			}
+			// 未关联：打开笔记
+			const safeName = sanitizeFileName(index.pdf_name);
+			const notePath = `书籍摘录/${safeName}/${safeName}.md`;
+			const file = this.app.vault.getAbstractFileByPath(notePath);
+			if (file) {
+				this.app.workspace.getLeaf(false).openFile(file as TFile);
+			} else {
+				new Notice('笔记文件不存在，请重新同步', 3000);
+			}
+			return;
+		}
+
+		const chaptersExist = this.checkBookChaptersExist(index.pdf_name);
+
+		if (!chaptersExist) {
+			new Notice('章节文件不存在，请重新索引书籍', 3000);
+			return;
+		}
+
+		this.selectedIndexId = index.id;
+		this.options.onIndexChange?.(index.id);
+	}
 
     private checkBookChaptersExist(pdfName: string): boolean {
         const folderName = this.getDisplayName(pdfName);

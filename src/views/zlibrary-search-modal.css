@@ -1,0 +1,142 @@
+/* Z-Library 搜索 Modal */
+
+.deeppdf-zlib-modal .modal-content {
+	max-width: 680px;
+}
+
+.deeppdf-zlib-header {
+	text-align: center;
+	padding: 4px 0 12px;
+}
+
+.deeppdf-zlib-header-label {
+	font-size: 12px;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	margin-bottom: 4px;
+}
+
+.deeppdf-zlib-header-title {
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.deeppdf-zlib-header-author {
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+
+.deeppdf-zlib-results {
+	max-height: 60vh;
+	overflow-y: auto;
+}
+
+.deeppdf-zlib-loading,
+.deeppdf-zlib-empty,
+.deeppdf-zlib-error {
+	text-align: center;
+	padding: 32px 16px;
+	color: var(--text-muted);
+}
+
+.deeppdf-zlib-error button {
+	display: inline-block;
+	margin-top: 12px;
+	padding: 4px 16px;
+	cursor: pointer;
+}
+
+.deeppdf-zlib-card {
+	display: flex;
+	gap: 12px;
+	padding: 12px;
+	margin-bottom: 8px;
+	border-radius: 8px;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	transition: background-color 0.15s;
+}
+
+.deeppdf-zlib-card:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.deeppdf-zlib-cover {
+	flex-shrink: 0;
+	width: 56px;
+	height: 76px;
+	border-radius: 4px;
+	overflow: hidden;
+	background: var(--background-secondary);
+}
+
+.deeppdf-zlib-cover img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.deeppdf-zlib-placeholder {
+	width: 100%;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 11px;
+	color: var(--text-faint);
+}
+
+.deeppdf-zlib-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.deeppdf-zlib-title {
+	font-weight: 600;
+	font-size: 14px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.deeppdf-zlib-author {
+	font-size: 12px;
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.deeppdf-zlib-meta {
+	display: flex;
+	gap: 8px;
+	font-size: 12px;
+	color: var(--text-muted);
+	align-items: center;
+}
+
+.deeppdf-zlib-tag {
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+}
+
+.deeppdf-zlib-tag-epub { background: #4caf50; }
+.deeppdf-zlib-tag-pdf  { background: #f44336; }
+.deeppdf-zlib-tag-mobi { background: #ff9800; }
+
+.deeppdf-zlib-pagination {
+	text-align: center;
+	padding: 12px 0 4px;
+	font-size: 12px;
+	color: var(--text-faint);
+}

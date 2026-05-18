@@ -370,6 +370,34 @@
     color: #fff;
 }
 
+.deeppdf-library-view .deeppdf-lib-type-weread {
+    background: #07c160;
+    color: #fff;
+}
+
+.deeppdf-library-view .deeppdf-lib-type-zlibrary {
+    background: #6366f1;
+    color: #fff;
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.cloud {
+    background: rgba(99, 102, 241, 0.9);
+    color: #fff;
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.cloud:hover {
+    background: #6366f1;
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.link {
+    background: rgba(34, 197, 94, 0.9);
+    color: #fff;
+}
+
+.deeppdf-library-view .deeppdf-lib-cover-btn.link:hover {
+    background: #22c55e;
+}
+
 .deeppdf-library-view .deeppdf-lib-book-author {
     font-size: 11px;
     color: var(--text-muted);
@@ -470,4 +498,97 @@
         gap: 12px;
         padding: 12px 16px;
     }
+}
+
+/* 未匹配书籍 Modal */
+.deeppdf-unmatched-list-container {
+    max-height: 320px;
+    overflow-y: auto;
+    margin: 8px 0;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+}
+
+.deeppdf-unmatched-list {
+    list-style: none;
+    padding: 4px 0;
+    margin: 0;
+}
+
+.deeppdf-unmatched-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    gap: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-unmatched-item:last-child {
+    border-bottom: none;
+}
+
+.deeppdf-unmatched-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.deeppdf-unmatched-author {
+    color: var(--text-muted);
+}
+
+.deeppdf-unmatched-link-btn {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--interactive-accent);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--interactive-accent);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.deeppdf-unmatched-link-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.deeppdf-unmatched-hint {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin: 8px 0 0;
+    padding: 8px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+}
+
+/* 微信读书设置页 — 同步进度条 */
+.deeppdf-weread-progress {
+    margin: 8px 0 4px;
+}
+
+.deeppdf-weread-progress-bar {
+    height: 6px;
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.deeppdf-weread-progress-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+.deeppdf-weread-progress-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    line-height: 1.4;
 }

@@ -124,6 +124,18 @@ export interface DeepPDFSettings {
 	proactiveGuidanceEnabled: boolean;
 	proactiveCooldownMinutes: number;
 
+		// 微信读书集成
+		wereadApiKey: string;
+		wereadSyncInterval: number;
+		wereadExcludeArticles: boolean;
+		wereadNoteCountThreshold: number;
+
+		// Z-Library 集成（仅存登录后的 Cookie，不存明文密码）
+		zlibraryUserId: string;
+		zlibraryUserKey: string;
+		zlibraryDomain: string;
+
+
 	// ═══════════════════════════════════════════════════════════
 	// 旧版字段（迁移期间保留，Chunk 3 后删除）
 	// ═══════════════════════════════════════════════════════════
@@ -224,4 +236,16 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		// 用户画像
 		journalDir: "",
 		profileDimensions: [],
+
+		// 微信读书集成
+		wereadApiKey: '',
+		wereadSyncInterval: 0,
+		wereadExcludeArticles: true,
+		wereadNoteCountThreshold: 1,
+
+		// Z-Library 集成
+		zlibraryUserId: '',
+		zlibraryUserKey: '',
+		zlibraryDomain: '',
+
 };
