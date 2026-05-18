@@ -73,7 +73,7 @@ describe('ZLibraryClient', () => {
 						cover: 'https://example.com/cover.jpg', year: 2020, language: 'chinese',
 					},
 				],
-				total: 5, page: 1, totalPages: 1,
+				exactBooksCount: 5, pagination: [{}],
 			}));
 
 			const client = new ZLibraryClient();
@@ -87,7 +87,7 @@ describe('ZLibraryClient', () => {
 
 		it('搜索传递正确的参数', async () => {
 			mockRequest.mockResolvedValueOnce(mockResponse({
-				success: 1, books: [], total: 0, page: 1, totalPages: 0,
+				success: 1, books: [], exactBooksCount: 0, pagination: [],
 			}));
 
 			const client = new ZLibraryClient();
@@ -169,7 +169,7 @@ describe('ZLibraryClient', () => {
 			mockRequest
 				.mockRejectedValueOnce(new Error('timeout'))
 				.mockResolvedValueOnce(mockResponse({
-					success: 1, books: [], total: 0, page: 1, totalPages: 0,
+					success: 1, books: [], exactBooksCount: 0, pagination: [],
 				}));
 
 			const client = new ZLibraryClient();
@@ -218,10 +218,10 @@ describe('ZLibraryClient', () => {
 		it('返回用户信息和下载限额', async () => {
 			mockRequest.mockResolvedValueOnce(mockResponse({
 				user: {
-					userId: 23688146,
+					id: 23688146,
 					email: 'test@example.com',
-					downloadsDailyLimit: 10,
-					downloadsDailyLeft: 8,
+					downloads_limit: 10,
+					downloads_today: 2,
 					isPremium: false,
 				},
 			}));

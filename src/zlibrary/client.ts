@@ -102,8 +102,8 @@ export class ZLibraryClient {
 		return {
 			userId: data.user.id,
 			email: data.user.email ?? email,
-			downloadsTodayLimit: data.user.downloadsDailyLimit ?? 0,
-			downloadsTodayLeft: data.user.downloadsDailyLeft ?? 0,
+			downloadsTodayLimit: data.user.downloads_limit ?? 0,
+			downloadsTodayLeft: (data.user.downloads_limit ?? 0) - (data.user.downloads_today ?? 0),
 			isPremium: !!data.user.isPremium,
 		};
 	}
@@ -148,11 +148,15 @@ export class ZLibraryClient {
 			qualityScore: b.qualityScore,
 		}));
 
+		// API 返回 exactBooksCount + pagination 数组，而非 total/page/totalPages
+		const pagination = Array.isArray(data.pagination) ? data.pagination : [];
+		const totalPages = pagination.length > 0 ? pagination.length : 1;
+
 		return {
 			books,
-			total: data.total ?? 0,
-			page: data.page ?? 1,
-			totalPages: data.totalPages ?? 1,
+			total: data.exactBooksCount ?? books.length,
+			page: options?.page ?? 1,
+			totalPages,
 		};
 	}
 
@@ -228,10 +232,10 @@ export class ZLibraryClient {
 		const data = await this.request('GET', '/eapi/user/profile');
 
 		return {
-			userId: data?.user?.userId ?? 0,
+			userId: data?.user?.id ?? 0,
 			email: data?.user?.email ?? '',
-			downloadsTodayLimit: data?.user?.downloadsDailyLimit ?? 0,
-			downloadsTodayLeft: data?.user?.downloadsDailyLeft ?? 0,
+			downloadsTodayLimit: data?.user?.downloads_limit ?? 0,
+			downloadsTodayLeft: (data?.user?.downloads_limit ?? 0) - (data?.user?.downloads_today ?? 0),
 			isPremium: !!data?.user?.isPremium,
 		};
 	}
