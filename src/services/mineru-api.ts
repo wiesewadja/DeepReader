@@ -7,9 +7,9 @@
  */
 
 import AdmZip from 'adm-zip';
-import { parseMineruJson, type MineruJson, type PageText } from '../pageindex/parsers/mineru';
-import { countTokens } from '../pageindex/core/utils';
-import type { MineruPdfResult } from '../pageindex/parsers/mineru';
+import { parseMineruJson } from '../pageindex/parsers/mineru';
+import { buildTocTree, fillNodeText, countTokens } from '../pageindex/parsers/mineru-types';
+import type { MineruJson, MineruPdfResult, PageText } from '../pageindex/parsers/mineru-types';
 import type { TreeNode } from '../pageindex/core/types';
 
 // ════════════════════════════════════════════════════════════════
@@ -50,10 +50,6 @@ export interface MineruClientOptions {
   language?: string;
 }
 
-export interface ParseOptions {
-  modelVersion?: 'pipeline' | 'vlm';
-}
-
 export class MineruClient {
   private agentTimeout: number;
   private precisionTimeout: number;
@@ -71,7 +67,9 @@ export class MineruClient {
   }
 
   /**
-   * 判断文件是否适用 Agent 轻量 API
+   * 判断文件是否适用 Agent 轻量 API（≤10MB 且≤20页）
+   * 注意：页数在解析前未知，这里只能检查文件大小。
+   * Agent API 服务端会在超限时返回错误。
    */
   private canUseAgentApi(fileSize: number): boolean {
     return fileSize <= MAX_AGENT_FILE_SIZE;
@@ -161,8 +159,15 @@ export class MineruClient {
 
     flushPage();
 
-    const outline = buildTocTreeFromMarkdown(allTitles);
-    fillNodeTextFromMarkdown(outline, pages);
+    const outline = buildTocTree(allTitles);
+    fillNodeText(
+      outline,
+      pages,
+      (index: number) => {
+        const nextNode = outline[index];
+        return nextNode?.startIndex ?? Infinity;
+      }
+    );
 
     return {
       title: fileName.replace(/\.pdf$/i, ''),
@@ -388,62 +393,4 @@ export async function parsePdfWithMineru(
 ): Promise<MineruPdfResult> {
   const client = new MineruClient(token);
   return client.parse(input, fileName);
-}
-
-// ════════════════════════════════════════════════════════════════
-// Markdown 解析辅助函数
-// ════════════════════════════════════════════════════════════════
-
-function buildTocTreeFromMarkdown(
-  titles: { title: string; level: 1 | 2 | 3; pageIdx: number }[]
-): TreeNode[] {
-  const root: TreeNode[] = [];
-  const stack: { level: number; node: TreeNode }[] = [];
-
-  for (const t of titles) {
-    const node: TreeNode = {
-      title: t.title,
-      startIndex: t.pageIdx + 1,
-      nodes: [],
-    };
-
-    while (stack.length > 0 && stack[stack.length - 1].level >= t.level) {
-      stack.pop();
-    }
-
-    if (stack.length === 0) {
-      root.push(node);
-    } else {
-      const parent = stack[stack.length - 1].node;
-      parent.nodes = parent.nodes || [];
-      parent.nodes.push(node);
-    }
-
-    stack.push({ level: t.level, node });
-  }
-
-  return root;
-}
-
-function fillNodeTextFromMarkdown(nodes: TreeNode[], pages: PageText[]): void {
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const nextPage = i + 1 < nodes.length
-      ? nodes[i + 1].startIndex ?? Infinity
-      : Infinity;
-
-    const textParts: string[] = [];
-    for (const page of pages) {
-      if (page.pageNumber >= node.startIndex! && page.pageNumber < nextPage) {
-        if (page.text.trim()) {
-          textParts.push(page.text);
-        }
-      }
-    }
-    node.text = textParts.join('\n\n');
-
-    if (node.nodes && node.nodes.length > 0) {
-      fillNodeTextFromMarkdown(node.nodes, pages);
-    }
-  }
 }

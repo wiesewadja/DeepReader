@@ -173,10 +173,10 @@ export class PageIndex {
       addNodeSummary: options.addNodeSummary ?? DEFAULT_OPTIONS.addNodeSummary,
       addDocDescription: options.addDocDescription ?? DEFAULT_OPTIONS.addDocDescription,
       addNodeText: options.addNodeText ?? DEFAULT_OPTIONS.addNodeText,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-    mineruApiKey: options.mineruApiKey,
-    onProgress: options.onProgress,
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      mineruApiKey: options.mineruApiKey,
+      onProgress: options.onProgress,
       // OCR options
       extractionMode: options.extractionMode || DEFAULT_OPTIONS.extractionMode,
       ocrModel: options.ocrModel || DEFAULT_OPTIONS.ocrModel,
@@ -285,7 +285,6 @@ export class PageIndex {
       pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
 
       // MinerU doesn't provide coverPng or author
-      this._pendingCoverPng = undefined;
 
       // Save outline (Mineru returns TreeNode[] already)
       const savedOutline = pdfInfo.outline;
@@ -294,21 +293,18 @@ export class PageIndex {
       if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
         piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
         const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-        this._pendingCoverPng = undefined;
         return result;
       }
 
       // LLM path: use outline as hint for page mapping accuracy
       try {
         const result = await this.processPdfPages(pages, pdfName, savedOutline);
-        this._pendingCoverPng = undefined;
         return result;
       } catch (error) {
         // LLM failed — fall back to outline if available
         if (savedOutline && savedOutline.length > 0) {
           piLog(`[fromPdf] LLM path failed, falling back to outline (${savedOutline.length} entries): ${(error as Error).message}`);
           const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-          this._pendingCoverPng = undefined;
           return result;
         }
         throw error;
@@ -317,8 +313,6 @@ export class PageIndex {
 
     // OCR mode path (no outline available)
     const result = await this.processPdfPages(pages, pdfName);
-    result.coverPng = this._pendingCoverPng;
-    this._pendingCoverPng = undefined;
     return result;
   }
 

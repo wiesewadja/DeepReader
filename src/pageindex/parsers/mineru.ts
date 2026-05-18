@@ -5,63 +5,15 @@
  */
 
 import { NodeHtmlMarkdown } from 'node-html-markdown';
-import { countTokens } from '../core/utils';
-import type { TreeNode } from '../core/types';
-
-// ════════════════════════════════════════════════════════════════
-// MinerU JSON 类型定义
-// ════════════════════════════════════════════════════════════════
-
-export interface MineruSpan {
-  type: 'text' | 'table';
-  content?: string;
-  html?: string;
-  bbox: number[];
-  score?: number;
-}
-
-export interface MineruLine {
-  bbox: number[];
-  spans: MineruSpan[];
-}
-
-export interface MineruBlock {
-  bbox: number[];
-  type: string;
-  angle: number;
-  index: number;
-  lines: MineruLine[];
-  merge_prev?: boolean;
-  blocks?: MineruBlock[];
-}
-
-export interface MineruPage {
-  preproc_blocks: MineruBlock[];
-  para_blocks: MineruBlock[];
-  page_size: [number, number];
-  page_idx: number;
-}
-
-export interface MineruJson {
-  pdf_info: MineruPage[];
-}
-
-// ════════════════════════════════════════════════════════════════
-// 解析结果类型
-// ════════════════════════════════════════════════════════════════
-
-export interface MineruPdfResult {
-  title: string;
-  totalPages: number;
-  pages: PageText[];
-  outline: TreeNode[];
-}
-
-export interface PageText {
-  pageNumber: number;
-  text: string;
-  tokenCount: number;
-}
+import {
+  countTokens,
+  buildTocTree,
+  fillNodeText,
+  type MineruBlock,
+  type MineruJson,
+  type MineruPdfResult,
+  type PageText,
+} from './mineru-types';
 
 // ════════════════════════════════════════════════════════════════
 // 工具函数
@@ -87,9 +39,11 @@ function extractTableHtml(block: MineruBlock): string | null {
 
   for (const nested of block.blocks) {
     if (nested.lines) {
-      for (const span of nested.lines[0]?.spans || []) {
-        if (span.type === 'table' && span.html) {
-          return span.html;
+      for (const line of nested.lines) {
+        for (const span of line.spans) {
+          if (span.type === 'table' && span.html) {
+            return span.html;
+          }
         }
       }
     }
@@ -108,82 +62,27 @@ async function htmlToMarkdown(html: string): Promise<string> {
   }
 }
 
+/** 根据 Y 坐标位置和 bbox 高度差估算标题级别 */
 function estimateHeadingLevel(
   block: MineruBlock,
   pageHeight: number,
   text: string
 ): 1 | 2 | 3 {
   const y = block.bbox[1];
+  const blockHeight = block.bbox[3] - block.bbox[1];
 
-  if (y < pageHeight * 0.15) {
-    return 1;
-  }
+  // 页面上方 15% → h1
+  if (y < pageHeight * 0.15) return 1;
 
-  if (y < pageHeight * 0.35 && text.length < 80) {
-    return 2;
-  }
+  // 页面 15%-35% 且文字较短 → h2
+  if (y < pageHeight * 0.35 && text.length < 80) return 2;
+
+  // 辅助：bbox 高度差较大（大字号）→ 提升级别
+  const avgLineHeight = pageHeight / 50;
+  if (blockHeight > avgLineHeight * 2.5) return 1;
+  if (blockHeight > avgLineHeight * 1.5) return 2;
 
   return 3;
-}
-
-function buildTocTree(titles: {
-  title: string;
-  level: 1 | 2 | 3;
-  pageIdx: number;
-}[]): TreeNode[] {
-  const root: TreeNode[] = [];
-  const stack: { level: number; node: TreeNode }[] = [];
-
-  for (const t of titles) {
-    const node: TreeNode = {
-      title: t.title,
-      startIndex: t.pageIdx + 1,
-      nodes: [],
-    };
-
-    while (stack.length > 0 && stack[stack.length - 1].level >= t.level) {
-      stack.pop();
-    }
-
-    if (stack.length === 0) {
-      root.push(node);
-    } else {
-      const parent = stack[stack.length - 1].node;
-      parent.nodes = parent.nodes || [];
-      parent.nodes.push(node);
-    }
-
-    stack.push({ level: t.level, node });
-  }
-
-  return root;
-}
-
-function fillNodeText(
-  nodes: TreeNode[],
-  pages: PageText[],
-  getNextPage: (index: number) => number
-): void {
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const nextPage = i + 1 < nodes.length
-      ? getNextPage(i + 1)
-      : Infinity;
-
-    const textParts: string[] = [];
-    for (const page of pages) {
-      if (page.pageNumber >= node.startIndex! && page.pageNumber < nextPage) {
-        if (page.text.trim()) {
-          textParts.push(page.text);
-        }
-      }
-    }
-    node.text = textParts.join('\n\n');
-
-    if (node.nodes && node.nodes.length > 0) {
-      fillNodeText(node.nodes, pages, getNextPage);
-    }
-  }
 }
 
 function extractDocTitle(titles: { title: string; level: number }[]): string {
@@ -265,3 +164,6 @@ export async function parseMineruJson(json: MineruJson): Promise<MineruPdfResult
     outline,
   };
 }
+
+// Re-export types for backward compatibility
+export type { MineruJson, MineruPdfResult, PageText, MineruBlock, MineruSpan, MineruLine, MineruPage } from './mineru-types';

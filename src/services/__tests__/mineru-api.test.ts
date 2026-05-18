@@ -73,31 +73,39 @@ describe("MineruClient", () => {
     it("should use precision API for small files when token provided", async () => {
       client = new MineruClient("test-token");
 
-      // Mock fetch: returns done immediately for agent API polling
+      // Mock downloadAndParseZip to skip ZIP operations
+      vi.spyOn(client as any, 'downloadAndParseZip').mockResolvedValue({
+        title: "Test Title",
+        totalPages: 1,
+        pages: [{ pageNumber: 1, text: "Test content", tokenCount: 10 }],
+        outline: [],
+      });
+
+      // Mock fetch for precision API flow (upload → poll)
       const mockFetch = vi.fn()
+        // 1. requestPrecisionUploadUrl
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ code: 0, data: { task_id: "task-123", file_url: "https://oss.example.com/upload" } }),
+          json: async () => ({ code: 0, data: { batch_id: "batch-123", file_urls: ["https://oss.example.com/upload"] } }),
         })
+        // 2. uploadFile
         .mockResolvedValueOnce({ ok: true })
+        // 3. pollPrecisionResult
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => ({ data: { state: "done", markdown_url: "https://cdn.example.com/result.md" } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          text: async () => "# Test\n\nPage content",
+          json: async () => ({ data: { extract_result: [{ state: "done", full_zip_url: "https://cdn.example.com/result.zip" }] } }),
         });
       global.fetch = mockFetch;
 
       const smallPdf = Buffer.from("small pdf content");
       const result = await client.parse(smallPdf, "test.pdf");
 
-      // With token, small files still use agent API (it's the default for small files)
+      // With token, all files use precision API
       expect(result).toBeDefined();
-      expect(result.pages).toBeDefined();
-      expect(result.pages.length).toBeGreaterThan(0);
+      expect(result.title).toBe("Test Title");
+      expect(mockFetch).toHaveBeenCalledTimes(3);
 
+      vi.restoreAllMocks();
       global.fetch = vi.fn();
     });
   });

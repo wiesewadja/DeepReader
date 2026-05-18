@@ -13,10 +13,14 @@ import { obsidianPage } from 'wdio-obsidian-service';
 
 const PDF_FILENAME = "69fe2a55b93bb0732b1fe33c_The-Founders-Playbook-05062026_v3 (1).pdf";
 
-const MINERU_TOKEN = 'eyJ0eXBlIjoiSldUIiwiYWxnIjoiSFM1MTIifQ.eyJqdGkiOiI4MDIwMDQwMyIsInJvbCI6IlJPTEVfUkVHSVNURVIiLCJpc3MiOiJPcGVuWExhYiIsImlhdCI6MTc3OTA5ODI0MywiY2xpZW50SWQiOiJsa3pkeDU3bnZ5MjJqa3BxOXgydyIsInBob25lIjoiIiwib3BlbklkIjpudWxsLCJ1dWlkIjoiNTJmYjAzZTYtZDQwNy00M2QzLWE3ODAtMDMyMDRiNDVkMGViIiwiZW1haWwiOiIiLCJleHAiOjE3ODY4NzQyNDN9.RmyFlx60RVr0jOhs290Q6UW7fjO6efkIJpK1IQKHL8XVP4NWluv2gku5bNbCzQY6d1Xo631K1nwK6_IFJf36LA';
-
 describe('PDF Parsing — MinerU 文本提取质量验证', function () {
     before(async function () {
+        const MINERU_TOKEN = process.env.MINERU_TOKEN;
+        if (!MINERU_TOKEN) {
+            console.log('[E2E] MINERU_TOKEN not set, skipping MinerU PDF tests');
+            this.skip();
+        }
+
         // 配置 MinerU Token
         await browser.executeObsidian(async ({ app }, token: string) => {
             const plugin = app.plugins?.plugins?.['deepreader'] as any;

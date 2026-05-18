@@ -8,8 +8,8 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { NodeHtmlMarkdown } from 'node-html-markdown';
 
-const INPUT_JSON = '/Users/lizhao/workspace/DeepReader/MinerU_69fe2a55b93bb0732b1fe33c_The-Founders-Playbook-05062026_v3 (1)__20260518054415.json';
-const OUTPUT_DIR = '/Users/lizhao/workspace/DeepReader/.claude/worktrees/worktree-mineru-parser/playground/output';
+const INPUT_JSON = process.argv[2] || 'MinerU_69fe2a55b93bb0732b1fe33c_The-Founders-Playbook-05062026_v3 (1)__20260518054415.json';
+const OUTPUT_DIR = process.argv[3] || 'playground/output';
 const OUTPUT_TREE = `${OUTPUT_DIR}/tree.json`;
 const OUTPUT_PAGES = `${OUTPUT_DIR}/pages.json`;
 const OUTPUT_MD = `${OUTPUT_DIR}/output.md`;
