@@ -2,7 +2,7 @@
  * 微信读书笔记 — Markdown 渲染器
  *
  * 对齐 ExcerptService callout 格式：
- * - 高亮：> [!warning]+ 🟡 高亮
+ * - 高亮：> [!quote]+ 🟡 高亮
  * - 想法：> [!note]+ 💬 想法
  */
 import type { WereadNotebook, WereadHighlight, WereadReview } from '../types';
@@ -73,7 +73,7 @@ export function renderNotebook(notebook: WereadNotebook): string {
 			for (const h of chHighlights) {
 				const emoji = getColorEmoji(h.colorStyle);
 				sections.push('');
-				sections.push(`> [!warning]+ ${emoji} 高亮`);
+				sections.push(`> [!quote]+ ${emoji} 高亮`);
 				sections.push(`> ${h.markText}`);
 				if (h.reviewContent) {
 					sections.push(`> 💬 ${h.reviewContent}`);

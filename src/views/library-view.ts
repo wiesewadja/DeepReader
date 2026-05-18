@@ -20,6 +20,7 @@ import { ZLibraryClient } from '../zlibrary/client.js';
 import { buildZlibClient } from '../zlibrary/build-client.js';
 import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
+import { SyncStateManager } from '../weread/sync/state.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -1241,6 +1242,15 @@ export class LibraryView extends ItemView {
                 this.renderGrid();
 
                 try {
+                    // 微信读书书籍：加入排除列表，后续同步跳过
+                    if (index.fileType === 'weread') {
+                        const adapter = (this.app as any).vault?.adapter;
+                        if (adapter) {
+                            const stateManager = new SyncStateManager(adapter);
+                            await stateManager.excludeBook(index.id);
+                        }
+                    }
+
                     // Delegate actual deletion to parent (sidebar-view.handleDeleteIndex)
                     // which handles file cleanup AND UI reset for the reading panel
                     if (this.options.onDeleteIndex) {

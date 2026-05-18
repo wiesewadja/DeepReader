@@ -106,17 +106,22 @@ export interface WereadReviewResponse {
 	synckey?: number;
 }
 
-/** 评论原始条目 */
+/** 评论原始条目 — 网关返回嵌套结构 reviews[].review.{content,...} */
 export interface WereadReviewItem {
 	reviewId: string;
-	content: string;
-	htmlContent?: string;
-	chapterUid?: number;
-	chapterName?: string;
-	range?: string;
-	createTime: number;
-	type: number;  // 1=章节评论, 4=全书评论
-	abstract?: string;
+	review: {
+		reviewId?: string;
+		type?: number;
+		content?: string;
+		htmlContent?: string;
+		chapterUid?: number;
+		chapterIdx?: number;
+		chapterName?: string;
+		chapterTitle?: string;
+		range?: string;
+		createTime?: number;
+		abstract?: string;
+	};
 }
 
 /** /book/chapterinfo 响应 — 网关返回顶层 chapters 数组 */
@@ -240,6 +245,8 @@ export interface WereadNotebook {
 export interface WereadSyncState {
 	lastSyncTime: number;
 	syncedBooks: Record<string, WereadSyncedBookEntry>;
+	/** 已手动删除的书籍 ID，同步时跳过 */
+	excludedBooks: string[];
 }
 
 /** 已同步书籍条目 */
