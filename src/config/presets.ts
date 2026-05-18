@@ -27,12 +27,27 @@ export interface ProviderPreset {
  */
 export const PRESETS: ProviderPreset[] = [
 	{
+		id: 'xiaomi-token-plan',
+		label: '小米 MIMO',
+		description: '订阅制全模态，一个 Key 搞定对话+TTS（embedding/reranker/图片生成需其他服务商）',
+		provider: 'xiaomi',
+		free: false,
+		recommended: true,
+		website: 'https://platform.xiaomimimo.com',
+		roleAssignments: {
+			chat: 'mimo-v2.5',
+			router: 'mimo-v2-flash',
+			pageindex: 'mimo-v2.5',
+			proposition: 'mimo-v2.5',
+			embedding: 'BAAI/bge-m3',
+		},
+	},
+	{
 		id: 'siliconflow-all',
 		label: '硅基流动 · 全功能',
 		description: '一个 Key 搞定对话、语义搜索、智能排序',
 		provider: 'siliconflow',
 		free: true,
-		recommended: true,
 		website: 'https://cloud.siliconflow.cn',
 		roleAssignments: {
 			chat: 'Qwen/Qwen3-8B',
@@ -52,20 +67,6 @@ export const PRESETS: ProviderPreset[] = [
 			chat: 'deepseek-chat',
 			router: 'deepseek-chat',
 			pageindex: 'deepseek-chat',
-		},
-	},
-	{
-		id: 'zhipu-balanced',
-		label: '智谱 · 均衡',
-		description: '免费向量化 + 低成本对话',
-		provider: 'zhipu',
-		free: true,
-		website: 'https://open.bigmodel.cn',
-		roleAssignments: {
-			chat: 'glm-4-flash',
-			router: 'glm-4-flash',
-			pageindex: 'glm-4-flash',
-			embedding: 'embedding-3',
 		},
 	},
 	{

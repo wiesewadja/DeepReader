@@ -29,7 +29,7 @@ describe('TTSClient', () => {
 		});
 	});
 
-	it('应该使用 MiMo-V2.5-TTS 模型', async () => {
+	it('应该使用 mimo-v2.5-tts 模型', async () => {
 		(global.fetch as any).mockResolvedValue(mockV25Response());
 
 		await client.synthesize('你好', {
@@ -38,7 +38,7 @@ describe('TTSClient', () => {
 
 		const callArgs = (global.fetch as any).mock.calls[0][1];
 		const body = JSON.parse(callArgs.body);
-		expect(body.model).toBe('MiMo-V2.5-TTS');
+		expect(body.model).toBe('mimo-v2.5-tts');
 	});
 
 	it('应该将 voiceProfile 中的音色传给 API', async () => {

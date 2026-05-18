@@ -112,7 +112,7 @@ describe('PROVIDER_CONFIGS', () => {
 describe('xiaomi provider + tts role', () => {
 	it('xiaomi 应该在 PROVIDER_CONFIGS 中有 tts capability', () => {
 		expect(PROVIDER_CONFIGS.xiaomi.capabilities.tts).toBe(true);
-		expect(PROVIDER_CONFIGS.xiaomi.capabilities.chat).toBe(false);
+		expect(PROVIDER_CONFIGS.xiaomi.capabilities.chat).toBe(true);
 	});
 
 	it('tts 角色应该映射到 tts capability', () => {
@@ -128,12 +128,12 @@ describe('xiaomi provider + tts role', () => {
 	it('resolveRoleConfig 对 tts 角色返回配置当已配置时', () => {
 		const settings = { ...DEFAULT_SETTINGS };
 		settings.providers = { ...DEFAULT_SETTINGS.providers, xiaomi: { apiKey: 'test-key' } };
-		settings.roles = { ...DEFAULT_SETTINGS.roles, tts: { provider: 'xiaomi', model: 'mimo-v2-tts' } };
+		settings.roles = { ...DEFAULT_SETTINGS.roles, tts: { provider: 'xiaomi', model: 'mimo-v2.5-tts' } };
 		const result = resolveRoleConfig('tts', settings);
 		expect(result).not.toBeNull();
 		expect(result!.apiKey).toBe('test-key');
-		expect(result!.model).toBe('mimo-v2-tts');
-		expect(result!.baseUrl).toBe('https://api.xiaomimimo.com/v1');
+		expect(result!.model).toBe('mimo-v2.5-tts');
+		expect(result!.baseUrl).toBe('https://token-plan-cn.xiaomimimo.com/v1');
 	});
 
 	it('getAvailableProvidersForRole 过滤 tts 角色', () => {

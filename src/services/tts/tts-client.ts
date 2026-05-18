@@ -17,7 +17,12 @@ export interface TTSOptions {
     styleText?: string;
 }
 
-export class TTSClient {
+export interface ITTSSynthesizer {
+    synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer>;
+    synthesizeStream(text: string, options: TTSOptions): AsyncGenerator<ArrayBuffer>;
+}
+
+export class TTSClient implements ITTSSynthesizer {
     #apiKey: string;
     private baseUrl: string;
     private model: string;
@@ -25,7 +30,7 @@ export class TTSClient {
     constructor(options: TTSClientOptions) {
         this.#apiKey = options.apiKey;
         this.baseUrl = options.baseUrl;
-        this.model = options.model || 'MiMo-V2.5-TTS';
+        this.model = options.model || 'mimo-v2.5-tts';
     }
 
     async synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer> {

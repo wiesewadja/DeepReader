@@ -6,10 +6,23 @@ describe('Presets', () => {
 		expect(PRESETS).toHaveLength(4);
 	});
 
-	it('siliconflow-all should be recommended', () => {
+	it('xiaomi-token-plan should be the first and recommended', () => {
+		const mm = getPresetById('xiaomi-token-plan')!;
+		expect(PRESETS[0].id).toBe('xiaomi-token-plan');
+		expect(mm.recommended).toBe(true);
+		expect(mm.free).toBe(false);
+		expect(mm.provider).toBe('xiaomi');
+		expect(mm.roleAssignments.chat).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.router).toBe('mimo-v2-flash');
+		expect(mm.roleAssignments.pageindex).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.proposition).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.embedding).toBe('BAAI/bge-m3');
+	});
+
+	it('siliconflow-all should not be recommended anymore', () => {
 		const sf = getPresetById('siliconflow-all');
 		expect(sf).toBeDefined();
-		expect(sf!.recommended).toBe(true);
+		expect(sf!.recommended).toBeUndefined();
 		expect(sf!.free).toBe(true);
 		expect(sf!.provider).toBe('siliconflow');
 	});

@@ -36,6 +36,7 @@ export function renderModelSection(
       }
       onRerender();
     },
+    onRerender,
   };
 
   // 核心服务
@@ -58,6 +59,7 @@ export function renderModelSection(
     { role: 'embedding', label: '向量化', desc: '用于语义搜索的向量嵌入（禁用则降级 BM25）' },
     { role: 'reranker', label: '重排序', desc: '对搜索结果进行精细重排（禁用则不重排）' },
     { role: 'tts', label: '语音播报', desc: 'AI 语音合成播报（禁用则无语音功能）' },
+    { role: 'imagegen', label: '图片生成', desc: '信息图/插画生成（禁用则使用默认生图服务）' },
   ];
   for (const { role, label, desc } of optionalRoles) {
     createRoleCard(enhanceCard, role, label, desc, true, roleCtx);

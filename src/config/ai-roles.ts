@@ -17,6 +17,7 @@ export const ROLE_CAPABILITY: Record<RoleType, RequiredCapability> = {
 	embedding: 'embedding',
 	reranker: 'reranker',
 	tts: 'tts',
+	imagegen: 'imagegen',
 };
 
 /** 第一层：服务商账号信息 */
@@ -24,6 +25,8 @@ export interface AIProviderAccount {
 	apiKey: string;
 	baseUrl?: string;          // 自定义服务商必填
 	name?: string;             // 显示名称（自定义服务商用）
+	fallbackApiKey?: string;   // Xiaomi MIMO API Key（可选，Token Plan 欠费时自动切换）
+	fallbackBaseUrl?: string;  // Xiaomi MIMO URL（可选）
 }
 
 /** 第二层：某用途角色的服务商和模型配置 */
@@ -35,7 +38,7 @@ export interface AIRoleConfig {
 	disableThinking?: boolean;    // undefined=自动检测, true=强制禁用, false=不禁用
 }
 
-/** 七种用途角色的完整配置 */
+/** 八种用途角色的完整配置 */
 export interface AIRoles {
 	chat: AIRoleConfig;                    // 必填
 	router: AIRoleConfig;                  // 必填
@@ -44,11 +47,12 @@ export interface AIRoles {
 	embedding: AIRoleConfig | null;        // null = 禁用，降级 BM25
 	reranker: AIRoleConfig | null;         // null = 禁用重排序
 	tts: AIRoleConfig | null;              // null = 禁用语音合成
+	imagegen: AIRoleConfig | null;         // null = 禁用图片生成
 }
 
 /** 判断是否为固定服务商（非自定义） */
 export function isBuiltInProvider(id: string): id is ProviderType {
 	return id in ({} as Record<ProviderType, unknown>) && [
-		'deepseek', 'kimi', 'zhipu', 'minimax', 'siliconflow', 'openai', 'xiaomi',
+		'minimax', 'deepseek', 'kimi', 'siliconflow', 'openai', 'xiaomi', 'sensenova',
 	].includes(id);
 }

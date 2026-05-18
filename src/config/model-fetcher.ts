@@ -8,7 +8,7 @@
 
 import type { ProviderType } from './providers';
 import type { AIProviderAccount } from './ai-roles';
-import { PROVIDER_CONFIGS, normalizeBaseUrl } from './providers';
+import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS } from './providers';
 import { safeRequest } from '../utils/safe-request.js';
 
 export interface FetchModelsResult {
@@ -30,11 +30,18 @@ const TIMEOUT_MS = 10_000;
  * 从服务商 API 获取可用模型列表
  *
  * base URL 通过 normalizeBaseUrl 自动规范化（补 /v1），然后请求 /models。
+ * 支持按能力维度（capability）筛选：TTS 角色查询 MiniMax 时返回硬编码的 TTS 模型列表。
  */
 export async function fetchModels(
 	provider: string,
 	account: AIProviderAccount,
+	capability?: string,
 ): Promise<FetchModelsResult> {
+	// MiniMax TTS 模型列表：/v1/models 不返回非文本模型
+	if (provider === 'minimax' && capability === 'tts') {
+		return { success: true, models: [...MINIMAX_TTS_MODELS] };
+	}
+
 	const config = PROVIDER_CONFIGS[provider as ProviderType];
 
 	// 固定服务商检查能力，自定义服务商默认支持
@@ -105,32 +112,48 @@ export async function fetchModels(
  * 测试 API 连接和模型可用性
  *
  * 发送一个最小的 API 请求，验证 base URL、API Key、模型名是否正确。
- * chat 角色测试 /chat/completions，embedding 角色测试 /embeddings。
+ * chat 角色测试 /chat/completions，embedding 角色测试 /embeddings，tts 角色测试 /t2a_v2。
  */
 export async function testConnection(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
-	endpoint: 'chat' | 'embedding' = 'chat',
+	endpoint: 'chat' | 'embedding' | 'tts' = 'chat',
 ): Promise<TestConnectionResult> {
 	if (!apiKey) return { success: false, latencyMs: 0, error: 'API Key 未配置' };
 	if (!model) return { success: false, latencyMs: 0, error: '模型名未填写' };
 
 	const normalizedUrl = normalizeBaseUrl(baseUrl || '');
-	const isEmbedding = endpoint === 'embedding';
-	const url = `${normalizedUrl}/${isEmbedding ? 'embeddings' : 'chat/completions'}`;
 
 	const t0 = Date.now();
 	try {
+		let url: string;
+		let body: string;
+
+		if (endpoint === 'tts') {
+			url = `${normalizedUrl}/t2a_v2`;
+			body = JSON.stringify({
+				model,
+				text: '测试',
+				stream: false,
+				voice_setting: { voice_id: 'female-tianmei', speed: 1, vol: 1, pitch: 0 },
+				audio_setting: { format: 'mp3', sample_rate: 32000, channel: 1 },
+			});
+		} else {
+			const isEmbedding = endpoint === 'embedding';
+			url = `${normalizedUrl}/${isEmbedding ? 'embeddings' : 'chat/completions'}`;
+			body = isEmbedding
+				? JSON.stringify({ model, input: 'hello' })
+				: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 });
+		}
+
 		const response = await Promise.race([
 			safeRequest({
 				url,
 				method: 'POST',
 				contentType: 'application/json',
 				headers: { Authorization: `Bearer ${apiKey}` },
-				body: isEmbedding
-					? JSON.stringify({ model, input: 'hello' })
-					: JSON.stringify({ model, messages: [{ role: 'user', content: 'hi' }], max_tokens: 1 }),
+				body,
 			}),
 			new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('请求超时（15秒）')), 15_000),
@@ -149,15 +172,22 @@ export async function testConnection(
 
 		if (response.status >= 400) {
 			const data = response.json;
-			const msg = data?.error?.message || data?.message || response.text?.slice(0, 200) || `HTTP ${response.status}`;
+			const msg = data?.base_resp?.status_msg || data?.error?.message || data?.message || response.text?.slice(0, 200) || `HTTP ${response.status}`;
 			return { success: false, latencyMs, error: msg };
 		}
 
-		const data = response.json as { model?: string };
+		const data = response.json as Record<string, unknown>;
+		if (endpoint === 'tts') {
+			const baseResp = data?.base_resp as Record<string, unknown> | undefined;
+			if (baseResp && baseResp.status_code !== 0) {
+				return { success: false, latencyMs, error: String(baseResp.status_msg || 'TTS 接口返回错误') };
+			}
+			return { success: true, latencyMs, model };
+		}
 		return {
 			success: true,
 			latencyMs,
-			model: data?.model || model,
+			model: (data as { model?: string })?.model || model,
 		};
 	} catch (error) {
 		const latencyMs = Date.now() - t0;

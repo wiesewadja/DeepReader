@@ -24,6 +24,10 @@ export interface LLMClientOptions {
   providerName?: string;
   /** 禁用思考过程：undefined=自动检测, true=强制禁用, false=不禁用 */
   disableThinking?: boolean;
+  /** Xiaomi MIMO API Key（可选，Token Plan 欠费时自动切换） */
+  fallbackApiKey?: string;
+  /** Xiaomi MIMO URL（可选） */
+  fallbackBaseUrl?: string;
 }
 
 /**
@@ -68,6 +72,8 @@ export class LLMClient {
   private model: string;
   private providerName: string;
   private disableThinking?: boolean;
+  private fallbackApiKey?: string;
+  private fallbackBaseUrl?: string;
 
   constructor(options: LLMClientOptions) {
     this.#apiKey = options.apiKey;
@@ -75,6 +81,8 @@ export class LLMClient {
     this.model = options.model || 'deepseek-chat';
     this.providerName = options.providerName || 'Unknown';
     this.disableThinking = options.disableThinking;
+    this.fallbackApiKey = options.fallbackApiKey;
+    this.fallbackBaseUrl = options.fallbackBaseUrl ? normalizeBaseUrl(options.fallbackBaseUrl) : undefined;
   }
 
   /**
@@ -181,7 +189,7 @@ export class LLMClient {
 
     try {
       const fetchStart = performance.now();
-      const response = await fetchWithCorsFallback(apiUrl, {
+      let response = await fetchWithCorsFallback(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -202,16 +210,53 @@ export class LLMClient {
       agentLog(`[LLM] ⏱️ 请求响应: ${ttfb.toFixed(0)}ms (TTFB)`);
 
       if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = `API returned ${response.status}`;
-        try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
-        } catch {
-          errorMessage = errorText || errorMessage;
+        // Xiaomi Token Plan 失败，尝试 fallback
+        if (this.fallbackApiKey && this.fallbackBaseUrl) {
+          agentLog(`[LLM] ⚠️ Token Plan 请求失败 (${response.status})，切换到 MIMO API 重试`);
+          const fallbackUrl = `${this.fallbackBaseUrl}/chat/completions`;
+          const fallbackResponse = await fetchWithCorsFallback(fallbackUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.fallbackApiKey}`,
+            },
+            body: JSON.stringify({
+              model: this.model,
+              messages: cleanedMessages,
+              tools: tools.length > 0 ? tools : undefined,
+              stream: true,
+              ...disableThinkingParams,
+            }),
+            signal: controller.signal,
+          });
+
+          if (fallbackResponse.ok) {
+            agentLog(`[LLM] ✅ MIMO API 请求成功`);
+            response = fallbackResponse;
+          } else {
+            const errorText = await fallbackResponse.text();
+            let errorMessage = `API returned ${fallbackResponse.status}`;
+            try {
+              const errorJson = JSON.parse(errorText);
+              errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+            } catch {
+              errorMessage = errorText || errorMessage;
+            }
+            callbacks.onError(errorMessage);
+            return controller;
+          }
+        } else {
+          const errorText = await response.text();
+          let errorMessage = `API returned ${response.status}`;
+          try {
+            const errorJson = JSON.parse(errorText);
+            errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+          } catch {
+            errorMessage = errorText || errorMessage;
+          }
+          callbacks.onError(errorMessage);
+          return controller;
         }
-        callbacks.onError(errorMessage);
-        return controller;
       }
 
       if (!response.body) {

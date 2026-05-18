@@ -50,6 +50,38 @@ export function setProviderAccount(
   asProviders(providers)[providerId] = { ...existing, ...patch };
 }
 
+export function debounce<T extends (...args: unknown[]) => unknown>(
+  fn: T,
+  delay: number,
+): (this: unknown, ...args: Parameters<T>) => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return function (this: unknown, ...args: Parameters<T>) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+    }, delay);
+  };
+}
+
+export function debounceAsync<T extends (...args: unknown[]) => Promise<unknown>>(
+  fn: T,
+  delay: number,
+): (this: unknown, ...args: Parameters<T>) => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: Promise<unknown> | null = null;
+  return function (this: unknown, ...args: Parameters<T>) {
+    if (timer) clearTimeout(timer);
+    pending = new Promise(resolve => {
+      timer = setTimeout(async () => {
+        timer = null;
+        pending = null;
+        await fn.apply(this, args);
+        resolve(undefined);
+      }, delay);
+    });
+  };
+}
+
 export function validateBaseUrl(url: string): { valid: boolean; error?: string } {
   if (!url.trim()) return { valid: true };
   try {

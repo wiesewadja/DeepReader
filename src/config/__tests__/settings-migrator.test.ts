@@ -108,7 +108,7 @@ describe('settings-migrator', () => {
 			};
 			const result = migrateSettings(raw, makeDefaults());
 			const legacyFields = [
-				'deepseekApiKey', 'kimiApiKey', 'zhipuApiKey', 'openaiApiKey', 'customApiKey',
+				'deepseekApiKey', 'kimiApiKey', 'openaiApiKey', 'customApiKey',
 				'apiUrl', 'llmProvider', 'llmModel',
 				'fastModelEnabled', 'fastModelProvider', 'fastModelName', 'fastModelApiUrl',
 				'embedding', 'reranker', 'propositions',

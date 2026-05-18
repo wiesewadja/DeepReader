@@ -1,10 +1,10 @@
 import type { BookGenre } from './book-genre-detector.js';
 
 export interface VoiceProfile {
-  /** 音色 ID（冰糖 = 中文年轻女声） */
+  /** 音色 ID（Xiaomi: 冰糖/茉莉/苏打/白桦; MiniMax: voice_id） */
   voice: string;
   /**
-   * V2.5 音频风格标签，放在 assistant content 最前面
+   * V2.5 音频风格标签（仅 Xiaomi），放在 assistant content 最前面
    * 格式：(风格1 风格2 风格3)
    * 控制整体朗读的音色、情感和节奏
    */
@@ -13,6 +13,8 @@ export interface VoiceProfile {
   speedHint: string;
   /** 情感基调描述（嵌入导演模式「指导」部分） */
   moodHint: string;
+  /** TTS 提供商，用于区分 voice 字段解释方式 */
+  provider?: string;
 }
 
 /**
@@ -69,31 +71,38 @@ function resolveMoodHint(mood: string): string {
   return hints[mood] || '整体语调自然平和。';
 }
 
+const XIAOMI_DEFAULT_VOICE = '冰糖';
+const MINIMAX_DEFAULT_VOICE_ID = 'female-tianmei';
+
 /**
  * 根据书籍类型生成最佳音色配置
  *
  * V2.5 策略：固定使用 冰糖（中文年轻女声），通过音频标签和导演模式控制风格
+ * MiniMax 策略：使用系统音色 female-shensi-ziran，后续可通过 Voice Design API 设计专属音色
  *
- * 内置音色：冰糖（中文女声，年轻清亮）
  * 风格控制：
- *   - 音频标签 (audioTag)：放在 assistant content 前面，控制音色/情感/节奏
+ *   - 音频标签 (audioTag)：放在 assistant content 前面，控制音色/情感/节奏（仅 Xiaomi）
  *   - 导演模式 (styleText)：放在 user message，定义角色/场景/指导
  */
-export function resolveVoiceProfile(genre: BookGenre): VoiceProfile {
+export function resolveVoiceProfile(genre: BookGenre, provider?: string): VoiceProfile {
   const mood = genre.mood || 'neutral';
+  const isMinimax = provider === 'minimax';
   return {
-    voice: '冰糖',
-    audioTag: resolveAudioTag(mood),
+    voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE,
+    audioTag: isMinimax ? '' : resolveAudioTag(mood),
     speedHint: resolveSpeedHint(mood),
     moodHint: resolveMoodHint(mood),
+    provider,
   };
 }
 
-export function getDefaultVoiceProfile(): VoiceProfile {
+export function getDefaultVoiceProfile(provider?: string): VoiceProfile {
+  const isMinimax = provider === 'minimax';
   return {
-    voice: '冰糖',
-    audioTag: '(清亮 活泼 书卷气)',
+    voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE,
+    audioTag: isMinimax ? '' : '(清亮 活泼 书卷气)',
     speedHint: '语速中等偏快，清晰自然。',
     moodHint: '整体语调自然平和，不疾不徐。',
+    provider,
   };
 }

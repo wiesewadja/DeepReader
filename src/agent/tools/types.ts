@@ -55,13 +55,13 @@ export interface ToolContext {
   /** 插件实例（用于访问设置和画像构建器） */
   plugin?: DeepReaderPlugin;
   /** TTS 配置（用于 VoicePipeline 语音合成） */
-  ttsConfig?: { apiKey: string; baseUrl: string; model?: string };
+  ttsConfig?: { apiKey: string; baseUrl: string; model?: string; provider?: string };
   /** LLM 配置（用于 VoicePipeline 语音摘要生成） */
   llmConfig?: { apiKey: string; baseUrl: string; model?: string };
   /** 用户笔记目录（配置后启用 search_journal 工具） */
   journalDir?: string;
   /** 信息图生成配置（配置后启用 generate_infographic 工具） */
-  infographicConfig?: { apiKey: string; relativeDir: string; vaultAdapter: FileSystemAdapter };
+  infographicConfig?: { apiKey: string; baseUrl?: string; model?: string; relativeDir: string; vaultAdapter: FileSystemAdapter };
   /** 是否启用苏格拉底模式（S2→S4 之间插入 filter 节点） */
   isSocratic?: boolean;
   /** 是否为主动引导模式（只问问题，不回答） */

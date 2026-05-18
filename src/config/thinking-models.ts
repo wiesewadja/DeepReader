@@ -7,6 +7,7 @@
 
 /** 已知的思考模型关键词（小写匹配） */
 const THINKING_MODEL_PATTERNS = [
+	'minimax-m2',
 	'mimo',
 	'deepseek-v4',
 	'deepseek-reasoner',

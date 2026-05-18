@@ -15,6 +15,7 @@ interface RoleCardContext {
   plugin: DeepPDFPlugin;
   expandedSections: Set<string>;
   onToggle: (sectionId: string) => void;
+  onRerender?: () => void;
 }
 
 function buildSummaryLine(roleConfig: { provider: string; model: string } | null, settings: any): string {
@@ -138,7 +139,14 @@ export function createRoleContent(
     .setName('服务商')
     .setDesc(availableProviders.length === 0 ? '没有已配置的服务商，请先在上方填写 API Key' : '')
     .addDropdown(dropdown => {
+      const requiredCap = ROLE_CAPABILITY[role];
       const allProviders = new Set<string>([...availableProviders, currentProvider]);
+      // 加入所有具备该能力的内置服务商（即使未填 Key，方便用户发现和配置）
+      for (const [id, config] of Object.entries(PROVIDER_CONFIGS)) {
+        if (config.capabilities[requiredCap as keyof typeof config.capabilities]) {
+          allProviders.add(id);
+        }
+      }
       for (const p of allProviders) {
         const hasKey = !!(settings.providers as Record<string, unknown>)[p] &&
           !!((settings.providers as Record<string, unknown>)[p] as { apiKey?: string })?.apiKey;
@@ -151,8 +159,8 @@ export function createRoleContent(
         setRoleConfig(roles, role, { provider: value, model: dm });
         ctx.plugin.resetFrontendAgent();
         await ctx.plugin.saveSettings();
-        if (modelTextComp) modelTextComp.setValue(dm);
         updateSummary(summaryEl, role, ctx.plugin);
+        ctx.onRerender?.();
       });
     });
 
@@ -184,52 +192,28 @@ export function createRoleContent(
     });
 
   const currentAccount = (settings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
-  if (currentAccount?.apiKey) {
-    modelSetting.addExtraButton(btn => btn
-      .setIcon('plug')
-      .setTooltip('测试连接')
-      .onClick(async () => {
-        const freshSettings = ctx.plugin.settings;
-        const freshAccount = (freshSettings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
-        const freshRole = getRoleConfig(freshSettings.roles, role);
-        const currentModel = freshRole?.model;
-        if (!currentModel) {
-          new Notice('请先填写模型名称');
-          return;
-        }
-        btn.setDisabled(true);
-        btn.setIcon('loader');
-        const { testConnection } = await import('../../config/model-fetcher');
-        const builtInConfig = PROVIDER_CONFIGS[currentProvider as ProviderType];
-        const effectiveBaseUrl = freshAccount?.baseUrl || builtInConfig?.baseUrl || '';
-        const result = await testConnection(
-          effectiveBaseUrl,
-          freshAccount?.apiKey || '',
-          currentModel,
-          role === 'embedding' ? 'embedding' : 'chat',
-        );
-        btn.setDisabled(false);
-        btn.setIcon('plug');
-        if (result.success) {
-          new Notice(`✓ 连接成功 (${result.latencyMs}ms) — ${result.model || currentModel}`);
-        } else {
-          new Notice(`✗ 连接失败: ${result.error}`);
-        }
-      }));
-  }
 
   if (supportsModelList) {
     const account = (settings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
     if (account?.apiKey) {
+      const switchToText = () => {
+        modelSetting.controlEl.empty();
+        const cur = getRoleConfig(ctx.plugin.settings.roles, role)?.model || '';
+        modelTextComp?.setValue(cur);
+        if (modelTextComp) modelSetting.controlEl.appendChild(modelTextComp.inputEl);
+      };
+
+      const onModelChange = (model: string) => {
+        setRoleConfig(roles, role, { model });
+        ctx.plugin.resetFrontendAgent();
+        ctx.plugin.saveSettings();
+        updateSummary(summaryEl, role, ctx.plugin);
+      };
+
       // If cached, render select directly instead of text input
       const cached = modelListCache.get(currentProvider);
       if (cached && cached.length > 0) {
-        renderModelSelect(modelSetting.controlEl, cached, oldModel, (model) => {
-          setRoleConfig(roles, role, { model });
-          ctx.plugin.resetFrontendAgent();
-          ctx.plugin.saveSettings();
-          updateSummary(summaryEl, role, ctx.plugin);
-        });
+        renderModelSelect(modelSetting.controlEl, cached, oldModel, onModelChange, switchToText);
       }
 
       // Refresh button always available
@@ -239,7 +223,7 @@ export function createRoleContent(
         .onClick(async () => {
           btn.setDisabled(true);
           const { fetchModels } = await import('../../config/model-fetcher');
-          const result = await fetchModels(currentProvider, account as any);
+          const result = await fetchModels(currentProvider, account as any, ROLE_CAPABILITY[role]);
           btn.setDisabled(false);
           if (result.success && result.models.length > 0) {
             modelListCache.set(currentProvider, result.models);
@@ -251,7 +235,7 @@ export function createRoleContent(
               ctx.plugin.resetFrontendAgent();
               await ctx.plugin.saveSettings();
               updateSummary(summaryEl, role, ctx.plugin);
-            });
+            }, switchToText);
 
             const selectedValue = curModel && result.models.includes(curModel)
               ? curModel
@@ -270,6 +254,45 @@ export function createRoleContent(
           }
         }));
     }
+  }
+
+  if (currentAccount?.apiKey) {
+    new Setting(row)
+      .setName('连接测试')
+      .setDesc('验证当前服务商、API Key 和模型名称是否可用')
+      .addButton(btn => btn
+        .setButtonText('测试连接')
+        .setCta()
+        .onClick(async () => {
+          const freshSettings = ctx.plugin.settings;
+          const freshAccount = (freshSettings.providers as Record<string, unknown>)[currentProvider] as { apiKey?: string; baseUrl?: string } | undefined;
+          const freshRole = getRoleConfig(freshSettings.roles, role);
+          const currentModel = freshRole?.model;
+          if (!currentModel) {
+            new Notice('请先填写模型名称');
+            return;
+          }
+          btn.setDisabled(true);
+          btn.setButtonText('测试中...');
+          const { testConnection } = await import('../../config/model-fetcher');
+          const builtInConfig = PROVIDER_CONFIGS[currentProvider as ProviderType];
+          const effectiveBaseUrl = freshAccount?.baseUrl || builtInConfig?.baseUrl || '';
+          const capability = ROLE_CAPABILITY[role];
+          const endpoint = capability === 'tts' ? 'tts' : capability === 'embedding' ? 'embedding' : 'chat';
+          const result = await testConnection(
+            effectiveBaseUrl,
+            freshAccount?.apiKey || '',
+            currentModel,
+            endpoint,
+          );
+          btn.setDisabled(false);
+          btn.setButtonText('测试连接');
+          if (result.success) {
+            new Notice(`✓ 连接成功 (${result.latencyMs}ms) — ${result.model || currentModel}`);
+          } else {
+            new Notice(`✗ 连接失败: ${result.error}`);
+          }
+        }));
   }
 
   if (ROLE_CAPABILITY[role] === 'chat') {
@@ -316,6 +339,7 @@ function renderModelSelect(
   models: string[],
   currentModel: string,
   onChange: (model: string) => void,
+  onManual?: () => void,
 ): void {
   controlEl.empty();
   const select = controlEl.createEl('select', { cls: 'dropdown' });
@@ -327,8 +351,15 @@ function renderModelSelect(
     const opt = select.createEl('option', { text: `${currentModel} (自定义)` });
     opt.value = currentModel;
   }
-  select.value = currentModel || models[0];
-  select.addEventListener('change', () => onChange(select.value));
+  select.createEl('option', { text: '── 手动输入其他模型 ──' }).value = '__manual__';
+  select.value = currentModel || models[0] || '__manual__';
+  select.addEventListener('change', () => {
+    if (select.value === '__manual__') {
+      onManual?.();
+    } else {
+      onChange(select.value);
+    }
+  });
 }
 
 // Cache fetched model lists per provider with 30-minute TTL

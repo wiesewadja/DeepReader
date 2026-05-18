@@ -16,6 +16,7 @@ export interface ProviderCapabilities {
 	embedding: boolean;
 	reranker: boolean;
 	tts?: boolean;
+	imagegen?: boolean;
 }
 
 export interface ProviderConfig {
@@ -24,7 +25,7 @@ export interface ProviderConfig {
 	/** @deprecated 仅迁移模块内部使用，迁移完成后删除 */
 	legacyApiKeyField?: keyof DeepPDFSettings;
 	website?: string;
-	supportsModelList?: boolean;         // false = minimax/custom，展示文本输入
+	supportsModelList?: boolean;         // false = custom，展示文本输入
 	capabilities: ProviderCapabilities;
 }
 
@@ -32,9 +33,15 @@ export interface ProviderConfig {
  * 各服务商的预设配置
  */
 export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
+	minimax: {
+		baseUrl: 'https://api.minimaxi.com/v1',
+		defaultModel: 'MiniMax-M2.7',
+		supportsModelList: true,
+		capabilities: { chat: true, embedding: true, reranker: false, tts: true, imagegen: true },
+	},
 	deepseek: {
 		baseUrl: 'https://api.deepseek.com',
-		defaultModel: 'deepseek-chat',
+		defaultModel: 'deepseek-v4-flash',
 		legacyApiKeyField: 'deepseekApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
@@ -45,19 +52,6 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		legacyApiKeyField: 'kimiApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
-	},
-	zhipu: {
-		baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-		defaultModel: 'glm-4-flash',
-		legacyApiKeyField: 'zhipuApiKey',
-		supportsModelList: true,
-		capabilities: { chat: true, embedding: true, reranker: false },
-	},
-	minimax: {
-		baseUrl: 'https://api.minimax.chat/v1',
-		defaultModel: 'MiniMax-Text-01',
-		supportsModelList: false,
-		capabilities: { chat: true, embedding: true, reranker: false },
 	},
 	siliconflow: {
 		baseUrl: 'https://api.siliconflow.cn/v1',
@@ -73,16 +67,22 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},
 	xiaomi: {
-		baseUrl: 'https://api.xiaomimimo.com/v1',
-		defaultModel: 'MiMo-V2.5-TTS',
-		supportsModelList: false,
-		capabilities: { chat: false, embedding: false, reranker: false, tts: true },
+		baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+		defaultModel: 'mimo-v2.5',
+		supportsModelList: true,
+		capabilities: { chat: true, embedding: false, reranker: false, tts: true, imagegen: false },
+	},
+	sensenova: {
+		baseUrl: 'https://token.sensenova.cn/v1',
+		defaultModel: 'sensenova-u1-fast',
+		supportsModelList: true,
+		capabilities: { chat: false, embedding: false, reranker: false, imagegen: true },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl
 		defaultModel: '',
 		legacyApiKeyField: 'customApiKey',
-		supportsModelList: false,
+		supportsModelList: true,
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},
 };
@@ -118,7 +118,7 @@ export function normalizeBaseUrl(url: string): string {
 export function resolveRoleConfig(
 	role: RoleType,
 	settings: DeepPDFSettings,
-): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number; disableThinking?: boolean } | null {
+): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number; disableThinking?: boolean; fallbackApiKey?: string; fallbackBaseUrl?: string } | null {
 	const roleConfig = (settings.roles as unknown as Record<string, unknown>)?.[role];
 	if (!roleConfig || typeof roleConfig !== 'object') return null;
 
@@ -147,9 +147,42 @@ export function resolveRoleConfig(
 	const needsNormalize = !builtInConfig || (!!baseUrlOverride || !!(account as { baseUrl?: string }).baseUrl);
 	const baseUrl = (needsNormalize && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
 
-	const resolvedModel = model || builtInConfig?.defaultModel || '';
+	const defaultModel = role === 'tts' && provider === 'minimax'
+		? (MINIMAX_TTS_MODELS[0] || builtInConfig?.defaultModel || '')
+		: (builtInConfig?.defaultModel || '');
+	const resolvedModel = model || defaultModel;
 
-	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking };
+	// Xiaomi router: 有 fallbackKey 则 mimo-v2-flash 走 MIMO API，否则 mimo-v2.5 走 Token Plan
+	if (provider === 'xiaomi' && role === 'router') {
+		const fallbackKey = (account as { fallbackApiKey?: string }).fallbackApiKey;
+		if (fallbackKey) {
+			return {
+				apiKey: fallbackKey,
+				baseUrl: 'https://api.xiaomimimo.com/v1',
+				model: 'mimo-v2-flash',
+				provider,
+				embeddingBatchSize,
+				disableThinking,
+			};
+		}
+		// 无 fallbackKey → 走 Token Plan
+		return {
+			apiKey,
+			baseUrl: builtInConfig?.baseUrl || '',
+			model: 'mimo-v2.5',
+			provider,
+			embeddingBatchSize,
+			disableThinking,
+		};
+	}
+
+	// Xiaomi fallback：Token Plan 失败时使用 MIMO API
+	const fallbackApiKey = provider === 'xiaomi' ? (account as { fallbackApiKey?: string }).fallbackApiKey : undefined;
+	const fallbackBaseUrl = provider === 'xiaomi'
+		? ((account as { fallbackBaseUrl?: string }).fallbackBaseUrl || 'https://api.xiaomimimo.com/v1')
+		: undefined;
+
+	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking, fallbackApiKey, fallbackBaseUrl };
 }
 
 /**
@@ -287,13 +320,21 @@ export function getProviderConfig(
 /**
  * 服务商显示名称映射
  */
+/**
+ * MiniMax TTS 模型列表（/v1/models 不返回非文本模型，故硬编码）
+ */
+export const MINIMAX_TTS_MODELS = [
+  'speech-2.8-hd',
+  'speech-2.8-turbo',
+];
+
 export const PROVIDER_LABELS: Record<ProviderType, string> = {
+	minimax: 'MiniMax',
 	deepseek: 'DeepSeek',
 	kimi: 'Kimi (Moonshot)',
-	zhipu: '智谱 (GLM)',
-	minimax: 'MiniMax',
 	siliconflow: '硅基流动 (SiliconFlow)',
 	openai: 'OpenAI',
-	xiaomi: '小米 (Mimo)',
+	xiaomi: '小米 MIMO',
+	sensenova: '商汤 (SenseNova)',
 	custom: '自定义',
 };

@@ -164,9 +164,37 @@ export async function fetchWithCorsFallback(
 
 /**
  * 为 LangChain/OpenAI SDK 创建 CORS 安全的 fetch 函数
+ *
+ * 剥离 `x-stainless-*` 头：OpenAI SDK v6+ 自动注入这些遥测头，
+ * 但部分供应商（如 MiniMax）的 CORS 配置未允许它们，导致预检失败。
+ * 这些头不影响 API 功能，剥离后即可避免 CORS 问题。
  */
 export function createCorsSafeFetch(): (url: RequestInfo, init?: RequestInit) => Promise<Response> {
 	return async (url: RequestInfo, init?: RequestInit): Promise<Response> => {
-		return fetchWithCorsFallback(url.toString(), init || {});
+		const cleanedInit = init ? { ...init } : {};
+		if (cleanedInit.headers) {
+			if (cleanedInit.headers instanceof Headers) {
+				const cleaned = new Headers();
+				cleanedInit.headers.forEach((v, k) => {
+					if (!k.toLowerCase().startsWith('x-stainless-')) {
+						cleaned.set(k, v);
+					}
+				});
+				cleanedInit.headers = cleaned;
+			} else if (Array.isArray(cleanedInit.headers)) {
+				cleanedInit.headers = (cleanedInit.headers as [string, string][]).filter(
+					([k]) => !k.toLowerCase().startsWith('x-stainless-')
+				);
+			} else {
+				const record: Record<string, string> = {};
+				for (const [k, v] of Object.entries(cleanedInit.headers)) {
+					if (!k.toLowerCase().startsWith('x-stainless-')) {
+						record[k] = v;
+					}
+				}
+				cleanedInit.headers = record;
+			}
+		}
+		return fetchWithCorsFallback(url.toString(), cleanedInit);
 	};
 }

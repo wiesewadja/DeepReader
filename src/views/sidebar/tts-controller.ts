@@ -45,6 +45,7 @@ export class TTSController {
 			ttsApiKey: ttsConfig.apiKey,
 			ttsBaseUrl: ttsConfig.baseUrl,
 			ttsModel: ttsConfig.model,
+			ttsProvider: ttsConfig.provider,
 			llmApiKey: fastConfig.apiKey,
 			llmBaseUrl: fastConfig.baseUrl,
 			llmModel: fastConfig.model,

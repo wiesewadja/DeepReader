@@ -1,7 +1,8 @@
 import { Notice } from 'obsidian';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { TTSClient, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
+import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
+import { MiniMaxTTSClient } from './minimax-tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
 import { PCMStreamPlayer } from './pcm-stream-player.js';
 import { BookGenreDetector } from './book-genre-detector.js';
@@ -16,6 +17,7 @@ export interface TTSServiceConfig {
     ttsApiKey: string;
     ttsBaseUrl: string;
     ttsModel?: string;
+    ttsProvider: string;
     llmApiKey: string;
     llmBaseUrl: string;
     llmModel: string;
@@ -74,7 +76,7 @@ function stripWikiLinksForTTS(text: string): string {
 
 export class TTSService {
     private state: TTSPlayState = 'idle';
-    private client: TTSClient;
+    private client: ITTSSynthesizer;
     private summarizer: TTSSummarizer;
     private genreDetector: BookGenreDetector | null = null;
     private expressivePreprocessor: ExpressivePreprocessor;
@@ -103,13 +105,22 @@ export class TTSService {
     private currentAudio: HTMLAudioElement | null = null;
     /** 用于在 stop 时 reject 挂起的 playAudioAndWait promise，避免异步链泄漏 */
     private playbackReject: ((err: Error) => void) | null = null;
+    /** TTS 提供商 ID，用于决定音色选择策略 */
+    private ttsProvider: string;
 
     constructor(config: TTSServiceConfig) {
-        this.client = new TTSClient({
-            apiKey: config.ttsApiKey,
-            baseUrl: config.ttsBaseUrl,
-            model: config.ttsModel,
-        });
+        this.client = config.ttsProvider === 'minimax'
+            ? new MiniMaxTTSClient({
+                apiKey: config.ttsApiKey,
+                baseUrl: config.ttsBaseUrl,
+                model: config.ttsModel,
+            })
+            : new TTSClient({
+                apiKey: config.ttsApiKey,
+                baseUrl: config.ttsBaseUrl,
+                model: config.ttsModel,
+            });
+        this.ttsProvider = config.ttsProvider;
         this.summarizer = new TTSSummarizer({
             apiKey: config.llmApiKey,
             baseUrl: config.llmBaseUrl,
@@ -187,7 +198,7 @@ export class TTSService {
         }
 
         // Step 2: 解析音色配置
-        const voiceProfile = genre ? resolveVoiceProfile(genre) : getDefaultVoiceProfile();
+        const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider) : getDefaultVoiceProfile(this.ttsProvider);
 
         // Step 3: 构建缓存 key（包含音色指纹）
         const cacheKey = this.buildCacheKey(messageId, voiceProfile);
@@ -273,7 +284,7 @@ export class TTSService {
             }
 
             // 2. 解析音色配置
-            const voiceProfile = genre ? resolveVoiceProfile(genre) : getDefaultVoiceProfile();
+            const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider) : getDefaultVoiceProfile(this.ttsProvider);
 
             // 3. 检查缓存是否已存在
             const cacheKey = this.buildCacheKey(messageId, voiceProfile);
@@ -987,7 +998,7 @@ export class TTSService {
     ): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
         const cleanContent = stripWikiLinksForTTS(content);
         const summary = await this.summarizer.summarize(cleanContent, userQuestion, context);
-        const defaultProfile = getDefaultVoiceProfile();
+        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider);
         const audioBuffer = await this.client.synthesize(summary, this.buildTTSOptions(defaultProfile));
         const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
         return { audioBuffer, duration };
@@ -998,7 +1009,7 @@ export class TTSService {
      */
     async synthesizeRawText(text: string): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
         const cleanText = stripWikiLinksForTTS(text);
-        const defaultProfile = getDefaultVoiceProfile();
+        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider);
         const audioBuffer = await this.client.synthesize(cleanText, this.buildTTSOptions(defaultProfile));
         const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
         return { audioBuffer, duration };
@@ -1133,7 +1144,7 @@ export class TTSService {
         let fullSummary = '';
         let ttsStarted = false;
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
         let firstSentence = true;
 
         try {
@@ -1221,7 +1232,7 @@ export class TTSService {
         let sealDone = false;
         let lastSentProgress = -1;
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
         const taggedText = this.withAudioTag(text, voiceProfile);
 
         const startProgressTracking = () => {
@@ -1308,7 +1319,7 @@ export class TTSService {
 
         this.setState('tts_loading');
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile());
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
         const audioBuffer = await this.client.synthesize(this.withAudioTag(text, voiceProfile), ttsOptions);
 
         if (this.currentMessageId !== messageId) {

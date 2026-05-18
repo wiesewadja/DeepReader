@@ -22,11 +22,11 @@ const generateInfographicSchema = z.object({
 });
 
 export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
-  tool(
+    tool(
     async (args) => {
       const config = ctx.infographicConfig;
       if (!config?.apiKey) {
-        return '错误：信息图生成未配置。请在设置中填写 SenseNova API Key。';
+        return '错误：图片生成未配置。请在设置中配置 imagegen 角色或填写 SenseNova API Key。';
       }
       try {
         const result = await generateInfographic(config.apiKey, {
@@ -34,10 +34,12 @@ export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
           size: args.size || DEFAULT_INFOGRAPHIC_SIZE,
           relativeDir: config.relativeDir,
           vaultAdapter: config.vaultAdapter,
+          baseUrl: config.baseUrl,
+          model: config.model,
         });
         return `已生成信息图：\n\n![信息图](${result.relativePath})`;
       } catch (err) {
-        return `信息图生成失败: ${err instanceof Error ? err.message : String(err)}`;
+        return `图片生成失败: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
     {
