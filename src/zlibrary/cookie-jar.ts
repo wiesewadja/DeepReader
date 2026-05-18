@@ -30,6 +30,14 @@ export class CookieJar {
 		return this.cookies.has('remix_userid') && this.cookies.has('remix_userkey');
 	}
 
+	getUserId(): string {
+		return this.cookies.get('remix_userid') ?? '';
+	}
+
+	getUserKey(): string {
+		return this.cookies.get('remix_userkey') ?? '';
+	}
+
 	clear(): void {
 		this.cookies.clear();
 	}

@@ -4,7 +4,7 @@
  */
 import { safeRequest } from '../utils/safe-request';
 import { CookieJar } from './cookie-jar';
-import { DEFAULT_DOMAINS, EAPI_HEADERS, EAPI_TIMEOUT } from './constants';
+import { DEFAULT_DOMAINS, EAPI_HEADERS } from './constants';
 import { ZLibraryError } from './errors';
 import type {
 	ZLibraryBook,
@@ -16,15 +16,24 @@ import type {
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
+const MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024; // 200 MB
+
+const ALLOWED_EXTENSIONS = new Set(['pdf', 'epub', 'mobi', 'azw3', 'djvu', 'fb2', 'txt']);
+
+const TRUSTED_DOMAINS = [
+	'z-lib.org',
+	'zlibrary.org',
+	'z-library.sk',
+	'singlelogin.re',
+	'zlibrary.global',
+];
 
 export class ZLibraryClient {
 	private domain: string;
-	private timeout: number;
 	private cookieJar: CookieJar;
 
-	constructor(options?: { domain?: string; timeout?: number }) {
+	constructor(options?: { domain?: string }) {
 		this.domain = options?.domain ?? DEFAULT_DOMAINS[0];
-		this.timeout = options?.timeout ?? EAPI_TIMEOUT;
 		this.cookieJar = new CookieJar();
 	}
 
@@ -67,6 +76,7 @@ export class ZLibraryClient {
 					throw new ZLibraryError('下载限额已用完', 'RATE_LIMITED', resp.status);
 				}
 
+				this.cookieJar.extractFromResponse(resp.headers as any);
 				return resp.json;
 			} catch (err) {
 				if (err instanceof ZLibraryError) throw err;
@@ -167,6 +177,15 @@ export class ZLibraryClient {
 	): Promise<{ data: ArrayBuffer; extension: string }> {
 		const dlInfo = await this.getDownloadLink(bookId, hash);
 
+		// C1: 扩展名白名单校验
+		const ext = dlInfo.extension.toLowerCase();
+		if (!ALLOWED_EXTENSIONS.has(ext)) {
+			throw new ZLibraryError(`不支持的文件格式：${ext}`, 'DOWNLOAD_FAILED');
+		}
+
+		// C2: 下载链接域名校验
+		this.validateDownloadUrl(dlInfo.downloadLink);
+
 		const headers: Record<string, string> = {};
 		if (this.cookieJar.isLoggedIn()) {
 			headers['Cookie'] = this.cookieJar.toHeader();
@@ -178,7 +197,12 @@ export class ZLibraryClient {
 			throw new ZLibraryError('下载文件为空', 'DOWNLOAD_FAILED');
 		}
 
-		return { data: resp.arrayBuffer, extension: dlInfo.extension };
+		// I5: 文件大小上限
+		if (resp.arrayBuffer.byteLength > MAX_DOWNLOAD_BYTES) {
+			throw new ZLibraryError(`文件过大（${(resp.arrayBuffer.byteLength / 1024 / 1024).toFixed(0)} MB），超出 200 MB 限制`, 'DOWNLOAD_FAILED');
+		}
+
+		return { data: resp.arrayBuffer, extension: ext };
 	}
 
 	async discoverDomain(): Promise<string> {
@@ -214,5 +238,36 @@ export class ZLibraryClient {
 
 	isLoggedIn(): boolean {
 		return this.cookieJar.isLoggedIn();
+	}
+
+	/** I1: 从已有凭证恢复会话（替代直接访问 cookieJar） */
+	restoreSession(userId: number, userKey: string): void {
+		this.cookieJar.setFromLogin(userId, userKey);
+	}
+
+	/** I1: 获取可持久化的凭证（替代直接访问 cookieJar） */
+	getPersistableCredentials(): { userId: string; userKey: string; domain: string } | null {
+		if (!this.cookieJar.isLoggedIn()) return null;
+		return {
+			userId: this.cookieJar.getUserId(),
+			userKey: this.cookieJar.getUserKey(),
+			domain: this.domain,
+		};
+	}
+
+	/** C2: 校验下载链接协议和域名 */
+	private validateDownloadUrl(url: string): void {
+		try {
+			const parsed = new URL(url);
+			if (parsed.protocol !== 'https:') {
+				throw new ZLibraryError('下载链接必须使用 HTTPS', 'DOWNLOAD_FAILED');
+			}
+			if (!TRUSTED_DOMAINS.some(d => parsed.hostname === d || parsed.hostname.endsWith('.' + d))) {
+				throw new ZLibraryError(`下载链接域名不可信：${parsed.hostname}`, 'DOWNLOAD_FAILED');
+			}
+		} catch (err) {
+			if (err instanceof ZLibraryError) throw err;
+			throw new ZLibraryError('下载链接格式无效', 'DOWNLOAD_FAILED');
+		}
 	}
 }

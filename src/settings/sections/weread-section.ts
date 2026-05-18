@@ -6,7 +6,7 @@ import { Setting, Notice } from 'obsidian';
 import type { SectionContext } from '../types';
 import { WereadService } from '../../weread/index';
 import { ZLibraryClient } from '../../zlibrary/client';
-import { DEFAULT_DOMAINS } from '../../zlibrary/constants';
+import { buildZlibClient } from '../../zlibrary/build-client';
 
 export function renderWereadSection(
 	container: HTMLElement,
@@ -311,9 +311,12 @@ export function renderWereadSection(
 							try {
 								const client = new ZLibraryClient();
 								const profile = await client.login(email, password);
-								settings.zlibraryUserId = String(profile.userId);
-								settings.zlibraryUserKey = (client as any).cookieJar.cookies.get('remix_userkey') || '';
-								settings.zlibraryDomain = (client as any).domain;
+								const creds = client.getPersistableCredentials();
+								if (creds) {
+									settings.zlibraryUserId = creds.userId;
+									settings.zlibraryUserKey = creds.userKey;
+									settings.zlibraryDomain = creds.domain;
+								}
 								await plugin.saveSettings();
 								new Notice(`登录成功！剩余下载 ${profile.downloadsTodayLeft} 次`);
 								refresh();
@@ -369,18 +372,7 @@ async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<
 	}
 }
 
-/** 构建 Z-Library 客户端（从 settings 恢复 Cookie） */
-function buildZlibClient(settings: any): ZLibraryClient {
-	const domain = settings.zlibraryDomain || DEFAULT_DOMAINS[0];
-	const client = new ZLibraryClient({ domain });
-	if (settings.zlibraryUserId && settings.zlibraryUserKey) {
-		(client as any).cookieJar.setFromLogin(
-			Number(settings.zlibraryUserId),
-			settings.zlibraryUserKey,
-		);
-	}
-	return client;
-}
+
 
 /** 异步加载 Z-Library 用户配额 */
 async function loadZlibProfile(container: HTMLElement, settings: any): Promise<void> {

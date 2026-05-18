@@ -17,6 +17,7 @@ import { loadProgress, getProgressPercent, createEmptyProgress } from '../pagein
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
 import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
 import { ZLibraryClient } from '../zlibrary/client.js';
+import { buildZlibClient } from '../zlibrary/build-client.js';
 import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import * as path from 'path';
@@ -639,12 +640,7 @@ export class LibraryView extends ItemView {
             return;
         }
 
-        const domain = settings.zlibraryDomain || DEFAULT_DOMAINS[0];
-        const client = new ZLibraryClient({ domain });
-        (client as any).cookieJar.setFromLogin(
-            Number(settings.zlibraryUserId),
-            settings.zlibraryUserKey,
-        );
+        const client = buildZlibClient(settings);
 
         const query = this.getDisplayName(index.pdf_name);
         new ZLibrarySearchModal(this.app, query, client, async (book) => {
