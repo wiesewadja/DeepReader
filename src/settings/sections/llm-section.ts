@@ -16,6 +16,7 @@ export interface LLMState {
   expandedSections: Set<string>;
   selectedPresetId: string | null;
   testStatus: { success: boolean; message: string } | null;
+  fallbackTestStatus: { success: boolean; message: string } | null;
   forceShowQuickSetup: boolean;
 }
 
@@ -24,6 +25,7 @@ export function createLLMState(): LLMState {
     expandedSections: new Set(),
     selectedPresetId: null,
     testStatus: null,
+    fallbackTestStatus: null,
     forceShowQuickSetup: false,
   };
 }
@@ -111,6 +113,7 @@ function renderQuickSetup(
     presetCard.addEventListener('click', () => {
       state.selectedPresetId = preset.id;
       state.testStatus = null;
+      state.fallbackTestStatus = null;
       onRerender();
     });
   }
@@ -123,12 +126,13 @@ function renderQuickSetup(
   const providerId = selectedPreset?.provider || 'siliconflow';
   const currentKey = ctx.plugin.settings.providers[providerId]?.apiKey || '';
 
+  const isXiaomi = selectedPreset?.provider === 'xiaomi';
   const keyRow = card.createDiv({ cls: 'deeppdf-key-row' });
   const keyInput = keyRow.createEl('input', {
     cls: 'deeppdf-key-input',
     attr: {
       type: 'password',
-      placeholder: `输入 ${PROVIDER_LABELS[providerId as ProviderType] || providerId} API Key`,
+      placeholder: isXiaomi ? '输入 Token Plan API Key（必填）' : `输入 ${PROVIDER_LABELS[providerId as ProviderType] || providerId} API Key`,
     },
   });
   keyInput.value = currentKey;
@@ -137,7 +141,7 @@ function renderQuickSetup(
     await ctx.plugin.saveSettings();
   }, 300);
   keyInput.addEventListener('input', () => {
-    const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; baseUrl?: string }>;
+    const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; baseUrl?: string; fallbackApiKey?: string }>;
     if (!accounts[providerId]) accounts[providerId] = { apiKey: keyInput.value };
     else accounts[providerId].apiKey = keyInput.value;
     ctx.plugin.resetFrontendAgent();
@@ -156,6 +160,46 @@ function renderQuickSetup(
       text: state.testStatus.message,
       cls: `deeppdf-key-status ${state.testStatus.success ? 'is-success' : 'is-error'}`,
     });
+  }
+
+  // Xiaomi MIMO: 第二个 Key 输入框（API API Key，可选）
+  let fallbackInput: HTMLInputElement | undefined;
+  if (isXiaomi) {
+    const fallbackRow = card.createDiv({ cls: 'deeppdf-key-row' });
+    const currentFallbackKey = ctx.plugin.settings.providers['xiaomi']?.fallbackApiKey || '';
+    fallbackInput = fallbackRow.createEl('input', {
+      cls: 'deeppdf-key-input',
+      attr: {
+        type: 'password',
+        placeholder: '输入 API API Key（可选，Token Plan 欠费时自动切换）',
+      },
+    });
+    fallbackInput.value = currentFallbackKey;
+
+    const debouncedSaveFallback = debounceAsync(async () => {
+      await ctx.plugin.saveSettings();
+    }, 300);
+    fallbackInput.addEventListener('input', () => {
+      const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; baseUrl?: string; fallbackApiKey?: string }>;
+      if (!accounts['xiaomi']) accounts['xiaomi'] = { apiKey: keyInput.value, fallbackApiKey: fallbackInput!.value };
+      else accounts['xiaomi'].fallbackApiKey = fallbackInput!.value;
+      ctx.plugin.resetFrontendAgent();
+      debouncedSaveFallback();
+    });
+
+    const fallbackEyeBtn = fallbackRow.createEl('button', { text: '👁', cls: 'deeppdf-btn-eye' });
+    let fallbackKeyVisible = false;
+    fallbackEyeBtn.addEventListener('click', () => {
+      fallbackKeyVisible = !fallbackKeyVisible;
+      fallbackInput!.type = fallbackKeyVisible ? 'text' : 'password';
+    });
+
+    if (state.fallbackTestStatus) {
+      fallbackRow.createEl('span', {
+        text: state.fallbackTestStatus.message,
+        cls: `deeppdf-key-status ${state.fallbackTestStatus.success ? 'is-success' : 'is-error'}`,
+      });
+    }
   }
 
   const actionsRow = card.createDiv({ cls: 'deeppdf-actions-row' });
@@ -178,21 +222,53 @@ function renderQuickSetup(
     testBtn.textContent = '测试中...';
     testBtn.setAttribute('disabled', 'true');
 
-    try {
-      const { testConnection } = await import('../../config/model-fetcher');
-      const config = PROVIDER_CONFIGS[providerId as ProviderType];
-      const result = await testConnection(
-        config?.baseUrl || '',
-        apiKey,
-        selectedPreset.roleAssignments.chat || config?.defaultModel || '',
-        'chat',
-      );
-      state.testStatus = result.success
-        ? { success: true, message: `✓ ${result.latencyMs}ms` }
-        : { success: false, message: `✗ ${result.error}` };
-    } catch (e: any) {
-      state.testStatus = { success: false, message: `✗ ${e.message}` };
+    state.testStatus = null;
+    state.fallbackTestStatus = null;
+
+    const { testConnection } = await import('../../config/model-fetcher');
+    const config = PROVIDER_CONFIGS[providerId as ProviderType];
+    const model = selectedPreset.roleAssignments.chat || config?.defaultModel || '';
+
+    // 主 Key 测试（Token Plan）
+    const primaryTest = testConnection(
+      config?.baseUrl || '',
+      apiKey,
+      model,
+      'chat',
+    ).then(r => ({
+      success: r.success,
+      message: r.success ? `✓ ${r.latencyMs}ms` : `✗ ${r.error}`,
+    })).catch(e => ({
+      success: false,
+      message: `✗ ${e.message}`,
+    }));
+
+    // 小米 MIMO：如果配了 fallback Key，并行测
+    let fallbackTest: Promise<{ success: boolean; message: string }> | null = null;
+    if (isXiaomi && fallbackInput) {
+      const fallbackVal = fallbackInput.value.trim();
+      if (fallbackVal) {
+        fallbackTest = testConnection(
+          'https://api.xiaomimimo.com/v1',
+          fallbackVal,
+          model,
+          'chat',
+        ).then(r => ({
+          success: r.success,
+          message: r.success ? `✓ ${r.latencyMs}ms` : `✗ ${r.error}`,
+        })).catch(e => ({
+          success: false,
+          message: `✗ ${e.message}`,
+        }));
+      }
     }
+
+    const [primaryResult, fallbackResult] = await Promise.all(
+      fallbackTest ? [primaryTest, fallbackTest] : [primaryTest],
+    );
+
+    state.testStatus = primaryResult;
+    if (fallbackResult) state.fallbackTestStatus = fallbackResult;
 
     testBtn.textContent = '测试连接';
     testBtn.removeAttribute('disabled');
@@ -207,10 +283,20 @@ function renderQuickSetup(
     }
 
     applyPreset(state.selectedPresetId, apiKey, ctx.plugin.settings);
+
+    // Xiaomi MIMO: 同时保存 fallbackApiKey
+    if (isXiaomi && fallbackInput) {
+      const fallbackVal = fallbackInput.value.trim();
+      const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; baseUrl?: string; fallbackApiKey?: string }>;
+      if (!accounts['xiaomi']) accounts['xiaomi'] = { apiKey, fallbackApiKey: fallbackVal || undefined };
+      else accounts['xiaomi'].fallbackApiKey = fallbackVal || undefined;
+    }
+
     ctx.plugin.settings.setupComplete = true;
     ctx.plugin.resetFrontendAgent();
     await ctx.plugin.saveSettings();
     state.testStatus = null;
+    state.fallbackTestStatus = null;
     new Notice('配置完成！可以开始使用了');
     state.forceShowQuickSetup = false;
     onRerender();

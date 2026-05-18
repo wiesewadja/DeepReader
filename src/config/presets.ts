@@ -27,18 +27,18 @@ export interface ProviderPreset {
  */
 export const PRESETS: ProviderPreset[] = [
 	{
-		id: 'minimax-token-plan',
-		label: 'MiniMax · Token Plan',
-		description: '订阅制全模态，一个 Key 搞定对话+向量搜索（需配置 MiniMax 图片生成）',
-		provider: 'minimax',
+		id: 'xiaomi-token-plan',
+		label: '小米 MIMO',
+		description: '订阅制全模态，一个 Key 搞定对话+TTS（embedding/reranker/图片生成需其他服务商）',
+		provider: 'xiaomi',
 		free: false,
 		recommended: true,
-		website: 'https://platform.minimaxi.com',
+		website: 'https://platform.xiaomimimo.com',
 		roleAssignments: {
-			chat: 'MiniMax-M2.7',
-			router: 'MiniMax-M2.7',
-			pageindex: 'MiniMax-M2.7',
-			proposition: 'MiniMax-M2.7',
+			chat: 'mimo-v2.5',
+			router: 'mimo-v2.5',
+			pageindex: 'mimo-v2.5',
+			proposition: 'mimo-v2.5',
 			embedding: 'BAAI/bge-m3',
 		},
 	},
@@ -67,20 +67,6 @@ export const PRESETS: ProviderPreset[] = [
 			chat: 'deepseek-chat',
 			router: 'deepseek-chat',
 			pageindex: 'deepseek-chat',
-		},
-	},
-	{
-		id: 'zhipu-balanced',
-		label: '智谱 · 均衡',
-		description: '免费向量化 + 低成本对话',
-		provider: 'zhipu',
-		free: true,
-		website: 'https://open.bigmodel.cn',
-		roleAssignments: {
-			chat: 'glm-4-flash',
-			router: 'glm-4-flash',
-			pageindex: 'glm-4-flash',
-			embedding: 'embedding-3',
 		},
 	},
 	{

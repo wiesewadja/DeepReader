@@ -25,6 +25,8 @@ export interface AIProviderAccount {
 	apiKey: string;
 	baseUrl?: string;          // 自定义服务商必填
 	name?: string;             // 显示名称（自定义服务商用）
+	fallbackApiKey?: string;   // Xiaomi MIMO API Key（可选，Token Plan 欠费时自动切换）
+	fallbackBaseUrl?: string;  // Xiaomi MIMO URL（可选）
 }
 
 /** 第二层：某用途角色的服务商和模型配置 */
@@ -51,6 +53,6 @@ export interface AIRoles {
 /** 判断是否为固定服务商（非自定义） */
 export function isBuiltInProvider(id: string): id is ProviderType {
 	return id in ({} as Record<ProviderType, unknown>) && [
-		'minimax', 'deepseek', 'kimi', 'zhipu', 'siliconflow', 'openai', 'xiaomi',
+		'minimax', 'deepseek', 'kimi', 'siliconflow', 'openai', 'xiaomi', 'sensenova',
 	].includes(id);
 }

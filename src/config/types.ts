@@ -6,7 +6,7 @@
  */
 
 /** LLM 服务商标识 */
-export type ProviderType = 'minimax' | 'deepseek' | 'kimi' | 'zhipu' | 'siliconflow' | 'openai' | 'xiaomi' | 'custom';
+export type ProviderType = 'minimax' | 'deepseek' | 'kimi' | 'siliconflow' | 'openai' | 'xiaomi' | 'sensenova' | 'custom';
 
 /** AI 用途角色 */
 export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker' | 'tts' | 'imagegen';

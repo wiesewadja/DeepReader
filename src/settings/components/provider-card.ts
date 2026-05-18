@@ -104,7 +104,7 @@ export function renderProviderList(
 export function renderProviderDetail(
   container: HTMLElement,
   providerId: string,
-  account: { apiKey?: string; baseUrl?: string; name?: string },
+  account: { apiKey?: string; baseUrl?: string; name?: string; fallbackApiKey?: string; fallbackBaseUrl?: string },
   isBuiltIn: boolean,
   displayName: string,
   ctx: ProviderCardContext,
@@ -154,9 +154,13 @@ export function renderProviderDetail(
         }));
   }
 
+  const isXiaomi = providerId === 'xiaomi';
+  const keyLabel = isXiaomi ? 'Token Plan API Key' : 'API Key';
+  const keyDesc = isXiaomi ? '用于访问 MIMO Token Plan 服务的密钥（必填）' : `用于访问 ${displayName} 服务的密钥`;
+
   const keySetting = new Setting(container)
-    .setName('API Key')
-    .setDesc(`用于访问 ${displayName} 服务的密钥`)
+    .setName(keyLabel)
+    .setDesc(keyDesc)
     .addText(text => {
       text.setPlaceholder('sk-...')
         .setValue(account.apiKey || '')
@@ -175,12 +179,89 @@ export function renderProviderDetail(
   keySetting.addExtraButton(btn => {
     let visible = false;
     btn.setIcon('eye')
-      .setTooltip('显示 API Key')
+      .setTooltip('显示')
       .onClick(() => {
         visible = !visible;
         if (inputEl) inputEl.type = visible ? 'text' : 'password';
         btn.setIcon(visible ? 'eye-off' : 'eye');
-        btn.setTooltip(visible ? '隐藏 API Key' : '显示 API Key');
+        btn.setTooltip(visible ? '隐藏' : '显示');
       });
   });
+
+  // 测试连接（Token Plan / 主 key）
+  keySetting.addExtraButton(btn => {
+    btn.setIcon('plug')
+      .setTooltip('测试连接')
+      .onClick(async () => {
+        if (!account.apiKey) {
+          new Notice('请先填写 API Key');
+          return;
+        }
+        const { testConnection } = await import('../../config/model-fetcher');
+        const builtInConfig = PROVIDER_CONFIGS[providerId as ProviderType];
+        const effectiveBaseUrl = account.baseUrl || builtInConfig?.baseUrl || '';
+        const isTts = builtInConfig?.capabilities?.tts && !builtInConfig?.capabilities?.chat;
+        const endpoint = isTts ? 'tts' : 'chat';
+        btn.setDisabled(true);
+        btn.setIcon('loader');
+        const result = await testConnection(effectiveBaseUrl, account.apiKey, builtInConfig?.defaultModel || '', endpoint);
+        btn.setDisabled(false);
+        btn.setIcon('plug');
+        if (result.success) {
+          new Notice(`✓ Token Plan 连接成功 (${result.latencyMs}ms)`);
+        } else {
+          new Notice(`✗ Token Plan 连接失败: ${result.error}`);
+        }
+      });
+  });
+
+  // Xiaomi: 可选的 API Key（Token Plan 欠费时自动切换）
+  if (isXiaomi) {
+    const fallbackSetting = new Setting(container)
+      .setName('API API Key（可选）')
+      .setDesc('Token Plan 欠费时自动切换到此 Key 对应的 MIMO API')
+      .addText(text => {
+        text.setPlaceholder('sk-...（可选）')
+          .setValue(account.fallbackApiKey || '')
+          .inputEl.type = 'password';
+        text.onChange(async (value) => {
+          setProviderAccount(providers, providerId, { fallbackApiKey: value });
+          ctx.plugin.resetFrontendAgent();
+          await ctx.plugin.saveSettings();
+        });
+      });
+
+    const fallbackInputEl = fallbackSetting.controlEl.querySelector('input');
+    fallbackSetting.addExtraButton(btn => {
+      btn.setIcon('eye')
+        .setTooltip('显示')
+        .onClick(() => {
+          // placeholder for now
+        });
+    });
+
+    // 测试连接（API key）
+    fallbackSetting.addExtraButton(btn => {
+      btn.setIcon('plug')
+        .setTooltip('测试连接')
+        .onClick(async () => {
+          if (!account.fallbackApiKey) {
+            new Notice('请先填写 API API Key');
+            return;
+          }
+          const { testConnection } = await import('../../config/model-fetcher');
+          const fallbackBaseUrl = account.fallbackBaseUrl || 'https://api.xiaomimimo.com/v1';
+          btn.setDisabled(true);
+          btn.setIcon('loader');
+          const result = await testConnection(fallbackBaseUrl, account.fallbackApiKey, 'mimo-v2.5', 'chat');
+          btn.setDisabled(false);
+          btn.setIcon('plug');
+          if (result.success) {
+            new Notice(`✓ API 连接成功 (${result.latencyMs}ms)`);
+          } else {
+            new Notice(`✗ API 连接失败: ${result.error}`);
+          }
+        });
+    });
+  }
 }

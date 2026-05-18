@@ -2,20 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { PRESETS, getPresetById, buildRolesFromPreset } from '../presets';
 
 describe('Presets', () => {
-	it('should have 5 presets', () => {
-		expect(PRESETS).toHaveLength(5);
+	it('should have 4 presets', () => {
+		expect(PRESETS).toHaveLength(4);
 	});
 
-	it('minimax-token-plan should be the first and recommended', () => {
-		const mm = getPresetById('minimax-token-plan')!;
-		expect(PRESETS[0].id).toBe('minimax-token-plan');
+	it('xiaomi-token-plan should be the first and recommended', () => {
+		const mm = getPresetById('xiaomi-token-plan')!;
+		expect(PRESETS[0].id).toBe('xiaomi-token-plan');
 		expect(mm.recommended).toBe(true);
 		expect(mm.free).toBe(false);
-		expect(mm.provider).toBe('minimax');
-		expect(mm.roleAssignments.chat).toBe('MiniMax-M2.7');
-		expect(mm.roleAssignments.router).toBe('MiniMax-M2.7');
-		expect(mm.roleAssignments.pageindex).toBe('MiniMax-M2.7');
-		expect(mm.roleAssignments.proposition).toBe('MiniMax-M2.7');
+		expect(mm.provider).toBe('xiaomi');
+		expect(mm.roleAssignments.chat).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.router).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.pageindex).toBe('mimo-v2.5');
+		expect(mm.roleAssignments.proposition).toBe('mimo-v2.5');
 		expect(mm.roleAssignments.embedding).toBe('BAAI/bge-m3');
 	});
 

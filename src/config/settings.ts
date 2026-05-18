@@ -47,26 +47,26 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 		minimax:     { apiKey: '' },
 		deepseek:    { apiKey: '' },
 		kimi:        { apiKey: '' },
-		zhipu:       { apiKey: '' },
 		siliconflow: { apiKey: '' },
 		openai:      { apiKey: '' },
 		xiaomi:      { apiKey: '' },
+		sensenova:   { apiKey: '' },
 	};
 }
 
-/** 新版默认的角色配置 */
-function defaultRoles(): AIRoles {
-	return {
-		chat:        { provider: 'minimax', model: 'MiniMax-M2.7' },
-		router:      { provider: 'minimax', model: 'MiniMax-M2.7' },
-		pageindex:   { provider: 'minimax', model: 'MiniMax-M2.7' },
-		proposition: { provider: 'minimax', model: 'MiniMax-M2.7' },
-		embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },
-		reranker:    null,
-		tts:         null,
-		imagegen:    null,
-	};
-}
+	/** 新版默认的角色配置 */
+	function defaultRoles(): AIRoles {
+		return {
+			chat:        { provider: 'xiaomi', model: 'mimo-v2.5' },
+			router:      { provider: 'xiaomi', model: 'mimo-v2.5' },
+			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
+			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
+			embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },
+			reranker:    null,
+			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts' },
+			imagegen:    null,
+		};
+	}
 
 export interface DeepPDFSettings {
 	// === 新增：两层架构 ===
@@ -134,8 +134,6 @@ export interface DeepPDFSettings {
 	openaiApiKey?: string;
 	/** @deprecated 迁移到 providers.kimi.apiKey */
 	kimiApiKey?: string;
-	/** @deprecated 迁移到 providers.zhipu.apiKey */
-	zhipuApiKey?: string;
 	/** @deprecated 迁移到 providers.custom.apiKey */
 	customApiKey?: string;
 	/** @deprecated 迁移到 roles.chat.provider + roles.chat.model */

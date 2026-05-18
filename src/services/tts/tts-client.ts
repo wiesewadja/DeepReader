@@ -30,7 +30,7 @@ export class TTSClient implements ITTSSynthesizer {
     constructor(options: TTSClientOptions) {
         this.#apiKey = options.apiKey;
         this.baseUrl = options.baseUrl;
-        this.model = options.model || 'MiMo-V2.5-TTS';
+        this.model = options.model || 'mimo-v2.5-tts';
     }
 
     async synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer> {

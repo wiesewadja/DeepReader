@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS } from './settings';
 
 /** 需要检测的旧版字段名列表 */
 const LEGACY_FIELDS = [
-	'deepseekApiKey', 'kimiApiKey', 'zhipuApiKey', 'openaiApiKey', 'customApiKey',
+	'deepseekApiKey', 'kimiApiKey', 'openaiApiKey', 'customApiKey',
 	'apiUrl', 'llmProvider', 'llmModel',
 	'fastModelEnabled', 'fastModelProvider', 'fastModelName', 'fastModelApiUrl',
 	'embedding', 'reranker', 'propositions',
@@ -41,7 +41,7 @@ export function migrateSettings(
 	const apiKeyMap: Record<string, ProviderType> = {
 		deepseekApiKey: 'deepseek',
 		kimiApiKey: 'kimi',
-		zhipuApiKey: 'zhipu',
+
 		openaiApiKey: 'openai',
 		customApiKey: 'custom',
 	};
@@ -290,7 +290,7 @@ function inferProviderFromBaseUrl(baseUrl: string | undefined): ProviderType {
 	if (baseUrl.includes('api.siliconflow.cn')) return 'siliconflow';
 	if (baseUrl.includes('api.deepseek.com')) return 'deepseek';
 	if (baseUrl.includes('api.openai.com')) return 'openai';
-	if (baseUrl.includes('open.bigmodel.cn')) return 'zhipu';
+
 	if (baseUrl.includes('api.moonshot.cn')) return 'kimi';
 	return 'custom';
 }

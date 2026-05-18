@@ -9,6 +9,7 @@ import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
 import { getProviderConfig, PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
+import { isBuiltInProvider } from './config/ai-roles.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
@@ -1111,6 +1112,17 @@ views:
             await this.saveData(this.settings);
         } else {
             this.settings = Object.assign({}, DEFAULT_SETTINGS, rawData);
+        }
+        // 同步 providers：添加新增的内置服务商，移除已删除的内置服务商
+        const defaults = DEFAULT_SETTINGS.providers as Record<string, { apiKey: string }>;
+        const saved = this.settings.providers as Record<string, { apiKey?: string }>;
+        for (const key of Object.keys(defaults)) {
+            if (!saved[key]) saved[key] = { apiKey: '' };
+        }
+        for (const key of Object.keys(saved)) {
+            if (isBuiltInProvider(key) && !defaults[key]) {
+                delete saved[key];
+            }
         }
         setLogEnabled(this.settings.enableDebugLog);
 

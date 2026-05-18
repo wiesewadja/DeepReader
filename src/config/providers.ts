@@ -53,13 +53,6 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
 	},
-	zhipu: {
-		baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-		defaultModel: 'glm-4-flash',
-		legacyApiKeyField: 'zhipuApiKey',
-		supportsModelList: true,
-		capabilities: { chat: true, embedding: true, reranker: false },
-	},
 	siliconflow: {
 		baseUrl: 'https://api.siliconflow.cn/v1',
 		defaultModel: 'Qwen/Qwen3-8B',
@@ -74,16 +67,22 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},
 	xiaomi: {
-		baseUrl: 'https://api.xiaomimimo.com/v1',
-		defaultModel: 'MiMo-V2.5-TTS',
-		supportsModelList: false,
-		capabilities: { chat: false, embedding: false, reranker: false, tts: true },
+		baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+		defaultModel: 'mimo-v2.5',
+		supportsModelList: true,
+		capabilities: { chat: true, embedding: false, reranker: false, tts: true, imagegen: false },
+	},
+	sensenova: {
+		baseUrl: 'https://token.sensenova.cn/v1',
+		defaultModel: 'sensenova-u1-fast',
+		supportsModelList: true,
+		capabilities: { chat: false, embedding: false, reranker: false, imagegen: true },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl
 		defaultModel: '',
 		legacyApiKeyField: 'customApiKey',
-		supportsModelList: false,
+		supportsModelList: true,
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},
 };
@@ -119,7 +118,7 @@ export function normalizeBaseUrl(url: string): string {
 export function resolveRoleConfig(
 	role: RoleType,
 	settings: DeepPDFSettings,
-): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number; disableThinking?: boolean } | null {
+): { apiKey: string; baseUrl: string; model: string; provider: string; embeddingBatchSize?: number; disableThinking?: boolean; fallbackApiKey?: string; fallbackBaseUrl?: string } | null {
 	const roleConfig = (settings.roles as unknown as Record<string, unknown>)?.[role];
 	if (!roleConfig || typeof roleConfig !== 'object') return null;
 
@@ -153,7 +152,13 @@ export function resolveRoleConfig(
 		: (builtInConfig?.defaultModel || '');
 	const resolvedModel = model || defaultModel;
 
-	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking };
+	// Xiaomi fallback：Token Plan 失败时使用 MIMO API
+	const fallbackApiKey = provider === 'xiaomi' ? (account as { fallbackApiKey?: string }).fallbackApiKey : undefined;
+	const fallbackBaseUrl = provider === 'xiaomi'
+		? ((account as { fallbackBaseUrl?: string }).fallbackBaseUrl || 'https://api.xiaomimimo.com/v1')
+		: undefined;
+
+	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking, fallbackApiKey, fallbackBaseUrl };
 }
 
 /**
@@ -303,9 +308,9 @@ export const PROVIDER_LABELS: Record<ProviderType, string> = {
 	minimax: 'MiniMax',
 	deepseek: 'DeepSeek',
 	kimi: 'Kimi (Moonshot)',
-	zhipu: '智谱 (GLM)',
 	siliconflow: '硅基流动 (SiliconFlow)',
 	openai: 'OpenAI',
-	xiaomi: '小米 (Mimo)',
+	xiaomi: '小米 MIMO',
+	sensenova: '商汤 (SenseNova)',
 	custom: '自定义',
 };
