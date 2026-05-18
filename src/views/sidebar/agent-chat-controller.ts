@@ -342,6 +342,19 @@ export class AgentChatController {
 				onContent: (text: string) => {
 					fullContent = text;
 
+					// 实时提取 <think> 推理内容送入状态栏，从气泡内容中剥离
+					const thinkResult = extractStreamingThink(fullContent);
+					if (thinkResult.reasoning) {
+						fullContent = thinkResult.cleanedContent;
+						const firstLine = thinkResult.reasoning.split('\n')[0].slice(0, 50);
+						const displayReasoning = firstLine.length < thinkResult.reasoning.split('\n')[0].length
+							? firstLine + '...'
+							: firstLine;
+						if (displayReasoning.trim()) {
+							currentStatus = `💭 ${displayReasoning}`;
+						}
+					}
+
 					if (!firstContentLogged && fullContent.trim().length > 0) {
 						firstContentLogged = true;
 						const ttfc = Date.now() - queryStartTime;
@@ -400,17 +413,20 @@ export class AgentChatController {
 					self.host.messageList?.updateMessage(aiMessageId, updates);
 				},
 				onContentComplete: async (content: string): Promise<string> => {
+					// 剥离 <think> 标签，避免全量残留
+					const { cleanedContent: cleanedForValidation } = extractStreamingThink(content);
+
 					if (!self.host.currentPdfName || !context.app) {
-						return content;
+						return cleanedForValidation;
 					}
 
 					try {
 						const { correctedContent, validatedLinks } = await validateAndCorrectLinks(
 							self.host.app,
-							content
+							cleanedForValidation
 						);
 
-						if (correctedContent !== content) {
+						if (correctedContent !== cleanedForValidation) {
 							log('[DeepPDF] 链接已纠正，更新消息');
 							self.host.messageList?.updateMessage(aiMessageId, {
 								content: correctedContent,
@@ -1010,4 +1026,23 @@ export class AgentChatController {
 		}
 		this.streamingVoicePlayers.clear();
 	}
+}
+
+// 从流式内容中提取 <think> 推理文本并剥离标签
+function extractStreamingThink(text: string): { reasoning: string; cleanedContent: string } {
+	const closedTag = text.match(/<think>([\s\S]*?)<\/think>/);
+	if (closedTag) {
+		return {
+			reasoning: closedTag[1],
+			cleanedContent: text.replace(/<think>[\s\S]*?<\/think>/g, '').trim(),
+		};
+	}
+	const openTag = text.match(/<think>([\s\S]*)$/);
+	if (openTag) {
+		return {
+			reasoning: openTag[1],
+			cleanedContent: text.replace(/<think>[\s\S]*$/, '').trim(),
+		};
+	}
+	return { reasoning: '', cleanedContent: text.trim() };
 }

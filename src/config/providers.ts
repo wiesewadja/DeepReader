@@ -41,7 +41,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	},
 	deepseek: {
 		baseUrl: 'https://api.deepseek.com',
-		defaultModel: 'deepseek-chat',
+		defaultModel: 'deepseek-v4-flash',
 		legacyApiKeyField: 'deepseekApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
