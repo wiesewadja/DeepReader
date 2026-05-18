@@ -63,7 +63,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
 			embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },
 			reranker:    null,
-			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts' },
+			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
 			imagegen:    null,
 		};
 	}

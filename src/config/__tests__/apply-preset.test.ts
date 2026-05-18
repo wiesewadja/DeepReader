@@ -43,7 +43,7 @@ describe('applyPreset', () => {
 		expect(settings.providers.deepseek.apiKey).toBe('sk-test');
 		expect(settings.roles.chat.provider).toBe('deepseek');
 		// tts should remain untouched (not in preset) — stays as default xiaomi
-		expect(settings.roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts' });
+		expect(settings.roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
 	});
 
 	it('should overwrite existing provider key', () => {

@@ -36,16 +36,19 @@ export class TTSClient implements ITTSSynthesizer {
     async synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer> {
         const url = `${this.baseUrl}/chat/completions`;
 
+        const isVoiceDesign = this.model.includes('voicedesign');
+        const audioConfig: any = { format: 'wav' };
+        if (!isVoiceDesign) {
+            audioConfig.voice = options.voiceProfile.voice;
+        }
+
         const body: any = {
             model: this.model,
             messages: [
                 ...(options.styleText ? [{ role: 'user' as const, content: options.styleText }] : []),
                 { role: 'assistant' as const, content: text },
             ],
-            audio: {
-                format: 'wav',
-                voice: options.voiceProfile.voice,
-            },
+            audio: audioConfig,
         };
 
         const response = await fetchWithCorsFallback(url, {
@@ -83,16 +86,19 @@ export class TTSClient implements ITTSSynthesizer {
     async *synthesizeStream(text: string, options: TTSOptions): AsyncGenerator<ArrayBuffer> {
         const url = `${this.baseUrl}/chat/completions`;
 
+        const isVoiceDesign = this.model.includes('voicedesign');
+        const audioConfig: any = { format: 'pcm16' };
+        if (!isVoiceDesign) {
+            audioConfig.voice = options.voiceProfile.voice;
+        }
+
         const body: any = {
             model: this.model,
             messages: [
                 ...(options.styleText ? [{ role: 'user' as const, content: options.styleText }] : []),
                 { role: 'assistant' as const, content: text },
             ],
-            audio: {
-                format: 'pcm16',
-                voice: options.voiceProfile.voice,
-            },
+            audio: audioConfig,
             stream: true,
         };
 

@@ -107,6 +107,8 @@ export class TTSService {
     private playbackReject: ((err: Error) => void) | null = null;
     /** TTS 提供商 ID，用于决定音色选择策略 */
     private ttsProvider: string;
+    /** 是否使用 VoiceDesign 模式（模型名包含 voicedesign） */
+    private isVoiceDesign: boolean;
 
     constructor(config: TTSServiceConfig) {
         this.client = config.ttsProvider === 'minimax'
@@ -121,6 +123,7 @@ export class TTSService {
                 model: config.ttsModel,
             });
         this.ttsProvider = config.ttsProvider;
+        this.isVoiceDesign = config.ttsModel?.includes('voicedesign') ?? false;
         this.summarizer = new TTSSummarizer({
             apiKey: config.llmApiKey,
             baseUrl: config.llmBaseUrl,
@@ -198,7 +201,7 @@ export class TTSService {
         }
 
         // Step 2: 解析音色配置
-        const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider) : getDefaultVoiceProfile(this.ttsProvider);
+        const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
         // Step 3: 构建缓存 key（包含音色指纹）
         const cacheKey = this.buildCacheKey(messageId, voiceProfile);
@@ -284,7 +287,7 @@ export class TTSService {
             }
 
             // 2. 解析音色配置
-            const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider) : getDefaultVoiceProfile(this.ttsProvider);
+            const voiceProfile = genre ? resolveVoiceProfile(genre, this.ttsProvider, this.isVoiceDesign) : getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
 
             // 3. 检查缓存是否已存在
             const cacheKey = this.buildCacheKey(messageId, voiceProfile);
@@ -816,7 +819,9 @@ export class TTSService {
      * 构建带音色指纹的缓存 key
      */
     private buildCacheKey(messageId: string, voiceProfile: VoiceProfile): string {
-        return `${messageId}_${voiceProfile.voice}`;
+        const prefix = voiceProfile.voiceDesignPrompt ? 'vd_' : '';
+        const voiceId = voiceProfile.voiceDesignPrompt ? 'voicedesign' : voiceProfile.voice;
+        return `${prefix}${messageId}_${voiceId}`;
     }
 
     /** 原文内容哈希（djb2），用于磁盘缓存的稳定 key */
@@ -921,7 +926,12 @@ export class TTSService {
             ? `，这是一本「${genre.subGenre}」类型的书籍`
             : '';
 
-        return `角色：你叫奚童，是用户的伴读书童，像一位聪明伶俐的小师妹。你年轻活泼，爱读书，声音清亮温润，带着书卷气和少女的灵动。你不是冷冰冰的AI，而是一个有温度的朗读伙伴。称呼用户时，偶尔说"你看呀""你说是不是""你想想"这样拉近距离的话。
+        // VoiceDesign 模式：音色描述作为角色设定的核心
+        const voiceDesignPrefix = voiceProfile.voiceDesignPrompt
+            ? `\n音色定义：${voiceProfile.voiceDesignPrompt}\n`
+            : '';
+
+        return `角色：你叫奚童，是用户的伴读书童，像一位聪明伶俐的小师妹。你年轻活泼，爱读书，声音清亮温润，带着书卷气和少女的灵动。你不是冷冰冰的AI，而是一个有温度的朗读伙伴。称呼用户时，偶尔说"你看呀""你说是不是""你想想"这样拉近距离的话。${voiceDesignPrefix}
 
 场景：你正在为用户朗读书籍内容${genreHint}，就像坐在用户旁边，翻开书页一起读。
 
@@ -998,7 +1008,7 @@ export class TTSService {
     ): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
         const cleanContent = stripWikiLinksForTTS(content);
         const summary = await this.summarizer.summarize(cleanContent, userQuestion, context);
-        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider);
+        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
         const audioBuffer = await this.client.synthesize(summary, this.buildTTSOptions(defaultProfile));
         const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
         return { audioBuffer, duration };
@@ -1009,7 +1019,7 @@ export class TTSService {
      */
     async synthesizeRawText(text: string): Promise<{ audioBuffer: ArrayBuffer; duration: number }> {
         const cleanText = stripWikiLinksForTTS(text);
-        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider);
+        const defaultProfile = getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign);
         const audioBuffer = await this.client.synthesize(cleanText, this.buildTTSOptions(defaultProfile));
         const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
         return { audioBuffer, duration };
@@ -1144,7 +1154,7 @@ export class TTSService {
         let fullSummary = '';
         let ttsStarted = false;
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign));
         let firstSentence = true;
 
         try {
@@ -1232,7 +1242,7 @@ export class TTSService {
         let sealDone = false;
         let lastSentProgress = -1;
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign));
         const taggedText = this.withAudioTag(text, voiceProfile);
 
         const startProgressTracking = () => {
@@ -1319,7 +1329,7 @@ export class TTSService {
 
         this.setState('tts_loading');
 
-        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider));
+        const ttsOptions = this.buildTTSOptions(voiceProfile || getDefaultVoiceProfile(this.ttsProvider, this.isVoiceDesign));
         const audioBuffer = await this.client.synthesize(this.withAudioTag(text, voiceProfile), ttsOptions);
 
         if (this.currentMessageId !== messageId) {

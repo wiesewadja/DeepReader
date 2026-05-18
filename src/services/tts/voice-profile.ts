@@ -1,7 +1,7 @@
 import type { BookGenre } from './book-genre-detector.js';
 
 export interface VoiceProfile {
-  /** 音色 ID（Xiaomi: 冰糖/茉莉/苏打/白桦; MiniMax: voice_id） */
+  /** 音色 ID（Xiaomi: 冰糖/茉莉/苏打/白桦; MiniMax: voice_id）；VoiceDesign 模式下为空 */
   voice: string;
   /**
    * V2.5 音频风格标签（仅 Xiaomi），放在 assistant content 最前面
@@ -15,7 +15,15 @@ export interface VoiceProfile {
   moodHint: string;
   /** TTS 提供商，用于区分 voice 字段解释方式 */
   provider?: string;
+  /** VoiceDesign 音色描述文本；仅 VoiceDesign 模式下存在 */
+  voiceDesignPrompt?: string;
 }
+
+/** VoiceDesign 默认音色描述：温柔书伴 */
+export const DEFAULT_VOICE_DESIGN_PROMPT =
+  '一位二十多岁的年轻女性，声音清亮柔和，像一位温柔耐心的读书伙伴。' +
+  '语速中等偏慢，咬字清晰，语调平缓中带着微微的暖意，' +
+  '仿佛在安静的午后陪你看书时，轻声为你讲解书中的内容。';
 
 /**
  * 根据书籍情感基调生成全局音频标签
@@ -84,25 +92,31 @@ const MINIMAX_DEFAULT_VOICE_ID = 'female-tianmei';
  *   - 音频标签 (audioTag)：放在 assistant content 前面，控制音色/情感/节奏（仅 Xiaomi）
  *   - 导演模式 (styleText)：放在 user message，定义角色/场景/指导
  */
-export function resolveVoiceProfile(genre: BookGenre, provider?: string): VoiceProfile {
+export function resolveVoiceProfile(genre: BookGenre, provider?: string, isVoiceDesign?: boolean): VoiceProfile {
   const mood = genre.mood || 'neutral';
   const isMinimax = provider === 'minimax';
-  return {
-    voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE,
+  const base = {
     audioTag: isMinimax ? '' : resolveAudioTag(mood),
     speedHint: resolveSpeedHint(mood),
     moodHint: resolveMoodHint(mood),
     provider,
   };
+  if (isVoiceDesign && !isMinimax) {
+    return { ...base, voice: '', voiceDesignPrompt: DEFAULT_VOICE_DESIGN_PROMPT };
+  }
+  return { ...base, voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE };
 }
 
-export function getDefaultVoiceProfile(provider?: string): VoiceProfile {
+export function getDefaultVoiceProfile(provider?: string, isVoiceDesign?: boolean): VoiceProfile {
   const isMinimax = provider === 'minimax';
-  return {
-    voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE,
+  const base = {
     audioTag: isMinimax ? '' : '(清亮 活泼 书卷气)',
     speedHint: '语速中等偏快，清晰自然。',
     moodHint: '整体语调自然平和，不疾不徐。',
     provider,
   };
+  if (isVoiceDesign && !isMinimax) {
+    return { ...base, voice: '', voiceDesignPrompt: DEFAULT_VOICE_DESIGN_PROMPT };
+  }
+  return { ...base, voice: isMinimax ? MINIMAX_DEFAULT_VOICE_ID : XIAOMI_DEFAULT_VOICE };
 }
