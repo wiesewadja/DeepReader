@@ -238,82 +238,58 @@ export class PageIndex {
   async fromPdf(input: string | Buffer | ArrayBuffer): Promise<PageIndexResult> {
     let pages: PdfPage[];
     let pdfName: string;
-    let cachedPdfInfo: MineruPdfResult | null = null;
 
-    // 判断是否需要 OCR
-    let useOcr = this.options.extractionMode === "ocr";
+    // ── MinerU 云 API 解析（主路径）──
+    // MinerU 精准 API 使用 VLM 视觉模型，本身能处理扫描版 PDF，
+    // 因此不再做文本密度检测和 OCR 回退，直接信任 MinerU 结果。
+    const hasMineruToken = !!this.options.mineruApiKey;
 
-    // 自动检测模式：先快速解析前 5 页，检查文本密度
-    if (!useOcr && this.options.extractionMode !== "text") {
-      piLog("[fromPdf] Auto-detecting scanned PDF...");
+    if (hasMineruToken || this.options.extractionMode !== "ocr") {
+      piLog("[fromPdf] Parsing PDF with MinerU API...");
       try {
-        cachedPdfInfo = await parsePdf(input, this.options.mineruApiKey);
-        const samplePages = cachedPdfInfo.pages.slice(0, 5);
-        if (samplePages.length > 0) {
-          const avgCharsPerPage = samplePages
-            .reduce((sum, p) => sum + p.text.trim().length, 0) / samplePages.length;
-          if (avgCharsPerPage < 50) {
-            piLog(`[fromPdf] Detected scanned PDF (avg ${avgCharsPerPage.toFixed(1)} chars/page), switching to OCR`);
-            useOcr = true;
-            cachedPdfInfo = null;
+        const pdfInfo = await parsePdf(input, this.options.mineruApiKey);
+        pages = pdfInfo.pages;
+        pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
+
+        const savedOutline = pdfInfo.outline;
+
+        // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
+        if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
+          piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
+          return this.processPdfWithOutline(pages, savedOutline, pdfName);
+        }
+
+        // LLM path: use outline as hint for page mapping accuracy
+        try {
+          return await this.processPdfPages(pages, pdfName, savedOutline);
+        } catch (error) {
+          if (savedOutline && savedOutline.length > 0) {
+            piLog(`[fromPdf] LLM failed, falling back to outline: ${(error as Error).message}`);
+            return this.processPdfWithOutline(pages, savedOutline, pdfName);
           }
+          throw error;
         }
-      } catch {
-        piLog("[fromPdf] PDF text extraction failed, falling back to OCR");
-        useOcr = true;
+      } catch (mineruError) {
+        // MinerU 完全失败时，降级到 OCR
+        piLog(`[fromPdf] MinerU failed: ${(mineruError as Error).message}, falling back to OCR`);
       }
     }
 
-    if (useOcr) {
-      // OCR mode: Convert PDF to images and extract text via cloud GLM-OCR
-      piLog("[OCR Mode] Processing PDF with cloud GLM-OCR...");
-      const ocrOptions: OcrOptions = {
-        ocrModel: this.options.ocrModel || DEFAULT_OCR_MODEL,
-        apiKey: this.options.apiKey,
-        baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-        imageFormat: this.options.imageFormat,
-        imageDpi: this.options.imageDpi,
-        concurrency: this.options.ocrConcurrency,
-      };
-      const result = await parsePdfWithOcr(input, ocrOptions);
-      pages = result.pages;
-      pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
-    } else {
-      // Text mode: use cached parse result if available
-      const pdfInfo = cachedPdfInfo || await parsePdf(input, this.options.mineruApiKey);
-      pages = pdfInfo.pages;
-      pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
+    // ── OCR 兜底路径（无 Token 或 MinerU 失败）──
+    piLog("[fromPdf] Using OCR fallback...");
+    const ocrOptions: OcrOptions = {
+      ocrModel: this.options.ocrModel || DEFAULT_OCR_MODEL,
+      apiKey: this.options.apiKey,
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+      imageFormat: this.options.imageFormat,
+      imageDpi: this.options.imageDpi,
+      concurrency: this.options.ocrConcurrency,
+    };
+    const result = await parsePdfWithOcr(input, ocrOptions);
+    pages = result.pages;
+    pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
 
-      // MinerU doesn't provide coverPng or author
-
-      // Save outline (Mineru returns TreeNode[] already)
-      const savedOutline = pdfInfo.outline;
-
-      // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
-      if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
-        piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
-        const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-        return result;
-      }
-
-      // LLM path: use outline as hint for page mapping accuracy
-      try {
-        const result = await this.processPdfPages(pages, pdfName, savedOutline);
-        return result;
-      } catch (error) {
-        // LLM failed — fall back to outline if available
-        if (savedOutline && savedOutline.length > 0) {
-          piLog(`[fromPdf] LLM path failed, falling back to outline (${savedOutline.length} entries): ${(error as Error).message}`);
-          const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-          return result;
-        }
-        throw error;
-      }
-    }
-
-    // OCR mode path (no outline available)
-    const result = await this.processPdfPages(pages, pdfName);
-    return result;
+    return this.processPdfPages(pages, pdfName);
   }
 
   /**
