@@ -22,6 +22,8 @@ export interface ProviderCapabilities {
 export interface ProviderConfig {
 	baseUrl: string;
 	defaultModel: string;
+	/** 用于连接测试的模型（当 defaultModel 不支持 /chat/completions 时） */
+	chatTestModel?: string;
 	/** @deprecated 仅迁移模块内部使用，迁移完成后删除 */
 	legacyApiKeyField?: keyof DeepPDFSettings;
 	website?: string;
@@ -75,8 +77,9 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	sensenova: {
 		baseUrl: 'https://token.sensenova.cn/v1',
 		defaultModel: 'sensenova-u1-fast',
+		chatTestModel: 'sensenova-6.7-flash-lite',
 		supportsModelList: true,
-		capabilities: { chat: false, embedding: false, reranker: false, imagegen: true },
+		capabilities: { chat: true, embedding: false, reranker: false, imagegen: true },
 	},
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl

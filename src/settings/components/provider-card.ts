@@ -193,18 +193,20 @@ export function renderProviderDetail(
     btn.setIcon('plug')
       .setTooltip('测试连接')
       .onClick(async () => {
-        if (!account.apiKey) {
+        const current = getProviderAccount(providers, providerId);
+        const currentKey = current?.apiKey || '';
+        if (!currentKey) {
           new Notice('请先填写 API Key');
           return;
         }
         const { testConnection } = await import('../../config/model-fetcher');
         const builtInConfig = PROVIDER_CONFIGS[providerId as ProviderType];
-        const effectiveBaseUrl = account.baseUrl || builtInConfig?.baseUrl || '';
+        const effectiveBaseUrl = current?.baseUrl || builtInConfig?.baseUrl || '';
         const isTts = builtInConfig?.capabilities?.tts && !builtInConfig?.capabilities?.chat;
         const endpoint = isTts ? 'tts' : 'chat';
         btn.setDisabled(true);
         btn.setIcon('loader');
-        const result = await testConnection(effectiveBaseUrl, account.apiKey, builtInConfig?.defaultModel || '', endpoint);
+        const result = await testConnection(effectiveBaseUrl, currentKey, builtInConfig?.chatTestModel || builtInConfig?.defaultModel || '', endpoint);
         btn.setDisabled(false);
         btn.setIcon('plug');
         if (result.success) {
@@ -245,15 +247,17 @@ export function renderProviderDetail(
       btn.setIcon('plug')
         .setTooltip('测试连接')
         .onClick(async () => {
-          if (!account.fallbackApiKey) {
+          const current = getProviderAccount(providers, providerId);
+          const currentFallbackKey = current?.fallbackApiKey || '';
+          if (!currentFallbackKey) {
             new Notice('请先填写 API API Key');
             return;
           }
           const { testConnection } = await import('../../config/model-fetcher');
-          const fallbackBaseUrl = account.fallbackBaseUrl || 'https://api.xiaomimimo.com/v1';
+          const fallbackBaseUrl = current?.fallbackBaseUrl || 'https://api.xiaomimimo.com/v1';
           btn.setDisabled(true);
           btn.setIcon('loader');
-          const result = await testConnection(fallbackBaseUrl, account.fallbackApiKey, 'mimo-v2.5', 'chat');
+          const result = await testConnection(fallbackBaseUrl, currentFallbackKey, 'mimo-v2.5', 'chat');
           btn.setDisabled(false);
           btn.setIcon('plug');
           if (result.success) {

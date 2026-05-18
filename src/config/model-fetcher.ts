@@ -123,7 +123,7 @@ export async function testConnection(
 	baseUrl: string,
 	apiKey: string,
 	model: string,
-	endpoint: 'chat' | 'embedding' | 'tts' = 'chat',
+	endpoint: 'chat' | 'embedding' | 'tts' | 'imagegen' = 'chat',
 ): Promise<TestConnectionResult> {
 	if (!apiKey) return { success: false, latencyMs: 0, error: 'API Key 未配置' };
 	if (!model) return { success: false, latencyMs: 0, error: '模型名未填写' };
@@ -150,6 +150,9 @@ export async function testConnection(
 				],
 				audio: audioConfig,
 			});
+		} else if (endpoint === 'imagegen') {
+			url = `${normalizedUrl}/images/generations`;
+			body = JSON.stringify({ model, prompt: 'a red circle', n: 1, size: '1024x1024' });
 		} else {
 			const isEmbedding = endpoint === 'embedding';
 			url = `${normalizedUrl}/${isEmbedding ? 'embeddings' : 'chat/completions'}`;

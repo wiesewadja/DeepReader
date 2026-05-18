@@ -278,7 +278,7 @@ export function createRoleContent(
           const builtInConfig = PROVIDER_CONFIGS[currentProvider as ProviderType];
           const effectiveBaseUrl = freshAccount?.baseUrl || builtInConfig?.baseUrl || '';
           const capability = ROLE_CAPABILITY[role];
-          const endpoint = capability === 'tts' ? 'tts' : capability === 'embedding' ? 'embedding' : 'chat';
+          const endpoint = capability === 'tts' ? 'tts' : capability === 'embedding' ? 'embedding' : capability === 'imagegen' ? 'imagegen' : 'chat';
           const result = await testConnection(
             effectiveBaseUrl,
             freshAccount?.apiKey || '',
