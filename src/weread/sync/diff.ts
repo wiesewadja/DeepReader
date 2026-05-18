@@ -16,13 +16,18 @@ export function filterBooksToSync(
 	syncState: WereadSyncState,
 	options?: { force?: boolean },
 ): WereadBook[] {
+	const excluded = new Set(syncState.excludedBooks ?? []);
+
+	// 排除已手动删除的书籍（即使强制同步也跳过）
+	let books = remoteBooks.filter(b => !excluded.has(b.bookId));
+
 	if (options?.force) {
-		return [...remoteBooks];
+		return books;
 	}
 
 	const syncedBooks = syncState.syncedBooks ?? {};
 
-	return remoteBooks.filter((book) => {
+	return books.filter((book) => {
 		const local = syncedBooks[book.bookId];
 		if (!local) return true; // 新书
 		return book.noteCount !== local.noteCount || book.reviewCount !== local.reviewCount;
@@ -43,6 +48,7 @@ export function detectChangedBooks(
 	remoteBooks: WereadBook[],
 	syncState: WereadSyncState,
 ): DiffResult {
+	const excluded = new Set(syncState.excludedBooks ?? []);
 	const syncedBooks = syncState.syncedBooks ?? {};
 
 	const toSync: WereadBook[] = [];
@@ -50,6 +56,7 @@ export function detectChangedBooks(
 	const newBooks: WereadBook[] = [];
 
 	for (const book of remoteBooks) {
+		if (excluded.has(book.bookId)) continue;
 		const local = syncedBooks[book.bookId];
 		if (!local) {
 			toSync.push(book);

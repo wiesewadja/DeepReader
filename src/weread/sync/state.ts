@@ -48,12 +48,15 @@ export class SyncStateManager {
 		const filePath = join(this.wereadDir, SYNC_STATE_FILE);
 		try {
 			if (!(await this.adapter.exists(filePath))) {
-				return { lastSyncTime: 0, syncedBooks: {} };
+				return { lastSyncTime: 0, syncedBooks: {}, excludedBooks: [] };
 			}
 			const raw = await this.adapter.read(filePath);
-			return JSON.parse(raw) as WereadSyncState;
+			const state = JSON.parse(raw) as WereadSyncState;
+			// 兼容旧数据
+			if (!state.excludedBooks) state.excludedBooks = [];
+			return state;
 		} catch {
-			return { lastSyncTime: 0, syncedBooks: {} };
+			return { lastSyncTime: 0, syncedBooks: {}, excludedBooks: [] };
 		}
 	}
 
@@ -62,6 +65,24 @@ export class SyncStateManager {
 		await this.ensureDir();
 		const filePath = join(this.wereadDir, SYNC_STATE_FILE);
 		await this.adapter.write(filePath, JSON.stringify(state, null, 2));
+	}
+
+	/** 将书籍加入排除列表 */
+	async excludeBook(bookId: string): Promise<void> {
+		const state = await this.loadSyncState();
+		if (!state.excludedBooks.includes(bookId)) {
+			state.excludedBooks.push(bookId);
+		}
+		// 同时从 syncedBooks 移除，避免残留
+		delete state.syncedBooks[bookId];
+		await this.saveSyncState(state);
+	}
+
+	/** 将书籍从排除列表移除（恢复同步） */
+	async unexcludeBook(bookId: string): Promise<void> {
+		const state = await this.loadSyncState();
+		state.excludedBooks = state.excludedBooks.filter(id => id !== bookId);
+		await this.saveSyncState(state);
 	}
 
 	/** 读取映射关系，文件不存在时返回空映射 */

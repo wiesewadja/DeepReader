@@ -669,16 +669,26 @@ API Key 格式：`wrk-xxxxxxxx`，绑定用户身份（vid），需要用户身�
 | `synckey` | int | 翻页游标 |
 | `removed` | array | 已删除的 review ID 列表（增量同步用） |
 
+#### `reviews[]` 结构
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `reviewId` | string | 唯一 ID（外层） |
+| `review` | object | 嵌套内容对象（见下表） |
+
 #### `reviews[].review` 结构
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `reviewId` | string | 唯一 ID |
+| `reviewId` | string | 唯一 ID（内层，与外层相同） |
+| `type` | int | 类型（1=章节评论/想法, 4=全书评论） |
 | `content` | string | 内容文本 |
+| `htmlContent` | string | HTML 富文本内容 |
 | `createTime` | int | 创建时间（Unix 时间戳） |
-| `star` | int | 评分（0-5，-1=无评分） |
-| `chapterName` | string | 所在章节名 |
-| `isFinish` | bool | 是否读完 |
+| `chapterUid` | int | 所在章节 UID |
+| `chapterTitle` | string | 所在章节名 |
+| `abstract` | string | 划线原文摘要 |
+| `range` | string | 划线位置范围 |
 
 ### `POST /review/single` — 单条想法详情
 

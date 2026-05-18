@@ -124,9 +124,7 @@ export class WereadSyncEngine {
 		const stateManager = new SyncStateManager(this.adapter);
 		await stateManager.ensureDir();
 		const syncState = await stateManager.loadSyncState();
-		const toSync = forceFullSync
-			? remoteBooks
-			: filterBooksToSync(remoteBooks, syncState);
+		const toSync = filterBooksToSync(remoteBooks, syncState, forceFullSync ? { force: true } : undefined);
 
 		logger.info(`需要同步 ${toSync.length} 本（全量=${forceFullSync}）`);
 
@@ -265,19 +263,22 @@ export class WereadSyncEngine {
 			}),
 		);
 
-		// 解析评论
+		// 解析评论 — 网关返回嵌套结构 reviews[].review.{content,...}
 		const reviews: WereadReview[] = (reviewResp.reviews ?? []).map(
-			(rv: WereadReviewItem) => ({
-				reviewId: rv.reviewId,
-				content: rv.content || '',
-				mdContent: rv.htmlContent ? htmlToMarkdown(rv.htmlContent) : (rv.content || ''),
-				chapterUid: rv.chapterUid ?? 0,
-				chapterTitle: rv.chapterName ?? '',
-				createTime: rv.createTime,
-				type: rv.type as 1 | 4,
-				abstract: rv.abstract,
-				range: rv.range,
-			}),
+			(rv: WereadReviewItem) => {
+				const r = rv.review ?? {};
+				return {
+					reviewId: r.reviewId ?? rv.reviewId,
+					content: r.content || '',
+					mdContent: r.htmlContent ? htmlToMarkdown(r.htmlContent) : (r.content || ''),
+					chapterUid: r.chapterUid ?? 0,
+					chapterTitle: r.chapterTitle ?? r.chapterName ?? '',
+					createTime: r.createTime ?? 0,
+					type: (r.type ?? 1) as 1 | 4,
+					abstract: r.abstract,
+					range: r.range,
+				};
+			},
 		);
 
 		// 解析章节 — 网关返回直接的 chapters 数组
