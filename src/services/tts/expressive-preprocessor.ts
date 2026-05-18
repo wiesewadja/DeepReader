@@ -86,6 +86,10 @@ export class ExpressivePreprocessor {
 
     // 11. 精简空行
     text = text.replace(/\n{3,}/g, '\n\n');
+
+    // 12. 段落间插入停顿标记（让 TTS 在段落边界自然停顿）
+    text = text.replace(/\n\n/g, '\n……\n');
+
     text = text.trim();
 
     return text;
