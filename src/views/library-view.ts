@@ -22,6 +22,7 @@ import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import { SyncStateManager } from '../weread/sync/state.js';
 import type { MappingStats } from '../weread/types.js';
+import { downloadWereadCover } from '../weread/utils/cover.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -101,14 +102,18 @@ export class LibraryView extends ItemView {
         const container = this.containerEl.children[1]; // 跳过 nav-header
         container.empty();
         container.addClass('deeppdf-library-view');
-        
+
+        // 清除封面缓存，强制重新检查封面文件是否完整
+        this.coverCache.clear();
+        this.loadingCovers.clear();
+
         // 从 state 初始化数据（如果有的话）
         const state = this.getState() as { indexes?: IndexListItem[]; selectedIndexId?: string | null } | null;
         if (state?.indexes) {
             this.indexes = state.indexes;
             this.selectedIndexId = state.selectedIndexId ?? null;
         }
-        
+
         await this.loadReadingProgresses();
         this.render();
     }
@@ -349,6 +354,14 @@ export class LibraryView extends ItemView {
                 const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
                 imgEl.src = cachedCover;
                 imgEl.alt = bookName;
+                // 缓存封面加载失败 → 清除缓存并重新尝试
+                imgEl.addEventListener('error', () => {
+                    this.coverCache.delete(index.id);
+                    if (!this.loadingCovers.has(index.id)) {
+                        this.loadingCovers.add(index.id);
+                        this.loadCoverAndDisplay(index.id, coverName, coverEl);
+                    }
+                });
             } else {
                 // 没有缓存，先显示占位符
                 coverEl.innerHTML = this.createCoverPlaceholder(coverName);
@@ -372,26 +385,37 @@ export class LibraryView extends ItemView {
             checkMark.innerHTML = Icons.checkCircle;
         }
 
-        // 信息区域：书名 + 作者 + 元信息
+        // 信息区域：书名 + 标签行 + 作者 + 元信息
         const infoEl = card.createDiv({ cls: 'deeppdf-lib-book-info' });
 
-        // 书名行（标题 + 类型标签）
-        const titleRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-title-row' });
-        const titleEl = titleRow.createDiv({ cls: 'deeppdf-lib-book-title', text: bookName });
+        // 书名（独占一行，不截断）
+        const titleEl = infoEl.createDiv({ cls: 'deeppdf-lib-book-title', text: bookName });
         titleEl.title = index.pdf_name;
 
-        // 文件类型标签
+        // 标签行：类型 + 状态 + 统计
+        const tagParts: string[] = [];
         const typeTag = index.fileType?.toUpperCase() || 'PDF';
-        titleRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
 
-        // 已关联标签
+        const tagRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-tag-row' });
+        tagRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
+
         if (this.wereadMappingCache.has(index.id)) {
-            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '已关联' });
+            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
         }
 
-        // 未关联的微信读书书籍：显示下载按钮
         if (index.fileType === 'weread' && !this.wereadMappingCache.has(index.id)) {
-            titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-zlibrary', text: '待下载' });
+            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-zlibrary', text: '待下载' });
+        }
+
+        // 统计标签（笔记/评论/时长）
+        const wereadStats = this.wereadStatsCache.get(index.id);
+        if (wereadStats) {
+            if (wereadStats.noteCount > 0) {
+                tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-stat', text: `${wereadStats.noteCount} 笔记` });
+            }
+            if (wereadStats.reviewCount > 0) {
+                tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-stat', text: `${wereadStats.reviewCount} 评论` });
+            }
         }
 
         // 作者
@@ -399,22 +423,13 @@ export class LibraryView extends ItemView {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: index.author });
         }
 
-        // 元信息行：章节数 + 索引日期 + 微信读书统计
+        // 元信息行：章节数 + 阅读时长 + 索引日期
         const metaParts: string[] = [];
         if (index.node_count > 0) {
             metaParts.push(`${index.node_count} 章节`);
         }
-        const wereadStats = this.wereadStatsCache.get(index.id);
-        if (wereadStats) {
-            if (wereadStats.noteCount > 0) {
-                metaParts.push(`${wereadStats.noteCount} 笔记`);
-            }
-            if (wereadStats.reviewCount > 0) {
-                metaParts.push(`${wereadStats.reviewCount} 评论`);
-            }
-            if (wereadStats.readingTime) {
-                metaParts.push(wereadStats.readingTime);
-            }
+        if (wereadStats?.readingTime) {
+            metaParts.push(wereadStats.readingTime);
         }
         if (index.created_at) {
             const date = new Date(index.created_at);
@@ -479,33 +494,31 @@ export class LibraryView extends ItemView {
         }
     }
 
-    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章和统计 */
+    /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章、统计标签和进度条 */
     private refreshWereadCardInfo(): void {
         for (const [bookId, card] of this.cardElements) {
-            const titleRow = card.querySelector('.deeppdf-lib-book-title-row');
-            if (!titleRow) continue;
-            // 已有徽章则跳过
-            if (titleRow.querySelector('.deeppdf-lib-type-weread')) continue;
-            if (this.wereadMappingCache.has(bookId)) {
-                titleRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+            // 注入标签到 tag-row
+            const tagRow = card.querySelector('.deeppdf-lib-book-tag-row');
+            if (tagRow && !tagRow.querySelector('.deeppdf-lib-type-weread')) {
+                if (this.wereadMappingCache.has(bookId)) {
+                    tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
+                }
             }
 
-            // 注入统计信息到 meta 区域
+            // 注入统计标签
             const stats = this.wereadStatsCache.get(bookId);
-            if (!stats) continue;
-            const metaEl = card.querySelector('.deeppdf-lib-book-meta') as HTMLElement | null;
-            if (!metaEl || metaEl.dataset.wereadStatsInjected) continue;
-            metaEl.dataset.wereadStatsInjected = '1';
-            const parts: string[] = [];
-            if (stats.noteCount > 0) parts.push(`${stats.noteCount} 笔记`);
-            if (stats.reviewCount > 0) parts.push(`${stats.reviewCount} 评论`);
-            if (stats.readingTime) parts.push(stats.readingTime);
-            if (parts.length > 0 && metaEl.textContent) {
-                metaEl.textContent = parts.join(' · ') + ' · ' + metaEl.textContent;
+            if (stats && tagRow && !(tagRow as HTMLElement).dataset.wereadStatsInjected) {
+                (tagRow as HTMLElement).dataset.wereadStatsInjected = '1';
+                if (stats.noteCount > 0) {
+                    tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-stat', text: `${stats.noteCount} 笔记` });
+                }
+                if (stats.reviewCount > 0) {
+                    tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-stat', text: `${stats.reviewCount} 评论` });
+                }
             }
 
             // 注入进度条
-            if (stats.progress > 0 && !card.querySelector('.deeppdf-lib-reading-progress')) {
+            if (stats && stats.progress > 0 && !card.querySelector('.deeppdf-lib-reading-progress')) {
                 const infoEl = card.querySelector('.deeppdf-lib-book-info');
                 if (infoEl) {
                     const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
@@ -610,6 +623,13 @@ export class LibraryView extends ItemView {
                     : this.app.vault.getResourcePath(foundPath as any);
                 this.coverCache.set(indexId, localCoverUrl);
 
+                // 检查文件大小，0 字节视为无效
+                if (coverFile && coverFile.stat?.size === 0) {
+                    this.coverCache.delete(indexId);
+                    this.retryCoverDownload(indexId, bookName, coverEl);
+                    return;
+                }
+
                 // 保留选中对勾（如果存在）
                 const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
 
@@ -618,6 +638,12 @@ export class LibraryView extends ItemView {
                 imgEl.src = localCoverUrl;
                 imgEl.alt = foundName || bookName;
 
+                // 封面加载失败（文件损坏/不完整）→ 清除缓存并尝试重新下载
+                imgEl.addEventListener('error', () => {
+                    this.coverCache.delete(indexId);
+                    this.retryCoverDownload(indexId, bookName, coverEl);
+                });
+
                 // 恢复选中对勾
                 if (checkMark) {
                     coverEl.appendChild(checkMark);
@@ -625,12 +651,60 @@ export class LibraryView extends ItemView {
 
                 // 重新添加操作按钮
                 this.addCoverActions(coverEl, indexId);
+            } else {
+                // 封面文件不存在 → 尝试重新下载
+                this.retryCoverDownload(indexId, bookName, coverEl);
             }
         } catch (error) {
             // 加载失败，保持占位符
         } finally {
             this.loadingCovers.delete(indexId);
         }
+    }
+
+    /**
+     * 封面图片加载失败时，尝试重新下载封面
+     * 优先从 syncState 获取 cover URL 下载微信读书封面
+     */
+    private async retryCoverDownload(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
+        const displayName = this.getDisplayName(bookName);
+        const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
+
+        // 显示加载中占位符
+        coverEl.innerHTML = `<div class="deeppdf-lib-cover-loading">${Icons.loading}</div>`;
+
+        try {
+            // 从 syncState 获取 cover URL，重新下载微信读书封面
+            const adapter = this.app.vault.adapter as any;
+            const stateManager = new SyncStateManager(adapter);
+            const syncState = await stateManager.loadSyncState();
+            const entry = syncState.syncedBooks[indexId];
+            if (entry?.cover) {
+                const newCoverPath = await downloadWereadCover(entry.cover, entry.title, adapter);
+                if (newCoverPath) {
+                    // vault 需要刷新才能识别新文件
+                    await this.app.vault.adapter.stat(newCoverPath);
+                    const file = this.app.vault.getAbstractFileByPath(newCoverPath);
+                    if (file && file instanceof TFile) {
+                        const url = this.app.vault.getResourcePath(file);
+                        this.coverCache.set(indexId, url);
+
+                        coverEl.innerHTML = '';
+                        const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
+                        imgEl.src = url;
+                        imgEl.alt = bookName;
+                        if (checkMark) coverEl.appendChild(checkMark);
+                        this.addCoverActions(coverEl, indexId);
+                        return;
+                    }
+                }
+            }
+        } catch { /* ignore */ }
+
+        // 重新下载失败，显示占位符
+        coverEl.innerHTML = this.createCoverPlaceholder(displayName);
+        if (checkMark) coverEl.appendChild(checkMark);
+        this.addCoverActions(coverEl, indexId);
     }
 
     /**

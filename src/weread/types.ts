@@ -261,6 +261,8 @@ export interface WereadSyncedBookEntry {
 	/** Phase 2 扩展：进度和阅读时长（可选，向后兼容） */
 	progress?: number;
 	readingTime?: number;
+	/** 封面 URL（同步时保存，用于封面缺失时重新下载） */
+	cover?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -11,7 +11,7 @@ import { filterBooksToSync } from './diff';
 import { SyncStateManager } from './state';
 import type { VaultAdapter } from './state';
 import { renderNotebook } from '../render/markdown-renderer';
-import { extractCoverExt, toHighResCoverUrl } from '../utils/cover';
+import { extractCoverExt, toHighResCoverUrl, downloadWereadCover } from '../utils/cover';
 import { sanitizeFileName } from '../utils/file';
 import type { WereadChapter, WereadHighlight, WereadReview } from '../types';
 import type {
@@ -327,6 +327,7 @@ export class WereadSyncEngine {
 			filePath: outputPath,
 			progress: book.progress,
 			readingTime: book.readingTime,
+			cover: book.cover,
 		};
 
 		return { success: true, isNew };
@@ -334,34 +335,7 @@ export class WereadSyncEngine {
 
 	/** 下载封面图片 */
 	private async downloadCover(book: WereadBook): Promise<void> {
-		if (!book.cover) return;
-
-		const ext = extractCoverExt(book.cover);
-		const coverPath = `DeepReader/covers/${sanitizeFileName(book.title)}.${ext}`;
-
-		if (await this.adapter.exists(coverPath)) {
-			try {
-				const stat = await this.adapter.stat(coverPath);
-				if (stat && stat.size > 5 * 1024) return;
-			} catch { /* stat 失败则重新下载 */ }
-		}
-
-		// 先尝试高清，失败则用原始 URL
-		const hiresUrl = toHighResCoverUrl(book.cover);
-		const urls = hiresUrl !== book.cover ? [hiresUrl, book.cover] : [book.cover];
-
-		for (const url of urls) {
-			try {
-				const resp = await safeRequest({ url });
-				if (resp.arrayBuffer && resp.arrayBuffer.byteLength > 0) {
-					await this.ensureDirForFile(coverPath);
-					await this.adapter.writeBinary(coverPath, resp.arrayBuffer);
-					return;
-				}
-			} catch {
-				continue;
-			}
-		}
+		await downloadWereadCover(book.cover, book.title, this.adapter);
 	}
 
 	/** 根据设置生成笔记文件路径 */
