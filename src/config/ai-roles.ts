@@ -17,6 +17,7 @@ export const ROLE_CAPABILITY: Record<RoleType, RequiredCapability> = {
 	embedding: 'embedding',
 	reranker: 'reranker',
 	tts: 'tts',
+	imagegen: 'imagegen',
 };
 
 /** 第一层：服务商账号信息 */
@@ -35,7 +36,7 @@ export interface AIRoleConfig {
 	disableThinking?: boolean;    // undefined=自动检测, true=强制禁用, false=不禁用
 }
 
-/** 七种用途角色的完整配置 */
+/** 八种用途角色的完整配置 */
 export interface AIRoles {
 	chat: AIRoleConfig;                    // 必填
 	router: AIRoleConfig;                  // 必填
@@ -44,11 +45,12 @@ export interface AIRoles {
 	embedding: AIRoleConfig | null;        // null = 禁用，降级 BM25
 	reranker: AIRoleConfig | null;         // null = 禁用重排序
 	tts: AIRoleConfig | null;              // null = 禁用语音合成
+	imagegen: AIRoleConfig | null;         // null = 禁用图片生成
 }
 
 /** 判断是否为固定服务商（非自定义） */
 export function isBuiltInProvider(id: string): id is ProviderType {
 	return id in ({} as Record<ProviderType, unknown>) && [
-		'deepseek', 'kimi', 'zhipu', 'minimax', 'siliconflow', 'openai', 'xiaomi',
+		'minimax', 'deepseek', 'kimi', 'zhipu', 'siliconflow', 'openai', 'xiaomi',
 	].includes(id);
 }

@@ -11,6 +11,7 @@ export interface VoiceConfig {
   apiKey: string;
   baseUrl: string;
   model?: string;
+  provider?: string;
 }
 
 export interface VoicePipelineOptions {
@@ -32,6 +33,7 @@ export async function generateVoice(
 
   const { TTSSummarizer } = await import('../../services/tts/tts-summarizer.js');
   const { TTSClient } = await import('../../services/tts/tts-client.js');
+  const { MiniMaxTTSClient } = await import('../../services/tts/minimax-tts-client.js');
   const { getDefaultVoiceProfile } = await import('../../services/tts/voice-profile.js');
   const { TTSService } = await import('../../services/tts/tts-service.js');
 
@@ -41,11 +43,17 @@ export async function generateVoice(
     model: llmConfig.model || 'deepseek-chat',
   });
 
-  const client = new TTSClient({
-    apiKey: ttsConfig.apiKey,
-    baseUrl: ttsConfig.baseUrl,
-    model: ttsConfig.model,
-  });
+  const client = ttsConfig.provider === 'minimax'
+    ? new MiniMaxTTSClient({
+        apiKey: ttsConfig.apiKey,
+        baseUrl: ttsConfig.baseUrl,
+        model: ttsConfig.model,
+      })
+    : new TTSClient({
+        apiKey: ttsConfig.apiKey,
+        baseUrl: ttsConfig.baseUrl,
+        model: ttsConfig.model,
+      });
 
   // 先对整个内容进行摘要
   const summary = await summarizer.summarize(formattedOutput, options.userQuestion, {
@@ -65,7 +73,7 @@ export async function generateVoice(
     if (signal?.aborted) break;
     try {
       const audioBuffer = await client.synthesize(sentence, {
-        voiceProfile: { voice: getDefaultVoiceProfile().voice },
+        voiceProfile: { voice: getDefaultVoiceProfile(ttsConfig.provider).voice },
       });
       audioChunks.push(audioBuffer);
       // 流式回调：每生成一个句子就返回音频块

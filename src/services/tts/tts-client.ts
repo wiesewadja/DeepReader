@@ -17,7 +17,12 @@ export interface TTSOptions {
     styleText?: string;
 }
 
-export class TTSClient {
+export interface ITTSSynthesizer {
+    synthesize(text: string, options: TTSOptions): Promise<ArrayBuffer>;
+    synthesizeStream(text: string, options: TTSOptions): AsyncGenerator<ArrayBuffer>;
+}
+
+export class TTSClient implements ITTSSynthesizer {
     #apiKey: string;
     private baseUrl: string;
     private model: string;

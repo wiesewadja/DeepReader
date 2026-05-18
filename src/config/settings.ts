@@ -41,13 +41,13 @@ export interface PropositionSettings {
 // 新版两层架构字段
 // ═══════════════════════════════════════════════════════════════
 
-/** 新版默认的服务商账号（固定 6 个 + 用户可新增自定义） */
+/** 新版默认的服务商账号（固定 7 个 + 用户可新增自定义） */
 function defaultProviders(): Record<string, AIProviderAccount> {
 	return {
+		minimax:     { apiKey: '' },
 		deepseek:    { apiKey: '' },
 		kimi:        { apiKey: '' },
 		zhipu:       { apiKey: '' },
-		minimax:     { apiKey: '' },
 		siliconflow: { apiKey: '' },
 		openai:      { apiKey: '' },
 		xiaomi:      { apiKey: '' },
@@ -57,13 +57,14 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 /** 新版默认的角色配置 */
 function defaultRoles(): AIRoles {
 	return {
-		chat:        { provider: 'deepseek', model: 'deepseek-chat' },
-		router:      { provider: 'deepseek', model: 'deepseek-chat' },
-		pageindex:   { provider: 'deepseek', model: 'deepseek-chat' },
-		proposition: { provider: 'siliconflow', model: 'Qwen/Qwen3-8B' },
-		embedding:   null,
+		chat:        { provider: 'minimax', model: 'MiniMax-M2.7' },
+		router:      { provider: 'minimax', model: 'MiniMax-M2.7' },
+		pageindex:   { provider: 'minimax', model: 'MiniMax-M2.7' },
+		proposition: { provider: 'minimax', model: 'MiniMax-M2.7' },
+		embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },
 		reranker:    null,
 		tts:         null,
+		imagegen:    null,
 	};
 }
 

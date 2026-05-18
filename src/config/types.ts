@@ -6,10 +6,10 @@
  */
 
 /** LLM 服务商标识 */
-export type ProviderType = 'deepseek' | 'kimi' | 'zhipu' | 'minimax' | 'siliconflow' | 'openai' | 'xiaomi' | 'custom';
+export type ProviderType = 'minimax' | 'deepseek' | 'kimi' | 'zhipu' | 'siliconflow' | 'openai' | 'xiaomi' | 'custom';
 
 /** AI 用途角色 */
-export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker' | 'tts';
+export type RoleType = 'chat' | 'router' | 'pageindex' | 'proposition' | 'embedding' | 'reranker' | 'tts' | 'imagegen';
 
 /** 角色所需的能力类型 */
-export type RequiredCapability = 'chat' | 'embedding' | 'reranker' | 'tts';
+export type RequiredCapability = 'chat' | 'embedding' | 'reranker' | 'tts' | 'imagegen';

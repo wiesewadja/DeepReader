@@ -16,6 +16,7 @@ export interface ProviderCapabilities {
 	embedding: boolean;
 	reranker: boolean;
 	tts?: boolean;
+	imagegen?: boolean;
 }
 
 export interface ProviderConfig {
@@ -24,7 +25,7 @@ export interface ProviderConfig {
 	/** @deprecated 仅迁移模块内部使用，迁移完成后删除 */
 	legacyApiKeyField?: keyof DeepPDFSettings;
 	website?: string;
-	supportsModelList?: boolean;         // false = minimax/custom，展示文本输入
+	supportsModelList?: boolean;         // false = custom，展示文本输入
 	capabilities: ProviderCapabilities;
 }
 
@@ -32,6 +33,12 @@ export interface ProviderConfig {
  * 各服务商的预设配置
  */
 export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
+	minimax: {
+		baseUrl: 'https://api.minimaxi.com/v1',
+		defaultModel: 'MiniMax-M2.7',
+		supportsModelList: true,
+		capabilities: { chat: true, embedding: true, reranker: false, tts: true, imagegen: true },
+	},
 	deepseek: {
 		baseUrl: 'https://api.deepseek.com',
 		defaultModel: 'deepseek-chat',
@@ -51,12 +58,6 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 		defaultModel: 'glm-4-flash',
 		legacyApiKeyField: 'zhipuApiKey',
 		supportsModelList: true,
-		capabilities: { chat: true, embedding: true, reranker: false },
-	},
-	minimax: {
-		baseUrl: 'https://api.minimax.chat/v1',
-		defaultModel: 'MiniMax-Text-01',
-		supportsModelList: false,
 		capabilities: { chat: true, embedding: true, reranker: false },
 	},
 	siliconflow: {
@@ -147,7 +148,10 @@ export function resolveRoleConfig(
 	const needsNormalize = !builtInConfig || (!!baseUrlOverride || !!(account as { baseUrl?: string }).baseUrl);
 	const baseUrl = (needsNormalize && rawBaseUrl) ? normalizeBaseUrl(rawBaseUrl) : rawBaseUrl;
 
-	const resolvedModel = model || builtInConfig?.defaultModel || '';
+	const defaultModel = role === 'tts' && provider === 'minimax'
+		? (MINIMAX_TTS_MODELS[0] || builtInConfig?.defaultModel || '')
+		: (builtInConfig?.defaultModel || '');
+	const resolvedModel = model || defaultModel;
 
 	return { apiKey, baseUrl, model: resolvedModel, provider, embeddingBatchSize, disableThinking };
 }
@@ -287,11 +291,19 @@ export function getProviderConfig(
 /**
  * 服务商显示名称映射
  */
+/**
+ * MiniMax TTS 模型列表（/v1/models 不返回非文本模型，故硬编码）
+ */
+export const MINIMAX_TTS_MODELS = [
+  'speech-2.8-hd',
+  'speech-2.8-turbo',
+];
+
 export const PROVIDER_LABELS: Record<ProviderType, string> = {
+	minimax: 'MiniMax',
 	deepseek: 'DeepSeek',
 	kimi: 'Kimi (Moonshot)',
 	zhipu: '智谱 (GLM)',
-	minimax: 'MiniMax',
 	siliconflow: '硅基流动 (SiliconFlow)',
 	openai: 'OpenAI',
 	xiaomi: '小米 (Mimo)',

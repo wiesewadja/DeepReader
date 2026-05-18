@@ -140,7 +140,7 @@ export async function chatGPTWithFinishReason(
       piLog(`[chatGPT] finish_reason=${choice.finish_reason}, output ${choice.message.content.length} chars`);
 
       return {
-        content: choice.message.content,
+        content: sharedStripThinkTags(choice.message.content),
         finishReason: choice.finish_reason === "stop" ? "finished" :
                       choice.finish_reason === "length" ? "max_output_reached" : "error",
       };

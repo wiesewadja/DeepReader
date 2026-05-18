@@ -10,6 +10,7 @@ import { PRESETS, getPresetById, detectCurrentPreset } from '../../config/preset
 import type { ProviderPreset } from '../../config/presets';
 import type { SectionContext } from '../types';
 import { renderProviderList } from '../components/provider-card';
+import { debounceAsync } from '../helpers';
 
 export interface LLMState {
   expandedSections: Set<string>;
@@ -131,6 +132,17 @@ function renderQuickSetup(
     },
   });
   keyInput.value = currentKey;
+
+  const debouncedSaveKey = debounceAsync(async () => {
+    await ctx.plugin.saveSettings();
+  }, 300);
+  keyInput.addEventListener('input', () => {
+    const accounts = ctx.plugin.settings.providers as Record<string, { apiKey?: string; baseUrl?: string }>;
+    if (!accounts[providerId]) accounts[providerId] = { apiKey: keyInput.value };
+    else accounts[providerId].apiKey = keyInput.value;
+    ctx.plugin.resetFrontendAgent();
+    debouncedSaveKey();
+  });
 
   const eyeBtn = keyRow.createEl('button', { text: '👁', cls: 'deeppdf-btn-eye' });
   let keyVisible = false;

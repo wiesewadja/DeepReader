@@ -289,17 +289,27 @@ export class AgentChatController {
 				isSocratic: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
 				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
 					const cfg = resolveRoleConfig('tts', this.host.plugin.settings);
-					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
+					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, provider: cfg.provider } : undefined;
 				})() : undefined,
 				llmConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
 					const cfg = resolveRoleConfig('router', this.host.plugin.settings);
 					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
 				})() : undefined,
 				infographicConfig: (() => {
-					const apiKey = this.host.plugin.settings.sensenovaApiKey;
-					if (!apiKey) return undefined;
+					const imagegenCfg = resolveRoleConfig('imagegen', this.host.plugin.settings);
+					const legacyKey = this.host.plugin.settings.sensenovaApiKey;
+					if (!imagegenCfg?.apiKey && !legacyKey) return undefined;
+					if (imagegenCfg?.apiKey) {
+						return {
+							apiKey: imagegenCfg.apiKey,
+							baseUrl: imagegenCfg.baseUrl,
+							model: imagegenCfg.model,
+							relativeDir: 'DeepReader/infographics',
+							vaultAdapter: this.host.app.vault.adapter as any,
+						};
+					}
 					return {
-						apiKey,
+						apiKey: legacyKey,
 						relativeDir: 'DeepReader/infographics',
 						vaultAdapter: this.host.app.vault.adapter as any,
 					};

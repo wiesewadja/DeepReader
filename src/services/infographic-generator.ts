@@ -2,8 +2,8 @@ import { requestUrl, type FileSystemAdapter } from 'obsidian';
 import { safeRequest } from '../utils/safe-request.js';
 import { serviceLog } from '../utils/logger.js';
 
-const BASE_URL = 'https://token.sensenova.cn/v1';
-const MODEL = 'sensenova-u1-fast';
+const LEGACY_SENSENOVA_URL = 'https://token.sensenova.cn/v1';
+const LEGACY_SENSENOVA_MODEL = 'sensenova-u1-fast';
 const API_TIMEOUT = 60_000;
 const DOWNLOAD_TIMEOUT = 30_000;
 
@@ -31,6 +31,10 @@ export interface InfographicOptions {
   /** Vault adapter 用于文件操作（替代 fs/promises） */
   vaultAdapter: FileSystemAdapter;
   filename?: string;
+  /** API 端点，默认使用 MiniMax Image API */
+  baseUrl?: string;
+  /** 图片生成模型，默认 image-01 */
+  model?: string;
 }
 
 export interface InfographicResult {
@@ -58,9 +62,11 @@ export async function generateInfographic(
   options: InfographicOptions,
 ): Promise<InfographicResult> {
   const size = options.size || DEFAULT_INFOGRAPHIC_SIZE;
-  const apiUrl = `${BASE_URL}/images/generations`;
+  const baseUrl = options.baseUrl || LEGACY_SENSENOVA_URL;
+  const model = options.model || LEGACY_SENSENOVA_MODEL;
+  const apiUrl = `${baseUrl}/images/generations`;
 
-  serviceLog(`[Infographic] 请求 U1 Fast API, size: ${size}`);
+  serviceLog(`[Infographic] 请求 ${model}, size: ${size}, baseUrl: ${baseUrl}`);
 
   const response = await withTimeout(
     safeRequest({
@@ -71,7 +77,7 @@ export async function generateInfographic(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         prompt: options.prompt,
         size,
         n: 1,
@@ -85,10 +91,10 @@ export async function generateInfographic(
   const data = response.json;
   const imageUrl: string = data?.data?.[0]?.url;
   if (!imageUrl) {
-    throw new Error('SenseNova API 未返回图片 URL');
+    throw new Error('图片生成 API 未返回图片 URL');
   }
   if (!imageUrl.startsWith('https://')) {
-    throw new Error('SenseNova API 返回的图片 URL 无效（仅支持 HTTPS）');
+    throw new Error('图片生成 API 返回的图片 URL 无效（仅支持 HTTPS）');
   }
 
   let fileName = options.filename

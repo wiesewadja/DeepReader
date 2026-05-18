@@ -27,12 +27,27 @@ export interface ProviderPreset {
  */
 export const PRESETS: ProviderPreset[] = [
 	{
+		id: 'minimax-token-plan',
+		label: 'MiniMax · Token Plan',
+		description: '订阅制全模态，一个 Key 搞定对话+向量搜索（需配置 MiniMax 图片生成）',
+		provider: 'minimax',
+		free: false,
+		recommended: true,
+		website: 'https://platform.minimaxi.com',
+		roleAssignments: {
+			chat: 'MiniMax-M2.7',
+			router: 'MiniMax-M2.7',
+			pageindex: 'MiniMax-M2.7',
+			proposition: 'MiniMax-M2.7',
+			embedding: 'BAAI/bge-m3',
+		},
+	},
+	{
 		id: 'siliconflow-all',
 		label: '硅基流动 · 全功能',
 		description: '一个 Key 搞定对话、语义搜索、智能排序',
 		provider: 'siliconflow',
 		free: true,
-		recommended: true,
 		website: 'https://cloud.siliconflow.cn',
 		roleAssignments: {
 			chat: 'Qwen/Qwen3-8B',
