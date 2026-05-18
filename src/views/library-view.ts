@@ -445,7 +445,7 @@ export class LibraryView extends ItemView {
             const raw = await adapter.read(mappingPath);
             const mapping = JSON.parse(raw);
             this.wereadMappingCache = new Set(
-                Object.values(mapping.mappings || {}).map((m: any) => m.deepReaderBookId),
+                Object.keys(mapping.mappings || {}),
             );
         } catch {
             // 静默失败
@@ -587,15 +587,25 @@ export class LibraryView extends ItemView {
     private addCoverActions(coverEl: HTMLElement, indexId: string): void {
         const actionsOverlay = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
 
-        // 下载按钮（未关联的微信读书书籍）
+        // 关联按钮组（未关联的微信读书书籍）
         const index = this.indexes.find(idx => idx.id === indexId);
         if (index?.fileType === 'weread' && !this.wereadMappingCache.has(indexId)) {
-            const downloadBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn download' });
-            downloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-            downloadBtn.title = '从 Z-Library 下载';
-            downloadBtn.addEventListener('click', (e) => {
+            // Z-Library 下载按钮
+            const cloudBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn cloud' });
+            cloudBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>`;
+            cloudBtn.title = '从 Z-Library 下载';
+            cloudBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.handleZlibDownload(index);
+            });
+
+            // 本地文件关联按钮
+            const linkBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn link' });
+            linkBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
+            linkBtn.title = '从本地文件关联';
+            linkBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.handleLocalAssociate(index);
             });
         }
 
@@ -649,7 +659,115 @@ export class LibraryView extends ItemView {
         }).open();
     }
 
+    private handleLocalAssociate(index: IndexListItem): void {
+        new PDFFileSelectorModal(this.app, async (fileInfo) => {
+            await this.associateLocalFile(index, fileInfo);
+        }).open();
+    }
 
+    private async associateLocalFile(
+        wereadIndex: IndexListItem,
+        fileInfo: FileSelectResult,
+    ): Promise<void> {
+        const adapter = (this.app as any).vault?.adapter;
+        if (!adapter) {
+            new Notice('Vault 不可用');
+            return;
+        }
+
+        const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+        if (!vaultBase) {
+            new Notice('无法获取 Vault 路径');
+            return;
+        }
+
+        let filePath: string;
+        let fileType: 'pdf' | 'epub';
+        let localVaultPath: string | undefined;
+
+        if (isSystemFileInfo(fileInfo)) {
+            // 系统文件：先复制到 Vault
+            const ext = fileInfo.docType;
+            const safeName = sanitizeFileName(fileInfo.name);
+            const assetsDir = `${DEFAULT_EXPORT_DIR}/${DEFAULT_ASSETS_PATH}`;
+            const vaultRelativePath = `${assetsDir}/${safeName}.${ext}`;
+
+            if (!(await adapter.exists(assetsDir))) {
+                await adapter.mkdir(assetsDir);
+            }
+
+            const buffer = await fileInfo.file.arrayBuffer();
+            await adapter.writeBinary(vaultRelativePath, buffer);
+            filePath = `${vaultBase}/${vaultRelativePath}`;
+            fileType = ext;
+            localVaultPath = vaultRelativePath;
+            new Notice(`已导入「${safeName}.${ext}」到 Vault`);
+        } else {
+            // Vault 内文件：直接使用
+            filePath = `${vaultBase}/${fileInfo.file.path}`;
+            fileType = fileInfo.docType;
+            localVaultPath = fileInfo.file.path;
+        }
+
+        // 检查是否已索引
+        let bookId: string;
+        const alreadyIndexed = await isBookIndexed(filePath, vaultBase);
+
+        if (alreadyIndexed) {
+            bookId = await generateBookId(filePath);
+        } else {
+            // 需要索引
+            new Notice(`正在索引「${fileInfo.name}」...`);
+            const settings = this.options.plugin.settings;
+            const pageindexRole = resolveRoleConfig('pageindex', settings);
+            const embeddingRole = resolveRoleConfig('embedding', settings);
+            const embeddingOpts = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+
+            try {
+                const result = await indexBook({
+                    filePath,
+                    fileType,
+                    outputDir: vaultBase,
+                    embedding: embeddingOpts,
+                    model: pageindexRole?.model || 'deepseek-chat',
+                    apiKey: pageindexRole?.apiKey || '',
+                    baseUrl: pageindexRole?.baseUrl || '',
+                    addNodeSummary: settings.ifAddNodeSummary,
+                });
+                bookId = result.bookId;
+                new Notice(`索引完成：${result.chaptersCount} 章节`);
+            } catch (e: any) {
+                new Notice(`索引失败：${e.message}`, 5000);
+                return;
+            }
+        }
+
+        // 写 mapping 关联
+        try {
+            const mappingPath = '.pageindex/weread/mapping.json';
+            let mapping = { mappings: {} as Record<string, any> };
+            if (await adapter.exists(mappingPath)) {
+                const raw = await adapter.read(mappingPath);
+                mapping = JSON.parse(raw);
+            }
+            mapping.mappings[wereadIndex.id] = {
+                deepReaderBookId: bookId,
+                title: wereadIndex.pdf_name,
+                filePath,
+                localFile: localVaultPath,
+            };
+            await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
+            this.wereadMappingCache.add(wereadIndex.id);
+        } catch (e: any) {
+            new Notice(`关联写入失败：${e.message}`, 5000);
+            return;
+        }
+
+        new Notice(`「${wereadIndex.pdf_name}」关联成功`);
+        await this.refreshIndexes();
+        await this.loadWereadMapping();
+        this.renderGrid();
+    }
     private async downloadIndexAndAssociate(
         wereadIndex: IndexListItem,
         zlibBook: ZLibraryBook,
@@ -728,7 +846,7 @@ export class LibraryView extends ItemView {
                 zlibraryBookId: zlibBook.id,
             };
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
-            this.wereadMappingCache.add(bookId);
+            this.wereadMappingCache.add(wereadIndex.id);
         } catch (e: any) {
             new Notice(`关联写入失败：${e.message}`, 5000);
             return;
