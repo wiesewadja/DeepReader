@@ -11,8 +11,8 @@
 import AdmZip from 'adm-zip';
 import { safeRequest } from '../utils/safe-request';
 import { parseMineruJson } from '../pageindex/parsers/mineru';
-import { buildTocTree, fillNodeText, countTokens } from '../pageindex/parsers/mineru-types';
-import type { MineruJson, MineruPdfResult, PageText } from '../pageindex/parsers/mineru-types';
+import { buildTocTree, fillNodeText, countTokens, extractImageExt } from '../pageindex/parsers/mineru-types';
+import type { MineruJson, MineruPdfResult, MineruImage, PageText } from '../pageindex/parsers/mineru-types';
 import type { TreeNode } from '../pageindex/core/types';
 
 // ════════════════════════════════════════════════════════════════
@@ -129,6 +129,9 @@ export class MineruClient {
 
     const pages: PageText[] = [];
     const allTitles: { title: string; level: 1 | 2 | 3; pageIdx: number }[] = [];
+    const images: MineruImage[] = [];
+    const seenUrls = new Set<string>();
+    let imgSeq = 0;
 
     let currentPageNum = 1;
     let currentPageLines: string[] = [];
@@ -145,21 +148,59 @@ export class MineruClient {
       currentPageLines = [];
     };
 
-    for (const line of lines) {
-      const pageMatch = line.match(/<!--\s*Page\s+(\d+)\s*-->/i);
+    const imageRegex = /!\[([^\]]*)\]\((https:\/\/cdn-mineru\.openxlab\.org\.cn\/[^\)]+)\)/g;
+
+    for (const rawLine of lines) {
+      const pageMatch = rawLine.match(/<!--\s*Page\s+(\d+)\s*-->/i);
       if (pageMatch) {
         flushPage();
         currentPageNum = parseInt(pageMatch[1]);
         continue;
       }
 
-      const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
+      const headingMatch = rawLine.match(/^(#{1,3})\s+(.+)/);
       if (headingMatch) {
         const level = headingMatch[1].length as 1 | 2 | 3;
         const title = headingMatch[2].trim();
         if (title) {
           allTitles.push({ title, level, pageIdx: currentPageNum - 1 });
         }
+      }
+
+      // Extract and replace image references
+      // Collect matches first, then replace from end to avoid index shifting
+      let line = rawLine;
+      const imgMatches: Array<{ index: number; length: number; replacement: string }> = [];
+      let match;
+      imageRegex.lastIndex = 0;
+      while ((match = imageRegex.exec(line)) !== null) {
+        const url = match[2];
+        let imgFileName: string;
+        if (seenUrls.has(url)) {
+          const existingImg = images.find(i => i.url === url);
+          if (!existingImg) continue;
+          imgFileName = existingImg.fileName;
+        } else {
+          seenUrls.add(url);
+          imgSeq++;
+          const ext = extractImageExt(url);
+          imgFileName = `img-${imgSeq}${ext}`;
+          images.push({
+            url,
+            fileName: imgFileName,
+            caption: match[1] || undefined,
+          });
+        }
+        imgMatches.push({
+          index: match.index,
+          length: match[0].length,
+          replacement: `![[images/${imgFileName}]]`,
+        });
+      }
+      // Replace from end to start to preserve indices
+      for (let mi = imgMatches.length - 1; mi >= 0; mi--) {
+        const m = imgMatches[mi];
+        line = line.slice(0, m.index) + m.replacement + line.slice(m.index + m.length);
       }
 
       currentPageLines.push(line);
@@ -182,6 +223,7 @@ export class MineruClient {
       totalPages: pages.length,
       pages,
       outline,
+      images,
     };
   }
 

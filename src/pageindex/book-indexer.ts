@@ -26,6 +26,8 @@ import type {
 import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
 import { buildBM25Index } from "./bm25.js";
 import { indexPropositions } from "./proposition-indexer.js";
+import { safeRequest } from "../utils/safe-request.js";
+import type { MineruImage } from "./parsers/mineru-types.js";
 
 const BOOK_ID_HEAD_BYTES = 65536; // 64KB sample for content-based ID
 const MIGRATION_MARKER = ".migrated-content-id-v1";
@@ -264,6 +266,28 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     } catch (err) {
       console.warn("[book-indexer] Failed to generate text cover:", err);
     }
+  }
+
+  // Step 1.5: Download images (PDF only)
+  if (options.fileType === "pdf" && parseResult.images && parseResult.images.length > 0) {
+    const imagesDir = path.join(bookDir, "images");
+    await fs.mkdir(imagesDir, { recursive: true });
+
+    reportProgress({
+      percent: 70,
+      step: "download_images",
+      stepLabel: `下载图片 (0/${parseResult.images.length})`,
+    });
+
+    await downloadImages(parseResult.images, imagesDir, (done, total) => {
+      reportProgress({
+        percent: 70,
+        step: "download_images",
+        stepLabel: `下载图片 (${done}/${total})`,
+      });
+    });
+
+    piLog(`[book-indexer] Downloaded images to ${imagesDir}`);
   }
 
   // Step 2: Markdown export (70%-80%)
@@ -954,6 +978,42 @@ function simplifyTitle(title: string): string {
     }
   }
   return title;
+}
+
+const CONCURRENT_DOWNLOADS = 5;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_HOST = 'cdn-mineru.openxlab.org.cn';
+
+async function downloadImages(
+  images: MineruImage[],
+  imagesDir: string,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  let completed = 0;
+
+  for (let i = 0; i < images.length; i += CONCURRENT_DOWNLOADS) {
+    const batch = images.slice(i, i + CONCURRENT_DOWNLOADS);
+    await Promise.allSettled(
+      batch.map(async (img) => {
+        try {
+          const urlObj = new URL(img.url);
+          if (urlObj.hostname !== ALLOWED_IMAGE_HOST) return;
+
+          const resp = await safeRequest({ url: img.url });
+          if (resp.status >= 400) return;
+
+          const data = resp.arrayBuffer;
+          if (!data || data.byteLength > MAX_IMAGE_SIZE) return;
+
+          await fs.writeFile(path.join(imagesDir, img.fileName), Buffer.from(data));
+        } catch (err) {
+          piLog(`[book-indexer] Failed to download image ${img.fileName}: ${err instanceof Error ? err.message : err}`);
+        }
+      })
+    );
+    completed += batch.length;
+    onProgress(completed, images.length);
+  }
 }
 
 /**
