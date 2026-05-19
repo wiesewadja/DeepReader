@@ -84,7 +84,7 @@
 }
 
 .deeppdf-chat-input-textarea::placeholder {
-	color: var(--text-muted);
+	color: var(--text-faint);
 }
 
 /* 滚动条适配 */
