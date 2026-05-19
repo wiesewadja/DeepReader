@@ -98,6 +98,8 @@ export interface PageIndexResult {
   coverPng?: Buffer;
   /** Raw EPUB info for reuse by exporters (avoids re-parsing) */
   epubInfo?: import("../parsers/epub").EpubInfo;
+  /** Images extracted from PDF (MinerU CDN URLs → local files) */
+  images?: import("../parsers/mineru-types").MineruImage[];
 }
 
 export interface TocItem {

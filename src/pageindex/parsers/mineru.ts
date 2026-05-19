@@ -9,7 +9,9 @@ import {
   countTokens,
   buildTocTree,
   fillNodeText,
+  extractImageExt,
   type MineruBlock,
+  type MineruImage,
   type MineruJson,
   type MineruPdfResult,
   type PageText,
@@ -90,6 +92,46 @@ function extractDocTitle(titles: { title: string; level: number }[]): string {
   return firstH1?.title || 'Untitled';
 }
 
+/** 从 image block 提取图片信息（去重、生成文件名） */
+function extractImageFromBlock(
+  block: MineruBlock,
+  pageIdx: number,
+  seqInPage: number,
+  seenUrls: Set<string>,
+): MineruImage | null {
+  if (!block.lines) return null;
+
+  for (const line of block.lines) {
+    for (const span of line.spans) {
+      if (span.type === 'image' && span.image_path) {
+        const url = span.image_path;
+        if (seenUrls.has(url)) return null;
+        seenUrls.add(url);
+
+        const ext = extractImageExt(url);
+        const fileName = `p${pageIdx + 1}-${seqInPage}${ext}`;
+
+        return {
+          url,
+          fileName,
+          caption: span.content || undefined,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function extractImageUrlFromBlock(block: MineruBlock): string | null {
+  if (!block.lines) return null;
+  for (const line of block.lines) {
+    for (const span of line.spans) {
+      if (span.type === 'image' && span.image_path) return span.image_path;
+    }
+  }
+  return null;
+}
+
 // ════════════════════════════════════════════════════════════════
 // 主解析函数
 // ════════════════════════════════════════════════════════════════
@@ -104,10 +146,13 @@ export async function parseMineruJson(json: MineruJson): Promise<MineruPdfResult
     level: 1 | 2 | 3;
     pageIdx: number;
   }[] = [];
+  const images: MineruImage[] = [];
+  const seenUrls = new Set<string>();
 
   for (const page of json.pdf_info) {
     const pageHeight = page.page_size[1];
     const pageTextParts: string[] = [];
+    let imageSeqInPage = 0;
 
     for (const block of page.para_blocks) {
       if (block.type === 'title') {
@@ -132,6 +177,20 @@ export async function parseMineruJson(json: MineruJson): Promise<MineruPdfResult
         if (html) {
           const md = await htmlToMarkdown(html);
           pageTextParts.push(md);
+        }
+      } else if (block.type === 'image') {
+        imageSeqInPage++;
+        const img = extractImageFromBlock(block, page.page_idx, imageSeqInPage, seenUrls);
+        if (img) {
+          images.push(img);
+          pageTextParts.push(`![[images/${img.fileName}]]`);
+        } else {
+          // Duplicate URL: still insert wiki reference using cached filename
+          const url = extractImageUrlFromBlock(block);
+          const existing = url ? images.find(i => i.url === url) : undefined;
+          if (existing) {
+            pageTextParts.push(`![[images/${existing.fileName}]]`);
+          }
         }
       }
     }
@@ -162,8 +221,9 @@ export async function parseMineruJson(json: MineruJson): Promise<MineruPdfResult
     totalPages: pages.length,
     pages,
     outline,
+    images,
   };
 }
 
 // Re-export types for backward compatibility
-export type { MineruJson, MineruPdfResult, PageText, MineruBlock, MineruSpan, MineruLine, MineruPage } from './mineru-types';
+export type { MineruJson, MineruPdfResult, MineruImage, PageText, MineruBlock, MineruSpan, MineruLine, MineruPage } from './mineru-types';

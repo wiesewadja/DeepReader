@@ -12,9 +12,10 @@ import { countTokens } from '../core/utils';
 // ════════════════════════════════════════════════════════════════
 
 export interface MineruSpan {
-  type: 'text' | 'table';
+  type: 'text' | 'table' | 'image';
   content?: string;
   html?: string;
+  image_path?: string;
   bbox: number[];
   score?: number;
 }
@@ -54,6 +55,13 @@ export interface MineruPdfResult {
   totalPages: number;
   pages: PageText[];
   outline: TreeNode[];
+  images: MineruImage[];
+}
+
+export interface MineruImage {
+  url: string;
+  fileName: string;
+  caption?: string;
 }
 
 export interface PageText {
@@ -65,6 +73,12 @@ export interface PageText {
 // ════════════════════════════════════════════════════════════════
 // 共享工具函数
 // ════════════════════════════════════════════════════════════════
+
+/** 从 URL 中提取图片扩展名，默认 .jpg */
+export function extractImageExt(url: string): string {
+  const match = url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?|$)/i);
+  return match ? `.${match[1].toLowerCase()}` : '.jpg';
+}
 
 export { countTokens };
 

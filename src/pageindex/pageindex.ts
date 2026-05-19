@@ -238,6 +238,7 @@ export class PageIndex {
   async fromPdf(input: string | Buffer | ArrayBuffer): Promise<PageIndexResult> {
     let pages: PdfPage[];
     let pdfName: string;
+    let mineruImages: import("./parsers/mineru-types").MineruImage[] | undefined;
 
     // ── MinerU 云 API 解析（主路径）──
     // MinerU 精准 API 使用 VLM 视觉模型，本身能处理扫描版 PDF，
@@ -250,18 +251,23 @@ export class PageIndex {
         const pdfInfo = await parsePdf(input, this.options.mineruApiKey);
         pages = pdfInfo.pages;
         pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
+        mineruImages = pdfInfo.images;
 
         const savedOutline = pdfInfo.outline;
 
         // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
         if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
           piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
-          return this.processPdfWithOutline(pages, savedOutline, pdfName);
+          const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
+          result.images = mineruImages;
+          return result;
         }
 
         // LLM path: use outline as hint for page mapping accuracy
         try {
-          return await this.processPdfPages(pages, pdfName, savedOutline);
+          const result = await this.processPdfPages(pages, pdfName, savedOutline);
+          result.images = mineruImages;
+          return result;
         } catch (error) {
           if (savedOutline && savedOutline.length > 0) {
             piLog(`[fromPdf] LLM failed, falling back to outline: ${(error as Error).message}`);
@@ -289,7 +295,9 @@ export class PageIndex {
     pages = result.pages;
     pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
 
-    return this.processPdfPages(pages, pdfName);
+    const ocrResult = await this.processPdfPages(pages, pdfName);
+    ocrResult.images = undefined; // OCR path does not produce images
+    return ocrResult;
   }
 
   /**

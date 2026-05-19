@@ -342,3 +342,260 @@ describe("heading level estimation", () => {
     expect(result.outline[0].title).toBe("Top of Page Title");
   });
 });
+
+describe("image block handling", () => {
+  it("should extract image blocks and generate wiki references", async () => {
+    const jsonWithImages: MineruJson = {
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [595, 842],
+          preproc_blocks: [],
+          para_blocks: [
+            {
+              bbox: [72, 72, 523, 120],
+              type: "text",
+              angle: 0,
+              index: 0,
+              lines: [
+                {
+                  bbox: [72, 72, 523, 120],
+                  spans: [
+                    { type: "text", content: "Some text before image.", bbox: [72, 72, 523, 120] },
+                  ],
+                },
+              ],
+            },
+            {
+              bbox: [72, 150, 400, 350],
+              type: "image",
+              angle: 0,
+              index: 1,
+              lines: [
+                {
+                  bbox: [72, 150, 400, 350],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/images/abc123.jpg",
+                      content: "A diagram showing the system architecture",
+                      bbox: [72, 150, 400, 350],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              bbox: [72, 370, 523, 420],
+              type: "text",
+              angle: 0,
+              index: 2,
+              lines: [
+                {
+                  bbox: [72, 370, 523, 420],
+                  spans: [
+                    { type: "text", content: "Text after image.", bbox: [72, 370, 523, 420] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await parseMineruJson(jsonWithImages);
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0]).toMatchObject({
+      url: "https://cdn-mineru.openxlab.org.cn/images/abc123.jpg",
+      fileName: "p1-1.jpg",
+      caption: "A diagram showing the system architecture",
+    });
+
+    // Wiki reference in page text, maintaining reading order
+    expect(result.pages[0].text).toContain("![[images/p1-1.jpg]]");
+    expect(result.pages[0].text).toContain("Some text before image.");
+    expect(result.pages[0].text).toContain("Text after image.");
+  });
+
+  it("should deduplicate images with same URL", async () => {
+    const jsonWithDupe: MineruJson = {
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [595, 842],
+          preproc_blocks: [],
+          para_blocks: [
+            {
+              bbox: [72, 150, 400, 350],
+              type: "image",
+              angle: 0,
+              index: 0,
+              lines: [
+                {
+                  bbox: [72, 150, 400, 350],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/images/dupe.jpg",
+                      bbox: [72, 150, 400, 350],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              bbox: [72, 400, 400, 600],
+              type: "image",
+              angle: 0,
+              index: 1,
+              lines: [
+                {
+                  bbox: [72, 400, 400, 600],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/images/dupe.jpg",
+                      bbox: [72, 400, 400, 600],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await parseMineruJson(jsonWithDupe);
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].fileName).toBe("p1-1.jpg");
+  });
+
+  it("should extract correct extension from URL", async () => {
+    const jsonWithPng: MineruJson = {
+      pdf_info: [
+        {
+          page_idx: 2,
+          page_size: [595, 842],
+          preproc_blocks: [],
+          para_blocks: [
+            {
+              bbox: [72, 150, 400, 350],
+              type: "image",
+              angle: 0,
+              index: 0,
+              lines: [
+                {
+                  bbox: [72, 150, 400, 350],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/images/chart.png",
+                      bbox: [72, 150, 400, 350],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await parseMineruJson(jsonWithPng);
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].fileName).toBe("p3-1.png");
+  });
+
+  it("should return empty images array when no image blocks", async () => {
+    const result = await parseMineruJson(mockMineruJson);
+
+    expect(result.images).toHaveLength(0);
+  });
+
+  it("should handle multiple images across pages with correct sequence", async () => {
+    const jsonMultiImages: MineruJson = {
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [595, 842],
+          preproc_blocks: [],
+          para_blocks: [
+            {
+              bbox: [72, 100, 400, 200],
+              type: "image",
+              angle: 0,
+              index: 0,
+              lines: [
+                {
+                  bbox: [72, 100, 400, 200],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/img/a.jpg",
+                      bbox: [72, 100, 400, 200],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              bbox: [72, 250, 400, 350],
+              type: "image",
+              angle: 0,
+              index: 1,
+              lines: [
+                {
+                  bbox: [72, 250, 400, 350],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/img/b.jpg",
+                      bbox: [72, 250, 400, 350],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          page_idx: 1,
+          page_size: [595, 842],
+          preproc_blocks: [],
+          para_blocks: [
+            {
+              bbox: [72, 100, 400, 200],
+              type: "image",
+              angle: 0,
+              index: 0,
+              lines: [
+                {
+                  bbox: [72, 100, 400, 200],
+                  spans: [
+                    {
+                      type: "image",
+                      image_path: "https://cdn-mineru.openxlab.org.cn/img/c.jpg",
+                      bbox: [72, 100, 400, 200],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await parseMineruJson(jsonMultiImages);
+
+    expect(result.images).toHaveLength(3);
+    expect(result.images[0].fileName).toBe("p1-1.jpg");
+    expect(result.images[1].fileName).toBe("p1-2.jpg");
+    expect(result.images[2].fileName).toBe("p2-1.jpg");
+  });
+});
