@@ -18,6 +18,7 @@ export interface SyntopicalSearchOptions {
   query: string;
   vaultPath: string;
   embedding?: EmbeddingOptions;
+  reranker?: { provider: 'openai'; model: string; apiKey: string; baseUrl: string; weight: number };
   maxBooks?: number;
   topKPerBook?: number;
 }
@@ -78,7 +79,7 @@ async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: 
 }
 
 export async function syntopicalSearch(options: SyntopicalSearchOptions): Promise<SyntopicalSearchResult> {
-  const { query, vaultPath, embedding, maxBooks = 5, topKPerBook = 5 } = options;
+  const { query, vaultPath, embedding, reranker, maxBooks = 5, topKPerBook = 5 } = options;
 
   // 1. Scan Vault for indexed books
   const indexedBooks = await scanIndexedBooks(vaultPath);
@@ -106,6 +107,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         vaultPath,
         topK: topKPerBook,
         embedding,
+        reranker,
       };
 
       const results = await searchBookV2(searchOpts);

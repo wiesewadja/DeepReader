@@ -19,7 +19,7 @@ import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopica
 import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
 import type { SyntopicalInput } from '../node-io.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
-import { toEmbeddingOptions } from '../../../config/role-adapters.js';
+import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import {
   buildSyntopicalSystemPrompt,
   buildSyntopicalUserMessage,
@@ -57,7 +57,10 @@ export async function syntopicalNode(
   const query = rewrittenQuery || ctx?.rawUserQuery || '';
   const settings = toolContext.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
+  const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
+  const rerankerWeight = settings?.rerankerWeight ?? 0.7;
   const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+  const reranker = rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined;
 
   log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
 
@@ -67,6 +70,7 @@ export async function syntopicalNode(
       query,
       vaultPath,
       embedding,
+      reranker,
       maxBooks: SYNTOPICAL_MAX_BOOKS,
       topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
     })

@@ -11,7 +11,7 @@ import type { ToolExecutor, ToolContext } from '../types.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
-import { toEmbeddingOptions } from '../../../config/role-adapters.js';
+import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
 
@@ -223,11 +223,14 @@ export const searchBookTool: ToolExecutor = {
 
       const settings = context.plugin?.settings;
       const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
+      const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
+      const rerankerWeight = settings?.rerankerWeight ?? 0.7;
 
       const baseOptions: any = {
         filePath: '',
         topK: 20, // 每个子查询多取，供 RRF 挑选
         embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
+        reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
         scopeNodeIds,
       };
 
