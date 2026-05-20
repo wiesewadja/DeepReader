@@ -13,43 +13,64 @@ describe('applyPreset', () => {
 		expect(() => applyPreset('nonexistent', 'sk-test', settings)).toThrow('Unknown preset');
 	});
 
-	it('should set API key for siliconflow preset', () => {
+	it('should set primary API key for xitong preset', () => {
 		const settings = createTestSettings();
-		applyPreset('siliconflow-all', 'sk-test-key', settings);
-		expect(settings.providers.siliconflow.apiKey).toBe('sk-test-key');
+		applyPreset('xitong', 'sk-mimo-key', settings);
+		expect(settings.providers.xiaomi.apiKey).toBe('sk-mimo-key');
 	});
 
-	it('should assign chat, router, pageindex roles for siliconflow preset', () => {
+	it('should set secondary API key when provided', () => {
 		const settings = createTestSettings();
-		applyPreset('siliconflow-all', 'sk-test', settings);
-		expect(settings.roles.chat.provider).toBe('siliconflow');
-		expect(settings.roles.chat.model).toBe('Qwen/Qwen3-8B');
+		applyPreset('xitong', 'sk-mimo', settings, 'sk-sf');
+		expect(settings.providers.xiaomi.apiKey).toBe('sk-mimo');
+		expect(settings.providers.siliconflow.apiKey).toBe('sk-sf');
+	});
+
+	it('should assign all 7 roles when both keys provided', () => {
+		const settings = createTestSettings();
+		applyPreset('xitong', 'sk-mimo', settings, 'sk-sf');
+		// Primary roles
+		expect(settings.roles.chat.provider).toBe('xiaomi');
+		expect(settings.roles.chat.model).toBe('mimo-v2.5');
+		expect(settings.roles.pageindex.provider).toBe('xiaomi');
+		expect(settings.roles.proposition.provider).toBe('xiaomi');
+		expect(settings.roles.tts.provider).toBe('xiaomi');
+		// Secondary roles
 		expect(settings.roles.router.provider).toBe('siliconflow');
-		expect(settings.roles.pageindex.provider).toBe('siliconflow');
-	});
-
-	it('should assign embedding and reranker for siliconflow preset', () => {
-		const settings = createTestSettings();
-		applyPreset('siliconflow-all', 'sk-test', settings);
-		expect(settings.roles.embedding).not.toBeNull();
+		expect(settings.roles.router.model).toBe('Step-3.5-Flash');
 		expect(settings.roles.embedding!.provider).toBe('siliconflow');
-		expect(settings.roles.embedding!.model).toBe('BAAI/bge-m3');
-		expect(settings.roles.reranker).not.toBeNull();
+		expect(settings.roles.embedding!.model).toBe('Qwen/Qwen3-Embedding-0.6B');
+		expect(settings.roles.reranker!.provider).toBe('siliconflow');
+		expect(settings.roles.reranker!.model).toBe('Qwen/Qwen3-Reranker-0.6B');
 	});
 
-	it('should not assign embedding for deepseek preset', () => {
+	it('should degrade secondary roles when no SF key provided', () => {
 		const settings = createTestSettings();
-		applyPreset('deepseek-economy', 'sk-test', settings);
-		expect(settings.providers.deepseek.apiKey).toBe('sk-test');
-		expect(settings.roles.chat.provider).toBe('deepseek');
-		// tts should remain untouched (not in preset) — stays as default xiaomi
-		expect(settings.roles.tts).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' });
+		applyPreset('xitong', 'sk-mimo', settings);
+		// Primary roles still assigned
+		expect(settings.roles.chat.provider).toBe('xiaomi');
+		// Router degrades to xiaomi
+		expect(settings.roles.router.provider).toBe('xiaomi');
+		expect(settings.roles.router.model).toBe('mimo-v2.5');
+		// Embedding and reranker disabled
+		expect(settings.roles.embedding).toBeNull();
+		expect(settings.roles.reranker).toBeNull();
+	});
+
+	it('should not overwrite secondary key if not provided', () => {
+		const settings = createTestSettings();
+		settings.providers.siliconflow.apiKey = 'existing-sf-key';
+		applyPreset('xitong', 'sk-mimo', settings);
+		// SF key should remain unchanged when secondaryApiKey not passed
+		expect(settings.providers.siliconflow.apiKey).toBe('existing-sf-key');
+		// But roles are still degraded because secondaryApiKey was not passed
+		expect(settings.roles.embedding).toBeNull();
 	});
 
 	it('should overwrite existing provider key', () => {
 		const settings = createTestSettings();
-		settings.providers.siliconflow.apiKey = 'old-key';
-		applyPreset('siliconflow-all', 'new-key', settings);
-		expect(settings.providers.siliconflow.apiKey).toBe('new-key');
+		settings.providers.xiaomi.apiKey = 'old-key';
+		applyPreset('xitong', 'new-key', settings, 'sk-sf');
+		expect(settings.providers.xiaomi.apiKey).toBe('new-key');
 	});
 });

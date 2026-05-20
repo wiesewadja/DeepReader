@@ -155,30 +155,6 @@ export function resolveRoleConfig(
 		: (builtInConfig?.defaultModel || '');
 	const resolvedModel = model || defaultModel;
 
-	// Xiaomi router: 有 fallbackKey 则 mimo-v2-flash 走 MIMO API，否则 mimo-v2.5 走 Token Plan
-	if (provider === 'xiaomi' && role === 'router') {
-		const fallbackKey = (account as { fallbackApiKey?: string }).fallbackApiKey;
-		if (fallbackKey) {
-			return {
-				apiKey: fallbackKey,
-				baseUrl: 'https://api.xiaomimimo.com/v1',
-				model: 'mimo-v2-flash',
-				provider,
-				embeddingBatchSize,
-				disableThinking,
-			};
-		}
-		// 无 fallbackKey → 走 Token Plan
-		return {
-			apiKey,
-			baseUrl: builtInConfig?.baseUrl || '',
-			model: 'mimo-v2.5',
-			provider,
-			embeddingBatchSize,
-			disableThinking,
-		};
-	}
-
 	// Xiaomi fallback：Token Plan 失败时使用 MIMO API
 	const fallbackApiKey = provider === 'xiaomi' ? (account as { fallbackApiKey?: string }).fallbackApiKey : undefined;
 	const fallbackBaseUrl = provider === 'xiaomi'
@@ -256,26 +232,58 @@ export function getProviderBaseUrl(id: string, settings: DeepPDFSettings): strin
 /**
  * 应用预设配置：填写 API Key + 自动分配角色
  *
+ * 支持双 Provider 预设（如奚童：小米 MIMO + SiliconFlow）。
  * 修改 settings 对象（原地修改）。
+ *
+ * @param presetId 预设 ID
+ * @param primaryApiKey 主 Provider 的 API Key
+ * @param settings 设置对象
+ * @param secondaryApiKey 第二 Provider 的 API Key（可选，缺失时对应角色降级）
  */
 export function applyPreset(
 	presetId: string,
-	apiKey: string,
+	primaryApiKey: string,
 	settings: DeepPDFSettings,
+	secondaryApiKey?: string,
 ): void {
 	const preset = getPresetById(presetId);
 	if (!preset) throw new Error(`Unknown preset: ${presetId}`);
 
-	// 填写 API Key
-	const providers = settings.providers as Record<string, { apiKey?: string; baseUrl?: string; name?: string }>;
+	// 填写主 Provider Key
+	const providers = settings.providers as Record<string, { apiKey?: string; baseUrl?: string; name?: string; fallbackApiKey?: string }>;
 	if (!providers[preset.provider]) {
-		providers[preset.provider] = { apiKey };
+		providers[preset.provider] = { apiKey: primaryApiKey };
 	} else {
-		providers[preset.provider].apiKey = apiKey;
+		providers[preset.provider].apiKey = primaryApiKey;
 	}
 
-	// 分配角色
-	const roles = buildRolesFromPreset(preset);
+	// 填写第二 Provider Key
+	if (preset.secondaryProvider && secondaryApiKey) {
+		if (!providers[preset.secondaryProvider]) {
+			providers[preset.secondaryProvider] = { apiKey: secondaryApiKey };
+		} else {
+			providers[preset.secondaryProvider].apiKey = secondaryApiKey;
+		}
+	}
+
+	// 分配角色（含降级处理）
+	const withSecondary = !!secondaryApiKey;
+	const roles = buildRolesFromPreset(preset, withSecondary);
+
+	// 无第二 Key 时的降级处理
+	if (!withSecondary && preset.secondaryProvider && preset.secondaryRoleAssignments) {
+		for (const role of Object.keys(preset.secondaryRoleAssignments)) {
+			if (role === 'router') {
+				// router 降级到主 Provider 的默认模型
+				const fallbackModel = preset.roleAssignments.chat || Object.values(preset.roleAssignments)[0];
+				roles[role] = { provider: preset.provider, model: fallbackModel };
+			} else {
+				// embedding/reranker 禁用
+				roles[role] = null;
+			}
+		}
+	}
+
 	for (const [role, config] of Object.entries(roles)) {
 		(settings.roles as unknown as Record<string, unknown>)[role] = config;
 	}
