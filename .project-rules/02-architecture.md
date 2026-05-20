@@ -49,6 +49,22 @@ src/
 │   ├── reading-mode-service.ts  # 阅读模式生命周期管理
 │   ├── excerpt-service.ts       # 摘录/高亮保存服务
 │   └── excalidraw-service.ts    # Excalidraw 插件集成
+├── weread/                      # 微信读书集成
+│   ├── index.ts                 # WereadService 服务入口
+│   ├── api/client.ts           # 微信读书 API 客户端
+│   ├── api/shelf.ts            # 书架 API
+│   ├── auth/unmatched-modal.ts # 未匹配书籍弹窗
+│   ├── sync/                   # 同步引擎
+│   │   ├── sync-engine.ts      # 同步编排
+│   │   ├── state.ts            # 同步状态管理
+│   │   ├── matcher.ts          # 书籍匹配
+│   │   ├── highlight-importer.ts # 高亮导入
+│   │   ├── mapping-stats.ts    # 映射统计
+│   │   └── diff.ts             # 差异计算
+│   ├── render/                 # 渲染器
+│   │   ├── markdown-renderer.ts # Markdown 渲染
+│   │   └── frontmatter.ts      # Frontmatter 生成
+│   └── utils/                  # 工具函数
 ├── config/                      # 配置类型、迁移、模型提供商定义
 │   └── settings.ts              # DeepPDFSettings
 ├── settings/                    # 插件设置面板 UI
@@ -129,3 +145,28 @@ Query → Embedding → Vector 搜索 → BM25 搜索 → 混合排序 → 结�
 - 采用两层架构: `providers`（服务商账号） + `roles`（角色配置: chat / router / pageindex / proposition / embedding / reranker）。
 - 旧版字段仍保留以兼容迁移逻辑（`config/settings-migrator.ts`）。
 - 修改设置后需调用 `plugin.saveSettings()` 持久化。
+
+## 微信读书集成
+
+### 同步流程
+
+```
+微信读书 API → 拉取书架 → 书籍匹配 → 同步笔记/高亮/评论 → 关联本地书籍
+```
+
+### 核心功能
+
+| 功能 | 说明 |
+|------|------|
+| 账号绑定 | 通过 API Key 连接微信读书账号 |
+| 全量同步 | 同步书架所有书籍的标注、笔记、评论 |
+| 增量同步 | 仅同步自上次同步以来变化的内容 |
+| 书籍匹配 | 自动匹配微信读书书籍与本地 PDF/EPUB（书名+作者） |
+| 高亮导入 | 将微信读书标注导入已关联书籍的章节文件 |
+| 进度同步 | 同步阅读进度和阅读时长统计 |
+
+### 本地存储
+
+- **同步状态**: `.pageindex/weread/sync-state.json`
+- **书籍映射**: `.pageindex/weread/mapping.json`
+- **配置**: 存储在插件 settings 中的 `wereadApiKey`

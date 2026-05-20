@@ -1,7 +1,7 @@
 {
   "name": "obsidian-deepreader",
-  "version": "2026.05.19",
-  "description": "奚童 - 深度阅读AI助理",
+  "version": "2026.05.20",
+  "description": "奚童 - 深度AI伴读",
   "main": "bin/main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

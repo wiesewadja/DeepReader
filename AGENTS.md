@@ -36,3 +36,48 @@
 3. **文件路径通过 Vault API** — 不要硬编码路径。
 4. **Agent 唯一入口**: `FrontendAgent.chat()` → `runGraphEngine()` → LangGraph `stream()`。
 5. **Node.js 兼容**: 始终通过 `src/pageindex/node.ts` 导入 PageIndex。
+
+---
+
+## OpenCode Skill 集成
+
+### 核心规则
+
+- 如果任务匹配某个 skill，必须使用它
+- Skills 位于 `.agents/skills/<skill-name>/SKILL.md`
+- 不要在 skill 适用时直接实现
+- 严格遵循 skill 指令（不要部分应用）
+
+### Intent → Skill 映射
+
+Agent 应自动将用户意图映射到 skills：
+
+- 功能/新功能 → `spec-driven-development`，然后 `incremental-implementation`，`test-driven-development`
+- 规划/分解 → `planning-and-task-breakdown`
+- Bug/失败/意外行为 → `debugging-and-error-recovery`
+- 代码审查 → `code-review-and-quality`
+- 重构/简化 → `code-simplification`
+- API 或接口设计 → `api-and-interface-design`
+- UI 工作 → `frontend-ui-engineering`
+
+### 生命周期映射
+
+OpenCode 不支持 `/spec` 或 `/plan` 等斜杠命令。
+
+Agent 必须内部遵循此生命周期：
+
+- DEFINE → `spec-driven-development`
+- PLAN → `planning-and-task-breakdown`
+- BUILD → `incremental-implementation` + `test-driven-development`
+- VERIFY → `debugging-and-error-recovery`
+- REVIEW → `code-review-and-quality`
+- SHIP → `shipping-and-launch`
+
+### 执行模型
+
+对于每个请求：
+
+1. 确定是否有任何 skill 适用（即使 1% 的可能性）
+2. 使用 `skill` 工具调用适当的 skill
+3. 严格遵循 skill 工作流程
+4. 在完成所需步骤（spec、plan 等）后才能继续实现
