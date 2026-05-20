@@ -10,13 +10,12 @@ import type DeepPDFPlugin from '../main';
 import type { SectionContext } from './types';
 import { renderLLMSection, createLLMState } from './sections/llm-section';
 import type { LLMState } from './sections/llm-section';
-import { renderModelSection } from './sections/model-section';
 import { renderProfileSection } from './sections/profile-section';
 import { renderGeneralSection } from './sections/general-section';
 import { renderWereadSection } from './sections/weread-section';
 import { renderReadingSection } from './sections/reading-section';
 
-type SettingsTabId = 'llm' | 'model' | 'profile' | 'reading' | 'general' | 'weread';
+type SettingsTabId = 'llm' | 'profile' | 'reading' | 'general' | 'weread';
 
 interface SettingsTab {
   id: SettingsTabId;
@@ -33,7 +32,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
 
   private tabs: SettingsTab[] = [
     { id: 'llm', name: 'AI 服务', icon: 'bot' },
-    { id: 'model', name: '模型配置', icon: 'cpu' },
     { id: 'profile', name: '用户画像', icon: 'user' },
     { id: 'reading', name: '阅读模式', icon: 'book-open' },
     { id: 'general', name: '通用', icon: 'wrench' },
@@ -97,9 +95,6 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     switch (tabId) {
       case 'llm':
         renderLLMSection(container, ctx, this.llmState, () => this.renderTabContent('llm'));
-        break;
-      case 'model':
-        renderModelSection(container, ctx, this.expandedSections, () => this.renderTabContent('model'));
         break;
       case 'profile':
         renderProfileSection(container, ctx, () => this.renderTabContent('profile'));

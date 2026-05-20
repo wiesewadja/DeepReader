@@ -1,7 +1,7 @@
 /**
- * 服务商预设配置 — "一键配置"数据定义
+ * 服务商预设配置 — 奚童预设
  *
- * 每个预设对应一个推荐的服务商组合，用户只需填一个 API Key 即可自动分配所有角色。
+ * 奚童预设使用双 Provider：小米 MIMO（对话）+ SiliconFlow（搜索）。
  */
 
 import type { RoleType } from './types';
@@ -17,70 +17,38 @@ export interface ProviderPreset {
 	recommended?: boolean;
 	website?: string;
 	roleAssignments: Partial<Record<RoleType, string>>;
+
+	/** 奚童预设：第二 Provider（SiliconFlow） */
+	secondaryProvider?: string;
+	secondaryRoleAssignments?: Partial<Record<RoleType, string>>;
+	secondaryWebsite?: string;
 }
 
 /**
- * 预设列表
- *
- * roleAssignments 中每个 key 是角色名，value 是该角色使用的默认模型。
- * 未列出的角色保持 null。
+ * 预设列表 — 只有奚童
  */
 export const PRESETS: ProviderPreset[] = [
 	{
-		id: 'xiaomi-token-plan',
-		label: '小米 MIMO',
-		description: '订阅制全模态，一个 Key 搞定对话+TTS（embedding/reranker/图片生成需其他服务商）',
+		id: 'xitong',
+		label: '奚童',
+		description: 'MIMO 对话 + SiliconFlow 搜索，一个配置全搞定',
 		provider: 'xiaomi',
 		free: false,
 		recommended: true,
 		website: 'https://platform.xiaomimimo.com',
 		roleAssignments: {
 			chat: 'mimo-v2.5',
-			router: 'mimo-v2-flash',
 			pageindex: 'mimo-v2.5',
 			proposition: 'mimo-v2.5',
-			embedding: 'BAAI/bge-m3',
+			tts: 'mimo-v2.5-tts-voicedesign',
 		},
-	},
-	{
-		id: 'siliconflow-all',
-		label: '硅基流动 · 全功能',
-		description: '一个 Key 搞定对话、语义搜索、智能排序',
-		provider: 'siliconflow',
-		free: true,
-		website: 'https://cloud.siliconflow.cn',
-		roleAssignments: {
-			chat: 'Qwen/Qwen3-8B',
-			router: 'Qwen/Qwen3-8B',
-			pageindex: 'Qwen/Qwen3-8B',
-			embedding: 'BAAI/bge-m3',
-			reranker: 'BAAI/bge-reranker-v2-m3',
+		secondaryProvider: 'siliconflow',
+		secondaryRoleAssignments: {
+			router: 'Step-3.5-Flash',
+			embedding: 'Qwen/Qwen3-Embedding-0.6B',
+			reranker: 'Qwen/Qwen3-Reranker-0.6B',
 		},
-	},
-	{
-		id: 'deepseek-economy',
-		label: 'DeepSeek · 精简',
-		description: '最低成本的纯对话模式',
-		provider: 'deepseek',
-		free: false,
-		roleAssignments: {
-			chat: 'deepseek-chat',
-			router: 'deepseek-chat',
-			pageindex: 'deepseek-chat',
-		},
-	},
-	{
-		id: 'openai-standard',
-		label: 'OpenAI · 标准',
-		description: '国际标准，效果稳定',
-		provider: 'openai',
-		free: false,
-		roleAssignments: {
-			chat: 'gpt-4o',
-			router: 'gpt-4o',
-			pageindex: 'gpt-4o',
-			embedding: 'text-embedding-3-small',
-		},
+		secondaryWebsite: 'https://cloud.siliconflow.cn',
 	},
 ];
 
@@ -90,30 +58,58 @@ export function getPresetById(id: string): ProviderPreset | undefined {
 }
 
 /**
- * 将预设的角色分配应用到 settings.roles
+ * 将预设的角色分配构建为 roles 对象
  *
- * @returns 新的 roles 对象（不修改原对象）
+ * 合并主 Provider 和第二 Provider 的角色分配。
+ * 未列出的角色保持 null。
+ *
+ * @param withSecondary 是否包含第二 Provider 角色（用于降级判断）
  */
-export function buildRolesFromPreset(preset: ProviderPreset): Record<string, AIRoleConfig | null> {
+export function buildRolesFromPreset(
+	preset: ProviderPreset,
+	withSecondary = true,
+): Record<string, AIRoleConfig | null> {
 	const roles: Record<string, AIRoleConfig | null> = {};
+
 	for (const [role, model] of Object.entries(preset.roleAssignments)) {
 		roles[role] = { provider: preset.provider, model };
 	}
+
+	if (withSecondary && preset.secondaryProvider && preset.secondaryRoleAssignments) {
+		for (const [role, model] of Object.entries(preset.secondaryRoleAssignments)) {
+			roles[role] = { provider: preset.secondaryProvider, model };
+		}
+	}
+
 	return roles;
 }
 
 /**
- * 检测当前 settings 是否匹配某个预设
+ * 检测当前 settings 是否匹配某个预设（含第二 Provider）
  *
- * 当所有预设分配的角色 provider + model 完全一致时返回该预设，否则返回 null。
+ * 当所有角色的 provider + model 完全一致时返回该预设，否则返回 null。
  */
 export function detectCurrentPreset(
 	roles: Record<string, { provider: string; model: string } | null>,
 ): ProviderPreset | null {
-	return PRESETS.find(p =>
-		Object.entries(p.roleAssignments).every(([role, model]) => {
+	return PRESETS.find(p => {
+		const expected = buildRolesFromPreset(p);
+
+		// 检查主 Provider 角色
+		const allPrimaryMatch = Object.entries(p.roleAssignments).every(([role, model]) => {
 			const r = roles[role];
 			return r?.provider === p.provider && r?.model === model;
-		})
-	) ?? null;
+		});
+		if (!allPrimaryMatch) return false;
+
+		// 检查第二 Provider 角色
+		if (p.secondaryProvider && p.secondaryRoleAssignments) {
+			return Object.entries(p.secondaryRoleAssignments).every(([role, model]) => {
+				const r = roles[role];
+				return r?.provider === p.secondaryProvider && r?.model === model;
+			});
+		}
+
+		return true;
+	}) ?? null;
 }

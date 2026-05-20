@@ -59,11 +59,11 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 	function defaultRoles(): AIRoles {
 		return {
 			chat:        { provider: 'xiaomi', model: 'mimo-v2.5' },
-			router:      { provider: 'xiaomi', model: 'mimo-v2-flash' },
+			router:      { provider: 'siliconflow', model: 'Step-3.5-Flash' },
 			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
 			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
-			embedding:   { provider: 'siliconflow', model: 'BAAI/bge-m3' },
-			reranker:    null,
+			embedding:   { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },
+			reranker:    { provider: 'siliconflow', model: 'Qwen/Qwen3-Reranker-0.6B' },
 			tts:         { provider: 'xiaomi', model: 'mimo-v2.5-tts-voicedesign' },
 			imagegen:    null,
 		};
