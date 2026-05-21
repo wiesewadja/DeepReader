@@ -7,6 +7,7 @@
 
 import type { AgentLoopOptions } from '../agent-loop.js';
 import type { ChatMessage } from '../types.js';
+import type { HumanizedProgress, ReadingLevel } from '../ui/humanized-types.js';
 
 const NODE_STATUS_MAP: Record<string, string> = {
   router: '正在理解你的问题...',
@@ -15,6 +16,15 @@ const NODE_STATUS_MAP: Record<string, string> = {
   formatter: '正在整理笔记...',
   syntopical: '正在跨书主题分析...',
   visualizer: '正在生成图表...',
+};
+
+const NODE_ACTION_MAP: Record<string, { type: string; level: ReadingLevel }> = {
+  router:       { type: 'thinking',  level: 'elementary' },
+  inspectional: { type: 'reading',   level: 'inspectional' },
+  analytical:   { type: 'reading',   level: 'analytical' },
+  formatter:    { type: 'writing',   level: 'analytical' },
+  syntopical:   { type: 'reading',   level: 'syntopical' },
+  visualizer:   { type: 'writing',   level: 'analytical' },
 };
 
 function getNodeStatus(nodeName: string): string {
@@ -68,6 +78,18 @@ export async function processGraphStream(
       if (stateUpdate == null) continue;
 
       onProgress(getNodeStatus(nodeName));
+
+      // 通知表情系统
+      const action = NODE_ACTION_MAP[nodeName];
+      if (action && callbacks.onHumanizedProgress) {
+        callbacks.onHumanizedProgress({
+          mainAction: { type: action.type as any, detail: getNodeStatus(nodeName) },
+          readingSteps: [],
+          currentReadingLevel: action.level,
+          generatedContent: '',
+          overallProgress: 0,
+        });
+      }
 
       // 收集格式化输出（流式）
       if (stateUpdate.formattedOutput && typeof stateUpdate.formattedOutput === 'string') {

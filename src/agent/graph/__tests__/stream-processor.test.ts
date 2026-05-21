@@ -7,6 +7,12 @@ function mockCallbacks() {
     onContent: vi.fn(),
     onComplete: vi.fn(),
     onError: vi.fn(),
+    onHumanizedProgress: vi.fn(),
+    onContentComplete: vi.fn<() => Promise<string>>(),
+    onReasoning: vi.fn(),
+    onVoiceReady: vi.fn(),
+    onVoiceChunk: vi.fn(),
+    abortSignal: undefined as AbortSignal | undefined,
   };
 }
 
@@ -117,11 +123,11 @@ describe('processGraphStream', () => {
   });
 
   it('does not fire voicePipeline without onVoiceReady', async () => {
-    const cb = mockCallbacks(); // no onVoiceReady
+    const { onVoiceReady: _, ...cb } = { ...mockCallbacks() };
     const pipeline = vi.fn();
     const chunks = [{ formatter: { formattedOutput: '内容' } }];
 
-    await processGraphStream(fromChunks(chunks), cb, {}, pipeline);
+    await processGraphStream(fromChunks(chunks), cb as any, {}, pipeline);
 
     expect(pipeline).not.toHaveBeenCalled();
   });
@@ -143,4 +149,51 @@ describe('processGraphStream', () => {
 
     expect(cb.onProgress).toHaveBeenCalledWith('unknown_node');
   });
+  // ── onHumanizedProgress 回调测试 ──
+
+  it('calls onHumanizedProgress for analytical node', async () => {
+    const cb = mockCallbacks();
+    const chunks = [{ analytical: { formattedOutput: '分析结果' } }];
+    await processGraphStream(fromChunks(chunks), cb);
+
+    expect(cb.onHumanizedProgress).toHaveBeenCalledTimes(1);
+    const progress = cb.onHumanizedProgress.mock.calls[0][0];
+    expect(progress.mainAction.type).toBe('reading');
+    expect(progress.mainAction.detail).toBe('正在深度分析原文...');
+    expect(progress.currentReadingLevel).toBe('analytical');
+  });
+
+  it('calls onHumanizedProgress for each known node', async () => {
+    const cb = mockCallbacks();
+    const chunks = [
+      { router: {} },
+      { inspectional: {} },
+      { analytical: {} },
+      { formatter: { formattedOutput: '结果' } },
+    ];
+    await processGraphStream(fromChunks(chunks), cb);
+
+    expect(cb.onHumanizedProgress).toHaveBeenCalledTimes(4);
+    const types = cb.onHumanizedProgress.mock.calls.map((c: any) => c[0].mainAction.type);
+    expect(types).toEqual(['thinking', 'reading', 'reading', 'writing']);
+  });
+
+  it('does not call onHumanizedProgress for unknown nodes', async () => {
+    const cb = mockCallbacks();
+    const chunks = [{ unknown_node: { formattedOutput: 'x' } }];
+    await processGraphStream(fromChunks(chunks), cb);
+
+    expect(cb.onHumanizedProgress).not.toHaveBeenCalled();
+  });
+
+  it('maps syntopical node to correct reading level', async () => {
+    const cb = mockCallbacks();
+    const chunks = [{ syntopical: {} }];
+    await processGraphStream(fromChunks(chunks), cb);
+
+    const progress = cb.onHumanizedProgress.mock.calls[0][0];
+    expect(progress.mainAction.type).toBe('reading');
+    expect(progress.currentReadingLevel).toBe('syntopical');
+  });
+
 });
