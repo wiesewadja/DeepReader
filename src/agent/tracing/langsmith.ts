@@ -31,7 +31,7 @@ let cachedConfig: string = '';
 function safeWrap(tracer: LangChainTracer): LangChainTracer {
   return new Proxy(tracer, {
     get(target, prop) {
-      const value = (target as Record<string | symbol, unknown>)[prop];
+      const value = (target as unknown as Record<string | symbol, unknown>)[prop];
       if (typeof value === 'function') {
         return (...args: unknown[]) => {
           try {
