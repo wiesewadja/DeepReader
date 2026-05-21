@@ -88,6 +88,15 @@
     line-height: 1.3;
 }
 
+/* 中间区域 - 奚童表情 + 进度圈 */
+.deeppdf-topbar-center {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 0 4px;
+}
+
 /* 阅读进度圆形指示器 */
 .deeppdf-topbar-progress {
     display: flex;

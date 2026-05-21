@@ -336,6 +336,7 @@ export class SidebarView extends ItemView {
             get isAiStreaming() { return self.agentChatCtrl.aiStreaming; },
             setIsProcessing(v: boolean) { /* state owned by AgentChatController */ },
             setIsAiStreaming(v: boolean) { /* state owned by AgentChatController */ },
+            get readingTopbar() { return self.readingTopbar; },
             saveToCache() { return self.sessionMgr.saveToCache(); },
             clearQuotes() { self.quoteManager.clearQuotes(); },
             getDisplayName(name: string) { return self.getDisplayName(name); },
@@ -638,6 +639,17 @@ export class SidebarView extends ItemView {
 
         // 创建阅读顶栏 (简化版)
         this.createReadingTopbar(container);
+
+        // 奚童表情：用户活动重置 idle 计时器
+        this.registerDomEvent(container, 'mouseenter', () => {
+            this.readingTopbar?.onMascotUserActivity();
+        });
+        this.registerDomEvent(container, 'keydown', () => {
+            this.readingTopbar?.onMascotUserActivity();
+        });
+        this.registerDomEvent(container, 'click', () => {
+            this.readingTopbar?.onMascotUserActivity();
+        });
 
         // 创建消息列表区
         this.createMessageListSection(container);

@@ -21,6 +21,7 @@ import { GUIDANCE_BUTTONS, GuidanceType } from '../../components/message-list/me
 import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.js';
 import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import type { ChatMessage } from '../../agent/types.js';
+import type { MascotExpression } from '../../components/reading-topbar/mascot-face.js';
 
 export interface AgentChatControllerHost {
 	get app(): import('obsidian').App;
@@ -47,6 +48,8 @@ export interface AgentChatControllerHost {
 	get isAiStreaming(): boolean;
 	setIsProcessing(v: boolean): void;
 	setIsAiStreaming(v: boolean): void;
+
+	get readingTopbar(): import("../../components/reading-topbar/index.js").ReadingTopbar | null;
 
 	saveToCache(): Promise<void>;
 	clearQuotes(): void;
@@ -92,6 +95,7 @@ export class AgentChatController {
 		}
 		this.isAiStreaming = false;
 		this.isProcessing = false;
+		this.host.readingTopbar?.setMascotExpression("idle");
 		this.host.setIsAiStreaming(false);
 		this.host.setIsProcessing(false);
 		this.host.chatInput?.setStreaming(false);
@@ -113,6 +117,7 @@ export class AgentChatController {
 
 		this.host.chatInput?.setStreaming(false);
 		this.host.chatInput?.setDisabled(false);
+		this.host.readingTopbar?.setMascotExpression('idle');
 
 		const messages = this.host.messageList?.getMessages() || [];
 		const lastAiMessage = [...messages].reverse().find(m => {
@@ -160,6 +165,7 @@ export class AgentChatController {
 		this.host.setIsAiStreaming(true);
 		this.host.chatInput?.setDisabled(true);
 		this.host.chatInput?.setStreaming(true);
+		this.host.readingTopbar?.setMascotExpression("curious");
 
 		try {
 			let aiMessageId: string;
@@ -236,6 +242,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.host.readingTopbar?.setMascotExpression('idle');
 			this.host.chatInput?.focus();
 		}
 	}
@@ -373,6 +380,9 @@ export class AgentChatController {
 
 					if (agentState === 'thinking' && fullContent.trim().length > 0) {
 						agentState = 'answering';
+						if (!hadToolCalls) {
+							self.host.readingTopbar?.setMascotExpression('thinking');
+						}
 					}
 
 					if (agentState === 'thinking' && !hadToolCalls) {
@@ -465,6 +475,7 @@ export class AgentChatController {
 						isStreaming: true,
 						isAgentMessage: true,
 					});
+					self.host.readingTopbar?.setMascotExpression('thinking');
 				},
 				onComplete: async () => {
 					self.host.messageList?.updateMessage(aiMessageId, {
@@ -490,6 +501,7 @@ export class AgentChatController {
 					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
+					self.host.readingTopbar?.setMascotExpression('happy');
 
 					self.host.clearQuotes();
 
@@ -522,6 +534,7 @@ export class AgentChatController {
 					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
+					self.host.readingTopbar?.setMascotExpression('idle');
 
 					self.host.clearQuotes();
 
@@ -559,6 +572,8 @@ export class AgentChatController {
 							isStreaming: true,
 							isAgentMessage: true,
 						});
+					const mascotExpr = mapActionToExpression(progress.mainAction.type, progress.mainAction.detail);
+					self.host.readingTopbar?.setMascotExpression(mascotExpr);
 					};
 				})()),
 				abortSignal: this.streamController.signal,
@@ -647,6 +662,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.host.readingTopbar?.setMascotExpression('idle');
 		}
 	}
 
@@ -658,6 +674,7 @@ export class AgentChatController {
 		this.host.proactiveEngine?.setProcessing(true);
 		this.isProcessing = true;
 		this.host.setIsProcessing(true);
+		this.host.readingTopbar?.setMascotExpression('thinking');
 		const aiMessageId = `proactive-${Date.now()}`;
 		this.proactiveAbortController = new AbortController();
 		try {
@@ -705,8 +722,11 @@ export class AgentChatController {
 				onProgress: (msg: string) => {
 					self.host.messageList?.updateMessage(aiMessageId, { currentStatus: msg });
 				},
-				onComplete: () => {},
+				onComplete: () => {
+					self.host.readingTopbar?.setMascotExpression('happy');
+				},
 				onError: (msg: string) => {
+					self.host.readingTopbar?.setMascotExpression('idle');
 					self.host.messageList?.updateMessage(aiMessageId, {
 						isStreaming: false,
 						content: `引导生成失败: ${msg}`,
@@ -714,7 +734,10 @@ export class AgentChatController {
 				},
 				onContentComplete: async (content: string) => content,
 				onReasoning: () => {},
-				onHumanizedProgress: () => {},
+				onHumanizedProgress: (progress: HumanizedProgress) => {
+					const expr = mapActionToExpression(progress.mainAction.type, progress.mainAction.detail);
+					self.host.readingTopbar?.setMascotExpression(expr);
+				},
 				abortSignal: self.proactiveAbortController?.signal,
 				onVoiceReady: () => {},
 				onVoiceChunk: () => {},
@@ -784,6 +807,7 @@ export class AgentChatController {
 
 		new Notice(`[${nodeLabel}] 审查中 — 自动确认继续`);
 		log(`[DeepPDF] HITL 审查: ${nodeLabel}, 自动确认`);
+		this.host.readingTopbar?.setMascotExpression('curious');
 
 		this.handleHumanReviewResponse(true, '', context, callbacks);
 	}
@@ -819,6 +843,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.host.readingTopbar?.setMascotExpression('happy');
 		} catch (error) {
 			logError('[DeepPDF] HITL 恢复错误:', error);
 			this.isProcessing = false;
@@ -827,6 +852,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.host.readingTopbar?.setMascotExpression('idle');
 		}
 	}
 
@@ -1045,4 +1071,19 @@ function extractStreamingThink(text: string): { reasoning: string; cleanedConten
 		};
 	}
 	return { reasoning: '', cleanedContent: text.trim() };
+}
+
+function mapActionToExpression(type: string, detail: string): MascotExpression {
+	if (type === 'thinking' || type === 'writing') return 'thinking';
+	if (type === 'reading') {
+		// 搜索/浏览/子代理 → curious；深度阅读/分析 → reading
+		if (detail.startsWith('🔍') || detail.startsWith('📋') ||
+			detail.startsWith('📚') || detail.startsWith('🤖') ||
+			detail.startsWith('⏳')) {
+			return 'curious';
+		}
+		return 'reading';
+	}
+	if (type === 'searching' || type === 'waiting') return 'curious';
+	return 'thinking';
 }

@@ -6,6 +6,7 @@
 import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
 import { uiLog as log } from '../../utils/logger.js';
+import { MascotFace, type MascotExpression } from './mascot-face.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
@@ -21,6 +22,7 @@ export class ReadingTopbar extends Component {
     private progressCircleEl: SVGCircleElement | null = null;
     private progressTextEl: HTMLElement | null = null;
     private progressContainerEl: HTMLElement | null = null;
+    private mascotFace: MascotFace | null = null;
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -65,13 +67,19 @@ export class ReadingTopbar extends Component {
 
         container.appendChild(leftSection);
 
-        // 中间：阅读进度圆形指示器
+        // 中间：奚童表情 + 阅读进度
+        const centerSection = document.createElement('div');
+        centerSection.className = 'deeppdf-topbar-center';
+
+        this.mascotFace = new MascotFace();
+        centerSection.appendChild(this.mascotFace.getElement()!);
+
         this.progressContainerEl = document.createElement('div');
         this.progressContainerEl.className = 'deeppdf-topbar-progress';
 
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('width', '22');
-        svg.setAttribute('height', '22');
+        svg.setAttribute('width', '18');
+        svg.setAttribute('height', '18');
         svg.setAttribute('viewBox', '0 0 22 22');
 
         // 背景圆
@@ -120,7 +128,8 @@ export class ReadingTopbar extends Component {
         });
 
         this.progressContainerEl.appendChild(svg);
-        container.appendChild(this.progressContainerEl);
+        centerSection.appendChild(this.progressContainerEl);
+        container.appendChild(centerSection);
 
         // 右侧：操作按钮（我的书库 + 设置）
         const rightSection = document.createElement('div');
@@ -136,8 +145,6 @@ export class ReadingTopbar extends Component {
             this.options.onOpenLibrary?.();
         });
         rightSection.appendChild(libraryBtn);
-
-
 
         // 设置按钮
         const settingsBtn = document.createElement('button');
@@ -237,9 +244,17 @@ export class ReadingTopbar extends Component {
         log(`[ReadingTopbar] setIndexes called with ${indexes.length} indexes`);
     }
 
+    public setMascotExpression(expr: MascotExpression): void {
+        this.mascotFace?.setExpression(expr);
+    }
 
+    public onMascotUserActivity(): void {
+        this.mascotFace?.onUserActivity();
+    }
 
     destroy(): void {
+        this.mascotFace?.destroy();
+        this.mascotFace = null;
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
