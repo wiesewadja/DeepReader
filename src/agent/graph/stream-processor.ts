@@ -12,6 +12,7 @@ import type { HumanizedProgress, ReadingLevel } from '../ui/humanized-types.js';
 const NODE_STATUS_MAP: Record<string, string> = {
   router: '正在理解你的问题...',
   inspectional: '正在翻阅目录，锁定相关章节...',
+  pre_search: '正在快速翻阅相关段落...',
   analytical: '正在深度分析原文...',
   formatter: '正在整理笔记...',
   syntopical: '正在跨书主题分析...',
@@ -21,6 +22,7 @@ const NODE_STATUS_MAP: Record<string, string> = {
 const NODE_ACTION_MAP: Record<string, { type: string; level: ReadingLevel }> = {
   router:       { type: 'thinking',  level: 'elementary' },
   inspectional: { type: 'reading',   level: 'inspectional' },
+  pre_search:  { type: 'reading',   level: 'analytical' },
   analytical:   { type: 'reading',   level: 'analytical' },
   formatter:    { type: 'writing',   level: 'analytical' },
   syntopical:   { type: 'reading',   level: 'syntopical' },

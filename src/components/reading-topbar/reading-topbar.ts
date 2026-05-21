@@ -157,6 +157,21 @@ export class ReadingTopbar extends Component {
         this.mascotFace?.onUserActivity();
     }
 
+    public detachMascot(): HTMLElement | null {
+        if (!this.mascotFace) return null;
+        const el = this.mascotFace.getElement();
+        if (el && el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+        return el;
+    }
+
+    public reattachMascot(el: HTMLElement): void {
+        if (!el.parentNode && this.el) {
+            this.el.insertBefore(el, this.el.firstChild);
+        }
+    }
+
     destroy(): void {
         this.mascotFace?.destroy();
         this.mascotFace = null;

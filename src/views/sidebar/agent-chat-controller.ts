@@ -66,6 +66,14 @@ export class AgentChatController {
 	private isAiStreaming: boolean = false;
 	private proactiveAbortController: AbortController | null = null;
 	private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
+	private detachedMascotEl: HTMLElement | null = null;
+
+	private reattachMascot(): void {
+		if (this.detachedMascotEl) {
+			this.host.readingTopbar?.reattachMascot(this.detachedMascotEl);
+			this.detachedMascotEl = null;
+		}
+	}
 
 	constructor(host: AgentChatControllerHost) {
 		this.host = host;
@@ -95,6 +103,7 @@ export class AgentChatController {
 		}
 		this.isAiStreaming = false;
 		this.isProcessing = false;
+		this.reattachMascot();
 		this.host.readingTopbar?.setMascotExpression("idle");
 		this.host.setIsAiStreaming(false);
 		this.host.setIsProcessing(false);
@@ -117,6 +126,7 @@ export class AgentChatController {
 
 		this.host.chatInput?.setStreaming(false);
 		this.host.chatInput?.setDisabled(false);
+		this.reattachMascot();
 		this.host.readingTopbar?.setMascotExpression('idle');
 
 		const messages = this.host.messageList?.getMessages() || [];
@@ -222,6 +232,15 @@ export class AgentChatController {
 				this.host.messageList?.addMessage(aiMessageData);
 			}
 
+			// Detach mascot from topbar → insert into AI message bubble
+			const mascotEl = this.host.readingTopbar?.detachMascot() ?? null;
+			if (mascotEl) {
+				this.detachedMascotEl = mascotEl;
+				const aiMsgEl = this.host.messageList?.getMessage(aiMessageId)?.getElement();
+				const thinkingBar = aiMsgEl?.querySelector('.deeppdf-mascot-thinking-bar');
+				thinkingBar?.insertBefore(mascotEl, thinkingBar.firstChild);
+			}
+
 			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes);
 
 		} catch (error) {
@@ -242,6 +261,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.reattachMascot();
 			this.host.readingTopbar?.setMascotExpression('idle');
 			this.host.chatInput?.focus();
 		}
@@ -478,6 +498,10 @@ export class AgentChatController {
 					self.host.readingTopbar?.setMascotExpression('thinking');
 				},
 				onComplete: async () => {
+					// 先恢复 mascot 到 topbar（在 updateMessage 之前，避免 DOM 重绘丢失）
+					self.reattachMascot();
+					self.host.readingTopbar?.setMascotExpression('happy');
+
 					self.host.messageList?.updateMessage(aiMessageId, {
 						isStreaming: false,
 						timestamp: new Date().toISOString()
@@ -501,7 +525,6 @@ export class AgentChatController {
 					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
-					self.host.readingTopbar?.setMascotExpression('happy');
 
 					self.host.clearQuotes();
 
@@ -522,6 +545,10 @@ export class AgentChatController {
 				},
 				onError: (error: string) => {
 					logError('[DeepPDF] Agent 错误:', error);
+					// 先恢复 mascot（在 updateMessage 之前）
+					self.reattachMascot();
+					self.host.readingTopbar?.setMascotExpression('idle');
+
 					self.host.messageList?.updateMessage(aiMessageId, {
 						content: `查询失败: ${error}`,
 						isStreaming: false,
@@ -534,7 +561,6 @@ export class AgentChatController {
 					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
-					self.host.readingTopbar?.setMascotExpression('idle');
 
 					self.host.clearQuotes();
 
@@ -651,6 +677,8 @@ export class AgentChatController {
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			logError('[DeepPDF] handleAgentQuery 错误:', error);
+			this.reattachMascot();
+			this.host.readingTopbar?.setMascotExpression('idle');
 			this.host.messageList?.updateMessage(aiMessageId, {
 				content: `Agent 查询失败: ${errorMessage}`,
 				isStreaming: false,
@@ -662,7 +690,6 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
-			this.host.readingTopbar?.setMascotExpression('idle');
 		}
 	}
 
@@ -843,6 +870,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.reattachMascot();
 			this.host.readingTopbar?.setMascotExpression('happy');
 		} catch (error) {
 			logError('[DeepPDF] HITL 恢复错误:', error);
@@ -852,6 +880,7 @@ export class AgentChatController {
 			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
+			this.reattachMascot();
 			this.host.readingTopbar?.setMascotExpression('idle');
 		}
 	}

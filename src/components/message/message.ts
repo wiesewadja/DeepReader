@@ -317,43 +317,33 @@ export class AIMessage extends Message {
 		this.patternClass = patternClass;
 		const bubble = wrapper.createEl('div', { cls: ['deeppdf-message-bubble', 'deeppdf-message-bubble-ai', patternClass] });
 
-		// Agent 消息标识 + 状态显示
+		// Agent 消息标识
 		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
-
-		// 左侧容器：Badge + 状态文本（垂直排列）
 		if (this.data.isAgentMessage) {
-			const leftContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-left' });
+			const badge = headerRow.createEl('div', { cls: 'deeppdf-message-agent-badge' });
+			badge.textContent = "奚童";
 
-			// Badge
-			const badge = leftContainer.createEl('div', { cls: 'deeppdf-message-agent-badge' });
-			badge.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"></path><path d="M8.5 8.5A2.5 2.5 0 0 0 8 10c0 1.5 1.5 2.5 3 2.5s3-1 3-2.5a2.5 2.5 0 0 0-.5-1.5"></path><path d="M15 15a5 5 0 0 1-5 5"></path></svg>奚童`;
-
-
-			// 主动引导标签
 			if (this.data.isProactiveGuidance) {
-				const tag = leftContainer.createEl("span", { cls: "deeppdf-message-proactive-tag" });
+				const tag = headerRow.createEl("span", { cls: "deeppdf-message-proactive-tag" });
 				tag.textContent = "阅读引导";
 			}
-			// 状态文本（Badge 正下方）
-			this.statusEl = leftContainer.createEl('div', { cls: 'deeppdf-message-status-text' });
-			// 立即显示初始状态
+		}
+
+		// 思考条 — AI 处理中时显示（mascot + 状态文字）
+		if (this.data.isAgentMessage) {
+			const thinkingBar = bubble.createEl('div', { cls: 'deeppdf-mascot-thinking-bar' });
+			this.statusEl = thinkingBar.createEl('div', { cls: 'deeppdf-message-status-text' });
 			if (this.data.currentStatus && this.data.isStreaming) {
 				this.statusEl.textContent = this.data.currentStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = this.data.currentStatus;
 			}
 
-			// 声波动画（TTS 播放时显示）
-			const ttsWave = leftContainer.createEl('div', { cls: 'deeppdf-tts-wave' });
+			const ttsWave = thinkingBar.createEl('div', { cls: 'deeppdf-tts-wave' });
 			for (let i = 0; i < 4; i++) {
 				ttsWave.createEl('span');
 			}
 			this.voiceCtrl.ttsWaveEl = ttsWave;
-		}
-
-		// 右侧按钮组（非流式时显示）
-		if (!this.data.isStreaming) {
-			const rightContainer = headerRow.createEl('div', { cls: 'deeppdf-message-header-right' });
 		}
 
 		// Agent 工具调用

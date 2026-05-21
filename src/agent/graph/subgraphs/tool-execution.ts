@@ -186,15 +186,15 @@ export function reportPlan(
 
   if (total === 0) return;
 
-  const roundLabel = maxPlanRounds > 1 ? `（第 ${round + 1}/${maxPlanRounds} 轮）` : '';
+  const roundHint = round === 0 ? '首次' : '再次';
 
   if (searches > 0 && reads > 0) {
-    config.onProgress(`正在检索${roundLabel}：搜索 ${searches} 个关键词，精读 ${reads} 个章节...`);
+    config.onProgress(`${roundHint}翻找相关段落，找到 ${searches} 处，精读 ${reads} 个章节...`);
   } else if (reads > 0) {
-    config.onProgress(`正在精读${roundLabel}：${reads} 个章节...`);
+    config.onProgress(`${roundHint}精读 ${reads} 个章节...`);
   } else if (searches > 0) {
-    config.onProgress(`正在搜索${roundLabel}：${searches} 个关键词...`);
+    config.onProgress(`${roundHint}翻找 ${searches} 个关键词...`);
   } else {
-    config.onProgress(`正在检索${roundLabel}：${total} 个工具调用...`);
+    config.onProgress(`${roundHint}查阅...`);
   }
 }
