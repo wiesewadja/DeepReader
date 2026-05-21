@@ -46,7 +46,7 @@ export function renderProfileSection(
   // 自定义维度管理
   container.createEl('h4', { text: '画像维度' });
   container.createEl('p', {
-    text: '内置 7 个维度覆盖核心方面。你也可以添加自定义维度，画像会从更多角度理解你。',
+    text: '内置 8 个维度覆盖核心方面。你也可以添加自定义维度，画像会从更多角度理解你。',
     cls: 'setting-item-description',
   });
 
@@ -199,6 +199,7 @@ function showBuildProgress(builder: any, el: HTMLElement): void {
     scanning: '扫描笔记文件',
     indexing: '建立索引',
     extracting: '抽取维度事实',
+    weread: '抽取微信读书阅读画像',
     synthesizing: '生成画像',
     summarizing: '生成摘要',
     done: '构建完成',

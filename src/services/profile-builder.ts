@@ -1,9 +1,10 @@
 /**
  * ProfileBuilder — 从用户笔记目录构建用户画像
  *
- * 两阶段提炼：
- *   Stage 1: 分批按维度抽取事实（extractFacts）
- *   Stage 2: 基于全部事实生成自然语言画像（synthesizeProfile）
+ * 多源并行构建：
+ *   数据源: 用户笔记目录 + 微信读书同步数据
+ *   Stage 1: 并行抽取维度事实 + 阅读画像 + 构建索引
+ *   Stage 2: 基于全部事实生成多维度画像与摘要
  */
 
 import { TFile, TFolder, type App } from 'obsidian';
@@ -19,6 +20,8 @@ import {
 } from '../pageindex/vault/vectors';
 import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
 import { fetchWithCorsFallback } from '../utils/safe-request';
+import type { WereadSyncState } from '../weread/types';
+import { sanitizeFileName } from '../weread/utils/file';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,
@@ -40,7 +43,7 @@ export interface ProfileMeta {
 }
 
 export interface BuildProgress {
-	stage: 'scanning' | 'indexing' | 'extracting' | 'synthesizing' | 'summarizing' | 'done';
+	stage: 'scanning' | 'indexing' | 'extracting' | 'weread' | 'synthesizing' | 'summarizing' | 'done';
 	current: number;
 	total: number;
 	message: string;
@@ -65,29 +68,45 @@ const EXTRACT_SYSTEM_PROMPT_TEMPLATE = `你是一个善于观察的人。现在�
 
 // ═══ Stage 2 Prompt ═══
 
-const SYNTHESIZE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你从他的大量笔记中提取了关于他的方方面面的事实。
 
-请基于这些事实，写一段关于他的完整描绘。像在跟另一个朋友提起他时的那种语气——带着理解、带着温度。
+const WEREAD_EXTRACT_SYSTEM_PROMPT = `你是一个善于观察的人。现在你读到了一个用户在微信读书上的阅读记录，包括他读过的书、划线内容、写的想法和书评。
+
+请从中提取关于用户的**阅读画像**。具体关注：
+- 他读什么类型的书（领域、主题偏好）
+- 他反复关注的话题（通过划线内容推断）
+- 他对书中内容的思考深度（通过想法/书评推断）
+- 他的阅读习惯（速度、完读率、笔记频率）
+- 值得注意的具体阅读体验（引用原话）
+
+输出格式：
+[阅读画像] 事实1；事实2；...
 
 注意：
+- 只提取明确可见的，不推测
+- 保留划线原文（用引号标注）
+- 标注书籍来源（如「在《书名》中划线：...」）`;
+const SYNTHESIZE_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友。你从他的笔记和阅读记录中提取了关于他方方面面的事实。
+
+请基于这些事实，按以下结构描绘他。每个维度独立成段。
+
+输出格式（严格遵循每个维度标题）：
+
+## 身份与阶段
+## 家庭与关系
+## 工作与事业
+## 兴趣与投入
+## 性格与思维
+## 情绪与状态
+## 价值观与信念
+## 阅读画像
+
+规则：
 - 用「你」称呼他
-- 每个维度至少覆盖到（如果有事实的话）
 - 保留具体细节——他说过的原话、比喻、顿悟
 - 时间线上有明显变化的要写出来
-- 500-1000 字
-- 不编造他没有说过的话`;
-
-const SUMMARY_SYSTEM_PROMPT = `你是一个认识了用户很多年的老朋友，现在要给另一个朋友简要介绍他。
-
-不是列标签，是让人听完后能"感受到"他是谁。注意以下要点：
-
-1. 他正处在人生的什么阶段，往哪个方向走
-2. 他真正在意的事，不是表面说的，是你观察到他反复挂在心上的
-3. 他的性格底色——是焦虑驱动还是好奇驱动，是独处充电还是人群充电
-4. 他和身边人的关系，有没有特别的牵挂或负担
-5. 如果他在不同时期有明显变化，用一两句话勾勒这种转变
-
-写 500-800 字。用"他"来称呼。不用面面俱到，抓住最能定义他的那几条线。像一个了解他的人，在灯下跟朋友谈起他时会说的话。`;
+- 如果某个维度没有事实，写「暂无足够信息」
+- 不编造他没有说过的话
+- 每个维度的标题必须是「## 维度名」格式，不要修改标题文字`;
 
 export class ProfileBuilder {
 	private app: App;
@@ -353,16 +372,128 @@ export class ProfileBuilder {
 		return allFacts;
 	}
 
-	// ── Stage 2: 画像生成 ──
+	// ── 微信读书阅读画像抽取 ──
 
-	async synthesizeProfile(
+	private async extractWereadFacts(
+		onProgress?: (p: BuildProgress) => void,
+		signal?: AbortSignal,
+	): Promise<Record<string, string[]>> {
+		const emptyResult: Record<string, string[]> = { reading: [] };
+
+		if (!this.settings.wereadApiKey) {
+			onProgress?.({ stage: 'weread', current: 0, total: 0, message: '跳过微信读书（未配置 API Key）' });
+			return emptyResult;
+		}
+
+		let syncState: WereadSyncState;
+		try {
+			const raw = await this.vault.adapter.read('.pageindex/weread/sync-state.json');
+			syncState = JSON.parse(raw) as WereadSyncState;
+		} catch {
+			onProgress?.({ stage: 'weread', current: 0, total: 0, message: '跳过微信读书（尚未同步）' });
+			return emptyResult;
+		}
+
+		const books = Object.values(syncState.syncedBooks);
+		if (books.length === 0) {
+			onProgress?.({ stage: 'weread', current: 0, total: 0, message: '跳过微信读书（无已同步书籍）' });
+			return emptyResult;
+		}
+
+		onProgress?.({ stage: 'weread', current: 0, total: books.length, message: '读取微信读书数据...' });
+
+		const facts: string[] = [];
+		const totalBooks = books.length;
+		const finishedBooks = books.filter(b => (b.progress ?? 0) >= 100).length;
+		const totalNotes = books.reduce((s, b) => s + b.noteCount + b.reviewCount, 0);
+		const readingTimes = books.filter(b => b.readingTime).map(b => b.readingTime!);
+		const totalReadingHours = readingTimes.length > 0
+			? Math.round(readingTimes.reduce((s, t) => s + t, 0) / 3600)
+			: 0;
+
+		facts.push(`共阅读 ${totalBooks} 本书`);
+		if (finishedBooks > 0) {
+			facts.push(`读完 ${finishedBooks} 本，完读率 ${Math.round(finishedBooks / totalBooks * 100)}%`);
+		}
+		if (totalNotes > 0) {
+			facts.push(`累计做笔记/划线 ${totalNotes} 条`);
+		}
+		if (totalReadingHours > 0) {
+			facts.push(`累计阅读时长约 ${totalReadingHours} 小时`);
+		}
+
+		const bookContents: string[] = [];
+		const READ_BATCH = 10;
+		for (let i = 0; i < books.length; i += READ_BATCH) {
+			if (signal?.aborted) return emptyResult;
+			const slice = books.slice(i, i + READ_BATCH);
+			const results = await Promise.all(
+				slice.map(async b => {
+					const safeName = sanitizeFileName(b.title);
+					const path = `书籍摘录/${safeName}/${safeName}.md`;
+					try {
+						const content = await this.vault.adapter.read(path);
+						return content.replace(/^---[\s\S]*?---\n*/, '').trim();
+					} catch { return ''; }
+				}),
+			);
+			for (const c of results) {
+				if (c) bookContents.push(c);
+			}
+			onProgress?.({
+				stage: 'weread',
+				current: Math.min(i + READ_BATCH, books.length),
+				total: books.length,
+				message: `读取微信读书笔记... (${Math.min(i + READ_BATCH, books.length)}/${books.length})`,
+			});
+		}
+
+		if (bookContents.length > 0) {
+			const { baseUrl, apiKey, model } = this.getChatConfig();
+			const batches = this.batchBySize(bookContents, 12000);
+			const CONCURRENCY = 3;
+
+			for (let i = 0; i < batches.length; i += CONCURRENCY) {
+				if (signal?.aborted) return emptyResult;
+				const chunk = batches.slice(i, i + CONCURRENCY);
+				const results = await Promise.all(
+					chunk.map(batch => {
+						const batchText = batch.join('\n\n');
+						return this.callLLM(
+							WEREAD_EXTRACT_SYSTEM_PROMPT,
+							`以下是他的微信读书阅读记录：\n\n${batchText}\n\n请提取阅读画像事实。`,
+							baseUrl, apiKey, model, signal,
+						).catch(() => '');
+					}),
+				);
+
+				for (const text of results) {
+					if (!text) continue;
+					const parsed = parseFactsText(text, [{ key: 'reading', label: '阅读画像' }]);
+					if (parsed.reading) facts.push(...parsed.reading);
+				}
+
+				onProgress?.({
+					stage: 'weread',
+					current: Math.min(i + CONCURRENCY, batches.length),
+					total: batches.length,
+					message: `抽取阅读画像... (${Math.min(i + CONCURRENCY, batches.length)}/${batches.length})`,
+				});
+			}
+		}
+
+		return { reading: facts };
+	}
+
+	// ── Stage 2: 画像 + 摘要（一次 LLM 调用） ──
+
+	async synthesizeAndSummarize(
 		facts: Record<string, string[]>,
 		signal?: AbortSignal,
-	): Promise<string> {
+	): Promise<{ profileText: string; summaryText: string }> {
 		const { baseUrl, apiKey, model } = this.getChatConfig();
 		const dimensions = this.getDimensions();
 
-		// 将维度事实格式化为文本
 		const factsText = dimensions
 			.map(d => {
 				const items = facts[d.key] || [];
@@ -372,25 +503,19 @@ export class ProfileBuilder {
 			.filter(Boolean)
 			.join('\n\n');
 
-		if (!factsText) return '';
+		if (!factsText) return { profileText: '', summaryText: '' };
 
-		return this.callLLM(
+		const combined = await this.callLLM(
 			SYNTHESIZE_SYSTEM_PROMPT,
-			`以下是从他的笔记中提取的关于他的各方面事实：\n\n${factsText}\n\n请写一段关于他的完整描绘。`,
+			`以下是从他的笔记和阅读记录中提取的关于他的各方面事实：\n\n${factsText}\n\n请按维度描绘他。\n\n完成后，输出一行「<<<PROFILE_SUMMARY_SPLIT>>>」，然后输出精炼的维度摘要（每个维度 2-3 句话，用"他"称呼，500-800 字）。`,
 			baseUrl, apiKey, model, signal,
 		);
-	}
 
-	// ── 画像摘要 ──
-
-	async generateSummary(profileText: string, signal?: AbortSignal): Promise<string> {
-		const { baseUrl, apiKey, model } = this.getChatConfig();
-		const summary = await this.callLLM(
-			SUMMARY_SYSTEM_PROMPT,
-			`以下是关于他的详细描绘：\n\n${profileText}\n\n请压缩成一段简短摘要。`,
-			baseUrl, apiKey, model, signal,
-		);
-		return summary.trim();
+		const parts = combined.split('<<<PROFILE_SUMMARY_SPLIT>>>').map(s => s.trim());
+		return {
+			profileText: parts[0] || '',
+			summaryText: parts[1] || '',
+		};
 	}
 
 	async readSummary(): Promise<string | null> {
@@ -622,13 +747,13 @@ export class ProfileBuilder {
 			};
 			await this.writeFacts(factsData);
 
-			// Stage 2: 生成画像
-			emit({ stage: 'synthesizing', current: 0, total: 1, message: '生成画像中...' });
-			const profile = await this.synthesizeProfile(mergedFacts, signal);
+				// Stage 2: 生成画像 + 摘要
+				emit({ stage: 'synthesizing', current: 0, total: 1, message: '生成画像与摘要...' });
+				const { profileText, summaryText } = await this.synthesizeAndSummarize(mergedFacts, signal);
 
-			// 写入画像文件
-			const now = new Date().toISOString();
-			const profileContent = `---
+				// 写入画像文件
+				const now = new Date().toISOString();
+				const profileContent = `---
 created: ${meta?.lastBuildTime || now}
 updated: ${now}
 sourceDir: "${dir}"
@@ -637,16 +762,14 @@ fileCount: ${allFiles.length}
 
 ## 用户画像
 
-${profile}
+${profileText}
 `;
-			await this.vault.adapter.write(this.profilePath, profileContent);
+				await this.vault.adapter.write(this.profilePath, profileContent);
 
-			// 生成摘要
-			emit({ stage: 'summarizing', current: 0, total: 1, message: '生成摘要中...' });
-			const summary = await this.generateSummary(profile, signal);
-			if (summary) {
-				await this.vault.adapter.write(this.summaryPath, summary);
-			}
+				// 写入摘要
+				if (summaryText) {
+					await this.vault.adapter.write(this.summaryPath, summaryText);
+				}
 
 			// 更新 meta
 			const processedFiles: Record<string, { mtime: string; size: number }> = {};

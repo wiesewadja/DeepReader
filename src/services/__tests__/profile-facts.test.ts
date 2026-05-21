@@ -12,8 +12,8 @@ import {
 } from '../profile-facts';
 
 describe('DEFAULT_DIMENSIONS', () => {
-	it('has exactly 7 built-in dimensions', () => {
-		expect(DEFAULT_DIMENSIONS).toHaveLength(7);
+	it('has exactly 8 built-in dimensions', () => {
+		expect(DEFAULT_DIMENSIONS).toHaveLength(8);
 	});
 
 	it('each dimension has key and label', () => {
@@ -32,20 +32,21 @@ describe('DEFAULT_DIMENSIONS', () => {
 		expect(keys).toContain('personality');
 		expect(keys).toContain('emotions');
 		expect(keys).toContain('values');
+		expect(keys).toContain('reading');
 	});
 });
 
 describe('buildDimensionList', () => {
 	it('returns default dimensions when no custom', () => {
 		const result = buildDimensionList([]);
-		expect(result).toHaveLength(7);
+		expect(result).toHaveLength(8);
 		expect(result[0].key).toBe('identity');
 	});
 
 	it('appends custom dimensions after defaults', () => {
 		const result = buildDimensionList([{ key: 'learning', label: '学习' }]);
-		expect(result).toHaveLength(8);
-		expect(result[7]).toEqual({ key: 'learning', label: '学习' });
+		expect(result).toHaveLength(9);
+		expect(result[8]).toEqual({ key: 'learning', label: '学习' });
 	});
 });
 
@@ -124,9 +125,9 @@ describe('buildDimensionList with custom dimensions', () => {
 	it('generates dimension lines for prompt', () => {
 		const dims = buildDimensionList([{ key: 'learning', label: '学习与成长' }]);
 		const lines = dims.map(d => `[${d.label}] `);
-		expect(lines).toHaveLength(8);
+		expect(lines).toHaveLength(9);
 		expect(lines[0]).toBe('[身份与阶段] ');
-		expect(lines[7]).toBe('[学习与成长] ');
+		expect(lines[8]).toBe('[学习与成长] ');
 	});
 
 	it('custom dimensions appear in parseFactsText', () => {

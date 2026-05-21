@@ -11,6 +11,7 @@ export const DEFAULT_DIMENSIONS: ProfileFactDimension[] = [
 	{ key: 'personality', label: '性格与思维' },
 	{ key: 'emotions', label: '情绪与状态' },
 	{ key: 'values', label: '价值观与信念' },
+	{ key: 'reading', label: '阅读画像' },
 ];
 
 export interface ProfileFactDimension {
