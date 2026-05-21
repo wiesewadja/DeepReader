@@ -148,21 +148,35 @@ export class MascotFace extends Component {
 		this.svgEl.innerHTML = faceSVG('idle');
 		container.appendChild(this.svgEl);
 
+		// Tooltip 挂载到 body，fixed 定位
 		this.tooltipEl = document.createElement('span');
 		this.tooltipEl.className = 'deeppdf-mascot-tooltip';
 		this.tooltipEl.textContent = EXPRESSION_META.idle.tooltip;
-		container.appendChild(this.tooltipEl);
+		document.body.appendChild(this.tooltipEl);
 
 		container.addEventListener('mouseenter', () => {
-			if (this.tooltipEl) this.tooltipEl.classList.add('visible');
+			this.showTooltip(container);
 		});
 		container.addEventListener('mouseleave', () => {
-			if (this.tooltipEl) this.tooltipEl.classList.remove('visible');
+			this.hideTooltip();
 		});
 
 		this.resetIdleTimer();
 
 		return container;
+	}
+
+	private showTooltip(anchor: HTMLElement): void {
+		if (!this.tooltipEl) return;
+		const rect = anchor.getBoundingClientRect();
+		this.tooltipEl.style.left = `${rect.left + rect.width / 2}px`;
+		this.tooltipEl.style.top = `${rect.bottom + 6}px`;
+		this.tooltipEl.textContent = EXPRESSION_META[this.currentExpression].tooltip;
+		this.tooltipEl.classList.add('visible');
+	}
+
+	private hideTooltip(): void {
+		this.tooltipEl?.classList.remove('visible');
 	}
 
 	setExpression(expr: MascotExpression): void {
@@ -173,18 +187,17 @@ export class MascotFace extends Component {
 		if (this.svgEl) {
 			this.svgEl.innerHTML = faceSVG(expr);
 		}
-		if (this.tooltipEl) {
+
+		if (this.tooltipEl?.classList.contains('visible')) {
 			this.tooltipEl.textContent = EXPRESSION_META[expr].tooltip;
 		}
 
-		// happy 自动回 idle
 		if (expr === 'happy') {
 			this.happyTimer = setTimeout(() => {
 				this.setExpression('idle');
 			}, HAPPY_REVERT_MS);
 		}
 
-		// 非 sleeping 状态重置 idle 计时器
 		if (expr !== 'sleeping') {
 			this.resetIdleTimer();
 		}
@@ -225,6 +238,9 @@ export class MascotFace extends Component {
 	destroy(): void {
 		this.clearIdleTimer();
 		this.clearHappyTimer();
+		if (this.tooltipEl && this.tooltipEl.parentNode) {
+			this.tooltipEl.parentNode.removeChild(this.tooltipEl);
+		}
 		this.svgEl = null;
 		this.tooltipEl = null;
 		super.destroy();

@@ -26,11 +26,9 @@
 	image-rendering: pixelated;
 }
 
-/* Tooltip */
+/* Tooltip — fixed 定位挂载到 body */
 .deeppdf-mascot-tooltip {
-	position: absolute;
-	bottom: 100%;
-	left: 50%;
+	position: fixed;
 	transform: translateX(-50%);
 	font-size: 10px;
 	font-weight: 600;
@@ -43,28 +41,7 @@
 	pointer-events: none;
 	opacity: 0;
 	transition: opacity 0.15s ease;
-	z-index: 10;
-	margin-bottom: 4px;
-}
-
-.deeppdf-mascot-tooltip::before {
-	content: '';
-	position: absolute;
-	top: 100%;
-	left: 50%;
-	transform: translateX(-50%);
-	border: 4px solid transparent;
-	border-top-color: var(--background-modifier-border);
-}
-
-.deeppdf-mascot-tooltip::after {
-	content: '';
-	position: absolute;
-	top: calc(100% - 1px);
-	left: 50%;
-	transform: translateX(-50%);
-	border: 3px solid transparent;
-	border-top-color: var(--background-primary);
+	z-index: 1000;
 }
 
 .deeppdf-mascot-tooltip.visible {
