@@ -1,9 +1,9 @@
 /**
  * DeepPDF 阅读顶栏样式
- * 极简风格：左侧书籍封面+书名，右侧我的书库和设置按钮
+ * 布局：中间（mascot + 书籍信息 + 进度），右侧（操作按钮）
  */
 
-/* 顶栏容器 - 与右侧边栏背景一致 */
+/* 顶栏容器 */
 .deeppdf-reading-topbar {
     display: flex;
     align-items: center;
@@ -17,14 +17,23 @@
     position: relative;
 }
 
-/* 左侧区域 - 书籍封面 + 书名信息 */
-.deeppdf-topbar-left {
+/* 中间区域 — 主内容居中 */
+.deeppdf-topbar-center {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 8px;
     flex: 1;
     min-width: 0;
-    position: relative;
+}
+
+/* 书籍信息组：封面 + 书名/作者 */
+.deeppdf-topbar-book-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-shrink: 1;
 }
 
 /* 书籍封面 - 圆角矩形 */
@@ -88,37 +97,6 @@
     line-height: 1.3;
 }
 
-/* 阅读进度圆形指示器 */
-.deeppdf-topbar-progress {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-    opacity: 0.4;
-    transition: opacity 0.3s ease;
-}
-
-.deeppdf-topbar-progress svg {
-    display: block;
-}
-
-.deeppdf-progress-text {
-    position: absolute;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-muted);
-    background: var(--background-primary);
-    padding: 2px 5px;
-    border-radius: 4px;
-    border: 1px solid var(--background-modifier-border);
-    pointer-events: none;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    z-index: 10;
-}
-
 /* 右侧区域 */
 .deeppdf-topbar-right {
     display: flex;
@@ -127,7 +105,7 @@
     flex: 0 0 auto;
 }
 
-/* 操作按钮 - 极简风格，背景与右边栏一致 */
+/* 操作按钮 */
 .deeppdf-topbar-action-btn {
     display: flex;
     align-items: center;

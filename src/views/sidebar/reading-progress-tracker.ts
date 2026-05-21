@@ -131,7 +131,6 @@ export class ReadingProgressTracker {
 
 		const totalChapters = this.getTotalChapters();
 		const percent = getProgressPercent(rp, totalChapters);
-		this.host.readingTopbar?.setProgress(percent);
 		log(`[DeepPDF] 进度更新: ${percent}% (${Object.values(rp.chapters).filter(c => c.visited).length}/${totalChapters})`);
 	}
 
