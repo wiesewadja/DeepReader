@@ -44,7 +44,7 @@ export const PRESETS: ProviderPreset[] = [
 		},
 		secondaryProvider: 'siliconflow',
 		secondaryRoleAssignments: {
-			router: 'Step-3.5-Flash',
+			router: 'deepseek-ai/DeepSeek-V4-Flash',
 			embedding: 'Qwen/Qwen3-Embedding-0.6B',
 			reranker: 'Qwen/Qwen3-Reranker-0.6B',
 		},

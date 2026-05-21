@@ -59,7 +59,7 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 	function defaultRoles(): AIRoles {
 		return {
 			chat:        { provider: 'xiaomi', model: 'mimo-v2.5' },
-			router:      { provider: 'siliconflow', model: 'stepfun-ai/Step-3.5-Flash' },
+			router:      { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' },
 			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
 			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
 			embedding:   { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },

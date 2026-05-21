@@ -25,7 +25,7 @@ describe('Presets', () => {
 	it('xitong secondary roles use siliconflow', () => {
 		const xt = getPresetById('xitong')!;
 		expect(xt.secondaryProvider).toBe('siliconflow');
-		expect(xt.secondaryRoleAssignments!.router).toBe('Step-3.5-Flash');
+		expect(xt.secondaryRoleAssignments!.router).toBe('deepseek-ai/DeepSeek-V4-Flash');
 		expect(xt.secondaryRoleAssignments!.embedding).toBe('Qwen/Qwen3-Embedding-0.6B');
 		expect(xt.secondaryRoleAssignments!.reranker).toBe('Qwen/Qwen3-Reranker-0.6B');
 	});
@@ -44,7 +44,7 @@ describe('Presets', () => {
 		const xt = getPresetById('xitong')!;
 		const roles = buildRolesFromPreset(xt, true);
 		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
-		expect(roles.router).toEqual({ provider: 'siliconflow', model: 'Step-3.5-Flash' });
+		expect(roles.router).toEqual({ provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' });
 		expect(roles.pageindex).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.proposition).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.embedding).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' });

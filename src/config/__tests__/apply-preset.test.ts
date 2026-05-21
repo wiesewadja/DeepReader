@@ -37,7 +37,7 @@ describe('applyPreset', () => {
 		expect(settings.roles.tts.provider).toBe('xiaomi');
 		// Secondary roles
 		expect(settings.roles.router.provider).toBe('siliconflow');
-		expect(settings.roles.router.model).toBe('Step-3.5-Flash');
+		expect(settings.roles.router.model).toBe('deepseek-ai/DeepSeek-V4-Flash');
 		expect(settings.roles.embedding!.provider).toBe('siliconflow');
 		expect(settings.roles.embedding!.model).toBe('Qwen/Qwen3-Embedding-0.6B');
 		expect(settings.roles.reranker!.provider).toBe('siliconflow');

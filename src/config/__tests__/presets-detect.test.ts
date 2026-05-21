@@ -51,7 +51,7 @@ describe('detectCurrentPreset', () => {
 	it('does not match when primary role differs', () => {
 		const roles = {
 			chat: { provider: 'xiaomi', model: 'wrong-model' },
-			router: { provider: 'siliconflow', model: 'Step-3.5-Flash' },
+			router: { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' },
 		};
 		expect(detectCurrentPreset(roles)).toBeNull();
 	});
@@ -59,7 +59,7 @@ describe('detectCurrentPreset', () => {
 	it('does not match when role is null', () => {
 		const roles = {
 			chat: null,
-			router: { provider: 'siliconflow', model: 'Step-3.5-Flash' },
+			router: { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' },
 		};
 		expect(detectCurrentPreset(roles)).toBeNull();
 	});
