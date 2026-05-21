@@ -1,6 +1,6 @@
 /**
  * 奚童像素表情组件
- * 10×10 像素 SVG 表情脸，6 态切换
+ * 10×10 像素 SVG 表情脸，6 态切换 + idle 眨眼/转眼动画
  */
 
 import { Component } from '../component.js';
@@ -97,6 +97,35 @@ const FACE_DATA: Record<MascotExpression, string[]> = {
 	],
 };
 
+// ── idle 眨眼/转眼动画帧 ──
+const IDLE_FRAMES: Record<string, string[]> = {
+	normal: FACE_DATA.idle,
+	blink: [
+		'0111111110',
+		'1222222210',
+		'1222222210',
+		'1222222210',
+		'1222222210',
+		'1222222210',
+		'1222222210',
+		'1227222210',
+		'1622222610',
+		'0111111110',
+	],
+	lookRight: [
+		'0111111110',
+		'1222222210',
+		'1222222210',
+		'1222222210',
+		'1254225420',
+		'1254225420',
+		'1222222210',
+		'1227222210',
+		'1622222610',
+		'0111111110',
+	],
+};
+
 const EXPRESSION_META: Record<MascotExpression, { tooltip: string }> = {
 	idle:     { tooltip: '等你提问~' },
 	thinking: { tooltip: '让我想想…' },
@@ -112,10 +141,7 @@ const HAPPY_REVERT_MS = 2000;
 /**
  * 像素数据 → SVG 字符串
  */
-export function faceSVG(expression: MascotExpression): string {
-	const data = FACE_DATA[expression];
-	if (!data) return '';
-
+function renderFaceSVG(data: string[]): string {
 	let rects = '';
 	for (let y = 0; y < data.length; y++) {
 		for (let x = 0; x < data[y].length; x++) {
@@ -127,10 +153,16 @@ export function faceSVG(expression: MascotExpression): string {
 	return `<svg viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg" style="image-rendering:pixelated">${rects}</svg>`;
 }
 
+export function faceSVG(expression: MascotExpression): string {
+	const data = FACE_DATA[expression];
+	return data ? renderFaceSVG(data) : '';
+}
+
 export class MascotFace extends Component {
 	private currentExpression: MascotExpression = 'idle';
 	private idleTimer: ReturnType<typeof setTimeout> | null = null;
 	private happyTimer: ReturnType<typeof setTimeout> | null = null;
+	private blinkTimer: ReturnType<typeof setTimeout> | null = null;
 	private svgEl: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
 
@@ -162,6 +194,7 @@ export class MascotFace extends Component {
 		});
 
 		this.resetIdleTimer();
+		this.scheduleBlink();
 
 		return container;
 	}
@@ -201,6 +234,11 @@ export class MascotFace extends Component {
 		if (expr !== 'sleeping') {
 			this.resetIdleTimer();
 		}
+
+		// 回到 idle 时启动眨眼
+		if (expr === 'idle') {
+			this.scheduleBlink();
+		}
 	}
 
 	onUserActivity(): void {
@@ -213,6 +251,50 @@ export class MascotFace extends Component {
 	getExpression(): MascotExpression {
 		return this.currentExpression;
 	}
+
+	// ── 眨眼 + 转眼动画 ──
+
+	private scheduleBlink(): void {
+		this.clearBlinkTimer();
+		if (this.currentExpression !== 'idle') return;
+		const delay = 3000 + Math.random() * 4000; // 3-7 秒
+		this.blinkTimer = setTimeout(() => {
+			this.blinkTimer = null;
+			this.doBlink();
+		}, delay);
+	}
+
+	private doBlink(): void {
+		if (this.currentExpression !== 'idle' || !this.svgEl) return;
+
+		// 闭眼
+		this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.blink);
+
+		setTimeout(() => {
+			if (this.currentExpression !== 'idle' || !this.svgEl) {
+				this.scheduleBlink();
+				return;
+			}
+
+			// 30% 几率转眼
+			if (Math.random() < 0.3) {
+				const frame = Math.random() < 0.5 ? 'lookRight' : 'normal';
+				this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES[frame]);
+
+				setTimeout(() => {
+					if (this.currentExpression === 'idle' && this.svgEl) {
+						this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.normal);
+					}
+					this.scheduleBlink();
+				}, 800 + Math.random() * 1200);
+			} else {
+				this.svgEl.innerHTML = renderFaceSVG(IDLE_FRAMES.normal);
+				this.scheduleBlink();
+			}
+		}, 150);
+	}
+
+	// ── 计时器管理 ──
 
 	private resetIdleTimer(): void {
 		this.clearIdleTimer();
@@ -235,9 +317,17 @@ export class MascotFace extends Component {
 		}
 	}
 
+	private clearBlinkTimer(): void {
+		if (this.blinkTimer) {
+			clearTimeout(this.blinkTimer);
+			this.blinkTimer = null;
+		}
+	}
+
 	destroy(): void {
 		this.clearIdleTimer();
 		this.clearHappyTimer();
+		this.clearBlinkTimer();
 		if (this.tooltipEl && this.tooltipEl.parentNode) {
 			this.tooltipEl.parentNode.removeChild(this.tooltipEl);
 		}
