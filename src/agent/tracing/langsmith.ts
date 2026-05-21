@@ -25,6 +25,34 @@ let cachedTracer: LangChainTracer | null = null;
 let cachedConfig: string = '';
 
 /**
+ * Wrap tracer with Proxy so any callback error is silently swallowed.
+ * LangSmith failures must never block the main conversation flow.
+ */
+function safeWrap(tracer: LangChainTracer): LangChainTracer {
+  return new Proxy(tracer, {
+    get(target, prop) {
+      const value = (target as Record<string | symbol, unknown>)[prop];
+      if (typeof value === 'function') {
+        return (...args: unknown[]) => {
+          try {
+            const result = (value as (...a: unknown[]) => unknown).apply(target, args);
+            if (result instanceof Promise) {
+              return result.catch((err: unknown) => {
+                log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? err.message : err);
+              });
+            }
+            return result;
+          } catch (err) {
+            log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? err.message : err);
+          }
+        };
+      }
+      return value;
+    },
+  }) as LangChainTracer;
+}
+
+/**
  * Create or return cached LangChainTracer.
  *
  * Caches by config hash to avoid re-creating on every call.
@@ -46,10 +74,10 @@ export function getLangSmithTracer(config?: LangSmithConfig): LangChainTracer | 
       apiUrl: config.apiUrl || 'https://api.smith.langchain.com',
     });
 
-    cachedTracer = new LangChainTracer({
+    cachedTracer = safeWrap(new LangChainTracer({
       client,
       projectName: config.projectName || 'DeepReader',
-    });
+    }));
     cachedConfig = configKey;
 
     log('[LangSmith] Tracer 初始化成功, project:', config.projectName || 'DeepReader');
