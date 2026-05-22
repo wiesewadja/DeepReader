@@ -506,9 +506,9 @@ describe("book-indexer", () => {
       await fs.writeFile(path.join(indexDir, "book-meta.json"), "{ invalid json }");
       await fs.writeFile(path.join(indexDir, "bm25.json"), "{}");
 
-      const { searchBook } = await import("../book-search.js");
+      const { searchBookV2 } = await import("../book-search-v2.js");
       await expect(
-        searchBook({
+        searchBookV2({
           filePath,
           query: "test query",
         })
@@ -534,9 +534,9 @@ describe("book-indexer", () => {
       }));
       await fs.writeFile(path.join(indexDir, "bm25.json"), "{ corrupted }");
 
-      const { searchBook } = await import("../book-search.js");
+      const { searchBookV2 } = await import("../book-search-v2.js");
       await expect(
-        searchBook({
+        searchBookV2({
           filePath,
           query: "test query",
         })

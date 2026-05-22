@@ -75,6 +75,18 @@ export class AgentChatController {
 		}
 	}
 
+	/** 统一重置处理中状态 + UI 恢复 */
+	private resetProcessingState(): void {
+		this.isProcessing = false;
+		this.isAiStreaming = false;
+		this.host.setIsProcessing(false);
+		this.host.setIsAiStreaming(false);
+		this.host.chatInput?.setStreaming(false);
+		this.host.chatInput?.setDisabled(false);
+		this.reattachMascot();
+		this.host.readingTopbar?.setMascotExpression('idle');
+	}
+
 	constructor(host: AgentChatControllerHost) {
 		this.host = host;
 	}
@@ -241,7 +253,16 @@ export class AgentChatController {
 				thinkingBar?.insertBefore(mascotEl, thinkingBar.firstChild);
 			}
 
-			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes);
+			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes)
+				.catch(err => {
+					logError('[DeepPDF] handleAgentQuery unhandled:', err);
+					this.host.messageList?.updateMessage(aiMessageId, {
+						content: `查询失败: ${err instanceof Error ? err.message : String(err)}`,
+						isStreaming: false,
+						timestamp: new Date().toISOString()
+					});
+					this.resetProcessingState();
+				});
 
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
