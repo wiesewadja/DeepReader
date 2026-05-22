@@ -113,14 +113,7 @@ export class AgentChatController {
 			}
 			this.streamController = null;
 		}
-		this.isAiStreaming = false;
-		this.isProcessing = false;
-		this.reattachMascot();
-		this.host.readingTopbar?.setMascotExpression("idle");
-		this.host.setIsAiStreaming(false);
-		this.host.setIsProcessing(false);
-		this.host.chatInput?.setStreaming(false);
-		this.host.chatInput?.setDisabled(false);
+		this.resetProcessingState();
 	}
 
 	stopGeneration(): void {
@@ -131,15 +124,7 @@ export class AgentChatController {
 		log('[DeepPDF] 用户中断 AI 生成');
 		this.streamController.abort();
 		this.streamController = null;
-		this.isAiStreaming = false;
-		this.isProcessing = false;
-		this.host.setIsAiStreaming(false);
-		this.host.setIsProcessing(false);
-
-		this.host.chatInput?.setStreaming(false);
-		this.host.chatInput?.setDisabled(false);
-		this.reattachMascot();
-		this.host.readingTopbar?.setMascotExpression('idle');
+		this.resetProcessingState();
 
 		const messages = this.host.messageList?.getMessages() || [];
 		const lastAiMessage = [...messages].reverse().find(m => {
@@ -276,12 +261,7 @@ export class AgentChatController {
 				timestamp: new Date().toISOString()
 			});
 
-			this.isProcessing = false;
-			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
-			this.host.chatInput?.setStreaming(false);
-			this.host.chatInput?.setDisabled(false);
+			this.resetProcessingState();
 			this.reattachMascot();
 			this.host.readingTopbar?.setMascotExpression('idle');
 			this.host.chatInput?.focus();
@@ -705,12 +685,7 @@ export class AgentChatController {
 				isStreaming: false,
 				timestamp: new Date().toISOString()
 			});
-			this.isProcessing = false;
-			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
-			this.host.chatInput?.setStreaming(false);
-			this.host.chatInput?.setDisabled(false);
+			this.resetProcessingState();
 		}
 	}
 
