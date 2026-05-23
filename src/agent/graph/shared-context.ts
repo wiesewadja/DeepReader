@@ -62,6 +62,8 @@ export interface SharedContext {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  /** 书单模式下的书籍 ID 列表，传入后 Syntopical 节点只搜索这些书 */
+  booklistBookIds?: string[];
 }
 
 /**
@@ -81,6 +83,7 @@ export function createSharedContext(params: {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  booklistBookIds?: string[];
 }): SharedContext {
   return {
     chatHistory: params.chatHistory || [],
@@ -97,5 +100,6 @@ export function createSharedContext(params: {
     recentHistorySummaries: params.recentHistorySummaries,
     prevSearchedBlockIds: params.prevSearchedBlockIds,
     userProfileSummary: params.userProfileSummary,
+    booklistBookIds: params.booklistBookIds,
   };
 }

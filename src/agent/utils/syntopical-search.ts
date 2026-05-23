@@ -21,6 +21,8 @@ export interface SyntopicalSearchOptions {
   reranker?: { provider: 'openai'; model: string; apiKey: string; baseUrl: string; weight: number };
   maxBooks?: number;
   topKPerBook?: number;
+  /** Only search these book IDs; omit to search all indexed books */
+  bookIds?: string[];
 }
 
 export interface SyntopicalBookResult {
@@ -82,7 +84,13 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   const { query, vaultPath, embedding, reranker, maxBooks = 5, topKPerBook = 5 } = options;
 
   // 1. Scan Vault for indexed books
-  const indexedBooks = await scanIndexedBooks(vaultPath);
+  let indexedBooks = await scanIndexedBooks(vaultPath);
+
+  // Filter to specific books when booklist is active
+  if (options.bookIds?.length) {
+    const idSet = new Set(options.bookIds);
+    indexedBooks = indexedBooks.filter(b => idSet.has(b.id));
+  }
 
   if (indexedBooks.length === 0) {
     return {

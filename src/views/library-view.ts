@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
 import { sanitizeFileName } from '../weread/utils/file';
-import { IndexListItem } from '../types/index.js';
+import { IndexListItem, Booklist } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
 import { error as logError, serviceLog } from '../utils/logger.js';
@@ -46,7 +46,8 @@ const Icons = {
     checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" fill="#10b981" stroke="#10b981"/><polyline points="16 9 10.5 14.5 8 12" stroke="white" stroke-width="2.5"/></svg>`,
     book: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
     loading: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
-    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
+    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    booksStacked: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M2 7v14.5A2.5 2.5 0 0 0 4.5 22H8" opacity="0.5"/></svg>`
 };
 
 export interface LibraryViewOptions {
@@ -57,6 +58,7 @@ export interface LibraryViewOptions {
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
     onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
+    onStartThematicReading?: (booklist: Booklist) => void;
     plugin: any;
 }
 
@@ -79,6 +81,10 @@ export class LibraryView extends ItemView {
     private wereadStatsCache: Map<string, MappingStats> = new Map();
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
+    private _multiSelectMode: boolean = false;
+    private _selectedBookIds: Set<string> = new Set();
+    private _confirmBarEl: HTMLElement | null = null;
+    private static readonly MAX_MULTI_SELECT = 5;
 
     constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
         super(leaf);
@@ -177,6 +183,11 @@ export class LibraryView extends ItemView {
         addBtn.innerHTML = Icons.add;
         addBtn.title = '添加书籍';
         addBtn.addEventListener('click', () => this.handleAddDocument());
+
+        const thematicBtn = toolbar.createEl('button', { cls: 'deeppdf-lib-add-btn' });
+        thematicBtn.innerHTML = Icons.booksStacked;
+        thematicBtn.title = '主题阅读';
+        thematicBtn.addEventListener('click', () => this.toggleMultiSelectMode());
 
         // 卡片网格
         this.gridEl = container.createDiv({ cls: 'deeppdf-lib-grid' });
@@ -456,10 +467,31 @@ export class LibraryView extends ItemView {
 
         // 点击选择
         card.addEventListener('click', () => {
-            if (statusClass === 'ready') {
-                this.handleSelect(index);
+            if (this._multiSelectMode) {
+                if (statusClass !== 'ready') return;
+                this.toggleBookSelection(index.id, card);
+            } else {
+                if (statusClass === 'ready') {
+                    this.handleSelect(index);
+                }
             }
         });
+
+        // 多选模式：添加勾选框 + 状态
+        if (this._multiSelectMode && statusClass === 'ready') {
+            card.classList.add('deeppdf-lib-multi-selectable');
+            if (this._selectedBookIds.has(index.id)) {
+                card.classList.add('deeppdf-lib-multi-selected');
+            }
+            if (this._selectedBookIds.size >= LibraryView.MAX_MULTI_SELECT && !this._selectedBookIds.has(index.id)) {
+                card.classList.add('deeppdf-lib-multi-disabled');
+            }
+            const checkbox = card.createDiv({ cls: 'deeppdf-lib-checkbox' });
+            if (this._selectedBookIds.has(index.id)) {
+                checkbox.classList.add('checked');
+                checkbox.innerHTML = Icons.check;
+            }
+        }
 
         return card;
     }
@@ -1026,6 +1058,89 @@ export class LibraryView extends ItemView {
         await this.refreshIndexes();
         await this.loadWereadMapping();
         this.renderGrid();
+    }
+
+    private toggleMultiSelectMode(): void {
+        if (this._multiSelectMode) {
+            this.exitMultiSelectMode();
+        } else {
+            this._multiSelectMode = true;
+            this._selectedBookIds.clear();
+            this.renderGrid();
+            this.showConfirmBar();
+        }
+    }
+
+    private exitMultiSelectMode(): void {
+        this._multiSelectMode = false;
+        this._selectedBookIds.clear();
+        this.hideConfirmBar();
+        this.renderGrid();
+    }
+
+    private toggleBookSelection(indexId: string, card: HTMLElement): void {
+        if (this._selectedBookIds.has(indexId)) {
+            this._selectedBookIds.delete(indexId);
+        } else {
+            if (this._selectedBookIds.size >= LibraryView.MAX_MULTI_SELECT) return;
+            this._selectedBookIds.add(indexId);
+        }
+        this.renderGrid();
+        this.updateConfirmBar();
+    }
+
+    private showConfirmBar(): void {
+        this.hideConfirmBar();
+        const container = this.containerEl.children[1] as HTMLElement;
+        this._confirmBarEl = container.createDiv({ cls: 'deeppdf-lib-multi-confirm-bar' });
+        this.updateConfirmBar();
+    }
+
+    private updateConfirmBar(): void {
+        if (!this._confirmBarEl) return;
+        const count = this._selectedBookIds.size;
+        this._confirmBarEl.empty();
+
+        this._confirmBarEl.createDiv({ cls: 'deeppdf-lib-multi-count', text: `已选 ${count} 本` });
+
+        if (count >= 2) {
+            const startBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-start-btn' });
+            startBtn.textContent = '开始主题阅读';
+            startBtn.addEventListener('click', () => this.confirmThematicReading());
+        }
+
+        const cancelBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-cancel-btn' });
+        cancelBtn.textContent = '取消';
+        cancelBtn.addEventListener('click', () => this.exitMultiSelectMode());
+    }
+
+    private hideConfirmBar(): void {
+        if (this._confirmBarEl) {
+            this._confirmBarEl.remove();
+            this._confirmBarEl = null;
+        }
+    }
+
+    private confirmThematicReading(): void {
+        if (this._selectedBookIds.size < 2) return;
+        const bookIds = Array.from(this._selectedBookIds);
+        const bookNames = bookIds.map(id => {
+            const idx = this.indexes.find(i => i.id === id);
+            let name = idx?.pdf_name || id;
+            if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
+            if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
+            return name;
+        });
+        const displayName = `${bookNames[0]}等${bookNames.length}本书`;
+        const booklist: Booklist = {
+            id: `booklist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: displayName,
+            bookIds,
+            bookNames,
+            createdAt: new Date().toISOString(),
+        };
+        this.options.onStartThematicReading?.(booklist);
+        this.exitMultiSelectMode();
     }
 
     private async handleSelect(index: IndexListItem): Promise<void> {

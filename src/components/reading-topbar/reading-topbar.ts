@@ -7,11 +7,13 @@ import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
 import { uiLog as log } from '../../utils/logger.js';
 import { MascotFace, type MascotExpression } from './mascot-face.js';
+import type { Booklist } from '../../types/index.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onOpenSettings?: () => void;
     onCoverClick?: () => void;
+    onExitBooklist?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -141,6 +143,61 @@ export class ReadingTopbar extends Component {
         }
     }
 
+    /**
+     * 设置书单模式（主题阅读）
+     */
+    public setCurrentBooklist(booklist: Booklist): void {
+        if (!this.bookTitleEl || !this.bookAuthorEl) return;
+
+        this.bookTitleEl.textContent = booklist.name;
+        this.bookTitleEl.classList.add('has-book');
+
+        const names = booklist.bookNames || [];
+        this.bookAuthorEl.textContent = `${booklist.bookIds.length}本书`;
+        this.bookAuthorEl.title = names.join('、');
+
+        this.el?.classList.add('booklist-mode');
+
+        this.showExitButton();
+    }
+
+    /**
+     * 清除书单模式，恢复默认
+     */
+    public clearBooklistMode(): void {
+        this.el?.classList.remove('booklist-mode');
+        this.hideExitButton();
+        this.setCurrentBook(null);
+        this.setBookCover(null);
+    }
+
+    private exitBtnEl: HTMLElement | null = null;
+
+    private showExitButton(): void {
+        this.hideExitButton();
+        if (!this.el) return;
+
+        const centerSection = this.el.querySelector('.deeppdf-topbar-center');
+        if (!centerSection) return;
+
+        this.exitBtnEl = document.createElement('button');
+        this.exitBtnEl.className = 'deeppdf-topbar-exit-btn';
+        this.exitBtnEl.title = '退出主题阅读';
+        this.exitBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+        this.exitBtnEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.options.onExitBooklist?.();
+        });
+        centerSection.appendChild(this.exitBtnEl);
+    }
+
+    private hideExitButton(): void {
+        if (this.exitBtnEl) {
+            this.exitBtnEl.remove();
+            this.exitBtnEl = null;
+        }
+    }
+
     public selectIndex(indexId: string): void {
         log(`[ReadingTopbar] selectIndex called: ${indexId}`);
     }
@@ -178,6 +235,7 @@ export class ReadingTopbar extends Component {
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
+        this.exitBtnEl = null;
 
         super.destroy();
     }

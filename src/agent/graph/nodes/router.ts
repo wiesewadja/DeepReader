@@ -105,7 +105,8 @@ export async function routerNode(
 
     // Hybrid trigger: keywords pre-check + LLM classification
     // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
-    const candidateSyntopical = hasSyntopicalKeywords(rawQuery);
+    const hasBooklist = (sharedContext?.booklistBookIds?.length ?? 0) > 0;
+    const candidateSyntopical = hasSyntopicalKeywords(rawQuery) || hasBooklist;
     const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
       ? ReadingDepth.SYNTOPICAL
       : depth;

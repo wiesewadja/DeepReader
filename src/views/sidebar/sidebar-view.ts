@@ -7,7 +7,7 @@ import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../../ui/pdf-file-selector.js";
 import { Drawer } from "../../components/drawer/drawer.js";
 import { TaskProgressCard } from "../../components/task-progress-card.js";
-import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc } from "../../types/index.js";
+import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc, Booklist } from "../../types/index.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
 import {
     createEmptyProgress,
@@ -330,6 +330,7 @@ export class SidebarView extends ItemView {
             get agentChatHistory() { return self.agentChatHistory; },
             setAgentChatHistory(history: import("../../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
             get crossBookMode() { return self.sessionMgr.crossBookMode; },
+            get currentBooklistBookIds() { return self.bookMgr.currentBooklistBookIds; },
             get ttsService() { return self.ttsService; },
             get contextManager() { return self.contextManager; },
             get isProcessing() { return self.agentChatCtrl.processing; },
@@ -426,6 +427,16 @@ export class SidebarView extends ItemView {
      */
     public async selectIndex(indexId: string): Promise<void> {
         await this.bookMgr.selectIndex(indexId);
+    }
+
+    public async selectBooklist(booklist: Booklist): Promise<void> {
+        this.sessionMgr.crossBookMode = true;
+        await this.bookMgr.selectBooklist(booklist);
+    }
+
+    public exitBooklist(): void {
+        this.bookMgr.clearBooklist();
+        this.sessionMgr.crossBookMode = false;
     }
 
     /**
@@ -579,6 +590,7 @@ export class SidebarView extends ItemView {
                 // 点击封面时，打开当前书籍正在阅读的章节
                 this.navigateToLastReadChapter();
             },
+            onExitBooklist: () => this.exitBooklist(),
         });
 
         const el = this.readingTopbar.getElement();

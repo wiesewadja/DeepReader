@@ -6,7 +6,7 @@
 
 import { Notice, TFile } from 'obsidian';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
-import type { IndexListItem } from '../../types/index.js';
+import type { IndexListItem, Booklist } from '../../types/index.js';
 import type { MessageList } from '../../components/message-list/message-list.js';
 import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
 import type { ReadingProgress } from '../../pageindex/reading-progress.js';
@@ -53,6 +53,7 @@ export class BookManager {
 	private _currentDocDescription: string | null = null;
 	private _indexes: IndexListItem[] = [];
 	private _milestoneRecorder: MilestoneRecorder | null = null;
+	private _currentBooklist: Booklist | null = null;
 
 	constructor(host: BookManagerHost) {
 		this.host = host;
@@ -74,6 +75,8 @@ export class BookManager {
 	set indexes(indexes: IndexListItem[]) { this._indexes = indexes; }
 	get milestoneRecorder(): MilestoneRecorder | null { return this._milestoneRecorder; }
 	set milestoneRecorder(recorder: MilestoneRecorder | null) { this._milestoneRecorder = recorder; }
+	get currentBooklist(): Booklist | null { return this._currentBooklist; }
+	get currentBooklistBookIds(): string[] | null { return this._currentBooklist?.bookIds ?? null; }
 
 	// ── Book display name ──
 
@@ -603,13 +606,65 @@ export class BookManager {
 		this._currentPdfName = null;
 		this._currentBookCoverUrl = null;
 		this._currentBookAuthor = null;
+		this._currentBooklist = null;
 		this.host.readingTopbar?.setCurrentBook(null);
 		this.host.readingTopbar?.setBookCover(null);
+		this.host.readingTopbar?.clearBooklistMode();
 	}
 
 	clearTopbarDisplay(): void {
 		this.host.readingTopbar?.setCurrentBook(null);
 		this.host.readingTopbar?.setBookCover(null);
+	}
+
+	// ── Booklist (Thematic Reading) ──
+
+	async selectBooklist(booklist: Booklist): Promise<void> {
+		log(`[DeepPDF] selectBooklist: ${booklist.name}, books=${booklist.bookIds.length}`);
+
+		await this.host.flushProgressSave();
+
+		this._currentIndexId = null;
+		this._currentPdfName = null;
+		this._currentBookCoverUrl = null;
+		this._currentBookAuthor = null;
+		this._currentDocDescription = null;
+		this._currentBooklist = booklist;
+
+		this.host.readingTopbar?.setCurrentBooklist(booklist);
+
+		this.host.plugin.settings.lastSelectedIndexId = undefined;
+		this.host.plugin.settings.lastCrossBookMode = true;
+		await this.host.plugin.saveSettings();
+
+		this.host.messageList?.setCurrentPdfName(booklist.name);
+
+		if (!this.host.proactiveEngine) {
+			await this.host.initializeFrontendAgent();
+		}
+
+		this.host.cancelActiveStream();
+		this.host.messageList?.clear();
+
+		await this.host.startNewSession(booklist.id);
+
+		log(`[DeepPDF] selectBooklist 完成: session started for ${booklist.id}`);
+	}
+
+	clearBooklist(): void {
+		if (!this._currentBooklist) return;
+		log(`[DeepPDF] clearBooklist: exiting booklist mode`);
+
+		this.host.cancelActiveStream();
+		this._currentBooklist = null;
+		this._currentDocDescription = null;
+
+		this.host.readingTopbar?.clearBooklistMode();
+		this.host.messageList?.clear();
+
+		this.host.plugin.settings.lastCrossBookMode = false;
+		this.host.plugin.settings.lastSelectedIndexId = undefined;
+		this.host.plugin.saveSettings();
 	}
 
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {

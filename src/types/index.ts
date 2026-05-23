@@ -64,6 +64,18 @@ export interface SearchFilters {
 }
 
 /**
+ * 书单（主题阅读）
+ */
+export interface Booklist {
+    id: string;
+    name: string;
+    bookIds: string[];
+    bookNames: string[];
+    createdAt: string;
+    updatedAt?: string;
+}
+
+/**
  * 索引进度步骤配置
  *
  * 进度流程说明（后端 indexer.py + pageindex-lib）：

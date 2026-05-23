@@ -605,3 +605,93 @@
     margin-top: 6px;
     line-height: 1.4;
 }
+
+/* ── 多选模式（主题阅读） ── */
+
+.deeppdf-lib-multi-selectable {
+    position: relative;
+}
+
+.deeppdf-lib-multi-selected {
+    border-color: var(--interactive-accent) !important;
+    box-shadow: 0 0 0 2px var(--interactive-accent) !important;
+}
+
+.deeppdf-lib-multi-disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.deeppdf-lib-checkbox {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--text-muted);
+    background: var(--background-primary);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.deeppdf-lib-checkbox.checked {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+}
+
+.deeppdf-lib-checkbox.checked svg {
+    color: white;
+    width: 14px;
+    height: 14px;
+}
+
+.deeppdf-lib-multi-confirm-bar {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    background: var(--background-primary);
+    border-top: 1px solid var(--background-modifier-border);
+    z-index: 20;
+}
+
+.deeppdf-lib-multi-count {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.deeppdf-lib-multi-start-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.deeppdf-lib-multi-start-btn:hover {
+    opacity: 0.9;
+}
+
+.deeppdf-lib-multi-cancel-btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.deeppdf-lib-multi-cancel-btn:hover {
+    background: var(--background-secondary);
+}

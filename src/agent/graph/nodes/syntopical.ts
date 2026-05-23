@@ -65,6 +65,7 @@ export async function syntopicalNode(
   log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
 
   // 1. Multi-book search
+  const booklistBookIds = ctx?.booklistBookIds;
   const searchRunnable = RunnableLambda.from(
     async () => syntopicalSearch({
       query,
@@ -73,6 +74,7 @@ export async function syntopicalNode(
       reranker,
       maxBooks: SYNTOPICAL_MAX_BOOKS,
       topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
+      bookIds: booklistBookIds,
     })
   ).withConfig({ runName: 'syntopical_search' });
 

@@ -144,6 +144,13 @@ export default class DeepPDFPlugin extends Plugin {
                     // 此处无需额外下载，LibraryView 会从本地加载
                     return null;
                 },
+                onStartThematicReading: (booklist) => {
+                    const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
+                    if (sidebarLeaves.length > 0) {
+                        const sidebarView = sidebarLeaves[0].view as SidebarView;
+                        sidebarView.selectBooklist(booklist);
+                    }
+                },
                 plugin: this
             })
         );
