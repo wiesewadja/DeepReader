@@ -262,8 +262,6 @@ export class AgentChatController {
 			});
 
 			this.resetProcessingState();
-			this.reattachMascot();
-			this.host.readingTopbar?.setMascotExpression('idle');
 			this.host.chatInput?.focus();
 		}
 	}

@@ -245,7 +245,6 @@ function compactMessages(messages: ChatMessage[]): ChatMessage[] {
  * @param client LLM 客户端实例
  * @param messages 对话消息历史
  * @param tools 可用工具定义列表
- * @param toolRegistry 工具注册表
  * @param context 工具执行上下文
  * @param options 配置选项（回调、最大轮数等）
  * @returns 更新后的消息历史
@@ -524,30 +523,6 @@ export async function runAgentLoop(
     }
     // SubagentManager 路径不传递工具，不应收到 tool_calls
     throw new Error(`Unexpected tool calls in SubagentManager path: ${toolCalls.map(tc => tc.name).join(', ')}`);
-    const toolsDuration = Date.now() - toolsStartTime;
-    toolsTotalTime += toolsDuration;
-
-    // 迭代结束统计
-    const iterationDuration = Date.now() - iterationStartTime;
-    agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)} (并行执行 ${toolCalls.length} 个工具)`);
-    agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
-
-    // 追踪：结束迭代
-    iterationSpan?.end({
-      output: {
-        iterationDuration,
-        llmDuration,
-        toolsDuration,
-      },
-    });
-
-    // 🔄 循环内压缩： 当 token 超过阈值时，提前压缩以保持上下文大小可控
-    const currentTokens = estimateTokens(workingMessages);
-    if (currentTokens > MAX_CONTEXT_TOKENS) {
-      agentLog(`[AgentLoop] ⚠️ Token 超限 (${currentTokens} > ${MAX_CONTEXT_TOKENS})，执行循环内压缩...`);
-      workingMessages = manageMessageHistory(workingMessages);
-      agentLog(`[AgentLoop] ✅ 压缩后: ${workingMessages.length} 条, tokens: ~${estimateTokens(workingMessages)}`);
-    }
   }
 
   // 🛑 优雅降级：达到最大迭代次数时，强制总结
