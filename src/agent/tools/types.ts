@@ -73,6 +73,8 @@ export interface ToolContext {
   subagentManager?: import('../subagent/types.js').ISubagentManager;
   /** 书单模式下的书籍 ID 列表，传入后 Syntopical 节点只搜索这些书 */
   booklistBookIds?: string[];
+  /** 跨书籍模式（含书单模式和泛跨书模式） */
+  crossBookMode?: boolean;
 }
 
 /**

@@ -156,9 +156,36 @@ export class ReadingTopbar extends Component {
         this.bookAuthorEl.textContent = `${booklist.bookIds.length}本书`;
         this.bookAuthorEl.title = names.join('、');
 
+        this.renderStackedCovers(booklist.items);
+
         this.el?.classList.add('booklist-mode');
 
         this.showExitButton();
+    }
+
+    private renderStackedCovers(items?: import('../../types/index.js').BooklistItemInfo[]): void {
+        if (!this.bookCoverEl) return;
+        this.bookCoverEl.innerHTML = '';
+        this.bookCoverEl.classList.remove('has-cover');
+        this.bookCoverEl.classList.remove('stacked');
+
+        if (!items || items.length === 0) {
+            this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+            return;
+        }
+
+        this.bookCoverEl.classList.add('stacked');
+        const maxShow = Math.min(items.length, 3);
+        for (let i = 0; i < maxShow; i++) {
+            const item = items[i];
+            const layer = document.createElement('div');
+            layer.className = 'deeppdf-stacked-cover-layer';
+            layer.style.setProperty('--layer-index', String(i));
+            if (item.coverUrl) {
+                layer.style.backgroundImage = `url(${item.coverUrl})`;
+            }
+            this.bookCoverEl.appendChild(layer);
+        }
     }
 
     /**

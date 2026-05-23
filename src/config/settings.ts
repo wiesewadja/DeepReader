@@ -4,6 +4,7 @@
 
 import type { ProviderType } from './types.js';
 import type { AIProviderAccount, AIRoles } from './ai-roles';
+import type { Booklist } from '../types/index.js';
 
 // ═══════════════════════════════════════════════════════════════
 // 旧版子配置类型（迁移期间保留，Chunk 3 后删除）
@@ -93,6 +94,8 @@ export interface DeepPDFSettings {
 	forceMode: string;
 	lastCrossBookMode: boolean;
 	lastCrossBookSessionId: string;
+		booklistHistory: Booklist[];
+		lastActiveBooklistId: string;
 	chatCache?: Record<string, unknown>;
 	enableDebugLog: boolean;
 	lastDeepSearchMode: boolean;
@@ -208,6 +211,8 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	forceMode: "auto",
 	lastCrossBookMode: false,
 	lastCrossBookSessionId: "",
+		booklistHistory: [],
+		lastActiveBooklistId: "",
 	enableDebugLog: false,
 	lastDeepSearchMode: false,
 

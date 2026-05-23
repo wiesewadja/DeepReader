@@ -12,6 +12,7 @@ import { MemoryConsolidator } from '../../agent/memory/consolidator.js';
 import { DEFAULT_CONSOLIDATOR_CONFIG } from '../../agent/memory/types.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
+import type { BooklistItemInfo, Booklist } from '../../types/index.js';
 
 export interface SessionManagerHost {
 	get app(): import('obsidian').App;
@@ -31,6 +32,8 @@ export interface SessionManagerHost {
 	cancelActiveStream(): void;
 	initializeFrontendAgent(): Promise<void>;
 	setUseLLMTreeSearch(v: boolean): void;
+	get currentBooklistItems(): BooklistItemInfo[] | null;
+	restoreBooklist(booklist: Booklist): void;
 }
 
 export class SessionManager {
@@ -113,14 +116,21 @@ export class SessionManager {
 		if (!this.host.messageList) return;
 
 		const welcomeId = `msg-${Date.now()}`;
-		let welcomeContent: string;
 
 		if (this._crossBookMode) {
-			welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
+			const items = this.host.currentBooklistItems;
+			let welcomeContent: string;
 
-			if (this.hasSearchFilters()) {
-				welcomeContent += `\n\n🔍 当前过滤条件: ${this.buildFilterDescription()}`;
-				welcomeContent += `\n\n[清除过滤](obsidian://deepreader-search) | [搜索全部](obsidian://deepreader-search)`;
+			if (items && items.length > 0) {
+				const bookLines = items.map(item => {
+					let line = `- **${item.name}**`;
+					if (item.author) line += `  *${item.author}*`;
+					return line;
+				}).join("\n");
+
+				welcomeContent = `📚 **主题阅读**已开启，以下 ${items.length} 本书将被跨书分析：\n\n${bookLines}\n\n请输入您的问题，我将在这些书籍范围内进行搜索和分析。`;
+			} else {
+				welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
 			}
 
 			this.host.messageList.addMessage({
@@ -429,6 +439,17 @@ export class SessionManager {
 			this._crossBookMode = true;
 			this.host.readingTopbar?.setCrossBookMode(true);
 			await this.loadCrossBookSession();
+
+			// 恢复上次活跃的书单（如果有）
+			const lastBooklistId = this.host.plugin.settings.lastActiveBooklistId;
+			if (lastBooklistId) {
+				const history = this.host.plugin.settings.booklistHistory || [];
+				const saved = history.find((b: Booklist) => b.id === lastBooklistId);
+				if (saved) {
+					log('[DeepPDF] 恢复书单:', saved.name);
+					this.host.restoreBooklist(saved);
+				}
+			}
 		}
 
 		const wasDeepSearchMode = this.host.plugin.settings.lastDeepSearchMode;

@@ -46,6 +46,13 @@ export interface SessionInfo {
     createdTime: string;
 }
 
+/** 去除文件名中的 .pdf / .epub 扩展名 */
+export function stripFileExtension(name: string): string {
+    if (name.toLowerCase().endsWith('.pdf')) return name.slice(0, -4);
+    if (name.toLowerCase().endsWith('.epub')) return name.slice(0, -5);
+    return name;
+}
+
 /**
  * 上下文文档
  */
@@ -73,6 +80,15 @@ export interface Booklist {
     bookNames: string[];
     createdAt: string;
     updatedAt?: string;
+    items?: BooklistItemInfo[];
+}
+
+/** 书单内单本书的展示信息 */
+export interface BooklistItemInfo {
+    id: string;
+    name: string;
+    author?: string;
+    coverUrl?: string;
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
 import { sanitizeFileName } from '../weread/utils/file';
-import { IndexListItem, Booklist } from '../types/index.js';
+import { IndexListItem, Booklist, stripFileExtension } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
 import { error as logError, serviceLog } from '../utils/logger.js';
@@ -230,6 +230,16 @@ export class LibraryView extends ItemView {
 
         // 按状态排序
         const sorted = this.sortIndexes(filtered);
+
+        // 渲染历史主题阅读书单卡片（混排在最前面）
+        const history: Booklist[] = this.options.plugin?.settings?.booklistHistory || [];
+        if (history.length > 0 && !this.searchQuery) {
+            history.forEach(booklist => {
+                const card = this.createBooklistCard(booklist);
+                this.gridEl!.appendChild(card);
+            });
+        }
+
         sorted.forEach(index => {
             const card = this.createBookCard(index);
             this.gridEl!.appendChild(card);
@@ -318,8 +328,7 @@ export class LibraryView extends ItemView {
 
         // 书名处理
         let bookName = index.pdf_name;
-        if (bookName.toLowerCase().endsWith('.pdf')) bookName = bookName.slice(0, -4);
-        if (bookName.toLowerCase().endsWith('.epub')) bookName = bookName.slice(0, -5);
+        bookName = stripFileExtension(bookName);
         // Simplified name for cover lookup (matches exportName used during indexing)
         const coverName = this.getDisplayName(bookName);
 
@@ -496,6 +505,68 @@ export class LibraryView extends ItemView {
         return card;
     }
 
+    private createBooklistCard(booklist: Booklist): HTMLElement {
+        const card = document.createElement('div');
+        card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
+
+        // 封面区域：堆叠封面占位
+        const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover' });
+        const maxShow = Math.min(booklist.bookIds.length, 3);
+        for (let i = 0; i < maxShow; i++) {
+            const layer = coverEl.createDiv({ cls: 'deeppdf-lib-stacked-cover-layer' });
+            layer.style.setProperty('--layer-index', String(i));
+        }
+        if (booklist.bookIds.length > 3) {
+            const moreEl = coverEl.createDiv({ cls: 'deeppdf-lib-stacked-cover-more', text: `+${booklist.bookIds.length - 3}` });
+        }
+
+        // 信息区域
+        const infoEl = card.createDiv({ cls: 'deeppdf-lib-book-info' });
+        infoEl.createDiv({ cls: 'deeppdf-lib-book-title', text: booklist.name });
+
+        const tagRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-tag-row' });
+        tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-booklist', text: '主题阅读' });
+
+        // 书名列表
+        const namesText = booklist.bookNames.slice(0, 3).join('、');
+        const suffix = booklist.bookNames.length > 3 ? '…' : '';
+        infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: namesText + suffix });
+
+        // 日期
+        if (booklist.createdAt) {
+            const date = new Date(booklist.createdAt);
+            infoEl.createDiv({ cls: 'deeppdf-lib-book-meta', text: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` });
+        }
+
+        // 删除按钮
+        const coverActions = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
+        const deleteBtn = coverActions.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
+        deleteBtn.innerHTML = Icons.trash;
+        deleteBtn.title = '移除书单';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteBooklistHistory(booklist.id);
+        });
+
+        // 点击重新进入
+        card.addEventListener('click', () => {
+            this.options.onStartThematicReading?.(booklist);
+        });
+
+        return card;
+    }
+
+    private deleteBooklistHistory(booklistId: string): void {
+        const history = this.options.plugin?.settings?.booklistHistory || [];
+        const booklist = history.find((b: Booklist) => b.id === booklistId);
+        if (!booklist) return;
+        new Notice(`已移除书单「${booklist.name}」`, 2000);
+        const updated = history.filter((b: Booklist) => b.id !== booklistId);
+        this.options.plugin.settings.booklistHistory = updated;
+        this.options.plugin.saveSettings();
+        this.renderGrid();
+    }
+
     /**
      * 异步加载封面并更新显示
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
@@ -601,8 +672,7 @@ export class LibraryView extends ItemView {
             const index = this.indexes.find(idx => idx.id === indexId);
             if (index) {
                 let rawName = index.pdf_name;
-                if (rawName.toLowerCase().endsWith('.pdf')) rawName = rawName.slice(0, -4);
-                if (rawName.toLowerCase().endsWith('.epub')) rawName = rawName.slice(0, -5);
+                rawName = stripFileExtension(rawName);
                 if (rawName && !possibleNames.includes(rawName)) {
                     possibleNames.push(rawName);
                 }
@@ -1127,21 +1197,33 @@ export class LibraryView extends ItemView {
         const bookNames = bookIds.map(id => {
             const idx = this.indexes.find(i => i.id === id);
             let name = idx?.pdf_name || id;
-            if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
-            if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
+            name = stripFileExtension(name);
             return name;
         });
         const displayName = `${bookNames[0]}等${bookNames.length}本书`;
+        const items = bookIds.map(id => {
+            const idx = this.indexes.find(i => i.id === id);
+            let name = idx?.pdf_name || id;
+            name = stripFileExtension(name);
+            return {
+                id,
+                name,
+                author: idx?.author,
+                coverUrl: this.coverCache.get(id) || undefined,
+            };
+        });
         const booklist: Booklist = {
             id: `booklist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             name: displayName,
             bookIds,
             bookNames,
             createdAt: new Date().toISOString(),
+            items,
         };
         this.options.onStartThematicReading?.(booklist);
         this.exitMultiSelectMode();
     }
+
 
     private async handleSelect(index: IndexListItem): Promise<void> {
 		const rawStatus = (index.status || 'unknown').toLowerCase();

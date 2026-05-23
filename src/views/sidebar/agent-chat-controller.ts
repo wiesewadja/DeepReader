@@ -382,6 +382,11 @@ export class AgentChatController {
 				context.booklistBookIds = this.host.currentBooklistBookIds;
 			}
 
+				if (this.host.crossBookMode) {
+					context.crossBookMode = true;
+				}
+				
+				log(`[AgentChat] crossBookMode=${this.host.crossBookMode}, booklistBookIds=${JSON.stringify(this.host.currentBooklistBookIds)}`);
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {
@@ -796,6 +801,9 @@ export class AgentChatController {
 				context.booklistBookIds = this.host.currentBooklistBookIds;
 			}
 
+				if (this.host.crossBookMode) {
+					context.crossBookMode = true;
+				}
 			const self = this;
 			const callbacks = {
 				onContent: (content: string) => {

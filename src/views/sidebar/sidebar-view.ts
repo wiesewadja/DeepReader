@@ -7,7 +7,7 @@ import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
 import { PDFFileSelectorModal, DocumentFileInfo } from "../../ui/pdf-file-selector.js";
 import { Drawer } from "../../components/drawer/drawer.js";
 import { TaskProgressCard } from "../../components/task-progress-card.js";
-import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc, Booklist } from "../../types/index.js";
+import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc, Booklist, stripFileExtension } from "../../types/index.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
 import {
     createEmptyProgress,
@@ -192,8 +192,7 @@ export class SidebarView extends ItemView {
      */
     private getDisplayName(pdfName: string): string {
         let name = pdfName;
-        if (name.toLowerCase().endsWith('.pdf')) name = name.slice(0, -4);
-        if (name.toLowerCase().endsWith('.epub')) name = name.slice(0, -5);
+        name = stripFileExtension(name);
 
         const separators = ['：', ':', '—', '-', '｜', '|'];
         for (const sep of separators) {
@@ -310,6 +309,8 @@ export class SidebarView extends ItemView {
             cancelActiveStream() { self.agentChatCtrl?.cancelActiveStream(); },
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
             setUseLLMTreeSearch(v: boolean) { self.useLLMTreeSearch = v; },
+            get currentBooklistItems() { return self.bookMgr.currentBooklist?.items ?? null; },
+            restoreBooklist(booklist: import("../../types/index.js").Booklist) { self.restoreBooklist(booklist); },
         });
         this.agentChatCtrl = new AgentChatController({
             get app() { return self.app; },
@@ -437,6 +438,18 @@ export class SidebarView extends ItemView {
     public exitBooklist(): void {
         this.bookMgr.clearBooklist();
         this.sessionMgr.crossBookMode = false;
+    }
+
+    public restoreBooklist(booklist: Booklist): void {
+        // 补全 items：从 indexes 中查找 name/author
+        const items = booklist.bookIds.map(id => {
+            const idx = this.bookMgr.indexes.find(i => i.id === id);
+            let name = idx?.pdf_name || id;
+            name = stripFileExtension(name);
+            return { id, name, author: idx?.author };
+        });
+        const restored = { ...booklist, items };
+        this.bookMgr.restoreBooklist(restored);
     }
 
     /**

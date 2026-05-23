@@ -468,6 +468,7 @@ ${currentMemory}
       prevSearchedBlockIds,
       userProfileSummary,
       booklistBookIds: context.booklistBookIds,
+      crossBookMode: !!context.booklistBookIds?.length || !!context.crossBookMode,
     });
 
     const engineCallbacks: EngineCallbacks = {

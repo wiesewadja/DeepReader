@@ -619,6 +619,13 @@ export class BookManager {
 
 	// ── Booklist (Thematic Reading) ──
 
+	restoreBooklist(booklist: Booklist): void {
+		log(`[DeepPDF] restoreBooklist: ${booklist.name}`);
+		this._currentBooklist = booklist;
+		this.host.readingTopbar?.setCurrentBooklist(booklist);
+		this.host.messageList?.setCurrentPdfName(booklist.name);
+	}
+
 	async selectBooklist(booklist: Booklist): Promise<void> {
 		log(`[DeepPDF] selectBooklist: ${booklist.name}, books=${booklist.bookIds.length}`);
 
@@ -635,6 +642,20 @@ export class BookManager {
 
 		this.host.plugin.settings.lastSelectedIndexId = undefined;
 		this.host.plugin.settings.lastCrossBookMode = true;
+
+		// 持久化书单到历史（不存 items.coverUrl，恢复时补全）
+		const history = this.host.plugin.settings.booklistHistory || [];
+		const toSave: Booklist = { ...booklist, items: undefined };
+		const idx = history.findIndex((b: Booklist) => b.id === booklist.id);
+		if (idx >= 0) {
+			history[idx] = toSave;
+		} else {
+			history.unshift(toSave);
+		}
+		if (history.length > 20) history.length = 20;
+		this.host.plugin.settings.booklistHistory = history;
+		this.host.plugin.settings.lastActiveBooklistId = booklist.id;
+
 		await this.host.plugin.saveSettings();
 
 		this.host.messageList?.setCurrentPdfName(booklist.name);
@@ -664,6 +685,7 @@ export class BookManager {
 
 		this.host.plugin.settings.lastCrossBookMode = false;
 		this.host.plugin.settings.lastSelectedIndexId = undefined;
+		this.host.plugin.settings.lastActiveBooklistId = "";
 		this.host.plugin.saveSettings();
 	}
 

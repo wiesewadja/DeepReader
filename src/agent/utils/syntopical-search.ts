@@ -68,8 +68,8 @@ async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: 
       const metaContent = await fs.readFile(metaPath, 'utf-8');
       const meta = JSON.parse(metaContent);
 
-      if (meta.status === 'complete' && meta.bookName) {
-        books.push({ id: bookId, name: meta.bookName });
+      if (meta.title) {
+        books.push({ id: bookId, name: meta.title });
       }
     } catch {
       continue;

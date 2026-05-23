@@ -695,3 +695,56 @@
 .deeppdf-lib-multi-cancel-btn:hover {
     background: var(--background-secondary);
 }
+
+/* ── 书单历史卡片（主题阅读） ── */
+
+.deeppdf-lib-booklist-card {
+    border-color: var(--interactive-accent);
+    border-style: dashed;
+    opacity: 0.9;
+}
+
+.deeppdf-lib-booklist-card:hover {
+    opacity: 1;
+}
+
+.deeppdf-lib-type-booklist {
+    background: var(--interactive-accent) !important;
+    color: var(--text-on-accent) !important;
+}
+
+/* 堆叠封面（书单卡片内） */
+.deeppdf-lib-stacked-cover-layer {
+    position: absolute;
+    width: 60%;
+    height: 75%;
+    border-radius: 4px;
+    background: var(--background-modifier-hover);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    top: calc(50% - 37.5% + var(--layer-index) * 6px);
+    left: calc(var(--layer-index) * 10px);
+}
+
+.deeppdf-lib-stacked-cover-layer:first-child {
+    z-index: 3;
+}
+
+.deeppdf-lib-stacked-cover-layer:nth-child(2) {
+    z-index: 2;
+}
+
+.deeppdf-lib-stacked-cover-layer:nth-child(3) {
+    z-index: 1;
+}
+
+.deeppdf-lib-stacked-cover-more {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--background-primary);
+    padding: 1px 5px;
+    border-radius: 8px;
+    z-index: 4;
+}
