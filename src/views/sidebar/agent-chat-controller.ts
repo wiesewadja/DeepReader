@@ -69,6 +69,42 @@ export class AgentChatController {
 	private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
 	private detachedMascotEl: HTMLElement | null = null;
 
+	/**
+	 * 压缩超长引用文档内容（通过 LLM 摘要）
+	 * 超过 HARD_LIMIT 直接截断，超过 maxChars 但在 HARD_LIMIT 内则调用 LLM 压缩
+	 */
+	private async compressReferencedDoc(name: string, content: string, maxChars: number): Promise<string> {
+		const HARD_LIMIT = 50000;
+		const truncated = () => content.slice(0, maxChars) + '\n... (内容过长已截断)';
+
+		// 超大文档不走 LLM 压缩，直接截断
+		if (content.length > HARD_LIMIT) {
+			return truncated();
+		}
+
+		const llmClient = this.host.frontendAgent?.getLLMClient();
+		if (!llmClient) {
+			return truncated();
+		}
+
+		try {
+			const response = await llmClient.chat([
+				{ role: 'system', content: '你是文档摘要助手。将文档压缩到指定字数以内，保留关键信息和结构。直接输出压缩后的 Markdown 内容，不要解释。' },
+				{ role: 'user', content: `请将以下文档压缩到 ${maxChars} 字符以内（当前 ${content.length} 字符），保留核心观点和结构：\n\n---\n${content}` },
+			], []);
+			if (response.content && response.content.length > 0) {
+				// LLM 可能不严格遵守字数限制，超长则截断
+				return response.content.length > maxChars * 1.2
+					? response.content.slice(0, maxChars) + '\n... (压缩后仍过长，已截断)'
+					: response.content;
+			}
+		} catch (err) {
+			log('[AgentChatController] 文档压缩失败:', err);
+		}
+
+		return truncated();
+	}
+
 	private reattachMascot(): void {
 		if (this.detachedMascotEl) {
 			this.host.readingTopbar?.reattachMascot(this.detachedMascotEl);
@@ -354,6 +390,24 @@ export class AgentChatController {
 					return `> ${q.text}\n> — ${location}`;
 				}).join('\n\n');
 				userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
+			}
+
+			// 注入 @ 引用的文档内容到用户消息（超长文档通过 LLM 压缩）
+			const contextManager = this.host.contextManager;
+			if (contextManager) {
+				const MAX_DOC_CHARS = 10000;
+				const referencedDocs = contextManager.getLoadedDocumentsArray()
+					.filter(d => d.source === 'wikilink' || d.source === 'mention');
+				if (referencedDocs.length > 0) {
+					const docsText = await Promise.all(referencedDocs.map(async d => {
+						let content = d.content;
+						if (content.length > MAX_DOC_CHARS) {
+							content = await this.compressReferencedDoc(d.name, content, MAX_DOC_CHARS);
+						}
+						return `### ${d.name}\n\`\`\`markdown\n${content}\n\`\`\``;
+					})).then(results => results.join('\n\n'));
+					userMessage = `${userMessage}\n\n---\n**用户通过 @ 引用了以下文档，请基于文档内容回答：**\n\n${docsText}`;
+				}
 			}
 
 			const isNewConversation = this.host.agentChatHistory.length <= 1;
