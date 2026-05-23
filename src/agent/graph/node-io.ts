@@ -107,11 +107,7 @@ export interface FormatterInput {
   structuralAnalysis: string;
   rewrittenQuery: string;
   pdfName: string;
-  /** @deprecated Use mode */
-  isProactive: boolean;
   proactiveTrigger: string;
-  /** @deprecated Use mode */
-  isSocratic: boolean;
   mode: EngineMode;
   depth: ReadingDepth;
   tocSummary: string;

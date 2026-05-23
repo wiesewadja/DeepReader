@@ -314,7 +314,7 @@ export class AgentChatController {
 				},
 				docDescription: this.host.currentDocDescription || undefined,
 				quotes: quotes,
-				isSocratic: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
+				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,
 				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
 					const cfg = resolveRoleConfig('tts', this.host.plugin.settings);
 					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, provider: cfg.provider } : undefined;
@@ -734,7 +734,7 @@ export class AgentChatController {
 				currentNodeId,
 				documentMetadata: { title: this.host.currentPdfName || '未知文档' },
 				docDescription: this.host.currentDocDescription || undefined,
-				isProactive: true,
+				mode: 'proactive' as const,
 			};
 
 			const self = this;

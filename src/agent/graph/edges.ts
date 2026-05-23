@@ -34,8 +34,8 @@ export function routeByDepth(state: CognitiveEngineState): string {
 /**
  * Route after S1 Inspectional.
  *
- * - isProactive → visualizer or formatter (ask Socratic question)
- * - isSocratic → formatter (dialogue mode, skip S2, reuse chatHistory)
+ * - mode=proactive → visualizer or formatter (ask Socratic question)
+ * - mode=socratic → formatter (dialogue mode, skip S2, reuse chatHistory)
  * - depth=3 → S3 (syntopical)
  * - depth=1 + diagram intent → visualizer (use S1's structural analysis)
  * - depth=1 + no diagram → formatter

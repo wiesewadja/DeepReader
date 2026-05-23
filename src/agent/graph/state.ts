@@ -25,7 +25,7 @@ export enum ReadingDepth {
 }
 
 /**
- * Engine mode — replaces the isProactive/isSocratic boolean pair.
+ * Engine mode.
  * 'normal'    — standard query-answer flow
  * 'proactive' — ask guiding questions instead of answering
  * 'socratic'  — dialogue mode with follow-up questions
@@ -102,14 +102,8 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   pdfName: Annotation<string>(),
 
   // === Proactive guidance ===
-  /** @deprecated Use mode */
-  isProactive: Annotation<boolean>(),
   proactiveTrigger: Annotation<string>(),
   highlightContext: Annotation<string[]>(overwriteWithDefault([])),
-
-  // === Socratic mode ===
-  /** @deprecated Use mode */
-  isSocratic: Annotation<boolean>(),
 
   // === Unified mode ===
   mode: Annotation<EngineMode>(overwriteWithDefault('normal' as EngineMode)),
