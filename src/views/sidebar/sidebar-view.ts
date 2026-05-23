@@ -343,6 +343,7 @@ export class SidebarView extends ItemView {
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
             parseAndLoadReferences(message: string) { return self.parseAndLoadReferences(message); },
             copyToClipboard(text: string) { _copyToClipboard(text); },
+            getBookshelfSummary() { return self.bookMgr.buildBookshelfSummary() || undefined; },
         });
         this.bookMgr = new BookManager({
             get app() { return self.app; },
@@ -426,6 +427,10 @@ export class SidebarView extends ItemView {
      */
     public async selectIndex(indexId: string): Promise<void> {
         await this.bookMgr.selectIndex(indexId);
+        // 选书时退出阅读顾问模式
+        if (this.sessionMgr.generalChatMode) {
+            this.sessionMgr.generalChatMode = false;
+        }
     }
 
     /**
@@ -662,6 +667,11 @@ export class SidebarView extends ItemView {
 
         // 恢复跨书籍模式状态
         await this.restoreCrossBookMode();
+
+        // 无书时自动进入阅读顾问模式
+        if (!this.bookMgr.currentIndexId && !this.sessionMgr.crossBookMode) {
+            await this.sessionMgr.restoreGeneralChatSession();
+        }
 
         // 设置滚动监听：滚动时隐藏输入框
         this.setupScrollHandler(container);

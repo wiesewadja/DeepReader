@@ -467,6 +467,7 @@ ${currentMemory}
       recentHistorySummaries,
       prevSearchedBlockIds,
       userProfileSummary,
+      bookshelfSummary: context.bookshelfSummary,
     });
 
     const engineCallbacks: EngineCallbacks = {

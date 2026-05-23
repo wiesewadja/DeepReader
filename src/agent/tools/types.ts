@@ -71,6 +71,8 @@ export interface ToolContext {
   highlightContext?: string[];
   /** 子 Agent 管理器（通过 ToolContext 注入，替代全局单例） */
   subagentManager?: import('../subagent/types.js').ISubagentManager;
+  /** 书架摘要（阅读顾问模式下注入用户全量书架上下文） */
+  bookshelfSummary?: string;
 }
 
 /**

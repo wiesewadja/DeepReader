@@ -55,12 +55,12 @@ export class ReadingTopbar extends Component {
 
         this.bookTitleEl = document.createElement('div');
         this.bookTitleEl.className = 'deeppdf-book-title';
-        this.bookTitleEl.textContent = '未选择文档';
+        this.bookTitleEl.textContent = '奚童 · AI 伴读';
         bookInfo.appendChild(this.bookTitleEl);
 
         this.bookAuthorEl = document.createElement('div');
         this.bookAuthorEl.className = 'deeppdf-book-author';
-        this.bookAuthorEl.textContent = '点击选择书籍';
+        this.bookAuthorEl.textContent = '';
         bookInfo.appendChild(this.bookAuthorEl);
 
         bookGroup.appendChild(bookInfo);
@@ -107,9 +107,9 @@ export class ReadingTopbar extends Component {
             this.bookTitleEl.classList.add('has-book');
             this.bookAuthorEl.textContent = author || '';
         } else {
-            this.bookTitleEl.textContent = '未选择文档';
+            this.bookTitleEl.textContent = '奚童 · AI 伴读';
             this.bookTitleEl.classList.remove('has-book');
-            this.bookAuthorEl.textContent = '点击选择书籍';
+            this.bookAuthorEl.textContent = '';
         }
     }
 

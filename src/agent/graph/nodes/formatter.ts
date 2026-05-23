@@ -248,14 +248,18 @@ export async function formatterNode(
   // === Casual mode (depth=CASUAL): simple direct response ===
   if (depth === ReadingDepth.CASUAL) {
     callbacks?.onProgress?.('正在思考...');
-    const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
+    const isReadingAdvisor = !pdfName;
+    const casualPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary, isReadingAdvisor);
     const chatHistory = ctx?.chatHistory ?? [];
     const historyText = chatHistory.length > 0
       ? formatHistoryBlock(summarizeRecentHistory(chatHistory, 3))
       : '';
+    const bookshelfSection = (isReadingAdvisor && ctx?.bookshelfSummary)
+      ? `\n<bookshelf>\n${ctx.bookshelfSummary}\n</bookshelf>`
+      : '';
     const userMsg = historyText
-      ? `<history>\n${historyText}\n</history>\n\n<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>`
-      : rewrittenQuery || '';
+      ? `<history>\n${historyText}\n</history>\n\n<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>${bookshelfSection}`
+      : `<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>${bookshelfSection}`;
     const content = await streamToContent(
       mainModel,
       [new SystemMessage(casualPrompt), new HumanMessage(userMsg)],

@@ -62,6 +62,8 @@ export interface SharedContext {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  /** 书架摘要（阅读顾问模式下注入用户全量书架上下文） */
+  bookshelfSummary?: string;
 }
 
 /**
@@ -81,6 +83,7 @@ export function createSharedContext(params: {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  bookshelfSummary?: string;
 }): SharedContext {
   return {
     chatHistory: params.chatHistory || [],
@@ -97,5 +100,6 @@ export function createSharedContext(params: {
     recentHistorySummaries: params.recentHistorySummaries,
     prevSearchedBlockIds: params.prevSearchedBlockIds,
     userProfileSummary: params.userProfileSummary,
+    bookshelfSummary: params.bookshelfSummary,
   };
 }

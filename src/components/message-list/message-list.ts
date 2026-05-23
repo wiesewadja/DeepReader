@@ -11,17 +11,23 @@ import type { QuoteMetadata } from '../chat-input/chat-input';
 import { warn } from '../../utils/logger.js';
 import { QuestionMinimap } from '../question-minimap';
 import type { TTSPlayState } from '../../services/tts/tts-service.js';
+// @ts-ignore — esbuild dataurl loader handles .jpg
+const XITONG_IMG = require('../../assets/xitong.jpg') as string;
 
 /**
  * 引导按钮类型
  */
 export type GuidanceType =
-	| 'overview'        // 这本书讲了什么
-	| 'core-views'      // 核心观点
-	| 'mindmap'         // 全书导图
-	| 'key-concepts'    // 关键概念
-	| 'reading-guide'   // 从哪开始读
-	| 'relevance';      // 跟我有什么关系
+		| 'overview'        // 这本书讲了什么
+		| 'core-views'      // 核心观点
+		| 'mindmap'         // 全书导图
+		| 'key-concepts'    // 关键概念
+		| 'reading-guide'   // 从哪开始读
+		| 'relevance'       // 跟我有什么关系
+		| 'recommend'       // 推荐一本好书
+		| 'organize'        // 整理读书笔记
+		| 'summary'         // 我的阅读总结
+		| 'method';         // 聊聊阅读方法
 
 /**
  * 引导按钮配置
@@ -42,6 +48,16 @@ export const GUIDANCE_BUTTONS: GuidanceButton[] = [
 	{ type: 'key-concepts', label: '关键概念', prompt: '这本书有哪些关键概念和重要术语？' },
 	{ type: 'reading-guide', label: '从哪开始读', prompt: '我刚拿到这本书，请根据目录和章节难度，给我一个阅读路线建议：哪些章节必读、哪些可以跳过、推荐什么顺序？' },
 	{ type: 'relevance', label: '跟我有什么关系', prompt: '请结合这本书的核心内容，谈谈它对普通读者的实际价值，以及哪些章节最值得我花时间精读？' },
+];
+
+/**
+ * 阅读顾问引导按钮配置
+ */
+export const ADVISOR_BUTTONS: GuidanceButton[] = [
+	{ type: 'recommend', label: '推荐一本好书', prompt: '根据我的书架和阅读偏好，推荐一本我可能喜欢的书' },
+	{ type: 'organize', label: '整理读书笔记', prompt: '帮我把最近的读书笔记整理一下' },
+	{ type: 'summary', label: '我的阅读总结', prompt: '帮我做个阅读总结，看看我最近都读了什么' },
+	{ type: 'method', label: '聊聊阅读方法', prompt: '聊聊如何提高阅读效率，有什么好的阅读方法推荐？' },
 ];
 
 /**
@@ -86,6 +102,7 @@ export class MessageList extends Component {
 	private app?: App;
 	private currentPdfName: string = '';
 	private minimap: QuestionMinimap | null = null;
+	private _typewriterActive: boolean = false;
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
@@ -444,15 +461,79 @@ export class MessageList extends Component {
 					this.callbacks.onGuidanceClick?.(button.type);
 				});
 			});
+		} else if (this.callbacks.onGuidanceClick) {
+			// 阅读顾问模式：沉浸式背景欢迎界面
+			const advisorState = this.quickActionsEl.createEl('div', { cls: 'deeppdf-advisor-welcome' });
+			const bg = advisorState.createEl('div', { cls: 'deeppdf-advisor-bg' });
+			bg.style.backgroundImage = `url(${XITONG_IMG})`;
+			advisorState.createEl('div', { cls: 'deeppdf-advisor-overlay' });
+			const content = advisorState.createEl('div', { cls: 'deeppdf-advisor-content' });
+			const titleEl = content.createEl('div', { cls: 'deeppdf-advisor-title' });
+				this.startTypewriter(titleEl, '你好，我是奚童');
+			content.createEl('div', { cls: 'deeppdf-advisor-subtitle', text: '你的 AI 伴读' });
+			content.createEl('div', { cls: 'deeppdf-advisor-hint', text: '有什么想聊的，随时问我' });
+			const grid = content.createEl('div', { cls: 'deeppdf-guidance-grid deeppdf-advisor-grid' });
+			ADVISOR_BUTTONS.forEach((button) => {
+				const btn = grid.createEl('button', { cls: 'deeppdf-guidance-btn' });
+				btn.createEl('span', { cls: 'deeppdf-guidance-label', text: button.label });
+				btn.addEventListener('click', () => {
+					this.callbacks.onGuidanceClick?.(button.type);
+				});
+			});
 		} else {
-			// 无 PDF 选中时的提示
+			// 无回调时的降级占位符
 			const placeholder = this.quickActionsEl.createEl('div', {
 				cls: 'deeppdf-empty-placeholder'
 			});
-			placeholder.createEl('div', { cls: 'deeppdf-empty-icon' }).innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2"></path><path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path><path d="M7 12h.01"></path><path d="M12 12h.01"></path><path d="M17 12h.01"></path></svg>`;
 			placeholder.createEl('div', { cls: 'deeppdf-empty-title', text: '选择一本书籍开始阅读' });
-			placeholder.createEl('div', { cls: 'deeppdf-empty-desc', text: '从左侧列表中选择要阅读的书籍' });
 		}
+	}
+
+	/**
+	 * 循环打字机效果
+	 */
+	private startTypewriter(el: HTMLElement, text: string): void {
+		this._typewriterActive = true;
+		el.addClass('deeppdf-advisor-title-cursor');
+		let charIndex = 0;
+		let phase: 'typing' | 'holding' | 'erasing' | 'waiting' = 'typing';
+
+		const tick = () => {
+			if (!this._typewriterActive) return;
+
+			switch (phase) {
+				case 'typing':
+					charIndex++;
+					el.textContent = text.slice(0, charIndex);
+					if (charIndex >= text.length) {
+						phase = 'holding';
+						setTimeout(tick, 2500);
+						return;
+					}
+					setTimeout(tick, 160);
+					break;
+				case 'holding':
+					phase = 'erasing';
+					setTimeout(tick, 400);
+					break;
+				case 'erasing':
+					charIndex--;
+					el.textContent = text.slice(0, charIndex);
+					if (charIndex <= 0) {
+						phase = 'waiting';
+						setTimeout(tick, 600);
+						return;
+					}
+					setTimeout(tick, 80);
+					break;
+				case 'waiting':
+					phase = 'typing';
+					setTimeout(tick, 400);
+					break;
+			}
+		};
+
+		setTimeout(tick, 600);
 	}
 
 	/**
@@ -472,6 +553,9 @@ export class MessageList extends Component {
 	 * 销毁组件
 	 */
 	override destroy(): void {
+		// 停止打字机
+		this._typewriterActive = false;
+
 		// 销毁 minimap
 		if (this.minimap) {
 			this.minimap.destroy();

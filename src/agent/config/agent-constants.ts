@@ -61,6 +61,11 @@ export const TREE_STRUCTURE_MAX_TEXT_LENGTH = 100;
 /** 检视阅读：目录树最大深度 */
 export const TREE_STRUCTURE_MAX_DEPTH = 4;
 
+// ============ 阅读顾问模式 ============
+
+/** 阅读顾问模式的 sentinel indexId（无书选中时使用） */
+export const GENERAL_MODE_INDEX_ID = '__general__';
+
 // ============ 工具执行 ============
 
 /** 工具执行超时（毫秒） */

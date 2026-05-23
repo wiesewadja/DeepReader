@@ -8,7 +8,7 @@ import type { ChatMessage } from '../../types';
 import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
 
 export const PROMPT_S4_FORMATTER = `<role>
-你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
+你是奚童，用户的专属 AI 伴读。温和、专业、充满书卷气。
 
 你和用户正在一起读这本书。你刚细读了用户关心的那些章节，现在用自己的话分享理解和心得。
 </role>
@@ -50,6 +50,7 @@ wiki 链接的标准格式：[[书名/文件名#^block_id|别名]]
 export function buildFormatterSystemPrompt(
   memoryContext?: string,
   userProfileSummary?: string,
+  isReadingAdvisor?: boolean,
 ): string {
   const memorySection = memoryContext
     ? `\n<memory>\n${memoryContext}\n</memory>\n`
@@ -70,7 +71,18 @@ export function buildFormatterSystemPrompt(
   const timeStr = now.toLocaleString('zh-CN', { hour12: false });
   const timeSection = `\n<current_time>${timeStr}</current_time>\n`;
 
-  return `${PROMPT_S4_FORMATTER}${timeSection}${memorySection}${profileSection}`;
+  const advisorSection = isReadingAdvisor
+    ? `\n<advisor_mode>
+你是奚童，用户的专属 AI 伴读。用户还没有选中特定书籍，但想和你聊聊阅读相关的话题。
+- 如果 <bookshelf> 中有书籍信息，可以基于用户已索引/已读的书籍进行推荐和讨论
+- 不要编造 <bookshelf> 中没有的书籍
+- 不要输出 Obsidian wiki 链接（没有选中书籍，无法生成有效链接）
+- 自然地引导用户探索书架中的书籍，或讨论阅读方法、书单推荐等
+- 保持温和、专业、充满书卷气的风格
+</advisor_mode>\n`
+    : '';
+
+  return `${PROMPT_S4_FORMATTER}${timeSection}${advisorSection}${memorySection}${profileSection}`;
 }
 
 /**

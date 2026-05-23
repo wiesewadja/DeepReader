@@ -17,7 +17,8 @@ import { resolveRoleConfig } from '../../config/providers.js';
 import { ExcerptModal } from '../../components/excerpt/excerpt-modal.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt.js';
 import { ConfirmModal } from '../../components/confirm-modal.js';
-import { GUIDANCE_BUTTONS, GuidanceType } from '../../components/message-list/message-list.js';
+import { GUIDANCE_BUTTONS, ADVISOR_BUTTONS, GuidanceType } from '../../components/message-list/message-list.js';
+import { GENERAL_MODE_INDEX_ID } from '../../agent/config/agent-constants.js';
 import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.js';
 import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import type { ChatMessage } from '../../agent/types.js';
@@ -57,6 +58,7 @@ export interface AgentChatControllerHost {
 	initializeFrontendAgent(): Promise<void>;
 	parseAndLoadReferences(message: string): Promise<void>;
 	copyToClipboard(text: string): void;
+	getBookshelfSummary(): string | undefined;
 }
 
 export class AgentChatController {
@@ -195,11 +197,6 @@ export class AgentChatController {
 			return;
 		}
 
-		if (!this.host.crossBookMode && !this.host.currentIndexId) {
-			new Notice("请先选择一个索引");
-			return;
-		}
-
 		await this.host.parseAndLoadReferences(message);
 
 		this.isProcessing = true;
@@ -274,7 +271,7 @@ export class AgentChatController {
 				thinkingBar?.insertBefore(mascotEl, thinkingBar.firstChild);
 			}
 
-			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes)
+			this.handleAgentQuery(message, this.host.currentIndexId || GENERAL_MODE_INDEX_ID, aiMessageId, quotes)
 				.catch(err => {
 					logError('[DeepPDF] handleAgentQuery unhandled:', err);
 					this.host.messageList?.updateMessage(aiMessageId, {
@@ -376,6 +373,9 @@ export class AgentChatController {
 						vaultAdapter: this.host.app.vault.adapter as any,
 					};
 				})(),
+				bookshelfSummary: indexId === GENERAL_MODE_INDEX_ID
+					? this.host.getBookshelfSummary()
+					: undefined,
 			};
 
 			let userMessage = query;
@@ -1099,7 +1099,8 @@ export class AgentChatController {
 	handleGuidanceClick(type: GuidanceType): void {
 		log('[DeepPDF] 引导按钮点击:', type);
 
-		const button = GUIDANCE_BUTTONS.find(b => b.type === type);
+		const button = GUIDANCE_BUTTONS.find(b => b.type === type)
+			|| ADVISOR_BUTTONS.find(b => b.type === type);
 		if (!button) {
 			warn('[DeepPDF] 未找到引导按钮配置:', type);
 			return;
