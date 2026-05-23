@@ -1470,7 +1470,7 @@ export class LibraryView extends ItemView {
             const completedIndexes = this.detectCompletedIndexes(this.indexes);
 
             if (newAddedIndexes.length > 0) {
-                this.renderGrid();
+                this.addNewCards(newAddedIndexes);
             } else if (changedIndexes.length > 0 || completedIndexes.length > 0) {
                 this.updateCardsIncrementally(changedIndexes, completedIndexes);
             }
@@ -1527,18 +1527,52 @@ export class LibraryView extends ItemView {
         return newIndexes.filter(idx => completedIds.includes(idx.id));
     }
 
+
+    /**
+     * 增量添加新卡片（避免全量重建导致封面闪烁）
+     */
+    private addNewCards(newIndexes: IndexListItem[]): void {
+        if (!this.gridEl) return;
+
+        for (const index of newIndexes) {
+            const card = this.createBookCard(index);
+            this.gridEl.appendChild(card);
+            this.cardElements.set(index.id, card);
+            this.lastIndexStates.set(index.id, {
+                status: index.status || 'unknown',
+                progress: index.progress_percent || 0,
+                message: index.message || ''
+            });
+        }
+
+        // 如果有正在处理的索引，确保轮询已启动
+        const hasProcessing = newIndexes.some(idx =>
+            PROCESSING_STATUSES.has((idx.status || '').toLowerCase())
+        );
+        if (hasProcessing) {
+            this.startProgressPolling();
+        }
+    }
     /**
      * 增量更新卡片
      */
     private async updateCardsIncrementally(changedIndexes: IndexListItem[], completedIndexes: IndexListItem[]): Promise<void> {
         // 更新变化的卡片
         changedIndexes.forEach(idx => {
-            const card = this.cardElements.get(idx.id);
-            if (card) {
-                // 重新创建该卡片
-                const newCard = this.createBookCard(idx);
-                card.replaceWith(newCard);
-                this.cardElements.set(idx.id, newCard);
+            const rawStatus = (idx.status || 'unknown').toLowerCase();
+            const isProcessing = PROCESSING_STATUSES.has(rawStatus);
+
+            if (isProcessing) {
+                // 索引中：只更新进度条，不重建卡片（避免封面闪烁）
+                this.updateCardProgress(idx.id, idx.progress_percent || 0, idx.status || '', idx.message || undefined);
+            } else {
+                // 状态变化（如 processing → ready）：重建卡片
+                const card = this.cardElements.get(idx.id);
+                if (card) {
+                    const newCard = this.createBookCard(idx);
+                    card.replaceWith(newCard);
+                    this.cardElements.set(idx.id, newCard);
+                }
             }
         });
 
