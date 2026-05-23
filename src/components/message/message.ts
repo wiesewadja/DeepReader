@@ -465,6 +465,7 @@ export class AIMessage extends Message {
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
 
+		// 比较上次实际显示的状态（非 data 旧值），因 currentStatus 被持久化存储
 		const newStatus = data.currentStatus !== undefined ? data.currentStatus : (this.data as any).currentStatus;
 		if (this.el && this.statusEl) {
 			if (newStatus) {
@@ -550,7 +551,9 @@ export class AIMessage extends Message {
 			});
 		}
 		this.el!.removeClass('deeppdf-message-streaming');
-		this.setupSelectionListener(contentEl as HTMLElement);
+		if (contentEl) {
+			this.setupSelectionListener(contentEl as HTMLElement);
+		}
 
 		if (bubble) {
 			if (!bubble.querySelector('.deeppdf-message-time')) {
