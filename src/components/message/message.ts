@@ -459,134 +459,104 @@ export class AIMessage extends Message {
 
 		Object.assign(this.data, data);
 
-		// 检查哪些字段发生了变化（优化：使用浅比较而非 JSON.stringify）
 		const agentToolCallsChanged = data.agentToolCalls !== undefined && (
 			data.agentToolCalls !== oldAgentToolCalls &&
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
 
-		// 【关键修复】状态更新逻辑：比较新状态与上次实际显示的状态，而不是 data 中的旧状态
-		// 因为 data.currentStatus 会被持久化存储，导致相同状态不会触发更新
 		const newStatus = data.currentStatus !== undefined ? data.currentStatus : (this.data as any).currentStatus;
-
-		// 优先处理状态更新（不受节流限制，立即更新）
 		if (this.el && this.statusEl) {
-			// 更新状态显示
 			if (newStatus) {
 				this.statusEl.textContent = newStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = newStatus;
 			} else if (!newStatus && this.lastDisplayedStatus) {
-				// 清空状态
 				this.statusEl.textContent = '';
 				this.statusEl.removeClass('visible');
 				this.lastDisplayedStatus = undefined;
 			}
 		}
 
-			// 语音书信模式：增量更新信封内容（避免全量重绘闪烁）
-			if (this.voiceCtrl.enableVoiceReply && this.el) {
-				if (data.content !== undefined && data.content !== oldContent) {
-					this.updateContent(data.content);
-				}
-				// 流式结束时：更新语音气泡状态（从 loading 变为 ready）
-				if (data.voiceState) {
-					this.voiceCtrl.voiceState = data.voiceState;
-				}
-				// 流式结束或语音到达：局部更新语音气泡和信封
-				if (data.voiceState) {
-					this.voiceCtrl.updateVoiceBubbleUI();
-				}
-				if (streamingEnded) {
-					this.voiceCtrl.updateLetterEnvelopeUI();
-					this.hideStreamingState();
-					this.voiceCtrl.appendTimestampAndActions();
-				}
-				return;
-			}
-
-		// 【优化】流式更新期间，只做增量更新，避免全量重绘导致闪烁
-		// 只有在流式结束时（streamingEnded）才做完整重绘
-		if (this.el && this.data.isStreaming && !streamingEnded) {
-			// 流式期间：增量更新内容
-			if (data.content !== undefined && data.content !== oldContent) {
-				this.updateContent(data.content);
-			}
-			// 流式期间：增量更新工具调用（如果需要）
-			if (agentToolCallsChanged && data.agentToolCalls) {
-				this.updateToolCalls(data.agentToolCalls);
-			}
-			// 流式期间：不处理引用和追问变化，等到流式结束再处理
+		if (this.voiceCtrl.enableVoiceReply && this.el) {
+			this.handleVoiceLetterUpdate(data, oldContent, streamingEnded);
 			return;
 		}
 
-		// 非流式期间或流式结束时，使用原有逻辑
-		if (this.el &&
-			data.content !== undefined &&
-			data.content !== oldContent &&
-			!agentToolCallsChanged &&
-			!streamingEnded
-		) {
+		if (this.el && this.data.isStreaming && !streamingEnded) {
+			if (data.content !== undefined && data.content !== oldContent) {
+				this.updateContent(data.content);
+			}
+			if (agentToolCallsChanged && data.agentToolCalls) {
+				this.updateToolCalls(data.agentToolCalls);
+			}
+			return;
+		}
+
+		if (this.el && data.content !== undefined && data.content !== oldContent && !agentToolCallsChanged && !streamingEnded) {
 			this.updateContent(data.content);
 		} else if (streamingEnded && this.el) {
-			// 流式结束时，进行完整的 Markdown 渲染
-			const bubble = this.el.querySelector('.deeppdf-message-bubble');
-			const contentEl = this.el.querySelector('.deeppdf-message-content');
-
-			// 结束时隐藏状态
-			if (this.statusEl) {
-				this.statusEl.innerHTML = '';
-				this.statusEl.removeClass('visible');
-			}
-			this.lastDisplayedStatus = undefined;
-			log('[DeepPDF] update() - 流式结束，隐藏状态');
-
-			if (contentEl && this.app) {
-				// 清理旧的 observers 和 mouseover handler
-				this.observers.forEach(obs => obs.disconnect());
-				this.observers = [];
-
-				// 移除 loading 状态
-				if ((contentEl as HTMLElement).hasClass('deeppdf-message-loading')) {
-					(contentEl as HTMLElement).removeClass('deeppdf-message-loading');
-				}
-
-				// 处理 HTML 标签
-				const { cleanedContent } = parseAgentContent(this.data.content);
-
-				contentEl.empty();
-				const sourcePath = this.data.pdfName || '';
-				// 保存 app 引用用于回调
-				const appRef = this.app;
-				// 等待 Markdown 渲染完成后再设置链接事件（关键修复）
-				MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component()).then(() => {
-					if (appRef) {
-						_setupInternalLinks(contentEl as HTMLElement, appRef, false, this.observers);
-					}
-				});
-			}
-			// 移除流式状态
-			this.el.removeClass('deeppdf-message-streaming');
-
-			// 【关键修复】流式结束后设置选中监听器
-			this.setupSelectionListener(contentEl as HTMLElement);
-
-			// 【关键修复】流式结束后渲染时间戳（显示完成时间）和操作按钮
-			if (bubble) {
-				// 避免重复添加时间戳
-				if (!bubble.querySelector('.deeppdf-message-time')) {
-					bubble.appendChild(this.renderTimestamp());
-				}
-				this.renderActions(bubble as HTMLElement);
-			}
+			this.finalizeStreamingEnd();
 		} else {
-			// 全量重绘
 			const newRender = this.render();
 			if (this.el) {
 				this.el.replaceWith(newRender);
 			}
 			this.el = newRender;
+		}
+	}
+
+	private handleVoiceLetterUpdate(data: Partial<MessageData>, oldContent: string, streamingEnded: boolean | undefined): void {
+		if (data.content !== undefined && data.content !== oldContent) {
+			this.updateContent(data.content);
+		}
+		if (data.voiceState) {
+			this.voiceCtrl.voiceState = data.voiceState;
+			this.voiceCtrl.updateVoiceBubbleUI();
+		}
+		if (streamingEnded) {
+			this.voiceCtrl.updateLetterEnvelopeUI();
+			this.hideStreamingState();
+			this.voiceCtrl.appendTimestampAndActions();
+		}
+	}
+
+	private finalizeStreamingEnd(): void {
+		const bubble = this.el!.querySelector('.deeppdf-message-bubble');
+		const contentEl = this.el!.querySelector('.deeppdf-message-content');
+
+		if (this.statusEl) {
+			this.statusEl.innerHTML = '';
+			this.statusEl.removeClass('visible');
+		}
+		this.lastDisplayedStatus = undefined;
+
+		if (contentEl && this.app) {
+			this.observers.forEach(obs => obs.disconnect());
+			this.observers = [];
+
+			if ((contentEl as HTMLElement).hasClass('deeppdf-message-loading')) {
+				(contentEl as HTMLElement).removeClass('deeppdf-message-loading');
+			}
+
+			const { cleanedContent } = parseAgentContent(this.data.content);
+			contentEl.empty();
+			const sourcePath = this.data.pdfName || '';
+			const appRef = this.app;
+			MarkdownRenderer.render(this.app, cleanedContent, contentEl as HTMLElement, sourcePath, new Component()).then(() => {
+				if (appRef) {
+					_setupInternalLinks(contentEl as HTMLElement, appRef, false, this.observers);
+				}
+			});
+		}
+		this.el!.removeClass('deeppdf-message-streaming');
+		this.setupSelectionListener(contentEl as HTMLElement);
+
+		if (bubble) {
+			if (!bubble.querySelector('.deeppdf-message-time')) {
+				bubble.appendChild(this.renderTimestamp());
+			}
+			this.renderActions(bubble as HTMLElement);
 		}
 	}
 

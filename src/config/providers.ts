@@ -301,34 +301,6 @@ export function getProviderDefaultModel(provider: ProviderType): string {
 }
 
 /**
- * 获取当前服务商的配置信息
- * @deprecated 迁移完成后删除，改用 resolveRoleConfig
- */
-export function getProviderConfig(
-	settings: Pick<DeepPDFSettings, 'llmProvider' | 'apiUrl'>
-): ProviderConfig & { provider: ProviderType } {
-	let provider = settings.llmProvider as ProviderType;
-
-	// 向后兼容：将旧的 google 映射到 custom
-	if ((provider as string) === 'google') {
-		provider = 'custom';
-	}
-
-	// 映射当前 5 种到新的 7 种
-	if (provider === 'minimax' || provider === 'siliconflow') {
-		provider = 'deepseek'; // 旧版不可能直接用这两种做 LLM
-	}
-
-	const config = PROVIDER_CONFIGS[provider] || PROVIDER_CONFIGS.deepseek;
-
-	return {
-		...config,
-		provider,
-		baseUrl: provider === 'custom' ? (settings.apiUrl || '') : config.baseUrl,
-	};
-}
-
-/**
  * 服务商显示名称映射
  */
 /**
