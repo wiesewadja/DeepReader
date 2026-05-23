@@ -152,7 +152,7 @@ export async function testConnection(
 			});
 		} else if (endpoint === 'imagegen') {
 			url = `${normalizedUrl}/images/generations`;
-			body = JSON.stringify({ model, prompt: 'a red circle', n: 1, size: '1024x1024' });
+			body = JSON.stringify({ model, prompt: 'a red circle', n: 1, size: '2048x2048' });
 		} else {
 			const isEmbedding = endpoint === 'embedding';
 			url = `${normalizedUrl}/${isEmbedding ? 'embeddings' : 'chat/completions'}`;

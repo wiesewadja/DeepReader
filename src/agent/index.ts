@@ -20,7 +20,7 @@ export { ContextBuilder } from './context/builder.js';
 export { NoopTracer, NoopTraceContext } from './tracing/index.js';
 export type { ITraceContext, ITracer } from './tracing/types.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
-export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
+export type { ToolContext } from './tools/types.js';
 export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata } from './context/builder.js';
@@ -44,7 +44,6 @@ import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
-import { getToolDefinitions } from './tools/index.js';
 import { SubagentManager } from './subagent/manager.js';
 import { runAgentLoop } from './agent-loop.js';
 import { IntentRouter } from './router/index.js';
@@ -294,19 +293,83 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: `构建引擎配置失败: ${cfgMsg}` }] };
     }
 
+    const result = await this.executeWithStream(
+      {
+        messages: [new HumanMessage(userMessage)],
+        bookId: context.indexId || '',
+        pdfName: context.pdfName || '',
+        depth: context.mode === 'proactive' ? ReadingDepth.INSPECTIONAL : undefined,
+        mode: (context.mode || 'normal') as EngineMode,
+        proactiveTrigger: context.proactiveTrigger ?? undefined,
+        highlightContext: context.highlightContext ?? [],
+      },
+      callbacks,
+      configurable,
+      tracer,
+    );
+
+    // 后台累计对话轮数（满 10 轮自动更新画像摘要）
+    const _pb = context.plugin?.profileBuilder;
+    if (_pb) {
+      const _userMsg = userMessage || '';
+      const _assistantMsg = result.messages?.[0]?.content || '';
+      if (_userMsg && _assistantMsg) {
+        _pb.accumulateConversationRound(_userMsg, _assistantMsg);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * 恢复被 HITL 中断的图执行。
+   */
+  async resumeGraphExecution(
+    approved: boolean,
+    feedback: string,
+    context: ToolContext,
+    callbacks: AgentLoopOptions,
+    chatHistory?: ChatMessage[],
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+    if (!this.activeThreadId) {
+      return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
+    }
+
+    let tracer: unknown;
+    let configurable: Record<string, unknown>;
+    try {
+      const cfg = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId, undefined, chatHistory);
+      ({ _langsmithTracer: tracer, ...configurable } = cfg);
+    } catch (cfgErr) {
+      const msg = cfgErr instanceof Error ? cfgErr.message : String(cfgErr);
+      log('[FrontendAgent] 恢复执行配置构建失败:', msg);
+      callbacks.onError?.(msg);
+      return { messages: [{ role: 'assistant', content: `构建引擎配置失败: ${msg}` }] };
+    }
+
+    return this.executeWithStream(
+      new Command({ resume: { approved, feedback } }),
+      callbacks,
+      configurable,
+      tracer,
+      '恢复图执行错误',
+    );
+  }
+
+  /**
+   * 执行图流并统一处理取消/错误。
+   * runGraphEngine 和 resumeGraphExecution 的共享逻辑。
+   */
+  private async executeWithStream(
+    streamInput: Parameters<ReturnType<typeof this.getCompiledEngine>['stream']>[0],
+    callbacks: AgentLoopOptions,
+    configurable: Record<string, unknown>,
+    tracer: unknown,
+    errorPrefix: string = 'LangGraph 引擎错误',
+  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
     try {
       const stream = await this.getCompiledEngine().stream(
-        {
-          messages: [new HumanMessage(userMessage)],
-          bookId: context.indexId || '',
-          pdfName: context.pdfName || '',
-          depth: context.isProactive ? ReadingDepth.INSPECTIONAL : undefined,
-          isSocratic: context.isSocratic ?? false,
-          isProactive: context.isProactive ?? false,
-          mode: (context.isProactive ? 'proactive' : context.isSocratic ? 'socratic' : 'normal') as EngineMode | undefined,
-          proactiveTrigger: context.proactiveTrigger ?? undefined,
-          highlightContext: context.highlightContext ?? [],
-        },
+        streamInput,
         {
           streamMode: 'updates',
           configurable,
@@ -319,20 +382,8 @@ ${currentMemory}
       if (!result.interrupted) {
         this.activeThreadId = null;
       }
-
-      // 后台累计对话轮数（满 10 轮自动更新画像摘要）
-      const _pb = context.plugin?.profileBuilder;
-      if (_pb) {
-        const _userMsg = userMessage || '';
-        const _assistantMsg = result.messages?.[0]?.content || '';
-        if (_userMsg && _assistantMsg) {
-          _pb.accumulateConversationRound(_userMsg, _assistantMsg);
-        }
-      }
-
       return result;
     } catch (err) {
-      // 用户主动取消（新查询 abort 旧请求）不应显示为错误
       if (err instanceof DOMException && err.name === 'AbortError') {
         log('[FrontendAgent] 请求被用户取消');
         this.activeThreadId = null;
@@ -350,67 +401,10 @@ ${currentMemory}
         return { messages: [] };
       }
       const errorMsg = err instanceof Error ? err.message : String(err);
-      log('[FrontendAgent] LangGraph 引擎错误:', errorMsg);
+      log(`[FrontendAgent] ${errorPrefix}:`, errorMsg);
       callbacks.onError?.(errorMsg);
       this.activeThreadId = null;
-      return { messages: [{ role: 'assistant', content: `LangGraph 引擎错误: ${errorMsg}` }] };
-    }
-  }
-
-  /**
-   * 恢复被 HITL 中断的图执行。
-   */
-  async resumeGraphExecution(
-    approved: boolean,
-    feedback: string,
-    context: ToolContext,
-    callbacks: AgentLoopOptions,
-    chatHistory?: ChatMessage[],
-  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
-    if (!this.activeThreadId) {
-      return { messages: [{ role: 'assistant', content: '没有活跃的图会话可恢复' }] };
-    }
-
-    const { _langsmithTracer: tracer, ...configurable } = await this.buildGraphConfigurable(context, callbacks, this.activeThreadId, undefined, chatHistory);
-
-    try {
-      const stream = await this.getCompiledEngine().stream(
-        new Command({ resume: { approved, feedback } }),
-        {
-          streamMode: 'updates',
-          configurable,
-          signal: callbacks.abortSignal,
-          ...(tracer ? { callbacks: [tracer] } : {}),
-        },
-      );
-
-      const result = await this.processGraphStream(stream, callbacks, { configurable });
-      if (!result.interrupted) {
-        this.activeThreadId = null;
-      }
-      return result;
-    } catch (err) {
-      // 用户主动取消不应显示为错误
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        log('[FrontendAgent] 恢复执行被用户取消');
-        this.activeThreadId = null;
-        return { messages: [] };
-      }
-      const isAbort = err instanceof Error && (
-        err.message.startsWith('Cancel') ||
-        err.message.startsWith('AbortError') ||
-        err.message === 'Abort' ||
-        err.name === 'AbortError'
-      );
-      if (isAbort || callbacks.abortSignal?.aborted) {
-        log('[FrontendAgent] 恢复执行被取消');
-        this.activeThreadId = null;
-        return { messages: [] };
-      }
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      callbacks.onError?.(errorMsg);
-      this.activeThreadId = null;
-      return { messages: [{ role: 'assistant', content: `恢复图执行错误: ${errorMsg}` }] };
+      return { messages: [{ role: 'assistant', content: `${errorPrefix}: ${errorMsg}` }] };
     }
   }
 
@@ -469,7 +463,6 @@ ${currentMemory}
       docDescription: context.docDescription,
       memoryContext,
       llmClientManager: this.llmClientManager,
-      toolRegistry: undefined, // S2 uses createLangChainTools directly
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
@@ -622,7 +615,6 @@ ${currentMemory}
     const manager = new SubagentManager(
       runAgentLoop,
       this.llmClientManager.getMainClient(),
-      undefined, // toolRegistry - SubagentManager uses its own system
       context,
       {},
       undefined,

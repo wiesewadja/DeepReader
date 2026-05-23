@@ -75,6 +75,18 @@ export class AgentChatController {
 		}
 	}
 
+	/** 统一重置处理中状态 + UI 恢复 */
+	private resetProcessingState(): void {
+		this.isProcessing = false;
+		this.isAiStreaming = false;
+		this.host.setIsProcessing(false);
+		this.host.setIsAiStreaming(false);
+		this.host.chatInput?.setStreaming(false);
+		this.host.chatInput?.setDisabled(false);
+		this.reattachMascot();
+		this.host.readingTopbar?.setMascotExpression('idle');
+	}
+
 	constructor(host: AgentChatControllerHost) {
 		this.host = host;
 	}
@@ -101,14 +113,7 @@ export class AgentChatController {
 			}
 			this.streamController = null;
 		}
-		this.isAiStreaming = false;
-		this.isProcessing = false;
-		this.reattachMascot();
-		this.host.readingTopbar?.setMascotExpression("idle");
-		this.host.setIsAiStreaming(false);
-		this.host.setIsProcessing(false);
-		this.host.chatInput?.setStreaming(false);
-		this.host.chatInput?.setDisabled(false);
+		this.resetProcessingState();
 	}
 
 	stopGeneration(): void {
@@ -119,15 +124,7 @@ export class AgentChatController {
 		log('[DeepPDF] 用户中断 AI 生成');
 		this.streamController.abort();
 		this.streamController = null;
-		this.isAiStreaming = false;
-		this.isProcessing = false;
-		this.host.setIsAiStreaming(false);
-		this.host.setIsProcessing(false);
-
-		this.host.chatInput?.setStreaming(false);
-		this.host.chatInput?.setDisabled(false);
-		this.reattachMascot();
-		this.host.readingTopbar?.setMascotExpression('idle');
+		this.resetProcessingState();
 
 		const messages = this.host.messageList?.getMessages() || [];
 		const lastAiMessage = [...messages].reverse().find(m => {
@@ -241,7 +238,16 @@ export class AgentChatController {
 				thinkingBar?.insertBefore(mascotEl, thinkingBar.firstChild);
 			}
 
-			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes);
+			this.handleAgentQuery(message, this.host.currentIndexId!, aiMessageId, quotes)
+				.catch(err => {
+					logError('[DeepPDF] handleAgentQuery unhandled:', err);
+					this.host.messageList?.updateMessage(aiMessageId, {
+						content: `查询失败: ${err instanceof Error ? err.message : String(err)}`,
+						isStreaming: false,
+						timestamp: new Date().toISOString()
+					});
+					this.resetProcessingState();
+				});
 
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
@@ -255,14 +261,7 @@ export class AgentChatController {
 				timestamp: new Date().toISOString()
 			});
 
-			this.isProcessing = false;
-			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
-			this.host.chatInput?.setStreaming(false);
-			this.host.chatInput?.setDisabled(false);
-			this.reattachMascot();
-			this.host.readingTopbar?.setMascotExpression('idle');
+			this.resetProcessingState();
 			this.host.chatInput?.focus();
 		}
 	}
@@ -313,7 +312,7 @@ export class AgentChatController {
 				},
 				docDescription: this.host.currentDocDescription || undefined,
 				quotes: quotes,
-				isSocratic: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ?? false,
+				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,
 				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
 					const cfg = resolveRoleConfig('tts', this.host.plugin.settings);
 					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, provider: cfg.provider } : undefined;
@@ -684,12 +683,7 @@ export class AgentChatController {
 				isStreaming: false,
 				timestamp: new Date().toISOString()
 			});
-			this.isProcessing = false;
-			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
-			this.host.chatInput?.setStreaming(false);
-			this.host.chatInput?.setDisabled(false);
+			this.resetProcessingState();
 		}
 	}
 
@@ -738,7 +732,7 @@ export class AgentChatController {
 				currentNodeId,
 				documentMetadata: { title: this.host.currentPdfName || '未知文档' },
 				docDescription: this.host.currentDocDescription || undefined,
-				isProactive: true,
+				mode: 'proactive' as const,
 			};
 
 			const self = this;

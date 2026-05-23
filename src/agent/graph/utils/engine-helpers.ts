@@ -23,13 +23,7 @@ export function resolveCurrentChapterName(
 
 /**
  * Resolve engine mode from state.
- * Prefers `mode` field; falls back to deprecated boolean pair for backward compat.
  */
 export function resolveMode(state: CognitiveEngineState): EngineMode {
-  // 显式 mode 优先（包括 'normal' 以外的值）
-  if (state.mode) return state.mode;
-  // 向后兼容：旧的布尔标记
-  if (state.isProactive) return 'proactive';
-  if (state.isSocratic) return 'socratic';
-  return 'normal';
+  return state.mode || 'normal';
 }

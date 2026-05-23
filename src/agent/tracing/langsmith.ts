@@ -39,6 +39,7 @@ function safeWrap(tracer: LangChainTracer): LangChainTracer {
             if (result instanceof Promise) {
               return result.catch((err: unknown) => {
                 log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? err.message : err);
+                return undefined;
               });
             }
             return result;

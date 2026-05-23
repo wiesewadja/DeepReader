@@ -9,8 +9,7 @@
 
 import type { ChatMessage, ToolDefinition } from './types';
 import { LLMClient } from './llm-client';
-import type { ToolRegistry, ToolContext } from './tools/types';
-import { executeTool } from './tools/index';
+import type { ToolContext } from './tools/types';
 import { agentLog } from '../utils/logger';
 import { estimateTokens } from './utils/token-estimator.js';
 export { estimateTokens };
@@ -19,7 +18,7 @@ import {
 } from './utils/link-validator.js';
 import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
 import type { HumanizedProgress } from './ui/humanized-types.js';
-import { MAX_TOOL_RESULT_LENGTH, MAX_CONTEXT_TOKENS, TOOL_MAX_RETRIES } from './config/agent-constants.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_CONTEXT_TOKENS } from './config/agent-constants.js';
 import type { ITraceContext } from './tracing/types';
 
 // 导出日志函数供控制台使用
@@ -246,7 +245,6 @@ function compactMessages(messages: ChatMessage[]): ChatMessage[] {
  * @param client LLM 客户端实例
  * @param messages 对话消息历史
  * @param tools 可用工具定义列表
- * @param toolRegistry 工具注册表
  * @param context 工具执行上下文
  * @param options 配置选项（回调、最大轮数等）
  * @returns 更新后的消息历史
@@ -261,7 +259,6 @@ export async function runAgentLoop(
   client: LLMClient,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  toolRegistry: ToolRegistry,
   context: ToolContext,
   options: AgentLoopOptions
 ): Promise<ChatMessage[]> {
@@ -524,186 +521,8 @@ export async function runAgentLoop(
         options.onHumanizedProgress?.(progress);
       }
     }
-
-    // 并行执行所有工具
-    const toolResults = await Promise.all(
-      toolCalls.map(async (tc, index) => {
-        const toolStartTime = Date.now();
-
-        let args: Record<string, unknown>;
-        try {
-          args = JSON.parse(tc.arguments);
-        } catch {
-          args = {};
-        }
-
-        // 追踪：工具开始
-        const toolSpan = iterationSpan?.withSpan(`tool-${tc.name}`, {
-          input: {
-            toolName: tc.name,
-            args,
-          },
-        });
-
-        try {
-          // 工具执行（带重试机制）
-          let result: string | null = null;
-          let lastError: Error | null = null;
-
-          for (let attempt = 0; attempt <= TOOL_MAX_RETRIES; attempt++) {
-            try {
-              result = await executeTool(toolRegistry, tc.name, args, context);
-              break;
-            } catch (error) {
-              lastError = error as Error;
-              if (attempt < TOOL_MAX_RETRIES) {
-                const delayMs = 1000 * (attempt + 1);
-                agentLog(`[AgentLoop] ⚠️ 工具失败，重试 ${attempt + 1}/${TOOL_MAX_RETRIES}... (${tc.name})`);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-              }
-            }
-          }
-
-          if (result === null) {
-            throw lastError;
-          }
-
-          const duration = Date.now() - toolStartTime;
-          const resultLength = result.length;
-
-          // 追踪：工具结果
-          toolSpan?.end({
-            output: {
-              status: 'success',
-              result,
-              resultLength,
-            },
-            metadata: { duration },
-          });
-
-          return {
-            success: true,
-            toolCallId: tc.id,
-            toolName: tc.name,
-            humanizerId: toolCallIds[index],
-            result,
-            duration,
-            resultLength,
-          };
-        } catch (error) {
-          const duration = Date.now() - toolStartTime;
-          const errorMsg = error instanceof Error ? error.message : String(error);
-
-          // 追踪：工具错误
-          toolSpan?.end({
-            output: {
-              status: 'error',
-              error: errorMsg,
-            },
-            metadata: { duration },
-          });
-
-          return {
-            success: false,
-            toolCallId: tc.id,
-            toolName: tc.name,
-            humanizerId: toolCallIds[index],
-            error: errorMsg,
-            duration,
-          };
-        }
-      })
-    );
-
-    // 处理所有结果
-    for (const res of toolResults) {
-      if (res.success) {
-        // 记录工具调用指标
-        toolCallMetrics.push({
-          name: res.toolName,
-          duration: res.duration,
-          resultChars: res.resultLength!,
-          compressedChars: res.resultLength!,
-        });
-
-        // 记录工具调用完成（拟人化）
-        if (humanizer) {
-          humanizer.recordToolComplete(res.humanizerId, res.duration);
-          options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
-        }
-
-        agentLog(`[AgentLoop] ✓ ${res.toolName}: ${formatDuration(res.duration)}, ${res.resultLength || 0}字符`);
-
-        // 检查是否返回了隐藏消息
-        try {
-          const parsed = JSON.parse(res.result!);
-          if (parsed.success && parsed.hiddenMessage) {
-            workingMessages.push({
-              role: parsed.hiddenMessage.role,
-              content: parsed.hiddenMessage.content,
-              hidden: true,
-            });
-            agentLog(`[AgentLoop] 📝 隐藏消息: "${parsed.hiddenMessage.content.slice(0, 50)}..."`);
-          }
-        } catch {
-          // 不是 JSON 格式，正常处理
-        }
-
-        // 添加 tool result 消息
-        workingMessages.push({
-          role: 'tool',
-          tool_call_id: res.toolCallId,
-          content: res.result!,
-        });
-      } else {
-        // 记录失败的工具调用指标
-        toolCallMetrics.push({
-          name: res.toolName,
-          duration: res.duration,
-          resultChars: 0,
-          compressedChars: 0,
-        });
-
-        // 记录工具调用失败（拟人化）
-        if (humanizer) {
-          humanizer.recordToolFailed(res.humanizerId);
-          options.onHumanizedProgress?.(humanizer.toHumanizedProgress());
-        }
-
-        agentLog(`[AgentLoop] ✗ 失败: ${res.toolName} (${formatDuration(res.duration)}) → ${res.error}`);
-
-        workingMessages.push({
-          role: 'tool',
-          tool_call_id: res.toolCallId,
-          content: `Error: ${res.error}\n\n请尝试其他方法，或简化你的请求。`,
-        });
-      }
-    }
-
-    const toolsDuration = Date.now() - toolsStartTime;
-    toolsTotalTime += toolsDuration;
-
-    // 迭代结束统计
-    const iterationDuration = Date.now() - iterationStartTime;
-    agentLog(`\n[AgentLoop] 📊 迭代 ${iterations} 完成，耗时: ${formatDuration(iterationDuration)} (并行执行 ${toolCalls.length} 个工具)`);
-    agentLog(`[AgentLoop] 📊 当前消息历史: ${workingMessages.length} 条, 估算 tokens: ~${estimateTokens(workingMessages)}`);
-
-    // 追踪：结束迭代
-    iterationSpan?.end({
-      output: {
-        iterationDuration,
-        llmDuration,
-        toolsDuration,
-      },
-    });
-
-    // 🔄 循环内压缩： 当 token 超过阈值时，提前压缩以保持上下文大小可控
-    const currentTokens = estimateTokens(workingMessages);
-    if (currentTokens > MAX_CONTEXT_TOKENS) {
-      agentLog(`[AgentLoop] ⚠️ Token 超限 (${currentTokens} > ${MAX_CONTEXT_TOKENS})，执行循环内压缩...`);
-      workingMessages = manageMessageHistory(workingMessages);
-      agentLog(`[AgentLoop] ✅ 压缩后: ${workingMessages.length} 条, tokens: ~${estimateTokens(workingMessages)}`);
-    }
+    // SubagentManager 路径不传递工具，不应收到 tool_calls
+    throw new Error(`Unexpected tool calls in SubagentManager path: ${toolCalls.map(tc => tc.name).join(', ')}`);
   }
 
   // 🛑 优雅降级：达到最大迭代次数时，强制总结

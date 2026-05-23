@@ -6,6 +6,7 @@ import type { App, FileSystemAdapter } from 'obsidian';
 import type { ToolDefinition } from '../types.js';
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
 import type { DeepPDFSettings } from '../../config/settings.js';
+import type { EngineMode } from '../graph/state.js';
 
 /**
  * 插件实例的最小类型接口（消除 plugin: any）
@@ -62,10 +63,8 @@ export interface ToolContext {
   journalDir?: string;
   /** 信息图生成配置（配置后启用 generate_infographic 工具） */
   infographicConfig?: { apiKey: string; baseUrl?: string; model?: string; relativeDir: string; vaultAdapter: FileSystemAdapter };
-  /** 是否启用苏格拉底模式（S2→S4 之间插入 filter 节点） */
-  isSocratic?: boolean;
-  /** 是否为主动引导模式（只问问题，不回答） */
-  isProactive?: boolean;
+  /** 引擎模式：normal / proactive / socratic */
+  mode?: EngineMode;
   /** 主动引导触发类型（inspectional / highlight / chapter） */
   proactiveTrigger?: string;
   /** 用户划线内容（用于 highlight / chapter 触发） */
@@ -81,8 +80,3 @@ export interface ToolExecutor {
   definition: ToolDefinition;
   execute(args: Record<string, unknown>, context: ToolContext): Promise<string>;
 }
-
-/**
- * Tool 注册表类型
- */
-export type ToolRegistry = Map<string, ToolExecutor>;

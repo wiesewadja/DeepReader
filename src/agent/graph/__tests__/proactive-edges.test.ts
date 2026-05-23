@@ -5,17 +5,17 @@ import { buildProactiveSystemPrompt, buildSocraticDialoguePrompt, buildSocraticD
 
 describe('proactive edge routing', () => {
   describe('routeFromStart', () => {
-    it('routes to inspectional when isProactive=true', () => {
-      const state = { isProactive: true, depth: 1 } as any;
+    it('routes to inspectional when mode=proactive', () => {
+      const state = { mode: 'proactive', depth: 1 } as any;
       expect(routeFromStart(state)).toBe(NODE_NAMES.INSPECTIONAL);
     });
 
-    it('routes to router when isProactive=false', () => {
-      const state = { isProactive: false } as any;
+    it('routes to router when mode=normal', () => {
+      const state = { mode: 'normal' } as any;
       expect(routeFromStart(state)).toBe(NODE_NAMES.ROUTER);
     });
 
-    it('routes to router when isProactive is undefined', () => {
+    it('routes to router when mode is undefined', () => {
       const state = {} as any;
       expect(routeFromStart(state)).toBe(NODE_NAMES.ROUTER);
     });
@@ -31,42 +31,42 @@ describe('proactive edge routing', () => {
 
     it('routes to visualizer for inspectional when Excalidraw available', () => {
       (globalThis as any).ExcalidrawAutomate = {};
-      const state = { isProactive: true, proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
+      const state = { mode: 'proactive', proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(NODE_NAMES.VISUALIZER);
     });
 
     it('routes to done for inspectional when Excalidraw not available', () => {
-      const state = { isProactive: true, proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
+      const state = { mode: 'proactive', proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
     it('routes to done for highlight trigger even with Excalidraw', () => {
       (globalThis as any).ExcalidrawAutomate = {};
-      const state = { isProactive: true, proactiveTrigger: 'highlight', depth: 1 } as any;
+      const state = { mode: 'proactive', proactiveTrigger: 'highlight', depth: 1 } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
     it('routes to done for chapter trigger even with Excalidraw', () => {
       (globalThis as any).ExcalidrawAutomate = {};
-      const state = { isProactive: true, proactiveTrigger: 'chapter', depth: 1 } as any;
+      const state = { mode: 'proactive', proactiveTrigger: 'chapter', depth: 1 } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
     it('routes to done when proactiveTrigger is undefined', () => {
       (globalThis as any).ExcalidrawAutomate = {};
-      const state = { isProactive: true, depth: 1, structuralAnalysis: '...' } as any;
+      const state = { mode: 'proactive', depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
   });
 
   describe('routeAfterInspectional — socratic', () => {
-    it('routes to done (formatter) when isSocratic=true', () => {
-      const state = { isSocratic: true, depth: 2, structuralAnalysis: '...' } as any;
+    it('routes to done (formatter) when mode=socratic', () => {
+      const state = { mode: 'socratic', depth: 2, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
-    it('isSocratic does not interfere when false', () => {
-      const state = { isSocratic: false, depth: 2, structuralAnalysis: '...' } as any;
+    it('mode=normal routes to pre_search', () => {
+      const state = { mode: 'normal', depth: 2, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(NODE_NAMES.PRE_SEARCH);
     });
   });

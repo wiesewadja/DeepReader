@@ -8,7 +8,7 @@ import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
-import { getProviderConfig, PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
+import { PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
 import { isBuiltInProvider } from './config/ai-roles.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';

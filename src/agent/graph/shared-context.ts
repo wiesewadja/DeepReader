@@ -7,7 +7,7 @@
 
 import type { ChatMessage } from '../types';
 import type { LLMClientManager } from '../llm-client';
-import type { ToolRegistry, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
 import type { HistorySummary } from './utils/history-summarizer';
 import { ReadingDepth } from './state.js';
 
@@ -58,8 +58,6 @@ export interface SharedContext {
   docDescription?: string;
   memoryContext?: string;
   llmClientManager?: LLMClientManager;
-  /** @deprecated LangGraph 节点使用 createLangChainTools() 直接创建工具 */
-  toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
@@ -79,7 +77,6 @@ export function createSharedContext(params: {
   docDescription?: string;
   memoryContext?: string;
   llmClientManager?: LLMClientManager;
-  toolRegistry?: ToolRegistry;
   toolContext?: ToolContext;
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
@@ -96,7 +93,6 @@ export function createSharedContext(params: {
     docDescription: params.docDescription,
     memoryContext: params.memoryContext,
     llmClientManager: params.llmClientManager,
-    toolRegistry: params.toolRegistry,
     toolContext: params.toolContext,
     recentHistorySummaries: params.recentHistorySummaries,
     prevSearchedBlockIds: params.prevSearchedBlockIds,

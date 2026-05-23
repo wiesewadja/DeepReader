@@ -241,8 +241,6 @@ export {
   migrateBookIndexes,
 } from "./book-indexer.js";
 
-export { searchBook } from "./book-search.js";
-
 // ── Proposition Cards ───────────────────────────────────────────────────────────
 
 export {

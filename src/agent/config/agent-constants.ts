@@ -34,9 +34,6 @@ export const MAX_FULL_TOOL_MESSAGES = 2;
 /** 消息历史最大 token 数（超出时触发压缩） */
 export const MAX_CONTEXT_TOKENS = 20000;
 
-/** 工具执行失败最大重试次数 */
-export const TOOL_MAX_RETRIES = 2;
-
 // ============ 记忆系统 ============
 
 /** 记忆条数上限（store + consolidator 统一值） */
