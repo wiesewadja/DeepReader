@@ -9,8 +9,7 @@
 
 import type { ChatMessage, ToolDefinition } from './types';
 import { LLMClient } from './llm-client';
-import type { ToolRegistry, ToolContext } from './tools/types';
-import { executeTool } from './tools/index';
+import type { ToolContext } from './tools/types';
 import { agentLog } from '../utils/logger';
 import { estimateTokens } from './utils/token-estimator.js';
 export { estimateTokens };
@@ -19,7 +18,7 @@ import {
 } from './utils/link-validator.js';
 import { HumanizedProgressAdapter } from './ui/humanized-adapter.js';
 import type { HumanizedProgress } from './ui/humanized-types.js';
-import { MAX_TOOL_RESULT_LENGTH, MAX_CONTEXT_TOKENS, TOOL_MAX_RETRIES } from './config/agent-constants.js';
+import { MAX_TOOL_RESULT_LENGTH, MAX_CONTEXT_TOKENS } from './config/agent-constants.js';
 import type { ITraceContext } from './tracing/types';
 
 // 导出日志函数供控制台使用
@@ -261,7 +260,6 @@ export async function runAgentLoop(
   client: LLMClient,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  toolRegistry: ToolRegistry,
   context: ToolContext,
   options: AgentLoopOptions
 ): Promise<ChatMessage[]> {
@@ -546,27 +544,10 @@ export async function runAgentLoop(
         });
 
         try {
-          // 工具执行（带重试机制）
-          let result: string | null = null;
-          let lastError: Error | null = null;
+          // SubagentManager 路径不传递工具，此分支不应触发
+          throw new Error(`Unexpected tool call in SubagentManager path: ${tc.name}`);
+          const result = ''; // unreachable
 
-          for (let attempt = 0; attempt <= TOOL_MAX_RETRIES; attempt++) {
-            try {
-              result = await executeTool(toolRegistry, tc.name, args, context);
-              break;
-            } catch (error) {
-              lastError = error as Error;
-              if (attempt < TOOL_MAX_RETRIES) {
-                const delayMs = 1000 * (attempt + 1);
-                agentLog(`[AgentLoop] ⚠️ 工具失败，重试 ${attempt + 1}/${TOOL_MAX_RETRIES}... (${tc.name})`);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-              }
-            }
-          }
-
-          if (result === null) {
-            throw lastError;
-          }
 
           const duration = Date.now() - toolStartTime;
           const resultLength = result.length;

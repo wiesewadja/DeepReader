@@ -6,16 +6,15 @@
 
 import type { ChatMessage, ToolDefinition } from '../types';
 import type { LLMClient } from '../llm-client';
-import type { ToolRegistry, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
 
 /**
- * AgentLoopRunner — runAgentLoop 的函数签名，用于依赖注入断循环
+ * AgentLoopRunner — runAgentLoop 的函数签名，用于依赖注入
  */
 export type AgentLoopRunner = (
   client: LLMClient,
   messages: ChatMessage[],
   tools: ToolDefinition[],
-  toolRegistry: ToolRegistry,
   context: ToolContext,
   options: import('../agent-loop').AgentLoopOptions,
 ) => Promise<ChatMessage[]>;
@@ -59,8 +58,6 @@ export interface SubagentTask {
 export interface SubagentConfig {
 	/** 最大迭代次数（默认 5） */
 	maxIterations: number;
-	/** 允许的工具列表（null 表示使用默认集） */
-	allowedTools?: string[];
 	/** 超时时间（毫秒，默认 60000） */
 	timeout: number;
 	/** 缓存 TTL（毫秒，默认 300000 = 5分钟） */
@@ -95,16 +92,6 @@ export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = {
 	maxRetries: 3,
 	retryDelay: 5000, // 5 秒
 };
-
-/**
- * 子 Agent 可用的默认工具列表
- */
-export const DEFAULT_SUBAGENT_TOOLS = [
-	'search_markdown_text',
-	'read_markdown_section',
-	'get_document_outline',
-	'search_read_books',
-];
 
 /**
  * 生成任务描述的缓存键

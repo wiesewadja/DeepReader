@@ -9,9 +9,9 @@ import { v4 as uuidv4 } from 'uuid';
 import type { ChatMessage, ToolDefinition } from '../types';
 import type { LLMClient } from '../llm-client';
 import type { ITraceContext } from '../tracing/types';
-import type { ToolRegistry, ToolContext } from '../tools/types';
+import type { ToolContext } from '../tools/types';
 import type { SubagentTask, SubagentConfig, SubagentCallback, AgentLoopRunner } from './types';
-import { DEFAULT_SUBAGENT_CONFIG, DEFAULT_SUBAGENT_TOOLS, hashDescription } from './types';
+import { DEFAULT_SUBAGENT_CONFIG, hashDescription } from './types';
 import type { ISubagentManager } from './types';
 import { agentLog } from '../../utils/logger';
 
@@ -25,7 +25,6 @@ interface CacheEntry {
 export class SubagentManager implements ISubagentManager {
 	private runLoopFn: AgentLoopRunner;
 	private client: LLMClient;
-	private toolRegistry: ToolRegistry;
 	private context: ToolContext;
 	private config: SubagentConfig;
 	private onResult?: SubagentCallback;
@@ -43,7 +42,6 @@ export class SubagentManager implements ISubagentManager {
 	constructor(
 		runLoop: AgentLoopRunner,
 		client: LLMClient,
-		toolRegistry: ToolRegistry | undefined,
 		context: ToolContext,
 		config: Partial<SubagentConfig> = {},
 		onResult?: SubagentCallback,
@@ -51,7 +49,6 @@ export class SubagentManager implements ISubagentManager {
 	) {
 		this.runLoopFn = runLoop;
 		this.client = client;
-		this.toolRegistry = toolRegistry ?? new Map();
 		this.context = context;
 		this.config = { ...DEFAULT_SUBAGENT_CONFIG, ...config };
 			this.traceCtx = traceCtx;
@@ -316,7 +313,7 @@ export class SubagentManager implements ISubagentManager {
 				abortSignal.addEventListener('abort', abortHandler);
 
 				// 正确处理 async 函数返回的 Promise
-				this.runLoopFn(this.client, messages, tools, this.toolRegistry, this.context, {
+				this.runLoopFn(this.client, messages, tools, this.context, {
 					maxIterations: this.config.maxIterations,
 					abortSignal,  // 传递取消信号
 					onContent: (text) => {
@@ -414,12 +411,7 @@ ${docContext}
 	 * 获取允许的工具列表
 	 */
 	private getAllowedTools(): ToolDefinition[] {
-		// 子 Agent 可用的工具（受限）
-		const allowed = this.config.allowedTools || DEFAULT_SUBAGENT_TOOLS;
-
-		// 从工具注册表获取工具定义
-		const allTools = Array.from(this.toolRegistry.values()).map((e) => e.definition);
-		return allTools.filter((tool) => allowed.includes(tool.function.name));
+		return [];
 	}
 
 	/**

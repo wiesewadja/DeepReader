@@ -20,7 +20,7 @@ export { ContextBuilder } from './context/builder.js';
 export { NoopTracer, NoopTraceContext } from './tracing/index.js';
 export type { ITraceContext, ITracer } from './tracing/types.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
-export type { ToolExecutor, ToolRegistry, ToolContext } from './tools/types.js';
+export type { ToolContext } from './tools/types.js';
 export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata } from './context/builder.js';
@@ -44,7 +44,6 @@ import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
-import { getToolDefinitions } from './tools/index.js';
 import { SubagentManager } from './subagent/manager.js';
 import { runAgentLoop } from './agent-loop.js';
 import { IntentRouter } from './router/index.js';
@@ -466,7 +465,6 @@ ${currentMemory}
       docDescription: context.docDescription,
       memoryContext,
       llmClientManager: this.llmClientManager,
-      toolRegistry: undefined, // S2 uses createLangChainTools directly
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
@@ -619,7 +617,6 @@ ${currentMemory}
     const manager = new SubagentManager(
       runAgentLoop,
       this.llmClientManager.getMainClient(),
-      undefined, // toolRegistry - SubagentManager uses its own system
       context,
       {},
       undefined,
