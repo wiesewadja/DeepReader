@@ -485,6 +485,15 @@ export class AIMessage extends Message {
 		}
 
 		if (this.el && this.data.isStreaming && !streamingEnded) {
+			// 重试场景：从非流式 -> 流式过渡时，全量重绘以恢复 streaming CSS 类、隐藏按钮等
+			if (!wasStreaming) {
+				const newRender = this.render();
+				if (this.el) {
+					this.el.replaceWith(newRender);
+				}
+				this.el = newRender;
+				return;
+			}
 			if (data.content !== undefined && data.content !== oldContent) {
 				this.updateContent(data.content);
 			}
