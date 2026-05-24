@@ -76,7 +76,7 @@ export class LibraryView extends ItemView {
     private cardElements: Map<string, HTMLElement> = new Map();
     private readingProgressCache: Map<string, number> = new Map();
     private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
-    private associatedDeepReaderIds: Set<string> = new Set(); // 已关联的 deepReader bookId（用于去重）
+    private associatedDeepReaderIds: Set<string> = new Set(); // 已关联微信读书的本地书 bookId
     private activelyIndexingBookId: string | null = null; // handleAddDocument 正在管理的索引 ID
     private wereadStatsCache: Map<string, MappingStats> = new Map();
     private resizeObserver: ResizeObserver | null = null;
@@ -215,14 +215,16 @@ export class LibraryView extends ItemView {
     private renderGrid(): void {
         if (!this.gridEl) return;
 
-        // 首次渲染时异步加载微信读书映射，加载完后刷新徽章
+        // 首次渲染时异步加载微信读书映射，加载完后重新渲染（更新 counts 和徽章）
         if (this.wereadMappingCache.size === 0) {
-            this.loadWereadMapping().then(() => this.refreshWereadCardInfo());
+            this.loadWereadMapping().then(() => this.renderGrid());
+            // 映射未加载完成前，先按无映射状态渲染
         }
 
         // 清空所有缓存和引用
         this.cardElements.clear();
         this.lastIndexStates.clear();
+        this.loadingCovers.clear();
 
         this.gridEl.innerHTML = '';
 
@@ -234,9 +236,13 @@ export class LibraryView extends ItemView {
               )
             : [...this.indexes];
 
-        // 2. 类型筛选（undefined fileType 视为 pdf）
+        // 2. 类型筛选（undefined fileType 视为 pdf；微信读书包括纯 weread 和已关联本地书）
         if (this.filterType !== 'all') {
-            filtered = filtered.filter(idx => (idx.fileType || 'pdf') === this.filterType);
+            if (this.filterType === 'weread') {
+                filtered = filtered.filter(idx => this.isWereadLinked(idx));
+            } else {
+                filtered = filtered.filter(idx => (idx.fileType || 'pdf') === this.filterType);
+            }
         }
 
         // 3. 作者筛选
@@ -319,7 +325,7 @@ export class LibraryView extends ItemView {
             all: searched.length,
             pdf: searched.filter(idx => (idx.fileType || 'pdf') === 'pdf').length,
             epub: searched.filter(idx => idx.fileType === 'epub').length,
-            weread: searched.filter(idx => idx.fileType === 'weread').length,
+            weread: searched.filter(idx => this.isWereadLinked(idx)).length,
         };
 
         for (const [key, el] of chipEls) {
@@ -642,18 +648,19 @@ export class LibraryView extends ItemView {
 
         // 标签行：类型 + 状态 + 统计
         const tagParts: string[] = [];
-        const typeTag = index.fileType?.toUpperCase() || 'PDF';
+        const typeKey = index.fileType || 'pdf';
+        const typeTag = typeKey === 'weread' ? '微信读书' : typeKey.toUpperCase();
 
         const tagRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-tag-row' });
-        tagRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeTag.toLowerCase()}`, text: typeTag });
+        tagRow.createDiv({ cls: `deeppdf-lib-type-tag deeppdf-lib-type-${typeKey}`, text: typeTag });
 
-        if (this.wereadMappingCache.has(index.id)) {
-            const linkedText = index.fileType === 'weread' ? '已关联' : '微信读书';
-            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: linkedText });
-        }
-
-        if (index.fileType === 'weread' && !this.wereadMappingCache.has(index.id)) {
+        // 纯微信读书（未下载到本地）显示"待下载"
+        if (index.fileType === 'weread') {
             tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-zlibrary', text: '待下载' });
+        }
+        // 已关联微信读书的本地书显示"微信读书"标记
+        else if (this.isWereadLinked(index)) {
+            tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
         }
 
         // 统计标签（笔记/评论/时长）
@@ -909,13 +916,20 @@ export class LibraryView extends ItemView {
         }
     }
 
+    /** 判断一本书是否属于微信读书（纯 weread 书籍 或 已关联微信读书的本地书） */
+    private isWereadLinked(index: IndexListItem): boolean {
+        if (index.fileType === 'weread') return true;
+        return this.wereadMappingCache.has(index.id) || this.associatedDeepReaderIds.has(index.id);
+    }
+
     /** mapping 加载完成后，为已渲染的卡片补充微信读书徽章、统计标签和进度条 */
     private refreshWereadCardInfo(): void {
         for (const [bookId, card] of this.cardElements) {
             // 注入标签到 tag-row
             const tagRow = card.querySelector('.deeppdf-lib-book-tag-row');
             if (tagRow && !tagRow.querySelector('.deeppdf-lib-type-weread')) {
-                if (this.wereadMappingCache.has(bookId)) {
+                const idx = this.indexes.find(i => i.id === bookId);
+                if (idx && this.isWereadLinked(idx)) {
                     tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-weread', text: '微信读书' });
                 }
             }
