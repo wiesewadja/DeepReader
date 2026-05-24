@@ -171,7 +171,7 @@ export class BookManager {
 
 			this._indexes = indexes;
 
-			// 追加微信读书已同步书籍
+			// 追加微信读书已同步书籍（跳过已关联本地的）
 			try {
 				const wereadStatePath = `${pageindexDir}/weread/sync-state.json`;
 				const stateRaw = await fs.readFile(wereadStatePath, 'utf-8');
@@ -179,8 +179,21 @@ export class BookManager {
 				const syncedBooks = state.syncedBooks || {};
 				const localIds = new Set(indexes.map((i: any) => i.id));
 
+				// 从 mapping.json 收集已关联本地索引的 WeRead bookId
+				const linkedWereadIds = new Set<string>();
+				try {
+					const mappingRaw = await fs.readFile(`${pageindexDir}/weread/mapping.json`, 'utf-8');
+					const parsed = JSON.parse(mappingRaw);
+					const mapping = parsed.mappings || parsed;
+					for (const [wereadId, info] of Object.entries(mapping) as any[]) {
+						if (info?.deepReaderBookId && localIds.has(info.deepReaderBookId)) {
+							linkedWereadIds.add(wereadId);
+						}
+					}
+				} catch { /* mapping.json 不存在，无关联 */ }
+
 				for (const entry of Object.values(syncedBooks) as any[]) {
-					if (localIds.has(entry.bookId)) continue;
+					if (linkedWereadIds.has(entry.bookId)) continue;
 					indexes.push({
 						id: entry.bookId,
 						pdf_name: entry.title,

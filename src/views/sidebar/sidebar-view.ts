@@ -462,9 +462,11 @@ export class SidebarView extends ItemView {
 
         // 尝试恢复已有会话
         const savedSessionId = this.plugin.settings.savedSessions?.[booklist.id];
+        console.warn(`[reenterBooklist DIAG] booklist.id=${booklist.id}, bookIds=${JSON.stringify(booklist.bookIds)}, savedSessionId=${savedSessionId}, crossBookMode=${this.sessionMgr.crossBookMode}`);
         if (savedSessionId) {
             // 设置 booklist 状态（不创建新会话）
             this.bookMgr.restoreBooklist(booklist);
+            console.warn(`[reenterBooklist DIAG] after restoreBooklist: _currentBooklist.bookIds=${JSON.stringify(this.bookMgr.currentBooklistBookIds)}`);
             this.plugin.settings.lastCrossBookMode = true;
             this.plugin.settings.lastActiveBooklistId = booklist.id;
             await this.plugin.saveSettings();

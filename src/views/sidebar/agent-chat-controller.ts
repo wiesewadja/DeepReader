@@ -386,7 +386,7 @@ export class AgentChatController {
 					context.crossBookMode = true;
 				}
 				
-				log(`[AgentChat] crossBookMode=${this.host.crossBookMode}, booklistBookIds=${JSON.stringify(this.host.currentBooklistBookIds)}`);
+				console.warn(`[AgentChat DIAG] crossBookMode=${this.host.crossBookMode}, booklistBookIds=${JSON.stringify(this.host.currentBooklistBookIds)}, currentIndexId=${this.host.currentIndexId}`);
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {

@@ -89,6 +89,19 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   // Filter to specific books when booklist is active
   if (options.bookIds?.length) {
     const idSet = new Set(options.bookIds);
+    // Resolve WeRead bookIds to local index IDs via mapping.json
+    const unresolved = options.bookIds.filter(id => !indexedBooks.some(b => b.id === id));
+    if (unresolved.length > 0) {
+      try {
+        const mappingRaw = await fs.readFile(path.join(vaultPath, '.pageindex', 'weread', 'mapping.json'), 'utf-8');
+        const parsed = JSON.parse(mappingRaw);
+        const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
+        for (const wereadId of unresolved) {
+          const info = mapping[wereadId];
+          if (info?.deepReaderBookId) idSet.add(info.deepReaderBookId);
+        }
+      } catch { /* mapping.json not found */ }
+    }
     indexedBooks = indexedBooks.filter(b => idSet.has(b.id));
   }
 
