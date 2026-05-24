@@ -337,6 +337,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     structuralAnalysis || undefined,
     betterQuestion || undefined,
     coveredScope || undefined,
+    !!crossBookMode,
   );
 
   const messages = [
