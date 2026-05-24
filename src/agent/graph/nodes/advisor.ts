@@ -22,7 +22,15 @@ const ADVISOR_SYSTEM_PROMPT = `你是奚童，用户的专属 AI 伴读。当前
 - 查看阅读统计 → 调用 weread_readdata
 - 整理笔记 → 调用 weread_notebooks
 - 查找特定书 → 调用 weread_search
+- 用户聊到情绪/困惑/想回顾 → 调用 search_journal 检索用户笔记，做深度分析
 - 一般性阅读讨论、方法论交流 → 直接回答，不调工具
+
+## 用户了解（重要）
+你已经了解这个用户（见下方 <user_profile> 和 <memory>）：
+- 自然地引用用户信息，像老朋友一样
+- 当用户问"适合读什么"时，必须基于画像兴趣和书架做个性化推荐
+- 当用户聊到情绪/困惑时，主动用 search_journal 检索相关日志做深度分析
+- 不要强行关联，生硬比沉默更糟糕
 
 ## 输出规范
 - 不要生成 Obsidian wiki 链接（[[...]]），因为用户没有打开书籍
@@ -77,24 +85,37 @@ export async function advisorNode(
 
 	callbacks?.onProgress?.('正在查找阅读数据...');
 
+	// Build user context sections for system prompt
+	const rawProfile = ctx?.userProfileSummary || '';
+	const profileSection = rawProfile
+		? `\n\n<user_profile>\n${rawProfile.slice(0, 1500)}\n</user_profile>`
+		: '';
+	const rawMemory = ctx?.memoryContext || '';
+	const memorySection = rawMemory
+		? `\n\n<memory>\n${rawMemory.slice(0, 1500)}\n</memory>`
+		: '';
 	const rawShelf = ctx?.bookshelfSummary || '';
 	const bookshelfSection = rawShelf
 		? `\n\n<bookshelf>\n${rawShelf.slice(0, 2000)}\n</bookshelf>`
 		: '';
+	const systemPrompt = ADVISOR_SYSTEM_PROMPT + profileSection + memorySection;
 
 	const query = stateQuery || ctx?.rawUserQuery || '';
 	const userMessage = `<query>${query}</query>${bookshelfSection}`;
 
-	// Create tools: WeRead tools + search_read_books
+	// Create tools: WeRead tools + search_journal (when available)
 	const allTools = createLangChainTools(toolContext);
 	const advisorToolNames = [
 		'weread_search', 'weread_recommend', 'weread_readdata',
-		'weread_notebooks', 'weread_book_info', 'search_read_books',
+		'weread_notebooks', 'weread_book_info',
 	];
+	if (toolContext.journalDir) {
+		advisorToolNames.push('search_journal');
+	}
 	const advisorTools = allTools.filter(t => advisorToolNames.includes(t.name));
 
 	const loopMessages = [
-		new SystemMessage(ADVISOR_SYSTEM_PROMPT),
+		new SystemMessage(systemPrompt),
 		new HumanMessage(userMessage),
 	];
 
