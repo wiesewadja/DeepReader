@@ -612,6 +612,10 @@ export class SidebarView extends ItemView {
         return this.bookMgr.currentIndexId;
     }
 
+    public getCurrentBooklistId(): string | null {
+        return this.bookMgr.currentBooklist?.id ?? null;
+    }
+
     /** 索引列表（供 main.ts 等外部调用者使用） */
     get indexes(): import("../../types/index.js").IndexListItem[] {
         return this.bookMgr.indexes;

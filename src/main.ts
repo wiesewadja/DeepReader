@@ -1392,11 +1392,14 @@ views:
         const sidebarLeaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
         let indexes: any[] = [];
         let selectedIndexId: string | null = null;
+        let selectedBooklistId: string | null = null;
         if (sidebarLeaves.length > 0) {
             const sidebarView = sidebarLeaves[0].view as SidebarView;
             await sidebarView.loadIndexes();
             indexes = sidebarView.indexes;
             selectedIndexId = sidebarView.getCurrentIndexId();
+            selectedBooklistId = sidebarView.getCurrentBooklistId();
+            if (selectedBooklistId) selectedIndexId = null;
         }
 
         // 检查是否已有书库视图
@@ -1406,7 +1409,7 @@ views:
             const leaf = existingLeaves[0];
             await leaf.setViewState({
                 type: LIBRARY_VIEW_TYPE,
-                state: { indexes, selectedIndexId }
+                state: { indexes, selectedIndexId, selectedBooklistId }
             });
             this.app.workspace.revealLeaf(leaf);
             return;
@@ -1416,7 +1419,7 @@ views:
         const leaf = this.app.workspace.getLeaf('tab');
         await leaf.setViewState({
             type: LIBRARY_VIEW_TYPE,
-            state: { indexes, selectedIndexId }
+            state: { indexes, selectedIndexId, selectedBooklistId }
         });
     }
 

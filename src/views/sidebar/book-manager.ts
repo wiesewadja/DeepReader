@@ -108,7 +108,7 @@ export class BookManager {
 		const leaf = this.host.app.workspace.getLeaf('tab');
 		await leaf.setViewState({
 			type: LIBRARY_VIEW_TYPE,
-			state: { indexes: this._indexes, selectedIndexId: this._currentIndexId }
+			state: { indexes: this._indexes, selectedIndexId: this._currentBooklist ? null : this._currentIndexId, selectedBooklistId: this._currentBooklist?.id ?? null }
 		});
 	}
 
@@ -688,7 +688,14 @@ export class BookManager {
 
 	restoreBooklist(booklist: Booklist): void {
 		log(`[DeepPDF] restoreBooklist: ${booklist.name}`);
+		this._currentIndexId = null;
+		this._currentPdfName = null;
+		this._currentBookCoverUrl = null;
+		this._currentBookAuthor = null;
+		this._currentDocDescription = null;
 		this._currentBooklist = booklist;
+		this.host.cancelActiveStream();
+		this.host.messageList?.clear();
 		this.host.readingTopbar?.setCurrentBooklist(booklist);
 		this.host.messageList?.setCurrentPdfName(booklist.name);
 		this.loadAndApplyBooklistCovers(booklist);
