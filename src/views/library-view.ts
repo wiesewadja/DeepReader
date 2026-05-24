@@ -86,6 +86,13 @@ export class LibraryView extends ItemView {
     private _confirmBarEl: HTMLElement | null = null;
     private static readonly MAX_MULTI_SELECT = 5;
 
+    // 筛选与排序状态
+    private filterType: 'all' | 'pdf' | 'epub' | 'weread' = 'all';
+    private filterAuthor: string | null = null; // null = 全部, '__unknown__' = 无作者
+    private sortKey: 'time-desc' | 'time-asc' | 'name-asc' | 'name-desc' | 'author-asc' | 'author-desc' | 'status' = 'time-desc';
+    private _filterBtnEl: HTMLElement | null = null;
+    private _activeDropdown: HTMLElement | null = null;
+
     constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
         super(leaf);
         this.options = options;
@@ -159,11 +166,14 @@ export class LibraryView extends ItemView {
         const container = this.containerEl.children[1];
         container.empty();
 
+        // 重置引用
+        this._filterBtnEl = null;
+
         // 标题行
         const header = container.createDiv({ cls: 'deeppdf-lib-header' });
         header.createEl('h2', { text: '我的书库', cls: 'deeppdf-lib-title' });
 
-        // 工具栏：搜索 + 添加
+        // 工具栏：搜索 + 操作按钮
         const toolbar = container.createDiv({ cls: 'deeppdf-lib-toolbar' });
 
         const searchWrap = toolbar.createDiv({ cls: 'deeppdf-lib-search' });
@@ -189,6 +199,14 @@ export class LibraryView extends ItemView {
         thematicBtn.title = '主题阅读';
         thematicBtn.addEventListener('click', () => this.toggleMultiSelectMode());
 
+        // 筛选按钮
+        this._filterBtnEl = toolbar.createEl('button', { cls: 'deeppdf-lib-filter-btn' });
+        this.updateFilterBtnLabel();
+        this._filterBtnEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (this._filterBtnEl) this.showFilterPanel(this._filterBtnEl);
+        });
+
         // 卡片网格
         this.gridEl = container.createDiv({ cls: 'deeppdf-lib-grid' });
         this.renderGrid();
@@ -208,32 +226,45 @@ export class LibraryView extends ItemView {
 
         this.gridEl.innerHTML = '';
 
-        // 过滤 + 去重已关联的 deepReader 索引
-        const filtered = (this.searchQuery
+        // 1. 文本搜索过滤
+        let filtered = this.searchQuery
             ? this.indexes.filter(idx =>
                   idx.pdf_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
                   (idx.author && idx.author.toLowerCase().includes(this.searchQuery.toLowerCase()))
               )
-            : this.indexes
-        ).filter(idx => !this.associatedDeepReaderIds.has(idx.id));
+            : [...this.indexes];
+
+        // 2. 类型筛选（undefined fileType 视为 pdf）
+        if (this.filterType !== 'all') {
+            filtered = filtered.filter(idx => (idx.fileType || 'pdf') === this.filterType);
+        }
+
+        // 3. 作者筛选
+        if (this.filterAuthor !== null) {
+            if (this.filterAuthor === '__unknown__') {
+                filtered = filtered.filter(idx => !idx.author);
+            } else {
+                filtered = filtered.filter(idx => idx.author === this.filterAuthor);
+            }
+        }
 
         if (filtered.length === 0) {
             this.gridEl.innerHTML = `
                 <div class="deeppdf-lib-empty">
                     <div class="deeppdf-lib-empty-icon">${Icons.empty}</div>
-                    <div class="deeppdf-lib-empty-text">${this.searchQuery ? '未找到匹配书籍' : '书架空空如也'}</div>
-                    <div class="deeppdf-lib-empty-hint">${this.searchQuery ? '' : '点击右上角 + 添加第一本书'}</div>
+                    <div class="deeppdf-lib-empty-text">${this.searchQuery || this.filterType !== 'all' || this.filterAuthor ? '未找到匹配书籍' : '书架空空如也'}</div>
+                    <div class="deeppdf-lib-empty-hint">${this.searchQuery || this.filterType !== 'all' || this.filterAuthor ? '' : '点击右上角 + 添加第一本书'}</div>
                 </div>
             `;
             return;
         }
 
-        // 按状态排序
-        const sorted = this.sortIndexes(filtered);
+        // 5. 排序
+        const sorted = this.applySort(filtered);
 
-        // 渲染历史主题阅读书单卡片（混排在最前面）
+        // 渲染历史主题阅读书单卡片（混排在最前面，不受筛选影响）
         const history: Booklist[] = this.options.plugin?.settings?.booklistHistory || [];
-        if (history.length > 0 && !this.searchQuery) {
+        if (history.length > 0 && !this.searchQuery && this.filterType === 'all' && this.filterAuthor === null) {
             history.forEach(booklist => {
                 const card = this.createBooklistCard(booklist);
                 this.gridEl!.appendChild(card);
@@ -274,6 +305,180 @@ export class LibraryView extends ItemView {
         this.resizeObserver.observe(this.gridEl);
     }
 
+    /** 更新筛选栏中各 chip 的数量显示 */
+    private updateFilterCounts(chipEls: Map<string, HTMLElement>): void {
+        const base = this.indexes;
+        const searched = this.searchQuery
+            ? base.filter(idx =>
+                  idx.pdf_name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
+                  (idx.author && idx.author.toLowerCase().includes(this.searchQuery.toLowerCase()))
+              )
+            : base;
+
+        const counts: Record<string, number> = {
+            all: searched.length,
+            pdf: searched.filter(idx => (idx.fileType || 'pdf') === 'pdf').length,
+            epub: searched.filter(idx => idx.fileType === 'epub').length,
+            weread: searched.filter(idx => idx.fileType === 'weread').length,
+        };
+
+        for (const [key, el] of chipEls) {
+            const count = counts[key] ?? 0;
+            const labels: Record<string, string> = { all: '全部', pdf: 'PDF', epub: 'EPUB', weread: '微信读书' };
+            el.textContent = `${labels[key] || key}(${count})`;
+        }
+    }
+
+    /** 收集去重作者列表，按书籍数量降序排列 */
+    private collectAuthors(): Array<{ name: string; count: number }> {
+        const authorMap = new Map<string, number>();
+        const base = this.indexes;
+        for (const idx of base) {
+            const author = idx.author || '__unknown__';
+            authorMap.set(author, (authorMap.get(author) || 0) + 1);
+        }
+        return Array.from(authorMap.entries())
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+    }
+
+    /** 关闭当前打开的下拉菜单 */
+    private closeDropdown(): void {
+        if (this._activeDropdown) {
+            this._activeDropdown.remove();
+            this._activeDropdown = null;
+        }
+    }
+
+    /** 显示筛选面板（类型 + 作者 + 排序 + 重置） */
+    private showFilterPanel(anchor: HTMLElement): void {
+        this.closeDropdown();
+        const panel = document.body.createDiv({ cls: 'deeppdf-lib-filter-panel' });
+        this._activeDropdown = panel;
+
+        // ── 类型筛选 ──
+        panel.createDiv({ cls: 'deeppdf-lib-filter-section-title', text: '类型' });
+        const typeRow = panel.createDiv({ cls: 'deeppdf-lib-filter-chip-row' });
+        const chipEls = new Map<string, HTMLElement>();
+
+        const chipTypes: Array<{ key: 'all' | 'pdf' | 'epub' | 'weread'; label: string }> = [
+            { key: 'all', label: '全部' },
+            { key: 'pdf', label: 'PDF' },
+            { key: 'epub', label: 'EPUB' },
+            { key: 'weread', label: '微信读书' },
+        ];
+        for (const { key, label } of chipTypes) {
+            const chip = typeRow.createDiv({ cls: 'deeppdf-lib-type-chip' });
+            if (this.filterType === key) chip.classList.add('active');
+            chip.textContent = `${label}(0)`;
+            chip.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.filterType = key;
+                for (const [, el] of chipEls) el.classList.remove('active');
+                chip.classList.add('active');
+                this.updateFilterBtnLabel();
+                this.renderGrid();
+                this.updateFilterCounts(chipEls);
+            });
+            chipEls.set(key, chip);
+        }
+        this.updateFilterCounts(chipEls);
+
+        // ── 排序 ──
+        panel.createDiv({ cls: 'deeppdf-lib-filter-section-title', text: '排序' });
+        const sortOptions: Array<{ key: typeof this.sortKey; label: string }> = [
+            { key: 'time-desc', label: '添加时间（最新优先）' },
+            { key: 'time-asc', label: '添加时间（最早优先）' },
+            { key: 'name-asc', label: '书名 A→Z' },
+            { key: 'name-desc', label: '书名 Z→A' },
+            { key: 'author-asc', label: '作者 A→Z' },
+            { key: 'author-desc', label: '作者 Z→A' },
+            { key: 'status', label: '按状态' },
+        ];
+        for (const opt of sortOptions) {
+            const item = panel.createDiv({ cls: 'deeppdf-lib-filter-option' });
+            if (this.sortKey === opt.key) item.classList.add('active');
+            item.textContent = opt.label;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.sortKey = opt.key;
+                this.updateFilterBtnLabel();
+                // 更新面板内高亮
+                panel.querySelectorAll('.deeppdf-lib-filter-option').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                this.renderGrid();
+            });
+        }
+
+        // ── 作者 ──
+        panel.createDiv({ cls: 'deeppdf-lib-filter-section-title', text: '作者' });
+        const authorContainer = panel.createDiv({ cls: 'deeppdf-lib-filter-author-list' });
+
+        const allAuthorItem = authorContainer.createDiv({ cls: 'deeppdf-lib-filter-option' });
+        if (this.filterAuthor === null) allAuthorItem.classList.add('active');
+        allAuthorItem.textContent = '全部作者';
+        allAuthorItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.filterAuthor = null;
+            this.updateFilterBtnLabel();
+            authorContainer.querySelectorAll('.deeppdf-lib-filter-option').forEach(el => el.classList.remove('active'));
+            allAuthorItem.classList.add('active');
+            this.renderGrid();
+        });
+
+        const authors = this.collectAuthors();
+        for (const { name, count } of authors) {
+            const item = authorContainer.createDiv({ cls: 'deeppdf-lib-filter-option' });
+            const displayName = name === '__unknown__' ? '未知作者' : name;
+            if (this.filterAuthor === name) item.classList.add('active');
+            item.textContent = `${displayName} (${count})`;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.filterAuthor = name;
+                this.updateFilterBtnLabel();
+                authorContainer.querySelectorAll('.deeppdf-lib-filter-option').forEach(el => el.classList.remove('active'));
+                item.classList.add('active');
+                this.renderGrid();
+            });
+        }
+
+        // ── 底部重置 ──
+        if (this.filterType !== 'all' || this.filterAuthor !== null || this.sortKey !== 'time-desc') {
+            const resetRow = panel.createDiv({ cls: 'deeppdf-lib-filter-reset-row' });
+            const resetBtn = resetRow.createEl('button', { cls: 'deeppdf-lib-filter-reset-btn', text: '重置筛选' });
+            resetBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.filterType = 'all';
+                this.filterAuthor = null;
+                this.sortKey = 'time-desc';
+                this.updateFilterBtnLabel();
+                this.closeDropdown();
+                this.renderGrid();
+            });
+        }
+
+        // 定位
+        const rect = anchor.getBoundingClientRect();
+        panel.style.position = 'fixed';
+        panel.style.top = `${rect.bottom + 4}px`;
+        panel.style.right = `${window.innerWidth - rect.right}px`;
+
+        // 点击外部关闭
+        setTimeout(() => {
+            document.addEventListener('click', this._dropdownCloseHandler, { once: true });
+        }, 0);
+    }
+
+    private _dropdownCloseHandler = (): void => {
+        this.closeDropdown();
+    };
+
+    private updateFilterBtnLabel(): void {
+        if (!this._filterBtnEl) return;
+        const hasFilter = this.filterType !== 'all' || this.filterAuthor !== null;
+        this._filterBtnEl.textContent = hasFilter ? '筛选 ●' : '筛选';
+    }
+
 /**
      * 动态计算封面高度：遍历所有卡片，根据宽度 × 4/3 设置封面高度
      * 用于替代 CSS aspect-ratio（在 Obsidian 的 flex 布局中不生效）
@@ -303,6 +508,28 @@ export class LibraryView extends ItemView {
             (priority[(a.status || '').toLowerCase()] ?? 4) -
             (priority[(b.status || '').toLowerCase()] ?? 4)
         );
+    }
+
+    private applySort(indexes: IndexListItem[]): IndexListItem[] {
+        const sorted = [...indexes];
+        switch (this.sortKey) {
+            case 'time-desc':
+                return sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            case 'time-asc':
+                return sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+            case 'name-asc':
+                return sorted.sort((a, b) => a.pdf_name.localeCompare(b.pdf_name, 'zh'));
+            case 'name-desc':
+                return sorted.sort((a, b) => b.pdf_name.localeCompare(a.pdf_name, 'zh'));
+            case 'author-asc':
+                return sorted.sort((a, b) => (a.author || 'zzz').localeCompare(b.author || 'zzz', 'zh'));
+            case 'author-desc':
+                return sorted.sort((a, b) => (b.author || 'zzz').localeCompare(a.author || 'zzz', 'zh'));
+            case 'status':
+                return this.sortIndexes(sorted);
+            default:
+                return sorted;
+        }
     }
 
     private createBookCard(index: IndexListItem): HTMLElement {
@@ -519,10 +746,10 @@ export class LibraryView extends ItemView {
             if (cachedUrl) {
                 cover.style.backgroundImage = `url(${cachedUrl})`;
             } else {
-                // 异步加载封面，完成后更新 backgroundImage
                 const idx = this.indexes.find(ix => ix.id === bookId);
-                if (idx) {
-                    const bookName = stripFileExtension(idx.pdf_name);
+                // 优先用 index 的 pdf_name，兜底用 booklist 存储的 bookName
+                const bookName = stripFileExtension(idx?.pdf_name || booklist.bookNames[i] || '');
+                if (bookName) {
                     this.loadCoverForBooklistCard(bookId, bookName, cover);
                 }
             }
@@ -564,24 +791,79 @@ export class LibraryView extends ItemView {
         return card;
     }
 
+    /** 查找封面文件并返回 URL，找不到返回 null */
+    private async findCoverUrl(indexId: string, bookName: string): Promise<string | null> {
+        const possibleNames: string[] = [];
+
+        // 1. 从 book-meta.json 读取 exportName
+        try {
+            const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+            const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+            const meta = JSON.parse(metaRaw);
+            if (meta.exportName) possibleNames.push(meta.exportName);
+        } catch { /* ignore */ }
+
+        // 2. getDisplayName
+        const displayName = this.getDisplayName(bookName);
+        if (displayName && !possibleNames.includes(displayName)) possibleNames.push(displayName);
+
+        // 3. 原始 bookName
+        if (bookName && !possibleNames.includes(bookName)) possibleNames.push(bookName);
+
+        // 4. sanitize
+        const sanitizedName = sanitizeFileName(bookName);
+        if (sanitizedName && !possibleNames.includes(sanitizedName)) possibleNames.push(sanitizedName);
+
+        // 5. 去扩展名的 pdf_name
+        const index = this.indexes.find(idx => idx.id === indexId);
+        if (index) {
+            let rawName = stripFileExtension(index.pdf_name);
+            if (rawName && !possibleNames.includes(rawName)) possibleNames.push(rawName);
+            const sanitizedRaw = sanitizeFileName(rawName);
+            if (sanitizedRaw && !possibleNames.includes(sanitizedRaw)) possibleNames.push(sanitizedRaw);
+        }
+
+        const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
+
+        // 先查 vault 缓存
+        for (const name of possibleNames) {
+            for (const ext of extensions) {
+                const coverPath = `DeepReader/covers/${name}.${ext}`;
+                const file = this.app.vault.getAbstractFileByPath(coverPath);
+                if (file && file instanceof TFile) {
+                    if (file.stat?.size === 0) return null;
+                    return this.app.vault.getResourcePath(file);
+                }
+            }
+        }
+
+        // Fallback: adapter 检查
+        const adapter = this.app.vault.adapter as any;
+        for (const name of possibleNames) {
+            for (const ext of extensions) {
+                const coverPath = `DeepReader/covers/${name}.${ext}`;
+                try {
+                    if (await adapter.exists(coverPath)) {
+                        return this.app.vault.getResourcePath(coverPath as any);
+                    }
+                } catch { continue; }
+            }
+        }
+
+        return null;
+    }
+
     private async loadCoverForBooklistCard(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
-        // 复用 loadCoverAndDisplay 的逻辑，但更新小封面 div 的 backgroundImage
         if (this.coverCache.has(indexId)) {
             coverEl.style.backgroundImage = `url(${this.coverCache.get(indexId)})`;
             return;
         }
-        // 延迟加载：等书籍卡片的封面加载完 coverCache 后再试
-        const tryLoad = async (attempt: number) => {
-            const cached = this.coverCache.get(indexId);
-            if (cached) {
-                coverEl.style.backgroundImage = `url(${cached})`;
-                return;
-            }
-            if (attempt < 5) {
-                setTimeout(() => tryLoad(attempt + 1), 500 * attempt);
-            }
-        };
-        tryLoad(0);
+        // 实际查找封面文件并加载
+        const url = await this.findCoverUrl(indexId, bookName);
+        if (url) {
+            this.coverCache.set(indexId, url);
+            coverEl.style.backgroundImage = `url(${url})`;
+        }
     }
 
     private deleteBooklistHistory(booklistId: string): void {
@@ -665,129 +947,29 @@ export class LibraryView extends ItemView {
 
     private async loadCoverAndDisplay(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
         try {
-            // 收集所有可能的书名（按优先级排序）
-            const possibleNames: string[] = [];
+            const localCoverUrl = await this.findCoverUrl(indexId, bookName);
 
-            // 1. 优先从 book-meta.json 读取 exportName（与 indexer 保存封面时一致）
-            try {
-                const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
-                const fs = await import('fs/promises');
-                const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
-                const meta = JSON.parse(metaRaw);
-                if (meta.exportName) {
-                    possibleNames.push(meta.exportName);
-                }
-            } catch { /* ignore */ }
-
-            // 2. getDisplayName 结果（截取副标题后的主标题）
-            const displayName = this.getDisplayName(bookName);
-            if (displayName && !possibleNames.includes(displayName)) {
-                possibleNames.push(displayName);
-            }
-
-            // 3. 原始 bookName（不截断）
-            if (bookName && !possibleNames.includes(bookName)) {
-                possibleNames.push(bookName);
-            }
-
-            // 4. sanitize 后的书名（微信读书封面保存时用了 sanitize）
-            const sanitizedName = sanitizeFileName(bookName);
-            if (sanitizedName && !possibleNames.includes(sanitizedName)) {
-                possibleNames.push(sanitizedName);
-            }
-
-            // 5. 去掉扩展名的原始文件名（来自 index.pdf_name）
-            const index = this.indexes.find(idx => idx.id === indexId);
-            if (index) {
-                let rawName = index.pdf_name;
-                rawName = stripFileExtension(rawName);
-                if (rawName && !possibleNames.includes(rawName)) {
-                    possibleNames.push(rawName);
-                }
-                // sanitize 全标题（和封面下载时一致，处理特殊字符和长度）
-                const sanitizedRaw = sanitizeFileName(rawName);
-                if (sanitizedRaw && !possibleNames.includes(sanitizedRaw)) {
-                    possibleNames.push(sanitizedRaw);
-                }
-            }
-
-            // 尝试所有可能的书名 + 所有图片扩展名
-            const extensions = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'];
-            let coverFile: TFile | null = null;
-            let foundPath: string = '';
-            let foundName: string = '';
-
-            for (const name of possibleNames) {
-                for (const ext of extensions) {
-                    const coverPath = `DeepReader/covers/${name}.${ext}`;
-                    const file = this.app.vault.getAbstractFileByPath(coverPath);
-                    if (file && file instanceof TFile) {
-                        coverFile = file;
-                        foundPath = coverPath;
-                        foundName = name;
-                        break;
-                    }
-                }
-                if (coverFile) break;
-            }
-
-            // Fallback: vault 缓存未更新时，直接用 adapter 检查文件是否存在
-            if (!coverFile) {
-                const adapter = this.app.vault.adapter as any;
-                for (const name of possibleNames) {
-                    for (const ext of extensions) {
-                        const coverPath = `DeepReader/covers/${name}.${ext}`;
-                        try {
-                            if (await adapter.exists(coverPath)) {
-                                foundPath = coverPath;
-                                foundName = name;
-                                break;
-                            }
-                        } catch { continue; }
-                    }
-                    if (foundPath) break;
-                }
-            }
-
-            if (coverFile || foundPath) {
-                const localCoverUrl = coverFile
-                    ? this.app.vault.getResourcePath(coverFile)
-                    : this.app.vault.getResourcePath(foundPath as any);
+            if (localCoverUrl) {
                 this.coverCache.set(indexId, localCoverUrl);
 
-                // 检查文件大小，0 字节视为无效
-                if (coverFile && coverFile.stat?.size === 0) {
-                    this.coverCache.delete(indexId);
-                    this.retryCoverDownload(indexId, bookName, coverEl);
-                    return;
-                }
-
-                // 保留选中对勾（如果存在）
                 const checkMark = coverEl.querySelector('.deeppdf-lib-cover-check');
 
                 coverEl.innerHTML = '';
                 const imgEl = coverEl.createEl('img', { cls: 'deeppdf-lib-cover-img' });
                 imgEl.src = localCoverUrl;
-                imgEl.alt = foundName || bookName;
+                imgEl.alt = bookName;
 
-                // 封面加载失败（文件损坏/不完整）→ 清除缓存并尝试重新下载
                 imgEl.addEventListener('error', () => {
                     this.coverCache.delete(indexId);
                     this.retryCoverDownload(indexId, bookName, coverEl);
                 });
 
-                // 恢复选中对勾
-                if (checkMark) {
-                    coverEl.appendChild(checkMark);
-                }
-
-                // 重新添加操作按钮
+                if (checkMark) coverEl.appendChild(checkMark);
                 this.addCoverActions(coverEl, indexId);
             } else {
-                // 封面文件不存在 → 尝试重新下载
                 this.retryCoverDownload(indexId, bookName, coverEl);
             }
-        } catch (error) {
+        } catch {
             // 加载失败，保持占位符
         } finally {
             this.loadingCovers.delete(indexId);

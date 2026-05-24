@@ -748,3 +748,141 @@
     transform: translate(-50%, -50%) rotate(10deg);
     z-index: 3;
 }
+
+/* ── 筛选面板 ── */
+
+/* 筛选按钮 */
+.deeppdf-library-view .deeppdf-lib-filter-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.deeppdf-library-view .deeppdf-lib-filter-btn:hover {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    color: #fff;
+}
+
+/* 筛选弹出面板 */
+.deeppdf-lib-filter-panel {
+    position: fixed;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    z-index: 1000;
+    padding: 12px 16px;
+    min-width: 220px;
+    max-width: 300px;
+    max-height: 480px;
+    overflow-y: auto;
+}
+
+.deeppdf-lib-filter-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    margin-top: 10px;
+}
+
+.deeppdf-lib-filter-section-title:first-child {
+    margin-top: 0;
+}
+
+/* 类型 chips（面板内） */
+.deeppdf-lib-filter-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.deeppdf-lib-type-chip {
+    padding: 3px 10px;
+    border-radius: 14px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    color: var(--text-muted);
+    transition: all 0.15s;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.deeppdf-lib-type-chip:hover {
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+}
+
+.deeppdf-lib-type-chip.active {
+    background: var(--interactive-accent);
+    color: #fff;
+    border-color: var(--interactive-accent);
+}
+
+/* 排序/作者选项 */
+.deeppdf-lib-filter-option {
+    padding: 5px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    color: var(--text-normal);
+    white-space: nowrap;
+    transition: background 0.1s;
+}
+
+.deeppdf-lib-filter-option:hover {
+    background: var(--background-modifier-hover);
+}
+
+.deeppdf-lib-filter-option.active {
+    color: var(--interactive-accent);
+    font-weight: 600;
+}
+
+/* 作者列表 */
+.deeppdf-lib-filter-author-list {
+    max-height: 160px;
+    overflow-y: auto;
+    margin-bottom: 4px;
+}
+
+/* 重置按钮行 */
+.deeppdf-lib-filter-reset-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-lib-filter-reset-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.deeppdf-lib-filter-reset-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
