@@ -310,7 +310,6 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   }
 
   // === Normal mode (depth >= 1): format with full context ===
-  const isReadingAdvisor = !pdfName;
   // 收集输入文本用于校验编造链接
   const inputTextsForValidation = [
     analysisResult || '',
@@ -318,16 +317,13 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   ];
   callbacks?.onProgress?.('正在整理笔记...');
 
-  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary, isReadingAdvisor);
+  const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
 
   const chatHistory = ctx?.chatHistory ?? [];
   const markdownFiles = ctx?.markdownFiles ?? {};
   const effectiveScopeNodeIds = scopeNodeIds ?? [];
   const coveredScope = effectiveScopeNodeIds.length > 0
     ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles)
-    : '';
-  const bookshelfSection = (isReadingAdvisor && ctx?.bookshelfSummary)
-    ? `\n<bookshelf>\n${ctx.bookshelfSummary}\n</bookshelf>`
     : '';
   const userMessage = buildFormatterUserMessage(
     rewrittenQuery,
@@ -338,7 +334,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     structuralAnalysis || undefined,
     betterQuestion || undefined,
     coveredScope || undefined,
-  ) + bookshelfSection;
+  );
 
   const messages = [
     new SystemMessage(systemPrompt),

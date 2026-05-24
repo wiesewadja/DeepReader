@@ -30,10 +30,7 @@ export async function advisorNode(
 	state: CognitiveEngineState,
 	config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-	const {
-		rewrittenQuery: stateQuery,
-		pdfName: statePdfName,
-	}: AdvisorInput = state;
+	const { rewrittenQuery: stateQuery }: AdvisorInput = state;
 
 	const ctx = config.configurable?.sharedContext;
 	const mainModel = config.configurable?.mainModel;

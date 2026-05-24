@@ -29,6 +29,8 @@ export function routeFromStart(state: CognitiveEngineState): string {
 export function routeByDepth(state: CognitiveEngineState): string {
   // Reading advisor mode: no book selected
   if (!state.pdfName) {
+    const mode = resolveMode(state);
+    if (mode === 'socratic') return NODE_NAMES.FORMATTER;
     if (state.wereadAvailable) return NODE_NAMES.ADVISOR;
     return NODE_NAMES.FORMATTER;
   }

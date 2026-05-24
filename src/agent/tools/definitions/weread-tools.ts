@@ -132,7 +132,7 @@ export const createWereadReadDataTool: ToolFactory = (ctx: ToolContext) =>
 			name: 'weread_readdata',
 			description: '获取微信读书阅读统计数据（时长、天数、偏好分类等）',
 			schema: z.object({
-				mode: z.string().optional().describe('统计维度: weekly=本周, monthly=本月(默认), annually=本年, overall=总计'),
+				mode: z.enum(['weekly', 'monthly', 'annually', 'overall']).optional().describe('统计维度: weekly=本周, monthly=本月(默认), annually=本年, overall=总计'),
 			}),
 		},
 	);
@@ -147,7 +147,7 @@ export const createWereadNotebooksTool: ToolFactory = (ctx: ToolContext) =>
 				const resp = await client.getNotebook();
 				if (!resp.books?.length) return '暂无笔记数据。';
 				const lines: string[] = [`共 ${resp.totalBookCount || resp.books.length} 本有笔记的书，${resp.totalNoteCount || 0} 条笔记`];
-				for (const item of resp.books.slice(0, args.count)) {
+				for (const item of resp.books.slice(0, args.count ?? 20)) {
 					const b = item.book;
 					const progress = item.readingProgress ? ` 进度:${item.readingProgress}%` : '';
 					const status = item.markedStatus === 1 ? '已读完' : '在读';
