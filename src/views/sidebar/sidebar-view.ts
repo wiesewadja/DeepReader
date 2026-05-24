@@ -429,11 +429,14 @@ export class SidebarView extends ItemView {
      * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
-        await this.bookMgr.selectIndex(indexId);
-        // 选书时退出阅读顾问模式
+        // 选书时退出书单/阅读顾问模式
+        if (this.sessionMgr.crossBookMode) {
+            this.sessionMgr.crossBookMode = false;
+        }
         if (this.sessionMgr.generalChatMode) {
             this.sessionMgr.generalChatMode = false;
         }
+        await this.bookMgr.selectIndex(indexId);
     }
 
     public async selectBooklist(booklist: Booklist): Promise<void> {
@@ -638,6 +641,9 @@ export class SidebarView extends ItemView {
      * 通过书名选择索引（自动切换时使用）
      */
     public async selectBookByName(bookName: string): Promise<void> {
+        if (this.sessionMgr.crossBookMode) {
+            this.sessionMgr.crossBookMode = false;
+        }
         await this.bookMgr.selectBookByName(bookName);
     }
 

@@ -293,6 +293,13 @@ export class BookManager {
 		log(`[DeepPDF] selectIndex triggered: ${indexId}`);
 
 		await this.host.flushProgressSave();
+
+		// Exit booklist mode when switching to a single book
+		if (this._currentBooklist) {
+			this._currentBooklist = null;
+			this.host.readingTopbar?.clearBooklistMode();
+		}
+
 		this._currentIndexId = indexId;
 		this.host.plugin.settings.lastSelectedIndexId = indexId;
 		await this.host.plugin.saveSettings();
