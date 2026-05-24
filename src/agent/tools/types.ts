@@ -73,6 +73,8 @@ export interface ToolContext {
   subagentManager?: import('../subagent/types.js').ISubagentManager;
   /** 书架摘要（阅读顾问模式下注入用户全量书架上下文） */
   bookshelfSummary?: string;
+  /** 缓存的 WereadApiClient 实例（避免每次工具调用新建） */
+  _wereadClient?: import('../../weread/api/client.js').WereadApiClient;
 }
 
 /**

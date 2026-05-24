@@ -17,6 +17,13 @@ import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
 import { createCheckSubAgentTool } from './definitions/sub-agent.js';
 import { createSearchJournalTool } from './definitions/search-journal.js';
 import { createGenerateInfographicTool } from './definitions/generate-infographic.js';
+import {
+	createWereadSearchTool,
+	createWereadRecommendTool,
+	createWereadReadDataTool,
+	createWereadNotebooksTool,
+	createWereadBookInfoTool,
+} from './definitions/weread-tools.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -70,6 +77,17 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
 
   if (ctx.infographicConfig) {
     tools.push(createGenerateInfographicTool(ctx));
+  }
+
+  // WeRead 工具：仅当 API Key 已配置时注册
+  if (ctx.plugin?.settings?.wereadApiKey) {
+    tools.push(
+      createWereadSearchTool(ctx),
+      createWereadRecommendTool(ctx),
+      createWereadReadDataTool(ctx),
+      createWereadNotebooksTool(ctx),
+      createWereadBookInfoTool(ctx),
+    );
   }
 
   return tools;

@@ -18,6 +18,7 @@ import { inspectionalNode } from './nodes/inspectional';
 import { preSearchNode } from './nodes/analytical-pre-search';
 import { analyticalNode } from './nodes/analytical';
 import { syntopicalNode } from './nodes/syntopical';
+import { advisorNode } from './nodes/advisor';
 import { visualizerNode } from './nodes/visualizer';
 import { formatterNode } from './nodes/formatter';
 import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterPreSearch, routeAfterAnalysis } from './edges';
@@ -62,6 +63,10 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
     analysisResult: '',
     toolResultsSnapshot: [],
   })))
+  .addNode(NODE_NAMES.ADVISOR, safeNode(NODE_NAMES.ADVISOR, advisorNode, () => ({
+    analysisResult: '',
+    toolResultsSnapshot: [],
+  })))
   .addNode(NODE_NAMES.VISUALIZER, visualizerNode)
   .addNode(NODE_NAMES.FORMATTER, safeFormatter)
   .addConditionalEdges(START, routeFromStart, {
@@ -71,6 +76,7 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addConditionalEdges(NODE_NAMES.ROUTER, routeByDepth, {
     [NODE_NAMES.FORMATTER]: NODE_NAMES.FORMATTER,
     [NODE_NAMES.INSPECTIONAL]: NODE_NAMES.INSPECTIONAL,
+    [NODE_NAMES.ADVISOR]: NODE_NAMES.ADVISOR,
   })
   .addConditionalEdges(NODE_NAMES.INSPECTIONAL, routeAfterInspectional, {
     [NODE_NAMES.PRE_SEARCH]: NODE_NAMES.PRE_SEARCH,
@@ -91,6 +97,7 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
     [NODE_NAMES.FORMATTER]: NODE_NAMES.FORMATTER,
   })
   .addEdge(NODE_NAMES.VISUALIZER, NODE_NAMES.FORMATTER)
+  .addEdge(NODE_NAMES.ADVISOR, NODE_NAMES.FORMATTER)
   .addEdge(NODE_NAMES.FORMATTER, END);
 
 export const cognitiveEngine = workflow.compile({

@@ -300,6 +300,113 @@ export interface MappingStats {
 // 同步进度
 // ═══════════════════════════════════════════════════════════════
 
+/** /store/search 响应 */
+export interface WereadSearchResponse {
+	sid?: string;
+	hasMore?: number;
+	results?: WereadSearchGroup[];
+}
+
+export interface WereadSearchGroup {
+	title?: string;
+	scope?: number;
+	scopeCount?: number;
+	currentCount?: number;
+	books?: WereadSearchBook[];
+}
+
+export interface WereadSearchBook {
+	searchIdx?: string;
+	bookInfo?: WereadSearchBookInfo;
+}
+
+export interface WereadSearchBookInfo {
+	bookId: string;
+	title: string;
+	author: string;
+	cover?: string;
+	intro?: string;
+	publisher?: string;
+	category?: string;
+	payType?: number;
+	price?: number;
+	soldout?: number;
+	readingCount?: number;
+	newRating?: number;
+	newRatingCount?: number;
+	newRatingDetail?: { title?: string };
+}
+
+/** /book/recommend 响应 */
+export interface WereadRecommendResponse {
+	books?: WereadRecommendBook[];
+}
+
+export interface WereadRecommendBook {
+	bookId: string;
+	title: string;
+	author: string;
+	cover?: string;
+	intro?: string;
+	category?: string;
+	reason?: string;
+	readingCount?: number;
+	searchIdx?: string;
+	newRating?: number;
+	newRatingCount?: number;
+	newRatingDetail?: { title?: string };
+	price?: number;
+	payType?: number;
+	type?: number;
+}
+
+/** /book/info 响应 */
+export interface WereadBookInfoResponse {
+	bookId: string;
+	title: string;
+	author: string;
+	translator?: string;
+	cover?: string;
+	intro?: string;
+	category?: string;
+	publisher?: string;
+	publishTime?: string;
+	isbn?: string;
+	wordCount?: number;
+	newRating?: number;
+	newRatingCount?: number;
+	newRatingDetail?: unknown;
+}
+
+/** /readdata/detail 响应 */
+export interface WereadReadDataResponse {
+	baseTime?: number;
+	readTimes?: Record<string, number>;
+	readDays?: number;
+	totalReadTime?: number;
+	dayAverageReadTime?: number;
+	compare?: number;
+	readLongest?: WereadReadLongestItem[];
+	readStat?: { stat: string; counts: string }[];
+	preferCategory?: { title: string; count: number }[];
+	preferCategoryWord?: string;
+	preferTime?: number[];
+	preferTimeWord?: string;
+	preferAuthor?: { author: string; count: number }[];
+	authorCount?: number;
+	readRate?: number;
+	wrReadTime?: number;
+	wrListenTime?: number;
+	registTime?: number;
+}
+
+export interface WereadReadLongestItem {
+	book?: { bookId: string; title: string; author: string; cover?: string };
+	albumInfo?: unknown;
+	readTime: number;
+	tags?: string[];
+}
+
 /** 同步进度回调 */
 export interface SyncProgress {
 	current: number;

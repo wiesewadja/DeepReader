@@ -334,14 +334,14 @@ export class AgentChatController {
 
 			const context: ToolContext = {
 				indexId: indexId,
-				pdfName: this.host.currentPdfName || '未知文档',
+				pdfName: this.host.currentPdfName || '',
 				markdownFiles: this.host.currentMarkdownFiles,
 				useLLMTreeSearch: this.host.useLLMTreeSearch,
 				app: this.host.app,
 				plugin: this.host.plugin,
 				currentNodeId,
 				documentMetadata: {
-					title: this.host.currentPdfName || '未知文档',
+					title: this.host.currentPdfName || '',
 				},
 				docDescription: this.host.currentDocDescription || undefined,
 				quotes: quotes,

@@ -243,6 +243,7 @@ export class MessageList extends Component {
 	 * 清空消息列表
 	 */
 	clear(): void {
+		this._typewriterActive = false;
 		this.messages.forEach(message => {
 			message.getElement().remove();
 		});
@@ -299,6 +300,7 @@ export class MessageList extends Component {
 	 * 清空所有消息
 	 */
 	clearMessages(): void {
+		this._typewriterActive = false;
 		// 清空 DOM
 		if (this.messagesContainer) {
 			this.messagesContainer.empty();

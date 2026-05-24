@@ -302,6 +302,7 @@ ${currentMemory}
         mode: (context.mode || 'normal') as EngineMode,
         proactiveTrigger: context.proactiveTrigger ?? undefined,
         highlightContext: context.highlightContext ?? [],
+        wereadAvailable: !!context.plugin?.settings?.wereadApiKey,
       },
       callbacks,
       configurable,

@@ -108,6 +108,9 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // === Unified mode ===
   mode: Annotation<EngineMode>(overwriteWithDefault('normal' as EngineMode)),
 
+  // === Reading advisor mode ===
+  wereadAvailable: Annotation<boolean>(overwriteWithDefault(false)),
+
   // === Error tracking ===
   nodeErrors: Annotation<Record<string, NodeError | string>>({
     reducer: (a, b) => ({ ...a, ...b }),

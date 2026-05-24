@@ -14,6 +14,7 @@ export const NODE_NAMES = {
   PRE_SEARCH: 'pre_search',
   ANALYTICAL: 'analytical',
   SYNTOPICAL: 'syntopical',
+  ADVISOR: 'advisor',
   VISUALIZER: 'visualizer',
   FORMATTER: 'formatter',
 } as const;

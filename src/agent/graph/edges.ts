@@ -27,6 +27,11 @@ export function routeFromStart(state: CognitiveEngineState): string {
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
+  // Reading advisor mode: no book selected
+  if (!state.pdfName) {
+    if (state.wereadAvailable) return NODE_NAMES.ADVISOR;
+    return NODE_NAMES.FORMATTER;
+  }
   if (state.depth === ReadingDepth.CASUAL) return NODE_NAMES.FORMATTER;
   return NODE_NAMES.INSPECTIONAL;
 }

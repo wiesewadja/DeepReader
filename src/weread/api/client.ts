@@ -4,6 +4,7 @@
  */
 
 import { safeRequest } from '../../utils/safe-request';
+import { apiLog as log } from '../../utils/logger.js';
 import type {
 	WereadNotebookResponse,
 	WereadShelfResponse,
@@ -11,6 +12,10 @@ import type {
 	WereadReviewResponse,
 	WereadChapterResponse,
 	WereadProgressResponse,
+	WereadSearchResponse,
+	WereadRecommendResponse,
+	WereadBookInfoResponse,
+	WereadReadDataResponse,
 } from '../types';
 
 const GATEWAY_URL = 'https://i.weread.qq.com/api/agent/gateway';
@@ -38,7 +43,7 @@ export class WereadApiClient {
 		};
 
 		const reqBody = JSON.stringify(body);
-		console.log('[WereadApiClient] gatewayCall:', apiName, 'body:', reqBody);
+		log('[WereadApiClient]', apiName);
 
 		const resp = await safeRequest({
 			url: GATEWAY_URL,
@@ -50,7 +55,7 @@ export class WereadApiClient {
 			body: reqBody,
 		});
 
-		console.log('[WereadApiClient] response status:', resp.status, 'json:', JSON.stringify(resp.json).substring(0, 500));
+		log('[WereadApiClient]', apiName, 'status:', resp.status);
 
 		const data = resp.json as GatewayResponse;
 		if (data.errcode != null && data.errcode !== 0) {
@@ -110,12 +115,29 @@ export class WereadApiClient {
 		return this.gatewayCall<WereadProgressResponse>('/book/getprogress', { bookId });
 	}
 
+
+	async searchBooks(keyword: string, scope: number = 10, count: number = 10): Promise<WereadSearchResponse> {
+		return this.gatewayCall<WereadSearchResponse>('/store/search', { keyword, scope, count });
+	}
+
+	async recommendBooks(count: number = 6): Promise<WereadRecommendResponse> {
+		return this.gatewayCall<WereadRecommendResponse>('/book/recommend', { count });
+	}
+
+	async getReadingData(mode: string = 'monthly'): Promise<WereadReadDataResponse> {
+		return this.gatewayCall<WereadReadDataResponse>('/readdata/detail', { mode });
+	}
+
+	async getBookInfo(bookId: string): Promise<WereadBookInfoResponse> {
+		return this.gatewayCall<WereadBookInfoResponse>('/book/info', { bookId });
+	}
+
 	async validateApiKey(): Promise<boolean> {
 		try {
 			await this.gatewayCall<WereadNotebookResponse>('/user/notebooks');
 			return true;
 		} catch (err) {
-			console.error('[WereadApiClient] validateApiKey failed:', err);
+			log('[WereadApiClient] validateApiKey failed:', err);
 			return false;
 		}
 	}
