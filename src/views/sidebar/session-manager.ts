@@ -124,13 +124,13 @@ export class SessionManager {
 			if (items && items.length > 0) {
 				const bookLines = items.map(item => {
 					let line = `- **${item.name}**`;
-					if (item.author) line += `  *${item.author}*`;
+					if (item.author) line += ` — *${item.author}*`;
 					return line;
 				}).join("\n");
 
-				welcomeContent = `📚 **主题阅读**已开启，以下 ${items.length} 本书将被跨书分析：\n\n${bookLines}\n\n请输入您的问题，我将在这些书籍范围内进行搜索和分析。`;
+				welcomeContent = `📚 **主题阅读**模式已开启\n\n${bookLines}\n\n试试问我这些书之间有什么关联、观点差异，或者围绕某个主题进行跨书对比。`;
 			} else {
-				welcomeContent = "📚 已切换到**跨书籍阅读**模式。您可以在所有已索引的书籍中搜索和提问！";
+				welcomeContent = "📚 **主题阅读**模式已开启，选择书籍后即可开始跨书对话与对比分析。";
 			}
 
 			this.host.messageList.addMessage({

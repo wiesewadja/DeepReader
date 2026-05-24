@@ -58,7 +58,7 @@ export interface LibraryViewOptions {
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
     onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
-    onStartThematicReading?: (booklist: Booklist) => void;
+    onStartThematicReading?: (booklist: Booklist, reenter?: boolean) => void;
     plugin: any;
 }
 
@@ -509,15 +509,23 @@ export class LibraryView extends ItemView {
         const card = document.createElement('div');
         card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
 
-        // 封面区域：堆叠封面占位
-        const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover' });
+        // 封面区域：并排小封面
+        const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover deeppdf-lib-booklist-covers' });
         const maxShow = Math.min(booklist.bookIds.length, 3);
         for (let i = 0; i < maxShow; i++) {
-            const layer = coverEl.createDiv({ cls: 'deeppdf-lib-stacked-cover-layer' });
-            layer.style.setProperty('--layer-index', String(i));
-        }
-        if (booklist.bookIds.length > 3) {
-            const moreEl = coverEl.createDiv({ cls: 'deeppdf-lib-stacked-cover-more', text: `+${booklist.bookIds.length - 3}` });
+            const cover = coverEl.createDiv({ cls: 'deeppdf-lib-inline-cover' });
+            const bookId = booklist.bookIds[i];
+            const cachedUrl = this.coverCache.get(bookId);
+            if (cachedUrl) {
+                cover.style.backgroundImage = `url(${cachedUrl})`;
+            } else {
+                // 异步加载封面，完成后更新 backgroundImage
+                const idx = this.indexes.find(ix => ix.id === bookId);
+                if (idx) {
+                    const bookName = stripFileExtension(idx.pdf_name);
+                    this.loadCoverForBooklistCard(bookId, bookName, cover);
+                }
+            }
         }
 
         // 信息区域
@@ -548,12 +556,32 @@ export class LibraryView extends ItemView {
             this.deleteBooklistHistory(booklist.id);
         });
 
-        // 点击重新进入
+        // 点击重新进入历史书单
         card.addEventListener('click', () => {
-            this.options.onStartThematicReading?.(booklist);
+            this.options.onStartThematicReading?.(booklist, true);
         });
 
         return card;
+    }
+
+    private async loadCoverForBooklistCard(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
+        // 复用 loadCoverAndDisplay 的逻辑，但更新小封面 div 的 backgroundImage
+        if (this.coverCache.has(indexId)) {
+            coverEl.style.backgroundImage = `url(${this.coverCache.get(indexId)})`;
+            return;
+        }
+        // 延迟加载：等书籍卡片的封面加载完 coverCache 后再试
+        const tryLoad = async (attempt: number) => {
+            const cached = this.coverCache.get(indexId);
+            if (cached) {
+                coverEl.style.backgroundImage = `url(${cached})`;
+                return;
+            }
+            if (attempt < 5) {
+                setTimeout(() => tryLoad(attempt + 1), 500 * attempt);
+            }
+        };
+        tryLoad(0);
     }
 
     private deleteBooklistHistory(booklistId: string): void {

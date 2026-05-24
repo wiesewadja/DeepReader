@@ -6,7 +6,7 @@
 
 import { Notice, TFile } from 'obsidian';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
-import type { IndexListItem, Booklist } from '../../types/index.js';
+import { stripFileExtension, type IndexListItem, type Booklist } from '../../types/index.js';
 import type { MessageList } from '../../components/message-list/message-list.js';
 import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
 import type { ReadingProgress } from '../../pageindex/reading-progress.js';
@@ -624,6 +624,82 @@ export class BookManager {
 		this._currentBooklist = booklist;
 		this.host.readingTopbar?.setCurrentBooklist(booklist);
 		this.host.messageList?.setCurrentPdfName(booklist.name);
+		this.loadAndApplyBooklistCovers(booklist);
+	}
+
+	/** 异步加载书单封面并更新 topbar */
+	private async loadAndApplyBooklistCovers(booklist: Booklist): Promise<void> {
+		try {
+			const coverUrls: string[] = [];
+			const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+			const adapter = this.host.app.vault.adapter as any;
+
+			for (const bookId of booklist.bookIds.slice(0, 3)) {
+				let found = false;
+				// 从 indexes 获取书名
+				const idx = this._indexes.find(i => i.id === bookId);
+				const pdfName = idx?.pdf_name || '';
+				const names: string[] = [];
+				if (pdfName) {
+					const stripped = stripFileExtension(pdfName);
+					names.push(stripped);
+					// getDisplayName 简化版：取第一个分隔符前的部分
+					for (const sep of ['_', '-']) {
+						if (stripped.includes(sep)) {
+							names.push(stripped.split(sep)[0].trim());
+							break;
+						}
+					}
+				}
+				// 也从 booklist.bookNames 取
+				const bookIdx = booklist.bookIds.indexOf(bookId);
+				if (bookIdx >= 0 && booklist.bookNames?.[bookIdx]) {
+					const bn = booklist.bookNames[bookIdx];
+					if (!names.includes(bn)) names.push(bn);
+				}
+
+				for (const name of names) {
+					for (const ext of extensions) {
+						const coverPath = `DeepReader/covers/${name}.${ext}`;
+						const file = this.host.app.vault.getAbstractFileByPath(coverPath);
+						if (file) {
+							coverUrls.push(this.host.app.vault.getResourcePath(file as any));
+							found = true;
+							break;
+						}
+					}
+					if (found) break;
+				}
+				// Fallback: adapter.exists
+				if (!found) {
+					for (const name of names) {
+						for (const ext of extensions) {
+							const coverPath = `DeepReader/covers/${name}.${ext}`;
+							try {
+								if (await adapter.exists(coverPath)) {
+									coverUrls.push(this.host.app.vault.getResourcePath(coverPath as any));
+									found = true;
+									break;
+								}
+							} catch { continue; }
+						}
+						if (found) break;
+					}
+				}
+				if (!found) coverUrls.push('');
+			}
+
+			if (coverUrls.some(u => u)) {
+				const items = booklist.bookIds.slice(0, 3).map((id, i) => ({
+					id,
+					name: booklist.bookNames?.[i] || id,
+					coverUrl: coverUrls[i] || undefined,
+				}));
+				this.host.readingTopbar?.updateBooklistCovers(items);
+			}
+		} catch (err) {
+			console.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
+		}
 	}
 
 	async selectBooklist(booklist: Booklist): Promise<void> {
@@ -639,6 +715,7 @@ export class BookManager {
 		this._currentBooklist = booklist;
 
 		this.host.readingTopbar?.setCurrentBooklist(booklist);
+		this.loadAndApplyBooklistCovers(booklist);
 
 		this.host.plugin.settings.lastSelectedIndexId = undefined;
 		this.host.plugin.settings.lastCrossBookMode = true;

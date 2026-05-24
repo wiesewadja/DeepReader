@@ -149,18 +149,16 @@ export class ReadingTopbar extends Component {
     public setCurrentBooklist(booklist: Booklist): void {
         if (!this.bookTitleEl || !this.bookAuthorEl) return;
 
-        this.bookTitleEl.textContent = booklist.name;
+        this.bookTitleEl.textContent = '主题阅读';
         this.bookTitleEl.classList.add('has-book');
 
         const names = booklist.bookNames || [];
-        this.bookAuthorEl.textContent = `${booklist.bookIds.length}本书`;
+        this.bookAuthorEl.textContent = names.join('、');
         this.bookAuthorEl.title = names.join('、');
 
         this.renderStackedCovers(booklist.items);
 
         this.el?.classList.add('booklist-mode');
-
-        this.showExitButton();
     }
 
     private renderStackedCovers(items?: import('../../types/index.js').BooklistItemInfo[]): void {
@@ -178,14 +176,24 @@ export class ReadingTopbar extends Component {
         const maxShow = Math.min(items.length, 3);
         for (let i = 0; i < maxShow; i++) {
             const item = items[i];
-            const layer = document.createElement('div');
-            layer.className = 'deeppdf-stacked-cover-layer';
-            layer.style.setProperty('--layer-index', String(i));
+            const cover = document.createElement('div');
+            cover.className = 'deeppdf-inline-cover';
             if (item.coverUrl) {
-                layer.style.backgroundImage = `url(${item.coverUrl})`;
+                cover.style.backgroundImage = `url(${item.coverUrl})`;
             }
-            this.bookCoverEl.appendChild(layer);
+            this.bookCoverEl.appendChild(cover);
         }
+    }
+
+    /** 异步更新书单封面（封面加载完成后调用） */
+    public updateBooklistCovers(items: { id: string; name: string; coverUrl?: string }[]): void {
+        if (!this.bookCoverEl) return;
+        const covers = this.bookCoverEl.querySelectorAll<HTMLElement>('.deeppdf-inline-cover');
+        items.forEach((item, i) => {
+            if (covers[i] && item.coverUrl) {
+                covers[i].style.backgroundImage = `url(${item.coverUrl})`;
+            }
+        });
     }
 
     /**
@@ -193,36 +201,8 @@ export class ReadingTopbar extends Component {
      */
     public clearBooklistMode(): void {
         this.el?.classList.remove('booklist-mode');
-        this.hideExitButton();
         this.setCurrentBook(null);
         this.setBookCover(null);
-    }
-
-    private exitBtnEl: HTMLElement | null = null;
-
-    private showExitButton(): void {
-        this.hideExitButton();
-        if (!this.el) return;
-
-        const centerSection = this.el.querySelector('.deeppdf-topbar-center');
-        if (!centerSection) return;
-
-        this.exitBtnEl = document.createElement('button');
-        this.exitBtnEl.className = 'deeppdf-topbar-exit-btn';
-        this.exitBtnEl.title = '退出主题阅读';
-        this.exitBtnEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-        this.exitBtnEl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.options.onExitBooklist?.();
-        });
-        centerSection.appendChild(this.exitBtnEl);
-    }
-
-    private hideExitButton(): void {
-        if (this.exitBtnEl) {
-            this.exitBtnEl.remove();
-            this.exitBtnEl = null;
-        }
     }
 
     public selectIndex(indexId: string): void {
@@ -262,7 +242,6 @@ export class ReadingTopbar extends Component {
         this.bookCoverEl = null;
         this.bookTitleEl = null;
         this.bookAuthorEl = null;
-        this.exitBtnEl = null;
 
         super.destroy();
     }

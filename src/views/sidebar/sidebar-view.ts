@@ -432,6 +432,54 @@ export class SidebarView extends ItemView {
 
     public async selectBooklist(booklist: Booklist): Promise<void> {
         this.sessionMgr.crossBookMode = true;
+        // 补全 items（历史书单不含 items）
+        if (!booklist.items || booklist.items.length === 0) {
+            const items = booklist.bookIds.map(id => {
+                const idx = this.bookMgr.indexes.find(i => i.id === id);
+                let name = idx?.pdf_name || id;
+                name = stripFileExtension(name);
+                return { id, name, author: idx?.author };
+            });
+            booklist = { ...booklist, items };
+        }
+        await this.bookMgr.selectBooklist(booklist);
+    }
+
+    /** 重新进入历史书单：恢复已有会话，无会话则新建 */
+    public async reenterBooklist(booklist: Booklist): Promise<void> {
+        // 补全 items
+        if (!booklist.items || booklist.items.length === 0) {
+            const items = booklist.bookIds.map(id => {
+                const idx = this.bookMgr.indexes.find(i => i.id === id);
+                let name = idx?.pdf_name || id;
+                name = stripFileExtension(name);
+                return { id, name, author: idx?.author };
+            });
+            booklist = { ...booklist, items };
+        }
+
+        this.sessionMgr.crossBookMode = true;
+
+        // 尝试恢复已有会话
+        const savedSessionId = this.plugin.settings.savedSessions?.[booklist.id];
+        if (savedSessionId) {
+            // 设置 booklist 状态（不创建新会话）
+            this.bookMgr.restoreBooklist(booklist);
+            this.plugin.settings.lastCrossBookMode = true;
+            this.plugin.settings.lastActiveBooklistId = booklist.id;
+            await this.plugin.saveSettings();
+
+            if (!this.frontendAgent) {
+                await this.initializeFrontendAgent();
+            }
+
+            const restored = await this.sessionMgr.restoreFromSessionStore(savedSessionId);
+            if (restored) {
+                return;
+            }
+        }
+
+        // 无已有会话，走正常 selectBooklist
         await this.bookMgr.selectBooklist(booklist);
     }
 
