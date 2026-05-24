@@ -27,14 +27,16 @@ export function routeFromStart(state: CognitiveEngineState): string {
  * Route after S0 Router based on classified depth.
  */
 export function routeByDepth(state: CognitiveEngineState): string {
-  // Reading advisor mode: no book selected
-  if (!state.pdfName) {
+  // No book selected AND not in booklist mode → advisor or casual
+  if (!state.pdfName && !state.crossBookMode) {
     const mode = resolveMode(state);
     if (mode === 'socratic') return NODE_NAMES.FORMATTER;
     if (state.wereadAvailable) return NODE_NAMES.ADVISOR;
     return NODE_NAMES.FORMATTER;
   }
   if (state.depth === ReadingDepth.CASUAL) return NODE_NAMES.FORMATTER;
+  // Syntopical (depth=3) skips Inspectional — multi-book search doesn't use single-book TOC analysis
+  if (state.depth === ReadingDepth.SYNTOPICAL) return NODE_NAMES.SYNTOPICAL;
   return NODE_NAMES.INSPECTIONAL;
 }
 

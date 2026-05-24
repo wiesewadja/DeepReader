@@ -332,6 +332,7 @@ export class SidebarView extends ItemView {
             setAgentChatHistory(history: import("../../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
             get crossBookMode() { return self.sessionMgr.crossBookMode; },
             get currentBooklistBookIds() { return self.bookMgr.currentBooklistBookIds; },
+            get indexes() { return self.bookMgr.indexes; },
             get ttsService() { return self.ttsService; },
             get contextManager() { return self.contextManager; },
             get isProcessing() { return self.agentChatCtrl.processing; },

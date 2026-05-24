@@ -186,6 +186,7 @@ export async function formatterNode(
     scopeNodeIds,
     toolResultsSnapshot,
     highlightContext,
+    crossBookMode,
   }: FormatterInput = state;
   const mode = resolveMode(state);
   const mainModel = config.configurable?.mainModel;
@@ -246,7 +247,7 @@ export async function formatterNode(
   }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
-  if (!pdfName && analysisResult) {
+  if (!pdfName && !crossBookMode && analysisResult) {
     return { formattedOutput: cleanOutput(analysisResult, '') };
   }
 
@@ -325,10 +326,12 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   const coveredScope = effectiveScopeNodeIds.length > 0
     ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles)
     : '';
+  // Booklist mode: avoid single-book link fixup; pdfName is meaningless for multi-book analysis
+  const effectivePdfName = crossBookMode ? '' : (pdfName || '');
   const userMessage = buildFormatterUserMessage(
     rewrittenQuery,
     analysisResult || '',
-    pdfName || '',
+    effectivePdfName,
     chatHistory,
     tocSummary || undefined,
     structuralAnalysis || undefined,
@@ -408,8 +411,9 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   }
 
   // Append degradation hints for recoverable node errors
+  // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
   const formatted = stripFabricatedLinks(
-    cleanOutput(content, pdfName || ''),
+    cleanOutput(content, effectivePdfName),
     inputTextsForValidation,
   );
   const errorHints = appendErrorHints(state.nodeErrors);

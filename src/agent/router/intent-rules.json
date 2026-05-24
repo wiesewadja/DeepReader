@@ -31,15 +31,6 @@
       "comment": "概念检索，允许换关键词重试"
     },
     {
-      "id": "syntopical",
-      "pattern": "对比|结合|另一本|异同|其他书|不同文献|主题阅读|联系起来|比较",
-      "intent": "主题阅读",
-      "tools": ["search_read_books"],
-      "priority": 1,
-      "maxIterations": 6,
-      "comment": "跨书检索，需要更多空间"
-    },
-    {
       "id": "action_output",
       "pattern": "画一个|画张|做个图|制作.*图表|总结成表格|做.*卡片|闪卡|写.*笔记|思维导图|脑图|可视化|导图|画.*图|生成.*图|整理成.*图|导出.*图|绘制|信息图|infographic|插图|示意",
       "intent": "动作输出",

@@ -303,6 +303,7 @@ ${currentMemory}
         proactiveTrigger: context.proactiveTrigger ?? undefined,
         highlightContext: context.highlightContext ?? [],
         wereadAvailable: !!context.plugin?.settings?.wereadApiKey,
+        crossBookMode: !!context.booklistBookIds?.length,
       },
       callbacks,
       configurable,
@@ -471,6 +472,7 @@ ${currentMemory}
       booklistBookIds: context.booklistBookIds,
       crossBookMode: !!context.booklistBookIds?.length || !!context.crossBookMode,
       bookshelfSummary: context.bookshelfSummary,
+      indexedBooks: context.indexedBooks,
     });
 
     const engineCallbacks: EngineCallbacks = {

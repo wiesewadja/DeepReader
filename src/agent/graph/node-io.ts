@@ -115,6 +115,7 @@ export interface FormatterInput {
   scopeNodeIds: string[];
   toolResultsSnapshot: ToolResultSnapshot[];
   highlightContext: string[];
+  crossBookMode?: boolean;
 }
 
 export interface FormatterOutput {

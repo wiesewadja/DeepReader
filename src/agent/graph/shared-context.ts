@@ -68,6 +68,8 @@ export interface SharedContext {
   crossBookMode?: boolean;
   /** 书架摘要（阅读顾问模式下注入用户全量书架上下文） */
   bookshelfSummary?: string;
+  /** 已索引书籍列表（避免 syntopical search 重复扫描文件系统） */
+  indexedBooks?: { id: string; name: string }[];
 }
 
 /**
@@ -90,6 +92,7 @@ export function createSharedContext(params: {
   booklistBookIds?: string[];
   crossBookMode?: boolean;
   bookshelfSummary?: string;
+  indexedBooks?: { id: string; name: string }[];
 }): SharedContext {
   return {
     chatHistory: params.chatHistory || [],
@@ -109,5 +112,6 @@ export function createSharedContext(params: {
     booklistBookIds: params.booklistBookIds,
     crossBookMode: params.crossBookMode,
     bookshelfSummary: params.bookshelfSummary,
+    indexedBooks: params.indexedBooks,
   };
 }

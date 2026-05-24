@@ -44,6 +44,7 @@ export interface AgentChatControllerHost {
 	setAgentChatHistory(history: ChatMessage[]): void;
 	get crossBookMode(): boolean;
 	get currentBooklistBookIds(): string[] | null;
+	get indexes(): import('../../types/index.js').IndexListItem[];
 	get ttsService(): import('../../services/tts/tts-service.js').TTSService | null;
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
 	get isProcessing(): boolean;
@@ -378,15 +379,19 @@ export class AgentChatController {
 					? this.host.getBookshelfSummary()
 					: undefined,
 			};
+			// Booklist mode: booklistBookIds is the authoritative signal; crossBookMode derives from it
 			if (this.host.currentBooklistBookIds) {
 				context.booklistBookIds = this.host.currentBooklistBookIds;
+				context.crossBookMode = true;
 			}
 
-				if (this.host.crossBookMode) {
-					context.crossBookMode = true;
-				}
-				
-				console.warn(`[AgentChat DIAG] crossBookMode=${this.host.crossBookMode}, booklistBookIds=${JSON.stringify(this.host.currentBooklistBookIds)}, currentIndexId=${this.host.currentIndexId}`);
+			// Pass pre-resolved indexed books to avoid redundant filesystem scans in syntopical search
+			if (this.host.indexes?.length) {
+				context.indexedBooks = this.host.indexes
+					.filter(i => i.status === 'ready')
+					.map(i => ({ id: i.id, name: i.pdf_name }));
+			}
+
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {
@@ -788,7 +793,7 @@ export class AgentChatController {
 
 			const context: ToolContext = {
 				indexId: this.host.currentIndexId || '',
-				pdfName: this.host.currentPdfName || '未知文档',
+				pdfName: this.host.currentPdfName || '',
 				markdownFiles: this.host.currentMarkdownFiles,
 				app: this.host.app,
 				plugin: this.host.plugin,
@@ -799,11 +804,8 @@ export class AgentChatController {
 			};
 			if (this.host.currentBooklistBookIds) {
 				context.booklistBookIds = this.host.currentBooklistBookIds;
+				context.crossBookMode = true;
 			}
-
-				if (this.host.crossBookMode) {
-					context.crossBookMode = true;
-				}
 			const self = this;
 			const callbacks = {
 				onContent: (content: string) => {

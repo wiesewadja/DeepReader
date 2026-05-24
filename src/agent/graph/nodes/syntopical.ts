@@ -2,11 +2,10 @@
  * S3: Syntopical Reading Node — LangGraph node for multi-book analysis
  *
  * Flow:
- * 1. Scan Vault for all indexed books
- * 2. Parallel search across books (vector + proposition)
- * 3. Inject results into LLM context
- * 4. LLM fusion analysis (consensus vocabulary + issues + positions)
- * 5. Output coherent text with cross-book wiki links
+ * 1. Parallel vector + proposition search across books
+ * 2. LLM fusion analysis (consensus vocabulary + issues + positions)
+ * 3. Wiki link self-verification
+ * 4. Optional HITL review
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
@@ -15,9 +14,10 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
-import { syntopicalSearch, formatSyntopicalContext } from '../../utils/syntopical-search.js';
+import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
 import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
 import type { SyntopicalInput } from '../node-io.js';
+import type { SharedContext } from '../shared-context.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import {
@@ -33,61 +33,30 @@ export interface SyntopicalToolResult {
   originalResultLength: number;
 }
 
-/**
- * S3 Syntopical node: multi-book fusion analysis.
- */
-export async function syntopicalNode(
-  state: CognitiveEngineState,
-  config: RunnableConfig,
-): Promise<Partial<CognitiveEngineState>> {
-  const { rewrittenQuery }: SyntopicalInput = state;
-  const ctx = config.configurable?.sharedContext;
-  const mainModel = config.configurable?.mainModel;
-  const toolContext = config.configurable?.toolContext;
+// ── Helpers ──
 
-  if (!mainModel || !toolContext?.app) {
-    console.warn('[S3 Syntopical] Missing required config, returning empty result.');
-    return {
-      analysisResult: '',
-      toolResultsSnapshot: [],
-    };
-  }
+function extractToolResults(books: SyntopicalBookResult[]): SyntopicalToolResult[] {
+  return books.flatMap(book =>
+    book.results.flatMap(r =>
+      r.matchedBlocks.map(block => ({
+        toolName: 'syntopical_search',
+        args: { bookId: book.bookId, nodeId: r.nodeId },
+        result: block.content,
+        originalResultLength: block.content.length,
+      }))
+    )
+  );
+}
 
-  const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath || '';
-  const query = rewrittenQuery || ctx?.rawUserQuery || '';
-  const settings = toolContext.plugin?.settings;
-  const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
-  const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
-  const rerankerWeight = settings?.rerankerWeight ?? 0.7;
-  const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
-  const reranker = rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined;
-
-  log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
-
-  // 1. Multi-book search
-  const booklistBookIds = ctx?.booklistBookIds;
-  const searchRunnable = RunnableLambda.from(
-    async () => syntopicalSearch({
-      query,
-      vaultPath,
-      embedding,
-      reranker,
-      maxBooks: SYNTOPICAL_MAX_BOOKS,
-      topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
-      bookIds: booklistBookIds,
-    })
-  ).withConfig({ runName: 'syntopical_search' });
-
-  const searchResult = await searchRunnable.invoke({}, { callbacks: config.callbacks });
-
-  // 2. Handle edge cases
+/** Edge-case responses when search results are insufficient */
+function handleInsufficientResults(searchResult: SyntopicalSearchResult): Partial<CognitiveEngineState> | null {
   if (searchResult.books.length === 0) {
     log('[S3 Syntopical] No indexed books found');
     return {
       analysisResult: 'Vault 中没有已索引的书籍。请先在 Library 中添加书籍并完成索引。',
       toolResultsSnapshot: [{
         toolName: 'syntopical_search',
-        args: { query },
+        args: { query: '' },
         result: 'No indexed books found',
         originalResultLength: 0,
       }],
@@ -103,7 +72,54 @@ export async function syntopicalNode(
     };
   }
 
-  // 3. Build context and call LLM
+  return null;
+}
+
+// ── Node ──
+
+export async function syntopicalNode(
+  state: CognitiveEngineState,
+  config: RunnableConfig,
+): Promise<Partial<CognitiveEngineState>> {
+  const { rewrittenQuery }: SyntopicalInput = state;
+  const ctx = config.configurable?.sharedContext as SharedContext | undefined;
+  const mainModel = config.configurable?.mainModel;
+  const toolContext = config.configurable?.toolContext;
+
+  if (!mainModel || !toolContext?.app) {
+    log('[S3 Syntopical] Missing required config, returning empty result.');
+    return { analysisResult: '', toolResultsSnapshot: [] };
+  }
+
+  const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath || '';
+  const query = rewrittenQuery || ctx?.rawUserQuery || '';
+  const settings = toolContext.plugin?.settings;
+  const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
+  const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
+  const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
+  const reranker = rerankerRole ? toRerankerOptions(rerankerRole, settings?.rerankerWeight ?? 0.7) : undefined;
+
+  log(`[S3 Syntopical] Starting multi-book search for: "${query.slice(0, 50)}"`);
+
+  // 1. Multi-book search
+  const searchResult = await RunnableLambda.from(
+    async () => syntopicalSearch({
+      query,
+      vaultPath,
+      embedding,
+      reranker,
+      maxBooks: SYNTOPICAL_MAX_BOOKS,
+      topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
+      bookIds: ctx?.booklistBookIds,
+      knownBooks: ctx?.indexedBooks,
+    })
+  ).withConfig({ runName: 'syntopical_search' }).invoke({}, { callbacks: config.callbacks });
+
+  // 2. Edge cases
+  const fallback = handleInsufficientResults(searchResult);
+  if (fallback) return fallback;
+
+  // 3. LLM synthesis
   const systemPrompt = buildSyntopicalSystemPrompt();
   const userMessage = buildSyntopicalUserMessage(query, searchResult.books);
 
@@ -114,33 +130,19 @@ export async function syntopicalNode(
     new HumanMessage(userMessage),
   ], config);
 
-  let content = typeof response.content === 'string'
-    ? response.content
-    : JSON.stringify(response.content);
+  let content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
 
   // 4. Self-verification (wiki link validation)
-  const toolResults: SyntopicalToolResult[] = searchResult.books.flatMap(book =>
-    book.results.flatMap(r =>
-      r.matchedBlocks.map(block => ({
-        toolName: 'syntopical_search',
-        args: { bookId: book.bookId, nodeId: r.nodeId },
-        result: block.content,
-        originalResultLength: block.content.length,
-      }))
-    )
-  );
+  const toolResults = extractToolResults(searchResult.books);
+  const verification = await verifyAndCleanContent(content, toolResults);
+  content = verification.content;
 
-  const verificationResult = await verifyAndCleanContent(content, toolResults);
-  content = verificationResult.content;
+  log(`[S3 Syntopical] Analysis complete, ${verification.totalRefs} refs, ${verification.ghostRefs} ghost`);
 
-  log(`[S3 Syntopical] Analysis complete, ${verificationResult.totalRefs} refs, ${verificationResult.ghostRefs} ghost`);
-
-  // 5. HITL interrupt (optional)
-  // Keep toolResultsSnapshot limited but include all referenced results
-  const snapshotLimit = SYNTOPICAL_SNAPSHOT_LIMIT;
+  // 5. Build state update (with optional HITL)
   const stateUpdate: Partial<CognitiveEngineState> = {
     analysisResult: content,
-    toolResultsSnapshot: toolResults.slice(0, Math.min(snapshotLimit, toolResults.length)),
+    toolResultsSnapshot: toolResults.slice(0, Math.min(SYNTOPICAL_SNAPSHOT_LIMIT, toolResults.length)),
   };
 
   const enableHumanReview = config.configurable?.enableHumanReview as boolean | undefined;
@@ -152,17 +154,15 @@ export async function syntopicalNode(
     }) as { approved: boolean; feedback: string } | undefined;
 
     if (resumeValue?.approved === false && resumeValue.feedback) {
-      const refinedResponse = await mainModel.invoke([
+      const refined = await mainModel.invoke([
         new SystemMessage(systemPrompt),
         new HumanMessage(userMessage),
         new HumanMessage(`用户反馈：${resumeValue.feedback}\n\n请根据反馈补充或修正分析。`),
       ], config);
 
-      const refinedContent = typeof refinedResponse.content === 'string'
-        ? refinedResponse.content
-        : JSON.stringify(refinedResponse.content);
-
-      stateUpdate.analysisResult = refinedContent;
+      stateUpdate.analysisResult = typeof refined.content === 'string'
+        ? refined.content
+        : JSON.stringify(refined.content);
     }
   }
 
