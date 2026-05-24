@@ -102,6 +102,7 @@ export function buildFormatterUserMessage(
   structuralAnalysis?: string,
   betterQuestion?: string,
   coveredScope?: string,
+  multiBook?: boolean,
 ): string {
   // Use compact summaries instead of full message text to reduce token cost
   const historyText = recentHistory && recentHistory.length > 0
@@ -128,6 +129,14 @@ export function buildFormatterUserMessage(
     ? `\n<wiki_links_in_analysis>\n以下是从 analysis 中提取的 wiki 链接示例：\n${wikiExamples.map(e => `- ${e}`).join('\n')}\n请确保在回复中保留这些链接的完整格式。\n</wiki_links_in_analysis>`
     : '';
 
+  const bookInstruction = multiBook
+    ? `1. analysis 中的 [[...]] wiki 链接必须**原样保留**，每条链接已包含各自的书名前缀（如 [[书名A/章节#^block_id|别名]]、[[书名B/章节#^block_id|别名]]），不可修改或删除书名前缀
+2. 不要添加、修改或统一书名前缀——不同书目的链接有不同的书名，这是正确的
+3. 别名（| 后面的文字）要自然嵌入句子中，替代对应的关键词`
+    : `1. analysis 中的 [[...]] wiki 链接必须**原样保留**，包括书名、文件名、block_id 和别名
+2. 书名是 "${bookName}"，如果链接中缺少书名，请补全为 [[${bookName}/文件名#^block_id|别名]]
+3. 别名（| 后面的文字）要自然嵌入句子中，替代对应的关键词`;
+
   return `<history>
 ${historyText}
 </history>
@@ -143,9 +152,7 @@ ${tocSection}${structureSection}${scopeSection}${wikiExampleSection}
 用奚童的口吻分享你读后的理解。
 
 **重要提醒**：
-1. analysis 中的 [[...]] wiki 链接必须**原样保留**，包括书名、文件名、block_id 和别名
-2. 书名是 "${bookName}"，如果链接中缺少书名，请补全为 [[${bookName}/文件名#^block_id|别名]]
-3. 别名（| 后面的文字）要自然嵌入句子中，替代对应的关键词
+${bookInstruction}
 4. 如果有阅读范围信息，在末尾自然地引导用户继续探索。`;
 }
 

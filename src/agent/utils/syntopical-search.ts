@@ -23,6 +23,8 @@ export interface SyntopicalSearchOptions {
   topKPerBook?: number;
   /** Only search these book IDs; omit to search all indexed books */
   bookIds?: string[];
+  /** Pre-resolved list of indexed books (skips filesystem scan when provided) */
+  knownBooks?: { id: string; name: string }[];
 }
 
 export interface SyntopicalBookResult {
@@ -83,8 +85,8 @@ async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: 
 export async function syntopicalSearch(options: SyntopicalSearchOptions): Promise<SyntopicalSearchResult> {
   const { query, vaultPath, embedding, reranker, maxBooks = 5, topKPerBook = 5 } = options;
 
-  // 1. Scan Vault for indexed books
-  let indexedBooks = await scanIndexedBooks(vaultPath);
+  // 1. Use provided book list or fall back to filesystem scan
+  let indexedBooks = options.knownBooks?.length ? options.knownBooks : await scanIndexedBooks(vaultPath);
 
   // Filter to specific books when booklist is active
   if (options.bookIds?.length) {
