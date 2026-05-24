@@ -6,7 +6,7 @@
 
 import { Notice, TFile } from 'obsidian';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
-import type { IndexListItem } from '../../types/index.js';
+import { stripFileExtension, type IndexListItem, type Booklist } from '../../types/index.js';
 import type { MessageList } from '../../components/message-list/message-list.js';
 import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
 import type { ReadingProgress } from '../../pageindex/reading-progress.js';
@@ -53,6 +53,7 @@ export class BookManager {
 	private _currentDocDescription: string | null = null;
 	private _indexes: IndexListItem[] = [];
 	private _milestoneRecorder: MilestoneRecorder | null = null;
+	private _currentBooklist: Booklist | null = null;
 
 	constructor(host: BookManagerHost) {
 		this.host = host;
@@ -74,6 +75,8 @@ export class BookManager {
 	set indexes(indexes: IndexListItem[]) { this._indexes = indexes; }
 	get milestoneRecorder(): MilestoneRecorder | null { return this._milestoneRecorder; }
 	set milestoneRecorder(recorder: MilestoneRecorder | null) { this._milestoneRecorder = recorder; }
+	get currentBooklist(): Booklist | null { return this._currentBooklist; }
+	get currentBooklistBookIds(): string[] | null { return this._currentBooklist?.bookIds ?? null; }
 
 	// ── Book display name ──
 
@@ -168,7 +171,7 @@ export class BookManager {
 
 			this._indexes = indexes;
 
-			// 追加微信读书已同步书籍
+			// 追加微信读书已同步书籍（跳过已关联本地的）
 			try {
 				const wereadStatePath = `${pageindexDir}/weread/sync-state.json`;
 				const stateRaw = await fs.readFile(wereadStatePath, 'utf-8');
@@ -176,8 +179,21 @@ export class BookManager {
 				const syncedBooks = state.syncedBooks || {};
 				const localIds = new Set(indexes.map((i: any) => i.id));
 
+				// 从 mapping.json 收集已关联本地索引的 WeRead bookId
+				const linkedWereadIds = new Set<string>();
+				try {
+					const mappingRaw = await fs.readFile(`${pageindexDir}/weread/mapping.json`, 'utf-8');
+					const parsed = JSON.parse(mappingRaw);
+					const mapping = parsed.mappings || parsed;
+					for (const [wereadId, info] of Object.entries(mapping) as any[]) {
+						if (info?.deepReaderBookId && localIds.has(info.deepReaderBookId)) {
+							linkedWereadIds.add(wereadId);
+						}
+					}
+				} catch { /* mapping.json 不存在，无关联 */ }
+
 				for (const entry of Object.values(syncedBooks) as any[]) {
-					if (localIds.has(entry.bookId)) continue;
+					if (linkedWereadIds.has(entry.bookId)) continue;
 					indexes.push({
 						id: entry.bookId,
 						pdf_name: entry.title,
@@ -603,13 +619,164 @@ export class BookManager {
 		this._currentPdfName = null;
 		this._currentBookCoverUrl = null;
 		this._currentBookAuthor = null;
+		this._currentBooklist = null;
 		this.host.readingTopbar?.setCurrentBook(null);
 		this.host.readingTopbar?.setBookCover(null);
+		this.host.readingTopbar?.clearBooklistMode();
 	}
 
 	clearTopbarDisplay(): void {
 		this.host.readingTopbar?.setCurrentBook(null);
 		this.host.readingTopbar?.setBookCover(null);
+	}
+
+	// ── Booklist (Thematic Reading) ──
+
+	restoreBooklist(booklist: Booklist): void {
+		log(`[DeepPDF] restoreBooklist: ${booklist.name}`);
+		this._currentBooklist = booklist;
+		this.host.readingTopbar?.setCurrentBooklist(booklist);
+		this.host.messageList?.setCurrentPdfName(booklist.name);
+		this.loadAndApplyBooklistCovers(booklist);
+	}
+
+	/** 异步加载书单封面并更新 topbar */
+	private async loadAndApplyBooklistCovers(booklist: Booklist): Promise<void> {
+		try {
+			const coverUrls: string[] = [];
+			const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+			const adapter = this.host.app.vault.adapter as any;
+
+			for (const bookId of booklist.bookIds.slice(0, 3)) {
+				let found = false;
+				// 从 indexes 获取书名
+				const idx = this._indexes.find(i => i.id === bookId);
+				const pdfName = idx?.pdf_name || '';
+				const names: string[] = [];
+				if (pdfName) {
+					const stripped = stripFileExtension(pdfName);
+					names.push(stripped);
+					// getDisplayName 简化版：取第一个分隔符前的部分
+					for (const sep of ['_', '-']) {
+						if (stripped.includes(sep)) {
+							names.push(stripped.split(sep)[0].trim());
+							break;
+						}
+					}
+				}
+				// 也从 booklist.bookNames 取
+				const bookIdx = booklist.bookIds.indexOf(bookId);
+				if (bookIdx >= 0 && booklist.bookNames?.[bookIdx]) {
+					const bn = booklist.bookNames[bookIdx];
+					if (!names.includes(bn)) names.push(bn);
+				}
+
+				for (const name of names) {
+					for (const ext of extensions) {
+						const coverPath = `DeepReader/covers/${name}.${ext}`;
+						const file = this.host.app.vault.getAbstractFileByPath(coverPath);
+						if (file) {
+							coverUrls.push(this.host.app.vault.getResourcePath(file as any));
+							found = true;
+							break;
+						}
+					}
+					if (found) break;
+				}
+				// Fallback: adapter.exists
+				if (!found) {
+					for (const name of names) {
+						for (const ext of extensions) {
+							const coverPath = `DeepReader/covers/${name}.${ext}`;
+							try {
+								if (await adapter.exists(coverPath)) {
+									coverUrls.push(this.host.app.vault.getResourcePath(coverPath as any));
+									found = true;
+									break;
+								}
+							} catch { continue; }
+						}
+						if (found) break;
+					}
+				}
+				if (!found) coverUrls.push('');
+			}
+
+			if (coverUrls.some(u => u)) {
+				const items = booklist.bookIds.slice(0, 3).map((id, i) => ({
+					id,
+					name: booklist.bookNames?.[i] || id,
+					coverUrl: coverUrls[i] || undefined,
+				}));
+				this.host.readingTopbar?.updateBooklistCovers(items);
+			}
+		} catch (err) {
+			console.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
+		}
+	}
+
+	async selectBooklist(booklist: Booklist): Promise<void> {
+		log(`[DeepPDF] selectBooklist: ${booklist.name}, books=${booklist.bookIds.length}`);
+
+		await this.host.flushProgressSave();
+
+		this._currentIndexId = null;
+		this._currentPdfName = null;
+		this._currentBookCoverUrl = null;
+		this._currentBookAuthor = null;
+		this._currentDocDescription = null;
+		this._currentBooklist = booklist;
+
+		this.host.readingTopbar?.setCurrentBooklist(booklist);
+		this.loadAndApplyBooklistCovers(booklist);
+
+		this.host.plugin.settings.lastSelectedIndexId = undefined;
+		this.host.plugin.settings.lastCrossBookMode = true;
+
+		// 持久化书单到历史（不存 items.coverUrl，恢复时补全）
+		const history = this.host.plugin.settings.booklistHistory || [];
+		const toSave: Booklist = { ...booklist, items: undefined };
+		const idx = history.findIndex((b: Booklist) => b.id === booklist.id);
+		if (idx >= 0) {
+			history[idx] = toSave;
+		} else {
+			history.unshift(toSave);
+		}
+		if (history.length > 20) history.length = 20;
+		this.host.plugin.settings.booklistHistory = history;
+		this.host.plugin.settings.lastActiveBooklistId = booklist.id;
+
+		await this.host.plugin.saveSettings();
+
+		this.host.messageList?.setCurrentPdfName(booklist.name);
+
+		if (!this.host.proactiveEngine) {
+			await this.host.initializeFrontendAgent();
+		}
+
+		this.host.cancelActiveStream();
+		this.host.messageList?.clear();
+
+		await this.host.startNewSession(booklist.id);
+
+		log(`[DeepPDF] selectBooklist 完成: session started for ${booklist.id}`);
+	}
+
+	clearBooklist(): void {
+		if (!this._currentBooklist) return;
+		log(`[DeepPDF] clearBooklist: exiting booklist mode`);
+
+		this.host.cancelActiveStream();
+		this._currentBooklist = null;
+		this._currentDocDescription = null;
+
+		this.host.readingTopbar?.clearBooklistMode();
+		this.host.messageList?.clear();
+
+		this.host.plugin.settings.lastCrossBookMode = false;
+		this.host.plugin.settings.lastSelectedIndexId = undefined;
+		this.host.plugin.settings.lastActiveBooklistId = "";
+		this.host.plugin.saveSettings();
 	}
 
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {

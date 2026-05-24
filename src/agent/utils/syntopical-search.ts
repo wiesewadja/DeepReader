@@ -21,6 +21,8 @@ export interface SyntopicalSearchOptions {
   reranker?: { provider: 'openai'; model: string; apiKey: string; baseUrl: string; weight: number };
   maxBooks?: number;
   topKPerBook?: number;
+  /** Only search these book IDs; omit to search all indexed books */
+  bookIds?: string[];
 }
 
 export interface SyntopicalBookResult {
@@ -66,8 +68,8 @@ async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: 
       const metaContent = await fs.readFile(metaPath, 'utf-8');
       const meta = JSON.parse(metaContent);
 
-      if (meta.status === 'complete' && meta.bookName) {
-        books.push({ id: bookId, name: meta.bookName });
+      if (meta.title) {
+        books.push({ id: bookId, name: meta.title });
       }
     } catch {
       continue;
@@ -82,7 +84,26 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
   const { query, vaultPath, embedding, reranker, maxBooks = 5, topKPerBook = 5 } = options;
 
   // 1. Scan Vault for indexed books
-  const indexedBooks = await scanIndexedBooks(vaultPath);
+  let indexedBooks = await scanIndexedBooks(vaultPath);
+
+  // Filter to specific books when booklist is active
+  if (options.bookIds?.length) {
+    const idSet = new Set(options.bookIds);
+    // Resolve WeRead bookIds to local index IDs via mapping.json
+    const unresolved = options.bookIds.filter(id => !indexedBooks.some(b => b.id === id));
+    if (unresolved.length > 0) {
+      try {
+        const mappingRaw = await fs.readFile(path.join(vaultPath, '.pageindex', 'weread', 'mapping.json'), 'utf-8');
+        const parsed = JSON.parse(mappingRaw);
+        const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
+        for (const wereadId of unresolved) {
+          const info = mapping[wereadId];
+          if (info?.deepReaderBookId) idSet.add(info.deepReaderBookId);
+        }
+      } catch { /* mapping.json not found */ }
+    }
+    indexedBooks = indexedBooks.filter(b => idSet.has(b.id));
+  }
 
   if (indexedBooks.length === 0) {
     return {

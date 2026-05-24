@@ -5,7 +5,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
 import { sanitizeFileName } from '../weread/utils/file';
-import { IndexListItem } from '../types/index.js';
+import { IndexListItem, Booklist, stripFileExtension } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
 import { error as logError, serviceLog } from '../utils/logger.js';
@@ -46,7 +46,8 @@ const Icons = {
     checkCircle: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" fill="#10b981" stroke="#10b981"/><polyline points="16 9 10.5 14.5 8 12" stroke="white" stroke-width="2.5"/></svg>`,
     book: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
     loading: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
-    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`
+    empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
+    booksStacked: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M2 7v14.5A2.5 2.5 0 0 0 4.5 22H8" opacity="0.5"/></svg>`
 };
 
 export interface LibraryViewOptions {
@@ -57,6 +58,7 @@ export interface LibraryViewOptions {
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
     onRefresh?: () => Promise<IndexListItem[]>;
     onDownloadCover?: (indexId: string, pdfName: string) => Promise<string | null>;
+    onStartThematicReading?: (booklist: Booklist, reenter?: boolean) => void;
     plugin: any;
 }
 
@@ -79,6 +81,10 @@ export class LibraryView extends ItemView {
     private wereadStatsCache: Map<string, MappingStats> = new Map();
     private resizeObserver: ResizeObserver | null = null;
     private _searchDebounce: number | null = null;
+    private _multiSelectMode: boolean = false;
+    private _selectedBookIds: Set<string> = new Set();
+    private _confirmBarEl: HTMLElement | null = null;
+    private static readonly MAX_MULTI_SELECT = 5;
 
     constructor(leaf: WorkspaceLeaf, options: LibraryViewOptions) {
         super(leaf);
@@ -178,6 +184,11 @@ export class LibraryView extends ItemView {
         addBtn.title = '添加书籍';
         addBtn.addEventListener('click', () => this.handleAddDocument());
 
+        const thematicBtn = toolbar.createEl('button', { cls: 'deeppdf-lib-add-btn' });
+        thematicBtn.innerHTML = Icons.booksStacked;
+        thematicBtn.title = '主题阅读';
+        thematicBtn.addEventListener('click', () => this.toggleMultiSelectMode());
+
         // 卡片网格
         this.gridEl = container.createDiv({ cls: 'deeppdf-lib-grid' });
         this.renderGrid();
@@ -219,6 +230,16 @@ export class LibraryView extends ItemView {
 
         // 按状态排序
         const sorted = this.sortIndexes(filtered);
+
+        // 渲染历史主题阅读书单卡片（混排在最前面）
+        const history: Booklist[] = this.options.plugin?.settings?.booklistHistory || [];
+        if (history.length > 0 && !this.searchQuery) {
+            history.forEach(booklist => {
+                const card = this.createBooklistCard(booklist);
+                this.gridEl!.appendChild(card);
+            });
+        }
+
         sorted.forEach(index => {
             const card = this.createBookCard(index);
             this.gridEl!.appendChild(card);
@@ -307,8 +328,7 @@ export class LibraryView extends ItemView {
 
         // 书名处理
         let bookName = index.pdf_name;
-        if (bookName.toLowerCase().endsWith('.pdf')) bookName = bookName.slice(0, -4);
-        if (bookName.toLowerCase().endsWith('.epub')) bookName = bookName.slice(0, -5);
+        bookName = stripFileExtension(bookName);
         // Simplified name for cover lookup (matches exportName used during indexing)
         const coverName = this.getDisplayName(bookName);
 
@@ -456,12 +476,123 @@ export class LibraryView extends ItemView {
 
         // 点击选择
         card.addEventListener('click', () => {
-            if (statusClass === 'ready') {
-                this.handleSelect(index);
+            if (this._multiSelectMode) {
+                if (statusClass !== 'ready') return;
+                this.toggleBookSelection(index.id, card);
+            } else {
+                if (statusClass === 'ready') {
+                    this.handleSelect(index);
+                }
             }
         });
 
+        // 多选模式：添加勾选框 + 状态
+        if (this._multiSelectMode && statusClass === 'ready') {
+            card.classList.add('deeppdf-lib-multi-selectable');
+            if (this._selectedBookIds.has(index.id)) {
+                card.classList.add('deeppdf-lib-multi-selected');
+            }
+            if (this._selectedBookIds.size >= LibraryView.MAX_MULTI_SELECT && !this._selectedBookIds.has(index.id)) {
+                card.classList.add('deeppdf-lib-multi-disabled');
+            }
+            const checkbox = card.createDiv({ cls: 'deeppdf-lib-checkbox' });
+            if (this._selectedBookIds.has(index.id)) {
+                checkbox.classList.add('checked');
+                checkbox.innerHTML = Icons.check;
+            }
+        }
+
         return card;
+    }
+
+    private createBooklistCard(booklist: Booklist): HTMLElement {
+        const card = document.createElement('div');
+        card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
+
+        // 封面区域：并排小封面
+        const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover deeppdf-lib-booklist-covers' });
+        const maxShow = Math.min(booklist.bookIds.length, 3);
+        for (let i = 0; i < maxShow; i++) {
+            const cover = coverEl.createDiv({ cls: 'deeppdf-lib-inline-cover' });
+            const bookId = booklist.bookIds[i];
+            const cachedUrl = this.coverCache.get(bookId);
+            if (cachedUrl) {
+                cover.style.backgroundImage = `url(${cachedUrl})`;
+            } else {
+                // 异步加载封面，完成后更新 backgroundImage
+                const idx = this.indexes.find(ix => ix.id === bookId);
+                if (idx) {
+                    const bookName = stripFileExtension(idx.pdf_name);
+                    this.loadCoverForBooklistCard(bookId, bookName, cover);
+                }
+            }
+        }
+
+        // 信息区域
+        const infoEl = card.createDiv({ cls: 'deeppdf-lib-book-info' });
+        infoEl.createDiv({ cls: 'deeppdf-lib-book-title', text: booklist.name });
+
+        const tagRow = infoEl.createDiv({ cls: 'deeppdf-lib-book-tag-row' });
+        tagRow.createDiv({ cls: 'deeppdf-lib-type-tag deeppdf-lib-type-booklist', text: '主题阅读' });
+
+        // 书名列表
+        const namesText = booklist.bookNames.slice(0, 3).join('、');
+        const suffix = booklist.bookNames.length > 3 ? '…' : '';
+        infoEl.createDiv({ cls: 'deeppdf-lib-book-author', text: namesText + suffix });
+
+        // 日期
+        if (booklist.createdAt) {
+            const date = new Date(booklist.createdAt);
+            infoEl.createDiv({ cls: 'deeppdf-lib-book-meta', text: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` });
+        }
+
+        // 删除按钮
+        const coverActions = coverEl.createDiv({ cls: 'deeppdf-lib-cover-actions' });
+        const deleteBtn = coverActions.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
+        deleteBtn.innerHTML = Icons.trash;
+        deleteBtn.title = '移除书单';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.deleteBooklistHistory(booklist.id);
+        });
+
+        // 点击重新进入历史书单
+        card.addEventListener('click', () => {
+            this.options.onStartThematicReading?.(booklist, true);
+        });
+
+        return card;
+    }
+
+    private async loadCoverForBooklistCard(indexId: string, bookName: string, coverEl: HTMLElement): Promise<void> {
+        // 复用 loadCoverAndDisplay 的逻辑，但更新小封面 div 的 backgroundImage
+        if (this.coverCache.has(indexId)) {
+            coverEl.style.backgroundImage = `url(${this.coverCache.get(indexId)})`;
+            return;
+        }
+        // 延迟加载：等书籍卡片的封面加载完 coverCache 后再试
+        const tryLoad = async (attempt: number) => {
+            const cached = this.coverCache.get(indexId);
+            if (cached) {
+                coverEl.style.backgroundImage = `url(${cached})`;
+                return;
+            }
+            if (attempt < 5) {
+                setTimeout(() => tryLoad(attempt + 1), 500 * attempt);
+            }
+        };
+        tryLoad(0);
+    }
+
+    private deleteBooklistHistory(booklistId: string): void {
+        const history = this.options.plugin?.settings?.booklistHistory || [];
+        const booklist = history.find((b: Booklist) => b.id === booklistId);
+        if (!booklist) return;
+        new Notice(`已移除书单「${booklist.name}」`, 2000);
+        const updated = history.filter((b: Booklist) => b.id !== booklistId);
+        this.options.plugin.settings.booklistHistory = updated;
+        this.options.plugin.saveSettings();
+        this.renderGrid();
     }
 
     /**
@@ -569,8 +700,7 @@ export class LibraryView extends ItemView {
             const index = this.indexes.find(idx => idx.id === indexId);
             if (index) {
                 let rawName = index.pdf_name;
-                if (rawName.toLowerCase().endsWith('.pdf')) rawName = rawName.slice(0, -4);
-                if (rawName.toLowerCase().endsWith('.epub')) rawName = rawName.slice(0, -5);
+                rawName = stripFileExtension(rawName);
                 if (rawName && !possibleNames.includes(rawName)) {
                     possibleNames.push(rawName);
                 }
@@ -1027,6 +1157,101 @@ export class LibraryView extends ItemView {
         await this.loadWereadMapping();
         this.renderGrid();
     }
+
+    private toggleMultiSelectMode(): void {
+        if (this._multiSelectMode) {
+            this.exitMultiSelectMode();
+        } else {
+            this._multiSelectMode = true;
+            this._selectedBookIds.clear();
+            this.renderGrid();
+            this.showConfirmBar();
+        }
+    }
+
+    private exitMultiSelectMode(): void {
+        this._multiSelectMode = false;
+        this._selectedBookIds.clear();
+        this.hideConfirmBar();
+        this.renderGrid();
+    }
+
+    private toggleBookSelection(indexId: string, card: HTMLElement): void {
+        if (this._selectedBookIds.has(indexId)) {
+            this._selectedBookIds.delete(indexId);
+        } else {
+            if (this._selectedBookIds.size >= LibraryView.MAX_MULTI_SELECT) return;
+            this._selectedBookIds.add(indexId);
+        }
+        this.renderGrid();
+        this.updateConfirmBar();
+    }
+
+    private showConfirmBar(): void {
+        this.hideConfirmBar();
+        const container = this.containerEl.children[1] as HTMLElement;
+        this._confirmBarEl = container.createDiv({ cls: 'deeppdf-lib-multi-confirm-bar' });
+        this.updateConfirmBar();
+    }
+
+    private updateConfirmBar(): void {
+        if (!this._confirmBarEl) return;
+        const count = this._selectedBookIds.size;
+        this._confirmBarEl.empty();
+
+        this._confirmBarEl.createDiv({ cls: 'deeppdf-lib-multi-count', text: `已选 ${count} 本` });
+
+        if (count >= 2) {
+            const startBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-start-btn' });
+            startBtn.textContent = '开始主题阅读';
+            startBtn.addEventListener('click', () => this.confirmThematicReading());
+        }
+
+        const cancelBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-cancel-btn' });
+        cancelBtn.textContent = '取消';
+        cancelBtn.addEventListener('click', () => this.exitMultiSelectMode());
+    }
+
+    private hideConfirmBar(): void {
+        if (this._confirmBarEl) {
+            this._confirmBarEl.remove();
+            this._confirmBarEl = null;
+        }
+    }
+
+    private confirmThematicReading(): void {
+        if (this._selectedBookIds.size < 2) return;
+        const bookIds = Array.from(this._selectedBookIds);
+        const bookNames = bookIds.map(id => {
+            const idx = this.indexes.find(i => i.id === id);
+            let name = idx?.pdf_name || id;
+            name = stripFileExtension(name);
+            return name;
+        });
+        const displayName = `${bookNames[0]}等${bookNames.length}本书`;
+        const items = bookIds.map(id => {
+            const idx = this.indexes.find(i => i.id === id);
+            let name = idx?.pdf_name || id;
+            name = stripFileExtension(name);
+            return {
+                id,
+                name,
+                author: idx?.author,
+                coverUrl: this.coverCache.get(id) || undefined,
+            };
+        });
+        const booklist: Booklist = {
+            id: `booklist-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: displayName,
+            bookIds,
+            bookNames,
+            createdAt: new Date().toISOString(),
+            items,
+        };
+        this.options.onStartThematicReading?.(booklist);
+        this.exitMultiSelectMode();
+    }
+
 
     private async handleSelect(index: IndexListItem): Promise<void> {
 		const rawStatus = (index.status || 'unknown').toLowerCase();

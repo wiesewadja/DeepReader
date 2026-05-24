@@ -175,3 +175,54 @@
     color: var(--interactive-accent);
     background: var(--background-modifier-hover);
 }
+
+/* ── 书单模式（主题阅读） ── */
+
+.deeppdf-topbar-exit-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* ── 斜角堆叠封面（主题阅读 Topbar） ── */
+
+.deeppdf-book-cover.stacked {
+    position: relative;
+    width: 36px;
+    height: 36px;
+}
+
+.deeppdf-inline-cover {
+    position: absolute;
+    width: 22px;
+    height: 30px;
+    border-radius: 3px;
+    background: var(--background-modifier-hover);
+    background-size: cover;
+    background-position: center;
+    top: 50%;
+    left: 50%;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.5s ease,
+                box-shadow 0.5s ease;
+}
+
+.deeppdf-inline-cover[data-slot="back"] {
+    transform: translate(-50%, -50%) rotate(-8deg) scale(0.88);
+    z-index: 1;
+    opacity: 0.45;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.deeppdf-inline-cover[data-slot="middle"] {
+    transform: translate(-50%, -50%) rotate(3deg) scale(0.94);
+    z-index: 2;
+    opacity: 0.7;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.deeppdf-inline-cover[data-slot="front"] {
+    transform: translate(-50%, -50%) rotate(10deg) scale(1);
+    z-index: 3;
+    opacity: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}

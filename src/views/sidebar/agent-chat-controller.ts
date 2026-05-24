@@ -42,6 +42,7 @@ export interface AgentChatControllerHost {
 	get agentChatHistory(): ChatMessage[];
 	setAgentChatHistory(history: ChatMessage[]): void;
 	get crossBookMode(): boolean;
+	get currentBooklistBookIds(): string[] | null;
 	get ttsService(): import('../../services/tts/tts-service.js').TTSService | null;
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
 	get isProcessing(): boolean;
@@ -377,7 +378,15 @@ export class AgentChatController {
 					};
 				})(),
 			};
+			if (this.host.currentBooklistBookIds) {
+				context.booklistBookIds = this.host.currentBooklistBookIds;
+			}
 
+				if (this.host.crossBookMode) {
+					context.crossBookMode = true;
+				}
+				
+				console.warn(`[AgentChat DIAG] crossBookMode=${this.host.crossBookMode}, booklistBookIds=${JSON.stringify(this.host.currentBooklistBookIds)}, currentIndexId=${this.host.currentIndexId}`);
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {
@@ -788,7 +797,13 @@ export class AgentChatController {
 				docDescription: this.host.currentDocDescription || undefined,
 				mode: 'proactive' as const,
 			};
+			if (this.host.currentBooklistBookIds) {
+				context.booklistBookIds = this.host.currentBooklistBookIds;
+			}
 
+				if (this.host.crossBookMode) {
+					context.crossBookMode = true;
+				}
 			const self = this;
 			const callbacks = {
 				onContent: (content: string) => {

@@ -7,11 +7,13 @@ import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
 import { uiLog as log } from '../../utils/logger.js';
 import { MascotFace, type MascotExpression } from './mascot-face.js';
+import type { Booklist } from '../../types/index.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;
     onOpenSettings?: () => void;
     onCoverClick?: () => void;
+    onExitBooklist?: () => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -20,6 +22,8 @@ export class ReadingTopbar extends Component {
     private bookTitleEl: HTMLElement | null = null;
     private bookAuthorEl: HTMLElement | null = null;
     private mascotFace: MascotFace | null = null;
+    private coverRotateTimer: ReturnType<typeof setInterval> | null = null;
+    private coverFrontIndex = 0;
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -141,6 +145,72 @@ export class ReadingTopbar extends Component {
         }
     }
 
+    /**
+     * 设置书单模式（主题阅读）
+     */
+    public setCurrentBooklist(booklist: Booklist): void {
+        if (!this.bookTitleEl || !this.bookAuthorEl) return;
+
+        this.bookTitleEl.textContent = '主题阅读';
+        this.bookTitleEl.classList.add('has-book');
+
+        const names = booklist.bookNames || [];
+        this.bookAuthorEl.textContent = names.join('、');
+        this.bookAuthorEl.title = names.join('、');
+
+        this.renderStackedCovers(booklist.items);
+
+        this.el?.classList.add('booklist-mode');
+        this.startCoverRotation();
+    }
+
+    private renderStackedCovers(items?: import('../../types/index.js').BooklistItemInfo[]): void {
+        if (!this.bookCoverEl) return;
+        this.bookCoverEl.innerHTML = '';
+        this.bookCoverEl.classList.remove('has-cover');
+        this.bookCoverEl.classList.remove('stacked');
+
+        if (!items || items.length === 0) {
+            this.bookCoverEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>`;
+            return;
+        }
+
+        this.bookCoverEl.classList.add('stacked');
+        const slots = ['back', 'middle', 'front'] as const;
+        const maxShow = Math.min(items.length, 3);
+        for (let i = 0; i < maxShow; i++) {
+            const item = items[i];
+            const cover = document.createElement('div');
+            cover.className = 'deeppdf-inline-cover';
+            cover.dataset.slot = slots[i] || 'back';
+            if (item.coverUrl) {
+                cover.style.backgroundImage = `url(${item.coverUrl})`;
+            }
+            this.bookCoverEl.appendChild(cover);
+        }
+    }
+
+    /** 异步更新书单封面（封面加载完成后调用） */
+    public updateBooklistCovers(items: { id: string; name: string; coverUrl?: string }[]): void {
+        if (!this.bookCoverEl) return;
+        const covers = this.bookCoverEl.querySelectorAll<HTMLElement>('.deeppdf-inline-cover');
+        items.forEach((item, i) => {
+            if (covers[i] && item.coverUrl) {
+                covers[i].style.backgroundImage = `url(${item.coverUrl})`;
+            }
+        });
+    }
+
+    /**
+     * 清除书单模式，恢复默认
+     */
+    public clearBooklistMode(): void {
+        this.stopCoverRotation();
+        this.el?.classList.remove('booklist-mode');
+        this.setCurrentBook(null);
+        this.setBookCover(null);
+    }
+
     public selectIndex(indexId: string): void {
         log(`[ReadingTopbar] selectIndex called: ${indexId}`);
     }
@@ -172,7 +242,32 @@ export class ReadingTopbar extends Component {
         }
     }
 
+    private startCoverRotation(): void {
+        this.stopCoverRotation();
+        const covers = this.bookCoverEl?.querySelectorAll<HTMLElement>('.deeppdf-inline-cover');
+        if (!covers || covers.length <= 1) return;
+
+        const slotOrder = ['back', 'middle', 'front'] as const;
+
+        this.coverRotateTimer = setInterval(() => {
+            covers.forEach(el => {
+                const slot = el.dataset.slot;
+                if (slot === 'front') el.dataset.slot = 'middle';
+                else if (slot === 'middle') el.dataset.slot = 'back';
+                else el.dataset.slot = 'front';
+            });
+        }, 5000);
+    }
+
+    private stopCoverRotation(): void {
+        if (this.coverRotateTimer) {
+            clearInterval(this.coverRotateTimer);
+            this.coverRotateTimer = null;
+        }
+    }
+
     destroy(): void {
+        this.stopCoverRotation();
         this.mascotFace?.destroy();
         this.mascotFace = null;
         this.bookCoverEl = null;

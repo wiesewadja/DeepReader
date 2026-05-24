@@ -62,6 +62,10 @@ export interface SharedContext {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  /** 书单模式下的书籍 ID 列表，传入后 Syntopical 节点只搜索这些书 */
+  booklistBookIds?: string[];
+  /** 跨书籍模式标志（含书单模式和泛跨书模式） */
+  crossBookMode?: boolean;
 }
 
 /**
@@ -81,6 +85,8 @@ export function createSharedContext(params: {
   recentHistorySummaries?: HistorySummary[];
   prevSearchedBlockIds?: string[];
   userProfileSummary?: string;
+  booklistBookIds?: string[];
+  crossBookMode?: boolean;
 }): SharedContext {
   return {
     chatHistory: params.chatHistory || [],
@@ -97,5 +103,7 @@ export function createSharedContext(params: {
     recentHistorySummaries: params.recentHistorySummaries,
     prevSearchedBlockIds: params.prevSearchedBlockIds,
     userProfileSummary: params.userProfileSummary,
+    booklistBookIds: params.booklistBookIds,
+    crossBookMode: params.crossBookMode,
   };
 }
