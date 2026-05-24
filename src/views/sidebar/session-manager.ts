@@ -10,6 +10,7 @@ import { SessionStore } from '../../agent/session/index.js';
 import { MemoryStore } from '../../agent/memory/store.js';
 import { MemoryConsolidator } from '../../agent/memory/consolidator.js';
 import { DEFAULT_CONSOLIDATOR_CONFIG } from '../../agent/memory/types.js';
+import { GENERAL_MODE_INDEX_ID } from '../../agent/config/agent-constants.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
 import type { BooklistItemInfo, Booklist } from '../../types/index.js';
@@ -41,6 +42,7 @@ export class SessionManager {
 	private _sessionId: string | null = null;
 	private _sessionStore: SessionStore | null = null;
 	private _crossBookMode: boolean = false;
+	private _generalChatMode: boolean = false;
 	private _searchFilters: { booklists: string[]; tags: string[] } = { booklists: [], tags: [] };
 
 	constructor(host: SessionManagerHost) {
@@ -56,6 +58,9 @@ export class SessionManager {
 
 	get crossBookMode(): boolean { return this._crossBookMode; }
 	set crossBookMode(v: boolean) { this._crossBookMode = v; }
+
+	get generalChatMode(): boolean { return this._generalChatMode; }
+	set generalChatMode(v: boolean) { this._generalChatMode = v; }
 
 	get searchFilters(): { booklists: string[]; tags: string[] } { return this._searchFilters; }
 	set searchFilters(filters: { booklists: string[]; tags: string[] }) { this._searchFilters = filters; }
@@ -102,7 +107,9 @@ export class SessionManager {
 		if (!this.host.plugin.settings.savedSessions) {
 			this.host.plugin.settings.savedSessions = {};
 		}
-		const sessionKey = this._crossBookMode ? indexId : this.getNormalizedBookName();
+		const sessionKey = this._crossBookMode ? indexId
+			: this._generalChatMode ? GENERAL_MODE_INDEX_ID
+			: this.getNormalizedBookName();
 		this.host.plugin.settings.savedSessions[sessionKey] = this._sessionId;
 		if (indexId !== sessionKey) {
 			this.host.plugin.settings.savedSessions[indexId] = this._sessionId;
@@ -117,9 +124,20 @@ export class SessionManager {
 
 		const welcomeId = `msg-${Date.now()}`;
 
+		let welcomeContent: string;
+		if (this._generalChatMode) {
+			welcomeContent = "你好！我是奚童，你的 AI 伴读。\n\n虽然还没有选中书籍，但我们可以聊聊阅读相关的话题——推荐书单、讨论读书方法、或者整理你的读书笔记。";
+			this.host.messageList.addMessage({
+				id: welcomeId,
+				role: "assistant",
+				content: welcomeContent,
+				timestamp: new Date().toISOString()
+			});
+			return;
+		}
+
 		if (this._crossBookMode) {
 			const items = this.host.currentBooklistItems;
-			let welcomeContent: string;
 
 			if (items && items.length > 0) {
 				const bookLines = items.map(item => {
@@ -176,12 +194,55 @@ export class SessionManager {
 		}
 	}
 
-	handleNewChat(): void {
-		if (!this.host.currentIndexId) {
-			new Notice("请先选择一个索引");
-			return;
+	async switchToGeneralChatMode(options: { clearMessages?: boolean; showWelcome?: boolean } = {}): Promise<void> {
+		if (this._generalChatMode) return;
+
+		this._generalChatMode = true;
+		this.host.messageList?.setCurrentPdfName('');
+
+		if (options.clearMessages !== false) {
+			this.host.cancelActiveStream();
+			this.host.messageList?.clear();
 		}
-		this.startNewSession(this.host.currentIndexId);
+
+		const indexId = GENERAL_MODE_INDEX_ID;
+		this._sessionId = this.generateSessionId();
+		this.host.setAgentChatHistory([]);
+
+		if (this.host.contextManager) {
+			this.host.contextManager.clearAll();
+		}
+
+		await this.initializeSessionStore();
+		await this._sessionStore!.create(this._sessionId, indexId, false);
+
+		if (!this.host.plugin.settings.savedSessions) {
+			this.host.plugin.settings.savedSessions = {};
+		}
+		this.host.plugin.settings.savedSessions[indexId] = this._sessionId;
+		await this.host.plugin.saveSettings();
+
+		if (options.showWelcome) {
+			this.showWelcomeMessage();
+		}
+	}
+
+	async restoreGeneralChatSession(): Promise<void> {
+		const savedSessions = this.host.plugin.settings.savedSessions || {};
+		const sessionId = savedSessions[GENERAL_MODE_INDEX_ID];
+
+		if (sessionId) {
+			this._sessionId = sessionId;
+			this._generalChatMode = true;
+			const restored = await this.restoreFromSessionStore(sessionId);
+			if (restored) return;
+		}
+
+		await this.switchToGeneralChatMode({ clearMessages: true });
+	}
+
+	handleNewChat(): void {
+		this.startNewSession(this.host.currentIndexId || GENERAL_MODE_INDEX_ID);
 	}
 
 	async restoreFromSessionStore(sessionId: string): Promise<boolean> {
@@ -285,7 +346,9 @@ export class SessionManager {
 
 		const effectiveIndexId = this._crossBookMode
 			? '__cross_book__'
-			: this.host.currentIndexId;
+			: this._generalChatMode
+				? GENERAL_MODE_INDEX_ID
+				: this.host.currentIndexId;
 
 		if (!effectiveIndexId) {
 			log('[DeepPDF] saveToCache early return: no effectiveIndexId');

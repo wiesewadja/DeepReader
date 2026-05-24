@@ -302,6 +302,7 @@ ${currentMemory}
         mode: (context.mode || 'normal') as EngineMode,
         proactiveTrigger: context.proactiveTrigger ?? undefined,
         highlightContext: context.highlightContext ?? [],
+        wereadAvailable: !!context.plugin?.settings?.wereadApiKey,
       },
       callbacks,
       configurable,
@@ -469,6 +470,7 @@ ${currentMemory}
       userProfileSummary,
       booklistBookIds: context.booklistBookIds,
       crossBookMode: !!context.booklistBookIds?.length || !!context.crossBookMode,
+      bookshelfSummary: context.bookshelfSummary,
     });
 
     const engineCallbacks: EngineCallbacks = {

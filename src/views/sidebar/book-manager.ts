@@ -52,6 +52,7 @@ export class BookManager {
 	private _currentBookAuthor: string | null = null;
 	private _currentDocDescription: string | null = null;
 	private _indexes: IndexListItem[] = [];
+	private _bookshelfSummary: string | null = null;
 	private _milestoneRecorder: MilestoneRecorder | null = null;
 	private _currentBooklist: Booklist | null = null;
 
@@ -109,6 +110,51 @@ export class BookManager {
 			type: LIBRARY_VIEW_TYPE,
 			state: { indexes: this._indexes, selectedIndexId: this._currentIndexId }
 		});
+	}
+
+	// ── Bookshelf summary ──
+
+	buildBookshelfSummary(): string {
+		if (this._bookshelfSummary) return this._bookshelfSummary;
+
+		const books = this._indexes.filter(i => i.status === 'ready');
+		if (books.length === 0) {
+			this._bookshelfSummary = '（用户书架为空，尚未索引任何书籍）';
+			return this._bookshelfSummary;
+		}
+
+		const localBooks = books.filter(b => b.fileType !== 'weread');
+		const wereadBooks = books.filter(b => b.fileType === 'weread');
+
+		const lines: string[] = [];
+		if (localBooks.length > 0) {
+			lines.push('已索引书籍（有详细笔记）：');
+			for (const book of localBooks.slice(0, 30)) {
+				const author = book.author ? ` - ${book.author}` : '';
+				lines.push(`- 《${book.pdf_name}》${author}`);
+			}
+			if (localBooks.length > 30) {
+				lines.push(`...（还有 ${localBooks.length - 30} 本）`);
+			}
+		}
+
+		if (wereadBooks.length > 0) {
+			lines.push('微信读书已同步书籍：');
+			for (const book of wereadBooks.slice(0, 20)) {
+				const author = book.author ? ` - ${book.author}` : '';
+				lines.push(`- 《${book.pdf_name}》${author}`);
+			}
+			if (wereadBooks.length > 20) {
+				lines.push(`...（还有 ${wereadBooks.length - 20} 本）`);
+			}
+		}
+
+		this._bookshelfSummary = lines.join('\n');
+		return this._bookshelfSummary;
+	}
+
+	invalidateBookshelfSummary(): void {
+		this._bookshelfSummary = null;
 	}
 
 	// ── Index loading ──
@@ -207,6 +253,7 @@ export class BookManager {
 			} catch { /* 微信读书同步状态不存在，跳过 */ }
 
 			log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/ + weread');
+			this.invalidateBookshelfSummary();
 		} catch {
 			this._indexes = [];
 		}

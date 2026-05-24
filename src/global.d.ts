@@ -236,4 +236,14 @@ declare global {
     }
 }
 
+// Image module declarations for esbuild dataurl loader
+declare module '*.jpg' {
+    const value: string;
+    export default value;
+}
+declare module '*.png' {
+    const value: string;
+    export default value;
+}
+
 export {};

@@ -120,3 +120,15 @@ export interface FormatterInput {
 export interface FormatterOutput {
   formattedOutput: string;
 }
+
+// ============ S-Advisor: Reading Advisor ============
+
+export interface AdvisorInput {
+  pdfName: string;
+  rewrittenQuery: string;
+}
+
+export interface AdvisorOutput {
+  analysisResult: string;
+  toolResultsSnapshot: ToolResultSnapshot[];
+}

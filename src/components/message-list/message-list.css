@@ -157,6 +157,92 @@
 	}
 }
 
+/* ==================== 阅读顾问沉浸式欢迎状态 ==================== */
+
+.deeppdf-advisor-welcome {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	animation: deeppdf-fade-in 0.4s ease;
+	border-radius: 12px;
+}
+
+.deeppdf-advisor-bg {
+	position: absolute;
+	inset: 0;
+	background-size: cover;
+	background-position: center 15%;
+	background-repeat: no-repeat;
+	opacity: 0.5;
+	pointer-events: none;
+	transition: opacity 0.3s ease;
+}
+
+.deeppdf-advisor-overlay {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 55%;
+	background: linear-gradient(to bottom, transparent, var(--background-primary));
+	pointer-events: none;
+}
+
+.deeppdf-advisor-content {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-end;
+	height: 100%;
+	padding: var(--size-4-8, 2rem) var(--size-4-4, 1rem) var(--size-4-6, 1.5rem);
+	gap: var(--size-4-2, 0.5rem);
+	text-align: center;
+}
+
+.deeppdf-advisor-title {
+	font-size: var(--font-ui-medium);
+	font-weight: 600;
+	color: var(--text-normal);
+	display: inline-block;
+	min-height: 1.5em;
+}
+
+.deeppdf-advisor-title-cursor::after {
+	content: '';
+	display: inline-block;
+	width: 2px;
+	height: 1em;
+	background: var(--text-normal);
+	margin-left: 2px;
+	vertical-align: text-bottom;
+	animation: deeppdf-cursor-blink 0.8s step-end infinite;
+}
+
+@keyframes deeppdf-cursor-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0; }
+}
+
+.deeppdf-advisor-subtitle {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.deeppdf-advisor-hint {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	margin-bottom: var(--size-4-2, 0.5rem);
+}
+
+.deeppdf-advisor-grid {
+	margin-top: var(--size-4-2, 0.5rem);
+}
+
 /* ==================== 消息项动画 ==================== */
 
 .deeppdf-message {

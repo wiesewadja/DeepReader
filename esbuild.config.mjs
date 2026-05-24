@@ -53,6 +53,7 @@ const context = await esbuild.context({
         "./pageindex/parsers/pdf-to-markdown"],
     format: "cjs",
     target: "es2018",
+    loader: { ".jpg": "dataurl" },
     logLevel: "info",
     sourcemap: prod ? false : "inline",
     treeShaking: true,

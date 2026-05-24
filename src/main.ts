@@ -376,16 +376,16 @@ export default class DeepPDFPlugin extends Plugin {
                     const currentBook = sidebarView.getCurrentBookInfo?.();
 
                     if (!currentBook?.title) {
-                        new Notice("请先选择一本书籍");
-                        return;
+                        // 阅读顾问模式允许无书操作
                     }
 
-                    new Notice(`正在抓取《${currentBook.title}》的系统提示词...`);
+                    const bookTitle = currentBook?.title ?? '';
+                    new Notice(bookTitle ? `正在抓取《${bookTitle}》的系统提示词...` : '正在抓取阅读顾问模式的系统提示词...');
 
                     const agent = await this.getFrontendAgent();
                     const systemPrompt = await agent.getSystemPromptAsync(
-                        { title: currentBook.title, page_count: currentBook.page_count },
-                        currentBook.docDescription ?? undefined
+                        { title: bookTitle || undefined, page_count: currentBook?.page_count },
+                        currentBook?.docDescription ?? undefined
                     );
 
                     // 确保调试目录存在
