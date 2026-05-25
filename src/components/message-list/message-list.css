@@ -166,7 +166,7 @@
 	overflow: hidden;
 	display: flex;
 	flex-direction: column;
-	animation: deeppdf-fade-in 0.4s ease;
+	animation: deeppdf-fade-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 	border-radius: 12px;
 }
 
@@ -176,9 +176,18 @@
 	background-size: cover;
 	background-position: center 15%;
 	background-repeat: no-repeat;
-	opacity: 0.5;
+	opacity: 0.35;
+	filter: saturate(0.8) contrast(1.05);
 	pointer-events: none;
-	transition: opacity 0.3s ease;
+	transition: opacity 0.6s ease;
+}
+
+/* 暗角效果 — 四角压暗，中心保留细节 */
+.deeppdf-advisor-bg::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(ellipse at 50% 40%, transparent 30%, var(--background-primary) 100%);
 }
 
 .deeppdf-advisor-overlay {
@@ -186,8 +195,12 @@
 	bottom: 0;
 	left: 0;
 	right: 0;
-	height: 55%;
-	background: linear-gradient(to bottom, transparent, var(--background-primary));
+	height: 65%;
+	background: linear-gradient(to bottom,
+		transparent 0%,
+		color-mix(in srgb, var(--background-primary) 40%, transparent) 40%,
+		var(--background-primary) 100%
+	);
 	pointer-events: none;
 }
 
@@ -199,17 +212,19 @@
 	align-items: center;
 	justify-content: flex-end;
 	height: 100%;
-	padding: var(--size-4-8, 2rem) var(--size-4-4, 1rem) var(--size-4-6, 1.5rem);
+	padding: var(--size-4-8, 2rem) var(--size-4-6, 1.5rem) var(--size-4-8, 2rem);
 	gap: var(--size-4-2, 0.5rem);
 	text-align: center;
 }
 
 .deeppdf-advisor-title {
-	font-size: var(--font-ui-medium);
+	font-size: clamp(1.15rem, 3.5vw, 1.5rem);
 	font-weight: 600;
+	letter-spacing: 0.02em;
 	color: var(--text-normal);
 	display: inline-block;
 	min-height: 1.5em;
+	line-height: 1.4;
 }
 
 .deeppdf-advisor-title-cursor::after {
@@ -231,12 +246,14 @@
 .deeppdf-advisor-subtitle {
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
+	letter-spacing: 0.01em;
 }
 
 .deeppdf-advisor-hint {
 	font-size: var(--font-ui-smaller);
 	color: var(--text-faint);
-	margin-bottom: var(--size-4-2, 0.5rem);
+	margin-bottom: var(--size-4-3, 0.75rem);
+	letter-spacing: 0.02em;
 }
 
 .deeppdf-advisor-grid {
@@ -354,63 +371,55 @@
 
 /* ==================== 引导按钮网格 ==================== */
 
-/* 引导按钮网格容器 */
 .deeppdf-guidance-grid {
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 8px;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	justify-content: center;
 	width: 100%;
 	max-width: 300px;
 	margin-top: 20px;
 }
 
-/* 引导按钮样式 - 扁平清爽 */
 .deeppdf-guidance-btn {
-	display: flex;
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	padding: 10px 12px;
-	background: transparent;
+	padding: 5px 12px;
+	background: var(--background-modifier-hover);
 	border: none;
-	border-radius: 6px;
+	border-radius: 20px;
 	cursor: pointer;
-	transition: background 0.15s ease;
-	font-size: var(--font-ui-small);
+	transition: background 0.15s ease, color 0.15s ease;
+	font-size: var(--font-ui-smaller);
 	font-weight: 400;
 	color: var(--text-muted);
-	text-align: center;
+	white-space: nowrap;
+	line-height: 1.4;
 }
 
 .deeppdf-guidance-btn:hover {
-	background: var(--background-modifier-hover);
+	background: var(--background-modifier-active-hover);
 	color: var(--text-normal);
 }
 
 .deeppdf-guidance-btn:active {
-	background: var(--background-modifier-active-hover);
+	background: var(--interactive-accent);
+	color: white;
 }
 
 .deeppdf-guidance-label {
-	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-/* "探索这本书"按钮 - 轻微突出 */
+/* 最后一个按钮 — accent 高亮 */
 .deeppdf-guidance-btn:last-child {
 	color: var(--interactive-accent);
 	font-weight: 500;
 }
 
 .deeppdf-guidance-btn:last-child:hover {
-	background: var(--interactive-accent-hover);
+	background: var(--interactive-accent);
 	color: white;
-}
-
-/* 响应式：小屏幕单列 */
-@media (max-width: 400px) {
-	.deeppdf-guidance-grid {
-		grid-template-columns: 1fr;
-		max-width: 180px;
-	}
 }

@@ -444,21 +444,24 @@ export class MessageList extends Component {
 
 		// 如果有当前 PDF 名称，显示引导按钮
 		if (this.currentPdfName && this.callbacks.onGuidanceClick) {
-			// 中心书籍图标
-			const centerIcon = this.quickActionsEl.createEl('div', { cls: 'deeppdf-empty-center-icon' });
-			centerIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>`;
+			const advisorState = this.quickActionsEl.createEl('div', { cls: 'deeppdf-advisor-welcome' });
+			const bg = advisorState.createEl('div', { cls: 'deeppdf-advisor-bg' });
+			bg.style.backgroundImage = `url(${XITONG_IMG})`;
+			advisorState.createEl('div', { cls: 'deeppdf-advisor-overlay' });
+			const content = advisorState.createEl('div', { cls: 'deeppdf-advisor-content' });
+			const titleEl = content.createEl('div', { cls: 'deeppdf-advisor-title' });
+			this.startTypewriter(titleEl, '\u4f60\u597d\uff0c\u6211\u662f\u595a\u7ae5');
+			content.createEl('div', { cls: 'deeppdf-advisor-subtitle', text: `\u4f60\u7684 AI \u4f34\u8bfb \u00b7 ${this.currentPdfName}` });
+			content.createEl('div', { cls: 'deeppdf-advisor-hint', text: '\u5f00\u59cb\u9605\u8bfb\u5427\uff0c\u6709\u4ec0\u4e48\u60f3\u804a\u7684\u968f\u65f6\u95ee\u6211' });
 
-			// 按钮网格容器
-			const gridContainer = this.quickActionsEl.createEl('div', { cls: 'deeppdf-guidance-grid' });
+			const gridContainer = content.createEl('div', { cls: 'deeppdf-guidance-grid' });
 
-			// 创建 6 个引导按钮
 			GUIDANCE_BUTTONS.forEach((button) => {
 				const btn = gridContainer.createEl('button', {
 					cls: 'deeppdf-guidance-btn'
 				});
 				btn.createEl('span', { cls: 'deeppdf-guidance-label', text: button.label });
 
-				// 点击事件
 				btn.addEventListener('click', () => {
 					this.callbacks.onGuidanceClick?.(button.type);
 				});

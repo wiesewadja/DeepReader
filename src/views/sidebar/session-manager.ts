@@ -136,7 +136,7 @@ export class SessionManager {
 			return;
 		}
 
-		if (this._crossBookMode) {
+		if (this._crossBookMode && this.host.currentBooklistItems) {
 			const items = this.host.currentBooklistItems;
 
 			if (items && items.length > 0) {
@@ -496,14 +496,12 @@ export class SessionManager {
 	async restoreCrossBookMode(): Promise<void> {
 		const wasCrossBookMode = this.host.plugin.settings.lastCrossBookMode;
 		log('[DeepPDF] restoreCrossBookMode: lastCrossBookMode =', wasCrossBookMode);
-		log('[DeepPDF] restoreCrossBookMode: lastCrossBookSessionId =', this.host.plugin.settings.lastCrossBookSessionId);
 		if (wasCrossBookMode) {
 			log('[DeepPDF] 恢复跨书籍模式');
 			this._crossBookMode = true;
 			this.host.readingTopbar?.setCrossBookMode(true);
-			await this.loadCrossBookSession();
 
-			// 恢复上次活跃的书单（如果有）
+			// 先恢复书单状态（topbar、currentIndex 等），再恢复会话
 			const lastBooklistId = this.host.plugin.settings.lastActiveBooklistId;
 			if (lastBooklistId) {
 				const history = this.host.plugin.settings.booklistHistory || [];
@@ -513,6 +511,8 @@ export class SessionManager {
 					this.host.restoreBooklist(saved);
 				}
 			}
+
+			await this.loadCrossBookSession();
 		}
 
 		const wasDeepSearchMode = this.host.plugin.settings.lastDeepSearchMode;
@@ -523,7 +523,11 @@ export class SessionManager {
 	}
 
 	async loadCrossBookSession(): Promise<void> {
-		const sessionId = this.host.plugin.settings.lastCrossBookSessionId;
+		// 优先从 savedSessions[booklistId] 查找，回退到 lastCrossBookSessionId
+		const lastBooklistId = this.host.plugin.settings.lastActiveBooklistId;
+		const savedSessions = this.host.plugin.settings.savedSessions || {};
+		const sessionId = (lastBooklistId && savedSessions[lastBooklistId])
+			|| this.host.plugin.settings.lastCrossBookSessionId;
 		log('[DeepPDF] loadCrossBookSession: sessionId =', sessionId);
 
 		if (sessionId) {
@@ -532,6 +536,8 @@ export class SessionManager {
 			const restored = await this.restoreFromSessionStore(sessionId);
 			if (restored) {
 				log('[DeepPDF] loadCrossBookSession: 从 SessionStore 恢复成功');
+				this.host.plugin.settings.lastCrossBookSessionId = this._sessionId;
+				await this.host.plugin.saveSettings();
 				return;
 			}
 		}

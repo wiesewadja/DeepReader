@@ -486,6 +486,7 @@ export class SidebarView extends ItemView {
 
             const restored = await this.sessionMgr.restoreFromSessionStore(savedSessionId);
             if (restored) {
+                this.sessionMgr.sessionId = savedSessionId;
                 return;
             }
         }
@@ -500,11 +501,10 @@ export class SidebarView extends ItemView {
     }
 
     public restoreBooklist(booklist: Booklist): void {
-        // 补全 items：从 indexes 中查找 name/author
-        const items = booklist.bookIds.map(id => {
-            const idx = this.bookMgr.indexes.find(i => i.id === id);
-            let name = idx?.pdf_name || id;
-            name = stripFileExtension(name);
+        // 补全 items：优先用已存的 bookNames，fallback 到 indexes 查找
+        const items = booklist.bookIds.map((id, i) => {
+            const idx = this.bookMgr.indexes.find(ix => ix.id === id);
+            const name = stripFileExtension(idx?.pdf_name || booklist.bookNames?.[i] || id);
             return { id, name, author: idx?.author };
         });
         const restored = { ...booklist, items };
@@ -610,6 +610,10 @@ export class SidebarView extends ItemView {
      */
     public getCurrentIndexId(): string | null {
         return this.bookMgr.currentIndexId;
+    }
+
+    public getCurrentBooklistId(): string | null {
+        return this.bookMgr.currentBooklist?.id ?? null;
     }
 
     /** 索引列表（供 main.ts 等外部调用者使用） */

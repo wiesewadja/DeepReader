@@ -53,6 +53,7 @@ const Icons = {
 export interface LibraryViewOptions {
     indexes: IndexListItem[];
     selectedIndexId: string | null;
+    selectedBooklistId?: string | null;
     onIndexChange?: (indexId: string) => void;
     onCreateIndex?: () => Promise<void>;
     onDeleteIndex?: (indexId: string) => Promise<IndexListItem[] | undefined>;
@@ -66,6 +67,7 @@ export class LibraryView extends ItemView {
     private options: LibraryViewOptions;
     private indexes: IndexListItem[] = [];
     private selectedIndexId: string | null = null;
+    private selectedBooklistId: string | null = null;
     private searchQuery: string = '';
     private gridEl: HTMLElement | null = null;
     private searchInputEl: HTMLInputElement | null = null;
@@ -122,10 +124,11 @@ export class LibraryView extends ItemView {
         this.loadingCovers.clear();
 
         // 从 state 初始化数据（如果有的话）
-        const state = this.getState() as { indexes?: IndexListItem[]; selectedIndexId?: string | null } | null;
+        const state = this.getState() as { indexes?: IndexListItem[]; selectedIndexId?: string | null; selectedBooklistId?: string | null } | null;
         if (state?.indexes) {
             this.indexes = state.indexes;
             this.selectedIndexId = state.selectedIndexId ?? null;
+            this.selectedBooklistId = state.selectedBooklistId ?? null;
         }
 
         await this.loadReadingProgresses();
@@ -142,6 +145,7 @@ export class LibraryView extends ItemView {
         if (state?.indexes) {
             this.indexes = state.indexes as IndexListItem[];
             this.selectedIndexId = (state.selectedIndexId as string) ?? null;
+            this.selectedBooklistId = (state.selectedBooklistId as string) ?? null;
             
             // 如果视图已打开，重新加载进度并渲染
             if (this.gridEl) {
@@ -743,6 +747,11 @@ export class LibraryView extends ItemView {
         const card = document.createElement('div');
         card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
 
+        const isSelected = booklist.id === this.selectedBooklistId;
+        if (isSelected) {
+            card.classList.add('selected');
+        }
+
         // 封面区域：并排小封面
         const coverEl = card.createDiv({ cls: 'deeppdf-lib-book-cover deeppdf-lib-booklist-covers' });
         const maxShow = Math.min(booklist.bookIds.length, 3);
@@ -790,8 +799,17 @@ export class LibraryView extends ItemView {
             this.deleteBooklistHistory(booklist.id);
         });
 
+        // 选中时显示绿色对钩
+        if (isSelected) {
+            const checkMark = coverEl.createDiv({ cls: 'deeppdf-lib-cover-check' });
+            checkMark.innerHTML = Icons.checkCircle;
+        }
+
         // 点击重新进入历史书单
         card.addEventListener('click', () => {
+            this.selectedIndexId = null;
+            this.selectedBooklistId = booklist.id;
+            this.renderGrid();
             this.options.onStartThematicReading?.(booklist, true);
         });
 
@@ -881,6 +899,9 @@ export class LibraryView extends ItemView {
         const updated = history.filter((b: Booklist) => b.id !== booklistId);
         this.options.plugin.settings.booklistHistory = updated;
         this.options.plugin.saveSettings();
+        if (this.selectedBooklistId === booklistId) {
+            this.selectedBooklistId = null;
+        }
         this.renderGrid();
     }
 
@@ -1472,6 +1493,7 @@ export class LibraryView extends ItemView {
 							if (m?.deepReaderBookId) {
 								this.selectedIndexId = m.deepReaderBookId;
 								this.options.onIndexChange?.(m.deepReaderBookId);
+								this.selectedBooklistId = null;
 								return;
 							}
 						}
@@ -1498,6 +1520,8 @@ export class LibraryView extends ItemView {
 		}
 
 		this.selectedIndexId = index.id;
+		this.selectedBooklistId = null;
+		this.renderGrid();
 		this.options.onIndexChange?.(index.id);
 	}
 
@@ -2049,7 +2073,10 @@ export class LibraryView extends ItemView {
 
     public updateIndexes(indexes: IndexListItem[], selectedId?: string): void {
         this.indexes = [...indexes];
-        if (selectedId !== undefined) this.selectedIndexId = selectedId;
+        if (selectedId !== undefined) {
+            this.selectedIndexId = selectedId;
+            this.selectedBooklistId = null;
+        }
         this.renderGrid();
     }
 }
