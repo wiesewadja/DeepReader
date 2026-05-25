@@ -320,9 +320,6 @@ export class AIMessage extends Message {
 		// Agent 消息标识
 		const headerRow = bubble.createEl('div', { cls: 'deeppdf-message-header-row' });
 		if (this.data.isAgentMessage) {
-			const badge = headerRow.createEl('div', { cls: 'deeppdf-message-agent-badge' });
-			badge.textContent = "奚童";
-
 			if (this.data.isProactiveGuidance) {
 				const tag = headerRow.createEl("span", { cls: "deeppdf-message-proactive-tag" });
 				tag.textContent = "阅读引导";
