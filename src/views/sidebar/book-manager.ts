@@ -258,7 +258,7 @@ export class BookManager {
 			this._indexes = [];
 		}
 
-		if (this.host.plugin.settings.lastSelectedIndexId) {
+		if (this.host.plugin.settings.lastSelectedIndexId && !this.host.plugin.settings.lastCrossBookMode) {
 			const exists = this._indexes.some(idx => idx.id === this.host.plugin.settings.lastSelectedIndexId);
 			if (exists) {
 				log('[DeepPDF] [loadIndexes] 恢复上次选中的书籍:', this.host.plugin.settings.lastSelectedIndexId);
@@ -298,6 +298,8 @@ export class BookManager {
 		if (this._currentBooklist) {
 			this._currentBooklist = null;
 			this.host.readingTopbar?.clearBooklistMode();
+			this.host.plugin.settings.lastCrossBookMode = false;
+			this.host.plugin.settings.lastActiveBooklistId = undefined;
 		}
 
 		this._currentIndexId = indexId;
@@ -838,6 +840,7 @@ export class BookManager {
 		this.host.plugin.settings.lastSelectedIndexId = undefined;
 		this.host.plugin.settings.lastActiveBooklistId = "";
 		this.host.plugin.saveSettings();
+		this.host.sessionId = null;
 	}
 
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
