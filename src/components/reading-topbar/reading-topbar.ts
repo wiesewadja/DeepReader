@@ -237,7 +237,10 @@ export class ReadingTopbar extends Component {
     }
 
     public reattachMascot(el: HTMLElement): void {
-        if (!el.parentNode && this.el) {
+        if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+        if (this.el) {
             this.el.insertBefore(el, this.el.firstChild);
         }
     }
