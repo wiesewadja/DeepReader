@@ -16,6 +16,7 @@ import type { MilestoneRecorder } from '../../agent/memory/milestones.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath } from '../../utils/mobile-fs.js';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
@@ -164,24 +165,25 @@ export class BookManager {
 		const app = this.host.app;
 
 		try {
-			if (!(await vaultExists(app, '.pageindex'))) {
+			console.log('[loadIndexes] Scanning PAGEINDEX_DIR:', PAGEINDEX_DIR);
+			if (!(await vaultExists(app, PAGEINDEX_DIR))) {
 				this._indexes = [];
 				return;
 			}
-			const { folders } = await vaultList(app, '.pageindex');
+			const { folders } = await vaultList(app, PAGEINDEX_DIR);
 			const indexes: any[] = [];
 
 			for (const folder of folders) {
 				const bookId = folder.split('/').pop() || folder;
 
 				try {
-					const statusContent = await vaultRead(app, `.pageindex/${bookId}/.indexing.json`);
+					const statusContent = await vaultRead(app, `${PAGEINDEX_DIR}/${bookId}/.indexing.json`);
 					const status = JSON.parse(statusContent);
 					const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
 					const isFailed = status.step === 'failed';
 
 					if (isComplete) {
-						vaultRemove(app, `.pageindex/${bookId}/.indexing.json`).catch(() => {});
+						vaultRemove(app, `${PAGEINDEX_DIR}/${bookId}/.indexing.json`).catch(() => {});
 					} else {
 						indexes.push({
 							id: status.bookId || bookId,
@@ -200,7 +202,7 @@ export class BookManager {
 				}
 
 				try {
-					const content = await vaultRead(app, `.pageindex/${bookId}/book-meta.json`);
+					const content = await vaultRead(app, `${PAGEINDEX_DIR}/${bookId}/book-meta.json`);
 					const meta = JSON.parse(content);
 					indexes.push({
 						id: meta.bookId || bookId,
@@ -221,7 +223,7 @@ export class BookManager {
 
 			// 追加微信读书已同步书籍（跳过已关联本地的）
 			try {
-				const stateRaw = await vaultRead(app, '.pageindex/weread/sync-state.json');
+				const stateRaw = await vaultRead(app, `${PAGEINDEX_DIR}/weread/sync-state.json`);
 				const state = JSON.parse(stateRaw);
 				const syncedBooks = state.syncedBooks || {};
 				const localIds = new Set(indexes.map((i: any) => i.id));
@@ -229,7 +231,7 @@ export class BookManager {
 				// 从 mapping.json 收集已关联本地索引的 WeRead bookId
 				const linkedWereadIds = new Set<string>();
 				try {
-					const mappingRaw = await vaultRead(app, '.pageindex/weread/mapping.json');
+					const mappingRaw = await vaultRead(app, `${PAGEINDEX_DIR}/weread/mapping.json`);
 					const parsed = JSON.parse(mappingRaw);
 					const mapping = parsed.mappings || parsed;
 					for (const [wereadId, info] of Object.entries(mapping) as any[]) {
@@ -253,7 +255,7 @@ export class BookManager {
 				}
 			} catch { /* 微信读书同步状态不存在，跳过 */ }
 
-			log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from .pageindex/ + weread');
+			log('[DeepPDF] [loadIndexes] Loaded', indexes.length, 'indexes from pageindex/ + weread');
 			this.invalidateBookshelfSummary();
 		} catch {
 			this._indexes = [];
@@ -328,7 +330,7 @@ export class BookManager {
 			let exportName: string | undefined;
 			let metaAuthor: string | undefined;
 			try {
-				const metaRaw = await vaultRead(this.host.app, `.pageindex/${indexId}/book-meta.json`);
+				const metaRaw = await vaultRead(this.host.app, `${PAGEINDEX_DIR}/${indexId}/book-meta.json`);
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -352,7 +354,7 @@ export class BookManager {
 			let exportName: string | undefined;
 			let metaAuthor: string | undefined;
 			try {
-				const metaRaw = await vaultRead(this.host.app, `.pageindex/${indexId}/book-meta.json`);
+				const metaRaw = await vaultRead(this.host.app, `${PAGEINDEX_DIR}/${indexId}/book-meta.json`);
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -517,7 +519,7 @@ export class BookManager {
 		try {
 			const app = this.host.app;
 
-			const indexDir = `.pageindex/${indexId}`;
+			const indexDir = `${PAGEINDEX_DIR}/${indexId}`;
 			let exportName: string | null = null;
 			try {
 				const metaRaw = await vaultRead(app, `${indexDir}/book-meta.json`);
@@ -830,6 +832,31 @@ export class BookManager {
 		this.host.plugin.settings.lastActiveBooklistId = "";
 		this.host.plugin.saveSettings();
 		this.host.sessionId = null;
+	}
+
+	/** 重命名当前书单 */
+	renameBooklist(newName: string): void {
+		if (!this._currentBooklist || !newName) return;
+
+		this._currentBooklist.name = newName;
+		this.host.messageList?.setCurrentPdfName(newName);
+
+		// 持久化到 booklistHistory
+		const history = this.host.plugin.settings.booklistHistory || [];
+		const idx = history.findIndex((b: Booklist) => b.id === this._currentBooklist!.id);
+		if (idx >= 0) {
+			history[idx].name = newName;
+			this.host.plugin.saveSettings();
+		}
+
+		// 同步更新书库视图中的卡片标题
+		const leaves = this.host.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
+		for (const leaf of leaves) {
+			const view = leaf.view as any;
+			view.updateBooklistName?.(this._currentBooklist!.id, newName);
+		}
+
+		log(`[DeepPDF] renameBooklist: ${newName}`);
 	}
 
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {

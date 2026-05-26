@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { getPageindexRoot } from '../pageindex/paths.js';
 
 
 vi.mock("../pageindex/pageindex.js", () => ({
@@ -123,7 +124,7 @@ vi.mock("../pageindex/vault/vectors.js", () => ({
 describe("E2E: Book Lifecycle", () => {
   const testDir = "/tmp/deepreader-e2e-test";
   const testVault = path.join(testDir, "vault");
-  const testIndexDir = path.join(testVault, ".pageindex");
+  const testIndexDir = getPageindexRoot(testVault);
 
   beforeEach(async () => {
     await fs.mkdir(testVault, { recursive: true });

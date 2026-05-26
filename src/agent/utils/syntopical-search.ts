@@ -1,3 +1,4 @@
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 /**
  * Syntopical Search - Multi-book retrieval for S3 Syntopical Reading
  *
@@ -60,15 +61,14 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
 
   if (app) {
     // Mobile: vault-relative paths
-    const pageindexRel = '.pageindex';
-    if (!(await vaultExists(app, pageindexRel))) {
-      log('[syntopical-search] No .pageindex directory found');
+    if (!(await vaultExists(app, PAGEINDEX_DIR))) {
+      log('[syntopical-search] No pageindex directory found');
       return [];
     }
-    const { folders } = await vaultList(app, pageindexRel);
+    const { folders } = await vaultList(app, PAGEINDEX_DIR);
     for (const folder of folders) {
       const bookId = folder.split('/').pop() || folder;
-      const metaRel = joinPath(pageindexRel, bookId, 'book-meta.json');
+      const metaRel = joinPath(PAGEINDEX_DIR, bookId, 'book-meta.json');
       try {
         const metaContent = await vaultRead(app, metaRel);
         const meta = JSON.parse(metaContent);
@@ -77,11 +77,11 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
     }
   } else {
     // Desktop: absolute paths
-    const pageindexDir = path.join(vaultPath, '.pageindex');
+    const pageindexDir = path.join(vaultPath, PAGEINDEX_DIR);
     try {
       await fs.access(pageindexDir);
     } catch {
-      log('[syntopical-search] No .pageindex directory found');
+      log('[syntopical-search] No pageindex directory found');
       return [];
     }
     const dirs = await fs.readdir(pageindexDir);
@@ -113,10 +113,10 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
     const unresolved = options.bookIds.filter(id => !indexedBooks.some(b => b.id === id));
     if (unresolved.length > 0) {
       try {
-        const mappingRel = joinPath('.pageindex', 'weread', 'mapping.json');
+        const mappingRel = joinPath(PAGEINDEX_DIR, 'weread', 'mapping.json');
         const mappingRaw = app
           ? await vaultRead(app, mappingRel)
-          : await fs.readFile(path.join(vaultPath, '.pageindex', 'weread', 'mapping.json'), 'utf-8');
+          : await fs.readFile(path.join(vaultPath, PAGEINDEX_DIR, 'weread', 'mapping.json'), 'utf-8');
         const parsed = JSON.parse(mappingRaw);
         const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
         for (const wereadId of unresolved) {

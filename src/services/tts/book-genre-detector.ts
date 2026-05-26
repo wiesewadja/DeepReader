@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { App } from 'obsidian';
 import { vaultRead, vaultWrite, vaultMkdir, vaultExists, joinPath } from '../../utils/mobile-fs.js';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 export interface BookGenre {
   /** 主类型 */
@@ -48,7 +49,7 @@ export class BookGenreDetector {
     llmClient: LLMClient;
     app?: App;
   }) {
-    this.cacheDir = options.app ? '.pageindex' : path.join(options.vaultPath!, '.pageindex');
+    this.cacheDir = options.app ? PAGEINDEX_DIR : path.join(options.vaultPath!, PAGEINDEX_DIR);
     this.llmClient = options.llmClient;
     this.app = options.app;
   }

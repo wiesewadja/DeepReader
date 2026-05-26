@@ -1454,22 +1454,59 @@
 	}
 }
 /* ==================== Wiki 链接悬浮预览 ==================== */
-/* 复用 Obsidian .popover 主题样式，仅追加自定义增强 */
+/* 对齐 Obsidian 原生 popover 风格，紧凑布局 + 淡入淡出动画 */
 
 .deeppdf-link-preview {
-	width: 400px;
+	width: min(400px, 90vw);
 	max-height: 360px;
 	position: fixed;
 	z-index: 1000;
 	overflow: hidden;
 	display: flex;
 	flex-direction: column;
-	padding: 8px 12px;
+	padding: 0;
+	font-size: 14px;
+	line-height: 1.7;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 6px);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	opacity: 0;
+	transform: translateY(4px);
+	transition: opacity 150ms ease-out, transform 150ms ease-out;
+	pointer-events: none;
+}
+
+.deeppdf-link-preview--visible {
+	opacity: 1;
+	transform: translateY(0);
+	pointer-events: auto;
+}
+
+.deeppdf-link-preview-header {
+	padding: 14px 18px 10px;
+	font-size: 12px;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.deeppdf-link-preview-book {
+	font-weight: 600;
+	color: var(--text-normal);
+}
+
+.deeppdf-link-preview-sep {
+	color: var(--text-faint);
+}
+
+.deeppdf-link-preview-chapter-inline {
+	color: var(--text-muted);
 }
 
 .deeppdf-link-preview-content {
 	overflow-y: auto;
 	flex: 1;
+	padding: 16px 20px;
 }
 
 .deeppdf-link-preview-content .markdown-preview-sizer {
@@ -1477,26 +1514,64 @@
 }
 
 .deeppdf-link-preview-content p {
-	margin: 0.5em 0;
-	line-height: 1.7;
+	margin: 1em 0;
+	font-size: 14px;
+	line-height: 1.8;
+	color: var(--text-muted);
+}
+
+.deeppdf-link-preview-content p:first-child {
+	margin-top: 0;
+}
+
+.deeppdf-link-preview-content p:last-child {
+	margin-bottom: 0;
 }
 
 .deeppdf-link-preview-content h1,
 .deeppdf-link-preview-content h2,
 .deeppdf-link-preview-content h3 {
-	margin: 0.6em 0 0.3em;
+	margin: 1em 0 0.4em;
+	font-size: 15px;
+	line-height: 1.4;
+	color: var(--text-normal);
 }
 
-/* 右下角章节标签 */
-.deeppdf-link-preview-chapter {
-	font-size: 11px;
-	color: var(--text-faint);
-	font-style: italic;
+.deeppdf-link-preview-content ul,
+.deeppdf-link-preview-content ol {
+	margin: 0.4em 0;
+	padding-left: 1.4em;
+}
+
+.deeppdf-link-preview-content blockquote {
+	margin: 0.5em 0;
+	padding: 0.3em 0.8em;
+	border-left: 3px solid var(--background-modifier-border);
+}
+
+.deeppdf-link-preview-content code {
+	font-size: 0.9em;
+}
+
+.deeppdf-link-preview-content pre {
+	margin: 0.5em 0;
+	padding: 0.6em 0.8em;
+	border-radius: 4px;
+	font-size: 12px;
+}
+
+.deeppdf-link-preview-footer {
+	padding: 10px 18px;
+	font-size: 12px;
+	color: var(--text-accent);
 	text-align: right;
-	padding: 6px 0 0;
-	margin-top: 6px;
 	border-top: 1px solid var(--background-modifier-border);
+	cursor: pointer;
 	flex-shrink: 0;
+}
+
+.deeppdf-link-preview-footer:hover {
+	color: var(--text-accent-hover);
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -9,6 +9,7 @@ import type { App } from 'obsidian';
 import type { LocalToolCache } from './types.js';
 import type { ToolContext } from '../types.js';
 import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /**
  * Token 上限常量
@@ -59,8 +60,8 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
 
     console.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);
 
-    // Load tree.json from .pageindex（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
-    const treePath = `.pageindex/${bookId}/tree.json`;
+    // Load tree.json from pageindex（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
+    const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await (app.vault as any).adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
@@ -92,7 +93,7 @@ function buildNodeTitleMap(nodes: any[], map: Map<string, string>): void {
  * 估算 Token 数量
  */
 export function estimateTokens(text: string): number {
-  const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const chineseChars = (text.match(/[一-龥]/g) || []).length;
   const englishWords = (text.match(/[a-zA-Z]+/g) || []).length;
   return Math.ceil(chineseChars / 2) + englishWords;
 }

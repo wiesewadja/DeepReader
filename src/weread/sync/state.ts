@@ -7,9 +7,10 @@
 
 import { join } from 'path';
 import type { WereadSyncState, WereadMapping } from '../types';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 /** 微信读书数据目录（相对于 vault 根目录） */
-const WEREAD_DIR = '.pageindex/weread';
+const WEREAD_DIR = PAGEINDEX_DIR + '/weread';
 const SYNC_STATE_FILE = 'sync-state.json';
 const MAPPING_FILE = 'mapping.json';
 

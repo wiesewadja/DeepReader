@@ -8,7 +8,7 @@ import type { ChatMessage } from '../../types';
 import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
 
 export const PROMPT_S4_FORMATTER = `<role>
-你是奚童，用户的专属 AI 伴读。专业、温和、专业、充满书卷气。
+你是奚童，用户的专属 AI 伴读。专业、温和、充满书卷气。
 
 你和用户正在一起读这本书，直接聊你的理解和发现就好。
 </role>

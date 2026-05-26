@@ -25,6 +25,7 @@ import type { MappingStats } from '../weread/types.js';
 import { downloadWereadCover } from '../weread/utils/cover.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { getBookFile, PAGEINDEX_DIR } from '../pageindex/paths.js';
 
 export const LIBRARY_VIEW_TYPE = 'deeppdf-library-view';
 
@@ -746,6 +747,7 @@ export class LibraryView extends ItemView {
     private createBooklistCard(booklist: Booklist): HTMLElement {
         const card = document.createElement('div');
         card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
+        card.dataset.booklistId = booklist.id;
 
         const isSelected = booklist.id === this.selectedBooklistId;
         if (isSelected) {
@@ -823,7 +825,7 @@ export class LibraryView extends ItemView {
         // 1. 从 book-meta.json 读取 exportName
         try {
             const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
-            const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+            const metaRaw = await fs.readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
             const meta = JSON.parse(metaRaw);
             if (meta.exportName) possibleNames.push(meta.exportName);
         } catch { /* ignore */ }
@@ -905,6 +907,14 @@ export class LibraryView extends ItemView {
         this.renderGrid();
     }
 
+    /** 更新书库视图中指定书单卡片的标题 */
+    updateBooklistName(booklistId: string, newName: string): void {
+        const card = this.gridEl?.querySelector(`[data-booklist-id="${booklistId}"]`);
+        if (!card) return;
+        const titleEl = card.querySelector('.deeppdf-lib-book-title');
+        if (titleEl) titleEl.textContent = newName;
+    }
+
     /**
      * 异步加载封面并更新显示
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
@@ -917,7 +927,7 @@ export class LibraryView extends ItemView {
         try {
             const adapter = (this.app as any).vault?.adapter;
             if (!adapter) return;
-            const mappingPath = '.pageindex/weread/mapping.json';
+            const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
             if (!(await adapter.exists(mappingPath))) return;
             const raw = await adapter.read(mappingPath);
             const mapping = JSON.parse(raw);
@@ -1255,7 +1265,7 @@ export class LibraryView extends ItemView {
         // 写 mapping 关联
         this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
         try {
-            const mappingPath = '.pageindex/weread/mapping.json';
+            const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
             let mapping = { mappings: {} as Record<string, any> };
             if (await adapter.exists(mappingPath)) {
                 const raw = await adapter.read(mappingPath);
@@ -1348,7 +1358,7 @@ export class LibraryView extends ItemView {
         // ── Phase 3: 关联 ──────────────────────────────
         this.updateCardProgress(wereadIndex.id, 100, 'processing', '关联中...');
         try {
-            const mappingPath = '.pageindex/weread/mapping.json';
+            const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
             let mapping = { mappings: {} as Record<string, any> };
             if (await adapter.exists(mappingPath)) {
                 const raw = await adapter.read(mappingPath);
@@ -1485,7 +1495,7 @@ export class LibraryView extends ItemView {
 				const adapter = (this.app as any).vault?.adapter;
 				if (adapter) {
 					try {
-						const mappingPath = '.pageindex/weread/mapping.json';
+						const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
 						if (await adapter.exists(mappingPath)) {
 							const raw = await adapter.read(mappingPath);
 							const mapping = JSON.parse(raw);

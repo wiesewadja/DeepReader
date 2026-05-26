@@ -78,6 +78,15 @@ export default class DeepPDFPlugin extends Plugin {
         // 迁移旧路径哈希 bookId → 内容哈希 bookId（一次性，幂等）
         const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
         if (vaultPath) {
+            // 先迁移 .pageindex/ → .obsidian/plugins/deepreader/pageindex/
+            try {
+                const { migratePageindexPath } = await import('./pageindex/migration.js');
+                const migrated = await migratePageindexPath(vaultPath);
+                if (migrated) log('[DeepReader] Migrated .pageindex to plugin directory');
+            } catch (e) {
+                log.error('[DeepReader] Path migration failed:', e);
+            }
+
             try {
                 const count = await migrateBookIndexes(vaultPath);
                 if (count > 0) log(`[DeepReader] Migrated ${count} book index(es) to content-based IDs`);

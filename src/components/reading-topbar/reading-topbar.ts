@@ -14,6 +14,7 @@ export interface ReadingTopbarOptions {
     onOpenSettings?: () => void;
     onCoverClick?: () => void;
     onExitBooklist?: () => void;
+    onBooklistRename?: (newName: string) => void;
 }
 
 export class ReadingTopbar extends Component {
@@ -24,6 +25,8 @@ export class ReadingTopbar extends Component {
     private mascotFace: MascotFace | null = null;
     private coverRotateTimer: ReturnType<typeof setInterval> | null = null;
     private coverFrontIndex = 0;
+    private isEditingTitle = false;
+    private titleBeforeEdit = '';
 
     constructor(options: ReadingTopbarOptions) {
         super();
@@ -151,7 +154,7 @@ export class ReadingTopbar extends Component {
     public setCurrentBooklist(booklist: Booklist): void {
         if (!this.bookTitleEl || !this.bookAuthorEl) return;
 
-        this.bookTitleEl.textContent = '主题阅读';
+        this.bookTitleEl.textContent = booklist.name || '主题阅读';
         this.bookTitleEl.classList.add('has-book');
 
         const names = booklist.bookNames || [];
@@ -162,6 +165,8 @@ export class ReadingTopbar extends Component {
 
         this.el?.classList.add('booklist-mode');
         this.startCoverRotation();
+
+        this.setupTitleEditing();
     }
 
     private renderStackedCovers(items?: import('../../types/index.js').BooklistItemInfo[]): void {
@@ -207,9 +212,76 @@ export class ReadingTopbar extends Component {
     public clearBooklistMode(): void {
         this.stopCoverRotation();
         this.el?.classList.remove('booklist-mode');
+        this.bookTitleEl?.classList.remove('editable');
         this.setCurrentBook(null);
         this.setBookCover(null);
     }
+
+    /**
+     * 书单模式下启用标题双击编辑
+     */
+    private setupTitleEditing(): void {
+        if (!this.bookTitleEl) return;
+
+        this.bookTitleEl.classList.add('editable');
+
+        // 移除旧监听（防止重复绑定）
+        this.bookTitleEl.removeEventListener('dblclick', this._onTitleDblClick);
+        this.bookTitleEl.removeEventListener('keydown', this._onTitleKeyDown);
+        this.bookTitleEl.removeEventListener('blur', this._onTitleBlur);
+
+        this.bookTitleEl.addEventListener('dblclick', this._onTitleDblClick);
+        this.bookTitleEl.addEventListener('keydown', this._onTitleKeyDown);
+        this.bookTitleEl.addEventListener('blur', this._onTitleBlur);
+    }
+
+    private _onTitleDblClick = (e: MouseEvent): void => {
+        const el = this.bookTitleEl;
+        if (!el) return;
+        e.preventDefault();
+
+        this.isEditingTitle = true;
+        this.titleBeforeEdit = el.textContent || '';
+        el.contentEditable = 'true';
+        el.classList.add('editing');
+        el.focus();
+
+        // 选中全部文字
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+    };
+
+    private _onTitleKeyDown = (e: KeyboardEvent): void => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            this.bookTitleEl?.blur();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            if (this.bookTitleEl) {
+                this.bookTitleEl.textContent = this.titleBeforeEdit;
+                this.bookTitleEl.blur();
+            }
+        }
+    };
+
+    private _onTitleBlur = (): void => {
+        const el = this.bookTitleEl;
+        if (!el || !this.isEditingTitle) return;
+
+        el.contentEditable = 'false';
+        el.classList.remove('editing');
+        this.isEditingTitle = false;
+
+        const newName = (el.textContent || '').trim();
+        if (newName && newName !== this.titleBeforeEdit) {
+            this.options.onBooklistRename?.(newName);
+        } else if (!newName) {
+            el.textContent = this.titleBeforeEdit;
+        }
+    };
 
     public selectIndex(indexId: string): void {
         log(`[ReadingTopbar] selectIndex called: ${indexId}`);
@@ -237,7 +309,10 @@ export class ReadingTopbar extends Component {
     }
 
     public reattachMascot(el: HTMLElement): void {
-        if (!el.parentNode && this.el) {
+        if (el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+        if (this.el) {
             this.el.insertBefore(el, this.el.firstChild);
         }
     }

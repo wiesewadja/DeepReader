@@ -78,7 +78,7 @@ export function buildLinkReverseIndex(dirPath: string): Map<string, string[]> {
       const fullPath = join(currentDir, entry.name);
       if (entry.isDirectory()) {
         // 跳过隐藏目录和系统目录
-        if (!entry.name.startsWith(".") && entry.name !== ".pageindex") {
+        if (!entry.name.startsWith(".")) {
           scanDir(fullPath);
         }
       } else if (entry.isFile() && entry.name.endsWith(".md")) {

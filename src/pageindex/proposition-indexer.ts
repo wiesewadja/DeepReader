@@ -1,3 +1,4 @@
+import { getBookDir } from "./paths.js";
 /**
  * Proposition Indexer - Extract atomic fact cards per chapter
  */
@@ -343,7 +344,7 @@ export async function indexPropositions(
     onProgress,
   } = options;
 
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = getBookDir(vaultPath, bookId);
   const allCards: PropositionCard[] = [];
 
   const chapters = collectChapters(treeData);

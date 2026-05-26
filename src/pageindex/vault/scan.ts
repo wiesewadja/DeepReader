@@ -85,7 +85,6 @@ export async function scanVaultFiles(
   const excludePatterns = options.excludePatterns || [
     "**/.obsidian/**",
     "**/.trash/**",
-    "**/.pageindex/**",
     "**/Templates/**",
   ];
 

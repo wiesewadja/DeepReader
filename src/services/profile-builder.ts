@@ -22,6 +22,7 @@ import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
 import { fetchWithCorsFallback } from '../utils/safe-request';
 import type { WereadSyncState } from '../weread/types';
 import { sanitizeFileName } from '../weread/utils/file';
+import { PAGEINDEX_DIR } from '../pageindex/paths.js';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,
@@ -133,7 +134,7 @@ export class ProfileBuilder {
 
 	getIndexDir(): string {
 		const hash = generateBookIdFromPath(this.settings.journalDir);
-		return `.pageindex/journal_${hash}/`;
+		return `${PAGEINDEX_DIR}/journal_${hash}/`;
 	}
 
 	getIsBuilding(): boolean { return this.isBuilding; }
@@ -387,7 +388,7 @@ export class ProfileBuilder {
 
 		let syncState: WereadSyncState;
 		try {
-			const raw = await this.vault.adapter.read('.pageindex/weread/sync-state.json');
+			const raw = await this.vault.adapter.read(`${PAGEINDEX_DIR}/weread/sync-state.json`);
 			syncState = JSON.parse(raw) as WereadSyncState;
 		} catch {
 			onProgress?.({ stage: 'weread', current: 0, total: 0, message: '跳过微信读书（尚未同步）' });

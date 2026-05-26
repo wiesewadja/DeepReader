@@ -7,6 +7,7 @@
 
 import type { OutlineNode } from '../../tools/local/types';
 import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure
@@ -53,7 +54,7 @@ export async function loadTreeJson(
       bookId = resolved;
     }
 
-    const treePath = `.pageindex/${bookId}/tree.json`;
+    const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await app.vault.adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 

@@ -1,3 +1,4 @@
+import { PAGEINDEX_DIR } from "./paths.js";
 /**
  * Book Search v2 — 8-stage hybrid search pipeline
  *
@@ -103,8 +104,8 @@ export async function searchBookV2(
 
   // indexDir: vault-relative when app provided, absolute path otherwise
   const indexDir = app
-    ? joinPath(".pageindex", bookId)
-    : path.join(vaultPath, ".pageindex", bookId);
+    ? joinPath(PAGEINDEX_DIR, bookId)
+    : path.join(vaultPath, PAGEINDEX_DIR, bookId);
 
   // Validate index exists
   try {

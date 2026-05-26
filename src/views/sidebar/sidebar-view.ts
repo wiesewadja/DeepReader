@@ -670,6 +670,9 @@ export class SidebarView extends ItemView {
                 this.navigateToLastReadChapter();
             },
             onExitBooklist: () => this.exitBooklist(),
+            onBooklistRename: (newName: string) => {
+                this.bookMgr.renameBooklist(newName);
+            },
         });
 
         const el = this.readingTopbar.getElement();

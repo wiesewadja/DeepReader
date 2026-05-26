@@ -11,6 +11,7 @@
 import type { WereadMapping, WereadSyncState } from '../types';
 import { findFuzzyMatches } from './text-matcher';
 import { serviceLog as logger } from '../../utils/logger';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 interface VaultAdapter {
 	read(path: string): Promise<string>;
@@ -93,7 +94,7 @@ async function importForBook(
 	if (highlights.length === 0) return { imported: 0, skipped: 0 };
 
 	// 3. 读取 book-meta.json 获取章节路径
-	const metaPath = `.pageindex/${deepReaderBookId}/book-meta.json`;
+	const metaPath = `${PAGEINDEX_DIR}/${deepReaderBookId}/book-meta.json`;
 	const metaExists = await adapter.exists(metaPath).catch(() => false);
 	if (!metaExists) return { imported: 0, skipped: 0 };
 

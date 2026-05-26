@@ -1,3 +1,4 @@
+import { getBookFile } from "./paths.js";
 /**
  * Reading Progress Data Module
  *
@@ -100,7 +101,7 @@ export function getProgressPercent(
  * Build the file path for a book's reading progress file.
  */
 function getProgressFilePath(baseDir: string, bookId: string): string {
-  return path.join(baseDir, '.pageindex', bookId, 'reading-progress.json');
+  return getBookFile(baseDir, bookId, 'reading-progress.json');
 }
 
 /**
