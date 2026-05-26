@@ -747,6 +747,7 @@ export class LibraryView extends ItemView {
     private createBooklistCard(booklist: Booklist): HTMLElement {
         const card = document.createElement('div');
         card.className = 'deeppdf-lib-book-card deeppdf-lib-booklist-card';
+        card.dataset.booklistId = booklist.id;
 
         const isSelected = booklist.id === this.selectedBooklistId;
         if (isSelected) {
@@ -904,6 +905,14 @@ export class LibraryView extends ItemView {
             this.selectedBooklistId = null;
         }
         this.renderGrid();
+    }
+
+    /** 更新书库视图中指定书单卡片的标题 */
+    updateBooklistName(booklistId: string, newName: string): void {
+        const card = this.gridEl?.querySelector(`[data-booklist-id="${booklistId}"]`);
+        if (!card) return;
+        const titleEl = card.querySelector('.deeppdf-lib-book-title');
+        if (titleEl) titleEl.textContent = newName;
     }
 
     /**

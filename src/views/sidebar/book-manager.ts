@@ -844,6 +844,31 @@ export class BookManager {
 		this.host.sessionId = null;
 	}
 
+	/** 重命名当前书单 */
+	renameBooklist(newName: string): void {
+		if (!this._currentBooklist || !newName) return;
+
+		this._currentBooklist.name = newName;
+		this.host.messageList?.setCurrentPdfName(newName);
+
+		// 持久化到 booklistHistory
+		const history = this.host.plugin.settings.booklistHistory || [];
+		const idx = history.findIndex((b: Booklist) => b.id === this._currentBooklist!.id);
+		if (idx >= 0) {
+			history[idx].name = newName;
+			this.host.plugin.saveSettings();
+		}
+
+		// 同步更新书库视图中的卡片标题
+		const leaves = this.host.app.workspace.getLeavesOfType(LIBRARY_VIEW_TYPE);
+		for (const leaf of leaves) {
+			const view = leaf.view as any;
+			view.updateBooklistName?.(this._currentBooklist!.id, newName);
+		}
+
+		log(`[DeepPDF] renameBooklist: ${newName}`);
+	}
+
 	getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
 		return {
 			title: this._currentPdfName,

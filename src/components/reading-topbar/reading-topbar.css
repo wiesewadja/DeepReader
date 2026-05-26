@@ -87,6 +87,31 @@
     color: var(--text-normal);
 }
 
+/* 书单模式下标题可编辑 */
+.deeppdf-book-title.editable {
+    cursor: pointer;
+}
+
+.deeppdf-book-title.editable:hover {
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+    text-decoration-color: var(--text-faint);
+}
+
+.deeppdf-book-title.editing {
+    white-space: nowrap;
+    overflow: visible;
+    text-overflow: unset;
+    cursor: text;
+    outline: none;
+    background: var(--background-modifier-hover);
+    border-radius: 3px;
+    padding: 0 4px;
+    margin: 0 -4px;
+    text-decoration: none;
+}
+
 /* 作者/状态 */
 .deeppdf-book-author {
     font-size: 11px;
