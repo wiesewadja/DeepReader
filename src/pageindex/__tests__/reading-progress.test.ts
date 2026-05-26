@@ -11,6 +11,7 @@ import {
   saveProgress,
 } from '../reading-progress.js';
 import type { ReadingProgress } from '../reading-progress.js';
+import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths.js';
 
 describe('ReadingProgress - Data Module', () => {
   let tempDir: string;
@@ -140,7 +141,7 @@ describe('ReadingProgress - Data Module', () => {
     });
 
     it('should return null for invalid data (missing bookId)', async () => {
-      const dir = path.join(tempDir, '.pageindex', 'bad-book');
+      const dir = getBookDir(tempDir, 'bad-book');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'reading-progress.json'), JSON.stringify({ version: 1 }));
 
@@ -149,7 +150,7 @@ describe('ReadingProgress - Data Module', () => {
     });
 
     it('should return null for invalid data (chapters not object)', async () => {
-      const dir = path.join(tempDir, '.pageindex', 'bad2');
+      const dir = getBookDir(tempDir, 'bad2');
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, 'reading-progress.json'), JSON.stringify({
         version: 1, bookId: 'bad2', chapters: 'invalid'
@@ -204,13 +205,13 @@ describe('ReadingProgress - Data Module', () => {
       await saveProgress(tempDir, progress);
 
       const dirExists = await fs
-        .stat(path.join(tempDir, '.pageindex', 'new-book'))
+        .stat(getBookDir(tempDir, 'new-book'))
         .then(() => true)
         .catch(() => false);
       expect(dirExists).toBe(true);
 
       const fileExists = await fs
-        .stat(path.join(tempDir, '.pageindex', 'new-book', 'reading-progress.json'))
+        .stat(getBookFile(tempDir, 'new-book', 'reading-progress.json'))
         .then(() => true)
         .catch(() => false);
       expect(fileExists).toBe(true);

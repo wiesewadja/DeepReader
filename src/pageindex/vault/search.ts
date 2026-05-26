@@ -1,3 +1,4 @@
+import { PAGEINDEX_DIR } from '../paths.js';
 /**
  * PageIndex: Obsidian Vault Hybrid Search
  * Combines vector semantic search, keyword exact match, level weighting, and cross-encoder re-ranking
@@ -38,7 +39,7 @@ export async function searchVault(
   if (options.embedding && vectorWeight > 0) {
     try {
       const queryVector = await generateEmbedding(query, options.embedding);
-      const jsonlPath = index.meta.vaultPath + "/.pageindex/vectors.jsonl";
+      const jsonlPath = index.meta.vaultPath + "/" + PAGEINDEX_DIR + "/vectors.jsonl";
       const results = await cosineSearchJsonl(jsonlPath, queryVector, recallK);
       // Merge by nodeId, keeping highest score (multiple chunks may share same nodeId)
       const scoreMap = new Map<string, number>();

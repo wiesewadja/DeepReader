@@ -3,6 +3,7 @@ import { indexBook, isBookIndexed, deleteBookIndex } from "../book-indexer.js";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { IndexErrorCode } from "../book-types.js";
+import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths.js';
 
 vi.mock("../pageindex.js", () => {
   return {
@@ -75,7 +76,7 @@ vi.mock("../vault/vectors.js", () => ({
 
 describe("book-indexer", () => {
   const testVaultPath = "/tmp/deepreader-test-vault";
-  const testPageIndexDir = path.join(testVaultPath, ".pageindex");
+  const testPageIndexDir = getPageindexRoot(testVaultPath);
 
   beforeEach(async () => {
     await fs.mkdir(testVaultPath, { recursive: true });
@@ -152,7 +153,7 @@ describe("book-indexer", () => {
       expect(result.bookId).toBeDefined();
       expect(result.title).toBe("Test Book");
       expect(result.chaptersCount).toBe(1);
-      expect(result.indexDir).toBe(path.join(testVaultPath, ".pageindex", result.bookId));
+      expect(result.indexDir).toBe(getBookDir(testVaultPath, result.bookId));
 
       expect(progressEvents.length).toBeGreaterThan(0);
       expect(progressEvents[progressEvents.length - 1].percent).toBe(100);
@@ -304,7 +305,7 @@ describe("book-indexer", () => {
       const bookId = "abcd1234";
 
       // Create fake index directory
-      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+      const indexDir = getBookDir(testVaultPath, bookId);
       await fs.mkdir(indexDir, { recursive: true });
       await fs.writeFile(path.join(indexDir, "book-meta.json"), "{}");
 
@@ -316,7 +317,7 @@ describe("book-indexer", () => {
       // Test with matching bookId
       const { generateBookId } = await import("../book-indexer.js");
       const correctBookId = await generateBookId(filePath);
-      const correctIndexDir = path.join(testVaultPath, ".pageindex", correctBookId);
+      const correctIndexDir = getBookDir(testVaultPath, correctBookId);
       await fs.mkdir(correctIndexDir, { recursive: true });
       await fs.writeFile(path.join(correctIndexDir, "tree.json"), "{}");
 		await fs.writeFile(path.join(correctIndexDir, "bm25.json"), "{}");
@@ -333,16 +334,16 @@ describe("book-indexer", () => {
       const vault1 = "/tmp/vault1";
       const vault2 = "/tmp/vault2";
 
-      await fs.mkdir(path.join(vault1, ".pageindex"), { recursive: true });
-      await fs.mkdir(path.join(vault2, ".pageindex"), { recursive: true });
+      await fs.mkdir(getPageindexRoot(vault1), { recursive: true });
+      await fs.mkdir(getPageindexRoot(vault2), { recursive: true });
 
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
 
       // Index exists in vault1
-      await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "tree.json"), "{}");
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "bm25.json"), "{}");
+      await fs.mkdir(getBookDir(vault1, bookId), { recursive: true });
+      await fs.writeFile(getBookFile(vault1, bookId, 'tree.json'), "{}");
+      await fs.writeFile(getBookFile(vault1, bookId, 'bm25.json'), "{}");
 
       const result1 = await isBookIndexed(filePath, vault1);
       expect(result1).toBe(true);
@@ -364,7 +365,7 @@ describe("book-indexer", () => {
       // Create fake index
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
-      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+      const indexDir = getBookDir(testVaultPath, bookId);
       await fs.mkdir(indexDir, { recursive: true });
       await fs.writeFile(path.join(indexDir, "tree.json"), "{}");
       await fs.writeFile(path.join(indexDir, "bm25.json"), "{}");
@@ -397,16 +398,16 @@ describe("book-indexer", () => {
       const vault1 = "/tmp/vault1";
       const vault2 = "/tmp/vault2";
 
-      await fs.mkdir(path.join(vault1, ".pageindex"), { recursive: true });
-      await fs.mkdir(path.join(vault2, ".pageindex"), { recursive: true });
+      await fs.mkdir(getPageindexRoot(vault1), { recursive: true });
+      await fs.mkdir(getPageindexRoot(vault2), { recursive: true });
 
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
 
       // Create index in vault1
-      await fs.mkdir(path.join(vault1, ".pageindex", bookId), { recursive: true });
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "tree.json"), "{}");
-      await fs.writeFile(path.join(vault1, ".pageindex", bookId, "bm25.json"), "{}");
+      await fs.mkdir(getBookDir(vault1, bookId), { recursive: true });
+      await fs.writeFile(getBookFile(vault1, bookId, 'tree.json'), "{}");
+      await fs.writeFile(getBookFile(vault1, bookId, 'bm25.json'), "{}");
 
       // Delete from vault2 (should not affect vault1)
       await deleteBookIndex(filePath, vault2);
@@ -484,7 +485,7 @@ describe("book-indexer", () => {
       await fs.writeFile(filePath, "fake pdf for incomplete");
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
-      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+      const indexDir = getBookDir(testVaultPath, bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
       // tree.json exists but bm25.json does not → isBookIndexed returns false
@@ -500,7 +501,7 @@ describe("book-indexer", () => {
       await fs.writeFile(filePath, "fake pdf for corrupted meta");
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
-      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+      const indexDir = getBookDir(testVaultPath, bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
       await fs.writeFile(path.join(indexDir, "book-meta.json"), "{ invalid json }");
@@ -522,7 +523,7 @@ describe("book-indexer", () => {
       await fs.writeFile(filePath, "fake pdf for corrupted bm25");
       const { generateBookId } = await import("../book-indexer.js");
       const bookId = await generateBookId(filePath);
-      const indexDir = path.join(testVaultPath, ".pageindex", bookId);
+      const indexDir = getBookDir(testVaultPath, bookId);
 
       await fs.mkdir(indexDir, { recursive: true });
       await fs.writeFile(path.join(indexDir, "book-meta.json"), JSON.stringify({

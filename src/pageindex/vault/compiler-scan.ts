@@ -19,7 +19,7 @@ export function scanDirectories(vaultPath: string): DirectoryScan[] {
     if (!entry.isDirectory()) continue;
     const dirPath = join(vaultPath, entry.name);
     // 跳过隐藏目录和系统目录
-    if (entry.name.startsWith(".") || entry.name === ".pageindex") continue;
+    if (entry.name.startsWith(".")) continue;
 
     const scan = classifyDirectory(dirPath, entry.name);
     if (scan.fileCount > 0) {

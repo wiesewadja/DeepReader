@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getPageindexRoot } from '../../pageindex/paths.js';
 
 export interface BookGenre {
   /** 主类型 */
@@ -44,7 +45,7 @@ export class BookGenreDetector {
     vaultPath: string;
     llmClient: LLMClient;
   }) {
-    this.cacheDir = path.join(options.vaultPath, '.pageindex');
+    this.cacheDir = getPageindexRoot(options.vaultPath);
     this.llmClient = options.llmClient;
   }
 

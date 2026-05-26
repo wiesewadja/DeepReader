@@ -3,6 +3,7 @@ import { join } from "path";
 import { generateEmbedding, cosineSearchJsonl } from "./vectors";
 import type { EmbeddingOptions } from "./types";
 import type { SearchResultV2 } from "./compiler-types";
+import { getPageindexRoot } from '../paths.js';
 
 /** 关键词快速匹配 L0 */
 export function keywordMatchL0(query: string, l0Content: string): string[] {
@@ -67,7 +68,7 @@ export async function searchV2(
   }
 ): Promise<SearchResultV2[]> {
   const topK = options?.topK || 5;
-  const indexPath = join(vaultPath, ".pageindex");
+  const indexPath = getPageindexRoot(vaultPath);
   const resultMap = new Map<string, SearchResultV2>();
 
   // Step 1: 关键词匹配 L0

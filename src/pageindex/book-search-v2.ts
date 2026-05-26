@@ -1,3 +1,4 @@
+import { getBookDir } from "./paths.js";
 /**
  * Book Search v2 — 8-stage hybrid search pipeline
  *
@@ -96,7 +97,7 @@ export async function searchBookV2(
     }
   }
   const vaultPath = options.vaultPath || path.dirname(options.filePath);
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = getBookDir(vaultPath, bookId);
   const topK = options.topK || 5;
 
   // Validate index exists

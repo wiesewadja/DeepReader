@@ -7,6 +7,7 @@
 
 import type { OutlineNode } from '../../tools/local/types';
 import { createHash } from 'crypto';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure
@@ -61,7 +62,7 @@ export async function loadTreeJson(
       bookId = createHash("sha256").update(filePath).digest("hex").slice(0, 8);
     }
 
-    const treePath = `.pageindex/${bookId}/tree.json`;
+    const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await app.vault.adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
