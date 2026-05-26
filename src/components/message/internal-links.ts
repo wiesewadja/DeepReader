@@ -4,14 +4,69 @@
 
 import { App, MarkdownRenderer, Component, HoverParent, MarkdownView } from 'obsidian';
 import { uiLog as log } from '../../utils/logger.js';
+import { escapeHtml } from './utils.js';
+
+/** 清理文本中的 block ID 标记（^xxx） */
+const cleanBlockIds = (text: string) => text.replace(/\^[a-zA-Z0-9_-]+/g, '').trim();
+
+/** 初始预览最少字符数（约 2-3 个完整段落，需配合 CSS max-height: 360px 溢出产生滚动） */
+const INITIAL_PREVIEW_MIN_CHARS = 500;
+
+interface PreviewResult {
+	text: string;
+	chapterName: string;
+	bookName: string;
+	/** 剩余未加载的行 */
+	remainingLines: string[];
+}
+
+/** 从行数组中找到第 index 行所在段落的范围 [start, end) */
+function findParagraphRange(lines: string[], index: number): [number, number] {
+	let start = index;
+	while (start > 0 && lines[start - 1].trim() !== '') start--;
+	let end = index;
+	while (end < lines.length && lines[end].trim() !== '') end++;
+	return [start, end];
+}
+
+/** 从 startPos 开始连续取完整段落，直到总字符数 >= minChars 或文件结束 */
+function collectParagraphs(lines: string[], startPos: number, minChars: number): { text: string; endPos: number } {
+	let pos = startPos;
+	let result = '';
+	while (pos < lines.length && result.length < minChars) {
+		while (pos < lines.length && lines[pos].trim() === '') {
+			result += '\n';
+			pos++;
+		}
+		if (pos >= lines.length) break;
+		const paraStart = pos;
+		while (pos < lines.length && lines[pos].trim() !== '') pos++;
+		const para = lines.slice(paraStart, pos).join('\n');
+		result += (result && !result.endsWith('\n') ? '\n' : '') + para;
+	}
+	return { text: result.trim(), endPos: pos };
+}
+
+/** 从 remainingLines 中取下一个完整段落 */
+function takeNextParagraph(remainingLines: string[]): { paragraph: string; consumed: number } | null {
+	let i = 0;
+	while (i < remainingLines.length && remainingLines[i].trim() === '') i++;
+	if (i >= remainingLines.length) return null;
+
+	const start = i;
+	while (i < remainingLines.length && remainingLines[i].trim() !== '') {
+		i++;
+	}
+	return {
+		paragraph: remainingLines.slice(start, i).join('\n'),
+		consumed: i,
+	};
+}
 
 /**
  * 解析 wiki 链接并获取预览内容
- *
- * 从 vault 中读取 DeepReader 导出的 markdown 文件，
- * 提取 block ID 附近的上下文（前后各 ~100 字）
  */
-export async function resolveWikiLinkPreview(app: App, href: string): Promise<{ text: string; chapterName: string } | null> {
+export async function resolveWikiLinkPreview(app: App, href: string): Promise<PreviewResult | null> {
 	const hrefClean = href.includes('|') ? href.split('|')[0] : href;
 	const hashIdx = hrefClean.indexOf('#');
 	const linkFilePath = hashIdx >= 0 ? hrefClean.slice(0, hashIdx) : hrefClean;
@@ -38,11 +93,11 @@ export async function resolveWikiLinkPreview(app: App, href: string): Promise<{ 
 	// 章节名：去掉前导序号 "14 - 认识财富创造的原理" → "认识财富创造的原理"
 	const chapterName = fileName.replace(/\.md$/, '').replace(/^\d+\s*-\s*/, '').trim();
 
-	// 清理文本中的 block ID 标记（^xxx）
-	const cleanBlockIds = (text: string) => text.replace(/\^[a-zA-Z0-9_-]+/g, '').trim();
+	const lines = content.split('\n');
+
+	let start: number;
 
 	if (blockId) {
-		const lines = content.split('\n');
 		let blockLineIndex = -1;
 		for (let i = 0; i < lines.length; i++) {
 			if (lines[i].includes(blockId)) {
@@ -52,27 +107,29 @@ export async function resolveWikiLinkPreview(app: App, href: string): Promise<{ 
 		}
 		if (blockLineIndex === -1) return null;
 
-		// 前后各 ~100 字
-		let start = blockLineIndex;
-		let end = blockLineIndex + 1;
-		let charCount = 0;
-		while (end < lines.length && charCount < 100) {
-			charCount += lines[end].length + 1;
-			end++;
+		// 向上找到段落组的起点（连续非空行的最顶端）
+		const [paraStart] = findParagraphRange(lines, blockLineIndex);
+		// 再向上扩展一个段落
+		start = paraStart;
+		if (start > 0) {
+			while (start > 0 && lines[start - 1].trim() === '') start--;
+			if (start > 0) {
+				const [prevStart] = findParagraphRange(lines, start - 1);
+				start = prevStart;
+			}
 		}
-		charCount = 0;
-		while (start > 0 && charCount < 100) {
-			start--;
-			charCount += lines[start].length + 1;
-		}
-
-		const text = cleanBlockIds(lines.slice(start, end).join('\n'));
-		return text ? { text, chapterName } : null;
+	} else {
+		start = 0;
 	}
 
-	// 无 block ID，显示章节开头
-	const text = cleanBlockIds(content.slice(0, 200));
-	return text ? { text, chapterName } : null;
+	const { text: rawText, endPos } = collectParagraphs(lines, start, INITIAL_PREVIEW_MIN_CHARS);
+	const text = cleanBlockIds(rawText);
+	return text ? {
+		text,
+		chapterName,
+		bookName,
+		remainingLines: lines.slice(endPos),
+	} : null;
 }
 
 /**
@@ -88,21 +145,26 @@ export async function resolveWikiLinkPreview(app: App, href: string): Promise<{ 
 export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false, observers?: MutationObserver[]): void {
 	const links = contentEl.querySelectorAll('a.internal-link');
 
-	// 用于自定义预览
 	let customPopover: HTMLElement | null = null;
+	let popoverComponent: Component | null = null;
 	let showTimer: number | null = null;
 	let hideTimer: number | null = null;
 
-	// 持久的 HoverParent，让 Obsidian Page Preview 能正确管理 popover 生命周期
 	const hoverParent: HoverParent = {
 		hoverPopover: null
 	};
 
-	// 清理 popover 的函数
 	const cleanupPopover = () => {
 		if (customPopover) {
-			customPopover.remove();
+			customPopover.classList.remove('deeppdf-link-preview--visible');
+			const el = customPopover;
+			const comp = popoverComponent;
 			customPopover = null;
+			popoverComponent = null;
+			setTimeout(() => {
+				comp?.unload();
+				el.remove();
+			}, 150);
 		}
 		if (showTimer) {
 			window.clearTimeout(showTimer);
@@ -118,7 +180,6 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		const href = link.getAttr('href');
 		if (!href) return;
 
-		// 检测链接指向的文件是否存在于 vault 中
 		let linkPath = href;
 		if (linkPath.includes('|')) {
 			linkPath = linkPath.split('|')[0];
@@ -132,10 +193,8 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 			link.addClass('is-unresolved');
 		}
 
-		// 移除浏览器原生的 title tooltip，避免双重提示
 		link.removeAttribute('title');
 
-		// 使用 MutationObserver 监听并持续移除 title（防止 Obsidian 重新添加）
 		const observer = new MutationObserver(() => {
 			if (link.hasAttribute('title')) {
 				link.removeAttribute('title');
@@ -151,12 +210,10 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
 
-			// 检测阅读模式状态
 			const readingModeEl = document.querySelector('.deeppdf-reading-mode');
 			const isReadingMode = !!readingModeEl;
 			const isPaginatedMode = isReadingMode && !!readingModeEl!.querySelector('.markdown-preview-view[style*="--deeppdf-col-width"]');
 
-			// 从 href 中提取文件路径和 block ID
 			const hrefClean = href.includes('|') ? href.split('|')[0] : href;
 			const hashIdx = hrefClean.indexOf('#');
 			const linkFilePath = hashIdx >= 0 ? hrefClean.slice(0, hashIdx) : hrefClean;
@@ -235,12 +292,11 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 			}
 		});
 
-		// 如果禁用 hover preview（AI 流式传输期间），则跳过 hover 事件设置
 		if (disableHoverPreview) {
 			return;
 		}
 
-		// 处理悬停事件 - 复用 Obsidian popover 样式，增强 DeepReader block 预览
+		// 处理悬停事件 — 增强版 DeepReader block 预览（含惰性加载）
 		link.addEventListener('mouseenter', (event: MouseEvent) => {
 			if (showTimer) { window.clearTimeout(showTimer); showTimer = null; }
 			if (hideTimer) { window.clearTimeout(hideTimer); hideTimer = null; }
@@ -252,40 +308,96 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 					customPopover = document.createElement('div');
 					customPopover.className = 'popover deeppdf-link-preview';
 
+					// 根 Component，管理所有 MarkdownRenderer.render 的子组件生命周期
+					popoverComponent = new Component();
+
+					// 头部：书名 · 章节名
+					const headerEl = document.createElement('div');
+					headerEl.className = 'deeppdf-link-preview-header';
+					headerEl.innerHTML =
+						'<span class="deeppdf-link-preview-book">《' + escapeHtml(result.bookName) + '》</span>' +
+						'<span class="deeppdf-link-preview-sep"> · </span>' +
+						'<span class="deeppdf-link-preview-chapter-inline">' + escapeHtml(result.chapterName) + '</span>';
+					customPopover.appendChild(headerEl);
+
+					// 正文预览
 					const previewContentEl = document.createElement('div');
 					previewContentEl.className = 'deeppdf-link-preview-content markdown-preview-view';
 					try {
-						await MarkdownRenderer.render(app, result.text, previewContentEl, '', new Component());
+						await MarkdownRenderer.render(app, result.text, previewContentEl, '', popoverComponent);
 					} catch {
 						previewContentEl.textContent = result.text;
 					}
 					customPopover.appendChild(previewContentEl);
 
-					const chapterEl = document.createElement('div');
-					chapterEl.className = 'deeppdf-link-preview-chapter';
-					chapterEl.textContent = result.chapterName;
-					customPopover.appendChild(chapterEl);
+					// 底部跳转
+					const footerEl = document.createElement('div');
+					footerEl.className = 'deeppdf-link-preview-footer';
+					footerEl.textContent = '查看原文 ›';
+					footerEl.addEventListener('click', () => (link as HTMLElement).click());
+					customPopover.appendChild(footerEl);
 
+					// 惰性加载：滚动到底部时追加下一段落
+					let remainingLines = result.remainingLines;
+					let isLoadingMore = false;
+
+					previewContentEl.addEventListener('scroll', async () => {
+						if (isLoadingMore || remainingLines.length === 0) return;
+						const { scrollTop, scrollHeight, clientHeight } = previewContentEl;
+						if (scrollTop + clientHeight < scrollHeight - 40) return;
+
+						isLoadingMore = true;
+						const next = takeNextParagraph(remainingLines);
+						if (!next) { isLoadingMore = false; return; }
+
+						remainingLines = remainingLines.slice(next.consumed);
+						const cleaned = cleanBlockIds(next.paragraph);
+						if (!cleaned) { isLoadingMore = false; return; }
+
+						try {
+							const container = document.createElement('div');
+							await MarkdownRenderer.render(app, cleaned, container, '', popoverComponent!);
+							while (container.firstChild) {
+								previewContentEl.appendChild(container.firstChild);
+							}
+						} catch {
+							const p = document.createElement('p');
+							p.textContent = cleaned;
+							previewContentEl.appendChild(p);
+						}
+						isLoadingMore = false;
+					}, { passive: true });
+
+					// 定位
 					const linkRect = link.getBoundingClientRect();
 					customPopover.style.position = 'fixed';
-
-					const popoverWidth = 400;
+					const POPOVER_WIDTH = Math.min(400, window.innerWidth * 0.9);
 					let leftPos = linkRect.left;
-					if (leftPos + popoverWidth > window.innerWidth) {
-						leftPos = window.innerWidth - popoverWidth - 8;
+					if (leftPos + POPOVER_WIDTH > window.innerWidth) {
+						leftPos = window.innerWidth - POPOVER_WIDTH - 8;
 					}
 					if (leftPos < 8) leftPos = 8;
-
 					customPopover.style.left = leftPos + 'px';
 					customPopover.style.top = (linkRect.bottom + 6) + 'px';
 					document.body.appendChild(customPopover);
 
+					// 检测底部溢出 → 向上翻转
 					requestAnimationFrame(() => {
 						if (!customPopover) return;
 						const r = customPopover.getBoundingClientRect();
-						if (r.bottom > window.innerHeight) {
+						if (r.bottom > window.innerHeight - 8) {
 							customPopover.style.top = (linkRect.top - r.height - 6) + 'px';
+							customPopover.style.transformOrigin = 'bottom';
 						}
+					});
+
+					// 触发淡入动画
+					requestAnimationFrame(() => {
+						requestAnimationFrame(() => {
+							if (customPopover) {
+								customPopover.classList.add('deeppdf-link-preview--visible');
+							}
+						});
 					});
 
 					customPopover.addEventListener('mouseenter', () => {
