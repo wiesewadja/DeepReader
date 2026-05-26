@@ -8,8 +8,7 @@
 import type { App } from 'obsidian';
 import type { LocalToolCache } from './types.js';
 import type { ToolContext } from '../types.js';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
 
 /**
  * Token 上限常量
@@ -46,26 +45,16 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
   }
 
   try {
-    const vaultPath = (app.vault.adapter as any).basePath;
-
     // 优先使用 indexId（即 bookId），避免重新计算路径导致的 bookId 不匹配
     let bookId = indexId;
 
     if (!bookId) {
-      // Fallback: 从 vault 文件路径计算 bookId
-      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-      const files = app.vault.getFiles();
-      const bookFile = files.find(f =>
-        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-      );
-
-      if (!bookFile) {
-        console.log('[buildLocalCache] Book file not found for:', bookName);
+      const resolved = await resolveBookIdFromPdf(app, pdfName);
+      if (!resolved) {
+        console.log('[buildLocalCache] Book file not found for:', pdfName);
         return {};
       }
-
-      const filePath = `${vaultPath}/${bookFile.path}`;
-      bookId = crypto.createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+      bookId = resolved;
     }
 
     console.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);

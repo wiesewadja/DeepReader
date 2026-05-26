@@ -14,6 +14,7 @@ import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
+import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',
@@ -218,7 +219,6 @@ export const searchBookTool: ToolExecutor = {
     }
 
     try {
-      const vaultPath = (app.vault.adapter as any).basePath;
       console.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
       const settings = context.plugin?.settings;
@@ -227,29 +227,24 @@ export const searchBookTool: ToolExecutor = {
       const rerankerWeight = settings?.rerankerWeight ?? 0.7;
 
       const baseOptions: any = {
-        filePath: '',
         topK: 20, // 每个子查询多取，供 RRF 挑选
         embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
         reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
         scopeNodeIds,
+        app,
       };
 
-      if (indexId && vaultPath) {
+      if (indexId) {
         baseOptions.bookId = indexId;
-        baseOptions.vaultPath = vaultPath;
       } else {
-        const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-        const files = app.vault.getFiles();
-        const bookFile = files.find(f =>
-          f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-        );
-        if (!bookFile) {
+        const bookId = await resolveBookIdFromPdf(app, pdfName);
+        if (!bookId) {
           return JSON.stringify({
             status: 'ERROR_BOOK_NOT_FOUND',
-            message: `未找到书籍文件: ${bookName}`
+            message: `未找到书籍文件: ${pdfName}`
           });
         }
-        baseOptions.filePath = `${vaultPath}/${bookFile.path}`;
+        baseOptions.bookId = bookId;
       }
 
       // 多查询并行检索：每个关键词独立搜索

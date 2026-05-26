@@ -148,7 +148,6 @@ export async function preSearchNode(
   const earlyStopThreshold = getEarlyStopThreshold(pluginSettings);
 
   try {
-    const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath;
     const embeddingRole = pluginSettings ? resolveRoleConfig('embedding', pluginSettings) : null;
     const rerankerRole = pluginSettings ? resolveRoleConfig('reranker', pluginSettings) : null;
     const rerankerWeight = pluginSettings?.rerankerWeight ?? 0.7;
@@ -158,10 +157,10 @@ export async function preSearchNode(
       embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
       reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
       scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
+      app: toolContext.app,
     };
-    if (toolContext.indexId && vaultPath) {
+    if (toolContext.indexId) {
       baseSearchOpts.bookId = toolContext.indexId;
-      baseSearchOpts.vaultPath = vaultPath;
     }
 
     const limitedKeywords = stateKeywords.slice(0, 8);

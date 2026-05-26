@@ -14,6 +14,8 @@
 
 import * as path from "path";
 import * as fs from "fs/promises";
+import type { App } from "obsidian";
+import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
 import type {
   BookSearchOptionsV2,
   BookSearchResultV2,
@@ -96,12 +98,21 @@ export async function searchBookV2(
     }
   }
   const vaultPath = options.vaultPath || path.dirname(options.filePath);
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
   const topK = options.topK || 5;
+  const app = options.app;
+
+  // indexDir: vault-relative when app provided, absolute path otherwise
+  const indexDir = app
+    ? joinPath(".pageindex", bookId)
+    : path.join(vaultPath, ".pageindex", bookId);
 
   // Validate index exists
   try {
-    await fs.access(indexDir);
+    if (app) {
+      await vaultExists(app, indexDir);
+    } else {
+      await fs.access(indexDir);
+    }
   } catch {
     throw new IndexError(
       "Index not found",
@@ -112,7 +123,7 @@ export async function searchBookV2(
   }
 
   // Load tree.json (cached to avoid redundant reads in multi-keyword searches)
-  const treeData = await getCached(`tree:${indexDir}`, () => loadTreeJson(indexDir));
+  const treeData = await getCached(`tree:${indexDir}`, () => loadTreeJson(indexDir, app));
   if (!treeData) {
     throw new IndexError(
       "tree.json not found",
@@ -124,8 +135,10 @@ export async function searchBookV2(
 
   // Load BM25 index (cached)
   const bm25Index = await getCached(`bm25:${indexDir}`, async () => {
-    const bm25Path = path.join(indexDir, "bm25.json");
-    const bm25Content = await fs.readFile(bm25Path, "utf-8");
+    const bm25Path = app ? joinPath(indexDir, "bm25.json") : path.join(indexDir, "bm25.json");
+    const bm25Content = app
+      ? await vaultRead(app, bm25Path)
+      : await fs.readFile(bm25Path, "utf-8");
     return JSON.parse(bm25Content) as BM25Data;
   });
 
@@ -149,10 +162,10 @@ export async function searchBookV2(
   const [bm25Results, vectorSearchResult, propSearchResult] = await Promise.all([
     searchBM25(options.query, bm25Index, expandedK),
     precomputedEmbedding
-      ? asyncVectorSearch(indexDir, precomputedEmbedding, expandedK)
+      ? asyncVectorSearch(indexDir, precomputedEmbedding, expandedK, app)
       : Promise.resolve({ scores: new Map<string, number>(), chunkHits: new Map<string, ChunkHit[]>(), vector: null as number[] | null }),
-    precomputedEmbedding 
-      ? asyncPropositionSearch(indexDir, precomputedEmbedding, expandedK) 
+    precomputedEmbedding
+      ? asyncPropositionSearch(indexDir, precomputedEmbedding, expandedK, app)
       : Promise.resolve(new Map()),
   ]);
 
@@ -276,7 +289,8 @@ export async function searchBookV2(
         rerankCandidates,
         treeData,
         vaultPath,
-        options.reranker
+        options.reranker,
+        app
       );
 
       const rerankWeight = options.reranker.weight || 0.7;
@@ -307,7 +321,8 @@ export async function searchBookV2(
   if (chunkHits.size > 0) {
     try {
       const { readChunkTexts } = await import("./vault/vectors.js");
-      const chunkTexts = await readChunkTexts(path.join(indexDir, "chunks.jsonl"));
+      const chunksPath = app ? joinPath(indexDir, "chunks.jsonl") : path.join(indexDir, "chunks.jsonl");
+      const chunkTexts = await readChunkTexts(chunksPath, app);
       chunkTextMap = new Map(chunkTexts.map(c => [c.chunkId, c.text]));
     } catch {
       piLog("[book-search-v2] Failed to load chunks.jsonl");
@@ -355,10 +370,12 @@ export async function searchBookV2(
 
 // ─── Load tree.json ─────────────────────────────────────────────────────────
 
-export async function loadTreeJson(indexDir: string): Promise<TreeData | null> {
+export async function loadTreeJson(indexDir: string, app?: App): Promise<TreeData | null> {
   try {
-    const treePath = path.join(indexDir, "tree.json");
-    const content = await fs.readFile(treePath, "utf-8");
+    const treePath = app ? joinPath(indexDir, "tree.json") : path.join(indexDir, "tree.json");
+    const content = app
+      ? await vaultRead(app, treePath)
+      : await fs.readFile(treePath, "utf-8");
     return JSON.parse(content) as TreeData;
   } catch {
     return null;
@@ -454,28 +471,32 @@ function findNodeTitle(nodeId: string, nodes: TreeNode[]): string | null {
 async function asyncVectorSearch(
   indexDir: string,
   queryVector: number[],
-  topK: number
+  topK: number,
+  app?: App
 ): Promise<{
   scores: Map<string, number>;
   chunkHits: Map<string, ChunkHit[]>;
   vector: number[] | null;
 }> {
   try {
+    const vectorsPath = app ? joinPath(indexDir, "vectors.jsonl") : path.join(indexDir, "vectors.jsonl");
     const vectorResults = await cosineSearchJsonl(
-      path.join(indexDir, "vectors.jsonl"),
+      vectorsPath,
       queryVector,
       topK * 3,  // over-recall since multiple chunks map to same nodeId
-      { level: "L2" }
+      { level: "L2" },
+      app
     );
 
     // Fallback to L1 if no L2 results (old index format)
     let results = vectorResults;
     if (results.length === 0) {
       const l1Results = await cosineSearchJsonl(
-        path.join(indexDir, "vectors.jsonl"),
+        vectorsPath,
         queryVector,
         topK,
-        { level: "L1" }
+        { level: "L1" },
+        app
       );
       results = l1Results.map(r => ({ ...r, blockIds: [] }));
     }
@@ -507,13 +528,14 @@ async function asyncVectorSearch(
 async function asyncPropositionSearch(
   indexDir: string,
   queryVector: number[],
-  recallK: number
+  recallK: number,
+  app?: App
 ): Promise<Map<string, PropositionCard[]>> {
   const propositionMatches = new Map<string, PropositionCard[]>();
 
   try {
-    const propositionsData = await loadPropositions(indexDir);
-    const propVectorMap = await loadPropVectorStore(indexDir);
+    const propositionsData = await loadPropositions(indexDir, app);
+    const propVectorMap = await loadPropVectorStore(indexDir, app);
 
     if (!propositionsData || !propVectorMap || propositionsData.totalCards === 0) {
       return propositionMatches;
@@ -558,12 +580,43 @@ async function asyncPropositionSearch(
  */
 async function resolveExportDirName(
   treeData: TreeData,
-  vaultPath: string
+  vaultPath?: string,
+  app?: App
 ): Promise<string | null> {
   const staticName = treeData.exportName || treeData.title;
+
+  if (app) {
+    // Mobile path: vault-relative
+    const deepReaderRel = joinPath("DeepReader");
+
+    if (staticName) {
+      const staticRel = joinPath(deepReaderRel, staticName);
+      if (await vaultExists(app, staticRel)) return staticName;
+    }
+
+    const sampleFileName = Object.values(treeData.nodeFileMap || {})[0];
+    if (!sampleFileName) return null;
+
+    try {
+      const { folders } = await vaultList(app, deepReaderRel);
+      for (const folder of folders) {
+        const folderName = folder.split('/').pop() || folder;
+        const candidateRel = joinPath(deepReaderRel, folderName, sampleFileName);
+        if (await vaultExists(app, candidateRel)) {
+          piLog(`[book-search-v2] 目录重命名检测: "${staticName}" → "${folderName}"`);
+          return folderName;
+        }
+      }
+    } catch {
+      piLog(`[book-search-v2] Failed to scan DeepReader/ via vault adapter`);
+    }
+    return null;
+  }
+
+  // Desktop path: absolute fs
+  if (!vaultPath) return null;
   const deepReaderPath = path.join(vaultPath, "DeepReader");
 
-  // 先用静态名称尝试
   if (staticName) {
     const staticPath = path.join(deepReaderPath, staticName);
     try {
@@ -572,7 +625,6 @@ async function resolveExportDirName(
     } catch { /* 目录不存在或被重命名，继续扫描 */ }
   }
 
-  // 扫描 DeepReader/ 下的所有目录，用 nodeFileMap 中的文件名匹配
   const sampleFileName = Object.values(treeData.nodeFileMap || {})[0];
   if (!sampleFileName) return null;
 
@@ -598,15 +650,16 @@ async function crossEncoderRerank(
   query: string,
   results: Array<{ nodeId: string; fusedScore: number }>,
   treeData: TreeData,
-  vaultPath: string,
-  reranker: RerankerOptions
+  vaultPath: string | undefined,
+  reranker: RerankerOptions,
+  app?: App
 ): Promise<Map<string, number>> {
   const rerankScores = new Map<string, number>();
 
   if (results.length === 0) return rerankScores;
 
   // 解析实际目录名（处理用户重命名的情况）
-  const actualDirName = await resolveExportDirName(treeData, vaultPath);
+  const actualDirName = await resolveExportDirName(treeData, vaultPath, app);
   const exportDir = actualDirName || treeData.exportName || treeData.title;
 
   const texts: string[] = [];
@@ -616,17 +669,24 @@ async function crossEncoderRerank(
     const fileName = treeData.nodeFileMap?.[r.nodeId];
     if (!fileName) continue;
 
-    const fullPath = path.join(vaultPath, "DeepReader", exportDir, fileName);
-
     try {
-      let content = await fs.readFile(fullPath, "utf-8");
+      let content: string;
+      if (app) {
+        const fileRel = joinPath("DeepReader", exportDir, fileName);
+        content = await vaultRead(app, fileRel);
+      } else if (vaultPath) {
+        const fullPath = path.join(vaultPath, "DeepReader", exportDir, fileName);
+        content = await fs.readFile(fullPath, "utf-8");
+      } else {
+        continue;
+      }
       content = content.replace(/---[\s\S]*?---\n/, "").slice(0, 1500);
       if (content.trim()) {
         texts.push(content);
         nodeIds.push(r.nodeId);
       }
     } catch {
-      piLog(`[book-search-v2] Failed to read ${fullPath}`);
+      piLog(`[book-search-v2] Failed to read ${fileName}`);
     }
   }
 

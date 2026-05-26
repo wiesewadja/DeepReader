@@ -4,6 +4,8 @@
 
 import * as path from "path";
 import * as fs from "fs/promises";
+import type { App } from 'obsidian';
+import { vaultRead, joinPath } from '../utils/mobile-fs.js';
 import { generateEmbedding } from "./vault/vectors.js";
 import type {
   PropositionCard,
@@ -16,12 +18,13 @@ import { cosineSimilarity } from "./core/utils.js";
 import { searchBM25 } from "./bm25.js";
 
 export async function loadPropositions(
-  indexDir: string
+  indexDir: string,
+  app?: App
 ): Promise<PropositionsData | null> {
-  const propPath = path.join(indexDir, "propositions.json");
-
   try {
-    const content = await fs.readFile(propPath, "utf-8");
+    const content = app
+      ? await vaultRead(app, joinPath(indexDir, 'propositions.json'))
+      : await fs.readFile(path.join(indexDir, "propositions.json"), "utf-8");
     return JSON.parse(content) as PropositionsData;
   } catch {
     return null;
@@ -29,12 +32,13 @@ export async function loadPropositions(
 }
 
 export async function loadPropVectorStore(
-  indexDir: string
+  indexDir: string,
+  app?: App
 ): Promise<Map<string, number[]> | null> {
-  const jsonlPath = path.join(indexDir, "prop-vectors.jsonl");
-
   try {
-    const content = await fs.readFile(jsonlPath, "utf-8");
+    const content = app
+      ? await vaultRead(app, joinPath(indexDir, 'prop-vectors.jsonl'))
+      : await fs.readFile(path.join(indexDir, "prop-vectors.jsonl"), "utf-8");
     const map = new Map<string, number[]>();
 
     for (const line of content.split("\n")) {
@@ -55,12 +59,15 @@ export async function searchPropositions(
   bookId: string,
   vaultPath: string,
   embedding: EmbeddingOptions,
-  topK: number = 5
+  topK: number = 5,
+  app?: App
 ): Promise<PropositionMatch[]> {
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = app
+    ? '.pageindex/' + bookId
+    : path.join(vaultPath, ".pageindex", bookId);
 
-  const propositions = await loadPropositions(indexDir);
-  const vectorMap = await loadPropVectorStore(indexDir);
+  const propositions = await loadPropositions(indexDir, app);
+  const vectorMap = await loadPropVectorStore(indexDir, app);
 
   if (!propositions || !vectorMap || propositions.totalCards === 0) {
     return [];
@@ -101,15 +108,18 @@ export async function searchWithPropositions(
   vaultPath: string,
   embedding: EmbeddingOptions,
   topK: number = 5,
-  fusionWeights?: { prop: number; bm25: number }
+  fusionWeights?: { prop: number; bm25: number },
+  app?: App
 ): Promise<FusionResult[]> {
   const weights = fusionWeights || { prop: 0.6, bm25: 0.4 };
 
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = app
+    ? '.pageindex/' + bookId
+    : path.join(vaultPath, ".pageindex", bookId);
 
   const [propResults, bm25Results] = await Promise.all([
-    searchPropositions(query, bookId, vaultPath, embedding, topK * 2),
-    searchBM25Light(query, indexDir, topK * 2),
+    searchPropositions(query, bookId, vaultPath, embedding, topK * 2, app),
+    searchBM25Light(query, indexDir, topK * 2, app),
   ]);
 
   const nodeMap = new Map<string, FusionResult>();
@@ -162,18 +172,20 @@ export async function searchWithPropositions(
 async function searchBM25Light(
   query: string,
   indexDir: string,
-  topK: number
+  topK: number,
+  app?: App
 ): Promise<Array<{ nodeId: string; title: string; fileName: string; score: number }>> {
-  const bm25Path = path.join(indexDir, "bm25.json");
-
   try {
-    const content = await fs.readFile(bm25Path, "utf-8");
+    const content = app
+      ? await vaultRead(app, joinPath(indexDir, 'bm25.json'))
+      : await fs.readFile(path.join(indexDir, "bm25.json"), "utf-8");
     const bm25Data = JSON.parse(content) as BM25Data;
 
     const results = searchBM25(query, bm25Data, topK);
 
-    const treePath = path.join(indexDir, "tree.json");
-    const treeContent = await fs.readFile(treePath, "utf-8");
+    const treeContent = app
+      ? await vaultRead(app, joinPath(indexDir, 'tree.json'))
+      : await fs.readFile(path.join(indexDir, "tree.json"), "utf-8");
     const treeData = JSON.parse(treeContent);
     const nodeFileMap = treeData.nodeFileMap || {};
 

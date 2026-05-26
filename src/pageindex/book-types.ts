@@ -226,6 +226,8 @@ export interface BookSearchOptionsV2 {
   maxContentLength?: number;
   bookId?: string;
   vaultPath?: string;
+  /** Obsidian App 实例，提供时使用 vault.adapter API（桌面端和移动端通用） */
+  app?: import('obsidian').App;
 }
 
 /** 匹配片段（聚焦到 block_id 级别） */

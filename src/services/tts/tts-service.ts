@@ -1,6 +1,7 @@
-import { Notice } from 'obsidian';
+import { Notice, type App } from 'obsidian';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { vaultRead, vaultReadBinary, vaultExists, vaultMkdir, vaultRemove, vaultWrite, vaultWriteBinary, joinPath } from '../../utils/mobile-fs.js';
 import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
 import { MiniMaxTTSClient } from './minimax-tts-client.js';
 import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
@@ -23,6 +24,8 @@ export interface TTSServiceConfig {
     llmModel: string;
     /** Vault 根目录路径，用于 BookGenreDetector 读取 tree.json */
     vaultPath?: string;
+    /** Obsidian App instance for mobile-compatible file access */
+    app?: App;
     onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
     /** TTS 播放进度回调：0-100 的进度值，每 200ms 更新一次 */
     onProgressChange?: (messageId: string, progress: number) => void;
@@ -92,6 +95,7 @@ export class TTSService {
     private previewBuffers: Map<string, ArrayBuffer> = new Map();
     /** 磁盘缓存目录（空=禁用磁盘缓存） */
     private diskCacheDir: string = '';
+    private app?: App;
     private static readonly MAX_DISK_ENTRIES = 10;
     /** manifest 串行写锁，防止并发覆盖 */
     private manifestLock: Promise<void> = Promise.resolve();
@@ -129,10 +133,11 @@ export class TTSService {
             baseUrl: config.llmBaseUrl,
             model: config.llmModel,
         });
-        // 初始化 BookGenreDetector（需要 vaultPath）
-        if (config.vaultPath) {
+        // 初始化 BookGenreDetector（需要 vaultPath 或 app）
+        if (config.vaultPath || config.app) {
             this.genreDetector = new BookGenreDetector({
                 vaultPath: config.vaultPath,
+                app: config.app,
                 llmClient: {
                     complete: async (prompt: string) => {
                         const response = await safeRequest({
@@ -157,8 +162,11 @@ export class TTSService {
         this.expressivePreprocessor = new ExpressivePreprocessor();
         this.onStateChange = config.onStateChange;
         this.onProgressChange = config.onProgressChange;
-        if (config.vaultPath) {
-            this.diskCacheDir = path.join(config.vaultPath, '.obsidian/plugins/deepreader/tts-cache');
+        this.app = config.app;
+        if (config.vaultPath || config.app) {
+            this.diskCacheDir = config.app
+                ? '.obsidian/plugins/deepreader/tts-cache'
+                : path.join(config.vaultPath!, '.obsidian/plugins/deepreader/tts-cache');
         }
     }
 
@@ -835,13 +843,24 @@ export class TTSService {
 
     private async ensureDiskCacheDir(): Promise<void> {
         if (!this.diskCacheDir) return;
-        await fs.mkdir(this.diskCacheDir, { recursive: true });
+        if (this.app) {
+            if (!(await vaultExists(this.app, this.diskCacheDir))) {
+                await vaultMkdir(this.app, this.diskCacheDir);
+            }
+        } else {
+            await fs.mkdir(this.diskCacheDir, { recursive: true });
+        }
     }
 
     private async readDiskManifest(): Promise<ManifestEntry[]> {
         if (!this.diskCacheDir) return [];
         try {
-            const data = await fs.readFile(path.join(this.diskCacheDir, 'manifest.json'), 'utf-8');
+            const manifestPath = this.app
+                ? joinPath(this.diskCacheDir, 'manifest.json')
+                : path.join(this.diskCacheDir, 'manifest.json');
+            const data = this.app
+                ? await vaultRead(this.app, manifestPath)
+                : await fs.readFile(manifestPath, 'utf-8');
             return (JSON.parse(data) as DiskManifest).entries ?? [];
         } catch {
             return [];
@@ -851,10 +870,15 @@ export class TTSService {
     private async writeDiskManifest(entries: ManifestEntry[]): Promise<void> {
         if (!this.diskCacheDir) return;
         await this.ensureDiskCacheDir();
-        await fs.writeFile(
-            path.join(this.diskCacheDir, 'manifest.json'),
-            JSON.stringify({ entries }, null, 2),
-        );
+        const manifestPath = this.app
+            ? joinPath(this.diskCacheDir, 'manifest.json')
+            : path.join(this.diskCacheDir, 'manifest.json');
+        const content = JSON.stringify({ entries }, null, 2);
+        if (this.app) {
+            await vaultWrite(this.app, manifestPath, content);
+        } else {
+            await fs.writeFile(manifestPath, content);
+        }
     }
 
     /** 将合并后的音频写入磁盘缓存，淘汰超过上限的旧条目 */
@@ -865,8 +889,14 @@ export class TTSService {
             try {
                 await this.ensureDiskCacheDir();
                 const wavFile = `${textHash}_${voice}.wav`;
-                const wavPath = path.join(this.diskCacheDir, wavFile);
-                await fs.writeFile(wavPath, Buffer.from(audioBuffer));
+                const wavPath = this.app
+                    ? joinPath(this.diskCacheDir, wavFile)
+                    : path.join(this.diskCacheDir, wavFile);
+                if (this.app) {
+                    await vaultWriteBinary(this.app, wavPath, audioBuffer);
+                } else {
+                    await fs.writeFile(wavPath, Buffer.from(audioBuffer));
+                }
 
                 let entries = await this.readDiskManifest();
                 entries = entries.filter(e => !(e.textHash === textHash && e.voice === voice));
@@ -875,7 +905,16 @@ export class TTSService {
                 entries.sort((a, b) => b.createdAt - a.createdAt);
                 const removed = entries.splice(TTSService.MAX_DISK_ENTRIES);
                 for (const r of removed) {
-                    try { await fs.unlink(path.join(this.diskCacheDir, r.wavFile)); } catch {}
+                    try {
+                        const removePath = this.app
+                            ? joinPath(this.diskCacheDir, r.wavFile)
+                            : path.join(this.diskCacheDir, r.wavFile);
+                        if (this.app) {
+                            await vaultRemove(this.app, removePath);
+                        } else {
+                            await fs.unlink(removePath);
+                        }
+                    } catch {}
                 }
 
                 await this.writeDiskManifest(entries);
@@ -905,9 +944,16 @@ export class TTSService {
         if (!this.diskCacheDir) return null;
         try {
             const wavFile = `${textHash}_${voice}.wav`;
-            const wavPath = path.join(this.diskCacheDir, wavFile);
-            const buffer = await fs.readFile(wavPath);
-            const audioBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            const wavPath = this.app
+                ? joinPath(this.diskCacheDir, wavFile)
+                : path.join(this.diskCacheDir, wavFile);
+            let audioBuffer: ArrayBuffer;
+            if (this.app) {
+                audioBuffer = await vaultReadBinary(this.app, wavPath);
+            } else {
+                const buffer = await fs.readFile(wavPath);
+                audioBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            }
             const blob = new Blob([audioBuffer], { type: 'audio/wav' });
             const blobUrl = URL.createObjectURL(blob);
             const audio = new Audio(blobUrl);

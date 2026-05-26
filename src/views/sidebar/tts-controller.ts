@@ -49,7 +49,7 @@ export class TTSController {
 			llmApiKey: fastConfig.apiKey,
 			llmBaseUrl: fastConfig.baseUrl,
 			llmModel: fastConfig.model,
-			vaultPath: (this.host.app.vault.adapter as any).basePath as string | undefined,
+			app: this.host.app,
 			onStateChange: (messageId: string | null, state: TTSPlayState) => {
 				if (messageId) {
 					this.host.messageList?.updateTTSState(messageId, state);

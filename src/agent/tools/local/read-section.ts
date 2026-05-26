@@ -81,27 +81,26 @@ export const readBookSectionTool: ToolExecutor = {
         });
       }
 
-      const vaultPath = (app.vault.adapter as any).basePath;
       const bookName = pdfName?.replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || '';
 
       // Priority 1: Batch read by node_ids
       if (nodeIds && nodeIds.length > 0) {
-        return await readMultipleSections(app, nodeIds, treeData, vaultPath, bookName);
+        return await readMultipleSections(app, nodeIds, treeData);
       }
 
       // Priority 2: Single node_id (with optional block_id)
       if (nodeId) {
-        return await readSingleNode(app, nodeId, blockId, treeData, vaultPath, bookName);
+        return await readSingleNode(app, nodeId, blockId, treeData);
       }
 
       // Priority 3: block_id only (need to scan files)
       if (blockId) {
-        return await readByBlockId(app, blockId, treeData, vaultPath, bookName);
+        return await readByBlockId(app, blockId, treeData);
       }
 
       // Priority 4: heading fuzzy match
       if (heading) {
-        return await readByHeading(app, heading, treeData, vaultPath, bookName);
+        return await readByHeading(app, heading, treeData);
       }
 
       return JSON.stringify({
@@ -123,9 +122,7 @@ export const readBookSectionTool: ToolExecutor = {
 async function readMultipleSections(
   app: App,
   nodeIds: string[],
-  treeData: any,
-  vaultPath: string,
-  bookName: string
+  treeData: any
 ): Promise<string> {
   const results: any[] = [];
 
@@ -134,7 +131,7 @@ async function readMultipleSections(
     if (!fileName) continue;
 
     const { content, truncated } = await readMdFile(
-      app, vaultPath, treeData.title, fileName, treeData
+      app, treeData.title, fileName, treeData
     );
 
     const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
@@ -169,9 +166,7 @@ async function readSingleNode(
   app: App,
   nodeId: string,
   blockId: string | undefined,
-  treeData: any,
-  vaultPath: string,
-  bookName: string
+  treeData: any
 ): Promise<string> {
   const fileName = treeData.nodeFileMap[nodeId];
   if (!fileName) {
@@ -181,7 +176,7 @@ async function readSingleNode(
     });
   }
 
-  const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
+  const { content } = await readMdFile(app, treeData.title, fileName, treeData);
   const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
   const mdFileName = fileName.replace(/\.md$/i, '');
 
@@ -217,15 +212,13 @@ async function readSingleNode(
 async function readByBlockId(
   app: App,
   blockId: string,
-  treeData: any,
-  vaultPath: string,
-  bookName: string
+  treeData: any
 ): Promise<string> {
   // Scan all files for the block_id
   const nodeFileMap = treeData.nodeFileMap as Record<string, string>;
 
   for (const [nodeId, fileName] of Object.entries(nodeFileMap)) {
-    const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
+    const { content } = await readMdFile(app, treeData.title, fileName, treeData);
     if (content.includes(blockId)) {
       const blockContent = extractBlockContext(content, blockId);
       const title = findNodeTitle(nodeId, treeData.structure) || nodeId;
@@ -253,9 +246,7 @@ async function readByBlockId(
 async function readByHeading(
   app: App,
   heading: string,
-  treeData: any,
-  vaultPath: string,
-  bookName: string
+  treeData: any
 ): Promise<string> {
   const normalizedQuery = heading.toLowerCase().trim();
   const nodeFileMap = treeData.nodeFileMap as Record<string, string>;
@@ -264,7 +255,7 @@ async function readByHeading(
   for (const [nodeId, fileName] of Object.entries(nodeFileMap)) {
     const title = findNodeTitle(nodeId, treeData.structure) || '';
     if (title.toLowerCase().includes(normalizedQuery) || normalizedQuery.includes(title.toLowerCase())) {
-      const { content } = await readMdFile(app, vaultPath, treeData.title, fileName, treeData);
+      const { content } = await readMdFile(app, treeData.title, fileName, treeData);
       const mdFileName = fileName.replace(/\.md$/i, '');
       return JSON.stringify({
         status: 'SUCCESS',
@@ -287,7 +278,6 @@ async function readByHeading(
 
 async function readMdFile(
   app: App,
-  vaultPath: string,
   bookTitle: string,
   fileName: string,
   treeData?: any

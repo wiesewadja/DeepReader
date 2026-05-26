@@ -15,6 +15,7 @@ import type { ProactiveEngine } from '../../agent/proactive/engine.js';
 import type { MilestoneRecorder } from '../../agent/memory/milestones.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
+import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath } from '../../utils/mobile-fs.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
@@ -160,30 +161,31 @@ export class BookManager {
 	// ── Index loading ──
 
 	async loadIndexes(): Promise<void> {
-		const vaultPath = (this.host.app.vault.adapter as any).basePath;
-		const pageindexDir = `${vaultPath}/.pageindex`;
+		const app = this.host.app;
 
 		try {
-			const fs = require('fs/promises');
-			const entries = await fs.readdir(pageindexDir, { withFileTypes: true });
+			if (!(await vaultExists(app, '.pageindex'))) {
+				this._indexes = [];
+				return;
+			}
+			const { folders } = await vaultList(app, '.pageindex');
 			const indexes: any[] = [];
 
-			for (const entry of entries) {
-				if (!entry.isDirectory()) continue;
-				const dirPath = `${pageindexDir}/${entry.name}`;
+			for (const folder of folders) {
+				const bookId = folder.split('/').pop() || folder;
 
 				try {
-					const statusContent = await fs.readFile(`${dirPath}/.indexing.json`, 'utf-8');
+					const statusContent = await vaultRead(app, `.pageindex/${bookId}/.indexing.json`);
 					const status = JSON.parse(statusContent);
 					const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
 					const isFailed = status.step === 'failed';
 
 					if (isComplete) {
-						fs.unlink(`${dirPath}/.indexing.json`).catch(() => {});
+						vaultRemove(app, `.pageindex/${bookId}/.indexing.json`).catch(() => {});
 					} else {
 						indexes.push({
-							id: status.bookId || entry.name,
-							pdf_name: status.title || entry.name,
+							id: status.bookId || bookId,
+							pdf_name: status.title || bookId,
 							node_count: 0,
 							created_at: new Date().toISOString(),
 							fileType: status.fileType,
@@ -198,11 +200,11 @@ export class BookManager {
 				}
 
 				try {
-					const content = await fs.readFile(`${dirPath}/book-meta.json`, 'utf-8');
+					const content = await vaultRead(app, `.pageindex/${bookId}/book-meta.json`);
 					const meta = JSON.parse(content);
 					indexes.push({
-						id: meta.bookId || entry.name,
-						pdf_name: meta.title || entry.name,
+						id: meta.bookId || bookId,
+						pdf_name: meta.title || bookId,
 						author: meta.author,
 						description: meta.description,
 						fileType: meta.fileType,
@@ -219,8 +221,7 @@ export class BookManager {
 
 			// 追加微信读书已同步书籍（跳过已关联本地的）
 			try {
-				const wereadStatePath = `${pageindexDir}/weread/sync-state.json`;
-				const stateRaw = await fs.readFile(wereadStatePath, 'utf-8');
+				const stateRaw = await vaultRead(app, '.pageindex/weread/sync-state.json');
 				const state = JSON.parse(stateRaw);
 				const syncedBooks = state.syncedBooks || {};
 				const localIds = new Set(indexes.map((i: any) => i.id));
@@ -228,7 +229,7 @@ export class BookManager {
 				// 从 mapping.json 收集已关联本地索引的 WeRead bookId
 				const linkedWereadIds = new Set<string>();
 				try {
-					const mappingRaw = await fs.readFile(`${pageindexDir}/weread/mapping.json`, 'utf-8');
+					const mappingRaw = await vaultRead(app, '.pageindex/weread/mapping.json');
 					const parsed = JSON.parse(mappingRaw);
 					const mapping = parsed.mappings || parsed;
 					for (const [wereadId, info] of Object.entries(mapping) as any[]) {
@@ -327,9 +328,7 @@ export class BookManager {
 			let exportName: string | undefined;
 			let metaAuthor: string | undefined;
 			try {
-				const vaultPath = (this.host.app.vault.adapter as any).basePath;
-				const fs = require('fs/promises');
-				const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+				const metaRaw = await vaultRead(this.host.app, `.pageindex/${indexId}/book-meta.json`);
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -353,9 +352,7 @@ export class BookManager {
 			let exportName: string | undefined;
 			let metaAuthor: string | undefined;
 			try {
-				const vaultPath = (this.host.app.vault.adapter as any).basePath;
-				const fs = require('fs/promises');
-				const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+				const metaRaw = await vaultRead(this.host.app, `.pageindex/${indexId}/book-meta.json`);
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -518,39 +515,31 @@ export class BookManager {
 
 	async handleDeleteIndex(indexId: string): Promise<void> {
 		try {
-			const vaultPath = (this.host.app.vault.adapter as any).basePath;
-			const fs = require('fs/promises');
-			const path = require('path');
+			const app = this.host.app;
 
-			const indexDir = path.join(vaultPath, '.pageindex', indexId);
+			const indexDir = `.pageindex/${indexId}`;
 			let exportName: string | null = null;
 			try {
-				const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');
+				const metaRaw = await vaultRead(app, `${indexDir}/book-meta.json`);
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || null;
 			} catch { /* meta file may not exist */ }
 
-			await fs.rm(indexDir, { recursive: true, force: true });
+			await vaultRmdir(app, indexDir);
 
 			const index = this._indexes.find(idx => idx.id === indexId);
 			if (index && exportName) {
-				const exportDir = path.join(vaultPath, 'DeepReader', exportName);
-				await fs.rm(exportDir, { recursive: true, force: true });
+				await vaultRmdir(app, `DeepReader/${exportName}`);
 
-				const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
 				for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-					const coverPath = path.join(coversDir, `${exportName}.${ext}`);
-					try { await fs.unlink(coverPath); } catch { /* not found */ }
+					try { await vaultRemove(app, `DeepReader/covers/${exportName}.${ext}`); } catch { /* not found */ }
 				}
 			} else if (index) {
 				const displayName = this.getDisplayName(index.pdf_name);
-				const exportDir = path.join(vaultPath, 'DeepReader', displayName);
-				await fs.rm(exportDir, { recursive: true, force: true });
+				await vaultRmdir(app, `DeepReader/${displayName}`);
 
-				const coversDir = path.join(vaultPath, 'DeepReader', 'covers');
 				for (const ext of ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg']) {
-					const coverPath = path.join(coversDir, `${displayName}.${ext}`);
-					try { await fs.unlink(coverPath); } catch { /* not found */ }
+					try { await vaultRemove(app, `DeepReader/covers/${displayName}.${ext}`); } catch { /* not found */ }
 				}
 			}
 

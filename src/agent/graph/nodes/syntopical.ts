@@ -91,7 +91,8 @@ export async function syntopicalNode(
     return { analysisResult: '', toolResultsSnapshot: [] };
   }
 
-  const vaultPath = (toolContext.app.vault.adapter as { basePath: string }).basePath || '';
+  // 桌面端用实际 basePath，移动端为空但会走 app 分支
+  const vaultPath = (toolContext.app.vault.adapter as any).basePath as string || '';
   const query = rewrittenQuery || ctx?.rawUserQuery || '';
   const settings = toolContext.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
@@ -112,6 +113,7 @@ export async function syntopicalNode(
       topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
       bookIds: ctx?.booklistBookIds,
       knownBooks: ctx?.indexedBooks,
+      app: toolContext.app,
     })
   ).withConfig({ runName: 'syntopical_search' }).invoke({}, { callbacks: config.callbacks });
 
