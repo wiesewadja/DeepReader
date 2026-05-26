@@ -249,6 +249,7 @@ export class MessageList extends Component {
 		});
 		this.messages.clear();
 		this.updateEmptyState();
+		this.updateMinimap();
 	}
 
 	/**
