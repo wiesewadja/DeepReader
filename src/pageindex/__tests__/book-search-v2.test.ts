@@ -23,6 +23,7 @@ import { generateBookId } from "../book-indexer.js";
 import { tokenize } from "../bm25.js";
 import type { TreeNode, BM25Data } from "../book-types.js";
 import { IndexError, IndexErrorCode } from "../book-types.js";
+import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Test vault paths
@@ -197,13 +198,13 @@ describe("Stage 5: Fusion weight and normalization logic", () => {
 // Returns { filePath, bookId } where bookId is the actual directory name
 async function getBookMeta(legacyBookId: string): Promise<{ filePath: string; bookId: string }> {
   // Try the given bookId first
-  let metaPath = path.join(VAULT_PATH, ".pageindex", legacyBookId, "book-meta.json");
+  let metaPath = getBookFile(VAULT_PATH, legacyBookId, 'book-meta.json');
   let exists = await fs.access(metaPath).then(() => true).catch(() => false);
   let actualDirName = legacyBookId;
 
   if (!exists) {
     // Scan all subdirs for matching book-meta.json with this bookId
-    const pageindexDir = path.join(VAULT_PATH, ".pageindex");
+    const pageindexDir = getPageindexRoot(VAULT_PATH);
     try {
       const dirs = await fs.readdir(pageindexDir);
       for (const dir of dirs) {
@@ -378,13 +379,13 @@ describe.skipIf(!vaultAvailable)("E2E: 金钱心理学 — result structure comp
 
 describe.skipIf(!vaultAvailable)("E2E: 思辨与立场 — proposition data", () => {
   it("should have propositions.json file", async () => {
-    const propPath = path.join(VAULT_PATH, ".pageindex", CRITICAL_BOOK_ID, "propositions.json");
+    const propPath = getBookFile(VAULT_PATH, CRITICAL_BOOK_ID, 'propositions.json');
     const exists = await fs.access(propPath).then(() => true).catch(() => false);
     expect(exists).toBe(true);
   });
 
   it("should load valid proposition data", async () => {
-    const propPath = path.join(VAULT_PATH, ".pageindex", CRITICAL_BOOK_ID, "propositions.json");
+    const propPath = getBookFile(VAULT_PATH, CRITICAL_BOOK_ID, 'propositions.json');
     const raw = await fs.readFile(propPath, "utf8");
     const data = JSON.parse(raw);
     expect(data.totalCards).toBeGreaterThan(0);
@@ -455,7 +456,7 @@ describe("Stage 4: Scope filter integration", () => {
     await fs.mkdir(testVault, { recursive: true });
     await fs.writeFile(testFilePath, "fake pdf content for v2 search test");
     testBookId = await generateBookId(testFilePath);
-    const indexDir = path.join(testVault, ".pageindex", testBookId);
+    const indexDir = getBookDir(testVault, testBookId);
 
     await fs.mkdir(indexDir, { recursive: true });
     await fs.writeFile(path.join(indexDir, "bm25.json"), JSON.stringify(bm25Data));
@@ -549,7 +550,7 @@ describe("Error handling and edge cases", () => {
     await fs.mkdir(testVault, { recursive: true });
     await fs.writeFile(testFilePath, "fake pdf for no match test");
     const testBookId = await generateBookId(testFilePath);
-    const indexDir = path.join(testVault, ".pageindex", testBookId);
+    const indexDir = getBookDir(testVault, testBookId);
 
     try {
       await fs.mkdir(indexDir, { recursive: true });
@@ -585,7 +586,7 @@ describe("Error handling and edge cases", () => {
     await fs.mkdir(testVault, { recursive: true });
     await fs.writeFile(testFilePath, "fake pdf for empty query test");
     const testBookId = await generateBookId(testFilePath);
-    const indexDir = path.join(testVault, ".pageindex", testBookId);
+    const indexDir = getBookDir(testVault, testBookId);
 
     try {
       await fs.mkdir(indexDir, { recursive: true });

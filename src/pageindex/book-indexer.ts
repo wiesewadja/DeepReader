@@ -6,6 +6,7 @@ import * as crypto from "crypto";
 import { log as piLog } from "./core/logger";
 import * as path from "path";
 import * as fs from "fs/promises";
+import { getPageindexRoot, getBookDir } from "./paths.js";
 import {
   DEFAULT_ADD_NODE_TEXT,
   DEFAULT_ADD_NODE_SUMMARY,
@@ -75,7 +76,7 @@ export async function isBookIndexed(filePath: string, vaultPath: string): Promis
   } catch {
     return false;
   }
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = getBookDir(vaultPath, bookId);
 
   try {
     // Check directory exists AND critical index files are present
@@ -100,13 +101,13 @@ export async function deleteBookIndex(filePath: string, vaultPath: string): Prom
   } catch {
     return; // Source file gone, nothing to delete
   }
-  const indexDir = path.join(vaultPath, ".pageindex", bookId);
+  const indexDir = getBookDir(vaultPath, bookId);
 
   await fs.rm(indexDir, { recursive: true, force: true });
 
   // Remove from global catalog
   const { removeCatalogEntry } = await import("./vault/vectors.js");
-  await removeCatalogEntry(path.join(vaultPath, ".pageindex"), bookId);
+  await removeCatalogEntry(getPageindexRoot(vaultPath), bookId);
 }
 
 /**
@@ -128,7 +129,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   }
 
   const bookId = await generateBookId(options.filePath);
-  const indexDir = path.join(options.outputDir, ".pageindex", bookId);
+  const indexDir = getBookDir(options.outputDir, bookId);
 
   // Create indexing status file so progress survives modal close/reopen
   await fs.mkdir(indexDir, { recursive: true });
@@ -466,7 +467,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
         // Update global catalog
         const { updateCatalogEntry } = await import("./vault/vectors.js");
-        await updateCatalogEntry(path.join(options.outputDir, ".pageindex"), bookId, {
+        await updateCatalogEntry(getPageindexRoot(options.outputDir), bookId, {
           title: bookMeta.title || path.basename(options.filePath),
           vectorModel: options.embedding.model || "text-embedding-3-small",
           dimensions: vectorResult.dimensions,
@@ -1024,7 +1025,7 @@ async function downloadImages(
  * @returns Number of indexes migrated
  */
 export async function migrateBookIndexes(vaultPath: string): Promise<number> {
-  const pageindexDir = path.join(vaultPath, ".pageindex");
+  const pageindexDir = getPageindexRoot(vaultPath);
   const markerPath = path.join(pageindexDir, MIGRATION_MARKER);
 
   // Skip if already migrated

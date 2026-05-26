@@ -1,3 +1,4 @@
+import { getPageindexRoot } from '../../pageindex/paths.js';
 /**
  * Syntopical Search - Multi-book retrieval for S3 Syntopical Reading
  *
@@ -52,7 +53,7 @@ export function hasSyntopicalKeywords(query: string): boolean {
 }
 
 async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: string }[]> {
-  const pageindexDir = path.join(vaultPath, '.pageindex');
+  const pageindexDir = getPageindexRoot(vaultPath);
 
   try {
     await fs.access(pageindexDir);
@@ -95,7 +96,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
     const unresolved = options.bookIds.filter(id => !indexedBooks.some(b => b.id === id));
     if (unresolved.length > 0) {
       try {
-        const mappingRaw = await fs.readFile(path.join(vaultPath, '.pageindex', 'weread', 'mapping.json'), 'utf-8');
+        const mappingRaw = await fs.readFile(path.join(getPageindexRoot(vaultPath), 'weread', 'mapping.json'), 'utf-8');
         const parsed = JSON.parse(mappingRaw);
         const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
         for (const wereadId of unresolved) {

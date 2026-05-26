@@ -10,13 +10,13 @@ import { loadCompilerState, saveCompilerState, loadLinkSnapshots, saveLinkSnapsh
 import { generateEmbeddings, readVectorJsonl, writeVectorJsonl } from "./vectors";
 import type { EmbeddingOptions } from "./types";
 import type { CompileOptions, CompileResult, ConceptExtraction, NoteMetadata } from "./compiler-types";
+import { getPageindexRoot } from '../paths.js';
 
-const INDEX_DIR = ".pageindex";
 const BATCH_SIZE = 5;
 
 export async function compileVault(options: CompileOptions): Promise<CompileResult> {
   const { vaultPath, dryRun = false, confirm = false } = options;
-  const indexPath = join(vaultPath, INDEX_DIR);
+  const indexPath = getPageindexRoot(vaultPath);
 
   // 首次编译强制 dry-run
   const isFirstRun = !existsSync(join(indexPath, "compiler-state.json"));

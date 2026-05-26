@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import type { ProactiveState, ChapterTrigger } from './types';
 import { serviceLog as log } from '../../utils/logger.js';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 // ============ Pure Functions ============
 
@@ -76,7 +77,7 @@ export function shouldTriggerChapter(
 // ============ File I/O via Vault API ============
 
 function getStateFilePath(bookId: string): string {
-  return `.pageindex/${bookId}/proactive-state.json`;
+  return `${PAGEINDEX_DIR}/${bookId}/proactive-state.json`;
 }
 
 /** 兼容旧版 state 字段 */

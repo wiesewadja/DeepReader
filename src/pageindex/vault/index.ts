@@ -34,14 +34,14 @@ import type {
 } from "./types";
 import { countTokens } from "../core/utils";
 import { log as piLog } from "../core/logger";
+import { getPageindexRoot } from '../paths.js';
 
-const INDEX_DIR = ".pageindex";
 
 export async function indexObsidianVault(
   options: ObsidianVaultIndexOptions
 ): Promise<VaultIndexResult> {
   const { vaultPath, incremental = true } = options;
-  const indexPath = path.join(vaultPath, INDEX_DIR);
+  const indexPath = getPageindexRoot(vaultPath);
 
   // 1. Scan files
   piLog("[obsidian-vault] Scanning vault files...");
@@ -126,7 +126,7 @@ export async function getVaultIndexStatus(
   fileCount: number;
   staleFiles: string[];
 }> {
-  const indexPath = path.join(vaultPath, INDEX_DIR);
+  const indexPath = getPageindexRoot(vaultPath);
   const meta = await loadMeta(indexPath);
 
   if (!meta) {
@@ -242,7 +242,7 @@ async function loadMeta(indexPath: string): Promise<VaultIndexMeta | null> {
  * Load an existing vault index from disk for searching
  */
 export async function loadVaultIndex(vaultPath: string): Promise<VaultIndexResult | null> {
-  const indexPath = path.join(vaultPath, INDEX_DIR);
+  const indexPath = getPageindexRoot(vaultPath);
   const meta = await loadMeta(indexPath);
   if (!meta) return null;
 

@@ -15,6 +15,7 @@ import type { ProactiveEngine } from '../../agent/proactive/engine.js';
 import type { MilestoneRecorder } from '../../agent/memory/milestones.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
+import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
@@ -161,7 +162,7 @@ export class BookManager {
 
 	async loadIndexes(): Promise<void> {
 		const vaultPath = (this.host.app.vault.adapter as any).basePath;
-		const pageindexDir = `${vaultPath}/.pageindex`;
+		const pageindexDir = getPageindexRoot(vaultPath);
 
 		try {
 			const fs = require('fs/promises');
@@ -329,7 +330,7 @@ export class BookManager {
 			try {
 				const vaultPath = (this.host.app.vault.adapter as any).basePath;
 				const fs = require('fs/promises');
-				const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+				const metaRaw = await fs.readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -355,7 +356,7 @@ export class BookManager {
 			try {
 				const vaultPath = (this.host.app.vault.adapter as any).basePath;
 				const fs = require('fs/promises');
-				const metaRaw = await fs.readFile(`${vaultPath}/.pageindex/${indexId}/book-meta.json`, 'utf-8');
+				const metaRaw = await fs.readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
 				const meta = JSON.parse(metaRaw);
 				exportName = meta.exportName || undefined;
 				metaAuthor = meta.author || undefined;
@@ -522,7 +523,7 @@ export class BookManager {
 			const fs = require('fs/promises');
 			const path = require('path');
 
-			const indexDir = path.join(vaultPath, '.pageindex', indexId);
+			const indexDir = getBookDir(vaultPath, indexId);
 			let exportName: string | null = null;
 			try {
 				const metaRaw = await fs.readFile(path.join(indexDir, 'book-meta.json'), 'utf-8');

@@ -20,6 +20,7 @@ import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
 import * as os from "os";
+import { getBookDir } from '../../pageindex/paths.js';
 
 // ─── 常量 ───────────────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ const VAULT_PATH = path.resolve(
   process.env.VAULT_PATH || path.join(process.cwd(), "test-vault"),
 );
 const BOOK_DIR = path.join(VAULT_PATH, "DeepReader", "如何阅读一本书");
-const PAGEINDEX_DIR = path.join(VAULT_PATH, ".pageindex", "459d6dbc");
+const TEST_BOOK_DIR = getBookDir(VAULT_PATH, "459d6dbc");
 const DATA_JSON = path.join(
   VAULT_PATH, ".obsidian", "plugins", "deepreader", "data.json",
 );
@@ -175,7 +176,7 @@ describe.skip('E2E Group A: 真实 Vault 数据 + chunker', () => {
   });
 
   it("现有索引 tree.json 的 nodeFileMap 与 .md 文件一一对应", async () => {
-    const treePath = path.join(PAGEINDEX_DIR, "tree.json");
+    const treePath = path.join(TEST_BOOK_DIR, "tree.json");
     if (!fsSync.existsSync(treePath)) {
       console.log("  跳过：tree.json 不存在");
       return;
@@ -327,14 +328,14 @@ describe.skip('E2E Group C: 完整向量化管线', () => {
 
     // 读取 tree.json 获取 nodeFileMap
     const treeData = JSON.parse(
-      await fs.readFile(path.join(PAGEINDEX_DIR, "tree.json"), "utf-8"),
+      await fs.readFile(path.join(TEST_BOOK_DIR, "tree.json"), "utf-8"),
     );
     const nodeFileMap: Record<string, string> = treeData.nodeFileMap || {};
     const exportName = treeData.exportName || treeData.title;
 
     // 读取 book-meta.json 获取书名和描述
     const bookMeta = JSON.parse(
-      await fs.readFile(path.join(PAGEINDEX_DIR, "book-meta.json"), "utf-8"),
+      await fs.readFile(path.join(TEST_BOOK_DIR, "book-meta.json"), "utf-8"),
     );
 
     // ── L0: 书籍级 ──
@@ -608,7 +609,7 @@ describe.skip('E2E Group D: 搜索质量验证', () => {
   });
 
   it("BM25 搜索在已有索引上返回正确结果", async () => {
-    const bm25Path = path.join(PAGEINDEX_DIR, "bm25.json");
+    const bm25Path = path.join(TEST_BOOK_DIR, "bm25.json");
     if (!fsSync.existsSync(bm25Path)) {
       console.log("  跳过：bm25.json 不存在");
       return;
@@ -635,7 +636,7 @@ describe.skip('E2E Group D: 搜索质量验证', () => {
   });
 
   it("BM25 搜索中文查询和英文查询都能返回结果", async () => {
-    const bm25Path = path.join(PAGEINDEX_DIR, "bm25.json");
+    const bm25Path = path.join(TEST_BOOK_DIR, "bm25.json");
     if (!fsSync.existsSync(bm25Path)) {
       console.log("  跳过：bm25.json 不存在");
       return;

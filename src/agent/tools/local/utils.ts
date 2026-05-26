@@ -10,6 +10,7 @@ import type { LocalToolCache } from './types.js';
 import type { ToolContext } from '../types.js';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /**
  * Token 上限常量
@@ -71,7 +72,7 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
     console.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);
 
     // Load tree.json from .pageindex（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
-    const treePath = `.pageindex/${bookId}/tree.json`;
+    const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await (app.vault as any).adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 

@@ -3,6 +3,7 @@ import { migrateBookIndexes } from "../book-indexer.js";
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as crypto from "crypto";
+import { getPageindexRoot } from '../../pageindex/paths.js';
 
 vi.mock("../vault/vectors.js", () => ({
   loadCatalog: vi.fn().mockResolvedValue({ version: 1, books: {} }),
@@ -20,7 +21,7 @@ function makeBookIdFromContent(content: string): string {
 
 describe("migrateBookIndexes", () => {
   const testDir = "/tmp/deepreader-migration-test";
-  const pageindexDir = path.join(testDir, ".pageindex");
+  const pageindexDir = getPageindexRoot(testDir);
 
   beforeEach(async () => {
     await fs.rm(testDir, { recursive: true, force: true });

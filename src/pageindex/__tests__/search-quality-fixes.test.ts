@@ -31,6 +31,7 @@ import { isBookIndexed } from "../book-indexer.js";
 import * as fs from "fs/promises";
 import * as fsSync from "fs";
 import * as path from "path";
+import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Real book data from test vault
@@ -39,12 +40,7 @@ import * as path from "path";
 const VAULT_PATH = "/Users/lizhao/workspace/deepreadertest";
 const MONEY_PSYCH_BOOK_ID = "f121b2ce";
 const vaultAvailable = fsSync.existsSync(VAULT_PATH);
-const TREE_JSON_PATH = path.join(
-  VAULT_PATH,
-  ".pageindex",
-  MONEY_PSYCH_BOOK_ID,
-  "tree.json"
-);
+const TREE_JSON_PATH = getBookFile(VAULT_PATH, MONEY_PSYCH_BOOK_ID, "tree.json");
 
 interface TreeNode {
   title: string;
@@ -365,7 +361,7 @@ describe("P0-2: Score normalization correctness", () => {
 
 describe.skipIf(!vaultAvailable)("P1-1: isBookIndexed — real vault data", () => {
   it("should return true for 金钱心理学 (89e541bc) which is indexed", async () => {
-    const metaPath = path.join(VAULT_PATH, ".pageindex", MONEY_PSYCH_BOOK_ID, "book-meta.json");
+    const metaPath = getBookFile(VAULT_PATH, MONEY_PSYCH_BOOK_ID, 'book-meta.json');
     // Skip if test vault not present (e.g. CI environment)
     const metaExists = await fs.access(metaPath).then(() => true).catch(() => false);
     if (!metaExists) return;
@@ -395,7 +391,7 @@ describe.skipIf(!vaultAvailable)("P1-1: isBookIndexed — real vault data", () =
     await fs.mkdir(testDir, { recursive: true });
     await fs.writeFile(fakeFilePath, "fake pdf content");
 
-    const indexDir = path.join(testDir, ".pageindex", "testbook");
+    const indexDir = getBookDir(testDir, 'testbook');
     await fs.mkdir(indexDir, { recursive: true });
     await fs.writeFile(path.join(indexDir, "bm25.json"), "{}");
 
@@ -411,7 +407,7 @@ describe.skipIf(!vaultAvailable)("P1-1: isBookIndexed — real vault data", () =
     await fs.mkdir(testDir, { recursive: true });
     await fs.writeFile(fakeFilePath, "fake pdf content");
 
-    const indexDir = path.join(testDir, ".pageindex", "testbook");
+    const indexDir = getBookDir(testDir, 'testbook');
     await fs.mkdir(indexDir, { recursive: true });
     await fs.writeFile(path.join(indexDir, "tree.json"), "{}");
 

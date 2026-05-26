@@ -22,6 +22,7 @@ import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /** 空的 pre-search 返回结构，多处复用 */
 function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<CognitiveEngineState> {
@@ -45,7 +46,7 @@ async function validateScopeNodeIds(
   if (scopeNodeIds.length === 0 || !bookId) return [];
 
   try {
-    const treePath = `.pageindex/${bookId}/tree.json`;
+    const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await app.vault.adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
