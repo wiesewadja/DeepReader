@@ -31,16 +31,4 @@ export function getCatalogPath(vaultPath: string): string {
 	return join(vaultPath, PAGEINDEX_DIR, 'catalog.json');
 }
 
-// ── adapter 相对路径（用于 app.vault.adapter 操作） ──
-
-export function getAdapterBookFile(bookId: string, filename: string): string {
-	return `${PAGEINDEX_DIR}/${bookId}/${filename}`;
-}
-
-export function getAdapterWereadFile(filename: string): string {
-	return `${PAGEINDEX_DIR}/weread/${filename}`;
-}
-
-export function getAdapterJournalDir(hash: string): string {
-	return `${PAGEINDEX_DIR}/journal_${hash}`;
-}
+// ── adapter 相对路径通过 PAGEINDEX_DIR 常量拼接 ──

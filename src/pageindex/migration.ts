@@ -28,12 +28,19 @@ export async function migratePageindexPath(vaultPath: string): Promise<boolean> 
 	try { await fs.access(newDir); newDirExists = true; } catch {}
 
 	if (newDirExists) {
-		// 新旧都存在 → 逐条目合并
+		// 新旧都存在 → 逐条目合并（处理同名条目冲突）
 		const entries = await fs.readdir(oldDir);
 		for (const entry of entries) {
 			const src = path.join(oldDir, entry);
 			const dst = path.join(newDir, entry);
-			await fs.rename(src, dst);
+			const dstExists = await fs.access(dst).then(() => true).catch(() => false);
+			if (dstExists) {
+				// 同名条目 → 递归复制后删除源
+				await fs.cp(src, dst, { recursive: true });
+				await fs.rm(src, { recursive: true, force: true });
+			} else {
+				await fs.rename(src, dst);
+			}
 		}
 		// 合并完成后删除旧目录
 		await fs.rm(oldDir, { recursive: true, force: true });

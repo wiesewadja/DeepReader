@@ -6,7 +6,7 @@ import * as crypto from "crypto";
 import { log as piLog } from "./core/logger";
 import * as path from "path";
 import * as fs from "fs/promises";
-import { getPageindexRoot, getBookDir, LEGACY_PAGEINDEX_DIR } from "./paths.js";
+import { getPageindexRoot, getBookDir } from "./paths.js";
 import {
   DEFAULT_ADD_NODE_TEXT,
   DEFAULT_ADD_NODE_SUMMARY,
