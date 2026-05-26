@@ -967,30 +967,18 @@ export default class DeepPDFPlugin extends Plugin {
     }
 
     /**
-     * 确保初始化完成：创建 DeepReader 目录和图书管理文档
+     * 确保初始化完成：创建 DeepReader 目录
      */
     private async ensureInitialization(): Promise<void> {
         const DEEPPDF_DIR = "DeepReader";
-        const BOOK_MANAGEMENT_FILE = "我的书架.md";
 
         try {
-            // 1. 确保 DeepReader 目录存在
             const dirExists = await this.app.vault.adapter.exists(DEEPPDF_DIR);
             if (!dirExists) {
                 await this.app.vault.createFolder(DEEPPDF_DIR);
                 log('[DeepPDF] Created DeepReader directory');
             }
-
-            // 2. 确保图书管理文档存在（放在 vault 根目录）
-            const bookManagementPath = BOOK_MANAGEMENT_FILE;
-            const fileExists = await this.app.vault.adapter.exists(bookManagementPath);
-            if (!fileExists) {
-                const content = this.generateBookManagementContent();
-                await this.app.vault.create(bookManagementPath, content);
-                log('[DeepPDF] Created book management document');
-            }
         } catch (err) {
-            // 初始化失败不应阻止插件加载，只记录错误
             log.error('[DeepPDF] Initialization failed:', err);
         }
     }
@@ -1144,77 +1132,6 @@ export default class DeepPDFPlugin extends Plugin {
         }
     }
 
-    /**
-     * 生成图书管理文档内容
-     */
-    private generateBookManagementContent(): string {
-        const vaultName = encodeURIComponent(this.app.vault.getName());
-
-        return `---
-deeppdf_book_management: true
----
-
-# 我的书架
-
-> 管理所有书籍，支持书单分类和标签过滤。
-
-
-## 📖 书籍列表
-
-### 📋 全部书籍
-
-\`\`\`base
-filters:
-  and:
-    - file.inFolder("DeepReader")
-    - file.ext == "md"
-    - file.hasProperty("cover")
-formulas:
-  status_label: if(status == "reading", "阅读中", if(status == "completed", "已完成", "未开始"))
-  chat_link: link("obsidian://deepreader-chat?index_id=" + index_id, "对话")
-  book_link: link(file.path, book_name)
-properties:
-  formula.book_link:
-    displayName: 书名
-  formula.chat_link:
-    displayName: 操作
-  booklists:
-    displayName: 书单
-  tags:
-    displayName: 标签
-  progress:
-    displayName: 进度%
-  formula.status_label:
-    displayName: 状态
-views:
-  - type: cards
-    name: 封面视图
-    order:
-      - formula.book_link
-      - formula.status_label
-      - formula.chat_link
-      - booklists
-      - tags
-      - author
-    image: cover
-    cardSize: 230
-    imageAspectRatio: 1.25
-  - type: table
-    name: 全部书籍
-    order:
-      - cover
-      - formula.book_link
-      - formula.chat_link
-      - booklists
-      - tags
-      - progress
-      - formula.status_label
-\`\`\`
-
-> 💡 点击「对话」可开始与 AI 讨论，在表格中直接编辑「书单」和「标签」列即可分类书籍
-
-`;
-    }
 
     async loadSettings() {
         const rawData = (await this.loadData()) ?? {};
