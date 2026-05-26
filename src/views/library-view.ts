@@ -23,6 +23,7 @@ import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
 import { SyncStateManager } from '../weread/sync/state.js';
 import type { MappingStats } from '../weread/types.js';
 import { downloadWereadCover } from '../weread/utils/cover.js';
+import { normalizeTitle } from '../weread/sync/matcher.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { getBookFile, PAGEINDEX_DIR } from '../pageindex/paths.js';
@@ -1129,6 +1130,31 @@ export class LibraryView extends ItemView {
     }
 
     private handleZlibDownload(index: IndexListItem): void {
+        // 检查本地是否已有匹配的书籍
+        const localMatch = this.findLocalMatch(index);
+        if (localMatch) {
+            new ConfirmModal(
+                this.app,
+                '发现本地已有此书',
+                `书库中已有「${localMatch.pdf_name}」，可以直接关联而无需重新下载。\n是否直接关联？`,
+                async () => {
+                    await this.linkExistingLocalBook(index, localMatch);
+                },
+                {
+                    confirmLabel: '直接关联',
+                    cancelLabel: '继续下载',
+                    onCancel: () => {
+                        this.proceedZlibDownload(index);
+                    },
+                },
+            ).open();
+            return;
+        }
+
+        this.proceedZlibDownload(index);
+    }
+
+    private proceedZlibDownload(index: IndexListItem): void {
         const settings = this.options.plugin?.settings;
         if (!settings?.zlibraryUserId || !settings?.zlibraryUserKey) {
             new Notice('请先在设置中登录 Z-Library 账号', 3000);
@@ -1142,6 +1168,61 @@ export class LibraryView extends ItemView {
         new ZLibrarySearchModal(this.app, bookTitle, bookAuthor, client, async (book) => {
             await this.downloadIndexAndAssociate(index, book, client);
         }).open();
+    }
+
+    /**
+     * 在本地已索引书籍中查找标题匹配的书籍（排除 weread 类型）
+     */
+    private findLocalMatch(wereadIndex: IndexListItem): IndexListItem | undefined {
+        const wereadTitle = normalizeTitle(wereadIndex.pdf_name);
+        if (!wereadTitle) return undefined;
+
+        return this.indexes.find(idx => {
+            if (idx.fileType === 'weread') return false;
+            if (this.associatedDeepReaderIds.has(idx.id)) return false;
+            const localTitle = normalizeTitle(idx.pdf_name);
+            if (!localTitle) return false;
+            if (wereadTitle === localTitle) return true;
+            const shorter = wereadTitle.length < localTitle.length ? wereadTitle : localTitle;
+            const longer = wereadTitle.length < localTitle.length ? localTitle : wereadTitle;
+            return longer.includes(shorter) && shorter.length >= longer.length * 0.7;
+        });
+    }
+
+    /**
+     * 直接关联已有的本地书籍到微信读书书籍
+     */
+    private async linkExistingLocalBook(wereadIndex: IndexListItem, localIndex: IndexListItem): Promise<void> {
+        const adapter = (this.app as any).vault?.adapter;
+        if (!adapter) {
+            new Notice('Vault 不可用');
+            return;
+        }
+
+        this.setWereadCardProcessing(wereadIndex, 50, '关联中...');
+
+        try {
+            const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
+            let mapping = { mappings: {} as Record<string, any> };
+            if (await adapter.exists(mappingPath)) {
+                const raw = await adapter.read(mappingPath);
+                mapping = JSON.parse(raw);
+            }
+            mapping.mappings[wereadIndex.id] = {
+                deepReaderBookId: localIndex.id,
+                title: wereadIndex.pdf_name,
+            };
+            await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
+        } catch (e: any) {
+            this.restoreWereadCard(wereadIndex);
+            new Notice(`关联失败：${e.message}`, 5000);
+            return;
+        }
+
+        new Notice(`「${wereadIndex.pdf_name}」已关联到本地书籍`);
+        await this.refreshIndexes();
+        await this.loadWereadMapping();
+        this.renderGrid();
     }
 
     /** 将微信读书卡片切换为 processing 状态以显示进度条 */

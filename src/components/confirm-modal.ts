@@ -15,6 +15,7 @@ export interface ConfirmModalOptions {
     cancelLabel?: string;
     isDestructive?: boolean;
     checkbox?: ConfirmModalCheckbox;  // 可选的复选框配置
+    onCancel?: () => void | Promise<void>;
 }
 
 export class ConfirmModal extends Modal {
@@ -45,7 +46,7 @@ export class ConfirmModal extends Modal {
 
     onOpen() {
         const { contentEl } = this;
-        const { confirmLabel = "Confirm", cancelLabel = "Cancel", checkbox } = this.options;
+        const { confirmLabel = "Confirm", cancelLabel = "Cancel", checkbox, onCancel } = this.options;
 
         // 标题
         contentEl.createEl("h2", { text: this.title });
@@ -101,8 +102,12 @@ export class ConfirmModal extends Modal {
             .addButton((btn) =>
                 btn
                     .setButtonText(cancelLabel)
-                    .onClick(() => {
-                        this.close();
+                    .onClick(async () => {
+                        try {
+                            if (onCancel) await onCancel();
+                        } finally {
+                            this.close();
+                        }
                     })
             )
             .addButton((btn) =>
