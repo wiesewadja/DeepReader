@@ -8,7 +8,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { PiRpcClient } from './pi-client.js';
-import { buildSpawnArgs, resolvePiPaths } from './pi-config.js';
+import { buildSpawnArgs, buildSpawnEnv, resolvePiPaths, detectPiCli } from './pi-config.js';
 import { PiProcessState, type PiConfig, type PiSkillContext, type PiExecutionResult } from './types.js';
 import { agentLog as log, error as logError } from '../../utils/logger.js';
 import type { App } from 'obsidian';
@@ -77,12 +77,21 @@ export class PiProcessManager {
 			// 目录可能已存在
 		}
 
-		const args = buildSpawnArgs(config);
+		// 检测 PI 可执行文件路径（Obsidian GUI 进程 PATH 不完整）
+		const piStatus = await detectPiCli(config.customPiPath);
+		if (!piStatus.available) {
+			this.state = PiProcessState.ERROR;
+			throw new Error('PI CLI not found. Please install PI and retry.');
+		}
+		const piBin = piStatus.path ?? 'pi';
 
-		this.process = spawn('pi', args, {
+		const args = buildSpawnArgs(config);
+		const spawnEnv = { ...buildSpawnEnv(), ANTHROPIC_API_KEY: config.apiKey };
+
+		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
 			stdio: ['pipe', 'pipe', 'pipe'],
-			env: { ...process.env, ANTHROPIC_API_KEY: config.apiKey },
+			env: spawnEnv,
 		});
 
 		this.process.on('error', (err) => {
@@ -275,7 +284,7 @@ export class PiProcessManager {
 	/**
 	 * 从 App 实例构建 PiConfig
 	 */
-	buildConfig(apiKey: string, model: string, provider: string): PiConfig {
+	buildConfig(apiKey: string, model: string, provider: string, customPiPath?: string): PiConfig {
 		const paths = resolvePiPaths(this.app);
 		return {
 			apiKey,
@@ -285,6 +294,7 @@ export class PiProcessManager {
 			sessionDir: paths.sessionDir,
 			exportsDir: paths.exportsDir,
 			workingDir: paths.workingDir,
+			customPiPath,
 		};
 	}
 

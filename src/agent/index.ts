@@ -50,6 +50,7 @@ import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { PiProcessManager } from './pi/pi-manager.js';
+	import { detectPiCli } from './pi/pi-config.js';
 import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from './pi/pi-context.js';
 import type { PiConfig } from './pi/types.js';
 import { agentLog as log } from '../utils/logger.js';
@@ -598,10 +599,10 @@ ${currentMemory}
     }
 
     // 检测 PI CLI 是否可用
-    const { detectPiCli } = await import('./pi/pi-config.js');
-    const piStatus = await detectPiCli();
+    const customPiPath = context.plugin?.settings?.customPiPath;
+    const piStatus = await detectPiCli(customPiPath);
     if (!piStatus.available) {
-      const msg = 'PI Agent 未安装。请在插件设置 → PI Agent 页面点击安装。';
+      const msg = 'PI Agent 未安装。请在插件设置 → 高级 → PI Agent 页面点击安装，或填写 pi 的绝对路径。';
       callbacks?.onError?.(msg);
       return [{ role: 'assistant', content: msg }];
     }
@@ -610,6 +611,7 @@ ${currentMemory}
       this.options.apiKey,
       this.options.model ?? 'claude-sonnet-4-20250514',
       this.options.providerName ?? 'anthropic',
+      customPiPath,
     );
 
     const skillDescriptions = await scanSkillDescriptions(app);

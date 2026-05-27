@@ -142,6 +142,7 @@ export interface DeepPDFSettings {
 		// PI Agent 集成
 		piEnabled: boolean;
 		piLastVersion?: string;
+		customPiPath: string;
 
 
 	// ═══════════════════════════════════════════════════════════
@@ -260,5 +261,6 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 		// PI Agent
 		piEnabled: false,
+		customPiPath: '',
 
 };

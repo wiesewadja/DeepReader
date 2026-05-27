@@ -22,6 +22,7 @@ export interface PiConfig {
 	sessionDir: string;
 	exportsDir: string;
 	workingDir: string;
+	customPiPath?: string;
 }
 
 // ─── 上下文传递 ───
