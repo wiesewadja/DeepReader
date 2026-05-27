@@ -14,7 +14,6 @@ import { createUpdateProfileTool } from './definitions/profile.js';
 import { createSearchReadBooksTool } from './definitions/search-read-books.js';
 import { createCanvasToolDefinition } from './definitions/canvas.js';
 import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
-import { createCheckSubAgentTool } from './definitions/sub-agent.js';
 import { createSearchJournalTool } from './definitions/search-journal.js';
 import { createGenerateInfographicTool } from './definitions/generate-infographic.js';
 import {
@@ -37,7 +36,6 @@ export {
   readBookSectionTool
 } from './local/index.js';
 export { writeNoteTool } from './write-note.js';
-export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool } from './memory.js';
 export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
@@ -60,7 +58,6 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
     createSearchMemoryTool(ctx),
     createUpdateProfileTool(ctx),
     createSearchReadBooksTool(ctx),
-    createCheckSubAgentTool(ctx),
     createExcalidrawToolDefinition(ctx),
   ];
 

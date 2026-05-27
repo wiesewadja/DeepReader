@@ -135,8 +135,6 @@ export const TOOL_TO_ACTION: Record<string, (args: Record<string, unknown>, cont
 		if (dtype === 'knowledge_graph') return '🔗 生成知识图谱';
 		return '🗺️ 生成思维导图';
 	},
-	create_sub_agent: () => '🤖 分头查找资料',
-	check_sub_agent: () => '⏳ 等待子任务完成',
 	Skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`,
 	skill: (args) => `🎓 加载技能「${String(args.skill || '专业知识')}」`, // 兼容小写
 };

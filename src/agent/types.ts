@@ -74,6 +74,22 @@ export interface Skill {
   };
 }
 
+// ==================== Agent Loop 回调 ====================
+
+export interface AgentLoopOptions {
+  maxIterations?: number;
+  abortSignal?: AbortSignal;
+  onContent: (text: string) => void;
+  onProgress: (status: string) => void;
+  onComplete: () => void;
+  onError: (error: string) => void;
+  onContentComplete?: (content: string) => Promise<string>;
+  onHumanizedProgress?: (progress: import('./ui/humanized-types.js').HumanizedProgress) => void;
+  onReasoning?: (text: string) => void;
+  onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
+  onVoiceChunk?: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => void;
+}
+
 // ==================== Agent 配置 ====================
 
 export interface AgentConfig {

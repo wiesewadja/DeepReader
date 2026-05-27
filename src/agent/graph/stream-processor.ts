@@ -5,7 +5,7 @@
  * 包括节点状态分发、HITL interrupt 检测、语音管线触发。
  */
 
-import type { AgentLoopOptions } from '../agent-loop.js';
+import type { AgentLoopOptions } from '../types.js';
 import type { ChatMessage } from '../types.js';
 import type { HumanizedProgress, ReadingLevel } from '../ui/humanized-types.js';
 

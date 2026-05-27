@@ -22,7 +22,7 @@ export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types
 export type { ToolContext } from './tools/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata } from './context/builder.js';
-export type { AgentLoopOptions } from './agent-loop.js';
+export type { AgentLoopOptions } from './types.js';
 
 // LangGraph 认知引擎导出
 export {
@@ -41,11 +41,9 @@ import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
-import { SubagentManager } from './subagent/manager.js';
-import { runAgentLoop } from './agent-loop.js';
 import { IntentRouter } from './router/index.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
-import type { AgentLoopOptions } from './agent-loop.js';
+import type { AgentLoopOptions } from './types.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
@@ -99,7 +97,6 @@ export class FrontendAgent {
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
-  private subagentManager?: SubagentManager;
   private piManager: PiProcessManager;
   private initialized = false;
   private activeThreadId: string | null = null;
@@ -572,16 +569,6 @@ ${currentMemory}
   }
 
   /**
-   * 过滤工具定义，只保留允许的工具
-   */
-  private filterToolDefinitions(
-    allTools: ToolDefinition[],
-    allowed: string[]
-  ): ToolDefinition[] {
-    return allTools.filter(tool => allowed.includes(tool.function.name));
-  }
-
-  /**
    * 处理 PI skill 请求
    */
   private async handleSkillRequest(
@@ -663,19 +650,6 @@ ${currentMemory}
   }
 
   /**
-   * 重载用户上下文（重新加载 MEMORY.md）
-   */
-  async reloadContext(): Promise<void> {
-    log('[FrontendAgent] User context will be refreshed on next prompt');
-  }
-
-  /**
-   * 清除缓存的用户画像（画像重建后调用）
-   */
-  invalidateProfileCache(): void {
-  }
-
-  /**
    * 获取 LLM 客户端（用于记忆整合等内部功能）
    */
   getLLMClient(): LLMClient {
@@ -694,22 +668,5 @@ ${currentMemory}
    */
   async destroy(): Promise<void> {
     await this.piManager.stop();
-  }
-
-  /**
-   * 初始化并设置 SubagentManager
-   */
-  setupSubagentManager(context: ToolContext): void {
-    const manager = new SubagentManager(
-      runAgentLoop,
-      this.llmClientManager.getMainClient(),
-      context,
-      {},
-      undefined,
-      undefined
-    );
-    this.subagentManager = manager;
-    context.subagentManager = manager;
-    log('[FrontendAgent] SubagentManager 已初始化');
   }
 }

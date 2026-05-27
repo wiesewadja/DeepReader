@@ -722,8 +722,6 @@ export class AgentChatController {
 				},
 			};
 
-			this.host.frontendAgent.setupSubagentManager(context);
-
 			const result = await this.host.frontendAgent.runGraphEngine(
 				userMessage,
 				context,
@@ -882,7 +880,7 @@ export class AgentChatController {
 		nodeId: string,
 		content: string,
 		context: import('../../agent/tools/types.js').ToolContext,
-		callbacks: import('../../agent/agent-loop.js').AgentLoopOptions
+		callbacks: import('../../agent/types.js').AgentLoopOptions
 	): void {
 		const nodeLabel = nodeId === 'analytical' ? 'S2 分析' : nodeId === 'formatter' ? 'S4 格式化' : nodeId;
 
@@ -908,7 +906,7 @@ export class AgentChatController {
 		approved: boolean,
 		feedback: string,
 		context: import('../../agent/tools/types.js').ToolContext,
-		callbacks: import('../../agent/agent-loop.js').AgentLoopOptions
+		callbacks: import('../../agent/types.js').AgentLoopOptions
 	): Promise<void> {
 		try {
 			const result = await this.host.frontendAgent!.resumeGraphExecution(

@@ -9,7 +9,6 @@ import type { ChatMessage } from '../types';
 import type { LLMClientManager } from '../llm-client';
 import type { ToolContext } from '../tools/types';
 import type { HistorySummary } from './utils/history-summarizer';
-import { ReadingDepth } from './state.js';
 
 /**
  * Reading depth levels based on Adler's methodology
@@ -36,19 +35,9 @@ export interface SharedContext {
   chatHistory: ChatMessage[];
   rawUserQuery: string;
   /** @deprecated 已迁移到 CognitiveEngineState */
-  depth: ReadingDepth;
-  /** @deprecated 已迁移到 CognitiveEngineState */
-  standaloneQuery?: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
-  scopeNodeIds?: string[];
-  /** @deprecated 已迁移到 CognitiveEngineState */
   tocSummary?: string;
   /** @deprecated 已迁移到 CognitiveEngineState */
   betterQuestion?: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
-  structuralAnalysis?: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
-  analysisResult?: string;
   s2ToolResults?: Array<{ toolName: string; args: Record<string, unknown>; result: string; originalResultLength: number }>;
   indexId: string;
   /** @deprecated 已迁移到 CognitiveEngineState */
@@ -97,7 +86,6 @@ export function createSharedContext(params: {
   return {
     chatHistory: params.chatHistory || [],
     rawUserQuery: params.rawUserQuery,
-    depth: ReadingDepth.ANALYTICAL,
     indexId: params.indexId,
     pdfName: params.pdfName,
     abortSignal: params.abortSignal,
