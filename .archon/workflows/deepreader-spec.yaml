@@ -1,6 +1,6 @@
 name: deepreader-spec
 description: |
-  交互式特性规划工作流。在隔离的 worktree 分支上，从自然语言描述出发，
+  交互式特性规划工作流。从自然语言描述出发，
   通过讨论生成 SPEC.md 和 tasks/plan.md。
   Triggers: "规划特性", "写SPEC", "spec一个功能", "规划一个新特性", "plan feature"。
 
@@ -10,7 +10,7 @@ interactive: true
 provider: claude
 model: sonnet
 worktree:
-  enabled: true
+  enabled: false
 
 nodes:
   # ── Phase 1: 探索想法，提出关键问题 ──

@@ -6,6 +6,9 @@
 
 import { type App, normalizePath } from 'obsidian';
 import type { PiConfig } from './types.js';
+import { spawn } from 'child_process';
+import { homedir } from 'os';
+import { join } from 'path';
 
 const PI_SYSTEM_PROMPT = `你是奚童的技能执行引擎，隶属于 DeepReader 深度阅读插件。
 
@@ -69,29 +72,109 @@ export function getPiSystemPrompt(): string {
 	return PI_SYSTEM_PROMPT;
 }
 
+/**
+ * 构建 spawn 需要的 env，补充 macOS GUI 应用缺失的 PATH
+ *
+ * Obsidian 从 Dock/Spotlight 启动时 PATH 不含 Homebrew/node 路径，
+ * 而 pi 是 Node.js 脚本（#!/usr/bin/env node），需要 node 在 PATH 中。
+ */
+export function buildSpawnEnv(): NodeJS.ProcessEnv {
+	const extraPaths = [
+		'/opt/homebrew/bin',           // Apple Silicon Homebrew (node + pi)
+		'/usr/local/bin',              // Intel Homebrew
+		join(homedir(), '.npm-global/bin'),
+	];
+	const existingPath = (process.env.PATH ?? '').split(':');
+	const merged = [...new Set([...extraPaths, ...existingPath])];
+	return { ...process.env, PATH: merged.join(':') };
+}
+
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
-let piCliCache: { result: { available: boolean; version?: string; error?: string }; timestamp: number } | null = null;
+let piCliCache: { result: { available: boolean; version?: string; path?: string; error?: string }; timestamp: number } | null = null;
+
+/** semver 格式正则（如 0.75.5） */
+const SEMVER_RE = /^\d+\.\d+\.\d+/;
+
+/**
+ * 候选 PI 可执行文件路径
+ *
+ * macOS GUI 应用（Obsidian）的 PATH 通常不含 Homebrew/npm 全局目录，
+ * 所以需要手动尝试常见安装位置。
+ */
+function getCandidatePaths(customPath?: string): string[] {
+	const home = homedir();
+	const candidates: string[] = [];
+
+	// 优先使用用户手动指定的路径
+	if (customPath) {
+		candidates.push(customPath);
+	}
+
+	candidates.push(
+		'/opt/homebrew/bin/pi',           // Apple Silicon Homebrew
+		'/usr/local/bin/pi',              // Intel Homebrew
+		join(home, '.npm-global/bin/pi'), // 用户自定义 npm prefix
+		join(home, '.local/bin/pi'),      // 手动安装
+		'pi',                             // 最后尝试 PATH（兜底）
+	);
+	return candidates;
+}
+
+/**
+ * 用 spawn 直接执行 pi --version（不走 shell），收集 stdout + stderr
+ */
+async function tryDetect(cliPath: string, env: NodeJS.ProcessEnv): Promise<{ available: true; version: string; path: string } | null> {
+	return new Promise((resolve) => {
+		try {
+			const child = spawn(cliPath, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'], env });
+			let out = '';
+
+			child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
+			child.stderr.on('data', (d: Buffer) => { out += d.toString(); });
+
+			child.on('error', (e) => {
+				resolve(null);
+			});
+
+			child.on('close', (code) => {
+				const output = out.trim();
+				if (code === 0 && SEMVER_RE.test(output)) {
+					resolve({ available: true, version: output, path: cliPath });
+				} else {
+					resolve(null);
+				}
+			});
+		} catch (e) {
+			resolve(null);
+		}
+	});
+}
 
 /**
  * 检测 PI CLI 是否可用（带缓存，5 分钟 TTL）
+ *
+ * 优先使用用户自定义路径，再尝试常见安装位置。
+ * 返回检测到的路径供 spawn 使用。
  */
-export async function detectPiCli(): Promise<{ available: boolean; version?: string; error?: string }> {
+export async function detectPiCli(customPath?: string): Promise<{ available: boolean; version?: string; path?: string; error?: string }> {
 	const now = Date.now();
 	if (piCliCache && now - piCliCache.timestamp < CACHE_TTL) {
 		return piCliCache.result;
 	}
 
-	const { execSync } = await import('child_process');
-	try {
-		const output = execSync('pi --version', { timeout: 5000, encoding: 'utf8' }).trim();
-		const result = { available: true, version: output };
-		piCliCache = { result, timestamp: now };
-		return result;
-	} catch (e) {
-		const result = { available: false, error: (e as Error).message };
-		piCliCache = { result, timestamp: now };
-		return result;
+	const env = buildSpawnEnv();
+	const candidates = getCandidatePaths(customPath);
+	for (const candidate of candidates) {
+		const result = await tryDetect(candidate, env);
+		if (result) {
+			piCliCache = { result, timestamp: now };
+			return result;
+		}
 	}
+
+	const result = { available: false, error: 'PI CLI not found in common paths' };
+	piCliCache = { result, timestamp: now };
+	return result;
 }
 
 /**
