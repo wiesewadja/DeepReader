@@ -148,7 +148,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         filePath: '',
         query,
         bookId: book.id,
-        vaultPath,
+        vaultPath: app ? undefined : vaultPath,
         topK: topKPerBook,
         embedding,
         reranker,

@@ -211,17 +211,31 @@ describe('mobile-fs: resolveBookIdFromPdf', () => {
 		expect(bookId).toBeNull();
 	});
 
-	it('移动端无 basePath 时用 vault 相对路径哈希', async () => {
+	it('移动端无 basePath 时通过 book-meta.json 标题匹配', async () => {
 		const app = {
 			vault: {
-				adapter: { basePath: undefined },
-				getFiles: vi.fn().mockReturnValue([
-					{ path: 'books/test.pdf', extension: 'pdf' },
-				]),
+				adapter: {
+					basePath: undefined,
+					list: vi.fn().mockResolvedValue({ files: [], folders: ['.obsidian/plugins/deepreader/pageindex/abc12345'] }),
+					read: vi.fn().mockResolvedValue(JSON.stringify({ title: 'Test Book' })),
+				},
 			},
 		} as any;
-		const bookId = await resolveBookIdFromPdf(app, 'test.pdf');
-		expect(bookId).toBeTruthy();
-		expect(bookId).toHaveLength(8);
+		const bookId = await resolveBookIdFromPdf(app, 'Test Book.pdf');
+		expect(bookId).toBe('abc12345');
+	});
+
+	it('移动端无匹配书籍时返回 null', async () => {
+		const app = {
+			vault: {
+				adapter: {
+					basePath: undefined,
+					list: vi.fn().mockResolvedValue({ files: [], folders: ['.obsidian/plugins/deepreader/pageindex/abc12345'] }),
+					read: vi.fn().mockResolvedValue(JSON.stringify({ title: 'Other Book' })),
+				},
+			},
+		} as any;
+		const bookId = await resolveBookIdFromPdf(app, 'Test Book.pdf');
+		expect(bookId).toBeNull();
 	});
 });

@@ -7,6 +7,7 @@
 
 import { type App, normalizePath } from 'obsidian';
 import type { TFile } from 'obsidian';
+import { PAGEINDEX_DIR } from '../pageindex/paths.js';
 
 /** 通过 Vault API 读取文本文件 */
 export async function vaultRead(app: App, relativePath: string): Promise<string> {
@@ -41,7 +42,16 @@ export async function vaultRemove(app: App, relativePath: string): Promise<void>
 
 /** 递归删除目录 */
 export async function vaultRmdir(app: App, relativePath: string): Promise<void> {
-	return (app.vault.adapter as any).rmdir(normalizePath(relativePath), true);
+	const adapter = app.vault.adapter as any;
+	const dir = normalizePath(relativePath);
+	if (typeof adapter.rmdir === 'function') {
+		return adapter.rmdir(dir, true);
+	}
+	// Fallback: 手动递归删除（兼容不同 adapter 实现）
+	const { files, folders } = await adapter.list(dir);
+	for (const f of files) await adapter.remove(f);
+	for (const d of folders) await vaultRmdir(app, d);
+	await adapter.remove(dir);
 }
 
 /** 写入文本文件 */
@@ -76,16 +86,37 @@ export function basename(filePath: string, ext?: string): string {
 
 /**
  * 从 pdfName 查找书籍文件并计算 bookId（fallback 路径）
- * 桌面端用绝对路径哈希，移动端用 vault 相对路径
+ * 桌面端用 basePath + vault 相对路径哈希（与索引构建一致）
+ * 移动端通过 book-meta.json 标题匹配查找已有的 bookId
  */
 export async function resolveBookIdFromPdf(app: App, pdfName: string): Promise<string | null> {
-	const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-	const files = app.vault.getFiles();
-	const bookFile = files.find((f: TFile) =>
-		f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-	);
-	if (!bookFile) return null;
 	const basePath = (app.vault.adapter as any).basePath as string | undefined;
-	const hashInput = basePath ? `${basePath}/${bookFile.path}` : bookFile.path;
-	return (await sha256Hex(hashInput)).slice(0, 8);
+
+	if (basePath) {
+		// 桌面端：直接用绝对路径哈希（与索引构建时的 bookId 一致）
+		const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+		const files = app.vault.getFiles();
+		const bookFile = files.find((f: TFile) =>
+			f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
+		);
+		if (!bookFile) return null;
+		return (await sha256Hex(`${basePath}/${bookFile.path}`)).slice(0, 8);
+	}
+
+	// 移动端：遍历 pageindex 目录，通过 book-meta.json 的标题匹配
+	const bookTitle = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+	try {
+		const { folders } = await app.vault.adapter.list(PAGEINDEX_DIR);
+		for (const folder of folders) {
+			const bookId = folder.split('/').pop() || folder;
+			try {
+				const meta = await app.vault.adapter.read(`${PAGEINDEX_DIR}/${bookId}/book-meta.json`);
+				const parsed = JSON.parse(meta);
+				if (parsed.title && parsed.title.includes(bookTitle)) {
+					return bookId;
+				}
+			} catch { continue; }
+		}
+	} catch { /* pageindex dir not found */ }
+	return null;
 }

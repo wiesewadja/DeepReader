@@ -423,3 +423,16 @@
 	background: var(--interactive-accent);
 	color: white;
 }
+
+/* ==================== 移动端适配 ==================== */
+
+@media (max-width: 600px) {
+	.deeppdf-message-list {
+		padding: 8px;
+	}
+
+	.deeppdf-advisor-content {
+		padding: 10px 12px;
+		font-size: 14px;
+	}
+}
