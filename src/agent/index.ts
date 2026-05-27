@@ -587,13 +587,13 @@ ${currentMemory}
   private async handleSkillRequest(
     userMessage: string,
     context: ToolContext,
-    callbacks: AgentLoopOptions,
+    callbacks?: AgentLoopOptions,
   ): Promise<ChatMessage[]> {
     const app = this.options.app;
 
     if (!this.options.apiKey) {
       const msg = 'Skill 能力需要配置 API Key，请在设置中填写。';
-      callbacks.onError?.(msg);
+      callbacks?.onError?.(msg);
       return [{ role: 'assistant', content: msg }];
     }
 
@@ -602,7 +602,7 @@ ${currentMemory}
     const piStatus = await detectPiCli();
     if (!piStatus.available) {
       const msg = 'PI Agent 未安装。请在插件设置 → PI Agent 页面点击安装。';
-      callbacks.onError?.(msg);
+      callbacks?.onError?.(msg);
       return [{ role: 'assistant', content: msg }];
     }
 
@@ -632,12 +632,12 @@ ${currentMemory}
       outputPath,
     });
 
-    callbacks.onProgress('正在通过 PI 执行 skill...');
+    callbacks?.onProgress?.('正在通过 PI 执行 skill...');
 
     const result = await this.piManager.executeSkill(
       skillContext,
       piConfig,
-      callbacks.onProgress,
+      callbacks?.onProgress,
     );
 
     if (result.success) {

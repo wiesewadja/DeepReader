@@ -48,8 +48,7 @@ export interface DocumentMetadata {
  * 使用方式：
  * ```typescript
  * const builder = new ContextBuilder(app, memoryStore, { deepReaderDir: 'DeepReader' });
- * const skillsSummary = skillLoader.buildSkillsSummary(); // XML 格式
- * const systemPrompt = await builder.buildSystemPrompt(skillsSummary, metadata);
+ * const systemPrompt = await builder.buildSystemPrompt(metadata);
  * const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
  * const messages = ContextBuilder.buildMessages(systemPrompt, history, userMsg, runtimeContext);
  * ```

@@ -65,9 +65,14 @@ export class PiProcessManager {
 		this.state = PiProcessState.STARTING;
 		log('[PiManager] Starting PI RPC process...');
 
-		// 确保 session 目录存在
+		// 确保 session 和 exports 目录存在
 		try {
 			mkdirSync(dirname(config.sessionDir), { recursive: true });
+		} catch {
+			// 目录可能已存在
+		}
+		try {
+			mkdirSync(config.exportsDir, { recursive: true });
 		} catch {
 			// 目录可能已存在
 		}
@@ -278,6 +283,7 @@ export class PiProcessManager {
 			provider,
 			skillsDir: paths.skillsDir,
 			sessionDir: paths.sessionDir,
+			exportsDir: paths.exportsDir,
 			workingDir: paths.workingDir,
 		};
 	}

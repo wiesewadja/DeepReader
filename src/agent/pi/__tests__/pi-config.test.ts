@@ -13,6 +13,7 @@ function createTestConfig(): PiConfig {
 		provider: 'anthropic',
 		skillsDir: '/vault/DeepReader/skills',
 		sessionDir: '/vault/DeepReader/pi/sessions',
+		exportsDir: '/vault/DeepReader/exports',
 		workingDir: '/vault',
 	};
 }

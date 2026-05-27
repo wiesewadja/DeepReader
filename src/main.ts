@@ -33,7 +33,6 @@ export default class DeepPDFPlugin extends Plugin {
     readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
     profileBuilder?: import('./services/profile-builder').ProfileBuilder;
-    private skillsDir: string = '';
 
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
@@ -967,12 +966,6 @@ export default class DeepPDFPlugin extends Plugin {
      */
     private async syncSkillsToVault(): Promise<void> {
         const SKILLS_DIR = "DeepReader/skills";
-
-        // 保存 skillsDir 供后续使用
-        // @ts-ignore - ObsidianFileSystemAdapter.getBasePath() 返回 string
-        const vaultPath = this.app.vault.adapter.getBasePath() as string;
-        const path = require('path') as typeof import('path');
-        this.skillsDir = path.join(vaultPath, SKILLS_DIR);
 
         try {
             // 确保 skills 目录存在

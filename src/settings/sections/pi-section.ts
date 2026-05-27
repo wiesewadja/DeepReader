@@ -4,6 +4,7 @@
 
 import { Setting, Notice } from 'obsidian';
 import type { SectionContext } from '../types.js';
+import { detectPiCli, invalidatePiCliCache } from '../../agent/pi/pi-config.js';
 
 export function renderPiSection(ctx: SectionContext): void {
 	const { containerEl: container } = ctx;
@@ -48,6 +49,7 @@ export function renderPiSection(ctx: SectionContext): void {
 						stdio: 'pipe',
 					});
 					new Notice('PI 安装成功');
+					invalidatePiCliCache();
 					await detectPiStatus(statusEl);
 				} catch (err) {
 					new Notice(`安装失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -69,6 +71,7 @@ export function renderPiSection(ctx: SectionContext): void {
 					const { execSync } = await import('child_process');
 					execSync('pi update --self', { timeout: 30000, stdio: 'pipe' });
 					new Notice('PI 更新成功');
+					invalidatePiCliCache();
 					await detectPiStatus(statusEl);
 				} catch (err) {
 					new Notice(`更新失败: ${err instanceof Error ? err.message : String(err)}`);
@@ -79,12 +82,11 @@ export function renderPiSection(ctx: SectionContext): void {
 }
 
 async function detectPiStatus(el: HTMLElement): Promise<void> {
-	try {
-		const { execSync } = await import('child_process');
-		const version = execSync('pi --version', { timeout: 5000, encoding: 'utf8' }).trim();
-		el.setText(`PI 已安装: v${version} ✓`);
+	const result = await detectPiCli();
+	if (result.available) {
+		el.setText(`PI 已安装: v${result.version} ✓`);
 		el.style.color = 'var(--text-success)';
-	} catch {
+	} else {
 		el.setText('PI 未安装。请点击下方按钮安装。');
 		el.style.color = 'var(--text-error)';
 	}

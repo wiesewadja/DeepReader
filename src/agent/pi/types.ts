@@ -20,6 +20,7 @@ export interface PiConfig {
 	provider: string;
 	skillsDir: string;
 	sessionDir: string;
+	exportsDir: string;
 	workingDir: string;
 }
 

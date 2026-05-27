@@ -33,13 +33,13 @@ export async function scanSkillDescriptions(app: App): Promise<string[]> {
 }
 
 /**
- * 生成输出文件路径
+ * 生成输出文件路径（vault-relative，兼容 Obsidian Vault API）
  */
 export function generateOutputPath(app: App, skillName: string, bookTitle: string): string {
 	const paths = resolvePiPaths(app);
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
 	const safeName = bookTitle.replace(/[<>:"/\\|?*]/g, '_').substring(0, 30);
-	return normalizePath(`${paths.exportsDir}/${safeName}-${skillName}-${timestamp}.md`);
+	return normalizePath(`${paths.exportsDirRelative}/${safeName}-${skillName}-${timestamp}.md`);
 }
 
 /**
