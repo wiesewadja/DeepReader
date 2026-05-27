@@ -11,7 +11,7 @@ description: |
 provider: claude
 model: sonnet
 worktree:
-  enabled: true
+  enabled: false
 
 nodes:
   # ── Phase 1: 检测输入 ──
