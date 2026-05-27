@@ -86,6 +86,7 @@ interface PiSkillContext {
 ```bash
 pi --mode rpc --no-session \
    --session-dir "<vault>/DeepReader/pi/sessions" \
+   --no-skills \
    --skill "<vault>/DeepReader/skills" \
    --no-context-files \
    --tools read,write,edit,grep,find,ls \
@@ -93,6 +94,8 @@ pi --mode rpc --no-session \
    --model "<model>" \
    --append-system-prompt "你是奚童的技能执行引擎..."
 ```
+
+> **注意**: 必须使用 `--no-skills` 先禁用全局 skill 发现，再用 `--skill` 只加载 vault 的 skill，否则 PI 会混入全局安装的 skills。
 
 ### PI 系统提示词
 
@@ -350,6 +353,7 @@ pi update --self
 # RPC 模式启动
 pi --mode rpc --no-session \
    --session-dir "<path>" \
+   --no-skills \
    --skill "<path>" \
    --no-context-files \
    --tools read,write,edit,grep,find,ls \

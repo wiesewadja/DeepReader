@@ -131,7 +131,7 @@ export class SidebarView extends ItemView {
         // 每次都从 plugin 获取最新的 Agent（支持设置切换后立即生效）
         const agent = await this.plugin.getFrontendAgent();
         this.frontendAgent = agent;
-        log('[DeepPDF] FrontendAgent 初始化完成，可用 skills:', agent.listSkills());
+        log('[DeepPDF] FrontendAgent 初始化完成');
 
         // 初始化主动阅读引导引擎
         this.proactiveEngine = new ProactiveEngine(

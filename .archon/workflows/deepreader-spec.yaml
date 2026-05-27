@@ -1,0 +1,53 @@
+name: deepreader-spec
+description: |
+  交互式特性规划工作流。在隔离的 worktree 分支上，从自然语言描述出发，
+  通过讨论生成 SPEC.md 和 tasks/plan.md。
+  Triggers: "规划特性", "写SPEC", "spec一个功能", "规划一个新特性", "plan feature"。
+
+  用法：archon workflow run deepreader-spec --branch feat/<name> "特性描述"
+  后续：archon continue feat/<name> --workflow deepreader-implement
+interactive: true
+provider: claude
+model: sonnet
+worktree:
+  enabled: true
+
+nodes:
+  # ── Phase 1: 探索想法，提出关键问题 ──
+  - id: explore
+    command: dr-explore-idea
+    context: fresh
+
+  - id: answer-questions
+    approval:
+      message: "请回答以上问题，或补充你想到的其他约束。回答后我生成 SPEC 草稿。"
+      capture_response: true
+    depends_on: [explore]
+
+  # ── Phase 2: 生成 SPEC ──
+  - id: write-spec
+    command: dr-write-spec
+    depends_on: [answer-questions]
+
+  - id: approve-spec
+    approval:
+      message: "SPEC.md 草稿已生成。请审查，确认后继续生成 tasks/plan.md。"
+      capture_response: true
+      on_reject:
+        prompt: "根据反馈修改 SPEC.md：$REJECTION_REASON"
+        max_attempts: 5
+    depends_on: [write-spec]
+
+  # ── Phase 3: 生成 Plan ──
+  - id: generate-plan
+    command: dr-generate-plan
+    depends_on: [approve-spec]
+
+  - id: approve-plan
+    approval:
+      message: "tasks/plan.md 已生成。请审查，确认后规划流程结束。"
+      capture_response: true
+      on_reject:
+        prompt: "根据反馈修改 tasks/plan.md：$REJECTION_REASON"
+        max_attempts: 5
+    depends_on: [generate-plan]

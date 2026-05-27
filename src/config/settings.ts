@@ -139,6 +139,10 @@ export interface DeepPDFSettings {
 		zlibraryUserKey: string;
 		zlibraryDomain: string;
 
+		// PI Agent 集成
+		piEnabled: boolean;
+		piLastVersion?: string;
+
 
 	// ═══════════════════════════════════════════════════════════
 	// 旧版字段（迁移期间保留，Chunk 3 后删除）
@@ -253,5 +257,8 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		zlibraryUserId: '',
 		zlibraryUserKey: '',
 		zlibraryDomain: '',
+
+		// PI Agent
+		piEnabled: false,
 
 };

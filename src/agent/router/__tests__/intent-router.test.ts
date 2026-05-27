@@ -117,3 +117,72 @@ describe('IntentRouter', () => {
     });
   });
 });
+
+
+describe('isSkillIntent', () => {
+  const router = new IntentRouter();
+
+  describe('正向匹配', () => {
+    it('应匹配思维导图请求', () => {
+      expect(router.isSkillIntent(['帮我画一个思维导图'])).toBe(true);
+    });
+
+    it('应匹配脑图请求', () => {
+      expect(router.isSkillIntent(['生成脑图'])).toBe(true);
+    });
+
+    it('应匹配概念图请求', () => {
+      expect(router.isSkillIntent(['画一个概念图'])).toBe(true);
+    });
+
+    it('应匹配导图请求', () => {
+      expect(router.isSkillIntent(['做一份导图'])).toBe(true);
+    });
+
+    it('应匹配知识卡片请求', () => {
+      expect(router.isSkillIntent(['生成知识卡片'])).toBe(true);
+    });
+
+    it('应匹配金句卡请求', () => {
+      expect(router.isSkillIntent(['做一张金句卡'])).toBe(true);
+    });
+
+    it('应匹配读书笔记请求', () => {
+      expect(router.isSkillIntent(['写读书笔记'])).toBe(true);
+    });
+
+    it('应匹配阅读笔记请求', () => {
+      expect(router.isSkillIntent(['帮我做阅读笔记'])).toBe(true);
+    });
+
+    it('应匹配可视化请求', () => {
+      expect(router.isSkillIntent(['可视化这本书的结构'])).toBe(true);
+    });
+
+    it('应匹配生成思维导图请求', () => {
+      expect(router.isSkillIntent(['生成全书思维导图'])).toBe(true);
+    });
+  });
+
+  describe('反向匹配（不应误匹配）', () => {
+    it('不应匹配普通对话', () => {
+      expect(router.isSkillIntent(['这本书讲了什么？'])).toBe(false);
+    });
+
+    it('不应匹配普通搜索请求', () => {
+      expect(router.isSkillIntent(['帮我搜索一下关键概念'])).toBe(false);
+    });
+
+    it('不应匹配图片生成请求', () => {
+      expect(router.isSkillIntent(['请帮我生成一张图片'])).toBe(false);
+    });
+
+    it('不应匹配普通画图请求', () => {
+      expect(router.isSkillIntent(['画一个流程图'])).toBe(false);
+    });
+
+    it('不应匹配普通笔记请求', () => {
+      expect(router.isSkillIntent(['记个笔记：今天看了第三章'])).toBe(false);
+    });
+  });
+});

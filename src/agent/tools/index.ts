@@ -36,7 +36,6 @@ export {
   searchBookTool,
   readBookSectionTool
 } from './local/index.js';
-export { createSkillTool } from './skill.js';
 export { writeNoteTool } from './write-note.js';
 export { createSubAgentTool } from './create-sub-agent.js';
 export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool } from './memory.js';

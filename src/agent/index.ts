@@ -14,14 +14,12 @@ import type { App } from 'obsidian';
 
 // Re-export everything
 export { LLMClient } from './llm-client.js';
-export { SkillLoader } from './skills/loader.js';
 export { ContextLoader } from './context/index.js';
 export { ContextBuilder } from './context/builder.js';
 export { NoopTracer, NoopTraceContext } from './tracing/index.js';
 export type { ITraceContext, ITracer } from './tracing/types.js';
 export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types.js';
 export type { ToolContext } from './tools/types.js';
-export type { Skill } from './skills/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata } from './context/builder.js';
 export type { AgentLoopOptions } from './agent-loop.js';
@@ -40,7 +38,6 @@ export { ReadingDepth } from './graph/state.js';
 import { ReadingDepth } from './graph/state.js';
 import type { EngineMode } from './graph/state.js';
 import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
-import { SkillLoader } from './skills/loader.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
@@ -52,6 +49,9 @@ import type { AgentLoopOptions } from './agent-loop.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
+import { PiProcessManager } from './pi/pi-manager.js';
+import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from './pi/pi-context.js';
+import type { PiConfig } from './pi/types.js';
 import { agentLog as log } from '../utils/logger.js';
 import { NoopTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
@@ -68,7 +68,6 @@ export interface FrontendAgentOptions {
   baseUrl?: string;
   model?: string;
   providerName?: string; // 服务商显示名称（用于日志）
-  skillsDir: string;
   app: App;
 
   // 新增：Fast 模型配置（可选）
@@ -96,12 +95,12 @@ export interface FrontendAgentOptions {
 
 export class FrontendAgent {
   private llmClientManager: LLMClientManager;
-  private skillLoader: SkillLoader;
   private contextLoader: ContextLoader;
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
   private subagentManager?: SubagentManager;
+  private piManager: PiProcessManager;
   private initialized = false;
   private activeThreadId: string | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
@@ -129,13 +128,13 @@ export class FrontendAgent {
     }
 
     this.llmClientManager = new LLMClientManager(mainConfig, fastConfig);
-    this.skillLoader = new SkillLoader(options.skillsDir);
     this.contextLoader = new ContextLoader(options.app);
     this.memoryStore = new MemoryStore(options.app);
     this.contextBuilder = new ContextBuilder(options.app, this.memoryStore, {
       deepReaderDir: 'DeepReader',
     });
     this.intentRouter = new IntentRouter();
+    this.piManager = new PiProcessManager(options.app);
   }
 
   async initialize(): Promise<void> {
@@ -146,10 +145,7 @@ export class FrontendAgent {
       // 初始化 MEMORY.md（如果不存在）
       await this.contextLoader.initializeMemoryFile();
 
-      // 加载 Skills
-      await this.skillLoader.loadSkills();
-
-      log('[FrontendAgent] 初始化完成，可用 skills:', this.skillLoader.listSkills());
+      log('[FrontendAgent] 初始化完成');
 
       this.initialized = true;
     }
@@ -167,11 +163,7 @@ export class FrontendAgent {
     // 🔄 检查并压缩过大的 MEMORY.md
     await this.maybeCompressMemory();
 
-    // 获取 Skills XML Summary（用于 System Prompt）
-    const skillsSummary = this.skillLoader.buildSkillsSummary();
-
     return this.contextBuilder.buildSystemPrompt(
-      skillsSummary,
       documentMetadata,
       docDescription
     );
@@ -553,6 +545,11 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
+    // 检测 PI skill 意图
+    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+      return this.handleSkillRequest(userMessage, context, callbacks);
+    }
+
     const result = await this.runGraphEngine(userMessage, context, callbacks);
     return result.messages;
   }
@@ -564,6 +561,11 @@ ${currentMemory}
     callbacks: AgentLoopOptions
   ): Promise<ChatMessage[]> {
     await this.initialize();
+
+    // 检测 PI skill 意图
+    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+      return this.handleSkillRequest(userMessage, context, callbacks);
+    }
 
     const result = await this.runGraphEngine(userMessage, context, callbacks, history);
     return result.messages;
@@ -579,12 +581,85 @@ ${currentMemory}
     return allTools.filter(tool => allowed.includes(tool.function.name));
   }
 
-  async reloadSkills(): Promise<void> {
-    await this.skillLoader.loadSkills();
-  }
+  /**
+   * 处理 PI skill 请求
+   */
+  private async handleSkillRequest(
+    userMessage: string,
+    context: ToolContext,
+    callbacks?: AgentLoopOptions,
+  ): Promise<ChatMessage[]> {
+    const app = this.options.app;
 
-  listSkills(): string[] {
-    return this.skillLoader.listSkills();
+    if (!this.options.apiKey) {
+      const msg = 'Skill 能力需要配置 API Key，请在设置中填写。';
+      callbacks?.onError?.(msg);
+      return [{ role: 'assistant', content: msg }];
+    }
+
+    // 检测 PI CLI 是否可用
+    const { detectPiCli } = await import('./pi/pi-config.js');
+    const piStatus = await detectPiCli();
+    if (!piStatus.available) {
+      const msg = 'PI Agent 未安装。请在插件设置 → PI Agent 页面点击安装。';
+      callbacks?.onError?.(msg);
+      return [{ role: 'assistant', content: msg }];
+    }
+
+    const piConfig = this.piManager.buildConfig(
+      this.options.apiKey,
+      this.options.model ?? 'claude-sonnet-4-20250514',
+      this.options.providerName ?? 'anthropic',
+    );
+
+    const skillDescriptions = await scanSkillDescriptions(app);
+
+    const outputPath = generateOutputPath(
+      app,
+      'skill',
+      context.documentMetadata?.title ?? '未命名',
+    );
+
+    const skillContext = buildSkillContext({
+      book: {
+        title: context.documentMetadata?.title ?? '未知',
+        author: context.documentMetadata?.author ?? '未知',
+      },
+      currentSection: context.currentNodeId ?? '全书',
+      analysisSummary: context.docDescription ?? '',
+      userRequest: userMessage,
+      skillDescriptions,
+      outputPath,
+    });
+
+    callbacks?.onProgress?.('正在通过 PI 执行 skill...');
+
+    const result = await this.piManager.executeSkill(
+      skillContext,
+      piConfig,
+      callbacks?.onProgress,
+    );
+
+    if (result.success) {
+      try {
+        const file = app.vault.getAbstractFileByPath(result.outputPath);
+        if (file && 'extension' in file) {
+          await app.workspace.getLeaf(false).openFile(file as import('obsidian').TFile);
+        }
+      } catch {
+        // 打开失败不影响主流程
+      }
+
+      return [{
+        role: 'assistant',
+        content: `已完成，结果保存在 \`${result.outputPath}\``,
+      }];
+    } else {
+      return [{
+        role: 'assistant',
+        content: `执行失败：${result.error ?? '未知错误'}`,
+      }];
+    }
   }
 
   /**
@@ -612,6 +687,13 @@ ${currentMemory}
    */
   getMemoryStore(): MemoryStore {
     return this.memoryStore;
+  }
+
+  /**
+   * 销毁资源（插件卸载时调用）
+   */
+  async destroy(): Promise<void> {
+    await this.piManager.stop();
   }
 
   /**

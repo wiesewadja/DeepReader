@@ -53,6 +53,10 @@ test-vault/
 .superpowers/
 .deploy-config.json
 
+# Archon runtime artifacts
+.archon/state/
+.archon/.env
+
 # macOS
 .DS_Store
 

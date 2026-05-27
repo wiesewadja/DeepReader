@@ -48,8 +48,7 @@ export interface DocumentMetadata {
  * 使用方式：
  * ```typescript
  * const builder = new ContextBuilder(app, memoryStore, { deepReaderDir: 'DeepReader' });
- * const skillsSummary = skillLoader.buildSkillsSummary(); // XML 格式
- * const systemPrompt = await builder.buildSystemPrompt(skillsSummary, metadata);
+ * const systemPrompt = await builder.buildSystemPrompt(metadata);
  * const runtimeContext = ContextBuilder.buildRuntimeContext(metadata, progress);
  * const messages = ContextBuilder.buildMessages(systemPrompt, history, userMsg, runtimeContext);
  * ```
@@ -80,13 +79,11 @@ export class ContextBuilder implements IContextBuilder {
 	/**
 	 * 构建完整的系统提示
 	 *
-	 * @param skillsSummary Skills XML Summary（由 SkillLoader.buildSkillsSummary() 生成）
 	 * @param documentMetadata 当前文档元数据（可选）
 	 * @param docDescription 全书摘要（可选，由路由器生成）
 	 * @returns 完整的系统提示字符串
 	 */
 	async buildSystemPrompt(
-		skillsSummary: string,
 		documentMetadata?: DocumentMetadata,
 		docDescription?: string
 	): Promise<string> {
@@ -335,5 +332,5 @@ ${docInfo}`;
  */
 export interface IContextBuilder {
 	loadRelevantDialogueSummaries(bookName: string, limit?: number): Promise<string>;
-	buildSystemPrompt(skillsSummary: string, documentMetadata?: DocumentMetadata, docDescription?: string): Promise<string>;
+	buildSystemPrompt(documentMetadata?: DocumentMetadata, docDescription?: string): Promise<string>;
 }
