@@ -51,8 +51,14 @@ export class PiRpcClient {
 	 * 发送 RPC 命令
 	 */
 	sendCommand(cmd: PiCommand): void {
-		if (!this.childProcess?.stdin?.writable) {
-			throw new Error('[PiRpc] Cannot send command: process stdin not writable');
+		if (!this.childProcess) {
+			throw new Error('[PiRpc] Cannot send command: PI process not attached');
+		}
+		if (!this.childProcess.stdin) {
+			throw new Error('[PiRpc] Cannot send command: PI process stdin unavailable');
+		}
+		if (!this.childProcess.stdin.writable) {
+			throw new Error('[PiRpc] Cannot send command: PI process stdin not writable');
 		}
 		const line = JSON.stringify(cmd) + '\n';
 		log(`[PiRpc] → ${cmd.type}${cmd.id ? ` (${cmd.id})` : ''}`);

@@ -164,7 +164,6 @@ export class FrontendAgent {
     await this.maybeCompressMemory();
 
     return this.contextBuilder.buildSystemPrompt(
-      '',
       documentMetadata,
       docDescription
     );
@@ -635,7 +634,11 @@ ${currentMemory}
 
     callbacks.onProgress('正在通过 PI 执行 skill...');
 
-    const result = await this.piManager.executeSkill(skillContext, piConfig);
+    const result = await this.piManager.executeSkill(
+      skillContext,
+      piConfig,
+      callbacks.onProgress,
+    );
 
     if (result.success) {
       try {

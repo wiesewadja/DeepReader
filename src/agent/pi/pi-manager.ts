@@ -131,6 +131,18 @@ export class PiProcessManager {
 	}
 
 	/**
+	 * 强制清理进程资源
+	 */
+	private killProcess(): void {
+		if (this.process) {
+			this.process.kill();
+			this.process = null;
+			this.rpcClient.detach();
+			this.state = PiProcessState.ERROR;
+		}
+	}
+
+	/**
 	 * 停止 PI 进程
 	 */
 	async stop(): Promise<void> {
@@ -168,10 +180,12 @@ export class PiProcessManager {
 	 * 执行一个 skill 任务
 	 *
 	 * 完整流程：ensureStarted → newSession → prompt → waitForAgentEnd
+	 * 整体超时 90s（含进程启动），skill 执行超时 60s。
 	 */
 	async executeSkill(
 		context: PiSkillContext,
 		config: PiConfig,
+		onProgress?: (msg: string) => void,
 	): Promise<PiExecutionResult> {
 		// 并发拒绝
 		if (this.busy) {
@@ -184,6 +198,22 @@ export class PiProcessManager {
 
 		this.busy = true;
 		this.state = PiProcessState.BUSY;
+
+		// 整体超时保护（含进程启动 + skill 执行）
+		const overallTimeout = 90_000;
+		const overallTimer = setTimeout(() => {
+			log('[PiManager] Overall timeout reached, killing process');
+			this.killProcess();
+		}, overallTimeout);
+
+		// 订阅 tool_execution 事件提供进度反馈
+		const progressHandler = (event: import('./types.js').PiEvent) => {
+			if (event.type === 'tool_execution_start') {
+				const e = event as import('./types.js').PiToolExecutionStartEvent;
+				onProgress?.(`PI 正在执行: ${e.toolName}`);
+			}
+		};
+		this.rpcClient.on(progressHandler);
 
 		try {
 			// 确保进程就绪
@@ -204,6 +234,8 @@ export class PiProcessManager {
 			const prompt = this.buildPrompt(context);
 			log(`[PiManager] Executing skill: ${context.userRequest.substring(0, 50)}...`);
 
+			onProgress?.('PI 已接收任务，正在处理...');
+
 			// 发送 prompt 并等待完成（60 秒超时）
 			await this.rpcClient.sendPrompt(prompt, 60_000);
 
@@ -217,7 +249,7 @@ export class PiProcessManager {
 
 			// 进程可能崩溃，标记错误状态
 			if (message.includes('stdin not writable') || message.includes('Timed out')) {
-				this.state = PiProcessState.ERROR;
+				this.killProcess();
 			}
 
 			return {
@@ -226,6 +258,8 @@ export class PiProcessManager {
 				error: message,
 			};
 		} finally {
+			clearTimeout(overallTimer);
+			this.rpcClient.off(progressHandler);
 			this.busy = false;
 			if (this.state === PiProcessState.BUSY) {
 				this.state = PiProcessState.READY;
