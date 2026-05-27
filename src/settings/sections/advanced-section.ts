@@ -1,5 +1,5 @@
 /**
- * 高级 Tab — 调试日志、语音回复、Skills 管理、主动引导、PI Agent
+ * 高级 Tab — PI Agent、调试日志、语音回复、主动阅读引导
  */
 
 import { Notice, Setting } from 'obsidian';
@@ -14,6 +14,52 @@ export function renderAdvancedSection(
 ): void {
   container.createEl('h3', { text: '高级设置' });
 
+  // PI Agent 集成（最上面，用户最常操作）
+  container.createEl('h4', { text: 'PI Agent 集成' });
+  container.createEl('p', {
+    text: 'PI 是外部 Coding Agent，为奚童提供 Skill 执行能力（思维导图、知识卡片、阅读笔记等）。',
+    cls: 'setting-item-description',
+  });
+
+  new Setting(container)
+    .setName('启用 PI Skill 能力')
+    .setDesc('开启后，奚童会将 Skill 类请求转交给 PI 执行。需要先安装 PI CLI。')
+    .addToggle(toggle => toggle
+      .setValue(ctx.plugin.settings.piEnabled)
+      .onChange(async (value) => {
+        ctx.plugin.settings.piEnabled = value;
+        await ctx.plugin.saveSettings();
+      }));
+
+  const statusEl = container.createDiv({ cls: 'setting-item-description' });
+  statusEl.setText('检测中...');
+
+  const actionContainer = container.createDiv();
+
+  new Setting(container)
+    .setName('PI 可执行文件路径')
+    .setDesc('如果自动检测失败，请填写 pi 的绝对路径（如 /opt/homebrew/bin/pi）。留空则自动检测。')
+    .addText(text => text
+      .setPlaceholder('/opt/homebrew/bin/pi')
+      .setValue(ctx.plugin.settings.customPiPath)
+      .onChange(async (value) => {
+        ctx.plugin.settings.customPiPath = value;
+        await ctx.plugin.saveSettings();
+        invalidatePiCliCache();
+        await refreshPiStatus(statusEl, actionContainer, ctx);
+      }));
+
+  // 初始渲染：先显示安装按钮占位，检测完成后动态替换
+  renderInstallButton(actionContainer, statusEl, ctx);
+  detectPiCli(ctx.plugin.settings.customPiPath).then(() => {
+    refreshPiStatus(statusEl, actionContainer, ctx);
+  });
+
+  container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+
+  // 调试日志
+  container.createEl('h4', { text: '调试与日志' });
+
   new Setting(container)
     .setName('启用调试日志')
     .setDesc('开启后会在控制台输出详细运行日志，用于问题排查。默认关闭以减少日志噪音。')
@@ -24,6 +70,11 @@ export function renderAdvancedSection(
         setLogEnabled(value);
         await ctx.plugin.saveSettings();
       }));
+
+  container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+
+  // 语音回复
+  container.createEl('h4', { text: '语音回复' });
 
   new Setting(container)
     .setName('语音书信回复')
@@ -61,43 +112,39 @@ export function renderAdvancedSection(
         ctx.plugin.settings.proactiveCooldownMinutes = value;
         await ctx.plugin.saveSettings();
       }));
+}
 
-  container.createEl('hr', { cls: 'deeppdf-settings-divider' });
+/** 根据检测结果刷新状态文案和操作按钮 */
+async function refreshPiStatus(
+  statusEl: HTMLElement,
+  actionContainer: HTMLElement,
+  ctx: SectionContext,
+): Promise<void> {
+  const result = await detectPiCli(ctx.plugin.settings.customPiPath);
 
-  // PI Agent 集成
-  container.createEl('h4', { text: 'PI Agent 集成' });
-  container.createEl('p', {
-    text: 'PI 是外部 Coding Agent，为奚童提供 Skill 执行能力（思维导图、知识卡片、阅读笔记等）。',
-    cls: 'setting-item-description',
-  });
+  // 更新状态文案
+  if (result.available) {
+    statusEl.setText(`PI 已安装: v${result.version}（${result.path}）`);
+    statusEl.style.color = 'var(--text-success)';
+  } else {
+    statusEl.setText('PI 未检测到。如果已安装，请在下方填写 pi 的绝对路径。');
+    statusEl.style.color = 'var(--text-error)';
+  }
 
-  new Setting(container)
-    .setName('启用 PI Skill 能力')
-    .setDesc('开启后，奚童会将 Skill 类请求转交给 PI 执行。需要先安装 PI CLI。')
-    .addToggle(toggle => toggle
-      .setValue(ctx.plugin.settings.piEnabled)
-      .onChange(async (value) => {
-        ctx.plugin.settings.piEnabled = value;
-        await ctx.plugin.saveSettings();
-      }));
+  // 动态渲染操作按钮
+  actionContainer.empty();
+  if (result.available) {
+    renderUpdateButton(actionContainer, statusEl, ctx);
+  } else {
+    renderInstallButton(actionContainer, statusEl, ctx);
+  }
+}
 
-  const statusEl = container.createDiv({ cls: 'setting-item-description' });
-  statusEl.setText('检测中...');
-  detectPiStatus(statusEl, ctx.plugin.settings.customPiPath);
-
-  new Setting(container)
-    .setName('PI 可执行文件路径')
-    .setDesc('如果自动检测失败，请填写 pi 的绝对路径（如 /opt/homebrew/bin/pi）。留空则自动检测。')
-    .addText(text => text
-      .setPlaceholder('/opt/homebrew/bin/pi')
-      .setValue(ctx.plugin.settings.customPiPath)
-      .onChange(async (value) => {
-        ctx.plugin.settings.customPiPath = value;
-        await ctx.plugin.saveSettings();
-        invalidatePiCliCache();
-        await detectPiStatus(statusEl, value);
-      }));
-
+function renderInstallButton(
+  container: HTMLElement,
+  statusEl: HTMLElement,
+  ctx: SectionContext,
+): void {
   new Setting(container)
     .setName('安装 PI')
     .setDesc('全局安装 PI Coding Agent（需要 Node.js 和 npm）')
@@ -111,14 +158,20 @@ export function renderAdvancedSection(
           await runSpawn('npm', ['install', '-g', '@mariozechner/pi-coding-agent'], 60000);
           new Notice('PI 安装成功');
           invalidatePiCliCache();
-          await detectPiStatus(statusEl, ctx.plugin.settings.customPiPath);
+          await refreshPiStatus(statusEl, container, ctx);
         } catch (err) {
           new Notice(`安装失败: ${err instanceof Error ? err.message : String(err)}`);
+          button.setDisabled(false);
+          button.setButtonText('安装 PI');
         }
-        button.setDisabled(false);
-        button.setButtonText('安装 PI');
       }));
+}
 
+function renderUpdateButton(
+  container: HTMLElement,
+  statusEl: HTMLElement,
+  ctx: SectionContext,
+): void {
   new Setting(container)
     .setName('更新 PI')
     .setDesc('更新到最新版本')
@@ -132,12 +185,12 @@ export function renderAdvancedSection(
           await runSpawn(cliPath, ['update', '--self'], 30000);
           new Notice('PI 更新成功');
           invalidatePiCliCache();
-          await detectPiStatus(statusEl, ctx.plugin.settings.customPiPath);
+          await refreshPiStatus(statusEl, container, ctx);
         } catch (err) {
           new Notice(`更新失败: ${err instanceof Error ? err.message : String(err)}`);
+          button.setDisabled(false);
+          button.setButtonText('更新 PI');
         }
-        button.setDisabled(false);
-        button.setButtonText('更新 PI');
       }));
 }
 
@@ -154,15 +207,4 @@ function runSpawn(cmd: string, args: string[], timeoutMs: number): Promise<void>
       else reject(new Error(stderr.trim() || `Exit code ${code}`));
     });
   });
-}
-
-async function detectPiStatus(el: HTMLElement, customPath?: string): Promise<void> {
-  const result = await detectPiCli(customPath);
-  if (result.available) {
-    el.setText(`PI 已安装: v${result.version}（${result.path}）`);
-    el.style.color = 'var(--text-success)';
-  } else {
-    el.setText('PI 未检测到。如果已安装，请在上方填写 pi 的绝对路径。');
-    el.style.color = 'var(--text-error)';
-  }
 }

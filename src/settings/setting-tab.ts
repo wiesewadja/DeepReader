@@ -34,8 +34,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     { id: 'llm', name: 'AI 服务', icon: 'bot' },
     { id: 'profile', name: '用户画像', icon: 'user' },
     { id: 'reading', name: '阅读模式', icon: 'book-open' },
-    { id: 'advanced', name: '高级', icon: 'cog' },
     { id: 'weread', name: '微信读书', icon: 'book-marked' },
+    { id: 'advanced', name: '高级', icon: 'cog' },
   ];
 
   constructor(app: App, plugin: DeepPDFPlugin) {
