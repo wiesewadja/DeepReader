@@ -11,12 +11,6 @@ import type { ToolContext } from '../tools/types';
 import type { HistorySummary } from './utils/history-summarizer';
 
 /**
- * Reading depth levels based on Adler's methodology
- * @deprecated Import from './state.js' instead
- */
-export { ReadingDepth } from './state.js';
-
-/**
  * Callbacks for engine progress reporting
  */
 export interface EngineCallbacks {
@@ -34,13 +28,10 @@ export interface EngineCallbacks {
 export interface SharedContext {
   chatHistory: ChatMessage[];
   rawUserQuery: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
   tocSummary?: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
   betterQuestion?: string;
   s2ToolResults?: Array<{ toolName: string; args: Record<string, unknown>; result: string; originalResultLength: number }>;
   indexId: string;
-  /** @deprecated 已迁移到 CognitiveEngineState */
   pdfName: string;
   abortSignal?: AbortSignal;
   markdownFiles?: Record<string, string>;
