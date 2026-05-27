@@ -7,6 +7,7 @@
 
 import * as path from "path";
 import * as fs from "node:fs/promises";
+import type { App } from "obsidian";
 import type {
   EmbeddingOptions,
   VectorRecord,
@@ -16,6 +17,7 @@ import type {
 } from "./types";
 import { cosineSimilarity } from "../core/utils";
 import { safeRequest } from "../../utils/safe-request.js";
+import { vaultRead } from "../../utils/mobile-fs.js";
 
 // ─── JSONL Vector Storage ─────────────────────────────────────
 
@@ -43,10 +45,13 @@ export async function writeVectorJsonl(
  * Read all vector records from a JSONL file (tolerates corrupt lines)
  */
 export async function readVectorJsonl(
-  filePath: string
+  filePath: string,
+  app?: App
 ): Promise<VectorRecord[]> {
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = app
+      ? await vaultRead(app, filePath)
+      : await fs.readFile(filePath, "utf-8");
     const records: VectorRecord[] = [];
     for (const line of content.trim().split("\n")) {
       if (!line.trim()) continue;
@@ -66,9 +71,10 @@ export async function cosineSearchJsonl(
   filePath: string,
   queryVector: number[],
   topK: number,
-  filter?: { level?: string }
+  filter?: { level?: string },
+  app?: App
 ): Promise<Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }>> {
-  const records = await readVectorJsonl(filePath);
+  const records = await readVectorJsonl(filePath, app);
   const query = new Float32Array(queryVector);
   const scores: Array<{ chunkId: string; nodeId: string; blockIds: string[]; score: number }> = [];
 
@@ -102,10 +108,13 @@ export async function writeChunkTexts(
  * Read chunk text records from a JSONL file (tolerates corrupt lines)
  */
 export async function readChunkTexts(
-  filePath: string
+  filePath: string,
+  app?: App
 ): Promise<ChunkTextRecord[]> {
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = app
+      ? await vaultRead(app, filePath)
+      : await fs.readFile(filePath, "utf-8");
     const records: ChunkTextRecord[] = [];
     for (const line of content.trim().split("\n")) {
       if (!line.trim()) continue;

@@ -9,6 +9,7 @@
  */
 
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
+import { Platform } from 'obsidian';
 import type { Skill } from './types.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,6 +30,12 @@ export class SkillLoader {
   async loadSkills(): Promise<void> {
     this.skills.clear();
     this.defaultSkillName = null;
+
+    // Mobile: skip skill loading (requires sync fs)
+    if (Platform.isMobile) {
+      log('[SkillLoader] Mobile platform, skipping skill loading');
+      return;
+    }
 
     try {
       // 检查目录是否存在

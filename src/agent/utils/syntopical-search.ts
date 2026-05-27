@@ -1,4 +1,4 @@
-import { getPageindexRoot } from '../../pageindex/paths.js';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 /**
  * Syntopical Search - Multi-book retrieval for S3 Syntopical Reading
  *
@@ -8,6 +8,8 @@ import { getPageindexRoot } from '../../pageindex/paths.js';
 
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import type { App } from 'obsidian';
+import { vaultRead, vaultExists, vaultList, joinPath } from '../../utils/mobile-fs.js';
 import { agentLog as log } from '../../utils/logger.js';
 import { searchBookV2 } from '../../pageindex/book-search-v2.js';
 import { searchPropositions } from '../../pageindex/proposition-search.js';
@@ -26,6 +28,8 @@ export interface SyntopicalSearchOptions {
   bookIds?: string[];
   /** Pre-resolved list of indexed books (skips filesystem scan when provided) */
   knownBooks?: { id: string; name: string }[];
+  /** Obsidian App instance for mobile-compatible file access */
+  app?: App;
 }
 
 export interface SyntopicalBookResult {
@@ -52,30 +56,42 @@ export function hasSyntopicalKeywords(query: string): boolean {
   return SYNTOPICAL_KEYWORDS.some(kw => lowerQuery.includes(kw));
 }
 
-async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: string }[]> {
-  const pageindexDir = getPageindexRoot(vaultPath);
-
-  try {
-    await fs.access(pageindexDir);
-  } catch {
-    log('[syntopical-search] No .pageindex directory found');
-    return [];
-  }
-
-  const dirs = await fs.readdir(pageindexDir);
+async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: string; name: string }[]> {
   const books: { id: string; name: string }[] = [];
 
-  for (const bookId of dirs) {
-    const metaPath = path.join(pageindexDir, bookId, 'book-meta.json');
+  if (app) {
+    // Mobile: vault-relative paths
+    if (!(await vaultExists(app, PAGEINDEX_DIR))) {
+      log('[syntopical-search] No pageindex directory found');
+      return [];
+    }
+    const { folders } = await vaultList(app, PAGEINDEX_DIR);
+    for (const folder of folders) {
+      const bookId = folder.split('/').pop() || folder;
+      const metaRel = joinPath(PAGEINDEX_DIR, bookId, 'book-meta.json');
+      try {
+        const metaContent = await vaultRead(app, metaRel);
+        const meta = JSON.parse(metaContent);
+        if (meta.title) books.push({ id: bookId, name: meta.title });
+      } catch { continue; }
+    }
+  } else {
+    // Desktop: absolute paths
+    const pageindexDir = path.join(vaultPath, PAGEINDEX_DIR);
     try {
-      const metaContent = await fs.readFile(metaPath, 'utf-8');
-      const meta = JSON.parse(metaContent);
-
-      if (meta.title) {
-        books.push({ id: bookId, name: meta.title });
-      }
+      await fs.access(pageindexDir);
     } catch {
-      continue;
+      log('[syntopical-search] No pageindex directory found');
+      return [];
+    }
+    const dirs = await fs.readdir(pageindexDir);
+    for (const bookId of dirs) {
+      const metaPath = path.join(pageindexDir, bookId, 'book-meta.json');
+      try {
+        const metaContent = await fs.readFile(metaPath, 'utf-8');
+        const meta = JSON.parse(metaContent);
+        if (meta.title) books.push({ id: bookId, name: meta.title });
+      } catch { continue; }
     }
   }
 
@@ -85,9 +101,10 @@ async function scanIndexedBooks(vaultPath: string): Promise<{ id: string; name: 
 
 export async function syntopicalSearch(options: SyntopicalSearchOptions): Promise<SyntopicalSearchResult> {
   const { query, vaultPath, embedding, reranker, maxBooks = 5, topKPerBook = 5 } = options;
+  const app = options.app;
 
   // 1. Use provided book list or fall back to filesystem scan
-  let indexedBooks = options.knownBooks?.length ? options.knownBooks : await scanIndexedBooks(vaultPath);
+  let indexedBooks = options.knownBooks?.length ? options.knownBooks : await scanIndexedBooks(vaultPath, app);
 
   // Filter to specific books when booklist is active
   if (options.bookIds?.length) {
@@ -96,7 +113,10 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
     const unresolved = options.bookIds.filter(id => !indexedBooks.some(b => b.id === id));
     if (unresolved.length > 0) {
       try {
-        const mappingRaw = await fs.readFile(path.join(getPageindexRoot(vaultPath), 'weread', 'mapping.json'), 'utf-8');
+        const mappingRel = joinPath(PAGEINDEX_DIR, 'weread', 'mapping.json');
+        const mappingRaw = app
+          ? await vaultRead(app, mappingRel)
+          : await fs.readFile(path.join(vaultPath, PAGEINDEX_DIR, 'weread', 'mapping.json'), 'utf-8');
         const parsed = JSON.parse(mappingRaw);
         const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
         for (const wereadId of unresolved) {
@@ -128,10 +148,11 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         filePath: '',
         query,
         bookId: book.id,
-        vaultPath,
+        vaultPath: app ? undefined : vaultPath,
         topK: topKPerBook,
         embedding,
         reranker,
+        ...(app ? { app } : {}),
       };
 
       const results = await searchBookV2(searchOpts);
@@ -145,7 +166,8 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
             book.id,
             vaultPath,
             embedding,
-            topKPerBook
+            topKPerBook,
+            app
           );
         } catch {
           // Proposition search optional, ignore failures

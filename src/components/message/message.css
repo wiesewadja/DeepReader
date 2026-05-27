@@ -1943,3 +1943,15 @@
     font-size: 12px;
     color: var(--text-muted);
 }
+
+/* ==================== 移动端适配 ==================== */
+
+@media (max-width: 600px) {
+    .deeppdf-message-bubble {
+        max-width: 100%;
+    }
+
+    .deeppdf-user-bubble {
+        max-width: 90%;
+    }
+}

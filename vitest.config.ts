@@ -24,10 +24,13 @@ export default defineConfig({
             'src/api/__tests__/server-manager.test.ts',
             // E2E 测试需要真实 API，不在默认测试中运行
             'src/services/__tests__/profile-builder-embedding.e2e.test.ts',
+            // E2E 测试依赖本地 test vault (/Users/lizhao/workspace/deepreadertest)
+            'src/pageindex/__tests__/search-quality-fixes.test.ts',
+            'src/pageindex/__tests__/book-search-v2.test.ts',
         ],
         poolOptions: {
-            threads: {
-                singleThread: true
+            forks: {
+                singleFork: true
             }
         }
     }

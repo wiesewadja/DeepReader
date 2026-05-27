@@ -6,7 +6,7 @@
  */
 
 import type { OutlineNode } from '../../tools/local/types';
-import { createHash } from 'crypto';
+import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /**
@@ -45,21 +45,13 @@ export async function loadTreeJson(
   pdfName?: string
 ): Promise<OutlineNode[]> {
   try {
-    const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
-
     // Use indexId directly as bookId
     let bookId = indexId;
     if (!bookId) {
-      // Fallback: compute bookId from file path
       if (!pdfName) return [];
-      const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-      const files = app.vault.getFiles();
-      const bookFile = files.find((f: { path: string; extension: string }) =>
-        f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-      );
-      if (!bookFile) return [];
-      const filePath = `${vaultPath}/${bookFile.path}`;
-      bookId = createHash("sha256").update(filePath).digest("hex").slice(0, 8);
+      const resolved = await resolveBookIdFromPdf(app, pdfName);
+      if (!resolved) return [];
+      bookId = resolved;
     }
 
     const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;

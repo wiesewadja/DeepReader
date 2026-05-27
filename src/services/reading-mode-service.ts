@@ -3,12 +3,13 @@
  * 管理章节文件的书籍化阅读体验
  */
 
-import { App, TFile, EventRef, MarkdownView } from 'obsidian';
+import { App, TFile, EventRef, MarkdownView, Platform } from 'obsidian';
 import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
 import { PagePaginator } from '../components/reading-mode/page-paginator.js';
 import { InkLayer } from '../components/reading-mode/ink-layer.js';
+import { MobileReadingFab } from '../components/reading-mode/mobile-reading-fab.js';
 import type { QuoteMetadata } from '../components/chat-input/chat-input.js';
 
 export interface ReadingModeCallbacks {
@@ -42,6 +43,7 @@ export class ReadingModeService {
     private autoEnable: boolean = true;
     private style: 'paginated' | 'scrolling' = 'paginated';
     private enableInkLayer: boolean = true;
+    private mobileFab: MobileReadingFab | null = null;
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
     private currentBookName: string = '';
@@ -283,6 +285,9 @@ export class ReadingModeService {
         // 初始化墨迹层
         this.initInkLayer(file);
 
+        // 初始化移动端浮动按钮
+        this.initMobileFab();
+
         serviceLog('[ReadingMode] Activated for:', file.path);
     }
 
@@ -323,8 +328,8 @@ export class ReadingModeService {
         this.inkLayer?.cleanup();
         this.inkLayer = null;
 
-        // 墨迹功能已关闭，跳过初始化
-        if (!this.enableInkLayer) return;
+        // 墨迹功能已关闭或移动端不支持
+        if (!this.enableInkLayer || Platform.isMobile) return;
 
         const container = this.getViewContent();
         if (!container) return;
@@ -340,6 +345,28 @@ export class ReadingModeService {
                 }
             }, 300);
         }
+    }
+
+    /**
+     * 初始化移动端浮动按钮
+     */
+    private initMobileFab(): void {
+        if (!Platform.isMobile) return;
+        this.mobileFab = new MobileReadingFab(() => {
+            const leaf = this.app.workspace.getRightLeaf(false);
+            if (leaf) {
+                leaf.setViewState({ type: 'deepreader-sidebar', active: true });
+                this.app.workspace.revealLeaf(leaf);
+            }
+        });
+        this.mobileFab.show();
+    }
+
+    /**
+     * 更新 FAB 未读状态
+     */
+    setFabUnread(hasUnread: boolean): void {
+        this.mobileFab?.setUnread(hasUnread);
     }
 
     /**
@@ -382,6 +409,10 @@ export class ReadingModeService {
         // 清理墨迹层
         this.inkLayer?.cleanup();
         this.inkLayer = null;
+
+        // 清理移动端浮动按钮
+        this.mobileFab?.destroy();
+        this.mobileFab = null;
 
         this.paginator?.destroy();
         this.paginator = null;
