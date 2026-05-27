@@ -22,6 +22,7 @@ export interface IntentResult {
   systemNote: string;          // 动态注入的 <system_note>
   detectedIntents: string[];   // 检测到的意图（用于日志）
   maxIterations: number;       // 动态最大迭代次数
+  isSkillIntent?: boolean;     // 是否为 PI skill 意图（命中时走 PI 路径）
 }
 
 /**

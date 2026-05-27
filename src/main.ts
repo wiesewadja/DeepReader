@@ -4,7 +4,6 @@ import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
-import { BUILT_IN_SKILLS } from './built-in-skills.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
@@ -201,27 +200,6 @@ export default class DeepPDFPlugin extends Plugin {
             id: "open-library",
             name: "Open Library",
             callback: () => this.openLibraryView()
-        });
-
-        // Skills 重载命令
-        this.addCommand({
-            id: "reload-skills",
-            name: "Reload DeepReader Skills",
-            callback: async () => {
-                try {
-                    new Notice("正在重载 Skills...");
-                    const result = await this.reloadSkills();
-                    if (result.success) {
-                        new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
-                        log('[DeepReader] Skills reloaded:', result.skills);
-                    } else {
-                        new Notice(`Skills 重载失败: ${result.message}`);
-                    }
-                } catch (err) {
-                    log.error('[DeepReader] Failed to reload skills:', err);
-                    new Notice(`Skills 重载失败: ${err instanceof Error ? err.message : String(err)}`);
-                }
-            }
         });
 
         // 调试命令：发送测试消息
@@ -997,33 +975,14 @@ export default class DeepPDFPlugin extends Plugin {
         this.skillsDir = path.join(vaultPath, SKILLS_DIR);
 
         try {
-            // 1. 确保 skills 目录存在
+            // 确保 skills 目录存在
             const dirExists = await this.app.vault.adapter.exists(SKILLS_DIR);
             if (!dirExists) {
                 await this.app.vault.createFolder(SKILLS_DIR);
                 log('[DeepPDF] Created skills directory');
             }
-
-            // 2. 写入内置 Skills（只写入不存在的文件，不覆盖用户修改）
-            let createdCount = 0;
-
-            for (const skill of BUILT_IN_SKILLS) {
-                const targetPath = `${SKILLS_DIR}/${skill.filename}`;
-                const targetExists = await this.app.vault.adapter.exists(targetPath);
-
-                if (!targetExists) {
-                    await this.app.vault.adapter.write(targetPath, skill.content);
-                    createdCount++;
-                    log('[DeepPDF] Created built-in skill:', skill.filename);
-                }
-            }
-
-            if (createdCount > 0) {
-                log(`[DeepPDF] Synced ${createdCount} built-in skills`);
-            }
         } catch (err) {
-            // Skills 同步失败不应阻止插件加载
-            log.error('[DeepPDF] Skills sync failed:', err);
+            log.error('[DeepPDF] Skills dir creation failed:', err);
         }
     }
 
@@ -1050,7 +1009,6 @@ export default class DeepPDFPlugin extends Plugin {
                 baseUrl: baseUrl,
                 model: model,
                 providerName: providerName,
-                skillsDir: this.skillsDir,
                 app: this.app,
 
                 // Router（原 Fast 模型）配置
@@ -1118,14 +1076,8 @@ export default class DeepPDFPlugin extends Plugin {
      */
     async reloadSkills(): Promise<{ success: boolean; message: string; skills: string[] }> {
         try {
-            // 如果 Agent 已初始化，重载 skills
-            if (this.frontendAgent) {
-                await this.frontendAgent.reloadSkills();
-                const skills = this.frontendAgent.listSkills();
-                return { success: true, message: 'Skills 重载成功', skills };
-            }
-            // Agent 未初始化，下次使用时会自动加载最新 skills
-            return { success: true, message: 'Skills 将在首次使用时加载', skills: [] };
+            // Skills 现在由 PI 管理，无需重载
+            return { success: true, message: 'Skills 由 PI Agent 管理', skills: [] };
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             return { success: false, message, skills: [] };
@@ -1206,6 +1158,11 @@ export default class DeepPDFPlugin extends Plugin {
         if (this.readingModeService) {
             this.readingModeService.stop();
             this.readingModeService = null;
+        }
+
+        // 清理 PI Agent 子进程
+        if (this.frontendAgent) {
+            await this.frontendAgent.destroy();
         }
 
     }

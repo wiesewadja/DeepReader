@@ -37,34 +37,9 @@ export function renderGeneralSection(
 
   container.createEl('hr', { cls: 'deeppdf-settings-divider' });
 
-  // Skills 管理
+  // Skills 管理（由 PI Agent 接管）
   container.createEl('h4', { text: 'Skills 管理' });
-
-  new Setting(container)
-    .setName('重载 Skills')
-    .setDesc('重新加载所有 Skills（包括内置和用户自定义）。当你添加了新的 Skill 文件后，点击此按钮使其生效。')
-    .addButton(button => button
-      .setButtonText('重载 Skills')
-      .setCta()
-      .onClick(async () => {
-        try {
-          button.setDisabled(true);
-          button.setButtonText('重载中...');
-          const result = await ctx.plugin.reloadSkills();
-          button.setDisabled(false);
-          button.setButtonText('重载 Skills');
-          if (result.success) {
-            new Notice(`Skills 重载成功！共加载 ${result.skills.length} 个技能`);
-          } else {
-            new Notice(`Skills 重载失败: ${result.message}`);
-          }
-        } catch (err) {
-          button.setDisabled(false);
-          button.setButtonText('重载 Skills');
-          const errMsg = err instanceof Error ? err.message : String(err);
-          new Notice(`Skills 重载失败: ${errMsg}`);
-        }
-      }));
+  container.createEl('p', { text: 'Skills 现由 PI Agent 管理。请将 Skill 文件放入 DeepReader/skills/ 目录，PI 会自动加载。', cls: 'setting-item-description' });
 
   container.createEl('p', {
     text: '提示：你也可以通过命令面板（Cmd/Ctrl+P）搜索"Reload DeepReader Skills"来重载。',

@@ -14,8 +14,9 @@ import { renderProfileSection } from './sections/profile-section';
 import { renderGeneralSection } from './sections/general-section';
 import { renderWereadSection } from './sections/weread-section';
 import { renderReadingSection } from './sections/reading-section';
+import { renderPiSection } from './sections/pi-section';
 
-type SettingsTabId = 'llm' | 'profile' | 'reading' | 'general' | 'weread';
+type SettingsTabId = 'llm' | 'profile' | 'reading' | 'general' | 'weread' | 'pi';
 
 interface SettingsTab {
   id: SettingsTabId;
@@ -36,6 +37,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     { id: 'reading', name: '阅读模式', icon: 'book-open' },
     { id: 'general', name: '通用', icon: 'wrench' },
     { id: 'weread', name: '微信读书', icon: 'book-marked' },
+    { id: 'pi', name: 'PI Agent', icon: 'cpu' },
   ];
 
   constructor(app: App, plugin: DeepPDFPlugin) {
@@ -107,6 +109,9 @@ export class DeepPDFSettingTab extends PluginSettingTab {
         break;
       case 'weread':
         renderWereadSection(container, ctx, () => this.renderTabContent('weread'));
+        break;
+      case 'pi':
+        renderPiSection(ctx);
         break;
     }
   }
