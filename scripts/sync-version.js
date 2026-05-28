@@ -21,8 +21,24 @@ try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
     const version = packageJson.version;
 
-    // 从根目录 manifest.json 读取模板（保留 description 等字段）
-    const rootManifest = JSON.parse(fs.readFileSync(rootManifestPath, 'utf8'));
+    // 优先从根目录读取 manifest 模板（保留 description 等字段）
+    // 如果根目录不存在，则从 bin/ 读取
+    let rootManifest;
+    if (fs.existsSync(rootManifestPath)) {
+        rootManifest = JSON.parse(fs.readFileSync(rootManifestPath, 'utf8'));
+    } else if (fs.existsSync(binManifestPath)) {
+        rootManifest = JSON.parse(fs.readFileSync(binManifestPath, 'utf8'));
+        console.log('Created root manifest from bin/manifest.json');
+    } else {
+        // 如果都不存在，使用 package.json 的 name 和 description 作为基础
+        rootManifest = {
+            name: packageJson.name || 'deepreader',
+            version: version,
+            description: packageJson.description || ''
+        };
+        console.log('Created new manifest from package.json');
+    }
+
     const manifest = { ...rootManifest, version };
 
     // 同时写入根目录和 bin/
