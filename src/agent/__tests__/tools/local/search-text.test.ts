@@ -21,19 +21,24 @@ describe.skip('search_markdown_text', () => {
     const mockFile = createMockTFile('DeepReader/如何阅读一本书/04-第一章.md', '04-第一章');
 
     return {
-      indexId: 'test-idx',
-      pdfName: '如何阅读一本书',
-      app: {
-        vault: {
-          getMarkdownFiles: vi.fn().mockReturnValue([mockFile]),
-          cachedRead: vi.fn().mockResolvedValue(content)
-        },
-        metadataCache: {
-          getFileCache: vi.fn().mockReturnValue({
-            frontmatter: { node_id: '0004', section: '第一篇 > 第一章', level: 1 }
-          })
-        }
-      } as any
+      vault: {
+        app: {
+          vault: {
+            getMarkdownFiles: vi.fn().mockReturnValue([mockFile]),
+            cachedRead: vi.fn().mockResolvedValue(content)
+          },
+          metadataCache: {
+            getFileCache: vi.fn().mockReturnValue({
+              frontmatter: { node_id: '0004', section: '第一篇 > 第一章', level: 1 }
+            })
+          }
+        } as any,
+        plugin: {} as any,
+      },
+      book: {
+        indexId: 'test-idx',
+        pdfName: '如何阅读一本书',
+      },
     };
   };
 
@@ -125,7 +130,7 @@ describe.skip('search_markdown_text', () => {
   });
 
   it('缺少 app 应返回 NO_APP_CONTEXT', async () => {
-    const context = { ...createMockContext('内容'), app: undefined };
+    const context = { ...createMockContext('内容'), vault: { ...createMockContext('内容').vault, app: undefined } };
     const result = await searchBookTool.execute({ keywords: ['test'] }, context);
     const parsed = JSON.parse(result);
 

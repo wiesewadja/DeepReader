@@ -181,7 +181,7 @@ export const writeNoteTool: ToolExecutor = {
       return 'Error: path and content parameters are required';
     }
 
-    const app = context.app;
+    const app = context.vault?.app;
     if (!app) {
       return 'Error: Obsidian app instance not available in context';
     }

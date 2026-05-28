@@ -24,7 +24,7 @@ const generateInfographicSchema = z.object({
 export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
     tool(
     async (args) => {
-      const config = ctx.infographicConfig;
+      const config = ctx.visual?.infographicConfig;
       if (!config?.apiKey) {
         return '错误：图片生成未配置。请在设置中配置 imagegen 角色或填写 SenseNova API Key。';
       }

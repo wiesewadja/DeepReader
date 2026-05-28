@@ -46,7 +46,7 @@ export { createExcalidrawTool } from './excalidraw.js';
  * 创建 LangChain StructuredToolInterface[] 数组。
  * 每个工具通过闭包捕获 ToolContext。
  *
- * 注意：canvas 依赖 ctx.app（Obsidian vault 操作），
+ * 注意：canvas 依赖 ctx.vault?.app（Obsidian vault 操作），
  * excalidraw 使用 window.ExcalidrawAutomate 全局 API（不依赖 ctx.app）。
  */
 export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[] {
@@ -62,21 +62,21 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
   ];
 
   // canvas 依赖 Obsidian app
-  if (ctx.app) {
+  if (ctx.vault?.app) {
     tools.push(createCanvasToolDefinition(ctx));
   }
 
   // search_journal 依赖 journalDir 配置
-  if (ctx.journalDir) {
+  if (ctx.visual?.journalDir) {
     tools.push(createSearchJournalTool(ctx));
   }
 
-  if (ctx.infographicConfig) {
+  if (ctx.visual?.infographicConfig) {
     tools.push(createGenerateInfographicTool(ctx));
   }
 
   // WeRead 工具：仅当 API Key 已配置时注册
-  if (ctx.plugin?.settings?.wereadApiKey) {
+  if (ctx.vault?.plugin?.settings?.wereadApiKey) {
     tools.push(
       createWereadSearchTool(ctx),
       createWereadRecommendTool(ctx),
@@ -97,7 +97,7 @@ export function createVizTools(ctx: ToolContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = [
     createExcalidrawToolDefinition(ctx),
   ];
-  if (ctx.infographicConfig) {
+  if (ctx.visual?.infographicConfig) {
     tools.push(createGenerateInfographicTool(ctx));
   }
   return tools;

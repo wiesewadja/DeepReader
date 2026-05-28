@@ -335,17 +335,45 @@ export class AgentChatController {
 			}
 
 			const context: ToolContext = {
-				indexId: indexId,
-				pdfName: this.host.currentPdfName || '',
-				markdownFiles: this.host.currentMarkdownFiles,
-				useLLMTreeSearch: this.host.useLLMTreeSearch,
-				app: this.host.app,
-				plugin: this.host.plugin,
-				currentNodeId,
-				documentMetadata: {
-					title: this.host.currentPdfName || '',
+				vault: {
+					app: this.host.app,
+					plugin: this.host.plugin,
 				},
-				docDescription: this.host.currentDocDescription || undefined,
+				book: {
+					indexId: indexId,
+				pdfName: this.host.currentPdfName || '',
+					markdownFiles: this.host.currentMarkdownFiles,
+					currentNodeId,
+					documentMetadata: {
+						title: this.host.currentPdfName || '',
+					},
+					docDescription: this.host.currentDocDescription || undefined,
+				},
+				crossBook: (() => {
+					const ids = this.host.currentBooklistBookIds;
+					const isGeneral = indexId === GENERAL_MODE_INDEX_ID;
+					if (!ids && !isGeneral) return undefined;
+					return {
+						booklistBookIds: ids ?? undefined,
+						crossBookMode: !!ids,
+						bookshelfSummary: isGeneral ? this.host.getBookshelfSummary() : undefined,
+						indexedBooks: this.host.indexes?.length
+							? this.host.indexes.filter(i => i.status === 'ready').map(i => ({ id: i.id, name: i.pdf_name }))
+						: undefined,
+					};
+				})(),
+				visual: (() => {
+					const imagegenCfg = resolveRoleConfig('imagegen', this.host.plugin.settings);
+					const legacyKey = this.host.plugin.settings.sensenovaApiKey;
+					if (!imagegenCfg?.apiKey && !legacyKey) return undefined;
+					const base = { relativeDir: 'DeepReader/infographics', vaultAdapter: this.host.app.vault.adapter as any };
+					return {
+						infographicConfig: imagegenCfg?.apiKey
+							? { apiKey: imagegenCfg.apiKey, baseUrl: imagegenCfg.baseUrl, model: imagegenCfg.model, ...base }
+							: { apiKey: legacyKey, ...base },
+					};
+				})(),
+				useLLMTreeSearch: this.host.useLLMTreeSearch,
 				quotes: quotes,
 				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,
 				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
@@ -356,41 +384,7 @@ export class AgentChatController {
 					const cfg = resolveRoleConfig('router', this.host.plugin.settings);
 					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
 				})() : undefined,
-				infographicConfig: (() => {
-					const imagegenCfg = resolveRoleConfig('imagegen', this.host.plugin.settings);
-					const legacyKey = this.host.plugin.settings.sensenovaApiKey;
-					if (!imagegenCfg?.apiKey && !legacyKey) return undefined;
-					if (imagegenCfg?.apiKey) {
-						return {
-							apiKey: imagegenCfg.apiKey,
-							baseUrl: imagegenCfg.baseUrl,
-							model: imagegenCfg.model,
-							relativeDir: 'DeepReader/infographics',
-							vaultAdapter: this.host.app.vault.adapter as any,
-						};
-					}
-					return {
-						apiKey: legacyKey,
-						relativeDir: 'DeepReader/infographics',
-						vaultAdapter: this.host.app.vault.adapter as any,
-					};
-				})(),
-				bookshelfSummary: indexId === GENERAL_MODE_INDEX_ID
-					? this.host.getBookshelfSummary()
-					: undefined,
 			};
-			// Booklist mode: booklistBookIds is the authoritative signal; crossBookMode derives from it
-			if (this.host.currentBooklistBookIds) {
-				context.booklistBookIds = this.host.currentBooklistBookIds;
-				context.crossBookMode = true;
-			}
-
-			// Pass pre-resolved indexed books to avoid redundant filesystem scans in syntopical search
-			if (this.host.indexes?.length) {
-				context.indexedBooks = this.host.indexes
-					.filter(i => i.status === 'ready')
-					.map(i => ({ id: i.id, name: i.pdf_name }));
-			}
 
 			let userMessage = query;
 
@@ -513,7 +507,7 @@ export class AgentChatController {
 					// 剥离 <think> 标签，避免全量残留
 					const { cleanedContent: cleanedForValidation } = extractStreamingThink(content);
 
-					if (!self.host.currentPdfName || !context.app) {
+					if (!self.host.currentPdfName || !context.vault.app) {
 						return cleanedForValidation;
 					}
 
@@ -789,21 +783,25 @@ export class AgentChatController {
 				if (rawNodeId) currentNodeId = String(rawNodeId);
 			}
 
-			const context: ToolContext = {
-				indexId: this.host.currentIndexId || '',
-				pdfName: this.host.currentPdfName || '',
-				markdownFiles: this.host.currentMarkdownFiles,
-				app: this.host.app,
-				plugin: this.host.plugin,
-				currentNodeId,
-				documentMetadata: { title: this.host.currentPdfName || '未知文档' },
-				docDescription: this.host.currentDocDescription || undefined,
-				mode: 'proactive' as const,
-			};
-			if (this.host.currentBooklistBookIds) {
-				context.booklistBookIds = this.host.currentBooklistBookIds;
-				context.crossBookMode = true;
-			}
+				const context: ToolContext = {
+					vault: {
+						app: this.host.app,
+						plugin: this.host.plugin,
+					},
+					book: {
+						indexId: this.host.currentIndexId || '',
+						pdfName: this.host.currentPdfName || '',
+						markdownFiles: this.host.currentMarkdownFiles,
+						currentNodeId,
+						documentMetadata: { title: this.host.currentPdfName || '未知文档' },
+						docDescription: this.host.currentDocDescription || undefined,
+					},
+					crossBook: this.host.currentBooklistBookIds ? {
+						booklistBookIds: this.host.currentBooklistBookIds,
+						crossBookMode: true,
+					} : undefined,
+					mode: 'proactive' as const,
+				};
 			const self = this;
 			const callbacks = {
 				onContent: (content: string) => {

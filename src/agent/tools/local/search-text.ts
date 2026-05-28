@@ -192,7 +192,9 @@ export const searchBookTool: ToolExecutor = {
   definition: SEARCH_BOOK_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const { app, pdfName, indexId } = context;
+    const { vault, book } = context;
+    const { app } = vault;
+    const { pdfName, indexId } = book;
     const keywords = args.keywords as string[];
     const scopeNodeIds = args.scope_node_ids as string[] | undefined;
     const topK = (args.top_k as number) || 10;
@@ -221,7 +223,7 @@ export const searchBookTool: ToolExecutor = {
     try {
       console.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
-      const settings = context.plugin?.settings;
+      const settings = context.vault.plugin?.settings;
       const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
       const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
       const rerankerWeight = settings?.rerankerWeight ?? 0.7;
@@ -273,7 +275,7 @@ export const searchBookTool: ToolExecutor = {
       }
 
       // 当前章节提权：用户正在阅读的章节搜索结果加权 1.5x
-      const currentNodeId = context.currentNodeId;
+      const currentNodeId = context.book.currentNodeId;
       if (currentNodeId) {
         for (const entry of fusedEntries) {
           if (entry.nodeId === currentNodeId) {
@@ -315,7 +317,8 @@ async function searchAnnotations(
   context: ToolContext,
   existingEntries: FusionEntry[],
 ): Promise<FusionEntry[]> {
-  const { app, pdfName } = context;
+  const { app } = context.vault;
+  const { pdfName } = context.book;
   if (!app || !pdfName) return [];
 
   const bookName = pdfName.replace(/\.(pdf|epub)$/i, '');

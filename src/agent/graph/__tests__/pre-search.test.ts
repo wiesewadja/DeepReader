@@ -48,16 +48,17 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
         stream: vi.fn(),
       },
       toolContext: {
-        app: mockApp,
-        indexId: 'test-book-id',
-        currentNodeId: 'node1',
-        markdownFiles: { 'book/01 - Intro.md': 'content' },
-        plugin: { settings: {} },
+        vault: {
+          app: mockApp,
+          plugin: { settings: {} },
+        },
+        book: {
+          indexId: 'test-book-id',
+          currentNodeId: 'node1',
+          markdownFiles: { 'book/01 - Intro.md': 'content' },
+        },
       },
-      sharedContext: {
-        pdfName: 'TestBook',
-        markdownFiles: {},
-      },
+      sharedContext: {},
       callbacks: {},
       ...overrides,
     },

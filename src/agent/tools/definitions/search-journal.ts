@@ -14,10 +14,10 @@ const searchJournalSchema = z.object({
 });
 
 export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
-	const journalDir = (ctx as any).journalDir as string | undefined;
-	const settings = ctx.plugin?.settings;
+	const journalDir = ctx.visual?.journalDir;
+	const settings = ctx.vault?.plugin?.settings;
 	const searchService = (journalDir && settings)
-		? new JournalSearchService(ctx.app!, settings, getJournalIndexDir(journalDir))
+		? new JournalSearchService(ctx.vault.app!, settings, getJournalIndexDir(journalDir))
 		: null;
 
 	return tool(

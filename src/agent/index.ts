@@ -262,8 +262,8 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: errorMsg }] };
     }
 
-    const threadId = context.indexId
-      ? `thread-${context.indexId}`
+    const threadId = context.book.indexId
+      ? `thread-${context.book.indexId}`
       : `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
@@ -285,14 +285,14 @@ ${currentMemory}
     const result = await this.executeWithStream(
       {
         messages: [new HumanMessage(userMessage)],
-        bookId: context.indexId || '',
-        pdfName: context.pdfName || '',
+        bookId: context.book.indexId || '',
+        pdfName: context.book.pdfName || '',
         depth: context.mode === 'proactive' ? ReadingDepth.INSPECTIONAL : undefined,
         mode: (context.mode || 'normal') as EngineMode,
         proactiveTrigger: context.proactiveTrigger ?? undefined,
         highlightContext: context.highlightContext ?? [],
-        wereadAvailable: !!context.plugin?.settings?.wereadApiKey,
-        crossBookMode: !!context.booklistBookIds?.length,
+        wereadAvailable: !!context.vault.plugin?.settings?.wereadApiKey,
+        crossBookMode: !!context.crossBook?.booklistBookIds?.length,
       },
       callbacks,
       configurable,
@@ -300,7 +300,7 @@ ${currentMemory}
     );
 
     // 后台累计对话轮数（满 10 轮自动更新画像摘要）
-    const _pb = context.plugin?.profileBuilder;
+    const _pb = context.vault.plugin?.profileBuilder;
     if (_pb) {
       const _userMsg = userMessage || '';
       const _assistantMsg = result.messages?.[0]?.content || '';
@@ -422,14 +422,15 @@ ${currentMemory}
     const memoryContext = await this.memoryStore.getMemoryContext();
 
     // 注入 journalDir 到 ToolContext（启用 search_journal 工具）
-    if (this.options.journalDir && !context.journalDir) {
-      context.journalDir = this.options.journalDir;
+    if (this.options.journalDir && !context.visual?.journalDir) {
+      if (!context.visual) context.visual = {};
+      context.visual.journalDir = this.options.journalDir;
     }
 
     // 读取画像摘要 + 检索相关片段（RAG）
     // 读取用户画像摘要（常驻注入）
     let userProfileSummary: string | undefined;
-    const profileBuilder = context.plugin?.profileBuilder;
+    const profileBuilder = context.vault.plugin?.profileBuilder;
     if (profileBuilder) {
       try {
         userProfileSummary = await profileBuilder.readSummary() || undefined;
@@ -445,23 +446,15 @@ ${currentMemory}
 
     // SharedContext for S2 compatibility
     const ctx = createSharedContext({
-      indexId: context.indexId || '',
-      pdfName: context.pdfName || '',
       rawUserQuery: rawUserQuery || '',
       chatHistory: cleanHistory,
-      markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,
       memoryContext,
       llmClientManager: this.llmClientManager,
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
       userProfileSummary,
-      booklistBookIds: context.booklistBookIds,
-      crossBookMode: !!context.booklistBookIds?.length || !!context.crossBookMode,
-      bookshelfSummary: context.bookshelfSummary,
-      indexedBooks: context.indexedBooks,
     });
 
     const engineCallbacks: EngineCallbacks = {
@@ -543,7 +536,7 @@ ${currentMemory}
     await this.initialize();
 
     // 检测 PI skill 意图
-    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
       return this.handleSkillRequest(userMessage, context, callbacks);
     }
 
@@ -560,7 +553,7 @@ ${currentMemory}
     await this.initialize();
 
     // 检测 PI skill 意图
-    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
       return this.handleSkillRequest(userMessage, context, callbacks);
     }
 
@@ -604,16 +597,16 @@ ${currentMemory}
     const outputPath = generateOutputPath(
       app,
       'skill',
-      context.documentMetadata?.title ?? '未命名',
+      context.book.documentMetadata?.title ?? '未命名',
     );
 
     const skillContext = buildSkillContext({
       book: {
-        title: context.documentMetadata?.title ?? '未知',
-        author: context.documentMetadata?.author ?? '未知',
+        title: context.book.documentMetadata?.title ?? '未知',
+        author: context.book.documentMetadata?.author ?? '未知',
       },
-      currentSection: context.currentNodeId ?? '全书',
-      analysisSummary: context.docDescription ?? '',
+      currentSection: context.book.currentNodeId ?? '全书',
+      analysisSummary: context.book.docDescription ?? '',
       userRequest: userMessage,
       skillDescriptions,
       outputPath,

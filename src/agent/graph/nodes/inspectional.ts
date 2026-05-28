@@ -49,9 +49,9 @@ export async function inspectionalNode(
 
   // Step 1: Load tree.json
   const outlineNodes = await loadTreeJson(
-    toolContext.app,
-    toolContext.indexId || bookId,
-    statePdfName || toolContext.pdfName,
+    toolContext.vault.app,
+    toolContext.book.indexId || bookId,
+    statePdfName || toolContext.book.pdfName,
   );
 
   if (outlineNodes.length === 0) {
@@ -68,7 +68,7 @@ export async function inspectionalNode(
   const treeText = formatTreeStructure(outlineNodes, 0, TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH, pdfName);
 
   // Step 3: Build prompt
-  const docDescription = config.configurable?.sharedContext?.docDescription;
+  const docDescription = config.configurable?.sharedContext?.toolContext?.book.docDescription;
   const systemPrompt = buildInspectionalSystemPrompt(
     treeText,
     statePdfName || '',

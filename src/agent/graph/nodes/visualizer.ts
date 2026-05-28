@@ -96,7 +96,7 @@ export async function visualizerNode(
   }
 
   const hasExcalidraw = typeof window !== 'undefined' && window.ExcalidrawAutomate;
-  const hasInfographic = !!toolContext.infographicConfig;
+  const hasInfographic = !!toolContext.visual?.infographicConfig;
   if (!hasExcalidraw && !hasInfographic) {
     log('[Visualizer] 无可用图表工具（Excalidraw 未安装且信息图未配置）');
     return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
@@ -109,7 +109,7 @@ export async function visualizerNode(
   }
 
   const userQuery = stateQuery || '';
-  const pdfName = statePdfName || toolContext.pdfName || '';
+  const pdfName = statePdfName || toolContext.book.pdfName || '';
 
   log(`[Visualizer] 开始生成图表，内容长度=${sourceContent.length}，query="${userQuery.slice(0, 50)}"`);
 
