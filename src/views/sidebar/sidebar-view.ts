@@ -55,7 +55,7 @@ import { ReadingProgressTracker } from './reading-progress-tracker.js';
 import { SessionManager } from './session-manager.js';
 import { AgentChatController } from './agent-chat-controller.js';
 import { BookManager } from './book-manager.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -63,7 +63,7 @@ export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
-    private plugin: DeepReaderPlugin;
+    private plugin: DeepReaderPluginInterface;
     private readingTopbar: ReadingTopbar | null = null;
     private taskCards: Map<string, TaskProgressCard> = new Map();
 
@@ -199,7 +199,7 @@ export class SidebarView extends ItemView {
 
 
 
-    constructor(leaf: WorkspaceLeaf, plugin: DeepReaderPlugin) {
+    constructor(leaf: WorkspaceLeaf, plugin: DeepReaderPluginInterface) {
         super(leaf);
         this.plugin = plugin;
         const self = this;

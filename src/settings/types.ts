@@ -3,10 +3,10 @@
  */
 
 import type { App } from 'obsidian';
-import type DeepPDFPlugin from '../main';
+import type DeepReaderPlugin from '../main';
 
 export interface SectionContext {
-  plugin: DeepPDFPlugin;
+  plugin: DeepReaderPlugin;
   app: App;
   containerEl: HTMLElement;
   expandedSections: Set<string>;

@@ -3,7 +3,7 @@
  */
 
 import { Notice, Setting, setIcon } from 'obsidian';
-import type DeepPDFPlugin from '../../main';
+import type DeepReaderPlugin from '../../main';
 import type { ProviderType, RoleType } from '../../config/types';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS, applyPreset } from '../../config/providers';
 import { getPresetById, detectCurrentPreset } from '../../config/presets';

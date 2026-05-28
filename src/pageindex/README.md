@@ -97,7 +97,7 @@ frontend/src/pageindex/
 ```typescript
 import { PageIndex, type PageIndexResult } from './pageindex/node';
 
-export default class DeepPDFPlugin extends Plugin {
+export default class DeepReaderPlugin extends Plugin {
   async processPdf(pdfPath: string) {
     const pageIndex = new PageIndex({
       model: this.settings.model,

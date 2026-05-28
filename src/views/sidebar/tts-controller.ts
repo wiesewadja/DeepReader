@@ -9,11 +9,11 @@ import { TTSService } from '../../services/tts/tts-service.js';
 import type { TTSPlayState } from '../../services/tts/tts-service.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { MemoryStore } from '../../agent/memory/store.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface TTSControllerHost {
 	get app(): import('obsidian').App;
-	get plugin(): DeepReaderPlugin;
+	get plugin(): DeepReaderPluginInterface;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	getDisplayName(name: string): string;
 	getCurrentPdfName(): string | null;

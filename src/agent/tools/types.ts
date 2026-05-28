@@ -8,7 +8,7 @@ import type { EngineMode } from '../graph/state.js';
 import type { VaultContext, BookContext, CrossBookContext, WereadContext, VisualContext } from './context/index.js';
 
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';
-export type { DeepReaderPlugin } from './context/vault.js';
+export type { DeepReaderPluginInterface } from './context/vault.js';
 
 /**
  * Tool 执行上下文

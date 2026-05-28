@@ -15,11 +15,11 @@ import {
 } from '../../pageindex/reading-progress.js';
 import type { ReadingProgress } from '../../pageindex/reading-progress.js';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface ReadingProgressTrackerHost {
 	get app(): import('obsidian').App;
-	get plugin(): DeepReaderPlugin;
+	get plugin(): DeepReaderPluginInterface;
 	get readingTopbar(): import('../../components/reading-topbar/index.js').ReadingTopbar | null;
 	get proactiveEngine(): import('../../agent/proactive/engine.js').ProactiveEngine | null;
 	get agentChatHistory(): import('../../agent/types.js').ChatMessage[];

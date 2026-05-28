@@ -3,13 +3,13 @@
  */
 
 import { Notice, Setting } from 'obsidian';
-import type DeepPDFPlugin from '../../main';
+import type DeepReaderPlugin from '../../main';
 import type { ProviderType } from '../../config/types';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS } from '../../config/providers';
 import { debounceAsync, getProviderAccount, setProviderAccount, validateBaseUrl } from '../helpers';
 
 interface ProviderCardContext {
-  plugin: DeepPDFPlugin;
+  plugin: DeepReaderPlugin;
   expandedSections: Set<string>;
   onToggle: (sectionId: string) => void;
 }

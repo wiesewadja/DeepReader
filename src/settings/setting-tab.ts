@@ -6,7 +6,7 @@
  */
 
 import { App, PluginSettingTab, setIcon } from 'obsidian';
-import type DeepPDFPlugin from '../main';
+import type DeepReaderPlugin from '../main';
 import type { SectionContext } from './types';
 import { renderLLMSection, createLLMState } from './sections/llm-section';
 import type { LLMState } from './sections/llm-section';
@@ -24,7 +24,7 @@ interface SettingsTab {
 }
 
 export class DeepPDFSettingTab extends PluginSettingTab {
-  plugin: DeepPDFPlugin;
+  plugin: DeepReaderPlugin;
   private currentTab: SettingsTabId = 'llm';
   private contentContainer: HTMLElement | null = null;
   private expandedSections: Set<string> = new Set();
@@ -38,7 +38,7 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     { id: 'advanced', name: '高级', icon: 'cog' },
   ];
 
-  constructor(app: App, plugin: DeepPDFPlugin) {
+  constructor(app: App, plugin: DeepReaderPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }

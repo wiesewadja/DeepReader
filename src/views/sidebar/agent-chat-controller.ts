@@ -23,11 +23,11 @@ import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.
 import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MascotExpression } from '../../components/reading-topbar/mascot-face.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface AgentChatControllerHost {
 	get app(): import('obsidian').App;
-	get plugin(): DeepReaderPlugin;
+	get plugin(): DeepReaderPluginInterface;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get chatInput(): import('../../components/chat-input/chat-input.js').ChatInput | null;
 	get frontendAgent(): import('../../agent/index.js').FrontendAgent | null;

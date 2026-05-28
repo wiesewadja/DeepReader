@@ -1,6 +1,6 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
-import type { DeepReaderPlugin } from "./agent/tools/context/vault.js";
+import type { DeepReaderPluginInterface } from "./agent/tools/context/vault.js";
 import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
@@ -30,11 +30,12 @@ import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 // 使用 service 模块日志器
 const log = serviceLog;
 
-export default class DeepPDFPlugin extends Plugin {
+export default class DeepReaderPlugin extends Plugin implements DeepReaderPluginInterface {
     settings: DeepPDFSettings;
     readingModeService: ReadingModeService | null = null;
     frontendAgent: FrontendAgent | null = null;
     profileBuilder?: import('./services/profile-builder').ProfileBuilder;
+    private highlightService: HighlightService | null = null;
 
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
@@ -113,7 +114,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this as unknown as DeepReaderPlugin)
+            (leaf) => new SidebarView(leaf, this as unknown as DeepReaderPluginInterface)
         );
 
         // 注册书库视图
@@ -504,8 +505,10 @@ export default class DeepPDFPlugin extends Plugin {
                 this.app.workspace.trigger('deeppdf:excerpt-selection', text, range);
             },
             onSaveHighlight: async (text: string, color: HighlightColorId) => {
-                const hlService = new HighlightService(this.app);
-                await hlService.saveHighlight(text, color);
+                if (!this.highlightService) {
+                    this.highlightService = new HighlightService(this.app);
+                }
+                await this.highlightService.saveHighlight(text, color);
                 const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                 if (leaves.length > 0) {
                     const sidebarView = leaves[0].view as SidebarView;
@@ -513,8 +516,10 @@ export default class DeepPDFPlugin extends Plugin {
                 }
             },
             onRemoveHighlight: async (text: string) => {
-                const hlService = new HighlightService(this.app);
-                await hlService.removeHighlight(text);
+                if (!this.highlightService) {
+                    this.highlightService = new HighlightService(this.app);
+                }
+                await this.highlightService.removeHighlight(text);
             },
             onBookDetected: (indexId: string, bookName: string) => {
                 // 检测到书籍章节，自动切换到对应书籍的聊天记录

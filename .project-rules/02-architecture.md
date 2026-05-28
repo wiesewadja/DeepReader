@@ -4,7 +4,7 @@
 
 ```
 src/
-├── main.ts                      # 插件入口（DeepPDFPlugin），注册命令、视图、事件
+├── main.ts                      # 插件入口（DeepReaderPlugin），注册命令、视图、事件
 ├── views/
 │   ├── sidebar-view.ts          # 主侧边栏视图（对话界面、书籍选择）
 │   ├── library-view.ts          # 书库视图（PDF/EPUB 管理 + Z-Library 下载）

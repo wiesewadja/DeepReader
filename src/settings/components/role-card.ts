@@ -4,7 +4,7 @@
  */
 
 import { Setting, Notice, TextComponent } from 'obsidian';
-import type DeepPDFPlugin from '../../main';
+import type DeepReaderPlugin from '../../main';
 import type { RoleType, ProviderType } from '../../config/types';
 import { ROLE_CAPABILITY } from '../../config/ai-roles';
 import type { AIRoleConfig } from '../../config/ai-roles';
@@ -12,7 +12,7 @@ import { PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName } from 
 import { getRoleConfig, setRoleConfig } from '../helpers';
 
 interface RoleCardContext {
-  plugin: DeepPDFPlugin;
+  plugin: DeepReaderPlugin;
   expandedSections: Set<string>;
   onToggle: (sectionId: string) => void;
   onRerender?: () => void;
@@ -24,7 +24,7 @@ function buildSummaryLine(roleConfig: { provider: string; model: string } | null
   return roleConfig.model ? `${providerLabel} · ${roleConfig.model}` : providerLabel;
 }
 
-function updateSummary(summaryEl: HTMLElement | null, role: RoleType, plugin: DeepPDFPlugin): void {
+function updateSummary(summaryEl: HTMLElement | null, role: RoleType, plugin: DeepReaderPlugin): void {
   if (!summaryEl) return;
   const rc = getRoleConfig(plugin.settings.roles, role);
   summaryEl.setText(buildSummaryLine(rc, plugin.settings));

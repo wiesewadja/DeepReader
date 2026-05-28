@@ -17,11 +17,11 @@ import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath } from '../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
-	get plugin(): DeepReaderPlugin;
+	get plugin(): DeepReaderPluginInterface;
 	get messageList(): MessageList | null;
 	get readingTopbar(): ReadingTopbar | null;
 	get readingProgress(): ReadingProgress | null;

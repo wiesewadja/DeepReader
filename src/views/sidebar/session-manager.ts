@@ -14,11 +14,11 @@ import { GENERAL_MODE_INDEX_ID } from '../../agent/config/agent-constants.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
 import type { BooklistItemInfo, Booklist } from '../../types/index.js';
-import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface SessionManagerHost {
 	get app(): import('obsidian').App;
-	get plugin(): DeepReaderPlugin;
+	get plugin(): DeepReaderPluginInterface;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get readingTopbar(): import('../../components/reading-topbar/index.js').ReadingTopbar | null;
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
