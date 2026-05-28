@@ -45,6 +45,7 @@ export async function analyticalNode(
     rewrittenQuery: stateQuery,
     betterQuestion: stateBetterQuestion,
     scopeNodeIds: rawScopeNodeIds,
+    nodeFileMap: stateNodeFileMap,
   }: AnalyticalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
@@ -64,6 +65,7 @@ export async function analyticalNode(
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
   const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
   const tocSummary = stateTocSummary || ctx?.tocSummary;
+  const nodeFileMap = stateNodeFileMap ?? {};
 
   // Build prompt context
   const { fullSystemPrompt, userMessage: rawUserMessage } = buildFullAnalyticalContext({
@@ -73,6 +75,7 @@ export async function analyticalNode(
     currentChapterName,
     userProfileSummary: ctx?.userProfileSummary,
     markdownFiles,
+    nodeFileMap,
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
     betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,

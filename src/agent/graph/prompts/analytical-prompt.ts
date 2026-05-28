@@ -127,15 +127,23 @@ ${scopeList}
  */
 export function buildScopedChaptersBlock(
   scopeNodeIds: string[],
-  markdownFiles: Record<string, string>
+  markdownFiles: Record<string, string>,
+  nodeFileMap?: Record<string, string>
 ): string {
   if (scopeNodeIds.length === 0) return '';
 
   const lines: string[] = [];
 
   for (const nodeId of scopeNodeIds) {
-    const numericPart = nodeId.replace(/^0+/, '');
+    // 优先从 nodeFileMap（tree.json 索引数据）获取 fileName
+    const indexFileName = nodeFileMap?.[nodeId]?.replace(/\.md$/, '');
+    if (indexFileName) {
+      lines.push(`- node_id: ${nodeId}, file_name: "${indexFileName}"`);
+      continue;
+    }
 
+    // fallback: 从 markdownFiles（用户加载的文档）匹配
+    const numericPart = nodeId.replace(/^0+/, '');
     const matchedKey = Object.keys(markdownFiles).find(key => {
       const fileName = key.split('/').pop() ?? '';
       const fileNumMatch = fileName.match(/^(\d+)\s*-\s*/);
@@ -207,6 +215,7 @@ export function buildFullAnalyticalContext(params: {
   currentChapterName?: string;
   userProfileSummary?: string;
   markdownFiles: Record<string, string>;
+  nodeFileMap?: Record<string, string>;
   standaloneQuery: string;
   betterQuestion?: string;
   recentHistorySummaries?: import('../utils/history-summarizer').HistorySummary[];
@@ -221,7 +230,7 @@ export function buildFullAnalyticalContext(params: {
     userProfileSummary: params.userProfileSummary,
   });
 
-  const scopedChapters = buildScopedChaptersBlock(params.scopeNodeIds, params.markdownFiles);
+  const scopedChapters = buildScopedChaptersBlock(params.scopeNodeIds, params.markdownFiles, params.nodeFileMap);
   const fullSystemPrompt = scopedChapters
     ? `${systemPrompt}\n${scopedChapters}`
     : systemPrompt;

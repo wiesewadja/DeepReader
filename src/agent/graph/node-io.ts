@@ -69,6 +69,7 @@ export interface AnalyticalInput {
   rewrittenQuery: string;
   betterQuestion: string;
   scopeNodeIds: string[];
+  nodeFileMap: Record<string, string>;
 }
 
 export interface AnalyticalOutput {
@@ -116,6 +117,7 @@ export interface FormatterInput {
   toolResultsSnapshot: ToolResultSnapshot[];
   highlightContext: string[];
   crossBookMode?: boolean;
+  nodeFileMap?: Record<string, string>;
 }
 
 export interface FormatterOutput {

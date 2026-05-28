@@ -93,6 +93,7 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   preSearchBlock: Annotation<string>(),
   earlyStopContent: Annotation<string>(),
   validatedScopeNodeIds: Annotation<string[]>(overwriteWithDefault([])),
+  nodeFileMap: Annotation<Record<string, string>>(overwriteWithDefault({})),
 
   // === S4: Formatter output ===
   formattedOutput: Annotation<string>(),

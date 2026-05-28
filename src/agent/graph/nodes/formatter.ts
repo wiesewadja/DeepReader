@@ -85,9 +85,23 @@ function fixupWikiLinks(content: string, bookName: string): string {
   });
 }
 
+/**
+ * 清理空的 block_id 锚点：[[path#^|alias]] → [[path|alias]]
+ * LLM 有时会为没有 block_id 的引用生成空的 #^，直接使用章节名即可。
+ *
+ * 全模式执行：proactive/socratic/casual 等 LLM 同样可能产生此幻觉模式，
+ * 对无 wiki 链接的内容该函数无副作用（正则无匹配即跳过）。
+ * 正则中 [^#\]]* 不允许 # 出现在路径中是正确的——Obsidian 用 # 分隔标题锚点，
+ * 文件名本身不能包含 #。
+ */
+function fixupEmptyBlockIds(content: string): string {
+  return content.replace(/\[\[([^#\]]*)#\^\|([^\]]+)\]\]/g, '[[$1|$2]]')
+    .replace(/\[\[([^#\]]*)#\^\]\]/g, '[[$1]]');
+}
+
 /** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
 function cleanOutput(content: string, pdfName: string): string {
-  return fixupWikiLinks(stripThinkTags(content), pdfName);
+  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName);
 }
 
 /**
@@ -98,19 +112,23 @@ function cleanOutput(content: string, pdfName: string): string {
 function stripFabricatedLinks(content: string, inputTexts: string[]): string {
   // 收集输入中所有合法链接的文件名（不含书名前缀）
   const validFileNames = new Set<string>();
+  // 1. 从 [[...]] wiki 链接中提取
   const wikiRegex = /\[\[([^\]]+)\]\]/g;
   for (const text of inputTexts) {
     let m: RegExpExecArray | null;
     const re = new RegExp(wikiRegex.source, wikiRegex.flags);
     while ((m = re.exec(text)) !== null) {
       const inner = m[1];
-      // 提取文件名部分（去掉 #block_id 和 |alias）
       const pathPart = inner.split('#')[0].split('|')[0];
-      // 去掉书名前缀，取最后一段作为文件名
       const fileName = pathPart.split('/').pop() || pathPart;
       validFileNames.add(fileName);
-      // 也保留完整路径
       validFileNames.add(pathPart);
+    }
+    // 2. 从 scoped_chapters 的 file_name 字段提取
+    const fnRegex = /file_name:\s*"([^"]+)"/g;
+    let fn: RegExpExecArray | null;
+    while ((fn = fnRegex.exec(text)) !== null) {
+      validFileNames.add(fn[1]);
     }
   }
 
@@ -187,6 +205,7 @@ export async function formatterNode(
     toolResultsSnapshot,
     highlightContext,
     crossBookMode,
+    nodeFileMap,
   }: FormatterInput = state;
   const mode = resolveMode(state);
   const mainModel = config.configurable?.mainModel;
@@ -311,21 +330,25 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   }
 
   // === Normal mode (depth >= 1): format with full context ===
-  // 收集输入文本用于校验编造链接
-  const inputTextsForValidation = [
-    analysisResult || '',
-    structuralAnalysis || '',
-  ];
-  callbacks?.onProgress?.('正在整理笔记...');
-
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
 
   const chatHistory = ctx?.chatHistory ?? [];
   const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
   const effectiveScopeNodeIds = scopeNodeIds ?? [];
   const coveredScope = effectiveScopeNodeIds.length > 0
-    ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles)
+    ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles, nodeFileMap)
     : '';
+
+  // 收集输入文本用于校验编造链接。
+  // coveredScope 包含 tree.json 中验证过的 file_name（vault 真实文件），
+  // 纳入校验是为了让早停路径已引用的链接在 formatter 输出中不被误删。
+  // 当 effectiveScopeNodeIds 为空时 coveredScope 为 ''，对校验无影响。
+  const inputTextsForValidation = [
+    analysisResult || '',
+    structuralAnalysis || '',
+    coveredScope,
+  ];
+  callbacks?.onProgress?.('正在整理笔记...');
   // Booklist mode: avoid single-book link fixup; pdfName is meaningless for multi-book analysis
   const effectivePdfName = crossBookMode ? '' : (pdfName || '');
   const userMessage = buildFormatterUserMessage(

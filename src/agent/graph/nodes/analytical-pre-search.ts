@@ -42,8 +42,8 @@ async function validateScopeNodeIds(
   bookId: string,
   pdfName: string,
   scopeNodeIds: string[]
-): Promise<string[]> {
-  if (scopeNodeIds.length === 0 || !bookId) return [];
+): Promise<{ validIds: string[]; nodeFileMap: Record<string, string> }> {
+  if (scopeNodeIds.length === 0 || !bookId) return { validIds: [], nodeFileMap: {} };
 
   try {
     const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
@@ -64,10 +64,11 @@ async function validateScopeNodeIds(
       log(`[S2-Pre] Scope validation: ${validIds.length}/${scopeNodeIds.length} IDs valid`);
     }
 
-    return validIds;
+    const nodeFileMap: Record<string, string> = treeData.nodeFileMap || {};
+    return { validIds, nodeFileMap };
   } catch (err) {
     log('[S2-Pre] Scope validation failed, using all IDs:', err);
-    return scopeNodeIds;
+    return { validIds: scopeNodeIds, nodeFileMap: {} };
   }
 }
 
@@ -113,7 +114,7 @@ export async function preSearchNode(
   }
 
   // 1. Validate scope
-  const validatedScopeNodeIds = await validateScopeNodeIds(
+  const { validIds: validatedScopeNodeIds, nodeFileMap } = await validateScopeNodeIds(
     toolContext.vault.app,
     toolContext.book.indexId || '',
     statePdfName || ctx?.toolContext?.book.pdfName || '',
@@ -133,6 +134,7 @@ export async function preSearchNode(
     currentChapterName,
     userProfileSummary: ctx?.userProfileSummary,
     markdownFiles,
+    nodeFileMap,
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
     betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
@@ -259,6 +261,7 @@ export async function preSearchNode(
 
       return {
         validatedScopeNodeIds,
+        nodeFileMap,
         earlyStopContent: 'done',
         analysisResult: verifyResult.content,
         toolResultsSnapshot: preSearchRecords,
@@ -278,6 +281,7 @@ ${blockLines.join('\n\n')}
 
     return {
       validatedScopeNodeIds,
+      nodeFileMap,
       preSearchBlock,
       earlyStopContent: '',
       toolResultsSnapshot: [],
