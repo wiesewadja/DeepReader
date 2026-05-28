@@ -37,10 +37,10 @@ import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths
 // Real book data from test vault
 // ═══════════════════════════════════════════════════════════════
 
-const VAULT_PATH = "/Users/lizhao/workspace/deepreadertest";
+const VAULT_PATH = process.env.VAULT_PATH;
 const MONEY_PSYCH_BOOK_ID = "f121b2ce";
-const vaultAvailable = fsSync.existsSync(VAULT_PATH);
-const TREE_JSON_PATH = getBookFile(VAULT_PATH, MONEY_PSYCH_BOOK_ID, "tree.json");
+const vaultAvailable = !!VAULT_PATH && fsSync.existsSync(VAULT_PATH);
+const TREE_JSON_PATH = VAULT_PATH ? getBookFile(VAULT_PATH, MONEY_PSYCH_BOOK_ID, "tree.json") : '';
 
 interface TreeNode {
   title: string;

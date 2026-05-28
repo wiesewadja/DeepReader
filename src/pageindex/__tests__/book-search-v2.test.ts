@@ -29,7 +29,7 @@ import { getPageindexRoot, getBookDir, getBookFile } from '../../pageindex/paths
 // Test vault paths
 // ═══════════════════════════════════════════════════════════════
 
-const VAULT_PATH = "/Users/lizhao/workspace/deepreadertest";
+const VAULT_PATH = process.env.VAULT_PATH;
 const MONEY_PSYCH_BOOK_ID = "f121b2ce";
 const CRITICAL_BOOK_ID = "7d21cc73";
 
@@ -229,7 +229,7 @@ async function getBookMeta(legacyBookId: string): Promise<{ filePath: string; bo
 }
 
 // Check if local test vault exists for E2E tests
-const vaultAvailable = fsSync.existsSync(VAULT_PATH);
+const vaultAvailable = !!VAULT_PATH && fsSync.existsSync(VAULT_PATH);
 
 describe.skipIf(!vaultAvailable)("E2E: 金钱心理学 — BM25 search quality", () => {
   let filePath: string;

@@ -4,6 +4,7 @@
  */
 
 import { App, TFile } from 'obsidian';
+import { uiLog } from './logger.js';
 
 /**
  * 从 DOM Range 中查找最近的 block id
@@ -68,7 +69,7 @@ export function findBlockIdFromRange(
         // 如果 DOM 查找失败，尝试从文件内容中查找（同步版本）
         return findBlockIdFromContentSync(range, filePath, app);
     } catch (err) {
-        console.warn('[DeepPDF] Failed to find block id from range:', err);
+        uiLog.warn('[DeepPDF] Failed to find block id from range:', err);
         return null;
     }
 }
@@ -124,7 +125,7 @@ function findBlockIdFromContentSync(
 
         return null;
     } catch (err) {
-        console.warn('[DeepPDF] Failed to find block id from content:', err);
+        uiLog.warn('[DeepPDF] Failed to find block id from content:', err);
         return null;
     }
 }
@@ -199,7 +200,7 @@ export async function findBlockIdFromText(
 
         return null;
     } catch (err) {
-        console.warn('[DeepPDF] Failed to find block id from file:', err);
+        uiLog.warn('[DeepPDF] Failed to find block id from file:', err);
         return null;
     }
 }

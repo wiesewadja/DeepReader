@@ -401,7 +401,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
                     new Notice(`抓取失败: ${msg}`);
-                    console.error('[DumpSystemPrompt] 错误:', err);
+                    serviceLog.error('[DumpSystemPrompt] 错误:', err);
                 }
             }
         });
@@ -463,7 +463,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 } catch (error) {
                     const errorMsg = error instanceof Error ? error.message : String(error);
                     new Notice(`生成失败: ${errorMsg}`);
-                    console.error("[DeepReader] Excalidraw 测试失败:", error);
+                    serviceLog.error("[DeepReader] Excalidraw 测试失败:", error);
                 }
             }
         });
@@ -789,7 +789,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         const hoursSinceBuild = (Date.now() - new Date(meta.lastBuildTime).getTime()) / (1000 * 60 * 60);
         if (hoursSinceBuild >= 24) {
             this.profileBuilder.build().catch(e => {
-                console.warn('[DeepReader] Auto-build profile failed:', e.message);
+                serviceLog.warn('[DeepReader] Auto-build profile failed:', e.message);
             });
         }
     }

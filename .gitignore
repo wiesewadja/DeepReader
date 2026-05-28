@@ -8,19 +8,19 @@ wheels/
 
 logs/
 
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Node modules
 frontend/node_modules/
 node_modules/
-
-# Package lock files (keep yarn.lock if using yarn)
-package-lock.json
-**/package-lock.json
 
 # Build outputs
 bin/
 main.js
 styles.css
-
 
 # Agent skills (local)
 .agents/
@@ -30,9 +30,9 @@ styles.css
 .claude/worktrees/
 output/
 backend/data/
-.worktrees/
 .kiro/
-bin/
+
+# Obsidian cache (local dev, 586MB+)
 .obsidian-cache
 test-vault/
 
@@ -57,12 +57,14 @@ docs/ideas/
 docs/issues/
 docs/superpowers/
 
+# Sensitive docs (private API documentation)
+docs/weread-api-docs.md
+docs/weread-api.md
+
 # macOS
 .DS_Store
 
 # Working files
 tasks/
 
-# Obsidian vault (local dev)
-.obsidian-cache/
 manifest.json

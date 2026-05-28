@@ -13,7 +13,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const VAULT_PATH = process.env.VAULT_PATH || '/Users/lizhao/workspace/deepreadertest';
+const VAULT_PATH = process.env.VAULT_PATH;
 const BOOK_NAME = '如何阅读一本书';
 
 // 性能计时器

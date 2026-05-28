@@ -14,6 +14,7 @@ import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
+import { toolsLog } from '../../../utils/logger.js';
 import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
@@ -221,7 +222,7 @@ export const searchBookTool: ToolExecutor = {
     }
 
     try {
-      console.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
+      toolsLog.log('[search_book] indexId:', indexId, 'keywords:', keywords, 'scope:', scopeNodeIds?.length ?? 0);
 
       const settings = context.vault.plugin?.settings;
       const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;

@@ -10,6 +10,7 @@ import type { LocalToolCache } from './types.js';
 import type { ToolContext } from '../types.js';
 import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
+import { toolsLog } from '../../../utils/logger.js';
 
 /**
  * Token 上限常量
@@ -42,7 +43,7 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
   const { app } = context.vault;
   const { pdfName, indexId } = context.book;
   if (!app || !pdfName) {
-    console.log('[buildLocalCache] Missing app or pdfName');
+    toolsLog.log('[buildLocalCache] Missing app or pdfName');
     return {};
   }
 
@@ -53,20 +54,20 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
     if (!bookId) {
       const resolved = await resolveBookIdFromPdf(app, pdfName);
       if (!resolved) {
-        console.log('[buildLocalCache] Book file not found for:', pdfName);
+        toolsLog.log('[buildLocalCache] Book file not found for:', pdfName);
         return {};
       }
       bookId = resolved;
     }
 
-    console.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);
+    toolsLog.log('[buildLocalCache] bookId:', bookId, 'pdfName:', pdfName, 'indexId:', indexId);
 
     // Load tree.json from pageindex（使用 vault 相对路径，adapter.read 会自动拼接 vault root）
     const treePath = `${PAGEINDEX_DIR}/${bookId}/tree.json`;
     const treeContent = await (app.vault as any).adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
-    console.log('[buildLocalCache] Loaded tree.json, structure length:', treeData.structure?.length);
+    toolsLog.log('[buildLocalCache] Loaded tree.json, structure length:', treeData.structure?.length);
 
     // Build nodeTitleMap
     const nodeTitleMap = new Map<string, string>();
@@ -74,7 +75,7 @@ async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
 
     return { treeData, nodeTitleMap };
   } catch (err) {
-    console.error('[buildLocalCache] Error:', err);
+    toolsLog.error('[buildLocalCache] Error:', err);
     return {};
   }
 }

@@ -22,3 +22,7 @@ jobs:
       - run: npm run build
 
       - run: npm run test:run
+
+      - name: Security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true

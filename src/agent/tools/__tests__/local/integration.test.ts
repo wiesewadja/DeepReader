@@ -10,7 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // 模拟 Obsidian App API
-const VAULT_PATH = process.env.VAULT_PATH || '/Users/lizhao/workspace/deepreadertest';
+const VAULT_PATH = process.env.VAULT_PATH;
 
 interface MockTFile {
   path: string;
