@@ -51,6 +51,10 @@ export interface MineruClientOptions {
   timeout?: number;
   pollInterval?: number;
   language?: string;
+  /** 自定义 Agent API 端点（默认: https://mineru.net/api/v1） */
+  agentBaseUrl?: string;
+  /** 自定义 Precision API 端点（默认: https://mineru.net/api/v4） */
+  precisionBaseUrl?: string;
 }
 
 export class MineruClient {
@@ -58,6 +62,8 @@ export class MineruClient {
   private precisionTimeout: number;
   private pollInterval: number;
   private language: string;
+  private agentBaseUrl: string;
+  private precisionBaseUrl: string;
 
   constructor(
     private token?: string,
@@ -67,6 +73,8 @@ export class MineruClient {
     this.precisionTimeout = options?.timeout ?? PRECISION_TIMEOUT;
     this.pollInterval = options?.pollInterval ?? POLL_INTERVAL;
     this.language = options?.language ?? 'ch';
+    this.agentBaseUrl = options?.agentBaseUrl ?? AGENT_BASE;
+    this.precisionBaseUrl = options?.precisionBaseUrl ?? PRECISION_BASE;
   }
 
   /**
@@ -247,7 +255,7 @@ export class MineruClient {
 
   private async requestUploadUrl(fileName: string): Promise<{ taskId: string; fileUrl: string }> {
     const resp = await safeRequest({
-      url: `${AGENT_BASE}/parse/file`,
+      url: `${this.agentBaseUrl}/parse/file`,
       method: 'POST',
       contentType: 'application/json',
       body: JSON.stringify({
@@ -287,7 +295,7 @@ export class MineruClient {
     const start = Date.now();
 
     while (Date.now() - start < this.agentTimeout) {
-      const resp = await safeRequest({ url: `${AGENT_BASE}/parse/${taskId}` });
+      const resp = await safeRequest({ url: `${this.agentBaseUrl}/parse/${taskId}` });
 
       if (resp.status >= 400) {
         throw new MineruError(`Poll request failed: ${resp.status}`, resp.status);
@@ -323,7 +331,7 @@ export class MineruClient {
     modelVersion: 'pipeline' | 'vlm' = 'vlm'
   ): Promise<{ batchId: string; fileUrls: string[] }> {
     const resp = await safeRequest({
-      url: `${PRECISION_BASE}/file-urls/batch`,
+      url: `${this.precisionBaseUrl}/file-urls/batch`,
       method: 'POST',
       contentType: 'application/json',
       headers: {
@@ -358,7 +366,7 @@ export class MineruClient {
 
     while (Date.now() - start < this.precisionTimeout) {
       const resp = await safeRequest({
-        url: `${PRECISION_BASE}/extract-results/batch/${batchId}`,
+        url: `${this.precisionBaseUrl}/extract-results/batch/${batchId}`,
         headers: { 'Authorization': `Bearer ${this.token}` },
       });
 
@@ -435,12 +443,18 @@ export class MineruClient {
 
 /**
  * 使用 MinerU 解析 PDF 文件
+ *
+ * @param input PDF 文件内容
+ * @param fileName 文件名（用于日志和结果标题）
+ * @param token MinerU API Token（可选，不提供则使用免费 API）
+ * @param options 额外选项（如自定义 API 端点）
  */
 export async function parsePdfWithMineru(
   input: Buffer,
   fileName: string,
-  token?: string
+  token?: string,
+  options?: MineruClientOptions
 ): Promise<MineruPdfResult> {
-  const client = new MineruClient(token);
+  const client = new MineruClient(token, options);
   return client.parse(input, fileName);
 }

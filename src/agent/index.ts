@@ -48,6 +48,7 @@ import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { PiProcessManager } from './pi/pi-manager.js';
+	import { detectPiCli } from './pi/pi-config.js';
 import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from './pi/pi-context.js';
 import type { PiConfig } from './pi/types.js';
 import { agentLog as log } from '../utils/logger.js';
@@ -578,10 +579,10 @@ ${currentMemory}
     }
 
     // 检测 PI CLI 是否可用
-    const { detectPiCli } = await import('./pi/pi-config.js');
-    const piStatus = await detectPiCli();
+    const customPiPath = context.vault.plugin?.settings?.customPiPath;
+    const piStatus = await detectPiCli(customPiPath);
     if (!piStatus.available) {
-      const msg = 'PI Agent 未安装。请在插件设置 → PI Agent 页面点击安装。';
+      const msg = 'PI Agent 未安装。请在插件设置 → 高级 → PI Agent 页面点击安装，或填写 pi 的绝对路径。';
       callbacks?.onError?.(msg);
       return [{ role: 'assistant', content: msg }];
     }
@@ -590,6 +591,7 @@ ${currentMemory}
       this.options.apiKey,
       this.options.model ?? 'claude-sonnet-4-20250514',
       this.options.providerName ?? 'anthropic',
+      customPiPath,
     );
 
     const skillDescriptions = await scanSkillDescriptions(app);
@@ -614,10 +616,14 @@ ${currentMemory}
 
     callbacks?.onProgress?.('正在通过 PI 执行 skill...');
 
+    // 设置 Extension UI bridge
+    this.piManager.setupExtensionUiBridge();
+
     const result = await this.piManager.executeSkill(
       skillContext,
       piConfig,
       callbacks?.onProgress,
+      callbacks?.onToken,
     );
 
     if (result.success) {
@@ -630,9 +636,15 @@ ${currentMemory}
         // 打开失败不影响主流程
       }
 
+      let statsInfo = '';
+      if (result.stats) {
+        const s = result.stats;
+        const totalTokens = s.tokens.total.toLocaleString();
+        statsInfo = `\n\nToken 消耗: ${totalTokens} | 费用: $${s.cost.toFixed(4)}`;
+      }
       return [{
         role: 'assistant',
-        content: `已完成，结果保存在 \`${result.outputPath}\``,
+        content: `已完成，结果保存在 \`${result.outputPath}\`${statsInfo}`,
       }];
     } else {
       return [{

@@ -86,6 +86,7 @@ export interface AgentLoopOptions {
   onContentComplete?: (content: string) => Promise<string>;
   onHumanizedProgress?: (progress: import('./ui/humanized-types.js').HumanizedProgress) => void;
   onReasoning?: (text: string) => void;
+  onToken?: (token: string) => void;
   onVoiceReady?: (data: { audioBuffer: ArrayBuffer; duration: number }) => void;
   onVoiceChunk?: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => void;
 }

@@ -54,12 +54,27 @@ test-vault/
 .superpowers/
 .deploy-config.json
 
-# Archon runtime artifacts
-.archon/state/
-.archon/.env
+# Archon workflow configs (may contain internal info)
+.archon/
+
+# Claude Code runtime data
+.claude/
+
+# Internal development files
+playground/
+antigravitycli/
+
+# Docs internal (personal plans, ideas, issues)
+docs/plans/
+docs/ideas/
+docs/issues/
+docs/superpowers/
 
 # macOS
 .DS_Store
 
 # Working files
 tasks/
+
+# Obsidian vault (local dev)
+.obsidian-cache/

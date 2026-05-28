@@ -11,12 +11,11 @@ import type { SectionContext } from './types';
 import { renderLLMSection, createLLMState } from './sections/llm-section';
 import type { LLMState } from './sections/llm-section';
 import { renderProfileSection } from './sections/profile-section';
-import { renderGeneralSection } from './sections/general-section';
+import { renderAdvancedSection } from './sections/advanced-section';
 import { renderWereadSection } from './sections/weread-section';
 import { renderReadingSection } from './sections/reading-section';
-import { renderPiSection } from './sections/pi-section';
 
-type SettingsTabId = 'llm' | 'profile' | 'reading' | 'general' | 'weread' | 'pi';
+type SettingsTabId = 'llm' | 'profile' | 'reading' | 'advanced' | 'weread';
 
 interface SettingsTab {
   id: SettingsTabId;
@@ -35,9 +34,8 @@ export class DeepPDFSettingTab extends PluginSettingTab {
     { id: 'llm', name: 'AI 服务', icon: 'bot' },
     { id: 'profile', name: '用户画像', icon: 'user' },
     { id: 'reading', name: '阅读模式', icon: 'book-open' },
-    { id: 'general', name: '通用', icon: 'wrench' },
     { id: 'weread', name: '微信读书', icon: 'book-marked' },
-    { id: 'pi', name: 'PI Agent', icon: 'cpu' },
+    { id: 'advanced', name: '高级', icon: 'cog' },
   ];
 
   constructor(app: App, plugin: DeepPDFPlugin) {
@@ -104,14 +102,11 @@ export class DeepPDFSettingTab extends PluginSettingTab {
       case 'reading':
         renderReadingSection(container, ctx);
         break;
-      case 'general':
-        renderGeneralSection(container, ctx, this.expandedSections, () => this.renderTabContent('general'));
+      case 'advanced':
+        renderAdvancedSection(container, ctx);
         break;
       case 'weread':
         renderWereadSection(container, ctx, () => this.renderTabContent('weread'));
-        break;
-      case 'pi':
-        renderPiSection(ctx);
         break;
     }
   }

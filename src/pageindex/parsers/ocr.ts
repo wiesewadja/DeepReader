@@ -171,8 +171,8 @@ export async function ocrImage(
     return "";
   }
   const apiKey = options.apiKey;
-  // OCR 固定使用智谱云端，忽略传入的 baseUrl
-  const baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+  // 支持用户自定义 OCR API 端点（默认使用智谱 GLM-OCR）
+  const baseUrl = options.baseUrl || "https://open.bigmodel.cn/api/paas/v4";
 
   // Read image and convert to base64 data URL
   const imageData = await fs.readFile(imagePath);

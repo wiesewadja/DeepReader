@@ -6,7 +6,7 @@
  */
 
 import type { ChildProcess } from 'child_process';
-import type { PiCommand, PiEvent, PiAgentEndEvent } from './types.js';
+import type { PiCommand, PiEvent, PiAgentEndEvent, PiExtensionUiRequestEvent, PiExtensionUiResponse, SessionStatsResult } from './types.js';
 import { agentLog as log, error as logError } from '../../utils/logger.js';
 
 export type PiEventHandler = (event: PiEvent) => void;
@@ -20,6 +20,7 @@ export class PiRpcClient {
 		reject: (err: Error) => void;
 		id: string;
 	} | null = null;
+	private extensionUiHandler: ((req: PiExtensionUiRequestEvent) => Promise<PiExtensionUiResponse>) | null = null;
 
 	/**
 	 * 绑定到已有子进程（由 PiProcessManager spawn）
@@ -144,6 +145,159 @@ export class PiRpcClient {
 	}
 
 	/**
+	 * 启用/禁用自动重试
+	 */
+	async setAutoRetry(enabled: boolean, timeoutMs = 5000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'set_auto_retry', enabled }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] set_auto_retry failed: ${resp.error ?? 'unknown'}`);
+		}
+		log(`[PiRpc] Auto retry ${enabled ? 'enabled' : 'disabled'}`);
+	}
+
+	/**
+	 * 中止当前自动重试
+	 */
+	async abortRetry(timeoutMs = 5000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'abort_retry' }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] abort_retry failed: ${resp.error ?? 'unknown'}`);
+		}
+		log('[PiRpc] Retry aborted');
+	}
+
+	/**
+	 * 获取 session 统计信息
+	 */
+	async getSessionStats(timeoutMs = 5000): Promise<SessionStatsResult> {
+		const resp = await this.sendCommandAndWait({ type: 'get_session_stats' }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] get_session_stats failed: ${resp.error ?? 'unknown'}`);
+		}
+		return resp.data as SessionStatsResult;
+	}
+
+	/**
+	 * 获取当前 session 状态
+	 */
+	async getState(timeoutMs = 5000): Promise<Record<string, unknown>> {
+		const resp = await this.sendCommandAndWait({ type: 'get_state' }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] get_state failed: ${resp.error ?? 'unknown'}`);
+		}
+		return (resp.data ?? {}) as Record<string, unknown>;
+	}
+
+	/**
+	 * 手动压缩上下文
+	 */
+	async compact(customInstructions?: string, timeoutMs = 30000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'compact', customInstructions }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] compact failed: ${resp.error ?? 'unknown'}`);
+		}
+		log('[PiRpc] Context compacted');
+	}
+
+	/**
+	 * 启用/禁用自动压缩
+	 */
+	async setAutoCompaction(enabled: boolean, timeoutMs = 5000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'set_auto_compaction', enabled }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] set_auto_compaction failed: ${resp.error ?? 'unknown'}`);
+		}
+		log(`[PiRpc] Auto compaction ${enabled ? 'enabled' : 'disabled'}`);
+	}
+
+	/**
+	 * 中途引导：调整 PI 当前执行方向
+	 */
+	async steer(message: string, timeoutMs = 10000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'steer', message }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] steer failed: ${resp.error ?? 'unknown'}`);
+		}
+		log('[PiRpc] Steer sent');
+	}
+
+	/**
+	 * 追加消息：在当前执行中追加额外指令
+	 */
+	async followUp(message: string, timeoutMs = 10000): Promise<void> {
+		const resp = await this.sendCommandAndWait({ type: 'follow_up', message }, timeoutMs);
+		if (!resp.success) {
+			throw new Error(`[PiRpc] follow_up failed: ${resp.error ?? 'unknown'}`);
+		}
+		log('[PiRpc] Follow-up sent');
+	}
+
+	/**
+	 * 流式发送 prompt：返回 AsyncGenerator 逐步 yield 所有事件，直到 agent_end。
+	 */
+	async *sendPromptStream(
+		message: string,
+		timeoutMs = 60000,
+	): AsyncGenerator<PiEvent, void, void> {
+		this.sendCommand({ type: 'prompt', message });
+
+		const MAX_QUEUE_SIZE = 10000;
+		const eventQueue: PiEvent[] = [];
+		let resolveWait: (() => void) | null = null;
+		let done = false;
+		let error: Error | null = null;
+
+		const timer = setTimeout(() => {
+			error = new Error(`[PiRpc] sendPromptStream timed out (${timeoutMs}ms)`);
+			resolveWait?.();
+		}, timeoutMs);
+
+		// 监听进程 stdout EOF，提前结束 generator
+		const onStdoutEnd = () => {
+			if (!done) {
+				error = new Error('[PiRpc] PI process stdout closed unexpectedly');
+				resolveWait?.();
+			}
+		};
+		this.childProcess?.stdout?.once('end', onStdoutEnd);
+
+		const handler: PiEventHandler = (event) => {
+			if (event.type === 'agent_end') {
+				done = true;
+				clearTimeout(timer);
+				this.off(handler);
+			}
+			if (eventQueue.length >= MAX_QUEUE_SIZE) {
+				logError(`[PiRpc] eventQueue exceeded ${MAX_QUEUE_SIZE}, dropping oldest event`);
+				eventQueue.shift();
+			}
+			eventQueue.push(event);
+			resolveWait?.();
+		};
+		this.on(handler);
+
+		try {
+			while (!done) {
+				if (error) throw error;
+				while (eventQueue.length > 0) {
+					yield eventQueue.shift()!;
+				}
+				if (!done) {
+					await new Promise<void>((r) => { resolveWait = r; });
+				}
+			}
+			// Drain remaining
+			while (eventQueue.length > 0) {
+				yield eventQueue.shift()!;
+			}
+		} finally {
+			clearTimeout(timer);
+			this.childProcess?.stdout?.removeListener('end', onStdoutEnd);
+			this.off(handler);
+		}
+	}
+
+	/**
 	 * 订阅事件
 	 */
 	on(handler: PiEventHandler): void {
@@ -155,6 +309,13 @@ export class PiRpcClient {
 	 */
 	off(handler: PiEventHandler): void {
 		this.handlers = this.handlers.filter(h => h !== handler);
+	}
+
+	/**
+	 * 注册 Extension UI 请求处理函数
+	 */
+	onExtensionUiRequest(handler: (req: PiExtensionUiRequestEvent) => Promise<PiExtensionUiResponse>): void {
+		this.extensionUiHandler = handler;
 	}
 
 	// ─── 内部方法 ───
@@ -192,6 +353,12 @@ export class PiRpcClient {
 			}
 		}
 
+		// Extension UI 请求 → 特殊处理
+		if (event.type === 'extension_ui_request') {
+			this.handleExtensionUiRequest(event as PiExtensionUiRequestEvent);
+			return;
+		}
+
 		// Dispatch to all handlers
 		for (const handler of this.handlers) {
 			try {
@@ -199,6 +366,33 @@ export class PiRpcClient {
 			} catch (e) {
 				logError(`[PiRpc] Handler error: ${e}`);
 			}
+		}
+	}
+
+	private handleExtensionUiRequest(req: PiExtensionUiRequestEvent): void {
+		// fire-and-forget 类型直接广播给 UI 层
+		const fireAndForget = ['notify', 'setStatus', 'setWidget', 'setTitle', 'set_editor_text'];
+		if (fireAndForget.includes(req.method)) {
+			for (const handler of this.handlers) {
+				try {
+					handler(req);
+				} catch (e) {
+					logError(`[PiRpc] Extension UI handler error: ${e}`);
+				}
+			}
+			return;
+		}
+
+		// dialog 类型 → 等待用户响应
+		if (this.extensionUiHandler) {
+			this.extensionUiHandler(req).then((resp) => {
+				this.sendCommand(resp);
+			}).catch(() => {
+				this.sendCommand({ type: 'extension_ui_response', id: req.id, cancelled: true });
+			});
+		} else {
+			// 无 handler → 取消
+			this.sendCommand({ type: 'extension_ui_response', id: req.id, cancelled: true });
 		}
 	}
 }

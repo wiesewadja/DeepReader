@@ -162,4 +162,156 @@ describe('PiRpcClient', () => {
 			).rejects.toThrow('timed out');
 		});
 	});
+
+	describe('sendPromptStream', () => {
+		it('应逐步 yield 事件直到 agent_end', async () => {
+			// 模拟流式输出：agent_start → message_update → agent_end
+			setTimeout(() => {
+				(mockProc as any).stdout.emit('data', '{"type":"agent_start"}\n');
+				(mockProc as any).stdout.emit('data', '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Hello"}}\n');
+				(mockProc as any).stdout.emit('data', '{"type":"agent_end","messages":[]}\n');
+			}, 10);
+
+			const events: PiEvent[] = [];
+			for await (const event of client.sendPromptStream('test', 5000)) {
+				events.push(event);
+			}
+
+			expect(events).toHaveLength(3);
+			expect(events[0].type).toBe('agent_start');
+			expect(events[1].type).toBe('message_update');
+			expect(events[2].type).toBe('agent_end');
+		});
+
+		it('应处理空流（直接 agent_end）', async () => {
+			setTimeout(() => {
+				(mockProc as any).stdout.emit('data', '{"type":"agent_end","messages":[]}\n');
+			}, 10);
+
+			const events: PiEvent[] = [];
+			for await (const event of client.sendPromptStream('test', 5000)) {
+				events.push(event);
+			}
+
+			expect(events).toHaveLength(1);
+			expect(events[0].type).toBe('agent_end');
+		});
+
+		it('应在超时时 throw', async () => {
+			const gen = client.sendPromptStream('test', 50);
+			await expect(gen.next()).rejects.toThrow('timed out');
+		});
+
+		describe('setAutoRetry', () => {
+			it('应发送 set_auto_retry 命令并在成功时 resolve', async () => {
+				const promise = client.setAutoRetry(true, 5000);
+
+				const written = (mockProc as any).stdin.write.mock.calls[0][0] as string;
+				const parsed = JSON.parse(written);
+				expect(parsed.type).toBe('set_auto_retry');
+				expect(parsed.enabled).toBe(true);
+
+				setTimeout(() => {
+					(mockProc as any).stdout.emit('data', '{"type":"response","command":"set_auto_retry","success":true,"id":"' + parsed.id + '"}\n');
+				}, 10);
+
+				await promise;
+			});
+
+			it('应在失败时 reject', async () => {
+				const promise = client.setAutoRetry(true, 5000);
+
+				const written = (mockProc as any).stdin.write.mock.calls[0][0] as string;
+				const parsed = JSON.parse(written);
+
+				setTimeout(() => {
+					(mockProc as any).stdout.emit('data', '{"type":"response","command":"set_auto_retry","success":false,"error":"not supported","id":"' + parsed.id + '"}\n');
+				}, 10);
+
+				await expect(promise).rejects.toThrow('set_auto_retry failed');
+			});
+		});
+
+		describe('abortRetry', () => {
+			it('应发送 abort_retry 命令并在成功时 resolve', async () => {
+				const promise = client.abortRetry(5000);
+
+				const written = (mockProc as any).stdin.write.mock.calls[0][0] as string;
+				const parsed = JSON.parse(written);
+				expect(parsed.type).toBe('abort_retry');
+
+				setTimeout(() => {
+					(mockProc as any).stdout.emit('data', '{"type":"response","command":"abort_retry","success":true,"id":"' + parsed.id + '"}\n');
+				}, 10);
+
+				await promise;
+			});
+		});
+
+	});
+
+
+	describe('Extension UI', () => {
+		it('无 handler 时 extension_ui_request 应自动取消', () => {
+			const handler = vi.fn();
+			client.on(handler);
+
+			(mockProc as any).stdout.emit('data', '{"type":"extension_ui_request","id":"ui-1","method":"confirm","title":"Test","message":"OK?"}\n');
+
+			// handler 不应收到 extension_ui_request（被 dispatch 拦截）
+			expect(handler).not.toHaveBeenCalled();
+
+			// 应发送取消响应
+			const calls = (mockProc as any).stdin.write.mock.calls;
+			const lastCall = calls[calls.length - 1][0] as string;
+			const resp = JSON.parse(lastCall);
+			expect(resp.type).toBe('extension_ui_response');
+			expect(resp.id).toBe('ui-1');
+			expect(resp.cancelled).toBe(true);
+		});
+
+		it('有 handler 时 extension_ui_request 应调用 handler 并发送响应', async () => {
+			const uiHandler = vi.fn().mockResolvedValue({
+				type: 'extension_ui_response',
+				id: 'ui-2',
+				confirmed: true,
+			});
+			client.onExtensionUiRequest(uiHandler);
+
+			(mockProc as any).stdout.emit('data', '{"type":"extension_ui_request","id":"ui-2","method":"confirm","title":"Test","message":"OK?"}\n');
+
+			// 等待 async handler
+			await new Promise(r => setTimeout(r, 20));
+
+			expect(uiHandler).toHaveBeenCalledWith(expect.objectContaining({
+				type: 'extension_ui_request',
+				id: 'ui-2',
+				method: 'confirm',
+			}));
+
+			const calls = (mockProc as any).stdin.write.mock.calls;
+			const lastCall = calls[calls.length - 1][0] as string;
+			const resp = JSON.parse(lastCall);
+			expect(resp.type).toBe('extension_ui_response');
+			expect(resp.confirmed).toBe(true);
+		});
+
+		it('fire-and-forget 类型应广播但不发送响应', () => {
+			const handler = vi.fn();
+			client.on(handler);
+
+			const writeCallCount = (mockProc as any).stdin.write.mock.calls.length;
+
+			(mockProc as any).stdout.emit('data', '{"type":"extension_ui_request","id":"ui-3","method":"notify","message":"hello"}\n');
+
+			// handler 应收到广播
+			expect(handler).toHaveBeenCalledWith(expect.objectContaining({
+				type: 'extension_ui_request',
+				method: 'notify',
+			}));
+
+			// 不应发送响应（write 调用次数不变）
+			expect((mockProc as any).stdin.write.mock.calls.length).toBe(writeCallCount);
+		});
+	});
 });
