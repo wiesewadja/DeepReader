@@ -55,6 +55,7 @@ import { ReadingProgressTracker } from './reading-progress-tracker.js';
 import { SessionManager } from './session-manager.js';
 import { AgentChatController } from './agent-chat-controller.js';
 import { BookManager } from './book-manager.js';
+import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -62,19 +63,14 @@ export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
-    private plugin: any; // 插件实例，用于访问设置
+    private plugin: DeepReaderPlugin;
     private readingTopbar: ReadingTopbar | null = null;
     private taskCards: Map<string, TaskProgressCard> = new Map();
 
-    /** @deprecated 使用 readingTopbar 代替 */
-    private get indexManager(): ReadingTopbar | null {
-        return this.readingTopbar;
-    }
 
     // 对话界面组件
     private messageList: MessageList | null = null;
     private chatInput: ChatInput | null = null;
-    private useLLMTreeSearch: boolean = false;  // 深度思考模式开关（LLM 树搜索）
 
     // 上下文管理（章节辅助阅读）
     private contextManager: ContextManager | null = null;
@@ -95,22 +91,14 @@ export class SidebarView extends ItemView {
     // 会话存储（JSONL 文件）
 
 
-    // 阅读进度追踪
-    private readingProgress: ReadingProgress | null = null;
-    private progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-    private readonly PROGRESS_DEBOUNCE_MS = 3000;
-
     // 主动阅读引导
-    private currentChapterId: string | null = null;
     private proactiveEngine: import("../../agent/proactive/engine.js").ProactiveEngine | null = null;
 
     // ContextManager 同步的文档内容（供 Agent 搜索）
-    private currentMarkdownFiles: Record<string, string> = {};
 
     /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
 
     /** 前端 Agent 对话历史 */
-    private agentChatHistory: import("../../agent/types.js").ChatMessage[] = [];
 
     // ── 子系统 controller ──
     private quoteManager: QuoteManager;
@@ -138,7 +126,7 @@ export class SidebarView extends ItemView {
             this.app,
             this.plugin,
             async (params) => {
-                await this.executeProactiveGuidance(params);
+                await this.agentChatCtrl.executeProactiveGuidance(params);
             },
         );
     }
@@ -154,30 +142,6 @@ export class SidebarView extends ItemView {
         await this.bookMgr.milestoneRecorder.restoreFromHistory();
 
         log('[DeepPDF] MilestoneRecorder 初始化完成');
-    }
-
-/**
-     * 检查后端连接状态
-     * @deprecated Page Index 不需要后端连接
-     */
-    private async checkBackendConnection(): Promise<boolean> {
-        return true;
-    }
-
-    /**
-     * 导出 Markdown（Page Index 不需要）
-     * @deprecated Markdown 已由 book-indexer 自动导出
-     */
-    async handleExportMarkdown(indexId: string) {
-        new Notice('Markdown 文件已在索引时自动导出', 3000);
-    }
-
-    /**
-     * 执行导出 Markdown 操作
-     * @deprecated Page Index 不需要
-     */
-    private async doExportMarkdown(indexId: string, pdfName: string) {
-        // No-op: Markdown 已由 book-indexer 自动导出
     }
 
     /**
@@ -212,29 +176,13 @@ export class SidebarView extends ItemView {
 
 
 
-    /** 开启新会话 */
-    private async startNewSession(indexId: string) {
-        await this.sessionMgr.startNewSession(indexId);
-    }
-
-    /** 显示欢迎语 */
-    private showWelcomeMessage() {
-        this.sessionMgr.showWelcomeMessage();
-    }
 
 
 
 
 
-    /** 切换到跨书籍模式 */
-    private async switchToCrossBookMode(options: { clearMessages?: boolean; showWelcome?: boolean } = {}): Promise<void> {
-        await this.sessionMgr.switchToCrossBookMode(options);
-    }
 
-    /** 处理新建会话 */
-    private handleNewChat() {
-        this.sessionMgr.handleNewChat();
-    }
+
 
     /**
      * 处理系统文件上传（已弃用 - Page Index 不需要上传）
@@ -249,17 +197,9 @@ export class SidebarView extends ItemView {
         return this.sessionMgr.restoreFromSessionStore(sessionId);
     }
 
-    /** 保存当前对话到 SessionStore（JSONL 文件） */
-    private async saveToCache() {
-        await this.sessionMgr.saveToCache();
-    }
 
-    /** 检查并执行记忆整合 */
-    private async maybeConsolidateMemory(): Promise<void> {
-        await this.sessionMgr.maybeConsolidateMemory();
-    }
 
-    constructor(leaf: WorkspaceLeaf, plugin: any) {
+    constructor(leaf: WorkspaceLeaf, plugin: DeepReaderPlugin) {
         super(leaf);
         this.plugin = plugin;
         const self = this;
@@ -282,14 +222,10 @@ export class SidebarView extends ItemView {
             get plugin() { return self.plugin; },
             get readingTopbar() { return self.readingTopbar; },
             get proactiveEngine() { return self.proactiveEngine; },
-            get agentChatHistory() { return self.agentChatHistory; },
+            get agentChatHistory() { return self.agentChatCtrl.agentChatHistory; },
             get indexes() { return self.bookMgr.indexes; },
             getCurrentIndexId() { return self.bookMgr.currentIndexId; },
             getCurrentPdfName() { return self.bookMgr.currentPdfName; },
-            getCurrentChapterId() { return self.currentChapterId; },
-            setCurrentChapterId(id) { self.currentChapterId = id; },
-            setReadingProgress(progress) { self.readingProgress = progress; },
-            getReadingProgress() { return self.readingProgress; },
         });
         this.sessionMgr = new SessionManager({
             get app() { return self.app; },
@@ -302,13 +238,12 @@ export class SidebarView extends ItemView {
             get currentPdfName() { return self.bookMgr.currentPdfName; },
             get currentBookCoverUrl() { return self.bookMgr.currentBookCoverUrl; },
             get currentBookAuthor() { return self.bookMgr.currentBookAuthor; },
-            get agentChatHistory() { return self.agentChatHistory; },
-            setAgentChatHistory(history: import("../../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
+            get agentChatHistory() { return self.agentChatCtrl.agentChatHistory; },
+            setAgentChatHistory(history: import("../../agent/types.js").ChatMessage[]) { self.agentChatCtrl.agentChatHistory = history; },
             get isProcessing() { return self.agentChatCtrl?.processing ?? false; },
             get isAiStreaming() { return self.agentChatCtrl?.aiStreaming ?? false; },
             cancelActiveStream() { self.agentChatCtrl?.cancelActiveStream(); },
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
-            setUseLLMTreeSearch(v: boolean) { self.useLLMTreeSearch = v; },
             get currentBooklistItems() { return self.bookMgr.currentBooklist?.items ?? null; },
             restoreBooklist(booklist: import("../../types/index.js").Booklist) { self.restoreBooklist(booklist); },
         });
@@ -324,12 +259,10 @@ export class SidebarView extends ItemView {
             get currentDocDescription() { return self.bookMgr.currentDocDescription; },
             get currentBookCoverUrl() { return self.bookMgr.currentBookCoverUrl; },
             get currentBookAuthor() { return self.bookMgr.currentBookAuthor; },
-            get currentMarkdownFiles() { return self.currentMarkdownFiles; },
-            get useLLMTreeSearch() { return self.useLLMTreeSearch; },
+            get currentMarkdownFiles() { return self.agentChatCtrl.currentMarkdownFiles; },
+            get useLLMTreeSearch() { return self.sessionMgr.useLLMTreeSearch; },
             get sessionId() { return self.sessionMgr.sessionId; },
             get sessionStore() { return self.sessionMgr.sessionStore; },
-            get agentChatHistory() { return self.agentChatHistory; },
-            setAgentChatHistory(history: import("../../agent/types.js").ChatMessage[]) { self.agentChatHistory = history; },
             get crossBookMode() { return self.sessionMgr.crossBookMode; },
             get currentBooklistBookIds() { return self.bookMgr.currentBooklistBookIds; },
             get indexes() { return self.bookMgr.indexes; },
@@ -337,10 +270,9 @@ export class SidebarView extends ItemView {
             get contextManager() { return self.contextManager; },
             get isProcessing() { return self.agentChatCtrl.processing; },
             get isAiStreaming() { return self.agentChatCtrl.aiStreaming; },
-            setIsProcessing(v: boolean) { /* state owned by AgentChatController */ },
-            setIsAiStreaming(v: boolean) { /* state owned by AgentChatController */ },
             get readingTopbar() { return self.readingTopbar; },
             saveToCache() { return self.sessionMgr.saveToCache(); },
+            maybeConsolidateMemory() { return self.sessionMgr.maybeConsolidateMemory(); },
             clearQuotes() { self.quoteManager.clearQuotes(); },
             getDisplayName(name: string) { return self.getDisplayName(name); },
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
@@ -353,7 +285,7 @@ export class SidebarView extends ItemView {
             get plugin() { return self.plugin; },
             get messageList() { return self.messageList; },
             get readingTopbar() { return self.readingTopbar; },
-            get readingProgress() { return self.readingProgress; },
+            get readingProgress() { return self.progressTracker.readingProgress; },
             get proactiveEngine() { return self.proactiveEngine; },
             get frontendAgent() { return self.frontendAgent; },
             startNewSession(indexId: string) { return self.sessionMgr.startNewSession(indexId); },
@@ -386,9 +318,6 @@ export class SidebarView extends ItemView {
     /**
      * 打开书库（改为 Tab 视图）
      */
-    private async openLibrary(): Promise<void> {
-        await this.bookMgr.openLibrary();
-    }
 
     /**
      * 检查书籍章节是否已下载到本地
@@ -405,9 +334,6 @@ export class SidebarView extends ItemView {
      *
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
-    private async loadBookCover(bookName: string, indexId?: string): Promise<void> {
-        await this.bookMgr.loadBookCover(bookName, indexId);
-    }
 
     /**
      * 通过 indexId 扫描 Vault 找到对应书籍的实际目录名和元数据
@@ -416,9 +342,6 @@ export class SidebarView extends ItemView {
     /**
      * 同步顶栏书名到最新状态（用户可能在书库中修改了书名/目录名）
      */
-    private async syncTopbarBookName(): Promise<void> {
-        await this.bookMgr.syncTopbarBookName();
-    }
 
     private async findBookDirectoryByIndexId(indexId: string): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
         return this.bookMgr.findBookDirectoryByIndexId(indexId);
@@ -558,24 +481,15 @@ export class SidebarView extends ItemView {
      * 初始化阅读进度（加载或创建）
      * 可安全多次调用（幂等）
      */
-    private async initReadingProgress(indexId: string): Promise<void> {
-        await this.progressTracker.initReadingProgress(indexId);
-    }
 
     /**
      * 追踪当前阅读的章节
      * 在 file-open 和 active-leaf-change 时调用
      */
-    private async trackReadingProgress(): Promise<void> {
-        await this.progressTracker.trackReadingProgress();
-    }
 
     /**
      * 更新顶栏进度 UI
      */
-    private updateProgressUI(): void {
-        this.progressTracker.updateProgressUI();
-    }
 
     /**
      * 获取当前书籍的总章节数
@@ -587,23 +501,14 @@ export class SidebarView extends ItemView {
     /**
      * 自动跳转到上次阅读的章节
      */
-    private navigateToLastReadChapter(): void {
-        this.progressTracker.navigateToLastReadChapter();
-    }
 
     /**
      * 防抖保存阅读进度
      */
-    private debouncedSaveProgress(): void {
-        this.progressTracker.debouncedSaveProgress();
-    }
 
     /**
      * 立即保存阅读进度到磁盘
      */
-    private async flushProgressSave(): Promise<void> {
-        await this.progressTracker.flushProgressSave();
-    }
 
     /**
      * 获取当前选中的索引 ID
@@ -622,24 +527,18 @@ export class SidebarView extends ItemView {
     }
 
     public async notifyHighlight(text: string): Promise<void> {
-        if (!this.bookMgr.currentIndexId || !this.currentChapterId) return;
-        await this.proactiveEngine?.onHighlight(this.bookMgr.currentIndexId, this.currentChapterId, text);
+        if (!this.bookMgr.currentIndexId || !this.progressTracker.currentChapterId) return;
+        await this.proactiveEngine?.onHighlight(this.bookMgr.currentIndexId, this.progressTracker.currentChapterId, text);
     }
 
     /**
      * 清除顶栏书名显示（阅读模式停用时调用）
      * 不重置 currentPdfName/currentIndexId，保持用户通过书库选中的书籍
      */
-    public clearTopbarDisplay(): void {
-        this.bookMgr.clearTopbarDisplay();
-    }
 
     /**
      * 清除所有书籍信息（删除索引时调用）
      */
-    public clearBookInfo(): void {
-        this.bookMgr.clearBookInfo();
-    }
 
     /**
      * 通过书名选择索引（自动切换时使用）
@@ -656,7 +555,7 @@ export class SidebarView extends ItemView {
      */
     private createReadingTopbar(container: HTMLElement) {
         this.readingTopbar = new ReadingTopbar({
-            onOpenLibrary: () => this.openLibrary(),
+            onOpenLibrary: () => this.bookMgr.openLibrary(),
             onOpenSettings: () => {
                 // 打开设置并定位到 DeepPDF 插件
                 const setting = (this.app as any).setting;
@@ -667,7 +566,7 @@ export class SidebarView extends ItemView {
             },
             onCoverClick: () => {
                 // 点击封面时，打开当前书籍正在阅读的章节
-                this.navigateToLastReadChapter();
+                this.progressTracker.navigateToLastReadChapter();
             },
             onExitBooklist: () => this.exitBooklist(),
             onBooklistRename: (newName: string) => {
@@ -720,7 +619,7 @@ export class SidebarView extends ItemView {
                 for (const [path, doc] of docs) {
                     files[path] = doc.content;
                 }
-                this.currentMarkdownFiles = files;
+                this.agentChatCtrl.currentMarkdownFiles = files;
 
                 // 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
                 const activeFile = this.app.workspace.getActiveFile();
@@ -755,7 +654,7 @@ export class SidebarView extends ItemView {
         await this.loadIndexes();
 
         // 恢复跨书籍模式状态
-        await this.restoreCrossBookMode();
+        await this.sessionMgr.restoreCrossBookMode();
 
         // 无书时自动进入阅读顾问模式
         if (!this.bookMgr.currentIndexId && !this.sessionMgr.crossBookMode) {
@@ -776,19 +675,18 @@ export class SidebarView extends ItemView {
                 if (this.sessionMgr.crossBookMode) {
                     log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
                     this.sessionMgr.crossBookMode = false;
-                    this.indexManager?.setCrossBookMode(false);
+                    this.readingTopbar?.setCrossBookMode(false);
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
 
                     // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
-                    this.cancelActiveStream();
+                    this.agentChatCtrl.cancelActiveStream();
 
                     // 清空跨书籍模式的消息，准备加载单书籍会话
                     this.messageList?.clear();
                 }
 
                 // 直接调用 selectIndex 方法，确保顶栏正确更新
-                // 而不是通过 indexManager.selectIndex 间接调用
                 await this.selectIndex(indexId);
             })
         );
@@ -797,7 +695,7 @@ export class SidebarView extends ItemView {
         this.registerEvent(
             workspace.on("deeppdf:quote-selection", async (metadata: import("../../components/chat-input/chat-input.js").QuoteMetadata) => {
                 log("[DeepPDF] Received quote-selection event");
-                this.handleQuoteSelection(metadata);
+                this.quoteManager.handleQuoteSelection(metadata);
             })
         );
 
@@ -817,7 +715,7 @@ export class SidebarView extends ItemView {
                     this.chatInput?.setLoadBtnActive(isLoaded);
                 }
                 // 追踪阅读进度
-                this.trackReadingProgress();
+                this.progressTracker.trackReadingProgress();
                 // 自动同步当前章节到上下文
                 this.autoSyncCurrentChapter();
             })
@@ -828,23 +726,14 @@ export class SidebarView extends ItemView {
      * 处理引用选中文字
      * 在输入框上方显示引用卡片，更新 placeholder 提示
      */
-    private handleQuoteSelection(metadata: QuoteMetadata): void {
-        this.quoteManager.handleQuoteSelection(metadata);
-    }
 
     /**
      * 移除引用
      */
-    private removeQuote(quoteId: string): void {
-        this.quoteManager.removeQuote(quoteId);
-    }
 
     /**
      * 清空所有引用
      */
-    private clearQuotes(): void {
-        this.quoteManager.clearQuotes();
-    }
 
     /**
      * 更新输入框 placeholder 反映引用数量
@@ -981,32 +870,32 @@ export class SidebarView extends ItemView {
         // 创建消息列表组件
         this.messageList = new MessageList({
             onRegenerate: (messageId: string) => {
-                this.handleRegenerate(messageId);
+                this.agentChatCtrl.handleRegenerate(messageId);
             },
             onCopy: (messageId: string) => {
-                this.handleCopy(messageId);
+                this.agentChatCtrl.handleCopy(messageId);
             },
             onQuestionClick: (question: string) => {
-                this.handleQuestionClick(question);
+                this.agentChatCtrl.handleQuestionClick(question);
             },
             onGenerateOutline: () => {
-                this.handleGenerateOutline();
+                this.agentChatCtrl.handleGenerateOutline();
             },
             onGuidanceClick: (type: GuidanceType) => {
-                this.handleGuidanceClick(type);
+                this.agentChatCtrl.handleGuidanceClick(type);
             },
             onExcerpt: (messageId: string, content: ExcerptContent, metadata: ExcerptMetadata) => {
-                this.handleExcerpt(messageId, content, metadata);
+                this.agentChatCtrl.handleExcerpt(messageId, content, metadata);
             },
             onQuote: (metadata: import("../../components/chat-input/chat-input.js").QuoteMetadata) => {
-                this.handleQuoteSelection(metadata);
+                this.quoteManager.handleQuoteSelection(metadata);
             },
             onDelete: (messageId: string) => {
-                this.handleDeleteMessagePair(messageId);
+                this.agentChatCtrl.handleDeleteMessagePair(messageId);
             },
             onTTS: async (messageId: string, content: string) => {
                 // 喇叭按钮始终直接朗读原文，不走摘要模式
-                this.handleTTS(messageId, content, { rawText: true });
+                this.ttsCtrl.handleTTS(messageId, content, { rawText: true });
             },
             onVoicePlay: (messageId: string) => {
                 // 控制流式语音播放
@@ -1048,11 +937,11 @@ export class SidebarView extends ItemView {
             placeholder: "输入以开始对话...",
             onSend: (message: string, _chatInputQuotes) => {
                 // 使用 sidebar 自己管理的引用列表（而非 ChatInput 内部的空数组）
-                this.sendMessage(message, this.getQuotes());
+                this.agentChatCtrl.sendMessage(message, this.quoteManager.getQuotes());
             },
             app: this.app,
             onStop: () => {
-                this.stopGeneration();
+                this.agentChatCtrl.stopGeneration();
             },
             onHeightChange: (height: number) => {
                 // 动态调整消息列表的底部间距（包含引用卡片高度）
@@ -1170,103 +1059,39 @@ export class SidebarView extends ItemView {
      * 切换深度思考模式
      */
     public async toggleDeepSearchMode(): Promise<void> {
-        this.useLLMTreeSearch = !this.useLLMTreeSearch;
-        const modeText = this.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
+        this.sessionMgr.useLLMTreeSearch = !this.sessionMgr.useLLMTreeSearch;
+        const modeText = this.sessionMgr.useLLMTreeSearch ? "深度思考模式已开启" : "深度思考模式已关闭";
         new Notice(modeText);
         log(`[DeepPDF] toggleDeepSearchMode: ${modeText}`);
         // 持久化设置
-        this.plugin.settings.lastDeepSearchMode = this.useLLMTreeSearch;
+        this.plugin.settings.lastDeepSearchMode = this.sessionMgr.useLLMTreeSearch;
         await this.plugin.saveSettings();
     }
 
-    /** 恢复跨书籍模式状态 */
-    private async restoreCrossBookMode() {
-        await this.sessionMgr.restoreCrossBookMode();
-    }
 
-    /** 加载跨书籍模式的会话 */
-    private async loadCrossBookSession() {
-        await this.sessionMgr.loadCrossBookSession();
-    }
 
     // ==================== 消息处理 ====================
 
-    /** 执行主动引导 */
-    private async executeProactiveGuidance(params: import("../../agent/proactive/types.js").ProactiveParams): Promise<void> {
-        await this.agentChatCtrl.executeProactiveGuidance(params);
-    }
 
     /** 从外部发送消息 */
     public async sendMessageWithInput(message: string): Promise<void> {
         await this.agentChatCtrl.sendMessageWithInput(message);
     }
 
-    /** 发送消息 */
-    private async sendMessage(message: string, quotes?: import("../../components/chat-input/chat-input.js").QuoteItem[], regenerateMessageId?: string): Promise<void> {
-        await this.agentChatCtrl.sendMessage(message, quotes, regenerateMessageId);
-    }
-
-    /** 静默取消正在进行的流式请求 */
-    private cancelActiveStream(): void {
-        this.agentChatCtrl.cancelActiveStream();
-    }
-
-    /** 停止 AI 生成 */
-    private stopGeneration(): void {
-        this.agentChatCtrl.stopGeneration();
-    }
-
-    /** 处理 Agent 查询 */
-    private async handleAgentQuery(
-        query: string,
-        indexId: string,
-        aiMessageId: string,
-        quotes?: import("../../components/chat-input/chat-input.js").QuoteItem[]
-    ): Promise<void> {
-        // AgentChatController handles this internally
-        // This method should not be called directly - use sendMessage instead
-    }
-
-    // HITL methods moved to AgentChatController
 
 
 
-    /** 处理重新生成 */
-    private handleRegenerate(messageId: string): void {
-        this.agentChatCtrl.handleRegenerate(messageId);
-    }
-
-    /** 处理复制 */
-    private handleCopy(messageId: string): void {
-        this.agentChatCtrl.handleCopy(messageId);
-    }
-
-    /** 处理删除消息对 */
-    private handleDeleteMessagePair(aiMessageId: string): void {
-        this.agentChatCtrl.handleDeleteMessagePair(aiMessageId);
-    }
 
 
 
-    /** 处理摘录保存 */
-    private handleExcerpt(messageId: string, content: ExcerptContent, metadata: ExcerptMetadata): void {
-        this.agentChatCtrl.handleExcerpt(messageId, content, metadata);
-    }
 
-    /** 处理追问问题点击 */
-    private handleQuestionClick(question: string): void {
-        this.agentChatCtrl.handleQuestionClick(question);
-    }
 
-    /** 生成阅读大纲 */
-    private handleGenerateOutline(): void {
-        this.agentChatCtrl.handleGenerateOutline();
-    }
 
-    /** 处理引导按钮点击 */
-    private handleGuidanceClick(type: GuidanceType): void {
-        this.agentChatCtrl.handleGuidanceClick(type);
-    }
+
+
+
+
+
 
     /**
      * 更新消息列表的底部间距
@@ -1288,13 +1113,7 @@ export class SidebarView extends ItemView {
         await this.bookMgr.loadIndexes();
     }
 
-    /**
-     * 如果当前选中的是 task_id，检查任务状态并更新为实际的 index_id
-     * @deprecated Page Index 不使用 task_id
-     */
-    private async updateCurrentIndexIdIfNeeded(): Promise<void> {
-        // Page Index 直接使用 bookId，没有 task_id 概念
-    }
+
 
     private escapeHtml(text: string): string {
         const div = document.createElement("div");
@@ -1305,9 +1124,6 @@ export class SidebarView extends ItemView {
     /**
      * 处理 TTS 播放/暂停请求
      */
-    private async handleTTS(messageId: string, content: string, options?: { rawText?: boolean }): Promise<void> {
-        await this.ttsCtrl.handleTTS(messageId, content, options);
-    }
 
     /**
      * 根据 AI 消息 ID 找到对应的用户提问
@@ -1325,7 +1141,7 @@ export class SidebarView extends ItemView {
     async onClose() {
         try {
             // 保存阅读进度
-            await this.flushProgressSave();
+            await this.progressTracker.flushProgressSave();
             if (this.agentChatCtrl.currentStreamController) {
                 this.agentChatCtrl.cancelActiveStream();
             }
@@ -1399,3 +1215,4 @@ export class SidebarView extends ItemView {
         return this.bookMgr.getCurrentBookInfo();
     }
 }
+

@@ -114,7 +114,7 @@ function checkAPI(): { available: boolean; message: string } {
 
 /** 根据当前书籍名称生成输出文件夹 */
 function getOutputFolder(context: ToolContext): string {
-  const bookName = context.pdfName?.replace(/[<>:"/\\|?*]/g, '').trim();
+  const bookName = context.book.pdfName?.replace(/[<>:"/\\|?*]/g, '').trim();
   return bookName
     ? `DeepReader/Excalidraw/${bookName}`
     : 'DeepReader/Excalidraw';

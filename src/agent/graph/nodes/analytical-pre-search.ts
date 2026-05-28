@@ -114,16 +114,16 @@ export async function preSearchNode(
 
   // 1. Validate scope
   const validatedScopeNodeIds = await validateScopeNodeIds(
-    toolContext.app,
-    toolContext.indexId || '',
-    statePdfName || ctx?.pdfName || '',
+    toolContext.vault.app,
+    toolContext.book.indexId || '',
+    statePdfName || ctx?.toolContext?.book.pdfName || '',
     rawScopeNodeIds,
   );
 
   const tocSummary = stateTocSummary || ctx?.tocSummary;
-  const currentNodeId = toolContext.currentNodeId;
-  const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.markdownFiles);
-  const markdownFiles = ctx?.markdownFiles ?? {};
+  const currentNodeId = toolContext.book.currentNodeId;
+  const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
+  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
 
   // 2. Build prompt context (shared with analytical node)
   const { fullSystemPrompt } = buildFullAnalyticalContext({
@@ -141,11 +141,11 @@ export async function preSearchNode(
   });
 
   // 3. Pre-search RRF with S1's suggested_keywords
-  if (!stateKeywords || stateKeywords.length === 0 || !toolContext.app) {
+  if (!stateKeywords || stateKeywords.length === 0 || !toolContext.vault.app) {
     return emptyPreSearchResult(validatedScopeNodeIds);
   }
 
-  const pluginSettings = toolContext.plugin?.settings;
+  const pluginSettings = toolContext.vault.plugin?.settings;
   const earlyStopThreshold = getEarlyStopThreshold(pluginSettings);
 
   try {
@@ -158,10 +158,10 @@ export async function preSearchNode(
       embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
       reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
       scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
-      app: toolContext.app,
+      app: toolContext.vault.app,
     };
-    if (toolContext.indexId) {
-      baseSearchOpts.bookId = toolContext.indexId;
+    if (toolContext.book.indexId) {
+      baseSearchOpts.bookId = toolContext.book.indexId;
     }
 
     const limitedKeywords = stateKeywords.slice(0, 8);
@@ -227,7 +227,7 @@ export async function preSearchNode(
 
       const blockLines = formatBlockLines(hits);
 
-      const pdfName = statePdfName || ctx?.pdfName || '';
+      const pdfName = statePdfName || ctx?.toolContext?.book.pdfName || '';
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
       const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery, pdfName);
 

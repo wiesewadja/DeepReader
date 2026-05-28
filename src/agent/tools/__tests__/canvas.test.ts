@@ -42,7 +42,7 @@ describe('Canvas Tool', () => {
   beforeEach(() => {
     mockApp = createMockApp();
     canvasTool = createCanvasTool(mockApp as any);
-    context = {} as ToolContext;
+    context = { vault: {} as any, book: {} as any } as ToolContext;
   });
 
   describe('definition', () => {

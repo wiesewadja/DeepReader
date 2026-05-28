@@ -22,7 +22,7 @@ export type { ChatMessage, ToolDefinition, ToolCall, StreamChunk } from './types
 export type { ToolContext } from './tools/types.js';
 export type { UserContext } from './context/index.js';
 export type { DocumentMetadata } from './context/builder.js';
-export type { AgentLoopOptions } from './agent-loop.js';
+export type { AgentLoopOptions } from './types.js';
 
 // LangGraph 认知引擎导出
 export {
@@ -41,11 +41,9 @@ import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { ContextLoader } from './context/index.js';
 import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
 import { MemoryStore } from './memory/store.js';
-import { SubagentManager } from './subagent/manager.js';
-import { runAgentLoop } from './agent-loop.js';
 import { IntentRouter } from './router/index.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
-import type { AgentLoopOptions } from './agent-loop.js';
+import type { AgentLoopOptions } from './types.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
@@ -100,7 +98,6 @@ export class FrontendAgent {
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
-  private subagentManager?: SubagentManager;
   private piManager: PiProcessManager;
   private initialized = false;
   private activeThreadId: string | null = null;
@@ -266,8 +263,8 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: errorMsg }] };
     }
 
-    const threadId = context.indexId
-      ? `thread-${context.indexId}`
+    const threadId = context.book.indexId
+      ? `thread-${context.book.indexId}`
       : `thread-${Date.now()}`;
     this.activeThreadId = threadId;
 
@@ -289,14 +286,14 @@ ${currentMemory}
     const result = await this.executeWithStream(
       {
         messages: [new HumanMessage(userMessage)],
-        bookId: context.indexId || '',
-        pdfName: context.pdfName || '',
+        bookId: context.book.indexId || '',
+        pdfName: context.book.pdfName || '',
         depth: context.mode === 'proactive' ? ReadingDepth.INSPECTIONAL : undefined,
         mode: (context.mode || 'normal') as EngineMode,
         proactiveTrigger: context.proactiveTrigger ?? undefined,
         highlightContext: context.highlightContext ?? [],
-        wereadAvailable: !!context.plugin?.settings?.wereadApiKey,
-        crossBookMode: !!context.booklistBookIds?.length,
+        wereadAvailable: !!context.vault.plugin?.settings?.wereadApiKey,
+        crossBookMode: !!context.crossBook?.booklistBookIds?.length,
       },
       callbacks,
       configurable,
@@ -304,7 +301,7 @@ ${currentMemory}
     );
 
     // 后台累计对话轮数（满 10 轮自动更新画像摘要）
-    const _pb = context.plugin?.profileBuilder;
+    const _pb = context.vault.plugin?.profileBuilder;
     if (_pb) {
       const _userMsg = userMessage || '';
       const _assistantMsg = result.messages?.[0]?.content || '';
@@ -426,14 +423,15 @@ ${currentMemory}
     const memoryContext = await this.memoryStore.getMemoryContext();
 
     // 注入 journalDir 到 ToolContext（启用 search_journal 工具）
-    if (this.options.journalDir && !context.journalDir) {
-      context.journalDir = this.options.journalDir;
+    if (this.options.journalDir && !context.visual?.journalDir) {
+      if (!context.visual) context.visual = {};
+      context.visual.journalDir = this.options.journalDir;
     }
 
     // 读取画像摘要 + 检索相关片段（RAG）
     // 读取用户画像摘要（常驻注入）
     let userProfileSummary: string | undefined;
-    const profileBuilder = context.plugin?.profileBuilder;
+    const profileBuilder = context.vault.plugin?.profileBuilder;
     if (profileBuilder) {
       try {
         userProfileSummary = await profileBuilder.readSummary() || undefined;
@@ -449,23 +447,15 @@ ${currentMemory}
 
     // SharedContext for S2 compatibility
     const ctx = createSharedContext({
-      indexId: context.indexId || '',
-      pdfName: context.pdfName || '',
       rawUserQuery: rawUserQuery || '',
       chatHistory: cleanHistory,
-      markdownFiles: context.markdownFiles,
       abortSignal: callbacks.abortSignal,
-      docDescription: context.docDescription,
       memoryContext,
       llmClientManager: this.llmClientManager,
       toolContext: context,
       recentHistorySummaries,
       prevSearchedBlockIds,
       userProfileSummary,
-      booklistBookIds: context.booklistBookIds,
-      crossBookMode: !!context.booklistBookIds?.length || !!context.crossBookMode,
-      bookshelfSummary: context.bookshelfSummary,
-      indexedBooks: context.indexedBooks,
     });
 
     const engineCallbacks: EngineCallbacks = {
@@ -547,7 +537,7 @@ ${currentMemory}
     await this.initialize();
 
     // 检测 PI skill 意图
-    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
       return this.handleSkillRequest(userMessage, context, callbacks);
     }
 
@@ -564,22 +554,12 @@ ${currentMemory}
     await this.initialize();
 
     // 检测 PI skill 意图
-    if (context.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
+    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
       return this.handleSkillRequest(userMessage, context, callbacks);
     }
 
     const result = await this.runGraphEngine(userMessage, context, callbacks, history);
     return result.messages;
-  }
-
-  /**
-   * 过滤工具定义，只保留允许的工具
-   */
-  private filterToolDefinitions(
-    allTools: ToolDefinition[],
-    allowed: string[]
-  ): ToolDefinition[] {
-    return allTools.filter(tool => allowed.includes(tool.function.name));
   }
 
   /**
@@ -599,7 +579,7 @@ ${currentMemory}
     }
 
     // 检测 PI CLI 是否可用
-    const customPiPath = context.plugin?.settings?.customPiPath;
+    const customPiPath = context.vault.plugin?.settings?.customPiPath;
     const piStatus = await detectPiCli(customPiPath);
     if (!piStatus.available) {
       const msg = 'PI Agent 未安装。请在插件设置 → 高级 → PI Agent 页面点击安装，或填写 pi 的绝对路径。';
@@ -619,16 +599,16 @@ ${currentMemory}
     const outputPath = generateOutputPath(
       app,
       'skill',
-      context.documentMetadata?.title ?? '未命名',
+      context.book.documentMetadata?.title ?? '未命名',
     );
 
     const skillContext = buildSkillContext({
       book: {
-        title: context.documentMetadata?.title ?? '未知',
-        author: context.documentMetadata?.author ?? '未知',
+        title: context.book.documentMetadata?.title ?? '未知',
+        author: context.book.documentMetadata?.author ?? '未知',
       },
-      currentSection: context.currentNodeId ?? '全书',
-      analysisSummary: context.docDescription ?? '',
+      currentSection: context.book.currentNodeId ?? '全书',
+      analysisSummary: context.book.docDescription ?? '',
       userRequest: userMessage,
       skillDescriptions,
       outputPath,
@@ -675,19 +655,6 @@ ${currentMemory}
   }
 
   /**
-   * 重载用户上下文（重新加载 MEMORY.md）
-   */
-  async reloadContext(): Promise<void> {
-    log('[FrontendAgent] User context will be refreshed on next prompt');
-  }
-
-  /**
-   * 清除缓存的用户画像（画像重建后调用）
-   */
-  invalidateProfileCache(): void {
-  }
-
-  /**
    * 获取 LLM 客户端（用于记忆整合等内部功能）
    */
   getLLMClient(): LLMClient {
@@ -706,22 +673,5 @@ ${currentMemory}
    */
   async destroy(): Promise<void> {
     await this.piManager.stop();
-  }
-
-  /**
-   * 初始化并设置 SubagentManager
-   */
-  setupSubagentManager(context: ToolContext): void {
-    const manager = new SubagentManager(
-      runAgentLoop,
-      this.llmClientManager.getMainClient(),
-      context,
-      {},
-      undefined,
-      undefined
-    );
-    this.subagentManager = manager;
-    context.subagentManager = manager;
-    log('[FrontendAgent] SubagentManager 已初始化');
   }
 }

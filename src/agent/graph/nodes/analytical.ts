@@ -60,9 +60,9 @@ export async function analyticalNode(
 
   // Use validated scope from pre-search node (fallback to raw if pre-search was skipped)
   const scopeNodeIds = validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : rawScopeNodeIds;
-  const currentNodeId = toolContext.currentNodeId;
-  const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.markdownFiles);
-  const markdownFiles = ctx?.markdownFiles ?? {};
+  const currentNodeId = toolContext.book.currentNodeId;
+  const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
+  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
   const tocSummary = stateTocSummary || ctx?.tocSummary;
 
   // Build prompt context
@@ -87,7 +87,7 @@ export async function analyticalNode(
   // Create scoped tools
   const allTools = createLangChainTools(toolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
-  if (toolContext.infographicConfig) {
+  if (toolContext.visual?.infographicConfig) {
     s2ToolNames.push('generate_infographic');
   }
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
@@ -102,7 +102,7 @@ export async function analyticalNode(
     maxIterations: 6,
     maxToolCalls: 3,
     forcedConclusionContext: {
-      pdfName: statePdfName || ctx?.pdfName,
+      pdfName: statePdfName || ctx?.toolContext?.book.pdfName,
       scopeNodeIds,
     },
     toolInterceptor: createScopeInterceptor(scopeNodeIds),
@@ -145,7 +145,7 @@ export async function analyticalNode(
           maxIterations: 4,
           maxToolCalls: 3,
           forcedConclusionContext: {
-            pdfName: statePdfName || ctx?.pdfName,
+            pdfName: statePdfName || ctx?.toolContext?.book.pdfName,
             scopeNodeIds,
           },
           toolInterceptor: createScopeInterceptor(scopeNodeIds),

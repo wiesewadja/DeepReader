@@ -14,10 +14,11 @@ import { GENERAL_MODE_INDEX_ID } from '../../agent/config/agent-constants.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
 import type { BooklistItemInfo, Booklist } from '../../types/index.js';
+import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
 
 export interface SessionManagerHost {
 	get app(): import('obsidian').App;
-	get plugin(): any;
+	get plugin(): DeepReaderPlugin;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get readingTopbar(): import('../../components/reading-topbar/index.js').ReadingTopbar | null;
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
@@ -32,7 +33,6 @@ export interface SessionManagerHost {
 	get isAiStreaming(): boolean;
 	cancelActiveStream(): void;
 	initializeFrontendAgent(): Promise<void>;
-	setUseLLMTreeSearch(v: boolean): void;
 	get currentBooklistItems(): BooklistItemInfo[] | null;
 	restoreBooklist(booklist: Booklist): void;
 }
@@ -44,6 +44,7 @@ export class SessionManager {
 	private _crossBookMode: boolean = false;
 	private _generalChatMode: boolean = false;
 	private _searchFilters: { booklists: string[]; tags: string[] } = { booklists: [], tags: [] };
+	private _useLLMTreeSearch: boolean = false;
 
 	constructor(host: SessionManagerHost) {
 		this.host = host;
@@ -64,6 +65,8 @@ export class SessionManager {
 
 	get searchFilters(): { booklists: string[]; tags: string[] } { return this._searchFilters; }
 	set searchFilters(filters: { booklists: string[]; tags: string[] }) { this._searchFilters = filters; }
+	get useLLMTreeSearch(): boolean { return this._useLLMTreeSearch; }
+	set useLLMTreeSearch(v: boolean) { this._useLLMTreeSearch = v; }
 
 	// ── Session lifecycle ──
 
@@ -413,7 +416,7 @@ export class SessionManager {
 		}
 
 		if (this._crossBookMode) {
-			this.host.plugin.settings.lastCrossBookSessionId = this._sessionId;
+			this.host.plugin.settings.lastCrossBookSessionId = this._sessionId!;
 			await this.host.plugin.saveSettings();
 			log('[DeepPDF] 保存跨书籍会话ID:', this._sessionId);
 		}
@@ -518,7 +521,7 @@ export class SessionManager {
 		const wasDeepSearchMode = this.host.plugin.settings.lastDeepSearchMode;
 		if (wasDeepSearchMode) {
 			log('[DeepPDF] 恢复深度思考模式');
-			this.host.setUseLLMTreeSearch(true);
+			this._useLLMTreeSearch = true;
 		}
 	}
 
@@ -536,7 +539,7 @@ export class SessionManager {
 			const restored = await this.restoreFromSessionStore(sessionId);
 			if (restored) {
 				log('[DeepPDF] loadCrossBookSession: 从 SessionStore 恢复成功');
-				this.host.plugin.settings.lastCrossBookSessionId = this._sessionId;
+				this.host.plugin.settings.lastCrossBookSessionId = this._sessionId!;
 				await this.host.plugin.saveSettings();
 				return;
 			}
@@ -544,7 +547,7 @@ export class SessionManager {
 
 		log('[DeepPDF] loadCrossBookSession: 没有缓存的跨书籍会话，开始新会话');
 		this._sessionId = `cross-book-${Date.now()}`;
-		this.host.plugin.settings.lastCrossBookSessionId = this._sessionId;
+		this.host.plugin.settings.lastCrossBookSessionId = this._sessionId!;
 		await this.host.plugin.saveSettings();
 
 		await this.initializeSessionStore();

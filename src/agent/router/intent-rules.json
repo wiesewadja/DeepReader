@@ -41,12 +41,12 @@
     },
     {
       "id": "syntopical",
-      "pattern": "对比.*和|对比.*与|比较.*和|比较.*与|异同|有什么不同|有什么相同|和.*相比|与.*相比|两本书|多本书|跨书|主题阅读|syntopical",
+      "pattern": "对比|比较|异同|差异|不同.*观点|两本书|多本书|跨书|主题阅读",
       "intent": "主题阅读",
-      "tools": ["search_read_books", "search_markdown_text", "get_document_outline"],
+      "tools": ["search_read_books", "get_document_outline", "search_markdown_text"],
       "priority": 2,
       "maxIterations": 6,
-      "comment": "主题阅读/对比分析，需要跨书检索，给予更多迭代"
+      "comment": "主题阅读（syntopical），跨书对比需要更多迭代"
     }
   ],
 

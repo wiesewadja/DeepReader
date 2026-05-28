@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { IntentRouter } from '../router/intent-router.js';
-import { ContextBuilder, type DocumentMetadata, type ReadingProgress } from '../context/builder.js';
+import { ContextBuilder, type DocumentMetadata } from '../context/builder.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { App } from 'obsidian';
 
@@ -113,7 +113,6 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			expect(intentResult.allowedTools).toContain('get_document_outline');
 
 			// 2. 构建系统提示
-			const skillsSummary = '<skill name="test">测试技能</skill>';
 			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata);
 
 			// 3. 构建消息列表
@@ -139,7 +138,6 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 	describe('测试 2: 全书摘要应能注入到系统提示中', () => {
 		it('buildSystemPrompt 应包含 docDescription', async () => {
-			const skillsSummary = '<skill name="test">测试技能</skill>';
 			const metadata: DocumentMetadata = { title: '如何阅读一本书', author: '艾德勒', page_count: 400 };
 			const docDescription = '这是一本关于阅读方法的经典著作，系统介绍了检视阅读、分析阅读和主题阅读三个层次。';
 
@@ -153,10 +151,9 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 		});
 
 		it('无 docDescription 时不应包含摘要区块', async () => {
-			const skillsSummary = '<skill name="test">测试技能</skill>';
 			const metadata: DocumentMetadata = { title: '测试书籍' };
 
-			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata, undefined);
 
 			// 不应包含全书摘要区块
 			expect(systemPrompt).not.toContain('## 全书摘要');
@@ -167,14 +164,12 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const userInput = '总结一下这本书';
 			const metadata: DocumentMetadata = { title: '深度学习', page_count: 500 };
 			const docDescription = '本书系统介绍了深度学习的基础理论和实践方法。';
-			const progress: ReadingProgress = { coverage: 0.3, absorption: 0.5 };
 
 			// 1. 意图路由
 			const intentResult = router.analyze(userInput);
 			expect(intentResult.detectedIntents).toContain('检视阅读');
 
 			// 2. 构建系统提示（带 docDescription）
-			const skillsSummary = '<skill name="get_document_outline">获取目录</skill>';
 			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata, docDescription);
 
 			// 验证系统提示结构
@@ -229,7 +224,6 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 	describe('测试 4: ContextBuilder 分层验证', () => {
 		it('系统提示应包含所有层级', async () => {
-			const skillsSummary = '<skill name="get_document_outline">获取目录</skill>';
 			const metadata: DocumentMetadata = { title: '测试书籍' };
 			const docDescription = '这是测试书籍的摘要。';
 

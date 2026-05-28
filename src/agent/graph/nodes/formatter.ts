@@ -260,8 +260,8 @@ export async function formatterNode(
     const historyText = chatHistory.length > 0
       ? formatHistoryBlock(summarizeRecentHistory(chatHistory, 3))
       : '';
-    const bookshelfSection = (isReadingAdvisor && ctx?.bookshelfSummary)
-      ? `\n<bookshelf>\n${ctx.bookshelfSummary}\n</bookshelf>`
+    const bookshelfSection = (isReadingAdvisor && ctx?.toolContext?.crossBook?.bookshelfSummary)
+      ? `\n<bookshelf>\n${ctx?.toolContext?.crossBook?.bookshelfSummary}\n</bookshelf>`
       : '';
     const userMsg = historyText
       ? `<history>\n${historyText}\n</history>\n\n<query>${rewrittenQuery || ''}</query>\n<book>${pdfName || ''}</book>${bookshelfSection}`
@@ -321,7 +321,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
 
   const chatHistory = ctx?.chatHistory ?? [];
-  const markdownFiles = ctx?.markdownFiles ?? {};
+  const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
   const effectiveScopeNodeIds = scopeNodeIds ?? [];
   const coveredScope = effectiveScopeNodeIds.length > 0
     ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles)

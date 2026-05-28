@@ -94,7 +94,7 @@ export async function advisorNode(
 	const memorySection = rawMemory
 		? `\n\n<memory>\n${rawMemory.slice(0, 1500)}\n</memory>`
 		: '';
-	const rawShelf = ctx?.bookshelfSummary || '';
+	const rawShelf = ctx?.toolContext?.crossBook?.bookshelfSummary || '';
 	const bookshelfSection = rawShelf
 		? `\n\n<bookshelf>\n${rawShelf.slice(0, 2000)}\n</bookshelf>`
 		: '';
@@ -109,7 +109,7 @@ export async function advisorNode(
 		'weread_search', 'weread_recommend', 'weread_readdata',
 		'weread_notebooks', 'weread_book_info',
 	];
-	if (toolContext.journalDir) {
+	if (toolContext.visual?.journalDir) {
 		advisorToolNames.push('search_journal');
 	}
 	const advisorTools = allTools.filter(t => advisorToolNames.includes(t.name));

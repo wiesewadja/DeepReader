@@ -10,43 +10,48 @@ import type { ToolContext } from '../../../tools/types.js';
 
 describe.skip('get_document_outline', () => {
   const createMockContext = (): ToolContext => ({
-    indexId: 'test-idx',
-    pdfName: '如何阅读一本书',
-    app: {
-      vault: {
-        getMarkdownFiles: vi.fn().mockReturnValue([
-          { path: 'DeepReader/如何阅读一本书/04-第一章.md' },
-          { path: 'DeepReader/如何阅读一本书/05-第二章.md' },
-          { path: 'DeepReader/如何阅读一本书/如何阅读一本书.md' }, // 主文件，应被排除
-        ]),
-        cachedRead: vi.fn().mockResolvedValue('内容 ^block1')
-      },
-      metadataCache: {
-        getFileCache: vi.fn().mockImplementation((file: any) => {
-          if (file.path.includes('第一章')) {
-            return {
-              frontmatter: {
-                node_id: '0004',
-                section: '第一篇 > 第一章',
-                level: 1,
-                summary: '本章探讨...'
-              }
-            };
-          }
-          if (file.path.includes('第二章')) {
-            return {
-              frontmatter: {
-                node_id: '0005',
-                section: '第一篇 > 第二章',
-                level: 1,
-                summary: '第二章内容'
-              }
-            };
-          }
-          return { frontmatter: {} };
-        })
-      }
-    } as any
+    vault: {
+      app: {
+        vault: {
+          getMarkdownFiles: vi.fn().mockReturnValue([
+            { path: 'DeepReader/如何阅读一本书/04-第一章.md' },
+            { path: 'DeepReader/如何阅读一本书/05-第二章.md' },
+            { path: 'DeepReader/如何阅读一本书/如何阅读一本书.md' }, // 主文件，应被排除
+          ]),
+          cachedRead: vi.fn().mockResolvedValue('内容 ^block1')
+        },
+        metadataCache: {
+          getFileCache: vi.fn().mockImplementation((file: any) => {
+            if (file.path.includes('第一章')) {
+              return {
+                frontmatter: {
+                  node_id: '0004',
+                  section: '第一篇 > 第一章',
+                  level: 1,
+                  summary: '本章探讨...'
+                }
+              };
+            }
+            if (file.path.includes('第二章')) {
+              return {
+                frontmatter: {
+                  node_id: '0005',
+                  section: '第一篇 > 第二章',
+                  level: 1,
+                  summary: '第二章内容'
+                }
+              };
+            }
+            return { frontmatter: {} };
+          })
+        }
+      } as any,
+      plugin: {} as any,
+    },
+    book: {
+      indexId: 'test-idx',
+      pdfName: '如何阅读一本书',
+    },
   });
 
   it('应返回大纲树结构', async () => {
@@ -70,7 +75,7 @@ describe.skip('get_document_outline', () => {
   });
 
   it('缺少 app 时应返回错误', async () => {
-    const context = { ...createMockContext(), app: undefined };
+    const context = { ...createMockContext(), vault: { ...createMockContext().vault, app: undefined } };
     const result = await getDocumentOutlineTool.execute({}, context);
     const parsed = JSON.parse(result);
 
@@ -79,17 +84,22 @@ describe.skip('get_document_outline', () => {
 
   it('无章节文件时应返回 ERROR_NO_FILES', async () => {
     const context: ToolContext = {
-      indexId: 'test-idx',
-      pdfName: '不存在的书',
-      app: {
-        vault: {
-          getMarkdownFiles: vi.fn().mockReturnValue([]),
-          cachedRead: vi.fn()
-        },
-        metadataCache: {
-          getFileCache: vi.fn()
-        }
-      } as any
+      vault: {
+        app: {
+          vault: {
+            getMarkdownFiles: vi.fn().mockReturnValue([]),
+            cachedRead: vi.fn()
+          },
+          metadataCache: {
+            getFileCache: vi.fn()
+          }
+        } as any,
+        plugin: {} as any,
+      },
+      book: {
+        indexId: 'test-idx',
+        pdfName: '不存在的书',
+      },
     };
 
     const result = await getDocumentOutlineTool.execute({}, context);

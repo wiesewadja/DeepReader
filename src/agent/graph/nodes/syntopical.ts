@@ -92,9 +92,9 @@ export async function syntopicalNode(
   }
 
   // 桌面端用实际 basePath，移动端为空但会走 app 分支
-  const vaultPath = (toolContext.app.vault.adapter as any).basePath as string || '';
+  const vaultPath = (toolContext.vault.app.vault.adapter as any).basePath as string || '';
   const query = rewrittenQuery || ctx?.rawUserQuery || '';
-  const settings = toolContext.plugin?.settings;
+  const settings = toolContext.vault.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;
   const rerankerRole = settings ? resolveRoleConfig('reranker', settings) : null;
   const embedding = embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined;
@@ -111,9 +111,9 @@ export async function syntopicalNode(
       reranker,
       maxBooks: SYNTOPICAL_MAX_BOOKS,
       topKPerBook: SYNTOPICAL_TOP_K_PER_BOOK,
-      bookIds: ctx?.booklistBookIds,
-      knownBooks: ctx?.indexedBooks,
-      app: toolContext.app,
+      bookIds: ctx?.toolContext?.crossBook?.booklistBookIds,
+      knownBooks: ctx?.toolContext?.crossBook?.indexedBooks,
+      app: toolContext.vault.app,
     })
   ).withConfig({ runName: 'syntopical_search' }).invoke({}, { callbacks: config.callbacks });
 

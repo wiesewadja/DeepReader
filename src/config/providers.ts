@@ -24,8 +24,6 @@ export interface ProviderConfig {
 	defaultModel: string;
 	/** 用于连接测试的模型（当 defaultModel 不支持 /chat/completions 时） */
 	chatTestModel?: string;
-	/** @deprecated 仅迁移模块内部使用，迁移完成后删除 */
-	legacyApiKeyField?: keyof DeepPDFSettings;
 	website?: string;
 	supportsModelList?: boolean;         // false = custom，展示文本输入
 	capabilities: ProviderCapabilities;
@@ -44,14 +42,12 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	deepseek: {
 		baseUrl: 'https://api.deepseek.com',
 		defaultModel: 'deepseek-v4-flash',
-		legacyApiKeyField: 'deepseekApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
 	},
 	kimi: {
 		baseUrl: 'https://api.moonshot.cn/v1',
 		defaultModel: 'kimi-k2.5',
-		legacyApiKeyField: 'kimiApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false },
 	},
@@ -64,7 +60,6 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	openai: {
 		baseUrl: 'https://api.openai.com/v1',
 		defaultModel: 'gpt-4o',
-		legacyApiKeyField: 'openaiApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},
@@ -84,7 +79,6 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	custom: {
 		baseUrl: '', // 使用用户输入的 baseUrl
 		defaultModel: '',
-		legacyApiKeyField: 'customApiKey',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: true, reranker: true },
 	},

@@ -2,41 +2,8 @@
  * DeepReader 插件设置类型定义
  */
 
-import type { ProviderType } from './types.js';
 import type { AIProviderAccount, AIRoles } from './ai-roles';
 import type { Booklist } from '../types/index.js';
-
-// ═══════════════════════════════════════════════════════════════
-// 旧版子配置类型（迁移期间保留，Chunk 3 后删除）
-// ═══════════════════════════════════════════════════════════════
-
-/** @deprecated 迁移到 roles.embedding + providers */
-export interface EmbeddingSettings {
-	provider: "openai" | "ollama" | "lmstudio" | "local";
-	model?: string;
-	apiKey?: string;
-	baseUrl?: string;
-	dimensions?: number;
-}
-
-/** @deprecated 迁移到 roles.reranker + rerankerWeight */
-export interface RerankerSettings {
-	enabled: boolean;
-	provider?: "lmstudio" | "ollama" | "openai";
-	model?: string;
-	apiKey?: string;
-	baseUrl?: string;
-	weight?: number;  // 0.0-1.0, default 0.7
-}
-
-/** @deprecated 迁移到 roles.proposition + propositionCardsPer500Words */
-export interface PropositionSettings {
-	enabled: boolean;
-	model: string;
-	apiKey?: string;
-	baseUrl: string;
-	cardsPer500Words?: number;
-}
 
 // ═══════════════════════════════════════════════════════════════
 // 新版两层架构字段
@@ -90,12 +57,12 @@ export interface DeepPDFSettings {
 	ifAddNodeSummary: boolean;
 
 	// 状态存储
-	lastSelectedIndexId: string;
+	lastSelectedIndexId: string | undefined;
 	forceMode: string;
 	lastCrossBookMode: boolean;
 	lastCrossBookSessionId: string;
 		booklistHistory: Booklist[];
-		lastActiveBooklistId: string;
+		lastActiveBooklistId: string | undefined;
 	chatCache?: Record<string, unknown>;
 	enableDebugLog: boolean;
 	lastDeepSearchMode: boolean;
@@ -145,39 +112,9 @@ export interface DeepPDFSettings {
 		piLastVersion?: string;
 		customPiPath: string;
 
+		// 会话持久化
+		savedSessions?: Record<string, string>;
 
-	// ═══════════════════════════════════════════════════════════
-	// 旧版字段（迁移期间保留，Chunk 3 后删除）
-	// ═══════════════════════════════════════════════════════════
-
-	/** @deprecated 迁移到 providers.deepseek.apiKey */
-	deepseekApiKey?: string;
-	/** @deprecated 迁移到 providers.openai.apiKey */
-	openaiApiKey?: string;
-	/** @deprecated 迁移到 providers.kimi.apiKey */
-	kimiApiKey?: string;
-	/** @deprecated 迁移到 providers.custom.apiKey */
-	customApiKey?: string;
-	/** @deprecated 迁移到 roles.chat.provider + roles.chat.model */
-	llmProvider?: ProviderType;
-	/** @deprecated 迁移到 roles.chat.model */
-	llmModel?: string;
-	/** @deprecated 迁移到 providers.custom.baseUrl */
-	apiUrl?: string;
-	/** @deprecated 迁移到 roles.router */
-	fastModelEnabled?: boolean;
-	/** @deprecated 迁移到 roles.router.provider */
-	fastModelProvider?: ProviderType;
-	/** @deprecated 迁移到 roles.router.model */
-	fastModelName?: string;
-	/** @deprecated 迁移到 roles.router.baseUrlOverride */
-	fastModelApiUrl?: string;
-	/** @deprecated 迁移到 roles.embedding */
-	embedding?: EmbeddingSettings;
-	/** @deprecated 迁移到 roles.proposition */
-	propositions?: PropositionSettings;
-	/** @deprecated 迁移到 roles.reranker + rerankerWeight */
-	reranker?: RerankerSettings;
 }
 
 /**
@@ -213,12 +150,12 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	ifAddNodeSummary: true,
 
 	// 状态存储
-	lastSelectedIndexId: "",
+	lastSelectedIndexId: undefined,
 	forceMode: "auto",
 	lastCrossBookMode: false,
 	lastCrossBookSessionId: "",
 		booklistHistory: [],
-		lastActiveBooklistId: "",
+		lastActiveBooklistId: undefined,
 	enableDebugLog: false,
 	lastDeepSearchMode: false,
 

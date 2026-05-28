@@ -92,7 +92,7 @@ export const searchReadBooksTool: ToolExecutor = {
       return 'Error: query 参数是必需的';
     }
 
-    if (!context.app) {
+    if (!context.vault?.app) {
       return 'Error: Obsidian App 实例不可用';
     }
 
@@ -101,13 +101,13 @@ export const searchReadBooksTool: ToolExecutor = {
 
       // 1. 获取已读书籍目录
       const notesDir = BOOK_NOTES_DIR;
-      const exists = await context.app.vault.adapter.exists(notesDir);
+      const exists = await context.vault.app.vault.adapter.exists(notesDir);
 
       if (!exists) {
         return '没有找到已读书籍。请先阅读一些书籍。';
       }
 
-      const bookDirs = await context.app.vault.adapter.list(notesDir);
+      const bookDirs = await context.vault.app.vault.adapter.list(notesDir);
       const results: Array<{
         bookName: string;
         chapterTitle: string;
@@ -120,7 +120,7 @@ export const searchReadBooksTool: ToolExecutor = {
       // 2. 遍历每本书的章节
       for (const bookDir of bookDirs.folders) {
         const bookName = bookDir.split('/').pop() || '';
-        const chapterFiles = await context.app.vault.adapter.list(bookDir);
+        const chapterFiles = await context.vault.app.vault.adapter.list(bookDir);
 
         for (const chapterFile of chapterFiles.files) {
           if (!chapterFile.endsWith('.md')) continue;
@@ -129,7 +129,7 @@ export const searchReadBooksTool: ToolExecutor = {
           if (chapterFile.endsWith(`${bookName}.md`)) continue;
 
           try {
-            const content = await context.app.vault.adapter.read(chapterFile);
+            const content = await context.vault.app.vault.adapter.read(chapterFile);
 
             // 提取摘要
             const summary = extractSummary(content);

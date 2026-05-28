@@ -17,10 +17,11 @@ import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath } from '../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
-	get plugin(): any;
+	get plugin(): DeepReaderPlugin;
 	get messageList(): MessageList | null;
 	get readingTopbar(): ReadingTopbar | null;
 	get readingProgress(): ReadingProgress | null;
@@ -829,7 +830,7 @@ export class BookManager {
 
 		this.host.plugin.settings.lastCrossBookMode = false;
 		this.host.plugin.settings.lastSelectedIndexId = undefined;
-		this.host.plugin.settings.lastActiveBooklistId = "";
+		this.host.plugin.settings.lastActiveBooklistId = undefined;
 		this.host.plugin.saveSettings();
 		this.host.sessionId = null;
 	}

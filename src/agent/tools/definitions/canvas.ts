@@ -14,7 +14,7 @@ import type { ToolContext } from '../types.js';
 export const createCanvasToolDefinition: ToolFactory = (ctx: ToolContext) =>
   tool(
     async (args) => {
-      return createCanvasTool(ctx.app).execute(args, ctx);
+      return createCanvasTool(ctx.vault.app).execute(args, ctx);
     },
     {
       name: 'canvas',

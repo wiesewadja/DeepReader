@@ -16,11 +16,12 @@ import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
 
 function getClient(ctx: ToolContext): WereadApiClient | null {
-	if (ctx._wereadClient) return ctx._wereadClient;
-	const apiKey = ctx.plugin?.settings?.wereadApiKey;
+	if (ctx.weread?.wereadClient) return ctx.weread.wereadClient;
+	const apiKey = ctx.vault?.plugin?.settings?.wereadApiKey;
 	if (!apiKey) return null;
 	const client = new WereadApiClient(apiKey);
-	ctx._wereadClient = client;
+	if (!ctx.weread) ctx.weread = {};
+	ctx.weread.wereadClient = client;
 	return client;
 }
 

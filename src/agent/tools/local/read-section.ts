@@ -51,7 +51,9 @@ export const readBookSectionTool: ToolExecutor = {
   definition: READ_BOOK_SECTION_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const { app, pdfName } = context;
+    const { vault, book } = context;
+    const { app } = vault;
+    const { pdfName } = book;
     const nodeIds = args.node_ids as string[] | undefined;
     const nodeId = args.node_id as string | undefined;
     const blockId = args.block_id as string | undefined;

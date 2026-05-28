@@ -22,7 +22,7 @@ export const MAX_TOKENS = 8000;
 export async function getOrBuildLocalCache(
   context: ToolContext
 ): Promise<LocalToolCache> {
-  const { localCache } = context;
+  const { localCache } = context.book;
 
   // 如果已有 treeData 缓存，直接返回
   if (localCache?.treeData) {
@@ -31,7 +31,7 @@ export async function getOrBuildLocalCache(
 
   // 构建新缓存
   const cache = await buildLocalCache(context);
-  context.localCache = cache;
+  context.book.localCache = cache;
   return cache;
 }
 
@@ -39,7 +39,8 @@ export async function getOrBuildLocalCache(
  * 构建 local cache from tree.json
  */
 async function buildLocalCache(context: ToolContext): Promise<LocalToolCache> {
-  const { app, pdfName, indexId } = context;
+  const { app } = context.vault;
+  const { pdfName, indexId } = context.book;
   if (!app || !pdfName) {
     console.log('[buildLocalCache] Missing app or pdfName');
     return {};

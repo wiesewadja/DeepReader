@@ -77,11 +77,11 @@ export function createSaveMemoryTool(_app: any): ToolExecutor {
 				return 'Error: history_entry 参数是必需的，且必须是字符串';
 			}
 
-			if (!context.app) {
+			if (!context.vault?.app) {
 				return 'Error: Obsidian App 实例不可用';
 			}
 
-			const store = new MemoryStore(context.app);
+			const store = new MemoryStore(context.vault.app);
 
 			try {
 				// 1. 追加历史条目
@@ -137,11 +137,11 @@ export function createSearchMemoryTool(_app: any): ToolExecutor {
 				return 'Error: query 参数是必需的，且必须是字符串';
 			}
 
-			if (!context.app) {
+			if (!context.vault?.app) {
 				return 'Error: Obsidian App 实例不可用';
 			}
 
-			const store = new MemoryStore(context.app);
+			const store = new MemoryStore(context.vault.app);
 
 			try {
 				const results: string[] = [];
@@ -185,20 +185,20 @@ export function createSearchMemoryTool(_app: any): ToolExecutor {
 export const saveMemoryTool: ToolExecutor = {
 	definition: saveMemoryDefinition,
 	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-		if (!context.app) {
+		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
 		}
-		return createSaveMemoryTool(context.app).execute(args, context);
+		return createSaveMemoryTool(context.vault.app).execute(args, context);
 	},
 };
 
 export const searchMemoryTool: ToolExecutor = {
 	definition: searchMemoryDefinition,
 	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-		if (!context.app) {
+		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
 		}
-		return createSearchMemoryTool(context.app).execute(args, context);
+		return createSearchMemoryTool(context.vault.app).execute(args, context);
 	},
 };
 

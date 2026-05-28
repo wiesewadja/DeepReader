@@ -72,7 +72,7 @@ export async function routerNode(
 
   try {
     const sharedContext = config.configurable?.sharedContext as SharedContext | undefined;
-    const docDescription = sharedContext?.docDescription;
+    const docDescription = sharedContext?.toolContext?.book.docDescription;
     const userMessage = buildRouterUserMessage(rawQuery, chatHistory, pdfName || undefined, docDescription);
 
     const response = await fastModel.invoke([
@@ -105,9 +105,9 @@ export async function routerNode(
 
     // Hybrid trigger: keywords pre-check + LLM classification + booklist mode
     // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
-    const hasBooklist = (sharedContext?.booklistBookIds?.length ?? 0) > 0;
+    const hasBooklist = (sharedContext?.toolContext?.crossBook?.booklistBookIds?.length ?? 0) > 0;
     const candidateSyntopical = hasSyntopicalKeywords(rawQuery) || hasBooklist;
-    log(`[S0 Router] hasBooklist=${hasBooklist}, hasKeywords=${hasSyntopicalKeywords(rawQuery)}, booklistBookIds=${JSON.stringify(sharedContext?.booklistBookIds)}`);
+    log(`[S0 Router] hasBooklist=${hasBooklist}, hasKeywords=${hasSyntopicalKeywords(rawQuery)}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
     const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
       ? ReadingDepth.SYNTOPICAL
       : depth;

@@ -8,22 +8,27 @@ import type { ToolContext } from '../../../tools/types.js';
 
 describe.skip('read_markdown_section', () => {
   const createMockContext = (content: string): ToolContext => ({
-    indexId: 'test-idx',
-    pdfName: '如何阅读一本书',
-    app: {
-      vault: {
-        adapter: { basePath: '/tmp/test-vault', getBasePath: () => '/tmp/test-vault', read: vi.fn().mockRejectedValue('not found'), exists: vi.fn().mockResolvedValue(false) },
-        getMarkdownFiles: vi.fn().mockReturnValue([
-          { path: 'DeepReader/如何阅读一本书/04-MECE原则.md', basename: '04-MECE原则' }
-        ]),
-        cachedRead: vi.fn().mockResolvedValue(content)
-      },
-      metadataCache: {
-        getFileCache: vi.fn().mockReturnValue({
-          frontmatter: { node_id: '0004', section: '第一篇 > MECE原则', level: 2 }
-        })
-      }
-    } as any
+    vault: {
+      app: {
+        vault: {
+          adapter: { basePath: '/tmp/test-vault', getBasePath: () => '/tmp/test-vault', read: vi.fn().mockRejectedValue('not found'), exists: vi.fn().mockResolvedValue(false) },
+          getMarkdownFiles: vi.fn().mockReturnValue([
+            { path: 'DeepReader/如何阅读一本书/04-MECE原则.md', basename: '04-MECE原则' }
+          ]),
+          cachedRead: vi.fn().mockResolvedValue(content)
+        },
+        metadataCache: {
+          getFileCache: vi.fn().mockReturnValue({
+            frontmatter: { node_id: '0004', section: '第一篇 > MECE原则', level: 2 }
+          })
+        }
+      } as any,
+      plugin: {} as any,
+    },
+    book: {
+      indexId: 'test-idx',
+      pdfName: '如何阅读一本书',
+    },
   });
 
   it('应返回完整章节内容', async () => {
@@ -91,7 +96,7 @@ describe.skip('read_markdown_section', () => {
   });
 
   it('缺少 app 应返回 NO_APP_CONTEXT', async () => {
-    const context = { ...createMockContext('内容'), app: undefined };
+    const context = { ...createMockContext('内容'), vault: { ...createMockContext('内容').vault, app: undefined } };
     const result = await readBookSectionTool.execute({ heading: 'test' }, context);
     const parsed = JSON.parse(result);
 
@@ -100,24 +105,29 @@ describe.skip('read_markdown_section', () => {
 
   it('多匹配应返回候选列表', async () => {
     const context: ToolContext = {
-      indexId: 'test-idx',
-      pdfName: '如何阅读一本书',
-      app: {
-        vault: {
-          getMarkdownFiles: vi.fn().mockReturnValue([
-            { path: 'DeepReader/如何阅读一本书/04-第一章-MECE.md', basename: '04-第一章-MECE' },
-            { path: 'DeepReader/如何阅读一本书/05-第二章-MECE.md', basename: '05-第二章-MECE' }
-          ]),
-          cachedRead: vi.fn().mockResolvedValue('内容')
-        },
-        metadataCache: {
-          getFileCache: vi.fn().mockImplementation((file: any) => ({
-            frontmatter: {
-              section: file.path.includes('第一章') ? '第一章 > MECE' : '第二章 > MECE'
-            }
-          }))
-        }
-      } as any
+      vault: {
+        app: {
+          vault: {
+            getMarkdownFiles: vi.fn().mockReturnValue([
+              { path: 'DeepReader/如何阅读一本书/04-第一章-MECE.md', basename: '04-第一章-MECE' },
+              { path: 'DeepReader/如何阅读一本书/05-第二章-MECE.md', basename: '05-第二章-MECE' }
+            ]),
+            cachedRead: vi.fn().mockResolvedValue('内容')
+          },
+          metadataCache: {
+            getFileCache: vi.fn().mockImplementation((file: any) => ({
+              frontmatter: {
+                section: file.path.includes('第一章') ? '第一章 > MECE' : '第二章 > MECE'
+              }
+            }))
+          }
+        } as any,
+        plugin: {} as any,
+      },
+      book: {
+        indexId: 'test-idx',
+        pdfName: '如何阅读一本书',
+      },
     };
 
     const result = await readBookSectionTool.execute({ heading: 'MECE' }, context);

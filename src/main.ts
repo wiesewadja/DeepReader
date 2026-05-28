@@ -1,9 +1,11 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
+import type { DeepReaderPlugin } from "./agent/tools/context/vault.js";
 import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import type { QuoteMetadata } from './components/chat-input/chat-input.js';
+import { HighlightService } from './services/highlight-service.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
@@ -111,7 +113,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this)
+            (leaf) => new SidebarView(leaf, this as unknown as DeepReaderPlugin)
         );
 
         // 注册书库视图
@@ -502,7 +504,8 @@ export default class DeepPDFPlugin extends Plugin {
                 this.app.workspace.trigger('deeppdf:excerpt-selection', text, range);
             },
             onSaveHighlight: async (text: string, color: HighlightColorId) => {
-                await this.saveHighlightToFile(text, color);
+                const hlService = new HighlightService(this.app);
+                await hlService.saveHighlight(text, color);
                 const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                 if (leaves.length > 0) {
                     const sidebarView = leaves[0].view as SidebarView;
@@ -510,7 +513,8 @@ export default class DeepPDFPlugin extends Plugin {
                 }
             },
             onRemoveHighlight: async (text: string) => {
-                await this.removeHighlightFromFile(text);
+                const hlService = new HighlightService(this.app);
+                await hlService.removeHighlight(text);
             },
             onBookDetected: (indexId: string, bookName: string) => {
                 // 检测到书籍章节，自动切换到对应书籍的聊天记录
@@ -674,275 +678,6 @@ export default class DeepPDFPlugin extends Plugin {
         }
         return this.wereadService;
     }
-
-    private splitFrontmatter(content: string): { frontmatter: string; body: string; hasFrontmatter: boolean } {
-        const match = content.match(/^(---\n[\s\S]*?\n---)(\n*)/);
-        if (match) {
-            return {
-                frontmatter: match[0],
-                body: content.slice(match[0].length),
-                hasFrontmatter: true,
-            };
-        }
-        return {
-            frontmatter: '',
-            body: content,
-            hasFrontmatter: false,
-        };
-    }
-
-    /**
-     * 保存高亮到文件
-     * 多行文本分行处理，每行独立高亮但使用同一颜色
-     * 同时保存高亮内容到摘录文件
-     */
-    private async saveHighlightToFile(text: string, color: HighlightColorId): Promise<void> {
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            new Notice("无法保存高亮：没有活动文件");
-            return;
-        }
-
-        try {
-            const content = await this.app.vault.read(activeFile);
-            const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
-            const bgColor = this.getHighlightBgColor(color);
-
-            const lines = text.split('\n').filter(line => line.trim().length > 0);
-            let newBody = body;
-            let highlightedCount = 0;
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed) continue;
-
-                const matchResult = findTextInMarkdown(newBody, trimmed);
-                if (matchResult) {
-                    // matched 是原始 markdown 片段（含标记），trimmed 是用户选中的纯文本
-                    // 写入时用 trimmed，保证高亮内容和用户选中的一致
-                    const highlighted = `<mark style="background: ${bgColor}">${trimmed}</mark>`;
-                    newBody = newBody.substring(0, matchResult.index) + highlighted + newBody.substring(matchResult.index + matchResult.matched.length);
-                    highlightedCount++;
-                }
-            }
-
-            if (highlightedCount === 0) {
-                new Notice("无法保存高亮：未找到文本");
-                return;
-            }
-
-            const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
-            await this.app.vault.modify(activeFile, newContent);
-            log('[DeepPDF] Highlight saved:', highlightedCount, 'lines');
-
-            await this.saveHighlightToExcerpt(text, color, activeFile, null);
-
-        } catch (err) {
-            log.error('[DeepPDF] Failed to save highlight:', err);
-            new Notice("保存高亮失败");
-        }
-    }
-
-    /**
-     * 从文本位置附近查找 block id
-     * block id 格式为 ^xxx，通常在段落末尾
-     */
-    private findBlockIdNearText(content: string, position: number): string | null {
-        // 从当前位置向后查找，最多查找 500 个字符
-        const searchStart = position;
-        const searchEnd = Math.min(position + 500, content.length);
-        const searchText = content.substring(searchStart, searchEnd);
-
-        // 匹配 ^xxx 格式的 block id
-        const match = searchText.match(/\^([a-zA-Z0-9_-]+)/);
-        if (match) {
-            return match[1];
-        }
-
-        // 如果后面没找到，尝试向前查找
-        const searchStartBack = Math.max(0, position - 500);
-        const searchTextBack = content.substring(searchStartBack, position);
-        const matchBack = searchTextBack.match(/\^([a-zA-Z0-9_-]+)/);
-        if (matchBack) {
-            return matchBack[1];
-        }
-
-        return null;
-    }
-
-    /**
-     * 保存高亮内容到摘录文件
-     */
-    private async saveHighlightToExcerpt(
-        text: string,
-        color: HighlightColorId,
-        activeFile: any,
-        blockId: string | null
-    ): Promise<void> {
-        try {
-            // 从文件的 frontmatter 或路径中提取书籍信息
-            const cache = this.app.metadataCache.getFileCache(activeFile);
-            let bookName = cache?.frontmatter?.pdf_name || '';
-
-            // 如果没有从 frontmatter 获取到书名，从路径提取
-            if (!bookName) {
-                const pathParts = activeFile.path.split('/');
-                if (pathParts.length >= 2) {
-                    if (pathParts[0] === 'DeepReader') {
-                        bookName = pathParts[1];
-                    } else {
-                        bookName = pathParts[0];
-                    }
-                } else {
-                    bookName = activeFile.basename;
-                }
-            }
-
-            // 构建摘录内容
-            const excerptContent: ExcerptContent = {
-                text: text.trim()
-            };
-
-            // 构建元数据
-            const metadata: ExcerptMetadata = {
-                sourcePdf: bookName,
-                createdAt: new Date().toISOString(),
-                sourceType: 'reading',
-                chapterPath: activeFile.path,
-                chapterName: activeFile.basename,
-                blockId: blockId || undefined,
-                excerptType: 'highlight',
-                highlightColor: color,
-            };
-
-            // 保存摘录
-            const excerptService = new ExcerptService(this.app);
-            const savedPath = await excerptService.saveExcerpt(excerptContent, metadata);
-
-            if (savedPath) {
-                log('[DeepPDF] Highlight saved to excerpt file:', savedPath);
-            }
-        } catch (err) {
-            log.error('[DeepPDF] Failed to save highlight to excerpt:', err);
-            // 不显示错误提示，因为高亮已经保存到章节文件了
-        }
-    }
-
-    /**
-     * 从文件中移除高亮
-     * 检测相邻的段落/列表项是否也有相同颜色的高亮，一并移除
-     */
-    private async removeHighlightFromFile(text: string): Promise<void> {
-        const activeFile = this.app.workspace.getActiveFile();
-        if (!activeFile) {
-            return;
-        }
-
-        try {
-            const content = await this.app.vault.read(activeFile);
-
-            // 分离 frontmatter 和 body，只在 body 中移除
-            const { frontmatter, body, hasFrontmatter } = this.splitFrontmatter(content);
-
-            // 首先找到当前文本所在的高亮标签，获取其颜色
-            const colorInfo = this.findHighlightColor(body, text);
-            if (!colorInfo) {
-                log('[DeepPDF] No highlight found for text');
-                return;
-            }
-
-            const { bgColor, matchedText } = colorInfo;
-
-            // 移除当前高亮
-            let newBody = body;
-            const escapedMatched = this.escapeRegex(matchedText);
-            const currentMarkRegex = new RegExp(`<mark style="background: ${this.escapeRegex(bgColor)}">${escapedMatched}</mark>`, 's');
-            newBody = newBody.replace(currentMarkRegex, matchedText);
-
-            // 检测并移除相邻的相同颜色高亮（列表项或段落）
-            newBody = this.removeAdjacentHighlights(newBody, bgColor);
-
-            const newContent = hasFrontmatter ? frontmatter + newBody : newBody;
-            await this.app.vault.modify(activeFile, newContent);
-            log('[DeepPDF] Highlight removed from file');
-        } catch (err) {
-            log.error('[DeepPDF] Failed to remove highlight:', err);
-        }
-    }
-
-    /**
-     * 查找文本所在高亮的颜色
-     */
-    private findHighlightColor(body: string, text: string): { bgColor: string, matchedText: string } | null {
-        // 尝试精确匹配
-        const exactRegex = new RegExp(`<mark style="background: ([^"]*)">${this.escapeRegex(text)}</mark>`, 's');
-        const exactMatch = body.match(exactRegex);
-        if (exactMatch) {
-            return { bgColor: exactMatch[1], matchedText: text };
-        }
-
-        // 尝试模糊匹配
-        const matchResult = findTextInMarkdown(body, text);
-        if (matchResult) {
-            const fuzzyRegex = new RegExp(`<mark style="background: ([^"]*)">${this.escapeRegex(matchResult.matched)}</mark>`, 's');
-            const fuzzyMatch = body.match(fuzzyRegex);
-            if (fuzzyMatch) {
-                return { bgColor: fuzzyMatch[1], matchedText: matchResult.matched };
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * 移除相邻的相同颜色高亮
-     * 检测连续的列表项（1. 2. 3. 或 - *）或段落是否有相同颜色的高亮
-     */
-    private removeAdjacentHighlights(body: string, bgColor: string): string {
-        const escapedBgColor = this.escapeRegex(bgColor);
-
-        // 对于每个匹配到的行，检查是否是目标颜色，如果是则移除
-        // 使用简单的逐行处理
-        const lines = body.split('\n');
-        const processedLines: string[] = [];
-
-        for (const line of lines) {
-            // 检查这行是否有目标颜色的高亮
-            const highlightRegex = new RegExp(`<mark style="background: ${escapedBgColor}">([^<]+)</mark>`, 'g');
-
-            if (highlightRegex.test(line)) {
-                // 移除该行的高亮标签
-                const cleanLine = line.replace(highlightRegex, '$1');
-                processedLines.push(cleanLine);
-            } else {
-                processedLines.push(line);
-            }
-        }
-
-        return processedLines.join('\n');
-    }
-
-    /**
-     * 获取高亮背景颜色
-     */
-    private getHighlightBgColor(color: HighlightColorId): string {
-        const colors: Record<HighlightColorId, string> = {
-            yellow: 'rgba(255, 235, 59, 0.5)',
-            green: 'rgba(76, 175, 80, 0.4)',
-            blue: 'rgba(33, 150, 243, 0.4)',
-            pink: 'rgba(233, 30, 99, 0.4)',
-            orange: 'rgba(255, 152, 0, 0.4)',
-        };
-        return colors[color] || colors.yellow;
-    }
-
-    /**
-     * 转义正则表达式特殊字符
-     */
-    private escapeRegex(str: string): string {
-        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
     /**
      * 确保初始化完成：创建 DeepReader 目录
      */

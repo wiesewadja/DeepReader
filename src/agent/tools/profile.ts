@@ -110,25 +110,25 @@ export function createUpdateProfileTool(app: any): ToolExecutor {
         return 'Error: section, field, value 参数都是必需的';
       }
 
-      if (!context.app) {
+      if (!context.vault?.app) {
         return 'Error: Obsidian App 实例不可用';
       }
 
       try {
         // 读取现有 DeepReader.md
         const profilePath = 'DeepReader/DeepReader.md';
-        const exists = await context.app.vault.adapter.exists(profilePath);
+        const exists = await context.vault.app.vault.adapter.exists(profilePath);
 
         let content = '';
         if (exists) {
-          content = await context.app.vault.adapter.read(profilePath);
+          content = await context.vault.app.vault.adapter.read(profilePath);
         }
 
         // 更新内容
         const updatedContent = updateProfileSection(content, section, field, value, mode);
 
         // 写回文件
-        await context.app.vault.adapter.write(profilePath, updatedContent);
+        await context.vault.app.vault.adapter.write(profilePath, updatedContent);
 
         log('[update_profile] 已更新:', section, field, value);
 
@@ -153,9 +153,9 @@ export function createUpdateProfileTool(app: any): ToolExecutor {
 export const updateProfileTool: ToolExecutor = {
   definition: updateProfileDefinition,
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    if (!context.app) {
+    if (!context.vault?.app) {
       return 'Error: Obsidian App 实例不可用';
     }
-    return createUpdateProfileTool(context.app).execute(args, context);
+    return createUpdateProfileTool(context.vault.app).execute(args, context);
   },
 };
