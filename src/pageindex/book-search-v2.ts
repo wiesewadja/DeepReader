@@ -350,8 +350,20 @@ export async function searchBookV2(
         content: chunkTextMap.get(c.chunkId) || "",
       }));
     } else {
-      // No proposition or chunk hits — provide minimal block with nodeId reference
-      matchedBlocks = [{ blockId: "", content: `[${title}]` }];
+      // No proposition or chunk hits — extract content from BM25 node text
+      const bm25Node = bm25Index.nodes?.[r.nodeId];
+      if (bm25Node?.text) {
+        const text = bm25Node.text;
+        // Extract first block_id (^xxx) from BM25 text
+        const blockIdMatch = text.match(/\^([\w-]+)/);
+        const blockId = blockIdMatch ? blockIdMatch[1] : "";
+        matchedBlocks = [{
+          blockId,
+          content: text.slice(0, 300),
+        }];
+      } else {
+        matchedBlocks = [{ blockId: "", content: `[${title}]` }];
+      }
     }
 
     results.push({

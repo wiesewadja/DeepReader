@@ -224,7 +224,13 @@ export async function preSearchNode(
     // 4. Early stop check
     const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
 
-    if (avgScore >= earlyStopThreshold && hits.length >= 2) {
+    // Quality guard: matched blocks must contain actual content (not just title-only fallbacks).
+    // Without this, min-max normalization makes avgScore always > threshold regardless of result quality.
+    const hasSubstantiveBlocks = hits.some(h =>
+      h.matched_blocks.some(b => b.block_id !== '' && b.content.length > 50)
+    );
+
+    if (avgScore >= earlyStopThreshold && hits.length >= 2 && hasSubstantiveBlocks) {
       log(`[S2-Pre] 早停: avg=${avgScore.toFixed(2)} >= ${earlyStopThreshold}, 跳过 ReAct`);
 
       const blockLines = formatBlockLines(hits);
@@ -270,6 +276,9 @@ export async function preSearchNode(
 
     // 5. Normal path: inject compact pre-search results
     const blockLines = formatBlockLines(hits);
+    if (avgScore >= earlyStopThreshold && hits.length >= 2 && !hasSubstantiveBlocks) {
+      log(`[S2-Pre] 早停被质量守卫拦截: avg=${avgScore.toFixed(2)} 但无实质内容 (block_ids 均为空), 走 ReAct`);
+    }
 
     const preSearchBlock = `<pre_search_results>
 基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。

@@ -448,7 +448,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     try {
       const nodeFileMap = (parseResult as any)._nodeFileMap || {};
       const vectorResult = await vectorizeAllLevels(
-        parseResult, indexDir, options.embedding, nodeFileMap, treeData,
+        parseResult, indexDir, options.embedding, nodeFileMap, treeData, options.outputDir,
         (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg })
       );
       vectorizationSuccess = true;
@@ -656,6 +656,7 @@ async function vectorizeAllLevels(
   embedding: any,
   nodeFileMap: Record<string, string>,
   treeData: any,
+  vaultRootPath: string,
   onProgress?: (msg: string) => void
 ): Promise<{ dimensions: number; nodeCount: number } | undefined> {
   const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
@@ -714,7 +715,6 @@ async function vectorizeAllLevels(
   }
 
   // L2: chunk paragraphs from .md files
-  const vaultPath = path.dirname(path.dirname(indexDir));
   const exportName = treeData.exportName || treeData.title;
   let totalChunks = 0;
 
@@ -723,7 +723,7 @@ async function vectorizeAllLevels(
     for (const ch of chapters) {
       const fileName = nodeFileMap[ch.nodeId];
       if (!fileName) continue;
-      const mdPath = path.join(vaultPath, "DeepReader", exportName, fileName);
+      const mdPath = path.join(vaultRootPath, "DeepReader", exportName, fileName);
       try {
         const content = await fs.readFile(mdPath, "utf-8");
         const cleaned = cleanMdContent(content);

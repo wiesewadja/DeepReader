@@ -85,7 +85,7 @@ function makeSearchResult(overrides: Partial<BookSearchResultV2> = {}): BookSear
     fileName: '01 - Chapter 1',
     score: 0.8,
     matchedBlocks: [
-      { blockId: 'b1', content: 'Some relevant content about the topic.' },
+      { blockId: 'b1', content: 'Some relevant content about the topic for testing early-stop quality.' },
     ],
     ...overrides,
   };
@@ -170,6 +170,24 @@ describe('preSearchNode', () => {
     expect(result.earlyStopContent).toBe('');
     expect(result.preSearchBlock).toContain('pre_search_results');
     expect(result.preSearchBlock).toContain('相关段落');
+  });
+
+  it('quality guard blocks early-stop when matchedBlocks are title-only fallbacks', async () => {
+    const highScoreButNoBlocks = [
+      makeSearchResult({ nodeId: 'n1', score: 0.95, matchedBlocks: [{ blockId: '', content: '[Chapter 1]' }] }),
+      makeSearchResult({ nodeId: 'n2', score: 0.9, matchedBlocks: [{ blockId: '', content: '[Chapter 2]' }] }),
+      makeSearchResult({ nodeId: 'n3', score: 0.88, matchedBlocks: [{ blockId: '', content: '[Chapter 3]' }] }),
+    ];
+    vi.mocked(searchBookV2).mockResolvedValue(highScoreButNoBlocks);
+
+    const state = makeState();
+    const config = makeConfig();
+
+    const result = await preSearchNode(state, config as any);
+
+    // Early-stop should be blocked — falls through to normal pre-search injection
+    expect(result.earlyStopContent).toBe('');
+    expect(result.preSearchBlock).toContain('pre_search_results');
   });
 
   it('returns empty result on search exception', async () => {
