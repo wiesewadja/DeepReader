@@ -30,11 +30,22 @@ nodes:
     depends_on: [detect-input]
     when: "$detect-input.output == 'none'"
 
+  # ── Plan 生成（仅 spec 模式需要）─────────────────────────────
   - id: generate-plan-from-spec
     command: dr-generate-plan
     depends_on: [detect-input]
     when: "$detect-input.output == 'spec'"
     context: fresh
+
+  - id: approve-plan
+    approval:
+      message: "tasks/plan.md 已生成。请审查，确认后开始实现。"
+      capture_response: true
+      on_reject:
+        prompt: "根据反馈修改 tasks/plan.md：$REJECTION_REASON"
+        max_attempts: 5
+    depends_on: [generate-plan-from-spec]
+    when: "$detect-input.output == 'spec'"
 
   # ── Phase 2: 逐任务实现 ──
   - id: implement
@@ -57,10 +68,10 @@ nodes:
 
         当所有任务完成时，输出 <promise>COMPLETE</promise>
       until: COMPLETE
-      max_iterations: 20
+      max_iterations: 30
       fresh_context: true
       until_bash: "npm run build && npm run test:run"
-    depends_on: [generate-plan-from-spec, detect-input]
+    depends_on: [approve-plan, detect-input]
     trigger_rule: none_failed_min_one_success
 
   # ── Phase 3: 代码审查 ──
@@ -86,7 +97,9 @@ nodes:
         如果审查结果为 REVIEW_PASSED，直接输出 <promise>COMPLETE</promise>。
       until: COMPLETE
       max_iterations: 3
+      fresh_context: true
       until_bash: "npm run build && npm run test:run"
+      idle_timeout: 600000
     depends_on: [review]
 
   # ── Phase 5: 部署 ──
