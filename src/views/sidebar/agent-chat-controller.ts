@@ -341,7 +341,7 @@ export class AgentChatController {
 				},
 				book: {
 					indexId: indexId,
-				pdfName: this.host.currentPdfName || '',
+						pdfName: this.host.currentPdfName || '',
 					markdownFiles: this.host.currentMarkdownFiles,
 					currentNodeId,
 					documentMetadata: {
@@ -783,25 +783,25 @@ export class AgentChatController {
 				if (rawNodeId) currentNodeId = String(rawNodeId);
 			}
 
-				const context: ToolContext = {
-					vault: {
-						app: this.host.app,
-						plugin: this.host.plugin,
-					},
-					book: {
-						indexId: this.host.currentIndexId || '',
-						pdfName: this.host.currentPdfName || '',
-						markdownFiles: this.host.currentMarkdownFiles,
-						currentNodeId,
-						documentMetadata: { title: this.host.currentPdfName || '未知文档' },
-						docDescription: this.host.currentDocDescription || undefined,
-					},
-					crossBook: this.host.currentBooklistBookIds ? {
-						booklistBookIds: this.host.currentBooklistBookIds,
-						crossBookMode: true,
-					} : undefined,
-					mode: 'proactive' as const,
-				};
+			const context: ToolContext = {
+				vault: {
+					app: this.host.app,
+					plugin: this.host.plugin,
+				},
+				book: {
+					indexId: this.host.currentIndexId || '',
+					pdfName: this.host.currentPdfName || '',
+					markdownFiles: this.host.currentMarkdownFiles,
+					currentNodeId,
+					documentMetadata: { title: this.host.currentPdfName || '未知文档' },
+					docDescription: this.host.currentDocDescription || undefined,
+				},
+				crossBook: this.host.currentBooklistBookIds ? {
+					booklistBookIds: this.host.currentBooklistBookIds,
+					crossBookMode: true,
+				} : undefined,
+				mode: 'proactive' as const,
+			};
 			const self = this;
 			const callbacks = {
 				onContent: (content: string) => {
