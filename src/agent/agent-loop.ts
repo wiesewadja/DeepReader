@@ -61,6 +61,11 @@ export interface AgentLoopOptions {
    * 边生成边返回音频块，支持实时播放
    */
   onVoiceChunk?: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => void;
+  /**
+   * 流式 token 回调（可选）
+   * 用于 PI Agent 流式文本输出
+   */
+  onToken?: (text: string) => void;
 }
 
 // ============================================================================

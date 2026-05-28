@@ -38,6 +38,15 @@
       "priority": 3,
       "maxIterations": 3,
       "comment": "输出动作，中等迭代"
+    },
+    {
+      "id": "syntopical",
+      "pattern": "对比.*和|对比.*与|比较.*和|比较.*与|异同|有什么不同|有什么相同|和.*相比|与.*相比|两本书|多本书|跨书|主题阅读|syntopical",
+      "intent": "主题阅读",
+      "tools": ["search_read_books", "search_markdown_text", "get_document_outline"],
+      "priority": 2,
+      "maxIterations": 6,
+      "comment": "主题阅读/对比分析，需要跨书检索，给予更多迭代"
     }
   ],
 

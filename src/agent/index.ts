@@ -636,10 +636,14 @@ ${currentMemory}
 
     callbacks?.onProgress?.('正在通过 PI 执行 skill...');
 
+    // 设置 Extension UI bridge
+    this.piManager.setupExtensionUiBridge();
+
     const result = await this.piManager.executeSkill(
       skillContext,
       piConfig,
       callbacks?.onProgress,
+      callbacks?.onToken,
     );
 
     if (result.success) {
@@ -652,9 +656,15 @@ ${currentMemory}
         // 打开失败不影响主流程
       }
 
+      let statsInfo = '';
+      if (result.stats) {
+        const s = result.stats;
+        const totalTokens = s.tokens.total.toLocaleString();
+        statsInfo = `\n\nToken 消耗: ${totalTokens} | 费用: $${s.cost.toFixed(4)}`;
+      }
       return [{
         role: 'assistant',
-        content: `已完成，结果保存在 \`${result.outputPath}\``,
+        content: `已完成，结果保存在 \`${result.outputPath}\`${statsInfo}`,
       }];
     } else {
       return [{

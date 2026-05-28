@@ -133,6 +133,6 @@ describe('Graph Edge Routing', () => {
 
   it('should route depth=2 to inspectional (scope narrowing before analytical)', async () => {
     const { routeByDepth } = await import('../../graph/edges.js');
-    expect(routeByDepth({ depth: 2 } as any)).toBe('inspectional');
+    expect(routeByDepth({ depth: 2, pdfName: 'test.pdf' } as any)).toBe('inspectional');
   });
 });

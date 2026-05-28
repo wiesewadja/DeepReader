@@ -9,8 +9,10 @@ import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { PiRpcClient } from './pi-client.js';
 import { buildSpawnArgs, buildSpawnEnv, resolvePiPaths, detectPiCli } from './pi-config.js';
-import { PiProcessState, type PiConfig, type PiSkillContext, type PiExecutionResult } from './types.js';
+import { PiProcessState, type PiConfig, type PiSkillContext, type PiExecutionResult, type PiExtensionUiRequestEvent, type PiExtensionUiResponse } from './types.js';
 import { agentLog as log, error as logError } from '../../utils/logger.js';
+import { ConfirmModal } from '../../components/confirm-modal.js';
+import { Notice } from 'obsidian';
 import type { App } from 'obsidian';
 
 export class PiProcessManager {
@@ -19,6 +21,7 @@ export class PiProcessManager {
 	private state: PiProcessState = PiProcessState.STOPPED;
 	private config: PiConfig | null = null;
 	private busy = false;
+	private _bridgeSetup = false;
 
 	constructor(private app: App) {}
 
@@ -142,6 +145,12 @@ export class PiProcessManager {
 			stdin.once('ready', onReady);
 			stdin.once('error', onError);
 		});
+
+		// 启用瞬态错误自动重试（旧版 PI 可能不支持，不阻止启动）
+		try { await this.rpcClient.setAutoRetry(true); } catch { log('[PiManager] setAutoRetry not supported'); }
+
+		// 启用自动上下文压缩（旧版 PI 可能不支持，不阻止启动）
+		try { await this.rpcClient.setAutoCompaction(true); } catch { log('[PiManager] setAutoCompaction not supported'); }
 	}
 
 	/**
@@ -200,6 +209,7 @@ export class PiProcessManager {
 		context: PiSkillContext,
 		config: PiConfig,
 		onProgress?: (msg: string) => void,
+		onStreamDelta?: (text: string) => void,
 	): Promise<PiExecutionResult> {
 		// 并发拒绝
 		if (this.busy) {
@@ -225,6 +235,14 @@ export class PiProcessManager {
 			if (event.type === 'tool_execution_start') {
 				const e = event as import('./types.js').PiToolExecutionStartEvent;
 				onProgress?.(`PI 正在执行: ${e.toolName}`);
+			} else if (event.type === 'auto_retry_start') {
+				const e = event as import('./types.js').PiAutoRetryStartEvent;
+				onProgress?.(`遇到临时错误，自动重试 (${e.attempt}/${e.maxAttempts})...`);
+			} else if (event.type === 'auto_retry_end') {
+				const e = event as import('./types.js').PiAutoRetryEndEvent;
+				if (e.success) {
+					onProgress?.('自动重试成功，继续执行...');
+				}
 			}
 		};
 		this.rpcClient.on(progressHandler);
@@ -250,12 +268,20 @@ export class PiProcessManager {
 
 			onProgress?.('PI 已接收任务，正在处理...');
 
-			// 发送 prompt 并等待完成（60 秒超时）
-			await this.rpcClient.sendPrompt(prompt, 60_000);
+			// 流式执行，逐步 yield 事件
+			for await (const event of this.rpcClient.sendPromptStream(prompt, 60_000)) {
+				if (event.type === 'message_update') {
+					const delta = (event as import('./types.js').PiMessageUpdateEvent).assistantMessageEvent;
+					if (delta?.type === 'text_delta' && delta.delta) {
+						onStreamDelta?.(delta.delta);
+					}
+				}
+			}
 
 			return {
 				outputPath: context.outputPath,
 				success: true,
+				stats: await this.tryGetSessionStats(),
 			};
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
@@ -278,6 +304,61 @@ export class PiProcessManager {
 			if (this.state === PiProcessState.BUSY) {
 				this.state = PiProcessState.READY;
 			}
+		}
+	}
+
+	/**
+	 * 设置 Extension UI bridge：PI 请求 → Obsidian Modal/Notice
+	 */
+	setupExtensionUiBridge(): void {
+		if (this._bridgeSetup) return;
+		this._bridgeSetup = true;
+		this.rpcClient.onExtensionUiRequest(async (req: PiExtensionUiRequestEvent): Promise<PiExtensionUiResponse> => {
+			switch (req.method) {
+				case 'confirm': {
+					return new Promise((resolve) => {
+						const modal = new ConfirmModal(
+							this.app,
+							req.title ?? '确认',
+							req.message ?? '',
+							() => resolve({ type: 'extension_ui_response', id: req.id, confirmed: true }),
+							{ onCancel: () => resolve({ type: 'extension_ui_response', id: req.id, cancelled: true }) },
+						);
+						modal.open();
+					});
+				}
+				case 'select': {
+					// select 需要列表选择 Modal，暂回退为取消
+					return { type: 'extension_ui_response', id: req.id, cancelled: true };
+				}
+				default:
+					return { type: 'extension_ui_response', id: req.id, cancelled: true };
+			}
+		});
+	}
+
+	/**
+	 * 中途引导 PI 执行方向
+	 */
+	async steer(message: string): Promise<void> {
+		await this.rpcClient.steer(message);
+	}
+
+	/**
+	 * 追加额外指令
+	 */
+	async followUp(message: string): Promise<void> {
+		await this.rpcClient.followUp(message);
+	}
+
+	/**
+	 * 尝试获取 session 统计（失败不影响主流程）
+	 */
+	private async tryGetSessionStats(): Promise<import('./types.js').SessionStatsResult | undefined> {
+		try {
+			return await this.rpcClient.getSessionStats();
+		} catch {
+			return undefined;
 		}
 	}
 

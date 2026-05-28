@@ -78,7 +78,7 @@ describe('proactive edge routing', () => {
     });
 
     it('still routes depth>=1 to inspectional', () => {
-      const state = { depth: 2 } as any;
+      const state = { depth: 2, pdfName: 'test.pdf' } as any;
       expect(routeByDepth(state)).toBe(NODE_NAMES.INSPECTIONAL);
     });
   });

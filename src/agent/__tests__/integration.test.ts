@@ -114,7 +114,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 			// 2. 构建系统提示
 			const skillsSummary = '<skill name="test">测试技能</skill>';
-			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata);
 
 			// 3. 构建消息列表
 			const messages = ContextBuilder.buildMessagesWithMetadata(
@@ -143,7 +143,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const metadata: DocumentMetadata = { title: '如何阅读一本书', author: '艾德勒', page_count: 400 };
 			const docDescription = '这是一本关于阅读方法的经典著作，系统介绍了检视阅读、分析阅读和主题阅读三个层次。';
 
-			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata, docDescription);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata, docDescription);
 
 			// 验证系统提示包含全书摘要
 			expect(systemPrompt).toContain('全书摘要');
@@ -156,7 +156,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const skillsSummary = '<skill name="test">测试技能</skill>';
 			const metadata: DocumentMetadata = { title: '测试书籍' };
 
-			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata, undefined);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata);
 
 			// 不应包含全书摘要区块
 			expect(systemPrompt).not.toContain('## 全书摘要');
@@ -175,7 +175,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 
 			// 2. 构建系统提示（带 docDescription）
 			const skillsSummary = '<skill name="get_document_outline">获取目录</skill>';
-			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata, docDescription);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata, docDescription);
 
 			// 验证系统提示结构
 			expect(systemPrompt).toContain('奚童'); // Identity 层
@@ -233,7 +233,7 @@ describe('IntentRouter + ContextBuilder 集成测试', () => {
 			const metadata: DocumentMetadata = { title: '测试书籍' };
 			const docDescription = '这是测试书籍的摘要。';
 
-			const systemPrompt = await contextBuilder.buildSystemPrompt(skillsSummary, metadata, docDescription);
+			const systemPrompt = await contextBuilder.buildSystemPrompt(metadata, docDescription);
 
 			// 验证层级
 			// Layer 1: Identity（人设层）
