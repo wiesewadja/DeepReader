@@ -15,44 +15,42 @@ import {
 } from '../../pageindex/reading-progress.js';
 import type { ReadingProgress } from '../../pageindex/reading-progress.js';
 import { uiLog as log, error as logError } from '../../utils/logger.js';
+import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
 
 export interface ReadingProgressTrackerHost {
 	get app(): import('obsidian').App;
-	get plugin(): any;
+	get plugin(): DeepReaderPlugin;
 	get readingTopbar(): import('../../components/reading-topbar/index.js').ReadingTopbar | null;
 	get proactiveEngine(): import('../../agent/proactive/engine.js').ProactiveEngine | null;
 	get agentChatHistory(): import('../../agent/types.js').ChatMessage[];
 	get indexes(): import('../../types/index.js').IndexListItem[];
 	getCurrentIndexId(): string | null;
 	getCurrentPdfName(): string | null;
-	getCurrentChapterId(): string | null;
-	setCurrentChapterId(id: string | null): void;
-	setReadingProgress(progress: ReadingProgress | null): void;
-	getReadingProgress(): ReadingProgress | null;
 }
 
 export class ReadingProgressTracker {
 	private host: ReadingProgressTrackerHost;
 	private progressDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private readonly PROGRESS_DEBOUNCE_MS = 3000;
+	private _readingProgress: ReadingProgress | null = null;
+	private _currentChapterId: string | null = null;
 
 	constructor(host: ReadingProgressTrackerHost) {
 		this.host = host;
 	}
 
-	getProgress(): ReadingProgress | null {
-		return this.host.getReadingProgress();
-	}
+	get readingProgress(): ReadingProgress | null { return this._readingProgress; }
+	get currentChapterId(): string | null { return this._currentChapterId; }
 
 	async initReadingProgress(indexId: string): Promise<void> {
-		const progress = this.host.getReadingProgress();
+		const progress = this._readingProgress;
 		if (progress?.bookId === indexId) return;
 
 		try {
 			const vaultPath = (this.host.app.vault.adapter as any).basePath;
 			const loaded = await loadProgress(vaultPath, indexId);
-			this.host.setReadingProgress(loaded || createEmptyProgress(indexId));
-			const rp = this.host.getReadingProgress()!;
+			this._readingProgress = loaded || createEmptyProgress(indexId);
+			const rp = this._readingProgress!;
 			log(`[DeepPDF] 阅读进度已初始化: ${indexId}, 已访问 ${Object.keys(rp.chapters).filter(k => rp.chapters[k].visited).length} 章`);
 
 			this.updateProgressUI();
@@ -63,24 +61,24 @@ export class ReadingProgressTracker {
 			await this.host.proactiveEngine?.onBookOpen(indexId, hasHistory, progressPercent);
 		} catch (e) {
 			logError('[DeepPDF] 初始化阅读进度失败:', e);
-			this.host.setReadingProgress(createEmptyProgress(indexId));
+			this._readingProgress = createEmptyProgress(indexId);
 		}
 	}
 
 	async trackReadingProgress(): Promise<void> {
-		const rp = this.host.getReadingProgress();
+		const rp = this._readingProgress;
 		const pdfName = this.host.getCurrentPdfName();
 		if (!rp || !pdfName) return;
 
 		const bookPath = `DeepReader/${pdfName}/`;
 
 		// Proactive: 检测离开整本书
-		const currentChapterId = this.host.getCurrentChapterId();
+		const currentChapterId = this._currentChapterId;
 		if (currentChapterId && rp) {
 			const activeFile = this.host.app.workspace.getActiveFile();
 			if (!activeFile || !activeFile.path.startsWith(bookPath)) {
 				this.host.proactiveEngine?.onChapterLeave(rp.bookId, currentChapterId);
-				this.host.setCurrentChapterId(null);
+				this._currentChapterId = null;
 			}
 		}
 
@@ -105,8 +103,8 @@ export class ReadingProgressTracker {
 		if (!chapterId) return;
 
 		// Proactive: 章节内切换
-		const prevChapterId = this.host.getCurrentChapterId();
-		this.host.setCurrentChapterId(chapterId);
+		const prevChapterId = this._currentChapterId;
+		this._currentChapterId = chapterId;
 		if (prevChapterId && prevChapterId !== chapterId) {
 			this.host.proactiveEngine?.onChapterLeave(rp.bookId, prevChapterId);
 		}
@@ -115,7 +113,7 @@ export class ReadingProgressTracker {
 		const wasVisited = rp.chapters[chapterId]?.visited;
 		let updated = markChapterVisited(rp, chapterId);
 		updated = updateLastRead(updated, chapterId);
-		this.host.setReadingProgress(updated);
+		this._readingProgress = updated;
 
 		if (!wasVisited) {
 			log(`[DeepPDF] 章节已标记为已读: ${chapterId} (${activeFile.basename})`);
@@ -126,7 +124,7 @@ export class ReadingProgressTracker {
 	}
 
 	updateProgressUI(): void {
-		const rp = this.host.getReadingProgress();
+		const rp = this._readingProgress;
 		if (!rp || !this.host.getCurrentPdfName()) return;
 
 		const totalChapters = this.getTotalChapters();
@@ -161,7 +159,7 @@ export class ReadingProgressTracker {
 		if (!pdfName) return;
 
 		const bookPath = `DeepReader/${pdfName}/`;
-		const rp = this.host.getReadingProgress();
+		const rp = this._readingProgress;
 		const indexId = this.host.getCurrentIndexId();
 
 		const activeFile = this.host.app.workspace.getActiveFile();
@@ -255,7 +253,7 @@ export class ReadingProgressTracker {
 			this.progressDebounceTimer = null;
 		}
 
-		const rp = this.host.getReadingProgress();
+		const rp = this._readingProgress;
 		if (!rp) return;
 
 		try {
@@ -268,7 +266,7 @@ export class ReadingProgressTracker {
 	}
 
 	private async syncProgressToMoc(): Promise<void> {
-		const rp = this.host.getReadingProgress();
+		const rp = this._readingProgress;
 		const indexId = this.host.getCurrentIndexId();
 		if (!rp || !indexId) return;
 

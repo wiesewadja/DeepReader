@@ -1,5 +1,6 @@
 import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
 import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
+import type { DeepReaderPlugin } from "./agent/tools/context/vault.js";
 import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
 import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
@@ -112,7 +113,7 @@ export default class DeepPDFPlugin extends Plugin {
         // 注册侧边栏视图（必须在 activateView 之前）
         this.registerView(
             SIDEBAR_VIEW_TYPE,
-            (leaf) => new SidebarView(leaf, this)
+            (leaf) => new SidebarView(leaf, this as unknown as DeepReaderPlugin)
         );
 
         // 注册书库视图

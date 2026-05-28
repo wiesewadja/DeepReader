@@ -57,12 +57,12 @@ export interface DeepPDFSettings {
 	ifAddNodeSummary: boolean;
 
 	// 状态存储
-	lastSelectedIndexId: string;
+	lastSelectedIndexId: string | undefined;
 	forceMode: string;
 	lastCrossBookMode: boolean;
 	lastCrossBookSessionId: string;
 		booklistHistory: Booklist[];
-		lastActiveBooklistId: string;
+		lastActiveBooklistId: string | undefined;
 	chatCache?: Record<string, unknown>;
 	enableDebugLog: boolean;
 	lastDeepSearchMode: boolean;
@@ -110,6 +110,8 @@ export interface DeepPDFSettings {
 		piEnabled: boolean;
 		piLastVersion?: string;
 
+		// 会话持久化
+		savedSessions?: Record<string, string>;
 
 }
 
@@ -146,12 +148,12 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	ifAddNodeSummary: true,
 
 	// 状态存储
-	lastSelectedIndexId: "",
+	lastSelectedIndexId: undefined,
 	forceMode: "auto",
 	lastCrossBookMode: false,
 	lastCrossBookSessionId: "",
 		booklistHistory: [],
-		lastActiveBooklistId: "",
+		lastActiveBooklistId: undefined,
 	enableDebugLog: false,
 	lastDeepSearchMode: false,
 

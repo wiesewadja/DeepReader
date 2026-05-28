@@ -23,10 +23,11 @@ import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.
 import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MascotExpression } from '../../components/reading-topbar/mascot-face.js';
+import type { DeepReaderPlugin } from '../../agent/tools/context/vault.js';
 
 export interface AgentChatControllerHost {
 	get app(): import('obsidian').App;
-	get plugin(): any;
+	get plugin(): DeepReaderPlugin;
 	get messageList(): import('../../components/message-list/message-list.js').MessageList | null;
 	get chatInput(): import('../../components/chat-input/chat-input.js').ChatInput | null;
 	get frontendAgent(): import('../../agent/index.js').FrontendAgent | null;
@@ -40,8 +41,6 @@ export interface AgentChatControllerHost {
 	get useLLMTreeSearch(): boolean;
 	get sessionId(): string | null;
 	get sessionStore(): import('../../agent/session/index.js').SessionStore | null;
-	get agentChatHistory(): ChatMessage[];
-	setAgentChatHistory(history: ChatMessage[]): void;
 	get crossBookMode(): boolean;
 	get currentBooklistBookIds(): string[] | null;
 	get indexes(): import('../../types/index.js').IndexListItem[];
@@ -49,12 +48,11 @@ export interface AgentChatControllerHost {
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
 	get isProcessing(): boolean;
 	get isAiStreaming(): boolean;
-	setIsProcessing(v: boolean): void;
-	setIsAiStreaming(v: boolean): void;
 
 	get readingTopbar(): import("../../components/reading-topbar/index.js").ReadingTopbar | null;
 
 	saveToCache(): Promise<void>;
+	maybeConsolidateMemory(): Promise<void>;
 	clearQuotes(): void;
 	getDisplayName(name: string): string;
 	initializeFrontendAgent(): Promise<void>;
@@ -71,6 +69,8 @@ export class AgentChatController {
 	private proactiveAbortController: AbortController | null = null;
 	private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
 	private detachedMascotEl: HTMLElement | null = null;
+	private _agentChatHistory: ChatMessage[] = [];
+	private _currentMarkdownFiles: Record<string, string> = {};
 
 	/**
 	 * 压缩超长引用文档内容（通过 LLM 摘要）
@@ -119,8 +119,6 @@ export class AgentChatController {
 	private resetProcessingState(): void {
 		this.isProcessing = false;
 		this.isAiStreaming = false;
-		this.host.setIsProcessing(false);
-		this.host.setIsAiStreaming(false);
 		this.host.chatInput?.setStreaming(false);
 		this.host.chatInput?.setDisabled(false);
 		this.reattachMascot();
@@ -136,6 +134,10 @@ export class AgentChatController {
 	get processing(): boolean { return this.isProcessing; }
 	get aiStreaming(): boolean { return this.isAiStreaming; }
 	get currentStreamController(): AbortController | null { return this.streamController; }
+	get agentChatHistory(): ChatMessage[] { return this._agentChatHistory; }
+	set agentChatHistory(history: ChatMessage[]) { this._agentChatHistory = history; }
+	get currentMarkdownFiles(): Record<string, string> { return this._currentMarkdownFiles; }
+	set currentMarkdownFiles(files: Record<string, string>) { this._currentMarkdownFiles = files; }
 
 	getStreamingVoicePlayers(): Map<string, StreamingVoicePlayer> {
 		return this.streamingVoicePlayers;
@@ -203,8 +205,6 @@ export class AgentChatController {
 
 		this.isProcessing = true;
 		this.isAiStreaming = true;
-		this.host.setIsProcessing(true);
-		this.host.setIsAiStreaming(true);
 		this.host.chatInput?.setDisabled(true);
 		this.host.chatInput?.setStreaming(true);
 		this.host.readingTopbar?.setMascotExpression("curious");
@@ -221,12 +221,12 @@ export class AgentChatController {
 					agentToolCalls: [],
 				});
 
-				const history = this.host.agentChatHistory;
+				const history = this._agentChatHistory;
 				const lastUserIndex = history.findLastIndex(m => m.role === 'user');
 				if (lastUserIndex >= 0) {
 					const beforeRegenerate = history.length;
-					this.host.setAgentChatHistory(history.slice(0, lastUserIndex + 1));
-					log(`[DeepPDF] 重试模式：清理了 ${beforeRegenerate - this.host.agentChatHistory.length} 条旧消息`);
+					this._agentChatHistory = history.slice(0, lastUserIndex + 1);
+					log(`[DeepPDF] 重试模式：清理了 ${beforeRegenerate - this._agentChatHistory.length} 条旧消息`);
 				}
 			} else {
 				const timestamp = Date.now();
@@ -342,7 +342,7 @@ export class AgentChatController {
 				book: {
 					indexId: indexId,
 						pdfName: this.host.currentPdfName || '',
-					markdownFiles: this.host.currentMarkdownFiles,
+					markdownFiles: this._currentMarkdownFiles,
 					currentNodeId,
 					documentMetadata: {
 						title: this.host.currentPdfName || '',
@@ -414,7 +414,7 @@ export class AgentChatController {
 				}
 			}
 
-			const isNewConversation = this.host.agentChatHistory.length <= 1;
+			const isNewConversation = this._agentChatHistory.length <= 1;
 
 			let agentState: 'thinking' | 'answering' = 'thinking';
 			let hadToolCalls = false;
@@ -577,13 +577,11 @@ export class AgentChatController {
 
 					self.host.saveToCache();
 					self.host.saveToCache().then(() => {
-						self.maybeConsolidateMemory();
+						self.host.maybeConsolidateMemory();
 					});
 
 					self.isProcessing = false;
 					self.isAiStreaming = false;
-					self.host.setIsProcessing(false);
-					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
 
@@ -618,8 +616,6 @@ export class AgentChatController {
 
 					self.isProcessing = false;
 					self.isAiStreaming = false;
-					self.host.setIsProcessing(false);
-					self.host.setIsAiStreaming(false);
 					self.host.chatInput?.setStreaming(false);
 					self.host.chatInput?.setDisabled(false);
 
@@ -669,7 +665,7 @@ export class AgentChatController {
 					if (msg && msg instanceof AIMessage) {
 						msg.updateVoiceData(data);
 					}
-					const lastAiMsg = self.host.agentChatHistory[self.host.agentChatHistory.length - 1];
+					const lastAiMsg = self._agentChatHistory[self._agentChatHistory.length - 1];
 					if (lastAiMsg && lastAiMsg.role === 'assistant') {
 						(lastAiMsg as any).voiceAudio = data.audioBuffer;
 						(lastAiMsg as any).voiceDuration = data.duration;
@@ -720,7 +716,7 @@ export class AgentChatController {
 				userMessage,
 				context,
 				callbacks,
-				this.host.agentChatHistory,
+				this._agentChatHistory,
 			);
 
 			if (result.interrupted) {
@@ -729,7 +725,7 @@ export class AgentChatController {
 			}
 
 			if (result.messages.length > 0) {
-				this.host.setAgentChatHistory([...this.host.agentChatHistory, { role: 'user', content: userMessage }, ...result.messages]);
+				this._agentChatHistory = [...this._agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
 			}
 			await this.host.saveToCache();
 
@@ -754,7 +750,6 @@ export class AgentChatController {
 		if (this.isProcessing || this.isAiStreaming) return;
 		this.host.proactiveEngine?.setProcessing(true);
 		this.isProcessing = true;
-		this.host.setIsProcessing(true);
 		this.host.readingTopbar?.setMascotExpression('thinking');
 		const aiMessageId = `proactive-${Date.now()}`;
 		this.proactiveAbortController = new AbortController();
@@ -791,7 +786,7 @@ export class AgentChatController {
 				book: {
 					indexId: this.host.currentIndexId || '',
 					pdfName: this.host.currentPdfName || '',
-					markdownFiles: this.host.currentMarkdownFiles,
+					markdownFiles: this._currentMarkdownFiles,
 					currentNodeId,
 					documentMetadata: { title: this.host.currentPdfName || '未知文档' },
 					docDescription: this.host.currentDocDescription || undefined,
@@ -836,7 +831,7 @@ export class AgentChatController {
 				syntheticMessage,
 				context,
 				callbacks,
-				this.host.agentChatHistory,
+				this._agentChatHistory,
 			);
 
 			if (this.proactiveAbortController?.signal.aborted) {
@@ -848,11 +843,11 @@ export class AgentChatController {
 			}
 
 			const assistantContent = result.messages[0]?.content || '';
-			this.host.setAgentChatHistory([
-				...this.host.agentChatHistory,
+			this._agentChatHistory = [
+				...this._agentChatHistory,
 				{ role: 'user', content: syntheticMessage },
 				{ role: 'assistant', content: assistantContent },
-			]);
+			];
 			this.host.messageList?.updateMessage(aiMessageId, {
 				isStreaming: false,
 				content: assistantContent,
@@ -867,7 +862,6 @@ export class AgentChatController {
 		} finally {
 			this.host.proactiveEngine?.setProcessing(false);
 			this.isProcessing = false;
-			this.host.setIsProcessing(false);
 			this.proactiveAbortController = null;
 		}
 	}
@@ -920,15 +914,13 @@ export class AgentChatController {
 			}
 			if (result.messages.length > 0) {
 				const lastAiMsg = result.messages[result.messages.length - 1];
-				const history = [...this.host.agentChatHistory, lastAiMsg];
-				this.host.setAgentChatHistory(history);
+				const history = [...this._agentChatHistory, lastAiMsg];
+				this._agentChatHistory = history;
 			}
 			await this.host.saveToCache();
 
 			this.isProcessing = false;
 			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
 			this.reattachMascot();
@@ -937,8 +929,6 @@ export class AgentChatController {
 			logError('[DeepPDF] HITL 恢复错误:', error);
 			this.isProcessing = false;
 			this.isAiStreaming = false;
-			this.host.setIsProcessing(false);
-			this.host.setIsAiStreaming(false);
 			this.host.chatInput?.setStreaming(false);
 			this.host.chatInput?.setDisabled(false);
 			this.reattachMascot();
@@ -1056,10 +1046,10 @@ export class AgentChatController {
 			if (this.host.frontendAgent && sessionStore) {
 				const llmHistory = await sessionStore.getLLMHistory(sessionId);
 				const systemPrompt = await this.host.frontendAgent.getSystemPromptAsync();
-				this.host.setAgentChatHistory([
+				this._agentChatHistory = [
 					{ role: 'system', content: systemPrompt },
 					...llmHistory
-				]);
+				];
 			}
 
 			this.host.messageList?.removeMessages(uiIdsToDelete);
@@ -1131,10 +1121,6 @@ export class AgentChatController {
 		return prev?.role === 'user' ? prev.content : undefined;
 	}
 
-	private async maybeConsolidateMemory(): Promise<void> {
-		// Delegate to SessionManager via host's saveToCache trigger
-		// This is called after saveToCache completes
-	}
 
 	destroy(): void {
 		this.cancelActiveStream();
