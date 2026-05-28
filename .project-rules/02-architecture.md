@@ -6,13 +6,24 @@
 src/
 ├── main.ts                      # 插件入口（DeepPDFPlugin），注册命令、视图、事件
 ├── views/
-│   └── sidebar-view.ts          # 主侧边栏视图（对话界面、书籍选择）
+│   ├── sidebar-view.ts          # 主侧边栏视图（对话界面、书籍选择）
+│   ├── library-view.ts          # 书库视图（PDF/EPUB 管理 + Z-Library 下载）
+│   └── zlibrary-search-modal.ts # Z-Library 搜索弹窗
 ├── components/                  # UI 组件（纯 TypeScript + DOM，无 React/Vue）
 │   ├── chat-input/              # 聊天输入框
 │   ├── message/                 # AI/用户消息气泡
 │   ├── message-list/            # 消息列表 + 问题导航 minimap
 │   ├── reading-mode/            # 分页阅读模式（章节导航、高亮、摘录）
-│   └── question-minimap/        # 问题快速导航
+│   ├── question-minimap/        # 问题快速导航
+│   ├── reading-topbar/          # 阅读顶栏（封面、书名、作者）
+│   ├── agent-mode-toggle/       # Agent 模式切换
+│   ├── chat-settings-modal/     # 聊天设置弹窗
+│   ├── context-tags/            # 上下文标签
+│   ├── file-suggest/            # 文件建议
+│   ├── excerpt/                 # 摘录组件（摘录弹窗、选择菜单）
+│   ├── confirm-modal/           # 通用确认弹窗
+│   ├── top-nav/                 # 顶部导航
+│   └── ...                      # 其他 UI 组件
 ├── agent/                       # FrontendAgent AI 系统
 │   ├── index.ts                 # 主入口（FrontendAgent 类）
 │   ├── graph/                   # LangGraph 认知引擎
@@ -45,10 +56,6 @@ src/
 │   ├── exporters/               # Obsidian Markdown 导出
 │   ├── vault/                   # 向量存储、索引引擎、编译器、搜索引擎
 │   └── llm/client.ts            # PageIndex 专用 LLM 客户端
-├── services/                    # 业务服务
-│   ├── reading-mode-service.ts  # 阅读模式生命周期管理
-│   ├── excerpt-service.ts       # 摘录/高亮保存服务
-│   └── excalidraw-service.ts    # Excalidraw 插件集成
 ├── weread/                      # 微信读书集成
 │   ├── index.ts                 # WereadService 服务入口
 │   ├── api/client.ts           # 微信读书 API 客户端
@@ -66,8 +73,27 @@ src/
 │   │   └── frontmatter.ts      # Frontmatter 生成
 │   └── utils/                  # 工具函数
 ├── config/                      # 配置类型、迁移、模型提供商定义
-│   └── settings.ts              # DeepPDFSettings
+│   ├── settings.ts              # DeepPDFSettings
+│   └── features.ts              # 功能开关（ZLIBRARY_ENABLED 等）
 ├── settings/                    # 插件设置面板 UI
+│   └── sections/                # 设置 Tab 页面
+│       └── weread-section.ts    # 微信读书/高级设置 Tab
+├── services/                    # 业务服务
+│   ├── reading-mode-service.ts  # 阅读模式生命周期管理
+│   ├── excerpt-service.ts       # 摘录/高亮保存服务
+│   ├── excalidraw-service.ts    # Excalidraw 插件集成
+│   └── mineru-api.ts           # MinerU PDF 解析 API 客户端
+├── ui/                         # 通用 UI 组件
+├── assets/                     # 静态资源（图标等）
+├── e2e/                        # E2E 测试配置
+├── zlibrary/                    # Z-Library 集成（默认关闭）
+│   ├── client.ts               # Z-Library API 客户端
+│   ├── build-client.ts         # 构建查询请求
+│   ├── types.ts                # 类型定义
+│   ├── errors.ts               # 错误类型
+│   ├── constants.ts            # 常量
+│   ├── cookie-jar.ts           # Cookie 管理
+│   └── DISCLAIMER.ts           # 法律免责声明
 ├── api/                         # HTTP 客户端（fetch 封装、请求管理）
 ├── types/                       # 全局类型定义
 ├── utils/                       # 工具函数（日志、错误处理、图标、时间）
@@ -170,3 +196,49 @@ Query → Embedding → Vector 搜索 → BM25 搜索 → 混合排序 → 结�
 - **同步状态**: `.pageindex/weread/sync-state.json`
 - **书籍映射**: `.pageindex/weread/mapping.json`
 - **配置**: 存储在插件 settings 中的 `wereadApiKey`
+
+## Z-Library 集成
+
+### 双开关设计
+
+Z-Library 功能采用编译时 + 运行时双重开关：
+
+| 开关 | 位置 | 默认值 | 作用 |
+|------|------|--------|------|
+| `ZLIBRARY_ENABLED` | `src/config/features.ts` | `true` | 编译时控制是否将 Z-Library 代码编译进插件 |
+| `enableZlibrary` | `src/config/settings.ts` | `false` | 运行时控制用户是否可使用 Z-Library |
+
+### 法律声明
+
+用户首次启用 Z-Library 功能前需阅读并同意法律警告（`src/zlibrary/DISCLAIMER.ts`）。
+
+### 集成点
+
+- `src/views/library-view.ts` — `proceedZlibDownload()` 双重检查
+- `src/views/zlibrary-search-modal.ts` — Z-Library 搜索 UI
+- `src/config/settings.ts` — `enableZlibrary` 设置项
+- `src/settings/sections/weread-section.ts` — 启用开关 + 免责声明弹窗
+
+## 第三方服务抽象
+
+### MinerU PDF 解析
+
+`src/services/mineru-api.ts` 的 `MineruClient` 支持自定义 API 端点：
+
+```typescript
+const client = new MineruClient(token, {
+  agentBaseUrl: 'https://custom-agent-api.com',
+  precisionBaseUrl: 'https://custom-precision-api.com'
+});
+```
+
+### OCR
+
+`src/pageindex/parsers/ocr.ts` 的 `ocrImage()` 支持自定义 OCR API 端点：
+
+```typescript
+const text = await ocrImage(imagePath, {
+  apiKey: 'your-api-key',
+  baseUrl: 'https://custom-ocr-api.com/api/paas/v4'
+});
+```
