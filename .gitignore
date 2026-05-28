@@ -6,16 +6,6 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
-# 忽略后端生成的 docs，但保留项目根的 docs 目录
-backend/*/docs
-frontend/*/docs
-
-# Backend runtime data
-backend/logs/
-backend/deeppdf-api/data/
-backend/deeppdf-api/logs/
 logs/
 
 # Node modules
@@ -31,9 +21,6 @@ bin/
 main.js
 styles.css
 
-# Vitest test results and coverage
-frontend/node_modules/.vite/
-frontend/coverage/
 
 # Agent skills (local)
 .agents/
