@@ -130,13 +130,25 @@ function stripFabricatedLinks(content: string, inputTexts: string[]): string {
     while ((fn = fnRegex.exec(text)) !== null) {
       validFileNames.add(fn[1]);
     }
+    // 3. 从 tocSummary 的章节标题提取（格式：'标题'(nodeId)）
+    const tocRegex = /'([^']+)'\(\d+\)/g;
+    let toc: RegExpExecArray | null;
+    while ((toc = tocRegex.exec(text)) !== null) {
+      validFileNames.add(toc[1]);
+    }
   }
 
   if (validFileNames.size === 0) {
-    // 输入中无链接，移除输出中所有链接（保留别名）
-    return content.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, (_m: string, inner: string, aliasPart: string) => {
-      const alias = aliasPart ? aliasPart.slice(1) : inner.split('/').pop() || inner;
-      return alias;
+    // 输入中无链接，保留标题引用 [[书名/章节|alias]]，只移除带 #^block_id 的链接
+    return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
+      if (inner.includes('#^')) {
+        // block_id 链接无法验证，降级为标题链接 [[书名/章节|alias]]
+        const pathPart = inner.split('#')[0].split('|')[0];
+        const aliasMatch = inner.match(/\|([^|]+)$/);
+        const alias = aliasMatch ? aliasMatch[1] : pathPart.split('/').pop() || pathPart;
+        return `[[${pathPart}|${alias}]]`;
+      }
+      return fullMatch;
     });
   }
 
@@ -347,6 +359,7 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
     analysisResult || '',
     structuralAnalysis || '',
     coveredScope,
+    tocSummary || '',
   ];
   callbacks?.onProgress?.('正在整理笔记...');
   // Booklist mode: avoid single-book link fixup; pdfName is meaningless for multi-book analysis

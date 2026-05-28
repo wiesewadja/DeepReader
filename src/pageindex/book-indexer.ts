@@ -717,6 +717,9 @@ async function vectorizeAllLevels(
   // L2: chunk paragraphs from .md files
   const exportName = treeData.exportName || treeData.title;
   let totalChunks = 0;
+  let l2ReadErrors = 0;
+
+  piLog(`[vectorize] L2 path base: ${path.join(vaultRootPath, "DeepReader", exportName)}`);
 
   for (const node of parseResult.structure || []) {
     const chapters = collectChaptersFlat(node);
@@ -741,11 +744,14 @@ async function vectorizeAllLevels(
           });
           totalChunks++;
         }
-      } catch {
-        piLog(`[vectorize] L2: failed to read ${mdPath}`);
+      } catch (err) {
+        l2ReadErrors++;
+        piLog(`[vectorize] L2: failed to read ${mdPath}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
+
+  piLog(`[vectorize] L2 scan: ${totalChunks} chunks from ${nodeFileMap ? Object.keys(nodeFileMap).length : 0} files, ${l2ReadErrors} read errors`);
 
   onProgress?.(`向量化段落 0/${totalChunks}`);
 
