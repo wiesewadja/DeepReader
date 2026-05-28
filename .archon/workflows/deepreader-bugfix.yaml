@@ -1,0 +1,68 @@
+name: deepreader-bugfix
+description: |
+  快速 Bug 修复工作流：测试优先 + 分流处理。
+  逻辑 bug：写失败测试 → 自动修复循环 → 验证通过。
+  UI bug：生成手动步骤 + E2E 辅助 → test-vault 验证。
+  Triggers: "修复 bug", "fix bug", "bugfix", "修一个问题"
+
+  用法：archon workflow run deepreader-bugfix "Bug 描述"
+interactive: true
+provider: claude
+model: sonnet
+worktree:
+  enabled: false
+
+nodes:
+  # ── Phase 1: 复现 + 分流 ──────────────────────────────
+  - id: reproduce
+    command: dr-reproduce-bug
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        bug_type: { type: string, enum: [logic, ui] }
+        root_cause: { type: string }
+        affected_files: { type: array, items: { type: string } }
+        test_file: { type: string }
+        manual_test_steps: { type: string }
+        e2e_test: { type: string }
+      required: [bug_type]
+
+  - id: approve-reproduce
+    approval:
+      message: "请确认 bug 类型和复现方案（逻辑 bug 走自动修复，UI bug 走手动/E2E 验证）"
+      capture_response: true
+    depends_on: [reproduce]
+
+  # ── Phase 2a: 逻辑 bug 自动修复循环 ──────────────────
+  - id: fix-loop
+    loop:
+      prompt: |
+        调用 agent-skills:incremental-implementation 技能，实现最小修复。
+
+        上下文：读取 $ARTIFACTS_DIR/reproduce.md
+        目标：使 `npm run build && npm run test:run` 通过
+        原则：只改必要代码，不重构、不优化相邻代码
+      until: COMPLETE
+      max_iterations: 10
+      fresh_context: true
+      until_bash: "npm run build && npm run test:run"
+      idle_timeout: 600000
+    depends_on: [approve-reproduce]
+    when: "$reproduce.output.bug_type == 'logic'"
+
+  - id: verify
+    bash: "npm run build && npm run test:run"
+    depends_on: [fix-loop]
+    when: "$reproduce.output.bug_type == 'logic'"
+
+  # ── Phase 2b: UI bug 验证 ────────────────────────────
+  - id: verify-ui
+    command: dr-verify-ui-bug
+    depends_on: [approve-reproduce]
+    when: "$reproduce.output.bug_type == 'ui'"
+
+  # ── Phase 3: 部署 ─────────────────────────────────────
+  - id: deploy
+    bash: "npm run deploy"
+    depends_on: [verify, verify-ui]
