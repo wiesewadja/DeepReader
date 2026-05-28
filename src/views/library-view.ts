@@ -15,11 +15,12 @@ import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
 import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
+import type { ZLibraryBook } from '../zlibrary/types.js';
 import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
 import { ZLibraryClient } from '../zlibrary/client.js';
 import { buildZlibClient } from '../zlibrary/build-client.js';
-import type { ZLibraryBook } from '../zlibrary/types.js';
 import { DEFAULT_DOMAINS } from '../zlibrary/constants.js';
+import { ZLIBRARY_ENABLED } from '../config/features.js';
 import { SyncStateManager } from '../weread/sync/state.js';
 import type { MappingStats } from '../weread/types.js';
 import { downloadWereadCover } from '../weread/utils/cover.js';
@@ -1155,7 +1156,17 @@ export class LibraryView extends ItemView {
     }
 
     private proceedZlibDownload(index: IndexListItem): void {
+        // 检查 Z-Library 功能开关
+        if (!ZLIBRARY_ENABLED) {
+            new Notice('Z-Library 功能已关闭，请前往设置启用', 3000);
+            return;
+        }
+
         const settings = this.options.plugin?.settings;
+        if (!settings?.enableZlibrary) {
+            new Notice('请先在设置中启用 Z-Library 功能', 3000);
+            return;
+        }
         if (!settings?.zlibraryUserId || !settings?.zlibraryUserKey) {
             new Notice('请先在设置中登录 Z-Library 账号', 3000);
             return;

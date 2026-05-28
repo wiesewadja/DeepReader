@@ -95,8 +95,11 @@ let piCliCache: { result: { available: boolean; version?: string; path?: string;
 /** semver 格式正则（如 0.75.5） */
 const SEMVER_RE = /^\d+\.\d+\.\d+/;
 
+/** 当前平台 */
+const platform = process.platform;
+
 /**
- * 候选 PI 可执行文件路径
+ * 候选 PI 可执行文件路径（跨平台）
  *
  * macOS GUI 应用（Obsidian）的 PATH 通常不含 Homebrew/npm 全局目录，
  * 所以需要手动尝试常见安装位置。
@@ -110,13 +113,45 @@ function getCandidatePaths(customPath?: string): string[] {
 		candidates.push(customPath);
 	}
 
-	candidates.push(
-		'/opt/homebrew/bin/pi',           // Apple Silicon Homebrew
-		'/usr/local/bin/pi',              // Intel Homebrew
-		join(home, '.npm-global/bin/pi'), // 用户自定义 npm prefix
-		join(home, '.local/bin/pi'),      // 手动安装
-		'pi',                             // 最后尝试 PATH（兜底）
-	);
+	// macOS
+	if (platform === 'darwin') {
+		candidates.push(
+			'/opt/homebrew/bin/pi',           // Apple Silicon Homebrew
+			'/usr/local/bin/pi',              // Intel Homebrew
+			join(home, '.npm-global/bin/pi'), // 用户自定义 npm prefix
+			join(home, '.local/bin/pi'),      // 手动安装
+		);
+	}
+
+	// Linux
+	if (platform === 'linux') {
+		candidates.push(
+			'/usr/local/bin/pi',                  // 系统级安装
+			'/usr/bin/pi',                        // apt/yum/pacman 安装
+			'/snap/bin/pi',                       // snap 包
+			join(home, '.npm-global/bin/pi'),     // npm global
+			join(home, '.local/bin/pi'),          // 用户本地安装
+			join(home, '.local/share/pnpm/pi'),    // pnpm
+			'/opt/pi/bin/pi',                     // 自定义安装到 /opt
+		);
+	}
+
+	// Windows
+	if (platform === 'win32') {
+		const appdata = process.env.APPDATA ?? join(home, 'AppData', 'Roaming');
+		const localappdata = process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local');
+		candidates.push(
+			join(appdata, 'npm', 'pi.cmd'),                  // npm global
+			join(localappdata, 'pnpm', 'pi.cmd'),             // pnpm
+			join(localappdata, 'Programs', 'pi', 'pi.cmd'),   // 独立安装
+			'C:\\Program Files\\nodejs\\pi.cmd',              // Node.js 安装目录
+			join(localappdata, 'pi', 'pi.cmd'),               // Windows Store 版或其他安装
+		);
+	}
+
+	// 最后尝试 PATH（兜底）
+	candidates.push('pi');
+
 	return candidates;
 }
 

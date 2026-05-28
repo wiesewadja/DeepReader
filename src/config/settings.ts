@@ -134,7 +134,8 @@ export interface DeepPDFSettings {
 		wereadExcludeArticles: boolean;
 		wereadNoteCountThreshold: number;
 
-		// Z-Library 集成（仅存登录后的 Cookie，不存明文密码）
+		// Z-Library 集成（功能开关 + 仅存登录后的 Cookie，不存明文密码）
+		enableZlibrary: boolean;
 		zlibraryUserId: string;
 		zlibraryUserKey: string;
 		zlibraryDomain: string;
@@ -255,6 +256,7 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		wereadNoteCountThreshold: 1,
 
 		// Z-Library 集成
+		enableZlibrary: false,
 		zlibraryUserId: '',
 		zlibraryUserKey: '',
 		zlibraryDomain: '',

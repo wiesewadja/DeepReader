@@ -7,6 +7,8 @@ import type { SectionContext } from '../types';
 import { WereadService } from '../../weread/index';
 import { ZLibraryClient } from '../../zlibrary/client';
 import { buildZlibClient } from '../../zlibrary/build-client';
+import { ZLIBRARY_DISCLAIMER } from '../../zlibrary/DISCLAIMER';
+import { ConfirmModal } from '../../components/confirm-modal';
 
 export function renderWereadSection(
 	container: HTMLElement,
@@ -235,9 +237,44 @@ export function renderWereadSection(
 		const zlibCard = container.createDiv({ cls: 'deeppdf-settings-card' });
 		zlibCard.createEl('h4', { text: 'Z-Library 书籍下载' });
 
+		// 功能开关 + 法律免责声明
+		new Setting(zlibCard)
+			.setName('启用 Z-Library')
+			.setDesc('启用后将显示法律免责声明，请确保使用方式符合当地法律法规')
+			.addToggle(toggle => {
+				toggle.setValue(settings.enableZlibrary);
+				toggle.onChange(async (enabled) => {
+					if (enabled) {
+						// 用户开启时，显示法律免责声明并要求确认
+						new ConfirmModal(
+							plugin.app,
+							'Z-Library 法律警告',
+							ZLIBRARY_DISCLAIMER,
+							async () => {
+								settings.enableZlibrary = true;
+								await plugin.saveSettings();
+								new Notice('已启用 Z-Library 功能');
+								refresh();
+							},
+							{ onCancel: () => { toggle.setValue(false); } },
+						).open();
+					} else {
+						settings.enableZlibrary = false;
+						await plugin.saveSettings();
+						new Notice('已禁用 Z-Library 功能');
+					}
+				});
+			});
+
 		const hasZlib = !!settings.zlibraryUserId && !!settings.zlibraryUserKey;
 
-		if (hasZlib) {
+		// 如果功能未启用，显示提示
+		if (!settings.enableZlibrary) {
+			zlibCard.createDiv({
+				cls: 'setting-item',
+				text: 'Z-Library 功能已禁用。请在上方启用后再登录。',
+			});
+		} else if (hasZlib) {
 			// 已登录状态：显示用户信息 + 操作按钮
 			const infoDiv = zlibCard.createDiv({ cls: 'setting-item' });
 			infoDiv.createEl('span', { text: `用户 ID：${settings.zlibraryUserId}` });
