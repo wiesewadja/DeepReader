@@ -27,12 +27,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/deepreader-team/deepreader.git"
+    "url": "https://github.com/wiesewadja/DeepReader.git"
   },
   "bugs": {
-    "url": "https://github.com/deepreader-team/deepreader/issues"
+    "url": "https://github.com/wiesewadja/DeepReader/issues"
   },
-  "homepage": "https://github.com/deepreader-team/deepreader",
+  "homepage": "https://github.com/wiesewadja/DeepReader",
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/jsdom": "^27.0.0",

@@ -35,14 +35,14 @@ An AI-powered deep reading companion for Obsidian.
 
 **Manual Install**
 
-1. Download latest release from [GitHub Releases](https://github.com/deepreader-team/deepreader/releases)
+1. Download latest release from [GitHub Releases](https://github.com/wiesewadja/DeepReader/releases)
 2. Extract `main.js`, `styles.css`, `manifest.json` to your vault: `.obsidian/plugins/deepreader/`
 3. Enable plugin in Obsidian Settings → Community Plugins
 
 **BRAT Install**
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) plugin
-2. Add Beta repository: `deepreader-team/deepreader`
+2. Add Beta repository: `wiesewadja/DeepReader`
 
 ### Configuration
 
@@ -69,8 +69,8 @@ An AI-powered deep reading companion for Obsidian.
 ### Setup
 
 ```bash
-git clone https://github.com/deepreader-team/deepreader.git
-cd deepreader
+git clone https://github.com/wiesewadja/DeepReader.git
+cd DeepReader
 npm install
 npm run dev      # Watch mode
 ```
