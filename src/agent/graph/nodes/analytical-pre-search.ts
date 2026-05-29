@@ -173,7 +173,9 @@ export async function preSearchNode(
       baseSearchOpts.bookId = toolContext.book.indexId;
     }
 
-    const limitedKeywords = stateKeywords.slice(0, 8);
+    // Deduplicate and limit keywords (S1 may produce overlapping terms)
+    const uniqueKeywords = [...new Set(stateKeywords.map(k => k.trim()).filter(Boolean))];
+    const limitedKeywords = uniqueKeywords.slice(0, 5);
     const preSearchRunnable = RunnableLambda.from(
       async () => {
         const subResults = await Promise.all(

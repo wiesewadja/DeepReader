@@ -59,7 +59,7 @@ import { cognitiveEngine } from './graph/index.js';
 import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
 import { createSharedContext } from './graph/shared-context.js';
-import { processGraphStream as processStream } from './graph/stream-processor.js';
+import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
 import { generateVoice, type VoiceConfig } from './graph/voice-pipeline.js';
 
 export interface FrontendAgentOptions {
@@ -253,7 +253,7 @@ ${currentMemory}
     context: ToolContext,
     callbacks: AgentLoopOptions,
     chatHistory?: ChatMessage[],
-  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+  ): Promise<StreamProcessorResult> {
     await this.initialize();
 
     // 前置检查：API Key 必须配置
@@ -263,9 +263,7 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: errorMsg }] };
     }
 
-    const threadId = context.book.indexId
-      ? `thread-${context.book.indexId}`
-      : `thread-${Date.now()}`;
+    const threadId = `thread-${context.book.indexId || 'unknown'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.activeThreadId = threadId;
 
     let configurable: Record<string, unknown>;
@@ -358,7 +356,7 @@ ${currentMemory}
     configurable: Record<string, unknown>,
     tracer: unknown,
     errorPrefix: string = 'LangGraph 引擎错误',
-  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+  ): Promise<StreamProcessorResult> {
     try {
       const stream = await this.getCompiledEngine().stream(
         streamInput,
@@ -497,7 +495,7 @@ ${currentMemory}
     stream: AsyncIterable<unknown>,
     callbacks: AgentLoopOptions,
     config?: { configurable?: Record<string, unknown> },
-  ): Promise<{ messages: ChatMessage[]; interrupted?: { nodeId: string; content: string } }> {
+  ): Promise<StreamProcessorResult> {
     return processStream(stream, callbacks, config, this.createVoicePipelineCallback());
   }
 

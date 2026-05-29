@@ -8,6 +8,7 @@
 import type { AgentLoopOptions } from '../types.js';
 import type { ChatMessage } from '../types.js';
 import type { HumanizedProgress, ReadingLevel } from '../ui/humanized-types.js';
+import type { ToolResultSnapshot } from './state.js';
 
 const NODE_STATUS_MAP: Record<string, string> = {
   router: '正在理解你的问题...',
@@ -33,9 +34,17 @@ function getNodeStatus(nodeName: string): string {
   return NODE_STATUS_MAP[nodeName] || nodeName;
 }
 
+export interface EvalTraceData {
+  nodesVisited: string[];
+  depth?: number;
+  toolCalls: Array<{ tool: string; args: Record<string, unknown>; resultLength: number }>;
+  durationMs: number;
+}
+
 export interface StreamProcessorResult {
   messages: ChatMessage[];
   interrupted?: { nodeId: string; content: string };
+  traceData?: EvalTraceData;
 }
 
 type VoicePipelineCallback = (
@@ -55,6 +64,12 @@ export async function processGraphStream(
 
   let formattedOutput = '';
   let interruptedNode: { nodeId: string; content: string } | undefined;
+
+  // 轨迹数据收集
+  const startTime = Date.now();
+  const visitedNodes: string[] = [];
+  let lastToolSnapshot: ToolResultSnapshot[] = [];
+  let routedDepth: number | undefined;
 
   for await (const chunk of stream) {
     if (chunk == null || typeof chunk !== 'object') continue;
@@ -80,6 +95,7 @@ export async function processGraphStream(
       if (stateUpdate == null) continue;
 
       onProgress(getNodeStatus(nodeName));
+      visitedNodes.push(nodeName);
 
       // 通知表情系统
       const action = NODE_ACTION_MAP[nodeName];
@@ -99,6 +115,14 @@ export async function processGraphStream(
         onContent(formattedOutput);
       }
 
+      // 收集轨迹：工具调用快照（overwrite 语义，只保留最终全量）
+      if (Array.isArray(stateUpdate.toolResultsSnapshot)) {
+        lastToolSnapshot = stateUpdate.toolResultsSnapshot as ToolResultSnapshot[];
+      }
+      if (stateUpdate.depth != null && typeof stateUpdate.depth === 'number' && routedDepth === undefined) {
+        routedDepth = stateUpdate.depth;
+      }
+
     }
   }
 
@@ -107,8 +131,17 @@ export async function processGraphStream(
     await voicePipeline(formattedOutput, config ?? {}, callbacks);
   }
 
+  const traceData: EvalTraceData = {
+    nodesVisited: visitedNodes,
+    depth: routedDepth,
+    toolCalls: lastToolSnapshot.map(ts => ({
+      tool: ts.toolName, args: ts.args, resultLength: ts.originalResultLength,
+    })),
+    durationMs: Date.now() - startTime,
+  };
+
   if (interruptedNode) {
-    return { messages: [], interrupted: interruptedNode };
+    return { messages: [], interrupted: interruptedNode, traceData };
   }
 
   callbacks.onComplete?.();
@@ -118,5 +151,5 @@ export async function processGraphStream(
     resultMessages.push({ role: 'assistant', content: formattedOutput });
   }
 
-  return { messages: resultMessages };
+  return { messages: resultMessages, traceData };
 }

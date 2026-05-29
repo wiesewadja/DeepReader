@@ -65,6 +65,8 @@ export interface DeepPDFSettings {
 		lastActiveBooklistId: string | undefined;
 	chatCache?: Record<string, unknown>;
 	enableDebugLog: boolean;
+	/** @internal E2E 评估模式，由测试脚本注入 data.json */
+	evalMode?: boolean;
 	lastDeepSearchMode: boolean;
 
 	// 阅读模式设置
