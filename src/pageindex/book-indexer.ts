@@ -527,7 +527,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       const vectorResult = await vectorizeAllLevels(
         parseResult, indexDir, options.embedding, nodeFileMap, treeData, options.outputDir,
         (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg }),
-        (info) => tracer.recordLlmCall({ purpose: "generate_embedding", model: info.model, durationMs: info.durationMs }),
+        (info) => tracer.recordEmbedCall({ model: info.model, durationMs: info.durationMs, inputTokens: info.inputTokens, batchSize: info.batchSize }),
       );
       vectorizationSuccess = true;
 
@@ -566,7 +566,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     } catch (error) {
       console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
 
-      tracer.endPhase();
+      tracer.failPhase(error instanceof Error ? error.message : "Embedding API failed");
       tracer.save();
 
       bookMeta.embedding = undefined;
@@ -763,7 +763,7 @@ async function vectorizeAllLevels(
   treeData: any,
   vaultRootPath: string,
   onProgress?: (msg: string) => void,
-  onEmbedCall?: (info: { model: string; durationMs: number }) => void
+  onEmbedCall?: (info: { model: string; durationMs: number; inputTokens?: number; batchSize: number }) => void
 ): Promise<{ dimensions: number; nodeCount: number } | undefined> {
   const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
     await import("./vault/vectors.js");

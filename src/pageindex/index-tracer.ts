@@ -1,8 +1,8 @@
 /**
- * 书籍索引追踪日志 — 类型定义 + IndexTracer 类
+ * 书籍索引追踪日志 — 追加写入模式
  *
- * 每次 indexBook() 生成一份 JSON 追踪文件，记录耗时、数据量、路径决策、LLM 调用统计。
- * 详见 SPEC.md §3, §6.2
+ * 每个事件（phase start/end、llm_call、embed_call、path_decision）即时写入 .log 文件。
+ * finalize() 追加 index_end + llm_summary 汇总行，同时写一份兼容的 .json 摘要。
  */
 
 import * as fs from "node:fs/promises";
@@ -10,10 +10,10 @@ import * as path from "node:path";
 import { getPageindexRoot } from "./paths.js";
 import { INDEX_TRACE_ENABLED } from "../config/features.js";
 
-/** LLM 调用追踪（SPEC §3.4） */
+/** LLM 调用追踪（兼容导出） */
 export interface LlmCallTrace {
-	phase: string;             // 所属阶段
-	purpose: string;           // "generate_toc" | "verify_page" | "generate_summary" | ...
+	phase: string;
+	purpose: string;
 	model: string;
 	inputTokens?: number;
 	outputTokens?: number;
@@ -21,31 +21,27 @@ export interface LlmCallTrace {
 	error?: string;
 }
 
-/** 阶段记录（SPEC §3.2） */
+/** 阶段记录（兼容导出） */
 export interface TracePhase {
-	name: string;              // "parse_document" | "export_markdown" | ...
+	name: string;
 	startedAt: string;
 	completedAt?: string;
 	durationMs?: number;
 	success: boolean;
 	error?: string;
-
-	/** 数据量指标 */
 	stats?: Record<string, number | string>;
-
-	/** 该阶段内的 LLM 调用 */
 	llmCalls: LlmCallTrace[];
 }
 
-/** 路径决策（SPEC §3.3） */
+/** 路径决策（兼容导出） */
 export interface PathDecision {
-	phase: string;             // 哪个阶段做的决策
-	decision: string;          // "outline_fast_path" | "llm_toc" | "ocr_fallback" | ...
-	reason: string;            // 人类可读的决策原因
-	degradedFrom?: string;     // 降级前的路径
+	phase: string;
+	decision: string;
+	reason: string;
+	degradedFrom?: string;
 }
 
-/** 配置快照，传入 IndexTracer 构造函数 */
+/** 配置快照 */
 export interface TraceConfig {
 	pageindexModel: string;
 	embeddingProvider?: string;
@@ -53,28 +49,25 @@ export interface TraceConfig {
 	mineruUsed: boolean;
 }
 
-/** 顶层追踪记录（SPEC §3.1） */
+/** 顶层追踪记录（兼容导出，.json 摘要仍用此结构） */
 export interface IndexTrace {
 	bookId: string;
 	title: string;
 	filePath: string;
 	fileType: "pdf" | "epub";
-	startedAt: string;          // ISO 8601
+	startedAt: string;
 	completedAt?: string;
 	totalDurationMs?: number;
 	success: boolean;
 	error?: string;
-
 	config: {
 		pageindexModel: string;
 		embeddingProvider?: string;
 		embeddingModel?: string;
 		mineruUsed: boolean;
 	};
-
 	phases: TracePhase[];
 	pathDecisions: PathDecision[];
-
 	llmSummary: {
 		totalCalls: number;
 		totalInputTokens: number;
@@ -84,16 +77,36 @@ export interface IndexTrace {
 	};
 }
 
-/** 索引追踪器（SPEC §6.2） */
+// ─── 日志行格式 ──────────────────────────────────────────────
+
+function isoNow(): string {
+	return new Date().toISOString();
+}
+
+function logLine(type: string, data: Record<string, unknown>): string {
+	return JSON.stringify({ ts: isoNow(), type, ...data });
+}
+
+// ─── IndexTracer ─────────────────────────────────────────────
+
 export class IndexTracer {
-	private trace: IndexTrace;
-	private currentPhase: TracePhase | null = null;
-	private phaseStartMs: number = 0;
 	private vaultPath: string;
 	private exportName: string;
-	private tracePath: string;
+	private logPath: string;
+	private jsonPath: string;
+	private traceStartMs: number;
+	private currentPhaseName: string | null = null;
+	private phaseStartMs: number = 0;
+	private dirEnsured: boolean = false;
 
-	private traceStartMs: number = 0;
+	// 用于 finalize() 时聚合 .json 摘要
+	private phases: TracePhase[] = [];
+	private pathDecisions: PathDecision[] = [];
+	private bookId: string;
+	private title: string;
+	private filePath: string;
+	private fileType: "pdf" | "epub";
+	private config: TraceConfig;
 
 	constructor(
 		bookId: string,
@@ -106,115 +119,158 @@ export class IndexTracer {
 	) {
 		this.vaultPath = vaultPath;
 		this.exportName = exportName;
-		this.tracePath = path.join(getPageindexRoot(vaultPath), "traces", `${exportName}.json`);
+		this.bookId = bookId;
+		this.title = title;
+		this.filePath = filePath;
+		this.fileType = fileType;
+		this.config = config;
 		this.traceStartMs = Date.now();
 
-		this.trace = {
+		const traceDir = path.join(getPageindexRoot(vaultPath), "traces");
+		this.logPath = path.join(traceDir, `${exportName}.log`);
+		this.jsonPath = path.join(traceDir, `${exportName}.json`);
+
+		// 构造时立即写 index_start 行
+		const startLine = logLine("index_start", {
 			bookId,
 			title,
 			filePath,
 			fileType,
-			startedAt: new Date(this.traceStartMs).toISOString(),
-			success: false,
-			config: { ...config },
-			phases: [],
-			pathDecisions: [],
-			llmSummary: {
-				totalCalls: 0,
-				totalInputTokens: 0,
-				totalOutputTokens: 0,
-				totalDurationMs: 0,
-				byModel: {},
-			},
-		};
+			config,
+		});
+		this.append(startLine);
+	}
+
+	private append(line: string): void {
+		const write = () => fs.appendFile(this.logPath, line + "\n", "utf-8");
+		if (this.dirEnsured) {
+			write().catch((e) => { console.error("[IndexTracer] append failed:", e); });
+		} else {
+			const dir = path.dirname(this.logPath);
+			fs.mkdir(dir, { recursive: true })
+				.then(() => { this.dirEnsured = true; return write(); })
+				.catch((e) => { console.error("[IndexTracer] append failed:", e); });
+		}
 	}
 
 	startPhase(name: string): void {
+		this.currentPhaseName = name;
 		this.phaseStartMs = Date.now();
-		this.currentPhase = {
+		this.append(logLine("phase_start", { phase: name }));
+
+		// 为 .json 摘要预创建 phase 记录
+		this.phases.push({
 			name,
 			startedAt: new Date(this.phaseStartMs).toISOString(),
 			success: false,
 			llmCalls: [],
-		};
-	}
-
-	endPhase(stats?: Record<string, number | string>): void {
-		if (!this.currentPhase) return;
-		const endMs = Date.now();
-		this.currentPhase.completedAt = new Date(endMs).toISOString();
-		this.currentPhase.durationMs = endMs - this.phaseStartMs;
-		this.currentPhase.success = true;
-		if (stats) this.currentPhase.stats = stats;
-		this.trace.phases.push(this.currentPhase);
-		this.currentPhase = null;
-	}
-
-	failPhase(error: string): void {
-		if (!this.currentPhase) return;
-		const endMs = Date.now();
-		this.currentPhase.completedAt = new Date(endMs).toISOString();
-		this.currentPhase.durationMs = endMs - this.phaseStartMs;
-		this.currentPhase.success = false;
-		this.currentPhase.error = error;
-		this.trace.phases.push(this.currentPhase);
-		this.currentPhase = null;
-	}
-
-	recordLlmCall(call: Omit<LlmCallTrace, "phase">): void {
-		if (!this.currentPhase) return;
-		this.currentPhase.llmCalls.push({
-			...call,
-			phase: this.currentPhase.name,
 		});
 	}
 
-	/** 解析完成后更新标题 */
+	endPhase(stats?: Record<string, number | string>): void {
+		if (!this.currentPhaseName) return;
+		const endMs = Date.now();
+		const durationMs = endMs - this.phaseStartMs;
+
+		this.append(logLine("phase_end", {
+			phase: this.currentPhaseName,
+			durationMs,
+			success: true,
+			...(stats ? { stats } : {}),
+		}));
+
+		// 更新 .json 摘要中的 phase
+		const phase = this.phases[this.phases.length - 1];
+		if (phase) {
+			phase.completedAt = new Date(endMs).toISOString();
+			phase.durationMs = durationMs;
+			phase.success = true;
+			if (stats) phase.stats = stats;
+		}
+
+		this.currentPhaseName = null;
+	}
+
+	failPhase(error: string): void {
+		if (!this.currentPhaseName) return;
+		const endMs = Date.now();
+		const durationMs = endMs - this.phaseStartMs;
+
+		this.append(logLine("phase_end", {
+			phase: this.currentPhaseName,
+			durationMs,
+			success: false,
+			error,
+		}));
+
+		const phase = this.phases[this.phases.length - 1];
+		if (phase) {
+			phase.completedAt = new Date(endMs).toISOString();
+			phase.durationMs = durationMs;
+			phase.success = false;
+			phase.error = error;
+		}
+
+		this.currentPhaseName = null;
+	}
+
+	recordLlmCall(call: Omit<LlmCallTrace, "phase">): void {
+		const phase = this.currentPhaseName || "unknown";
+		this.append(logLine("llm_call", { phase, ...call }));
+
+		// 记入 .json 摘要（仅当有活跃 phase 时）
+		if (this.currentPhaseName) {
+			const currentPhase = this.phases[this.phases.length - 1];
+			if (currentPhase) {
+				currentPhase.llmCalls.push({ ...call, phase });
+			}
+		}
+	}
+
+	recordEmbedCall(call: { model: string; durationMs: number; inputTokens?: number; batchSize: number }): void {
+		const phase = this.currentPhaseName || "unknown";
+		this.append(logLine("embed_call", { phase, ...call }));
+	}
+
 	setTitle(title: string): void {
-		this.trace.title = title;
+		this.title = title;
 	}
 
 	recordPathDecision(decision: PathDecision): void {
-		this.trace.pathDecisions.push(decision);
+		this.pathDecisions.push(decision);
+		this.append(logLine("path_decision", { ...decision }));
 	}
 
-	/** fire-and-forget 写入 JSON */
 	save(): void {
-		const dir = path.dirname(this.tracePath);
-		const data = JSON.stringify(this.trace, null, 2);
-		fs.mkdir(dir, { recursive: true })
-			.then(() => fs.writeFile(this.tracePath, data, "utf-8"))
-			.catch((e) => { console.error("[IndexTracer] save failed:", e); });
+		// 追加日志模式不需要显式 save，每次调用都已写入
 	}
 
-	/** 计算汇总并写入最终文件 */
 	finalize(success: boolean, error?: string): void {
-		// 关闭未完成的 phase（异常路径兜底）
-		if (this.currentPhase) {
-			const endMs = Date.now();
-			this.currentPhase.completedAt = new Date(endMs).toISOString();
-			this.currentPhase.durationMs = endMs - this.phaseStartMs;
-			this.currentPhase.success = false;
-			this.currentPhase.error = "phase interrupted";
-			this.trace.phases.push(this.currentPhase);
-			this.currentPhase = null;
+		// 关闭未完成的 phase
+		if (this.currentPhaseName) {
+			this.failPhase("phase interrupted");
 		}
 
 		const endMs = Date.now();
-		this.trace.completedAt = new Date(endMs).toISOString();
-		this.trace.totalDurationMs = endMs - this.traceStartMs;
-		this.trace.success = success;
-		if (error) this.trace.error = error;
+		const totalDurationMs = endMs - this.traceStartMs;
 
-		// 从所有 phases 的 llmCalls 聚合 llmSummary
-		const summary = this.trace.llmSummary;
-		summary.totalCalls = 0;
-		summary.totalInputTokens = 0;
-		summary.totalOutputTokens = 0;
-		summary.totalDurationMs = 0;
-		summary.byModel = {};
+		// 追加 index_end 行
+		this.append(logLine("index_end", {
+			success,
+			error,
+			totalDurationMs,
+		}));
 
-		for (const phase of this.trace.phases) {
+		// 聚合 llm_summary
+		const summary = {
+			totalCalls: 0,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalDurationMs: 0,
+			byModel: {} as Record<string, { calls: number; inputTokens: number; outputTokens: number }>,
+		};
+
+		for (const phase of this.phases) {
 			for (const call of phase.llmCalls) {
 				summary.totalCalls++;
 				summary.totalInputTokens += call.inputTokens ?? 0;
@@ -230,7 +286,29 @@ export class IndexTracer {
 			}
 		}
 
-		this.save();
+		this.append(logLine("llm_summary", { ...summary }));
+
+		// 写兼容 .json 摘要
+		const jsonTrace: IndexTrace = {
+			bookId: this.bookId,
+			title: this.title,
+			filePath: this.filePath,
+			fileType: this.fileType,
+			startedAt: new Date(this.traceStartMs).toISOString(),
+			completedAt: new Date(endMs).toISOString(),
+			totalDurationMs,
+			success,
+			error,
+			config: this.config,
+			phases: this.phases,
+			pathDecisions: this.pathDecisions,
+			llmSummary: summary,
+		};
+
+		const dir = path.dirname(this.jsonPath);
+		fs.mkdir(dir, { recursive: true })
+			.then(() => fs.writeFile(this.jsonPath, JSON.stringify(jsonTrace, null, 2), "utf-8"))
+			.catch((e) => { console.error("[IndexTracer] json write failed:", e); });
 	}
 }
 
@@ -240,6 +318,7 @@ export class NoopIndexTracer {
 	endPhase(_stats?: Record<string, number | string>): void {}
 	failPhase(_error: string): void {}
 	recordLlmCall(_call: Omit<LlmCallTrace, "phase">): void {}
+	recordEmbedCall(_call: { model: string; durationMs: number; inputTokens?: number; batchSize: number }): void {}
 	recordPathDecision(_decision: PathDecision): void {}
 	setTitle(_title: string): void {}
 	save(): void {}

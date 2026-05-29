@@ -7,7 +7,7 @@ import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";
 
 export interface EmbeddingOptions {
   /** Embedding provider */
-  provider: "openai" | "ollama" | "lmstudio" | "local";
+  provider: "openai" | "ollama" | "lmstudio" | "local" | "siliconflow" | "deepseek";
   /** Model name (default: text-embedding-3-small for openai, nomic-embed-text for ollama) */
   model?: string;
   /** API key */

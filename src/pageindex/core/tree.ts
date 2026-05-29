@@ -3,7 +3,7 @@
  * Functions for building, processing, and managing document tree structures
  */
 
-import { chatGPT } from "../llm/client";
+import { chatGPT, chatGPTWithUsage } from "../llm/client";
 import { log as piLog } from "./logger";
 import type { PdfPage } from "../parsers/pdf";
 import type { TreeNode, TocItem } from "./types";
@@ -345,16 +345,24 @@ export function addNodeTextWithLabels(
 /**
  * Generate summary for a single node
  */
+interface NodeSummaryResult {
+  content: string;
+  durationMs: number;
+  usage?: { inputTokens: number; outputTokens: number };
+}
+
 async function generateNodeSummary(
   node: TreeNode,
   options: TreeOptions
-): Promise<string> {
-  if (!node.text) return "";
+): Promise<NodeSummaryResult> {
+  if (!node.text) return { content: "", durationMs: 0 };
+
+  const t0 = Date.now();
 
   if (options.formatMarkdown !== false) {
     // Combined: format text + generate summary in one LLM call (PDF path)
     const prompt = prompts.formatAndSummarizePrompt(node.text, node.title || "");
-    const response = await chatGPT({
+    const result = await chatGPTWithUsage({
       model: options.model,
       prompt,
       apiKey: options.apiKey,
@@ -362,22 +370,24 @@ async function generateNodeSummary(
     });
 
     // Parse response: <<<MARKDOWN>>>...\n<<<SUMMARY>>>...
-    const mdMatch = response.match(/<<<MARKDOWN>>>([\s\S]*?)<<<SUMMARY>>>/);
-    const summaryMatch = response.match(/<<<SUMMARY>>>([\s\S]*?)$/);
+    const mdMatch = result.content.match(/<<<MARKDOWN>>>([\s\S]*?)<<<SUMMARY>>>/);
+    const summaryMatch = result.content.match(/<<<SUMMARY>>>([\s\S]*?)$/);
 
     if (mdMatch) {
       node.text = mdMatch[1].trim();
     }
-    return summaryMatch ? summaryMatch[1].trim() : response.trim();
+    const summary = summaryMatch ? summaryMatch[1].trim() : result.content.trim();
+    return { content: summary, durationMs: Date.now() - t0, usage: result.usage };
   } else {
     // EPUB path: text is already formatted, only generate summary
     const prompt = prompts.generateNodeSummaryPrompt(node.text);
-    return chatGPT({
+    const result = await chatGPTWithUsage({
       model: options.model,
       prompt,
       apiKey: options.apiKey,
       baseUrl: options.baseUrl,
     });
+    return { content: result.content, durationMs: Date.now() - t0, usage: result.usage };
   }
 }
 
@@ -390,7 +400,6 @@ export async function generateSummariesForStructure(
   options: TreeOptions,
   onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
-  const t0 = Date.now();
   const nodes = structureToList(structure);
   const total = nodes.length;
 
@@ -400,20 +409,26 @@ export async function generateSummariesForStructure(
   const batchSize = 8;
   for (let i = 0; i < nodes.length; i += batchSize) {
     const batch = nodes.slice(i, i + batchSize);
-    const summaries = await Promise.all(
+    const results = await Promise.all(
       batch.map((node) => generateNodeSummary(node as TreeNode, options))
     );
 
     for (let j = 0; j < batch.length; j++) {
-      (batch[j] as TreeNode).summary = summaries[j];
+      const node = batch[j] as TreeNode;
+      node.summary = results[j]!.content;
+      options.onLlmCall?.({
+        purpose: "generate_summary",
+        model: options.model,
+        durationMs: results[j]!.durationMs,
+        inputTokens: results[j]!.usage?.inputTokens,
+        outputTokens: results[j]!.usage?.outputTokens,
+      });
     }
 
     // 报告进度
     const completed = Math.min(i + batchSize, total);
     onProgress?.(completed, total);
   }
-
-  options.onLlmCall?.({ purpose: "generate_summary", model: options.model, durationMs: Date.now() - t0 });
 }
 
 /**
@@ -427,16 +442,22 @@ export async function generateDocDescription(
   const cleanStructure = createCleanStructureForDescription(structure);
   const prompt = prompts.generateDocDescriptionPrompt(JSON.stringify(cleanStructure));
 
-  const result = await chatGPT({
+  const result = await chatGPTWithUsage({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
   });
 
-  options.onLlmCall?.({ purpose: "generate_description", model: options.model, durationMs: Date.now() - t0 });
+  options.onLlmCall?.({
+    purpose: "generate_description",
+    model: options.model,
+    durationMs: Date.now() - t0,
+    inputTokens: result.usage?.inputTokens,
+    outputTokens: result.usage?.outputTokens,
+  });
 
-  return result;
+  return result.content;
 }
 
 /**
