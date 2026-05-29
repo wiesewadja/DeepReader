@@ -6,6 +6,7 @@ import type { TraceConfig } from "@/pageindex/index-tracer";
 vi.mock("node:fs/promises", () => ({
 	mkdir: vi.fn().mockResolvedValue(undefined),
 	writeFile: vi.fn().mockResolvedValue(undefined),
+	appendFile: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../paths.js", () => ({
@@ -19,12 +20,20 @@ const mockConfig: TraceConfig = {
 	mineruUsed: false,
 };
 
-/** 刷新 microtask 队列，让 fire-and-forget 的 fs.writeFile 落地 */
+/** 刷新 microtask 队列，让 fire-and-forget 的 fs 操作落地 */
 async function flush(): Promise<void> {
 	await new Promise((r) => setTimeout(r, 0));
 }
 
-async function getLastWrittenTrace(): Promise<any> {
+/** 获取所有 appendFile 写入的行 */
+async function getLogLines(): Promise<any[]> {
+	await flush();
+	const calls = vi.mocked(fs.appendFile).mock.calls;
+	return calls.map((call) => JSON.parse(call[1] as string));
+}
+
+/** 获取最后一次 writeFile 的内容（.json 兼容摘要） */
+async function getLastJsonTrace(): Promise<any> {
 	await flush();
 	const calls = vi.mocked(fs.writeFile).mock.calls;
 	const last = calls[calls.length - 1];
@@ -47,7 +56,13 @@ describe("IndexTracer", () => {
 		);
 	});
 
-	it("should simulate a complete lifecycle: startPhase → endPhase → finalize", async () => {
+	it("should write index_start on construction", async () => {
+		const lines = await getLogLines();
+		expect(lines[0].type).toBe("index_start");
+		expect(lines[0].bookId).toBe("book123");
+	});
+
+	it("should simulate a complete lifecycle with log lines", async () => {
 		tracer.startPhase("validate");
 		tracer.endPhase({ fileSizeBytes: 1024 });
 
@@ -73,34 +88,53 @@ describe("IndexTracer", () => {
 
 		tracer.finalize(true);
 
-		const trace = await getLastWrittenTrace();
+		const lines = await getLogLines();
 
-		expect(trace.bookId).toBe("book123");
-		expect(trace.title).toBe("测试书籍");
-		expect(trace.fileType).toBe("pdf");
-		expect(trace.success).toBe(true);
-		expect(trace.config.pageindexModel).toBe("test-model");
+		// index_start + 3 phases (start+end each) + 2 llm_calls + index_end + llm_summary
+		const llmCallLines = lines.filter((l: any) => l.type === "llm_call");
+		expect(llmCallLines).toHaveLength(2);
+		expect(llmCallLines[0].purpose).toBe("generate_toc");
+		expect(llmCallLines[0].inputTokens).toBe(12000);
+		expect(llmCallLines[1].purpose).toBe("verify_page");
 
-		expect(trace.phases).toHaveLength(3);
-		expect(trace.phases[0].name).toBe("validate");
-		expect(trace.phases[0].success).toBe(true);
-		expect(trace.phases[0].stats.fileSizeBytes).toBe(1024);
+		const phaseEndLines = lines.filter((l: any) => l.type === "phase_end");
+		expect(phaseEndLines).toHaveLength(3);
 
-		expect(trace.phases[1].name).toBe("parse_document");
-		expect(trace.phases[1].stats.chaptersCount).toBe(21);
-		expect(trace.phases[1].llmCalls).toHaveLength(2);
-		expect(trace.phases[1].llmCalls[0].purpose).toBe("generate_toc");
-		expect(trace.phases[1].llmCalls[0].phase).toBe("parse_document");
+		const indexEnd = lines.find((l: any) => l.type === "index_end");
+		expect(indexEnd.success).toBe(true);
 
-		expect(trace.llmSummary.totalCalls).toBe(2);
-		expect(trace.llmSummary.totalInputTokens).toBe(17000);
-		expect(trace.llmSummary.totalOutputTokens).toBe(1000);
-		expect(trace.llmSummary.totalDurationMs).toBe(4700);
-		expect(trace.llmSummary.byModel["test-model"]).toEqual({
+		const summary = lines.find((l: any) => l.type === "llm_summary");
+		expect(summary.totalCalls).toBe(2);
+		expect(summary.totalInputTokens).toBe(17000);
+		expect(summary.totalOutputTokens).toBe(1000);
+		expect(summary.byModel["test-model"]).toEqual({
 			calls: 2,
 			inputTokens: 17000,
 			outputTokens: 1000,
 		});
+	});
+
+	it("should write .json compatibility summary on finalize", async () => {
+		tracer.startPhase("parse_document");
+		tracer.recordLlmCall({
+			purpose: "generate_toc",
+			model: "test-model",
+			inputTokens: 12000,
+			outputTokens: 800,
+			durationMs: 3200,
+		});
+		tracer.endPhase();
+
+		tracer.finalize(true);
+
+		const trace = await getLastJsonTrace();
+
+		expect(trace.title).toBe("测试书籍");
+		expect(trace.success).toBe(true);
+		expect(trace.phases).toHaveLength(1);
+		expect(trace.phases[0].llmCalls).toHaveLength(1);
+		expect(trace.llmSummary.totalCalls).toBe(1);
+		expect(trace.llmSummary.totalInputTokens).toBe(12000);
 	});
 
 	it("should handle failPhase", async () => {
@@ -109,12 +143,14 @@ describe("IndexTracer", () => {
 
 		tracer.finalize(false, "索引失败");
 
-		const trace = await getLastWrittenTrace();
+		const lines = await getLogLines();
+		const phaseEnd = lines.find((l: any) => l.type === "phase_end");
+		expect(phaseEnd.success).toBe(false);
+		expect(phaseEnd.error).toBe("文件格式错误");
 
-		expect(trace.success).toBe(false);
-		expect(trace.error).toBe("索引失败");
-		expect(trace.phases[0].success).toBe(false);
-		expect(trace.phases[0].error).toBe("文件格式错误");
+		const indexEnd = lines.find((l: any) => l.type === "index_end");
+		expect(indexEnd.success).toBe(false);
+		expect(indexEnd.error).toBe("索引失败");
 	});
 
 	it("should record path decisions", async () => {
@@ -128,11 +164,10 @@ describe("IndexTracer", () => {
 
 		tracer.finalize(true);
 
-		const trace = await getLastWrittenTrace();
-
-		expect(trace.pathDecisions).toHaveLength(1);
-		expect(trace.pathDecisions[0].decision).toBe("outline_fast_path");
-		expect(trace.pathDecisions[0].degradedFrom).toBeUndefined();
+		const lines = await getLogLines();
+		const pd = lines.find((l: any) => l.type === "path_decision");
+		expect(pd.decision).toBe("outline_fast_path");
+		expect(pd.degradedFrom).toBeUndefined();
 	});
 
 	it("should handle degradation with degradedFrom", async () => {
@@ -147,8 +182,7 @@ describe("IndexTracer", () => {
 
 		tracer.finalize(true);
 
-		const trace = await getLastWrittenTrace();
-
+		const trace = await getLastJsonTrace();
 		expect(trace.pathDecisions[0].degradedFrom).toBe("toc_with_pages");
 	});
 
@@ -179,7 +213,7 @@ describe("IndexTracer", () => {
 
 		tracer.finalize(true);
 
-		const trace = await getLastWrittenTrace();
+		const trace = await getLastJsonTrace();
 
 		expect(trace.llmSummary.totalCalls).toBe(3);
 		expect(trace.llmSummary.byModel["model-a"]).toEqual({
@@ -194,12 +228,31 @@ describe("IndexTracer", () => {
 		});
 	});
 
-	it("save() should not throw on fs failure", async () => {
-		vi.mocked(fs.writeFile).mockRejectedValueOnce(new Error("disk full"));
+	it("should record embed_call lines", async () => {
+		tracer.startPhase("vectorize");
+		tracer.recordEmbedCall({
+			model: "text-embedding-3-small",
+			durationMs: 500,
+			inputTokens: 3000,
+			batchSize: 32,
+		});
+		tracer.endPhase();
+
+		tracer.finalize(true);
+
+		const lines = await getLogLines();
+		const embedLine = lines.find((l: any) => l.type === "embed_call");
+		expect(embedLine).toBeDefined();
+		expect(embedLine.model).toBe("text-embedding-3-small");
+		expect(embedLine.inputTokens).toBe(3000);
+		expect(embedLine.batchSize).toBe(32);
+	});
+
+	it("should not throw on appendFile failure", async () => {
+		vi.mocked(fs.appendFile).mockRejectedValueOnce(new Error("disk full"));
 
 		tracer.startPhase("validate");
 		tracer.endPhase();
-		tracer.save();
 
 		await flush();
 	});

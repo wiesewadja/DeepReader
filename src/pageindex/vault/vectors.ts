@@ -183,7 +183,7 @@ export async function generateEmbedding(
   if (options.provider === "local") {
     throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
   }
-  if (options.provider === "openai") {
+  if (options.provider === "openai" || options.provider === "siliconflow" || options.provider === "deepseek") {
     return generateOpenAIEmbedding(text, options);
   } else if (options.provider === "ollama") {
     return generateOllamaEmbedding(text, options);
@@ -196,7 +196,7 @@ export async function generateEmbedding(
 export async function generateEmbeddings(
   texts: string[],
   options: EmbeddingOptions,
-  onEmbedCall?: (info: { model: string; durationMs: number }) => void
+  onEmbedCall?: (info: { model: string; durationMs: number; inputTokens?: number; batchSize: number }) => void
 ): Promise<number[][]> {
   if (options.provider === "local") {
     throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
@@ -210,7 +210,7 @@ export async function generateEmbeddings(
     const batch = texts.slice(i, i + batchSize)
       .map(t => t.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') || ' ');
 
-    if (options.provider === "openai" || options.provider === "lmstudio") {
+    if (options.provider === "openai" || options.provider === "lmstudio" || options.provider === "siliconflow" || options.provider === "deepseek") {
       const t0 = Date.now();
       const body: Record<string, unknown> = {
         model: options.model || "text-embedding-3-small",
@@ -238,17 +238,31 @@ export async function generateEmbeddings(
         throw new Error(`Embedding API error: ${response.status} - ${response.text}`);
       }
 
-      const data = response.json as { data: Array<{ embedding: number[] }> };
+      const data = response.json as {
+        data: Array<{ embedding: number[] }>;
+        usage?: { prompt_tokens: number };
+      };
       if (data.data.length !== batch.length) {
         throw new Error(`Embedding API returned ${data.data.length} results for ${batch.length} inputs`);
       }
       results.push(...data.data.map((item) => item.embedding));
-      onEmbedCall?.({ model: body.model as string, durationMs: Date.now() - t0 });
+      onEmbedCall?.({
+        model: body.model as string,
+        durationMs: Date.now() - t0,
+        inputTokens: data.usage?.prompt_tokens,
+        batchSize: batch.length,
+      });
     } else if (options.provider === "ollama") {
+      const t0 = Date.now();
       for (const text of batch) {
         const embedding = await generateOllamaEmbedding(text, options);
         results.push(embedding);
       }
+      onEmbedCall?.({
+        model: options.model || "nomic-embed-text",
+        durationMs: Date.now() - t0,
+        batchSize: batch.length,
+      });
     }
   }
 
