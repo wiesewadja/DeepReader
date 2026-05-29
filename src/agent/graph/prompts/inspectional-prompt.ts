@@ -98,6 +98,7 @@ export function buildInspectionalSystemPrompt(
 3. better_question 根据全书摘要重新推断出更能体现用户提问意图的下一阶段问题
 4. structural_analysis 记录一句话简述为什么圈定这几个章节和提问意图改写
 5. scopeNodeIds 不超过 5 个，宁缺毋滥：只选最相关的章节，宁可漏掉也不要圈太多
+   ⚠️ 跨章节题注意：如果用户问的问题涉及多个概念在不同章节的分布（如"X和Y的联系""某个观点如何贯穿不同章节"），scopeNodeIds 应覆盖每个相关概念出现的章节，不要只聚焦最明显的一处
 6. **suggested_keywords 至少提供 3-5 个搜索关键词**：包括书中特有的术语、核心概念名、可能的同义词。这些关键词将被直接用于下一阶段的自动检索，请务必选择目录树摘要中出现过的精确术语
 
 </task_branch>`;

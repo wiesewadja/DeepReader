@@ -9,6 +9,7 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { ReadingDepth } from '../state';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { RouterInput } from '../node-io.js';
 import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
@@ -42,6 +43,9 @@ function mergeTools(a: string[], b: string[]): string[] {
 }
 
 const intentRouter = new IntentRouter();
+
+/** BM25 score threshold for anti-hallucination: below this = not in book */
+const ANTI_HALLUCINATION_SCORE_THRESHOLD = 0.3;
 
 export async function routerNode(
   state: CognitiveEngineState,
@@ -89,6 +93,28 @@ export async function routerNode(
       ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
 
+    // Anti-hallucination guard: "书中有没有提到X" → BM25 verification
+    let antiHallucinationQuery = '';
+    if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
+      const cleanQuery = standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
+      const bookId = sharedContext?.toolContext?.book.indexId;
+      const app = sharedContext?.toolContext?.vault.app;
+      if (bookId && app) {
+        try {
+          const results = await searchBookV2({ query: cleanQuery, bookId, app, topK: 3, filePath: '' });
+          if (results.length > 0 && results.some(r => (r.score ?? 0) > ANTI_HALLUCINATION_SCORE_THRESHOLD)) {
+            log(`[S0 Router] ANTI_HALLUCINATION: "${cleanQuery}" 命中 ${results.length} 条结果，升级 depth→2`);
+            depth = ReadingDepth.ANALYTICAL;
+          } else {
+            log(`[S0 Router] ANTI_HALLUCINATION: "${cleanQuery}" 未命中，保持 depth=0`);
+            antiHallucinationQuery = cleanQuery;
+          }
+        } catch (e) {
+          log(`[S0 Router] ANTI_HALLUCINATION BM25 搜索失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+
     // Continuity guard: short replies ("ok", "继续", "嗯") during an ongoing
     // deep discussion should inherit the previous depth, not be treated as casual.
     const CONTINUITY_THRESHOLD = 5;
@@ -120,9 +146,21 @@ export async function routerNode(
 
     log(`[S0 Router] depth=${effectiveDepth}, tools(raw)=${rawIntent.allowedTools.join(',')}, tools(rewritten)=${rewrittenIntent.allowedTools.join(',')}, tools(inherited)=${inheritedTools.join(',')}, tools(final)=${finalTools.join(',')}`);
 
+    // When BM25 found nothing, rewrite query to guide Formatter to say "not in book"
+    // Otherwise strip the [ANTI_HALLUCINATION] prefix (if present) from the output
+    let finalQuery: string;
+    if (antiHallucinationQuery) {
+      finalQuery = `请直接回答：经检索确认，这本书中并未提及"${antiHallucinationQuery}"相关内容。请简洁回复，说明书中未提及该内容，不要展开讨论或用书中概念去分析它。`;
+    } else if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
+      // BM25 hit — strip prefix and proceed normally at depth=2
+      finalQuery = standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
+    } else {
+      finalQuery = standaloneQuery;
+    }
+
     return {
       depth: effectiveDepth,
-      rewrittenQuery: standaloneQuery,
+      rewrittenQuery: finalQuery,
       allowedTools: finalTools,
     };
   } catch (err) {

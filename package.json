@@ -14,7 +14,12 @@
     "deploy": "node scripts/deploy.js dev",
     "deploy:dev": "node scripts/deploy.js dev",
     "deploy:daily": "node scripts/deploy.js daily",
-    "deploy:all": "node scripts/deploy.js dev daily"
+    "deploy:all": "node scripts/deploy.js dev daily",
+    "eval": "node scripts/eval-runner.mjs",
+    "eval:run": "node scripts/eval-run.mjs",
+    "eval:generate": "node scripts/eval-generate.mjs",
+    "eval:judge": "node scripts/eval-judge.mjs",
+    "eval:history": "node scripts/eval-history.mjs"
   },
   "keywords": [
     "obsidian",
