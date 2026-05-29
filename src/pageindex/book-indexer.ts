@@ -7,6 +7,7 @@ import { log as piLog } from "./core/logger";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { getPageindexRoot, getBookDir } from "./paths.js";
+import { createTracer, type Tracer } from "./index-tracer.js";
 import {
   DEFAULT_ADD_NODE_TEXT,
   DEFAULT_ADD_NODE_SUMMARY,
@@ -131,6 +132,22 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const bookId = await generateBookId(options.filePath);
   const indexDir = getBookDir(options.outputDir, bookId);
 
+  // 创建追踪日志（INDEX_TRACE_ENABLED=false 时为 NoopIndexTracer，零开销）
+  const tracer = createTracer(
+    bookId,
+    path.basename(options.filePath, path.extname(options.filePath)),
+    options.filePath,
+    options.fileType,
+    {
+      pageindexModel: options.model || "unknown",
+      embeddingProvider: options.embedding?.provider,
+      embeddingModel: options.embedding?.model,
+      mineruUsed: !!options.mineruApiKey,
+    },
+    options.outputDir,
+    bookId,
+  );
+
   // Create indexing status file so progress survives modal close/reopen
   await fs.mkdir(indexDir, { recursive: true });
   const indexingStatusPath = path.join(indexDir, ".indexing.json");
@@ -158,6 +175,14 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Wrap entire pipeline in try-finally to ensure status cleanup on any error
   try {
 
+  // B0 validate
+  tracer.startPhase("validate");
+  // (file access already checked above, record file size)
+  let fileSizeBytes = 0;
+  try { fileSizeBytes = (await fs.stat(options.filePath)).size; } catch {}
+  tracer.endPhase({ fileSizeBytes });
+  tracer.save();
+
   // Step 1: Document parsing + LLM indexing (most time-consuming, 5%-70%)
   reportProgress({
     percent: 5,
@@ -176,6 +201,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
   };
 
+  // B1 parse_document
+  tracer.startPhase("parse_document");
+
   const pageIndex = new PageIndex({
     model: options.model,
     apiKey: options.apiKey,
@@ -185,6 +213,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     addNodeSummary: options.addNodeSummary ?? DEFAULT_ADD_NODE_SUMMARY,
     addDocDescription: options.addDocDescription ?? DEFAULT_ADD_DOC_DESCRIPTION,
     onProgress: onParseProgress,
+    onLlmCall: (call) => tracer.recordLlmCall(call),
   });
 
   let parseResult;
@@ -214,6 +243,28 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     );
   }
 
+  tracer.endPhase({
+    chaptersCount: parseResult.structure.length,
+    totalNodes: parseResult.structure.reduce((acc, n) => acc + 1 + (n.nodes?.length || 0), 0),
+  });
+  tracer.save();
+
+  // 记录解析路径决策
+  if (options.fileType === "epub") {
+    tracer.recordPathDecision({
+      phase: "parse_document",
+      decision: "epub_direct",
+      reason: `EPUB has ${parseResult.structure.length} chapters from spine`,
+    });
+  } else {
+    tracer.recordPathDecision({
+      phase: "parse_document",
+      decision: "llm_toc",
+      reason: `PDF parsed via LLM, ${parseResult.structure.length} chapters extracted`,
+    });
+  }
+  tracer.save();
+
   reportProgress({
     percent: 70,
     step: "parse_complete",
@@ -223,13 +274,15 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   const rootTitle = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
   // Simplify export name: strip subtitles after separators for cleaner directory names
   const exportName = simplifyTitle(rootTitle);
+  tracer.setTitle(exportName);
   const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
   const bookDir = path.join(deepReaderDir, exportName);
 
   // Ensure DeepReader directory exists
   await fs.mkdir(deepReaderDir, { recursive: true });
 
-  // Save cover image
+  // B1.5 Save cover image
+  tracer.startPhase("save_cover");
   const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
   await fs.mkdir(coversDir, { recursive: true });
 
@@ -268,9 +321,12 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       console.warn("[book-indexer] Failed to generate text cover:", err);
     }
   }
+  tracer.endPhase();
+  tracer.save();
 
-  // Step 1.5: Download images (PDF only)
+  // B1.6: Download images (PDF only)
   if (options.fileType === "pdf" && parseResult.images && parseResult.images.length > 0) {
+    tracer.startPhase("download_images");
     const imagesDir = path.join(bookDir, "images");
     await fs.mkdir(imagesDir, { recursive: true });
 
@@ -289,9 +345,12 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     piLog(`[book-indexer] Downloaded images to ${imagesDir}`);
+    tracer.endPhase({ imageCount: parseResult.images.length });
+    tracer.save();
   }
 
-  // Step 2: Markdown export (70%-80%)
+  // B2 export_markdown
+  tracer.startPhase("export_markdown");
   reportProgress({
     percent: 70,
     step: "export_markdown",
@@ -341,13 +400,17 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     );
   }
 
+  tracer.endPhase();
+  tracer.save();
+
   reportProgress({
     percent: 80,
     step: "export_complete",
     stepLabel: "Markdown 导出完成",
   });
 
-  // Step 3: Build book-meta.json
+  // B3 build_meta
+  tracer.startPhase("build_meta");
   reportProgress({
     percent: 82,
     step: "build_meta",
@@ -369,6 +432,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     path.join(indexDir, "book-meta.json"),
     JSON.stringify(bookMeta, null, 2)
   );
+  tracer.endPhase();
+  tracer.save();
 
   // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
   let treeData: any = { title: rootTitle, exportName, structure: parseResult.structure };
@@ -437,8 +502,20 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   let vectorizationSuccess = false;
   // Skip vectorization if provider is 'local' (means no vector index)
   const shouldVectorize = options.embedding && options.embedding.provider !== 'local';
-  
+
+  if (!shouldVectorize) {
+    tracer.recordPathDecision({
+      phase: "vectorize",
+      decision: "vectorize_skipped",
+      reason: options.embedding?.provider === 'local'
+        ? "embedding provider is 'local' (BM25-only)"
+        : "embedding role not configured",
+    });
+    tracer.save();
+  }
+
   if (shouldVectorize) {
+    tracer.startPhase("vectorize");
     reportProgress({
     percent: 87,
       step: "vectorize",
@@ -449,7 +526,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       const nodeFileMap = (parseResult as any)._nodeFileMap || {};
       const vectorResult = await vectorizeAllLevels(
         parseResult, indexDir, options.embedding, nodeFileMap, treeData, options.outputDir,
-        (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg })
+        (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg }),
+        (info) => tracer.recordLlmCall({ purpose: "generate_embedding", model: info.model, durationMs: info.durationMs }),
       );
       vectorizationSuccess = true;
 
@@ -476,7 +554,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
           indexedAt: new Date().toISOString(),
         });
       }
-      
+
+      tracer.endPhase({ totalVectors: vectorResult?.nodeCount || 0, dimensions: vectorResult?.dimensions || 0 });
+      tracer.save();
+
       reportProgress({
         percent: 92,
         step: "vectorize_complete",
@@ -484,6 +565,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       });
     } catch (error) {
       console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
+
+      tracer.endPhase();
+      tracer.save();
 
       bookMeta.embedding = undefined;
       await fs.writeFile(
@@ -500,18 +584,27 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     }
   }
 
-  // Step 5: BM25 index building
+  // B5 build_bm25
+  tracer.startPhase("build_bm25");
   reportProgress({
     percent: 94,
     step: "build_bm25",
     stepLabel: "构建 BM25 索引",
   });
 
-  const bm25Data = buildBM25IndexFromParseResult(parseResult);
-  await fs.writeFile(
-    path.join(indexDir, "bm25.json"),
-    JSON.stringify(bm25Data, null, 2)
-  );
+  try {
+    const bm25Data = buildBM25IndexFromParseResult(parseResult);
+    await fs.writeFile(
+      path.join(indexDir, "bm25.json"),
+      JSON.stringify(bm25Data, null, 2)
+    );
+    tracer.endPhase();
+    tracer.save();
+  } catch (error) {
+    tracer.failPhase(error instanceof Error ? error.message : String(error));
+    tracer.save();
+    throw error;
+  }
 
   reportProgress({
     percent: 97,
@@ -519,8 +612,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     stepLabel: "BM25 索引构建完成",
   });
 
-  // Step 7: Proposition cards extraction (optional)
+  // B6 extract_propositions
   if (options.propositions?.enabled && options.propositions.apiKey) {
+    tracer.startPhase("extract_propositions");
     reportProgress({
       percent: 97,
       step: "extract_propositions",
@@ -564,11 +658,17 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         JSON.stringify(bookMeta, null, 2)
       );
 
+      tracer.endPhase({ totalCards: propResult.totalCards });
+      tracer.save();
+
       piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       console.warn("[book-indexer] Proposition extraction failed:", errorMsg);
-      
+
+      tracer.endPhase();
+      tracer.save();
+
       bookMeta.propositions = {
         enabled: false,
         totalCards: 0,
@@ -580,7 +680,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         path.join(indexDir, "book-meta.json"),
         JSON.stringify(bookMeta, null, 2)
       );
-      
+
       reportProgress({
         percent: 97,
         step: "propositions_failed",
@@ -597,6 +697,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     stepLabel: "索引完成",
   });
 
+  tracer.finalize(true);
+
   return {
     bookId,
     title: rootTitle,
@@ -605,6 +707,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     indexDir,
   };
 
+  } catch (error) {
+    tracer.finalize(false, error instanceof Error ? error.message : String(error));
+    throw error;
   } finally {
     cleanupStatus();
   }
@@ -657,7 +762,8 @@ async function vectorizeAllLevels(
   nodeFileMap: Record<string, string>,
   treeData: any,
   vaultRootPath: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  onEmbedCall?: (info: { model: string; durationMs: number }) => void
 ): Promise<{ dimensions: number; nodeCount: number } | undefined> {
   const { generateEmbedding, generateEmbeddings, writeVectorJsonl, writeChunkTexts } =
     await import("./vault/vectors.js");
@@ -709,7 +815,7 @@ async function vectorizeAllLevels(
 
   // Generate embeddings for L0+L1 (truncate to model token limit)
   const l0l1Texts = allPending.map(p => truncate(p.text));
-  const l0l1Vectors = await generateEmbeddings(l0l1Texts, embedding);
+  const l0l1Vectors = await generateEmbeddings(l0l1Texts, embedding, onEmbedCall);
   for (let i = 0; i < l0l1Vectors.length; i++) {
     allPending[i].vector = l0l1Vectors[i];
   }
@@ -717,9 +823,6 @@ async function vectorizeAllLevels(
   // L2: chunk paragraphs from .md files
   const exportName = treeData.exportName || treeData.title;
   let totalChunks = 0;
-  let l2ReadErrors = 0;
-
-  piLog(`[vectorize] L2 path base: ${path.join(vaultRootPath, "DeepReader", exportName)}`);
 
   for (const node of parseResult.structure || []) {
     const chapters = collectChaptersFlat(node);
@@ -744,14 +847,11 @@ async function vectorizeAllLevels(
           });
           totalChunks++;
         }
-      } catch (err) {
-        l2ReadErrors++;
-        piLog(`[vectorize] L2: failed to read ${mdPath}: ${err instanceof Error ? err.message : String(err)}`);
+      } catch {
+        piLog(`[vectorize] L2: failed to read ${mdPath}`);
       }
     }
   }
-
-  piLog(`[vectorize] L2 scan: ${totalChunks} chunks from ${nodeFileMap ? Object.keys(nodeFileMap).length : 0} files, ${l2ReadErrors} read errors`);
 
   onProgress?.(`向量化段落 0/${totalChunks}`);
 
@@ -762,7 +862,7 @@ async function vectorizeAllLevels(
     for (let i = 0; i < l2Pending.length; i += batchSize) {
       const batch = l2Pending.slice(i, i + batchSize);
       const texts = batch.map(c => truncate(c.text));
-      const vectors = await generateEmbeddings(texts, embedding);
+      const vectors = await generateEmbeddings(texts, embedding, onEmbedCall);
       for (let j = 0; j < vectors.length; j++) {
         batch[j].vector = vectors[j];
       }
@@ -977,7 +1077,7 @@ function generateTextCover(title: string, fileType: string): string {
  * Simplify title by stripping subtitles after common separators
  * e.g. "遥远的救世主：根据本书改编..." → "遥远的救世主"
  */
-function simplifyTitle(title: string): string {
+export function simplifyTitle(title: string): string {
   const separators = ['：', ':', '—', '-', '｜', '|'];
   for (const sep of separators) {
     if (title.includes(sep)) {

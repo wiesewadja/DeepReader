@@ -195,7 +195,8 @@ export async function generateEmbedding(
 
 export async function generateEmbeddings(
   texts: string[],
-  options: EmbeddingOptions
+  options: EmbeddingOptions,
+  onEmbedCall?: (info: { model: string; durationMs: number }) => void
 ): Promise<number[][]> {
   if (options.provider === "local") {
     throw new Error("Local provider does not support embedding generation. Use BM25-only search instead.");
@@ -210,6 +211,7 @@ export async function generateEmbeddings(
       .map(t => t.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') || ' ');
 
     if (options.provider === "openai" || options.provider === "lmstudio") {
+      const t0 = Date.now();
       const body: Record<string, unknown> = {
         model: options.model || "text-embedding-3-small",
         input: batch,
@@ -241,6 +243,7 @@ export async function generateEmbeddings(
         throw new Error(`Embedding API returned ${data.data.length} results for ${batch.length} inputs`);
       }
       results.push(...data.data.map((item) => item.embedding));
+      onEmbedCall?.({ model: body.model as string, durationMs: Date.now() - t0 });
     } else if (options.provider === "ollama") {
       for (const text of batch) {
         const embedding = await generateOllamaEmbedding(text, options);

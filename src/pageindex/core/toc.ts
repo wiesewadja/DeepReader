@@ -9,6 +9,7 @@ import type { PdfPage } from "../parsers/pdf";
 import type { TocItem, TocCheckResult } from "./types";
 import { extractJson, getJsonContent, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
 import * as prompts from "./prompts";
+import type { LlmCallTrace } from "../index-tracer.js";
 
 export interface TocOptions {
   model: string;
@@ -16,6 +17,7 @@ export interface TocOptions {
   apiKey?: string;
   baseUrl?: string;
   maxTokens?: number; // 可选的输出 token 上限，不同模型不同
+  onLlmCall?: (call: Omit<LlmCallTrace, "phase">) => void;
 }
 
 /**
@@ -223,14 +225,16 @@ export async function tocTransformer(
 ): Promise<TocItem[]> {
   const prompt = prompts.tocTransformerPrompt(tocContent);
   const maxTokens = options.maxTokens || 8192;
-  
-  let { content: lastComplete, finishReason } = await chatGPTWithFinishReason({
+
+  let t0 = Date.now();
+  let { content: lastComplete, finishReason, usage: firstUsage } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     maxTokens,
   });
+  options.onLlmCall?.({ purpose: "extract_page_numbers", model: options.model, inputTokens: firstUsage?.inputTokens, outputTokens: firstUsage?.outputTokens, durationMs: Date.now() - t0 });
 
   piLog(`[DIAG-tocTransformer] LLM response length: ${lastComplete.length}, finishReason: ${finishReason}`);
 
@@ -263,6 +267,7 @@ export async function tocTransformer(
     }
 
     const continuePrompt = prompts.tocTransformerContinuePrompt(tocContent, lastComplete);
+    t0 = Date.now();
     const result = await chatGPTWithFinishReason({
       model: options.model,
       prompt: continuePrompt,
@@ -270,6 +275,7 @@ export async function tocTransformer(
       baseUrl: options.baseUrl,
       maxTokens,
     });
+    options.onLlmCall?.({ purpose: "extract_page_numbers", model: options.model, inputTokens: result.usage?.inputTokens, outputTokens: result.usage?.outputTokens, durationMs: Date.now() - t0 });
 
     let newContent = result.content;
     finishReason = result.finishReason;
@@ -331,13 +337,17 @@ export async function generateTocInit(
   const inputTokens = Math.round(part.length / 4);
   piLog(`[generateTocInit] Sending to ${options.model} (input ~${inputTokens} chars, baseUrl: ${options.baseUrl})...`);
 
-  const { content, finishReason } = await chatGPTWithFinishReason({
+  const t0 = Date.now();
+  const { content, finishReason, usage } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     maxTokens: 16384,
   });
+  const durationMs = Date.now() - t0;
+
+  options.onLlmCall?.({ purpose: "generate_toc", model: options.model, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, durationMs });
 
   piLog(`[generateTocInit] Response received: finishReason=${finishReason}, output ${content.length} chars`);
 
@@ -371,13 +381,17 @@ export async function generateTocContinue(
   const inputTokens = Math.round(part.length / 4);
   piLog(`[generateTocContinue] Sending to ${options.model} (input ~${inputTokens} chars, context ${tocContent.length} items)...`);
 
-  const { content, finishReason } = await chatGPTWithFinishReason({
+  const t0 = Date.now();
+  const { content, finishReason, usage } = await chatGPTWithFinishReason({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
     maxTokens: 16384,
   });
+  const durationMs = Date.now() - t0;
+
+  options.onLlmCall?.({ purpose: "generate_toc", model: options.model, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, durationMs });
 
   piLog(`[generateTocContinue] Response received: finishReason=${finishReason}, output ${content.length} chars`);
 

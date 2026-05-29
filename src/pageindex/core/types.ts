@@ -2,6 +2,8 @@
  * PageIndex: Types and interfaces
  */
 
+import type { LlmCallTrace } from "../index-tracer.js";
+
 /** Extraction mode for PDF processing */
 export type ExtractionMode = "text" | "ocr";
 
@@ -33,6 +35,8 @@ export interface PageIndexOptions {
   mineruApiKey?: string;
   /** Progress callback for real-time updates */
   onProgress?: (progress: ProgressInfo) => void;
+  /** LLM 调用追踪回调（可选，用于索引追踪日志） */
+  onLlmCall?: (call: Omit<LlmCallTrace, "phase">) => void;
   
   // OCR-specific options
   /** Extraction mode: 'text' for native PDFs, 'ocr' for scanned PDFs (default: 'text') */

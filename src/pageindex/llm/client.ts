@@ -32,6 +32,7 @@ export interface ChatOptions {
 export interface ChatResult {
   content: string;
   finishReason: "finished" | "max_output_reached" | "error";
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 /**
@@ -130,6 +131,7 @@ export async function chatGPTWithFinishReason(
           message: { content: string };
           finish_reason: string;
         }>;
+        usage?: { prompt_tokens: number; completion_tokens: number };
       };
 
       const choice = data.choices[0];
@@ -143,6 +145,7 @@ export async function chatGPTWithFinishReason(
         content: sharedStripThinkTags(choice.message.content),
         finishReason: choice.finish_reason === "stop" ? "finished" :
                       choice.finish_reason === "length" ? "max_output_reached" : "error",
+        ...(data.usage ? { usage: { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens } } : {}),
       };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -205,6 +208,7 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
       message: { content: string };
       finish_reason: string;
     }>;
+    usage?: { prompt_tokens: number; completion_tokens: number };
   };
 
   const choice = data.choices[0];
@@ -215,6 +219,7 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
   return {
     content: choice.message.content,
     finishReason: choice.finish_reason === "stop" ? "finished" : "error",
+    ...(data.usage ? { usage: { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens } } : {}),
   };
 }
 

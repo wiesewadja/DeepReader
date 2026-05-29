@@ -13,3 +13,6 @@ export const ZLIBRARY_ENABLED = true;
 // 其他可选插件开关（预留）
 // export const WEREAD_ENABLED = true;
 // export const PI_AGENT_ENABLED = true;
+
+/** 索引追踪日志（调试用，默认关闭。开启后每次索引生成 traces/{exportName}.json） */
+export const INDEX_TRACE_ENABLED = false;

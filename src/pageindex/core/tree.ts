@@ -390,6 +390,7 @@ export async function generateSummariesForStructure(
   options: TreeOptions,
   onProgress?: (completed: number, total: number) => void
 ): Promise<void> {
+  const t0 = Date.now();
   const nodes = structureToList(structure);
   const total = nodes.length;
 
@@ -411,6 +412,8 @@ export async function generateSummariesForStructure(
     const completed = Math.min(i + batchSize, total);
     onProgress?.(completed, total);
   }
+
+  options.onLlmCall?.({ purpose: "generate_summary", model: options.model, durationMs: Date.now() - t0 });
 }
 
 /**
@@ -420,15 +423,20 @@ export async function generateDocDescription(
   structure: TreeNode[],
   options: TreeOptions
 ): Promise<string> {
+  const t0 = Date.now();
   const cleanStructure = createCleanStructureForDescription(structure);
   const prompt = prompts.generateDocDescriptionPrompt(JSON.stringify(cleanStructure));
 
-  return chatGPT({
+  const result = await chatGPT({
     model: options.model,
     prompt,
     apiKey: options.apiKey,
     baseUrl: options.baseUrl,
   });
+
+  options.onLlmCall?.({ purpose: "generate_description", model: options.model, durationMs: Date.now() - t0 });
+
+  return result;
 }
 
 /**
@@ -443,6 +451,7 @@ export async function verifyToc(
   correct: TocItem[];
   incorrect: Array<{ listIndex: number; title: string; physicalIndex?: number }>;
 }> {
+  const t0 = Date.now();
   const correct: TocItem[] = [];
   const incorrect: Array<{ listIndex: number; title: string; physicalIndex?: number }> = [];
 
@@ -470,6 +479,8 @@ export async function verifyToc(
     }
   }
 
+  options.onLlmCall?.({ purpose: "verify_page", model: options.model, durationMs: Date.now() - t0 });
+
   return { correct, incorrect };
 }
 
@@ -486,6 +497,7 @@ export async function fixIncorrectToc(
   fixed: TocItem[];
   stillIncorrect: Array<{ listIndex: number; title: string; physicalIndex?: number }>;
 }> {
+  const t0 = Date.now();
   const fixed = [...tocWithPageNumber];
   const stillIncorrect: Array<{ listIndex: number; title: string; physicalIndex?: number }> = [];
   const incorrectIndices = new Set(incorrectResults.map((r) => r.listIndex));
@@ -571,6 +583,8 @@ export async function fixIncorrectToc(
       stillIncorrect.push(result);
     }
   }
+
+  options.onLlmCall?.({ purpose: "fix_toc_entry", model: options.model, durationMs: Date.now() - t0 });
 
   return { fixed, stillIncorrect };
 }

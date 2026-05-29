@@ -137,7 +137,7 @@ interface InternalOptions extends TreeOptions {
   onProgress?: (progress: ProgressInfo) => void;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "mineruApiKey" | "onProgress" | "ocrPromptType">> = {
+const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "mineruApiKey" | "onProgress" | "onLlmCall" | "ocrPromptType">> = {
   model: DEFAULT_MODEL,
   tocCheckPageNum: DEFAULT_TOC_CHECK_PAGE_NUM,
   maxPageNumEachNode: DEFAULT_MAX_PAGE_NUM_EACH_NODE,
@@ -177,6 +177,7 @@ export class PageIndex {
       baseUrl: options.baseUrl,
       mineruApiKey: options.mineruApiKey,
       onProgress: options.onProgress,
+      onLlmCall: options.onLlmCall,
       // OCR options
       extractionMode: options.extractionMode || DEFAULT_OPTIONS.extractionMode,
       ocrModel: options.ocrModel || DEFAULT_OPTIONS.ocrModel,
@@ -474,6 +475,7 @@ export class PageIndex {
     nodes: TreeNode[],
     pages: PdfPage[]
   ): Promise<void> {
+    const t0 = Date.now();
     const maxPageNum = this.options.maxPageNumEachNode;
     const maxTokenNum = this.options.maxTokenNumEachNode;
     const leafNodes: { node: TreeNode; parent?: TreeNode; index?: number }[] = [];
@@ -555,6 +557,8 @@ export class PageIndex {
 
     // Recurse on newly created leaf nodes
     await this.processLargeNodesRecursively(nodes, pages);
+
+    this.options.onLlmCall?.({ purpose: "split_large_node", model: this.options.model, durationMs: Date.now() - t0 });
   }
 
   /**
