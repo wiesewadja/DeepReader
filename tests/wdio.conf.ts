@@ -1,26 +1,25 @@
 import * as path from "path";
-import { defineConfig } from "vitest/config";
 
-export const wdioConfig: WebdriverIO.Config = {
+export const config: WebdriverIO.Config = {
     runner: 'local',
     framework: 'mocha',
-    specs: ['./tests/e2e/specs/**/*.e2e.ts'],
+    specs: ['tests/e2e/specs/**/*.e2e.ts'],
     maxInstances: 1,
 
     capabilities: [{
         browserName: 'obsidian',
         browserVersion: 'latest',
         'wdio:obsidianOptions': {
-            installerVersion: '1.12',
-            plugins: ['./bin'],
-            vault: './test-vault',
+            installerVersion: 'latest',
+            plugins: [path.resolve(__dirname, '../bin')],
+            vault: path.resolve(__dirname, '../test-vault'),
         },
     }],
 
     services: ['obsidian'],
     reporters: ['spec'],
 
-    cacheDir: path.resolve('.obsidian-cache'),
+    cacheDir: path.resolve(__dirname, '../.obsidian-cache'),
 
     mochaOpts: {
         ui: 'bdd',
