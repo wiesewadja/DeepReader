@@ -31,6 +31,7 @@ function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<Cog
     preSearchBlock: '',
     earlyStopContent: '',
     toolResultsSnapshot: [],
+    prevSearchedBlockIds: [],
   };
 }
 
@@ -154,9 +155,15 @@ export async function preSearchNode(
     const embeddingRole = pluginSettings ? resolveRoleConfig('embedding', pluginSettings) : null;
     const rerankerRole = pluginSettings ? resolveRoleConfig('reranker', pluginSettings) : null;
     const rerankerWeight = pluginSettings?.rerankerWeight ?? 0.7;
+
+    // #6: 动态 topK — 事实性短查询用少量精确结果，概念性长查询提高召回
+    const queryText = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
+    const queryLen = queryText.length;
+    const dynamicTopK = queryLen < 8 ? 5 : queryLen > 30 ? 15 : 10;
+
     const baseSearchOpts: Omit<BookSearchOptionsV2, 'query'> = {
       filePath: '',
-      topK: 10,
+      topK: dynamicTopK,
       embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
       reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
       scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
@@ -221,17 +228,46 @@ export async function preSearchNode(
       })),
     }));
 
+    // #7: block_id 级别去重 — 不同关键词可能命中同一 block
+    const seenBlockIds = new Set<string>();
+    for (const h of hits) {
+      h.matched_blocks = h.matched_blocks.filter(b => {
+        if (seenBlockIds.has(b.block_id)) return false;
+        seenBlockIds.add(b.block_id);
+        return true;
+      });
+    }
+
     // 4. Early stop check
-    const avgScore = hits.reduce((s, h) => s + h.score, 0) / hits.length;
+    // #1: 加权 avgScore — Top-1 占 60%, Top-2 占 30%, Top-3 占 10%
+    const wScore = hits[0].score * 0.6
+      + (hits[1]?.score ?? 0) * 0.3
+      + (hits[2]?.score ?? 0) * 0.1;
 
-    // Quality guard: matched blocks must contain actual content (not just title-only fallbacks).
-    // Without this, min-max normalization makes avgScore always > threshold regardless of result quality.
-    const hasSubstantiveBlocks = hits.some(h =>
-      h.matched_blocks.some(b => b.block_id !== '' && b.content.length > 50)
-    );
+    // #3: 连续性实质性分数（0-100），替代原来的二元 hasSubstantiveBlocks
+    // 考虑: block_id 非空 +20, 内容长度每 10 字 +1(上限+30), 非空壳 +15
+    function computeSubstantiveScore(): number {
+      // 所有 block_id 均为空 → 纯标题回退，直接返回 0
+      if (hits.every(h => h.matched_blocks.every(b => !b.block_id))) {
+        return 0;
+      }
+      let maxScore = 0;
+      for (const h of hits) {
+        for (const b of h.matched_blocks) {
+          let s = 0;
+          if (b.block_id) s += 20;
+          s += Math.min(b.content.length / 10, 30);
+          if (b.content.length > 20) s += 15;
+          maxScore = Math.max(maxScore, s);
+        }
+      }
+      return maxScore;
+    }
+    const SUBSTANTIVE_THRESHOLD = 30;
+    const substantiveScore = computeSubstantiveScore();
 
-    if (avgScore >= earlyStopThreshold && hits.length >= 2 && hasSubstantiveBlocks) {
-      log(`[S2-Pre] 早停: avg=${avgScore.toFixed(2)} >= ${earlyStopThreshold}, 跳过 ReAct`);
+    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore >= SUBSTANTIVE_THRESHOLD) {
+      log(`[S2-Pre] 早停: wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
 
       const blockLines = formatBlockLines(hits);
 
@@ -276,9 +312,16 @@ export async function preSearchNode(
 
     // 5. Normal path: inject compact pre-search results
     const blockLines = formatBlockLines(hits);
-    if (avgScore >= earlyStopThreshold && hits.length >= 2 && !hasSubstantiveBlocks) {
-      log(`[S2-Pre] 早停被质量守卫拦截: avg=${avgScore.toFixed(2)} 但无实质内容 (block_ids 均为空), 走 ReAct`);
+    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore < SUBSTANTIVE_THRESHOLD) {
+      log(`[S2-Pre] 早停被质量守卫拦截: wScore=${wScore.toFixed(2)} 但实质性分数仅 ${substantiveScore}/${SUBSTANTIVE_THRESHOLD}, 走 ReAct`);
     }
+
+    // #5: 提取所有已搜 block_ids，供下游 ReAct 循环避免重复搜索
+    const preSearchBlockIds = hits.flatMap(h =>
+      h.matched_blocks.map(b => b.block_id).filter(Boolean)
+    );
+    const existingBlockIds = ctx?.prevSearchedBlockIds ?? [];
+    const mergedBlockIds = [...new Set([...existingBlockIds, ...preSearchBlockIds])];
 
     const preSearchBlock = `<pre_search_results>
 基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
@@ -286,7 +329,7 @@ export async function preSearchNode(
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, avg=${avgScore.toFixed(2)}, ${stateKeywords.length} 个关键词`);
+    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记`);
 
     return {
       validatedScopeNodeIds,
@@ -294,6 +337,7 @@ ${blockLines.join('\n\n')}
       preSearchBlock,
       earlyStopContent: '',
       toolResultsSnapshot: [],
+      prevSearchedBlockIds: mergedBlockIds,
     };
   } catch (err) {
     log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));

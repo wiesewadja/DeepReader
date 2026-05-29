@@ -12,6 +12,9 @@
 
 import { MAX_TOOL_RESULT_LENGTH } from '../../config/agent-constants.js';
 
+/** #4: 幽灵引用触发 LLM 修正的比例阈值 */
+export const GHOST_REF_RATIO_THRESHOLD = 0.3;
+
 export interface ToolResultEntry {
   toolName: string;
   args: Record<string, unknown>;
@@ -277,7 +280,7 @@ export async function verifyAndCleanContent(
   cleanedContent = removeGhostFileLinks(cleanedContent, ghostFiles);
   let llmCorrectionTriggered = false;
 
-  if ((ghostCount + invalidFileRefs) > totalRefs * 0.5 && options?.llmClient) {
+  if ((ghostCount + invalidFileRefs) > totalRefs * GHOST_REF_RATIO_THRESHOLD && options?.llmClient) {
     try {
       const correctionMessage = `你的回答中有 ${ghostCount}/${totalRefs} 个引用无法在工具调用结果中找到（幽灵引用），${invalidFileRefs} 个引用的文件名不匹配。` +
         `请重新生成回答，只引用实际存在于工具返回内容中的 block_id 和正确的文件名，` +

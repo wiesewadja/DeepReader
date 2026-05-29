@@ -46,6 +46,7 @@ export async function analyticalNode(
     betterQuestion: stateBetterQuestion,
     scopeNodeIds: rawScopeNodeIds,
     nodeFileMap: stateNodeFileMap,
+    prevSearchedBlockIds: statePrevBlockIds,
   }: AnalyticalInput = state;
   const ctx = config.configurable?.sharedContext;
   const mainModel = config.configurable?.mainModel;
@@ -79,7 +80,7 @@ export async function analyticalNode(
     standaloneQuery: stateQuery || ctx?.rawUserQuery || '',
     betterQuestion: stateBetterQuestion || ctx?.betterQuestion,
     recentHistorySummaries: ctx?.recentHistorySummaries,
-    prevSearchedBlockIds: ctx?.prevSearchedBlockIds,
+    prevSearchedBlockIds: statePrevBlockIds.length > 0 ? statePrevBlockIds : ctx?.prevSearchedBlockIds,
   });
 
   // Inject pre-search results from S2-Pre node

@@ -59,6 +59,7 @@ export interface PreSearchOutput {
   earlyStopContent: string;
   analysisResult?: string;
   toolResultsSnapshot: ToolResultSnapshot[];
+  prevSearchedBlockIds?: string[];
 }
 
 export interface AnalyticalInput {
@@ -70,6 +71,7 @@ export interface AnalyticalInput {
   betterQuestion: string;
   scopeNodeIds: string[];
   nodeFileMap: Record<string, string>;
+  prevSearchedBlockIds: string[];
 }
 
 export interface AnalyticalOutput {
