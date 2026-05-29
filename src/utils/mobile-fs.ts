@@ -6,6 +6,7 @@
  */
 
 import { type App, normalizePath } from 'obsidian';
+import { join } from 'path';
 import type { TFile } from 'obsidian';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
 
@@ -100,7 +101,7 @@ export async function resolveBookIdFromPdf(app: App, pdfName: string): Promise<s
 			f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
 		);
 		if (!bookFile) return null;
-		return (await sha256Hex(`${basePath}/${bookFile.path}`)).slice(0, 8);
+		return (await sha256Hex(join(basePath, bookFile.path))).slice(0, 8);
 	}
 
 	// 移动端：遍历 pageindex 目录，通过 book-meta.json 的标题匹配

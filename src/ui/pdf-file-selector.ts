@@ -5,6 +5,7 @@
  */
 
 import { App, Modal, FuzzySuggestModal, TFile, Notice } from "obsidian";
+import { join } from "path";
 
 // ==================== 文档类型 ====================
 export type DocumentType = "pdf" | "epub";
@@ -193,7 +194,7 @@ export class PDFFileSelectorModal extends Modal {
 
         this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径
-            const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
+            const absolutePath = basePath ? join(basePath, file.path) : file.path;
 
             return {
                 file,
@@ -374,7 +375,7 @@ export class PDFQuickSelector extends FuzzySuggestModal<DocumentFileInfo> {
 
         this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径
-            const absolutePath = basePath ? `${basePath}/${file.path}` : file.path;
+            const absolutePath = basePath ? join(basePath, file.path) : file.path;
 
             return {
                 file,

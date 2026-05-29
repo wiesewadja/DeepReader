@@ -8,7 +8,10 @@ import { type App, normalizePath } from 'obsidian';
 import type { PiConfig } from './types.js';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, delimiter } from 'path';
+
+/** 当前平台 */
+const platform = process.platform;
 
 const PI_SYSTEM_PROMPT = `你是奚童的技能执行引擎，隶属于 DeepReader 深度阅读插件。
 
@@ -79,14 +82,22 @@ export function getPiSystemPrompt(): string {
  * 而 pi 是 Node.js 脚本（#!/usr/bin/env node），需要 node 在 PATH 中。
  */
 export function buildSpawnEnv(): NodeJS.ProcessEnv {
-	const extraPaths = [
-		'/opt/homebrew/bin',           // Apple Silicon Homebrew (node + pi)
-		'/usr/local/bin',              // Intel Homebrew
-		join(homedir(), '.npm-global/bin'),
-	];
-	const existingPath = (process.env.PATH ?? '').split(':');
+	const home = homedir();
+	const extraPaths: string[] = [];
+
+	if (platform === 'darwin') {
+		extraPaths.push('/opt/homebrew/bin', '/usr/local/bin', join(home, '.npm-global/bin'));
+	} else if (platform === 'linux') {
+		extraPaths.push('/usr/local/bin', '/usr/bin', join(home, '.npm-global/bin'), join(home, '.local/bin'));
+	} else if (platform === 'win32') {
+		const appdata = process.env.APPDATA ?? join(home, 'AppData', 'Roaming');
+		const localappdata = process.env.LOCALAPPDATA ?? join(home, 'AppData', 'Local');
+		extraPaths.push(join(appdata, 'npm'), join(localappdata, 'pnpm'));
+	}
+
+	const existingPath = (process.env.PATH ?? '').split(delimiter);
 	const merged = [...new Set([...extraPaths, ...existingPath])];
-	return { ...process.env, PATH: merged.join(':') };
+	return { ...process.env, PATH: merged.join(delimiter) };
 }
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
@@ -94,9 +105,6 @@ let piCliCache: { result: { available: boolean; version?: string; path?: string;
 
 /** semver 格式正则（如 0.75.5） */
 const SEMVER_RE = /^\d+\.\d+\.\d+/;
-
-/** 当前平台 */
-const platform = process.platform;
 
 /**
  * 候选 PI 可执行文件路径（跨平台）

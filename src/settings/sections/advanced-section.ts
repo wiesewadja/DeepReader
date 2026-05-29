@@ -38,9 +38,9 @@ export function renderAdvancedSection(
 
   new Setting(container)
     .setName('PI 可执行文件路径')
-    .setDesc('如果自动检测失败，请填写 pi 的绝对路径（如 /opt/homebrew/bin/pi）。留空则自动检测。')
+    .setDesc('如果自动检测失败，请填写 pi 的绝对路径。留空则自动检测。示例：/opt/homebrew/bin/pi（macOS）或 C:\\Users\\<用户>\\AppData\\Roaming\\npm\\pi.cmd（Windows）')
     .addText(text => text
-      .setPlaceholder('/opt/homebrew/bin/pi')
+      .setPlaceholder('pi 的绝对路径')
       .setValue(ctx.plugin.settings.customPiPath)
       .onChange(async (value) => {
         ctx.plugin.settings.customPiPath = value;
