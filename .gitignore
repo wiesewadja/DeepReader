@@ -36,6 +36,9 @@ backend/data/
 .obsidian-cache
 test-vault/
 
+# Eval test artifacts
+.eval/
+
 # AI agent tools (internal)
 .gstack/
 .superpowers/

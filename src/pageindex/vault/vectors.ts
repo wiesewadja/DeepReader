@@ -287,7 +287,11 @@ async function generateOpenAIEmbedding(
     throw new Error(`API Key is required for ${options.provider} provider`);
   }
 
-  const baseUrl = options.baseUrl || (options.provider === "lmstudio" ? "http://localhost:1234/v1" : "https://api.openai.com/v1");
+  const baseUrl = options.baseUrl ||
+    (options.provider === "lmstudio" ? "http://localhost:1234/v1" :
+     options.provider === "siliconflow" ? "https://api.siliconflow.cn/v1" :
+     options.provider === "deepseek" ? "https://api.deepseek.com/v1" :
+     "https://api.openai.com/v1");
 
   const response = await safeRequest({
     url: `${baseUrl}/embeddings`,

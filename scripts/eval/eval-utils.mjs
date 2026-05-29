@@ -306,4 +306,62 @@ export function printHistoryTable(entries) {
   console.log(`共 ${entries.length} 条记录`);
 }
 
+/**
+ * 启动 PI Agent 子进程并等待完成
+ * @param {object} opts
+ * @param {string} opts.PI_BIN - PI 可执行文件路径
+ * @param {string} opts.systemPrompt - 系统提示词（文件内容）
+ * @param {string} opts.vault - 工作目录（vault 路径）
+ * @param {string} opts.promptMessage - 延迟发送给 PI 的 prompt 消息
+ * @param {string[]} [opts.tools] - 启用的工具列表
+ * @param {number} [opts.timeoutMs] - 超时时间（默认 5 分钟）
+ */
+export function spawnPI({ PI_BIN, systemPrompt, vault, promptMessage, tools, timeoutMs }) {
+  const bin = PI_BIN || process.env.PI_BIN || '/opt/homebrew/bin/pi';
+  const timeout = timeoutMs || 300_000;
+  const enabledTools = tools || ['read', 'write', 'ls', 'find', 'grep'];
 
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, [
+      '--mode', 'rpc',
+      '--provider', process.env.PI_PROVIDER || 'xiaomi-token-plan-cn',
+      '--model', process.env.PI_MODEL || 'mimo-v2.5',
+      '--no-session', '--no-skills', '--no-extensions',
+      '--tools', enabledTools.join(','),
+      '--append-system-prompt', systemPrompt,
+    ], { cwd: vault, stdio: ['pipe', 'pipe', 'pipe'] });
+
+    let buffer = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) { settled = true; child.kill(); reject(new EvalError(`PI Agent 执行超时（${Math.round(timeout / 1000)}s）`, 'ETIMEDOUT')); }
+    }, timeout);
+
+    child.stdout.on('data', d => {
+      buffer += d.toString('utf-8'); process.stdout.write(d.toString('utf-8'));
+      while (true) {
+        const idx = buffer.indexOf('\n');
+        if (idx === -1) break;
+        const line = buffer.substring(0, idx); buffer = buffer.substring(idx + 1);
+        if (!line.trim()) continue;
+        try {
+          const evt = JSON.parse(line);
+          if (evt.type === 'tool_execution_start') console.log(`\n[TOOL] ${evt.tool_name}`);
+          if (evt.type === 'agent_end' && !settled) {
+            settled = true; clearTimeout(timer);
+            console.log('\n[PI Agent 完成]');
+            setTimeout(() => child.kill(), 500);
+            resolve({ done: true });
+          }
+        } catch {}
+      }
+    });
+    child.stderr.on('data', () => {});
+    child.on('error', err => { if (!settled) { settled = true; clearTimeout(timer); reject(new EvalError(`PI 启动失败: ${err.message}`, 'ENOENT')); } });
+    child.on('close', () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ done: true }); } });
+
+    setTimeout(() => {
+      child.stdin.write(JSON.stringify({ type: 'prompt', message: promptMessage }) + '\n');
+    }, 2000);
+  });
+}

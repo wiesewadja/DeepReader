@@ -500,6 +500,7 @@ export async function verifyToc(
     }
   }
 
+  // checkTitleAppearance 内部使用 chatGPT（不含 usage），暂无法追踪 token
   options.onLlmCall?.({ purpose: "verify_page", model: options.model, durationMs: Date.now() - t0 });
 
   return { correct, incorrect };
@@ -605,6 +606,7 @@ export async function fixIncorrectToc(
     }
   }
 
+  // singleTocItemIndexFixer 内部使用 chatGPT（不含 usage），暂无法追踪 token
   options.onLlmCall?.({ purpose: "fix_toc_entry", model: options.model, durationMs: Date.now() - t0 });
 
   return { fixed, stillIncorrect };

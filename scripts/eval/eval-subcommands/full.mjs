@@ -4,7 +4,7 @@
  */
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { printStep, printError, printOK } from '../eval-utils.mjs';
+import { printStep, printError, printOK, EvalError } from '../eval-utils.mjs';
 import { main as generate } from './generate.mjs';
 import { main as run } from './run.mjs';
 import { main as judge } from './judge.mjs';

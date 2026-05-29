@@ -101,6 +101,7 @@ export class IndexTracer {
 
 	// 用于 finalize() 时聚合 .json 摘要
 	private phases: TracePhase[] = [];
+	private orphanLlmCalls: Array<Omit<LlmCallTrace, "phase"> & { phase: string }> = [];
 	private pathDecisions: PathDecision[] = [];
 	private bookId: string;
 	private title: string;
@@ -218,12 +219,14 @@ export class IndexTracer {
 		const phase = this.currentPhaseName || "unknown";
 		this.append(logLine("llm_call", { phase, ...call }));
 
-		// 记入 .json 摘要（仅当有活跃 phase 时）
+		// 记入 .json 摘要
 		if (this.currentPhaseName) {
 			const currentPhase = this.phases[this.phases.length - 1];
 			if (currentPhase) {
 				currentPhase.llmCalls.push({ ...call, phase });
 			}
+		} else {
+			this.orphanLlmCalls.push({ ...call, phase });
 		}
 	}
 
@@ -284,6 +287,21 @@ export class IndexTracer {
 				summary.byModel[call.model].inputTokens += call.inputTokens ?? 0;
 				summary.byModel[call.model].outputTokens += call.outputTokens ?? 0;
 			}
+		}
+
+		// 聚合不在任何 phase 内的 llm_call
+		for (const call of this.orphanLlmCalls) {
+			summary.totalCalls++;
+			summary.totalInputTokens += call.inputTokens ?? 0;
+			summary.totalOutputTokens += call.outputTokens ?? 0;
+			summary.totalDurationMs += call.durationMs;
+
+			if (!summary.byModel[call.model]) {
+				summary.byModel[call.model] = { calls: 0, inputTokens: 0, outputTokens: 0 };
+			}
+			summary.byModel[call.model].calls++;
+			summary.byModel[call.model].inputTokens += call.inputTokens ?? 0;
+			summary.byModel[call.model].outputTokens += call.outputTokens ?? 0;
 		}
 
 		this.append(logLine("llm_summary", { ...summary }));

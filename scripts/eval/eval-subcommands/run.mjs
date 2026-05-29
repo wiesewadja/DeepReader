@@ -58,8 +58,8 @@ export async function main({ bookTitle, vaultPath }) {
 function spawnWDIO({ vault, book, bookId, runId, questionCount, ROOT }) {
   return new Promise((resolve, reject) => {
     const wdioBin = resolve(ROOT, 'node_modules', '.bin', 'wdio');
-    const specFile = resolve(ROOT, 'tests', 'specs', 'eval-agent.e2e.ts');
-    const wdioConf = resolve(ROOT, 'wdio.conf.ts');
+    const specFile = resolve(ROOT, 'tests', 'e2e', 'specs', 'eval-agent.e2e.ts');
+    const wdioConf = resolve(ROOT, 'tests', 'wdio.conf.ts');
     if (!existsSync(wdioBin)) { reject(new EvalError(`wdio 未安装: ${wdioBin}`, 'ENOENT')); return; }
 
     console.log(`\n启动 wdio（最多 10 分钟）...`);

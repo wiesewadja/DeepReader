@@ -668,56 +668,10 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             },
         });
 
-        // ── E2E 评估模式后门 API（仅 evalMode=true 时注册）──
-        if (this.settings.evalMode) {
-            const plugin = this;
-            (this as any).evalBackdoor = {
-                async triggerAgentQnA(question: string, bookId: string): Promise<{
-                    response: string;
-                    toolCalls: Array<{ tool: string; args: Record<string, unknown>; resultLength: number }>;
-                    nodesVisited: string[];
-                    durationMs: number;
-                    depth?: number;
-                    error?: string;
-                }> {
-                    try {
-                        const agent = await plugin.getFrontendAgent();
-                        const metaPath = `.obsidian/plugins/deepreader/pageindex/${bookId}/book-meta.json`;
-                        const metaRaw = await plugin.app.vault.adapter.read(metaPath);
-                        const meta = JSON.parse(metaRaw);
-
-                        const context: import('./agent/tools/types.js').ToolContext = {
-                            vault: { app: plugin.app, plugin: plugin as any },
-                            book: {
-                                indexId: bookId,
-                                pdfName: meta.title || bookId,
-                                documentMetadata: { title: meta.title, author: meta.author, page_count: meta.totalPages },
-                                docDescription: meta.description,
-                            },
-                            mode: 'normal',
-                        };
-
-                        const result = await agent.runGraphEngine(question, context, {
-                            onProgress: () => {},
-                            onContent: () => {},
-                            onComplete: () => {},
-                            onError: () => {},
-                        });
-
-                        const lastMsg = result.messages[result.messages.length - 1];
-                        return {
-                            response: lastMsg?.content || '',
-                            toolCalls: result.traceData?.toolCalls || [],
-                            nodesVisited: result.traceData?.nodesVisited || [],
-                            durationMs: result.traceData?.durationMs || 0,
-                            depth: result.traceData?.depth,
-                        };
-                    } catch (e: any) {
-                        return { response: '', toolCalls: [], nodesVisited: [], durationMs: 0, error: e.message };
-                    }
-                },
-            };
-            serviceLog('[DeepPDF] Eval backdoor registered');
+        // ── E2E 评估模式后门 API（仅 evalMode=true + EVAL_MODE 环境变量时注册）──
+        // E2E 测试通过 executeObsidian 动态注册 startQnA/pollResult，此处仅为守卫标记
+        if (this.settings.evalMode && process.env.EVAL_MODE === 'true') {
+            serviceLog('[DeepPDF] Eval mode active (EVAL_MODE=true)');
         }
     }
 

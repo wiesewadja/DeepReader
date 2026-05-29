@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import {
   goldenPath, datasetDir, validateVault, validateSrcPrompt,
   findBookInCatalog, ensureDir, readJSON,
-  printStep, printError, printOK, printDivider, EvalError,
+  printStep, printError, printOK, printDivider, EvalError, spawnPI,
 } from '../eval-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -39,8 +39,12 @@ export async function main({ bookTitle, vaultPath }) {
   printStep('GENERATE', `为《${bookTitle}》生成黄金测试集`);
   console.log(`bookId: ${bookId}`);
 
-  const PI_BIN = process.env.PI_BIN || '/opt/homebrew/bin/pi';
-  await spawnPI({ PI_BIN, systemPrompt, vault, bookTitle, bookId });
+  await spawnPI({
+    systemPrompt, vault,
+    promptMessage: `为书籍《${bookTitle}》（bookId=${bookId}）生成黄金测试题集。
+步骤：1. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/tree.json 2. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/book-meta.json 3. 从不同卷/部分抽样 8-10 个章节 4. 生成恰好 20 道测试题
+写入 .eval/datasets/${bookTitle}/golden.json`,
+  });
 
   const finalPath = goldenPath(vault, bookTitle);
   if (!existsSync(finalPath)) throw new EvalError('PI Agent 未写入 golden.json', 'ENODATA');
@@ -57,46 +61,6 @@ export async function main({ bookTitle, vaultPath }) {
   }
   printDivider();
   return { bookId, questionCount: data.questions.length };
-}
-
-function spawnPI({ PI_BIN, systemPrompt, vault, bookTitle, bookId }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(PI_BIN, [
-      '--mode', 'rpc',
-      '--provider', process.env.PI_PROVIDER || 'xiaomi-token-plan-cn',
-      '--model', process.env.PI_MODEL || 'mimo-v2.5',
-      '--no-session', '--no-skills', '--no-extensions',
-      '--tools', 'read,write,ls,find,grep',
-      '--append-system-prompt', systemPrompt,
-    ], { cwd: vault, stdio: ['pipe', 'pipe', 'pipe'] });
-
-    let buffer = ''; let settled = false;
-    const timer = setTimeout(() => { if (!settled) { settled = true; child.kill(); reject(new EvalError('超时', 'ETIMEDOUT')); } }, 300_000);
-
-    child.stdout.on('data', d => {
-      buffer += d.toString('utf-8'); process.stdout.write(d.toString('utf-8'));
-      while (true) {
-        const idx = buffer.indexOf('\n');
-        if (idx === -1) break;
-        const line = buffer.substring(0, idx); buffer = buffer.substring(idx + 1);
-        if (!line.trim()) continue;
-        try {
-          const evt = JSON.parse(line);
-          if (evt.type === 'agent_end' && !settled) { settled = true; clearTimeout(timer); console.log('\n[PI Agent 完成]'); setTimeout(() => child.kill(), 500); resolve({ done: true }); }
-        } catch {}
-      }
-    });
-    child.stderr.on('data', () => {});
-    child.on('error', err => { if (!settled) { settled = true; clearTimeout(timer); reject(new EvalError(`PI 启动失败: ${err.message}`, 'ENOENT')); } });
-    child.on('close', () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ done: true }); } });
-
-    setTimeout(() => {
-      const prompt = `为书籍《${bookTitle}》（bookId=${bookId}）生成黄金测试题集。
-步骤：1. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/tree.json 2. 读取 .obsidian/plugins/deepreader/pageindex/${bookId}/book-meta.json 3. 从不同卷/部分抽样 8-10 个章节 4. 生成恰好 20 道测试题
-写入 .eval/datasets/${bookTitle}/golden.json`;
-      child.stdin.write(JSON.stringify({ type: 'prompt', message: prompt }) + '\n');
-    }, 2000);
-  });
 }
 
 // CLI 入口：eval-cli 调用 main({ bookTitle, vaultPath })

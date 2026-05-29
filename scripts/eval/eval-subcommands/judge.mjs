@@ -10,7 +10,7 @@ import {
   latestRunId, evalDir, reportPath,
   readJSON, readFile, readHistory,
   printStep, printError, printOK, printDivider,
-  EvalError, getGitCommit,
+  EvalError, getGitCommit, spawnPI,
 } from '../eval-utils.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -42,7 +42,12 @@ export async function main({ bookTitle, vaultPath, run: runId, threshold }) {
   printStep('JUDGE', `评估《${bookTitle}》运行 ${targetRunId}`);
   console.log(`git commit: ${gitCommit}`);
 
-  await spawnPI({ vault, systemPrompt, bookTitle, runId: targetRunId, gitCommit, responseData });
+  await spawnPI({
+    vault, systemPrompt,
+    tools: ['read', 'write', 'ls', 'find', 'grep', 'web'],
+    timeoutMs: 600_000,
+    promptMessage: `评估书籍《${bookTitle}》的 Agent 回复质量。\n运行 ID：${targetRunId}\nGit Commit：${gitCommit}\n题数：${responseData.responses?.length || 0}\n测试集：.eval/datasets/${bookTitle}/golden.json\n响应文件：.eval/datasets/${bookTitle}/responses/${targetRunId}.json\n按照系统提示词逐题评分，低分题进行根因分析。\n将报告写入 .eval/reports/ 并追加历史到 .eval/history/eval-log.jsonl。`,
+  });
 
   // PI Agent 写完后再从 history 读评分（eval-log.jsonl 最新一条即本次结果）
   const history = readHistory(vault);
@@ -60,54 +65,6 @@ export async function main({ bookTitle, vaultPath, run: runId, threshold }) {
     else { printError(`分数 ${score} < 阈值 ${threshold}，失败`); return { exitCode: 1, score, verdict }; }
   }
   return { exitCode: 0, score, verdict };
-}
-
-function spawnPI({ vault, systemPrompt, bookTitle, runId, gitCommit, responseData }) {
-  return new Promise((resolve, reject) => {
-    const PI_BIN = process.env.PI_BIN || '/opt/homebrew/bin/pi';
-    const child = spawn(PI_BIN, [
-      '--mode', 'rpc',
-      '--provider', process.env.PI_PROVIDER || 'xiaomi-token-plan-cn',
-      '--model', process.env.PI_MODEL || 'mimo-v2.5',
-      '--no-session', '--no-skills', '--no-extensions',
-      '--tools', 'read,write,ls,find,grep,web',
-      '--append-system-prompt', systemPrompt,
-    ], { cwd: vault, stdio: ['pipe', 'pipe', 'pipe'] });
-
-    let buffer = ''; let settled = false;
-    const timer = setTimeout(() => {
-      if (!settled) { settled = true; child.kill(); reject(new EvalError('PI Agent 执行超时（10分钟）', 'ETIMEDOUT')); }
-    }, 600_000);
-
-    child.stdout.on('data', d => {
-      buffer += d.toString('utf-8'); process.stdout.write(d.toString('utf-8'));
-      while (true) {
-        const idx = buffer.indexOf('\n');
-        if (idx === -1) break;
-        const line = buffer.substring(0, idx); buffer = buffer.substring(idx + 1);
-        if (!line.trim()) continue;
-        try {
-          const evt = JSON.parse(line);
-          if (evt.type === 'tool_execution_start') console.log(`\n[TOOL] ${evt.tool_name}`);
-          if (evt.type === 'agent_end' && !settled) {
-            settled = true; clearTimeout(timer);
-            console.log('\n[PI Agent 完成]');
-            setTimeout(() => child.kill(), 500);
-            resolve({ done: true });
-          }
-        } catch {}
-      }
-    });
-    child.stderr.on('data', () => {});
-    child.on('error', err => { if (!settled) { settled = true; clearTimeout(timer); reject(new EvalError(`PI 启动失败: ${err.message}`, 'ENOENT')); } });
-    child.on('close', () => { if (!settled) { settled = true; clearTimeout(timer); resolve({ done: true }); } });
-
-    setTimeout(() => {
-      const qCount = responseData.responses?.length || 0;
-      const prompt = `评估书籍《${bookTitle}》的 Agent 回复质量。\n运行 ID：${runId}\nGit Commit：${gitCommit}\n题数：${qCount}\n测试集：.eval/datasets/${bookTitle}/golden.json\n响应文件：.eval/datasets/${bookTitle}/responses/${runId}.json\n按照系统提示词逐题评分，低分题进行根因分析。\n将报告写入 .eval/reports/ 并追加历史到 .eval/history/eval-log.jsonl。`;
-      child.stdin.write(JSON.stringify({ type: 'prompt', message: prompt }) + '\n');
-    }, 2000);
-  });
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
