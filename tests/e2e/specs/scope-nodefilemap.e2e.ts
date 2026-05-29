@@ -322,21 +322,12 @@ describe('S2 Analytical Scope E2E', function () {
       l.includes('tree.json')
     );
 
-    if (nodeFileMapLog) {
-      console.log('[E2E] Found nodeFileMap usage log:', nodeFileMapLog);
-    }
-
-    // nodeFileMap 使用日志如果存在则验证通过
-    // 如果不存在，通过 tree.json 验证 nodeFileMap 实际存在
+    // analytical 查询必须使用 nodeFileMap（不是旧的 markdownFiles 扫描）
     if (!nodeFileMapLog) {
-      console.log('[E2E] WARNING: nodeFileMap log not found in browser logs, verifying via tree.json');
-      const treeData = await readTreeJson(BOOKS.excellent.bookId);
-      expect(treeData).not.toBeNull();
-      expect(treeData.nodeFileMap).toBeDefined();
-      expect(Object.keys(treeData.nodeFileMap).length).toBeGreaterThan(0);
-    } else {
-      expect(nodeFileMapLog).toBeTruthy();
+      throw new Error('[E2E] nodeFileMap usage log not found — analytical query should use nodeFileMap');
     }
+    console.log('[E2E] Found nodeFileMap usage log:', nodeFileMapLog);
+    expect(nodeFileMapLog).toBeTruthy();
 
     // 验证日志中不应有旧的 markdownFiles 扫描
     const markdownScanLog = logs.find(l =>

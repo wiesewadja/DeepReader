@@ -354,9 +354,7 @@ describe('L2 向量化诊断 E2E', function () {
     const trace = await readTraceFile(bookId);
 
     if (!trace) {
-      console.log('[E2E] No trace file found, skipping token用量验证');
-      expect(true).toBe(true);
-      return;
+      throw new Error(`[E2E] Trace file not found for book: ${bookId}`);
     }
 
     // 检查是否有向量化的 LLM 调用记录

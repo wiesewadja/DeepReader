@@ -69,6 +69,14 @@ export async function chatGPT(options: ChatOptions): Promise<string> {
 }
 
 /**
+ * Call ChatGPT-compatible API and return full result including token usage.
+ * Use this when callers need inputTokens/outputTokens from the response.
+ */
+export async function chatGPTWithUsage(options: ChatOptions): Promise<ChatResult> {
+  return chatGPTWithFinishReason(options);
+}
+
+/**
  * Call ChatGPT-compatible API with retry logic and finish reason
  */
 export async function chatGPTWithFinishReason(

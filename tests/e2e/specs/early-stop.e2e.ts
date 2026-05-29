@@ -404,18 +404,12 @@ describe('早停机制 E2E', function () {
     // LangSmith Trace 分析
     const trace = await getTraceAnalysis(Date.now() - testStartTime + 5000);
 
-    if (earlyStopLog) {
-      console.log('[E2E] Found early stop log:', earlyStopLog);
-      expect(earlyStopLog).toBeTruthy();
-    } else {
-      console.log('[E2E] WARNING: Early stop log not found in browser logs');
-      // 通过 LangSmith trace 验证早停是否发生
-      if (trace.totalRuns > 0) {
-        // 如果有 analytical 节点，说明没有走早停路径（这是期望的行为）
-        // 早停发生时 hasAnalytical 应该为 false
-        console.log(`[E2E] Trace hasAnalytical: ${trace.hasAnalytical}`);
-      }
+    // 高置信度检索必须触发早停，日志中必须有早停标记
+    if (!earlyStopLog) {
+      throw new Error('[E2E] Early stop log not found — high confidence search should trigger early stop');
     }
+    console.log('[E2E] Found early stop log:', earlyStopLog);
+    expect(earlyStopLog).toBeTruthy();
 
     if (trace.totalRuns > 0) {
       console.log(`[E2E] Trace analysis:`, JSON.stringify({
@@ -492,22 +486,12 @@ describe('早停机制 E2E', function () {
       l.includes('无实质内容')
     );
 
-    if (qualityGuardLog) {
-      console.log('[E2E] Found quality guard log:', qualityGuardLog);
-    }
-
-    // 质量守卫拦截日志如果存在则验证通过
-    // 如果不存在，通过 LangSmith trace 验证查询走了完整路径（有 analytical 节点）
+    // 质量守卫拦截必须出现在日志中
     if (!qualityGuardLog) {
-      console.log('[E2E] WARNING: Quality guard log not found, verifying via LangSmith trace');
-      const trace = await getTraceAnalysis(Date.now() - 60000); // Last minute
-      if (trace.totalRuns > 0) {
-        // 有 analytical 节点说明走了完整路径（质量守卫正常工作，拦截了早停）
-        expect(trace.hasAnalytical).toBe(true);
-      }
-    } else {
-      expect(qualityGuardLog).toBeTruthy();
+      throw new Error('[E2E] Quality guard log not found — quality guard should intercept when no substantive content');
     }
+    console.log('[E2E] Found quality guard log:', qualityGuardLog);
+    expect(qualityGuardLog).toBeTruthy();
 
     // 最终仍应有有效响应
     expect(response.length).toBeGreaterThan(5);
