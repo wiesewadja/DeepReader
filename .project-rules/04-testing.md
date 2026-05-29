@@ -28,11 +28,11 @@ npm run test:ui
 ## E2E 测试（WebdriverIO）
 
 ```bash
-npx wdio run wdio.conf.ts
+npx wdio run tests/wdio.conf.ts
 ```
 
-- **配置**: `wdio.conf.ts`
-- **测试文件**: `tests/specs/**/*.e2e.ts`
+- **配置**: `tests/wdio.conf.ts`
+- **测试文件**: `tests/e2e/specs/**/*.e2e.ts`
 - **Obsidian 选项**: 使用 `./test-vault` 作为 Vault，`./bin` 作为插件目录。
 - **超时**: 10 分钟（LLM 摘要多章节耗时较长）。
 - **缓存目录**: `.obsidian-cache/`（安装器、Obsidian 应用、版本信息）。

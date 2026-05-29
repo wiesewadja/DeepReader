@@ -6,7 +6,9 @@
 src/
 ├── main.ts                      # 插件入口（DeepReaderPlugin），注册命令、视图、事件
 ├── views/
-│   ├── sidebar-view.ts          # 主侧边栏视图（对话界面、书籍选择）
+│   ├── sidebar/                 # 主侧边栏（对话界面、书籍选择、TTS、Agent 控制）
+│   │   └── sidebar-view.ts      # 主视图实现
+│   ├── sidebar-view.ts          # 重新导出入口
 │   ├── library-view.ts          # 书库视图（PDF/EPUB 管理 + Z-Library 下载）
 │   └── zlibrary-search-modal.ts # Z-Library 搜索弹窗
 ├── components/                  # UI 组件（纯 TypeScript + DOM，无 React/Vue）
@@ -23,6 +25,8 @@ src/
 │   ├── excerpt/                 # 摘录组件（摘录弹窗、选择菜单）
 │   ├── confirm-modal/           # 通用确认弹窗
 │   ├── top-nav/                 # 顶部导航
+│   ├── drawer/                  # 抽屉面板
+│   ├── index-manager/           # 索引管理器 UI
 │   └── ...                      # 其他 UI 组件
 ├── agent/                       # FrontendAgent AI 系统
 │   ├── index.ts                 # 主入口（FrontendAgent 类）
@@ -44,6 +48,8 @@ src/
 │   ├── context/                 # 用户上下文构建（MEMORY.md、书籍元数据）
 │   ├── models/                  # ChatModel 封装
 │   ├── tracing/                 # LangSmith / Langfuse 追踪
+│   ├── pi/                      # PI Coding Agent（外部 Agent 集成）
+│   ├── proactive/               # 主动式 Agent（主动提问/提醒）
 │   └── llm-client.ts            # LLM API 客户端管理
 ├── pageindex/                   # PageIndex 本地索引引擎
 │   ├── pageindex.ts             # 核心类（PDF/EPUB 解析、TOC、LLM 摘要）
@@ -51,8 +57,10 @@ src/
 │   ├── book-indexer.ts          # 书籍索引编排（生成 bookId、调用解析器）
 │   ├── book-search.ts           # 混合搜索（Vector + BM25 Fusion）
 │   ├── book-search-v2.ts        # 段落级分层搜索（L0/L1/L2）
+│   ├── index-tracer.ts          # 索引追踪日志（append .log + .json 兼容摘要）
 │   ├── bm25.ts                  # BM25 关键词检索实现
 │   ├── parsers/                 # 文档解析器（pdf.ts, epub.ts, markdown.ts, ocr.ts）
+│   ├── core/                    # 核心逻辑（tree.ts 摘要、toc.ts 目录、prompts.ts）
 │   ├── exporters/               # Obsidian Markdown 导出
 │   ├── vault/                   # 向量存储、索引引擎、编译器、搜索引擎
 │   └── llm/client.ts            # PageIndex 专用 LLM 客户端
@@ -85,7 +93,6 @@ src/
 │   └── mineru-api.ts           # MinerU PDF 解析 API 客户端
 ├── ui/                         # 通用 UI 组件
 ├── assets/                     # 静态资源（图标等）
-├── e2e/                        # E2E 测试配置
 ├── zlibrary/                    # Z-Library 集成（默认关闭）
 │   ├── client.ts               # Z-Library API 客户端
 │   ├── build-client.ts         # 构建查询请求
@@ -94,10 +101,8 @@ src/
 │   ├── constants.ts            # 常量
 │   ├── cookie-jar.ts           # Cookie 管理
 │   └── DISCLAIMER.ts           # 法律免责声明
-├── api/                         # HTTP 客户端（fetch 封装、请求管理）
 ├── types/                       # 全局类型定义
-├── utils/                       # 工具函数（日志、错误处理、图标、时间）
-└── built-in-skills.ts           # 内置 Skill 定义（启动时同步到 Vault）
+└── utils/                       # 工具函数（日志、错误处理、图标、时间）
 ```
 
 ### 构建产物
@@ -162,7 +167,7 @@ Query → Embedding → Vector 搜索 → BM25 搜索 → 混合排序 → 结�
 ## Skill 系统
 
 - Skills 是带有 frontmatter 的 Markdown 文件，存放在 Vault 的 `DeepReader/skills/`。
-- 内置 Skills 定义在 `src/built-in-skills.ts`，插件启动时自动同步到 Vault（仅创建不覆盖）。
+- Skills 由 PI Agent 管理，插件启动时确保 skills 目录存在。
 - Skill 通过 `SkillLoader` 加载，在 System Prompt 中作为 XML Summary 注入。
 
 ## 设置与配置

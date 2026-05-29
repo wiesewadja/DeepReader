@@ -1,11 +1,3 @@
-# DeepReader — CLAUDE.md
-
-> 本文档面向 Claude Code。完整项目信息见 `.project-rules/` 目录。
-
----
-
-## 快速入口
-
 | 文档 | 内容 |
 |------|------|
 | `.project-rules/01-overview.md` | 项目概述、定位、技术栈 |
@@ -16,7 +8,7 @@
 | `.project-rules/06-security-privacy.md` | 安全与隐私 |
 | `.project-rules/agent-specific/claude-code.md` | Claude Code 专属提示（UI 组件、文档索引） |
 
-**开始前，请先阅读以上全部文档。**
+**根据任务需要读取对应文档，无需全部预读。**
 
 ---
 
@@ -26,6 +18,7 @@
 - **入口**: `src/main.ts`
 - **构建**: `npm run build` / `npm run dev`（watch）
 - **测试**: `npm run test:run`（Vitest）
+- **E2E**: `npx wdio run tests/wdio.conf.ts`（WebdriverIO + Obsidian）
 - **部署**: `npm run deploy` / `deploy:daily` / `deploy:all` → `test-vault/.obsidian/plugins/deepreader/`
 - **调试**: Obsidian 中 Cmd+Option+I → `app.plugins.plugins['deepreader']`
 

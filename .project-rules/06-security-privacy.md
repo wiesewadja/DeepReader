@@ -21,7 +21,9 @@ Z-Library 功能**默认关闭**，采用双开关保护机制：
 
 | 服务 | 用途 | 数据流向 |
 |------|------|----------|
+| OpenAI/DeepSeek/Xiaomi 等 | LLM 对话、索引摘要 | 对话内容发送至 LLM 服务商 |
+| SiliconFlow | Embedding 向量化、Reranking | 文本发送至 SiliconFlow API |
+| 微信读书 | 书籍标注/笔记同步 | 微信读书账号数据拉取至本地 |
 | MinerU | PDF 解析 | 文件上传至 MinerU 服务器 |
 | 智谱 GLM-OCR | 图像文字识别 | 图片上传至智谱服务器 |
-| OpenAI/DeepSeek 等 | LLM 对话 | 对话内容发送至 LLM 服务商 |
 | Z-Library | 电子书搜索下载 | 搜索请求发送至 Z-Library |

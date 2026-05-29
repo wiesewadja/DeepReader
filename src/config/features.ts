@@ -14,6 +14,5 @@ export const ZLIBRARY_ENABLED = true;
 // export const WEREAD_ENABLED = true;
 // export const PI_AGENT_ENABLED = true;
 
-<<<<<<< HEAD
 /** 索引追踪日志（默认开启。每次索引生成 traces/{exportName}.log + .json） */
 export const INDEX_TRACE_ENABLED = true;
