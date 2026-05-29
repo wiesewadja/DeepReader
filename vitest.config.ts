@@ -13,20 +13,19 @@ export default defineConfig({
         environment: "jsdom",
         globals: true,
         setupFiles: ['./tests/setup.ts'],
-        include: ['**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+        include: ['./tests/unit/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
         exclude: [
             'node_modules',
             '.worktrees',
             '.claude/worktrees',
-            // 以下测试文件引用了已移除的组件或需要大量重构
-            'tests/components/message.test.ts',
-            'tests/views/sidebar-view.test.ts',
-            'src/api/__tests__/server-manager.test.ts',
             // E2E 测试需要真实 API，不在默认测试中运行
-            'src/services/__tests__/profile-builder-embedding.e2e.test.ts',
-            // E2E 测试依赖本地 test vault (/Users/lizhao/workspace/deepreadertest)
-            'src/pageindex/__tests__/search-quality-fixes.test.ts',
-            'src/pageindex/__tests__/book-search-v2.test.ts',
+            './tests/e2e/**',
+            // 以下测试文件引用了已移除的组件或需要大量重构
+            './tests/unit/**/message.test.ts',
+            './tests/unit/**/sidebar-view.test.ts',
+            // 某些测试依赖外部资源
+            './tests/unit/**/search-quality-fixes.test.ts',
+            './tests/unit/**/book-search-v2.test.ts',
         ],
         poolOptions: {
             forks: {
