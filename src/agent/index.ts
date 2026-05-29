@@ -263,9 +263,7 @@ ${currentMemory}
       return { messages: [{ role: 'assistant', content: errorMsg }] };
     }
 
-    const threadId = context.book.indexId
-      ? `thread-${context.book.indexId}`
-      : `thread-${Date.now()}`;
+    const threadId = `thread-${context.book.indexId || 'unknown'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.activeThreadId = threadId;
 
     let configurable: Record<string, unknown>;
