@@ -15,11 +15,14 @@
     "deploy:dev": "node scripts/deploy.js dev",
     "deploy:daily": "node scripts/deploy.js daily",
     "deploy:all": "node scripts/deploy.js dev daily",
-    "eval": "node scripts/eval-runner.mjs",
-    "eval:run": "node scripts/eval-run.mjs",
-    "eval:generate": "node scripts/eval-generate.mjs",
-    "eval:judge": "node scripts/eval-judge.mjs",
-    "eval:history": "node scripts/eval-history.mjs"
+    "eval": "node scripts/eval/eval-cli.mjs",
+    "eval:generate": "node scripts/eval/eval-cli.mjs generate",
+    "eval:run": "node scripts/eval/eval-cli.mjs run",
+    "eval:judge": "node scripts/eval/eval-cli.mjs judge",
+    "eval:history": "node scripts/eval/eval-cli.mjs history",
+    "eval:diff": "node scripts/eval/eval-cli.mjs diff",
+    "eval:full": "node scripts/eval/eval-cli.mjs full",
+    "eval:sync-prompts": "rsync -av scripts/eval/eval-prompts/ test-vault/.eval/"
   },
   "keywords": [
     "obsidian",
