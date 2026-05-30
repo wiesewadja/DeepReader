@@ -107,7 +107,6 @@ export async function visualizerNode(
   const pdfName = statePdfName || (toolContext?.book?.pdfName ?? '');
 
   // ── PI 路径：优先使用 PI 执行可视化 skill ──
-  log(`[Visualizer] PI check: piManager=${!!piManager}, piConfig=${!!piConfig}, busy=${piManager?.isBusy?.() ?? 'N/A'}`);
   if (piManager && piConfig && !piManager.isBusy()) {
     log('[Visualizer] PI available, using PI backend');
     try {
@@ -115,7 +114,7 @@ export async function visualizerNode(
       if (app) {
         piManager.setupExtensionUiBridge();
 
-        const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram');
+        const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram').replace(/\.md$/, '.excalidraw.md');
         const skillContext = buildSkillContext({
           book: { title: pdfName, author: '' },
           currentSection: '',

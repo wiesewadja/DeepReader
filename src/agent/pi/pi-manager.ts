@@ -418,7 +418,7 @@ ${context.userRequest}
 
 ## 输出要求
 使用 excalidraw skill 生成可视化图表。
-	输出文件路径: ${context.outputPath.replace(/\.md$/, '.excalidraw.md')}。
+	输出文件路径: ${context.outputPath}。
 	确保使用 write 工具将生成的 Excalidraw JSON 写入上述文件路径。`;
 	}
 }
