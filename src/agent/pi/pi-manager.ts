@@ -421,14 +421,11 @@ export class PiProcessManager {
 书籍: ${context.book.title} - ${context.book.author}
 当前章节: ${context.context.currentSection}
 章节摘要: ${context.context.analysisSummary}${tocBlock}${structuralBlock}${analysisBlock}
-## 可用 Skill
-${context.skillDescriptions.join('\n')}
-
 ## 用户请求
 ${context.userRequest}
 
 ## 输出要求
-请根据用户请求选择合适的 skill 执行，结果写入文件: ${context.outputPath}。
+请根据用户请求执行可视化生成，结果写入文件: ${context.outputPath}。
 如果 skill 要求特定后缀（如 .excalidraw.md），请将文件后缀替换为 skill 指定的格式。`;
 	}
 }

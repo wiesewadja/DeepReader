@@ -18,7 +18,7 @@ import type { VisualizerInput } from '../node-io.js';
 import type { ToolCallLike } from '../utils/tool-call-parser.js';
 import type { PiProcessManager } from '../../pi/pi-manager.js';
 import type { PiConfig } from '../../pi/types.js';
-import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from '../../pi/pi-context.js';
+import { buildSkillContext, generateOutputPath } from '../../pi/pi-context.js';
 import type { EngineCallbacks } from '../shared-context.js';
 
 /**
@@ -107,6 +107,7 @@ export async function visualizerNode(
   const pdfName = statePdfName || (toolContext?.book?.pdfName ?? '');
 
   // ── PI 路径：优先使用 PI 执行可视化 skill ──
+  log(`[Visualizer] PI check: piManager=${!!piManager}, piConfig=${!!piConfig}, busy=${piManager?.isBusy?.() ?? 'N/A'}`);
   if (piManager && piConfig && !piManager.isBusy()) {
     log('[Visualizer] PI available, using PI backend');
     try {
@@ -114,7 +115,6 @@ export async function visualizerNode(
       if (app) {
         piManager.setupExtensionUiBridge();
 
-        const skillDescriptions = await scanSkillDescriptions(app);
         const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram');
         const skillContext = buildSkillContext({
           book: { title: pdfName, author: '' },
@@ -123,7 +123,6 @@ export async function visualizerNode(
           analysisData: sourceContent,
           structuralAnalysis: stateStructural || undefined,
           tocSummary: stateTocSummary || undefined,
-          skillDescriptions,
           outputPath,
           userRequest: userQuery,
         });

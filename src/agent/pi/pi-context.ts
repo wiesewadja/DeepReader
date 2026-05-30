@@ -1,43 +1,13 @@
 /**
  * PI Skill 上下文构造
  *
- * 从当前阅读状态构造 PiSkillContext，扫描 vault skills 目录。
+ * 从当前阅读状态构造 PiSkillContext。
  */
 
 import type { App } from 'obsidian';
 import { normalizePath } from 'obsidian';
 import type { PiSkillContext } from './types.js';
 import { resolvePiPaths } from './pi-config.js';
-
-/**
- * 扫描 vault skills 目录，提取每个 skill 的名称和描述
- */
-export async function scanSkillDescriptions(app: App): Promise<string[]> {
-	const paths = resolvePiPaths(app);
-	const descriptions: string[] = [];
-
-	async function scanDir(dir: string): Promise<void> {
-		let listing;
-		try {
-			listing = await app.vault.adapter.list(dir);
-		} catch {
-			return;
-		}
-		for (const filePath of listing.files) {
-			if (!filePath.endsWith('.md')) continue;
-			const content = await app.vault.adapter.read(filePath);
-			const name = filePath.split('/').pop()?.replace('.md', '') ?? '';
-			const desc = extractDescription(content);
-			descriptions.push(`${name}: ${desc}`);
-		}
-		for (const subDir of listing.folders) {
-			await scanDir(subDir);
-		}
-	}
-
-	await scanDir(paths.skillsDir);
-	return descriptions;
-}
 
 /**
  * 生成输出文件路径（vault-relative，兼容 Obsidian Vault API）
@@ -60,7 +30,7 @@ export function buildSkillContext(options: {
 	structuralAnalysis?: string;
 	tocSummary?: string;
 	userRequest: string;
-	skillDescriptions: string[];
+	skillDescriptions?: string[];
 	outputPath: string;
 }): PiSkillContext {
 	return {
@@ -72,7 +42,7 @@ export function buildSkillContext(options: {
 			structuralAnalysis: options.structuralAnalysis,
 			tocSummary: options.tocSummary,
 		},
-		skillDescriptions: options.skillDescriptions,
+		skillDescriptions: options.skillDescriptions ?? [],
 		outputPath: options.outputPath,
 		userRequest: options.userRequest,
 	};
