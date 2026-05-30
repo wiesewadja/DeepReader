@@ -89,7 +89,15 @@ export class PiProcessManager {
 		const piBin = piStatus.path ?? 'pi';
 
 		const args = buildSpawnArgs(config);
-		const spawnEnv = { ...buildSpawnEnv(), ANTHROPIC_API_KEY: config.apiKey };
+		// 根据 provider 设置对应的环境变量
+		const providerEnvKeyMap: Record<string, string> = {
+			anthropic: 'ANTHROPIC_API_KEY',
+			deepseek: 'DEEPSEEK_API_KEY',
+			openai: 'OPENAI_API_KEY',
+			xiaomi: 'OPENAI_API_KEY',
+		};
+		const envKey = providerEnvKeyMap[config.provider] || 'ANTHROPIC_API_KEY';
+		const spawnEnv = { ...buildSpawnEnv(), [envKey]: config.apiKey };
 
 		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
@@ -394,13 +402,10 @@ export class PiProcessManager {
 书籍: ${context.book.title} - ${context.book.author}
 当前章节: ${context.context.currentSection}
 章节摘要: ${context.context.analysisSummary}${tocBlock}${structuralBlock}${analysisBlock}
-## 可用 Skill
-${context.skillDescriptions.join('\n')}
-
 ## 用户请求
 ${context.userRequest}
 
 ## 输出要求
-请根据用户请求选择合适的 skill 执行，结果写入文件: ${context.outputPath}`;
+结果写入文件: ${context.outputPath}`;
 	}
 }

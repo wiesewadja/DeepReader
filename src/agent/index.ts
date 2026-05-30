@@ -477,11 +477,18 @@ ${currentMemory}
     // PI integration: build config if enabled
     const piEnabled = context.vault.plugin?.settings?.piEnabled;
     const customPiPath = context.vault.plugin?.settings?.customPiPath;
-    const piConfig = piEnabled
+    const piSettings = (context.vault.plugin?.settings as any)?.pi as Record<string, string> | undefined;
+    const piProvider = piSettings?.provider || 'deepseek';
+    const piModel = piSettings?.model || 'deepseek-v4-flash';
+    // PI API Key: 优先 pi 配置 -> providers[piProvider].apiKey -> chat apiKey
+    const providers = (context.vault.plugin?.settings as any)?.providers as Record<string, { apiKey?: string }> | undefined;
+    const piApiKey = piSettings?.apiKey || providers?.[piProvider]?.apiKey || this.options.apiKey;
+    log(`[FrontendAgent] PI config: piEnabled=${piEnabled}, piProvider=${piProvider}, piModel=${piModel}, hasApiKey=${!!piApiKey}`);
+    const piConfig = piEnabled && piApiKey
       ? this.piManager.buildConfig(
-          this.options.apiKey,
-          this.options.model ?? 'deepseek-v4-flash',
-          this.options.providerName ?? 'deepseek',
+          piApiKey,
+          piModel,
+          piProvider,
           customPiPath,
         )
       : undefined;

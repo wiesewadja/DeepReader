@@ -11,7 +11,7 @@ function createTestConfig(): PiConfig {
 		apiKey: 'test-api-key',
 		model: 'claude-sonnet-4-20250514',
 		provider: 'anthropic',
-		skillsDir: '/vault/DeepReader/skills',
+		skillsDir: '/vault/.pi/skills',
 		sessionDir: '/vault/DeepReader/pi/sessions',
 		exportsDir: '/vault/DeepReader/exports',
 		workingDir: '/vault',
@@ -37,12 +37,14 @@ describe('PiConfig', () => {
 			expect(args[toolsIndex + 1]).toBe('read,write,edit,grep,find,ls');
 		});
 
-		it('应传入 model（API key 通过环境变量传递）', () => {
+		it('应传入 model、provider 和 api-key', () => {
 			const config = createTestConfig();
 			const args = buildSpawnArgs(config);
 
-			// API key 不应在 CLI 参数中（通过环境变量 ANTHROPIC_API_KEY 传递）
-			expect(args).not.toContain('--api-key');
+			expect(args).toContain('--api-key');
+			expect(args[args.indexOf('--api-key') + 1]).toBe('test-api-key');
+			expect(args).toContain('--provider');
+			expect(args[args.indexOf('--provider') + 1]).toBe('anthropic');
 			expect(args).toContain('--model');
 			expect(args[args.indexOf('--model') + 1]).toBe('claude-sonnet-4-20250514');
 		});

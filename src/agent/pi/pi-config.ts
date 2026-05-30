@@ -44,7 +44,7 @@ export function resolvePiPaths(app: App): {
 
 	return {
 		workingDir: vaultPath,
-		skillsDir: normalizePath(`${deepReaderDir}/skills`),
+		skillsDir: normalizePath(`${vaultPath}/.pi/skills`),
 		sessionDir: normalizePath(`${deepReaderDir}/pi/sessions`),
 		exportsDir: normalizePath(`${deepReaderDir}/exports`),
 		exportsDirRelative: exportsRelative,
@@ -63,7 +63,9 @@ export function buildSpawnArgs(config: PiConfig): string[] {
 		'--skill', config.skillsDir,
 		'--no-context-files',
 		'--tools', 'read,write,edit,grep,find,ls',
+		'--provider', config.provider,
 		'--model', config.model,
+		'--api-key', config.apiKey,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,
 	];
 }
