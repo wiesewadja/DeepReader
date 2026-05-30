@@ -44,7 +44,7 @@ export function resolvePiPaths(app: App): {
 
 	return {
 		workingDir: vaultPath,
-		skillsDir: normalizePath(`${deepReaderDir}/skills`),
+		skillsDir: normalizePath(`${vaultPath}/.pi/skills`),
 		sessionDir: normalizePath(`${deepReaderDir}/pi/sessions`),
 		exportsDir: normalizePath(`${deepReaderDir}/exports`),
 		exportsDirRelative: exportsRelative,

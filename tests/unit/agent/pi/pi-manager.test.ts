@@ -67,7 +67,7 @@ describe('PiProcessManager', () => {
 			expect(config.apiKey).toBe('my-key');
 			expect(config.model).toBe('gpt-4');
 			expect(config.provider).toBe('openai');
-			expect(config.skillsDir).toContain('DeepReader/skills');
+			expect(config.skillsDir).toContain('.pi/skills');
 			expect(config.workingDir).toBe('/test-vault');
 		});
 	});

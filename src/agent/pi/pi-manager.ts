@@ -89,7 +89,15 @@ export class PiProcessManager {
 		const piBin = piStatus.path ?? 'pi';
 
 		const args = buildSpawnArgs(config);
-		const spawnEnv = buildSpawnEnv();
+		// 根据 provider 设置对应的环境变量
+		const providerEnvKeyMap: Record<string, string> = {
+			anthropic: 'ANTHROPIC_API_KEY',
+			deepseek: 'DEEPSEEK_API_KEY',
+			openai: 'OPENAI_API_KEY',
+			xiaomi: 'OPENAI_API_KEY',
+		};
+		const envKey = providerEnvKeyMap[config.provider] || 'ANTHROPIC_API_KEY';
+		const spawnEnv = { ...buildSpawnEnv(), [envKey]: config.apiKey };
 
 		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
