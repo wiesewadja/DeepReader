@@ -29,7 +29,7 @@ describe('PiConfig', () => {
 			expect(args).toContain('--no-skills');
 			expect(args).toContain('--no-context-files');
 			expect(args).toContain('--provider');
-			expect(args).toContain('--api-key');
+			expect(args).not.toContain('--api-key');
 		});
 
 		it('应设置正确的工具白名单', () => {
@@ -38,18 +38,16 @@ describe('PiConfig', () => {
 			expect(args[toolsIndex + 1]).toBe('read,write,edit,grep,find,ls');
 		});
 
-		it('应传入 model、provider 和 api-key', () => {
+		it('应传入 model 和 provider（API key 通过环境变量传递）', () => {
 			const config = createTestConfig();
 			const args = buildSpawnArgs(config);
 
-			expect(args).toContain('--api-key');
-			expect(args[args.indexOf('--api-key') + 1]).toBe('test-api-key');
+			// API key 不应在 CLI 参数中（通过环境变量传递，避免进程列表泄露）
+			expect(args).not.toContain('--api-key');
 			expect(args).toContain('--provider');
 			expect(args[args.indexOf('--provider') + 1]).toBe('anthropic');
 			expect(args).toContain('--model');
 			expect(args[args.indexOf('--model') + 1]).toBe('claude-sonnet-4-20250514');
-			expect(args).toContain('--provider');
-			expect(args[args.indexOf('--provider') + 1]).toBe('anthropic');
 		});
 
 		it('应设置 --no-skills 和 --skill 以隔离 vault skills', () => {

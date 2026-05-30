@@ -113,6 +113,11 @@ export interface DeepPDFSettings {
 		piEnabled: boolean;
 		piLastVersion?: string;
 		customPiPath: string;
+		pi?: {
+			provider: string;
+			model: string;
+			apiKey?: string;
+		};
 
 		// 会话持久化
 		savedSessions?: Record<string, string>;

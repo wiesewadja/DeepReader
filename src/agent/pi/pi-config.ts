@@ -64,7 +64,6 @@ export function buildSpawnArgs(config: PiConfig): string[] {
 		'--tools', 'read,write,edit,grep,find,ls',
 		'--provider', config.provider,
 		'--model', config.model,
-		'--api-key', config.apiKey,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,
 	];
 }

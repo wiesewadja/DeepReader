@@ -96,8 +96,11 @@ export class PiProcessManager {
 			openai: 'OPENAI_API_KEY',
 			xiaomi: 'OPENAI_API_KEY',
 		};
-		const envKey = providerEnvKeyMap[config.provider] || 'ANTHROPIC_API_KEY';
-		const spawnEnv = { ...buildSpawnEnv(), [envKey]: config.apiKey };
+		const envKey = providerEnvKeyMap[config.provider];
+		if (!envKey) {
+			log(`[PiManager] Warning: unknown provider "${config.provider}", falling back to ANTHROPIC_API_KEY`);
+		}
+		const spawnEnv = { ...buildSpawnEnv(), [envKey || 'ANTHROPIC_API_KEY']: config.apiKey };
 
 		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
