@@ -340,6 +340,7 @@ export type PiEvent =
 export interface PiExecutionResult {
 	outputPath: string;
 	success: boolean;
+	hadToolCall?: boolean;
 	error?: string;
 	stats?: SessionStatsResult;
 }

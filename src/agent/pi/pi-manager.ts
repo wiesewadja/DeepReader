@@ -89,7 +89,7 @@ export class PiProcessManager {
 		const piBin = piStatus.path ?? 'pi';
 
 		const args = buildSpawnArgs(config);
-		const spawnEnv = { ...buildSpawnEnv(), ANTHROPIC_API_KEY: config.apiKey };
+		const spawnEnv = buildSpawnEnv();
 
 		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
@@ -224,7 +224,7 @@ export class PiProcessManager {
 		this.state = PiProcessState.BUSY;
 
 		// 整体超时保护（含进程启动 + skill 执行）
-		const overallTimeout = 90_000;
+		const overallTimeout = 150_000;
 		const overallTimer = setTimeout(() => {
 			log('[PiManager] Overall timeout reached, killing process');
 			this.killProcess();
@@ -269,18 +269,45 @@ export class PiProcessManager {
 			onProgress?.('PI 已接收任务，正在处理...');
 
 			// 流式执行，逐步 yield 事件
-			for await (const event of this.rpcClient.sendPromptStream(prompt, 60_000)) {
+			let hadToolCall = false;
+			let lastError: string | undefined;
+			for await (const event of this.rpcClient.sendPromptStream(prompt, 120_000)) {
 				if (event.type === 'message_update') {
 					const delta = (event as import('./types.js').PiMessageUpdateEvent).assistantMessageEvent;
 					if (delta?.type === 'text_delta' && delta.delta) {
 						onStreamDelta?.(delta.delta);
 					}
+				} else if (event.type === 'tool_execution_start') {
+					hadToolCall = true;
+				} else if (event.type === 'agent_end') {
+					const end = event as import('./types.js').PiAgentEndEvent;
+					if (end.messages) {
+						const last = end.messages[end.messages.length - 1];
+						const textBlock = last?.content?.find(b => b.type === 'text');
+						if (textBlock && 'text' in textBlock && textBlock.text?.includes('错误')) {
+							lastError = textBlock.text;
+						}
+					}
+				} else if (event.type === 'auto_retry_end') {
+					const retry = event as import('./types.js').PiAutoRetryEndEvent;
+					if (!retry.success && retry.finalError) {
+						lastError = retry.finalError;
+					}
 				}
+			}
+
+			if (lastError) {
+				return {
+					outputPath: context.outputPath,
+					success: false,
+					error: lastError,
+				};
 			}
 
 			return {
 				outputPath: context.outputPath,
 				success: true,
+				hadToolCall,
 				stats: await this.tryGetSessionStats(),
 			};
 		} catch (err) {
@@ -401,6 +428,7 @@ ${context.skillDescriptions.join('\n')}
 ${context.userRequest}
 
 ## 输出要求
-请根据用户请求选择合适的 skill 执行，结果写入文件: ${context.outputPath}`;
+请根据用户请求选择合适的 skill 执行，结果写入文件: ${context.outputPath}。
+如果 skill 要求特定后缀（如 .excalidraw.md），请将文件后缀替换为 skill 指定的格式。`;
 	}
 }

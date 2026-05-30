@@ -16,19 +16,26 @@ export async function scanSkillDescriptions(app: App): Promise<string[]> {
 	const paths = resolvePiPaths(app);
 	const descriptions: string[] = [];
 
-	try {
-		const files = await app.vault.adapter.list(paths.skillsDir);
-		for (const filePath of files.files) {
+	async function scanDir(dir: string): Promise<void> {
+		let listing;
+		try {
+			listing = await app.vault.adapter.list(dir);
+		} catch {
+			return;
+		}
+		for (const filePath of listing.files) {
 			if (!filePath.endsWith('.md')) continue;
 			const content = await app.vault.adapter.read(filePath);
 			const name = filePath.split('/').pop()?.replace('.md', '') ?? '';
 			const desc = extractDescription(content);
 			descriptions.push(`${name}: ${desc}`);
 		}
-	} catch {
-		// skills 目录可能不存在
+		for (const subDir of listing.folders) {
+			await scanDir(subDir);
+		}
 	}
 
+	await scanDir(paths.skillsDir);
 	return descriptions;
 }
 

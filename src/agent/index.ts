@@ -65,6 +65,7 @@ export interface FrontendAgentOptions {
   baseUrl?: string;
   model?: string;
   providerName?: string; // 服务商显示名称（用于日志）
+  providerId?: string;   // 服务商 ID（如 deepseek、openai，用于 PI CLI）
   app: App;
 
   // 新增：Fast 模型配置（可选）

@@ -623,6 +623,45 @@ export class BookManager {
 		return null;
 	}
 
+	/**
+	 * 从文件路径查找对应的 indexId
+	 * 用于当用户从 Obsidian 文件管理器直接打开书籍章节时
+	 */
+	findIndexIdByFilePath(filePath: string): string | null {
+		// 路径格式: DeepReader/{bookName}/{chapter}.md
+		const parts = filePath.split('/');
+		if (parts.length < 3 || parts[0] !== 'DeepReader') return null;
+
+		const bookName = parts[1];
+		if (!bookName) return null;
+
+		// 在 indexes 中查找匹配的书籍
+		const index = this._indexes.find(idx => {
+			const idxName = idx.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+			return idxName === bookName || idxName === bookName.replace(/_/g, ' ');
+		});
+
+		if (index) {
+			log(`[DeepPDF] findIndexIdByFilePath: 从路径 "${filePath}" 找到 indexId="${index.id}"`);
+			return index.id;
+		}
+
+		// 尝试通过 lastSelectedIndexId 恢复
+		const lastIndexId = this.host.plugin.settings.lastSelectedIndexId;
+		if (lastIndexId) {
+			const lastIndex = this._indexes.find(i => i.id === lastIndexId);
+			if (lastIndex) {
+				const lastBookName = lastIndex.pdf_name.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
+				if (lastBookName === bookName) {
+					log(`[DeepPDF] findIndexIdByFilePath: 从 lastSelectedIndexId 恢复 indexId="${lastIndexId}"`);
+					return lastIndexId;
+				}
+			}
+		}
+
+		return null;
+	}
+
 	async syncTopbarBookName(): Promise<void> {
 		if (!this._currentIndexId) return;
 		const vaultDir = await this.findBookDirectoryByIndexId(this._currentIndexId);

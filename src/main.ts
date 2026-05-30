@@ -748,6 +748,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 baseUrl: baseUrl,
                 model: model,
                 providerName: providerName,
+                providerId: chatProvider,
                 app: this.app,
 
                 // Router（原 Fast 模型）配置

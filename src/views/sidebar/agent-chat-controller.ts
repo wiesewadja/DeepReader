@@ -712,20 +712,14 @@ export class AgentChatController {
 				},
 			};
 
-			const result = await this.host.frontendAgent.runGraphEngine(
+			const result = await this.host.frontendAgent.chat(
 				userMessage,
 				context,
 				callbacks,
-				this._agentChatHistory,
 			);
 
-			if (result.interrupted) {
-				this.showHumanReviewPrompt(result.interrupted.nodeId, result.interrupted.content, context, callbacks);
-				return;
-			}
-
-			if (result.messages.length > 0) {
-				this._agentChatHistory = [...this._agentChatHistory, { role: 'user', content: userMessage }, ...result.messages];
+			if (result.length > 0) {
+				this._agentChatHistory = [...this._agentChatHistory, { role: 'user', content: userMessage }, ...result];
 			}
 			await this.host.saveToCache();
 

@@ -57,13 +57,14 @@ export function resolvePiPaths(app: App): {
 export function buildSpawnArgs(config: PiConfig): string[] {
 	return [
 		'--mode', 'rpc',
-		'--no-session',
 		'--session-dir', config.sessionDir,
 		'--no-skills',
 		'--skill', config.skillsDir,
 		'--no-context-files',
 		'--tools', 'read,write,edit,grep,find,ls',
+		'--provider', config.provider,
 		'--model', config.model,
+		'--api-key', config.apiKey,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,
 	];
 }
