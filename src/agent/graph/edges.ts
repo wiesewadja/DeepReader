@@ -89,7 +89,9 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
  * - otherwise → analytical (run ReAct/PlanExecute)
  */
 export function routeAfterPreSearch(state: CognitiveEngineState): string {
-  if (state.earlyStopContent) return NODE_NAMES.FORMATTER;
+  if (state.earlyStopContent) {
+    return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
+  }
   return NODE_NAMES.ANALYTICAL;
 }
 
