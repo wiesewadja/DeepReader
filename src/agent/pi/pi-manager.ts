@@ -380,11 +380,20 @@ export class PiProcessManager {
 	}
 
 	private buildPrompt(context: PiSkillContext): string {
+		const analysisBlock = context.context.analysisData
+			? `\n## 分析内容\n${context.context.analysisData.slice(0, 6000)}\n`
+			: '';
+		const structuralBlock = context.context.structuralAnalysis
+			? `\n## 结构分析\n${context.context.structuralAnalysis.slice(0, 4000)}\n`
+			: '';
+		const tocBlock = context.context.tocSummary
+			? `\n## 目录概览\n${context.context.tocSummary.slice(0, 2000)}\n`
+			: '';
+
 		return `## 任务上下文
 书籍: ${context.book.title} - ${context.book.author}
 当前章节: ${context.context.currentSection}
-章节摘要: ${context.context.analysisSummary}
-
+章节摘要: ${context.context.analysisSummary}${tocBlock}${structuralBlock}${analysisBlock}
 ## 可用 Skill
 ${context.skillDescriptions.join('\n')}
 

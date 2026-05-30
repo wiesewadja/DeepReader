@@ -16,6 +16,10 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 import type { VisualizerInput } from '../node-io.js';
 import type { ToolCallLike } from '../utils/tool-call-parser.js';
+import type { PiProcessManager } from '../../pi/pi-manager.js';
+import type { PiConfig } from '../../pi/types.js';
+import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from '../../pi/pi-context.js';
+import type { EngineCallbacks } from '../shared-context.js';
 
 /**
  * 执行 excalidraw draw 动作并返回格式化结果
@@ -86,10 +90,69 @@ export async function visualizerNode(
   state: CognitiveEngineState,
   config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  const { analysisResult: stateAnalysis, structuralAnalysis: stateStructural, rewrittenQuery: stateQuery, pdfName: statePdfName }: VisualizerInput = state;
+  const { analysisResult: stateAnalysis, structuralAnalysis: stateStructural, rewrittenQuery: stateQuery, pdfName: statePdfName, tocSummary: stateTocSummary }: VisualizerInput = state;
   const mainModel = config.configurable?.mainModel;
   const toolContext = config.configurable?.toolContext;
+  const piManager = config.configurable?.piManager as PiProcessManager | undefined;
+  const piConfig = config.configurable?.piConfig as PiConfig | undefined;
+  const callbacks = config.configurable?.callbacks as EngineCallbacks | undefined;
 
+  const sourceContent = stateAnalysis || stateStructural || '';
+  if (!sourceContent) {
+    log('[Visualizer] 无可用内容');
+    return { analysisResult: '图表生成失败: 缺少分析内容' };
+  }
+
+  const userQuery = stateQuery || '';
+  const pdfName = statePdfName || (toolContext?.book?.pdfName ?? '');
+
+  // ── PI 路径：优先使用 PI 执行可视化 skill ──
+  if (piManager && piConfig && !piManager.isBusy()) {
+    log('[Visualizer] PI available, using PI backend');
+    try {
+      const app = toolContext?.vault?.app;
+      if (app) {
+        piManager.setupExtensionUiBridge();
+
+        const skillDescriptions = await scanSkillDescriptions(app);
+        const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram');
+        const skillContext = buildSkillContext({
+          book: { title: pdfName, author: '' },
+          currentSection: '',
+          analysisSummary: sourceContent.slice(0, 500),
+          analysisData: sourceContent,
+          structuralAnalysis: stateStructural || undefined,
+          tocSummary: stateTocSummary || undefined,
+          skillDescriptions,
+          outputPath,
+          userRequest: userQuery,
+        });
+
+        const result = await piManager.executeSkill(
+          skillContext,
+          piConfig,
+          (msg) => { callbacks?.onProgress?.(msg); log(`[Visualizer] PI progress: ${msg}`); },
+          (text) => { callbacks?.onContent?.(text); },
+        );
+
+        if (result.success) {
+          log(`[Visualizer] PI skill succeeded, output: ${result.outputPath}`);
+          let statsInfo = '';
+          if (result.stats) {
+            const s = result.stats;
+            statsInfo = `\nToken 消耗: ${s.tokens.total.toLocaleString()} | 费用: $${s.cost.toFixed(4)}`;
+          }
+          return { analysisResult: `图表已通过 PI 生成\n输出文件: ${result.outputPath}${statsInfo}` };
+        }
+        log(`[Visualizer] PI skill failed: ${result.error}, falling back to local engine`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`[Visualizer] PI execution error: ${msg}, falling back to local engine`);
+    }
+  }
+
+  // ── 本地路径：ExcalidrawAutomate / SenseNova 信息图 ──
   if (!mainModel || !toolContext) {
     log('[Visualizer] 模型或上下文不可用');
     return { analysisResult: '图表生成失败: 模型不可用' };
@@ -101,15 +164,6 @@ export async function visualizerNode(
     log('[Visualizer] 无可用图表工具（Excalidraw 未安装且信息图未配置）');
     return { analysisResult: '图表生成失败: 未安装 Excalidraw 插件且未配置信息图 API。请安装插件或在设置中配置 SenseNova API Key。' };
   }
-
-  const sourceContent = stateAnalysis || stateStructural || '';
-  if (!sourceContent) {
-    log('[Visualizer] 无可用内容');
-    return { analysisResult: '图表生成失败: 缺少分析内容' };
-  }
-
-  const userQuery = stateQuery || '';
-  const pdfName = statePdfName || toolContext.book.pdfName || '';
 
   log(`[Visualizer] 开始生成图表，内容长度=${sourceContent.length}，query="${userQuery.slice(0, 50)}"`);
 

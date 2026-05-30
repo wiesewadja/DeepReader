@@ -35,6 +35,9 @@ export interface PiSkillContext {
 	context: {
 		currentSection: string;
 		analysisSummary: string;
+		analysisData?: string;
+		structuralAnalysis?: string;
+		tocSummary?: string;
 	};
 	skillDescriptions: string[];
 	outputPath: string;

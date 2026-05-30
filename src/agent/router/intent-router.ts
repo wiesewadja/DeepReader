@@ -116,17 +116,4 @@ export class IntentRouter {
 </system_note>`;
   }
 
-  /**
-   * 检测是否为 PI skill 意图（公开方法，由 FrontendAgent 调用）
-   */
-  isSkillIntent(inputs: string[]): boolean {
-    const patterns: RegExp[] = [
-      /思维导图|脑图|知识导图|概念图|导图/i,
-      /知识卡片|概念卡|金句卡/i,
-      /读书笔记|阅读笔记|章节笔记/i,
-      /可视化|绘制(思维|概念|知识|导图)/i,
-      /生[成画].*(思维导图|脑图|知识图|概念图|读书笔记)/i,
-    ];
-    return inputs.some(text => patterns.some(p => p.test(text)));
-  }
 }

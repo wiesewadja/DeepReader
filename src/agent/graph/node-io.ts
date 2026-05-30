@@ -97,6 +97,7 @@ export interface VisualizerInput {
   structuralAnalysis: string;
   rewrittenQuery: string;
   pdfName: string;
+  tocSummary: string;
 }
 
 export interface VisualizerOutput {

@@ -48,8 +48,6 @@ import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
 import { PiProcessManager } from './pi/pi-manager.js';
-	import { detectPiCli } from './pi/pi-config.js';
-import { buildSkillContext, scanSkillDescriptions, generateOutputPath } from './pi/pi-context.js';
 import type { PiConfig } from './pi/types.js';
 import { agentLog as log } from '../utils/logger.js';
 import { NoopTracer } from './tracing/index.js';
@@ -476,6 +474,18 @@ ${currentMemory}
       log('[FrontendAgent] LangSmith tracing 已启用');
     }
 
+    // PI integration: build config if enabled
+    const piEnabled = context.vault.plugin?.settings?.piEnabled;
+    const customPiPath = context.vault.plugin?.settings?.customPiPath;
+    const piConfig = piEnabled
+      ? this.piManager.buildConfig(
+          this.options.apiKey,
+          this.options.model ?? 'deepseek-v4-flash',
+          this.options.providerName ?? 'deepseek',
+          customPiPath,
+        )
+      : undefined;
+
     return {
       thread_id: threadId,
       fastModel: models.fast,
@@ -488,6 +498,8 @@ ${currentMemory}
       ttsConfig: context.ttsConfig,
       llmConfig: context.llmConfig,
       _langsmithTracer: langsmithTracer,
+      piManager: piEnabled ? this.piManager : undefined,
+      piConfig,
     };
   }
 
@@ -534,11 +546,6 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 检测 PI skill 意图
-    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
-      return this.handleSkillRequest(userMessage, context, callbacks);
-    }
-
     const result = await this.runGraphEngine(userMessage, context, callbacks);
     return result.messages;
   }
@@ -551,105 +558,8 @@ ${currentMemory}
   ): Promise<ChatMessage[]> {
     await this.initialize();
 
-    // 检测 PI skill 意图
-    if (context.vault.plugin?.settings?.piEnabled && this.intentRouter.isSkillIntent([userMessage])) {
-      return this.handleSkillRequest(userMessage, context, callbacks);
-    }
-
     const result = await this.runGraphEngine(userMessage, context, callbacks, history);
     return result.messages;
-  }
-
-  /**
-   * 处理 PI skill 请求
-   */
-  private async handleSkillRequest(
-    userMessage: string,
-    context: ToolContext,
-    callbacks?: AgentLoopOptions,
-  ): Promise<ChatMessage[]> {
-    const app = this.options.app;
-
-    if (!this.options.apiKey) {
-      const msg = 'Skill 能力需要配置 API Key，请在设置中填写。';
-      callbacks?.onError?.(msg);
-      return [{ role: 'assistant', content: msg }];
-    }
-
-    // 检测 PI CLI 是否可用
-    const customPiPath = context.vault.plugin?.settings?.customPiPath;
-    const piStatus = await detectPiCli(customPiPath);
-    if (!piStatus.available) {
-      const msg = 'PI Agent 未安装。请在插件设置 → 高级 → PI Agent 页面点击安装，或填写 pi 的绝对路径。';
-      callbacks?.onError?.(msg);
-      return [{ role: 'assistant', content: msg }];
-    }
-
-    const piConfig = this.piManager.buildConfig(
-      this.options.apiKey,
-      this.options.model ?? 'claude-sonnet-4-20250514',
-      this.options.providerName ?? 'anthropic',
-      customPiPath,
-    );
-
-    const skillDescriptions = await scanSkillDescriptions(app);
-
-    const outputPath = generateOutputPath(
-      app,
-      'skill',
-      context.book.documentMetadata?.title ?? '未命名',
-    );
-
-    const skillContext = buildSkillContext({
-      book: {
-        title: context.book.documentMetadata?.title ?? '未知',
-        author: context.book.documentMetadata?.author ?? '未知',
-      },
-      currentSection: context.book.currentNodeId ?? '全书',
-      analysisSummary: context.book.docDescription ?? '',
-      userRequest: userMessage,
-      skillDescriptions,
-      outputPath,
-    });
-
-    callbacks?.onProgress?.('正在通过 PI 执行 skill...');
-
-    // 设置 Extension UI bridge
-    this.piManager.setupExtensionUiBridge();
-
-    const result = await this.piManager.executeSkill(
-      skillContext,
-      piConfig,
-      callbacks?.onProgress,
-      callbacks?.onToken,
-    );
-
-    if (result.success) {
-      try {
-        const file = app.vault.getAbstractFileByPath(result.outputPath);
-        if (file && 'extension' in file) {
-          await app.workspace.getLeaf(false).openFile(file as import('obsidian').TFile);
-        }
-      } catch {
-        // 打开失败不影响主流程
-      }
-
-      let statsInfo = '';
-      if (result.stats) {
-        const s = result.stats;
-        const totalTokens = s.tokens.total.toLocaleString();
-        statsInfo = `\n\nToken 消耗: ${totalTokens} | 费用: $${s.cost.toFixed(4)}`;
-      }
-      return [{
-        role: 'assistant',
-        content: `已完成，结果保存在 \`${result.outputPath}\`${statsInfo}`,
-      }];
-    } else {
-      return [{
-        role: 'assistant',
-        content: `执行失败：${result.error ?? '未知错误'}`,
-      }];
-    }
   }
 
   /**

@@ -49,6 +49,9 @@ export function buildSkillContext(options: {
 	book: { title: string; author: string };
 	currentSection: string;
 	analysisSummary: string;
+	analysisData?: string;
+	structuralAnalysis?: string;
+	tocSummary?: string;
 	userRequest: string;
 	skillDescriptions: string[];
 	outputPath: string;
@@ -58,6 +61,9 @@ export function buildSkillContext(options: {
 		context: {
 			currentSection: options.currentSection,
 			analysisSummary: options.analysisSummary,
+			analysisData: options.analysisData,
+			structuralAnalysis: options.structuralAnalysis,
+			tocSummary: options.tocSummary,
 		},
 		skillDescriptions: options.skillDescriptions,
 		outputPath: options.outputPath,
