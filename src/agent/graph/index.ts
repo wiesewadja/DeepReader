@@ -88,6 +88,7 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
   .addConditionalEdges(NODE_NAMES.PRE_SEARCH, routeAfterPreSearch, {
     [NODE_NAMES.FORMATTER]: NODE_NAMES.FORMATTER,
     [NODE_NAMES.ANALYTICAL]: NODE_NAMES.ANALYTICAL,
+    [NODE_NAMES.VISUALIZER]: NODE_NAMES.VISUALIZER,
   })
   .addConditionalEdges(NODE_NAMES.ANALYTICAL, routeAfterAnalysis, {
     [NODE_NAMES.VISUALIZER]: NODE_NAMES.VISUALIZER,
