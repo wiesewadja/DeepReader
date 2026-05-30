@@ -5,8 +5,8 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
-import { mkdirSync } from 'fs';
-import { dirname } from 'path';
+import { mkdirSync, existsSync } from 'fs';
+import { dirname, join } from 'path';
 import { PiRpcClient } from './pi-client.js';
 import { buildSpawnArgs, buildSpawnEnv, resolvePiPaths, detectPiCli } from './pi-config.js';
 import { PiProcessState, type PiConfig, type PiSkillContext, type PiExecutionResult, type PiExtensionUiRequestEvent, type PiExtensionUiResponse } from './types.js';
@@ -96,11 +96,8 @@ export class PiProcessManager {
 			openai: 'OPENAI_API_KEY',
 			xiaomi: 'OPENAI_API_KEY',
 		};
-		const envKey = providerEnvKeyMap[config.provider];
-		if (!envKey) {
-			log(`[PiManager] Warning: unknown provider "${config.provider}", falling back to ANTHROPIC_API_KEY`);
-		}
-		const spawnEnv = { ...buildSpawnEnv(), [envKey || 'ANTHROPIC_API_KEY']: config.apiKey };
+		const envKey = providerEnvKeyMap[config.provider] || 'ANTHROPIC_API_KEY';
+		const spawnEnv = { ...buildSpawnEnv(), [envKey]: config.apiKey };
 
 		this.process = spawn(piBin, args, {
 			cwd: config.workingDir,
@@ -235,7 +232,7 @@ export class PiProcessManager {
 		this.state = PiProcessState.BUSY;
 
 		// 整体超时保护（含进程启动 + skill 执行）
-		const overallTimeout = 150_000;
+		const overallTimeout = 90_000;
 		const overallTimer = setTimeout(() => {
 			log('[PiManager] Overall timeout reached, killing process');
 			this.killProcess();
@@ -280,45 +277,29 @@ export class PiProcessManager {
 			onProgress?.('PI 已接收任务，正在处理...');
 
 			// 流式执行，逐步 yield 事件
-			let hadToolCall = false;
-			let lastError: string | undefined;
-			for await (const event of this.rpcClient.sendPromptStream(prompt, 120_000)) {
+			for await (const event of this.rpcClient.sendPromptStream(prompt, 60_000)) {
 				if (event.type === 'message_update') {
 					const delta = (event as import('./types.js').PiMessageUpdateEvent).assistantMessageEvent;
 					if (delta?.type === 'text_delta' && delta.delta) {
 						onStreamDelta?.(delta.delta);
 					}
-				} else if (event.type === 'tool_execution_start') {
-					hadToolCall = true;
-				} else if (event.type === 'agent_end') {
-					const end = event as import('./types.js').PiAgentEndEvent;
-					if (end.messages) {
-						const last = end.messages[end.messages.length - 1];
-						const textBlock = last?.content?.find(b => b.type === 'text');
-						if (textBlock && 'text' in textBlock && textBlock.text?.includes('错误')) {
-							lastError = textBlock.text;
-						}
-					}
-				} else if (event.type === 'auto_retry_end') {
-					const retry = event as import('./types.js').PiAutoRetryEndEvent;
-					if (!retry.success && retry.finalError) {
-						lastError = retry.finalError;
-					}
 				}
 			}
 
-			if (lastError) {
+			// 验证输出文件实际存在
+			const absoluteOutputPath = join(this.config!.workingDir, context.outputPath);
+			if (!existsSync(absoluteOutputPath)) {
+				log(`[PiManager] Output file not found: ${absoluteOutputPath}, PI may have skipped write`);
 				return {
 					outputPath: context.outputPath,
 					success: false,
-					error: lastError,
+					error: 'PI 未写入输出文件，可能未执行写入操作',
 				};
 			}
 
 			return {
 				outputPath: context.outputPath,
 				success: true,
-				hadToolCall,
 				stats: await this.tryGetSessionStats(),
 			};
 		} catch (err) {
@@ -436,7 +417,8 @@ export class PiProcessManager {
 ${context.userRequest}
 
 ## 输出要求
-请根据用户请求执行可视化生成，结果写入文件: ${context.outputPath}。
-如果 skill 要求特定后缀（如 .excalidraw.md），请将文件后缀替换为 skill 指定的格式。`;
+使用 excalidraw skill 生成可视化图表。
+	输出文件路径: ${context.outputPath.replace(/\.md$/, '.excalidraw.md')}。
+	确保使用 write 工具将生成的 Excalidraw JSON 写入上述文件路径。`;
 	}
 }
