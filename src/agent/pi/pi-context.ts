@@ -23,7 +23,7 @@ export function generateOutputPath(app: App, skillName: string, bookTitle: strin
  * 构造完整的 PiSkillContext
  */
 export function buildSkillContext(options: {
-	book: { title: string; author: string };
+	book: { title: string; author: string; indexId?: string };
 	currentSection: string;
 	analysisSummary: string;
 	analysisData?: string;

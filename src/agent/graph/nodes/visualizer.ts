@@ -114,9 +114,9 @@ export async function visualizerNode(
       if (app) {
         piManager.setupExtensionUiBridge();
 
-        const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram').replace(/\.md$/, '.excalidraw.md');
+        const outputPath = generateOutputPath(app, 'visualize', pdfName || 'diagram').replace(/\.md$/, '.excalidraw');
         const skillContext = buildSkillContext({
-          book: { title: pdfName, author: '' },
+          book: { title: pdfName, author: '', indexId: toolContext?.book?.indexId },
           currentSection: '',
           analysisSummary: sourceContent.slice(0, 500),
           analysisData: sourceContent,
@@ -130,19 +130,68 @@ export async function visualizerNode(
           skillContext,
           piConfig,
           (msg) => { callbacks?.onProgress?.(msg); log(`[Visualizer] PI progress: ${msg}`); },
-          (text) => { callbacks?.onContent?.(text); },
         );
 
         if (result.success) {
+          let finalPath = result.outputPath;
           log(`[Visualizer] PI skill succeeded, output: ${result.outputPath}`);
+
+          // Convert .excalidraw (legacy) → .excalidraw.md via Excalidraw plugin's built-in API
+          if (finalPath.endsWith('.excalidraw') && app) {
+            try {
+              const excalidrawPlugin = (app as any).plugins?.plugins?.['obsidian-excalidraw-plugin'];
+              const origFile = app.vault.getAbstractFileByPath(finalPath);
+              if (excalidrawPlugin?.convertSingleExcalidrawToMD && origFile) {
+                // convertSingleExcalidrawToMD(file, replaceExt=false, deleteOriginal=true)
+                await excalidrawPlugin.convertSingleExcalidrawToMD(origFile, false, true);
+                // Plugin creates: filename.excalidraw.md (not replacing .excalidraw extension)
+                const mdPath = finalPath.replace(/\.excalidraw$/, '.excalidraw.md');
+                const mdFile = app.vault.getAbstractFileByPath(mdPath);
+                if (mdFile) {
+                  finalPath = mdPath;
+                  log(`[Visualizer] Converted to .excalidraw.md: ${finalPath}`);
+                } else {
+                  log(`[Visualizer] .excalidraw.md not found after conversion, keeping original`);
+                }
+              }
+            } catch (convErr) {
+              log(`[Visualizer] Conversion to .excalidraw.md failed: ${convErr}`);
+            }
+          }
+
+          // Auto-open the generated file in a new tab（仅限已验证的 Excalidraw 文件）
+          if (finalPath.endsWith('.excalidraw.md') || finalPath.endsWith('.excalidraw')) {
+            const fileToOpen = app?.vault.getAbstractFileByPath(finalPath);
+            if (fileToOpen) {
+              try {
+                const leaf = app.workspace.getLeaf('tab');
+                await leaf.openFile(fileToOpen as any);
+              } catch (openErr) {
+                log(`[Visualizer] Auto-open failed: ${openErr}`);
+              }
+            } else {
+              log(`[Visualizer] File not found for auto-open: ${finalPath}`);
+            }
+          }
+
           let statsInfo = '';
           if (result.stats) {
             const s = result.stats;
             statsInfo = `\nToken 消耗: ${s.tokens.total.toLocaleString()} | 费用: $${s.cost.toFixed(4)}`;
           }
-          return { analysisResult: `图表已通过 PI 生成\n输出文件: ${result.outputPath}${statsInfo}` };
+          return { analysisResult: `图表已通过 PI 生成\n输出文件: ${finalPath}${statsInfo}` };
         }
-        log(`[Visualizer] PI skill failed: ${result.error}, falling back to local engine`);
+
+        // 非瞬时错误（配置/安装问题）→ 直接报错，不 fallback
+        if (result.transient !== true) {
+          log(`[Visualizer] PI skill failed (non-transient): ${result.error}, will not fallback`);
+          return {
+            analysisResult: `图表生成失败（PI 配置问题）: ${result.error}。请检查 PI 设置或插件日志。`,
+          };
+        }
+
+        // 瞬时错误 → fallback 到本地引擎
+        log(`[Visualizer] PI skill failed (transient): ${result.error}, falling back to local engine`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

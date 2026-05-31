@@ -19,6 +19,8 @@ export interface PiConfig {
 	model: string;
 	provider: string;
 	skillsDir: string;
+	/** 精确的 skill 路径（传 excalidraw 单 skill，避免加载整个 skillsDir） */
+	skillPath?: string;
 	sessionDir: string;
 	exportsDir: string;
 	workingDir: string;
@@ -31,6 +33,7 @@ export interface PiSkillContext {
 	book: {
 		title: string;
 		author: string;
+		indexId?: string;
 	};
 	context: {
 		currentSection: string;
@@ -342,5 +345,7 @@ export interface PiExecutionResult {
 	success: boolean;
 	hadToolCall?: boolean;
 	error?: string;
+	/** 是否为瞬时错误（网络超时等，可重试）；配置错误为 false，应终止流程 */
+	transient?: boolean;
 	stats?: SessionStatsResult;
 }

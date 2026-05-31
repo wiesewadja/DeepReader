@@ -4,11 +4,12 @@
  * 构建启动参数、解析 vault 路径、生成系统提示词。
  */
 
-import { type App, normalizePath } from 'obsidian';
+import { type App } from 'obsidian';
 import type { PiConfig } from './types.js';
 import { spawn } from 'child_process';
 import { homedir } from 'os';
 import { join, delimiter } from 'path';
+import { existsSync } from 'fs';
 
 /** 当前平台 */
 const platform = process.platform;
@@ -39,15 +40,16 @@ export function resolvePiPaths(app: App): {
 	exportsDirRelative: string;
 } {
 	const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
-	const deepReaderDir = normalizePath(`${vaultPath}/DeepReader`);
-	const exportsRelative = normalizePath('DeepReader/exports');
+	const deepReaderDir = `${vaultPath}/DeepReader`;
+	// 路径从 .pi/skills 迁移到 DeepReader/skills（2026-06），属于 breaking change：
+	// 旧 sessions 数据不再复用，新路径由插件首次启动时自动创建，无需迁移。
 
 	return {
 		workingDir: vaultPath,
-		skillsDir: normalizePath(`${vaultPath}/.pi/skills`),
-		sessionDir: normalizePath(`${deepReaderDir}/pi/sessions`),
-		exportsDir: normalizePath(`${deepReaderDir}/exports`),
-		exportsDirRelative: exportsRelative,
+		skillsDir: `${deepReaderDir}/skills`,
+		sessionDir: `${deepReaderDir}/pi/sessions`,
+		exportsDir: `${deepReaderDir}/exports`,
+		exportsDirRelative: 'DeepReader/exports',
 	};
 }
 
@@ -55,13 +57,15 @@ export function resolvePiPaths(app: App): {
  * 构建 PI RPC 启动参数
  */
 export function buildSpawnArgs(config: PiConfig): string[] {
+	// skillPath 优先（单 skill 路径），否则用 skillsDir（所有 skills）
+	const skillPath = config.skillPath ?? config.skillsDir;
 	return [
 		'--mode', 'rpc',
 		'--session-dir', config.sessionDir,
 		'--no-skills',
-		'--skill', config.skillsDir,
+		'--skill', skillPath,
 		'--no-context-files',
-		'--tools', 'read,write,edit,grep,find,ls',
+		'--tools', 'read,write,edit,grep,find,ls,bash',
 		'--provider', config.provider,
 		'--model', config.model,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,

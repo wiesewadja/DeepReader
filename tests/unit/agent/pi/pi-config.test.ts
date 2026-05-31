@@ -35,7 +35,7 @@ describe('PiConfig', () => {
 		it('应设置正确的工具白名单', () => {
 			const args = buildSpawnArgs(createTestConfig());
 			const toolsIndex = args.indexOf('--tools');
-			expect(args[toolsIndex + 1]).toBe('read,write,edit,grep,find,ls');
+			expect(args[toolsIndex + 1]).toBe('read,write,edit,grep,find,ls,bash');
 		});
 
 		it('应传入 model 和 provider（API key 通过环境变量传递）', () => {

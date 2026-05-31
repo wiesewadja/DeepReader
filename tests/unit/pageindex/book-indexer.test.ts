@@ -5,7 +5,7 @@ import * as path from "path";
 import { IndexErrorCode } from "@/pageindex/book-types";
 import { getPageindexRoot, getBookDir, getBookFile } from '@/pageindex/paths';
 
-vi.mock("@/pageindex/index", () => {
+vi.mock("@/pageindex/pageindex", () => {
   return {
     PageIndex: vi.fn().mockImplementation(() => ({
       fromPdf: vi.fn().mockResolvedValue({

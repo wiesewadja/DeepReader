@@ -309,7 +309,7 @@ export async function formatterNode(
 
   // === Diagram shortcut: brief in-character response, skip full formatting ===
   const ar = analysisResult || '';
-  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
+  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：') || ar.startsWith('图表已通过 PI 生成');
   const diagramFailed = ar.startsWith('图表生成失败:');
   if (diagramSuccess || diagramFailed) {
     callbacks?.onProgress?.(diagramSuccess ? '图表已生成' : '图表生成遇到问题');
@@ -327,13 +327,19 @@ ${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇�
 
     // Ensure the chart/infographic link is in the output (LLM may omit it)
     if (diagramSuccess) {
-      const hasLink = content.includes('[[') || content.includes('![');
+      const hasLink = content.includes('[[') || content.includes('![') || content.includes('.excalidraw');
       if (!hasLink) {
+        // Local engine returns wiki links
         const wikiMatch = ar.match(/\[\[[^\]]+\]\]/);
-        const imgMatch = ar.match(/!\[[^\]]*\]\([^)]+\)/);
-        const link = wikiMatch?.[0] || imgMatch?.[0];
-        if (link) {
-          content = `${content}\n\n${link}`;
+        // PI returns file path like "输出文件: DeepReader/exports/xxx.excalidraw.md"
+        const piPathMatch = ar.match(/输出文件:\s*(.+\.excalidraw(?:\.md)?)/);
+        if (wikiMatch) {
+          content = `${content}\n\n${wikiMatch[0]}`;
+        } else if (piPathMatch) {
+          const filePath = piPathMatch[1].trim();
+          const fileName = filePath.split('/').pop() || filePath;
+          const displayName = fileName.replace(/\.excalidraw(?:\.md)?$/, '').replace(/-visualize-.*$/, '');
+          content = `${content}\n\n[[${filePath}|${displayName}]]`;
         }
       }
     }
