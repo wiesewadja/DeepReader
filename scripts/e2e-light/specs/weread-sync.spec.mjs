@@ -2,16 +2,22 @@
  * 轻量 E2E: 微信读书同步
  *
  * 对比: tests/e2e/specs/weread-sync.e2e.ts (105 行 WDIO)
- * 通过插件命令触发同步，检查同步结果文件
+ * 通过插件命令触发同步，轮询同步状态，验证同步结果
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
+
+const SYNC_TIMEOUT = 60_000;
+const POLL_INTERVAL = 3_000;
 
 export default {
 	id: 'weread-sync',
 	name: '微信读书同步',
 	feature: 'F-27',
 	timeout: 300_000,
+	requires: {
+		settings: { wereadApiKey: true },
+	},
 
 	async run({ log }) {
 		const steps = [];
@@ -25,17 +31,27 @@ export default {
 			steps.push({ name, status: 'fail', duration, error: error.message });
 		}
 
-		// Step 1: 检查 API Key
+		// Step 1: 记录同步前状态
+		let syncStateBefore;
 		{
 			const t0 = Date.now();
 			try {
-				const hasKey = await evalObsidian(`!!app.plugins.plugins['deepreader']?.settings?.wereadApiKey`);
-				if (!hasKey) {
-					return { status: 'skip', reason: 'wereadApiKey 未配置' };
-				}
-				pass('API Key 检查', Date.now() - t0);
+				syncStateBefore = await evalObsidian(`(() => {
+					const adapter = app.vault.adapter;
+					return (async () => {
+						const exists = await adapter.exists('.pageindex/weread/sync-state.json');
+						if (!exists) return { lastSyncTime: null, syncedBookCount: 0 };
+						const raw = await adapter.read('.pageindex/weread/sync-state.json');
+						const state = JSON.parse(raw);
+						return {
+							lastSyncTime: state.lastSyncTime || null,
+							syncedBookCount: Object.keys(state.syncedBooks || {}).length,
+						};
+					})();
+				})()`, { timeout: 10_000 });
+				pass('同步前状态', Date.now() - t0, `lastSync=${syncStateBefore?.lastSyncTime}, books=${syncStateBefore?.syncedBookCount}`);
 			} catch (e) {
-				fail('API Key 检查', Date.now() - t0, e);
+				fail('同步前状态', Date.now() - t0, e);
 				return { steps };
 			}
 		}
@@ -45,48 +61,95 @@ export default {
 			const t0 = Date.now();
 			try {
 				await evalObsidian(`app.commands.executeCommandById("deepreader:weread-sync")`);
+				await new Promise(r => setTimeout(r, 2000));
 				pass('触发同步', Date.now() - t0);
 			} catch (e) {
 				fail('触发同步', Date.now() - t0, e);
+				return { steps };
 			}
 		}
 
-		// Step 3: 等待同步完成
-		await new Promise(r => setTimeout(r, 15000));
-
-		// Step 4: 检查同步结果
+		// Step 3: 轮询等待同步完成（lastSyncTime 更新或超时）
+		let syncCompleted = false;
 		{
 			const t0 = Date.now();
 			try {
-				const files = await evalObsidian(`(() => {
+				const deadline = Date.now() + SYNC_TIMEOUT;
+				while (Date.now() < deadline) {
+					try {
+						const state = await evalObsidian(`(() => {
+						const adapter = app.vault.adapter;
+						return (async () => {
+							const exists = await adapter.exists('.pageindex/weread/sync-state.json');
+							if (!exists) return { lastSyncTime: null };
+							const raw = await adapter.read('.pageindex/weread/sync-state.json');
+							const s = JSON.parse(raw);
+							return { lastSyncTime: s.lastSyncTime || null };
+						})();
+					})()`, { timeout: 10_000 });
+
+					if (state?.lastSyncTime && state.lastSyncTime !== syncStateBefore?.lastSyncTime) {
+						syncCompleted = true;
+							break;
+						}
+					} catch {
+						// 单次轮询失败不终止
+					}
+					await new Promise(r => setTimeout(r, POLL_INTERVAL));
+				}
+
+				if (!syncCompleted) {
+					throw new Error(`同步未在 ${SYNC_TIMEOUT / 1000}s 内完成 (lastSyncTime 未更新)`);
+				}
+				pass('同步完成', Date.now() - t0);
+			} catch (e) {
+				fail('同步完成', Date.now() - t0, e);
+			}
+		}
+
+		// Step 4: 验证同步结果
+		if (syncCompleted) {
+			const t0 = Date.now();
+			try {
+				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
+						const stateRaw = await adapter.read('.pageindex/weread/sync-state.json');
+						const state = JSON.parse(stateRaw);
+						const syncedCount = Object.keys(state.syncedBooks || {}).length;
+
+						// 检查同步文件夹
 						const paths = ['书籍摘录', 'DeepReader'];
+						let foundPath = null;
+						let fileCount = 0;
 						for (const p of paths) {
 							const exists = await adapter.exists(p);
 							if (exists) {
 								const listing = await adapter.list(p);
-								return {
-									path: p, exists: true,
-									fileCount: listing?.files?.length ?? 0,
-									folderCount: listing?.folders?.length ?? 0,
-								};
+								foundPath = p;
+								fileCount = listing?.files?.length ?? 0;
+								break;
 							}
 						}
-						const stateExists = await adapter.exists('.pageindex/weread/sync-state.json');
-						if (stateExists) {
-							const raw = await adapter.read('.pageindex/weread/sync-state.json');
-							const state = JSON.parse(raw);
-							return {
-								syncStateExists: true,
-								syncedBookCount: Object.keys(state.syncedBooks || {}).length,
-							};
-						}
-						return { exists: false };
-					})();
-				})()`, { timeout: 30_000 });
 
-				pass('同步结果', Date.now() - t0, JSON.stringify(files));
+						return {
+							syncedBookCount: syncedCount,
+							foundPath,
+							fileCount,
+							lastSyncTime: state.lastSyncTime,
+						};
+					})();
+				})()`, { timeout: 15_000 });
+
+				if (!result) throw new Error('同步结果读取失败');
+
+				// 断言：至少同步了 1 本书
+				if (result.syncedBookCount < 1) {
+					throw new Error(`syncedBookCount = ${result.syncedBookCount}，预期 ≥ 1`);
+				}
+
+				pass('同步结果', Date.now() - t0,
+					`books=${result.syncedBookCount}, path=${result.foundPath || '(无)'}, files=${result.fileCount}`);
 			} catch (e) {
 				fail('同步结果', Date.now() - t0, e);
 			}

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'url';
 import { e2eLightSpecs } from './specs/index.mjs';
 import { evalObsidian } from '../smoke/lib/obsidian-cli.mjs';
 import { countBySelector, listPrefixedClasses } from '../smoke/lib/dom-query.mjs';
+import { checkRequires } from './baseline.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -204,9 +205,26 @@ async function main() {
 		},
 	};
 
-	// 串行执行
+	// baseline 前置检查 + 串行执行
 	const allResults = [];
 	for (const spec of specs) {
+		if (spec.requires && Object.keys(spec.requires).length > 0) {
+			const baseline = await checkRequires(spec.requires);
+			if (!baseline.ok) {
+				const skipResult = {
+					id: spec.id,
+					name: spec.name,
+					status: 'skip',
+					duration: 0,
+					reason: 'baseline 不满足:\n           ' + baseline.missing.join('\n           '),
+					steps: [],
+				};
+				allResults.push(skipResult);
+				reportSpec(skipResult);
+				continue;
+			}
+		}
+
 		const result = await runOne(spec, ctx);
 		allResults.push(result);
 

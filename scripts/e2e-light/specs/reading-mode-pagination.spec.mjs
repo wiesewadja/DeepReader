@@ -13,6 +13,10 @@ export default {
 	name: '阅读模式分页',
 	feature: 'F-17',
 	timeout: 60_000,
+	requires: {
+		files: ['DeepReader/HISTORY.md'],
+		minLines: { 'DeepReader/HISTORY.md': 100 },
+	},
 
 	async run({ log }) {
 		const steps = [];

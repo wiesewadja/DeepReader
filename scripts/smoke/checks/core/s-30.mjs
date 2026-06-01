@@ -2,12 +2,12 @@
  * S-30: PI 子进程
  *
  * 锚定: F-30 PI 子进程（持久 AI 进程）
- * 触发:  evalObsidian 验证 frontendAgent.piManager 实例
- * 断言:  piManager 存在 + process 状态可读
+ * 触发:  evalObsidian 验证 piManager 实例存在 + 公共方法可达
+ * 断言:  piManager 存在 + getState()/isReady() 可调用
  * 失败信息:  piManager 状态详情
  *
  * 真实路径:  app.plugins.plugins['deepreader'].frontendAgent.piManager
- * (不是 app.plugins.plugins['deepreader'].piManager, 那个不存在)
+ * 注意: piManager 和其内部属性都是 private，只使用公共 getter 方法
  */
 
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';
@@ -23,13 +23,13 @@ export default {
 		const result = await evalObsidian(`(() => {
 			const pm = app.plugins.plugins["deepreader"]?.frontendAgent?.piManager;
 			if (!pm) return { exists: false };
+
+			// 只使用公共 API，不访问 private 字段
 			return {
 				exists: true,
-				hasProcess: !!pm.process,
-				hasRpc: !!pm.rpcClient,
-				busy: pm.busy,
-				state: pm.state,
-				hasHeartbeat: !!pm._heartbeatTimer,
+				state: typeof pm.getState === 'function' ? pm.getState() : 'no-getState',
+				ready: typeof pm.isReady === 'function' ? pm.isReady() : 'no-isReady',
+				busy: typeof pm.isBusy === 'function' ? pm.isBusy() : 'no-isBusy',
 			};
 		})()`);
 
@@ -37,7 +37,12 @@ export default {
 			throw new Error('piManager 不存在 (frontendAgent.piManager)');
 		}
 
-		log?.info?.(`✓ piManager 存在: hasProcess=${result.hasProcess}, hasRpc=${result.hasRpc}, state=${result.state}`);
+		// 验证公共方法存在且可调用
+		if (result.state === 'no-getState') {
+			throw new Error('piManager.getState() 方法不存在');
+		}
+
+		log?.info?.(`✓ piManager: state=${result.state}, ready=${result.ready}, busy=${result.busy}`);
 		return result;
 	},
 };

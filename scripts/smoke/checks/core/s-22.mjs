@@ -2,11 +2,12 @@
  * S-22: Sidebar 聊天界面
  *
  * 锚定: F-22 Sidebar 聊天界面
- * 触发:  evalObsidian 直接数 DOM 元素（plugin 已加载，sidebar 视图在 DOM）
+ * 触发:  executeCommandById("deepreader:open-deepreader-sidebar") → 等 DOM 渲染
  * 断言:  3 个关键 class 各 ≥ 1
  * 失败信息:  哪个选择器未匹配 + 当前含 deeppdf- 前缀的 className 列表
  */
 
+import { evalObsidian } from '../../lib/obsidian-cli.mjs';
 import { countBySelector, listPrefixedClasses } from '../../lib/dom-query.mjs';
 
 const SELECTORS = [
@@ -20,9 +21,13 @@ export default {
 	name: 'Sidebar 聊天界面',
 	level: 'core',
 	feature: 'F-22',
-	timeout: 5_000,
+	timeout: 8_000,
 
 	async run({ log }) {
+		// 先打开 sidebar 视图（否则 DOM 中不存在这些元素）
+		await evalObsidian('app.commands.executeCommandById("deepreader:open-deepreader-sidebar")');
+		await new Promise(r => setTimeout(r, 1000));
+
 		const counts = await Promise.all(SELECTORS.map(s => countBySelector(s)));
 		const missing = SELECTORS.filter((_, i) => counts[i] === 0);
 

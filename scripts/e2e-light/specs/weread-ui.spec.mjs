@@ -3,6 +3,8 @@
  *
  * 对比: tests/e2e/specs/weread-ui.e2e.ts (203 行 WDIO)
  * 验证设置页面、书库视图、未匹配 Modal UI 结构
+ *
+ * 所测试的 UI 都通过插件真实代码渲染，不自己构造 DOM。
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
@@ -39,19 +41,29 @@ export default {
 				`);
 				await new Promise(r => setTimeout(r, 1000));
 
-				// 验证微信读书设置区域存在（F-26 核心断言）
-				const hasWeread = await evalObsidian(`(() => {
-					const headings = document.querySelectorAll('.deeppdf-settings-card h4');
-					for (const h of headings) {
-						if (h.textContent?.includes('API Key') || h.textContent?.includes('同步')) return true;
-					}
-					const buttons = document.querySelectorAll('button');
-					for (const btn of buttons) {
-						if (btn.textContent?.includes('保存并验证') || btn.textContent?.includes('同步笔记')) return true;
+				// 切换到微信读书 tab
+				await evalObsidian(`(() => {
+					const navItems = document.querySelectorAll('.deeppdf-settings-nav-item');
+					for (const item of navItems) {
+						if (item.textContent?.includes('微信读书')) {
+							item.click();
+							return true;
+						}
 					}
 					return false;
 				})()`);
-				if (!hasWeread) throw new Error('微信读书设置区域未找到（无 h4 含 API Key/同步，无按钮含 保存并验证/同步笔记）');
+				await new Promise(r => setTimeout(r, 500));
+
+				// 验证微信读书设置区域：h4 "API Key" 无条件存在 (src/settings/sections/weread-section.ts)
+				const hasApiKeyCard = await evalObsidian(`(() => {
+					const headings = document.querySelectorAll('.deeppdf-settings-card h4');
+					for (const h of headings) {
+						if (h.textContent?.includes('API Key')) return true;
+					}
+					return false;
+				})()`);
+				if (!hasApiKeyCard) throw new Error('微信读书设置区域未找到: h4 "API Key" 不存在');
+
 				pass('设置页面 UI', Date.now() - t0);
 			} catch (e) {
 				fail('设置页面 UI', Date.now() - t0, e);
@@ -78,69 +90,33 @@ export default {
 			}
 		}
 
-		// ===== 未匹配 Modal =====
+		// ===== 微信读书服务可达性 =====
 		{
 			const t0 = Date.now();
 			try {
-				await evalObsidian(`(() => {
-					// 用 DOM 直接构建测试 modal
-					const overlay = document.createElement('div');
-					overlay.className = 'modal-container';
-					const modal = document.createElement('div');
-					modal.className = 'modal';
-					const content = document.createElement('div');
-					content.className = 'modal-content';
-					const h2 = document.createElement('h2');
-					h2.textContent = '未关联的微信读书书籍';
-					content.appendChild(h2);
-					const container = document.createElement('div');
-					container.className = 'deeppdf-unmatched-list-container';
-					const ul = document.createElement('ul');
-					ul.className = 'deeppdf-unmatched-list';
-					const books = [
-						{ title: '深度学习', author: 'Ian Goodfellow' },
-						{ title: '设计模式', author: 'GoF' },
-					];
-					for (const book of books) {
-						const li = document.createElement('li');
-						li.className = 'deeppdf-unmatched-item';
-						li.innerHTML = '<div class="deeppdf-unmatched-info"><strong>' + book.title + '</strong><span class="deeppdf-unmatched-author"> — ' + book.author + '</span></div><button class="deeppdf-unmatched-link-btn">手动关联</button>';
-						ul.appendChild(li);
-					}
-					container.appendChild(ul);
-					content.appendChild(container);
-					const hint = document.createElement('p');
-					hint.className = 'deeppdf-unmatched-hint';
-					hint.textContent = '提示：匹配基于书名相似度。';
-					content.appendChild(hint);
-					modal.appendChild(content);
-					overlay.appendChild(modal);
-					document.body.appendChild(overlay);
-					return true;
-				})()`);
-				await new Promise(r => setTimeout(r, 1000));
-
 				const info = await evalObsidian(`(() => {
-					const modal = document.querySelector('.modal');
-					if (!modal) return { exists: false };
-					return {
-						exists: true,
-						hasScrollContainer: !!modal.querySelector('.deeppdf-unmatched-list-container'),
-						linkButtons: modal.querySelectorAll('.deeppdf-unmatched-link-btn').length,
-						hasHint: !!modal.querySelector('.deeppdf-unmatched-hint'),
-						items: modal.querySelectorAll('.deeppdf-unmatched-item').length,
-					};
+					const plugin = app.plugins.plugins["deepreader"];
+					const hasWereadService = !!plugin.wereadService;
+					const hasRematch = typeof plugin.wereadService?.rematch === 'function';
+					const cmds = app.commands.listCommands().filter(c => c.id?.startsWith('deepreader:weread'));
+					const cmdIds = cmds.map(c => c.id);
+					return { hasWereadService, hasRematch, wereadCommands: cmdIds };
 				})()`);
 
-				if (!info?.exists) throw new Error('Modal 不存在');
-				if (!info.hasScrollContainer || info.linkButtons < 1) {
-					throw new Error(`Modal 结构不完整: ${JSON.stringify(info)}`);
+				if (!info?.hasWereadService) {
+					throw new Error('wereadService 不存在');
 				}
-				pass('未匹配 Modal', Date.now() - t0, `items=${info.items}, buttons=${info.linkButtons}`);
+				if (!info?.hasRematch) {
+					throw new Error('wereadService.rematch() 方法不可达');
+				}
+				if (info.wereadCommands.length < 4) {
+					throw new Error(`微信读书命令不完整: ${info.wereadCommands.join(', ')}`);
+				}
+
+				pass('微信读书服务可达', Date.now() - t0,
+					`rematch=${info.hasRematch}, cmds=${info.wereadCommands.length}`);
 			} catch (e) {
-				fail('未匹配 Modal', Date.now() - t0, e);
-			} finally {
-				await evalObsidian('document.querySelector(".modal-close-button")?.click()').catch(() => {});
+				fail('微信读书服务可达', Date.now() - t0, e);
 			}
 		}
 

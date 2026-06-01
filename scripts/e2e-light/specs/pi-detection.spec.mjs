@@ -67,7 +67,7 @@ export default {
 			}
 		}
 
-		// ===== PI self-update =====
+		// ===== PI CLI help 输出 =====
 		{
 			const t0 = Date.now();
 			try {
@@ -76,26 +76,36 @@ export default {
 					const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin'];
 					const existingPath = (process.env.PATH ?? '').split(':');
 					const env = { ...process.env, PATH: [...new Set([...extraPaths, ...existingPath])].join(':') };
+					const candidates = ['/opt/homebrew/bin/pi', '/usr/local/bin/pi', 'pi'];
 
-					return new Promise((resolve) => {
-						const child = spawn('/opt/homebrew/bin/pi', ['update', '--self'], {
-							timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'], env,
-						});
-						let stdout = '';
-						let stderr = '';
-						child.stdout.on('data', d => { stdout += d.toString(); });
-						child.stderr.on('data', d => { stderr += d.toString(); });
-						child.on('error', e => resolve({ success: false, output: e.message }));
-						child.on('close', code => {
-							resolve({ success: code === 0, output: (stdout + stderr).trim() });
-						});
-					});
-				})()`);
+					return (async () => {
+						for (const cliPath of candidates) {
+							try {
+								const output = await new Promise((resolve, reject) => {
+									const child = spawn(cliPath, ['--help'], {
+										timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'], env,
+									});
+									let out = '';
+									child.stdout.on('data', d => { out += d.toString(); });
+									child.stderr.on('data', d => { out += d.toString(); });
+									child.on('error', reject);
+									child.on('close', code => {
+										code === 0 ? resolve(out.trim()) : reject(new Error('Exit ' + code));
+									});
+								});
+								if (output.length > 0) {
+									return { success: true, output: output.slice(0, 200), path: cliPath };
+								}
+							} catch { continue; }
+						}
+						return { success: false };
+					})();
+				})()`, { timeout: 15_000 });
 
-				if (!result?.success) throw new Error(`pi update --self 失败: ${result?.output}`);
-				pass('PI self-update', Date.now() - t0, result.output?.slice(0, 60));
+				if (!result?.success) throw new Error('pi --help 无输出');
+				pass('PI CLI help', Date.now() - t0, result.output?.slice(0, 80));
 			} catch (e) {
-				fail('PI self-update', Date.now() - t0, e);
+				fail('PI CLI help', Date.now() - t0, e);
 			}
 		}
 

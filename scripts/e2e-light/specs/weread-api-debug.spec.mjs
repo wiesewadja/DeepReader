@@ -29,6 +29,9 @@ export default {
 	name: '微信读书网关 API',
 	feature: 'F-26',
 	timeout: 180_000,
+	requires: {
+		settings: { wereadApiKey: true },
+	},
 
 	async run({ log }) {
 		const steps = [];

@@ -52,10 +52,6 @@ export default {
 			(() => {
 				const svc = app.plugins.plugins['deepreader'].readingModeService;
 				svc.deactivate();
-				// deactivate() 不重置 isActive/currentFile，需手动清理
-				// 如果后续 deactivate() 修复了，可以移除这两行
-				svc.isActive = false;
-				svc.currentFile = null;
 				const leaf = app.workspace.getLeavesOfType('markdown')[0];
 				if (leaf) app.workspace.setActiveLeaf(leaf);
 				const file = leaf?.view?.file;
