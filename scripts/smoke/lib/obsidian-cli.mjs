@@ -31,10 +31,10 @@ export const PLUGIN_ID = 'deepreader';
  * @param {string[]} args      如 ["id=deepreader"]
  * @returns {Promise<{stdout: string, stderr: string, code: number}>}
  */
-export async function exec(subcommand, args = []) {
+export async function exec(subcommand, args = [], { timeout: execTimeout = 15_000 } = {}) {
 	try {
 		const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, [subcommand, ...args], {
-			timeout: 15_000,
+			timeout: execTimeout,
 			maxBuffer: 10 * 1024 * 1024,
 		});
 		return { stdout, stderr, code: 0 };
@@ -53,19 +53,20 @@ export async function exec(subcommand, args = []) {
  * 原理：调 Chrome DevTools Protocol 的 `Runtime.evaluate`，在 Obsidian
  * 主进程上下文里跑 JS，拿 `app` / `document` 等运行时对象。
  *
- * 实测验证（2026-06-01）：
- *   obsidian-cli dev:cdp method=Runtime.evaluate params='{"expression":"1+1"}'
- *   → {"result": {"description": "2", "type": "number", "value": 2}}
- *
- * @param {string} expression - JS 表达式
+ * @param {string} expression - JS 表达式（支持返回 Promise，会自动 await）
+ * @param {{ timeout?: number }} [options]
  * @returns {Promise<any>} 表达式的求值结果
  */
-export async function evalObsidian(expression) {
-	const params = JSON.stringify({ expression, returnByValue: true });
+export async function evalObsidian(expression, { timeout = 30_000 } = {}) {
+	const params = JSON.stringify({
+		expression,
+		returnByValue: true,
+		awaitPromise: true,
+	});
 	const r = await exec('dev:cdp', [
 		'method=Runtime.evaluate',
 		`params=${params}`,
-	]);
+	], { timeout });
 	if (r.code !== 0) {
 		throw new Error(`evalObsidian 失败: ${r.stderr || r.stdout}`);
 	}

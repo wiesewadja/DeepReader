@@ -3,7 +3,9 @@
  */
 
 import readingModePagination from './reading-mode-pagination.spec.mjs';
+import piDetection from './pi-detection.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
+	piDetection,
 ];
