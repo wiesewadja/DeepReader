@@ -49,6 +49,7 @@ test-vault/
 
 # Claude Code runtime data
 .claude/
+!.claude/hooks/
 
 # Internal development files
 playground/
