@@ -22,7 +22,13 @@
     "eval:history": "node scripts/eval/eval-cli.mjs history",
     "eval:diff": "node scripts/eval/eval-cli.mjs diff",
     "eval:full": "node scripts/eval/eval-cli.mjs full",
-    "eval:sync-prompts": "rsync -av scripts/eval/eval-prompts/ test-vault/.eval/"
+    "eval:sync-prompts": "rsync -av scripts/eval/eval-prompts/ test-vault/.eval/",
+    "smoke": "node scripts/smoke/smoke.mjs",
+    "smoke:core": "node scripts/smoke/smoke.mjs --level core",
+    "smoke:full": "node scripts/smoke/smoke.mjs --level full",
+    "smoke:verbose": "node scripts/smoke/smoke.mjs --verbose",
+    "e2e-light": "node scripts/e2e-light/run.mjs",
+    "e2e-light:verbose": "node scripts/e2e-light/run.mjs --verbose"
   },
   "keywords": [
     "obsidian",
