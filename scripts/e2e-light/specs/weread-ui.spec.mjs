@@ -39,11 +39,19 @@ export default {
 				`);
 				await new Promise(r => setTimeout(r, 1000));
 
-				// 验证 DeepReader 设置面板渲染
-				const cardCount = await countBySelector('.deeppdf-settings-card');
-				const keyInputs = await countBySelector('.deeppdf-key-input');
-				if (cardCount === 0) throw new Error('.deeppdf-settings-card 不存在');
-				if (keyInputs === 0) throw new Error('.deeppdf-key-input 不存在');
+				// 验证微信读书设置区域存在（F-26 核心断言）
+				const hasWeread = await evalObsidian(`(() => {
+					const headings = document.querySelectorAll('.deeppdf-settings-card h4');
+					for (const h of headings) {
+						if (h.textContent?.includes('API Key') || h.textContent?.includes('同步')) return true;
+					}
+					const buttons = document.querySelectorAll('button');
+					for (const btn of buttons) {
+						if (btn.textContent?.includes('保存并验证') || btn.textContent?.includes('同步笔记')) return true;
+					}
+					return false;
+				})()`);
+				if (!hasWeread) throw new Error('微信读书设置区域未找到（无 h4 含 API Key/同步，无按钮含 保存并验证/同步笔记）');
 				pass('设置页面 UI', Date.now() - t0);
 			} catch (e) {
 				fail('设置页面 UI', Date.now() - t0, e);

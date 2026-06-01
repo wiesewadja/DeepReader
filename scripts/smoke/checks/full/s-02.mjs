@@ -3,7 +3,10 @@
  *
  * 锚定: F-02 EPUB 索引
  * 触发:  listCommands 验证 EPUB 索引相关命令
- * 断言:  test-pageindex 命令存在（PDF/EPUB 共用）+ parseEpub API 可达
+ * 断言:  test-pageindex 命令存在 + focusIndex 模块可达
+ *
+ * 设计意图: EPUB 索引依赖 focusIndex（EpubSplitting）模块，
+ * 如果该模块不可达，说明 EPUB 索引链路有断点。
  */
 
 import { evalObsidian, listCommands } from '../../lib/obsidian-cli.mjs';
@@ -22,15 +25,18 @@ export default {
 			throw new Error('test-pageindex 命令不存在');
 		}
 
-		// 验证 parseEpub API 可达
-		const hasParseEpub = await evalObsidian(
-			'typeof app.plugins.plugins["deepreader"]?.api?.parseEpub === "function"'
+		// F-02 核心断言：EPUB splitting 模块必须可达
+		const hasFocusIndex = await evalObsidian(
+			'typeof app.plugins.plugins["deepreader"]?.api?.focusIndex === "object"'
 		);
-		if (!hasParseEpub) {
-			throw new Error('api.parseEpub 不可达');
+		if (!hasFocusIndex) {
+			const apiKeys = await evalObsidian('Object.keys(app.plugins.plugins["deepreader"]?.api || {})');
+			const err = new Error('api.focusIndex 不可达（EPUB splitting 模块未暴露）');
+			err.context = `当前 api 方法: ${apiKeys.join(', ')}`;
+			throw err;
 		}
 
-		log?.info?.('✓ test-pageindex 存在, parseEpub 可达');
+		log?.info?.('✓ test-pageindex 存在, focusIndex 模块可达');
 		return { ok: true };
 	},
 };
