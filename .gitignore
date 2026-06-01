@@ -44,8 +44,10 @@ test-vault/
 .superpowers/
 .deploy-config.json
 
-# Archon workflow configs (may contain internal info)
+# Archon workflow configs
 .archon/
+!.archon/workflows/
+!.archon/commands/
 
 # Claude Code runtime data
 .claude/

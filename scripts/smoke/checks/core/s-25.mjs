@@ -21,7 +21,7 @@ export default {
 	name: 'Settings 面板',
 	level: 'core',
 	feature: 'F-25',
-	timeout: 8_000,
+	timeout: 10_000,
 
 	async run({ log }) {
 		try {
@@ -36,7 +36,7 @@ export default {
 			`);
 
 			// 2. 等渲染
-			await new Promise(r => setTimeout(r, 1000));
+			await new Promise(r => setTimeout(r, 2000));
 
 			// 3. 验证关键元素
 			const counts = await Promise.all(SELECTORS.map(s => countBySelector(s)));

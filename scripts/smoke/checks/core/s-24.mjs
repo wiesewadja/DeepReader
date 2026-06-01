@@ -24,12 +24,16 @@ export default {
 	name: 'Quick Setup',
 	level: 'core',
 	feature: 'F-24',
-	timeout: 5_000,
+	timeout: 8_000,
 
 	async run({ log }) {
 		try {
+			// 确保 settings 面板已关闭（前序 S-25 可能留下残留状态）
+			await evalObsidian('app.setting.close()').catch(() => {});
+			await new Promise(r => setTimeout(r, 300));
+
 			await evalObsidian('app.commands.executeCommandById("deepreader:open-quick-setup")');
-			await new Promise(r => setTimeout(r, 500));
+			await new Promise(r => setTimeout(r, 1500));
 
 			const counts = await Promise.all(SELECTORS.map(s => countBySelector(s)));
 
