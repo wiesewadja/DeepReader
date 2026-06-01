@@ -25,7 +25,7 @@ import type {
 
 // ── Core Class ───────────────────────────────────────────────────────────────
 
-export { PageIndex, createPageIndex } from "./pageindex";
+export { PageIndex } from "./pageindex";
 
 // ── Unified API (core features only) ───────────────────────────────────────
 
@@ -73,9 +73,6 @@ export { exportEpubToObsidian, type EpubObsidianExportOptions } from "./exporter
 export {
   chatGPT,
   chatGPTWithFinishReason,
-  chatGPTBatch,
-  getLMStudioConfig,
-  getOllamaConfig,
   type ClientConfig,
   type ChatOptions,
   type ChatResult,

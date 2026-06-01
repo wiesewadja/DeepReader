@@ -23,7 +23,7 @@
 export { docToIndex, docToObsidian, searchVault, indexVault, loadVaultIndex } from "./unified";
 
 // Core class
-export { PageIndex, createPageIndex } from "./pageindex";
+export { PageIndex } from "./pageindex";
 
 // Obsidian export
 export { exportPdfToObsidian, type PdfObsidianExportOptions } from "./exporters/pdf-to-obsidian";
@@ -105,9 +105,6 @@ export {
 export {
   chatGPT,
   chatGPTWithFinishReason,
-  chatGPTBatch,
-  getLMStudioConfig,
-  getOllamaConfig,
   type ClientConfig,
   type ChatOptions,
   type ChatResult,

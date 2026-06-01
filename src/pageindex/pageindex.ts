@@ -4,8 +4,7 @@
  */
 
 import { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
-import type { MineruPdfResult } from "./parsers/mineru";
-import { parseEpub, getEpubName, epubChaptersToPages, splitLargeEpubPages, EPUB_SPLIT_THRESHOLD } from "./parsers/epub";
+import { parseEpub, epubChaptersToPages, splitLargeEpubPages, EPUB_SPLIT_THRESHOLD } from "./parsers/epub";
 import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
 import { checkToc, checkTitleAppearanceInStartConcurrent, type TocOptions } from "./core/toc";
 import {
@@ -830,83 +829,6 @@ export class PageIndex {
       epubInfo,
     };
   }
-  async processEpubPages(pages: PdfPage[], docName: string): Promise<PageIndexResult> {
-    const startIndex = 1;
-    const endPhysicalIndex = pages.length;
-    const totalSteps = 6;
-    let currentStep = 0;
-
-    // Step 1: Check for TOC (EPUBs often have NCX/TOC)
-    this.reportProgress({
-      stage: "detecting_toc",
-      message: "检测 EPUB 目录...",
-      step: ++currentStep,
-      totalSteps,
-      percent: Math.round((currentStep / totalSteps) * 100),
-    });
-
-    // For EPUBs, we skip TOC detection since structure comes from spine
-    // But we still need to run checkToc to see if content has embedded TOC
-    const tocResult = await checkToc(pages, this.options);
-    piLog(
-      `TOC found: ${tocResult.tocContent !== null}, Pages: ${tocResult.tocPageList.length}`
-    );
-
-    let tocItems: TocItem[];
-
-    // Step 2: Parse structure
-    this.reportProgress({
-      stage: "parsing_structure",
-      message: tocResult.tocContent ? "解析目录结构..." : "从章节生成结构...",
-      step: ++currentStep,
-      totalSteps,
-      percent: Math.round((currentStep / totalSteps) * 100),
-    });
-
-    if (tocResult.tocContent === null) {
-      // No embedded TOC - generate structure from chapters
-      piLog("Generating structure from chapter content...");
-      tocItems = await processNoToc(pages, startIndex, this.options);
-    } else {
-      // Use embedded TOC
-      piLog("Processing embedded TOC...");
-      tocItems = await processTocWithPageNumbers(
-        tocResult.tocContent,
-        tocResult.tocPageList,
-        pages,
-        this.options
-      );
-    }
-
-    // Convert physical_index strings to integers
-    tocItems = convertPhysicalIndexToInt(tocItems) as TocItem[];
-
-    // Add appear_start field
-    tocItems = await checkTitleAppearanceInStartConcurrent(tocItems, pages, this.options);
-
-    // Step 3: Skip TOC verification for EPUB
-    // EPUB chapters come from the spine/manifest with known physical indices.
-    // Unlike PDFs where TOC page numbers may not match actual pages,
-    // EPUB structure is deterministic and doesn't need verify + fix cycle.
-    this.reportProgress({
-      stage: "verifying_pages",
-      message: "构建章节树...",
-      step: ++currentStep,
-      totalSteps,
-      percent: Math.round((currentStep / totalSteps) * 100),
-    });
-
-    // Build tree structure
-    const tree = buildTree(tocItems, endPhysicalIndex, this.options);
-
-    // Add node text if requested
-    if (this.options.addNodeText || this.options.addNodeSummary) {
-      addNodeText(tree, pages);
-    }
-
-    return this.finalizeProcessing(tree, docName);
-  }
-
   /**
    * Index an Obsidian vault (or subdirectories)
    */
@@ -948,75 +870,6 @@ export class PageIndex {
 }
 
 /**
- * Create a PageIndex instance with options
- */
-export function createPageIndex(options?: PageIndexOptions): PageIndex {
-  return new PageIndex(options);
-}
-
-/**
- * Quick function to process a PDF file
- */
-export async function indexPdf(
-  input: string | Buffer | ArrayBuffer,
-  options?: PageIndexOptions
-): Promise<PageIndexResult> {
-  const pageIndex = new PageIndex(options);
-  return pageIndex.fromPdf(input);
-}
-
-/**
- * Quick function to process a PDF with LM Studio
- */
-export async function indexPdfWithLMStudio(
-  input: string | Buffer | ArrayBuffer,
-  model: string = "local-model",
-  options?: Omit<PageIndexOptions, "model" | "apiKey">
-): Promise<PageIndexResult> {
-  const pageIndex = new PageIndex({ ...options, model }).useLMStudio();
-  return pageIndex.fromPdf(input);
-}
-
-/**
- * Quick function to process a scanned PDF with OCR mode
- * Uses GLM-OCR for text extraction and a reasoning model for indexing
- */
-export async function indexPdfWithOcr(
-  input: string | Buffer | ArrayBuffer,
-  options?: Omit<PageIndexOptions, "extractionMode"> & {
-    reasoningModel?: string;
-    ocrModel?: string;
-  }
-): Promise<PageIndexResult> {
-  const pageIndex = new PageIndex({
-    ...options,
-    extractionMode: "ocr",
-    model: options?.reasoningModel || options?.model || "gpt-4o-2024-11-20",
-    ocrModel: options?.ocrModel || DEFAULT_OCR_MODEL,
-  });
-  return pageIndex.fromPdf(input);
-}
-
-/**
- * Quick function to process a scanned PDF with LM Studio (OCR mode)
- * Uses GLM-OCR for text extraction and a local reasoning model
- */
-export async function indexPdfWithLMStudioOcr(
-  input: string | Buffer | ArrayBuffer,
-  reasoningModel: string = "qwen/qwen3-vl-30b",
-  ocrModel: string = "mlx-community/GLM-OCR-bf16",
-  options?: Omit<PageIndexOptions, "model" | "apiKey" | "extractionMode" | "ocrModel">
-): Promise<PageIndexResult> {
-  const pageIndex = new PageIndex({
-    ...options,
-    model: reasoningModel,
-    ocrModel,
-    extractionMode: "ocr",
-  }).useLMStudio();
-  return pageIndex.fromPdf(input);
-}
-
-/**
  * Quick function to process an EPUB file
  */
 export async function indexEpub(
@@ -1024,18 +877,6 @@ export async function indexEpub(
   options?: PageIndexOptions
 ): Promise<PageIndexResult> {
   const pageIndex = new PageIndex(options);
-  return pageIndex.fromEpub(input);
-}
-
-/**
- * Quick function to process an EPUB with LM Studio
- */
-export async function indexEpubWithLMStudio(
-  input: string | Buffer,
-  model: string = "local-model",
-  options?: Omit<PageIndexOptions, "model" | "apiKey">
-): Promise<PageIndexResult> {
-  const pageIndex = new PageIndex({ ...options, model }).useLMStudio();
   return pageIndex.fromEpub(input);
 }
 

@@ -203,25 +203,10 @@ export function getProviderName(id: string, settings: DeepPDFSettings): string {
 	return id;
 }
 
-/**
- * 获取服务商的 baseUrl（固定服务商返回预设值，自定义服务商从 account 取）
- */
-export function getProviderBaseUrl(id: string, settings: DeepPDFSettings): string {
-	const builtInConfig = PROVIDER_CONFIGS[id as ProviderType];
-	if (builtInConfig) return builtInConfig.baseUrl;
-	const account = (settings.providers as Record<string, unknown>)[id];
-	if (account && typeof account === 'object') {
-		const raw = (account as { baseUrl?: string }).baseUrl || '';
-			return raw ? normalizeBaseUrl(raw) : '';
-	}
-	return '';
-}
-
 // ═══════════════════════════════════════════════════════════════
 // 预设配置
 // ═══════════════════════════════════════════════════════════════
 
-	// ═══════════════════════════════════════════════════════════════
 
 /**
  * 应用预设配置：填写 API Key + 自动分配角色
@@ -284,22 +269,8 @@ export function applyPreset(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 旧版兼容函数（迁移期间保留，Chunk 3 后删除）
+// MiniMax TTS 模型列表（/v1/models 不返回非文本模型，故硬编码）
 // ═══════════════════════════════════════════════════════════════
-
-/**
- * 获取服务商的默认模型
- */
-export function getProviderDefaultModel(provider: ProviderType): string {
-	return PROVIDER_CONFIGS[provider]?.defaultModel || 'deepseek-chat';
-}
-
-/**
- * 服务商显示名称映射
- */
-/**
- * MiniMax TTS 模型列表（/v1/models 不返回非文本模型，故硬编码）
- */
 export const MINIMAX_TTS_MODELS = [
   'speech-2.8-hd',
   'speech-2.8-turbo',

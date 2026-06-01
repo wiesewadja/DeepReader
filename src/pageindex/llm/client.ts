@@ -178,16 +178,6 @@ export async function chatGPTWithFinishReason(
 }
 
 /**
- * Call multiple prompts in batch
- */
-export async function chatGPTBatch(
-  prompts: string[],
-  options: Omit<ChatOptions, "prompt">
-): Promise<string[]> {
-  return Promise.all(prompts.map((prompt) => chatGPT({ ...options, prompt })));
-}
-
-/**
  * Native LM Studio API call (for thinking models)
  */
 async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
@@ -234,25 +224,5 @@ async function chatLMStudioNative(options: ChatOptions): Promise<ChatResult> {
     content: choice.message.content,
     finishReason: choice.finish_reason === "stop" ? "finished" : "error",
     ...(data.usage ? { usage: { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens } } : {}),
-  };
-}
-
-/**
- * Get LM Studio configuration
- */
-export function getLMStudioConfig(): ClientConfig {
-  return {
-    apiKey: "lm-studio",
-    baseUrl: "http://localhost:1234/v1",
-  };
-}
-
-/**
- * Get Ollama configuration
- */
-export function getOllamaConfig(): ClientConfig {
-  return {
-    apiKey: "ollama",
-    baseUrl: "http://localhost:11434/v1",
   };
 }

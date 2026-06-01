@@ -65,23 +65,6 @@ export interface HumanizedProgress {
 }
 
 /**
- * 从 markdown 文件路径中提取章节名称
- * 例如: "如何阅读一本书/05-第二章 阅读的层次.md" -> "第二章 阅读的层次"
- */
-function extractChapterNameFromPath(path: string): string | null {
-	const filename = path.split('/').pop() || '';
-	// 移除扩展名
-	const nameWithoutExt = filename.replace(/\.md$/, '');
-	// 尝试提取章节名（格式: "数字-章节名" 或 "数字_章节名"）
-	const match = nameWithoutExt.match(/^\d+[-_](.+)$/);
-	if (match) {
-		return match[1];
-	}
-	// 如果没有数字前缀，直接返回名称
-	return nameWithoutExt || null;
-}
-
-/**
  * 工具名称到拟人化动作的映射
  * @param args 工具参数
  * @param context 可选的上下文信息（包含 markdownFiles 映射）

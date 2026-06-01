@@ -4,32 +4,29 @@
  */
 
 import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
-import { PDFFileSelectorModal, DocumentFileInfo } from "../../ui/pdf-file-selector.js";
+import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
 import { Drawer } from "../../components/drawer/drawer.js";
 import { TaskProgressCard } from "../../components/task-progress-card.js";
-import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc, Booklist, stripFileExtension } from "../../types/index.js";
+import { IndexListItem, ContextDoc, Booklist, stripFileExtension } from "../../types/index.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../../components/message-list/message-list.js";
 import { ChatInput } from "../../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall, AIMessage } from "../../components/message/message.js";
 import { IndexManager } from "../../components/index-manager/index-manager.js";
 import { Icons, getIcon } from "../../utils/icons.js";
-import { handleError, handleNetworkError, handleAPIError } from "../../utils/error-handler.js";
+
 import { ContextManager } from "../../services/context-manager.js";
 import { ExcerptModal } from "../../components/excerpt/excerpt-modal.js";
 import { ConfirmModal } from "../../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
 import { ReadingTopbar } from "../../components/reading-topbar/index.js";
 
-import { uiLog as log, serviceLog, warn, error as logError } from "../../utils/logger.js";
+import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
 import { FrontendAgent } from "../../agent/index.js";
 import type { ToolContext } from "../../agent/tools/types.js";
 import {
     validateAndCorrectLinks,
 } from "../../agent/utils/link-validator.js";
-import { MemoryStore } from "../../agent/memory/store.js";
-import { MemoryConsolidator } from "../../agent/memory/consolidator.js";
-import { DEFAULT_CONSOLIDATOR_CONFIG } from "../../agent/memory/types.js";
 import type { HumanizedProgress } from "../../agent/ui/humanized-types.js";
 import { SessionStore } from "../../agent/session/index.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
@@ -37,7 +34,7 @@ import { TTSService, type TTSPlayState } from '../../services/tts/tts-service.js
 import { StreamingVoicePlayer, type StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { ProactiveEngine } from '../../agent/proactive/engine.js';
-import { rerankResults as _rerankResults, buildContextWithTokenLimit as _buildContextWithTokenLimit, estimateTokens as _estimateTokens, copyToClipboard as _copyToClipboard } from './search-utils.js';
+import { copyToClipboard as _copyToClipboard } from './search-utils.js';
 import { QuoteManager } from './quote-manager.js';
 import type { QuoteItem, QuoteMetadata } from '../../components/chat-input/chat-input.js';
 import { TTSController } from './tts-controller.js';
@@ -47,9 +44,6 @@ import { BookManager } from './book-manager.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
-
-/** 任务完成后显示延迟时间（毫秒） */
-const TASK_COMPLETE_DISPLAY_MS = 2000;
 
 export class SidebarView extends ItemView {
     private plugin: DeepReaderPluginInterface;
@@ -523,16 +517,6 @@ export class SidebarView extends ItemView {
         // 直接渲染主 UI（不阻塞）
         this.renderMainUI(container);
 
-        // 异步检查连接状态并更新指示器
-        this.checkConnectionAndRender();
-    }
-
-    /**
-     * 检查后端连接状态并更新状态指示器
-     * 注意：不再渲染界面，Page Index 不需要后端连接
-     */
-    private async checkConnectionAndRender(): Promise<void> {
-        // Page Index 不需要后端连接
     }
 
     /**
@@ -976,13 +960,6 @@ export class SidebarView extends ItemView {
         }));
     }
 
-    /**
-     * 切换搜索模式
-     */
-    private async toggleSearchMode() {
-        // 跨书籍搜索功能已移除
-        new Notice("跨书籍搜索功能已移除");
-    }
 
     /**
      * 切换深度思考模式
@@ -1041,15 +1018,6 @@ export class SidebarView extends ItemView {
     async loadIndexes(): Promise<void> {
         await this.bookMgr.loadIndexes();
     }
-
-
-
-    private escapeHtml(text: string): string {
-        const div = document.createElement("div");
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
     /**
      * 处理 TTS 播放/暂停请求
      */

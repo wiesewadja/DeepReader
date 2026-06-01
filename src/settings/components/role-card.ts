@@ -80,7 +80,7 @@ export function createRoleCard(
   });
 }
 
-export function createRoleContent(
+function createRoleContent(
   container: HTMLElement,
   role: RoleType,
   label: string,
@@ -234,7 +234,6 @@ export function createRoleContent(
           btn.setDisabled(false);
           if (result.success && result.models.length > 0) {
             modelListCache.set(currentProvider, result.models);
-            modelListCacheExpiry.set(currentProvider, Date.now());
 
             const curModel = getRoleConfig(ctx.plugin.settings.roles, role)?.model || '';
             renderModelSelect(modelSetting.controlEl, result.models, curModel, async (model) => {
@@ -371,25 +370,3 @@ function renderModelSelect(
 
 // Cache fetched model lists per provider with 30-minute TTL
 const modelListCache = new Map<string, string[]>();
-const modelListCacheExpiry = new Map<string, number>();
-const CACHE_TTL_MS = 30 * 60 * 1000;
-
-export function getCachedModels(provider: string): string[] | undefined {
-  const expiry = modelListCacheExpiry.get(provider);
-  if (expiry && Date.now() - expiry > CACHE_TTL_MS) {
-    modelListCache.delete(provider);
-    modelListCacheExpiry.delete(provider);
-    return undefined;
-  }
-  return modelListCache.get(provider);
-}
-
-export function clearModelCache(provider?: string): void {
-  if (provider) {
-    modelListCache.delete(provider);
-    modelListCacheExpiry.delete(provider);
-  } else {
-    modelListCache.clear();
-    modelListCacheExpiry.clear();
-  }
-}

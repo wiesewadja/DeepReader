@@ -6,10 +6,10 @@
 import { ItemView, WorkspaceLeaf, Notice, TFile, TFolder } from 'obsidian';
 import { sanitizeFileName } from '../weread/utils/file';
 import { IndexListItem, Booklist, stripFileExtension } from '../types/index.js';
-import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
+import { PDFFileSelectorModal, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
 import { error as logError, serviceLog } from '../utils/logger.js';
-import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, generateBookIdFromPath } from '../pageindex/book-indexer.js';
+import { indexBook, isBookIndexed, generateBookId, generateBookIdFromPath } from '../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../pageindex/book-types.js';
 import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
