@@ -1,8 +1,8 @@
 /**
- * HumanizedAgentView - 简化版拟人化 Agent 状态视图
+ * HumanizedAgentView - 拟人化 Agent 状态视图
  *
  * 核心原则：
- * 1. Act 阶段：显示进度反馈和已完成的步骤
+ * 1. Act 阶段：显示当前动作和阅读层次
  * 2. Answer 阶段：显示流式内容
  * 3. 简洁明了，让用户知道正在做什么
  */
@@ -11,8 +11,8 @@ import type { HumanizedProgress, AgentAction, ReadingLevel } from './humanized-t
 import { READING_LEVEL_DESCRIPTIONS } from './humanized-types';
 
 /**
- * 创建简洁的思考中状态元素
- * 显示当前动作 + 已完成的步骤列表
+ * 创建思考中状态元素
+ * 显示当前动作 + 阅读层次徽章
  */
 export function createThinkingStatusElement(progress: HumanizedProgress): HTMLElement {
 	const container = document.createElement('div');
@@ -33,29 +33,7 @@ export function createThinkingStatusElement(progress: HumanizedProgress): HTMLEl
 	const text = currentAction.createSpan({ cls: 'thinking-text' });
 	text.textContent = progress.mainAction.detail || '思考中...';
 
-	// 已完成的步骤（简洁列表）
-	const completedSteps = progress.readingSteps.filter(s => s.status === 'done');
-	if (completedSteps.length > 0) {
-		const stepsContainer = container.createDiv({ cls: 'thinking-steps' });
-		const stepsTitle = stepsContainer.createDiv({ cls: 'thinking-steps-title' });
-		stepsTitle.textContent = `已完成 ${completedSteps.length} 步`;
-
-		const stepsList = stepsContainer.createDiv({ cls: 'thinking-steps-list' });
-		for (const step of completedSteps.slice(-3)) { // 只显示最近3步
-			const stepEl = stepsList.createDiv({ cls: 'thinking-step done' });
-			stepEl.textContent = `✓ ${step.action}`;
-		}
-	}
-
 	return container;
-}
-
-/**
- * 创建拟人化状态元素（保留完整版以备后用）
- */
-export function createHumanizedStatusElement(progress: HumanizedProgress): HTMLElement {
-	// 使用简化版本
-	return createThinkingStatusElement(progress);
 }
 
 /**
@@ -86,43 +64,5 @@ export function updateHumanizedStatusElement(
 	const textEl = element.querySelector('.thinking-text');
 	if (textEl) {
 		textEl.textContent = progress.mainAction.detail || '思考中...';
-	}
-
-	// 更新已完成步骤
-	const completedSteps = progress.readingSteps.filter(s => s.status === 'done');
-	let stepsContainer = element.querySelector('.thinking-steps') as HTMLElement;
-
-	if (completedSteps.length > 0) {
-		if (!stepsContainer) {
-			stepsContainer = document.createElement('div');
-			stepsContainer.className = 'thinking-steps';
-			element.appendChild(stepsContainer);
-		}
-
-		// 更新标题
-		let stepsTitle = stepsContainer.querySelector('.thinking-steps-title') as HTMLElement;
-		if (!stepsTitle) {
-			stepsTitle = document.createElement('div');
-			stepsTitle.className = 'thinking-steps-title';
-			stepsContainer.appendChild(stepsTitle);
-		}
-		stepsTitle.textContent = `已完成 ${completedSteps.length} 步`;
-
-		// 更新步骤列表
-		let stepsList = stepsContainer.querySelector('.thinking-steps-list') as HTMLElement;
-		if (!stepsList) {
-			stepsList = document.createElement('div');
-			stepsList.className = 'thinking-steps-list';
-			stepsContainer.appendChild(stepsList);
-		}
-
-		// 重新渲染步骤（只显示最近3步）
-		stepsList.empty();
-		for (const step of completedSteps.slice(-3)) {
-			const stepEl = stepsList.createDiv({ cls: 'thinking-step done' });
-			stepEl.textContent = `✓ ${step.action}`;
-		}
-	} else if (stepsContainer) {
-		stepsContainer.remove();
 	}
 }

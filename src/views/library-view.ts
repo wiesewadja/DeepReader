@@ -9,12 +9,12 @@ import { IndexListItem, Booklist, stripFileExtension } from '../types/index.js';
 import { PDFFileSelectorModal, DocumentFileInfo, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
 import { error as logError, serviceLog } from '../utils/logger.js';
-import { indexBook, isBookIndexed, deleteBookIndex, generateBookId } from '../pageindex/book-indexer.js';
+import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, generateBookIdFromPath } from '../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../pageindex/book-types.js';
 import { resolveRoleConfig } from '../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../config/role-adapters.js';
-import { loadProgress, getProgressPercent, createEmptyProgress } from '../pageindex/reading-progress.js';
 import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../pageindex/defaults.js';
+import { loadArchivedBookIds, toggleArchive, batchToggleArchive } from '../pageindex/archive.js';
 import type { ZLibraryBook } from '../zlibrary/types.js';
 import { ZLibrarySearchModal } from './zlibrary-search-modal.js';
 import { ZLibraryClient } from '../zlibrary/client.js';
@@ -28,6 +28,7 @@ import { normalizeTitle } from '../weread/sync/matcher.js';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { getBookFile, PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { getVaultPath } from '../utils/mobile-fs.js';
 
 export const LIBRARY_VIEW_TYPE = 'deeppdf-library-view';
 
@@ -50,7 +51,8 @@ const Icons = {
     book: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
     loading: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`,
     empty: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`,
-    booksStacked: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M2 7v14.5A2.5 2.5 0 0 0 4.5 22H8" opacity="0.5"/></svg>`
+    booksStacked: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M2 7v14.5A2.5 2.5 0 0 0 4.5 22H8" opacity="0.5"/></svg>`,
+    archive: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>`
 };
 
 export interface LibraryViewOptions {
@@ -79,7 +81,6 @@ export class LibraryView extends ItemView {
     private loadingCovers: Set<string> = new Set();
     private lastIndexStates: Map<string, { status: string; progress: number; message: string }> = new Map();
     private cardElements: Map<string, HTMLElement> = new Map();
-    private readingProgressCache: Map<string, number> = new Map();
     private wereadMappingCache: Set<string> = new Set(); // 已关联的 weread bookId 集合
     private associatedDeepReaderIds: Set<string> = new Set(); // 已关联微信读书的本地书 bookId
     private activelyIndexingBookId: string | null = null; // handleAddDocument 正在管理的索引 ID
@@ -90,6 +91,10 @@ export class LibraryView extends ItemView {
     private _selectedBookIds: Set<string> = new Set();
     private _confirmBarEl: HTMLElement | null = null;
     private static readonly MAX_MULTI_SELECT = 5;
+    /* Phase 2: 归档状态 */
+    private _showArchived: boolean = false;
+    private _archivedBookIds: Set<string> = new Set();
+    private _archiveBtnEl: HTMLElement | null = null;
 
     // 筛选与排序状态
     private filterType: 'all' | 'pdf' | 'epub' | 'weread' = 'all';
@@ -134,8 +139,16 @@ export class LibraryView extends ItemView {
             this.selectedBooklistId = state.selectedBooklistId ?? null;
         }
 
-        await this.loadReadingProgresses();
-        this.render();
+        // 串行加载：归档状态 → 渲染 → （若数据为空则补载索引）
+        this.loadArchiveState().then(() => {
+            this.render();
+            // Obsidian 重启后恢复视图时没有 state 数据，需要等 layout 就绪后异步加载
+            if (this.indexes.length === 0) {
+                this.app.workspace.onLayoutReady(() => {
+                    this.refreshIndexes();
+                });
+            }
+        });
     }
 
     async onClose(): Promise<void> {
@@ -150,9 +163,8 @@ export class LibraryView extends ItemView {
             this.selectedIndexId = (state.selectedIndexId as string) ?? null;
             this.selectedBooklistId = (state.selectedBooklistId as string) ?? null;
             
-            // 如果视图已打开，重新加载进度并渲染
+            // 如果视图已打开，重新渲染
             if (this.gridEl) {
-                await this.loadReadingProgresses();
                 this.render();
             }
         }
@@ -206,6 +218,12 @@ export class LibraryView extends ItemView {
         thematicBtn.title = '主题阅读';
         thematicBtn.addEventListener('click', () => this.toggleMultiSelectMode());
 
+        // 归档切换按钮
+        this._archiveBtnEl = toolbar.createEl('button', { cls: 'deeppdf-lib-add-btn' });
+        this._archiveBtnEl.innerHTML = Icons.archive;
+        this._archiveBtnEl.title = '显示已归档';
+        this._archiveBtnEl.addEventListener('click', () => this.toggleArchiveView());
+
         // 筛选按钮
         this._filterBtnEl = toolbar.createEl('button', { cls: 'deeppdf-lib-filter-btn' });
         this.updateFilterBtnLabel();
@@ -222,11 +240,15 @@ export class LibraryView extends ItemView {
     private renderGrid(): void {
         if (!this.gridEl) return;
 
-        // 首次渲染时异步加载微信读书映射，加载完后重新渲染（更新 counts 和徽章）
-        if (this.wereadMappingCache.size === 0) {
-            this.loadWereadMapping().then(() => this.renderGrid());
-            // 映射未加载完成前，先按无映射状态渲染
-        }
+		// 首次渲染时异步加载微信读书映射，加载完后重新渲染（更新 counts 和徽章）
+		// 只在实际加载到数据时才触发 re-render，避免空 mapping 时无限循环
+		if (this.wereadMappingCache.size === 0) {
+			this.loadWereadMapping().then(() => {
+				if (this.wereadMappingCache.size > 0) {
+					this.renderGrid();
+				}
+			});
+		}
 
         // 清空所有缓存和引用
         this.cardElements.clear();
@@ -259,6 +281,15 @@ export class LibraryView extends ItemView {
             } else {
                 filtered = filtered.filter(idx => idx.author === this.filterAuthor);
             }
+        }
+
+        // 4. 归档过滤
+        if (!this._showArchived) {
+            // 默认视图：隐藏已归档的书
+            filtered = filtered.filter(idx => !this._archivedBookIds.has(idx.id));
+        } else {
+            // 归档视图：只显示已归档的书
+            filtered = filtered.filter(idx => this._archivedBookIds.has(idx.id));
         }
 
         if (filtered.length === 0) {
@@ -702,19 +733,6 @@ export class LibraryView extends ItemView {
             infoEl.createDiv({ cls: 'deeppdf-lib-book-meta', text: metaParts.join(' · ') });
         }
 
-        // 阅读进度条（仅 ready 状态显示）
-        if (statusClass === 'ready') {
-            const deepReaderProgress = this.readingProgressCache.get(index.id) || 0;
-            const wereadProgress = wereadStats?.progress || 0;
-            const progressPercent = Math.max(deepReaderProgress, wereadProgress);
-            if (progressPercent > 0) {
-                const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
-                const barBg = progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-bg' });
-                barBg.createDiv({ cls: 'deeppdf-lib-reading-bar-fill', attr: { style: `width: ${progressPercent}%` } });
-                progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-text', text: `${progressPercent}%` });
-            }
-        }
-
         // 点击选择
         card.addEventListener('click', () => {
             if (this._multiSelectMode) {
@@ -979,16 +997,6 @@ export class LibraryView extends ItemView {
                 }
             }
 
-            // 注入进度条
-            if (stats && stats.progress > 0 && !card.querySelector('.deeppdf-lib-reading-progress')) {
-                const infoEl = card.querySelector('.deeppdf-lib-book-info');
-                if (infoEl) {
-                    const progressRow = infoEl.createDiv({ cls: 'deeppdf-lib-reading-progress' });
-                    const barBg = progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-bg' });
-                    barBg.createDiv({ cls: 'deeppdf-lib-reading-bar-fill', attr: { style: `width: ${stats.progress}%` } });
-                    progressRow.createDiv({ cls: 'deeppdf-lib-reading-bar-text', text: `${stats.progress}%` });
-                }
-            }
         }
     }
 
@@ -1095,6 +1103,19 @@ export class LibraryView extends ItemView {
                 this.handleLocalAssociate(index);
             });
         }
+
+        // 归档/取消归档按钮
+        const isArchived = this._archivedBookIds.has(indexId);
+        const archiveBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn archive' });
+        archiveBtn.innerHTML = Icons.archive;
+        archiveBtn.title = isArchived ? '取消归档' : '归档';
+        archiveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const index = this.indexes.find(idx => idx.id === indexId);
+            if (index) {
+                this.handleArchiveBook(index);
+            }
+        });
 
         // 删除按钮
         const deleteBtn = actionsOverlay.createDiv({ cls: 'deeppdf-lib-cover-btn delete' });
@@ -1526,6 +1547,12 @@ export class LibraryView extends ItemView {
             startBtn.addEventListener('click', () => this.confirmThematicReading());
         }
 
+        if (count >= 1) {
+            const archiveBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-start-btn' });
+            archiveBtn.textContent = this._showArchived ? `取消归档 ${count} 本` : `归档 ${count} 本`;
+            archiveBtn.addEventListener('click', () => this.handleBatchArchive());
+        }
+
         const cancelBtn = this._confirmBarEl.createEl('button', { cls: 'deeppdf-lib-multi-cancel-btn' });
         cancelBtn.textContent = '取消';
         cancelBtn.addEventListener('click', () => this.exitMultiSelectMode());
@@ -1659,60 +1686,70 @@ export class LibraryView extends ItemView {
         return name;
     }
 
-    /**
-     * 加载所有已索引书籍的阅读进度
-     */
-    private async loadReadingProgresses(): Promise<void> {
-        this.readingProgressCache.clear();
-        const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+    /* ── 归档相关 ── */
 
-        const readyIndexes = this.indexes.filter(idx => {
-            const status = (idx.status || '').toLowerCase();
-            return READY_STATUSES.has(status);
-        });
-
-        const results = await Promise.allSettled(
-            readyIndexes.map(async (idx) => {
-                const progress = await loadProgress(vaultPath, idx.id);
-                const totalChapters = this.getChapterCount(idx);
-                const percent = progress && totalChapters > 0
-                    ? getProgressPercent(progress, totalChapters)
-                    : 0;
-                return { id: idx.id, percent };
-            })
-        );
-
-        for (const r of results) {
-            if (r.status === 'fulfilled' && r.value.percent > 0) {
-                this.readingProgressCache.set(r.value.id, r.value.percent);
-            }
+    private async loadArchiveState(): Promise<void> {
+        try {
+            this._archivedBookIds = await loadArchivedBookIds(getVaultPath(this.app));
+        } catch (e) {
+            logError('[DeepPDF] 加载归档状态失败:', e);
+            this._archivedBookIds = new Set();
         }
     }
 
-    /**
-     * 获取书籍的总章节数（索引 node_count 回退到 vault 文件计数）
-     */
-    private getChapterCount(index: IndexListItem): number {
-        if (index.node_count > 0) return index.node_count;
-
-        // 回退：统计 DeepReader/{displayName}/ 下的 md 文件数量
-        const folderName = this.getDisplayName(index.pdf_name);
-        const folderPath = `DeepReader/${folderName}`;
-        const folder = this.app.vault.getAbstractFileByPath(folderPath);
-
-        if (folder && 'children' in folder) {
-            const children = (folder as any).children as any[];
-            return children.filter((f: any) =>
-                f instanceof TFile && f.extension === 'md'
-            ).length;
+    private toggleArchiveView(): void {
+        this._showArchived = !this._showArchived;
+        if (this._archiveBtnEl) {
+            this._archiveBtnEl.toggleClass('is-active', this._showArchived);
+            this._archiveBtnEl.title = this._showArchived ? '隐藏已归档' : '显示已归档';
         }
-        return 0;
+        this.renderGrid();
+    }
+
+    private async handleArchiveBook(index: IndexListItem): Promise<void> {
+        try {
+            const bookId = index.id;
+            const newState = await toggleArchive(getVaultPath(this.app), bookId);
+            if (newState) {
+                this._archivedBookIds.add(bookId);
+                new Notice(`已归档「${this.getDisplayName(index.pdf_name)}」`, 3000);
+            } else {
+                this._archivedBookIds.delete(bookId);
+                new Notice(`已取消归档「${this.getDisplayName(index.pdf_name)}」`, 3000);
+            }
+            this.renderGrid();
+        } catch (e) {
+            logError('[DeepPDF] 归档操作失败:', e);
+            new Notice('归档操作失败', 3000);
+        }
+    }
+
+    private async handleBatchArchive(): Promise<void> {
+        try {
+            const archive = !this._showArchived;
+            const bookIds = Array.from(this._selectedBookIds);
+            const count = await batchToggleArchive(getVaultPath(this.app), bookIds, archive);
+            if (count > 0) {
+                if (archive) {
+                    for (const id of bookIds) this._archivedBookIds.add(id);
+                    new Notice(`已归档 ${count} 本书`, 3000);
+                } else {
+                    for (const id of bookIds) this._archivedBookIds.delete(id);
+                    new Notice(`已取消归档 ${count} 本书`, 3000);
+                }
+            }
+            this.exitMultiSelectMode();
+            this.renderGrid();
+        } catch (e) {
+            logError('[DeepPDF] 批量归档失败:', e);
+            new Notice('批量归档失败', 3000);
+        }
     }
 
     private async handleAddDocument(): Promise<void> {
         new PDFFileSelectorModal(this.app, async (fileInfo: FileSelectResult) => {
-            let bookId = '';
             const displayName = this.getDisplayName(fileInfo.name);
+            let bookId = '';
 
             try {
                 const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
@@ -1745,20 +1782,15 @@ export class LibraryView extends ItemView {
                     // Vault 中的文件：path 已经是绝对路径（由 PDFFileSelectorModal 构建）
                     filePath = fileInfo.path;
                 }
-                
-                // 计算真实的 bookId，避免临时 ID 导致卡片重复
-                bookId = await generateBookId(filePath);
 
-                // 移除同名文件的旧索引项或旧状态卡片，避免重复
-                this.indexes = this.indexes.filter(idx => {
-                    const idxName = idx.pdf_name || '';
-                    return idxName !== fileInfo.name && idx.id !== bookId;
-                });
-                this.cardElements.delete(bookId);
+                const fileType = (fileInfo as any).docType === 'epub' ? 'epub' : 'pdf';
 
+                // 先展示 processing 卡片，再异步计算 bookId
+                const prelimId = generateBookIdFromPath(filePath);
                 const newIndex: IndexListItem = {
-                    id: bookId,
+                    id: prelimId,
                     pdf_name: fileInfo.name,
+                    fileType,
                     node_count: 0,
                     created_at: new Date().toISOString(),
                     status: 'processing',
@@ -1766,12 +1798,40 @@ export class LibraryView extends ItemView {
                     message: '准备索引...'
                 };
 
+                // 移除同名文件的旧索引项
+                this.indexes = this.indexes.filter(idx => {
+                    const idxName = idx.pdf_name || '';
+                    return idxName !== fileInfo.name;
+                });
+                this.cardElements.delete(prelimId);
+
+                this.activelyIndexingBookId = prelimId;
                 this.indexes.unshift(newIndex);
                 this.renderGrid();
-
                 new Notice(`开始索引「${displayName}」...`);
-                
-                const fileType = (fileInfo as any).docType === 'epub' ? 'epub' : 'pdf';
+
+                // 异步计算真实 bookId，替换临时 id
+                bookId = await generateBookId(filePath);
+                if (bookId !== prelimId) {
+                    // 替换内存中的 ID
+                    const entry = this.indexes.find(i => i.id === prelimId);
+                    if (entry) entry.id = bookId;
+                    const card = this.cardElements.get(prelimId);
+                    if (card) {
+                        this.cardElements.delete(prelimId);
+                        this.cardElements.set(bookId, card);
+                    }
+                    this.lastIndexStates.delete(prelimId);
+                    // 移除磁盘已写入的同 bookId 条目，避免重复（轮询可能已提前读到）
+                    const dupCount = this.indexes.filter(i => i.id === bookId).length;
+                    if (dupCount > 1) {
+                        // 保留 processing 状态的那个（我们正在管理的），移除磁盘读到的
+                        this.indexes = this.indexes.filter(i =>
+                            i.id !== bookId || i.status === 'processing'
+                        );
+                    }
+                }
+                this.activelyIndexingBookId = bookId;
 
                 const settings = this.options.plugin.settings;
                 const pageindexRole = resolveRoleConfig('pageindex', settings);
@@ -1788,9 +1848,6 @@ export class LibraryView extends ItemView {
                 const propositionOpts = propositionRole
                     ? toPropositionConfig(propositionRole, settings.propositionCardsPer500Words)
                     : undefined;
-
-                // 标记正在主动管理索引，防止轮询弹出重复通知
-                this.activelyIndexingBookId = bookId;
 
                 const result = await indexBook({
                     filePath,
@@ -1999,15 +2056,38 @@ export class LibraryView extends ItemView {
         const newIndexes = await this.options.onRefresh?.();
 
         if (newIndexes) {
+            const prevIds = new Set(this.indexes.map(idx => idx.id));
+
             // 去重：移除 this.indexes 中的 tempIndex（其 bookId 已出现在 newIndexes 中）
-            // 这样 tempIndex 会被实际的 bookId 索引项替代，避免同一本书出现两个卡片
             const realBookIds = new Set(newIndexes.map(idx => idx.id));
             const tempIndexesToKeep = this.indexes.filter(idx =>
                 idx.id.startsWith('temp_') && !realBookIds.has(idx.id)
             );
+            const processingToKeep = this.indexes.filter(idx =>
+                !idx.id.startsWith('temp_') &&
+                PROCESSING_STATUSES.has((idx.status || '').toLowerCase()) &&
+                !realBookIds.has(idx.id)
+            );
 
-            // 合并：实际索引项 + 仍在处理中的 tempIndex（尚未生成 bookId）
-            this.indexes = [...newIndexes, ...tempIndexesToKeep];
+            this.indexes = [...newIndexes, ...tempIndexesToKeep, ...processingToKeep];
+
+            // 按 id 去重（prelimId 被替换为 bookId 后可能与 newIndexes 重复）
+            const seen = new Set<string>();
+            this.indexes = this.indexes.filter(idx => {
+                if (seen.has(idx.id)) return false;
+                seen.add(idx.id);
+                return true;
+            });
+
+            // 从 DOM 移除不再存在于 indexes 中的卡片
+            const currentIds = new Set(this.indexes.map(idx => idx.id));
+            for (const [id, card] of this.cardElements) {
+                if (!currentIds.has(id)) {
+                    card.remove();
+                    this.cardElements.delete(id);
+                    this.lastIndexStates.delete(id);
+                }
+            }
 
             // 检测新增的索引
             const newAddedIndexes = this.detectNewIndexes(this.indexes);
@@ -2081,6 +2161,13 @@ export class LibraryView extends ItemView {
     private addNewCards(newIndexes: IndexListItem[]): void {
         if (!this.gridEl) return;
 
+        // 如果当前网格显示的是空状态（deeppdf-lib-empty），先清空再全量渲染
+        const isEmptyState = this.gridEl.querySelector('.deeppdf-lib-empty') !== null;
+        if (isEmptyState) {
+            this.renderGrid();
+            return;
+        }
+
         for (const index of newIndexes) {
             const card = this.createBookCard(index);
             this.gridEl.appendChild(card);
@@ -2104,6 +2191,13 @@ export class LibraryView extends ItemView {
      * 增量更新卡片
      */
     private async updateCardsIncrementally(changedIndexes: IndexListItem[], completedIndexes: IndexListItem[]): Promise<void> {
+        // 如果当前网格为空状态，全量渲染避免追加到空状态下面
+        const isEmptyState = this.gridEl?.querySelector('.deeppdf-lib-empty') !== null;
+        if (isEmptyState) {
+            this.renderGrid();
+            return;
+        }
+
         // 更新变化的卡片
         changedIndexes.forEach(idx => {
             const rawStatus = (idx.status || 'unknown').toLowerCase();

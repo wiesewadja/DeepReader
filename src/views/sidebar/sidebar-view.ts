@@ -9,15 +9,6 @@ import { Drawer } from "../../components/drawer/drawer.js";
 import { TaskProgressCard } from "../../components/task-progress-card.js";
 import { TaskProgress, SearchFilters, IndexListItem, SessionInfo, ContextDoc, Booklist, stripFileExtension } from "../../types/index.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
-import {
-    createEmptyProgress,
-    markChapterVisited,
-    updateLastRead,
-    getProgressPercent,
-    loadProgress,
-    saveProgress,
-} from "../../pageindex/reading-progress.js";
-import type { ReadingProgress } from "../../pageindex/reading-progress.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../../components/message-list/message-list.js";
 import { ChatInput } from "../../components/chat-input/chat-input.js";
 import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall, AIMessage } from "../../components/message/message.js";
@@ -39,7 +30,6 @@ import {
 import { MemoryStore } from "../../agent/memory/store.js";
 import { MemoryConsolidator } from "../../agent/memory/consolidator.js";
 import { DEFAULT_CONSOLIDATOR_CONFIG } from "../../agent/memory/types.js";
-import { MilestoneRecorder } from "../../agent/memory/milestones.js";
 import type { HumanizedProgress } from "../../agent/ui/humanized-types.js";
 import { SessionStore } from "../../agent/session/index.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
@@ -51,7 +41,6 @@ import { rerankResults as _rerankResults, buildContextWithTokenLimit as _buildCo
 import { QuoteManager } from './quote-manager.js';
 import type { QuoteItem, QuoteMetadata } from '../../components/chat-input/chat-input.js';
 import { TTSController } from './tts-controller.js';
-import { ReadingProgressTracker } from './reading-progress-tracker.js';
 import { SessionManager } from './session-manager.js';
 import { AgentChatController } from './agent-chat-controller.js';
 import { BookManager } from './book-manager.js';
@@ -103,7 +92,6 @@ export class SidebarView extends ItemView {
     // ── 子系统 controller ──
     private quoteManager: QuoteManager;
     private ttsCtrl: TTSController;
-    private progressTracker: ReadingProgressTracker;
     private sessionMgr: SessionManager;
     private agentChatCtrl: AgentChatController;
     private bookMgr: BookManager;
@@ -134,16 +122,6 @@ export class SidebarView extends ItemView {
     /**
      * 初始化里程碑记录器
      */
-    private async initializeMilestoneRecorder(): Promise<void> {
-        if (this.bookMgr.milestoneRecorder) {
-            return; // 已初始化
-        }
-        this.bookMgr.milestoneRecorder = new MilestoneRecorder(this.app);
-        await this.bookMgr.milestoneRecorder.restoreFromHistory();
-
-        log('[DeepPDF] MilestoneRecorder 初始化完成');
-    }
-
     /**
      * 删除索引（本地实现）
      */
@@ -217,16 +195,6 @@ export class SidebarView extends ItemView {
             getCurrentIndexId() { return self.bookMgr.currentIndexId; },
             setTtsService(service) { self.ttsService = service; },
         });
-        this.progressTracker = new ReadingProgressTracker({
-            get app() { return self.app; },
-            get plugin() { return self.plugin; },
-            get readingTopbar() { return self.readingTopbar; },
-            get proactiveEngine() { return self.proactiveEngine; },
-            get agentChatHistory() { return self.agentChatCtrl.agentChatHistory; },
-            get indexes() { return self.bookMgr.indexes; },
-            getCurrentIndexId() { return self.bookMgr.currentIndexId; },
-            getCurrentPdfName() { return self.bookMgr.currentPdfName; },
-        });
         this.sessionMgr = new SessionManager({
             get app() { return self.app; },
             get plugin() { return self.plugin; },
@@ -285,7 +253,6 @@ export class SidebarView extends ItemView {
             get plugin() { return self.plugin; },
             get messageList() { return self.messageList; },
             get readingTopbar() { return self.readingTopbar; },
-            get readingProgress() { return self.progressTracker.readingProgress; },
             get proactiveEngine() { return self.proactiveEngine; },
             get frontendAgent() { return self.frontendAgent; },
             startNewSession(indexId: string) { return self.sessionMgr.startNewSession(indexId); },
@@ -294,12 +261,8 @@ export class SidebarView extends ItemView {
             set sessionId(id: string | null) { self.sessionMgr.sessionId = id; },
             get sessionStore() { return self.sessionMgr.sessionStore; },
             ensureSessionStore() { return self.sessionMgr.ensureSessionStore(); },
-            flushProgressSave() { return self.progressTracker.flushProgressSave(); },
-            initReadingProgress(indexId: string) { return self.progressTracker.initReadingProgress(indexId); },
-            navigateToLastReadChapter() { self.progressTracker.navigateToLastReadChapter(); },
             cancelActiveStream() { self.agentChatCtrl.cancelActiveStream(); },
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
-            initializeMilestoneRecorder() { return self.initializeMilestoneRecorder(); },
         });
     }
 
@@ -475,41 +438,6 @@ export class SidebarView extends ItemView {
         log(`[DeepPDF] 自动加载章节: ${activeFile.basename}`);
     }
 
-    // ============ 阅读进度追踪 ============
-
-    /**
-     * 初始化阅读进度（加载或创建）
-     * 可安全多次调用（幂等）
-     */
-
-    /**
-     * 追踪当前阅读的章节
-     * 在 file-open 和 active-leaf-change 时调用
-     */
-
-    /**
-     * 更新顶栏进度 UI
-     */
-
-    /**
-     * 获取当前书籍的总章节数
-     */
-    private getTotalChapters(): number {
-        return this.progressTracker.getTotalChapters();
-    }
-
-    /**
-     * 自动跳转到上次阅读的章节
-     */
-
-    /**
-     * 防抖保存阅读进度
-     */
-
-    /**
-     * 立即保存阅读进度到磁盘
-     */
-
     /**
      * 获取当前选中的索引 ID
      */
@@ -527,8 +455,12 @@ export class SidebarView extends ItemView {
     }
 
     public async notifyHighlight(text: string): Promise<void> {
-        if (!this.bookMgr.currentIndexId || !this.progressTracker.currentChapterId) return;
-        await this.proactiveEngine?.onHighlight(this.bookMgr.currentIndexId, this.progressTracker.currentChapterId, text);
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile || !this.bookMgr.currentIndexId) return;
+        const cache = this.app.metadataCache.getFileCache(activeFile);
+        const chapterId = cache?.frontmatter?.node_id ? String(cache.frontmatter.node_id) : activeFile.basename;
+        if (!chapterId) return;
+        await this.proactiveEngine?.onHighlight(this.bookMgr.currentIndexId, chapterId, text);
     }
 
     /**
@@ -565,8 +497,7 @@ export class SidebarView extends ItemView {
                 }
             },
             onCoverClick: () => {
-                // 点击封面时，打开当前书籍正在阅读的章节
-                this.progressTracker.navigateToLastReadChapter();
+                // Phase 1: 阅读进度移除，保留空操作
             },
             onExitBooklist: () => this.exitBooklist(),
             onBooklistRename: (newName: string) => {
@@ -714,8 +645,6 @@ export class SidebarView extends ItemView {
                     const isLoaded = activeFile ? this.contextManager.hasDocument(activeFile.path) : false;
                     this.chatInput?.setLoadBtnActive(isLoaded);
                 }
-                // 追踪阅读进度
-                this.progressTracker.trackReadingProgress();
                 // 自动同步当前章节到上下文
                 this.autoSyncCurrentChapter();
             })
@@ -1140,8 +1069,6 @@ export class SidebarView extends ItemView {
 
     async onClose() {
         try {
-            // 保存阅读进度
-            await this.progressTracker.flushProgressSave();
             if (this.agentChatCtrl.currentStreamController) {
                 this.agentChatCtrl.cancelActiveStream();
             }

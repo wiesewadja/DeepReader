@@ -4,12 +4,11 @@
 
 export { HumanizedProgressAdapter } from './humanized-adapter';
 export {
-	createHumanizedStatusElement,
+	createThinkingStatusElement,
 	updateHumanizedStatusElement,
 } from './humanized-view';
 export type {
 	HumanizedProgress,
-	ReadingProgressItem,
 	AgentAction,
 } from './humanized-types';
 export { TOOL_TO_ACTION, generateThoughtBubble } from './humanized-types';

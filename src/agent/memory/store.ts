@@ -215,30 +215,9 @@ export class MemoryStore implements IMemoryStore {
 			}
 
 			// 统计里程碑类型
-			const milestones = {
-				'📖': 0, // 开始阅读
-				'🔄': 0, // 切换书籍
-				'📍': 0, // 进度里程碑
-				'💡': 0, // 吸收度提升
-				'✅': 0, // 完成阅读
-				'🔁': 0, // 新一轮
-			};
-
-			for (const entry of entries) {
-				for (const [emoji] of Object.entries(milestones)) {
-					if (entry.includes(emoji)) {
-						milestones[emoji as keyof typeof milestones]++;
-					}
-				}
-			}
-
 			// 生成摘要
 			const lines = [
 				`📚 已阅读书籍: ${books.size} 本`,
-				`📖 开始阅读: ${milestones['📖']} 次`,
-				`📍 进度里程碑: ${milestones['📍']} 次`,
-				`💡 吸收度提升: ${milestones['💡']} 次`,
-				`✅ 完成阅读: ${milestones['✅']} 次`,
 			];
 
 			if (books.size > 0) {

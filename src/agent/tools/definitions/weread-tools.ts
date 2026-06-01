@@ -150,10 +150,9 @@ export const createWereadNotebooksTool: ToolFactory = (ctx: ToolContext) =>
 				const lines: string[] = [`共 ${resp.totalBookCount || resp.books.length} 本有笔记的书，${resp.totalNoteCount || 0} 条笔记`];
 				for (const item of resp.books.slice(0, args.count ?? 20)) {
 					const b = item.book;
-					const progress = item.readingProgress ? ` 进度:${item.readingProgress}%` : '';
 					const status = item.markedStatus === 1 ? '已读完' : '在读';
 					const noteCount = (item.noteCount || 0) + (item.reviewCount || 0) + (item.bookmarkCount || 0);
-					lines.push(`《${b.title}》 ${b.author} — ${status}${progress} 笔记${noteCount}条 [bookId:${b.bookId}]`);
+					lines.push(`《${b.title}》 ${b.author} — ${status} 笔记${noteCount}条 [bookId:${b.bookId}]`);
 				}
 				return lines.join('\n');
 			} catch (e: any) {

@@ -132,7 +132,7 @@ export class MemoryConsolidator {
 	/**
 	 * 执行整合（调用 LLM）
 	 *
-	 * 注意：MEMORY.md 整合聚焦于用户特征，HISTORY.md 由 MilestoneRecorder 负责
+	 * 注意：MEMORY.md 整合聚焦于用户特征
 	 */
 	async consolidate(
 		messages: ChatMessage[],

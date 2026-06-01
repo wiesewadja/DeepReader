@@ -635,23 +635,14 @@ export class AgentChatController {
 						}
 						lastUpdateTime = now;
 
-						if (progress.readingSteps.some(step => step.status === 'done' || step.status === 'current')) {
-							hadToolCalls = true;
-						}
-
-						const hasRunningTools = progress.readingSteps.some(step => step.status === 'current');
-						if (agentState !== 'thinking' && !hasRunningTools) {
+						hadToolCalls = true;
+						if (agentState !== 'thinking') {
 							return;
 						}
-
-						const completedSteps = progress.readingSteps
-							.filter(step => step.status === 'done')
-							.map(step => step.action);
 
 						self.host.messageList?.updateMessage(aiMessageId, {
 							currentStatus: progress.mainAction.detail,
 							readingLevel: progress.currentReadingLevel,
-							completedSteps: completedSteps.length > 0 ? completedSteps : undefined,
 							isStreaming: true,
 							isAgentMessage: true,
 						});

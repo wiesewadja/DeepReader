@@ -102,6 +102,7 @@ export async function chatGPTWithFinishReason(
   ];
 
   let lastError: Error | null = null;
+  const TIMEOUT_MS = 120_000;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -112,19 +113,24 @@ export async function chatGPTWithFinishReason(
 
       const disableThinking = getDisableThinkingParams(model);
 
-      const response = await safeRequest({
-        url: `${effectiveBaseUrl}/chat/completions`,
-        method: "POST",
-        contentType: "application/json",
-        headers: { Authorization: `Bearer ${effectiveApiKey}` },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          ...(maxTokens ? { max_tokens: maxTokens } : {}),
-          ...(disableThinking || {}),
+      const response = await Promise.race([
+        safeRequest({
+          url: `${effectiveBaseUrl}/chat/completions`,
+          method: "POST",
+          contentType: "application/json",
+          headers: { Authorization: `Bearer ${effectiveApiKey}` },
+          body: JSON.stringify({
+            model,
+            messages,
+            temperature,
+            ...(maxTokens ? { max_tokens: maxTokens } : {}),
+            ...(disableThinking || {}),
+          }),
         }),
-      });
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Request timed out after ${TIMEOUT_MS / 1000}s`)), TIMEOUT_MS)
+        ),
+      ]);
 
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
       piLog(`[chatGPT] ${model} responded in ${elapsed}s (status ${response.status}, attempt ${attempt + 1})`);

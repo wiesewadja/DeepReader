@@ -49,25 +49,11 @@ export type AgentAction =
 	| { type: 'waiting'; detail: string }; // 等待中
 
 /**
- * 阅读进度项
- */
-export interface ReadingProgressItem {
-	/** 动作描述（用户视角） */
-	action: string;
-	/** 状态 */
-	status: 'done' | 'current' | 'pending';
-	/** 耗时（可选） */
-	duration?: number;
-}
-
-/**
  * 拟人化进度信息
  */
 export interface HumanizedProgress {
 	/** 当前主状态 */
 	mainAction: AgentAction;
-	/** 阅读进度列表 */
-	readingSteps: ReadingProgressItem[];
 	/** 思考气泡内容（可选） */
 	thoughtBubble?: string;
 	/** 已生成的内容（流式） */

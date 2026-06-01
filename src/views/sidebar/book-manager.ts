@@ -9,14 +9,13 @@ import { uiLog as log, error as logError } from '../../utils/logger.js';
 import { stripFileExtension, type IndexListItem, type Booklist } from '../../types/index.js';
 import type { MessageList } from '../../components/message-list/message-list.js';
 import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
-import type { ReadingProgress } from '../../pageindex/reading-progress.js';
 import type { FrontendAgent } from '../../agent/index.js';
 import type { ProactiveEngine } from '../../agent/proactive/engine.js';
-import type { MilestoneRecorder } from '../../agent/memory/milestones.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
-import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath } from '../../utils/mobile-fs.js';
+import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath, getVaultPath } from '../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import { removeFromCatalog } from '../../pageindex/archive.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
 export interface BookManagerHost {
@@ -24,7 +23,6 @@ export interface BookManagerHost {
 	get plugin(): DeepReaderPluginInterface;
 	get messageList(): MessageList | null;
 	get readingTopbar(): ReadingTopbar | null;
-	get readingProgress(): ReadingProgress | null;
 	get proactiveEngine(): ProactiveEngine | null;
 	get frontendAgent(): FrontendAgent | null;
 
@@ -36,15 +34,9 @@ export interface BookManagerHost {
 	get sessionStore(): SessionStore | null;
 	ensureSessionStore(): Promise<void>;
 
-	// Progress tracking
-	flushProgressSave(): Promise<void>;
-	initReadingProgress(indexId: string): Promise<void>;
-	navigateToLastReadChapter(): void;
-
 	// Agent
 	cancelActiveStream(): void;
 	initializeFrontendAgent(): Promise<void>;
-	initializeMilestoneRecorder(): Promise<void>;
 }
 
 export class BookManager {
@@ -56,7 +48,6 @@ export class BookManager {
 	private _currentDocDescription: string | null = null;
 	private _indexes: IndexListItem[] = [];
 	private _bookshelfSummary: string | null = null;
-	private _milestoneRecorder: MilestoneRecorder | null = null;
 	private _currentBooklist: Booklist | null = null;
 
 	constructor(host: BookManagerHost) {
@@ -77,8 +68,6 @@ export class BookManager {
 	set currentDocDescription(desc: string | null) { this._currentDocDescription = desc; }
 	get indexes(): IndexListItem[] { return this._indexes; }
 	set indexes(indexes: IndexListItem[]) { this._indexes = indexes; }
-	get milestoneRecorder(): MilestoneRecorder | null { return this._milestoneRecorder; }
-	set milestoneRecorder(recorder: MilestoneRecorder | null) { this._milestoneRecorder = recorder; }
 	get currentBooklist(): Booklist | null { return this._currentBooklist; }
 	get currentBooklistBookIds(): string[] | null { return this._currentBooklist?.bookIds ?? null; }
 
@@ -166,7 +155,7 @@ export class BookManager {
 		const app = this.host.app;
 
 		try {
-			console.log('[loadIndexes] Scanning PAGEINDEX_DIR:', PAGEINDEX_DIR);
+			log('[loadIndexes] Scanning PAGEINDEX_DIR:', PAGEINDEX_DIR);
 			if (!(await vaultExists(app, PAGEINDEX_DIR))) {
 				this._indexes = [];
 				return;
@@ -284,19 +273,14 @@ export class BookManager {
 	async selectIndex(indexId: string): Promise<void> {
 		if (this._currentIndexId === indexId) {
 			log(`[DeepPDF] selectIndex: 已选中索引 ${indexId}，跳过`);
-			if (!this.host.readingProgress) {
-				if (!this.host.proactiveEngine) {
-					await this.host.initializeFrontendAgent();
-				}
-				await this.host.initReadingProgress(indexId);
+			if (!this.host.proactiveEngine) {
+				await this.host.initializeFrontendAgent();
 			}
 			await this.syncTopbarBookName();
 			return;
 		}
 
 		log(`[DeepPDF] selectIndex triggered: ${indexId}`);
-
-		await this.host.flushProgressSave();
 
 		// Exit booklist mode when switching to a single book
 		if (this._currentBooklist) {
@@ -341,11 +325,6 @@ export class BookManager {
 			const simplifiedName = vaultDir?.dirName || exportName || this.getDisplayName(displayName);
 			this._currentPdfName = simplifiedName;
 			displayName = vaultDir?.bookName || simplifiedName;
-
-			await this.host.initializeMilestoneRecorder();
-			if (this._milestoneRecorder && previousBook !== displayName) {
-				await this._milestoneRecorder.handleBookSwitch(displayName);
-			}
 
 			author = vaultDir?.author || metaAuthor || index.author;
 			log(`[DeepPDF] 作者信息: vaultDir.author="${vaultDir?.author}", book-meta.author="${metaAuthor}", index.author="${index.author}"`);
@@ -398,9 +377,6 @@ export class BookManager {
 		if (!this.host.proactiveEngine) {
 			await this.host.initializeFrontendAgent();
 		}
-
-		await this.host.initReadingProgress(indexId);
-		this.host.navigateToLastReadChapter();
 
 		// 从本地书籍笔记读取全书摘要
 		try {
@@ -480,9 +456,6 @@ export class BookManager {
 		const currentBookName = (this._currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this._currentIndexId || '';
 		if (currentBookName === normalizedBookName) {
 			log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
-			if (!this.host.readingProgress && this._currentIndexId) {
-				await this.host.initReadingProgress(this._currentIndexId);
-			}
 			return;
 		}
 
@@ -551,6 +524,14 @@ export class BookManager {
 				if (session) {
 					await this.host.sessionStore.delete(session.sessionId);
 				}
+			}
+
+			// 从 catalog.json 清理条目
+			try {
+				await removeFromCatalog(getVaultPath(this.host.app), indexId);
+			} catch (e) {
+				// 失败时留下 stale entry，loadArchivedBookIds 仍能读到；记录以便调试
+				logError(`[DeepPDF] 清理 catalog 条目失败 (bookId=${indexId}):`, e);
 			}
 
 			new Notice("索引已删除");
@@ -811,8 +792,6 @@ export class BookManager {
 
 	async selectBooklist(booklist: Booklist): Promise<void> {
 		log(`[DeepPDF] selectBooklist: ${booklist.name}, books=${booklist.bookIds.length}`);
-
-		await this.host.flushProgressSave();
 
 		this._currentIndexId = null;
 		this._currentPdfName = null;

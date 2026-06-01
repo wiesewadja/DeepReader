@@ -118,6 +118,8 @@ export interface CatalogBookEntry {
   nodeCount: number;
   hasPropositions: boolean;
   indexedAt: string;
+  /** 是否已归档（Phase 2 新增，缺失 = false） */
+  archived?: boolean;
 }
 
 export interface RerankerOptions {

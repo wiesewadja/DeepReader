@@ -102,7 +102,6 @@ export async function processGraphStream(
       if (action && callbacks.onHumanizedProgress) {
         callbacks.onHumanizedProgress({
           mainAction: { type: action.type as any, detail: getNodeStatus(nodeName) },
-          readingSteps: [],
           currentReadingLevel: action.level,
           generatedContent: '',
           overallProgress: 0,

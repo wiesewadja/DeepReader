@@ -5,7 +5,7 @@
  * 输出: 用户友好的动作描述
  */
 
-import type { HumanizedProgress, ReadingProgressItem, AgentAction, ReadingLevel } from './humanized-types';
+import type { HumanizedProgress, AgentAction, ReadingLevel } from './humanized-types';
 import { TOOL_TO_ACTION, generateThoughtBubble, TOOL_TO_READING_LEVEL } from './humanized-types';
 
 /**
@@ -156,9 +156,6 @@ export class HumanizedProgressAdapter {
 		// 确定当前主动作
 		const mainAction = this.determineMainAction();
 
-		// 生成阅读步骤
-		const readingSteps = this.generateReadingSteps();
-
 		// 生成思考气泡
 		const thoughtBubble = this.shouldShowThought()
 			? generateThoughtBubble(this.determineThoughtContext())
@@ -172,7 +169,6 @@ export class HumanizedProgressAdapter {
 
 		return {
 			mainAction,
-			readingSteps,
 			thoughtBubble,
 			generatedContent: this.currentContent,
 			overallProgress,
@@ -227,27 +223,6 @@ export class HumanizedProgressAdapter {
 		}
 
 		return { type: 'thinking', detail: '🤔 思考中...' };
-	}
-
-	/**
-	 * 生成阅读步骤列表
-	 */
-	private generateReadingSteps(): ReadingProgressItem[] {
-		const context = { markdownFiles: this.markdownFiles };
-		return this.toolCalls.map((tool) => {
-			const actionFn = TOOL_TO_ACTION[tool.name];
-			const action = actionFn?.(tool.args, context) || tool.name;
-
-			let status: ReadingProgressItem['status'] = 'pending';
-			if (tool.status === 'completed') status = 'done';
-			else if (tool.status === 'running') status = 'current';
-
-			return {
-				action,
-				status,
-				duration: tool.duration,
-			};
-		});
 	}
 
 	/**

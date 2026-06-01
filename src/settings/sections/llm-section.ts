@@ -77,7 +77,7 @@ function renderQuickSetup(
 	onRerender: () => void,
 ): void {
 	const card = container.createDiv({ cls: 'deeppdf-settings-card deeppdf-quick-setup' });
-	card.createEl('div', { text: '开始使用 DeepReader', cls: 'deeppdf-quick-setup-title' });
+	card.createEl('div', { text: '开始使用 奚童', cls: 'deeppdf-quick-setup-title' });
 	card.createEl('div', {
 		text: '填写 API Key 即可开始，推荐同时填写两组 Key 以获得完整体验',
 		cls: 'deeppdf-quick-setup-desc',
@@ -97,6 +97,13 @@ function renderQuickSetup(
 		attr: { type: 'password', placeholder: '输入 Token Plan Key（必填）' },
 	});
 	mimoInput.value = currentMimoKey;
+	const debouncedMimoSave = debounceAsync(async () => {
+		const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
+		if (!providers['xiaomi']) providers['xiaomi'] = {};
+		providers['xiaomi'].apiKey = mimoInput.value.trim();
+		await ctx.plugin.saveSettings();
+	}, 300);
+	mimoInput.addEventListener('input', () => debouncedMimoSave());
 	const mimoEye = mimoInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
 	setIcon(mimoEye, 'eye');
 	let mimoVisible = false;
@@ -127,21 +134,29 @@ function renderQuickSetup(
 			fallbackToggle.createSpan({ text: ' · 可选', cls: 'deeppdf-fallback-hint' });
 		}
 
-		if (fallbackExpanded) {
-			const fallbackRow = mimoGroup.createDiv({ cls: 'deeppdf-key-row' });
-			const fallbackInputWrap = fallbackRow.createDiv({ cls: 'deeppdf-key-input-wrap' });
-			const fallbackInput = fallbackInputWrap.createEl('input', {
-				cls: 'deeppdf-key-input',
-				attr: { type: 'password', placeholder: '按量付费 Key（可选，Token Plan 耗尽时自动切换）' },
-			});
-			fallbackInput.value = currentFallbackKey;
-			const fallbackEye = fallbackInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
-			setIcon(fallbackEye, 'eye');
-			let fallbackVisible = false;
-			fallbackEye.addEventListener('click', () => {
-				fallbackVisible = !fallbackVisible;
-				fallbackInput.type = fallbackVisible ? 'text' : 'password';
-			});
+		let fallbackInput: HTMLInputElement | null = null;
+	if (fallbackExpanded) {
+		const fallbackRow = mimoGroup.createDiv({ cls: 'deeppdf-key-row' });
+		const fallbackInputWrap = fallbackRow.createDiv({ cls: 'deeppdf-key-input-wrap' });
+		fallbackInput = fallbackInputWrap.createEl('input', {
+			cls: 'deeppdf-key-input',
+			attr: { type: 'password', placeholder: '按量付费 Key（可选，Token Plan 耗尽时自动切换）' },
+		});
+		fallbackInput.value = currentFallbackKey;
+		const debouncedFallbackSave = debounceAsync(async () => {
+			const providers = ctx.plugin.settings.providers as Record<string, { fallbackApiKey?: string }>;
+			if (!providers['xiaomi']) providers['xiaomi'] = {};
+			providers['xiaomi'].fallbackApiKey = fallbackInput!.value.trim();
+			await ctx.plugin.saveSettings();
+		}, 300);
+		fallbackInput.addEventListener('input', () => debouncedFallbackSave());
+		const fallbackEye = fallbackInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
+		setIcon(fallbackEye, 'eye');
+		let fallbackVisible = false;
+		fallbackEye.addEventListener('click', () => {
+			fallbackVisible = !fallbackVisible;
+			fallbackInput!.type = fallbackVisible ? 'text' : 'password';
+		});
 
 			if (state.fallbackTestStatus) {
 				fallbackRow.createEl('span', {
@@ -176,6 +191,13 @@ function renderQuickSetup(
 		attr: { type: 'password', placeholder: '输入 SiliconFlow API Key（推荐填写）' },
 	});
 	sfInput.value = currentSfKey;
+	const debouncedSfSave = debounceAsync(async () => {
+		const providers = ctx.plugin.settings.providers as Record<string, { apiKey?: string }>;
+		if (!providers['siliconflow']) providers['siliconflow'] = {};
+		providers['siliconflow'].apiKey = sfInput.value.trim();
+		await ctx.plugin.saveSettings();
+	}, 300);
+	sfInput.addEventListener('input', () => debouncedSfSave());
 	const sfEye = sfInputWrap.createEl('button', { cls: 'deeppdf-btn-eye' });
 	setIcon(sfEye, 'eye');
 	let sfVisible = false;
@@ -206,7 +228,7 @@ function renderQuickSetup(
 	// ── 测试连接 ──
 	testBtn.addEventListener('click', async () => {
 		const mimoVal = mimoInput.value.trim();
-		const fallbackVal = (card.querySelector('input[placeholder*="æéä»è´¹"]') as HTMLInputElement)?.value?.trim() || '';
+		const fallbackVal = fallbackInput?.value?.trim() || '';
 		const sfVal = sfInput.value.trim();
 
 		if (!mimoVal && !fallbackVal && !sfVal) {
@@ -254,7 +276,7 @@ function renderQuickSetup(
 	// ── 确认配置 ──
 	confirmBtn.addEventListener('click', async () => {
 		const mimoVal = mimoInput.value.trim();
-		const fallbackVal = (card.querySelector('input[placeholder*="æéä»è´¹"]') as HTMLInputElement)?.value?.trim() || '';
+		const fallbackVal = fallbackInput?.value?.trim() || '';
 		const sfVal = sfInput.value.trim();
 
 		if (!mimoVal && !fallbackVal) {

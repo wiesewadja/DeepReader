@@ -65,7 +65,7 @@ export const PROVIDER_CONFIGS: Record<ProviderType, ProviderConfig> = {
 	},
 	xiaomi: {
 		baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-		defaultModel: 'mimo-v2.5',
+		defaultModel: 'mimo-v2.5-pro',
 		supportsModelList: true,
 		capabilities: { chat: true, embedding: false, reranker: false, tts: true, imagegen: false },
 	},
