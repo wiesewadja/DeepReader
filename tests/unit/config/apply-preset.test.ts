@@ -31,13 +31,13 @@ describe('applyPreset', () => {
 		applyPreset('xitong', 'sk-mimo', settings, 'sk-sf');
 		// Primary roles
 		expect(settings.roles.chat.provider).toBe('xiaomi');
-		expect(settings.roles.chat.model).toBe('mimo-v2.5');
+		expect(settings.roles.chat.model).toBe('mimo-v2.5-pro');
 		expect(settings.roles.pageindex.provider).toBe('xiaomi');
 		expect(settings.roles.proposition.provider).toBe('xiaomi');
 		expect(settings.roles.tts.provider).toBe('xiaomi');
-		// Secondary roles
-		expect(settings.roles.router.provider).toBe('siliconflow');
-		expect(settings.roles.router.model).toBe('deepseek-ai/DeepSeek-V4-Flash');
+		// Router is now a primary role (xiaomi)
+		expect(settings.roles.router.provider).toBe('xiaomi');
+		expect(settings.roles.router.model).toBe('mimo-v2.5');
 		expect(settings.roles.embedding!.provider).toBe('siliconflow');
 		expect(settings.roles.embedding!.model).toBe('Qwen/Qwen3-Embedding-0.6B');
 		expect(settings.roles.reranker!.provider).toBe('siliconflow');

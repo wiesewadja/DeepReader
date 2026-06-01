@@ -15,6 +15,22 @@ export async function vaultRead(app: App, relativePath: string): Promise<string>
 	return app.vault.adapter.read(normalizePath(relativePath));
 }
 
+/**
+ * 提取 vault 根目录的绝对路径（用于 Node.js fs 操作）。
+ *
+ * Obsidian 的 vault.adapter 在桌面端暴露 `getBasePath()`，
+ * 但在某些 adapter 实现中只有 `basePath` 字段——依次回退。
+ *
+ * @returns vault 根目录绝对路径；若 adapter 不支持则返回空字符串
+ */
+export function getVaultPath(app: App): string {
+	const adapter = app.vault.adapter as {
+		getBasePath?: () => string;
+		basePath?: string;
+	};
+	return adapter.getBasePath?.() || adapter.basePath || '';
+}
+
 /** 通过 Vault API 读取二进制文件 */
 export async function vaultReadBinary(app: App, relativePath: string): Promise<ArrayBuffer> {
 	return app.vault.adapter.readBinary(normalizePath(relativePath));

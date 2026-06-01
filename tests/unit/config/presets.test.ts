@@ -16,7 +16,8 @@ describe('Presets', () => {
 
 	it('xitong primary roles use xiaomi', () => {
 		const xt = getPresetById('xitong')!;
-		expect(xt.roleAssignments.chat).toBe('mimo-v2.5');
+		expect(xt.roleAssignments.chat).toBe('mimo-v2.5-pro');
+		expect(xt.roleAssignments.router).toBe('mimo-v2.5');
 		expect(xt.roleAssignments.pageindex).toBe('mimo-v2.5');
 		expect(xt.roleAssignments.proposition).toBe('mimo-v2.5');
 		expect(xt.roleAssignments.tts).toBe('mimo-v2.5-tts-voicedesign');
@@ -25,7 +26,7 @@ describe('Presets', () => {
 	it('xitong secondary roles use siliconflow', () => {
 		const xt = getPresetById('xitong')!;
 		expect(xt.secondaryProvider).toBe('siliconflow');
-		expect(xt.secondaryRoleAssignments!.router).toBe('deepseek-ai/DeepSeek-V4-Flash');
+		expect(xt.secondaryRoleAssignments!.router).toBeUndefined();
 		expect(xt.secondaryRoleAssignments!.embedding).toBe('Qwen/Qwen3-Embedding-0.6B');
 		expect(xt.secondaryRoleAssignments!.reranker).toBe('Qwen/Qwen3-Reranker-0.6B');
 	});
@@ -43,8 +44,8 @@ describe('Presets', () => {
 	it('buildRolesFromPreset with secondary should build all 7 roles', () => {
 		const xt = getPresetById('xitong')!;
 		const roles = buildRolesFromPreset(xt, true);
-		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
-		expect(roles.router).toEqual({ provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' });
+		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
+		expect(roles.router).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.pageindex).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.proposition).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.embedding).toEqual({ provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' });
@@ -55,8 +56,8 @@ describe('Presets', () => {
 	it('buildRolesFromPreset without secondary only builds primary roles', () => {
 		const xt = getPresetById('xitong')!;
 		const roles = buildRolesFromPreset(xt, false);
-		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
-		expect(roles.router).toBeUndefined();
+		expect(roles.chat).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5-pro' });
+		expect(roles.router).toEqual({ provider: 'xiaomi', model: 'mimo-v2.5' });
 		expect(roles.embedding).toBeUndefined();
 	});
 });

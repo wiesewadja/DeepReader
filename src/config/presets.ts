@@ -37,14 +37,14 @@ export const PRESETS: ProviderPreset[] = [
 		recommended: true,
 		website: 'https://platform.xiaomimimo.com',
 		roleAssignments: {
-			chat: 'mimo-v2.5',
+			chat: 'mimo-v2.5-pro',
+			router: 'mimo-v2.5',
 			pageindex: 'mimo-v2.5',
 			proposition: 'mimo-v2.5',
 			tts: 'mimo-v2.5-tts-voicedesign',
 		},
 		secondaryProvider: 'siliconflow',
 		secondaryRoleAssignments: {
-			router: 'deepseek-ai/DeepSeek-V4-Flash',
 			embedding: 'Qwen/Qwen3-Embedding-0.6B',
 			reranker: 'Qwen/Qwen3-Reranker-0.6B',
 		},

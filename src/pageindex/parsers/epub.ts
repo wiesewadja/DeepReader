@@ -194,83 +194,7 @@ function createTurndownServiceWithBlocks(
 
         const trimmedContent = content.trim();
 
-        // Detect potential h3 heading: short text without ending punctuation
-        // but exclude image captions/alt text
-        const isPotentialHeading = (text: string, node: any): boolean => {
-          // Skip image-related patterns:
-          // - Markdown image syntax: ![...]
-          // - Chinese image captions: "图1", "图 1-1", "插图说明", etc.
-          const imageCaptionPatterns = [
-            /^图\s*\d/i,           // "图1", "图 1-1", "图2.3"
-            /^插图/i,              // "插图说明"
-            /^配图/i,              // "配图..."
-            /^示意图/i,            // "示意图"
-            /^图示/i,              // "图示"
-            /^\*\s*图/i,           // "* 图1" (italic caption)
-            /^Figure\s*\d/i,       // "Figure 1", "Figure 2.1" (English)
-          ];
-          
-          for (const pattern of imageCaptionPatterns) {
-            if (pattern.test(text)) return false;
-          }
-          
-          // Skip if contains image markdown syntax
-          if (text.includes("![") || text.includes("](")) {
-            return false;
-          }
-
-          // Skip if parent or previous sibling is figure/image related
-          const parentTag = node.parentNode?.tagName?.toLowerCase();
-          if (parentTag === "figure" || parentTag === "figcaption") {
-            return false;
-          }
-
-          // Check previous sibling for image
-          const prevSibling = node.previousElementSibling;
-          if (prevSibling && (prevSibling.tagName?.toLowerCase() === "img" || 
-              prevSibling.tagName?.toLowerCase() === "figure")) {
-            return false;
-          }
-
-          // Check for any child img elements
-          if (node.querySelector?.("img")) {
-            return false;
-          }
-
-          // Skip if already a markdown heading (converted from HTML h1-h6)
-          if (/^#{1,6}\s/.test(text)) return false;
-
-          // Text length check: headings are typically short (≤ 60 chars)
-          if (text.length > 60) return false;
-
-          // Check for ending punctuation (Chinese and English)
-          // Chinese: 。！？；：…"」』
-          // English: .!?;:
-          // Note: question mark (?) is allowed for question-style headings
-          const endingPunctuation = /[。！；：…"」』。;:]$/;
-          if (endingPunctuation.test(text)) {
-            return false;
-          }
-
-          // Additional check: should have some content (not just whitespace/symbols)
-          const meaningfulChars = text.replace(/[^\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7afa-zA-Z0-9]/g, "");
-          if (meaningfulChars.length < 3) {
-            return false;
-          }
-
-          // Likely a heading if passed all checks
-          return true;
-        };
-
-        // Check if this paragraph could be a heading
-        const couldBeHeading = isPotentialHeading(trimmedContent, node);
-
         // Add block reference marker at the end of content (same line)
-        if (couldBeHeading) {
-          // Strip existing heading markers to avoid duplication like "### ## title"
-          const headingText = trimmedContent.replace(/^#{1,6}\s+/, '');
-          return `\n\n### ${headingText} ^${blockId}\n\n`;
-        }
         return `\n\n${trimmedContent} ^${blockId}\n\n`;
       },
     },
@@ -639,6 +563,86 @@ export function epubChaptersToPages(chapters: EpubChapter[]): PdfPage[] {
     text: `=== ${chapter.title} ===\n\n${chapter.content}`,
     tokenCount: chapter.tokenCount,
   }));
+}
+
+/**
+ * EPUB-specific token threshold for splitting large pages at chapter boundaries.
+ *
+ * EPUB spine may have few entries with the entire book packed into one HTML file.
+ * When a single page exceeds this token count, we split it at heading markers
+ * (# / ## / 第X章 / Chapter N / Part X) to improve chapter granularity.
+ *
+ * Not tied to `maxTokenNumEachNode` (which defaults to 100K) because we want
+ * finer-grained splitting for EPUB regardless of LLM tree depth config.
+ */
+export const EPUB_SPLIT_THRESHOLD = 4500;
+
+/** Heading-based split boundary (kept as a positive lookahead) */
+const EPUB_SPLIT_PATTERN = /\n(?=# |## |第[一二三四五六七八九十百千]+章\s|Chapter\s+\d+|CHAPTER\s+\d+|Part\s+[IVX\d]+)/;
+
+/** Heading prefix used to extract a title from a split part */
+const EPUB_TITLE_PREFIX = /^(?:# |## |第[一二三四五六七八九十百千]+章\s*|Chapter\s+\d+\s*|CHAPTER\s+\d+\s*|Part\s+[IVX\d]+\s*)/;
+
+export interface SplitEpubResult {
+  pages: PdfPage[];
+  chapters: EpubChapter[];
+  /** true if any page was actually split; false if input was below threshold */
+  split: boolean;
+}
+
+/**
+ * Split large EPUB pages by markdown heading markers.
+ *
+ * Pages with `tokenCount <= EPUB_SPLIT_THRESHOLD` are passed through unchanged.
+ * Pages exceeding the threshold are split at heading boundaries; if a page
+ * cannot be split (no heading markers), it is kept as a single page.
+ *
+ * Pure function — does not mutate input arrays.
+ */
+export function splitLargeEpubPages(
+  pages: PdfPage[],
+  chapters: EpubChapter[],
+): SplitEpubResult {
+  const needsSplit = pages.some((p) => p.tokenCount > EPUB_SPLIT_THRESHOLD);
+  if (!needsSplit) {
+    return { pages, chapters, split: false };
+  }
+
+  const newPages: PdfPage[] = [];
+  const newChapters: EpubChapter[] = [];
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const chapter = chapters[i];
+
+    if (page.tokenCount <= EPUB_SPLIT_THRESHOLD) {
+      newPages.push(page);
+      newChapters.push(chapter);
+      continue;
+    }
+
+    const parts = page.text.split(EPUB_SPLIT_PATTERN).filter((p) => p.trim());
+    if (parts.length <= 1) {
+      newPages.push(page);
+      newChapters.push(chapter);
+      continue;
+    }
+
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j].trim();
+      if (!part) continue;
+      const titleMatch = part.match(EPUB_TITLE_PREFIX);
+      const title = titleMatch
+        ? titleMatch[0].trim()
+        : j === 0
+          ? chapter.title
+          : `Section ${newChapters.length + 1}`;
+      newPages.push({ text: part, tokenCount: countTokens(part) });
+      newChapters.push({ ...chapter, title, content: part });
+    }
+  }
+
+  return { pages: newPages, chapters: newChapters, split: true };
 }
 
 /**

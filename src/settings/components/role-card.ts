@@ -10,6 +10,7 @@ import { ROLE_CAPABILITY } from '../../config/ai-roles';
 import type { AIRoleConfig } from '../../config/ai-roles';
 import { PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName } from '../../config/providers';
 import { getRoleConfig, setRoleConfig } from '../helpers';
+import { error as logError } from '../../utils/logger.js';
 
 interface RoleCardContext {
   plugin: DeepReaderPlugin;
@@ -203,10 +204,16 @@ export function createRoleContent(
         if (modelTextComp) modelSetting.controlEl.appendChild(modelTextComp.inputEl);
       };
 
-      const onModelChange = (model: string) => {
+      const onModelChange = async (model: string) => {
         setRoleConfig(roles, role, { model });
         ctx.plugin.resetFrontendAgent();
-        ctx.plugin.saveSettings();
+        try {
+          await ctx.plugin.saveSettings();
+        } catch (e) {
+          logError(`[DeepReader] saveSettings 失败 (role=${role}, model=${model}):`, e);
+          new Notice('保存设置失败，请重试', 3000);
+          return;
+        }
         updateSummary(summaryEl, role, ctx.plugin);
       };
 

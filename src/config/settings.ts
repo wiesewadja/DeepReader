@@ -26,8 +26,8 @@ function defaultProviders(): Record<string, AIProviderAccount> {
 	/** 新版默认的角色配置 */
 	function defaultRoles(): AIRoles {
 		return {
-			chat:        { provider: 'xiaomi', model: 'mimo-v2.5' },
-			router:      { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' },
+			chat:        { provider: 'xiaomi', model: 'mimo-v2.5-pro' },
+			router:      { provider: 'xiaomi', model: 'mimo-v2.5' },
 			pageindex:   { provider: 'xiaomi', model: 'mimo-v2.5' },
 			proposition: { provider: 'xiaomi', model: 'mimo-v2.5' },
 			embedding:   { provider: 'siliconflow', model: 'Qwen/Qwen3-Embedding-0.6B' },

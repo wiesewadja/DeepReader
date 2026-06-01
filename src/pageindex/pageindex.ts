@@ -5,7 +5,7 @@
 
 import { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
 import type { MineruPdfResult } from "./parsers/mineru";
-import { parseEpub, getEpubName, epubChaptersToPages } from "./parsers/epub";
+import { parseEpub, getEpubName, epubChaptersToPages, splitLargeEpubPages, EPUB_SPLIT_THRESHOLD } from "./parsers/epub";
 import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
 import { checkToc, checkTitleAppearanceInStartConcurrent, type TocOptions } from "./core/toc";
 import {
@@ -710,13 +710,26 @@ export class PageIndex {
     const epubInfo = await parseEpub(input);
     const pages = epubChaptersToPages(epubInfo.chapters);
     const docName = epubInfo.title;
-    const endPhysicalIndex = pages.length;
-    const totalChapters = epubInfo.chapters.length;
 
     // EPUB text is already structured HTML→Markdown, skip LLM formatting
     const epubOptions = { ...this.options, formatMarkdown: false as const };
 
     piLog(`[EPUB Mode] Extracted ${pages.length} chapters`);
+
+    // EPUB spine may have few entries with entire book in one HTML file.
+    // Split large pages by markdown heading markers for proper chapter granularity.
+    const splitResult = splitLargeEpubPages(pages, epubInfo.chapters);
+    if (splitResult.split) {
+      piLog(`[EPUB Mode] Splitting large pages (threshold: ${EPUB_SPLIT_THRESHOLD} tokens)...`);
+      piLog(`[EPUB Mode] Page count: ${pages.length} → ${splitResult.pages.length}`);
+      pages.length = 0;
+      pages.push(...splitResult.pages);
+      epubInfo.chapters.length = 0;
+      epubInfo.chapters.push(...splitResult.chapters);
+    }
+
+    const endPhysicalIndex = pages.length;
+    const totalChapters = epubInfo.chapters.length;
 
     this.reportProgress({
       stage: "parsing_structure",
@@ -783,6 +796,13 @@ export class PageIndex {
     // Step 3: Generate document description
     let docDescription: string | undefined;
     if (epubOptions.addDocDescription) {
+      this.reportProgress({
+        stage: "generating_description",
+        message: "生成文档描述...",
+        step: 3,
+        totalSteps: 3,
+        percent: 96,
+      });
       piLog("Generating document description...");
       docDescription = await generateDocDescription(tree, epubOptions);
     }
