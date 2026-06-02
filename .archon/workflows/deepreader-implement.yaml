@@ -10,7 +10,7 @@ description: |
     archon workflow run deepreader-implement --branch feat/<name>
 
 provider: pi
-model: glm-5.1
+model: glm/glm-5.1
 interactive: true
 worktree:
   enabled: true
