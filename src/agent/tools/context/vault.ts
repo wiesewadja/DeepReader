@@ -1,9 +1,10 @@
-import type { App } from 'obsidian';
+import type { App, PluginManifest } from 'obsidian';
 import type { DeepPDFSettings } from '../../../config/settings.js';
 
 export interface DeepReaderPluginInterface {
   settings: DeepPDFSettings;
   saveSettings(): Promise<void>;
+  manifest: PluginManifest;
   profileBuilder?: {
     readSummary(): Promise<string | null>;
     readMeta(): Promise<import('../../../services/profile-builder.js').ProfileMeta | null>;

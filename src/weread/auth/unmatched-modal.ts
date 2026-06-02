@@ -16,6 +16,7 @@ export class UnmatchedModal extends Modal {
 	constructor(
 		app: App,
 		private unmatchedBooks: UnmatchedBook[],
+		private pluginId: string = 'deepreader',
 		onLink?: (bookId: string, filePath: string) => Promise<void>,
 	) {
 		super(app);
@@ -96,7 +97,7 @@ export class UnmatchedModal extends Modal {
 			async onChooseItem(item: string): Promise<void> {
 				try {
 					// 写入映射关系到 weread mapping
-					const plugin = (this.app as any).plugins?.plugins?.['deepreader'] as any;
+					const plugin = (this.app as any).plugins?.plugins?.[this.parent.pluginId] as any;
 					if (plugin?.wereadMapping) {
 						plugin.wereadMapping[book.bookId] = item;
 						await plugin.saveSettings?.();

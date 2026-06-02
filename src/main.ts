@@ -65,7 +65,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 const setting = (this.app as any).setting;
                 if (setting) {
                     setting.open();
-                    setting.openTabById('deepreader');
+                    setting.openTabById(this.manifest.id);
                 }
             });
         }
@@ -221,7 +221,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 const setting = (this.app as any).setting;
                 if (setting) {
                     setting.open();
-                    setting.openTabById('deepreader');
+                    setting.openTabById(this.manifest.id);
                 }
             },
         });
@@ -530,7 +530,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 // 顶栏书名始终跟随用户通过书库选中的书籍
             },
         };
-        this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks);
+        this.readingModeService = new ReadingModeService(this.app, readingModeCallbacks, this.manifest.id);
 
         // 应用自动阅读模式设置
         this.readingModeService.setAutoEnable(this.settings.autoEnableReadingMode);
@@ -586,7 +586,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                         const svc2 = this.getWereadService();
                         const stats = await svc2.getSyncStats();
                         if (stats.unmatchedBooks.length > 0) {
-                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                            new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
                 } catch (e: any) {
@@ -630,7 +630,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                         const svc2 = this.getWereadService();
                         const stats = await svc2.getSyncStats();
                         if (stats.unmatchedBooks.length > 0) {
-                            new UnmatchedModal(this.app, stats.unmatchedBooks).open();
+                            new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
                 } catch (e: any) {
@@ -679,7 +679,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
      * 分离 Markdown 文件的 frontmatter 和 body
      * @returns { frontmatter, body, hasFrontmatter } 如果没有 frontmatter，frontmatter 为空字符串
      */
-    private getWereadService(): WereadService {
+    public getWereadService(): WereadService {
         if (!this.wereadService) {
             this.wereadService = new WereadService({
                 settings: this.settings,

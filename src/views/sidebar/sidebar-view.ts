@@ -487,11 +487,17 @@ export class SidebarView extends ItemView {
                 const setting = (this.app as any).setting;
                 if (setting) {
                     setting.open();
-                    setting.openTabById('deepreader');
+                    setting.openTabById(this.plugin.manifest.id);
                 }
             },
-            onCoverClick: () => {
-                // Phase 1: 阅读进度移除，保留空操作
+            onCoverClick: async () => {
+                const service = this.plugin.readingModeService;
+                if (!service) return;
+                const opened = await service.openMostRecent();
+                if (!opened) {
+                    // 无最近阅读历史：fallback 到书库
+                    this.bookMgr.openLibrary();
+                }
             },
             onExitBooklist: () => this.exitBooklist(),
             onBooklistRename: (newName: string) => {
