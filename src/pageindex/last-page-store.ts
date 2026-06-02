@@ -42,17 +42,17 @@ export interface LastPagesState {
 /**
  * 加载所有已记录的页码 + 最近阅读时间
  *
- * 优先从 current plugin 目录加载；不存在时回退到 daily 目录（向后兼容，
- * 方便 dev 从 daily 共享 vault 切换时读取已有数据）。
+ * 仅从当前 pluginId 路径加载，文件不存在时返回空 maps。
+ * 注意：dev/daily 共享 vault 时不会跨读对方数据（避免污染）。
  * @returns 文件不存在/解析失败时返回空 maps
  */
-export async function loadLastPages(vaultPath: string, pluginId?: string): Promise<LastPagesState> {
+export async function loadLastPages(vaultPath: string, pluginId: string): Promise<LastPagesState> {
 	const empty: LastPagesState = {
 		pages: new Map(),
 		lastReadAt: new Map(),
 	};
 	if (!vaultPath) return empty;
-	const id = pluginId || 'deepreader';
+	const id = pluginId;
 	const paths = pageindexPaths(id);
 	const filePath = paths.lastPages(vaultPath);
 	let parsed: any;
@@ -100,7 +100,7 @@ export async function saveLastPages(
 	vaultPath: string,
 	pages: Map<string, number>,
 	lastReadAt: Map<string, number>,
-	pluginId?: string
+	pluginId: string
 ): Promise<void> {
 	if (!vaultPath) return;
 
@@ -120,7 +120,7 @@ export async function saveLastPages(
 		for (const k of toRemove) delete merged[k];
 	}
 
-	const id = pluginId || 'deepreader';
+	const id = pluginId;
 	const paths = pageindexPaths(id);
 	const filePath = paths.lastPages(vaultPath);
 	const data: LastPagesData = {

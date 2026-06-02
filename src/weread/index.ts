@@ -21,7 +21,7 @@ interface WereadPluginHost {
 	settings: DeepPDFSettings;
 	app: App;
 	saveSettings(): Promise<void>;
-	pluginDir: string;  // '.obsidian/plugins/<pluginId>'，dev='deepreader-dev'，daily='deepreader'
+	pluginId: string;  // dev='deepreader-dev'，daily='deepreader'
 }
 
 export class WereadService {
@@ -58,7 +58,7 @@ export class WereadService {
 				wereadNoteCountThreshold: this.settings.wereadNoteCountThreshold ?? 0,
 			},
 			adapter: this.getVaultAdapter(),
-			pluginDir: this.plugin.pluginDir,
+			pluginId: this.plugin.pluginId,
 		};
 	}
 
@@ -98,7 +98,7 @@ export class WereadService {
 		}
 
 		const adapter = this.getVaultAdapter();
-		const stateManager = new SyncStateManager(adapter, this.plugin.pluginDir);
+		const stateManager = new SyncStateManager(adapter, this.plugin.pluginId);
 		await stateManager.ensureDir();
 
 		const syncState = await stateManager.loadSyncState();
@@ -180,7 +180,7 @@ export class WereadService {
 		unmatchedBooks: { bookId: string; title: string; author: string }[];
 	}> {
 		const adapter = this.getVaultAdapter();
-		const stateManager = new SyncStateManager(adapter, this.plugin.pluginDir);
+		const stateManager = new SyncStateManager(adapter, this.plugin.pluginId);
 		const syncState = await stateManager.loadSyncState();
 		const mapping = await stateManager.loadMapping();
 
@@ -202,7 +202,7 @@ export class WereadService {
 	private async updateMappingStats(): Promise<void> {
 		try {
 			const adapter = this.getVaultAdapter();
-			const stateManager = new SyncStateManager(adapter, this.plugin.pluginDir);
+			const stateManager = new SyncStateManager(adapter, this.plugin.pluginId);
 
 			const syncState = await stateManager.loadSyncState();
 			const mapping = await stateManager.loadMapping();
@@ -222,7 +222,7 @@ export class WereadService {
 	private async importHighlightsToChapters(): Promise<void> {
 		try {
 			const adapter = this.getVaultAdapter();
-			const stateManager = new SyncStateManager(adapter, this.plugin.pluginDir);
+			const stateManager = new SyncStateManager(adapter, this.plugin.pluginId);
 			const syncState = await stateManager.loadSyncState();
 			const mapping = await stateManager.loadMapping();
 

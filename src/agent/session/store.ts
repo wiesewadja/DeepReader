@@ -54,7 +54,7 @@ export class SessionStore implements ISessionStore {
 	/** 索引缓存 */
 	private indexCache: SessionsIndex | null = null;
 
-	constructor(app: App, config?: SessionStoreConfig, pluginId: string = 'deepreader') {
+	constructor(app: App, config: SessionStoreConfig | undefined, pluginId: string) {
 		this.app = app;
 		this.config = { ...DEFAULT_SESSION_STORE_CONFIG, ...config };
 		const base = `.obsidian/plugins/${pluginId}/sessions`;

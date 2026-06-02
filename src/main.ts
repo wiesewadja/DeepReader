@@ -38,6 +38,11 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
     profileBuilder?: import('./services/profile-builder').ProfileBuilder;
     private highlightService: HighlightService | null = null;
 
+    /** 派生：dev='deepreader-dev'，daily='deepreader' — 来自 manifest.json */
+    get pluginId(): string {
+        return this.manifest.id;
+    }
+
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
 
@@ -689,7 +694,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 settings: this.settings,
                 app: this.app,
                 saveSettings: async () => { await this.saveSettings(); },
-                pluginDir: `.obsidian/plugins/${this.manifest.id}`,
+                pluginId: this.pluginId,
             });
         }
         return this.wereadService;

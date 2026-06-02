@@ -16,7 +16,7 @@ export class UnmatchedModal extends Modal {
 	constructor(
 		app: App,
 		private unmatchedBooks: UnmatchedBook[],
-		private pluginId: string = 'deepreader',
+		private pluginId: string,
 		onLink?: (bookId: string, filePath: string) => Promise<void>,
 	) {
 		super(app);

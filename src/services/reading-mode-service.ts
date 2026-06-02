@@ -60,10 +60,10 @@ export class ReadingModeService {
     private _saveTimer: ReturnType<typeof setTimeout> | null = null;
     private _pluginId: string;
 
-    constructor(app: App, callbacks?: ReadingModeCallbacks, pluginId?: string) {
+    constructor(app: App, callbacks: ReadingModeCallbacks | undefined, pluginId: string) {
         this.app = app;
         this.callbacks = callbacks || null;
-        this._pluginId = pluginId || 'deepreader';
+        this._pluginId = pluginId;
     }
 
     /**

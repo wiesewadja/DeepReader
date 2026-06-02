@@ -1,10 +1,10 @@
 /**
- * 同步状态持久化 — 通过 VaultAdapter 读写 <pluginDir>/pageindex/weread/ 下的 JSON 文件
+ * 同步状态持久化 — 通过 VaultAdapter 读写 <pluginId>/pageindex/weread/ 下的 JSON 文件
  *
  * VaultAdapter 是 Obsidian 的 FileSystemAdapter（Node.js 环境下的适配器），
  * 提供 read/write/exists/mkdir 等 Promise 方法。
  *
- * 注：pluginDir 由调用方传入（dev='deepreader-dev'，daily='deepreader'），
+ * 注：pluginId 由调用方传入（dev='deepreader-dev'，daily='deepreader'），
  *     保证 dev/daily 部署到不同物理目录时数据落在各自 plugin 目录下。
  */
 
@@ -27,7 +27,7 @@ export interface VaultAdapter {
 /**
  * 同步状态管理器
  *
- * 封装 <pluginDir>/pageindex/weread/ 下所有 JSON 文件的读写操作。
+ * 封装 <pluginId> 路径下的 pageindex/weread/ 目录：.obsidian/plugins/<pluginId>/pageindex/weread/
  * 所有路径均为 vault-relative。
  */
 export class SyncStateManager {
@@ -35,9 +35,9 @@ export class SyncStateManager {
 
 	constructor(
 		private readonly adapter: VaultAdapter,
-		pluginDir: string = 'deepreader',
+		pluginId: string,
 	) {
-		this.wereadDir = `${pluginDir}/pageindex/weread`;
+		this.wereadDir = `.obsidian/plugins/${pluginId}/pageindex/weread`;
 	}
 
 	/** 确保 .pageindex/weread/ 目录存在 */

@@ -38,7 +38,7 @@ export interface SyncEngineHost {
 		wereadNoteCountThreshold: number;
 	};
 	adapter: VaultAdapter;
-	pluginDir: string;  // '.obsidian/plugins/<pluginId>'
+	pluginId: string;  // dev='deepreader-dev'，daily='deepreader'
 }
 
 export class WereadSyncEngine {
@@ -122,7 +122,7 @@ export class WereadSyncEngine {
 		logger.info(`拉取到 ${remoteBooks.length} 本书籍`);
 
 		// ── Phase 2: 差异检测 ──────────────────────────────
-		const stateManager = new SyncStateManager(this.adapter, this.host.pluginDir);
+		const stateManager = new SyncStateManager(this.adapter, this.host.pluginId);
 		await stateManager.ensureDir();
 		const syncState = await stateManager.loadSyncState();
 		const toSync = filterBooksToSync(remoteBooks, syncState, forceFullSync ? { force: true } : undefined);

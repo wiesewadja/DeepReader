@@ -4,10 +4,11 @@
  * 所有 pageindex 相关路径通过本模块导出，
  * 确保存储位置（.obsidian/plugins/<pluginId>/pageindex/）在唯一一处定义。
  *
- * 调用方式：
- * - main.ts 在 onload 中调用 setActivePluginId(this.manifest.id)
- * - 之后 PAGEINDEX_DIR 自动跟随当前 pluginId 变化（dev/daily 隔离）
- * - 也可直接使用 pageindexPaths(pluginId) 系列函数（静态、显式）
+ * ⚠️ PAGEINDEX_DIR 是动态值：
+ * - 运行期值由 setActivePluginId(pluginId) 决定（main.ts onload 中调用）
+ * - 使用 Proxy 拦截 toString/valueOf/Symbol.toPrimitive，使 `${PAGEINDEX_DIR}/...` 拼接自动跟随
+ * - **不要**解构为 const 变量、**不要**用 typeof 判定、**不要**用 === 字符串比较
+ * - 新代码建议直接用 pageindexPaths(pluginId) 或 getPageindexDir() 显式函数
  */
 
 import { join } from 'node:path';
@@ -20,19 +21,36 @@ export function setActivePluginId(pluginId: string): void {
 	_activePluginId = pluginId;
 }
 
-/** pageindex 存储 base dir（vault 相对路径，用于 app.vault.adapter）
- *  使用 String 对象 + toString/valueOf 拦截，使所有模板字符串拼接自动使用当前 pluginId。
- *  导出类型标记为 string 以保持调用方零改动；运行时为 String 对象，字符串拼接/toString() 自动跟随。
+/** 读取当前 pageindex 相对路径（vault-relative） */
+export function getPageindexDir(): string {
+	return `.obsidian/plugins/${_activePluginId}/pageindex`;
+}
+
+/**
+ * pageindex 存储 base dir（vault 相对路径，用于 app.vault.adapter）
+ *
+ * 实现机制：Proxy 拦截 toString/valueOf/Symbol.toPrimitive，返回当前 pluginId 对应的路径。
+ * 这样所有 `${PAGEINDEX_DIR}/xxx` 模板字符串拼接无需改写，自动跟随当前 pluginId。
+ *
+ * 声明类型为 string 是为了保持现有 87 个调用点零改动；运行时是 Proxy 对象。
  */
-export const PAGEINDEX_DIR: string = new String('') as unknown as string;
-(PAGEINDEX_DIR as any).toString = () => `.obsidian/plugins/${_activePluginId}/pageindex`;
-(PAGEINDEX_DIR as any).valueOf = () => `.obsidian/plugins/${_activePluginId}/pageindex`;
+export const PAGEINDEX_DIR: string = new Proxy({} as object, {
+	get(_target, prop) {
+		if (prop === 'toString' || prop === 'valueOf') {
+			return () => getPageindexDir();
+		}
+		if (typeof prop === 'symbol' && prop === Symbol.toPrimitive) {
+			return () => getPageindexDir();
+		}
+		return undefined;
+	},
+}) as unknown as string;
 
 /** 旧路径（仅迁移时使用） */
 export const LEGACY_PAGEINDEX_DIR = '.pageindex';
 
 /**
- * 为指定 pluginId 计算 pageindex 路径族
+ * 为指定 pluginId 计算 pageindex 路径族（静态、显式）
  * - dev 部署（pluginId="deepreader-dev"）→ .obsidian/plugins/deepreader-dev/pageindex
  * - daily 部署（pluginId="deepreader"）→ .obsidian/plugins/deepreader/pageindex
  */
@@ -52,23 +70,23 @@ export function pageindexPaths(pluginId: string) {
 // ── fs 绝对路径（用于 node:fs 操作） ──
 
 export function getPageindexRoot(vaultPath: string): string {
-	return join(vaultPath, String(PAGEINDEX_DIR));
+	return join(vaultPath, getPageindexDir());
 }
 
 export function getBookDir(vaultPath: string, bookId: string): string {
-	return join(vaultPath, String(PAGEINDEX_DIR), bookId);
+	return join(vaultPath, getPageindexDir(), bookId);
 }
 
 export function getBookFile(vaultPath: string, bookId: string, filename: string): string {
-	return join(vaultPath, String(PAGEINDEX_DIR), bookId, filename);
+	return join(vaultPath, getPageindexDir(), bookId, filename);
 }
 
 export function getCatalogPath(vaultPath: string): string {
-	return join(vaultPath, String(PAGEINDEX_DIR), 'catalog.json');
+	return join(vaultPath, getPageindexDir(), 'catalog.json');
 }
 
 export function getLastPagesPath(vaultPath: string): string {
-	return join(vaultPath, String(PAGEINDEX_DIR), 'last-pages.json');
+	return join(vaultPath, getPageindexDir(), 'last-pages.json');
 }
 
 // ── adapter 相对路径通过 PAGEINDEX_DIR 常量拼接 ──
