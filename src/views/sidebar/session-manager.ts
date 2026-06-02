@@ -76,7 +76,7 @@ export class SessionManager {
 
 	private async initializeSessionStore(): Promise<void> {
 		if (this._sessionStore) return;
-		this._sessionStore = new SessionStore(this.host.app);
+		this._sessionStore = new SessionStore(this.host.app, undefined, this.host.plugin.manifest.id);
 		log('[DeepPDF] SessionStore 初始化完成');
 	}
 

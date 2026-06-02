@@ -51,6 +51,7 @@ export class TTSController {
 			llmBaseUrl: fastConfig.baseUrl,
 			llmModel: fastConfig.model,
 			app: this.host.app,
+			pluginId: this.host.plugin.manifest.id,
 			onStateChange: (messageId: string | null, state: TTSPlayState) => {
 				if (messageId) {
 					this.host.messageList?.updateTTSState(messageId, state);

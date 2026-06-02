@@ -40,6 +40,7 @@ export function renderWereadSection(
 								settings: plugin.settings,
 								app: plugin.app,
 								saveSettings: async () => { await plugin.saveSettings(); },
+								pluginDir: `.obsidian/plugins/${plugin.manifest.id}`,
 							};
 							const svc = new WereadService(host);
 							const valid = await svc.validateApiKey();
@@ -87,6 +88,7 @@ export function renderWereadSection(
 								settings: plugin.settings,
 								app: plugin.app,
 								saveSettings: async () => { await plugin.saveSettings(); },
+								pluginDir: `.obsidian/plugins/${plugin.manifest.id}`,
 							};
 							const svc = new WereadService(host);
 							const result = await svc.setApiKey(key);
@@ -141,6 +143,7 @@ export function renderWereadSection(
 				settings: plugin.settings,
 				app: plugin.app,
 				saveSettings: async () => { await plugin.saveSettings(); },
+				pluginDir: `.obsidian/plugins/${plugin.manifest.id}`,
 			};
 			const svc = new WereadService(host);
 			const result = await svc.sync(force, {
@@ -378,6 +381,7 @@ async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<
 			settings: plugin.settings,
 			app: plugin.app,
 			saveSettings: async () => { await plugin.saveSettings(); },
+			pluginDir: `.obsidian/plugins/${plugin.manifest.id}`,
 		};
 		const svc = new WereadService(host);
 		const stats = await svc.getSyncStats();

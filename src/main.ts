@@ -8,6 +8,7 @@ import type { QuoteMetadata } from './components/chat-input/chat-input.js';
 import { HighlightService } from './services/highlight-service.js';
 import { FrontendAgent } from './agent/index.js';
 import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
+import { setActivePluginId } from './pageindex/paths.js';
 import { needsMigration, migrateSettings } from './config/settings-migrator.js';
 import { PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
 import { isBuiltInProvider } from './config/ai-roles.js';
@@ -58,6 +59,9 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
     async onload() {
         await this.loadSettings();
+
+        // 设置 pageindex 路径模块的当前 pluginId（dev/daily 隔离）
+        setActivePluginId(this.manifest.id);
 
         // 首次安装：自动打开设置页面引导配置
         if (!this.settings.setupComplete) {
@@ -685,6 +689,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 settings: this.settings,
                 app: this.app,
                 saveSettings: async () => { await this.saveSettings(); },
+                pluginDir: `.obsidian/plugins/${this.manifest.id}`,
             });
         }
         return this.wereadService;

@@ -26,6 +26,8 @@ export interface TTSServiceConfig {
     vaultPath?: string;
     /** Obsidian App instance for mobile-compatible file access */
     app?: App;
+    /** 插件 ID（用于隔离 dev/daily 缓存目录） */
+    pluginId?: string;
     onStateChange?: (messageId: string | null, state: TTSPlayState) => void;
     /** TTS 播放进度回调：0-100 的进度值，每 200ms 更新一次 */
     onProgressChange?: (messageId: string, progress: number) => void;
@@ -163,10 +165,12 @@ export class TTSService {
         this.onStateChange = config.onStateChange;
         this.onProgressChange = config.onProgressChange;
         this.app = config.app;
+        const pluginId = config.pluginId || 'deepreader';
         if (config.vaultPath || config.app) {
+            const rel = `.obsidian/plugins/${pluginId}/tts-cache`;
             this.diskCacheDir = config.app
-                ? '.obsidian/plugins/deepreader/tts-cache'
-                : path.join(config.vaultPath!, '.obsidian/plugins/deepreader/tts-cache');
+                ? rel
+                : path.join(config.vaultPath!, rel);
         }
     }
 

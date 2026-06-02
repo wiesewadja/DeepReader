@@ -10,6 +10,26 @@ import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
 const SYNC_TIMEOUT = 60_000;
 const POLL_INTERVAL = 3_000;
 
+// 在 vault 适配器中读取 sync-state.json 的辅助 eval（带 try/catch 单次容错）
+function readSyncStateEval() {
+	return `(() => {
+		const adapter = app.vault.adapter;
+		const pluginDir = '.obsidian/plugins/' + (app.plugins.plugins['deepreader-dev']?.manifest?.id || 'deepreader');
+		const syncPath = pluginDir + '/pageindex/weread/sync-state.json';
+		return (async () => {
+			const exists = await adapter.exists(syncPath);
+			if (!exists) return { lastSyncTime: null, syncedBookCount: 0, exists: false };
+			const raw = await adapter.read(syncPath);
+			const state = JSON.parse(raw);
+			return {
+				lastSyncTime: state.lastSyncTime || null,
+				syncedBookCount: Object.keys(state.syncedBooks || {}).length,
+				exists: true,
+			};
+		})();
+	})()`;
+}
+
 export default {
 	id: 'weread-sync',
 	name: '微信读书同步',
@@ -36,19 +56,7 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				syncStateBefore = await evalObsidian(`(() => {
-					const adapter = app.vault.adapter;
-					return (async () => {
-						const exists = await adapter.exists('.pageindex/weread/sync-state.json');
-						if (!exists) return { lastSyncTime: null, syncedBookCount: 0 };
-						const raw = await adapter.read('.pageindex/weread/sync-state.json');
-						const state = JSON.parse(raw);
-						return {
-							lastSyncTime: state.lastSyncTime || null,
-							syncedBookCount: Object.keys(state.syncedBooks || {}).length,
-						};
-					})();
-				})()`, { timeout: 10_000 });
+				syncStateBefore = await evalObsidian(readSyncStateEval(), { timeout: 10_000 });
 				pass('同步前状态', Date.now() - t0, `lastSync=${syncStateBefore?.lastSyncTime}, books=${syncStateBefore?.syncedBookCount}`);
 			} catch (e) {
 				fail('同步前状态', Date.now() - t0, e);
@@ -77,19 +85,10 @@ export default {
 				const deadline = Date.now() + SYNC_TIMEOUT;
 				while (Date.now() < deadline) {
 					try {
-						const state = await evalObsidian(`(() => {
-						const adapter = app.vault.adapter;
-						return (async () => {
-							const exists = await adapter.exists('.pageindex/weread/sync-state.json');
-							if (!exists) return { lastSyncTime: null };
-							const raw = await adapter.read('.pageindex/weread/sync-state.json');
-							const s = JSON.parse(raw);
-							return { lastSyncTime: s.lastSyncTime || null };
-						})();
-					})()`, { timeout: 10_000 });
+						const state = await evalObsidian(readSyncStateEval(), { timeout: 10_000 });
 
-					if (state?.lastSyncTime && state.lastSyncTime !== syncStateBefore?.lastSyncTime) {
-						syncCompleted = true;
+						if (state?.lastSyncTime && state.lastSyncTime !== syncStateBefore?.lastSyncTime) {
+							syncCompleted = true;
 							break;
 						}
 					} catch {
@@ -113,8 +112,10 @@ export default {
 			try {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
+					const pluginDir = '.obsidian/plugins/' + (app.plugins.plugins['deepreader-dev']?.manifest?.id || 'deepreader');
+					const syncPath = pluginDir + '/pageindex/weread/sync-state.json';
 					return (async () => {
-						const stateRaw = await adapter.read('.pageindex/weread/sync-state.json');
+						const stateRaw = await adapter.read(syncPath);
 						const state = JSON.parse(stateRaw);
 						const syncedCount = Object.keys(state.syncedBooks || {}).length;
 

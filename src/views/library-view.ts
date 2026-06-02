@@ -1045,7 +1045,7 @@ export class LibraryView extends ItemView {
         try {
             // 从 syncState 获取 cover URL，重新下载微信读书封面
             const adapter = this.app.vault.adapter as any;
-            const stateManager = new SyncStateManager(adapter);
+            const stateManager = new SyncStateManager(adapter, this.options.plugin?.manifest?.id || 'deepreader');
             const syncState = await stateManager.loadSyncState();
             const entry = syncState.syncedBooks[indexId];
             if (entry?.cover) {
@@ -2053,7 +2053,7 @@ export class LibraryView extends ItemView {
                     if (index.fileType === 'weread') {
                         const adapter = (this.app as any).vault?.adapter;
                         if (adapter) {
-                            const stateManager = new SyncStateManager(adapter);
+                            const stateManager = new SyncStateManager(adapter, this.options.plugin?.manifest?.id || 'deepreader');
                             await stateManager.excludeBook(index.id);
                         }
                     }

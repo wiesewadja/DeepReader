@@ -22,9 +22,6 @@ import {
 	DEFAULT_SESSION_STORE_CONFIG,
 } from './types.js';
 
-/** Sessions 目录路径 */
-const SESSIONS_DIR = '.obsidian/plugins/deepreader/sessions';
-
 /** 索引文件名 */
 const INDEX_FILE = 'index.json';
 
@@ -57,11 +54,12 @@ export class SessionStore implements ISessionStore {
 	/** 索引缓存 */
 	private indexCache: SessionsIndex | null = null;
 
-	constructor(app: App, config?: SessionStoreConfig) {
+	constructor(app: App, config?: SessionStoreConfig, pluginId: string = 'deepreader') {
 		this.app = app;
 		this.config = { ...DEFAULT_SESSION_STORE_CONFIG, ...config };
-		this.sessionsDir = normalizePath(SESSIONS_DIR);
-		this.indexPath = normalizePath(`${SESSIONS_DIR}/${INDEX_FILE}`);
+		const base = `.obsidian/plugins/${pluginId}/sessions`;
+		this.sessionsDir = normalizePath(base);
+		this.indexPath = normalizePath(`${base}/${INDEX_FILE}`);
 	}
 
 	/**
@@ -79,14 +77,14 @@ export class SessionStore implements ISessionStore {
 	 * 获取会话文件路径
 	 */
 	private getSessionPath(sessionId: string): string {
-		return normalizePath(`${SESSIONS_DIR}/${sessionId}.jsonl`);
+		return normalizePath(`${this.sessionsDir}/${sessionId}.jsonl`);
 	}
 
 	/**
 	 * 获取语音文件目录路径（与会话文件同级）
 	 */
 	private getVoiceDir(sessionId: string): string {
-		return normalizePath(`${SESSIONS_DIR}/voice/${sessionId}`);
+		return normalizePath(`${this.sessionsDir}/voice/${sessionId}`);
 	}
 
 	/**
@@ -102,7 +100,7 @@ export class SessionStore implements ISessionStore {
 	 */
 	async saveVoiceAudio(sessionId: string, messageId: string, audioBuffer: ArrayBuffer): Promise<string> {
 		const voiceDir = this.getVoiceDir(sessionId);
-		
+
 		// 确保语音目录存在
 		const dirExists = await this.app.vault.adapter.exists(voiceDir);
 		if (!dirExists) {
@@ -125,7 +123,7 @@ export class SessionStore implements ISessionStore {
 	 */
 	async loadVoiceAudio(sessionId: string, relativePath: string): Promise<ArrayBuffer | null> {
 		try {
-			const fullPath = normalizePath(`${SESSIONS_DIR}/${relativePath}`);
+			const fullPath = normalizePath(`${this.sessionsDir}/${relativePath}`);
 			const exists = await this.app.vault.adapter.exists(fullPath);
 			if (!exists) {
 				log(`[SessionStore] 语音文件不存在: ${relativePath}`);

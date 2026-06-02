@@ -30,6 +30,8 @@ export class PagePaginator {
 	private _isActive = false;
 	private _currentPage = 1;
 	private _totalPages = 0;
+	/** 待恢复页码：在 _totalPages 稳定后应用（避免 setCurrentPage 被 clamp 到 1） */
+	private _pendingRestorePage: number | null = null;
 
 	private leftBtn: HTMLElement | null = null;
 	private rightBtn: HTMLElement | null = null;
@@ -67,9 +69,30 @@ export class PagePaginator {
 
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */
 	setCurrentPage(page: number): void {
+		// 布局未稳定（_totalPages=0 或 _totalPages < page）时延后应用
+		// 避免 setCurrentPage 在 paginateAndShow 早期被 clamp 到 1
+		if (this._totalPages === 0 || page > this._totalPages) {
+			this._pendingRestorePage = page;
+			return;
+		}
 		const next = Math.max(1, Math.min(page, this._totalPages));
 		if (next === this._currentPage) return;
 		this._currentPage = next;
+		this.updateControls();
+		this.options.onPageChange?.(this._currentPage, this._totalPages);
+	}
+
+	/**
+	 * 应用待恢复的页码（在 _totalPages 稳定后由 calculatePages / handleResize / verifyTimer 触发）
+	 * 解决 paginateAndShow 早期 setCurrentPage(2) 被 clamp 到 1 的问题
+	 */
+	private applyPendingRestorePage(): void {
+		if (this._pendingRestorePage == null) return;
+		const target = this._pendingRestorePage;
+		if (this._totalPages === 0 || target > this._totalPages) return;
+		this._pendingRestorePage = null;
+		if (target === this._currentPage) return;
+		this._currentPage = target;
 		this.updateControls();
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
 	}
@@ -98,6 +121,7 @@ export class PagePaginator {
 				this._totalPages = newTotal;
 				this.updateControls();
 			}
+			this.applyPendingRestorePage();
 		}, 600);
 
 		serviceLog(`[PagePaginator] CSS Column Pagination activated`);
@@ -172,6 +196,7 @@ export class PagePaginator {
 		this.teardownMutationObserver();
 		this._totalPages = 0;
 		this._currentPage = 1;
+		this._pendingRestorePage = null;
 		serviceLog('[PagePaginator] destroyed');
 	}
 
@@ -189,6 +214,7 @@ export class PagePaginator {
 				this.options.onPageChange?.(this._currentPage, this._totalPages);
 				this.updateCurrentPageFromScroll();
 				this.updateControls();
+				this.applyPendingRestorePage();
 			});
 		});
 	}
@@ -457,6 +483,7 @@ export class PagePaginator {
 
 				// 更新底部控件
 				this.updateControls();
+				this.applyPendingRestorePage();
 			});
 		});
 	}
@@ -477,6 +504,7 @@ export class PagePaginator {
 					serviceLog(`[PagePaginator] DOM 变化校正: ${this._totalPages} → ${newTotal} 页`);
 					this._totalPages = newTotal;
 					this.updateControls();
+					this.applyPendingRestorePage();
 				}
 			}, 200);
 		});
