@@ -1648,10 +1648,41 @@ export class LibraryView extends ItemView {
 			return;
 		}
 
+		// Ready 状态的书籍：直接进入阅读模式（首章），由 reading-mode-service 自动恢复页码
+		if (READY_STATUSES.has(rawStatus)) {
+			const firstChapter = this.getFirstChapterFile(index.pdf_name);
+			if (firstChapter) {
+				const leaf = this.app.workspace.getLeaf(false);
+				await leaf.openFile(firstChapter);
+				// 同步通知 sidebar 更新选中状态（避免停留在 generalChatMode 等旧状态）
+				this.options.onIndexChange?.(index.id);
+				return;
+			}
+			// 找不到首章时 fallback 到原详情流
+		}
+
 		this.selectedIndexId = index.id;
 		this.selectedBooklistId = null;
 		this.renderGrid();
 		this.options.onIndexChange?.(index.id);
+	}
+
+	/**
+	 * 获取书籍的首个章节文件（按数字序），找不到则 null
+	 * 注意：numeric localeCompare 适用于 "1-xxx.md", "2-xxx.md" 风格命名；
+	 * 纯中文章节名（如 "第一章.md"）排序可能不符合预期，会 fallback 到原详情流。
+	 */
+	private getFirstChapterFile(pdfName: string): TFile | null {
+		const folderName = this.getDisplayName(pdfName);
+		const folderPath = `DeepReader/${folderName}`;
+		const folder = this.app.vault.getAbstractFileByPath(folderPath);
+		if (!folder) return null;
+
+		const files = this.app.vault.getMarkdownFiles();
+		const chapterFiles = files
+			.filter(f => f.path.startsWith(folderPath + '/'))
+			.sort((a, b) => a.basename.localeCompare(b.basename, undefined, { numeric: true }));
+		return chapterFiles[0] || null;
 	}
 
     private checkBookChaptersExist(pdfName: string): boolean {

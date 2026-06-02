@@ -25,6 +25,11 @@ export interface WereadBookItem {
 	reviewCommentCount: number;
 	noteCount: number;
 	bookmarkCount: number;
+	/**
+	 * @deprecated 由 WeRead 网关 API 返回，但内部已统一规范化为 `WereadBook.progress` 字段（line 189）。
+	 * 保留仅为记录 API 契约，c0da03bc 后前端无任何消费方（见 docs/test-strategies/reading-progress-anti-regression.md §5.3）。
+	 * 新代码不应读取此字段；如有需要请从 `WereadBook.progress` 取值。
+	 */
 	readingProgress?: number;
 	markedStatus?: number;
 	sort: number;
