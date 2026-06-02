@@ -10,8 +10,10 @@ Obsidian 深度阅读插件。AI 伴读 + PDF/EPUB 索引 + 微信读书同步�
 
 ## 架构
 - UI: 纯 TypeScript + DOM（无框架）
-- AI: LangGraph（四层） + FrontendAgent
-- 索引: PageIndex（Vector + BM25）
+- AI: LangGraph（四层认知引擎） + FrontendAgent
+- 索引: PageIndex（Vector + BM25 混合搜索）
+- 阅读: ReadingModeService + PagePaginator（分页+章节导航+位置恢复）
+- 记忆: 用户画像 + 长期记忆（MEMORY.md → 渐进理解用户）
 - 构建: esbuild（CJS）
 
 ## 运行时
@@ -22,7 +24,8 @@ Obsidian 深度阅读插件。AI 伴读 + PDF/EPUB 索引 + 微信读书同步�
 
 ## 约束
 - 日志用 `utils/logger.ts`
-- 文件路径通过 Vault API，不硬编码
+- 数据文件用 `fs`（原子写入），用户内容用 Vault API
+- 插件 ID 用 `this.manifest.id`，不硬编码 `'deepreader'`
 - Agent 唯入口: `FrontendAgent.chat()` → `runGraphEngine()` → `stream()`
 - 不自提交代码，提交前告知用户
 
