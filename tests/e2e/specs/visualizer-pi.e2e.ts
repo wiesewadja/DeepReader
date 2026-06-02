@@ -23,13 +23,13 @@ function injectSettings(): void {
   if (!apiKey) {
     try {
       const realData = JSON.parse(fs.readFileSync(
-        path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+        path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json'), 'utf-8'
       ));
       apiKey = realData.providers?.deepseek?.apiKey || realData.deepseekApiKey || '';
     } catch { /* ignore */ }
   }
 
-  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader/data.json');
+  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json');
   const existing = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
   const merged = {
     ...existing,
@@ -130,7 +130,7 @@ async function getLastAIMessage(): Promise<string> {
 }
 
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   await browser.executeObsidian(({ app }, _bookId: string) => {
@@ -158,7 +158,7 @@ describe('VISUALIZER → PI E2E', function () {
 
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     expect(loaded).toBe(true);
   });
@@ -170,7 +170,7 @@ describe('VISUALIZER → PI E2E', function () {
   it('PI 路径：图表请求应走 VISUALIZER → PI 生成图表文件', async function () {
     // 先检查 settings
     const settings = await browser.executeObsidian(({ app }) => {
-      const plugin = app.plugins?.plugins?.['deepreader'];
+      const plugin = app.plugins?.plugins?.['deepreader-dev'];
       return {
         piEnabled: plugin?.settings?.piEnabled,
         hasApiKey: !!plugin?.settings?.deepseekApiKey,
@@ -219,7 +219,7 @@ describe('VISUALIZER → PI E2E', function () {
   it.skip('Fallback 路径：无 PI 时应回退到 ExcalidrawAutomate', async function () {
     // 临时禁用 PI
     await browser.executeObsidian(({ app }) => {
-      const plugin = app.plugins?.plugins?.['deepreader'];
+      const plugin = app.plugins?.plugins?.['deepreader-dev'];
       if (plugin?.settings) {
         plugin.settings.piEnabled = false;
       }
@@ -239,7 +239,7 @@ describe('VISUALIZER → PI E2E', function () {
 
     // 恢复 PI 设置
     await browser.executeObsidian(({ app }) => {
-      const plugin = app.plugins?.plugins?.['deepreader'];
+      const plugin = app.plugins?.plugins?.['deepreader-dev'];
       if (plugin?.settings) {
         plugin.settings.piEnabled = true;
       }

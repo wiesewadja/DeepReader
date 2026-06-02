@@ -22,7 +22,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const svc = app.plugins.plugins["deepreader"]?.readingModeService;
+			const svc = app.plugins.plugins["deepreader-dev"]?.readingModeService;
 			if (!svc) return { exists: false };
 
 			// 高亮通过 callback 链路: ReadingModeService → HighlightService

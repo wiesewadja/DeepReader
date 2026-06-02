@@ -40,7 +40,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const s = plugin.settings;
 					const pageindexRole = s?.roles?.pageindex;
 					const provider = s?.providers?.[pageindexRole?.provider];
@@ -76,8 +76,8 @@ export default {
 					const adapter = app.vault.adapter;
 					return (async () => {
 						const exists = await adapter.exists('.pageindex/${bookId}/book-meta.json');
-						// pageindex dir is under .obsidian/plugins/deepreader/
-						const piPath = '.obsidian/plugins/deepreader/pageindex';
+						// pageindex dir is under .obsidian/plugins/deepreader-dev/
+						const piPath = '.obsidian/plugins/deepreader-dev/pageindex';
 						const files = await adapter.list(piPath);
 						const hasBookDir = files.folders?.includes(piPath + '/' + ${JSON.stringify(bookId)}) ||
 							files.folders?.some(f => f.includes(${JSON.stringify(bookId)}));

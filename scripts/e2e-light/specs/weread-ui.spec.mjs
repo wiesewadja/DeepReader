@@ -35,7 +35,7 @@ export default {
 				await evalObsidian(`
 					(() => {
 						app.setting.open();
-						app.setting.openTabById('deepreader');
+						app.setting.openTabById('deepreader-dev');
 						return true;
 					})()
 				`);
@@ -76,7 +76,7 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				await evalObsidian('app.commands.executeCommandById("deepreader:open-library")');
+				await evalObsidian('app.commands.executeCommandById("deepreader-dev:open-library")');
 				await new Promise(r => setTimeout(r, 1000));
 
 				const hasLibrary = await countBySelector('.deeppdf-library-view');
@@ -95,10 +95,14 @@ export default {
 			const t0 = Date.now();
 			try {
 				const info = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
+					// 触发 lazy init（wereadService 是按需创建的）
+					if (typeof plugin.getWereadService === 'function') {
+						try { plugin.getWereadService(); } catch (e) {}
+					}
 					const hasWereadService = !!plugin.wereadService;
 					const hasRematch = typeof plugin.wereadService?.rematch === 'function';
-					const cmds = app.commands.listCommands().filter(c => c.id?.startsWith('deepreader:weread'));
+					const cmds = app.commands.listCommands().filter(c => c.id?.startsWith('deepreader-dev:weread'));
 					const cmdIds = cmds.map(c => c.id);
 					return { hasWereadService, hasRematch, wereadCommands: cmdIds };
 				})()`);

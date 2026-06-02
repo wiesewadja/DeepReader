@@ -19,7 +19,7 @@ import * as path from 'path';
 // 测试配置
 const VAULT_PATH = path.resolve(__dirname, '../../test-vault');
 const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
-const PLUGIN_ID = 'deepreader';
+const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_SHORT = 30_000;   // 30s 简单对话
 const TIMEOUT_MEDIUM = 60_000;  // 60s 检视阅读
 const TIMEOUT_LONG = 120_000;   // 120s 分析阅读
@@ -32,7 +32,7 @@ function getApiKey(): string {
   // 尝试从真实 vault 的 data.json 读取
   try {
     const realData = JSON.parse(fs.readFileSync(
-      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json'), 'utf-8'
     ));
     return realData.deepseekApiKey || '';
   } catch {
@@ -49,7 +49,7 @@ function getLangSmithConfig(): { apiKey: string; project: string } {
 
   try {
     const realData = JSON.parse(fs.readFileSync(
-      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json'), 'utf-8'
     ));
     return {
       apiKey: realData.langsmithApiKey || '',
@@ -114,7 +114,7 @@ function wait(ms: number): Promise<void> {
  * 辅助函数：写入插件设置到 data.json（仅用于 Obsidian 启动前）
  */
 function writePluginSettings(settings: Record<string, unknown>): void {
-  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader/data.json');
+  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json');
   const existing = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
   const merged = { ...existing, ...settings };
   fs.writeFileSync(dataPath, JSON.stringify(merged, null, 2), 'utf-8');
@@ -390,7 +390,7 @@ async function getPluginLogs(): Promise<string[]> {
  */
 async function openSidebarWithBook(bookId: string): Promise<void> {
   // 打开 sidebar
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   // 验证 sidebar 已打开
@@ -434,7 +434,7 @@ describe('LangGraph Agent E2E', function () {
   // 在所有测试之前，验证插件已加载
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     console.log('[E2E] Plugin loaded:', loaded);
     console.log('[E2E] Vault path:', VAULT_PATH);

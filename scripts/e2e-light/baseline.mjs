@@ -63,7 +63,7 @@ export async function checkRequires(requires = {}) {
 	if (Object.keys(settings).length > 0) {
 		const keys = Object.keys(settings);
 		const settingResults = await evalObsidian(`(() => {
-			const s = app.plugins.plugins["deepreader"]?.settings;
+			const s = app.plugins.plugins["deepreader-dev"]?.settings;
 			return ${JSON.stringify(keys)}.map(k => !!s?.[k]);
 		})()`);
 

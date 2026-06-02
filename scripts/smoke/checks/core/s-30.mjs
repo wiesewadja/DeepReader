@@ -6,7 +6,7 @@
  * 断言:  piManager 存在 + getState()/isReady() 可调用
  * 失败信息:  piManager 状态详情
  *
- * 真实路径:  app.plugins.plugins['deepreader'].frontendAgent.piManager
+ * 真实路径:  app.plugins.plugins['deepreader-dev'].frontendAgent.piManager
  * 注意: piManager 和其内部属性都是 private，只使用公共 getter 方法
  */
 
@@ -21,7 +21,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const pm = app.plugins.plugins["deepreader"]?.frontendAgent?.piManager;
+			const pm = app.plugins.plugins["deepreader-dev"]?.frontendAgent?.piManager;
 			if (!pm) return { exists: false };
 
 			// 只使用公共 API，不访问 private 字段

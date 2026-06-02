@@ -30,7 +30,7 @@ const VAULT_PATH = path.resolve(
 const BOOK_DIR = path.join(VAULT_PATH, "DeepReader", "如何阅读一本书");
 const TEST_BOOK_DIR = getBookDir(VAULT_PATH, "459d6dbc");
 const DATA_JSON = path.join(
-  VAULT_PATH, ".obsidian", "plugins", "deepreader", "data.json",
+  VAULT_PATH, ".obsidian", "plugins", "deepreader-dev", "data.json",
 );
 
 // 硅基流动 OpenAI 兼容 API base URL

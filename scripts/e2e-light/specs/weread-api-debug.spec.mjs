@@ -51,7 +51,7 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const result = await evalObsidian(`app.plugins.plugins['deepreader']?.settings?.wereadApiKey`);
+				const result = await evalObsidian(`app.plugins.plugins['deepreader-dev']?.settings?.wereadApiKey`);
 				if (!result) {
 					return {
 						status: 'skip',

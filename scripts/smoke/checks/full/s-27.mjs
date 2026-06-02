@@ -12,11 +12,11 @@
 import { evalObsidian } from '../../lib/obsidian-cli.mjs';
 
 const WEREAD_COMMANDS = [
-	'deepreader:weread-login',
-	'deepreader:weread-sync',
-	'deepreader:weread-sync-force',
-	'deepreader:weread-logout',
-	'deepreader:weread-rematch',
+	'deepreader-dev:weread-login',
+	'deepreader-dev:weread-sync',
+	'deepreader-dev:weread-sync-force',
+	'deepreader-dev:weread-logout',
+	'deepreader-dev:weread-rematch',
 ];
 
 export default {
@@ -39,7 +39,7 @@ export default {
 
 		// 2. 验证 WereadService 能被实例化（通过 getWereadService 路径）
 		const hasService = await evalObsidian(`(() => {
-			const plugin = app.plugins.plugins["deepreader"];
+			const plugin = app.plugins.plugins["deepreader-dev"];
 			// wereadService 是 private，esbuild 编译后可访问
 			// 也可通过调用 weread-login 命令触发 getWereadService()
 			const svc = plugin.wereadService || plugin.getWereadService?.();

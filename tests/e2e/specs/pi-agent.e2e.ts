@@ -21,7 +21,7 @@ import * as path from 'path';
 // 测试配置（项目根目录的 test-vault）
 const VAULT_PATH = path.resolve(__dirname, '../../../test-vault');
 const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
-const PLUGIN_ID = 'deepreader';
+const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_MEDIUM = 90_000;   // 90s PI skill 执行
 const TIMEOUT_LONG = 150_000;    // 150s 复杂 skill
 
@@ -33,7 +33,7 @@ function getApiKey(): string {
   // 尝试从 test-vault data.json 读取
   try {
     const testData = JSON.parse(fs.readFileSync(
-      path.join(VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+      path.join(VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json'), 'utf-8'
     ));
     return testData.providers?.deepseek?.apiKey || '';
   } catch {
@@ -82,7 +82,7 @@ function wait(ms: number): Promise<void> {
  * 辅助函数：写入插件设置到 data.json（仅用于 Obsidian 启动前）
  */
 function writePluginSettings(settings: Record<string, unknown>): void {
-  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader/data.json');
+  const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json');
   const existing = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
   const merged = { ...existing, ...settings };
   fs.writeFileSync(dataPath, JSON.stringify(merged, null, 2), 'utf-8');
@@ -187,7 +187,7 @@ async function getLastAIMessage(): Promise<string> {
  * 辅助函数：打开 sidebar 并选择指定书籍
  */
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   const topbarBtn = await $(SELECTORS.topbarBtn);
@@ -273,7 +273,7 @@ describe('PI Agent E2E', function () {
   // 预检查：验证插件已加载
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     console.log('[E2E-PI] Plugin loaded:', loaded);
     console.log('[E2E-PI] Vault path:', VAULT_PATH);
@@ -373,14 +373,14 @@ describe('PI Agent E2E', function () {
   // ===== Test 5: PI 未启用时不应触发技能 =====
   it('PI 未启用时：应回退到普通 LLM 处理', async function () {
     // 临时禁用 PI
-    const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader/data.json');
+    const dataPath = path.join(VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json');
     const existingData = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
     fs.writeFileSync(dataPath, JSON.stringify({ ...existingData, piEnabled: false }), 'utf-8');
 
     // 需要重启插件或刷新设置...由于难以动态刷新，简单跳过此测试
     // 改为验证 piEnabled 设置存在
     const piEnabled = await browser.executeObsidian(({ app }) => {
-      const plugin = app.plugins?.plugins?.['deepreader'];
+      const plugin = app.plugins?.plugins?.['deepreader-dev'];
       return plugin?.settings?.piEnabled ?? false;
     });
     console.log('[E2E-PI] piEnabled setting:', piEnabled);

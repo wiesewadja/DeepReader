@@ -37,9 +37,9 @@ export default {
 
 		// 检查前置条件：LLM API Key + 已索引书籍
 		const precheck = await evalObsidian(`(() => {
-			const s = app.plugins.plugins["deepreader"]?.settings;
+			const s = app.plugins.plugins["deepreader-dev"]?.settings;
 			const hasApiKey = !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey);
-			const agent = app.plugins.plugins["deepreader"]?.frontendAgent;
+			const agent = app.plugins.plugins["deepreader-dev"]?.frontendAgent;
 			return { hasApiKey, hasAgent: !!agent };
 		})()`);
 
@@ -54,7 +54,7 @@ export default {
 		async function sendAndPoll(question, bookId, timeoutMs) {
 			// 打开 sidebar + 选书 + 清空历史 + 发消息
 			await evalObsidian(`(() => {
-				app.commands.executeCommandById("deepreader:open-deepreader-sidebar");
+				app.commands.executeCommandById("deepreader-dev:open-deepreader-sidebar");
 				return true;
 			})()`);
 			await new Promise(r => setTimeout(r, 1000));
@@ -125,7 +125,7 @@ export default {
 			const t0 = Date.now();
 			const hasNaval = await evalObsidian(`(() => {
 				const adapter = app.vault.adapter;
-				return adapter.exists('.obsidian/plugins/deepreader/pageindex/${BOOKS.naval.bookId}/book-meta.json');
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.naval.bookId}/book-meta.json');
 			})()`);
 			if (!hasNaval) {
 				steps.push({ name: 'depth=1 检视阅读', status: 'skip', duration: 0,
@@ -150,7 +150,7 @@ export default {
 			const t0 = Date.now();
 			const hasNaval = await evalObsidian(`(() => {
 				const adapter = app.vault.adapter;
-				return adapter.exists('.obsidian/plugins/deepreader/pageindex/${BOOKS.naval.bookId}/book-meta.json');
+				return adapter.exists('.obsidian/plugins/deepreader-dev/pageindex/${BOOKS.naval.bookId}/book-meta.json');
 			})()`);
 			if (!hasNaval) {
 				steps.push({ name: 'depth=2 分析阅读', status: 'skip', duration: 0,

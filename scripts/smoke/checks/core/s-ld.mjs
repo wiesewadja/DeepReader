@@ -21,7 +21,7 @@ export default {
 	timeout: 5_000,
 
 	async run({ log }) {
-		const r = await exec('plugin', ['id=deepreader']);
+		const r = await exec('plugin', ['id=deepreader-dev']);
 		if (r.code !== 0) {
 			throw new Error(`plugin 命令失败: ${r.stderr || r.stdout}`);
 		}

@@ -22,8 +22,8 @@ const execFileAsync = promisify(execFile);
 /** Obsidian CLI 可执行文件名（PATH 中查找） */
 const OBSIDIAN_CLI = process.env.OBSIDIAN_CLI || 'obsidian';
 
-/** 插件 ID（来自 manifest.json） */
-export const PLUGIN_ID = 'deepreader';
+/** 插件 ID（dev 部署使用 -dev 后缀，避免与 daily 冲突） */
+export const PLUGIN_ID = 'deepreader-dev';
 
 /**
  * 执行 obsidian CLI 子命令

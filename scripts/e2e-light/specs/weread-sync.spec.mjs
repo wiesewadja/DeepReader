@@ -60,7 +60,7 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				await evalObsidian(`app.commands.executeCommandById("deepreader:weread-sync")`);
+				await evalObsidian(`app.commands.executeCommandById("deepreader-dev:weread-sync")`);
 				await new Promise(r => setTimeout(r, 2000));
 				pass('触发同步', Date.now() - t0);
 			} catch (e) {

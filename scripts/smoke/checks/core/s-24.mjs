@@ -2,7 +2,7 @@
  * S-24: Quick Setup
  *
  * 锚定: F-24 Quick Setup 向导
- * 触发:  executeCommandById('deepreader:open-quick-setup')
+ * 触发:  executeCommandById('deepreader-dev:open-quick-setup')
  * 断言:  Settings 面板打开 + .deeppdf-quick-setup 卡片存在
  *
  * 注意: open-quick-setup 实际是 open Settings + openTabById('deepreader')，
@@ -32,7 +32,7 @@ export default {
 			await evalObsidian('app.setting.close()').catch(() => {});
 			await new Promise(r => setTimeout(r, 300));
 
-			await evalObsidian('app.commands.executeCommandById("deepreader:open-quick-setup")');
+			await evalObsidian('app.commands.executeCommandById("deepreader-dev:open-quick-setup")');
 			await new Promise(r => setTimeout(r, 1500));
 
 			const counts = await Promise.all(SELECTORS.map(s => countBySelector(s)));

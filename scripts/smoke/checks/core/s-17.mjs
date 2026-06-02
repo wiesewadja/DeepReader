@@ -50,7 +50,7 @@ export default {
 		log?.info?.('正在激活阅读模式...');
 		await evalObsidian(`
 			(() => {
-				const svc = app.plugins.plugins['deepreader'].readingModeService;
+				const svc = app.plugins.plugins['deepreader-dev'].readingModeService;
 				svc.deactivate();
 				const leaf = app.workspace.getLeavesOfType('markdown')[0];
 				if (leaf) app.workspace.setActiveLeaf(leaf);

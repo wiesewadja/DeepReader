@@ -136,7 +136,7 @@ export function secondLatestRunId(vaultPath, bookTitle) {
  * @param {string} bookTitle 标题（模糊匹配）
  */
 export function findBookInCatalog(vaultPath, bookTitle) {
-  const catalogPath = join(vaultPath, '.obsidian', 'plugins', 'deepreader', 'pageindex', 'catalog.json');
+  const catalogPath = join(vaultPath, '.obsidian', 'plugins', 'deepreader-dev', 'pageindex', 'catalog.json');
   const catalog = readJSONOrDie(catalogPath, `catalog.json 不存在，请先索引书籍: ${catalogPath}`);
 
   const books = catalog.books || catalog;

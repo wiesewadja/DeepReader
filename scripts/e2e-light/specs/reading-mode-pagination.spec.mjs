@@ -34,7 +34,7 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const loaded = await evalObsidian('!!app.plugins?.plugins?.["deepreader"]');
+				const loaded = await evalObsidian('!!app.plugins?.plugins?.["deepreader-dev"]');
 				if (!loaded) throw new Error('plugin not loaded');
 				pass('plugin loaded', Date.now() - t0);
 			} catch (e) {
@@ -48,7 +48,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const svc = app.plugins.plugins["deepreader"].readingModeService;
+					const svc = app.plugins.plugins["deepreader-dev"].readingModeService;
 					svc.deactivate();
 					const leaf = app.workspace.getLeavesOfType("markdown")[0];
 					app.workspace.setActiveLeaf(leaf);
@@ -72,8 +72,8 @@ export default {
 			const t0 = Date.now();
 			try {
 				const state = await evalObsidian(`JSON.stringify({
-					hasPaginator: !!app.plugins.plugins["deepreader"].readingModeService.paginator,
-					style: app.plugins.plugins["deepreader"].readingModeService.style,
+					hasPaginator: !!app.plugins.plugins["deepreader-dev"].readingModeService.paginator,
+					style: app.plugins.plugins["deepreader-dev"].readingModeService.style,
 				})`);
 				const obj = JSON.parse(state);
 				if (!obj.hasPaginator) throw new Error('paginator not initialized');
@@ -112,12 +112,12 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const total = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.getTotalPages()');
+				const total = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getTotalPages()');
 				if (total < 2) throw new Error(`总页数 < 2 (total=${total})，无法验证翻页`);
-				const before = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.getCurrentPage()');
-				await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.setCurrentPage(2)');
+				const before = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getCurrentPage()');
+				await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.setCurrentPage(2)');
 				await new Promise(r => setTimeout(r, 300));
-				const after = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.getCurrentPage()');
+				const after = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getCurrentPage()');
 				if (after !== 2) throw new Error(`setCurrentPage(2) failed: before=${before} after=${after}`);
 				pass('navigate to next page', Date.now() - t0, `${before} -> ${after} (totalPages=${total})`);
 			} catch (e) {
@@ -129,10 +129,10 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				const before = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.getCurrentPage()');
-				await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.setCurrentPage(1)');
+				const before = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getCurrentPage()');
+				await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.setCurrentPage(1)');
 				await new Promise(r => setTimeout(r, 300));
-				const after = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.paginator.getCurrentPage()');
+				const after = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.paginator.getCurrentPage()');
 				if (after !== 1) throw new Error(`setCurrentPage(1) failed: before=${before} after=${after}`);
 				pass('navigate to previous page', Date.now() - t0, `${before} -> ${after}`);
 			} catch (e) {
@@ -144,9 +144,9 @@ export default {
 		{
 			const t0 = Date.now();
 			try {
-				await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.deactivate()');
+				await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.deactivate()');
 				await new Promise(r => setTimeout(r, 500));
-				const isActive = await evalObsidian('app.plugins.plugins["deepreader"].readingModeService.isActive');
+				const isActive = await evalObsidian('app.plugins.plugins["deepreader-dev"].readingModeService.isActive');
 				if (isActive) throw new Error('deactivate did not work');
 				pass('deactivate reading mode', Date.now() - t0);
 			} catch (e) {

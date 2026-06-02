@@ -19,7 +19,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
         // 配置插件使用豆包模型（通过 custom provider）
         // E2E 环境资源有限，关闭摘要生成避免 Obsidian 崩溃
         await browser.executeObsidian(async ({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (plugin) {
                 plugin.settings.llmProvider = 'custom';
                 plugin.settings.customApiKey = '84660ce6-68f8-4426-82f6-9da665680aad';
@@ -35,7 +35,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
 
     it('should have DeepReader plugin loaded with sidebar view', async function () {
         const pluginLoaded = await browser.executeObsidian(({ app }) => {
-            return !!app.plugins?.plugins?.['deepreader'];
+            return !!app.plugins?.plugins?.['deepreader-dev'];
         });
         expect(pluginLoaded).toBe(true);
     });
@@ -55,7 +55,7 @@ describe('PDF Index & Export — 用户真实操作流程', function () {
 
         // ── 2a: 通过侧边栏打开书库 Tab 页（和用户点击按钮一样） ──
         const opened = await browser.executeObsidian(async ({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const leaves = app.workspace.getLeavesOfType('deeppdf-sidebar-view');

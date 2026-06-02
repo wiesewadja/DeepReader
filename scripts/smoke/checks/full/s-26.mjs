@@ -27,7 +27,7 @@ export default {
 	async run({ log }) {
 		const keys = Object.keys(EXPECTED_SETTINGS);
 		const result = await evalObsidian(`(() => {
-			const s = app.plugins.plugins["deepreader"]?.settings;
+			const s = app.plugins.plugins["deepreader-dev"]?.settings;
 			return ${JSON.stringify(keys)}.map(k => typeof s?.[k]);
 		})()`);
 

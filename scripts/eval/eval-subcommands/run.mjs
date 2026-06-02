@@ -29,7 +29,7 @@ export async function main({ bookTitle, vaultPath }) {
   const goldenData = readJSON(golden);
   const { bookId } = goldenData;
 
-  const indexDir = resolve(vault, '.obsidian', 'plugins', 'deepreader', 'pageindex', bookId);
+  const indexDir = resolve(vault, '.obsidian', 'plugins', 'deepreader-dev', 'pageindex', bookId);
   if (!existsSync(indexDir)) {
     throw new EvalError(`书籍索引数据不存在: ${indexDir}\n请先索引书籍 "${bookTitle}"`, 'ENOENT');
   }

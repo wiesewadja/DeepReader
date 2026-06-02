@@ -33,7 +33,7 @@ if (!existsSync(systemPromptPath)) {
 const systemPrompt = readFileSync(systemPromptPath, 'utf-8');
 
 // ── 查找 bookId ──
-const catalogPath = join(VAULT, '.obsidian', 'plugins', 'deepreader', 'pageindex', 'catalog.json');
+const catalogPath = join(VAULT, '.obsidian', 'plugins', 'deepreader-dev', 'pageindex', 'catalog.json');
 if (!existsSync(catalogPath)) {
   console.error('catalog.json 不存在，请先索引书籍');
   process.exit(1);

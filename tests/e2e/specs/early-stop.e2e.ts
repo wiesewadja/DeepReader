@@ -16,7 +16,7 @@ import * as path from 'path';
 // 测试配置
 const VAULT_PATH = path.resolve(__dirname, '../../test-vault');
 const REAL_VAULT_PATH = '/Users/lizhao/workspace/deepreadertest';
-const PLUGIN_ID = 'deepreader';
+const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_SHORT = 30_000;
 const TIMEOUT_MEDIUM = 60_000;
 const TIMEOUT_LONG = 120_000;
@@ -154,7 +154,7 @@ async function getPluginLogs(): Promise<string[]> {
  * 辅助函数：打开 sidebar 并选择指定书籍
  */
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   const topbarBtn = await $(SELECTORS.topbarBtn);
@@ -250,7 +250,7 @@ function getLangSmithConfig(): { apiKey: string; project: string } {
 
   try {
     const realData = JSON.parse(fs.readFileSync(
-      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader/data.json'), 'utf-8'
+      path.join(REAL_VAULT_PATH, '.obsidian/plugins/deepreader-dev/data.json'), 'utf-8'
     ));
     return {
       apiKey: realData.langsmithApiKey || '',
@@ -365,7 +365,7 @@ describe('早停机制 E2E', function () {
 
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     console.log('[E2E] Plugin loaded:', loaded);
     expect(loaded).toBe(true);

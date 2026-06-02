@@ -22,7 +22,7 @@ describe('EPUB 完整用户流程 E2E 测试', function () {
 
     it('should have DeepReader plugin loaded', async function () {
         const loaded = await browser.executeObsidian(({ app }) => {
-            return !!app.plugins?.plugins?.['deepreader'];
+            return !!app.plugins?.plugins?.['deepreader-dev'];
         });
         expect(loaded).toBe(true);
     });
@@ -39,7 +39,7 @@ describe('EPUB 完整用户流程 E2E 测试', function () {
     // ══════════════════════════════════════
 
     it('should open DeepReader sidebar via command', async function () {
-        await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+        await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
 
         const topbarBtn = await browser.$('.deeppdf-topbar-action-btn');
         await topbarBtn.waitForExist({ timeout: 8000 });
@@ -143,7 +143,7 @@ describe('EPUB 完整用户流程 E2E 测试', function () {
             console.log('[E2E] No exported files found, using API fallback');
             const exportResult = await browser.executeObsidian(
                 async ({ app }, epubPath: string, outputDir: string) => {
-                    const plugin = app.plugins?.plugins?.['deepreader'] as any;
+                    const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
                     const adapter = app.vault.adapter as any;
                     const basePath = adapter.getBasePath?.() || '';
                     const fullPath = `${basePath}/${epubPath}`;

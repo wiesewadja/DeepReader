@@ -23,7 +23,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
         // 配置 MinerU Token
         await browser.executeObsidian(async ({ app }, token: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (plugin) {
                 if (!plugin.settings.providers) plugin.settings.providers = {};
                 if (!plugin.settings.providers.mineru) plugin.settings.providers.mineru = {};
@@ -37,7 +37,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should parse PDF and return structured result', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;
@@ -66,7 +66,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should detect headings from MinerU output', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;
@@ -116,7 +116,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should have paragraph breaks (empty lines between paragraphs)', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;
@@ -152,7 +152,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should correctly extract Chinese text without garbled characters', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;
@@ -196,7 +196,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should extract PDF outline as TreeNode[]', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;
@@ -247,7 +247,7 @@ describe('PDF Parsing — MinerU 文本提取质量验证', function () {
 
     it('should have valid page data with pageNumber, text, and tokenCount', async function () {
         const result = await browser.executeObsidian(async ({ app }, pdfName: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             if (!plugin) return { error: 'Plugin not loaded' };
 
             const adapter = app.vault.adapter as any;

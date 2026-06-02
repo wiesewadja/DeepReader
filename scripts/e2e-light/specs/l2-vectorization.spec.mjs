@@ -37,7 +37,7 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const chunksPath = '.obsidian/plugins/deepreader/pageindex/${BOOK_ID}/chunks.jsonl';
+						const chunksPath = '.obsidian/plugins/deepreader-dev/pageindex/${BOOK_ID}/chunks.jsonl';
 						const exists = await adapter.exists(chunksPath);
 						if (!exists) return { exists: false };
 
@@ -89,7 +89,7 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const tracePath = '.obsidian/plugins/deepreader/pageindex/traces/${BOOK_ID}.json';
+						const tracePath = '.obsidian/plugins/deepreader-dev/pageindex/traces/${BOOK_ID}.json';
 						const exists = await adapter.exists(tracePath);
 						if (!exists) return { exists: false };
 

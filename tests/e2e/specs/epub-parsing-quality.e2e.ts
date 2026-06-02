@@ -47,7 +47,7 @@ describe('EPUB 解析质量 E2E 测试', function () {
 
   it('should have DeepReader plugin loaded', async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     expect(loaded).toBe(true);
   });
@@ -63,7 +63,7 @@ describe('EPUB 解析质量 E2E 测试', function () {
 
   it('parseEpub: should NOT have fragmented ### headings', async function () {
     const chapters = await browser.executeObsidian(async ({ app }, epubPath: string) => {
-      const plugin = app.plugins?.plugins?.['deepreader'] as any;
+      const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
       const bp = (app.vault.adapter as any).getBasePath?.() || '';
       const fullPath = `${bp}/DeepReader/assets/${epubPath}`;
       const info = await plugin.api.parseEpub(fullPath);
@@ -110,7 +110,7 @@ describe('EPUB 解析质量 E2E 测试', function () {
 
     // 2. Run indexBook (no LLM)
     const result = await browser.executeObsidian(async ({ app }, epubPath: string) => {
-      const plugin = app.plugins?.plugins?.['deepreader'] as any;
+      const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
       const s = plugin.settings;
       const bp = (app.vault.adapter as any).getBasePath?.() || '';
       const fullPath = `${bp}/DeepReader/assets/${epubPath}`;

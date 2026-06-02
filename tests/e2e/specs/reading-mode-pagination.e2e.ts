@@ -11,7 +11,7 @@ describe('阅读模式分页 E2E 测试', function () {
 
     it('should have DeepReader plugin loaded', async function () {
         const loaded = await browser.executeObsidian(({ app }) => {
-            return !!app.plugins?.plugins?.['deepreader'];
+            return !!app.plugins?.plugins?.['deepreader-dev'];
         });
         expect(loaded).toBe(true);
     });
@@ -57,7 +57,7 @@ describe('阅读模式分页 E2E 测试', function () {
 
         // 检查分页器是否激活
         const paginatorState = await browser.executeObsidian(({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const service = plugin?.readingModeService;
             if (!service) return { error: 'no service' };
             const paginator = service.getPaginator?.();
@@ -143,7 +143,7 @@ describe('阅读模式分页 E2E 测试', function () {
 
         // 获取当前页码
         const beforePage = await browser.executeObsidian(({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const paginator = plugin?.readingModeService?.getPaginator?.();
             return paginator?.getCurrentPage?.() ?? -1;
         });
@@ -154,7 +154,7 @@ describe('阅读模式分页 E2E 测试', function () {
         await browser.pause(500);
 
         const afterPage = await browser.executeObsidian(({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const paginator = plugin?.readingModeService?.getPaginator?.();
             return paginator?.getCurrentPage?.() ?? -1;
         });

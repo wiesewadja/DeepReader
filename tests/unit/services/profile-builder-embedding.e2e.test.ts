@@ -25,7 +25,7 @@ const VAULT_PATH = path.resolve(
 	process.env.VAULT_PATH || path.join(process.cwd(), 'test-vault'),
 );
 const DATA_JSON = path.join(
-	VAULT_PATH, '.obsidian', 'plugins', 'deepreader', 'data.json',
+	VAULT_PATH, '.obsidian', 'plugins', 'deepreader-dev', 'data.json',
 );
 const SILICONFLOW_BASE = 'https://api.siliconflow.cn/v1';
 

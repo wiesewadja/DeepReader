@@ -19,7 +19,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const s = app.plugins.plugins["deepreader"]?.settings;
+			const s = app.plugins.plugins["deepreader-dev"]?.settings;
 			if (!s) return null;
 			return {
 				apiKey: typeof s.langsmithApiKey,

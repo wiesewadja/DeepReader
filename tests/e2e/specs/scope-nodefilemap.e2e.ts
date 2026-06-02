@@ -14,7 +14,7 @@ import * as path from 'path';
 
 // 测试配置
 const VAULT_PATH = path.resolve(__dirname, '../../test-vault');
-const PLUGIN_ID = 'deepreader';
+const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_MEDIUM = 60_000;
 const TIMEOUT_LONG = 120_000;
 
@@ -151,7 +151,7 @@ async function getPluginLogs(): Promise<string[]> {
  * 辅助函数：打开 sidebar 并选择指定书籍
  */
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   const topbarBtn = await $(SELECTORS.topbarBtn);
@@ -211,7 +211,7 @@ async function clearChatHistory(): Promise<void> {
 async function readTreeJson(bookId: string): Promise<any | null> {
   const treePath = path.join(
     VAULT_PATH,
-    '.obsidian/plugins/deepreader/pageindex',
+    '.obsidian/plugins/deepreader-dev/pageindex',
     bookId,
     'tree.json'
   );
@@ -232,7 +232,7 @@ describe('S2 Analytical Scope E2E', function () {
 
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     console.log('[E2E] Plugin loaded:', loaded);
     expect(loaded).toBe(true);
@@ -377,7 +377,7 @@ describe('S2 Analytical Scope E2E', function () {
     // 尝试添加其他书籍（如果存在）
     const catalogPath = path.join(
       VAULT_PATH,
-      '.obsidian/plugins/deepreader/pageindex/catalog.json'
+      '.obsidian/plugins/deepreader-dev/pageindex/catalog.json'
     );
 
     try {

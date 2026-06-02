@@ -41,7 +41,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const s = plugin.settings;
 					const pageindexRole = s?.roles?.pageindex;
 					const provider = s?.providers?.[pageindexRole?.provider];
@@ -50,7 +50,7 @@ export default {
 					const adapter = app.vault.adapter;
 					return (async () => {
 						// 清理旧索引
-						const piBase = '.obsidian/plugins/deepreader/pageindex';
+						const piBase = '.obsidian/plugins/deepreader-dev/pageindex';
 						const bookDir = piBase + '/' + ${JSON.stringify(TEST_BOOK.id)};
 						const exists = await adapter.exists(bookDir);
 						if (exists) {
@@ -99,7 +99,7 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const tracePath = '.obsidian/plugins/deepreader/pageindex/traces/' + ${JSON.stringify(bookId)} + '.json';
+						const tracePath = '.obsidian/plugins/deepreader-dev/pageindex/traces/' + ${JSON.stringify(bookId)} + '.json';
 						const exists = await adapter.exists(tracePath);
 						if (!exists) return { exists: false };
 

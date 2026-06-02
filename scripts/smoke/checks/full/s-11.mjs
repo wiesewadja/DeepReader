@@ -21,7 +21,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const s = app.plugins.plugins["deepreader"]?.settings;
+			const s = app.plugins.plugins["deepreader-dev"]?.settings;
 			return {
 				enabled: s?.proactiveGuidanceEnabled,
 				cooldown: s?.proactiveCooldownMinutes,

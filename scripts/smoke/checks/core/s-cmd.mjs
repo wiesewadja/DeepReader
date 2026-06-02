@@ -23,16 +23,16 @@
 import { listCommands } from '../../lib/obsidian-cli.mjs';
 
 const CORE_COMMAND_IDS = [
-	'deepreader:open-deepreader-sidebar',     // F-22 Sidebar
-	'deepreader:open-library',                // F-23 Library
-	'deepreader:open-quick-setup',            // F-24 Quick Setup
-	'deepreader:test-pageindex',              // F-01/02 PageIndex
-	'deepreader:weread-login',                // F-26 微信登录
-	'deepreader:weread-sync',                 // F-27 微信同步
-	'deepreader:weread-sync-force',           // F-28 强制全量
-	'deepreader:weread-logout',               // F-26 微信登出
-	'deepreader:weread-rematch',              // F-28 重新匹配
-	'deepreader:debug-analytical-reading',    // F-30 PI 调试
+	'deepreader-dev:open-deepreader-sidebar',     // F-22 Sidebar
+	'deepreader-dev:open-library',                // F-23 Library
+	'deepreader-dev:open-quick-setup',            // F-24 Quick Setup
+	'deepreader-dev:test-pageindex',              // F-01/02 PageIndex
+	'deepreader-dev:weread-login',                // F-26 微信登录
+	'deepreader-dev:weread-sync',                 // F-27 微信同步
+	'deepreader-dev:weread-sync-force',           // F-28 强制全量
+	'deepreader-dev:weread-logout',               // F-26 微信登出
+	'deepreader-dev:weread-rematch',              // F-28 重新匹配
+	'deepreader-dev:debug-analytical-reading',    // F-30 PI 调试
 ];
 
 export default {

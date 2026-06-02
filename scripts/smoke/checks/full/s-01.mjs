@@ -12,7 +12,7 @@
 import { listCommands } from '../../lib/obsidian-cli.mjs';
 
 const EXPECTED_IDS = [
-	'deepreader:test-pageindex',
+	'deepreader-dev:test-pageindex',
 ];
 
 export default {

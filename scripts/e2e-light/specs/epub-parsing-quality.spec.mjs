@@ -39,7 +39,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					return plugin.api.parseEpub(${JSON.stringify(fullPath)});
 				})()`, { timeout: 30_000 });
 

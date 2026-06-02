@@ -9,7 +9,7 @@ describe('微信读书 UI E2E 测试', function () {
 
 	it('should have DeepReader plugin loaded', async function () {
 		const loaded = await browser.executeObsidian(({ app }) => {
-			return !!app.plugins?.plugins?.['deepreader'];
+			return !!app.plugins?.plugins?.['deepreader-dev'];
 		});
 		expect(loaded).toBe(true);
 	});
@@ -93,7 +93,7 @@ describe('微信读书 UI E2E 测试', function () {
 
 			// 通过命令打开书库视图
 			await browser.executeObsidian(({ app }) => {
-				app.commands.executeCommandById('deepreader:open-library');
+				app.commands.executeCommandById('deepreader-dev:open-library');
 			});
 			await browser.pause(2000);
 		});

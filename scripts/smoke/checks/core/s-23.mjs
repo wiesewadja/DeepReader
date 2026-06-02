@@ -2,7 +2,7 @@
  * S-23: Library 书库
  *
  * 锚定: F-23 Library 书库管理
- * 触发:  executeCommandById("deepreader:open-library") → 等 DOM 渲染
+ * 触发:  executeCommandById("deepreader-dev:open-library") → 等 DOM 渲染
  * 断言:  .deeppdf-library-view 容器存在
  * 失败信息:  当前 Library 相关 className 列表
  *
@@ -31,7 +31,7 @@ export default {
 
 	async run({ log }) {
 		// 1. 先打开 Library 视图
-		await evalObsidian('app.commands.executeCommandById("deepreader:open-library")');
+		await evalObsidian('app.commands.executeCommandById("deepreader-dev:open-library")');
 		await new Promise(r => setTimeout(r, 1000));
 
 		// 2. 检查 DOM

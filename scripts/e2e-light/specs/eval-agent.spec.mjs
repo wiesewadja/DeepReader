@@ -32,7 +32,7 @@ export default {
 		// 检查前置条件
 		const precheck = await evalObsidian(`(() => {
 			const adapter = app.vault.adapter;
-			const plugin = app.plugins.plugins["deepreader"];
+			const plugin = app.plugins.plugins["deepreader-dev"];
 			return (async () => {
 				const goldenPath = '.eval/datasets/' + ${JSON.stringify(EVAL_BOOK)} + '/golden.json';
 				const exists = await adapter.exists(goldenPath);
@@ -63,7 +63,7 @@ export default {
 
 		// 注册 evalBackdoor
 		await evalObsidian(`(() => {
-			const plugin = app.plugins.plugins["deepreader"];
+			const plugin = app.plugins.plugins["deepreader-dev"];
 			if (!plugin.evalBackdoor) {
 				const pending = {};
 				plugin.evalBackdoor = {
@@ -71,7 +71,7 @@ export default {
 						const adapter = app.vault.adapter;
 						const agent = plugin.frontendAgent;
 						(async () => {
-							const metaPath = '.obsidian/plugins/deepreader/pageindex/' + bookId + '/book-meta.json';
+							const metaPath = '.obsidian/plugins/deepreader-dev/pageindex/' + bookId + '/book-meta.json';
 							const exists = await adapter.exists(metaPath);
 							let docMeta = {};
 							if (exists) {
@@ -110,7 +110,7 @@ export default {
 		const bookId = await evalObsidian(`(() => {
 			const adapter = app.vault.adapter;
 			return (async () => {
-				const catPath = '.obsidian/plugins/deepreader/pageindex/catalog.json';
+				const catPath = '.obsidian/plugins/deepreader-dev/pageindex/catalog.json';
 				const exists = await adapter.exists(catPath);
 				if (!exists) return null;
 				const raw = await adapter.read(catPath);
@@ -132,7 +132,7 @@ export default {
 
 			// 启动 Q&A
 			await evalObsidian(`(() => {
-				app.plugins.plugins["deepreader"].evalBackdoor.startQnA(
+				app.plugins.plugins["deepreader-dev"].evalBackdoor.startQnA(
 					${JSON.stringify(qId)}, ${JSON.stringify(q.question)}, ${JSON.stringify(bookId)}
 				);
 				return true;
@@ -144,7 +144,7 @@ export default {
 			while (Date.now() < deadline) {
 				try {
 					const r = await evalObsidian(
-						'app.plugins.plugins["deepreader"].evalBackdoor.pollResult(' + JSON.stringify(qId) + ')'
+						'app.plugins.plugins["deepreader-dev"].evalBackdoor.pollResult(' + JSON.stringify(qId) + ')'
 					);
 					if (r) { response = r; break; }
 				} catch { /* ignore */ }

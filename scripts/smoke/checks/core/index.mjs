@@ -1,8 +1,9 @@
 /**
- * Core 9 场景注册表
+ * Core 10 场景注册表
  *
  * Slice 1: 仅含 S-RES
  * 后续 slice 增量添加: S-LD, S-CMD, S-22, S-23, S-17, S-25, S-30, S-24
+ * 2026-06-02: 新增 S-RP-ANTI（阅读进度反例，c0da03bc 后回归保护）
  */
 
 import sRes from './s-res.mjs';
@@ -14,6 +15,7 @@ import sLd from './s-ld.mjs';
 import s17 from './s-17.mjs';
 import s30 from './s-30.mjs';
 import s24 from './s-24.mjs';
+import sRpAnti from '../S-RP-ANTI.check.mjs';
 
 export const coreChecks = [
 	sRes,
@@ -25,4 +27,5 @@ export const coreChecks = [
 	s17,
 	s30,
 	s24,
+	sRpAnti,
 ];

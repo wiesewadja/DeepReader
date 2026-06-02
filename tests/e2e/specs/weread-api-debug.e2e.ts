@@ -12,7 +12,7 @@ describe('微信读书网关 API 全链路调试', function () {
 
 	it('Step 1: 获取 API Key', async function () {
 		const result = await browser.executeObsidian(({ app }) => {
-			const plugin = app.plugins?.plugins?.['deepreader'] as any;
+			const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
 			return { apiKey: plugin?.settings?.wereadApiKey };
 		});
 		expect(result?.apiKey).toBeDefined();

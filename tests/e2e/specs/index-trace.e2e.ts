@@ -51,7 +51,7 @@ async function waitForIndex(
 
   while (Date.now() - startTime < maxWaitMs) {
     const logPath = path.join(
-      VAULT_PATH, '.obsidian/plugins/deepreader/pageindex/traces', `${bookId}.log`,
+      VAULT_PATH, '.obsidian/plugins/deepreader-dev/pageindex/traces', `${bookId}.log`,
     );
     let logContent: string | null = null;
     try { logContent = await fs.promises.readFile(logPath, 'utf-8'); } catch {}
@@ -62,7 +62,7 @@ async function waitForIndex(
         console.log(`[E2E] Indexing done in ${Date.now() - startTime}ms`);
         // 读取 .json 兼容摘要
         const jsonPath = path.join(
-          VAULT_PATH, '.obsidian/plugins/deepreader/pageindex/traces', `${bookId}.json`,
+          VAULT_PATH, '.obsidian/plugins/deepreader-dev/pageindex/traces', `${bookId}.json`,
         );
         let json: any = null;
         try { json = JSON.parse(await fs.promises.readFile(jsonPath, 'utf-8')); } catch {}
@@ -87,7 +87,7 @@ async function waitForIndex(
 async function triggerIndex(): Promise<{ bookId: string; title: string }> {
   const result = await browser.executeObsidian(
     async ({ app }, pattern: string) => {
-      const plugin = app.plugins?.plugins?.['deepreader'] as any;
+      const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
       if (!plugin?.api?.indexBook) {
         return { success: false, error: 'plugin.api.indexBook not available' };
       }
@@ -170,13 +170,13 @@ async function cleanExistingIndex(bookId: string): Promise<void> {
     const { rmSync, existsSync } = require('fs');
 
     // 删除索引目录
-    const indexDir = `${vaultPath}/.obsidian/plugins/deepreader/pageindex/${_bookId}`;
+    const indexDir = `${vaultPath}/.obsidian/plugins/deepreader-dev/pageindex/${_bookId}`;
     if (existsSync(indexDir)) {
       rmSync(indexDir, { recursive: true, force: true });
     }
 
     // 删除 traces
-    const tracesDir = `${vaultPath}/.obsidian/plugins/deepreader/pageindex/traces`;
+    const tracesDir = `${vaultPath}/.obsidian/plugins/deepreader-dev/pageindex/traces`;
     if (existsSync(tracesDir)) {
       rmSync(tracesDir, { recursive: true, force: true });
     }
@@ -203,7 +203,7 @@ async function cleanExistingIndex(bookId: string): Promise<void> {
     } catch {}
 
     // 清除 catalog 中该书的条目
-    const catalogPath = `${vaultPath}/.obsidian/plugins/deepreader/pageindex/catalog.json`;
+    const catalogPath = `${vaultPath}/.obsidian/plugins/deepreader-dev/pageindex/catalog.json`;
     if (existsSync(catalogPath)) {
       const { readFileSync, writeFileSync } = require('fs');
       const catalog = JSON.parse(readFileSync(catalogPath, 'utf-8'));
@@ -230,7 +230,7 @@ describe('索引追踪日志 E2E', function () {
 
     // 验证插件已加载
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     expect(loaded).toBe(true);
 

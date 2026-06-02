@@ -20,7 +20,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const p = app.plugins.plugins["deepreader"];
+			const p = app.plugins.plugins["deepreader-dev"];
 			return {
 				hasParseEpub: typeof p?.api?.parseEpub === 'function',
 				hasIndexBook: typeof p?.api?.indexBook === 'function',

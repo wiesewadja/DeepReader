@@ -17,7 +17,7 @@ export default {
 
 	async run({ log }) {
 		const type = await evalObsidian(
-			'typeof app.plugins.plugins["deepreader"]?.frontendAgent?.memoryStore'
+			'typeof app.plugins.plugins["deepreader-dev"]?.frontendAgent?.memoryStore'
 		);
 
 		if (type !== 'object') {

@@ -66,7 +66,7 @@ describe('Agent Q&A Evaluation', function () {
   before(async function () {
     // 注册 evalBackdoor + 轮询辅助
     const registered = await browser.executeObsidian(({ app }) => {
-      const plugin = app.plugins?.plugins?.['deepreader'] as any;
+      const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
       if (!plugin || !plugin.getFrontendAgent) return false;
       if (plugin.evalBackdoor?.startQnA) return true;
 
@@ -144,7 +144,7 @@ describe('Agent Q&A Evaluation', function () {
       // Step 1: 启动 Agent（快速返回）
       await browser.executeObsidian(
         ({ app }, args: { qid: string; question: string; bookId: string }) => {
-          const plugin = app.plugins?.plugins?.['deepreader'] as any;
+          const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
           return plugin?.evalBackdoor?.startQnA(args.qid, args.question, args.bookId);
         },
         { qid: q.id, question: q.question, bookId: golden.bookId },
@@ -158,7 +158,7 @@ describe('Agent Q&A Evaluation', function () {
         await sleep(5000);
         result = await browser.executeObsidian(
           ({ app }, args: { qid: string }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             return plugin?.evalBackdoor?.pollResult(args.qid);
           },
           { qid: q.id },

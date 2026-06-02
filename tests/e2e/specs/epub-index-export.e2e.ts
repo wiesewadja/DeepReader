@@ -13,7 +13,7 @@ describe('EPUB Index & Export to Obsidian Vault', function () {
 
     it('should have DeepReader plugin loaded', async function () {
         const pluginLoaded = await browser.executeObsidian(({ app }) => {
-            return !!app.plugins?.plugins?.['deepreader'];
+            return !!app.plugins?.plugins?.['deepreader-dev'];
         });
         expect(pluginLoaded).toBe(true);
     });
@@ -27,7 +27,7 @@ describe('EPUB Index & Export to Obsidian Vault', function () {
 
     it('should have plugin API exposed', async function () {
         const hasApi = await browser.executeObsidian(({ app }) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             return !!(plugin?.api?.parseEpub && plugin?.api?.exportToObsidian && plugin?.api?.indexBook);
         });
         expect(hasApi).toBe(true);
@@ -37,7 +37,7 @@ describe('EPUB Index & Export to Obsidian Vault', function () {
 
     it('should parse EPUB and extract book metadata', async function () {
         const bookInfo = await browser.executeObsidian(async ({ app }, epubPath: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
             const fullPath = `${basePath}/${epubPath}`;
@@ -66,7 +66,7 @@ describe('EPUB Index & Export to Obsidian Vault', function () {
 
     it('should parse EPUB chapters with content', async function () {
         const chapters = await browser.executeObsidian(async ({ app }, epubPath: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
             const fullPath = `${basePath}/${epubPath}`;
@@ -99,7 +99,7 @@ describe('EPUB Index & Export to Obsidian Vault', function () {
         this.timeout(180000);
 
         const exportResult = await browser.executeObsidian(async ({ app }, epubPath: string, outputDir: string) => {
-            const plugin = app.plugins?.plugins?.['deepreader'] as any;
+            const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
             const adapter = app.vault.adapter as any;
             const basePath = adapter.getBasePath?.() || '';
             const fullPath = `${basePath}/${epubPath}`;

@@ -118,7 +118,8 @@ const data = {
 };
 
 // ----- 输出 -----
-const dataPath = resolve(root, 'test-vault/.obsidian/plugins/deepreader/data.json');
+// 默认写到 dev 目录（deepreader-dev），与 .deploy-config.json 的 dev target.path 一致
+const dataPath = resolve(root, 'test-vault/.obsidian/plugins/deepreader-dev/data.json');
 
 if (dryRun) {
 	console.log('🔍 [dry-run] 将写入以下配置:\n');

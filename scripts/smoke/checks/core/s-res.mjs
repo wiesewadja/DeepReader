@@ -2,8 +2,11 @@
  * S-RES: 资源文件完整
  *
  * 触发:  检查 bin/ 目录
- * 断言:  main.js > 100KB, styles.css > 0KB, manifest.json 合法且 id="deepreader"
+ * 断言:  main.js > 100KB, styles.css > 0KB, manifest.json 合法且 id="deepreader"（源 manifest）
  * 失败信息:  缺失文件 + 大小 + 解析错误
+ *
+ * 注: 源 manifest 的 id 固定为 "deepreader"（与 daily 一致），部署到 dev 时
+ *     deploy.js 会按 target.pluginId 改写为 "deepreader-dev"。
  */
 
 import { promises as fs } from 'fs';

@@ -30,7 +30,7 @@ export default {
 			await evalObsidian(`
 				(() => {
 					app.setting.open();
-					app.setting.openTabById('deepreader');
+					app.setting.openTabById('deepreader-dev');
 					return true;
 				})()
 			`);

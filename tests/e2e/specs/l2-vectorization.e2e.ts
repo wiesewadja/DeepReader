@@ -13,7 +13,7 @@ import * as path from 'path';
 
 // 测试配置
 const VAULT_PATH = path.resolve(__dirname, '../../test-vault');
-const PLUGIN_ID = 'deepreader';
+const PLUGIN_ID = 'deepreader-dev';
 const TIMEOUT_LONG = 120_000;
 
 // 书籍配置（使用 test-vault 中实际存在的书籍）
@@ -149,7 +149,7 @@ async function getPluginLogs(): Promise<string[]> {
  * 辅助函数：打开 sidebar 并选择指定书籍
  */
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
 
   const topbarBtn = await $(SELECTORS.topbarBtn);
@@ -209,7 +209,7 @@ async function clearChatHistory(): Promise<void> {
 async function readTraceFile(bookId: string): Promise<any | null> {
   const tracePath = path.join(
     VAULT_PATH,
-    '.obsidian/plugins/deepreader/pageindex/traces',
+    '.obsidian/plugins/deepreader-dev/pageindex/traces',
     `${bookId}.json`
   );
 
@@ -231,7 +231,7 @@ async function checkForFabricatedLinks(bookId: string): Promise<{
 }> {
   const chunksPath = path.join(
     VAULT_PATH,
-    '.obsidian/plugins/deepreader/pageindex',
+    '.obsidian/plugins/deepreader-dev/pageindex',
     bookId,
     'chunks.jsonl'
   );
@@ -280,7 +280,7 @@ describe('L2 向量化诊断 E2E', function () {
 
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     console.log('[E2E] Plugin loaded:', loaded);
     expect(loaded).toBe(true);

@@ -38,7 +38,7 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const treePath = '.obsidian/plugins/deepreader/pageindex/${BOOK_ID}/tree.json';
+						const treePath = '.obsidian/plugins/deepreader-dev/pageindex/${BOOK_ID}/tree.json';
 						const exists = await adapter.exists(treePath);
 						if (!exists) return { exists: false };
 						const raw = await adapter.read(treePath);
@@ -72,7 +72,7 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const treePath = '.obsidian/plugins/deepreader/pageindex/${BOOK_ID}/tree.json';
+						const treePath = '.obsidian/plugins/deepreader-dev/pageindex/${BOOK_ID}/tree.json';
 						const raw = await adapter.read(treePath);
 						const tree = JSON.parse(raw);
 						const map = tree.nodeFileMap || {};
@@ -107,14 +107,14 @@ export default {
 				const result = await evalObsidian(`(() => {
 					const adapter = app.vault.adapter;
 					return (async () => {
-						const catPath = '.obsidian/plugins/deepreader/pageindex/catalog.json';
+						const catPath = '.obsidian/plugins/deepreader-dev/pageindex/catalog.json';
 						const exists = await adapter.exists(catPath);
 						if (!exists) return { bookCount: 0 };
 						const raw = await adapter.read(catPath);
 						const catalog = JSON.parse(raw);
 						let booksWithMap = 0;
 						for (const [bookId, meta] of Object.entries(catalog)) {
-							const treePath = '.obsidian/plugins/deepreader/pageindex/' + bookId + '/tree.json';
+							const treePath = '.obsidian/plugins/deepreader-dev/pageindex/' + bookId + '/tree.json';
 							const treeExists = await adapter.exists(treePath);
 							if (!treeExists) continue;
 							const treeRaw = await adapter.read(treePath);

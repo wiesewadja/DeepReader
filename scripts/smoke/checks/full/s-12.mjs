@@ -21,7 +21,7 @@ export default {
 
 	async run({ log }) {
 		const result = await evalObsidian(`(() => {
-			const p = app.plugins.plugins["deepreader"];
+			const p = app.plugins.plugins["deepreader-dev"];
 			const agent = p?.frontendAgent;
 			if (!agent) return { hasAgent: false };
 

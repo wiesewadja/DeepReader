@@ -25,7 +25,7 @@ describe('Summary & Doc Description 导出验证', function () {
     it('should parse EPUB and get chapter titles', async function () {
         const info = await browser.executeObsidian(
             async ({ app }, epubPath: string) => {
-                const plugin = app.plugins?.plugins?.['deepreader'] as any;
+                const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
                 const adapter = app.vault.adapter as any;
                 const basePath = adapter.getBasePath?.() || '';
                 const fullPath = `${basePath}/${epubPath}`;
@@ -62,7 +62,7 @@ describe('Summary & Doc Description 导出验证', function () {
 
         const exportResult = await browser.executeObsidian(
             async ({ app }, epubPath: string, outputDir: string, summariesJson: string, docDescription: string) => {
-                const plugin = app.plugins?.plugins?.['deepreader'] as any;
+                const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
                 const adapter = app.vault.adapter as any;
                 const basePath = adapter.getBasePath?.() || '';
                 const fullPath = `${basePath}/${epubPath}`;

@@ -107,7 +107,7 @@ async function getLastAIMessage(): Promise<string> {
 }
 
 async function openSidebarWithBook(bookId: string): Promise<void> {
-  await browser.executeObsidianCommand('deepreader:open-deepreader-sidebar');
+  await browser.executeObsidianCommand('deepreader-dev:open-deepreader-sidebar');
   await wait(2000);
   const topbarBtn = await $(SELECTORS.topbarBtn);
   await topbarBtn.waitForExist({ timeout: 10_000 });
@@ -138,13 +138,13 @@ describe('PI Visualizer E2E', function () {
 
   before(async function () {
     const loaded = await browser.executeObsidian(({ app }) => {
-      return !!app.plugins?.plugins?.['deepreader'];
+      return !!app.plugins?.plugins?.['deepreader-dev'];
     });
     expect(loaded).toBe(true);
 
     // 确认 PI 设置已启用
     const piEnabled = await browser.executeObsidian(({ app }) => {
-      return app.plugins?.plugins?.['deepreader']?.settings?.piEnabled ?? false;
+      return app.plugins?.plugins?.['deepreader-dev']?.settings?.piEnabled ?? false;
     });
     console.log('[E2E-PI-VIZ] PI enabled:', piEnabled);
     expect(piEnabled).toBe(true);

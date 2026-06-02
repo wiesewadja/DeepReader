@@ -17,7 +17,7 @@ export default {
 
 	async run({ log }) {
 		const type = await evalObsidian(
-			'typeof app.plugins.plugins["deepreader"]?.api?.exportToObsidian'
+			'typeof app.plugins.plugins["deepreader-dev"]?.api?.exportToObsidian'
 		);
 
 		if (type !== 'function') {

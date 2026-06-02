@@ -8,7 +8,7 @@ describe('微信读书同步 E2E', function () {
 
 	it('should have plugin loaded with api key', async function () {
 		const result = await browser.executeObsidian(({ app }) => {
-			const plugin = app.plugins?.plugins?.['deepreader'] as any;
+			const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
 			return {
 				loaded: !!plugin,
 				hasApiKey: !!plugin?.settings?.wereadApiKey,
@@ -23,7 +23,7 @@ describe('微信读书同步 E2E', function () {
 		// 直接执行插件注册的同步命令
 		const result = await browser.executeObsidian(async ({ app }) => {
 			// 执行同步命令
-			const plugin = app.plugins?.plugins?.['deepreader'] as any;
+			const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
 			if (!plugin) return { error: 'no plugin' };
 
 			// 调用 WereadService.sync() 通过插件内部的方法
@@ -38,7 +38,7 @@ describe('微信读书同步 E2E', function () {
 					};
 					// WereadService 已经打包在 main.js 中，通过插件间接调用
 					// 使用命令触发同步
-					app.commands.executeCommandById('deepreader:weread-sync');
+					app.commands.executeCommandById('deepreader-dev:weread-sync');
 					return { triggered: true };
 				} catch (e: any) {
 					return { error: e.message };

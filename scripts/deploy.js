@@ -3,6 +3,9 @@
 /**
  * DeepReader 插件部署脚本
  * 支持多目标部署：dev（开发）、daily（日常使用）
+ *
+ * Dev 目标会自动把 manifest.json 的 id 改为 <pluginId>（默认 deepreader-dev），
+ * 并部署到 <pluginId> 目录，避免与 daily 版本的 deepreader 冲突。
  */
 
 const fs = require('fs');
@@ -33,6 +36,16 @@ try {
 const binDir = path.join(__dirname, '..', 'bin');
 const files = config.files;
 
+// 源 manifest（git tracked，id 固定为 'deepreader'）
+const srcManifestPath = path.join(binDir, 'manifest.json');
+let baseManifest;
+try {
+  baseManifest = JSON.parse(fs.readFileSync(srcManifestPath, 'utf-8'));
+} catch (e) {
+  console.error('❌ 读取源 manifest 失败:', e.message);
+  process.exit(1);
+}
+
 for (const targetName of targets) {
   const target = config.targets[targetName];
 
@@ -41,7 +54,8 @@ for (const targetName of targets) {
     continue;
   }
 
-  console.log(`🎯 部署到: ${target.name}`);
+  const pluginId = target.pluginId || 'deepreader';
+  console.log(`🎯 部署到: ${target.name} (id=${pluginId})`);
 
   // 创建目标目录
   if (!fs.existsSync(target.path)) {
@@ -55,12 +69,19 @@ for (const targetName of targets) {
     const src = path.join(binDir, file);
     const dest = path.join(target.path, file);
 
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dest);
-      copiedCount++;
-    } else {
+    if (!fs.existsSync(src)) {
       console.log(`   ⚠️  文件不存在: ${src}`);
+      continue;
     }
+
+    if (file === 'manifest.json') {
+      // manifest: 按 target.pluginId 改写 id 字段
+      const targetManifest = { ...baseManifest, id: pluginId };
+      fs.writeFileSync(dest, JSON.stringify(targetManifest, null, '\t') + '\n', 'utf-8');
+    } else {
+      fs.copyFileSync(src, dest);
+    }
+    copiedCount++;
   }
 
   console.log(`   ✅ 成功复制 ${copiedCount} 个文件\n`);

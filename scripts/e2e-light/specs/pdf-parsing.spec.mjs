@@ -38,7 +38,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					return plugin.api.parsePdf(${JSON.stringify(basePath + '/' + PDF_FILE)});
 				})()`, { timeout: 60_000 });
 
@@ -60,7 +60,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const r = plugin.api.parsePdf(${JSON.stringify(basePath + '/' + PDF_FILE)});
 					if (r.error) return { error: r.error };
 					let headingLines = 0;
@@ -88,7 +88,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const r = plugin.api.parsePdf(${JSON.stringify(basePath + '/' + PDF_FILE)});
 					if (r.error) return { error: r.error };
 					let hasBreak = false;
@@ -118,7 +118,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const r = plugin.api.parsePdf(${JSON.stringify(basePath + '/' + PDF_FILE)});
 					if (r.error) return { error: r.error };
 					const pages = r.pages || [];
@@ -148,7 +148,7 @@ export default {
 			const t0 = Date.now();
 			try {
 				const result = await evalObsidian(`(() => {
-					const plugin = app.plugins.plugins["deepreader"];
+					const plugin = app.plugins.plugins["deepreader-dev"];
 					const r = plugin.api.parsePdf(${JSON.stringify(basePath + '/' + PDF_FILE)});
 					if (r.error) return { error: r.error };
 					const pages = r.pages || [];
