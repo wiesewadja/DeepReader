@@ -76,10 +76,26 @@ export class PagePaginator {
 			return;
 		}
 		const next = Math.max(1, Math.min(page, this._totalPages));
-		if (next === this._currentPage) return;
+		if (next === this._currentPage) {
+			// 即便页码未变，也要尊重"用户主动跳到这里"的事实，
+			// 取消可能仍在排队的不同页码延后恢复
+			this.cancelPendingRestoreIfDifferent(next);
+			return;
+		}
 		this._currentPage = next;
+		this.cancelPendingRestoreIfDifferent(next);
 		this.updateControls();
 		this.options.onPageChange?.(this._currentPage, this._totalPages);
+	}
+
+	/**
+	 * 取消延后恢复：如果 _pendingRestorePage 已设且与 newPage 不同，
+	 * 视为用户主动跳转覆盖了恢复意图。清空避免后续 applyPendingRestorePage 覆盖用户选择。
+	 */
+	private cancelPendingRestoreIfDifferent(newPage: number): void {
+		if (this._pendingRestorePage != null && this._pendingRestorePage !== newPage) {
+			this._pendingRestorePage = null;
+		}
 	}
 
 	/**
@@ -332,6 +348,8 @@ export class PagePaginator {
 		if (newPage !== this._currentPage) {
 			this._currentPage = Math.max(1, Math.min(newPage, this._totalPages));
 			this.options.onPageChange?.(this._currentPage, this._totalPages);
+			// 用户在等待期间手动滚动 → 取消延后恢复，尊重用户意图
+			this.cancelPendingRestoreIfDifferent(this._currentPage);
 		}
 	}
 
