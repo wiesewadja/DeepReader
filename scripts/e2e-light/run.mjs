@@ -177,7 +177,7 @@ function formatDur(ms) {
 function reportSteps(steps) {
 	for (const step of steps) {
 		// 步骤用较短的显示格式，不走 reporter 的 id/name 列布局
-		const icon = step.status === 'pass' ? '  ✓' : '  ✗';
+		const icon = step.status === 'pass' ? '  ✓' : step.status === 'skip' ? '  ⏭' : '  ✗';
 		const dur = `(${step.duration}ms)`;
 		const detail = step.detail ? `  ${step.detail}` : '';
 		const errMsg = step.error ? `\n           错误: ${step.error}` : '';

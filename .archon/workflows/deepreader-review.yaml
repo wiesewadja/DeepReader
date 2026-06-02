@@ -9,8 +9,8 @@ description: |
   或（审查当前分支）：
     archon workflow run deepreader-review --no-worktree ""
 
-provider: claude
-model: sonnet
+provider: pi
+model: minimax/MiniMax-M3
 interactive: true
 
 nodes:
@@ -60,6 +60,7 @@ nodes:
   # ── Phase 3: 五轴代码审查（不依赖测试结果）──
   - id: review
     command: dr-review-code
+    skills: [deepreader-review]
     depends_on: [gather-changes]
     context: fresh
 
@@ -142,18 +143,23 @@ nodes:
       idle_timeout: 600000
     depends_on: [synthesize]
 
-  # ── Phase 7: Smoke + E2E-Light 回归测试（并行）──
+  # ── Phase 7: 提交修复（如有）──
+  - id: commit-fixes
+    command: dr-commit-changes
+    depends_on: [auto-fix]
+
+  # ── Phase 8: Smoke + E2E-Light 回归测试（并行）──
   - id: smoke-test
     bash: "npm run smoke:core 2>&1 | tail -30"
-    depends_on: [auto-fix]
+    depends_on: [commit-fixes]
     timeout: 180000
 
   - id: e2e-light
     bash: "npm run e2e-light 2>&1 | tail -30"
-    depends_on: [auto-fix]
+    depends_on: [commit-fixes]
     timeout: 300000
 
-  # ── Phase 8: 最终报告 ──
+  # ── Phase 9: 最终报告 ──
   - id: final-report
     prompt: |
       生成最终审查报告，汇总所有阶段的结果：
