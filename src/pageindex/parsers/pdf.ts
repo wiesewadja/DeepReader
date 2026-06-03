@@ -20,7 +20,8 @@ export interface PdfPage {
  */
 export async function parsePdf(
   input: string | Buffer | ArrayBuffer,
-  token?: string
+  token?: string,
+  onProgress?: (message: string) => void
 ): Promise<MineruPdfResult> {
   let dataBuffer: Buffer;
   if (typeof input === "string") {
@@ -37,7 +38,7 @@ export async function parsePdf(
 
   piLog(`[parsePdf] Parsing PDF with MinerU: ${fileName} (${dataBuffer.length} bytes)`);
 
-  const client = new MineruClient(token);
+  const client = new MineruClient(token, { onProgress });
   const result = await client.parse(dataBuffer, fileName);
 
   piLog(`[parsePdf] Done: ${result.totalPages} pages, ${result.outline.length} outline nodes`);

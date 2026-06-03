@@ -58,6 +58,8 @@ export interface MineruClientOptions {
   agentBaseUrl?: string;
   /** 自定义 Precision API 端点（默认: https://mineru.net/api/v4） */
   precisionBaseUrl?: string;
+  /** 进度回调（分批上传/解析时触发） */
+  onProgress?: (message: string) => void;
 }
 
 export class MineruClient {
@@ -67,6 +69,7 @@ export class MineruClient {
   private language: string;
   private agentBaseUrl: string;
   private precisionBaseUrl: string;
+  private onProgress?: (message: string) => void;
 
   constructor(
     private token?: string,
@@ -78,6 +81,7 @@ export class MineruClient {
     this.language = options?.language ?? 'ch';
     this.agentBaseUrl = options?.agentBaseUrl ?? AGENT_BASE;
     this.precisionBaseUrl = options?.precisionBaseUrl ?? PRECISION_BASE;
+    this.onProgress = options?.onProgress;
   }
 
   /**
@@ -268,7 +272,9 @@ export class MineruClient {
       const endPage = Math.min(startPage + MAX_PRECISION_PAGES, totalPages);
       const pageIndices = Array.from({ length: endPage - startPage }, (_, k) => startPage + k);
 
-      piLog(`[parseViaPrecision] Batch ${i + 1}/${batchCount}: pages ${startPage + 1}-${endPage}`);
+      const batchLabel = `分批解析 ${i + 1}/${batchCount}（第 ${startPage + 1}-${endPage} 页）`;
+      piLog(`[parseViaPrecision] ${batchLabel}`);
+      this.onProgress?.(batchLabel);
 
       // 创建只包含当前页范围的新 PDF
       const newDoc = await PDFDocument.create();

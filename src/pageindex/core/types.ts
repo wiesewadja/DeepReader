@@ -56,7 +56,7 @@ export interface PageIndexOptions {
 /** Progress information for real-time updates */
 export interface ProgressInfo {
   /** Current processing stage */
-  stage: "detecting_toc" | "parsing_structure" | "verifying_pages" | "generating_summaries" | "generating_description" | "complete";
+  stage: "detecting_toc" | "parsing_structure" | "verifying_pages" | "generating_summaries" | "generating_description" | "mineru_batch" | "complete";
   /** Human-readable stage description */
   message: string;
   /** Current step number */

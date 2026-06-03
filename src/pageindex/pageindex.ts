@@ -248,7 +248,9 @@ export class PageIndex {
     if (hasMineruToken || this.options.extractionMode !== "ocr") {
       piLog("[fromPdf] Parsing PDF with MinerU API...");
       try {
-        const pdfInfo = await parsePdf(input, this.options.mineruApiKey);
+        const pdfInfo = await parsePdf(input, this.options.mineruApiKey, (msg) => {
+          this.options.onProgress?.({ percent: 10, message: msg, stage: 'mineru_batch', step: 0, totalSteps: 0 });
+        });
         pages = pdfInfo.pages;
         pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
         mineruImages = pdfInfo.images;
