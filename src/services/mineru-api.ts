@@ -296,9 +296,13 @@ export class MineruClient {
 
   /** 单批次精准 API 调用 */
   private async precisionSingleBatch(input: Buffer, fileName: string): Promise<MineruPdfResult> {
+    piLog(`[precisionSingleBatch] ${fileName}: ${(input.length / 1024 / 1024).toFixed(1)} MB`);
     const batch = await this.requestPrecisionUploadUrl(fileName);
+    piLog(`[precisionSingleBatch] Upload URL obtained, batch ID: ${batch.batchId}`);
     await this.uploadFile(batch.fileUrls[0], input);
+    piLog(`[precisionSingleBatch] Upload done, polling...`);
     const zipUrl = await this.pollPrecisionResult(batch.batchId);
+    piLog(`[precisionSingleBatch] Parsing complete, downloading ZIP...`);
     return this.downloadAndParseZip(zipUrl);
   }
 
@@ -370,13 +374,19 @@ export class MineruClient {
   }
 
   private async uploadFile(url: string, data: Buffer): Promise<void> {
+    // 注意：OSS 预签名 URL 不包含 Content-Type，不能传 contentType 参数
+    // 否则会导致签名验证失败 (SignatureDoesNotMatch)
+    piLog(`[uploadFile] Uploading ${(data.length / 1024 / 1024).toFixed(1)} MB to OSS...`);
     const resp = await safeRequest({
       url,
       method: 'PUT',
       body: data.buffer as ArrayBuffer,
     });
 
+    piLog(`[uploadFile] Upload response: ${resp.status}`);
     if (resp.status >= 400) {
+      const errText = resp.text?.slice(0, 200) || '';
+      piLog(`[uploadFile] Error response: ${errText}`);
       throw new MineruError(`File upload failed: ${resp.status}`, resp.status);
     }
   }
@@ -453,6 +463,7 @@ export class MineruClient {
 
   private async pollPrecisionResult(batchId: string): Promise<string> {
     const start = Date.now();
+    let lastState = '';
 
     while (Date.now() - start < this.precisionTimeout) {
       const resp = await safeRequest({
@@ -467,12 +478,22 @@ export class MineruClient {
       const data = resp.json;
       const results = data.data?.extract_result;
 
+      // API 还在处理中，extract_result 可能为空
       if (!results || results.length === 0) {
-        throw new MineruError('No results in precision API response');
+        piLog(`[pollPrecisionResult] ${batchId}: no results yet, waiting...`);
+        await this.sleep(this.pollInterval);
+        continue;
       }
 
       const result = results[0];
       const state = result.state;
+
+      // 只在状态变化时打印日志
+      if (state !== lastState) {
+        const elapsed = ((Date.now() - start) / 1000).toFixed(0);
+        piLog(`[pollPrecisionResult] ${batchId}: ${state} (${elapsed}s)`);
+        lastState = state;
+      }
 
       if (state === 'done') {
         return result.full_zip_url;
