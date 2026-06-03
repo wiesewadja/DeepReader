@@ -14,10 +14,11 @@ import {
 	loadLastPages,
 	saveLastPages,
 } from "@/pageindex/last-page-store";
-import { getLastPagesPath } from "@/pageindex/paths.js";
+import { getLastPagesPath, pageindexPaths } from "@/pageindex/paths.js";
 
+const PLUGIN_ID = "deepreader";
 const VAULT = "/tmp/deepreader-last-page-test";
-const FILE = getLastPagesPath(VAULT);
+const FILE = pageindexPaths(PLUGIN_ID).lastPages(VAULT);
 
 async function rmrf(p: string) {
 	try {
@@ -35,13 +36,13 @@ describe("last-page-store", () => {
 
 	describe("loadLastPages", () => {
 		it("文件不存在时返回空 maps", async () => {
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.size).toBe(0);
 			expect(result.lastReadAt.size).toBe(0);
 		});
 
 		it("vaultPath 为空时返回空 maps", async () => {
-			const result = await loadLastPages("");
+			const result = await loadLastPages("", PLUGIN_ID);
 			expect(result.pages.size).toBe(0);
 			expect(result.lastReadAt.size).toBe(0);
 		});
@@ -57,7 +58,7 @@ describe("last-page-store", () => {
 			};
 			await fs.writeFile(FILE, JSON.stringify(v1), "utf-8");
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.get("books/a.epub")).toBe(42);
 			expect(result.pages.get("books/b.epub")).toBe(17);
 			// v1 无时间戳，迁移后 lastReadAt 全为 0
@@ -75,7 +76,7 @@ describe("last-page-store", () => {
 			};
 			await fs.writeFile(FILE, JSON.stringify(v2), "utf-8");
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.get("books/a.epub")).toBe(42);
 			expect(result.lastReadAt.get("books/a.epub")).toBe(1717350000000);
 			expect(result.lastReadAt.get("books/b.epub")).toBe(1717350123000);
@@ -85,7 +86,7 @@ describe("last-page-store", () => {
 			await fs.mkdir(path.dirname(FILE), { recursive: true });
 			await fs.writeFile(FILE, "this is not json", "utf-8");
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.size).toBe(0);
 			expect(result.lastReadAt.size).toBe(0);
 		});
@@ -104,7 +105,7 @@ describe("last-page-store", () => {
 			};
 			await fs.writeFile(FILE, JSON.stringify(data), "utf-8");
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.size).toBe(1);
 			expect(result.pages.get("books/valid.epub")).toBe(5);
 		});
@@ -114,9 +115,9 @@ describe("last-page-store", () => {
 		it("写入后再读数据一致", async () => {
 			const pages = new Map([["a.md", 10], ["b.md", 20]]);
 			const lastReadAt = new Map([["a.md", 1000], ["b.md", 2000]]);
-			await saveLastPages(VAULT, pages, lastReadAt);
+			await saveLastPages(VAULT, pages, lastReadAt, PLUGIN_ID);
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.get("a.md")).toBe(10);
 			expect(result.pages.get("b.md")).toBe(20);
 			expect(result.lastReadAt.get("a.md")).toBe(1000);
@@ -126,13 +127,13 @@ describe("last-page-store", () => {
 		it("vaultPath 为空时不写入", async () => {
 			const pages = new Map([["a.md", 10]]);
 			// 不应抛错
-			await saveLastPages("", pages, new Map());
+			await saveLastPages("", pages, new Map(), PLUGIN_ID);
 		});
 
 		it("写入 v2 格式（顶层 version: 2）", async () => {
 			const pages = new Map([["a.md", 5]]);
 			const lastReadAt = new Map([["a.md", 999]]);
-			await saveLastPages(VAULT, pages, lastReadAt);
+			await saveLastPages(VAULT, pages, lastReadAt, PLUGIN_ID);
 
 			const raw = await fs.readFile(FILE, "utf-8");
 			const parsed = JSON.parse(raw);
@@ -143,9 +144,9 @@ describe("last-page-store", () => {
 		it("lastReadAt 缺失时填 0", async () => {
 			const pages = new Map([["a.md", 7]]);
 			const lastReadAt = new Map<string, number>();  // 无 a.md
-			await saveLastPages(VAULT, pages, lastReadAt);
+			await saveLastPages(VAULT, pages, lastReadAt, PLUGIN_ID);
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.get("a.md")).toBe(7);
 			expect(result.lastReadAt.get("a.md")).toBe(0);
 		});
@@ -158,9 +159,9 @@ describe("last-page-store", () => {
 				pages.set(String(i), i + 1);
 				lastReadAt.set(String(i), 1000 + i);
 			}
-			await saveLastPages(VAULT, pages, lastReadAt);
+			await saveLastPages(VAULT, pages, lastReadAt, PLUGIN_ID);
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.size).toBe(500);
 			// 最早 10 条被丢弃（i=0..9, lastReadAt=1000..1009）
 			expect(result.pages.get("0")).toBeUndefined();
@@ -178,9 +179,9 @@ describe("last-page-store", () => {
 				["nan.md", NaN],
 				["infinity.md", Infinity],
 			]);
-			await saveLastPages(VAULT, pages, new Map());
+			await saveLastPages(VAULT, pages, new Map(), PLUGIN_ID);
 
-			const result = await loadLastPages(VAULT);
+			const result = await loadLastPages(VAULT, PLUGIN_ID);
 			expect(result.pages.size).toBe(1);
 			expect(result.pages.get("valid.md")).toBe(5);
 		});

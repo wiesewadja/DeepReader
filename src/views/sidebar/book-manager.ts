@@ -14,7 +14,7 @@ import type { ProactiveEngine } from '../../agent/proactive/engine.js';
 import type { SessionStore } from '../../agent/session/index.js';
 import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath, getVaultPath } from '../../utils/mobile-fs.js';
-import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
 import { removeFromCatalog } from '../../pageindex/archive.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 
@@ -156,11 +156,11 @@ export class BookManager {
 
 		try {
 			log('[loadIndexes] Scanning PAGEINDEX_DIR:', PAGEINDEX_DIR);
-			if (!(await vaultExists(app, PAGEINDEX_DIR))) {
+			if (!(await vaultExists(app, getPageindexDir()))) {
 				this._indexes = [];
 				return;
 			}
-			const { folders } = await vaultList(app, PAGEINDEX_DIR);
+			const { folders } = await vaultList(app, getPageindexDir());
 			const indexes: any[] = [];
 
 			for (const folder of folders) {
@@ -786,7 +786,7 @@ export class BookManager {
 				this.host.readingTopbar?.updateBooklistCovers(items);
 			}
 		} catch (err) {
-			console.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
+		log.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
 		}
 	}
 

@@ -11,6 +11,7 @@ import * as os from "os";
 import * as fs from "fs/promises";
 import { countTokens } from "../core/utils";
 import { log as piLog } from "../core/logger";
+import { apiLog } from "../../utils/logger.js";
 import { safeRequest } from "../../utils/safe-request.js";
 import {
   DEFAULT_OCR_MODEL,
@@ -173,7 +174,7 @@ export async function ocrImage(
   const model = options.ocrModel || DEFAULT_OCR_OPTIONS.ocrModel;
 
   if (!options.apiKey) {
-    console.error("[OCR Error] API Key is required for cloud OCR");
+    apiLog.error("[OCR Error] API Key is required for cloud OCR");
     return "";
   }
   const apiKey = options.apiKey;
@@ -200,7 +201,7 @@ export async function ocrImage(
     });
 
     if (response.status >= 400) {
-      console.error(`[OCR Error] API error: ${response.status} - ${response.text}`);
+      apiLog.error(`[OCR Error] API error: ${response.status} - ${response.text}`);
       return "";
     }
 
@@ -216,7 +217,7 @@ export async function ocrImage(
 
     return "";
   } catch (error) {
-    console.error(`[OCR Error] Failed to process ${imagePath}:`, error);
+    apiLog.error(`[OCR Error] Failed to process ${imagePath}:`, error);
     return "";
   }
 }

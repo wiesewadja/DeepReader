@@ -16,6 +16,8 @@ import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 import { findTextInMarkdown } from './utils/markdown-utils.js';
+import { getVaultPath } from './utils/mobile-fs.js';
+import { getExcalidrawAutomate } from './utils/excalidraw.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -86,7 +88,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         await this.ensureInitialization();
 
         // 迁移旧路径哈希 bookId → 内容哈希 bookId（一次性，幂等）
-        const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+        const vaultPath = getVaultPath(this.app);
         if (vaultPath) {
             // 先迁移 .pageindex/ → .obsidian/plugins/deepreader/pageindex/
             try {
@@ -108,8 +110,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         // 同步 Skills 到 vault（插件启动时执行）
         await this.syncSkillsToVault();
 
-        // 初始化 FrontendAgent（插件启动时初始化）
-        await this.getFrontendAgent();
+        // FrontendAgent 延迟初始化：首次聊天时通过 getFrontendAgent() 按需加载
 
         // 初始化 ProfileBuilder 并自动增量构建（距上次 > 24h）
         if (this.settings.journalDir) {
@@ -348,7 +349,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             id: "check-excalidraw-status",
             name: "Check Excalidraw Plugin Status",
             callback: () => {
-                const ea = (window as any).ExcalidrawAutomate;
+                const ea = getExcalidrawAutomate();
                 if (ea) {
                     new Notice(`Excalidraw 插件已安装 (版本: ${ea.version || '未知'})`);
                 } else {
@@ -420,7 +421,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             id: "debug-excalidraw-mindmap",
             name: "Debug: Test Excalidraw mindmap",
             callback: async () => {
-                const ea = (window as any).ExcalidrawAutomate;
+                const ea = getExcalidrawAutomate();
                 if (!ea) {
                     new Notice("Excalidraw 插件未安装");
                     return;
@@ -598,8 +599,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
-                } catch (e: any) {
-                    new Notice(`同步失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`同步失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -642,8 +643,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
-                } catch (e: any) {
-                    new Notice(`同步失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`同步失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -671,8 +672,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 try {
                     const result = await svc.rematch();
                     new Notice(`匹配完成：${result.matched} 本已关联，${result.unmatched} 本未关联`);
-                } catch (e: any) {
-                    new Notice(`匹配失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`匹配失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -806,7 +807,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         const hoursSinceBuild = (Date.now() - new Date(meta.lastBuildTime).getTime()) / (1000 * 60 * 60);
         if (hoursSinceBuild >= 24) {
             this.profileBuilder.build().catch(e => {
-                serviceLog.warn('[DeepReader] Auto-build profile failed:', e.message);
+                serviceLog.warn('[DeepReader] Auto-build profile failed:', (e instanceof Error ? e.message : String(e)));
             });
         }
     }
@@ -871,7 +872,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
      */
     async exportCanvasToExcalidraw(canvasPath: string) {
         // 检查 Excalidraw 插件是否可用
-        const ea = (window as any).ExcalidrawAutomate;
+        const ea = getExcalidrawAutomate();
         if (!ea) {
             new Notice("请先安装 Excalidraw 插件（社区插件市场）");
             return;

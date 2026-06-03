@@ -97,11 +97,11 @@ export async function runEngine(input: EngineInput): Promise<EngineOutput> {
       nodeCount: result.nodeCount,
       edgeCount: result.edgeCount,
     };
-  } catch (err: any) {
-    log('engine', `引擎错误: ${err.message}`);
+  } catch (err: unknown) {
+    log('engine', `引擎错误: ${(err instanceof Error ? err.message : String(err))}`);
     return {
       success: false,
-      error: err.message,
+      error: (err instanceof Error ? err.message : String(err)),
     };
   }
 }

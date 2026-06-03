@@ -13,6 +13,7 @@ import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
 import { buildBM25Index } from '../pageindex/bm25';
 import { generateBookIdFromPath } from '../pageindex/book-indexer';
+import { getVaultPath } from '../utils/mobile-fs.js';
 import {
 	generateEmbeddings,
 	writeVectorJsonl,
@@ -23,6 +24,7 @@ import { fetchWithCorsFallback } from '../utils/safe-request';
 import type { WereadSyncState } from '../weread/types';
 import { sanitizeFileName } from '../weread/utils/file';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { serviceLog } from '../utils/logger.js';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,
@@ -276,12 +278,12 @@ export class ProfileBuilder {
 						});
 					}
 				} catch (e) {
-					console.warn(`[ProfileBuilder] embedding batch ${i}-${i + batch.length} failed:`, e);
+				serviceLog.warn(`[ProfileBuilder] embedding batch ${i}-${i + batch.length} failed:`, e);
 				}
 			}
 
 			if (vectors.length > 0) {
-				const vaultPath = (this.vault.adapter as any).getBasePath?.() || (this.vault as any).basePath || '';
+				const vaultPath = getVaultPath(this.app);
 				await writeVectorJsonl(`${vaultPath}/${indexDir}vectors.jsonl`, vectors);
 				await writeChunkTexts(`${vaultPath}/${indexDir}chunks.jsonl`, chunks);
 			}
@@ -593,7 +595,7 @@ export class ProfileBuilder {
 
 			await this.vault.adapter.write(this.bufferPath, JSON.stringify({ rounds: [] }));
 		} catch (e) {
-			console.warn('[ProfileBuilder] accumulateConversationRound failed:', (e as Error).message);
+		serviceLog.warn('[ProfileBuilder] accumulateConversationRound failed:', (e as Error).message);
 		}
 	}
 

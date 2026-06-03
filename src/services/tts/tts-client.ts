@@ -1,4 +1,5 @@
 import { fetchWithCorsFallback } from '../../utils/safe-request.js';
+import { serviceLog } from '../../utils/logger.js';
 
 export interface TTSClientOptions {
     apiKey: string;
@@ -65,7 +66,7 @@ export class TTSClient implements ITTSSynthesizer {
             let detail = errText;
             let parsed: any;
             try { parsed = JSON.parse(errText); detail = parsed.error?.message || errText; } catch {}
-            console.error('[TTS] API 请求失败:', {
+            serviceLog.error('[TTS] API 请求失败:', {
                 url,
                 status: response.status,
                 requestBody: { model: this.model, messages: body.messages, audio: body.audio },
@@ -116,7 +117,7 @@ export class TTSClient implements ITTSSynthesizer {
             let detail = errText;
             let parsed: any;
             try { parsed = JSON.parse(errText); detail = parsed.error?.message || errText; } catch {}
-            console.error('[TTS] Streaming API 请求失败:', {
+            serviceLog.error('[TTS] Streaming API 请求失败:', {
                 url,
                 status: response.status,
                 requestBody: { model: this.model, messages: body.messages, audio: body.audio, stream: true },

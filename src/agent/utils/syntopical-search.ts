@@ -1,4 +1,4 @@
-import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
 /**
  * Syntopical Search - Multi-book retrieval for S3 Syntopical Reading
  *
@@ -61,11 +61,11 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
 
   if (app) {
     // Mobile: vault-relative paths
-    if (!(await vaultExists(app, PAGEINDEX_DIR))) {
+    if (!(await vaultExists(app, getPageindexDir()))) {
       log('[syntopical-search] No pageindex directory found');
       return [];
     }
-    const { folders } = await vaultList(app, PAGEINDEX_DIR);
+    const { folders } = await vaultList(app, getPageindexDir());
     for (const folder of folders) {
       const bookId = folder.split('/').pop() || folder;
       const metaRel = joinPath(PAGEINDEX_DIR, bookId, 'book-meta.json');
@@ -77,7 +77,7 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
     }
   } else {
     // Desktop: absolute paths
-    const pageindexDir = path.join(vaultPath, PAGEINDEX_DIR);
+    const pageindexDir = path.join(vaultPath, getPageindexDir());
     try {
       await fs.access(pageindexDir);
     } catch {
@@ -116,7 +116,7 @@ export async function syntopicalSearch(options: SyntopicalSearchOptions): Promis
         const mappingRel = joinPath(PAGEINDEX_DIR, 'weread', 'mapping.json');
         const mappingRaw = app
           ? await vaultRead(app, mappingRel)
-          : await fs.readFile(path.join(vaultPath, PAGEINDEX_DIR, 'weread', 'mapping.json'), 'utf-8');
+          : await fs.readFile(path.join(vaultPath, getPageindexDir(), 'weread', 'mapping.json'), 'utf-8');
         const parsed = JSON.parse(mappingRaw);
         const mapping = parsed.mappings || parsed; // support both {mappings:{...}} and flat {...}
         for (const wereadId of unresolved) {

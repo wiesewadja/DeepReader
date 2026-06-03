@@ -15,6 +15,7 @@ import type {
 import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
 import { findNodeById, cosineSimilarity } from "../core/utils";
 import { safeRequest } from "../../utils/safe-request.js";
+import { apiLog } from "../../utils/logger.js";
 import { chatGPT } from "../llm/client";
 import { extractJson } from "../core/utils";
 import { treeSearchPrompt } from "../core/prompts";
@@ -621,7 +622,7 @@ async function llmTreeSearch(
 
     return result;
   } catch (err) {
-    console.warn(`Tree search failed: ${err}`);
+    apiLog.warn(`Tree search failed: ${err}`);
     return new Map();
   }
 }

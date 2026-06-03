@@ -4,6 +4,7 @@
 
 import * as crypto from "crypto";
 import { log as piLog } from "./core/logger";
+import { apiLog } from "../utils/logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { getPageindexRoot, getBookDir } from "./paths.js";
@@ -25,6 +26,9 @@ import type {
   IndexErrorCode,
   BM25Data,
 } from "./book-types.js";
+import type { PageIndexResult, TreeNode } from "./core/types.js";
+import type { EmbeddingOptions } from "./vault/types.js";
+import type { TreeData } from "./book-types.js";
 import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
 import { buildBM25Index } from "./bm25.js";
 import { indexPropositions } from "./proposition-indexer.js";
@@ -297,7 +301,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
       piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to save cover:", err);
+      apiLog.warn("[book-indexer] Failed to save cover:", err);
     }
   } else if (parseResult.coverPng && parseResult.coverPng.length > 100) {
     // PDF: save rendered first page as PNG (only if valid, >100 bytes)
@@ -307,7 +311,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.png`;
       piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to save PDF cover:", err);
+      apiLog.warn("[book-indexer] Failed to save PDF cover:", err);
     }
   } else {
     // No cover available: generate text-based SVG cover
@@ -318,7 +322,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.svg`;
       piLog(`[book-indexer] Text cover generated: ${coverPath}`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to generate text cover:", err);
+      apiLog.warn("[book-indexer] Failed to generate text cover:", err);
     }
   }
   tracer.endPhase();
@@ -371,7 +375,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         bookId,
       });
       // Store nodeFileMap for tree.json
-      (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
+      parseResult._nodeFileMap = exportResult.nodeFileMap;
     } else {
       const { exportToObsidian } = await import("./exporters/epub-to-obsidian.js");
       const exportResult = await exportToObsidian(
@@ -388,8 +392,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         },
         parseResult.epubInfo,  // reuse parsed epubInfo instead of re-parsing
       );
-      (parseResult as any)._nodeFileMap = exportResult.nodeFileMap;
-      (parseResult as any)._hierarchicalTree = exportResult.treeNodes;
+      parseResult._nodeFileMap = exportResult.nodeFileMap;
+      parseResult._hierarchicalTree = exportResult.treeNodes;
     }
   } catch (error) {
     throw new IndexError(
@@ -436,10 +440,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   tracer.save();
 
   // Step 3.5: Write tree.json to .pageindex/{bookId}/ (single data source)
-  let treeData: any = { title: rootTitle, exportName, structure: parseResult.structure };
+  let treeData: TreeData = { title: rootTitle, exportName, structure: parseResult.structure, nodeFileMap: {} };
   try {
-    const nodeFileMap = (parseResult as any)._nodeFileMap || {};
-    const hierarchicalTree = (parseResult as any)._hierarchicalTree;
+    const nodeFileMap = parseResult._nodeFileMap || {};
+    const hierarchicalTree = parseResult._hierarchicalTree;
     let finalStructure = parseResult.structure;
 
     if (hierarchicalTree && hierarchicalTree.length > 0) {
@@ -457,9 +461,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         }
       }
       // Merge parseResult data into hierarchical tree, only keep TreeNode fields
-      const enrichNode = (n: any): any => {
-        const data = summaryMap.get(n.nodeId);
-        const result: any = {
+      const enrichNode = (n: TreeNode): TreeNode => {
+        const data = n.nodeId ? summaryMap.get(n.nodeId) : undefined;
+        const result: TreeNode = {
           title: n.title,
           nodeId: n.nodeId,
           // Prefer parseResult's startIndex/endIndex (1-based, correct page range)
@@ -523,9 +527,9 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     });
 
     try {
-      const nodeFileMap = (parseResult as any)._nodeFileMap || {};
+      const nodeFileMap = parseResult._nodeFileMap || {};
       const vectorResult = await vectorizeAllLevels(
-        parseResult, indexDir, options.embedding, nodeFileMap, treeData, options.outputDir,
+        parseResult, indexDir, options.embedding!, nodeFileMap, treeData, options.outputDir,
         (msg: string) => reportProgress({ percent: 84, step: "vectorize", stepLabel: msg }),
         (info) => tracer.recordEmbedCall({ model: info.model, durationMs: info.durationMs, inputTokens: info.inputTokens, batchSize: info.batchSize }),
       );
@@ -564,7 +568,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         stepLabel: "向量索引完成",
       });
     } catch (error) {
-      console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
+      apiLog.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
 
       tracer.failPhase(error instanceof Error ? error.message : "Embedding API failed");
       tracer.save();
@@ -664,7 +668,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      console.warn("[book-indexer] Proposition extraction failed:", errorMsg);
+      apiLog.warn("[book-indexer] Proposition extraction failed:", errorMsg);
 
       tracer.endPhase();
       tracer.save();
@@ -720,12 +724,12 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
  * Simplified: no chapters[] (chapters info is in tree.json)
  */
 async function buildBookMeta(
-  parseResult: any,
+  parseResult: PageIndexResult,
   bookId: string,
   bookDir: string,
   filePath: string,
   fileType: "pdf" | "epub",
-  embedding?: any,
+  embedding?: EmbeddingOptions,
   author?: string
 ): Promise<BookMeta> {
   const title = parseResult.docName || parseResult.structure[0]?.title || "Unknown";
@@ -756,11 +760,11 @@ async function buildBookMeta(
  * Returns { dimensions, nodeCount }
  */
 async function vectorizeAllLevels(
-  parseResult: any,
+  parseResult: PageIndexResult,
   indexDir: string,
-  embedding: any,
+  embedding: EmbeddingOptions,
   nodeFileMap: Record<string, string>,
-  treeData: any,
+  treeData: TreeData,
   vaultRootPath: string,
   onProgress?: (msg: string) => void,
   onEmbedCall?: (info: { model: string; durationMs: number; inputTokens?: number; batchSize: number }) => void
@@ -801,7 +805,7 @@ async function vectorizeAllLevels(
   const allPending: PendingChunk[] = [];
 
   // L0: book summary
-  const bookTitle = parseResult.title || "";
+  const bookTitle = parseResult.docName || "";
   const bookSummary = parseResult.docDescription || "";
   allPending.push({
     chunkId: "BOOK", nodeId: "", blockIds: [], type: "summary", level: "L0",
@@ -911,7 +915,7 @@ async function vectorizeAllLevels(
  * Fix: iterate entire structure array (not just structure[0])
  * BM25 uses full text (title + summary + text) for keyword matching
  */
-function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
+function buildBM25IndexFromParseResult(parseResult: PageIndexResult): BM25Data {
   const nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }> = [];
 
   for (const rootNode of parseResult.structure || []) {
@@ -935,7 +939,7 @@ function buildBM25IndexFromParseResult(parseResult: any): BM25Data {
  * @param includeFullText - If true, include node.text for BM25; if false, use title+summary only for vectorization
  */
 function collectIndexLeafNodes(
-  node: any,
+  node: TreeNode,
   nodes: Array<{ id: string; title: string; text: string; level: "L0" | "L1" }>,
   includeFullText: boolean = false
 ): void {
@@ -959,7 +963,7 @@ function collectIndexLeafNodes(
  * Collect chapter nodes into PendingChunk[] for L1 vectorization.
  */
 function collectAllChapterNodesForPending(
-  node: any,
+  node: TreeNode,
   pending: Array<{
     chunkId: string; nodeId: string; blockIds: string[];
     type: "summary" | "heading" | "body" | "list" | "quote";
@@ -984,7 +988,7 @@ function collectAllChapterNodesForPending(
 /**
  * Flat collection of all chapters with nodeId and title.
  */
-function collectChaptersFlat(node: any): Array<{ nodeId: string; title: string }> {
+function collectChaptersFlat(node: TreeNode): Array<{ nodeId: string; title: string }> {
   const result: Array<{ nodeId: string; title: string }> = [];
   if (node.nodeId && node.title) result.push({ nodeId: node.nodeId, title: node.title });
   for (const child of node.nodes || []) result.push(...collectChaptersFlat(child));
@@ -1004,7 +1008,7 @@ function cleanMdContent(content: string): string {
  * Collect node summaries from parse result structure
  * Returns a plain object of chapter title → summary
  */
-function collectNodeSummaries(structure: any[]): Record<string, string> {
+function collectNodeSummaries(structure: TreeNode[]): Record<string, string> {
   if (!structure) return {};
 
   const summaries: Record<string, string> = {};

@@ -76,3 +76,5 @@ tasks/
 manifest.json
 
 test-vault/
+
+.serena

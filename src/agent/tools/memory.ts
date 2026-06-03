@@ -66,7 +66,7 @@ const searchMemoryDefinition: ToolDefinition = {
 /**
  * 创建 save_memory 工具执行器
  */
-export function createSaveMemoryTool(_app: any): ToolExecutor {
+export function createSaveMemoryTool(): ToolExecutor {
 	return {
 		definition: saveMemoryDefinition,
 		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
@@ -127,7 +127,7 @@ ${memoryUpdate}
 /**
  * 创建 search_memory 工具执行器
  */
-export function createSearchMemoryTool(_app: any): ToolExecutor {
+export function createSearchMemoryTool(): ToolExecutor {
 	return {
 		definition: searchMemoryDefinition,
 		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
@@ -188,7 +188,7 @@ export const saveMemoryTool: ToolExecutor = {
 		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
 		}
-		return createSaveMemoryTool(context.vault.app).execute(args, context);
+		return createSaveMemoryTool().execute(args, context);
 	},
 };
 
@@ -198,7 +198,7 @@ export const searchMemoryTool: ToolExecutor = {
 		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
 		}
-		return createSearchMemoryTool(context.vault.app).execute(args, context);
+		return createSearchMemoryTool().execute(args, context);
 	},
 };
 

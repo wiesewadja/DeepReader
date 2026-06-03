@@ -13,6 +13,7 @@ import { matchBooks, type WereadBookSummary } from './sync/matcher';
 import { loadIndexedBooks } from './utils/indexed-books';
 import type { SyncResult, WereadMapping } from './types';
 import { enrichMappingWithStats } from './sync/mapping-stats';
+import { getVaultPath } from '../utils/mobile-fs.js';
 import { importHighlights } from './sync/highlight-importer';
 import { serviceLog as logger } from '../utils/logger';
 
@@ -46,8 +47,8 @@ export class WereadService {
 		return (this.plugin.app.vault as any).adapter;
 	}
 
-	private getVaultPath(): string {
-		return this.getVaultAdapter().basePath as string;
+	private getVaultPathLocal(): string {
+		return getVaultPath(this.plugin.app);
 	}
 
 	private createSyncEngineHost(): SyncEngineHost {
@@ -108,7 +109,7 @@ export class WereadService {
 			author: b.author,
 		}));
 
-		const vaultPath = this.getVaultPath();
+		const vaultPath = this.getVaultPathLocal();
 		const indexedBooks = await loadIndexedBooks(vaultPath);
 		const matchResults = matchBooks(wereadSummaries, indexedBooks);
 

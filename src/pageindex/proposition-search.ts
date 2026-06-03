@@ -1,4 +1,4 @@
-import { PAGEINDEX_DIR } from "./paths.js";
+import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 /**
  * Proposition Search - Retrieve atomic fact cards with parallel fusion
  */
@@ -65,7 +65,7 @@ export async function searchPropositions(
 ): Promise<PropositionMatch[]> {
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
-    : path.join(vaultPath, PAGEINDEX_DIR, bookId);
+    : path.join(vaultPath, getPageindexDir(), bookId);
 
   const propositions = await loadPropositions(indexDir, app);
   const vectorMap = await loadPropVectorStore(indexDir, app);
@@ -116,7 +116,7 @@ export async function searchWithPropositions(
 
   const indexDir = app
     ? joinPath(PAGEINDEX_DIR, bookId)
-    : path.join(vaultPath, PAGEINDEX_DIR, bookId);
+    : path.join(vaultPath, getPageindexDir(), bookId);
 
   const [propResults, bm25Results] = await Promise.all([
     searchPropositions(query, bookId, vaultPath, embedding, topK * 2, app),

@@ -5,6 +5,7 @@
 
 import { chatGPT } from "../llm/client";
 import { log as piLog } from "../core/logger";
+import { apiLog } from "../../utils/logger.js";
 import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";
 import {
   countTokens,
@@ -101,7 +102,7 @@ export function extractNodeTextContent(
     const headerMatch = lineContent.match(/^(#{1,6})/);
 
     if (!headerMatch) {
-      console.warn(
+      apiLog.warn(
         `Warning: Line ${node.lineNum} does not contain a valid header: '${lineContent}'`
       );
       continue;

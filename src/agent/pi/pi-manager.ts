@@ -119,7 +119,7 @@ export class PiProcessManager {
 		});
 
 		this.process.on('error', (err) => {
-			logError(`[PiManager] Process error: ${err.message}`);
+			logError(`[PiManager] Process error: ${(err instanceof Error ? err.message : String(err))}`);
 			this.state = PiProcessState.ERROR;
 			this.currentBookId = null;
 			this.process = null;

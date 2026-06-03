@@ -103,8 +103,8 @@ export class UnmatchedModal extends Modal {
 						await plugin.saveSettings?.();
 						new Notice(`已关联"${book.title}" → ${item}`);
 					}
-				} catch (e: any) {
-					new Notice(`关联失败：${e.message}`);
+				} catch (e: unknown) {
+					new Notice(`关联失败：${(e instanceof Error ? e.message : String(e))}`);
 				}
 			}
 		})(this.app, this, book, this.getBookFiles());

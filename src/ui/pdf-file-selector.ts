@@ -6,6 +6,7 @@
 
 import { App, Modal, FuzzySuggestModal, TFile, Notice } from "obsidian";
 import { join } from "path";
+import { getVaultPath } from "../utils/mobile-fs.js";
 
 // ==================== 文档类型 ====================
 export type DocumentType = "pdf" | "epub";
@@ -190,7 +191,7 @@ export class PDFFileSelectorModal extends Modal {
         );
 
         // 获取 vault 的基础路径
-        const basePath = (this.app.vault.adapter as any).basePath || '';
+        const basePath = getVaultPath(this.app);
 
         this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径
@@ -371,7 +372,7 @@ export class PDFQuickSelector extends FuzzySuggestModal<DocumentFileInfo> {
         );
 
         // 获取 vault 的基础路径
-        const basePath = (this.app.vault.adapter as any).basePath || '';
+        const basePath = getVaultPath(this.app);
 
         this.documentFiles = documentFiles.map(file => {
             // 拼接绝对路径

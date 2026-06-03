@@ -379,10 +379,10 @@ ${currentMemory}
         return { messages: [] };
       }
       const isAbort = err instanceof Error && (
-        err.message.startsWith('Cancel') ||
-        err.message.startsWith('AbortError') ||
-        err.message === 'Abort' ||
-        err.name === 'AbortError'
+        (err instanceof Error ? err.message : String(err)).startsWith('Cancel') ||
+        (err instanceof Error ? err.message : String(err)).startsWith('AbortError') ||
+        (err instanceof Error ? err.message : String(err)) === 'Abort' ||
+        (err instanceof Error ? err.name : "Error") === 'AbortError'
       );
       if (isAbort || callbacks.abortSignal?.aborted) {
         log('[FrontendAgent] 请求被取消');

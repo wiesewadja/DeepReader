@@ -57,7 +57,7 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
   if (mode === 'proactive') {
     if (state.proactiveTrigger === 'inspectional'
         && typeof window !== 'undefined'
-        && (window as any).ExcalidrawAutomate) {
+        && window.ExcalidrawAutomate) {
       return NODE_NAMES.VISUALIZER;
     }
     return EDGE_KEYS.DONE;

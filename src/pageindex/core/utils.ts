@@ -7,6 +7,7 @@ import { stripThinkTags } from '../../config/thinking-models.js';
 
 import type { TreeNode, TocItem } from "./types";
 import { log as piLog } from "./logger";
+import { apiLog } from "../../utils/logger.js";
 
 /**
  * Approximate token count using character-based estimation
@@ -206,7 +207,7 @@ export function extractJson<T = unknown>(content: string): T | null {
       }
     }
     
-    console.error("Failed to extract JSON:", error);
+    apiLog.error("Failed to extract JSON:", error);
     return null;
   }
 }

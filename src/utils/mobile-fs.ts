@@ -8,7 +8,7 @@
 import { type App, normalizePath } from 'obsidian';
 import { join } from 'path';
 import type { TFile } from 'obsidian';
-import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { PAGEINDEX_DIR, getPageindexDir } from '../pageindex/paths.js';
 
 /** 通过 Vault API 读取文本文件 */
 export async function vaultRead(app: App, relativePath: string): Promise<string> {
@@ -123,7 +123,7 @@ export async function resolveBookIdFromPdf(app: App, pdfName: string): Promise<s
 	// 移动端：遍历 pageindex 目录，通过 book-meta.json 的标题匹配
 	const bookTitle = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 	try {
-		const { folders } = await app.vault.adapter.list(PAGEINDEX_DIR);
+		const { folders } = await app.vault.adapter.list(getPageindexDir());
 		for (const folder of folders) {
 			const bookId = folder.split('/').pop() || folder;
 			try {

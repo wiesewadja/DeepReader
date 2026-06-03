@@ -9,6 +9,7 @@
 
 import * as path from "path";
 import * as fs from "fs";
+import { apiLog } from "../utils/logger.js";
 import { PageIndex } from "./pageindex";
 import { mdToTree } from "./parsers/markdown";
 import { exportPdfToObsidian } from "./exporters/pdf-to-obsidian";
@@ -231,7 +232,7 @@ async function maybeAutoIndex(options: DocObsidianOptions): Promise<VaultIndexRe
   
   // Vault features require Bun runtime
   if (!isBunRuntime) {
-    console.warn("[pageindex] Vault auto-index requires Bun runtime. Skipping auto-index.");
+    apiLog.warn("[pageindex] Vault auto-index requires Bun runtime. Skipping auto-index.");
     return undefined;
   }
   

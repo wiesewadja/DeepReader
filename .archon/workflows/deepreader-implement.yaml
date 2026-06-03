@@ -1,0 +1,147 @@
+name: deepreader-implement
+description: |
+  全自动特性实现工作流。在已有 worktree 分支上（含 SPEC.md + tasks/plan.md），
+  自动实现、构建、测试、提交、部署到 test-vault。
+  Triggers: "实现特性", "implement", "跑实现", "build feature"。
+
+  用法（续接 deepreader-spec 的 worktree）：
+    archon continue feat/<name> --workflow deepreader-implement
+  或（独立使用，需已有 SPEC 或 plan）：
+    archon workflow run deepreader-implement --branch feat/<name>
+
+provider: pi
+model: glm/glm-5.1
+interactive: true
+worktree:
+  enabled: true
+  baseRef: origin/main
+
+nodes:
+  # ── Phase 1: 检测输入 ──
+  - id: detect-input
+    bash: |
+      if [ -f "tasks/plan.md" ]; then
+        echo "plan"
+      elif [ -f "SPEC.md" ]; then
+        echo "spec"
+      else
+        echo "none"
+      fi
+
+  - id: cancel-no-input
+    cancel: "未找到 tasks/plan.md 或 SPEC.md，无法继续。请先运行 deepreader-spec 工作流。"
+    depends_on: [detect-input]
+    when: "$detect-input.output == 'none'"
+
+  # ── Phase 2: Plan 生成（仅 spec 模式需要）──
+  - id: generate-plan-from-spec
+    command: dr-generate-plan
+    depends_on: [detect-input]
+    when: "$detect-input.output == 'spec'"
+    context: fresh
+
+  # ── Phase 3: 预构建上下文 ──
+  - id: prepare-context
+    bash: |
+      mkdir -p "$ARTIFACTS_DIR"
+      {
+        echo "# 项目上下文"
+        echo ""
+        echo "---"
+        echo "## 概述"
+        cat .project-rules/01-overview.md 2>/dev/null || echo "(missing)"
+        echo ""
+        echo "---"
+        echo "## 架构"
+        cat .project-rules/02-architecture.md 2>/dev/null || echo "(missing)"
+        echo ""
+        echo "---"
+        echo "## 代码规范"
+        cat .project-rules/05-conventions.md 2>/dev/null || echo "(missing)"
+        echo ""
+        echo "---"
+        echo "## SPEC"
+        cat SPEC.md 2>/dev/null || echo "(missing)"
+        echo ""
+        echo "---"
+        echo "## 实现计划"
+        cat tasks/plan.md 2>/dev/null || echo "(missing)"
+      } > "$ARTIFACTS_DIR/project-context.md"
+      echo "Context: $(wc -l < "$ARTIFACTS_DIR/project-context.md") lines"
+    depends_on: [generate-plan-from-spec, detect-input]
+    trigger_rule: none_failed_min_one_success
+
+  # ── Phase 4: 逐任务实现 ──
+  - id: implement
+    skills: [deepreader-implement]
+    loop:
+      prompt: |
+        你是增量实现 agent。每次迭代实现 **一个** 任务。
+        先读取 `$ARTIFACTS_DIR/project-context.md` 获取项目上下文。
+
+        ## 输出格式（必须遵循）
+
+        每次迭代开头输出：
+        ### >>> Task [ID]: [标题]
+
+        每次迭代末尾输出：
+        ### <<< 完成 | 进度: N/M
+
+        ## 步骤
+
+        1. 读取 `tasks/plan.md`，找到第一个 `[ ]` 的验收标准
+        2. 定位该标准所属任务，阅读相关源文件
+        3. 用 Edit（修改）或 Write（新建）工具实现代码
+        4. 运行 `npx tsc --noEmit` 确认无类型错误
+        5. 将通过的验收标准 `[ ]` → `[x]`
+        6. 追加变更摘要到 `$ARTIFACTS_DIR/changes.md`
+
+        所有验收标准都为 `[x]` 时，输出 <promise>COMPLETE</promise>
+
+        **注意**：如果所有标准已是 `[x]` 但你仍在此循环中，说明构建或测试失败。
+        运行 `npm run build 2>&1` 和 `npm run test:run 2>&1` 查看错误，修复后输出 COMPLETE。
+      until: COMPLETE
+      max_iterations: 20
+      fresh_context: true
+      until_bash: "! grep -q '\\[ \\]' tasks/plan.md 2>/dev/null"
+    depends_on: [prepare-context]
+    idle_timeout: 600000
+
+  # ── Phase 5: 显式验证 ──
+  - id: verify
+    bash: "npm run build 2>&1 | tail -10 && npm run test:run 2>&1 | tail -10"
+    depends_on: [implement]
+    timeout: 180000
+
+  # ── Phase 6: 提交变更 ──
+  - id: commit
+    command: dr-commit-changes
+    depends_on: [verify]
+
+  # ── Phase 7: 部署到 test-vault ──
+  - id: deploy
+    bash: "npm run deploy 2>&1 | tail -10"
+    depends_on: [commit]
+    timeout: 120000
+
+  # ── Phase 8: 提示下一步 ──
+  - id: next-steps
+    prompt: |
+      实现已完成并部署到 test-vault。输出以下提示：
+
+      ## ✅ 实现完成
+
+      请在 Obsidian 中验证 test-vault 的功能。
+
+      ### 下一步
+
+      **审查代码：**
+      ```
+      archon workflow run deepreader-review --no-worktree ""
+      ```
+
+      **发布到 main：**
+      ```
+      archon workflow run deepreader-ship --no-worktree "<当前分支名>"
+      ```
+    depends_on: [deploy]

@@ -97,7 +97,7 @@ function updateProfileSection(
 /**
  * 创建 update_profile 工具执行器
  */
-export function createUpdateProfileTool(app: any): ToolExecutor {
+export function createUpdateProfileTool(): ToolExecutor {
   return {
     definition: updateProfileDefinition,
     async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
@@ -156,6 +156,6 @@ export const updateProfileTool: ToolExecutor = {
     if (!context.vault?.app) {
       return 'Error: Obsidian App 实例不可用';
     }
-    return createUpdateProfileTool(context.vault.app).execute(args, context);
+    return createUpdateProfileTool().execute(args, context);
   },
 };

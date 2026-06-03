@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { migratePageindexPath } from "@/pageindex/migration";
-import { PAGEINDEX_DIR } from "@/pageindex/paths";
+import { PAGEINDEX_DIR, getPageindexDir } from "@/pageindex/paths";
 
 describe("migratePageindexPath", () => {
 	let tmpDir: string;
@@ -23,7 +23,7 @@ describe("migratePageindexPath", () => {
 
 	it("should move old dir to new location", async () => {
 		const oldDir = path.join(tmpDir, ".pageindex");
-		const newDir = path.join(tmpDir, PAGEINDEX_DIR);
+		const newDir = path.join(tmpDir, getPageindexDir());
 
 		await fs.mkdir(path.join(oldDir, "abc123"), { recursive: true });
 		await fs.writeFile(path.join(oldDir, "abc123", "tree.json"), "{}");
@@ -39,7 +39,7 @@ describe("migratePageindexPath", () => {
 
 	it("should merge when both old and new dirs exist", async () => {
 		const oldDir = path.join(tmpDir, ".pageindex");
-		const newDir = path.join(tmpDir, PAGEINDEX_DIR);
+		const newDir = path.join(tmpDir, getPageindexDir());
 
 		await fs.mkdir(path.join(oldDir, "book-old"), { recursive: true });
 		await fs.writeFile(path.join(oldDir, "book-old", "tree.json"), "old");
@@ -70,7 +70,7 @@ describe("migratePageindexPath", () => {
 
 	it("should handle same-name entry conflict by recursive copy", async () => {
 		const oldDir = path.join(tmpDir, ".pageindex");
-		const newDir = path.join(tmpDir, PAGEINDEX_DIR);
+		const newDir = path.join(tmpDir, getPageindexDir());
 
 		// 旧目录中有 book-shared/tree.json 和 book-old/tree.json
 		await fs.mkdir(path.join(oldDir, "book-shared"), { recursive: true });
