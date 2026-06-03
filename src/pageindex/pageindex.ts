@@ -247,56 +247,28 @@ export class PageIndex {
 
     if (hasMineruToken || this.options.extractionMode !== "ocr") {
       piLog("[fromPdf] Parsing PDF with MinerU API...");
-      try {
-        const pdfInfo = await parsePdf(input, this.options.mineruApiKey, (msg) => {
-          this.options.onProgress?.({ percent: 10, message: msg, stage: 'mineru_batch', step: 0, totalSteps: 0 });
-        });
-        pages = pdfInfo.pages;
-        pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
-        mineruImages = pdfInfo.images;
+      // MinerU 解析是独立的 try-catch，失败时直接报错（不降级 OCR）
+      const pdfInfo = await parsePdf(input, this.options.mineruApiKey, (msg) => {
+        this.options.onProgress?.({ percent: 10, message: msg, stage: 'mineru_batch', step: 0, totalSteps: 0 });
+      });
+      pages = pdfInfo.pages;
+      pdfName = typeof input === "string" ? getPdfName(input) : pdfInfo.title;
+      mineruImages = pdfInfo.images;
 
-        const savedOutline = pdfInfo.outline;
+      const savedOutline = pdfInfo.outline;
 
-        // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
-        if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
-          piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
-          const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
-          result.images = mineruImages;
-          return result;
-        }
-
-        // LLM path: use outline as hint for page mapping accuracy
-        try {
-          const result = await this.processPdfPages(pages, pdfName, savedOutline);
-          result.images = mineruImages;
-          return result;
-        } catch (error) {
-          if (savedOutline && savedOutline.length > 0) {
-            piLog(`[fromPdf] LLM failed, falling back to outline: ${(error as Error).message}`);
-            return this.processPdfWithOutline(pages, savedOutline, pdfName);
-          }
-          throw error;
-        }
-      } catch (mineruError) {
-        const msg = (mineruError as Error).message || '';
-        piLog(`[fromPdf] MinerU failed: ${msg}, falling back to OCR`);
-        // 已知的不可恢复错误：文件过大/页数超限，OCR 也处理不了，直接报错
-        const isUnrecoverable = /exceeds limit|file too large|文件过大/i.test(msg);
-        if (hasMineruToken && isUnrecoverable) {
-          throw new Error(`MinerU 解析失败: ${msg}\n请在 MinerU 在线平台 (mineru.net) 处理大文件`);
-        }
-        // 有 token 但其他原因失败，尝试 OCR 降级
-        if (hasMineruToken) {
-          try {
-            return await this.ocrFallback(input);
-          } catch (ocrError) {
-            throw new Error(
-              `MinerU 解析失败: ${msg}\n` +
-              `OCR 降级也失败: ${(ocrError as Error).message}`
-            );
-          }
-        }
+      // Outline-first: if PDF has high-quality bookmarks, skip LLM entirely
+      if (savedOutline && savedOutline.length > 0 && isOutlineHighQuality(savedOutline, pdfInfo.totalPages)) {
+        piLog(`[fromPdf] PDF has ${savedOutline.length} high-quality bookmarks, using outline directly (skipping LLM)`);
+        const result = await this.processPdfWithOutline(pages, savedOutline, pdfName);
+        result.images = mineruImages;
+        return result;
       }
+
+      // LLM path: use outline as hint for page mapping accuracy
+      const result = await this.processPdfPages(pages, pdfName, savedOutline);
+      result.images = mineruImages;
+      return result;
     }
 
     // ── OCR 兜底路径（无 Token 或 MinerU 失败）──
