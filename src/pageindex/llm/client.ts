@@ -89,7 +89,7 @@ export async function chatGPTWithFinishReason(
     baseUrl,
     chatHistory = [],
     temperature = 0,
-    maxRetries = 3,
+    maxRetries = 5,
     maxTokens,
   } = options;
 
@@ -166,8 +166,11 @@ export async function chatGPTWithFinishReason(
       piLog(`[chatGPT] Attempt ${attempt + 1} failed: ${lastError.message}`);
 
       if (attempt < maxRetries - 1) {
-        const backoff = 1000 * (attempt + 1);
-        piLog(`[chatGPT] Retrying in ${backoff}ms...`);
+        // 429 限流：指数退避 + 随机抖动，避免所有并发请求同时重试
+        const is429 = lastError.message.includes('429');
+        const baseBackoff = is429 ? 3000 : 1000;
+        const backoff = baseBackoff * Math.pow(2, attempt) + Math.random() * 1000;
+        piLog(`[chatGPT] Retrying in ${Math.round(backoff)}ms...`);
         await sleep(backoff);
       }
     }
