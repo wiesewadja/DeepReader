@@ -110,7 +110,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         // 同步 Skills 到 vault（插件启动时执行）
         await this.syncSkillsToVault();
 
-			// FrontendAgent 延迟初始化：首次聊天时通过 getFrontendAgent() 按需加载
+        // FrontendAgent 延迟初始化：首次聊天时通过 getFrontendAgent() 按需加载
 
         // 初始化 ProfileBuilder 并自动增量构建（距上次 > 24h）
         if (this.settings.journalDir) {
