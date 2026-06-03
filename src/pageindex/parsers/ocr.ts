@@ -6,6 +6,7 @@
  */
 
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import * as path from "path";
 import * as os from "os";
 import * as fs from "fs/promises";
@@ -20,6 +21,16 @@ import {
   DEFAULT_OCR_CONCURRENCY,
 } from "../defaults.js";
 import type { PdfPage } from "./pdf";
+
+/** 解析 poppler 工具可执行文件路径（兼容 macOS Electron renderer 进程） */
+function popplerBin(name: string): string {
+	if (process.platform !== "darwin") return name;
+	for (const dir of ["/opt/homebrew/bin", "/usr/local/bin"]) {
+		const full = path.join(dir, name);
+		if (existsSync(full)) return full;
+	}
+	return name;
+}
 
 export interface OcrOptions {
   /** OCR model to use (default: glm-ocr) */
@@ -60,8 +71,9 @@ interface LayoutParsingResponse {
  * Check if poppler tools are installed on the system
  */
 export async function checkPopplerInstalled(): Promise<boolean> {
+  const cmd = popplerBin("pdftocairo");
   return new Promise((resolve) => {
-    const child = spawn("pdftocairo", ["-v"], { stdio: "ignore" });
+    const child = spawn(cmd, ["-v"], { stdio: "ignore" });
     child.on("error", () => resolve(false));
     child.on("close", (code) => {
       // pdftocairo -v 在多数系统上输出版本到 stderr 后返回 exit code 1
@@ -75,7 +87,7 @@ export async function checkPopplerInstalled(): Promise<boolean> {
  */
 async function getPdfPageCount(pdfPath: string): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn("pdfinfo", [pdfPath], { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(popplerBin("pdfinfo"), [pdfPath], { stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
     child.on("error", () => resolve(0));
@@ -116,7 +128,7 @@ export async function pdfToImages(
 
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn("pdftocairo", [formatFlag, "-r", String(dpi), pdfPath, outputPrefix], { stdio: "ignore" });
+      const child = spawn(popplerBin("pdftocairo"), [formatFlag, "-r", String(dpi), pdfPath, outputPrefix], { stdio: "ignore" });
       child.on("error", reject);
       child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`Exit code ${code}`)));
     });

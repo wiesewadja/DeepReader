@@ -278,10 +278,26 @@ export class PageIndex {
       } catch (mineruError) {
         // MinerU 完全失败时，降级到 OCR
         piLog(`[fromPdf] MinerU failed: ${(mineruError as Error).message}, falling back to OCR`);
+        // 如果 MinerU 有 token 但仍然失败，在 OCR 也失败时暴露原始错误
+        if (hasMineruToken) {
+          try {
+            return await this.ocrFallback(input);
+          } catch (ocrError) {
+            throw new Error(
+              `MinerU 解析失败: ${(mineruError as Error).message}\n` +
+              `OCR 降级也失败: ${(ocrError as Error).message}`
+            );
+          }
+        }
       }
     }
 
     // ── OCR 兜底路径（无 Token 或 MinerU 失败）──
+    return this.ocrFallback(input);
+  }
+
+  /** OCR 兜底解析（提取为方法以便复用） */
+  private async ocrFallback(input: string | Buffer | ArrayBuffer): Promise<PageIndexResult> {
     piLog("[fromPdf] Using OCR fallback...");
     const ocrOptions: OcrOptions = {
       ocrModel: this.options.ocrModel || DEFAULT_OCR_MODEL,
@@ -292,11 +308,11 @@ export class PageIndex {
       concurrency: this.options.ocrConcurrency,
     };
     const result = await parsePdfWithOcr(input, ocrOptions);
-    pages = result.pages;
-    pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
+    const pages = result.pages;
+    const pdfName = typeof input === "string" ? getPdfName(input) : "Untitled";
 
     const ocrResult = await this.processPdfPages(pages, pdfName);
-    ocrResult.images = undefined; // OCR path does not produce images
+    ocrResult.images = undefined;
     return ocrResult;
   }
 
