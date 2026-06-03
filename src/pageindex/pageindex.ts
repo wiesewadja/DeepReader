@@ -276,15 +276,20 @@ export class PageIndex {
           throw error;
         }
       } catch (mineruError) {
-        // MinerU 完全失败时，降级到 OCR
-        piLog(`[fromPdf] MinerU failed: ${(mineruError as Error).message}, falling back to OCR`);
-        // 如果 MinerU 有 token 但仍然失败，在 OCR 也失败时暴露原始错误
+        const msg = (mineruError as Error).message || '';
+        piLog(`[fromPdf] MinerU failed: ${msg}, falling back to OCR`);
+        // 已知的不可恢复错误：文件过大/页数超限，OCR 也处理不了，直接报错
+        const isUnrecoverable = /exceeds limit|file too large|文件过大/i.test(msg);
+        if (hasMineruToken && isUnrecoverable) {
+          throw new Error(`MinerU 解析失败: ${msg}\n请在 MinerU 在线平台 (mineru.net) 处理大文件`);
+        }
+        // 有 token 但其他原因失败，尝试 OCR 降级
         if (hasMineruToken) {
           try {
             return await this.ocrFallback(input);
           } catch (ocrError) {
             throw new Error(
-              `MinerU 解析失败: ${(mineruError as Error).message}\n` +
+              `MinerU 解析失败: ${msg}\n` +
               `OCR 降级也失败: ${(ocrError as Error).message}`
             );
           }
