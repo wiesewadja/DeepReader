@@ -14,6 +14,7 @@ import { buildZlibClient } from '../../zlibrary/build-client.js';
 import { ZLIBRARY_ENABLED } from '../../config/features.js';
 import { SyncStateManager } from '../../weread/sync/state.js';
 import type { VaultAdapter } from '../../weread/sync/state.js';
+import { getVaultAdapter } from '../../utils/vault.js';
 import type { MappingStats } from '../../weread/types.js';
 import { normalizeTitle } from '../../weread/sync/matcher.js';
 import { PDFFileSelectorModal } from '../../ui/pdf-file-selector.js';
@@ -54,7 +55,7 @@ export class WereadBridge {
 	getStatsCache(): Map<string, MappingStats> { return this.wereadStatsCache; }
 
 	private getAdapter(): VaultAdapter | null {
-		return (this.callbacks.app as unknown as { vault?: { adapter?: VaultAdapter } }).vault?.adapter ?? null;
+		return getVaultAdapter(this.callbacks.app);
 	}
 
 	/** 从 .pageindex/weread/mapping.json 加载已关联书籍 ID 集合 + 统计 */

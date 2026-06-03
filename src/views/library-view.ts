@@ -12,7 +12,7 @@ import { error as logError, uiLog } from '../utils/logger.js';
 import { loadArchivedBookIds, toggleArchive, batchToggleArchive } from '../pageindex/archive.js';
 import { getVaultPath } from '../utils/mobile-fs.js';
 import { SyncStateManager } from '../weread/sync/state.js';
-import type { VaultAdapter } from '../weread/sync/state.js';
+import { getVaultAdapter } from '../utils/vault.js';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
 import { sanitizeFileName } from '../weread/utils/file.js';
 
@@ -468,7 +468,7 @@ export class LibraryView extends ItemView {
 		// 微信读书：已关联则打开阅读，未关联则打开笔记
 		if (index.fileType === 'weread') {
 			if (this.wereadBridge.getMappingCache().has(index.id)) {
-				const adapter = (this.app as unknown as { vault?: { adapter?: VaultAdapter } }).vault?.adapter;
+				const adapter = getVaultAdapter(this.app);
 				if (adapter) {
 					try {
 						const mappingPath = `${PAGEINDEX_DIR}/weread/mapping.json`;
@@ -663,7 +663,7 @@ export class LibraryView extends ItemView {
 
 				try {
 					if (index.fileType === 'weread') {
-						const adapter = (this.app as unknown as { vault?: { adapter?: VaultAdapter } }).vault?.adapter;
+						const adapter = getVaultAdapter(this.app);
 						if (adapter) {
 							const stateManager = new SyncStateManager(adapter, this.options.plugin.manifest.id);
 							await stateManager.excludeBook(index.id);

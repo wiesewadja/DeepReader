@@ -3,8 +3,9 @@
  * 负责封面查找、加载、缓存和占位符生成
  */
 
-import type { App } from 'obsidian';
-import { TFile } from 'obsidian';
+import { getVaultPath } from '../../utils/mobile-fs.js';
+import { getVaultAdapter } from '../../utils/vault.js';
+import { TFile, type App } from 'obsidian';
 import { sanitizeFileName } from '../../weread/utils/file.js';
 import type { IndexListItem } from '../../types/index.js';
 import { stripFileExtension } from '../../types/index.js';
@@ -12,7 +13,6 @@ import { SyncStateManager } from '../../weread/sync/state.js';
 import type { VaultAdapter } from '../../weread/sync/state.js';
 import { downloadWereadCover } from '../../weread/utils/cover.js';
 import { getBookFile } from '../../pageindex/paths.js';
-import { getVaultPath } from '../../utils/mobile-fs.js';
 import * as fs from 'fs/promises';
 
 export interface CoverManagerCallbacks {
@@ -49,7 +49,7 @@ export class CoverManager {
 	}
 
 	private getAdapter(): VaultAdapter | null {
-		return (this.app as unknown as { vault?: { adapter?: VaultAdapter } }).vault?.adapter ?? null;
+		return getVaultAdapter(this.app);
 	}
 
 	/** 查找封面文件并返回 URL，找不到返回 null */
