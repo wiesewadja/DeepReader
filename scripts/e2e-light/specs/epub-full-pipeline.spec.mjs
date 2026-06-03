@@ -126,8 +126,9 @@ export default {
 				epubTitle = result.title;
 				epubAuthor = result.author || '';
 				chapters = result.chapters;
+				const totalTokens = chapters.reduce((sum, c) => sum + (c.tokenCount || 0), 0);
 				pass('parseEpub 元数据', Date.now() - t0,
-					`title="${epubTitle?.slice(0, 20)}", author="${epubAuthor?.slice(0, 10)}", ch=${chapters.length}`);
+					`title="${epubTitle?.slice(0, 20)}", author="${epubAuthor?.slice(0, 10)}", topChapters=${chapters.length}, totalTokens=${totalTokens}`);
 			} catch (e) {
 				fail('parseEpub 元数据', Date.now() - t0, e);
 			}
@@ -209,18 +210,21 @@ export default {
 							title: meta.title,
 							author: meta.author,
 							fileType: meta.fileType,
+							version: meta.version,
+							hasEmbedding: !!meta.embedding,
+							embeddingModel: meta.embedding?.model,
+							// V3: chapters 始终为空数组，章节信息在 tree.json 中
 							chaptersCount: meta.chapters?.length || 0,
-							hasTree: !!meta.treePath,
-							hasBm25: !!meta.bm25Path,
 						};
 					})();
 				})()`, { timeout: 10_000 });
 
 				if (!meta?.exists) throw new Error('book-meta.json 不存在');
 				if (meta.fileType !== 'epub') throw new Error(`fileType=${meta.fileType}, expected epub`);
+				if (!meta.version) throw new Error('缺少 version 字段');
 
 				pass('book-meta.json', Date.now() - t0,
-					`title="${meta.title?.slice(0, 20)}", ch=${meta.chaptersCount}, tree=${meta.hasTree}, bm25=${meta.hasBm25}`);
+					`title="${meta.title?.slice(0, 20)}", v${meta.version}, embedding=${meta.embeddingModel || 'none'}`);
 			} catch (e) {
 				fail('book-meta.json', Date.now() - t0, e);
 			}
@@ -244,23 +248,24 @@ export default {
 						// tree.json 有两种格式：扁平 nodes[] 或嵌套 structure[]
 						let totalNodes = 0;
 						let maxDepth = 0;
-						let hasEmbeddings = false;
 
 						if (Array.isArray(tree.nodes)) {
 							totalNodes = tree.nodes.length;
 							maxDepth = Math.max(...tree.nodes.map(n => n.level || 0), 0);
-							hasEmbeddings = tree.nodes.some(n => n.embedding);
 						} else if (Array.isArray(tree.structure)) {
 							const walk = (nodes, depth) => {
 								for (const n of nodes) {
 									totalNodes++;
 									if (depth > maxDepth) maxDepth = depth;
-									if (n.embedding) hasEmbeddings = true;
 									if (n.nodes?.length) walk(n.nodes, depth + 1);
 								}
 							};
 							walk(tree.structure, 1);
 						}
+
+						// 向量存储在 vectors.jsonl 而非 tree.json 节点中
+						const vectorPath = piBase + '/' + ${JSON.stringify(bookId)} + '/vectors.jsonl';
+						const hasVectors = await adapter.exists(vectorPath);
 
 						const rootNodes = tree.structure?.length || tree.nodes?.filter(n => !n.parentId).length || 0;
 						return {
@@ -268,7 +273,7 @@ export default {
 							totalNodes,
 							rootNodes,
 							maxDepth,
-							hasEmbeddings,
+							hasVectors,
 							hasDocDescription: !!tree.docDescription,
 							hasNodeFileMap: !!tree.nodeFileMap,
 						};
@@ -280,7 +285,7 @@ export default {
 				if (result.rootNodes < 1) throw new Error('无根节点');
 
 				pass('tree.json', Date.now() - t0,
-					`nodes=${result.totalNodes}, roots=${result.rootNodes}, depth=${result.maxDepth}, embeddings=${result.hasEmbeddings}`);
+					`nodes=${result.totalNodes}, roots=${result.rootNodes}, depth=${result.maxDepth}, vectors=${result.hasVectors}`);
 			} catch (e) {
 				fail('tree.json', Date.now() - t0, e);
 			}
@@ -451,6 +456,44 @@ export default {
 					`terms=${result.termsCount}, sample=${result.sampleTerms?.join('/')}`);
 			} catch (e) {
 				fail('bm25.json', Date.now() - t0, e);
+			}
+		}
+
+		// ===== Step 10: vectors.jsonl 向量数据验证 =====
+		{
+			const t0 = Date.now();
+			try {
+				const result = await evalObsidian(`(() => {
+					const adapter = app.vault.adapter;
+					return (async () => {
+						const piBase = '.obsidian/plugins/deepreader-dev/pageindex';
+						const vectorPath = piBase + '/' + ${JSON.stringify(bookId)} + '/vectors.jsonl';
+						const exists = await adapter.exists(vectorPath);
+						if (!exists) return { exists: false };
+
+						const raw = await adapter.read(vectorPath);
+						const lines = raw.trim().split('\\n');
+						// 抽样第一行：验证有 vector 字段且维度 > 0
+						const first = JSON.parse(lines[0]);
+						const vectorLen = first.vector?.length || 0;
+						return {
+							exists: true,
+							vectorCount: lines.length,
+							dimensions: vectorLen,
+							hasChunkId: !!first.chunkId,
+							levels: [...new Set(lines.slice(0, 20).map(l => { try { return JSON.parse(l).level; } catch { return '?'; } }))],
+						};
+					})();
+				})()`, { timeout: 10_000 });
+
+				if (!result?.exists) throw new Error('vectors.jsonl 不存在');
+				if (result.vectorCount < 10) throw new Error(`向量数过少: ${result.vectorCount}`);
+				if (result.dimensions < 100) throw new Error(`向量维度异常: ${result.dimensions}`);
+
+				pass('vectors.jsonl', Date.now() - t0,
+					`count=${result.vectorCount}, dim=${result.dimensions}, levels=${result.levels?.join('/')}`);
+			} catch (e) {
+				fail('vectors.jsonl', Date.now() - t0, e);
 			}
 		}
 
