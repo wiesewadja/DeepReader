@@ -139,7 +139,7 @@ ${bodyContent}`;
 /**
  * 检查文件是否有 aicreate frontmatter
  */
-async function hasAicreateFrontmatter(app: any, file: TFile): Promise<boolean> {
+async function hasAicreateFrontmatter(app: import('obsidian').App, file: TFile): Promise<boolean> {
   try {
     const content = await app.vault.read(file);
     const parsed = parseFrontmatter(content);
@@ -206,7 +206,7 @@ export const writeNoteTool: ToolExecutor = {
       // 确保目录存在
       const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
       if (folderPath) {
-        await ensureFolderExists(app as unknown as import('obsidian').App, folderPath);
+        await ensureFolderExists(app, folderPath);
       }
 
       const newContent = generateContentWithFrontmatter(content, 'create');

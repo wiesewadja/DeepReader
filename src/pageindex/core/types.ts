@@ -102,8 +102,11 @@ export interface PageIndexResult {
   coverPng?: Buffer;
   /** Raw EPUB info for reuse by exporters (avoids re-parsing) */
   epubInfo?: import("../parsers/epub").EpubInfo;
-  /** Images extracted from PDF (MinerU CDN URLs → local files) */
   images?: import("../parsers/mineru-types").MineruImage[];
+  /** 导出阶段注入的节点-文件映射 */
+  _nodeFileMap?: Record<string, string>;
+  /** EPUB 层级树（仅 EPUB 来源） */
+  _hierarchicalTree?: TreeNode[];
 }
 
 export interface TocItem {

@@ -13,19 +13,13 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { toolsLog as log } from '../../utils/logger.js';
 import { ensureFolderExists } from '../../utils/vault.js';
-import type { App } from 'obsidian';
+import type { App, TFile } from 'obsidian';
 
-// TFile 类型定义（避免直接导入 obsidian）
-interface TFileLike {
-  path: string;
-  extension: string;
-  basename?: string;
+// 检查对象是否是 TFile（支持 mock 对象）
+function isTFile(file: unknown): file is TFile & { path: string; extension: string } {
+  return !!file && typeof (file as Record<string, unknown>).path === 'string' && typeof (file as Record<string, unknown>).extension === 'string';
 }
 
-// 检查是否是 TFile
-function isTFile(file: any): file is TFileLike {
-  return file && typeof file.path === 'string' && typeof file.extension === 'string';
-}
 
 // Canvas 数据类型定义
 interface CanvasNode {
@@ -56,6 +50,10 @@ interface CanvasData {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
 }
+
+// Zod 解析后的输入节点/边类型（字段都是可选的，运行时由 schema 校验）
+type InputNode = Partial<CanvasNode> & Record<string, unknown>;
+type InputEdge = Partial<Omit<CanvasEdge, 'id' | 'fromNode' | 'toNode'>> & { id?: string; fromNode?: string; toNode?: string } & Record<string, unknown>;
 
 // Mindmap 类型定义
 interface MindmapBranch {
@@ -491,12 +489,14 @@ function buildMindmapCanvas(
 /**
  * 创建 Canvas Tool
  */
-export function createCanvasTool(app: any): ToolExecutor {
+export function createCanvasTool(app: App): ToolExecutor {
   return {
     definition: CANVAS_DEFINITION,
 
     async execute(args: Record<string, unknown>, _context: ToolContext): Promise<string> {
-      const { action, path, nodes, edges } = args;
+      const action = args.action as string;
+      const path = args.path as string | undefined;
+      const { nodes, edges } = args;
 
       log('[Canvas] 执行:', action);
 
@@ -508,7 +508,7 @@ export function createCanvasTool(app: any): ToolExecutor {
 
           try {
             // 处理节点：添加 ID 和默认值
-            const processedNodes: CanvasNode[] = ((nodes as any[]) || []).map((node, index) => ({
+            const processedNodes: CanvasNode[] = ((nodes as InputNode[]) || []).map((node, index) => ({
               id: node.id || generateId(),
               type: node.type || 'text',
               x: node.x ?? 0,
@@ -523,10 +523,10 @@ export function createCanvasTool(app: any): ToolExecutor {
             }));
 
             // 处理边：添加 ID
-            const processedEdges: CanvasEdge[] = ((edges as any[]) || []).map((edge) => ({
+            const processedEdges: CanvasEdge[] = ((edges as InputEdge[]) || []).map((edge) => ({
               id: edge.id || generateId(),
-              fromNode: edge.fromNode,
-              toNode: edge.toNode,
+              fromNode: edge.fromNode ?? '',
+              toNode: edge.toNode ?? '',
               ...(edge.fromSide && { fromSide: edge.fromSide }),
               ...(edge.toSide && { toSide: edge.toSide }),
               ...(edge.label && { label: edge.label }),
@@ -570,7 +570,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             const defaultX = canvasData.nodes.length > 0 ? maxX + 30 : 0;
 
             // 添加新节点
-            const newNodes: CanvasNode[] = nodes.map((node: any, index: number) => ({
+            const newNodes: CanvasNode[] = (nodes as InputNode[]).map((node, index: number) => ({
               id: node.id || generateId(),
               type: node.type || 'text',
               x: node.x ?? defaultX,
@@ -613,10 +613,10 @@ export function createCanvasTool(app: any): ToolExecutor {
             const canvasData: CanvasData = JSON.parse(content);
 
             // 添加新边
-            const newEdges: CanvasEdge[] = edges.map((edge: any) => ({
+            const newEdges: CanvasEdge[] = (edges as InputEdge[]).map((edge) => ({
               id: edge.id || generateId(),
-              fromNode: edge.fromNode,
-              toNode: edge.toNode,
+              fromNode: edge.fromNode ?? '',
+              toNode: edge.toNode ?? '',
               ...(edge.fromSide && { fromSide: edge.fromSide }),
               ...(edge.toSide && { toSide: edge.toSide }),
               ...(edge.label && { label: edge.label }),
@@ -657,8 +657,8 @@ export function createCanvasTool(app: any): ToolExecutor {
           try {
             const files = app.vault.getFiles();
             const canvasFiles = files
-              .filter((f: any) => isTFile(f) && f.extension === 'canvas')
-              .map((f: any) => f.path);
+              .filter((f): f is TFile => isTFile(f) && f.extension === 'canvas')
+              .map(f => f.path);
 
             if (canvasFiles.length === 0) {
               return 'Canvas files:\n(none found)';
@@ -686,7 +686,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             // 确保目录存在
             const folderPath = (path as string).substring(0, (path as string).lastIndexOf('/'));
             if (folderPath) {
-              await ensureFolderExists(app as unknown as App, folderPath);
+              await ensureFolderExists(app, folderPath);
             }
 
             // 计算布局
