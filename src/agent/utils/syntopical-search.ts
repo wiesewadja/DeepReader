@@ -61,11 +61,11 @@ async function scanIndexedBooks(vaultPath: string, app?: App): Promise<{ id: str
 
   if (app) {
     // Mobile: vault-relative paths
-    if (!(await vaultExists(app, PAGEINDEX_DIR))) {
+    if (!(await vaultExists(app, getPageindexDir()))) {
       log('[syntopical-search] No pageindex directory found');
       return [];
     }
-    const { folders } = await vaultList(app, PAGEINDEX_DIR);
+    const { folders } = await vaultList(app, getPageindexDir());
     for (const folder of folders) {
       const bookId = folder.split('/').pop() || folder;
       const metaRel = joinPath(PAGEINDEX_DIR, bookId, 'book-meta.json');
