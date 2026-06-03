@@ -13,17 +13,17 @@
 - [ ] `npx tsc --noEmit` 无错误
 
 ### Task 1.2: 替换 src/views/library-view.ts 中的 5 处 getBasePath
-- [ ] 第 846、1307、1433、1453、1785 行全部替换为 `getVaultPath(this.app)`
-- [ ] 添加 import
-- [ ] 同时替换 `src/ui/pdf-file-selector.ts` 第 192、373 行
-- [ ] `npx tsc --noEmit` 无错误
+- [x] 第 846、1307、1433、1453、1785 行全部替换为 `getVaultPath(this.app)`
+- [x] 添加 import
+- [x] 同时替换 `src/ui/pdf-file-selector.ts` 第 192、373 行
+- [x] `npx tsc --noEmit` 无错误
 
 ### Task 1.3: 替换 services/ 和 agent/ 中的 getBasePath
-- [ ] `src/services/profile-builder.ts` 第 283 行
-- [ ] `src/services/journal-search.ts` 第 48 行
-- [ ] `src/agent/graph/nodes/syntopical.ts` 第 94 行
-- [ ] `src/agent/pi/pi-config.ts` 第 41 行
-- [ ] `npm run build` 通过
+- [x] `src/services/profile-builder.ts` 第 283 行
+- [x] `src/services/journal-search.ts` 第 48 行
+- [x] `src/agent/graph/nodes/syntopical.ts` 第 94 行
+- [x] `src/agent/pi/pi-config.ts` 第 41 行
+- [x] `npm run build` 通过
 
 ### Task 1.4: 替换 src/weread/index.ts 中的 basePath
 - [ ] 第 49 行 `this.getVaultAdapter().basePath` 替换为 `getVaultPath(this.plugin.app)`
