@@ -844,7 +844,7 @@ export class LibraryView extends ItemView {
 
         // 1. 从 book-meta.json 读取 exportName
         try {
-            const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+            const vaultPath = getVaultPath(this.app);
             const metaRaw = await fs.readFile(getBookFile(vaultPath, indexId, 'book-meta.json'), 'utf-8');
             const meta = JSON.parse(metaRaw);
             if (meta.exportName) possibleNames.push(meta.exportName);
@@ -1305,7 +1305,7 @@ export class LibraryView extends ItemView {
             return;
         }
 
-        const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+        const vaultBase = getVaultPath(this.app);
         if (!vaultBase) {
             new Notice('无法获取 Vault 路径');
             return;
@@ -1431,7 +1431,7 @@ export class LibraryView extends ItemView {
                 await adapter.mkdir(assetsDir);
             }
             await adapter.writeBinary(vaultRelativePath, data);
-            const vaultBase = (adapter as any).getBasePath?.() || (adapter as any).basePath;
+            const vaultBase = getVaultPath(this.app);
             downloadPath = `${vaultBase}/${vaultRelativePath}`;
             new Notice(`已保存到 ${vaultRelativePath}`);
         } catch (e: any) {
@@ -1451,7 +1451,7 @@ export class LibraryView extends ItemView {
             const result = await indexBook({
                 filePath: downloadPath,
                 fileType: (zlibBook.extension || 'pdf') as 'pdf' | 'epub',
-                outputDir: (adapter as any).getBasePath?.() || (adapter as any).basePath,
+                outputDir: getVaultPath(this.app),
                 embedding: embeddingOpts,
                 model: pageindexRole?.model || 'deepseek-chat',
                 apiKey: pageindexRole?.apiKey || '',
@@ -1783,7 +1783,7 @@ export class LibraryView extends ItemView {
             let bookId = '';
 
             try {
-                const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+                const vaultPath = getVaultPath(this.app);
                 let filePath: string;
                 
                 if (isSystemFileInfo(fileInfo)) {

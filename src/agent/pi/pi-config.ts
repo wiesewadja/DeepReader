@@ -10,6 +10,7 @@ import { spawn } from 'child_process';
 import { homedir } from 'os';
 import { join, delimiter } from 'path';
 import { existsSync } from 'fs';
+import { getVaultPath } from '../../utils/mobile-fs.js';
 
 /** 当前平台 */
 const platform = process.platform;
@@ -39,7 +40,7 @@ export function resolvePiPaths(app: App): {
 	exportsDir: string;
 	exportsDirRelative: string;
 } {
-	const vaultPath = (app.vault.adapter as unknown as { basePath: string }).basePath;
+	const vaultPath = getVaultPath(app);
 	const deepReaderDir = `${vaultPath}/DeepReader`;
 	// 路径从 .pi/skills 迁移到 DeepReader/skills（2026-06），属于 breaking change：
 	// 旧 sessions 数据不再复用，新路径由插件首次启动时自动创建，无需迁移。

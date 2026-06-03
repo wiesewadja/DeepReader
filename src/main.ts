@@ -16,6 +16,7 @@ import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 import { findTextInMarkdown } from './utils/markdown-utils.js';
+import { getVaultPath } from './utils/mobile-fs.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -86,7 +87,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         await this.ensureInitialization();
 
         // 迁移旧路径哈希 bookId → 内容哈希 bookId（一次性，幂等）
-        const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app.vault.adapter as any).basePath;
+        const vaultPath = getVaultPath(this.app);
         if (vaultPath) {
             // 先迁移 .pageindex/ → .obsidian/plugins/deepreader/pageindex/
             try {

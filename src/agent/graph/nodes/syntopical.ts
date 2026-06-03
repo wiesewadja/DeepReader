@@ -14,6 +14,7 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { CognitiveEngineState } from '../state';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
+import { getVaultPath } from '../../../utils/mobile-fs.js';
 import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
 import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
 import type { SyntopicalInput } from '../node-io.js';
@@ -92,7 +93,7 @@ export async function syntopicalNode(
   }
 
   // 桌面端用实际 basePath，移动端为空但会走 app 分支
-  const vaultPath = (toolContext.vault.app.vault.adapter as any).basePath as string || '';
+  const vaultPath = getVaultPath(toolContext.vault.app) || '';
   const query = rewrittenQuery || ctx?.rawUserQuery || '';
   const settings = toolContext.vault.plugin?.settings;
   const embeddingRole = settings ? resolveRoleConfig('embedding', settings) : null;

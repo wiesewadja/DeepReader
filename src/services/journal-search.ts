@@ -12,6 +12,7 @@ import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
 import { generateBookIdFromPath } from '../pageindex/book-indexer';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { getVaultPath } from '../utils/mobile-fs.js';
 
 export interface JournalSearchResult {
 	fileName: string;
@@ -46,7 +47,7 @@ export class JournalSearchService {
 			try {
 				const embeddings = await generateEmbeddings([query], embOpts);
 				if (embeddings.length > 0) {
-					const vaultPath = (this.app.vault.adapter as any).getBasePath?.() || (this.app as any).basePath || '';
+					const vaultPath = getVaultPath(this.app);
 					const raw = await cosineSearchJsonl(
 						`${vaultPath}/${indexDir}vectors.jsonl`,
 						embeddings[0],

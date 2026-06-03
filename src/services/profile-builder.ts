@@ -13,6 +13,7 @@ import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
 import { buildBM25Index } from '../pageindex/bm25';
 import { generateBookIdFromPath } from '../pageindex/book-indexer';
+import { getVaultPath } from '../utils/mobile-fs.js';
 import {
 	generateEmbeddings,
 	writeVectorJsonl,
@@ -281,7 +282,7 @@ export class ProfileBuilder {
 			}
 
 			if (vectors.length > 0) {
-				const vaultPath = (this.vault.adapter as any).getBasePath?.() || (this.vault as any).basePath || '';
+				const vaultPath = getVaultPath(this.app);
 				await writeVectorJsonl(`${vaultPath}/${indexDir}vectors.jsonl`, vectors);
 				await writeChunkTexts(`${vaultPath}/${indexDir}chunks.jsonl`, chunks);
 			}
