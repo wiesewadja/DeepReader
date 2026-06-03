@@ -298,7 +298,7 @@ export const searchBookTool: ToolExecutor = {
         scope_filter: scopeNodeIds ? `已限定在 ${scopeNodeIds.length} 个章节` : '全局搜索'
       });
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return JSON.stringify({
         status: 'ERROR_SEARCH_FAILED',
         message: `搜索失败: ${errorMsg}`

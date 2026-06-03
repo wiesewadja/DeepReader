@@ -123,7 +123,7 @@ export async function pdfToImages(
   } catch (error) {
     // Cleanup on error
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-    throw new Error(`PDF conversion failed: ${error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error)}`);
+    throw new Error(`PDF conversion failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Get list of generated images (sorted by page number)

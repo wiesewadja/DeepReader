@@ -143,7 +143,7 @@ export function createUpdateProfileTool(app: any): ToolExecutor {
         });
       } catch (err) {
         error('[update_profile] 执行失败:', err);
-        return `更新画像时出错: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
+        return `更新画像时出错: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
   };

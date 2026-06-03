@@ -62,12 +62,12 @@ export function classifyDirectory(
 function listMarkdownFiles(dirPath: string): ScannedFile[] {
   const entries = readdirSync(dirPath, { withFileTypes: true });
   return entries
-    .filter((e) => e.isFile() && (e instanceof Error ? e.name : "Error").endsWith(".md"))
+    .filter((e) => e.isFile() && e.name.endsWith(".md"))
     .map((e) => {
-      const stat = statSync(join(dirPath, (e instanceof Error ? e.name : "Error")));
+      const stat = statSync(join(dirPath, e.name));
       return {
-        relativePath: join(basename(dirPath), (e instanceof Error ? e.name : "Error")),
-        fileName: (e instanceof Error ? e.name : "Error"),
+        relativePath: join(basename(dirPath), e.name),
+        fileName: e.name,
         mtime: stat.mtimeMs,
         size: stat.size,
       };

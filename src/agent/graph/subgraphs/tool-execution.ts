@@ -144,7 +144,7 @@ export async function executeSingleToolCall(
       record: { toolName, args, result: compressed, originalResultLength: resultStr.length, extractedBlockIds } as ToolResultRecord,
     };
   } catch (err) {
-    const errorMsg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
+    const errorMsg = err instanceof Error ? err.message : String(err);
     return {
       msg: new ToolMessage({ content: `Error: ${errorMsg}`, tool_call_id: tcId }),
       record: null,

@@ -277,7 +277,7 @@ export class AgentChatController {
 				.catch(err => {
 					logError('[DeepPDF] handleAgentQuery unhandled:', err);
 					this.host.messageList?.updateMessage(aiMessageId, {
-						content: `查询失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`,
+						content: `查询失败: ${err instanceof Error ? err.message : String(err)}`,
 						isStreaming: false,
 						timestamp: new Date().toISOString()
 					});
@@ -285,7 +285,7 @@ export class AgentChatController {
 				});
 
 		} catch (error) {
-			const errorMessage = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
 			new Notice(`查询失败: ${errorMessage}`);
 
 			const errorId = `msg-${Date.now()}-error`;
@@ -715,7 +715,7 @@ export class AgentChatController {
 			await this.host.saveToCache();
 
 		} catch (error) {
-			const errorMessage = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+			const errorMessage = error instanceof Error ? error.message : String(error);
 			logError('[DeepPDF] handleAgentQuery 错误:', error);
 			this.reattachMascot();
 			this.host.readingTopbar?.setMascotExpression('idle');
@@ -842,7 +842,7 @@ export class AgentChatController {
 			logError('[DeepPDF] 主动引导生成失败:', err);
 			this.host.messageList?.updateMessage(aiMessageId, {
 				isStreaming: false,
-				content: "引导生成失败: " + (err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)),
+				content: "引导生成失败: " + (err instanceof Error ? err.message : String(err)),
 			});
 		} finally {
 			this.host.proactiveEngine?.setProcessing(false);

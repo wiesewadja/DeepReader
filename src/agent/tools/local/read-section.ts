@@ -110,7 +110,7 @@ export const readBookSectionTool: ToolExecutor = {
         message: '必须提供 node_ids、node_id、block_id 或 heading 参数'
       });
     } catch (e) {
-      const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
+      const errorMsg = e instanceof Error ? e.message : String(e);
       return JSON.stringify({
         status: 'ERROR_FILE_READ_FAILED',
         message: `读取文件失败: ${errorMsg}`

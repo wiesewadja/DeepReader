@@ -62,7 +62,7 @@ export async function importHighlights(
 			result.imported += count.imported;
 			result.skipped += count.skipped;
 		} catch (err) {
-			const msg = `导入《${entry.wereadTitle}》高亮失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
+			const msg = `导入《${entry.wereadTitle}》高亮失败: ${err instanceof Error ? err.message : String(err)}`;
 			logger.warn(msg);
 			result.errors.push(msg);
 		}

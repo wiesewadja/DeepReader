@@ -242,7 +242,7 @@ export class TTSService {
                 // 用户主动停止 → 静默处理（state 已由 stopInternal 清理）
                 if (err instanceof Error && (err instanceof Error ? err.message : String(err)) === 'STOPPED') return;
                 serviceLog.error('[TTS] oral rewrite play failed:', err);
-                new Notice(`朗读失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
+                new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
                 this.setState('idle');
@@ -270,7 +270,7 @@ export class TTSService {
                 }
             } catch (err) {
                 serviceLog.error('[TTS] play failed:', err);
-                new Notice(`语音播报失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
+                new Notice(`语音播报失败: ${err instanceof Error ? err.message : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
                 this.setState('idle');

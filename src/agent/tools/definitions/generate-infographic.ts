@@ -39,7 +39,7 @@ export const createGenerateInfographicTool: ToolFactory = (ctx: ToolContext) =>
         });
         return `已生成信息图：\n\n![信息图](${result.relativePath})`;
       } catch (err) {
-        return `图片生成失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
+        return `图片生成失败: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
     {

@@ -84,7 +84,7 @@ export class WereadService {
 
 			return result;
 		} catch (err) {
-			const msg = `同步失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
+			const msg = `同步失败: ${err instanceof Error ? err.message : String(err)}`;
 			logger.error(msg);
 			callbacks?.onNotice?.(msg);
 			return { added: 0, updated: 0, unchanged: 0, matched: 0, unmatched: 0, errors: [msg] };
@@ -215,7 +215,7 @@ export class WereadService {
 
 			logger.info(`Mapping stats updated for ${Object.keys(enriched.mappings).length} entries`);
 		} catch (err) {
-			logger.warn(`更新 mapping stats 失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
+			logger.warn(`更新 mapping stats 失败: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 
@@ -237,7 +237,7 @@ export class WereadService {
 				logger.warn(`高亮导入错误: ${result.errors.join('; ')}`);
 			}
 		} catch (err) {
-			logger.warn(`高亮导入失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
+			logger.warn(`高亮导入失败: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 

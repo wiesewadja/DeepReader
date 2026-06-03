@@ -188,7 +188,7 @@ export class ErrorHandler {
 	 */
 	handleNetworkError(error: Error, context?: Record<string, unknown>): void {
 		const deepPdfError = new DeepPDFError(
-			`网络请求失败: ${(error instanceof Error ? error.message : String(error))}`,
+			`网络请求失败: ${error.message}`,
 			ErrorCategory.NETWORK,
 			ErrorSeverity.ERROR,
 			'网络连接失败，请检查服务器是否运行',
@@ -258,7 +258,7 @@ export class ErrorHandler {
 			: '文件处理失败';
 
 		const deepPdfError = new DeepPDFError(
-			`文件错误: ${(error instanceof Error ? error.message : String(error))}`,
+			`文件错误: ${error.message}`,
 			ErrorCategory.FILE,
 			ErrorSeverity.ERROR,
 			userMessage,
@@ -279,7 +279,7 @@ export class ErrorHandler {
 		if (error instanceof Error) {
 			// 尝试根据错误消息判断错误类别
 			let category = ErrorCategory.UNKNOWN;
-			const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+			const message = error.message.toLowerCase();
 
 			if (message.includes('network') || message.includes('fetch') || message.includes('connection')) {
 				category = ErrorCategory.NETWORK;
@@ -290,7 +290,7 @@ export class ErrorHandler {
 			}
 
 			return new DeepPDFError(
-				(error instanceof Error ? error.message : String(error)),
+				error.message,
 				category,
 				ErrorSeverity.ERROR,
 				undefined,
@@ -362,7 +362,7 @@ export class ErrorHandler {
 	 * 跟踪错误频率
 	 */
 	private trackError(error: DeepPDFError): void {
-		const key = `${error.category}:${(error instanceof Error ? error.message : String(error))}`;
+		const key = `${error.category}:${error.message}`;
 		const now = Date.now();
 
 		// 重置计数（如果超过5分钟）

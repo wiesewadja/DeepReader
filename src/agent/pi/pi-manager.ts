@@ -387,7 +387,7 @@ export class PiProcessManager {
 				stats: this.tryExtractStatsFromAgentEnd(agentEndEvent) ?? await this.tryGetSessionStats(),
 			};
 		} catch (err) {
-			const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
+			const message = err instanceof Error ? err.message : String(err);
 			logError(`[PiManager] Skill execution failed: ${message}`);
 
 			const transient = this.isTransientError(message);

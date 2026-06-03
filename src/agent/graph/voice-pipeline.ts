@@ -81,7 +81,7 @@ export async function generateVoice(
         onChunk(audioBuffer);
       }
     } catch (err) {
-      log('[VoicePipeline] sentence synthesis failed:', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
+      log('[VoicePipeline] sentence synthesis failed:', err instanceof Error ? err.message : String(err));
     }
   }
 

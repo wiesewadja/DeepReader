@@ -208,7 +208,7 @@ export class ExcalidrawService {
         edgeCount,
       };
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       log('[ExcalidrawService] 转换失败:', errorMsg);
       new Notice(`转换失败: ${errorMsg}`);
 
@@ -351,7 +351,7 @@ export class ExcalidrawService {
 
       return await this.convertCanvasToExcalidraw(canvasData, filename);
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         error: `读取 Canvas 失败: ${errorMsg}`,
@@ -463,7 +463,7 @@ export class ExcalidrawService {
         edgeCount,
       };
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         error: errorMsg,
@@ -567,7 +567,7 @@ export class ExcalidrawService {
         edgeCount: edges.length,
       };
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         error: errorMsg,
@@ -704,7 +704,7 @@ export class ExcalidrawService {
         edgeCount: data.concepts.length + data.relations.length,
       };
     } catch (error) {
-      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
+      const errorMsg = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         error: errorMsg,
