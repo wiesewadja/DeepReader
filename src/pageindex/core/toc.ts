@@ -501,18 +501,25 @@ export async function checkTitleAppearanceInStartConcurrent(
   pages: PdfPage[],
   options: TocOptions
 ): Promise<TocItem[]> {
-  // All checks are independent — run in parallel
-  const results = await Promise.all(
-    structure.map((item) => {
-      if (!item.physicalIndex) {
-        return Promise.resolve({ ...item, appearStart: "no" as const });
-      }
-      const pageText = pages[item.physicalIndex - 1]?.text || "";
-      return checkTitleAppearanceInStart(item.title, pageText, options).then(
-        (appearStart) => ({ ...item, appearStart } as TocItem)
-      );
-    })
-  );
+  // 分批处理，避免一次性发送大量并发请求触发 429 限流
+  const batchSize = 5;
+  const results: TocItem[] = [];
+
+  for (let i = 0; i < structure.length; i += batchSize) {
+    const batch = structure.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map((item) => {
+        if (!item.physicalIndex) {
+          return Promise.resolve({ ...item, appearStart: "no" as const });
+        }
+        const pageText = pages[item.physicalIndex - 1]?.text || "";
+        return checkTitleAppearanceInStart(item.title, pageText, options).then(
+          (appearStart) => ({ ...item, appearStart } as TocItem)
+        );
+      })
+    );
+    results.push(...batchResults);
+  }
 
   return results;
 }
