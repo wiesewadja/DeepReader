@@ -171,7 +171,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     })).catch(() => {});
   };
 
-  // Clean up indexing status file on completion or failure
+  // Clean up indexing status file only on successful completion
+  // On failure, the file is preserved so loadIndexes can show "failed" status
   const cleanupStatus = () => {
     fs.unlink(indexingStatusPath).catch(() => {});
   };
@@ -228,17 +229,6 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       parseResult = await pageIndex.fromEpub(options.filePath);
     }
   } catch (error) {
-    // Write failed status so modal can show retry button on reopen
-    fs.writeFile(indexingStatusPath, JSON.stringify({
-      bookId,
-      filePath: options.filePath,
-      fileType: options.fileType,
-      title: path.basename(options.filePath, path.extname(options.filePath)),
-      percent: 0,
-      step: "failed",
-      stepLabel: "索引失败",
-      error: error instanceof Error ? error.message : "Unknown error",
-    })).catch(() => {});
     throw new IndexError(
       `Document parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       ErrorCode.FILE_NOT_FOUND,
@@ -692,17 +682,15 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       });
     }
   }
-
-  // Step 8: Finalize — cleanup handled by try-finally
-
+  // Step 8: Finalize — success path
   reportProgress({
     percent: 100,
     step: "complete",
     stepLabel: "索引完成",
   });
-
   tracer.finalize(true);
-
+  // 成功时清理进度文件
+  cleanupStatus();
   return {
     bookId,
     title: rootTitle,
@@ -710,12 +698,23 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     chaptersCount: parseResult.structure.length,
     indexDir,
   };
-
   } catch (error) {
     tracer.finalize(false, error instanceof Error ? error.message : String(error));
+    // 失败时保留 .indexing.json 以便 loadIndexes 显示 failed 状态
+    // 但确保写入 failed 状态（内层 catch 可能没写入或被异步竞争覆盖）
+    try {
+      await fs.writeFile(indexingStatusPath, JSON.stringify({
+        bookId,
+        filePath: options.filePath,
+        fileType: options.fileType,
+        title: path.basename(options.filePath, path.extname(options.filePath)),
+        percent: 0,
+        step: "failed",
+        stepLabel: "索引失败",
+        error: error instanceof Error ? error.message : "Unknown error",
+      }));
+    } catch { /* best-effort */ }
     throw error;
-  } finally {
-    cleanupStatus();
   }
 }
 
