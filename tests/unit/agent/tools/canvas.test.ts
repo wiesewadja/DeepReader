@@ -14,7 +14,8 @@ vi.mock('obsidian', () => ({
       this.path = path;
       this.extension = path.split('.').pop() || '';
     }
-  }
+  },
+  normalizePath: (p: string) => p.replace(/\\/g, '/'),
 }));
 
 import { createCanvasTool } from '@/agent/tools/canvas';
