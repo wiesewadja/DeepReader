@@ -741,7 +741,7 @@ export function createCanvasTool(app: any): ToolExecutor {
           }
 
           // 检查 Excalidraw 插件是否可用
-          const ea = (window as any).ExcalidrawAutomate;
+          const ea = window.ExcalidrawAutomate;
           if (!ea) {
             return 'Error: Excalidraw 插件未安装。请在社区插件市场安装 Excalidraw 插件后重试。';
           }

@@ -17,6 +17,7 @@ import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 import { findTextInMarkdown } from './utils/markdown-utils.js';
 import { getVaultPath } from './utils/mobile-fs.js';
+import { getExcalidrawAutomate } from './utils/excalidraw.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -349,7 +350,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             id: "check-excalidraw-status",
             name: "Check Excalidraw Plugin Status",
             callback: () => {
-                const ea = (window as any).ExcalidrawAutomate;
+                const ea = getExcalidrawAutomate();
                 if (ea) {
                     new Notice(`Excalidraw 插件已安装 (版本: ${ea.version || '未知'})`);
                 } else {
@@ -421,7 +422,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             id: "debug-excalidraw-mindmap",
             name: "Debug: Test Excalidraw mindmap",
             callback: async () => {
-                const ea = (window as any).ExcalidrawAutomate;
+                const ea = getExcalidrawAutomate();
                 if (!ea) {
                     new Notice("Excalidraw 插件未安装");
                     return;
@@ -872,7 +873,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
      */
     async exportCanvasToExcalidraw(canvasPath: string) {
         // 检查 Excalidraw 插件是否可用
-        const ea = (window as any).ExcalidrawAutomate;
+        const ea = getExcalidrawAutomate();
         if (!ea) {
             new Notice("请先安装 Excalidraw 插件（社区插件市场）");
             return;
