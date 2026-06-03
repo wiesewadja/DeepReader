@@ -9,7 +9,7 @@
 
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { TFile, normalizePath } from 'obsidian';
+import { TFile, normalizePath, type App } from 'obsidian';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import { ensureFolderExists } from '../../utils/vault.js';
 import { parseFrontmatter } from '../utils/book-note.js';
@@ -139,7 +139,7 @@ ${bodyContent}`;
 /**
  * 检查文件是否有 aicreate frontmatter
  */
-async function hasAicreateFrontmatter(app: import('obsidian').App, file: TFile): Promise<boolean> {
+async function hasAicreateFrontmatter(app: App, file: TFile): Promise<boolean> {
   try {
     const content = await app.vault.read(file);
     const parsed = parseFrontmatter(content);
