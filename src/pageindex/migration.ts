@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { LEGACY_PAGEINDEX_DIR, PAGEINDEX_DIR } from './paths.js';
+import { LEGACY_PAGEINDEX_DIR, PAGEINDEX_DIR, getPageindexDir } from './paths.js';
 
 /**
  * 迁移旧路径到新路径。
@@ -15,7 +15,7 @@ import { LEGACY_PAGEINDEX_DIR, PAGEINDEX_DIR } from './paths.js';
  */
 export async function migratePageindexPath(vaultPath: string): Promise<boolean> {
 	const oldDir = path.join(vaultPath, LEGACY_PAGEINDEX_DIR);
-	const newDir = path.join(vaultPath, PAGEINDEX_DIR);
+	const newDir = path.join(vaultPath, getPageindexDir());
 
 	// 旧路径不存在 → 无需迁移（新安装 或 已迁移）
 	try { await fs.access(oldDir); } catch { return false; }
