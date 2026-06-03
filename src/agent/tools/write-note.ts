@@ -235,7 +235,7 @@ export const writeNoteTool: ToolExecutor = {
       const displayName = normalizedPath.split('/').pop()?.replace(/\.md$/, '') || normalizedPath;
       return `✅ 笔记已创建: [[${normalizedPath}|${displayName}]]`;
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
       logError('[write_note] 写入失败:', errorMsg);
       return `Error writing note: ${errorMsg}`;
     }

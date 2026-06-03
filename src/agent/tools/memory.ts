@@ -118,7 +118,7 @@ ${memoryUpdate}
 				return '记忆已成功保存。';
 			} catch (err) {
 				error('[save_memory] 执行失败:', err);
-				return `保存记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
+				return `保存记忆时出错: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
 			}
 		},
 	};
@@ -175,7 +175,7 @@ export function createSearchMemoryTool(_app: any): ToolExecutor {
 				return `找到 ${uniqueResults.length} 条相关记录：\n\n${uniqueResults.map((m, i) => `${i + 1}. ${m}`).join('\n')}`;
 			} catch (err) {
 				error('[search_memory] 执行失败:', err);
-				return `搜索记忆时出错: ${err instanceof Error ? err.message : String(err)}`;
+				return `搜索记忆时出错: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
 			}
 		},
 	};

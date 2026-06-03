@@ -102,7 +102,7 @@ export async function fetchModels(
 
 		return { success: true, models };
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
+		const message = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
 		const isTimeout = message.includes('abort') || message.includes('timeout') || message.includes('超时');
 
 		return {
@@ -207,7 +207,7 @@ export async function testConnection(
 		};
 	} catch (error) {
 		const latencyMs = Date.now() - t0;
-		const message = error instanceof Error ? error.message : String(error);
+		const message = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
 		return { success: false, latencyMs, error: message };
 	}
 }

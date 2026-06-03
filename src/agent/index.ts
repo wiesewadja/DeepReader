@@ -373,23 +373,23 @@ ${currentMemory}
       }
       return result;
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (err instanceof DOMException && (err instanceof Error ? err.name : "Error") === 'AbortError') {
         log('[FrontendAgent] 请求被用户取消');
         this.activeThreadId = null;
         return { messages: [] };
       }
       const isAbort = err instanceof Error && (
-        err.message.startsWith('Cancel') ||
-        err.message.startsWith('AbortError') ||
-        err.message === 'Abort' ||
-        err.name === 'AbortError'
+        (err instanceof Error ? err.message : String(err)).startsWith('Cancel') ||
+        (err instanceof Error ? err.message : String(err)).startsWith('AbortError') ||
+        (err instanceof Error ? err.message : String(err)) === 'Abort' ||
+        (err instanceof Error ? err.name : "Error") === 'AbortError'
       );
       if (isAbort || callbacks.abortSignal?.aborted) {
         log('[FrontendAgent] 请求被取消');
         this.activeThreadId = null;
         return { messages: [] };
       }
-      const errorMsg = err instanceof Error ? err.message : String(err);
+      const errorMsg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
       log(`[FrontendAgent] ${errorPrefix}:`, errorMsg);
       callbacks.onError?.(errorMsg);
       this.activeThreadId = null;
@@ -542,7 +542,7 @@ ${currentMemory}
             cb.onVoiceReady!({ audioBuffer, duration });
           }
         }).catch(err => {
-          log('[VoicePipeline] voice generation failed:', err instanceof Error ? err.message : String(err));
+          log('[VoicePipeline] voice generation failed:', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
         });
     };
   }

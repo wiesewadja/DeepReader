@@ -160,7 +160,7 @@ function renderInstallButton(
           invalidatePiCliCache();
           await refreshPiStatus(statusEl, container, ctx);
         } catch (err) {
-          new Notice(`安装失败: ${err instanceof Error ? err.message : String(err)}`);
+          new Notice(`安装失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
           button.setDisabled(false);
           button.setButtonText('安装 PI');
         }
@@ -187,7 +187,7 @@ function renderUpdateButton(
           invalidatePiCliCache();
           await refreshPiStatus(statusEl, container, ctx);
         } catch (err) {
-          new Notice(`更新失败: ${err instanceof Error ? err.message : String(err)}`);
+          new Notice(`更新失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
           button.setDisabled(false);
           button.setButtonText('更新 PI');
         }

@@ -161,7 +161,7 @@ export function createExcalidrawTool(): ToolExecutor {
             await ea.create({ filename, foldername: folder });
             return `Created empty Excalidraw file: ${folder}/${filename}.excalidraw.md`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             return `Error: ${errorMsg}`;
           }
         }

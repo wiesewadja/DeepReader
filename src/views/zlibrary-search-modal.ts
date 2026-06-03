@@ -81,10 +81,10 @@ export class ZLibrarySearchModal extends Modal {
 			if (result.books.length === 0) {
 				result = await this.client.search(this.bookTitle, { limit: 10 });
 			}
-		} catch (e: any) {
+		} catch (e: unknown) {
 			container.empty();
 			const errorDiv = container.createDiv({ cls: 'deeppdf-zlib-error' });
-			errorDiv.createEl('span', { text: `搜索失败：${e.message}` });
+			errorDiv.createEl('span', { text: `搜索失败：${(e instanceof Error ? e.message : String(e))}` });
 			errorDiv.createEl('button', { text: '重试' }).addEventListener('click', () => {
 				container.empty();
 				container.createEl('div', { text: '搜索中...', cls: 'deeppdf-zlib-loading' });

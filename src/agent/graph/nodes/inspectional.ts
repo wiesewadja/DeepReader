@@ -112,7 +112,7 @@ export async function inspectionalNode(
     };
   } catch (err) {
     // Graceful degradation on LLM error
-    log('[S1 Inspectional] LLM 调用失败，降级到全局搜索:', err instanceof Error ? err.message : String(err));
+    log('[S1 Inspectional] LLM 调用失败，降级到全局搜索:', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
     return {
       scopeNodeIds: [],
       tocSummary: '无法解析目录范围，使用全局搜索。',

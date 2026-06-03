@@ -183,7 +183,7 @@ export async function preSearchNode(
             try {
               return await searchBookV2({ ...baseSearchOpts, query: kw });
             } catch (err) {
-              log(`[S2-Pre] Keyword search failed for "${kw}":`, err instanceof Error ? err.message : String(err));
+              log(`[S2-Pre] Keyword search failed for "${kw}":`, err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
               return [];
             }
           })
@@ -342,7 +342,7 @@ ${blockLines.join('\n\n')}
       prevSearchedBlockIds: mergedBlockIds,
     };
   } catch (err) {
-    log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
+    log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
     return emptyPreSearchResult(validatedScopeNodeIds);
   }
 }

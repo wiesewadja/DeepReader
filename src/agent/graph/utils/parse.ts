@@ -162,7 +162,7 @@ export function parseStateOutput<T>(
   } catch (e) {
     if (fallback !== undefined) return fallback;
     throw new StateParseError(
-      `JSON parse failed: ${e instanceof Error ? e.message : String(e)}`,
+      `JSON parse failed: ${e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e)}`,
       content
     );
   }

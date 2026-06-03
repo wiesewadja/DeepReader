@@ -1245,9 +1245,9 @@ export class LibraryView extends ItemView {
                 title: wereadIndex.pdf_name,
             };
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
-        } catch (e: any) {
+        } catch (e: unknown) {
             this.restoreWereadCard(wereadIndex);
-            new Notice(`关联失败：${e.message}`, 5000);
+            new Notice(`关联失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
             return;
         }
 
@@ -1368,9 +1368,9 @@ export class LibraryView extends ItemView {
                     },
                 });
                 bookId = result.bookId;
-            } catch (e: any) {
+            } catch (e: unknown) {
                 this.restoreWereadCard(wereadIndex);
-                new Notice(`索引失败：${e.message}`, 5000);
+                new Notice(`索引失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
                 return;
             }
         }
@@ -1392,9 +1392,9 @@ export class LibraryView extends ItemView {
             };
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
             this.wereadMappingCache.add(wereadIndex.id);
-        } catch (e: any) {
+        } catch (e: unknown) {
             this.restoreWereadCard(wereadIndex);
-            new Notice(`关联写入失败：${e.message}`, 5000);
+            new Notice(`关联写入失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
             return;
         }
 
@@ -1434,9 +1434,9 @@ export class LibraryView extends ItemView {
             const vaultBase = getVaultPath(this.app);
             downloadPath = `${vaultBase}/${vaultRelativePath}`;
             new Notice(`已保存到 ${vaultRelativePath}`);
-        } catch (e: any) {
+        } catch (e: unknown) {
             this.restoreWereadCard(wereadIndex);
-            new Notice(`下载失败：${e.message}`, 5000);
+            new Notice(`下载失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
             return;
         }
 
@@ -1462,9 +1462,9 @@ export class LibraryView extends ItemView {
                 },
             });
             bookId = result.bookId;
-        } catch (e: any) {
+        } catch (e: unknown) {
             this.restoreWereadCard(wereadIndex);
-            new Notice(`索引失败：${e.message}`, 5000);
+            new Notice(`索引失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
             return;
         }
 
@@ -1485,9 +1485,9 @@ export class LibraryView extends ItemView {
             };
             await adapter.write(mappingPath, JSON.stringify(mapping, null, 2));
             this.wereadMappingCache.add(wereadIndex.id);
-        } catch (e: any) {
+        } catch (e: unknown) {
             this.restoreWereadCard(wereadIndex);
-            new Notice(`关联写入失败：${e.message}`, 5000);
+            new Notice(`关联写入失败：${(e instanceof Error ? e.message : String(e))}`, 5000);
             return;
         }
 
@@ -1917,13 +1917,13 @@ export class LibraryView extends ItemView {
 
                 this.activelyIndexingBookId = null;
                 new Notice(`索引成功！章节: ${result.chaptersCount}`, 3000);
-            } catch (error: any) {
+            } catch (error: unknown) {
                 this.activelyIndexingBookId = null;
                 // 将 temp 索引标记为失败状态
                 const errIdx = this.indexes.find(idx => idx.id === bookId);
                 if (errIdx) {
                     errIdx.status = 'failed';
-                    errIdx.message = error.message || '索引失败';
+                    errIdx.message = (error instanceof Error ? error.message : String(error)) || '索引失败';
                     // 重新渲染该卡片为失败状态
                     const card = this.cardElements.get(bookId);
                     if (card) {
@@ -1936,8 +1936,8 @@ export class LibraryView extends ItemView {
                 await this.refreshIndexes();
 
                 let msg = '索引创建失败';
-                if (error.message?.includes('API key')) msg = 'API key 未配置或无效';
-                else if (error.message) msg = `索引创建失败: ${error.message}`;
+                if ((error instanceof Error ? error.message : String(error))?.includes('API key')) msg = 'API key 未配置或无效';
+                else if ((error instanceof Error ? error.message : String(error))) msg = `索引创建失败: ${(error instanceof Error ? error.message : String(error))}`;
                 new Notice(msg, 5000);
                 logError('[DeepPDF] 索引创建错误:', error);
             }

@@ -33,8 +33,8 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 					return JSON.stringify({ status: 'SUCCESS', message: '未找到相关笔记', results: [] });
 				}
 				return JSON.stringify({ status: 'SUCCESS', results });
-			} catch (e: any) {
-				return JSON.stringify({ status: 'ERROR', message: e.message });
+			} catch (e: unknown) {
+				return JSON.stringify({ status: 'ERROR', message: (e instanceof Error ? e.message : String(e)) });
 			}
 		},
 		{

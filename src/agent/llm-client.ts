@@ -407,7 +407,7 @@ export class LLMClient {
       }
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error occurred';
+        error instanceof Error ? (error instanceof Error ? error.message : String(error)) : 'Unknown error occurred';
       callbacks.onError(errorMessage);
     }
 

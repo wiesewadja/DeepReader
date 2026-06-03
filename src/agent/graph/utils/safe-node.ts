@@ -33,7 +33,7 @@ export function safeNode(
       const result = await fn(state, config);
       return result;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
       log(`[${name}] 节点执行失败:`, msg);
 
       const nodeError: NodeError = {

@@ -97,7 +97,7 @@ export class WereadSyncEngine {
 				remoteBooks = mergeShelfBooks(nb, []);
 			}
 		} catch (err) {
-			const msg = `拉取书架失败: ${err instanceof Error ? err.message : String(err)}`;
+			const msg = `拉取书架失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`;
 			logger.error(msg);
 			result.errors.push(msg);
 			return result;

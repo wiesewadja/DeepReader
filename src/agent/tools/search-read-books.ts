@@ -190,7 +190,7 @@ ${outputLines.join('\n\n')}
 ---
 *提示：如需查看完整内容，可以使用 read_markdown_section 工具读取具体章节。*`;
     } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
+      const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
       logError('[search_read_books] 搜索失败:', errorMsg);
       return `搜索时出错: ${errorMsg}`;
     }

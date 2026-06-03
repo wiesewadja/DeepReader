@@ -48,8 +48,8 @@ export const createWereadSearchTool: ToolFactory = (ctx: ToolContext) =>
 					}
 				}
 				return lines.join('\n') || '未找到相关书籍。';
-			} catch (e: any) {
-				return `搜索失败: ${e.message}`;
+			} catch (e: unknown) {
+				return `搜索失败: ${(e instanceof Error ? e.message : String(e))}`;
 			}
 		},
 		{
@@ -79,8 +79,8 @@ export const createWereadRecommendTool: ToolFactory = (ctx: ToolContext) =>
 					lines.push(`《${b.title}》 ${b.author}${rating}${reason} [bookId:${b.bookId}]`);
 				}
 				return lines.join('\n');
-			} catch (e: any) {
-				return `获取推荐失败: ${e.message}`;
+			} catch (e: unknown) {
+				return `获取推荐失败: ${(e instanceof Error ? e.message : String(e))}`;
 			}
 		},
 		{
@@ -125,8 +125,8 @@ export const createWereadReadDataTool: ToolFactory = (ctx: ToolContext) =>
 					lines.push(`偏好分类: ${resp.preferCategoryWord}`);
 				}
 				return lines.join('\n') || '暂无阅读统计数据。';
-			} catch (e: any) {
-				return `获取阅读统计失败: ${e.message}`;
+			} catch (e: unknown) {
+				return `获取阅读统计失败: ${(e instanceof Error ? e.message : String(e))}`;
 			}
 		},
 		{
@@ -155,8 +155,8 @@ export const createWereadNotebooksTool: ToolFactory = (ctx: ToolContext) =>
 					lines.push(`《${b.title}》 ${b.author} — ${status} 笔记${noteCount}条 [bookId:${b.bookId}]`);
 				}
 				return lines.join('\n');
-			} catch (e: any) {
-				return `获取笔记数据失败: ${e.message}`;
+			} catch (e: unknown) {
+				return `获取笔记数据失败: ${(e instanceof Error ? e.message : String(e))}`;
 			}
 		},
 		{
@@ -187,8 +187,8 @@ export const createWereadBookInfoTool: ToolFactory = (ctx: ToolContext) =>
 				if (resp.category) lines.push(`分类: ${resp.category}`);
 				if (resp.intro) lines.push(`简介: ${resp.intro}`);
 				return lines.join('\n');
-			} catch (e: any) {
-				return `获取书籍详情失败: ${e.message}`;
+			} catch (e: unknown) {
+				return `获取书籍详情失败: ${(e instanceof Error ? e.message : String(e))}`;
 			}
 		},
 		{

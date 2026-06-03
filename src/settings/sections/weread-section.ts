@@ -170,9 +170,9 @@ export function renderWereadSection(
 				(result.errors.length > 0 ? `，${result.errors.length} 本失败` : '');
 			new Notice(`同步完成：新增 ${result.added} 本，更新 ${result.updated} 本`);
 			refresh();
-		} catch (e: any) {
-			progressText.textContent = `同步失败：${e.message}`;
-			new Notice(`同步失败：${e.message}`);
+		} catch (e: unknown) {
+			progressText.textContent = `同步失败：${(e instanceof Error ? e.message : String(e))}`;
+			new Notice(`同步失败：${(e instanceof Error ? e.message : String(e))}`);
 		} finally {
 			syncBtn.setDisabled(!isLoggedIn);
 			forceBtn.setDisabled(!isLoggedIn);
@@ -360,8 +360,8 @@ export function renderWereadSection(
 								await plugin.saveSettings();
 								new Notice(`登录成功！剩余下载 ${profile.downloadsTodayLeft} 次`);
 								refresh();
-							} catch (e: any) {
-								new Notice(e.message || '登录失败');
+							} catch (e: unknown) {
+								new Notice((e instanceof Error ? e.message : String(e)) || '登录失败');
 							} finally {
 								btn.setButtonText('登录').setDisabled(false);
 							}

@@ -305,7 +305,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     log('[PageIndex] ✓ All core features working');
                     
                 } catch (err) {
-                    const errorMsg = err instanceof Error ? err.message : String(err);
+                    const errorMsg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
                     new Notice(`PageIndex 测试失败: ${errorMsg}`);
                     log.error('[PageIndex] Test failed:', err);
                 }
@@ -409,7 +409,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
                     new Notice(`系统提示词已保存到 DeepReader/debug/${filename}`);
                 } catch (err) {
-                    const msg = err instanceof Error ? err.message : String(err);
+                    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
                     new Notice(`抓取失败: ${msg}`);
                     serviceLog.error('[DumpSystemPrompt] 错误:', err);
                 }
@@ -471,7 +471,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     // Excalidraw Automate 会自动保存
                     new Notice("测试思维导图已生成: DeepReader/Excalidraw/test-mindmap.excalidraw.md");
                 } catch (error) {
-                    const errorMsg = error instanceof Error ? error.message : String(error);
+                    const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
                     new Notice(`生成失败: ${errorMsg}`);
                     serviceLog.error("[DeepReader] Excalidraw 测试失败:", error);
                 }
@@ -599,8 +599,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
-                } catch (e: any) {
-                    new Notice(`同步失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`同步失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -643,8 +643,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                             new UnmatchedModal(this.app, stats.unmatchedBooks, this.manifest.id).open();
                         }
                     }
-                } catch (e: any) {
-                    new Notice(`同步失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`同步失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -672,8 +672,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 try {
                     const result = await svc.rematch();
                     new Notice(`匹配完成：${result.matched} 本已关联，${result.unmatched} 本未关联`);
-                } catch (e: any) {
-                    new Notice(`匹配失败：${e.message}`);
+                } catch (e: unknown) {
+                    new Notice(`匹配失败：${(e instanceof Error ? e.message : String(e))}`);
                 }
             },
         });
@@ -807,7 +807,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         const hoursSinceBuild = (Date.now() - new Date(meta.lastBuildTime).getTime()) / (1000 * 60 * 60);
         if (hoursSinceBuild >= 24) {
             this.profileBuilder.build().catch(e => {
-                serviceLog.warn('[DeepReader] Auto-build profile failed:', e.message);
+                serviceLog.warn('[DeepReader] Auto-build profile failed:', (e instanceof Error ? e.message : String(e)));
             });
         }
     }
@@ -830,7 +830,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             // Skills 现在由 PI 管理，无需重载
             return { success: true, message: 'Skills 由 PI Agent 管理', skills: [] };
         } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
             return { success: false, message, skills: [] };
         }
     }
@@ -896,7 +896,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                 new Notice(`导出失败: ${result.error}`);
             }
         } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
+            const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
             new Notice(`导出失败: ${errorMsg}`);
         }
     }
@@ -1106,7 +1106,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             // TODO: 可以将 result.structure 保存到笔记或显示在 UI 中
 
         } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err);
+            const errorMsg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
             log.error('[PageIndex] Failed to process PDF:', err);
             new Notice(`PDF 处理失败: ${errorMsg}`);
         }

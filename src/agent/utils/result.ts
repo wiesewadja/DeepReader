@@ -159,7 +159,7 @@ export namespace Result {
 		if (result.ok) {
 			return String(result.value);
 		}
-		const errorMsg = result.error.message || String(result.error);
+		const errorMsg = (result.error instanceof Error ? result.error.message : String(result.error)) || String(result.error);
 		const hint = errorHint || '\n\n[分析上面的错误，尝试不同的方法。]';
 		return `Error: ${errorMsg}${hint}`;
 	}

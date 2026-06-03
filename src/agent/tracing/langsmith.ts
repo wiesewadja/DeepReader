@@ -38,13 +38,13 @@ function safeWrap(tracer: LangChainTracer): LangChainTracer {
             const result = (value as (...a: unknown[]) => unknown).apply(target, args);
             if (result instanceof Promise) {
               return result.catch((err: unknown) => {
-                log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? err.message : err);
+                log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : err);
                 return undefined;
               });
             }
             return result;
           } catch (err) {
-            log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? err.message : err);
+            log('[LangSmith] Silent error in', String(prop), ':', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : err);
           }
         };
       }

@@ -119,7 +119,7 @@ export class PiProcessManager {
 		});
 
 		this.process.on('error', (err) => {
-			logError(`[PiManager] Process error: ${err.message}`);
+			logError(`[PiManager] Process error: ${(err instanceof Error ? err.message : String(err))}`);
 			this.state = PiProcessState.ERROR;
 			this.currentBookId = null;
 			this.process = null;
@@ -387,7 +387,7 @@ export class PiProcessManager {
 				stats: this.tryExtractStatsFromAgentEnd(agentEndEvent) ?? await this.tryGetSessionStats(),
 			};
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
+			const message = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
 			logError(`[PiManager] Skill execution failed: ${message}`);
 
 			const transient = this.isTransientError(message);

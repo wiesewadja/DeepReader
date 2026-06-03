@@ -278,9 +278,9 @@ async function handleBuildProfile(
   }
   if (statusEl) statusEl.empty();
 
-  builder.build(undefined, force).catch((e: any) => {
-    if (e.name !== 'AbortError') {
-      new Notice(`构建失败：${e.message}`);
+  builder.build(undefined, force).catch((e: unknown) => {
+    if ((e instanceof Error ? e.name : "Error") !== 'AbortError') {
+      new Notice(`构建失败：${(e instanceof Error ? e.message : String(e))}`);
     }
   });
 

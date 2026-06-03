@@ -30,7 +30,7 @@ export function planReorg(scan: DirectoryScan): ReorgPlan {
   if (!scan.needsReorg) return plan;
 
   const files = readdirSync(scan.path, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith(".md") && e.name !== "_目录.md");
+    .filter((e) => e.isFile() && (e instanceof Error ? e.name : "Error").endsWith(".md") && (e instanceof Error ? e.name : "Error") !== "_目录.md");
 
   const groups = new Map<string, string[]>();
   for (const file of files) {

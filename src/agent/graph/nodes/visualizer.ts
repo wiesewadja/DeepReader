@@ -194,7 +194,7 @@ export async function visualizerNode(
         log(`[Visualizer] PI skill failed (transient): ${result.error}, falling back to local engine`);
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
       log(`[Visualizer] PI execution error: ${msg}, falling back to local engine`);
     }
   }
@@ -304,7 +304,7 @@ export async function visualizerNode(
 
     return { analysisResult: diagramDescription };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err);
     log(`[Visualizer] 错误: ${msg}`);
     return { analysisResult: `图表生成失败: ${msg}` };
   }

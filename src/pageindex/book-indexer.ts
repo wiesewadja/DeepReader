@@ -233,10 +233,10 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       percent: 0,
       step: "failed",
       stepLabel: "索引失败",
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Unknown error",
     })).catch(() => {});
     throw new IndexError(
-      `Document parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Document parsing failed: ${error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Unknown error"}`,
       ErrorCode.FILE_NOT_FOUND,
       "文档解析失败",
       "请检查文件格式是否正确"
@@ -393,7 +393,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     }
   } catch (error) {
     throw new IndexError(
-      `Markdown export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      `Markdown export failed: ${error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Unknown error"}`,
       ErrorCode.MD_PARSE_ERROR,
       "Markdown 导出失败",
       "请检查输出目录是否有写入权限"
@@ -566,7 +566,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     } catch (error) {
       console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
 
-      tracer.failPhase(error instanceof Error ? error.message : "Embedding API failed");
+      tracer.failPhase(error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Embedding API failed");
       tracer.save();
 
       bookMeta.embedding = undefined;
@@ -579,7 +579,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         percent: 92,
         step: "vectorize_skipped",
         stepLabel: "向量索引跳过（使用纯 BM25）",
-        message: error instanceof Error ? error.message : "Embedding API failed",
+        message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Embedding API failed",
       });
     }
   }
@@ -601,7 +601,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     tracer.endPhase();
     tracer.save();
   } catch (error) {
-    tracer.failPhase(error instanceof Error ? error.message : String(error));
+    tracer.failPhase(error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error));
     tracer.save();
     throw error;
   }
@@ -663,7 +663,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
       piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
       console.warn("[book-indexer] Proposition extraction failed:", errorMsg);
 
       tracer.endPhase();
@@ -708,7 +708,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   };
 
   } catch (error) {
-    tracer.finalize(false, error instanceof Error ? error.message : String(error));
+    tracer.finalize(false, error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error));
     throw error;
   } finally {
     cleanupStatus();
@@ -1114,7 +1114,7 @@ async function downloadImages(
 
           await fs.writeFile(path.join(imagesDir, img.fileName), Buffer.from(data));
         } catch (err) {
-          piLog(`[book-indexer] Failed to download image ${img.fileName}: ${err instanceof Error ? err.message : err}`);
+          piLog(`[book-indexer] Failed to download image ${img.fileName}: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : err}`);
         }
       })
     );

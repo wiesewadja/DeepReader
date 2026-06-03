@@ -557,7 +557,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             log('[Canvas] 创建成功:', file.path);
             return `Created canvas: ${file.path}`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             log('[Canvas] 创建失败:', errorMsg);
             return `Error: ${errorMsg}`;
           }
@@ -605,7 +605,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             log('[Canvas] 添加节点:', newNodes.length);
             return `Added ${newNodes.length} nodes to ${path}`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             return `Error: ${errorMsg}`;
           }
         }
@@ -644,7 +644,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             log('[Canvas] 添加边:', newEdges.length);
             return `Added ${newEdges.length} edges to ${path}`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             return `Error: ${errorMsg}`;
           }
         }
@@ -663,7 +663,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             const content = await app.vault.read(file);
             return content;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             return `Error: ${errorMsg}`;
           }
         }
@@ -681,7 +681,7 @@ export function createCanvasTool(app: any): ToolExecutor {
 
             return `Canvas files:\n${canvasFiles.map((p: string) => `- ${p}`).join('\n')}`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             return `Error: ${errorMsg}`;
           }
         }
@@ -729,7 +729,7 @@ export function createCanvasTool(app: any): ToolExecutor {
 - Total nodes: ${totalNodes}
 - Total edges: ${totalEdges}`;
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             log('[Canvas] Mindmap 创建失败:', errorMsg);
             return `Error: ${errorMsg}`;
           }
@@ -783,7 +783,7 @@ export function createCanvasTool(app: any): ToolExecutor {
               return `Error: ${result.error}`;
             }
           } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e);
+            const errorMsg = e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e);
             log('[Canvas] 导出 Excalidraw 失败:', errorMsg);
             return `Error: ${errorMsg}`;
           }

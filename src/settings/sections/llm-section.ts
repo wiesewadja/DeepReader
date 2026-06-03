@@ -248,17 +248,17 @@ function renderQuickSetup(
 		if (mimoVal) {
 			tests.push(testConnection('https://token-plan-cn.xiaomimimo.com/v1', mimoVal, 'mimo-v2.5', 'chat')
 				.then(r => ({ key: 'mimo', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
-				.catch(e => ({ key: 'mimo', success: false, message: `✗ ${e.message}` })));
+				.catch(e => ({ key: 'mimo', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
 		}
 		if (fallbackVal) {
 			tests.push(testConnection('https://api.xiaomimimo.com/v1', fallbackVal, 'mimo-v2.5', 'chat')
 				.then(r => ({ key: 'fallback', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
-				.catch(e => ({ key: 'fallback', success: false, message: `✗ ${e.message}` })));
+				.catch(e => ({ key: 'fallback', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
 		}
 		if (sfVal) {
 			tests.push(testConnection('https://api.siliconflow.cn/v1', sfVal, 'Qwen/Qwen3-8B', 'chat')
 				.then(r => ({ key: 'sf', success: r.success, message: r.success ? `${r.latencyMs}ms` : (r.error || 'failed') }))
-				.catch(e => ({ key: 'sf', success: false, message: `✗ ${e.message}` })));
+				.catch(e => ({ key: 'sf', success: false, message: `✗ ${(e instanceof Error ? e.message : String(e))}` })));
 		}
 
 		const results = await Promise.all(tests);

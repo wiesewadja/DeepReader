@@ -81,12 +81,12 @@ function isNetworkError(error: unknown): boolean {
 	}
 	// DOMException（某些 Electron 版本的 CORS 错误）
 	if (error instanceof DOMException) {
-		const msg = error.message.toLowerCase();
+		const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
 		return msg.includes('cors') || msg.includes('blocked') || msg.includes('network');
 	}
 	// 兜底：检查 message
 	if (error instanceof Error) {
-		const msg = error.message.toLowerCase();
+		const msg = (error instanceof Error ? error.message : String(error)).toLowerCase();
 		return msg.includes('cors') || msg.includes('blocked') || msg.includes('network');
 	}
 	return false;

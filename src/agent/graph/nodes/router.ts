@@ -110,7 +110,7 @@ export async function routerNode(
             antiHallucinationQuery = cleanQuery;
           }
         } catch (e) {
-          log(`[S0 Router] ANTI_HALLUCINATION BM25 搜索失败: ${e instanceof Error ? e.message : String(e)}`);
+          log(`[S0 Router] ANTI_HALLUCINATION BM25 搜索失败: ${e instanceof Error ? (e instanceof Error ? e.message : String(e)) : String(e)}`);
         }
       }
     }
@@ -165,7 +165,7 @@ export async function routerNode(
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
-    log('[S0 Router] LLM 调用失败，降级到 depth=2:', err instanceof Error ? err.message : String(err));
+    log('[S0 Router] LLM 调用失败，降级到 depth=2:', err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err));
     return {
       depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,

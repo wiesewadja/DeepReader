@@ -239,9 +239,9 @@ export class TTSService {
                 await this.playWithOralRewrite(messageId, cleanContent, voiceProfile, cached, textHash);
             } catch (err) {
                 // 用户主动停止 → 静默处理（state 已由 stopInternal 清理）
-                if (err instanceof Error && err.message === 'STOPPED') return;
+                if (err instanceof Error && (err instanceof Error ? err.message : String(err)) === 'STOPPED') return;
                 console.error('[TTS] oral rewrite play failed:', err);
-                new Notice(`朗读失败: ${err instanceof Error ? err.message : String(err)}`);
+                new Notice(`朗读失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
                 this.setState('idle');
@@ -269,7 +269,7 @@ export class TTSService {
                 }
             } catch (err) {
                 console.error('[TTS] play failed:', err);
-                new Notice(`语音播报失败: ${err instanceof Error ? err.message : String(err)}`);
+                new Notice(`语音播报失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
                 this.setState('idle');
@@ -568,7 +568,7 @@ export class TTSService {
             try {
                 await this.playAudioAndWait(messageId, segResult.audio);
             } catch (err) {
-                if (err instanceof Error && err.message === 'STOPPED') throw err;
+                if (err instanceof Error && (err instanceof Error ? err.message : String(err)) === 'STOPPED') throw err;
                 console.warn(`[TTS] Segment ${i} playback failed:`, err);
             }
 
