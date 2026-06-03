@@ -8,7 +8,7 @@ import { sanitizeFileName } from '../weread/utils/file';
 import { IndexListItem, Booklist, stripFileExtension } from '../types/index.js';
 import { PDFFileSelectorModal, SystemFileInfo, FileSelectResult, isSystemFileInfo } from '../ui/pdf-file-selector.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
-import { error as logError, serviceLog } from '../utils/logger.js';
+import { error as logError, serviceLog, uiLog } from '../utils/logger.js';
 import { indexBook, isBookIndexed, generateBookId, generateBookIdFromPath } from '../pageindex/book-indexer.js';
 import type { BookIndexProgress, BookMeta } from '../pageindex/book-types.js';
 import { resolveRoleConfig } from '../config/providers.js';
@@ -2072,7 +2072,7 @@ export class LibraryView extends ItemView {
 
                     new Notice(`已删除「${displayName}」的索引和导出数据`);
                 } catch (error) {
-                    console.error('[LibraryView] 删除失败:', error);
+                    uiLog.error('[LibraryView] 删除失败:', error);
                     new Notice('删除失败');
                 }
             },

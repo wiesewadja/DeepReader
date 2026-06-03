@@ -5,6 +5,7 @@
 
 import { chatGPT, chatGPTWithFinishReason } from "../llm/client";
 import { log as piLog } from "./logger";
+import { apiLog } from "../../utils/logger.js";
 import type { PdfPage } from "../parsers/pdf";
 import type { TocItem, TocCheckResult } from "./types";
 import { extractJson, getJsonContent, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
@@ -302,7 +303,7 @@ export async function tocTransformer(
     return finalItems;
   }
 
-  console.error("[DIAG-tocTransformer] All JSON extraction methods failed, returning empty");
+  apiLog.error("[DIAG-tocTransformer] All JSON extraction methods failed, returning empty");
   return [];
 }
 

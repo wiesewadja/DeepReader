@@ -9,6 +9,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import * as crypto from "crypto";
 import type { ObsidianVaultIndexOptions, VaultIndexMeta } from "./types";
+import { apiLog } from "../../utils/logger.js";
 
 export interface ScannedFile {
   relativePath: string;
@@ -137,7 +138,7 @@ export async function scanVaultFiles(
       });
     } catch (error) {
       // Skip files that can't be read
-      console.error(`[scan] Error reading file ${relativePath}:`, error);
+      apiLog.error(`[scan] Error reading file ${relativePath}:`, error);
     }
   }
 

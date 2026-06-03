@@ -4,6 +4,7 @@
 
 import * as crypto from "crypto";
 import { log as piLog } from "./core/logger";
+import { apiLog } from "../utils/logger.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { getPageindexRoot, getBookDir } from "./paths.js";
@@ -297,7 +298,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
       piLog(`[book-indexer] Cover saved: ${coverPath}`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to save cover:", err);
+      apiLog.warn("[book-indexer] Failed to save cover:", err);
     }
   } else if (parseResult.coverPng && parseResult.coverPng.length > 100) {
     // PDF: save rendered first page as PNG (only if valid, >100 bytes)
@@ -307,7 +308,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.png`;
       piLog(`[book-indexer] PDF cover saved: ${coverPath} (${parseResult.coverPng.length} bytes)`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to save PDF cover:", err);
+      apiLog.warn("[book-indexer] Failed to save PDF cover:", err);
     }
   } else {
     // No cover available: generate text-based SVG cover
@@ -318,7 +319,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}.svg`;
       piLog(`[book-indexer] Text cover generated: ${coverPath}`);
     } catch (err) {
-      console.warn("[book-indexer] Failed to generate text cover:", err);
+      apiLog.warn("[book-indexer] Failed to generate text cover:", err);
     }
   }
   tracer.endPhase();
@@ -564,7 +565,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
         stepLabel: "向量索引完成",
       });
     } catch (error) {
-      console.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
+      apiLog.warn("[book-indexer] Vectorization failed, continuing with pure BM25:", error);
 
       tracer.failPhase(error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Embedding API failed");
       tracer.save();
@@ -664,7 +665,7 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       piLog(`[book-indexer] Proposition cards: ${propResult.totalCards}`);
     } catch (error) {
       const errorMsg = error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error);
-      console.warn("[book-indexer] Proposition extraction failed:", errorMsg);
+      apiLog.warn("[book-indexer] Proposition extraction failed:", errorMsg);
 
       tracer.endPhase();
       tracer.save();

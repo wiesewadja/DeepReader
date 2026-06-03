@@ -786,7 +786,7 @@ export class BookManager {
 				this.host.readingTopbar?.updateBooklistCovers(items);
 			}
 		} catch (err) {
-			console.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
+		log.warn(`[DeepPDF] loadAndApplyBooklistCovers failed:`, err);
 		}
 	}
 

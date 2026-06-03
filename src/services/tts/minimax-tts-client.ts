@@ -1,4 +1,5 @@
 import type { TTSOptions } from './tts-client.js';
+import { serviceLog } from '../../utils/logger.js';
 
 export interface MiniMaxVoiceSetting {
     voice_id: string;
@@ -71,7 +72,7 @@ export class MiniMaxTTSClient {
                 const parsed = JSON.parse(errText);
                 detail = parsed.base_resp?.status_msg || parsed.error?.message || errText;
             } catch {}
-            console.error('[MiniMaxTTS] API 请求失败:', {
+            serviceLog.error('[MiniMaxTTS] API 请求失败:', {
                 url,
                 status: response.status,
                 responseBody: detail,
@@ -127,7 +128,7 @@ export class MiniMaxTTSClient {
                 const parsed = JSON.parse(errText);
                 detail = parsed.base_resp?.status_msg || parsed.error?.message || errText;
             } catch {}
-            console.error('[MiniMaxTTS] Streaming API 请求失败:', {
+            serviceLog.error('[MiniMaxTTS] Streaming API 请求失败:', {
                 url,
                 status: response.status,
                 responseBody: detail,

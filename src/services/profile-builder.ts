@@ -24,6 +24,7 @@ import { fetchWithCorsFallback } from '../utils/safe-request';
 import type { WereadSyncState } from '../weread/types';
 import { sanitizeFileName } from '../weread/utils/file';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { serviceLog } from '../utils/logger.js';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,
@@ -277,7 +278,7 @@ export class ProfileBuilder {
 						});
 					}
 				} catch (e) {
-					console.warn(`[ProfileBuilder] embedding batch ${i}-${i + batch.length} failed:`, e);
+				serviceLog.warn(`[ProfileBuilder] embedding batch ${i}-${i + batch.length} failed:`, e);
 				}
 			}
 
@@ -594,7 +595,7 @@ export class ProfileBuilder {
 
 			await this.vault.adapter.write(this.bufferPath, JSON.stringify({ rounds: [] }));
 		} catch (e) {
-			console.warn('[ProfileBuilder] accumulateConversationRound failed:', (e as Error).message);
+		serviceLog.warn('[ProfileBuilder] accumulateConversationRound failed:', (e as Error).message);
 		}
 	}
 

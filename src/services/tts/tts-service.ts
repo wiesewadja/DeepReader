@@ -11,6 +11,7 @@ import { ExpressivePreprocessor } from './expressive-preprocessor.js';
 import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
 import type { BookGenre } from './book-genre-detector.js';
 import { safeRequest } from '../../utils/safe-request.js';
+import { serviceLog } from '../../utils/logger.js';
 
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 
@@ -208,7 +209,7 @@ export class TTSService {
                 genre = await this.genreDetector.detect(context.bookId);
                 this.currentGenre = genre;
             } catch (err) {
-                console.warn('[TTS] Genre detection failed:', err);
+                serviceLog.warn('[TTS] Genre detection failed:', err);
             }
         }
 
@@ -229,7 +230,7 @@ export class TTSService {
             if (diskCached) {
                 this.setCache(cacheKey, diskCached);
                 cached = diskCached;
-                console.log(`[TTS] Disk cache hit: ${textHash}_${voiceProfile.voice}`);
+                serviceLog.info(`[TTS] Disk cache hit: ${textHash}_${voiceProfile.voice}`);
             }
         }
 
@@ -240,7 +241,7 @@ export class TTSService {
             } catch (err) {
                 // 用户主动停止 → 静默处理（state 已由 stopInternal 清理）
                 if (err instanceof Error && (err instanceof Error ? err.message : String(err)) === 'STOPPED') return;
-                console.error('[TTS] oral rewrite play failed:', err);
+                serviceLog.error('[TTS] oral rewrite play failed:', err);
                 new Notice(`朗读失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
@@ -252,7 +253,7 @@ export class TTSService {
         try {
             await this.streamSummaryToAudio(messageId, cleanContent, userQuestion, context, voiceProfile);
         } catch {
-            console.warn('[TTS] Streaming pipeline failed, falling back');
+            serviceLog.warn('[TTS] Streaming pipeline failed, falling back');
             try {
                 this.setState('summarizing');
                 const summary = await this.summarizer.summarize(cleanContent, userQuestion, context);
@@ -268,7 +269,7 @@ export class TTSService {
                     await this.playNonStream(messageId, summary, voiceProfile);
                 }
             } catch (err) {
-                console.error('[TTS] play failed:', err);
+                serviceLog.error('[TTS] play failed:', err);
                 new Notice(`语音播报失败: ${err instanceof Error ? (err instanceof Error ? err.message : String(err)) : String(err)}`);
                 this.currentMessageId = null;
                 this.currentGenre = null;
@@ -294,7 +295,7 @@ export class TTSService {
                 try {
                     genre = await this.genreDetector.detect(context.bookId);
                 } catch (err) {
-                    console.warn('[TTS] Preload genre detection failed:', err);
+                    serviceLog.warn('[TTS] Preload genre detection failed:', err);
                 }
             }
 
@@ -316,7 +317,7 @@ export class TTSService {
             try {
                 textToRead = await this.summarizer.oralRewrite(previewText);
             } catch (err) {
-                console.warn('[TTS] Oral rewrite failed, using original text:', err);
+                serviceLog.warn('[TTS] Oral rewrite failed, using original text:', err);
             }
 
             // 6. Markdown 清洗 + 数字归一化
@@ -337,14 +338,14 @@ export class TTSService {
             this.setCache(cacheKey, { blobUrl, audio });
             this.previewBuffers.set(cacheKey, audioBuffer);
 
-            console.log(`[TTS] Preloaded oral preview for message ${messageId} (${previewText.length} chars)`);
+            serviceLog.info(`[TTS] Preloaded oral preview for message ${messageId} (${previewText.length} chars)`);
 
             // 9. 后台启动全量改写（利用用户阅读的 3-10 秒空白）
             if (cleanContent.length > 250 && !this.rewrittenCache.has(messageId) && !this.pendingRewrites.has(messageId)) {
                 this.startFullRewrite(messageId, cleanContent);
             }
         } catch (err) {
-            console.warn('[TTS] Preload preview failed:', err);
+            serviceLog.warn('[TTS] Preload preview failed:', err);
         }
     }
 
@@ -356,11 +357,11 @@ export class TTSService {
             .then(rewritten => {
                 this.rewrittenCache.set(messageId, rewritten);
                 this.pendingRewrites.delete(messageId);
-                console.log(`[TTS] Full oral rewrite completed for ${messageId} (${content.length} → ${rewritten.length} chars)`);
+                serviceLog.info(`[TTS] Full oral rewrite completed for ${messageId} (${content.length} → ${rewritten.length} chars)`);
                 return rewritten;
             })
             .catch(err => {
-                console.warn('[TTS] Full oral rewrite failed:', err);
+                serviceLog.warn('[TTS] Full oral rewrite failed:', err);
                 this.pendingRewrites.delete(messageId);
                 return '';
             });
@@ -539,7 +540,7 @@ export class TTSService {
             try {
                 segResult = await synthPromise!;
             } catch (err) {
-                console.warn(`[TTS] Segment ${i} synthesis failed, skipping:`, err);
+                serviceLog.warn(`[TTS] Segment ${i} synthesis failed, skipping:`, err);
                 currentCharOffset += segmentText.length;
                 // 补充并发池
                 if (nextSynthIndex < totalSegments) {
@@ -569,7 +570,7 @@ export class TTSService {
                 await this.playAudioAndWait(messageId, segResult.audio);
             } catch (err) {
                 if (err instanceof Error && (err instanceof Error ? err.message : String(err)) === 'STOPPED') throw err;
-                console.warn(`[TTS] Segment ${i} playback failed:`, err);
+                serviceLog.warn(`[TTS] Segment ${i} playback failed:`, err);
             }
 
             currentCharOffset += segmentText.length;
@@ -596,10 +597,10 @@ export class TTSService {
 
                 // 异步写入磁盘缓存（不阻塞播放结束）
                 if (diskSaveKey) {
-                    this.saveToDiskCache(diskSaveKey, voiceProfile.voice, merged).catch(err => console.warn('[TTS] Async disk save failed:', err));
+                    this.saveToDiskCache(diskSaveKey, voiceProfile.voice, merged).catch(err => serviceLog.warn('[TTS] Async disk save failed:', err));
                 }
             } catch (err) {
-                console.warn('[TTS] Failed to cache merged audio:', err);
+                serviceLog.warn('[TTS] Failed to cache merged audio:', err);
             }
 
             this.onProgressChange?.(messageId, 100);
@@ -922,9 +923,9 @@ export class TTSService {
                 }
 
                 await this.writeDiskManifest(entries);
-                console.log(`[TTS] Disk cache saved: ${wavFile} (${entries.length} entries)`);
+                serviceLog.info(`[TTS] Disk cache saved: ${wavFile} (${entries.length} entries)`);
             } catch (err) {
-                console.warn('[TTS] Disk cache save failed:', err);
+                serviceLog.warn('[TTS] Disk cache save failed:', err);
             }
         });
         await this.manifestLock;
@@ -1130,7 +1131,7 @@ export class TTSService {
             const chunkChannels = view.getUint16(22, true);
             
             if (chunkSampleRate !== sampleRate || chunkBits !== bitsPerSample || chunkChannels !== numChannels) {
-                console.warn('[TTS] Audio format mismatch, skipping chunk');
+                serviceLog.warn('[TTS] Audio format mismatch, skipping chunk');
                 continue;
             }
             
@@ -1478,7 +1479,7 @@ export class TTSService {
 
         audio.onerror = () => {
             this.clearProgressTimer();
-            console.error('[TTS] Audio playback error');
+            serviceLog.error('[TTS] Audio playback error');
             if (this.currentMessageId === messageId) {
                 this.setState('idle');
                 this.currentMessageId = null;
@@ -1502,7 +1503,7 @@ export class TTSService {
             }
         };
         audio.onerror = () => {
-            console.error('[TTS] Audio playback error');
+            serviceLog.error('[TTS] Audio playback error');
             if (this.currentMessageId === messageId) {
                 this.setState('idle');
                 this.currentMessageId = null;

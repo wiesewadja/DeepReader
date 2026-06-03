@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { getPageindexRoot } from "./paths.js";
 import { INDEX_TRACE_ENABLED } from "../config/features.js";
+import { apiLog } from "../utils/logger.js";
 
 /** LLM 调用追踪（兼容导出） */
 export interface LlmCallTrace {
@@ -145,12 +146,12 @@ export class IndexTracer {
 	private append(line: string): void {
 		const write = () => fs.appendFile(this.logPath, line + "\n", "utf-8");
 		if (this.dirEnsured) {
-			write().catch((e) => { console.error("[IndexTracer] append failed:", e); });
+		write().catch((e) => { apiLog.error("[IndexTracer] append failed:", e); });
 		} else {
 			const dir = path.dirname(this.logPath);
 			fs.mkdir(dir, { recursive: true })
 				.then(() => { this.dirEnsured = true; return write(); })
-				.catch((e) => { console.error("[IndexTracer] append failed:", e); });
+			.catch((e) => { apiLog.error("[IndexTracer] append failed:", e); });
 		}
 	}
 
@@ -326,7 +327,7 @@ export class IndexTracer {
 		const dir = path.dirname(this.jsonPath);
 		fs.mkdir(dir, { recursive: true })
 			.then(() => fs.writeFile(this.jsonPath, JSON.stringify(jsonTrace, null, 2), "utf-8"))
-			.catch((e) => { console.error("[IndexTracer] json write failed:", e); });
+		.catch((e) => { apiLog.error("[IndexTracer] json write failed:", e); });
 	}
 }
 
