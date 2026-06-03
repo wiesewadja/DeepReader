@@ -1,0 +1,10 @@
+{
+	"id": "deepreader",
+	"name": "DeepReader",
+	"minAppVersion": "1.0.0",
+	"description": "Deep reading AI assistant — PDF/EPUB indexing, semantic search, and intelligent dialogue",
+	"author": "DeepReader Team",
+	"authorUrl": "https://github.com/wiesewadja/DeepReader",
+	"isDesktopOnly": false,
+	"version": "2026.06.03"
+}
