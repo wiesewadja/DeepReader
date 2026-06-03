@@ -11,6 +11,7 @@ import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { TFile, normalizePath } from 'obsidian';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
+import { ensureFolderExists } from '../../utils/vault.js';
 import { parseFrontmatter } from '../utils/book-note.js';
 
 const WRITE_NOTE_DEFINITION: ToolDefinition = {
@@ -150,24 +151,6 @@ async function hasAicreateFrontmatter(app: any, file: TFile): Promise<boolean> {
   }
 }
 
-/**
- * 确保目录存在
- */
-async function ensureFolderExists(app: any, folderPath: string): Promise<void> {
-  const normalizedPath = normalizePath(folderPath);
-  const parts = normalizedPath.split('/');
-  let currentPath = '';
-
-  for (const part of parts) {
-    currentPath = currentPath ? `${currentPath}/${part}` : part;
-    const folder = app.vault.getAbstractFileByPath(currentPath);
-
-    if (!folder) {
-      await app.vault.createFolder(currentPath);
-      log('[write_note] 创建目录:', currentPath);
-    }
-  }
-}
 
 export const writeNoteTool: ToolExecutor = {
   definition: WRITE_NOTE_DEFINITION,
@@ -223,7 +206,7 @@ export const writeNoteTool: ToolExecutor = {
       // 确保目录存在
       const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
       if (folderPath) {
-        await ensureFolderExists(app, folderPath);
+        await ensureFolderExists(app as unknown as import('obsidian').App, folderPath);
       }
 
       const newContent = generateContentWithFrontmatter(content, 'create');

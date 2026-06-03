@@ -12,6 +12,8 @@
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import { toolsLog as log } from '../../utils/logger.js';
+import { ensureFolderExists } from '../../utils/vault.js';
+import type { App } from 'obsidian';
 
 // TFile 类型定义（避免直接导入 obsidian）
 interface TFileLike {
@@ -186,23 +188,6 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
-/**
- * 确保目录存在
- */
-async function ensureFolderExists(app: any, folderPath: string): Promise<void> {
-  const parts = folderPath.split('/');
-  let currentPath = '';
-
-  for (const part of parts) {
-    currentPath = currentPath ? `${currentPath}/${part}` : part;
-    const folder = app.vault.getAbstractFileByPath(currentPath);
-
-    if (!folder) {
-      await app.vault.createFolder(currentPath);
-      log('[Canvas] 创建目录:', currentPath);
-    }
-  }
-}
 
 // ============ Mindmap 布局常量和函数 ============
 
@@ -701,7 +686,7 @@ export function createCanvasTool(app: any): ToolExecutor {
             // 确保目录存在
             const folderPath = (path as string).substring(0, (path as string).lastIndexOf('/'));
             if (folderPath) {
-              await ensureFolderExists(app, folderPath);
+              await ensureFolderExists(app as unknown as App, folderPath);
             }
 
             // 计算布局
