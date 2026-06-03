@@ -8,8 +8,10 @@
  * 使用 safeRequest（Obsidian requestUrl）绕过 CORS 限制
  */
 
+import path from 'path';
 import AdmZip from 'adm-zip';
 import { safeRequest } from '../utils/safe-request';
+import { log as piLog } from '../pageindex/core/logger';
 import { parseMineruJson } from '../pageindex/parsers/mineru';
 import { buildTocTree, fillNodeText, countTokens, extractImageExt } from '../pageindex/parsers/mineru-types';
 import type { MineruJson, MineruPdfResult, MineruImage, PageText } from '../pageindex/parsers/mineru-types';
@@ -28,6 +30,7 @@ const POLL_INTERVAL = 3_000;       // 3 秒
 
 const MAX_AGENT_FILE_SIZE = 10 * 1024 * 1024;  // 10MB
 const MAX_AGENT_PAGES = 20;
+const MAX_PRECISION_PAGES = 200;
 
 // ════════════════════════════════════════════════════════════════
 // 错误类型
@@ -237,16 +240,97 @@ export class MineruClient {
 
   /**
    * 精准 API（需 Token，支持 ≤200MB / ≤200页）
+   * 超过 200 页时自动拆分 PDF，分批解析后合并结果
    */
   async parseViaPrecision(input: Buffer, fileName: string): Promise<MineruPdfResult> {
     if (!this.token) {
       throw new MineruError('MinerU Token not configured');
     }
 
+    const totalPages = this.getPdfPageCount(input);
+    piLog(`[parseViaPrecision] ${fileName}: ${totalPages} pages, ${input.length} bytes`);
+
+    // 单次可处理，直接调用
+    if (totalPages <= MAX_PRECISION_PAGES || totalPages === 0) {
+      return this.precisionSingleBatch(input, fileName);
+    }
+
+    // 超过 200 页，拆分为多个 batch
+    piLog(`[parseViaPrecision] Splitting ${totalPages} pages into batches of ${MAX_PRECISION_PAGES}`);
+    const { PDFDocument } = await import('pdf-lib');
+    const srcDoc = await PDFDocument.load(input, { ignoreEncryption: true });
+
+    const batchCount = Math.ceil(totalPages / MAX_PRECISION_PAGES);
+    const results: MineruPdfResult[] = [];
+
+    for (let i = 0; i < batchCount; i++) {
+      const startPage = i * MAX_PRECISION_PAGES;
+      const endPage = Math.min(startPage + MAX_PRECISION_PAGES, totalPages);
+      const pageIndices = Array.from({ length: endPage - startPage }, (_, k) => startPage + k);
+
+      piLog(`[parseViaPrecision] Batch ${i + 1}/${batchCount}: pages ${startPage + 1}-${endPage}`);
+
+      // 创建只包含当前页范围的新 PDF
+      const newDoc = await PDFDocument.create();
+      const copiedPages = await newDoc.copyPages(srcDoc, pageIndices);
+      for (const page of copiedPages) {
+        newDoc.addPage(page);
+      }
+      const batchBytes = await newDoc.save();
+      const batchBuffer = Buffer.from(batchBytes);
+
+      const batchFileName = `${path.parse(fileName).name}_part${i + 1}.pdf`;
+      const result = await this.precisionSingleBatch(batchBuffer, batchFileName);
+      results.push(result);
+    }
+
+    // 合并结果：修正页码编号 + 合并 pages/outline/images
+    return this.mergeBatchResults(results, fileName, totalPages);
+  }
+
+  /** 单批次精准 API 调用 */
+  private async precisionSingleBatch(input: Buffer, fileName: string): Promise<MineruPdfResult> {
     const batch = await this.requestPrecisionUploadUrl(fileName);
     await this.uploadFile(batch.fileUrls[0], input);
     const zipUrl = await this.pollPrecisionResult(batch.batchId);
     return this.downloadAndParseZip(zipUrl);
+  }
+
+  /** 合并多批次结果 */
+  private mergeBatchResults(results: MineruPdfResult[], fileName: string, totalPages: number): MineruPdfResult {
+    let pageOffset = 0;
+    const allPages: PageText[] = [];
+    const allOutline: TreeNode[] = [];
+    const allImages: MineruImage[] = [];
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      // 修正页码：每个 batch 的页码从 1 开始，需要加上偏移量
+      for (const page of r.pages) {
+        allPages.push({
+          ...page,
+          pageNumber: page.pageNumber + pageOffset,
+        });
+      }
+      const adjustOutline = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.map(n => ({
+          ...n,
+          startIndex: n.startIndex !== undefined ? n.startIndex + pageOffset : n.startIndex,
+          endIndex: n.endIndex !== undefined ? n.endIndex + pageOffset : n.endIndex,
+          nodes: n.nodes ? adjustOutline(n.nodes) : undefined,
+        }));
+      allOutline.push(...adjustOutline(r.outline));
+      allImages.push(...r.images);
+      pageOffset += r.totalPages;
+    }
+
+    return {
+      title: results[0]?.title || path.parse(fileName).name,
+      totalPages,
+      pages: allPages,
+      outline: allOutline,
+      images: allImages,
+    };
   }
 
   // ════════════════════════════════════════════════════════════
