@@ -479,18 +479,30 @@ export async function checkTitleAppearance(
 export async function checkTitleAppearanceInStart(
   title: string,
   pageText: string,
-  options: TocOptions
+  _options: TocOptions
 ): Promise<"yes" | "no"> {
-  const prompt = prompts.checkTitleStartAtBeginningPrompt(title, pageText);
-  const response = await chatGPT({
-    model: options.model,
-    prompt,
-    apiKey: options.apiKey,
-    baseUrl: options.baseUrl,
-  });
+  // 纯字符串匹配：检查标题是否出现在页面文本开头（前 500 字符）
+  // 替代 LLM 调用，避免大量并发请求触发 429 限流
+  if (!title || !pageText) return "no";
 
-  const json = extractJson<{ start_begin: string }>(response);
-  return json?.start_begin === "yes" ? "yes" : "no";
+  // 归一化：去除空白差异，转小写
+  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  const normalizedTitle = normalize(title);
+  const head = normalize(pageText.slice(0, 500));
+
+  // 标题出现在页面开头的前 100 字符内
+  const prefix = normalize(pageText.slice(0, 100));
+  if (prefix.includes(normalizedTitle) || normalizedTitle.includes(prefix)) {
+    return "yes";
+  }
+
+  // 模糊匹配：标题的前 10 个字符在页面开头 200 字符内
+  const titlePrefix = normalizedTitle.slice(0, 10);
+  if (titlePrefix.length >= 4 && head.includes(titlePrefix)) {
+    return "yes";
+  }
+
+  return "no";
 }
 
 /**
