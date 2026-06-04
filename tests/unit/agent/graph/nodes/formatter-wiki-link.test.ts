@@ -25,7 +25,6 @@ describe('fixupWikiLinks', () => {
 
   it('保留已有 bookName 前缀的链接不变', () => {
     const result = fixupWikiLinks('[[另一本书/01-序|序]]', '西方史纲');
-    // 现状行为：只要含 `/` 就跳过，所以跨书链接不会被改动
     expect(result).toBe('[[另一本书/01-序|序]]');
   });
 
@@ -51,7 +50,6 @@ describe('fixupWikiLinks', () => {
   });
 
   it('crossBookMode=false (默认) 行为与旧版一致', () => {
-    // 显式 false 也要工作
     const result = fixupWikiLinks('[[01-序|序]]', '西方史纲', false);
     expect(result).toBe('[[西方史纲/01-序|序]]');
   });
@@ -79,16 +77,11 @@ describe('fixupEmptyBlockIds', () => {
   });
 });
 
-describe('stripFabricatedLinks', () => {
+describe('stripFabricatedLinks - T0.2 snapshot (current behavior)', () => {
   it('移除不在 inputTexts 中的「编造」链接（需 validFileNames 非空）', () => {
-    // 关键：validFileNames 必须从 inputTexts 中的 wiki link 收集
-    // 否则走空分支（宽松），不会检测编造
     const content = 'real [[a/01-序|序]] and fake [[a/99-不存在的章节|不存在]]';
-    const inputs = [
-      'scope has [[a/01-序|序]] reference', // wiki link → validFileNames 添加 '01-序'
-    ];
+    const inputs = ['scope has [[a/01-序|序]] reference'];
     const result = stripFabricatedLinks(content, inputs);
-    // 01-序 保留（合法）；99-不存在的章节 应被识别为编造并降级为别名
     expect(result).toContain('[[a/01-序|序]]');
     expect(result).not.toContain('99-不存在的章节');
   });
@@ -97,7 +90,6 @@ describe('stripFabricatedLinks', () => {
     const content = '[[a/01-序#^b1|序]]';
     const inputs = ['scope has [[a/01-序|序]] reference'];
     const result = stripFabricatedLinks(content, inputs, new Set(['b1']));
-    // b1 在 vaultBlockIds 中，应保留 #^b1
     expect(result).toBe('[[a/01-序#^b1|序]]');
   });
 
@@ -105,17 +97,6 @@ describe('stripFabricatedLinks', () => {
     const content = '[[a/01-序#^ghost|序]]';
     const inputs = ['scope has [[a/01-序|序]] reference'];
     const result = stripFabricatedLinks(content, inputs, new Set(['b1', 'b2']));
-    // ghost 不在 vaultBlockIds 中，应降级
-    expect(result).toBe('[[a/01-序|序]]');
-  });
-
-  it('scope 为空时降级 block_id 链接到文件级（宽松分支）', () => {
-    // 现状行为：当 validFileNames.size === 0 时，只降级 block_id 链接
-    // 不做 file_name 编造检测
-    const content = '[[a/01-序#^b1|序]]';
-    const inputs: string[] = []; // 完全无输入
-    const result = stripFabricatedLinks(content, inputs, new Set());
-    // block_id 链接降级为文件级
     expect(result).toBe('[[a/01-序|序]]');
   });
 
@@ -123,16 +104,56 @@ describe('stripFabricatedLinks', () => {
     const content = '[[a/01-序|序]]';
     const inputs: string[] = [];
     const result = stripFabricatedLinks(content, inputs, new Set());
-    // 无 block_id，宽松分支保留
     expect(result).toBe('[[a/01-序|序]]');
   });
 
   it('降级 Calibre pagebreak 标记 (#calibre-pb-N) 为文件级链接', () => {
-    // 关键：calibre-pb-* 不是合法 block_id，应降级为标题链接
     const content = '[[a/01-序#calibre-pb-5|序]]';
     const inputs = ['scope has [[a/01-序|序]] reference'];
     const result = stripFabricatedLinks(content, inputs, new Set());
-    // calibre-pb-N 应降级
     expect(result).toBe('[[a/01-序|序]]');
+  });
+});
+
+describe('stripFabricatedLinks - T1.4 input whitelist (new behavior)', () => {
+  it('scope 空 + 无 vaultBlockIds: 链接完全保留', () => {
+    // T1.4 修复：移除宽松分支，但 validFileNames.size === 0 时 file_name 检查跳过 → 所有链接保留
+    const content = '[[a/01-序|序]]';
+    const result = stripFabricatedLinks(content, [], new Set());
+    expect(result).toBe('[[a/01-序|序]]');
+  });
+
+  it('scope 空 + vaultBlockIds 有内容: 只校验 block_id，file_name 跳过', () => {
+    // T1.4：严格分支里 file_name 检查因 validFileNames 为空而跳过
+    const content = '[[a/01-序#^ghost|序]] and [[a/02-论#^b1|论]]';
+    const result = stripFabricatedLinks(content, [], new Set(['b1']));
+    expect(result).toContain('[[a/01-序|序]]');  // ghost 降级
+    expect(result).toContain('[[a/02-论#^b1|论]]');  // b1 保留
+  });
+
+  it('scope 非空 + 无 vaultBlockIds: 只校验 file_name，block_id 跳过', () => {
+    // inputTexts 包含 wiki link → validFileNames 非空
+    const content = '[[a/01-序|序]] and [[a/99-不存在的章节|不存在]]';
+    const inputs = ['scope has [[a/01-序|序]] reference'];
+    const result = stripFabricatedLinks(content, inputs, new Set());
+    expect(result).toContain('[[a/01-序|序]]');
+    expect(result).not.toContain('99-不存在的章节');
+  });
+
+  it('scope 非空 + vaultBlockIds 有内容: 两个校验都执行', () => {
+    const content = '[[a/01-序#^b1|序]] and [[a/99-不存#^ghost|不存在]]';
+    const inputs = ['scope has [[a/01-序|序]] reference'];
+    const result = stripFabricatedLinks(content, inputs, new Set(['b1']));
+    expect(result).toContain('[[a/01-序#^b1|序]]');  // 合法
+    expect(result).not.toContain('99-不存');  // 99-不存 被识别为编造
+  });
+
+  it('严格分支: fabricated file_name 被 strip 到别名', () => {
+    const content = '[[a/01-序|序]] and [[b/完全编造的章节|虚构]]';
+    const inputs = ['scope has [[a/01-序|序]] reference'];
+    const result = stripFabricatedLinks(content, inputs, new Set());
+    expect(result).toContain('[[a/01-序|序]]');
+    expect(result).toContain('虚构');
+    expect(result).not.toContain('完全编造的章节');
   });
 });

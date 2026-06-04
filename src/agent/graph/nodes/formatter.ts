@@ -147,49 +147,39 @@ export function stripFabricatedLinks(content: string, inputTexts: string[], vaul
     }
   }
 
-  if (validFileNames.size === 0) {
-    // 输入中无链接，保留标题引用 [[书名/章节|alias]]，只移除带 #^block_id 的链接
-    return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
-      if (inner.includes('#^')) {
-        // block_id 链接无法验证，降级为标题链接 [[书名/章节|alias]]
-        const pathPart = inner.split('#')[0].split('|')[0];
-        const aliasMatch = inner.match(/\|([^|]+)$/);
-        const alias = aliasMatch ? aliasMatch[1] : pathPart.split('/').pop() || pathPart;
-        return `[[${pathPart}|${alias}]]`;
-      }
-      return fullMatch;
-    });
-  }
-
-  // 逐个检查输出中的链接，移除编造的
+  // T1.4 修复：移除宽松分支，统一走严格分支
+  // 严格分支：file_name 检查仅在 validFileNames 非空时执行
+  //           block_id 检查仅在 vaultBlockIds 非空时执行
   return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
     const hashIdx = inner.indexOf('#');
     const pathPart = (hashIdx >= 0 ? inner.slice(0, hashIdx) : inner).split('|')[0];
     const fileName = pathPart.split('/').pop() || pathPart;
 
-    // 模糊匹配：检查文件名是否在合法集合中（去除数字前缀后的核心部分）
-    let isFabricated = true;
-    for (const valid of validFileNames) {
-      if (valid === fileName || valid === pathPart || valid.endsWith(fileName) || fileName.endsWith(valid)) {
-        isFabricated = false;
-        break;
+    // 1. file_name 检查（仅在 validFileNames 非空时执行）
+    if (validFileNames.size > 0) {
+      let isFabricated = true;
+      for (const valid of validFileNames) {
+        if (valid === fileName || valid === pathPart || valid.endsWith(fileName) || fileName.endsWith(valid)) {
+          isFabricated = false;
+          break;
+        }
+        // 宽松匹配：去除编号前缀后比较标题部分
+        const stripNum = (s: string) => s.replace(/^\d+\s*[-–]\s*/, '');
+        if (stripNum(valid) === stripNum(fileName)) {
+          isFabricated = false;
+          break;
+        }
       }
-      // 宽松匹配：去除编号前缀后比较标题部分
-      const stripNum = (s: string) => s.replace(/^\d+\s*[-–]\s*/, '');
-      if (stripNum(valid) === stripNum(fileName)) {
-        isFabricated = false;
-        break;
+
+      if (isFabricated) {
+        // 编造链接 → 回退为纯文本（保留别名）
+        const aliasMatch = inner.match(/[^|]+$/) ;
+        const alias = aliasMatch ? aliasMatch[0] : fileName;
+        return alias;
       }
     }
 
-    if (isFabricated) {
-      // 编造链接 → 回退为纯文本（保留别名）
-      const aliasMatch = inner.match(/[^|]+$/) ;
-      const alias = aliasMatch ? aliasMatch[0] : fileName;
-      return alias;
-    }
-
-    // 文件名合法 → 进一步校验 block_id 是否存在于 vault 中
+    // 2. block_id 检查（仅在 vaultBlockIds 非空时执行）
     if (hashIdx >= 0 && vaultBlockIds && vaultBlockIds.size > 0) {
       const hashContent = inner.slice(hashIdx + 1);
       const blockIdMatch = hashContent.match(/^\^([\w-]+)/);
