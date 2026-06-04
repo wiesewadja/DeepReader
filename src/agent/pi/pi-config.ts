@@ -64,11 +64,15 @@ export function buildSpawnArgs(config: PiConfig): string[] {
 		'--no-skills',
 		'--no-context-files',
 		'--tools', 'read,write,edit,grep,find,ls,bash',
-		'--provider', config.provider,
-		'--model', config.model,
-		'--api-key', config.apiKey,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,
 	];
+
+	// PI 自带 LLM 配置时（~/.pi/agent/settings.json 有 defaultProvider）不覆盖，
+	// 否则用插件配置的 provider/model/apiKey
+	const hasOwnLlm = hasPiLlmConfig();
+	if (!hasOwnLlm && config.provider && config.apiKey) {
+		args.push('--provider', config.provider, '--model', config.model, '--api-key', config.apiKey);
+	}
 
 	// skillPath 优先（单 skill 路径），否则用 skillsDir（所有 skills）
 	const skillPath = config.skillPath ?? config.skillsDir;
@@ -77,6 +81,19 @@ export function buildSpawnArgs(config: PiConfig): string[] {
 	}
 
 	return args;
+}
+
+/** 检测 PI 是否有自身的 LLM 配置 */
+function hasPiLlmConfig(): boolean {
+	try {
+		const settingsPath = join(homedir(), '.pi', 'agent', 'settings.json');
+		if (!existsSync(settingsPath)) return false;
+		const { readFileSync } = require('fs') as typeof import('fs');
+		const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+		return !!(settings.defaultProvider && settings.defaultModel);
+	} catch {
+		return false;
+	}
 }
 
 /**
