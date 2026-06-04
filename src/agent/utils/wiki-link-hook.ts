@@ -97,6 +97,11 @@ function parseWikiLinkInternal(linkContent: string): ParsedWikiLink | null {
 function detectLinkIssues(parsed: ParsedWikiLink, expectedBookName: string): WikiLinkIssue['issueType'][] {
   const issues: WikiLinkIssue['issueType'][] = [];
 
+  // 跨书模式（expectedBookName 为空）：禁用 wrong_book 检查
+  if (expectedBookName === '') {
+    return issues;
+  }
+
   if (!parsed.bookName || parsed.bookName !== expectedBookName) {
     issues.push('wrong_book');
   }
@@ -310,7 +315,11 @@ export async function validateWikiLinks(
 
     if (!parsed) continue;
 
-    const detectedIssues = detectLinkIssues(parsed, context.bookName);
+    // T1.2: expectedBookName 优先于 context.bookName
+    const expectedBookName = context.expectedBookName !== undefined
+      ? context.expectedBookName
+      : context.bookName;
+    const detectedIssues = detectLinkIssues(parsed, expectedBookName);
 
     // T1.1: 文件存在性检查前置 - 即使 detectedIssues 为空也校验
     let fileExists = false;
@@ -338,7 +347,8 @@ export async function validateWikiLinks(
     let confidence = 0;
 
     if (detectedIssues.includes('file_not_found') || detectedIssues.includes('wrong_book')) {
-      const bookToUse = detectedIssues.includes('wrong_book') ? context.bookName : parsed.bookName;
+      // T1.2: wrong_book 时在 expectedBookName 目录下找
+      const bookToUse = detectedIssues.includes('wrong_book') ? expectedBookName : parsed.bookName;
       const cachedFiles = await getCachedBookFiles(bookToUse);
       if (cachedFiles) {
         // 直接使用缓存的列表做模糊匹配
@@ -357,7 +367,7 @@ export async function validateWikiLinks(
       parsed,
       correctedFile,
       correctedBlockId,
-      context.bookName
+      expectedBookName
     );
 
     issues.push({

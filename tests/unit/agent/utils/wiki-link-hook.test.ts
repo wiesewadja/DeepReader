@@ -265,3 +265,76 @@ describe('validateWikiLinks - file existence checked BEFORE issue detection (T1.
     expect(calledPaths).toContain('01-序');
   });
 });
+
+describe('validateWikiLinks - cross-book guard (T1.2)', () => {
+  it('uses context.bookName when expectedBookName not provided (backward compat)', async () => {
+    const app = createMockApp({ exists: vi.fn().mockResolvedValue(true) });
+    // 跨书链接，bookName 是另一本书
+    const result = await validateWikiLinks('[[另一本书/01-序|序]]', {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // 默认行为：与 context.bookName 不一致 → wrong_book
+    const wrongBook = result.issues.find(i => i.issueType === 'wrong_book');
+    expect(wrongBook).toBeDefined();
+  });
+
+  it('uses expectedBookName when provided (overrides context.bookName)', async () => {
+    const app = createMockApp({ exists: vi.fn().mockResolvedValue(true) });
+    // 链接 bookName 与 expectedBookName 一致，无 wrong_book
+    const result = await validateWikiLinks('[[西方史纲/01-序|序]]', {
+      app,
+      bookName: '其他书',  // context.bookName 是其他书
+      expectedBookName: '西方史纲',  // 但 expectedBookName 是西方史纲
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // expectedBookName 优先，链接 bookName 匹配 → 无 wrong_book
+    const wrongBook = result.issues.find(i => i.issueType === 'wrong_book');
+    expect(wrongBook).toBeUndefined();
+  });
+
+  it('crossBookMode (expectedBookName="") disables wrong_book check', async () => {
+    const app = createMockApp({ exists: vi.fn().mockResolvedValue(true) });
+    // 跨书模式：expectedBookName 为空，禁用 wrong_book 检查
+    const result = await validateWikiLinks('[[任意书/01-序|序]]', {
+      app,
+      bookName: '西方史纲',
+      expectedBookName: '',  // 跨书模式
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // 跨书模式不应有 wrong_book
+    const wrongBook = result.issues.find(i => i.issueType === 'wrong_book');
+    expect(wrongBook).toBeUndefined();
+  });
+
+  it('records wrong_book issue and uses expectedBookName for findClosestFile', async () => {
+    const existsFn = vi.fn().mockImplementation(async (path: string) => {
+      // 西方史纲 目录存在
+      if (path === '/vault/DeepReader/西方史纲') return true;
+      // 西方史纲 下的目标文件存在
+      if (path.endsWith('08-八、抗议.md')) return true;
+      return false;
+    });
+    const listFn = vi.fn().mockResolvedValue({
+      files: ['/vault/DeepReader/西方史纲/08-八、抗议.md'],
+      folders: [],
+    });
+    const app = createMockApp({ exists: existsFn, list: listFn });
+    // 跨书链接，文件 07-八、抗议 在 另一本书
+    const result = await validateWikiLinks('[[另一本书/07-八、抗议|七、抗议]]', {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // 应有 wrong_book + file_not_found 两个 issue
+    expect(result.issues.some(i => i.issueType === 'wrong_book')).toBe(true);
+    // findClosestFile 应在 expectedBookName (西方史纲) 目录找
+    // list 应被调用过 (即使 mock 不严格)
+    expect(listFn).toHaveBeenCalled();
+  });
+});
