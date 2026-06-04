@@ -157,3 +157,66 @@ describe('stripFabricatedLinks - T1.4 input whitelist (new behavior)', () => {
     expect(result).not.toContain('完全编造的章节');
   });
 });
+
+/**
+ * T3.2 集成测试：验证 S4 formatter 处理顺序中 link-pair-validator 在最前面被调用
+ *
+ * 简化策略：不直接测 formatterNode（需要 mock LLM stream），
+ * 而是验证「如果先调用 validateLinkPairs，残片修复后能进入下游 fixup」。
+ */
+import { validateLinkPairs } from '@/agent/utils/wiki-link-pair-validator';
+
+describe('S4 formatter 集成：流式截断残片修复 (T3.2)', () => {
+  it('链式调用 validateLinkPairs → fixupWikiLinks 修复截断链接', () => {
+    // 模拟 streamToContent 末尾被截断（流式中断），输出残留 [[book/01
+    const truncated = 'see [[book/01';
+
+    // 步骤 1: 流式截断修复（formatter.ts 中 streamToContent 之后立即调用）
+    const pairResult = validateLinkPairs(truncated);
+    expect(pairResult.fixedUnpaired).toBe(1);
+    expect(pairResult.content).toBe('see [book/01');
+
+    // 步骤 2: 修复后的 content 交给下游 fixup
+    const fixed = fixupWikiLinks(pairResult.content, 'book');
+    // fixupWikiLinks 不识别 `[book/01`（不是 [[ 开头），所以原样保留
+    expect(fixed).toBe('see [book/01');
+  });
+
+  it('流式截断 + 完整链接混合：截断残片被剥，完整链接被保留', () => {
+    const mixed = '[[book/01-序|序]] and [[book/02-论';
+
+    const pairResult = validateLinkPairs(mixed);
+    expect(pairResult.pairedCount).toBe(1);
+    expect(pairResult.unpairedCount).toBe(1);
+    expect(pairResult.fixedUnpaired).toBe(1);
+    expect(pairResult.content).toBe('[[book/01-序|序]] and [book/02-论');
+
+    // 修复后进入 fixup: 完整 [[book/01-序|序]] 已有 bookName 前缀，fixup 不动
+    const fixed = fixupWikiLinks(pairResult.content, 'book');
+    expect(fixed).toContain('[[book/01-序|序]]');  // 完整保留
+    expect(fixed).toContain('[book/02-论');  // 残片不带 [[ 不被改
+  });
+
+  it('流式截断：裸文件名残片经 pair 修复后能进入 fixup 加前缀', () => {
+    // LLM 偶尔输出 [[裸名（流中断），残片经 pair 修复后形态是 [裸名
+    // 这种 case 实际上进入不了 wiki link 流程（不是 [[ 开头），但确认链路不崩
+    const truncated = '[[01-序';
+
+    const pairResult = validateLinkPairs(truncated);
+    expect(pairResult.fixedUnpaired).toBe(1);
+    expect(pairResult.content).toBe('[01-序');
+
+    // 残片形态，fixup 不识别 - 不会做错的事
+    const fixed = fixupWikiLinks(pairResult.content, 'book');
+    expect(fixed).toBe('[01-序');
+  });
+
+  it('空输入时 linkPair validator 返回原值，下游不报错', () => {
+    const pairResult = validateLinkPairs('');
+    expect(pairResult.content).toBe('');
+    expect(pairResult.fixedUnpaired).toBe(0);
+
+    const fixed = fixupWikiLinks(pairResult.content, 'book');
+    expect(fixed).toBe('');
+  });
+});

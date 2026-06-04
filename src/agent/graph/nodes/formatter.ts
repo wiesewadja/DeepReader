@@ -22,6 +22,7 @@ import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
 import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
+import { validateLinkPairs } from '../../utils/wiki-link-pair-validator.js';
 import { getVaultPath } from '../../../utils/mobile-fs.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import {
@@ -374,6 +375,14 @@ export async function formatterNode(
 
   // Stream output
   let content = await streamToContent(mainModel, messages, config, callbacks?.onContent);
+
+  // T3.2: 流式截断修复 — 在做工具结果校验前先把单边 [[ / ]] 残片修了
+  // 顺序关键：流式残片必须先修，否则 verifyAndCleanContent 看到的就是坏数据
+  const linkPairResult = validateLinkPairs(content);
+  if (linkPairResult.fixedUnpaired > 0) {
+    log(`[Formatter] Fixed ${linkPairResult.fixedUnpaired} unpaired [[ or ]]`);
+  }
+  content = linkPairResult.content;
 
   // Self-verification: remove ghost block_id references (safety net)
   const toolResults: ToolResultEntry[] = (toolResultsSnapshot || []).map(r => ({
