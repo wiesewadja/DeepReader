@@ -304,11 +304,13 @@ export class PiProcessManager {
 
 		this.busy = true;
 		this.state = PiProcessState.BUSY;
+		let killedByTimeout = false;
 
 		// 整体超时保护（含进程启动 + skill 执行）
 		const overallTimeout = 300_000;
 		const overallTimer = setTimeout(() => {
 			log('[PiManager] Overall timeout reached, killing process');
+			killedByTimeout = true;
 			this.killProcess();
 		}, overallTimeout);
 
@@ -390,8 +392,8 @@ export class PiProcessManager {
 			const message = err instanceof Error ? err.message : String(err);
 			logError(`[PiManager] Skill execution failed: ${message}`);
 
-			const transient = this.isTransientError(message);
-			// 瞬时错误（进程崩溃/超时）→ 杀死进程，下次调用重启
+			// 超时杀进程导致的错误 → 始终视为瞬时错误，允许 fallback
+			const transient = killedByTimeout || this.isTransientError(message);
 			if (transient) {
 				this.killProcess();
 			}
@@ -399,7 +401,7 @@ export class PiProcessManager {
 			return {
 				outputPath: context.outputPath,
 				success: false,
-				error: message,
+				error: killedByTimeout ? `PI 执行超时 (${Math.round(overallTimeout / 1000)}s)` : message,
 				transient,
 			};
 		} finally {
