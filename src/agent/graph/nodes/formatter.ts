@@ -450,29 +450,31 @@ export async function formatterNode(
     }
   }
 
-  // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
-  // T2.1: 接入 validateWikiLinks 做真实 vault.exists 校验（在 cleanOutput 之后、stripFabricatedLinks 之前）
-  // T2.2 正式顺序：verify → cleanOutput → validateWikiLinks → stripFabricatedLinks
-  let wikiLinkValidatedContent = content;
+  // T2.2: 正式处理顺序
+  // 1. cleanOutput - 修格式（fixupWikiLinks, fixupEmptyBlockIds, stripThinkTags）
+  // 2. validateWikiLinks - 基于 vault.exists 真实校验（仅在有 app 时）
+  // 3. stripFabricatedLinks - 兜底（变形的 file_name 白名单）
+  let cleanedContent = cleanOutput(content, effectivePdfName, crossBookMode);
+
   const vaultApp = ctx?.toolContext?.vault?.app;
   if (vaultApp) {
     try {
-      const wikiLinkResult = await validateWikiLinks(content, {
+      const wikiLinkResult = await validateWikiLinks(cleanedContent, {
         app: vaultApp,
         bookName: crossBookMode ? '' : (pdfName || ''),
         expectedBookName: crossBookMode ? '' : (pdfName || ''),
         vaultPath: getVaultPath(vaultApp),
         toolResults,
       });
-      wikiLinkValidatedContent = wikiLinkResult.correctedContent;
+      cleanedContent = wikiLinkResult.correctedContent;
     } catch (err) {
-      // 校验失败时静默使用原 content（不阻塞 S4 输出）
-      log('[Formatter] validateWikiLinks 失败，使用原 content:', err);
+      // 校验失败时静默使用 cleanOutput 的结果（不阻塞 S4 输出）
+      log('[Formatter] validateWikiLinks 失败，使用 cleanOutput 结果:', err);
     }
   }
 
   const formatted = stripFabricatedLinks(
-    cleanOutput(wikiLinkValidatedContent, effectivePdfName, crossBookMode),
+    cleanedContent,
     inputTextsForValidation,
     vaultBlockIds,
   );
