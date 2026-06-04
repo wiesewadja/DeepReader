@@ -201,8 +201,13 @@ export class ReadingModeService {
      * 激活阅读模式
      */
     activate(file: TFile, retryCount = 0): void {
-        // 如果是同一文件，不重复激活
+        // 如果是同一文件，将对应 leaf 激活到前台即可
         if (this.isActive && this.currentFile?.path === file.path) {
+            const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
+                .find(l => (l.view as import('obsidian').MarkdownView)?.file?.path === file.path);
+            if (existingLeaf) {
+                this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+            }
             return;
         }
 
@@ -663,6 +668,17 @@ export class ReadingModeService {
         }
 
         serviceLog('[ReadingMode] openMostRecent:', mostRecentPath, 'at', mostRecentTime);
+
+        // 如果文件已在某个 tab 中打开，激活该 tab
+        const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
+            .find(l => (l.view as import('obsidian').MarkdownView)?.file?.path === file.path);
+        if (existingLeaf) {
+            await this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+        } else {
+            // 文件未在任何 tab 中打开，先打开它
+            await this.app.workspace.getLeaf(false).openFile(file);
+        }
+
         this.activate(file);
         return true;
     }
