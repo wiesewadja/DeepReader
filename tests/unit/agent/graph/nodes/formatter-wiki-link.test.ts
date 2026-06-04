@@ -38,6 +38,23 @@ describe('fixupWikiLinks', () => {
     const result = fixupWikiLinks('[[01-序|序]] and [[02-论|论]]', '西方史纲');
     expect(result).toBe('[[西方史纲/01-序|序]] and [[西方史纲/02-论|论]]');
   });
+
+  // T1.3: 跨书守卫
+  it('crossBookMode=true 时不加书名前缀（保留跨书裸名）', () => {
+    const result = fixupWikiLinks('[[01-序|序]]', '西方史纲', true);
+    expect(result).toBe('[[01-序|序]]');
+  });
+
+  it('crossBookMode=true 时跨书链接不被加错前缀', () => {
+    const result = fixupWikiLinks('[[另一本书/01-序|序]]', '西方史纲', true);
+    expect(result).toBe('[[另一本书/01-序|序]]');
+  });
+
+  it('crossBookMode=false (默认) 行为与旧版一致', () => {
+    // 显式 false 也要工作
+    const result = fixupWikiLinks('[[01-序|序]]', '西方史纲', false);
+    expect(result).toBe('[[西方史纲/01-序|序]]');
+  });
 });
 
 describe('fixupEmptyBlockIds', () => {

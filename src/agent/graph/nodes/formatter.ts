@@ -76,9 +76,11 @@ async function streamToContent(
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
  * LLM 有时会输出 [[文件名]] 而非 [[书名/文件名]]，这里强制补全
+ *
+ * @param crossBookMode true 时不加前缀（书单模式，跨书链接需保持各自的书名前缀或裸名）
  */
-export function fixupWikiLinks(content: string, bookName: string): string {
-  if (!bookName) return content;
+export function fixupWikiLinks(content: string, bookName: string, crossBookMode: boolean = false): string {
+  if (!bookName || crossBookMode) return content;
   // 匹配 [[...]] 中不含 / 的链接，补全书名前缀
   return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
     return `[[${bookName}/${inner}]]`;
@@ -100,8 +102,8 @@ export function fixupEmptyBlockIds(content: string): string {
 }
 
 /** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
-function cleanOutput(content: string, pdfName: string): string {
-  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName);
+function cleanOutput(content: string, pdfName: string, crossBookMode: boolean = false): string {
+  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName, crossBookMode);
 }
 
 /**
@@ -283,7 +285,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
@@ -302,12 +304,12 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
   if (!pdfName && !crossBookMode && effectiveAR) {
-    return { formattedOutput: cleanOutput(effectiveAR, '') };
+    return { formattedOutput: cleanOutput(effectiveAR, '', crossBookMode) };
   }
 
   // === Casual mode (depth=CASUAL): simple direct response ===
@@ -332,7 +334,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
 
@@ -457,7 +459,7 @@ export async function formatterNode(
 
   // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
   const formatted = stripFabricatedLinks(
-    cleanOutput(content, effectivePdfName),
+    cleanOutput(content, effectivePdfName, crossBookMode),
     inputTextsForValidation,
     vaultBlockIds,
   );
