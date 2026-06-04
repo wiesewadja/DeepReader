@@ -58,19 +58,25 @@ export function resolvePiPaths(app: App): {
  * 构建 PI RPC 启动参数
  */
 export function buildSpawnArgs(config: PiConfig): string[] {
-	// skillPath 优先（单 skill 路径），否则用 skillsDir（所有 skills）
-	const skillPath = config.skillPath ?? config.skillsDir;
-	return [
+	const args = [
 		'--mode', 'rpc',
 		'--session-dir', config.sessionDir,
 		'--no-skills',
-		'--skill', skillPath,
 		'--no-context-files',
 		'--tools', 'read,write,edit,grep,find,ls,bash',
 		'--provider', config.provider,
 		'--model', config.model,
+		'--api-key', config.apiKey,
 		'--append-system-prompt', PI_SYSTEM_PROMPT,
 	];
+
+	// skillPath 优先（单 skill 路径），否则用 skillsDir（所有 skills）
+	const skillPath = config.skillPath ?? config.skillsDir;
+	if (skillPath) {
+		args.push('--skill', skillPath);
+	}
+
+	return args;
 }
 
 /**
