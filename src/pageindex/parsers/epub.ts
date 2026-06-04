@@ -72,14 +72,15 @@ function createTurndownServiceWithBlocks(
   // Obsidian block ID format: letters, numbers, and hyphens only
   const generateBlockId = (originalId?: string): string => {
     if (originalId) {
-      // 替换下划线为连字符，清理其他特殊字符
-      // jz_1_14 -> jz-1-14
       const sanitized = originalId
-        .replace(/_/g, "-")           // 下划线改连字符
-        .replace(/[^a-zA-Z0-9-]/g, ""); // 只保留字母数字连字符
-      return sanitized || `p${String(paragraphIndex++).padStart(3, "0")}`;
+        .replace(/_/g, "-")
+        .replace(/[^a-zA-Z0-9-]/g, "");
+      // Skip Calibre pagebreak markers (calibre-pb-* after sanitization)
+      if (sanitized && !/^calibre-pb-\d+$/.test(sanitized)) {
+        return sanitized;
+      }
     }
-    // 无原始ID时使用段落序号
+    // 无原始ID或为 Calibre 辅助 ID 时使用段落序号
     return `p${String(paragraphIndex++).padStart(3, "0")}`;
   };
 
@@ -157,9 +158,9 @@ function createTurndownServiceWithBlocks(
         if (!["p", "div", "section", "blockquote"].includes(tagName)) {
           return false;
         }
-        // Skip Calibre pagebreak markers (empty divs with calibre-pb id/class)
-        if (node.getAttribute?.("class") === "calibre-pb" ||
-            /^calibre-pb-\d+$/.test(node.getAttribute?.("id") || "")) {
+        // Skip Calibre pagebreak markers (id: calibre_pb_N or calibre-pb-N)
+        const nodeId = (node.getAttribute?.("id") || "").replace(/_/g, "-");
+        if (/^calibre-pb-\d+$/.test(nodeId)) {
           return false;
         }
         // Skip container elements that have nested paragraph-like elements
