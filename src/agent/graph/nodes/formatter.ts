@@ -235,9 +235,8 @@ export async function formatterNode(
   if (mode === 'proactive') {
     const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = analysisResult || '';
-    const hasDiagram = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：');
-    const progressLabel = hasDiagram ? '图表已生成，准备引导...' : '思考引导问题...';
-    callbacks?.onProgress?.(progressLabel);
+    const hasDiagram = false; // 图表生成已迁移到 Hermes
+    callbacks?.onProgress?.('思考引导问题...');
     const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
     let proactiveUserMsg = buildProactiveUserMessage({
       structuralAnalysis: structuralAnalysis || undefined,
@@ -307,45 +306,8 @@ export async function formatterNode(
     return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
-  // === Diagram shortcut: brief in-character response, skip full formatting ===
+  // === Diagram shortcut removed (图表生成已迁移到 Hermes) ===
   const ar = analysisResult || '';
-  const diagramSuccess = ar.startsWith('已生成 Excalidraw 图表：') || ar.startsWith('已生成信息图：') || ar.startsWith('图表已通过 PI 生成');
-  const diagramFailed = ar.startsWith('图表生成失败:');
-  if (diagramSuccess || diagramFailed) {
-    callbacks?.onProgress?.(diagramSuccess ? '图表已生成' : '图表生成遇到问题');
-    const diagramPrompt = `你是奚童，用户的专属 AI 阅读助理。温和、专业、充满书卷气。
-你刚帮用户${diagramSuccess ? '生成了一张可视化图表' : '尝试生成图表但遇到了问题'}。用 1-2 句话简短告诉用户结果，自然亲切，像朋友之间说话。
-${diagramSuccess ? '提一下图表大致涵盖了哪些内容。' : '说明遇到了什么情况，建议用户检查是否安装了 Excalidraw 插件或在设置中配置信息图 API。'}
-不要用列表、不要用加粗、不要说"亲爱的用户"之类的称呼。`
-
-    let content = stripThinkTags(await streamToContent(
-      mainModel,
-      [new SystemMessage(diagramPrompt), new HumanMessage(`用户请求：${rewrittenQuery || ''}\n\n图表结果：${ar}`)],
-      config,
-      callbacks?.onContent,
-    ));
-
-    // Ensure the chart/infographic link is in the output (LLM may omit it)
-    if (diagramSuccess) {
-      const hasLink = content.includes('[[') || content.includes('![') || content.includes('.excalidraw');
-      if (!hasLink) {
-        // Local engine returns wiki links
-        const wikiMatch = ar.match(/\[\[[^\]]+\]\]/);
-        // PI returns file path like "输出文件: DeepReader/exports/xxx.excalidraw.md"
-        const piPathMatch = ar.match(/输出文件:\s*(.+\.excalidraw(?:\.md)?)/);
-        if (wikiMatch) {
-          content = `${content}\n\n${wikiMatch[0]}`;
-        } else if (piPathMatch) {
-          const filePath = piPathMatch[1].trim();
-          const fileName = filePath.split('/').pop() || filePath;
-          const displayName = fileName.replace(/\.excalidraw(?:\.md)?$/, '').replace(/-visualize-.*$/, '');
-          content = `${content}\n\n[[${filePath}|${displayName}]]`;
-        }
-      }
-    }
-
-    return { formattedOutput: content };
-  }
 
   // === Normal mode (depth >= 1): format with full context ===
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
