@@ -445,7 +445,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         // 应用自动阅读模式设置
         this.readingModeService.setAutoEnable(this.settings.autoEnableReadingMode);
         this.readingModeService.setStyle(this.settings.readingModeStyle || 'paginated');
-        this.readingModeService.setEnableInkLayer(this.settings.enableInkLayer ?? true);
 
         this.readingModeService.start();
         serviceLog('[DeepPDF] Reading mode service started');

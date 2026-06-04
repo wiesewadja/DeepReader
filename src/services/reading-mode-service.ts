@@ -8,7 +8,6 @@ import { serviceLog } from '../utils/logger.js';
 import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
 import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
 import { PagePaginator } from '../components/reading-mode/page-paginator.js';
-import { InkLayer } from '../components/reading-mode/ink-layer.js';
 import { MobileReadingFab } from '../components/reading-mode/mobile-reading-fab.js';
 import { loadLastPages, saveLastPages } from '../pageindex/last-page-store.js';
 import { getVaultPath } from '../utils/mobile-fs.js';
@@ -40,11 +39,9 @@ export class ReadingModeService {
     private selectionToolbar: SelectionToolbar | null = null;
     private chapterNav: ChapterNav | null = null;
     private paginator: PagePaginator | null = null;
-    private inkLayer: InkLayer | null = null;
     private callbacks: ReadingModeCallbacks | null = null;
     private autoEnable: boolean = true;
     private style: 'paginated' | 'scrolling' = 'paginated';
-    private enableInkLayer: boolean = true;
     private mobileFab: MobileReadingFab | null = null;
     private originalScrollIntoView: typeof HTMLElement.prototype.scrollIntoView | null = null;
     private hashChangeHandler: ((e: HashChangeEvent) => void) | null = null;
@@ -120,30 +117,6 @@ export class ReadingModeService {
         return this.style;
     }
 
-    /**
-     * 设置是否启用墨迹效果
-     */
-    setEnableInkLayer(value: boolean): void {
-        this.enableInkLayer = value;
-        if (!value) {
-            // 关闭时立即清理墨迹层
-            this.inkLayer?.cleanup();
-            this.inkLayer = null;
-        } else if (this.isActive) {
-            // 开启时如果已激活，重新初始化墨迹层
-            this.initInkLayer(this.currentFile!);
-            // 分页模式下等分页器就绪后激活，滚动模式下延迟激活
-            if (this.style !== 'paginated') {
-                setTimeout(() => {
-                    if (this.inkLayer) {
-                        this.inkLayer.activate();
-                    }
-                }, 300);
-            } else if (this.paginator) {
-                this.inkLayer?.activate();
-            }
-        }
-    }
 
     /**
      * 初始化悬浮工具栏
@@ -290,8 +263,6 @@ export class ReadingModeService {
         // 通知书籍检测回调
         this.notifyBookDetected(file);
 
-        // 初始化墨迹层
-        this.initInkLayer(file);
 
         // 初始化移动端浮动按钮
         this.initMobileFab();
@@ -329,31 +300,6 @@ export class ReadingModeService {
         }
     }
 
-    /**
-     * 初始化墨迹层
-     */
-    private initInkLayer(_file: TFile): void {
-        this.inkLayer?.cleanup();
-        this.inkLayer = null;
-
-        // 墨迹功能已关闭或移动端不支持
-        if (!this.enableInkLayer || Platform.isMobile) return;
-
-        const container = this.getViewContent();
-        if (!container) return;
-
-        this.inkLayer = new InkLayer({ container });
-
-        // 滚动模式直接激活；分页模式等分页器就绪后激活
-        if (this.style !== 'paginated') {
-            setTimeout(() => {
-                if (this.inkLayer) {
-                    this.inkLayer.activate();
-                    serviceLog('[InkLayer] Activated in scrolling mode');
-                }
-            }, 300);
-        }
-    }
 
     /**
      * 初始化移动端浮动按钮
@@ -410,9 +356,6 @@ export class ReadingModeService {
             this.recordPage(this.currentFile.path, this.paginator.getCurrentPage());
         }
 
-        // 清理墨迹层
-        this.inkLayer?.cleanup();
-        this.inkLayer = null;
 
         // 清理移动端浮动按钮
         this.mobileFab?.destroy();
@@ -589,10 +532,6 @@ export class ReadingModeService {
                             });
                         });
                     }
-                }
-                // 分页器就绪后激活墨迹层
-                if (this.inkLayer) {
-                    this.inkLayer.activate();
                 }
 
                 serviceLog('[ReadingMode] Paginator initialized');

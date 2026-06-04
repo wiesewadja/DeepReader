@@ -1,7 +1,7 @@
 /**
  * 全屏展示控制器
  *
- * 管理 AIMessage 的全屏展示模式：分页翻页、翻信导航、墨迹拖尾效果。
+ * 管理 AIMessage 的全屏展示模式：分页翻页、翻信导航。
  */
 
 import { App, MarkdownRenderer, Component } from 'obsidian';
@@ -26,15 +26,6 @@ export class FullscreenController {
 	private getAllMessages: (() => MessageData[]) | null;
 	private getCurrentBookInfo: (() => { coverUrl: string | null; author: string | null; bookName: string | null }) | null;
 	private fullscreenKeyHandler: ((e: KeyboardEvent) => void) | null = null;
-
-	// Ink trail
-	private inkTrailCanvas: HTMLCanvasElement | null = null;
-	private inkTrailCtx: CanvasRenderingContext2D | null = null;
-	private inkTrailRAF: number = 0;
-	private inkPoints: { x: number; y: number; t: number; speed: number }[] = [];
-	private inkPanelEl: HTMLElement | null = null;
-	private inkResizeObs: ResizeObserver | null = null;
-	private inkMoveHandler: ((e: MouseEvent) => void) | null = null;
 
 	constructor(
 		host: FullscreenHost,
@@ -298,7 +289,6 @@ export class FullscreenController {
 		this.fullscreenOverlay = overlay;
 		requestAnimationFrame(() => overlay.addClass('deeppdf-fullscreen-open'));
 
-		this.setupInkTrail(overlay);
 	}
 
 	closeFullscreen(): void {
@@ -311,90 +301,6 @@ export class FullscreenController {
 		const overlay = this.fullscreenOverlay;
 		this.fullscreenOverlay = null;
 		setTimeout(() => overlay.remove(), 300);
-	}
-
-	private setupInkTrail(overlay: HTMLElement): void {
-		const panel = overlay.querySelector('.deeppdf-fullscreen-panel') as HTMLElement;
-		const canvas = document.createElement('canvas');
-		canvas.className = 'deeppdf-ink-trail-canvas';
-		panel.appendChild(canvas);
-		this.inkTrailCanvas = canvas;
-		this.inkTrailCtx = canvas.getContext('2d');
-
-		const resize = () => {
-			canvas.width = panel.offsetWidth;
-			canvas.height = panel.offsetHeight;
-		};
-		resize();
-		const resizeObs = new ResizeObserver(resize);
-		resizeObs.observe(panel);
-
-		let lastX = 0, lastY = 0, lastTime = 0;
-
-		const onMove = (e: MouseEvent) => {
-			const now = performance.now();
-			const dt = now - lastTime;
-			if (dt < 12) return;
-			const dx = e.clientX - lastX;
-			const dy = e.clientY - lastY;
-			const dist = Math.sqrt(dx * dx + dy * dy);
-			const speed = dt > 0 ? dist / dt : 0;
-
-			if (dist > 5) {
-				const rect = panel.getBoundingClientRect();
-				this.inkPoints.push({ x: e.clientX - rect.left, y: e.clientY - rect.top, t: now, speed });
-			}
-			lastX = e.clientX;
-			lastY = e.clientY;
-			lastTime = now;
-		};
-
-		const draw = () => {
-			const ctx = this.inkTrailCtx;
-			if (!ctx || !this.inkTrailCanvas) return;
-			const now = performance.now();
-			const FADE_MS = 1200;
-
-			ctx.clearRect(0, 0, this.inkTrailCanvas.width, this.inkTrailCanvas.height);
-			this.inkPoints = this.inkPoints.filter(p => now - p.t < FADE_MS);
-
-			if (this.inkPoints.length < 2) {
-				this.inkTrailRAF = requestAnimationFrame(draw);
-				return;
-			}
-
-			for (let i = 1; i < this.inkPoints.length; i++) {
-				const prev = this.inkPoints[i - 1];
-				const curr = this.inkPoints[i];
-				const age = now - curr.t;
-				const alpha = Math.max(0, 1 - age / FADE_MS);
-				const baseWidth = 4.5;
-				const speedFactor = Math.max(0.15, 1 - curr.speed * 0.8);
-				const width = baseWidth * speedFactor * (0.3 + alpha * 0.7);
-
-				ctx.beginPath();
-				ctx.moveTo(prev.x, prev.y);
-				ctx.lineTo(curr.x, curr.y);
-				ctx.strokeStyle = `rgba(178, 34, 34, ${alpha * 0.6})`;
-				ctx.lineWidth = width;
-				ctx.lineCap = 'round';
-				ctx.lineJoin = 'round';
-				ctx.stroke();
-
-				if (alpha > 0.3) {
-					ctx.beginPath();
-					ctx.arc(curr.x, curr.y, width * 0.8, 0, Math.PI * 2);
-					ctx.fillStyle = `rgba(178, 34, 34, ${alpha * 0.12})`;
-					ctx.fill();
-				}
-			}
-
-			this.inkTrailRAF = requestAnimationFrame(draw);
-		};
-
-		panel.addEventListener('mousemove', onMove);
-		this.inkTrailRAF = requestAnimationFrame(draw);
-
 	}
 
 	destroy(): void {
