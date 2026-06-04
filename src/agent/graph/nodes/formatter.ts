@@ -77,7 +77,7 @@ async function streamToContent(
  * 修复 wiki 链接格式：补全缺失的书名前缀
  * LLM 有时会输出 [[文件名]] 而非 [[书名/文件名]]，这里强制补全
  */
-function fixupWikiLinks(content: string, bookName: string): string {
+export function fixupWikiLinks(content: string, bookName: string): string {
   if (!bookName) return content;
   // 匹配 [[...]] 中不含 / 的链接，补全书名前缀
   return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
@@ -94,7 +94,7 @@ function fixupWikiLinks(content: string, bookName: string): string {
  * 正则中 [^#\]]* 不允许 # 出现在路径中是正确的——Obsidian 用 # 分隔标题锚点，
  * 文件名本身不能包含 #。
  */
-function fixupEmptyBlockIds(content: string): string {
+export function fixupEmptyBlockIds(content: string): string {
   return content.replace(/\[\[([^#\]]*)#\^\|([^\]]+)\]\]/g, '[[$1|$2]]')
     .replace(/\[\[([^#\]]*)#\^\]\]/g, '[[$1]]');
 }
@@ -109,7 +109,7 @@ function cleanOutput(content: string, pdfName: string): string {
  * 收集输入文本中的所有合法链接，输出中只保留这些链接
  * 编造的链接回退为纯文本（保留别名部分）
  */
-function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
+export function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
   // 预处理：降级 Calibre pagebreak 标记（calibre-pb-* 不是有效的 Obsidian block ID）
   content = content.replace(/\[\[([^\]]*?)#calibre-pb-\d+([^\]]*)\]\]/g, (_: string, before: string, after: string) => {
     const aliasMatch = after.match(/^\|([^|]+)$/);
