@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "hermes-agent": {
+      "command": "hermes mcp agent-serve"
+    }
+  }
+}

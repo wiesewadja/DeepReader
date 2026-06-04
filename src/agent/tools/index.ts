@@ -12,10 +12,7 @@ import { createWriteNoteTool } from './definitions/write-note.js';
 import { createSaveMemoryTool, createSearchMemoryTool } from './definitions/memory.js';
 import { createUpdateProfileTool } from './definitions/profile.js';
 import { createSearchReadBooksTool } from './definitions/search-read-books.js';
-import { createCanvasToolDefinition } from './definitions/canvas.js';
-import { createExcalidrawToolDefinition } from './definitions/excalidraw.js';
 import { createSearchJournalTool } from './definitions/search-journal.js';
-import { createGenerateInfographicTool } from './definitions/generate-infographic.js';
 import {
 	createWereadSearchTool,
 	createWereadRecommendTool,
@@ -39,15 +36,10 @@ export { writeNoteTool } from './write-note.js';
 export { addMemoryTool, searchMemoryTool, saveMemoryTool, createSaveMemoryTool } from './memory.js';
 export { updateProfileTool } from './profile.js';
 export { searchReadBooksTool } from './search-read-books.js';
-export { createCanvasTool } from './canvas.js';
-export { createExcalidrawTool } from './excalidraw.js';
 
 /**
  * 创建 LangChain StructuredToolInterface[] 数组。
  * 每个工具通过闭包捕获 ToolContext。
- *
- * 注意：canvas 依赖 ctx.vault?.app（Obsidian vault 操作），
- * excalidraw 使用 window.ExcalidrawAutomate 全局 API（不依赖 ctx.app）。
  */
 export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[] {
   const tools: StructuredToolInterface[] = [
@@ -58,21 +50,11 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
     createSearchMemoryTool(ctx),
     createUpdateProfileTool(ctx),
     createSearchReadBooksTool(ctx),
-    createExcalidrawToolDefinition(ctx),
   ];
-
-  // canvas 依赖 Obsidian app
-  if (ctx.vault?.app) {
-    tools.push(createCanvasToolDefinition(ctx));
-  }
 
   // search_journal 依赖 journalDir 配置
   if (ctx.visual?.journalDir) {
     tools.push(createSearchJournalTool(ctx));
-  }
-
-  if (ctx.visual?.infographicConfig) {
-    tools.push(createGenerateInfographicTool(ctx));
   }
 
   // WeRead 工具：仅当 API Key 已配置时注册
@@ -81,24 +63,10 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
       createWereadSearchTool(ctx),
       createWereadRecommendTool(ctx),
       createWereadReadDataTool(ctx),
-      createWereadNotebooksTool(ctx),
       createWereadBookInfoTool(ctx),
+      createWereadNotebooksTool(ctx),
     );
   }
 
-  return tools;
-}
-
-/**
- * 只创建 visualizer 节点所需的工具（excalidraw + generate_infographic）。
- * 避免 createLangChainTools 中为所有 ~12 个工具构建 schema 的开销。
- */
-export function createVizTools(ctx: ToolContext): StructuredToolInterface[] {
-  const tools: StructuredToolInterface[] = [
-    createExcalidrawToolDefinition(ctx),
-  ];
-  if (ctx.visual?.infographicConfig) {
-    tools.push(createGenerateInfographicTool(ctx));
-  }
   return tools;
 }

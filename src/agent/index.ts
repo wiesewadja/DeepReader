@@ -47,8 +47,6 @@ import type { AgentLoopOptions } from './types.js';
 import type { ToolContext } from './tools/types.js';
 import type { EngineCallbacks } from './graph/shared-context.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
-import { PiProcessManager } from './pi/pi-manager.js';
-import type { PiConfig } from './pi/types.js';
 import { agentLog as log } from '../utils/logger.js';
 import { NoopTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
@@ -97,7 +95,6 @@ export class FrontendAgent {
   private contextBuilder: ContextBuilder;
   private memoryStore: MemoryStore;
   private intentRouter: IntentRouter;
-  private piManager: PiProcessManager;
   private initialized = false;
   private activeThreadId: string | null = null;
   private cachedModels: ReturnType<typeof createChatModels> | null = null;
@@ -131,7 +128,6 @@ export class FrontendAgent {
       deepReaderDir: 'DeepReader',
     });
     this.intentRouter = new IntentRouter();
-    this.piManager = new PiProcessManager(options.app);
   }
 
   async initialize(): Promise<void> {
@@ -475,25 +471,6 @@ ${currentMemory}
       log('[FrontendAgent] LangSmith tracing 已启用');
     }
 
-    // PI integration: build config if enabled
-    const settings = context.vault.plugin?.settings;
-    const piEnabled = settings?.piEnabled;
-    const customPiPath = settings?.customPiPath;
-    const piSettings = settings?.pi;
-    const piProvider = piSettings?.provider || 'deepseek';
-    const piModel = piSettings?.model || 'deepseek-v4-flash';
-    // PI API Key: 优先 pi 配置 → providers[piProvider].apiKey → chat apiKey
-    const piApiKey = piSettings?.apiKey || settings?.providers?.[piProvider]?.apiKey || this.options.apiKey;
-    log(`[FrontendAgent] PI config: piEnabled=${piEnabled}, piProvider=${piProvider}, piModel=${piModel}, hasApiKey=${!!piApiKey}`);
-    const piConfig = piEnabled && piApiKey
-      ? this.piManager.buildConfig(
-          piApiKey,
-          piModel,
-          piProvider,
-          customPiPath,
-        )
-      : undefined;
-
     return {
       thread_id: threadId,
       fastModel: models.fast,
@@ -506,8 +483,6 @@ ${currentMemory}
       ttsConfig: context.ttsConfig,
       llmConfig: context.llmConfig,
       _langsmithTracer: langsmithTracer,
-      piManager: piEnabled ? this.piManager : undefined,
-      piConfig,
     };
   }
 
@@ -588,6 +563,6 @@ ${currentMemory}
    * 销毁资源（插件卸载时调用）
    */
   async destroy(): Promise<void> {
-    await this.piManager.stop();
+    // Resources cleaned up automatically
   }
 }

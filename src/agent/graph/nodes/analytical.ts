@@ -91,9 +91,6 @@ export async function analyticalNode(
   // Create scoped tools
   const allTools = createLangChainTools(toolContext);
   const s2ToolNames = ['search_book', 'read_book_section'];
-  if (toolContext.visual?.infographicConfig) {
-    s2ToolNames.push('generate_infographic');
-  }
   const s2Tools = allTools.filter(t => s2ToolNames.includes(t.name));
 
   const loopMessages = [

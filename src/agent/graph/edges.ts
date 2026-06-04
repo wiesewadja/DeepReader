@@ -7,9 +7,9 @@ import { ReadingDepth } from './state';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import { resolveMode } from './utils/engine-helpers';
 
-function hasDiagramIntent(state: CognitiveEngineState): boolean {
-  const tools = state.allowedTools ?? [];
-  return tools.includes('excalidraw') || tools.includes('generate_infographic');
+function hasDiagramIntent(_state: CognitiveEngineState): boolean {
+  // 图表生成已迁移到 Hermes，暂时跳过
+  return false;
 }
 
 /**
