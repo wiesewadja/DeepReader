@@ -471,9 +471,9 @@ export class BookManager {
 
 		const normalizedBookName = bookName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
 
-		const currentBookName = (this._currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this._currentIndexId || '';
-		if (currentBookName === normalizedBookName) {
-			log('[DeepPDF] Already on the same book (by name):', normalizedBookName);
+		const currentBookName = (this._currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || '';
+		if (currentBookName === normalizedBookName && this._currentIndexId) {
+			log('[DeepPDF] Already on the same book (by name):', normalizedBookName, 'indexId:', this._currentIndexId);
 			return;
 		}
 

@@ -306,6 +306,7 @@ async function createChapterNote(
     tags: ["epub", "book", sanitizeTag(bookName)],
   };
   if (bookInfo.author) frontmatter.author = bookInfo.author;
+  if (options.bookId) frontmatter.index_id = options.bookId;
 
   // 应用自定义模板
   if (options.noteTemplate) {
