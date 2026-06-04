@@ -354,9 +354,10 @@ export async function searchBookV2(
       const bm25Node = bm25Index.nodes?.[r.nodeId];
       if (bm25Node?.text) {
         const text = bm25Node.text;
-        // Extract first block_id (^xxx) from BM25 text
-        const blockIdMatch = text.match(/\^([\w-]+)/);
-        const blockId = blockIdMatch ? blockIdMatch[1] : "";
+        // Extract first valid block_id (^xxx) from BM25 text
+        // Skip calibre-pb-* (Calibre pagebreak markers, not real Obsidian block IDs)
+        const blockIdMatches = [...text.matchAll(/\^([\w-]+)/g)];
+        const blockId = blockIdMatches.find(m => !/^calibre-pb-\d+$/.test(m[1]))?.[1] ?? "";
         matchedBlocks = [{
           blockId,
           content: text.slice(0, 300),

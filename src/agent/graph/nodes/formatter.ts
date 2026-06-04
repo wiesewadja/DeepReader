@@ -110,7 +110,14 @@ function cleanOutput(content: string, pdfName: string): string {
  * 编造的链接回退为纯文本（保留别名部分）
  */
 function stripFabricatedLinks(content: string, inputTexts: string[]): string {
-  // 收集输入中所有合法链接的文件名（不含书名前缀）
+  // 预处理：降级 Calibre pagebreak 标记（calibre-pb-* 不是有效的 Obsidian block ID）
+  content = content.replace(/\[\[([^\]]*?)#calibre-pb-\d+([^\]]*)\]\]/g, (_: string, before: string, after: string) => {
+    const aliasMatch = after.match(/^\|([^|]+)$/);
+    const pathPart = before.split('|')[0];
+    const alias = aliasMatch ? aliasMatch[1] : pathPart.split('/').pop() || pathPart;
+    return `[[${pathPart}|${alias}]]`;
+  });
+
   const validFileNames = new Set<string>();
   // 1. 从 [[...]] wiki 链接中提取
   const wikiRegex = /\[\[([^\]]+)\]\]/g;
