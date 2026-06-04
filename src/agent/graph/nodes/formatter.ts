@@ -109,7 +109,7 @@ function cleanOutput(content: string, pdfName: string): string {
  * 收集输入文本中的所有合法链接，输出中只保留这些链接
  * 编造的链接回退为纯文本（保留别名部分）
  */
-function stripFabricatedLinks(content: string, inputTexts: string[]): string {
+function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
   // 预处理：降级 Calibre pagebreak 标记（calibre-pb-* 不是有效的 Obsidian block ID）
   content = content.replace(/\[\[([^\]]*?)#calibre-pb-\d+([^\]]*)\]\]/g, (_: string, before: string, after: string) => {
     const aliasMatch = after.match(/^\|([^|]+)$/);
@@ -161,7 +161,8 @@ function stripFabricatedLinks(content: string, inputTexts: string[]): string {
 
   // 逐个检查输出中的链接，移除编造的
   return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
-    const pathPart = inner.split('#')[0].split('|')[0];
+    const hashIdx = inner.indexOf('#');
+    const pathPart = (hashIdx >= 0 ? inner.slice(0, hashIdx) : inner).split('|')[0];
     const fileName = pathPart.split('/').pop() || pathPart;
 
     // 模糊匹配：检查文件名是否在合法集合中（去除数字前缀后的核心部分）
@@ -185,6 +186,22 @@ function stripFabricatedLinks(content: string, inputTexts: string[]): string {
       const alias = aliasMatch ? aliasMatch[0] : fileName;
       return alias;
     }
+
+    // 文件名合法 → 进一步校验 block_id 是否存在于 vault 中
+    if (hashIdx >= 0 && vaultBlockIds && vaultBlockIds.size > 0) {
+      const hashContent = inner.slice(hashIdx + 1);
+      const blockIdMatch = hashContent.match(/^\^([\w-]+)/);
+      if (blockIdMatch) {
+        const blockId = blockIdMatch[1];
+        if (!vaultBlockIds.has(blockId)) {
+          // block_id 在 vault 中不存在 → 降级为标题链接
+          const aliasMatch = inner.match(/\|([^|]+)$/);
+          const alias = aliasMatch ? aliasMatch[1] : fileName;
+          return `[[${pathPart}|${alias}]]`;
+        }
+      }
+    }
+
     return fullMatch;
   });
 }
@@ -426,11 +443,23 @@ export async function formatterNode(
     }
   }
 
-  // Append degradation hints for recoverable node errors
+  // Build vault-validated block_id set from actual file contents
+  const vaultBlockIds = new Set<string>();
+  if (!crossBookMode && Object.keys(markdownFiles).length > 0) {
+    const blockIdRegex = /\^([\w-]+)\s*$/gm;
+    for (const fileContent of Object.values(markdownFiles) as string[]) {
+      let m: RegExpExecArray | null;
+      while ((m = blockIdRegex.exec(fileContent)) !== null) {
+        vaultBlockIds.add(m[1]);
+      }
+    }
+  }
+
   // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
   const formatted = stripFabricatedLinks(
     cleanOutput(content, effectivePdfName),
     inputTextsForValidation,
+    vaultBlockIds,
   );
   const errorHints = appendErrorHints(state.nodeErrors);
 
