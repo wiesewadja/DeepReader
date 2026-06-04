@@ -157,3 +157,111 @@ describe('validateWikiLinks - multi-link content', () => {
     expect(result.correctionsApplied).toBe(0);
   });
 });
+
+describe('validateWikiLinks - metrics (T1.1)', () => {
+  it('returns metrics field with totalLinks/validLinks/deadLinksRemoved/autoCorrectedLinks', async () => {
+    const app = createMockApp({
+      exists: vi.fn().mockResolvedValue(true),
+    });
+    const result = await validateWikiLinks('[[西方史纲/01-序|序]]', {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // metrics 字段必须存在
+    expect(result.metrics).toBeDefined();
+    expect(result.metrics.totalLinks).toBe(1);
+    expect(result.metrics.validLinks).toBe(1);
+    expect(result.metrics.deadLinksRemoved).toBe(0);
+    expect(result.metrics.autoCorrectedLinks).toBe(0);
+  });
+
+  it('metrics.totalLinks counts all wiki links', async () => {
+    const app = createMockApp({
+      exists: vi.fn().mockResolvedValue(true),
+    });
+    const result = await validateWikiLinks('[[西方史纲/01-序|序]] and [[西方史纲/02-论|论]]', {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    expect(result.metrics.totalLinks).toBe(2);
+    expect(result.metrics.validLinks).toBe(2);
+  });
+
+  it('metrics.autoCorrectedLinks counts links that got corrected', async () => {
+    const app = createMockApp({
+      exists: vi.fn().mockImplementation(async (path: string) => {
+        // book 目录存在
+        if (path.endsWith('西方史纲')) return true;
+        // 目标文件存在，模糊匹配候选
+        if (path.endsWith('08-八、抗议.md')) return true;
+        return false;
+      }),
+      list: vi.fn().mockResolvedValue({
+        files: ['/vault/DeepReader/西方史纲/08-八、抗议.md'],
+        folders: [],
+      }),
+    });
+    const result = await validateWikiLinks('[[西方史纲/07-八、抗议|七、抗议]]', {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // 模糊匹配应触发自动纠正
+    expect(result.metrics.autoCorrectedLinks).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('validateWikiLinks - batch cache (T1.1)', () => {
+  it('calls list() once per book even with multiple links in same book', async () => {
+    const listFn = vi.fn().mockResolvedValue({
+      files: [
+        '/vault/DeepReader/西方史纲/01-序.md',
+        '/vault/DeepReader/西方史纲/02-论.md',
+      ],
+      folders: [],
+    });
+    const app = createMockApp({
+      exists: vi.fn().mockImplementation(async (path: string) => {
+        if (path.includes('西方史纲/01-序')) return true;
+        if (path.includes('西方史纲/02-论')) return true;
+        return false;
+      }),
+      list: listFn,
+    });
+    // 多个错误链接，触发同一本书的多次模糊匹配
+    const content = '[[西方史纲/07-八、抗议|七]] and [[西方史纲/08-九|九]]';
+    await validateWikiLinks(content, {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // 优化后：同一本书只 list 一次
+    const listCalls = listFn.mock.calls.filter(([path]) => path.includes('西方史纲'));
+    expect(listCalls.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('validateWikiLinks - file existence checked BEFORE issue detection (T1.1)', () => {
+  it('checks app.vault.adapter.exists for every link, not only when issue detected', async () => {
+    const existsFn = vi.fn().mockResolvedValue(true);
+    const app = createMockApp({ exists: existsFn });
+    const content = '[[西方史纲/01-序|序]]';
+    await validateWikiLinks(content, {
+      app,
+      bookName: '西方史纲',
+      vaultPath: '/vault',
+      toolResults: [],
+    });
+    // exists 至少被调用一次（验证文件存在）
+    expect(existsFn).toHaveBeenCalled();
+    // 至少包含 01-序 的路径
+    const calledPaths = existsFn.mock.calls.map(c => c[0]).join('|');
+    expect(calledPaths).toContain('01-序');
+  });
+});
