@@ -103,7 +103,8 @@ export function buildFormatterUserMessage(
     : '';
 
   const scopeSection = coveredScope
-
+    ? `\n${coveredScope}`
+    : '';
   const effectiveQuery = betterQuestion || rawUserQuery;
 
   const bookInstruction = multiBook
