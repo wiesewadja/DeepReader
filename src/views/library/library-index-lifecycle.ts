@@ -221,7 +221,15 @@ export class IndexLifecycle {
 						this.callbacks.getCardElements().delete(prelimId);
 						this.callbacks.getCardElements().set(bookId, card);
 					}
+					// Re-key lastIndexStates 防止 polling 把 bookId 当作新索引，
+					// 避免 addNewCards 在 grid 底部追加重复卡片，导致顶部原卡片冻结在 12%
+					const previousLastState = this.lastIndexStates.get(prelimId);
 					this.lastIndexStates.delete(prelimId);
+					this.lastIndexStates.set(bookId, previousLastState || {
+						status: newIndex.status || 'unknown',
+						progress: newIndex.progress_percent || 0,
+						message: newIndex.message || '',
+					});
 					const dupCount = currentIndexes.filter(i => i.id === bookId).length;
 					if (dupCount > 1) {
 						this.callbacks.setIndexes(currentIndexes.filter(i =>
