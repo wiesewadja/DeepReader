@@ -30,26 +30,10 @@ export const PROMPT_S4_FORMATTER = `<role>
    - 1-2 句话结束，不要强行展开
    - 如果用户可能记错了，可以礼貌提示，但不要替用户"脑补"一个答案
 </rules>
-
-<wiki_link_format>
-wiki 链接的标准格式：[[书名/文件名#^block_id|别名]]
-
-**关键规则**：
-- 书名来自 <book> 标签，必须使用完整的书名（不含扩展名）
-- 文件名必须来自 analysis 中的引用，保持原始格式（含数字前缀）
-- 别名是 2-6 个字的核心词，自然嵌入句子中替代关键词
-- block_id 保持原样，用于精确定位到具体段落
-
-**正确示例**：
-纳瓦尔将[[纳瓦尔宝典/26 - 判断力#^s25-001|判断力]]定义为"知道行为的长期后果"的能力。
-书中提到[[纳瓦尔宝典/30 - 发现好的心智模型#^s29-001|心智模型]]来自进化论、博弈论。
-
-**错误示例**：
-❌ [[26 - 判断力#^s25-001|判断力]] ← 缺少书名
-❌ [[纳瓦尔宝典/26#^s25-001|判断力]] ← 文件名不完整
-❌ 判断力 [[纳瓦尔宝典/26 - 判断力#^s25-001]] ← 别名缺失，链接未嵌入句子
-❌ 我们真正缺乏的不是内容，而是**求知欲**本身。[[纳瓦尔宝典/31 - 学会热爱阅读#^s30-001|热爱阅读]] ←  没有自然嵌入
-</wiki_link_format>`;
+<wiki_link_rule>
+analysis 中的 [[...]] wiki 链接必须原样保留，不可修改路径、block_id 或别名，也不可丢弃。
+绝不可以凭记忆或推测自行创建新的 wiki 链接。如果输入中没有链接，输出中也不应该有链接。
+</wiki_link_rule>`;
 
 /**
  * Build system prompt for formatter state with memory context
@@ -105,24 +89,15 @@ export function buildFormatterUserMessage(
   analysisResult: string,
   bookName: string,
   recentHistory?: ChatMessage[],
-  tocSummary?: string,
-  structuralAnalysis?: string,
+  _tocSummary?: string,       // kept for API compat, no longer injected
+  _structuralAnalysis?: string, // kept for API compat, no longer injected
   betterQuestion?: string,
   coveredScope?: string,
   multiBook?: boolean,
 ): string {
-  // Use compact summaries instead of full message text to reduce token cost
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
     : '(无历史记录)';
-
-  const tocSection = tocSummary
-    ? `\n<toc>\n${tocSummary}\n</toc>`
-    : '';
-
-  const structureSection = structuralAnalysis
-    ? `\n<structural_analysis>\n${structuralAnalysis}\n</structural_analysis>`
-    : '';
 
   const scopeSection = coveredScope
     ? `\n${coveredScope}`
@@ -130,19 +105,11 @@ export function buildFormatterUserMessage(
 
   const effectiveQuery = betterQuestion || rawUserQuery;
 
-  // 提取 analysis 中的 wiki 链接示例，帮助模型理解格式
-  const wikiExamples = extractWikiExamples(analysisResult || structuralAnalysis || '');
-  const wikiExampleSection = wikiExamples.length > 0
-    ? `\n<wiki_links_in_analysis>\n以下是从 analysis 中提取的 wiki 链接示例：\n${wikiExamples.map(e => `- ${e}`).join('\n')}\n请确保在回复中保留这些链接的完整格式。\n</wiki_links_in_analysis>`
-    : '';
-
   const bookInstruction = multiBook
-    ? `1. analysis 中的 [[...]] wiki 链接必须**原样保留**，每条链接已包含各自的书名前缀（如 [[书名A/章节#^block_id|别名]]、[[书名B/章节#^block_id|别名]]），不可修改或删除书名前缀
-2. 不要添加、修改或统一书名前缀——不同书目的链接有不同的书名，这是正确的
-3. 别名（| 后面的文字）要自然嵌入句子中，替代对应的关键词`
-    : `1. analysis 中的 [[...]] wiki 链接必须**原样保留**，包括书名、文件名、block_id 和别名
-2. 书名是 "${bookName}"，如果链接中缺少书名，请补全为 [[${bookName}/文件名#^block_id|别名]]
-3. 别名（| 后面的文字）要自然嵌入句子中，替代对应的关键词`;
+    ? `1. analysis 中的 [[...]] wiki 链接必须原样保留，不可修改或删除书名前缀
+2. 别名要自然嵌入句子中，替代对应的关键词`
+    : `1. analysis 中的 [[...]] wiki 链接必须原样保留
+2. 别名要自然嵌入句子中，替代对应的关键词`;
 
   return `<history>
 ${historyText}
@@ -153,34 +120,12 @@ ${historyText}
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${tocSection}${structureSection}${scopeSection}${wikiExampleSection}
-<book>${bookName}</book>
+${scopeSection}<book>${bookName}</book>
 
 用奚童的口吻分享你读后的理解。
 
 **重要提醒**：
 ${bookInstruction}
-4. 如果有阅读范围信息，在末尾自然地引导用户继续探索。`;
+3. 如果有阅读范围信息，在末尾自然地引导用户继续探索。`;
 }
 
-/**
- * 从 analysisResult 中提取 wiki 链接示例
- */
-function extractWikiExamples(analysis: string): string[] {
-  if (!analysis) return [];
-  
-  // 匹配 [[...]] 格式的 wiki 链接
-  const wikiRegex = /\[\[([^\]]+)\]\]/g;
-  const examples: string[] = [];
-  let match;
-  
-  while ((match = wikiRegex.exec(analysis)) !== null) {
-    const link = match[1];
-    // 只取前 5 个作为示例
-    if (examples.length < 5) {
-      examples.push(`[[${link}]]`);
-    }
-  }
-  
-  return examples;
-}
