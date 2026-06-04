@@ -89,8 +89,8 @@ export function buildFormatterUserMessage(
   analysisResult: string,
   bookName: string,
   recentHistory?: ChatMessage[],
-  _tocSummary?: string,       // kept for API compat, no longer injected
-  _structuralAnalysis?: string, // kept for API compat, no longer injected
+  tocSummary?: string,
+  structuralAnalysis?: string,
   betterQuestion?: string,
   coveredScope?: string,
   multiBook?: boolean,
@@ -98,17 +98,18 @@ export function buildFormatterUserMessage(
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
     : '(无历史记录)';
+  const structureSection = structuralAnalysis
+    ? `\n<structural_analysis>\n${structuralAnalysis}\n</structural_analysis>`
+    : '';
 
   const scopeSection = coveredScope
-    ? `\n${coveredScope}`
-    : '';
 
   const effectiveQuery = betterQuestion || rawUserQuery;
 
   const bookInstruction = multiBook
-    ? `1. analysis 中的 [[...]] wiki 链接必须原样保留，不可修改或删除书名前缀
+    ? `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留，不可修改或删除书名前缀
 2. 别名要自然嵌入句子中，替代对应的关键词`
-    : `1. analysis 中的 [[...]] wiki 链接必须原样保留
+    : `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留
 2. 别名要自然嵌入句子中，替代对应的关键词`;
 
   return `<history>
@@ -120,7 +121,7 @@ ${historyText}
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${scopeSection}<book>${bookName}</book>
+${structureSection}${scopeSection}<book>${bookName}</book>
 
 用奚童的口吻分享你读后的理解。
 
