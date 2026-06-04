@@ -24,9 +24,6 @@ import { ReadingTopbar } from "../../components/reading-topbar/index.js";
 import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
 import { FrontendAgent } from "../../agent/index.js";
 import type { ToolContext } from "../../agent/tools/types.js";
-import {
-    validateAndCorrectLinks,
-} from "../../agent/utils/link-validator.js";
 import type { HumanizedProgress } from "../../agent/ui/humanized-types.js";
 import { SessionStore } from "../../agent/session/index.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
