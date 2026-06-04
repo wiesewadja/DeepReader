@@ -53,13 +53,8 @@ export function routeByDepth(state: CognitiveEngineState): string {
 export function routeAfterInspectional(state: CognitiveEngineState): string {
   const mode = resolveMode(state);
 
-  // Proactive: inspectional + Excalidraw → visualizer; otherwise → formatter
+  // Proactive: 直接完成（图表生成已迁移到 Hermes）
   if (mode === 'proactive') {
-    if (state.proactiveTrigger === 'inspectional'
-        && typeof window !== 'undefined'
-        && window.ExcalidrawAutomate) {
-      return NODE_NAMES.VISUALIZER;
-    }
     return EDGE_KEYS.DONE;
   }
 

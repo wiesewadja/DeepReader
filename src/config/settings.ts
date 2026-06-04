@@ -109,10 +109,7 @@ export interface DeepPDFSettings {
 		zlibraryUserKey: string;
 		zlibraryDomain: string;
 
-		// PI Agent 集成
-		piEnabled: boolean;
-		piLastVersion?: string;
-		customPiPath: string;
+		// Hermes MCP（保留配置块用于后续集成）
 		pi?: {
 			provider: string;
 			model: string;
@@ -205,8 +202,5 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 		zlibraryUserKey: '',
 		zlibraryDomain: '',
 
-		// PI Agent
-		piEnabled: false,
-		customPiPath: '',
 
 };

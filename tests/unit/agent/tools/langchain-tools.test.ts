@@ -34,7 +34,7 @@ const mockContext: ToolContext = {
 describe('LangChain Tools Migration', () => {
   it('should create all tools without errors', () => {
     const tools = createLangChainTools(mockContext);
-    expect(tools.length).toBeGreaterThanOrEqual(9);
+    expect(tools.length).toBeGreaterThanOrEqual(7);
 
     const names = tools.map((t) => t.name);
     expect(names).toContain('search_book');
@@ -44,8 +44,6 @@ describe('LangChain Tools Migration', () => {
     expect(names).toContain('search_memory');
     expect(names).toContain('update_profile');
     expect(names).toContain('search_read_books');
-    expect(names).toContain('excalidraw');
-    expect(names).toContain('canvas');
   });
 
   it('each tool should have name, description, and schema', () => {
@@ -57,12 +55,10 @@ describe('LangChain Tools Migration', () => {
     }
   });
 
-  it('should exclude canvas when app is not available', () => {
+  it('should still create core tools when app is not available', () => {
     const noAppContext = { ...mockContext, vault: { ...mockContext.vault, app: undefined } };
     const tools = createLangChainTools(noAppContext as any);
     const names = tools.map((t) => t.name);
     expect(names).not.toContain('canvas');
-    // excalidraw 不依赖 app，应该存在
-    expect(names).toContain('excalidraw');
   });
 });

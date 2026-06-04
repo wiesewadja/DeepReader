@@ -22,17 +22,10 @@ describe('proactive edge routing', () => {
   });
 
   describe('routeAfterInspectional — proactive', () => {
-    beforeEach(() => {
-      delete (globalThis as any).ExcalidrawAutomate;
-    });
-    afterEach(() => {
-      delete (globalThis as any).ExcalidrawAutomate;
-    });
-
-    it('routes to visualizer for inspectional when Excalidraw available', () => {
+    it('routes to done for inspectional when Excalidraw available', () => {
       (globalThis as any).ExcalidrawAutomate = {};
       const state = { mode: 'proactive', proactiveTrigger: 'inspectional', depth: 1, structuralAnalysis: '...' } as any;
-      expect(routeAfterInspectional(state)).toBe(NODE_NAMES.VISUALIZER);
+      expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
     it('routes to done for inspectional when Excalidraw not available', () => {
@@ -40,20 +33,17 @@ describe('proactive edge routing', () => {
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
-    it('routes to done for highlight trigger even with Excalidraw', () => {
-      (globalThis as any).ExcalidrawAutomate = {};
+    it('routes to done for highlight trigger', () => {
       const state = { mode: 'proactive', proactiveTrigger: 'highlight', depth: 1 } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
-    it('routes to done for chapter trigger even with Excalidraw', () => {
-      (globalThis as any).ExcalidrawAutomate = {};
+    it('routes to done for chapter trigger', () => {
       const state = { mode: 'proactive', proactiveTrigger: 'chapter', depth: 1 } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });
 
     it('routes to done when proactiveTrigger is undefined', () => {
-      (globalThis as any).ExcalidrawAutomate = {};
       const state = { mode: 'proactive', depth: 1, structuralAnalysis: '...' } as any;
       expect(routeAfterInspectional(state)).toBe(EDGE_KEYS.DONE);
     });

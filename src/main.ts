@@ -17,7 +17,6 @@ import { ExcerptService } from './services/excerpt-service.js';
 import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
 import { findTextInMarkdown } from './utils/markdown-utils.js';
 import { getVaultPath } from './utils/mobile-fs.js';
-import { getExcalidrawAutomate } from './utils/excalidraw.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -328,35 +327,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             }
         });
 
-        // Excalidraw 命令 - 导出当前 Canvas 到 Excalidraw
-        this.addCommand({
-            id: "export-canvas-to-excalidraw",
-            name: "Export Canvas to Excalidraw",
-            checkCallback: (checking: boolean) => {
-                const file = this.app.workspace.getActiveFile();
-                if (file && file.extension === 'canvas') {
-                    if (!checking) {
-                        this.exportCanvasToExcalidraw(file.path);
-                    }
-                    return true;
-                }
-                return false;
-            }
-        });
-
-        // Excalidraw 命令 - 检查 Excalidraw 插件状态
-        this.addCommand({
-            id: "check-excalidraw-status",
-            name: "Check Excalidraw Plugin Status",
-            callback: () => {
-                const ea = getExcalidrawAutomate();
-                if (ea) {
-                    new Notice(`Excalidraw 插件已安装 (版本: ${ea.version || '未知'})`);
-                } else {
-                    new Notice("Excalidraw 插件未安装。请在社区插件市场安装 Excalidraw 插件。");
-                }
-            }
-        });
 
         // 调试命令：抓取系统提示词
         this.addCommand({
@@ -364,7 +334,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             name: "Debug: Dump System Prompt",
             callback: async () => {
                 try {
-                    // 获取当前选中的书籍信息
                     const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
                     if (leaves.length === 0) {
                         new Notice("请先打开 DeepReader 侧边栏");
@@ -373,10 +342,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
                     const sidebarView = leaves[0].view as SidebarView;
                     const currentBook = sidebarView.getCurrentBookInfo?.();
-
-                    if (!currentBook?.title) {
-                        // 阅读顾问模式允许无书操作
-                    }
 
                     const bookTitle = currentBook?.title ?? '';
                     new Notice(bookTitle ? `正在抓取《${bookTitle}》的系统提示词...` : '正在抓取阅读顾问模式的系统提示词...');
@@ -387,21 +352,18 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                         currentBook?.docDescription ?? undefined
                     );
 
-                    // 确保调试目录存在
                     const debugDir = 'DeepReader/debug';
                     const dirExists = await this.app.vault.adapter.exists(debugDir);
                     if (!dirExists) {
                         await this.app.vault.createFolder(debugDir);
                     }
 
-                    // 保存到调试目录
                     const filename = `system-prompt-${Date.now()}.md`;
-                    const bookInfo = `<!-- 书籍: ${currentBook.title} -->\n<!-- 生成时间: ${new Date().toISOString()} -->\n\n`;
+                    const bookInfo = `<!-- 书籍: ${currentBook?.title} -->\n<!-- 生成时间: ${new Date().toISOString()} -->\n\n`;
                     await this.app.vault.create(`${debugDir}/${filename}`, bookInfo + systemPrompt);
 
-                    // 打印到控制台
                     serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
-                    serviceLog(`%c系统提示词 - 《${currentBook.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
+                    serviceLog(`%c系统提示词 - 《${currentBook?.title}》`, 'color: #4CAF50; font-weight: bold; font-size: 14px');
                     serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
                     serviceLog('%c' + systemPrompt, 'color: #2196F3; font-family: monospace; font-size: 12px');
                     serviceLog('%c' + '='.repeat(80), 'color: #4CAF50; font-weight: bold');
@@ -412,68 +374,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
                     const msg = err instanceof Error ? err.message : String(err);
                     new Notice(`抓取失败: ${msg}`);
                     serviceLog.error('[DumpSystemPrompt] 错误:', err);
-                }
-            }
-        });
-
-        // 调试命令：测试 Excalidraw 思维导图生成
-        this.addCommand({
-            id: "debug-excalidraw-mindmap",
-            name: "Debug: Test Excalidraw mindmap",
-            callback: async () => {
-                const ea = getExcalidrawAutomate();
-                if (!ea) {
-                    new Notice("Excalidraw 插件未安装");
-                    return;
-                }
-
-                try {
-                    new Notice("正在生成测试思维导图...");
-
-                    // 创建新文件
-                    await ea.create({
-                        filename: "test-mindmap",
-                        foldername: "DeepReader/Excalidraw",
-                    });
-                    ea.clear();
-
-                    // 中心主题
-                    const centerId = ea.addText(400, 300, "DeepReader", {
-                        width: 200,
-                        height: 60,
-                        textAlign: "center",
-                        box: "ellipse",
-                    });
-
-                    // 分支
-                    const branches = ["PDF阅读", "AI对话", "知识管理", "可视化"];
-                    const radius = 300;
-
-                    branches.forEach((label, index) => {
-                        const angle = (2 * Math.PI * index) / branches.length - Math.PI / 2;
-                        const x = 400 + radius * Math.cos(angle) - 75;
-                        const y = 300 + radius * Math.sin(angle) - 20;
-
-                        const branchId = ea.addText(x, y, label, {
-                            width: 150,
-                            height: 40,
-                            textAlign: "center",
-                            box: "box",
-                        });
-
-                        // 连接到中心
-                        const sides = ["right", "bottom", "left", "top"] as const;
-                        ea.connectObjects(centerId, sides[index], branchId, sides[(index + 2) % 4], {
-                            endArrowHead: "arrow",
-                        });
-                    });
-
-                    // Excalidraw Automate 会自动保存
-                    new Notice("测试思维导图已生成: DeepReader/Excalidraw/test-mindmap.excalidraw.md");
-                } catch (error) {
-                    const errorMsg = error instanceof Error ? error.message : String(error);
-                    new Notice(`生成失败: ${errorMsg}`);
-                    serviceLog.error("[DeepReader] Excalidraw 测试失败:", error);
                 }
             }
         });
@@ -867,39 +767,6 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         await this.saveData(this.settings);
     }
 
-    /**
-     * 导出 Canvas 文件到 Excalidraw
-     */
-    async exportCanvasToExcalidraw(canvasPath: string) {
-        // 检查 Excalidraw 插件是否可用
-        const ea = getExcalidrawAutomate();
-        if (!ea) {
-            new Notice("请先安装 Excalidraw 插件（社区插件市场）");
-            return;
-        }
-
-        try {
-            new Notice("正在导出到 Excalidraw...");
-
-            // 动态导入 ExcalidrawService
-            const { ExcalidrawService } = await import('./services/excalidraw-service.js');
-            const service = new ExcalidrawService({
-                app: this.app,
-                defaultFolder: 'DeepReader/Excalidraw',
-            });
-
-            const result = await service.convertFromCanvasFile(canvasPath);
-
-            if (result.success) {
-                new Notice(`导出成功: ${result.filePath}`);
-            } else {
-                new Notice(`导出失败: ${result.error}`);
-            }
-        } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error);
-            new Notice(`导出失败: ${errorMsg}`);
-        }
-    }
 
     async onunload() {
         // 卸载时手动清理视图，虽然 Obsidian 会自动处理，但显式清理更安全
