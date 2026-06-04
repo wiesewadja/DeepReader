@@ -21,6 +21,9 @@ import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-sum
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
+import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
+import { getVaultPath } from '../../../utils/mobile-fs.js';
+import { agentLog as log } from '../../../utils/logger.js';
 import {
   buildProactiveSystemPrompt,
   buildProactiveUserMessage,
@@ -448,8 +451,28 @@ export async function formatterNode(
   }
 
   // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
+  // T2.1: 接入 validateWikiLinks 做真实 vault.exists 校验（在 cleanOutput 之后、stripFabricatedLinks 之前）
+  // T2.2 正式顺序：verify → cleanOutput → validateWikiLinks → stripFabricatedLinks
+  let wikiLinkValidatedContent = content;
+  const vaultApp = ctx?.toolContext?.vault?.app;
+  if (vaultApp) {
+    try {
+      const wikiLinkResult = await validateWikiLinks(content, {
+        app: vaultApp,
+        bookName: crossBookMode ? '' : (pdfName || ''),
+        expectedBookName: crossBookMode ? '' : (pdfName || ''),
+        vaultPath: getVaultPath(vaultApp),
+        toolResults,
+      });
+      wikiLinkValidatedContent = wikiLinkResult.correctedContent;
+    } catch (err) {
+      // 校验失败时静默使用原 content（不阻塞 S4 输出）
+      log('[Formatter] validateWikiLinks 失败，使用原 content:', err);
+    }
+  }
+
   const formatted = stripFabricatedLinks(
-    cleanOutput(content, effectivePdfName, crossBookMode),
+    cleanOutput(wikiLinkValidatedContent, effectivePdfName, crossBookMode),
     inputTextsForValidation,
     vaultBlockIds,
   );
