@@ -19,16 +19,9 @@ describe('routeAfterPreSearch', () => {
       earlyStopContent: 'done',
       allowedTools: ['excalidraw'],
     } as unknown as CognitiveEngineState;
-    expect(routeAfterPreSearch(state)).toBe(NODE_NAMES.VISUALIZER);
+    expect(routeAfterPreSearch(state)).toBe(NODE_NAMES.FORMATTER);
   });
 
-  it('early stop + generate_infographic → visualizer', () => {
-    const state = {
-      earlyStopContent: 'done',
-      allowedTools: ['generate_infographic'],
-    } as unknown as CognitiveEngineState;
-    expect(routeAfterPreSearch(state)).toBe(NODE_NAMES.VISUALIZER);
-  });
 
   it('early stop + unrelated tools → formatter', () => {
     const state = {

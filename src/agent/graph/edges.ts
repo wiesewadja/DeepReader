@@ -7,9 +7,9 @@ import { ReadingDepth } from './state';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import { resolveMode } from './utils/engine-helpers';
 
-function hasDiagramIntent(state: CognitiveEngineState): boolean {
-  const tools = state.allowedTools ?? [];
-  return tools.includes('excalidraw') || tools.includes('generate_infographic');
+function hasDiagramIntent(_state: CognitiveEngineState): boolean {
+  // 图表生成已迁移到 Hermes，暂时跳过
+  return false;
 }
 
 /**
@@ -53,13 +53,8 @@ export function routeByDepth(state: CognitiveEngineState): string {
 export function routeAfterInspectional(state: CognitiveEngineState): string {
   const mode = resolveMode(state);
 
-  // Proactive: inspectional + Excalidraw → visualizer; otherwise → formatter
+  // Proactive: 直接完成（图表生成已迁移到 Hermes）
   if (mode === 'proactive') {
-    if (state.proactiveTrigger === 'inspectional'
-        && typeof window !== 'undefined'
-        && window.ExcalidrawAutomate) {
-      return NODE_NAMES.VISUALIZER;
-    }
     return EDGE_KEYS.DONE;
   }
 

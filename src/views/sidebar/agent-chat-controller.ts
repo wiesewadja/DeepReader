@@ -362,17 +362,7 @@ export class AgentChatController {
 						: undefined,
 					};
 				})(),
-				visual: (() => {
-					const imagegenCfg = resolveRoleConfig('imagegen', this.host.plugin.settings);
-					const legacyKey = this.host.plugin.settings.sensenovaApiKey;
-					if (!imagegenCfg?.apiKey && !legacyKey) return undefined;
-					const base = { relativeDir: 'DeepReader/infographics', vaultAdapter: this.host.app.vault.adapter as any };
-					return {
-						infographicConfig: imagegenCfg?.apiKey
-							? { apiKey: imagegenCfg.apiKey, baseUrl: imagegenCfg.baseUrl, model: imagegenCfg.model, ...base }
-							: { apiKey: legacyKey, ...base },
-					};
-				})(),
+				visual: undefined, // 图表生成已迁移到 Hermes
 				useLLMTreeSearch: this.host.useLLMTreeSearch,
 				quotes: quotes,
 				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,

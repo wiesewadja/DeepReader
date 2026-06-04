@@ -644,14 +644,6 @@
     transition: background 0.3s ease;
 }
 
-/* 墨迹层 Canvas */
-.deeppdf-ink-layer-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    pointer-events: none;
-    z-index: 100;
-}
 
 /* ==================== 移动端适配 ==================== */
 

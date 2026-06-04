@@ -161,14 +161,14 @@ export class LibraryView extends ItemView {
 			this.selectedBooklistId = state.selectedBooklistId ?? null;
 		}
 
+
 		// 串行加载：归档状态 → 渲染
 		this.loadArchiveState().then(() => {
 			this.render();
-			if (this.indexes.length === 0) {
-				this.app.workspace.onLayoutReady(() => {
-					this.indexLifecycle.refreshIndexes();
-				});
-			}
+			// 总是从文件系统刷新索引状态，避免恢复过时的 processing 快照
+			this.app.workspace.onLayoutReady(() => {
+				this.indexLifecycle.refreshIndexes();
+			});
 		});
 	}
 
@@ -185,6 +185,8 @@ export class LibraryView extends ItemView {
 
 			if (this.gridEl) {
 				this.render();
+				// 从持久化 state 恢复后，刷新真实状态（state 可能包含过时的 processing 快照）
+				this.indexLifecycle.refreshIndexes();
 			}
 		}
 	}

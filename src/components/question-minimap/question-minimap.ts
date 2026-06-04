@@ -130,6 +130,9 @@ export class QuestionMinimap extends Component {
 		const minimapHeight = this.trackEl.clientHeight;
 		const containerScrollHeight = this.props.containerEl.scrollHeight;
 
+		// 即使无法计算位置，也必须清空旧 blocks，避免 minimap 残留旧数据
+		this.blocks = [];
+
 		if (containerScrollHeight === 0 || minimapHeight === 0) return;
 
 		this.blocks = [];

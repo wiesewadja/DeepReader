@@ -1,13 +1,12 @@
 /**
  * Cognitive Engine — LangGraph StateGraph
  *
- * Main graph compiling S0→S1→S2/S3→Visualizer→S4 nodes with conditional edges.
+ * Main graph compiling S0→S1→S2/S3→S4 nodes with conditional edges.
  *
  * S0: Router (depth classification + intent routing)
  * S1: Inspectional (TOC analysis, scope narrowing)
  * S2: Analytical (single-book deep analysis)
  * S3: Syntopical (multi-book fusion analysis)
- * Visualizer: Convert analysis to Excalidraw diagram (when diagram intent detected)
  * S4: Formatter (output formatting)
  */
 
