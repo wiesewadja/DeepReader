@@ -71,8 +71,17 @@ export async function runPlanExecute(
     totalIterations++;
 
     if (!planResponse?.tool_calls?.length) {
-      const content = typeof planResponse?.content === 'string'
+      let content = typeof planResponse?.content === 'string'
         ? planResponse.content : JSON.stringify(planResponse?.content ?? '');
+
+      // Clean up XML tool call residue — LLM sometimes outputs <function>...</function>
+      // instead of structured tool_calls. Strip it to avoid polluting analysisResult.
+      content = content.replace(/<function>[\s\S]*?<\/function>/g, '').replace(/<parameter>[\s\S]*?<\/parameter>/g, '').trim();
+
+      if (round === 0 && !content) {
+        // LLM produced only XML tool calls with no text — treat as empty
+        return { content: '', toolResults: [], iterations: totalIterations, finishReason: 'stop' };
+      }
       if (round === 0) {
         return { content, toolResults: [], iterations: totalIterations, finishReason: 'stop' };
       }

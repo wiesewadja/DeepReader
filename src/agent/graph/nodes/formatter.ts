@@ -227,8 +227,13 @@ export async function formatterNode(
   } | undefined;
   const ctx = config.configurable?.sharedContext;
 
+  // Detect and clean XML tool call residue in analysisResult
+  const _rawAR = analysisResult || '';
+  const _hasXmlResidue = /<function>[\s\S]*?<\/function>/.test(_rawAR);
+  const effectiveAR = _hasXmlResidue ? _rawAR.replace(/<function>[\s\S]*?<\/function>/g, '').replace(/<parameter>[\s\S]*?<\/parameter>/g, '').trim() : _rawAR;
+
   if (!mainModel) {
-    return { formattedOutput: analysisResult || rewrittenQuery || '' };
+    return { formattedOutput: effectiveAR || rewrittenQuery || '' };
   }
 
   // === Proactive mode: ask a question, don't answer ===
@@ -277,8 +282,8 @@ export async function formatterNode(
   }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
-  if (!pdfName && !crossBookMode && analysisResult) {
-    return { formattedOutput: cleanOutput(analysisResult, '') };
+  if (!pdfName && !crossBookMode && effectiveAR) {
+    return { formattedOutput: cleanOutput(effectiveAR, '') };
   }
 
   // === Casual mode (depth=CASUAL): simple direct response ===
@@ -306,8 +311,6 @@ export async function formatterNode(
     return { formattedOutput: cleanOutput(content, pdfName || '') };
   }
 
-  // === Diagram shortcut removed (图表生成已迁移到 Hermes) ===
-  const ar = analysisResult || '';
 
   // === Normal mode (depth >= 1): format with full context ===
   const systemPrompt = buildFormatterSystemPrompt(ctx?.memoryContext, ctx?.userProfileSummary);
@@ -323,8 +326,9 @@ export async function formatterNode(
   // coveredScope 包含 tree.json 中验证过的 file_name（vault 真实文件），
   // 纳入校验是为了让早停路径已引用的链接在 formatter 输出中不被误删。
   // 当 effectiveScopeNodeIds 为空时 coveredScope 为 ''，对校验无影响。
+  // 当 analysisResult 无效时使用 effectiveAR（空字符串），避免 XML 残留污染校验。
   const inputTextsForValidation = [
-    analysisResult || '',
+    effectiveAR,
     structuralAnalysis || '',
     coveredScope,
     tocSummary || '',
@@ -334,7 +338,7 @@ export async function formatterNode(
   const effectivePdfName = crossBookMode ? '' : (pdfName || '');
   const userMessage = buildFormatterUserMessage(
     rewrittenQuery,
-    analysisResult || '',
+    effectiveAR,
     effectivePdfName,
     chatHistory,
     tocSummary || undefined,
