@@ -157,6 +157,11 @@ function createTurndownServiceWithBlocks(
         if (!["p", "div", "section", "blockquote"].includes(tagName)) {
           return false;
         }
+        // Skip Calibre pagebreak markers (empty divs with calibre-pb id/class)
+        if (node.getAttribute?.("class") === "calibre-pb" ||
+            /^calibre-pb-\d+$/.test(node.getAttribute?.("id") || "")) {
+          return false;
+        }
         // Skip container elements that have nested paragraph-like elements
         // This prevents double-processing when <div><p>text</p></div>
         const hasNestedParagraph = node.querySelector?.("p, div:not(:empty), section, blockquote");
