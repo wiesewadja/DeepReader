@@ -467,7 +467,7 @@ export class SessionStore implements ISessionStore {
 
 			const session: Session = {
 				sessionId: metaLine.sessionId,
-				indexId: metaLine.indexId,
+				indexId: String(metaLine.indexId),
 				createdAt: new Date(metaLine.createdAt).getTime(),
 				updatedAt: Date.now(),
 				messageCount: messages.length,

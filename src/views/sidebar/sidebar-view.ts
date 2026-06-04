@@ -676,7 +676,7 @@ export class SidebarView extends ItemView {
         // 从文件的 frontmatter 或路径中提取书籍信息
         const cache = this.app.metadataCache.getFileCache(activeFile);
         let bookName = cache?.frontmatter?.pdf_name || '';
-        let indexId = cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '';
+        let indexId = String(cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '');
 
         // 如果没有从 frontmatter 获取到书名，从路径提取
         if (!bookName) {

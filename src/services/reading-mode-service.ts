@@ -284,7 +284,7 @@ export class ReadingModeService {
         // 从文件的 frontmatter 获取 index_id 或 pdf_index_id
         const cache = this.app.metadataCache.getFileCache(file);
         const frontmatter = cache?.frontmatter;
-        let indexId = frontmatter?.index_id || frontmatter?.pdf_index_id || '';
+        let indexId = String(frontmatter?.index_id || frontmatter?.pdf_index_id || '');
 
         // 兼容多种 frontmatter 字段获取书名：pdf_name (旧), book (EPUB), source (PDF)
         let bookName = frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || '';
@@ -732,7 +732,8 @@ export class ReadingModeService {
     getCurrentIndexId(): string | null {
         if (!this.currentFile) return null;
         const cache = this.app.metadataCache.getFileCache(this.currentFile);
-        return cache?.frontmatter?.index_id || null;
+        const raw = cache?.frontmatter?.index_id;
+        return raw != null ? String(raw) : null;
     }
 
     /**

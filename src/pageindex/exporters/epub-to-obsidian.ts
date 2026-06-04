@@ -404,7 +404,7 @@ function generateFrontmatter(data: Record<string, unknown>): string {
 function yamlString(value: unknown): string {
   if (typeof value !== "string") return String(value);
   const s = value as string;
-  if (/[:{}\[\],&*#?|<>=!%@`\n\r"'"]/.test(s) || s === "" || s === "true" || s === "false" || s === "null") {
+  if (/[:{}\[\],&*#?|<>=!%@`\n\r"'"]/.test(s) || s === "" || s === "true" || s === "false" || s === "null" || /^\d+$/.test(s)) {
     return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   }
   return s;

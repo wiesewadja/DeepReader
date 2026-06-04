@@ -433,17 +433,18 @@ export class BookManager {
 				const session = await this.host.sessionStore!.get(savedSessionId);
 
 				if (session) {
-					const sessionBookName = session.indexId
+					const sessionIndexId = String(session.indexId);
+					const sessionBookName = sessionIndexId
 						.replace(/\.pdf$/i, '')
 						.replace(/\.epub$/i, '');
 
-					const isMatch = session.indexId === indexId ||
-						session.indexId === normalizedBookName ||
+					const isMatch = sessionIndexId === indexId ||
+						sessionIndexId === normalizedBookName ||
 						sessionBookName === normalizedBookName ||
 						sessionBookName === indexId;
 
 					if (!isMatch) {
-						log(`[DeepPDF] 会话不匹配: session.indexId="${session.indexId}", 当前 indexId="${indexId}", normalizedBookName="${normalizedBookName}"`);
+						log(`[DeepPDF] 会话不匹配: session.indexId="${sessionIndexId}", 当前 indexId="${indexId}", normalizedBookName="${normalizedBookName}"`);
 						this.host.startNewSession(indexId);
 						return;
 					}
@@ -606,15 +607,17 @@ export class BookManager {
 			if (!f.path.includes('MOC')) continue;
 
 			const cache = this.host.app.metadataCache.getFileCache(f);
-			if (cache?.frontmatter?.index_id === indexId || cache?.frontmatter?.pdf_index_id === indexId) {
+			const fmIndexId = String(cache?.frontmatter?.index_id ?? '');
+			const fmPdfIndexId = String(cache?.frontmatter?.pdf_index_id ?? '');
+			if (fmIndexId === indexId || fmPdfIndexId === indexId) {
 				const parts = f.path.split('/');
 				if (parts.length >= 3) {
 					const dirName = parts[1];
 					log(`[DeepPDF] findBookDirectoryByIndexId: 找到目录 "${dirName}" (indexId=${indexId})`);
 					return {
 						dirName,
-						author: cache.frontmatter?.author,
-						bookName: cache.frontmatter?.book_name || cache.frontmatter?.title,
+						author: cache?.frontmatter?.author,
+						bookName: cache?.frontmatter?.book_name || cache?.frontmatter?.title,
 					};
 				}
 			}
