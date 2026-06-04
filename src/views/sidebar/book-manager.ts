@@ -172,8 +172,26 @@ export class BookManager {
 					const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
 					const isFailed = status.step === 'failed';
 
+					// 检测僵尸索引：文件超过 30 分钟未更新视为失败
+					const fileStat = await app.vault.adapter.stat(`${getPageindexDir()}/${bookId}/.indexing.json`);
+					const fileAge = fileStat ? Date.now() - fileStat.mtime : 0;
+					const isStale = fileAge > 30 * 60 * 1000;
+
 					if (isComplete) {
 						vaultRemove(app, `${PAGEINDEX_DIR}/${bookId}/.indexing.json`).catch(() => {});
+					} else if (isStale && !isFailed) {
+						// 僵尸索引：标记为失败，显示重试按钮
+						indexes.push({
+							id: status.bookId || bookId,
+							pdf_name: status.title || bookId,
+							node_count: 0,
+							created_at: new Date().toISOString(),
+							fileType: status.fileType,
+							status: 'failed',
+							progress_percent: status.percent || 0,
+							message: `索引中断: ${status.stepLabel || '处理中'}（超时）`,
+						});
+						continue;
 					} else {
 						indexes.push({
 							id: status.bookId || bookId,
