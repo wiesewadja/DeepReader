@@ -260,7 +260,11 @@ export class IndexLifecycle {
 						newIndex.progress_percent = progress.percent;
 						newIndex.status = 'processing';
 						newIndex.message = progress.stepLabel;
-						this.updateCardProgress(bookId, progress.percent, 'processing', progress.stepLabel);
+						try {
+							this.updateCardProgress(bookId, progress.percent, 'processing', progress.stepLabel);
+						} catch (e) {
+							console.warn('[IndexProgress] updateCardProgress failed:', e);
+						}
 					},
 				});
 
@@ -277,6 +281,11 @@ export class IndexLifecycle {
 						card.replaceWith(newCard);
 						this.callbacks.getCardElements().set(bookId, newCard);
 					}
+				} else {
+					// Fallback: 索引完成但 refreshIndexes 没找到它，强制重新加载
+					console.warn('[IndexLifecycle] indexBook succeeded but doneIdx not found, forcing full reload');
+					await this.callbacks.onRefreshIndexes();
+					this.callbacks.onRenderGrid();
 				}
 
 				this.activelyIndexingBookId = null;

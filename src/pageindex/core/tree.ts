@@ -406,7 +406,7 @@ export async function generateSummariesForStructure(
   piLog(`[generateSummaries] Processing ${total} nodes (format + summary)...`);
 
   // Process in batches to balance speed with API rate limits
-  const batchSize = 3;
+  const batchSize = 2;
   for (let i = 0; i < nodes.length; i += batchSize) {
     const batch = nodes.slice(i, i + batchSize);
     const results = await Promise.all(
