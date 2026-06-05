@@ -307,6 +307,19 @@ export class IndexLifecycle {
 			const currentIndexes = this.callbacks.getIndexes();
 
 			const realBookIds = new Set(newIndexes.map(idx => idx.id));
+
+			// When activelyIndexingBookId is set, the onProgress callback owns
+			// that book's card (progress bar, status). Do NOT let polling data
+			// (loadIndexes) overwrite it — otherwise the card flashes to "ready"
+			// the moment cleanupStatus deletes .indexing.json, well before
+			// indexBook resolves and the success Notice appears.
+			let activeIdxOverride: IndexListItem | undefined;
+			if (this.activelyIndexingBookId) {
+				activeIdxOverride = currentIndexes.find(
+					idx => idx.id === this.activelyIndexingBookId
+				);
+			}
+
 			const tempIndexesToKeep = currentIndexes.filter(idx =>
 				idx.id.startsWith('temp_') && !realBookIds.has(idx.id)
 			);
@@ -316,7 +329,12 @@ export class IndexLifecycle {
 				!realBookIds.has(idx.id)
 			);
 
-			const merged = [...newIndexes, ...tempIndexesToKeep, ...processingToKeep];
+			const merged = [
+				...newIndexes.filter(idx => idx.id !== this.activelyIndexingBookId),
+				...(activeIdxOverride ? [activeIdxOverride] : []),
+				...tempIndexesToKeep,
+				...processingToKeep,
+			];
 
 			const seen = new Set<string>();
 			this.callbacks.setIndexes(merged.filter(idx => {

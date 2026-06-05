@@ -134,9 +134,10 @@ interface InternalOptions extends TreeOptions {
   ocrConcurrency: number;
   mineruApiKey?: string;
   onProgress?: (progress: ProgressInfo) => void;
+  onCoverReady?: (cover: { name: string; data: Buffer; mediaType: string } | undefined, title: string) => void;
 }
 
-const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "mineruApiKey" | "onProgress" | "onLlmCall" | "ocrPromptType">> = {
+const DEFAULT_OPTIONS: Required<Omit<PageIndexOptions, "apiKey" | "baseUrl" | "mineruApiKey" | "onProgress" | "onCoverReady" | "onLlmCall" | "ocrPromptType">> = {
   model: DEFAULT_MODEL,
   tocCheckPageNum: DEFAULT_TOC_CHECK_PAGE_NUM,
   maxPageNumEachNode: DEFAULT_MAX_PAGE_NUM_EACH_NODE,
@@ -176,6 +177,7 @@ export class PageIndex {
       baseUrl: options.baseUrl,
       mineruApiKey: options.mineruApiKey,
       onProgress: options.onProgress,
+      onCoverReady: options.onCoverReady,
       onLlmCall: options.onLlmCall,
       // OCR options
       extractionMode: options.extractionMode || DEFAULT_OPTIONS.extractionMode,
@@ -704,6 +706,11 @@ export class PageIndex {
     const epubInfo = await parseEpub(input);
     const pages = epubChaptersToPages(epubInfo.chapters);
     const docName = epubInfo.title;
+
+    // Notify cover as soon as parsed — well before LLM summary generation
+    if (this.options.onCoverReady) {
+      this.options.onCoverReady(epubInfo.coverImage, docName);
+    }
 
     // EPUB text is already structured HTML→Markdown, skip LLM formatting
     const epubOptions = { ...this.options, formatMarkdown: false as const };

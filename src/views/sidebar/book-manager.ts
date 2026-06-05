@@ -169,7 +169,6 @@ export class BookManager {
 				try {
 					const statusContent = await vaultRead(app, `${PAGEINDEX_DIR}/${bookId}/.indexing.json`);
 					const status = JSON.parse(statusContent);
-					const isComplete = status.step === 'complete' || (status.percent || 0) >= 100;
 					const isFailed = status.step === 'failed';
 
 					// 检测僵尸索引：文件超过 30 分钟未更新视为失败
@@ -177,9 +176,7 @@ export class BookManager {
 					const fileAge = fileStat ? Date.now() - fileStat.mtime : 0;
 					const isStale = fileAge > 30 * 60 * 1000;
 
-					if (isComplete) {
-						vaultRemove(app, `${PAGEINDEX_DIR}/${bookId}/.indexing.json`).catch(() => {});
-					} else if (isStale && !isFailed) {
+					if (isStale && !isFailed) {
 						// 僵尸索引：标记为失败，显示重试按钮
 						indexes.push({
 							id: status.bookId || bookId,
@@ -193,6 +190,10 @@ export class BookManager {
 						});
 						continue;
 					} else {
+						// .indexing.json 存在 = 索引进行中（不管 step/percent 值是什么）
+						// 完成判断完全由 .indexing.json 是否存在决定：
+						//   - 索引成功: cleanupStatus() 删除 .indexing.json
+						//   - 索引失败: .indexing.json 保留且 step="failed"
 						indexes.push({
 							id: status.bookId || bookId,
 							pdf_name: status.title || bookId,
@@ -206,7 +207,7 @@ export class BookManager {
 						continue;
 					}
 				} catch {
-					// No .indexing.json, fall through
+					// No .indexing.json, fall through to book-meta.json
 				}
 
 				try {
