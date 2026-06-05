@@ -145,6 +145,8 @@ export interface BookMeta {
   filePath: string;
   fileType: "pdf" | "epub";
   indexedAt: string;
+  /** Indexing status: "indexing" while pipeline is running, "ready" when complete */
+  status?: "indexing" | "ready";
   embedding?: {
     provider: string;
     model: string;

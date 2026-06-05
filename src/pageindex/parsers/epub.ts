@@ -435,13 +435,14 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     }
   }
 
-  // Extract cover image
+  // Extract cover image (multiple fallback strategies)
   let coverImage: EpubCoverImage | undefined;
-  // EPUB 3.0: manifest item with properties="cover-image"
+
+  // Strategy 1: EPUB 3.0 — manifest item with properties="cover-image"
   const coverManifestItem = manifest.find(
     (item: any) => item.$.properties?.includes("cover-image")
   );
-  // EPUB 2.0: <meta name="cover" content="manifest-id">
+  // Strategy 2: EPUB 2.0 — <meta name="cover" content="manifest-id">
   const coverMeta = metadata.meta?.find(
     (m: any) => m.$.name === "cover"
   );
@@ -463,6 +464,61 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
           data: coverEntry.getData(),
           mediaType: mediaTypes[ext] || "image/jpeg",
         };
+      }
+    }
+  }
+
+  // Strategy 3: EPUB 2.0 — <guide><reference type="cover" href="..."/>
+  // Some EPUBs use guide instead of meta for cover reference.
+  // Note: guide href may point to an HTML cover page, not an image directly.
+  // Only use it if the href extension looks like an image file.
+  if (!coverImage) {
+    const guide = packageData.guide?.[0]?.reference || [];
+    const coverGuideRef = guide.find((ref: any) =>
+      ref.$.type === "cover" || ref.$.type === "other.ms-coverimage"
+    );
+    if (coverGuideRef?.$.href) {
+      const guideHref = path.join(basePath, coverGuideRef.$.href).replace(/\\/g, "/");
+      const ext = path.extname(guideHref).toLowerCase();
+      const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+      if (imageExts.includes(ext)) {
+        const guideEntry = zip.getEntry(guideHref);
+        if (guideEntry) {
+          coverImage = {
+            name: `cover${ext}`,
+            data: guideEntry.getData(),
+            mediaType: "image/jpeg",
+          };
+        }
+      }
+    }
+  }
+
+  // Strategy 4: Search manifest for common cover image names
+  if (!coverImage) {
+    const coverPatterns = ["cover", "coverimage", "cover-image", "titlepage"];
+    for (const item of manifest) {
+      const id = (item.$.id || "").toLowerCase();
+      const href = (item.$.href || "").toLowerCase();
+      const properties = item.$.properties || "";
+      const mediaType = ((item.$ as Record<string, string>)["media-type"] || "").toLowerCase();
+      const isImage = mediaType.startsWith("image/");
+      if (!isImage) continue;
+      const match = coverPatterns.some(p => id.includes(p) || href.includes(p));
+      if (match && !properties.includes("nav")) {
+        const coverHref = manifestMap.get(item.$.id);
+        if (coverHref) {
+          const coverEntry = zip.getEntry(coverHref);
+          if (coverEntry) {
+            const ext = path.extname(coverHref).toLowerCase();
+            coverImage = {
+              name: `cover${ext || ".jpg"}`,
+              data: coverEntry.getData(),
+              mediaType: "image/jpeg",
+            };
+            break;
+          }
+        }
       }
     }
   }

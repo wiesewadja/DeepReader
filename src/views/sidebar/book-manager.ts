@@ -212,6 +212,10 @@ export class BookManager {
 				try {
 					const content = await vaultRead(app, `${PAGEINDEX_DIR}/${bookId}/book-meta.json`);
 					const meta = JSON.parse(content);
+					// book-meta.json with status "indexing" but no .indexing.json means
+					// the pipeline crashed after writing meta but before finalizing —
+					// treat as ready since the index data is complete (BM25, vectors, etc.)
+					const metaStatus = meta.status === 'indexing' ? 'ready' : (meta.status || 'ready');
 					indexes.push({
 						id: meta.bookId || bookId,
 						pdf_name: meta.title || bookId,
@@ -220,7 +224,7 @@ export class BookManager {
 						fileType: meta.fileType,
 						node_count: meta.chapters?.length || 0,
 						created_at: meta.indexedAt || new Date().toISOString(),
-						status: 'ready',
+						status: metaStatus,
 					});
 				} catch {
 					// Skip

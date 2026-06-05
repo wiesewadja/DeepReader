@@ -199,9 +199,13 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // PageIndex goes through: parsing → tree building → summary generation
   const onParseProgress = (progress: { percent: number; message: string; stage: string }) => {
     const mappedPercent = 5 + Math.round(progress.percent * 0.65);
+    // Map internal "complete" to "parse_complete" to prevent .indexing.json
+    // from being misread as fully complete by loadIndexes polling (which
+    // checks step === "complete"). We're only 70% done at this point.
+    const safeStep = progress.stage === 'complete' ? 'parse_complete' : (progress.stage || 'parse_document');
     reportProgress({
       percent: Math.min(mappedPercent, 70),
-      step: progress.stage || "parse_document",
+      step: safeStep,
       stepLabel: progress.message || "处理文档",
     });
   };
@@ -688,6 +692,14 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     step: "complete",
     stepLabel: "索引完成",
   });
+  // Mark book-meta as ready (prevents loadIndexes from seeing "indexing" status)
+  try {
+    const metaPath = path.join(indexDir, "book-meta.json");
+    const metaRaw = await fs.readFile(metaPath, "utf-8");
+    const meta = JSON.parse(metaRaw);
+    meta.status = "ready";
+    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+  } catch { /* best-effort */ }
   tracer.finalize(true);
   // 成功时清理进度文件
   cleanupStatus();
@@ -745,6 +757,7 @@ async function buildBookMeta(
     filePath,
     fileType,
     indexedAt: new Date().toISOString(),
+    status: "indexing",
     embedding: embedding ? {
       provider: embedding.provider,
       model: embedding.model || "text-embedding-3-small",
