@@ -15,7 +15,7 @@ import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
-import { hasSyntopicalKeywords } from '../../utils/syntopical-search.js';
+
 import { IntentRouter } from '../../router/intent-router.js';
 
 interface LLMRouterResponse {
@@ -92,7 +92,7 @@ export async function routerNode(
     let depth: ReadingDepth = validDepths.includes(rawDepth)
       ? rawDepth : ReadingDepth.ANALYTICAL;
     const standaloneQuery = parsed?.standalone_query || rawQuery;
-
+    log(`[S0 Router] LLM response: depth=${rawDepth}, reason="${parsed?.reason || '(none)'}", query="${standaloneQuery.slice(0, 80)}"`);
     // Anti-hallucination guard: "书中有没有提到X" → BM25 verification
     let antiHallucinationQuery = '';
     if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
@@ -129,12 +129,13 @@ export async function routerNode(
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
 
-    // Hybrid trigger: keywords pre-check + LLM classification + booklist mode
-    // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
+    // Upgrade to SYNTOPICAL only when user explicitly selected a booklist
+    // (multi-book mode). We do NOT auto-upgrade based on keyword matching —
+    // keywords like "对比" appear in normal single-book discussions (e.g. concept
+    // comparison tables) and should not override the LLM's depth decision.
     const hasBooklist = (sharedContext?.toolContext?.crossBook?.booklistBookIds?.length ?? 0) > 0;
-    const candidateSyntopical = hasSyntopicalKeywords(rawQuery) || hasBooklist;
-    log(`[S0 Router] hasBooklist=${hasBooklist}, hasKeywords=${hasSyntopicalKeywords(rawQuery)}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
-    const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
+    log(`[S0 Router] hasBooklist=${hasBooklist}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
+    const effectiveDepth = (hasBooklist && depth >= ReadingDepth.ANALYTICAL)
       ? ReadingDepth.SYNTOPICAL
       : depth;
 
