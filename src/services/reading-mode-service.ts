@@ -638,6 +638,24 @@ export class ReadingModeService {
     }
 
     /**
+     * 在指定文件夹下查找最近阅读的文件路径。
+     * 用于书库点击书籍时定位到上次阅读的章节。
+     * @param folderPath 书籍章节文件夹路径（如 "DeepReader/书名"）
+     * @returns 最近阅读的文件路径，或 null
+     */
+    findMostRecentInFolder(folderPath: string): string | null {
+        let bestPath: string | null = null;
+        let bestTime = -1;
+        for (const [path, time] of this.lastReadAt) {
+            if (path.startsWith(folderPath + '/') && time > bestTime) {
+                bestTime = time;
+                bestPath = path;
+            }
+        }
+        return bestPath;
+    }
+
+    /**
      * 打开最近阅读的书籍
      * 找到 lastReadAt 最大的文件，激活其阅读模式（恢复上次页码）
      * @returns true 表示找到并打开了；false 表示无历史或文件已删除

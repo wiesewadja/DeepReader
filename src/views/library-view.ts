@@ -508,10 +508,16 @@ export class LibraryView extends ItemView {
 		}
 
 		if (READY_STATUSES.has(rawStatus)) {
-			const firstChapter = this.getFirstChapterFile(index.pdf_name);
-			if (firstChapter) {
-				const leaf = this.app.workspace.getLeaf(false);
-				await leaf.openFile(firstChapter);
+			const targetFile = this.getLastReadChapterFile(index.pdf_name) || this.getFirstChapterFile(index.pdf_name);
+			if (targetFile) {
+				// 如果文件已在某个 tab 中打开，激活该 tab；否则在新 tab 中打开
+				const existingLeaf = this.app.workspace.getLeavesOfType('markdown')
+					.find(l => (l.view as import('obsidian').MarkdownView)?.file?.path === targetFile.path);
+				if (existingLeaf) {
+					await this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+				} else {
+					await this.app.workspace.getLeaf(false).openFile(targetFile);
+				}
 				this.options.onIndexChange?.(index.id);
 				return;
 			}
@@ -534,6 +540,24 @@ export class LibraryView extends ItemView {
 			.filter(f => f.path.startsWith(folderPath + '/'))
 			.sort((a, b) => a.basename.localeCompare(b.basename, undefined, { numeric: true }));
 		return chapterFiles[0] || null;
+	}
+
+	/**
+	 * 查找该书最近阅读的章节文件。
+	 * 通过 ReadingModeService 的 lastReadAt 历史匹配书籍文件夹下的文件。
+	 * 如果该书从未阅读过，返回 null（调用方 fallback 到第一个章节）。
+	 */
+	private getLastReadChapterFile(pdfName: string): TFile | null {
+		const readingMode = this.options.plugin.readingModeService;
+		if (!readingMode) return null;
+
+		const folderName = this.getDisplayName(pdfName);
+		const folderPath = `DeepReader/${folderName}`;
+		const recentFile = readingMode.findMostRecentInFolder(folderPath);
+		if (!recentFile) return null;
+
+		const file = this.app.vault.getAbstractFileByPath(recentFile);
+		return file instanceof TFile ? file : null;
 	}
 
 	private checkBookChaptersExist(pdfName: string): boolean {
