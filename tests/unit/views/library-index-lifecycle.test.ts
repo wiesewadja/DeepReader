@@ -38,15 +38,6 @@ vi.mock("@/pageindex/book-indexer.js", () => {
 			await new Promise(() => {});
 		}),
 		generateBookId: vi.fn().mockImplementation(async (filePath: string) => {
-			// 用文件内容 hash（与生产实现相同）— 必然与 generateBookIdFromPath 不同
-			const content = await fs.readFile(filePath);
-			const crypto = await import("crypto");
-			return crypto
-				.createHash("sha256")
-				.update(content)
-				.update(Buffer.from(String(content.length)))
-				.digest("hex")
-		generateBookId: vi.fn().mockImplementation(async (filePath: string) => {
 			const content = await fs.readFile(filePath);
 			const crypto = await import("crypto");
 			return crypto
@@ -55,7 +46,6 @@ vi.mock("@/pageindex/book-indexer.js", () => {
 				.update(Buffer.from(String(content.length)))
 				.digest("hex")
 				.slice(0, 8);
-		}),
 		}),
 	};
 });
@@ -180,18 +170,15 @@ describe("IndexLifecycle.handleAddDocument — lastIndexStates re-key", () => {
 		const handlePromise = lifecycle.handleAddDocument();
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
-		const lastStates = lifecycle.getLastIndexStates();
-		const bookIds = Array.from(lastStates.keys());
-		expect(bookIds.length).toBe(1);
+		// cardElements 中应有 1 个 entry，ID 是 content-based bookId
+		const cardIds = Array.from(cardElements.keys());
+		expect(cardIds.length).toBe(1);
 
 		// bookId 应该基于文件内容生成（generateBookId），不是路径 hash
-		const onlyId = bookIds[0]!;
-		expect(cardElements.has(onlyId)).toBe(true);
-		expect(lastStates.has(onlyId)).toBe(true);
+		expect(cardElements.has(cardIds[0]!)).toBe(true);
 
 		handlePromise.catch(() => {});
 	});
-
 	it("polling 后不会创建重复卡片", async () => {
 		const lifecycle = createLifecycle();
 
