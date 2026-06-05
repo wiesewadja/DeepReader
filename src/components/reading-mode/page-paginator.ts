@@ -12,6 +12,8 @@ export interface PagePaginatorOptions {
 	container: HTMLElement;                    // .markdown-preview-sizer
 	onNavigatePrev: () => Promise<boolean>;
 	onNavigateNext: () => Promise<boolean>;
+	hasPrevChapter: () => boolean;             // 是否有上一章
+	hasNextChapter: () => boolean;             // 是否有下一章
 	chapterName?: string;                      // 当前章节名称
 	bookName?: string;                         // 当前书名
 	onPageChange?: (page: number, totalPages: number) => void;
@@ -423,8 +425,11 @@ export class PagePaginator {
 			this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
 		}
 
-		this.leftBtn?.classList.toggle(DISABLED_CLASS, this._currentPage <= 1);
-		this.rightBtn?.classList.toggle(DISABLED_CLASS, this._currentPage >= this._totalPages);
+		// 边界页且有上/下一章时，不隐藏按钮（用户可点击跳章）
+		const atFirstPage = this._currentPage <= 1;
+		const atLastPage = this._currentPage >= this._totalPages;
+		this.leftBtn?.classList.toggle(DISABLED_CLASS, atFirstPage && !this.options.hasPrevChapter());
+		this.rightBtn?.classList.toggle(DISABLED_CLASS, atLastPage && !this.options.hasNextChapter());
 	}
 
 	private removeControls(): void {

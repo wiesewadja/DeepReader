@@ -509,6 +509,8 @@ export class ReadingModeService {
                     container,
                     onNavigatePrev: () => this.navigateToPrev(),
                     onNavigateNext: () => this.navigateToNext(),
+                    hasPrevChapter: () => this.getChapterNavigation()?.prev != null,
+                    hasNextChapter: () => this.getChapterNavigation()?.next != null,
                     onPageChange: (page) => {
                         // 每翻页都记录 + 调度持久化（debounced 200ms）
                         if (this.currentFile) {
