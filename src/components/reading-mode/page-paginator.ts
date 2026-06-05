@@ -147,13 +147,15 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 		
 		if (this._currentPage >= this._totalPages) {
+			// At last page: navigate to next chapter.
+			// After navigation, paginator is destroyed and re-created for the new chapter,
+			// so the caller should not try to continue paging.
 			this.onNavigateNext();
 			return false;
 		}
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
-		// 翻页后触发强制重绘，避免空白页问题
 		this.forceRerender();
 		return true;
 	}
@@ -162,13 +164,13 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 		
 		if (this._currentPage <= 1) {
+			// At first page: navigate to previous chapter (opens at last remembered page).
 			this.onNavigatePrev();
 			return false;
 		}
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
-		// 翻页后触发强制重绘，避免空白页问题
 		this.forceRerender();
 		return true;
 	}

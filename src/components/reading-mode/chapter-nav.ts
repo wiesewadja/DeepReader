@@ -16,7 +16,7 @@ export interface ChapterNavOptions {
     onNavigatePrev: () => Promise<boolean>;
     onNavigateNext: () => Promise<boolean>;
     getNavigation: () => { prev: TFile | null; next: TFile | null; currentIndex: number; total: number } | null;
-    getPaginator?: () => { nextPage: () => boolean; prevPage: () => boolean; isActive: () => boolean } | null;
+    getPaginator?: () => { nextPage: () => boolean; prevPage: () => boolean; isActive: () => boolean; getCurrentPage: () => number; getTotalPages: () => number } | null;
 }
 
 export class ChapterNav {
@@ -114,8 +114,9 @@ export class ChapterNav {
         // 左箭头：上一页 or 上一章
         if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
             e.preventDefault();
+            e.stopImmediatePropagation();
             const paginator = this.options.getPaginator?.();
-            if (paginator?.isActive()) {
+            if (paginator?.isActive() && paginator.getCurrentPage() > 1) {
                 paginator.prevPage();
             } else {
                 this.options.onNavigatePrev();
@@ -124,8 +125,9 @@ export class ChapterNav {
         // 右箭头：下一页 or 下一章
         if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
             e.preventDefault();
+            e.stopImmediatePropagation();
             const paginator = this.options.getPaginator?.();
-            if (paginator?.isActive()) {
+            if (paginator?.isActive() && paginator.getCurrentPage() < paginator.getTotalPages()) {
                 paginator.nextPage();
             } else {
                 this.options.onNavigateNext();
