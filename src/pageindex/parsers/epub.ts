@@ -337,6 +337,152 @@ function createTurndownServiceWithBlocks(
 }
 
 /**
+ * Sentence-ending punctuation patterns (CJK + Latin).
+ * A line ending with one of these is considered a complete sentence.
+ */
+const SENTENCE_END_RE = /[。？！.?!\u3001\u201d\u2019'"”'）》」\d]$/;
+
+/**
+ * Block ID pattern at end of a line: ` ^blockId`
+ */
+const BLOCK_ID_RE = / \^([a-zA-Z0-9_-]+)$/;
+
+/**
+ * Merge fragmented paragraphs produced by Calibre-style EPUB splitting.
+ *
+ * Many EPUBs split one logical paragraph into multiple <p> tags, each
+ * containing a single sentence. After Turndown conversion, this results in
+ * lines like:
+ *
+ *   肯·西格尔是史蒂夫·乔布斯的得力助手。在与乔布斯共事的12年时 ^p125
+ *   间里，他一直被人们公认为是最具创意的设计师。 ^p595
+ *   期就到苹果公司工作了。 ^p596
+ *
+ * This function merges consecutive fragment lines into single paragraphs,
+ * keeping only the last block ID and removing intermediate ones from the
+ * blocks array and blockMap.
+ *
+ * A line is considered a fragment if:
+ *   - It is a regular paragraph (has a block ID at the end)
+ *   - It does NOT end with sentence-ending punctuation after the block ID
+ *   - The next line is also a regular paragraph (not a heading, image, etc.)
+ */
+function mergeFragmentedParagraphs(
+  markdown: string,
+  blocks: string[],
+  blockMap: Map<string, string>
+): string {
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+
+  // Track which block IDs to remove (intermediate fragments)
+  const blocksToRemove = new Set<string>();
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Check if this line is a fragment candidate:
+    // - Has a block ID at the end
+    // - Text before block ID does NOT end with sentence-ending punctuation
+    const blockMatch = trimmed.match(BLOCK_ID_RE);
+    if (blockMatch) {
+      const textBeforeBlock = trimmed.slice(0, trimmed.length - blockMatch[0].length).trim();
+      const blockId = blockMatch[1];
+
+      // Check if this is a heading (starts with #) or image (starts with !)
+      if (textBeforeBlock.startsWith("#") || textBeforeBlock.startsWith("![]") || textBeforeBlock.startsWith("![")) {
+        result.push(line);
+        i++;
+        continue;
+      }
+
+      // Check if the text ends with sentence-ending punctuation
+      const endsWithSentenceEnd = SENTENCE_END_RE.test(textBeforeBlock);
+
+      if (!endsWithSentenceEnd) {
+        // This is a fragment — try to merge with following lines
+        let mergedText = textBeforeBlock;
+        const removedBlocks = [blockId];
+        let j = i + 1;
+
+        while (j < lines.length) {
+          // Skip empty lines between fragments (they're artifacts of \n\n output)
+          if (lines[j].trim() === "") {
+            j++;
+            continue;
+          }
+
+          const nextTrimmed = lines[j].trim();
+          const nextBlockMatch = nextTrimmed.match(BLOCK_ID_RE);
+
+          // Next line must also be a regular paragraph with block ID
+          if (!nextBlockMatch) break;
+
+          const nextText = nextTrimmed.slice(0, nextTrimmed.length - nextBlockMatch[0].length).trim();
+
+          // Don't merge with headings or images
+          if (nextText.startsWith("#") || nextText.startsWith("![]") || nextText.startsWith("![")) break;
+
+          mergedText += nextText;
+          removedBlocks.push(nextBlockMatch[1]);
+
+          // If this merged line ends with sentence punctuation, stop merging
+          if (SENTENCE_END_RE.test(nextText)) {
+            j++;
+            break;
+          }
+
+          j++;
+        }
+
+        // Only actually merge if we found at least one fragment to merge with
+        if (j > i + 1) {
+          // Keep the last block ID
+          const lastBlockId = removedBlocks[removedBlocks.length - 1];
+          result.push(`\n${mergedText} ^${lastBlockId}`);
+
+          // Remove all intermediate block IDs
+          for (let k = 0; k < removedBlocks.length - 1; k++) {
+            blocksToRemove.add(removedBlocks[k]);
+          }
+
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  // Clean up blocks array and blockMap
+  if (blocksToRemove.size > 0) {
+    // Remove from blockMap entries pointing to removed block IDs
+    for (const rb of blocksToRemove) {
+      for (const [key, val] of blockMap.entries()) {
+        if (val === rb) {
+          blockMap.delete(key);
+        }
+      }
+    }
+
+    // Filter blocks array
+    const originalBlocks = [...blocks];
+    blocks.length = 0;
+    for (const b of originalBlocks) {
+      if (!blocksToRemove.has(b)) {
+        blocks.push(b);
+      }
+    }
+  }
+
+  return result.join("\n");
+}
+
+/**
  * Extract text from HTML content using Turndown with block IDs
  * @param html - Raw HTML content
  * @param chapterIndex - Chapter index for block ID generation
@@ -361,6 +507,13 @@ function extractTextFromHTMLWithBlocks(
   // Use Turndown for HTML to Markdown conversion with block IDs
   const turndown = createTurndownServiceWithBlocks(chapterIndex, blockMap, blocks);
   let markdown = turndown.turndown(cleanHtml);
+
+  // Merge fragmented paragraphs
+  // Many EPUBs (especially Calibre-converted) split one logical paragraph
+  // into multiple <p> tags (one sentence each). This produces many short
+  // lines each with their own block ID. We merge consecutive fragments
+  // that don't end with sentence-ending punctuation into single paragraphs.
+  markdown = mergeFragmentedParagraphs(markdown, blocks, blockMap);
 
   // Clean up excessive whitespace
   markdown = markdown
