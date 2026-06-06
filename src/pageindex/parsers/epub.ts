@@ -772,7 +772,14 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
       for (const m of headingLevelMatches) {
         const levelMatch = m.match(/^<h([1-6])/i);
         const level = levelMatch ? levelMatch[1] : "6";
-        const text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+        let text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+        // If heading text is empty (e.g. <h1><img/></h1>), try title attribute
+        if (text.length === 0) {
+          const titleAttr = m.match(/title=["']([^"']+)["']/i);
+          if (titleAttr) {
+            text = cleanTitle(titleAttr[1].trim());
+          }
+        }
         if (text.length > 0) {
           if (!byLevel[level]) byLevel[level] = [];
           byLevel[level].push(text);
@@ -788,11 +795,17 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
           // or combine short + long if first is very short (e.g. "第1章" + "标题")
           if (texts.length > 1) {
             const first = texts[0];
-            const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
-            if (first !== longest && first.length <= 5 && longest.length > first.length) {
-              pickedTitle = `${first} ${longest}`;
+            const second = texts[1];
+            // Combine chapter number + subtitle (e.g. "第1章" + "导言" → "第1章 导言")
+            if (first.length <= 8 && texts.length >= 2) {
+              pickedTitle = texts.slice(0, 2).join(" ");
             } else {
-              pickedTitle = first;
+              const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
+              if (first !== longest && first.length <= 5 && longest.length > first.length) {
+                pickedTitle = `${first} ${longest}`;
+              } else {
+                pickedTitle = first;
+              }
             }
           } else {
             pickedTitle = texts[0];
@@ -804,16 +817,52 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     } else {
       // No heading tag: use first non-empty line of markdown as title
       const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
-      // Strip block ID marker from the end (e.g., " ^p001")
-      chapterTitle = firstLine
-        ? cleanTitle(firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim())
-        : `Chapter ${order + 1}`;
+      // Strip block ID marker from the end
+      let rawTitle = firstLine
+        ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
+        : "";
+      // If the line contains links, extract only the text BEFORE the first link.
+      // This handles TOC pages where first line is "目录[[link1|text1]][[link2|text2]]"
+      if (rawTitle.includes("[[") || /\]\(/.test(rawTitle)) {
+        const beforeFirstLink = rawTitle.split(/\[\[/)[0].trim();
+        if (beforeFirstLink.length > 0) {
+          rawTitle = beforeFirstLink;
+        } else {
+          // If no text before links, extract alias from first wiki link
+          const aliasMatch = rawTitle.match(/\[\[[^\]|]*\|([^\]]*)\]\]/);
+          if (aliasMatch) {
+            rawTitle = aliasMatch[1];
+          }
+        }
+      }
+      chapterTitle = cleanTitle(rawTitle) || `Chapter ${order + 1}`;
+      // Truncate overly long titles
+      if (chapterTitle.length > 50) {
+        chapterTitle = chapterTitle.substring(0, 20).trim();
+      }
     }
 
-    // Skip cover/image-only pages (title is a markdown image syntax)
+    // Skip cover/image-only pages
+    // Case 1: title looks like a markdown image
     if (chapterTitle.startsWith("![") || chapterTitle.startsWith("![Cover")) {
       order++;
       continue;
+    }
+    // Case 2: content is empty or only contains images (e.g. Part divider pages)
+    const textOnlyContent = result.content
+      .replace(/#!\[[^\]]*\]\([^)]*\)/g, "")  // remove H1 image lines
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // remove all images
+      .replace(/[^\w\u4e00-\u9fff]/g, "")      // keep only word chars and CJK
+      .trim();
+    if (textOnlyContent.length === 0) {
+      // Image-only page: skip if it doesn't have meaningful text in title
+      // But keep it if the title comes from heading tag with useful text
+      // (e.g. "第一部分　预测" from h1 title attribute)
+      if (chapterTitle.startsWith("Chapter ") || chapterTitle.length === 0) {
+        order++;
+        continue;
+      }
+      // Part divider with meaningful title: keep as lightweight chapter
     }
 
     chapters.push({
