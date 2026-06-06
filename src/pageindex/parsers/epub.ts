@@ -150,8 +150,13 @@ function createTurndownServiceWithBlocks(
       },
     },
 
-    // Paragraphs - add block ID to every paragraph, detect potential h3 headings
+    // Paragraphs - add block ID to every paragraph, detect implicit H3 headings
     // Only process leaf paragraph elements (not containers with nested p/div)
+    //
+    // Implicit heading patterns detected in replacement():
+    //   1. "◆ prefix" lines  →  ### text  (Calibre TOC-style)
+    //   2. <p><span class="bold*">short text</span></p>  →  ### text  (bold-only paragraphs)
+    //   3. <p><a id="xxx"></a>short text</p>  →  ### text  (anchor-only short paragraphs)
     paragraph: {
       filter: (node: any) => {
         const tagName = node.tagName?.toLowerCase();
@@ -174,6 +179,68 @@ function createTurndownServiceWithBlocks(
       replacement: (content, node: any) => {
         if (!content.trim()) return "";
 
+        // --- Implicit H3 heading detection ---
+        // Check for three patterns of EPUB implicit headings
+        // before treating this as a regular paragraph.
+        const nodeText = (node.textContent || "").trim();
+        let isHeading = false;
+        let headingText = "";
+
+        // Pattern 1: ◆ prefix (e.g. "◆ 模仿的心态")
+        if (/^◆\s+/.test(nodeText)) {
+          isHeading = true;
+          headingText = nodeText.replace(/^◆\s+/, "");
+        }
+
+        // Pattern 2: bold span covering entire paragraph content
+        // <p><span class="bold1">short text</span></p> or <p><b>short</b></p>
+        if (!isHeading && node.nodeName === "P") {
+          const meaningfulChildren = Array.from(node.childNodes).filter((child: any) => {
+            if (child.nodeType === 3) {
+              return child.textContent.trim().length > 0;
+            }
+            return child.nodeType === 1;
+          });
+          if (meaningfulChildren.length === 1) {
+            const child = meaningfulChildren[0] as any;
+            if (child.nodeType === 1) {
+              const tag = child.tagName?.toLowerCase();
+              if (tag === "span" || tag === "b" || tag === "strong") {
+                const cls = (child.getAttribute("class") || "").toLowerCase();
+                if (/(?:^|\s)bold/i.test(cls) || tag === "b" || tag === "strong") {
+                  if (nodeText.length > 0 && nodeText.length <= 60) {
+                    isHeading = true;
+                    headingText = nodeText;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Pattern 3: anchor-only short paragraph
+        // <p><a id="xxx"></a>short text</p> or <p><a id="xxx">text</a></p>
+        if (!isHeading && node.nodeName === "P" && nodeText.length > 0 && nodeText.length <= 30) {
+          const hasDirectAnchorId = Array.from(node.childNodes).some((child: any) => {
+            if (child.nodeType === 1 && child.tagName?.toLowerCase() === "a") {
+              return !!child.getAttribute("id");
+            }
+            return false;
+          });
+          if (hasDirectAnchorId) {
+            isHeading = true;
+            headingText = nodeText;
+          }
+        }
+
+        if (isHeading) {
+          // Clean up heading text
+          headingText = headingText.replace(/[ \t]+/g, " ").trim();
+          if (!headingText) return "";
+          return `\n\n### ${headingText}\n\n`;
+        }
+
+        // --- Regular paragraph processing ---
         // Get original ID if exists
         const originalId = node.getAttribute?.("id");
 
