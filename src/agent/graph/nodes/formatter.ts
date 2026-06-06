@@ -8,7 +8,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
-import type { CognitiveEngineState, NodeError } from '../state';
+import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
 import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
@@ -45,6 +45,30 @@ function extractChunkText(chunk: { content: unknown }): string {
       .join('');
   }
   return '';
+}
+
+/**
+ * Build retrieval-coverage metadata for the formatter prompt.
+ *
+ * Returns undefined when there is no signal worth reporting (no current chapter
+ * AND no searches performed), keeping the prompt lean.
+ */
+function buildRetrievalCoverage(
+  toolResultsSnapshot: ToolResultSnapshot[] | undefined,
+  currentNodeId: string | undefined,
+):
+  | { searchedNodeIds: string[]; currentNodeId: string | undefined; isCoverageGap: boolean }
+  | undefined {
+  const searchedNodeIds = (toolResultsSnapshot || [])
+    .map(r => r.args?.node_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const uniqueSearched = Array.from(new Set(searchedNodeIds));
+  if (!currentNodeId && uniqueSearched.length === 0) return undefined;
+  return {
+    searchedNodeIds: uniqueSearched,
+    currentNodeId,
+    isCoverageGap: currentNodeId ? !uniqueSearched.includes(currentNodeId) : false,
+  };
 }
 
 /**
@@ -342,6 +366,14 @@ export async function formatterNode(
     ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles, nodeFileMap)
     : '';
 
+  // === Retrieval coverage transparency ===
+  // 把"实际检索了哪些章节"+"用户当前章节是否被覆盖"显式注入 prompt
+  // 防止 LLM 拿"未出现"搪塞用户，掩盖真实检索失败
+  const retrievalCoverage = buildRetrievalCoverage(
+    toolResultsSnapshot,
+    ctx?.toolContext?.book?.currentNodeId,
+  );
+
   // 收集输入文本用于校验编造链接。
   // coveredScope 包含 tree.json 中验证过的 file_name（vault 真实文件），
   // 纳入校验是为了让早停路径已引用的链接在 formatter 输出中不被误删。
@@ -366,6 +398,7 @@ export async function formatterNode(
     betterQuestion || undefined,
     coveredScope || undefined,
     !!crossBookMode,
+    retrievalCoverage,
   );
 
   const messages = [

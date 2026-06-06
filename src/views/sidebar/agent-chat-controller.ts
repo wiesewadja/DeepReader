@@ -700,7 +700,8 @@ export class AgentChatController {
 				},
 			};
 
-			const result = await this.host.frontendAgent.chat(
+			const result = await this.host.frontendAgent.continueChat(
+				this._agentChatHistory,
 				userMessage,
 				context,
 				callbacks,

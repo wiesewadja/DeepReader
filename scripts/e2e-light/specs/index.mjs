@@ -15,6 +15,7 @@ import pdfIndexExport from './pdf-index-export.spec.mjs';
 import indexTrace from './index-trace.spec.mjs';
 import langgraphAgent from './langgraph-agent.spec.mjs';
 import evalAgent from './eval-agent.spec.mjs';
+import followupCoherence from './followup-coherence.spec.mjs';
 import scopeNodefilemap from './scope-nodefilemap.spec.mjs';
 import l2Vectorization from './l2-vectorization.spec.mjs';
 import archiveToggle from './archive-toggle.spec.mjs';
@@ -35,6 +36,7 @@ export const e2eLightSpecs = [
 	indexTrace,
 	langgraphAgent,
 	evalAgent,
+	followupCoherence,
 	scopeNodefilemap,
 	l2Vectorization,
 	archiveToggle,

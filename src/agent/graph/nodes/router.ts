@@ -15,6 +15,7 @@ import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
+import { detectCorrection, correctionReason } from '../utils/correction-detector.js';
 
 import { IntentRouter } from '../../router/intent-router.js';
 
@@ -60,6 +61,15 @@ export async function routerNode(
   const rawIntent = intentRouter.analyze(rawQuery);
   log(`[S0 Router] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
 
+  // Step 1.5: Correction detection — if the user is pushing back on a
+  // previous answer, force ANALYTICAL depth regardless of the LLM's
+  // depth classification. The LLM tends to inherit the previous
+  // (wrong) depth when history already says "未出现".
+  const isCorrection = detectCorrection(rawQuery);
+  if (isCorrection) {
+    log(`[S0 Router] 纠错信号检测: reason="${correctionReason(rawQuery)}", 强制 depth=2 (ANALYTICAL)`);
+  }
+
   // Step 2: Inherit previous intent if this is a follow-up
   const hasNewIntent = rawIntent.detectedIntents.length > 0
     && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
@@ -71,6 +81,7 @@ export async function routerNode(
       depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(mergeTools(rawIntent.allowedTools, inheritedTools), []),
+      correctionDetected: isCorrection,
     };
   }
 
@@ -91,6 +102,12 @@ export async function routerNode(
     const validDepths = Object.values(ReadingDepth) as number[];
     let depth: ReadingDepth = validDepths.includes(rawDepth)
       ? rawDepth : ReadingDepth.ANALYTICAL;
+
+    // Correction-signal override: force ANALYTICAL even if LLM said CASUAL
+    if (isCorrection && depth < ReadingDepth.ANALYTICAL) {
+      log(`[S0 Router] 纠错信号覆盖 LLM depth=${depth} → 2 (ANALYTICAL)`);
+      depth = ReadingDepth.ANALYTICAL;
+    }
     const standaloneQuery = parsed?.standalone_query || rawQuery;
     log(`[S0 Router] LLM response: depth=${rawDepth}, reason="${parsed?.reason || '(none)'}", query="${standaloneQuery.slice(0, 80)}"`);
     // Anti-hallucination guard: "书中有没有提到X" → BM25 verification
@@ -163,6 +180,7 @@ export async function routerNode(
       depth: effectiveDepth,
       rewrittenQuery: finalQuery,
       allowedTools: finalTools,
+      correctionDetected: isCorrection,
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
@@ -171,6 +189,7 @@ export async function routerNode(
       depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+      correctionDetected: isCorrection,
     };
   }
 }

@@ -94,6 +94,11 @@ export function buildFormatterUserMessage(
   betterQuestion?: string,
   coveredScope?: string,
   multiBook?: boolean,
+  retrievalCoverage?: {
+    searchedNodeIds: string[];
+    currentNodeId?: string;
+    isCoverageGap: boolean;
+  },
 ): string {
   const historyText = recentHistory && recentHistory.length > 0
     ? formatHistoryBlock(summarizeRecentHistory(recentHistory, MAX_HISTORY_ROUNDS))
@@ -105,6 +110,22 @@ export function buildFormatterUserMessage(
   const scopeSection = coveredScope
     ? `\n${coveredScope}`
     : '';
+
+  // 检索覆盖透明化块：当 S2 未覆盖用户当前章节时，给 S4 提供上下文。
+  // L5 状态机重启已上移到 S2-Pre（见 utils/claim-verifier.ts），如果它触发，
+  // S2 Analytical 会基于全量复核 hits 重新生成 analysis。所以 S4 看到的
+  // analysis 应当已是可信的——S4 只需基于它回答，不要向用户暴露
+  // "检索失败/未覆盖"等技术细节，也不要用其他章节的相似概念搪塞。
+  const retrievalSection = retrievalCoverage
+    ? `\n<retrieval_coverage>
+本次实际检索覆盖的章节: [${retrievalCoverage.searchedNodeIds.join(', ') || '(无)'}]
+用户当前正在阅读的章节: ${retrievalCoverage.currentNodeId || '(未知)'}
+${retrievalCoverage.isCoverageGap
+  ? `注：上述检索未包含用户当前章节 (${retrievalCoverage.currentNodeId})。L5 状态机重启已在 S2-Pre 处理这种情况，基于当前 <analysis> 给出最准确的回答。`
+  : ''}
+</retrieval_coverage>`
+    : '';
+
   const effectiveQuery = betterQuestion || rawUserQuery;
 
   const bookInstruction = multiBook
@@ -122,7 +143,7 @@ ${historyText}
 <analysis>
 ${analysisResult || '(无分析结果)'}
 </analysis>
-${structureSection}${scopeSection}<book>${bookName}</book>
+${structureSection}${scopeSection}${retrievalSection}<book>${bookName}</book>
 
 用奚童的口吻分享你读后的理解。
 
