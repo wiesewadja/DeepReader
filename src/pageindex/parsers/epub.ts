@@ -180,64 +180,11 @@ function createTurndownServiceWithBlocks(
         if (!content.trim()) return "";
 
         // --- Implicit H3 heading detection ---
-        // Check for three patterns of EPUB implicit headings
-        // before treating this as a regular paragraph.
-        const nodeText = (node.textContent || "").trim();
-        let isHeading = false;
-        let headingText = "";
-
-        // Pattern 1: ◆ prefix (e.g. "◆ 模仿的心态")
-        if (/^◆\s+/.test(nodeText)) {
-          isHeading = true;
-          headingText = nodeText.replace(/^◆\s+/, "");
-        }
-
-        // Pattern 2: bold span covering entire paragraph content
-        // <p><span class="bold1">short text</span></p> or <p><b>short</b></p>
-        if (!isHeading && node.nodeName === "P") {
-          const meaningfulChildren = Array.from(node.childNodes).filter((child: any) => {
-            if (child.nodeType === 3) {
-              return child.textContent.trim().length > 0;
-            }
-            return child.nodeType === 1;
-          });
-          if (meaningfulChildren.length === 1) {
-            const child = meaningfulChildren[0] as any;
-            if (child.nodeType === 1) {
-              const tag = child.tagName?.toLowerCase();
-              if (tag === "span" || tag === "b" || tag === "strong") {
-                const cls = (child.getAttribute("class") || "").toLowerCase();
-                if (/(?:^|\s)bold/i.test(cls) || tag === "b" || tag === "strong") {
-                  if (nodeText.length > 0 && nodeText.length <= 60) {
-                    isHeading = true;
-                    headingText = nodeText;
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        // Pattern 3: anchor-only short paragraph
-        // <p><a id="xxx"></a>short text</p> or <p><a id="xxx">text</a></p>
-        if (!isHeading && node.nodeName === "P" && nodeText.length > 0 && nodeText.length <= 30) {
-          const hasDirectAnchorId = Array.from(node.childNodes).some((child: any) => {
-            if (child.nodeType === 1 && child.tagName?.toLowerCase() === "a") {
-              return !!child.getAttribute("id");
-            }
-            return false;
-          });
-          if (hasDirectAnchorId) {
-            isHeading = true;
-            headingText = nodeText;
-          }
-        }
-
-        if (isHeading) {
-          // Clean up heading text
-          headingText = headingText.replace(/[ \t]+/g, " ").trim();
-          if (!headingText) return "";
-          return `\n\n### ${headingText}\n\n`;
+        const headingText = detectImplicitHeading(node);
+        if (headingText !== null) {
+          const cleaned = headingText.replace(/[ \t]+/g, " ").trim();
+          if (!cleaned) return "";
+          return `\n\n### ${cleaned}\n\n`;
         }
 
         // --- Regular paragraph processing ---
@@ -337,15 +284,70 @@ function createTurndownServiceWithBlocks(
 }
 
 /**
+ * Detect if a DOM node is an implicit H3 heading.
+ * Returns the heading text (stripped of ◆ prefix) or null.
+ *
+ * Three patterns:
+ *   1. ◆ prefix lines  →  ### text  (Calibre TOC-style)
+ *   2. <p><span class="bold*">short text</span></p>  →  ### text  (bold-only paragraphs)
+ *   3. <p><a id="xxx"></a>short text</p>  →  ### text  (anchor-only short paragraphs)
+ */
+export function detectImplicitHeading(node: any): string | null {
+  if (node.nodeName !== "P") return null;
+
+  const nodeText = (node.textContent || "").trim();
+
+  // Pattern 1: ◆ prefix (e.g. "◆ 模仿的心态")
+  if (/^◆\s+/.test(nodeText)) {
+    return nodeText.replace(/^◆\s+/, "");
+  }
+
+  // Pattern 2: bold span covering entire paragraph content
+  const meaningfulChildren = Array.from(node.childNodes).filter((child: any) => {
+    if (child.nodeType === 3) return child.textContent.trim().length > 0;
+    return child.nodeType === 1;
+  });
+  if (meaningfulChildren.length === 1) {
+    const child = meaningfulChildren[0] as any;
+    if (child.nodeType === 1) {
+      const tag = child.tagName?.toLowerCase();
+      if (tag === "span" || tag === "b" || tag === "strong") {
+        const cls = (child.getAttribute("class") || "").toLowerCase();
+        if (/(?:^|\s)bold/i.test(cls) || tag === "b" || tag === "strong") {
+          if (nodeText.length > 0 && nodeText.length <= 60) return nodeText;
+        }
+      }
+    }
+  }
+
+  // Pattern 3: anchor-only short paragraph
+  if (nodeText.length > 0 && nodeText.length <= 30) {
+    const hasDirectAnchorId = Array.from(node.childNodes).some((child: any) => {
+      if (child.nodeType === 1 && child.tagName?.toLowerCase() === "a") {
+        return !!child.getAttribute("id");
+      }
+      return false;
+    });
+    if (hasDirectAnchorId) return nodeText;
+  }
+
+  return null;
+}
+
+/**
  * Sentence-ending punctuation patterns (CJK + Latin).
  * A line ending with one of these is considered a complete sentence.
  */
-const SENTENCE_END_RE = /[。？！.?!\u3001\u201d\u2019'"”'）》」\d]$/;
+const SENTENCE_END_RE = /[。？！.?!、”’'""”'）》」\d]$/;
 
 /**
  * Block ID pattern at end of a line: ` ^blockId`
  */
 const BLOCK_ID_RE = / \^([a-zA-Z0-9_-]+)$/;
+
+/** Check if a markdown line is a heading or image (not a regular paragraph) */
+const isSpecialLine = (text: string): boolean =>
+  text.startsWith("#") || text.startsWith("![");
 
 /**
  * Merge fragmented paragraphs produced by Calibre-style EPUB splitting.
@@ -367,7 +369,7 @@ const BLOCK_ID_RE = / \^([a-zA-Z0-9_-]+)$/;
  *   - It does NOT end with sentence-ending punctuation after the block ID
  *   - The next line is also a regular paragraph (not a heading, image, etc.)
  */
-function mergeFragmentedParagraphs(
+export function mergeFragmentedParagraphs(
   markdown: string,
   blocks: string[],
   blockMap: Map<string, string>
@@ -392,7 +394,7 @@ function mergeFragmentedParagraphs(
       const blockId = blockMatch[1];
 
       // Check if this is a heading (starts with #) or image (starts with !)
-      if (textBeforeBlock.startsWith("#") || textBeforeBlock.startsWith("![]") || textBeforeBlock.startsWith("![")) {
+      if (isSpecialLine(textBeforeBlock)) {
         result.push(line);
         i++;
         continue;
@@ -423,7 +425,7 @@ function mergeFragmentedParagraphs(
           const nextText = nextTrimmed.slice(0, nextTrimmed.length - nextBlockMatch[0].length).trim();
 
           // Don't merge with headings or images
-          if (nextText.startsWith("#") || nextText.startsWith("![]") || nextText.startsWith("![")) break;
+          if (isSpecialLine(nextText)) break;
 
           mergedText += nextText;
           removedBlocks.push(nextBlockMatch[1]);
@@ -795,9 +797,8 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
           // or combine short + long if first is very short (e.g. "第1章" + "标题")
           if (texts.length > 1) {
             const first = texts[0];
-            const second = texts[1];
             // Combine chapter number + subtitle (e.g. "第1章" + "导言" → "第1章 导言")
-            if (first.length <= 8 && texts.length >= 2) {
+            if (first.length <= 8) {
               pickedTitle = texts.slice(0, 2).join(" ");
             } else {
               const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);

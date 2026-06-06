@@ -1,8 +1,7 @@
 /**
  * Unit tests for EPUB heading paragraph detection
  *
- * Validates that three implicit heading patterns are converted to H3
- * inside the paragraph rule's replacement function:
+ * Validates that three implicit heading patterns are detected:
  *   1. ◆ prefix lines (Calibre TOC-style)
  *   2. <p><span class="bold*">short text</span></p> (bold-only paragraphs)
  *   3. <p><a id="xxx"></a>short text</p> (anchor-only short paragraphs)
@@ -10,10 +9,11 @@
 
 import { describe, it, expect } from "vitest";
 import TurndownService from "turndown";
+import { detectImplicitHeading } from "../../../../src/pageindex/parsers/epub";
 
 /**
- * Create a Turndown service that mirrors the heading detection logic
- * from epub.ts paragraph rule replacement().
+ * Create a minimal Turndown service that uses detectImplicitHeading
+ * to convert implicit headings to ### and add block IDs to paragraphs.
  */
 function createTestTurndown() {
   const turndown = new TurndownService({
@@ -42,7 +42,6 @@ function createTestTurndown() {
     return `p${String(paragraphIndex++).padStart(3, "0")}`;
   };
 
-  // Single paragraph rule with integrated heading detection
   turndown.addRule("paragraph", {
     filter: (node: any) => {
       const tagName = node.tagName?.toLowerCase();
@@ -62,62 +61,15 @@ function createTestTurndown() {
     replacement: (content: string, node: any) => {
       if (!content.trim()) return "";
 
-      const nodeText = (node.textContent || "").trim();
-      let isHeading = false;
-      let headingText = "";
-
-      // Pattern 1: ◆ prefix
-      if (/^◆\s+/.test(nodeText)) {
-        isHeading = true;
-        headingText = nodeText.replace(/^◆\s+/, "");
+      // Use the shared heading detection function
+      const headingText = detectImplicitHeading(node);
+      if (headingText !== null) {
+        const cleaned = headingText.replace(/[ \t]+/g, " ").trim();
+        if (!cleaned) return "";
+        return `\n\n### ${cleaned}\n\n`;
       }
 
-      // Pattern 2: bold span covering entire paragraph
-      if (!isHeading && node.nodeName === "P") {
-        const meaningfulChildren = Array.from(node.childNodes).filter((child: any) => {
-          if (child.nodeType === 3) {
-            return child.textContent.trim().length > 0;
-          }
-          return child.nodeType === 1;
-        });
-        if (meaningfulChildren.length === 1) {
-          const child = meaningfulChildren[0] as any;
-          if (child.nodeType === 1) {
-            const tag = child.tagName?.toLowerCase();
-            if (tag === "span" || tag === "b" || tag === "strong") {
-              const cls = (child.getAttribute("class") || "").toLowerCase();
-              if (/(?:^|\s)bold/i.test(cls) || tag === "b" || tag === "strong") {
-                if (nodeText.length > 0 && nodeText.length <= 60) {
-                  isHeading = true;
-                  headingText = nodeText;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Pattern 3: anchor-only short paragraph
-      if (!isHeading && node.nodeName === "P" && nodeText.length > 0 && nodeText.length <= 30) {
-        const hasDirectAnchorId = Array.from(node.childNodes).some((child: any) => {
-          if (child.nodeType === 1 && child.tagName?.toLowerCase() === "a") {
-            return !!child.getAttribute("id");
-          }
-          return false;
-        });
-        if (hasDirectAnchorId) {
-          isHeading = true;
-          headingText = nodeText;
-        }
-      }
-
-      if (isHeading) {
-        headingText = headingText.replace(/[ \t]+/g, " ").trim();
-        if (!headingText) return "";
-        return `\n\n### ${headingText}\n\n`;
-      }
-
-      // Regular paragraph
+      // Regular paragraph with block ID
       const originalId = node.getAttribute?.("id");
       let childId: string | null = null;
       if (!originalId) {
