@@ -56,6 +56,8 @@ export class ReadingModeService {
     /** debounced 持久化定时器 */
     private _saveTimer: ReturnType<typeof setTimeout> | null = null;
     private _pluginId: string;
+    /** 跨章回退标记：从后一章按 ← 时，前一章应恢复到最后一页 */
+    private _jumpToLastPage: boolean = false;
 
     constructor(app: App, callbacks: ReadingModeCallbacks | undefined, pluginId: string) {
         this.app = app;
@@ -524,19 +526,32 @@ export class ReadingModeService {
                 this.paginator.paginateAndShow();
 
 
-                // 恢复上次阅读的页码（双 rAF 确保 paginator 布局完成）
+                // 恢复页码（双 rAF 确保 paginator 布局完成）
                 if (this.currentFile) {
-                    const savedPage = this.pageMemory.get(this.currentFile.path);
-                    if (savedPage && savedPage > 1) {
+                    // 跨章回退：跳到最后一页（翻书语义）
+                    const restoreLastPage = this._jumpToLastPage;
+                    this._jumpToLastPage = false;
+
+                    const savedPage = restoreLastPage ? undefined : this.pageMemory.get(this.currentFile.path);
+                    const shouldRestore = restoreLastPage || (savedPage != null && savedPage > 1);
+                    if (shouldRestore) {
                         requestAnimationFrame(() => {
                             requestAnimationFrame(() => {
-                                if (this.paginator) {
-                                    this.paginator.setCurrentPage(savedPage);
-                                    const scrollView = this.activeContainerEl?.querySelector('.markdown-preview-view') as HTMLElement;
-                                    if (scrollView) {
-                                        scrollView.scrollLeft = (savedPage - 1) * scrollView.clientWidth;
-                                    }
-                                }
+                                if (!this.paginator) return;
+                                const scrollView = this.activeContainerEl?.querySelector('.markdown-preview-view') as HTMLElement;
+                                if (!scrollView) return;
+
+                                const totalPages = this.paginator.getTotalPages();
+                                const targetPage = restoreLastPage
+                                    ? totalPages
+                                    : Math.max(1, Math.min(savedPage!, totalPages || savedPage!));
+                                if (targetPage <= 1 && !restoreLastPage) return;
+
+                                const targetScroll = (targetPage - 1) * scrollView.clientWidth;
+                                const maxScroll = Math.max(0, scrollView.scrollWidth - scrollView.clientWidth);
+
+                                this.paginator.setCurrentPage(targetPage);
+                                scrollView.scrollLeft = Math.min(targetScroll, maxScroll);
                             });
                         });
                     }
@@ -595,6 +610,8 @@ export class ReadingModeService {
     private recordPage(filePath: string, page: number): void {
         if (!filePath) return;
         if (typeof page !== 'number' || !Number.isFinite(page) || page < 1) return;
+        const total = this.paginator?.getTotalPages() ?? 0;
+        if (total > 0 && page > total) return;
         this.pageMemory.set(filePath, page);
         this.lastReadAt.set(filePath, Date.now());
         // 内存侧淘汰：与 last-page-store MAX_ENTRIES 同步，防止长期运行 map 无限增长
@@ -795,6 +812,7 @@ export class ReadingModeService {
     async navigateToPrev(): Promise<boolean> {
         const nav = this.getChapterNavigation();
         if (nav?.prev) {
+            this._jumpToLastPage = true;
             await this.openFile(nav.prev);
             return true;
         }

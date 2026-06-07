@@ -16,7 +16,15 @@ export interface ChapterNavOptions {
     onNavigatePrev: () => Promise<boolean>;
     onNavigateNext: () => Promise<boolean>;
     getNavigation: () => { prev: TFile | null; next: TFile | null; currentIndex: number; total: number } | null;
-    getPaginator?: () => { nextPage: () => boolean; prevPage: () => boolean; isActive: () => boolean; getCurrentPage: () => number; getTotalPages: () => number } | null;
+    getPaginator?: () => {
+        nextPage: () => boolean;
+        prevPage: () => boolean;
+        isActive: () => boolean;
+        getCurrentPage: () => number;
+        getTotalPages: () => number;
+        isAtFirstPage: () => boolean;
+        isAtLastPage: () => boolean;
+    } | null;
 }
 
 export class ChapterNav {
@@ -116,7 +124,7 @@ export class ChapterNav {
             e.preventDefault();
             e.stopImmediatePropagation();
             const paginator = this.options.getPaginator?.();
-            if (paginator?.isActive() && paginator.getCurrentPage() > 1) {
+            if (paginator?.isActive() && !paginator.isAtFirstPage()) {
                 paginator.prevPage();
             } else {
                 this.options.onNavigatePrev();
@@ -127,7 +135,7 @@ export class ChapterNav {
             e.preventDefault();
             e.stopImmediatePropagation();
             const paginator = this.options.getPaginator?.();
-            if (paginator?.isActive() && paginator.getCurrentPage() < paginator.getTotalPages()) {
+            if (paginator?.isActive() && !paginator.isAtLastPage()) {
                 paginator.nextPage();
             } else {
                 this.options.onNavigateNext();
