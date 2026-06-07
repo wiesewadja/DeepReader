@@ -51,6 +51,7 @@ export class PagePaginator {
 	private chapterName: string;
 	private bookName: string;
 	private lastKnownViewWidth: number = 0;
+	private _rerenderRafIds: number[] = [];
 
 	constructor(options: PagePaginatorOptions) {
 		this.options = options;
@@ -68,6 +69,21 @@ export class PagePaginator {
 	isActive(): boolean { return this._isActive; }
 	getTotalPages(): number { return this._totalPages; }
 	getCurrentPage(): number { return this._currentPage; }
+
+	/** 实时判断是否已滚动到最后一页(不依赖 _currentPage 缓存) */
+	isAtLastPage(): boolean {
+		if (!this._isActive || !this.scrollView) return false;
+		if (this._totalPages <= 1) return true;
+		const EPS = 1;
+		const max = this.scrollView.scrollWidth - this.scrollView.clientWidth;
+		return this.scrollView.scrollLeft + EPS >= max;
+	}
+
+	/** 实时判断是否已滚动到第一页 */
+	isAtFirstPage(): boolean {
+		if (!this._isActive || !this.scrollView) return false;
+		return this.scrollView.scrollLeft <= 1;
+	}
 
 	/** 外部设置当前页码（用于 blockId 跳转后同步状态） */
 	setCurrentPage(page: number): void {
@@ -147,15 +163,15 @@ export class PagePaginator {
 
 	nextPage(): boolean {
 		if (!this._isActive || !this.scrollView) return false;
-		
-		if (this._currentPage >= this._totalPages) {
+
+		if (this.isAtLastPage()) {
 			// At last page: navigate to next chapter.
 			// After navigation, paginator is destroyed and re-created for the new chapter,
 			// so the caller should not try to continue paging.
 			this.onNavigateNext();
 			return false;
 		}
-		
+
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
 		this.forceRerender();
@@ -164,13 +180,13 @@ export class PagePaginator {
 
 	prevPage(): boolean {
 		if (!this._isActive || !this.scrollView) return false;
-		
-		if (this._currentPage <= 1) {
+
+		if (this.isAtFirstPage()) {
 			// At first page: navigate to previous chapter (opens at last remembered page).
 			this.onNavigatePrev();
 			return false;
 		}
-		
+
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
 		this.forceRerender();
@@ -183,33 +199,40 @@ export class PagePaginator {
 	 */
 	private forceRerender(): void {
 		if (!this.scrollView) return;
-		
+
 		// 使用多次 requestAnimationFrame 确保在滚动完成后执行
-		requestAnimationFrame(() => {
-			if (!this.scrollView) return;
-			
+		const id1 = requestAnimationFrame(() => {
+			this._rerenderRafIds.splice(this._rerenderRafIds.indexOf(id1), 1);
+			if (!this._isActive || !this.scrollView) return;
+
 			// 方法1：修改 column-width 触发重排
 			const currentWidth = this.scrollView.style.getPropertyValue('--deeppdf-col-width');
 			this.scrollView.style.setProperty('--deeppdf-col-width', `${parseInt(currentWidth) + 0.1}px`);
-			
-			requestAnimationFrame(() => {
-				if (!this.scrollView) return;
+
+			const id2 = requestAnimationFrame(() => {
+				this._rerenderRafIds.splice(this._rerenderRafIds.indexOf(id2), 1);
+				if (!this._isActive || !this.scrollView) return;
 				this.scrollView.style.setProperty('--deeppdf-col-width', currentWidth);
-				
+
 				// 方法2：修改 overflow 触发重排
 				this.scrollView.style.overflow = 'hidden';
-				requestAnimationFrame(() => {
-					if (this.scrollView) {
-						this.scrollView.style.overflow = '';
-					}
+				const id3 = requestAnimationFrame(() => {
+					this._rerenderRafIds.splice(this._rerenderRafIds.indexOf(id3), 1);
+					if (!this._isActive || !this.scrollView) return;
+					this.scrollView.style.overflow = '';
 				});
+				this._rerenderRafIds.push(id3);
 			});
+			this._rerenderRafIds.push(id2);
 		});
+		this._rerenderRafIds.push(id1);
 	}
 
 	destroy(): void {
 		this._isActive = false;
 		if (this.verifyTimer) { clearTimeout(this.verifyTimer); this.verifyTimer = null; }
+		this._rerenderRafIds.forEach(id => cancelAnimationFrame(id));
+		this._rerenderRafIds = [];
 		this.removeControls();
 		this.teardownResizeObserver();
 		this.teardownScrollListener();
@@ -426,8 +449,8 @@ export class PagePaginator {
 		}
 
 		// 边界页且有上/下一章时，不隐藏按钮（用户可点击跳章）
-		const atFirstPage = this._currentPage <= 1;
-		const atLastPage = this._currentPage >= this._totalPages;
+		const atFirstPage = this.isAtFirstPage();
+		const atLastPage = this.isAtLastPage();
 		this.leftBtn?.classList.toggle(DISABLED_CLASS, atFirstPage && !this.options.hasPrevChapter());
 		this.rightBtn?.classList.toggle(DISABLED_CLASS, atLastPage && !this.options.hasNextChapter());
 	}

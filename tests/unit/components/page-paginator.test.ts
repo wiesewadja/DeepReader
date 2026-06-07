@@ -434,3 +434,263 @@ describe.skip('PagePaginator integration', () => {
 		}
 	});
 });
+
+// ============================================================================
+// PagePaginator (multi-column) - 边界与状态发散
+//
+// 覆盖核心 bug：smooth scroll 进行中 _currentPage 滞后，章节末页按 → 误回前章
+// 与 forceRerender 残留 rAF 在 destroy 后污染 DOM
+// ============================================================================
+
+/**
+ * 构造完整 DOM 层级：
+ *   .view-content > .markdown-preview-view > .markdown-preview-sizer
+ * 并赋值 scrollWidth/clientWidth 让 multi-column 分页逻辑可计算
+ */
+function createMultiColumnDom(opts: { clientWidth: number; scrollWidth: number; scrollLeft?: number }) {
+	const viewContent = document.createElement('div');
+	viewContent.className = 'view-content';
+	const scrollView = document.createElement('div');
+	scrollView.className = 'markdown-preview-view';
+	const sizer = document.createElement('div');
+	sizer.className = 'markdown-preview-sizer';
+	scrollView.appendChild(sizer);
+	viewContent.appendChild(scrollView);
+	document.body.appendChild(viewContent);
+
+	Object.defineProperty(scrollView, 'clientWidth', { value: opts.clientWidth, configurable: true });
+	Object.defineProperty(scrollView, 'scrollWidth', { value: opts.scrollWidth, configurable: true });
+	// scrollLeft 用普通字段（jsdom 默认就支持赋值/读取）
+	scrollView.scrollLeft = opts.scrollLeft ?? 0;
+	// jsdom 不提供 scrollBy；定义一个 noop 让 spyOn 能挂上去
+	(scrollView as any).scrollBy = () => {};
+
+	return { viewContent, scrollView, sizer };
+}
+
+describe('PagePaginator (multi-column) - 边界与状态发散', () => {
+	let onNavigatePrev: ReturnType<typeof vi.fn>;
+	let onNavigateNext: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		(global as any).ResizeObserver = MockResizeObserver;
+		onNavigatePrev = vi.fn().mockResolvedValue(true);
+		onNavigateNext = vi.fn().mockResolvedValue(true);
+	});
+
+	afterEach(() => {
+		document.body.innerHTML = '';
+		delete (global as any).ResizeObserver;
+		vi.useRealTimers();
+		vi.restoreAllMocks();
+	});
+
+	/**
+	 * 创建已激活的 paginator，绕过 paginateAndShow 中的 rAF / observer 副作用
+	 * 直接植入私有字段，让我们可以独立测试 nextPage/prevPage/isAtLastPage 边界
+	 */
+	function makeActivePaginator(args: {
+		clientWidth: number;
+		scrollWidth: number;
+		scrollLeft: number;
+		totalPages: number;
+		currentPage: number;
+	}): { paginator: PagePaginator; scrollView: HTMLElement } {
+		const { sizer, scrollView } = createMultiColumnDom({
+			clientWidth: args.clientWidth,
+			scrollWidth: args.scrollWidth,
+			scrollLeft: args.scrollLeft,
+		});
+		const paginator = new PagePaginator({
+			container: sizer,
+			onNavigatePrev,
+			onNavigateNext,
+			hasPrevChapter: () => true,
+			hasNextChapter: () => true,
+		});
+		(paginator as any)._isActive = true;
+		(paginator as any)._totalPages = args.totalPages;
+		(paginator as any)._currentPage = args.currentPage;
+		return { paginator, scrollView };
+	}
+
+	it('isAtLastPage() returns true when scrollLeft + clientWidth >= scrollWidth - 1', () => {
+		const { paginator } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,        // 3 页
+			scrollLeft: 1600,         // 滚到最后一页起始
+			totalPages: 3,
+			currentPage: 3,
+		});
+		expect(paginator.isAtLastPage()).toBe(true);
+	});
+
+	it('isAtLastPage() returns true even when _currentPage is stale (smooth scroll 滞后)', () => {
+		// 核心 bug：DOM 已经滚到最后一页，但 _currentPage 还停在 2
+		const { paginator } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 1600,         // 已在末页
+			totalPages: 3,
+			currentPage: 2,           // 缓存滞后
+		});
+		expect(paginator.isAtLastPage()).toBe(true);
+	});
+
+	it('isAtFirstPage() returns true when scrollLeft is 0 even if _currentPage is stale', () => {
+		const { paginator } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 0,
+			totalPages: 3,
+			currentPage: 2,           // 缓存滞后
+		});
+		expect(paginator.isAtFirstPage()).toBe(true);
+	});
+
+	it('nextPage() calls onNavigateNext when isAtLastPage is true regardless of _currentPage', () => {
+		const { paginator, scrollView } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 1600,         // 已在末页
+			totalPages: 3,
+			currentPage: 2,           // 缓存滞后（关键回归点）
+		});
+		const scrollBySpy = vi.spyOn(scrollView, 'scrollBy').mockImplementation(() => {});
+
+		const result = paginator.nextPage();
+
+		expect(result).toBe(false);
+		expect(onNavigateNext).toHaveBeenCalledTimes(1);
+		expect(scrollBySpy).not.toHaveBeenCalled();
+	});
+
+	it('nextPage() does NOT call onNavigateNext when not at end (should call scrollBy)', () => {
+		const { paginator, scrollView } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 0,            // 在第 1 页
+			totalPages: 3,
+			currentPage: 1,
+		});
+		const scrollBySpy = vi.spyOn(scrollView, 'scrollBy').mockImplementation(() => {});
+
+		const result = paginator.nextPage();
+
+		expect(result).toBe(true);
+		expect(onNavigateNext).not.toHaveBeenCalled();
+		expect(scrollBySpy).toHaveBeenCalledTimes(1);
+		expect(scrollBySpy.mock.calls[0][0]).toMatchObject({ left: 800 });
+	});
+
+	it('prevPage() calls onNavigatePrev when isAtFirstPage is true even with stale _currentPage', () => {
+		const { paginator, scrollView } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 0,            // 已在首页
+			totalPages: 3,
+			currentPage: 2,           // 缓存滞后
+		});
+		const scrollBySpy = vi.spyOn(scrollView, 'scrollBy').mockImplementation(() => {});
+
+		const result = paginator.prevPage();
+
+		expect(result).toBe(false);
+		expect(onNavigatePrev).toHaveBeenCalledTimes(1);
+		expect(scrollBySpy).not.toHaveBeenCalled();
+	});
+
+	it('destroy() cancels pending rAFs from forceRerender', () => {
+		const { paginator, scrollView } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 0,
+			totalPages: 3,
+			currentPage: 1,
+		});
+		// 为 forceRerender 提供 CSS 变量初值
+		scrollView.style.setProperty('--deeppdf-col-width', '500px');
+
+		// 捕获每次 requestAnimationFrame 的 id
+		const rafIds: number[] = [];
+		const realRaf = global.requestAnimationFrame;
+		const realCaf = global.cancelAnimationFrame;
+		let nextId = 1;
+		const pending = new Map<number, FrameRequestCallback>();
+		global.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+			const id = nextId++;
+			pending.set(id, cb);
+			rafIds.push(id);
+			return id;
+		}) as any;
+		const cancelSpy = vi.fn((id: number) => {
+			pending.delete(id);
+		});
+		global.cancelAnimationFrame = cancelSpy as any;
+
+		try {
+			(paginator as any).forceRerender();
+			// forceRerender 第一层立刻排队一个 rAF
+			expect(rafIds.length).toBeGreaterThanOrEqual(1);
+			const queuedBeforeDestroy = pending.size;
+			expect(queuedBeforeDestroy).toBeGreaterThan(0);
+
+			paginator.destroy();
+
+			// destroy 应取消所有挂起 rAF
+			expect(cancelSpy).toHaveBeenCalled();
+			expect(pending.size).toBe(0);
+		} finally {
+			global.requestAnimationFrame = realRaf;
+			global.cancelAnimationFrame = realCaf;
+		}
+	});
+
+	it('forceRerender mutations are skipped after destroy (no overflow override)', () => {
+		const { paginator, scrollView } = makeActivePaginator({
+			clientWidth: 800,
+			scrollWidth: 2400,
+			scrollLeft: 0,
+			totalPages: 3,
+			currentPage: 1,
+		});
+		scrollView.style.setProperty('--deeppdf-col-width', '500px');
+
+		// 手动控制 rAF：把每个回调入队，destroy 后再 flush，验证它们都早退
+		const callbacks: FrameRequestCallback[] = [];
+		const realRaf = global.requestAnimationFrame;
+		const realCaf = global.cancelAnimationFrame;
+		// 注意：destroy 中的 cancelAnimationFrame 会从我们队列里清掉，本地实现要兼容
+		const idToIdx = new Map<number, number>();
+		let nextId = 1;
+		global.requestAnimationFrame = ((cb: FrameRequestCallback): number => {
+			const id = nextId++;
+			idToIdx.set(id, callbacks.length);
+			callbacks.push(cb);
+			return id;
+		}) as any;
+		global.cancelAnimationFrame = ((id: number) => {
+			const idx = idToIdx.get(id);
+			if (idx != null) callbacks[idx] = (() => {}) as FrameRequestCallback;
+			idToIdx.delete(id);
+		}) as any;
+
+		try {
+			(paginator as any).forceRerender();
+			paginator.destroy();
+
+			// destroy 把 scrollView ref 没断（destroy 不置空 scrollView），
+			// 但 _isActive=false。手动 flush 队列，每个 cb 应早退
+			scrollView.style.overflow = 'visible'; // sentinel
+			while (callbacks.length > 0) {
+				const cb = callbacks.shift()!;
+				cb(0);
+			}
+			// 验证 forceRerender 内的 overflow='hidden' 没有覆盖我们的 sentinel
+			expect(scrollView.style.overflow).toBe('visible');
+		} finally {
+			global.requestAnimationFrame = realRaf;
+			global.cancelAnimationFrame = realCaf;
+		}
+	});
+});
