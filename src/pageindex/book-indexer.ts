@@ -1045,27 +1045,33 @@ function cleanMdContent(content: string): string {
 
 /**
  * Collect node summaries from parse result structure
- * Returns a plain object of chapter title → summary
+ * Returns a nodeId-keyed object: { [nodeId]: { title, summary } }
+ *
+ * nodeId-keyed (not title-keyed) because multiple sibling nodes can share the
+ * same title (e.g. after `splitLargeEpubPages` truncates titles to "#"/"##"),
+ * which would cause key collisions in a title-keyed dict. nodeId is unique.
  */
-function collectNodeSummaries(structure: TreeNode[]): Record<string, string> {
+export function collectNodeSummaries(
+  structure: TreeNode[],
+): Record<string, { title: string; summary: string }> {
   if (!structure) return {};
 
-  const summaries: Record<string, string> = {};
+  const map: Record<string, { title: string; summary: string }> = {};
 
   for (const root of structure) {
     // Root level
-    if (root.summary && root.title) {
-      summaries[root.title] = root.summary;
+    if (root.summary && root.nodeId) {
+      map[root.nodeId] = { title: root.title, summary: root.summary };
     }
     // L1 nodes (chapters)
     for (const node of root?.nodes || []) {
-      if (node.summary && node.title) {
-        summaries[node.title] = node.summary;
+      if (node.summary && node.nodeId) {
+        map[node.nodeId] = { title: node.title, summary: node.summary };
       }
     }
   }
 
-  return summaries;
+  return map;
 }
 
 /**

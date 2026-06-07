@@ -210,8 +210,9 @@ describe('splitLargeEpubPages - mixed sizes', () => {
     expect(result.pages[0].text).toBe(text);
   });
 
-  it('generates titles from heading prefix for split chapters (Chinese markers)', () => {
-    // 中文 第X章 提取整个前缀作为 title（“第一章”）
+  it('Chinese chapter marker: title is the heading text after marker (not the marker itself)', () => {
+    // 修复后: split 出来的 chapter title 是 prefix 之后的 heading 文本，不是 prefix 本身
+    // 例: "第一章 开篇" → title="开篇"（不是"第一章"）
     const text = `前言\n第一章 开篇\n内容A\n第二章 展开\n内容B\n第三章 结尾\n内容C`;
     const { pages, chapters } = buildInput(text);
     pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
@@ -220,14 +221,14 @@ describe('splitLargeEpubPages - mixed sizes', () => {
 
     expect(result.split).toBe(true);
     expect(result.chapters.length).toBe(4);
-    expect(result.chapters[1].title).toContain('第一章');
-    expect(result.chapters[2].title).toContain('第二章');
-    expect(result.chapters[3].title).toContain('第三章');
+    expect(result.chapters[1].title).toBe('开篇');
+    expect(result.chapters[2].title).toBe('展开');
+    expect(result.chapters[3].title).toBe('结尾');
   });
 
-  it('ATX heading prefix: title is the marker only (existing behavior, not the full line)', () => {
-    // ATX heading #/## 提取的 title 是前缀本身（# / ##），不是整行标题。
-    // 这是 pre-existing 行为，保留以便后续重构时不产生静默变更。
+  it('ATX heading: title is the full heading text, not the prefix', () => {
+    // 修复后: ATX heading 提取的 title 是 prefix 之后的 heading 文本
+    // 例: "## Title B" → title="Title B"（不是"##"）
     const text = `# Title A\n内容A\n## Title B\n内容B`;
     const { pages, chapters } = buildInput(text);
     pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
@@ -236,7 +237,71 @@ describe('splitLargeEpubPages - mixed sizes', () => {
 
     expect(result.split).toBe(true);
     expect(result.chapters.length).toBe(2);
-    expect(result.chapters[0].title).toBe('#');
-    expect(result.chapters[1].title).toBe('##');
+    expect(result.chapters[0].title).toBe('Title A');
+    expect(result.chapters[1].title).toBe('Title B');
+  });
+
+  it('ATX heading ## 中文: title is the heading text, not "##"', () => {
+    // 真实场景: AI 极简经济学 索引时被 splitLargeEpubPages 切碎，
+    // 修复前所有 ## 标题子节点 title="##"，导致 S1 Inspectional 无法 scope
+    const text = `前言\n## 判断的价值\n内容A\n## 回报函数工程\n内容B\n## 整合\n内容C`;
+    const { pages, chapters } = buildInput(text);
+    pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
+
+    const result = splitLargeEpubPages(pages, chapters);
+
+    expect(result.split).toBe(true);
+    expect(result.chapters.length).toBe(4);
+    // 第一段无 heading prefix，保留原 chapter.title
+    expect(result.chapters[0].title).toBe('Original Chapter');
+    // 后续段: heading 全文作为 title
+    expect(result.chapters[1].title).toBe('判断的价值');
+    expect(result.chapters[2].title).toBe('回报函数工程');
+    expect(result.chapters[3].title).toBe('整合');
+  });
+
+  it('English chapter marker: title is the heading text after "Chapter N"', () => {
+    // 英文场景: "Chapter 1 Social Currency" → title="Social Currency"
+    const text = `Intro\nChapter 1 Social Currency\nContent A\nChapter 2 Triggers\nContent B`;
+    const { pages, chapters } = buildInput(text);
+    pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
+
+    const result = splitLargeEpubPages(pages, chapters);
+
+    expect(result.split).toBe(true);
+    expect(result.chapters.length).toBe(3);
+    expect(result.chapters[1].title).toBe('Social Currency');
+    expect(result.chapters[2].title).toBe('Triggers');
+  });
+
+  it('Part marker: title is the heading text after "Part X"', () => {
+    // Part 标记: "Part I Introduction" → title="Introduction"
+    const text = `Preface\nPart I Introduction\nContent A\nPart II Methods\nContent B`;
+    const { pages, chapters } = buildInput(text);
+    pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
+
+    const result = splitLargeEpubPages(pages, chapters);
+
+    expect(result.split).toBe(true);
+    expect(result.chapters.length).toBe(3);
+    expect(result.chapters[1].title).toBe('Introduction');
+    expect(result.chapters[2].title).toBe('Methods');
+  });
+
+  it('falls back to chapter.title when heading has no text after prefix', () => {
+    // 防御: 当 heading 文本为空时（如 "## " 单独成行），回退到 chapter.title
+    const text = `前言\n## \n内容A\n## 真实标题\n内容B`;
+    const { pages, chapters } = buildInput(text);
+    pages[0].tokenCount = EPUB_SPLIT_THRESHOLD + 1;
+
+    const result = splitLargeEpubPages(pages, chapters);
+
+    expect(result.split).toBe(true);
+    // 第一段（含"前言"）保留原 title "Original Chapter"
+    expect(result.chapters[0].title).toBe('Original Chapter');
+    // 第二段 heading 为空，回退到 chapter.title
+    expect(result.chapters[1].title).toBe('Original Chapter');
+    // 第三段正常
+    expect(result.chapters[2].title).toBe('真实标题');
   });
 });
