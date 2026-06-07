@@ -52,7 +52,8 @@ export interface EpubChapter {
 function createTurndownServiceWithBlocks(
   chapterIndex: number,
   blockMap: Map<string, string>,
-  blocks: string[]
+  blocks: string[],
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
 ): TurndownService {
   const turndown = new TurndownService({
     headingStyle: "atx",
@@ -180,7 +181,7 @@ function createTurndownServiceWithBlocks(
         if (!content.trim()) return "";
 
         // --- Implicit H3 heading detection ---
-        const headingText = detectImplicitHeading(node);
+        const headingText = detectImplicitHeading(node, strategy);
         if (headingText !== null) {
           const cleaned = headingText.replace(/[ \t]+/g, " ").trim();
           if (!cleaned) return "";
@@ -292,13 +293,18 @@ function createTurndownServiceWithBlocks(
  *   2. <p><span class="bold*">short text</span></p>  →  ### text  (bold-only paragraphs)
  *   3. <p><a id="xxx"></a>short text</p>  →  ### text  (anchor-only short paragraphs)
  */
-export function detectImplicitHeading(node: any): string | null {
+export function detectImplicitHeading(
+  node: any,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
+): string | null {
   if (node.nodeName !== "P") return null;
 
   const nodeText = (node.textContent || "").trim();
 
   // Pattern 1: ◆ prefix (e.g. "◆ 模仿的心态")
+  // Skip when strategy says ◆ lines are TOC entries, not headings
   if (/^◆\s+/.test(nodeText)) {
+    if (strategy?.diamondLines === "tocEntries") return null;
     return nodeText.replace(/^◆\s+/, "");
   }
 
@@ -492,7 +498,8 @@ export function mergeFragmentedParagraphs(
  */
 function extractTextFromHTMLWithBlocks(
   html: string,
-  chapterIndex: number
+  chapterIndex: number,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
 ): { content: string; blockMap: Map<string, string>; blocks: string[] } {
   // Remove <head> entirely — some Kobo EPUBs use self-closing <title/>
   // which DOMParser in text/html mode treats as an opening <title> tag,
@@ -506,8 +513,7 @@ function extractTextFromHTMLWithBlocks(
   const blockMap = new Map<string, string>();
   const blocks: string[] = [];
 
-  // Use Turndown for HTML to Markdown conversion with block IDs
-  const turndown = createTurndownServiceWithBlocks(chapterIndex, blockMap, blocks);
+  const turndown = createTurndownServiceWithBlocks(chapterIndex, blockMap, blocks, strategy);
   let markdown = turndown.turndown(cleanHtml);
 
   // Merge fragmented paragraphs
@@ -563,10 +569,146 @@ function cleanEpubTitle(title: string): string {
   return cleaned || title.trim();
 }
 
+/** NCX TOC entry */
+interface NcxTocEntry {
+  text: string;
+  src: string; // "file#anchor" or just "file"
+}
+
+/** Section extracted from HTML split at NCX anchor */
+interface HtmlSection {
+  title: string;
+  anchor: string;
+  html: string;
+}
+
+/**
+ * Parse NCX TOC entries from EPUB zip.
+ * Returns entries with text and src (file#anchor).
+ */
+function parseNcxToc(zip: AdmZip, basePath: string): NcxTocEntry[] {
+  const ncxFiles = zip.getEntries().filter((e) => e.entryName.endsWith(".ncx"));
+  if (ncxFiles.length === 0) return [];
+  const ncxXml = ncxFiles[0].getData().toString("utf-8");
+
+  const textMatches = [...ncxXml.matchAll(/<text>([^<]+)<\/text>/g)];
+  const srcMatches = [...ncxXml.matchAll(/<content\s+src="([^"]+)"/g)];
+
+  const entries: NcxTocEntry[] = [];
+  for (let i = 0; i < Math.min(textMatches.length, srcMatches.length); i++) {
+    const text = textMatches[i][1].trim();
+    const src = srcMatches[i][1];
+    if (text) entries.push({ text, src });
+  }
+  return entries;
+}
+
+/**
+ * Group NCX entries by source file.
+ * NCX src uses relative paths; we need to match against manifestMap's full paths.
+ * Returns map: fullFilePath → entries for that file.
+ */
+function groupNcxEntriesByFile(
+  entries: NcxTocEntry[],
+  basePath: string
+): Map<string, NcxTocEntry[]> {
+  const result = new Map<string, NcxTocEntry[]>();
+  for (const entry of entries) {
+    const [file] = entry.src.split("#");
+    const fullPath = path.join(basePath, file).replace(/\\/g, "/");
+    if (!result.has(fullPath)) result.set(fullPath, []);
+    result.get(fullPath)!.push(entry);
+  }
+  return result;
+}
+
+/**
+ * Split HTML at NCX anchor points.
+ *
+ * Finds each anchor in the HTML, then extracts the content between
+ * that anchor and the next one. Returns one HtmlSection per NCX entry.
+ */
+function splitHtmlByAnchors(
+  html: string,
+  entries: NcxTocEntry[]
+): HtmlSection[] {
+  // Find anchor positions in HTML
+  interface AnchorPos {
+    anchor: string;
+    title: string;
+    index: number;
+  }
+
+  const positions: AnchorPos[] = [];
+
+  for (const entry of entries) {
+    const anchor = entry.src.split("#")[1];
+    if (!anchor) {
+      // No anchor — skip (file-level entry like cover page)
+      continue;
+    }
+
+    // Try multiple patterns to find the anchor in HTML
+    const patterns = [
+      // <a id="anchor">
+      new RegExp(`<a[^>]*id="${escapeRegex(anchor)}"[^>]*>`, "i"),
+      // id="anchor" on any element
+      new RegExp(`id="${escapeRegex(anchor)}"`, "i"),
+      // <span id="anchor">
+      new RegExp(`<span[^>]*id="${escapeRegex(anchor)}"[^>]*>`, "i"),
+      // name="anchor" (old HTML)
+      new RegExp(`name="${escapeRegex(anchor)}"`, "i"),
+    ];
+
+    for (const pattern of patterns) {
+      const match = pattern.exec(html);
+      if (match) {
+        positions.push({
+          anchor,
+          title: entry.text,
+          index: match.index,
+        });
+        break;
+      }
+    }
+  }
+
+  // Sort by position in HTML
+  positions.sort((a, b) => a.index - b.index);
+
+  if (positions.length === 0) {
+    // No anchors found — return entire HTML as one section
+    return [{ title: entries[0]?.text || "Section", anchor: "start", html }];
+  }
+
+  // Split at positions
+  const sections: HtmlSection[] = [];
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i].index;
+    const end = i + 1 < positions.length ? positions[i + 1].index : html.length;
+    const sectionHtml = html.substring(start, end);
+    sections.push({
+      title: positions[i].title,
+      anchor: positions[i].anchor,
+      html: sectionHtml,
+    });
+  }
+
+  return sections;
+}
+
+/** Escape special regex characters */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Parse EPUB file
  */
-export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
+export async function parseEpub(
+  input: string | Buffer,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
+): Promise<EpubInfo> {
   let zip: AdmZip;
 
   if (typeof input === "string") {
@@ -749,6 +891,81 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
   const chapters: EpubChapter[] = [];
   let order = 0;
 
+  // ─── Strategy-driven path: NCX anchor splitting ───
+  if (strategy?.splitStrategy === "ncxAnchors") {
+    // Parse NCX TOC and group entries by source file
+    const ncxEntries = parseNcxToc(zip, basePath);
+    const ncxByFile = groupNcxEntriesByFile(ncxEntries, basePath);
+
+    for (const id of readingOrder) {
+      const href = manifestMap.get(id);
+      if (!href) continue;
+      // href already includes basePath (manifestMap stores full paths)
+      const entry = zip.getEntry(href);
+      if (!entry) continue;
+      const html = entry.getData().toString("utf-8");
+
+      // Get NCX entries for this file
+      const fileEntries = ncxByFile.get(href) || [];
+      if (fileEntries.length === 0) {
+        // No NCX entries for this file — skip or keep as-is
+        const result = extractTextFromHTMLWithBlocks(html, order, strategy);
+        if (result.content.trim()) {
+          chapters.push({
+            id,
+            title: `Section ${order + 1}`,
+            content: result.content,
+            tokenCount: countTokens(result.content),
+            order: order++,
+            href,
+            blockMap: result.blockMap,
+            blocks: result.blocks,
+          });
+        }
+        continue;
+      }
+
+      // Split HTML at NCX anchor points
+      const sections = splitHtmlByAnchors(html, fileEntries);
+
+      for (const section of sections) {
+        if (!section.html.trim()) continue;
+
+        // Skip noise entries (书名页, 版权页, 目录, etc.)
+        const noiseKeywords = ["书名页", "版权页", "扉页", "目录",
+          "版权信息", "图书在版编目", "CIP"];
+        if (noiseKeywords.some(kw => section.title.includes(kw))) continue;
+
+        const result = extractTextFromHTMLWithBlocks(section.html, order, strategy);
+
+        // Skip empty/image-only sections
+        const textOnly = result.content
+          .replace(/#!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/[^\w\u4e00-\u9fff]/g, "")
+          .trim();
+        if (textOnly.length === 0) continue;
+
+        // Use NCX text as title (strategy: titleSource=ncxText)
+        const chapterTitle = strategy?.titleSource === "ncxText"
+          ? section.title
+          : `Chapter ${order + 1}`;
+
+        chapters.push({
+          id: `${id}#${section.anchor}`,
+          title: chapterTitle,
+          content: result.content,
+          tokenCount: countTokens(result.content),
+          order: order++,
+          href: `${href}#${section.anchor}`,
+          blockMap: result.blockMap,
+          blocks: result.blocks,
+        });
+      }
+    }
+  } else {
+  // ─── Default path: one chapter per spine item ───
+
   for (const id of readingOrder) {
     const href = manifestMap.get(id);
     if (!href) continue;
@@ -757,7 +974,7 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     if (!entry) continue;
 
     const html = entry.getData().toString("utf-8");
-    const result = extractTextFromHTMLWithBlocks(html, order);
+    const result = extractTextFromHTMLWithBlocks(html, order, strategy);
 
     // Extract chapter title
     // Strategy: 1) Try <h1> first, then <h2>, etc. (strip inner HTML tags),
@@ -878,6 +1095,8 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     });
   }
 
+  } // end else (default path)
+
   return {
     title,
     author: creator,
@@ -963,12 +1182,21 @@ export function splitLargeEpubPages(
     for (let j = 0; j < parts.length; j++) {
       const part = parts[j].trim();
       if (!part) continue;
-      const titleMatch = part.match(EPUB_TITLE_PREFIX);
-      const title = titleMatch
-        ? titleMatch[0].trim()
-        : j === 0
-          ? chapter.title
-          : `Section ${newChapters.length + 1}`;
+      // 提取 part 第一行的 heading 全文：匹配 prefix（# / ## / 第X章 / Chapter N / Part X），
+      // 取 prefix 之后的 heading 文本，而不是把 prefix 本身当作 title
+      // 例: "## 判断的价值" → prefix "## " → slice 后 "判断的价值" → cleanTitle 标准化
+      const firstLine = part.split("\n", 1)[0];
+      const titleMatch = firstLine.match(EPUB_TITLE_PREFIX);
+      let title: string;
+      if (titleMatch) {
+        const headingText = cleanTitle(firstLine.slice(titleMatch[0].length));
+        // 防御: cleanTitle 把 heading 文本清空时（如 "## " 单独成行），回退到 chapter.title
+        title = headingText || chapter.title;
+      } else if (j === 0) {
+        title = chapter.title;
+      } else {
+        title = `Section ${newChapters.length + 1}`;
+      }
       newPages.push({ text: part, tokenCount: countTokens(part) });
       newChapters.push({ ...chapter, title, content: part });
     }

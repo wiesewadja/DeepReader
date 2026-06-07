@@ -26,8 +26,8 @@ export interface ObsidianExportOptions {
   maxDepth?: number;
   /** 文档级描述（写入 MOC 文件） */
   docDescription?: string;
-  /** 章节摘要映射 (title → summary) */
-  nodeSummaries?: Record<string, string>;
+  /** 章节摘要映射 (nodeId → { title, summary }) — nodeId-keyed 以避免 title 撞车 */
+  nodeSummaries?: Record<string, { title: string; summary: string }>;
   /** 导出目录名（如不提供则使用 bookInfo.title） */
   exportName?: string;
   /** 封面图片相对路径（用于 Base 查询） */
@@ -255,6 +255,15 @@ async function createChapterNote(
     );
   }
 
+  // Remove image references that don't resolve to actual files on disk
+  content = content.replace(
+    /!\[([^\]]*)\]\(([^)]+\.(?:jpg|jpeg|png|gif|svg|webp))\)/gi,
+    (_match, alt: string, imgPath: string) => {
+      const resolved = path.resolve(bookDir, imgPath);
+      return fs.existsSync(resolved) ? _match : `*${alt || "图像"}*`;
+    }
+  );
+
   // Clean Markdown heading lines: remove stray * and excessive -
   // e.g. "#**第****2****章**" → "# 第2章"
   // e.g. "## --第----1----章--" → "## 第1章"
@@ -274,7 +283,11 @@ async function createChapterNote(
   content = fixAbnormalAsterisks(content);
 
   // Summary callout — 放在正文最前面
-  const nodeSummary = options.nodeSummaries?.[chapter.title];
+  // Lookup by nodeId (not title) to avoid key collisions when multiple chapters
+  // share the same title (e.g. after `splitLargeEpubPages` truncation).
+  // nodeId 格式: "0001", "0002", ... 与 buildEpubTree 的 `String(i+1).padStart(4,"0")` 对齐
+  const nodeId = String(index + 1).padStart(4, "0");
+  const nodeSummary = options.nodeSummaries?.[nodeId]?.summary;
   if (nodeSummary) {
     // 将多行 summary 转为 Obsidian callout 格式（每行都需要 > 前缀）
     const summaryLines = nodeSummary.split('\n').map((line: string) => `> ${line}`).join('\n');
