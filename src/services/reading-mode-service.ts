@@ -420,9 +420,10 @@ export class ReadingModeService {
             serviceLog('[DeepPDF] file-open event:', file?.path);
             if (file && this.isChapterFile(file)) {
                 if (this.autoEnable) {
-                    // 同一本书不重复激活分页模式，新章节用原始滚动模式打开
                     const bookName = this.getBookNameFromFile(file);
-                    if (!this.isActive || this.activatedBookForReading !== bookName) {
+                    // Re-activate if: not active, different book, or different file (new chapter)
+                    const isDifferentFile = this.currentFile?.path !== file.path;
+                    if (!this.isActive || this.activatedBookForReading !== bookName || isDifferentFile) {
                         this.activate(file);
                     }
                 }
