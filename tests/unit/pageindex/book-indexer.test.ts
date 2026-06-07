@@ -578,4 +578,59 @@ describe("book-indexer", () => {
       await fs.rm(testFilePath, { force: true });
     });
   });
+
+  describe("collectNodeSummaries - nodeId-keyed", () => {
+    it("two sibling nodes with same title get separate summaries (regression: bug 撞车)", async () => {
+      // 修复前: collectNodeSummaries 用 title 作 dict key，"##" 标题撞车，最后一次写入胜出
+      // 修复后: 用 nodeId 作 key，每个节点独立保留自己的 summary
+      const { collectNodeSummaries } = await import("@/pageindex/book-indexer");
+      const structure = [
+        { nodeId: "0001", title: "Ch1", summary: "Ch1 summary" },
+        { nodeId: "0002", title: "##", summary: "should-be-Ch2" },
+        { nodeId: "0003", title: "##", summary: "should-be-Ch3" },
+      ];
+      const result = collectNodeSummaries(structure);
+      expect(result["0001"].summary).toBe("Ch1 summary");
+      expect(result["0002"].summary).toBe("should-be-Ch2");
+      expect(result["0003"].summary).toBe("should-be-Ch3");
+    });
+
+    it("child nodes with same title as parent get separate entries", async () => {
+      // 真实场景: 父节点 "第8章" + 子节点 title="##" (splitLargeEpubPages 修复前的副作用)
+      // 修复后: 每个 nodeId 都有独立 entry，frontmatter 摘要不再错位
+      const { collectNodeSummaries } = await import("@/pageindex/book-indexer");
+      const structure = [
+        {
+          nodeId: "0001",
+          title: "第8章 判断的价值",
+          summary: "parent-summary",
+          nodes: [
+            { nodeId: "0022", title: "##", summary: "child-0022" },
+            { nodeId: "0023", title: "##", summary: "child-0023" },
+          ],
+        },
+      ];
+      const result = collectNodeSummaries(structure);
+      expect(result["0001"].summary).toBe("parent-summary");
+      expect(result["0022"].summary).toBe("child-0022");
+      expect(result["0023"].summary).toBe("child-0023");
+    });
+
+    it("node without summary is excluded", async () => {
+      const { collectNodeSummaries } = await import("@/pageindex/book-indexer");
+      const structure = [
+        { nodeId: "0001", title: "Ch1", summary: "" },
+        { nodeId: "0002", title: "Ch2", summary: "has-summary" },
+      ];
+      const result = collectNodeSummaries(structure);
+      expect(result["0001"]).toBeUndefined();
+      expect(result["0002"].summary).toBe("has-summary");
+    });
+
+    it("empty structure returns empty object", async () => {
+      const { collectNodeSummaries } = await import("@/pageindex/book-indexer");
+      expect(collectNodeSummaries([])).toEqual({});
+      expect(collectNodeSummaries(null as any)).toEqual({});
+    });
+  });
 });

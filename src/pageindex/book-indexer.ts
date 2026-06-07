@@ -199,15 +199,25 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // PageIndex goes through: parsing → tree building → summary generation
   const onParseProgress = (progress: { percent: number; message: string; stage: string }) => {
     const mappedPercent = 5 + Math.round(progress.percent * 0.65);
+    // Map internal "complete" to "parse_complete" to prevent .indexing.json
+    // from being misread as fully complete by loadIndexes polling (which
+    // checks step === "complete"). We're only 70% done at this point.
+    const safeStep = progress.stage === 'complete' ? 'parse_complete' : (progress.stage || 'parse_document');
     reportProgress({
       percent: Math.min(mappedPercent, 70),
-      step: progress.stage || "parse_document",
+      step: safeStep,
       stepLabel: progress.message || "处理文档",
     });
   };
 
   // B1 parse_document
   tracer.startPhase("parse_document");
+
+  // Early cover save: EPUB cover is available right after parseEpub (~5% progress),
+  // well before the full indexing pipeline completes. Save it immediately so the
+  // library UI can show the cover during the remaining LLM-heavy steps.
+  let earlyCoverSaved = false;
+  const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
 
   const pageIndex = new PageIndex({
     model: options.model,
@@ -219,6 +229,21 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     addDocDescription: options.addDocDescription ?? DEFAULT_ADD_DOC_DESCRIPTION,
     onProgress: onParseProgress,
     onLlmCall: (call) => tracer.recordLlmCall(call),
+    onCoverReady: (cover, title) => {
+      if (!cover) return;
+      try {
+        const exportName = simplifyTitle(title);
+        const coversDir = path.join(deepReaderDir, DEFAULT_COVERS_PATH);
+        fs.mkdir(coversDir, { recursive: true }).then(() => {
+          const ext = path.extname(cover.name) || ".jpg";
+          const coverPath = path.join(coversDir, `${exportName}${ext}`);
+          fs.writeFile(coverPath, cover.data).then(() => {
+            earlyCoverSaved = true;
+            piLog(`[book-indexer] Early cover saved: ${coverPath}`);
+          }).catch(() => {});
+        }).catch(() => {});
+      } catch { /* best-effort, non-blocking */ }
+    },
   });
 
   let parseResult;
@@ -269,7 +294,6 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   // Simplify export name: strip subtitles after separators for cleaner directory names
   const exportName = simplifyTitle(rootTitle);
   tracer.setTitle(exportName);
-  const deepReaderDir = path.join(options.outputDir, DEFAULT_EXPORT_DIR);
   const bookDir = path.join(deepReaderDir, exportName);
 
   // Ensure DeepReader directory exists
@@ -282,8 +306,12 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
   // Track cover relative path for frontmatter
   let coverRelPath = "";
-  if (parseResult.coverImage) {
-    // EPUB: save extracted cover image
+  if (earlyCoverSaved && parseResult.coverImage) {
+    // Already saved by onCoverReady callback during parseEpub — just compute path
+    const ext = path.extname(parseResult.coverImage.name) || ".jpg";
+    coverRelPath = `DeepReader/${DEFAULT_COVERS_PATH}${exportName}${ext}`;
+  } else if (parseResult.coverImage) {
+    // EPUB: save extracted cover image (early save didn't fire or failed)
     try {
       const ext = path.extname(parseResult.coverImage.name) || ".jpg";
       const coverPath = path.join(coversDir, `${exportName}${ext}`);
@@ -683,13 +711,24 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
     }
   }
   // Step 8: Finalize — success path
-  reportProgress({
-    percent: 100,
-    step: "complete",
-    stepLabel: "索引完成",
-  });
+  // Notify UI directly (path A: onProgress callback) but do NOT write to
+  // .indexing.json — cleanupStatus will delete it momentarily, and writing
+  // step:"complete" / percent:100 there creates a race with loadIndexes
+  // (path B: polling) which may see it and prematurely mark the index as done.
+  if (options.onProgress) {
+    options.onProgress({ percent: 100, step: "complete", stepLabel: "索引完成" });
+  }
+  // Mark book-meta as ready BEFORE deleting .indexing.json so that
+  // loadIndexes never sees a gap (no .indexing.json + book-meta still "indexing")
+  try {
+    const metaPath = path.join(indexDir, "book-meta.json");
+    const metaRaw = await fs.readFile(metaPath, "utf-8");
+    const meta = JSON.parse(metaRaw);
+    meta.status = "ready";
+    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2));
+  } catch { /* best-effort */ }
   tracer.finalize(true);
-  // 成功时清理进度文件
+  // 成功时清理进度文件 — .indexing.json 的删除标志着真正完成
   cleanupStatus();
   return {
     bookId,
@@ -745,6 +784,7 @@ async function buildBookMeta(
     filePath,
     fileType,
     indexedAt: new Date().toISOString(),
+    status: "indexing",
     embedding: embedding ? {
       provider: embedding.provider,
       model: embedding.model || "text-embedding-3-small",
@@ -1005,27 +1045,33 @@ function cleanMdContent(content: string): string {
 
 /**
  * Collect node summaries from parse result structure
- * Returns a plain object of chapter title → summary
+ * Returns a nodeId-keyed object: { [nodeId]: { title, summary } }
+ *
+ * nodeId-keyed (not title-keyed) because multiple sibling nodes can share the
+ * same title (e.g. after `splitLargeEpubPages` truncates titles to "#"/"##"),
+ * which would cause key collisions in a title-keyed dict. nodeId is unique.
  */
-function collectNodeSummaries(structure: TreeNode[]): Record<string, string> {
+export function collectNodeSummaries(
+  structure: TreeNode[],
+): Record<string, { title: string; summary: string }> {
   if (!structure) return {};
 
-  const summaries: Record<string, string> = {};
+  const map: Record<string, { title: string; summary: string }> = {};
 
   for (const root of structure) {
     // Root level
-    if (root.summary && root.title) {
-      summaries[root.title] = root.summary;
+    if (root.summary && root.nodeId) {
+      map[root.nodeId] = { title: root.title, summary: root.summary };
     }
     // L1 nodes (chapters)
     for (const node of root?.nodes || []) {
-      if (node.summary && node.title) {
-        summaries[node.title] = node.summary;
+      if (node.summary && node.nodeId) {
+        map[node.nodeId] = { title: node.title, summary: node.summary };
       }
     }
   }
 
-  return summaries;
+  return map;
 }
 
 /**

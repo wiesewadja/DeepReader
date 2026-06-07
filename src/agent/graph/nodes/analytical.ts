@@ -60,7 +60,9 @@ export async function analyticalNode(
     return { analysisResult: '', toolResultsSnapshot: [] };
   }
 
-  // Use validated scope from pre-search node (fallback to raw if pre-search was skipped)
+  // Use validated scope from pre-search node (fallback to raw if pre-search was skipped).
+  // L5 的全量复核 hits 已由 S2-Pre 合并进 validatedScopeNodeIds（scope 单一收尾点），
+  // S2 不再单独处理 L5 状态。
   const scopeNodeIds = validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : rawScopeNodeIds;
   const currentNodeId = toolContext.book.currentNodeId;
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);

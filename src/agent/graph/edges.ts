@@ -6,6 +6,7 @@ import type { CognitiveEngineState } from './state';
 import { ReadingDepth } from './state';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import { resolveMode } from './utils/engine-helpers';
+import { agentLog as log } from '../../utils/logger.js';
 
 function hasDiagramIntent(_state: CognitiveEngineState): boolean {
   // 图表生成已迁移到 Hermes，暂时跳过
@@ -82,8 +83,24 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
  *   high enough to generate a direct answer (stored in analysisResult).
  *   Empty string means normal path → analytical.
  * - otherwise → analytical (run ReAct/PlanExecute)
+ *
+ * Two independent overrides force ANALYTICAL:
+ *  - correctionDetected: user is pushing back on a prior answer
+ *  - verifiedFullBookHits: S2-Pre ran L5 (negative-claim auto-verification)
+ *    and the full-book search found evidence that the previous turn's
+ *    "未出现" answer was wrong. Routing back to S2 lets the ReAct loop
+ *    re-analyze with the new evidence — the only robust fix, since
+ *    patching the analysis string and hoping S4 rephrases is unreliable.
  */
 export function routeAfterPreSearch(state: CognitiveEngineState): string {
+  if (state.correctionDetected) {
+    log(`[Edges] correctionDetected=true, 强制跳过早停 → analytical`);
+    return NODE_NAMES.ANALYTICAL;
+  }
+  if (state.verifiedFullBookHits && state.verifiedFullBookHits.length > 0) {
+    log(`[Edges] verifiedFullBookHits=${state.verifiedFullBookHits.length}, L5 状态机重启 → analytical`);
+    return NODE_NAMES.ANALYTICAL;
+  }
   if (state.earlyStopContent) {
     return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
   }

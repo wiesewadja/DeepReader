@@ -8,6 +8,7 @@
 
 import { Annotation, messagesStateReducer } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
+import type { BookSearchResultV2 } from '../../pageindex/book-types.js';
 
 /**
  * Reading depth levels based on Adler's "How to Read a Book" methodology.
@@ -86,6 +87,11 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   suggestedKeywords: Annotation<string[]>(overwriteWithDefault([])),
 
   // === S2: Analytical output ===
+  // 双源写入：可由 S2 Analytical (ReAct/PlanExecute) 写入，也可由 S2-Pre 早停
+  // 路径直接生成。两者的 LLM 质量不可比——S2-Pre 早停用的是 mainModel 一次性
+  // 输出（非 ReAct 工具循环），可能比 S2 ReAct 的结论更不严谨。L5（见下方
+  // verifiedFullBookHits + utils/claim-verifier.ts）会在下一轮自动复核这种
+  // 来自 S2-Pre 早停路径的"未出现"声明并触发状态机重启。
   analysisResult: Annotation<string>(),
   toolResultsSnapshot: Annotation<ToolResultSnapshot[]>(overwriteWithDefault([])),
 
@@ -102,6 +108,24 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // === Runtime ===
   bookId: Annotation<string>(),
   pdfName: Annotation<string>(),
+
+  // === Correction / hard-override signals ===
+  // Set by Router when the user's message looks like a pushback
+  // ("不，这里就有这个概念", "再搜索下" ...). Downstream nodes use this
+  // to (a) force ANALYTICAL path, (b) bypass early-stop, and
+  // (c) re-include the current chapter in scope.
+  correctionDetected: Annotation<boolean>(overwriteWithDefault(false)),
+
+  // === L5: Full-book negative-claim verification ===
+  // Set by S2-Pre when the pre-searched analysisResult (carried via
+  // the S1→S2 hand-off, see edge wiring) shows a negative claim
+  // ("未出现" etc.) and the full-book verification search surfaced
+  // meaningful hits. The routing layer (routeAfterPreSearch) checks
+  // this to force a state-machine restart at S2 Analytical — so
+  // S2 can do its own ReAct reasoning with the new evidence,
+  // rather than S4 patching a wrong answer. See
+  // utils/claim-verifier.ts:75 for the detection + search.
+  verifiedFullBookHits: Annotation<BookSearchResultV2[]>(overwriteWithDefault([])),
 
   // === Proactive guidance ===
   proactiveTrigger: Annotation<string>(),

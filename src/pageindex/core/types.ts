@@ -37,6 +37,8 @@ export interface PageIndexOptions {
   onProgress?: (progress: ProgressInfo) => void;
   /** LLM 调用追踪回调（可选，用于索引追踪日志） */
   onLlmCall?: (call: Omit<LlmCallTrace, "phase">) => void;
+  /** 封面数据就绪回调 — EPUB 在 parseEpub 后立即触发，早于 fromEpub 返回 */
+  onCoverReady?: (cover: { name: string; data: Buffer; mediaType: string } | undefined, title: string) => void;
   
   // OCR-specific options
   /** Extraction mode: 'text' for native PDFs, 'ocr' for scanned PDFs (default: 'text') */

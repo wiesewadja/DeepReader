@@ -420,9 +420,10 @@ export class ReadingModeService {
             serviceLog('[DeepPDF] file-open event:', file?.path);
             if (file && this.isChapterFile(file)) {
                 if (this.autoEnable) {
-                    // 同一本书不重复激活分页模式，新章节用原始滚动模式打开
                     const bookName = this.getBookNameFromFile(file);
-                    if (!this.isActive || this.activatedBookForReading !== bookName) {
+                    // Re-activate if: not active, different book, or different file (new chapter)
+                    const isDifferentFile = this.currentFile?.path !== file.path;
+                    if (!this.isActive || this.activatedBookForReading !== bookName || isDifferentFile) {
                         this.activate(file);
                     }
                 }
@@ -509,6 +510,8 @@ export class ReadingModeService {
                     container,
                     onNavigatePrev: () => this.navigateToPrev(),
                     onNavigateNext: () => this.navigateToNext(),
+                    hasPrevChapter: () => this.getChapterNavigation()?.prev != null,
+                    hasNextChapter: () => this.getChapterNavigation()?.next != null,
                     onPageChange: (page) => {
                         // 每翻页都记录 + 调度持久化（debounced 200ms）
                         if (this.currentFile) {
@@ -635,6 +638,24 @@ export class ReadingModeService {
         // 没有历史可写
         if (this.pageMemory.size === 0) return;
         await saveLastPages(vaultPath, this.pageMemory, this.lastReadAt, this._pluginId);
+    }
+
+    /**
+     * 在指定文件夹下查找最近阅读的文件路径。
+     * 用于书库点击书籍时定位到上次阅读的章节。
+     * @param folderPath 书籍章节文件夹路径（如 "DeepReader/书名"）
+     * @returns 最近阅读的文件路径，或 null
+     */
+    findMostRecentInFolder(folderPath: string): string | null {
+        let bestPath: string | null = null;
+        let bestTime = -1;
+        for (const [path, time] of this.lastReadAt) {
+            if (path.startsWith(folderPath + '/') && time > bestTime) {
+                bestTime = time;
+                bestPath = path;
+            }
+        }
+        return bestPath;
     }
 
     /**

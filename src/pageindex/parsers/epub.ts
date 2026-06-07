@@ -52,7 +52,8 @@ export interface EpubChapter {
 function createTurndownServiceWithBlocks(
   chapterIndex: number,
   blockMap: Map<string, string>,
-  blocks: string[]
+  blocks: string[],
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
 ): TurndownService {
   const turndown = new TurndownService({
     headingStyle: "atx",
@@ -150,8 +151,13 @@ function createTurndownServiceWithBlocks(
       },
     },
 
-    // Paragraphs - add block ID to every paragraph, detect potential h3 headings
+    // Paragraphs - add block ID to every paragraph, detect implicit H3 headings
     // Only process leaf paragraph elements (not containers with nested p/div)
+    //
+    // Implicit heading patterns detected in replacement():
+    //   1. "◆ prefix" lines  →  ### text  (Calibre TOC-style)
+    //   2. <p><span class="bold*">short text</span></p>  →  ### text  (bold-only paragraphs)
+    //   3. <p><a id="xxx"></a>short text</p>  →  ### text  (anchor-only short paragraphs)
     paragraph: {
       filter: (node: any) => {
         const tagName = node.tagName?.toLowerCase();
@@ -174,6 +180,15 @@ function createTurndownServiceWithBlocks(
       replacement: (content, node: any) => {
         if (!content.trim()) return "";
 
+        // --- Implicit H3 heading detection ---
+        const headingText = detectImplicitHeading(node, strategy);
+        if (headingText !== null) {
+          const cleaned = headingText.replace(/[ \t]+/g, " ").trim();
+          if (!cleaned) return "";
+          return `\n\n### ${cleaned}\n\n`;
+        }
+
+        // --- Regular paragraph processing ---
         // Get original ID if exists
         const originalId = node.getAttribute?.("id");
 
@@ -270,6 +285,212 @@ function createTurndownServiceWithBlocks(
 }
 
 /**
+ * Detect if a DOM node is an implicit H3 heading.
+ * Returns the heading text (stripped of ◆ prefix) or null.
+ *
+ * Three patterns:
+ *   1. ◆ prefix lines  →  ### text  (Calibre TOC-style)
+ *   2. <p><span class="bold*">short text</span></p>  →  ### text  (bold-only paragraphs)
+ *   3. <p><a id="xxx"></a>short text</p>  →  ### text  (anchor-only short paragraphs)
+ */
+export function detectImplicitHeading(
+  node: any,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
+): string | null {
+  if (node.nodeName !== "P") return null;
+
+  const nodeText = (node.textContent || "").trim();
+
+  // Pattern 1: ◆ prefix (e.g. "◆ 模仿的心态")
+  // Skip when strategy says ◆ lines are TOC entries, not headings
+  if (/^◆\s+/.test(nodeText)) {
+    if (strategy?.diamondLines === "tocEntries") return null;
+    return nodeText.replace(/^◆\s+/, "");
+  }
+
+  // Pattern 2: bold span covering entire paragraph content
+  const meaningfulChildren = Array.from(node.childNodes).filter((child: any) => {
+    if (child.nodeType === 3) return child.textContent.trim().length > 0;
+    return child.nodeType === 1;
+  });
+  if (meaningfulChildren.length === 1) {
+    const child = meaningfulChildren[0] as any;
+    if (child.nodeType === 1) {
+      const tag = child.tagName?.toLowerCase();
+      if (tag === "span" || tag === "b" || tag === "strong") {
+        const cls = (child.getAttribute("class") || "").toLowerCase();
+        if (/(?:^|\s)bold/i.test(cls) || tag === "b" || tag === "strong") {
+          if (nodeText.length > 0 && nodeText.length <= 60) return nodeText;
+        }
+      }
+    }
+  }
+
+  // Pattern 3: anchor-only short paragraph
+  if (nodeText.length > 0 && nodeText.length <= 30) {
+    const hasDirectAnchorId = Array.from(node.childNodes).some((child: any) => {
+      if (child.nodeType === 1 && child.tagName?.toLowerCase() === "a") {
+        return !!child.getAttribute("id");
+      }
+      return false;
+    });
+    if (hasDirectAnchorId) return nodeText;
+  }
+
+  return null;
+}
+
+/**
+ * Sentence-ending punctuation patterns (CJK + Latin).
+ * A line ending with one of these is considered a complete sentence.
+ */
+const SENTENCE_END_RE = /[。？！.?!、”’'""”'）》」\d]$/;
+
+/**
+ * Block ID pattern at end of a line: ` ^blockId`
+ */
+const BLOCK_ID_RE = / \^([a-zA-Z0-9_-]+)$/;
+
+/** Check if a markdown line is a heading or image (not a regular paragraph) */
+const isSpecialLine = (text: string): boolean =>
+  text.startsWith("#") || text.startsWith("![");
+
+/**
+ * Merge fragmented paragraphs produced by Calibre-style EPUB splitting.
+ *
+ * Many EPUBs split one logical paragraph into multiple <p> tags, each
+ * containing a single sentence. After Turndown conversion, this results in
+ * lines like:
+ *
+ *   肯·西格尔是史蒂夫·乔布斯的得力助手。在与乔布斯共事的12年时 ^p125
+ *   间里，他一直被人们公认为是最具创意的设计师。 ^p595
+ *   期就到苹果公司工作了。 ^p596
+ *
+ * This function merges consecutive fragment lines into single paragraphs,
+ * keeping only the last block ID and removing intermediate ones from the
+ * blocks array and blockMap.
+ *
+ * A line is considered a fragment if:
+ *   - It is a regular paragraph (has a block ID at the end)
+ *   - It does NOT end with sentence-ending punctuation after the block ID
+ *   - The next line is also a regular paragraph (not a heading, image, etc.)
+ */
+export function mergeFragmentedParagraphs(
+  markdown: string,
+  blocks: string[],
+  blockMap: Map<string, string>
+): string {
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+
+  // Track which block IDs to remove (intermediate fragments)
+  const blocksToRemove = new Set<string>();
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Check if this line is a fragment candidate:
+    // - Has a block ID at the end
+    // - Text before block ID does NOT end with sentence-ending punctuation
+    const blockMatch = trimmed.match(BLOCK_ID_RE);
+    if (blockMatch) {
+      const textBeforeBlock = trimmed.slice(0, trimmed.length - blockMatch[0].length).trim();
+      const blockId = blockMatch[1];
+
+      // Check if this is a heading (starts with #) or image (starts with !)
+      if (isSpecialLine(textBeforeBlock)) {
+        result.push(line);
+        i++;
+        continue;
+      }
+
+      // Check if the text ends with sentence-ending punctuation
+      const endsWithSentenceEnd = SENTENCE_END_RE.test(textBeforeBlock);
+
+      if (!endsWithSentenceEnd) {
+        // This is a fragment — try to merge with following lines
+        let mergedText = textBeforeBlock;
+        const removedBlocks = [blockId];
+        let j = i + 1;
+
+        while (j < lines.length) {
+          // Skip empty lines between fragments (they're artifacts of \n\n output)
+          if (lines[j].trim() === "") {
+            j++;
+            continue;
+          }
+
+          const nextTrimmed = lines[j].trim();
+          const nextBlockMatch = nextTrimmed.match(BLOCK_ID_RE);
+
+          // Next line must also be a regular paragraph with block ID
+          if (!nextBlockMatch) break;
+
+          const nextText = nextTrimmed.slice(0, nextTrimmed.length - nextBlockMatch[0].length).trim();
+
+          // Don't merge with headings or images
+          if (isSpecialLine(nextText)) break;
+
+          mergedText += nextText;
+          removedBlocks.push(nextBlockMatch[1]);
+
+          // If this merged line ends with sentence punctuation, stop merging
+          if (SENTENCE_END_RE.test(nextText)) {
+            j++;
+            break;
+          }
+
+          j++;
+        }
+
+        // Only actually merge if we found at least one fragment to merge with
+        if (j > i + 1) {
+          // Keep the last block ID
+          const lastBlockId = removedBlocks[removedBlocks.length - 1];
+          result.push(`\n${mergedText} ^${lastBlockId}`);
+
+          // Remove all intermediate block IDs
+          for (let k = 0; k < removedBlocks.length - 1; k++) {
+            blocksToRemove.add(removedBlocks[k]);
+          }
+
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    result.push(line);
+    i++;
+  }
+
+  // Clean up blocks array and blockMap
+  if (blocksToRemove.size > 0) {
+    // Remove from blockMap entries pointing to removed block IDs
+    for (const rb of blocksToRemove) {
+      for (const [key, val] of blockMap.entries()) {
+        if (val === rb) {
+          blockMap.delete(key);
+        }
+      }
+    }
+
+    // Filter blocks array
+    const originalBlocks = [...blocks];
+    blocks.length = 0;
+    for (const b of originalBlocks) {
+      if (!blocksToRemove.has(b)) {
+        blocks.push(b);
+      }
+    }
+  }
+
+  return result.join("\n");
+}
+
+/**
  * Extract text from HTML content using Turndown with block IDs
  * @param html - Raw HTML content
  * @param chapterIndex - Chapter index for block ID generation
@@ -277,7 +498,8 @@ function createTurndownServiceWithBlocks(
  */
 function extractTextFromHTMLWithBlocks(
   html: string,
-  chapterIndex: number
+  chapterIndex: number,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
 ): { content: string; blockMap: Map<string, string>; blocks: string[] } {
   // Remove <head> entirely — some Kobo EPUBs use self-closing <title/>
   // which DOMParser in text/html mode treats as an opening <title> tag,
@@ -291,9 +513,15 @@ function extractTextFromHTMLWithBlocks(
   const blockMap = new Map<string, string>();
   const blocks: string[] = [];
 
-  // Use Turndown for HTML to Markdown conversion with block IDs
-  const turndown = createTurndownServiceWithBlocks(chapterIndex, blockMap, blocks);
+  const turndown = createTurndownServiceWithBlocks(chapterIndex, blockMap, blocks, strategy);
   let markdown = turndown.turndown(cleanHtml);
+
+  // Merge fragmented paragraphs
+  // Many EPUBs (especially Calibre-converted) split one logical paragraph
+  // into multiple <p> tags (one sentence each). This produces many short
+  // lines each with their own block ID. We merge consecutive fragments
+  // that don't end with sentence-ending punctuation into single paragraphs.
+  markdown = mergeFragmentedParagraphs(markdown, blocks, blockMap);
 
   // Clean up excessive whitespace
   markdown = markdown
@@ -341,10 +569,146 @@ function cleanEpubTitle(title: string): string {
   return cleaned || title.trim();
 }
 
+/** NCX TOC entry */
+interface NcxTocEntry {
+  text: string;
+  src: string; // "file#anchor" or just "file"
+}
+
+/** Section extracted from HTML split at NCX anchor */
+interface HtmlSection {
+  title: string;
+  anchor: string;
+  html: string;
+}
+
+/**
+ * Parse NCX TOC entries from EPUB zip.
+ * Returns entries with text and src (file#anchor).
+ */
+function parseNcxToc(zip: AdmZip, basePath: string): NcxTocEntry[] {
+  const ncxFiles = zip.getEntries().filter((e) => e.entryName.endsWith(".ncx"));
+  if (ncxFiles.length === 0) return [];
+  const ncxXml = ncxFiles[0].getData().toString("utf-8");
+
+  const textMatches = [...ncxXml.matchAll(/<text>([^<]+)<\/text>/g)];
+  const srcMatches = [...ncxXml.matchAll(/<content\s+src="([^"]+)"/g)];
+
+  const entries: NcxTocEntry[] = [];
+  for (let i = 0; i < Math.min(textMatches.length, srcMatches.length); i++) {
+    const text = textMatches[i][1].trim();
+    const src = srcMatches[i][1];
+    if (text) entries.push({ text, src });
+  }
+  return entries;
+}
+
+/**
+ * Group NCX entries by source file.
+ * NCX src uses relative paths; we need to match against manifestMap's full paths.
+ * Returns map: fullFilePath → entries for that file.
+ */
+function groupNcxEntriesByFile(
+  entries: NcxTocEntry[],
+  basePath: string
+): Map<string, NcxTocEntry[]> {
+  const result = new Map<string, NcxTocEntry[]>();
+  for (const entry of entries) {
+    const [file] = entry.src.split("#");
+    const fullPath = path.join(basePath, file).replace(/\\/g, "/");
+    if (!result.has(fullPath)) result.set(fullPath, []);
+    result.get(fullPath)!.push(entry);
+  }
+  return result;
+}
+
+/**
+ * Split HTML at NCX anchor points.
+ *
+ * Finds each anchor in the HTML, then extracts the content between
+ * that anchor and the next one. Returns one HtmlSection per NCX entry.
+ */
+function splitHtmlByAnchors(
+  html: string,
+  entries: NcxTocEntry[]
+): HtmlSection[] {
+  // Find anchor positions in HTML
+  interface AnchorPos {
+    anchor: string;
+    title: string;
+    index: number;
+  }
+
+  const positions: AnchorPos[] = [];
+
+  for (const entry of entries) {
+    const anchor = entry.src.split("#")[1];
+    if (!anchor) {
+      // No anchor — skip (file-level entry like cover page)
+      continue;
+    }
+
+    // Try multiple patterns to find the anchor in HTML
+    const patterns = [
+      // <a id="anchor">
+      new RegExp(`<a[^>]*id="${escapeRegex(anchor)}"[^>]*>`, "i"),
+      // id="anchor" on any element
+      new RegExp(`id="${escapeRegex(anchor)}"`, "i"),
+      // <span id="anchor">
+      new RegExp(`<span[^>]*id="${escapeRegex(anchor)}"[^>]*>`, "i"),
+      // name="anchor" (old HTML)
+      new RegExp(`name="${escapeRegex(anchor)}"`, "i"),
+    ];
+
+    for (const pattern of patterns) {
+      const match = pattern.exec(html);
+      if (match) {
+        positions.push({
+          anchor,
+          title: entry.text,
+          index: match.index,
+        });
+        break;
+      }
+    }
+  }
+
+  // Sort by position in HTML
+  positions.sort((a, b) => a.index - b.index);
+
+  if (positions.length === 0) {
+    // No anchors found — return entire HTML as one section
+    return [{ title: entries[0]?.text || "Section", anchor: "start", html }];
+  }
+
+  // Split at positions
+  const sections: HtmlSection[] = [];
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i].index;
+    const end = i + 1 < positions.length ? positions[i + 1].index : html.length;
+    const sectionHtml = html.substring(start, end);
+    sections.push({
+      title: positions[i].title,
+      anchor: positions[i].anchor,
+      html: sectionHtml,
+    });
+  }
+
+  return sections;
+}
+
+/** Escape special regex characters */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Parse EPUB file
  */
-export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
+export async function parseEpub(
+  input: string | Buffer,
+  strategy?: import("./epub-structure-sampler").EpubParsingStrategy
+): Promise<EpubInfo> {
   let zip: AdmZip;
 
   if (typeof input === "string") {
@@ -435,13 +799,14 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     }
   }
 
-  // Extract cover image
+  // Extract cover image (multiple fallback strategies)
   let coverImage: EpubCoverImage | undefined;
-  // EPUB 3.0: manifest item with properties="cover-image"
+
+  // Strategy 1: EPUB 3.0 — manifest item with properties="cover-image"
   const coverManifestItem = manifest.find(
     (item: any) => item.$.properties?.includes("cover-image")
   );
-  // EPUB 2.0: <meta name="cover" content="manifest-id">
+  // Strategy 2: EPUB 2.0 — <meta name="cover" content="manifest-id">
   const coverMeta = metadata.meta?.find(
     (m: any) => m.$.name === "cover"
   );
@@ -467,9 +832,139 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     }
   }
 
+  // Strategy 3: EPUB 2.0 — <guide><reference type="cover" href="..."/>
+  // Some EPUBs use guide instead of meta for cover reference.
+  // Note: guide href may point to an HTML cover page, not an image directly.
+  // Only use it if the href extension looks like an image file.
+  if (!coverImage) {
+    const guide = packageData.guide?.[0]?.reference || [];
+    const coverGuideRef = guide.find((ref: any) =>
+      ref.$.type === "cover" || ref.$.type === "other.ms-coverimage"
+    );
+    if (coverGuideRef?.$.href) {
+      const guideHref = path.join(basePath, coverGuideRef.$.href).replace(/\\/g, "/");
+      const ext = path.extname(guideHref).toLowerCase();
+      const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+      if (imageExts.includes(ext)) {
+        const guideEntry = zip.getEntry(guideHref);
+        if (guideEntry) {
+          coverImage = {
+            name: `cover${ext}`,
+            data: guideEntry.getData(),
+            mediaType: "image/jpeg",
+          };
+        }
+      }
+    }
+  }
+
+  // Strategy 4: Search manifest for common cover image names
+  if (!coverImage) {
+    const coverPatterns = ["cover", "coverimage", "cover-image", "titlepage"];
+    for (const item of manifest) {
+      const id = (item.$.id || "").toLowerCase();
+      const href = (item.$.href || "").toLowerCase();
+      const properties = item.$.properties || "";
+      const mediaType = ((item.$ as Record<string, string>)["media-type"] || "").toLowerCase();
+      const isImage = mediaType.startsWith("image/");
+      if (!isImage) continue;
+      const match = coverPatterns.some(p => id.includes(p) || href.includes(p));
+      if (match && !properties.includes("nav")) {
+        const coverHref = manifestMap.get(item.$.id);
+        if (coverHref) {
+          const coverEntry = zip.getEntry(coverHref);
+          if (coverEntry) {
+            const ext = path.extname(coverHref).toLowerCase();
+            coverImage = {
+              name: `cover${ext || ".jpg"}`,
+              data: coverEntry.getData(),
+              mediaType: "image/jpeg",
+            };
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Extract chapters
   const chapters: EpubChapter[] = [];
   let order = 0;
+
+  // ─── Strategy-driven path: NCX anchor splitting ───
+  if (strategy?.splitStrategy === "ncxAnchors") {
+    // Parse NCX TOC and group entries by source file
+    const ncxEntries = parseNcxToc(zip, basePath);
+    const ncxByFile = groupNcxEntriesByFile(ncxEntries, basePath);
+
+    for (const id of readingOrder) {
+      const href = manifestMap.get(id);
+      if (!href) continue;
+      // href already includes basePath (manifestMap stores full paths)
+      const entry = zip.getEntry(href);
+      if (!entry) continue;
+      const html = entry.getData().toString("utf-8");
+
+      // Get NCX entries for this file
+      const fileEntries = ncxByFile.get(href) || [];
+      if (fileEntries.length === 0) {
+        // No NCX entries for this file — skip or keep as-is
+        const result = extractTextFromHTMLWithBlocks(html, order, strategy);
+        if (result.content.trim()) {
+          chapters.push({
+            id,
+            title: `Section ${order + 1}`,
+            content: result.content,
+            tokenCount: countTokens(result.content),
+            order: order++,
+            href,
+            blockMap: result.blockMap,
+            blocks: result.blocks,
+          });
+        }
+        continue;
+      }
+
+      // Split HTML at NCX anchor points
+      const sections = splitHtmlByAnchors(html, fileEntries);
+
+      for (const section of sections) {
+        if (!section.html.trim()) continue;
+
+        // Skip noise entries (书名页, 版权页, 目录, etc.)
+        const noiseKeywords = ["书名页", "版权页", "扉页", "目录",
+          "版权信息", "图书在版编目", "CIP"];
+        if (noiseKeywords.some(kw => section.title.includes(kw))) continue;
+
+        const result = extractTextFromHTMLWithBlocks(section.html, order, strategy);
+
+        // Skip empty/image-only sections
+        const textOnly = result.content
+          .replace(/#!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+          .replace(/[^\w\u4e00-\u9fff]/g, "")
+          .trim();
+        if (textOnly.length === 0) continue;
+
+        // Use NCX text as title (strategy: titleSource=ncxText)
+        const chapterTitle = strategy?.titleSource === "ncxText"
+          ? section.title
+          : `Chapter ${order + 1}`;
+
+        chapters.push({
+          id: `${id}#${section.anchor}`,
+          title: chapterTitle,
+          content: result.content,
+          tokenCount: countTokens(result.content),
+          order: order++,
+          href: `${href}#${section.anchor}`,
+          blockMap: result.blockMap,
+          blocks: result.blocks,
+        });
+      }
+    }
+  } else {
+  // ─── Default path: one chapter per spine item ───
 
   for (const id of readingOrder) {
     const href = manifestMap.get(id);
@@ -479,7 +974,7 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     if (!entry) continue;
 
     const html = entry.getData().toString("utf-8");
-    const result = extractTextFromHTMLWithBlocks(html, order);
+    const result = extractTextFromHTMLWithBlocks(html, order, strategy);
 
     // Extract chapter title
     // Strategy: 1) Try <h1> first, then <h2>, etc. (strip inner HTML tags),
@@ -496,7 +991,14 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
       for (const m of headingLevelMatches) {
         const levelMatch = m.match(/^<h([1-6])/i);
         const level = levelMatch ? levelMatch[1] : "6";
-        const text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+        let text = cleanTitle(m.replace(/<[^>]+>/g, "").trim());
+        // If heading text is empty (e.g. <h1><img/></h1>), try title attribute
+        if (text.length === 0) {
+          const titleAttr = m.match(/title=["']([^"']+)["']/i);
+          if (titleAttr) {
+            text = cleanTitle(titleAttr[1].trim());
+          }
+        }
         if (text.length > 0) {
           if (!byLevel[level]) byLevel[level] = [];
           byLevel[level].push(text);
@@ -512,11 +1014,16 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
           // or combine short + long if first is very short (e.g. "第1章" + "标题")
           if (texts.length > 1) {
             const first = texts[0];
-            const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
-            if (first !== longest && first.length <= 5 && longest.length > first.length) {
-              pickedTitle = `${first} ${longest}`;
+            // Combine chapter number + subtitle (e.g. "第1章" + "导言" → "第1章 导言")
+            if (first.length <= 8) {
+              pickedTitle = texts.slice(0, 2).join(" ");
             } else {
-              pickedTitle = first;
+              const longest = texts.reduce((a, b) => a.length >= b.length ? a : b);
+              if (first !== longest && first.length <= 5 && longest.length > first.length) {
+                pickedTitle = `${first} ${longest}`;
+              } else {
+                pickedTitle = first;
+              }
             }
           } else {
             pickedTitle = texts[0];
@@ -528,16 +1035,52 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
     } else {
       // No heading tag: use first non-empty line of markdown as title
       const firstLine = result.content.split("\n").find(l => l.trim().length > 0);
-      // Strip block ID marker from the end (e.g., " ^p001")
-      chapterTitle = firstLine
-        ? cleanTitle(firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim())
-        : `Chapter ${order + 1}`;
+      // Strip block ID marker from the end
+      let rawTitle = firstLine
+        ? firstLine.replace(/\s*\^[a-zA-Z0-9_-]+\s*$/, "").trim()
+        : "";
+      // If the line contains links, extract only the text BEFORE the first link.
+      // This handles TOC pages where first line is "目录[[link1|text1]][[link2|text2]]"
+      if (rawTitle.includes("[[") || /\]\(/.test(rawTitle)) {
+        const beforeFirstLink = rawTitle.split(/\[\[/)[0].trim();
+        if (beforeFirstLink.length > 0) {
+          rawTitle = beforeFirstLink;
+        } else {
+          // If no text before links, extract alias from first wiki link
+          const aliasMatch = rawTitle.match(/\[\[[^\]|]*\|([^\]]*)\]\]/);
+          if (aliasMatch) {
+            rawTitle = aliasMatch[1];
+          }
+        }
+      }
+      chapterTitle = cleanTitle(rawTitle) || `Chapter ${order + 1}`;
+      // Truncate overly long titles
+      if (chapterTitle.length > 50) {
+        chapterTitle = chapterTitle.substring(0, 20).trim();
+      }
     }
 
-    // Skip cover/image-only pages (title is a markdown image syntax)
+    // Skip cover/image-only pages
+    // Case 1: title looks like a markdown image
     if (chapterTitle.startsWith("![") || chapterTitle.startsWith("![Cover")) {
       order++;
       continue;
+    }
+    // Case 2: content is empty or only contains images (e.g. Part divider pages)
+    const textOnlyContent = result.content
+      .replace(/#!\[[^\]]*\]\([^)]*\)/g, "")  // remove H1 image lines
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")    // remove all images
+      .replace(/[^\w\u4e00-\u9fff]/g, "")      // keep only word chars and CJK
+      .trim();
+    if (textOnlyContent.length === 0) {
+      // Image-only page: skip if it doesn't have meaningful text in title
+      // But keep it if the title comes from heading tag with useful text
+      // (e.g. "第一部分　预测" from h1 title attribute)
+      if (chapterTitle.startsWith("Chapter ") || chapterTitle.length === 0) {
+        order++;
+        continue;
+      }
+      // Part divider with meaningful title: keep as lightweight chapter
     }
 
     chapters.push({
@@ -551,6 +1094,8 @@ export async function parseEpub(input: string | Buffer): Promise<EpubInfo> {
       blocks: result.blocks,
     });
   }
+
+  } // end else (default path)
 
   return {
     title,
@@ -637,12 +1182,21 @@ export function splitLargeEpubPages(
     for (let j = 0; j < parts.length; j++) {
       const part = parts[j].trim();
       if (!part) continue;
-      const titleMatch = part.match(EPUB_TITLE_PREFIX);
-      const title = titleMatch
-        ? titleMatch[0].trim()
-        : j === 0
-          ? chapter.title
-          : `Section ${newChapters.length + 1}`;
+      // 提取 part 第一行的 heading 全文：匹配 prefix（# / ## / 第X章 / Chapter N / Part X），
+      // 取 prefix 之后的 heading 文本，而不是把 prefix 本身当作 title
+      // 例: "## 判断的价值" → prefix "## " → slice 后 "判断的价值" → cleanTitle 标准化
+      const firstLine = part.split("\n", 1)[0];
+      const titleMatch = firstLine.match(EPUB_TITLE_PREFIX);
+      let title: string;
+      if (titleMatch) {
+        const headingText = cleanTitle(firstLine.slice(titleMatch[0].length));
+        // 防御: cleanTitle 把 heading 文本清空时（如 "## " 单独成行），回退到 chapter.title
+        title = headingText || chapter.title;
+      } else if (j === 0) {
+        title = chapter.title;
+      } else {
+        title = `Section ${newChapters.length + 1}`;
+      }
       newPages.push({ text: part, tokenCount: countTokens(part) });
       newChapters.push({ ...chapter, title, content: part });
     }

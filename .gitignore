@@ -72,9 +72,10 @@ docs/weread-api.md
 
 # Working files
 tasks/
+goals/
 
 manifest.json
 
 test-vault/
-
+test-output/
 .serena

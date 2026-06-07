@@ -3,8 +3,10 @@
  * 模拟 Obsidian API 的 DOM 扩展方法
  */
 
-// 模拟 Obsidian 的 addClass 方法
-HTMLElement.prototype.addClass = function(this: HTMLElement, ...classes: string[]) {
+// Guard: only set up DOM mocks when HTMLElement is available (jsdom env)
+if (typeof HTMLElement !== 'undefined') {
+  // 模拟 Obsidian 的 addClass 方法
+  HTMLElement.prototype.addClass = function(this: HTMLElement, ...classes: string[]) {
 	// 处理包含空格的类名字符串
 	const allClasses = classes.flatMap(cls => cls.split(' ').filter(c => c));
 	this.classList.add(...allClasses);
@@ -94,3 +96,4 @@ HTMLElement.prototype.empty = function(this: HTMLElement) {
 	HoverPopover: class MockHoverPopover {},
 	markdownToHTML: (text: string) => text,
 };
+} // end if (HTMLElement)

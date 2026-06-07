@@ -35,6 +35,25 @@ export interface LinkCorrectionContext {
   bookName: string;
   vaultPath: string;
   toolResults: ToolResultEntry[];
+  /**
+   * 跨书模式：传 true 时，链接 bookName 与 context.bookName 不一致不会
+   * 触发 wrong_book issue（书单模式下允许跨书引用）
+   */
+  expectedBookName?: string;
+}
+
+export interface WikiLinkMetrics {
+  totalLinks: number;
+  validLinks: number;
+  deadLinksRemoved: number;
+  autoCorrectedLinks: number;
+}
+
+export interface WikiLinkValidationResult {
+  correctedContent: string;
+  issues: WikiLinkIssue[];
+  correctionsApplied: number;
+  metrics: WikiLinkMetrics;
 }
 
 const WIKI_LINK_PATTERN = /\[\[([^\]]+)\]\]/g;
@@ -77,6 +96,11 @@ function parseWikiLinkInternal(linkContent: string): ParsedWikiLink | null {
 
 function detectLinkIssues(parsed: ParsedWikiLink, expectedBookName: string): WikiLinkIssue['issueType'][] {
   const issues: WikiLinkIssue['issueType'][] = [];
+
+  // 跨书模式（expectedBookName 为空）：禁用 wrong_book 检查
+  if (expectedBookName === '') {
+    return issues;
+  }
 
   if (!parsed.bookName || parsed.bookName !== expectedBookName) {
     issues.push('wrong_book');
@@ -152,6 +176,39 @@ function calculateSimilarity(str1: string, str2: string): number {
   return common / Math.max(s1.length, s2.length);
 }
 
+function findClosestFileInCachedList(
+  cachedFiles: string[],
+  targetFileName: string
+): string | null {
+  // 先去除 .md 后缀
+  const targetBase = targetFileName.replace(/\.md$/, '');
+  const targetTitle = targetBase.replace(/^\d+-/, '').trim();
+
+  // 完全匹配
+  for (const file of cachedFiles) {
+    const basename = path.basename(file, '.md');
+    if (basename === targetBase || basename === `${targetBase}.md`) {
+      return basename;
+    }
+  }
+
+  if (!targetTitle) return null;
+
+  // 模糊匹配
+  let bestMatch: string | null = null;
+  let bestScore = 0;
+  for (const file of cachedFiles) {
+    const basename = path.basename(file, '.md');
+    const fileTitle = basename.replace(/^\d+-/, '').trim();
+    const score = calculateSimilarity(targetTitle, fileTitle);
+    if (score > bestScore && score > 0.4) {
+      bestScore = score;
+      bestMatch = basename;
+    }
+  }
+  return bestMatch;
+}
+
 function findClosestBlockId(
   targetBlockId: string | undefined,
   toolResults: ToolResultEntry[]
@@ -221,15 +278,35 @@ function buildCorrectedLink(
 export async function validateWikiLinks(
   content: string,
   context: LinkCorrectionContext
-): Promise<{
-  correctedContent: string;
-  issues: WikiLinkIssue[];
-  correctionsApplied: number;
-}> {
+): Promise<WikiLinkValidationResult> {
   const issues: WikiLinkIssue[] = [];
   const corrections: Map<string, string> = new Map();
+  const deadLinksRemoved = new Set<string>();
+  const autoCorrectedLinks = new Set<string>();
 
   const matches = Array.from(content.matchAll(WIKI_LINK_PATTERN));
+  const totalLinks = matches.length;
+
+  // 批量缓存：每本书的 list 结果只取一次
+  const bookDirCache = new Map<string, string[]>();
+  const getCachedBookFiles = async (bookName: string): Promise<string[] | null> => {
+    if (bookDirCache.has(bookName)) return bookDirCache.get(bookName)!;
+    const bookDir = path.join(context.vaultPath, 'DeepReader', bookName);
+    try {
+      const exists = await context.app.vault.adapter.exists(bookDir);
+      if (!exists) {
+        bookDirCache.set(bookName, []);
+        return null;
+      }
+      const files = await context.app.vault.adapter.list(bookDir);
+      const mdFiles = files.files.filter((f: string) => f.endsWith('.md'));
+      bookDirCache.set(bookName, mdFiles);
+      return mdFiles;
+    } catch {
+      bookDirCache.set(bookName, []);
+      return null;
+    }
+  };
 
   for (const match of matches) {
     const fullMatch = match[0];
@@ -238,30 +315,45 @@ export async function validateWikiLinks(
 
     if (!parsed) continue;
 
-    const detectedIssues = detectLinkIssues(parsed, context.bookName);
+    // T1.2: expectedBookName 优先于 context.bookName
+    const expectedBookName = context.expectedBookName !== undefined
+      ? context.expectedBookName
+      : context.bookName;
+    const detectedIssues = detectLinkIssues(parsed, expectedBookName);
 
-    if (detectedIssues.length === 0 && parsed.fileName) {
+    // T1.1: 文件存在性检查前置 - 即使 detectedIssues 为空也校验
+    let fileExists = false;
+    if (parsed.fileName) {
       const filePath = path.join(context.vaultPath, 'DeepReader', parsed.bookName, `${parsed.fileName}.md`);
-      const fileExists = await context.app.vault.adapter.exists(filePath);
+      fileExists = await context.app.vault.adapter.exists(filePath);
 
       if (fileExists && parsed.blockId) {
         const blockExists = findClosestBlockId(parsed.blockId, context.toolResults);
-        if (blockExists === parsed.blockId) continue;
-        detectedIssues.push('block_not_found');
+        if (blockExists !== parsed.blockId) {
+          detectedIssues.push('block_not_found');
+        }
       } else if (!fileExists) {
         detectedIssues.push('file_not_found');
       }
     }
 
-    if (detectedIssues.length === 0) continue;
+    if (detectedIssues.length === 0) {
+      // 有效链接
+      continue;
+    }
 
     let correctedFile: string | null = null;
     let correctedBlockId: string | null = null;
     let confidence = 0;
 
     if (detectedIssues.includes('file_not_found') || detectedIssues.includes('wrong_book')) {
-      const bookToUse = detectedIssues.includes('wrong_book') ? context.bookName : parsed.bookName;
-      correctedFile = await findClosestFile(context.app, context.vaultPath, bookToUse, parsed.fileName);
+      // T1.2: wrong_book 时在 expectedBookName 目录下找
+      const bookToUse = detectedIssues.includes('wrong_book') ? expectedBookName : parsed.bookName;
+      const cachedFiles = await getCachedBookFiles(bookToUse);
+      if (cachedFiles) {
+        // 直接使用缓存的列表做模糊匹配
+        correctedFile = findClosestFileInCachedList(cachedFiles, parsed.fileName);
+      }
       confidence = correctedFile ? 0.7 : 0;
     }
 
@@ -275,7 +367,7 @@ export async function validateWikiLinks(
       parsed,
       correctedFile,
       correctedBlockId,
-      context.bookName
+      expectedBookName
     );
 
     issues.push({
@@ -288,6 +380,10 @@ export async function validateWikiLinks(
 
     if (suggestedCorrection && confidence > 0.5) {
       corrections.set(fullMatch, suggestedCorrection);
+      autoCorrectedLinks.add(fullMatch);
+    } else {
+      // 无可信纠正 → 记录为死链
+      deadLinksRemoved.add(fullMatch);
     }
   }
 
@@ -301,6 +397,12 @@ export async function validateWikiLinks(
     correctedContent,
     issues,
     correctionsApplied: corrections.size,
+    metrics: {
+      totalLinks,
+      validLinks: totalLinks - issues.length,
+      deadLinksRemoved: deadLinksRemoved.size,
+      autoCorrectedLinks: autoCorrectedLinks.size,
+    },
   };
 }
 

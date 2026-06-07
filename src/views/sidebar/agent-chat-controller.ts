@@ -10,8 +10,9 @@ import { MessageData, MessageRole, AIMessage } from '../../components/message/me
 import type { ToolContext } from '../../agent/tools/types.js';
 import type { HumanizedProgress } from '../../agent/ui/humanized-types.js';
 import {
-	validateAndCorrectLinks,
-} from '../../agent/utils/link-validator.js';
+	validateWikiLinks,
+} from '../../agent/utils/wiki-link-hook.js';
+import { getVaultPath } from '../../utils/mobile-fs.js';
 import { MemoryStore } from '../../agent/memory/store.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { ExcerptModal } from '../../components/excerpt/excerpt-modal.js';
@@ -502,10 +503,16 @@ export class AgentChatController {
 					}
 
 					try {
-						const { correctedContent, validatedLinks } = await validateAndCorrectLinks(
-							self.host.app,
-							cleanedForValidation
+						const wikiLinkResult = await validateWikiLinks(
+							cleanedForValidation,
+							{
+								app: context.vault.app,
+								bookName: self.host.currentPdfName,
+								vaultPath: getVaultPath(self.host.app),
+								toolResults: [],
+							}
 						);
+						const correctedContent = wikiLinkResult.correctedContent;
 
 						if (correctedContent !== cleanedForValidation) {
 							log('[DeepPDF] 链接已纠正，更新消息');
@@ -693,7 +700,8 @@ export class AgentChatController {
 				},
 			};
 
-			const result = await this.host.frontendAgent.chat(
+			const result = await this.host.frontendAgent.continueChat(
+				this._agentChatHistory,
 				userMessage,
 				context,
 				callbacks,

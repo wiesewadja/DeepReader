@@ -11,6 +11,7 @@
 import type { OutlineNode } from '../../tools/local/types';
 import { z } from 'zod';
 import { ReadingDepth } from '../state.js';
+import { formatHistoryBlock, type HistorySummary } from '../utils/history-summarizer.js';
 
 /**
  * Format tree structure for LLM prompt
@@ -61,10 +62,34 @@ export function buildInspectionalSystemPrompt(
   treeText: string,
   docName: string,
   depth: ReadingDepth,
-  docDescription?: string
+  docDescription?: string,
+  currentNodeId?: string,
+  citedNodeIds?: string[],
 ): string {
   const summarySection = docDescription
     ? `\n<book_summary>\n${docDescription}\n</book_summary>\n`
+    : '';
+
+  // 当前章节硬约束：防止 LLM 因摘要不全而漏掉用户当前正在阅读的章节
+  // 这是 issue: "回报函数工程"在 24 章存在但被 inspectional 漏选
+  // 任何情况下 currentNodeId 都必须出现在 scopeNodeIds 中（除非有显式排除理由）
+  const currentChapterBlock = currentNodeId
+    ? `\n<current_chapter_lock>
+用户当前正在阅读的章节是 node_id=${currentNodeId}。
+⚠️ 硬性要求：此章节必须出现在 scopeNodeIds 中——除非你能在 excludedCurrentChapter 字段给出明确的排除理由（如"该章节摘要与用户问题在主题上完全无关"）。
+"看起来和 X 章重复" 不构成排除理由——重复章节可能含有独特术语。
+摘要里没有出现用户问题中的关键词不构成排除理由——摘要本身可能丢失术语。
+</current_chapter_lock>`
+    : '';
+
+  // 用户显式引用章节：用户用 [[24 - xxx]] 或 > — 24 - xxx 形式直接点名的章节
+  // 这是用户意图的强信号，权重高于 LLM 推断的 scope
+  const citedChaptersBlock = citedNodeIds && citedNodeIds.length > 0
+    ? `\n<user_cited_chapters>
+用户在消息中通过 wiki 链接或块引用显式引用了以下章节：
+${citedNodeIds.map(id => `- node_id: ${id}`).join('\n')}
+⚠️ 这些章节必须出现在 scopeNodeIds 中——它们是用户问题的直接来源，绕开它们等于忽略用户意图。
+</user_cited_chapters>`
     : '';
 
   const taskBranch = depth === ReadingDepth.INSPECTIONAL
@@ -106,6 +131,11 @@ export function buildInspectionalSystemPrompt(
    ⚠️ 跨章节题注意：如果用户问的问题涉及多个概念在不同章节的分布（如"X和Y的联系""某个观点如何贯穿不同章节"），scopeNodeIds 应覆盖每个相关概念出现的章节，不要只聚焦最明显的一处
 6. **suggested_keywords 至少提供 3-5 个搜索关键词**：包括书中特有的术语、核心概念名、可能的同义词。这些关键词将被直接用于下一阶段的自动检索，请务必选择目录树摘要中出现过的精确术语
 
+⚠️ 强制要求（如有 <current_chapter_lock> 或 <user_cited_chapters>）：
+- 当前阅读章节和用户显式引用的章节必须包含在 scopeNodeIds 中
+- 如果你判断某章节应该被排除，必须在 excludedCurrentChapter 字段给出明确理由（"摘要与问题主题完全无关"等）
+- "摘要里没出现关键词"不是充分理由——摘要可能丢失术语
+- "和 X 章重复"不是充分理由——重复章节可能含独特概念
 </task_branch>`;
 
   return `<role>
@@ -121,7 +151,7 @@ ${treeText}
 <depth_context>
 当前用户的阅读深度诉求为：【深度 ${depth}】
 </depth_context>
-
+${currentChapterBlock}${citedChaptersBlock}
 ${taskBranch}
 
 <constraints>
@@ -136,6 +166,7 @@ ${taskBranch}
 {
   "thought_process": "定位思考过程",
   "scopeNodeIds": ["0004", "0005"],
+  "excludedCurrentChapter": "如果当前章节被排除，给出排除理由（'与问题主题完全无关'等），否则 null",
   "better_question":"改写的更符合书籍内容的提问",
   "suggested_keywords": ["关键词1", "关键词2", "关键词3"],
   "tocSummary": "为什么这些章节相关，建议搜索哪些关键词",
@@ -147,12 +178,22 @@ ${taskBranch}
 /**
  * Build user message for inspectional state
  */
-export function buildInspectionalUserMessage(standaloneQuery: string, depth: ReadingDepth): string {
+export function buildInspectionalUserMessage(
+  standaloneQuery: string,
+  depth: ReadingDepth,
+  recentHistorySummaries?: HistorySummary[],
+): string {
   const depthHint = depth === ReadingDepth.INSPECTIONAL
     ? '请基于目录树生成详细的结构检视报告，解答用户的宏观问题。'
     : '请根据目录树圈定相关章节范围，在 tocSummary 中提供搜索关键词建议。';
 
-  return `<query>
+  const historyBlock = recentHistorySummaries && recentHistorySummaries.length > 0
+    ? formatHistoryBlock(recentHistorySummaries)
+    : '<history>\n(无历史记录)\n</history>';
+
+  return `${historyBlock}
+
+<query>
 ${standaloneQuery}
 </query>
 

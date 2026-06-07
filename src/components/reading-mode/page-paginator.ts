@@ -12,6 +12,8 @@ export interface PagePaginatorOptions {
 	container: HTMLElement;                    // .markdown-preview-sizer
 	onNavigatePrev: () => Promise<boolean>;
 	onNavigateNext: () => Promise<boolean>;
+	hasPrevChapter: () => boolean;             // 是否有上一章
+	hasNextChapter: () => boolean;             // 是否有下一章
 	chapterName?: string;                      // 当前章节名称
 	bookName?: string;                         // 当前书名
 	onPageChange?: (page: number, totalPages: number) => void;
@@ -147,13 +149,15 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 		
 		if (this._currentPage >= this._totalPages) {
+			// At last page: navigate to next chapter.
+			// After navigation, paginator is destroyed and re-created for the new chapter,
+			// so the caller should not try to continue paging.
 			this.onNavigateNext();
 			return false;
 		}
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: pageWidth, behavior: 'smooth' });
-		// 翻页后触发强制重绘，避免空白页问题
 		this.forceRerender();
 		return true;
 	}
@@ -162,13 +166,13 @@ export class PagePaginator {
 		if (!this._isActive || !this.scrollView) return false;
 		
 		if (this._currentPage <= 1) {
+			// At first page: navigate to previous chapter (opens at last remembered page).
 			this.onNavigatePrev();
 			return false;
 		}
 		
 		const pageWidth = this.scrollView.clientWidth;
 		this.scrollView.scrollBy({ left: -pageWidth, behavior: 'smooth' });
-		// 翻页后触发强制重绘，避免空白页问题
 		this.forceRerender();
 		return true;
 	}
@@ -421,8 +425,11 @@ export class PagePaginator {
 			this.pageIndicator.textContent = `${this._currentPage} / ${this._totalPages}`;
 		}
 
-		this.leftBtn?.classList.toggle(DISABLED_CLASS, this._currentPage <= 1);
-		this.rightBtn?.classList.toggle(DISABLED_CLASS, this._currentPage >= this._totalPages);
+		// 边界页且有上/下一章时，不隐藏按钮（用户可点击跳章）
+		const atFirstPage = this._currentPage <= 1;
+		const atLastPage = this._currentPage >= this._totalPages;
+		this.leftBtn?.classList.toggle(DISABLED_CLASS, atFirstPage && !this.options.hasPrevChapter());
+		this.rightBtn?.classList.toggle(DISABLED_CLASS, atLastPage && !this.options.hasNextChapter());
 	}
 
 	private removeControls(): void {

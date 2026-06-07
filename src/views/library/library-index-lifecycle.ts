@@ -10,7 +10,7 @@ import { stripFileExtension } from '../../types/index.js';
 import type { SystemFileInfo, FileSelectResult } from '../../ui/pdf-file-selector.js';
 import { isSystemFileInfo } from '../../ui/pdf-file-selector.js';
 import { PDFFileSelectorModal } from '../../ui/pdf-file-selector.js';
-import { indexBook, generateBookId, generateBookIdFromPath } from '../../pageindex/book-indexer.js';
+import { indexBook, generateBookId } from '../../pageindex/book-indexer.js';
 import type { BookIndexProgress } from '../../pageindex/book-types.js';
 import { resolveRoleConfig } from '../../config/providers.js';
 import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
@@ -186,9 +186,12 @@ export class IndexLifecycle {
 
 				const fileType = (fileInfo as unknown as { docType: string }).docType === 'epub' ? 'epub' : 'pdf';
 
-				const prelimId = generateBookIdFromPath(filePath);
+				// Use content-based bookId from the start to avoid prelimId→bookId mismatch
+				// which causes polling to see two different IDs and create duplicate cards
+				bookId = await generateBookId(filePath);
+
 				const newIndex: IndexListItem = {
-					id: prelimId,
+					id: bookId,
 					pdf_name: fileInfo.name,
 					fileType,
 					node_count: 0,
@@ -203,41 +206,13 @@ export class IndexLifecycle {
 					const idxName = idx.pdf_name || '';
 					return idxName !== fileInfo.name;
 				});
-				this.callbacks.getCardElements().delete(prelimId);
+				this.callbacks.getCardElements().delete(bookId);
 
-				this.activelyIndexingBookId = prelimId;
+				this.activelyIndexingBookId = bookId;
 				indexes.unshift(newIndex);
 				this.callbacks.setIndexes(indexes);
 				this.callbacks.onRenderGrid();
 				new Notice(`开始索引「${displayName}」...`);
-
-				bookId = await generateBookId(filePath);
-				if (bookId !== prelimId) {
-					const currentIndexes = this.callbacks.getIndexes();
-					const entry = currentIndexes.find(i => i.id === prelimId);
-					if (entry) entry.id = bookId;
-					const card = this.callbacks.getCardElements().get(prelimId);
-					if (card) {
-						this.callbacks.getCardElements().delete(prelimId);
-						this.callbacks.getCardElements().set(bookId, card);
-					}
-					// Re-key lastIndexStates 防止 polling 把 bookId 当作新索引，
-					// 避免 addNewCards 在 grid 底部追加重复卡片，导致顶部原卡片冻结在 12%
-					const previousLastState = this.lastIndexStates.get(prelimId);
-					this.lastIndexStates.delete(prelimId);
-					this.lastIndexStates.set(bookId, previousLastState || {
-						status: newIndex.status || 'unknown',
-						progress: newIndex.progress_percent || 0,
-						message: newIndex.message || '',
-					});
-					const dupCount = currentIndexes.filter(i => i.id === bookId).length;
-					if (dupCount > 1) {
-						this.callbacks.setIndexes(currentIndexes.filter(i =>
-							i.id !== bookId || i.status === 'processing'
-						));
-					}
-				}
-				this.activelyIndexingBookId = bookId;
 
 				const settings = this.callbacks.plugin.settings;
 				const pageindexRole = resolveRoleConfig('pageindex', settings);
@@ -332,6 +307,19 @@ export class IndexLifecycle {
 			const currentIndexes = this.callbacks.getIndexes();
 
 			const realBookIds = new Set(newIndexes.map(idx => idx.id));
+
+			// When activelyIndexingBookId is set, the onProgress callback owns
+			// that book's card (progress bar, status). Do NOT let polling data
+			// (loadIndexes) overwrite it — otherwise the card flashes to "ready"
+			// the moment cleanupStatus deletes .indexing.json, well before
+			// indexBook resolves and the success Notice appears.
+			let activeIdxOverride: IndexListItem | undefined;
+			if (this.activelyIndexingBookId) {
+				activeIdxOverride = currentIndexes.find(
+					idx => idx.id === this.activelyIndexingBookId
+				);
+			}
+
 			const tempIndexesToKeep = currentIndexes.filter(idx =>
 				idx.id.startsWith('temp_') && !realBookIds.has(idx.id)
 			);
@@ -341,7 +329,12 @@ export class IndexLifecycle {
 				!realBookIds.has(idx.id)
 			);
 
-			const merged = [...newIndexes, ...tempIndexesToKeep, ...processingToKeep];
+			const merged = [
+				...newIndexes.filter(idx => idx.id !== this.activelyIndexingBookId),
+				...(activeIdxOverride ? [activeIdxOverride] : []),
+				...tempIndexesToKeep,
+				...processingToKeep,
+			];
 
 			const seen = new Set<string>();
 			this.callbacks.setIndexes(merged.filter(idx => {

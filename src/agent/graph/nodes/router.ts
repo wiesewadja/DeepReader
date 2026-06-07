@@ -15,7 +15,8 @@ import type { SharedContext } from '../shared-context.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
-import { hasSyntopicalKeywords } from '../../utils/syntopical-search.js';
+import { detectCorrection, correctionReason } from '../utils/correction-detector.js';
+
 import { IntentRouter } from '../../router/intent-router.js';
 
 interface LLMRouterResponse {
@@ -60,6 +61,15 @@ export async function routerNode(
   const rawIntent = intentRouter.analyze(rawQuery);
   log(`[S0 Router] IntentRouter(raw): intents=${rawIntent.detectedIntents.join(',')}, tools=${rawIntent.allowedTools.join(',')}`);
 
+  // Step 1.5: Correction detection — if the user is pushing back on a
+  // previous answer, force ANALYTICAL depth regardless of the LLM's
+  // depth classification. The LLM tends to inherit the previous
+  // (wrong) depth when history already says "未出现".
+  const isCorrection = detectCorrection(rawQuery);
+  if (isCorrection) {
+    log(`[S0 Router] 纠错信号检测: reason="${correctionReason(rawQuery)}", 强制 depth=2 (ANALYTICAL)`);
+  }
+
   // Step 2: Inherit previous intent if this is a follow-up
   const hasNewIntent = rawIntent.detectedIntents.length > 0
     && !rawIntent.detectedIntents.every(i => i === 'general_qa' || i === '闲聊');
@@ -71,6 +81,7 @@ export async function routerNode(
       depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(mergeTools(rawIntent.allowedTools, inheritedTools), []),
+      correctionDetected: isCorrection,
     };
   }
 
@@ -91,8 +102,14 @@ export async function routerNode(
     const validDepths = Object.values(ReadingDepth) as number[];
     let depth: ReadingDepth = validDepths.includes(rawDepth)
       ? rawDepth : ReadingDepth.ANALYTICAL;
-    const standaloneQuery = parsed?.standalone_query || rawQuery;
 
+    // Correction-signal override: force ANALYTICAL even if LLM said CASUAL
+    if (isCorrection && depth < ReadingDepth.ANALYTICAL) {
+      log(`[S0 Router] 纠错信号覆盖 LLM depth=${depth} → 2 (ANALYTICAL)`);
+      depth = ReadingDepth.ANALYTICAL;
+    }
+    const standaloneQuery = parsed?.standalone_query || rawQuery;
+    log(`[S0 Router] LLM response: depth=${rawDepth}, reason="${parsed?.reason || '(none)'}", query="${standaloneQuery.slice(0, 80)}"`);
     // Anti-hallucination guard: "书中有没有提到X" → BM25 verification
     let antiHallucinationQuery = '';
     if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
@@ -129,12 +146,13 @@ export async function routerNode(
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
 
-    // Hybrid trigger: keywords pre-check + LLM classification + booklist mode
-    // Only upgrade to SYNTOPICAL when LLM already classified depth >= ANALYTICAL
+    // Upgrade to SYNTOPICAL only when user explicitly selected a booklist
+    // (multi-book mode). We do NOT auto-upgrade based on keyword matching —
+    // keywords like "对比" appear in normal single-book discussions (e.g. concept
+    // comparison tables) and should not override the LLM's depth decision.
     const hasBooklist = (sharedContext?.toolContext?.crossBook?.booklistBookIds?.length ?? 0) > 0;
-    const candidateSyntopical = hasSyntopicalKeywords(rawQuery) || hasBooklist;
-    log(`[S0 Router] hasBooklist=${hasBooklist}, hasKeywords=${hasSyntopicalKeywords(rawQuery)}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
-    const effectiveDepth = (candidateSyntopical && depth >= ReadingDepth.ANALYTICAL)
+    log(`[S0 Router] hasBooklist=${hasBooklist}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
+    const effectiveDepth = (hasBooklist && depth >= ReadingDepth.ANALYTICAL)
       ? ReadingDepth.SYNTOPICAL
       : depth;
 
@@ -162,6 +180,7 @@ export async function routerNode(
       depth: effectiveDepth,
       rewrittenQuery: finalQuery,
       allowedTools: finalTools,
+      correctionDetected: isCorrection,
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
@@ -170,6 +189,7 @@ export async function routerNode(
       depth: ReadingDepth.ANALYTICAL,
       rewrittenQuery: rawQuery,
       allowedTools: mergeTools(rawIntent.allowedTools, inheritedTools),
+      correctionDetected: isCorrection,
     };
   }
 }

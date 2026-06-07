@@ -8,7 +8,7 @@
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
-import type { CognitiveEngineState, NodeError } from '../state';
+import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
 import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
 import type { FormatterInput } from '../node-io.js';
@@ -21,6 +21,10 @@ import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-sum
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 import { stripThinkTags } from '../../../config/thinking-models.js';
+import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
+import { validateLinkPairs } from '../../utils/wiki-link-pair-validator.js';
+import { getVaultPath } from '../../../utils/mobile-fs.js';
+import { agentLog as log } from '../../../utils/logger.js';
 import {
   buildProactiveSystemPrompt,
   buildProactiveUserMessage,
@@ -41,6 +45,30 @@ function extractChunkText(chunk: { content: unknown }): string {
       .join('');
   }
   return '';
+}
+
+/**
+ * Build retrieval-coverage metadata for the formatter prompt.
+ *
+ * Returns undefined when there is no signal worth reporting (no current chapter
+ * AND no searches performed), keeping the prompt lean.
+ */
+function buildRetrievalCoverage(
+  toolResultsSnapshot: ToolResultSnapshot[] | undefined,
+  currentNodeId: string | undefined,
+):
+  | { searchedNodeIds: string[]; currentNodeId: string | undefined; isCoverageGap: boolean }
+  | undefined {
+  const searchedNodeIds = (toolResultsSnapshot || [])
+    .map(r => r.args?.node_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const uniqueSearched = Array.from(new Set(searchedNodeIds));
+  if (!currentNodeId && uniqueSearched.length === 0) return undefined;
+  return {
+    searchedNodeIds: uniqueSearched,
+    currentNodeId,
+    isCoverageGap: currentNodeId ? !uniqueSearched.includes(currentNodeId) : false,
+  };
 }
 
 /**
@@ -76,9 +104,11 @@ async function streamToContent(
 /**
  * 修复 wiki 链接格式：补全缺失的书名前缀
  * LLM 有时会输出 [[文件名]] 而非 [[书名/文件名]]，这里强制补全
+ *
+ * @param crossBookMode true 时不加前缀（书单模式，跨书链接需保持各自的书名前缀或裸名）
  */
-function fixupWikiLinks(content: string, bookName: string): string {
-  if (!bookName) return content;
+export function fixupWikiLinks(content: string, bookName: string, crossBookMode: boolean = false): string {
+  if (!bookName || crossBookMode) return content;
   // 匹配 [[...]] 中不含 / 的链接，补全书名前缀
   return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
     return `[[${bookName}/${inner}]]`;
@@ -94,14 +124,14 @@ function fixupWikiLinks(content: string, bookName: string): string {
  * 正则中 [^#\]]* 不允许 # 出现在路径中是正确的——Obsidian 用 # 分隔标题锚点，
  * 文件名本身不能包含 #。
  */
-function fixupEmptyBlockIds(content: string): string {
+export function fixupEmptyBlockIds(content: string): string {
   return content.replace(/\[\[([^#\]]*)#\^\|([^\]]+)\]\]/g, '[[$1|$2]]')
     .replace(/\[\[([^#\]]*)#\^\]\]/g, '[[$1]]');
 }
 
 /** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
-function cleanOutput(content: string, pdfName: string): string {
-  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName);
+function cleanOutput(content: string, pdfName: string, crossBookMode: boolean = false): string {
+  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName, crossBookMode);
 }
 
 /**
@@ -109,7 +139,7 @@ function cleanOutput(content: string, pdfName: string): string {
  * 收集输入文本中的所有合法链接，输出中只保留这些链接
  * 编造的链接回退为纯文本（保留别名部分）
  */
-function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
+export function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
   // 预处理：降级 Calibre pagebreak 标记（calibre-pb-* 不是有效的 Obsidian block ID）
   content = content.replace(/\[\[([^\]]*?)#calibre-pb-\d+([^\]]*)\]\]/g, (_: string, before: string, after: string) => {
     const aliasMatch = after.match(/^\|([^|]+)$/);
@@ -145,49 +175,39 @@ function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockI
     }
   }
 
-  if (validFileNames.size === 0) {
-    // 输入中无链接，保留标题引用 [[书名/章节|alias]]，只移除带 #^block_id 的链接
-    return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
-      if (inner.includes('#^')) {
-        // block_id 链接无法验证，降级为标题链接 [[书名/章节|alias]]
-        const pathPart = inner.split('#')[0].split('|')[0];
-        const aliasMatch = inner.match(/\|([^|]+)$/);
-        const alias = aliasMatch ? aliasMatch[1] : pathPart.split('/').pop() || pathPart;
-        return `[[${pathPart}|${alias}]]`;
-      }
-      return fullMatch;
-    });
-  }
-
-  // 逐个检查输出中的链接，移除编造的
+  // T1.4 修复：移除宽松分支，统一走严格分支
+  // 严格分支：file_name 检查仅在 validFileNames 非空时执行
+  //           block_id 检查仅在 vaultBlockIds 非空时执行
   return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
     const hashIdx = inner.indexOf('#');
     const pathPart = (hashIdx >= 0 ? inner.slice(0, hashIdx) : inner).split('|')[0];
     const fileName = pathPart.split('/').pop() || pathPart;
 
-    // 模糊匹配：检查文件名是否在合法集合中（去除数字前缀后的核心部分）
-    let isFabricated = true;
-    for (const valid of validFileNames) {
-      if (valid === fileName || valid === pathPart || valid.endsWith(fileName) || fileName.endsWith(valid)) {
-        isFabricated = false;
-        break;
+    // 1. file_name 检查（仅在 validFileNames 非空时执行）
+    if (validFileNames.size > 0) {
+      let isFabricated = true;
+      for (const valid of validFileNames) {
+        if (valid === fileName || valid === pathPart || valid.endsWith(fileName) || fileName.endsWith(valid)) {
+          isFabricated = false;
+          break;
+        }
+        // 宽松匹配：去除编号前缀后比较标题部分
+        const stripNum = (s: string) => s.replace(/^\d+\s*[-–]\s*/, '');
+        if (stripNum(valid) === stripNum(fileName)) {
+          isFabricated = false;
+          break;
+        }
       }
-      // 宽松匹配：去除编号前缀后比较标题部分
-      const stripNum = (s: string) => s.replace(/^\d+\s*[-–]\s*/, '');
-      if (stripNum(valid) === stripNum(fileName)) {
-        isFabricated = false;
-        break;
+
+      if (isFabricated) {
+        // 编造链接 → 回退为纯文本（保留别名）
+        const aliasMatch = inner.match(/[^|]+$/) ;
+        const alias = aliasMatch ? aliasMatch[0] : fileName;
+        return alias;
       }
     }
 
-    if (isFabricated) {
-      // 编造链接 → 回退为纯文本（保留别名）
-      const aliasMatch = inner.match(/[^|]+$/) ;
-      const alias = aliasMatch ? aliasMatch[0] : fileName;
-      return alias;
-    }
-
-    // 文件名合法 → 进一步校验 block_id 是否存在于 vault 中
+    // 2. block_id 检查（仅在 vaultBlockIds 非空时执行）
     if (hashIdx >= 0 && vaultBlockIds && vaultBlockIds.size > 0) {
       const hashContent = inner.slice(hashIdx + 1);
       const blockIdMatch = hashContent.match(/^\^([\w-]+)/);
@@ -283,7 +303,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
@@ -302,12 +322,12 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
   if (!pdfName && !crossBookMode && effectiveAR) {
-    return { formattedOutput: cleanOutput(effectiveAR, '') };
+    return { formattedOutput: cleanOutput(effectiveAR, '', crossBookMode) };
   }
 
   // === Casual mode (depth=CASUAL): simple direct response ===
@@ -332,7 +352,7 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '') };
+    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
   }
 
 
@@ -345,6 +365,14 @@ export async function formatterNode(
   const coveredScope = effectiveScopeNodeIds.length > 0
     ? buildScopedChaptersBlock(effectiveScopeNodeIds, markdownFiles, nodeFileMap)
     : '';
+
+  // === Retrieval coverage transparency ===
+  // 把"实际检索了哪些章节"+"用户当前章节是否被覆盖"显式注入 prompt
+  // 防止 LLM 拿"未出现"搪塞用户，掩盖真实检索失败
+  const retrievalCoverage = buildRetrievalCoverage(
+    toolResultsSnapshot,
+    ctx?.toolContext?.book?.currentNodeId,
+  );
 
   // 收集输入文本用于校验编造链接。
   // coveredScope 包含 tree.json 中验证过的 file_name（vault 真实文件），
@@ -370,6 +398,7 @@ export async function formatterNode(
     betterQuestion || undefined,
     coveredScope || undefined,
     !!crossBookMode,
+    retrievalCoverage,
   );
 
   const messages = [
@@ -379,6 +408,14 @@ export async function formatterNode(
 
   // Stream output
   let content = await streamToContent(mainModel, messages, config, callbacks?.onContent);
+
+  // T3.2: 流式截断修复 — 在做工具结果校验前先把单边 [[ / ]] 残片修了
+  // 顺序关键：流式残片必须先修，否则 verifyAndCleanContent 看到的就是坏数据
+  const linkPairResult = validateLinkPairs(content);
+  if (linkPairResult.fixedUnpaired > 0) {
+    log(`[Formatter] Fixed ${linkPairResult.fixedUnpaired} unpaired [[ or ]]`);
+  }
+  content = linkPairResult.content;
 
   // Self-verification: remove ghost block_id references (safety net)
   const toolResults: ToolResultEntry[] = (toolResultsSnapshot || []).map(r => ({
@@ -455,9 +492,31 @@ export async function formatterNode(
     }
   }
 
-  // In booklist mode, skip single-book wiki link fixup (links already have their own book prefixes)
+  // T2.2: 正式处理顺序
+  // 1. cleanOutput - 修格式（fixupWikiLinks, fixupEmptyBlockIds, stripThinkTags）
+  // 2. validateWikiLinks - 基于 vault.exists 真实校验（仅在有 app 时）
+  // 3. stripFabricatedLinks - 兜底（变形的 file_name 白名单）
+  let cleanedContent = cleanOutput(content, effectivePdfName, crossBookMode);
+
+  const vaultApp = ctx?.toolContext?.vault?.app;
+  if (vaultApp) {
+    try {
+      const wikiLinkResult = await validateWikiLinks(cleanedContent, {
+        app: vaultApp,
+        bookName: crossBookMode ? '' : (pdfName || ''),
+        expectedBookName: crossBookMode ? '' : (pdfName || ''),
+        vaultPath: getVaultPath(vaultApp),
+        toolResults,
+      });
+      cleanedContent = wikiLinkResult.correctedContent;
+    } catch (err) {
+      // 校验失败时静默使用 cleanOutput 的结果（不阻塞 S4 输出）
+      log('[Formatter] validateWikiLinks 失败，使用 cleanOutput 结果:', err);
+    }
+  }
+
   const formatted = stripFabricatedLinks(
-    cleanOutput(content, effectivePdfName),
+    cleanedContent,
     inputTextsForValidation,
     vaultBlockIds,
   );

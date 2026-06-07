@@ -17,7 +17,9 @@ describe('ChapterNav - Pure Keyboard Navigation (No UI)', () => {
         mockPaginator = {
             isActive: vi.fn(() => true),
             nextPage: vi.fn(() => true),
-            prevPage: vi.fn(() => true)
+            prevPage: vi.fn(() => true),
+            getCurrentPage: vi.fn(() => 2),
+            getTotalPages: vi.fn(() => 5),
         };
         
         mockOnNavigatePrev = vi.fn(async () => true);

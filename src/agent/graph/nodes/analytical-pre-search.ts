@@ -21,7 +21,13 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
-import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
+import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
+import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
+import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
+import {
+  shouldVerifyNegativeClaim,
+  verifyNegativeClaimWithFullBook,
+} from '../utils/claim-verifier.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 
 /** 空的 pre-search 返回结构，多处复用 */
@@ -32,7 +38,22 @@ function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<Cog
     earlyStopContent: '',
     toolResultsSnapshot: [],
     prevSearchedBlockIds: [],
+    verifiedFullBookHits: [],
   };
+}
+
+/** 把 L5 全量复核命中的 hits 格式化为 prompt 块 */
+function formatVerifiedFullBookBlock(hits: BookSearchResultV2[]): string {
+  const lines = hits.slice(0, 3).flatMap(h =>
+    h.matchedBlocks.slice(0, 2).map(b => {
+      const content = b.content.length > 200 ? `${b.content.slice(0, 200)}...` : b.content;
+      return `【${h.title}】(file_name: "${h.fileName}", block_id: ${b.blockId.replace(/^\^/, '')})\n${content}`;
+    })
+  );
+  return `<verified_full_book_hits>
+【L5 负向声明自动复核命中】上一轮你或前序 S2 说过"书中未出现相关概念"，但全量书库搜索（不受当前 scope 限制）已找到以下证据。请基于这些证据重新分析，禁止再次输出"未出现/未提及"：
+${lines.join('\n\n')}
+</verified_full_book_hits>`;
 }
 
 /**
@@ -115,7 +136,7 @@ export async function preSearchNode(
   }
 
   // 1. Validate scope
-  const { validIds: validatedScopeNodeIds, nodeFileMap } = await validateScopeNodeIds(
+  const { validIds: validatedScopeNodeIdsRaw, nodeFileMap } = await validateScopeNodeIds(
     toolContext.vault.app,
     toolContext.book.indexId || '',
     statePdfName || ctx?.toolContext?.book.pdfName || '',
@@ -127,9 +148,56 @@ export async function preSearchNode(
   const currentChapterName = resolveCurrentChapterName(currentNodeId, toolContext.book.markdownFiles);
   const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
 
+  // === Scope hard-guard (defense in depth — see utils/scope-guard.ts docstring) ===
+  const citedFromMessages = extractCitedNodeIds(
+    extractHumanMessageContents(state.messages),
+  );
+  const guardResult = enforceScopeHardGuard(
+    validatedScopeNodeIdsRaw,
+    currentNodeId,
+    citedFromMessages,
+  );
+  const validatedScopeNodeIds = guardResult.scope;
+  if (guardResult.injected.length > 0) {
+    log(`[S2-Pre] Scope hard-guard injected ${guardResult.injected.length} ids: ${formatGuardInjectedLog(guardResult.injected)}`);
+  }
+
+  // === L5: Negative-claim auto-verification against the FULL book ===
+  // If the previous turn's analysisResult contained a "未出现" claim AND
+  // a full-book search now surfaces meaningful hits, force a state-machine
+  // restart at S2 Analytical (skip the early-stop path) and inject the
+  // verified hits into S2's context. S2's ReAct loop can then re-analyze
+  // with the new evidence rather than S4 patching a wrong answer.
+  // See utils/claim-verifier.ts:75 for the detection + search.
+  const queryForL5 = stateQuery || stateBetterQuestion || ctx?.rawUserQuery || '';
+  let verifiedFullBookHits: BookSearchResultV2[] = [];
+  if (toolContext.book.indexId
+      && toolContext.vault.app
+      && shouldVerifyNegativeClaim(state.analysisResult, queryForL5)) {
+    verifiedFullBookHits = await verifyNegativeClaimWithFullBook(queryForL5, {
+      bookId: toolContext.book.indexId,
+      app: toolContext.vault.app,
+    });
+    if (verifiedFullBookHits.length > 0) {
+      log(`[S2-Pre] L5 命中 ${verifiedFullBookHits.length} 条, 强制走 analytical 重新 ReAct`);
+    }
+  }
+  const l5ForcesAnalytical = verifiedFullBookHits.length > 0;
+
+  // L5 命中后，把 verified hits 的 nodeIds 合并进 validatedScopeNodeIds（去重），
+  // 让 S2 的 search_book 可以深入这些章节 explore 上下文。Scope 是 S2-Pre 的
+  // 单一收尾点（与 enforceScopeHardGuard 一致），S2 不应再知道 L5 的存在。
+  // 用 Set 重写并保持 `validatedScopeNodeIds` 的 const 语义清晰。
+  const finalScopeNodeIds: string[] = verifiedFullBookHits.length > 0
+    ? Array.from(new Set([
+        ...validatedScopeNodeIds,
+        ...verifiedFullBookHits.map(h => h.nodeId),
+      ]))
+    : validatedScopeNodeIds;
+
   // 2. Build prompt context (shared with analytical node)
   const { fullSystemPrompt } = buildFullAnalyticalContext({
-    scopeNodeIds: validatedScopeNodeIds,
+    scopeNodeIds: finalScopeNodeIds,
     tocSummary,
     currentNodeId,
     currentChapterName,
@@ -145,7 +213,7 @@ export async function preSearchNode(
 
   // 3. Pre-search RRF with S1's suggested_keywords
   if (!stateKeywords || stateKeywords.length === 0 || !toolContext.vault.app) {
-    return emptyPreSearchResult(validatedScopeNodeIds);
+    return emptyPreSearchResult(finalScopeNodeIds);
   }
 
   const pluginSettings = toolContext.vault.plugin?.settings;
@@ -166,7 +234,7 @@ export async function preSearchNode(
       topK: dynamicTopK,
       embedding: embeddingRole ? toEmbeddingOptions(embeddingRole) : undefined,
       reranker: rerankerRole ? toRerankerOptions(rerankerRole, rerankerWeight) : undefined,
-      scopeNodeIds: validatedScopeNodeIds.length > 0 ? validatedScopeNodeIds : undefined,
+      scopeNodeIds: finalScopeNodeIds.length > 0 ? finalScopeNodeIds : undefined,
       app: toolContext.vault.app,
     };
     if (toolContext.book.indexId) {
@@ -216,7 +284,7 @@ export async function preSearchNode(
 
     if (!Array.isArray(preResults) || preResults.length < 2) {
       log(`[S2-Pre] 预检索结果不足 (${Array.isArray(preResults) ? preResults.length : 0} 条), 跳过注入`);
-      return emptyPreSearchResult(validatedScopeNodeIds);
+      return emptyPreSearchResult(finalScopeNodeIds);
     }
 
     const hits = preResults.slice(0, 3).map(r => ({
@@ -268,7 +336,8 @@ export async function preSearchNode(
     const SUBSTANTIVE_THRESHOLD = 30;
     const substantiveScore = computeSubstantiveScore();
 
-    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore >= SUBSTANTIVE_THRESHOLD) {
+    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore >= SUBSTANTIVE_THRESHOLD
+        && !l5ForcesAnalytical) {
       log(`[S2-Pre] 早停: wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
 
       const blockLines = formatBlockLines(hits);
@@ -304,17 +373,20 @@ export async function preSearchNode(
       const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
 
       return {
-        validatedScopeNodeIds,
+        validatedScopeNodeIds: finalScopeNodeIds,
         nodeFileMap,
         earlyStopContent: 'done',
         analysisResult: verifyResult.content,
         toolResultsSnapshot: preSearchRecords,
+        verifiedFullBookHits,
       };
     }
 
     // 5. Normal path: inject compact pre-search results
     const blockLines = formatBlockLines(hits);
-    if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore < SUBSTANTIVE_THRESHOLD) {
+    if (l5ForcesAnalytical) {
+      log(`[S2-Pre] L5 强制走 analytical: 跳过早停决策, 注入 ${verifiedFullBookHits.length} 条全量复核 hits`);
+    } else if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore < SUBSTANTIVE_THRESHOLD) {
       log(`[S2-Pre] 早停被质量守卫拦截: wScore=${wScore.toFixed(2)} 但实质性分数仅 ${substantiveScore}/${SUBSTANTIVE_THRESHOLD}, 走 ReAct`);
     }
 
@@ -325,24 +397,31 @@ export async function preSearchNode(
     const existingBlockIds = ctx?.prevSearchedBlockIds ?? [];
     const mergedBlockIds = [...new Set([...existingBlockIds, ...preSearchBlockIds])];
 
-    const preSearchBlock = `<pre_search_results>
+    const mainPreSearchBlock = `<pre_search_results>
 基于目录分析自动检索到的相关段落（共 ${preResults.length} 条，取前 ${hits.length} 条），请优先利用。不够可用 search_book 补充。
 
 ${blockLines.join('\n\n')}
 </pre_search_results>`;
 
-    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记`);
+    // L5 注入：把全量书库复核命中的 hits 放在 main pre-search 之前，
+    // 让 S2 ReAct 看到「之前 S2 答错了，但全量复核已找到证据」的上下文。
+    const preSearchBlock = l5ForcesAnalytical
+      ? `${formatVerifiedFullBookBlock(verifiedFullBookHits)}\n\n${mainPreSearchBlock}`
+      : mainPreSearchBlock;
+
+    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记, L5=${verifiedFullBookHits.length}`);
 
     return {
-      validatedScopeNodeIds,
+      validatedScopeNodeIds: finalScopeNodeIds,
       nodeFileMap,
       preSearchBlock,
       earlyStopContent: '',
       toolResultsSnapshot: [],
       prevSearchedBlockIds: mergedBlockIds,
+      verifiedFullBookHits,
     };
   } catch (err) {
     log('[S2-Pre] 预检索失败 (非致命):', err instanceof Error ? err.message : String(err));
-    return emptyPreSearchResult(validatedScopeNodeIds);
+    return emptyPreSearchResult(finalScopeNodeIds);
   }
 }
