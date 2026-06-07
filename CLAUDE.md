@@ -1,11 +1,10 @@
 # DeepReader
 
-Obsidian 深度阅读插件。AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
+Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 
 ## 命令
 - 构建: `npm run build` → `bin/`
 - 测试: `npm run test:run`（单元）/ `npx wdio run tests/wdio.conf.ts`（E2E）
-- 开发: `npm run dev`（watch）
 - 部署: `npm run deploy` → test-vault
 
 ## 架构
@@ -27,7 +26,8 @@ Obsidian 深度阅读插件。AI 伴读 + PDF/EPUB 索引 + 微信读书同步�
 - 数据文件用 `fs`（原子写入），用户内容用 Vault API
 - 插件 ID 用 `this.manifest.id`，不硬编码 `'deepreader'`
 - Agent 唯入口: `FrontendAgent.chat()` → `runGraphEngine()` → `stream()`
-- 不自提交代码，提交前告知用户
+- 提交前将代码修改方案整理后告知用户审查，用户确认后提交代码
+- 每个重要功能都拉取独立worktree分支，完成后调用测试工程师代理进行测试
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录
