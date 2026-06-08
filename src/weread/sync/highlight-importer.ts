@@ -26,7 +26,7 @@ export interface ImportResult {
 }
 
 const WEREAD_COLOR_MAP: Record<number, string> = {
-	0: 'rgba(255, 235, 59, 0.5)',  // 黄色
+	0: 'rgba(255, 235, 59, 0.4)',  // 黄色
 	1: 'rgba(233, 30, 99, 0.4)',   // 红色 → 粉色（DeepReader 无红色）
 	2: 'rgba(255, 152, 0, 0.4)',   // 橙色
 	3: 'rgba(76, 175, 80, 0.4)',   // 绿色

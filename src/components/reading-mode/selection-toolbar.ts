@@ -217,14 +217,8 @@ export class SelectionToolbar {
      * 获取高亮颜色
      */
     private getHighlightColor(color: HighlightColorId): string {
-        const colors: Record<HighlightColorId, string> = {
-            yellow: 'rgba(255, 235, 59, 0.5)',
-            green: 'rgba(76, 175, 80, 0.4)',
-            blue: 'rgba(33, 150, 243, 0.4)',
-            pink: 'rgba(233, 30, 99, 0.4)',
-            orange: 'rgba(255, 152, 0, 0.4)',
-        };
-        return colors[color] || colors.yellow;
+        const found = HIGHLIGHT_COLORS.find(c => c.id === color);
+        return found?.bg || HIGHLIGHT_COLORS[0].bg;
     }
 
     /**

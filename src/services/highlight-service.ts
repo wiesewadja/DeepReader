@@ -6,7 +6,7 @@ import { findTextInMarkdown } from '../utils/markdown-utils.js';
 import { ExcerptService } from './excerpt-service.js';
 
 const HIGHLIGHT_COLORS: Record<HighlightColorId, string> = {
-	yellow: 'rgba(255, 235, 59, 0.5)',
+	yellow: 'rgba(255, 235, 59, 0.4)',
 	green: 'rgba(76, 175, 80, 0.4)',
 	blue: 'rgba(33, 150, 243, 0.4)',
 	pink: 'rgba(233, 30, 99, 0.4)',

@@ -16,6 +16,7 @@ import s17 from './s-17.mjs';
 import s30 from './s-30.mjs';
 import s24 from './s-24.mjs';
 import sRpAnti from '../S-RP-ANTI.check.mjs';
+import sSec from './s-sec.mjs';
 
 export const coreChecks = [
 	sRes,
@@ -28,4 +29,5 @@ export const coreChecks = [
 	s30,
 	s24,
 	sRpAnti,
+	sSec,
 ];

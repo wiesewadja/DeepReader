@@ -21,6 +21,11 @@ import l2Vectorization from './l2-vectorization.spec.mjs';
 import archiveToggle from './archive-toggle.spec.mjs';
 import lastPageResume from './last-page-resume.spec.mjs';
 import epubFullPipeline from './epub-full-pipeline.spec.mjs';
+import securitySanitizer from './security-sanitizer.spec.mjs';
+import writeNoteSecurity from './write-note-security.spec.mjs';
+import voicePersistence from './voice-persistence.spec.mjs';
+import selectionToolbarDelegation from './selection-toolbar-delegation.spec.mjs';
+import archGuardRules from './arch-guard-rules.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -42,4 +47,9 @@ export const e2eLightSpecs = [
 	archiveToggle,
 	lastPageResume,
 	epubFullPipeline,
+	securitySanitizer,
+	writeNoteSecurity,
+	voicePersistence,
+	selectionToolbarDelegation,
+	archGuardRules,
 ];
