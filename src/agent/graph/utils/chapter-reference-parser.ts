@@ -27,7 +27,7 @@ const ARROW_BARE_PATTERN = /[—–-]\s*(\d+)\s*[-–—]/g;
  * Pad a number to 4 digits with leading zeros, matching tree.json node_id format.
  * If the input already has leading zeros, returns as-is.
  */
-function toNodeId(num: string): string {
+export function toNodeId(num: string): string {
   // If it already has 4-digit form, keep it.
   if (num.length >= 4) return num;
   return num.padStart(4, '0');
@@ -38,9 +38,14 @@ function toNodeId(num: string): string {
  *
  * @param messages - all HumanMessage contents concatenated (so historical
  *                   context can also surface cited chapters)
+ * @param quotedNodeIds - 可选：来自引用卡片的 nodeId（从 ToolContext.quotes[].nodeId 传入）
+ *                        这些是用户在 UI 上主动引用的章节，权重等同 wiki 链接
  * @returns deduped, ordered list of canonical 4-digit nodeIds
  */
-export function extractCitedNodeIds(messages: string | string[]): string[] {
+export function extractCitedNodeIds(
+  messages: string | string[],
+  quotedNodeIds?: string[]
+): string[] {
   const text = Array.isArray(messages) ? messages.join('\n') : messages;
   if (!text) return [];
 
@@ -56,6 +61,15 @@ export function extractCitedNodeIds(messages: string | string[]): string[] {
       const n = parseInt(num, 10);
       if (isNaN(n) || n < 1 || n > 9999) continue;
       collected.add(toNodeId(num));
+    }
+  }
+
+  // 来源 2：UI 引用卡片中的 nodeId
+  if (quotedNodeIds?.length) {
+    for (const id of quotedNodeIds) {
+      if (id && /^\d{1,4}$/.test(id)) {
+        collected.add(toNodeId(id));
+      }
     }
   }
 
