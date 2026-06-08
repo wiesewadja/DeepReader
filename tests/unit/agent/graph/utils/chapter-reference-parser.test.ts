@@ -73,35 +73,4 @@ describe('extractCitedNodeIds', () => {
       expect(extractCitedNodeIds('[[0024 - 章节]]')).toEqual(['0024']);
     });
   });
-
-  describe('PR 1: quotedNodeIds from UI cards', () => {
-    it('merges quotedNodeIds when text has no wiki link', () => {
-      expect(extractCitedNodeIds('什么是回报函数工程', ['24'])).toContain('0024');
-    });
-
-    it('deduplicates wiki-cited and quoted (same chapter)', () => {
-      expect(extractCitedNodeIds('[[24 - xxx]]', ['24'])).toEqual(['0024']);
-    });
-
-    it('pads quotedNodeIds to 4 digits', () => {
-      expect(extractCitedNodeIds('', ['7'])).toEqual(['0007']);
-    });
-
-    it('rejects invalid quotedNodeIds (non-numeric)', () => {
-      // "abc" 跳过；"99" 保留
-      const result = extractCitedNodeIds('', ['abc', '99']);
-      expect(result).toContain('0099');
-      expect(result).not.toContain('abc');
-    });
-
-    it('combines text + quoted sources', () => {
-      const result = extractCitedNodeIds('[[21 - 第一章]]', ['24']);
-      expect(result).toContain('0021');
-      expect(result).toContain('0024');
-    });
-
-    it('handles undefined quotedNodeIds gracefully', () => {
-      expect(extractCitedNodeIds('[[24 - xxx]]', undefined)).toEqual(['0024']);
-    });
-  });
 });

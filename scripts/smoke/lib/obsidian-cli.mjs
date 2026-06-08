@@ -25,9 +25,6 @@ const OBSIDIAN_CLI = process.env.OBSIDIAN_CLI || 'obsidian';
 /** 插件 ID（dev 部署使用 -dev 后缀，避免与 daily 冲突） */
 export const PLUGIN_ID = 'deepreader-dev';
 
-/** 目标 vault（可通过 E2E_VAULT 环境变量覆盖；不设则使用 Obsidian 当前激活的 vault） */
-const VAULT_ARG = process.env.E2E_VAULT ? `vault=${process.env.E2E_VAULT}` : null;
-
 /**
  * 执行 obsidian CLI 子命令
  * @param {string} subcommand  如 "plugin:reload"
@@ -35,9 +32,8 @@ const VAULT_ARG = process.env.E2E_VAULT ? `vault=${process.env.E2E_VAULT}` : nul
  * @returns {Promise<{stdout: string, stderr: string, code: number}>}
  */
 export async function exec(subcommand, args = [], { timeout: execTimeout = 15_000 } = {}) {
-	const fullArgs = VAULT_ARG ? [subcommand, VAULT_ARG, ...args] : [subcommand, ...args];
 	try {
-		const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, fullArgs, {
+		const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, [subcommand, ...args], {
 			timeout: execTimeout,
 			maxBuffer: 10 * 1024 * 1024,
 		});

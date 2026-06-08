@@ -16,18 +16,6 @@ export interface ChatMessage {
   timestamp?: string;
   /** DeepSeek 推理过程（仅 assistant 消息） */
   reasoning_content?: string;
-  /** 引用上下文（仅 user 消息，UI 引用卡片 + 高亮的来源） */
-  quotes?: Array<{
-    id: string;
-    text: string;
-    source?: string;
-    sourcePath?: string;
-    blockId?: string;
-    nodeId?: string;
-    heading?: string;
-    headingPath?: string[];
-    page?: number;
-  }>;
 }
 
 export interface ToolCall {

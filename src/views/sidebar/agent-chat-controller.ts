@@ -245,9 +245,6 @@ export class AgentChatController {
 					quotes: quotes && quotes.length > 0 ? quotes : undefined
 				};
 				this.host.messageList?.addMessage(userMessageData);
-				// 发送后立即清空输入区的引用卡片
-				// （AI 开始回复时不再需要“边发边看”卡片，已在 user message 里持久化）
-				this.host.clearQuotes();
 
 				const aiMessageData: MessageData = {
 					id: aiMessageId,
@@ -383,29 +380,11 @@ export class AgentChatController {
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {
-				// 1. 用户可见部分：markdown 引用块（保持原有 UX）
 				const quotesText = quotes.map(q => {
 					const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
 					return `> ${q.text}\n> — ${location}`;
 				}).join('\n\n');
 				userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
-
-				// 2. LLM 可读部分：结构化 <user_cited_quotes> 块（含 blockId/nodeId）
-				//    让 LLM 知道这是用户主动引用的强信号 + wiki 回链的精确位置
-				//    bookNameForLink：LLM 构造 wiki 链接时**直接使用**这个书名（避免用错章节名/路径）
-				const bookNameForLink = this.host.currentPdfName || '当前书籍';
-				const citedLines = quotes.map((q, i) => {
-					const parts: string[] = [`[${i + 1}] ${q.text}`];
-					// wiki 链接用书名（必填）—— LLM 复制即可
-					parts.push(`书名(wiki用): ${bookNameForLink}`);
-					if (q.headingPath?.length) parts.push(`位置: ${q.headingPath.join(' > ')}`);
-					else if (q.heading) parts.push(`位置: ${q.heading}`);
-					if (q.nodeId) parts.push(`node_id: ${q.nodeId}`);
-					if (q.blockId) parts.push(`block_id: ^${q.blockId}`);
-					if (q.sourcePath) parts.push(`来源文件: ${q.sourcePath}`);
-					return parts.join(' | ');
-				}).join('\n');
-				userMessage = `${userMessage}\n\n<user_cited_quotes>\n${citedLines}\n</user_cited_quotes>\n\n⚠️ 你正在回应用户主动引用的内容。回复中**必须**插入 wiki 链接回引每条引用（格式 \`[[书名(wiki用)#^blockId|2-6 字短别名]]\`，书名照抄上面 "书名(wiki用)" 字段，不要猜），链接应嵌入句中作主语/宾语/修饰语，不要堆砌在句末。`;
 			}
 
 			// 注入 @ 引用的文档内容到用户消息（超长文档通过 LLM 压缩）

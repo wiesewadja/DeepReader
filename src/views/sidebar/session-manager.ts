@@ -35,16 +35,6 @@ export interface SessionManagerHost {
 	initializeFrontendAgent(): Promise<void>;
 	get currentBooklistItems(): BooklistItemInfo[] | null;
 	restoreBooklist(booklist: Booklist): void;
-	/**
-	 * 阅读模式服务（用于引用高亮的会话级追踪）
-	 * 可选（未提供则不进行高亮同步）
-	 */
-	get readingModeService(): import('../../services/reading-mode-service.js').ReadingModeService | null;
-	/**
-	 * PR 1 C1：恢复对话时同时恢复输入区上方的引用卡片
-	 * 选可选（不传则不恢复）
-	 */
-	get quoteManager(): import('./quote-manager.js').QuoteManager | null;
 }
 
 export class SessionManager {
@@ -107,9 +97,6 @@ export class SessionManager {
 		this._sessionId = this.generateSessionId();
 
 		this.host.setAgentChatHistory([]);
-
-		// 新对话：清除阅读模式中所有引用高亮
-		this.host.readingModeService?.clearAllCitedHighlights();
 
 		if (this.host.contextManager) {
 			this.host.contextManager.clearAll();
@@ -321,36 +308,11 @@ export class SessionManager {
 					msgData.enableVoiceReply = true;
 					log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
 				}
-				// 恢复引用数据（用户消息：引用卡片）
-				if (msg.quotes?.length) {
-					msgData.quotes = msg.quotes;
-					log(`[DeepPDF] 恢复 ${msg.quotes.length} 条引用`);
-				}
 				this.host.messageList!.addMessage(msgData);
 			} catch (e) {
 				warn(`[DeepPDF] Failed to restore message:`, e);
 			}
 		});
-
-		// 重放引用高亮：扫描所有 user message 的 quotes，调用 readingModeService.setCitedHighlightsByFile
-		// 这样用户切回章节时能看到原始位置加亮
-		const citedByFile = new Map<string, { blockId?: string; text: string }[]>();
-		for (const msg of displayMessages) {
-			if (msg.role === 'user' && msg.quotes) {
-				for (const q of msg.quotes) {
-					if (!q.text) continue;
-					const filePath = q.sourcePath;
-					if (!filePath) continue;
-					const arr = citedByFile.get(filePath) || [];
-					arr.push({ blockId: q.blockId, text: q.text });
-					citedByFile.set(filePath, arr);
-				}
-			}
-		}
-		if (citedByFile.size > 0) {
-			this.host.readingModeService?.setCitedHighlightsByFile(citedByFile);
-			log(`[DeepPDF] 重放 ${citedByFile.size} 个文件的引用高亮`);
-		}
 
 		if (displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === 'user') {
 			this.host.messageList!.addMessage({

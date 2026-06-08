@@ -305,33 +305,6 @@
     height: 16px;
 }
 
-/* ==================== 块高亮闪烁动画（引用跳转 2s） ==================== */
-@keyframes deeppdf-block-flash {
-    0%, 100% { background-color: transparent; }
-    10%, 30% { background-color: rgba(255, 235, 59, 0.5); }
-}
-
-.deeppdf-reading-mode .deeppdf-reading-block-flash {
-    animation: deeppdf-block-flash 2s ease-out;
-    border-radius: 3px;
-}
-
-/* ==================== 引用高亮（原文选区） ==================== */
-/* 只包裹选中的文字，不影响整个段落 */
-.deeppdf-reading-mode .deeppdf-cited-text {
-    background-color: rgba(255, 100, 100, 0.22);
-    border-radius: 2px;
-    padding: 0 1px;
-    box-shadow: 0 0 0 1px rgba(255, 100, 100, 0.45);
-    transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-/* hover 引用高亮：加深色 */
-.deeppdf-reading-mode .deeppdf-cited-text:hover {
-    background-color: rgba(255, 100, 100, 0.35);
-    box-shadow: 0 0 0 1px rgba(220, 60, 60, 0.7);
-}
-
 /* ==================== 高亮颜色选择器样式 ==================== */
 
 .deeppdf-highlight-picker {

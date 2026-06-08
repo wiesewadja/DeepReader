@@ -51,21 +51,8 @@ export interface MessageData {
 	completedSteps?: string[];
 	/** 可选：关联的 PDF 文件名 */
 	pdfName?: string;
-	/**
-	 * 可选：用户引用内容（完整 QuoteItem[]，含 blockId/nodeId/sourcePath）
-	 * 持久化到 JSONL 时会过滤掉运行时字段（range/messageId）
-	 */
-	quotes?: Array<{
-		id?: string;
-		text: string;
-		source?: string;
-		sourcePath?: string;
-		blockId?: string;
-		nodeId?: string;
-		heading?: string;
-		headingPath?: string[];
-		page?: number;
-	}>;
+	/** 可选：用户引用内容 */
+	quotes?: Array<{ text: string; source?: string; heading?: string; headingPath?: string[] }>;
 	/** 可选：关联的页码 */
 	page?: number;
 	/** 可选：关联的用户问题 */
