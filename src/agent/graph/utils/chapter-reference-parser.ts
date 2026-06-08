@@ -26,9 +26,10 @@ const ARROW_BARE_PATTERN = /[—–-]\s*(\d+)\s*[-–—]/g;
 /**
  * Pad a number to 4 digits with leading zeros, matching tree.json node_id format.
  * If the input already has leading zeros, returns as-is.
+ * Non-numeric inputs (including empty string) are returned unchanged.
  */
-function toNodeId(num: string): string {
-  // If it already has 4-digit form, keep it.
+export function toNodeId(num: string): string {
+  if (!/^\d+$/.test(num)) return num;
   if (num.length >= 4) return num;
   return num.padStart(4, '0');
 }

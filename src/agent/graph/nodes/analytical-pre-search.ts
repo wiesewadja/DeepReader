@@ -22,7 +22,7 @@ import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
 import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
-import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
+import { extractCitedNodeIds, toNodeId } from '../utils/chapter-reference-parser.js';
 import type { QuoteItem } from '../../tools/types.js';
 import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import {
@@ -139,10 +139,8 @@ async function readUserCitedBlocks(
   // 归一化 node_id 为 4 位字符串：tree.json 的 nodeFileMap 用 “0015” 这种格式，
   // 而引用卡片里可能存的是 “15”（取决于上游怎么读 frontmatter）。
   // 两边不统一会导致 read_book_section 报 ERROR_NOT_FOUND。
-  const normalizeNodeId = (id: string): string =>
-    /^\d+$/.test(id) ? id.padStart(4, '0') : id;
   const withLoc = quotes
-    .map(q => ({ ...q, nodeId: q.nodeId ? normalizeNodeId(q.nodeId) : q.nodeId }))
+    .map(q => ({ ...q, nodeId: q.nodeId ? toNodeId(q.nodeId) : q.nodeId }))
     .filter(
       (q): q is QuoteItem & { nodeId: string; blockId: string } =>
         !!q.nodeId && !!q.blockId,

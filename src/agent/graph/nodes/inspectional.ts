@@ -18,7 +18,7 @@ import {
 import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
-import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
+import { extractCitedNodeIds, toNodeId } from '../utils/chapter-reference-parser.js';
 import type { QuoteItem } from '../../tools/types.js';
 import { enforceScopeHardGuard, buildFallbackScope, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';
@@ -93,12 +93,10 @@ export async function inspectionalNode(
   // 用于在 prompt 中以原文形式展示，让 LLM 依据原文判断引用章节的相关性
   // 归一化 nodeId 为 4 位（与 tree.json nodeFileMap 和 scopeNodeIds 一致），
   // 避免 “15” vs “0015” 导致 map lookup miss
-  const normalizeNodeId = (id: string): string =>
-    /^\d+$/.test(id) ? id.padStart(4, '0') : id;
   const citedQuoteTexts: Array<{ nodeId: string; blockId?: string; text: string }> = (toolContext?.quotes || [])
     .filter((q: QuoteItem): q is QuoteItem & { nodeId: string } => !!q.nodeId)
     .map((q: QuoteItem & { nodeId: string }) => ({
-      nodeId: normalizeNodeId(q.nodeId),
+      nodeId: toNodeId(q.nodeId),
       blockId: q.blockId,
       text: q.text,
     }));
