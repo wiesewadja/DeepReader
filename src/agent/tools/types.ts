@@ -4,7 +4,6 @@
 
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
 import type { EngineMode } from '../graph/state.js';
-import type { ToolDefinition } from '../types.js';
 import type { VaultContext, BookContext, CrossBookContext, WereadContext, VisualContext } from './context/index.js';
 
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';
@@ -48,6 +47,5 @@ export interface ToolContext {
  * Tool 执行器接口
  */
 export interface ToolExecutor {
-  definition?: ToolDefinition;
   execute(args: Record<string, unknown>, context: ToolContext): Promise<string>;
 }
