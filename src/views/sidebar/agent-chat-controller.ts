@@ -215,12 +215,24 @@ export class AgentChatController {
 
 			if (regenerateMessageId) {
 				aiMessageId = regenerateMessageId;
-				this.host.messageList?.updateMessage(aiMessageId, {
+				// 保留原消息的 citedQuoteIds / citedQuotePreviews（重新生成不应丢失引用关联）
+				// 注意：仅在 existingMsg 存在且有值时设置，
+				// 避免 updateMessage 里的 Object.assign 用 undefined 覆盖原值
+				const existingMsg = this.host.messageList?.getMessagesData()
+					.find(m => m.id === aiMessageId);
+				const updates: Partial<MessageData> = {
 					content: this.host.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
 					isStreaming: true,
 					currentStatus: '开始阅读...',
 					agentToolCalls: [],
-				});
+				};
+				if (existingMsg?.citedQuoteIds?.length) {
+					updates.citedQuoteIds = existingMsg.citedQuoteIds;
+				}
+				if (existingMsg?.citedQuotePreviews?.length) {
+					updates.citedQuotePreviews = existingMsg.citedQuotePreviews;
+				}
+				this.host.messageList?.updateMessage(aiMessageId, updates);
 
 				const history = this._agentChatHistory;
 				const lastUserIndex = history.findLastIndex(m => m.role === 'user');
@@ -245,6 +257,9 @@ export class AgentChatController {
 					quotes: quotes && quotes.length > 0 ? quotes : undefined
 				};
 				this.host.messageList?.addMessage(userMessageData);
+				// 发送后立即清空输入区的引用卡片
+				// （AI 开始回复时不再需要“边发边看”卡片，已在 user message 里持久化）
+				this.host.clearQuotes();
 
 				const aiMessageData: MessageData = {
 					id: aiMessageId,
@@ -261,6 +276,12 @@ export class AgentChatController {
 					bookAuthor: this.host.currentBookAuthor || undefined,
 					enableVoiceReply: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)),
 					voiceState: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)) ? 'loading' as const : undefined,
+					// 回应引用关联：AI 消息 → 哪几条 user quote 触发的（用于 "📌 回应引用" 徽标）
+					citedQuoteIds: quotes && quotes.length > 0 ? quotes.map(q => q.id) : undefined,
+					// 引用预览（供徽标显示 “正在回应「……」”）
+					citedQuotePreviews: quotes && quotes.length > 0
+						? quotes.map(q => q.text.length > 12 ? q.text.substring(0, 12) + '…' : q.text)
+						: undefined,
 				};
 				this.host.messageList?.addMessage(aiMessageData);
 			}
@@ -380,11 +401,29 @@ export class AgentChatController {
 			let userMessage = query;
 
 			if (quotes && quotes.length > 0) {
+				// 1. 用户可见部分：markdown 引用块（保持原有 UX）
 				const quotesText = quotes.map(q => {
 					const location = q.headingPath?.join(' > ') || q.heading || q.source || '引用';
 					return `> ${q.text}\n> — ${location}`;
 				}).join('\n\n');
 				userMessage = `${userMessage}\n\n---\n**用户引用了以下内容，请重点关注并基于引用内容回答：**\n${quotesText}`;
+
+				// 2. LLM 可读部分：结构化 <user_cited_quotes> 块（含 blockId/nodeId）
+				//    让 LLM 知道这是用户主动引用的强信号 + wiki 回链的精确位置
+				//    bookNameForLink：LLM 构造 wiki 链接时**直接使用**这个书名（避免用错章节名/路径）
+				const bookNameForLink = this.host.currentPdfName || '当前书籍';
+				const citedLines = quotes.map((q, i) => {
+					const parts: string[] = [`[${i + 1}] ${q.text}`];
+					// wiki 链接用书名（必填）—— LLM 复制即可
+					parts.push(`书名(wiki用): ${bookNameForLink}`);
+					if (q.headingPath?.length) parts.push(`位置: ${q.headingPath.join(' > ')}`);
+					else if (q.heading) parts.push(`位置: ${q.heading}`);
+					if (q.nodeId) parts.push(`node_id: ${q.nodeId}`);
+					if (q.blockId) parts.push(`block_id: ^${q.blockId}`);
+					if (q.sourcePath) parts.push(`来源文件: ${q.sourcePath}`);
+					return parts.join(' | ');
+				}).join('\n');
+				userMessage = `${userMessage}\n\n<user_cited_quotes>\n${citedLines}\n</user_cited_quotes>\n\n⚠️ 你正在回应用户主动引用的内容。回复中**必须**插入 wiki 链接回引每条引用（格式 \`[[书名(wiki用)#^blockId|2-6 字短别名]]\`，书名照抄上面 "书名(wiki用)" 字段，不要猜），链接应嵌入句中作主语/宾语/修饰语，不要堆砌在句末。`;
 			}
 
 			// 注入 @ 引用的文档内容到用户消息（超长文档通过 LLM 压缩）

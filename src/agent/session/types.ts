@@ -55,6 +55,28 @@ export interface SessionMessageLine {
 	voiceAudioPath?: string;  // 音频文件相对路径（相对于 sessions 目录）
 	voiceDuration?: number;   // 语音时长（秒）
 	letterState?: 'sealing' | 'sealed' | 'opened';  // 信封状态
+	// 引用持久化字段（对话恢复时还原 UI 状态）
+	quotes?: SessionQuoteItem[];  // 用户消息：引用的原文片段列表
+	citedQuoteIds?: string[];     // AI 消息：正在回应的 user quote id 列表（用于 "📌 回应引用" 徽标）
+	citedQuotePreviews?: string[]; // AI 消息：citedQuoteIds 对应的引用文本预览（供徽标显示）
+}
+
+/**
+ * 持久化版本的引用项（JSONL 安全：不存 Range 引用）
+ *
+ * 与 components/chat-input/chat-input.ts 的 QuoteItem 对应，
+ * 但排除运行时字段（range）和 messageId（仅二级引用时用，不持久化）
+ */
+export interface SessionQuoteItem {
+	id: string;
+	text: string;
+	source?: string;
+	sourcePath?: string;
+	blockId?: string;
+	nodeId?: string;
+	heading?: string;
+	headingPath?: string[];
+	page?: number;
 }
 
 /**

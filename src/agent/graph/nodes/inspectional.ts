@@ -19,6 +19,7 @@ import { extractJSON } from '../utils/parse.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
+import type { QuoteItem } from '../../tools/types.js';
 import { enforceScopeHardGuard, buildFallbackScope, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';
 import type { InspectionalInput } from '../node-io.js';
@@ -77,8 +78,12 @@ export async function inspectionalNode(
   const currentNodeId = toolContext?.book?.currentNodeId;
   // citedNodeIds: 提取用户消息中显式引用的章节 nodeId
   // 既看最新消息，也看 chatHistory（防止前几轮引用被忽略）
+  // PR 1：同时收集 UI 引用卡片中的 nodeId
   const allHumanContents = extractHumanMessageContents(state.messages);
-  const citedNodeIds = extractCitedNodeIds(allHumanContents);
+  const quotedNodeIdsFromUI = (toolContext?.quotes || [])
+    .map((q: QuoteItem) => q.nodeId)
+    .filter((id: string | undefined): id is string => !!id);
+  const citedNodeIds = extractCitedNodeIds(allHumanContents, quotedNodeIdsFromUI);
 
   if (currentNodeId || citedNodeIds.length > 0) {
     log(`[S1 Inspectional] currentNodeId=${currentNodeId || '(none)'}, citedNodeIds=[${citedNodeIds.join(',')}]`);

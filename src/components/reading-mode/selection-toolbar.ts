@@ -5,19 +5,9 @@
 
 import { App, Notice } from 'obsidian';
 import { uiLog } from '../../utils/logger.js';
+import { findBlockIdFromRange } from '../../utils/block-utils.js';
+import { Icons } from '../../utils/icons.js';
 import type { QuoteMetadata } from '../chat-input/chat-input.js';
-
-// 极简图标（与 AI 回复气泡图标一致）
-const Icons = {
-    // 引用图标（quote，用于添加到对话上下文）
-    quote: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`,
-    // 摘录图标（bookmark，与 AI 回复气泡一致）
-    excerpt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`,
-    // 高亮图标（荧光笔）
-    highlight: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
-    // 移除高亮图标（橡皮擦）
-    removeHighlight: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`
-};
 
 // 高亮颜色配置
 export const HIGHLIGHT_COLORS = [
@@ -433,7 +423,7 @@ export class SelectionToolbar {
 
     /**
      * 从选中文本提取引用元数据
-     * 包括 block_id、node_id、章节标题等
+     * 包括 block_id、node_id、章节标题、Range、Page
      */
     private extractQuoteMetadata(text: string): QuoteMetadata {
         const metadata: QuoteMetadata = { text };
@@ -458,82 +448,19 @@ export class SelectionToolbar {
         }
 
         // 3. 从 DOM 中获取 block_id
-        if (this.savedRange) {
-            const blockId = this.findBlockIdInRange(this.savedRange);
-            if (blockId) {
-                metadata.blockId = blockId;
+        //    使用共享工具 findBlockIdFromRange()（含 metadataCache 降级）
+        if (this.savedRange && activeFile) {
+            try {
+                const blockId = findBlockIdFromRange(this.savedRange, activeFile.path, this.app);
+                if (blockId) {
+                    metadata.blockId = blockId;
+                }
+            } catch (err) {
+                uiLog.warn('[DeepPDF] findBlockIdFromRange failed:', err);
             }
         }
 
         return metadata;
-    }
-
-    /**
-     * 从选区中查找 block_id
-     * block_id 通常在段落末尾，格式为 ^xxx
-     */
-    private findBlockIdInRange(range: Range): string | undefined {
-        // 从选区起始节点向上找到段落级块元素
-        let node: Node | null = range.startContainer;
-
-        while (node && node !== document.body) {
-            if (node instanceof HTMLElement) {
-                const tag = node.tagName.toLowerCase();
-                // 找到段落级元素后，在其内部搜索 block ID
-                if (['p', 'li', 'div', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
-                    const blockId = this.extractBlockIdFromElement(node);
-                    if (blockId) return blockId;
-                }
-            }
-            node = node.parentNode;
-        }
-
-        // 降级：在选区起始节点的父链上逐级找
-        node = range.startContainer;
-        while (node && node !== document.body) {
-            if (node instanceof HTMLElement) {
-                const blockId = this.extractBlockIdFromElement(node);
-                if (blockId) return blockId;
-            }
-            node = node.parentNode;
-        }
-
-        return undefined;
-    }
-
-    /**
-     * 从元素中提取 block ID
-     * Obsidian 渲染 block ID 的几种方式：
-     * 1. 子元素带 data-block-id 属性
-     * 2. 子元素带 id="^xxx" 属性
-     * 3. 文本节点末尾有 ^xxx（未渲染时）
-     */
-    private extractBlockIdFromElement(el: HTMLElement): string | undefined {
-        // 方式1：data-block-id 属性（自身或子元素）
-        const withAttr = el.querySelector('[data-block-id]') || (el.hasAttribute('data-block-id') ? el : null);
-        if (withAttr) {
-            const id = withAttr.getAttribute('data-block-id') || '';
-            return id.replace(/^\^/, '') || undefined;
-        }
-
-        // 方式2：id="^xxx" 的子元素（Obsidian 标准渲染）
-        const allChildren = el.querySelectorAll('[id]');
-        for (const child of Array.from(allChildren)) {
-            const id = child.getAttribute('id') || '';
-            if (id.startsWith('^')) return id.slice(1);
-        }
-        // 自身 id
-        if (el.id?.startsWith('^')) return el.id.slice(1);
-
-        // 方式3：文本节点末尾的 ^xxx（原始 markdown 未完全渲染时）
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        let textNode: Text | null;
-        while ((textNode = walker.nextNode() as Text | null)) {
-            const m = (textNode.textContent || '').match(/\^([a-zA-Z0-9_-]+)\s*$/);
-            if (m) return m[1];
-        }
-
-        return undefined;
     }
 
     /**

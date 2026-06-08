@@ -65,6 +65,30 @@ HTMLElement.prototype.createEl = function(this: HTMLElement, tagName: string, op
 	return el;
 };
 
+// 模拟 Obsidian 的 createDiv 方法
+HTMLElement.prototype.createDiv = function(this: HTMLElement, options?: { cls?: string | string[]; text?: string; attr?: Record<string, string> }) {
+	const el = document.createElement('div');
+	if (options?.cls) {
+		if (Array.isArray(options.cls)) {
+			const allClasses = options.cls.flatMap((cls: string) => cls.split(' ').filter(c => c));
+			el.classList.add(...allClasses);
+		} else {
+			const allClasses = options.cls.split(' ').filter(c => c);
+			el.classList.add(...allClasses);
+		}
+	}
+	if (options?.text) {
+		el.textContent = options.text;
+	}
+	if (options?.attr) {
+		Object.entries(options.attr).forEach(([key, value]) => {
+			el.setAttribute(key, value);
+		});
+	}
+	this.appendChild(el);
+	return el;
+};
+
 // 模拟 Obsidian 的 empty 方法
 HTMLElement.prototype.empty = function(this: HTMLElement) {
 	while (this.firstChild) {

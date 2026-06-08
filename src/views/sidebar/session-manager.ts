@@ -35,6 +35,16 @@ export interface SessionManagerHost {
 	initializeFrontendAgent(): Promise<void>;
 	get currentBooklistItems(): BooklistItemInfo[] | null;
 	restoreBooklist(booklist: Booklist): void;
+	/**
+	 * 阅读模式服务（用于引用高亮的会话级追踪）
+	 * 可选（未提供则不进行高亮同步）
+	 */
+	get readingModeService(): import('../../services/reading-mode-service.js').ReadingModeService | null;
+	/**
+	 * PR 1 C1：恢复对话时同时恢复输入区上方的引用卡片
+	 * 选可选（不传则不恢复）
+	 */
+	get quoteManager(): import('./quote-manager.js').QuoteManager | null;
 }
 
 export class SessionManager {
@@ -97,6 +107,9 @@ export class SessionManager {
 		this._sessionId = this.generateSessionId();
 
 		this.host.setAgentChatHistory([]);
+
+		// 新对话：清除阅读模式中所有引用高亮
+		this.host.readingModeService?.clearAllCitedHighlights();
 
 		if (this.host.contextManager) {
 			this.host.contextManager.clearAll();
@@ -308,11 +321,52 @@ export class SessionManager {
 					msgData.enableVoiceReply = true;
 					log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
 				}
+				// 恢复引用数据（用户消息：引用卡片；AI 消息：回应徽标）
+				if ((msg as any).quotes?.length) {
+					msgData.quotes = (msg as any).quotes;
+					msgData.quotesRestored = true;  // 标记为恢复态 → 只读、不可移除
+					log(`[DeepPDF] 恢复 ${(msg as any).quotes.length} 条引用`);
+				}
+				if ((msg as any).citedQuoteIds?.length) {
+					msgData.citedQuoteIds = (msg as any).citedQuoteIds;
+				}
+				if ((msg as any).citedQuotePreviews?.length) {
+					msgData.citedQuotePreviews = (msg as any).citedQuotePreviews;
+				}
 				this.host.messageList!.addMessage(msgData);
 			} catch (e) {
 				warn(`[DeepPDF] Failed to restore message:`, e);
 			}
 		});
+
+		// PR 1：C1 接线 — 已删除
+		// 早期实现会在恢复时调用 quoteManager.restoreQuotes() 在输入区显示历史引用卡片。
+		// 用户反馈：恢复时再次出现引用卡片不合适，因为：
+		//   1. 引用已经在 user message 气泡里持久化可见了
+		//   2. 再次出现会让用户困惑“我是不是又被引用了一遍？”
+		//   3. 输入区是“待发送”区域，恢复历史是“已完成”，语义不匹配
+		// 现在：只重放章节高亮（下面的代码），不再二次出现引用卡片。
+
+
+		// 重放引用高亮：扫描所有 user message 的 quotes，调用 readingModeService.setCitedHighlightsByFile
+		// 这样用户切回章节时能看到原始位置加亮
+		const citedByFile = new Map<string, { blockId?: string; text: string }[]>();
+		for (const msg of displayMessages) {
+			if (msg.role === 'user' && (msg as any).quotes) {
+				for (const q of (msg as any).quotes) {
+					if (!q.text) continue;
+					const filePath = q.sourcePath;
+					if (!filePath) continue;
+					const arr = citedByFile.get(filePath) || [];
+					arr.push({ blockId: q.blockId, text: q.text });
+					citedByFile.set(filePath, arr);
+				}
+			}
+		}
+		if (citedByFile.size > 0) {
+			this.host.readingModeService?.setCitedHighlightsByFile(citedByFile);
+			log(`[DeepPDF] 重放 ${citedByFile.size} 个文件的引用高亮`);
+		}
 
 		if (displayMessages.length > 0 && displayMessages[displayMessages.length - 1].role === 'user') {
 			this.host.messageList!.addMessage({

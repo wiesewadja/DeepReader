@@ -407,6 +407,15 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         const readingModeCallbacks: ReadingModeCallbacks = {
             onQuote: (metadata: QuoteMetadata) => {
                 this.activateView();
+                // 同步给原文章节加高亮（用选区 Range 包裹精准位置）
+                const sel = window.getSelection();
+                const range = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0) : undefined;
+                this.readingModeService?.addCitedHighlight(
+                    metadata.blockId,
+                    metadata.text,
+                    metadata.sourcePath,
+                    range
+                );
                 setTimeout(() => {
                     this.app.workspace.trigger('deeppdf:quote-selection', metadata);
                 }, 100);

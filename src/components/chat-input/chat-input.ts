@@ -22,7 +22,7 @@ export interface QuoteMetadata {
 	sourcePath?: string;
 	/** 来源文件名（不含路径） */
 	source?: string;
-	/** block_id（如 ^ch1-p3） */
+	/** block_id（如 ^ch1-p3，去掉 ^） */
 	blockId?: string;
 	/** 章节 node_id */
 	nodeId?: string;
@@ -30,28 +30,41 @@ export interface QuoteMetadata {
 	heading?: string;
 	/** 完整标题路径（如 ["第一章", "1.1 什么是投资"]） */
 	headingPath?: string[];
+	/** PDF 页码 */
+	page?: number;
+	/** 二级引用：来自哪条 AI 回复（仅 selection-menu.ts 触发时有值） */
+	messageId?: string;
 }
 
 /**
  * 引用数据结构（存储在 quotes 数组中）
+ *
+ * 设计原则：
+ * - 字段全量透传到 LLM（通过 ToolContext.quotes + <user_cited_quotes> 块）
+ * - blockId / nodeId / sourcePath 在恢复对话时由 JSONL 缓存还原
+ * - 所有字段均可 JSON 序列化（无 DOM 引用）
  */
 export interface QuoteItem {
-	/** 唯一标识 */
+	/** 唯一标识（用于 citedQuoteIds 反向链接和卡片 key） */
 	id: string;
 	/** 引用文本内容 */
 	text: string;
-	/** 来源文件名（可选） */
+	/** 来源文件名（书籍显示名，不含路径） */
 	source?: string;
-	/** 来源文件路径 */
+	/** 来源文件完整 Vault 路径（用于跳转原文） */
 	sourcePath?: string;
-	/** block_id（如 ^ch1-p3） */
+	/** block_id（去掉 ^ 前缀，如 ch1-p3） */
 	blockId?: string;
-	/** 章节 node_id */
+	/** 章节 node_id（4 位数字字符串，PageIndex 内部标识） */
 	nodeId?: string;
-	/** 所属标题 */
+	/** 所属标题（最近一级） */
 	heading?: string;
-	/** 完整标题路径 */
+	/** 完整标题路径（如 ["第一章", "1.1 什么是投资"]） */
 	headingPath?: string[];
+	/** PDF 页码（PDF 阅读模式时可用） */
+	page?: number;
+	/** 二级引用：来自哪条 AI 回复（仅 selection-menu.ts 触发时有值） */
+	messageId?: string;
 }
 
 /**
@@ -612,25 +625,39 @@ export class ChatInput {
 	// ==================== 引用相关方法 ====================
 
 	/**
-	 * 添加引用
-	 * @param text 引用文本
-	 * @param source 来源文件名（可选）
+	 * 添加引用（完整字段版本）
+	 * 推荐使用：接收完整 QuoteItem，避免字段丢失
 	 */
-	addQuote(text: string, source?: string): void {
-		if (!text.trim()) return;
+	addQuoteFull(quote: Omit<QuoteItem, 'id'>): void {
+		if (!quote.text?.trim()) return;
 
-		const quote: QuoteItem = {
+		const fullQuote: QuoteItem = {
 			id: `quote-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-			text: text.trim(),
-			source
+			text: quote.text.trim(),
+			source: quote.source,
+			sourcePath: quote.sourcePath,
+			blockId: quote.blockId,
+			nodeId: quote.nodeId,
+			heading: quote.heading,
+			headingPath: quote.headingPath,
+			page: quote.page,
+			messageId: quote.messageId,
 		};
 
-		this.quotes.push(quote);
+		this.quotes.push(fullQuote);
 		this.updateSendButtonState();
 		this.notifyHeightChange();
 
 		// 通过回调通知外部渲染引用卡片
-		this.options.onQuoteAdded?.(quote);
+		this.options.onQuoteAdded?.(fullQuote);
+	}
+
+	/**
+	 * 添加引用（简化版：仅文本 + 来源）
+	 * @deprecated 推荐使用 addQuoteFull() 保留完整元数据
+	 */
+	addQuote(text: string, source?: string): void {
+		this.addQuoteFull({ text, source });
 	}
 
 	/**

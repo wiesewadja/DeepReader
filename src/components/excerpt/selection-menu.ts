@@ -6,18 +6,9 @@
 
 import { App } from 'obsidian';
 import { ExcerptModal } from './excerpt-modal';
+import { Icons } from '../../utils/icons.js';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
-
-// 与 SelectionToolbar 一致的图标
-const Icons = {
-    // 引用图标（quote，用于添加到对话上下文）
-    quote: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V21c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>`,
-    // 摘录图标（bookmark）
-    excerpt: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`,
-    // 高亮图标（荧光笔）
-    highlight: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
-};
 
 // 高亮颜色配置（与 SelectionToolbar 一致）
 const HIGHLIGHT_COLORS = [
@@ -132,14 +123,45 @@ export class SelectionMenu {
 	 */
 	private handleQuote(): void {
 		if (this.options.onQuote) {
-			// 从 AI 回复中选中，只有纯文本，包装为简单的 QuoteMetadata
+			// 从 AI 回复中选中，尝试从渲染 DOM 提取 blockId（如果 LLM 上次输出了 [[书名#^xxx]]）
+			const blockId = this.extractBlockIdFromSelection();
 			const metadata: QuoteMetadata = {
 				text: this.options.selectedText,
 				source: this.options.sourcePdf,
+				messageId: this.options.messageId,  // 保留二级引用的来源消息
+				blockId,
 			};
 			this.options.onQuote(metadata);
 		}
 		this.hide();
+	}
+
+	/**
+	 * 从 AI 渲染的 DOM 中提取 ^blockId
+	 * Obsidian 渲染 wiki 链接为 <a id="^xxx">...</a>，或子元素带 [id^="^"]
+	 */
+	private extractBlockIdFromSelection(): string | undefined {
+		try {
+			const selection = window.getSelection();
+			if (!selection || selection.rangeCount === 0) return undefined;
+			const range = selection.getRangeAt(0);
+
+			// 在选区祖先链上找 id="^xxx" 的元素
+			let node: Node | null = range.startContainer;
+			while (node && node !== document.body) {
+				if (node instanceof HTMLElement) {
+					// 1. 自身 id
+					if (node.id?.startsWith('^')) return node.id.slice(1);
+					// 2. 子元素中最近一个 [id^="^"]
+					const sub = node.querySelector('[id^="^"]');
+					if (sub?.id) return sub.id.slice(1);
+				}
+				node = node.parentNode;
+			}
+		} catch (err) {
+			// 忽略提取失败（无 blockId 时仍可作为纯文本引用）
+		}
+		return undefined;
 	}
 
 	/**

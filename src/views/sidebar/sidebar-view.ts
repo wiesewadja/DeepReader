@@ -52,7 +52,7 @@ export class SidebarView extends ItemView {
     private messageList: MessageList | null = null;
     private chatInput: ChatInput | null = null;
 
-    // 上下文管理（章节辅助阅读）
+    // 上下文管理(章节辅助阅读)
     private contextManager: ContextManager | null = null;
 
     // 引用卡片管理
@@ -66,17 +66,17 @@ export class SidebarView extends ItemView {
     // TTS 语音播报服务
     private ttsService: TTSService | null = null;
 
-    // 流式语音播放器（用于语音消息）
+    // 流式语音播放器(用于语音消息)
 
-    // 会话存储（JSONL 文件）
+    // 会话存储(JSONL 文件)
 
 
     // 主动阅读引导
     private proactiveEngine: import("../../agent/proactive/engine.js").ProactiveEngine | null = null;
 
-    // ContextManager 同步的文档内容（供 Agent 搜索）
+    // ContextManager 同步的文档内容(供 Agent 搜索)
 
-    /** 当前书籍的全书摘要（由后端生成，用于 Agent 系统提示） */
+    /** 当前书籍的全书摘要(由后端生成,用于 Agent 系统提示) */
 
     /** 前端 Agent 对话历史 */
 
@@ -95,7 +95,7 @@ export class SidebarView extends ItemView {
      * 使用 plugin 统一管理的 Agent 实例
      */
     private async initializeFrontendAgent(): Promise<void> {
-        // 每次都从 plugin 获取最新的 Agent（支持设置切换后立即生效）
+        // 每次都从 plugin 获取最新的 Agent(支持设置切换后立即生效)
         const agent = await this.plugin.getFrontendAgent();
         this.frontendAgent = agent;
         log('[DeepPDF] FrontendAgent 初始化完成');
@@ -114,20 +114,20 @@ export class SidebarView extends ItemView {
      * 初始化里程碑记录器
      */
     /**
-     * 删除索引（本地实现）
+     * 删除索引(本地实现)
      */
     async handleDeleteIndex(indexId: string) {
         await this.bookMgr.handleDeleteIndex(indexId);
     }
 
     /**
-     * 获取书籍显示名称（去除扩展名和副标题）
+     * 获取书籍显示名称(去除扩展名和副标题)
      */
     private getDisplayName(pdfName: string): string {
         let name = pdfName;
         name = stripFileExtension(name);
 
-        const separators = ['：', ':', '—', '-', '｜', '|'];
+        const separators = [':', ':', '-', '-', '|', '|'];
         for (const sep of separators) {
             if (name.includes(sep)) {
                 name = name.split(sep)[0].trim();
@@ -154,7 +154,7 @@ export class SidebarView extends ItemView {
 
 
     /**
-     * 处理系统文件上传（已弃用 - Page Index 不需要上传）
+     * 处理系统文件上传(已弃用 - Page Index 不需要上传)
      */
     private async handleSystemUpload(): Promise<void> {
         new Notice('请使用我的书库添加书籍', 3000);
@@ -175,6 +175,19 @@ export class SidebarView extends ItemView {
         this.quoteManager = new QuoteManager({
             get chatInput() { return self.chatInput; },
             updateMessageListPadding(hasContextTags: boolean) { self.updateMessageListPadding(hasContextTags); },
+            jumpToQuote(quote) { return self.jumpToQuoteInReadingMode(quote); },
+            addCitedHighlight(quote) {
+                const rms = self.plugin.readingModeService;
+                if (rms) rms.addCitedHighlight(quote.blockId, quote.text, quote.sourcePath);
+            },
+            removeCitedHighlight(quote) {
+                const rms = self.plugin.readingModeService;
+                if (rms) rms.removeCitedHighlight(quote.blockId, quote.text, quote.sourcePath);
+            },
+            clearCitedHighlights() {
+                const rms = self.plugin.readingModeService;
+                if (rms) rms.clearAllCitedHighlights();
+            },
         });
         this.ttsCtrl = new TTSController({
             get app() { return self.app; },
@@ -193,6 +206,7 @@ export class SidebarView extends ItemView {
             get readingTopbar() { return self.readingTopbar; },
             get contextManager() { return self.contextManager; },
             get frontendAgent() { return self.frontendAgent; },
+            get readingModeService() { return self.plugin.readingModeService ?? null; },
             get currentIndexId() { return self.bookMgr.currentIndexId; },
             get currentPdfName() { return self.bookMgr.currentPdfName; },
             get currentBookCoverUrl() { return self.bookMgr.currentBookCoverUrl; },
@@ -205,6 +219,7 @@ export class SidebarView extends ItemView {
             initializeFrontendAgent() { return self.initializeFrontendAgent(); },
             get currentBooklistItems() { return self.bookMgr.currentBooklist?.items ?? null; },
             restoreBooklist(booklist: import("../../types/index.js").Booklist) { self.restoreBooklist(booklist); },
+            get quoteManager() { return self.quoteManager; },
         });
         this.agentChatCtrl = new AgentChatController({
             get app() { return self.app; },
@@ -270,7 +285,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 打开书库（改为 Tab 视图）
+     * 打开书库(改为 Tab 视图)
      */
 
     /**
@@ -284,17 +299,17 @@ export class SidebarView extends ItemView {
 
     /**
      * 加载书籍封面
-     * @param bookName 书籍名称（不含扩展名）
+     * @param bookName 书籍名称(不含扩展名)
      *
      * 从本地 Obsidian vault 加载 (DeepReader/covers/{bookName}.png)
      */
 
     /**
      * 通过 indexId 扫描 Vault 找到对应书籍的实际目录名和元数据
-     * 用户可能重命名了目录，因此不能仅依赖静态的 book-meta.json
+     * 用户可能重命名了目录,因此不能仅依赖静态的 book-meta.json
      */
     /**
-     * 同步顶栏书名到最新状态（用户可能在书库中修改了书名/目录名）
+     * 同步顶栏书名到最新状态(用户可能在书库中修改了书名/目录名)
      */
 
     private async findBookDirectoryByIndexId(indexId: string): Promise<{ dirName: string; author?: string; bookName?: string } | null> {
@@ -302,7 +317,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 选择索引（从弹窗中调用或自动切换）
+     * 选择索引(从弹窗中调用或自动切换)
      * @param indexId 索引 ID
      */
     public async selectIndex(indexId: string): Promise<void> {
@@ -318,7 +333,7 @@ export class SidebarView extends ItemView {
 
     public async selectBooklist(booklist: Booklist): Promise<void> {
         this.sessionMgr.crossBookMode = true;
-        // 补全 items（历史书单不含 items）
+        // 补全 items(历史书单不含 items)
         if (!booklist.items || booklist.items.length === 0) {
             const items = booklist.bookIds.map(id => {
                 const idx = this.bookMgr.indexes.find(i => i.id === id);
@@ -331,7 +346,7 @@ export class SidebarView extends ItemView {
         await this.bookMgr.selectBooklist(booklist);
     }
 
-    /** 重新进入历史书单：恢复已有会话，无会话则新建 */
+    /** 重新进入历史书单:恢复已有会话,无会话则新建 */
     public async reenterBooklist(booklist: Booklist): Promise<void> {
         // 补全 items
         if (!booklist.items || booklist.items.length === 0) {
@@ -350,7 +365,7 @@ export class SidebarView extends ItemView {
         const savedSessionId = this.plugin.settings.savedSessions?.[booklist.id];
         warn(`[reenterBooklist DIAG] booklist.id=${booklist.id}, bookIds=${JSON.stringify(booklist.bookIds)}, savedSessionId=${savedSessionId}, crossBookMode=${this.sessionMgr.crossBookMode}`);
         if (savedSessionId) {
-            // 设置 booklist 状态（不创建新会话）
+            // 设置 booklist 状态(不创建新会话)
             this.bookMgr.restoreBooklist(booklist);
             warn(`[reenterBooklist DIAG] after restoreBooklist: _currentBooklist.bookIds=${JSON.stringify(this.bookMgr.currentBooklistBookIds)}`);
             this.plugin.settings.lastCrossBookMode = true;
@@ -368,7 +383,7 @@ export class SidebarView extends ItemView {
             }
         }
 
-        // 无已有会话，走正常 selectBooklist
+        // 无已有会话,走正常 selectBooklist
         await this.bookMgr.selectBooklist(booklist);
     }
 
@@ -378,7 +393,7 @@ export class SidebarView extends ItemView {
     }
 
     public restoreBooklist(booklist: Booklist): void {
-        // 补全 items：优先用已存的 bookNames，fallback 到 indexes 查找
+        // 补全 items:优先用已存的 bookNames,fallback 到 indexes 查找
         const items = booklist.bookIds.map((id, i) => {
             const idx = this.bookMgr.indexes.find(ix => ix.id === id);
             const name = stripFileExtension(idx?.pdf_name || booklist.bookNames?.[i] || id);
@@ -390,10 +405,10 @@ export class SidebarView extends ItemView {
 
     /**
      * 自动同步当前章节到上下文
-     * 
-     * 默认行为：
-     * - 首次打开章节时，自动加载到上下文
-     * - 切换章节时，自动更新为新章节
+     *
+     * 默认行为:
+     * - 首次打开章节时,自动加载到上下文
+     * - 切换章节时,自动更新为新章节
      * - 只有用户手动点击按钮才能卸载文档
      */
     private async autoSyncCurrentChapter(): Promise<void> {
@@ -406,13 +421,13 @@ export class SidebarView extends ItemView {
         const bookPath = `DeepReader/${this.bookMgr.currentPdfName}/`;
         if (!activeFile.path.startsWith(bookPath)) return;
 
-        // 排除书籍主文件（只加载章节文件）
+        // 排除书籍主文件(只加载章节文件)
         if (activeFile.path === `${bookPath}${this.bookMgr.currentPdfName}.md`) return;
 
         // 检查当前章节是否已在上下文中
         if (this.contextManager.hasDocument(activeFile.path)) return;
 
-        // 找到当前书籍的章节文档（source === 'current' 的文档）
+        // 找到当前书籍的章节文档(source === 'current' 的文档)
         const docs = this.contextManager.getLoadedDocuments();
         const currentChapterDoc = Array.from(docs.values()).find(
             doc => doc.source === 'current' && doc.path.startsWith(bookPath)
@@ -440,7 +455,7 @@ export class SidebarView extends ItemView {
         return this.bookMgr.currentBooklist?.id ?? null;
     }
 
-    /** 索引列表（供 main.ts 等外部调用者使用） */
+    /** 索引列表(供 main.ts 等外部调用者使用) */
     get indexes(): import("../../types/index.js").IndexListItem[] {
         return this.bookMgr.indexes;
     }
@@ -455,16 +470,16 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 清除顶栏书名显示（阅读模式停用时调用）
-     * 不重置 currentPdfName/currentIndexId，保持用户通过书库选中的书籍
+     * 清除顶栏书名显示(阅读模式停用时调用)
+     * 不重置 currentPdfName/currentIndexId,保持用户通过书库选中的书籍
      */
 
     /**
-     * 清除所有书籍信息（删除索引时调用）
+     * 清除所有书籍信息(删除索引时调用)
      */
 
     /**
-     * 通过书名选择索引（自动切换时使用）
+     * 通过书名选择索引(自动切换时使用)
      */
     public async selectBookByName(bookName: string): Promise<void> {
         if (this.sessionMgr.crossBookMode) {
@@ -492,7 +507,7 @@ export class SidebarView extends ItemView {
                 if (!service) return;
                 const opened = await service.openMostRecent();
                 if (!opened) {
-                    // 无最近阅读历史：fallback 到书库
+                    // 无最近阅读历史:fallback 到书库
                     this.bookMgr.openLibrary();
                 }
             },
@@ -514,10 +529,10 @@ export class SidebarView extends ItemView {
         container.addClass("deeppdf-container");
         container.addClass("deeppdf-chat-container");
 
-        // 设置聚焦模式变化监听（已移除）
+        // 设置聚焦模式变化监听(已移除)
         // this.setupFocusModeListener();
 
-        // 直接渲染主 UI（不阻塞）
+        // 直接渲染主 UI(不阻塞)
         this.renderMainUI(container);
 
     }
@@ -528,7 +543,7 @@ export class SidebarView extends ItemView {
     private async renderMainUI(container: HTMLElement): Promise<void> {
         container.empty();
 
-        // 初始化上下文管理器（章节辅助阅读）
+        // 初始化上下文管理器(章节辅助阅读)
         this.contextManager = new ContextManager({
             app: this.app,
             onContextChange: (docs: Map<string, import("../../services/context-manager.js").LoadedDocument>) => {
@@ -539,11 +554,11 @@ export class SidebarView extends ItemView {
                 }
                 this.agentChatCtrl.currentMarkdownFiles = files;
 
-                // 更新加载按钮的激活状态（检查当前活跃文件是否已加载）
+                // 更新加载按钮的激活状态(检查当前活跃文件是否已加载)
                 const activeFile = this.app.workspace.getActiveFile();
                 const isCurrentDocLoaded = activeFile ? docs.has(activeFile.path) : false;
                 this.chatInput?.setLoadBtnActive(isCurrentDocLoaded);
-                // 更新消息列表的底部间距，避免被上下文标签遮挡
+                // 更新消息列表的底部间距,避免被上下文标签遮挡
                 this.updateMessageListPadding(docs.size > 0);
             }
         });
@@ -551,7 +566,7 @@ export class SidebarView extends ItemView {
         // 创建阅读顶栏 (简化版)
         this.createReadingTopbar(container);
 
-        // 奚童表情：用户活动重置 idle 计时器
+        // 奚童表情:用户活动重置 idle 计时器
         this.registerDomEvent(container, 'mouseenter', () => {
             this.readingTopbar?.onMascotUserActivity();
         });
@@ -579,32 +594,32 @@ export class SidebarView extends ItemView {
             await this.sessionMgr.restoreGeneralChatSession();
         }
 
-        // 设置滚动监听：滚动时隐藏输入框
+        // 设置滚动监听:滚动时隐藏输入框
         this.setupScrollHandler(container);
 
         // 监听 URI 协议触发的索引切换事件
-        // 自定义事件，Obsidian 类型定义不支持，使用 any 绕过
+        // 自定义事件,Obsidian 类型定义不支持,使用 any 绕过
         const workspace = this.app.workspace as any;
         this.registerEvent(
             workspace.on("deeppdf:select-index", async (indexId: string) => {
                 log("[DeepPDF] Received select-index event:", indexId);
 
-                // 如果当前处于跨书籍模式，先切换回单书籍模式
+                // 如果当前处于跨书籍模式,先切换回单书籍模式
                 if (this.sessionMgr.crossBookMode) {
-                    log("[DeepPDF] 从阅读入口点击，自动关闭跨书籍模式");
+                    log("[DeepPDF] 从阅读入口点击,自动关闭跨书籍模式");
                     this.sessionMgr.crossBookMode = false;
                     this.readingTopbar?.setCrossBookMode(false);
                     this.plugin.settings.lastCrossBookMode = false;
                     await this.plugin.saveSettings();
 
-                    // 取消任何正在进行的流式请求，避免旧回调更新新消息列表
+                    // 取消任何正在进行的流式请求,避免旧回调更新新消息列表
                     this.agentChatCtrl.cancelActiveStream();
 
-                    // 清空跨书籍模式的消息，准备加载单书籍会话
+                    // 清空跨书籍模式的消息,准备加载单书籍会话
                     this.messageList?.clear();
                 }
 
-                // 直接调用 selectIndex 方法，确保顶栏正确更新
+                // 直接调用 selectIndex 方法,确保顶栏正确更新
                 await this.selectIndex(indexId);
             })
         );
@@ -624,7 +639,7 @@ export class SidebarView extends ItemView {
             })
         );
 
-        // 监听文件切换事件，更新文档加载按钮状态 + 阅读进度追踪 + 自动同步章节上下文
+        // 监听文件切换事件,更新文档加载按钮状态 + 阅读进度追踪 + 自动同步章节上下文
         this.registerEvent(
             this.app.workspace.on("active-leaf-change", () => {
                 if (this.contextManager) {
@@ -640,7 +655,7 @@ export class SidebarView extends ItemView {
 
     /**
      * 处理引用选中文字
-     * 在输入框上方显示引用卡片，更新 placeholder 提示
+     * 在输入框上方显示引用卡片,更新 placeholder 提示
      */
 
     /**
@@ -659,9 +674,9 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 处理摘录选中文字（阅读模式中的摘录）
-     * 保存位置：书籍摘录/{书名}/摘录-{日期}.md
-     * 链接：链接到章节文件，精确到 block id
+     * 处理摘录选中文字(阅读模式中的摘录)
+     * 保存位置:书籍摘录/{书名}/摘录-{日期}.md
+     * 链接:链接到章节文件,精确到 block id
      */
     private handleExcerptSelection(text: string, range: Range): void {
         const activeFile = this.app.workspace.getActiveFile();
@@ -675,7 +690,7 @@ export class SidebarView extends ItemView {
         let bookName = cache?.frontmatter?.pdf_name || '';
         let indexId = String(cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '');
 
-        // 如果没有从 frontmatter 获取到书名，从路径提取
+        // 如果没有从 frontmatter 获取到书名,从路径提取
         if (!bookName) {
             const pathParts = activeFile.path.split('/');
             // 假设路径格式是 DeepReader/{书名}/章节.md 或 {书名}/章节.md
@@ -711,7 +726,7 @@ export class SidebarView extends ItemView {
             metadata,
             onSave: async (path: string) => {
                 new Notice(`摘录已保存到 ${path}`);
-                // 摘录成功后，在阅读界面标记文本（添加虚线下划线）
+                // 摘录成功后,在阅读界面标记文本(添加虚线下划线)
                 this.markExcerptText(range);
             },
         });
@@ -719,7 +734,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 在阅读界面标记摘录文本（添加虚线下划线）
+     * 在阅读界面标记摘录文本(添加虚线下划线)
      */
     private markExcerptText(range: Range): void {
         try {
@@ -739,13 +754,13 @@ export class SidebarView extends ItemView {
 
     /**
      * 设置滚动监听逻辑
-     * 当消息列表滚动时隐藏输入框，停止滚动后显示
-     * AI 回复期间，输入框最小化并暂停滚动监听
+     * 当消息列表滚动时隐藏输入框,停止滚动后显示
+     * AI 回复期间,输入框最小化并暂停滚动监听
      */
     private setupScrollHandler(container: HTMLElement) {
-        // 使用 setTimeout 延迟查找 DOM 元素，确保它们已被渲染
+        // 使用 setTimeout 延迟查找 DOM 元素,确保它们已被渲染
         setTimeout(() => {
-            // 注意：实际滚动的是 messages-container，不是 message-list
+            // 注意:实际滚动的是 messages-container,不是 message-list
             const messagesContainer = container.querySelector('.deeppdf-messages-container');
             const inputSection = container.querySelector('.deeppdf-chat-input-section');
 
@@ -757,7 +772,7 @@ export class SidebarView extends ItemView {
             let scrollTimeout: any = null;
 
             messagesContainer.addEventListener('scroll', () => {
-                // AI 流式输出时，不处理滚动事件（由 isAiStreaming 标志控制）
+                // AI 流式输出时,不处理滚动事件(由 isAiStreaming 标志控制)
                 if (this.agentChatCtrl.aiStreaming) {
                     return;
                 }
@@ -810,7 +825,7 @@ export class SidebarView extends ItemView {
                 this.agentChatCtrl.handleDeleteMessagePair(messageId);
             },
             onTTS: async (messageId: string, content: string) => {
-                // 喇叭按钮始终直接朗读原文，不走摘要模式
+                // 喇叭按钮始终直接朗读原文,不走摘要模式
                 this.ttsCtrl.handleTTS(messageId, content, { rawText: true });
             },
             onVoicePlay: (messageId: string) => {
@@ -839,7 +854,7 @@ export class SidebarView extends ItemView {
         if (messageListEl) {
             section.appendChild(messageListEl);
         }
-        // 注意：引用卡片容器已移至 createChatInputSection
+        // 注意:引用卡片容器已移至 createChatInputSection
     }
 
     /**
@@ -848,11 +863,11 @@ export class SidebarView extends ItemView {
     private createChatInputSection(container: HTMLElement) {
         const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
-        // 创建聊天输入组件（在最上方）
+        // 创建聊天输入组件(在最上方)
         this.chatInput = new ChatInput({
             placeholder: "输入以开始对话...",
             onSend: (message: string, _chatInputQuotes) => {
-                // 使用 sidebar 自己管理的引用列表（而非 ChatInput 内部的空数组）
+                // 使用 sidebar 自己管理的引用列表(而非 ChatInput 内部的空数组)
                 this.agentChatCtrl.sendMessage(message, this.quoteManager.getQuotes());
             },
             app: this.app,
@@ -860,7 +875,7 @@ export class SidebarView extends ItemView {
                 this.agentChatCtrl.stopGeneration();
             },
             onHeightChange: (height: number) => {
-                // 动态调整消息列表的底部间距（包含引用卡片高度）
+                // 动态调整消息列表的底部间距(包含引用卡片高度)
                 const quotesHeight = this.quotesContainer?.offsetHeight || 0;
                 this.messageList?.updateBottomPadding(height, quotesHeight);
             },
@@ -874,6 +889,9 @@ export class SidebarView extends ItemView {
 
         // 创建引用卡片容器（在输入框上方）
         this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
+        // 接线：让 QuoteManager 知道往哪里渲染卡片
+        // （之前这里漏调，导致引用卡片永远不出现，UI 上仅显示 placeholder 文字）
+        this.quoteManager.setContainer(this.quotesContainer);
 
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
@@ -948,7 +966,7 @@ export class SidebarView extends ItemView {
     }
 
     /**
-     * 获取上下文文档列表（用于 API 调用）
+     * 获取上下文文档列表(用于 API 调用)
      */
     private getContextDocs(): ContextDoc[] | undefined {
         if (!this.contextManager) return undefined;
@@ -1004,7 +1022,7 @@ export class SidebarView extends ItemView {
 
     /**
      * 更新消息列表的底部间距
-     * 当有上下文标签或引用卡片时，增加间距避免遮挡
+     * 当有上下文标签或引用卡片时,增加间距避免遮挡
      */
     private updateMessageListPadding(hasContextTags: boolean): void {
         const messagesContainer = this.containerEl?.querySelector('.deeppdf-messages-container') as HTMLElement;
@@ -1102,15 +1120,48 @@ export class SidebarView extends ItemView {
             }
         } catch (error) {
             logError('[DeepPDF] Error in onClose:', error);
-            // 不要重新抛出错误，避免影响 Obsidian 的 UI
+            // 不要重新抛出错误,避免影响 Obsidian 的 UI
         }
     }
 
     /**
-     * 获取当前书籍信息（供调试命令使用）
+     * 获取当前书籍信息(供调试命令使用)
      */
     getCurrentBookInfo(): { title: string | null; page_count: number; docDescription: string | null } {
         return this.bookMgr.getCurrentBookInfo();
+    }
+
+    /**
+     * 跳转引用卡片到原文位置
+     * - 若 sourcePath 有效且与当前活动文件不同:先打开文件
+     * - 调 reading-mode-service.jumpToBlock(blockId) 跳 + 黄色闪烁
+     * - 返回是否成功
+     */
+    jumpToQuoteInReadingMode(quote: import('../../components/chat-input/chat-input.js').QuoteItem): boolean {
+        const service = this.plugin.readingModeService;
+        if (!service) {
+            log.warn('[Sidebar] jumpToQuote: readingModeService unavailable');
+            return false;
+        }
+        if (!quote.blockId) {
+            log.warn('[Sidebar] jumpToQuote: quote has no blockId');
+            return false;
+        }
+
+        // 1. 如果 sourcePath 存在且与当前活动文件不同,先打开
+        const activeFile = this.app.workspace.getActiveFile();
+        if (quote.sourcePath && (!activeFile || activeFile.path !== quote.sourcePath)) {
+            const abstract = this.app.vault.getAbstractFileByPath(quote.sourcePath);
+            if (abstract) {
+                void this.app.workspace.openLinkText(quote.sourcePath, '', false);
+            } else {
+                log.warn('[Sidebar] jumpToQuote: source file not found', quote.sourcePath);
+                return false;
+            }
+        }
+
+        // 2. 跳转 + 闪烁
+        return service.jumpToBlock(quote.blockId);
     }
 }
 

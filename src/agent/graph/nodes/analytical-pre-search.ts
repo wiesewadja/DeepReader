@@ -23,6 +23,7 @@ import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adap
 import { verifyAndCleanContent } from '../utils/self-verification.js';
 import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
+import type { QuoteItem } from '../../tools/types.js';
 import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
 import {
   shouldVerifyNegativeClaim,
@@ -149,8 +150,13 @@ export async function preSearchNode(
   const markdownFiles = ctx?.toolContext?.book.markdownFiles ?? {};
 
   // === Scope hard-guard (defense in depth — see utils/scope-guard.ts docstring) ===
+  // PR 1：同时收集消息中的 wiki 引用 + UI 引用卡片中的 nodeId
+  const quotedNodeIdsFromUI = (toolContext.quotes || [])
+    .map((q: QuoteItem) => q.nodeId)
+    .filter((id: string | undefined): id is string => !!id);
   const citedFromMessages = extractCitedNodeIds(
     extractHumanMessageContents(state.messages),
+    quotedNodeIdsFromUI,
   );
   const guardResult = enforceScopeHardGuard(
     validatedScopeNodeIdsRaw,

@@ -51,8 +51,34 @@ export interface MessageData {
 	completedSteps?: string[];
 	/** 可选：关联的 PDF 文件名 */
 	pdfName?: string;
-	/** 可选：用户引用内容 */
-	quotes?: Array<{ text: string; source?: string; heading?: string; headingPath?: string[] }>;
+	/**
+	 * 可选：用户引用内容（完整 QuoteItem[]，含 blockId/nodeId/sourcePath）
+	 * 持久化到 JSONL 时会过滤掉运行时字段（range/messageId）
+	 */
+	quotes?: Array<{
+		id?: string;
+		text: string;
+		source?: string;
+		sourcePath?: string;
+		blockId?: string;
+		nodeId?: string;
+		heading?: string;
+		headingPath?: string[];
+		page?: number;
+	}>;
+	/**
+	 * 可选：AI 消息正在回应的 user quote id 列表
+	 * 用于渲染 "📌 回应引用" 徽标
+	 * 持久化到 JSONL 中，对话恢复后保留
+	 */
+	citedQuoteIds?: string[];
+	/**
+	 * 可选：对应 citedQuoteIds 的引用文本预览（每条前 N 字）
+	 * 让徽标显示 “正在回应「回报函数…」” 而不是不可读的 id 截断
+	 */
+	citedQuotePreviews?: string[];
+	/** 可选：引用是否来自历史恢复（只读、不可移除样式） */
+	quotesRestored?: boolean;
 	/** 可选：关联的页码 */
 	page?: number;
 	/** 可选：关联的用户问题 */

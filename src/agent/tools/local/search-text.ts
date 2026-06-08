@@ -189,6 +189,26 @@ function fusionToHits(
   }));
 }
 
+/**
+ * PR 1：合并用户引用卡片中的 nodeId 到 scope_node_ids
+ *
+ * 用户主动引用某段文字是强信号：表明该章节高度相关。
+ * 独立函数方便单元测试。
+ */
+export function mergeQuotedNodeIds(
+  userScopeNodeIds: string[] | undefined,
+  contextQuotes: Array<{ nodeId?: string }> | undefined
+): string[] | undefined {
+  const quotedNodeIds = (contextQuotes || [])
+    .map(q => q.nodeId)
+    .filter((id): id is string => !!id);
+  const hasUserScope = !!userScopeNodeIds && userScopeNodeIds.length > 0;
+  if (!hasUserScope && quotedNodeIds.length === 0) {
+    return undefined;
+  }
+  return Array.from(new Set([...(userScopeNodeIds || []), ...quotedNodeIds]));
+}
+
 export const searchBookTool: ToolExecutor = {
   definition: SEARCH_BOOK_DEFINITION,
 
@@ -197,7 +217,11 @@ export const searchBookTool: ToolExecutor = {
     const { app } = vault;
     const { pdfName, indexId } = book;
     const keywords = args.keywords as string[];
-    const scopeNodeIds = args.scope_node_ids as string[] | undefined;
+    // PR 1: 合并用户引用卡片中的 nodeId 到 scope_node_ids（用户主动引用是强信号）
+    const scopeNodeIds = mergeQuotedNodeIds(
+      args.scope_node_ids as string[] | undefined,
+      context.quotes
+    );
     const topK = (args.top_k as number) || 10;
 
     if (!app) {

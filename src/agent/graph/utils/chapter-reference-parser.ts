@@ -38,24 +38,40 @@ function toNodeId(num: string): string {
  *
  * @param messages - all HumanMessage contents concatenated (so historical
  *                   context can also surface cited chapters)
+ * @param quotedNodeIds - 可选：来自引用卡片的 nodeId（从 ToolContext.quotes[].nodeId 传入）
+ *                        这些是用户在 UI 上主动引用的章节，权重等同 wiki 链接
  * @returns deduped, ordered list of canonical 4-digit nodeIds
  */
-export function extractCitedNodeIds(messages: string | string[]): string[] {
+export function extractCitedNodeIds(
+  messages: string | string[],
+  quotedNodeIds?: string[]
+): string[] {
   const text = Array.isArray(messages) ? messages.join('\n') : messages;
-  if (!text) return [];
 
   const collected = new Set<string>();
 
-  for (const re of [WIKI_LINK_PATTERN, BLOCK_QUOTE_PATTERN, ARROW_BARE_PATTERN]) {
-    re.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text)) !== null) {
-      const num = m[1];
-      // Reject clearly-out-of-range numbers (likely page numbers, not chapter IDs)
-      if (!num) continue;
-      const n = parseInt(num, 10);
-      if (isNaN(n) || n < 1 || n > 9999) continue;
-      collected.add(toNodeId(num));
+  // 来源 1：消息文本中的 wiki 链接 / 块引用
+  if (text) {
+    for (const re of [WIKI_LINK_PATTERN, BLOCK_QUOTE_PATTERN, ARROW_BARE_PATTERN]) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        const num = m[1];
+        // Reject clearly-out-of-range numbers (likely page numbers, not chapter IDs)
+        if (!num) continue;
+        const n = parseInt(num, 10);
+        if (isNaN(n) || n < 1 || n > 9999) continue;
+        collected.add(toNodeId(num));
+      }
+    }
+  }
+
+  // 来源 2：UI 引用卡片中的 nodeId
+  if (quotedNodeIds?.length) {
+    for (const id of quotedNodeIds) {
+      if (id && /^\d{1,4}$/.test(id)) {
+        collected.add(toNodeId(id));
+      }
     }
   }
 
