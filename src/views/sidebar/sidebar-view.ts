@@ -757,39 +757,10 @@ export class SidebarView extends ItemView {
      * 当消息列表滚动时隐藏输入框,停止滚动后显示
      * AI 回复期间,输入框最小化并暂停滚动监听
      */
-    private setupScrollHandler(container: HTMLElement) {
-        // 使用 setTimeout 延迟查找 DOM 元素,确保它们已被渲染
-        setTimeout(() => {
-            // 注意:实际滚动的是 messages-container,不是 message-list
-            const messagesContainer = container.querySelector('.deeppdf-messages-container');
-            const inputSection = container.querySelector('.deeppdf-chat-input-section');
-
-            if (!messagesContainer || !inputSection) {
-                warn('[DeepPDF] Scroll handler setup failed: elements not found');
-                return;
-            }
-
-            let scrollTimeout: any = null;
-
-            messagesContainer.addEventListener('scroll', () => {
-                // AI 流式输出时,不处理滚动事件(由 isAiStreaming 标志控制)
-                if (this.agentChatCtrl.aiStreaming) {
-                    return;
-                }
-
-                // 滚动时添加 hidden 类
-                inputSection.addClass('hidden');
-
-                if (scrollTimeout) {
-                    clearTimeout(scrollTimeout);
-                }
-
-                // 停止滚动 300ms 后显示
-                scrollTimeout = setTimeout(() => {
-                    inputSection.removeClass('hidden');
-                }, 300);
-            });
-        }, 100);
+    private setupScrollHandler(_container: HTMLElement) {
+        // 保留接口位置,但当前不隐藏任何元素。
+        // 历史原因:曾将 chat-input 添加 .hidden,滚动时隐藏输入框。
+        // 用户反馈:不要隐藏输入框(即使滚动对话时也应保持可见)。
     }
 
     /**
@@ -875,9 +846,8 @@ export class SidebarView extends ItemView {
                 this.agentChatCtrl.stopGeneration();
             },
             onHeightChange: (height: number) => {
-                // 动态调整消息列表的底部间距(包含引用卡片高度)
-                const quotesHeight = this.quotesContainer?.offsetHeight || 0;
-                this.messageList?.updateBottomPadding(height, quotesHeight);
+                // 引用卡片已移到独立子 section,不与 input 联动
+                this.messageList?.updateBottomPadding(height, 0);
             },
             onLoadCurrentDoc: async () => {
                 await this.loadCurrentDocument();
@@ -887,10 +857,11 @@ export class SidebarView extends ItemView {
             }
         });
 
-        // 创建引用卡片容器（在输入框上方）
-        this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
-        // 接线：让 QuoteManager 知道往哪里渲染卡片
-        // （之前这里漏调，导致引用卡片永远不出现，UI 上仅显示 placeholder 文字）
+        // 引用卡片容器：位于输入框上方，位置贴附输入框
+        // 使用独立的 quote-bar-section 子容器，作用是让 cards 与 chat-input 在
+        // flex column 中分离，避免两者互相干扰
+        const quoteBar = section.createDiv({ cls: "deeppdf-quote-bar-section" });
+        this.quotesContainer = quoteBar.createDiv({ cls: "deeppdf-quotes-container" });
         this.quoteManager.setContainer(this.quotesContainer);
 
         const chatInputEl = this.chatInput.getElement();

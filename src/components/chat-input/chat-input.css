@@ -15,11 +15,6 @@
 	transition: transform 0.3s ease, opacity 0.3s ease;
 }
 
-.deeppdf-chat-input-section.hidden {
-	opacity: 0;
-	pointer-events: none;
-}
-
 .deeppdf-chat-input {
 	display: flex;
 	flex-direction: column;

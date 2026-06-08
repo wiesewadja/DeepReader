@@ -29,6 +29,7 @@
 @import url('../views/zlibrary-search-modal.css');
 @import url('../components/reading-mode/reading-mode.css');
 @import url('../components/quote-card.css');
+@import url('../components/quote-bar.css');
 @import url('../components/question-minimap/question-minimap.css');
 @import url('../settings/settings.css');
 @import url('./agent-humanized.css');
