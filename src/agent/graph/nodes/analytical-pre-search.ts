@@ -139,20 +139,20 @@ async function readUserCitedBlocks(
   // 归一化 node_id 为 4 位字符串：tree.json 的 nodeFileMap 用 “0015” 这种格式，
   // 而引用卡片里可能存的是 “15”（取决于上游怎么读 frontmatter）。
   // 两边不统一会导致 read_book_section 报 ERROR_NOT_FOUND。
+  const seen = new Set<string>();
   const withLoc = quotes
     .map(q => ({ ...q, nodeId: q.nodeId ? toNodeId(q.nodeId) : q.nodeId }))
-    .filter(
-      (q): q is QuoteItem & { nodeId: string; blockId: string } =>
-        !!q.nodeId && !!q.blockId,
-    );
+    .filter((q): q is QuoteItem & { nodeId: string; blockId: string } => {
+      if (!q.nodeId || !q.blockId) return false;
+      const key = `${q.nodeId}::${q.blockId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   if (withLoc.length === 0) return [];
 
-  const results: CitedBlock[] = [];
-  const seen = new Set<string>();
-  for (const q of withLoc) {
-    const key = `${q.nodeId}::${q.blockId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+  // 并行 read 多个引用 block（不同 block 之间无依赖；磁盘 I/O 受限于 readBookSectionTool）
+  const reads = await Promise.all(withLoc.map(async q => {
     try {
       const raw = await readBookSectionTool.execute(
         { node_id: q.nodeId, block_id: q.blockId },
@@ -161,22 +161,23 @@ async function readUserCitedBlocks(
       const parsed = JSON.parse(raw);
       if (parsed.status !== 'SUCCESS') {
         log(`[S2-Pre] read_user_cited_block failed: ${q.nodeId}#${q.blockId} -> ${parsed.status}`);
-        continue;
+        return null;
       }
       const content = (parsed.content || '').trim();
-      if (!content) continue;
-      results.push({
+      if (!content) return null;
+      return {
         title: parsed.title || '',
         file_name: (parsed.file_name || '').replace(/\.md$/i, ''),
         block_id: q.blockId,
         content: content.slice(0, 600),
         node_id: q.nodeId,
-      });
+      } as CitedBlock;
     } catch (err) {
       log(`[S2-Pre] read_user_cited_block error: ${q.nodeId}#${q.blockId} -> ${err instanceof Error ? err.message : String(err)}`);
+      return null;
     }
-  }
-  return results;
+  }));
+  return reads.filter((b): b is CitedBlock => b !== null);
 }
 
 /** 把用户引用的 blocks 格式化为 prompt 块 (贴上【用户引用】标签以与 keyword hits 区分) */
