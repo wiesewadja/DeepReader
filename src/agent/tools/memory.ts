@@ -10,65 +10,13 @@
 
 import { toolsLog as log, error } from '../../utils/logger.js';
 import { MemoryStore } from '../memory/store.js';
-import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-
-/**
- * save_memory 工具定义
- *
- * 这是 LLM 调用的工具，用于：
- * 1. 将重要对话内容追加到 HISTORY.md
- * 2. 更新 MEMORY.md（用户画像、偏好等）
- */
-export const saveMemoryDefinition: ToolDefinition = {
-	type: 'function',
-	function: {
-		name: 'save_memory',
-		description: `保存重要信息到长期记忆。写入对话摘要到 HISTORY.md，更新用户画像到 MEMORY.md。用于用户表达偏好、纠正行为、提供个人信息时。`,
-		parameters: {
-			type: 'object',
-			properties: {
-				history_entry: {
-					type: 'string',
-					description: '对话摘要，简洁描述本次对话的要点',
-				},
-				memory_update: {
-					type: 'string',
-					description: '需要更新到 MEMORY.md 的内容（用户画像、偏好变化等）',
-				},
-			},
-			required: ['history_entry'],
-		},
-	},
-};
-
-/**
- * search_memory 工具定义
- */
-const searchMemoryDefinition: ToolDefinition = {
-	type: 'function',
-	function: {
-		name: 'search_memory',
-		description: `搜索用户记忆和阅读历程（MEMORY.md + HISTORY.md）。用于"我读过什么书"、"读到哪里了"等查询。`,
-		parameters: {
-			type: 'object',
-			properties: {
-				query: {
-					type: 'string',
-					description: '搜索关键词，用空格分隔多个词（如"学会提问 批判性思维"）',
-				},
-			},
-			required: ['query'],
-		},
-	},
-};
 
 /**
  * 创建 save_memory 工具执行器
  */
 export function createSaveMemoryTool(): ToolExecutor {
 	return {
-		definition: saveMemoryDefinition,
 		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 			const historyEntry = args.history_entry as string;
 			const memoryUpdate = args.memory_update as string | undefined;
@@ -129,7 +77,6 @@ ${memoryUpdate}
  */
 export function createSearchMemoryTool(): ToolExecutor {
 	return {
-		definition: searchMemoryDefinition,
 		async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 			const query = args.query as string;
 
@@ -183,7 +130,6 @@ export function createSearchMemoryTool(): ToolExecutor {
 
 // 导出工具定义（用于注册）
 export const saveMemoryTool: ToolExecutor = {
-	definition: saveMemoryDefinition,
 	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
@@ -193,7 +139,6 @@ export const saveMemoryTool: ToolExecutor = {
 };
 
 export const searchMemoryTool: ToolExecutor = {
-	definition: searchMemoryDefinition,
 	async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
 		if (!context.vault?.app) {
 			return 'Error: Obsidian App 实例不可用';
@@ -203,6 +148,5 @@ export const searchMemoryTool: ToolExecutor = {
 };
 
 // 兼容旧名称（废弃，但保持向后兼容）
-export const addMemoryDefinition = saveMemoryDefinition;
 export const createAddMemoryTool = createSaveMemoryTool;
 export const addMemoryTool = saveMemoryTool;

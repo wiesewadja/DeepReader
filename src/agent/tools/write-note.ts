@@ -10,36 +10,8 @@
 import { TFile, normalizePath, type App } from 'obsidian';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import { ensureFolderExists } from '../../utils/vault.js';
-import type { ToolDefinition } from '../types.js';
 import { parseFrontmatter } from '../utils/book-note.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-
-const WRITE_NOTE_DEFINITION: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'write_note',
-    description: '写入笔记到 Obsidian vault。AI 创建的笔记带 aicreate 标记，只能由 AI 修改。',
-    parameters: {
-      type: 'object',
-      properties: {
-        path: {
-          type: 'string',
-          description: 'Relative path for the note (e.g., "知识卡/概念/神经网络.md")',
-        },
-        content: {
-          type: 'string',
-          description: 'Note content in Markdown format',
-        },
-        mode: {
-          type: 'string',
-          enum: ['create', 'overwrite', 'append'],
-          description: 'Write mode: create (new only), overwrite (replace), append (add to end). Default: create',
-        },
-      },
-      required: ['path', 'content'],
-    },
-  },
-};
 
 /**
  * 检测内容是否包含 frontmatter
@@ -153,7 +125,6 @@ async function hasAicreateFrontmatter(app: App, file: TFile): Promise<boolean> {
 
 
 export const writeNoteTool: ToolExecutor = {
-  definition: WRITE_NOTE_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const path = args.path as string;

@@ -6,43 +6,7 @@
  */
 
 import { toolsLog as log, error } from '../../utils/logger.js';
-import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-
-/**
- * update_profile 工具定义
- */
-const updateProfileDefinition: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'update_profile',
-    description: `更新用户画像字段。用于用户表达新偏好、纠正行为、提供个人信息时。每次只更新一个字段。`,
-    parameters: {
-      type: 'object',
-      properties: {
-        section: {
-          type: 'string',
-          description: '画像部分：基础信息|阅读偏好|认知特点|阅读轨迹',
-          enum: ['基础信息', '阅读偏好', '认知特点', '阅读轨迹'],
-        },
-        field: {
-          type: 'string',
-          description: '具体字段名，如 "称呼"、"风格"、"擅长"',
-        },
-        value: {
-          type: 'string',
-          description: '新的值',
-        },
-        mode: {
-          type: 'string',
-          description: '更新模式：append（追加）或 replace（替换，默认）',
-          enum: ['append', 'replace'],
-        },
-      },
-      required: ['section', 'field', 'value'],
-    },
-  },
-};
 
 /**
  * 更新 DeepReader.md 的某个字段
@@ -99,7 +63,6 @@ function updateProfileSection(
  */
 export function createUpdateProfileTool(): ToolExecutor {
   return {
-    definition: updateProfileDefinition,
     async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
       const section = args.section as string;
       const field = args.field as string;
@@ -151,7 +114,6 @@ export function createUpdateProfileTool(): ToolExecutor {
 
 // 导出工具定义（用于注册）
 export const updateProfileTool: ToolExecutor = {
-  definition: updateProfileDefinition,
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     if (!context.vault?.app) {
       return 'Error: Obsidian App 实例不可用';

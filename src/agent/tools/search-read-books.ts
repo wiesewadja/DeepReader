@@ -5,31 +5,8 @@
  */
 
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
-import type { ToolDefinition } from '../types.js';
 import { BOOK_NOTES_DIR } from '../utils/book-note.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-
-const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'search_read_books',
-    description: `【主题阅读】搜索已读书库。用于跨书比较和关联。`,
-    parameters: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: '搜索主题/关键词',
-        },
-        maxResults: {
-          type: 'number',
-          description: '最大返回数量（默认 5）',
-        },
-      },
-      required: ['query'],
-    },
-  },
-};
 
 /**
  * 从 frontmatter 提取 summary 字段
@@ -82,7 +59,6 @@ function calculateRelevance(query: string, text: string): number {
 }
 
 export const searchReadBooksTool: ToolExecutor = {
-  definition: SEARCH_READ_BOOKS_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const query = args.query as string;

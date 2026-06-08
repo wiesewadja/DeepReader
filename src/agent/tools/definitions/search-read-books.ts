@@ -20,7 +20,7 @@ export const createSearchReadBooksTool: ToolFactory = (ctx: ToolContext) =>
       description: '跨书搜索已读过的书籍，查找与查询相关的内容',
       schema: z.object({
         query: z.string().describe('搜索关键词'),
-        top_k: z.number().optional().describe('返回结果数量'),
+        top_k: z.number().min(1).max(50).optional().describe('返回结果数量'),
       }),
     },
   );

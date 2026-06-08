@@ -14,58 +14,7 @@ import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
 import { toolsLog } from '../../../utils/logger.js';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
-import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
-
-const SEARCH_BOOK_DEFINITION: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'search_book',
-    description: `在书中搜索关键词，返回匹配段落片段（聚焦到 block_id 级别）。
-
-【搜索逻辑】
-- 多路并行召回：BM25 + Vector + Proposition + 用户标注 四路同时执行
-- 用户标注：检索 DeepReader 高亮/摘录和微信读书笔记，命中标注以 [用户标注] 前缀显示
-- 9 阶段管线：
-  1. Dynamic recall K
-  2. BM25 keyword search
-  3. Vector semantic search
-  3.5. Proposition cards search（原子事实）
-  3.6. 用户标注检索（高亮、笔记、想法）
-  4. Scope filter
-  5. Score fusion + level weighting
-  6. LLM tree search (optional)
-  7. Cross-encoder rerank（可选，需配置 Reranker）
-  8. Matched block location
-- 命题卡片优先：如果有原子事实卡片匹配，直接返回卡片内容（更精准）
-
-【返回结果】
-- matched_blocks: 匹配的段落片段或命题卡片或用户标注
-- 命题卡片格式：【类型】答案 + 原文 ^卡片ID
-- 用户标注格式：[用户标注] 标注内容
-- 大部分情况无需再调 read_book_section
-
-【中文搜索技巧】
-- 提取核心名词，剔除"如何"、"是什么"等修饰语
-- 拆分复合词：不要搜"解决问题的前提"，改用 ["解决问题", "前提"]`,
-    parameters: {
-      type: 'object',
-      properties: {
-        keywords: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '关键词数组，每个关键词独立检索后融合排序（OR 语义）'
-        },
-        scope_node_ids: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '限定搜索范围（章节 ID 列表），留空则全局搜索'
-        }
-      },
-      required: ['keywords']
-    }
-  }
-};
 
 // === RRF (Reciprocal Rank Fusion) ===
 
@@ -190,7 +139,6 @@ function fusionToHits(
 }
 
 export const searchBookTool: ToolExecutor = {
-  definition: SEARCH_BOOK_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const { vault, book } = context;

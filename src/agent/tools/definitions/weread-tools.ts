@@ -58,7 +58,7 @@ export const createWereadSearchTool: ToolFactory = (ctx: ToolContext) =>
 			schema: z.object({
 				keyword: z.string().describe('搜索关键词（书名、作者等）'),
 				scope: z.number().optional().describe('搜索类型: 10=电子书(默认), 0=全部, 6=作者'),
-				count: z.number().optional().describe('返回数量，默认10'),
+				count: z.number().min(1).max(50).optional().describe('返回数量，默认10'),
 			}),
 		},
 	);
@@ -87,7 +87,7 @@ export const createWereadRecommendTool: ToolFactory = (ctx: ToolContext) =>
 			name: 'weread_recommend',
 			description: '获取微信读书个性化推荐书籍，基于用户阅读记录推荐',
 			schema: z.object({
-				count: z.number().optional().describe('推荐数量，默认6'),
+				count: z.number().min(1).max(50).optional().describe('推荐数量，默认6'),
 			}),
 		},
 	);
@@ -163,7 +163,7 @@ export const createWereadNotebooksTool: ToolFactory = (ctx: ToolContext) =>
 			name: 'weread_notebooks',
 			description: '获取微信读书中所有有笔记的书籍列表（含笔记数量、阅读进度）',
 			schema: z.object({
-				count: z.number().optional().describe('返回数量，默认20'),
+				count: z.number().min(1).max(50).optional().describe('返回数量，默认20'),
 			}),
 		},
 	);

@@ -6,49 +6,13 @@
  */
 
 import type { App } from 'obsidian';
-import type { ToolDefinition } from '../../types.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
 import type { LocalToolCache } from './types.js';
 import { getOrBuildLocalCache } from './utils.js';
 
 const MAX_SECTION_LENGTH = 8000;
 
-const READ_BOOK_SECTION_DEFINITION: ToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'read_book_section',
-    description: `读取指定章节的完整内容（含 ^block_id 标记）。
-
-【推荐用法】先 search_book 获取 node_id 列表，再批量读取。
-参数优先级: node_ids (批量) > node_id+block_id (精确定位) > heading`,
-    parameters: {
-      type: 'object',
-      properties: {
-        node_ids: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '批量读取多个章节（推荐，一次读取多个 node_id）'
-        },
-        node_id: {
-          type: 'string',
-          description: '单个章节 ID'
-        },
-        block_id: {
-          type: 'string',
-          description: '块引用 ID（如 ^s1-002），需配合 node_id 使用'
-        },
-        heading: {
-          type: 'string',
-          description: '标题名称（模糊匹配）'
-        }
-      },
-      required: []
-    }
-  }
-};
-
 export const readBookSectionTool: ToolExecutor = {
-  definition: READ_BOOK_SECTION_DEFINITION,
 
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const { vault, book } = context;

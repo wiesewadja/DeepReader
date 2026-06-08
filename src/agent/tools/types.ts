@@ -13,6 +13,19 @@ export type { DeepReaderPluginInterface } from './context/vault.js';
 /**
  * Tool 执行上下文
  */
+export interface TTSConfig {
+  apiKey: string;
+  baseUrl: string;
+  model?: string;
+  provider?: string;
+}
+
+export interface LLMConfig {
+  apiKey: string;
+  baseUrl: string;
+  model?: string;
+}
+
 export interface ToolContext {
   vault: VaultContext;
   book: BookContext;
@@ -24,8 +37,8 @@ export interface ToolContext {
   useLLMTreeSearch?: boolean;
   scopeNodeIds?: string[];
   quotes?: QuoteItem[];
-  ttsConfig?: { apiKey: string; baseUrl: string; model?: string; provider?: string };
-  llmConfig?: { apiKey: string; baseUrl: string; model?: string };
+  ttsConfig?: TTSConfig;
+  llmConfig?: LLMConfig;
   mode?: EngineMode;
   proactiveTrigger?: string;
   highlightContext?: string[];
@@ -35,6 +48,6 @@ export interface ToolContext {
  * Tool 执行器接口
  */
 export interface ToolExecutor {
-  definition: ToolDefinition;
+  definition?: ToolDefinition;
   execute(args: Record<string, unknown>, context: ToolContext): Promise<string>;
 }

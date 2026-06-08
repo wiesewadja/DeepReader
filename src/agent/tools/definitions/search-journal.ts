@@ -10,7 +10,7 @@ import type { ToolFactory } from './types.js';
 
 const searchJournalSchema = z.object({
 	query: z.string().describe('搜索关键词，用于在用户个人笔记中查找相关内容'),
-	topK: z.number().optional().describe('返回结果数量，默认 3'),
+	topK: z.number().min(1).max(50).optional().describe('返回结果数量，默认 3'),
 });
 
 export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
