@@ -12,22 +12,22 @@ import { ChatInput } from "../../components/chat-input/chat-input.js";
 import type { QuoteItem, QuoteMetadata } from '../../components/chat-input/chat-input.js';
 import { ConfirmModal } from "../../components/confirm-modal.js";
 import { Drawer } from "../../components/drawer/drawer.js";
-import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
-import { type TaskProgressCard } from "../../components/task-progress-card.js";
-import { IndexListItem, type ContextDoc, type Booklist, stripFileExtension } from "../../types/index.js";
-import { Icons, getIcon } from "../../utils/icons.js";
-import { LIBRARY_VIEW_TYPE } from "../library-view.js";
-import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../../components/message-list/message-list.js";
-import { IndexManager } from "../../components/index-manager/index-manager.js";
-import { ContextManager } from "../../services/context-manager.js";
 import { ExcerptModal } from "../../components/excerpt/excerpt-modal.js";
-import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
+import { IndexManager } from "../../components/index-manager/index-manager.js";
+import { MessageList, type GuidanceType, GUIDANCE_BUTTONS } from "../../components/message-list/message-list.js";
 import { ReadingTopbar } from "../../components/reading-topbar/index.js";
-import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
-import { findBlockIdFromRange } from "../../utils/block-utils.js";
-import { type TTSService, type TTSPlayState } from '../../services/tts/tts-service.js';
-import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
+import { type TaskProgressCard } from "../../components/task-progress-card.js";
 import { resolveRoleConfig } from '../../config/providers.js';
+import { ContextManager } from "../../services/context-manager.js";
+import { type TTSService, type TTSPlayState } from '../../services/tts/tts-service.js';
+import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
+import { IndexListItem, type ContextDoc, type Booklist, stripFileExtension } from "../../types/index.js";
+import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
+import { findBlockIdFromRange } from "../../utils/block-utils.js";
+import { Icons, getIcon } from "../../utils/icons.js";
+import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
+import { LIBRARY_VIEW_TYPE } from "../library-view.js";
+import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import { AgentChatController } from './agent-chat-controller.js';
 import { BookManager } from './book-manager.js';
 import { QuoteManager } from './quote-manager.js';
@@ -868,6 +868,10 @@ export class SidebarView extends ItemView {
 
         // 创建引用卡片容器（在输入框上方）
         this.quotesContainer = section.createDiv({ cls: "deeppdf-quotes-container" });
+        // 接线 QuoteManager：告诉它往哪里渲染卡片。
+        // 311b3a61 refactor 误删了这个调用，导致引用卡片永远不出现，
+        // UI 上仅显示 placeholder 文字"已引用 N 段文字..."。
+        this.quoteManager.setContainer(this.quotesContainer);
 
         const chatInputEl = this.chatInput.getElement();
         if (chatInputEl) {
