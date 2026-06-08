@@ -65,6 +65,8 @@ export function buildInspectionalSystemPrompt(
   docDescription?: string,
   currentNodeId?: string,
   citedNodeIds?: string[],
+  /** 用户实际引用的文本片段（来自 UI 引用卡片）。 */
+  citedQuoteTexts?: Array<{ nodeId: string; blockId?: string; text: string }>,
 ): string {
   const summarySection = docDescription
     ? `\n<book_summary>\n${docDescription}\n</book_summary>\n`
@@ -84,11 +86,30 @@ export function buildInspectionalSystemPrompt(
 
   // 用户显式引用章节：用户用 [[24 - xxx]] 或 > — 24 - xxx 形式直接点名的章节
   // 这是用户意图的强信号，权重高于 LLM 推断的 scope
+  // 同时如果能拿到用户实际引用的文本片段，一并注入，让 LLM 以原文为依据判断相关性
+  const citedTextsByNode = new Map<string, Array<{ blockId?: string; text: string }>>();
+  if (citedQuoteTexts && citedQuoteTexts.length > 0) {
+    for (const q of citedQuoteTexts) {
+      const arr = citedTextsByNode.get(q.nodeId) ?? [];
+      arr.push({ blockId: q.blockId, text: q.text });
+      citedTextsByNode.set(q.nodeId, arr);
+    }
+  }
   const citedChaptersBlock = citedNodeIds && citedNodeIds.length > 0
     ? `\n<user_cited_chapters>
 用户在消息中通过 wiki 链接或块引用显式引用了以下章节：
-${citedNodeIds.map(id => `- node_id: ${id}`).join('\n')}
+${citedNodeIds.map(id => {
+  const texts = citedTextsByNode.get(id);
+  if (!texts || texts.length === 0) return `- node_id: ${id}`;
+  const textBlurbs = texts.map(t => {
+    const trimmed = t.text.length > 400 ? `${t.text.slice(0, 400)}…` : t.text;
+    const blockTag = t.blockId ? ` (block_id: ^${t.blockId})` : '';
+    return `  - 用户引用文本${blockTag}：\n    > ${trimmed.replace(/\n/g, '\n    > ')}`;
+  }).join('\n');
+  return `- node_id: ${id}\n${textBlurbs}`;
+}).join('\n')}
 ⚠️ 这些章节必须出现在 scopeNodeIds 中——它们是用户问题的直接来源，绕开它们等于忽略用户意图。
+⚠️ **以用户引用的文本为最直接依据**判断这些章节是否与问题相关。章节摘要可能丢失关键术语，但用户引用的原文揭示了真实意图。不要仅凭摘要排除这些章节。
 </user_cited_chapters>`
     : '';
 

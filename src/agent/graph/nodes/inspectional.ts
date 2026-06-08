@@ -89,6 +89,23 @@ export async function inspectionalNode(
     log(`[S1 Inspectional] currentNodeId=${currentNodeId || '(none)'}, citedNodeIds=[${citedNodeIds.join(',')}]`);
   }
 
+  // 提取用户实际引用的文本片段 (来自 UI 引用卡片 + 消息中嵌入的引文)
+  // 用于在 prompt 中以原文形式展示，让 LLM 依据原文判断引用章节的相关性
+  // 归一化 nodeId 为 4 位（与 tree.json nodeFileMap 和 scopeNodeIds 一致），
+  // 避免 “15” vs “0015” 导致 map lookup miss
+  const normalizeNodeId = (id: string): string =>
+    /^\d+$/.test(id) ? id.padStart(4, '0') : id;
+  const citedQuoteTexts: Array<{ nodeId: string; blockId?: string; text: string }> = (toolContext?.quotes || [])
+    .filter((q: QuoteItem): q is QuoteItem & { nodeId: string } => !!q.nodeId)
+    .map((q: QuoteItem & { nodeId: string }) => ({
+      nodeId: normalizeNodeId(q.nodeId),
+      blockId: q.blockId,
+      text: q.text,
+    }));
+  if (citedQuoteTexts.length > 0) {
+    log(`[S1 Inspectional] 注入 ${citedQuoteTexts.length} 条用户引用文本到 prompt`);
+  }
+
   const systemPrompt = buildInspectionalSystemPrompt(
     treeText,
     statePdfName || '',
@@ -96,6 +113,7 @@ export async function inspectionalNode(
     docDescription,
     currentNodeId,
     citedNodeIds,
+    citedQuoteTexts,
   );
   const userMessage = buildInspectionalUserMessage(
     rewrittenQuery,
