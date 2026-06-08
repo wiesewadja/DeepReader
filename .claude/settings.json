@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/security_guard.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/on_file_edit.py" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/stop_validate.py" }
+        ]
+      }
+    ]
+  }
+}
