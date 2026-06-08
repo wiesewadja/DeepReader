@@ -1,9 +1,9 @@
 import { Notice, type App } from 'obsidian';
-import type { HighlightColorId } from '../components/reading-mode/index.js';
 import type { ExcerptContent, ExcerptMetadata } from '../types/excerpt.js';
-import { ExcerptService } from './excerpt-service.js';
-import { findTextInMarkdown } from '../utils/markdown-utils.js';
+import type { HighlightColorId } from '../types/highlight.js';
 import { log, error as logError } from '../utils/logger.js';
+import { findTextInMarkdown } from '../utils/markdown-utils.js';
+import { ExcerptService } from './excerpt-service.js';
 
 const HIGHLIGHT_COLORS: Record<HighlightColorId, string> = {
 	yellow: 'rgba(255, 235, 59, 0.5)',

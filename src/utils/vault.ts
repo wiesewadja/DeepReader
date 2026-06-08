@@ -3,7 +3,16 @@
  */
 
 import { normalizePath, type App } from 'obsidian';
-import type { VaultAdapter } from '../weread/sync/state.js';
+
+/** VaultAdapter 最小接口 — Obsidian FileSystemAdapter 的子集，路径均为 vault-relative */
+export interface VaultAdapter {
+	read(path: string): Promise<string>;
+	write(path: string, data: string): Promise<void>;
+	writeBinary(path: string, data: ArrayBuffer): Promise<void>;
+	exists(path: string, sensitive?: boolean): Promise<boolean>;
+	mkdir(path: string): Promise<void>;
+	stat(path: string): Promise<{ size: number } | null>;
+}
 
 /**
  * 获取 Vault 的 FileSystemAdapter（桌面端）。

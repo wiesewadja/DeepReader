@@ -3,10 +3,10 @@
  * 折叠式面板，用于选择、创建和管理 PDF 索引
  */
 
-import { Component } from '../component.js';
+import { type App } from 'obsidian';
+import { type IndexListItem } from '../../types/index.js';
 import { Icons } from '../../utils/icons.js';
-import { IndexListItem } from '../../types/index.js';
-import { App } from 'obsidian';
+import { Component } from '../component.js';
 import { ConfirmModal } from '../confirm-modal.js';
 
 export interface IndexManagerOptions {

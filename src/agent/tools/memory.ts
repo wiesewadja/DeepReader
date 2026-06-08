@@ -8,10 +8,10 @@
  * 设计参考: nanobot 的 memory.py
  */
 
+import { toolsLog as log, error } from '../../utils/logger.js';
+import { MemoryStore } from '../memory/store.js';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { MemoryStore } from '../memory/store.js';
-import { toolsLog as log, error } from '../../utils/logger.js';
 
 /**
  * save_memory 工具定义

@@ -5,9 +5,9 @@
  * Only includes what the LangGraph path actually uses.
  */
 
-import type { ChatMessage } from '../types';
 import type { LLMClientManager } from '../llm-client';
 import type { ToolContext } from '../tools/types';
+import type { ChatMessage } from '../types';
 import type { HistorySummary } from './utils/history-summarizer';
 
 /**

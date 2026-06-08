@@ -2,11 +2,11 @@
  * Conditional edges for the cognitive engine graph
  */
 
+import { agentLog as log } from '../../utils/logger.js';
+import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import type { CognitiveEngineState } from './state';
 import { ReadingDepth } from './state';
-import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import { resolveMode } from './utils/engine-helpers';
-import { agentLog as log } from '../../utils/logger.js';
 
 function hasDiagramIntent(_state: CognitiveEngineState): boolean {
   // 图表生成已迁移到 Hermes，暂时跳过

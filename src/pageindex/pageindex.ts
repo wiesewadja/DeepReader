@@ -5,7 +5,7 @@
 
 import { parsePdf, getPdfName, type PdfPage } from "./parsers/pdf";
 import { parseEpub, epubChaptersToPages, splitLargeEpubPages, EPUB_SPLIT_THRESHOLD } from "./parsers/epub";
-import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
+import { log as piLog } from "./core/logger";
 import { checkToc, checkTitleAppearanceInStartConcurrent, type TocOptions } from "./core/toc";
 import {
   processNoToc,
@@ -19,9 +19,8 @@ import {
   fixIncorrectToc,
   type TreeOptions,
 } from "./core/tree";
-import { convertPhysicalIndexToInt, removeFields, countTokens, structureToList } from "./core/utils";
-import { log as piLog } from "./core/logger";
 import type { PageIndexOptions, PageIndexResult, TreeNode, TocItem, ExtractionMode, ProgressInfo } from "./core/types";
+import { convertPhysicalIndexToInt, removeFields, countTokens, structureToList } from "./core/utils";
 
 /**
  * Flatten PDF outline (bookmarks) to a Map<title, pageNumber> for easy lookup
@@ -107,9 +106,6 @@ function validateAndTruncatePhysicalIndices(items: TocItem[], totalPages: number
     return true;
   });
 }
-import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
-import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
-import { searchVault as searchVaultFn } from "./vault/search";
 import {
   DEFAULT_MODEL,
   DEFAULT_ADD_NODE_ID,
@@ -125,6 +121,10 @@ import {
   DEFAULT_IMAGE_FORMAT,
   DEFAULT_OCR_CONCURRENCY,
 } from "./defaults.js";
+import { parsePdfWithOcr, type OcrOptions } from "./parsers/ocr";
+import { indexObsidianVault as indexVault, getVaultIndexStatus as getVaultStatus, loadVaultIndex } from "./vault";
+import { searchVault as searchVaultFn } from "./vault/search";
+import type { ObsidianVaultIndexOptions, VaultIndexResult, SearchOptions, SearchResult } from "./vault/types";
 
 interface InternalOptions extends TreeOptions {
   extractionMode: ExtractionMode;

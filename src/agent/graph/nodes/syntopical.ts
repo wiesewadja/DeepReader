@@ -8,23 +8,23 @@
  * 4. Optional HITL review
  */
 
-import type { RunnableConfig } from '@langchain/core/runnables';
-import { RunnableLambda } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import type { CognitiveEngineState } from '../state';
+import { RunnableLambda } from '@langchain/core/runnables';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { interrupt } from '@langchain/langgraph';
-import { agentLog as log } from '../../../utils/logger.js';
-import { getVaultPath } from '../../../utils/mobile-fs.js';
-import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
-import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
-import type { SyntopicalInput } from '../node-io.js';
-import type { SharedContext } from '../shared-context.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
+import { agentLog as log } from '../../../utils/logger.js';
+import { getVaultPath } from '../../../utils/mobile-fs.js';
+import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
+import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
+import type { SyntopicalInput } from '../node-io.js';
 import {
   buildSyntopicalSystemPrompt,
   buildSyntopicalUserMessage,
 } from '../prompts/syntopical-prompt.js';
+import type { SharedContext } from '../shared-context.js';
+import type { CognitiveEngineState } from '../state';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
 
 export interface SyntopicalToolResult {

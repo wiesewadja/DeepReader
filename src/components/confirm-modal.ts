@@ -2,7 +2,7 @@
  * 确认弹窗组件
  */
 
-import { App, Modal, Setting } from "obsidian";
+import { type App, Modal, Setting } from "obsidian";
 
 export interface ConfirmModalCheckbox {
     label: string;

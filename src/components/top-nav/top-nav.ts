@@ -3,8 +3,8 @@
  * 极简风格：Logo + 状态点 + 设置按钮
  */
 
-import { Component } from '../component.js';
 import { Icons } from '../../utils/icons.js';
+import { Component } from '../component.js';
 
 /**
  * 连接状态类型

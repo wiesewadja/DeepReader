@@ -10,8 +10,8 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { CatalogMeta } from './vault/types';
 import { getCatalogPath } from './paths';
+import type { CatalogMeta } from './vault/types';
 
 /**
  * 加载所有已归档的书籍 ID

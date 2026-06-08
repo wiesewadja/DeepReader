@@ -5,10 +5,10 @@
  * 迁移是幂等的：对已迁移的数据再次执行不会改变结果。
  */
 
-import type { DeepPDFSettings } from './settings';
+import type { AIProviderAccount } from './ai-roles';
 import type { ProviderType } from './providers';
 import { PROVIDER_CONFIGS } from './providers';
-import type { AIRoleConfig, AIProviderAccount } from './ai-roles';
+import type { DeepPDFSettings } from './settings';
 import { DEFAULT_SETTINGS } from './settings';
 
 /** 需要检测的旧版字段名列表 */

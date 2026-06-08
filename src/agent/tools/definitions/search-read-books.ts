@@ -7,8 +7,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { searchReadBooksTool } from '../search-read-books.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 export const createSearchReadBooksTool: ToolFactory = (ctx: ToolContext) =>
   tool(

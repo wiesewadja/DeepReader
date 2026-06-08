@@ -35,28 +35,28 @@ export type {
 export { ReadingDepth } from './graph/state.js';
 
 // Import for FrontendAgent class
+import { agentLog as log } from '../utils/logger.js';
+import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
+import { ContextLoader } from './context/index.js';
+import { cognitiveEngine } from './graph/index.js';
+import type { EngineCallbacks } from './graph/shared-context.js';
+import { createSharedContext } from './graph/shared-context.js';
 import { ReadingDepth } from './graph/state.js';
 import type { EngineMode } from './graph/state.js';
-import { LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
-import { ContextLoader } from './context/index.js';
-import { ContextBuilder, type DocumentMetadata } from './context/builder.js';
+import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
+import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
+import { generateVoice, type VoiceConfig } from './graph/voice-pipeline.js';
+import { type LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { MemoryStore } from './memory/store.js';
+import { createChatModels } from './models/index.js';
 import { IntentRouter } from './router/index.js';
+import type { ToolContext } from './tools/types.js';
+import { NoopTracer } from './tracing/index.js';
 import type { ChatMessage, ToolDefinition } from './types.js';
 import type { AgentLoopOptions } from './types.js';
-import type { ToolContext } from './tools/types.js';
-import type { EngineCallbacks } from './graph/shared-context.js';
-import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
-import { agentLog as log } from '../utils/logger.js';
-import { NoopTracer } from './tracing/index.js';
 import { HumanMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
-import { cognitiveEngine } from './graph/index.js';
-import { createChatModels } from './models/index.js';
 import { getLangSmithTracer, resetLangSmithTracer } from './tracing/langsmith.js';
-import { createSharedContext } from './graph/shared-context.js';
-import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
-import { generateVoice, type VoiceConfig } from './graph/voice-pipeline.js';
 
 export interface FrontendAgentOptions {
   apiKey: string;

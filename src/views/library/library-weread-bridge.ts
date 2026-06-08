@@ -5,29 +5,28 @@
 
 import type { App } from 'obsidian';
 import { Notice } from 'obsidian';
-import { sanitizeFileName } from '../../weread/utils/file.js';
+import { ConfirmModal } from '../../components/confirm-modal.js';
+import { ZLIBRARY_ENABLED } from '../../config/features.js';
+import { resolveRoleConfig } from '../../config/providers.js';
+import { toEmbeddingOptions } from '../../config/role-adapters.js';
+import type { DeepPDFSettings } from '../../config/settings.js';
+import { indexBook, isBookIndexed, generateBookId } from '../../pageindex/book-indexer.js';
+import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 import type { IndexListItem } from '../../types/index.js';
+import { SyncStateManager } from '../../weread/sync/state.js';
+import { sanitizeFileName } from '../../weread/utils/file.js';
 import type { ZLibraryBook } from '../../zlibrary/types.js';
 import { ZLibrarySearchModal } from '../zlibrary-search-modal.js';
 import type { ZLibraryClient } from '../../zlibrary/client.js';
 import { buildZlibClient } from '../../zlibrary/build-client.js';
-import { ZLIBRARY_ENABLED } from '../../config/features.js';
-import { SyncStateManager } from '../../weread/sync/state.js';
 import type { VaultAdapter } from '../../weread/sync/state.js';
 import { getVaultAdapter } from '../../utils/vault.js';
 import type { MappingStats } from '../../weread/types.js';
 import { normalizeTitle } from '../../weread/sync/matcher.js';
-import { PDFFileSelectorModal } from '../../ui/pdf-file-selector.js';
+import { PDFFileSelectorModal , isSystemFileInfo } from '../../ui/pdf-file-selector.js';
 import type { FileSelectResult } from '../../ui/pdf-file-selector.js';
-import { isSystemFileInfo } from '../../ui/pdf-file-selector.js';
-import { indexBook, isBookIndexed, generateBookId } from '../../pageindex/book-indexer.js';
-import { resolveRoleConfig } from '../../config/providers.js';
-import { toEmbeddingOptions } from '../../config/role-adapters.js';
-import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
-import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 import { getVaultPath } from '../../utils/mobile-fs.js';
-import { ConfirmModal } from '../../components/confirm-modal.js';
-import type { DeepPDFSettings } from '../../config/settings.js';
 
 export interface WereadBridgeCallbacks {
 	app: App;

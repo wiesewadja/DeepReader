@@ -3,11 +3,11 @@
  * 布局：左侧（mascot），中间（书籍信息+进度），右侧（操作按钮）
  */
 
-import { Component } from '../component.js';
+import type { Booklist } from '../../types/index.js';
 import { Icons } from '../../utils/icons.js';
 import { uiLog as log } from '../../utils/logger.js';
+import { Component } from '../component.js';
 import { MascotFace, type MascotExpression } from './mascot-face.js';
-import type { Booklist } from '../../types/index.js';
 
 export interface ReadingTopbarOptions {
     onOpenLibrary?: () => void;

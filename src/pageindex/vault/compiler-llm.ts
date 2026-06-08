@@ -1,5 +1,5 @@
-import { buildConceptExtractionPrompt, buildDeepAnalysisPrompt } from "./compiler-prompts";
 import { chatGPT } from "../llm/client";
+import { buildConceptExtractionPrompt, buildDeepAnalysisPrompt } from "./compiler-prompts";
 import type { ConceptExtraction, DeepAnalysis } from "./compiler-types";
 
 /** 解析 LLM 返回的概念提取 JSON */

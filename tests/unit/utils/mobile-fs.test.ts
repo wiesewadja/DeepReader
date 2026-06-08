@@ -21,8 +21,8 @@ import {
 	vaultRemove,
 	vaultWrite,
 	vaultWriteBinary,
-	resolveBookIdFromPdf,
 } from '@/utils/mobile-fs.js';
+import { resolveBookIdFromPdf } from '@/pageindex/book-resolver.js';
 
 // Mock App with vault adapter
 function createMockApp(adapterOverrides: Record<string, any> = {}) {

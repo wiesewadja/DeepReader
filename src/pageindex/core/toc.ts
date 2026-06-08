@@ -3,14 +3,14 @@
  * Functions for detecting, extracting, and processing table of contents
  */
 
-import { chatGPT, chatGPTWithFinishReason } from "../llm/client";
-import { log as piLog } from "./logger";
 import { apiLog } from "../../utils/logger.js";
+import type { LlmCallTrace } from "../index-tracer.js";
+import { chatGPT, chatGPTWithFinishReason } from "../llm/client";
 import type { PdfPage } from "../parsers/pdf";
+import { log as piLog } from "./logger";
+import * as prompts from "./prompts";
 import type { TocItem, TocCheckResult } from "./types";
 import { extractJson, getJsonContent, convertPhysicalIndexToInt, convertPageToInt } from "./utils";
-import * as prompts from "./prompts";
-import type { LlmCallTrace } from "../index-tracer.js";
 
 export interface TocOptions {
   model: string;

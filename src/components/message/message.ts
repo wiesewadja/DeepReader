@@ -3,12 +3,12 @@
  * 实现 ChatGPT 风格的聊天消息界面，支持 Markdown 渲染和流式更新
  */
 
-import { App, MarkdownRenderer, Component, HoverParent, HoverPopover, MarkdownView } from 'obsidian';
+import { type App, MarkdownRenderer, Component } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import { Icons } from '../../utils/icons.js';
+import { uiLog as log, error as logError } from '../../utils/logger.js';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { SelectionMenu } from '../excerpt/selection-menu';
-import { uiLog as log, error as logError } from '../../utils/logger.js';
-import { Icons } from '../../utils/icons.js';
 
 // 从拆分模块 re-export
 export type { MessageRole, AgentToolCall, AgentThought, MessageData } from './types.js';
@@ -17,12 +17,12 @@ export { escapeHtml, formatTimestamp, extractSectionByBlockRef } from './utils.j
 export { resolveWikiLinkPreview, setupInternalLinks } from './internal-links.js';
 
 // 内部引用
-import type { MessageData, AgentToolCall } from './types.js';
-import { parseAgentContent } from './parse-agent-content.js';
-import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp, extractSectionByBlockRef as _extractSectionByBlockRef } from './utils.js';
-import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
-import { VoiceLetterController } from './voice-letter-controller.js';
 import { FullscreenController } from './fullscreen-controller.js';
+import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
+import { parseAgentContent } from './parse-agent-content.js';
+import type { MessageData, AgentToolCall } from './types.js';
+import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp } from './utils.js';
+import { VoiceLetterController } from './voice-letter-controller.js';
 
 /**
  * 消息基类

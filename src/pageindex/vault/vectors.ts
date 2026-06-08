@@ -5,9 +5,12 @@
  * Node.js compatible version
  */
 
-import * as path from "path";
 import * as fs from "node:fs/promises";
+import * as path from "path";
 import type { App } from "obsidian";
+import { vaultRead } from "../../utils/mobile-fs.js";
+import { safeRequest } from "../../utils/safe-request.js";
+import { cosineSimilarity } from "../core/utils";
 import type {
   EmbeddingOptions,
   VectorRecord,
@@ -15,9 +18,6 @@ import type {
   CatalogMeta,
   CatalogBookEntry,
 } from "./types";
-import { cosineSimilarity } from "../core/utils";
-import { safeRequest } from "../../utils/safe-request.js";
-import { vaultRead } from "../../utils/mobile-fs.js";
 
 // ─── JSONL Vector Storage ─────────────────────────────────────
 

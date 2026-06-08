@@ -12,8 +12,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { WereadApiClient } from '../../../weread/api/client.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 function getClient(ctx: ToolContext): WereadApiClient | null {
 	if (ctx.weread?.wereadClient) return ctx.weread.wereadClient;

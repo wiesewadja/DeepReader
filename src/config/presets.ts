@@ -4,8 +4,8 @@
  * 奚童预设使用双 Provider：小米 MIMO（对话）+ SiliconFlow（搜索）。
  */
 
-import type { RoleType } from './types';
 import type { AIRoleConfig } from './ai-roles';
+import type { RoleType } from './types';
 
 /** 预设配置 */
 export interface ProviderPreset {

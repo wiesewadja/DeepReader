@@ -15,8 +15,8 @@
  * for most cases.
  */
 
-import AdmZip from "adm-zip";
 import * as path from "path";
+import type AdmZip from "adm-zip";
 
 // ─── Strategy interface ─────────────────────────────────────────
 

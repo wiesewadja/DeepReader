@@ -6,10 +6,10 @@
  * 仅对 supportsModelList: true 的服务商调用。
  */
 
-import type { ProviderType } from './providers';
-import type { AIProviderAccount } from './ai-roles';
-import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS, XIAOMI_TTS_MODELS } from './providers';
 import { safeRequest } from '../utils/safe-request.js';
+import type { AIProviderAccount } from './ai-roles';
+import type { ProviderType } from './providers';
+import { PROVIDER_CONFIGS, normalizeBaseUrl, MINIMAX_TTS_MODELS, XIAOMI_TTS_MODELS } from './providers';
 
 export interface FetchModelsResult {
 	success: boolean;

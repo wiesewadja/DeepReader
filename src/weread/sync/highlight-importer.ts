@@ -8,10 +8,10 @@
  * 4. 按章节分组，每条高亮模糊匹配后批量写入 <mark> 标签
  */
 
+import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import { serviceLog as logger } from '../../utils/logger';
 import type { WereadMapping, WereadSyncState } from '../types';
 import { findFuzzyMatches } from './text-matcher';
-import { serviceLog as logger } from '../../utils/logger';
-import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
 
 interface VaultAdapter {
 	read(path: string): Promise<string>;

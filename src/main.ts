@@ -1,22 +1,12 @@
-import { Plugin, WorkspaceLeaf, Notice, MarkdownView } from "obsidian";
-import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
-import type { DeepReaderPluginInterface } from "./agent/tools/context/vault.js";
-import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
-import { serviceLog, setLogEnabled } from "./utils/logger.js";
-import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
-import type { QuoteMetadata } from './components/chat-input/chat-input.js';
-import { HighlightService } from './services/highlight-service.js';
+import { Plugin, type WorkspaceLeaf, Notice } from "obsidian";
 import { FrontendAgent } from './agent/index.js';
-import { DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
-import { setActivePluginId } from './pageindex/paths.js';
-import { needsMigration, migrateSettings } from './config/settings-migrator.js';
-import { PROVIDER_LABELS, resolveRoleConfig, getProviderName } from './config/providers.js';
+import type { DeepReaderPluginInterface } from "./agent/tools/context/vault.js";
+import type { QuoteMetadata } from './components/chat-input/chat-input.js';
+import { ReadingModeService, type ReadingModeCallbacks, type HighlightColorId } from './components/reading-mode/index.js';
 import { isBuiltInProvider } from './config/ai-roles.js';
-import { DeepPDFSettingTab } from './settings/setting-tab.js';
-import { ExcerptService } from './services/excerpt-service.js';
-import type { ExcerptContent, ExcerptMetadata } from './types/excerpt.js';
-import { findTextInMarkdown } from './utils/markdown-utils.js';
-import { getVaultPath } from './utils/mobile-fs.js';
+import { resolveRoleConfig, getProviderName } from './config/providers.js';
+import { needsMigration, migrateSettings } from './config/settings-migrator.js';
+import { type DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './config/settings.js';
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
@@ -25,9 +15,16 @@ import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
 // PageIndex - 核心功能导入（Node.js 兼容）
 import { PageIndex, type PageIndexResult, type ProgressInfo } from './pageindex/node.js';
 import { indexBook, isBookIndexed, deleteBookIndex, generateBookId, migrateBookIndexes } from './pageindex/book-indexer.js';
-import { parseEpub, type EpubInfo } from './pageindex/parsers/epub.js';
+import { parseEpub } from './pageindex/parsers/epub.js';
 import { parsePdf } from './pageindex/parsers/pdf.js';
 import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
+import { setActivePluginId } from './pageindex/paths.js';
+import { HighlightService } from './services/highlight-service.js';
+import { DeepPDFSettingTab } from './settings/setting-tab.js';
+import { serviceLog, setLogEnabled } from "./utils/logger.js";
+import { getVaultPath } from './utils/mobile-fs.js';
+import { LibraryView, LIBRARY_VIEW_TYPE } from "./views/library-view.js";
+import { SidebarView, SIDEBAR_VIEW_TYPE } from "./views/sidebar-view.js";
 
 // 使用 service 模块日志器
 const log = serviceLog;

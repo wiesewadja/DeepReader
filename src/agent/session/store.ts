@@ -9,8 +9,8 @@
 
 import type { App } from 'obsidian';
 import { normalizePath } from 'obsidian';
-import type { ChatMessage } from '../types.js';
 import { agentLog as log } from '../../utils/logger.js';
+import type { ChatMessage } from '../types.js';
 import {
 	type Session,
 	type SessionMeta,

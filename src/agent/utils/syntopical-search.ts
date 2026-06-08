@@ -1,4 +1,3 @@
-import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
 /**
  * Syntopical Search - Multi-book retrieval for S3 Syntopical Reading
  *
@@ -6,16 +5,17 @@ import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
  * search, returns top results per book for LLM fusion analysis.
  */
 
-import * as path from 'path';
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import type { App } from 'obsidian';
-import { vaultRead, vaultExists, vaultList, joinPath } from '../../utils/mobile-fs.js';
-import { agentLog as log } from '../../utils/logger.js';
 import { searchBookV2 } from '../../pageindex/book-search-v2.js';
-import { searchPropositions } from '../../pageindex/proposition-search.js';
 import type { BookSearchResultV2, PropositionMatch } from '../../pageindex/book-types.js';
-import type { EmbeddingOptions } from '../../pageindex/vault/types.js';
+import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
+import { searchPropositions } from '../../pageindex/proposition-search.js';
 import { getOrGenerateEmbedding } from '../../pageindex/vault/embedding-cache.js';
+import type { EmbeddingOptions } from '../../pageindex/vault/types.js';
+import { agentLog as log } from '../../utils/logger.js';
+import { vaultRead, vaultExists, vaultList, joinPath } from '../../utils/mobile-fs.js';
 
 export interface SyntopicalSearchOptions {
   query: string;

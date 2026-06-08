@@ -16,12 +16,12 @@
  * For Bun-native vault indexing, use './index.ts' instead.
  */
 
-import { PageIndex } from "./pageindex";
 import type {
   TreeNode,
   ExtractionMode,
   ProgressInfo,
 } from "./core/types";
+import { PageIndex } from "./pageindex";
 
 // ── Core Class ───────────────────────────────────────────────────────────────
 

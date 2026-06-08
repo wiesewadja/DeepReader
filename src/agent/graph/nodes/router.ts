@@ -5,19 +5,18 @@
  * Calls the fast model to classify depth and rewrite query.
  */
 
-import type { RunnableConfig } from '@langchain/core/runnables';
 import type { BaseMessage } from '@langchain/core/messages';
+import type { RunnableConfig } from '@langchain/core/runnables';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
+import { agentLog as log } from '../../../utils/logger.js';
+import { IntentRouter } from '../../router/intent-router.js';
+import type { RouterInput } from '../node-io.js';
+import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
+import type { SharedContext } from '../shared-context.js';
 import type { CognitiveEngineState } from '../state';
 import { ReadingDepth } from '../state';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
-import type { RouterInput } from '../node-io.js';
-import type { SharedContext } from '../shared-context.js';
-import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
-import { extractJSON } from '../utils/parse.js';
-import { agentLog as log } from '../../../utils/logger.js';
 import { detectCorrection, correctionReason } from '../utils/correction-detector.js';
-
-import { IntentRouter } from '../../router/intent-router.js';
+import { extractJSON } from '../utils/parse.js';
 
 interface LLMRouterResponse {
   depth: number;

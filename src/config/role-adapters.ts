@@ -5,9 +5,9 @@
  * 这是迁移期间的桥接层，Chunk 完成后底层也会统一到新 ProviderType。
  */
 
-import type { ProviderType } from './providers';
-import type { EmbeddingOptions } from '../pageindex/vault/types';
 import type { BookIndexOptions } from '../pageindex/book-types';
+import type { EmbeddingOptions } from '../pageindex/vault/types';
+import type { ProviderType } from './providers';
 
 /** resolveRoleConfig() 的返回值类型 */
 interface ResolvedConfig {

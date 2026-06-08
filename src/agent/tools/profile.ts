@@ -5,9 +5,9 @@
  * - update_profile: 更新用户画像字段
  */
 
+import { toolsLog as log, error } from '../../utils/logger.js';
 import type { ToolDefinition } from '../types.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-import { toolsLog as log, error } from '../../utils/logger.js';
 
 /**
  * update_profile 工具定义

@@ -7,9 +7,9 @@
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getPageindexRoot } from "./paths.js";
 import { INDEX_TRACE_ENABLED } from "../config/features.js";
 import { apiLog } from "../utils/logger.js";
+import { getPageindexRoot } from "./paths.js";
 
 /** LLM 调用追踪（兼容导出） */
 export interface LlmCallTrace {

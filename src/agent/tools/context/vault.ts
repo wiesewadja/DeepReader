@@ -12,7 +12,7 @@ export interface DeepReaderPluginInterface {
     readMeta(): Promise<import('../../../services/profile-builder.js').ProfileMeta | null>;
     accumulateConversationRound(userMessage: string, assistantMessage: string): void;
   };
-  readingModeService?: import('../../../services/reading-mode-service.js').ReadingModeService | null;
+  readingModeService?: import('../../../components/reading-mode/reading-mode-orchestrator.js').ReadingModeService | null;
   getFrontendAgent(): Promise<import('../../index.js').FrontendAgent>;
 }
 

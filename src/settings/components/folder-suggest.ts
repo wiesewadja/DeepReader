@@ -2,7 +2,7 @@
  * Folder suggestion modal — based on Obsidian FuzzySuggestModal.
  */
 
-import { App, FuzzySuggestModal, TFolder } from 'obsidian';
+import { type App, FuzzySuggestModal, TFolder } from 'obsidian';
 
 export class FolderSuggestModal extends FuzzySuggestModal<string> {
   private onSelect: (path: string) => void;

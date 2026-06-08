@@ -3,42 +3,37 @@
  * ChatGPT 风格的对话界面
  */
 
-import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
-import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
+import { ItemView, type WorkspaceLeaf, Notice } from "obsidian";
+import { type FrontendAgent } from "../../agent/index.js";
+import { ProactiveEngine } from '../../agent/proactive/engine.js';
+import { SessionStore } from "../../agent/session/index.js";
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
+import { ChatInput } from "../../components/chat-input/chat-input.js";
+import type { QuoteItem, QuoteMetadata } from '../../components/chat-input/chat-input.js';
+import { ConfirmModal } from "../../components/confirm-modal.js";
 import { Drawer } from "../../components/drawer/drawer.js";
-import { TaskProgressCard } from "../../components/task-progress-card.js";
-import { IndexListItem, ContextDoc, Booklist, stripFileExtension } from "../../types/index.js";
+import { PDFFileSelectorModal } from "../../ui/pdf-file-selector.js";
+import { type TaskProgressCard } from "../../components/task-progress-card.js";
+import { IndexListItem, type ContextDoc, type Booklist, stripFileExtension } from "../../types/index.js";
+import { Icons, getIcon } from "../../utils/icons.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
 import { MessageList, GuidanceType, GUIDANCE_BUTTONS } from "../../components/message-list/message-list.js";
-import { ChatInput } from "../../components/chat-input/chat-input.js";
-import { MessageData, MessageRole, parseAgentContent, AgentThought, AgentToolCall, AIMessage } from "../../components/message/message.js";
 import { IndexManager } from "../../components/index-manager/index-manager.js";
-import { Icons, getIcon } from "../../utils/icons.js";
-
 import { ContextManager } from "../../services/context-manager.js";
 import { ExcerptModal } from "../../components/excerpt/excerpt-modal.js";
-import { ConfirmModal } from "../../components/confirm-modal.js";
 import type { ExcerptContent, ExcerptMetadata } from "../../types/excerpt.js";
 import { ReadingTopbar } from "../../components/reading-topbar/index.js";
-
 import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
-import { FrontendAgent } from "../../agent/index.js";
-import type { ToolContext } from "../../agent/tools/types.js";
-import type { HumanizedProgress } from "../../agent/ui/humanized-types.js";
-import { SessionStore } from "../../agent/session/index.js";
 import { findBlockIdFromRange } from "../../utils/block-utils.js";
-import { TTSService, type TTSPlayState } from '../../services/tts/tts-service.js';
-import { StreamingVoicePlayer, type StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
+import { type TTSService, type TTSPlayState } from '../../services/tts/tts-service.js';
+import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import { resolveRoleConfig } from '../../config/providers.js';
-import { ProactiveEngine } from '../../agent/proactive/engine.js';
-import { copyToClipboard as _copyToClipboard } from './search-utils.js';
-import { QuoteManager } from './quote-manager.js';
-import type { QuoteItem, QuoteMetadata } from '../../components/chat-input/chat-input.js';
-import { TTSController } from './tts-controller.js';
-import { SessionManager } from './session-manager.js';
 import { AgentChatController } from './agent-chat-controller.js';
 import { BookManager } from './book-manager.js';
-import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
+import { QuoteManager } from './quote-manager.js';
+import { copyToClipboard as _copyToClipboard } from './search-utils.js';
+import { SessionManager } from './session-manager.js';
+import { TTSController } from './tts-controller.js';
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -672,7 +667,7 @@ export class SidebarView extends ItemView {
         // 从文件的 frontmatter 或路径中提取书籍信息
         const cache = this.app.metadataCache.getFileCache(activeFile);
         let bookName = cache?.frontmatter?.pdf_name || '';
-        let indexId = String(cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '');
+        const indexId = String(cache?.frontmatter?.index_id || cache?.frontmatter?.pdf_index_id || '');
 
         // 如果没有从 frontmatter 获取到书名，从路径提取
         if (!bookName) {

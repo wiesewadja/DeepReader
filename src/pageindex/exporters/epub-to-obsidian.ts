@@ -3,13 +3,13 @@
  * 将 EPUB 解析为 Obsidian 兼容的笔记结构
  */
 
-import { parseEpub, type EpubInfo, type EpubChapter } from "../parsers/epub";
+import * as fs from "fs";
+import * as path from "path";
+import AdmZip from "adm-zip";
 import { log as piLog } from "../core/logger";
 import { cleanTitle } from "../core/utils";
 import { DEFAULT_ASSETS_PATH, DEFAULT_INCLUDE_INDEX } from "../defaults.js";
-import * as path from "path";
-import * as fs from "fs";
-import AdmZip from "adm-zip";
+import { parseEpub, type EpubInfo, type EpubChapter } from "../parsers/epub";
 
 export interface ObsidianExportOptions {
   /** 输出目录 */

@@ -5,9 +5,9 @@
  * Extracted from cognitive-engine/states/inspectional.ts
  */
 
-import type { OutlineNode } from '../../tools/local/types';
-import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
+import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
+import type { OutlineNode } from '../../tools/local/types';
 
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure

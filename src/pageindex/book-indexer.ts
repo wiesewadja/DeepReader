@@ -3,12 +3,21 @@
  */
 
 import * as crypto from "crypto";
-import { log as piLog } from "./core/logger";
-import { apiLog } from "../utils/logger.js";
-import * as path from "path";
 import * as fs from "fs/promises";
-import { getPageindexRoot, getBookDir } from "./paths.js";
-import { createTracer, type Tracer } from "./index-tracer.js";
+import * as path from "path";
+import { apiLog } from "../utils/logger.js";
+import { safeRequest } from "../utils/safe-request.js";
+import { buildBM25Index } from "./bm25.js";
+import type {
+  BookIndexOptions,
+  BookIndexResult,
+  BookMeta,
+  IndexErrorCode,
+  BM25Data,
+ TreeData } from "./book-types.js";
+import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
+import { log as piLog } from "./core/logger";
+import type { PageIndexResult, TreeNode } from "./core/types.js";
 import {
   DEFAULT_ADD_NODE_TEXT,
   DEFAULT_ADD_NODE_SUMMARY,
@@ -18,22 +27,12 @@ import {
   DEFAULT_INCLUDE_INDEX,
   DEFAULT_ASSETS_PATH,
 } from "./defaults.js";
+import { createTracer, type Tracer } from "./index-tracer.js";
 import { PageIndex } from "./pageindex.js";
-import type {
-  BookIndexOptions,
-  BookIndexResult,
-  BookMeta,
-  IndexErrorCode,
-  BM25Data,
-} from "./book-types.js";
-import type { PageIndexResult, TreeNode } from "./core/types.js";
-import type { EmbeddingOptions } from "./vault/types.js";
-import type { TreeData } from "./book-types.js";
-import { IndexErrorCode as ErrorCode, IndexError } from "./book-types.js";
-import { buildBM25Index } from "./bm25.js";
-import { indexPropositions } from "./proposition-indexer.js";
-import { safeRequest } from "../utils/safe-request.js";
 import type { MineruImage } from "./parsers/mineru-types.js";
+import { getPageindexRoot, getBookDir } from "./paths.js";
+import { indexPropositions } from "./proposition-indexer.js";
+import type { EmbeddingOptions } from "./vault/types.js";
 
 const BOOK_ID_HEAD_BYTES = 65536; // 64KB sample for content-based ID
 const MIGRATION_MARKER = ".migrated-content-id-v1";

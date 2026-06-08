@@ -11,18 +11,18 @@
  */
 
 import { StateGraph, START, END, MemorySaver } from '@langchain/langgraph';
-import { CognitiveEngineAnnotation } from './state';
-import { routerNode } from './nodes/router';
-import { inspectionalNode } from './nodes/inspectional';
-import { preSearchNode } from './nodes/analytical-pre-search';
-import { analyticalNode } from './nodes/analytical';
-import { syntopicalNode } from './nodes/syntopical';
-import { advisorNode } from './nodes/advisor';
-import { visualizerNode } from './nodes/visualizer';
-import { formatterNode } from './nodes/formatter';
 import { routeFromStart, routeByDepth, routeAfterInspectional, routeAfterPreSearch, routeAfterAnalysis } from './edges';
-import { safeNode } from './utils/safe-node.js';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
+import { advisorNode } from './nodes/advisor';
+import { analyticalNode } from './nodes/analytical';
+import { preSearchNode } from './nodes/analytical-pre-search';
+import { formatterNode } from './nodes/formatter';
+import { inspectionalNode } from './nodes/inspectional';
+import { routerNode } from './nodes/router';
+import { syntopicalNode } from './nodes/syntopical';
+import { visualizerNode } from './nodes/visualizer';
+import { CognitiveEngineAnnotation } from './state';
+import { safeNode } from './utils/safe-node.js';
 
 // S1 fallback: empty data with error flag — downstream checks nodeErrors to detect failure
 const safeInspectional = safeNode(NODE_NAMES.INSPECTIONAL, inspectionalNode, (state) => ({

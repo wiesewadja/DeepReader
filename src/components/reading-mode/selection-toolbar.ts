@@ -3,9 +3,14 @@
  * 选中文字后显示引用/摘录/高亮操作（极简图标模式）
  */
 
-import { App, Notice } from 'obsidian';
+import { type App, Notice } from 'obsidian';
+import { HIGHLIGHT_COLORS } from '../../types/highlight.js';
+import type { HighlightColorId } from '../../types/highlight.js';
+import type { QuoteMetadata } from '../../types/quote.js';
 import { uiLog } from '../../utils/logger.js';
-import type { QuoteMetadata } from '../chat-input/chat-input.js';
+
+export { HIGHLIGHT_COLORS } from '../../types/highlight.js';
+export type { HighlightColorId } from '../../types/highlight.js';
 
 // 极简图标（与 AI 回复气泡图标一致）
 const Icons = {
@@ -18,17 +23,6 @@ const Icons = {
     // 移除高亮图标（橡皮擦）
     removeHighlight: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`
 };
-
-// 高亮颜色配置
-export const HIGHLIGHT_COLORS = [
-    { id: 'yellow', label: '黄色', color: '#ffeb3b', bg: 'rgba(255, 235, 59, 0.4)' },
-    { id: 'green', label: '绿色', color: '#4caf50', bg: 'rgba(76, 175, 80, 0.4)' },
-    { id: 'blue', label: '蓝色', color: '#2196f3', bg: 'rgba(33, 150, 243, 0.4)' },
-    { id: 'pink', label: '粉色', color: '#e91e63', bg: 'rgba(233, 30, 99, 0.4)' },
-    { id: 'orange', label: '橙色', color: '#ff9800', bg: 'rgba(255, 152, 0, 0.4)' },
-] as const;
-
-export type HighlightColorId = typeof HIGHLIGHT_COLORS[number]['id'];
 
 export interface SelectionToolbarOptions {
     app: App;

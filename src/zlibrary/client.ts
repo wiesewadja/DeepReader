@@ -3,8 +3,8 @@
  * 使用 Obsidian requestUrl (通过 safeRequest) 发起 HTTP 请求
  */
 import { safeRequest } from '../utils/safe-request';
-import { CookieJar } from './cookie-jar';
 import { DEFAULT_DOMAINS, EAPI_HEADERS } from './constants';
+import { CookieJar } from './cookie-jar';
 import { ZLibraryError } from './errors';
 import type {
 	ZLibraryBook,

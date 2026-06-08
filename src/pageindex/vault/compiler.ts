@@ -1,16 +1,16 @@
-import { join } from "path";
 import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, renameSync } from "node:fs";
+import { join } from "path";
 import { log as piLog } from "../core/logger";
-import { scanDirectories } from "./compiler-scan";
-import { planReorg, buildLinkReverseIndex, updateLinksAfterMove } from "./compiler-reorg";
-import { extractConcepts, mergeTags } from "./compiler-llm";
-import { generateL0, generateMOC, generateDirectoryIndex, groupExtractionsByTopic } from "./compiler-index";
-import { planMerge, insertWikiLinks, detectRemovedLinks } from "./compiler-enhance";
-import { loadCompilerState, saveCompilerState, loadLinkSnapshots, saveLinkSnapshots } from "./compiler-state";
-import { generateEmbeddings, readVectorJsonl, writeVectorJsonl } from "./vectors";
-import type { EmbeddingOptions } from "./types";
-import type { CompileOptions, CompileResult, ConceptExtraction, NoteMetadata } from "./compiler-types";
 import { getPageindexRoot } from '../paths.js';
+import { planMerge, insertWikiLinks, detectRemovedLinks } from "./compiler-enhance";
+import { generateL0, generateMOC, generateDirectoryIndex, groupExtractionsByTopic } from "./compiler-index";
+import { extractConcepts, mergeTags } from "./compiler-llm";
+import { planReorg, buildLinkReverseIndex, updateLinksAfterMove } from "./compiler-reorg";
+import { scanDirectories } from "./compiler-scan";
+import { loadCompilerState, saveCompilerState, loadLinkSnapshots, saveLinkSnapshots } from "./compiler-state";
+import type { CompileOptions, CompileResult, ConceptExtraction, NoteMetadata } from "./compiler-types";
+import type { EmbeddingOptions } from "./types";
+import { generateEmbeddings, readVectorJsonl, writeVectorJsonl } from "./vectors";
 
 const BATCH_SIZE = 5;
 

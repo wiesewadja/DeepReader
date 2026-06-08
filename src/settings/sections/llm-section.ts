@@ -3,14 +3,14 @@
  */
 
 import { Notice, Setting, setIcon } from 'obsidian';
-import type DeepReaderPlugin from '../../main';
-import type { ProviderType, RoleType } from '../../config/types';
-import { PROVIDER_LABELS, PROVIDER_CONFIGS, applyPreset } from '../../config/providers';
 import { getPresetById, detectCurrentPreset } from '../../config/presets';
-import type { SectionContext } from '../types';
+import { PROVIDER_LABELS, PROVIDER_CONFIGS, applyPreset } from '../../config/providers';
+import type { ProviderType, RoleType } from '../../config/types';
+import type DeepReaderPlugin from '../../main';
 import { renderProviderDetail } from '../components/provider-card';
 import { createRoleCard } from '../components/role-card';
 import { debounceAsync } from '../helpers';
+import type { SectionContext } from '../types';
 
 const PROPOSITION_ENABLED = false;
 

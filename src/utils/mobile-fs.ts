@@ -5,10 +5,8 @@
  * 桌面端和移动端使用同一套代码路径（vault.adapter 在两端均可用）。
  */
 
-import { type App, normalizePath } from 'obsidian';
 import { join } from 'path';
-import type { TFile } from 'obsidian';
-import { PAGEINDEX_DIR, getPageindexDir } from '../pageindex/paths.js';
+import { type App, normalizePath } from 'obsidian';
 
 /** 通过 Vault API 读取文本文件 */
 export async function vaultRead(app: App, relativePath: string): Promise<string> {
@@ -99,41 +97,4 @@ export function joinPath(...segments: string[]): string {
 export function basename(filePath: string, ext?: string): string {
 	const name = filePath.split('/').pop() || '';
 	return ext && name.endsWith(ext) ? name.slice(0, -ext.length) : name;
-}
-
-/**
- * 从 pdfName 查找书籍文件并计算 bookId（fallback 路径）
- * 桌面端用 basePath + vault 相对路径哈希（与索引构建一致）
- * 移动端通过 book-meta.json 标题匹配查找已有的 bookId
- */
-export async function resolveBookIdFromPdf(app: App, pdfName: string): Promise<string | null> {
-	const basePath = (app.vault.adapter as any).basePath as string | undefined;
-
-	if (basePath) {
-		// 桌面端：直接用绝对路径哈希（与索引构建时的 bookId 一致）
-		const bookName = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-		const files = app.vault.getFiles();
-		const bookFile = files.find((f: TFile) =>
-			f.path.includes(bookName) && (f.extension === 'pdf' || f.extension === 'epub')
-		);
-		if (!bookFile) return null;
-		return (await sha256Hex(join(basePath, bookFile.path))).slice(0, 8);
-	}
-
-	// 移动端：遍历 pageindex 目录，通过 book-meta.json 的标题匹配
-	const bookTitle = pdfName.replace(/\.pdf$/i, '').replace(/\.epub$/i, '');
-	try {
-		const { folders } = await app.vault.adapter.list(getPageindexDir());
-		for (const folder of folders) {
-			const bookId = folder.split('/').pop() || folder;
-			try {
-				const meta = await app.vault.adapter.read(`${PAGEINDEX_DIR}/${bookId}/book-meta.json`);
-				const parsed = JSON.parse(meta);
-				if (parsed.title && parsed.title.includes(bookTitle)) {
-					return bookId;
-				}
-			} catch { continue; }
-		}
-	} catch { /* pageindex dir not found */ }
-	return null;
 }

@@ -7,12 +7,12 @@
  * 3. 目录不存在：自动创建
  */
 
-import type { ToolDefinition } from '../types.js';
-import type { ToolExecutor, ToolContext } from './types.js';
 import { TFile, normalizePath, type App } from 'obsidian';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
 import { ensureFolderExists } from '../../utils/vault.js';
+import type { ToolDefinition } from '../types.js';
 import { parseFrontmatter } from '../utils/book-note.js';
+import type { ToolExecutor, ToolContext } from './types.js';
 
 const WRITE_NOTE_DEFINITION: ToolDefinition = {
   type: 'function',

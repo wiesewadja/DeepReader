@@ -6,16 +6,16 @@
  * This avoids vector embedding dilution when multiple keywords are combined.
  */
 
-import type { ToolDefinition } from '../../types.js';
-import type { ToolExecutor, ToolContext } from '../types.js';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
-import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { resolveRoleConfig } from '../../../config/providers.js';
 import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
+import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
+import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
-import { sanitizeFileName } from '../../../weread/utils/file.js';
 import { toolsLog } from '../../../utils/logger.js';
-import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
+import { sanitizeFileName } from '../../../weread/utils/file.js';
+import type { ToolDefinition } from '../../types.js';
+import type { ToolExecutor, ToolContext } from '../types.js';
 
 const SEARCH_BOOK_DEFINITION: ToolDefinition = {
   type: 'function',

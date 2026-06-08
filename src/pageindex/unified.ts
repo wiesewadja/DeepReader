@@ -7,19 +7,19 @@
  *   docToObsidian()  — document → Obsidian vault (md files + MOC + tree.json)
  */
 
-import * as path from "path";
 import * as fs from "fs";
+import * as path from "path";
 import { apiLog } from "../utils/logger.js";
-import { PageIndex } from "./pageindex";
-import { mdToTree } from "./parsers/markdown";
-import { exportPdfToObsidian } from "./exporters/pdf-to-obsidian";
-import { exportEpubToObsidian, type EpubObsidianExportOptions } from "./exporters/adapter";
 import type {
   PageIndexResult,
   DocIndexOptions,
   DocObsidianOptions,
   ObsidianExportResult,
 } from "./core/types";
+import { exportEpubToObsidian, type EpubObsidianExportOptions } from "./exporters/adapter";
+import { exportPdfToObsidian } from "./exporters/pdf-to-obsidian";
+import { PageIndex } from "./pageindex";
+import { mdToTree } from "./parsers/markdown";
 import type { VaultIndexResult } from "./vault/types";
 
 // Runtime detection - in Node.js, vault features are disabled

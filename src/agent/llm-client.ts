@@ -3,12 +3,12 @@
  * 用于前端 Agent 直接调用 DeepSeek API
  */
 
-import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
-import type { ITraceContext } from './tracing/types';
-import { agentLog } from '../utils/logger';
-import { getDisableThinkingParams } from '../config/thinking-models.js';
 import { normalizeBaseUrl } from '../config/providers.js';
+import { getDisableThinkingParams } from '../config/thinking-models.js';
+import { agentLog } from '../utils/logger';
 import { fetchWithCorsFallback, safeRequest } from '../utils/safe-request.js';
+import type { ITraceContext } from './tracing/types';
+import type { ChatMessage, ToolDefinition, StreamChunk } from './types';
 
 /**
  * LLM 客户端配置选项
@@ -171,8 +171,8 @@ export class LLMClient {
     let ttfb = 0; // Time to First Byte
     let firstChunk = true;
     let chunkCount = 0;
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+    const totalInputTokens = 0;
+    const totalOutputTokens = 0;
 
     // Note: Langfuse generation 追踪由调用方（runStateLoop）负责
     // llm-client 不创建独立的 generation，避免双重追踪

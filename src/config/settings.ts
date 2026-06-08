@@ -2,8 +2,8 @@
  * DeepReader 插件设置类型定义
  */
 
-import type { AIProviderAccount, AIRoles } from './ai-roles';
 import type { Booklist } from '../types/index.js';
+import type { AIProviderAccount, AIRoles } from './ai-roles';
 
 // ═══════════════════════════════════════════════════════════════
 // 新版两层架构字段

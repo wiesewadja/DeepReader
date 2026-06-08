@@ -2,7 +2,7 @@
  * 内部链接处理 — wiki 链接预览和交互增强
  */
 
-import { App, MarkdownRenderer, Component, HoverParent, MarkdownView } from 'obsidian';
+import { type App, MarkdownRenderer, Component, type HoverParent, MarkdownView } from 'obsidian';
 import { uiLog as log } from '../../utils/logger.js';
 import { escapeHtml } from './utils.js';
 

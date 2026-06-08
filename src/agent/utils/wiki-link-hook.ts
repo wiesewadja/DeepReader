@@ -8,8 +8,8 @@
  * 4. Apply corrections to output
  */
 
-import type { App } from 'obsidian';
 import * as path from 'path';
+import type { App } from 'obsidian';
 import { agentLog as log } from '../../utils/logger.js';
 import type { ToolResultEntry } from '../graph/utils/self-verification.js';
 

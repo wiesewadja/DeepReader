@@ -10,12 +10,12 @@
  */
 
 import * as path from "path";
-import { PageIndex } from "./pageindex";
-import { mdToTree } from "./parsers/markdown";
 import type {
   PageIndexResult,
   DocIndexOptions,
 } from "./core/types";
+import { PageIndex } from "./pageindex";
+import { mdToTree } from "./parsers/markdown";
 
 // ─── Type detection ──────────────────────────────────────────────────────────
 

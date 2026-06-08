@@ -5,19 +5,18 @@
 
 import type { App } from 'obsidian';
 import { Notice, TFile, TFolder } from 'obsidian';
+import { resolveRoleConfig } from '../../config/providers.js';
+import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
+import type { DeepPDFSettings } from '../../config/settings.js';
+import { indexBook, generateBookId } from '../../pageindex/book-indexer.js';
+import type { BookIndexProgress } from '../../pageindex/book-types.js';
+import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
 import type { IndexListItem } from '../../types/index.js';
 import { stripFileExtension } from '../../types/index.js';
 import type { SystemFileInfo, FileSelectResult } from '../../ui/pdf-file-selector.js';
-import { isSystemFileInfo } from '../../ui/pdf-file-selector.js';
-import { PDFFileSelectorModal } from '../../ui/pdf-file-selector.js';
-import { indexBook, generateBookId } from '../../pageindex/book-indexer.js';
-import type { BookIndexProgress } from '../../pageindex/book-types.js';
-import { resolveRoleConfig } from '../../config/providers.js';
-import { toEmbeddingOptions, toPropositionConfig } from '../../config/role-adapters.js';
-import { DEFAULT_EXPORT_DIR, DEFAULT_ASSETS_PATH } from '../../pageindex/defaults.js';
-import { getVaultPath } from '../../utils/mobile-fs.js';
+import { isSystemFileInfo , PDFFileSelectorModal } from '../../ui/pdf-file-selector.js';
 import { error as logError } from '../../utils/logger.js';
-import type { DeepPDFSettings } from '../../config/settings.js';
+import { getVaultPath } from '../../utils/mobile-fs.js';
 import type { CoverManager } from './library-cover-manager.js';
 
 export interface IndexLifecycleCallbacks {
@@ -202,7 +201,7 @@ export class IndexLifecycle {
 				};
 
 				// 移除同名文件的旧索引项
-				let indexes = this.callbacks.getIndexes().filter(idx => {
+				const indexes = this.callbacks.getIndexes().filter(idx => {
 					const idxName = idx.pdf_name || '';
 					return idxName !== fileInfo.name;
 				});

@@ -3,7 +3,7 @@
  * 用于 @ 提及和 [[]] 链接时的文件搜索
  */
 
-import { App, TFile } from 'obsidian';
+import { type App, type TFile } from 'obsidian';
 
 export interface FileSuggestOptions {
 	app: App;

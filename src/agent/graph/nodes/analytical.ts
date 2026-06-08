@@ -5,15 +5,15 @@
  * Runs PlanExecute with scoped tools for deep analysis.
  */
 
-import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import type { CognitiveEngineState } from '../state';
-import { runPlanExecute } from '../subgraphs/react-loop.js';
-import type { AnalyticalInput } from '../node-io.js';
-import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
-import { createLangChainTools } from '../../tools/index.js';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
+import { createLangChainTools } from '../../tools/index.js';
+import type { AnalyticalInput } from '../node-io.js';
+import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
+import type { CognitiveEngineState } from '../state';
+import { runPlanExecute } from '../subgraphs/react-loop.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
 
 /**

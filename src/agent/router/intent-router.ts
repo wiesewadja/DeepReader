@@ -4,10 +4,10 @@
  * 基于正则匹配快速判断用户意图，动态限制 LLM 可用工具集
  */
 
-import type { IntentRule, IntentResult, IntentRulesConfig } from './types.js';
 import { agentLog } from '../../utils/logger.js';
 import type { ITraceContext } from '../tracing/types.js';
 import DEFAULT_RULES_JSON from './intent-rules.json';
+import type { IntentRule, IntentResult, IntentRulesConfig } from './types.js';
 
 // 默认最大迭代次数（当规则未指定时使用）
 const DEFAULT_MAX_ITERATIONS = 4;

@@ -4,10 +4,10 @@
  * 与阅读模式的 SelectionToolbar 保持一致的按钮样式
  */
 
-import { App } from 'obsidian';
-import { ExcerptModal } from './excerpt-modal';
+import { type App } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
 import type { QuoteMetadata } from '../chat-input/chat-input';
+import { ExcerptModal } from './excerpt-modal';
 
 // 与 SelectionToolbar 一致的图标
 const Icons = {

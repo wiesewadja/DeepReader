@@ -4,8 +4,8 @@
 
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import type { IndexedBook } from '../sync/matcher';
 import { getPageindexRoot } from '../../pageindex/paths.js';
+import type { IndexedBook } from '../sync/matcher';
 
 export async function loadIndexedBooks(vaultPath: string): Promise<IndexedBook[]> {
 	const pageindexDir = getPageindexRoot(vaultPath);

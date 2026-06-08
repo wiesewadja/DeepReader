@@ -25,7 +25,7 @@ export function extractJSON(text: string): Record<string, any> | null {
  * Migrated from cognitive-engine/parse.ts
  */
 
-import { z } from 'zod';
+import { type z } from 'zod';
 
 /**
  * Error thrown when JSON parsing fails in state output

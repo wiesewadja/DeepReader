@@ -2,7 +2,7 @@
  * Mapping Stats — 从 syncState 向 mapping 注入统计信息
  */
 
-import type { WereadMapping, WereadSyncState, MappingStats } from '../types';
+import type { WereadMapping, WereadSyncState } from '../types';
 import { formatReadingTime } from '../utils/time';
 
 /**

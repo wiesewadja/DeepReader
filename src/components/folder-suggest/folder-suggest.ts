@@ -6,7 +6,7 @@
  * 避免 AbstractInputSuggest 构造时干扰已有的 input 值。
  */
 
-import { App, AbstractInputSuggest, TFolder } from 'obsidian';
+import { type App, AbstractInputSuggest, TFolder } from 'obsidian';
 
 class FolderSuggestInner extends AbstractInputSuggest<TFolder> {
 	getSuggestions(query: string): TFolder[] {

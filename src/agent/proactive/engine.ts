@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import type { ProactiveState, ProactiveParams } from './types';
+import type { DeepPDFSettings } from '../../config/settings.js';
 import {
   createEmptyState,
   recordHighlight,
@@ -11,7 +11,7 @@ import {
   loadProactiveState,
   saveProactiveState,
 } from './state';
-import type { DeepPDFSettings } from '../../config/settings.js';
+import type { ProactiveState, ProactiveParams } from './types';
 
 type SettingsProvider = { settings: DeepPDFSettings };
 

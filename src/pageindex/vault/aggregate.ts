@@ -3,9 +3,9 @@
  * Aggregates file-level PageIndexResult into directory-level DirectoryIndex
  */
 
-import type { DirectoryIndex, FileMeta } from "./types";
 import type { TreeNode } from "../core/types";
 import { countTokens } from "../core/utils";
+import type { DirectoryIndex, FileMeta } from "./types";
 
 export function aggregateDirectories(
   files: Record<string, FileMeta>

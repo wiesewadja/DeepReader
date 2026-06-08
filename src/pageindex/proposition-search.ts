@@ -1,22 +1,22 @@
-import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 /**
  * Proposition Search - Retrieve atomic fact cards with parallel fusion
  */
 
-import * as path from "path";
 import * as fs from "fs/promises";
+import * as path from "path";
 import type { App } from 'obsidian';
 import { vaultRead, joinPath } from '../utils/mobile-fs.js';
-import { generateEmbedding } from "./vault/vectors.js";
+import { searchBM25 } from "./bm25.js";
 import type {
   PropositionCard,
   PropositionsData,
   PropositionMatch,
   BM25Data,
 } from "./book-types.js";
-import type { EmbeddingOptions } from "./vault/types.js";
 import { cosineSimilarity } from "./core/utils.js";
-import { searchBM25 } from "./bm25.js";
+import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
+import type { EmbeddingOptions } from "./vault/types.js";
+import { generateEmbedding } from "./vault/vectors.js";
 
 export async function loadPropositions(
   indexDir: string,

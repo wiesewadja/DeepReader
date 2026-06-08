@@ -14,8 +14,8 @@
 import type { App } from 'obsidian';
 import { normalizePath } from 'obsidian';
 import { agentLog } from '../../utils/logger.js';
-import type { ChatMessage } from '../types.js';
 import type { MemoryStore } from '../memory/store.js';
+import type { ChatMessage } from '../types.js';
 
 /**
  * 运行时上下文标记

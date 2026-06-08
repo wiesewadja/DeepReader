@@ -1,4 +1,3 @@
-import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 /**
  * Book Search v2 — 8-stage hybrid search pipeline
  *
@@ -13,10 +12,13 @@ import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
  * Stage 8: Matched block location (block_id level)
  */
 
-import * as path from "path";
 import * as fs from "fs/promises";
+import * as path from "path";
 import type { App } from "obsidian";
 import { vaultRead, vaultExists, vaultList, joinPath } from "../utils/mobile-fs.js";
+import { safeRequest } from "../utils/safe-request.js";
+import { searchBM25, tokenize } from "./bm25.js";
+import { generateBookId } from "./book-indexer.js";
 import type {
   BookSearchOptionsV2,
   BookSearchResultV2,
@@ -27,19 +29,17 @@ import type {
   PropositionCard,
 } from "./book-types.js";
 import { IndexErrorCode, IndexError } from "./book-types.js";
-import { generateBookId } from "./book-indexer.js";
-import { searchBM25, tokenize } from "./bm25.js";
-import {
-  cosineSearchJsonl,
-} from "./vault/vectors.js";
-import type { RerankerOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger";
+import { PAGEINDEX_DIR, getPageindexDir } from "./paths.js";
 import {
   loadPropositions,
   loadPropVectorStore,
 } from "./proposition-search.js";
 import { getOrGenerateEmbedding } from "./vault/embedding-cache.js";
-import { safeRequest } from "../utils/safe-request.js";
+import type { RerankerOptions } from "./vault/types.js";
+import {
+  cosineSearchJsonl,
+} from "./vault/vectors.js";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 

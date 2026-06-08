@@ -8,8 +8,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { addMemoryTool, searchMemoryTool } from '../memory.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 export const createSaveMemoryTool: ToolFactory = (ctx: ToolContext) =>
   tool(

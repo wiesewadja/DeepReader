@@ -3,9 +3,9 @@
  */
 
 import { Notice, Setting } from 'obsidian';
-import type { SectionContext } from '../types';
 import { DEFAULT_DIMENSIONS } from '../../services/profile-facts';
 import { FolderSuggestModal } from '../components/folder-suggest';
+import type { SectionContext } from '../types';
 
 export function renderProfileSection(
   container: HTMLElement,

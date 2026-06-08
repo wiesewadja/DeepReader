@@ -5,11 +5,11 @@
  * Node.js compatible version (replaces Bun.Glob and Bun.file)
  */
 
-import * as path from "path";
-import * as fs from "fs/promises";
 import * as crypto from "crypto";
-import type { ObsidianVaultIndexOptions, VaultIndexMeta } from "./types";
+import * as fs from "fs/promises";
+import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
+import type { ObsidianVaultIndexOptions, VaultIndexMeta } from "./types";
 
 export interface ScannedFile {
   relativePath: string;

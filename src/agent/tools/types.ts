@@ -2,9 +2,9 @@
  * Tool Executor 类型定义
  */
 
-import type { ToolDefinition } from '../types.js';
 import type { QuoteItem } from '../../components/chat-input/chat-input.js';
 import type { EngineMode } from '../graph/state.js';
+import type { ToolDefinition } from '../types.js';
 import type { VaultContext, BookContext, CrossBookContext, WereadContext, VisualContext } from './context/index.js';
 
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';

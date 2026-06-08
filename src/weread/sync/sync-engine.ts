@@ -5,16 +5,12 @@
  */
 
 import { join, dirname } from 'path';
+import { serviceLog as logger } from '../../utils/logger';
+import { safeRequest } from '../../utils/safe-request';
 import { WereadApiClient } from '../api/client';
 import { mergeShelfBooks } from '../api/shelf';
-import { filterBooksToSync } from './diff';
-import { SyncStateManager } from './state';
-import type { VaultAdapter } from './state';
 import { renderNotebook } from '../render/markdown-renderer';
-import { extractCoverExt, toHighResCoverUrl, downloadWereadCover } from '../utils/cover';
-import { sanitizeFileName } from '../utils/file';
-import type { WereadChapter, WereadHighlight, WereadReview } from '../types';
-import type {
+import type { WereadChapter, WereadHighlight, WereadReview ,
 	WereadBook,
 	WereadNotebook,
 	WereadChapterDetail,
@@ -24,9 +20,12 @@ import type {
 	SyncResult,
 	SyncProgress,
 } from '../types';
-import { safeRequest } from '../../utils/safe-request';
+import { extractCoverExt, toHighResCoverUrl, downloadWereadCover } from '../utils/cover';
+import { sanitizeFileName } from '../utils/file';
 import { htmlToMarkdown } from '../utils/html-to-md';
-import { serviceLog as logger } from '../../utils/logger';
+import { filterBooksToSync } from './diff';
+import type { VaultAdapter } from './state';
+import { SyncStateManager } from './state';
 
 
 const DEFAULT_BATCH_SIZE = 8;

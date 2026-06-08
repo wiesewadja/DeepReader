@@ -3,9 +3,9 @@
  */
 
 import { Notice, Setting } from 'obsidian';
-import type DeepReaderPlugin from '../../main';
-import type { ProviderType } from '../../config/types';
 import { PROVIDER_LABELS, PROVIDER_CONFIGS } from '../../config/providers';
+import type { ProviderType } from '../../config/types';
+import type DeepReaderPlugin from '../../main';
 import { debounceAsync, getProviderAccount, setProviderAccount, validateBaseUrl } from '../helpers';
 
 interface ProviderCardContext {

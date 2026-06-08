@@ -3,7 +3,7 @@
  * 显示在阅读视图内容区域底部，提供上一章/下一章导航
  */
 
-import { App, TFile } from 'obsidian';
+import { type App, type TFile } from 'obsidian';
 import { uiLog } from '../../utils/logger.js';
 
 const Icons = {

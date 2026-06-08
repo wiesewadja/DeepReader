@@ -3,17 +3,17 @@
  * 负责封面查找、加载、缓存和占位符生成
  */
 
-import { getVaultPath } from '../../utils/mobile-fs.js';
-import { getVaultAdapter } from '../../utils/vault.js';
+import * as fs from 'fs/promises';
 import { TFile, type App } from 'obsidian';
-import { sanitizeFileName } from '../../weread/utils/file.js';
+import { getBookFile } from '../../pageindex/paths.js';
 import type { IndexListItem } from '../../types/index.js';
 import { stripFileExtension } from '../../types/index.js';
+import { getVaultPath } from '../../utils/mobile-fs.js';
+import { getVaultAdapter } from '../../utils/vault.js';
 import { SyncStateManager } from '../../weread/sync/state.js';
 import type { VaultAdapter } from '../../weread/sync/state.js';
 import { downloadWereadCover } from '../../weread/utils/cover.js';
-import { getBookFile } from '../../pageindex/paths.js';
-import * as fs from 'fs/promises';
+import { sanitizeFileName } from '../../weread/utils/file.js';
 
 export interface CoverManagerCallbacks {
 	getIndexes: () => IndexListItem[];

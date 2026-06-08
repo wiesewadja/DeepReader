@@ -3,9 +3,11 @@
  * Functions for building tree structures from markdown documents
  */
 
-import { chatGPT } from "../llm/client";
-import { log as piLog } from "../core/logger";
+import * as fs from "fs/promises";
+import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
+import { log as piLog } from "../core/logger";
+import * as prompts from "../core/prompts";
 import type { TreeNode, MarkdownOptions, PageIndexResult } from "../core/types";
 import {
   countTokens,
@@ -14,9 +16,7 @@ import {
   createCleanStructureForDescription,
   formatStructure,
 } from "../core/utils";
-import * as prompts from "../core/prompts";
-import * as path from "path";
-import * as fs from "fs/promises";
+import { chatGPT } from "../llm/client";
 
 interface MarkdownNode {
   title: string;
@@ -233,7 +233,7 @@ export function treeThinningForIndex(
       }
 
       if (childrenTexts.length > 0) {
-        let parentText = currentNode.text || "";
+        const parentText = currentNode.text || "";
         let mergedText = parentText;
 
         for (const childText of childrenTexts) {

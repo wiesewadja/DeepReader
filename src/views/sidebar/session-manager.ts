@@ -5,16 +5,16 @@
  */
 
 import { Notice } from 'obsidian';
-import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
-import { SessionStore } from '../../agent/session/index.js';
-import { MemoryStore } from '../../agent/memory/store.js';
-import { MemoryConsolidator } from '../../agent/memory/consolidator.js';
-import { DEFAULT_CONSOLIDATOR_CONFIG } from '../../agent/memory/types.js';
 import { GENERAL_MODE_INDEX_ID } from '../../agent/config/agent-constants.js';
+import { MemoryConsolidator } from '../../agent/memory/consolidator.js';
+import { MemoryStore } from '../../agent/memory/store.js';
+import { DEFAULT_CONSOLIDATOR_CONFIG } from '../../agent/memory/types.js';
+import { SessionStore } from '../../agent/session/index.js';
+import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
 import type { ChatMessage } from '../../agent/types.js';
 import type { MessageRole } from '../../components/message/message.js';
 import type { BooklistItemInfo, Booklist } from '../../types/index.js';
-import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
+import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
 
 export interface SessionManagerHost {
 	get app(): import('obsidian').App;

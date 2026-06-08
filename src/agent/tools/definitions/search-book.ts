@@ -7,8 +7,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { searchBookTool } from '../local/search-text.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 const searchBookSchema = z.object({
   keywords: z.array(z.string()).describe('关键词数组，每个关键词独立检索后融合排序（OR 语义）'),

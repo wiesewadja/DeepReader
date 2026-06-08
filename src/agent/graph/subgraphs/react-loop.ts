@@ -6,13 +6,11 @@
  * and iteration/tool-call limits.
  */
 
-import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
-import { AIMessage, HumanMessage, ToolMessage } from '@langchain/core/messages';
-import { parseToolCallArgs } from '../utils/tool-call-parser.js';
-import { messagesStateReducer } from '@langchain/langgraph';
-import type { BaseMessage } from '@langchain/core/messages';
+import { type AIMessage, HumanMessage, ToolMessage , type BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { messagesStateReducer , StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
+import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 import {
   type ToolResultRecord,
   type ReactLoopConfig,

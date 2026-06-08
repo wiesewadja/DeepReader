@@ -4,10 +4,10 @@
  */
 
 import * as fs from "fs/promises";
-import { log as piLog } from "../core/logger";
-import { countTokens } from "../core/utils";
-import type { PageContent } from "../core/types";
 import { MineruClient } from "../../services/mineru-api";
+import { log as piLog } from "../core/logger";
+import type { PageContent } from "../core/types";
+import { countTokens } from "../core/utils";
 import type { MineruPdfResult, PageText } from "./mineru";
 
 export interface PdfPage {

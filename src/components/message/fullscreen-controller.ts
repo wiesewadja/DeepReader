@@ -4,10 +4,10 @@
  * 管理 AIMessage 的全屏展示模式：分页翻页、翻信导航。
  */
 
-import { App, MarkdownRenderer, Component } from 'obsidian';
-import type { MessageData } from './types.js';
-import { parseAgentContent } from './parse-agent-content.js';
+import { type App, MarkdownRenderer, Component } from 'obsidian';
 import { setupInternalLinks } from './internal-links.js';
+import { parseAgentContent } from './parse-agent-content.js';
+import type { MessageData } from './types.js';
 
 export interface FullscreenHost {
 	get el(): HTMLElement | null;

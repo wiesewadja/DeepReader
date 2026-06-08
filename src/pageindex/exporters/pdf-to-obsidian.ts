@@ -10,10 +10,10 @@
  *     → 按 leaf 节点拆分为 Obsidian 笔记
  */
 
+import * as fs from "fs";
+import * as path from "path";
 import { log as piLog } from "../core/logger";
 import type { PageIndexResult, TreeNode } from "../core/types";
-import * as path from "path";
-import * as fs from "fs";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 

@@ -5,17 +5,26 @@
  * Node.js compatible version
  */
 
-import * as path from "path";
 import * as fs from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
+import * as path from "path";
+import { log as piLog } from "../core/logger";
+import { countTokens } from "../core/utils";
+import { getPageindexRoot } from '../paths.js';
+import { aggregateDirectories } from "./aggregate";
+import { indexFile } from "./index-engine";
 import {
   scanVaultFiles,
   detectChangedFiles,
   groupFilesByDirectory,
 } from "./scan";
-import { indexFile } from "./index-engine";
-import { aggregateDirectories } from "./aggregate";
 import { buildSearchIndex } from "./search-index";
+import type {
+  ObsidianVaultIndexOptions,
+  VaultIndexMeta,
+  VaultIndexResult,
+  FileMeta,
+} from "./types";
 import {
   generateEmbedding,
   generateEmbeddings,
@@ -26,15 +35,6 @@ import {
   updateCatalogEntry,
   removeCatalogEntry,
 } from "./vectors";
-import type {
-  ObsidianVaultIndexOptions,
-  VaultIndexMeta,
-  VaultIndexResult,
-  FileMeta,
-} from "./types";
-import { countTokens } from "../core/utils";
-import { log as piLog } from "../core/logger";
-import { getPageindexRoot } from '../paths.js';
 
 
 export async function indexObsidianVault(

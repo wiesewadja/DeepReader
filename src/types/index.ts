@@ -2,6 +2,10 @@
  * DeepPDF - 类型定义
  */
 
+export type { HighlightColorId } from './highlight.js';
+export { HIGHLIGHT_COLORS } from './highlight.js';
+export type { QuoteMetadata } from './quote.js';
+
 /**
  * 索引列表项
  */

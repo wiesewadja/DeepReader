@@ -4,18 +4,8 @@
  */
 
 import { chatGPT, chatGPTWithUsage } from "../llm/client";
-import { log as piLog } from "./logger";
 import type { PdfPage } from "../parsers/pdf";
-import type { TreeNode, TocItem } from "./types";
-import {
-  countTokens,
-  postProcessing,
-  addPrefaceIfNeeded,
-  writeNodeId,
-  structureToList,
-  createCleanStructureForDescription,
-  formatStructure,
-} from "./utils";
+import { log as piLog } from "./logger";
 import * as prompts from "./prompts";
 import {
   tocTransformer,
@@ -28,6 +18,16 @@ import {
   singleTocItemIndexFixer,
   type TocOptions,
 } from "./toc";
+import type { TreeNode, TocItem } from "./types";
+import {
+  countTokens,
+  postProcessing,
+  addPrefaceIfNeeded,
+  writeNodeId,
+  structureToList,
+  createCleanStructureForDescription,
+  formatStructure,
+} from "./utils";
 
 export interface TreeOptions extends TocOptions {
   maxPageNumEachNode: number;
@@ -189,7 +189,7 @@ export async function processNoToc(
 
   const t0 = Date.now();
   piLog(`[processNoToc] Group 1/${groupTexts.length}: calling generateTocInit (input ~${countTokens(groupTexts[0] || "")} tokens)...`);
-  let tocWithPageNumber = await generateTocInit(groupTexts[0] || "", options);
+  const tocWithPageNumber = await generateTocInit(groupTexts[0] || "", options);
   piLog(`[processNoToc] Group 1 done: ${tocWithPageNumber.length} items, elapsed ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 
   for (let i = 1; i < groupTexts.length; i++) {

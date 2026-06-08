@@ -2,8 +2,8 @@
  * 阅读模式组件
  */
 
-export { ReadingModeService } from '../../services/reading-mode-service.js';
-export type { ReadingModeCallbacks, ChapterNavigation } from '../../services/reading-mode-service.js';
+export { ReadingModeService } from './reading-mode-orchestrator.js';
+export type { ReadingModeCallbacks, ChapterNavigation } from './reading-mode-orchestrator.js';
 export { SelectionToolbar, HIGHLIGHT_COLORS } from './selection-toolbar.js';
 export type { SelectionToolbarOptions, HighlightColorId } from './selection-toolbar.js';
 export { ChapterNav } from './chapter-nav.js';

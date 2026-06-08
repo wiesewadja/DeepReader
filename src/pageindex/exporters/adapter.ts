@@ -3,10 +3,10 @@
  * Integrates EPUB processing with Obsidian export, supporting summaries and node splitting
  */
 
+import { countTokens } from "../core/utils";
+import { chatGPT } from "../llm/client";
 import { parseEpub, type EpubInfo, type EpubChapter } from "../parsers/epub";
 import { exportToObsidian, type ObsidianExportOptions } from "./epub-to-obsidian";
-import { chatGPT } from "../llm/client";
-import { countTokens } from "../core/utils";
 
 export interface EpubObsidianExportOptions extends ObsidianExportOptions {
   /** Maximum tokens per node (paragraph) - splits large chapters into smaller nodes */

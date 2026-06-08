@@ -1,4 +1,4 @@
-import { STEP_CONFIG, TaskProgress } from "../types/index.js";
+import { STEP_CONFIG, type TaskProgress } from "../types/index.js";
 
 /**
  * 任务进度卡片组件

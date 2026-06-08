@@ -5,8 +5,8 @@
  * Node.js compatible version - uses native fetch API (no openai SDK dependency)
  */
 
-import { isThinkingModel as sharedIsThinkingModel, getDisableThinkingParams, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
 import { normalizeBaseUrl } from '../../config/providers.js';
+import { isThinkingModel as sharedIsThinkingModel, getDisableThinkingParams, stripThinkTags as sharedStripThinkTags } from '../../config/thinking-models.js';
 import { safeRequest } from '../../utils/safe-request.js';
 import { log as piLog } from '../core/logger';
 

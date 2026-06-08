@@ -5,15 +5,15 @@
  * 具体 UI 逻辑在 sections/ 和 components/ 目录。
  */
 
-import { App, PluginSettingTab, setIcon } from 'obsidian';
+import { type App, PluginSettingTab, setIcon } from 'obsidian';
 import type DeepReaderPlugin from '../main';
-import type { SectionContext } from './types';
+import { renderAdvancedSection } from './sections/advanced-section';
 import { renderLLMSection, createLLMState } from './sections/llm-section';
 import type { LLMState } from './sections/llm-section';
 import { renderProfileSection } from './sections/profile-section';
-import { renderAdvancedSection } from './sections/advanced-section';
-import { renderWereadSection } from './sections/weread-section';
 import { renderReadingSection } from './sections/reading-section';
+import { renderWereadSection } from './sections/weread-section';
+import type { SectionContext } from './types';
 
 type SettingsTabId = 'llm' | 'profile' | 'reading' | 'advanced' | 'weread';
 

@@ -8,14 +8,14 @@
  * 4. 更新 MEMORY.md 和 HISTORY.md
  */
 
+import { agentLog } from '../../utils/logger';
+import { MAX_MEMORY_LINES, MAX_MEMORY_CHARS } from '../config/agent-constants.js';
+import type { LLMClient } from '../llm-client';
 import type { ChatMessage } from '../types';
-import { MemoryStore } from './store';
+import { estimateTokens } from '../utils/token-estimator.js';
+import { type MemoryStore } from './store';
 import type { ConsolidationResult, ConsolidatorConfig } from './types';
 import { DEFAULT_CONSOLIDATOR_CONFIG } from './types';
-import { estimateTokens } from '../utils/token-estimator.js';
-import { MAX_MEMORY_LINES, MAX_MEMORY_CHARS } from '../config/agent-constants.js';
-import { agentLog } from '../../utils/logger';
-import type { LLMClient } from '../llm-client';
 
 /**
  * save_memory 工具定义（参考 nanobot）

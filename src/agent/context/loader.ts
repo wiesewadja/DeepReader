@@ -7,7 +7,7 @@
  * - Layer 3: DeepReader/HISTORY.md（时间线日志，按需加载）
  */
 
-import { App, normalizePath } from 'obsidian';
+import { type App, normalizePath } from 'obsidian';
 import { contextLog as log, error } from '../../utils/logger.js';
 
 // 导出日志函数供控制台使用

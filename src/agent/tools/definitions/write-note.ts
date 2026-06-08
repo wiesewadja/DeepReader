@@ -6,9 +6,9 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import type { ToolContext } from '../types.js';
 import { writeNoteTool } from '../write-note.js';
 import type { ToolFactory } from './types.js';
-import type { ToolContext } from '../types.js';
 
 export const createWriteNoteTool: ToolFactory = (ctx: ToolContext) =>
   tool(

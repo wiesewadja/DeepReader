@@ -8,29 +8,12 @@
  * Skills 自动路由：后端根据查询关键词自动匹配 Skill，无需手动选择
  */
 
-import { App, TFile } from 'obsidian';
+import { type App, type TFile } from 'obsidian';
+import type { QuoteMetadata } from '../../types/quote.js';
 import { Icons } from '../../utils/icons.js';
 import { FileSuggest } from '../file-suggest/file-suggest.js';
 
-/**
- * 引用元数据（从阅读模式传递）
- */
-export interface QuoteMetadata {
-	/** 选中的文本内容 */
-	text: string;
-	/** 来源文件路径 */
-	sourcePath?: string;
-	/** 来源文件名（不含路径） */
-	source?: string;
-	/** block_id（如 ^ch1-p3） */
-	blockId?: string;
-	/** 章节 node_id */
-	nodeId?: string;
-	/** 所属标题 */
-	heading?: string;
-	/** 完整标题路径（如 ["第一章", "1.1 什么是投资"]） */
-	headingPath?: string[];
-}
+export type { QuoteMetadata } from '../../types/quote.js';
 
 /**
  * 引用数据结构（存储在 quotes 数组中）
@@ -452,8 +435,8 @@ export class ChatInput {
 		const scrollTop = this.textarea.scrollTop;
 
 		// 基本定位：文本框左下角
-		let x = rect.left;
-		let y = rect.bottom + 4;
+		const x = rect.left;
+		const y = rect.bottom + 4;
 
 		// 如果有触发器，尝试定位到触发器位置
 		if (this.suggestTrigger) {

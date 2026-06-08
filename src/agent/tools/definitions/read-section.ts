@@ -7,8 +7,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { readBookSectionTool } from '../local/read-section.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 const readBookSectionSchema = z.object({
   node_ids: z.array(z.string()).optional().describe('批量读取多个章节（推荐，一次读取多个 node_id）'),

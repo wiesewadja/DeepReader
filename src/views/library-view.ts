@@ -3,27 +3,26 @@
  * 在主面板全屏展示书库，支持自适应宽度布局
  */
 
-import { ItemView, WorkspaceLeaf, Notice, TFile, type PluginManifest } from 'obsidian';
-import { stripFileExtension, type IndexListItem, type Booklist } from '../types/index.js';
-import type { DeepPDFSettings } from '../config/settings.js';
+import { ItemView, type WorkspaceLeaf, Notice, TFile } from 'obsidian';
 import type { DeepReaderPluginInterface } from '../agent/tools/context/vault.js';
 import { ConfirmModal } from '../components/confirm-modal.js';
-import { error as logError, uiLog } from '../utils/logger.js';
+import type { DeepPDFSettings } from '../config/settings.js';
 import { loadArchivedBookIds, toggleArchive, batchToggleArchive } from '../pageindex/archive.js';
-import { getVaultPath } from '../utils/mobile-fs.js';
-import { SyncStateManager } from '../weread/sync/state.js';
-import { getVaultAdapter } from '../utils/vault.js';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import { stripFileExtension, type IndexListItem, type Booklist } from '../types/index.js';
+import { error as logError, uiLog } from '../utils/logger.js';
+import { getVaultPath } from '../utils/mobile-fs.js';
+import { getVaultAdapter } from '../utils/vault.js';
+import { SyncStateManager } from '../weread/sync/state.js';
 import { sanitizeFileName } from '../weread/utils/file.js';
-
+import { createBookCard, createBooklistCard, updateCoverHeights, addCoverActions } from './library/library-card-builder.js';
+import type { CardBuilderContext } from './library/library-card-builder.js';
 import { CoverManager } from './library/library-cover-manager.js';
 import { FilterSort } from './library/library-filter-sort.js';
 import type { FilterType, SortKey } from './library/library-filter-sort.js';
+import { IndexLifecycle } from './library/library-index-lifecycle.js';
 import { MultiSelectController } from './library/library-multi-select.js';
 import { WereadBridge } from './library/library-weread-bridge.js';
-import { IndexLifecycle } from './library/library-index-lifecycle.js';
-import { createBookCard, createBooklistCard, updateCoverHeights, addCoverActions } from './library/library-card-builder.js';
-import type { CardBuilderContext } from './library/library-card-builder.js';
 
 export const LIBRARY_VIEW_TYPE = 'deeppdf-library-view';
 

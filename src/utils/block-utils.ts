@@ -3,7 +3,7 @@
  * 用于从 DOM 中查找选中文字所在的 block id
  */
 
-import { App, TFile } from 'obsidian';
+import { type App, TFile } from 'obsidian';
 import { uiLog } from './logger.js';
 
 /**

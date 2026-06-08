@@ -5,32 +5,32 @@
  * 引导 S4 保留原始链接。self-verification 作为安全网移除幽灵引用。
  */
 
-import type { RunnableConfig } from '@langchain/core/runnables';
 import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langchain/core/messages';
-import type { ChatOpenAI } from '@langchain/openai';
-import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
-import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
-import { resolveMode } from '../utils/engine-helpers';
-import type { FormatterInput } from '../node-io.js';
+import type { RunnableConfig } from '@langchain/core/runnables';
 import { interrupt } from '@langchain/langgraph';
+import type { ChatOpenAI } from '@langchain/openai';
+import { stripThinkTags } from '../../../config/thinking-models.js';
+import { agentLog as log } from '../../../utils/logger.js';
+import { getVaultPath } from '../../../utils/mobile-fs.js';
+import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
+import { validateLinkPairs } from '../../utils/wiki-link-pair-validator.js';
+import type { FormatterInput } from '../node-io.js';
+import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
 } from '../prompts/formatter-prompt';
-import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
-import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
-import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
-import { stripThinkTags } from '../../../config/thinking-models.js';
-import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
-import { validateLinkPairs } from '../../utils/wiki-link-pair-validator.js';
-import { getVaultPath } from '../../../utils/mobile-fs.js';
-import { agentLog as log } from '../../../utils/logger.js';
 import {
   buildProactiveSystemPrompt,
   buildProactiveUserMessage,
   buildSocraticDialoguePrompt,
   buildSocraticDialogueUserMessage,
 } from '../prompts/proactive-formatter-prompt';
+import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
+import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
+import { resolveMode } from '../utils/engine-helpers';
+import { summarizeRecentHistory, formatHistoryBlock } from '../utils/history-summarizer';
+import { verifyAndCleanContent, type ToolResultEntry } from '../utils/self-verification';
 
 /**
  * Extract text from a streaming chunk (handles string, array, and null content).

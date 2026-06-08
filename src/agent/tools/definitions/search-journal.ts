@@ -4,9 +4,9 @@
 
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import type { ToolFactory } from './types.js';
-import type { ToolContext } from '../types.js';
 import { JournalSearchService, getJournalIndexDir } from '../../../services/journal-search.js';
+import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 const searchJournalSchema = z.object({
 	query: z.string().describe('搜索关键词，用于在用户个人笔记中查找相关内容'),

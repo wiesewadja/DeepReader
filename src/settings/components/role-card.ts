@@ -3,14 +3,14 @@
  * Uses CSS display toggle for smooth expand/collapse without DOM rebuild.
  */
 
-import { Setting, Notice, TextComponent } from 'obsidian';
-import type DeepReaderPlugin from '../../main';
-import type { RoleType, ProviderType } from '../../config/types';
+import { Setting, Notice, type TextComponent } from 'obsidian';
 import { ROLE_CAPABILITY } from '../../config/ai-roles';
 import type { AIRoleConfig } from '../../config/ai-roles';
 import { PROVIDER_CONFIGS, getAvailableProvidersForRole, getProviderName } from '../../config/providers';
-import { getRoleConfig, setRoleConfig } from '../helpers';
+import type { RoleType, ProviderType } from '../../config/types';
+import type DeepReaderPlugin from '../../main';
 import { error as logError } from '../../utils/logger.js';
+import { getRoleConfig, setRoleConfig } from '../helpers';
 
 interface RoleCardContext {
   plugin: DeepReaderPlugin;

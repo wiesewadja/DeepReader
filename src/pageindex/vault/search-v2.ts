@@ -1,9 +1,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "path";
-import { generateEmbedding, cosineSearchJsonl } from "./vectors";
-import type { EmbeddingOptions } from "./types";
-import type { SearchResultV2 } from "./compiler-types";
 import { getPageindexRoot } from '../paths.js';
+import type { SearchResultV2 } from "./compiler-types";
+import type { EmbeddingOptions } from "./types";
+import { generateEmbedding, cosineSearchJsonl } from "./vectors";
 
 /** 关键词快速匹配 L0 */
 export function keywordMatchL0(query: string, l0Content: string): string[] {

@@ -4,8 +4,7 @@
  */
 
 import type { DeepPDFSettings } from './settings';
-import type { RoleType } from './types.js';
-import type { ProviderType } from './types.js';
+import type { RoleType , ProviderType } from './types.js';
 export type { ProviderType } from './types.js';
 import { ROLE_CAPABILITY } from './ai-roles';
 import { getPresetById, buildRolesFromPreset } from './presets';

@@ -6,9 +6,9 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import type { CognitiveEngineState } from '../state';
 import { agentLog as log } from '../../../utils/logger.js';
 import type { VisualizerInput } from '../node-io.js';
+import type { CognitiveEngineState } from '../state';
 
 export async function visualizerNode(
   state: CognitiveEngineState,

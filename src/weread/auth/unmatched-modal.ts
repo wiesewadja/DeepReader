@@ -2,7 +2,7 @@
  * 未匹配书籍 Modal — 同步完成后展示未关联的微信读书书籍
  */
 
-import { Modal, App, Setting, Notice } from 'obsidian';
+import { Modal, type App, Setting, Notice } from 'obsidian';
 
 export interface UnmatchedBook {
 	bookId: string;

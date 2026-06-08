@@ -6,32 +6,28 @@
  * early-stop (high-quality results) or pass data to the ReAct loop.
  */
 
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { RunnableLambda } from '@langchain/core/runnables';
-import { SystemMessage, HumanMessage } from '@langchain/core/messages';
-import type { CognitiveEngineState } from '../state';
-import type { ToolResultSnapshot } from '../state';
+import { resolveRoleConfig } from '../../../config/providers.js';
+import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
+import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
+import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
+import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
+import { agentLog as log } from '../../../utils/logger.js';
 import { getEarlyStopThreshold } from '../../config/agent-constants.js';
 import type { PreSearchInput } from '../node-io.js';
 import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
 import { buildEarlyStopPrompt } from '../prompts/pre-search-prompt.js';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
-import type { BookSearchResultV2, BookSearchOptionsV2 } from '../../../pageindex/book-types.js';
-import { agentLog as log } from '../../../utils/logger.js';
-import { resolveRoleConfig } from '../../../config/providers.js';
-import { toEmbeddingOptions, toRerankerOptions } from '../../../config/role-adapters.js';
-import { verifyAndCleanContent } from '../utils/self-verification.js';
-import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
-import { extractCitedNodeIds, toNodeId } from '../utils/chapter-reference-parser.js';
-import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
+import type { CognitiveEngineState , ToolResultSnapshot } from '../state';
+import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import {
   shouldVerifyNegativeClaim,
   verifyNegativeClaimWithFullBook,
 } from '../utils/claim-verifier.js';
-import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
-import { readBookSectionTool } from '../../tools/local/read-section.js';
-import type { ToolContext } from '../../tools/types.js';
-import type { QuoteItem } from '../../tools/types.js';
+import { resolveCurrentChapterName, extractHumanMessageContents } from '../utils/engine-helpers.js';
+import { enforceScopeHardGuard, formatGuardInjectedLog } from '../utils/scope-guard.js';
+import { verifyAndCleanContent } from '../utils/self-verification.js';
 
 /** 空的 pre-search 返回结构，多处复用 */
 function emptyPreSearchResult(validatedScopeNodeIds: string[] = []): Partial<CognitiveEngineState> {
@@ -113,75 +109,6 @@ function formatBlockLines(hits: HitEntry[]): string[] {
       `【${h.title}】(file_name: "${h.file_name}", block_id: ${b.block_id})\n${b.content}`
     )
   );
-}
-
-/**
- * 直接读取用户引用的 block 们。
- *
- * 背景：keyword search 依赖 inspectional 生成的 suggestedKeywords，这些关键词
- * 通常是理论术语（“被宠坏”、“生活风格”），会匹配概念章节。但用户实际引用的
- * 段落可能用的是另一套具体词汇（“求死愿望”、“错误的生活方式”），导致 keyword
- * search 跳过用户引用的章节。直接 read 引用 block 绕过这个问题。
- */
-type CitedBlock = {
-  title: string;
-  file_name: string;
-  block_id: string;
-  content: string;
-  node_id: string;
-};
-
-async function readUserCitedBlocks(
-  toolContext: ToolContext,
-): Promise<CitedBlock[]> {
-  const quotes = toolContext.quotes || [];
-  // 归一化 node_id 为 4 位字符串：tree.json 的 nodeFileMap 用 “0015” 这种格式，
-  // 而引用卡片里可能存的是 “15”（取决于上游怎么读 frontmatter）。
-  // 两边不统一会导致 read_book_section 报 ERROR_NOT_FOUND。
-  const seen = new Set<string>();
-  const withLoc = quotes
-    .map(q => ({ ...q, nodeId: q.nodeId ? toNodeId(q.nodeId) : q.nodeId }))
-    .filter((q): q is QuoteItem & { nodeId: string; blockId: string } => {
-      if (!q.nodeId || !q.blockId) return false;
-      const key = `${q.nodeId}::${q.blockId}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  if (withLoc.length === 0) return [];
-
-  // 并行 read 多个引用 block（不同 block 之间无依赖）
-  const reads = await Promise.all(withLoc.map(async q => {
-    try {
-      const raw = await readBookSectionTool.execute(
-        { node_id: q.nodeId, block_id: q.blockId },
-        toolContext,
-      );
-      const parsed = JSON.parse(raw);
-      if (parsed.status !== 'SUCCESS') {
-        log(`[S2-Pre] read_user_cited_block failed: ${q.nodeId}#${q.blockId} -> ${parsed.status}`);
-        return null;
-      }
-      const content = (parsed.content || '').trim();
-      if (!content) return null;
-      return {
-        title: parsed.title || '',
-        file_name: (parsed.file_name || '').replace(/\.md$/i, ''),
-        block_id: q.blockId,
-        content: content.slice(0, 600),
-        node_id: q.nodeId,
-      } as CitedBlock;
-    } catch (err) {
-      log(`[S2-Pre] read_user_cited_block error: ${q.nodeId}#${q.blockId} -> ${err instanceof Error ? err.message : String(err)}`);
-      return null;
-    }
-  }));
-  return reads.filter((b): b is CitedBlock => b !== null);
-}
-
-/** 把用户引用的 blocks 格式化为 prompt 块 (贴上【用户引用】标签以与 keyword hits 区分) */
-function formatCitedBlockLines(blocks: CitedBlock[]): string[] {
-  return blocks.map(b => `【用户引用】(file_name: "${b.file_name}", block_id: ${b.block_id})\n${b.content}`);
 }
 
 /**
@@ -354,13 +281,6 @@ export async function preSearchNode(
     ).withConfig({ runName: 'pre_search_rrf' });
     const preResults = await preSearchRunnable.invoke({}, { callbacks: config.callbacks });
 
-    // 读取用户主动引用的 block (来自 UI 引用卡片) — 这些是用户问题的直接来源，
-    // 必须进入 pre_search_results。优先级高于 keyword search。
-    const userCitedBlocks = await readUserCitedBlocks(toolContext);
-    if (userCitedBlocks.length > 0) {
-      log(`[S2-Pre] 读取用户引用 block: ${userCitedBlocks.length} 个 (来源 node_ids: ${[...new Set(userCitedBlocks.map(b => b.node_id))].join(',')})`);
-    }
-
     if (!Array.isArray(preResults) || preResults.length < 2) {
       log(`[S2-Pre] 预检索结果不足 (${Array.isArray(preResults) ? preResults.length : 0} 条), 跳过注入`);
       return emptyPreSearchResult(finalScopeNodeIds);
@@ -419,10 +339,7 @@ export async function preSearchNode(
         && !l5ForcesAnalytical) {
       log(`[S2-Pre] 早停: wScore=${wScore.toFixed(2)} >= ${earlyStopThreshold}, substantive=${substantiveScore}, 跳过 ReAct`);
 
-      const blockLines = [
-        ...formatCitedBlockLines(userCitedBlocks),
-        ...formatBlockLines(hits),
-      ];
+      const blockLines = formatBlockLines(hits);
 
       const pdfName = statePdfName || ctx?.toolContext?.book.pdfName || '';
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
@@ -442,24 +359,15 @@ export async function preSearchNode(
               .join('')
           : '';
 
-      const preSearchRecords = [
-        ...userCitedBlocks.map(b => ({
-          toolName: 'user_cited' as const,
-          args: { node_id: b.node_id, block_id: b.block_id },
+      const preSearchRecords = hits.flatMap(h =>
+        h.matched_blocks.map(b => ({
+          toolName: 'pre_search',
+          args: { query: 'auto', node_id: h.node_id },
           result: b.content,
           originalResultLength: b.content.length,
           extractedBlockIds: [b.block_id],
-        })),
-        ...hits.flatMap(h =>
-          h.matched_blocks.map(b => ({
-            toolName: 'pre_search' as const,
-            args: { query: 'auto', node_id: h.node_id },
-            result: b.content,
-            originalResultLength: b.content.length,
-            extractedBlockIds: [b.block_id],
-          }))
-        ),
-      ];
+        }))
+      );
 
       const verifyResult = await verifyAndCleanContent(directContent, preSearchRecords);
 
@@ -474,10 +382,7 @@ export async function preSearchNode(
     }
 
     // 5. Normal path: inject compact pre-search results
-    const blockLines = [
-      ...formatCitedBlockLines(userCitedBlocks),
-      ...formatBlockLines(hits),
-    ];
+    const blockLines = formatBlockLines(hits);
     if (l5ForcesAnalytical) {
       log(`[S2-Pre] L5 强制走 analytical: 跳过早停决策, 注入 ${verifiedFullBookHits.length} 条全量复核 hits`);
     } else if (wScore >= earlyStopThreshold && hits.length >= 2 && substantiveScore < SUBSTANTIVE_THRESHOLD) {
@@ -503,23 +408,14 @@ ${blockLines.join('\n\n')}
       ? `${formatVerifiedFullBookBlock(verifiedFullBookHits)}\n\n${mainPreSearchBlock}`
       : mainPreSearchBlock;
 
-    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记, 用户引用=${userCitedBlocks.length} 个, L5=${verifiedFullBookHits.length}`);
-
-    // 正常路径：记录 user_cited 记录到 snapshot，供后续 L4 self-verification / formatter 使用
-    const userCitedSnapshot: ToolResultSnapshot[] = userCitedBlocks.map(b => ({
-      toolName: 'user_cited',
-      args: { node_id: b.node_id, block_id: b.block_id },
-      result: b.content,
-      originalResultLength: b.content.length,
-      extractedBlockIds: [b.block_id],
-    }));
+    log(`[S2-Pre] 预检索注入: ${preResults.length} 条结果, wScore=${wScore.toFixed(2)}, substantive=${substantiveScore}, ${stateKeywords.length} 个关键词, ${mergedBlockIds.length} 个 block_id 已标记, L5=${verifiedFullBookHits.length}`);
 
     return {
       validatedScopeNodeIds: finalScopeNodeIds,
       nodeFileMap,
       preSearchBlock,
       earlyStopContent: '',
-      toolResultsSnapshot: userCitedSnapshot,
+      toolResultsSnapshot: [],
       prevSearchedBlockIds: mergedBlockIds,
       verifiedFullBookHits,
     };

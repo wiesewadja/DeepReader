@@ -4,10 +4,9 @@
  */
 
 import { stripThinkTags } from '../../config/thinking-models.js';
-
-import type { TreeNode, TocItem } from "./types";
-import { log as piLog } from "./logger";
 import { apiLog } from "../../utils/logger.js";
+import { log as piLog } from "./logger";
+import type { TreeNode, TocItem } from "./types";
 
 /**
  * Approximate token count using character-based estimation
@@ -178,7 +177,7 @@ export function extractJson<T = unknown>(content: string): T | null {
     // Try a more aggressive extraction - find first { or [ and match to last } or ]
     try {
       // First strip think tags from the original content
-      let cleanContent = stripThinkTags(content);
+      const cleanContent = stripThinkTags(content);
       
       const startBrace = cleanContent.indexOf("{");
       const startBracket = cleanContent.indexOf("[");

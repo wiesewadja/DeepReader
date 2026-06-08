@@ -10,12 +10,12 @@
 
 import path from 'path';
 import AdmZip from 'adm-zip';
-import { safeRequest } from '../utils/safe-request';
 import { log as piLog } from '../pageindex/core/logger';
+import type { TreeNode } from '../pageindex/core/types';
 import { parseMineruJson } from '../pageindex/parsers/mineru';
 import { buildTocTree, fillNodeText, countTokens, extractImageExt } from '../pageindex/parsers/mineru-types';
 import type { MineruJson, MineruPdfResult, MineruImage, PageText } from '../pageindex/parsers/mineru-types';
-import type { TreeNode } from '../pageindex/core/types';
+import { safeRequest } from '../utils/safe-request';
 
 // ════════════════════════════════════════════════════════════════
 // 常量

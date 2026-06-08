@@ -19,7 +19,7 @@ export function filterBooksToSync(
 	const excluded = new Set(syncState.excludedBooks ?? []);
 
 	// 排除已手动删除的书籍（即使强制同步也跳过）
-	let books = remoteBooks.filter(b => !excluded.has(b.bookId));
+	const books = remoteBooks.filter(b => !excluded.has(b.bookId));
 
 	if (options?.force) {
 		return books;

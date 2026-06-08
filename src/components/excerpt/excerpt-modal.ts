@@ -3,7 +3,7 @@
  * 用于预览和编辑和保存 AI 回复的摘录
  */
 
-import { App, Modal, Notice } from 'obsidian';
+import { type App, Modal, Notice } from 'obsidian';
 import { ExcerptService } from '../../services/excerpt-service';
 import type { ExcerptContent, ExcerptMetadata, ExcerptOptions } from '../../types/excerpt';
 

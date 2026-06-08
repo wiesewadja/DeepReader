@@ -1,5 +1,5 @@
-import { fetchWithCorsFallback } from '../../utils/safe-request.js';
 import { serviceLog } from '../../utils/logger.js';
+import { fetchWithCorsFallback } from '../../utils/safe-request.js';
 
 export interface TTSClientOptions {
     apiKey: string;

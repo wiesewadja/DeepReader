@@ -7,8 +7,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { updateProfileTool } from '../profile.js';
-import type { ToolFactory } from './types.js';
 import type { ToolContext } from '../types.js';
+import type { ToolFactory } from './types.js';
 
 export const createUpdateProfileTool: ToolFactory = (ctx: ToolContext) =>
   tool(

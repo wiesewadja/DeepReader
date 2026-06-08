@@ -1,7 +1,7 @@
 import type { App } from 'obsidian';
-import type { ProactiveState, ChapterTrigger } from './types';
-import { serviceLog as log } from '../../utils/logger.js';
 import { PAGEINDEX_DIR } from '../../pageindex/paths.js';
+import { serviceLog as log } from '../../utils/logger.js';
+import type { ProactiveState, ChapterTrigger } from './types';
 
 // ============ Pure Functions ============
 

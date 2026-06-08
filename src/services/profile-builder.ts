@@ -8,23 +8,23 @@
  */
 
 import { TFile, TFolder, type App } from 'obsidian';
-import type { DeepPDFSettings } from '../config/settings';
 import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
+import type { DeepPDFSettings } from '../config/settings';
 import { buildBM25Index } from '../pageindex/bm25';
 import { generateBookIdFromPath } from '../pageindex/book-indexer';
-import { getVaultPath } from '../utils/mobile-fs.js';
+import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
 import {
 	generateEmbeddings,
 	writeVectorJsonl,
 	writeChunkTexts,
 } from '../pageindex/vault/vectors';
-import type { VectorRecord, ChunkTextRecord } from '../pageindex/vault/types';
+import { serviceLog } from '../utils/logger.js';
+import { getVaultPath } from '../utils/mobile-fs.js';
 import { fetchWithCorsFallback } from '../utils/safe-request';
 import type { WereadSyncState } from '../weread/types';
 import { sanitizeFileName } from '../weread/utils/file';
-import { PAGEINDEX_DIR } from '../pageindex/paths.js';
-import { serviceLog } from '../utils/logger.js';
 import {
 	DEFAULT_DIMENSIONS,
 	type ProfileFactDimension,

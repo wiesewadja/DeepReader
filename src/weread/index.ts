@@ -6,16 +6,16 @@
 
 import type { App } from 'obsidian';
 import type { DeepPDFSettings } from '../config/settings';
+import { serviceLog as logger } from '../utils/logger';
+import { getVaultPath } from '../utils/mobile-fs.js';
 import { WereadApiClient } from './api/client';
+import { importHighlights } from './sync/highlight-importer';
+import { enrichMappingWithStats } from './sync/mapping-stats';
+import { matchBooks, type WereadBookSummary } from './sync/matcher';
 import { SyncStateManager } from './sync/state';
 import { WereadSyncEngine, type SyncEngineHost } from './sync/sync-engine';
-import { matchBooks, type WereadBookSummary } from './sync/matcher';
-import { loadIndexedBooks } from './utils/indexed-books';
 import type { SyncResult, WereadMapping } from './types';
-import { enrichMappingWithStats } from './sync/mapping-stats';
-import { getVaultPath } from '../utils/mobile-fs.js';
-import { importHighlights } from './sync/highlight-importer';
-import { serviceLog as logger } from '../utils/logger';
+import { loadIndexedBooks } from './utils/indexed-books';
 
 /** 最小接口：Plugin 实例需要 settings + app + saveSettings */
 interface WereadPluginHost {

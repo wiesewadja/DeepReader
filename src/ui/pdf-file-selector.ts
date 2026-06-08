@@ -4,8 +4,8 @@
  * 支持从系统上传文件
  */
 
-import { App, Modal, FuzzySuggestModal, TFile, Notice } from "obsidian";
 import { join } from "path";
+import { type App, Modal, FuzzySuggestModal, type TFile, Notice } from "obsidian";
 import { getVaultPath } from "../utils/mobile-fs.js";
 
 // ==================== 文档类型 ====================

@@ -3,14 +3,14 @@
  * 管理和渲染聊天消息列表
  */
 
-import { App } from 'obsidian';
-import { Component } from '../component';
-import { createMessage, Message, MessageData } from '../message/message';
-import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
-import type { QuoteMetadata } from '../chat-input/chat-input';
-import { warn } from '../../utils/logger.js';
-import { QuestionMinimap } from '../question-minimap';
+import { type App } from 'obsidian';
 import type { TTSPlayState } from '../../services/tts/tts-service.js';
+import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import { warn } from '../../utils/logger.js';
+import type { QuoteMetadata } from '../chat-input/chat-input';
+import { Component } from '../component';
+import { createMessage, type Message, type MessageData } from '../message/message';
+import { QuestionMinimap } from '../question-minimap';
 // @ts-ignore — esbuild dataurl loader handles .jpg
 const XITONG_IMG = require('../../assets/xitong.jpg') as string;
 

@@ -3,12 +3,12 @@
  */
 
 import { Setting, Notice } from 'obsidian';
-import type { SectionContext } from '../types';
-import { WereadService } from '../../weread/index';
-import { ZLibraryClient } from '../../zlibrary/client';
-import { buildZlibClient } from '../../zlibrary/build-client';
-import { ZLIBRARY_DISCLAIMER } from '../../zlibrary/DISCLAIMER';
 import { ConfirmModal } from '../../components/confirm-modal';
+import { WereadService } from '../../weread/index';
+import { buildZlibClient } from '../../zlibrary/build-client';
+import { ZLibraryClient } from '../../zlibrary/client';
+import { ZLIBRARY_DISCLAIMER } from '../../zlibrary/DISCLAIMER';
+import type { SectionContext } from '../types';
 
 export function renderWereadSection(
 	container: HTMLElement,

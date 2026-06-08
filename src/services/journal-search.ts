@@ -3,15 +3,15 @@
  */
 
 import type { App } from 'obsidian';
-import { searchBM25 } from '../pageindex/bm25';
-import type { BM25Data } from '../pageindex/book-types';
-import { cosineSearchJsonl, generateEmbeddings } from '../pageindex/vault/vectors';
-import type { EmbeddingOptions } from '../pageindex/vault/types';
-import type { DeepPDFSettings } from '../config/settings';
 import { resolveRoleConfig } from '../config/providers';
 import { toEmbeddingOptions } from '../config/role-adapters';
+import type { DeepPDFSettings } from '../config/settings';
+import { searchBM25 } from '../pageindex/bm25';
 import { generateBookIdFromPath } from '../pageindex/book-indexer';
+import type { BM25Data } from '../pageindex/book-types';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
+import type { EmbeddingOptions } from '../pageindex/vault/types';
+import { cosineSearchJsonl, generateEmbeddings } from '../pageindex/vault/vectors';
 import { getVaultPath } from '../utils/mobile-fs.js';
 
 export interface JournalSearchResult {

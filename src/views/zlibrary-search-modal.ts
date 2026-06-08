@@ -2,8 +2,8 @@
  * Z-Library 搜索 Modal — 在 Modal 中展示搜索结果并选择下载
  */
 
-import { Modal, App, Notice } from 'obsidian';
-import { ZLibraryClient } from '../zlibrary/client';
+import { Modal, type App, Notice } from 'obsidian';
+import { type ZLibraryClient } from '../zlibrary/client';
 import type { ZLibraryBook, SearchResult } from '../zlibrary/types';
 
 const FORMAT_ORDER: Record<string, number> = {

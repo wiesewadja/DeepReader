@@ -48,7 +48,7 @@ const defaultConfig: LogConfig = {
 };
 
 // 当前配置
-let _config: LogConfig = { ...defaultConfig, modules: { ...defaultConfig.modules } };
+const _config: LogConfig = { ...defaultConfig, modules: { ...defaultConfig.modules } };
 
 // 日志模块类型
 export type LogModule = keyof typeof _config.modules;

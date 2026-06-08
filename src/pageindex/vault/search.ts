@@ -1,10 +1,15 @@
+import { apiLog } from "../../utils/logger.js";
+import { safeRequest } from "../../utils/safe-request.js";
+import { treeSearchPrompt } from "../core/prompts";
+import type { TreeNode } from "../core/types";
+import { findNodeById, cosineSimilarity , extractJson } from "../core/utils";
+import { chatGPT } from "../llm/client";
 import { PAGEINDEX_DIR } from '../paths.js';
 /**
  * PageIndex: Obsidian Vault Hybrid Search
  * Combines vector semantic search, keyword exact match, level weighting, and cross-encoder re-ranking
  */
 
-import type { TreeNode } from "../core/types";
 import type {
   SearchResult,
   SearchOptions,
@@ -13,12 +18,6 @@ import type {
   TreeSearchOptions,
 } from "./types";
 import { generateEmbeddings, cosineSearchJsonl, generateEmbedding } from "./vectors";
-import { findNodeById, cosineSimilarity } from "../core/utils";
-import { safeRequest } from "../../utils/safe-request.js";
-import { apiLog } from "../../utils/logger.js";
-import { chatGPT } from "../llm/client";
-import { extractJson } from "../core/utils";
-import { treeSearchPrompt } from "../core/prompts";
 
 export async function searchVault(
   query: string,

@@ -3,10 +3,10 @@
  * Centralizes type casts so callers don't need `as unknown as`.
  */
 
-import type { RoleType } from '../config/types';
 import type { AIRoleConfig, AIRoles, AIProviderAccount } from '../config/ai-roles';
+import type { RoleType } from '../config/types';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type RolesAny = Record<string, AIRoleConfig | null>;
 
 function asRoles(roles: AIRoles): RolesAny {

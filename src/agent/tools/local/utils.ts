@@ -6,11 +6,11 @@
  */
 
 import type { App } from 'obsidian';
-import type { LocalToolCache } from './types.js';
-import type { ToolContext } from '../types.js';
-import { resolveBookIdFromPdf } from '../../../utils/mobile-fs.js';
+import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { toolsLog } from '../../../utils/logger.js';
+import type { ToolContext } from '../types.js';
+import type { LocalToolCache } from './types.js';
 
 /**
  * Token 上限常量

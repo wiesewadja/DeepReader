@@ -3,8 +3,8 @@
  * 统一 POST https://i.weread.qq.com/api/agent/gateway
  */
 
-import { safeRequest } from '../../utils/safe-request';
 import { apiLog as log } from '../../utils/logger.js';
+import { safeRequest } from '../../utils/safe-request';
 import type {
 	WereadNotebookResponse,
 	WereadShelfResponse,

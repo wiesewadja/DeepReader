@@ -1,15 +1,9 @@
-import { getBookDir } from "./paths.js";
 /**
  * Proposition Indexer - Extract atomic fact cards per chapter
  */
 
-import * as path from "path";
 import * as fs from "fs/promises";
-import { chatGPT } from "./llm/client.js";
-import {
-  generateEmbedding,
-  generateEmbeddings,
-} from "./vault/vectors.js";
+import * as path from "path";
 import type { 
   PropositionCard, 
   PropositionsData, 
@@ -19,8 +13,14 @@ import type {
   TreeData,
   TreeNode,
 } from "./book-types.js";
-import type { EmbeddingOptions } from "./vault/types.js";
 import { log as piLog } from "./core/logger.js";
+import { chatGPT } from "./llm/client.js";
+import { getBookDir } from "./paths.js";
+import type { EmbeddingOptions } from "./vault/types.js";
+import {
+  generateEmbedding,
+  generateEmbeddings,
+} from "./vault/vectors.js";
 
 const DEFAULT_CARDS_PER_500 = 1;
 const DEFAULT_MIN_CARDS = 3;

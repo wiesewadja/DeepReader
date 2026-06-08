@@ -3,10 +3,10 @@
  * Indexes individual markdown files using existing markdownToTree pipeline
  */
 
-import { markdownToTree } from "../parsers/markdown";
 import type { PageIndexResult } from "../core/types";
-import type { ObsidianVaultIndexOptions } from "./types";
+import { markdownToTree } from "../parsers/markdown";
 import type { ScannedFile } from "./scan";
+import type { ObsidianVaultIndexOptions } from "./types";
 
 export async function indexFile(
   file: ScannedFile,

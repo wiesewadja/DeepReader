@@ -7,8 +7,8 @@
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
-import type { CognitiveEngineState, NodeError } from '../state';
 import { agentLog as log } from '../../../utils/logger.js';
+import type { CognitiveEngineState, NodeError } from '../state';
 
 /** 节点名称到降级策略的映射 */
 const FALLBACK_ACTIONS: Record<string, NodeError['fallbackAction']> = {

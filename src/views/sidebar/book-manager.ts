@@ -5,18 +5,18 @@
  */
 
 import { Notice, TFile } from 'obsidian';
-import { uiLog as log, error as logError } from '../../utils/logger.js';
-import { stripFileExtension, type IndexListItem, type Booklist } from '../../types/index.js';
-import type { MessageList } from '../../components/message-list/message-list.js';
-import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
 import type { FrontendAgent } from '../../agent/index.js';
 import type { ProactiveEngine } from '../../agent/proactive/engine.js';
 import type { SessionStore } from '../../agent/session/index.js';
-import { LIBRARY_VIEW_TYPE } from '../library-view.js';
-import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath, getVaultPath } from '../../utils/mobile-fs.js';
-import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
-import { removeFromCatalog } from '../../pageindex/archive.js';
 import type { DeepReaderPluginInterface } from '../../agent/tools/context/vault.js';
+import type { MessageList } from '../../components/message-list/message-list.js';
+import type { ReadingTopbar } from '../../components/reading-topbar/index.js';
+import { removeFromCatalog } from '../../pageindex/archive.js';
+import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
+import { stripFileExtension, type IndexListItem, type Booklist } from '../../types/index.js';
+import { uiLog as log, error as logError } from '../../utils/logger.js';
+import { vaultRead, vaultExists, vaultList, vaultMkdir, vaultRemove, vaultRmdir, joinPath, getVaultPath } from '../../utils/mobile-fs.js';
+import { LIBRARY_VIEW_TYPE } from '../library-view.js';
 
 export interface BookManagerHost {
 	get app(): import('obsidian').App;
@@ -430,7 +430,7 @@ export class BookManager {
 		// 恢复会话
 		const savedSessions = this.host.plugin.settings.savedSessions || {};
 		const normalizedBookName = (this._currentPdfName || '').replace(/\.pdf$/i, '').replace(/\.epub$/i, '') || this._currentIndexId || '';
-		let savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
+		const savedSessionId = savedSessions[normalizedBookName] || savedSessions[indexId];
 
 		if (savedSessionId) {
 			try {

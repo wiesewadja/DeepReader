@@ -6,8 +6,8 @@
  * - messages uses messagesStateReducer (append semantics)
  */
 
-import { Annotation, messagesStateReducer } from '@langchain/langgraph';
 import type { BaseMessage } from '@langchain/core/messages';
+import { Annotation, messagesStateReducer } from '@langchain/langgraph';
 import type { BookSearchResultV2 } from '../../pageindex/book-types.js';
 
 /**

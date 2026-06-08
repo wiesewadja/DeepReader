@@ -3,8 +3,8 @@
  * 提供聊天模式切换等隐藏设置选项
  */
 
-import { App, Modal } from 'obsidian';
-import { AgentModeToggle, ChatMode } from '../agent-mode-toggle/agent-mode-toggle';
+import { type App, Modal } from 'obsidian';
+import { AgentModeToggle, type ChatMode } from '../agent-mode-toggle/agent-mode-toggle';
 
 export interface ChatSettingsOptions {
     initialMode: ChatMode;

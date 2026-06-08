@@ -7,13 +7,13 @@
 
 import { spawn } from "child_process";
 import { existsSync } from "fs";
-import * as path from "path";
-import * as os from "os";
 import * as fs from "fs/promises";
-import { countTokens } from "../core/utils";
-import { log as piLog } from "../core/logger";
+import * as os from "os";
+import * as path from "path";
 import { apiLog } from "../../utils/logger.js";
 import { safeRequest } from "../../utils/safe-request.js";
+import { log as piLog } from "../core/logger";
+import { countTokens } from "../core/utils";
 import {
   DEFAULT_OCR_MODEL,
   DEFAULT_IMAGE_FORMAT,

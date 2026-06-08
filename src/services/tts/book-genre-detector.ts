@@ -1,8 +1,8 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { App } from 'obsidian';
-import { vaultRead, vaultWrite, vaultMkdir, vaultExists, joinPath } from '../../utils/mobile-fs.js';
 import { PAGEINDEX_DIR, getPageindexDir } from '../../pageindex/paths.js';
+import { vaultRead, vaultWrite, vaultMkdir, vaultExists, joinPath } from '../../utils/mobile-fs.js';
 
 export interface BookGenre {
   /** 主类型 */

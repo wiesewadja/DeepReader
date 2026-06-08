@@ -1,17 +1,17 @@
-import { Notice, type App } from 'obsidian';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { vaultRead, vaultReadBinary, vaultExists, vaultMkdir, vaultRemove, vaultWrite, vaultWriteBinary, joinPath } from '../../utils/mobile-fs.js';
-import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
-import { MiniMaxTTSClient } from './minimax-tts-client.js';
-import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
-import { PCMStreamPlayer } from './pcm-stream-player.js';
-import { BookGenreDetector } from './book-genre-detector.js';
-import { ExpressivePreprocessor } from './expressive-preprocessor.js';
-import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
-import type { BookGenre } from './book-genre-detector.js';
-import { safeRequest } from '../../utils/safe-request.js';
+import { Notice, type App } from 'obsidian';
 import { serviceLog } from '../../utils/logger.js';
+import { vaultRead, vaultReadBinary, vaultExists, vaultMkdir, vaultRemove, vaultWrite, vaultWriteBinary, joinPath } from '../../utils/mobile-fs.js';
+import { safeRequest } from '../../utils/safe-request.js';
+import { BookGenreDetector } from './book-genre-detector.js';
+import type { BookGenre } from './book-genre-detector.js';
+import { ExpressivePreprocessor } from './expressive-preprocessor.js';
+import { MiniMaxTTSClient } from './minimax-tts-client.js';
+import { PCMStreamPlayer } from './pcm-stream-player.js';
+import { TTSClient, type ITTSSynthesizer, type TTSVoiceOptions, type TTSOptions } from './tts-client.js';
+import { TTSSummarizer, type TTSContext } from './tts-summarizer.js';
+import { resolveVoiceProfile, getDefaultVoiceProfile, type VoiceProfile } from './voice-profile.js';
 
 export type TTSPlayState = 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused';
 

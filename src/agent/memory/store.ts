@@ -9,10 +9,10 @@
  * 参考: nanobot 的 memory.py 设计
  */
 
-import { App, normalizePath } from 'obsidian';
+import { type App, normalizePath } from 'obsidian';
 import { agentLog } from '../../utils/logger';
-import type { IMemoryStore } from './types.js';
 import { MAX_MEMORY_CHARS } from '../config/agent-constants.js';
+import type { IMemoryStore } from './types.js';
 
 /** DeepReader 目录名 */
 const DEEPREADER_DIR = 'DeepReader';

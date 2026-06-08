@@ -1,5 +1,5 @@
-import type { TTSOptions } from './tts-client.js';
 import { serviceLog } from '../../utils/logger.js';
+import type { TTSOptions } from './tts-client.js';
 
 export interface MiniMaxVoiceSetting {
     voice_id: string;

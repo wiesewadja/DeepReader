@@ -3,8 +3,8 @@
  */
 
 import { Setting } from 'obsidian';
-import type { SectionContext } from '../types';
 import { setLogEnabled } from '../../utils/logger';
+import type { SectionContext } from '../types';
 
 export function renderAdvancedSection(
   container: HTMLElement,

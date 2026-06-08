@@ -3,7 +3,7 @@
  * 管理已加载到对话上下文的文档
  */
 
-import { App, TFile, Notice } from 'obsidian';
+import { type App, TFile, Notice } from 'obsidian';
 import { error as logError } from '../utils/logger.js';
 
 /**

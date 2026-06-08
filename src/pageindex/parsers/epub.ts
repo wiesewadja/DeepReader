@@ -6,8 +6,8 @@
 
 import * as path from "path";
 import AdmZip from "adm-zip";
-import { parseStringPromise } from "xml2js";
 import TurndownService from "turndown";
+import { parseStringPromise } from "xml2js";
 import { countTokens, cleanTitle } from "../core/utils";
 import type { PdfPage } from "./pdf";
 
@@ -504,7 +504,7 @@ function extractTextFromHTMLWithBlocks(
   // Remove <head> entirely — some Kobo EPUBs use self-closing <title/>
   // which DOMParser in text/html mode treats as an opening <title> tag,
   // causing the entire document body to be swallowed into the title element.
-  let cleanHtml = html
+  const cleanHtml = html
     .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, "")
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");

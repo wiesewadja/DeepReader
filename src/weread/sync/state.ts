@@ -9,20 +9,13 @@
  */
 
 import { join } from 'path';
+import type { VaultAdapter } from '../../utils/vault.js';
 import type { WereadSyncState, WereadMapping } from '../types';
+
+export type { VaultAdapter } from '../../utils/vault.js';
 
 const SYNC_STATE_FILE = 'sync-state.json';
 const MAPPING_FILE = 'mapping.json';
-
-/** VaultAdapter 最小接口 — Obsidian FileSystemAdapter 的子集，路径均为 vault-relative */
-export interface VaultAdapter {
-	read(path: string): Promise<string>;
-	write(path: string, data: string): Promise<void>;
-	writeBinary(path: string, data: ArrayBuffer): Promise<void>;
-	exists(path: string, sensitive?: boolean): Promise<boolean>;
-	mkdir(path: string): Promise<void>;
-	stat(path: string): Promise<{ size: number } | null>;
-}
 
 /**
  * 同步状态管理器

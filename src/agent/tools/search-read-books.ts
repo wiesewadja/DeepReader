@@ -4,10 +4,10 @@
  * 用于关联阅读功能，帮助用户找到已读书籍中与当前主题相关的内容
  */
 
-import type { ToolDefinition } from '../types.js';
-import type { ToolExecutor, ToolContext } from './types.js';
 import { toolsLog as log, error as logError } from '../../utils/logger.js';
+import type { ToolDefinition } from '../types.js';
 import { BOOK_NOTES_DIR } from '../utils/book-note.js';
+import type { ToolExecutor, ToolContext } from './types.js';
 
 const SEARCH_READ_BOOKS_DEFINITION: ToolDefinition = {
   type: 'function',

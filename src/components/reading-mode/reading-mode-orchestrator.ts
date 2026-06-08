@@ -1,17 +1,20 @@
 /**
- * 阅读模式服务
- * 管理章节文件的书籍化阅读体验
+ * 阅读模式编排器
+ * 管理章节文件的书籍化阅读体验 — 创建并编排 SelectionToolbar/ChapterNav/PagePaginator/MobileReadingFab 的完整生命周期
  */
 
-import { App, TFile, EventRef, MarkdownView, Platform } from 'obsidian';
-import { serviceLog } from '../utils/logger.js';
-import { SelectionToolbar, SelectionToolbarOptions, HighlightColorId } from '../components/reading-mode/selection-toolbar.js';
-import { ChapterNav, ChapterNavOptions } from '../components/reading-mode/chapter-nav.js';
-import { PagePaginator } from '../components/reading-mode/page-paginator.js';
-import { MobileReadingFab } from '../components/reading-mode/mobile-reading-fab.js';
-import { loadLastPages, saveLastPages } from '../pageindex/last-page-store.js';
-import { getVaultPath } from '../utils/mobile-fs.js';
-import type { QuoteMetadata } from '../components/chat-input/chat-input.js';
+import { type App, TFile, type EventRef, MarkdownView, Platform } from 'obsidian';
+import { loadLastPages, saveLastPages } from '../../pageindex/last-page-store.js';
+import type { HighlightColorId } from '../../types/highlight.js';
+import type { QuoteMetadata } from '../../types/quote.js';
+import { serviceLog } from '../../utils/logger.js';
+import { getVaultPath } from '../../utils/mobile-fs.js';
+import { ChapterNav } from './chapter-nav.js';
+import type { ChapterNavOptions } from './chapter-nav.js';
+import { MobileReadingFab } from './mobile-reading-fab.js';
+import { PagePaginator } from './page-paginator.js';
+import { SelectionToolbar } from './selection-toolbar.js';
+import type { SelectionToolbarOptions } from './selection-toolbar.js';
 
 export interface ReadingModeCallbacks {
     onQuote: (metadata: QuoteMetadata) => void;
@@ -260,11 +263,11 @@ export class ReadingModeService {
                 this.waitForRenderAndInitPaginator();
             }, 200);
 
-// 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
-        this.patchScrollIntoView();
+	// 拦截 scrollIntoView，修复 multi-column 布局下的 blockId 跳转
+	        this.patchScrollIntoView();
 
-        // 监听 hashchange，处理 blockId 跳转（双重保险）
-        this.setupHashChangeHandler();
+	        // 监听 hashchange，处理 blockId 跳转（双重保险）
+	        this.setupHashChangeHandler();
         }
 
         // 通知书籍检测回调
@@ -286,7 +289,7 @@ export class ReadingModeService {
         // 从文件的 frontmatter 获取 index_id 或 pdf_index_id
         const cache = this.app.metadataCache.getFileCache(file);
         const frontmatter = cache?.frontmatter;
-        let indexId = String(frontmatter?.index_id || frontmatter?.pdf_index_id || '');
+        const indexId = String(frontmatter?.index_id || frontmatter?.pdf_index_id || '');
 
         // 兼容多种 frontmatter 字段获取书名：pdf_name (旧), book (EPUB), source (PDF)
         let bookName = frontmatter?.pdf_name || frontmatter?.book || frontmatter?.source || '';
@@ -845,7 +848,7 @@ export class ReadingModeService {
      * 标记摘录文本（添加虚线下划线）
      * @param range 选中的文本范围
      */
-markExcerpt(range: Range): void {
+    markExcerpt(range: Range): void {
         try {
             const excerptMark = document.createElement('mark');
             excerptMark.setAttribute('data-excerpt', 'true');
@@ -863,10 +866,10 @@ markExcerpt(range: Range): void {
 
     /**
      * 拦截 scrollIntoView，修复 CSS multi-column 布局下的 blockId 跳转
-     * 
+     *
      * 问题：Obsidian 内部用 scrollIntoView() 跳转到 blockId 目标，
      * 但 CSS multi-column 布局下 scrollIntoView() 无法正确横向滚动。
-     * 
+     *
      * 方案：全局拦截 scrollIntoView，当目标元素在 reading mode 的
      * multi-column 容器内时，手动计算横向滚动位置。
      */
@@ -879,7 +882,7 @@ markExcerpt(range: Range): void {
         HTMLElement.prototype.scrollIntoView = function (options?: ScrollIntoViewOptions | boolean) {
             // 检查目标元素是否在 reading mode 的 multi-column 容器内
             const scrollView = this.closest?.('.deeppdf-reading-mode .markdown-preview-view') as HTMLElement | null;
-            
+
             if (scrollView && self.isActive) {
                 self.scrollToElementInColumn(this as HTMLElement, scrollView);
                 return;
