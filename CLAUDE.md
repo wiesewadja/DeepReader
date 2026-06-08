@@ -27,7 +27,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - 插件 ID 用 `this.manifest.id`，不硬编码 `'deepreader'`
 - Agent 唯入口: `FrontendAgent.chat()` → `runGraphEngine()` → `stream()`
 - 提交前将代码修改方案整理后告知用户审查，用户确认后提交代码
-- 每个重要功能都拉取独立worktree分支，完成后调用测试工程师代理进行测试
+- 每个重要功能都拉取.worktrees/目录下的独立worktree分支，完成后调用测试工程师代理进行测试
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录

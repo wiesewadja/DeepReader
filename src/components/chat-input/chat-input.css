@@ -12,7 +12,9 @@
 	flex-shrink: 0;
 	padding: 0 var(--size-4-4) var(--size-4-3);
 	z-index: 100;
-	transition: transform 0.3s ease, opacity 0.3s ease;
+	transition:
+		transform 0.3s ease,
+		opacity 0.3s ease;
 }
 
 .deeppdf-chat-input-section.hidden {
@@ -61,7 +63,10 @@
 	padding: 10px 12px 4px 12px;
 	overflow: hidden;
 	opacity: 1;
-	transition: max-height 0.2s ease, padding 0.2s ease, opacity 0.15s ease;
+	transition:
+		max-height 0.2s ease,
+		padding 0.2s ease,
+		opacity 0.15s ease;
 }
 
 .deeppdf-chat-input-textarea {
@@ -139,7 +144,9 @@
 	cursor: pointer;
 	color: var(--text-muted);
 
-	transition: color 0.15s ease, background-color 0.15s ease;
+	transition:
+		color 0.15s ease,
+		background-color 0.15s ease;
 }
 
 .deeppdf-load-doc-btn:hover,
@@ -244,7 +251,9 @@
 	font-size: var(--font-ui-small);
 	font-weight: 500;
 
-	transition: color 0.15s ease, background-color 0.15s ease;
+	transition:
+		color 0.15s ease,
+		background-color 0.15s ease;
 	-webkit-appearance: none;
 }
 
@@ -286,8 +295,8 @@
 
 @media (max-width: 600px) {
 	.deeppdf-chat-input-section {
-	display: flex;
-	flex-direction: column;
+		display: flex;
+		flex-direction: column;
 
 		left: 3%;
 		right: 3%;
@@ -338,7 +347,10 @@
 
 	cursor: pointer;
 	animation: deeppdf-quote-enter 0.2s ease;
-	transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease,
+		transform 0.15s ease;
 }
 
 .deeppdf-quote-card:hover {
@@ -404,7 +416,10 @@
 	color: var(--text-muted);
 	opacity: 0;
 
-	transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+	transition:
+		opacity 0.15s ease,
+		background-color 0.15s ease,
+		color 0.15s ease;
 }
 
 .deeppdf-quote-card:hover .deeppdf-quote-remove-btn {
@@ -440,7 +455,9 @@
 	color: var(--text-muted);
 
 	cursor: pointer;
-	transition: background-color 0.15s ease, color 0.15s ease;
+	transition:
+		background-color 0.15s ease,
+		color 0.15s ease;
 }
 
 .deeppdf-quotes-more:hover {
