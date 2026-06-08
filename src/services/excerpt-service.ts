@@ -3,7 +3,7 @@
  * 负责将 AI 回复内容保存为 Obsidian 笔记
  */
 
-import { type App, Notice, TFile, TFolder } from 'obsidian';
+import { type App, Notice, TFile } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata, ExcerptOptions } from '../types/excerpt';
 import { error as logError } from '../utils/logger.js';
 
