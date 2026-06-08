@@ -5,7 +5,6 @@
  * 桌面端和移动端使用同一套代码路径（vault.adapter 在两端均可用）。
  */
 
-import { join } from 'path';
 import { type App, normalizePath } from 'obsidian';
 
 /** 通过 Vault API 读取文本文件 */

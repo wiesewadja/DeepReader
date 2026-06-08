@@ -6,6 +6,8 @@
 
 import { type App } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt';
+import { HIGHLIGHT_COLORS } from '../../types/highlight.js';
+import type { HighlightColorId } from '../../types/highlight.js';
 import type { QuoteMetadata } from '../chat-input/chat-input';
 import { ExcerptModal } from './excerpt-modal';
 
@@ -18,17 +20,6 @@ const Icons = {
     // 高亮图标（荧光笔）
     highlight: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>`,
 };
-
-// 高亮颜色配置（与 SelectionToolbar 一致）
-const HIGHLIGHT_COLORS = [
-    { id: 'yellow', label: '黄色', bg: 'rgba(255, 235, 59, 0.5)' },
-    { id: 'green', label: '绿色', bg: 'rgba(76, 175, 80, 0.4)' },
-    { id: 'blue', label: '蓝色', bg: 'rgba(33, 150, 243, 0.4)' },
-    { id: 'pink', label: '粉色', bg: 'rgba(233, 30, 99, 0.4)' },
-    { id: 'orange', label: '橙色', bg: 'rgba(255, 152, 0, 0.4)' },
-] as const;
-
-type HighlightColorId = typeof HIGHLIGHT_COLORS[number]['id'];
 
 export interface SelectionMenuOptions {
 	/** 选中的文本内容 */

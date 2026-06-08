@@ -217,6 +217,7 @@ export class SessionStore implements ISessionStore {
 
 		// 后续行：消息
 		for (const msg of session.messages) {
+			const voiceData = msg as any;
 			const msgLine: SessionMessageLine = {
 				role: msg.role as 'user' | 'assistant' | 'tool',
 				content: msg.content,
@@ -225,6 +226,10 @@ export class SessionStore implements ISessionStore {
 				tool_call_id: msg.tool_call_id,
 				name: msg.name,
 				hidden: msg.hidden,
+				// 语音字段透传（deleteMessages/save 全量重写时保留）
+				voiceAudioPath: voiceData.voiceAudioPath,
+				voiceDuration: voiceData.voiceDuration,
+				letterState: voiceData.letterState,
 			};
 			lines.push(JSON.stringify(msgLine));
 		}
@@ -453,6 +458,7 @@ export class SessionStore implements ISessionStore {
 						const audioBuffer = await this.loadVoiceAudio(sessionId, msgLine.voiceAudioPath);
 						if (audioBuffer) {
 							(msg as any).voiceAudio = audioBuffer;
+							(msg as any).voiceAudioPath = msgLine.voiceAudioPath;
 							(msg as any).voiceDuration = msgLine.voiceDuration;
 							(msg as any).letterState = msgLine.letterState;
 							(msg as any).voiceState = 'ready';  // 从文件加载后状态为 ready

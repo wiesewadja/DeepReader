@@ -144,6 +144,17 @@ export const writeNoteTool: ToolExecutor = {
       log('[write_note] 执行:', { path, mode, contentLength: content.length });
 
       const normalizedPath = normalizePath(path);
+
+      // Path traversal check
+      if (path.includes('..')) {
+        return `Error: Path traversal detected in "${path}"`;
+      }
+
+      // Prevent writing to Obsidian internals
+      if (normalizedPath.startsWith('.obsidian/')) {
+        return `Error: Cannot write to Obsidian configuration directory`;
+      }
+
       const existingFile = app.vault.getAbstractFileByPath(normalizedPath);
 
       // 文件已存在

@@ -6,7 +6,6 @@
 
 import { join, dirname } from 'path';
 import { serviceLog as logger } from '../../utils/logger';
-import { safeRequest } from '../../utils/safe-request';
 import { WereadApiClient } from '../api/client';
 import { mergeShelfBooks } from '../api/shelf';
 import { renderNotebook } from '../render/markdown-renderer';
@@ -20,7 +19,7 @@ import type { WereadChapter, WereadHighlight, WereadReview ,
 	SyncResult,
 	SyncProgress,
 } from '../types';
-import { extractCoverExt, toHighResCoverUrl, downloadWereadCover } from '../utils/cover';
+import { downloadWereadCover } from '../utils/cover';
 import { sanitizeFileName } from '../utils/file';
 import { htmlToMarkdown } from '../utils/html-to-md';
 import { filterBooksToSync } from './diff';

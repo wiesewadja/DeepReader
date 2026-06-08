@@ -38,6 +38,10 @@ function extractChapterIndex(path: string): number {
 /**
  * 计算文本与查询的相关性分数
  */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function calculateRelevance(query: string, text: string): number {
   const queryWords = query.toLowerCase().split(/\s+/);
   const textLower = text.toLowerCase();
@@ -50,7 +54,8 @@ function calculateRelevance(query: string, text: string): number {
     }
     // 部分匹配（子串）
     if (word.length > 2) {
-      const partialMatches = (textLower.match(new RegExp(word.slice(0, 3), 'g')) || []).length;
+      const prefix = escapeRegex(word.slice(0, 3));
+      const partialMatches = (textLower.match(new RegExp(prefix, 'g')) || []).length;
       score += partialMatches * 0.3;
     }
   }

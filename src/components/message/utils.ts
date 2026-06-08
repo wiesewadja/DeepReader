@@ -5,6 +5,34 @@
 import { uiLog as log } from '../../utils/logger.js';
 
 /**
+ * Sanitize HTML for safe innerHTML rendering.
+ * Strips dangerous tags, event handlers, and script URLs.
+ */
+export function sanitizeHumanizedHtml(html: string): string {
+	let result = html;
+
+	// Remove dangerous tags and their content
+	result = result.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+	result = result.replace(/<script\b[^>]*\/?>/gi, '');
+	result = result.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
+	result = result.replace(/<iframe\b[^>]*\/?>/gi, '');
+	result = result.replace(/<object\b[^>]*>[\s\S]*?<\/object>/gi, '');
+	result = result.replace(/<embed\b[^>]*\/?>/gi, '');
+	result = result.replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, '');
+	result = result.replace(/<meta\b[^>]*\/?>/gi, '');
+	result = result.replace(/<link\b[^>]*\/?>/gi, '');
+	result = result.replace(/<base\b[^>]*\/?>/gi, '');
+
+	// Remove event handler attributes (onclick, onerror, onload, etc.)
+	result = result.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+
+	// Remove javascript: and data: URLs in src/href/action
+	result = result.replace(/(src|href|action)\s*=\s*["']?\s*(?:javascript|data)\s*:[^"'\s>]*/gi, '$1=""');
+
+	return result;
+}
+
+/**
  * HTML 转义
  */
 export function escapeHtml(text: string): string {

@@ -11,8 +11,8 @@
  *   node scripts/arch-guard.mjs --strict  # 有违规时退出码 1
  */
 
-import { readFileSync, readdirSync, statSync } from 'fs';
-import { join, relative, normalize } from 'path';
+import { readFileSync, readdirSync } from 'fs';
+import { join, relative } from 'path';
 import { execSync } from 'child_process';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -70,6 +70,10 @@ const DEPENDENCY_RULES = [
 // ─── Import 解析 ───
 
 const IMPORT_RE = /import\s+(?:type\s+)?(?:[\w{},\s*]+\s+from\s+)?['"](\.\.?\/[^'"]+)['"]/g;
+// 动态 import() 调用
+const DYNAMIC_IMPORT_RE = /import\s*\(\s*['"](\.\.?\/[^'"]+)['"]\s*\)/g;
+// re-export 语句
+const REEXPORT_RE = /export\s+(?:type\s+)?(?:\{[^}]*\}\s+from\s+)['"](\.\.?\/[^'"]+)['"]/g;
 
 function resolveImport(fromFile, importPath) {
   const dir = fromFile.substring(0, fromFile.lastIndexOf('/'));
@@ -95,7 +99,22 @@ function getImports(filePath) {
   const content = readFileSync(filePath, 'utf-8');
   const imports = [];
   let match;
+  // 静态 import
   while ((match = IMPORT_RE.exec(content)) !== null) {
+    imports.push({
+      raw: match[1],
+      resolved: resolveImport(filePath, match[1]),
+    });
+  }
+  // 动态 import()
+  while ((match = DYNAMIC_IMPORT_RE.exec(content)) !== null) {
+    imports.push({
+      raw: match[1],
+      resolved: resolveImport(filePath, match[1]),
+    });
+  }
+  // re-export
+  while ((match = REEXPORT_RE.exec(content)) !== null) {
     imports.push({
       raw: match[1],
       resolved: resolveImport(filePath, match[1]),

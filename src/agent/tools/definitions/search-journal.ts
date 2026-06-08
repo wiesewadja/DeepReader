@@ -34,7 +34,7 @@ export const createSearchJournalTool: ToolFactory = (ctx: ToolContext) => {
 				}
 				return JSON.stringify({ status: 'SUCCESS', results });
 			} catch (e: unknown) {
-				return JSON.stringify({ status: 'ERROR', message: (e instanceof Error ? e.message : String(e)) });
+				return JSON.stringify({ status: 'ERROR', message: e instanceof Error ? e.message.split('\n')[0] : 'Unknown error' });
 			}
 		},
 		{

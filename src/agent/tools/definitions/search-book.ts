@@ -11,7 +11,7 @@ import type { ToolContext } from '../types.js';
 import type { ToolFactory } from './types.js';
 
 const searchBookSchema = z.object({
-  keywords: z.array(z.string()).min(1).describe('关键词数组，每个关键词独立检索后融合排序（OR 语义）'),
+  keywords: z.array(z.string().max(200)).min(1).max(20).describe('关键词数组，每个关键词独立检索后融合排序（OR 语义）'),
   scope_node_ids: z.array(z.string()).optional().describe('限定搜索范围（章节 ID 列表），留空则全局搜索'),
 });
 

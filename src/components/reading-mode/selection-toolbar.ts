@@ -64,6 +64,22 @@ export class SelectionToolbar {
             </button>
         `;
 
+        // 事件委托：在 toolbarEl 上统一处理按钮点击，避免 show() 时重复绑定
+        this.toolbarEl.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest('.deeppdf-toolbar-btn');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const action = (btn as HTMLElement).dataset.action;
+            if (action === 'highlight') {
+                this.handleHighlight(this.getRandomColor());
+            } else if (action === 'remove-highlight') {
+                this.removeHighlight();
+            } else {
+                this.handleAction(action!);
+            }
+        });
+
         // 创建颜色选择器
         this.colorPickerEl = document.body.createDiv({ cls: 'deeppdf-highlight-picker' });
         this.colorPickerEl.innerHTML = HIGHLIGHT_COLORS.map(c =>
@@ -72,19 +88,6 @@ export class SelectionToolbar {
             </button>`
         ).join('');
 
-        // 绑定工具栏按钮事件
-        this.toolbarEl.querySelectorAll('.deeppdf-toolbar-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const action = (btn as HTMLElement).dataset.action;
-                if (action === 'highlight') {
-                    this.handleHighlight(this.getRandomColor());
-                } else {
-                    this.handleAction(action!);
-                }
-            });
-        });
 
         // 绑定颜色选择器事件
         this.colorPickerEl.querySelectorAll('.deeppdf-highlight-color').forEach(btn => {
@@ -356,21 +359,6 @@ export class SelectionToolbar {
             `;
         }
 
-        // 绑定工具栏按钮事件
-        this.toolbarEl.querySelectorAll('.deeppdf-toolbar-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const action = (btn as HTMLElement).dataset.action;
-                if (action === 'highlight') {
-                    this.handleHighlight(this.getRandomColor());
-                } else if (action === 'remove-highlight') {
-                    this.removeHighlight();
-                } else {
-                    this.handleAction(action!);
-                }
-            });
-        });
 
         // 使用鼠标光标位置定位
         const toolbarRect = this.toolbarEl.getBoundingClientRect();

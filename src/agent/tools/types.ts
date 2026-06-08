@@ -34,7 +34,9 @@ export interface ToolContext {
 
   // 图节点专用（向后兼容，后续 PR 可逐步移入图节点专属上下文）
   useLLMTreeSearch?: boolean;
+  /** @deprecated 无赋值点，消费者已移除 */
   scopeNodeIds?: string[];
+  /** @deprecated 无赋值点，消费者已移除 */
   quotes?: QuoteItem[];
   ttsConfig?: TTSConfig;
   llmConfig?: LLMConfig;

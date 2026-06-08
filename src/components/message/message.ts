@@ -21,7 +21,7 @@ import { FullscreenController } from './fullscreen-controller.js';
 import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
 import { parseAgentContent } from './parse-agent-content.js';
 import type { MessageData, AgentToolCall } from './types.js';
-import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp } from './utils.js';
+import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp, sanitizeHumanizedHtml as _sanitizeHumanizedHtml } from './utils.js';
 import { VoiceLetterController } from './voice-letter-controller.js';
 
 /**
@@ -674,8 +674,8 @@ export class AIMessage extends Message {
 				const isHumanizedUI = newContent.includes('deepreader-agent-humanized');
 
 				if (isHumanizedUI) {
-					// 直接渲染 HTML（拟人化 UI）
-					contentEl.innerHTML = cleanedContent;
+					// 直接渲染 HTML（拟人化 UI，已通过 sanitizer 清理）
+					contentEl.innerHTML = _sanitizeHumanizedHtml(cleanedContent);
 					// 更新跟踪变量
 					this.lastRenderedContent = cleanedContent;
 					this.lastRenderTime = Date.now();
@@ -733,8 +733,8 @@ export class AIMessage extends Message {
 		const isHumanizedUI = content.includes('deepreader-agent-humanized');
 
 		if (isHumanizedUI) {
-			// 直接渲染 HTML（拟人化 UI）
-			contentEl.innerHTML = cleanedContent;
+			// 直接渲染 HTML（拟人化 UI，已通过 sanitizer 清理）
+			contentEl.innerHTML = _sanitizeHumanizedHtml(cleanedContent);
 		} else if (this.app) {
 			const sourcePath = this.data.pdfName || '';
 			// 等待 Markdown 渲染完成后再设置链接事件
