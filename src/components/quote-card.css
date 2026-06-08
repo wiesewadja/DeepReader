@@ -138,11 +138,6 @@
 }
 
 /* ---------- 删除按钮（绝对定位右上角，hover 时显示） ---------- */
-.deeppdf-quote-card-footer {
-	/* 保留空容器用于视觉占位避免文字被遮挡 */
-	min-height: 0;
-}
-
 .deeppdf-quote-remove-btn {
 	/* 绝对定位到卡片右上角 */
 	position: absolute;

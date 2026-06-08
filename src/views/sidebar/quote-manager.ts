@@ -151,9 +151,6 @@ export class QuoteManager {
 		// 关键：line-clamp 由 CSS 控制（display: -webkit-box !important）
 		const textEl = card.createEl('div', { cls: 'deeppdf-quote-text', text: quote.text });
 
-		// ===== 底部占位行（保留以备扩展，现在为空） =====
-		const footer = card.createEl('div', { cls: 'deeppdf-quote-card-footer' });
-
 		// ===== 删除按钮（绝对定位右上角，仅非只读） =====
 		if (!this.readonly) {
 			const removeBtn = card.createEl('button', {

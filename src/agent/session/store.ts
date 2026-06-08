@@ -216,9 +216,9 @@ export class SessionStore implements ISessionStore {
 		lines.push(JSON.stringify(metaLine));
 
 		// 后续行：消息
-		// 注意：writeSessionFile 需带上所有持久化字段（包括 quotes / citedQuoteIds /
-		// citedQuotePreviews / voice*）。这些字段在 appendMessage 路径上会显式写入，
-		// 但 writeSessionFile 会重写整个文件，如果不在这里透传，引用/语音数据会丢失。
+		// 注意：writeSessionFile 需带上所有持久化字段（包括 quotes / voice*）。
+		// 这些字段在 appendMessage 路径上会显式写入，但 writeSessionFile 会重写整个文件，
+		// 如果不在这里透传，引用/语音数据会丢失。
 		// （该 bug 在 quotes 引入前就存在，本处统一修复为完整字段集。）
 		for (const msg of session.messages) {
 			const ext = msg as any;
@@ -232,8 +232,6 @@ export class SessionStore implements ISessionStore {
 				hidden: msg.hidden,
 				// 引用字段
 				quotes: ext.quotes,
-				citedQuoteIds: ext.citedQuoteIds,
-				citedQuotePreviews: ext.citedQuotePreviews,
 				// 语音字段
 				voiceAudioPath: ext.voiceAudioPath,
 				voiceDuration: ext.voiceDuration,
@@ -385,8 +383,6 @@ export class SessionStore implements ISessionStore {
 			letterState: voiceData.letterState,
 			// 引用字段（对话恢复时还原 UI 状态）
 			quotes: voiceData.quotes,
-			citedQuoteIds: voiceData.citedQuoteIds,
-			citedQuotePreviews: voiceData.citedQuotePreviews,
 		};
 
 		// 检查文件是否存在
@@ -476,15 +472,9 @@ export class SessionStore implements ISessionStore {
 						}
 					}
 
-					// 恢复引用数据（用于 UI 重建引用卡片 + 回应徽标）
+					// 恢复引用数据（用于 UI 重建引用卡片）
 					if (msgLine.quotes?.length) {
 						(msg as any).quotes = msgLine.quotes;
-					}
-					if (msgLine.citedQuoteIds?.length) {
-						(msg as any).citedQuoteIds = msgLine.citedQuoteIds;
-					}
-					if (msgLine.citedQuotePreviews?.length) {
-						(msg as any).citedQuotePreviews = msgLine.citedQuotePreviews;
 					}
 
 					messages.push(msg);

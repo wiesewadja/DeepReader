@@ -527,8 +527,6 @@
 	color: var(--text-on-accent);
 }
 
-/* PR 1 以前的“回应引用”徽标样式（已删除渲染调用，以下样式暂时保留以备未来） */
-
 /* AI 消息内容使用阅读模式样式 */
 .deeppdf-message-bubble-ai .deeppdf-message-content .markdown-preview-view,
 .deeppdf-message-bubble-ai .deeppdf-message-content .markdown-renderer {

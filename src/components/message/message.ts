@@ -343,12 +343,6 @@ export class AIMessage extends Message {
 			this.voiceCtrl.ttsWaveEl = ttsWave;
 		}
 
-		// PR 1: 以前这里会渲染“回应引用”徽标（“📌 正在回应你引用的…”），
-		// 但用户反馈太冗余。AI 回复本身已经通过 wiki 回链提供导航，
-		// 输入区上方的引用卡片已经显示引文内容，不需要额外徽标。
-		// 保留 renderCitedQuoteBadges 方法 + citedQuoteIds 数据结构，
-		// 以备未来需要（如“本回复引用的章节”侧边栏等）。
-
 		// Agent 工具调用
 		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
 			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tool-calls' });
@@ -748,57 +742,6 @@ export class AIMessage extends Message {
 			_setupInternalLinks(contentEl, this.app, false, this.observers);
 		} else {
 			contentEl.innerHTML = this.escapeHtml(cleanedContent);
-		}
-	}
-
-	/**
-	 * PR 1：渲染“回应引用”徽标
-	 * @param container AI 消息气泡
-	 * @param citedQuoteIds 该条 AI 回复正在回应的 user quote id 列表
-	 * @param citedQuotePreviews 可选：对应的引用文本预览（前 N 字），供徽标显示
-	 */
-	private renderCitedQuoteBadges(
-		container: HTMLElement,
-		citedQuoteIds: string[],
-		citedQuotePreviews?: string[]
-	): void {
-		const wrapper = container.createEl('div', { cls: 'deeppdf-ai-cited-badges' });
-		const label = wrapper.createEl('span', {
-			cls: 'deeppdf-ai-cited-label',
-			text: '📌 正在回应你引用的'
-		});
-		for (let i = 0; i < citedQuoteIds.length; i++) {
-			const quoteId = citedQuoteIds[i];
-			const preview = citedQuotePreviews?.[i];
-			const tag = wrapper.createEl('button', {
-				cls: 'deeppdf-ai-cited-tag',
-				attr: {
-					type: 'button',
-					'data-quote-id': quoteId,
-					'aria-label': preview
-						? `跳到引用「${preview}」`
-						: `跳到引用 ${quoteId}`,
-				}
-			});
-			// 显示预览而不是 id（I5 修复）
-			tag.textContent = preview ? `「${preview}」` : `📎 ${quoteId.slice(-6)}`;
-			tag.title = '点击定位到对应引用卡片';
-			tag.addEventListener('click', (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				const card = document.querySelector(
-					`.deeppdf-quote-card[data-quote-id="${quoteId}"]`
-				) as HTMLElement;
-				if (!card) {
-					log.warn('[DeepPDF] cited quote card not found:', quoteId);
-					return;
-				}
-				card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-				card.classList.add('deeppdf-quote-flash');
-				window.setTimeout(() => {
-					card.classList.remove('deeppdf-quote-flash');
-				}, 2000);
-			});
 		}
 	}
 

@@ -45,7 +45,7 @@ export interface QuoteMetadata {
  * - 所有字段均可 JSON 序列化（无 DOM 引用）
  */
 export interface QuoteItem {
-	/** 唯一标识（用于 citedQuoteIds 反向链接和卡片 key） */
+	/** 唯一标识（用于卡片 DOM key / 跨消息关联） */
 	id: string;
 	/** 引用文本内容 */
 	text: string;

@@ -57,8 +57,6 @@ export interface SessionMessageLine {
 	letterState?: 'sealing' | 'sealed' | 'opened';  // 信封状态
 	// 引用持久化字段（对话恢复时还原 UI 状态）
 	quotes?: SessionQuoteItem[];  // 用户消息：引用的原文片段列表
-	citedQuoteIds?: string[];     // AI 消息：正在回应的 user quote id 列表（用于 "📌 回应引用" 徽标）
-	citedQuotePreviews?: string[]; // AI 消息：citedQuoteIds 对应的引用文本预览（供徽标显示）
 }
 
 /**

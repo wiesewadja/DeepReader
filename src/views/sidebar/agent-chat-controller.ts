@@ -215,24 +215,12 @@ export class AgentChatController {
 
 			if (regenerateMessageId) {
 				aiMessageId = regenerateMessageId;
-				// 保留原消息的 citedQuoteIds / citedQuotePreviews（重新生成不应丢失引用关联）
-				// 注意：仅在 existingMsg 存在且有值时设置，
-				// 避免 updateMessage 里的 Object.assign 用 undefined 覆盖原值
-				const existingMsg = this.host.messageList?.getMessagesData()
-					.find(m => m.id === aiMessageId);
-				const updates: Partial<MessageData> = {
+				this.host.messageList?.updateMessage(aiMessageId, {
 					content: this.host.crossBookMode ? "🔍 正在跨书籍查阅..." : "📖 正在翻阅...",
 					isStreaming: true,
 					currentStatus: '开始阅读...',
 					agentToolCalls: [],
-				};
-				if (existingMsg?.citedQuoteIds?.length) {
-					updates.citedQuoteIds = existingMsg.citedQuoteIds;
-				}
-				if (existingMsg?.citedQuotePreviews?.length) {
-					updates.citedQuotePreviews = existingMsg.citedQuotePreviews;
-				}
-				this.host.messageList?.updateMessage(aiMessageId, updates);
+				});
 
 				const history = this._agentChatHistory;
 				const lastUserIndex = history.findLastIndex(m => m.role === 'user');
@@ -276,12 +264,6 @@ export class AgentChatController {
 					bookAuthor: this.host.currentBookAuthor || undefined,
 					enableVoiceReply: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)),
 					voiceState: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)) ? 'loading' as const : undefined,
-					// 回应引用关联：AI 消息 → 哪几条 user quote 触发的（用于 "📌 回应引用" 徽标）
-					citedQuoteIds: quotes && quotes.length > 0 ? quotes.map(q => q.id) : undefined,
-					// 引用预览（供徽标显示 “正在回应「……」”）
-					citedQuotePreviews: quotes && quotes.length > 0
-						? quotes.map(q => q.text.length > 12 ? q.text.substring(0, 12) + '…' : q.text)
-						: undefined,
 				};
 				this.host.messageList?.addMessage(aiMessageData);
 			}

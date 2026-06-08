@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionMessageLine } from '@/agent/session/types';
 
-describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
+describe('SessionMessageLine JSON round-trip (quotes)', () => {
   it('应能 JSON.stringify 含完整 quotes 的 user 消息行', () => {
     const line: SessionMessageLine = {
       role: 'user',
@@ -37,21 +37,6 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
     expect(() => JSON.parse(json)).not.toThrow();
   });
 
-  it('应能 JSON.stringify 含 citedQuoteIds + citedQuotePreviews 的 AI 消息行', () => {
-    const line: SessionMessageLine = {
-      role: 'assistant',
-      content: '如你在引用中提到的，回报函数...',
-      timestamp: '2026-01-01T00:00:01.000Z',
-      citedQuoteIds: ['quote-1', 'quote-2'],
-      citedQuotePreviews: ['回报函数是强化学习…', 'MECE 原则…'],
-    };
-
-    const json = JSON.stringify(line);
-    const parsed = JSON.parse(json) as SessionMessageLine;
-    expect(parsed.citedQuoteIds).toEqual(['quote-1', 'quote-2']);
-    expect(parsed.citedQuotePreviews).toEqual(['回报函数是强化学习…', 'MECE 原则…']);
-  });
-
   it('应能 round-trip 完整字段不丢失', () => {
     const original: SessionMessageLine = {
       role: 'user',
@@ -61,19 +46,15 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
         { id: 'q1', text: 'a' },
         { id: 'q2', text: 'b', blockId: 'b1' },
       ],
-      citedQuoteIds: ['q1'],
-      citedQuotePreviews: ['a'],
     };
 
     const round = JSON.parse(JSON.stringify(original)) as SessionMessageLine;
     expect(round.role).toBe('user');
     expect(round.content).toBe('test');
     expect(round.quotes).toEqual(original.quotes);
-    expect(round.citedQuoteIds).toEqual(['q1']);
-    expect(round.citedQuotePreviews).toEqual(['a']);
   });
 
-  it('旧版 JSONL（没有 quotes/citedQuoteIds 字段）应能加载为 undefined', () => {
+  it('旧版 JSONL（没有 quotes 字段）应能加载为 undefined', () => {
     // 模拟旧版 JSONL 数据
     const oldLine = {
       role: 'user',
@@ -82,8 +63,6 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
     };
     const parsed = JSON.parse(JSON.stringify(oldLine)) as SessionMessageLine;
     expect(parsed.quotes).toBeUndefined();
-    expect(parsed.citedQuoteIds).toBeUndefined();
-    expect(parsed.citedQuotePreviews).toBeUndefined();
   });
 
   it('空 quotes 数组（[]）应正常序列化', () => {
@@ -99,7 +78,7 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
     expect(parsed.quotes?.length ?? 0).toBe(0);
   });
 
-  it('writeSessionFile 重建：应保留所有持久化字段（防 N2 回归）', () => {
+  it('writeSessionFile 重建：应保留 quotes + voice 字段（防 N2 回归）', () => {
     // 模拟 session.messages 里的 ChatMessage 对象，含全部扩展字段
     const sessionMessages: Array<any> = [
       {
@@ -110,8 +89,6 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
       {
         role: 'assistant',
         content: '回报函数是...',
-        citedQuoteIds: ['q1'],
-        citedQuotePreviews: ['回报函数是强化学习…'],
         voiceAudioPath: 'voice/s1/msg-1.wav',
         voiceDuration: 12.5,
         letterState: 'sealed',
@@ -125,8 +102,6 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
         role: ext.role,
         content: ext.content,
         quotes: ext.quotes,
-        citedQuoteIds: ext.citedQuoteIds,
-        citedQuotePreviews: ext.citedQuotePreviews,
         voiceAudioPath: ext.voiceAudioPath,
         voiceDuration: ext.voiceDuration,
         letterState: ext.letterState,
@@ -134,8 +109,6 @@ describe('SessionMessageLine JSON round-trip (quotes + citedQuoteIds)', () => {
     });
 
     expect(rebuilt[0].quotes).toEqual([{ id: 'q1', text: '回报函数是强化学习的核心。', blockId: 'ch1-p3' }]);
-    expect(rebuilt[1].citedQuoteIds).toEqual(['q1']);
-    expect(rebuilt[1].citedQuotePreviews).toEqual(['回报函数是强化学习…']);
     expect(rebuilt[1].voiceAudioPath).toBe('voice/s1/msg-1.wav');
     expect(rebuilt[1].voiceDuration).toBe(12.5);
   });
