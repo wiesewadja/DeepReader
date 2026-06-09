@@ -42,13 +42,13 @@ import { findBlockIdFromRange } from "../../utils/block-utils.js";
 import { Icons, getIcon } from "../../utils/icons.js";
 import { uiLog as log, warn, error as logError } from "../../utils/logger.js";
 import { LIBRARY_VIEW_TYPE } from "../library-view.js";
-import type { StreamingVoiceState } from "../../services/tts/streaming-voice-player.js";
 import { AgentChatController } from "./agent-chat-controller.js";
 import { BookManager } from "./book-manager.js";
 import { QuoteManager } from "./quote-manager.js";
 import { copyToClipboard as _copyToClipboard } from "./search-utils.js";
 import { SessionManager } from "./session-manager.js";
 import { TTSController } from "./tts-controller.js";
+import { VoiceInputController } from "../../services/asr/voice-input-controller.js";
 
 export const SIDEBAR_VIEW_TYPE = "deeppdf-sidebar-view";
 
@@ -70,12 +70,8 @@ export class SidebarView extends ItemView {
 	// 前端 Agent
 	private frontendAgent: FrontendAgent | null = null;
 
-	// TTS 语音播报服务
-	private ttsService: TTSService | null = null;
-
-	// 流式语音播放器（用于语音消息）
-
 	// 会话存储（JSONL 文件）
+	private ttsService: import("../../services/tts/tts-service.js").TTSService | null = null;
 
 	// 主动阅读引导
 	private proactiveEngine:
@@ -94,6 +90,7 @@ export class SidebarView extends ItemView {
 	private sessionMgr: SessionManager;
 	private agentChatCtrl: AgentChatController;
 	private bookMgr: BookManager;
+	private voiceInputCtrl: VoiceInputController | null = null;
 
 	/**
 	 * 初始化前端 Agent
@@ -309,9 +306,6 @@ export class SidebarView extends ItemView {
 			get indexes() {
 				return self.bookMgr.indexes;
 			},
-			get ttsService() {
-				return self.ttsService;
-			},
 			get contextManager() {
 				return self.contextManager;
 			},
@@ -323,6 +317,9 @@ export class SidebarView extends ItemView {
 			},
 			get readingTopbar() {
 				return self.readingTopbar;
+			},
+			get ttsService() {
+				return self.ttsService;
 			},
 			saveToCache() {
 				return self.sessionMgr.saveToCache();
@@ -964,22 +961,6 @@ export class SidebarView extends ItemView {
 					// 喇叭按钮始终直接朗读原文，不走摘要模式
 					this.ttsCtrl.handleTTS(messageId, content, { rawText: true });
 				},
-				onVoicePlay: (messageId: string) => {
-					// 控制流式语音播放
-					const player = this.agentChatCtrl
-						.getStreamingVoicePlayers()
-						.get(messageId);
-					if (player) {
-						const state = player.getState();
-						if (state === "playing") {
-							player.pause();
-						} else if (state === "paused" || state === "buffering") {
-							player.play();
-						} else if (state === "idle") {
-							player.play();
-						}
-					}
-				},
 				getCurrentBookInfo: () => ({
 					coverUrl: this.bookMgr.currentBookCoverUrl,
 					author: this.bookMgr.currentBookAuthor,
@@ -1005,6 +986,11 @@ export class SidebarView extends ItemView {
 		const section = container.createDiv({ cls: "deeppdf-chat-input-section" });
 
 		// 创建聊天输入组件（在最上方）
+		// 检查是否可启用语音输入（需要 MiMo API Key）
+		const ttsConfig = resolveRoleConfig('tts', this.plugin.settings);
+		const showVoiceButton = !!ttsConfig;
+
+		// 创建聊天输入组件（在最上方）
 		this.chatInput = new ChatInput({
 			placeholder: "输入以开始对话...",
 			onSend: (message: string, _chatInputQuotes) => {
@@ -1026,6 +1012,16 @@ export class SidebarView extends ItemView {
 			onUnloadCurrentDoc: async () => {
 				await this.unloadCurrentDocument();
 			},
+			showVoiceButton,
+			onVoiceToggle: showVoiceButton ? () => {
+				if (!this.voiceInputCtrl) {
+					this.voiceInputCtrl = new VoiceInputController(this.chatInput!, {
+						apiKey: ttsConfig!.apiKey,
+						baseUrl: ttsConfig!.baseUrl,
+					});
+				}
+				this.voiceInputCtrl.toggle();
+			} : undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
@@ -1198,7 +1194,6 @@ export class SidebarView extends ItemView {
 				} catch (e) {
 					warn("[DeepPDF] Error stopping TTS service:", e);
 				}
-				// ttsService managed by ttsCtrl;
 			}
 
 			// 清理消息列表
@@ -1219,6 +1214,16 @@ export class SidebarView extends ItemView {
 					warn("[DeepPDF] Error destroying chatInput:", e);
 				}
 				this.chatInput = null;
+			}
+
+			// 清理语音输入控制器
+			if (this.voiceInputCtrl) {
+				try {
+					this.voiceInputCtrl.destroy();
+				} catch (e) {
+					warn("[DeepPDF] Error destroying voiceInputCtrl:", e);
+				}
+				this.voiceInputCtrl = null;
 			}
 
 			// 清理主动引导引擎

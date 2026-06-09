@@ -65,14 +65,6 @@ export interface MessageData {
 	bookCoverUrl?: string;
 	/** 可选：书籍作者（用于最大化展示） */
 	bookAuthor?: string;
-	// 语音对话气泡
-	voiceAudio?: ArrayBuffer;
-	voiceDuration?: number;  // 秒
-	voiceState?: 'loading' | 'ready' | 'playing' | 'paused' | 'ended';
-	// 信封状态
-	letterState?: 'sealing' | 'sealed' | 'opened';
-	// 语音对话模式开关（由 sidebar-view 根据设置传入）
-	enableVoiceReply?: boolean;
 	/** 可选：是否为主动阅读引导消息 */
 	isProactiveGuidance?: boolean;
 }

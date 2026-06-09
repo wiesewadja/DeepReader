@@ -20,9 +20,7 @@ import type { ExcerptContent, ExcerptMetadata } from '../../types/excerpt.js';
 import { ConfirmModal } from '../../components/confirm-modal.js';
 import { MessageData, MessageRole, AIMessage } from '../../components/message/message.js';
 import { GUIDANCE_BUTTONS, ADVISOR_BUTTONS, type GuidanceType } from '../../components/message-list/message-list.js';
-import type { StreamingVoiceState } from '../../services/tts/streaming-voice-player.js';
 import type { MascotExpression } from '../../components/reading-topbar/mascot-face.js';
-import { StreamingVoicePlayer } from '../../services/tts/streaming-voice-player.js';
 import { uiLog as log, warn, error as logError } from '../../utils/logger.js';
 import { getVaultPath } from '../../utils/mobile-fs.js';
 
@@ -45,12 +43,12 @@ export interface AgentChatControllerHost {
 	get crossBookMode(): boolean;
 	get currentBooklistBookIds(): string[] | null;
 	get indexes(): import('../../types/index.js').IndexListItem[];
-	get ttsService(): import('../../services/tts/tts-service.js').TTSService | null;
 	get contextManager(): import('../../services/context-manager.js').ContextManager | null;
 	get isProcessing(): boolean;
 	get isAiStreaming(): boolean;
 
 	get readingTopbar(): import("../../components/reading-topbar/index.js").ReadingTopbar | null;
+	get ttsService(): import("../../services/tts/tts-service.js").TTSService | null;
 
 	saveToCache(): Promise<void>;
 	maybeConsolidateMemory(): Promise<void>;
@@ -68,7 +66,6 @@ export class AgentChatController {
 	private isProcessing: boolean = false;
 	private isAiStreaming: boolean = false;
 	private proactiveAbortController: AbortController | null = null;
-	private streamingVoicePlayers: Map<string, StreamingVoicePlayer> = new Map();
 	private detachedMascotEl: HTMLElement | null = null;
 	private _agentChatHistory: ChatMessage[] = [];
 	private _currentMarkdownFiles: Record<string, string> = {};
@@ -139,11 +136,6 @@ export class AgentChatController {
 	set agentChatHistory(history: ChatMessage[]) { this._agentChatHistory = history; }
 	get currentMarkdownFiles(): Record<string, string> { return this._currentMarkdownFiles; }
 	set currentMarkdownFiles(files: Record<string, string>) { this._currentMarkdownFiles = files; }
-
-	getStreamingVoicePlayers(): Map<string, StreamingVoicePlayer> {
-		return this.streamingVoicePlayers;
-	}
-
 	// ── Stream control ──
 
 	cancelActiveStream(): void {
@@ -259,8 +251,6 @@ export class AgentChatController {
 					conversationId: this.host.sessionId || undefined,
 					bookCoverUrl: this.host.currentBookCoverUrl || undefined,
 					bookAuthor: this.host.currentBookAuthor || undefined,
-					enableVoiceReply: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)),
-					voiceState: !!(this.host.plugin.settings.enableVoiceReply && resolveRoleConfig('tts', this.host.plugin.settings)) ? 'loading' as const : undefined,
 				};
 				this.host.messageList?.addMessage(aiMessageData);
 			}
@@ -367,14 +357,6 @@ export class AgentChatController {
 				useLLMTreeSearch: this.host.useLLMTreeSearch,
 				quotes: quotes,
 				mode: this.host.proactiveEngine?.shouldEnableSocratic(indexId) ? 'socratic' as const : undefined,
-				ttsConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
-					const cfg = resolveRoleConfig('tts', this.host.plugin.settings);
-					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model, provider: cfg.provider } : undefined;
-				})() : undefined,
-				llmConfig: this.host.plugin.settings.enableVoiceReply ? (() => {
-					const cfg = resolveRoleConfig('router', this.host.plugin.settings);
-					return cfg ? { apiKey: cfg.apiKey, baseUrl: cfg.baseUrl, model: cfg.model } : undefined;
-				})() : undefined,
 			};
 
 			let userMessage = query;
@@ -413,7 +395,6 @@ export class AgentChatController {
 
 			const queryStartTime = Date.now();
 			let firstContentLogged = false;
-			let ttsPreloadTriggered = false;
 
 			const self = this;
 
@@ -440,15 +421,6 @@ export class AgentChatController {
 						log(`[DeepPDF] ⚡ 首字节响应时间 (TTCF): ${ttfc}ms (${(ttfc / 1000).toFixed(1)}s)`);
 					}
 
-				// TTS 预加载：内容到 250 字符时异步生成前段音频，用户点击即可播
-				if (!ttsPreloadTriggered && fullContent.length >= 250) {
-					ttsPreloadTriggered = true;
-					self.host.ttsService?.preloadPreview(aiMessageId, fullContent, {
-						bookId: self.host.currentIndexId || undefined,
-						bookTitle: self.host.getDisplayName(self.host.currentPdfName || '') || undefined,
-						bookAuthor: self.host.currentBookAuthor || undefined,
-					});
-				}
 
 					if (agentState === 'thinking' && fullContent.trim().length > 0) {
 						agentState = 'answering';
@@ -564,14 +536,6 @@ export class AgentChatController {
 						isStreaming: false,
 						timestamp: new Date().toISOString()
 					});
-
-					if (self.host.plugin.settings.enableVoiceReply) {
-						const msg = self.host.messageList?.getMessage(aiMessageId);
-						if (msg && msg instanceof AIMessage) {
-							msg.updateLetterState('sealed');
-						}
-					}
-
 					self.host.saveToCache();
 					self.host.saveToCache().then(() => {
 						self.host.maybeConsolidateMemory();
@@ -584,10 +548,8 @@ export class AgentChatController {
 
 					self.host.clearQuotes();
 
-					self.host.chatInput?.focus();
-					self.streamController = null;
-
-					if (self.host.plugin.settings.autoTTS && !self.host.plugin.settings.enableVoiceReply) {
+					// autoTTS 自动朗读
+					if (self.host.plugin.settings.autoTTS) {
 						if (self.host.ttsService && self.host.ttsService.getCurrentMessageId() !== aiMessageId) {
 							const question = self.findUserQuestion(aiMessageId);
 							const memoryContent = await new MemoryStore(self.host.app).readLongTermMemory() || undefined;
@@ -598,6 +560,8 @@ export class AgentChatController {
 							});
 						}
 					}
+
+					self.host.chatInput?.focus();
 				},
 				onError: (error: string) => {
 					logError('[DeepPDF] Agent 错误:', error);
@@ -648,56 +612,6 @@ export class AgentChatController {
 					};
 				})()),
 				abortSignal: this.streamController.signal,
-				onVoiceReady: (data: { audioBuffer: ArrayBuffer; duration: number }) => {
-					const msg = self.host.messageList?.getMessage(aiMessageId);
-					if (msg && msg instanceof AIMessage) {
-						msg.updateVoiceData(data);
-					}
-					const lastAiMsg = self._agentChatHistory[self._agentChatHistory.length - 1];
-					if (lastAiMsg && lastAiMsg.role === 'assistant') {
-						(lastAiMsg as any).voiceAudio = data.audioBuffer;
-						(lastAiMsg as any).voiceDuration = data.duration;
-						(lastAiMsg as any).voiceState = 'ready';
-					}
-					if (self.host.sessionStore && self.host.sessionId) {
-						self.host.sessionStore.saveVoiceToPlaceholder(
-							self.host.sessionId,
-							aiMessageId,
-							data.audioBuffer,
-						);
-					}
-				},
-				onVoiceChunk: (data: { audioChunk: ArrayBuffer; isComplete: boolean }) => {
-					const msg = self.host.messageList?.getMessage(aiMessageId);
-					if (msg && msg instanceof AIMessage) {
-						if (data.isComplete) {
-							const player = self.streamingVoicePlayers.get(aiMessageId);
-							if (player) {
-								player.seal();
-							}
-						} else {
-							let player = self.streamingVoicePlayers.get(aiMessageId);
-							if (!player) {
-								player = new StreamingVoicePlayer({
-									sampleRate: 24000,
-									onStateChange: (state: StreamingVoiceState) => {
-										if (state === 'playing') {
-											msg.updateVoiceState('playing');
-										} else if (state === 'paused') {
-											msg.updateVoiceState('paused');
-										} else if (state === 'ended') {
-											msg.updateVoiceState('ended');
-										}
-									},
-								});
-								self.streamingVoicePlayers.set(aiMessageId, player);
-
-								msg.updateVoiceState('ready');
-							}
-							player.enqueueChunk(data.audioChunk);
-						}
-					}
-				},
 			};
 
 			const result = await this.host.frontendAgent.continueChat(
@@ -805,8 +719,6 @@ export class AgentChatController {
 					self.host.readingTopbar?.setMascotExpression(expr);
 				},
 				abortSignal: self.proactiveAbortController?.signal,
-				onVoiceReady: () => {},
-				onVoiceChunk: () => {},
 			};
 
 			const syntheticMessage = (params as any).syntheticMessage || (params as any).question || '';
@@ -1107,10 +1019,6 @@ export class AgentChatController {
 
 	destroy(): void {
 		this.cancelActiveStream();
-		for (const player of this.streamingVoicePlayers.values()) {
-			try { player.destroy(); } catch { /* ignore */ }
-		}
-		this.streamingVoicePlayers.clear();
 	}
 }
 

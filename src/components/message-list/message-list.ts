@@ -82,8 +82,6 @@ export interface MessageCallbacks {
 	onDelete?: (messageId: string) => void;
 	/** TTS 朗读 */
 	onTTS?: (messageId: string, content: string) => void;
-	/** 语音播放控制 */
-	onVoicePlay?: (messageId: string) => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
 	getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		getBubbleTheme?: () => string;
@@ -208,9 +206,6 @@ export class MessageList extends Component {
 			},
 			onTTS: (messageId: string, content: string) => {
 				this.callbacks.onTTS?.(messageId, content);
-			},
-			onVoicePlay: (messageId: string) => {
-				this.callbacks.onVoicePlay?.(messageId);
 			},
 			getAllMessages: () => this.getMessagesData(),
 			getCurrentBookInfo: this.callbacks.getCurrentBookInfo,

@@ -74,9 +74,8 @@ export interface DeepPDFSettings {
 	readingModeStyle: 'paginated' | 'scrolling';
 		messageBubbleTheme: 'notebook' | 'parchment' | 'clean' | 'chat' | 'kami';
 
-	// TTS 语音播报
+	// TTS 语音朗读
 	autoTTS: boolean;
-	enableVoiceReply: boolean; // 语音对话+书信回复模式
 	// SenseNova 信息图生成 API Key
 	sensenovaApiKey: string;
 
@@ -167,9 +166,8 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 	readingModeStyle: 'paginated' as const,
 		messageBubbleTheme: 'notebook' as const,
 
-	// TTS 语音播报
+	// TTS 语音朗读
 	autoTTS: false,
-	enableVoiceReply: false,
 	sensenovaApiKey: "",
 
 	// LangGraph 引擎设置

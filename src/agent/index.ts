@@ -45,7 +45,6 @@ import { ReadingDepth } from './graph/state.js';
 import type { EngineMode } from './graph/state.js';
 import { processGraphStream as processStream, type StreamProcessorResult } from './graph/stream-processor.js';
 import { summarizeRecentHistory, extractPrevBlockIds } from './graph/utils/history-summarizer.js';
-import { generateVoice, type VoiceConfig } from './graph/voice-pipeline.js';
 import { type LLMClient, LLMClientManager, type ModelConfig } from './llm-client.js';
 import { MemoryStore } from './memory/store.js';
 import { createChatModels } from './models/index.js';
@@ -480,8 +479,6 @@ ${currentMemory}
       toolContext: context,
       callbacks: engineCallbacks,
       enableHumanReview: this.options.enableHumanReview ?? false,
-      ttsConfig: context.ttsConfig,
-      llmConfig: context.llmConfig,
       _langsmithTracer: langsmithTracer,
     };
   }
@@ -491,35 +488,7 @@ ${currentMemory}
     callbacks: AgentLoopOptions,
     config?: { configurable?: Record<string, unknown> },
   ): Promise<StreamProcessorResult> {
-    return processStream(stream, callbacks, config, this.createVoicePipelineCallback());
-  }
-
-  private createVoicePipelineCallback() {
-    return (formattedOutput: string, cfg: { configurable?: Record<string, unknown> }, cb: AgentLoopOptions) => {
-      const ttsCfg = cfg.configurable?.ttsConfig as VoiceConfig | undefined;
-      const llmCfg = cfg.configurable?.llmConfig as VoiceConfig | undefined;
-      if (!ttsCfg || !llmCfg || !cb.onVoiceReady) return;
-
-      const sharedCtx = cfg.configurable?.sharedContext as Record<string, unknown> | undefined;
-      const onChunk = cb.onVoiceChunk;
-      generateVoice(formattedOutput, ttsCfg, llmCfg, {
-        userQuestion: sharedCtx?.rawUserQuery as string | undefined,
-        bookTitle: sharedCtx?.pdfName as string | undefined,
-        memoryContext: sharedCtx?.memoryContext as string | undefined,
-        abortSignal: cb.abortSignal,
-      }, onChunk ? (chunk) => onChunk({ audioChunk: chunk, isComplete: false }) : undefined)
-        .then(audioBuffer => {
-          if (audioBuffer) {
-            const duration = (audioBuffer.byteLength - 44) / (24000 * 2);
-            if (onChunk) {
-              onChunk({ audioChunk: new ArrayBuffer(0), isComplete: true });
-            }
-            cb.onVoiceReady!({ audioBuffer, duration });
-          }
-        }).catch(err => {
-          log('[VoicePipeline] voice generation failed:', err instanceof Error ? err.message : String(err));
-        });
-    };
+    return processStream(stream, callbacks, config);
   }
 
   async chat(

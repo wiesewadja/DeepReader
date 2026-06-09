@@ -112,35 +112,6 @@ describe('processGraphStream', () => {
     expect(result.messages).toEqual([]);
   });
 
-  it('fires voicePipeline callback when conditions met', async () => {
-    const cb = { ...mockCallbacks(), onVoiceReady: vi.fn() };
-    const pipeline = vi.fn();
-    const chunks = [{ formatter: { formattedOutput: '语音内容' } }];
-
-    await processGraphStream(fromChunks(chunks), cb, {}, pipeline);
-
-    expect(pipeline).toHaveBeenCalledWith('语音内容', {}, cb);
-  });
-
-  it('does not fire voicePipeline without onVoiceReady', async () => {
-    const { onVoiceReady: _, ...cb } = { ...mockCallbacks() };
-    const pipeline = vi.fn();
-    const chunks = [{ formatter: { formattedOutput: '内容' } }];
-
-    await processGraphStream(fromChunks(chunks), cb as any, {}, pipeline);
-
-    expect(pipeline).not.toHaveBeenCalled();
-  });
-
-  it('does not fire voicePipeline when no formattedOutput', async () => {
-    const cb = { ...mockCallbacks(), onVoiceReady: vi.fn() };
-    const pipeline = vi.fn();
-    const chunks = [{ router: { depth: 2 } }];
-
-    await processGraphStream(fromChunks(chunks), cb, {}, pipeline);
-
-    expect(pipeline).not.toHaveBeenCalled();
-  });
 
   it('maps unknown node names to raw name', async () => {
     const cb = mockCallbacks();

@@ -1,5 +1,5 @@
 /**
- * 高级 Tab — 调试日志、语音回复、主动阅读引导
+ * 高级 Tab — 调试日志、主动阅读引导
  */
 
 import { Setting } from 'obsidian';
@@ -23,21 +23,6 @@ export function renderAdvancedSection(
       .onChange(async (value) => {
         ctx.plugin.settings.enableDebugLog = value;
         setLogEnabled(value);
-        await ctx.plugin.saveSettings();
-      }));
-
-  container.createEl('hr', { cls: 'deeppdf-settings-divider' });
-
-  // 语音回复
-  container.createEl('h4', { text: '语音回复' });
-
-  new Setting(container)
-    .setName('语音书信回复')
-    .setDesc('AI 回复变为语音对话气泡+书信模式。语音从分析结果并行生成，文字以信封形式呈现。需要配置 TTS 角色。')
-    .addToggle(toggle => toggle
-      .setValue(ctx.plugin.settings.enableVoiceReply)
-      .onChange(async (value) => {
-        ctx.plugin.settings.enableVoiceReply = value;
         await ctx.plugin.saveSettings();
       }));
 
