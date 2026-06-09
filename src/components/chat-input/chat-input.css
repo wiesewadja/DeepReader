@@ -62,6 +62,7 @@
 	max-height: 200px;
 	padding: 10px 12px 4px 12px;
 	overflow: hidden;
+	position: relative;
 	opacity: 1;
 	transition:
 		max-height 0.2s ease,
@@ -128,6 +129,7 @@
 .deeppdf-load-doc-btn,
 .deeppdf-mode-toggle-btn,
 .deeppdf-deep-search-btn,
+.deeppdf-voice-btn,
 .deeppdf-chat-input-send-btn {
 	display: flex;
 	align-items: center;
@@ -152,6 +154,7 @@
 .deeppdf-load-doc-btn:hover,
 .deeppdf-mode-toggle-btn:hover,
 .deeppdf-deep-search-btn:hover,
+.deeppdf-voice-btn:hover,
 .deeppdf-chat-input-send-btn:hover {
 	background: var(--background-modifier-hover);
 	color: var(--text-normal);
@@ -160,6 +163,7 @@
 .deeppdf-load-doc-btn svg,
 .deeppdf-mode-toggle-btn svg,
 .deeppdf-deep-search-btn svg,
+.deeppdf-voice-btn svg,
 .deeppdf-chat-input-send-btn svg {
 	width: 16px;
 	height: 16px;
@@ -463,4 +467,115 @@
 .deeppdf-quotes-more:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
+}
+
+/* ==================== 语音输入按钮 ==================== */
+
+/* 录音中 — 红色脉动 */
+.deeppdf-voice-btn.recording {
+	color: var(--text-error);
+	animation: deeppdf-mic-pulse 1.5s ease-in-out infinite;
+}
+
+.deeppdf-voice-btn.recording:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-error);
+}
+
+/* 识别中 — 旋转 */
+.deeppdf-voice-btn.recognizing {
+	color: var(--interactive-accent);
+	animation: deeppdf-mic-spin 1s linear infinite;
+}
+
+.deeppdf-voice-btn.recognizing:hover {
+	background: var(--background-modifier-hover);
+	color: var(--interactive-accent);
+}
+
+@keyframes deeppdf-mic-pulse {
+	0%, 100% { transform: scale(1); }
+	50% { transform: scale(1.15); }
+}
+
+@keyframes deeppdf-mic-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+/* ==================== 语音输入活跃态 ==================== */
+
+.deeppdf-voice-active .deeppdf-chat-input-textarea {
+	color: transparent;
+	caret-color: transparent;
+}
+
+.deeppdf-voice-active .deeppdf-chat-input-textarea::placeholder {
+	color: transparent !important;
+}
+
+/* 语音 overlay（覆盖在 textarea 上方） */
+.deeppdf-voice-overlay {
+	position: absolute;
+	left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	pointer-events: none;
+	z-index: 10;
+}
+
+/* 波形条动画 */
+.deeppdf-voice-wave {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	height: 20px;
+}
+
+.deeppdf-voice-wave span {
+	display: block;
+	width: 3px;
+	border-radius: 2px;
+	background: var(--interactive-accent);
+	animation: deeppdf-wave-bar 1.2s ease-in-out infinite;
+}
+
+.deeppdf-voice-wave span:nth-child(1) { animation-delay: 0s; }
+.deeppdf-voice-wave span:nth-child(2) { animation-delay: 0.2s; }
+.deeppdf-voice-wave span:nth-child(3) { animation-delay: 0.4s; }
+.deeppdf-voice-wave span:nth-child(4) { animation-delay: 0.1s; }
+.deeppdf-voice-wave span:nth-child(5) { animation-delay: 0.3s; }
+
+@keyframes deeppdf-wave-bar {
+	0%, 100% { height: 4px; }
+	50% { height: 18px; }
+}
+
+/* 语音状态文字 */
+.deeppdf-voice-label {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	pointer-events: none;
+	white-space: nowrap;
+}
+
+/* ==================== 减少动画偏好 ==================== */
+
+@media (prefers-reduced-motion: reduce) {
+	.deeppdf-voice-btn.recording {
+		animation: none;
+		color: var(--text-error);
+	}
+	.deeppdf-voice-btn.recognizing {
+		animation: none;
+		color: var(--interactive-accent);
+		opacity: 0.7;
+	}
+	.deeppdf-voice-wave span {
+		animation: none;
+		height: 8px;
+	}
 }
