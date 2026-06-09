@@ -9,22 +9,6 @@ import type { VaultContext, BookContext, CrossBookContext, WereadContext, Visual
 export type { QuoteItem } from '../../components/chat-input/chat-input.js';
 export type { DeepReaderPluginInterface } from './context/vault.js';
 
-/**
- * Tool 执行上下文
- */
-export interface TTSConfig {
-  apiKey: string;
-  baseUrl: string;
-  model?: string;
-  provider?: string;
-}
-
-export interface LLMConfig {
-  apiKey: string;
-  baseUrl: string;
-  model?: string;
-}
-
 export interface ToolContext {
   vault: VaultContext;
   book: BookContext;
@@ -38,8 +22,6 @@ export interface ToolContext {
   scopeNodeIds?: string[];
   /** @deprecated 无赋值点，消费者已移除 */
   quotes?: QuoteItem[];
-  ttsConfig?: TTSConfig;
-  llmConfig?: LLMConfig;
   mode?: EngineMode;
   proactiveTrigger?: string;
   highlightContext?: string[];

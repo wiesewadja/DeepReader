@@ -22,7 +22,6 @@ import { setupInternalLinks as _setupInternalLinks } from './internal-links.js';
 import { parseAgentContent } from './parse-agent-content.js';
 import type { MessageData, AgentToolCall } from './types.js';
 import { escapeHtml as _escapeHtml, formatTimestamp as _formatTimestamp, sanitizeHumanizedHtml as _sanitizeHumanizedHtml } from './utils.js';
-import { VoiceLetterController } from './voice-letter-controller.js';
 
 /**
  * 消息基类
@@ -242,16 +241,17 @@ export class AIMessage extends Message {
 	private selectionMenu: SelectionMenu | null = null;
 	// 状态文本元素引用
 	private statusEl: HTMLElement | null = null;
-	// 语音书信模式控制器
-	private voiceCtrl: VoiceLetterController;
+	// TTS 朗读状态
+	private ttsBtn: HTMLButtonElement | null = null;
+	private ttsWaveEl: HTMLElement | null = null;
+	private scrollListener: (() => void) | null = null;
+	private userScrolled: boolean = false;
 	private fullscreenCtrl: FullscreenController | null = null;
 	private getAllMessages: (() => MessageData[]) | null = null;
 	private getCurrentBookInfo: (() => { coverUrl: string | null; author: string | null; bookName: string | null }) | null = null;
 	// 信笺图案
 	private patternClass: string = '';
 	private getBubbleTheme?: () => string;
-	// TTS 按钮引用（由 renderActions 设置，controller 读取）
-
 
 	constructor(
 		data: MessageData,
@@ -263,8 +263,6 @@ export class AIMessage extends Message {
 			onQuote?: (metadata: QuoteMetadata) => void;
 			onDelete?: () => void;
 			onTTS?: (messageId: string, content: string) => void;
-			onVoicePlay?: (messageId: string) => void;
-			onVoicePause?: (messageId: string) => void;
 			getAllMessages?: () => MessageData[];
 			getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 			getBubbleTheme?: () => string;
@@ -286,17 +284,6 @@ export class AIMessage extends Message {
 		this.lastRenderedContent = data.content;
 		this.lastRenderTime = Date.now();
 		this.lastRenderedLength = data.content.length;
-		// 语音书信模式控制器
-		this.voiceCtrl = new VoiceLetterController({
-			getEl: () => this.el,
-			getData: () => this.data,
-			update: (d) => this.update(d),
-			renderTimestamp: () => this.renderTimestamp(),
-			renderActions: (b) => this.renderActions(b),
-			requestRerender: () => this.requestRerender(),
-		}, data);
-		this.voiceCtrl.onVoicePlay = options?.onVoicePlay;
-		this.voiceCtrl.onVoicePause = options?.onVoicePause;
 		this.el = this.render();
 	}
 
@@ -340,69 +327,38 @@ export class AIMessage extends Message {
 			for (let i = 0; i < 4; i++) {
 				ttsWave.createEl('span');
 			}
-			this.voiceCtrl.ttsWaveEl = ttsWave;
-		}
+			this.ttsWaveEl = ttsWave;
+			if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
+				const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tool-calls' });
 
-		// Agent 工具调用
-		if (this.data.agentToolCalls && this.data.agentToolCalls.length > 0) {
-			const toolsContainer = bubble.createEl('div', { cls: 'deeppdf-agent-tool-calls' });
+				this.data.agentToolCalls.forEach(toolCall => {
+					const toolItem = toolsContainer.createEl('div', { cls: 'deeppdf-agent-tool-call' });
 
-			this.data.agentToolCalls.forEach(toolCall => {
-				const toolItem = toolsContainer.createEl('div', { cls: 'deeppdf-agent-tool-call' });
+					// 根据状态添加样式类
+					if (toolCall.status === 'success') {
+						toolItem.addClass('deeppdf-agent-tool-call-success');
+					} else if (toolCall.status === 'error') {
+						toolItem.addClass('deeppdf-agent-tool-call-error');
+					}
 
-				// 根据状态添加样式类
-				if (toolCall.status === 'success') {
-					toolItem.addClass('deeppdf-agent-tool-call-success');
-				} else if (toolCall.status === 'error') {
-					toolItem.addClass('deeppdf-agent-tool-call-error');
-				}
+					const toolHeader = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-header' });
+					toolHeader.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6"></path><path d="M5.64 5.64l4.24 4.24m6.72 6.72l4.24 4.24"></path></svg>调用 <span class="deeppdf-agent-tool-name">${toolCall.name}</span>`;
 
-				const toolHeader = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-header' });
-				toolHeader.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v6m0 6v6"></path><path d="M5.64 5.64l4.24 4.24m6.72 6.72l4.24 4.24"></path></svg>调用 <span class="deeppdf-agent-tool-name">${toolCall.name}</span>`;
+					if (toolCall.args) {
+						const toolArgs = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-args' });
+						toolArgs.textContent = toolCall.args;
+					}
 
-				if (toolCall.args) {
-					const toolArgs = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-args' });
-					toolArgs.textContent = toolCall.args;
-				}
-
-				if (toolCall.result) {
-					const toolResult = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-result' });
-					toolResult.textContent = toolCall.result;
-				}
-			});
-		}
-
-		// 语音书信模式：语音气泡 + 信封/完整内容
-		if (this.voiceCtrl.enableVoiceReply) {
-			// 渲染语音气泡
-			this.voiceCtrl.renderVoiceBubble(bubble);
-
-
-			if (this.voiceCtrl.letterState !== 'opened') {
-				// 信封模式：流式开始就显示，内部有写信动画
-				this.voiceCtrl.renderLetterEnvelope(bubble, this.data.content);
-			} else {
-				const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
-				if (this.app) {
-					const { cleanedContent } = parseAgentContent(this.data.content);
-					const sourcePath = this.data.pdfName || '';
-					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
-					});
-				} else {
-					const { cleanedContent } = parseAgentContent(this.data.content);
-					content.innerHTML = this.escapeHtml(cleanedContent);
-				}
-				// 收起回信封按钮
-				const collapseBtn = bubble.createDiv({ cls: 'deeppdf-letter-collapse-btn' });
-				collapseBtn.textContent = '收起 ↩';
-				collapseBtn.addEventListener('click', (e) => {
-					e.stopPropagation();
-					this.voiceCtrl.letterState = 'sealed';
-					this.requestRerender();
+					if (toolCall.result) {
+						const toolResult = toolItem.createEl('div', { cls: 'deeppdf-agent-tool-result' });
+						toolResult.textContent = toolCall.result;
+					}
 				});
 			}
-		} else {
-			// 普通模式：正常消息内容
+		}
+
+		// 消息内容
+		{
 			const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
 			// 如果正在流式传输且内容为空，显示加载动画
@@ -413,7 +369,6 @@ export class AIMessage extends Message {
 				// 使用 Markdown 渲染（先清理 <thought> 标签）
 				if (this.app) {
 					const { cleanedContent } = parseAgentContent(this.data.content);
-					// 使用当前 PDF 文件路径作为 sourcePath，以便正确解析 wikilink
 					const sourcePath = this.data.pdfName || '';
 					MarkdownRenderer.render(this.app, cleanedContent, content, sourcePath, new Component()).then(() => {
 						_setupInternalLinks(content, this.app!, this.data.isStreaming, this.observers);
@@ -476,10 +431,6 @@ export class AIMessage extends Message {
 			}
 		}
 
-		if (this.voiceCtrl.enableVoiceReply && this.el) {
-			this.handleVoiceLetterUpdate(data, oldContent, streamingEnded);
-			return;
-		}
 
 		if (this.el && this.data.isStreaming && !streamingEnded) {
 			// 重试场景：从非流式 -> 流式过渡时，全量重绘以恢复 streaming CSS 类、隐藏按钮等
@@ -513,20 +464,6 @@ export class AIMessage extends Message {
 		}
 	}
 
-	private handleVoiceLetterUpdate(data: Partial<MessageData>, oldContent: string, streamingEnded: boolean | undefined): void {
-		if (data.content !== undefined && data.content !== oldContent) {
-			this.updateContent(data.content);
-		}
-		if (data.voiceState) {
-			this.voiceCtrl.voiceState = data.voiceState;
-			this.voiceCtrl.updateVoiceBubbleUI();
-		}
-		if (streamingEnded) {
-			this.voiceCtrl.updateLetterEnvelopeUI();
-			this.hideStreamingState();
-			this.voiceCtrl.appendTimestampAndActions();
-		}
-	}
 
 	private finalizeStreamingEnd(): void {
 		const bubble = this.el!.querySelector('.deeppdf-message-bubble');
@@ -570,15 +507,6 @@ export class AIMessage extends Message {
 	}
 
 	protected updateContent(content: string): void {
-		// 语音书信模式：更新信封内容
-		if (this.voiceCtrl.enableVoiceReply) {
-			const inkEl = this.el?.querySelector('.deeppdf-letter-ink');
-			if (inkEl) {
-				this.voiceCtrl.updateLetterContent(inkEl as HTMLElement, content);
-			}
-			return;
-		}
-
 		const contentEl = this.el?.querySelector('.deeppdf-message-content');
 		if (!contentEl) return;
 
@@ -773,7 +701,7 @@ export class AIMessage extends Message {
 						this.onTTS(this.data.id, this.data.content);
 					}
 				});
-				this.voiceCtrl.ttsBtn = ttsBtn;
+				this.ttsBtn = ttsBtn;
 			}
 
 			// AI 消息：左下角全屏按钮
@@ -849,46 +777,25 @@ export class AIMessage extends Message {
 
 
 
-
-		// ─── 语音书信模式（委托给 VoiceLetterController）──────────────
-
-		updateVoiceData(data: { audioBuffer: ArrayBuffer; duration: number }): void {
-			this.voiceCtrl.updateVoiceData(data);
+	/** 请求重新渲染 */
+	private requestRerender(): void {
+		if (this.el) {
+			const newRender = this.render();
+			this.el.replaceWith(newRender);
+			this.el = newRender;
 		}
+	}
 
-		updateLetterState(state: 'sealing' | 'sealed' | 'opened'): void {
-			this.voiceCtrl.updateLetterState(state);
+	/** 隐藏流式状态（状态文本 + streaming class） */
+	private hideStreamingState(): void {
+		if (!this.el) return;
+		this.el.removeClass('deeppdf-message-streaming');
+		if (this.statusEl) {
+			this.statusEl.innerHTML = '';
+			this.statusEl.removeClass('visible');
 		}
-
-		updateVoiceState(state: 'loading' | 'ready' | 'playing' | 'paused' | 'ended'): void {
-			this.voiceCtrl.updateVoiceState(state);
-		}
-
-		private updateVoiceBubbleUI(): void { this.voiceCtrl.updateVoiceBubbleUI(); }
-		private renderVoiceBubble(container: HTMLElement): void { this.voiceCtrl.renderVoiceBubble(container); }
-		private renderLetterEnvelope(container: HTMLElement, content: string): void { this.voiceCtrl.renderLetterEnvelope(container, content); }
-		private toggleVoicePlayback(): void { this.voiceCtrl.toggleVoicePlayback(); }
-		private updateLetterEnvelopeUI(): void { this.voiceCtrl.updateLetterEnvelopeUI(); }
-		/** 隐藏流式状态（状态文本 + streaming class） */
-		private hideStreamingState(): void {
-			if (!this.el) return;
-			this.el.removeClass('deeppdf-message-streaming');
-			if (this.statusEl) {
-				this.statusEl.innerHTML = '';
-				this.statusEl.removeClass('visible');
-			}
-			this.lastDisplayedStatus = undefined;
-		}
-
-		/** 请求重新渲染 */
-		private requestRerender(): void {
-			// 触发全量重绘
-			if (this.el) {
-				const newRender = this.render();
-				this.el.replaceWith(newRender);
-				this.el = newRender;
-			}
-		}
+		this.lastDisplayedStatus = undefined;
+	}
 
 	// ─── 全屏展示（委托给 FullscreenController）────────────────
 
@@ -1024,20 +931,132 @@ export class AIMessage extends Message {
 			this.selectionMenu = null;
 		}
 
-		// 清理语音播放资源
-		this.voiceCtrl.destroy();
+		// 清理 TTS 朗读资源
+		this.detachScrollListener();
 
 		// 清理全屏展示资源
 		this.fullscreenCtrl?.destroy();
 	}
 
-
 	setTTSState(state: 'idle' | 'summarizing' | 'tts_loading' | 'playing' | 'paused'): void {
-		this.voiceCtrl.setTTSState(state);
+		if (this.ttsWaveEl) {
+			this.ttsWaveEl.classList.toggle('active', state === 'playing');
+		}
+
+		if (this.ttsBtn) {
+			switch (state) {
+				case 'idle':
+					this.ttsBtn.innerHTML = Icons.volume2;
+					this.ttsBtn.title = '朗读';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+				case 'summarizing':
+				case 'tts_loading':
+					this.ttsBtn.innerHTML = Icons.spinner;
+					this.ttsBtn.title = state === 'summarizing' ? '生成摘要...' : '加载语音...';
+					this.ttsBtn.classList.add('tts-loading');
+					break;
+				case 'playing':
+					this.ttsBtn.innerHTML = Icons.audioWave;
+					this.ttsBtn.title = '暂停';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+				case 'paused':
+					this.ttsBtn.innerHTML = Icons.volume2;
+					this.ttsBtn.title = '继续';
+					this.ttsBtn.classList.remove('tts-loading');
+					break;
+			}
+		}
 	}
 
 	highlightTTSProgress(progress: number): void {
-		this.voiceCtrl.highlightTTSProgress(progress);
+		const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+		if (!contentEl) return;
+
+		if (progress < 0) {
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
+			delete (contentEl.dataset as any).ttsLastParagraphIndex;
+			this.detachScrollListener();
+			this.userScrolled = false;
+			return;
+		}
+
+		if (!this.scrollListener) {
+			const container = this.findScrollContainer(contentEl);
+			if (container) {
+				this.scrollListener = () => { this.userScrolled = true; };
+				container.addEventListener('scroll', this.scrollListener, { passive: true });
+			}
+		}
+
+		const paragraphs = contentEl.querySelectorAll('p');
+		if (paragraphs.length === 0) return;
+
+		const paragraphInfo: { el: Element; start: number; end: number }[] = [];
+		let totalChars = 0;
+
+		for (const p of paragraphs) {
+			const text = p.textContent || '';
+			const charCount = text.length;
+			paragraphInfo.push({ el: p, start: totalChars, end: totalChars + charCount });
+			totalChars += charCount;
+		}
+
+		if (totalChars === 0) return;
+
+		const currentChar = Math.floor((progress / 100) * totalChars);
+		let currentParagraph: Element | null = null;
+		let currentIndex = -1;
+
+		for (let i = 0; i < paragraphInfo.length; i++) {
+			if (currentChar >= paragraphInfo[i].start && currentChar < paragraphInfo[i].end) {
+				currentParagraph = paragraphInfo[i].el;
+				currentIndex = i;
+				break;
+			}
+		}
+
+		if (!currentParagraph && progress >= 100) {
+			currentParagraph = paragraphInfo[paragraphInfo.length - 1].el;
+			currentIndex = paragraphInfo.length - 1;
+		}
+
+		if (!currentParagraph) return;
+
+		if (currentIndex !== (contentEl.dataset as any).ttsLastParagraphIndex) {
+			contentEl.querySelectorAll('.deeppdf-tts-reading-paragraph').forEach(el => {
+				el.removeClass('deeppdf-tts-reading-paragraph');
+			});
+			currentParagraph.addClass('deeppdf-tts-reading-paragraph');
+			if (!this.userScrolled) {
+				(currentParagraph as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+			(contentEl.dataset as any).ttsLastParagraphIndex = currentIndex;
+		}
+	}
+
+	private findScrollContainer(el: HTMLElement): HTMLElement | null {
+		let node: HTMLElement | null = el;
+		while (node) {
+			const { overflowY } = getComputedStyle(node);
+			if (overflowY === 'auto' || overflowY === 'scroll') return node;
+			node = node.parentElement;
+		}
+		return null;
+	}
+
+	private detachScrollListener(): void {
+		if (this.scrollListener) {
+			const contentEl = this.el?.querySelector('.deeppdf-message-content') as HTMLElement;
+			if (contentEl) {
+				const container = this.findScrollContainer(contentEl);
+				container?.removeEventListener('scroll', this.scrollListener);
+			}
+			this.scrollListener = null;
+		}
 	}
 }
 
@@ -1055,7 +1074,6 @@ export function createMessage(
 		onDelete?: () => void;
 		getAllMessages?: () => MessageData[];
 		onTTS?: (messageId: string, content: string) => void;
-		onVoicePlay?: (messageId: string) => void;
 		getCurrentBookInfo?: () => { coverUrl: string | null; author: string | null; bookName: string | null };
 		getBubbleTheme?: () => string;
 		app?: App;

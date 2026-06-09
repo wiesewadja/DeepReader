@@ -300,14 +300,6 @@ export class SessionManager {
 				} else if (msg.role === 'assistant' && lastUserContent) {
 					msgData.question = lastUserContent;
 				}
-				if ((msg as any).voiceAudio) {
-					msgData.voiceAudio = (msg as any).voiceAudio;
-					msgData.voiceDuration = (msg as any).voiceDuration;
-					msgData.letterState = (msg as any).letterState || 'sealed';
-					msgData.voiceState = 'ready';
-					msgData.enableVoiceReply = true;
-					log(`[DeepPDF] 恢复语音数据: duration=${(msg as any).voiceDuration}s`);
-				}
 				this.host.messageList!.addMessage(msgData);
 			} catch (e) {
 				warn(`[DeepPDF] Failed to restore message:`, e);

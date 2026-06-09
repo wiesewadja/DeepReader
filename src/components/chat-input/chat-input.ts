@@ -38,6 +38,11 @@ export interface QuoteItem {
 }
 
 /**
+ * 语音输入状态
+ */
+export type VoiceState = 'idle' | 'recording' | 'recognizing';
+
+/**
  * 聊天输入配置选项
  */
 export interface ChatInputOptions {
@@ -71,6 +76,10 @@ export interface ChatInputOptions {
 	onQuoteAdded?: (quote: QuoteItem) => void;
 	/** 引用移除回调（可选） */
 	onQuoteRemoved?: (quoteId: string) => void;
+	/** 语音输入切换回调（点击麦克风按钮时触发） */
+	onVoiceToggle?: () => void;
+	/** 是否显示语音按钮（默认 false） */
+	showVoiceButton?: boolean;
 }
 
 /**
@@ -94,9 +103,13 @@ export class ChatInput {
 	private textarea: HTMLTextAreaElement | null = null;
 	private sendButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
+	private voiceButton: HTMLButtonElement | null = null;
+	private voiceOverlay: HTMLElement | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
 	private isDocLoaded: boolean = false;  // 文档是否已加载到上下文
+	private voiceState: VoiceState = 'idle';
+	private savedPlaceholder = '';
 
 	// 文件建议组件
 	private fileSuggest: FileSuggest | null = null;
@@ -113,6 +126,7 @@ export class ChatInput {
 	private pasteHandler: (() => void) | null = null;
 	private loadDocClickHandler: (() => void) | null = null;
 	private containerClickHandler: ((event: MouseEvent) => void) | null = null;
+	private voiceClickHandler: (() => void) | null = null;
 
 	constructor(options: ChatInputOptions) {
 		this.options = {
@@ -123,6 +137,7 @@ export class ChatInput {
 			maxHeight: 150,
 			...options
 		};
+		this.savedPlaceholder = this.options.placeholder || '';
 		this.el = this.render();
 
 		// 初始化文件建议组件
@@ -158,6 +173,92 @@ export class ChatInput {
 
 		// 通知高度变化
 		this.notifyHeightChange();
+	}
+
+	/**
+	 * 设置语音输入状态
+	 */
+	setVoiceState(state: VoiceState): void {
+		this.voiceState = state;
+		if (!this.voiceButton || !this.textarea) return;
+
+		this.voiceButton.classList.remove('recording', 'recognizing');
+		this.removeVoiceOverlay();
+
+		if (state === 'recording') {
+			this.voiceButton.classList.add('recording');
+			this.textarea.disabled = true;
+			this.textarea.value = '';
+			this.textarea.setAttribute('placeholder', '');
+			this.inputContainer?.addClass('deeppdf-voice-active');
+			this.showVoiceOverlay('正在聆听...', true);
+		} else if (state === 'recognizing') {
+			this.voiceButton.classList.add('recognizing');
+			this.textarea.disabled = true;
+			this.textarea.value = '';
+			this.textarea.setAttribute('placeholder', '');
+			this.inputContainer?.addClass('deeppdf-voice-active');
+			this.showVoiceOverlay('正在识别...', false);
+		} else {
+			this.textarea.disabled = this.options.disabled || false;
+			this.textarea.setAttribute('placeholder', this.savedPlaceholder);
+			this.inputContainer?.removeClass('deeppdf-voice-active');
+		}
+
+		this.notifyHeightChange();
+	}
+
+	private showVoiceOverlay(label: string, showWave: boolean): void {
+		const inputArea = this.textarea?.parentElement;
+		if (!inputArea) return;
+
+		inputArea.style.position = 'relative';
+
+		this.voiceOverlay = inputArea.createDiv({ cls: 'deeppdf-voice-overlay' });
+
+		if (showWave) {
+			const wave = this.voiceOverlay.createSpan({ cls: 'deeppdf-voice-wave' });
+			for (let i = 0; i < 5; i++) {
+				wave.createSpan();
+			}
+		}
+
+		this.voiceOverlay.createSpan({
+			cls: 'deeppdf-voice-label',
+			text: label,
+		});
+	}
+
+	private removeVoiceOverlay(): void {
+		if (this.voiceOverlay) {
+			this.voiceOverlay.remove();
+			this.voiceOverlay = null;
+		}
+	}
+
+	/**
+	 * 追加语音识别文字（流式）
+	 */
+	appendVoiceText(text: string): void {
+		if (!this.textarea) return;
+		// 首次写入时移除 overlay，恢复 textarea 可见
+		if (this.voiceOverlay) {
+			this.removeVoiceOverlay();
+			this.inputContainer?.removeClass('deeppdf-voice-active');
+			this.textarea.style.color = '';
+			this.textarea.style.caretColor = '';
+		}
+		this.textarea.value += text;
+		this.autoResize();
+		this.updateSendButtonState();
+	}
+
+	/**
+	 * 完成语音识别，启用编辑
+	 */
+	completeVoiceInput(): void {
+		this.setVoiceState('idle');
+		this.textarea?.focus();
 	}
 
 	/**
@@ -210,12 +311,22 @@ export class ChatInput {
 			cls: 'deeppdf-input-toolbar'
 		});
 
-		// 左侧工具 (加载文档按钮)
+		// 左侧工具
 		const leftToolbar = toolbar.createEl('div', {
 			cls: 'deeppdf-toolbar-left'
 		});
 
-		// 加载当前文档按钮（使用文档图标）
+		// 麦克风按钮（最左位）
+		if (this.options.showVoiceButton && this.options.onVoiceToggle) {
+			this.voiceButton = leftToolbar.createEl('button', {
+				cls: 'deeppdf-voice-btn'
+			});
+			this.voiceButton.innerHTML = Icons.mic;
+			this.voiceButton.setAttribute('aria-label', '语音输入');
+			this.voiceButton.type = 'button';
+		}
+
+		// 加载当前文档按钮
 		if (this.options.onLoadCurrentDoc) {
 			this.loadDocButton = leftToolbar.createEl('button', {
 				cls: 'deeppdf-load-doc-btn'
@@ -299,6 +410,14 @@ export class ChatInput {
 				this.focus();
 			};
 			this.loadDocButton.addEventListener('click', this.loadDocClickHandler);
+		}
+
+		// 点击麦克风按钮
+		if (this.voiceButton && this.options.onVoiceToggle) {
+			this.voiceClickHandler = () => {
+				this.options.onVoiceToggle!();
+			};
+			this.voiceButton.addEventListener('click', this.voiceClickHandler);
 		}
 
 		// 粘贴事件：移除多余的格式
@@ -758,6 +877,11 @@ export class ChatInput {
 			this.loadDocClickHandler = null;
 		}
 
+		if (this.voiceButton && this.voiceClickHandler) {
+			this.voiceButton.removeEventListener('click', this.voiceClickHandler);
+			this.voiceClickHandler = null;
+		}
+
 		if (this.inputContainer && this.containerClickHandler) {
 			this.inputContainer.removeEventListener('click', this.containerClickHandler);
 			this.containerClickHandler = null;
@@ -783,5 +907,6 @@ export class ChatInput {
 		this.textarea = null;
 		this.sendButton = null;
 		this.loadDocButton = null;
+		this.voiceButton = null;
 	}
 }

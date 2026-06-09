@@ -46,17 +46,11 @@ export interface StreamProcessorResult {
   traceData?: EvalTraceData;
 }
 
-type VoicePipelineCallback = (
-  formattedOutput: string,
-  config: { configurable?: Record<string, unknown> },
-  callbacks: AgentLoopOptions,
-) => void | Promise<void>;
 
 export async function processGraphStream(
   stream: AsyncIterable<unknown>,
   callbacks: AgentLoopOptions,
-  config?: { configurable?: Record<string, unknown> },
-  voicePipeline?: VoicePipelineCallback,
+  _config?: { configurable?: Record<string, unknown> },
 ): Promise<StreamProcessorResult> {
   const onProgress = callbacks.onProgress || (() => {});
   const onContent = callbacks.onContent || (() => {});
@@ -122,11 +116,6 @@ export async function processGraphStream(
       }
 
     }
-  }
-
-  // S4 阶段完成后，使用 formattedOutput 生成语音
-  if (callbacks.onVoiceReady && formattedOutput && voicePipeline) {
-    await voicePipeline(formattedOutput, config ?? {}, callbacks);
   }
 
   const traceData: EvalTraceData = {
