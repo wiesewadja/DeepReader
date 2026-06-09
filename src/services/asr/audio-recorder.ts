@@ -129,6 +129,44 @@ export class AudioRecorder {
 		});
 	}
 
+	/**
+	 * 在不停止录音的情况下，获取当前累积的所有音频数据（WAV base64）。
+	 * 用于递增识别：每 N 秒调用一次，发送「已录音频 → ASR → 替换文本」。
+	 */
+	async getAccumulatedAudio(): Promise<{ audioBase64: string; mimeType: string }> {
+		if (this.state !== 'recording' || !this.mediaRecorder) {
+			throw new Error('Not recording');
+		}
+
+		// requestData() 触发 ondataavailable，把当前进行中的 chunk 刷入 this.chunks
+		await new Promise<void>((resolve, reject) => {
+			const timeout = setTimeout(() => {
+				this.mediaRecorder!.removeEventListener('dataavailable', tempHandler);
+				reject(new Error('requestData timeout'));
+			}, 2000);
+			const tempHandler = () => {
+				clearTimeout(timeout);
+				this.mediaRecorder!.removeEventListener('dataavailable', tempHandler);
+				resolve();
+			};
+			this.mediaRecorder!.addEventListener('dataavailable', tempHandler);
+			this.mediaRecorder!.requestData();
+		});
+
+		// 此时 this.chunks 包含从录音开始到现在的所有数据
+		const blob = new Blob([...this.chunks], { type: this.mediaRecorder!.mimeType });
+		const arrayBuffer = await blob.arrayBuffer();
+		const audioBuffer = await this.decodeAudio(arrayBuffer);
+		const pcmData = this.audioBufferToPCM16(audioBuffer);
+		const wavBytes = encodeWav(pcmData.buffer as ArrayBuffer, {
+			sampleRate: audioBuffer.sampleRate,
+			channels: audioBuffer.numberOfChannels,
+		});
+
+		const base64 = arrayBufferToBase64(wavBytes.buffer as ArrayBuffer);
+		return { audioBase64: base64, mimeType: 'audio/wav' };
+	}
+
 	cancel(): void {
 		if (this.mediaRecorder && this.state === 'recording') {
 			this.mediaRecorder.onstop = null;

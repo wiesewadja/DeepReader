@@ -527,6 +527,34 @@
 	z-index: 10;
 }
 
+/* 递增识别时的录音指示器（右上角红点 + 文字） */
+.deeppdf-voice-recording-indicator {
+	position: absolute;
+	top: 4px;
+	right: 8px;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	pointer-events: none;
+	z-index: 10;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.deeppdf-voice-recording-dot {
+	display: block;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-error);
+	animation: deeppdf-recording-blink 1s ease-in-out infinite;
+}
+
+@keyframes deeppdf-recording-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.3; }
+}
+
 /* 波形条动画 */
 .deeppdf-voice-wave {
 	display: inline-flex;

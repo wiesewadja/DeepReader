@@ -241,16 +241,43 @@ export class ChatInput {
 	 */
 	appendVoiceText(text: string): void {
 		if (!this.textarea) return;
-		// 首次写入时移除 overlay，恢复 textarea 可见
-		if (this.voiceOverlay) {
-			this.removeVoiceOverlay();
-			this.inputContainer?.removeClass('deeppdf-voice-active');
-			this.textarea.style.color = '';
-			this.textarea.style.caretColor = '';
-		}
+		this.dismissVoiceOverlay();
 		this.textarea.value += text;
 		this.autoResize();
 		this.updateSendButtonState();
+	}
+
+	/**
+	 * 替换语音识别文字（递增识别模式 — 每 N 秒用最新全文替换）
+	 */
+	replaceVoiceText(text: string): void {
+		if (!this.textarea) return;
+		this.transitionToRecordingIndicator();
+		this.textarea.value = text;
+		this.autoResize();
+		this.updateSendButtonState();
+	}
+
+	/** 递增文本首次出现：wave overlay → 右上角小录音指示器（红点 + "录音中"） */
+	private transitionToRecordingIndicator(): void {
+		if (!this.voiceOverlay) return;
+		this.removeVoiceOverlay();
+		// 移除 voice-active（让 textarea 文字可见），但 voice button 的 recording 类仍保留（脉冲动画）
+		this.inputContainer?.removeClass('deeppdf-voice-active');
+
+		const inputArea = this.textarea?.parentElement;
+		if (!inputArea) return;
+
+		this.voiceOverlay = inputArea.createDiv({ cls: 'deeppdf-voice-recording-indicator' });
+		this.voiceOverlay.createSpan({ cls: 'deeppdf-voice-recording-dot' });
+		this.voiceOverlay.createSpan({ text: '录音中' });
+	}
+
+	/** 首次写入语音文本时移除 overlay，恢复 textarea 可见 */
+	private dismissVoiceOverlay(): void {
+		if (!this.voiceOverlay) return;
+		this.removeVoiceOverlay();
+		this.inputContainer?.removeClass('deeppdf-voice-active');
 	}
 
 	/**
