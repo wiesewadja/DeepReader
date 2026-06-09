@@ -11,12 +11,24 @@ export interface VoiceInputConfig {
 	language?: string;
 }
 
+/** 递增识别间隔（毫秒） */
+const INCREMENTAL_INTERVAL_MS = 3000;
+
 export class VoiceInputController {
 	private asrClient: ASRClient;
 	private recorder: AudioRecorder;
 	private chatInput: ChatInput;
 	private language: string;
 	#toggling = false;
+
+	/** 递增识别定时器 */
+	private incrementalTimer: ReturnType<typeof setInterval> | null = null;
+	/** 当前是否有递增识别正在进行 */
+	private incrementalInProgress = false;
+	/** 是否已获得首次识别文本（用于区分追加/替换） */
+	private hasIncrementalResult = false;
+	/** 递增识别最后文本 */
+	private lastIncrementalText = '';
 
 	constructor(chatInput: ChatInput, config: VoiceInputConfig) {
 		this.chatInput = chatInput;
@@ -34,7 +46,7 @@ export class VoiceInputController {
 		this.#toggling = true;
 		try {
 			if (this.recorder.getState() === 'recording') {
-				await this.stopAndRecognize();
+				await this.stopAndFinalRecognize();
 			} else {
 				await this.startRecording();
 			}
@@ -47,7 +59,14 @@ export class VoiceInputController {
 		try {
 			await this.recorder.start();
 			this.chatInput.setVoiceState('recording');
-			serviceLog.info('[VoiceInput] 开始录音');
+			this.hasIncrementalResult = false;
+			this.lastIncrementalText = '';
+			serviceLog.info('[VoiceInput] 开始录音（递增识别模式）');
+
+			// 首次识别延迟 3 秒，之后每 3 秒
+			this.incrementalTimer = setInterval(() => {
+				this.runIncrementalRecognition();
+			}, INCREMENTAL_INTERVAL_MS);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			serviceLog.error('[VoiceInput] 录音启动失败:', msg);
@@ -60,38 +79,72 @@ export class VoiceInputController {
 		}
 	}
 
-	private async stopAndRecognize(): Promise<void> {
-		this.chatInput.setVoiceState('recognizing');
+	/** 递增识别：取当前累积音频 → ASR → 替换文本 */
+	private async runIncrementalRecognition(): Promise<void> {
+		if (this.incrementalInProgress) return;
+		if (this.recorder.getState() !== 'recording') return;
 
+		this.incrementalInProgress = true;
 		try {
-			const { audioBase64, mimeType, duration } = await this.recorder.stop();
-			serviceLog.info(`[VoiceInput] 录音完成: ${duration}ms, ${audioBase64.length} bytes base64`);
+			const { audioBase64 } = await this.recorder.getAccumulatedAudio();
 
-			let fullText = '';
-			for await (const chunk of this.asrClient.transcribeStream(audioBase64, mimeType, {
+			let text = '';
+			for await (const chunk of this.asrClient.transcribeStream(audioBase64, 'audio/wav', {
 				language: this.language,
 			})) {
-				fullText += chunk;
-				this.chatInput.appendVoiceText(chunk);
+				text += chunk;
 			}
 
-			if (fullText) {
-				serviceLog.info(`[VoiceInput] 识别完成: "${fullText}"`);
-			} else {
-				serviceLog.warn('[VoiceInput] 识别结果为空');
-				new Notice('未识别到语音内容，请重试');
+			if (text) {
+				this.lastIncrementalText = text;
+				this.chatInput.replaceVoiceText(text);
+				this.hasIncrementalResult = true;
+				serviceLog.info(`[VoiceInput] 递增识别: "${text}"`);
 			}
-
-			this.chatInput.completeVoiceInput();
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			serviceLog.error('[VoiceInput] 识别失败:', msg);
+			serviceLog.warn('[VoiceInput] 递增识别失败（非致命）:', msg);
+		} finally {
+			this.incrementalInProgress = false;
+		}
+	}
+
+	/** 用户点击停止 → 直接使用最后一次递增结果 */
+	private async stopAndFinalRecognize(): Promise<void> {
+		// 停止递增识别定时器
+		if (this.incrementalTimer) {
+			clearInterval(this.incrementalTimer);
+			this.incrementalTimer = null;
+		}
+
+		// 等待可能正在进行的递增识别完成（最多 5 秒）
+		const deadline = Date.now() + 5000;
+		while (this.incrementalInProgress && Date.now() < deadline) {
+			await new Promise(r => setTimeout(r, 100));
+		}
+
+		// 停止录音（释放麦克风）
+		if (this.recorder.getState() === 'recording') {
+			this.recorder.cancel();
+		}
+
+		if (this.hasIncrementalResult && this.lastIncrementalText) {
+			// 已有递增结果，直接使用
+			serviceLog.info(`[VoiceInput] 停止录音，使用递增结果: "${this.lastIncrementalText}"`);
+			this.chatInput.completeVoiceInput();
+		} else {
+			// 录音太短，没有递增结果
+			serviceLog.warn('[VoiceInput] 录音时间过短，无识别结果');
 			this.chatInput.setVoiceState('idle');
-			new Notice(`识别失败: ${msg}`);
+			new Notice('录音时间过短，请重试');
 		}
 	}
 
 	destroy(): void {
+		if (this.incrementalTimer) {
+			clearInterval(this.incrementalTimer);
+			this.incrementalTimer = null;
+		}
 		this.recorder.destroy();
 	}
 }
