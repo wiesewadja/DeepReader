@@ -20,7 +20,6 @@ An AI-powered deep reading companion for Obsidian.
 
 ### Reading Experience
 - **阅读模式** — PDF/EPUB 分页阅读 + 交互式导航
-- **阅读进度** — 自动追踪阅读位置和统计
 - **AI 伴读** — 对话式深度阅读引导
 
 ### Optional Integrations
@@ -89,18 +88,18 @@ npm run deploy     # Deploy to test vault
 src/
 ├── main.ts                    # Plugin entry point
 ├── agent/                     # AI Agent engine
-│   ├── graph/                 # LangGraph state machine
-│   ├── pi/                    # PI Agent subprocess
-│   ├── tools/                 # Agent tools (search, read, visualize)
+│   ├── graph/                 # LangGraph state machine (nodes, subgraphs, prompts)
+│   ├── tools/                 # Agent tools (search, read, memory, weread)
+│   ├── tracing/               # LangSmith tracing
 │   └── router/                # Intent router
 ├── pageindex/                 # Indexing engine
 │   ├── parsers/               # PDF / EPUB / Markdown parsers
 │   ├── exporters/             # Obsidian Markdown export
-│   ├── vault/                 # Vector storage
+│   ├── vault/                 # Vector storage & search
 │   └── llm/                   # LLM summarization
-├── components/                # UI components
+├── components/                # UI components (chat, reading-mode, top-nav)
 ├── views/                     # Obsidian views (sidebar, library)
-├── services/                  # Business services (TTS, Excalidraw, etc.)
+├── services/                  # Business services (TTS, ASR, profile)
 ├── config/                    # Settings & providers
 ├── weread/                    # WeRead integration (optional)
 ├── zlibrary/                  # Z-Library integration (optional, disabled by default)

@@ -76,7 +76,7 @@
 - **输入**: Obsidian Settings → DeepReader
 - **输出**: 多 tab 设置面板
 - **验收标准**:
-  - [ ] 含 6 个 tab：API/Embedding/Indexing/Reading/Tracing/Advanced
+  - [ ] 含 5 个 tab：LLM/Profile/Reading/Advanced/WeRead
   - [ ] 双层结构：providers（账号）→ roles（角色）
   - [ ] 添加 provider 时校验 endpoint
   - [ ] 修改角色模型立即生效

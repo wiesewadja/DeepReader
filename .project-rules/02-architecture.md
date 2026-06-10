@@ -23,7 +23,7 @@ src/
 │   ├── context-tags/            # 上下文标签
 │   ├── file-suggest/            # 文件建议
 │   ├── excerpt/                 # 摘录组件（摘录弹窗、选择菜单）
-│   ├── confirm-modal/           # 通用确认弹窗
+│   ├── confirm-modal.ts         # 通用确认弹窗
 │   ├── top-nav/                 # 顶部导航
 │   ├── drawer/                  # 抽屉面板
 │   ├── index-manager/           # 索引管理器 UI
@@ -44,7 +44,6 @@ src/
 │   ├── router/                  # 意图路由器（闲聊/检视/分析/主题）
 │   ├── memory/                  # 记忆系统（store + consolidator + milestones）
 │   ├── session/                 # 会话持久化（JSONL）
-│   ├── skills/                  # Skill 加载器（从 Vault 读取 Markdown Skill）
 │   ├── context/                 # 用户上下文构建（MEMORY.md、书籍元数据）
 │   ├── models/                  # ChatModel 封装
 │   ├── tracing/                 # LangSmith / Langfuse 追踪
@@ -128,8 +127,6 @@ Agent 使用 LangGraph 实现四层认知模型（基于《如何阅读一本书
 ### 工具集
 
 ```
-inspect_toc      // 查看目录结构
-hybrid_search    // 混合搜索（Vector + BM25）
 read_section     // 读取章节内容
 write_note       // 写笔记到 Obsidian
 search_read_books // 跨书籍搜索
@@ -168,7 +165,6 @@ Query → Embedding → Vector 搜索 → BM25 搜索 → 混合排序 → 结�
 
 - Skills 是带有 frontmatter 的 Markdown 文件，存放在 Vault 的 `DeepReader/skills/`。
 - Skills 由 PI Agent 管理，插件启动时确保 skills 目录存在。
-- Skill 通过 `SkillLoader` 加载，在 System Prompt 中作为 XML Summary 注入。
 
 ## 设置与配置
 
@@ -219,7 +215,7 @@ Z-Library 功能采用编译时 + 运行时双重开关：
 
 ### 集成点
 
-- `src/views/library-view.ts` — `proceedZlibDownload()` 双重检查
+- `src/views/library/library-weread-bridge.ts` — `proceedZlibDownload()` 双重检查
 - `src/views/zlibrary-search-modal.ts` — Z-Library 搜索 UI
 - `src/config/settings.ts` — `enableZlibrary` 设置项
 - `src/settings/sections/weread-section.ts` — 启用开关 + 免责声明弹窗

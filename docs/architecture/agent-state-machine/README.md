@@ -11,8 +11,7 @@
 
 | 文档 | 关系 |
 |------|------|
-| [`../agent-overview.md`](../agent-overview.md) | **入口导览**（30 分钟读懂 Agent），5 层视角（构建全景） |
-| [`../state-machine-flow.md`](../state-machine-flow.md) | 状态机流程的「老版视角」（节点 + 边的扁平图） |
+| [`../agent-overview.md`](../agent-overview.md) | **入口导览**（30 分钟读懂 Agent），构建全景 |
 | **`docs/architecture/agent-state-machine/`**（本目录） | **按 9 层视角**的深度剖析（每层「现状 + 已知问题 + 优化探讨」） |
 
 **互补关系：**

@@ -12,8 +12,8 @@
 
 | 层级 | 场景数 | 耗时预算 | 触发时机 |
 |------|--------|----------|----------|
-| **Core** | 9 | < 30s | 每次代码修改后（手动 / 后续可接 pre-commit）|
-| **Full** | 26 = Core 9 + 17 增量 | < 60s | 提交 PR / 发布前 / CI 流水线 |
+| **Core** | 10 | < 30s | 每次代码修改后（手动 / 后续可接 pre-commit）|
+| **Full** | 25 = Core 10 + 15 增量 | < 60s | 提交 PR / 发布前 / CI 流水线 |
 
 ### 1.2 设计原则
 
@@ -56,25 +56,20 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 | "微信读书：重新匹配书籍" | `deepreader:weread-rematch` |
 | "Debug: Test analytical reading tools" | `deepreader:debug-analytical-reading` |
 | "Debug: Send test message" | `deepreader:debug-send-message` |
-| "Check Excalidraw Plugin Status" | `deepreader:check-excalidraw-status` |
 | "Debug: Test syntopical reading" | `deepreader:debug-syntopical-reading` |
-| "Debug: Test mindmap skill" | `deepreader:debug-mindmap-skill` |
 | "Debug: Test knowledge cards skill" | `deepreader:debug-knowledge-cards` |
 | "Debug: Dump System Prompt" | `deepreader:dump-system-prompt` |
-| "Debug: Test Excalidraw mindmap" | `deepreader:debug-excalidraw-mindmap` |
 
 ### 1.5 关键路径实证
 
 | 之前假设（错）| 实证（真）|
 |---|---|
-| `app.plugins.plugins['deepreader']?.piManager` | `app.plugins.plugins['deepreader'].frontendAgent.piManager` |
-| `piManager.isRunning()` | `piManager` 有 `process / rpcClient / state / busy / currentBookId / _heartbeatTimer` 属性 |
 | `app.setting?.openTabById` 不存在 | **存在**（`typeof === 'function'`，已验证可调）|
 
 `app.plugins.plugins['deepreader']` 顶层属性（实证）：
 `_loaded, _events, _children, _lastDataModifiedTime, _userDisabled, onConfigFileChange, app, manifest, readingModeService, frontendAgent, highlightService, wereadService, api, settings`
 
-`frontendAgent` 顶层属性：`options, initialized, activeThreadId, cachedModels, llmClientManager, contextLoader, memoryStore, contextBuilder, intentRouter, piManager`
+`frontendAgent` 顶层属性：`options, initialized, activeThreadId, cachedModels, llmClientManager, contextLoader, memoryStore, contextBuilder, intentRouter`
 
 ### 1.6 与其他测试层关系
 
@@ -86,23 +81,23 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 
 ## 2. 场景总览
 
-### 2.1 Core 9 场景（已实现 + 真测）
+### 2.1 Core 10 场景（已实现 + 真测）
 
 | ID | 名称 | 锚定 Feature | 实际状态 | 验证方式 |
 |----|------|--------------|----------|----------|
 | S-RES | 资源文件完整 | — | ✅ PASS | 静态文件检查 |
-| S-CMD | 关键命令注册 | F-22/23/24/25/26/30 | ✅ PASS | evalObsidian listCommands |
+| S-CMD | 关键命令注册 | F-22/23/24/25/26 | ✅ PASS | evalObsidian listCommands |
+| S-SEC | 安全检查 | — | ✅ PASS | 验证无敏感信息泄露 |
 | S-22 | Sidebar 聊天界面 | F-22 | ✅ PASS | dev:dom 数 3 个 class |
 | S-23 | Library 书库 | F-23 | ✅ PASS | dev:dom 数 library class |
 | S-25 | Settings 面板 | F-25 | ⏭ SKIP | 需主动打开 settings + 切 tab |
 | S-LD | 插件加载 | — | ✅ PASS | `obs plugin id=deepreader` |
 | S-17 | 阅读模式入口 | F-17 | ⏭ SKIP | 需选书+UI 触发 |
-| S-30 | PI 子进程 | F-30 | ✅ PASS | evalObsidian frontendAgent.piManager |
 | S-24 | Quick Setup | F-24 | ⏭ SKIP | 需触发命令+UI 交互 |
 
 **实际跑通结果（2026-06-01）**：6 PASS / 3 SKIP / 0 FAIL，耗时 1.2s。
 
-### 2.2 Full 17 增量场景（待实现）
+### 2.2 Full 15 增量场景（待实现）
 
 | ID | 名称 | 锚定 Feature | 计划验证方式 | 预期状态 |
 |----|------|--------------|-------------|----------|
@@ -119,18 +114,17 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 | S-26 | 微信读书命令 | F-26 | listCommands 验证 4 个 weread-* | ✅ PASS（已在 S-CMD 覆盖）|
 | S-27 | 微信同步进度元素 | F-27 | dev:dom 数同步 UI | ⏭ SKIP（需触发同步）|
 | S-29 | Z-Lib 设置开关 | F-29 | evalObsidian 验证 settings.zlibrary | ✅ PASS（基础设施）|
-| S-31 | PI 可视化元素 | F-31 | dev:dom 数可视化 panel | ⏭ SKIP（需触发）|
 | S-32 | 画像数据 schema | F-32 | evalObsidian 验证 profile 目录 | ✅ PASS |
 | S-34 | LangSmith 设置项 | F-34 | evalObsidian 验证 settings.langsmith | ✅ PASS |
 | S-35 | stream-processor 模块可达 | F-35 | evalObsidian 验证 graph.streamProcessor | ✅ PASS |
 
-**Full 17 预期结果**：~10 PASS / ~7 SKIP / 0 FAIL。
+**Full 15 预期结果**：~9 PASS / ~6 SKIP / 0 FAIL。
 
 ---
 
 ## 3. 详细场景
 
-### 3.1 Core 9 场景（已实现 + 真测）
+### 3.1 Core 场景（已实现 + 真测）
 
 #### S-LD: 插件加载
 - **触发**: `obsidian-cli plugin id=deepreader`
@@ -163,7 +157,7 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 
 #### S-25: Settings 面板（⏭ SKIP）
 - **触发**: 需主动打开 Obsidian Settings + 切到 DeepReader tab
-- **SKIP 原因**: 完整验证需 `cmd+, → 切 tab → 检查 6 个 sub-tab`，超出冒烟可达性范围
+- **SKIP 原因**: 完整验证需 `cmd+, → 切 tab → 检查 5 个 sub-tab`，超出冒烟可达性范围
 - **替代验证**: 命令 `deepreader:open-quick-setup` 已在 S-CMD 验证
 
 #### S-17: 阅读模式入口（⏭ SKIP）
@@ -172,18 +166,12 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 - **替代验证**: `readingModeService` 实例存在（已在实例属性列表中）
 - **归 E2E**: `reading-mode-pagination.e2e.ts`
 
-#### S-30: PI 子进程
-- **触发**: `evalObsidian('app.plugins.plugins["deepreader"].frontendAgent.piManager')`
-- **断言**: piManager 实例存在 + hasProcess / hasRpc / state / busy 属性可读
-- **超时**: 5s
-- **失败信息**: piManager 状态详情
-
 #### S-24: Quick Setup（⏭ SKIP）
 - **触发**: 需主动 `app.setting.openTabById('deepreader')` + 等 modal 渲染
 - **SKIP 原因**: 完整验证需触发 + UI 交互（输入 API Key）
 - **替代验证**: 命令 `deepreader:open-quick-setup` 已在 S-CMD 验证
 
-### 3.2 Full 17 增量场景（待实现 + 真测对齐）
+### 3.2 Full 增量场景（待实现 + 真测对齐）
 
 每个场景的**精确触发 / 断言**待写时**用 `dev:cdp` 真测验证**，不在此文档凭想象。
 
@@ -225,9 +213,6 @@ Obsidian 内部对 `addCommand({ name: ... })` 做 **i18n 映射 + 小写化 + k
 - 触发: `evalObsidian('typeof app.plugins.plugins["deepreader"]?.settings?.zlibrary')`
 - 断言: typeof === 'object'（即使 disabled 也存在）
 
-**S-31**: PI 可视化
-- ⏭ SKIP（需触发）
-
 **S-32**: 画像数据
 - 触发: `evalObsidian('typeof app.plugins.plugins["deepreader"]?.frontendAgent?.memoryStore')`
 - 断言: typeof === 'object'
@@ -251,8 +236,8 @@ scripts/smoke/
 ├── smoke.mjs              # 入口
 ├── reporter.mjs           # 彩色报告
 ├── checks/
-│   ├── core/              # 9 个 Core 场景（已全部实现）
-│   └── full/              # 17 个 Full 增量（待实现）
+│   ├── core/              # 10 个 Core 场景（已全部实现）
+│   └── full/              # 15 个 Full 增量（待实现）
 └── lib/
     ├── obsidian-cli.mjs   # obsidian-cli 封装（核心用 dev:cdp）
     └── dom-query.mjs      # DOM 查询封装
@@ -341,7 +326,7 @@ export default {
            原因: Quick Setup 模态框需主动触发 + UI 交互，超出冒烟范围，归 E2E (核心命令已在 S-CMD 验证)
 
 ──────────────────────────────────────
-总计: 9   通过: 6   失败: 0   跳过: 3
+总计: 10   通过: 6   失败: 0   跳过: 3
 耗时: 1.2s
 ──────────────────────────────────────
 ```
@@ -379,7 +364,7 @@ async run() {
 
 `smoke.mjs` 两种都识别，`reporter.mjs` 输出黄色 `⏭ SKIP`。
 
-### 6.3 Core 9 中 3 个 SKIP 的原因
+### 6.3 Core 中 3 个 SKIP 的原因
 
 | SKIP | 原因 | 替代验证 |
 |------|------|----------|
@@ -394,7 +379,7 @@ async run() {
 | 局限 | 实证 | 缓解 |
 |------|------|------|
 | **命令 ID 是 i18n 映射** | "微信读书：同步笔记" → `weread-sync`（不是按 name 字符串推）| 验证时用 `app.commands.listCommands()` 真测，**永不** 按 name 推 ID |
-| **路径嵌套深** | `piManager` 在 `frontendAgent` 下 | 验证时用 `Object.keys()` 真探，不假设 |
+| **路径嵌套深** | `memoryStore` 在 `frontendAgent` 下 | 验证时用 `Object.keys()` 真探，不假设 |
 | **没有 `plugin:reload`** | 只有 enable/disable/info | S-LD 验证 `enabled=true` 即可 |
 | **DOM 不常驻** | 阅读/Quick Setup 等不主动打开时为空 | SKIP 归 E2E，不强行触发 |
 | **多个命令派生同 ID** | "Process PDF" 和 "Test: PageIndex" 都派生 `test-pageindex` | 用 Set 去重，不重复计数 |
@@ -427,7 +412,7 @@ async run() {
 
 - **addCommand 改了 name** → **必须**重跑 `evalObsidian` 拿新 ID 列表
 - **新增/删除命令** → 评估 S-CMD 核心列表
-- **改了 Plugin 内部结构**（如 `frontendAgent.piManager` 改名）→ 用 `Object.keys()` 重探
+- **改了 Plugin 内部结构**（如 `frontendAgent.memoryStore` 改名）→ 用 `Object.keys()` 重探
 
 ### 8.5 与真测对齐原则（最重要）
 

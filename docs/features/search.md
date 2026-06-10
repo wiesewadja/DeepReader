@@ -19,6 +19,7 @@
   - [ ] 支持章节范围过滤（scope filter）
   - [ ] 100ms 内返回 Top-10 结果（< 10k 节点的书籍）
   - [ ] 无匹配时返回明确空结果（非错误）
+- **核心路径**: `src/pageindex/vault/search.ts`（基础搜索）、`src/pageindex/vault/search-v2.ts`（v2 8 阶段管线）、`src/pageindex/vault/search-index.ts`（索引构建）、`src/pageindex/book-search-v2.ts`（编排入口）
 - **对应测试**:
   - 单元: `tests/unit/pageindex/bm25.test.ts`、`proposition-search.test.ts`、`vector-storage.test.ts`
   - 排除项: `tests/unit/pageindex/book-search-v2.test.ts`（在 vitest.config.ts 排除列表）

@@ -82,7 +82,7 @@ PDF/EPUB → 解析器 → 章节树 → LLM 摘要 → 向量化 → BM25 索�
 
 #### 2.2.1 搜索架构
 
-**v1 搜索**（`book-search.ts`）：
+**搜索核心**（`src/pageindex/vault/` 目录下的 `search.ts` + `search-v2.ts` + `search-index.ts`）：
 ```
 Query → BM25 检索 → 向量检索 → RRF 融合 → Top-K → L2 上下文
 ```
@@ -128,11 +128,15 @@ S0 → (S1 | Formatter) → (S2-Pre → S2 | S3 | Visualizer) → S4
 |------|------|
 | `search_book` | 书中搜索 |
 | `read_book_section` | 读取章节 |
-| `search_read_books` | 跨书搜索 |
+| `search_read_books` | 跨已读书搜索 |
+| `search_journal` | 搜索用户个人笔记 |
 | `write_note` | 写笔记 |
 | `memory` | 记忆系统 |
-| `canvas` | 生成 Canvas 可视化 |
-| `excalidraw` | 生成 Excalidraw 图形 |
+| `weread_search` | 微信读书搜书 |
+| `weread_recommend` | 微信读书推荐 |
+| `weread_readdata` | 微信读书阅读统计 |
+| `weread_notebooks` | 微信读书笔记概览 |
+| `weread_book_info` | 微信读书书籍详情 |
 
 #### 2.3.3 Agent 执行路径
 
@@ -144,23 +148,21 @@ FrontendAgent.chat() → runGraphEngine() → LangGraph stream()
 - `src/agent/index.ts` — FrontendAgent 主入口
 - `src/agent/graph/index.ts` — LangGraph StateGraph 编译
 - `src/agent/graph/nodes/` — 各节点实现
-- `src/agent/agent-loop.ts` — Agent 主循环
+- `src/agent/index.ts` — FrontendAgent 类（唯一入口）
 
 ### 2.4 阅读模式
 
-**核心文件**：`src/services/reading-mode-service.ts`
+**核心文件**：`src/components/reading-mode/reading-mode-orchestrator.ts`
 
 **功能**：
 - 分页阅读（章节导航）
 - 文字选择与高亮
 - 摘录保存
-- 阅读进度追踪
 
 **子组件**：
 - `page-paginator.ts` — 分页器
 - `chapter-nav.ts` — 章节导航
 - `selection-toolbar.ts` — 选择工具栏
-- `ink-layer.ts` — 墨迹层（高亮）
 
 ### 2.5 摘录与笔记
 
@@ -283,7 +285,6 @@ Skill 是带有 frontmatter 的 Markdown 文件，存放在 Vault 的 `DeepReade
 
 ### 5.3 Skill 加载
 
-- `src/agent/skills/loader.ts` — Skill 加载器
 - 插件启动时同步到 Vault
 - 在 System Prompt 中作为 XML Summary 注入
 
@@ -410,7 +411,6 @@ src/
 ├── pageindex/                   # PageIndex 引擎
 │   ├── pageindex.ts
 │   ├── book-indexer.ts
-│   ├── book-search.ts
 │   ├── book-search-v2.ts
 │   ├── parsers/                # 文档解析
 │   ├── exporters/              # 导出
@@ -472,7 +472,6 @@ app.plugins.plugins['deepreader']  // 插件实例
 
 ### C. 相关文档
 
-- [ARCHITECTURE-agent.md](ARCHITECTURE-agent.md) — Agent 架构详文档
-- [agent-design.md](agent-design.md) — Agent 设计文档
-- [engineering-modular-analysis.md](engineering-modular-analysis.md) — 工程模块分析
-- [状态机改造方案.md](状态机改造方案.md) — 状态机改造
+- [agent-overview.md](architecture/agent-overview.md) — Agent 全景图
+- [agent-state-machine/](architecture/agent-state-machine/) — L0-L8 分层架构文档
+- [features/README.md](features/README.md) — 功能特征索引

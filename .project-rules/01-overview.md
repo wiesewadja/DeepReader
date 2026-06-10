@@ -25,4 +25,4 @@
 | LLM 接入 | OpenAI 兼容 API | 支持 DeepSeek、Kimi、智谱、SiliconFlow、OpenAI 等 |
 | 测试 (单元) | Vitest 1.x | `jsdom` 环境，单线程线程池 |
 | 测试 (E2E) | WebdriverIO 9.x + `wdio-obsidian-service` | 在真实 Obsidian 实例中测试，超时 10 分钟 |
-| 其他依赖 | `pdf-parse`、`turndown`、`xml2js`、`adm-zip`、`uuid`、`zod` | 文档解析与工具库 |
+| 其他依赖 | `turndown`、`xml2js`、`adm-zip`、`uuid`、`zod` | 文档解析与工具库 |
