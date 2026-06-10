@@ -1,9 +1,14 @@
 # 外部集成（F-26 ~ F-29）
 
+> **架构深度文档**（配套）：
+> - 微信读书 → [integrations/weread-api.md](../integrations/weread-api.md)
+> - Z-Library → [integrations/zlibrary.md](../integrations/zlibrary.md)
+> - Proactive Engine → [integrations/proactive.md](../integrations/proactive.md)
+> - User Profile → [integrations/profile.md](../integrations/profile.md)
+> - TTS + ASR → [integrations/tts-asr.md](../integrations/tts-asr.md)
+>
 > 用户已有阅读历史在微信读书。用户需要书才能开始。
 > 微信读书的标注是用户思维的痕迹。
-
----
 
 ## F-26: 微信读书账号绑定
 
