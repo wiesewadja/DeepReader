@@ -79,3 +79,6 @@ manifest.json
 test-vault/
 test-output/
 .serena
+.codegraph/.gitignore
+.codegraph/daemon.pid
+.codegraph
