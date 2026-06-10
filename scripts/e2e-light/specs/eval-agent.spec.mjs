@@ -4,11 +4,18 @@
  * 对比: tests/e2e/specs/eval-agent.e2e.ts (231 行 WDIO)
  * 通过 evalBackdoor API 运行 Agent 问答并收集响应
  * 需要 LLM + 已索引的书籍 + golden.json 数据集
+ * 集成六维评分: ACC(30) + REL(20) + COM(15) + REF(15) + SAF(10) + STY(10)
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
+import { evaluateQaQuality } from '../../../tests/golden/qa-quality/scorer.mjs';
 
 const EVAL_BOOK = process.env.EVAL_BOOK || '反脆弱';
+
+// 六维评分最低阈值
+const THRESHOLD_TOTAL = 60;
+const THRESHOLD_ACC = 15;
+const THRESHOLD_SAF = 8;
 
 export default {
 	id: 'eval-agent',
@@ -159,7 +166,30 @@ export default {
 				fail(`[${q.type}] ${qId}`, Date.now() - t0,
 					new Error(`响应过短: ${response.response?.length || 0}`));
 			} else {
-				pass(`[${q.type}] ${qId}`, Date.now() - t0, `${response.response.length} chars`);
+				// 六维评分检查
+				const evalResult = evaluateQaQuality(response.response, {
+					depth: q.depth ?? 0,
+					expectedKeywords: q.expectedKeywords || [],
+					mustNotContain: q.mustNotContain || [],
+					scoringOverrides: q.scoringOverrides || {},
+				});
+				const { total, scores, grade, details } = evalResult;
+				const scoreDetail = `${total}${grade.icon} ACC=${scores.ACC} REL=${scores.REL} COM=${scores.COM} REF=${scores.REF} SAF=${scores.SAF} STY=${scores.STY}`;
+
+				// 最低阈值判定
+				if (total < THRESHOLD_TOTAL) {
+					fail(`[${q.type}] ${qId}`, Date.now() - t0,
+						new Error(`总分 ${total} < ${THRESHOLD_TOTAL} (${grade.label}): ${scoreDetail}`));
+				} else if (scores.ACC < THRESHOLD_ACC) {
+					fail(`[${q.type}] ${qId}`, Date.now() - t0,
+						new Error(`ACC ${scores.ACC} < ${THRESHOLD_ACC}: ${scoreDetail}`));
+				} else if (scores.SAF < THRESHOLD_SAF) {
+					fail(`[${q.type}] ${qId}`, Date.now() - t0,
+						new Error(`SAF ${scores.SAF} < ${THRESHOLD_SAF} (sentinel=${details.sentinelHits?.join(',') || 'none'}): ${scoreDetail}`));
+				} else {
+					pass(`[${q.type}] ${qId}`, Date.now() - t0,
+						`${response.response.length} chars | ${scoreDetail}`);
+				}
 			}
 		}
 
