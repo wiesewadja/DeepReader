@@ -15,6 +15,8 @@
     "lint:fix": "eslint src/ --fix",
     "arch-guard": "node scripts/arch-guard.mjs",
     "arch-guard:strict": "node scripts/arch-guard.mjs --strict",
+    "e2e-cdp": "node tests/e2e-cdp/run.mjs",
+    "e2e-cli": "node tests/e2e-cli/run.mjs",
     "deploy": "node scripts/deploy.js dev && node scripts/inject-config.mjs",
     "deploy:dev": "node scripts/deploy.js dev && node scripts/inject-config.mjs",
     "deploy:daily": "node scripts/deploy.js daily",

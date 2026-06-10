@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/stop_validate.py"
+            "command": "bash /Users/lizhao/workspace/DeepReader/.claude/hooks/stop_validate.sh"
           }
         ]
       }
