@@ -4,7 +4,10 @@
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/security_guard.py" }
+          {
+            "type": "command",
+            "command": "bash /Users/lizhao/workspace/DeepReader/.claude/hooks/security_guard.sh"
+          }
         ]
       }
     ],
@@ -12,7 +15,10 @@
       {
         "matcher": "Edit|Write",
         "hooks": [
-          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/on_file_edit.py" }
+          {
+            "type": "command",
+            "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/on_file_edit.py"
+          }
         ]
       }
     ],
@@ -20,9 +26,15 @@
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/stop_validate.py" }
+          {
+            "type": "command",
+            "command": "python3 /Users/lizhao/workspace/DeepReader/.claude/hooks/stop_validate.py"
+          }
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "skill-creator@claude-plugins-official": true
   }
 }
