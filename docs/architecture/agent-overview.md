@@ -258,6 +258,7 @@ UI 阅读视图
 | [ADR-006](../decisions/ADR-006-dual-model-routing.md) | 双模型分层架构（main + fast） | 想知道为什么 S0/S1 用便宜模型 |
 | [ADR-007](../decisions/ADR-007-memory-and-session-architecture.md) | MEMORY.md + JSONL 长期记忆与会话 | 想知道记忆与会话如何存储 |
 | [ADR-008](../decisions/ADR-008-proactive-engine-design.md) | 主动引擎（Proactive Engine）设计 | 想知道为什么 Agent 会主动说话 |
+| [ADR-009](../decisions/ADR-009-s2-multi-layer-early-stop.md) | S2 多层早停 | 想知道为什么 S2 会在多层级判断停止 |
 
 ---
 
@@ -283,15 +284,14 @@ UI 阅读视图
 
 按学习路径推荐：
 
-1. **先看**：`docs/architecture/agent.md`（1050 行，全面架构总览）
-2. **再看**：`docs/architecture/agent-design.md`（1220 行，设计演进史）
-3. **配合**：本文档（旅程视角） + 8 个 ADR（决策视角）
-4. **看代码**：`src/agent/index.ts: FrontendAgent`（入口） → `src/agent/graph/index.ts: cognitiveEngine`（状态机） → `src/agent/graph/nodes/*.ts`（各节点）
-5. **看测试**：`tests/unit/agent/`（单元测试，演示如何 mock 各层）
+1. **先看**：`docs/architecture/agent-state-machine/` 目录（L0-L8 分层文档，从外部触发到基础设施逐层深入）
+2. **配合**：本文档（旅程视角） + 9 个 ADR（决策视角）
+3. **看代码**：`src/agent/index.ts: FrontendAgent`（入口） → `src/agent/graph/index.ts: cognitiveEngine`（状态机） → `src/agent/graph/nodes/*.ts`（各节点）
+4. **看测试**：`tests/unit/agent/`（单元测试，演示如何 mock 各层）
 
 **其他相关文档：**
-- `docs/architecture/state-machine-flow.md` — 状态机流转图
-- `docs/architecture/book-indexing.md` — PageIndex 索引管线
+- `docs/architecture/agent-state-machine/README.md` — L0-L8 文档索引
+- `docs/architecture/书籍索引系统.md` — PageIndex 索引管线
 - `docs/features/ai-dialogue.md` — AI 对话 UI 行为
 - `docs/features/agent-tools.md` — 工具系统用户视角
 - `docs/features/memory-observability.md` — 记忆与可观测性

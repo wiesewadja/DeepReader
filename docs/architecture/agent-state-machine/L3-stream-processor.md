@@ -207,7 +207,7 @@ S4 formatter 的 `model.stream()` 会**增量**地更新 `state.formattedOutput`
 **现象**：节点名 → 中文描述的映射是写死在 `stream-processor.ts` 里的常量对象。
 
 **问题**：
-- 新增节点时需要改两处（这里 + state-machine-flow.md）
+- 新增节点时需要改两处（这里 + L2-langgraph-state-machine.md）
 - i18n 困难（多语言支持无法做）
 - 文案风格不统一（"正在..."开头是手动约定的）
 

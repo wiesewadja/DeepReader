@@ -6,9 +6,9 @@
 
 | 文档 | 位置 | 内容 |
 |------|------|------|
-| Agent 设计 | `docs/ARCHITECTURE-agent.md` | Agent 系统完整架构 |
-| 状态机流程 | `docs/state-machine-flow.md` | Agent 认知状态机流程 |
-| 索引设计 | `docs/book-indexing.md` | 书籍索引流程设计 |
+| Agent 设计 | `docs/architecture/agent-overview.md` | Agent 系统完整架构 |
+| 状态机流程 | `docs/architecture/agent-state-machine/README.md` | Agent 认知状态机流程 |
+| 索引设计 | `docs/architecture/book-indexing.md` | 书籍索引流程设计 |
 
 ## UI 组件参考
 
@@ -22,9 +22,7 @@
 ### 消息数据流
 
 ```
-```
 sidebar-view.ts → sidebar/agent-chat-controller → MessageList → AIMessage → 全屏展示（openFullscreen）
-```
 ```
 
 ## 类型检查

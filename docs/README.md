@@ -13,10 +13,10 @@
 
 | 文档 | 说明 |
 |------|------|
-| [architecture/agent.md](./architecture/agent.md) | Agent 系统架构（LangGraph 状态机、节点、工具） |
-| [architecture/agent-design.md](./architecture/agent-design.md) | Agent 设计详述（早期设计文档，历史参考） |
-| [architecture/state-machine-flow.md](./architecture/state-machine-flow.md) | 状态机流转图 |
+| [architecture/agent-overview.md](./architecture/agent-overview.md) | Agent 系统入口导览（30 分钟读懂） |
+| [architecture/agent-state-machine/](./architecture/agent-state-machine/) | Agent 认知状态机 9 层深度剖析（L0-L8） |
 | [architecture/book-indexing.md](./architecture/book-indexing.md) | 书籍索引流程与数据结构 |
+| [architecture/dev-daily-separation.md](./architecture/dev-daily-separation.md) | dev/daily 插件路径隔离方案 |
 
 ## 决策记录
 
@@ -42,8 +42,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [integrations/weread-api-docs.md](./integrations/weread-api-docs.md) | 微信读书 API 文档 |
-| [integrations/weread-api.md](./integrations/weread-api.md) | 微信读书集成说明 |
+| [integrations/weread-api-docs.md](./integrations/weread-api-docs.md) | 微信读书 Agent API Gateway 文档（v1.0.3） |
 
 ## 安全
 
@@ -55,4 +54,4 @@
 
 | 文档 | 说明 |
 |------|------|
-| [features.md](./features.md) | 旧版功能清单（已迁移至 features/ 目录） |
+| [ideas/](./ideas/) | 设计想法与讨论（非正式） |
