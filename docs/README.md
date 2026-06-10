@@ -24,19 +24,12 @@
 |------|------|
 | [decisions/](./decisions/) | 架构决策记录（ADR）——为什么这样设计 |
 
-## 规格
-
-| 文档 | 说明 |
-|------|------|
-| [specs/](./specs/) | 功能规格书（实现前写，含验收条件） |
-
 ## 测试
 
 | 文档 | 说明 |
 |------|------|
 | [testing/smoke-scenarios.md](./testing/smoke-scenarios.md) | 冒烟测试场景 |
 | [testing/agent-eval-cli.md](./testing/agent-eval-cli.md) | Agent 评估 CLI 用法 |
-| [test-strategies/](./test-strategies/) | 测试策略文档 |
 
 ## 集成
 
