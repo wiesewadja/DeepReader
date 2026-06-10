@@ -2,8 +2,8 @@
  * DeepPDF - 现代样式系统
  * 基于 UI/UX Pro Max 设计原则
  *
- * 风格: Dark Mode (OLED) + Minimalism + Flat Design
- * 颜色: 生产力 SaaS 配色方案
+ * 风格: Minimalism + Flat Design，适配 Obsidian 亮色/暗色主题
+ * 颜色: 生产力 SaaS 配色方案，全部通过 Obsidian CSS 变量引用
  */
 
 /* ==================== 导入设计系统 ==================== */
