@@ -12,6 +12,7 @@ import { type App, type TFile } from 'obsidian';
 import type { QuoteMetadata } from '../../types/quote.js';
 import { Icons } from '../../utils/icons.js';
 import { FileSuggest } from '../file-suggest/file-suggest.js';
+import { VoiceOverlay } from './voice-overlay.js';
 
 export type { QuoteMetadata } from '../../types/quote.js';
 
@@ -104,7 +105,7 @@ export class ChatInput {
 	private sendButton: HTMLButtonElement | null = null;
 	private loadDocButton: HTMLButtonElement | null = null;
 	private voiceButton: HTMLButtonElement | null = null;
-	private voiceOverlay: HTMLElement | null = null;
+	private voiceOverlay: VoiceOverlay | null = null;
 	private options: ChatInputOptions;
 	private isStreaming: boolean = false;
 	private isDocLoaded: boolean = false;  // 文档是否已加载到上下文
@@ -212,28 +213,15 @@ export class ChatInput {
 		const inputArea = this.textarea?.parentElement;
 		if (!inputArea) return;
 
-		inputArea.style.position = 'relative';
-
-		this.voiceOverlay = inputArea.createDiv({ cls: 'deeppdf-voice-overlay' });
-
-		if (showWave) {
-			const wave = this.voiceOverlay.createSpan({ cls: 'deeppdf-voice-wave' });
-			for (let i = 0; i < 5; i++) {
-				wave.createSpan();
-			}
+		// 首次使用时懒创建 VoiceOverlay
+		if (!this.voiceOverlay) {
+			this.voiceOverlay = new VoiceOverlay(inputArea);
 		}
-
-		this.voiceOverlay.createSpan({
-			cls: 'deeppdf-voice-label',
-			text: label,
-		});
+		this.voiceOverlay.show(label, showWave);
 	}
 
 	private removeVoiceOverlay(): void {
-		if (this.voiceOverlay) {
-			this.voiceOverlay.remove();
-			this.voiceOverlay = null;
-		}
+		this.voiceOverlay?.remove();
 	}
 
 	/**
@@ -261,16 +249,9 @@ export class ChatInput {
 	/** 递增文本首次出现：wave overlay → 右上角小录音指示器（红点 + "录音中"） */
 	private transitionToRecordingIndicator(): void {
 		if (!this.voiceOverlay) return;
-		this.removeVoiceOverlay();
+		this.voiceOverlay.transitionToRecordingIndicator();
 		// 移除 voice-active（让 textarea 文字可见），但 voice button 的 recording 类仍保留（脉冲动画）
 		this.inputContainer?.removeClass('deeppdf-voice-active');
-
-		const inputArea = this.textarea?.parentElement;
-		if (!inputArea) return;
-
-		this.voiceOverlay = inputArea.createDiv({ cls: 'deeppdf-voice-recording-indicator' });
-		this.voiceOverlay.createSpan({ cls: 'deeppdf-voice-recording-dot' });
-		this.voiceOverlay.createSpan({ text: '录音中' });
 	}
 
 	/** 首次写入语音文本时移除 overlay，恢复 textarea 可见 */
