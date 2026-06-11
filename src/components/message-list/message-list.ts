@@ -157,6 +157,8 @@ export class MessageList extends Component {
 	private app?: App;
 	private currentPdfName: string = "";
 	private minimap: QuestionMinimap | null = null;
+	/** 跟踪所有 setTimeout 以便 destroy 时清理（防内存泄漏 / DOM 引用悬空） */
+	private _pendingTimeouts: Set<ReturnType<typeof setTimeout>> = new Set();
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
@@ -386,7 +388,6 @@ export class MessageList extends Component {
 	 * 清空消息列表
 	 */
 	clear(): void {
-		
 		this.messages.forEach((message) => {
 			message.getElement().remove();
 		});
@@ -444,7 +445,6 @@ export class MessageList extends Component {
 	 * 清空所有消息
 	 */
 	clearMessages(): void {
-		
 		// 清空 DOM
 		if (this.messagesContainer) {
 			this.messagesContainer.empty();
@@ -602,27 +602,42 @@ export class MessageList extends Component {
 			cls: "deeppdf-empty-state-content",
 		});
 
-		// 顶部圆形 avatar（"奚"字 —— 不依赖图片资源，token 化配色）
+		// 顶部圆形 avatar —— 系统 emoji（不依赖图片资源，跨平台一致）
 		const avatar = wrapper.createEl("div", {
-			cls: "deeppdf-empty-avatar",
-			text: "奚",
+			cls: "deeppdf-empty-avatar deeppdf-animated",
+			text: "📚",
 		});
 		avatar.setAttribute("aria-hidden", "true");
 
-		// 招呼标题
-		wrapper.createEl("h2", {
+		// 招呼标题 —— 打字机逐字呈现
+		const title = wrapper.createEl("h2", {
 			cls: "deeppdf-empty-title",
-			text: "你好，我是奚童",
 		});
+		this.startTypewriter(title, "你好，我是奚童");
 
-		// 副标题（含/不含 PDF 名称）
-		const subtitleText = this.currentPdfName
-			? `你的 AI 伴读 · ${this.currentPdfName}`
-			: "你的 AI 伴读";
-		wrapper.createEl("p", {
+		// 副标题（含/不含 PDF 名称）—— 书名独立 class 区分
+		const subtitle = wrapper.createEl("p", {
 			cls: "deeppdf-empty-subtitle",
-			text: subtitleText,
 		});
+		subtitle.createEl("span", {
+			cls: "deeppdf-empty-subtitle-prefix",
+			text: "你的 AI 伴读",
+		});
+		if (this.currentPdfName) {
+			subtitle.createEl("span", { cls: "deeppdf-empty-subtitle-sep", text: " · " });
+			const bookEl = subtitle.createEl("span", {
+				cls: "deeppdf-empty-book-name",
+			});
+			bookEl.createEl("span", {
+				cls: "deeppdf-empty-book-icon",
+				text: "📖",
+				attr: { "aria-hidden": "true" },
+			});
+			bookEl.createEl("span", {
+				cls: "deeppdf-empty-book-text",
+				text: this.currentPdfName,
+			});
+		}
 
 		// 提示文字
 		const hintText = this.currentPdfName
@@ -675,11 +690,58 @@ export class MessageList extends Component {
 	}
 
 	/**
+	 * 打字机逐字呈现 —— 仅用于招呼标题
+	 * @param el 标题元素
+	 * @param text 完整文本
+	 * @param speedMs 每个字符间隔（默认 100ms）
+	 * 尊重 prefers-reduced-motion：用户在系统设置开启"减少动画"时，
+	 * 直接显示完整文本，不播打字机效果。
+	 */
+	private startTypewriter(el: HTMLElement, text: string, speedMs: number = 100): void {
+		// 检查 prefers-reduced-motion
+		const prefersReducedMotion =
+			typeof window !== "undefined" &&
+			window.matchMedia &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+		if (prefersReducedMotion) {
+			el.textContent = text;
+			return;
+		}
+
+		el.addClass("deeppdf-typing-cursor");
+		let charIndex = 0;
+		const tick = () => {
+			charIndex++;
+			el.textContent = text.slice(0, charIndex);
+			if (charIndex >= text.length) {
+				el.removeClass("deeppdf-typing-cursor");
+				return;
+			}
+			this.safeSetTimeout(tick, speedMs);
+		};
+		this.safeSetTimeout(tick, speedMs);
+	}
+
+	/**
+	 * 安全 setTimeout：自动注册到 _pendingTimeouts 以便 destroy 时清理
+	 */
+	private safeSetTimeout(handler: () => void, ms: number): ReturnType<typeof setTimeout> {
+		const id = setTimeout(() => {
+			this._pendingTimeouts.delete(id);
+			handler();
+		}, ms);
+		this._pendingTimeouts.add(id);
+		return id;
+	}
+
+	/**
 	 * 销毁组件
 	 */
 	override destroy(): void {
-		// 停止打字机
-		
+		// 停止所有未完成的 setTimeout（打字机 / loading 等）
+		this._pendingTimeouts.forEach((id) => clearTimeout(id));
+		this._pendingTimeouts.clear();
 
 		// 销毁 minimap
 		if (this.minimap) {

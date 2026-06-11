@@ -73,7 +73,7 @@
 	padding: var(--dr-space-6) var(--dr-space-4);
 }
 
-/* 顶部圆形 avatar —— 用 “奚” 字符，不依赖图片资源 */
+/* 顶部圆形 avatar —— 系统 emoji，不依赖图片资源 */
 .deeppdf-empty-avatar {
 	width: 80px;
 	height: 80px;
@@ -81,17 +81,48 @@
 	background: linear-gradient(
 		135deg,
 		var(--interactive-accent) 0%,
-		color-mix(in srgb, var(--interactive-accent) 70%, var(--background-modifier-border)) 100%
+		color-mix(
+				in srgb,
+				var(--interactive-accent) 70%,
+				var(--background-modifier-border)
+			)
+			100%
 	);
 	color: var(--text-on-accent, #ffffff);
-	font-size: 36px;
-	font-weight: 600;
+	font-size: 42px;
+	line-height: 1;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	user-select: none;
-	box-shadow: 0 2px 8px color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+	box-shadow: 0 2px 8px
+		color-mix(in srgb, var(--interactive-accent) 25%, transparent);
 	margin-bottom: var(--dr-space-2);
+}
+
+/* avatar 动画 —— 呼吸/浮动 */
+@keyframes deeppdf-empty-avatar-float {
+	0%, 100% {
+		transform: translateY(0) scale(1);
+	}
+	50% {
+		transform: translateY(-4px) scale(1.05);
+	}
+}
+
+.deeppdf-empty-avatar.deeppdf-animated {
+	animation: deeppdf-empty-avatar-float 3s ease-in-out infinite;
+}
+
+/* 尊重 OS 减少动画偏好：动画 + 打字机都不播 */
+@media (prefers-reduced-motion: reduce) {
+	.deeppdf-empty-avatar.deeppdf-animated {
+		animation: none;
+	}
+	.deeppdf-empty-title.deeppdf-typing-cursor::after {
+		animation: none;
+		opacity: 1;
+	}
 }
 
 /* 招呼标题 */
@@ -104,12 +135,59 @@
 	letter-spacing: 0.01em;
 }
 
+/* 打字机光标 —— 文字后闪烁指示器 */
+@keyframes deeppdf-typing-cursor-blink {
+	0%, 50% { opacity: 1; }
+	51%, 100% { opacity: 0; }
+}
+
+.deeppdf-empty-title.deeppdf-typing-cursor::after {
+	content: '|';
+	display: inline-block;
+	margin-left: 2px;
+	font-weight: 300;
+	color: var(--interactive-accent);
+	animation: deeppdf-typing-cursor-blink 0.7s step-end infinite;
+}
+
 /* 副标题 */
 .deeppdf-empty-subtitle {
 	font-size: var(--dr-text-base);
 	color: var(--dr-color-text-muted);
 	margin: 0;
 	line-height: var(--dr-leading-normal);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.deeppdf-empty-subtitle-sep {
+	color: var(--dr-color-text-faint);
+}
+
+/* 书名徽章 —— 与其他文字明显区分 */
+.deeppdf-empty-book-name {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	background: color-mix(in srgb, var(--interactive-accent) 12%, var(--dr-color-surface));
+	color: var(--interactive-accent);
+	padding: 2px 10px;
+	border-radius: var(--dr-radius-pill);
+	font-weight: var(--dr-weight-semibold);
+	font-size: var(--dr-text-sm);
+	border: 1px solid color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+}
+
+.deeppdf-empty-book-icon {
+	font-size: 14px;
+	line-height: 1;
+}
+
+.deeppdf-empty-book-text {
+	line-height: 1;
 }
 
 /* 提示 */
@@ -154,7 +232,11 @@
 }
 
 .deeppdf-empty-btn:hover {
-	background: color-mix(in srgb, var(--interactive-accent) 8%, var(--dr-color-surface));
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 8%,
+		var(--dr-color-surface)
+	);
 	border-color: var(--interactive-accent);
 	color: var(--interactive-accent);
 	transform: translateY(-1px);
