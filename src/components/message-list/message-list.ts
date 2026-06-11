@@ -133,6 +133,8 @@ export interface MessageCallbacks {
 	onDelete?: (messageId: string) => void;
 	/** TTS 朗读 */
 	onTTS?: (messageId: string, content: string) => void;
+	/** 错误状态下点击重试按钮的回调 */
+	onRetry?: () => void;
 	/** 获取当前书籍信息（封面、作者、书名） */
 	getCurrentBookInfo?: () => {
 		coverUrl: string | null;
@@ -170,6 +172,87 @@ export class MessageList extends Component {
 	setCurrentPdfName(name: string): void {
 		this.currentPdfName = name;
 		this.updateEmptyState();
+	}
+
+	/**
+	 * 设置加载状态：true 时显示 skeleton placeholder，false 时移除
+	 * 同时在 messagesContainer 挂 aria-busy 供屏幕阅读器感知
+	 */
+	setLoading(loading: boolean): void {
+		if (!this.messagesContainer) return;
+
+		// 先清掉旧的 loading 节点
+		const existingSkeletons =
+			this.messagesContainer.querySelectorAll(".deeppdf-skeleton-message");
+		existingSkeletons.forEach((el) => el.remove());
+
+		if (loading) {
+			this.messagesContainer.setAttribute("aria-busy", "true");
+			// 加载态时强制隐藏空状态（避免 skeleton 与空状态同时可见）
+			if (this.emptyState) {
+				this.emptyState.addClass("deeppdf-hidden");
+			}
+			// 渲染 3 个 skeleton placeholder
+			for (let i = 0; i < 3; i++) {
+				this.renderSkeletonMessage();
+			}
+		} else {
+			this.messagesContainer.setAttribute("aria-busy", "false");
+			this.updateEmptyState();
+		}
+	}
+
+	/**
+	 * 设置错误状态：显示 role=alert 的错误 banner + retry 按钮
+	 */
+	setError(message: string): void {
+		if (!this.messagesContainer) return;
+
+		this.clearError(); // 先清旧的
+
+		const alert = this.messagesContainer.createDiv({
+			cls: "deeppdf-message-list-error",
+		});
+		alert.setAttribute("role", "alert");
+
+		const text = alert.createDiv({ cls: "deeppdf-message-list-error-text" });
+		text.textContent = message;
+
+		const retryBtn = alert.createEl("button", {
+			cls: "deeppdf-message-list-retry-btn mod-cta",
+			text: "重试",
+		});
+		retryBtn.addEventListener("click", () => {
+			this.callbacks.onRetry?.();
+		});
+	}
+
+	/**
+	 * 清除错误状态
+	 */
+	clearError(): void {
+		if (!this.messagesContainer) return;
+		const existing = this.messagesContainer.querySelectorAll(
+			".deeppdf-message-list-error",
+		);
+		existing.forEach((el) => el.remove());
+	}
+
+	/**
+	 * 渲染单条 skeleton placeholder（loading 状态）
+	 */
+	private renderSkeletonMessage(): void {
+		if (!this.messagesContainer) return;
+		const skeleton = this.messagesContainer.createDiv({
+			cls: "deeppdf-skeleton-message",
+		});
+		skeleton.setAttribute("aria-hidden", "true");
+		// 模拟消息气泡 + 文本行
+		const bubble = skeleton.createDiv({
+			cls: "deeppdf-skeleton-bubble",
+		});
+		bubble.createDiv({ cls: "deeppdf-skeleton-line" });
+		bubble.createDiv({ cls: "deeppdf-skeleton-line short" });
 	}
 
 	/**
