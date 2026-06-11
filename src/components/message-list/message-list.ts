@@ -15,6 +15,7 @@ import {
 	type MessageData,
 } from "../message/message";
 import { QuestionMinimap } from "../question-minimap";
+import { MascotFace } from "../reading-topbar/mascot-face.js";
 // @ts-ignore — esbuild dataurl loader handles .jpg
 // const XITONG_IMG = require("../../assets/xitong.jpg") as string;
 
@@ -602,12 +603,13 @@ export class MessageList extends Component {
 			cls: "deeppdf-empty-state-content",
 		});
 
-		// 顶部圆形 avatar —— 系统 emoji（不依赖图片资源，跨平台一致）
-		const avatar = wrapper.createEl("div", {
+		// 顶部圆形 avatar —— 奚童表情系统图标（从 topbar 迁移过来）
+		const avatar = wrapper.createDiv({
 			cls: "deeppdf-empty-avatar deeppdf-animated",
-			text: "📚",
 		});
 		avatar.setAttribute("aria-hidden", "true");
+		const mascot = new MascotFace();
+		avatar.appendChild(mascot.getElement()!);
 
 		// 招呼标题 —— 打字机逐字呈现
 		const title = wrapper.createEl("h2", {
@@ -624,7 +626,10 @@ export class MessageList extends Component {
 			text: "你的 AI 伴读",
 		});
 		if (this.currentPdfName) {
-			subtitle.createEl("span", { cls: "deeppdf-empty-subtitle-sep", text: " · " });
+			subtitle.createEl("span", {
+				cls: "deeppdf-empty-subtitle-sep",
+				text: " · ",
+			});
 			const bookEl = subtitle.createEl("span", {
 				cls: "deeppdf-empty-book-name",
 			});
@@ -697,7 +702,11 @@ export class MessageList extends Component {
 	 * 尊重 prefers-reduced-motion：用户在系统设置开启"减少动画"时，
 	 * 直接显示完整文本，不播打字机效果。
 	 */
-	private startTypewriter(el: HTMLElement, text: string, speedMs: number = 100): void {
+	private startTypewriter(
+		el: HTMLElement,
+		text: string,
+		speedMs: number = 100,
+	): void {
 		// 检查 prefers-reduced-motion
 		const prefersReducedMotion =
 			typeof window !== "undefined" &&
@@ -726,7 +735,10 @@ export class MessageList extends Component {
 	/**
 	 * 安全 setTimeout：自动注册到 _pendingTimeouts 以便 destroy 时清理
 	 */
-	private safeSetTimeout(handler: () => void, ms: number): ReturnType<typeof setTimeout> {
+	private safeSetTimeout(
+		handler: () => void,
+		ms: number,
+	): ReturnType<typeof setTimeout> {
 		const id = setTimeout(() => {
 			this._pendingTimeouts.delete(id);
 			handler();

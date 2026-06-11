@@ -705,8 +705,9 @@ export class SidebarView extends ItemView {
 			},
 		});
 
-		// 创建阅读顶栏 (简化版)
-		this.createReadingTopbar(container);
+		// 顶栏已隐藏（2026-06 设计重构：书名移到 empty state 徽章，
+		// 奚童表情头像移到 empty state 顶部，原 topbar 不再需要）
+		// this.createReadingTopbar(container);
 
 		// 奚童表情：用户活动重置 idle 计时器
 		this.registerDomEvent(container, "mouseenter", () => {
