@@ -1173,29 +1173,38 @@
 	margin-top: var(--size-4-2);
 }
 
-/* 阶段颜色指示 */
+/* 阶段进度颜色指示
+ * 6 阶段统一使用 --interactive-accent 不透明度梯度
+ * （不再 6 个不相关色相，去 AI 审美；渐变改为实色）
+ */
 .deeppdf-phase-preparation .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #94a3b8, #64748b);
+	background: var(--interactive-accent);
+	opacity: 0.25;
 }
 
 .deeppdf-phase-init .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #60a5fa, #3b82f6);
+	background: var(--interactive-accent);
+	opacity: 0.4;
 }
 
 .deeppdf-phase-parse .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #f59e0b, #d97706);
+	background: var(--interactive-accent);
+	opacity: 0.55;
 }
 
 .deeppdf-phase-summary .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+	background: var(--interactive-accent);
+	opacity: 0.7;
 }
 
 .deeppdf-phase-store .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #34d399, #10b981);
+	background: var(--interactive-accent);
+	opacity: 0.85;
 }
 
 .deeppdf-phase-complete .deeppdf-task-progress-fill {
-	background: linear-gradient(90deg, #22c55e, #16a34a);
+	background: var(--interactive-accent);
+	opacity: 1;
 }
 
 /* ==================== 索引状态徽章样式 ==================== */

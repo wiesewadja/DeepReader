@@ -10,55 +10,54 @@
 	font-weight: 500;
 }
 
+/* 阅读层次徽章
+ * 4 个独立语义色（这些是 type 不是 stage，所以不强制同色相）
+ * 暗色主题由 Obsidian 变量透传响应，不重复手写 .theme-dark 覆写
+ * WCAG 1.4.1：颜色不单独传达信息，下面 ::before 加图标字符
+ */
 .reading-level-elementary {
-	background: #f0f0f0;
-	color: #666;
+	background: var(--dr-color-surface);
+	color: var(--dr-color-reading-elementary);
+}
+
+.reading-level-elementary::before {
+	content: "○ ";
 }
 
 .reading-level-inspectional {
-	background: #e3f2fd;
-	color: #1565c0;
+	background: var(--dr-color-surface);
+	color: var(--dr-color-reading-inspectional);
+}
+
+.reading-level-inspectional::before {
+	content: "◐ ";
 }
 
 .reading-level-analytical {
-	background: #fff3e0;
-	color: #e65100;
+	background: var(--dr-color-surface);
+	color: var(--dr-color-reading-analytical);
+}
+
+.reading-level-analytical::before {
+	content: "◑ ";
 }
 
 .reading-level-syntopical {
-	background: #f3e5f5;
-	color: #7b1fa2;
+	background: var(--dr-color-surface);
+	color: var(--dr-color-reading-syntopical);
+}
+
+.reading-level-syntopical::before {
+	content: "◒ ";
 }
 
 .reading-level-skill {
-	background: #e8f5e9;
-	color: #2e7d32;
+	background: var(--dr-color-surface);
+	color: var(--dr-color-reading-skill);
 }
 
-/* 暗色主题下的阅读层次徽章 */
-.theme-dark .reading-level-elementary {
-	background: #3a3a3a;
-	color: #aaa;
-}
-
-.theme-dark .reading-level-inspectional {
-	background: #1a3a5c;
-	color: #90caf9;
-}
-
-.theme-dark .reading-level-analytical {
-	background: #4a3000;
-	color: #ffcc80;
-}
-
-.theme-dark .reading-level-syntopical {
-	background: #4a2a5a;
-	color: #ce93d8;
-}
-
-.theme-dark .reading-level-skill {
-	background: #1b3a1b;
-	color: #a5d6a7;
+.reading-level-skill::before {
+	content: "✓ ";
 }
 
 /* 思考中状态 - 增强版 */
