@@ -145,10 +145,15 @@ describe("MessageList — Empty State 重构（去背景图）", () => {
 			root = list.el!;
 			document.body.appendChild(root);
 
-			// 打字机每字符 100ms × 7 字符 + 首字符初始 100ms = ~800ms
-			await new Promise((r) => setTimeout(r, 1200));
-
+			// 打字机每字符 180ms × 7 字符 + 首字符初始 180ms = ~1440ms
+			// 验证动画在跑：等 600ms 检查已出现部分字符
+			await new Promise((r) => setTimeout(r, 600));
 			const title = root.querySelector(".deeppdf-empty-title") as HTMLElement;
+			const partial = title.textContent;
+			expect(partial?.length).toBeGreaterThan(0);
+			expect(partial).toContain('你');
+			// 等完整打完（约 2.1s 总时长）
+			await new Promise((r) => setTimeout(r, 1700));
 			expect(title.textContent).toContain("你好，我是奚童");
 		});
 

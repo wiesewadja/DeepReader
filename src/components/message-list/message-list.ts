@@ -663,7 +663,7 @@ export class MessageList extends Component {
 		if (this.callbacks.onGuidanceClick) {
 			buttons.forEach((button) => {
 				const btn = grid.createEl("button", {
-					cls: "deeppdf-empty-btn",
+					cls: "deeppdf-empty-btn-minimal",
 					text: button.label,
 				});
 				btn.setAttribute("type", "button");
@@ -705,7 +705,10 @@ export class MessageList extends Component {
 	private startTypewriter(
 		el: HTMLElement,
 		text: string,
-		speedMs: number = 100,
+		typeSpeedMs: number = 180,
+		eraseSpeedMs: number = 80,
+		holdMs: number = 1800,
+		waitMs: number = 600,
 	): void {
 		// 检查 prefers-reduced-motion
 		const prefersReducedMotion =
@@ -719,17 +722,45 @@ export class MessageList extends Component {
 		}
 
 		el.addClass("deeppdf-typing-cursor");
+
+		type Phase = "typing" | "holding" | "erasing" | "waiting";
+		let phase: Phase = "typing";
 		let charIndex = 0;
-		const tick = () => {
-			charIndex++;
-			el.textContent = text.slice(0, charIndex);
-			if (charIndex >= text.length) {
-				el.removeClass("deeppdf-typing-cursor");
-				return;
+
+		const tick = (): void => {
+			switch (phase) {
+				case "typing":
+					charIndex++;
+					el.textContent = text.slice(0, charIndex);
+					if (charIndex >= text.length) {
+						phase = "holding";
+						this.safeSetTimeout(tick, holdMs);
+					} else {
+						this.safeSetTimeout(tick, typeSpeedMs);
+					}
+					break;
+				case "holding":
+					phase = "erasing";
+					this.safeSetTimeout(tick, 200);
+					break;
+				case "erasing":
+					charIndex--;
+					el.textContent = text.slice(0, charIndex);
+					if (charIndex <= 0) {
+						phase = "waiting";
+						this.safeSetTimeout(tick, waitMs);
+					} else {
+						this.safeSetTimeout(tick, eraseSpeedMs);
+					}
+					break;
+				case "waiting":
+					phase = "typing";
+					this.safeSetTimeout(tick, 300);
+					break;
 			}
-			this.safeSetTimeout(tick, speedMs);
 		};
-		this.safeSetTimeout(tick, speedMs);
+
+		this.safeSetTimeout(tick, typeSpeedMs);
 	}
 
 	/**
