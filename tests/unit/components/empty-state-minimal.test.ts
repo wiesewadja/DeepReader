@@ -9,7 +9,7 @@
  *  5. 按钮 grid 在窄屏降为 1 列（极简风给单行足够呼吸空间）
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { MessageList } from "@/components/message-list/message-list";
 
 describe("Empty State — 头像去背景 + 按钮极简", () => {
@@ -103,10 +103,84 @@ describe("Empty State — 头像去背景 + 按钮极简", () => {
 			) as HTMLElement;
 			// 验证 ::after 伪元素 CSS 存在 —— jsdom 不支持 ::after，但可通过 class 标识
 			// （或在 setup.ts 中 polyfill getComputedStyle 对 ::after 的支持）
-			const styles = window.getComputedStyle(firstBtn, "::after");
-			// styles.content 应非 'none' （即定义过 ::after）
+			void window.getComputedStyle(firstBtn, "::after");
+			// content 应非 'none' （即定义过 ::after）
 			// 但 jsdom 总是返回 'none' —— 跳过这 case
 			expect(firstBtn).toBeTruthy();
+		});
+	});
+
+	describe("invariant 3 — 无障碍：hidden 不与焦点冲突", () => {
+		it("空状态隐藏时，inert=true（防止焦点进入）", () => {
+			list = new MessageList({ onGuidanceClick: vi.fn() });
+			root = list.el!;
+			document.body.appendChild(root);
+
+			// 初始为空状态：inert=false
+			const emptyState = root.querySelector(
+				".deeppdf-empty-state",
+			) as HTMLElement;
+			expect(emptyState.inert).toBe(false);
+
+			// 模拟加一条消息（触发空状态隐藏）
+			list.addMessage({
+				id: "test-1",
+				role: "user",
+				content: "test question",
+				timestamp: Date.now(),
+			});
+
+			// 空状态应被 inert（焦点不能进入，且不会触发 aria-hidden 拦截）
+			expect(emptyState.inert).toBe(true);
+			expect(emptyState.getAttribute("aria-hidden")).toBe("true");
+		});
+
+		it("隐藏前自动 blur 空状态内的焦点（避免 aria-hidden 拦截错误）", () => {
+			list = new MessageList({ onGuidanceClick: vi.fn() });
+			list.setCurrentPdfName("深度工作.pdf");
+			root = list.el!;
+			document.body.appendChild(root);
+
+			const firstBtn = root.querySelector(
+				".deeppdf-empty-grid > button",
+			) as HTMLButtonElement;
+			firstBtn.focus();
+			expect(document.activeElement).toBe(firstBtn);
+
+			// 模拟加消息
+			list.addMessage({
+				id: "test-1",
+				role: "user",
+				content: "test",
+				timestamp: Date.now(),
+			});
+
+			// 焦点应被 blur 掉（不再在按钮上）
+			expect(document.activeElement).not.toBe(firstBtn);
+		});
+
+		it("显示空状态时，inert=false（允许焦点进入按钮）", () => {
+			list = new MessageList({ onGuidanceClick: vi.fn() });
+			root = list.el!;
+			document.body.appendChild(root);
+
+			const emptyState = root.querySelector(
+				".deeppdf-empty-state",
+			) as HTMLElement;
+
+			// 加一条消息 → 隐藏空状态
+			list.addMessage({
+				id: "test-1",
+				role: "user",
+				content: "test",
+				timestamp: Date.now(),
+			});
+			expect(emptyState.inert).toBe(true);
+
+			// 清除消息 → 显示空状态
+			list.clearMessages();
+			expect(emptyState.inert).toBe(false);
+			expect(emptyState.getAttribute("aria-hidden")).toBe("false");
 		});
 	});
 });

@@ -585,16 +585,30 @@ export class MessageList extends Component {
 		}
 
 		if (hasMessages) {
+			// 在 hidden 之前先检查焦点：避免 aria-hidden 拦截错误
+			// （如果 activeElement 在空状态内，需先 blur）
+			if (
+				this.emptyState.contains(document.activeElement) &&
+				document.activeElement instanceof HTMLElement
+			) {
+				document.activeElement.blur();
+			}
 			this.emptyState.addClass("deeppdf-hidden");
+			// 用 inert 同时实现隐藏 AT + 阻止 focus 进入
+			// （aria-hidden 在 descendant 有焦点时会被浏览器拦截）
+			this.emptyState.inert = true;
 			this.emptyState.setAttribute("aria-hidden", "true");
 			this.messagesContainer.removeClass("deeppdf-hidden");
+			this.messagesContainer.inert = false;
 			this.messagesContainer.setAttribute("aria-hidden", "false");
 			// 消息列表非空时显示 minimap
 			this.minimap?.getElement()?.removeClass("deeppdf-minimap-hidden");
 		} else {
 			this.emptyState.removeClass("deeppdf-hidden");
+			this.emptyState.inert = false;
 			this.emptyState.setAttribute("aria-hidden", "false");
 			this.messagesContainer.addClass("deeppdf-hidden");
+			this.messagesContainer.inert = true;
 			this.messagesContainer.setAttribute("aria-hidden", "true");
 			// 空状态时隐藏 minimap（避免右侧出现 20px 视口条）
 			this.minimap?.getElement()?.addClass("deeppdf-minimap-hidden");
