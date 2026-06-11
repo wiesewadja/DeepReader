@@ -1,11 +1,112 @@
 /**
- * DeepReader - 样式基础
- * 直接使用 Obsidian 原生主题变量，不设额外抽象层
+ * DeepReader 设计 token 系统
+ *
+ * 5 套 token：
+ *  - color:    颜色语义层（透传或派生 Obsidian 原生变量）
+ *  - spacing:  4px 步进（0.25rem / 0.5rem / 0.75rem / 1rem / 1.5rem / 2rem）
+ *  - text:     字号（rem 单位，配套 weight）
+ *  - radius:   圆角 3 档（sm 4px / md 8px / pill 9999px）
+ *  - shadow:   阴影 2 档（sm 微浮起 / md 卡片）
+ *
+ * 命名空间：`--dr-*`（DeepReader），不与 Obsidian 原生 `var(--...)` 冲突。
+ *
+ * 迁移策略：
+ *  - Phase 1（本文件）：定义 token
+ *  - Phase 2（后续 commit）：逐步替换硬编码色 / px / shadow
+ *  - 配套检查：stylelint 规则 `declaration-property-value-disallowed-list`（待加）
+ *
+ * 透传 Obsidian 原生变量的理由：
+ *  - 切主题时自动响应（用户切到 AnuPpuccin / Minimal 等自定义主题）
+ *  - 不需要为每个组件写主题覆写
+ *  - 维护成本最低
  */
 
-/* 强制重置容器样式以匹配设计 */
+:root {
+  /* ═══════════════════════════════════════════════════════════════════
+   * COLOR — 颜色语义层
+   * 透传 Obsidian 原生变量，保持主题感知
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-color-accent: var(--interactive-accent);
+  --dr-color-accent-hover: var(--interactive-accent-hover);
+  --dr-color-surface: var(--background-secondary);
+  --dr-color-surface-elevated: var(--background-primary);
+  --dr-color-text: var(--text-normal);
+  --dr-color-text-muted: var(--text-muted);
+  --dr-color-text-faint: var(--text-faint);
+  --dr-color-border: var(--background-modifier-border);
+  --dr-color-border-focus: var(--interactive-accent);
+
+  /* 状态色（透传 Obsidian；如有自定义需求可在此派生） */
+  --dr-color-success: hsl(140, 50%, 45%);
+  --dr-color-warning: hsl(35, 90%, 50%);
+  --dr-color-error: hsl(0, 70%, 50%);
+
+  /* ═══════════════════════════════════════════════════════════════════
+   * SPACING — 4px 步进
+   * 0.25rem / 0.5rem / 0.75rem / 1rem / 1.5rem / 2rem / 3rem
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-space-1: 0.25rem;   /*  4px */
+  --dr-space-2: 0.5rem;    /*  8px */
+  --dr-space-3: 0.75rem;   /* 12px */
+  --dr-space-4: 1rem;      /* 16px */
+  --dr-space-5: 1.25rem;   /* 20px */
+  --dr-space-6: 1.5rem;    /* 24px */
+  --dr-space-8: 2rem;      /* 32px */
+  --dr-space-12: 3rem;     /* 48px */
+
+  /* ═══════════════════════════════════════════════════════════════════
+   * TYPOGRAPHY — 字号 + 字重
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-text-xs: 0.75rem;     /* 12px - 辅助文字 / 标签 */
+  --dr-text-sm: 0.875rem;    /* 14px - 次要正文 */
+  --dr-text-base: 1rem;      /* 16px - 正文 */
+  --dr-text-lg: 1.125rem;    /* 18px - 强调正文 */
+  --dr-text-xl: 1.25rem;     /* 20px - 小标题 */
+  --dr-text-2xl: 1.5rem;     /* 24px - 标题 */
+  --dr-text-3xl: 1.875rem;   /* 30px - 大标题 */
+
+  /* 字重 */
+  --dr-weight-normal: 400;
+  --dr-weight-medium: 500;
+  --dr-weight-semibold: 600;
+  --dr-weight-bold: 700;
+
+  /* 行高 */
+  --dr-leading-tight: 1.25;
+  --dr-leading-normal: 1.5;
+  --dr-leading-relaxed: 1.75;
+
+  /* ═══════════════════════════════════════════════════════════════════
+   * RADIUS — 圆角 3 档
+   * 避免 9999px pill 通配：sm 用于按钮 / 输入框，md 用于卡片，pill 用于特殊 chip
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-radius-sm: 4px;
+  --dr-radius-md: 8px;
+  --dr-radius-lg: 12px;
+  --dr-radius-pill: 9999px;
+
+  /* ═══════════════════════════════════════════════════════════════════
+   * SHADOW — 阴影 2 档
+   * 避免 shadow-heavy AI 审美：sm 微浮起（hover），md 卡片（modal）
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --dr-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+  /* ═══════════════════════════════════════════════════════════════════
+   * Z-INDEX — 分层（避免散落 magic number）
+   * ═══════════════════════════════════════════════════════════════════ */
+  --dr-z-base: 1;
+  --dr-z-dropdown: 10;
+  --dr-z-sticky: 100;
+  --dr-z-modal: 1000;
+  --dr-z-toast: 2000;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 容器基础样式（保留原行为 — 强制重置以匹配设计）
+ * ═══════════════════════════════════════════════════════════════════════ */
 .deeppdf-container {
-  background-color: var(--background-primary) !important;
-  color: var(--text-normal);
+  background-color: var(--dr-color-surface-elevated) !important;
+  color: var(--dr-color-text);
   font-family: var(--font-interface);
 }

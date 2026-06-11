@@ -131,7 +131,7 @@
   gap: var(--size-4-2);
   padding: var(--size-4-2);
   background: var(--background-secondary);
-  border-radius: 8px;
+  border-radius: var(--dr-radius-md);
 }
 
 .deeppdf-logo svg {
