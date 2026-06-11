@@ -1816,3 +1816,31 @@
 button.deeppdf-icon-button:focus-visible {
 	outline-offset: 4px;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 减少动画偏好（WCAG 2.3.3）
+ * 系统级偏好启用时，禁用所有动画 / 过渡
+ * ══════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	.deeppdf-pulse,
+	.deeppdf-spin,
+	.deeppdf-spinner,
+	.deeppdf-task-progress-fill,
+	.deeppdf-fade-in,
+	.deeppdf-slide-up,
+	.deeppdf-bounce,
+	.deeppdf-progress-shine,
+	.deeppdf-thinking-dot,
+	.deeppdf-mascot-face {
+		animation: none !important;
+	}
+}
