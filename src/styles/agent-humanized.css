@@ -284,8 +284,10 @@
 }
 
 /* 暗色主题 */
-.theme-dark .deepreader-thinking,
-.theme-dark .deepreader-agent-humanized {
+/* 注意：原这里是 .theme-dark 限定，但 text-muted 本身是 Obsidian token，
+ * 亮 / 暗主题都生效。不需要额外限定主题。 */
+.deepreader-thinking,
+.deepreader-agent-humanized {
 	color: var(--text-muted);
 }
 
