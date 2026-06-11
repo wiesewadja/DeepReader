@@ -3,117 +3,130 @@
  * 提供聊天模式切换等隐藏设置选项
  */
 
-import { type App, Modal } from 'obsidian';
-import { AgentModeToggle, type ChatMode } from '../agent-mode-toggle/agent-mode-toggle';
+import { type App, Modal } from "obsidian";
+import {
+	AgentModeToggle,
+	type ChatMode,
+} from "../agent-mode-toggle/agent-mode-toggle";
 
 export interface ChatSettingsOptions {
-    initialMode: ChatMode;
-    onModeChange: (mode: ChatMode) => void;
+	initialMode: ChatMode;
+	onModeChange: (mode: ChatMode) => void;
 }
 
 export class ChatSettingsModal extends Modal {
-    private options: ChatSettingsOptions;
-    private agentModeToggle: AgentModeToggle | null = null;
+	private options: ChatSettingsOptions;
+	private agentModeToggle: AgentModeToggle | null = null;
 
-    constructor(app: App, options: ChatSettingsOptions) {
-        super(app);
-        this.options = options;
-    }
+	constructor(app: App, options: ChatSettingsOptions) {
+		super(app);
+		this.options = options;
+	}
 
-    onOpen() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.addClass('deeppdf-chat-settings-modal');
+	onOpen() {
+		const { contentEl, modalEl } = this;
+		contentEl.empty();
+		contentEl.addClass("deeppdf-chat-settings-modal");
 
-        // 标题
-        const header = contentEl.createEl('h2', {
-            text: '聊天设置',
-            cls: 'deeppdf-settings-title'
-        });
+		// 标题
+		const header = contentEl.createEl("h2", {
+			text: "聊天设置",
+			cls: "deeppdf-settings-title",
+		});
 
-        // 描述
-        const description = contentEl.createEl('p', {
-            text: '配置聊天模式和回答偏好',
-            cls: 'deeppdf-settings-description'
-        });
+		// 描述
+		const description = contentEl.createEl("p", {
+			text: "配置聊天模式和回答偏好",
+			cls: "deeppdf-settings-description",
+		});
 
-        // 创建设置项容器
-        const settingsContainer = contentEl.createDiv({
-            cls: 'deeppdf-settings-container'
-        });
+		// 屏幕阅读器可访问性：dialog 语义 + 关联标题/描述
+		const headerId = "deeppdf-chat-settings-title";
+		const descriptionId = "deeppdf-chat-settings-description";
+		header.id = headerId;
+		description.id = descriptionId;
+		modalEl.setAttribute("role", "dialog");
+		modalEl.setAttribute("aria-modal", "true");
+		modalEl.setAttribute("aria-labelledby", headerId);
+		modalEl.setAttribute("aria-describedby", descriptionId);
 
-        // ========== 模式切换设置 ==========
-        this.createModeSetting(settingsContainer);
+		// 创建设置项容器
+		const settingsContainer = contentEl.createDiv({
+			cls: "deeppdf-settings-container",
+		});
 
-        // ========== 模式说明 ==========
-        this.createModeDescription(settingsContainer);
+		// ========== 模式切换设置 ==========
+		this.createModeSetting(settingsContainer);
 
-        // 关闭按钮
-        const buttonContainer = contentEl.createDiv({
-            cls: 'modal-button-container'
-        });
+		// ========== 模式说明 ==========
+		this.createModeDescription(settingsContainer);
 
-        const closeBtn = buttonContainer.createEl('button', {
-            text: '关闭',
-            cls: 'mod-cta'
-        });
+		// 关闭按钮
+		const buttonContainer = contentEl.createDiv({
+			cls: "modal-button-container",
+		});
 
-        closeBtn.addEventListener('click', () => {
-            this.close();
-        });
+		const closeBtn = buttonContainer.createEl("button", {
+			text: "关闭",
+			cls: "mod-cta",
+		});
 
-        // 聚焦关闭按钮
-        setTimeout(() => closeBtn.focus(), 50);
-    }
+		closeBtn.addEventListener("click", () => {
+			this.close();
+		});
 
-    /**
-     * 创建模式切换设置项
-     */
-    private createModeSetting(container: HTMLElement) {
-        const settingItem = container.createDiv({
-            cls: 'deeppdf-setting-item'
-        });
+		// 聚焦关闭按钮
+		setTimeout(() => closeBtn.focus(), 50);
+	}
 
-        const label = settingItem.createDiv({
-            cls: 'deeppdf-setting-label'
-        });
-        label.createEl('h3', { text: '聊天模式' });
-        label.createEl('p', {
-            text: '选择 AI 回答的方式',
-            cls: 'deeppdf-setting-hint'
-        });
+	/**
+	 * 创建模式切换设置项
+	 */
+	private createModeSetting(container: HTMLElement) {
+		const settingItem = container.createDiv({
+			cls: "deeppdf-setting-item",
+		});
 
-        const control = settingItem.createDiv({
-            cls: 'deeppdf-setting-control'
-        });
+		const label = settingItem.createDiv({
+			cls: "deeppdf-setting-label",
+		});
+		label.createEl("h3", { text: "聊天模式" });
+		label.createEl("p", {
+			text: "选择 AI 回答的方式",
+			cls: "deeppdf-setting-hint",
+		});
 
-        // 使用现有的 AgentModeToggle 组件
-        this.agentModeToggle = new AgentModeToggle({
-            initialMode: this.options.initialMode,
-            onModeChange: (mode: ChatMode) => {
-                this.options.onModeChange(mode);
-            }
-        });
+		const control = settingItem.createDiv({
+			cls: "deeppdf-setting-control",
+		});
 
-        const toggleEl = this.agentModeToggle.getElement();
-        if (toggleEl) {
-            control.appendChild(toggleEl);
-        }
-    }
+		// 使用现有的 AgentModeToggle 组件
+		this.agentModeToggle = new AgentModeToggle({
+			initialMode: this.options.initialMode,
+			onModeChange: (mode: ChatMode) => {
+				this.options.onModeChange(mode);
+			},
+		});
 
-    /**
-     * 创建模式说明
-     */
-    private createModeDescription(container: HTMLElement) {
-        const descriptionSection = container.createDiv({
-            cls: 'deeppdf-mode-description'
-        });
+		const toggleEl = this.agentModeToggle.getElement();
+		if (toggleEl) {
+			control.appendChild(toggleEl);
+		}
+	}
 
-        // 快速检索模式说明
-        const fastDesc = descriptionSection.createDiv({
-            cls: 'deeppdf-mode-desc-item deeppdf-mode-desc-fast'
-        });
-        fastDesc.innerHTML = `
+	/**
+	 * 创建模式说明
+	 */
+	private createModeDescription(container: HTMLElement) {
+		const descriptionSection = container.createDiv({
+			cls: "deeppdf-mode-description",
+		});
+
+		// 快速检索模式说明
+		const fastDesc = descriptionSection.createDiv({
+			cls: "deeppdf-mode-desc-item deeppdf-mode-desc-fast",
+		});
+		fastDesc.innerHTML = `
             <div class="deeppdf-mode-desc-icon">⚡</div>
             <div class="deeppdf-mode-desc-content">
                 <div class="deeppdf-mode-desc-title">快速检索</div>
@@ -121,23 +134,23 @@ export class ChatSettingsModal extends Modal {
             </div>
         `;
 
-        // Agent 问答模式说明
-        const agentDesc = descriptionSection.createDiv({
-            cls: 'deeppdf-mode-desc-item deeppdf-mode-desc-agent'
-        });
-        agentDesc.innerHTML = `
+		// Agent 问答模式说明
+		const agentDesc = descriptionSection.createDiv({
+			cls: "deeppdf-mode-desc-item deeppdf-mode-desc-agent",
+		});
+		agentDesc.innerHTML = `
             <div class="deeppdf-mode-desc-icon">🤖</div>
             <div class="deeppdf-mode-desc-content">
                 <div class="deeppdf-mode-desc-title">Agent 问答</div>
                 <div class="deeppdf-mode-desc-text">使用 Agent 思考并调用工具，综合多个来源回答复杂问题，适合深度分析</div>
             </div>
         `;
-    }
+	}
 
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
-        contentEl.removeClass('deeppdf-chat-settings-modal');
-        this.agentModeToggle = null;
-    }
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.removeClass("deeppdf-chat-settings-modal");
+		this.agentModeToggle = null;
+	}
 }
