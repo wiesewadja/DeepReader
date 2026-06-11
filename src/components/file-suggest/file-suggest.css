@@ -31,19 +31,6 @@
 	width: 6px;
 }
 
-.deeppdf-file-suggest::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.deeppdf-file-suggest::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border);
-	border-radius: 3px;
-}
-
-.deeppdf-file-suggest::-webkit-scrollbar-thumb:hover {
-	background: var(--background-modifier-border-hover);
-}
-
 .deeppdf-file-suggest-empty {
 	padding: 16px;
 	color: var(--text-muted);

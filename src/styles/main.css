@@ -1456,22 +1456,9 @@
 	/* 为卡片阴影留空间 */
 }
 
-/* 自定义滚动条 */
+/* 滚动条 —— 只设宽度，颜色用浏览器默认 */
 .deeppdf-file-list::-webkit-scrollbar {
 	width: 8px;
-}
-
-.deeppdf-file-list::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.deeppdf-file-list::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border);
-	border-radius: 4px;
-}
-
-.deeppdf-file-list::-webkit-scrollbar-thumb:hover {
-	background: var(--background-modifier-border-hover);
 }
 
 /* 文件项 - 卡片设计 */
