@@ -104,19 +104,6 @@
     width: 8px;
 }
 
-.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-thumb {
-    background: var(--background-modifier-border);
-    border-radius: 4px;
-}
-
-.deeppdf-library-view .deeppdf-lib-grid::-webkit-scrollbar-thumb:hover {
-    background: var(--text-faint);
-}
-
 /* 书籍卡片 */
 .deeppdf-library-view .deeppdf-lib-book-card {
     display: flex;

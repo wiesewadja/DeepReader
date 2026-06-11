@@ -135,7 +135,9 @@
 	color: var(--text-normal);
 	border: none;
 	border-radius: 2px;
-	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+	font-family:
+		"Charter", "Georgia", "Times New Roman", "Noto Serif SC",
+		"Source Han Serif SC", serif;
 	position: relative;
 	overflow: hidden;
 	box-shadow:
@@ -158,19 +160,34 @@
 	--deeppdf-margin: rgba(200, 80, 80, 0.35);
 
 	background:
-		linear-gradient(to bottom, var(--interactive-accent) 3px, transparent 3px) no-repeat,
-		linear-gradient(to right, transparent 34px, var(--deeppdf-margin) 34px, var(--deeppdf-margin) 35px, transparent 35px) no-repeat,
+		linear-gradient(to bottom, var(--interactive-accent) 3px, transparent 3px)
+		no-repeat,
+		linear-gradient(
+			to right,
+			transparent 34px,
+			var(--deeppdf-margin) 34px,
+			var(--deeppdf-margin) 35px,
+			transparent 35px
+		)
+		no-repeat,
 		repeating-linear-gradient(
-			transparent, transparent 27px,
-			var(--deeppdf-rule) 27px, var(--deeppdf-rule) 28px
+			transparent,
+			transparent 27px,
+			var(--deeppdf-rule) 27px,
+			var(--deeppdf-rule) 28px
 		),
 		repeating-linear-gradient(
 			45deg,
-			transparent, transparent 2px,
-			rgba(0, 0, 0, 0.008) 2px, rgba(0, 0, 0, 0.008) 4px
+			transparent,
+			transparent 2px,
+			rgba(0, 0, 0, 0.008) 2px,
+			rgba(0, 0, 0, 0.008) 4px
 		),
-		radial-gradient(ellipse at 50% 0%, var(--deeppdf-paper) 0%, var(--deeppdf-paper-vignette) 100%)
-		!important;
+		radial-gradient(
+			ellipse at 50% 0%,
+			var(--deeppdf-paper) 0%,
+			var(--deeppdf-paper-vignette) 100%
+		) !important;
 	background-color: var(--deeppdf-paper) !important;
 	border-top: none;
 	padding: 28px 20px 20px 42px !important;
@@ -179,23 +196,38 @@
 .theme-dark .deeppdf-pattern-notebook {
 	--deeppdf-paper: #1e1f22;
 	--deeppdf-paper-vignette: rgba(0, 0, 0, 0.25);
-	--deeppdf-rule: rgba(120, 160, 220, 0.10);
+	--deeppdf-rule: rgba(120, 160, 220, 0.1);
 	--deeppdf-margin: rgba(200, 80, 80, 0.25);
 
 	background:
-		linear-gradient(to bottom, var(--interactive-accent) 3px, transparent 3px) no-repeat,
-		linear-gradient(to right, transparent 34px, var(--deeppdf-margin) 34px, var(--deeppdf-margin) 35px, transparent 35px) no-repeat,
+		linear-gradient(to bottom, var(--interactive-accent) 3px, transparent 3px)
+		no-repeat,
+		linear-gradient(
+			to right,
+			transparent 34px,
+			var(--deeppdf-margin) 34px,
+			var(--deeppdf-margin) 35px,
+			transparent 35px
+		)
+		no-repeat,
 		repeating-linear-gradient(
-			transparent, transparent 27px,
-			var(--deeppdf-rule) 27px, var(--deeppdf-rule) 28px
+			transparent,
+			transparent 27px,
+			var(--deeppdf-rule) 27px,
+			var(--deeppdf-rule) 28px
 		),
 		repeating-linear-gradient(
 			45deg,
-			transparent, transparent 3px,
-			rgba(255, 255, 255, 0.006) 3px, rgba(255, 255, 255, 0.006) 6px
+			transparent,
+			transparent 3px,
+			rgba(255, 255, 255, 0.006) 3px,
+			rgba(255, 255, 255, 0.006) 6px
 		),
-		radial-gradient(ellipse at 50% 0%, var(--deeppdf-paper) 0%, var(--deeppdf-paper-vignette) 100%)
-		!important;
+		radial-gradient(
+			ellipse at 50% 0%,
+			var(--deeppdf-paper) 0%,
+			var(--deeppdf-paper-vignette) 100%
+		) !important;
 	background-color: var(--deeppdf-paper) !important;
 }
 
@@ -203,27 +235,35 @@
  * 暖棕古纸底色 + 粗纤维纹理 + 深棕顶部装饰 + 强晕影 */
 .deeppdf-pattern-parchment {
 	--deeppdf-paper: #f0e4cc;
-	--deeppdf-paper-vignette: rgba(160, 130, 90, 0.20);
+	--deeppdf-paper-vignette: rgba(160, 130, 90, 0.2);
 	--deeppdf-grain: rgba(140, 110, 70, 0.06);
 	--deeppdf-header: #8b6914;
 
 	background:
-		/* 顶部金色装饰带 */
-		linear-gradient(to bottom, var(--deeppdf-header) 3px, transparent 3px) no-repeat,
+/* 顶部金色装饰带 */
+		linear-gradient(to bottom, var(--deeppdf-header) 3px, transparent 3px)
+		no-repeat,
 		/* 纤维纹理：两组交叉斜线 */
 		repeating-linear-gradient(
 			135deg,
-			transparent, transparent 3px,
-			var(--deeppdf-grain) 3px, var(--deeppdf-grain) 5px
+			transparent,
+			transparent 3px,
+			var(--deeppdf-grain) 3px,
+			var(--deeppdf-grain) 5px
 		),
 		repeating-linear-gradient(
 			45deg,
-			transparent, transparent 4px,
-			rgba(0, 0, 0, 0.01) 4px, rgba(0, 0, 0, 0.01) 6px
+			transparent,
+			transparent 4px,
+			rgba(0, 0, 0, 0.01) 4px,
+			rgba(0, 0, 0, 0.01) 6px
 		),
 		/* 径向晕影：边缘泛黄 */
-		radial-gradient(ellipse at 50% 50%, var(--deeppdf-paper) 0%, var(--deeppdf-paper-vignette) 100%)
-		!important;
+		radial-gradient(
+			ellipse at 50% 50%,
+			var(--deeppdf-paper) 0%,
+			var(--deeppdf-paper-vignette) 100%
+		) !important;
 	background-color: var(--deeppdf-paper) !important;
 	padding: 28px 24px 24px 28px !important;
 	box-shadow:
@@ -239,19 +279,27 @@
 	--deeppdf-header: #a08030;
 
 	background:
-		linear-gradient(to bottom, var(--deeppdf-header) 3px, transparent 3px) no-repeat,
+		linear-gradient(to bottom, var(--deeppdf-header) 3px, transparent 3px)
+		no-repeat,
 		repeating-linear-gradient(
 			135deg,
-			transparent, transparent 4px,
-			var(--deeppdf-grain) 4px, var(--deeppdf-grain) 6px
+			transparent,
+			transparent 4px,
+			var(--deeppdf-grain) 4px,
+			var(--deeppdf-grain) 6px
 		),
 		repeating-linear-gradient(
 			45deg,
-			transparent, transparent 5px,
-			rgba(255, 255, 255, 0.004) 5px, rgba(255, 255, 255, 0.004) 7px
+			transparent,
+			transparent 5px,
+			rgba(255, 255, 255, 0.004) 5px,
+			rgba(255, 255, 255, 0.004) 7px
 		),
-		radial-gradient(ellipse at 50% 50%, var(--deeppdf-paper) 0%, var(--deeppdf-paper-vignette) 100%)
-		!important;
+		radial-gradient(
+			ellipse at 50% 50%,
+			var(--deeppdf-paper) 0%,
+			var(--deeppdf-paper-vignette) 100%
+		) !important;
 	background-color: var(--deeppdf-paper) !important;
 	box-shadow:
 		inset 0 0 50px rgba(0, 0, 0, 0.15),
@@ -299,29 +347,32 @@
  * 设计意图：日式书信的留白与含蓄， hairline 顶饰替代 blunt border-top */
 .deeppdf-pattern-kami {
 	--kami-paper: #f5f4ed;
-	--kami-accent: #1B365D;
+	--kami-accent: #1b365d;
 	--kami-text: #3d3d3a;
 	--kami-warm: #e8e6dc;
 
 	/* 多层纸叠：顶饰线 + 横纤维 + 中心暖调 + 边缘晕影 + 底色 */
 	background:
-		/* 左上角 hairline（信头感，非全宽进度条） */
-		linear-gradient(to right, var(--kami-accent), var(--kami-accent))
-			no-repeat 24px 16px / 60px 1px,
+/* 左上角 hairline（信头感，非全宽进度条） */
+		linear-gradient(to right, var(--kami-accent), var(--kami-accent)) no-repeat
+		24px 16px / 60px 1px,
 		/* 手漉和纸横向纤维（laid paper 水印线） */
 		repeating-linear-gradient(
 			to bottom,
-			transparent, transparent 20px,
+			transparent,
+			transparent 20px,
 			rgba(0, 0, 0, 0.005) 20px,
 			rgba(0, 0, 0, 0.005) 21px
 		),
 		/* 中心暖晕（纸张受光面的温润） */
-		radial-gradient(ellipse at 50% 40%,
+		radial-gradient(
+			ellipse at 50% 40%,
 			rgba(255, 250, 240, 0.5) 0%,
 			transparent 70%
 		),
 		/* 边缘微晕（纸张厚度与投影） */
-		radial-gradient(ellipse at 50% 50%,
+		radial-gradient(
+			ellipse at 50% 50%,
 			transparent 60%,
 			rgba(0, 0, 0, 0.012) 100%
 		),
@@ -345,7 +396,9 @@
 
 .deeppdf-message-bubble-ai.deeppdf-pattern-kami {
 	border-radius: 3px 4px 5px 3px;
-	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+	font-family:
+		"Charter", "Georgia", "Times New Roman", "Noto Serif SC",
+		"Source Han Serif SC", serif;
 }
 
 /* 内容排版：温润而非锐利 */
@@ -399,19 +452,22 @@
 	--kami-warm: #3d3d3a;
 
 	background:
-		linear-gradient(to right, var(--kami-accent), var(--kami-accent))
-			no-repeat 24px 16px / 60px 1px,
+		linear-gradient(to right, var(--kami-accent), var(--kami-accent)) no-repeat
+		24px 16px / 60px 1px,
 		repeating-linear-gradient(
 			to bottom,
-			transparent, transparent 20px,
+			transparent,
+			transparent 20px,
 			rgba(255, 255, 255, 0.004) 20px,
 			rgba(255, 255, 255, 0.004) 21px
 		),
-		radial-gradient(ellipse at 50% 40%,
+		radial-gradient(
+			ellipse at 50% 40%,
 			rgba(255, 255, 255, 0.03) 0%,
 			transparent 60%
 		),
-		radial-gradient(ellipse at 50% 50%,
+		radial-gradient(
+			ellipse at 50% 50%,
 			transparent 50%,
 			rgba(0, 0, 0, 0.2) 100%
 		),
@@ -482,7 +538,9 @@
 }
 
 @keyframes deeppdf-loading-bounce {
-	0%, 80%, 100% {
+	0%,
+	80%,
+	100% {
 		transform: scale(0.6);
 		opacity: 0.5;
 	}
@@ -550,7 +608,9 @@
 
 /* AI 消息段落样式 */
 .deeppdf-message-bubble-ai .deeppdf-message-content p {
-	font-family: "Charter", "Georgia", "Times New Roman", "Noto Serif SC", "Source Han Serif SC", serif;
+	font-family:
+		"Charter", "Georgia", "Times New Roman", "Noto Serif SC",
+		"Source Han Serif SC", serif;
 	line-height: 1.9;
 	letter-spacing: 0.01em;
 }
@@ -592,12 +652,15 @@
 }
 
 /* 未解析的链接（文件不存在） */
-.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved {
+.deeppdf-message-bubble-ai .deeppdf-message-content
+	a.internal-link.is-unresolved {
 	color: var(--text-muted);
 	opacity: 0.7;
 }
 
-.deeppdf-message-bubble-ai .deeppdf-message-content a.internal-link.is-unresolved:hover {
+.deeppdf-message-bubble-ai
+	.deeppdf-message-content
+	a.internal-link.is-unresolved:hover {
 	opacity: 1;
 }
 
@@ -718,7 +781,10 @@
 /* 删除按钮特殊样式 */
 .deeppdf-message-delete-btn {
 	opacity: 0.3;
-	transition: opacity 0.2s ease, background 0.15s ease, color 0.15s ease;
+	transition:
+		opacity 0.2s ease,
+		background 0.15s ease,
+		color 0.15s ease;
 }
 
 .deeppdf-message:hover .deeppdf-message-delete-btn {
@@ -735,7 +801,7 @@
 
 /* 使用伪元素制作优雅的圆形光标 */
 .deeppdf-message-streaming .deeppdf-message-content::after {
-	content: '';
+	content: "";
 	display: inline-block;
 	width: 8px;
 	height: 8px;
@@ -748,7 +814,8 @@
 }
 
 @keyframes deeppdf-pulse {
-	0%, 100% {
+	0%,
+	100% {
 		transform: scale(0.9);
 		opacity: 0.6;
 	}
@@ -788,7 +855,6 @@
 /* ==================== 打印样式 ==================== */
 
 @media print {
-
 	.deeppdf-message-actions,
 	.deeppdf-citation-jump-btn {
 		display: none;
@@ -934,7 +1000,9 @@
 	transition: transform 0.2s ease;
 }
 
-.deeppdf-agent-thoughts.collapsed .deeppdf-agent-thought-header svg.thoughts-chevron {
+.deeppdf-agent-thoughts.collapsed
+	.deeppdf-agent-thought-header
+	svg.thoughts-chevron {
 	transform: rotate(-90deg);
 }
 
@@ -951,7 +1019,10 @@
 	gap: 8px;
 	max-height: 500px;
 	overflow: hidden;
-	transition: max-height 0.2s ease, opacity 0.2s ease, margin-top 0.2s ease;
+	transition:
+		max-height 0.2s ease,
+		opacity 0.2s ease,
+		margin-top 0.2s ease;
 	opacity: 1;
 	margin-top: 6px;
 }
@@ -1050,11 +1121,6 @@
 	width: 4px;
 }
 
-.deeppdf-agent-tool-result::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border);
-	border-radius: 2px;
-}
-
 /* Agent 消息头部行 */
 .deeppdf-message-header-row {
 	display: flex;
@@ -1114,8 +1180,14 @@
 }
 
 @keyframes thinking-bar-in {
-	from { opacity: 0; transform: translateY(-4px); }
-	to { opacity: 1; transform: translateY(0); }
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 /* Agent 消息状态文本 */
@@ -1138,8 +1210,6 @@
 .deeppdf-message-status-text:empty {
 	display: none;
 }
-
-
 
 /* ==================== 全屏覆盖层 ==================== */
 
@@ -1210,7 +1280,9 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	transition: color 0.2s, background 0.2s;
+	transition:
+		color 0.2s,
+		background 0.2s;
 }
 
 .deeppdf-fullscreen-close-btn:hover {
@@ -1324,7 +1396,7 @@
 }
 
 .deeppdf-fullscreen-question::before {
-	content: '· ';
+	content: "· ";
 	color: var(--text-faint);
 }
 
@@ -1346,7 +1418,9 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	transition: color 0.2s, background 0.2s;
+	transition:
+		color 0.2s,
+		background 0.2s;
 }
 
 .deeppdf-fullscreen-nav-btn:hover {
@@ -1375,13 +1449,20 @@
 	cursor: pointer;
 	color: var(--text-muted);
 	opacity: 0.15;
-	transition: opacity 0.3s, color 0.3s, background 0.3s;
+	transition:
+		opacity 0.3s,
+		color 0.3s,
+		background 0.3s;
 	padding: 20px 8px;
 	border-radius: 8px;
 }
 
-.deeppdf-fullscreen-letter-prev { left: 8px; }
-.deeppdf-fullscreen-letter-next { right: 8px; }
+.deeppdf-fullscreen-letter-prev {
+	left: 8px;
+}
+.deeppdf-fullscreen-letter-next {
+	right: 8px;
+}
 
 .deeppdf-fullscreen-letter-nav:hover {
 	opacity: 0.8;
@@ -1402,25 +1483,50 @@
 /* ==================== 翻信滑动动画 ==================== */
 
 @keyframes deeppdf-flip-left-out {
-	to { transform: translateX(-40px); opacity: 0; }
+	to {
+		transform: translateX(-40px);
+		opacity: 0;
+	}
 }
 @keyframes deeppdf-flip-left-in {
-	from { transform: translateX(40px); opacity: 0; }
-	to { transform: translateX(0); opacity: 1; }
+	from {
+		transform: translateX(40px);
+		opacity: 0;
+	}
+	to {
+		transform: translateX(0);
+		opacity: 1;
+	}
 }
 @keyframes deeppdf-flip-right-out {
-	to { transform: translateX(40px); opacity: 0; }
+	to {
+		transform: translateX(40px);
+		opacity: 0;
+	}
 }
 @keyframes deeppdf-flip-right-in {
-	from { transform: translateX(-40px); opacity: 0; }
-	to { transform: translateX(0); opacity: 1; }
+	from {
+		transform: translateX(-40px);
+		opacity: 0;
+	}
+	to {
+		transform: translateX(0);
+		opacity: 1;
+	}
 }
 
-.deeppdf-flip-left-out { animation: deeppdf-flip-left-out 0.2s ease forwards; }
-.deeppdf-flip-left-in { animation: deeppdf-flip-left-in 0.25s ease forwards; }
-.deeppdf-flip-right-out { animation: deeppdf-flip-right-out 0.2s ease forwards; }
-.deeppdf-flip-right-in { animation: deeppdf-flip-right-in 0.25s ease forwards; }
-
+.deeppdf-flip-left-out {
+	animation: deeppdf-flip-left-out 0.2s ease forwards;
+}
+.deeppdf-flip-left-in {
+	animation: deeppdf-flip-left-in 0.25s ease forwards;
+}
+.deeppdf-flip-right-out {
+	animation: deeppdf-flip-right-out 0.2s ease forwards;
+}
+.deeppdf-flip-right-in {
+	animation: deeppdf-flip-right-in 0.25s ease forwards;
+}
 
 .deeppdf-fullscreen-toolbar {
 	z-index: 3;
@@ -1463,7 +1569,9 @@
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 	opacity: 0;
 	transform: translateY(4px);
-	transition: opacity 150ms ease-out, transform 150ms ease-out;
+	transition:
+		opacity 150ms ease-out,
+		transform 150ms ease-out;
 	pointer-events: none;
 }
 
@@ -1580,10 +1688,18 @@
 /* 墨水晕染动画 */
 @keyframes deeppdf-paragraph-ink {
 	from {
-		background: linear-gradient(90deg, rgba(139, 69, 19, 0.12) 0%, transparent 0%);
+		background: linear-gradient(
+			90deg,
+			rgba(139, 69, 19, 0.12) 0%,
+			transparent 0%
+		);
 	}
 	to {
-		background: linear-gradient(90deg, rgba(139, 69, 19, 0.12) 0%, transparent 100%);
+		background: linear-gradient(
+			90deg,
+			rgba(139, 69, 19, 0.12) 0%,
+			transparent 100%
+		);
 	}
 }
 
@@ -1594,10 +1710,18 @@
 
 @keyframes deeppdf-paragraph-ink-dark {
 	from {
-		background: linear-gradient(90deg, rgba(205, 133, 63, 0.14) 0%, transparent 0%);
+		background: linear-gradient(
+			90deg,
+			rgba(205, 133, 63, 0.14) 0%,
+			transparent 0%
+		);
 	}
 	to {
-		background: linear-gradient(90deg, rgba(205, 133, 63, 0.14) 0%, transparent 100%);
+		background: linear-gradient(
+			90deg,
+			rgba(205, 133, 63, 0.14) 0%,
+			transparent 100%
+		);
 	}
 }
 
@@ -1621,14 +1745,27 @@
 	animation: tts-wave-bar 0.8s ease-in-out infinite;
 }
 
-.deeppdf-tts-wave span:nth-child(1) { animation-delay: 0s; }
-.deeppdf-tts-wave span:nth-child(2) { animation-delay: 0.15s; }
-.deeppdf-tts-wave span:nth-child(3) { animation-delay: 0.3s; }
-.deeppdf-tts-wave span:nth-child(4) { animation-delay: 0.45s; }
+.deeppdf-tts-wave span:nth-child(1) {
+	animation-delay: 0s;
+}
+.deeppdf-tts-wave span:nth-child(2) {
+	animation-delay: 0.15s;
+}
+.deeppdf-tts-wave span:nth-child(3) {
+	animation-delay: 0.3s;
+}
+.deeppdf-tts-wave span:nth-child(4) {
+	animation-delay: 0.45s;
+}
 
 @keyframes tts-wave-bar {
-	0%, 100% { transform: scaleY(0.4); }
-	50% { transform: scaleY(1); }
+	0%,
+	100% {
+		transform: scaleY(0.4);
+	}
+	50% {
+		transform: scaleY(1);
+	}
 }
 
 .deeppdf-message-action-btn.tts-loading svg {
@@ -1636,18 +1773,22 @@
 }
 
 @keyframes deeppdf-tts-spin {
-	from { transform: rotate(0deg); }
-	to { transform: rotate(360deg); }
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 /* ==================== 移动端适配 ==================== */
 
 @media (max-width: 600px) {
-    .deeppdf-message-bubble {
-        max-width: 100%;
-    }
+	.deeppdf-message-bubble {
+		max-width: 100%;
+	}
 
-    .deeppdf-user-bubble {
-        max-width: 90%;
-    }
+	.deeppdf-user-bubble {
+		max-width: 90%;
+	}
 }

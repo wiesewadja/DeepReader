@@ -127,22 +127,9 @@
     overflow-y: auto;
 }
 
-/* 自定义滚动条 */
+/* 滚动条 —— 只设宽度，颜色默认 */
 .deeppdf-index-list::-webkit-scrollbar {
     width: 6px;
-}
-
-.deeppdf-index-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.deeppdf-index-list::-webkit-scrollbar-thumb {
-    background: var(--background-modifier-border);
-    border-radius: 3px;
-}
-
-.deeppdf-index-list::-webkit-scrollbar-thumb:hover {
-    background: var(--background-modifier-border-hover);
 }
 
 /* ==================== 友好空状态 ==================== */

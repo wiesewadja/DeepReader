@@ -417,26 +417,9 @@
 	margin-top: 8px;
 }
 
-/* ==================== 右侧内容区滚动条 ==================== */
+/* ==================== 右侧内容区滚动条 —— 只设宽度，颜色默认 ==================== */
 .deeppdf-settings-content::-webkit-scrollbar {
 	width: 4px !important;
-}
-
-.deeppdf-settings-content::-webkit-scrollbar-track {
-	background: transparent !important;
-}
-
-.deeppdf-settings-content::-webkit-scrollbar-thumb {
-	background: transparent !important;
-	border-radius: 2px !important;
-}
-
-.deeppdf-settings-content:hover::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border) !important;
-}
-
-.deeppdf-settings-content::-webkit-scrollbar-thumb:hover {
-	background: var(--text-muted) !important;
 }
 
 
