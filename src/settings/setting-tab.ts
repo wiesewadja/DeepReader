@@ -56,14 +56,42 @@ export class DeepPDFSettingTab extends PluginSettingTab {
   }
 
   private createTabNav(container: HTMLElement): void {
+    // 屏幕阅读器可访问性：WAI-ARIA Tabs Pattern
+    container.setAttribute('role', 'tablist');
+    container.setAttribute('aria-label', '设置分类导航');
+
     this.tabs.forEach(tab => {
+      const isActive = this.currentTab === tab.id;
       const navItem = container.createDiv({
-        cls: `deeppdf-settings-nav-item ${this.currentTab === tab.id ? 'is-active' : ''}`,
+        cls: `deeppdf-settings-nav-item ${isActive ? 'is-active' : ''}`,
       });
+      navItem.setAttribute('role', 'tab');
+      navItem.setAttribute('aria-selected', String(isActive));
+      // roving tabindex：只有激活 tab 可 Tab 聚焦，其他用 Arrow 键
+      navItem.setAttribute('tabindex', isActive ? '0' : '-1');
+
       const iconEl = navItem.createSpan({ cls: 'deeppdf-settings-nav-icon' });
       setIcon(iconEl, tab.icon);
       navItem.createSpan({ cls: 'deeppdf-settings-nav-name', text: tab.name });
+
       navItem.addEventListener('click', () => this.switchTab(tab.id));
+      // 键盘导航：ArrowLeft / ArrowRight 循环切换（roving tabindex 模式）
+      navItem.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const idx = this.tabs.findIndex((t) => t.id === tab.id);
+          const nextIdx =
+            e.key === 'ArrowRight'
+              ? (idx + 1) % this.tabs.length
+              : (idx - 1 + this.tabs.length) % this.tabs.length;
+          this.switchTab(this.tabs[nextIdx].id);
+          // 让新激活 tab 获得焦点
+          requestAnimationFrame(() => {
+            const items = container.querySelectorAll<HTMLElement>('[role="tab"]');
+            items[nextIdx]?.focus();
+          });
+        }
+      });
     });
   }
 
