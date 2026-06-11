@@ -1844,3 +1844,53 @@ button.deeppdf-icon-button:focus-visible {
 		animation: none !important;
 	}
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 响应式断点（mobile-first 升序）
+ * 4 档：320 / 768 / 1024 / 1440
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/* 320px — mobile 起点（参考点，以下的 padding/字号是移动设备默认值） */
+@media (min-width: 320px) {
+	.deeppdf-message-list {
+		padding: var(--dr-space-2);
+	}
+	.deeppdf-chat-input-container {
+		font-size: var(--dr-text-sm);
+	}
+	.deeppdf-empty-state {
+		padding: var(--dr-space-4);
+	}
+}
+
+/* 768px — tablet 起点（增加内边距，启用更多布局选项） */
+@media (min-width: 768px) {
+	.deeppdf-message-list {
+		padding: var(--dr-space-4);
+	}
+	.deeppdf-chat-input-container {
+		font-size: var(--dr-text-base);
+	}
+	.deeppdf-empty-state {
+		padding: var(--dr-space-6);
+	}
+}
+
+/* 1024px — desktop 起点（启用全宽布局） */
+@media (min-width: 1024px) {
+	.deeppdf-message-list {
+		padding: var(--dr-space-4) var(--dr-space-6);
+		max-width: 960px;
+		margin: 0 auto;
+	}
+	.deeppdf-empty-state {
+		padding: var(--dr-space-8);
+	}
+}
+
+/* 1440px — large desktop（限制最大宽，避免文本行过长） */
+@media (min-width: 1440px) {
+	.deeppdf-message-list {
+		max-width: 1100px;
+	}
+}
