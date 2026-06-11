@@ -7,14 +7,27 @@
 	right: 0;
 	top: 0;
 	bottom: 0;
-	width: 20px;
+	width: 36px;
 	display: flex;
 	flex-direction: column;
-	padding: 8px 3px;
+	padding: 8px 4px;
 	pointer-events: auto;
-	/* 无背景，完全融合 */
-	background: transparent;
+	/* 有明显背景：与滚动条区分 */
+	background: var(--background-secondary);
+	border-left: 1px solid var(--background-modifier-border);
 	z-index: 10;
+}
+
+/* 顶部小标签明示这是导航，不是滚动条 */
+.deeppdf-question-minimap::before {
+	content: '导航';
+	display: block;
+	font-size: 9px;
+	color: var(--text-faint);
+	text-align: center;
+	letter-spacing: 0.05em;
+	margin-bottom: 4px;
+	opacity: 0.6;
 }
 
 /* ==================== 标记轨道 ==================== */

@@ -182,8 +182,9 @@ export class MessageList extends Component {
 		if (!this.messagesContainer) return;
 
 		// 先清掉旧的 loading 节点
-		const existingSkeletons =
-			this.messagesContainer.querySelectorAll(".deeppdf-skeleton-message");
+		const existingSkeletons = this.messagesContainer.querySelectorAll(
+			".deeppdf-skeleton-message",
+		);
 		existingSkeletons.forEach((el) => el.remove());
 
 		if (loading) {
