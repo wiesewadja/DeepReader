@@ -36,6 +36,11 @@
 	display: none;
 }
 
+/* minimap 隐藏态（空消息列表时不占位，避免右侧出现 viewport 条） */
+.deeppdf-minimap-hidden {
+	display: none !important;
+}
+
 /* 隐藏状态 */
 .deeppdf-hidden {
 	display: none !important;

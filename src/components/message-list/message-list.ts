@@ -570,11 +570,15 @@ export class MessageList extends Component {
 			this.emptyState.setAttribute("aria-hidden", "true");
 			this.messagesContainer.removeClass("deeppdf-hidden");
 			this.messagesContainer.setAttribute("aria-hidden", "false");
+			// 消息列表非空时显示 minimap
+			this.minimap?.getElement()?.removeClass("deeppdf-minimap-hidden");
 		} else {
 			this.emptyState.removeClass("deeppdf-hidden");
 			this.emptyState.setAttribute("aria-hidden", "false");
 			this.messagesContainer.addClass("deeppdf-hidden");
 			this.messagesContainer.setAttribute("aria-hidden", "true");
+			// 空状态时隐藏 minimap（避免右侧出现 20px 视口条）
+			this.minimap?.getElement()?.addClass("deeppdf-minimap-hidden");
 
 			// 更新快捷操作按钮
 			this.renderQuickActions();
