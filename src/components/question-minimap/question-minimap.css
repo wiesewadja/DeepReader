@@ -1,33 +1,20 @@
 /* frontend/src/components/question-minimap/question-minimap.css */
 
-/* ==================== Minimap 容器 - 融合设计 ==================== */
+/* ==================== Minimap 容器 - 极简设计 ==================== */
 
 .deeppdf-question-minimap {
 	position: absolute;
-	right: 0;
-	top: 0;
-	bottom: 0;
-	width: 36px;
+	right: 2px;
+	top: 8px;
+	bottom: 8px;
+	width: 4px;
 	display: flex;
 	flex-direction: column;
-	padding: 8px 4px;
 	pointer-events: auto;
-	/* 有明显背景：与滚动条区分 */
-	background: var(--background-secondary);
-	border-left: 1px solid var(--background-modifier-border);
+	/* 透明、无背景、无 border —— 只是右下角的一根细指示器 */
+	background: transparent;
+	border: none;
 	z-index: 10;
-}
-
-/* 顶部小标签明示这是导航，不是滚动条 */
-.deeppdf-question-minimap::before {
-	content: '导航';
-	display: block;
-	font-size: 9px;
-	color: var(--text-faint);
-	text-align: center;
-	letter-spacing: 0.05em;
-	margin-bottom: 4px;
-	opacity: 0.6;
 }
 
 /* ==================== 标记轨道 ==================== */
@@ -42,39 +29,40 @@
 
 .deeppdf-minimap-block {
 	position: absolute;
-	left: 1px;
-	width: calc(100% - 2px);
+	left: 0;
+	width: 100%;
 	border-radius: 2px;
 	transition: all 0.15s ease;
 }
 
-/* 用户消息块 - 更浅的颜色 */
+/* 用户消息块 */
 .deeppdf-minimap-block-user {
 	background: var(--text-muted);
-	opacity: 0.25;
+	opacity: 0.5;
 	cursor: pointer;
-	min-height: 14px;
+	min-height: 8px;
 }
 
 .deeppdf-minimap-block-user:hover {
-	opacity: 0.5;
+	opacity: 0.8;
 }
 
-/* AI 消息块 - 非常淡 */
+/* AI 消息块 */
 .deeppdf-minimap-block-assistant {
 	background: var(--text-faint);
-	opacity: 0.1;
-	min-height: 6px;
+	opacity: 0.3;
+	min-height: 4px;
 }
 
 /* ==================== 视口指示器 ==================== */
 
 .deeppdf-minimap-viewport {
 	position: absolute;
-	left: 0;
-	width: 100%;
-	background: var(--text-faint);
-	opacity: 0.15;
+	left: -1px;
+	right: -1px;
+	width: calc(100% + 2px);
+	background: var(--interactive-accent);
+	opacity: 0.5;
 	border-radius: 2px;
 	pointer-events: none;
 	transition: opacity 0.15s ease;
@@ -106,7 +94,7 @@
 
 @media (max-width: 640px) {
 	.deeppdf-question-minimap {
-		width: 16px;
-		padding: 6px 2px;
+		width: 3px;
+		right: 1px;
 	}
 }

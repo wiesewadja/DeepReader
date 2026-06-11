@@ -20,8 +20,8 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 右侧为 minimap 留空间（36px 宽 + 4px 边距） */
-	padding: 16px 44px 16px 1%;
+	/* 右侧为 minimap 留空间（4px 极简 minimap + 4px 边距） */
+	padding: 16px 12px 16px 1%;
 
 	display: flex;
 	flex-direction: column;
@@ -73,36 +73,21 @@
 	padding: var(--dr-space-6) var(--dr-space-4);
 }
 
-/* 顶部圆形 avatar —— 系统 emoji，不依赖图片资源 */
+/* 顶部圆形 avatar —— 裸 MascotFace 显示，无背景/无阴影 */
 .deeppdf-empty-avatar {
 	width: 80px;
 	height: 80px;
-	border-radius: 50%;
-	background: linear-gradient(
-		135deg,
-		var(--interactive-accent) 0%,
-		color-mix(
-				in srgb,
-				var(--interactive-accent) 70%,
-				var(--background-modifier-border)
-			)
-			100%
-	);
-	color: var(--text-on-accent, #ffffff);
-	font-size: 42px;
-	line-height: 1;
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	user-select: none;
-	box-shadow: 0 2px 8px
-		color-mix(in srgb, var(--interactive-accent) 25%, transparent);
 	margin-bottom: var(--dr-space-2);
 }
 
 /* avatar 动画 —— 呼吸/浮动 */
 @keyframes deeppdf-empty-avatar-float {
-	0%, 100% {
+	0%,
+	100% {
 		transform: translateY(0) scale(1);
 	}
 	50% {
@@ -137,12 +122,18 @@
 
 /* 打字机光标 —— 文字后闪烁指示器 */
 @keyframes deeppdf-typing-cursor-blink {
-	0%, 50% { opacity: 1; }
-	51%, 100% { opacity: 0; }
+	0%,
+	50% {
+		opacity: 1;
+	}
+	51%,
+	100% {
+		opacity: 0;
+	}
 }
 
 .deeppdf-empty-title.deeppdf-typing-cursor::after {
-	content: '|';
+	content: "|";
 	display: inline-block;
 	margin-left: 2px;
 	font-weight: 300;
@@ -172,13 +163,18 @@
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
-	background: color-mix(in srgb, var(--interactive-accent) 12%, var(--dr-color-surface));
+	background: color-mix(
+		in srgb,
+		var(--interactive-accent) 12%,
+		var(--dr-color-surface)
+	);
 	color: var(--interactive-accent);
 	padding: 2px 10px;
 	border-radius: var(--dr-radius-pill);
 	font-weight: var(--dr-weight-semibold);
 	font-size: var(--dr-text-sm);
-	border: 1px solid color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+	border: 1px solid
+		color-mix(in srgb, var(--interactive-accent) 25%, transparent);
 }
 
 .deeppdf-empty-book-icon {
@@ -199,20 +195,20 @@
 	line-height: var(--dr-leading-normal);
 }
 
-/* 按钮网格 */
+/* 按钮网格 —— 极简风给单行足够呼吸空间，2 列 */
 .deeppdf-empty-grid {
 	display: grid;
-	grid-template-columns: repeat(3, 1fr);
-	gap: var(--dr-space-3);
+	grid-template-columns: repeat(2, 1fr);
+	gap: var(--dr-space-1) var(--dr-space-4);
 	width: 100%;
-	max-width: 480px;
+	max-width: 560px;
 	margin-top: var(--dr-space-2);
 }
 
-/* 响应式：窄屏降为 2 列 */
+/* 响应式：窄屏降为 1 列 */
 @media (max-width: 640px) {
 	.deeppdf-empty-grid {
-		grid-template-columns: repeat(2, 1fr);
+		grid-template-columns: 1fr;
 	}
 }
 

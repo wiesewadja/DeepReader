@@ -71,7 +71,9 @@ export class SidebarView extends ItemView {
 	private frontendAgent: FrontendAgent | null = null;
 
 	// 会话存储（JSONL 文件）
-	private ttsService: import("../../services/tts/tts-service.js").TTSService | null = null;
+	private ttsService:
+		| import("../../services/tts/tts-service.js").TTSService
+		| null = null;
 
 	// 主动阅读引导
 	private proactiveEngine:
@@ -705,9 +707,8 @@ export class SidebarView extends ItemView {
 			},
 		});
 
-		// 顶栏已隐藏（2026-06 设计重构：书名移到 empty state 徽章，
-		// 奚童表情头像移到 empty state 顶部，原 topbar 不再需要）
-		// this.createReadingTopbar(container);
+		// 创建阅读顶栏（有消息时提供书名/封面/设置入口）
+		this.createReadingTopbar(container);
 
 		// 奚童表情：用户活动重置 idle 计时器
 		this.registerDomEvent(container, "mouseenter", () => {
@@ -988,7 +989,7 @@ export class SidebarView extends ItemView {
 
 		// 创建聊天输入组件（在最上方）
 		// 检查是否可启用语音输入（需要 MiMo API Key）
-		const ttsConfig = resolveRoleConfig('tts', this.plugin.settings);
+		const ttsConfig = resolveRoleConfig("tts", this.plugin.settings);
 		const showVoiceButton = !!ttsConfig;
 
 		// 创建聊天输入组件（在最上方）
@@ -1014,15 +1015,17 @@ export class SidebarView extends ItemView {
 				await this.unloadCurrentDocument();
 			},
 			showVoiceButton,
-			onVoiceToggle: showVoiceButton ? () => {
-				if (!this.voiceInputCtrl) {
-					this.voiceInputCtrl = new VoiceInputController(this.chatInput!, {
-						apiKey: ttsConfig!.apiKey,
-						baseUrl: ttsConfig!.baseUrl,
-					});
-				}
-				this.voiceInputCtrl.toggle();
-			} : undefined,
+			onVoiceToggle: showVoiceButton
+				? () => {
+						if (!this.voiceInputCtrl) {
+							this.voiceInputCtrl = new VoiceInputController(this.chatInput!, {
+								apiKey: ttsConfig!.apiKey,
+								baseUrl: ttsConfig!.baseUrl,
+							});
+						}
+						this.voiceInputCtrl.toggle();
+					}
+				: undefined,
 		});
 
 		// 创建引用卡片容器（在输入框上方）
