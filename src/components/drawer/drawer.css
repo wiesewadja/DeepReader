@@ -71,20 +71,7 @@
     pointer-events: auto;
 }
 
-/* 滚动条样式优化 */
+/* 滚动条 —— 只设宽度，颜色用浏览器默认 */
 .deeppdf-drawer::-webkit-scrollbar {
     width: 8px;
-}
-
-.deeppdf-drawer::-webkit-scrollbar-track {
-    background: var(--background-secondary);
-}
-
-.deeppdf-drawer::-webkit-scrollbar-thumb {
-    background: var(--background-modifier-border);
-    border-radius: 4px;
-}
-
-.deeppdf-drawer::-webkit-scrollbar-thumb:hover {
-    background: var(--text-muted);
 }

@@ -93,14 +93,9 @@
 	color: var(--text-faint);
 }
 
-/* 滚动条适配 */
+/* 滚动条 —— 只设宽度，颜色用浏览器默认 */
 .deeppdf-chat-input-textarea::-webkit-scrollbar {
 	width: 4px;
-}
-
-.deeppdf-chat-input-textarea::-webkit-scrollbar-thumb {
-	background: var(--background-modifier-border);
-	border-radius: 4px;
 }
 
 /* ==================== 底部工具栏 ==================== */
