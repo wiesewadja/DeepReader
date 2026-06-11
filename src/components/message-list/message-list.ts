@@ -16,7 +16,7 @@ import {
 } from "../message/message";
 import { QuestionMinimap } from "../question-minimap";
 // @ts-ignore — esbuild dataurl loader handles .jpg
-const XITONG_IMG = require("../../assets/xitong.jpg") as string;
+// const XITONG_IMG = require("../../assets/xitong.jpg") as string;
 
 /**
  * 引导按钮类型
@@ -157,7 +157,6 @@ export class MessageList extends Component {
 	private app?: App;
 	private currentPdfName: string = "";
 	private minimap: QuestionMinimap | null = null;
-	private _typewriterActive: boolean = false;
 
 	constructor(callbacks: MessageCallbacks = {}, app?: App) {
 		super();
@@ -387,7 +386,7 @@ export class MessageList extends Component {
 	 * 清空消息列表
 	 */
 	clear(): void {
-		this._typewriterActive = false;
+		
 		this.messages.forEach((message) => {
 			message.getElement().remove();
 		});
@@ -445,7 +444,7 @@ export class MessageList extends Component {
 	 * 清空所有消息
 	 */
 	clearMessages(): void {
-		this._typewriterActive = false;
+		
 		// 清空 DOM
 		if (this.messagesContainer) {
 			this.messagesContainer.empty();
@@ -587,7 +586,10 @@ export class MessageList extends Component {
 	}
 
 	/**
-	 * 渲染快捷操作按钮
+	 * 渲染快捷操作按钮 / empty state
+	 *
+	 * 2026-06 重构：去掉 XITONG_IMG 全屏背景图（人物 JPG 作为背景怎么都像 AI 模板），
+	 * 改为：顶部小圆形 avatar + 紧凑文字层次 + 按钮网格。
 	 */
 	private renderQuickActions(): void {
 		if (!this.quickActionsEl) return;
@@ -595,141 +597,70 @@ export class MessageList extends Component {
 		// 清空现有内容
 		this.quickActionsEl.empty();
 
-		// 如果有当前 PDF 名称，显示引导按钮
-		if (this.currentPdfName && this.callbacks.onGuidanceClick) {
-			const advisorState = this.quickActionsEl.createEl("div", {
-				cls: "deeppdf-advisor-welcome",
-			});
-			const bg = advisorState.createEl("div", { cls: "deeppdf-advisor-bg" });
-			bg.style.backgroundImage = `url(${XITONG_IMG})`;
-			advisorState.createEl("div", { cls: "deeppdf-advisor-overlay" });
-			const content = advisorState.createEl("div", {
-				cls: "deeppdf-advisor-content",
-			});
-			const titleEl = content.createEl("div", { cls: "deeppdf-advisor-title" });
-			this.startTypewriter(
-				titleEl,
-				"\u4f60\u597d\uff0c\u6211\u662f\u595a\u7ae5",
-			);
-			content.createEl("div", {
-				cls: "deeppdf-advisor-subtitle",
-				text: `\u4f60\u7684 AI \u4f34\u8bfb \u00b7 ${this.currentPdfName}`,
-			});
-			content.createEl("div", {
-				cls: "deeppdf-advisor-hint",
-				text: "\u5f00\u59cb\u9605\u8bfb\u5427\uff0c\u6709\u4ec0\u4e48\u60f3\u804a\u7684\u968f\u65f6\u95ee\u6211",
-			});
+		// 统一渲染结构（avatar + title + subtitle + hint + grid）
+		const wrapper = this.quickActionsEl.createEl("div", {
+			cls: "deeppdf-empty-state-content",
+		});
 
-			const gridContainer = content.createEl("div", {
-				cls: "deeppdf-guidance-grid",
-			});
+		// 顶部圆形 avatar（"奚"字 —— 不依赖图片资源，token 化配色）
+		const avatar = wrapper.createEl("div", {
+			cls: "deeppdf-empty-avatar",
+			text: "奚",
+		});
+		avatar.setAttribute("aria-hidden", "true");
 
-			GUIDANCE_BUTTONS.forEach((button) => {
-				const btn = gridContainer.createEl("button", {
-					cls: "deeppdf-guidance-btn",
-				});
-				btn.createEl("span", {
-					cls: "deeppdf-guidance-label",
+		// 招呼标题
+		wrapper.createEl("h2", {
+			cls: "deeppdf-empty-title",
+			text: "你好，我是奚童",
+		});
+
+		// 副标题（含/不含 PDF 名称）
+		const subtitleText = this.currentPdfName
+			? `你的 AI 伴读 · ${this.currentPdfName}`
+			: "你的 AI 伴读";
+		wrapper.createEl("p", {
+			cls: "deeppdf-empty-subtitle",
+			text: subtitleText,
+		});
+
+		// 提示文字
+		const hintText = this.currentPdfName
+			? "开始阅读吧，有什么想聊的随时问我"
+			: "有什么想聊的，随时问我";
+		wrapper.createEl("p", {
+			cls: "deeppdf-empty-hint",
+			text: hintText,
+		});
+
+		// 按钮网格
+		const grid = wrapper.createEl("div", {
+			cls: "deeppdf-empty-grid",
+		});
+
+		// 选择要显示的按钮组
+		const buttons = this.currentPdfName ? GUIDANCE_BUTTONS : ADVISOR_BUTTONS;
+		if (this.callbacks.onGuidanceClick) {
+			buttons.forEach((button) => {
+				const btn = grid.createEl("button", {
+					cls: "deeppdf-empty-btn",
 					text: button.label,
 				});
-
-				btn.addEventListener("click", () => {
-					this.callbacks.onGuidanceClick?.(button.type);
-				});
-			});
-		} else if (this.callbacks.onGuidanceClick) {
-			// 阅读顾问模式：沉浸式背景欢迎界面
-			const advisorState = this.quickActionsEl.createEl("div", {
-				cls: "deeppdf-advisor-welcome",
-			});
-			const bg = advisorState.createEl("div", { cls: "deeppdf-advisor-bg" });
-			bg.style.backgroundImage = `url(${XITONG_IMG})`;
-			advisorState.createEl("div", { cls: "deeppdf-advisor-overlay" });
-			const content = advisorState.createEl("div", {
-				cls: "deeppdf-advisor-content",
-			});
-			const titleEl = content.createEl("div", { cls: "deeppdf-advisor-title" });
-			this.startTypewriter(titleEl, "你好，我是奚童");
-			content.createEl("div", {
-				cls: "deeppdf-advisor-subtitle",
-				text: "你的 AI 伴读",
-			});
-			content.createEl("div", {
-				cls: "deeppdf-advisor-hint",
-				text: "有什么想聊的，随时问我",
-			});
-			const grid = content.createEl("div", {
-				cls: "deeppdf-guidance-grid deeppdf-advisor-grid",
-			});
-			ADVISOR_BUTTONS.forEach((button) => {
-				const btn = grid.createEl("button", { cls: "deeppdf-guidance-btn" });
-				btn.createEl("span", {
-					cls: "deeppdf-guidance-label",
-					text: button.label,
-				});
+				btn.setAttribute("type", "button");
 				btn.addEventListener("click", () => {
 					this.callbacks.onGuidanceClick?.(button.type);
 				});
 			});
 		} else {
-			// 无回调时的降级占位符
-			const placeholder = this.quickActionsEl.createEl("div", {
+			// 无回调时的降级占位
+			grid.createEl("div", {
 				cls: "deeppdf-empty-placeholder",
-			});
-			placeholder.createEl("div", {
-				cls: "deeppdf-empty-title",
 				text: "选择一本书籍开始阅读",
 			});
 		}
 	}
 
 	/**
-	 * 循环打字机效果
-	 */
-	private startTypewriter(el: HTMLElement, text: string): void {
-		this._typewriterActive = true;
-		el.addClass("deeppdf-advisor-title-cursor");
-		let charIndex = 0;
-		let phase: "typing" | "holding" | "erasing" | "waiting" = "typing";
-
-		const tick = () => {
-			if (!this._typewriterActive) return;
-
-			switch (phase) {
-				case "typing":
-					charIndex++;
-					el.textContent = text.slice(0, charIndex);
-					if (charIndex >= text.length) {
-						phase = "holding";
-						setTimeout(tick, 2500);
-						return;
-					}
-					setTimeout(tick, 160);
-					break;
-				case "holding":
-					phase = "erasing";
-					setTimeout(tick, 400);
-					break;
-				case "erasing":
-					charIndex--;
-					el.textContent = text.slice(0, charIndex);
-					if (charIndex <= 0) {
-						phase = "waiting";
-						setTimeout(tick, 600);
-						return;
-					}
-					setTimeout(tick, 80);
-					break;
-				case "waiting":
-					phase = "typing";
-					setTimeout(tick, 400);
-					break;
-			}
-		};
-
-		setTimeout(tick, 600);
-	}
-
 	/**
 	 * 更新底部间距（适应输入框高度变化）
 	 * @param inputHeight 输入框的高度（像素）
@@ -748,7 +679,7 @@ export class MessageList extends Component {
 	 */
 	override destroy(): void {
 		// 停止打字机
-		this._typewriterActive = false;
+		
 
 		// 销毁 minimap
 		if (this.minimap) {

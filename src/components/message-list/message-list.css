@@ -60,6 +60,125 @@
 	position: relative;
 }
 
+/* ==================== Empty State 重构（去 XITONG_IMG 背景图） ==================== */
+
+.deeppdf-empty-state-content {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--dr-space-3);
+	width: 100%;
+	max-width: 560px;
+	padding: var(--dr-space-6) var(--dr-space-4);
+}
+
+/* 顶部圆形 avatar —— 用 “奚” 字符，不依赖图片资源 */
+.deeppdf-empty-avatar {
+	width: 80px;
+	height: 80px;
+	border-radius: 50%;
+	background: linear-gradient(
+		135deg,
+		var(--interactive-accent) 0%,
+		color-mix(in srgb, var(--interactive-accent) 70%, var(--background-modifier-border)) 100%
+	);
+	color: var(--text-on-accent, #ffffff);
+	font-size: 36px;
+	font-weight: 600;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	user-select: none;
+	box-shadow: 0 2px 8px color-mix(in srgb, var(--interactive-accent) 25%, transparent);
+	margin-bottom: var(--dr-space-2);
+}
+
+/* 招呼标题 */
+.deeppdf-empty-title {
+	font-size: var(--dr-text-2xl);
+	font-weight: var(--dr-weight-semibold);
+	color: var(--dr-color-text);
+	margin: 0;
+	line-height: var(--dr-leading-tight);
+	letter-spacing: 0.01em;
+}
+
+/* 副标题 */
+.deeppdf-empty-subtitle {
+	font-size: var(--dr-text-base);
+	color: var(--dr-color-text-muted);
+	margin: 0;
+	line-height: var(--dr-leading-normal);
+}
+
+/* 提示 */
+.deeppdf-empty-hint {
+	font-size: var(--dr-text-sm);
+	color: var(--dr-color-text-faint);
+	margin: 0 0 var(--dr-space-3) 0;
+	max-width: 360px;
+	line-height: var(--dr-leading-normal);
+}
+
+/* 按钮网格 */
+.deeppdf-empty-grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: var(--dr-space-3);
+	width: 100%;
+	max-width: 480px;
+	margin-top: var(--dr-space-2);
+}
+
+/* 响应式：窄屏降为 2 列 */
+@media (max-width: 640px) {
+	.deeppdf-empty-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+/* 单个按钮 */
+.deeppdf-empty-btn {
+	background: var(--dr-color-surface);
+	color: var(--dr-color-text);
+	border: 1px solid var(--dr-color-border);
+	border-radius: var(--dr-radius-md);
+	padding: var(--dr-space-3) var(--dr-space-4);
+	font-size: var(--dr-text-sm);
+	font-weight: var(--dr-weight-medium);
+	cursor: pointer;
+	transition: all 0.15s ease;
+	text-align: center;
+	line-height: var(--dr-leading-tight);
+}
+
+.deeppdf-empty-btn:hover {
+	background: color-mix(in srgb, var(--interactive-accent) 8%, var(--dr-color-surface));
+	border-color: var(--interactive-accent);
+	color: var(--interactive-accent);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.deeppdf-empty-btn:active {
+	transform: translateY(0);
+}
+
+.deeppdf-empty-btn:focus-visible {
+	outline: 2px solid var(--dr-color-border-focus);
+	outline-offset: 2px;
+}
+
+/* 无回调降级占位 */
+.deeppdf-empty-placeholder {
+	grid-column: 1 / -1;
+	color: var(--dr-color-text-faint);
+	font-size: var(--dr-text-sm);
+	padding: var(--dr-space-6) var(--dr-space-4);
+	text-align: center;
+}
+
 /* 快捷操作区域 - 作为主要容器 */
 .deeppdf-empty-state .deeppdf-quick-actions {
 	display: flex;
