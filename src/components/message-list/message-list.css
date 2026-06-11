@@ -20,12 +20,12 @@
 	overflow-y: auto;
 	overflow-x: hidden;
 
-	/* 右侧为 minimap 留空间（4px 极简 minimap + 4px 边距） */
-	padding: 16px 12px 16px 1%;
+	/* 右侧为 minimap 留空间（4px 极简 minimap + 8px 边距） */
+	padding: 16px 12px 16px 12px;
 
 	display: flex;
 	flex-direction: column;
-	align-items: center;
+	align-items: stretch;
 	gap: 16px;
 
 	/* 隐藏滚动条，用 minimap 代替 */

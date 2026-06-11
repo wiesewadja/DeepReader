@@ -8,8 +8,8 @@
 
 .deeppdf-message {
 	display: flex;
-	width: 95%;
-	max-width: 95%;
+	width: 100%;
+	max-width: 100%;
 	margin-bottom: 16px;
 	animation: deeppdf-fade-in 0.2s ease;
 }
@@ -20,7 +20,7 @@
 
 .deeppdf-message-user .deeppdf-message-wrapper {
 	width: auto;
-	max-width: 100%;
+	max-width: 85%;
 }
 
 .deeppdf-message-assistant {
@@ -28,7 +28,7 @@
 }
 
 .deeppdf-message-assistant .deeppdf-message-wrapper {
-	width: auto;
+	width: 100%;
 	max-width: 100%;
 }
 
