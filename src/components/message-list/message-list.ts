@@ -173,7 +173,11 @@ export class MessageList extends Component {
 	 */
 	setCurrentPdfName(name: string): void {
 		this.currentPdfName = name;
-		this.updateEmptyState();
+		// 重新渲染 empty state（书名变化）
+		// 避免 updateEmptyState 重新调用 renderQuickActions（那会重建 DOM 抹掉 deeppdf-hidden）
+		if (this.messages.size === 0) {
+			this.renderQuickActions();
+		}
 	}
 
 	/**
@@ -548,12 +552,22 @@ export class MessageList extends Component {
 	 * 更新 minimap
 	 */
 	private updateMinimap(): void {
-		if (this.minimap) {
-			// 延迟更新，等待 DOM 渲染完成
-			requestAnimationFrame(() => {
-				this.minimap?.updateMessages(this.getMessagesData());
-			});
+		if (!this.minimap) return;
+
+		// 消息数 < 3 时不显示 minimap —— 对话刚开始时右侧不出现竖条
+		// （仅在需要滚动导航的长对话中才有价值）
+		const messageCount = this.messages.size;
+		const minShowMessages = 3;
+		if (messageCount < minShowMessages) {
+			this.minimap.getElement()?.addClass("deeppdf-minimap-hidden");
+			return;
 		}
+		this.minimap.getElement()?.removeClass("deeppdf-minimap-hidden");
+
+		// 延迟更新，等待 DOM 渲染完成
+		requestAnimationFrame(() => {
+			this.minimap?.updateMessages(this.getMessagesData());
+		});
 	}
 
 	/**
