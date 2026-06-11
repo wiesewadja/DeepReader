@@ -60,6 +60,11 @@
 	position: relative;
 }
 
+/* 空状态时隐藏 topbar —— 避免两个奚童头像同时出现 */
+.deeppdf-chat-container:has(.deeppdf-message-list.deeppdf-is-empty) .deeppdf-reading-topbar {
+	display: none;
+}
+
 /* ==================== Empty State 重构（去 XITONG_IMG 背景图） ==================== */
 
 .deeppdf-empty-state-content {

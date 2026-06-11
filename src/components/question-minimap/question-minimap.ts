@@ -254,6 +254,14 @@ export class QuestionMinimap extends Component {
 
 		if (scrollHeight === 0) return;
 
+		// 内容不需滚动（全部可见）—— 隐藏 viewport 指示器
+		// 避免出现"一整条覆盖全高的紫条"
+		if (scrollHeight <= viewportHeight) {
+			this.viewportEl.style.display = 'none';
+			return;
+		}
+		this.viewportEl.style.display = '';
+
 		const minimapHeight = this.trackEl.clientHeight;
 		const viewportPercent = viewportHeight / scrollHeight;
 		const scrollTopPercent = scrollTop / scrollHeight;

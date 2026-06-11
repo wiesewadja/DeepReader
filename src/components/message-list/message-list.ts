@@ -566,6 +566,11 @@ export class MessageList extends Component {
 
 		const hasMessages = this.messages.size > 0;
 
+		// 切换 root 的 .deeppdf-is-empty 状态，CSS 用 :has() 隐藏 topbar
+		if (this.el) {
+			this.el.toggleClass("deeppdf-is-empty", !hasMessages);
+		}
+
 		if (hasMessages) {
 			this.emptyState.addClass("deeppdf-hidden");
 			this.emptyState.setAttribute("aria-hidden", "true");
