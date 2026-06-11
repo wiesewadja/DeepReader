@@ -276,7 +276,6 @@ export class MessageList extends Component {
 		// 屏幕阅读器可访问性：chat log 语义
 		// role=log 隐式 aria-live=polite：新消息到达时屏幕阅读器会播报
 		this.messagesContainer.setAttribute("role", "log");
-		this.messagesContainer.setAttribute("aria-label", "对话历史");
 		// 注：aria-busy 暂不设 —— 当前没有公开的 setLoading 接口，
 		// 除非有真实的加载生命周期（如初始会话加载 / 重新生成中）需要广播，
 		// 否则该属性是"假合规"。需要时同步增加 setLoading API。

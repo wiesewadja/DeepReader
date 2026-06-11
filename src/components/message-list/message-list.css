@@ -32,6 +32,13 @@
 	scrollbar-width: none;
 }
 
+/* 弹性 spacer — 消息少时将消息推到底部（靠近输入框） */
+.deeppdf-messages-container::before {
+	content: '';
+	flex: 999 1 0;
+	min-height: 0;
+}
+
 .deeppdf-messages-container::-webkit-scrollbar {
 	display: none;
 }

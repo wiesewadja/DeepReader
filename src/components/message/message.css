@@ -46,7 +46,7 @@
 }
 
 .deeppdf-message-assistant .deeppdf-message-wrapper {
-	flex-direction: row-reverse;
+	flex-direction: row;
 }
 
 /* ==================== AI 头像 ==================== */
