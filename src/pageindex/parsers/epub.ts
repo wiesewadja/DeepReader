@@ -81,8 +81,8 @@ function createTurndownServiceWithBlocks(
         return sanitized;
       }
     }
-    // 无原始ID或为 Calibre 辅助 ID 时使用段落序号
-    return `p${String(paragraphIndex++).padStart(3, "0")}`;
+    // 无原始ID或为 Calibre 辅助 ID 时使用章节+段落序号，确保跨章节唯一
+    return `p${chapterIndex}-${String(paragraphIndex++).padStart(3, "0")}`;
   };
 
   // Custom rules

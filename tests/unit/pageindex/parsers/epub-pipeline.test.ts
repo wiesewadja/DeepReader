@@ -471,8 +471,23 @@ describe("B1-b: Block ID quality", () => {
     if (!AI极简经济学) return;
     const ch = AI极简经济学.chapters.find(c => c.title.includes("导言"));
     if (!ch || !ch.blocks) return;
-    const autoIds = ch.blocks.filter(b => /^p\d{3}$/.test(b));
+    const autoIds = ch.blocks.filter(b => /^p\d+-\d{3}$/.test(b));
     expect(autoIds.length).toBeGreaterThan(0);
+  });
+
+  it("block IDs should be unique across chapters", () => {
+    const books = [AI极简经济学, 优秀的绵羊, 小岛经济学].filter(Boolean);
+    for (const book of books) {
+      const seen = new Map<string, string>();
+      for (const ch of book!.chapters) {
+        if (!ch.blocks) continue;
+        for (const bid of ch.blocks) {
+          const prev = seen.get(bid);
+          expect(prev, `Duplicate block_id "${bid}" in chapters "${prev}" and "${ch.title}"`).toBeUndefined();
+          seen.set(bid, ch.title || "untitled");
+        }
+      }
+    }
   });
 });
 
