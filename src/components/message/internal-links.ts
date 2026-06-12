@@ -2,7 +2,14 @@
  * 内部链接处理 — wiki 链接预览和交互增强
  */
 
-import { type App, MarkdownRenderer, Component, type HoverParent, MarkdownView } from 'obsidian';
+import {
+	type App,
+	MarkdownRenderer,
+	Component,
+	HoverPopover,
+	type HoverParent,
+	MarkdownView,
+} from 'obsidian';
 import { uiLog as log } from '../../utils/logger.js';
 import { escapeHtml } from './utils.js';
 
@@ -143,43 +150,43 @@ export async function resolveWikiLinkPreview(app: App, href: string): Promise<Pr
  * @param observers - 用于跟踪和清理 MutationObserver 的数组（可选）
  */
 export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHoverPreview: boolean = false, observers?: MutationObserver[]): void {
-	const links = contentEl.querySelectorAll('a.internal-link');
+	// 让 Obsidian 接管 hover-link 生命周期。
+	// 必须是 Obsidian 的某个真实容器（不是普通对象字面量）——
+	// 否则 HoverPopover 创建后无法挂载，hover-link trigger 也会失败。
+	// 取 MarkdownView 优先，回退到任意 leaf 容器，兜底 document.body。
+	const hoverParent: HoverParent = ((): HoverParent => {
+		const activeLeaf = app.workspace.getActiveViewOfType(MarkdownView)
+			?? (app.workspace.getLeavesOfType('markdown')[0] as unknown as HoverParent | undefined);
+		return activeLeaf ?? (document.body as unknown as HoverParent);
+	})();
 
-	let customPopover: HTMLElement | null = null;
-	let popoverComponent: Component | null = null;
-	let showTimer: number | null = null;
-	let hideTimer: number | null = null;
+	// Per-link hover 状态（每个 link 独立持有，互不干扰）
+	let showTimer: ReturnType<typeof setTimeout> | null = null;
+	let hideTimer: ReturnType<typeof setTimeout> | null = null;
+	let activePopover: HoverPopover | null = null;
+	let activeComponent: Component | null = null;
+	let lastTarget: HTMLElement | null = null;
+	let isLoading = false;
 
-	const hoverParent: HoverParent = {
-		hoverPopover: null
-	};
-
-	const cleanupPopover = () => {
-		if (customPopover) {
-			customPopover.classList.remove('deeppdf-link-preview--visible');
-			const el = customPopover;
-			const comp = popoverComponent;
-			customPopover = null;
-			popoverComponent = null;
-			setTimeout(() => {
-				comp?.unload();
-				el.remove();
-			}, 150);
+	const cleanup = (): void => {
+		if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+		if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+		if (activePopover) {
+			// HoverPopover.unload() 会自动管 hoverEl 移除 + 卸载监听
+			activePopover.unload();
+			activePopover = null;
 		}
-		if (showTimer) {
-			window.clearTimeout(showTimer);
-			showTimer = null;
+		if (activeComponent) {
+			activeComponent.unload();
+			activeComponent = null;
 		}
-		if (hideTimer) {
-			window.clearTimeout(hideTimer);
-			hideTimer = null;
-		}
-	};
+		lastTarget = null;
+};
 
-	links.forEach(link => {
-		const href = link.getAttr('href');
-		if (!href) return;
-
+const links: NodeListOf<HTMLAnchorElement> = contentEl.querySelectorAll('a.internal-link');
+links.forEach(link => {
+	const href = link.getAttr('href');
+	if (!href) return;
 		let linkPath = href;
 		if (linkPath.includes('|')) {
 			linkPath = linkPath.split('|')[0];
@@ -192,21 +199,11 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		if (!linkedFile) {
 			link.addClass('is-unresolved');
 		}
+	// 保留 link.title —— 由 Obsidian HoverPopover 接管 hover-link 生命周期。
+	// Bug 2 修复：不再 removeAttribute('title') + MutationObserver 持续删 title
+	// （破坏 Obsidian 内部 hover 触发器 + 阻断 fallback trigger('hover-link') 接管）
 
-		link.removeAttribute('title');
-
-		const observer = new MutationObserver(() => {
-			if (link.hasAttribute('title')) {
-				link.removeAttribute('title');
-			}
-		});
-		observer.observe(link, { attributes: true, attributeFilter: ['title'] });
-
-		if (observers) {
-			observers.push(observer);
-		}
-
-		// 处理点击事件
+	// 处理点击事件
 		link.addEventListener('click', async (e) => {
 			e.preventDefault();
 
@@ -296,132 +293,140 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 			return;
 		}
 
-		// 处理悬停事件 — 增强版 DeepReader block 预览（含惰性加载）
-		link.addEventListener('mouseenter', (event: MouseEvent) => {
-			if (showTimer) { window.clearTimeout(showTimer); showTimer = null; }
-			if (hideTimer) { window.clearTimeout(hideTimer); hideTimer = null; }
-			cleanupPopover();
+	// 处理悬停事件 — 增强版 DeepReader block 预览（HoverPopover 接管）
+	// Bug 修复：始终用 Obsidian HoverPopover，让 Obsidian 自管生命周期。
+	// 不再自建 div + document.body.appendChild + 手控 style.position。
+	link.addEventListener('mouseenter', (_event: MouseEvent) => {
+		if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+		if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+		cleanup();
+		lastTarget = link;
 
-			showTimer = window.setTimeout(async () => {
-				const result = await resolveWikiLinkPreview(app, href);
-				if (result) {
-					customPopover = document.createElement('div');
-					customPopover.className = 'popover deeppdf-link-preview';
+		showTimer = setTimeout(async () => {
+			// 用户可能已移走
+			if (lastTarget !== link || isLoading) return;
+			isLoading = true;
 
-					// 根 Component，管理所有 MarkdownRenderer.render 的子组件生命周期
-					popoverComponent = new Component();
+			// 1. 立刻创建 HoverPopover —— Obsidian 接管挂载 + 显示
+			// waitTime=0 表示我们已经异步等了 200ms，立即显示
+			const popover = new HoverPopover(hoverParent, link, 0);
+			activePopover = popover;
 
-					// 头部：书名 · 章节名
-					const headerEl = document.createElement('div');
-					headerEl.className = 'deeppdf-link-preview-header';
-					headerEl.innerHTML =
-						'<span class="deeppdf-link-preview-book">《' + escapeHtml(result.bookName) + '》</span>' +
-						'<span class="deeppdf-link-preview-sep"> · </span>' +
-						'<span class="deeppdf-link-preview-chapter-inline">' + escapeHtml(result.chapterName) + '</span>';
-					customPopover.appendChild(headerEl);
+			// 2. 准备 Component 容器（管 MarkdownRenderer 子组件生命周期）
+			const component = new Component();
+			activeComponent = component;
 
-					// 正文预览
-					const previewContentEl = document.createElement('div');
-					previewContentEl.className = 'deeppdf-link-preview-content markdown-preview-view';
-					try {
-						await MarkdownRenderer.render(app, result.text, previewContentEl, '', popoverComponent);
-					} catch {
-						previewContentEl.textContent = result.text;
+			// 3. 填 hoverEl 骨架（Obsidian 自管位置 + 动画）
+			const root = popover.hoverEl;
+			root.classList.add('popover', 'deeppdf-link-preview');
+			const headerEl = root.createDiv({ cls: 'deeppdf-link-preview-header' });
+			const contentEl = root.createDiv({
+				cls: 'deeppdf-link-preview-content markdown-preview-view',
+			});
+			const footerEl = root.createDiv({
+				cls: 'deeppdf-link-preview-footer',
+				text: '查看原文 ›',
+			});
+			footerEl.addEventListener('click', () => link.click());
+
+			// 4. 异步加载内容
+			let result: PreviewResult | null = null;
+			try {
+				result = await resolveWikiLinkPreview(app, href);
+			} catch (e) {
+				log('[DeepPDF] Preview resolve failed:', e);
+			}
+
+			// 二次检查：用户可能已移走
+			if (lastTarget !== link || activePopover !== popover) {
+				cleanup();
+				isLoading = false;
+				return;
+			}
+
+			if (!result) {
+				// 失败：交给 Obsidian 默认 hover-link 处理
+				cleanup();
+				app.workspace.trigger('hover-link', {
+					source: 'deeppdf',
+					hoverParent,
+					targetEl: link,
+					linktext: href,
+				});
+				isLoading = false;
+				return;
+			}
+
+			// 5. 填头部 + 内容
+			headerEl.innerHTML =
+				'<span class="deeppdf-link-preview-book">《' + escapeHtml(result.bookName) + '》</span>' +
+				'<span class="deeppdf-link-preview-sep"> · </span>' +
+				'<span class="deeppdf-link-preview-chapter-inline">' + escapeHtml(result.chapterName) + '</span>';
+			try {
+				await MarkdownRenderer.render(app, result.text, contentEl, '', component);
+			} catch {
+				contentEl.textContent = result.text;
+			}
+
+			// 6. 惰性加载（保持原有逻辑）
+			let remainingLines = result.remainingLines;
+			let isLoadingMore = false;
+			contentEl.addEventListener('scroll', async () => {
+				if (isLoadingMore || remainingLines.length === 0) return;
+				const { scrollTop, scrollHeight, clientHeight } = contentEl;
+				if (scrollTop + clientHeight < scrollHeight - 40) return;
+				isLoadingMore = true;
+				const next = takeNextParagraph(remainingLines);
+				if (!next) { isLoadingMore = false; return; }
+				remainingLines = remainingLines.slice(next.consumed);
+				const cleaned = cleanBlockIds(next.paragraph);
+				if (!cleaned) { isLoadingMore = false; return; }
+				try {
+					const container = document.createElement('div');
+					await MarkdownRenderer.render(app, cleaned, container, '', component);
+					while (container.firstChild) {
+						contentEl.appendChild(container.firstChild);
 					}
-					customPopover.appendChild(previewContentEl);
-
-					// 底部跳转
-					const footerEl = document.createElement('div');
-					footerEl.className = 'deeppdf-link-preview-footer';
-					footerEl.textContent = '查看原文 ›';
-					footerEl.addEventListener('click', () => (link as HTMLElement).click());
-					customPopover.appendChild(footerEl);
-
-					// 惰性加载：滚动到底部时追加下一段落
-					let remainingLines = result.remainingLines;
-					let isLoadingMore = false;
-
-					previewContentEl.addEventListener('scroll', async () => {
-						if (isLoadingMore || remainingLines.length === 0) return;
-						const { scrollTop, scrollHeight, clientHeight } = previewContentEl;
-						if (scrollTop + clientHeight < scrollHeight - 40) return;
-
-						isLoadingMore = true;
-						const next = takeNextParagraph(remainingLines);
-						if (!next) { isLoadingMore = false; return; }
-
-						remainingLines = remainingLines.slice(next.consumed);
-						const cleaned = cleanBlockIds(next.paragraph);
-						if (!cleaned) { isLoadingMore = false; return; }
-
-						try {
-							const container = document.createElement('div');
-							await MarkdownRenderer.render(app, cleaned, container, '', popoverComponent!);
-							while (container.firstChild) {
-								previewContentEl.appendChild(container.firstChild);
-							}
-						} catch {
-							const p = document.createElement('p');
-							p.textContent = cleaned;
-							previewContentEl.appendChild(p);
-						}
-						isLoadingMore = false;
-					}, { passive: true });
-
-					// 定位
-					const linkRect = link.getBoundingClientRect();
-					customPopover.style.position = 'fixed';
-					const POPOVER_WIDTH = Math.min(400, window.innerWidth * 0.9);
-					let leftPos = linkRect.left;
-					if (leftPos + POPOVER_WIDTH > window.innerWidth) {
-						leftPos = window.innerWidth - POPOVER_WIDTH - 8;
-					}
-					if (leftPos < 8) leftPos = 8;
-					customPopover.style.left = leftPos + 'px';
-					customPopover.style.top = (linkRect.bottom + 6) + 'px';
-					document.body.appendChild(customPopover);
-
-					// 检测底部溢出 → 向上翻转
-					requestAnimationFrame(() => {
-						if (!customPopover) return;
-						const r = customPopover.getBoundingClientRect();
-						if (r.bottom > window.innerHeight - 8) {
-							customPopover.style.top = (linkRect.top - r.height - 6) + 'px';
-							customPopover.style.transformOrigin = 'bottom';
-						}
-					});
-
-					// 触发淡入动画
-					requestAnimationFrame(() => {
-						requestAnimationFrame(() => {
-							if (customPopover) {
-								customPopover.classList.add('deeppdf-link-preview--visible');
-							}
-						});
-					});
-
-					customPopover.addEventListener('mouseenter', () => {
-						if (hideTimer) { window.clearTimeout(hideTimer); hideTimer = null; }
-					});
-					customPopover.addEventListener('mouseleave', () => {
-						hideTimer = window.setTimeout(() => cleanupPopover(), 300);
-					});
-				} else {
-					app.workspace.trigger('hover-link', {
-						event: event,
-						source: 'deeppdf',
-						hoverParent: hoverParent,
-						targetEl: link,
-						linktext: href
-					});
+				} catch {
+					const p = document.createElement('p');
+					p.textContent = cleaned;
+					contentEl.appendChild(p);
 				}
-			}, 200);
-		});
+				isLoadingMore = false;
+			}, { passive: true });
 
-		link.addEventListener('mouseleave', () => {
-			if (showTimer) { window.clearTimeout(showTimer); showTimer = null; }
-			hideTimer = window.setTimeout(() => cleanupPopover(), 300);
-		});
+			// 7. 淡入动画
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => {
+					root.classList.add('deeppdf-link-preview--visible');
+				});
+			});
+
+			// 8. 鼠标进 popover 不关闭
+			popover.hoverEl.addEventListener('mouseenter', () => {
+				if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+			});
+			popover.hoverEl.addEventListener('mouseleave', () => {
+				hideTimer = setTimeout(() => {
+					// 检查鼠标是否在 popover 内
+					if (activePopover && activePopover.hoverEl.matches(':hover')) return;
+					cleanup();
+				}, 300);
+			});
+
+			isLoading = false;
+		}, 200);
 	});
 
+	link.addEventListener('mouseleave', () => {
+		if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+		hideTimer = setTimeout(() => {
+			if (activePopover && activePopover.hoverEl.matches(':hover')) return;
+			cleanup();
+		}, 300);
+	});
+});
+
+// HoverPopover 创建是同步的，立即接管显示
+// 自定义 class（popover / deeppdf-link-preview / ...）由 CSS 控制视觉
 }
