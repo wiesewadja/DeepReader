@@ -194,10 +194,10 @@ export class AgentChatController {
 			return;
 		}
 
-		await this.host.parseAndLoadReferences(message);
-
 		this.isProcessing = true;
 		this.isAiStreaming = true;
+
+		await this.host.parseAndLoadReferences(message);
 		this.host.chatInput?.setDisabled(true);
 		this.host.chatInput?.setStreaming(true);
 		this.host.readingTopbar?.setMascotExpression("curious");
