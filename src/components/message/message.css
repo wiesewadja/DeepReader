@@ -28,8 +28,9 @@
 }
 
 .deeppdf-message-assistant .deeppdf-message-wrapper {
-	width: 100%;
+	width: fit-content;
 	max-width: 100%;
+	min-width: 30%;
 }
 
 /* ==================== 消息包装器 ==================== */
