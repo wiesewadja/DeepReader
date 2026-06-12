@@ -48,6 +48,68 @@
 	overflow: hidden;
 	/* 移除 padding，让顶栏与左边栏对齐 */
 	padding: 0;
+	position: relative;
+	overflow: hidden;
+}
+
+/* pi.dev 风格点阵网格背景 —— 全铺 */
+.deeppdf-chat-container::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	--grid-gap: 4px;
+	--grid-bg: var(--background-primary);
+	background-color: var(--grid-bg);
+	background-image:
+		/* 小网格线 */
+		linear-gradient(color-mix(in srgb, var(--text-normal) 0.6%, transparent) 0 1px, transparent 1px var(--grid-gap)),
+		linear-gradient(to right, color-mix(in srgb, var(--text-normal) 0.6%, transparent) 0 1px, transparent 1px var(--grid-gap)),
+		/* 大网格线 */
+		linear-gradient(color-mix(in srgb, var(--text-normal) 1.5%, transparent) 0 1px, transparent 1px calc(var(--grid-gap) * 5)),
+		linear-gradient(to right, color-mix(in srgb, var(--text-normal) 1.5%, transparent) 0 1px, transparent 1px calc(var(--grid-gap) * 5)),
+		/* 交叉点圆点 */
+		radial-gradient(circle at center, transparent calc(var(--grid-gap) / 2), var(--grid-bg) calc(var(--grid-gap) / 2) 100%),
+		/* 十字高亮 */
+		linear-gradient(color-mix(in srgb, var(--text-normal) 3%, transparent) 0 1px, transparent 1px calc(var(--grid-gap) * 5)),
+		linear-gradient(to right, color-mix(in srgb, var(--text-normal) 3%, transparent) 0 1px, transparent 1px calc(var(--grid-gap) * 5));
+	background-size:
+		var(--grid-gap) var(--grid-gap),
+		var(--grid-gap) var(--grid-gap),
+		calc(var(--grid-gap) * 5) calc(var(--grid-gap) * 5),
+		calc(var(--grid-gap) * 5) calc(var(--grid-gap) * 5),
+		calc(var(--grid-gap) * 5) calc(var(--grid-gap) * 5),
+		calc(var(--grid-gap) * 5) calc(var(--grid-gap) * 5),
+		calc(var(--grid-gap) * 5) calc(var(--grid-gap) * 5);
+	background-position:
+		0 0,
+		0 0,
+		0 0,
+		0 0,
+		calc(var(--grid-gap) * -2.5) calc(var(--grid-gap) * -2.5),
+		0 0,
+		0 0;
+}
+
+/* 暗角渐变 */
+.deeppdf-chat-container::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background: radial-gradient(
+		ellipse at 50% 40%,
+		transparent 30%,
+		var(--background-primary) 100%
+	);
+}
+
+/* 子元素浮于背景之上 */
+.deeppdf-chat-container > * {
+	position: relative;
+	z-index: 1;
 }
 
 /* ==================== 顶部导航区 ==================== */

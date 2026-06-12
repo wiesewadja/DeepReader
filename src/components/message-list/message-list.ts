@@ -630,63 +630,97 @@ export class MessageList extends Component {
 		// 清空现有内容
 		this.quickActionsEl.empty();
 
-		// 统一渲染结构（avatar + title + subtitle + hint + grid）
+		// 统一渲染结构
 		const wrapper = this.quickActionsEl.createEl("div", {
 			cls: "deeppdf-empty-state-content",
 		});
 
-		// 顶部圆形 avatar —— 奚童表情系统图标（从 topbar 迁移过来）
-		const avatar = wrapper.createDiv({
+		// 有封面时，整体包在 hero 容器里，封面作底层背景
+		const coverUrl = this.callbacks.getCurrentBookInfo?.()?.coverUrl;
+		let contentWrapper = wrapper;
+		if (this.currentPdfName && coverUrl) {
+			const heroSection = wrapper.createEl("div", {
+				cls: "deeppdf-empty-hero",
+			});
+			heroSection.createEl("img", {
+				cls: "deeppdf-empty-hero-cover",
+				attr: { src: coverUrl, alt: "" },
+			});
+			// 内容叠在封面上
+			contentWrapper = heroSection.createDiv({
+				cls: "deeppdf-empty-hero-content",
+			});
+		}
+
+		// 奚童头像 —— 打字标题上方
+		const avatar = contentWrapper.createDiv({
 			cls: "deeppdf-empty-avatar deeppdf-animated",
 		});
 		avatar.setAttribute("aria-hidden", "true");
 		const mascot = new MascotFace();
 		avatar.appendChild(mascot.getElement()!);
 
-		// 招呼标题 —— 打字机逐字呈现
-		const title = wrapper.createEl("h2", {
+		// 招呼标题 —— 打字机逐字呈现（多条轮播，含能力介绍）
+		const title = contentWrapper.createEl("h2", {
 			cls: "deeppdf-empty-title",
 		});
-		this.startTypewriter(title, "你好，我是奚童");
+		const typewriterMessages = this.currentPdfName
+			? [
+					"你好，我是奚童",
+					"准备好探索这本书了吗",
+					"想聊聊这本书吗",
+					"一起读这本书吧",
+					"有什么想了解的吗",
+					"可以问我书中的观点、概念，或者帮你梳理全书脉络",
+					"支持章节分析、关键概念提取、思维导图生成",
+					"想了解核心观点？还是需要阅读路线建议？",
+					"随时可以聊聊你的阅读感受或疑问",
+				]
+			: [
+					"你好，我是奚童",
+					"想找本好书聊聊吗",
+					"今天想聊点什么",
+					"随时为你效劳",
+					"推荐书单、讨论读书方法、整理笔记，都可以",
+					"可以聊聊你最近在读什么，或者想要什么类型的书",
+					"有什么阅读上的问题，随时问我",
+				];
+		this.startTypewriter(title, typewriterMessages);
 
-		// 副标题（含/不含 PDF 名称）—— 书名独立 class 区分
-		const subtitle = wrapper.createEl("p", {
-			cls: "deeppdf-empty-subtitle",
-		});
-		subtitle.createEl("span", {
-			cls: "deeppdf-empty-subtitle-prefix",
-			text: "你的 AI 伴读",
-		});
+		// 书籍信息 —— 书名 + 作者
 		if (this.currentPdfName) {
-			subtitle.createEl("span", {
-				cls: "deeppdf-empty-subtitle-sep",
-				text: " · ",
+			const bookMeta = this.callbacks.getCurrentBookInfo?.();
+			const bookInfo = contentWrapper.createEl("div", {
+				cls: "deeppdf-empty-book-info",
 			});
-			const bookEl = subtitle.createEl("span", {
-				cls: "deeppdf-empty-book-name",
+			const bookTitleRow = bookInfo.createDiv({
+				cls: "deeppdf-empty-book-title-row",
 			});
-			bookEl.createEl("span", {
+			bookTitleRow.createEl("span", {
 				cls: "deeppdf-empty-book-icon",
 				text: "📖",
 				attr: { "aria-hidden": "true" },
 			});
-			bookEl.createEl("span", {
+			bookTitleRow.createEl("span", {
 				cls: "deeppdf-empty-book-text",
 				text: this.currentPdfName,
 			});
+			if (bookMeta?.author) {
+				bookInfo.createEl("p", {
+					cls: "deeppdf-empty-book-author",
+					text: bookMeta.author,
+				});
+			}
 		}
 
-		// 提示文字
-		const hintText = this.currentPdfName
-			? "开始阅读吧，有什么想聊的随时问我"
-			: "有什么想聊的，随时问我";
-		wrapper.createEl("p", {
-			cls: "deeppdf-empty-hint",
-			text: hintText,
+		// 副标题 —— 固定文案
+		contentWrapper.createEl("p", {
+			cls: "deeppdf-empty-subtitle",
+			text: "你的 AI 伴读",
 		});
 
 		// 按钮网格
-		const grid = wrapper.createEl("div", {
+		const grid = contentWrapper.createEl("div", {
 			cls: "deeppdf-empty-grid",
 		});
 
@@ -727,16 +761,16 @@ export class MessageList extends Component {
 	}
 
 	/**
-	 * 打字机逐字呈现 —— 仅用于招呼标题
+	 * 打字机逐字呈现 —— 支持多条文字轮播
 	 * @param el 标题元素
-	 * @param text 完整文本
+	 * @param texts 文字数组，随机顺序轮播
 	 * @param speedMs 每个字符间隔（默认 100ms）
 	 * 尊重 prefers-reduced-motion：用户在系统设置开启"减少动画"时，
-	 * 直接显示完整文本，不播打字机效果。
+	 * 直接显示随机一条文本，不播打字机效果。
 	 */
 	private startTypewriter(
 		el: HTMLElement,
-		text: string,
+		texts: string[],
 		typeSpeedMs: number = 180,
 		eraseSpeedMs: number = 80,
 		holdMs: number = 1800,
@@ -749,11 +783,21 @@ export class MessageList extends Component {
 			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 		if (prefersReducedMotion) {
-			el.textContent = text;
+			el.textContent = texts[0];
 			return;
 		}
 
 		el.addClass("deeppdf-typing-cursor");
+
+		// Fisher-Yates 洗牌，生成随机顺序
+		const shuffled = [...texts];
+		for (let i = shuffled.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+		}
+
+		let textIndex = 0;
+		let currentText = shuffled[0];
 
 		type Phase = "typing" | "holding" | "erasing" | "waiting";
 		let phase: Phase = "typing";
@@ -763,8 +807,8 @@ export class MessageList extends Component {
 			switch (phase) {
 				case "typing":
 					charIndex++;
-					el.textContent = text.slice(0, charIndex);
-					if (charIndex >= text.length) {
+					el.textContent = currentText.slice(0, charIndex);
+					if (charIndex >= currentText.length) {
 						phase = "holding";
 						this.safeSetTimeout(tick, holdMs);
 					} else {
@@ -777,7 +821,7 @@ export class MessageList extends Component {
 					break;
 				case "erasing":
 					charIndex--;
-					el.textContent = text.slice(0, charIndex);
+					el.textContent = currentText.slice(0, charIndex);
 					if (charIndex <= 0) {
 						phase = "waiting";
 						this.safeSetTimeout(tick, waitMs);
@@ -786,6 +830,9 @@ export class MessageList extends Component {
 					}
 					break;
 				case "waiting":
+					// 切换到下一条文字
+					textIndex = (textIndex + 1) % shuffled.length;
+					currentText = shuffled[textIndex];
 					phase = "typing";
 					this.safeSetTimeout(tick, 300);
 					break;
