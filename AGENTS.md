@@ -37,6 +37,7 @@
 3. **文件路径通过 Vault API** — 不要硬编码路径。
 4. **Agent 唯一入口**: `FrontendAgent.chat()` → `runGraphEngine()` → LangGraph `stream()`。
 5. **Node.js 兼容**: 始终通过 `src/pageindex/node.ts` 导入 PageIndex。
+6. **Worktree 分支锁定**: 当在 `.worktrees/` 目录中工作时，所有修改必须提交到当前功能分支，**禁止直接提交到 main**。合并到 main 需要用户显式操作。
 
 ---
 
