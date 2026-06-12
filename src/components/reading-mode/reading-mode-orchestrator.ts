@@ -548,6 +548,7 @@ export class ReadingModeService implements ScrollPatchService {
 			onNavigateNext: () => this.navigateToNext(),
 			getNavigation: () => this.getChapterNavigation(),
 			getPaginator: () => this.paginator,
+			isActive: () => this.isActive,
 		});
 		this.chapterNav.init();
 		serviceLog("[ReadingMode] Chapter navigation initialized");

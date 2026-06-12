@@ -25,6 +25,7 @@ export interface ChapterNavOptions {
         isAtFirstPage: () => boolean;
         isAtLastPage: () => boolean;
     } | null;
+    isActive?: () => boolean;
 }
 
 export class ChapterNav {
@@ -96,12 +97,14 @@ export class ChapterNav {
      * 处理键盘事件
      */
     private handleKeyDown(e: KeyboardEvent): void {
-        // 只在阅读模式下响应（检查 containerEl 或 body）
-        const hasReadingMode = 
-            document.body.classList.contains('deeppdf-reading-mode') ||
-            document.querySelector('.deeppdf-reading-mode');
-        
-        if (!hasReadingMode) return;
+        // 检查当前阅读模式是否处于活跃状态（防止非活跃页面响应按键）
+        if (this.options.isActive && !this.options.isActive()) return;
+
+        // 检查当前活跃 leaf 是否是阅读模式视图（防止切换标签页后仍响应）
+        const activeLeaf = this.app.workspace.activeLeaf;
+        if (!activeLeaf?.view?.containerEl?.classList.contains('deeppdf-reading-mode')) {
+            return;
+        }
 
         // 检查是否有打开的弹窗
         const hasOpenModal = document.querySelector('.modal-container, .modal-bg');
