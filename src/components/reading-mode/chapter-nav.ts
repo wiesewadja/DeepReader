@@ -101,7 +101,7 @@ export class ChapterNav {
         if (this.options.isActive && !this.options.isActive()) return;
 
         // 检查当前活跃 leaf 是否是阅读模式视图（防止切换标签页后仍响应）
-        const activeLeaf = this.app.workspace.activeLeaf;
+        const activeLeaf = this.app.workspace?.activeLeaf;
         if (!activeLeaf?.view?.containerEl?.classList.contains('deeppdf-reading-mode')) {
             return;
         }
