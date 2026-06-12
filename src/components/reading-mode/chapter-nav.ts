@@ -101,9 +101,18 @@ export class ChapterNav {
         if (this.options.isActive && !this.options.isActive()) return;
 
         // 检查当前活跃 leaf 是否是阅读模式视图（防止切换标签页后仍响应）
+        // 如果 workspace 不存在（测试环境），回退到检查 DOM
         const activeLeaf = this.app.workspace?.activeLeaf;
-        if (!activeLeaf?.view?.containerEl?.classList.contains('deeppdf-reading-mode')) {
-            return;
+        if (activeLeaf) {
+            // 生产环境：检查活跃 leaf 的 containerEl
+            if (!activeLeaf.view?.containerEl?.classList.contains('deeppdf-reading-mode')) {
+                return;
+            }
+        } else {
+            // 测试环境或 workspace 不可用：检查 DOM 中是否存在阅读模式
+            if (!document.querySelector('.deeppdf-reading-mode')) {
+                return;
+            }
         }
 
         // 检查是否有打开的弹窗
