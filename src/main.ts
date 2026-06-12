@@ -191,9 +191,9 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         // 添加设置面板
         this.addSettingTab(new DeepPDFSettingTab(this.app, this));
 
-        // 添加 Ribbon 图标 - 使用读书郎图标
-        this.addRibbonIcon("lucide-book-open", "DeepPDF", () => {
-            this.activateView();
+        // 添加 Ribbon 图标 - 书库入口（打开书库 Tab 页）
+        this.addRibbonIcon("lucide-library", "书库", () => {
+            void this.openLibraryView();
         });
 
         // 添加命令
