@@ -154,17 +154,18 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		hoverPopover: null
 	};
 
+	// 同步清理 popover —— 之前 setTimeout(150ms) 在反复 hover 时会和
+	// 下一次 mouseenter 异步创建竞态，触发 comp?.unload() 在已卸载 Component
+	// 上跑 → Obsidian 内部栈累加 → 闪退。
 	const cleanupPopover = () => {
 		if (customPopover) {
-			customPopover.classList.remove('deeppdf-link-preview--visible');
 			const el = customPopover;
 			const comp = popoverComponent;
 			customPopover = null;
 			popoverComponent = null;
-			setTimeout(() => {
-				comp?.unload();
-				el.remove();
-			}, 150);
+			// 同步卸载
+			comp?.unload();
+			el.remove();
 		}
 		if (showTimer) {
 			window.clearTimeout(showTimer);
@@ -188,23 +189,10 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 			linkPath = linkPath.split('#')[0];
 		}
 
-		const linkedFile = app.metadataCache.getFirstLinkpathDest(linkPath, '');
-		if (!linkedFile) {
-			link.addClass('is-unresolved');
-		}
-
-		link.removeAttribute('title');
-
-		const observer = new MutationObserver(() => {
-			if (link.hasAttribute('title')) {
-				link.removeAttribute('title');
-			}
-		});
-		observer.observe(link, { attributes: true, attributeFilter: ['title'] });
-
-		if (observers) {
-			observers.push(observer);
-		}
+		// 不再 removeAttribute('title') + MutationObserver 持续删：
+		// Obsidian 内部依赖 title 做 hover 触发，删除会阻断 fallback trigger('hover-link')。
+		// 之前会引发：Obsidian 内部栈累加 → 反复 hover 闪退。
+		// （参见 docs/test-strategies/early-stop-golden-cases.md Bug 2 修复说明）
 
 		// 处理点击事件
 		link.addEventListener('click', async (e) => {

@@ -1555,7 +1555,7 @@
 
 .deeppdf-link-preview {
 	width: min(400px, 90vw);
-	max-height: 360px;
+	max-height: 50vh;
 	position: fixed;
 	z-index: 1000;
 	overflow: hidden;
@@ -1568,6 +1568,9 @@
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m, 6px);
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	opacity: 0;
+	transform: translateY(4px);
+	transition:
 	opacity: 0;
 	transform: translateY(4px);
 	transition:

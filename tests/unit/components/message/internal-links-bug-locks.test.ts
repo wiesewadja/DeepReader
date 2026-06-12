@@ -132,7 +132,7 @@ describe('internal-links hover popover — bug lock', () => {
 	// Bug 2: link 元素 title 被 removeAttribute + MutationObserver 永久删
 	//        → 即使 Obsidian 想用 title 触发 hover 也做不到
 	// ============================================================
-	it('Bug 2: setupInternalLinks 永久删除 link.title，阻断 Obsidian 原生 hover 触发器', async () => {
+	it('Bug 2 修复: link.title 保留（不再被删除，Obsidian 原生 hover 触发器可用）', async () => {
 		const link = buildLink('《纳瓦尔宝典》/14 - 认识财富', 'test');
 		// 模拟 Obsidian 渲染时设置的 title
 		link.setAttribute('title', '认识财富');
@@ -140,18 +140,14 @@ describe('internal-links hover popover — bug lock', () => {
 
 		setupInternalLinks(container, app, false, []);
 
-		expect(link.hasAttribute('title')).toBe(false);
-		// 即使其他代码重新设了 title，MutationObserver 也会立刻删
+		// 修复：title 应当保留
+		expect(link.hasAttribute('title')).toBe(true);
+		expect(link.getAttribute('title')).toBe('认识财富');
+		// 即使其他代码重新设了 title，保留
 		link.setAttribute('title', 'synthetic');
-		// MutationObserver 异步触发
-		await new Promise((r) => {
-			const { promise, resolve } = Promise.withResolvers<void>();
-			r(promise);
-			queueMicrotask(resolve);
-		});
-		// 至少等一个微任务让 observer 跑
 		await flushMicrotasks();
-		expect(link.hasAttribute('title')).toBe(false);
+		expect(link.hasAttribute('title')).toBe(true);
+		expect(link.getAttribute('title')).toBe('synthetic');
 	});
 
 	// ============================================================
@@ -205,7 +201,7 @@ describe('internal-links hover popover — bug lock', () => {
 	//        → 流式期间 title 也被删
 	//        → 流式结束 setupInternalLinks 重调后 title 又被删
 	// ============================================================
-	it('Bug 5: 流式期间 setupInternalLinks 仍删除 title（即使 disableHoverPreview=true）', async () => {
+	it('Bug 5 修复: 流式期间 link.title 保留（不再被删除）', async () => {
 		const link = buildLink('《纳瓦尔宝典》/14 - 认识财富', 'test');
 		link.setAttribute('title', 'pre-existing-title');
 		container.appendChild(link);
@@ -213,13 +209,15 @@ describe('internal-links hover popover — bug lock', () => {
 		// 流式期间 disableHoverPreview=true
 		setupInternalLinks(container, app, true, []);
 
-		// 即使不绑 mouseenter，title 仍然被删 + observer 仍然挂
-		expect(link.hasAttribute('title')).toBe(false);
+		// 修复：title 不再被删
+		expect(link.hasAttribute('title')).toBe(true);
+		expect(link.getAttribute('title')).toBe('pre-existing-title');
 
-		// 模拟 Obsidian 后续想设 title → 立刻被 observer 删
-		link.setAttribute('title', 'observed-and-removed');
+		// 模拟 Obsidian 后续想设 title → 不再被 observer 删
+		link.setAttribute('title', 'preserved');
 		await flushMicrotasks();
-		expect(link.hasAttribute('title')).toBe(false);
+		expect(link.hasAttribute('title')).toBe(true);
+		expect(link.getAttribute('title')).toBe('preserved');
 	});
 
 	// ============================================================
