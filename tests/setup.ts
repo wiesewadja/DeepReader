@@ -191,4 +191,9 @@ if (typeof HTMLElement !== "undefined") {
 		HoverPopover: class MockHoverPopover {},
 		markdownToHTML: (text: string) => text,
 	};
+
+	// Polyfill: Obsidian 扩展的 HTMLElement#getAttr（jsdom 不提供）
+	HTMLElement.prototype.getAttr = function (this: HTMLElement, name: string): string | null {
+		return this.getAttribute(name);
+	};
 } // end if (HTMLElement)

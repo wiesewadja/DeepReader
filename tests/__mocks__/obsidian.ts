@@ -35,26 +35,41 @@ export class TFolder {
 
 // Mock App 类
 export class App {
-  vault: any;
-  workspace: any;
-  fileManager: any;
+  vault: {
+    getAbstractFileByPath: ReturnType<typeof vi.fn>;
+    getFiles: ReturnType<typeof vi.fn>;
+    read: ReturnType<typeof vi.fn>;
+    adapter: { read: ReturnType<typeof vi.fn> };
+  };
+  workspace: {
+    getActiveFile: ReturnType<typeof vi.fn>;
+    getLeavesOfType: ReturnType<typeof vi.fn>;
+    trigger: ReturnType<typeof vi.fn>;
+  };
+  metadataCache: {
+    getFirstLinkpathDest: ReturnType<typeof vi.fn>;
+  };
+  fileManager: {
+    getNewFileParent: ReturnType<typeof vi.fn>;
+  };
 
   constructor() {
     this.vault = {
       getAbstractFileByPath: vi.fn(),
       getFiles: vi.fn(() => []),
       read: vi.fn(),
-      create: vi.fn(),
-      modify: vi.fn(),
-      delete: vi.fn(),
-      createFolder: vi.fn()
+      adapter: { read: vi.fn() },
     };
     this.workspace = {
       getActiveFile: vi.fn(),
-      getLeavesOfType: vi.fn(() => [])
+      getLeavesOfType: vi.fn(() => []),
+      trigger: vi.fn(),
+    };
+    this.metadataCache = {
+      getFirstLinkpathDest: vi.fn(() => null),
     };
     this.fileManager = {
-      getNewFileParent: vi.fn()
+      getNewFileParent: vi.fn(),
     };
   }
 }
@@ -85,11 +100,24 @@ export const MarkdownRenderer = {
 
 // Mock HoverParent
 export class HoverParent {
-  hoverPopover: any = null;
+  hoverPopover: HoverPopover | null = null;
 }
 
-// Mock HoverPopover
+// Mock HoverPopover — 暴露 hoverEl 让测试可观察 popover 状态
 export class HoverPopover {
-  constructor() {}
-  hide() {}
+  hoverEl: HTMLElement;
+  state: number = 0;
+  constructor(parent: HoverParent, targetEl: HTMLElement | null, waitTime?: number, staticPos?: unknown) {
+    this.hoverEl = document.createElement('div');
+    this.hoverEl.className = 'hover-popover';
+    // parent.hoverPopover 是由调用方显式设的
+    parent.hoverPopover = this;
+  }
+  hide() {
+    this.state = 0;
+    this.hoverEl.remove();
+  }
+  unload() {
+    this.hide();
+  }
 }
