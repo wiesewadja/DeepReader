@@ -44,7 +44,6 @@ export class App {
   workspace: {
     getActiveFile: ReturnType<typeof vi.fn>;
     getLeavesOfType: ReturnType<typeof vi.fn>;
-    getActiveViewOfType: ReturnType<typeof vi.fn>;
     trigger: ReturnType<typeof vi.fn>;
   };
   metadataCache: {
@@ -61,13 +60,11 @@ export class App {
       read: vi.fn(),
       adapter: { read: vi.fn() },
     };
-        	this.workspace = {
-        		getActiveFile: vi.fn(),
-        		getLeavesOfType: vi.fn(() => []),
-        		getActiveViewOfType: vi.fn(),
-        		trigger: vi.fn(),
-        	};
-
+    this.workspace = {
+      getActiveFile: vi.fn(),
+      getLeavesOfType: vi.fn(() => []),
+      trigger: vi.fn(),
+    };
     this.metadataCache = {
       getFirstLinkpathDest: vi.fn(() => null),
     };
@@ -111,13 +108,10 @@ export class HoverPopover {
   hoverEl: HTMLElement;
   state: number = 0;
   constructor(parent: HoverParent, targetEl: HTMLElement | null, waitTime?: number, staticPos?: unknown) {
-  	this.hoverEl = document.createElement('div');
-  	this.hoverEl.className = 'hover-popover';
-  	parent.hoverPopover = this;
-  	// Obsidian 真实行为：HoverPopover 挂到 parent 容器下
-  	const host = (parent as unknown as { hoverEl?: HTMLElement });
-  	const mount = (host.hoverEl && host.hoverEl.parentNode) || document.body;
-  	mount.appendChild(this.hoverEl);
+    this.hoverEl = document.createElement('div');
+    this.hoverEl.className = 'hover-popover';
+    // parent.hoverPopover 是由调用方显式设的
+    parent.hoverPopover = this;
   }
   hide() {
     this.state = 0;
