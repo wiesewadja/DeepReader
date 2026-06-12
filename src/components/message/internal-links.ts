@@ -89,7 +89,7 @@ export async function resolveWikiLinkPreview(app: App, href: string): Promise<Pr
 	const vaultRelPath = `DeepReader/${bookName}/${fileName.endsWith('.md') ? fileName : fileName + '.md'}`;
 	let content: string;
 	try {
-		content = await (app.vault as any).adapter.read(vaultRelPath);
+		content = await app.vault.adapter.read(vaultRelPath);
 	} catch {
 		return null;
 	}
@@ -221,10 +221,10 @@ links.forEach(link => {
 			const scrollToBlockInCurrentView = (delayMs = 50): void => {
 				if (!blockId) return;
 				setTimeout(() => {
-					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
-					const container: Element = activeView?.previewMode?.renderer?.containerEl
-						|| activeView?.containerEl
-						|| document.body;
+				const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+				const container: Element = activeView?.previewMode?.containerEl
+					?? activeView?.containerEl
+					?? document.body;
 					const blockSel = [
 						`[id="^${CSS.escape(blockId)}"]`,
 						`[data-block-id="${CSS.escape(blockId)}"]`,
@@ -232,7 +232,7 @@ links.forEach(link => {
 					].join(', ');
 					const target = container.querySelector(blockSel);
 					if (target) {
-						(target as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+						target.scrollIntoView({ behavior: 'smooth', block: 'center' });
 						log('[DeepPDF] Scrolled to block:', blockId);
 					} else {
 						log('[DeepPDF] Block not found in view:', blockId);
@@ -256,8 +256,8 @@ links.forEach(link => {
 				if (!linkFilePath) {
 					scrollToBlockInCurrentView(50);
 				} else {
-					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
-					const currentFilePath = activeView?.file?.path || '';
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+					const currentFilePath = activeView?.file?.path ?? '';
 					const targetFile = app.metadataCache.getFirstLinkpathDest(linkFilePath, currentFilePath);
 
 					if (targetFile && targetFile.path === currentFilePath) {
@@ -276,8 +276,8 @@ links.forEach(link => {
 				if (blockId) {
 					scrollToBlockInCurrentView(50);
 				} else if (headingFragment) {
-					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
-					const currentFilePath = activeView?.file?.path || '';
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+					const currentFilePath = activeView?.file?.path ?? '';
 					app.workspace.openLinkText(hrefClean, currentFilePath, true);
 				} else {
 					app.workspace.openLinkText(href, '', true);
