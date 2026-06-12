@@ -14,8 +14,37 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-// 读取配置文件
-const configPath = path.join(__dirname, '..', '.deploy-config.json');
+// 获取当前脚本所在目录
+const scriptDir = __dirname;
+const currentRoot = path.join(scriptDir, '..');
+
+// 尝试从当前目录读取配置，如果不存在则从主仓库读取
+let configPath = path.join(currentRoot, '.deploy-config.json');
+if (!fs.existsSync(configPath)) {
+  // 在 worktree 中，从主仓库读取配置
+  try {
+    const mainWorktree = execSync('git worktree list --porcelain', {
+      encoding: 'utf-8',
+      cwd: currentRoot
+    });
+    const lines = mainWorktree.split('\n');
+    let mainPath = null;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('worktree ')) {
+        mainPath = lines[i].slice('worktree '.length);
+      }
+      if (lines[i] === 'branch refs/heads/main' && mainPath) {
+        break;
+      }
+    }
+    if (mainPath) {
+      configPath = path.join(mainPath, '.deploy-config.json');
+    }
+  } catch (e) {
+    // 忽略错误
+  }
+}
+
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // 获取命令行参数
