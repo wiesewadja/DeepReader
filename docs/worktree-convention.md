@@ -289,7 +289,41 @@ jobs:
 ```bash
 # 在 worktree 中部署
 cd .worktrees/feat/my-feature
-npm run deploy:test
+npm run deploy
+# 自动部署到 test-vault/.obsidian/plugins/deepreader-wt-feat-my-feature/
+```
+
+## E2E 测试配置
+
+### 动态 Plugin ID
+
+测试脚本自动检测当前环境的 Plugin ID：
+
+```bash
+# 主仓库
+npm run test:e2e  # 使用 deepreader-dev
+
+# worktree 中
+cd .worktrees/feat/my-feature
+npm run test:e2e  # 自动使用 deepreader-wt-feat-my-feature
+```
+
+### 手动指定 Plugin ID
+
+```bash
+# 通过环境变量覆盖
+DEEPREADER_PLUGIN_ID=my-custom-id npm run test:e2e
+```
+
+### 测试代码示例
+
+```typescript
+// tests/lib/plugin-id.mjs 提供动态检测
+import { PLUGIN_ID, INDEX_DIR } from '../lib/plugin-id.mjs';
+
+// 使用
+const dataPath = `${vaultPath}/.obsidian/plugins/${PLUGIN_ID}/data.json`;
+const indexDir = `${vaultPath}/${INDEX_DIR}`;
 ```
 
 ## 清理策略
