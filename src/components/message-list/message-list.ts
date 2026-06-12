@@ -713,10 +713,10 @@ export class MessageList extends Component {
 			}
 		}
 
-		// 副标题 —— 固定文案
+	// 副标题 —— 固定文案（"奚童 · " 产品标识 + AI 伴读定位）
 		contentWrapper.createEl("p", {
 			cls: "deeppdf-empty-subtitle",
-			text: "你的 AI 伴读",
+			text: "奚童 · 你的 AI 伴读",
 		});
 
 		// 按钮网格
