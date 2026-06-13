@@ -37,7 +37,7 @@ L6 是状态机与外部世界（Vault、文件、网络 API）的桥梁：
 | `weread_readdata` | weread | 阅读时长/天数/偏好统计 | `mode?: 'weekly'\|'monthly'\|'annually'\|'overall'` | 同上 |
 | `weread_book_info` | weread | 书籍详情 | `bookId: string` | 同上 |
 | `weread_notebooks` | weread | 笔记概览 | `count?: number` | 同上 |
-| `excalidraw` | visual | 生成 Excalidraw 图形（思维导图/流程图等） | `filename: string`, `elements: ElementDef[]` | definition: `definitions/excalidraw.ts`；实现: `excalidraw.ts` |
+| `excalidraw` | visual | 生成 Excalidraw 图形（思维导图/流程图等） | `filename: string`, `elements: ElementDef[]` | definition: `definitions/excalidraw.ts`；实现: `excalidraw.ts` + `excalidraw-geometry.ts` |
 
 ### 1.3 ToolContext 全景
 

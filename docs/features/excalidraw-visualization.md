@@ -87,7 +87,7 @@ VISUALIZER 不是散落在 S1/S3 内部的逻辑，而是一个独立的 LangGra
 | 图表辅助 | `src/agent/graph/utils/diagram-helper.ts` | 意图检测 regex + LLM 调用 + JSON 提取 |
 | Excalidraw 工具执行器 | `src/agent/tools/excalidraw.ts` | 元素转换、碰撞检测、文件写入 |
 | Excalidraw 工具定义 | `src/agent/tools/definitions/excalidraw.ts` | LangChain tool 包装，设计哲学/布局参数 |
-| 几何计算 | `src/agent/tools/excalidraw.ts`（内联） | edgeIntersection、calculateViewport、detectTextOverlaps |
+| 几何计算 | `src/agent/tools/excalidraw-geometry.ts` | edgeIntersection、calculateViewport（从 excalidraw.ts 拆出） |
 | 路由逻辑 | `src/agent/graph/edges.ts` | `userHasDiagramIntent()` 在三个路由点判断 |
 
 ### 路由触发点
@@ -185,7 +185,7 @@ LLM 不是按关键词硬编码模式，而是根据分析内容的语义选择�
 | `src/agent/graph/nodes/visualizer.ts` | VISUALIZER 节点 |
 | `src/agent/graph/utils/diagram-helper.ts` | 图表生成辅助 |
 | `src/agent/tools/excalidraw.ts` | Excalidraw 工具执行器 |
-| `src/agent/tools/excalidraw.ts` | 几何计算（交点、视口、碰撞） |
+| `src/agent/tools/excalidraw-geometry.ts` | 几何计算（交点、视口） |
 | `src/agent/tools/definitions/excalidraw.ts` | LangChain tool 定义 |
 | `src/agent/graph/edges.ts` | 路由逻辑 |
 | `src/agent/graph/prompts/router-prompt.ts` | Router 可视化路由规则 |
