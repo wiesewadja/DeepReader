@@ -146,6 +146,7 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   const isText = el.type === 'text';
   const isArrow = el.type === 'arrow';
   const isLine = el.type === 'line';
+  const isShape = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
   const base: ExcalidrawElement = {
     id: el.id,
     type: el.type,
@@ -155,7 +156,7 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     height: el.height,
     angle: 0,
     strokeColor: el.strokeColor ?? '#1e293b',
-    backgroundColor: el.backgroundColor ?? 'transparent',
+    backgroundColor: el.backgroundColor ?? (isShape ? '#fffaf0' : 'transparent'),
     fillStyle: el.fillStyle ?? 'solid',
     strokeWidth: el.strokeWidth ?? (isLine || isArrow ? 1 : 2),
     strokeStyle: 'solid',
@@ -163,7 +164,7 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     opacity: el.opacity ?? 100,
     groupIds: el.groupIds ?? [],
     frameId: null,
-    roundness: ['rectangle', 'ellipse', 'diamond'].includes(el.type) ? { type: 3 } : null,
+    roundness: isShape ? { type: 3 } : null,
     seed: nextSeed(),
     version: 1,
     versionNonce: now(),
@@ -180,9 +181,10 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     // Free text cap: 22px max; bound text uses the container's maxFontSize logic instead
     const freeTextCap = el.containerId ? (el.fontSize ?? 16) : Math.min(el.fontSize ?? 16, 22);
     base.fontSize = freeTextCap;
-    base.fontFamily = 3;
-    base.textAlign = el.textAlign ?? 'center';
-    base.verticalAlign = el.verticalAlign ?? 'middle';
+    base.fontFamily = 1;
+    // 自由文本默认左对齐，容器内文本默认居中
+    base.textAlign = el.textAlign ?? (el.containerId ? 'center' : 'left');
+    base.verticalAlign = el.verticalAlign ?? (el.containerId ? 'middle' : 'top');
     base.containerId = el.containerId ?? null;
     base.lineHeight = 1.25;
     // 文本元素需要有高度计算
@@ -214,6 +216,16 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   return base;
 }
 
+/**
+ * 容器内文本字号上限（极简三档）。
+ * 避免 LLM 给大容器配过大字号导致中文溢出。
+ */
+function getContainerMaxFontSize(containerWidth: number): number {
+  if (containerWidth >= 240) return 22;
+  if (containerWidth >= 140) return 16;
+  return 14;
+}
+
 function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
   // Deterministic collision resolution before building
   const resolved = resolveOverlaps(elements);
@@ -226,12 +238,23 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
 
   const result: ExcalidrawElement[] = [];
 
-  for (const el of resolved) {
+  for (let el of resolved) {
     const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
     const needsAutoText = isContainer && el.text && !isText;
     const isArrowOrLine = el.type === 'arrow' || el.type === 'line';
 
+    // Normalize binding field names: LLM may emit {id} instead of {elementId}
+    if (el.startBinding && !el.startBinding.elementId) {
+      const b = el.startBinding as Record<string, unknown>;
+      const eid = (b.id ?? b.targetId ?? b.element ?? b.target) as string | undefined;
+      if (eid) el = { ...el, startBinding: { elementId: eid, gap: b.gap as number ?? 2, focus: b.focus as number ?? 0 } };
+    }
+    if (el.endBinding && !el.endBinding.elementId) {
+      const b = el.endBinding as Record<string, unknown>;
+      const eid = (b.id ?? b.targetId ?? b.element ?? b.target) as string | undefined;
+      if (eid) el = { ...el, endBinding: { elementId: eid, gap: b.gap as number ?? 2, focus: b.focus as number ?? 0 } };
+    }
     if (needsAutoText) {
       // 形状有 text → 自动创建绑定的 text 子元素
       const textId = `${el.id}_text`;
@@ -240,16 +263,18 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
       shapeEl.boundElements = [{ id: textId, type: 'text' }];
       result.push(shapeEl);
 
-      // 创建 text 子元素 — fontSize 根据容器宽度自适应上限
-      const maxFontSize = el.width >= 300 ? 24 : el.width >= 220 ? 20 : el.width >= 160 ? 16 : 14;
+      // 创建 text 子元素 — fontSize 根据容器宽度自适应上限，避免中文溢出
+      const maxFontSize = getContainerMaxFontSize(el.width);
+      const paddingX = Math.max(24, el.width * 0.12);
+      const paddingY = Math.max(18, el.height * 0.15);
       const textEl = toExcalidrawElement({
         ...el,
         id: textId,
         type: 'text',
-        x: el.x + 10,
-        y: el.y + 10,
-        width: Math.max(20, el.width - 20),
-        height: Math.max(20, el.height - 20),
+        x: el.x + paddingX,
+        y: el.y + paddingY,
+        width: Math.max(20, el.width - paddingX * 2),
+        height: Math.max(20, el.height - paddingY * 2),
         containerId: el.id,
         strokeColor: el.strokeColor || '#1e293b',
         fontSize: Math.min(el.fontSize || 16, maxFontSize),
@@ -275,7 +300,13 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
 
         arrowEl.x = sx;
         arrowEl.y = sy;
-        arrowEl.points = [[0, 0], [ex - sx, ey - sy]];
+        // 保留 LLM 提供的中间控制点，只修正起点和终点到形状边缘
+        const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [1, 0]];
+        arrowEl.points = provided.map((p, i) => {
+          if (i === 0) return [0, 0];
+          if (i === provided.length - 1) return [ex - sx, ey - sy];
+          return p as [number, number];
+        });
       } else if (startEl) {
         const gap = 2;
         const cx = startEl.x + startEl.width / 2;
@@ -284,13 +315,23 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
         const [sx, sy] = edgeIntersection(startEl, cx, targetCy, gap);
         arrowEl.x = sx;
         arrowEl.y = sy;
-        // 只有起点绑定时给一段默认向上延伸的箭头，避免残留 [0,0]→[1,0] 的微小箭头
-        arrowEl.points = [[0, 0], [0, -80]];
+        // 只有起点绑定时：优先保留 LLM 提供的 points 形态，否则默认向上延伸
+        const provided = el.points && el.points.length >= 2 ? el.points : [[0, 0], [0, -80]];
+        arrowEl.points = provided.map((p, i) => i === 0 ? [0, 0] : (p as [number, number]));
       }
 
       result.push(arrowEl);
     } else {
-      result.push(toExcalidrawElement(el));
+      let elDef = el;
+      // Cap fontSize for text elements with containerId
+      if (isText && el.containerId) {
+        const container = elMap.get(el.containerId);
+        if (container) {
+          const maxFs = getContainerMaxFontSize(container.width);
+          elDef = { ...el, fontSize: Math.min(el.fontSize ?? 16, maxFs) };
+        }
+      }
+      result.push(toExcalidrawElement(elDef));
     }
   }
 
@@ -310,8 +351,8 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
     source: 'https://excalidraw.com',
     elements: result,
     appState: {
-      viewBackgroundColor: '#ffffff',
-      gridSize: 20,
+      viewBackgroundColor: '#fffaf0',
+      gridSize: null,
       scrollX: viewport.scrollX,
       scrollY: viewport.scrollY,
       zoom: viewport.zoom,

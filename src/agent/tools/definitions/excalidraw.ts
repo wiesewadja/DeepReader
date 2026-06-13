@@ -34,15 +34,21 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 并列（side-by-side）：平行对比 → 适合异同、对照
 - 同类元素必须 y 坐标对齐，形成整齐的行或列
 
-## 元素大小与字号层级（书卷审美：疏朗、大气）
-- Hero（视觉锚点/中心主题）: 320×160, fontSize 20-24
-- Primary（主节点/部分标题）: 220×110, fontSize 16-20
-- Secondary（子节点/章节）: 160×80, fontSize 14-16
-- Tertiary（细节点/要点）: 120×60, fontSize 12-14
-- Small（标注/标签）: 80×44, fontSize 11-12
-- 自由文本标题: fontSize 18-22（无需容器）
-- 自由文本正文: fontSize 14-16
+## 元素大小与视觉层级（参考 excalidraw-diagram-skill：用尺寸/颜色/留白做层级，而非堆叠字号）
+- Hero（视觉锚点/中心主题）: 340×170
+- Primary（主节点/部分标题）: 240×120
+- Secondary（子节点/章节）: 180×90
+- Tertiary（细节点/要点）: 140×70
+- Small（标注/标签）: 100×50
 - 最重要元素周围留白 250px+
+- 容器内文本必须留出 12-15% 内边距，宁可容器略大也不要文字顶边
+
+## 字号（极简三档，降低溢出风险）
+- 标题/强调: fontSize 20-22（用于 Hero 中心标题、章节大标题）
+- 正文/节点标签: fontSize 16（默认，绝大多数形状内文本）
+- 标注/辅助: fontSize 14（最小，用于小标签、注释）
+- 中文最小字号 14，任何情况下不要小于 14
+- 优先用颜色深浅、strokeWidth、容器尺寸、留白来表达层级，而不是切换字号
 
 ## 文本宽度估算
 - Latin: width = max(180, charCount × 9)
@@ -59,7 +65,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 
 ## 书卷审美色板（颜色即语义，勿任意发挥）
 所有颜色均来自低饱和、温润的中国传统书卷色调：
-- 宣纸白背景: canvas #ffffff, 形状填充 #fffaf0 或 #fdfbf7
+- 宣纸色背景: canvas #fffaf0, 形状填充 #fffaf0 或 #fdfbf7
 - 墨色（主文字/主线条）: #2c2c2c / #1e293b
 - 朱砂（重点、起点、关键决策）: fill #fde8e8, stroke #c53030
 - 靛青（主流程、主节点）: fill #e8f0fe, stroke #1e3a5f
@@ -73,7 +79,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - roughness: 0（干净、专业、书卷气）
 - opacity: 100（所有元素，不用透明度做层次）
 - strokeWidth: 2（形状与主箭头）/ 1（细分支、结构线）
-- fontFamily: 3（等宽字体，中文清晰）
+- fontFamily: 1（Virgil 手写体，Excalidraw 默认）
 - lineHeight: 1.25
 - roundness: { type: 3 }（轻微圆角，温润）
 

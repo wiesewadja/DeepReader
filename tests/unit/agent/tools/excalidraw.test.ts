@@ -53,7 +53,7 @@ describe('buildExcalidrawJSON', () => {
     expect(result.version).toBe(2);
     expect(result.source).toBe('https://excalidraw.com');
     expect(result.elements).toHaveLength(2);
-    expect(result.appState.viewBackgroundColor).toBe('#ffffff');
+    expect(result.appState.viewBackgroundColor).toBe('#fffaf0');
     expect(result.files).toEqual({});
   });
 
@@ -68,9 +68,9 @@ describe('buildExcalidrawJSON', () => {
     expect(el.text).toBe('测试文本');
     expect(el.originalText).toBe('测试文本');
     expect(el.fontSize).toBe(20);
-    expect(el.fontFamily).toBe(3);
-    expect(el.textAlign).toBe('center');
-    expect(el.verticalAlign).toBe('middle');
+    expect(el.fontFamily).toBe(1);
+    expect(el.textAlign).toBe('left');
+    expect(el.verticalAlign).toBe('top');
     expect(el.containerId).toBeNull();
   });
 
