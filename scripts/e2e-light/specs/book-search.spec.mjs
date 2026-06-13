@@ -125,26 +125,8 @@ export default {
 			}
 		}
 
-		// 搜索数据完整性
-		{
-			const t0 = Date.now();
-			try {
-				const result = await evalObsidian(`(async () => {
-					const adapter = app.vault.adapter;
-					const base = '.obsidian/plugins/${PLUGIN_ID}/pageindex/${BOOK_ID}';
-					const checks = {};
-					for (const f of ['tree.json', 'bm25.json', 'chunks.jsonl', 'vectors.jsonl', 'book-meta.json']) {
-						checks[f] = await adapter.exists(base + '/' + f);
-					}
-					const missing = Object.entries(checks).filter(([k,v]) => !v).map(([k]) => k);
-					return { missing, checks };
-				})()`);
-				if (result.missing.length > 0) throw new Error(`缺失: ${result.missing.join(', ')}`);
-				pass('搜索数据完整性', Date.now() - t0, '5 个搜索数据文件齐全');
-			} catch (e) {
-				fail('搜索数据完整性', Date.now() - t0, e);
-			}
-		}
+		// 注：搜索数据文件完整性（tree/bm25/chunks/vectors/book-meta 五件套是否齐全）
+		// 由 index-integrity spec 统一覆盖，此处不重复检查，聚焦搜索行为本身。
 
 		return { steps };
 	},

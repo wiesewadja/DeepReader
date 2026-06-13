@@ -41,7 +41,8 @@ export default {
 		// 检查前置条件：LLM API Key + 已索引书籍
 		const precheck = await evalObsidian(`(() => {
 			const s = app.plugins.plugins["deepreader-dev"]?.settings;
-			const hasApiKey = !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey);
+			const providers = s?.providers || {};
+			const hasApiKey = !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey || Object.values(providers).some(p => !!p.apiKey));
 			const agent = app.plugins.plugins["deepreader-dev"]?.frontendAgent;
 			return { hasApiKey, hasAgent: !!agent };
 		})()`);

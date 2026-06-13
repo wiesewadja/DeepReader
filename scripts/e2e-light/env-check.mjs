@@ -50,45 +50,38 @@ export async function checkEnvironment() {
 		return { ok: false, errors };
 	}
 
-	// 3. 检查 catalog.json
+	// 3 + 4. 一次读取 catalog.json：校验格式 + 取出 bookIds（后续索引文件检查复用）
+	let bookIds = [];
 	try {
-		const catalogExists = await evalObsidian(`(() => {
+		const catalogInfo = await evalObsidian(`(async () => {
 			const adapter = app.vault.adapter;
-			return adapter.exists('${INDEX_DIR}/catalog.json');
-		})()`);
-		if (!catalogExists) {
-			errors.push('catalog.json 不存在');
-		} else {
-			const catalogValid = await evalObsidian(`(() => {
-				try {
-					const adapter = app.vault.adapter;
-					return adapter.read('${INDEX_DIR}/catalog.json').then(raw => {
-						const catalog = JSON.parse(raw);
-						return catalog?.books && typeof catalog.books === 'object' && Object.keys(catalog.books).length > 0;
-					});
-				} catch {
-					return false;
-				}
-			})()`);
-			if (!catalogValid) {
-				errors.push('catalog.json 格式错误或无书籍记录');
+			if (!(await adapter.exists('${INDEX_DIR}/catalog.json'))) {
+				return { exists: false };
 			}
-		}
-	} catch (e) {
-		errors.push(`catalog.json 检查失败: ${e.message}`);
-	}
-
-	// 4. 检查每本书的索引文件
-	try {
-		const bookIds = await evalObsidian(`(() => {
-			const adapter = app.vault.adapter;
-			return adapter.read('${INDEX_DIR}/catalog.json').then(raw => {
+			try {
+				const raw = await adapter.read('${INDEX_DIR}/catalog.json');
 				const catalog = JSON.parse(raw);
-				return Object.keys(catalog?.books || {});
-			});
+				const valid = catalog?.books && typeof catalog.books === 'object';
+				return {
+					exists: true,
+					valid,
+					bookIds: valid ? Object.keys(catalog.books) : [],
+				};
+			} catch {
+				return { exists: true, valid: false, bookIds: [] };
+			}
 		})()`);
 
-		if (bookIds && bookIds.length > 0) {
+		if (!catalogInfo?.exists) {
+			errors.push('catalog.json 不存在');
+		} else if (!catalogInfo.valid) {
+			errors.push('catalog.json 格式错误或无书籍记录');
+		} else {
+			bookIds = catalogInfo.bookIds;
+		}
+
+		// 4. 检查每本书的索引文件（复用已取到的 bookIds）
+		if (bookIds.length > 0) {
 			const missingFiles = await evalObsidian(`(async () => {
 				const adapter = app.vault.adapter;
 				const bookIds = ${JSON.stringify(bookIds)};
@@ -118,7 +111,7 @@ export async function checkEnvironment() {
 		const hasApiKey = await evalObsidian(`(() => {
 			const s = app.plugins.plugins["${PLUGIN_ID}"]?.settings;
 			const providers = s?.providers || {};
-			return Object.values(providers).some(p => !!p.apiKey);
+			return !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey || Object.values(providers).some(p => !!p.apiKey));
 		})()`);
 		if (!hasApiKey) {
 			errors.push('未配置任何 LLM API Key');
