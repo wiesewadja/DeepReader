@@ -3,10 +3,17 @@
 Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 
 ## 命令
-- 单元测试: `npm run test:run`
-- E2E (wdio): `npx wdio run tests/wdio.conf.ts`（独立 Obsidian 实例，从 `bin/` 加载）
-- 冒烟测试: `node scripts/smoke/smoke.mjs`（core 11 场景）/ `node scripts/smoke/smoke.mjs --level full`（core+full 25 场景）/ `--only S-22,S-23` 指定场景
-- 轻量 E2E: `scripts/smoke/lib/obsidian-cli.mjs` 的 `evalObsidian()`（对运行中的 Obsidian 执行 JS，冒烟测试底层也用它，但还可用于部署验证、问题排查等）
+
+### 四层测试架构
+
+| 层级 | 命令 | 适用场景 |
+|------|------|----------|
+| L1 单元测试 | `npm run test:run` | 函数逻辑、组件测试 |
+| L2 冒烟测试 | `npm run smoke:core` | 部署后快速验证（~10-30s） |
+| L3 轻量 E2E | `npm run e2e-light` | 流程级验证（~90s） |
+| L4 WebdriverIO | `npx wdio run tests/wdio.conf.ts` | 多步 UI 交互（~5min） |
+
+### 其他命令
 - 部署: `npm run deploy` → test-vault
 - 跨 worktree 部署: 复制 `bin/main.js` + `bin/styles.css` + `bin/manifest.json` 到目标 vault 的 `plugins/<plugin-dir>/`
 
