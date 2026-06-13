@@ -6,11 +6,15 @@ import { agentLog as log } from '../../utils/logger.js';
 import { NODE_NAMES, EDGE_KEYS } from './node-names';
 import type { CognitiveEngineState } from './state';
 import { ReadingDepth } from './state';
-import { resolveMode } from './utils/engine-helpers';
+import { hasDiagramIntent } from './utils/diagram-helper.js';
+import { extractHumanMessageContents, resolveMode } from './utils/engine-helpers';
 
-function hasDiagramIntent(_state: CognitiveEngineState): boolean {
-  // 图表生成已迁移到 Hermes，暂时跳过
-  return false;
+function userHasDiagramIntent(state: CognitiveEngineState): boolean {
+  // Prefer original user message over rewrittenQuery — the router LLM may
+  // strip diagram keywords (e.g. "画思维导图" → "整体结构").
+  const humanMsgs = extractHumanMessageContents(state.messages);
+  const lastUserMsg = humanMsgs[humanMsgs.length - 1] || '';
+  return hasDiagramIntent(lastUserMsg) || hasDiagramIntent(state.rewrittenQuery || '');
 }
 
 /**
@@ -70,7 +74,7 @@ export function routeAfterInspectional(state: CognitiveEngineState): string {
   // depth=1: check if diagram intent (skip visualizer if S1 failed — no valid structural analysis)
   if (state.depth === ReadingDepth.INSPECTIONAL) {
     if (state.nodeErrors?.inspectional || !state.structuralAnalysis) return EDGE_KEYS.DONE;
-    return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : EDGE_KEYS.DONE;
+    return userHasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : EDGE_KEYS.DONE;
   }
   // depth=2 → pre-search (then analytical or early-stop formatter)
   return NODE_NAMES.PRE_SEARCH;
@@ -102,7 +106,7 @@ export function routeAfterPreSearch(state: CognitiveEngineState): string {
     return NODE_NAMES.ANALYTICAL;
   }
   if (state.earlyStopContent) {
-    return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
+    return userHasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
   }
   return NODE_NAMES.ANALYTICAL;
 }
@@ -114,5 +118,5 @@ export function routeAfterPreSearch(state: CognitiveEngineState): string {
  * - otherwise → formatter
  */
 export function routeAfterAnalysis(state: CognitiveEngineState): string {
-  return hasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
+  return userHasDiagramIntent(state) ? NODE_NAMES.VISUALIZER : NODE_NAMES.FORMATTER;
 }

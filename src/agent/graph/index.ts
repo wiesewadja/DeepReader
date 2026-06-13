@@ -66,7 +66,9 @@ const workflow = new StateGraph(CognitiveEngineAnnotation)
     analysisResult: '',
     toolResultsSnapshot: [],
   })))
-  .addNode(NODE_NAMES.VISUALIZER, visualizerNode)
+  .addNode(NODE_NAMES.VISUALIZER, safeNode(NODE_NAMES.VISUALIZER, visualizerNode, (state) => ({
+    analysisResult: state.analysisResult || '',
+  })))
   .addNode(NODE_NAMES.FORMATTER, safeFormatter)
   .addConditionalEdges(START, routeFromStart, {
     [NODE_NAMES.ROUTER]: NODE_NAMES.ROUTER,

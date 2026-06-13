@@ -1,21 +1,48 @@
 /**
- * Visualizer Node — 占位实现
+ * Visualizer Node — 统一图表生成节点
  *
- * 图表生成功能已迁移到 Hermes MCP Server。
- * 此节点保留占位，后续 Hermes MCP client 集成时替换实现。
+ * 检测到可视化意图时，由 edges.ts 路由到本节点。
+ * 调用 diagram-helper 生成 excalidraw 图形，追加 embed 到分析结果。
  */
 
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { agentLog as log } from '../../../utils/logger.js';
 import type { CognitiveEngineState } from '../state';
+import { generateDiagram } from '../utils/diagram-helper.js';
 
 export async function visualizerNode(
   state: CognitiveEngineState,
-  _config: RunnableConfig,
+  config: RunnableConfig,
 ): Promise<Partial<CognitiveEngineState>> {
-  log('[Visualizer] 图表生成功能正在升级中，即将支持 Hermes 后端');
+  const mainModel = config.configurable?.mainModel;
+  const toolContext = config.configurable?.toolContext;
 
-  return {
-    analysisResult: '📊 图表生成功能正在升级中，即将通过 Hermes 后端支持思维导图、知识图谱等信息图生成。',
-  };
+  if (!mainModel || !toolContext) {
+    log('[Visualizer] 缺少 mainModel 或 toolContext，跳过图表生成');
+    return { analysisResult: state.analysisResult || '' };
+  }
+
+  const content = [state.analysisResult, state.structuralAnalysis].filter(Boolean).join('\n\n');
+  if (!content) {
+    log('[Visualizer] 无分析内容，跳过图表生成');
+    return { analysisResult: state.analysisResult || '' };
+  }
+
+  const embed = await generateDiagram(
+    state.rewrittenQuery || '',
+    content,
+    mainModel,
+    toolContext,
+    { pdfName: state.pdfName },
+  );
+
+  if (!embed) {
+    log('[Visualizer] 图表生成失败或 LLM 未返回有效结果');
+    return { analysisResult: state.analysisResult || '' };
+  }
+
+  if (state.analysisResult) {
+    return { analysisResult: `${state.analysisResult}\n\n${embed}` };
+  }
+  return { structuralAnalysis: `${state.structuralAnalysis || ''}\n\n${embed}` };
 }

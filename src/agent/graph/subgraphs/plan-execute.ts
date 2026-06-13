@@ -23,7 +23,8 @@ function buildSynthesisPrompt(config: ReactLoopConfig): string {
 2. 不要再次调用任何工具
 3. 如果某些结果不完整，基于已有信息给出尽可能完整的回答
 4. 严格遵守 <output_rules> 中的 wiki 链接格式
-5. 提取逻辑骨架：定义 → 主旨 → 论述 → 结论`;
+5. 提取逻辑骨架：定义 → 主旨 → 论述 → 结论
+6. 如果工具返回中包含 ![[Excalidraw/xxx.excalidraw]] 嵌入语法，必须原样包含在输出中，这是图形嵌入标记`;
 
   if (config.forcedConclusionContext) {
     const { pdfName, scopeNodeIds } = config.forcedConclusionContext;

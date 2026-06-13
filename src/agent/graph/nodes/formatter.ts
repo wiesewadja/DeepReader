@@ -284,7 +284,7 @@ export async function formatterNode(
   if (mode === 'proactive') {
     const trigger = (proactiveTrigger || 'inspectional') as 'inspectional' | 'highlight' | 'chapter';
     const ar = analysisResult || '';
-    const hasDiagram = false; // 图表生成已迁移到 Hermes
+    const hasDiagram = false; // Proactive 模式直接结束到 formatter，不经过 VISUALIZER 节点，因此不附带图表
     callbacks?.onProgress?.('思考引导问题...');
     const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
     let proactiveUserMsg = buildProactiveUserMessage({
@@ -493,10 +493,21 @@ export async function formatterNode(
   }
 
   // T2.2: 正式处理顺序
+  // 0. protectEmbeds - 保护 ![[...]] 嵌入语法不被 wiki link 处理误删
   // 1. cleanOutput - 修格式（fixupWikiLinks, fixupEmptyBlockIds, stripThinkTags）
   // 2. validateWikiLinks - 基于 vault.exists 真实校验（仅在有 app 时）
   // 3. stripFabricatedLinks - 兜底（变形的 file_name 白名单）
-  let cleanedContent = cleanOutput(content, effectivePdfName, crossBookMode);
+  // 4. restoreEmbeds - 恢复嵌入语法
+
+  // 保护 ![[...]] 嵌入语法（如 ![[Excalidraw/xxx.excalidraw]]）
+  const embedPlaceholders: string[] = [];
+  const contentToProcess = content.replace(/!\[\[([^\]]+)\]\]/g, (match) => {
+    const idx = embedPlaceholders.length;
+    embedPlaceholders.push(match);
+    return `%%EMBED_${idx}%%`;
+  });
+
+  let cleanedContent = cleanOutput(contentToProcess, effectivePdfName, crossBookMode);
 
   const vaultApp = ctx?.toolContext?.vault?.app;
   if (vaultApp) {
@@ -515,11 +526,17 @@ export async function formatterNode(
     }
   }
 
-  const formatted = stripFabricatedLinks(
+  let formatted = stripFabricatedLinks(
     cleanedContent,
     inputTextsForValidation,
     vaultBlockIds,
   );
+
+  // 恢复嵌入语法
+  for (let i = 0; i < embedPlaceholders.length; i++) {
+    formatted = formatted.replace(`%%EMBED_${i}%%`, embedPlaceholders[i]);
+  }
+
   const errorHints = appendErrorHints(state.nodeErrors);
 
   return { formattedOutput: errorHints ? `${formatted}\n\n> [!hint] ${errorHints}` : formatted };

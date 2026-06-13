@@ -3,8 +3,8 @@
  */
 
 import type { StructuredToolInterface } from '@langchain/core/tools';
-
 // LangChain tool() 格式的工具定义
+import { createExcalidrawTool } from './definitions/excalidraw.js';
 import { createSaveMemoryTool, createSearchMemoryTool } from './definitions/memory.js';
 import { createUpdateProfileTool } from './definitions/profile.js';
 import { createReadBookSectionTool } from './definitions/read-section.js';
@@ -19,7 +19,7 @@ import {
 	createWereadBookInfoTool,
 } from './definitions/weread-tools.js';
 import { createWriteNoteTool } from './definitions/write-note.js';
-import type { ToolExecutor, ToolContext } from './types.js';
+import type { ToolContext } from './types.js';
 
 // 导出日志函数供控制台使用
 export { setModuleEnabled, setModulesEnabled, getModuleConfig } from '../../utils/logger.js';
@@ -50,6 +50,7 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
     createSearchMemoryTool(ctx),
     createUpdateProfileTool(ctx),
     createSearchReadBooksTool(ctx),
+    createExcalidrawTool(ctx),
   ];
 
   // search_journal 依赖 journalDir 配置
