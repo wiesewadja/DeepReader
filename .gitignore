@@ -83,3 +83,4 @@ test-output/
 .codegraph/daemon.pid
 .codegraph
 .mimocode
+.kimi-code
