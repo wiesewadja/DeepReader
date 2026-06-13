@@ -58,7 +58,7 @@ L2 是 LangGraph 的**纯编排层**。它：
         ┌───────────┼────────────┐
         ▼           ▼            ▼
    [PRE_SEARCH]  [SYNTOPICAL]  [VISUALIZER]
-   safePreSearch    (S3)        (占位)
+   safePreSearch    (S3)        (图表生成)
         │
         │  routeAfterPreSearch
         │  - earlyStopContent='done' → VISUALIZER/FORMATTER
@@ -70,7 +70,7 @@ L2 是 LangGraph 的**纯编排层**。它：
         │  routeAfterAnalysis
         │
         ▼
-   [VISUALIZER] (占位) → [FORMATTER]
+   [VISUALIZER] (图表生成) → [FORMATTER]
    或 [SYNTOPICAL] (S3)  → [FORMATTER]
    或 [ANALYTICAL] (S2)  → [FORMATTER]
         │
@@ -94,10 +94,10 @@ L2 是 LangGraph 的**纯编排层**。它：
 | `ANALYTICAL` | `analyticalNode` | ✅ `safeAnalytical` | 失败 → 空 analysisResult |
 | `SYNTOPICAL` | `syntopicalNode` | ✅ inline safe | 失败 → 空 analysisResult |
 | `ADVISOR` | `advisorNode` | ✅ inline safe | 失败 → 空 analysisResult |
-| `VISUALIZER` | `visualizerNode` | ❌ 无 | 占位实现，自己就是降级 |
+| `VISUALIZER` | `visualizerNode` | ✅ `safeNode` | 图表生成失败时返回原 analysisResult |
 | `FORMATTER` | `formatterNode` | ✅ `safeFormatter` | 唯一 `fallbackAction='abort'` |
 
-**关键不变量**：所有"业务节点"都有 safeNode 包装（**safeNode 是图的核心防御**），只有"纯入口"（Router）和"占位节点"（Visualizer）例外。
+**关键不变量**：所有"业务节点"都有 safeNode 包装（**safeNode 是图的核心防御**），只有"纯入口"（Router）例外。
 
 ### 1.4 边与路由决策
 
@@ -203,22 +203,9 @@ export const NODE_NAMES = {
 
 ### 2.1 hasDiagramIntent 永远返回 false
 
-**现象**：
-```typescript
-function hasDiagramIntent(_state: CognitiveEngineState): boolean {
-  // 图表生成已迁移到 Hermes，暂时跳过
-  return false;
-}
-```
+**现象**（已修复）：`hasDiagramIntent` 曾被硬编码为 `return false`，VISUALIZER 节点永远不会被路由到。
 
-**后果**：
-- `routeAfterInspectional`、`routeAfterPreSearch`、`routeAfterAnalysis` 三处都依赖这个函数
-- VISUALIZER 节点（占位）**永远不会被路由到**
-- 但图里仍然注册了 VISUALIZER 节点 + 边，每次 stream 增加一次额外的"评估"开销
-
-**根因**：图表生成迁到 Hermes MCP（推测在另一个 module），但 LangGraph 的边决策没跟着调整。
-
-**优化方向**（见 §3）：要么把 VISUALIZER 节点从图里完全移除，要么真正实现图表生成。
+**现状**：`hasDiagramIntent` 已激活，基于正则匹配用户消息中的可视化关键词（11 种）。VISUALIZER 节点已从占位升级为真实的 Excalidraw 图表生成节点。详见 [L4 第 7 节](./L4-nodes.md#7-visualizer统一图表生成) 和 [excalidraw-visualization.md](../../features/excalidraw-visualization.md)。
 
 ### 2.2 SafeNode fallbackAction 命名混乱
 
@@ -293,13 +280,9 @@ return {
 
 ## 3. 优化探讨
 
-### 3.1 VISUALIZER 节点去留
+### 3.1 VISUALIZER 节点（已实现）
 
-**选项 A**：完全移除 VISUALIZER 节点 + 边。`hasDiagramIntent` 永远 false，节点永远不被路由到，徒增 graph 注册复杂度。
-**选项 B**：实现真正的图表生成（Hermes MCP 调用），让 VISUALIZER 节点有效。
-**选项 C**：保留节点但改为"自动跳过"（启动时打印 warning，提示用户图表功能在 Hermes 里）。
-
-**建议**：A 优先（B 工作量大），但需要迁移 `routeAfterInspectional` 等三处的 `hasDiagramIntent` 分支。
+**已选择选项 B**：VISUALIZER 已实现真实的 Excalidraw 图表生成。`hasDiagramIntent` 已激活，三个路由点（`routeAfterInspectional`、`routeAfterPreSearch`、`routeAfterAnalysis`）在检测到可视化意图时路由到 VISUALIZER。详见 [excalidraw-visualization.md](../../features/excalidraw-visualization.md)。
 
 ### 3.2 NodeError.fallbackAction 实际生效
 

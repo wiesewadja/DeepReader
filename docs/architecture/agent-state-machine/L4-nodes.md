@@ -16,7 +16,7 @@
 | S2 Analytical | routeAfterPreSearch → ANALYTICAL | main (3-6次) | search_book + read_book_section | analysisResult / toolResultsSnapshot | safeAnalytical 兜底 |
 | S3 Syntopical | routeByDepth/routeAfterInspectional → SYNTOPICAL | main (1-2次) | 跨书搜索 (内部实现) | analysisResult | safeNode 兜底 |
 | Advisor | routeByDepth → ADVISOR | main (3-4次) | weread_* + search_journal | analysisResult | safeNode 兜底 |
-| Visualizer | 占位 — 永远不被路由到 | — | — | 固定提示字符串 | 本身即降级 |
+| Visualizer | edges.ts 三个路由点检测到可视化意图 | main (1次) | — | analysisResult 追加 embed | safeNode 兜底，返回原 analysisResult |
 | S4 Formatter | 几乎所有路径 → FORMATTER | main (1次流式 + HITL refine 1次) | — | formattedOutput | safeFormatter fallbackAction='abort' |
 
 ---
@@ -256,24 +256,60 @@ PlanExecute ReAct 循环（首选 L5 子图），可注入 S2-Pre 的 preSearchB
 
 ---
 
-## 7. Visualizer（占位）
+## 7. Visualizer（统一图表生成）
 
 **文件**：`src/agent/graph/nodes/visualizer.ts`
 
 ### 职责
-**占位实现** —— 图表生成已迁到 Hermes MCP，本节点返回固定提示。
+检测到可视化意图时，调用 `diagram-helper.generateDiagram()` 生成 Excalidraw 图形，将 embed 追加到分析结果中。
 
 ### 状态读写
-- **读**：无
-- **写**：`analysisResult`（固定字符串）
+- **读**：`analysisResult`、`structuralAnalysis`、`rewrittenQuery`、`pdfName`
+- **写**：`analysisResult`（追加 `![[Excalidraw/xxx.excalidraw]]`）
 
 ### LLM 调用
-- 0 次
+- `mainModel.invoke([sys, user])` x 1（通过 `diagram-helper.generateDiagram` 间接调用）
 
-### 已知问题
-- 整个函数是 TODO，state 一字未用；`analysisResult` 在 normal 路径下被 S4 替换，但仍**占一次 graph 跳转开销**
-- **没标 deprecated**，没移除图边（如果还在图中）
-- 与 L2 的 `hasDiagramIntent` 永远 false 配合，形成"双重占位"
+### Prompt 入口
+- `src/agent/graph/utils/diagram-helper.ts` — `DIAGRAM_SYSTEM_PROMPT`（内嵌 Excalidraw 图形生成指令）
+
+### 关键步骤
+1. 检查 `mainModel` 和 `toolContext` 可用性
+2. 合并 `analysisResult` + `structuralAnalysis` 作为输入内容
+3. 调用 `generateDiagram(query, content, model, toolContext)` — 内部调 LLM 生成元素 JSON + 调 excalidraw 工具写入文件
+4. 成功时追加 embed 到 `analysisResult`；失败时返回原始 `analysisResult`
+
+### 降级策略
+- `mainModel`/`toolContext` 缺失 → 返回原 `analysisResult`
+- 无分析内容 → 返回原 `analysisResult`
+- `generateDiagram` 失败 → 返回原 `analysisResult`（静默降级）
+- `safeNode` 兜底
+
+### 路由触发点
+- `routeAfterInspectional`：depth=1 + 有意图 + S1 无错误 → VISUALIZER
+- `routeAfterPreSearch`：S2 早停 + 有意图 → VISUALIZER
+- `routeAfterAnalysis`：S2/S3 完成 + 有意图 → VISUALIZER
+
+### 意图检测
+```typescript
+const DIAGRAM_INTENT_RE =
+  /思维导图|脑图|流程图|概念图|画.{0,6}图|可视化展示|可视化|导图|示意图|infographic|图表|知识图谱/;
+```
+同时检查原始用户消息和改写查询（防止 Router LLM 剥离关键词）。
+
+### 视觉优化（excalidraw-geometry.ts）
+- **edgeIntersection()** — 箭头与形状边缘交点计算（矩形/椭圆/菱形）
+- **Z-index 排序** — shapes(0) < arrows(1) < text(2)
+- **calculateViewport()** — 自适应视口
+- **detectTextOverlaps()** — 独立文本碰撞检测
+
+### embed 保护
+S4 Formatter 用 `%%EMBED_N%%` 占位符保护 `![[Excalidraw/xxx.excalidraw]]` 不被 wiki link 后处理误删。
+
+### 已知限制
+- LLM 坐标质量不稳定，结构性连接线可能穿过文字
+- Obsidian Excalidraw 插件可能不尊重 scrollX/scrollY/zoom
+- Proactive/Socratic 模式不经过 VISUALIZER（by design）
 
 ---
 
@@ -410,9 +446,11 @@ function safeNode(name, node, fallback) {
 
 **风险**：跨节点 schema 耦合。
 
-### 10.6 Visualizer 节点去留
+### 10.6 Visualizer 节点（已实现）
 
-见 L2 §3.1。
+VISUALIZER 已从占位升级为真实图表生成节点。详见上方第 7 节。
+
+**配套阅读**：[excalidraw-visualization.md](../../features/excalidraw-visualization.md)
 
 ### 10.7 Advisor prompt 外置
 
@@ -430,7 +468,7 @@ function safeNode(name, node, fallback) {
 | `src/agent/graph/nodes/analytical.ts` | S2 Analytical |
 | `src/agent/graph/nodes/syntopical.ts` | S3 Syntopical |
 | `src/agent/graph/nodes/advisor.ts` | Advisor |
-| `src/agent/graph/nodes/visualizer.ts` | Visualizer（占位） |
+| `src/agent/graph/nodes/visualizer.ts` | Visualizer（统一图表生成） |
 | `src/agent/graph/nodes/formatter.ts` | S4 Formatter（最复杂） |
 | `src/agent/graph/prompts/*.ts` | 7 个 prompt 文件 |
 | `src/agent/graph/utils/safe-node.ts` | safeNode 包装 |

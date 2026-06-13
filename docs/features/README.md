@@ -15,6 +15,7 @@
 | Agent 工具 | [agent-tools.md](./agent-tools.md) | F-12 ~ F-16 |
 | 阅读体验 | [reading.md](./reading.md) | F-17 ~ F-21 |
 | 用户界面 | [ui.md](./ui.md) | F-22 ~ F-25 |
+| Excalidraw 可视化 | [excalidraw-visualization.md](./excalidraw-visualization.md) | F-36 |
 | 外部集成 | [integrations.md](./integrations.md) | F-26 ~ F-29 |
 | 记忆与可观测 | [memory-observability.md](./memory-observability.md) | F-32, F-34, F-35 |
 
@@ -68,3 +69,4 @@
 | F-32 | 用户画像 + 长期记忆 | 记忆 | ✅ 已实现 | ✅ 强 |
 | F-34 | LangSmith 追踪 | 可观测 | ✅ 已实现 | ❌ 无 |
 | F-35 | 提早停止 | 稳定 | ✅ 已实现 | ✅ 强 |
+| F-36 | Excalidraw 可视化（VISUALIZER） | 可视化 | ✅ 已实现 | ✅ 强 |

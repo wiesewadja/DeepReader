@@ -1,6 +1,6 @@
 # L6 — 工具层
 
-> 13 个工具的定义、注册、错误处理
+> 14 个工具的定义、注册、错误处理
 >
 > 状态机节点不直接调外部 API/IO，而是通过工具抽象。L6 是"工具的实现"。
 
@@ -14,7 +14,7 @@ L6 是状态机与外部世界（Vault、文件、网络 API）的桥梁：
 
 | 职责 | 说明 |
 |------|------|
-| **工具定义** | 13 个工具的 name/description/Schema |
+| **工具定义** | 14 个工具的 name/description/Schema |
 | **实现** | 实际执行逻辑（搜索/读取/写入/搜索历史等） |
 | **注册** | 通过 `createLangChainTools(ctx)` 工厂模式 |
 | **错误处理** | 工具级 try/catch，子图层兜底 |
@@ -37,6 +37,7 @@ L6 是状态机与外部世界（Vault、文件、网络 API）的桥梁：
 | `weread_readdata` | weread | 阅读时长/天数/偏好统计 | `mode?: 'weekly'\|'monthly'\|'annually'\|'overall'` | 同上 |
 | `weread_book_info` | weread | 书籍详情 | `bookId: string` | 同上 |
 | `weread_notebooks` | weread | 笔记概览 | `count?: number` | 同上 |
+| `excalidraw` | visual | 生成 Excalidraw 图形（思维导图/流程图等） | `filename: string`, `elements: ElementDef[]` | definition: `definitions/excalidraw.ts`；实现: `excalidraw.ts` |
 
 ### 1.3 ToolContext 全景
 
@@ -101,6 +102,7 @@ export function createLangChainTools(ctx: ToolContext): StructuredToolInterface[
 ```
 
 **基础 7 个工具** 无条件注册。**条件注册**：
+- `excalidraw`：无条件注册（VISUALIZER 节点直接调用 `excalidrawTool.execute`，S2 Analytical 通过 PlanExecute 工具循环调用）
 - `search_journal`：仅当 `ctx.visual?.journalDir` 存在
 - 5 个 WeRead 工具：仅当 `ctx.vault?.plugin?.settings?.wereadApiKey` 存在
 
@@ -417,7 +419,7 @@ export async function executeSingleToolCall(
 |------|------|
 | `src/agent/tools/index.ts` | `createLangChainTools()` 工厂 |
 | `src/agent/tools/types.ts` | ToolContext 接口 |
-| `src/agent/tools/definitions/*.ts` | 9 个工具的 v2 包装 |
+| `src/agent/tools/definitions/*.ts` | 10 个工具的 v2 包装（含 excalidraw） |
 | `src/agent/tools/local/*.ts` | search_book / read_book_section 实现 |
 | `src/agent/tools/context/*.ts` | 子上下文（VaultContext / BookContext 等） |
 | `src/agent/tools/{memory,profile,write-note,search-read-books}.ts` | 顶层工具（v1 形态） |

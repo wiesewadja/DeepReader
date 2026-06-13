@@ -49,8 +49,9 @@ DeepReader Agent 是一个**分层可插拔**的认知系统。从外到内拆�
 ┌────────────────────────▼────────────────────────────────────────┐
 │  L4  工具层：search_book / read_book_section / write_note / ... │
 │      src/agent/tools/                                           │
-│      • 9 个 LangChain StructuredTool                             │
+│      • 10 个 LangChain StructuredTool                            │
 │      • S2 只用其中 2 个（search_book, read_book_section）        │
+│      • VISUALIZER 通过 excalidraw 工具生成图形                   │
 │      • 实现位置：definitions/ (schema) + local/ (执行)           │
 └────────────────────────┬────────────────────────────────────────┘
                          │ 数据源
