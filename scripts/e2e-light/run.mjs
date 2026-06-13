@@ -20,6 +20,7 @@ import { e2eLightSpecs } from './specs/index.mjs';
 import { evalObsidian } from '../smoke/lib/obsidian-cli.mjs';
 import { countBySelector, listPrefixedClasses } from '../smoke/lib/dom-query.mjs';
 import { checkRequires } from './baseline.mjs';
+import { checkEnvironment } from './env-check.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -192,6 +193,21 @@ async function main() {
 	const specs = loadSpecs(args);
 
 	console.log(`\n🧪 DeepReader 轻量 E2E (${specs.length} spec)\n`);
+
+	// 环境健康检查（只检查一次）
+	console.log('🔍 检查环境...');
+	const envCheck = await checkEnvironment();
+	if (!envCheck.ok) {
+		console.log('\x1b[31m✗ 环境检查失败\x1b[0m\n');
+		for (const err of envCheck.errors) {
+			console.log(`  \x1b[31m• ${err}\x1b[0m`);
+		}
+		console.log('\n\x1b[90m──────────────────────────────────────\x1b[0m');
+		console.log('\x1b[31m测试套件停止: 环境不就绪\x1b[0m');
+		console.log('\x1b[90m──────────────────────────────────────\x1b[0m');
+		process.exit(2);
+	}
+	console.log('\x1b[32m✓ 环境检查通过\x1b[0m\n');
 
 	const ctx = {
 		projectRoot: PROJECT_ROOT,

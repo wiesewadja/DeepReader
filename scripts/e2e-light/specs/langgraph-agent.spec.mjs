@@ -4,9 +4,12 @@
  * 对比: tests/e2e/specs/langgraph-agent.e2e.ts (623 行 WDIO)
  * 通过 sidebar chat API 发送消息，验证 depth=0/1/2 路由
  * 需要 LLM API Key + 已索引的书籍
+ *
+ * 集成 LangSmith trace：测试失败时自动显示 trace 信息
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
+import { startTraceCollection } from '../trace-helper.mjs';
 
 const BOOKS = {
 	naval: { bookId: '74dca606', name: '纳瓦尔宝典' },
@@ -38,7 +41,8 @@ export default {
 		// 检查前置条件：LLM API Key + 已索引书籍
 		const precheck = await evalObsidian(`(() => {
 			const s = app.plugins.plugins["deepreader-dev"]?.settings;
-			const hasApiKey = !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey);
+			const providers = s?.providers || {};
+			const hasApiKey = !!(s?.deepseekApiKey || s?.customApiKey || s?.openaiApiKey || Object.values(providers).some(p => !!p.apiKey));
 			const agent = app.plugins.plugins["deepreader-dev"]?.frontendAgent;
 			return { hasApiKey, hasAgent: !!agent };
 		})()`);
@@ -108,14 +112,24 @@ export default {
 		// ===== depth=0: 闲聊 =====
 		{
 			const t0 = Date.now();
+			const traceCollector = await startTraceCollection();
 			try {
 				const response = await sendAndPoll('你好，今天天气怎么样？', null, 30_000);
 				if (!response) throw new Error('无响应');
 				if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
 				if (response.includes('API Key 未配置')) throw new Error('API Key 未配置');
 
-				pass('depth=0 闲聊', Date.now() - t0, response.slice(0, 50));
+				// 获取 trace 信息
+				const traceSummary = await traceCollector.getTraceSummary();
+				pass('depth=0 闲聊', Date.now() - t0, 
+					traceSummary ? `${response.slice(0, 50)} | ${traceSummary}` : response.slice(0, 50));
 			} catch (e) {
+				// 测试失败时获取 trace 详情
+				const traceDetails = await traceCollector.getTraceDetails();
+				if (traceDetails?.length > 0) {
+					const trace = traceDetails[0];
+					e.context = `LangSmith trace: tokens=${trace.totalTokens}, 耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s, status=${trace.status}`;
+				}
 				fail('depth=0 闲聊', Date.now() - t0, e);
 			}
 		}
@@ -131,6 +145,7 @@ export default {
 				steps.push({ name: 'depth=1 检视阅读', status: 'skip', duration: 0,
 					error: `${BOOKS.naval.name} 未索引` });
 			} else {
+				const traceCollector = await startTraceCollection();
 				try {
 					const response = await sendAndPoll(
 						'纳瓦尔宝典这本书主要讲了什么？', BOOKS.naval.bookId, 60_000);
@@ -138,8 +153,15 @@ export default {
 					if (response.length < 50) throw new Error(`响应过短: ${response.length} chars`);
 					if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
 
-					pass('depth=1 检视阅读', Date.now() - t0, `${response.length} chars`);
+					const traceSummary = await traceCollector.getTraceSummary();
+					pass('depth=1 检视阅读', Date.now() - t0, 
+						traceSummary ? `${response.length} chars | ${traceSummary}` : `${response.length} chars`);
 				} catch (e) {
+					const traceDetails = await traceCollector.getTraceDetails();
+					if (traceDetails?.length > 0) {
+						const trace = traceDetails[0];
+						e.context = `LangSmith trace: tokens=${trace.totalTokens}, 耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s, status=${trace.status}`;
+					}
 					fail('depth=1 检视阅读', Date.now() - t0, e);
 				}
 			}
@@ -156,6 +178,7 @@ export default {
 				steps.push({ name: 'depth=2 分析阅读', status: 'skip', duration: 0,
 					error: `${BOOKS.naval.name} 未索引` });
 			} else {
+				const traceCollector = await startTraceCollection();
 				try {
 					const response = await sendAndPoll(
 						'纳瓦尔宝典中关于如何获得财富的具体建议在哪个章节？',
@@ -164,8 +187,15 @@ export default {
 					if (response.length < 100) throw new Error(`响应过短: ${response.length} chars`);
 					if (response.includes('LangGraph 引擎错误')) throw new Error('引擎错误');
 
-					pass('depth=2 分析阅读', Date.now() - t0, `${response.length} chars`);
+					const traceSummary = await traceCollector.getTraceSummary();
+					pass('depth=2 分析阅读', Date.now() - t0, 
+						traceSummary ? `${response.length} chars | ${traceSummary}` : `${response.length} chars`);
 				} catch (e) {
+					const traceDetails = await traceCollector.getTraceDetails();
+					if (traceDetails?.length > 0) {
+						const trace = traceDetails[0];
+						e.context = `LangSmith trace: tokens=${trace.totalTokens}, 耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s, status=${trace.status}`;
+					}
 					fail('depth=2 分析阅读', Date.now() - t0, e);
 				}
 			}

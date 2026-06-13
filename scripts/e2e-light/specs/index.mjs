@@ -1,5 +1,7 @@
 /**
  * 轻量 E2E 注册表
+ *
+ * 迁移自 tests/e2e-cli/ 的测试已整合到此处
  */
 
 import readingModePagination from './reading-mode-pagination.spec.mjs';
@@ -26,6 +28,9 @@ import writeNoteSecurity from './write-note-security.spec.mjs';
 import voicePersistence from './voice-persistence.spec.mjs';
 import selectionToolbarDelegation from './selection-toolbar-delegation.spec.mjs';
 import archGuardRules from './arch-guard-rules.spec.mjs';
+import bookSearch from './book-search.spec.mjs';
+import indexIntegrity from './index-integrity.spec.mjs';
+import selectionQuote from './selection-quote.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -52,4 +57,7 @@ export const e2eLightSpecs = [
 	voicePersistence,
 	selectionToolbarDelegation,
 	archGuardRules,
+	bookSearch,
+	indexIntegrity,
+	selectionQuote,
 ];
