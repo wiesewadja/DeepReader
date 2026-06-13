@@ -32,7 +32,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 循环（spiral）：箭头回到起点 → 适合迭代、反馈
 - 组装线（assembly line）：输入→处理→输出 → 适合变换
 - 并列（side-by-side）：平行对比 → 适合异同
-- 每个主要概念应使用**不同的视觉模式**，避免统一卡片网格
+- 同类元素 y 坐标对齐，形成整齐的行或列
 
 ## 元素大小参考
 - Hero（视觉锚点）: 300×150, fontSize 28

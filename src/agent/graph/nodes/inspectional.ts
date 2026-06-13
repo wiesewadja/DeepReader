@@ -138,7 +138,7 @@ export async function inspectionalNode(
       log(`[S1 Inspectional] Scope hard-guard injected ${guardResult.injected.length} ids: ${formatGuardInjectedLog(guardResult.injected)}`);
     }
 
-    const result: Partial<CognitiveEngineState> = {
+    return {
       scopeNodeIds: guardResult.scope,
       tocSummary: parsed.tocSummary ?? '',
       betterQuestion: parsed.better_question ?? rewrittenQuery,
@@ -147,8 +147,6 @@ export async function inspectionalNode(
         ? parsed.suggested_keywords.filter((k): k is string => typeof k === 'string')
         : [],
     };
-
-    return result;
   } catch (err) {
     // Graceful degradation on LLM error
     log('[S1 Inspectional] LLM 调用失败，降级到全局搜索:', err instanceof Error ? err.message : String(err));
