@@ -81,6 +81,7 @@ interface ExcalidrawElement {
   fontFamily?: number;
   textAlign?: string;
   verticalAlign?: string;
+  lineHeight?: number;
   containerId?: string | null;
   // arrow specific
   points?: [number, number][];
@@ -176,11 +177,14 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   if (isText) {
     base.text = el.text ?? '';
     base.originalText = el.text ?? '';
-    base.fontSize = el.fontSize ?? 20;
+    // Free text cap: 22px max; bound text uses the container's maxFontSize logic instead
+    const freeTextCap = el.containerId ? (el.fontSize ?? 16) : Math.min(el.fontSize ?? 16, 22);
+    base.fontSize = freeTextCap;
     base.fontFamily = 3;
     base.textAlign = el.textAlign ?? 'center';
     base.verticalAlign = el.verticalAlign ?? 'middle';
     base.containerId = el.containerId ?? null;
+    base.lineHeight = 1.25;
     // 文本元素需要有高度计算
     if (!el.height || el.height === 0) {
       const lines = (el.text ?? '').split('\n').length;
@@ -236,7 +240,8 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
       shapeEl.boundElements = [{ id: textId, type: 'text' }];
       result.push(shapeEl);
 
-      // 创建 text 子元素
+      // 创建 text 子元素 — fontSize 根据容器宽度自适应上限
+      const maxFontSize = el.width >= 300 ? 24 : el.width >= 220 ? 20 : el.width >= 160 ? 16 : 14;
       const textEl = toExcalidrawElement({
         ...el,
         id: textId,
@@ -247,7 +252,7 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
         height: Math.max(20, el.height - 20),
         containerId: el.id,
         strokeColor: el.strokeColor || '#1e293b',
-        fontSize: el.fontSize || 20,
+        fontSize: Math.min(el.fontSize || 16, maxFontSize),
       });
       textEl.containerId = el.id;
       result.push(textEl);

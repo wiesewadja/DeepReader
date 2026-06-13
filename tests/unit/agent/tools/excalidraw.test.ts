@@ -59,7 +59,7 @@ describe('buildExcalidrawJSON', () => {
 
   it('converts text elements with correct defaults', () => {
     const elements: ElementDef[] = [
-      makeElement({ id: 't1', type: 'text', text: '测试文本', fontSize: 24 }),
+      makeElement({ id: 't1', type: 'text', text: '测试文本', fontSize: 20 }),
     ];
 
     const result = buildExcalidrawJSON(elements);
@@ -67,11 +67,25 @@ describe('buildExcalidrawJSON', () => {
 
     expect(el.text).toBe('测试文本');
     expect(el.originalText).toBe('测试文本');
-    expect(el.fontSize).toBe(24);
+    expect(el.fontSize).toBe(20);
     expect(el.fontFamily).toBe(3);
     expect(el.textAlign).toBe('center');
     expect(el.verticalAlign).toBe('middle');
     expect(el.containerId).toBeNull();
+  });
+
+  it('caps free text fontSize at 22', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'big', type: 'text', text: '大标题', fontSize: 30, strokeColor: '#1e293b' }),
+      makeElement({ id: 'ok', type: 'text', text: '正常', fontSize: 18, strokeColor: '#1e293b' }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const bigEl = result.elements.find(e => e.id === 'big')!;
+    const okEl = result.elements.find(e => e.id === 'ok')!;
+
+    expect(bigEl.fontSize).toBe(22); // capped from 30
+    expect(okEl.fontSize).toBe(18); // under cap, unchanged
   });
 
   it('converts arrow elements with bindings', () => {

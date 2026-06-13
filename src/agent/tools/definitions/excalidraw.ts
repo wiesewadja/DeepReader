@@ -20,51 +20,83 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
       description: `通过 Excalidraw 生成可视化图形（思维导图、流程图、概念图等）。
 
 ## 设计哲学
-图表应该**论证而非展示**。视觉结构应映射概念结构。
+图表应该**论证而非展示**。视觉结构必须映射概念结构——去掉文字后，结构本身仍能说明关系。
 形状即语义：椭圆=起始/终点，菱形=决策/条件，矩形=过程/动作，自由文本=标注/标题。
-默认使用自由文本，仅当容器承载语义时才加框。
+默认使用自由文本，仅当容器承载语义时才加框。容器内文本比例应 <30%。
 
 ## 视觉模式（根据内容语义选择）
-- 扇出（fan-out）：一中心辐射多目标 → 适合分类、层次
+- 扇出（fan-out）：一中心辐射多目标 → 适合分类、层次、思维导图
 - 汇聚（convergence）：多输入汇单输出 → 适合总结、归因
-- 树形（tree）：线条+自由文本 → 适合层级结构
-- 时间线（timeline）：线条+小圆点+自由文本 → 适合流程、步骤
+- 树形（tree）：线条+自由文本 → 适合层级结构、知识图谱
+- 时间线（timeline）：线条+小圆点(10-20px)+自由文本 → 适合流程、步骤
 - 循环（spiral）：箭头回到起点 → 适合迭代、反馈
 - 组装线（assembly line）：输入→处理→输出 → 适合变换
-- 并列（side-by-side）：平行对比 → 适合异同
-- 同类元素 y 坐标对齐，形成整齐的行或列
+- 并列（side-by-side）：平行对比 → 适合异同、对照
+- 同类元素必须 y 坐标对齐，形成整齐的行或列
 
-## 元素大小参考
-- Hero（视觉锚点）: 300×150, fontSize 28
-- Primary（主节点）: 180×90, fontSize 24
-- Secondary（子节点）: 120×60, fontSize 20
-- Small（标注/标签）: 60×40, fontSize 16
-- 最重要元素周围留最多空白（200px+）
+## 元素大小与字号层级（书卷审美：疏朗、大气）
+- Hero（视觉锚点/中心主题）: 320×160, fontSize 20-24
+- Primary（主节点/部分标题）: 220×110, fontSize 16-20
+- Secondary（子节点/章节）: 160×80, fontSize 14-16
+- Tertiary（细节点/要点）: 120×60, fontSize 12-14
+- Small（标注/标签）: 80×44, fontSize 11-12
+- 自由文本标题: fontSize 18-22（无需容器）
+- 自由文本正文: fontSize 14-16
+- 最重要元素周围留白 250px+
 
 ## 文本宽度估算
-- Latin: width = max(160, charCount × 9)
-- CJK: width = max(160, charCount × 18)
+- Latin: width = max(180, charCount × 9)
+- CJK: width = max(180, charCount × 22)
 - 混合: 逐字符估算求和
+- 多行文本高度 = 行数 × fontSize × 1.25
 
-## 间距参考
-- 节点间水平间距: 200-300px
-- 节点间垂直间距: 100-150px
-- 容器内边距: 50-60px
-- 最小间距: 40px
+## 间距参考（疏朗）
+- 节点间水平间距: 300-420px
+- 节点间垂直间距: 160-240px
+- 同一层级元素 y 坐标严格相等
+- 容器内边距: 60-80px
+- 最小间距: 60px
+
+## 书卷审美色板（颜色即语义，勿任意发挥）
+所有颜色均来自低饱和、温润的中国传统书卷色调：
+- 宣纸白背景: canvas #ffffff, 形状填充 #fffaf0 或 #fdfbf7
+- 墨色（主文字/主线条）: #2c2c2c / #1e293b
+- 朱砂（重点、起点、关键决策）: fill #fde8e8, stroke #c53030
+- 靛青（主流程、主节点）: fill #e8f0fe, stroke #1e3a5f
+- 黛绿（成功、终点、生长）: fill #e6f4ea, stroke #1f5e3b
+- 赭石（警告、备选、冲突）: fill #fff3e0, stroke #b45309
+- 藤黄（高亮、注释）: fill #fef9c3, stroke #a16207
+- 文本层级色: 标题 #1e3a5f, 副标题 #475569, 正文 #4b5563
+规则：深 stroke + 浅 fill 形成对比；同类概念用同色；不要在一个图中使用超过 4-5 种主色。
 
 ## 审美设置
-- roughness: 0（干净/专业，除非用户要求手绘风格）
-- opacity: 100（所有元素）
-- strokeWidth: 1-2（线条1，形状2）
-- fontFamily: 3（monospace）
+- roughness: 0（干净、专业、书卷气）
+- opacity: 100（所有元素，不用透明度做层次）
+- strokeWidth: 2（形状与主箭头）/ 1（细分支、结构线）
+- fontFamily: 3（等宽字体，中文清晰）
+- lineHeight: 1.25
+- roundness: { type: 3 }（轻微圆角，温润）
+
+## 形状语义（默认无容器）
+| 概念类型 | 形状 |
+|----------|------|
+| 标签、描述、详情 | 自由文本（无容器） |
+| 章节/部分标题 | 自由文本（fontSize 24-32） |
+| 起点、触发、输入 | ellipse |
+| 终点、输出、结果 | ellipse |
+| 决策、条件 | diamond |
+| 过程、动作、步骤 | rectangle |
+| 层级节点 | line + 自由文本（无框） |
+| 时间线标记 | 小 ellipse 10-20px |
 
 ## 重要规则
 - 所有文本必须显式设置 strokeColor（即文字颜色），否则可能不可见
 - 容器内文本用 containerId 绑定，双方都要有 boundElements
-- 箭头 points 从 [0,0] 开始（相对坐标）
+- 箭头 points 从 [0,0] 开始（相对坐标）；x/y/points 会被系统自动计算，只需提供 startBinding/endBinding
 - 用描述性 ID（如 "root_node"），不用随机字符串
 - seed 会自动分配，按区域分段（100xxx, 200xxx...）
 - 关系必须有箭头或线条连接，仅靠位置不足以表达关系
+- 复杂图形分区域生成，每区用独立 seed 段
 
 ## 输出
 工具写入 .excalidraw 文件并返回嵌入语法 ![[Excalidraw/filename.excalidraw]]。
