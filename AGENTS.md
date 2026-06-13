@@ -1,85 +1,41 @@
-# DeepReader — AGENTS.md
+# DeepReader
 
-> 本文档面向 OpenCode/AI Coding Agent。完整项目信息见 `.project-rules/` 目录。
+Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 
----
+## 命令
+- 单元测试: `npm run test:run`
+- E2E (wdio): `npx wdio run tests/wdio.conf.ts`（独立 Obsidian 实例，从 `bin/` 加载）
+- 冒烟测试: `node scripts/smoke/smoke.mjs`（core 11 场景）/ `node scripts/smoke/smoke.mjs --level full`（core+full 25 场景）/ `--only S-22,S-23` 指定场景
+- 轻量 E2E: `scripts/smoke/lib/obsidian-cli.mjs` 的 `evalObsidian()`（对运行中的 Obsidian 执行 JS，冒烟测试底层也用它，但还可用于部署验证、问题排查等）
+- 部署: `npm run deploy` → test-vault
+- 跨 worktree 部署: 复制 `bin/main.js` + `bin/styles.css` + `bin/manifest.json` 到目标 vault 的 `plugins/<plugin-dir>/`
 
-## 快速入口
+## 架构
+- UI: 纯 TypeScript + DOM（无框架）
+- AI: LangGraph（四层认知引擎） + FrontendAgent
+- 索引: PageIndex（Vector + BM25 混合搜索）
+- 阅读: ReadingModeService + PagePaginator（分页+章节导航+位置恢复）
+- 记忆: 用户画像 + 长期记忆（MEMORY.md → 渐进理解用户）
 
-| 文档 | 内容 |
-|------|------|
-| `.project-rules/01-overview.md` | 项目概述、定位、技术栈 |
-| `.project-rules/02-architecture.md` | 目录结构、架构约定、Agent 系统 |
-| `.project-rules/03-development.md` | 构建命令、开发工作流、调试方法 |
-| `.project-rules/04-testing.md` | 测试策略（单元 + E2E） |
-| `.project-rules/05-conventions.md` | 代码风格、Git 规范、日志系统 |
-| `.project-rules/06-security-privacy.md` | 安全与隐私 |
-| `.project-rules/agent-specific/opencode.md` | OpenCode 专属提示 |
+## 运行时
+- Obsidian 插件，跑在 Electron 渲染进程
+- 有 DOM + Obsidian API，无完整 Node.js
+- 调试: Obsidian 内 `Cmd+Option+I` → `app.plugins.plugins['deepreader-dev']`
+- ⛔ 不是网页，不要用浏览器 MCP / Playwright 调试
 
-**根据任务需要读取对应文档，无需全部预读。**
+## 约束
+- 日志用 `utils/logger.ts`
+- 数据文件用 `fs`（原子写入），用户内容用 Vault API
+- 插件 ID 用 `this.manifest.id`，不硬编码 `'deepreader'`
+- Agent 唯入口: `FrontendAgent.chat()` → `runGraphEngine()` → `stream()`
+- 提交前将代码修改方案整理后告知用户审查，用户确认后提交代码
+- 每个重要功能都拉取.worktrees/目录下的独立worktree分支，完成后调用测试工程师代理进行测试
 
----
+## 部署陷阱
+- `manifest.json` 的 `id` 字段必须与插件目录名一致（`deepreader-dev/` → id=`deepreader-dev`），否则 Obsidian 静默加载失败
+- `community-plugins.json` 只能包含实际存在的插件 ID，空目录会导致加载冲突
+- wdio 从 `bin/` 加载插件（不是 test-vault），`bin/manifest.json` 的 id 也要匹配
+- 跨 worktree 部署时需同时更新主仓库的 `bin/` 和 `test-vault/.obsidian/plugins/deepreader-dev/`
 
-## 摘要（快速参考）
-
-- **项目**: 奚童：Obsidian 深度阅读插件（TypeScript + LangGraph）
-- **入口**: `src/main.ts`
-- **构建**: `npm run build` / `npm run dev`（watch）
-- **测试**: `npm run test:run`（Vitest）
-- **E2E**: `npx wdio run tests/wdio.conf.ts`（WebdriverIO + Obsidian）
-- **部署**: `npm run deploy` / `deploy:daily` / `deploy:all` → `test-vault/.obsidian/plugins/deepreader/`
-- **调试**: Obsidian 中 Cmd+Option+I → `app.plugins.plugins['deepreader']`
-
-## 关键原则
-
-1. **不要自行提交代码** — 需要用户审查后提交。
-2. **日志用 `utils/logger.ts`** — 按模块分类，错误日志不受开关影响。
-3. **文件路径通过 Vault API** — 不要硬编码路径。
-4. **Agent 唯一入口**: `FrontendAgent.chat()` → `runGraphEngine()` → LangGraph `stream()`。
-5. **Node.js 兼容**: 始终通过 `src/pageindex/node.ts` 导入 PageIndex。
-6. **Worktree 分支锁定**: 当在 `.worktrees/` 目录中工作时，所有修改必须提交到当前功能分支，**禁止直接提交到 main**。合并到 main 需要用户显式操作。
-
----
-
-## OpenCode Skill 集成
-
-### 核心规则
-
-- 如果任务匹配某个 skill，必须使用它
-- Skills 位于 `.agents/skills/<skill-name>/SKILL.md`
-- 不要在 skill 适用时直接实现
-- 严格遵循 skill 指令（不要部分应用）
-
-### Intent → Skill 映射
-
-Agent 应自动将用户意图映射到 skills：
-
-- 功能/新功能 → `spec-driven-development`，然后 `incremental-implementation`，`test-driven-development`
-- 规划/分解 → `planning-and-task-breakdown`
-- Bug/失败/意外行为 → `debugging-and-error-recovery`
-- 代码审查 → `code-review-and-quality`
-- 重构/简化 → `code-simplification`
-- API 或接口设计 → `api-and-interface-design`
-- UI 工作 → `frontend-ui-engineering`
-
-### 生命周期映射
-
-OpenCode 不支持 `/spec` 或 `/plan` 等斜杠命令。
-
-Agent 必须内部遵循此生命周期：
-
-- DEFINE → `spec-driven-development`
-- PLAN → `planning-and-task-breakdown`
-- BUILD → `incremental-implementation` + `test-driven-development`
-- VERIFY → `debugging-and-error-recovery`
-- REVIEW → `code-review-and-quality`
-- SHIP → `shipping-and-launch`
-
-### 执行模型
-
-对于每个请求：
-
-1. 确定是否有任何 skill 适用（即使 1% 的可能性）
-2. 使用 `skill` 工具调用适当的 skill
-3. 严格遵循 skill 工作流程
-4. 在完成所需步骤（spec、plan 等）后才能继续实现
+## 项目规则
+完整规则见 `.project-rules/` 目录
