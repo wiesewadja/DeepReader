@@ -27,55 +27,31 @@ async function getLangSmithConfig() {
 }
 
 /**
- * 获取 LangSmith session UUID
- */
-async function getSessionUuid(apiKey, project) {
-  try {
-    const response = await fetch('https://api.smith.langchain.com/api/v1/sessions', {
-      headers: {
-        'x-api-key': apiKey,
-        'Accept': 'application/json',
-      },
-    });
-    
-    if (!response.ok) return null;
-    
-    const sessions = await response.json();
-    const session = sessions.find(s => s.name === project);
-    return session?.id || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * 获取指定时间后的 LangSmith runs
+ *
+ * 用 GET /api/v1/runs?session_name=<project> 直接按 project 名查，
+ * 与 tests/e2e/helpers/langsmith.helper.ts 保持一致的可靠写法。
+ * 不依赖 session UUID（GET /sessions 在不同租户行为不一致，易静默失效）。
  */
-async function getRunsAfter(apiKey, sessionUuid, sinceMs = 60_000) {
-  if (!apiKey || !sessionUuid) return [];
-  
+async function getRunsAfter(apiKey, project, sinceMs = 60_000) {
+  if (!apiKey || !project) return [];
+
   const since = new Date(Date.now() - sinceMs).toISOString();
-  
+  const url = `https://api.smith.langchain.com/api/v1/runs?session_name=${encodeURIComponent(project)}&start_time_gte=${encodeURIComponent(since)}&order_by=-start_time&limit=50`;
+
   try {
-    const response = await fetch('https://api.smith.langchain.com/api/v1/runs/query', {
-      method: 'POST',
+    const response = await fetch(url, {
       headers: {
         'x-api-key': apiKey,
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        session: [sessionUuid],
-        limit: 10,
-        is_root: true,
-        start_time_gte: since,
-      }),
     });
-    
+
     if (!response.ok) return [];
-    
+
     const data = await response.json();
-    return data.runs || [];
+    // GET /runs 直接返回 runs 数组（非 { runs: [...] } 包装）
+    return Array.isArray(data) ? data : (data.runs || []);
   } catch {
     return [];
   }
@@ -128,63 +104,54 @@ function analyzeTrace(run) {
 export async function startTraceCollection() {
   const startTime = Date.now();
   const config = await getLangSmithConfig();
-  
-  let sessionUuid = null;
-  if (config.enabled && config.apiKey) {
-    sessionUuid = await getSessionUuid(config.apiKey, config.project);
-  }
-  
+  const available = !!(config.enabled && config.apiKey);
+
   return {
     /**
      * 获取测试后的 trace
      */
     async getTrace() {
-      if (!config.enabled || !config.apiKey || !sessionUuid) {
-        return null;
-      }
-      
+      if (!available) return null;
+
       const runs = await getRunsAfter(
-        config.apiKey, 
-        sessionUuid, 
-        Date.now() - startTime + 10_000 // 多等 10 秒确保写入
+        config.apiKey,
+        config.project,
+        Date.now() - startTime + 10_000, // 多等 10 秒确保写入
       );
-      
+
       if (runs.length === 0) return null;
-      
-      // 获取最新的 root run
-      const latestRun = runs[0];
-      return analyzeTrace(latestRun);
+
+      // 获取最新的 root run（runs 已按 start_time 倒序）
+      return analyzeTrace(runs[0]);
     },
-    
+
     /**
      * 获取 trace 摘要文本
      */
     async getTraceSummary() {
       const trace = await this.getTrace();
       if (!trace) return null;
-      
+
       const parts = [];
       parts.push(`tokens=${trace.totalTokens}`);
       parts.push(`耗时=${(trace.executionTimeMs / 1000).toFixed(1)}s`);
       if (trace.hasError) parts.push('⚠️ 错误');
-      
+
       return parts.join(', ');
     },
-    
+
     /**
      * 获取 trace 详情（用于调试）
      */
     async getTraceDetails() {
-      if (!config.enabled || !config.apiKey || !sessionUuid) {
-        return null;
-      }
-      
+      if (!available) return null;
+
       const runs = await getRunsAfter(
-        config.apiKey, 
-        sessionUuid, 
-        Date.now() - startTime + 10_000
+        config.apiKey,
+        config.project,
+        Date.now() - startTime + 10_000,
       );
-      
+
       return runs.map(analyzeTrace).filter(Boolean);
     },
     
