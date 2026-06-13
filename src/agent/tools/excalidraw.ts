@@ -6,7 +6,7 @@
  */
 
 import { log } from '../../utils/logger.js';
-import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
+import { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 
 /** LLM 输入的元素定义（简化版，工具负责补齐完整字段） */
@@ -211,16 +211,18 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
 }
 
 function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
+  // Deterministic collision resolution before building
+  const resolved = resolveOverlaps(elements);
 
   // Build element lookup for auto-calculating arrow positions
   const elMap = new Map<string, ElementDef>();
-  for (const el of elements) {
+  for (const el of resolved) {
     elMap.set(el.id, el);
   }
 
   const result: ExcalidrawElement[] = [];
 
-  for (const el of elements) {
+  for (const el of resolved) {
     const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
     const needsAutoText = isContainer && el.text && !isText;
@@ -459,5 +461,5 @@ export const excalidrawTool: ToolExecutor = {
 
 // 导出内部函数供测试使用
 export { buildExcalidrawJSON, detectOverlaps, detectTextOverlaps, validateSemantics };
-export { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
+export { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
 export type { ElementDef };

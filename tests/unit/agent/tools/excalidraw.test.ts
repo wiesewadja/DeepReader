@@ -6,6 +6,7 @@ import {
   validateSemantics,
   edgeIntersection,
   calculateViewport,
+  resolveOverlaps,
 } from '@/agent/tools/excalidraw';
 import { excalidrawTool } from '@/agent/tools/excalidraw';
 import type { ElementDef } from '@/agent/tools/excalidraw';
@@ -513,5 +514,88 @@ describe('detectTextOverlaps', () => {
 
     const warnings = detectTextOverlaps(elements);
     expect(warnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe('resolveOverlaps', () => {
+  it('pushes apart two overlapping rectangles', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'a', type: 'rectangle', x: 0, y: 0, width: 200, height: 100 }),
+      makeElement({ id: 'b', type: 'rectangle', x: 100, y: 0, width: 200, height: 100 }),
+    ];
+
+    const resolved = resolveOverlaps(elements);
+
+    // After resolution, elements should not overlap
+    const a = resolved.find(e => e.id === 'a')!;
+    const b = resolved.find(e => e.id === 'b')!;
+    const xOv = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+    const yOv = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    expect(xOv * yOv).toBe(0);
+  });
+
+  it('pushes apart overlapping free texts but not bound texts', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'r1', type: 'rectangle', x: 0, y: 0, width: 200, height: 100 }),
+      makeElement({ id: 't1', type: 'text', x: 10, y: 10, width: 100, height: 50, text: 'free' }),
+      makeElement({ id: 't2', type: 'text', x: 10, y: 10, width: 100, height: 50, text: 'bound', containerId: 'r1' }),
+    ];
+
+    const resolved = resolveOverlaps(elements);
+
+    const boundText = resolved.find(e => e.id === 't2')!;
+    expect(boundText.x).toBe(10);
+    expect(boundText.y).toBe(10);
+  });
+
+  it('preserves row alignment after pushing', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'a', type: 'rectangle', x: 0, y: 100, width: 100, height: 50 }),
+      makeElement({ id: 'b', type: 'rectangle', x: 80, y: 102, width: 100, height: 50 }),
+      makeElement({ id: 'c', type: 'rectangle', x: 300, y: 101, width: 100, height: 50 }),
+    ];
+
+    const resolved = resolveOverlaps(elements);
+
+    // a and c are on the same row (original y: 100, 101, 102 all within 10px)
+    // After alignment, their y should be the same
+    const a = resolved.find(e => e.id === 'a')!;
+    const c = resolved.find(e => e.id === 'c')!;
+    expect(Math.abs(a.y - c.y)).toBeLessThan(1);
+  });
+
+  it('does not modify elements when no overlaps exist', () => {
+    const elements: ElementDef[] = [
+      makeElement({ id: 'a', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'b', type: 'rectangle', x: 300, y: 0, width: 100, height: 50 }),
+    ];
+
+    const resolved = resolveOverlaps(elements);
+
+    expect(resolved[0].x).toBe(0);
+    expect(resolved[1].x).toBe(300);
+  });
+
+  it('arrows follow resolved shape positions in buildExcalidrawJSON', () => {
+    // Two overlapping shapes + arrow between them
+    const elements: ElementDef[] = [
+      makeElement({ id: 'src', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'dst', type: 'rectangle', x: 50, y: 0, width: 100, height: 50 }),
+      makeElement({
+        id: 'arr', type: 'arrow',
+        startBinding: { elementId: 'src', gap: 2, focus: 0 },
+        endBinding: { elementId: 'dst', gap: 2, focus: 0 },
+      }),
+    ];
+
+    const result = buildExcalidrawJSON(elements);
+    const arrow = result.elements.find(e => e.type === 'arrow')!;
+
+    // Arrow must still start at src edge and end at dst edge (not pass through)
+    // After resolveOverlaps pushes shapes apart, edges change but arrow still works
+    expect(arrow.points!.length).toBe(2);
+    // Arrow start should not be inside the source shape
+    const srcEl = result.elements.find(e => e.id === 'src')!;
+    expect(arrow.x).toBeGreaterThan(srcEl.x + srcEl.width - 1);
   });
 });

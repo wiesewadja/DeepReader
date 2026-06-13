@@ -6,16 +6,18 @@
  * calculations live in their own module.
  */
 
-interface ElementDef {
+type Positionable = {
   type: string;
   x: number;
   y: number;
   width: number;
   height: number;
-}
+  containerId?: string | null;
+};
 
-interface ExcalidrawElement extends ElementDef {
+interface ExcalidrawElement extends Positionable {
   points?: [number, number][];
+  containerId?: string | null;
 }
 
 /**
@@ -23,7 +25,7 @@ interface ExcalidrawElement extends ElementDef {
  * landing on the element boundary + gap. Handles rectangle, ellipse, diamond.
  */
 export function edgeIntersection(
-  el: ElementDef,
+  el: Positionable,
   targetCx: number,
   targetCy: number,
   gap: number,
@@ -122,4 +124,116 @@ export function calculateViewport(elements: ExcalidrawElement[]): {
   const scrollY = centerY - VP_H / (2 * zoomValue);
 
   return { scrollX, scrollY, zoom: { value: zoomValue } };
+}
+
+const MIN_GAP = 20;
+const MAX_ITERATIONS = 10;
+const ALIGN_THRESHOLD = 10;
+
+/**
+ * Deterministic collision resolution — push apart overlapping elements.
+ *
+ * Only moves shapes (rectangle/ellipse/diamond) and free texts (no containerId).
+ * Arrows are not moved; their coordinates are auto-calculated from bindings later.
+ * After pushing, restores row alignment for elements with similar y coordinates.
+ */
+export function resolveOverlaps<T extends Positionable>(elements: T[]): T[] {
+  const result = elements.map(el => ({ ...el })) as T[];
+
+  // Collect movable element indices
+  const movableIdx: number[] = [];
+  for (let i = 0; i < result.length; i++) {
+    const el = result[i];
+    if (['rectangle', 'ellipse', 'diamond'].includes(el.type)) {
+      movableIdx.push(i);
+    } else if (el.type === 'text' && !el.containerId) {
+      movableIdx.push(i);
+    }
+  }
+
+  if (movableIdx.length > 100) return result;
+
+  // Record original y-coordinates per row cluster for alignment restoration
+  const originalY = movableIdx.map(i => result[i].y);
+
+  for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
+    let hadOverlap = false;
+
+    for (let i = 0; i < movableIdx.length; i++) {
+      for (let j = i + 1; j < movableIdx.length; j++) {
+        const a = result[movableIdx[i]];
+        const b = result[movableIdx[j]];
+
+        const xOv = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+        const yOv = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+
+        if (xOv > 0 && yOv > 0) {
+          hadOverlap = true;
+
+          // Push along the axis with less penetration (tie → horizontal)
+          if (xOv <= yOv) {
+            const push = (xOv + MIN_GAP) / 2;
+            if (a.x < b.x) {
+              a.x -= push;
+              b.x += push;
+            } else {
+              a.x += push;
+              b.x -= push;
+            }
+          } else {
+            const push = (yOv + MIN_GAP) / 2;
+            if (a.y < b.y) {
+              a.y -= push;
+              b.y += push;
+            } else {
+              a.y += push;
+              b.y -= push;
+            }
+          }
+        }
+      }
+    }
+
+    if (!hadOverlap) break;
+  }
+
+  // Restore row alignment: cluster elements by original y, re-align
+  const visited = new Set<number>();
+  for (let i = 0; i < movableIdx.length; i++) {
+    if (visited.has(i)) continue;
+    const row: number[] = [i];
+    visited.add(i);
+
+    for (let j = i + 1; j < movableIdx.length; j++) {
+      if (visited.has(j)) continue;
+      if (Math.abs(originalY[i] - originalY[j]) < ALIGN_THRESHOLD) {
+        row.push(j);
+        visited.add(j);
+      }
+    }
+
+    if (row.length > 1) {
+      const avgY = row.reduce((sum, idx) => sum + result[movableIdx[idx]].y, 0) / row.length;
+      // Check if alignment would re-introduce overlaps
+      const aligned = row.map(idx => {
+        const el = result[movableIdx[idx]];
+        return { idx, x: el.x, right: el.x + el.width, y: avgY, bottom: avgY + el.height };
+      });
+      let causesOverlap = false;
+      for (let a = 0; a < aligned.length && !causesOverlap; a++) {
+        for (let b = a + 1; b < aligned.length && !causesOverlap; b++) {
+          const xOv = Math.min(aligned[a].right, aligned[b].right) - Math.max(aligned[a].x, aligned[b].x);
+          const yOv = Math.min(aligned[a].bottom, aligned[b].bottom) - Math.max(aligned[a].y, aligned[b].y);
+          if (xOv > 0 && yOv > 0) causesOverlap = true;
+        }
+      }
+      if (!causesOverlap) {
+        for (const { idx } of aligned) {
+          result[movableIdx[idx]].y = avgY;
+        }
+      }
+    }
+  }
+
+  return result;
 }
