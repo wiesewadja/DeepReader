@@ -75,18 +75,22 @@ describe('buildExcalidrawJSON', () => {
     expect(el.containerId).toBeNull();
   });
 
-  it('caps free text fontSize at 22', () => {
+  it('钳制 text fontSize 到四档 S16/M20/L28/XL36', () => {
     const elements: ElementDef[] = [
       makeElement({ id: 'big', type: 'text', text: '大标题', fontSize: 30, strokeColor: '#1e293b' }),
       makeElement({ id: 'ok', type: 'text', text: '正常', fontSize: 18, strokeColor: '#1e293b' }),
+      makeElement({ id: 'xl', type: 'text', text: '超大', fontSize: 40, strokeColor: '#1e293b' }),
     ];
 
     const result = buildExcalidrawJSON(elements);
     const bigEl = result.elements.find(e => e.id === 'big')!;
     const okEl = result.elements.find(e => e.id === 'ok')!;
+    const xlEl = result.elements.find(e => e.id === 'xl')!;
 
-    expect(bigEl.fontSize).toBe(22); // capped from 30
-    expect(okEl.fontSize).toBe(18); // under cap, unchanged
+    // 向下取档：30→28(L)，18→16(S)，40→36(XL)
+    expect(bigEl.fontSize).toBe(28);
+    expect(okEl.fontSize).toBe(16);
+    expect(xlEl.fontSize).toBe(36);
   });
 
   it('converts arrow elements with bindings', () => {

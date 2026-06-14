@@ -205,12 +205,24 @@ function computeOptimalFontSize(
   return best;
 }
 
-/** 字号上下限：太小看不清，太大超出容器视觉比例 */
-const MIN_FONT_SIZE = 16;
-const MAX_FONT_SIZE = 30;
+/**
+ * 字号四档（S/M/L/XL）：图表文字只从这四档里选，离散可控，视觉统一。
+ * 取值参考书卷审美——大号为主、疏朗大气（每档差距递增）。
+ * 由 computeOptimalFontSize 算出"不溢出容器的最大理想字号"后，向下取到最近的档位。
+ */
+const FONT_SIZE_TIERS: readonly number[] = [16, 20, 28, 36]; // S, M, L, XL
+const MIN_FONT_SIZE = FONT_SIZE_TIERS[0];  // 16 (S)
 
+/**
+ * 把理想字号钳制到四档之一：取不超过 fs 的最大档位（向下取档，保证不溢出容器）。
+ * fs 小于最小档 S 时用 S 兜底（宁可略挤也不用更小字号，保持可读性）。
+ */
 function clampFontSize(fs: number): number {
-  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.floor(fs)));
+  // 从大到小找第一个 ≤ fs 的档位
+  for (let i = FONT_SIZE_TIERS.length - 1; i >= 0; i--) {
+    if (fs >= FONT_SIZE_TIERS[i]) return FONT_SIZE_TIERS[i];
+  }
+  return MIN_FONT_SIZE; // fs < 16，用 S 兜底
 }
 
 /**
@@ -272,9 +284,9 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   if (isText) {
     base.text = el.text ?? '';
     base.originalText = el.text ?? '';
-    // Free text cap: 22px max; bound text uses the container's maxFontSize logic instead
-    const freeTextCap = el.containerId ? (el.fontSize ?? 16) : Math.min(el.fontSize ?? 16, 22);
-    base.fontSize = freeTextCap;
+    // 所有 text 字号统一钳到四档（S16/M20/L28/XL36），保证视觉统一离散可控。
+    // LLM 给的 fontSize 仅作参考（取不小于它的... 实际取不超过它的最大档，避免溢出容器）。
+    base.fontSize = clampFontSize(el.fontSize ?? 16);
     base.fontFamily = 5;
     base.textAlign = el.textAlign ?? 'center';
     base.verticalAlign = el.verticalAlign ?? 'middle';

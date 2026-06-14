@@ -37,13 +37,16 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 - 中心/主题元素周围留白 250px+
 
 ## 元素大小与字号层级（书卷审美：疏朗、大气）
-- Hero（视觉锚点/中心主题）: 320×160, fontSize 34-38
-- Primary（主节点/部分标题）: 220×110, fontSize 26-28
-- Secondary（子节点/章节）: 160×80, fontSize 20-22
-- Tertiary（细节点/要点）: 120×60, fontSize 16-18
-- Small（标注/标签）: 80×44, fontSize 14
-- 自由文本标题: fontSize 24-32（无需容器）
-- 自由文本正文: fontSize 16-20
+字号只从四档里选（系统会自动向下取档保证文字不溢出容器）：
+- **S=16**（标注/细节）、**M=20**（子节点）、**L=28**（主节点）、**XL=36**（中心主题/标题）
+对应元素尺寸建议：
+- Hero（视觉锚点/中心主题）: 320×160, fontSize XL(36)
+- Primary（主节点/部分标题）: 220×110, fontSize L(28)
+- Secondary（子节点/章节）: 160×80, fontSize M(20)
+- Tertiary（细节点/要点）: 120×60, fontSize S(16)
+- 自由文本标题: fontSize XL(36) 或 L(28)（无需容器）
+- 自由文本正文: fontSize M(20) 或 S(16)
+注意：你给 fontSize 只需在 16/20/28/36 里选一个，系统会确保它装得下容器。
 
 ## 文本宽度估算
 - Latin: width = max(180, charCount × 9)
