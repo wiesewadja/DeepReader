@@ -397,9 +397,9 @@ describe('generateDiagramProgressive (B3)', () => {
 
     const embed = await generateDiagramProgressive('画图', '内容', model as any, ctx, {}, {});
 
-    // fallback 走单次生成，写 .excalidraw.md
+    // fallback 走单次生成，写 .excalidraw（纯 JSON，插件原生支持 embed 渲染）
     expect(embed).toContain('![[Excalidraw/fallback-');
-    expect(embed).toContain('.excalidraw.md]]');
+    expect(embed).toContain('.excalidraw]]');
   });
 
   it('abort 中断 → 停止后续节，返回中间态 .excalidraw embed', async () => {

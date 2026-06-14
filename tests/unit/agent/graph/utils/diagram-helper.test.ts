@@ -85,7 +85,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/test-diagram-');
-    expect(result).toContain('.excalidraw.md]]');
+    expect(result).toContain('.excalidraw]]');
   });
 
   it('returns empty when LLM returns non-JSON', async () => {
@@ -184,7 +184,7 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/wrapped-');
-    expect(result).toContain('.excalidraw.md]]');
+    expect(result).toContain('.excalidraw]]');
   });
 
   it('includes pdfName in prompt when provided', async () => {
@@ -229,6 +229,6 @@ describe('generateDiagram', () => {
     );
 
     expect(result).toContain('![[Excalidraw/brace-in-string-');
-    expect(result).toContain('.excalidraw.md]]');
+    expect(result).toContain('.excalidraw]]');
   });
 });

@@ -289,11 +289,11 @@ describe('excalidrawTool.execute', () => {
 
     const parsed = JSON.parse(result);
     expect(parsed.success).toBe(true);
-    expect(parsed.filepath).toBe('Excalidraw/test-diagram.excalidraw.md');
-    expect(parsed.embed).toBe('![[Excalidraw/test-diagram.excalidraw.md]]');
+    expect(parsed.filepath).toBe('Excalidraw/test-diagram.excalidraw');
+    expect(parsed.embed).toBe('![[Excalidraw/test-diagram.excalidraw]]');
 
     expect(mockCtx.vault.app.vault.adapter.write).toHaveBeenCalledWith(
-      'Excalidraw/test-diagram.excalidraw.md',
+      'Excalidraw/test-diagram.excalidraw',
       expect.any(String),
     );
   });

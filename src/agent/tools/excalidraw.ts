@@ -7,7 +7,6 @@
 
 import { log } from '../../utils/logger.js';
 import { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
-import { buildExcalidrawMd } from './excalidraw-md.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 
 /** LLM 输入的元素定义（简化版，工具负责补齐完整字段） */
@@ -553,11 +552,12 @@ export const excalidrawTool: ToolExecutor = {
         await adapter.mkdir(dir);
       }
 
-      // 写成 .excalidraw.md（Excalidraw 插件原生格式）
-      // 用 buildExcalidrawMd 直接压缩原始 JSON，保留所有元素属性（fontSize/坐标/尺寸）
-      // 不调插件的 convert 命令——那会触发 fontSize 重算、文字重排
-      const filepath = `${dir}/${filename}.excalidraw.md`;
-      await adapter.write(filepath, buildExcalidrawMd(excalidrawFile));
+      // 写纯 JSON 到 .excalidraw（Excalidraw 插件 registerExtensions(["excalidraw"]) 原生支持）
+      // 关键：Obsidian embed（![[...]]）只对 .excalidraw 后缀触发插件的图渲染；
+      // .excalidraw.md 会被当普通 markdown 嵌入显示原始文本。故必须用 .excalidraw。
+      // 点开 .excalidraw 文件插件自动用 Excalidraw 编辑视图打开。
+      const filepath = `${dir}/${filename}.excalidraw`;
+      await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
 
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
