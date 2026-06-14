@@ -97,9 +97,12 @@ export interface DeepPDFSettings {
 
 		// 微信读书集成
 		wereadApiKey: string;
+		wereadAutoSync: boolean;
 		wereadSyncInterval: number;
 		wereadExcludeArticles: boolean;
 		wereadNoteCountThreshold: number;
+		wereadTemplateId: string;
+		wereadCustomTemplate: string;
 
 		// Z-Library 集成（功能开关 + 仅存登录后的 Cookie，不存明文密码）
 		enableZlibrary: boolean;
@@ -188,9 +191,12 @@ export const DEFAULT_SETTINGS: DeepPDFSettings = {
 
 		// 微信读书集成
 		wereadApiKey: '',
-		wereadSyncInterval: 0,
+		wereadAutoSync: false,
+		wereadSyncInterval: 30,
 		wereadExcludeArticles: true,
 		wereadNoteCountThreshold: 1,
+		wereadTemplateId: 'merged',
+		wereadCustomTemplate: '',
 
 		// Z-Library 集成
 		enableZlibrary: false,

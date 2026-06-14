@@ -64,6 +64,7 @@ export class WereadSyncEngine {
 	}
 
 	async sync(forceFullSync = false): Promise<SyncResult> {
+		const syncStartTime = Date.now();
 		const result: SyncResult = {
 			added: 0,
 			updated: 0,
@@ -171,7 +172,7 @@ export class WereadSyncEngine {
 			});
 		}
 
-		// ── Phase 4: 匹配关联 ──────────────────────────────
+		// ── Phase 4: 保存同步状态 + 记录日志 ──────────────────────
 		this.emitProgress({
 			phase: 'matching',
 			current: 0,
@@ -179,8 +180,35 @@ export class WereadSyncEngine {
 			currentBook: '',
 		});
 
+		// 计算同步耗时
+		const syncEndTime = Date.now();
+		const duration = (syncEndTime - syncStartTime) / 1000;
+
+		// 记录同步日志
+		// syncedBooks = 实际新增/更新的书籍；skippedBooks = 远程总数中未变化而跳过的书籍
+		const syncedBooks = result.added + result.updated;
+		const skippedBooks = remoteBooks.length - toSync.length;
+		const syncLog: import('../types').SyncLogEntry = {
+			id: `sync-${syncStartTime}`,
+			timestamp: syncStartTime,
+			totalBooks: remoteBooks.length,
+			syncedBooks,
+			skippedBooks,
+			duration,
+			added: result.added,
+			updated: result.updated,
+			success: result.errors.length === 0,
+			errorMessage: result.errors.length > 0 ? result.errors.join('; ') : undefined,
+		};
+
 		// 保存同步状态
-		syncState.lastSyncTime = Date.now();
+		syncState.lastSyncTime = syncEndTime;
+		if (!syncState.syncLogs) syncState.syncLogs = [];
+		syncState.syncLogs.unshift(syncLog);
+		// 只保留最近 10 条日志
+		if (syncState.syncLogs.length > 10) {
+			syncState.syncLogs = syncState.syncLogs.slice(0, 10);
+		}
 		await stateManager.saveSyncState(syncState);
 
 		this.emitProgress({
@@ -306,8 +334,37 @@ export class WereadSyncEngine {
 			logger.warn(`下载封面失败 ${bookId}: ${err}`);
 		});
 
-		// 渲染 Markdown
-		const md = renderNotebook(notebook);
+		// 获取热门划线（缓存优先）
+		let popularHighlights: import('../render/markdown-renderer').PopularHighlightInfo[] = [];
+		try {
+			const { PopularHighlightsCacheManager } = await import('../cache/popular-highlights-cache');
+			const cacheManager = new PopularHighlightsCacheManager(this.adapter);
+
+			// 尝试从缓存获取
+			let cached = await cacheManager.get(bookId);
+			if (cached) {
+				popularHighlights = cached;
+			} else {
+				// 缓存未命中，从 API 获取
+				const popularResp = await this.client.getBestBookmarks(bookId);
+				if (popularResp?.items) {
+					popularHighlights = popularResp.items.map(item => ({
+						bookmarkId: item.bookmarkId,
+						chapterUid: item.chapterUid,
+						range: item.range,
+						markText: item.markText,
+						totalCount: item.totalCount,
+					}));
+					// 写入缓存
+					await cacheManager.set(bookId, popularHighlights);
+				}
+			}
+		} catch (e) {
+			logger.warn(`获取热门划线失败 ${bookId}: ${e}`);
+		}
+
+		// 渲染 Markdown（传入热门划线）
+		const md = renderNotebook(notebook, popularHighlights.length > 0 ? popularHighlights : undefined);
 
 		// 写入文件
 		const outputPath = this.resolveNotePath(book);

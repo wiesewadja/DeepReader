@@ -850,3 +850,57 @@
 	color: var(--text-error);
 	background: var(--background-modifier-hover);
 }
+
+/* ==================== 同步日志 ==================== */
+.deeppdf-sync-log-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.deeppdf-sync-log-item {
+	padding: 10px 12px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+}
+
+.deeppdf-sync-log-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 4px;
+}
+
+.deeppdf-sync-log-time {
+	font-size: 12px;
+	color: var(--text-muted);
+}
+
+.deeppdf-sync-log-success {
+	font-size: 12px;
+	color: var(--text-success);
+	font-weight: 500;
+}
+
+.deeppdf-sync-log-error {
+	font-size: 12px;
+	color: var(--text-error);
+	font-weight: 500;
+}
+
+.deeppdf-sync-log-stats {
+	display: flex;
+	gap: 12px;
+	font-size: 11px;
+	color: var(--text-muted);
+}
+
+.deeppdf-sync-log-error-msg {
+	margin-top: 6px;
+	font-size: 11px;
+	color: var(--text-error);
+	padding: 6px 8px;
+	background: var(--background-secondary);
+	border-radius: 4px;
+}

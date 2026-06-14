@@ -10,6 +10,7 @@ import { type DeepPDFSettings, DEFAULT_SETTINGS, detectSetupComplete } from './c
 
 // 微信读书集成
 import { WereadService } from './weread/index.js';
+import { WereadScheduledSync } from './weread/sync/scheduled-sync.js';
 import { UnmatchedModal } from './weread/auth/unmatched-modal.js';
 
 // PageIndex - 核心功能导入（Node.js 兼容）
@@ -43,6 +44,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
 
     // E2E 测试暴露的 API
     private wereadService: WereadService | null = null;
+    private wereadScheduledSync: WereadScheduledSync | null = null;
 
     readonly api = {
         indexBook,
@@ -579,6 +581,9 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
         if (this.settings.evalMode && process.env.EVAL_MODE === 'true') {
             serviceLog('[DeepPDF] Eval mode active (EVAL_MODE=true)');
         }
+
+        // ═══ 启动微信读书定时同步 ═══
+        this.setupWereadScheduledSync();
     }
 
     /**
@@ -595,6 +600,44 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             });
         }
         return this.wereadService;
+    }
+
+    /**
+     * 设置微信读书定时同步
+     */
+    private setupWereadScheduledSync(): void {
+        this.clearWereadScheduledSync();
+
+        if (!this.settings.wereadAutoSync) {
+            return;
+        }
+
+        const svc = this.getWereadService();
+        if (!svc.isLoggedIn()) {
+            return;
+        }
+
+        this.wereadScheduledSync = new WereadScheduledSync(svc, {
+            autoSync: this.settings.wereadAutoSync,
+            intervalMinutes: this.settings.wereadSyncInterval,
+        });
+        this.wereadScheduledSync.start();
+    }
+
+    /**
+     * 清理微信读书定时同步
+     */
+    private clearWereadScheduledSync(): void {
+        this.wereadScheduledSync?.stop();
+        this.wereadScheduledSync = null;
+    }
+
+    /**
+     * 重新启动微信读书定时同步（设置变更后调用）
+     */
+    public restartWereadScheduledSync(): void {
+        this.clearWereadScheduledSync();
+        this.setupWereadScheduledSync();
     }
     /**
      * 确保初始化完成：创建 DeepReader 目录
@@ -779,6 +822,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             await this.frontendAgent.destroy();
         }
 
+        // 清理微信读书定时同步
+        this.clearWereadScheduledSync();
     }
 
     /**

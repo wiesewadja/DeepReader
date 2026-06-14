@@ -192,12 +192,19 @@ export function renderWereadSection(
 			btn.onClick(() => doSync(false));
 		})
 		.addButton(btn => {
-			btn.setButtonText('强制全量同步')
-				.setDisabled(!isLoggedIn)
-				.setWarning();
-			forceBtn = btn;
-			btn.onClick(() => doSync(true));
-		});
+		btn.setButtonText('强制全量同步')
+			.setDisabled(!isLoggedIn)
+			.setWarning();
+		forceBtn = btn;
+		btn.onClick(() => doSync(true));
+	});
+
+	// ═══ 同步日志区域 ═══
+	if (isLoggedIn) {
+		const logCard = container.createDiv({ cls: 'deeppdf-settings-card' });
+		logCard.createEl('h4', { text: '同步日志' });
+		loadAndRenderSyncLogs(logCard, plugin);
+	}
 
 	// ═══ 配置区域 ═══
 	const configCard = container.createDiv({ cls: 'deeppdf-settings-card' });
@@ -235,8 +242,28 @@ export function renderWereadSection(
 				});
 		});
 
+	// 模板选择
+	const templateOptions: Record<string, string> = {
+		'merged': '合并式模板（划线+想法 inline）',
+		'separated': '分离式模板（划线在前，想法在后）',
+		'custom': '自定义模板',
+	};
 
-		// ═══ Z-Library 下载 ═══
+	new Setting(configCard)
+		.setName('笔记模板')
+		.setDesc('选择同步笔记的渲染模板')
+		.addDropdown(dropdown => {
+			for (const [value, label] of Object.entries(templateOptions)) {
+				dropdown.addOption(value, label);
+			}
+			dropdown.setValue(settings.wereadTemplateId || 'merged');
+			dropdown.onChange(async (value) => {
+				settings.wereadTemplateId = value;
+				await plugin.saveSettings();
+			});
+		});
+
+	// ═══ Z-Library 下载 ═══
 		const zlibCard = container.createDiv({ cls: 'deeppdf-settings-card' });
 		zlibCard.createEl('h4', { text: 'Z-Library 书籍下载' });
 
@@ -410,6 +437,74 @@ async function loadAndRenderStats(container: HTMLElement, plugin: any): Promise<
 	} catch {
 		container.empty();
 		container.createEl('span', { text: '无法读取同步状态' });
+	}
+}
+
+/** 异步加载同步日志 */
+async function loadAndRenderSyncLogs(container: HTMLElement, plugin: any): Promise<void> {
+	try {
+		const host = {
+			settings: plugin.settings,
+			app: plugin.app,
+			saveSettings: async () => { await plugin.saveSettings(); },
+			pluginId: plugin.manifest.id,
+		};
+		const adapter = (plugin.app.vault as any).adapter;
+		const stateManager = new (await import('../../weread/sync/state.js')).SyncStateManager(adapter, plugin.manifest.id);
+		const syncState = await stateManager.loadSyncState();
+		const logs = syncState.syncLogs || [];
+
+		container.empty();
+		container.createEl('h4', { text: '同步日志' });
+
+		if (logs.length === 0) {
+			container.createEl('div', {
+				text: '暂无同步记录',
+				cls: 'setting-item-description',
+			});
+			return;
+		}
+
+		// 显示最近 10 条日志
+		const logList = container.createDiv({ cls: 'deeppdf-sync-log-list' });
+		for (const log of logs.slice(0, 10)) {
+			const logItem = logList.createDiv({ cls: 'deeppdf-sync-log-item' });
+
+			// 时间和状态
+			const header = logItem.createDiv({ cls: 'deeppdf-sync-log-header' });
+			const date = new Date(log.timestamp);
+			const timeStr = date.toLocaleString('zh-CN', {
+				month: '2-digit',
+				day: '2-digit',
+				hour: '2-digit',
+				minute: '2-digit',
+			});
+			header.createEl('span', {
+				text: timeStr,
+				cls: 'deeppdf-sync-log-time',
+			});
+			header.createEl('span', {
+				text: log.success ? '✓ 成功' : '✗ 失败',
+				cls: log.success ? 'deeppdf-sync-log-success' : 'deeppdf-sync-log-error',
+			});
+
+			// 统计信息
+			const stats = logItem.createDiv({ cls: 'deeppdf-sync-log-stats' });
+			stats.createEl('span', { text: `新增 ${log.added}` });
+			stats.createEl('span', { text: `更新 ${log.updated}` });
+			stats.createEl('span', { text: `耗时 ${log.duration.toFixed(1)}s` });
+
+			// 错误信息
+			if (log.errorMessage) {
+				logItem.createDiv({
+					text: log.errorMessage,
+					cls: 'deeppdf-sync-log-error-msg',
+				});
+			}
+		}
+	} catch {
+		container.empty();
+		container.createEl('span', { text: '无法加载同步日志' });
 	}
 }
 

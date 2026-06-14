@@ -243,6 +243,24 @@ export interface WereadNotebook {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 同步日志
+// ═══════════════════════════════════════════════════════════════
+
+/** 同步日志条目 */
+export interface SyncLogEntry {
+	id: string;
+	timestamp: number;
+	totalBooks: number;
+	syncedBooks: number;
+	skippedBooks: number;
+	duration: number; // 秒
+	added: number;
+	updated: number;
+	success: boolean;
+	errorMessage?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 同步状态
 // ═══════════════════════════════════════════════════════════════
 
@@ -252,6 +270,8 @@ export interface WereadSyncState {
 	syncedBooks: Record<string, WereadSyncedBookEntry>;
 	/** 已手动删除的书籍 ID，同步时跳过 */
 	excludedBooks: string[];
+	/** 同步日志（最近 10 条） */
+	syncLogs?: SyncLogEntry[];
 }
 
 /** 已同步书籍条目 */
@@ -410,6 +430,24 @@ export interface WereadReadLongestItem {
 	albumInfo?: unknown;
 	readTime: number;
 	tags?: string[];
+}
+
+/** /book/bestbookmarks 响应 — 热门划线 */
+export interface WereadBestBookmarksResponse {
+	synckey?: number;
+	totalCount?: number;
+	items: WereadBestBookmarkItem[];
+	chapters: { bookId: string; chapterUid: number; chapterIdx: number; title: string }[];
+}
+
+/** 热门划线条目 */
+export interface WereadBestBookmarkItem {
+	bookId: string;
+	bookmarkId: string;
+	chapterUid: number;
+	range: string;
+	markText: string;
+	totalCount: number;
 }
 
 /** 同步进度回调 */
