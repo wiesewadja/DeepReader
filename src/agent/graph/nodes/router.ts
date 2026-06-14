@@ -10,6 +10,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { IntentRouter } from '../../router/intent-router.js';
+import { inheritDepthOnContinuity } from '../../router/continuity-guard.js';
+import { upgradeToSyntopical } from '../../router/booklist-resolver.js';
 import type { RouterInput } from '../node-io.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import type { SharedContext } from '../shared-context.js';
@@ -162,29 +164,21 @@ export async function routerNode(
       }
     }
 
-    // Continuity guard: short replies ("ok", "继续", "嗯") during an ongoing
-    // deep discussion should inherit the previous depth, not be treated as casual.
-    const CONTINUITY_THRESHOLD = 5;
-    if (depth === ReadingDepth.CASUAL && rawQuery.trim().length <= CONTINUITY_THRESHOLD && chatHistory.length >= 2) {
-      const lastAi = [...chatHistory].reverse().find(m => m.role === 'assistant');
-      if (lastAi && lastAi.content.length > 200) {
-        log(`[S0 Router] 延续性对话检测: "${rawQuery}" 在深度讨论中，升级 depth 0→2`);
-        depth = ReadingDepth.ANALYTICAL;
-      }
+    // Continuity guard: 短回复延续性检测（纯函数策略）
+    const continuity = inheritDepthOnContinuity(depth, rawQuery, chatHistory);
+    if (continuity.didUpgrade) {
+      log(`[S0 Router] 延续性对话检测: "${rawQuery}" 在深度讨论中，升级 depth 0→2`);
+      depth = continuity.depth;
     }
 
     // Step 3: IntentRouter on rewritten query (catches intent missed by raw query)
     const rewrittenIntent = intentRouter.analyze(standaloneQuery);
 
-    // Upgrade to SYNTOPICAL only when user explicitly selected a booklist
-    // (multi-book mode). We do NOT auto-upgrade based on keyword matching —
-    // keywords like "对比" appear in normal single-book discussions (e.g. concept
-    // comparison tables) and should not override the LLM's depth decision.
+    // Booklist resolver: 仅当用户显式选择书单时升级到 SYNTOPICAL（纯函数策略）
     const hasBooklist = (sharedContext?.toolContext?.crossBook?.booklistBookIds?.length ?? 0) > 0;
     log(`[S0 Router] hasBooklist=${hasBooklist}, booklistBookIds=${JSON.stringify(sharedContext?.toolContext?.crossBook?.booklistBookIds)}`);
-    const effectiveDepth = (hasBooklist && depth >= ReadingDepth.ANALYTICAL)
-      ? ReadingDepth.SYNTOPICAL
-      : depth;
+    const syntopical = upgradeToSyntopical(depth, hasBooklist);
+    const effectiveDepth = syntopical.depth;
 
     // Step 4: Merge all tool sources: raw + rewritten + inherited
     const finalTools = mergeTools(
