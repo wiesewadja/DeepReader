@@ -7,11 +7,11 @@
 
 import type { BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
-import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { IntentRouter } from '../../router/intent-router.js';
 import { inheritDepthOnContinuity } from '../../router/continuity-guard.js';
 import { upgradeToSyntopical } from '../../router/booklist-resolver.js';
+import { verifyExistence } from '../../router/existence-verifier.js';
 import type { RouterInput } from '../node-io.js';
 import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
 import type { SharedContext } from '../shared-context.js';
@@ -109,60 +109,16 @@ export async function routerNode(
     }
     const standaloneQuery = parsed?.standalone_query || rawQuery;
     log(`[S0 Router] LLM response: depth=${rawDepth}, reason="${parsed?.reason || '(none)'}", query="${standaloneQuery.slice(0, 80)}"`);
-    // Anti-hallucination guard: "书中有没有提到X" → BM25 verification
-    // Regex fallback: catch existence questions the LLM missed.
-    // When the raw query matches patterns like "有没有提到X" but the LLM
-    // didn't add [ANTI_HALLUCINATION], force the anti-hallucination path.
-    const EXISTENCE_PATTERN = /(?:有没有(?:提到|讲到|说到|涉及|讨论)|是否(?:提到|讲到|讨论|涉及)|里有没有|书中(?:有没有|是否))/;
-    const needsAntiHallucination = EXISTENCE_PATTERN.test(rawQuery);
-    let antiHallucinationQuery = '';
-    if (standaloneQuery.startsWith('[ANTI_HALLUCINATION]') || needsAntiHallucination) {
-      // Extract the core concept from the original query — avoid using the
-      // full rewritten query which contains book titles and filler words that
-      // dilute the BM25 search and cause false positives.
-      const extractedConcept = rawQuery
-        .replace(/.*?(?:有没有|是否|里有没有|书中(?:有没有|是否))(?:提到|讲到|说到|涉及|讨论)?\s*/, '')
-        .replace(/[？?。！!《》]/g, '')
-        .replace(/\s*(的|内容|相关|有关)$/, '')
-        .replace(/^[的了着过吗呢吧啊]+\s*/, '')
-        .replace(/\s*[的了着过吗呢吧啊]+$/, '')
-        .trim();
-      let cleanQuery = extractedConcept || standaloneQuery.replace('[ANTI_HALLUCINATION]', '').trim();
-
-      if (needsAntiHallucination && !standaloneQuery.startsWith('[ANTI_HALLUCINATION]')) {
-        log(`[S0 Router] 存在性验证正则兜底触发: LLM depth=${depth}, 提取概念="${cleanQuery}"`);
-        depth = ReadingDepth.CASUAL;
-      }
-      const bookId = sharedContext?.toolContext?.book.indexId;
-      const app = sharedContext?.toolContext?.vault.app;
-      if (bookId && app) {
-        try {
-          const results = await searchBookV2({ query: cleanQuery, bookId, app, topK: 3, filePath: '' });
-          const HIGHER_THRESHOLD = 0.5;
-          const hasStrongMatch = results.some(r => {
-            const score = r.score ?? 0;
-            if (score < HIGHER_THRESHOLD) return false;
-            const content = r.matchedBlocks?.map((b: { content: string }) => b.content).join(' ') || '';
-            const concept = cleanQuery.replace(/[的了着过吗呢吧啊\s]/g, '');
-            if (concept.length < 2) return content.includes(concept);
-            for (let i = 0; i <= concept.length - 2; i++) {
-              if (content.includes(concept.slice(i, i + 2))) return true;
-            }
-            return false;
-          });
-          if (hasStrongMatch) {
-            log(`[S0 Router] ANTI_HALLUCINATION: "${cleanQuery}" 强命中，升级 depth→2`);
-            depth = ReadingDepth.ANALYTICAL;
-          } else {
-            log(`[S0 Router] ANTI_HALLUCINATION: "${cleanQuery}" 未强命中 (results=${results.length}, topScore=${results[0]?.score?.toFixed(2) || 'N/A'})，强制 depth=0`);
-            depth = ReadingDepth.CASUAL;
-            antiHallucinationQuery = cleanQuery;
-          }
-        } catch (e) {
-          log(`[S0 Router] ANTI_HALLUCINATION BM25 搜索失败: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-    }
+    // Existence verification（独立 module）：BM25 反查"书中有没有提到 X" 类问题
+    const existence = await verifyExistence({
+      rawQuery,
+      standaloneQuery,
+      depth,
+      bookId: sharedContext?.toolContext?.book.indexId,
+      app: sharedContext?.toolContext?.vault.app,
+    });
+    depth = existence.depth;
+    const antiHallucinationQuery = existence.antiHallucinationQuery;
 
     // Continuity guard: 短回复延续性检测（纯函数策略）
     const continuity = inheritDepthOnContinuity(depth, rawQuery, chatHistory);
