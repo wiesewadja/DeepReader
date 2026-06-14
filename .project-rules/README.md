@@ -12,6 +12,7 @@
 | `04-testing.md` | 测试策略（单元 + E2E） | 共用 |
 | `05-conventions.md` | 代码风格、Git 规范 | 共用 |
 | `06-security-privacy.md` | 安全与隐私 | 共用 |
+| `07-deployment.md` | 部署规范（worktree 统一覆盖 deepreader-dev） | 共用 |
 | `agent-specific/claude-code.md` | Claude Code 专属提示 | Claude Code |
 | `agent-specific/opencode.md` | OpenCode 专属提示 | OpenCode |
 

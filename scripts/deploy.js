@@ -3,16 +3,38 @@
 /**
  * DeepReader 插件部署脚本
  * 支持多目标部署：dev（开发）、daily（日常使用）
- * 
- * Worktree 支持：
- * - 自动检测当前是否在 worktree 中
- * - 如果是 worktree，部署到独立的插件目录（基于分支名）
- * - 共享主仓库的 test-vault
+ *
+ * worktree 中也直接覆盖 dev 目标路径，保持 Obsidian 内只有一个插件实例。
  */
 
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+
+// ─── 入口自检：防止反模式回潮 ───
+// 如果 scripts/deploy.js 被改回 worktree 隔离路径模式，立刻拒绝执行
+// 只检测确定性的反模式（注释/字符串中合法出现的词不算）
+// 扫描时剔除自检函数自身，避免字符串自触发
+(function selfCheck() {
+  const raw = fs.readFileSync(__filename, 'utf-8');
+  // 剔除 selfCheck 函数体（从标记到对应 IIFE 结束）
+  const self = raw.replace(
+    /\/\/\s*─── 入口自检：防止反模式回潮 ───[\s\S]*?\}\)\(\);/,
+    ''
+  );
+  const antiPatterns = [
+    { re: /function\s+detectWorktree/, msg: 'detectWorktree() 函数' },
+    { re: /\bsafeBranchName\b/, msg: 'safeBranchName 变量' },
+  ];
+  for (const { re, msg } of antiPatterns) {
+    if (re.test(self)) {
+      console.error(`❌ scripts/deploy.js 含反模式: ${msg}`);
+      console.error('   所有 worktree 必须覆盖到同一个 deepreader-dev/，禁止按分支名生成独立目录');
+      console.error('   详见 .project-rules/07-deployment.md');
+      process.exit(1);
+    }
+  }
+})();
 
 // 获取当前脚本所在目录
 const scriptDir = __dirname;
@@ -53,57 +75,6 @@ const targets = args.length > 0 ? args : ['dev'];
 
 console.log('🚀 DeepReader 插件部署\n');
 
-// 检测 worktree
-function detectWorktree() {
-  try {
-    const gitRoot = execSync('git rev-parse --show-toplevel', { 
-      encoding: 'utf-8',
-      cwd: path.join(__dirname, '..')
-    }).trim();
-    
-    const mainWorktree = execSync('git worktree list --porcelain', {
-      encoding: 'utf-8',
-      cwd: path.join(__dirname, '..')
-    });
-    
-    // 找到 main 分支的 worktree 路径
-    const lines = mainWorktree.split('\n');
-    let mainPath = null;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].startsWith('worktree ')) {
-        mainPath = lines[i].slice('worktree '.length);
-      }
-      if (lines[i] === 'branch refs/heads/main' && mainPath) {
-        break;
-      }
-    }
-    
-    // 获取当前分支名
-    const currentBranch = execSync('git branch --show-current', {
-      encoding: 'utf-8',
-      cwd: path.join(__dirname, '..')
-    }).trim();
-    
-    const isWorktree = gitRoot !== mainPath;
-    
-    return {
-      isWorktree,
-      gitRoot,
-      mainPath,
-      branch: currentBranch
-    };
-  } catch (e) {
-    return { isWorktree: false, branch: 'unknown' };
-  }
-}
-
-const worktreeInfo = detectWorktree();
-
-if (worktreeInfo.isWorktree) {
-  console.log(`🌿 检测到 worktree: ${worktreeInfo.branch}`);
-  console.log(`   路径: ${worktreeInfo.gitRoot}\n`);
-}
-
 // 执行构建
 console.log('📦 正在构建...');
 try {
@@ -128,8 +99,38 @@ try {
   process.exit(1);
 }
 
-function deployToPath(targetPath, pluginId, targetName) {
+/**
+ * dev 部署专用：生成带特性标识 + 时间戳的版本号
+ * 格式：<baseVersion>-<feature>.<HHMM>
+ * 例：2026.06.13-async-visualizer.1430
+ *
+ * 让 Obsidian 插件列表能直观看到当前部署的是哪个分支、何时部署的
+ */
+function getDevVersion(baseVersion) {
+  let branch = 'unknown';
+  try {
+    branch = execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      cwd: path.join(__dirname, '..')
+    }).trim();
+  } catch (e) {
+    // 忽略
+  }
+  // feat/async-visualizer → async-visualizer；main → main
+  const feature = branch
+    .replace(/^(feat|fix|refactor|chore|docs|test|release)\//, '')
+    .replace(/[^a-zA-Z0-9-]/g, '')
+    .slice(0, 30) || 'main';
+  const now = new Date();
+  const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+  return `${baseVersion}-${feature}.${hhmm}`;
+}
+
+function deployToPath(targetPath, pluginId, targetName, overrideVersion) {
   console.log(`🎯 部署到: ${targetName} (id=${pluginId})`);
+  if (overrideVersion) {
+    console.log(`   🏷️  版本: ${overrideVersion}`);
+  }
 
   // 创建目标目录
   if (!fs.existsSync(targetPath)) {
@@ -149,8 +150,9 @@ function deployToPath(targetPath, pluginId, targetName) {
     }
 
     if (file === 'manifest.json') {
-      // manifest: 按 pluginId 改写 id 字段
+      // manifest: 按 pluginId 改写 id 字段；dev 目标额外重写 version
       const targetManifest = { ...baseManifest, id: pluginId };
+      if (overrideVersion) targetManifest.version = overrideVersion;
       fs.writeFileSync(dest, JSON.stringify(targetManifest, null, '\t') + '\n', 'utf-8');
     } else {
       fs.copyFileSync(src, dest);
@@ -169,18 +171,22 @@ for (const targetName of targets) {
     continue;
   }
 
-  // 如果是 worktree，使用独立的插件目录
-  if (worktreeInfo.isWorktree && targetName === 'dev') {
-    const { basePluginId, testVaultPath } = config.worktree;
-    // 从分支名生成安全的目录名（feat/xxx -> feat-xxx）
-    const safeBranchName = worktreeInfo.branch.replace(/\//g, '-').replace(/[^a-zA-Z0-9-]/g, '');
-    const pluginId = `${basePluginId}-${safeBranchName}`;
-    const pluginPath = path.join(testVaultPath, '.obsidian', 'plugins', pluginId);
-    
-    deployToPath(pluginPath, pluginId, `worktree (${worktreeInfo.branch})`);
-  } else {
-    deployToPath(target.path, target.pluginId, target.name);
-  }
+  // dev 目标注入特性版本号，方便用户在 Obsidian 插件列表里看到部署生效
+  const overrideVersion = targetName === 'dev' ? getDevVersion(baseManifest.version) : undefined;
+  deployToPath(target.path, target.pluginId, target.name, overrideVersion);
 }
 
-console.log('✨ 部署完成！');
+console.log('✨ 部署完成！\n');
+
+// 部署到 dev 目标后强制跑后置校验（test-vault 干净 + manifest 正确）
+if (targets.includes('dev')) {
+  try {
+    execSync('node scripts/verify-deploy.mjs', {
+      stdio: 'inherit',
+      cwd: path.join(__dirname, '..'),
+    });
+  } catch (e) {
+    console.error('\n❌ 部署后置校验失败，请按提示修复');
+    process.exit(1);
+  }
+}

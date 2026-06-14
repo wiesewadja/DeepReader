@@ -7,8 +7,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - E2E (wdio): `npx wdio run tests/wdio.conf.ts`（独立 Obsidian 实例，从 `bin/` 加载）
 - 冒烟测试: `node scripts/smoke/smoke.mjs`（core 11 场景）/ `node scripts/smoke/smoke.mjs --level full`（core+full 25 场景）/ `--only S-22,S-23` 指定场景
 - 轻量 E2E: `scripts/smoke/lib/obsidian-cli.mjs` 的 `evalObsidian()`（对运行中的 Obsidian 执行 JS，冒烟测试底层也用它，但还可用于部署验证、问题排查等）
-- 部署: `npm run deploy` → test-vault
-- 跨 worktree 部署: 复制 `bin/main.js` + `bin/styles.css` + `bin/manifest.json` 到目标 vault 的 `plugins/<plugin-dir>/`
+- 部署: `npm run deploy` → test-vault 的 `deepreader-dev/`（所有 worktree 都覆盖到同一个目录，**禁止**用分支名生成独立插件目录）
 
 ## 架构
 - UI: 纯 TypeScript + DOM（无框架）
@@ -35,7 +34,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - `manifest.json` 的 `id` 字段必须与插件目录名一致（`deepreader-dev/` → id=`deepreader-dev`），否则 Obsidian 静默加载失败
 - `community-plugins.json` 只能包含实际存在的插件 ID，空目录会导致加载冲突
 - wdio 从 `bin/` 加载插件（不是 test-vault），`bin/manifest.json` 的 id 也要匹配
-- 跨 worktree 部署时需同时更新主仓库的 `bin/` 和 `test-vault/.obsidian/plugins/deepreader-dev/`
+- **所有 worktree 都部署到同一个 `deepreader-dev/`**（覆盖式）。禁止按分支名生成独立插件目录（如 `deepreader-wt-feat-xxx`），那会让 Obsidian 里出现多个同名 DeepReader 无法区分。详见 `.project-rules/07-deployment.md`
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录
