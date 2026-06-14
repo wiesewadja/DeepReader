@@ -4,8 +4,11 @@
  * 对齐 ExcerptService callout 格式：
  * - 高亮：> [!quote]+ 🟡 高亮
  * - 想法：> [!note]+ 💬 想法
+ * - 热门划线：> [!quote]+ 🔥 热门划线
+ * - 用户+热门：> [!quote]+ 📌🔥 高亮
  */
-import type { WereadNotebook, WereadHighlight, WereadReview } from '../types';
+import type { WereadNotebook, WereadHighlight, WereadReview, WereadBestBookmarkItem } from '../types';
+import { buildPopularMap } from './popular-map';
 import { generateFrontmatter } from './frontmatter';
 
 /** 微信读书颜色样式 → emoji 映射（对齐 ExcerptService） */
@@ -22,11 +25,26 @@ function getColorEmoji(colorStyle?: number): string {
 	return COLOR_STYLE_EMOJI[colorStyle ?? 0] ?? '🖍️';
 }
 
+/** 热门划线信息 */
+export interface PopularHighlightInfo {
+	bookmarkId: string;
+	chapterUid: number;
+	range: string;
+	markText: string;
+	totalCount: number;
+}
+
 /**
  * 将 WereadNotebook 渲染为完整 Markdown 字符串
  */
-export function renderNotebook(notebook: WereadNotebook): string {
+export function renderNotebook(
+	notebook: WereadNotebook,
+	popularHighlights?: PopularHighlightInfo[]
+): string {
 	const { meta, chapters, highlights, reviews } = notebook;
+
+	// 构建热门划线索引（按 chapterUid + range 快速查找）
+	const popularMap = buildPopularMap(popularHighlights);
 
 	const sections: string[] = [];
 
@@ -67,17 +85,29 @@ export function renderNotebook(notebook: WereadNotebook): string {
 		sections.push('');
 		sections.push(`## ${chTitle}`);
 
-		// 高亮 — ExcerptService 风格 callout
+		// 高亮 — 支持热门划线标记
 		const chHighlights = highlightsByChapter.get(uid) ?? [];
 		if (chHighlights.length > 0) {
 			for (const h of chHighlights) {
 				const emoji = getColorEmoji(h.colorStyle);
+				const popularKey = `${uid}:${h.range}`;
+				const popular = popularMap.get(popularKey);
+
 				sections.push('');
-				sections.push(`> [!quote]+ ${emoji} 高亮`);
-				sections.push(`> ${h.markText}`);
+				if (popular) {
+					// 用户划线 + 热门：📌🔥
+					sections.push(`> [!quote]+ 📌🔥 ${emoji} 高亮`);
+					sections.push(`> ${h.markText}`);
+					sections.push(`> 🔥 ${popular.totalCount} 人共读`);
+				} else {
+					// 普通用户划线：📌
+					sections.push(`> [!quote]+ 📌 ${emoji} 高亮`);
+					sections.push(`> ${h.markText}`);
+				}
 				if (h.reviewContent) {
 					sections.push(`> 💬 ${h.reviewContent}`);
 				}
+				sections.push(`> ⏱ ${h.createTime} ^${h.bookmarkId}`);
 			}
 		}
 
@@ -91,6 +121,7 @@ export function renderNotebook(notebook: WereadNotebook): string {
 				if (r.abstract) {
 					sections.push(`> 📌 ${r.abstract}`);
 				}
+				sections.push(`> ⏱ ${r.createTime} ^${r.reviewId}`);
 			}
 		}
 	}
@@ -104,6 +135,40 @@ export function renderNotebook(notebook: WereadNotebook): string {
 			sections.push('');
 			sections.push(`> [!note]+ 💬 书评`);
 			sections.push(`> ${r.mdContent || r.content}`);
+			sections.push(`> ⏱ ${r.createTime} ^${r.reviewId}`);
+		}
+	}
+
+	// 5. 独立热门划线（用户未标注的）
+	if (popularHighlights && popularHighlights.length > 0) {
+		// 收集用户已标注的 range
+		const userRanges = new Set(highlights.map(h => `${h.chapterUid}:${h.range}`));
+		const standalonePopular = popularHighlights.filter(ph => !userRanges.has(`${ph.chapterUid}:${ph.range}`));
+
+		if (standalonePopular.length > 0) {
+			sections.push('');
+			sections.push('## 热门划线');
+
+			// 按章节分组
+			const popularByChapter = new Map<number, PopularHighlightInfo[]>();
+			for (const ph of standalonePopular) {
+				const list = popularByChapter.get(ph.chapterUid) ?? [];
+				list.push(ph);
+				popularByChapter.set(ph.chapterUid, list);
+			}
+
+			for (const [chapterUid, items] of popularByChapter) {
+				const chTitle = chapterMap.get(chapterUid) ?? `章节 ${chapterUid}`;
+				sections.push('');
+				sections.push(`### ${chTitle}`);
+
+				for (const ph of items) {
+					sections.push('');
+					sections.push(`> [!quote]+ 🔥 热门划线`);
+					sections.push(`> ${ph.markText}`);
+					sections.push(`> 📊 ${ph.totalCount} 人共读 ^${ph.bookmarkId}`);
+				}
+			}
 		}
 	}
 

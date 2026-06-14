@@ -12,6 +12,7 @@ export interface VaultAdapter {
 	exists(path: string, sensitive?: boolean): Promise<boolean>;
 	mkdir(path: string): Promise<void>;
 	stat(path: string): Promise<{ size: number } | null>;
+	remove(path: string): Promise<void>;
 }
 
 /**

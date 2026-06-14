@@ -16,6 +16,7 @@ import type {
 	WereadRecommendResponse,
 	WereadBookInfoResponse,
 	WereadReadDataResponse,
+	WereadBestBookmarksResponse,
 } from '../types';
 
 const GATEWAY_URL = 'https://i.weread.qq.com/api/agent/gateway';
@@ -130,6 +131,14 @@ export class WereadApiClient {
 
 	async getBookInfo(bookId: string): Promise<WereadBookInfoResponse> {
 		return this.gatewayCall<WereadBookInfoResponse>('/book/info', { bookId });
+	}
+
+	async getBestBookmarks(bookId: string, chapterUid?: number): Promise<WereadBestBookmarksResponse> {
+		const params: Record<string, unknown> = { bookId };
+		if (chapterUid !== undefined) {
+			params.chapterUid = chapterUid;
+		}
+		return this.gatewayCall<WereadBestBookmarksResponse>('/book/bestbookmarks', params);
 	}
 
 	async validateApiKey(): Promise<boolean> {
