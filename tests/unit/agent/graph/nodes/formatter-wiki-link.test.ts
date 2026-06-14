@@ -15,7 +15,7 @@ import {
   fixupWikiLinks,
   fixupEmptyBlockIds,
   stripFabricatedLinks,
-} from '@/agent/graph/nodes/formatter';
+} from '@/agent/graph/utils/output-sanitizer';
 
 describe('fixupWikiLinks', () => {
   it('加书名前缀到「裸文件名」链接', () => {

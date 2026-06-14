@@ -30,7 +30,7 @@ import {
   fixupWikiLinks,
   fixupEmptyBlockIds,
   stripFabricatedLinks,
-} from '@/agent/graph/nodes/formatter';
+} from '@/agent/graph/utils/output-sanitizer';
 import { validateLinkPairs } from '@/agent/utils/wiki-link-pair-validator';
 import { validateWikiLinks } from '@/agent/utils/wiki-link-hook';
 import type { App } from 'obsidian';

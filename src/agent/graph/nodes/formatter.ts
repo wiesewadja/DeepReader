@@ -9,11 +9,12 @@ import { SystemMessage, HumanMessage, AIMessage, type BaseMessage } from '@langc
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { interrupt } from '@langchain/langgraph';
 import type { ChatOpenAI } from '@langchain/openai';
-import { stripThinkTags } from '../../../config/thinking-models.js';
 import { agentLog as log } from '../../../utils/logger.js';
-import { getVaultPath } from '../../../utils/mobile-fs.js';
-import { validateWikiLinks } from '../../utils/wiki-link-hook.js';
 import { validateLinkPairs } from '../../utils/wiki-link-pair-validator.js';
+import {
+  cleanOutput,
+  sanitizeOutput,
+} from '../utils/output-sanitizer.js';
 import type { FormatterInput } from '../node-io.js';
 import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import {
@@ -99,131 +100,6 @@ async function streamToContent(
     }
   }
   return content;
-}
-
-/**
- * 修复 wiki 链接格式：补全缺失的书名前缀
- * LLM 有时会输出 [[文件名]] 而非 [[书名/文件名]]，这里强制补全
- *
- * @param crossBookMode true 时不加前缀（书单模式，跨书链接需保持各自的书名前缀或裸名）
- */
-export function fixupWikiLinks(content: string, bookName: string, crossBookMode: boolean = false): string {
-  if (!bookName || crossBookMode) return content;
-  // 匹配 [[...]] 中不含 / 的链接，补全书名前缀
-  return content.replace(/\[\[([^/\]]+)\]\]/g, (_match: string, inner: string) => {
-    return `[[${bookName}/${inner}]]`;
-  });
-}
-
-/**
- * 清理空的 block_id 锚点：[[path#^|alias]] → [[path|alias]]
- * LLM 有时会为没有 block_id 的引用生成空的 #^，直接使用章节名即可。
- *
- * 全模式执行：proactive/socratic/casual 等 LLM 同样可能产生此幻觉模式，
- * 对无 wiki 链接的内容该函数无副作用（正则无匹配即跳过）。
- * 正则中 [^#\]]* 不允许 # 出现在路径中是正确的——Obsidian 用 # 分隔标题锚点，
- * 文件名本身不能包含 #。
- */
-export function fixupEmptyBlockIds(content: string): string {
-  return content.replace(/\[\[([^#\]]*)#\^\|([^\]]+)\]\]/g, '[[$1|$2]]')
-    .replace(/\[\[([^#\]]*)#\^\]\]/g, '[[$1]]');
-}
-
-/** 清理思维标签并修复 wiki 链接 — 多个模式分支共用 */
-function cleanOutput(content: string, pdfName: string, crossBookMode: boolean = false): string {
-  return fixupWikiLinks(fixupEmptyBlockIds(stripThinkTags(content)), pdfName, crossBookMode);
-}
-
-/**
- * 移除编造的 wiki 链接（输入中不存在的链接）
- * 收集输入文本中的所有合法链接，输出中只保留这些链接
- * 编造的链接回退为纯文本（保留别名部分）
- */
-export function stripFabricatedLinks(content: string, inputTexts: string[], vaultBlockIds?: Set<string>): string {
-  // 预处理：降级 Calibre pagebreak 标记（calibre-pb-* 不是有效的 Obsidian block ID）
-  content = content.replace(/\[\[([^\]]*?)#calibre-pb-\d+([^\]]*)\]\]/g, (_: string, before: string, after: string) => {
-    const aliasMatch = after.match(/^\|([^|]+)$/);
-    const pathPart = before.split('|')[0];
-    const alias = aliasMatch ? aliasMatch[1] : pathPart.split('/').pop() || pathPart;
-    return `[[${pathPart}|${alias}]]`;
-  });
-
-  const validFileNames = new Set<string>();
-  // 1. 从 [[...]] wiki 链接中提取
-  const wikiRegex = /\[\[([^\]]+)\]\]/g;
-  for (const text of inputTexts) {
-    let m: RegExpExecArray | null;
-    const re = new RegExp(wikiRegex.source, wikiRegex.flags);
-    while ((m = re.exec(text)) !== null) {
-      const inner = m[1];
-      const pathPart = inner.split('#')[0].split('|')[0];
-      const fileName = pathPart.split('/').pop() || pathPart;
-      validFileNames.add(fileName);
-      validFileNames.add(pathPart);
-    }
-    // 2. 从 scoped_chapters 的 file_name 字段提取
-    const fnRegex = /file_name:\s*"([^"]+)"/g;
-    let fn: RegExpExecArray | null;
-    while ((fn = fnRegex.exec(text)) !== null) {
-      validFileNames.add(fn[1]);
-    }
-    // 3. 从 tocSummary 的章节标题提取（格式：'标题'(nodeId)）
-    const tocRegex = /'([^']+)'\(\d+\)/g;
-    let toc: RegExpExecArray | null;
-    while ((toc = tocRegex.exec(text)) !== null) {
-      validFileNames.add(toc[1]);
-    }
-  }
-
-  // T1.4 修复：移除宽松分支，统一走严格分支
-  // 严格分支：file_name 检查仅在 validFileNames 非空时执行
-  //           block_id 检查仅在 vaultBlockIds 非空时执行
-  return content.replace(/\[\[([^\]]+)\]\]/g, (fullMatch: string, inner: string) => {
-    const hashIdx = inner.indexOf('#');
-    const pathPart = (hashIdx >= 0 ? inner.slice(0, hashIdx) : inner).split('|')[0];
-    const fileName = pathPart.split('/').pop() || pathPart;
-
-    // 1. file_name 检查（仅在 validFileNames 非空时执行）
-    if (validFileNames.size > 0) {
-      let isFabricated = true;
-      for (const valid of validFileNames) {
-        if (valid === fileName || valid === pathPart || valid.endsWith(fileName) || fileName.endsWith(valid)) {
-          isFabricated = false;
-          break;
-        }
-        // 宽松匹配：去除编号前缀后比较标题部分
-        const stripNum = (s: string) => s.replace(/^\d+\s*[-–]\s*/, '');
-        if (stripNum(valid) === stripNum(fileName)) {
-          isFabricated = false;
-          break;
-        }
-      }
-
-      if (isFabricated) {
-        // 编造链接 → 回退为纯文本（保留别名）
-        const aliasMatch = inner.match(/[^|]+$/) ;
-        const alias = aliasMatch ? aliasMatch[0] : fileName;
-        return alias;
-      }
-    }
-
-    // 2. block_id 检查（仅在 vaultBlockIds 非空时执行）
-    if (hashIdx >= 0 && vaultBlockIds && vaultBlockIds.size > 0) {
-      const hashContent = inner.slice(hashIdx + 1);
-      const blockIdMatch = hashContent.match(/^\^([\w-]+)/);
-      if (blockIdMatch) {
-        const blockId = blockIdMatch[1];
-        if (!vaultBlockIds.has(blockId)) {
-          // block_id 在 vault 中不存在 → 降级为标题链接
-          const aliasMatch = inner.match(/\|([^|]+)$/);
-          const alias = aliasMatch ? aliasMatch[1] : fileName;
-          return `[[${pathPart}|${alias}]]`;
-        }
-      }
-    }
-
-    return fullMatch;
-  });
 }
 
 /**
@@ -480,62 +356,16 @@ export async function formatterNode(
     }
   }
 
-  // Build vault-validated block_id set from actual file contents
-  const vaultBlockIds = new Set<string>();
-  if (!crossBookMode && Object.keys(markdownFiles).length > 0) {
-    const blockIdRegex = /\^([\w-]+)\s*$/gm;
-    for (const fileContent of Object.values(markdownFiles) as string[]) {
-      let m: RegExpExecArray | null;
-      while ((m = blockIdRegex.exec(fileContent)) !== null) {
-        vaultBlockIds.add(m[1]);
-      }
-    }
-  }
-
-  // T2.2: 正式处理顺序
-  // 0. protectEmbeds - 保护 ![[...]] 嵌入语法不被 wiki link 处理误删
-  // 1. cleanOutput - 修格式（fixupWikiLinks, fixupEmptyBlockIds, stripThinkTags）
-  // 2. validateWikiLinks - 基于 vault.exists 真实校验（仅在有 app 时）
-  // 3. stripFabricatedLinks - 兜底（变形的 file_name 白名单）
-  // 4. restoreEmbeds - 恢复嵌入语法
-
-  // 保护 ![[...]] 嵌入语法（如 ![[Excalidraw/xxx.excalidraw]]）
-  const embedPlaceholders: string[] = [];
-  const contentToProcess = content.replace(/!\[\[([^\]]+)\]\]/g, (match) => {
-    const idx = embedPlaceholders.length;
-    embedPlaceholders.push(match);
-    return `%%EMBED_${idx}%%`;
-  });
-
-  let cleanedContent = cleanOutput(contentToProcess, effectivePdfName, crossBookMode);
-
-  const vaultApp = ctx?.toolContext?.vault?.app;
-  if (vaultApp) {
-    try {
-      const wikiLinkResult = await validateWikiLinks(cleanedContent, {
-        app: vaultApp,
-        bookName: crossBookMode ? '' : (pdfName || ''),
-        expectedBookName: crossBookMode ? '' : (pdfName || ''),
-        vaultPath: getVaultPath(vaultApp),
-        toolResults,
-      });
-      cleanedContent = wikiLinkResult.correctedContent;
-    } catch (err) {
-      // 校验失败时静默使用 cleanOutput 的结果（不阻塞 S4 输出）
-      log('[Formatter] validateWikiLinks 失败，使用 cleanOutput 结果:', err);
-    }
-  }
-
-  let formatted = stripFabricatedLinks(
-    cleanedContent,
+  // 段 B 清理 pipeline（vault 真实校验）：委派给 OutputSanitizer
+  // 顺序：protectEmbeds → cleanOutput → validateWikiLinks → stripFabricatedLinks → restoreEmbeds
+  const formatted = await sanitizeOutput(content, {
+    bookName: effectivePdfName,
+    crossBookMode,
     inputTextsForValidation,
-    vaultBlockIds,
-  );
-
-  // 恢复嵌入语法
-  for (let i = 0; i < embedPlaceholders.length; i++) {
-    formatted = formatted.replace(`%%EMBED_${i}%%`, embedPlaceholders[i]);
-  }
+    markdownFiles,
+    vaultApp: ctx?.toolContext?.vault?.app,
+    toolResults,
+  });
 
   const errorHints = appendErrorHints(state.nodeErrors);
 
