@@ -4,7 +4,8 @@
  * 流程：拉取书架 → 差异检测 → 逐本同步（并发控制）→ 匹配关联 → 持久化状态
  */
 
-import { join, dirname } from 'path';
+import { dirname } from 'path';
+import { bookNotePath } from '../../utils/book-paths';
 import { serviceLog as logger } from '../../utils/logger';
 import { WereadApiClient } from '../api/client';
 import { mergeShelfBooks } from '../api/shelf';
@@ -397,8 +398,7 @@ export class WereadSyncEngine {
 	/** 根据设置生成笔记文件路径 */
 	private resolveNotePath(book: WereadBook): string {
 		const safeName = sanitizeFileName(book.title);
-		const bookDir = join('书籍摘录', safeName);
-		return join(bookDir, safeName + '.md');
+		return bookNotePath(safeName);
 	}
 
 	/** 确保文件所在目录存在 */

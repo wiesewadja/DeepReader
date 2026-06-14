@@ -20,6 +20,7 @@ import {
 	writeVectorJsonl,
 	writeChunkTexts,
 } from '../pageindex/vault/vectors';
+import { bookNotePath } from '../utils/book-paths';
 import { serviceLog } from '../utils/logger.js';
 import { getVaultPath } from '../utils/mobile-fs.js';
 import { fetchWithCorsFallback } from '../utils/safe-request';
@@ -433,7 +434,7 @@ export class ProfileBuilder {
 			const results = await Promise.all(
 				slice.map(async b => {
 					const safeName = sanitizeFileName(b.title);
-					const path = `书籍摘录/${safeName}/${safeName}.md`;
+					const path = bookNotePath(safeName);
 					try {
 						const content = await this.vault.adapter.read(path);
 						return content.replace(/^---[\s\S]*?---\n*/, '').trim();

@@ -10,6 +10,7 @@ import type { DeepPDFSettings } from '../config/settings.js';
 import { loadArchivedBookIds, toggleArchive, batchToggleArchive } from '../pageindex/archive.js';
 import { PAGEINDEX_DIR } from '../pageindex/paths.js';
 import { stripFileExtension, type IndexListItem, type Booklist } from '../types/index.js';
+import { bookNotePath } from '../utils/book-paths.js';
 import { error as logError, uiLog } from '../utils/logger.js';
 import { getVaultPath } from '../utils/mobile-fs.js';
 import { getVaultAdapter } from '../utils/vault.js';
@@ -489,7 +490,7 @@ export class LibraryView extends ItemView {
 			}
 			// 未关联：打开笔记
 			const safeName = sanitizeFileName(index.pdf_name);
-			const notePath = `书籍摘录/${safeName}/${safeName}.md`;
+			const notePath = bookNotePath(safeName);
 			const file = this.app.vault.getAbstractFileByPath(notePath);
 			if (file) {
 				this.app.workspace.getLeaf(false).openFile(file as TFile);

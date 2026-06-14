@@ -5,6 +5,7 @@
 
 import { type App, Notice, TFile } from 'obsidian';
 import type { ExcerptContent, ExcerptMetadata, ExcerptOptions } from '../types/excerpt';
+import { dailyExcerptPath } from '../utils/book-paths.js';
 import { error as logError } from '../utils/logger.js';
 
 /**
@@ -68,16 +69,8 @@ export class ExcerptService {
    * 格式: 书籍摘录/{书籍名}/摘录-{日期}.md
    */
   getExcerptPath(sourcePdf: string): string {
-    const baseFolder = '书籍摘录';
-
-    // 清理书籍名称，移除不安全的文件名字符
-    const bookName = this.sanitizeFilename(sourcePdf);
-
-    // 获取当前日期 (YYYY-MM-DD)
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    return `${baseFolder}/${bookName}/摘录-${dateStr}.md`;
+    const safeName = this.sanitizeFilename(sourcePdf);
+    return dailyExcerptPath(safeName);
   }
 
   /**

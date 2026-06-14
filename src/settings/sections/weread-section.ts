@@ -4,6 +4,7 @@
 
 import { Setting, Notice } from 'obsidian';
 import { ConfirmModal } from '../../components/confirm-modal';
+import { bookNotePath, excerptBaseDir } from '../../utils/book-paths';
 import { WereadService } from '../../weread/index';
 import { buildZlibClient } from '../../zlibrary/build-client';
 import { ZLibraryClient } from '../../zlibrary/client';
@@ -212,9 +213,9 @@ export function renderWereadSection(
 
 	new Setting(configCard)
 		.setName('笔记存放位置')
-		.setDesc('同步到 书籍摘录/{书名}/{书名}.md')
+		.setDesc(`同步到 ${bookNotePath('{书名}')}`)
 		.addText(text => {
-			text.setValue('书籍摘录').setDisabled(true);
+			text.setValue(excerptBaseDir()).setDisabled(true);
 		});
 
 	new Setting(configCard)

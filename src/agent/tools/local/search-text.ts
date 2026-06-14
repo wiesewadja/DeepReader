@@ -12,6 +12,7 @@ import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
 import { searchBookV2 } from '../../../pageindex/book-search-v2.js';
 import type { BookSearchResultV2 } from '../../../pageindex/book-types.js';
 import { parseCallouts } from '../../../utils/callout-parser.js';
+import { bookExcerptDir } from '../../../utils/book-paths.js';
 import { toolsLog } from '../../../utils/logger.js';
 import { sanitizeFileName } from '../../../weread/utils/file.js';
 import type { ToolExecutor, ToolContext } from '../types.js';
@@ -280,7 +281,7 @@ async function searchAnnotations(
     .trim()
     .substring(0, 100);
   const sanitizeB = sanitizeFileName(bookName);
-  const possibleDirs = [...new Set([`书籍摘录/${sanitizeA}`, `书籍摘录/${sanitizeB}`])];
+  const possibleDirs = [...new Set([bookExcerptDir(sanitizeA), bookExcerptDir(sanitizeB)])];
 
   // 查找摘录目录下的 .md 文件
   const mdFiles = app.vault.getFiles().filter(f =>
