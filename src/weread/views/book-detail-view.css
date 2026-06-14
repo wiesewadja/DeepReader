@@ -1,0 +1,189 @@
+/**
+ * 书籍详情视图样式 — 对齐 weread 风格
+ */
+
+.weread-book-detail-view {
+    padding: 0;
+    overflow-y: auto;
+}
+
+/* Header */
+.weread-book-detail-header {
+    padding: 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.weread-book-detail-header-top {
+    display: flex;
+    gap: 16px;
+}
+
+.weread-book-detail-cover {
+    width: 88px;
+    height: 120px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.weread-book-detail-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.weread-book-detail-title {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.weread-book-detail-stats-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.weread-book-detail-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--background-modifier-hover);
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Tab Bar */
+.weread-book-detail-tabbar {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+}
+
+.weread-book-detail-tab {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.weread-book-detail-tab:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.weread-book-detail-tab.is-active {
+    background: var(--interactive-accent);
+    color: white;
+}
+
+/* Content */
+.weread-book-detail-content {
+    padding: 16px;
+}
+
+.weread-book-detail-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+/* Highlight Card */
+.weread-book-detail-hl-card {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    transition: border-color 0.15s;
+}
+
+.weread-book-detail-hl-card:hover {
+    border-color: var(--interactive-accent);
+    background: var(--background-secondary);
+}
+
+.weread-book-detail-hl-quote {
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: 8px;
+}
+
+.weread-book-detail-hl-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-normal);
+}
+
+.weread-book-detail-hl-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.weread-book-detail-hl-meta-item {
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+/* Note Card */
+.weread-book-detail-note-card {
+    margin-bottom: 12px;
+    padding: 12px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+}
+
+.weread-book-detail-note-content {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-normal);
+}
+
+.weread-book-detail-note-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+/* Popular Card */
+.weread-book-detail-popular-card {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--color-orange);
+    border-radius: 6px;
+}
+
+.weread-book-detail-popular-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-normal);
+}
+
+.weread-book-detail-popular-meta {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.weread-book-detail-popular-count {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    color: var(--color-orange);
+    font-weight: 500;
+}

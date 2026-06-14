@@ -21,6 +21,11 @@ export function setActivePluginId(pluginId: string): void {
 	_activePluginId = pluginId;
 }
 
+/** 读取当前激活的 pluginId */
+export function getActivePluginId(): string {
+	return _activePluginId;
+}
+
 /** 读取当前 pageindex 相对路径（vault-relative） */
 export function getPageindexDir(): string {
 	return `.obsidian/plugins/${_activePluginId}/pageindex`;
