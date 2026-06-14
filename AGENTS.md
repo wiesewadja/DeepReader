@@ -58,9 +58,50 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 - 跨 worktree 部署时需同时更新主仓库的 `bin/` 和 `test-vault/.obsidian/plugins/deepreader-dev/`
 
 ## Worktree Skill/Agent 同步
-- `.claude/` 目录是 symlink → worktree 自动继承，不需要手动更新
-- `.mimocode/` 目录不是 symlink → 新增 skill/agent 时必须手动同步到 worktree
-- 同步命令: `cp .claude/skills/xxx/SKILL.md .mimocode/skills/xxx/SKILL.md`
+
+AI 工具配置（`.agents/`、`.claude/`、`.mimocode/`、`.kimi-code/`、`.archon/`）**不纳入 GitHub**，只在本地主仓库维护。
+
+创建 worktree 时会自动通过 symlink 共享主仓库的 AI 配置：
+
+```bash
+# 一键创建 worktree 并自动链接 AI 工具目录
+npm run worktree:create <branch-name> [base-ref]
+
+# 或直接使用脚本
+bash scripts/setup-worktree.sh <branch-name> [base-ref]
+```
+
+脚本会执行：
+1. `git worktree add .worktrees/<branch-name> -b <branch-name> <base-ref>`
+2. 自动创建 symlink：
+   - `.worktrees/<branch-name>/.agents -> <repo-root>/.agents`
+   - `.worktrees/<branch-name>/.claude -> <repo-root>/.claude`
+   - `.worktrees/<branch-name>/.mimocode -> <repo-root>/.mimocode`
+3. 安装依赖、构建、部署到 test-vault、运行单元测试
+
+如果已有 worktree 需要补建 symlink，可单独运行：
+
+```bash
+bash scripts/setup-worktree-symlinks.sh .worktrees/<branch-name>
+```
+
+### 让 AI 自动创建 worktree
+
+如果你直接对 AI 说"帮我新建一个 worktree 分支"，AI 通常会执行 `git worktree add`。为确保 AI 配置可用，项目提供了三层保障：
+
+1. **Claude Code 自定义命令**（推荐）：
+   - 输入 `/create-worktree feat/my-feature main`
+   - Claude 会执行 `git worktree add` + 自动 symlink
+
+2. **MimoCode 自定义命令**：
+   - 输入 `create-worktree feat/my-feature main`
+   - MimoCode 会执行 `git worktree add` + 自动 symlink
+
+3. **Claude Code PostToolUse Hook（兜底）**：
+   - 当 Claude 执行任意 `git worktree add ...` 命令后，`.claude/settings.json` 中注册的 `auto_symlink_worktree.py` hook 会自动检测并补建 `.agents`、`.claude`、`.mimocode` 的 symlink。
+   - 这样即使 AI 没有使用自定义命令，直接调用 `git worktree add`，AI 配置也会被自动链接。
+
+> ⚠️ `.kimi-code/mcp.json` 等文件含 API key，通过 symlink 共享时请确保工作目录安全。
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录

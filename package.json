@@ -35,7 +35,8 @@
     "smoke:full": "node scripts/smoke/smoke.mjs --level full",
     "smoke:verbose": "node scripts/smoke/smoke.mjs --verbose",
     "e2e-light": "node scripts/e2e-light/run.mjs",
-    "e2e-light:verbose": "node scripts/e2e-light/run.mjs --verbose"
+    "e2e-light:verbose": "node scripts/e2e-light/run.mjs --verbose",
+    "worktree:create": "bash scripts/setup-worktree.sh"
   },
   "keywords": [
     "obsidian",
