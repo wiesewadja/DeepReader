@@ -21,13 +21,10 @@ node_modules/
 bin/
 main.js
 styles.css
-
-# Agent skills (local)
-.agents/
+manifest.json
 
 # Git worktrees
 .worktrees/
-.claude/worktrees/
 output/
 backend/data/
 .kiro/
@@ -39,19 +36,17 @@ test-vault/
 # Eval test artifacts
 .eval/
 
-# AI agent tools (internal)
+# AI agent tools and local configs — 不上传 GitHub
 .gstack/
 .superpowers/
 .deploy-config.json
-
-# Archon workflow configs
-.archon/
-!.archon/workflows/
-!.archon/commands/
-
-# Claude Code runtime data
+.agents/
 .claude/
-!.claude/hooks/
+.mimocode/
+.kimi-code/
+.archon/
+.serena
+.codegraph/
 
 # Internal development files
 playground/
@@ -74,16 +69,8 @@ docs/weread-api.md
 tasks/
 goals/
 
-manifest.json
-
-test-vault/
+# Test outputs
 test-output/
-.serena
-.codegraph/.gitignore
-.codegraph/daemon.pid
-.codegraph
-.mimocode
-.kimi-code
 
 # ZCode / OpenCode 本地配置（含明文 API key，勿提交）
 opencode.json
