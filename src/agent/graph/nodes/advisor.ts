@@ -12,7 +12,7 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { createLangChainTools } from '../../tools/index.js';
 import type { AdvisorInput } from '../node-io.js';
 import type { CognitiveEngineState } from '../state';
-import { runPlanExecute } from '../subgraphs/react-loop.js';
+import { runPlanExecute } from '../subgraphs/plan-execute.js';
 
 const ADVISOR_SYSTEM_PROMPT = `你是奚童，用户的专属 AI 伴读。当前处于阅读顾问模式——用户没有选中具体书籍，但你可以通过微信读书 API 工具获取真实数据。
 

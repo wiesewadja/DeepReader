@@ -13,15 +13,11 @@ import { verifyAndCleanContent } from '../utils/self-verification.js';
 import { parseToolCallArgs } from '../utils/tool-call-parser.js';
 import {
   type ToolResultRecord,
-  type ReactLoopConfig,
-  type ReactLoopResult,
+  type SubgraphConfig,
+  type SubgraphResult,
   compressMessagesForLLM,
   executeSingleToolCall,
 } from './tool-execution.js';
-
-// Re-export public interfaces from tool-execution.ts
-export type { ToolResultRecord, ReactLoopConfig, ReactLoopResult } from './tool-execution.js';
-export { runPlanExecute } from './plan-execute.js';
 
 // === State Definition ===
 
@@ -97,7 +93,7 @@ async function agentNode(
   state: ReactState,
   config: RunnableConfig,
 ): Promise<Partial<ReactState>> {
-  const reactConfig = config.configurable?.reactLoopConfig as ReactLoopConfig;
+  const reactConfig = config.configurable?.reactLoopConfig as SubgraphConfig;
   const modelWithTools = reactConfig.model.bindTools(reactConfig.tools);
   const compressedMessages = compressMessagesForLLM(state.messages);
   const response = await modelWithTools.invoke(compressedMessages, config);
@@ -110,7 +106,7 @@ async function agentNode(
 
 // === Enhanced Tool Node ===
 
-function createEnhancedToolNode(toolInterceptor?: ReactLoopConfig['toolInterceptor']) {
+function createEnhancedToolNode(toolInterceptor?: SubgraphConfig['toolInterceptor']) {
   return async function enhancedToolNode(
     state: ReactState,
     config: RunnableConfig,
@@ -121,7 +117,7 @@ function createEnhancedToolNode(toolInterceptor?: ReactLoopConfig['toolIntercept
       return { messages: [] };
     }
 
-    const reactConfig = config.configurable?.reactLoopConfig as ReactLoopConfig;
+    const reactConfig = config.configurable?.reactLoopConfig as SubgraphConfig;
     const interceptor = toolInterceptor ?? reactConfig?.toolInterceptor;
     const tools = reactConfig.tools;
 
@@ -203,7 +199,7 @@ function shouldContinue(state: ReactState): string {
 
 // === Forced Conclusion ===
 
-function buildForcedConclusionPrompt(config: ReactLoopConfig, hitToolCallLimit: boolean): string {
+function buildForcedConclusionPrompt(config: SubgraphConfig, hitToolCallLimit: boolean): string {
   const limitType = hitToolCallLimit ? '工具调用' : '迭代';
   const limitValue = hitToolCallLimit ? config.maxToolCalls : config.maxIterations;
 
@@ -230,7 +226,7 @@ function buildForcedConclusionPrompt(config: ReactLoopConfig, hitToolCallLimit: 
 
 // === Build the subgraph ===
 
-export function createReactLoopGraph(config: ReactLoopConfig) {
+export function createReactLoopGraph(config: SubgraphConfig) {
   return new StateGraph(ReactAnnotation)
     .addNode('agent', agentNode)
     .addNode('tools', createEnhancedToolNode(config.toolInterceptor))
@@ -250,9 +246,9 @@ export function createReactLoopGraph(config: ReactLoopConfig) {
  */
 export async function runReactLoop(
   messages: BaseMessage[],
-  config: ReactLoopConfig,
+  config: SubgraphConfig,
   runnableConfig?: RunnableConfig,
-): Promise<ReactLoopResult> {
+): Promise<SubgraphResult> {
   const graph = createReactLoopGraph(config);
   const compiled = graph.compile();
 

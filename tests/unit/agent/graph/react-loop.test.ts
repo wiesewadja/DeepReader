@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { runReactLoop, createReactLoopGraph } from '@/agent/graph/subgraphs/react-loop.js';
-import type { ReactLoopConfig } from '@/agent/graph/subgraphs/react-loop.js';
+import type { SubgraphConfig } from '@/agent/graph/subgraphs/tool-execution.js';
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 
@@ -77,7 +77,7 @@ describe('ReAct Loop Subgraph', () => {
         new AIMessage({ content: '分析完成' }),
       ]);
 
-      const config: ReactLoopConfig = {
+      const config: SubgraphConfig = {
         tools: createMockTools(),
         model: mockModel as any,
         maxIterations: 8,

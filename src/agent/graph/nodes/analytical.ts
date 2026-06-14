@@ -13,7 +13,7 @@ import { createLangChainTools } from '../../tools/index.js';
 import type { AnalyticalInput } from '../node-io.js';
 import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
 import type { CognitiveEngineState } from '../state';
-import { runPlanExecute } from '../subgraphs/react-loop.js';
+import { runPlanExecute } from '../subgraphs/plan-execute.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';
 
 /**

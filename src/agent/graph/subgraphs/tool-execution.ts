@@ -25,7 +25,7 @@ export interface ToolResultRecord {
   extractedBlockIds?: string[];
 }
 
-export interface ReactLoopConfig {
+export interface SubgraphConfig {
   tools: StructuredToolInterface[];
   model: ChatOpenAI;
   maxIterations: number;
@@ -43,7 +43,7 @@ export interface ReactLoopConfig {
   onProgress?: (message: string) => void;
 }
 
-export interface ReactLoopResult {
+export interface SubgraphResult {
   content: string;
   toolResults: ToolResultRecord[];
   iterations: number;
@@ -155,7 +155,7 @@ export async function executeSingleToolCall(
 export async function executeToolBatch(
   toolCalls: ToolCallLike[],
   tools: StructuredToolInterface[],
-  config: ReactLoopConfig,
+  config: SubgraphConfig,
   runnableConfig?: RunnableConfig,
 ): Promise<{ messages: ToolMessage[]; records: ToolResultRecord[] }> {
   const execResults = await Promise.all(
@@ -173,7 +173,7 @@ export async function executeToolBatch(
 // ============ Progress Reporting ============
 
 export function reportPlan(
-  config: ReactLoopConfig,
+  config: SubgraphConfig,
   toolCalls: ToolCallLike[],
   round: number,
   maxPlanRounds: number,

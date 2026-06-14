@@ -12,10 +12,10 @@ import { HumanMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
-import type { ReactLoopConfig, ReactLoopResult, ToolResultRecord } from './tool-execution.js';
+import type { SubgraphConfig, SubgraphResult, ToolResultRecord } from './tool-execution.js';
 import { compressMessagesForLLM, executeToolBatch, reportPlan } from './tool-execution.js';
 
-function buildSynthesisPrompt(config: ReactLoopConfig): string {
+function buildSynthesisPrompt(config: SubgraphConfig): string {
   let prompt = `现在请基于你请求的所有工具执行结果，输出完整的分析结论。
 
 要求：
@@ -50,9 +50,9 @@ function buildSynthesisPrompt(config: ReactLoopConfig): string {
  */
 export async function runPlanExecute(
   messages: BaseMessage[],
-  config: ReactLoopConfig,
+  config: SubgraphConfig,
   runnableConfig?: RunnableConfig,
-): Promise<ReactLoopResult> {
+): Promise<SubgraphResult> {
   const { tools, model } = config;
   const modelWithTools = model.bindTools(tools);
   const maxPlanRounds = Math.max(1, Math.min(config.maxToolCalls, 2));
