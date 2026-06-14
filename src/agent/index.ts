@@ -456,6 +456,9 @@ ${currentMemory}
       onReasoning: callbacks.onReasoning,
       onComplete: callbacks.onComplete || (() => {}),
       onError: callbacks.onError || (() => {}),
+      onDiagramStart: callbacks.onDiagramStart,
+      onDiagramReady: callbacks.onDiagramReady,
+      onDiagramFailed: callbacks.onDiagramFailed,
     };
 
     // LangSmith tracer

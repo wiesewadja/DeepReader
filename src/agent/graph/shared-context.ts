@@ -19,6 +19,22 @@ export interface EngineCallbacks {
   onReasoning?: (text: string) => void;
   onComplete: () => void;
   onError: (error: string) => void;
+  /**
+   * 图表生成开始时同步触发（visualizer 节点内）。
+   * 前端用于标记"本次回复会附带图表"，占位气泡延迟到 formatter onComplete 后才创建
+   * （避免文字流式输出时就冒出空的画图气泡，体验割裂）。
+   */
+  onDiagramStart?: () => void;
+  /**
+   * 图表生成完成时异步触发（visualizer 节点的 fire-and-forget 任务内）。
+   * embed 形如 "![[Excalidraw/xxx.excalidraw.md]]"。
+   */
+  onDiagramReady?: (embed: string) => void;
+  /**
+   * 图表生成失败/超时异步触发（visualizer fire-and-forget 任务内）。
+   * 前端用于把占位气泡替换为失败提示，并重置 diagramPending 等状态，避免占位永远卡住。
+   */
+  onDiagramFailed?: (reason: string) => void;
 }
 
 /**

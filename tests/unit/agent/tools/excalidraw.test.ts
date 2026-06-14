@@ -9,6 +9,7 @@ import {
   resolveOverlaps,
 } from '@/agent/tools/excalidraw';
 import { excalidrawTool } from '@/agent/tools/excalidraw';
+import { writeExcalidrawJson } from '@/agent/tools/excalidraw';
 import type { ElementDef } from '@/agent/tools/excalidraw';
 import type { ToolContext } from '@/agent/tools/types';
 
@@ -68,7 +69,7 @@ describe('buildExcalidrawJSON', () => {
     expect(el.text).toBe('测试文本');
     expect(el.originalText).toBe('测试文本');
     expect(el.fontSize).toBe(20);
-    expect(el.fontFamily).toBe(3);
+    expect(el.fontFamily).toBe(5);
     expect(el.textAlign).toBe('center');
     expect(el.verticalAlign).toBe('middle');
     expect(el.containerId).toBeNull();
@@ -288,11 +289,11 @@ describe('excalidrawTool.execute', () => {
 
     const parsed = JSON.parse(result);
     expect(parsed.success).toBe(true);
-    expect(parsed.filepath).toBe('Excalidraw/test-diagram.excalidraw');
-    expect(parsed.embed).toBe('![[Excalidraw/test-diagram.excalidraw]]');
+    expect(parsed.filepath).toBe('Excalidraw/test-diagram.excalidraw.md');
+    expect(parsed.embed).toBe('![[Excalidraw/test-diagram.excalidraw.md]]');
 
     expect(mockCtx.vault.app.vault.adapter.write).toHaveBeenCalledWith(
-      'Excalidraw/test-diagram.excalidraw',
+      'Excalidraw/test-diagram.excalidraw.md',
       expect.any(String),
     );
   });
@@ -611,5 +612,81 @@ describe('resolveOverlaps', () => {
     // Arrow start should not be inside the source shape
     const srcEl = result.elements.find(e => e.id === 'src')!;
     expect(arrow.x).toBeGreaterThan(srcEl.x + srcEl.width - 1);
+  });
+});
+
+describe('writeExcalidrawJson', () => {
+  it('写入纯 JSON 到 .excalidraw 文件（非 .md）', async () => {
+    const ctx = makeMockCtx();
+    const elements: ElementDef[] = [
+      makeElement({ id: 'r1', type: 'rectangle', x: 0, y: 0, width: 220, height: 110, text: '中心' }),
+    ];
+
+    const filepath = await writeExcalidrawJson('test-diagram', elements, ctx);
+
+    expect(filepath).toBe('Excalidraw/test-diagram.excalidraw');
+    expect(ctx.vault.app.vault.adapter.write).toHaveBeenCalledWith(
+      'Excalidraw/test-diagram.excalidraw',
+      expect.any(String),
+    );
+    // 写入内容是合法 JSON（非 .excalidraw.md 的 frontmatter 格式）
+    const writtenContent = (ctx.vault.app.vault.adapter.write as any).mock.calls[0][1];
+    const parsed = JSON.parse(writtenContent);
+    expect(parsed.type).toBe('excalidraw');
+    expect(Array.isArray(parsed.elements)).toBe(true);
+  });
+
+  it('元素经 buildExcalidrawJSON 处理（字号优化生效）', async () => {
+    const ctx = makeMockCtx();
+    // shape 带 text → buildExcalidrawJSON 会自动创建绑定的 text 子元素 + 字号优化
+    const elements: ElementDef[] = [
+      makeElement({ id: 'box', type: 'rectangle', x: 0, y: 0, width: 220, height: 110, text: '短文本' }),
+    ];
+
+    await writeExcalidrawJson('opt-test', elements, ctx);
+
+    const writtenContent = (ctx.vault.app.vault.adapter.write as any).mock.calls[0][1];
+    const parsed = JSON.parse(writtenContent);
+    // shape + auto-created text = 2 elements
+    expect(parsed.elements.length).toBe(2);
+    const textEl = parsed.elements.find((e: any) => e.type === 'text');
+    expect(textEl).toBeDefined();
+    expect(textEl.fontSize).toBeGreaterThanOrEqual(16);
+  });
+
+  it('确保 Excalidraw 目录存在', async () => {
+    const ctx = makeMockCtx();
+    (ctx.vault.app.vault.adapter.exists as any).mockResolvedValue(false);
+
+    await writeExcalidrawJson('new-file', [makeElement({ id: 'r1' })], ctx);
+
+    expect(ctx.vault.app.vault.adapter.mkdir).toHaveBeenCalledWith('Excalidraw');
+  });
+
+  it('空 elements 抛异常', async () => {
+    const ctx = makeMockCtx();
+    await expect(writeExcalidrawJson('empty', [], ctx)).rejects.toThrow(/elements 为空/);
+  });
+
+  it('非法 filename 抛异常', async () => {
+    const ctx = makeMockCtx();
+    await expect(
+      writeExcalidrawJson('bad/name', [makeElement({ id: 'r1' })], ctx),
+    ).rejects.toThrow(/filename 非法/);
+  });
+
+  it('多次调用同一 filename 覆盖写入（增量累积场景）', async () => {
+    const ctx = makeMockCtx();
+    // 模拟渐进：节1 写 1 元素，节2 写 2 元素（累积）
+    await writeExcalidrawJson('grow', [makeElement({ id: 'r1' })], ctx);
+    await writeExcalidrawJson('grow', [makeElement({ id: 'r1' }), makeElement({ id: 'r2' })], ctx);
+
+    const calls = (ctx.vault.app.vault.adapter.write as any).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[0][0]).toBe('Excalidraw/grow.excalidraw');
+    expect(calls[1][0]).toBe('Excalidraw/grow.excalidraw'); // 同路径覆盖
+    // 第二次元素更多
+    const second = JSON.parse(calls[1][1]);
+    expect(second.elements.length).toBeGreaterThan(JSON.parse(calls[0][1]).elements.length);
   });
 });

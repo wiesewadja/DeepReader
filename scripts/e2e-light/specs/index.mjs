@@ -26,6 +26,7 @@ import writeNoteSecurity from './write-note-security.spec.mjs';
 import voicePersistence from './voice-persistence.spec.mjs';
 import selectionToolbarDelegation from './selection-toolbar-delegation.spec.mjs';
 import archGuardRules from './arch-guard-rules.spec.mjs';
+import excalidrawVisual from './excalidraw-visual.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -52,4 +53,5 @@ export const e2eLightSpecs = [
 	voicePersistence,
 	selectionToolbarDelegation,
 	archGuardRules,
+	excalidrawVisual,
 ];

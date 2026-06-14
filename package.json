@@ -21,6 +21,7 @@
     "deploy:dev": "node scripts/deploy.js dev && node scripts/inject-config.mjs",
     "deploy:daily": "node scripts/deploy.js daily",
     "deploy:all": "node scripts/deploy.js dev daily && node scripts/inject-config.mjs",
+    "verify-deploy": "node scripts/verify-deploy.mjs",
     "eval": "node scripts/eval/eval-cli.mjs",
     "eval:generate": "node scripts/eval/eval-cli.mjs generate",
     "eval:run": "node scripts/eval/eval-cli.mjs run",

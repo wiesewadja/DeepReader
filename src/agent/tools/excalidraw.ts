@@ -7,6 +7,7 @@
 
 import { log } from '../../utils/logger.js';
 import { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
+import { buildExcalidrawMd } from './excalidraw-md.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 
 /** LLM 输入的元素定义（简化版，工具负责补齐完整字段） */
@@ -142,6 +143,101 @@ function now(): number {
   return Date.now();
 }
 
+/**
+ * 容器内文字 padding（Excalidraw 默认容器文字留白）。
+ * text 子元素的 width/height 已在 buildExcalidrawJSON 里减去 20px（每边 10），
+ * 这里再留少量内边距，避免文字顶到容器边缘。
+ */
+const CONTAINER_TEXT_PADDING = 6;
+
+/**
+ * 估算中文字符显示宽度系数（相对 fontSize）。
+ * Excalidraw fontFamily 5 中文约等于 1.0 × fontSize 每字，
+ * 英文/数字约 0.6 × fontSize。这里用 1.0 偏保守，保证不溢出。
+ */
+const CHAR_WIDTH_RATIO = 1.0;
+
+/**
+ * 根据容器尺寸 + 文本内容，主动计算能撑满容器又不溢出的最大字号。
+ *
+ * 旧逻辑：fontSize = Math.min(LLM给的值 || 16, 容器档位上限)
+ *   问题：LLM 倾向给保守的 16，长文本被压到 16 显得字小框空。
+ *
+ * 新逻辑：遍历可能的每行字数，找到"横向不溢出 + 纵向不溢出"的最大字号。
+ * 自动换行让长文本也能用上更大字号。
+ *
+ * @returns { fontSize, wrappedText } — 最优字号 + 换行后的文本
+ */
+function computeOptimalFontSize(
+  text: string,
+  containerWidth: number,
+  containerHeight: number,
+): { fontSize: number; wrappedText: string } {
+  const availW = Math.max(20, containerWidth - CONTAINER_TEXT_PADDING * 2);
+  const availH = Math.max(20, containerHeight - CONTAINER_TEXT_PADDING * 2);
+
+  // 用户已经手动换行 → 尊重原有断行，按最长行算
+  const userLines = text.split('\n');
+  const hasManualWrap = userLines.length > 1;
+
+  if (hasManualWrap) {
+    const maxChars = Math.max(...userLines.map(l => effectiveCharCount(l)));
+    const lineCount = userLines.length;
+    const byWidth = availW / (maxChars * CHAR_WIDTH_RATIO);
+    const byHeight = availH / (lineCount * 1.25);
+    const fontSize = clampFontSize(Math.min(byWidth, byHeight));
+    return { fontSize, wrappedText: text };
+  }
+
+  // 无手动换行 → 尝试不同每行字数，找最大字号
+  const totalChars = effectiveCharCount(text);
+  let best = { fontSize: MIN_FONT_SIZE, wrappedText: text };
+
+  // 每行字数从 1 到 totalChars 遍历；字数越多行数越少但横向越紧
+  for (let charsPerLine = totalChars; charsPerLine >= 1; charsPerLine--) {
+    const lineCount = Math.ceil(totalChars / charsPerLine);
+    const byWidth = availW / (charsPerLine * CHAR_WIDTH_RATIO);
+    const byHeight = availH / (lineCount * 1.25);
+    const fontSize = clampFontSize(Math.min(byWidth, byHeight));
+    if (fontSize > best.fontSize) {
+      best = { fontSize, wrappedText: wrapText(text, charsPerLine) };
+    }
+  }
+  return best;
+}
+
+/** 字号上下限：太小看不清，太大超出容器视觉比例 */
+const MIN_FONT_SIZE = 16;
+const MAX_FONT_SIZE = 30;
+
+function clampFontSize(fs: number): number {
+  return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, Math.floor(fs)));
+}
+
+/**
+ * 估算文本"等效字数"——中文按 1 计，英文/数字/标点按 0.6 计。
+ * 用于换行计算（中文一个字占的宽度比英文字母大）。
+ */
+function effectiveCharCount(text: string): number {
+  let count = 0;
+  for (const ch of text) {
+    count += /[一-鿿　-〿＀-￯]/.test(ch) ? 1 : 0.6;
+  }
+  return Math.max(1, count);
+}
+
+/**
+ * 按指定字数把文本断行（中文按字符，尽量均匀）。
+ */
+function wrapText(text: string, charsPerLine: number): string {
+  if (charsPerLine >= text.length) return text;
+  const lines: string[] = [];
+  for (let i = 0; i < text.length; i += charsPerLine) {
+    lines.push(text.slice(i, i + charsPerLine));
+  }
+  return lines.join('\n');
+}
+
 function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   const isText = el.type === 'text';
   const isArrow = el.type === 'arrow';
@@ -180,7 +276,7 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     // Free text cap: 22px max; bound text uses the container's maxFontSize logic instead
     const freeTextCap = el.containerId ? (el.fontSize ?? 16) : Math.min(el.fontSize ?? 16, 22);
     base.fontSize = freeTextCap;
-    base.fontFamily = 3;
+    base.fontFamily = 5;
     base.textAlign = el.textAlign ?? 'center';
     base.verticalAlign = el.verticalAlign ?? 'middle';
     base.containerId = el.containerId ?? null;
@@ -224,13 +320,25 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
     elMap.set(el.id, el);
   }
 
+  // 去重说明：LLM 有时对同一节点既给 shape.text 又给独立 text 元素（containerId 指向 shape）。
+  // 这种独立 text 在主循环里通过 isRedundantBoundText 判断跳过，由 shape.text 自动创建接管，
+  // 统一字号优化，避免两个 text 重叠。
+
   const result: ExcalidrawElement[] = [];
 
   for (const el of resolved) {
     const isContainer = ['rectangle', 'ellipse', 'diamond'].includes(el.type);
     const isText = el.type === 'text';
+    // shape 有 text 属性 → 自动创建绑定 text（即使 LLM 同时给了独立 text，也以 shape.text 为准）
     const needsAutoText = isContainer && el.text && !isText;
     const isArrowOrLine = el.type === 'arrow' || el.type === 'line';
+    // 独立 text 元素：若它绑定到的容器自己有 text 属性，则跳过（已被自动创建接管）
+    const isRedundantBoundText =
+      isText && !!el.containerId && !!elMap.get(el.containerId!)?.text;
+
+    // 冗余 text：LLM 给的独立 text 指向"自身有 text 属性的容器"，
+    // 由 shape.text 自动创建接管，跳过避免重复。
+    if (isRedundantBoundText) continue;
 
     if (needsAutoText) {
       // 形状有 text → 自动创建绑定的 text 子元素
@@ -240,19 +348,25 @@ function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
       shapeEl.boundElements = [{ id: textId, type: 'text' }];
       result.push(shapeEl);
 
-      // 创建 text 子元素 — fontSize 根据容器宽度自适应上限
-      const maxFontSize = el.width >= 300 ? 24 : el.width >= 220 ? 20 : el.width >= 160 ? 16 : 14;
+      // 主动计算最优字号 + 自动换行：撑满容器又不溢出
+      // 替代旧的 Math.min(LLM值, 档位上限) —— 那会让长文本被压到 16
+      const { fontSize: optimalFontSize, wrappedText } = computeOptimalFontSize(
+        el.text!,
+        el.width,
+        el.height,
+      );
       const textEl = toExcalidrawElement({
         ...el,
         id: textId,
         type: 'text',
+        text: wrappedText,
         x: el.x + 10,
         y: el.y + 10,
         width: Math.max(20, el.width - 20),
         height: Math.max(20, el.height - 20),
         containerId: el.id,
         strokeColor: el.strokeColor || '#1e293b',
-        fontSize: Math.min(el.fontSize || 16, maxFontSize),
+        fontSize: optimalFontSize,
       });
       textEl.containerId = el.id;
       result.push(textEl);
@@ -439,8 +553,11 @@ export const excalidrawTool: ToolExecutor = {
         await adapter.mkdir(dir);
       }
 
-      const filepath = `${dir}/${filename}.excalidraw`;
-      await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
+      // 写成 .excalidraw.md（Excalidraw 插件原生格式）
+      // 用 buildExcalidrawMd 直接压缩原始 JSON，保留所有元素属性（fontSize/坐标/尺寸）
+      // 不调插件的 convert 命令——那会触发 fontSize 重算、文字重排
+      const filepath = `${dir}/${filename}.excalidraw.md`;
+      await adapter.write(filepath, buildExcalidrawMd(excalidrawFile));
 
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
@@ -465,6 +582,50 @@ export const excalidrawTool: ToolExecutor = {
 };
 
 // 导出内部函数供测试使用
-export { buildExcalidrawJSON, detectOverlaps, detectTextOverlaps, validateSemantics };
+/**
+ * 写纯 JSON 到 `Excalidraw/<filename>.excalidraw`（不带 .md 后缀）。
+ *
+ * 用于渐进式分节生成的中间态落盘：
+ * - 每节完成时调用，累积元素写入纯 JSON（便于增量、可调试）
+ * - 全部完成后由 generateDiagramProgressive 转换为 .excalidraw.md 并删除此中间文件
+ *
+ * 与 excalidrawTool.execute 的区别：
+ * - execute 写 .excalidraw.md（插件格式，含压缩）→ 最终产物
+ * - writeExcalidrawJson 写 .excalidraw（纯 JSON）→ 渐进中间态
+ *
+ * 元素同样经 buildExcalidrawJSON 处理（字号优化/去重/碰撞检测），保证中间态视觉质量。
+ *
+ * @returns 文件路径（如 "Excalidraw/xxx.excalidraw"），失败抛异常
+ */
+export async function writeExcalidrawJson(
+  filename: string,
+  elements: ElementDef[],
+  context: ToolContext,
+): Promise<string> {
+  if (!filename || !elements || !Array.isArray(elements) || elements.length === 0) {
+    throw new Error('writeExcalidrawJson: filename 或 elements 为空');
+  }
+
+  if (!/^[\w一-鿿\-][\w一-鿿\- ]{0,100}$/.test(filename)) {
+    throw new Error(`writeExcalidrawJson: filename 非法 "${filename}"`);
+  }
+
+  const excalidrawFile = buildExcalidrawJSON(elements);
+
+  const dir = 'Excalidraw';
+  const adapter = context.vault.app.vault.adapter;
+  if (!(await adapter.exists(dir))) {
+    await adapter.mkdir(dir);
+  }
+
+  const filepath = `${dir}/${filename}.excalidraw`;
+  await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
+
+  log('info', `Excalidraw JSON 中间态已写入: ${filepath}（${elements.length} 元素）`);
+  return filepath;
+}
+
+// 导出内部函数供测试使用
+export { buildExcalidrawJSON, detectOverlaps, detectTextOverlaps, validateSemantics, computeOptimalFontSize };
 export { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
 export type { ElementDef };
