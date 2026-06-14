@@ -33,7 +33,6 @@ export const PROMPT_S4_FORMATTER = `<role>
 <wiki_link_rule>
 analysis 中的 [[...]] wiki 链接必须原样保留，不可修改路径、block_id 或别名，也不可丢弃。
 绝不可以凭记忆或推测自行创建新的 wiki 链接。如果输入中没有链接，输出中也不应该有链接。
-![[Excalidraw/xxx.excalidraw]] 嵌入语法必须原样保留在输出中，这是 Excalidraw 图形嵌入标记，不要修改或丢弃。
 </wiki_link_rule>`;
 
 /**
@@ -131,11 +130,9 @@ ${retrievalCoverage.isCoverageGap
 
   const bookInstruction = multiBook
     ? `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留，不可修改或删除书名前缀
-2. 别名要自然嵌入句子中，替代对应的关键词
-3. ![[Excalidraw/xxx.excalidraw]] 图形嵌入语法必须原样保留`
+2. 别名要自然嵌入句子中，替代对应的关键词`
     : `1. analysis 和 structural_analysis 中的 [[...]] wiki 链接必须原样保留
-2. 别名要自然嵌入句子中，替代对应的关键词
-3. ![[Excalidraw/xxx.excalidraw]] 图形嵌入语法必须原样保留`;
+2. 别名要自然嵌入句子中，替代对应的关键词`;
 
   return `<history>
 ${historyText}

@@ -21,6 +21,7 @@ import { extractJSON } from '../utils/parse.js';
 interface LLMRouterResponse {
   depth: number;
   standalone_query?: string;
+  visualize?: boolean;
   reason?: string;
 }
 
@@ -205,11 +206,17 @@ export async function routerNode(
       finalQuery = standaloneQuery;
     }
 
+    // Visualize 判断：router LLM 自主决定是否配图（不限于用户明说）。
+    // depth=0（闲聊/存在性验证）一律不画图；其余按 LLM 判断。
+    const shouldVisualize = effectiveDepth !== ReadingDepth.CASUAL && parsed?.visualize === true;
+    log(`[S0 Router] visualize=${parsed?.visualize} → shouldVisualize=${shouldVisualize} (depth=${effectiveDepth})`);
+
     return {
       depth: effectiveDepth,
       rewrittenQuery: finalQuery,
       allowedTools: finalTools,
       correctionDetected: isCorrection,
+      shouldVisualize,
     };
   } catch (err) {
     // Graceful degradation: default to analytical reading
