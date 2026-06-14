@@ -179,7 +179,16 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
+    const formatted = await sanitizeOutput(content, {
+      bookName: pdfName || '',
+      crossBookMode,
+      inputTextsForValidation: [structuralAnalysis || '', tocSummary || '', content],
+      markdownFiles: ctx?.toolContext?.book.markdownFiles ?? {},
+      vaultApp: ctx?.toolContext?.vault?.app,
+      toolResults: [],
+      skipVaultVerification: true,
+    });
+    return { formattedOutput: formatted };
   }
 
   // === Socratic dialogue: respond + follow-up using chatHistory ===
@@ -198,7 +207,16 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
+    const formatted = await sanitizeOutput(content, {
+      bookName: pdfName || '',
+      crossBookMode,
+      inputTextsForValidation: [content],
+      markdownFiles: ctx?.toolContext?.book.markdownFiles ?? {},
+      vaultApp: ctx?.toolContext?.vault?.app,
+      toolResults: [],
+      skipVaultVerification: true,
+    });
+    return { formattedOutput: formatted };
   }
 
   // === ADVISOR node passthrough: already produced formatted response via ReAct ===
@@ -228,7 +246,16 @@ export async function formatterNode(
       callbacks?.onContent,
     );
 
-    return { formattedOutput: cleanOutput(content, pdfName || '', crossBookMode) };
+    const formatted = await sanitizeOutput(content, {
+      bookName: pdfName || '',
+      crossBookMode,
+      inputTextsForValidation: [content],
+      markdownFiles: ctx?.toolContext?.book.markdownFiles ?? {},
+      vaultApp: ctx?.toolContext?.vault?.app,
+      toolResults: [],
+      skipVaultVerification: true,
+    });
+    return { formattedOutput: formatted };
   }
 
 
