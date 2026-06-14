@@ -119,7 +119,7 @@ describe('buildExcalidrawJSON', () => {
     const seeds = result.elements.map(e => e.seed);
 
     // Seeds should be unique positive integers
-    expect(seeds.length).toBe(3);
+    expect(seeds.length).toBe(3); // 3 elements
     const seedSet = new Set(seeds);
     expect(seedSet.size).toBe(3);
     seeds.forEach(s => expect(s).toBeGreaterThan(0));
