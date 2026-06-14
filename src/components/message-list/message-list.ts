@@ -276,6 +276,7 @@ export class MessageList extends Component {
 		// 屏幕阅读器可访问性：chat log 语义
 		// role=log 隐式 aria-live=polite：新消息到达时屏幕阅读器会播报
 		this.messagesContainer.setAttribute("role", "log");
+		this.messagesContainer.setAttribute("aria-label", "消息列表");
 		// 注：aria-busy 暂不设 —— 当前没有公开的 setLoading 接口，
 		// 除非有真实的加载生命周期（如初始会话加载 / 重新生成中）需要广播，
 		// 否则该属性是"假合规"。需要时同步增加 setLoading API。
@@ -714,9 +715,20 @@ export class MessageList extends Component {
 		}
 
 	// 副标题 —— 固定文案（"奚童 · " 产品标识 + AI 伴读定位）
+		const subtitleText = this.currentPdfName
+			? `${this.currentPdfName} · 你的 AI 伴读`
+			: "你的 AI 伴读";
 		contentWrapper.createEl("p", {
 			cls: "deeppdf-empty-subtitle",
-			text: "奚童 · 你的 AI 伴读",
+			text: subtitleText,
+		});
+
+		// 提示语
+		contentWrapper.createEl("p", {
+			cls: "deeppdf-empty-hint",
+			text: this.currentPdfName
+				? "选择一个问题，开始探索这本书"
+				: "选择一本书，或和我聊聊阅读话题",
 		});
 
 		// 按钮网格
@@ -789,11 +801,14 @@ export class MessageList extends Component {
 
 		el.addClass("deeppdf-typing-cursor");
 
-		// Fisher-Yates 洗牌，生成随机顺序
-		const shuffled = [...texts];
+		// 第一条固定为问候语，剩余随机轮播
+		const shuffled = texts.length > 1 ? [...texts.slice(1)] : [...texts];
 		for (let i = shuffled.length - 1; i > 0; i--) {
 			const j = Math.floor(Math.random() * (i + 1));
 			[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+		}
+		if (texts.length > 1) {
+			shuffled.unshift(texts[0]);
 		}
 
 		let textIndex = 0;

@@ -116,6 +116,12 @@ export const CognitiveEngineAnnotation = Annotation.Root({
   // (c) re-include the current chapter in scope.
   correctionDetected: Annotation<boolean>(overwriteWithDefault(false)),
 
+  // === Visualizer 自主触发 ===
+  // 由 S0 Router 设置：LLM 判断本次回答是否适合配 Excalidraw 图表。
+  // 不依赖用户明说"画图"——只要概念/流程/框架/关系类问题，router 主动 visualize=true。
+  // edges 用 (userHasDiagramIntent || shouldVisualize) 决定是否走 VISUALIZER 节点。
+  shouldVisualize: Annotation<boolean>(overwriteWithDefault(false)),
+
   // === L5: Full-book negative-claim verification ===
   // Set by S2-Pre when the pre-searched analysisResult (carried via
   // the S1→S2 hand-off, see edge wiring) shows a negative claim

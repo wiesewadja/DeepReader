@@ -10,11 +10,15 @@ import { hasDiagramIntent } from './utils/diagram-helper.js';
 import { extractHumanMessageContents, resolveMode } from './utils/engine-helpers';
 
 function userHasDiagramIntent(state: CognitiveEngineState): boolean {
-  // Prefer original user message over rewrittenQuery — the router LLM may
-  // strip diagram keywords (e.g. "画思维导图" → "整体结构").
+  // 三路触发 visualizer：
+  // 1. 用户消息/重写查询命中画图关键词（正则，快速路径，用户明说"画图/思维导图"）
+  // 2. router LLM 自主判断 shouldVisualize（语义级，概念/流程/框架类问题主动配图）
+  // 任一为真即触发。
   const humanMsgs = extractHumanMessageContents(state.messages);
   const lastUserMsg = humanMsgs[humanMsgs.length - 1] || '';
-  return hasDiagramIntent(lastUserMsg) || hasDiagramIntent(state.rewrittenQuery || '');
+  const keywordIntent = hasDiagramIntent(lastUserMsg) || hasDiagramIntent(state.rewrittenQuery || '');
+  const semanticIntent = state.shouldVisualize === true;
+  return keywordIntent || semanticIntent;
 }
 
 /**

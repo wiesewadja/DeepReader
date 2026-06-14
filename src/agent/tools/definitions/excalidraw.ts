@@ -105,7 +105,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 复杂图形分区域生成，每区用独立 seed 段
 
 ## 输出
-工具写入 .excalidraw 文件并返回嵌入语法 ![[Excalidraw/filename.excalidraw]]。
+工具写入 .excalidraw.md 文件（Excalidraw 插件原生格式）并返回嵌入语法 ![[Excalidraw/filename.excalidraw.md]]。
 如果有碰撞或绑定问题，返回 warnings 供修正后重新调用。`,
       schema: z.object({
         filename: z

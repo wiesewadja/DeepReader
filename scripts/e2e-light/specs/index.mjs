@@ -31,6 +31,7 @@ import archGuardRules from './arch-guard-rules.spec.mjs';
 import bookSearch from './book-search.spec.mjs';
 import indexIntegrity from './index-integrity.spec.mjs';
 import selectionQuote from './selection-quote.spec.mjs';
+import excalidrawVisual from './excalidraw-visual.spec.mjs';
 
 export const e2eLightSpecs = [
 	readingModePagination,
@@ -60,4 +61,5 @@ export const e2eLightSpecs = [
 	bookSearch,
 	indexIntegrity,
 	selectionQuote,
+	excalidrawVisual,
 ];
