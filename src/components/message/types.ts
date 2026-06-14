@@ -67,4 +67,6 @@ export interface MessageData {
 	bookAuthor?: string;
 	/** 可选：是否为主动阅读引导消息 */
 	isProactiveGuidance?: boolean;
+	/** 可选：是否为图表生成占位气泡（visualizer 后台任务运行中） */
+	isDiagramPlaceholder?: boolean;
 }
