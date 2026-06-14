@@ -20,6 +20,7 @@ import { parseEpub } from './pageindex/parsers/epub.js';
 import { parsePdf } from './pageindex/parsers/pdf.js';
 import { exportToObsidian } from './pageindex/exporters/epub-to-obsidian.js';
 import { setActivePluginId } from './pageindex/paths.js';
+import { ExcerptService } from './services/excerpt-service.js';
 import { HighlightService } from './services/highlight-service.js';
 import { DeepPDFSettingTab } from './settings/setting-tab.js';
 import { serviceLog, setLogEnabled } from "./utils/logger.js";
@@ -36,6 +37,7 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
     frontendAgent: FrontendAgent | null = null;
     profileBuilder?: import('./services/profile-builder').ProfileBuilder;
     private highlightService: HighlightService | null = null;
+    private excerptService: ExcerptService | null = null;
 
     /** 派生：dev='deepreader-dev'，daily='deepreader' — 来自 manifest.json */
     get pluginId(): string {
@@ -415,7 +417,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             },
             onSaveHighlight: async (text: string, color: HighlightColorId) => {
                 if (!this.highlightService) {
-                    this.highlightService = new HighlightService(this.app);
+                    this.excerptService ??= new ExcerptService(this.app);
+                    this.highlightService = new HighlightService(this.app, this.excerptService);
                 }
                 await this.highlightService.saveHighlight(text, color);
                 const leaves = this.app.workspace.getLeavesOfType(SIDEBAR_VIEW_TYPE);
@@ -426,7 +429,8 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             },
             onRemoveHighlight: async (text: string) => {
                 if (!this.highlightService) {
-                    this.highlightService = new HighlightService(this.app);
+                    this.excerptService ??= new ExcerptService(this.app);
+                    this.highlightService = new HighlightService(this.app, this.excerptService);
                 }
                 await this.highlightService.removeHighlight(text);
             },
@@ -590,6 +594,12 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
      * 分离 Markdown 文件的 frontmatter 和 body
      * @returns { frontmatter, body, hasFrontmatter } 如果没有 frontmatter，frontmatter 为空字符串
      */
+    /** 暴露 ExcerptService 单例供 UI 层（modal/sidebar）注入使用 */
+    public getExcerptService(): ExcerptService {
+        this.excerptService ??= new ExcerptService(this.app);
+        return this.excerptService;
+    }
+
     public getWereadService(): WereadService {
         if (!this.wereadService) {
             this.wereadService = new WereadService({
@@ -816,6 +826,10 @@ export default class DeepReaderPlugin extends Plugin implements DeepReaderPlugin
             this.readingModeService.stop();
             this.readingModeService = null;
         }
+
+        // 清理高亮 + 摘录服务（防御性：避免反复 load/unload 保留引用）
+        this.highlightService = null;
+        this.excerptService = null;
 
         // 清理 PI Agent 子进程
         if (this.frontendAgent) {

@@ -66,7 +66,7 @@ function removeAdjacentHighlights(body: string, bgColor: string): string {
 }
 
 export class HighlightService {
-	constructor(private app: App) {}
+	constructor(private app: App, private excerptService: ExcerptService) {}
 
 	async saveHighlight(text: string, color: HighlightColorId): Promise<void> {
 		const activeFile = this.app.workspace.getActiveFile();
@@ -165,8 +165,7 @@ export class HighlightService {
 				highlightColor: color,
 			};
 
-			const excerptService = new ExcerptService(this.app);
-			const savedPath = await excerptService.saveExcerpt(excerptContent, metadata);
+			const savedPath = await this.excerptService.saveExcerpt(excerptContent, metadata);
 			if (savedPath) {
 				log('[DeepPDF] Highlight saved to excerpt file:', savedPath);
 			}
