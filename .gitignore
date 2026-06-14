@@ -84,3 +84,7 @@ test-output/
 .codegraph
 .mimocode
 .kimi-code
+
+# ZCode / OpenCode 本地配置（含明文 API key，勿提交）
+opencode.json
+.mcp.json
