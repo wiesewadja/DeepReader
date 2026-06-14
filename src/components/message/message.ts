@@ -337,7 +337,9 @@ export class AIMessage extends Message {
 		if (this.data.isAgentMessage) {
 			const thinkingBar = bubble.createEl('div', { cls: 'deeppdf-mascot-thinking-bar' });
 			this.statusEl = thinkingBar.createEl('div', { cls: 'deeppdf-message-status-text' });
-			if (this.data.currentStatus && this.data.isStreaming) {
+			// 图表占位气泡也算"加载态"，需要显示状态文字
+			const isLoadingState = this.data.isStreaming || this.data.isDiagramPlaceholder;
+			if (this.data.currentStatus && isLoadingState) {
 				this.statusEl.textContent = this.data.currentStatus;
 				this.statusEl.addClass('visible');
 				this.lastDisplayedStatus = this.data.currentStatus;
@@ -381,8 +383,10 @@ export class AIMessage extends Message {
 		{
 			const content = bubble.createEl('div', { cls: 'deeppdf-message-content' });
 
-			// 如果正在流式传输且内容为空，显示加载动画
-			if (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0)) {
+			// 流式输出空内容 / 图表占位气泡 → 显示加载动画
+			const isLoadingPlaceholder = this.data.isDiagramPlaceholder
+				|| (this.data.isStreaming && (!this.data.content || this.data.content.trim().length === 0));
+			if (isLoadingPlaceholder) {
 				content.addClass('deeppdf-message-loading');
 				content.innerHTML = `<div class="deeppdf-loading-dots"><span></span><span></span><span></span></div>`;
 			} else {
@@ -409,14 +413,16 @@ export class AIMessage extends Message {
 		this.actionsRenderer.render(bubble);
 
 		// 如果正在流式传输，添加光标效果 (由 CSS 处理 .deeppdf-message-streaming)
-		if (this.data.isStreaming) {
+		// 图表占位气泡虽无文本流，但需要 thinking-bar（状态文字 + mascot 动画）可见，
+		// 因此也加上 streaming 类，否则 CSS 会隐藏整个 thinking-bar
+		if (this.data.isStreaming || this.data.isDiagramPlaceholder) {
 		 container.addClass('deeppdf-message-streaming');
         } else {
             container.removeClass('deeppdf-message-streaming');
         }
 
-		// 设置文字选中监听（仅对非流式消息）
-		if (!this.data.isStreaming) {
+		// 设置文字选中监听（仅对非流式消息 + 非图表占位气泡）
+		if (!this.data.isStreaming && !this.data.isDiagramPlaceholder) {
 			const contentEl = container.querySelector('.deeppdf-message-content') as HTMLElement;
 				if (contentEl) this.selectionMgr.setupSelectionListener(contentEl);
 		}
@@ -428,6 +434,7 @@ export class AIMessage extends Message {
 		const oldContent = this.data.content;
 		const oldAgentToolCalls = this.data.agentToolCalls;
 		const wasStreaming = this.data.isStreaming;
+		const wasDiagramPlaceholder = this.data.isDiagramPlaceholder === true;
 
 		Object.assign(this.data, data);
 
@@ -436,6 +443,9 @@ export class AIMessage extends Message {
 			(data.agentToolCalls?.length !== oldAgentToolCalls?.length || data.agentToolCalls?.[0]?.name !== oldAgentToolCalls?.[0]?.name)
 		);
 		const streamingEnded = wasStreaming && data.isStreaming === false;
+		// 图表占位气泡拿到 embed 时（isDiagramPlaceholder 从 true 变 false + 有 content），
+		// 需要完整重渲染以移除 loading 动画并渲染 markdown
+		const diagramPlaceholderEnded = wasDiagramPlaceholder && data.isDiagramPlaceholder === false;
 
 		// 比较上次实际显示的状态（非 data 旧值），因 currentStatus 被持久化存储
 		const newStatus = data.currentStatus !== undefined ? data.currentStatus : (this.data as any).currentStatus;
@@ -471,7 +481,14 @@ export class AIMessage extends Message {
 			return;
 		}
 
-		if (this.el && data.content !== undefined && data.content !== oldContent && !agentToolCallsChanged && !streamingEnded) {
+		// 仅内容变化、无其他状态转变 → 走轻量更新路径
+		const shouldUpdateContentOnly =
+			data.content !== undefined &&
+			data.content !== oldContent &&
+			!agentToolCallsChanged &&
+			!streamingEnded &&
+			!diagramPlaceholderEnded;
+		if (this.el && shouldUpdateContentOnly && data.content !== undefined) {
 			this.updateContent(data.content);
 		} else if (streamingEnded && this.el) {
 			this.finalizeStreamingEnd();

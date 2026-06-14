@@ -69,6 +69,20 @@ export class AgentChatController {
 	private detachedMascotEl: HTMLElement | null = null;
 	private _agentChatHistory: ChatMessage[] = [];
 	private _currentMarkdownFiles: Record<string, string> = {};
+	/** 当前活跃的图表占位气泡 ID（visualizer 后台任务运行中）。
+	 * stopGeneration 时置 null，让迟到的 onDiagramReady 自动跳过。 */
+	private activeDiagramMessageId: string | null = null;
+	/** visualizer 标记：本次回复会附带图表。
+	 * onDiagramStart 设置，用于 onComplete 判断是否需要创建占位气泡。 */
+	private diagramPending: boolean = false;
+	/** 后台画图任务的 embed 是否已就绪（onDiagramReady 早于 onComplete 完成的情况）。
+	 * 存 embed 字符串；null 表示尚未完成。 */
+	private diagramEmbedReady: string | null = null;
+	/** 后台画图任务是否已失败（onDiagramFailed 早于 onComplete 触发的情况）。
+	 * 存失败原因；null 表示尚未失败。 */
+	private diagramFailReason: string | null = null;
+	/** formatter onComplete 是否已执行（决定 onDiagramReady 该创建占位还是替换）。 */
+	private diagramCompleted: boolean = false;
 
 	/**
 	 * 压缩超长引用文档内容（通过 LLM 摘要）
@@ -175,6 +189,23 @@ export class AgentChatController {
 			});
 		}
 
+		// 清理图表状态机（visualizer 后台任务被 abort，onDiagramReady 不会到达）
+		// 先把状态置空让迟到的 onDiagramReady 跳过；再把 UI 上的占位气泡替换为取消提示。
+		if (this.activeDiagramMessageId) {
+			const placeholderId = this.activeDiagramMessageId;
+			this.activeDiagramMessageId = null;
+			this.host.messageList?.updateMessage(placeholderId, {
+				content: '*已取消图表生成*',
+				isDiagramPlaceholder: false,
+				currentStatus: undefined,
+				timestamp: new Date().toISOString(),
+			});
+			log(`[DeepPDF] 已清理图表占位气泡: ${placeholderId}`);
+		}
+		this.diagramPending = false;
+		this.diagramEmbedReady = null;
+		this.diagramFailReason = null;
+		this.diagramCompleted = false;
 		this.host.saveToCache();
 	}
 
@@ -316,6 +347,12 @@ export class AgentChatController {
 
 			let fullContent = '';
 			let currentStatus = '';
+			this.activeDiagramMessageId = null;
+			// 重置图表状态机，避免上一轮污染本轮
+			this.diagramPending = false;
+			this.diagramEmbedReady = null;
+			this.diagramFailReason = null;
+			this.diagramCompleted = false;
 
 			const activeFile = this.host.app.workspace.getActiveFile();
 			let currentNodeId: string | undefined;
@@ -527,6 +564,62 @@ export class AgentChatController {
 					});
 					self.host.readingTopbar?.setMascotExpression('thinking');
 				},
+				onDiagramStart: () => {
+					// visualizer 节点同步触发：仅标记"本次回复会附带图表"。
+					// 占位气泡延迟到 formatter onComplete 后才创建，
+					// 避免文字流式输出时就冒出空的"画图中"气泡。
+					self.diagramPending = true;
+					log('[DeepPDF] visualizer 标记 diagramPending，占位气泡待 formatter 完成后创建');
+				},
+				onDiagramReady: (embed: string) => {
+					// visualizer 后台任务完成。两种时序：
+					// 1) formatter onComplete 已执行（占位气泡已创建）→ 替换占位为 embed
+					// 2) onComplete 未执行（图比文字还快，罕见）→ 暂存 embed，等 onComplete 创建占位时直接带上
+					if (self.diagramCompleted) {
+						if (!self.activeDiagramMessageId) {
+							log('[DeepPDF] onDiagramReady 到达但占位已被清理（用户中断），忽略');
+							return;
+						}
+						log(`[DeepPDF] 图表生成完成，替换占位气泡: ${self.activeDiagramMessageId}`);
+						self.host.messageList?.updateMessage(self.activeDiagramMessageId, {
+							content: embed,
+							isDiagramPlaceholder: false,
+							currentStatus: undefined,
+							timestamp: new Date().toISOString(),
+						});
+						self.activeDiagramMessageId = null;
+						self.diagramPending = false;
+						self.host.saveToCache();
+					} else {
+						log('[DeepPDF] 图表先于文字完成，暂存 embed 待 onComplete');
+						self.diagramEmbedReady = embed;
+					}
+				},
+				onDiagramFailed: (reason: string) => {
+					// visualizer 后台任务失败/超时。两种时序（与 onDiagramReady 对称）：
+					// 1) onComplete 已执行（占位气泡已创建）→ 替换占位为失败提示
+					// 2) onComplete 未执行 → 暂存失败原因，onComplete 时直接出失败提示气泡
+					logError('[DeepPDF] 图表生成失败:', reason);
+					if (self.diagramCompleted) {
+						if (!self.activeDiagramMessageId) {
+							log('[DeepPDF] onDiagramFailed 到达但占位已被清理（用户中断），忽略');
+							return;
+						}
+						log(`[DeepPDF] 替换占位气泡为失败提示: ${self.activeDiagramMessageId}`);
+						self.host.messageList?.updateMessage(self.activeDiagramMessageId, {
+							content: `*图表生成失败：${reason}*`,
+							isDiagramPlaceholder: false,
+							currentStatus: undefined,
+							timestamp: new Date().toISOString(),
+						});
+						self.activeDiagramMessageId = null;
+						self.diagramPending = false;
+						self.host.saveToCache();
+					} else {
+						log('[DeepPDF] 图表失败先于文字完成，暂存原因待 onComplete');
+						self.diagramFailReason = reason;
+					}
+				},
 				onComplete: async () => {
 					// 先恢复 mascot 到 topbar（在 updateMessage 之前，避免 DOM 重绘丢失）
 					self.reattachMascot();
@@ -540,6 +633,63 @@ export class AgentChatController {
 					self.host.saveToCache().then(() => {
 						self.host.maybeConsolidateMemory();
 					});
+
+					// formatter 文字完成。若 visualizer 标记了 diagramPending，
+					// 现在才创建图表占位气泡（让用户先看完文字回答，再看到"画图中"）。
+					// 后台画图任务若已早于 onComplete 完成（diagramEmbedReady 非空），直接创建带 embed 的气泡，跳过占位闪烁。
+					self.diagramCompleted = true;
+					if (self.diagramPending) {
+						const timestamp = Date.now();
+						self.activeDiagramMessageId = `msg-${timestamp}-diagram`;
+						const readyEmbed = self.diagramEmbedReady;
+						const failReason = self.diagramFailReason;
+						// 公共字段
+						const baseMsg = {
+							id: self.activeDiagramMessageId,
+							role: "assistant" as MessageRole,
+							timestamp: new Date().toISOString(),
+							isStreaming: false,
+							isAgentMessage: true,
+							pdfName: self.host.currentPdfName || undefined,
+							conversationId: self.host.sessionId || undefined,
+							bookCoverUrl: self.host.currentBookCoverUrl || undefined,
+							bookAuthor: self.host.currentBookAuthor || undefined,
+						};
+						if (readyEmbed) {
+							// 图比文字快：直接出图，不闪占位
+							log(`[DeepPDF] formatter 完成 + 图表已就绪，直接创建图表气泡: ${self.activeDiagramMessageId}`);
+							self.host.messageList?.addMessage({
+								...baseMsg,
+								content: readyEmbed,
+								isDiagramPlaceholder: false,
+							});
+							self.diagramPending = false;
+							self.diagramEmbedReady = null;
+							self.activeDiagramMessageId = null;
+							self.host.saveToCache();
+						} else if (failReason) {
+							// 图比文字快但失败了：直接出失败提示，不闪占位
+							log(`[DeepPDF] formatter 完成 + 图表已失败，直接创建失败提示气泡: ${self.activeDiagramMessageId}`);
+							self.host.messageList?.addMessage({
+								...baseMsg,
+								content: `*图表生成失败：${failReason}*`,
+								isDiagramPlaceholder: false,
+							});
+							self.diagramPending = false;
+							self.diagramFailReason = null;
+							self.activeDiagramMessageId = null;
+							self.host.saveToCache();
+						} else {
+							// 图还没好：创建占位，等 onDiagramReady/onDiagramFailed 替换
+							log(`[DeepPDF] formatter 完成，图表仍在生成，创建占位气泡: ${self.activeDiagramMessageId}`);
+							self.host.messageList?.addMessage({
+								...baseMsg,
+								content: '',
+								isDiagramPlaceholder: true,
+								currentStatus: '让我画张图给你看...',
+							});
+						}
+					}
 
 					self.isProcessing = false;
 					self.isAiStreaming = false;

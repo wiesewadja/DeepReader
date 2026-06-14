@@ -87,6 +87,12 @@ export interface AgentLoopOptions {
   onHumanizedProgress?: (progress: import('./ui/humanized-types.js').HumanizedProgress) => void;
   onReasoning?: (text: string) => void;
   onToken?: (token: string) => void;
+  /** 图表生成开始时同步触发，前端标记"本次回复会附带图表" */
+  onDiagramStart?: () => void;
+  /** 图表生成完成时异步触发，前端用于替换占位符为 embed */
+  onDiagramReady?: (embed: string) => void;
+  /** 图表生成失败/超时异步触发，前端用于把占位替换为失败提示并重置状态 */
+  onDiagramFailed?: (reason: string) => void;
 }
 
 // ==================== Agent 配置 ====================
