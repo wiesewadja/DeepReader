@@ -176,11 +176,11 @@ describe('renderNotebook', () => {
 		expect(idx1).toBeLessThan(idx2);
 
 		// Each highlight has block quote with bookmarkId anchor
-		expect(md).toContain('> [!quote]+ 🟡 高亮');
+		expect(md).toContain('> [!quote]+ 📌 🟡 高亮');
 			expect(md).toContain('> 第一条高亮');
-		expect(md).toContain('> [!quote]+ 🟡 高亮');
+		expect(md).toContain('> [!quote]+ 📌 🟡 高亮');
 			expect(md).toContain('> 第二条高亮');
-		expect(md).toContain('> [!quote]+ 🟡 高亮');
+		expect(md).toContain('> [!quote]+ 📌 🟡 高亮');
 			expect(md).toContain('> 第二章的高亮');
 	});
 
@@ -202,7 +202,7 @@ describe('renderNotebook', () => {
 		const notebook = makeNotebook({ highlights });
 		const md = renderNotebook(notebook);
 
-		expect(md).toContain('> [!quote]+ 🟡 高亮');
+		expect(md).toContain('> [!quote]+ 📌 🟡 高亮');
 			expect(md).toContain('> 重要段落');
 		expect(md).toContain('> 💬 这段写得好');
 	});
