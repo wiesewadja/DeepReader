@@ -14,6 +14,8 @@ export interface DeepReaderPluginInterface {
   };
   readingModeService?: import('../../../components/reading-mode/reading-mode-orchestrator.js').ReadingModeService | null;
   getFrontendAgent(): Promise<import('../../index.js').FrontendAgent>;
+  /** 暴露 ExcerptService 单例供 UI 层注入（部分 caller 仍走 fallback） */
+  getExcerptService?(): import('../../../services/excerpt-service.js').ExcerptService;
 }
 
 export interface VaultContext {

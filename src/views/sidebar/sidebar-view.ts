@@ -880,6 +880,7 @@ export class SidebarView extends ItemView {
 			app: this.app,
 			content: { text },
 			metadata,
+			excerptService: this.plugin.getExcerptService?.(),
 			onSave: async (path: string) => {
 				new Notice(`摘录已保存到 ${path}`);
 				// 摘录成功后，在阅读界面标记文本（添加虚线下划线）

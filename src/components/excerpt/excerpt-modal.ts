@@ -31,6 +31,9 @@ export interface ExcerptModalOptions {
 	app: App;
 	/** 保存成功回调 */
 	onSave?: (path: string) => void;
+	/** 摘录服务（推荐通过 plugin.getExcerptService() 注入单例；
+	 * 未传时 fallback 创建临时实例，不利于未来生命周期/缓存统一） */
+	excerptService?: ExcerptService;
 }
 
 /**
@@ -61,7 +64,7 @@ export class ExcerptModal extends Modal {
 		this.content = options.content;
 		this.metadata = options.metadata;
 		this.onSave = options.onSave;
-		this.excerptService = new ExcerptService(this.app);
+		this.excerptService = options.excerptService ?? new ExcerptService(this.app);
 	}
 
 	onOpen() {
