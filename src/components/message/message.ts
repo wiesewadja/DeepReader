@@ -194,7 +194,6 @@ export class UserMessage extends Message {
 			content.createDiv({ text: this.data.content });
 		}
 
-		bubble.appendChild(this.renderTimestamp());
 		return container;
 	}
 
@@ -404,11 +403,6 @@ export class AIMessage extends Message {
 			}
 		}
 
-		// 流式输出期间不显示时间戳，等到结束后再显示完成时间
-		if (!this.data.isStreaming) {
-			bubble.appendChild(this.renderTimestamp());
-		}
-
 		// 渲染操作按钮
 		this.actionsRenderer.render(bubble);
 
@@ -536,9 +530,6 @@ export class AIMessage extends Message {
 		}
 
 		if (bubble) {
-			if (!bubble.querySelector('.deeppdf-message-time')) {
-				bubble.appendChild(this.renderTimestamp());
-			}
 			this.actionsRenderer.render(bubble as HTMLElement);
 		}
 	}
@@ -604,6 +595,7 @@ export class AIMessage extends Message {
 		this.observers = [];
 		this.selectionMgr.destroy();
 		this.ttsReadingCtrl.destroy();
+		this.actionsRenderer.destroy();
 		this.fullscreenCtrl?.destroy();
 	}
 

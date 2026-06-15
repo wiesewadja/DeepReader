@@ -28,9 +28,9 @@
 }
 
 .deeppdf-message-assistant .deeppdf-message-wrapper {
-	width: fit-content;
+	width: 100%;
 	max-width: 100%;
-	min-width: 30%;
+	flex: 1 1 auto;
 }
 
 /* ==================== 消息包装器 ==================== */
@@ -131,19 +131,18 @@
 	margin: 6px 0;
 }
 
-/* AI 消息气泡基础样式——各主题可覆盖 */
+/* AI 消息气泡基础样式——融入背景，无卡片感 */
 .deeppdf-message-bubble-ai {
 	color: var(--text-normal);
-	border: none;
-	border-radius: 2px;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0;
+	box-shadow: none !important;
 	font-family:
 		"Charter", "Georgia", "Times New Roman", "Noto Serif SC",
 		"Source Han Serif SC", serif;
 	position: relative;
 	overflow: hidden;
-	box-shadow:
-		0 1px 3px rgba(0, 0, 0, 0.06),
-		0 4px 12px rgba(0, 0, 0, 0.04);
 }
 
 /* =====================================================================
@@ -503,12 +502,23 @@
 	background: rgba(61, 106, 154, 0.06);
 }
 
+/* AI 气泡融入背景：覆盖所有主题的装饰性背景/边框/阴影 */
+.deeppdf-message-bubble-ai.deeppdf-pattern-notebook,
+.deeppdf-message-bubble-ai.deeppdf-pattern-parchment,
+.deeppdf-message-bubble-ai.deeppdf-pattern-clean,
+.deeppdf-message-bubble-ai.deeppdf-pattern-chat,
+.deeppdf-message-bubble-ai.deeppdf-pattern-kami {
+	background: transparent !important;
+	border: none !important;
+	box-shadow: none !important;
+}
+
 /* ==================== 加载动画 ==================== */
 
 .deeppdf-message-loading {
 	display: flex;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-start;
 	padding: 8px 0;
 }
 
@@ -744,7 +754,6 @@
 	gap: 6px;
 	flex-wrap: wrap;
 	padding-top: 8px;
-	border-top: 1px solid var(--background-modifier-border);
 }
 
 .deeppdf-message-action-btn {
@@ -777,6 +786,69 @@
 
 .deeppdf-message-action-btn:active {
 	transform: scale(0.98);
+}
+
+/* 更多操作下拉菜单 —— 仅图标按钮，横向紧凑排列 */
+.deeppdf-message-more-actions {
+	position: relative;
+}
+
+.deeppdf-message-more-dropdown {
+	display: none;
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 6px);
+	z-index: 10;
+	width: auto;
+	padding: 4px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.deeppdf-message-more-dropdown-visible {
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 2px;
+}
+
+.deeppdf-message-more-item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	font-family: inherit;
+	text-align: center;
+	color: var(--text-muted);
+	background: transparent;
+	border: none;
+	border-radius: 6px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.deeppdf-message-more-item:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.deeppdf-message-more-item svg {
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.deeppdf-message-more-item-danger {
+	color: var(--text-error);
+}
+
+.deeppdf-message-more-item-danger:hover {
+	background: rgba(var(--text-error-rgb, 230, 70, 70), 0.1);
+	color: var(--text-error);
 }
 
 /* 删除按钮特殊样式 */

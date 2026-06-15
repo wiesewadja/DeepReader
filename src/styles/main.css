@@ -1928,6 +1928,7 @@ button.deeppdf-icon-button:focus-visible {
 /* 1024px — desktop 起点（启用全宽布局） */
 @media (min-width: 1024px) {
 	.deeppdf-message-list {
+		width: 100%;
 		padding: var(--dr-space-4) var(--dr-space-6);
 		max-width: 960px;
 		margin: 0 auto;
