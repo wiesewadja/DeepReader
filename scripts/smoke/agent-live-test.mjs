@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
 import { evalObsidian } from './lib/obsidian-cli.mjs';
+import { ensureEvalBackdoor, runQa } from './lib/eval-backdoor.mjs';
 import { evaluateQaQuality, getGrade, saveResult as saveScorerResult } from '../../tests/golden/qa-quality/scorer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,131 +28,12 @@ const PROJECT_ROOT = join(__dirname, '..', '..');
 
 const DATASET_PATH = join(PROJECT_ROOT, 'tests', 'golden', 'qa-quality', 'dataset.json');
 const RESULTS_DIR = join(PROJECT_ROOT, 'tests', 'golden', 'qa-quality', 'results');
-const PLUGIN_ID = 'deepreader-dev';
-
-const TIMEOUT_RESPONSE = 180_000; // 单条问答超时（毫秒）
-const POLL_INTERVAL = 3_000; // 轮询间隔
 const COOLDOWN_MS = 2_000; // 用例间冷却，避免限流
 
 // ─── 评分引擎（已抽取到 scorer.mjs） ──────────────────────────────────────────
 
 // ─── Obsidian 交互层 ───────────────────────────────────────────
-
-/**
- * 确认插件已加载且 evalBackdoor 可用
- */
-async function ensureEvalBackdoor() {
-	// 检查插件是否加载
-	const pluginCheck = await evalObsidian(`(() => {
-		const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-		return { loaded: !!p, hasAgent: !!p?.frontendAgent };
-	})()`);
-
-	if (!pluginCheck?.loaded) {
-		throw new Error(`插件 ${PLUGIN_ID} 未加载。请确认 Obsidian 已启动并加载了插件。`);
-	}
-	if (!pluginCheck?.hasAgent) {
-		throw new Error('frontendAgent 不存在。插件可能未完全初始化。');
-	}
-
-	// 注册 evalBackdoor（如果不存在）
-	await evalObsidian(`(() => {
-		const plugin = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-		if (!plugin.evalBackdoor) {
-			const pending = {};
-			plugin.evalBackdoor = {
-				startQnA(id, question, bookId, history) {
-					const adapter = app.vault.adapter;
-					const agent = plugin.frontendAgent;
-					(async () => {
-						const metaPath = '.obsidian/plugins/deepreader-dev/pageindex/' + bookId + '/book-meta.json';
-						let docMeta = {};
-						try {
-							const exists = await adapter.exists(metaPath);
-							if (exists) {
-								const raw = await adapter.read(metaPath);
-								docMeta = JSON.parse(raw);
-							}
-						} catch(e) { /* ignore */ }
-						const context = {
-							vault: { app, plugin },
-							book: { indexId: bookId, pdfName: docMeta.title || '', documentMetadata: docMeta },
-							mode: 'normal',
-						};
-						const opts = {
-							onProgress: () => {},
-							onContent: () => {},
-							onComplete: () => {},
-							onError: () => {},
-						};
-						// 如果有历史消息，注入到 agent 的 chatHistory
-						if (history && history.length > 0) {
-							const sidebar = app.workspace.getLeavesOfType('deeppdf-sidebar-view');
-							if (sidebar.length > 0) {
-								const view = sidebar[0].view;
-								if (view._chatController) {
-									// 注入历史到 _agentChatHistory
-									const chatHistory = history.map(m => ({
-										role: m.role,
-										content: m.content,
-									}));
-									view._chatController._agentChatHistory = chatHistory;
-								}
-							}
-						}
-						try {
-							const result = await agent.runGraphEngine(question, context, opts);
-							const lastMsg = result?.messages?.slice(-1)[0];
-							pending[id] = {
-								response: lastMsg?.content || '',
-								traceData: result?.traceData || null,
-							};
-						} catch (e) {
-							pending[id] = { error: e.message };
-						}
-					})();
-				},
-				pollResult(id) {
-					const r = pending[id];
-					if (r) { delete pending[id]; return r; }
-					return null;
-				},
-			};
-		}
-		return true;
-	})()`);
-}
-
-/**
- * 发送问题并轮询等待回复
- */
-async function runSingleQa(caseId, question, bookId, history) {
-	// 启动问答
-	await evalObsidian(`(() => {
-		app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].evalBackdoor.startQnA(
-			${JSON.stringify(caseId)},
-			${JSON.stringify(question)},
-			${JSON.stringify(bookId || '')},
-			${JSON.stringify(history || null)}
-		);
-		return true;
-	})()`);
-
-	// 轮询结果
-	const deadline = Date.now() + TIMEOUT_RESPONSE;
-	let response = null;
-	while (Date.now() < deadline) {
-		try {
-			const r = await evalObsidian(
-				`app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].evalBackdoor.pollResult(${JSON.stringify(caseId)})`
-			);
-			if (r) { response = r; break; }
-		} catch { /* ignore poll errors */ }
-		await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-	}
-
-	return response;
-}
+// ensureEvalBackdoor / runQa 抽出到 ./lib/eval-backdoor.mjs（与其他 spec 共用）
 
 // ─── 报告格式化 ───────────────────────────────────────────────
 
@@ -350,7 +232,7 @@ async function main() {
 	if (customQuery) {
 		console.log(`运行自定义查询: "${customQuery}"`);
 		const t0 = Date.now();
-		const result = await runSingleQa('custom', customQuery, null, null);
+		const result = await runQa('custom', customQuery, null);
 		const duration = Date.now() - t0;
 
 		if (!result) {
@@ -416,7 +298,7 @@ async function main() {
 		}
 
 		// 运行问答
-		const response = await runSingleQa(c.id, c.question, c.bookId, c.precondition?.history || null);
+		const response = await runQa(c.id, c.question, c.bookId, { history: c.precondition?.history });
 		const duration = Date.now() - t0;
 
 		if (!response) {

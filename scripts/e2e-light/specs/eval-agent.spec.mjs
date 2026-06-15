@@ -8,6 +8,7 @@
  */
 
 import { evalObsidian } from '../../smoke/lib/obsidian-cli.mjs';
+import { registerEvalBackdoor, startQnA, pollResult } from '../../smoke/lib/eval-backdoor.mjs';
 import { evaluateQaQuality } from '../../../tests/golden/qa-quality/scorer.mjs';
 
 const EVAL_BOOK = process.env.EVAL_BOOK || '反脆弱';
@@ -68,50 +69,8 @@ export default {
 			return { status: 'skip', reason: 'golden.json 无 questions' };
 		}
 
-		// 注册 evalBackdoor
-		await evalObsidian(`(() => {
-			const plugin = app.plugins.plugins["deepreader-dev"];
-			if (!plugin.evalBackdoor) {
-				const pending = {};
-				plugin.evalBackdoor = {
-					startQnA(id, question, bookId) {
-						const adapter = app.vault.adapter;
-						const agent = plugin.frontendAgent;
-						(async () => {
-							const metaPath = '.obsidian/plugins/deepreader-dev/pageindex/' + bookId + '/book-meta.json';
-							const exists = await adapter.exists(metaPath);
-							let docMeta = {};
-							if (exists) {
-								const raw = await adapter.read(metaPath);
-								docMeta = JSON.parse(raw);
-							}
-							const context = {
-								vault: { app, plugin },
-								book: { indexId: bookId, pdfName: docMeta.title || '', documentMetadata: docMeta },
-								mode: 'normal',
-							};
-							try {
-								const result = await agent.runGraphEngine(question, context, {
-									onProgress: () => {},
-									onContent: () => {},
-									onComplete: () => {},
-									onError: () => {},
-								});
-								pending[id] = { response: result?.messages?.slice(-1)[0]?.content || '', traceData: result?.traceData };
-							} catch (e) {
-								pending[id] = { error: e.message };
-							}
-						})();
-					},
-					pollResult(id) {
-						const r = pending[id];
-						if (r) { delete pending[id]; return r; }
-						return null;
-					},
-				};
-			}
-			return true;
-		})()`);
+		// 注册 evalBackdoor（抽出共用逻辑到 lib/eval-backdoor.mjs）
+		await registerEvalBackdoor();
 
 		// 获取 bookId
 		const bookId = await evalObsidian(`(() => {
@@ -137,22 +96,15 @@ export default {
 			const t0 = Date.now();
 			const qId = q.id || q.question.slice(0, 20);
 
-			// 启动 Q&A
-			await evalObsidian(`(() => {
-				app.plugins.plugins["deepreader-dev"].evalBackdoor.startQnA(
-					${JSON.stringify(qId)}, ${JSON.stringify(q.question)}, ${JSON.stringify(bookId)}
-				);
-				return true;
-			})()`);
+			// 启动 Q&A（共用 lib/eval-backdoor.mjs）
+			await startQnA(qId, q.question, bookId);
 
 			// 轮询结果
 			let response = null;
 			const deadline = Date.now() + 180_000;
 			while (Date.now() < deadline) {
 				try {
-					const r = await evalObsidian(
-						'app.plugins.plugins["deepreader-dev"].evalBackdoor.pollResult(' + JSON.stringify(qId) + ')'
-					);
+					const r = await pollResult(qId);
 					if (r) { response = r; break; }
 				} catch { /* ignore */ }
 				await new Promise(r => setTimeout(r, 5_000));

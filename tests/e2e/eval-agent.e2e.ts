@@ -65,6 +65,9 @@ describe('Agent Q&A Evaluation', function () {
 
   before(async function () {
     // 注册 evalBackdoor + 轮询辅助
+    // 注意：本文件用 browser.executeObsidian（函数序列化），无法直接复用
+    // scripts/smoke/lib/eval-backdoor.mjs 的字符串注入版本。
+    // 接口契约（startQnA/pollResult 签名 + 返回结构）见该模块顶部文档。
     const registered = await browser.executeObsidian(({ app }) => {
       const plugin = app.plugins?.plugins?.['deepreader-dev'] as any;
       if (!plugin || !plugin.getFrontendAgent) return false;
@@ -78,7 +81,8 @@ describe('Agent Q&A Evaluation', function () {
         async startQnA(questionId: string, question: string, bookId: string): Promise<string> {
           try {
             const agent = await plugin.getFrontendAgent();
-            const metaPath = `.obsidian/plugins/deepreader/pageindex/${bookId}/book-meta.json`;
+            // 修复：dev 部署的插件 id 是 deepreader-dev，不是 deepreader
+            const metaPath = `.obsidian/plugins/deepreader-dev/pageindex/${bookId}/book-meta.json`;
             const metaRaw = await plugin.app.vault.adapter.read(metaPath);
             const meta = JSON.parse(metaRaw);
 
