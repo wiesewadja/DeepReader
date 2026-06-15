@@ -59,9 +59,19 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 
 ## Worktree Skill/Agent 同步
 
-AI 工具配置（`.agents/`、`.claude/`、`.mimocode/`、`.kimi-code/`、`.archon/`）**不纳入 GitHub**，只在本地主仓库维护。
+AI 工具配置（`.agents/`、`.claude/`、`.mimocode/`、`.kimi-code/`、`.archon/`）**不纳入 DeepReader 仓库，也不上传 GitHub**。它们现在独立存放在本地仓库 `~/workspace/DeepReader-AI-Configs`，由该仓库单独管理。
 
-创建 worktree 时会自动通过 symlink 共享主仓库的 AI 配置：
+DeepReader 主仓库通过 symlink 引用独立仓库：
+
+```
+<repo-root>/.agents   -> ~/workspace/DeepReader-AI-Configs/.agents
+<repo-root>/.claude   -> ~/workspace/DeepReader-AI-Configs/.claude
+<repo-root>/.mimocode -> ~/workspace/DeepReader-AI-Configs/.mimocode
+<repo-root>/.kimi-code -> ~/workspace/DeepReader-AI-Configs/.kimi-code
+<repo-root>/.archon   -> ~/workspace/DeepReader-AI-Configs/.archon
+```
+
+创建 worktree 时会自动通过 symlink 共享 AI 配置：
 
 ```bash
 # 一键创建 worktree 并自动链接 AI 工具目录
@@ -73,10 +83,12 @@ bash scripts/setup-worktree.sh <branch-name> [base-ref]
 
 脚本会执行：
 1. `git worktree add .worktrees/<branch-name> -b <branch-name> <base-ref>`
-2. 自动创建 symlink：
-   - `.worktrees/<branch-name>/.agents -> <repo-root>/.agents`
-   - `.worktrees/<branch-name>/.claude -> <repo-root>/.claude`
-   - `.worktrees/<branch-name>/.mimocode -> <repo-root>/.mimocode`
+2. 自动创建 symlink，指向独立 AI 配置仓库：
+   - `.worktrees/<branch-name>/.agents`
+   - `.worktrees/<branch-name>/.claude`
+   - `.worktrees/<branch-name>/.mimocode`
+   - `.worktrees/<branch-name>/.kimi-code`
+   - `.worktrees/<branch-name>/.archon`
 3. 安装依赖、构建、部署到 test-vault、运行单元测试
 
 如果已有 worktree 需要补建 symlink，可单独运行：
@@ -84,6 +96,8 @@ bash scripts/setup-worktree.sh <branch-name> [base-ref]
 ```bash
 bash scripts/setup-worktree-symlinks.sh .worktrees/<branch-name>
 ```
+
+> 若已有 worktree 中存在旧的物理 AI 配置目录（非 symlink），脚本会跳过它们。请手动删除或备份后再运行脚本，以确保所有 worktree 使用统一的独立仓库配置。
 
 ### 让 AI 自动创建 worktree
 
@@ -98,10 +112,10 @@ bash scripts/setup-worktree-symlinks.sh .worktrees/<branch-name>
    - MimoCode 会执行 `git worktree add` + 自动 symlink
 
 3. **Claude Code PostToolUse Hook（兜底）**：
-   - 当 Claude 执行任意 `git worktree add ...` 命令后，`.claude/settings.json` 中注册的 `auto_symlink_worktree.py` hook 会自动检测并补建 `.agents`、`.claude`、`.mimocode` 的 symlink。
+   - 当 Claude 执行任意 `git worktree add ...` 命令后，`.claude/settings.json` 中注册的 `auto_symlink_worktree.py` hook 会自动检测并补建 `.agents`、`.claude`、`.mimocode`、`.kimi-code`、`.archon` 的 symlink。
    - 这样即使 AI 没有使用自定义命令，直接调用 `git worktree add`，AI 配置也会被自动链接。
 
-> ⚠️ `.kimi-code/mcp.json` 等文件含 API key，通过 symlink 共享时请确保工作目录安全。
+> ⚠️ `.kimi-code/mcp.json`、`.archon/.env` 等文件含 API key，通过 symlink 共享时请确保工作目录安全。
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录

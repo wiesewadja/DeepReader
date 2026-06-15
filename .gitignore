@@ -36,15 +36,16 @@ test-vault/
 # Eval test artifacts
 .eval/
 
-# AI agent tools and local configs — 不上传 GitHub
+# AI agent tools and local configs — 本地独立仓库管理，不上传 GitHub
+# 这些目录在主仓库中以 symlink 指向 ~/workspace/DeepReader-AI-Configs
 .gstack/
 .superpowers/
 .deploy-config.json
-.agents/
-.claude/
-.mimocode/
-.kimi-code/
-.archon/
+.agents
+.claude
+.mimocode
+.kimi-code
+.archon
 .serena
 .codegraph/
 
