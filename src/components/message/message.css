@@ -1869,12 +1869,43 @@
 	}
 }
 
-/* ==================== Excalidraw embed 背景 ==================== */
-/* Excalidraw 插件 embed 渲染 SVG 时会画一个画布背景 rect（svg 直接子元素），
-   其 fill 固定为深色（#121212），透在消息气泡里像黑底（亮/暗主题皆是）。
-   强制覆盖为宣纸白，保证图表始终是书卷审美白底。
-   只作用于 DeepReader 消息内的 embed，不影响 Obsidian 其他地方的 Excalidraw。
-   注意：Excalidraw 的矩形/椭圆在 SVG 里渲染成 path，rect 仅此背景一个，选择器安全。 */
+/* ==================== Excalidraw embed 样式 ==================== */
+/* Excalidraw 插件 embed 渲染时背景固定为深色，与亮主题不协调。
+   覆盖为 Obsidian 主题变量，让背景跟随亮/暗主题自动切换。
+   只作用于 DeepReader 消息内的 embed，不影响 Obsidian 其他地方的 Excalidraw。 */
+
+/* 图片宽度：覆盖 Excalidraw 插件写死的 400px，让图片撑满对话框容器 */
+.deeppdf-message-content img.excalidraw-embedded-img {
+	width: 100% !important;
+	max-width: 100% !important;
+}
+
+/* 1. SVG 内的背景 rect（直接子元素或任意层级） */
+.deeppdf-message-content svg[class*="excalidraw"] rect:first-of-type {
+	fill: var(--background-primary) !important;
+}
 .deeppdf-message-content svg.excalidraw-svg > rect {
-	fill: #fdfbf7 !important;
+	fill: var(--background-primary) !important;
+}
+
+/* 2. iframe 方式渲染（部分 Excalidraw 版本使用 iframe） */
+.deeppdf-message-content iframe[src*="excalidraw"] {
+	background: var(--background-primary) !important;
+}
+
+/* 3. 嵌入容器 div 背景（Obsidian markdown-embed 包裹层） */
+.deeppdf-message-content .markdown-embed:has(iframe[src*="excalidraw"]),
+.deeppdf-message-content .markdown-embed:has(svg[class*="excalidraw"]) {
+	background: var(--background-primary) !important;
+}
+.deeppdf-message-content .markdown-embed-content:has(svg[class*="excalidraw"]) {
+	background: var(--background-primary) !important;
+}
+
+/* 4. Excalidraw 插件可能使用的 data-type 属性 */
+.deeppdf-message-content div[data-type="excalidraw"] {
+	background: var(--background-primary) !important;
+}
+.deeppdf-message-content div[data-type="excalidraw"] svg rect:first-of-type {
+	fill: var(--background-primary) !important;
 }

@@ -65,14 +65,12 @@ describe("MessageList — ARIA chat log semantics", () => {
 		});
 	});
 
-	describe("invariant 2 — messages container has aria-label", () => {
-		it("aria-label 描述容器内容", () => {
+	describe("invariant 2 — messages container has no visible aria-label tooltip", () => {
+		it("不设置 aria-label（避免 hover 时弹出 tooltip）", () => {
 			const container = root.querySelector(
 				".deeppdf-messages-container",
 			) as HTMLElement;
-			const label = container.getAttribute("aria-label");
-			expect(label).toBeTruthy();
-			expect(label!.length).toBeGreaterThan(0);
+			expect(container.hasAttribute("aria-label")).toBe(false);
 		});
 	});
 

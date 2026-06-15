@@ -261,24 +261,13 @@ export class SessionManager {
 
 		log('[DeepPDF] 从 SessionStore 恢复会话:', sessionId, '消息数:', session.messages.length, 'lastConsolidated:', session.lastConsolidated);
 
-		const allDisplayMessages = session.messages.filter(msg => {
+		const displayMessages = session.messages.filter(msg => {
 			if (msg.role === 'user') return true;
 			if (msg.role === 'assistant') {
 				return !msg.tool_calls || msg.tool_calls.length === 0;
 			}
 			return false;
 		});
-
-		const displayMessages: typeof allDisplayMessages = [];
-		for (let i = 0; i < allDisplayMessages.length; i++) {
-			const msg = allDisplayMessages[i];
-			const nextMsg = allDisplayMessages[i + 1];
-			if (msg.role === 'assistant' && nextMsg?.role === 'assistant') {
-				log(`[DeepPDF] 跳过旧的 AI 回复（有更新的版本）`);
-				continue;
-			}
-			displayMessages.push(msg);
-		}
 
 		let lastUserContent = '';
 

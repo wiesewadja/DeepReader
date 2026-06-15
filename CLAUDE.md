@@ -19,8 +19,7 @@ Obsidian 插件，奚童，AI 伴读 + PDF/EPUB 索引 + 微信读书同步。
 ## 运行时
 - Obsidian 插件，跑在 Electron 渲染进程
 - 有 DOM + Obsidian API，无完整 Node.js
-- 调试: Obsidian 内 `Cmd+Option+I` → `app.plugins.plugins['deepreader-dev']`
-- ⛔ 不是网页，不要用浏览器 MCP / Playwright 调试
+- ⛔ 不是网页，不要用浏览器 MCP / Playwright 调试，使用 obsidian-ui-debug 调试
 
 ## 约束
 - 日志用 `utils/logger.ts`
