@@ -8,6 +8,9 @@ wheels/
 
 logs/
 
+# graphify 本地知识图谱（不提交，类似 .codegraph/）
+graphify-out/
+
 # Environment files
 .env
 .env.*

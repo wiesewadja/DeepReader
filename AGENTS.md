@@ -119,3 +119,44 @@ bash scripts/setup-worktree-symlinks.sh .worktrees/<branch-name>
 
 ## 项目规则
 完整规则见 `.project-rules/` 目录
+
+## Graphify 知识图谱
+
+本项目已部署 [graphify](https://github.com/safishamsi/graphify)，把代码/文档构建为可查询的知识图谱（`graphify-out/`，本地索引，不入 git）。
+
+### 优先用 graphify 而非 grep
+
+当代码问题出现时，先查 `graphify-out/graph.json`（如果存在）：
+
+```bash
+graphify query "<问题>"             # 范围化子图，比 GRAPH_REPORT.md 或 grep 小得多
+graphify path "<A>" "<B>"           # 两个节点之间的最短路径
+graphify explain "<概念>"           # 概念 + 邻居的纯语言解释
+graphify affected "<符号>"          # 反向追溯：谁会被这个符号的改动影响
+```
+
+只在以下情况直接读源文件：
+- graphify 已定位范围后，需要修改/调试具体行
+- graphify 没有覆盖的内容（新建文件、刚改过未重建的代码）
+
+### 更新 graph
+
+代码改动后跑（AST-only，无 API 成本）：
+
+```bash
+graphify update .                   # 增量更新代码文件
+graphify extract .                  # 完整重建（含 docs/PDFs 的语义抽取，需 LLM key）
+```
+
+### 与 codegraph MCP 的关系
+
+| 工具 | 索引内容 | 强项 |
+|------|---------|------|
+| **codegraph** (`.codegraph/`) | 代码符号关系（callers/callees/impact） | sub-ms 查询，符号级精准 |
+| **graphify** (`graphify-out/`) | 知识图谱（语义关联 + 跨文件 surprising connections） | 概念级查询，docs + 代码统一 |
+
+二者互补：codegraph 答"谁调用谁"，graphify 答"概念 A 怎么连到概念 B"。
+
+### 给非 Claude Code 的 agent
+
+通用 skill 在 `.agents/skills/graphify/SKILL.md`（Codex/Aider/OpenCode/Kimi Code 等可直接读取并按其指令运行）。Claude Code 用户的 skill 在 `~/.claude/skills/graphify/SKILL.md`（全局）。
