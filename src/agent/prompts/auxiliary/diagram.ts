@@ -91,6 +91,3 @@ Output strict JSON object with filename, layout (optional), and elements fields.
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(diagramPrompt);

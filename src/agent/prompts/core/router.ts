@@ -166,6 +166,3 @@ Output only valid JSON, no Markdown code blocks:
   },
 };
 
-// 注册（向后兼容的 side-effect 注册）
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(routerPrompt);

@@ -114,7 +114,3 @@ export const memoryPrompts = {
   compression: compressionPrompt,
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(consolidationPrompt);
-promptRegistry.register(compressionPrompt);

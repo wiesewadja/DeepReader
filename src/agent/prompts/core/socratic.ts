@@ -41,6 +41,3 @@ Output only JSON, no markdown fences, no explanation. Format: { "facts": "...", 
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(socraticPrompt);

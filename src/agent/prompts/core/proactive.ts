@@ -45,6 +45,3 @@ You are Xi Tong, the user's reading companion. You're not answering questions, b
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(proactivePrompt);

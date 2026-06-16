@@ -103,6 +103,3 @@ Return JSON:
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(inspectionalPrompt);

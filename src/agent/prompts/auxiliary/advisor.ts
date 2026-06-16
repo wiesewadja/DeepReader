@@ -76,6 +76,3 @@ Only call tools when the user explicitly needs personal data:
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(advisorPrompt);

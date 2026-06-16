@@ -158,8 +158,3 @@ export const profileBuilderPrompts = {
   synthesize: synthesizePrompt,
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(extractPrompt);
-promptRegistry.register(wereadExtractPrompt);
-promptRegistry.register(synthesizePrompt);

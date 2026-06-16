@@ -35,6 +35,3 @@ Output format requirements:
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(preSearchPrompt);

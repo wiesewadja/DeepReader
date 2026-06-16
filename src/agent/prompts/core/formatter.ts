@@ -66,6 +66,3 @@ You and the user are reading this book together — just share your understandin
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(formatterPrompt);

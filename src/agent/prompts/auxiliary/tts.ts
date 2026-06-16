@@ -162,8 +162,3 @@ export const ttsPrompts = {
   system: ttsSystemPrompt,
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(oralRewritePrompt);
-promptRegistry.register(voiceReplyPrompt);
-promptRegistry.register(ttsSystemPrompt);

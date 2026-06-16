@@ -75,6 +75,3 @@ You are an Adlerian reading analyst. Stay faithful to the original work, execute
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(analyticalPrompt);

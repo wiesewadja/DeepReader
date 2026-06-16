@@ -57,6 +57,3 @@ You are an Adlerian syntopical reading analyst. Execute syntopical reading, synt
   },
 };
 
-// 注册
-import { promptRegistry } from '../registry.js';
-promptRegistry.register(syntopicalPrompt);
