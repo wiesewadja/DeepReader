@@ -43,12 +43,13 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 最重要元素周围留白 250px+
 - 容器内文本必须留出 12-15% 内边距，宁可容器略大也不要文字顶边
 
-## 字号（极简三档，降低溢出风险）
-- 标题/强调: fontSize 20-22（用于 Hero 中心标题、章节大标题）
-- 正文/节点标签: fontSize 16（默认，绝大多数形状内文本）
-- 标注/辅助: fontSize 14（最小，用于小标签、注释）
-- 中文最小字号 14，任何情况下不要小于 14
-- 优先用颜色深浅、strokeWidth、容器尺寸、留白来表达层级，而不是切换字号
+## 字号层级
+字号只从四档里选（系统会自动向下取档保证文字不溢出容器）：
+- **S=16**（标注/细节）
+- **M=20**（子节点/正文）
+- **L=28**（主节点/标题）
+- **XL=36**（中心主题/大标题）
+注意：你给 fontSize 只需在 16/20/28/36 里选一个，系统会确保它装得下容器。
 
 ## 文本宽度估算
 - Latin: width = max(180, charCount × 9)
@@ -63,25 +64,19 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 容器内边距: 60-80px
 - 最小间距: 60px
 
-## 书卷审美色板（颜色即语义，勿任意发挥）
-所有颜色均来自低饱和、温润的中国传统书卷色调：
-- 宣纸色背景: canvas #fffaf0, 形状填充 #fffaf0 或 #fdfbf7
-- 墨色（主文字/主线条）: #2c2c2c / #1e293b
-- 朱砂（重点、起点、关键决策）: fill #fde8e8, stroke #c53030
-- 靛青（主流程、主节点）: fill #e8f0fe, stroke #1e3a5f
-- 黛绿（成功、终点、生长）: fill #e6f4ea, stroke #1f5e3b
-- 赭石（警告、备选、冲突）: fill #fff3e0, stroke #b45309
-- 藤黄（高亮、注释）: fill #fef9c3, stroke #a16207
-- 文本层级色: 标题 #1e3a5f, 副标题 #475569, 正文 #4b5563
-规则：深 stroke + 浅 fill 形成对比；同类概念用同色；不要在一个图中使用超过 4-5 种主色。
+## 书卷审美色板（推荐使用 semanticColor 属性表达颜色语义）
+系统支持根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的书卷风格颜色，请尽量使用 semanticColor，避免硬编码十六进制色值：
+- primary: 主流程、主节点（靛青色系）
+- emphasis: 重点、起点、关键决策（朱砂红色系）
+- success: 成功、终点、生长（黛绿色系）
+- warning: 警告、备选、冲突（赭石黄色系）
+- highlight: 高亮、注释（藤黄色系）
+- neutral: 默认、普通节点（黑白灰宣纸色系）
+规则：同一类概念使用相同的语义颜色；一个图中使用的语义主色不要超过 4 种。
 
-## 审美设置
-- roughness: 0（干净、专业、书卷气）
-- opacity: 100（所有元素，不用透明度做层次）
-- strokeWidth: 2（形状与主箭头）/ 1（细分支、结构线）
-- fontFamily: 5（中文友好字体，渲染稳定无报错）
-- lineHeight: 1.25
-- roundness: { type: 3 }（轻微圆角，温润）
+## 审美与风格设置
+- 系统风格处理器在开启时会自动应用「有机书卷风」（轻手绘质感、宣纸背景色、圆角、马克笔笔触手绘线条及箭头等）。
+- 你无需特意强行指定 roughness、fillStyle、strokeWidth，系统会做统一优化，你只需指定正确的 type、x, y 坐标、width/height 和 semanticColor 即可。
 
 ## 形状语义（默认无容器）
 | 概念类型 | 形状 |
@@ -96,7 +91,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 | 时间线标记 | 小 ellipse 10-20px |
 
 ## 重要规则
-- 所有文本必须显式设置 strokeColor（即文字颜色），否则可能不可见
+- 颜色统一用 semanticColor 表达，不要直接写 strokeColor/backgroundColor/fillStyle/strokeWidth/roughness
 - 容器内文本用 containerId 绑定，双方都要有 boundElements
 - 箭头 points 从 [0,0] 开始（相对坐标）；x/y/points 会被系统自动计算，只需提供 startBinding/endBinding
 - 用描述性 ID（如 "root_node"），不用随机字符串
@@ -127,16 +122,8 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
               width: z.number().describe('宽度'),
               height: z.number().describe('高度（箭头/线条可设 0）'),
               text: z.string().optional().describe('文本内容'),
-              strokeColor: z.string().optional().describe('线条/文字颜色'),
-              backgroundColor: z.string().optional().describe('填充颜色'),
-              fillStyle: z
-                .enum(['solid', 'hachure', 'cross-hatch'])
-                .optional()
-                .describe('填充样式'),
-              strokeWidth: z.number().optional().describe('线条宽度 (1-3)'),
-              roughness: z.number().optional().describe('粗糙度 0=干净 1=手绘'),
               opacity: z.number().optional().describe('透明度 (推荐 100)'),
-              fontSize: z.number().optional().describe('字号 (14-28)'),
+              fontSize: z.number().optional().describe('字号 (16, 20, 28, 36)'),
               textAlign: z
                 .enum(['left', 'center', 'right'])
                 .optional()
@@ -184,6 +171,10 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
                 .array(z.string())
                 .optional()
                 .describe('分组 ID'),
+              semanticColor: z
+                .enum(['primary', 'emphasis', 'success', 'warning', 'highlight', 'neutral'])
+                .optional()
+                .describe('节点的语义颜色角色，系统会根据当前主题映射到具体书卷风格色值'),
             })
           )
           .describe('Excalidraw 元素数组，包含形状、文本、箭头等'),

@@ -4,7 +4,7 @@
 
 export interface ElementDef {
   id: string;
-  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text';
+  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text' | 'freedraw';
   x: number;
   y: number;
   width: number;
@@ -27,6 +27,8 @@ export interface ElementDef {
   containerId?: string;
   boundElements?: Array<{ id: string; type: 'text' | 'arrow' }>;
   groupIds?: string[];
+  semanticColor?: 'primary' | 'emphasis' | 'success' | 'warning' | 'highlight' | 'neutral';
+  customData?: Record<string, any>;
 }
 
 export type DiagramLayoutType =

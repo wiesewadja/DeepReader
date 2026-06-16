@@ -6,10 +6,12 @@
  */
 
 import { log } from '../../utils/logger.js';
-import { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
+import { calculateViewport, edgeIntersection } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from './types.js';
 import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
 import { arrangeWithFallback } from './excalidraw-layout.js';
+import { applyOrganicScrollStyle } from './excalidraw-style-processor.js';
+import { PALETTE, TEXT_COLORS } from './excalidraw-organic-palette.js';
 
 /** 完整的 .excalidraw JSON 结构 */
 interface ExcalidrawFile {
@@ -64,6 +66,10 @@ interface ExcalidrawElement {
   startArrowhead?: string | null;
   endArrowhead?: string | null;
   lastCommittedPoint?: null;
+  // freedraw/organic specific
+  pressures?: number[];
+  simulatePressure?: boolean;
+  customData?: Record<string, any> | null;
 }
 
 /**
@@ -114,6 +120,31 @@ function nextSeed(): number {
 
 function now(): number {
   return Date.now();
+}
+
+/**
+ * 解析当前 Obsidian 主题（'light' | 'dark'）。
+ *
+ * 优先读 vault.getConfig('theme')，再读 body 的 CSS class 作为兜底；
+ * 两者都拿不到时返回 'light'（安全默认）。
+ */
+function resolveObsidianTheme(context?: ToolContext): 'light' | 'dark' {
+  const app = context?.vault?.app ?? (typeof window !== 'undefined' ? (window as any).app : undefined);
+  if (app?.vault) {
+    try {
+      const vaultTheme = (app.vault as any).getConfig?.('theme');
+      if (vaultTheme === 'dark' || vaultTheme === 'light') {
+        return vaultTheme;
+      }
+    } catch {
+      // Ignore config reading errors
+    }
+  }
+  if (typeof document !== 'undefined' && document.body) {
+    if (document.body.classList.contains('theme-dark')) return 'dark';
+    if (document.body.classList.contains('theme-light')) return 'light';
+  }
+  return 'light';
 }
 
 /**
@@ -223,10 +254,34 @@ function wrapText(text: string, charsPerLine: number): string {
   return lines.join('\n');
 }
 
-function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
+function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): ExcalidrawElement {
   const isText = el.type === 'text';
   const isArrow = el.type === 'arrow';
   const isLine = el.type === 'line';
+  const isFreedraw = el.type === 'freedraw';
+
+  // Resolve stroke color with theme/semantic mapping
+  let strokeColor = el.strokeColor;
+  if (!strokeColor) {
+    if (el.semanticColor) {
+      strokeColor = PALETTE[theme][el.semanticColor].stroke;
+    } else if (isText) {
+      strokeColor = TEXT_COLORS[theme];
+    } else {
+      strokeColor = '#1e293b';
+    }
+  }
+
+  // Resolve background color with theme/semantic mapping
+  let backgroundColor = el.backgroundColor;
+  if (!backgroundColor) {
+    if (el.semanticColor) {
+      backgroundColor = PALETTE[theme][el.semanticColor].fill;
+    } else {
+      backgroundColor = 'transparent';
+    }
+  }
+
   const base: ExcalidrawElement = {
     id: el.id,
     type: el.type,
@@ -235,8 +290,8 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     width: el.width,
     height: el.height,
     angle: 0,
-    strokeColor: el.strokeColor ?? '#1e293b',
-    backgroundColor: el.backgroundColor ?? 'transparent',
+    strokeColor,
+    backgroundColor,
     fillStyle: el.fillStyle ?? 'solid',
     strokeWidth: el.strokeWidth ?? (isLine || isArrow ? 1 : 2),
     strokeStyle: 'solid',
@@ -253,6 +308,7 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     updated: now(),
     link: null,
     locked: false,
+    customData: el.customData ?? null,
   };
 
   if (isText) {
@@ -261,7 +317,9 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     // 所有 text 字号统一钳到四档（S16/M20/L28/XL36），保证视觉统一离散可控。
     // LLM 给的 fontSize 仅作参考（取不小于它的... 实际取不超过它的最大档，避免溢出容器）。
     base.fontSize = clampFontSize(el.fontSize ?? 16);
-    base.fontFamily = 5;
+    // fontFamily 4 = Excalidraw 内置 Virgil（手绘风），与官方默认一致；
+    // 之前用 5（中文友好字体）在 ExcalidrawAutomate 注册路径下偶尔渲染失败，统一回 4。
+    base.fontFamily = 4;
     base.textAlign = el.textAlign ?? 'center';
     base.verticalAlign = el.verticalAlign ?? 'middle';
     base.containerId = el.containerId ?? null;
@@ -292,16 +350,46 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
     }
   }
 
+  if (isFreedraw) {
+    base.points = el.points ?? [[0, 0]];
+    base.pressures = el.customData?.pressures ?? [];
+    base.simulatePressure = false;
+    base.width = 0;
+    base.height = 0;
+    base.roundness = null;
+    base.strokeWidth = el.strokeWidth ?? 2;
+  }
+
   return base;
 }
 
-function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType): ExcalidrawFile {
+function buildExcalidrawJSON(
+  elements: ElementDef[],
+  layout?: DiagramLayoutType,
+  context?: ToolContext
+): ExcalidrawFile {
   // Deterministic semantic layout and collision resolution
   const resolved = arrangeWithFallback(elements, layout);
 
+  // 1. Resolve Obsidian theme
+  const theme = resolveObsidianTheme(context);
+
+  // 2. Check if organic style is enabled.
+  // 生产环境由 plugin load 时合并 DEFAULT_SETTINGS 保证 enableOrganicScrollStyle 字段存在；
+  // 这里 fallback false 仅用于 settings 未加载的边界场景（如单测不传 context），避免误改样式。
+  const enabled = context?.vault?.plugin?.settings?.enableOrganicScrollStyle ?? false;
+
+  // 3. Apply style processor
+  const { elements: styledElements, viewBackgroundColor } = applyOrganicScrollStyle({
+    elements: resolved,
+    layout,
+    theme,
+    enabled,
+  });
+
   // Build element lookup for auto-calculating arrow positions
   const elMap = new Map<string, ElementDef>();
-  for (const el of resolved) {
+  for (const el of styledElements) {
     elMap.set(el.id, el);
   }
 
@@ -311,7 +399,7 @@ function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType)
 
   const result: ExcalidrawElement[] = [];
 
-  for (let el of resolved) {
+  for (let el of styledElements) {
     // Normalize binding field names: LLM may emit {id} instead of {elementId}
     if (el.startBinding && !el.startBinding.elementId) {
       const b = el.startBinding as Record<string, unknown>;
@@ -340,7 +428,7 @@ function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType)
     if (needsAutoText) {
       // 形状有 text → 自动创建绑定的 text 子元素
       const textId = `${el.id}_text`;
-      const shapeEl = toExcalidrawElement(el);
+      const shapeEl = toExcalidrawElement(el, theme);
       // shape 不放 text 属性，但加 boundElements 指向 text
       shapeEl.boundElements = [{ id: textId, type: 'text' }];
       result.push(shapeEl);
@@ -362,14 +450,16 @@ function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType)
         width: Math.max(20, el.width - 20),
         height: Math.max(20, el.height - 20),
         containerId: el.id,
-        strokeColor: el.strokeColor || '#1e293b',
+        strokeColor: el.strokeColor || TEXT_COLORS[theme],
         fontSize: optimalFontSize,
-      });
+      }, theme);
       textEl.containerId = el.id;
       result.push(textEl);
     } else if (isArrowOrLine && (el.startBinding || el.endBinding)) {
-      // Auto-calculate arrow position and points from bindings
-      const arrowEl = toExcalidrawElement(el);
+      // Auto-calculate arrow position and points from bindings.
+      // 注意：当 enableOrganicScrollStyle=true 时，style-processor 已经把 arrow/line 转成 freedraw，
+      // 这里只会处理 enabled=false 的回归路径（保留原有简洁箭头风格）。
+      const arrowEl = toExcalidrawElement(el, theme);
 
       const startEl = el.startBinding ? elMap.get(el.startBinding.elementId) : null;
       const endEl = el.endBinding ? elMap.get(el.endBinding.elementId) : null;
@@ -408,14 +498,14 @@ function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType)
 
       result.push(arrowEl);
     } else {
-      result.push(toExcalidrawElement(el));
+      result.push(toExcalidrawElement(el, theme));
     }
   }
 
-  // Z-index: shapes → arrows/lines → text (later = on top)
+  // Z-index: shapes → arrows/lines/freedraw → text (later = on top)
   const Z_ORDER: Record<string, number> = {
     rectangle: 0, ellipse: 0, diamond: 0,
-    line: 1, arrow: 1,
+    line: 1, arrow: 1, freedraw: 1,
     text: 2,
   };
   result.sort((a, b) => (Z_ORDER[a.type] ?? 0) - (Z_ORDER[b.type] ?? 0));
@@ -428,7 +518,7 @@ function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType)
     source: 'https://excalidraw.com',
     elements: result,
     appState: {
-      viewBackgroundColor: '#ffffff',
+      viewBackgroundColor: viewBackgroundColor || '#ffffff',
       gridSize: 20,
       scrollX: viewport.scrollX,
       scrollY: viewport.scrollY,
@@ -516,6 +606,75 @@ function validateSemantics(elements: ElementDef[]): string[] {
   return warnings;
 }
 
+/**
+ * 保存 Excalidraw 文件。
+ * 
+ * 优先调用 window.ExcalidrawAutomate API (运行在 Obsidian 真实环境中) 以确保有机线、字体等渲染注册缓存正确；
+ * 在测试环境或 API 不可用时，降级为直接写入 filesystem (.excalidraw 后缀的纯 JSON)。
+ * 
+ * @returns 最终文件的路径和嵌入语法
+ */
+export async function saveExcalidrawFile(
+  filename: string,
+  elements: ElementDef[],
+  layout: DiagramLayoutType | undefined,
+  context: ToolContext,
+): Promise<{ filepath: string; embed: string }> {
+  // 1. 决定主题（用于 ExcalidrawAutomate.setTheme）
+  const theme = resolveObsidianTheme(context);
+
+  // 2. 构建 JSON
+  const excalidrawFile = buildExcalidrawJSON(elements, layout, context);
+
+  // 3. 检测 window.ExcalidrawAutomate
+  const ea = typeof window !== 'undefined' ? (window as any).ExcalidrawAutomate : undefined;
+  const dir = 'Excalidraw';
+
+  if (ea) {
+    log('info', `调用 ExcalidrawAutomate 保存图表: ${filename}`);
+    try {
+      ea.reset();
+      ea.setTheme(theme === 'dark' ? 1 : 0);
+      if (ea.canvas) {
+        ea.canvas.viewBackgroundColor = excalidrawFile.appState.viewBackgroundColor;
+      }
+
+      // 填充 elementsDict
+      for (const el of excalidrawFile.elements) {
+        ea.elementsDict[el.id] = el;
+      }
+
+      // 保存文件，foldername 为 Excalidraw 目录，不带 onNewPane，silent: true
+      const filepath = await ea.create({
+        filename,
+        foldername: dir,
+        onNewPane: false,
+        silent: true,
+      });
+
+      return {
+        filepath,
+        embed: `![[${filepath}]]`,
+      };
+    } catch (err) {
+      log('error', `ExcalidrawAutomate 运行异常，降级为直写文件: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 4. 降级/测试路径：直接写入 filesystem (.excalidraw 后缀)
+  const adapter = context.vault.app.vault.adapter;
+  if (!(await adapter.exists(dir))) {
+    await adapter.mkdir(dir);
+  }
+
+  const filepath = `${dir}/${filename}.excalidraw`;
+  await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
+  return {
+    filepath,
+    embed: `![[${filepath}]]`,
+  };
+}
+
 export const excalidrawTool: ToolExecutor = {
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
     const { filename, elements, layout } = args as {
@@ -548,23 +707,7 @@ export const excalidrawTool: ToolExecutor = {
       const textWarnings = detectTextOverlaps(elements);
       const semanticWarnings = validateSemantics(elements);
 
-      // 构建 .excalidraw JSON
-      const excalidrawFile = buildExcalidrawJSON(elements, layout);
-
-      // 确保 Excalidraw 目录存在，写入文件
-      const dir = 'Excalidraw';
-      const adapter = context.vault.app.vault.adapter;
-      if (!(await adapter.exists(dir))) {
-        await adapter.mkdir(dir);
-      }
-
-      // 写纯 JSON 到 .excalidraw（Excalidraw 插件 registerExtensions(["excalidraw"]) 原生支持）
-      // 关键：Obsidian embed（![[...]]）只对 .excalidraw 后缀触发插件的图渲染；
-      // .excalidraw.md 会被当普通 markdown 嵌入显示原始文本。故必须用 .excalidraw。
-      // 点开 .excalidraw 文件插件自动用 Excalidraw 编辑视图打开。
-      const filepath = `${dir}/${filename}.excalidraw`;
-      await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
-
+      const { filepath, embed } = await saveExcalidrawFile(filename, elements, layout, context);
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
       const allWarnings = [...warnings, ...textWarnings, ...semanticWarnings];
@@ -572,13 +715,13 @@ export const excalidrawTool: ToolExecutor = {
         return JSON.stringify({
           success: true,
           filepath,
-          embed: `![[${filepath}]]`,
+          embed,
           warnings: allWarnings,
           suggestion: '请根据 warnings 调整坐标/尺寸/绑定后重新调用',
         });
       }
 
-      return JSON.stringify({ success: true, filepath, embed: `![[${filepath}]]` });
+      return JSON.stringify({ success: true, filepath, embed });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       log('error', `生成 Excalidraw 图形失败: ${errorMessage}`);
@@ -617,7 +760,7 @@ export async function writeExcalidrawJson(
     throw new Error(`writeExcalidrawJson: filename 非法 "${filename}"`);
   }
 
-  const excalidrawFile = buildExcalidrawJSON(elements, layout);
+  const excalidrawFile = buildExcalidrawJSON(elements, layout, context);
 
   const dir = 'Excalidraw';
   const adapter = context.vault.app.vault.adapter;
