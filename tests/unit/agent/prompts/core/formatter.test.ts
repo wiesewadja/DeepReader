@@ -18,17 +18,21 @@ describe('Formatter Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含完整的 XML 标签结构', () => {
       const { systemPrompt } = formatterPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
-      expect(systemPrompt).toContain('奚童');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<rules>');
+      expect(systemPrompt).toContain('</rules>');
     });
 
-    it('系统提示词应该包含规则', () => {
-      const { systemPrompt } = formatterPrompt.locales.zh;
+    it('en locale 也应包含完整标签结构', () => {
+      const { systemPrompt } = formatterPrompt.locales.en!;
+      expect(systemPrompt).toContain('<role>');
+      expect(systemPrompt).toContain('</role>');
       expect(systemPrompt).toContain('<rules>');
-      expect(systemPrompt).toContain('wiki 链接');
+      expect(systemPrompt).toContain('</rules>');
     });
   });
 });

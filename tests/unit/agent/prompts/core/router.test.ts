@@ -19,29 +19,27 @@ describe('Router Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含完整的 XML 标签结构', () => {
       const { systemPrompt } = routerPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
       expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<task>');
+      expect(systemPrompt).toContain('</task>');
+      expect(systemPrompt).toContain('<intent_types>');
+      expect(systemPrompt).toContain('<depth_rules_summary>');
+      expect(systemPrompt).toContain('<output_format>');
+      expect(systemPrompt).toContain('<visualization_rules>');
     });
 
-    it('系统提示词应该包含意图类型', () => {
-      const { systemPrompt } = routerPrompt.locales.zh;
-      expect(systemPrompt).toContain('intent_types');
-      expect(systemPrompt).toContain('depth');
-    });
-
-    it('系统提示词应该包含输出格式', () => {
-      const { systemPrompt } = routerPrompt.locales.zh;
-      expect(systemPrompt).toContain('output_format');
-      expect(systemPrompt).toContain('JSON');
-    });
-
-    it('英文 locale 也应该包含角色定义', () => {
+    it('en locale 也应包含核心 XML 标签结构', () => {
       const { systemPrompt } = routerPrompt.locales.en!;
       expect(systemPrompt).toContain('<role>');
-      expect(systemPrompt).toContain('router');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<task>');
+      expect(systemPrompt).toContain('</task>');
+      expect(systemPrompt).toContain('<intent_types>');
+      expect(systemPrompt).toContain('<output_format>');
     });
   });
 

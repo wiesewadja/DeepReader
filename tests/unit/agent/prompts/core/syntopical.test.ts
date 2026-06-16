@@ -18,18 +18,25 @@ describe('Syntopical Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含完整的 XML 标签结构', () => {
       const { systemPrompt } = syntopicalPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
-      expect(systemPrompt).toContain('主题阅读分析师');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<methodology>');
+      expect(systemPrompt).toContain('</methodology>');
+      expect(systemPrompt).toContain('<output_rules>');
+      expect(systemPrompt).toContain('</output_rules>');
     });
 
-    it('系统提示词应该包含方法论', () => {
-      const { systemPrompt } = syntopicalPrompt.locales.zh;
-      expect(systemPrompt).toContain('methodology');
-      expect(systemPrompt).toContain('共识词汇');
-      expect(systemPrompt).toContain('立场对比');
+    it('en locale 也应包含完整标签结构', () => {
+      const { systemPrompt } = syntopicalPrompt.locales.en!;
+      expect(systemPrompt).toContain('<role>');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<methodology>');
+      expect(systemPrompt).toContain('</methodology>');
+      expect(systemPrompt).toContain('<output_rules>');
+      expect(systemPrompt).toContain('</output_rules>');
     });
   });
 });

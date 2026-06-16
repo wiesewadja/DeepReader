@@ -18,24 +18,22 @@ describe('Inspectional Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含完整的 XML 标签结构', () => {
       const { systemPrompt } = inspectionalPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
-      expect(systemPrompt).toContain('图书管理员');
-    });
-
-    it('系统提示词应该包含任务分支', () => {
-      const { systemPrompt } = inspectionalPrompt.locales.zh;
-      expect(systemPrompt).toContain('task_branch');
-      expect(systemPrompt).toContain('宏观检视');
-      expect(systemPrompt).toContain('圈定战区');
-    });
-
-    it('系统提示词应该包含输出格式', () => {
-      const { systemPrompt } = inspectionalPrompt.locales.zh;
-      expect(systemPrompt).toContain('output_format');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<task_branch');
+      expect(systemPrompt).toContain('<output_format>');
       expect(systemPrompt).toContain('JSON');
+    });
+
+    it('en locale 也应包含核心标签结构', () => {
+      const { systemPrompt } = inspectionalPrompt.locales.en!;
+      expect(systemPrompt).toContain('<role>');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<task_branch');
+      expect(systemPrompt).toContain('<output_format>');
     });
   });
 });

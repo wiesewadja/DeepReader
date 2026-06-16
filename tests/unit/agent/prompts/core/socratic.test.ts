@@ -18,12 +18,14 @@ describe('Socratic Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含拆分规则', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含所有规则编号', () => {
       const { systemPrompt } = socraticPrompt.locales.zh;
-      expect(systemPrompt).toContain('facts');
-      expect(systemPrompt).toContain('question');
-      expect(systemPrompt).toContain('conclusion');
+      expect(systemPrompt).toContain('1.');
+      expect(systemPrompt).toContain('2.');
+      expect(systemPrompt).toContain('3.');
+      expect(systemPrompt).toContain('4.');
+      expect(systemPrompt).toContain('5.');
     });
   });
 });

@@ -18,24 +18,29 @@ describe('Analytical Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含完整的 XML 标签结构', () => {
       const { systemPrompt } = analyticalPrompt.locales.zh;
       expect(systemPrompt).toContain('<role>');
-      expect(systemPrompt).toContain('阅读分析师');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<constraints>');
+      expect(systemPrompt).toContain('</constraints>');
+      expect(systemPrompt).toContain('<workflow>');
+      expect(systemPrompt).toContain('</workflow>');
+      expect(systemPrompt).toContain('<output_rules>');
+      expect(systemPrompt).toContain('</output_rules>');
     });
 
-    it('系统提示词应该包含工作流程', () => {
-      const { systemPrompt } = analyticalPrompt.locales.zh;
-      expect(systemPrompt).toContain('workflow');
-      expect(systemPrompt).toContain('搜索');
-      expect(systemPrompt).toContain('精读');
-    });
-
-    it('系统提示词应该包含输出规则', () => {
-      const { systemPrompt } = analyticalPrompt.locales.zh;
-      expect(systemPrompt).toContain('output_rules');
-      expect(systemPrompt).toContain('wiki 链接');
+    it('en locale 也应包含完整的 XML 标签结构', () => {
+      const { systemPrompt } = analyticalPrompt.locales.en!;
+      expect(systemPrompt).toContain('<role>');
+      expect(systemPrompt).toContain('</role>');
+      expect(systemPrompt).toContain('<constraints>');
+      expect(systemPrompt).toContain('</constraints>');
+      expect(systemPrompt).toContain('<workflow>');
+      expect(systemPrompt).toContain('</workflow>');
+      expect(systemPrompt).toContain('<output_rules>');
+      expect(systemPrompt).toContain('</output_rules>');
     });
   });
 });

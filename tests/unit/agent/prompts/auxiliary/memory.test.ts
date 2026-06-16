@@ -14,7 +14,20 @@ describe('Memory Prompt Modules', () => {
 
     it('应该有中文 locale', () => {
       expect(memoryPrompts.consolidation.locales.zh).toBeDefined();
-      expect(memoryPrompts.consolidation.locales.zh.systemPrompt).toContain('对话');
+      expect(memoryPrompts.consolidation.locales.zh.systemPrompt).toContain('分析要点');
+    });
+
+    it('zh locale 应包含分析维度和输出要求', () => {
+      const { systemPrompt } = memoryPrompts.consolidation.locales.zh;
+      expect(systemPrompt).toContain('讨论主题');
+      expect(systemPrompt).toContain('用户画像推理');
+      expect(systemPrompt).toContain('save_memory');
+    });
+
+    it('en locale 也应包含核心内容', () => {
+      const { systemPrompt } = memoryPrompts.consolidation.locales.en!;
+      expect(systemPrompt).toContain('Analysis Points');
+      expect(systemPrompt).toContain('User Profile Inference');
     });
   });
 
@@ -29,7 +42,14 @@ describe('Memory Prompt Modules', () => {
 
     it('应该有中文 locale', () => {
       expect(memoryPrompts.compression.locales.zh).toBeDefined();
-      expect(memoryPrompts.compression.locales.zh.systemPrompt).toContain('压缩');
+      expect(memoryPrompts.compression.locales.zh.systemPrompt).toContain('压缩规则');
+    });
+
+    it('zh locale 应包含压缩规则', () => {
+      const { systemPrompt } = memoryPrompts.compression.locales.zh;
+      expect(systemPrompt).toContain('激进合并');
+      expect(systemPrompt).toContain('删除冗余');
+      expect(systemPrompt).toContain('输出格式');
     });
   });
 });

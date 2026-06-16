@@ -18,23 +18,38 @@ describe('Diagram Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含设计原则', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含设计原则', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
       expect(systemPrompt).toContain('设计原则');
       expect(systemPrompt).toContain('论证而非展示');
     });
 
-    it('系统提示词应该包含布局选项', () => {
+    it('zh locale 应包含语义布局选项', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
-      expect(systemPrompt).toContain('语义布局');
-      expect(systemPrompt).toContain('书卷审美');
+      expect(systemPrompt).toContain('语义布局选择');
+      expect(systemPrompt).toContain('mind-map');
+      expect(systemPrompt).toContain('flow-horizontal');
     });
 
-    it('系统提示词应该包含输出格式', () => {
+    it('zh locale 应包含色板和审美设置', () => {
+      const { systemPrompt } = diagramPrompt.locales.zh;
+      expect(systemPrompt).toContain('书卷审美色板');
+      expect(systemPrompt).toContain('roughness');
+      expect(systemPrompt).toContain('roundness');
+    });
+
+    it('zh locale 应包含输出格式', () => {
       const { systemPrompt } = diagramPrompt.locales.zh;
       expect(systemPrompt).toContain('输出格式');
       expect(systemPrompt).toContain('JSON');
+    });
+
+    it('en locale 也应包含核心内容', () => {
+      const { systemPrompt } = diagramPrompt.locales.en!;
+      expect(systemPrompt).toContain('Design Principles');
+      expect(systemPrompt).toContain('Scholarly Color Palette');
+      expect(systemPrompt).toContain('Output Format');
     });
   });
 });

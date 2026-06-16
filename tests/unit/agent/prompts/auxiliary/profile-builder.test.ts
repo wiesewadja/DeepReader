@@ -14,7 +14,19 @@ describe('Profile Builder Prompt Modules', () => {
 
     it('应该有中文 locale', () => {
       expect(profileBuilderPrompts.extract.locales.zh).toBeDefined();
-      expect(profileBuilderPrompts.extract.locales.zh.systemPrompt).toContain('观察');
+      expect(profileBuilderPrompts.extract.locales.zh.systemPrompt).toContain('具体事实');
+    });
+
+    it('zh locale 应包含分类维度和注意规则', () => {
+      const { systemPrompt } = profileBuilderPrompts.extract.locales.zh;
+      expect(systemPrompt).toContain('按以下维度分类输出');
+      expect(systemPrompt).toContain('保留用户说过的原话');
+    });
+
+    it('en locale 也应包含核心内容', () => {
+      const { systemPrompt } = profileBuilderPrompts.extract.locales.en!;
+      expect(systemPrompt).toContain('specific facts');
+      expect(systemPrompt).toContain('organized by dimensions');
     });
   });
 
@@ -29,7 +41,13 @@ describe('Profile Builder Prompt Modules', () => {
 
     it('应该有中文 locale', () => {
       expect(profileBuilderPrompts.wereadExtract.locales.zh).toBeDefined();
-      expect(profileBuilderPrompts.wereadExtract.locales.zh.systemPrompt).toContain('微信读书');
+      expect(profileBuilderPrompts.wereadExtract.locales.zh.systemPrompt).toContain('阅读画像');
+    });
+
+    it('zh locale 应包含分析维度', () => {
+      const { systemPrompt } = profileBuilderPrompts.wereadExtract.locales.zh;
+      expect(systemPrompt).toContain('领域、主题偏好');
+      expect(systemPrompt).toContain('划线内容');
     });
   });
 
@@ -45,6 +63,12 @@ describe('Profile Builder Prompt Modules', () => {
     it('应该有中文 locale', () => {
       expect(profileBuilderPrompts.synthesize.locales.zh).toBeDefined();
       expect(profileBuilderPrompts.synthesize.locales.zh.systemPrompt).toContain('老朋友');
+    });
+
+    it('zh locale 应包含输出维度结构', () => {
+      const { systemPrompt } = profileBuilderPrompts.synthesize.locales.zh;
+      expect(systemPrompt).toContain('## 身份与阶段');
+      expect(systemPrompt).toContain('## 阅读画像');
     });
   });
 });

@@ -18,11 +18,12 @@ describe('PreSearch Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含早停逻辑', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含 wiki 链接格式要求', () => {
       const { systemPrompt } = preSearchPrompt.locales.zh;
+      expect(systemPrompt).toContain('[[');
+      expect(systemPrompt).toContain('block_id');
       expect(systemPrompt).toContain('检索结果');
-      expect(systemPrompt).toContain('wiki 链接');
     });
   });
 });

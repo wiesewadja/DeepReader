@@ -18,11 +18,23 @@ describe('Advisor Prompt Module', () => {
     });
   });
 
-  describe('内容完整性', () => {
-    it('系统提示词应该包含角色定义', () => {
+  describe('结构完整性', () => {
+    it('zh locale 应包含角色定义', () => {
       const { systemPrompt } = advisorPrompt.locales.zh;
       expect(systemPrompt).toContain('阅读顾问');
       expect(systemPrompt).toContain('工具使用原则');
+    });
+
+    it('zh locale 应包含输出规范和阅读方法论', () => {
+      const { systemPrompt } = advisorPrompt.locales.zh;
+      expect(systemPrompt).toContain('输出规范');
+      expect(systemPrompt).toContain('四个层次');
+    });
+
+    it('en locale 也应包含核心内容', () => {
+      const { systemPrompt } = advisorPrompt.locales.en!;
+      expect(systemPrompt).toContain('reading advisor');
+      expect(systemPrompt).toContain('Four Levels of Reading');
     });
   });
 });
