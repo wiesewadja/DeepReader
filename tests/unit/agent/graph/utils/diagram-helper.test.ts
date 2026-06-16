@@ -262,4 +262,31 @@ describe('generateDiagram', () => {
 
     executeSpy.mockRestore();
   });
+
+  it('truncates analysisContent when it exceeds 8000 characters', async () => {
+    const mockCtx = makeMockCtx();
+    const elements = [
+      { id: 'r1', type: 'rectangle', x: 0, y: 0, width: 200, height: 100 },
+    ];
+    const mockModel = makeMockModel(JSON.stringify({
+      filename: 'truncate-test',
+      elements,
+    }));
+
+    const longContent = 'A'.repeat(9000);
+
+    await generateDiagram(
+      '画个图',
+      longContent,
+      mockModel,
+      mockCtx,
+    );
+
+    const callArgs = mockModel.invoke.mock.calls[0][0];
+    const userMsg = callArgs[1].content;
+    
+    // The content section should be truncated to 8000 chars + suffix
+    expect(userMsg).toContain('[...内容过长已截断...]');
+    expect(userMsg).not.toContain('A'.repeat(9000));
+  });
 });

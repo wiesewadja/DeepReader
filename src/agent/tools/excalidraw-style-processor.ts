@@ -212,8 +212,8 @@ function convertConnectors(
       const endCx = endEl.x + endEl.width / 2;
       const endCy = endEl.y + endEl.height / 2;
 
-      const startPoint = edgeIntersection(startEl, endCx, endCy, 2);
-      const endPoint = edgeIntersection(endEl, startCx, startCy, 2);
+      const startPoint = edgeIntersection(startEl, endCx, endCy, 4);
+      const endPoint = edgeIntersection(endEl, startCx, startCy, 4);
 
       const seed = getSeedFromId(el.id);
       points = generateConnectorPoints(startPoint, endPoint, layout, seed);
@@ -246,6 +246,8 @@ function convertConnectors(
       height: 0,
       strokeColor: col.stroke,
       backgroundColor: 'transparent',
+      strokeWidth: 1,
+      opacity: 90,
       groupIds,
       points: relativePoints,
       customData: {
@@ -290,7 +292,7 @@ export function applyOrganicScrollStyle(input: StyleProcessorInput): StyleProces
   const connectors = convertConnectors(elements, elMap, layout, theme);
 
   return {
-    elements: [...styledNodes, ...connectors],
+    elements: [...connectors, ...styledNodes],
     viewBackgroundColor: BACKGROUNDS[theme],
   };
 }

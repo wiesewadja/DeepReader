@@ -148,6 +148,21 @@ function resolveObsidianTheme(context?: ToolContext): 'light' | 'dark' {
 }
 
 /**
+ * 计算 ExcalidrawElement 的渲染层级：
+ * -1 = 有机连线（freedraw + isOrganicConnector 标记），最底层，避免覆盖文字
+ *  0 = 形状（rectangle/ellipse/diamond）
+ *  1 = 普通连线/箭头/手绘（line/arrow/非 organic 的 freedraw）
+ *  2 = 文本（最顶层）
+ */
+function getZOrder(el: ExcalidrawElement): number {
+  if (el.type === 'freedraw' && el.customData?.isOrganicConnector) return -1;
+  if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return 0;
+  if (el.type === 'line' || el.type === 'arrow' || el.type === 'freedraw') return 1;
+  if (el.type === 'text') return 2;
+  return 0;
+}
+
+/**
  * 容器内文字 padding（Excalidraw 默认容器文字留白）。
  * text 子元素的 width/height 已在 buildExcalidrawJSON 里减去 20px（每边 10），
  * 这里再留少量内边距，避免文字顶到容器边缘。
@@ -502,13 +517,9 @@ function buildExcalidrawJSON(
     }
   }
 
-  // Z-index: shapes → arrows/lines/freedraw → text (later = on top)
-  const Z_ORDER: Record<string, number> = {
-    rectangle: 0, ellipse: 0, diamond: 0,
-    line: 1, arrow: 1, freedraw: 1,
-    text: 2,
-  };
-  result.sort((a, b) => (Z_ORDER[a.type] ?? 0) - (Z_ORDER[b.type] ?? 0));
+  // Z-index: organic connectors (底层) → shapes → non-organic lines/arrows/freedraw → text (顶层)
+  // 有机连线（freedraw with isOrganicConnector）必须在 shapes 下面，避免覆盖文字
+  result.sort((a, b) => getZOrder(a) - getZOrder(b));
 
   const viewport = calculateViewport(result);
 
@@ -552,6 +563,96 @@ function detectOverlaps(elements: ElementDef[]): string[] {
       }
     }
   }
+  return warnings;
+}
+
+function ccw(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): boolean {
+  return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
+}
+
+function segmentsIntersect(
+  x1: number, y1: number, x2: number, y2: number,
+  x3: number, y3: number, x4: number, y4: number
+): boolean {
+  return (
+    ccw(x1, y1, x3, y3, x4, y4) !== ccw(x2, y2, x3, y3, x4, y4) &&
+    ccw(x1, y1, x2, y2, x3, y3) !== ccw(x1, y1, x2, y2, x4, y4)
+  );
+}
+
+function detectConnectorNodeOverlaps(elements: ElementDef[]): string[] {
+  const shapes = elements.filter(e =>
+    ['rectangle', 'ellipse', 'diamond'].includes(e.type)
+  );
+  const connectors = elements.filter(e => e.type === 'arrow' || e.type === 'line');
+  const warnings: string[] = [];
+
+  const nodeMap = new Map(elements.map(e => [e.id, e]));
+
+  for (const conn of connectors) {
+    const startId = conn.startBinding?.elementId;
+    const endId = conn.endBinding?.elementId;
+    const startEl = startId ? nodeMap.get(startId) : null;
+    const endEl = endId ? nodeMap.get(endId) : null;
+
+    // 构造连线的完整绝对坐标路径：
+    // 起点（startEl 中心或 points[0]）→ 中间控制点（points[1..n-1]）→ 终点（endEl 中心或 points[last]）
+    // 支持 multi-segment 折线/贝塞尔，避免漏检 L 形/Z 形连线穿过节点的情况
+    const path: [number, number][] = [];
+    if (startEl) {
+      path.push([startEl.x + startEl.width / 2, startEl.y + startEl.height / 2]);
+    } else if (conn.points && conn.points.length > 0) {
+      path.push([conn.x + conn.points[0][0], conn.y + conn.points[0][1]]);
+    }
+    // 中间控制点：仅当 points ≥ 3 个时才视为真实折线（LLM 默认占位 [[0,0],[1,0]] 长度=2）
+    if (conn.points && conn.points.length >= 3) {
+      for (let i = 1; i < conn.points.length - 1; i++) {
+        path.push([conn.x + conn.points[i][0], conn.y + conn.points[i][1]]);
+      }
+    }
+    if (endEl) {
+      path.push([endEl.x + endEl.width / 2, endEl.y + endEl.height / 2]);
+    } else if (conn.points && conn.points.length >= 2) {
+      const last = conn.points[conn.points.length - 1];
+      path.push([conn.x + last[0], conn.y + last[1]]);
+    }
+
+    // 路径点不足 2 个，无法构成线段
+    if (path.length < 2) continue;
+
+    // 对每个无关 shape，遍历 path 相邻段做相交检测
+    for (const shape of shapes) {
+      if (shape.id === startId || shape.id === endId) continue;
+
+      const minX = shape.x;
+      const maxX = shape.x + shape.width;
+      const minY = shape.y;
+      const maxY = shape.y + shape.height;
+      const inside = (x: number, y: number) => x > minX && x < maxX && y > minY && y < maxY;
+
+      let intersects = false;
+      for (let i = 0; i < path.length - 1; i++) {
+        const [x1, y1] = path[i];
+        const [x2, y2] = path[i + 1];
+        if (
+          inside(x1, y1) ||
+          inside(x2, y2) ||
+          segmentsIntersect(x1, y1, x2, y2, minX, minY, minX, maxY) ||
+          segmentsIntersect(x1, y1, x2, y2, maxX, minY, maxX, maxY) ||
+          segmentsIntersect(x1, y1, x2, y2, minX, minY, maxX, minY) ||
+          segmentsIntersect(x1, y1, x2, y2, minX, maxY, maxX, maxY)
+        ) {
+          intersects = true;
+          break;
+        }
+      }
+
+      if (intersects) {
+        warnings.push(`连线 "${conn.id}" 穿过了无关节点 "${shape.id}"，请调整节点位置或连线路径以避免遮挡`);
+      }
+    }
+  }
+
   return warnings;
 }
 
@@ -668,12 +769,13 @@ export const excalidrawTool: ToolExecutor = {
       // 碰撞检测 + 语义验证
       const warnings = detectOverlaps(elements);
       const textWarnings = detectTextOverlaps(elements);
+      const connectorWarnings = detectConnectorNodeOverlaps(elements);
       const semanticWarnings = validateSemantics(elements);
 
       const { filepath, embed } = await saveExcalidrawFile(filename, elements, layout, context);
       log('info', `Excalidraw 图形已生成: ${filepath}`);
 
-      const allWarnings = [...warnings, ...textWarnings, ...semanticWarnings];
+      const allWarnings = [...warnings, ...textWarnings, ...connectorWarnings, ...semanticWarnings];
       if (allWarnings.length > 0) {
         return JSON.stringify({
           success: true,
@@ -739,6 +841,6 @@ export async function writeExcalidrawJson(
 }
 
 // 导出内部函数供测试使用
-export { buildExcalidrawJSON, detectOverlaps, detectTextOverlaps, validateSemantics, computeOptimalFontSize };
+export { buildExcalidrawJSON, detectOverlaps, detectTextOverlaps, detectConnectorNodeOverlaps, validateSemantics, computeOptimalFontSize };
 export { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
 export type { ElementDef };

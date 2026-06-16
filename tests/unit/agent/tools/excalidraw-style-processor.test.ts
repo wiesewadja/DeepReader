@@ -254,14 +254,14 @@ describe('buildExcalidrawJSON with style processor integration', () => {
 
     const types = file.elements.map(e => e.type);
     
-    // Z-Index verification: rectangle < freedraw < text
-    const lastRectIdx = Math.max(...types.map((t, i) => t === 'rectangle' ? i : -1));
-    const firstFreedrawIdx = types.indexOf('freedraw');
+    // Z-Index verification: freedraw (organic connectors) < rectangle < text
     const lastFreedrawIdx = types.lastIndexOf('freedraw');
+    const firstRectIdx = types.indexOf('rectangle');
+    const lastRectIdx = Math.max(...types.map((t, i) => t === 'rectangle' ? i : -1));
     const firstTextIdx = types.indexOf('text');
 
-    expect(lastRectIdx).toBeLessThan(firstFreedrawIdx);
-    expect(lastFreedrawIdx).toBeLessThan(firstTextIdx);
+    expect(lastFreedrawIdx).toBeLessThan(firstRectIdx);
+    expect(lastRectIdx).toBeLessThan(firstTextIdx);
 
     // Verify that customData and pressures were preserved in the output ExcalidrawElement
     const excalidrawShaft = file.elements.find(e => e.id === 'arrow_1')!;

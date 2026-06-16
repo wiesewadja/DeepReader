@@ -16,118 +16,30 @@ import { agentLog as log } from '../../../utils/logger.js';
 import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
 import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
+import { SHARED_DIAGRAM_PROMPT } from '../../tools/excalidraw-prompts.js';
 
 const DIAGRAM_INTENT_RE = /思维导图|脑图|流程图|概念图|画.{0,6}图|可视化展示|可视化|导图|示意图|infographic|图表|知识图谱/;
+const DIAGRAM_SYSTEM_PROMPT = SHARED_DIAGRAM_PROMPT;
 
-const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根据提供的分析内容，生成疏朗、大气、具有书卷审美的 .excalidraw JSON 元素数组。
+/**
+ * analysisContent 安全长度上限（字符）。
+ *
+ * 依据：GLM-4 / DeepSeek 等模型 context window 通常 8K-32K tokens，
+ * 扣除 system prompt（约 2K tokens）+ 用户 query + 输出 JSON 元素（200 个元素约 4K tokens），
+ * 留给 analysisContent 的安全上限约 5000 tokens，按中文 1 字 ≈ 0.6 token 估算约 8000 字符。
+ * 超过此阈值会导致 LLM 输出截断或质量崩塌。
+ */
+const ANALYSIS_CONTENT_MAX_CHARS = 8000;
 
-## 设计原则
-- 图表应该**论证而非展示**。视觉结构必须映射概念结构——去掉文字后，结构本身仍能说明关系。
-- 形状即语义：椭圆=起始/终点，菱形=决策，矩形=过程/动作，自由文本=标注/标题。
-- 默认使用自由文本（无容器），仅当容器承载语义时才加框。容器内文本比例应 <30%。
-- 同类元素必须 y 坐标对齐，形成整齐的行或列。
-
-## 语义布局选择（必须输出 layout 属性）
-你**必须**在 JSON 的根级输出 "layout" 属性，系统会使用高精度的几何布局引擎重新计算所有节点的坐标。不要自行用坐标排列元素——系统布局引擎的精度远高于手算坐标。
-- "mind-map"：中心主题 + 多级分支向左右两侧交替展开（最常用，适合章节结构、概念拆解）。
-- "hierarchical-tree"：多层父子关系按垂直层级对齐（类似组织结构图）。
-- "flow-horizontal"：链式/分支流转的步骤、因果或串行流程（如流程图、因果链、阶段演进）。
-- "timeline"：按先后顺序演变的时间线，各节点会交错上下排布。
-- "radial"：单层放射（中心主题 -> 周围无父子连接的关联词）。
-- "matrix"：分类对比、四象限，按 2x2 格排列。
-
-### 如何选择 layout
-- 有明确的线性步骤/因果链/阶段演进 → flow-horizontal
-- 有中心主题向外拆解分支 → mind-map
-- 有层级/组织/树状关系 → hierarchical-tree
-- 有时间先后顺序 → timeline
-- 无明显结构，仅中心+发散 → radial
-- 分类对比/四象限 → matrix
-注：你仍需为每个元素提供一个初始估算的 x 和 y，系统会自动优化它们。
-
-## 布局规则（最重要）
-- 所有元素坐标以 (500, 300) 为中心向外扩散
-- 水平布局: x 从 200 到 1200，主节点间距 300-420px
-- 垂直布局: y 从 100 到 800，层间距 160-240px
-- 避免负坐标
-- 同一层级的元素 y 坐标必须严格相同
-- 中心/主题元素周围留白 250px+
-
-## 元素大小与字号层级（书卷审美：疏朗、大气）
-字号只从四档里选（系统会自动向下取档保证文字不溢出容器）：
-- **S=16**（标注/细节）、**M=20**（子节点）、**L=28**（主节点）、**XL=36**（中心主题/标题）
-对应元素尺寸建议：
-- Hero（视觉锚点/中心主题）: 320×160, fontSize XL(36)
-- Primary（主节点/部分标题）: 220×110, fontSize L(28)
-- Secondary（子节点/章节）: 160×80, fontSize M(20)
-- Tertiary（细节点/要点）: 120×60, fontSize S(16)
-- 自由文本标题: fontSize XL(36) 或 L(28)（无需容器）
-- 自由文本正文: fontSize M(20) 或 S(16)
-注意：你给 fontSize 只需在 16/20/28/36 里选一个，系统会确保它装得下容器。
-
-## 文本宽度估算
-- Latin: width = max(180, charCount × 9)
-- CJK: width = max(180, charCount × 22)
-- 混合: 逐字符估算求和
-- 多行文本高度 = 行数 × fontSize × 1.25
-
-## 书卷审美色板（必须使用 semanticColor 属性表达颜色语义）
-不要在任何元素中硬编码十六进制色值（如 strokeColor、backgroundColor）。系统会根据你指定的 semanticColor 自动渲染适配 Light/Dark 主题的书卷风格颜色：
-- primary: 主流程、主节点（靛青色系）
-- emphasis: 重点、起点、关键决策（朱砂红色系）
-- success: 成功、终点、生长（黛绿色系）
-- warning: 警告、备选、冲突（赭石黄色系）
-- highlight: 高亮、注释（藤黄色系）
-- neutral: 默认、普通节点（黑白灰宣纸色系）
-规则：同一类概念使用相同的语义颜色；一个图中使用的语义主色不要超过 4 种。
-
-## 审美与风格设置
-- 系统风格处理器在开启时会自动应用「有机书卷风」（轻手绘质感、圆角、手绘连线等）。
-- 你无需指定 roughness、fillStyle、strokeWidth，系统会做统一优化，你只需指定正确的 type、x, y 坐标、width/height 和 semanticColor 即可。
-
-## 形状语义（默认无容器）
-| 概念类型 | 形状 |
-|----------|------|
-| 标签、描述、详情 | 自由文本（无容器） |
-| 章节/部分标题 | 自由文本（fontSize L(28) 或 XL(36)） |
-| 起点、触发、输入 | ellipse |
-| 终点、输出、结果 | ellipse |
-| 决策、条件 | diamond |
-| 过程、动作、步骤 | rectangle |
-| 层级节点 | line + 自由文本（无框） |
-| 时间线标记 | 小 ellipse 10-20px |
-
-## 关系连接规则（关键）
-- 连线的 x/y 坐标和 points 会被系统自动计算为元素边缘交点。
-- 你只需要提供正确的 startBinding 和 endBinding。
-- gap 固定为 2，focus 固定为 0。
-- 不要手动计算连线的 x/y 和 points，系统会覆盖。
-
-## 输出格式
-严格输出 JSON 对象，包含 filename、layout（必填）和 elements 字段。不要包含任何其他文字。
-{
-  "filename": "图形名称",
-  "layout": "mind-map|hierarchical-tree|flow-horizontal|timeline|radial|matrix",
-  "elements": [
-    {
-      "id": "描述性ID",
-      "type": "rectangle|ellipse|diamond|arrow|line|text",
-      "x": 数字,
-      "y": 数字,
-      "width": 数字,
-      "height": 数字,
-      "text": "文本内容（可选）",
-      "fontSize": 20,
-      "textAlign": "center",
-      "verticalAlign": "middle",
-      "containerId": null,
-      "boundElements": [{"id": "子元素ID", "type": "text"}],
-      "startBinding": {"elementId": "ID", "gap": 2, "focus": 0},
-      "endBinding": {"elementId": "ID", "gap": 2, "focus": 0},
-      "semanticColor": "primary|emphasis|success|warning|highlight|neutral"
-    }
-  ]
-}`;
+/**
+ * 截断 analysisContent 到安全长度，防止 LLM context 溢出。
+ * 截断后追加显式标记，让 LLM 知道内容被截断。
+ */
+function truncateAnalysisContent(content: string): string {
+  if (content.length <= ANALYSIS_CONTENT_MAX_CHARS) return content;
+  log(`[DiagramHelper] analysisContent length ${content.length} exceeds ${ANALYSIS_CONTENT_MAX_CHARS}, truncating...`);
+  return content.slice(0, ANALYSIS_CONTENT_MAX_CHARS) + '\n\n[...内容过长已截断...]';
+}
 
 // ==================== 渐进式分节生成 ====================
 
@@ -503,11 +415,14 @@ export async function generateDiagramProgressive(
   options: { pdfName?: string; signal?: AbortSignal },
   callbacks: ProgressiveCallbacks,
 ): Promise<string> {
+  // 0. 截断 analysisContent 防止 LLM context 溢出（与 generateDiagram 保持一致）
+  const safeContent = truncateAnalysisContent(analysisContent);
+
   // 1. 规划分节
-  const plan = await planDiagramSections(query, analysisContent, model, options);
+  const plan = await planDiagramSections(query, safeContent, model, options);
   if (!plan) {
     log('[DiagramHelper] generateDiagramProgressive: 大纲解析失败，fallback 到单次生成');
-    return generateDiagram(query, analysisContent, model, toolContext, options);
+    return generateDiagram(query, safeContent, model, toolContext, options);
   }
 
   const { filename, sections } = plan;
@@ -603,11 +518,14 @@ export async function generateDiagram(
   toolContext: ToolContext,
   options?: { pdfName?: string; signal?: AbortSignal },
 ): Promise<string> {
+  let processedContent = analysisContent;
+  processedContent = truncateAnalysisContent(processedContent);
+
   const userMessage = `用户问题：${query}
 
 ${options?.pdfName ? `书籍：${options.pdfName}\n` : ''}
 分析内容：
-${analysisContent}
+${processedContent}
 
 请根据以上内容生成 Excalidraw 图形。输出严格的 JSON 格式。`;
 

@@ -1,5 +1,5 @@
 import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
-import { topologicalSort, syncBoundTextPositions } from './utils.js';
+import { topologicalSort, syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 /** 单行最大宽度（px），超出则自动换行 */
 const MAX_ROW_WIDTH = 1200;
@@ -15,7 +15,7 @@ export const FlowHorizontalLayout: LayoutEngine = {
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));
 
     const movableNodes = clonedElements.filter(el =>
-      el.type !== 'arrow' && el.type !== 'line' && !el.containerId
+      el.type !== 'arrow' && el.type !== 'line' && !el.containerId && !shouldIgnoreInLayout(el)
     );
 
     if (movableNodes.length === 0) {
@@ -63,11 +63,13 @@ export const FlowHorizontalLayout: LayoutEngine = {
       const rowY = firstRowY + r * ROW_SPACING;
 
       let cursorX = startX;
-      for (const id of row) {
-        const node = elementMap.get(id)!;
-        node.x = cursorX;
+      for (let i = 0; i < row.length; i++) {
+        const node = elementMap.get(row[i])!;
+        const cellWidth = node.width + (i < row.length - 1 ? spacingX : 0);
+        // 节点在 cell 内水平居中，保持相邻节点间距为 spacingX
+        node.x = cursorX + (cellWidth - node.width) / 2;
         node.y = rowY - node.height / 2;
-        cursorX += node.width + spacingX;
+        cursorX += cellWidth;
       }
     }
 
