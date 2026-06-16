@@ -170,6 +170,30 @@ describe('Layout Algorithms', () => {
     // The grandchild should be further to the right than its parent
     expect(right1child.x + right1child.width / 2).toBeGreaterThan(right1.x + right1.width / 2);
   });
+
+  it('mind-map dynamicSpacingX: keeps ≥60px gap between wide parent and children edges', () => {
+    // 构造超宽 parent（width=400）+ 多个 100 宽的子节点，
+    // 验证 dynamicSpacingX 自动放大：parent 右边到 child 左边至少 60px
+    const elements = [
+      makeElement({ id: 'root', x: 0, y: 0, width: 400, height: 80 }),
+      makeElement({ id: 'c1', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'c2', x: 0, y: 0, width: 100, height: 50 }),
+      makeElement({ id: 'arrow_c1', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c1', gap: 2, focus: 0 } }),
+      makeElement({ id: 'arrow_c2', type: 'arrow', startBinding: { elementId: 'root', gap: 2, focus: 0 }, endBinding: { elementId: 'c2', gap: 2, focus: 0 } }),
+    ];
+
+    const arranged = LAYOUT_REGISTRY['mind-map'].arrange(elements);
+    const root = arranged.find(e => e.id === 'root')!;
+    const child = arranged.find(e => e.id === 'c1')!;
+
+    // 计算水平间距：root 右边到 c1 左边
+    const rootRightEdge = root.x + root.width;
+    const childLeftEdge = child.x;
+    const gap = childLeftEdge - rootRightEdge;
+
+    // 父子节点边界至少 60px 留白（dynamicSpacingX = max(levelSpacingX, parent/2 + child/2 + 60)）
+    expect(gap).toBeGreaterThanOrEqual(60);
+  });
 });
 
 describe('arrangeWithFallback', () => {

@@ -1,17 +1,21 @@
 import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
-import { topologicalSort, syncBoundTextPositions } from './utils.js';
+import { topologicalSort, syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
+
+/** 单行最大宽度（px），超出则自动换行 */
+const MAX_ROW_WIDTH = 1200;
+/** 行间距（px） */
+const ROW_SPACING = 200;
 
 export const FlowHorizontalLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const spacingX = options?.spacing?.x ?? 250;
-    const centerY = 300;
     const centerX = 500;
 
     const clonedElements = elements.map(el => ({ ...el }));
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));
 
-    const movableNodes = clonedElements.filter(el => 
-      el.type !== 'arrow' && el.type !== 'line' && !el.containerId
+    const movableNodes = clonedElements.filter(el =>
+      el.type !== 'arrow' && el.type !== 'line' && !el.containerId && !shouldIgnoreInLayout(el)
     );
 
     if (movableNodes.length === 0) {
@@ -21,14 +25,52 @@ export const FlowHorizontalLayout: LayoutEngine = {
     const arrows = clonedElements.filter(el => el.type === 'arrow' || el.type === 'line');
     const orderedIds = topologicalSort(movableNodes, arrows);
 
-    // Position horizontally centered
+    // 按行拆分：每行节点总宽度不超过 MAX_ROW_WIDTH
     const N = orderedIds.length;
-    const startX = centerX - ((N - 1) * spacingX) / 2;
+    const nodeWidths = orderedIds.map(id => elementMap.get(id)!.width);
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentRowWidth = 0;
 
     for (let i = 0; i < N; i++) {
-      const node = elementMap.get(orderedIds[i])!;
-      node.x = startX + i * spacingX - node.width / 2;
-      node.y = centerY - node.height / 2;
+      const nodeW = nodeWidths[i];
+      const rowWidthWithNode = currentRow.length === 0
+        ? nodeW
+        : currentRowWidth + spacingX + nodeW;
+
+      if (currentRow.length > 0 && rowWidthWithNode > MAX_ROW_WIDTH) {
+        rows.push(currentRow);
+        currentRow = [orderedIds[i]];
+        currentRowWidth = nodeW;
+      } else {
+        currentRow.push(orderedIds[i]);
+        currentRowWidth = rowWidthWithNode;
+      }
+    }
+    if (currentRow.length > 0) rows.push(currentRow);
+
+    // 垂直居中各行：行数为 R 时，首行 y 为 centerY - (R-1)*ROW_SPACING/2
+    const R = rows.length;
+    const firstRowY = 300 - ((R - 1) * ROW_SPACING) / 2;
+
+    for (let r = 0; r < R; r++) {
+      const row = rows[r];
+      const rowWidth = row.reduce((sum, id, i) => {
+        const w = elementMap.get(id)!.width;
+        return sum + (i > 0 ? spacingX : 0) + w;
+      }, 0);
+      const startX = centerX - rowWidth / 2;
+      const rowY = firstRowY + r * ROW_SPACING;
+
+      let cursorX = startX;
+      for (let i = 0; i < row.length; i++) {
+        const node = elementMap.get(row[i])!;
+        const cellWidth = node.width + (i < row.length - 1 ? spacingX : 0);
+        // 节点在 cell 内水平居中，保持相邻节点间距为 spacingX
+        node.x = cursorX + (cellWidth - node.width) / 2;
+        node.y = rowY - node.height / 2;
+        cursorX += cellWidth;
+      }
     }
 
     // Sync coordinates of bound text elements

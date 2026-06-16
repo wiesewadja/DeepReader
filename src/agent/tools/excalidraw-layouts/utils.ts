@@ -58,6 +58,11 @@ export function topologicalSort(movableNodes: ElementDef[], arrows: ElementDef[]
   return orderedIds;
 }
 
+export function shouldIgnoreInLayout(el: ElementDef): boolean {
+  const id = el.id.toLowerCase();
+  return id.includes('title') || id.includes('subtitle') || id === 'header' || id.includes('legend');
+}
+
 /**
  * Synchronizes coordinates of all bound text elements to center them inside their container.
  */

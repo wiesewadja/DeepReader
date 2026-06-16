@@ -3,6 +3,7 @@ import {
   buildExcalidrawJSON,
   detectOverlaps,
   detectTextOverlaps,
+  detectConnectorNodeOverlaps,
   validateSemantics,
   edgeIntersection,
   calculateViewport,
@@ -692,5 +693,95 @@ describe('writeExcalidrawJson', () => {
     // 第二次元素更多
     const second = JSON.parse(calls[1][1]);
     expect(second.elements.length).toBeGreaterThan(JSON.parse(calls[0][1]).elements.length);
+  });
+});
+
+describe('detectConnectorNodeOverlaps', () => {
+  it('detects arrow crossing an unrelated rectangle', () => {
+    const elements: ElementDef[] = [
+      { id: 'src', type: 'rectangle', x: 0, y: 100, width: 100, height: 50 },
+      { id: 'dst', type: 'rectangle', x: 400, y: 100, width: 100, height: 50 },
+      { id: 'unrelated', type: 'rectangle', x: 200, y: 80, width: 100, height: 80 }, // block the path [100, 125] to [400, 125]
+      {
+        id: 'arr',
+        type: 'arrow',
+        x: 0,
+        y: 0,
+        startBinding: { elementId: 'src', gap: 2, focus: 0 },
+        endBinding: { elementId: 'dst', gap: 2, focus: 0 },
+      },
+    ];
+
+    const warnings = detectConnectorNodeOverlaps(elements);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('arr');
+    expect(warnings[0]).toContain('unrelated');
+  });
+
+  it('ignores arrow connecting to shapes without crossing others', () => {
+    const elements: ElementDef[] = [
+      { id: 'src', type: 'rectangle', x: 0, y: 100, width: 100, height: 50 },
+      { id: 'dst', type: 'rectangle', x: 400, y: 100, width: 100, height: 50 },
+      { id: 'unrelated', type: 'rectangle', x: 200, y: 300, width: 100, height: 80 }, // far away
+      {
+        id: 'arr',
+        type: 'arrow',
+        x: 0,
+        y: 0,
+        startBinding: { elementId: 'src', gap: 2, focus: 0 },
+        endBinding: { elementId: 'dst', gap: 2, focus: 0 },
+      },
+    ];
+
+    const warnings = detectConnectorNodeOverlaps(elements);
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('detects multi-segment arrow (L-shape) crossing an unrelated rectangle', () => {
+    // src 在左下、dst 在右上、unrelated 在中间。
+    // 直线 (src→dst) 不穿过 unrelated，但 L 形折线经过中间点 [250, -60] 时穿过 unrelated
+    const elements: ElementDef[] = [
+      { id: 'src', type: 'rectangle', x: 0, y: 300, width: 80, height: 50 },
+      { id: 'dst', type: 'rectangle', x: 500, y: 0, width: 80, height: 50 },
+      { id: 'unrelated', type: 'rectangle', x: 200, y: 220, width: 100, height: 80 },
+      {
+        id: 'arr',
+        type: 'arrow',
+        x: 40,
+        y: 325,
+        // L 形折线：起点 (40,325) → 中间 (290,265) → 终点 (540,25)
+        // 中间点 (290,265) 落在 unrelated (200,220)-(300,300) 内部
+        points: [[0, 0], [250, -60], [500, -300]],
+        startBinding: { elementId: 'src', gap: 2, focus: 0 },
+        endBinding: { elementId: 'dst', gap: 2, focus: 0 },
+      },
+    ];
+
+    const warnings = detectConnectorNodeOverlaps(elements);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('arr');
+    expect(warnings[0]).toContain('unrelated');
+  });
+
+  it('ignores L-shape arrow whose segments bypass the unrelated shape', () => {
+    // L 形折线明确绕开 unrelated，所有段都不相交
+    const elements: ElementDef[] = [
+      { id: 'src', type: 'rectangle', x: 0, y: 0, width: 80, height: 50 },
+      { id: 'dst', type: 'rectangle', x: 500, y: 0, width: 80, height: 50 },
+      { id: 'unrelated', type: 'rectangle', x: 200, y: 200, width: 100, height: 80 },
+      {
+        id: 'arr',
+        type: 'arrow',
+        x: 40,
+        y: 25,
+        // 折线 (40,25) → (290,-50) → (540,25)，整条线在 y < 50 区域，绕开 unrelated
+        points: [[0, 0], [250, -75], [500, 0]],
+        startBinding: { elementId: 'src', gap: 2, focus: 0 },
+        endBinding: { elementId: 'dst', gap: 2, focus: 0 },
+      },
+    ];
+
+    const warnings = detectConnectorNodeOverlaps(elements);
+    expect(warnings).toHaveLength(0);
   });
 });

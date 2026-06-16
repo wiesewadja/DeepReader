@@ -1,5 +1,5 @@
 import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
-import { syncBoundTextPositions } from './utils.js';
+import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 export const RadialLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
@@ -7,7 +7,7 @@ export const RadialLayout: LayoutEngine = {
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));
 
     const movableNodes = clonedElements.filter(el => 
-      el.type !== 'arrow' && el.type !== 'line' && !el.containerId
+      el.type !== 'arrow' && el.type !== 'line' && !el.containerId && !shouldIgnoreInLayout(el)
     );
 
     if (movableNodes.length === 0) {

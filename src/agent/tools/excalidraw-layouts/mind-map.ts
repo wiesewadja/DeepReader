@@ -1,5 +1,5 @@
 import type { ElementDef, LayoutEngine, LayoutOptions } from '../excalidraw-types.js';
-import { syncBoundTextPositions } from './utils.js';
+import { syncBoundTextPositions, shouldIgnoreInLayout } from './utils.js';
 
 /**
  * Left-right mind map layout.
@@ -13,14 +13,14 @@ export const MindMapLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const centerX = 500;
     const centerY = 300;
-    const levelSpacingX = options?.spacing?.x ?? 260;
-    const siblingSpacingY = options?.spacing?.y ?? 120;
+    const levelSpacingX = options?.spacing?.x ?? 320;
+    const siblingSpacingY = options?.spacing?.y ?? 160;
 
     const clonedElements = elements.map(el => ({ ...el }));
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));
 
     const movableNodes = clonedElements.filter(el =>
-      el.type !== 'arrow' && el.type !== 'line' && !el.containerId
+      el.type !== 'arrow' && el.type !== 'line' && !el.containerId && !shouldIgnoreInLayout(el)
     );
     const arrows = clonedElements.filter(el => el.type === 'arrow' || el.type === 'line');
 
@@ -52,8 +52,8 @@ export const MindMapLayout: LayoutEngine = {
       else leftChildren.push(child);
     });
 
-    layoutSide(rightChildren, 1, centerX, centerY, levelSpacingX, siblingSpacingY, childrenMap);
-    layoutSide(leftChildren, -1, centerX, centerY, levelSpacingX, siblingSpacingY, childrenMap);
+    layoutSide(rightChildren, 1, centerNode, centerY, levelSpacingX, siblingSpacingY, childrenMap);
+    layoutSide(leftChildren, -1, centerNode, centerY, levelSpacingX, siblingSpacingY, childrenMap);
 
     syncBoundTextPositions(clonedElements, elementMap);
     return clonedElements;
@@ -89,10 +89,27 @@ function buildParentMap(nodes: ElementDef[], arrows: ElementDef[]): Map<string, 
   return map;
 }
 
+/**
+ * 根据父节点宽度和子节点最大宽度，动态计算水平层间距。
+ *
+ * 保证：父子边界之间至少有 60px 留白，避免节点过宽时重叠或连线压字。
+ * 当父或子节点宽度很大时，dynamicSpacingX 会自动放大；width 为 0 或子节点缺失时回退到 levelSpacingX。
+ */
+function computeDynamicSpacingX(
+  levelSpacingX: number,
+  parentWidth: number,
+  childWidths: number[],
+): number {
+  const childMaxWidth = childWidths.length > 0
+    ? Math.max(...childWidths)
+    : 0;
+  return Math.max(levelSpacingX, parentWidth / 2 + childMaxWidth / 2 + 60);
+}
+
 function layoutSide(
   nodes: ElementDef[],
   side: 1 | -1,
-  centerX: number,
+  centerNode: ElementDef,
   centerY: number,
   levelSpacingX: number,
   siblingSpacingY: number,
@@ -102,13 +119,21 @@ function layoutSide(
 
   const heights = nodes.map(n => computeSubtreeHeight(n, childrenMap, siblingSpacingY, new Set()));
   const totalHeight = heights.reduce((a, b) => a + b, 0) + (nodes.length - 1) * siblingSpacingY;
+  const centerX = centerNode.x + centerNode.width / 2;
   let currentY = centerY - totalHeight / 2;
+
+  // 根据中心节点宽度和子节点最大宽度动态计算水平层间距
+  const dynamicSpacingX = computeDynamicSpacingX(
+    levelSpacingX,
+    centerNode.width,
+    nodes.map(n => n.width),
+  );
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
     const subtreeHeight = heights[i];
 
-    node.x = centerX + side * levelSpacingX - node.width / 2;
+    node.x = centerX + side * dynamicSpacingX - node.width / 2;
     node.y = currentY + (subtreeHeight - node.height) / 2;
 
     layoutDescendants(node, side, levelSpacingX, siblingSpacingY, childrenMap, new Set());
@@ -156,11 +181,18 @@ function layoutDescendants(
   const parentCenterX = parent.x + parent.width / 2;
   let currentY = parent.y + parent.height / 2 - totalHeight / 2;
 
+  // 根据父节点宽度和子节点最大宽度动态计算水平层间距
+  const dynamicSpacingX = computeDynamicSpacingX(
+    levelSpacingX,
+    parent.width,
+    children.map(c => c.width),
+  );
+
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     const subtreeHeight = heights[i];
 
-    child.x = parentCenterX + side * levelSpacingX - child.width / 2;
+    child.x = parentCenterX + side * dynamicSpacingX - child.width / 2;
     child.y = currentY + (subtreeHeight - child.height) / 2;
 
     layoutDescendants(child, side, levelSpacingX, siblingSpacingY, childrenMap, new Set(visited));
