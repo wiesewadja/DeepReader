@@ -374,6 +374,69 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 
 ---
 
+## 新架构：统一提示词管理系统
+
+> 2026-06-16 新增：基于模块化注册表的提示词管理系统
+
+### 架构概览
+
+新的提示词管理系统将所有提示词（核心 8 个 + 辅助模块）注册到中央注册表，支持 i18n、版本控制和单元测试。
+
+```
+src/agent/prompts/
+├── types.ts                    # 类型定义
+├── registry.ts                 # 注册表实现
+├── i18n.ts                     # i18n 管理器
+├── version.ts                  # 版本管理器
+├── index.ts                    # 统一导出
+├── core/                       # 核心 8 个 Agent 提示词
+│   ├── router.ts               # S0 Router
+│   ├── inspectional.ts         # S1 Inspectional
+│   ├── pre-search.ts           # S2-Pre
+│   ├── analytical.ts           # S2 Analytical
+│   ├── syntopical.ts           # S3 Syntopical
+│   ├── socratic.ts             # Socratic 拆分
+│   ├── formatter.ts            # S4 Formatter
+│   └── proactive.ts            # Proactive Formatter
+└── auxiliary/                  # 辅助提示词
+    └── advisor.ts              # 阅读顾问
+```
+
+### 使用方式
+
+```typescript
+import { promptRegistry } from '../prompts/index.js';
+
+// 获取提示词
+const routerPrompt = promptRegistry.get('router.s0');
+console.log(routerPrompt.systemPrompt);
+
+// 使用 i18n
+const englishPrompt = promptRegistry.get('router.s0', 'en');
+
+// 获取版本
+const version = promptRegistry.getVersion('router.s0');
+
+// 列出所有模块
+const coreModules = promptRegistry.list({ category: 'core' });
+```
+
+### 版本控制
+
+每个模块都有语义化版本号：
+- **主版本号（Major）**：提示词结构重大变化
+- **次版本号（Minor）**：内容调整
+- **修订号（Patch）**：小修
+
+### 测试覆盖
+
+所有模块都有单元测试：
+- 结构测试：验证 id、version、metadata
+- 内容测试：验证系统提示词包含必要的 XML 标签和规则
+
+---
+
 | 日期 | 变更 |
 |---|---|
+| 2026-06-16 | 新增统一提示词管理系统章节 |
 | 2026-06-10 | 初版：基于 `src/agent/graph/prompts/*` 8 文件 968 行的架构视角文档。XML 标签结构 + AnalyticalPromptContext 共享接口 + 8 节点 prompt 总览 + 跨节点共享模式 + 19 条已知限制 |
