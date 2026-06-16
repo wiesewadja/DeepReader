@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildFormatterUserMessage } from '@/agent/graph/prompts/formatter-prompt';
+import { buildFormatterUserMessage } from '@/agent/prompts/utils.js';
 
 describe('buildFormatterUserMessage — retrieval coverage', () => {
   it('emits coverage-gap guidance when current chapter is missing from searches', () => {
