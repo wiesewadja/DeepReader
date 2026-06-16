@@ -24,7 +24,7 @@ import {
   buildSocraticDialoguePrompt,
   buildSocraticDialogueUserMessage,
   buildScopedChaptersBlock,
-} from '../../prompts/utils.js';
+} from '../../prompts/utils/index.js';
 import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
 import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
@@ -172,7 +172,7 @@ export async function formatterNode(
     }
     const content = await streamToContent(
       mainModel,
-      [new SystemMessage(proactivePrompt), new HumanMessage(proactiveUserMsg)],
+      [new SystemMessage(proactivePromptStr), new HumanMessage(proactiveUserMsg)],
       config,
       callbacks?.onContent,
     );

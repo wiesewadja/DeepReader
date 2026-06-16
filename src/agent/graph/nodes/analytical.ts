@@ -11,7 +11,7 @@ import { interrupt } from '@langchain/langgraph';
 import { agentLog as log } from '../../../utils/logger.js';
 import { createLangChainTools } from '../../tools/index.js';
 import type { AnalyticalInput } from '../node-io.js';
-import { buildFullAnalyticalContext } from '../../prompts/utils.js';
+import { buildFullAnalyticalContext } from '../../prompts/utils/index.js';
 import type { CognitiveEngineState } from '../state';
 import { runPlanExecute } from '../subgraphs/plan-execute.js';
 import { resolveCurrentChapterName } from '../utils/engine-helpers.js';

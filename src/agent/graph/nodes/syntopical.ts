@@ -20,7 +20,7 @@ import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LI
 import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
 import type { SyntopicalInput } from '../node-io.js';
 import { syntopicalPrompt } from '../../prompts/core/syntopical.js';
-import { buildSyntopicalUserMessage } from '../../prompts/utils.js';
+import { buildSyntopicalUserMessage } from '../../prompts/utils/index.js';
 import type { SharedContext } from '../shared-context.js';
 import type { CognitiveEngineState } from '../state';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
