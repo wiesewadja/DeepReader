@@ -69,7 +69,7 @@ describe('buildExcalidrawJSON', () => {
     expect(el.text).toBe('测试文本');
     expect(el.originalText).toBe('测试文本');
     expect(el.fontSize).toBe(20);
-    expect(el.fontFamily).toBe(4);
+    expect(el.fontFamily).toBe(5);
     expect(el.textAlign).toBe('center');
     expect(el.verticalAlign).toBe('middle');
     expect(el.containerId).toBeNull();
