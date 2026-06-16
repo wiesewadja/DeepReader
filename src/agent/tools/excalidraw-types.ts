@@ -1,0 +1,55 @@
+/**
+ * Excalidraw semantic layout types.
+ */
+
+export interface ElementDef {
+  id: string;
+  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text?: string;
+  strokeColor?: string;
+  backgroundColor?: string;
+  fillStyle?: 'solid' | 'hachure' | 'cross-hatch';
+  strokeWidth?: number;
+  roughness?: number;
+  opacity?: number;
+  fontSize?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  points?: [number, number][];
+  startBinding?: { elementId: string; gap: number; focus: number };
+  endBinding?: { elementId: string; gap: number; focus: number };
+  startArrowHead?: string | null;
+  endArrowHead?: string | null;
+  containerId?: string;
+  boundElements?: Array<{ id: string; type: 'text' | 'arrow' }>;
+  groupIds?: string[];
+}
+
+export type DiagramLayoutType =
+  | 'hierarchical-tree'
+  | 'flow-horizontal'
+  | 'timeline'
+  | 'radial'
+  | 'matrix'
+  | 'mind-map';
+
+export interface LayoutScore {
+  totalOverlapArea: number;   // 总重叠面积
+  overlapPairs: number;       // 重叠元素对数
+  boundingArea: number;       // 整体包围盒面积（用于衡量稀疏度）
+  edgeCrossings: number;      // 边交叉数；Phase 1 固定返回 0
+}
+
+export interface LayoutOptions {
+  columns?: number;                       // matrix: 列数
+  direction?: 'horizontal' | 'vertical';  // flow / timeline
+  spacing?: { x: number; y: number };     // 可选间距覆盖
+}
+
+export interface LayoutEngine {
+  arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[];
+}

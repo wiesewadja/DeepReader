@@ -15,7 +15,7 @@ import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
 import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
 import { buildExcalidrawMd } from '../../tools/excalidraw-md.js';
-import type { ElementDef } from '../../tools/excalidraw.js';
+import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
 
 const DIAGRAM_INTENT_RE = /思维导图|脑图|流程图|概念图|画.{0,6}图|可视化展示|可视化|导图|示意图|infographic|图表|知识图谱/;
@@ -27,6 +27,16 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 - 形状即语义：椭圆=起始/终点，菱形=决策，矩形=过程/动作，自由文本=标注/标题。
 - 默认使用自由文本（无容器），仅当容器承载语义时才加框。容器内文本比例应 <30%。
 - 同类元素必须 y 坐标对齐，形成整齐的行或列。
+
+## 语义布局选择（新增可选 layout 属性）
+如果你在 JSON 的根级输出 "layout" 属性，系统会使用高精度的几何布局引擎重新计算所有节点的坐标。
+- "mind-map"：中心主题 + 多级分支向左右两侧交替展开（最常用，适合章节结构、概念拆解）。
+- "hierarchical-tree"：多层父子关系按垂直层级对齐（类似组织结构图）。
+- "flow-horizontal"：链式/分支流转的步骤、因果或串行流程。
+- "timeline"：按先后顺序演变的时间线，各节点会交错上下排布。
+- "radial"：单层放射（中心主题 -> 周围无父子连接的关联词）。
+- "matrix"：分类对比、四象限，按 2x2 格排列。
+注：你仍需为每个元素提供一个初始估算的 x 和 y，系统会自动优化它们。
 
 ## 布局规则（最重要）
 - 所有元素坐标以 (500, 300) 为中心向外扩散
@@ -92,9 +102,10 @@ const DIAGRAM_SYSTEM_PROMPT = `你是一个 Excalidraw 图形生成专家。根�
 - 不要手动计算箭头的 x/y 和 points，系统会覆盖
 
 ## 输出格式
-严格输出 JSON 对象，包含 filename 和 elements 字段。不要包含任何其他文字。
+严格输出 JSON 对象，包含 filename、layout（可选）和 elements 字段。不要包含任何其他文字。
 {
   "filename": "图形名称",
+  "layout": "mind-map|hierarchical-tree|flow-horizontal|timeline|radial|matrix（可选）",
   "elements": [
     {
       "id": "描述性ID",
@@ -636,7 +647,7 @@ ${analysisContent}
       return '';
     }
 
-    let parsed: { filename?: string; elements?: unknown[] };
+    let parsed: { filename?: string; layout?: string; elements?: unknown[] };
     try {
       parsed = JSON.parse(jsonText);
     } catch {
@@ -660,7 +671,7 @@ ${analysisContent}
     const filename = `${baseFilename}-${uniqueSuffix()}`;
 
     const result = await excalidrawTool.execute(
-      { filename, elements: parsed.elements },
+      { filename, elements: parsed.elements, layout: parsed.layout as DiagramLayoutType | undefined },
       toolContext,
     );
 

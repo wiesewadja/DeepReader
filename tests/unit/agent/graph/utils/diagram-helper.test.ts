@@ -231,4 +231,35 @@ describe('generateDiagram', () => {
     expect(result).toContain('![[Excalidraw/brace-in-string-');
     expect(result).toContain('.excalidraw]]');
   });
+
+  it('passes the layout parameter from LLM to excalidrawTool', async () => {
+    const mockCtx = makeMockCtx();
+    const elements = [
+      { id: 'r1', type: 'rectangle', x: 0, y: 0, width: 200, height: 100 },
+    ];
+    const mockModel = makeMockModel(JSON.stringify({
+      filename: 'layout-diagram',
+      layout: 'flow-horizontal',
+      elements,
+    }));
+
+    const { excalidrawTool } = await import('@/agent/tools/excalidraw');
+    const executeSpy = vi.spyOn(excalidrawTool, 'execute');
+
+    await generateDiagram(
+      '画个水平流程图',
+      '分析内容',
+      mockModel,
+      mockCtx,
+    );
+
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: 'flow-horizontal',
+      }),
+      mockCtx
+    );
+
+    executeSpy.mockRestore();
+  });
 });

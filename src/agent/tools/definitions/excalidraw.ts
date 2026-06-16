@@ -12,8 +12,8 @@ import type { ToolFactory } from './types.js';
 
 export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
   tool(
-    async ({ filename, elements }) => {
-      return excalidrawTool.execute({ filename, elements }, ctx);
+    async ({ filename, elements, layout }) => {
+      return excalidrawTool.execute({ filename, elements, layout }, ctx);
     },
     {
       name: 'excalidraw',
@@ -79,7 +79,7 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - roughness: 0（干净、专业、书卷气）
 - opacity: 100（所有元素，不用透明度做层次）
 - strokeWidth: 2（形状与主箭头）/ 1（细分支、结构线）
-- fontFamily: 1（Virgil 手写体，Excalidraw 默认）
+- fontFamily: 5（中文友好字体，渲染稳定无报错）
 - lineHeight: 1.25
 - roundness: { type: 3 }（轻微圆角，温润）
 
@@ -105,12 +105,16 @@ export const createExcalidrawTool: ToolFactory = (ctx: ToolContext) =>
 - 复杂图形分区域生成，每区用独立 seed 段
 
 ## 输出
-工具写入 .excalidraw.md 文件（Excalidraw 插件原生格式）并返回嵌入语法 ![[Excalidraw/filename.excalidraw.md]]。
+工具写入 .excalidraw 文件（Excalidraw 插件原生格式）并返回嵌入语法 ![[Excalidraw/filename.excalidraw]]。
 如果有碰撞或绑定问题，返回 warnings 供修正后重新调用。`,
       schema: z.object({
         filename: z
           .string()
           .describe('输出文件名（不含扩展名），如 "思维导图-书名"'),
+        layout: z
+          .enum(['mind-map', 'hierarchical-tree', 'flow-horizontal', 'timeline', 'radial', 'matrix'])
+          .optional()
+          .describe('使用的几何布局算法类型。无此字段时保持 LLM 原始坐标'),
         elements: z
           .array(
             z.object({

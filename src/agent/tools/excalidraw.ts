@@ -8,34 +8,8 @@
 import { log } from '../../utils/logger.js';
 import { calculateViewport, edgeIntersection, resolveOverlaps } from './excalidraw-geometry.js';
 import type { ToolExecutor, ToolContext } from './types.js';
-
-/** LLM 输入的元素定义（简化版，工具负责补齐完整字段） */
-interface ElementDef {
-  id: string;
-  type: 'rectangle' | 'ellipse' | 'diamond' | 'arrow' | 'line' | 'text';
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  text?: string;
-  strokeColor?: string;
-  backgroundColor?: string;
-  fillStyle?: 'solid' | 'hachure' | 'cross-hatch';
-  strokeWidth?: number;
-  roughness?: number;
-  opacity?: number;
-  fontSize?: number;
-  textAlign?: 'left' | 'center' | 'right';
-  verticalAlign?: 'top' | 'middle' | 'bottom';
-  points?: [number, number][];
-  startBinding?: { elementId: string; gap: number; focus: number };
-  endBinding?: { elementId: string; gap: number; focus: number };
-  startArrowHead?: string | null;
-  endArrowHead?: string | null;
-  containerId?: string;
-  boundElements?: Array<{ id: string; type: 'text' | 'arrow' }>;
-  groupIds?: string[];
-}
+import type { ElementDef, DiagramLayoutType } from './excalidraw-types.js';
+import { arrangeWithFallback } from './excalidraw-layout.js';
 
 /** 完整的 .excalidraw JSON 结构 */
 interface ExcalidrawFile {
@@ -321,9 +295,9 @@ function toExcalidrawElement(el: ElementDef): ExcalidrawElement {
   return base;
 }
 
-function buildExcalidrawJSON(elements: ElementDef[]): ExcalidrawFile {
-  // Deterministic collision resolution before building
-  const resolved = resolveOverlaps(elements);
+function buildExcalidrawJSON(elements: ElementDef[], layout?: DiagramLayoutType): ExcalidrawFile {
+  // Deterministic semantic layout and collision resolution
+  const resolved = arrangeWithFallback(elements, layout);
 
   // Build element lookup for auto-calculating arrow positions
   const elMap = new Map<string, ElementDef>();
@@ -544,9 +518,10 @@ function validateSemantics(elements: ElementDef[]): string[] {
 
 export const excalidrawTool: ToolExecutor = {
   async execute(args: Record<string, unknown>, context: ToolContext): Promise<string> {
-    const { filename, elements } = args as {
+    const { filename, elements, layout } = args as {
       filename: string;
       elements: ElementDef[];
+      layout?: DiagramLayoutType;
     };
 
     if (!filename || !elements || !Array.isArray(elements) || elements.length === 0) {
@@ -574,7 +549,7 @@ export const excalidrawTool: ToolExecutor = {
       const semanticWarnings = validateSemantics(elements);
 
       // 构建 .excalidraw JSON
-      const excalidrawFile = buildExcalidrawJSON(elements);
+      const excalidrawFile = buildExcalidrawJSON(elements, layout);
 
       // 确保 Excalidraw 目录存在，写入文件
       const dir = 'Excalidraw';
@@ -632,6 +607,7 @@ export async function writeExcalidrawJson(
   filename: string,
   elements: ElementDef[],
   context: ToolContext,
+  layout?: DiagramLayoutType,
 ): Promise<string> {
   if (!filename || !elements || !Array.isArray(elements) || elements.length === 0) {
     throw new Error('writeExcalidrawJson: filename 或 elements 为空');
@@ -641,7 +617,7 @@ export async function writeExcalidrawJson(
     throw new Error(`writeExcalidrawJson: filename 非法 "${filename}"`);
   }
 
-  const excalidrawFile = buildExcalidrawJSON(elements);
+  const excalidrawFile = buildExcalidrawJSON(elements, layout);
 
   const dir = 'Excalidraw';
   const adapter = context.vault.app.vault.adapter;
