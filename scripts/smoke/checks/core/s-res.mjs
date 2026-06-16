@@ -14,7 +14,7 @@ import path from 'path';
 
 const MAIN_JS_MIN_BYTES = 100 * 1024;   // 100KB
 const STYLES_MIN_BYTES = 0;             // 任意非空
-const EXPECTED_PLUGIN_ID = 'deepreader';
+const ACCEPTED_PLUGIN_IDS = ['deepreader', 'deepreader-dev'];
 
 export default {
 	id: 'S-RES',
@@ -54,8 +54,8 @@ export default {
 		try {
 			const content = await fs.readFile(manifestPath, 'utf-8');
 			const manifest = JSON.parse(content);
-			if (manifest.id !== EXPECTED_PLUGIN_ID) {
-				issues.push(`bin/manifest.json id 错误: "${manifest.id}" !== "${EXPECTED_PLUGIN_ID}"`);
+			if (!ACCEPTED_PLUGIN_IDS.includes(manifest.id)) {
+				issues.push(`bin/manifest.json id 错误: "${manifest.id}" 不在 [${ACCEPTED_PLUGIN_IDS.join(', ')}] 中`);
 			}
 		} catch (e) {
 			issues.push(`bin/manifest.json 读取/解析失败: ${e.message}`);
