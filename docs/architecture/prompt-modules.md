@@ -302,6 +302,8 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 
 ## Files
 
+### 运行时文件（当前 graph nodes 使用）
+
 | 文件 | 职责 |
 |---|---|
 | `src/agent/graph/prompts/router-prompt.ts` | S0 Router prompt（108 行） |
@@ -314,6 +316,26 @@ B. 存在性验证 — "书中有没有提到X" → depth=0
 | `src/agent/graph/prompts/proactive-formatter-prompt.ts` | Proactive 引导 prompt（110 行） |
 | `src/agent/graph/utils/history-summarizer.ts` | 历史摘要 + 格式化（103 行） |
 | `tests/unit/agent/graph/prompts/*.test.ts` | 8 个 prompt 构造单测 |
+
+### 模块化注册表（新架构，Phase 1）
+
+| 文件 | 职责 |
+|---|---|
+| `src/agent/prompts/types.ts` | 类型定义（PromptModule, RouterBuildContext 等） |
+| `src/agent/prompts/registry.ts` | 注册表实现 + i18n locale 管理 |
+| `src/agent/prompts/version.ts` | 版本管理器（changelog 追踪） |
+| `src/agent/prompts/index.ts` | 统一导出 + `registerAllPrompts()` 批量注册 |
+| `src/agent/prompts/i18n.ts` | 向后兼容 shim（委托给 registry） |
+| `src/agent/prompts/core/router.ts` | S0 Router 模块化定义 |
+| `src/agent/prompts/core/inspectional.ts` | S1 Inspectional 模块化定义 |
+| `src/agent/prompts/core/pre-search.ts` | S2-Pre 早停模块化定义 |
+| `src/agent/prompts/core/analytical.ts` | S2 Analytical 模块化定义 |
+| `src/agent/prompts/core/syntopical.ts` | S3 Syntopical 模块化定义 |
+| `src/agent/prompts/core/socratic.ts` | Socratic 模块化定义 |
+| `src/agent/prompts/core/formatter.ts` | S4 Formatter 模块化定义 |
+| `src/agent/prompts/core/proactive.ts` | Proactive 模块化定义 |
+| `src/agent/prompts/auxiliary/advisor.ts` | 阅读顾问模块化定义 |
+| `tests/unit/agent/prompts/*.test.ts` | 13 个测试文件，63 个用例 |
 
 ---
 
@@ -405,14 +427,21 @@ src/agent/prompts/
 ### 使用方式
 
 ```typescript
-import { promptRegistry } from '../prompts/index.js';
+import { registerAllPrompts, promptRegistry } from '../prompts/index.js';
+
+// 方式 1：显式批量注册（推荐）
+registerAllPrompts();
+
+// 方式 2：side-effect 注册（向后兼容，各模块文件底部自动注册）
+// import '../prompts/core/router.js';
 
 // 获取提示词
 const routerPrompt = promptRegistry.get('router.s0');
 console.log(routerPrompt.systemPrompt);
 
 // 使用 i18n
-const englishPrompt = promptRegistry.get('router.s0', 'en');
+promptRegistry.setLocale('en');
+const englishPrompt = promptRegistry.get('router.s0');
 
 // 获取版本
 const version = promptRegistry.getVersion('router.s0');
@@ -420,6 +449,23 @@ const version = promptRegistry.getVersion('router.s0');
 // 列出所有模块
 const coreModules = promptRegistry.list({ category: 'core' });
 ```
+
+### i18n（locale 管理）
+
+locale 状态统一由 `PromptRegistryImpl` 管理（单一状态源）：
+
+```typescript
+import { promptRegistry } from '../prompts/index.js';
+
+promptRegistry.setLocale('en');  // 切换全局 locale
+promptRegistry.getLocale();      // → 'en'
+
+// get() 默认使用全局 locale
+promptRegistry.get('router.s0');         // → 英文（因为全局是 en）
+promptRegistry.get('router.s0', 'zh');   // → 中文（覆盖）
+```
+
+> ⚠️ `promptI18n` 已废弃（内部委托给 registry），新代码请直接使用 `promptRegistry.setLocale()`。
 
 ### 版本控制
 
@@ -433,6 +479,7 @@ const coreModules = promptRegistry.list({ category: 'core' });
 所有模块都有单元测试：
 - 结构测试：验证 id、version、metadata
 - 内容测试：验证系统提示词包含必要的 XML 标签和规则
+- 功能测试：locale 切换、注册覆盖、版本比较等
 
 ---
 

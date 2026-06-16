@@ -1,9 +1,18 @@
 // src/agent/prompts/types.ts
 
+/** Router buildUserMessage 的上下文参数 */
+export interface RouterBuildContext {
+  rawQuery: string;
+  chatHistory: Array<{ role: string; content: string }>;
+  bookName?: string;
+  docDescription?: string;
+  locale?: 'zh' | 'en';
+}
+
 /** 提示词模块的语言版本 */
 export interface PromptLocale {
   systemPrompt: string;
-  userMessage?: string | ((ctx: any) => string);
+  userMessage?: string | ((ctx: Record<string, unknown>) => string);
 }
 
 /** 提示词模块的元数据 */
@@ -21,16 +30,16 @@ export interface PromptModule {
   name: string;            // 显示名称
   description?: string;    // 简短描述
   metadata: PromptMetadata;
-  
+
   // 多语言内容
   locales: {
     zh: PromptLocale;
     en?: PromptLocale;
   };
-  
+
   // 动态 build 函数（可选，用于需要参数拼装的模块）
-  buildSystemPrompt?: (ctx: any) => string;
-  buildUserMessage?: (ctx: any) => string;
+  buildSystemPrompt?: (ctx: Record<string, unknown>) => string;
+  buildUserMessage?: (ctx: Record<string, unknown>) => string;
 }
 
 /** 提示词注册表 */
@@ -39,4 +48,6 @@ export interface PromptRegistry {
   get(id: string, locale?: 'zh' | 'en'): PromptLocale;
   getVersion(id: string): string;
   list(filter?: { category?: string; tags?: string[] }): PromptModule[];
+  setLocale(locale: 'zh' | 'en'): void;
+  getLocale(): 'zh' | 'en';
 }

@@ -19,6 +19,7 @@ export class PromptRegistryImpl implements PromptRegistry {
       throw new Error(`[PromptRegistry] Module not found: ${id}`);
     }
     const lang = locale || this.currentLocale;
+    // 优先使用指定语言，fallback 到中文
     const content = module.locales[lang] || module.locales.zh;
     if (!content) {
       throw new Error(`[PromptRegistry] Locale not found: ${lang} for module: ${id}`);
@@ -28,6 +29,10 @@ export class PromptRegistryImpl implements PromptRegistry {
 
   setLocale(locale: 'zh' | 'en'): void {
     this.currentLocale = locale;
+  }
+
+  getLocale(): 'zh' | 'en' {
+    return this.currentLocale;
   }
 
   getVersion(id: string): string {
@@ -41,7 +46,7 @@ export class PromptRegistryImpl implements PromptRegistry {
       result = result.filter(m => m.metadata.category === filter.category);
     }
     if (filter?.tags) {
-      result = result.filter(m => 
+      result = result.filter(m =>
         filter.tags!.some(tag => m.metadata.tags?.includes(tag))
       );
     }
