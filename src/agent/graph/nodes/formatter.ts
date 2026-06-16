@@ -16,17 +16,15 @@ import {
   sanitizeOutput,
 } from '../utils/output-sanitizer.js';
 import type { FormatterInput } from '../node-io.js';
-import { buildScopedChaptersBlock } from '../prompts/analytical-prompt.js';
 import {
   buildFormatterSystemPrompt,
   buildFormatterUserMessage,
-} from '../prompts/formatter-prompt';
-import {
   buildProactiveSystemPrompt,
   buildProactiveUserMessage,
   buildSocraticDialoguePrompt,
   buildSocraticDialogueUserMessage,
-} from '../prompts/proactive-formatter-prompt';
+  buildScopedChaptersBlock,
+} from '../../prompts/utils.js';
 import type { CognitiveEngineState, NodeError, ToolResultSnapshot } from '../state';
 import { ReadingDepth, NODE_ERROR_HINTS } from '../state';
 import { resolveMode } from '../utils/engine-helpers';
@@ -162,7 +160,7 @@ export async function formatterNode(
     const ar = analysisResult || '';
     const hasDiagram = false; // Proactive 模式直接结束到 formatter，不经过 VISUALIZER 节点，因此不附带图表
     callbacks?.onProgress?.('思考引导问题...');
-    const proactivePrompt = buildProactiveSystemPrompt(trigger, hasDiagram);
+    const proactivePromptStr = buildProactiveSystemPrompt(trigger, hasDiagram);
     let proactiveUserMsg = buildProactiveUserMessage({
       structuralAnalysis: structuralAnalysis || undefined,
       tocSummary: tocSummary || undefined,

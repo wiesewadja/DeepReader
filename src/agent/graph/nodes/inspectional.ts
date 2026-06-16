@@ -11,11 +11,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
 import { agentLog as log } from '../../../utils/logger.js';
 import { TREE_STRUCTURE_MAX_TEXT_LENGTH, TREE_STRUCTURE_MAX_DEPTH } from '../../config/agent-constants.js';
 import type { InspectionalInput } from '../node-io.js';
-import {
-  formatTreeStructure,
-  buildInspectionalSystemPrompt,
-  buildInspectionalUserMessage,
-} from '../prompts/inspectional-prompt';
+import { formatTreeStructure } from '../../prompts/utils.js';
+import { buildInspectionalSystemPrompt, buildInspectionalUserMessage } from '../prompts/inspectional-prompt.js';
 import type { CognitiveEngineState } from '../state';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';

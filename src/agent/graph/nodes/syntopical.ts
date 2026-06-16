@@ -19,10 +19,8 @@ import { getVaultPath } from '../../../utils/mobile-fs.js';
 import { SYNTOPICAL_MAX_BOOKS, SYNTOPICAL_TOP_K_PER_BOOK, SYNTOPICAL_SNAPSHOT_LIMIT } from '../../config/agent-constants.js';
 import { syntopicalSearch, type SyntopicalBookResult, type SyntopicalSearchResult } from '../../utils/syntopical-search.js';
 import type { SyntopicalInput } from '../node-io.js';
-import {
-  buildSyntopicalSystemPrompt,
-  buildSyntopicalUserMessage,
-} from '../prompts/syntopical-prompt.js';
+import { syntopicalPrompt } from '../../prompts/core/syntopical.js';
+import { buildSyntopicalUserMessage } from '../../prompts/utils.js';
 import type { SharedContext } from '../shared-context.js';
 import type { CognitiveEngineState } from '../state';
 import { verifyAndCleanContent } from '../utils/self-verification.js';
@@ -123,7 +121,7 @@ export async function syntopicalNode(
   if (fallback) return fallback;
 
   // 3. LLM synthesis
-  const systemPrompt = buildSyntopicalSystemPrompt();
+  const systemPrompt = syntopicalPrompt.locales.zh.systemPrompt;
   const userMessage = buildSyntopicalUserMessage(query, searchResult.books);
 
   log(`[S3 Syntopical] Calling LLM with ${searchResult.books.length} books context`);

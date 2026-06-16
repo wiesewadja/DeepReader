@@ -17,8 +17,7 @@ import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import { agentLog as log } from '../../../utils/logger.js';
 import { getEarlyStopThreshold } from '../../config/agent-constants.js';
 import type { PreSearchInput } from '../node-io.js';
-import { buildFullAnalyticalContext } from '../prompts/analytical-prompt.js';
-import { buildEarlyStopPrompt } from '../prompts/pre-search-prompt.js';
+import { buildFullAnalyticalContext, buildEarlyStopPrompt } from '../../prompts/utils.js';
 import type { CognitiveEngineState , ToolResultSnapshot } from '../state';
 import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import {
