@@ -9,6 +9,8 @@ export function buildInspectionalSystemPrompt(
   docDescription?: string,
   currentNodeId?: string,
   citedNodeIds?: string[],
+  quality?: string,
+  qualityReason?: string,
 ): string {
 
   const summarySection = docDescription
@@ -58,13 +60,17 @@ ${citedNodeIds.map(id => `- node_id: ${id}`).join('\n')}
 5. **suggested_keywords 至少提供 3-5 个搜索关键词**
 </task_branch>`;
 
+  const qualityWarning = (quality === 'degraded' || quality === 'poor')
+    ? `\n⚠️ 目录解析质量标记为「${quality}」：${qualityReason || '清洗度不足/走兜底逻辑'}。
+回答时请注意：部分章节标题可能不准确，避免基于标题做过度推断。\n`
+    : '';
+
   return `${inspectionalPrompt.locales.zh.systemPrompt}
 
 <document>
 书名: ${docName}${summarySection}
 目录树:
-${treeText}
-</document>
+${treeText}${qualityWarning}</document>
 
 <depth_context>
 当前用户的阅读深度诉求为：【深度 ${depth}】

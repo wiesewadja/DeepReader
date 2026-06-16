@@ -9,6 +9,11 @@ import { resolveBookIdFromPdf } from '../../../pageindex/book-resolver.js';
 import { PAGEINDEX_DIR } from '../../../pageindex/paths.js';
 import type { OutlineNode } from '../../tools/local/types';
 
+export type OutlineTreeResult = OutlineNode[] & {
+  quality?: "good" | "degraded" | "poor";
+  qualityReason?: string;
+};
+
 /**
  * Convert tree.json structure to OutlineNode[] for formatTreeStructure
  */
@@ -43,7 +48,7 @@ export async function loadTreeJson(
   app: import('obsidian').App,
   indexId: string,
   pdfName?: string
-): Promise<OutlineNode[]> {
+): Promise<OutlineTreeResult> {
   try {
     // Use indexId directly as bookId
     let bookId = indexId;
@@ -58,7 +63,14 @@ export async function loadTreeJson(
     const treeContent = await app.vault.adapter.read(treePath);
     const treeData = JSON.parse(treeContent);
 
-    return treeToOutlineNodes(treeData.structure || [], treeData.nodeFileMap || {});
+    const result = treeToOutlineNodes(treeData.structure || [], treeData.nodeFileMap || {}) as OutlineTreeResult;
+    if (treeData.quality) {
+      result.quality = treeData.quality;
+    }
+    if (treeData.qualityReason) {
+      result.qualityReason = treeData.qualityReason;
+    }
+    return result;
   } catch {
     return [];
   }

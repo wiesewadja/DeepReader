@@ -32,5 +32,7 @@ export interface OutlineNode {
   level: number;
   file_name?: string;       // Markdown 文件名（不含 .md），含数字前缀，用于 wikilink
   summary?: string;
+  quality?: "good" | "degraded" | "poor";
+  qualityReason?: string;
   children?: OutlineNode[];
 }

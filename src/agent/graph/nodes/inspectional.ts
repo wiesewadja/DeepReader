@@ -17,7 +17,7 @@ import { extractCitedNodeIds } from '../utils/chapter-reference-parser.js';
 import { extractHumanMessageContents } from '../utils/engine-helpers.js';
 import { extractJSON } from '../utils/parse.js';
 import { enforceScopeHardGuard, buildFallbackScope, formatGuardInjectedLog } from '../utils/scope-guard.js';
-import { loadTreeJson } from '../utils/tree-loader';
+import { loadTreeJson, type OutlineTreeResult } from '../utils/tree-loader';
 
 /**
  * S1 Inspectional node: reads tree.json, selects scope, generates TOC summary.
@@ -80,6 +80,9 @@ export async function inspectionalNode(
     log(`[S1 Inspectional] currentNodeId=${currentNodeId || '(none)'}, citedNodeIds=[${citedNodeIds.join(',')}]`);
   }
 
+  const quality = outlineNodes.quality;
+  const qualityReason = outlineNodes.qualityReason;
+
   const systemPrompt = buildInspectionalSystemPrompt(
     treeText,
     statePdfName || '',
@@ -87,6 +90,8 @@ export async function inspectionalNode(
     docDescription,
     currentNodeId,
     citedNodeIds,
+    quality,
+    qualityReason
   );
   const userMessage = buildInspectionalUserMessage(
     rewrittenQuery,

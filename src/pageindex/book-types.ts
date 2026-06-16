@@ -22,6 +22,8 @@ export interface BookIndexOptions {
   addNodeSummary?: boolean;
   /** Generate document-level description (default: true) */
   addDocDescription?: boolean;
+  /** Optional model configuration to override the default model for TOC cleanup */
+  tocModel?: string;
   /** Progress callback */
   onProgress?: (progress: BookIndexProgress) => void;
   /** Proposition cards config (optional) */
@@ -269,6 +271,8 @@ export interface TreeData {
   type?: string;
   nodeFileMap: Record<string, string>;  // nodeId → fileName
   structure: TreeNode[];
+  quality?: "good" | "degraded" | "poor";
+  qualityReason?: string;
 }
 
 /** TreeNode 结构（复用 core/types.ts 的 TreeNode，增加可选字段） */

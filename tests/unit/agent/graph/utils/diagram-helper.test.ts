@@ -102,7 +102,7 @@ describe('generateDiagram', () => {
     expect(result).toBe('');
   });
 
-  it('returns empty when JSON is missing filename', async () => {
+  it('uses fallback filename when JSON is missing filename', async () => {
     const mockCtx = makeMockCtx();
     const mockModel = makeMockModel(JSON.stringify({
       elements: [{ id: 'r1', type: 'rectangle', x: 0, y: 0, width: 100, height: 50 }],
@@ -115,7 +115,8 @@ describe('generateDiagram', () => {
       mockCtx,
     );
 
-    expect(result).toBe('');
+    expect(result).toContain('![[Excalidraw/画个图-');
+    expect(result).toContain('.excalidraw]]');
   });
 
   it('returns empty when JSON is missing elements', async () => {

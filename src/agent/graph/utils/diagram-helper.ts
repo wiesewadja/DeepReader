@@ -552,16 +552,17 @@ ${processedContent}
       return '';
     }
 
-    if (!parsed.filename || !Array.isArray(parsed.elements) || parsed.elements.length === 0) {
-      log('[DiagramHelper] 缺少 filename 或 elements，parsed keys:', Object.keys(parsed).join(','));
+    if (!Array.isArray(parsed.elements) || parsed.elements.length === 0) {
+      log('[DiagramHelper] 缺少 elements，parsed keys:', Object.keys(parsed).join(','));
       return '';
     }
 
-    // filename 清洗（LLM 可能带书名号等非法字符）
-    const baseFilename = sanitizeFilename(parsed.filename);
+    // filename 清洗（LLM 可能带书名号等非法字符，如果缺失则兜底）
+    let baseFilename = parsed.filename ? sanitizeFilename(parsed.filename) : null;
     if (!baseFilename) {
-      log(`[DiagramHelper] filename 清洗后仍非法 "${parsed.filename}"`);
-      return '';
+      const fallback = options?.pdfName || query || "diagram";
+      baseFilename = sanitizeFilename(fallback) || "diagram";
+      log(`[DiagramHelper] LLM 未返回 filename 或清洗后为空，使用兜底名称: "${baseFilename}"`);
     }
     // 追加唯一后缀（HHMMSS）：一次对话可能多次绘图（S1/S2/S3 各画一张），
     // 不加后缀会导致同名文件互相覆盖/并发写入冲突。

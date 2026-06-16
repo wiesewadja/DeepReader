@@ -13,8 +13,8 @@ export const MindMapLayout: LayoutEngine = {
   arrange(elements: ElementDef[], options?: LayoutOptions): ElementDef[] {
     const centerX = 500;
     const centerY = 300;
-    const levelSpacingX = options?.spacing?.x ?? 320;
-    const siblingSpacingY = options?.spacing?.y ?? 160;
+    const levelSpacingX = options?.spacing?.x ?? 220;
+    const siblingSpacingY = options?.spacing?.y ?? 80;
 
     const clonedElements = elements.map(el => ({ ...el }));
     const elementMap = new Map<string, ElementDef>(clonedElements.map(el => [el.id, el]));

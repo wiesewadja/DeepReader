@@ -178,6 +178,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
 
   // Wrap entire pipeline in try-finally to ensure status cleanup on any error
   try {
+    let quality: "good" | "degraded" | "poor" = "good";
+    let qualityReason: string | undefined = undefined;
 
   // B0 validate
   tracer.startPhase("validate");
@@ -371,6 +373,38 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
   }
 
   // B2 export_markdown
+  // TOC LLM Cleanup before running exporters
+  try {
+    const { cleanTocTitles } = await import("./core/toc-cleaner.js");
+    const cleanup = await cleanTocTitles(parseResult.structure, {
+      bookTitle: rootTitle,
+      model: options.tocModel || options.model || "deepseek-chat",
+      apiKey: options.apiKey,
+      baseUrl: options.baseUrl,
+      onLlmCall: (call) => tracer.recordLlmCall(call),
+    });
+
+    parseResult.structure = cleanup.structure;
+    quality = cleanup.result.quality;
+    qualityReason = cleanup.result.qualityReason;
+
+    // Sync cleaned titles to epubInfo chapters for EPUB
+    // Match by root-level tree node index (epub chapters → tree nodes are 1:1)
+    if (options.fileType === "epub" && parseResult.epubInfo) {
+      const limit = Math.min(parseResult.structure.length, parseResult.epubInfo.chapters.length);
+      for (let i = 0; i < limit; i++) {
+        const node = parseResult.structure[i];
+        if (node && node.title) {
+          parseResult.epubInfo.chapters[i]!.title = node.title;
+        }
+      }
+    }
+  } catch (err) {
+    piLog(`[TOC Cleanup] Failed to run TOC cleanup: ${err}`);
+    quality = "degraded";
+    qualityReason = `TOC Cleanup failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+
   tracer.startPhase("export_markdown");
   reportProgress({
     percent: 70,
@@ -503,6 +537,8 @@ export async function indexBook(options: BookIndexOptions): Promise<BookIndexRes
       source: options.filePath,
       nodeFileMap,
       structure: finalStructure,
+      quality,
+      qualityReason,
     };
     await fs.writeFile(
       path.join(indexDir, "tree.json"),
