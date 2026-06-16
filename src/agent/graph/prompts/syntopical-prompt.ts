@@ -2,8 +2,10 @@
  * S3 Syntopical Reading System Prompt - Backward Compatible Re-export
  *
  * This file re-exports from the new prompt registry for backward compatibility.
- * New code should import from '@/agent/prompts/core/syntopical.js' instead.
+ * New code should import from '@/agent/prompts/utils.js' instead.
  */
+
+export { syntopicalPrompt } from '../../prompts/core/syntopical.js';
 
 import { syntopicalPrompt } from '../../prompts/core/syntopical.js';
 import type { SyntopicalBookResult } from '../../utils/syntopical-search.js';
@@ -61,6 +63,3 @@ export function buildSyntopicalUserMessage(
 }
 
 export const PROMPT_S3_SYNTOPICAL = buildSyntopicalSystemPrompt();
-
-// Also export the new prompt module for new code
-export { syntopicalPrompt };

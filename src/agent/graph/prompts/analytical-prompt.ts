@@ -2,12 +2,13 @@
  * S2 Analytical Reading System Prompt - Backward Compatible Re-export
  *
  * This file re-exports from the new prompt registry for backward compatibility.
- * New code should import from '@/agent/prompts/core/analytical.js' instead.
+ * New code should import from '@/agent/prompts/utils.js' instead.
  */
 
+export { buildFullAnalyticalContext, buildScopedChaptersBlock, buildAnalyticalUserMessage } from '../../prompts/utils.js';
+export { analyticalPrompt } from '../../prompts/core/analytical.js';
+
 import { analyticalPrompt } from '../../prompts/core/analytical.js';
-import type { HistorySummary } from '../utils/history-summarizer';
-import { formatHistoryBlock, formatPrevSearchedBlock } from '../utils/history-summarizer';
 
 export interface AnalyticalPromptContext {
   scopeNodeIds?: string[];
@@ -21,9 +22,6 @@ export function buildAnalyticalPrompt(_ctx: AnalyticalPromptContext): string {
 
 export const PROMPT_S2_ANALYTICAL_TEMPLATE = buildAnalyticalPrompt({});
 
-/**
- * Build system prompt for analytical state with scope
- */
 export function buildAnalyticalSystemPrompt(ctx: {
   scopeNodeIds: string[];
   tocSummary?: string;
@@ -60,128 +58,3 @@ ${searchHints}${currentChapterHint}${userProfileBlock}
 ${scopeList}
 </locked_scope>`;
 }
-
-/**
- * Build user message for analytical state
- */
-export function buildAnalyticalUserMessage(
-  standaloneQuery: string,
-  betterQuestion?: string,
-  recentHistory?: HistorySummary[],
-  prevSearchedBlockIds?: string[]
-): string {
-  const historyBlock = recentHistory && recentHistory.length > 0
-    ? formatHistoryBlock(recentHistory) + '\n'
-    : '';
-
-  const prevBlock = prevSearchedBlockIds && prevSearchedBlockIds.length > 0
-    ? formatPrevSearchedBlock(prevSearchedBlockIds) + '\n'
-    : '';
-
-  if (betterQuestion && betterQuestion !== standaloneQuery) {
-    return `${historyBlock}${prevBlock}<original_query>${standaloneQuery}</original_query>
-<refined_query>${betterQuestion}</refined_query>
-
-在限定范围内分析，提取关键内容并附带 block_id。`;
-  }
-  return `${historyBlock}${prevBlock}<query>
-${standaloneQuery}
-</query>
-
-在限定范围内分析，提取关键内容并附带 block_id。`;
-}
-
-export function buildScopedChaptersBlock(
-  scopeNodeIds: string[],
-  markdownFiles: Record<string, string>,
-  nodeFileMap?: Record<string, string>
-): string {
-  if (scopeNodeIds.length === 0) return '';
-
-  const lines: string[] = [];
-
-  for (const nodeId of scopeNodeIds) {
-    const indexFileName = nodeFileMap?.[nodeId]?.replace(/\.md$/, '');
-    if (indexFileName) {
-      lines.push(`- node_id: ${nodeId}, file_name: "${indexFileName}"`);
-      continue;
-    }
-
-    const numericPart = nodeId.replace(/^0+/, '');
-    const matchedKey = Object.keys(markdownFiles).find(key => {
-      const fileName = key.split('/').pop() ?? '';
-      const fileNumMatch = fileName.match(/^(\d+)\s*-\s*/);
-      if (fileNumMatch) {
-        const fileNum = fileNumMatch[1].replace(/^0+/, '');
-        return fileNum === numericPart;
-      }
-      return false;
-    });
-
-    if (matchedKey) {
-      const fileName = matchedKey.split('/').pop() ?? '';
-      const fileNameForLink = fileName.replace(/\.md$/, '');
-      lines.push(`- node_id: ${nodeId}, file_name: "${fileNameForLink}"`);
-    } else {
-      lines.push(`- node_id: ${nodeId}`);
-    }
-  }
-
-  const inner = lines.join('\n');
-  const full = `<scoped_chapters>\n${inner}\n</scoped_chapters>`;
-
-  if (full.length > 1500) {
-    const truncated = full.slice(0, 1500 - '...[已截断]'.length);
-    return `${truncated}...[已截断]`;
-  }
-
-  return full;
-}
-
-/**
- * Build the full analytical prompt context (system prompt + user message).
- * Shared by pre-search and analytical nodes to avoid duplication.
- */
-export function buildFullAnalyticalContext(params: {
-  scopeNodeIds: string[];
-  tocSummary?: string;
-  currentNodeId?: string;
-  currentChapterName?: string;
-  userProfileSummary?: string;
-  markdownFiles: Record<string, string>;
-  nodeFileMap?: Record<string, string>;
-  standaloneQuery: string;
-  betterQuestion?: string;
-  recentHistorySummaries?: import('../utils/history-summarizer').HistorySummary[];
-  prevSearchedBlockIds?: string[];
-  skipUserMessage?: boolean;
-}): { fullSystemPrompt: string; userMessage?: string } {
-  const systemPrompt = buildAnalyticalSystemPrompt({
-    scopeNodeIds: params.scopeNodeIds,
-    tocSummary: params.tocSummary,
-    currentNodeId: params.currentNodeId,
-    currentChapterName: params.currentChapterName,
-    userProfileSummary: params.userProfileSummary,
-  });
-
-  const scopedChapters = buildScopedChaptersBlock(params.scopeNodeIds, params.markdownFiles, params.nodeFileMap);
-  const fullSystemPrompt = scopedChapters
-    ? `${systemPrompt}\n${scopedChapters}`
-    : systemPrompt;
-
-  if (params.skipUserMessage) {
-    return { fullSystemPrompt };
-  }
-
-  const userMessage = buildAnalyticalUserMessage(
-    params.standaloneQuery,
-    params.betterQuestion,
-    params.recentHistorySummaries,
-    params.prevSearchedBlockIds,
-  );
-
-  return { fullSystemPrompt, userMessage };
-}
-
-// Also export the new prompt module for new code
-export { analyticalPrompt };

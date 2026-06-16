@@ -2,60 +2,18 @@
  * S1 Inspectional Reading System Prompt - Backward Compatible Re-export
  *
  * This file re-exports from the new prompt registry for backward compatibility.
- * New code should import from '@/agent/prompts/core/inspectional.js' instead.
+ * New code should import from '@/agent/prompts/utils.js' instead.
  */
 
-import { inspectionalPrompt } from '../../prompts/core/inspectional.js';
+export { formatTreeStructure, buildScopedChaptersBlock } from '../../prompts/utils.js';
+export { inspectionalPrompt } from '../../prompts/core/inspectional.js';
+
 import { z } from 'zod';
-import type { OutlineNode } from '../../tools/local/types';
+import { inspectionalPrompt } from '../../prompts/core/inspectional.js';
+import type { OutlineNode } from '../../tools/local/types.js';
 import { ReadingDepth } from '../state.js';
 import { formatHistoryBlock, type HistorySummary } from '../utils/history-summarizer.js';
 
-/**
- * Format tree structure for LLM prompt
- */
-export function formatTreeStructure(
-  nodes: OutlineNode[],
-  indent: number = 0,
-  maxTextLength: number = 100,
-  maxDepth: number = 4,
-  bookName: string = ''
-): string {
-  const lines: string[] = [];
-
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const isLast = i === nodes.length - 1;
-
-    const prefix = '    '.repeat(indent) + (isLast ? '└── ' : '├── ');
-
-    const fullLink = bookName && node.file_name
-      ? `[[${bookName}/${node.file_name}]]`
-      : node.file_name ? `[[${node.file_name}]]` : '';
-    const linkPart = fullLink ? `, link: ${fullLink}` : '';
-    const titleLine = `${prefix}${node.heading} (node_id: ${node.node_id}${linkPart})`;
-    lines.push(titleLine);
-
-    if (node.summary && indent < maxDepth) {
-      const truncatedSummary = node.summary.length > maxTextLength
-        ? node.summary.slice(0, maxTextLength) + '...'
-        : node.summary;
-      const summaryPrefix = '    '.repeat(indent + 1) + '摘要: ';
-      lines.push(`${summaryPrefix}${truncatedSummary}`);
-    }
-
-    if (node.children && node.children.length > 0 && indent < maxDepth) {
-      const childText = formatTreeStructure(node.children, indent + 1, maxTextLength, maxDepth, bookName);
-      lines.push(childText);
-    }
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * Build system prompt for inspectional state with depth-aware branching
- */
 export function buildInspectionalSystemPrompt(
   treeText: string,
   docName: string,
@@ -126,9 +84,6 @@ ${currentChapterBlock}${citedChaptersBlock}
 ${taskBranch}`;
 }
 
-/**
- * Build user message for inspectional state
- */
 export function buildInspectionalUserMessage(
   standaloneQuery: string,
   depth: ReadingDepth,
@@ -151,9 +106,6 @@ ${standaloneQuery}
 ${depthHint}`;
 }
 
-/**
- * Zod schema for S1 structured output
- */
 export const InspectionalOutputSchema = z.object({
   thought_process: z.string(),
   scopeNodeIds: z.array(z.string()),
@@ -163,6 +115,3 @@ export const InspectionalOutputSchema = z.object({
 });
 
 export type InspectionalOutput = z.infer<typeof InspectionalOutputSchema>;
-
-// Also export the new prompt module for new code
-export { inspectionalPrompt };
