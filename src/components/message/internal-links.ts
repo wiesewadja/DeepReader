@@ -412,24 +412,61 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		});
 	});
 
-	// Hook click events on Excalidraw embeds rendered inside messages
-	const embeds = contentEl.querySelectorAll('.markdown-embed, .internal-embed');
-	embeds.forEach(embed => {
-		const src = embed.getAttr('src');
-		if (!src) return;
+	// Hook click events on Excalidraw embeds rendered inside messages (using event delegation for robustness)
+	contentEl.addEventListener('click', async (e) => {
+		let target = e.target as HTMLElement | null;
+		while (target && target !== contentEl) {
+			const src = target.getAttribute('src');
+			const isExcalidrawEmbed = src && (
+				src.toLowerCase().includes('excalidraw') ||
+				src.endsWith('.excalidraw.md') ||
+				src.endsWith('.excalidraw')
+			);
+			const isExcalidrawImg = target.classList.contains('excalidraw-embedded-img') || 
+				(target.tagName === 'svg' && target.classList.contains('excalidraw-svg')) ||
+				!!target.closest('svg.excalidraw-svg') || 
+				!!target.closest('.excalidraw-embedded-img') ||
+				(target.closest('iframe') && !!target.closest('iframe')?.getAttribute('src')?.toLowerCase().includes('excalidraw'));
 
-		const isExcalidraw = src.endsWith('.excalidraw.md') || src.endsWith('.excalidraw');
-		if (!isExcalidraw) return;
+			if (isExcalidrawEmbed) {
+				e.preventDefault();
+				e.stopPropagation();
+				log('[DeepPDF] Opening excalidraw embed:', src);
+				const file = app.metadataCache.getFirstLinkpathDest(src, '');
+				if (file) {
+					await app.workspace.getLeaf(true).openFile(file);
+				} else {
+					const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+					const currentFilePath = activeView?.file?.path || '';
+					await app.workspace.openLinkText(src, currentFilePath, true);
+				}
+				return;
+			}
 
-		embed.addClass('deeppdf-clickable-embed');
+			if (isExcalidrawImg) {
+				const parentEmbed = target.closest('.internal-embed, .markdown-embed');
+				const parentSrc = parentEmbed?.getAttribute('src');
+				if (parentSrc && (
+					parentSrc.toLowerCase().includes('excalidraw') ||
+					parentSrc.endsWith('.excalidraw.md') ||
+					parentSrc.endsWith('.excalidraw')
+				)) {
+					e.preventDefault();
+					e.stopPropagation();
+					log('[DeepPDF] Opening excalidraw embed (img):', parentSrc);
+					const file = app.metadataCache.getFirstLinkpathDest(parentSrc, '');
+					if (file) {
+						await app.workspace.getLeaf(true).openFile(file);
+					} else {
+						const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+						const currentFilePath = activeView?.file?.path || '';
+						await app.workspace.openLinkText(parentSrc, currentFilePath, true);
+					}
+					return;
+				}
+			}
 
-		embed.addEventListener('click', async (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-
-			const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
-			const currentFilePath = activeView?.file?.path || '';
-			await app.workspace.openLinkText(src, currentFilePath, true);
-		});
+			target = target.parentElement;
+		}
 	});
 }

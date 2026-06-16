@@ -1911,18 +1911,35 @@
 }
 
 /* Clickable Excalidraw embed styling */
-.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed,
-.deeppdf-message-content .internal-embed.deeppdf-clickable-embed {
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i],
+.deeppdf-message-content .internal-embed[src*="excalidraw" i] {
 	cursor: pointer;
 	transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+	width: 100% !important;
+	max-width: 100% !important;
+	display: block;
 }
-.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed:hover,
-.deeppdf-message-content .internal-embed.deeppdf-clickable-embed:hover {
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i] *,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i] * {
+	pointer-events: none;
+}
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i] img,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i] img,
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i] svg,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i] svg,
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i] iframe,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i] iframe {
+	width: 100% !important;
+	max-width: 100% !important;
+	height: auto !important;
+}
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i]:hover,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i]:hover {
 	opacity: 0.95;
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 	transform: translateY(-1px);
 }
-.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed:active,
-.deeppdf-message-content .internal-embed.deeppdf-clickable-embed:active {
+.deeppdf-message-content .markdown-embed[src*="excalidraw" i]:active,
+.deeppdf-message-content .internal-embed[src*="excalidraw" i]:active {
 	transform: translateY(0);
 }
