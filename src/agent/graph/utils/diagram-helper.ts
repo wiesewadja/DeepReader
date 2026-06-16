@@ -540,7 +540,7 @@ ${processedContent}
     // 提取 JSON（可能被 ```json 包裹）
     const jsonText = extractJsonObject(text);
     if (!jsonText) {
-      log('[DiagramHelper] LLM 未返回有效 JSON');
+      log('[DiagramHelper] LLM 未返回有效 JSON，原始响应:', text.slice(0, 800));
       return '';
     }
 
@@ -548,12 +548,12 @@ ${processedContent}
     try {
       parsed = JSON.parse(jsonText);
     } catch {
-      log('[DiagramHelper] JSON 解析失败');
+      log('[DiagramHelper] JSON 解析失败，提取到的文本:', jsonText.slice(0, 800));
       return '';
     }
 
     if (!parsed.filename || !Array.isArray(parsed.elements) || parsed.elements.length === 0) {
-      log('[DiagramHelper] 缺少 filename 或 elements');
+      log('[DiagramHelper] 缺少 filename 或 elements，parsed keys:', Object.keys(parsed).join(','));
       return '';
     }
 
