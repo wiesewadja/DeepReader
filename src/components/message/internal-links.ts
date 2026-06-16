@@ -412,4 +412,24 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 		});
 	});
 
+	// Hook click events on Excalidraw embeds rendered inside messages
+	const embeds = contentEl.querySelectorAll('.markdown-embed');
+	embeds.forEach(embed => {
+		const src = embed.getAttr('src');
+		if (!src) return;
+
+		const isExcalidraw = src.endsWith('.excalidraw.md') || src.endsWith('.excalidraw');
+		if (!isExcalidraw) return;
+
+		embed.addClass('deeppdf-clickable-embed');
+
+		embed.addEventListener('click', async (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+
+			const activeView = app.workspace.getActiveViewOfType(MarkdownView) as any;
+			const currentFilePath = activeView?.file?.path || '';
+			await app.workspace.openLinkText(src, currentFilePath, true);
+		});
+	});
 }

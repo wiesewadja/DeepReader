@@ -1909,3 +1909,17 @@
 .deeppdf-message-content div[data-type="excalidraw"] svg rect:first-of-type {
 	fill: var(--background-primary) !important;
 }
+
+/* Clickable Excalidraw embed styling */
+.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed {
+	cursor: pointer;
+	transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed:hover {
+	opacity: 0.95;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+	transform: translateY(-1px);
+}
+.deeppdf-message-content .markdown-embed.deeppdf-clickable-embed:active {
+	transform: translateY(0);
+}
