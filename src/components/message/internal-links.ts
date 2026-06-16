@@ -413,7 +413,7 @@ export function setupInternalLinks(contentEl: HTMLElement, app: App, disableHove
 	});
 
 	// Hook click events on Excalidraw embeds rendered inside messages
-	const embeds = contentEl.querySelectorAll('.markdown-embed');
+	const embeds = contentEl.querySelectorAll('.markdown-embed, .internal-embed');
 	embeds.forEach(embed => {
 		const src = embed.getAttr('src');
 		if (!src) return;
