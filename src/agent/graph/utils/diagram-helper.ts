@@ -14,7 +14,6 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 import { agentLog as log } from '../../../utils/logger.js';
 import { excalidrawTool, writeExcalidrawJson, buildExcalidrawJSON } from '../../tools/excalidraw.js';
-import { buildExcalidrawMd } from '../../tools/excalidraw-md.js';
 import type { ElementDef, DiagramLayoutType } from '../../tools/excalidraw-types.js';
 import type { ToolContext } from '../../tools/types.js';
 
@@ -556,33 +555,20 @@ export async function generateDiagramProgressive(
     return '';
   }
 
-  // 5. 收尾：转 .excalidraw.md + 删中间文件
-  if (options.signal?.aborted) {
-    log('[DiagramHelper] generateDiagramProgressive: abortSignal 已触发，保留中间 .excalidraw 供部分查看');
-    // 返回中间态 embed（.excalidraw），让用户看到部分图
-    return `![[Excalidraw/${filename}.excalidraw]]`;
-  }
-
+  // 5. 收尾：写入最终 .excalidraw（覆盖中间态）
   try {
     const excalidrawFile = buildExcalidrawJSON(cumulative, undefined, toolContext);
-    const mdContent = buildExcalidrawMd(excalidrawFile);
 
     const dir = 'Excalidraw';
     const adapter = toolContext.vault.app.vault.adapter;
-    const mdFilepath = `${dir}/${filename}.excalidraw.md`;
-    await adapter.write(mdFilepath, mdContent);
+    const filepath = `${dir}/${filename}.excalidraw`;
+    await adapter.write(filepath, JSON.stringify(excalidrawFile, null, 2));
 
-    // 删除中间 .excalidraw 文件
-    const jsonFilepath = `${dir}/${filename}.excalidraw`;
-    if (await adapter.exists(jsonFilepath)) {
-      await adapter.remove(jsonFilepath);
-    }
-
-    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${mdFilepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
-    return `![[${mdFilepath}]]`;
+    log(`[DiagramHelper] generateDiagramProgressive: 收尾完成 ${filepath}（${cumulative.length} 元素，${succeededSections}/${total} 节）`);
+    return `![[${filepath}]]`;
   } catch (err) {
-    log('[DiagramHelper] generateDiagramProgressive: 收尾转换失败:', err instanceof Error ? err.message : String(err));
-    // 转换失败但中间态可用，返回 .excalidraw embed
+    log('[DiagramHelper] generateDiagramProgressive: 收尾写入失败:', err instanceof Error ? err.message : String(err));
+    // 写入失败但中间态可用，返回 .excalidraw embed
     return `![[Excalidraw/${filename}.excalidraw]]`;
   }
 }

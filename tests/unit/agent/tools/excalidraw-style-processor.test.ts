@@ -53,10 +53,10 @@ describe('applyOrganicScrollStyle', () => {
     expect(rect.strokeWidth).toBe(2);
     expect(rect.fillStyle).toBe('solid');
     expect(rect.strokeColor).toBe('#1e3a5f'); // light primary stroke
-    expect(rect.backgroundColor).toBe('#e8f0fe'); // light primary fill
+    expect(rect.backgroundColor).toBe('#c7d9f9'); // light primary fill
 
-    expect(ellipse.strokeColor).toBe('#c53030'); // light emphasis stroke
-    expect(ellipse.backgroundColor).toBe('#fde8e8'); // light emphasis fill
+    expect(ellipse.strokeColor).toBe('#b91c1c'); // light emphasis stroke
+    expect(ellipse.backgroundColor).toBe('#f9c6c6'); // light emphasis fill
 
     expect(result.viewBackgroundColor).toBe('#fffce8'); // light paper background
   });
@@ -103,7 +103,7 @@ describe('applyOrganicScrollStyle', () => {
 
     const shaft = result.elements.find(e => e.id === 'arrow_1')!;
     expect(shaft.type).toBe('freedraw');
-    expect(shaft.strokeColor).toBe('#b45309'); // warning color
+    expect(shaft.strokeColor).toBe('#9a3412'); // warning color
     expect(shaft.customData?.isOrganicConnector).toBe(true);
     expect(shaft.customData?.strokeOptions).toBeDefined();
 
@@ -249,8 +249,8 @@ describe('buildExcalidrawJSON with style processor integration', () => {
     expect(file.appState.viewBackgroundColor).toBe('#1f1d19'); // Dark background
     
     // Total elements in output:
-    // rect_1, rect_2, arrow_1 shaft, arrow_1 wing1, arrow_1 wing2, text_1 (total 6 elements)
-    expect(file.elements).toHaveLength(6);
+    // rect_1, rect_2, text_1 background, text_1, arrow_1 shaft, arrow_1 wing1, arrow_1 wing2 (total 7 elements)
+    expect(file.elements).toHaveLength(7);
 
     const types = file.elements.map(e => e.type);
     
@@ -270,6 +270,13 @@ describe('buildExcalidrawJSON with style processor integration', () => {
     expect(excalidrawShaft.customData?.isOrganicConnector).toBe(true);
     expect(excalidrawShaft.pressures).toBeDefined();
     expect(excalidrawShaft.pressures!.length).toBeGreaterThan(0);
+
+    // Verify text background was created and bound to text
+    const textBg = file.elements.find(e => e.id === 'text_1_bg')!;
+    expect(textBg.type).toBe('rectangle');
+    expect(textBg.backgroundColor).toBe('#1a1815'); // dark neutral textBg
+    const excalidrawText = file.elements.find(e => e.id === 'text_1')!;
+    expect(excalidrawText.containerId).toBe('text_1_bg');
 
     // Verify roundness on shape elements in final output
     const excalidrawRect = file.elements.find(e => e.id === 'rect_1')!;

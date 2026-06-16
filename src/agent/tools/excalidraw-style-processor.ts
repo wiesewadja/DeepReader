@@ -45,6 +45,39 @@ function resolveSemanticColor(theme: ObsidianTheme, color?: SemanticColor): Sema
 }
 
 // 辅助方法：处理节点样式映射
+// 给自由文本加浅色背景卡片，增强视觉隔离
+function wrapTextWithBackground(el: ElementDef, theme: ObsidianTheme): ElementDef[] {
+  const semantic = resolveSemanticColor(theme, el.semanticColor);
+  const col = PALETTE[theme][semantic];
+  const paddingX = 12;
+  const paddingY = 8;
+  const bgId = `${el.id}_bg`;
+
+  const bg: ElementDef = {
+    id: bgId,
+    type: 'rectangle',
+    x: el.x - paddingX,
+    y: el.y - paddingY,
+    width: el.width + paddingX * 2,
+    height: el.height + paddingY * 2,
+    strokeColor: col.stroke,
+    backgroundColor: col.textBg,
+    roughness: 1,
+    strokeWidth: 1,
+    fillStyle: 'solid',
+    semanticColor: el.semanticColor,
+    boundElements: [{ id: el.id, type: 'text' }],
+  };
+
+  const styledText: ElementDef = {
+    ...el,
+    strokeColor: el.semanticColor ? col.stroke : (el.strokeColor || TEXT_COLORS[theme]),
+    containerId: bgId,
+  };
+
+  return [bg, styledText];
+}
+
 function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] {
   const result: ElementDef[] = [];
   for (const el of elements) {
@@ -62,14 +95,16 @@ function styleNodes(elements: ElementDef[], theme: ObsidianTheme): ElementDef[] 
         fillStyle: 'solid',
       });
     } else if (isText) {
-      // 文本读取 semanticColor 并映射到主题色板；未指定时回退到显式 strokeColor 或主题文字色
-      const strokeColor = el.semanticColor
-        ? PALETTE[theme][resolveSemanticColor(theme, el.semanticColor)].stroke
-        : (el.strokeColor || TEXT_COLORS[theme]);
-      result.push({
-        ...el,
-        strokeColor,
-      });
+      if (el.containerId) {
+        // 已绑定到容器的文本：只上色，不加额外背景
+        const strokeColor = el.semanticColor
+          ? PALETTE[theme][resolveSemanticColor(theme, el.semanticColor)].stroke
+          : (el.strokeColor || TEXT_COLORS[theme]);
+        result.push({ ...el, strokeColor });
+      } else {
+        // 自由文本：生成浅色背景卡片
+        result.push(...wrapTextWithBackground(el, theme));
+      }
     }
     // arrow/line 会被 convertConnectors 转换为 freedraw，此处不输出
   }

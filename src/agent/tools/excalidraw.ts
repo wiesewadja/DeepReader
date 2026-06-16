@@ -608,11 +608,11 @@ function validateSemantics(elements: ElementDef[]): string[] {
 
 /**
  * 保存 Excalidraw 文件。
- * 
- * 优先调用 window.ExcalidrawAutomate API (运行在 Obsidian 真实环境中) 以确保有机线、字体等渲染注册缓存正确；
- * 在测试环境或 API 不可用时，降级为直接写入 filesystem (.excalidraw 后缀的纯 JSON)。
- * 
- * @returns 最终文件的路径和嵌入语法
+ *
+ * 统一输出为 `.excalidraw` 纯 JSON 格式（Excalidraw 插件原生支持，
+ * Obsidian embed 也只会对 `.excalidraw` 后缀触发绘图渲染）。
+ *
+ * @returns 最终 `.excalidraw` 文件的路径和嵌入语法
  */
 export async function saveExcalidrawFile(
   filename: string,
@@ -620,48 +620,11 @@ export async function saveExcalidrawFile(
   layout: DiagramLayoutType | undefined,
   context: ToolContext,
 ): Promise<{ filepath: string; embed: string }> {
-  // 1. 决定主题（用于 ExcalidrawAutomate.setTheme）
-  const theme = resolveObsidianTheme(context);
-
-  // 2. 构建 JSON
+  // 1. 构建完整 JSON
   const excalidrawFile = buildExcalidrawJSON(elements, layout, context);
 
-  // 3. 检测 window.ExcalidrawAutomate
-  const ea = typeof window !== 'undefined' ? (window as any).ExcalidrawAutomate : undefined;
+  // 2. 写入文件系统
   const dir = 'Excalidraw';
-
-  if (ea) {
-    log('info', `调用 ExcalidrawAutomate 保存图表: ${filename}`);
-    try {
-      ea.reset();
-      ea.setTheme(theme === 'dark' ? 1 : 0);
-      if (ea.canvas) {
-        ea.canvas.viewBackgroundColor = excalidrawFile.appState.viewBackgroundColor;
-      }
-
-      // 填充 elementsDict
-      for (const el of excalidrawFile.elements) {
-        ea.elementsDict[el.id] = el;
-      }
-
-      // 保存文件，foldername 为 Excalidraw 目录，不带 onNewPane，silent: true
-      const filepath = await ea.create({
-        filename,
-        foldername: dir,
-        onNewPane: false,
-        silent: true,
-      });
-
-      return {
-        filepath,
-        embed: `![[${filepath}]]`,
-      };
-    } catch (err) {
-      log('error', `ExcalidrawAutomate 运行异常，降级为直写文件: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // 4. 降级/测试路径：直接写入 filesystem (.excalidraw 后缀)
   const adapter = context.vault.app.vault.adapter;
   if (!(await adapter.exists(dir))) {
     await adapter.mkdir(dir);
