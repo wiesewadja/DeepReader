@@ -13,7 +13,7 @@ import { inheritDepthOnContinuity } from '../../router/continuity-guard.js';
 import { upgradeToSyntopical } from '../../router/booklist-resolver.js';
 import { verifyExistence } from '../../router/existence-verifier.js';
 import type { RouterInput } from '../node-io.js';
-import { PROMPT_S0_ROUTER, buildRouterUserMessage } from '../prompts/router-prompt';
+import { routerPrompt } from '../../prompts/core/router.js';
 import type { SharedContext } from '../shared-context.js';
 import type { CognitiveEngineState } from '../state';
 import { ReadingDepth } from '../state';
@@ -87,10 +87,10 @@ export async function routerNode(
   try {
     const sharedContext = config.configurable?.sharedContext as SharedContext | undefined;
     const docDescription = sharedContext?.toolContext?.book.docDescription;
-    const userMessage = buildRouterUserMessage(rawQuery, chatHistory, pdfName || undefined, docDescription);
+    const userMessage = routerPrompt.buildUserMessage?.({ rawQuery, chatHistory, bookName: pdfName || undefined, docDescription }) || '';
 
     const response = await fastModel.invoke([
-      { role: 'system', content: PROMPT_S0_ROUTER },
+      { role: 'system', content: routerPrompt.locales.zh.systemPrompt },
       { role: 'user', content: userMessage },
     ], config);
 
