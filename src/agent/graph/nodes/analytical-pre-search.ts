@@ -340,9 +340,8 @@ export async function preSearchNode(
 
       const blockLines = formatBlockLines(hits);
 
-      const pdfName = statePdfName || ctx?.toolContext?.book.pdfName || '';
       const userQuery = stateBetterQuestion || stateQuery || ctx?.rawUserQuery || '';
-      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery, pdfName);
+      const directPrompt = buildEarlyStopPrompt(fullSystemPrompt, blockLines, userQuery);
 
       const directResponse = await mainModel.invoke([
         new SystemMessage(directPrompt),

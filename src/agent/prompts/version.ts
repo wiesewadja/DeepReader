@@ -60,7 +60,7 @@ export class PromptVersionManager {
   }
 
   /** 比较版本 */
-  compareVersions(moduleId: string, v1: string, v2: string): number {
+  compareVersions(v1: string, v2: string): number {
     const parts1 = v1.split('.').map(Number);
     const parts2 = v2.split('.').map(Number);
     

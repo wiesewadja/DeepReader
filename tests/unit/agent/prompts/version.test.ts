@@ -31,9 +31,9 @@ describe('PromptVersionManager', () => {
   });
 
   it('should compare versions', () => {
-    expect(manager.compareVersions('test', '1.0.0', '1.0.1')).toBeLessThan(0);
-    expect(manager.compareVersions('test', '1.0.1', '1.0.0')).toBeGreaterThan(0);
-    expect(manager.compareVersions('test', '1.0.0', '1.0.0')).toBe(0);
+    expect(manager.compareVersions('1.0.0', '1.0.1')).toBeLessThan(0);
+    expect(manager.compareVersions('1.0.1', '1.0.0')).toBeGreaterThan(0);
+    expect(manager.compareVersions('1.0.0', '1.0.0')).toBe(0);
   });
 
   it('should return unknown for non-existent module', () => {

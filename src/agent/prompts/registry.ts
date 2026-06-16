@@ -45,8 +45,8 @@ export class PromptRegistryImpl implements PromptRegistry {
     if (filter?.category) {
       result = result.filter(m => m.metadata.category === filter.category);
     }
-    if (filter?.tags && filter.tags.length > 0) {
-      const { tags } = filter;
+    if (filter?.tags?.length) {
+      const tags = filter.tags;
       result = result.filter(m =>
         tags.some(tag => m.metadata.tags?.includes(tag))
       );

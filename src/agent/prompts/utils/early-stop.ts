@@ -4,7 +4,6 @@ export function buildEarlyStopPrompt(
   systemPrompt: string,
   blockLines: string[],
   userQuery: string,
-  pdfName: string,
 ): string {
   return `${systemPrompt}\n\n${preSearchPrompt.locales.zh.systemPrompt}
 
