@@ -317,9 +317,9 @@ function toExcalidrawElement(el: ElementDef, theme: 'light' | 'dark'): Excalidra
     // 所有 text 字号统一钳到四档（S16/M20/L28/XL36），保证视觉统一离散可控。
     // LLM 给的 fontSize 仅作参考（取不小于它的... 实际取不超过它的最大档，避免溢出容器）。
     base.fontSize = clampFontSize(el.fontSize ?? 16);
-    // fontFamily 4 = Excalidraw 内置 Virgil（手绘风），与官方默认一致；
-    // 之前用 5（中文友好字体）在 ExcalidrawAutomate 注册路径下偶尔渲染失败，统一回 4。
-    base.fontFamily = 4;
+    // fontFamily 5 = Excalidraw 内置中文友好字体，无需外部注册，渲染稳定。
+    // 不选 4（Virgil/自定义字体位）是因为该 fontFamily 在当前 Excalidraw 插件里未注册，会报字体错误。
+    base.fontFamily = 5;
     base.textAlign = el.textAlign ?? 'center';
     base.verticalAlign = el.verticalAlign ?? 'middle';
     base.containerId = el.containerId ?? null;
