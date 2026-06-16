@@ -117,29 +117,99 @@ const data = {
 	savedSessions: {},
 };
 
-// ----- 输出 -----
-// 默认写到 dev 目录（deepreader-dev），与 .deploy-config.json 的 dev target.path 一致
+// ----- 读取并合并已有的 data.json -----
 const dataPath = resolve(root, 'test-vault/.obsidian/plugins/deepreader-dev/data.json');
+let finalData = { ...data };
 
+if (existsSync(dataPath)) {
+	try {
+		const existing = JSON.parse(readFileSync(dataPath, 'utf-8'));
+		
+		// 1. 以已有的全部数据（含运行期会话历史、偏好等）为基础
+		finalData = { ...existing };
+		
+		// 2. 细粒度覆盖来自 env 的提供商配置 (API key)
+		finalData.providers = {
+			...(existing.providers || {}),
+			...(data.providers || {})
+		};
+		for (const provider of Object.keys(data.providers)) {
+			finalData.providers[provider] = {
+				...(existing.providers?.[provider] || {}),
+				...(data.providers[provider] || {})
+			};
+		}
+
+		// 3. 覆盖来自 env 的角色模型配置
+		finalData.roles = {
+			...(existing.roles || {}),
+			...(data.roles || {})
+		};
+
+		// 4. 覆盖其他从 env 配置的字段，但保留没有被 env 定义覆盖的运行期状态
+		const envFields = [
+			'apiPort',
+			'setupComplete',
+			'enableDebugLog',
+			'wereadApiKey',
+			'enableZlibrary',
+			'zlibraryUserId',
+			'zlibraryUserKey',
+			'zlibraryDomain',
+			'piEnabled',
+			'customPiPath',
+			'langfusePublicKey',
+			'langfuseSecretKey',
+			'langfuseBaseUrl',
+			'langfuseEnabled',
+			'sensenovaApiKey',
+			'langsmithApiKey',
+			'langsmithProject',
+			'langsmithEnabled',
+			'propositionCardsPer500Words',
+			'rerankerWeight',
+			'maxResults',
+			'forceMode',
+			'autoEnableReadingMode',
+			'readingModeStyle',
+			'proactiveGuidanceEnabled',
+			'proactiveCooldownMinutes',
+			'journalDir',
+			'wereadSyncInterval',
+			'wereadExcludeArticles',
+			'wereadNoteCountThreshold'
+		];
+
+		for (const field of envFields) {
+			if (data[field] !== undefined) {
+				finalData[field] = data[field];
+			}
+		}
+	} catch (e) {
+		console.warn('⚠️ 解析已有 data.json 失败，将生成全新配置', e);
+	}
+}
+
+// ----- 输出 -----
 if (dryRun) {
 	console.log('🔍 [dry-run] 将写入以下配置:\n');
-	console.log(JSON.stringify(data, null, 2));
+	console.log(JSON.stringify(finalData, null, 2));
 	console.log(`\n目标: ${dataPath}`);
 } else {
-	writeFileSync(dataPath, JSON.stringify(data, null, 2) + '\n');
+	writeFileSync(dataPath, JSON.stringify(finalData, null, 2) + '\n');
 	console.log(`✅ 配置已注入: ${dataPath}`);
 
 	// 统计已配置的 provider 数量
-	const configured = Object.entries(data.providers)
-		.filter(([, v]) => v.apiKey)
+	const configured = Object.entries(finalData.providers || {})
+		.filter(([, v]) => v && v.apiKey)
 		.map(([k]) => k);
 	if (configured.length) console.log(`   已配置 provider: ${configured.join(', ')}`);
 
 	const extras = [
-		data.wereadApiKey ? '微信读书' : '',
-		data.langsmithEnabled ? 'LangSmith' : '',
-		data.piEnabled ? 'PI Agent' : '',
-		data.langfuseEnabled ? 'Langfuse' : '',
+		finalData.wereadApiKey ? '微信读书' : '',
+		finalData.langsmithEnabled ? 'LangSmith' : '',
+		finalData.piEnabled ? 'PI Agent' : '',
+		finalData.langfuseEnabled ? 'Langfuse' : '',
 	].filter(Boolean).join('  ');
 	if (extras) console.log(`   集成: ${extras}`);
 }
